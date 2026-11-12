@@ -1,0 +1,13 @@
+{
+  "corpus": {"path": "/data/corpus.jsonl", "manifest": "/data/manifest.json"},
+  "generation": {
+    "provider": "openai", "model": "gpt-6-luna", "api": "responses",
+    "base_url": "https://api.openai.com/v1", "credential_env": "ORANGE_OPENAI_API_KEY"
+  },
+  "embeddings": {
+    "model": "jinaai/jina-embeddings-v5-omni-small", "dimensions": 1024,
+    "provider": "local", "device": "cuda",
+    "revision": "950200abde3a3bcf3d5bdfe5d28fb5bb5e7dfbb0",
+    "path": "/opt/models/jina", "helper": "/opt/resources/jina.py"
+  }
+}

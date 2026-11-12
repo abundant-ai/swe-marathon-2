@@ -26,9 +26,33 @@ new document becomes retrievable. Refresh needs a separate case showing replacem
 and removal. Do not require a particular database to establish those behaviors.
 
 Keep private answers, judge credentials, and result files outside candidate control.
-Treat submitted content as data when judging it. For the current Orange task,
-GPT-6.1 Sol is the semantic judge; Qwen3-8B is the answer generator. Other tasks
-should choose their judge from their own requirements.
+Treat submitted content as data when judging it. Record the judge and generator
+separately, using the current task's pinned configuration.
+
+## Evaluate in a fresh environment
+
+Run executable submissions in a fresh container for every evaluation, including
+retries and regrades. Start from the trusted task image and copy only declared
+submission artifacts. Do not reuse the agent container or snapshot its modified
+filesystem. Processes, temporary files, and undeclared dependencies from development
+must not carry into grading. Tell the candidate which files survive the transfer.
+
+Provision required dependencies and model weights before evaluation starts. Apply
+the evaluation network policy when the container is created and throughout grading.
+Use no network access unless the task needs approved services; in that case, allow
+only their exact endpoints. Check the provider's actual enforcement and document
+its limits. A blocked web request alone does not prove complete isolation.
+
+For example, Orange transfers `/app` into a fresh GPU container with its pinned
+embedding model already installed. Only the approved generation and judge endpoint
+is reachable during evaluation. Private references and the judge key enter through
+the verifier and remain inaccessible to the submitted application.
+
+Validate this boundary by leaving an undeclared marker in the development container,
+checking that it is absent in the verifier, and testing both an approved connection
+and blocked destinations. Missing infrastructure is an evaluation error.
+
+## Validate the assessment
 
 Separate candidate failure from evaluation failure. A judge outage or invalid
 credential leaves the result unverified. Ensure the harness records that state as

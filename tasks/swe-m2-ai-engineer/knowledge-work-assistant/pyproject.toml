@@ -1,0 +1,13 @@
+[project]
+name = "orange-task-authoring"
+version = "0.1.0"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "harbor[modal] @ git+https://github.com/harbor-framework/harbor.git@feea734de84bf2479b329dc6315a6d98d1596f4f",
+]
+
+[dependency-groups]
+dev = ["pytest==8.4.2"]
+
+[tool.pytest.ini_options]
+testpaths = ["checks"]

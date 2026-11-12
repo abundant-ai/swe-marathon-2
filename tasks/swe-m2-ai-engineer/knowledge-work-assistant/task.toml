@@ -1,0 +1,53 @@
+schema_version = "1.4"
+multi_step_reward_strategy = "final"
+artifacts = ["/app"]
+
+[task]
+name = "abundant-ai/knowledge-work-assistant"
+description = "Build a knowledge-work assistant through successive engineering steps."
+
+[metadata]
+open_internet_justification = "Development needs package installation and coding-harness setup. Evaluation uses a fresh container with only the approved model API reachable; benchmark questions and reference answers may not be downloaded during development."
+
+[agent]
+timeout_sec = 14400
+user = "candidate"
+
+[environment]
+network_mode = "public"
+build_timeout_sec = 3600
+cpus = 4
+memory_mb = 16384
+storage_mb = 32768
+gpus = 1
+gpu_types = ["L4"]
+workdir = "/app"
+
+[environment.env]
+ORANGE_OPENAI_API_KEY = "${ORANGE_OPENAI_API_KEY}"
+
+[verifier]
+environment_mode = "separate"
+network_mode = "allowlist"
+allowed_hosts = ["api.openai.com"]
+timeout_sec = 43200
+user = "root"
+
+[verifier.environment]
+network_mode = "allowlist"
+allowed_hosts = ["api.openai.com"]
+build_timeout_sec = 3600
+cpus = 4
+memory_mb = 16384
+storage_mb = 32768
+gpus = 1
+gpu_types = ["L4"]
+workdir = "/app"
+
+[verifier.env]
+ORANGE_JUDGE_API_KEY = "${ORANGE_JUDGE_API_KEY}"
+ORANGE_OPENAI_API_KEY = "${ORANGE_OPENAI_API_KEY}"
+
+[[steps]]
+name = "01-build-rag"
+min_reward = 1.0
