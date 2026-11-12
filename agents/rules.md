@@ -38,6 +38,8 @@ identify which earlier requirements still apply and which the new request replac
 
 ## Skills to use
 
+- Use [harbor-task-structure](skills/harbor-task-structure/SKILL.md) when organizing
+  environments, step inputs, verifier and oracle files, or their Python entry points.
 - Use [instruction-writing](skills/instruction-writing/SKILL.md) when drafting or
   editing a step instruction.
 - Use [declarative-task-design](skills/declarative-task-design/SKILL.md) when
