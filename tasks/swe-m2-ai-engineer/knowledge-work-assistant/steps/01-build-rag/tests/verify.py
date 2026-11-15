@@ -1,118 +1,22 @@
-"""Thin Harbor adapter and explicit orchestration of step-1 requirement tests."""
+"""Harbor entry point: configure trusted inputs and execute the verifier package."""
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import sys
-from dataclasses import asdict
 from pathlib import Path
-from typing import Any
 
-# The production entry point runs with Python -I, outside the submitted workspace.
+# Harbor invokes this file with Python -I; imports resolve only from /tests.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from client import ApplicationClient
-from contracts import CandidateFailure, CheckResult, EvaluationError, HeldOutCase, RegisteredCheck, VerificationContext, VerificationResult
-from judge import HERB_REVISION, JUDGE_MODEL, JUDGE_REASONING, PROMPT_SHA256, HerbJudge
-import test_requirements as requirements
-
-CHECKS = (
-    RegisteredCheck("interfaces", requirements.test_interfaces),
-    RegisteredCheck("cli_help", requirements.test_cli_help),
-    RegisteredCheck("answer_before_ingestion", requirements.test_answer_before_ingestion, ("interfaces", "cli_help")),
-    RegisteredCheck("ingestion_and_persistence", requirements.test_ingestion_and_persistence, ("interfaces",)),
-    RegisteredCheck("duplicate_documents", requirements.test_duplicate_documents, ("interfaces", "cli_help")),
-    RegisteredCheck("refresh_replaces_index", requirements.test_refresh_replaces_index, ("interfaces", "cli_help")),
-    RegisteredCheck("required_call_paths", requirements.test_required_call_paths, ("interfaces", "cli_help")),
-    RegisteredCheck("cli_question_files", requirements.test_cli_question_files, ("interfaces", "cli_help")),
-    RegisteredCheck("cli_stdin", requirements.test_cli_stdin, ("interfaces", "cli_help")),
-    RegisteredCheck("self_generated_evaluation", requirements.test_self_generated_evaluation),
-    RegisteredCheck("holdout_accuracy", requirements.test_holdout_accuracy, ("interfaces", "cli_help")),
-)
-
-
-def verify(context: VerificationContext) -> VerificationResult:
-    """Run every registered check, record dependency skips, and aggregate results.
-
-    Args:
-        context: Trusted inputs and a fresh per-run diagnostics list.
-
-    Returns:
-        One result per registry entry, with all mandatory checks required to pass.
-
-    Raises:
-        EvaluationError: Infrastructure or judge failure. Completed records remain
-            in context.completed for the entry-point adapter to preserve.
-    """
-    context.completed.clear()
-    outcomes: dict[str, CheckResult] = {}
-    for check in CHECKS:
-        unmet = [name for name in check.requires if outcomes[name].status != "passed"]
-        if unmet:
-            result = CheckResult(check.name, "skipped", f"Unmet prerequisites: {', '.join(unmet)}")
-        else:
-            try:
-                result = check.function(context)
-            except CandidateFailure as exc:
-                result = CheckResult(check.name, "failed", str(exc))
-        outcomes[check.name] = result
-        context.completed.append(result)
-    metrics = {key: value for check in context.completed for key, value in check.metrics.items()}
-    return VerificationResult(all(check.status == "passed" for check in context.completed), tuple(context.completed), metrics)
-
-
-def load_inputs(private: Path) -> tuple[Path, tuple[HeldOutCase, ...], dict[str, Any]]:
-    """Validate pinned private input hashes and the complete scoring denominator.
-
-    Args:
-        private: Trusted directory populated by scripts/prepare_data.py.
-
-    Returns:
-        Corpus path, all 238 content cases, and the provenance manifest.
-
-    Raises:
-        EvaluationError: Missing, corrupted, or mismatched evaluation inputs.
-    """
-    try:
-        manifest = json.loads((private / "manifest.json").read_text())
-        if manifest["herb_revision"] != HERB_REVISION:
-            raise ValueError("HERB revision mismatch")
-        for filename, key in (("corpus.jsonl", "corpus_sha256"), ("cases.jsonl", "cases_sha256")):
-            if hashlib.sha256((private / filename).read_bytes()).hexdigest() != manifest[key]:
-                raise ValueError(f"Hash mismatch: {filename}")
-        cases = tuple(HeldOutCase(**json.loads(line)) for line in (private / "cases.jsonl").read_text().splitlines())
-        if len(cases) != 238 or len({case.question_id for case in cases}) != 238:
-            raise ValueError("Expected 238 unique held-out questions")
-        return private / "corpus.jsonl", cases, manifest
-    except (OSError, ValueError, KeyError, TypeError) as exc:
-        raise EvaluationError(f"Invalid private inputs: {exc}") from exc
-
-
-def write_report(output: Path, context: VerificationContext | None, result: VerificationResult | None, error: str | None) -> None:
-    """Publish diagnostics and a reward only for a completed, valid evaluation.
-
-    Args:
-        output: Trusted verifier log directory, inaccessible to the candidate UID.
-        context: Partial observations, if context construction succeeded.
-        result: Completed evaluation; None means no valid reward.
-        error: Safe diagnostic for an infrastructure failure.
-    """
-    for name in ("reward.json", "reward.txt"):
-        (output / name).unlink(missing_ok=True)
-    payload = {
-        "status": "evaluation_error" if result is None else "completed",
-        "judge_model": JUDGE_MODEL, "judge_reasoning": JUDGE_REASONING,
-        "herb_revision": HERB_REVISION, "prompt_sha256": PROMPT_SHA256,
-        "score_definition": "Arithmetic mean of integer HERB ratings; missing/empty answers score zero",
-        "error": error,
-        "result": asdict(result) if result else None,
-        "completed_checks": [asdict(check) for check in context.completed] if context else [],
-    }
-    (output / "report.json").write_text(json.dumps(payload, indent=2) + "\n")
-    if result is not None:
-        (output / "reward.json").write_text(json.dumps({"reward": float(result.passed)}) + "\n")
+from verifier.application.client import ApplicationClient
+from verifier.config import load_generation_config, load_scoring_config
+from verifier.contracts import EvaluationError, VerificationContext
+from verifier.inputs import load_inputs
+from verifier.judging.client import HerbJudge
+from verifier.reporting import write_report
+from verifier.runner import verify
 
 
 def main() -> int:
@@ -133,6 +37,8 @@ def main() -> int:
             raise EvaluationError("Production verifier must start as root to isolate candidate UID")
         tests = Path(__file__).resolve().parent
         tests.chmod(0o700)
+        scoring = load_scoring_config(os.environ)
+        generation = load_generation_config(os.environ)
         corpus, cases, manifest = load_inputs(tests / "private")
         (output / "inputs.json").write_text(json.dumps(manifest, indent=2))
         app_root = Path("/app")
@@ -148,7 +54,7 @@ def main() -> int:
             "HF_HUB_DISABLE_TELEMETRY": "1",
         }
         app = ApplicationClient(app_root, uid=10001, environment=environment)
-        context = VerificationContext(app, corpus, cases, HerbJudge(), output)
+        context = VerificationContext(app, corpus, cases, HerbJudge(), output, scoring, generation)
         result = verify(context)
         write_report(output, context, result, None)
         return 0

@@ -19,6 +19,25 @@ methods from choices the candidate can make. Include acceptance criteria and
 limits that affect success, without prescribing unrequested implementation details.
 Flag unresolved requirements instead of filling them in with plausible numbers.
 
+## Keep final evaluation out of candidate-facing material
+
+Never explain final evaluation in `instruction.md` or anywhere the candidate can
+read in its environment. This includes resource READMEs, starter files, comments,
+help text, and example outputs. Keep grader procedures, held-out case details,
+judge configuration, scoring formulas, reward rules, timeouts, output caps, fresh
+verifier containers, and artifact-transfer mechanics in author-only documentation
+and verifier configuration.
+
+State the work, desired outcome, public interfaces, and deliverables directly.
+An accuracy goal can be a task requirement; explaining how the final grader computes
+it belongs to the author. A request to generate development questions or report
+the candidate's own experiments is part of the work and can remain. Preserve
+required data attribution without describing final evaluation.
+
+For Orange, ask for an assistant that reaches the requested accuracy and saves its
+development work under `/app/dev`. Do not append a paragraph beginning "Final
+evaluation..." or move that explanation into `/opt/resources/README.md`.
+
 For example, Orange's `generate` returns a typed answer object, and the CLI
 serializes it. An instruction should make that boundary clear. Its corpus size,
 model choices, and accuracy threshold belong to that task; do not copy them into

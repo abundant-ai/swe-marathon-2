@@ -3,18 +3,20 @@ multi_step_reward_strategy = "final"
 artifacts = ["/app"]
 
 [task]
-name = "abundant-ai/knowledge-work-assistant"
+name = "abundant/swe-m2_ai-engineering_knowledge-work-assistant"
 description = "Build a knowledge-work assistant through successive engineering steps."
+authors = [{ name = "Rundong Liu", email = "rundong@abundant.ai" }]
 
 [metadata]
-open_internet_justification = "Development needs package installation and coding-harness setup. Evaluation uses a fresh container with only the approved model API reachable; benchmark questions and reference answers may not be downloaded during development."
+reward_type = "continuous"
 
 [agent]
-timeout_sec = 14400
+timeout_sec = 28800
 user = "candidate"
 
 [environment]
-network_mode = "public"
+network_mode = "allowlist"
+allowed_hosts = ["api.openai.com"]
 build_timeout_sec = 3600
 cpus = 4
 memory_mb = 16384
@@ -24,13 +26,13 @@ gpu_types = ["L4"]
 workdir = "/app"
 
 [environment.env]
-ORANGE_OPENAI_API_KEY = "${ORANGE_OPENAI_API_KEY}"
+ORANGE_OPENAI_API_KEY = "${OPENAI_API_KEY}"
 
 [verifier]
 environment_mode = "separate"
 network_mode = "allowlist"
 allowed_hosts = ["api.openai.com"]
-timeout_sec = 43200
+timeout_sec = 86400
 user = "root"
 
 [verifier.environment]
@@ -45,9 +47,24 @@ gpu_types = ["L4"]
 workdir = "/app"
 
 [verifier.env]
-ORANGE_JUDGE_API_KEY = "${ORANGE_JUDGE_API_KEY}"
-ORANGE_OPENAI_API_KEY = "${ORANGE_OPENAI_API_KEY}"
+ORANGE_EVAL_QUALITY_WEIGHT = "0.8"
+ORANGE_EVAL_FUNCTIONAL_WEIGHT = "0.2"
+ORANGE_EVAL_ANSWER_WEIGHT = "0.9"
+ORANGE_EVAL_CITATION_WEIGHT = "0.1"
+ORANGE_EVAL_CITATION_MIN_ANSWER_SCORE = "0.75"
+ORANGE_EVAL_QUESTION_CONCURRENCY = "10"
+ORANGE_EVAL_GENERATION_CONCURRENCY = "10"
+ORANGE_EVAL_GENERATION_TIMEOUT_SEC = "1800"
+ORANGE_JUDGE_OUTPUT_RETRIES = "3"
+ORANGE_JUDGE_API_KEY = "${OPENAI_API_KEY}"
+ORANGE_OPENAI_API_KEY = "${OPENAI_API_KEY}"
 
 [[steps]]
 name = "01-build-rag"
-min_reward = 1.0
+
+[steps.agent]
+timeout_sec = 28800
+
+# Harbor's step verifier defaults to 600 seconds instead of inheriting the root limit.
+[steps.verifier]
+timeout_sec = 86400

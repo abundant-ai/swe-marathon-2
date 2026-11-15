@@ -51,7 +51,7 @@ labels, oracle code, and judge credentials out of the agent image.
 Put later inputs in the corresponding step's `workdir/`. Harbor uploads its contents
 into the application working directory before the step and optionally runs
 `setup.sh`. For example, with `/app` as the working directory, Orange's step-2
-`workdir/data/new-documents.jsonl` becomes `/app/data/new-documents.jsonl`.
+`workdir/data/new-documents.json` becomes `/app/data/new-documents.json`.
 Earlier application state persists; avoid overwriting the agent's code with setup
 files or reference implementations.
 
@@ -173,6 +173,12 @@ Let the agent discover installed tools through the environment, normal help text
 and inspectable files. Keep tool inventories out of `instruction.md`. Required
 application behavior and mandatory restrictions still need to be visible.
 
+Keep final-evaluation explanations out of `instruction.md` and every candidate-visible
+file, including resource documentation, starter-code comments, and help text.
+Container isolation, artifact transfer, private inputs, judge configuration, scoring,
+and grading limits belong in author-only files. Describe deliverable paths and
+required application behavior directly, without explaining how the grader uses them.
+
 When implementation is requested, validate the adapters and the full sequence
 from a fresh environment, including inherited requirements and targeted failing
 submissions. Use [declarative-task-design](../declarative-task-design/SKILL.md) to
@@ -182,3 +188,8 @@ Check the task's Harbor version when implementing file transfers. See Harbor's
 [multi-step layout](https://github.com/harbor-framework/harbor/blob/main/docs-mintlify/tasks/multi-step.mdx),
 [separate verifier rules](https://github.com/harbor-framework/harbor/blob/main/docs-mintlify/tasks/separate-verifier.mdx),
 and [oracle entry point](https://github.com/harbor-framework/harbor/blob/main/docs-mintlify/tasks/solution.mdx).
+
+Store all executable test assertions in `test_*.py` files, including subprocess
+probes. Keep accuracy checks in `test_accuracy.py` and run quality evaluation
+through the declared public CLI. Follow the weighted-reward and state-inspection
+rules in [declarative-task-design](../declarative-task-design/SKILL.md).

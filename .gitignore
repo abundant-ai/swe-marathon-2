@@ -1,3 +1,24 @@
 .env
 .env.*
 /HERB/
+/.venv/
+/.pytest_cache/
+**/__pycache__/
+
+# Knowledge-work assistant generated runtime inputs and author outputs.
+/tasks/swe-m2-ai-engineer/knowledge-work-assistant/environment/.venv/
+/tasks/swe-m2-ai-engineer/knowledge-work-assistant/.venv/
+/tasks/swe-m2-ai-engineer/knowledge-work-assistant/.runtime-venv/
+/tasks/swe-m2-ai-engineer/knowledge-work-assistant/environment/data/
+/tasks/swe-m2-ai-engineer/knowledge-work-assistant/environment/resources/corpus/
+/tasks/swe-m2-ai-engineer/knowledge-work-assistant/steps/01-build-rag/tests/private/
+/tasks/swe-m2-ai-engineer/knowledge-work-assistant/__pycache__/
+/tasks/swe-m2-ai-engineer/knowledge-work-assistant/.pytest_cache/
+/tasks/swe-m2-ai-engineer/knowledge-work-assistant/artifacts/
+/tasks/swe-m2-ai-engineer/knowledge-work-assistant/dist/
+/tasks/swe-m2-ai-engineer/knowledge-work-assistant/jobs/
+/authoring/**/dist/
+/authoring/**/.venv/
+/authoring/**/.pytest_cache/
+/authoring/**/artifacts/
+/authoring/**/jobs/

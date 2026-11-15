@@ -12,21 +12,28 @@ from jina import MODEL_ID, MODEL_PATH, MODEL_REVISION
 
 
 def main() -> None:
-    """Download weights, adapters, tokenizer, and custom code before evaluation.
+    """Download the merged retrieval tower and tokenizer during image build.
 
-    All adapters are included because the pinned loader opens each of them, even
-    for text retrieval. Runtime inference reads the resulting local directory.
-    Download errors fail the image build instead of deferring work until grading.
+    The official retrieval checkpoint merges the text adapter into the backbone.
+    Its config is adapted to SGLang's native Qwen3 last-token embedding path.
+    Download errors fail the image build.
     """
     snapshot_download(
         repo_id=MODEL_ID, revision=MODEL_REVISION, local_dir=MODEL_PATH,
-        ignore_patterns=["*.png", ".gitattributes"],
+        allow_patterns=["*.json", "*.safetensors", "*.txt", "*.md", "*.jinja"],
+        ignore_patterns=["onnx/*"],
     )
     model = Path(MODEL_PATH)
+    config_path = model / "config.json"
+    config = json.loads(config_path.read_text())
+    config["architectures"] = ["Qwen3ForCausalLM"]
+    config["rope_theta"] = config["rope_parameters"]["rope_theta"]
+    config_path.write_text(json.dumps(config, indent=2) + "\n")
     shutil.rmtree(model / ".cache", ignore_errors=True)
     (model / "PROVENANCE.json").write_text(json.dumps({
         "model": MODEL_ID, "revision": MODEL_REVISION,
         "modality": "text", "task": "retrieval", "dimensions": 1024,
+        "config_changes": {"architectures": config["architectures"], "rope_theta": config["rope_theta"]},
     }, indent=2) + "\n")
 
 

@@ -14,7 +14,7 @@ Status as of 12 November 2026. “Implemented” refers to task infrastructure; 
 
 | Task | Step | Progress | Remaining work |
 | --- | --- | --- | --- |
-| [Knowledge work assistant](tasks/swe-m2-ai-engineer/knowledge-work-assistant/README.md) | [1. Build RAG](tasks/swe-m2-ai-engineer/knowledge-work-assistant/steps/01-build-rag/instruction.md) | Environment, verifier, data preparation, and packaging implemented; controlled checks validated | Build an oracle, run all 238 quality questions with the fixed judge, and calibrate the 80% target |
+| [Knowledge work assistant](authoring/swe-m2-ai-engineer/knowledge-work-assistant/README.md) | [1. Build RAG](tasks/swe-m2-ai-engineer/knowledge-work-assistant/steps/01-build-rag/instruction.md) | Environment, verifier, data preparation, and packaging implemented; controlled checks validated | Build an oracle, run all 238 quality questions with the fixed judge, and calibrate the 80% target |
 | Knowledge work assistant | [2. Expand the corpus](tasks/swe-m2-ai-engineer/knowledge-work-assistant/steps/02-expand-corpus/instruction.md) | Draft instruction | Define additional data and evaluation splits; implement and calibrate the 95% target |
 | Knowledge work assistant | [3. Harden ingestion](tasks/swe-m2-ai-engineer/knowledge-work-assistant/steps/03-harden-ingestion/instruction.md) | Draft instruction | Define the workload and failure scenarios; build the environment, verifier, and oracle |
 | Knowledge work assistant | [4. Optimize retrieval](tasks/swe-m2-ai-engineer/knowledge-work-assistant/steps/04-optimize-retrieval/instruction.md) | Draft instruction | Define latency and quality criteria; build the environment, verifier, and oracle |
@@ -29,33 +29,66 @@ Orange is a RAG assistant over a fictional company's documents, conversations, p
 
 The development environment contains a uniform 4% sample of HERB: 1,570 of 39,268 source records. Evaluation rebuilds the index from the full sanitized corpus and asks 238 withheld content questions. HERB is public; withholding its questions from the container does not establish freedom from pretraining contamination.
 
-Jina v5 omni small runs locally on the container's GPU using bundled, pinned weights. The available generation model is `gpt-6-luna`. The verifier uses HERB's answer-rating prompt with the fixed judge `gpt-5.4-2026-03-05`. The 80% target is a mean partial-credit answer rating, not the fraction of questions answered perfectly.
+SGLang serves Jina v5 small's merged text-retrieval checkpoint locally on the container's GPU using bundled, pinned weights. The available generation model is `gpt-6-luna`. The verifier uses HERB's answer-rating rubric with the fixed judge `gpt-5.4-2026-03-05` and an explicit answer verdict. A separate citation judgment runs only after a correct or partial verdict and successful quotation checks. The task has no numerical success target. Both judges use five anchored bands from 0 to 1; the citation judge receives the full original documents. Reward uses raw normalized scores: 80% answer/citation quality and 20% functional checks, with answer and citation weights of 90% and 10% within quality.
 
-Every evaluation starts in a fresh container and restores the declared `/app` artifacts. The verifier allows HTTPS only to `api.openai.com`; Jina needs no network connection. Modal's domain allowlist still permits DNS and does not restrict individual API paths. Private references, judge credentials, and reward files remain outside the submitted application's control.
+Every evaluation starts in a fresh container and restores the declared `/app` artifacts. Both development and verification allow HTTPS only to `api.openai.com`; Jina needs no network connection. Modal's domain allowlist still permits DNS and does not restrict individual API paths. Private references, judge credentials, and reward files remain outside the submitted application's control.
 
 ### What has been validated
 
-- All 25 local author checks pass, covering verifier orchestration, targeted broken submissions, scoring, packaging, and network configuration.
+- All 112 local author checks pass, covering verifier orchestration, targeted broken submissions, five-band structured judging, per-question failures, packaging, and network configuration.
 - A controlled Linux application and judge passed all 11 registered requirement checks. This establishes verifier behavior, not RAG answer quality.
-- Local Jina inference produced a normalized 1,024-dimensional embedding on a Modal L4 with all networking blocked.
-- A Harbor boundary control completed on A10 with distinct development and verifier containers, correct artifact transfer, local GPU embeddings, and blocked non-approved destinations. The empty submission correctly received reward zero with no evaluation exceptions. The A10 control followed stalled L4 startup; the delivered configuration retains L4.
+- The SGLang helper passed offline L4 validation: 22.5 ms median warm queries and 111.7 corpus records/second, versus 159.1 ms and 37.3 previously. First startup takes about 73 seconds; later CLI processes reuse the server.
+- On 13 November, a controlled Harbor run built the exact Dockerfile and exercised SGLang in both L4 agent and fresh L4 verifier containers. GPU embeddings, artifact transfer, and the restricted network checks passed without evaluation exceptions. This validates the runtime setup; full RAG answer quality remains unverified.
 - Live judge examples scored correct, wrong, partial, unsupported-extra-claims, and prompt-injection answers at 100, 0, 65, 82, and 0. The **82 for an answer with unsupported additions** shows that the inherited rubric remains permissive.
 
-A full 238-question run with the final judge and a working oracle remains unverified. Coding-harness trials are handled by Oddish. See the [task README](tasks/swe-m2-ai-engineer/knowledge-work-assistant/README.md) for exact contracts, credentials, validation details, and limitations.
+A full 238-question run with the final judge and a working oracle remains unverified. Coding-harness trials are handled by Oddish. See the [task README](authoring/swe-m2-ai-engineer/knowledge-work-assistant/README.md) for exact contracts, credentials, validation details, and limitations.
+
+## Local development setup
+
+Use Python 3.13 and `uv` from the repository root. The root `pyproject.toml` and
+`uv.lock` manage the local `.venv` used to author, test, and package tasks. The root
+project reuses the first task's authoring dependencies through a local path dependency.
+Task-container dependencies remain in each task's `environment/pyproject.toml`.
+Orange's judge has separate locked dependencies under `steps/01-build-rag/tests/`
+because PydanticAI and SGLang require different OpenAI SDK versions.
+
+| Tool or dependency | Purpose |
+| --- | --- |
+| Python 3.13 | Run authoring scripts and verifier checks locally |
+| `uv` | Create `.venv`, resolve dependencies, and run project commands |
+| Harbor with its Modal extra | Parse task packages, build distributions, and support remote trials |
+| Pydantic | Validate the public interfaces and configuration models |
+| Chroma 1.5.9 | Exercise the local database contract in controlled checks |
+| pytest | Run authoring, packaging, and verifier regression checks |
+
+The task authoring project pins Harbor, Pydantic, and Chroma; the root project pins
+pytest. The root lock records all resolved dependencies, including Modal and SDKs
+required by Harbor. GPU inference packages are supplied by the task image.
+
+```bash
+uv sync --frozen
+source .venv/bin/activate
+uv run pytest -q
+```
+
+`uv run` selects the project environment even when the shell is not activated.
 
 ## Build the first task
 
-Use `uv` from the task directory. Data preparation requires a local HERB checkout at the revision recorded in the task README.
+Run these commands from the repository root. Data preparation requires a local
+HERB checkout at the revision recorded in the task README.
 
 ```bash
-cd tasks/swe-m2-ai-engineer/knowledge-work-assistant
-uv sync --frozen
-uv run python scripts/prepare_data.py --herb /path/to/HERB
-uv run pytest checks -q
-uv run python scripts/package_step.py
+uv run python authoring/swe-m2-ai-engineer/knowledge-work-assistant/scripts/prepare_data.py --herb /path/to/HERB
+uv run pytest -q
+uv run python authoring/swe-m2-ai-engineer/knowledge-work-assistant/scripts/package_step.py
 ```
 
-The archive is written to `dist/knowledge-work-assistant-step1.tar.gz`. Extract it and provide the enclosed task directory to Oddish or Harbor. Generated corpora, private evaluation inputs, archives, credentials, and run logs are excluded from Git; preparing the data is required before packaging. Image builds download pinned dependencies and model weights before network-restricted evaluation begins.
+The archive is written to the task's `dist/knowledge-work-assistant-step1.tar.gz`.
+Extract it and provide the enclosed task directory to Oddish or Harbor. Generated
+corpora, private evaluation inputs, archives, credentials, and run logs are excluded
+from Git; preparing the data is required before packaging. Image builds download
+pinned dependencies and model weights before network-restricted evaluation begins.
 
 ## Repository conventions
 

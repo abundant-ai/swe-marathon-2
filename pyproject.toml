@@ -1,0 +1,19 @@
+[project]
+name = "swe-marathon-2"
+version = "0.1.0"
+description = "Local tools for authoring, packaging, and validating SWE-Marathon tasks."
+requires-python = ">=3.13,<3.14"
+dependencies = ["orange-task-authoring", "abundant-titans"]
+
+[tool.uv]
+package = false
+
+[tool.uv.sources]
+orange-task-authoring = { path = "authoring/swe-m2-ai-engineer/knowledge-work-assistant", package = false }
+abundant-titans = { git = "ssh://git@github.com/abundant-ai/titans.git", rev = "2260f95668a4c3d40fd6050292a1d2f74d8f5a5c" }
+
+[dependency-groups]
+dev = ["pytest==8.4.2"]
+
+[tool.pytest.ini_options]
+testpaths = ["authoring/swe-m2-ai-engineer/knowledge-work-assistant/checks"]

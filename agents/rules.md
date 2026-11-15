@@ -12,8 +12,11 @@ discuss a contract or design a verifier is permission to do that design work.
 It does not call for scaffolding, downloading a corpus, or launching a GPU run.
 Existing authorization in the conversation still counts; do not ask for it again.
 
-Keep task code and tools inside their task directory. Do not create
-`tasks/swe-m2-ai-engineer/`-level utilities. Add a shared abstraction only when the
+Keep deployable Harbor files under `tasks/<family>/<task>/`. Put author checks,
+preparation and packaging scripts, author documentation, and author dependencies
+under `authoring/<family>/<task>/`. Keep generated bundles out of the task folder;
+create them under the corresponding authoring folder only when needed. Do not
+create `tasks/swe-m2-ai-engineer/`-level utilities. Add a shared abstraction only when the
 user requests one and there is a concrete use for it. Create future steps when
 requested, without placeholder implementations or unused directories.
 
@@ -22,6 +25,22 @@ instructions in the step directory. Do not commit or stage changes until the use
 asks; leave the branch without a commit for now.
 
 ## Task contracts
+
+Use `abundant/swe-m2_<domain>_<task>` for the `[task].name` field in
+`task.toml`. For example:
+
+```toml
+[task]
+name = "abundant/swe-m2_ai-engineering_knowledge-work-assistant"
+```
+
+Keep only the slash after the organization; join later components with underscores
+to fit Harbor's `org/name` contract. Repository directory names remain unchanged.
+
+Keep packaged task folders limited to runtime artifacts: task configuration,
+environment build inputs, step instructions, and verifier or solution files needed
+by the runner. Exclude authoring scripts, local checks, and author dependency files.
+Generate Oddish upload code when needed and keep it outside the task artifact.
 
 Read the current step instruction and the user's latest decisions before designing
 its environment or verifier. Work backward from the requested behavior. Existing
@@ -36,6 +55,11 @@ Keep each enforced requirement visible to the candidate. Private cases can test
 disclosed behavior, but cannot introduce new restrictions. For successive steps,
 identify which earlier requirements still apply and which the new request replaces.
 
+Never explain final evaluation in a task's `instruction.md` or candidate-visible
+environment. Keep grading procedures and configuration in author-only material.
+Describe the requested work, public interfaces, and deliverables directly. A
+candidate's own development experiments are part of the work, not final evaluation.
+
 ## Skills to use
 
 - Use [harbor-task-structure](skills/harbor-task-structure/SKILL.md) when organizing
@@ -49,7 +73,9 @@ identify which earlier requirements still apply and which the new request replac
 
 ## Implementation and evidence
 
-Use `uv` for Python dependencies and commands when implementation resumes. Keep
+Use the repository-root `pyproject.toml`, `uv.lock`, and `.venv` for local authoring,
+testing, and packaging. Run commands with `uv run` from the repository root. Keep
+container runtime dependencies in the task's `environment/pyproject.toml`. Keep
 generated datasets, environments, caches, credentials, and run artifacts out of
 version control. Add dependency files and ignore rules when they become necessary.
 
