@@ -1,0 +1,403 @@
+# Harbor task-quality ratings and implementation review for SWE-Marathon v2.
+# The first five criteria map to resources/requirement.md task design dimensions.
+# Remaining criteria assess contracts and readiness; they are not quality scores.
+# CLI/API operations, trial execution, QA and analysis remain with Oddish.
+
+# Task-design ratings are independent of implementation readiness and candidate reward.
+# Harbor supports outcome + explanation, so the rating is recorded in explanation.
+
+[[criteria]]
+name = "novelty"
+description = "Task quality: novelty against public benchmarks and our task collection"
+guidance = """
+Rate the substantive contribution of this task, following the novelty dimension in
+resources/requirement.md. Compare concrete tasks from relevant public work, considering
+Deep SWE, Frontier SWE, Multi-Step SWE, SWE-Marathon v1, and the closest existing or proposed
+tasks in this repository. Cite sources and task paths actually available to review. Describe
+both overlap and meaningful differences in workflow, deliverable, constraints, reasoning
+requirements, or assessment. Do not claim an exhaustive survey or infer originality from
+missing comparisons. Novelty need not be an unsolved research problem.
+Rating anchors: 1 = a reskin or duplicate; 2 = small changes with little new capability
+coverage; 3 = a substantive difference from the closest external and internal tasks;
+4 = a clear new capability or workflow with well-supported comparisons;
+5 = a substantial extension of benchmark coverage, with concrete comparisons explaining
+why existing tasks do not exercise it. Scale or a new domain label alone earns no credit.
+Use this explanation format: Rating: N/5 or UNASSESSED; Stage: proposal, implementation,
+or trial-backed; Confidence: low, medium, or high; Evidence: specific files, sections,
+or supplied results; Rationale: strengths and limitations; Gaps: missing evidence or
+unresolved questions. Confidence describes evidence strength, not task quality. Ratings
+3-5 map to PASS and 1-2 to FAIL for this dimension only. If evidence is insufficient to
+choose a rating, use UNASSESSED and NOT_APPLICABLE, explicitly stating that evidence is
+missing and the dimension still applies. Never substitute a low score for missing evidence.
+Assess this dimension independently; do not compute an average, overall score, or candidate
+reward from the design ratings. A PASS does not establish execution readiness.
+"""
+
+[[criteria]]
+name = "verifiability"
+description = "Task quality: meaningful, reliably computable assessment without a full oracle"
+guidance = """
+Rate whether success and partial progress can be established from available evidence,
+following resources/requirement.md. Identify observable outcomes, metric inputs, units,
+aggregation, missing or invalid evidence, and reference or judgment provenance. Programmatic
+checks, calibrated LLM judgments, and combinations are acceptable. For research or
+optimization, measuring a submission need not require knowing the optimum or a full oracle.
+Consider whether meaningful defects reduce credit and legitimate alternative solutions are
+accepted. Distinguish a clean formula from reliable evidence, and identify uncertainty from
+judge disagreement, measurement variation, or proxy mismatch.
+Rating anchors: 1 = the proposed assessment cannot distinguish success from failure;
+2 = important outcomes rely on vague judgments, unsupported references, or weak proxies;
+3 = a concrete, computable assessment covers the core outcomes with stated limits;
+4 = major requirements, partial progress, and alternative solutions have credible assessment
+methods and a clear reliability-validation plan; 5 = comprehensive outcome coverage with
+well-justified measures and a convincing treatment of failure modes and uncertainty.
+At proposal time, rate the verification design and label execution and calibration pending.
+At later stages, use actual implementation and results to revise the rating. Do not require
+a completed oracle, or claim a proposed validation plan has demonstrated reliability.
+Use this explanation format: Rating: N/5 or UNASSESSED; Stage: proposal, implementation,
+or trial-backed; Confidence: low, medium, or high; Evidence: specific files, sections,
+or supplied results; Rationale: strengths and limitations; Gaps: missing evidence or
+unresolved questions. Confidence describes evidence strength, not task quality. Ratings
+3-5 map to PASS and 1-2 to FAIL for this dimension only. If evidence is insufficient to
+choose a rating, use UNASSESSED and NOT_APPLICABLE, explicitly stating that evidence is
+missing and the dimension still applies. Never substitute a low score for missing evidence.
+Assess this dimension independently; do not compute an average, overall score, or candidate
+reward from the design ratings. A PASS does not establish execution readiness.
+"""
+
+[[criteria]]
+name = "realism"
+description = "Task quality: authentic professional workflow and useful results"
+guidance = """
+Rate how faithfully the task represents useful engineering, research, or domain work,
+following resources/requirement.md. Identify who needs the result and why. Assess the inputs,
+tools, constraints, decisions, feedback, iteration, and deliverables, including justified
+simplifications. Require domain judgment and meaningful reasoning. A single generated answer
+followed by a long computation or disconnected chores does not establish an authentic workflow.
+Welcome domains beyond the seed taxonomy; specialized work needs enough explanation to review.
+Rating anchors: 1 = an artificial exercise without a useful professional outcome;
+2 = a plausible story around mostly contrived work; 3 = a coherent professional workflow
+with a useful deliverable and credible operating conditions; 4 = realistic decisions,
+constraints, feedback, and integration shape the work; 5 = a deeply grounded end-to-end
+workflow whose consequential tradeoffs and deliverables reflect real practice.
+Do not require multiple turns when a single-turn workflow is authentic. For multiple turns,
+assess whether follow-ups arise naturally and preserve or explicitly change prior obligations.
+Use this explanation format: Rating: N/5 or UNASSESSED; Stage: proposal, implementation,
+or trial-backed; Confidence: low, medium, or high; Evidence: specific files, sections,
+or supplied results; Rationale: strengths and limitations; Gaps: missing evidence or
+unresolved questions. Confidence describes evidence strength, not task quality. Ratings
+3-5 map to PASS and 1-2 to FAIL for this dimension only. If evidence is insufficient to
+choose a rating, use UNASSESSED and NOT_APPLICABLE, explicitly stating that evidence is
+missing and the dimension still applies. Never substitute a low score for missing evidence.
+Assess this dimension independently; do not compute an average, overall score, or candidate
+reward from the design ratings. A PASS does not establish execution readiness.
+"""
+
+[[criteria]]
+name = "difficulty"
+description = "Task quality: substantive challenge to agent capabilities"
+guidance = """
+Rate the reasoning and execution challenge, following resources/requirement.md. Explain
+where consequential decisions and likely failures occur. Sources may include coherence
+across hundreds or thousands of decisions, multi-turn dependencies and user-held information,
+3D or spatial reasoning, frontier research, integration, diagnosis, and other justified
+capability demands. No task needs every source. Difficulty is not established by long
+timeouts, size alone, busywork, hidden requirements, or incidental infrastructure friction.
+Rating anchors: 1 = routine work with little consequential reasoning; 2 = bounded familiar
+work with limited dependencies or adaptation; 3 = substantial reasoning and sustained
+execution with meaningful failure points; 4 = demanding dependencies, coherence, or domain
+reasoning requiring repeated adaptation; 5 = an exceptionally demanding capability challenge
+with a concrete account of the interacting decisions, uncertainty, or depth that makes it hard.
+At proposal time, rate the difficulty hypothesis with its assumptions. Later, use observed
+behavior to refine it and state the tested agent/model and resource budget when available.
+Low reward alone is not evidence of difficulty; distinguish capability failures from broken
+infrastructure and verification. A successful baseline is not required. Assess the five-day
+workload target separately under ultra_long_horizon and accept faster valid solutions.
+For dynamic follow-ups, explain user knowledge, disclosure, and scope changes. Assess the
+requirements in force at each turn; private user information cannot be a hidden grading rule.
+Use this explanation format: Rating: N/5 or UNASSESSED; Stage: proposal, implementation,
+or trial-backed; Confidence: low, medium, or high; Evidence: specific files, sections,
+or supplied results; Rationale: strengths and limitations; Gaps: missing evidence or
+unresolved questions. Confidence describes evidence strength, not task quality. Ratings
+3-5 map to PASS and 1-2 to FAIL for this dimension only. If evidence is insufficient to
+choose a rating, use UNASSESSED and NOT_APPLICABLE, explicitly stating that evidence is
+missing and the dimension still applies. Never substitute a low score for missing evidence.
+Assess this dimension independently; do not compute an average, overall score, or candidate
+reward from the design ratings. A PASS does not establish execution readiness.
+"""
+
+[[criteria]]
+name = "initial_feasibility"
+description = "Task quality: a reasoned initial feasibility hypothesis, not demonstrated solvability"
+guidance = """
+Rate the quality of the rough feasibility argument in resources/requirement.md, not how easy
+the task is to solve. Identify a plausible approach using intended inputs and resources,
+its assumptions, and unresolved questions. A completed algorithm, oracle, or successful
+baseline is unnecessary at initial design. Do not prefer a less ambitious task because its
+oracle is easy to obtain. Open research questions are acceptable; distinguish them from
+known contradictions or unavailable essential inputs. Review actual oracle behavior
+separately under oracle_solution.
+Rating anchors: 1 = a known contradiction or impossible essential dependency defeats the
+proposed approach; 2 = the proposed approach leaves a central dependency unexplained;
+3 = a rough plausible path identifies needed inputs, resources, and major uncertainties;
+4 = the hypothesis explains its main assumptions and how critical uncertainties could be
+investigated; 5 = a well-reasoned hypothesis identifies credible routes, major risks, and
+focused ways to learn whether they work while preserving the intended ambition.
+A proposal can earn any rating without an oracle. A validated oracle is supporting evidence,
+not an automatic 5. State solvability separately as plausible, unresolved, or demonstrated
+by cited legitimate execution. Missing execution evidence is not a feasibility failure.
+Use this explanation format: Rating: N/5 or UNASSESSED; Stage: proposal, implementation,
+or trial-backed; Confidence: low, medium, or high; Evidence: specific files, sections,
+or supplied results; Rationale: strengths and limitations; Gaps: missing evidence or
+unresolved questions. Confidence describes evidence strength, not task quality. Ratings
+3-5 map to PASS and 1-2 to FAIL for this dimension only. If evidence is insufficient to
+choose a rating, use UNASSESSED and NOT_APPLICABLE, explicitly stating that evidence is
+missing and the dimension still applies. Never substitute a low score for missing evidence.
+Assess this dimension independently; do not compute an average, overall score, or candidate
+reward from the design ratings. A PASS does not establish execution readiness.
+"""
+
+[[criteria]]
+name = "ultra_long_horizon"
+description = "At least five days of intended agent work, aiming for a week"
+guidance = """
+Assess the full task across all turns. PASS if a credible workload breakdown supports at
+least five days of agent execution and a roughly week-long target. FAIL if only a large
+timeout, forced waiting, repeated busywork, or unnecessary computation supports the claim.
+Distinguish estimates from trial evidence, useful experiments from infrastructure delay, and
+human effort from agent time. Never penalize a valid solution merely for finishing early.
+Time spent waiting for necessary experiments counts toward the intended workload.
+Initial timing estimates may be approximate; document assumptions and refine scope through
+trials rather than requiring a completed multi-day run at proposal time.
+"""
+
+[[criteria]]
+name = "instruction_contract"
+description = "Clear disclosed requirements without grading details"
+guidance = """
+PASS if instruction.md is the source of the task contract and reads as a realistic user
+request, with clear sections for intent, objective, context, behavior, interfaces, and
+deliverables as applicable. State inputs, absolute paths, consequential schemas, defaults,
+and constraints without unnecessary implementation prescriptions. FAIL for unclear intent,
+unstructured requirements, hidden test requirements, contradictory contracts, or disclosure
+of final-evaluation protocols, methods, or procedures in any candidate-visible file.
+Check both requirement-to-test and test-to-requirement coverage; the verifier and oracle
+must follow the instruction rather than silently define it.
+Required methods are permitted when justified and disclosed. Judge clarity, not presumed
+human or AI authorship.
+"""
+
+[[criteria]]
+name = "functional_verification"
+description = "Checks establish behavior and quality through appropriate evidence"
+guidance = """
+PASS if verification is first decomposed into task-relevant dimensions with their own
+requirements, evidence, checks, and results. Assess each dimension separately before
+combining results through the declared reward formula. Explain how metrics can be computed
+from available evidence even without a known full solution or optimum. Identify reference
+or judgment provenance, measurement limits, partial progress, and meaningful defects that
+should reduce credit. At proposal time, assess this verification plan and mark execution
+unverified; do not require an implemented verifier or oracle to accept the design.
+For an implemented task, checks must exercise the actual
+public interfaces and cover required behavior, with targeted defects and valid alternatives.
+Check persistent state across processes where
+required. Required call paths need evidence beyond names or source keywords. Semantic or UI
+judges need explicit rubrics, live calibration, injection tests, and per-item evidence. FAIL
+if assertions, proxies, or uncalibrated judgments cannot establish the claimed outcome. No
+universal test-line limit or UI score blend applies.
+"""
+
+[[criteria]]
+name = "llm_judge_contract"
+description = "Structured Pydantic AI judges, local golden calibration, and Logfire traces"
+guidance = """
+Calibrated LLM rubric judges, including accuracy judges, are acceptable. For tasks without LLM judges, return
+NOT_APPLICABLE. Otherwise require every judge to use Pydantic AI, a clear prompt defining
+its dimension, evidence and rating criteria, and a Pydantic output class that validates
+structured ratings, evidence, and explanations before scoring. Before an Oddish run,
+every judge must be calibrated locally against a golden dataset with trusted expected
+assessments. Record versions, expected/actual results, disagreements, and the calibration
+decision; resolve material errors and recalibrate after model, prompt, rubric, or schema
+changes. Mocked calls do not count. Require retrievable Logfire traces for calibration and
+evaluation under swem2.<taskname>.test_accuracy.jugde.<name>, preserving the jugde spelling.
+During authoring, PASS for a conforming implementation with calibration and trace validation
+explicitly pending, or for one supported by completed validation evidence. Distinguish these
+states; a provisional authoring pass does not establish readiness for an Oddish run. FAIL
+for unstructured output, another judge framework, or a claim of readiness without the
+required calibration and traces. If the local reviewer cannot access evidence, identify
+that gap rather than claiming success or inferring that a run failed. Before an Oddish run,
+missing calibration or trace validation must be resolved. Keep evaluation details out of
+candidate-visible files.
+"""
+
+[[criteria]]
+name = "verifier_contract"
+description = "Fixed typed verification interfaces and complete reporting"
+guidance = """
+Require verify(context: VerificationContext) -> VerificationResult and test_...(context:
+VerificationContext) -> CheckResult. VerificationResult contains passed: bool, checks:
+tuple[CheckResult, ...], and metrics: Mapping[str, float]. Each check records a requirement
+ID, passed/failed/skipped status, explanation, and measurements. PASS if an explicit
+registry accounts for every check, independent checks continue, dependent skips have
+reasons, assertions live in test_*.py, and adapters stay thin. FAIL if the contract is
+bypassed, checks disappear, or skips count as passes. The passed field does not force binary
+reward.
+"""
+
+[[criteria]]
+name = "oracle_solution"
+description = "Rough initial feasibility; stronger solvability evidence during iteration"
+guidance = """
+At initial design, require only a rough plausible approach within the intended inputs and
+resources, documented in the task author README with assumptions and unresolved questions.
+Do not demand a worked-out algorithm, completed implementation, or successful baseline.
+Do not favor a less ambitious task merely because its oracle is easy to obtain. Resolve
+known contradictions or unavailable essential inputs, while allowing research uncertainty.
+For SWE-Marathon tasks, solution/ need not exist at initial proposal; the oracle can arrive
+during task iteration and may be taken from or based on the strongest agent rollout. Record
+the source rollout and any adaptations, review it for legitimate behavior, and validate it
+with the real verifier in a fresh separate container. A high reward alone does not prove
+that it meets the instruction. Do not change requirements merely to fit that rollout.
+When an oracle is present, require
+oracle(context: OracleContext) -> None behind a thin solve.sh adapter. It produces
+the working deliverable, uses candidate-accessible inputs, raises on failure, and is
+assessed by the real verifier. PASS for a reasoned initial feasibility hypothesis with oracle
+validation explicitly pending, or for a validated legitimate oracle. Distinguish these
+states in the finding; only the latter demonstrates solvability. A missing oracle or failed
+baseline alone is not a proposal failure. FAIL for no plausible approach, known infeasibility
+left unresolved, unsupported claims of demonstrated solvability, private-answer access,
+reward writes, patch-only solutions, or hardcoded answers replacing the work. Preserve
+earlier state when required. Do not impose v1's few-hour ceiling; missing execution
+evidence remains unverified.
+"""
+
+[[criteria]]
+name = "fresh_evaluation"
+description = "Every evaluation uses a fresh separate trusted container"
+guidance = """
+Require verifier.environment_mode = separate, declared artifacts, explicit verifier
+resources and network policy, and preinstalled dependencies or weights. PASS if every run,
+retry, and regrade starts fresh and transfers only declared artifacts, with boundary
+validation evidence. Follow resources/skills/multi-turn-task-structure/SKILL.md: author verifier
+code under steps/<step>/tests/, with verify.py behind test.sh and optional sibling
+verifier/ modules. A dedicated verifier Dockerfile must include its own tests and
+dependencies. Assess source files and generated bundles distinctly. The agent image must
+not contain verifier code or private tests. BUNDLE_MANIFEST.json is optional.
+FAIL for reused development state, undeclared dependencies, or unjustified inheritance
+assumptions. Judge outages and infrastructure errors must propagate distinctly and leave no
+valid or stale reward.
+"""
+
+[[criteria]]
+name = "security_and_anti_cheat"
+description = "Submitted code cannot control the assessment or compromise its surroundings"
+guidance = """
+Inspect actual capabilities in development and verification, not assumed root privileges or
+test-directory secrecy. PASS if trusted checks, configuration, private answers, credentials,
+and rewards are protected, adversarial probes support those boundaries, and no known
+exploitable path remains. FAIL for reward manipulation, answer leakage, malicious payloads,
+exfiltration, or host/cross-task interference. Prefer capability restrictions to brittle
+source scans. Document limitations: finite attack tests do not prove universal
+unhackability.
+"""
+
+[[criteria]]
+name = "hackability_assessment"
+description = "Every task author README assesses ways to game the task and their severity"
+guidance = """
+Require a Hackability assessment section in each task-root README.md. Cover task-specific attack
+surfaces, including shortcuts that earn credit without satisfying the instruction, private
+answer or credential access, judge manipulation where applicable, and result tampering.
+For each finding record the attack and impact, affected boundary or requirement, evidence
+and whether it was inspected or executed, mitigation, residual risk, and next validation.
+Use colored severity text with readable labels: GREEN / LOW for bounded low residual risk
+supported by tests; YELLOW / MEDIUM for limited impact or unresolved plausible weaknesses;
+RED / HIGH for exploits that defeat assessment integrity or compromise protected data or
+systems. Mark missing evidence YELLOW / UNASSESSED rather than treating it as low risk.
+Summarize the highest unresolved severity and flag unassessed boundaries. Follow the color
+format in resources/requirement.md. PASS if the assessment is specific, complete for the
+declared scope, and supported by its cited evidence; FAIL if absent, generic, or overstated.
+A complete assessment can document a failing security boundary: this criterion assesses
+the report, while security_and_anti_cheat assesses the protection. Keep the report author-only.
+"""
+
+[[criteria]]
+name = "reward_design"
+description = "The reward has a justified mathematical definition"
+guidance = """
+PASS if tasks/<family>/<task>/README.md states the published reward formula, in the
+shape of the knowledge-work assistant example cited by the v2 requirements, and the formula
+defines components, weights, normalization, denominators, mandatory conditions, thresholds,
+missing/skipped cases, and any turn aggregation. Code plus boundary tests must implement
+that same formula. Keep denominators fixed on candidate failure or skips; evaluation errors
+invalidate the result. Binary or continuous rewards and task-specific UI weights are allowed
+when justified. FAIL if the task author README omits the formula, or if the formula, code, and
+boundary tests disagree. The author must also include the formula and rationale in the PR;
+a local review cannot confirm an unseen PR.
+"""
+
+[[criteria]]
+name = "reproducibility_and_resources"
+description = "Controlled dependencies and feasible execution budgets"
+guidance = """
+PASS if dependency versions, data provenance, model/judge settings, and effective root/step
+budgets support reproducible work and fresh verification. Justified approved external
+services are allowed; control endpoints and distinguish their failures from candidate
+results. Do not pin apt versions just for this criterion. FAIL if uncontrolled variability,
+missing compute, conflicting timeouts, or unsupported execution limits undermine the task.
+Record observed variation; do not prescribe a universal repeat count.
+"""
+
+[[criteria]]
+name = "packaging_and_identity"
+description = "Self-contained runtime and correct task identity"
+guidance = """
+Require [task].name in abundant/swe-m2_<domain>_<task> form with one slash, a task-specific
+description, and actual author names/emails. PASS if the package has its required inputs,
+licenses, and runtime dependencies, with author tooling and credentials excluded. FAIL for
+missing files, identity mismatches, or checkout-dependent execution. Keep author notes
+separate. Delegate the exact preflight and upload contract to Oddish; do not claim preflight
+succeeded without its recorded result.
+"""
+
+[[criteria]]
+name = "review_evidence"
+description = "Claims match available implementation and validation evidence"
+guidance = """
+Inspect the supplied files and cite evidence for findings. Require a task-root README.md
+with dated development-log entries recording changes, actual validation, and remaining work.
+Check that novelty, verifiability, realism, difficulty, and initial_feasibility each have
+an independent anchored rating or UNASSESSED, with stage, confidence, evidence, rationale,
+and gaps in their explanation. These ratings concern the task, not the candidate submission.
+Do not silently omit a dimension or treat NOT_APPLICABLE due to missing evidence as a pass.
+Require each task author README to assess novelty, verifiability, realism, difficulty, and
+initial feasibility separately, following resources/requirement.md. Keep these task design
+dimensions distinct from candidate reward components; do not invent a combined quality score.
+State the review stage. At proposal time, assess design arguments, comparisons, a verification
+plan, and a rough solution hypothesis. Record unimplemented runtime checks as pending work;
+they do not by themselves reject the proposal. Later implementation review must assess the
+actual contracts and validation required for the claimed execution readiness.
+Explain why verification is sufficient,
+and how specialized expected answers or golden labels were derived and validated. These
+explanations must agree with the implementation and distinguish plans from observed results.
+Distinguish source inspection,
+mocked checks, live calibration, reference/no-op trials, adversarial tests, and end-to-end
+execution. Preserve diagnostic measurements and explanations, including UI per-item results
+when applicable. Explain legitimate no-op credit. PASS if the available evidence supports
+the stated claims. FAIL for unsupported readiness claims or missing required validation,
+identifying it as an evidence gap. Author notes, PRs, and Oddish results may not be visible
+to local harbor check: say what is unavailable, do not infer a candidate failure or require
+leaking author material into the candidate image. Operations and analysis belong to Oddish.
+"""
+
+[[criteria]]
+name = "multi_turn_bonus"
+description = "Meaningful follow-up requests are encouraged but optional"
+guidance = """
+PASS if multiple turns represent plausible work and clearly identify retained, changed, or
+replaced requirements. Otherwise return NOT_APPLICABLE and explain why the bonus is not
+established. Never fail this bonus solely for single-turn design, weak bonus evidence, or
+absent long-term dependencies. A single-turn task qualifies only when realism, difficulty,
+and ultra_long_horizon pass. Actual contradictions or broken state handling belong
+under the mandatory contract and verification criteria.
+"""

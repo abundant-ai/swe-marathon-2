@@ -1,0 +1,6 @@
+interface:
+  display_name: "Task Rating"
+  short_description: "Rate task quality after Harbor and record metadata"
+  default_prompt: "Use $task-rating to review the completed Harbor check and record supported task-quality scores in task.toml metadata."
+policy:
+  allow_implicit_invocation: true

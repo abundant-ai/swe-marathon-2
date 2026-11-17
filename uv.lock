@@ -1745,7 +1745,7 @@ wheels = [
 [[package]]
 name = "orange-task-authoring"
 version = "0.1.0"
-source = { virtual = "authoring/swe-m2-ai-engineer/knowledge-work-assistant" }
+source = { virtual = "tasks/swe-m2-ai-engineer/knowledge-work-assistant" }
 dependencies = [
     { name = "chromadb" },
     { name = "harbor", extra = ["modal"] },
@@ -2512,7 +2512,6 @@ name = "swe-marathon-2"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
-    { name = "abundant-titans" },
     { name = "orange-task-authoring" },
 ]
 
@@ -2520,15 +2519,16 @@ dependencies = [
 dev = [
     { name = "pytest" },
 ]
+titans = [
+    { name = "abundant-titans" },
+]
 
 [package.metadata]
-requires-dist = [
-    { name = "abundant-titans", git = "ssh://git@github.com/abundant-ai/titans.git?rev=2260f95668a4c3d40fd6050292a1d2f74d8f5a5c" },
-    { name = "orange-task-authoring", virtual = "authoring/swe-m2-ai-engineer/knowledge-work-assistant" },
-]
+requires-dist = [{ name = "orange-task-authoring", virtual = "tasks/swe-m2-ai-engineer/knowledge-work-assistant" }]
 
 [package.metadata.requires-dev]
 dev = [{ name = "pytest", specifier = "==8.4.2" }]
+titans = [{ name = "abundant-titans", git = "ssh://git@github.com/abundant-ai/titans.git?rev=2260f95668a4c3d40fd6050292a1d2f74d8f5a5c" }]
 
 [[package]]
 name = "sympy"
