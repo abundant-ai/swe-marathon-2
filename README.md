@@ -1,4 +1,6 @@
-![SWE-Marathon v2: a running track shaped like an M with two checkpoints](assets/repo-icon.png)
+<p align="center">
+  <img src="assets/repo-icon.png" alt="SWE-Marathon v2: a running track shaped like an M with two checkpoints" width="180">
+</p>
 
 # SWE-Marathon v2
 
