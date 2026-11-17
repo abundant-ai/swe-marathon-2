@@ -28,6 +28,8 @@ jobs:
         with:
           version: "0.13.7"
           python-version: "3.13"
+      - name: Install Python before offline validation
+        run: uv python install 3.13
       - name: Install the shared development environment
         run: |
           uv lock --check --offline

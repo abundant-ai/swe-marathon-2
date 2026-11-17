@@ -55,8 +55,10 @@ actionlint
 ## Task tests and packaging
 
 The author-test job uses the [shared development environment](../README.md#local-setup-and-checks),
-Python 3.13, and a 30-minute timeout. It first runs `uv lock --check --offline` to
-reject stale dependency declarations, then installs from the frozen root lockfile.
+Python 3.13, and a 30-minute timeout. It explicitly installs Python before running
+`uv lock --check --offline` to reject stale dependency declarations, then installs
+from the frozen root lockfile. The setup-uv `python-version` input selects the
+interpreter; an offline command cannot download it on a fresh runner.
 The freshness check is separate because
 [`--frozen` does not check whether a lockfile is current](https://docs.astral.sh/uv/concepts/projects/sync/).
 The default `dev` group supplies pytest. Oddish CLI and Titans are optional and
@@ -148,6 +150,17 @@ dependency files; changing the pytest pin without updating the lockfile failed
 as intended. Regression fixtures also confirmed that omitted suites, empty
 suites, partial reports, malformed counters, failures, errors, and skips fail.
 
-These results came from the local macOS checkout. The updated workflows have
-not been exercised on a GitHub-hosted Ubuntu runner. GitHub merge enforcement
-remains pending as described above; no remote settings were changed.
+These results came from the local macOS checkout before the first hosted run.
+GitHub merge enforcement remains pending as described above; no remote settings
+were changed.
+
+### Hosted startup fix: 2026-11-17
+
+The first hosted static-check run passed. The
+[task-validation run](https://github.com/abundant-ai/swe-marathon-2/actions/runs/44013272129)
+failed before installing dependencies because Python 3.13 was absent and the
+first uv command was offline. Missing test-report and artifact errors followed
+from that startup failure. The workflow now installs Python explicitly before
+the offline lockfile check. An isolated local reproduction with empty Python
+and uv cache directories failed before that installation and passed afterward.
+Source checks and actionlint with ShellCheck also passed.
