@@ -24,6 +24,7 @@ from reference import checkout  # noqa: E402
 TASK_ROOT = Path(__file__).resolve().parent.parent
 STEP = "steps/01-rebuild-server"
 SCENARIOS = TASK_ROOT / STEP / "tests" / "private" / "scenarios.json"
+MEDIA = TASK_ROOT / "experiment" / "media"  # scripts/make_media.py: `visible` ships as samples, `private` only to the verifier
 EXCLUDED = {"__pycache__", ".pytest_cache", ".DS_Store", "experiment"}
 CLIENT_FILES = ("index.html", "package.json", "package-lock.json", "tsconfig.json", "tsconfig.app.json", "tsconfig.node.json", "vite.config.ts",
                 "eslint.config.js", ".prettierrc.json", "openapi.json", "README.md")
@@ -37,6 +38,9 @@ def collect() -> dict[str, bytes]:
     """
     if not SCENARIOS.is_file():
         raise ValueError("Record the scenarios first: scripts/record_scenarios.py")
+    for kind in ("visible", "private"):
+        if not (MEDIA / kind / "manifest.json").is_file():
+            raise ValueError(f"Make the media first: scripts/make_media.py --out experiment/media/{kind}")
     content: dict[str, bytes] = {"task.toml": (TASK_ROOT / "task.toml").read_bytes()}
     for directory in ("environment", STEP):
         for path in (TASK_ROOT / directory).rglob("*"):
@@ -64,7 +68,12 @@ def collect() -> dict[str, bytes]:
             if path.is_file() and not path.name.endswith(".map") and "test" not in relative.parts and "test" not in path.name.split("."):
                 content[f"environment/client/{path.relative_to(client).as_posix()}"] = path.read_bytes()
     for path in sorted((source / "backend" / "tests" / "fixtures").iterdir()):
-        content[f"environment/samples/{path.name}"] = path.read_bytes()
+        if path.is_file():
+            content[f"environment/samples/{path.name}"] = path.read_bytes()
+    for kind, place in (("visible", "environment/samples"), ("private", f"{STEP}/tests/private/media")):
+        for path in sorted((MEDIA / kind).rglob("*")):
+            if path.is_file() and path.name != "manifest.json" and not path.name.startswith("."):
+                content[f"{place}/{path.relative_to(MEDIA / kind).as_posix()}"] = path.read_bytes()
     return dict(sorted(content.items()))
 
 

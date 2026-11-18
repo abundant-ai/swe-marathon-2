@@ -17,8 +17,11 @@ and the scripts our staff wrote against the API keep working.
   record means to our staff, and nothing in it needs changing.
 - The API is large: over two hundred endpoints across selling, stock, buying, production,
   planning and the books.
-- Staff attach photos, videos and PDFs to records, and the server prints invoices, packing
-  slips and labels. `/app/samples` holds files of the kinds they upload.
+- Staff attach phone photos, videos, voice notes and supplier PDFs to records, the server reads
+  what is inside them, and it prints invoices, packing slips and labels. What they upload is
+  whatever their phones, scanners and suppliers produce: scanned multi-page PDFs, encrypted and
+  password-protected PDFs, damaged files, large photos and long recordings. `/app/samples`
+  holds files of those kinds.
 - `POST /api/workspaces` gives you a fresh copy of the demo company, with its own id. Workspaces
   do not affect each other, so make as many as you like to try things out. Every workspace has
   its own calendar, which only moves when you move it.
@@ -49,7 +52,7 @@ A server in `/app/server` with an executable file `/app/server/run` that starts 
   workspace holds after a sequence of requests.
 - Where the sealed server answers with a file instead of JSON, yours answers with the same
   bytes and the same `Content-Type`.
-- Request bodies of up to 6 MB must be accepted.
+- JSON request bodies of up to 6 MB, and file uploads of up to 64 MiB, must be accepted.
 - The one thing that may differ is the workspace id itself: yours may be any string of letters,
   digits and underscores of at most 40 characters.
 - It must cope with many workspaces in use at the same time.

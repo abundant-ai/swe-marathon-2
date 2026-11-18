@@ -13,6 +13,30 @@ One step is implemented. See [Remaining work](#remaining-work).
 
 ## Development log
 
+### 2026-11-18 (real-world media)
+
+- The owner asked for messy PDFs and big media before anything else runs. Stockwell gained,
+  each with its own tests: a PDF reader for real files (xref streams and object streams,
+  incremental updates, repair of broken files, RC4 and AES-128, passwords, CID fonts, scanned
+  pages; 453 real PDFs open with poppler's page counts), image decoders (JPEG baseline and
+  progressive, byte-identical to libjpeg-turbo; PNG of every kind; animated GIF; EXIF with GPS
+  and embedded thumbnails), and a probe for MP4/MOV, Matroska/WebM, AVI, WAV, MP3 and Ogg.
+  The files API takes raw uploads of up to 64 MiB, reads them on upload, and answers
+  `/media`, `/pdf`, `/pages/{n}`, `/image`, `/unlock` and thumbnails; supplier invoices are
+  read with the new reader and scanned ones are flagged. Pinned commit `d61d29c`.
+- `scripts/make_media.py` makes two sets of 32 files (scanned multi-page invoices, encrypted,
+  password, incremental, broken and truncated PDFs, a 150-page price list, 12-24 MP photos with
+  EXIF, a CMYK JPEG, a large PNG, an animated GIF, 45-75 s videos in six containers, voice
+  notes): `visible` (seed 20261121) ships as `/app/samples`, `private` (seed 20261122) only to
+  the verifier, so no private upload is a file the candidate has seen.
+- Corpus: 2,483 scenarios (83 in the new `media` theme), 63,033 requests, 749 raw uploads,
+  558 file answers, no server error. A raw upload is a step with `body_file` (a file of the
+  media set) or `body_size` (zero bytes, for the over-limit case); the replay sends it raw,
+  reads a 413 sent before an oversized body is read, and allows 30 s per request.
+- The instruction now names the uploads (scanned, encrypted, password-protected, damaged,
+  large) and the 64 MiB upload limit beside the 6 MB JSON limit; the audit's should-fix is
+  covered by uploads up to 64 MiB and one just over.
+
 ### 2026-11-18 (after the version 2 audit)
 
 - Oddish source audit of version 2: one must-fix. The verifier wrote `{ws}` for the
@@ -186,7 +210,7 @@ reference server.
 ### Reward formula
 
 ```
-reward = scenarios_matched / 2400
+reward = scenarios_matched / 2483
 ```
 
 - Continuous. A scenario matches only if every one of its answers matches.
@@ -219,6 +243,7 @@ Highest unresolved severity: 🟡 YELLOW / UNASSESSED (findings 1, 2, 5).
 | `checks/` (7 tests) | re-cut with leak fixes, 2026-11-18 | pass; Oddish preflight passes |
 | Bundle | re-cut with leak fixes: `a691f329ea71`, 574 files | built twice with the same hash |
 | `checks/` (6 tests) | re-cut, pinned to Stockwell 722a647, 2026-11-18 | pass |
+| Reference through the verifier, local, no sandbox | real-world media: Stockwell `d61d29c`, 2,483 scenarios (83 media), 63,033 requests, private media set seed 20261122 | 1.0 (2,483 of 2,483), 261 s, no restarts |
 | Reference through the verifier, local, no sandbox | re-cut: 2,400 scenarios, 60,929 requests, seed 20261120 | 1.0 (2,400 of 2,400), 310 s, no restarts |
 | Bundle | re-cut: `fdf9b7e70edf`, 572 files, 13 MB (scenarios gzipped) | built twice with the same hash |
 | Oddish baselines | re-cut with leak fixes and no stated time budget: bundle `e51fb417380f`, task `...backoffice-server-rebuild-a7ccd915` version 2, experiment `backoffice-server-rebuild-recut-20261118` (https://www.oddish.app/experiments/d244f7d6), one row | reference 1.0 twice (trials 13, 14), no-op 0.0 twice (15, 16): the first build of both images. Ran on Archil with no verifier fault. No model trials yet |

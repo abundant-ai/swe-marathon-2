@@ -8,12 +8,14 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 TASK = Path(__file__).resolve().parent.parent
 STEP = TASK / "steps" / "01-rebuild-server"
+MEDIA = TASK / "experiment" / "media" / "private"  # the uploads the media scenarios use, when the author's machine has them
 
 sys.path.insert(0, str(TASK / "scripts"))
 
@@ -45,7 +47,7 @@ if defect == "rounding":
     path.write_text(path.read_text().replace("if 2 * remainder >= abs(denominator):", "if 2 * remainder > abs(denominator):"))
 if defect == "crash":
     (server / "run").write_text("#!/bin/sh\\nexit 3\\n")
-print(json.dumps(evaluate(server, scenarios, work / "w", work, sandbox=False)))
+print(json.dumps(evaluate(server, scenarios, work / "w", work, sandbox=False, media_dir=Path(sys.argv[7]))))
 """
 
 
@@ -61,7 +63,7 @@ def grade(tmp_path: Path, scenarios: Path, defect: str) -> dict:
     work = tmp_path / defect
     work.mkdir()
     done = subprocess.run([sys.executable, "-I", "-B", "-c", GRADE, str(STEP), str(REFERENCE / "backend" / "src"), str(scenarios), str(work), defect,
-                           reference_python()], capture_output=True, text=True, timeout=900)
+                           reference_python(), str(MEDIA)], capture_output=True, text=True, timeout=900)
     assert done.returncode == 0, done.stderr[-2000:]
     return json.loads(done.stdout.strip().splitlines()[-1])
 
@@ -74,7 +76,8 @@ def test_recording_is_deterministic_and_never_hits_a_server_error(tmp_path):
     statuses = {step["status"] for scenario in data["scenarios"] for step in scenario["steps"]}
     assert all(status < 500 for status in statuses) and {200, 201, 403, 409, 422} <= statuses
     themes = {s["theme"] for s in data["scenarios"]}
-    assert len(themes) == 27 and "trading" in themes
+    with_media = (MEDIA / "manifest.json").is_file()
+    assert len(themes) == 27 + with_media and "trading" in themes and ("media" in themes) == with_media
     assert any("binary" in step["json"] for scenario in data["scenarios"] for step in scenario["steps"])
 
 
@@ -112,6 +115,12 @@ def test_bundles_hold_runtime_files_only(tmp_path):
     if created:
         private.parent.mkdir(parents=True, exist_ok=True)
         private.write_text('{"scenarios": []}')
+    media = TASK / "experiment" / "media"
+    made_media = [kind for kind in ("visible", "private") if not (media / kind / "manifest.json").exists()]
+    for kind in made_media:  # stand-ins when the real sets (scripts/make_media.py) are not on this machine
+        (media / kind / "pdf").mkdir(parents=True, exist_ok=True)
+        (media / kind / "pdf" / "scan.pdf").write_bytes(f"%PDF-1.4 {kind} stand-in".encode())
+        (media / kind / "manifest.json").write_text("{}")
     try:
         for flag, kind in (([], "bundles"), (["--flat"], "flat")):
             done = subprocess.run([sys.executable, "-B", str(TASK / "scripts" / "package_step.py"), *flag, "--output", str(tmp_path / "out")],
@@ -134,6 +143,12 @@ def test_bundles_hold_runtime_files_only(tmp_path):
             assert not any("scenarios" in path.name or "replay" in path.name for path in environment)
             assert not any(".test." in path.name or "smoke" in path.name for path in environment)
             assert not any(path.suffix == ".py" for path in (bundle / "environment" / "client").rglob("*"))
+            # the visible media ships as samples; the private media reaches the verifier only, byte for byte nowhere else
+            private_media = {path.read_bytes() for path in (bundle / f"{prefix}tests/private/media").rglob("*") if path.is_file()}
+            shipped = {path.read_bytes() for path in (bundle / "environment").rglob("*") if path.is_file()}
+            assert private_media and not private_media & shipped
+            assert any((bundle / "environment" / "samples" / "pdf").iterdir())
+            assert not (bundle / "environment" / "samples" / "manifest.json").exists()
             # nothing the agent can read names how the work is judged (the sealed server is bytecode it cannot read)
             words = re.compile(r"oracle|verifier|grading|hidden test|parity|record_corpus|scenario|benchmark|harbor|oddish|reward", re.I)
             for path in (bundle / "environment").rglob("*"):
@@ -142,6 +157,8 @@ def test_bundles_hold_runtime_files_only(tmp_path):
     finally:
         if created:
             private.unlink()
+        for kind in made_media:
+            shutil.rmtree(media / kind)
 
 
 def test_the_sealed_server_is_started_as_its_own_user_from_bytecode():
@@ -185,3 +202,89 @@ def test_workspace_ids_are_rewritten_only_where_they_stand_alone():
     assert done.returncode == 0, done.stderr[-2000:]
     assert json.loads(done.stdout) == {"workspace": "{ws}", "total": 1100, "name": "Plant 1", "url": "/api/ws/{ws}/files/F-1/content",
                                        "list": ["{ws}", 11, {"ws": "{ws}"}], "other": "/ws/12/x"}
+
+
+def test_replay_sends_files_and_sized_bodies_raw(tmp_path):
+    """A step may upload a file from the media folder, or N zero bytes, as the raw request body."""
+    (tmp_path / "media" / "video").mkdir(parents=True)
+    (tmp_path / "media" / "video" / "clip.mp4").write_bytes(b"\x00\x00\x00\x18ftypisom" + b"x" * 100)
+    probe = """
+import hashlib, http.client, json, sys, threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+from verifier.replay import EvaluationError, Media, exchange
+
+class Echo(BaseHTTPRequestHandler):
+    def do_POST(self):
+        body = self.rfile.read(int(self.headers["Content-Length"]))
+        out = json.dumps({"type": self.headers["Content-Type"], "bytes": len(body), "sha": hashlib.sha256(body).hexdigest()[:8]}).encode()
+        self.send_response(201)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(out)))
+        self.end_headers()
+        self.wfile.write(out)
+
+    def log_message(self, *args):
+        pass
+
+server = ThreadingHTTPServer(("127.0.0.1", 0), Echo)
+threading.Thread(target=server.serve_forever, daemon=True).start()
+media = Media(Path(sys.argv[2]))
+connection = http.client.HTTPConnection("127.0.0.1", server.server_port)
+steps = [{"body_file": "video/clip.mp4", "headers": {"content-type": "video/mp4"}},
+         {"body_size": 70000, "headers": {"content-type": "application/octet-stream"}},
+         {"body": {"a": 1}, "headers": {}}]
+out = [exchange(connection, "POST", "/x", step["headers"], step.get("body"), media.body(step)) for step in steps]
+try:
+    media.body({"body_file": "../escape.mp4"})
+    out.append("no error")
+except EvaluationError:
+    out.append("refused")
+print(json.dumps(out))
+"""
+    done = subprocess.run([sys.executable, "-I", "-B", "-c", probe, str(STEP / "tests"), str(tmp_path / "media")],
+                          capture_output=True, text=True, timeout=60)
+    assert done.returncode == 0, done.stderr[-2000:]
+    first, sized, plain, escape = json.loads(done.stdout)
+    assert first[0] == 201 and first[1]["type"] == "video/mp4" and first[1]["bytes"] == 112
+    assert sized[0] == 201 and sized[1]["type"] == "application/octet-stream" and sized[1]["bytes"] == 70000
+    assert plain[1]["type"] == "application/json" and escape == "refused"
+
+
+def test_replay_reads_an_early_413_on_an_oversized_upload(tmp_path):
+    """A server may refuse a huge upload from its Content-Length and close before reading it."""
+    probe = """
+import http.client, json, sys, threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+from verifier.replay import Media, exchange
+
+class Refuse(BaseHTTPRequestHandler):
+    def do_POST(self):
+        out = json.dumps({"error": {"code": "body_too_large"}}).encode()
+        self.send_response(413)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(out)))
+        self.send_header("Connection", "close")
+        self.end_headers()
+        self.wfile.write(out)
+        self.close_connection = True
+
+    def log_message(self, *args):
+        pass
+
+server = ThreadingHTTPServer(("127.0.0.1", 0), Refuse)
+threading.Thread(target=server.serve_forever, daemon=True).start()
+connection = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=20)
+step = {"body_size": 48 * 1024 * 1024, "headers": {"content-type": "application/octet-stream"}}
+first = exchange(connection, "POST", "/files/upload", step["headers"], None, Media(Path(sys.argv[2])).body(step))
+second = exchange(connection, "POST", "/x", {}, {"a": 1})
+print(json.dumps([first, second]))
+"""
+    done = subprocess.run([sys.executable, "-I", "-B", "-c", probe, str(STEP / "tests"), str(tmp_path)],
+                          capture_output=True, text=True, timeout=120)
+    assert done.returncode == 0, done.stderr[-2000:]
+    first, second = json.loads(done.stdout)
+    assert first == [413, {"error": {"code": "body_too_large"}}] and second[0] == 413

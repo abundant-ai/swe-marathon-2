@@ -28,7 +28,7 @@ from typing import Any
 
 RUN_AS = "nobody"
 START_SEC = 60
-REQUEST_SEC = 15
+REQUEST_SEC = 30  # a big upload or a 200-page PDF needs more than a JSON call
 RESTART_LIMIT = 25
 WORKERS = 8
 WORKSPACE_ID = re.compile(r"[A-Za-z0-9_]{1,40}")
@@ -124,13 +124,26 @@ class Candidate:
             return self.start()
 
 
-def exchange(connection: http.client.HTTPConnection, method: str, path: str, headers: dict[str, str], body: Any) -> tuple[int, Any]:
-    """Send one request on an open connection and read the JSON answer."""
-    payload = None if body is None else json.dumps(body).encode()
+def exchange(connection: http.client.HTTPConnection, method: str, path: str, headers: dict[str, str], body: Any,
+             raw: bytes | None = None) -> tuple[int, Any]:
+    """Send one request on an open connection and read the JSON answer.
+
+    `raw` is a file sent as the request body as it is, with the content type the step names;
+    otherwise `body` is sent as JSON.
+    """
     sent = dict(headers)
-    if payload is not None:
-        sent["Content-Type"] = "application/json"
-    connection.request(method, path, body=payload, headers=sent)
+    if raw is not None:
+        payload: bytes | None = raw
+    else:
+        payload = None if body is None else json.dumps(body).encode()
+        if payload is not None:
+            sent["Content-Type"] = "application/json"
+    try:
+        connection.request(method, path, body=payload, headers=sent)
+    except (BrokenPipeError, ConnectionResetError):
+        # a server may answer an oversized upload (413) and close before reading it; its answer is still there
+        if raw is None:
+            raise
     response = connection.getresponse()
     raw = response.read(16_000_000)
     kind = (response.getheader("Content-Type") or "").split(";")[0].strip().lower()
@@ -149,6 +162,28 @@ def request(port: int, method: str, path: str, headers: dict[str, str], body: An
         return exchange(connection, method, path, headers, body)
     finally:
         connection.close()
+
+
+class Media:
+    """The files the scenarios upload, read once and shared by every worker."""
+
+    def __init__(self, folder: Path) -> None:
+        self.folder, self.cache, self.lock = folder, {}, threading.Lock()
+
+    def body(self, step: dict[str, Any]) -> bytes | None:
+        """The raw body a step sends: a named file, N zero bytes, or None for a JSON body."""
+        if "body_size" in step:
+            return bytes(int(step["body_size"]))
+        name = step.get("body_file")
+        if name is None:
+            return None
+        with self.lock:
+            if name not in self.cache:
+                path = (self.folder / name).resolve()
+                if self.folder.resolve() not in path.parents or not path.is_file():
+                    raise EvaluationError(f"a scenario names a missing upload: {name}")
+                self.cache[name] = path.read_bytes()
+            return self.cache[name]
 
 
 def normalise(value: Any, workspace: str) -> Any:
@@ -176,7 +211,7 @@ def encode_query(query: dict[str, str]) -> str:
     return ("?" + urlencode(query)) if query else ""
 
 
-def play(candidate: Candidate, scenario: dict[str, Any]) -> dict[str, Any]:
+def play(candidate: Candidate, scenario: dict[str, Any], media: Media) -> dict[str, Any]:
     """Replay one scenario; returns whether every answer matched and where the first difference was."""
     for attempt in range(3):
         generation, port, running = candidate.snapshot()
@@ -192,7 +227,7 @@ def play(candidate: Candidate, scenario: dict[str, Any]) -> dict[str, Any]:
             for index, step in enumerate(scenario["steps"], start=1):
                 headers = {name: value for name, value in step["headers"].items()}
                 status, answer = exchange(connection, step["method"], f"/api/ws/{workspace}{step['path']}{encode_query(step['query'])}",
-                                          headers, step["body"])
+                                          headers, step.get("body"), media.body(step))
                 if status != step["status"]:
                     return {"id": scenario["id"], "matched": False, "failed_step": index, "reason": f"status {status}, expected {step['status']}"}
                 normal = normalise(answer, workspace)
@@ -212,12 +247,14 @@ def play(candidate: Candidate, scenario: dict[str, Any]) -> dict[str, Any]:
     return {"id": scenario["id"], "matched": False, "failed_step": -1, "reason": "no answer from the server"}
 
 
-def evaluate(source: Path, scenario_path: Path, work: Path, output: Path, sandbox: bool = True) -> dict[str, Any]:
+def evaluate(source: Path, scenario_path: Path, work: Path, output: Path, sandbox: bool = True,
+             media_dir: Path | None = None) -> dict[str, Any]:
     """Grade the server in `source` against the scenarios in `scenario_path`.
 
     Args:
         source: The submitted /app/server directory.
         scenario_path: Private scenarios with the reference answers.
+        media_dir: The files the scenarios upload (default: `media` beside the scenarios).
         work: Scratch directory.
         output: Directory for diagnostic files.
         sandbox: Run the server as the unprivileged user (off only in development checks).
@@ -257,7 +294,8 @@ def evaluate(source: Path, scenario_path: Path, work: Path, output: Path, sandbo
             metrics["notes"].append("the server did not answer GET /api/health within 60 seconds")
             return metrics
         with ThreadPoolExecutor(WORKERS) as pool:
-            results = list(pool.map(lambda s: play(candidate, s), scenarios))
+            media = Media(media_dir or scenario_path.parent / "media")
+            results = list(pool.map(lambda s: play(candidate, s, media), scenarios))
     finally:
         candidate.stop()
     theme_of = {s["id"]: s["theme"] for s in scenarios}
