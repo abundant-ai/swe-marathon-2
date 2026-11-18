@@ -11,19 +11,29 @@ the units it did not answer and nothing else.
 - Time: a request has REQUEST_SEC of wall clock and the whole replay DEADLINE_SEC;
   a request still running past either has its connection shut down. Scenarios not
   played to the end by the deadline count as not matched.
-- Restarts: every scenario is played once, WORKERS at a time. One that got no
-  answer (the server died, dropped the connection or ran out of time) is played
+- Restarts: every scenario is played once, WORKERS at a time, in a fixed shuffled
+  order, so a server too slow to finish loses scenarios of every kind. One that got
+  no answer (the server died, dropped the connection or ran out of time) is played
   once more on its own after the others, so a server that crashes now and then
   loses only the scenarios that crash it. A server that has died, or has left its
   health check unanswered for HEALTH_SEC, is restarted before the next attempt, as
   often as needed while the deadline holds; after START_FAILURES starts in a row
   that never answer it is given up. Every start uses the same DATA_DIR.
-- Planned restarts: a scenario with a step marked `restart` runs alone, after the
-  others. After that step the server is stopped (SIGTERM, or SIGKILL straight after
-  the answer) and started again on the same DATA_DIR, and the scenario goes on in
-  the same workspace: what a workspace holds must survive.
-- Nothing the server sends makes the evaluation fail: a reply that is not HTTP,
-  not JSON, too large or nested too deeply is an answer that matches nothing.
+- Second tries start from nothing: the server is stopped, every process of its user
+  is ended, DATA_DIR and every file its user owns are removed with the shared memory
+  and message queues, and a fresh server is started. A second try decides only the
+  units the first try left unanswered, so nothing seen on the first try (a later
+  request of a month echoes many earlier answers) can be put to use on the second.
+- Planned restarts: a scenario with a step marked `restart` runs with nothing beside
+  it, at a fixed place among the others. After that step the server is stopped
+  (SIGTERM, or SIGKILL straight after the answer) and started again on the same
+  DATA_DIR, and the scenario goes on in the same workspace: what a workspace holds
+  must survive.
+- Nothing the server sends or does makes the evaluation fail: a reply that is not
+  HTTP, not JSON, too large or nested too deeply is an answer that matches nothing;
+  the server runs as an unprivileged user under limits on threads, file size and
+  memory, cannot write its own files, and is the first process ended when memory
+  runs out.
 """
 
 from __future__ import annotations
@@ -53,8 +63,19 @@ from typing import Any
 from urllib.parse import urlencode
 
 RUN_AS, RUN_GROUP = "nobody", "nogroup"
+# threads the server's user may run at once: plenty for any server, too few to fill the process table. The count is per
+# user across a shared kernel, so it is set well above what one server needs.
+THREAD_LIMIT = 4096
+FILE_LIMIT = 4 << 30  # bytes in any one file it writes
+MEMORY_LIMIT = 6 << 30  # address space of each of its processes, on a machine with 8 GB
+# set as root before the drop, so the server cannot lower it: when memory runs out the kernel ends the server first
+OOM_FIRST = ["sh", "-c", '{ echo 1000 > /proc/self/oom_score_adj; } 2>/dev/null; exec "$@"', "sh"]
+LIMITS = ["prlimit", f"--nproc={THREAD_LIMIT}", f"--fsize={FILE_LIMIT}", f"--as={MEMORY_LIMIT}", "--"]
 # no_new_privs: executing a set-user-id or set-group-id file, or one with file capabilities, grants nothing
-SANDBOX = ["setpriv", "--reuid", RUN_AS, "--regid", RUN_GROUP, "--clear-groups", "--no-new-privs"]
+DROP = ["setpriv", "--reuid", RUN_AS, "--regid", RUN_GROUP, "--clear-groups", "--no-new-privs"]
+SANDBOX = OOM_FIRST + LIMITS + DROP
+# where any user can create files, besides the root filesystem: swept before the second tries
+SCRATCH = ("/tmp", "/var/tmp", "/dev/shm", "/dev/mqueue", "/run/lock", "/var/lock", "/run/shm")
 START_SEC = 60
 REQUEST_SEC = 30  # wall clock for one request: a big upload or a 200-page PDF needs more than a JSON call
 DEADLINE_SEC = 3000  # the whole replay; the step allows 3,600 s for everything
@@ -145,6 +166,112 @@ def healthy(port: int, clock: Clock, seconds: float = 5) -> bool:
         connection.close()
 
 
+def user_processes(uid: int) -> list[int]:
+    """Live processes whose real user is `uid`, read from /proc: that needs no new process, even with a full process table."""
+    found = []
+    with contextlib.suppress(OSError):
+        with os.scandir("/proc") as entries:
+            for entry in entries:
+                if not entry.name.isdigit():
+                    continue
+                try:
+                    with open(f"/proc/{entry.name}/status", encoding="latin-1") as status:
+                        fields = dict(line.split(":", 1) for line in status if ":" in line)
+                except (OSError, ValueError):
+                    continue
+                if fields.get("Uid", "").split()[:1] == [str(uid)] and not fields.get("State", "").strip().startswith(("Z", "X")):
+                    found.append(int(entry.name))
+    return found
+
+
+def end_user_processes(uid: int, seconds: float = 20) -> bool:
+    """Stop every process of `uid`, then kill them all; True when none is left.
+
+    A sweep that lists processes and then kills them can be outrun by one that forks fast enough
+    (QA 07 F4). A stopped process cannot fork: once every process listed is stopped and a new listing
+    finds no other, none can appear, and all are killed. Never raises.
+    """
+    end = time.monotonic() + seconds
+    stopped: set[int] = set()
+    while time.monotonic() < end:
+        alive = set(user_processes(uid))
+        if not alive:
+            return True
+        fresh = alive - stopped
+        for pid in fresh or alive:
+            with contextlib.suppress(OSError):
+                os.kill(pid, signal.SIGSTOP if fresh else signal.SIGKILL)
+        stopped |= fresh
+        if not fresh:
+            time.sleep(0.05)
+    return not user_processes(uid)
+
+
+def reap_orphans() -> None:
+    """Collect the exit status of every finished child, so the server's killed helpers do not linger as zombies (they
+    would count against its thread limit). The evaluation is their reaper (PR_SET_CHILD_SUBREAPER) when sandboxed."""
+    with contextlib.suppress(ChildProcessError, OSError):
+        while os.waitpid(-1, os.WNOHANG)[0] > 0:
+            pass
+
+
+def remove_tree(path: Path | str) -> None:
+    """Remove a directory tree however deep it is (a deep enough one makes shutil.rmtree recurse past Python's limit)."""
+    try:
+        shutil.rmtree(path, ignore_errors=True)
+    except RecursionError:
+        pass
+    if os.path.lexists(path):
+        with contextlib.suppress(OSError, subprocess.SubprocessError):
+            subprocess.run(["rm", "-rf", "--", str(path)], check=False, capture_output=True, timeout=600)
+
+
+def remove_user_files(uid: int, roots: tuple[str, ...] = ("/",) + SCRATCH) -> int:
+    """Remove every file and directory `uid` owns under `roots` (each walked on its own filesystem, links never followed),
+    and in the scratch places every hard link, which can only be one made to another user's file; returns how many."""
+    removed = 0
+
+    def sweep(folder: str, device: int, scratch: bool) -> None:
+        nonlocal removed
+        try:
+            with os.scandir(folder) as entries:
+                for entry in entries:
+                    try:
+                        info = entry.stat(follow_symlinks=False)
+                    except OSError:
+                        continue
+                    directory = stat.S_ISDIR(info.st_mode)
+                    if info.st_uid == uid or (scratch and not directory and info.st_nlink > 1):
+                        removed += 1
+                        if directory:
+                            remove_tree(entry.path)
+                        else:
+                            with contextlib.suppress(OSError):
+                                os.unlink(entry.path)
+                    elif directory and info.st_dev == device:
+                        sweep(entry.path, device, scratch)
+        except (OSError, RecursionError):
+            pass
+
+    for root in roots:
+        try:
+            top = os.lstat(root)
+        except OSError:
+            continue
+        if stat.S_ISDIR(top.st_mode):
+            sweep(root, top.st_dev, root in SCRATCH)
+    return removed
+
+
+def open_log(path: Path) -> int:
+    """The server's log, opened for appending and readable by root only: the server writes to it but cannot read it back
+    through /proc/self/fd, so it carries nothing from one start of the server to the next."""
+    descriptor = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+    with contextlib.suppress(OSError):
+        os.fchmod(descriptor, 0o600)
+    return descriptor
+
+
 class Candidate:
     """The submitted server process and the means to restart it."""
 
@@ -158,18 +285,40 @@ class Candidate:
         self.restarts = 0
         self.planned = 0
         self.failed_starts = 0
+        self.uid = pwd.getpwnam(RUN_AS).pw_uid if sandbox else -1
 
     def stop(self) -> None:
-        """Kill the server's process group and, when sandboxed, whatever else its user still runs."""
-        if self.proc is None:
-            return
-        with contextlib.suppress(ProcessLookupError, PermissionError):
-            os.killpg(self.proc.pid, signal.SIGKILL)
-        if self.sandbox and shutil.which("pkill"):
-            subprocess.run(["pkill", "-9", "-u", RUN_AS], check=False, capture_output=True)  # children that left the group
-        with contextlib.suppress(subprocess.TimeoutExpired):
-            self.proc.wait(timeout=10)
+        """Kill the server's process group and, when sandboxed, every process its user still runs. Never raises: a server
+        that has exhausted processes, memory or disk must not turn a finished evaluation into an error (QA 07 F2)."""
+        if self.proc is not None:
+            with contextlib.suppress(OSError):
+                os.killpg(self.proc.pid, signal.SIGKILL)
+        if self.sandbox:
+            end_user_processes(self.uid)  # children that left the group too
+        if self.proc is not None:
+            with contextlib.suppress(subprocess.TimeoutExpired, OSError):
+                self.proc.wait(timeout=10)
+        if self.sandbox:
+            reap_orphans()
         self.proc = None
+
+    def clean_slate(self) -> None:
+        """Before the second tries: stop the server and remove everything it could have kept from the first pass, its
+        data, its user's processes and files anywhere, shared memory and message queues; then start it afresh.
+
+        The submission itself is read-only to the server, so it starts again exactly as delivered.
+        """
+        with self.lock:
+            self.stop()
+            remove_tree(self.data)
+            if self.sandbox:
+                remove_user_files(self.uid)
+                with contextlib.suppress(OSError, subprocess.SubprocessError):
+                    subprocess.run(["ipcrm", "--all"], check=False, capture_output=True, timeout=60)
+            if not self.clock.expired() and self.start():
+                self.failed_starts = 0
+            else:
+                self.failed_starts += 1  # the next attempt tries again, as after a crash
 
     def start(self) -> bool:
         """Start the server on the shared data directory and wait for its health check; False if it does not come up."""
@@ -183,11 +332,14 @@ class Candidate:
             env = {"PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/go/bin", "HOME": str(data),
                    "PORT": str(self.port), "DATA_DIR": str(data), "LC_ALL": "C.UTF-8", "LANG": "C.UTF-8",
                    "PYTHONDONTWRITEBYTECODE": "1", "GOCACHE": str(data / "gocache"), "GOFLAGS": "-mod=mod"}
-            with open(self.log_path, "ab") as log:
-                log.write(f"\n==== start {self.generation} on port {self.port} ====\n".encode())
-                log.flush()
+            log = open_log(self.log_path)
+            try:
+                with contextlib.suppress(OSError):
+                    os.write(log, f"\n==== start {self.generation} on port {self.port} ====\n".encode())
                 self.proc = subprocess.Popen((SANDBOX if self.sandbox else []) + [str(self.source / "run")], cwd=self.source, env=env,
                                              stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, start_new_session=True)
+            finally:
+                os.close(log)
         except OSError:  # no free port, a full disk, or a `run` that cannot be executed
             self.proc = None
             return False
@@ -438,7 +590,10 @@ def attempt(candidate: Candidate, scenario: dict[str, Any], media: Media, clock:
 
     def result(failed_step: int | None, reason: str | None) -> dict[str, Any]:
         verdicts = [not wrong[unit] and answered[unit] == needed[unit] for unit in range(count)]
-        return {"id": scenario["id"], "matched": all(verdicts), "units": verdicts, "failed_step": failed_step, "reason": reason}
+        # a unit with a wrong answer, or with every answer in, is settled: a second try cannot change its verdict
+        settled = [wrong[unit] or answered[unit] == needed[unit] for unit in range(count)]
+        return {"id": scenario["id"], "matched": all(verdicts), "units": verdicts, "settled": settled, "failed_step": failed_step,
+                "reason": reason}
 
     if clock.expired():
         return result(0, LATE)
@@ -490,32 +645,103 @@ def attempt(candidate: Candidate, scenario: dict[str, Any], media: Media, clock:
 
 
 def not_played(scenario: dict[str, Any], reason: str) -> dict[str, Any]:
-    return {"id": scenario["id"], "matched": False, "units": [False] * unit_count(scenario), "failed_step": 0, "reason": reason}
+    count = unit_count(scenario)
+    return {"id": scenario["id"], "matched": False, "units": [False] * count, "settled": [False] * count, "failed_step": 0, "reason": reason}
+
+
+def merge_retry(first: dict[str, Any], second: dict[str, Any]) -> dict[str, Any]:
+    """The verdict after a second try: it decides only the units the first try left unsettled (QA 07 F1).
+
+    A month goes on after a wrong answer, and later requests echo many earlier answers, so a server could
+    read a whole month on the first try, give no answer at the end to earn a second, and replay what it
+    learned. The units it answered on the first try keep the first try's verdicts.
+    """
+    units = [old if settled else new for old, new, settled in zip(first["units"], second["units"], first["settled"])]
+    settled = [old or new for old, new in zip(first["settled"], second["settled"])]
+    reason = second["reason"] or (None if all(units) else "answered differently on the first try")
+    return dict(second, matched=all(units), units=units, settled=settled, reason=reason,
+                failed_step=second["failed_step"] if second["reason"] else None)
+
+
+def play_order(scenarios: list[dict[str, Any]]) -> list[int]:
+    """The order scenarios are started in: a fixed shuffle, so a server too slow to finish loses some of every kind rather
+    than the kinds that come last, with the scenarios that restart the server spread evenly through it."""
+    def mixed(indexes: list[int]) -> list[int]:
+        return sorted(indexes, key=lambda index: hashlib.sha256(str(scenarios[index]["id"]).encode()).digest())
+
+    shared = mixed([index for index, scenario in enumerate(scenarios) if not durable(scenario)])
+    restarting = mixed([index for index, scenario in enumerate(scenarios) if durable(scenario)])
+    order: list[int] = []
+    taken = 0
+    for number, index in enumerate(restarting, start=1):
+        upto = len(shared) * number // (len(restarting) + 1)
+        order += shared[taken:upto] + [index]
+        taken = upto
+    return order + shared[taken:]
+
+
+class Gate:
+    """Lets scenarios run side by side, except one with a planned restart, which waits until it is alone and holds back
+    those after it until it is done, so stopping the server disturbs no other scenario."""
+
+    def __init__(self) -> None:
+        self.condition = threading.Condition()
+        self.running = 0
+        self.alone = False
+        self.waiting = 0
+
+    @contextlib.contextmanager
+    def enter(self, exclusive: bool) -> Iterator[None]:
+        with self.condition:
+            if exclusive:
+                self.waiting += 1
+                self.condition.wait_for(lambda: not self.alone and self.running == 0)
+                self.waiting -= 1
+                self.alone = True
+            else:
+                self.condition.wait_for(lambda: not self.alone and self.waiting == 0)
+                self.running += 1
+        try:
+            yield
+        finally:
+            with self.condition:
+                if exclusive:
+                    self.alone = False
+                else:
+                    self.running -= 1
+                self.condition.notify_all()
 
 
 def play_all(candidate: Candidate, scenarios: list[dict[str, Any]], media: Media, clock: Clock,
              metrics: dict[str, Any]) -> list[dict[str, Any]]:
-    """Play every scenario, then give each that got no answer one more try, alone, while time remains.
+    """Play every scenario, then give each that got no answer one more try, alone, on a clean slate, while time remains.
 
-    Scenarios without a planned restart run WORKERS at a time. Those with one run after them, one at a
-    time, so that stopping the server disturbs no other scenario. The second tries are what keep a
-    server that crashes now and then from losing the scenarios in flight beside the one that crashed it.
+    Scenarios run WORKERS at a time in `play_order`; one with a planned restart runs with nothing beside
+    it. The second tries are what keep a server that crashes now and then from losing the scenarios in
+    flight beside the one that crashed it.
     """
     results: list[dict[str, Any] | None] = [None] * len(scenarios)
-    shared = [index for index, scenario in enumerate(scenarios) if not durable(scenario)]
+    gate = Gate()
+
+    def play(index: int) -> dict[str, Any]:
+        with gate.enter(durable(scenarios[index])):
+            return attempt(candidate, scenarios[index], media, clock)
+
+    order = play_order(scenarios)
     pool = ThreadPoolExecutor(WORKERS)
     try:
-        for index, result in zip(shared, pool.map(lambda i: attempt(candidate, scenarios[i], media, clock), shared)):
+        for index, result in zip(order, pool.map(play, order)):
             results[index] = result
     finally:
         pool.shutdown(cancel_futures=True)
-    for index, scenario in enumerate(scenarios):
-        if durable(scenario):
-            results[index] = attempt(candidate, scenario, media, clock)
-    for index, scenario in enumerate(scenarios):
-        if results[index]["reason"] in (NO_ANSWER, DOWN) and not clock.expired():
+    again = [index for index in order if results[index]["reason"] in (NO_ANSWER, DOWN)]
+    if again and not clock.expired():
+        candidate.clean_slate()
+        for index in again:
+            if clock.expired():
+                break
             metrics["retried"] += 1
-            results[index] = attempt(candidate, scenario, media, clock)
+            results[index] = merge_retry(results[index], attempt(candidate, scenarios[index], media, clock))
     return results
 
 
@@ -536,16 +762,32 @@ def strip_set_id(root: Path) -> int:
 
 
 # Run under the drop: prints /proc/self/status, then what prctl(PR_GET_NO_NEW_PRIVS) says, since some
-# kernels (gVisor among them, possibly) do not list NoNewPrivs in the status file.
+# kernels (gVisor among them, possibly) do not list NoNewPrivs in the status file, then the limits.
 NNP_PROBE = (
-    "import ctypes, sys\n"
+    "import ctypes, resource, sys\n"
     "sys.stdout.write(open('/proc/self/status').read())\n"
     "try:\n"
     "    value = ctypes.CDLL(None, use_errno=True).prctl(39, 0, 0, 0, 0)\n"
     "except Exception:\n"
     "    value = -1\n"
     "sys.stdout.write('PrctlNoNewPrivs:\\t%d\\n' % value)\n"
+    "for name in ('NPROC', 'FSIZE', 'AS'):\n"
+    "    sys.stdout.write('Rlimit%s:\\t%d %d\\n' % ((name,) + resource.getrlimit(getattr(resource, 'RLIMIT_' + name))))\n"
 )
+LIMIT_LINES = {"NPROC": ("Max processes", THREAD_LIMIT), "FSIZE": ("Max file size", FILE_LIMIT), "AS": ("Max address space", MEMORY_LIMIT)}
+
+
+def limits_applied(report: str) -> bool:
+    """Whether a process's report shows the server's limits, soft and hard: `Rlimit*` lines from `NNP_PROBE`, or the
+    lines of /proc/self/limits."""
+    found: dict[str, list[str]] = {}
+    for line in report.splitlines():
+        for name, (title, _) in LIMIT_LINES.items():
+            if line.startswith(f"Rlimit{name}:"):
+                found[name] = line.split(":", 1)[1].split()
+            elif line.startswith(title + " ") and name not in found:
+                found[name] = line[len(title):].split()[:2]
+    return all(found.get(name) == [str(value)] * 2 for name, (_, value) in LIMIT_LINES.items())
 
 
 def privileges_dropped(status: str, uid: int, gid: int) -> bool:
@@ -568,18 +810,36 @@ def check_sandbox() -> None:
 
     Raises:
         EvaluationError: The unprivileged user is missing, or a process started through the drop keeps
-            privileges or could gain them back.
+            privileges or could gain them back, or does not run under the server's limits.
     """
     try:
         uid, gid = pwd.getpwnam(RUN_AS).pw_uid, grp.getgrnam(RUN_GROUP).gr_gid
         done = subprocess.run(SANDBOX + [sys.executable, "-I", "-c", NNP_PROBE],
                               capture_output=True, text=True, timeout=60)
-        if done.returncode != 0:  # this interpreter is not runnable by the user: the status file alone
-            done = subprocess.run(SANDBOX + ["cat", "/proc/self/status"], capture_output=True, text=True, timeout=60)
+        if done.returncode != 0:  # this interpreter is not runnable by the user: the status and limits files alone
+            done = subprocess.run(SANDBOX + ["cat", "/proc/self/status", "/proc/self/limits"], capture_output=True, text=True, timeout=60)
     except (KeyError, OSError, subprocess.SubprocessError) as exc:
         raise EvaluationError("Could not drop privileges; submitted code was not run") from exc
     if done.returncode != 0 or not privileges_dropped(done.stdout, uid, gid):
         raise EvaluationError("Could not drop privileges; submitted code was not run")
+    if not limits_applied(done.stdout):
+        raise EvaluationError("Could not limit the server's threads, file size and memory; submitted code was not run")
+
+
+def seal_submission(source: Path) -> None:
+    """Make the submission root's and read-only to the server's user: it cannot keep anything in its own files, and every
+    start runs exactly what was delivered. Links are not followed."""
+    with contextlib.suppress(OSError, subprocess.SubprocessError):
+        subprocess.run(["chown", "-R", "root:root", str(source)], check=False, capture_output=True, timeout=600)
+        subprocess.run(["chmod", "-R", "a+rX,go-w", str(source)], check=False, capture_output=True, timeout=600)
+
+
+def become_reaper() -> None:
+    """Adopt the server's orphaned helpers (PR_SET_CHILD_SUBREAPER), so they can be reaped after they are killed."""
+    with contextlib.suppress(Exception):
+        import ctypes
+
+        ctypes.CDLL(None, use_errno=True).prctl(36, 1, 0, 0, 0)
 
 
 def evaluate(source: Path, scenario_path: Path, work: Path, output: Path, sandbox: bool = True,
@@ -618,9 +878,14 @@ def evaluate(source: Path, scenario_path: Path, work: Path, output: Path, sandbo
                                    "by_theme": by_theme}
         if sandbox:
             check_sandbox()
+            become_reaper()
         candidate: Candidate | None = None
         runner = source / "run"
-        if source.is_symlink() or not runner.is_file() or not os.access(runner, os.X_OK):
+        if source.is_symlink() or not source.is_dir():
+            # an /app/server that could not be copied out of the agent's machine (QA 07 F3) arrives as nothing at all
+            metrics["notes"].append("/app/server did not arrive: it is missing, or it could not be copied from the machine it was built on")
+            results = [not_played(scenario, "no server to run") for scenario in scenarios]
+        elif not runner.is_file() or not os.access(runner, os.X_OK):
             metrics["notes"].append("/app/server/run is missing or not executable")
             results = [not_played(scenario, "no server to run") for scenario in scenarios]
         else:
@@ -630,7 +895,7 @@ def evaluate(source: Path, scenario_path: Path, work: Path, output: Path, sandbo
             work.mkdir(parents=True, exist_ok=True)
             os.chmod(work, 0o755)
             if sandbox:
-                subprocess.run(["chmod", "-R", "a+rX", str(source)], check=False)
+                seal_submission(source)
             candidate = Candidate(source, work, output / "server.log", sandbox, clock)
             try:
                 if candidate.start():

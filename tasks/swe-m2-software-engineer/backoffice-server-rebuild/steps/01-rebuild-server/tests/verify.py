@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
-import shutil
+import pwd
 import subprocess
 import sys
 import traceback
@@ -14,20 +15,41 @@ from typing import Any
 # test.sh starts this file with Python -I; imports resolve only from this directory.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from verifier.replay import EvaluationError, evaluate  # noqa: E402
+from verifier.replay import RUN_AS, EvaluationError, end_user_processes, evaluate  # noqa: E402
 
-SANDBOX_USER = "nobody"
 REWARD_FILES = ("reward.txt", "reward.json")
+PENDING = ".reward.pending"
+PLACEHOLDER = b"0.000000"  # a reward in [0, 1] written with six decimals always has this length
+
+
+def reserve(output: Path) -> None:
+    """Before any submitted code runs, write a placeholder the size of the reward under another name.
+
+    The server may fill the disk while it runs (QA 07 F2). The reward is later written over the
+    placeholder's bytes in place and renamed, which needs no free space.
+    """
+    with open(output / PENDING, "wb") as placeholder:
+        placeholder.write(PLACEHOLDER)
+        placeholder.flush()
+        os.fsync(placeholder.fileno())
 
 
 def publish(output: Path, metrics: dict[str, Any]) -> None:
     """Write the reward first, then the summary, then the per-scenario diagnostics.
 
-    The reward is a few bytes; the diagnostics can be large. A full disk or any other failure
-    writing the diagnostics costs only those files, never the reward already written.
+    The reward goes over the placeholder `reserve` wrote, when there is one; the diagnostics can be
+    large, and a full disk or any other failure writing them costs only those files.
     """
     results = metrics.pop("results", [])
-    (output / "reward.txt").write_text(f"{metrics['reward']:.6f}")
+    reward = f"{metrics['reward']:.6f}".encode()
+    pending = output / PENDING
+    if pending.is_file():
+        with open(pending, "r+b") as placeholder:
+            placeholder.write(reward)
+            placeholder.truncate(len(reward))
+        os.replace(pending, output / "reward.txt")
+    else:
+        (output / "reward.txt").write_bytes(reward)
     for name, text in (("metrics.json", json.dumps(dict(metrics, status="completed"), indent=1, sort_keys=True) + "\n"),
                        ("scenario_results.json", json.dumps(results))):
         try:
@@ -46,7 +68,7 @@ def main() -> int:
     tests = Path(__file__).resolve().parent
     output = Path("/logs/verifier")
     output.mkdir(parents=True, exist_ok=True)
-    for name in REWARD_FILES + ("metrics.json",):
+    for name in REWARD_FILES + ("metrics.json", PENDING):
         (output / name).unlink(missing_ok=True)
     code = 1
     try:
@@ -54,6 +76,7 @@ def main() -> int:
             raise EvaluationError("Verifier must start as root to isolate submitted code")
         for closed in (tests, output):
             closed.chmod(0o700)
+        reserve(output)
         scenarios = tests / "private" / "scenarios.json.gz"
         metrics = evaluate(Path("/app/server"), scenarios if scenarios.exists() else tests / "private" / "scenarios.json", Path("/work"), output)
         publish(output, metrics)
@@ -62,14 +85,17 @@ def main() -> int:
     except Exception as exc:  # noqa: BLE001 - every unexpected failure invalidates the evaluation
         message = str(exc) if isinstance(exc, EvaluationError) else f"Verifier error: {type(exc).__name__}"
         print(f"evaluation error: {message}", flush=True)
-        for name in REWARD_FILES:
-            (output / name).unlink(missing_ok=True)
-        (output / "metrics.json").write_text(json.dumps({"status": "evaluation_error", "error": message}) + "\n")
-        (output / "verifier_error.txt").write_text(traceback.format_exc())
+        for name in REWARD_FILES + (PENDING,):
+            with contextlib.suppress(OSError):
+                (output / name).unlink(missing_ok=True)
+        with contextlib.suppress(OSError):
+            (output / "metrics.json").write_text(json.dumps({"status": "evaluation_error", "error": message}) + "\n")
+            (output / "verifier_error.txt").write_text(traceback.format_exc())
     finally:
-        if shutil.which("pkill"):
-            subprocess.run(["pkill", "-9", "-u", SANDBOX_USER], check=False)
-        subprocess.run(["chmod", "-R", "a+rX", str(output)], check=False)
+        with contextlib.suppress(Exception):
+            end_user_processes(pwd.getpwnam(RUN_AS).pw_uid)
+        with contextlib.suppress(OSError, subprocess.SubprocessError):
+            subprocess.run(["chmod", "-R", "a+rX", str(output)], check=False, capture_output=True, timeout=120)
     return code
 
 
