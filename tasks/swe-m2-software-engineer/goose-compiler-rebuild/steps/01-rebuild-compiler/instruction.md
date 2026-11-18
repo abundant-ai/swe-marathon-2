@@ -26,9 +26,10 @@ implementation we own. Write one that behaves exactly like the copy we have.
   standard input. `python3 /app/examples/run_examples.py check <program>
   /app/examples/examples.json /app/examples/outputs.json -v` runs them against any program and
   lists the ones that differ.
-- The examples cover running programs (`goose run`), checking them (`goose check`, with the
-  errors as JSON through `--diagnostics json`), formatting (`goose format`) and the rest of the
-  command line: help, version, mistyped commands, missing files and wrong options.
+- The examples cover running programs (`goose run`), including programs that do not compile
+  and programs split over several files, checking them (`goose check`, with the errors as JSON
+  through `--diagnostics json`), formatting (`goose format`) and the rest of the command line:
+  help, version, mistyped commands, missing files and wrong options.
 - There is no network access. Python 3.12, Go, Rust (`rustc` and `cargo`, standard library
   only) and a C and C++ toolchain (`gcc`, `g++`, `make`, `cmake`) are installed, here and where
   your implementation will run. No Goose library or tool is available apart from the original.
@@ -41,9 +42,9 @@ Your implementation in `/app/rebuild`, with an executable `/app/rebuild/goose`.
   standard output and ends with the same exit code as the original. Its messages on standard
   error may differ.
 - That covers what a program prints under `goose run`, the errors and warnings reported with
-  `--diagnostics json`, the output of `goose format` and the command line's own answers, for
-  everything the original accepts or rejects, not only for the examples: programs that do not
-  compile, programs that abort, wrong options and missing files included.
+  `--diagnostics json`, the output of `goose format` (comments included) and the command line's
+  own answers, for everything the original accepts or rejects, not only for the examples:
+  programs that do not compile, programs that abort, wrong options and missing files included.
 - Error and warning messages count word for word: with `--diagnostics json` they are part of
   standard output, whatever the documentation says about other implementations.
 - It must not call the original compiler: it will be used where the original is not installed.

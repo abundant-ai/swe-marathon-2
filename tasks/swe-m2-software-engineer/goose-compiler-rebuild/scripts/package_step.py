@@ -10,7 +10,8 @@ repository) must be at UPSTREAM_COMMIT. Its build sources, less the standard lib
 ffi modules, go into both images and into the reference solution, which builds the original
 compiler itself, each with the hardening in common/hardening (apply.sh before the build,
 smoke.sh after it); its documentation and samples go into the agent image. Its tests never
-leave this machine except as generated cases.
+leave this machine except as generated cases, and packaging stops if a private case has an input
+that a shipped file or a visible case already holds.
 """
 
 from __future__ import annotations
@@ -51,6 +52,12 @@ def shipped_docs(name: str) -> bool:
     return bool(re.fullmatch(r"samples/[^/]+\.goose", name))
 
 
+def agent_visible(name: str) -> bool:
+    """A checkout file the agent image holds: documentation and samples in /app/docs, the
+    standard library in /usr/local/share/goose/stdlib."""
+    return shipped_docs(name) or (name.startswith("stdlib/") and name not in DROPPED)
+
+
 def collect() -> dict[str, bytes]:
     for required in (HIDDEN, VISIBLE):
         if not required.is_file():
@@ -65,6 +72,12 @@ def collect() -> dict[str, bytes]:
     head = subprocess.run(["git", "-C", str(checkout), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
     if head != UPSTREAM_COMMIT:
         raise ValueError(f"The upstream checkout at {checkout} is not at {UPSTREAM_COMMIT}")
+    import make_cases  # noqa: PLC0415 - it imports this module
+
+    found = make_cases.leaks(json.loads(HIDDEN.read_text(encoding="utf-8"))["cases"],
+                             json.loads(VISIBLE.read_text(encoding="utf-8"))["cases"], make_cases.shipped_texts(checkout))
+    if found:
+        raise ValueError(f"{len(found)} private cases have an input the agent can know: {', '.join(found[:20])}")
     for name in tracked(checkout):
         data = None
         if (name.startswith(BUILD_SOURCES) or name in BUILD_SOURCES) and name not in DROPPED:
