@@ -12,8 +12,8 @@ RUN sh /hardening/apply.sh /src \
     && bash /hardening/smoke.sh /opt/goose/goose
 COPY verifier/runcases.py verifier/recording.py /record/
 COPY private/cases.json /record/cases.json
-RUN python3 /record/runcases.py record /opt/goose/goose /record/cases.json /record/expected.json --keep /record/kept.json \
-    && python3 /record/recording.py /record/kept.json /record/expected.json /record/recording.json
+RUN python3 /record/runcases.py record /opt/goose/goose /record/cases.json /record/expected.json --keep /record/kept.json --report /record/timing.json \
+    && python3 /record/recording.py /record/cases.json /record/kept.json /record/expected.json /record/timing.json /record/recording.json
 
 FROM ubuntu:24.04
 ENV DEBIAN_FRONTEND=noninteractive PYTHONDONTWRITEBYTECODE=1 LC_ALL=C.UTF-8 LANG=C.UTF-8

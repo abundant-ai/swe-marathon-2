@@ -32,7 +32,6 @@ LIMIT_NAMES = {"Max stack size": resource.RLIMIT_STACK, "Max processes": resourc
 STRICT_LIMITS = ("Max processes", "Max file size", "Max core file size")
 
 
-
 class EvaluationError(Exception):
     """Evaluation could not be carried out; no valid reward may be published."""
 
@@ -167,7 +166,7 @@ def kill_user(uid: int) -> None:
 
 def remove_leftovers(uid: int) -> None:
     """Remove what the user left at the top of the shared temporary directories, never following
-    a link, so that the results can still be written."""
+    a link: every run starts with nothing of an earlier run's there."""
     for top in LEFTOVER_DIRS:
         try:
             entries = list(os.scandir(top))
@@ -202,38 +201,47 @@ def grade(program: Path, private: Path, prefix: list[str], owner: tuple[int, int
         raise EvaluationError("Private cases are unreadable") from exc
     if not cases or any(case["id"] not in expected for case in cases):
         raise EvaluationError("Private cases and recorded answers do not match")
-    metrics = {"cases_total": len(cases), "cases_run": 0, "cases_passed": 0, "reward": 0.0, "timeouts": 0, "errors": 0,
-               "notes": [], "by_kind": {}}
+    metrics = {"cases_total": len(cases), "cases_run": 0, "cases_passed": 0, "cases_failed": 0, "reward": 0.0,
+               "timeouts": 0, "output_limits": 0, "setup_errors": 0, "seconds_total": 0.0, "seconds_max": 0.0,
+               "stopped": None, "notes": [], "by_kind": {}}
     try:
         metrics["recording"] = json.loads((private / "recording.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         pass
+    kind = lambda case: case.get("kind", case["argv"][0])  # noqa: E731
     for case in cases:
-        metrics["by_kind"].setdefault(case.get("kind", case["argv"][0]), {"total": 0, "passed": 0})["total"] += 1
+        metrics["by_kind"].setdefault(kind(case), {"total": 0, "run": 0, "passed": 0, "failed": 0})["total"] += 1
+    failed = []
     if not program.is_file() or not os.access(program, os.X_OK):
         metrics["notes"].append("/app/rebuild/goose is missing or not executable")
-        return metrics
-    failed = []
+        cases = []
     started = time.monotonic()
     for case in cases:
         if time.monotonic() - started > budget:
-            metrics["notes"].append(f"stopped after {budget} seconds of runs; the remaining cases count as failed")
+            metrics["stopped"] = f"after {budget} seconds of runs; the remaining cases count as failed"
             break
         if owner is not None:
             kill_user(owner[0])
+            remove_leftovers(owner[0])
         try:
             got = runcases.run_case([str(program)], case, prefix=prefix, owner=owner)
         except OSError as exc:  # whatever the submission did to this machine is its own case's failure
-            got = {"exit": None, "stdout": None, "error": f"run: {type(exc).__name__}"}
-        want = expected[case["id"]]
+            got = {"exit": None, "stdout": None, "error": f"run: {type(exc).__name__}", "seconds": 0.0}
+        tally = metrics["by_kind"][kind(case)]
         metrics["cases_run"] += 1
-        if got.get("error") == "timeout":
+        tally["run"] += 1
+        metrics["seconds_total"] = round(metrics["seconds_total"] + got["seconds"], 3)
+        metrics["seconds_max"] = max(metrics["seconds_max"], got["seconds"])
+        error = got.get("error")
+        if error == "timeout":
             metrics["timeouts"] += 1
-        elif got.get("error"):
-            metrics["errors"] += 1
-        if got["exit"] == want["exit"] and got["stdout"] == want["stdout"]:
+        elif error == "output limit":
+            metrics["output_limits"] += 1
+        elif error:
+            metrics["setup_errors"] += 1
+        if runcases.matches(got, expected[case["id"]]):
             metrics["cases_passed"] += 1
-            metrics["by_kind"][case.get("kind", case["argv"][0])]["passed"] += 1
+            tally["passed"] += 1
         else:
             failed.append(case["id"])
     if owner is not None:
@@ -243,7 +251,10 @@ def grade(program: Path, private: Path, prefix: list[str], owner: tuple[int, int
         runcases.clear_workspace()
     except OSError:
         pass
-    metrics["reward"] = round(metrics["cases_passed"] / len(cases), 6)
+    metrics["cases_failed"] = metrics["cases_total"] - metrics["cases_passed"]
+    for tally in metrics["by_kind"].values():
+        tally["failed"] = tally["total"] - tally["passed"]
+    metrics["reward"] = round(metrics["cases_passed"] / metrics["cases_total"], 6)
     metrics["failed_sample"] = failed[:200]
     return metrics
 

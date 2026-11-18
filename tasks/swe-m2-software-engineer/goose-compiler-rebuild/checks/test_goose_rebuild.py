@@ -219,7 +219,8 @@ def test_command_line_cases_are_one_per_behaviour():
 
 # ---------------------------------------------------------------- verifier
 
-def run_verifier(tmp_path: Path, script: str, cases: list[dict], expected: dict, case_sec: float = 2, read_limit: int | None = None) -> dict:
+def run_verifier(tmp_path: Path, script: str, cases: list[dict], expected: dict, case_sec: float = 2,
+                 output_limit: int | None = None) -> dict:
     """grade() of the real verify.py, in a process of its own, with the workspace under tmp_path and
     no privilege drop (macOS and CI runners have no setpriv): what the submission can do to its
     workspace and its output is the same."""
@@ -237,8 +238,8 @@ def run_verifier(tmp_path: Path, script: str, cases: list[dict], expected: dict,
         import verify
         verify.runcases.WORKSPACE = Path({str(tmp_path / 'tmp' / 'goose-case')!r})
         verify.runcases.CASE_SEC = {case_sec}
-        if {read_limit!r} is not None:
-            verify.runcases.READ_LIMIT = {read_limit!r}
+        if {output_limit!r} is not None:
+            verify.runcases.OUTPUT_LIMIT = {output_limit!r}
         print(json.dumps(verify.grade(Path({str(program)!r}), Path({str(private)!r}), [], None)))
     """)
     (tmp_path / "tmp").mkdir(exist_ok=True)
@@ -247,16 +248,27 @@ def run_verifier(tmp_path: Path, script: str, cases: list[dict], expected: dict,
     return json.loads(done.stdout.strip().splitlines()[-1])
 
 
-def plain_cases(argvs: list[list[str]]) -> tuple[list[dict], dict]:
+def plain_cases(argvs: list[list[str]], kinds: list[str] | None = None) -> tuple[list[dict], dict]:
     cases = [{"id": f"P{i}", "files": {"main.goose": "fn main() {}\n"}, "argv": argv, "stdin": None} for i, argv in enumerate(argvs)]
+    for case, kind in zip(cases, kinds or []):
+        case["kind"] = kind
     return cases, {case["id"]: {"exit": 0, "stdout": "ok\n"} for case in cases}
+
+
+def verifier_call(code: str) -> object:
+    """The JSON a snippet prints with the verifier importable, in a process of its own (another
+    task's checks have a package named `verifier` too)."""
+    done = subprocess.run([sys.executable, "-B", "-c", f"import sys; sys.path.insert(0, {str(STEP / 'tests')!r})\n" + code],
+                          capture_output=True, text=True, timeout=120)
+    assert done.returncode == 0, done.stdout[-2000:] + done.stderr[-2000:]
+    return json.loads(done.stdout.strip().splitlines()[-1])
 
 
 def test_many_slow_runs_do_not_stop_the_count(tmp_path):
     cases, expected = plain_cases([["slow"]] * 65 + [["fast"]] * 5)
     metrics = run_verifier(tmp_path, 'case "$1" in slow) exec sleep 5;; esac\necho ok\n', cases, expected, case_sec=0.05)
     assert metrics["cases_run"] == 70 and metrics["timeouts"] == 65 and metrics["cases_passed"] == 5
-    assert metrics["reward"] == round(5 / 70, 6) and not metrics["notes"]
+    assert metrics["reward"] == round(5 / 70, 6) and metrics["stopped"] is None and not metrics["notes"]
 
 
 def test_a_swapped_or_stuck_workspace_is_a_failed_case_not_an_evaluation_error(tmp_path):
@@ -272,68 +284,30 @@ def test_a_swapped_or_stuck_workspace_is_a_failed_case_not_an_evaluation_error(t
     cases, expected = plain_cases([["a"], ["swap"], ["b"], ["c"], ["stuck"], ["d"]])
     metrics = run_verifier(tmp_path, script, cases, expected)
     assert metrics["cases_run"] == 6 and metrics["cases_passed"] == 5, metrics
-    assert metrics["errors"] == 1 and list(target.iterdir()) == [], "the verifier wrote through the submission's link"
+    assert metrics["setup_errors"] == 1 and list(target.iterdir()) == [], "the verifier wrote through the submission's link"
     for locked in tmp_path.rglob("locked"):
         locked.chmod(0o755)
 
 
-def test_output_is_read_up_to_a_bound(tmp_path):
-    cases, expected = plain_cases([["flood"], ["ok"]])
-    metrics = run_verifier(tmp_path, 'case "$1" in flood) head -c 20000000 /dev/zero;; esac\necho ok\n', cases, expected,
-                           read_limit=4096)
-    assert metrics["cases_passed"] == 1 and metrics["errors"] == 1 and metrics["failed_sample"] == ["P0"]
+def test_output_is_read_up_to_a_bound_and_compared_as_bytes(tmp_path):
+    cases, expected = plain_cases([["flood"], ["ok"], ["bad"], ["other"]])
+    expected["P2"] = {"exit": 0, "stdout": b"\x80\n".decode("utf-8", "surrogateescape")}
+    expected["P3"] = {"exit": 0, "stdout": b"\xff\n".decode("utf-8", "surrogateescape")}
+    script = "case \"$1\" in flood) head -c 20000000 /dev/zero; exit 0;; bad|other) printf '\\200\\n'; exit 0;; esac\necho ok\n"
+    metrics = run_verifier(tmp_path, script, cases, expected, output_limit=4096)
+    assert metrics["output_limits"] == 1 and metrics["cases_passed"] == 2, metrics
+    assert metrics["failed_sample"] == ["P0", "P3"], "two different invalid bytes compared equal"
 
 
-def test_recorder_keeps_only_cases_that_finish_the_same_way_twice(tmp_path):
-    program = tmp_path / "fake-goose"
-    program.write_text("#!/usr/bin/env python3\nimport os, sys, time\n"
-                       "if 'help' in sys.argv: print(os.urandom(4).hex())\n"
-                       "elif 'version' in sys.argv: time.sleep(5)\n"
-                       "else: print(' '.join(sys.argv[1:]), sorted(os.listdir('.')))\n"
-                       "sys.exit(2 if 'check' in sys.argv else 0)\n")
-    program.chmod(0o755)
-    cases = [{"id": f"P{i}", "files": {"main.goose": "fn main() {}\n"}, "argv": argv, "stdin": None}
-             for i, argv in enumerate([["run", "main.goose"], ["check", "main.goose"], ["help"], ["version"], ["format"]])]
-    source, outputs, kept = tmp_path / "cases.json", tmp_path / "outputs.json", tmp_path / "kept.json"
-    source.write_text(json.dumps({"cases": cases}))
-    done = subprocess.run([sys.executable, "-B", str(RUNNER), "record", str(program), str(source), str(outputs), "--keep", str(kept)],
-                          capture_output=True, text=True, timeout=120)
-    assert done.returncode != 0 and "only 3 of 5" in done.stdout + done.stderr  # two of five dropped is below the 85% floor
-    cases = cases[:2] + [cases[4]] * 8
-    for index, case in enumerate(cases):
-        cases[index] = dict(case, id=f"P{index}")
-    cases.append({"id": "P99", "files": {}, "argv": ["help"], "stdin": None})
-    source.write_text(json.dumps({"cases": cases}))
-    done = subprocess.run([sys.executable, "-B", str(RUNNER), "record", str(program), str(source), str(outputs), "--keep", str(kept)],
-                          capture_output=True, text=True, timeout=120)
-    assert done.returncode == 0, done.stdout + done.stderr
-    assert [c["id"] for c in json.loads(kept.read_text())["cases"]] == [f"P{i}" for i in range(10)]
-    check = subprocess.run([sys.executable, "-B", str(RUNNER), "check", str(program), str(kept), str(outputs)],
-                           capture_output=True, text=True, timeout=120)
-    assert check.stdout.strip().splitlines()[-1] == "10 of 10 cases pass"
-
-
-def test_the_recording_report_counts_outputs_equal_to_upstream(tmp_path):
-    digest = hashlib.sha256(b"6\n").hexdigest()
-    cases = [{"id": "P1", "kind": "run", "upstream": digest}, {"id": "P2", "kind": "run", "upstream": digest},
-             {"id": "P3", "kind": "check"}]
-    expected = {"P1": {"exit": 0, "stdout": "6\n"}, "P2": {"exit": 0, "stdout": "7\n"}, "P3": {"exit": 1, "stdout": ""}}
-    (tmp_path / "kept.json").write_text(json.dumps({"cases": cases}))
-    (tmp_path / "expected.json").write_text(json.dumps(expected))
-    subprocess.run([sys.executable, "-B", str(STEP / "tests" / "verifier" / "recording.py"), str(tmp_path / "kept.json"),
-                    str(tmp_path / "expected.json"), str(tmp_path / "out.json")], check=True, capture_output=True, timeout=60)
-    report = json.loads((tmp_path / "out.json").read_text())
-    assert report["run_cases_with_upstream_output"] == 2 and report["run_cases_printing_upstream_output"] == 1
-    assert report["empty_stdout_by_exit"] == {"1": 1} and report["kinds_kept"] == {"check": 1, "run": 2}
-
-
-def verifier_call(code: str) -> object:
-    """The JSON a snippet prints with the verifier importable, in a process of its own (another
-    task's checks have a package named `verifier` too)."""
-    done = subprocess.run([sys.executable, "-B", "-c", f"import sys; sys.path.insert(0, {str(STEP / 'tests')!r})\n" + code],
-                          capture_output=True, text=True, timeout=120)
-    assert done.returncode == 0, done.stdout[-2000:] + done.stderr[-2000:]
-    return json.loads(done.stdout.strip().splitlines()[-1])
+def test_metrics_count_each_kind_and_the_time_runs_took(tmp_path):
+    cases, expected = plain_cases([["a"], ["b"], ["slow"], ["c"]], kinds=["run", "run", "check", "format"])
+    metrics = run_verifier(tmp_path, 'case "$1" in slow) exec sleep 5;; b) echo no; exit 0;; esac\necho ok\n', cases, expected,
+                           case_sec=1.0)
+    assert metrics["by_kind"] == {"run": {"total": 2, "run": 2, "passed": 1, "failed": 1},
+                                  "check": {"total": 1, "run": 1, "passed": 0, "failed": 1},
+                                  "format": {"total": 1, "run": 1, "passed": 1, "failed": 0}}
+    assert metrics["cases_failed"] == 2 and metrics["timeouts"] == 1
+    assert 1.0 <= metrics["seconds_max"] < 3 and metrics["seconds_max"] <= metrics["seconds_total"]
 
 
 def test_every_run_gets_the_same_limits_and_its_own_stack(tmp_path):
@@ -385,6 +359,59 @@ def test_a_set_id_file_gains_nothing(tmp_path):
     modes = {path.relative_to(top).as_posix(): os.lstat(path).st_mode & 0o7777 for path in [top, *top.rglob("*")]}
     assert modes == {".": 0o755, "goose": 0o755, "lib": 0o755, "lib/helper": 0o755, "lib/data": 0o644, "link": modes["link"]}
     assert (top / "link").is_symlink()
+
+
+def test_recorder_keeps_only_cases_that_finish_the_same_way_twice_and_soon(tmp_path):
+    program = tmp_path / "fake-goose"
+    program.write_text("#!/usr/bin/env python3\nimport os, sys, time\n"
+                       "if 'help' in sys.argv: print(os.urandom(4).hex())\n"
+                       "elif 'version' in sys.argv: time.sleep(5)\n"
+                       "elif 'lag' in sys.argv: time.sleep(0.8); print('late')\n"
+                       "else: print(' '.join(sys.argv[1:]), sorted(os.listdir('.')))\n"
+                       "sys.exit(2 if 'check' in sys.argv else 0)\n")
+    program.chmod(0o755)
+    cases = [{"id": f"P{i}", "files": {"main.goose": "fn main() {}\n"}, "argv": argv, "stdin": None}
+             for i, argv in enumerate([["run", "main.goose"], ["check", "main.goose"], ["help"], ["version"], ["format"]])]
+    source, outputs, kept, timing = (tmp_path / name for name in ("cases.json", "outputs.json", "kept.json", "timing.json"))
+    source.write_text(json.dumps({"cases": cases}))
+    done = subprocess.run([sys.executable, "-B", str(RUNNER), "record", str(program), str(source), str(outputs), "--keep", str(kept)],
+                          capture_output=True, text=True, timeout=120)
+    assert done.returncode != 0 and "2 did not finish the same way twice" in done.stdout + done.stderr
+    cases = cases[:2] + [cases[4]] * 8
+    for index, case in enumerate(cases):
+        cases[index] = dict(case, id=f"P{index}")
+    cases += [{"id": "P98", "files": {}, "argv": ["lag"], "stdin": None}, {"id": "P99", "files": {}, "argv": ["help"], "stdin": None}]
+    source.write_text(json.dumps({"cases": cases}))
+    done = subprocess.run([sys.executable, "-B", str(RUNNER), "record", str(program), str(source), str(outputs), "--keep", str(kept),
+                           "--report", str(timing)], capture_output=True, text=True, timeout=120)
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert [c["id"] for c in json.loads(kept.read_text())["cases"]] == [f"P{i}" for i in range(10)]
+    report = json.loads(timing.read_text())
+    assert report["slow"] == ["P98"] and report["unsteady"] == ["P99"] and report["keep_seconds"] == 0.5
+    assert min(report["seconds"]["P98"]) >= 0.8 and max(max(report["seconds"][f"P{i}"]) for i in range(10)) < 0.5
+    check = subprocess.run([sys.executable, "-B", str(RUNNER), "check", str(program), str(kept), str(outputs)],
+                           capture_output=True, text=True, timeout=120)
+    assert check.stdout.strip().splitlines()[-1] == "10 of 10 cases pass"
+
+
+def test_the_recording_report_counts_outputs_equal_to_upstream_and_the_floor(tmp_path):
+    digest = hashlib.sha256(b"6\n").hexdigest()
+    kept = [{"id": "P1", "kind": "run", "upstream": digest}, {"id": "P2", "kind": "run", "upstream": digest},
+            {"id": "P3", "kind": "check"}]
+    cases = kept + [{"id": "P4", "kind": "modules"}, {"id": "P5", "kind": "run"}]
+    expected = {"P1": {"exit": 0, "stdout": "6\n"}, "P2": {"exit": 0, "stdout": "7\n"}, "P3": {"exit": 1, "stdout": ""}}
+    timing = {"keep_seconds": 0.5, "seconds": {"P1": [0.1, 0.2], "P2": [0.3, 0.1], "P3": [0.05, 0.05], "P4": [0.9, 0.8], "P5": [0.1, 2]},
+              "slow": ["P4"], "unsteady": ["P5"]}
+    for name, data in (("cases.json", {"cases": cases}), ("kept.json", {"cases": kept}), ("expected.json", expected), ("timing.json", timing)):
+        (tmp_path / name).write_text(json.dumps(data))
+    subprocess.run([sys.executable, "-B", str(STEP / "tests" / "verifier" / "recording.py"),
+                    *(str(tmp_path / name) for name in ("cases.json", "kept.json", "expected.json", "timing.json", "out.json"))],
+                   check=True, capture_output=True, timeout=60)
+    report = json.loads((tmp_path / "out.json").read_text())
+    assert report["run_cases_with_upstream_output"] == 2 and report["run_cases_printing_upstream_output"] == 1
+    assert report["empty_stdout_by_exit"] == {"1": 1} and report["kinds_kept"] == {"check": 1, "run": 2}
+    assert report["dropped_slow"] == {"modules": 1} and report["dropped_unsteady"] == {"run": 1}
+    assert report["kept_seconds_max"] == 0.3 and report["cases_kept"] == 3 and report["cases_recorded"] == 5
 
 
 # ---------------------------------------------------------------- hardening and images
