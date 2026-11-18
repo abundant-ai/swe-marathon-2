@@ -436,7 +436,7 @@ def test_recorder_keeps_only_cases_that_finish_the_same_way_twice_and_soon(tmp_p
     done = subprocess.run([sys.executable, "-B", str(RUNNER), "record", str(program), str(source), str(outputs), "--keep", str(kept)],
                           capture_output=True, text=True, timeout=120)
     assert done.returncode != 0 and "2 did not finish the same way twice" in done.stdout + done.stderr
-    cases = cases[:2] + [cases[4]] * 8
+    cases = cases[:2] + [dict(cases[4], files={f"f{index}.goose": ""}) for index in range(8)]
     for index, case in enumerate(cases):
         cases[index] = dict(case, id=f"P{index}")
     cases += [{"id": "P98", "files": {}, "argv": ["lag"], "stdin": None}, {"id": "P99", "files": {}, "argv": ["help"], "stdin": None}]
@@ -453,24 +453,142 @@ def test_recorder_keeps_only_cases_that_finish_the_same_way_twice_and_soon(tmp_p
     assert check.stdout.strip().splitlines()[-1] == "10 of 10 cases pass"
 
 
-def test_the_recording_report_counts_outputs_equal_to_upstream_and_the_floor(tmp_path):
+FAKE_COMPILER = """#!/usr/bin/env python3
+import os, signal, sys
+args = sys.argv[1:]
+if args[:2] == ["format", "-"]:
+    sys.stdout.write(sys.stdin.read().replace("  ", " "))
+    sys.exit(0)
+text = open(args[1]).read() if len(args) > 1 and os.path.exists(args[1]) else ""
+if "CRASH" in text:
+    sys.stderr.write("internal error: boom\\n")
+    sys.exit(2)
+if "SEGV" in text:
+    os.kill(os.getpid(), signal.SIGSEGV)
+if args[0] == "check":
+    print('[{"severity": "error", "message": "bad thing"}]' if "BAD" in text else "[]")
+    sys.exit(1 if "BAD" in text else 0)
+if args[0] == "format":
+    print(sorted(os.listdir(".")), open("a.goose").read() if os.path.exists("a.goose") else "")
+    sys.exit(0)
+if "ABORT" in text:
+    sys.exit(1)
+print(text.split()[0] if text.split() else "")
+"""
+
+
+def test_the_recorder_settles_each_case_by_its_rule_and_drops_crashes(tmp_path):
+    program = tmp_path / "fake-goose"
+    program.write_text(FAKE_COMPILER)
+    program.chmod(0o755)
+    run = lambda i, text, **plan: {"id": f"P{i}", "files": {"main.goose": text}, "argv": ["run", "main.goose"],  # noqa: E731
+                                   "stdin": None, **({"record": plan} if plan else {})}
+    cases = [run(1, "ABORT one", variants=[{"main.goose": "two"}, {"main.goose": "base"}], want="same"),
+             run(2, "CRASH", variants=[{"main.goose": "base2"}], want="same", complete=True),
+             {"id": "P3", "files": {"main.goose": "fine"}, "argv": ["check", "main.goose", "--diagnostics", "json"], "stdin": None,
+              "record": {"variants": [{"main.goose": "fine too"}, {"main.goose": "BAD"}], "want": "diagnostics"}},
+             run(4, "x", variants=[{"main.goose": "ABORT"}], want="same", complete=True),
+             {"id": "P5", "files": {"a.goose": "x  y", "b.goose": "p  q"}, "argv": ["format", "--check", "."], "stdin": None,
+              "record": {"formatted": ["a.goose"]}},
+             run(6, "SEGV"), run(7, "CRASH"), run(8, "same", variants=[{"main.goose": "same"}], want="same"),
+             run(9, "plain"), {"id": "P10", "files": {}, "argv": ["help"], "stdin": None, "record": {"cli": True}}]
+    source, outputs, kept, timing = (tmp_path / name for name in ("cases.json", "outputs.json", "kept.json", "timing.json"))
+    source.write_text(json.dumps({"cases": cases}))
+    done = subprocess.run([sys.executable, "-B", str(RUNNER), "record", str(program), str(source), str(outputs), "--keep", str(kept),
+                           "--report", str(timing)], capture_output=True, text=True, timeout=120)
+    assert "crashed" in done.stdout + done.stderr and done.returncode != 0, "two crashes in ten cases fail the recording"
+    cases = [case for case in cases if case["id"] not in ("P6", "P7")] + [run(i, f"word{i}") for i in range(20, 120)]
+    source.write_text(json.dumps({"cases": cases + [run(6, "SEGV")]}))
+    done = subprocess.run([sys.executable, "-B", str(RUNNER), "record", str(program), str(source), str(outputs), "--keep", str(kept),
+                           "--report", str(timing)], capture_output=True, text=True, timeout=300)
+    assert done.returncode == 0, done.stdout + done.stderr
+    got = {case["id"]: case for case in json.loads(kept.read_text())["cases"]}
+    report = json.loads(timing.read_text())
+    assert got["P1"]["files"] == {"main.goose": "two"}, "the first candidate that ends as the base does and prints otherwise"
+    assert got["P2"]["files"] == {"main.goose": "base2"}, "a crashing candidate is passed over for the base"
+    assert got["P3"]["files"] == {"main.goose": "BAD"}, "a check is settled on the first edit that reports something"
+    assert "P4" not in got and report["dropped"]["base does not complete"] == ["P4"]
+    assert got["P5"]["files"] == {"a.goose": "x y", "b.goose": "p  q"}, "only the marked file is formatted"
+    assert report["crashed"] == ["P6"] and "P6" not in got
+    assert report["settled"]["P8"] == "variant 0, output as the base's" and report["cli"] == ["P10"]
+    assert all("record" not in case for case in got.values())
+
+
+def test_selection_drops_shared_answers_quoted_answers_and_free_cases():
+    report = verifier_call(textwrap.dedent("""
+        import json
+        from verifier import runcases
+        case = lambda i, argv, stdin=None, text="fn main() {}": {"id": f"P{i:04d}", "files": {"main.goose": text},
+                                                               "argv": argv, "stdin": stdin}
+        cases, outputs = [], {}
+        for i in range(600):   # run cases: 40 print nothing and exit 1, the rest print their own line
+            cases.append(case(i, ["run", "main.goose"]))
+            outputs[cases[-1]["id"]] = {"exit": 1, "stdout": ""} if i < 40 else {"exit": 0, "stdout": f"line {i}\\n"}
+        for i in range(600, 1000):   # check cases: 60 answer [], the rest report something of their own
+            cases.append(case(i, ["check", "main.goose", "--diagnostics", "json"]))
+            message = json.dumps([{"severity": "error", "message": f"unknown variable: name{i}"}])
+            outputs[cases[-1]["id"]] = {"exit": 0, "stdout": "[]\\n"} if i < 660 else {"exit": 1, "stdout": message + "\\n"}
+        cases.append(case(1000, ["format"], stdin="fn main() {}\\n"))
+        outputs["P1000"] = {"exit": 0, "stdout": "fn main() {}\\n"}
+        cases.append(case(1001, ["format"], stdin="// we hit unknown variable: name700 here\\nfn  main() {}\\n"))
+        outputs["P1001"] = {"exit": 0, "stdout": "// we hit unknown variable: name700 here\\nfn main() {}\\n"}
+        for i in range(1002, 1022):
+            cases.append(case(i, ["help", str(i)]))
+            outputs[cases[-1]["id"]] = {"exit": 1, "stdout": ""}
+        kept, dropped = runcases.select(cases, outputs, {f"P{i:04d}" for i in range(1002, 1022)})
+        free = runcases.free_cases(kept, outputs, {f"P{i:04d}" for i in range(1002, 1022)})
+        empty = sum(1 for c in kept if outputs[c["id"]] == {"exit": 1, "stdout": ""})
+        checks_empty = sum(1 for c in kept if outputs[c["id"]]["stdout"] == "[]\\n")
+        print(json.dumps({"kept": len(kept), "dropped": {k: len(v) for k, v in dropped.items()},
+                          "quoted": dropped.get("comment quotes an answer"), "echo": dropped.get("input already formatted"),
+                          "free": sum(map(len, free.values())), "empty": empty, "checks_empty": checks_empty,
+                          "checks": sum(1 for c in kept if c["argv"][0] == "check")}))
+    """))
+    assert report["quoted"] == ["P1001"] and report["echo"] == ["P1000"]
+    assert report["empty"] <= int(0.012 * 1020) + 20, "the command-line cases are never dropped"
+    assert report["checks_empty"] <= max(1, int(0.05 * report["checks"]))
+    assert report["free"] <= 0.045 * report["kept"], report
+    assert report["kept"] > 900
+
+
+def test_the_recording_report_counts_upstream_answers_and_the_baselines(tmp_path):
     digest = hashlib.sha256(b"6\n").hexdigest()
-    kept = [{"id": "P1", "kind": "run", "upstream": digest}, {"id": "P2", "kind": "run", "upstream": digest},
-            {"id": "P3", "kind": "check"}]
-    cases = kept + [{"id": "P4", "kind": "modules"}, {"id": "P5", "kind": "run"}]
-    expected = {"P1": {"exit": 0, "stdout": "6\n"}, "P2": {"exit": 0, "stdout": "7\n"}, "P3": {"exit": 1, "stdout": ""}}
-    timing = {"keep_seconds": 0.5, "seconds": {"P1": [0.1, 0.2], "P2": [0.3, 0.1], "P3": [0.05, 0.05], "P4": [0.9, 0.8], "P5": [0.1, 2]},
-              "slow": ["P4"], "unsteady": ["P5"]}
+    message = lambda text: hashlib.sha256(text.encode()).hexdigest()  # noqa: E731
+    run = {"files": {"main.goose": ""}, "argv": ["run", "main.goose"], "stdin": None}
+    check = {"files": {"main.goose": ""}, "argv": ["check", "main.goose", "--diagnostics", "json"], "stdin": None}
+    kept = [dict(run, id="P1", kind="run", upstream=digest), dict(run, id="P2", kind="run", upstream=digest),
+            dict(check, id="P3", kind="check", upstream_messages=[message("unknown variable: a")]),
+            dict(check, id="P6", kind="check", upstream_messages=[message("unknown variable: a"), message("other")]),
+            dict(run, id="P7", kind="run"), dict(run, id="P8", kind="run"),
+            {"id": "P9", "kind": "format", "files": {}, "argv": ["format"], "stdin": "x\n"},
+            {"id": "P10", "kind": "cli", "files": {}, "argv": ["help"], "stdin": None}]
+    cases = kept + [dict(run, id="P4", kind="modules"), dict(run, id="P5", kind="run")]
+    diagnostic = lambda text: json.dumps([{"severity": "error", "message": text}]) + "\n"  # noqa: E731
+    expected = {"P1": {"exit": 0, "stdout": "6\n"}, "P2": {"exit": 0, "stdout": "7\n"},
+                "P3": {"exit": 1, "stdout": diagnostic("unknown variable: a")},
+                "P6": {"exit": 1, "stdout": diagnostic("unknown variable: renamed")},
+                "P7": {"exit": 1, "stdout": ""}, "P8": {"exit": 1, "stdout": ""}, "P9": {"exit": 0, "stdout": "y\n"},
+                "P10": {"exit": 0, "stdout": "usage\n"}}
+    seconds = {i: [0.1, 0.2] for i in ("P1", "P2", "P3", "P6", "P7", "P8", "P9", "P10")}
+    timing = {"keep_seconds": 0.5, "seconds": dict(seconds, P4=[0.9, 0.8], P5=[0.1, 2]), "slow": ["P4"], "unsteady": ["P5"],
+              "crashed": [], "dropped": {"answer shared by many cases": ["P5"]}, "settled": {"P1": "variant 0"}, "cli": ["P10"]}
     for name, data in (("cases.json", {"cases": cases}), ("kept.json", {"cases": kept}), ("expected.json", expected), ("timing.json", timing)):
         (tmp_path / name).write_text(json.dumps(data))
+    (tmp_path / "link").write_text("static\n")
     subprocess.run([sys.executable, "-B", str(STEP / "tests" / "verifier" / "recording.py"),
-                    *(str(tmp_path / name) for name in ("cases.json", "kept.json", "expected.json", "timing.json", "out.json"))],
-                   check=True, capture_output=True, timeout=60)
+                    *(str(tmp_path / name) for name in ("cases.json", "kept.json", "expected.json", "timing.json", "out.json")),
+                    "--link", str(tmp_path / "link")], check=True, capture_output=True, timeout=60)
     report = json.loads((tmp_path / "out.json").read_text())
     assert report["run_cases_with_upstream_output"] == 2 and report["run_cases_printing_upstream_output"] == 1
-    assert report["empty_stdout_by_exit"] == {"1": 1} and report["kinds_kept"] == {"check": 1, "run": 2}
+    assert report["error_cases_with_upstream_messages"] == 2 and report["error_cases_all_messages_verbatim"] == 1
+    assert report["error_cases_some_message_verbatim"] == 1 and report["link"] == "static"
+    assert report["empty_stdout_by_exit"] == {"1": 2} and report["kinds_kept"] == {"check": 2, "cli": 1, "format": 1, "run": 4}
     assert report["dropped_slow"] == {"modules": 1} and report["dropped_unsteady"] == {"run": 1}
-    assert report["kept_seconds_max"] == 0.3 and report["cases_kept"] == 3 and report["cases_recorded"] == 5
+    assert report["dropped"] == {"answer shared by many cases": {"run": 1}} and report["settled"] == {"variant 0": 1}
+    baselines = report["baselines"]
+    assert baselines["print_nothing_exit_1"] == round(2 / 8, 4) and baselines["print_nothing_exit_0"] == 0
+    assert baselines["command_line_table_and_constants"] == round(3 / 8, 4), "the help case and the two silent runs"
+    assert baselines["formatter_only"] == round(4 / 8, 4)
 
 
 # ---------------------------------------------------------------- hardening and images
