@@ -491,7 +491,8 @@ def test_nothing_the_agent_sees_names_a_reference_answer_or_a_budget():
             "run_examples.py": RUNNER.read_text(), "task.toml": (TASK / "task.toml").read_text()}
     for name, text in seen.items():
         lowered = text.lower()
-        for word in ("oracle", "reference solution", "hidden", "grade", "grading", "working session", "fresh context", "hours"):
+        for word in ("oracle", "reference solution", "hidden", "grade", "grading", "working session", "fresh context", "hours",
+                     "candidate"):
             assert word not in lowered, (name, word)
     assert "#" not in seen["task.toml"]
     assert sorted(path.name for path in (TASK / "environment").iterdir()) == [".dockerignore", "Dockerfile"]

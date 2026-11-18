@@ -2,7 +2,7 @@
 optional standard input.
 
 Programs come from a checkout of aardappel/goose: its test suite and benchmark programs (never
-shipped to the candidate), its samples and the complete programs in its documentation (both
+shipped to the agent), its samples and the complete programs in its documentation (both
 shipped). Visible cases use the samples, the documentation's programs and a fixed 15% of the
 test and benchmark programs. Private cases use only the others, and leave out any of them that a
 shipped file already holds (comments and whitespace aside) or that equals a visible program; the
