@@ -90,4 +90,15 @@ cp ok.goose side/main.goose
 printf 'c_sources = ["evil.c"];\n' > side/main.build
 expect 1 "sidecar files are not supported" "$goose" run side/main.goose
 
+# Nothing writes C, the program's or the runtime's own: no goose build, no -o, --standalone,
+# --header, --emit-runtime or --gen-runtime-header.
+expect 1 "unknown option: --emit-runtime" "$goose" --emit-runtime runtime.c
+expect 1 "unknown option: --gen-runtime-header" "$goose" --gen-runtime-header
+expect 1 "unknown option: -o" "$goose" -o program.c ok.goose
+expect 1 "unknown option: --standalone" "$goose" --standalone ok.goose
+expect 1 "unknown option: --header" "$goose" --header program.h ok.goose
+expect 1 "goose build is not available" "$goose" build ok.goose
+written="$(find "$work" -name '*.c' -o -name program.h)"
+[ -z "$written" ] || fail "C was written: $written"
+
 echo "goose hardening verified: $goose"

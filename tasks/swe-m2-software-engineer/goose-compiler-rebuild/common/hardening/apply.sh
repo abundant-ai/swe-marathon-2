@@ -13,7 +13,8 @@ rm -f stdlib/os.goose stdlib/ffi.goose
 for file in src/parser.h src/main.cpp src/packages.h src/jit.h; do
     grep -q "Hardened build" "$file" || { echo "hardening patch missing from $file" >&2; exit 1; }
 done
-if grep -qE 'getenv\("GOOSE_(TCCLIB|STDLIB)"\)|arg == "(-D|--include|--stdlib|--unsafe-no-rf-check)"' src/jit.h src/main.cpp; then
+if grep -qE 'getenv\("GOOSE_(TCCLIB|STDLIB)"\)|arg == "(-D|-o|--include|--stdlib|--unsafe-no-rf-check|--standalone|--header|--emit-runtime|--gen-runtime-header)"' src/jit.h src/main.cpp \
+    || ! grep -q 'goose build is not available' src/main.cpp; then
     echo "hardening patch incomplete" >&2
     exit 1
 fi

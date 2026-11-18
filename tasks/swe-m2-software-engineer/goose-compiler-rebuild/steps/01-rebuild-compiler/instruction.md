@@ -19,8 +19,10 @@ scripts act on its exit codes. A different output, message or position breaks th
   like. You cannot read the file, copy it or inspect it; you can only execute it.
 - It is our deployment build, which differs from the documentation in a few places: its
   standard library has no `os` and no `ffi` module, it refuses `extern` declarations outside
-  the standard library's own files, it reads no sidecar `.build` files, and it has no `-D`,
-  `--include`, `--stdlib` or `--unsafe-no-rf-check` option.
+  the standard library's own files, it reads no sidecar `.build` files, it has no `-D`,
+  `--include`, `--stdlib` or `--unsafe-no-rf-check` option, and nothing in it writes C: there
+  is no `goose build` and no `-o`, `--standalone`, `--header`, `--emit-runtime` or
+  `--gen-runtime-header` option.
 - Its documentation is in `/app/docs`: the README, a tutorial, the language reference and
   specification, the standard library, the command line (`docs/command_line.md`), design notes,
   and sample programs (`samples/`). `goose help` and `goose help <command>` describe the

@@ -444,11 +444,14 @@ def test_the_hardening_patch_applies_and_its_refusals_are_the_ones_the_build_pro
     smoke = (HARDENING / "smoke.sh").read_text()
     assert sorted(re.findall(r"^diff --git a/(\S+)", patch, re.M)) == ["src/jit.h", "src/main.cpp", "src/packages.h", "src/parser.h"]
     for gone in ('getenv("GOOSE_TCCLIB")', 'getenv("GOOSE_STDLIB")', 'arg == "-D"', 'arg == "--include"', 'arg == "--stdlib"',
-                 'arg == "--unsafe-no-rf-check"', 'cands.push_back("stdlib/")'):
+                 'arg == "--unsafe-no-rf-check"', 'cands.push_back("stdlib/")', 'arg == "-o"', 'arg == "--standalone"',
+                 'arg == "--header"', 'arg == "--emit-runtime"', 'arg == "--gen-runtime-header"', "RuntimeObjectSource()"):
         assert gone in removed and gone not in added, gone
-    for message in ("extern fn is only allowed in the standard library", "sidecar files are not supported"):
+    for message in ("extern fn is only allowed in the standard library", "sidecar files are not supported",
+                    "goose build is not available"):
         assert message in added and message in smoke
-    for option in ("-D", "--include", "--stdlib", "--unsafe-no-rf-check"):
+    for option in ("-D", "--include", "--stdlib", "--unsafe-no-rf-check", "-o", "--standalone", "--header", "--emit-runtime",
+                   "--gen-runtime-header"):
         assert f'"unknown option: {option}' in smoke, option
     for refused in ("GOOSE_TCCLIB", "GOOSE_STDLIB", "cannot find the module os", "cannot find the module ffi", "main.build"):
         assert refused in smoke, refused
