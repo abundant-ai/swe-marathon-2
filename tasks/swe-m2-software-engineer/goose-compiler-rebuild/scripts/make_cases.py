@@ -1,20 +1,29 @@
 """Generate the cases for the Goose compiler rebuild: one or a few Goose files, a command line and
 optional standard input.
 
-Programs come from a checkout of aardappel/goose: its test suite and benchmark programs (never
-shipped to the agent), its samples and the complete programs in its documentation (both
-shipped). Visible cases use the samples, the documentation's programs and a fixed 15% of the
-test and benchmark programs. Private cases use only the others, and leave out any of them that a
-shipped file already holds (comments and whitespace aside) or that equals a visible program; the
-generator refuses to write a private case whose input an agent could know.
+Programs come from a checkout of aardappel/goose: its test suite and benchmark programs, with
+LangArena's benchmarks (bench/kostya) each run by a program of its own (none of them shipped to
+the agent), its samples and the complete programs in its documentation (both shipped). Visible
+cases use the samples, the documentation's programs and a fixed 15% of the other programs'
+families (variants of one another go to one side together), adjusted so that both sides have
+programs whose check prints warnings and programs of every library module. Private cases use
+only the others, and leave out any that a shipped file already holds (comments and whitespace
+aside) or that equals a visible program; the generator refuses to write a private case whose
+input an agent could know.
 
 Comments are removed from a program before it runs or is checked: the error tests name the error
-they expect in comments, and many run tests write their output after each `print`. Every case is
-then changed in ways that keep its meaning and change its answer: identifiers renamed
-consistently, blank lines and indentation added so that positions move, and for most run cases
-literals changed so that the output follows. A format input keeps every token of its program
-and gets comments back: the program's own where no other case is built on that program, neutral
-ones otherwise. Expected outputs are NOT produced here: they are recorded from the original
+they expect in comments, and many run tests write their output after each `print`. Each case is
+then edited the way people edit a program, so that most answers differ from what upstream
+publishes: names renamed to ordinary words (first those its expected messages mention), blank
+lines and indentation added so that positions move, and for run cases literals and printed
+words changed, never in an assert, a size or an index. A run case carries up to three such
+edits, and a check case on a program broken on purpose three breaking edits, for the recorder to
+choose from (runcases.settle); recording.json counts the answers that are still upstream's. A
+format input keeps every token of its program but a trailing comma and gets comments back: the
+program's own where no other case is built on its family (less those upstream's test runner
+reads and those quoting an answer upstream publishes), comments of the kind people write
+otherwise; and the layout a person leaves before formatting, except a file a --check workspace
+has formatted first. Expected outputs are NOT produced here: they are recorded from the original
 compiler on Linux when the images are built.
 
 usage: make_cases.py <goose checkout> --count 1800 --seed N --visible 300 --out-private P --out-visible V
@@ -47,27 +56,103 @@ THREADS = {"thread_fn", "thread_spawn", "thread_spawn_contained", "thread_wait",
 BENCH_N = re.compile(r"^(\s*let\s+(\w+)\s*=\s*)(\d+)(\s*;\s*//\s*BENCH_N.*)$", re.M)
 VISIBLE_SHARE = 0.15
 # Draws per case, both sides alike; the command line has a fixed list of its own (CLI_*).
-KINDS = (("run", 0.315), ("library", 0.04), ("modules", 0.03), ("rejected", 0.08), ("check", 0.375), ("format", 0.16))
-COMMANDS = ["run", "build", "check", "fetch", "format", "toolchain", "version", "lsp", "completion", "help"]
-# One case for each command-line behaviour, on the private side; the visible side shows a few.
-CLI_PRIVATE = [["version"], ["--version"], ["help"], *[["help", c] for c in COMMANDS], ["help", "c"], ["help", "internals"],
-               ["run", "--help"], ["check", "-h"], ["format", "--help"],
-               ["completion", "bash"], ["completion", "zsh"], ["completion", "fish"], ["completion", "powershell"],
-               ["completion"], ["completion", "tcsh"], ["biuld", "main.goose"], ["chekc", "main.goose"], ["frobnicate"],
-               ["help", "nonsense"], ["run", "missing.goose"], ["check", "missing.goose"], ["check"],
-               ["format", "--check", "missing.goose"], ["check", "main.goose", "--bogus"],
-               ["run", "main.goose", "--diagnostics", "xml"], ["run", "main.goose", "-O7"], ["run", "main.goose", "-o", "out.c"]]
+KINDS = (("run", 0.33), ("library", 0.05), ("modules", 0.08), ("rejected", 0.08), ("check", 0.395), ("format", 0.065))
+# One case for each command-line behaviour of the commands in scope, on the private side, none of
+# them an argument list the visible side shows or an alias of one; the visible side shows a few.
+CLI_PRIVATE = [["help", "check"], ["help", "completion"], ["help", "version"], ["help", "c"], ["help", "internals"],
+               ["check", "-h"], ["completion", "zsh"], ["completion", "fish"], ["completion", "powershell"], ["completion"],
+               ["completion", "tcsh"], ["chekc", "main.goose"], ["frobnicate"], ["help", "nonsense"],
+               ["check", "missing.goose"], ["check"], ["format", "--check", "missing.goose"],
+               ["run", "main.goose", "--diagnostics", "xml"], ["run", "main.goose", "-O7"]]
 CLI_VISIBLE = [["version"], ["help"], ["help", "run"], ["help", "format"], ["completion", "bash"], ["biuld", "main.goose"],
                ["run", "missing.goose"], ["check", "main.goose", "--bogus"]]
+# LangArena's benchmarks (bench/kostya), each run by a program of its own: the suite's dispatch
+# for it, with the suite's harness (bench.goose) replaced by KOSTYA_BENCH, a fixed configuration
+# and no clock, and its helper's C library externs by the standard library's formatter. Left out:
+# the harness and its runner, brainfuck (its programs come from the configuration file) and matmul
+# (threads).
+KOSTYA = "bench/kostya/goose/src"
+KOSTYA_LEFT_OUT = {"bench", "helper", "main", "brainfuck_array", "brainfuck_recursion", "matmul"}
+KOSTYA_CONFIG = {"iterations": 2, "warmup_iterations": 1, "depth": 6, "n": 7, "size": 160, "rows": 40, "h": 24, "w": 32,
+                 "operations": 40, "count": 24, "values": 64, "lines_count": 60, "limit": 3000, "word_len": 5, "words": 80,
+                 "coords": 24, "vertices": 120, "jumps": 3, "jump_len": 5}
+KOSTYA_BENCH = """// The suite's run loop with a fixed configuration in place of its JSON file, and no clock: a
+// benchmark is prepared, warmed up and run, and its checksum returned.
+
+import std;
+import helper;
+
+struct Bench { name: const u8[:], iterations: i64, warmup: i64, time: f64 }
+
+fn config_i64(bench: u8[:], key: u8[:]) -> i64 {
+@CONFIG@
+    return 8;
+}
+
+fn make_bench(name: const u8[:]) -> Bench {
+    return Bench { name: name, iterations: config_i64(name, "iterations"), warmup: config_i64(name, "warmup_iterations"),
+                   time: 0.0 };
+}
+
+// The Benchmark class's prepare, warmup, run and checksum, with the helper's random numbers
+// reset as the other runners reset them. P, R and C are the benchmark's prepare, run and
+// checksum; its warmup runs R.
+fn execute<P, R, C, B>(b: Bench&, s: B&) -> u32 {
+    fn warmup(t: B&, iterations: i64) { for i in iterations { R(t, i); } }
+    return execute_with_warmup(b, s, P, warmup, R, C);
+}
+
+// The same for a benchmark with a warmup of its own, W(s, iterations).
+fn execute_with_warmup<P, W, R, C, B>(b: Bench&, s: B&) -> u32 {
+    reset();
+    P(s);
+    W(s, b.warmup);
+    reset();
+    for i in b.iterations { R(s, i); }
+    return C(s);
+}
+"""
+KOSTYA_FORMAT_FIXED = """// --- fixed-point float text --------------------------------------------------
+
+// `v` with `decimals` digits after the point, as the standard library writes it.
+fn format_fixed(out: u8[>..]&, v: f64, decimals: i64) {
+    format_flt(out, v, decimals);
+}
+"""
 # Names a rename never touches, besides every name in the standard library and the compiler's builtins.
 RESERVED = {"main", "it", "_", "inline", "checkfree", "root", "from", "has_default", "same", "upto"}
-WORDS = ["amber", "basil", "cedar", "delta", "ember", "fennel", "garnet", "hazel", "indigo", "juniper", "kestrel",
-         "lichen", "marlin", "nutmeg", "ochre", "pepper", "quartz", "russet", "saffron", "tamarind", "umber", "violet",
-         "walnut", "yarrow", "zircon"]
-PHRASES = ["keep this simple", "see the notes above", "checked by hand", "kept for later", "a small helper",
-           "the main loop", "order matters here", "edge case", "fast path", "slow path", "setup", "bookkeeping",
-           "tidy up later", "same as before", "worth a second look", "left as it was", "one more step",
-           "kept short on purpose", "the usual case", "nothing special here"]
+# The words a renamed identifier is made of: ordinary names, alone or two together, in the
+# original's case (snake_case, CamelCase or UPPER_CASE).
+NOUNS = ["count", "cursor", "holder", "scratch", "entry", "limit", "offset", "pending", "row", "column", "cell", "item",
+         "node", "slot", "page", "chunk", "token", "frame", "batch", "span", "block", "record", "field", "pair", "edge",
+         "step", "level", "depth", "width", "height", "total", "score", "weight", "mark", "label", "result", "buffer",
+         "queue", "table", "grid", "tree", "shape", "point", "color", "pixel", "word", "line", "digit", "amount", "price",
+         "order", "unit", "piece", "card", "player", "round", "tile", "room", "route", "stop", "client", "request",
+         "reply", "message", "event", "task", "job", "worker", "timer", "tick", "rate", "ratio", "gap", "margin", "bucket",
+         "window", "cache", "state", "target", "source", "origin", "anchor", "parent", "child", "owner", "group", "range"]
+ADJECTIVES = ["next", "prev", "last", "first", "base", "head", "tail", "left", "right", "top", "inner", "outer", "raw",
+              "old", "new", "temp", "local", "max", "min", "mid", "low", "high", "full", "spare", "extra", "start", "end",
+              "best", "main", "total", "open", "free", "used", "seen"]
+# Comments a developer writes, for a format input whose program's own comments cannot be used:
+# alone, or about one or two of the program's names ({a}, {b}), or before a function ({f}).
+PHRASES = ["may be empty", "sorted by key", "one entry per line", "see above", "cheap enough here", "keep this small",
+           "order matters", "not used yet", "assumes the input is not empty", "fast path", "slow path, rarely taken",
+           "first pass", "second pass", "bounds checked below", "runs once", "no allocation here", "reused below",
+           "the caller owns this", "TODO: tidy this up", "TODO: handle the empty case", "FIXME: quadratic for large inputs",
+           "hot loop", "simplest thing that works", "keeps the old behaviour", "wraps around", "inclusive range",
+           "exclusive end", "updated in place", "a copy, not a view", "keeps the order stable", "counted from zero",
+           "never negative here", "see the spec", "for debugging", "stops at the first match", "in bytes", "one per item"]
+NAME_PHRASES = ["{a} may be empty", "{a} is sorted here", "reset {a} each round", "{a} holds the running total",
+                "see {a} below", "{a} only grows here", "{a} starts at zero", "{a} comes from above",
+                "{a} is owned by the caller", "updates {a} in place", "{a} and {b} change together",
+                "{a} is never null here", "check {a} first", "{a} is reused below", "{a} before {b}"]
+DOC_PHRASES = ["{f} walks the input once.", "{f} is called once per item.", "Helper used by main.",
+               "{f}: the simple version.", "Kept apart so main stays short.", "{f} returns early on bad input.",
+               "{f} does the real work.", "See main for how {f} is used."]
+# Comments upstream's test runner reads, never kept in a program's own comments: expected errors
+# and warnings, defines, specs, bounds-check annotations, and first-line run markers.
+MARKERS = re.compile(r"//\s*(error:|warning:|runtime-define:|spec\b|bce:)")
+FIRST_LINE_MARKERS = re.compile(r"//\s*(runtime-debug|dump-runtime|all-levels|no-jit|parse-only|lsp)\b")
 
 
 # ---------------------------------------------------------------- lexer (src/lexer.h)
@@ -230,12 +315,13 @@ def _code_part(line: str) -> str:
     return line
 
 
-def strip_comments(text: str) -> str:
-    """The text without comments: a line that held only comments goes, and so does a run of
-    blank lines beyond one. Text that does not lex (Markdown, a broken test) loses its `//`
-    comments line by line and its `/* */` comments by pattern."""
+def strip_comments(text: str, drop=lambda comment, first: True) -> str:
+    """The text without the comments `drop` picks (all by default; it is given each comment's
+    text and whether it starts the file): a line that held only such comments goes, and so does
+    a run of blank lines beyond one. Text that does not lex (Markdown, a broken test) loses its
+    `//` comments line by line and its `/* */` comments by pattern."""
     try:
-        spans = [(t.start, t.end) for t in lex(text) if t.kind == "comment"]
+        spans = [(t.start, t.end) for t in lex(text) if t.kind == "comment" and drop(t.text, "\n" not in text[:t.start])]
     except LexError:
         lines = [_code_part(line) for line in text.split("\n") if not line.strip().startswith("//")]
         text = re.sub(r"/\*.*?\*/", "", "\n".join(lines), flags=re.S)
@@ -256,6 +342,13 @@ def strip_comments(text: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip("\n") + "\n"
 
 
+def strip_markers(text: str) -> str:
+    """The text without the comments upstream's test runner reads (MARKERS, FIRST_LINE_MARKERS),
+    its prose comments kept."""
+    return strip_comments(text, lambda comment, first: bool(MARKERS.match(comment) or
+                                                             first and FIRST_LINE_MARKERS.match(comment)))
+
+
 def normalise(text: str) -> str:
     """A text as compared with what ships: without comments and without any whitespace."""
     return re.sub(r"\s+", "", strip_comments(text))
@@ -269,9 +362,31 @@ class Program(NamedTuple):
     files: dict[str, str]     # Case-relative path to source text, comments included; main.goose first.
     warnings: bool            # The source declares warnings its check prints (`// warning:`).
     expected: str | None      # The sha256 of upstream's expected standard output, where it has one.
+    messages: tuple[str, ...] = ()   # The errors and warnings its comments name (`// error:`, `// warning:`).
+    complete: bool = False    # Upstream expects it to run to the end: exit 0.
+    silent: bool = False      # Upstream expects it to abort before printing anything.
+    edit: tuple[str, ...] = ("main.goose",)   # The files an edit of its literals may touch.
 
     def stripped(self) -> dict[str, str]:
         return {name: strip_comments(text) for name, text in self.files.items()}
+
+    def lines(self) -> int:
+        return sum(1 for text in self.files.values() for line in text.split("\n") if line.strip())
+
+
+def family(key: str) -> str:
+    """The programs written as variants of one another, which go to one side together: a test with
+    the same name but its last word, a benchmark with the same first word, or one LangArena program."""
+    if key.startswith("test/"):
+        directory, _, name = key[len("test/"):].rpartition("/")
+        stem = name[:-len(".goose")]
+        # The standard library's tests are named stdlib_<module>: each module's test is its own.
+        return f"test/{directory}/{stem if directory == 'stdlib' else stem.rsplit('_', 1)[0]}"
+    if key.startswith("bench/goose/"):
+        return "bench/" + key[len("bench/goose/"):].split("_", 1)[0].split(".", 1)[0]
+    if key.startswith(f"{KOSTYA}#"):  # the programs that share a module of their own are one family
+        return "kostya/" + key.split("#", 1)[1].split("_", 1)[0].split("+", 1)[0]
+    return key
 
 
 def imports(text: str) -> list[str]:
@@ -342,6 +457,66 @@ def scale_bench(text: str, rng: random.Random) -> str:
     return BENCH_N.sub(smaller, text, count=1)
 
 
+def kostya_programs(checkout: Path) -> list[Program]:
+    """LangArena's benchmarks as programs: for each group of the runner's dispatch blocks that use
+    the same benchmark modules, a main.goose with those blocks and a main that runs every
+    benchmark they name once and prints its checksum; KOSTYA_BENCH as bench.goose; the helper
+    without its C library externs; and the modules, with the local modules they import."""
+    src = checkout / KOSTYA
+    if not (src / "main.goose").is_file():
+        return []
+    runner = (src / "main.goose").read_text(encoding="utf-8")
+    head = "fn dispatch(b: Bench&) -> u32, bool {\n    let n = b.name;\n"
+    body = runner[runner.index(head) + len(head):runner.index("    return 0, false;\n}", runner.index(head))]
+    modules = {path.stem for path in src.glob("*.goose")}
+    blocks, current, depth = [], [], 0
+    for line in body.split("\n"):
+        if not current and not line.startswith("    if "):
+            continue
+        current.append(line)
+        toks = code(lex(strip_comments(line))) if line.strip() else []
+        depth += sum(1 for kind, text in toks if text == "{") - sum(1 for kind, text in toks if text == "}")
+        if depth == 0:
+            blocks.append("\n".join(current))
+            current = []
+    grouped: dict[frozenset, list[str]] = {}
+    for block in blocks:
+        used = frozenset(name for name in re.findall(r"\b(\w+)::", block) if name in modules)
+        if used and not used & KOSTYA_LEFT_OUT:
+            grouped.setdefault(used, []).append(block)
+    config = "\n".join(f'    if key == "{key}" {{ return {value}; }}' for key, value in KOSTYA_CONFIG.items())
+    harness = KOSTYA_BENCH.replace("@CONFIG@", config)
+    helper = (src / "helper.goose").read_text(encoding="utf-8")
+    helper = helper[:helper.index("// --- exact fixed-point float text")] + KOSTYA_FORMAT_FIXED
+    found = []
+    for used, chosen in sorted(grouped.items(), key=lambda item: sorted(item[0])):
+        names = list(dict.fromkeys(name for block in chosen for name in re.findall(r'n == "([^"]+)"', block)))
+        files = {"bench.goose": harness, "helper.goose": helper}
+        todo = sorted(used)
+        while todo:
+            name = todo.pop()
+            if f"{name}.goose" in files:
+                continue
+            text = (src / f"{name}.goose").read_text(encoding="utf-8")
+            if not usable(text, local=True, module=True):
+                break
+            files[f"{name}.goose"] = text
+            todo += [i for i in imports(text) if i in modules and i not in ("bench", "helper")]
+        else:
+            calls = "\n".join(f'    var b{i} = make_bench("{name}");\n    let sum{i}, found{i} = dispatch(b{i});\n'
+                              f'    assert(found{i});\n    print("{name}: ", sum{i});' for i, name in enumerate(names))
+            main = (f"// LangArena's {', '.join(names)}, run with the fixed configuration of bench.goose:\n"
+                    "// each prints its checksum.\n\nimport std;\nimport slice_pool;\nimport bench;\nimport helper;\n"
+                    + "".join(f"import {name};\n" for name in sorted(used)) + "\n"
+                    "// The checksum of one benchmark, or false for a name with no implementation.\n"
+                    + head + "\n".join(chosen) + "\n    return 0, false;\n}\n\nfn main() {\n" + calls + "\n}\n")
+            if usable(main, local=True):
+                key = f"{KOSTYA}#{'+'.join(sorted(used))}"
+                found.append(Program(key, "run", {"main.goose": main, **dict(sorted(files.items()))}, False, None,
+                                     complete=True, edit=tuple(f"{name}.goose" for name in sorted(used))))
+    return found
+
+
 def doc_programs(checkout: Path) -> list[str]:
     """Complete programs (with a main) from the documentation, skipping fragments and check-only blocks."""
     programs = []
@@ -376,14 +551,19 @@ def pools(checkout: Path) -> list[Program]:
                 files = module_files(path, path.parent)
                 if files is None:
                     continue
+                aborts = (tests / "expected" / f"{path.stem}.aborts").is_file()
+                silent = aborts and expected(path.stem).is_file() and not expected(path.stem).read_text().strip()
+                messages = tuple(re.findall(r"//\s*(?:error|warning):\s*(.*?)\s*$", text, re.M))
                 found.append(Program(f"test/{directory}/{path.name}", role, files, "// warning:" in text,
-                                     digest(path.stem) if role == "run" else None))
+                                     digest(path.stem) if role == "run" else None, messages,
+                                     role == "run" and not aborts, bool(silent)))
     for path in sorted((checkout / "bench" / "goose").glob("*.goose")):
         text = path.read_text(encoding="utf-8", errors="replace")
         if BENCH_N.search(text) and "fn main" in text:
             files = module_files(path, path.parent)
             if files is not None:
-                found.append(Program(f"bench/goose/{path.name}", "run", files, False, None))
+                found.append(Program(f"bench/goose/{path.name}", "run", files, False, None, complete=True))
+    found += kostya_programs(checkout)
     for path in sorted((checkout / "samples").glob("*.goose")):
         text = path.read_text(encoding="utf-8", errors="replace")
         if usable(text) and "fn main" in text:
@@ -393,10 +573,28 @@ def pools(checkout: Path) -> list[Program]:
     return found
 
 
-def visible_program(key: str) -> bool:
-    if not key.startswith(("test/", "bench/")):
-        return True
-    return int(hashlib.sha256(key.encode()).hexdigest()[:8], 16) / 0xFFFFFFFF < VISIBLE_SHARE
+def share(name: str) -> float:
+    return int(hashlib.sha256(name.encode()).hexdigest()[:8], 16) / 0xFFFFFFFF
+
+
+def visible_families(programs: list[Program]) -> set[str]:
+    """The families (`family`) on the visible side: the samples and the documentation's programs,
+    and a fixed VISIBLE_SHARE of the others by the hash of their family's name, adjusted so that
+    each side keeps some of every kind the cases test on purpose. Programs whose check prints
+    warnings get at least three visible families of their own, and every library module keeps a
+    private family, and a visible one where it has two or more."""
+    families = {family(p.key) for p in programs if p.key.startswith(("test/", "bench/"))}
+    visible = {name for name in families if share(name) < VISIBLE_SHARE}
+    warned = sorted({family(p.key) for p in programs if p.warnings}, key=share)
+    visible |= set(warned[:max(3, round(VISIBLE_SHARE * len(warned)))])
+    for module in sorted(LIBRARY):
+        using = sorted({family(p.key) for p in programs if p.key.startswith(("test/", "bench/")) and
+                        any(module in imports(text) for text in p.files.values())}, key=share)
+        if using and all(name in visible for name in using):
+            visible.discard(using[-1])
+        if len(using) >= 2 and not any(name in visible for name in using):
+            visible.add(using[0])
+    return visible | {family(p.key) for p in programs if not p.key.startswith(("test/", "bench/"))}
 
 
 def protected_names(checkout: Path) -> set[str]:
@@ -431,12 +629,20 @@ def inputs(case: dict) -> list[str]:
     return list(case["files"].values()) + ([case["stdin"]] if case["stdin"] else [])
 
 
-def leaks(private: list[dict], visible: list[dict], shipped: str) -> list[str]:
+def shared_modules(checkout: Path) -> set[str]:
+    """The normalised texts of the modules many programs share as they are, which are no input of
+    a program's own: the benchmarks' random number module, and LangArena's harness and helper."""
+    texts = {normalise((checkout / "bench" / "goose" / "rng.goose").read_text(encoding="utf-8"))}
+    for program in kostya_programs(checkout)[:1]:
+        texts |= {normalise(program.files[name]) for name in ("bench.goose", "helper.goose")}
+    return texts
+
+
+def leaks(private: list[dict], visible: list[dict], shipped: str, shared: set[str]) -> list[str]:
     """The private cases with an input that, comments and whitespace aside, is in a shipped file
-    or is an input of a visible case. A local module a benchmark shares with the others is no
-    input of its own (`shared`, the modules' normalised texts)."""
+    or is an input of a visible case. A module many programs share unchanged is no input of its
+    own (`shared`, by content: shared_modules)."""
     seen = {normalise(text) for case in visible for text in inputs(case)}
-    shared = {normalise(text) for case in private + visible for name, text in case["files"].items() if name == "rng.goose"}
     found = []
     for case in private:
         if any(key and key not in shared and (key in seen or key in shipped) for key in map(normalise, inputs(case))):
@@ -462,89 +668,238 @@ def _same_tokens(old: str, new: str) -> bool:
         return False
 
 
-def relayout(rng: random.Random, text: str) -> str:
-    """The same tokens and comments with other whitespace between them: indentation, spaces
-    and tabs between tokens, blank lines and trailing spaces. Two tokens touch only where they
-    still lex apart, so no operator is ever split or made."""
+def _layout(text: str) -> tuple[list[Tok], list[str], list[int], dict[int, Tok]]:
+    """The text's tokens, its lines, where each line starts, and for each line that starts with a
+    token (not inside a raw string or a comment) that token."""
     toks = lex(text)
-    if len(toks) < 2:
-        return text
     starts = line_starts(text)
-    for _ in range(8):
-        out = [text[:toks[0].start], toks[0].text]
-        busy = {line for line in range(len(starts)) if rng.random() < 0.35}
-        for prev, cur in zip(toks, toks[1:]):
-            gap = text[prev.end:cur.start]
-            if "\n" in gap:
-                breaks = gap.count("\n") + (rng.randint(1, 2) if rng.random() < 0.06 else 0)
-                indent = gap.rsplit("\n", 1)[1]
-                roll = rng.random()
-                if roll < 0.15:
-                    indent = ""
-                elif roll < 0.30:
-                    indent = " " * rng.randint(1, 9)
-                elif roll < 0.38:
-                    indent = indent.replace("    ", "\t")
-                elif roll < 0.46:
-                    indent += " " * rng.randint(1, 3)
-                trailing = rng.choice([" ", "  ", "\t"]) if prev.kind != "comment" and rng.random() < 0.05 else ""
-                out.append(trailing + "\n" * breaks + indent)
-            elif bisect.bisect_right(starts, prev.end) - 1 in busy:
-                roll = rng.random()
-                if roll < 0.3 and gap and _glues(prev, cur):
-                    out.append("")
-                elif roll < 0.55:
-                    out.append(" " * rng.randint(2, 4))
-                elif roll < 0.65:
-                    out.append("\t")
-                elif roll < 0.8 and not gap and cur.kind != "comment":
-                    out.append(" ")
-                else:
-                    out.append(gap)
-            else:
-                out.append(gap)
-            out.append(cur.text)
-        out.append(text[toks[-1].end:])
-        new = "".join(out)
-        if new != text and _same_tokens(text, new):
-            return new
-    lines = text.split("\n")
-    at = next(i for i, line in enumerate(lines) if line.strip())
-    lines[at] = "   " + lines[at]
+    first: dict[int, Tok] = {}
+    for tok in toks:
+        line = bisect.bisect_right(starts, tok.start) - 1
+        if line not in first and text[starts[line]:tok.start].strip() == "":
+            first[line] = tok
+    return toks, text.split("\n"), starts, first
+
+
+def _ends_outside(text: str, toks: list[Tok], starts: list[int], line: int) -> bool:
+    """Whether the line ends outside any token (a raw string or a block comment)."""
+    end = starts[line + 1] - 1 if line + 1 < len(starts) else len(text)
+    return not any(t.start < end < t.end for t in toks)
+
+
+CLOSERS = {")", "]", "}"}
+OPERATORS = {"=", "==", "!=", "<=", ">=", "+", "-", "*", "/", "%", "+=", "-=", "*=", "/=", "&&", "||", "->", "=>"}
+
+
+def reindent(text: str, unit: str) -> str:
+    """Every indentation level of four spaces written as `unit` instead, where a line starts with a token."""
+    _, lines, _, first = _layout(text)
+    for line in first:
+        lead = len(lines[line]) - len(lines[line].lstrip(" "))
+        lines[line] = unit * (lead // 4) + " " * (lead % 4) + lines[line][lead:]
     return "\n".join(lines)
 
 
-def add_comments(rng: random.Random, text: str, count: int) -> str:
-    """Neutral comments where comments go: on lines of their own (documentation where a
-    declaration follows), after code (sometimes a run of them sharing a column), and as block
-    comments between tokens, nested now and then."""
-    toks = lex(text)
-    if not toks:
+def slip_compact(rng: random.Random, text: str, every: bool = False) -> str:
+    """No space around operators and after commas, on a line or two (or every line)."""
+    toks, _, starts, _ = _layout(text)
+    code_toks = [t for t in toks if t.kind != "comment"]
+    lines = {bisect.bisect_right(starts, t.start) - 1 for t in code_toks if t.text in OPERATORS | {","}}
+    if not lines:
         return text
-    starts = [i for i in range(len(toks)) if i == 0 or "\n" in text[toks[i - 1].end:toks[i].start]]
-    ends = [i for i in range(len(toks)) if toks[i].kind != "comment" and
-            (i + 1 == len(toks) or "\n" in text[toks[i].end:toks[i + 1].start])]
-    inner = [i for i in range(len(toks) - 1) if "\n" not in text[toks[i].end:toks[i + 1].start]
-             and toks[i].kind != "comment"]
+    chosen = lines if every else set(rng.sample(sorted(lines), min(len(lines), rng.randint(1, 2))))
+    cuts = []
+    for prev, cur in zip(code_toks, code_toks[1:]):
+        if text[prev.end:cur.start] != " " or bisect.bisect_right(starts, prev.start) - 1 not in chosen:
+            continue
+        if (cur.text in OPERATORS or prev.text in OPERATORS or prev.text == ",") and _glues(prev, cur):
+            cuts.append(prev.end)
+    for at in sorted(cuts, reverse=True):
+        text = text[:at] + text[at + 1:]
+    return text
+
+
+def slip_brackets(rng: random.Random, text: str) -> str:
+    """Spaces inside the brackets of a call or an index, on one line."""
+    toks, _, starts, _ = _layout(text)
+    code_toks = [t for t in toks if t.kind != "comment"]
+    spots = [k for k in range(len(code_toks) - 1) if code_toks[k].text in ("(", "[") and
+             code_toks[k + 1].text not in CLOSERS and code_toks[k].end == code_toks[k + 1].start]
+    if not spots:
+        return text
+    k = rng.choice(spots)
+    depth, j = 0, k
+    while j < len(code_toks):
+        depth += code_toks[j].text in ("(", "[", "{")
+        depth -= code_toks[j].text in CLOSERS
+        if depth == 0:
+            break
+        j += 1
+    if j >= len(code_toks) or "\n" in text[code_toks[k].start:code_toks[j].end]:
+        return text
+    close, open_ = code_toks[j], code_toks[k]
+    text = text[:close.start] + " " + text[close.start:]
+    return text[:open_.end] + " " + text[open_.end:]
+
+
+def slip_indent(rng: random.Random, text: str) -> str:
+    """A line indented a space or two off, or a run of lines left one level out or in."""
+    _, lines, _, first = _layout(text)
+    indented = sorted(line for line, tok in first.items() if lines[line].startswith("    ") and tok.text not in CLOSERS)
+    if not indented:
+        return text
+    if rng.random() < 0.5:
+        line = rng.choice(indented)
+        lines[line] = (" " * rng.choice([1, 2]) + lines[line]) if rng.random() < 0.6 else lines[line][rng.choice([1, 2]):]
+        return "\n".join(lines)
+    at = rng.randrange(len(indented))
+    run = [line for line in indented[at:at + rng.randint(2, 4)] if line - indented[at] < 6]
+    out = rng.random() < 0.5
+    for line in run:
+        lines[line] = lines[line][4:] if out else "    " + lines[line]
+    return "\n".join(lines)
+
+
+def slip_trailing(rng: random.Random, text: str) -> str:
+    """Trailing spaces at the end of a line or two."""
+    toks, lines, starts, _ = _layout(text)
+    spots = [k for k, line in enumerate(lines) if line.strip() and _ends_outside(text, toks, starts, k)]
+    for line in rng.sample(spots, min(len(spots), rng.randint(1, 2))):
+        lines[line] += rng.choice([" ", "  ", "   "])
+    return "\n".join(lines)
+
+
+def slip_blank(rng: random.Random, text: str) -> str:
+    """One blank line more where there is one already."""
+    toks, lines, starts, _ = _layout(text)
+    spots = [k for k, line in enumerate(lines) if not line.strip() and 0 < k < len(lines) - 1
+             and _ends_outside(text, toks, starts, k) and _ends_outside(text, toks, starts, k - 1)]
+    if not spots:
+        return text
+    at = rng.choice(spots)
+    lines.insert(at, "")
+    return "\n".join(lines)
+
+
+def slip_comma(rng: random.Random, text: str) -> str:
+    """The trailing comma left off a list whose closing bracket starts a line (the formatter adds it)."""
+    toks = [t for t in lex(text) if t.kind != "comment"]
+    spots = [prev for prev, cur in zip(toks, toks[1:]) if prev.text == "," and cur.text in CLOSERS
+             and "\n" in text[prev.end:cur.start]]
+    if not spots:
+        return text
+    comma = rng.choice(spots)
+    return text[:comma.start] + text[comma.end:]
+
+
+def slip_column(rng: random.Random, text: str) -> str:
+    """A column of a lined-up table or comment run off by a space or more."""
+    toks, _, starts, _ = _layout(text)
+    gaps = [(prev.end, cur.start) for prev, cur in zip(toks, toks[1:])
+            if cur.start - prev.end >= 2 and "\n" not in text[prev.end:cur.start]]
+    if not gaps:
+        return text
+    start, end = rng.choice(gaps)
+    width = max(1, end - start + rng.choice([-2, -1, 1, 2]))
+    return text[:start] + " " * width + text[end:]
+
+
+def slip_wrap(rng: random.Random, text: str) -> str:
+    """A long line broken after a comma inside brackets, the rest a level or two further in."""
+    toks, lines, starts, _ = _layout(text)
+    code_toks = [t for t in toks if t.kind != "comment"]
+    spots = []
+    for prev, cur in zip(code_toks, code_toks[1:]):
+        line = bisect.bisect_right(starts, prev.start) - 1
+        if prev.text == "," and text[prev.end:cur.start] == " " and len(lines[line]) >= 60:
+            spots.append((prev, line))
+    if not spots:
+        return text
+    comma, line = rng.choice(spots)
+    lead = len(lines[line]) - len(lines[line].lstrip(" "))
+    return text[:comma.end] + "\n" + " " * (lead + rng.choice([4, 8])) + text[comma.end + 1:]
+
+
+def slip_brace(rng: random.Random, text: str) -> str:
+    """A one-line block written tight against its braces: {x} for { x }."""
+    toks = [t for t in lex(text) if t.kind != "comment"]
+    spots = [(prev, cur) for prev, cur in zip(toks, toks[1:]) if text[prev.end:cur.start] == " " and
+             ((prev.text == "{" and cur.text != "}") or (cur.text == "}" and prev.text != "{")) and _glues(prev, cur)]
+    if not spots:
+        return text
+    prev, cur = rng.choice(spots)
+    return text[:prev.end] + text[cur.start:]
+
+
+SLIPS = (slip_compact, slip_brackets, slip_indent, slip_trailing, slip_blank, slip_comma, slip_column, slip_wrap, slip_brace)
+
+
+def disturb(rng: random.Random, text: str) -> str:
+    """The file as a person leaves it before running the formatter: in a style of its own throughout
+    (two-space indentation, now and then tabs, operators written tight), or with a few slips
+    (SLIPS: a line or block indented off, spacing around an operator or inside brackets, a
+    trailing comma left off, a column out of line, a long line wrapped, trailing spaces, an extra
+    blank line). Every token stays but a trailing comma; the text is unchanged where nothing applies."""
+    for _ in range(10):
+        roll, new = rng.random(), text
+        if roll < 0.18:
+            new = reindent(text, "  ")
+            new = rng.choice(SLIPS)(rng, new) if rng.random() < 0.5 else new
+        elif roll < 0.22:
+            new = reindent(text, "\t")
+        elif roll < 0.28:
+            new = slip_compact(rng, text, every=True)
+        else:
+            for slip in rng.sample(SLIPS, rng.randint(1, 3)):
+                new = slip(rng, new)
+        if new != text and lexes(new) and [t for t in code(lex(new)) if t != ("punct", ",")] == \
+                [t for t in code(lex(text)) if t != ("punct", ",")]:
+            return new
+    return text
+
+
+def add_comments(rng: random.Random, text: str, count: int) -> str:
+    """Comments where people write them: a line of documentation before a function or a struct,
+    a note on a line of its own before a statement (indented as it, never before a closing
+    bracket), a note after a statement; and in one file in ten an argument's name in a block
+    comment before a literal argument."""
+    toks, lines, starts, first = _layout(text)
+    names = sorted({t.text for t in toks if t.kind == "ident" and len(t.text) > 2})
+    if not names:
+        return text
+    phrase = lambda: (rng.choice(NAME_PHRASES).format(a=rng.choice(names), b=rng.choice(names))  # noqa: E731
+                      if rng.random() < 0.4 else rng.choice(PHRASES))
+    code_toks = [t for t in toks if t.kind != "comment"]
+    after = {bisect.bisect_right(starts, t.start) - 1 for t in toks if t.kind == "comment"}
     edits: dict[int, str] = {}
-    phrase = lambda: rng.choice(PHRASES)  # noqa: E731
     for _ in range(count):
         roll = rng.random()
-        if roll < 0.4 and starts:
-            tok = toks[rng.choice(starts)]
-            indent = text[text.rfind("\n", 0, tok.start) + 1:tok.start]
-            edits.setdefault(tok.start, f"// {phrase()}\n{indent}")
-        elif roll < 0.8 and ends:
-            first = rng.randrange(len(ends))
-            run = ends[first:first + (rng.randint(2, 4) if rng.random() < 0.4 else 1)]
-            width = max(toks[i].end - (text.rfind("\n", 0, toks[i].end) + 1) for i in run)
-            for i in run:
-                column = toks[i].end - (text.rfind("\n", 0, toks[i].end) + 1)
-                edits.setdefault(toks[i].end, " " * (width - column + 2) + f"// {phrase()}")
-        elif inner:
-            tok = toks[rng.choice(inner)]
-            body = f"/* {phrase()} /* {phrase()} */ */" if rng.random() < 0.3 else f"/* {phrase()} */"
-            edits.setdefault(tok.end, f" {body} ")
+        if roll < 0.3:
+            spots = [(line, tok) for line, tok in first.items() if tok.text in ("fn", "struct", "enum") and
+                     not lines[line][:1].isspace() and line - 1 not in after]
+            if spots:
+                line, tok = rng.choice(spots)
+                index = code_toks.index(tok) if tok in code_toks else -1
+                name = code_toks[index + 1].text if 0 <= index < len(code_toks) - 1 else "it"
+                edits.setdefault(starts[line], "// " + rng.choice(DOC_PHRASES).format(f=name) + "\n")
+        elif roll < 0.65:
+            spots = [(line, tok) for line, tok in first.items() if lines[line][:1].isspace() and tok.text not in CLOSERS
+                     and tok.kind != "comment" and line - 1 not in after]
+            if spots:
+                line, tok = rng.choice(spots)
+                indent = lines[line][:len(lines[line]) - len(lines[line].lstrip())]
+                edits.setdefault(starts[line], f"{indent}// {phrase()}\n")
+        else:
+            spots = [k for k, line in enumerate(lines) if line.rstrip().endswith((";", "{")) and k not in after
+                     and len(line) < 72 and _ends_outside(text, toks, starts, k)]
+            if spots:
+                line = rng.choice(spots)
+                edits.setdefault(starts[line] + len(lines[line].rstrip()), rng.choice([" ", "  "]) + f"// {phrase()}")
+    if rng.random() < 0.1:
+        spots = [cur for prev, cur in zip(code_toks, code_toks[1:]) if prev.text in ("(", ",") and cur.kind == "int"]
+        if spots:
+            tok = rng.choice(spots)
+            edits.setdefault(tok.start, f"/*{rng.choice(NOUNS)}=*/")
     new = text
     for at in sorted(edits, reverse=True):
         new = new[:at] + edits[at] + new[at:]
@@ -555,35 +910,49 @@ def add_comments(rng: random.Random, text: str, count: int) -> str:
 
 
 def shift(rng: random.Random, text: str) -> str:
-    """Positions moved without touching a token: blank lines inserted before a line that starts
-    outside a token, and extra indentation on a run of such lines."""
-    toks = lex(text)
-    offsets = line_starts(text)
-    first_tok: dict[int, Tok] = {}
-    for tok in toks:
-        first_tok.setdefault(bisect.bisect_right(offsets, tok.start) - 1, tok)
-    lines = text.split("\n")
-    starts = [line for line, tok in sorted(first_tok.items()) if text[offsets[line]:tok.start].strip() == ""]
+    """Positions moved without touching a token: a blank line or two before a line that starts
+    with a token (never the first), and a run of such lines indented a level further."""
+    _, lines, _, first = _layout(text)
+    starts = sorted(line for line in first if line > 0)
     if not starts:
         return text
-    indent = rng.random() < 0.6
-    if rng.random() < 0.8 or not indent:
-        at = starts[0] if rng.random() < 0.7 else rng.choice([line for line in starts if not lines[line][:1].isspace()] or starts)
-        added = rng.randint(1, 3)
+    indent = rng.random() < 0.5
+    if rng.random() < 0.85 or not indent:
+        at = rng.choice(starts)
+        added = rng.choice([1, 1, 2])
         lines[at:at] = [""] * added
         starts = [line + added if line >= at else line for line in starts]
     if indent:
-        first = rng.randrange(len(starts))
-        pad = " " * rng.randint(1, 4)
-        for line in starts[first:first + rng.randint(1, 6)]:
-            lines[line] = pad + lines[line]
+        first_line = rng.randrange(len(starts))
+        for line in starts[first_line:first_line + rng.randint(1, 4)]:
+            lines[line] = "    " + lines[line]
     new = "\n".join(lines)
-    return new if _same_tokens(text, new) else text
+    return new if new != text and _same_tokens(text, new) else text
 
 
-def rename(rng: random.Random, files: dict[str, str], protected: set[str], count: int) -> tuple[dict[str, str], dict[str, str]]:
-    """The files with up to `count` of the program's own names replaced everywhere by fresh ones
-    that clash with nothing, keeping a leading underscore and the name's case."""
+def natural_name(rng: random.Random, word: str, taken: set[str]) -> str:
+    """An ordinary name for `word`, one or two words in its case (UPPER_CASE, CamelCase or
+    snake_case) and with its leading underscore, that clashes with nothing in `taken`; a number
+    is added only where every draw clashes."""
+    core = word.lstrip("_")
+    style = "upper" if core.isupper() else "camel" if core[:1].isupper() else "snake"
+    for attempt in range(40):
+        parts = [rng.choice(NOUNS)] if rng.random() < 0.45 else [rng.choice(ADJECTIVES + NOUNS), rng.choice(NOUNS)]
+        if len(parts) == 2 and parts[0] == parts[1]:
+            continue
+        name = ("_".join(parts).upper() if style == "upper" else "".join(part.capitalize() for part in parts)
+                if style == "camel" else "_".join(parts))
+        name = word[:len(word) - len(core)] + name + (str(attempt - 28) if attempt > 30 else "")
+        if name not in taken and name != word:
+            return name
+    raise SystemExit(f"no clash-free name for {word}")
+
+
+def rename(rng: random.Random, files: dict[str, str], protected: set[str], count: int,
+           prefer: tuple[str, ...] = ()) -> tuple[dict[str, str], dict[str, str]]:
+    """The files with `count` of the program's own names (first those in `prefer`, all of them,
+    where the program has them) replaced everywhere by ordinary ones that clash with nothing,
+    keeping a leading underscore and the name's case; in comments too, as whole words."""
     try:
         toks = {name: lex(text) for name, text in files.items()}
     except LexError:
@@ -592,23 +961,26 @@ def rename(rng: random.Random, files: dict[str, str], protected: set[str], count
     candidates = sorted({t.text for ts in toks.values() for t in ts if t.kind == "ident"} - protected - modules)
     if not candidates:
         return files, {}
-    taken = {t.text for ts in toks.values() for t in ts if t.kind in ("ident", "keyword")} | protected | modules
+    taken = {t.text for ts in toks.values() for t in ts if t.kind == "ident"} | protected | modules | KEYWORDS
+    first = [word for word in candidates if word in set(prefer)][:4]
+    rest = [word for word in candidates if word not in first]
     mapping: dict[str, str] = {}
-    for word in rng.sample(candidates, min(count, len(candidates))):
-        while True:
-            new = f"{rng.choice(WORDS)}{rng.randint(2, 99)}"
-            new = new.upper() if word.isupper() else new.capitalize() if word.lstrip("_")[:1].isupper() else new
-            new = "_" + new if word.startswith("_") else new
-            if new not in taken:
-                break
+    for word in first + rng.sample(rest, max(0, min(count, len(candidates)) - len(first))):
+        new = natural_name(rng, word, taken)
         taken.add(new)
         mapping[word] = new
+    if not mapping:
+        return files, {}
+    pattern = re.compile(r"\b(" + "|".join(map(re.escape, sorted(mapping, key=len, reverse=True))) + r")\b")
     out = {}
     for name, text in files.items():
         parts, pos = [], 0
         for tok in toks[name]:
             if tok.kind == "ident" and tok.text in mapping:
                 parts += [text[pos:tok.start], mapping[tok.text]]
+                pos = tok.end
+            elif tok.kind == "comment":
+                parts += [text[pos:tok.start], pattern.sub(lambda m: mapping[m.group(1)], tok.text)]
                 pos = tok.end
         out[name] = "".join(parts) + text[pos:]
     return out, mapping
@@ -620,41 +992,72 @@ def code_lines(text: str) -> list[int]:
     return [i for i, line in enumerate(text.split("\n")) if line.strip() and line.strip() not in ("{", "}", "};")]
 
 
+def literal_spots(text: str) -> list[Tok]:
+    """The integer literals an edit may change, where they are values that flow into what the
+    program computes: not inside an assert, a match, an array type's size, a repeat count, an
+    index or a slice, or a shift amount."""
+    try:
+        toks = [t for t in lex(text) if t.kind != "comment"]
+    except LexError:
+        return []
+    lines, starts = text.split("\n"), line_starts(text)
+    spots = []
+    for k, tok in enumerate(toks):
+        if tok.kind != "int" or not tok.text.isdigit() or len(tok.text) > 4:
+            continue
+        before = toks[k - 1].text if k else ""
+        after = toks[k + 1].text if k + 1 < len(toks) else ""
+        line = lines[bisect.bisect_right(starts, tok.start) - 1]
+        loop = line.lstrip().startswith("for ") and "[" not in line
+        if before in ("[", ";", "<<", ">>", "<<=", ">>=") or after in ("]", "=>", ":") or \
+                (".." in (before, after) and not loop) or "assert" in line or "match" in line:
+            continue
+        spots.append(tok)
+    return spots
+
+
 def mutate_literal(rng: random.Random, text: str) -> str:
-    spots = [m for m in re.finditer(r"(?<![\w.\"'])(\d{1,4})(?![\w.])", text)]
+    spots = literal_spots(text)
     if not spots:
         return text
-    spot = rng.choice(spots)
-    value = int(spot.group(1))
-    new = rng.choice([value + 1, max(0, value - 1), value + rng.randint(2, 9), value * 2])
-    return text[:spot.start()] + str(new) + text[spot.end():]
+    tok = rng.choice(spots)
+    value = int(tok.text)
+    new = rng.choice([value + 1, value - 1, value + rng.randint(2, 9), value * 2])
+    new = new if new >= 0 and new != value else value + 1
+    return text[:tok.start] + str(new) + text[tok.end:]
 
 
 def mutate_string(rng: random.Random, text: str) -> str:
-    """One letter of a string literal changed, outside its escapes."""
+    """One word of a string that a print prints changed for another, outside its escapes."""
     try:
-        strings = [t for t in lex(text) if t.kind == "string" and not t.text.startswith('"""')]
+        toks = [t for t in lex(text) if t.kind == "string" and not t.text.startswith('"""')]
     except LexError:
         return text
-    spots = [(t.start + k) for t in strings for k in range(1, len(t.text) - 1)
-             if t.text[k].isascii() and t.text[k].isalpha() and t.text[k - 1] != "\\"]
+    lines, starts = text.split("\n"), line_starts(text)
+    spots = []
+    for tok in toks:
+        line = lines[bisect.bisect_right(starts, tok.start) - 1]
+        if "print" in line and "assert" not in line:
+            spots += [(tok.start + m.start(), tok.start + m.end()) for m in re.finditer(r"[A-Za-z]{3,}", tok.text)
+                      if tok.text[m.start() - 1] != "\\"]
     if not spots:
         return text
-    at = rng.choice(spots)
-    letters = "abcdefghijklmnopqrstuvwxyz"
-    new = rng.choice([c for c in letters if c != text[at].lower()])
-    return text[:at] + (new.upper() if text[at].isupper() else new) + text[at + 1:]
+    start, end = rng.choice(spots)
+    word = rng.choice([w for w in NOUNS if w != text[start:end].lower()])
+    word = word.capitalize() if text[start].isupper() else word
+    return text[:start] + word + text[end:]
 
 
 def mutate_operator(rng: random.Random, text: str) -> str:
     swaps = [(" < ", " <= "), (" > ", " >= "), (" + ", " - "), (" * ", " + "), (" == ", " != "), (" && ", " || ")]
-    present = [(a, b) for a, b in swaps if a in text]
-    if not present:
+    lines = text.split("\n")
+    spots = [(k, m.start(), a, b) for k, line in enumerate(lines) if "assert" not in line
+             for a, b in swaps for m in re.finditer(re.escape(a), line)]
+    if not spots:
         return text
-    a, b = rng.choice(present)
-    spots = [m.start() for m in re.finditer(re.escape(a), text)]
-    at = rng.choice(spots)
-    return text[:at] + b + text[at + len(a):]
+    k, at, a, b = rng.choice(spots)
+    lines[k] = lines[k][:at] + b + lines[k][at + len(a):]
+    return "\n".join(lines)
 
 
 def mutate_name(rng: random.Random, text: str) -> str:
@@ -684,21 +1087,18 @@ def mutate_line(rng: random.Random, text: str) -> str:
     return "\n".join(lines)
 
 
-def mutate(rng: random.Random, text: str, breaking: bool, strings: bool = False) -> str:
-    """One to three edits that change the text, retried with other edits where one changes
-    nothing; the text unchanged only where no edit applies at all. `breaking` prefers edits that
-    make the program fail to compile; `strings` adds edits of string literals."""
-    if breaking:
-        edits = [mutate_name, mutate_line, mutate_operator]
-    else:
-        edits = [mutate_literal, mutate_literal, mutate_operator] + ([mutate_string, mutate_string] if strings else [])
-    for _ in range(rng.randint(1, 3 if breaking else 2)):
+def mutate(rng: random.Random, text: str) -> str:
+    """One to three edits that break the program as people break one while editing: a name
+    misspelt, a line deleted or doubled, an operator changed; retried where an edit changes
+    nothing. A file never starts with a blank line."""
+    edits = [mutate_name, mutate_line, mutate_operator]
+    for _ in range(rng.randint(1, 3)):
         for _ in range(6):
             edited = rng.choice(edits)(rng, text)
             if edited != text:
                 text = edited
                 break
-    return text
+    return text.lstrip("\n")
 
 
 # ---------------------------------------------------------------- cases
@@ -711,10 +1111,12 @@ class Built(NamedTuple):
 
 
 class Side:
-    """The programs of one side and the names a rename leaves alone."""
+    """The programs of one side, the names a rename leaves alone, and the answer texts upstream
+    publishes, which no comment of an input may hold."""
 
-    def __init__(self, programs: list[Program], protected: set[str]):
+    def __init__(self, programs: list[Program], protected: set[str], answers: set[str]):
         self.protected = protected
+        self.answers = answers
         self.run = [p for p in programs if p.role == "run" and set(p.files) == {"main.goose"}]
         # A side short of library or multi-file programs uses plain run programs instead.
         self.library = [p for p in self.run if LIBRARY & set(imports(p.files["main.goose"]))] or self.run
@@ -730,31 +1132,43 @@ class Side:
         return all((self.run, self.errors, self.formattable))
 
 
-def transformed(rng: random.Random, side: Side, program: Program, *, literals: float, strings: float = 0.0,
-                operators: float = 0.0, positions: float = 0.0, rename_share: float = 1.0) -> tuple[dict[str, str], bool]:
-    """A program's files, comments removed, with consistent renames and, by the given shares,
-    changed literals, strings and operators and moved positions; where none of that changed
-    anything, a literal or a string is changed after all. Also whether anything changed."""
-    files = program.stripped()
-    mapping: dict[str, str] = {}
-    if rng.random() < rename_share:
-        files, mapping = rename(rng, files, side.protected, rng.randint(1, 3))
-    main = files["main.goose"]
-    edited = main
-    if rng.random() < literals:
-        edited = mutate_literal(rng, edited)
-        edited = edited if edited != main else mutate_string(rng, edited)
-    if rng.random() < strings:
-        edited = mutate_string(rng, edited)
-    if rng.random() < operators:
-        edited = mutate_operator(rng, edited)
-    if rng.random() < positions and lexes(edited):
-        edited = shift(rng, edited)
-    if not mapping and edited == main:
-        edited = mutate_literal(rng, edited) if positions == 0.0 else shift(rng, edited) if lexes(edited) else edited
-        edited = edited if edited != main else mutate_string(rng, edited)
-    files = dict(files, **{"main.goose": edited})
-    return files, bool(mapping) or edited != main
+LINES: dict[str, int] = {}
+
+
+def pick(rng: random.Random, pool: list[Program]) -> Program:
+    """A program of the pool, larger ones more often (weight the square root of its lines), and
+    tests that abort before printing anything seldom."""
+    weights = [min(LINES.setdefault(p.key, p.lines()), 400) ** 0.5 * (0.1 if p.silent else 1.0) for p in pool]
+    return rng.choices(pool, weights)[0]
+
+
+def renamed(rng: random.Random, side: Side, program: Program, positions: bool = False) -> tuple[dict[str, str], bool]:
+    """The program's files without comments, one to three names renamed (first the names its
+    expected errors and warnings mention), and with `positions` lines moved; and whether
+    anything changed."""
+    files, mapping = rename(rng, program.stripped(), side.protected, rng.randint(1, 3),
+                            prefer=tuple(re.findall(r"[A-Za-z_]\w*", " ".join(program.messages))))
+    if positions and lexes(files["main.goose"]):
+        files = dict(files, **{"main.goose": shift(rng, files["main.goose"])})
+    return files, bool(mapping) or files != program.stripped()
+
+
+def edited(rng: random.Random, files: dict[str, str], program: Program, strings: float, operators: float) -> dict | None:
+    """The files with a literal of one of the program's own files changed (program.edit), and by
+    the given shares a printed string and an operator too; None where nothing applies."""
+    names = [name for name in program.edit if name in files]
+    for _ in range(8):
+        name = rng.choice(names)
+        text = files[name]
+        new = mutate_literal(rng, text)
+        if rng.random() < strings:
+            new = mutate_string(rng, new)
+        if rng.random() < operators:
+            new = mutate_operator(rng, new)
+        new = new if new != text else mutate_string(rng, text)
+        if new != text:
+            return dict(files, **{name: new})
+    return None
 
 
 def run_argv(rng: random.Random, program: Program) -> list[str]:
@@ -765,22 +1179,29 @@ def run_argv(rng: random.Random, program: Program) -> list[str]:
         argv.append("--debug")
     if program.warnings and rng.random() < 0.5:
         argv += ["--diagnostics", "json"]
-    if rng.random() < 0.05:
-        argv += ["--", *rng.sample(["input.txt", "--verbose", "-n", "3", "all"], rng.randint(1, 3))]
     return argv
 
 
 def make_run(rng: random.Random, side: Side, pool: list[Program], kind: str) -> Built:
-    program = rng.choice(pool)
-    files, changed = transformed(rng, side, program, literals=0.95, strings=0.5 if kind == "library" else 0.2,
-                                 operators=0.15)
-    return Built({"files": files, "argv": run_argv(rng, program), "stdin": None}, kind, [program.key], changed)
+    """A program, renamed, with up to three edits of its literals for the recorder to choose from
+    (runcases.settle): the first that ends as the unedited program does and prints otherwise."""
+    program = pick(rng, pool)
+    base, changed = renamed(rng, side, program)
+    options = []
+    for _ in range(3):
+        option = edited(rng, base, program, strings=0.5 if kind == "library" else 0.2, operators=0.15)
+        if option and option not in options:
+            options.append(option)
+    case = {"files": options[0] if options else base, "argv": run_argv(rng, program), "stdin": None}
+    if options:
+        case["record"] = {"variants": options[1:] + [base], "want": "same", "complete": program.complete}
+    return Built(case, kind, [program.key], changed or bool(options))
 
 
 def make_rejected(rng: random.Random, side: Side) -> Built:
     program = rng.choice(side.errors)
-    files, changed = transformed(rng, side, program, literals=0.0, positions=1.0)
-    argv = ["run", "main.goose", "--diagnostics", "json"] if rng.random() < 0.7 else ["run", "main.goose"]
+    files, changed = renamed(rng, side, program, positions=True)
+    argv = ["run", "main.goose", "--diagnostics", "json"] if rng.random() < 0.97 else ["run", "main.goose"]
     return Built({"files": files, "argv": argv, "stdin": None}, "rejected", [program.key], changed)
 
 
@@ -789,63 +1210,101 @@ def make_check(rng: random.Random, side: Side) -> Built:
     argv = ["check", "main.goose", "--diagnostics", "json"]
     if rng.random() < 0.1:
         argv[1:1] = ["--color", "never"]
+    record = None
     if roll < 0.62:
         program = rng.choice(side.errors)
-        files, changed = transformed(rng, side, program, literals=0.0, positions=1.0)
-    elif roll < 0.92:
-        program = rng.choice(side.run + side.shown)
-        files, _ = transformed(rng, side, program, literals=0.0, rename_share=0.5, positions=0.5)
-        files = dict(files, **{"main.goose": mutate(rng, files["main.goose"], breaking=True)})
+        files, changed = renamed(rng, side, program, positions=True)
+    elif roll < 0.92:  # a program broken while editing it, three ways for the recorder to choose from
+        program = pick(rng, side.run + side.shown)
+        files, _ = renamed(rng, side, program, positions=rng.random() < 0.5)
+        options = []
+        for _ in range(3):
+            option = dict(files, **{"main.goose": mutate(rng, files["main.goose"])})
+            if option not in options and option != files:
+                options.append(option)
+        files = options[0] if options else files
+        record = {"variants": options[1:], "want": "diagnostics"} if len(options) > 1 else None
         changed = True
     else:
         program = rng.choice(side.warned or side.errors)
-        files, changed = transformed(rng, side, program, literals=0.0, positions=1.0)
-    return Built({"files": files, "argv": argv, "stdin": None}, "check", [program.key], changed)
+        files, changed = renamed(rng, side, program, positions=True)
+    case = {"files": files, "argv": argv, "stdin": None}
+    if record:
+        case["record"] = record
+    return Built(case, "check", [program.key], changed)
 
 
 class FormatPlan(NamedTuple):
     """A format case before its comments are chosen: which programs go where."""
     stdin: bool
     argv: list[str]
-    places: list[tuple[str, Program, bool]]   # (file name or "-" for standard input, program, disturbed)
+    places: list[tuple[str, Program, bool]]   # (file name or "-" for standard input, program, formatted first)
+
+
+FORMAT_NAMES = ["main.goose", "lib.goose", "util.goose", "src/app.goose", "src/model.goose", "src/text/parse.goose",
+                "tools/gen.goose"]
 
 
 def plan_format(rng: random.Random, side: Side) -> FormatPlan:
-    if rng.random() < 0.6:
-        return FormatPlan(True, ["format"] if rng.random() < 0.8 else ["format", "-"], [("-", rng.choice(side.formattable), True)])
-    names = rng.sample(["main.goose", "lib.goose", "src/shapes.goose", "src/util/text.goose", "tools/gen.goose"], rng.randint(1, 3))
-    places = [(name, rng.choice(side.formattable), rng.random() < 0.6) for name in names]
+    """Standard input four times in five; else a workspace for --check of one to three files, all
+    formatted already, some of them, or none."""
+    if rng.random() < 0.8:
+        return FormatPlan(True, ["format"] if rng.random() < 0.8 else ["format", "-"], [("-", pick(rng, side.formattable), False)])
+    names = rng.sample(FORMAT_NAMES, rng.randint(1, 3))
+    roll = rng.random()
+    tidy = [True] * len(names) if roll < 0.3 else [False] * len(names) if roll >= 0.8 else \
+        [rng.random() < 0.5 for _ in names]
+    if 0.3 <= roll < 0.8 and len(names) > 1 and len(set(tidy)) == 1:
+        tidy[rng.randrange(len(names))] = not tidy[0]
+    places = [(name, pick(rng, side.formattable), formatted) for name, formatted in zip(names, tidy)]
     target = rng.choice([".", "src", names[0]]) if any(name.startswith("src/") for name in names) else rng.choice([".", names[0]])
     return FormatPlan(False, ["format", "--check", target], places)
 
 
+def quotes_an_answer(comment: str, answers: set[str]) -> bool:
+    return any(answer in comment for answer in answers)
+
+
+def own_comments(program: Program, side: Side) -> str:
+    """The program's text with its own comments but those upstream's test runner reads (MARKERS,
+    FIRST_LINE_MARKERS) and those that quote an answer upstream publishes for any program."""
+    return strip_comments(program.files["main.goose"], lambda comment, first: bool(
+        MARKERS.match(comment) or first and FIRST_LINE_MARKERS.match(comment) or quotes_an_answer(comment, side.answers)))
+
+
 def build_format(rng: random.Random, side: Side, plan: FormatPlan, busy: set[str]) -> Built:
-    """Comments from the program itself where no other case is built on it (`busy`), neutral
-    ones otherwise; then renames, and a new layout for a disturbed file."""
-    texts, changed = {}, not plan.stdin
-    for name, program, disturbed in plan.places:
-        text = program.files["main.goose"]
-        renamed, mapping = rename(rng, {"main.goose": text}, side.protected, rng.randint(1, 3))
-        own = program.key not in busy and bool(mapping) and any(t.kind == "comment" for t in lex(text))
+    """Comments from the program itself where no other case is built on its family (`busy`), else
+    comments of the kind people write; then renames, and the layout a person leaves (`disturb`)
+    in a file not formatted first. A file formatted first is left for the recorder to format."""
+    texts, changed, formatted = {}, not plan.stdin, []
+    for name, program, tidy in plan.places:
+        own = family(program.key) not in busy and any(t.kind == "comment" for t in lex(own_comments(program, side)))
         if own:
-            text = renamed["main.goose"]
-        else:  # neutral comments, renamed alike: unrenamed, the program's own would print as upstream wrote it
-            stripped = strip_comments(text)
-            text = add_comments(rng, rename(rng, {"main.goose": stripped}, side.protected, rng.randint(1, 3))[0]["main.goose"],
-                                rng.randint(2, 6))
-            own = False
+            text, mapping = rename(rng, {"main.goose": own_comments(program, side)}, side.protected, rng.randint(1, 3))
+        else:
+            text, mapping = rename(rng, {"main.goose": strip_comments(program.files["main.goose"])}, side.protected,
+                                   rng.randint(1, 3))
+            text = {"main.goose": add_comments(rng, text["main.goose"], max(1, min(6, program.lines() // 15)))}
         changed = changed or not own or bool(mapping)
-        texts[name] = relayout(rng, text) if disturbed else text
+        if tidy:
+            formatted.append(name)
+            texts[name] = text["main.goose"]
+        else:
+            texts[name] = disturb(rng, text["main.goose"])
     keys = [program.key for _, program, _ in plan.places]
     if plan.stdin:
         return Built({"files": {}, "argv": plan.argv, "stdin": texts["-"]}, "format", keys, changed)
-    return Built({"files": texts, "argv": plan.argv, "stdin": None}, "format", keys, changed)
+    case = {"files": texts, "argv": plan.argv, "stdin": None}
+    if formatted:
+        case["record"] = {"formatted": formatted}
+    return Built(case, "format", keys, changed)
 
 
 def make_cli(rng: random.Random, side: Side, argv: list[str]) -> Built:
     program = rng.choice(side.run + side.errors)
-    files, _ = transformed(rng, side, program, literals=0.0)
-    return Built({"files": {"main.goose": files["main.goose"]}, "argv": list(argv), "stdin": None}, "cli", [program.key], True)
+    files, _ = renamed(rng, side, program)
+    case = {"files": {"main.goose": files["main.goose"]}, "argv": list(argv), "stdin": None, "record": {"cli": True}}
+    return Built(case, "cli", [program.key], True)
 
 
 def generate(rng_for, side: Side, count: int, cli: list[list[str]], first: int, prefix: str) -> list[Built]:
@@ -858,10 +1317,10 @@ def generate(rng_for, side: Side, count: int, cli: list[list[str]], first: int, 
         if index in spots:
             built[index] = make_cli(rng, side, spots[index])
             continue
-        pick, kind = rng.random(), None
-        for name, share in KINDS:
-            pick -= share
-            if pick < 0:
+        pick_, kind = rng.random(), None
+        for name, share_ in KINDS:
+            pick_ -= share_
+            if pick_ < 0:
                 kind = name
                 break
         kind = kind or KINDS[-1][0]
@@ -873,7 +1332,7 @@ def generate(rng_for, side: Side, count: int, cli: list[list[str]], first: int, 
             built[index] = make_check(rng, side)
         else:
             built[index] = plan_format(rng, side)
-    busy = {key for item in built.values() if isinstance(item, Built) and item.kind != "format" for key in item.keys}
+    busy = {family(key) for item in built.values() if isinstance(item, Built) and item.kind != "format" for key in item.keys}
     out = []
     for index in range(first, first + count):
         item = built[index]
@@ -882,6 +1341,31 @@ def generate(rng_for, side: Side, count: int, cli: list[list[str]], first: int, 
         item.case["id"] = f"{prefix}{index + 1:05d}"
         out.append(item)
     return out
+
+
+def fingerprints(cases: list[dict]) -> dict:
+    """Marks a generator could leave, counted over the inputs: names with a number on the end that
+    the source does not have, lines starting with a tab, block comments, inputs that start with a
+    blank line, and comments upstream's test runner reads."""
+    texts = [text for case in cases for text in inputs(case)]
+    lines = [line for text in texts for line in text.split("\n")]
+    numbered = sum(1 for text in texts for word in set(re.findall(r"\b[A-Za-z_]+\d{1,2}\b", text))
+                   if word.rstrip("0123456789").lower() in set(NOUNS) | {"_" + n for n in NOUNS})
+    return {"inputs": len(texts), "lines": len(lines), "lines_starting_with_a_tab": sum(line.startswith("\t") for line in lines),
+            "block_comments": sum(text.count("/*") for text in texts), "starting_with_a_blank_line": sum(
+                text.startswith("\n") for text in texts), "runner_markers": sum(
+                1 for text in texts for line in text.split("\n") if MARKERS.search(line)), "numbered_names": numbered}
+
+
+def lines_summary(built: list[Built], by_key: dict) -> dict:
+    sizes = sorted(by_key[b.keys[0]].lines() for b in built)
+    return {"median": sizes[len(sizes) // 2], "p90": sizes[int(0.9 * (len(sizes) - 1))], "max": sizes[-1],
+            "at_least_80": sum(size >= 80 for size in sizes)} if sizes else {}
+
+
+def library_use(cases: list[dict]) -> dict:
+    return dict(sorted(Counter(module for case in cases if case.get("kind", "") != "cli"
+                               for module in {m for text in case["files"].values() for m in imports(text)} & LIBRARY).items()))
 
 
 def main() -> None:
@@ -903,15 +1387,23 @@ def main() -> None:
             program = program._replace(files=dict(program.files, **{"main.goose": scale_bench(program.files["main.goose"], rng)}))
         scaled.append(program)
     programs = scaled
-    visible = [p for p in programs if visible_program(p.key)]
+    shared = shared_modules(args.checkout)
+    families = visible_families(programs)
+    visible = [p for p in programs if family(p.key) in families]
     # A private program must be unknown to the agent: no shown program and no variant of one,
     # nothing a shipped file holds, nothing equal to a visible program.
-    seen = {normalise(text) for p in visible for name, text in p.files.items() if name != "rng.goose"}
-    excluded = sorted(p.key for p in programs if not visible_program(p.key) and
-                      any(key and (key in seen or key in shipped)
-                          for key in (normalise(text) for name, text in p.files.items() if name != "rng.goose")))
-    private = [p for p in programs if not visible_program(p.key) and p.key not in excluded and p.role != "shown"]
-    sides = {"visible": Side(visible, protected), "private": Side(private, protected)}
+    seen = {normalise(text) for p in visible for text in p.files.values()} - shared
+    excluded = sorted(p.key for p in programs if family(p.key) not in families and
+                      any(key and key not in shared and (key in seen or key in shipped)
+                          for key in (normalise(text) for text in p.files.values())))
+    private = [p for p in programs if family(p.key) not in families and p.key not in excluded and p.role != "shown"]
+    # What upstream publishes as any program's answer, which no comment of an input may quote: the
+    # errors and warnings its tests name, and every line of 12 characters or more of their outputs.
+    answers = {message for p in programs for message in p.messages if len(message) >= 8}
+    for path in sorted((args.checkout / "test" / "expected").glob("*.out")):
+        answers |= {line.strip() for line in path.read_text(encoding="utf-8", errors="replace").splitlines()
+                    if len(line.strip()) >= 12}
+    sides = {"visible": Side(visible, protected, answers), "private": Side(private, protected, answers)}
     for name, side in sides.items():
         if not side.ready() or not side.shown and name == "visible":
             raise SystemExit(f"the {name} side lacks programs of some kind")
@@ -920,12 +1412,15 @@ def main() -> None:
     hidden = generate(rng_for, sides["private"], args.count - args.visible, CLI_PRIVATE, args.visible, "P")
     # For the verifier's record of what it grades (verifier/recording.py): each private case's kind,
     # and for a run case built on an upstream test, the sha256 of the test's expected output.
-    expected = {p.key: p.expected for p in programs}
+    by_key = {p.key: p for p in programs}
     for item in hidden:
         item.case["kind"] = item.kind
-        if item.kind in ("run", "library", "modules") and expected.get(item.keys[0]):
-            item.case["upstream"] = expected[item.keys[0]]
-    found = leaks([b.case for b in hidden], [b.case for b in shown], shipped)
+        program = by_key[item.keys[0]]
+        if item.kind in ("run", "library", "modules") and program.expected:
+            item.case["upstream"] = program.expected
+        if item.kind in ("check", "rejected") and program.messages and "record" not in item.case:
+            item.case["upstream_messages"] = sorted({hashlib.sha256(m.encode()).hexdigest() for m in program.messages})
+    found = leaks([b.case for b in hidden], [b.case for b in shown], shipped, shared)
     if found:
         raise SystemExit(f"{len(found)} private cases have an input the agent can know: {', '.join(found[:20])}")
     for path, chosen in ((args.out_visible, shown), (args.out_private, hidden)):
@@ -933,6 +1428,10 @@ def main() -> None:
         path.write_text(json.dumps({"cases": [b.case for b in chosen]}, sort_keys=True, ensure_ascii=False))
     unchanged = Counter(b.kind for b in hidden if b.kind != "cli" and not b.changed)
     print(json.dumps({
+        "fingerprints": {name: fingerprints([b.case for b in chosen]) for name, chosen in (("visible", shown), ("private", hidden))},
+        "programs_lines": {name: lines_summary([b for b in chosen if b.kind != "cli"], by_key)
+                           for name, chosen in (("visible", shown), ("private", hidden))},
+        "library_modules": {name: library_use([b.case for b in chosen]) for name, chosen in (("visible", shown), ("private", hidden))},
         "programs": {name: {"run": len(s.run), "library": len(s.library), "modules": len(s.modules), "error": len(s.errors),
                             "warned": len(s.warned), "shown": len(s.shown)} for name, s in sides.items()},
         "excluded": excluded,

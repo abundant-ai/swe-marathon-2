@@ -75,7 +75,8 @@ def collect() -> dict[str, bytes]:
     import make_cases  # noqa: PLC0415 - it imports this module
 
     found = make_cases.leaks(json.loads(HIDDEN.read_text(encoding="utf-8"))["cases"],
-                             json.loads(VISIBLE.read_text(encoding="utf-8"))["cases"], make_cases.shipped_texts(checkout))
+                             json.loads(VISIBLE.read_text(encoding="utf-8"))["cases"], make_cases.shipped_texts(checkout),
+                             make_cases.shared_modules(checkout))
     if found:
         raise ValueError(f"{len(found)} private cases have an input the agent can know: {', '.join(found[:20])}")
     for name in tracked(checkout):

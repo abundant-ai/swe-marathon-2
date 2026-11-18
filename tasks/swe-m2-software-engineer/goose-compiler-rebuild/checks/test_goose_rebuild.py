@@ -84,6 +84,21 @@ def checkout(tmp_path: Path) -> Path:
                                                "    print(stdlib_marker);\n}\n")
     for module in ("json", "os", "ffi"):
         (root / "stdlib" / f"{module}.goose").write_text(f"// {module}\nfn {module}_entry() {{}}\n")
+    kostya = root / "bench" / "kostya" / "goose" / "src"
+    kostya.mkdir(parents=True)
+    (kostya / "main.goose").write_text(
+        "import std;\nimport os;\nimport bench;\nimport helper;\nimport small;\n\nfn dispatch(b: Bench&) -> u32, bool {\n"
+        "    let n = b.name;\n    if n == \"Small::One\" || n == \"Small::Two\" {\n        var s = small::new_small();\n"
+        "        return execute(b, s, small::prepare, small::run, small::checksum), true;\n    }\n    return 0, false;\n}\n\n"
+        "fn main() { run_main(dispatch); }\n")
+    (kostya / "small.goose").write_text(
+        "namespace small;\n\nimport std;\nimport bench;\nimport helper;\n\nstruct Small { total: u32 }\n\n"
+        "fn new_small() -> Small { Small { total: config_i64(\"Small::One\", \"size\") as u32 } }\n\n"
+        "fn prepare(s: Small&) { s.total += 1; }\n\nfn run(s: Small&, iteration_id: i64) {\n    s.total += 7;\n}\n\n"
+        "fn checksum(s: Small&) -> u32 { s.total }\n")
+    (kostya / "helper.goose").write_text("import std;\n\nfn reset() {}\n\n// --- exact fixed-point float text ----\n\n"
+                                         "extern fn frexp(x: f64, e: i32&) -> f64;\n")
+    (kostya / "bench.goose").write_text("import os;\n")
     (root / "samples" / "hello.goose").write_text(SHOWN)
     (root / "docs" / "reference.md").write_text(
         "Text.\n\n```goose\n" + SHOWN.replace("shown_", "shown_doc_") + "```\n\n<!-- fragment -->\n```goose\nlet y = 3;\n```\n")
@@ -128,12 +143,17 @@ def test_cases_are_reproducible_and_carry_comments_only_where_formatted(tmp_path
         if case["argv"][0] == "format" and case["argv"][1:2] != ["--help"] and "missing.goose" not in case["argv"]:
             assert all("//" in text or "/*" in text for text in texts), case
         else:  # the error tests name their errors in comments, and run tests their output
-            assert not any("//" in text or "/*" in text for text in texts), case
+            assert not any("//" in text or "/*" in text for text in texts + [text for variant in case.get(
+                "record", {}).get("variants", []) for text in variant.values()]), case
         assert not any(re.search(r"\b(extern|thread_fn|thread_spawn)\b|import (gfx|os|ffi)\b", text) for text in texts)
         assert not any("no-jit" in text for text in texts)
     assert any(len(case["files"]) > 1 and case["kind"] == "modules" for case in private)
     assert all(case["argv"][2:4] == ["--diagnostics", "json"] or case["argv"] == ["run", "main.goose"]
                for case in private if case["kind"] == "rejected")
+    rejected = [case for case in private + visible_cases if case["argv"][:2] == ["run", "main.goose"] and
+                any(text.count("\"a") for text in case["files"].values())]
+    assert sum(case["argv"] == ["run", "main.goose"] for case in rejected) <= max(1, len(rejected) // 10)
+    assert not any("--" in case["argv"] for case in private + visible_cases), "no program arguments: no program reads them"
     scaled = json.loads(scripts_call(textwrap.dedent("""
         import json, random, make_cases as mc
         rng = random.Random(1)
@@ -162,9 +182,9 @@ def test_the_leak_check_refuses_a_known_input():
         program = "fn main() {\\n    print(1);\\n}\\n"
         case = lambda i, text: {"id": i, "files": {"main.goose": text}, "argv": ["run", "main.goose"], "stdin": None}
         shipped = mc.normalise("Docs.\\n```goose\\n// a comment\\nfn main() {\\n  print(1);\\n}\\n```\\n")
-        print(json.dumps([mc.leaks([case("P1", program)], [], shipped),
-                          mc.leaks([case("P2", "fn main() { print(2); }\\n")], [case("E1", "fn main() {print(2);}")], ""),
-                          mc.leaks([case("P3", "fn main() { print(3); }\\n")], [case("E2", program)], shipped)]))
+        print(json.dumps([mc.leaks([case("P1", program)], [], shipped, set()),
+                          mc.leaks([case("P2", "fn main() { print(2); }\\n")], [case("E1", "fn main() {print(2);}")], "", set()),
+                          mc.leaks([case("P3", "fn main() { print(3); }\\n")], [case("E2", program)], shipped, set())]))
     """))
     assert json.loads(out) == [["P1"], ["P2"], []]
 
@@ -178,7 +198,7 @@ def test_format_inputs_keep_every_token_and_renames_are_consistent():
         for seed in range(200):
             rng = random.Random(seed)
             commented = mc.add_comments(rng, text, 4)
-            moved = mc.relayout(rng, commented)
+            moved = mc.disturb(rng, commented)
             renamed, mapping = mc.rename(rng, {"main.goose": text}, {"print", "main"}, 3)
             results.append([mc.code(mc.lex(moved)) == mc.code(mc.lex(text)), moved != commented,
                             sum(t.kind == "comment" for t in mc.lex(commented)) > 0, mapping,
@@ -191,6 +211,75 @@ def test_format_inputs_keep_every_token_and_renames_are_consistent():
     names = {new for *_, mapping, _, _ in results for new in mapping.values()}
     assert names and not names & {"sum", "xs", "t", "x", "v", "r", "print", "main", "fn", "let"}
     assert all(set(mapping) <= {"sum", "xs", "t", "x", "v", "r"} for *_, mapping, _, _ in results)
+    assert not any(re.search(r"\d", name) for name in names), "ordinary names, no numbered words"
+
+
+def test_inputs_look_like_code_people_write(tmp_path):
+    """No marks of a generator: no numbered names, no comment upstream's runner reads, no tabs but
+    in a file indented with tabs throughout, block comments only as argument labels, no input
+    starting with a blank line."""
+    private, visible_cases, summary = generate(tmp_path, 11)
+    for case in private + visible_cases:
+        variants = [text for variant in case.get("record", {}).get("variants", []) for text in variant.values()]
+        for text in inputs(case) + variants:
+            assert not re.search(r"//\s*(error|warning):|//\s*(runtime-define|bce):|// spec ", text), case["id"]
+            assert not text.startswith("\n"), case["id"]
+            assert not re.search(r"\b(amber|basil|cedar|yarrow|zircon)\d+\b", text, re.I), case["id"]
+            tabbed = [line for line in text.split("\n") if line.startswith("\t")]
+            spaced = [line for line in text.split("\n") if line.startswith("    ")]
+            assert not (tabbed and spaced), case["id"]
+            assert all(re.fullmatch(r"/\*\w+=\*/", block) for block in re.findall(r"/\*.*?\*/", text)), case["id"]
+        for phrase in ("edge case", "checked by hand", "worth a second look", "same as before", "nothing special here"):
+            assert not any(phrase in text for text in inputs(case)), (case["id"], phrase)
+    assert summary["fingerprints"]["private"]["runner_markers"] == 0
+
+
+def test_literal_and_string_edits_leave_asserts_sizes_and_indexes_alone():
+    out = scripts_call(textwrap.dedent("""
+        import json, random, make_cases as mc
+        text = ("fn main() {\\n    var tab: i64[4] = [0; 4];\\n    assert(tab.len == 4);\\n    let k = tab[2] << 3;\\n"
+                "    for i in 0..10 { print(i * 7, \\"items left\\"); }\\n    let msg = \\"internal word\\";\\n}\\n")
+        spots = sorted(t.text + "@" + str(t.start) for t in mc.literal_spots(text))
+        strings = {mc.mutate_string(random.Random(seed), text) for seed in range(40)}
+        print(json.dumps([spots, sorted(strings)]))
+    """))
+    spots, strings = json.loads(out)
+    assert [spot.split("@")[0] for spot in spots] == ["0", "10", "7"], "a loop's bounds and a printed product only"
+    assert all("internal word" in text and "assert(tab.len == 4)" in text for text in strings)
+    assert all('"items left"' not in text and re.search(r'"(\w+) left"|"items (\w+)"', text) for text in strings)
+
+
+def test_run_and_check_cases_carry_variants_for_the_recorder(tmp_path):
+    private, visible_cases, _ = generate(tmp_path, 13)
+    runs = [case for case in private if case["kind"] in ("run", "library", "modules") and "record" in case]
+    assert len(runs) > 20
+    for case in runs:
+        plan = case["record"]
+        assert plan["want"] == "same" and plan["variants"] and set(plan["variants"][-1]) == set(case["files"])
+        assert case["files"] != plan["variants"][-1], "the case's own files are an edit of the base"
+        assert isinstance(plan["complete"], bool)
+    broken = [case for case in private if case["kind"] == "check" and "record" in case]
+    assert broken and all(case["record"]["want"] == "diagnostics" for case in broken)
+    assert all("upstream_messages" in case for case in private if case["kind"] == "rejected")
+    workspaces = [case for case in private + visible_cases if case["argv"][:2] == ["format", "--check"]]
+    marked = [name for case in workspaces for name in case.get("record", {}).get("formatted", [])]
+    assert all(name in case["files"] for case in workspaces for name in case.get("record", {}).get("formatted", []))
+    assert workspaces and marked
+    kostya = [case for case in private + visible_cases if "bench.goose" in case["files"]]
+    assert kostya and all({"helper.goose", "small.goose"} <= set(case["files"]) for case in kostya)
+    assert all("clock" not in case["files"]["bench.goose"] and "extern" not in case["files"]["helper.goose"] for case in kostya)
+
+
+def test_families_split_together_and_every_library_module_and_warnings_reach_both_sides():
+    out = scripts_call(textwrap.dedent("""
+        import json, make_cases as mc
+        print(json.dumps([mc.family("test/errors_tc/shrink_class_copy_a.goose"), mc.family("test/errors_tc/shrink_class_copy_b.goose"),
+                          mc.family("test/stdlib/stdlib_csv.goose"), mc.family("test/stdlib/stdlib_json.goose"),
+                          mc.family("bench/goose/lru_indices.goose"), mc.family("bench/goose/lru.goose"),
+                          mc.family("bench/kostya/goose/src#json_parse_dom"), mc.family("bench/kostya/goose/src#json_generate")]))
+    """))
+    a, b, csv, json_, lru1, lru2, dom, gen = json.loads(out)
+    assert a == b and csv != json_ and lru1 == lru2 and dom == gen
 
 
 def test_the_tokenizer_never_lets_a_layout_change_split_an_operator():
@@ -212,9 +301,10 @@ def test_the_tokenizer_never_lets_a_layout_change_split_an_operator():
 def test_command_line_cases_are_one_per_behaviour():
     out = scripts_call("import json, make_cases as mc; print(json.dumps([mc.CLI_PRIVATE, mc.CLI_VISIBLE, mc.KINDS]))")
     private, visible_cases, kinds = json.loads(out)
-    assert len({tuple(argv) for argv in private}) == len(private) and len(private) <= 40
-    assert all(argv in private for argv in visible_cases)
-    assert abs(sum(share for _, share in kinds) - 1) < 1e-9
+    assert len({tuple(argv) for argv in private}) == len(private) and len(private) <= 22
+    aliases = [["--version"], ["help", "help"], ["run", "--help"], ["format", "--help"], ["run", "main.goose", "-o", "out.c"]]
+    assert not any(argv in private for argv in visible_cases + aliases), "nothing the examples show, no alias, no -o"
+    assert abs(sum(share for _, share in kinds) - 1) < 1e-9 and dict(kinds)["format"] <= 0.08
 
 
 # ---------------------------------------------------------------- verifier
