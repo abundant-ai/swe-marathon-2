@@ -2,10 +2,11 @@
 
 A scenario is a list of requests made in one fresh workspace, with the status and
 the answer the reference server gave for each: a JSON body, or for a file its type,
-length and SHA-256. A scenario counts when every one of its answers is the same.
-The reward is the share of scenarios that count; the total is fixed, so a server
-that does not start, dies, hangs or is too slow loses the scenarios it did not
-answer and nothing else.
+length and SHA-256. The reward is the share of units that match. A scenario is one
+unit, or, for a month of trading, one unit per trading day and per client screen
+opened after it; a unit matches when every one of its answers is the same. The
+total is fixed, so a server that does not start, dies, hangs or is too slow loses
+the units it did not answer and nothing else.
 
 - Time: a request has REQUEST_SEC of wall clock and the whole replay DEADLINE_SEC;
   a request still running past either has its connection shut down. Scenarios not
@@ -16,7 +17,11 @@ answer and nothing else.
   loses only the scenarios that crash it. A server that has died, or has left its
   health check unanswered for HEALTH_SEC, is restarted before the next attempt, as
   often as needed while the deadline holds; after START_FAILURES starts in a row
-  that never answer it is given up.
+  that never answer it is given up. Every start uses the same DATA_DIR.
+- Planned restarts: a scenario with a step marked `restart` runs alone, after the
+  others. After that step the server is stopped (SIGTERM, or SIGKILL straight after
+  the answer) and started again on the same DATA_DIR, and the scenario goes on in
+  the same workspace: what a workspace holds must survive.
 - Nothing the server sends makes the evaluation fail: a reply that is not HTTP,
   not JSON, too large or nested too deeply is an answer that matches nothing.
 """
@@ -53,6 +58,7 @@ START_SEC = 60
 REQUEST_SEC = 30  # wall clock for one request: a big upload or a 200-page PDF needs more than a JSON call
 DEADLINE_SEC = 3000  # the whole replay; the step allows 3,600 s for everything
 HEALTH_SEC = 30  # how long a live server may leave its health check unanswered before it is restarted
+STOP_SEC = 30  # how long a server stopped with SIGTERM may take to exit before it is killed
 START_FAILURES = 3  # starts in a row that never answer before the server is given up
 WORKERS = 8
 ANSWER_LIMIT = 16_000_000  # bytes read of one answer; the largest recorded file is about 3 MB
@@ -143,11 +149,13 @@ class Candidate:
 
     def __init__(self, source: Path, work: Path, log_path: Path, sandbox: bool, clock: Clock) -> None:
         self.source, self.work, self.log_path, self.sandbox, self.clock = source, work, log_path, sandbox, clock
+        self.data = work / "data"  # one DATA_DIR for every start, planned or after a crash: what a workspace holds must survive
         self.lock = threading.Lock()
         self.proc: subprocess.Popen[bytes] | None = None
         self.port = 0
         self.generation = 0
         self.restarts = 0
+        self.planned = 0
         self.failed_starts = 0
 
     def stop(self) -> None:
@@ -163,13 +171,12 @@ class Candidate:
         self.proc = None
 
     def start(self) -> bool:
-        """Start the server with a fresh data directory and wait for its health check; False if it does not come up."""
+        """Start the server on the shared data directory and wait for its health check; False if it does not come up."""
         self.stop()
-        shutil.rmtree(self.work / f"data{self.generation}", ignore_errors=True)  # the stopped server's files
         self.generation += 1
         try:
             self.port = free_port()
-            data = self.work / f"data{self.generation}"
+            data = self.data
             data.mkdir(parents=True, exist_ok=True)
             os.chmod(data, 0o777)
             env = {"PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/go/bin", "HOME": str(data),
@@ -201,6 +208,24 @@ class Candidate:
                 return None
             self.restarts += 1
             if not self.start():
+                self.failed_starts += 1
+                return None
+            self.failed_starts = 0
+            return self.generation, self.port
+
+    def planned_restart(self, how: str) -> tuple[int, int] | None:
+        """Stop the server as an operator ("term": SIGTERM, then SIGKILL after STOP_SEC) or a power cut ("kill": SIGKILL
+        straight after the answer just read) would, and start it again on the same data; None if it does not come back."""
+        with self.lock:
+            self.planned += 1
+            if self.proc is not None:
+                with contextlib.suppress(ProcessLookupError, PermissionError):
+                    os.killpg(self.proc.pid, signal.SIGTERM if how == "term" else signal.SIGKILL)
+                if how == "term":
+                    with contextlib.suppress(subprocess.TimeoutExpired):
+                        self.proc.wait(timeout=STOP_SEC)
+            self.stop()
+            if self.clock.expired() or not self.start():
                 self.failed_starts += 1
                 return None
             self.failed_starts = 0
@@ -372,10 +397,47 @@ def encode_query(query: dict[str, str]) -> str:
     return ("?" + urlencode(query)) if query else ""
 
 
+def unit_count(scenario: dict[str, Any]) -> int:
+    """A scenario is one unit, or as many as it lists in `units` (the days and screens of a trading run)."""
+    return len(scenario["units"]) if scenario.get("units") else 1
+
+
+def unit_themes(scenario: dict[str, Any]) -> list[str]:
+    """The theme each unit of a scenario counts under.
+
+    Raises:
+        EvaluationError: A step names a unit the scenario does not have, or a unit has no step.
+    """
+    count = unit_count(scenario)
+    used = {step.get("unit", 0) for step in scenario["steps"]}
+    if not used <= set(range(count)) or (scenario.get("units") and len(used) != count):
+        raise EvaluationError(f"Private scenarios are malformed: units of {scenario.get('id')}")
+    return [unit["theme"] for unit in scenario["units"]] if scenario.get("units") else [scenario["theme"]]
+
+
+def durable(scenario: dict[str, Any]) -> bool:
+    """A scenario with a planned restart in it; such scenarios run one at a time, so the restart disturbs no other."""
+    return any("restart" in step for step in scenario["steps"])
+
+
 def attempt(candidate: Candidate, scenario: dict[str, Any], media: Media, clock: Clock) -> dict[str, Any]:
-    """Play a scenario once in a fresh workspace: whether every answer matched, and where the first difference was."""
+    """Play a scenario once in a fresh workspace.
+
+    A scenario without units is one unit and stops at its first difference. A scenario with units goes on
+    after a difference, so each unit is judged on its own answers: a unit matches when every one of its
+    answers does. Either stops when an answer never comes. After a step marked `restart` the server is
+    stopped and started again on the same data, and the scenario goes on in the same workspace.
+    """
+    steps, multi = scenario["steps"], bool(scenario.get("units"))
+    count = unit_count(scenario)
+    needed, answered, wrong = [0] * count, [0] * count, [False] * count
+    for step in steps:
+        needed[step.get("unit", 0)] += 1
+    difference: tuple[int, str] | None = None
+
     def result(failed_step: int | None, reason: str | None) -> dict[str, Any]:
-        return {"id": scenario["id"], "matched": reason is None, "failed_step": failed_step, "reason": reason}
+        verdicts = [not wrong[unit] and answered[unit] == needed[unit] for unit in range(count)]
+        return {"id": scenario["id"], "matched": all(verdicts), "units": verdicts, "failed_step": failed_step, "reason": reason}
 
     if clock.expired():
         return result(0, LATE)
@@ -385,25 +447,37 @@ def attempt(candidate: Candidate, scenario: dict[str, Any], media: Media, clock:
     generation, port = running
     connection = http.client.HTTPConnection("127.0.0.1", port, timeout=REQUEST_SEC)
     index = 0
-
-    def differs(reason: str) -> dict[str, Any]:
-        if candidate.generation != generation:  # the server was restarted under this scenario
-            raise NoAnswer("restarted")
-        return result(index, reason)
-
     try:
         status, created = ask(clock, connection, "POST", "/api/workspaces", {}, None)
         workspace = created.get("id") if isinstance(created, dict) else None
         if status != 201 or not isinstance(workspace, str) or not WORKSPACE_ID.fullmatch(workspace):
-            return differs("could not create a workspace")
-        for index, step in enumerate(scenario["steps"], start=1):
-            target = f"/api/ws/{workspace}{step['path']}{encode_query(step['query'])}"
-            status, answer = ask(clock, connection, step["method"], target, step["headers"], step.get("body"), media.body(step))
-            if status != step["status"]:
-                return differs(f"status {status}, expected {step['status']}")
-            if not same(answer, step["json"], workspace):
-                return differs("body differs")
-        return result(None, None)
+            if candidate.generation != generation:  # the server was restarted under this scenario
+                raise NoAnswer("restarted")
+            return result(0, "could not create a workspace")
+        for index, step in enumerate(steps, start=1):
+            unit = step.get("unit", 0)
+            # most paths are the workspace's own; a step marked scoped: false names its full path (the client's /api/version)
+            path = step["path"] if step.get("scoped", True) is False else f"/api/ws/{workspace}{step['path']}"
+            status, answer = ask(clock, connection, step["method"], path + encode_query(step["query"]), step["headers"], step.get("body"),
+                                 media.body(step))
+            reason = (f"status {status}, expected {step['status']}" if status != step["status"]
+                      else None if same(answer, step["json"], workspace) else "body differs")
+            if reason is not None:
+                if candidate.generation != generation:
+                    raise NoAnswer("restarted")
+                wrong[unit] = True
+                difference = difference or (index, reason)
+                if not multi:
+                    return result(index, reason)
+            answered[unit] += 1
+            if step.get("restart"):
+                connection.close()
+                running = candidate.planned_restart(step["restart"])
+                if running is None:
+                    return result(index, LATE if clock.expired() else DOWN)
+                generation, port = running
+                connection = http.client.HTTPConnection("127.0.0.1", port, timeout=REQUEST_SEC)
+        return result(*(difference or (None, None)))
     except NoAnswer:
         connection.close()  # before waiting on the server: a server that serves one connection at a time may be waiting on this one
         if clock.expired():
@@ -415,21 +489,28 @@ def attempt(candidate: Candidate, scenario: dict[str, Any], media: Media, clock:
 
 
 def not_played(scenario: dict[str, Any], reason: str) -> dict[str, Any]:
-    return {"id": scenario["id"], "matched": False, "failed_step": 0, "reason": reason}
+    return {"id": scenario["id"], "matched": False, "units": [False] * unit_count(scenario), "failed_step": 0, "reason": reason}
 
 
 def play_all(candidate: Candidate, scenarios: list[dict[str, Any]], media: Media, clock: Clock,
              metrics: dict[str, Any]) -> list[dict[str, Any]]:
-    """Every scenario once, WORKERS at a time; then each that got no answer once more, alone, while time remains.
+    """Play every scenario, then give each that got no answer one more try, alone, while time remains.
 
-    The second pass is what keeps a server that crashes now and then from losing the scenarios that
-    were in flight beside the one that crashed it.
+    Scenarios without a planned restart run WORKERS at a time. Those with one run after them, one at a
+    time, so that stopping the server disturbs no other scenario. The second tries are what keep a
+    server that crashes now and then from losing the scenarios in flight beside the one that crashed it.
     """
+    results: list[dict[str, Any] | None] = [None] * len(scenarios)
+    shared = [index for index, scenario in enumerate(scenarios) if not durable(scenario)]
     pool = ThreadPoolExecutor(WORKERS)
     try:
-        results = list(pool.map(lambda s: attempt(candidate, s, media, clock), scenarios))
+        for index, result in zip(shared, pool.map(lambda i: attempt(candidate, scenarios[i], media, clock), shared)):
+            results[index] = result
     finally:
         pool.shutdown(cancel_futures=True)
+    for index, scenario in enumerate(scenarios):
+        if durable(scenario):
+            results[index] = attempt(candidate, scenario, media, clock)
     for index, scenario in enumerate(scenarios):
         if results[index]["reason"] in (NO_ANSWER, DOWN) and not clock.expired():
             metrics["retried"] += 1
@@ -507,11 +588,12 @@ def evaluate(source: Path, scenario_path: Path, work: Path, output: Path, sandbo
             raise EvaluationError("Private scenarios are unreadable") from exc
         if not scenarios:
             raise EvaluationError("Private scenarios are empty")
-        total = len(scenarios)
-        themes = sorted({s["theme"] for s in scenarios})
-        metrics: dict[str, Any] = {"scenarios_total": total, "scenarios_matched": 0, "reward": 0.0, "restarts": 0, "retried": 0,
-                                   "unfinished": 0, "notes": [],
-                                   "by_theme": {t: {"total": sum(1 for s in scenarios if s["theme"] == t), "matched": 0} for t in themes}}
+        themes = [unit_themes(scenario) for scenario in scenarios]  # also checks that every unit has steps
+        total = sum(len(names) for names in themes)
+        by_theme = {name: {"total": sum(names.count(name) for names in themes), "matched": 0} for name in sorted({n for ns in themes for n in ns})}
+        metrics: dict[str, Any] = {"units_total": total, "units_matched": 0, "reward": 0.0, "scenarios_total": len(scenarios),
+                                   "scenarios_matched": 0, "restarts": 0, "planned_restarts": 0, "retried": 0, "unfinished": 0, "notes": [],
+                                   "by_theme": by_theme}
         if sandbox:
             check_sandbox()
         candidate: Candidate | None = None
@@ -538,20 +620,20 @@ def evaluate(source: Path, scenario_path: Path, work: Path, output: Path, sandbo
                 candidate.stop()
     finally:
         clock.stop()
-    theme_of = {s["id"]: s["theme"] for s in scenarios}
-    for result in results:
-        if result["matched"]:
-            metrics["scenarios_matched"] += 1
-            metrics["by_theme"][theme_of[result["id"]]]["matched"] += 1
+    for names, result in zip(themes, results):
+        metrics["scenarios_matched"] += result["matched"]
+        for name, verdict in zip(names, result["units"]):
+            metrics["units_matched"] += verdict
+            metrics["by_theme"][name]["matched"] += verdict
     metrics["unfinished"] = sum(1 for result in results if result["reason"] == LATE)
     if metrics["unfinished"]:
         metrics["notes"].append(f"the replay reached its time limit of {DEADLINE_SEC} seconds; "
                                 f"{metrics['unfinished']} scenarios were not played to the end")
     if candidate is not None:
-        metrics["restarts"] = candidate.restarts
+        metrics["restarts"], metrics["planned_restarts"] = candidate.restarts, candidate.planned
         if candidate.failed_starts >= START_FAILURES:
             metrics["notes"].append(f"the server stopped and did not come back after {START_FAILURES} restarts in a row")
-    metrics["reward"] = round(metrics["scenarios_matched"] / total, 6)
+    metrics["reward"] = round(metrics["units_matched"] / total, 6)
     metrics["elapsed_sec"] = round(time.monotonic() - started, 1)
     metrics["results"] = results  # per-scenario diagnostics, written by the caller after the reward
     return metrics

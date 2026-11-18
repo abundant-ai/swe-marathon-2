@@ -57,7 +57,7 @@ def main() -> int:
         scenarios = tests / "private" / "scenarios.json.gz"
         metrics = evaluate(Path("/app/server"), scenarios if scenarios.exists() else tests / "private" / "scenarios.json", Path("/work"), output)
         publish(output, metrics)
-        print(f"reward: {metrics['reward']:.6f} ({metrics['scenarios_matched']}/{metrics['scenarios_total']} scenarios)", flush=True)
+        print(f"reward: {metrics['reward']:.6f} ({metrics['units_matched']}/{metrics['units_total']} units)", flush=True)
         code = 0
     except Exception as exc:  # noqa: BLE001 - every unexpected failure invalidates the evaluation
         message = str(exc) if isinstance(exc, EvaluationError) else f"Verifier error: {type(exc).__name__}"

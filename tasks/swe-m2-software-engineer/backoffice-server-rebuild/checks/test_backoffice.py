@@ -375,9 +375,21 @@ def test_the_candidate_cannot_replace_the_delivery_directory():
 
 
 FAKE_SERVER = r'''
-import json, os, socket, sys, threading, time
+import json, os, secrets, signal, socket, sys, threading, time
 
 MODE = sys.argv[1]
+STATE = os.path.join(os.environ["DATA_DIR"], "tallies.json")  # disk: written before each answer; lazy: only on SIGTERM
+tallies, lock = (json.load(open(STATE)) if MODE in ("disk", "lazy") and os.path.exists(STATE) else {}), threading.Lock()
+
+
+def save():
+    with open(STATE + ".tmp", "w") as out:
+        json.dump(tallies, out)
+    os.replace(STATE + ".tmp", STATE)
+
+
+if MODE == "lazy":
+    signal.signal(signal.SIGTERM, lambda *_: (save(), os._exit(0)))
 
 
 def send(conn, status, body):
@@ -418,7 +430,18 @@ def handle(conn):
                     while True:
                         conn.sendall(b" ")
                         time.sleep(0.2)
-                send(conn, 201, b'{"id": "w_1"}')
+                send(conn, 201, json.dumps({"id": "w_" + secrets.token_hex(4)}).encode())
+            elif path == "/api/version":
+                send(conn, 200, b'{"version": "1"}')
+            elif path.endswith("/tally"):
+                workspace = path.split("/")[3]
+                with lock:
+                    if method == "POST":
+                        tallies[workspace] = tallies.get(workspace, 0) + 1
+                        if MODE == "disk":
+                            save()
+                    count = tallies.get(workspace, 0)
+                send(conn, 200, json.dumps({"count": count}).encode())
             elif path.endswith("/crash"):
                 os._exit(3)
             elif path.endswith("/not-json"):
@@ -517,6 +540,47 @@ def test_a_server_that_crashes_now_and_then_loses_only_the_scenarios_that_crash_
     metrics = out["metrics"]
     assert metrics["scenarios_matched"] == 72 and metrics["by_theme"] == {"crash": {"total": 8, "matched": 0}, "fine": {"total": 72, "matched": 72}}
     assert metrics["restarts"] >= 8 and metrics["unfinished"] == 0 and not metrics["notes"]
+
+
+def test_each_trading_day_and_screen_counts_alone_and_the_reward_counts_units(tmp_path):
+    """Owner round 2: a trading run is one unit per day and per client screen after it. A day with a wrong answer is
+    unmatched, and the run goes on, so later days still count; a scenario without units stops at its first difference.
+    reward = matched units / all units. A step marked scoped: false names its full path (the client's /api/version)."""
+    wrong = dict(step("/items/3"), json={"path": "items/x"})
+    version = {"method": "GET", "path": "/api/version", "scoped": False, "query": {}, "headers": {"accept": "application/json"},
+               "body": None, "status": 200, "json": {"version": "1"}}
+    run = {"id": "T1", "theme": "trading", "units": [{"theme": "trading"}, {"theme": "trading"}, {"theme": "trading"}, {"theme": "screens"}],
+           "steps": [dict(step("/items/1"), unit=0), dict(step("/items/2"), unit=0), dict(wrong, unit=1), dict(step("/items/4"), unit=1),
+                     dict(step("/items/5"), unit=2), dict(version, unit=3), dict(step("/orders"), unit=3)]}
+    early = {"id": "S1", "theme": "t", "steps": [wrong, step("/items/4")]}
+    fine = {"id": "S2", "theme": "t", "steps": [step("/items/6")]}
+    out = drive(tmp_path, "plain", [run, early, fine])
+    metrics, results = out["metrics"], {result["id"]: result for result in out["results"]}
+    assert results["T1"]["units"] == [True, False, True, True] and results["S1"]["units"] == [False] and results["S1"]["failed_step"] == 1
+    assert metrics["units_total"] == 6 and metrics["units_matched"] == 4 and metrics["reward"] == round(4 / 6, 6)
+    assert metrics["by_theme"] == {"screens": {"total": 1, "matched": 1}, "t": {"total": 2, "matched": 1}, "trading": {"total": 3, "matched": 2}}
+
+
+def test_what_a_workspace_holds_survives_a_restart_on_the_same_data(tmp_path):
+    """Owner round 2 (QA 01 R2): a scenario with a planned restart runs alone; after the marked step the server is
+    stopped (SIGTERM, or SIGKILL straight after the answer) and started on the same DATA_DIR, and the scenario goes on
+    in the same workspace. A server that keeps its state in memory fails both; one that saves only on SIGTERM fails
+    the SIGKILL case; one that writes before it answers passes. Other scenarios are not disturbed."""
+    def tally(method: str, count: int, restart: str | None = None) -> dict:
+        found = {"method": method, "path": "/tally", "query": {}, "headers": {"x-user": "U-01"}, "body": None, "status": 200, "json": {"count": count}}
+        return dict(found, restart=restart) if restart else found
+
+    scenarios = [{"id": "TERM", "theme": "durable", "steps": [tally("POST", 1), tally("POST", 2, "term"), tally("GET", 2), tally("POST", 3)]},
+                 {"id": "KILL", "theme": "durable", "steps": [tally("POST", 1), tally("POST", 2, "kill"), tally("GET", 2)]},
+                 {"id": "PLAIN", "theme": "t", "steps": [tally("POST", 1), tally("GET", 1)]}]
+    verdicts = {}
+    for mode in ("disk", "memory", "lazy"):
+        out = drive(tmp_path / mode, mode, scenarios)
+        verdicts[mode] = {result["id"]: result["matched"] for result in out["results"]}
+        assert out["metrics"]["planned_restarts"] == 2 and out["metrics"]["retried"] == 0, out
+    assert verdicts == {"disk": {"TERM": True, "KILL": True, "PLAIN": True},
+                        "memory": {"TERM": False, "KILL": False, "PLAIN": True},
+                        "lazy": {"TERM": True, "KILL": False, "PLAIN": True}}
 
 
 def test_set_id_bits_are_stripped_and_the_privilege_drop_sets_no_new_privs(tmp_path):
