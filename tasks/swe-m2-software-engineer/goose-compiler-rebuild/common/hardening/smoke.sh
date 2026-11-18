@@ -23,18 +23,22 @@ expect() {
     [[ "$out" == *"$text"* ]] || fail "'$*' did not print '$text': $out"
 }
 
-# The standard library's extern fns (std's popcount, math's sqrt) bind and run.
+# The standard library's extern fns (std's popcount, math's sqrt) bind and run: the program
+# checks their values itself (a failed assert aborts with a nonzero exit), so only its exit
+# status and one plain word are compared here, never the way numbers print.
 cat > ok.goose <<'EOF'
 import std;
 import math;
 
 fn main() {
-    print("hardened ", popcount(255), " ", sqrt(16.0) == 4.0);
+    assert(popcount(255) == 8);
+    assert(sqrt(16.0) == 4.0);
+    print("hardened");
 }
 EOF
-expect 0 "hardened 8 true" "$goose" run ok.goose
+expect 0 "hardened" "$goose" run ok.goose
 # TinyCC's files come from beside the compiler whatever GOOSE_TCCLIB says.
-expect 0 "hardened 8 true" env GOOSE_TCCLIB="$work/nowhere" "$goose" run ok.goose
+expect 0 "hardened" env GOOSE_TCCLIB="$work/nowhere" "$goose" run ok.goose
 # Every module whose files declare extern fns (slice_pool through slice_pool_internal) still checks.
 for module in std math binary slice_pool; do
     printf 'import %s;\n\nfn main() {}\n' "$module" > "uses_$module.goose"
