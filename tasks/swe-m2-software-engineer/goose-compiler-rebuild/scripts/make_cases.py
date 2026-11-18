@@ -26,7 +26,9 @@ otherwise; and the layout a person leaves before formatting, except a file a --c
 has formatted first. Expected outputs are NOT produced here: they are recorded from the original
 compiler on Linux when the images are built.
 
-usage: make_cases.py <goose checkout> --count 1800 --seed N --visible 300 --out-private P --out-visible V
+usage: make_cases.py <goose checkout> --count 1800 --visible 300 --out-private P --out-visible V [--seed N]
+
+Without --seed the seed is the private one in experiment/seeds.json (scripts/seeds.py), never committed.
 """
 
 from __future__ import annotations
@@ -1372,11 +1374,14 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("checkout", type=Path)
     parser.add_argument("--count", type=int, default=1800)
-    parser.add_argument("--seed", type=int, required=True)
+    parser.add_argument("--seed", type=int, default=None, help="by default the private one (scripts/seeds.py)")
     parser.add_argument("--visible", type=int, default=300)
     parser.add_argument("--out-private", type=Path, required=True)
     parser.add_argument("--out-visible", type=Path, required=True)
     args = parser.parse_args()
+    if args.seed is None:
+        import seeds  # noqa: PLC0415
+        args.seed = int(seeds.value("cases"))
     programs = pools(args.checkout)
     shipped = shipped_texts(args.checkout)
     protected = protected_names(args.checkout)

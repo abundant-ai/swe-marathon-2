@@ -16,7 +16,9 @@ done
 if grep -qE 'getenv\("GOOSE_(TCCLIB|STDLIB)"\)|arg == "(-D|-o|--include|--stdlib|--unsafe-no-rf-check|--standalone|--header|--emit-runtime|--gen-runtime-header)"' src/jit.h src/main.cpp \
     || ! grep -q 'goose build is not available' src/main.cpp \
     || ! grep -q 'LoadEmbedded(callfile, path, bytes, outside)' src/typecheck_builtins.h \
-    || ! grep -q 'embed_shader is not available' src/typecheck_builtins.h; then
+    || ! grep -q 'embed_shader is not available' src/typecheck_builtins.h \
+    || ! grep -q 'const char goose_build_marker\[\] = GOOSE_BUILD_MARKER' src/main.cpp \
+    || grep -qE '^  (-D NAME|--stdlib dir|--unsafe-no-rf-check|--gen-runtime-header|-o out\.c|--emit-runtime)' src/main.cpp; then
     echo "hardening patch incomplete" >&2
     exit 1
 fi

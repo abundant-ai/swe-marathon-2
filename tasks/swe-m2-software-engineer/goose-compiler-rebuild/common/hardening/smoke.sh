@@ -100,6 +100,18 @@ expect 1 "unknown option: --header" "$goose" --header program.h ok.goose
 expect 1 "goose build is not available" "$goose" build ok.goose
 written="$(find "$work" -name '*.c' -o -name program.h)"
 [ -z "$written" ] || fail "C was written: $written"
+# Nor does any help or completion script offer them.
+for topic in "" check run c internals version; do
+    out="$("$goose" help $topic 2>&1)" || true
+    case "$out" in
+        *"-D NAME"*|*"--stdlib"*|*"--include"*|*"-o out"*|*"--standalone"*|*"--emit-runtime"*|*"--unsafe-no-rf-check"*|*"--gen-runtime-header"*)
+            fail "goose help $topic still offers a removed option: $out" ;;
+    esac
+done
+out="$("$goose" completion zsh 2>&1)" || true
+case "$out" in
+    *"--stdlib"*|*"--standalone"*|*"--emit-runtime"*) fail "the zsh completion still offers a removed option" ;;
+esac
 
 # embed_file reads only files under the directory of the file that embeds it: one beside it
 # still works, while an absolute path, a ".." and a symbolic link that lead out of it (to the

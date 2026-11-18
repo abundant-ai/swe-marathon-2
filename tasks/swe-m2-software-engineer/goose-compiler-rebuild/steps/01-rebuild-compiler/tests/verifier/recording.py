@@ -12,10 +12,11 @@
   exiting 0; a dispatcher with the command line's answers and one constant answer per kind of
   case (runcases.free_cases); and that dispatcher with a perfect formatter.
 
-usage: python3 recording.py <all cases.json> <kept cases.json> <expected.json> <report.json> <out.json> [--link <file>]
+- The recording compiler (`--build`, build.sh's build.txt: its link, its sha256, and its sha256
+  without the build marker, which the reference solution's build logs too), the build host, the
+  recording's wall time and the sha256 of the kept ids, so that two builds can be compared.
 
-`--link` names the file where build.sh wrote how the recording compiler was linked (static or
-dynamic), which the report repeats.
+usage: python3 recording.py <all cases.json> <kept cases.json> <expected.json> <report.json> <out.json> [--build <build.txt>]
 """
 
 from __future__ import annotations
@@ -26,7 +27,7 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-from runcases import diagnostics, free_cases, group
+from recorder import diagnostics, free_cases, group
 
 ENCODING = ("utf-8", "surrogateescape")
 
@@ -71,6 +72,11 @@ def describe(cases: list[dict], kept: list[dict], expected: dict, report: dict) 
         "dropped_slow": by_kind(report["slow"]),
         "dropped_unsteady": by_kind(report["unsteady"]),
         "dropped_crashed": by_kind(report.get("crashed", [])),
+        "dropped_perturbed": by_kind(report.get("perturbed", [])),
+        "dropped_output_limit": by_kind(report.get("output_limit", [])),
+        "dropped_memory_limit": by_kind(report.get("memory_limit", [])),
+        "keep_cpu": report.get("keep_cpu"), "host": report.get("host", {}), "wall_seconds": report.get("wall_seconds"),
+        "kept_ids_sha256": report.get("kept_ids_sha256"),
         "dropped": {reason: by_kind(ids) for reason, ids in sorted(report.get("dropped", {}).items())},
         "settled": dict(sorted(Counter(report.get("settled", {}).values()).items())),
         "kept_seconds_max": seconds[-1] if seconds else 0.0,
@@ -86,16 +92,16 @@ def describe(cases: list[dict], kept: list[dict], expected: dict, report: dict) 
 
 def main() -> None:
     args = sys.argv[1:]
-    link = None
-    if "--link" in args:
-        at = args.index("--link")
-        link = Path(args[at + 1]).read_text(encoding="utf-8").strip()
+    build = None
+    if "--build" in args:
+        at = args.index("--build")
+        build = dict(line.split(" ", 1) for line in Path(args[at + 1]).read_text(encoding="utf-8").splitlines() if " " in line)
         del args[at:at + 2]
     cases, kept = (json.loads(Path(path).read_text(encoding="utf-8"))["cases"] for path in args[0:2])
     expected, report = (json.loads(Path(path).read_text(encoding="utf-8")) for path in args[2:4])
     described = describe(cases, kept, expected, report)
-    if link is not None:
-        described["link"] = link
+    if build is not None:
+        described["build"] = build
     Path(args[4]).write_text(json.dumps(described, indent=1, sort_keys=True) + "\n")
     print(json.dumps(described, sort_keys=True))
 

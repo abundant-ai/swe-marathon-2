@@ -20,6 +20,7 @@ TASK = Path(__file__).resolve().parent.parent
 STEP = TASK / "steps" / "01-rebuild-compiler"
 SCRIPTS = TASK / "scripts"
 RUNNER = STEP / "tests" / "verifier" / "runcases.py"
+RECORDER = STEP / "tests" / "verifier" / "recorder.py"
 HARDENING = TASK / "common" / "hardening"
 
 RUN_PROGRAM = ("import std;\n// prints the sum\nfn main() {\n    var total = 0;\n    for i in 0..{n} {\n        total += i * 2;\n"
@@ -501,8 +502,8 @@ def test_nothing_a_submission_writes_reaches_a_later_case(tmp_path):
         verify.runcases.TEMP = Path({str(tmp_path / 'goose-tmp')!r})
         verify.LEFTOVER_DIRS[:] = [{str(shared)!r}]
         verify.kill_user = lambda uid: None
-        removed = []
-        verify.subprocess.run = lambda argv, **kw: removed.append(argv)
+        removed, real_run = [], verify.subprocess.run
+        verify.subprocess.run = lambda argv, **kw: removed.append(argv) if argv[0] == "ipcrm" else real_run(argv, **kw)
         root = Path({str(ipc)!r})
         verify.remove_ipc = (lambda real: lambda uid: real(uid, root))(verify.remove_ipc)
         metrics = verify.grade(Path({str(program)!r}), Path({str(private)!r}), [], (os.getuid(), os.getgid()))
@@ -524,7 +525,7 @@ def test_recorder_keeps_only_cases_that_finish_the_same_way_twice_and_soon(tmp_p
     program.write_text("#!/usr/bin/env python3\nimport os, sys, time\n"
                        "if 'help' in sys.argv: print(os.urandom(4).hex())\n"
                        "elif 'version' in sys.argv: time.sleep(5)\n"
-                       "elif 'lag' in sys.argv: time.sleep(0.8); print('late')\n"
+                       "elif 'lag' in sys.argv: time.sleep(1.2); print('late')\n"
                        "else: print(' '.join(sys.argv[1:]), sorted(os.listdir('.')))\n"
                        "sys.exit(2 if 'check' in sys.argv else 0)\n")
     program.chmod(0o755)
@@ -532,21 +533,23 @@ def test_recorder_keeps_only_cases_that_finish_the_same_way_twice_and_soon(tmp_p
              for i, argv in enumerate([["run", "main.goose"], ["check", "main.goose"], ["help"], ["version"], ["format"]])]
     source, outputs, kept, timing = (tmp_path / name for name in ("cases.json", "outputs.json", "kept.json", "timing.json"))
     source.write_text(json.dumps({"cases": cases}))
-    done = subprocess.run([sys.executable, "-B", str(RUNNER), "record", str(program), str(source), str(outputs), "--keep", str(kept)],
+    done = subprocess.run([sys.executable, "-B", str(RECORDER), "record", str(program), str(source), str(outputs), "--keep", str(kept)],
                           capture_output=True, text=True, timeout=120)
-    assert done.returncode != 0 and "2 did not finish the same way twice" in done.stdout + done.stderr
+    out = done.stdout + done.stderr
+    assert done.returncode != 0 and "1 did not finish the same way twice" in out and "1 were slow" in out, "a hang is slow"
     cases = cases[:2] + [dict(cases[4], files={f"f{index}.goose": ""}) for index in range(8)]
     for index, case in enumerate(cases):
         cases[index] = dict(case, id=f"P{index}")
     cases += [{"id": "P98", "files": {}, "argv": ["lag"], "stdin": None}, {"id": "P99", "files": {}, "argv": ["help"], "stdin": None}]
     source.write_text(json.dumps({"cases": cases}))
-    done = subprocess.run([sys.executable, "-B", str(RUNNER), "record", str(program), str(source), str(outputs), "--keep", str(kept),
+    done = subprocess.run([sys.executable, "-B", str(RECORDER), "record", str(program), str(source), str(outputs), "--keep", str(kept),
                            "--report", str(timing)], capture_output=True, text=True, timeout=120)
     assert done.returncode == 0, done.stdout + done.stderr
     assert [c["id"] for c in json.loads(kept.read_text())["cases"]] == [f"P{i}" for i in range(10)]
     report = json.loads(timing.read_text())
-    assert report["slow"] == ["P98"] and report["unsteady"] == ["P99"] and report["keep_seconds"] == 0.5
-    assert min(report["seconds"]["P98"]) >= 0.8 and max(max(report["seconds"][f"P{i}"]) for i in range(10)) < 0.5
+    assert report["slow"] == ["P98"] and report["unsteady"] == ["P99"] and report["keep_seconds"] == 1.0
+    assert min(report["seconds"]["P98"]) >= 1.2 and max(max(report["seconds"][f"P{i}"]) for i in range(10)) < 1.0
+    assert report["perturbed"] == [] and len(report["kept_ids_sha256"]) == 64 and report["wall_seconds"] > 0
     check = subprocess.run([sys.executable, "-B", str(RUNNER), "check", str(program), str(kept), str(outputs)],
                            capture_output=True, text=True, timeout=120)
     assert check.stdout.strip().splitlines()[-1] == "10 of 10 cases pass"
@@ -593,12 +596,12 @@ def test_the_recorder_settles_each_case_by_its_rule_and_drops_crashes(tmp_path):
              run(9, "plain"), {"id": "P10", "files": {}, "argv": ["help"], "stdin": None, "record": {"cli": True}}]
     source, outputs, kept, timing = (tmp_path / name for name in ("cases.json", "outputs.json", "kept.json", "timing.json"))
     source.write_text(json.dumps({"cases": cases}))
-    done = subprocess.run([sys.executable, "-B", str(RUNNER), "record", str(program), str(source), str(outputs), "--keep", str(kept),
+    done = subprocess.run([sys.executable, "-B", str(RECORDER), "record", str(program), str(source), str(outputs), "--keep", str(kept),
                            "--report", str(timing)], capture_output=True, text=True, timeout=120)
     assert "crashed" in done.stdout + done.stderr and done.returncode != 0, "two crashes in ten cases fail the recording"
     cases = [case for case in cases if case["id"] not in ("P6", "P7")] + [run(i, f"word{i}") for i in range(20, 120)]
     source.write_text(json.dumps({"cases": cases + [run(6, "SEGV")]}))
-    done = subprocess.run([sys.executable, "-B", str(RUNNER), "record", str(program), str(source), str(outputs), "--keep", str(kept),
+    done = subprocess.run([sys.executable, "-B", str(RECORDER), "record", str(program), str(source), str(outputs), "--keep", str(kept),
                            "--report", str(timing)], capture_output=True, text=True, timeout=300)
     assert done.returncode == 0, done.stdout + done.stderr
     got = {case["id"]: case for case in json.loads(kept.read_text())["cases"]}
@@ -616,7 +619,7 @@ def test_the_recorder_settles_each_case_by_its_rule_and_drops_crashes(tmp_path):
 def test_selection_drops_shared_answers_quoted_answers_and_free_cases():
     report = verifier_call(textwrap.dedent("""
         import json
-        from verifier import runcases
+        from verifier import recorder as runcases
         case = lambda i, argv, stdin=None, text="fn main() {}": {"id": f"P{i:04d}", "files": {"main.goose": text},
                                                                "argv": argv, "stdin": stdin}
         cases, outputs = [], {}
@@ -652,6 +655,86 @@ def test_selection_drops_shared_answers_quoted_answers_and_free_cases():
     assert report["kept"] > 900
 
 
+def test_the_shipped_runner_only_runs_and_compares():
+    """The agent's run_examples.py is runcases.py: it runs cases with the limits and compares, and
+    says nothing of how answers were recorded or which cases were kept."""
+    runner = RUNNER.read_text()
+    for phrase in ("original", "asked to copy", "no compiler", "collect", "slower machines", "settle", "variant",
+                   "SHARE", "record", "KEEP_SEC", "hidden", "grade"):
+        assert phrase not in runner, phrase
+    assert not re.search(r"(?<![.\w])select\b", runner), "no selection of cases"
+    for name in ("def limit(", "def prepare(", "def run_case(", "def matches(", "def remove_path(", "MEMORY_LIMIT"):
+        assert name in runner, name
+    done = subprocess.run([sys.executable, "-B", str(RUNNER), "record", "x", "y", "z"], capture_output=True, text=True)
+    assert done.returncode != 0 and "usage" in done.stdout + done.stderr
+
+
+def test_a_deep_tree_never_turns_grading_into_an_error(tmp_path):
+    """A run that leaves 1,500 nested directories behind: the next case's cleanup (rm -rf) removes
+    them, and grading completes."""
+    script = 'case "$1" in deep) i=0; while [ $i -lt 1500 ]; do mkdir d && cd d || break; i=$((i+1)); done;; esac\necho ok\n'
+    cases, expected = plain_cases([["deep"], ["after"], ["deep"], ["last"]])
+    metrics = run_verifier(tmp_path, script, cases, expected)
+    assert metrics["cases_run"] == 4 and metrics["setup_errors"] == 0, metrics
+    assert metrics["by_kind"]["after"]["passed"] == 1 and metrics["by_kind"]["last"]["passed"] == 1, metrics
+    assert not list((tmp_path / "tmp").rglob("d")), "the deep tree was left behind"
+
+
+def test_the_original_is_refused_by_its_marker_and_only_the_images_carry_one(tmp_path):
+    marker = b"GOOSE-BUILD-MARKER-" + b"f" * 32
+    top = tmp_path / "rebuild"
+    (top / "bin").mkdir(parents=True)
+    (top / "goose").write_bytes(b"\x7fELF" + b"x" * ((1 << 20) - 10) + marker + b"tail")
+    (top / "bin" / "clean").write_bytes(b"GOOSE-BUILD-MARKER-" + b"0" * 32)
+    (top / "link").symlink_to(top / "goose")
+    found = verifier_call(textwrap.dedent(f"""
+        import json, verify
+        from pathlib import Path
+        top = Path({str(top)!r})
+        print(json.dumps([verify.holds_marker(top, {marker!r}), verify.holds_marker(top / "bin", {marker!r}),
+                          verify.identity(top / "bin" / "clean"), verify.identity(top / "goose")]))
+    """))
+    assert found[0] == "goose" and found[1] is None, "found across a 1 MB chunk boundary, never through a link"
+    assert found[2]["sha256"] == found[2]["sha256_without_marker"] and found[3]["sha256"] != found[3]["sha256_without_marker"]
+    package = (SCRIPTS / "package_step.py").read_text()
+    assert 'for place in ("environment", f"{STEP}/tests"):\n        content[f"{place}/hardening/marker"] = marker' in package
+    build = (HARDENING / "build.sh").read_text()
+    assert 'if [ -f "$here/marker" ]' in build and "goose_marker.h" in build and 'grep -qF "$marker"' in build
+    assert "marker" not in (STEP / "solution" / "solve.sh").read_text().split("hardening/build.sh", 1)[0]
+    verify = (STEP / "tests" / "verify.py").read_text()
+    assert verify.index("holds_marker(SUBMISSION") < verify.index("metrics = grade(")
+
+
+def test_the_agent_cannot_replace_the_artifact_directory():
+    """/app is root's and sticky, /app/rebuild root's and writable by all: the agent cannot swap the
+    artifact for a link to the original, which the root-run collector would follow."""
+    docker = (TASK / "environment" / "Dockerfile").read_text()
+    owned = docker.index("chown -R dev:dev /app")
+    assert owned < docker.index("chown root:root /app /app/rebuild") and "chmod 1777 /app " in docker
+    assert "chmod 0777 /app/rebuild" in docker
+
+
+def test_the_recorder_renumbers_the_examples_it_keeps(tmp_path):
+    program = tmp_path / "fake-goose"
+    program.write_text(FAKE_COMPILER)
+    program.chmod(0o755)
+    cases = [{"id": f"E{i:05d}", "files": {"main.goose": f"word{i}"}, "argv": ["run", "main.goose"], "stdin": None}
+             for i in (3, 7, 8, 20)] + [{"id": "E00030", "files": {"main.goose": "SEGV"}, "argv": ["run", "main.goose"],
+                                         "stdin": None}]
+    source, outputs, kept = tmp_path / "c.json", tmp_path / "o.json", tmp_path / "k.json"
+    source.write_text(json.dumps({"cases": cases * 1}))
+    done = subprocess.run([sys.executable, "-B", str(RECORDER), "record", str(program), str(source), str(outputs), "--keep",
+                           str(kept), "--renumber", "E"], capture_output=True, text=True, timeout=120)
+    assert done.returncode != 0, "one crash in five fails the recording"
+    source.write_text(json.dumps({"cases": cases[:4] + [dict(c, id=f"E{40 + i:05d}", files={"main.goose": f"w{i}"})
+                                                        for i, c in enumerate(cases[:1] * 60)]}))
+    done = subprocess.run([sys.executable, "-B", str(RECORDER), "record", str(program), str(source), str(outputs), "--keep",
+                           str(kept), "--renumber", "E"], capture_output=True, text=True, timeout=300)
+    assert done.returncode == 0, done.stdout + done.stderr
+    ids = [case["id"] for case in json.loads(kept.read_text())["cases"]]
+    assert ids == [f"E{i:05d}" for i in range(1, len(ids) + 1)] and sorted(json.loads(outputs.read_text())) == ids
+
+
 def test_the_recording_report_counts_upstream_answers_and_the_baselines(tmp_path):
     digest = hashlib.sha256(b"6\n").hexdigest()
     message = lambda text: hashlib.sha256(text.encode()).hexdigest()  # noqa: E731
@@ -675,14 +758,15 @@ def test_the_recording_report_counts_upstream_answers_and_the_baselines(tmp_path
               "crashed": [], "dropped": {"answer shared by many cases": ["P5"]}, "settled": {"P1": "variant 0"}, "cli": ["P10"]}
     for name, data in (("cases.json", {"cases": cases}), ("kept.json", {"cases": kept}), ("expected.json", expected), ("timing.json", timing)):
         (tmp_path / name).write_text(json.dumps(data))
-    (tmp_path / "link").write_text("static\n")
+    (tmp_path / "build.txt").write_text("link static\nsha256 ab\nsha256_without_marker cd\n")
     subprocess.run([sys.executable, "-B", str(STEP / "tests" / "verifier" / "recording.py"),
                     *(str(tmp_path / name) for name in ("cases.json", "kept.json", "expected.json", "timing.json", "out.json")),
-                    "--link", str(tmp_path / "link")], check=True, capture_output=True, timeout=60)
+                    "--build", str(tmp_path / "build.txt")], check=True, capture_output=True, timeout=60)
     report = json.loads((tmp_path / "out.json").read_text())
     assert report["run_cases_with_upstream_output"] == 2 and report["run_cases_printing_upstream_output"] == 1
     assert report["error_cases_with_upstream_messages"] == 2 and report["error_cases_all_messages_verbatim"] == 1
-    assert report["error_cases_some_message_verbatim"] == 1 and report["link"] == "static"
+    assert report["error_cases_some_message_verbatim"] == 1 and report["build"]["link"] == "static"
+    assert report["build"]["sha256_without_marker"] == "cd"
     assert report["empty_stdout_by_exit"] == {"1": 2} and report["kinds_kept"] == {"check": 2, "cli": 1, "format": 1, "run": 4}
     assert report["dropped_slow"] == {"modules": 1} and report["dropped_unsteady"] == {"run": 1}
     assert report["dropped"] == {"answer shared by many cases": {"run": 1}} and report["settled"] == {"variant 0": 1}
@@ -698,8 +782,11 @@ def test_images_and_solution_build_one_hardened_compiler_and_ship_no_private_cas
     agent = (TASK / "environment" / "Dockerfile").read_text()
     verifier = (STEP / "tests" / "Dockerfile").read_text()
     solve = (STEP / "solution" / "solve.sh").read_text()
-    builder = agent.split("\n\nFROM ubuntu:24.04\n", 1)[0]
-    assert verifier.startswith(builder), "both images must build the compiler the same way"
+    base = re.search(r"^FROM (ubuntu:24\.04@sha256:[0-9a-f]{64}) AS program$", agent, re.M).group(1)
+    builder = agent.split(f"\n\nFROM {base}\n", 1)[0]
+    build_part = builder[:builder.index("bash /hardening/smoke.sh /opt/goose/goose") + 42]
+    assert verifier.startswith(build_part), "both images must build the compiler the same way"
+    assert agent.count(f"FROM {base}") == 2 and verifier.count(f"FROM {base}") == 2, "every stage on the pinned base"
     build = (HARDENING / "build.sh").read_text()
     for flag in ("-DGOOSE_VERSION=745901f", "-DGOOSE_STDLIB_PATH=/usr/local/share/goose/stdlib", 'make_goose "-static -s"',
                  'make_goose "-s"', 'bash "$here/smoke.sh" "$build/goose"'):
@@ -709,9 +796,14 @@ def test_images_and_solution_build_one_hardened_compiler_and_ship_no_private_cas
         < builder.index("sh /hardening/build.sh /src /build 4") < builder.index("bash /hardening/smoke.sh /opt/goose/goose")
     assert solve.index('sh "$here/hardening/apply.sh" "$src"') < solve.index('sh "$here/hardening/build.sh" "$src" "$build"') \
         < solve.index("install -m 0755")
-    assert "--link /build/link" in verifier
-    final_agent = agent.split("\n\nFROM ubuntu:24.04\n", 1)[1]
-    final_verifier = verifier.split("\n\nFROM ubuntu:24.04\n", 1)[1]
+    assert "--build /build/build.txt" in verifier and "cp /hardening/marker /record/marker" in verifier
+    assert 'cp "$build/build.txt" /logs/agent/build.txt' in solve and 'smoke.sh" /app/rebuild/goose' in solve
+    final_agent = agent.split(f"\n\nFROM {base}\n", 1)[1]
+    final_verifier = verifier.split(f"\n\nFROM {base}\n", 1)[1]
+    assert "recorder.py record /opt/goose/goose /record/examples.json" in builder and "--renumber E" in builder
+    assert "recorder" not in final_agent and "COPY run_examples.py /app/examples/" in final_agent
+    assert "COPY --from=program /record/kept.json /app/examples/examples.json" in final_agent
+    assert "COPY --from=program /record/marker /tests/private/marker" in final_verifier
     assert "hardening" not in final_agent and "hardening" not in final_verifier
     assert "private" not in agent and "chown root:goose /opt/goose/goose && chmod 2711 /opt/goose/goose" in final_agent
     assert "/opt/goose" not in final_verifier, "the verifier image holds no copy of the compiler"
@@ -732,6 +824,11 @@ def test_the_hardening_patch_applies_and_its_refusals_are_the_ones_the_build_pro
                  'arg == "--header"', 'arg == "--emit-runtime"', 'arg == "--gen-runtime-header"', "RuntimeObjectSource()"):
         assert gone in removed and gone not in added, gone
     assert "if (!LoadFile(path, bytes)) Error(c, cat(\"embed_file: cannot open \", path));" in removed
+    assert "extern \"C\" const char goose_build_marker[] = GOOSE_BUILD_MARKER;" in added
+    for gone in ("  -D NAME[=VALUE]       Define a C macro in the generated program (or -DNAME).",
+                 "  --emit-runtime out.c  Write the runtime's C.", "  --unsafe-no-rf-check  Leave out the checks after calls"):
+        assert gone in removed, gone
+    assert "goose help $topic still offers a removed option" in smoke
     for message in ("extern fn is only allowed in the standard library", "sidecar files are not supported",
                     "goose build is not available", "is outside the directory of the file that embeds it",
                     "embed_shader is not available in this build of goose"):

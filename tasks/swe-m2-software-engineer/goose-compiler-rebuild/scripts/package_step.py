@@ -73,6 +73,7 @@ def collect() -> dict[str, bytes]:
     if head != UPSTREAM_COMMIT:
         raise ValueError(f"The upstream checkout at {checkout} is not at {UPSTREAM_COMMIT}")
     import make_cases  # noqa: PLC0415 - it imports this module
+    import seeds  # noqa: PLC0415
 
     found = make_cases.leaks(json.loads(HIDDEN.read_text(encoding="utf-8"))["cases"],
                              json.loads(VISIBLE.read_text(encoding="utf-8"))["cases"], make_cases.shipped_texts(checkout),
@@ -90,7 +91,13 @@ def collect() -> dict[str, bytes]:
     for path in sorted(HARDENING.iterdir()):
         for place in ("environment", f"{STEP}/tests", f"{STEP}/solution"):
             content[f"{place}/hardening/{path.name}"] = path.read_bytes()
+    # The build marker (scripts/seeds.py) goes into both images' builds of the original, never into
+    # the solution's: the verifier refuses a submission that holds it.
+    marker = str(seeds.value("marker")).encode() + b"\n"
+    for place in ("environment", f"{STEP}/tests"):
+        content[f"{place}/hardening/marker"] = marker
     content["environment/run_examples.py"] = (TASK_ROOT / STEP / "tests" / "verifier" / "runcases.py").read_bytes()
+    content["environment/recorder.py"] = (TASK_ROOT / STEP / "tests" / "verifier" / "recorder.py").read_bytes()
     content["environment/examples.json"] = VISIBLE.read_bytes()
     return dict(sorted(content.items()))
 

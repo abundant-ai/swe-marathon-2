@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-import grp
+import ctypes
+import hashlib
 import json
 import os
-import pwd
+import re
 import resource
+import secrets
 import shutil
 import signal
 import stat
@@ -18,11 +20,11 @@ from pathlib import Path
 # test.sh starts this file with Python -I; imports resolve only from this directory.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from verifier import runcases  # noqa: E402
+from verifier import recorder, runcases  # noqa: E402
 
-SANDBOX_USER = "nobody"
-SANDBOX_GROUP = "nogroup"
 SUBMISSION = Path("/app/rebuild")
+MARKER = Path(__file__).resolve().parent / "private" / "marker"   # the original's build marker
+SCAN_BYTES = 4 << 30  # bytes of the submission searched for the marker, at most
 REWARD_FILES = ("reward.txt", "reward.json")
 TOTAL_SEC = 3300  # the step verifier has 3,600 s; 1,500 runs at the per-run limit take at most 3,000 s
 # Where the unprivileged user can leave files: these, and every other world-writable directory
@@ -66,10 +68,10 @@ def sandbox_problems(status: str, limits: str, owner: tuple[int, int]) -> tuple[
     if fields.get("Groups", "").split():
         problems.append("it keeps supplementary groups")
     for name in ("CapPrm", "CapEff", "CapAmb"):
-        try:
-            if int(fields[name].strip(), 16):
+        try:  # ambient capabilities are a subset of the permitted ones: a kernel may not list them
+            if int(fields.get(name, "0" if name == "CapAmb" else "").strip(), 16):
                 problems.append(f"it holds capabilities ({name})")
-        except (KeyError, ValueError):
+        except ValueError:
             problems.append(f"no {name} in its status")
     found = {}
     for line in limits.splitlines():
@@ -77,8 +79,10 @@ def sandbox_problems(status: str, limits: str, owner: tuple[int, int]) -> tuple[
             if line.startswith(name + " "):
                 found[name] = line[len(name):].split()[0]
     for name, which in LIMIT_NAMES.items():
-        if found.get(name) != str(runcases.LIMITS[which]) and name in STRICT_LIMITS:
-            problems.append(f"{name.lower()} is {found.get(name)}, not {runcases.LIMITS[which]}")
+        value = found.get(name)
+        wanted = runcases.LIMITS[which]
+        if name in STRICT_LIMITS and not (value and value.isdigit() and int(value) <= wanted):
+            problems.append(f"{name.lower()} is {value}, not at most {wanted}")
     return problems, found
 
 
@@ -96,20 +100,19 @@ def probe(prefix: list[str], argv: list[str], fallback: list[str] | None = None)
 
 
 def sandbox() -> tuple[list[str], tuple[int, int], dict]:
-    """The command prefix that runs submitted code as the unprivileged user, that user's ids, and
-    the limits such a process has. A process started the same way must have dropped every
-    privilege, and a set-user-id root file started that way must gain nothing.
+    """The command prefix that runs submitted code as an unprivileged user of this evaluation's own
+    (a random uid and gid no other container shares, so that its process limit counts only its
+    own runs), those ids, and the limits such a process has. A process started the same way must
+    have dropped every privilege, and a set-user-id root file started that way must gain nothing.
 
     Raises:
         EvaluationError: Privileges cannot be dropped or the drop does not hold.
     """
-    try:
-        owner = (pwd.getpwnam(SANDBOX_USER).pw_uid, grp.getgrnam(SANDBOX_GROUP).gr_gid)
-    except KeyError as exc:
-        raise EvaluationError("The unprivileged user is missing") from exc
+    uid = (1 << 20) + secrets.randbelow(1 << 29)
+    owner = (uid, uid)
     if shutil.which("setpriv") is None:
         raise EvaluationError("setpriv is missing; submitted code was not run")
-    prefix = ["setpriv", "--reuid", SANDBOX_USER, "--regid", SANDBOX_GROUP, "--clear-groups", "--no-new-privs"]
+    prefix = ["setpriv", "--reuid", str(uid), "--regid", str(uid), "--clear-groups", "--no-new-privs"]
     status = probe(prefix, [sys.executable, "-I", "-c", NNP_PROBE], fallback=["cat", "/proc/self/status"])
     problems, found = sandbox_problems(status, probe(prefix, ["cat", "/proc/self/limits"]), owner)
     # A set-user-id and set-group-id copy of id(1), owned by root, beside the submission.
@@ -156,13 +159,14 @@ def seal(top: Path, owner: tuple[int, int] = (0, 0)) -> None:
                 os.unlink(path)
         except OSError as exc:
             try:
-                shutil.rmtree(path) if path.is_dir() and not path.is_symlink() else path.unlink()
+                runcases.remove_path(path)
             except OSError:
                 raise EvaluationError(f"Could not seal the submission: {type(exc).__name__}") from exc
 
 
 def kill_user(uid: int) -> None:
-    """Kill every live process of the user, repeatedly until none is left, without starting one."""
+    """Kill every process of the user (owner of its /proc entry), repeatedly until none is left,
+    without starting one, and reap what this process is left to reap."""
     for _ in range(50):
         found = False
         try:
@@ -171,16 +175,36 @@ def kill_user(uid: int) -> None:
             return
         for pid in entries:
             try:
-                fields = dict(line.split(":", 1) for line in Path(f"/proc/{pid}/status").read_text().splitlines() if ":" in line)
-                if int(fields["Uid"].split()[0]) != uid or fields["State"].split()[0] in ("Z", "X"):
+                if os.stat(f"/proc/{pid}").st_uid != uid:
+                    continue
+                state = Path(f"/proc/{pid}/stat").read_bytes().rsplit(b")", 1)[1].split()[0]
+                if state in (b"Z", b"X"):
                     continue
                 os.kill(int(pid), signal.SIGKILL)
                 found = True
-            except (OSError, KeyError, ValueError, IndexError):
+            except (FileNotFoundError, ProcessLookupError):
                 continue
+            except (OSError, IndexError, ValueError):
+                try:
+                    os.kill(int(pid), signal.SIGKILL)
+                    found = True
+                except OSError:
+                    continue
+        reap()
         if not found:
             return
         time.sleep(0.01)
+
+
+def reap() -> None:
+    """Collect the exit of every child this process has (orphans included, as their subreaper)."""
+    while True:
+        try:
+            pid, _ = os.waitpid(-1, os.WNOHANG)
+        except ChildProcessError:
+            return
+        if pid == 0:
+            return
 
 
 def writable_dirs(root: str = "/") -> list[str]:
@@ -210,7 +234,10 @@ def remove_ipc(uid: int, root: Path = Path("/proc/sysvipc")) -> None:
         for row in rows:
             values = dict(zip(columns, row.split()))
             if str(uid) in (values.get("uid"), values.get("cuid")) and values.get(columns[1], "").isdigit():
-                subprocess.run(["ipcrm", flag, values[columns[1]]], capture_output=True, check=False)
+                try:
+                    subprocess.run(["ipcrm", flag, values[columns[1]]], capture_output=True, check=False, timeout=10)
+                except (OSError, subprocess.SubprocessError):
+                    continue
 
 
 def reset(uid: int) -> None:
@@ -231,15 +258,45 @@ def remove_leftovers(uid: int) -> None:
             continue
         for entry in entries:
             try:
-                info = entry.stat(follow_symlinks=False)
-                if info.st_uid != uid:
+                if entry.stat(follow_symlinks=False).st_uid == uid:
+                    runcases.remove_path(Path(entry.path))
+            except Exception:  # noqa: BLE001 - a leftover that cannot go fails the next case, not grading
+                continue
+
+
+def holds_marker(top: Path, marker: bytes) -> str | None:
+    """The first regular file under `top` (links not followed) that holds `marker`, searching at
+    most SCAN_BYTES bytes in all."""
+    left = SCAN_BYTES
+    for root, directories, files in os.walk(top):
+        for name in sorted(files):
+            path = Path(root, name)
+            try:
+                if not stat.S_ISREG(os.lstat(path).st_mode):
                     continue
-                if stat.S_ISDIR(info.st_mode):
-                    shutil.rmtree(entry.path)
-                else:
-                    os.unlink(entry.path)
+                with open(path, "rb") as handle:
+                    tail = b""
+                    while left > 0:
+                        chunk = handle.read(min(1 << 20, left))
+                        if not chunk:
+                            break
+                        left -= len(chunk)
+                        if marker in tail + chunk:
+                            return str(path.relative_to(top))
+                        tail = chunk[-len(marker):]
             except OSError:
                 continue
+    return None
+
+
+def identity(path: Path) -> dict:
+    """A program's sha256, and its sha256 with any build marker zeroed (build.sh's build.txt)."""
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return {}
+    zeroed = re.sub(rb"GOOSE-BUILD-MARKER-[0-9a-f]{32}", b"GOOSE-BUILD-MARKER-" + b"0" * 32, data)
+    return {"sha256": hashlib.sha256(data).hexdigest(), "sha256_without_marker": hashlib.sha256(zeroed).hexdigest()}
 
 
 def grade(program: Path, private: Path, prefix: list[str], owner: tuple[int, int] | None, budget: float = TOTAL_SEC) -> dict:
@@ -259,7 +316,8 @@ def grade(program: Path, private: Path, prefix: list[str], owner: tuple[int, int
     if not cases or any(case["id"] not in expected for case in cases):
         raise EvaluationError("Private cases and recorded answers do not match")
     metrics = {"cases_total": len(cases), "cases_run": 0, "cases_passed": 0, "cases_failed": 0, "reward": 0.0,
-               "timeouts": 0, "output_limits": 0, "setup_errors": 0, "seconds_total": 0.0, "seconds_max": 0.0,
+               "timeouts": 0, "output_limits": 0, "memory_limits": 0, "setup_errors": 0, "seconds_total": 0.0,
+               "seconds_max": 0.0,
                "stopped": None, "notes": [], "by_kind": {}}
     try:
         metrics["recording"] = json.loads((private / "recording.json").read_text(encoding="utf-8"))
@@ -268,7 +326,7 @@ def grade(program: Path, private: Path, prefix: list[str], owner: tuple[int, int
     kind = lambda case: case.get("kind", case["argv"][0])  # noqa: E731
     for case in cases:
         metrics["by_kind"].setdefault(kind(case), {"total": 0, "run": 0, "passed": 0, "failed": 0})["total"] += 1
-    failed = []
+    failed, seconds = [], []
     if not program.is_file() or not os.access(program, os.X_OK):
         metrics["notes"].append("/app/rebuild/goose is missing or not executable")
         cases = []
@@ -277,11 +335,11 @@ def grade(program: Path, private: Path, prefix: list[str], owner: tuple[int, int
         if time.monotonic() - started > budget:
             metrics["stopped"] = f"after {budget} seconds of runs; the remaining cases count as failed"
             break
-        if owner is not None:
-            reset(owner[0])
-        try:
+        try:  # whatever the submission did to this machine is its own case's failure, never an error
+            if owner is not None:
+                reset(owner[0])
             got = runcases.run_case([str(program)], case, prefix=prefix, owner=owner)
-        except OSError as exc:  # whatever the submission did to this machine is its own case's failure
+        except Exception as exc:  # noqa: BLE001
             got = {"exit": None, "stdout": None, "error": f"run: {type(exc).__name__}", "seconds": 0.0}
         tally = metrics["by_kind"][kind(case)]
         metrics["cases_run"] += 1
@@ -289,10 +347,13 @@ def grade(program: Path, private: Path, prefix: list[str], owner: tuple[int, int
         metrics["seconds_total"] = round(metrics["seconds_total"] + got["seconds"], 3)
         metrics["seconds_max"] = max(metrics["seconds_max"], got["seconds"])
         error = got.get("error")
+        seconds.append(got["seconds"])
         if error == "timeout":
             metrics["timeouts"] += 1
         elif error == "output limit":
             metrics["output_limits"] += 1
+        elif error == "memory limit":
+            metrics["memory_limits"] += 1
         elif error:
             metrics["setup_errors"] += 1
         if runcases.matches(got, expected[case["id"]]):
@@ -300,12 +361,16 @@ def grade(program: Path, private: Path, prefix: list[str], owner: tuple[int, int
             tally["passed"] += 1
         else:
             failed.append(case["id"])
-    if owner is not None:
-        reset(owner[0])
     try:
+        if owner is not None:
+            reset(owner[0])
         runcases.clear_workspace()
-    except OSError:
+    except Exception:  # noqa: BLE001
         pass
+    seconds.sort()
+    metrics["seconds_p99"] = seconds[int(0.99 * (len(seconds) - 1))] if seconds else 0.0
+    metrics["runs_over_half_a_second"] = sum(value > 0.5 for value in seconds)
+    metrics["runs_over_a_second"] = sum(value > 1.0 for value in seconds)
     metrics["cases_failed"] = metrics["cases_total"] - metrics["cases_passed"]
     for tally in metrics["by_kind"].values():
         tally["failed"] = tally["total"] - tally["passed"]
@@ -337,21 +402,45 @@ def main() -> int:
             Path("/proc/self/oom_score_adj").write_text("-1000")
         except OSError:
             pass
+        try:  # orphans of submitted code are reparented here and reaped (kill_user)
+            ctypes.CDLL(None, use_errno=True).prctl(36, 1, 0, 0, 0)
+        except (OSError, AttributeError):
+            pass
         prefix, owner, limits = sandbox()
-        seal(SUBMISSION)
+        refused = None
+        try:
+            seal(SUBMISSION)
+        except EvaluationError as exc:  # a submission that cannot be made safe to run is not run
+            refused = f"{exc}: not graded"
         LEFTOVER_DIRS.extend(top for top in writable_dirs() if top not in LEFTOVER_DIRS)
-        metrics = grade(SUBMISSION / "goose", tests / "private", prefix, owner)
+        marker = MARKER.read_text(encoding="utf-8").strip() if MARKER.is_file() else ""
+        found = holds_marker(SUBMISSION, f"GOOSE-BUILD-MARKER-{marker}".encode()) if marker and not refused else None
+        if found:  # the original compiler itself, delivered: nothing of it is the agent's work
+            refused = f"/app/rebuild/{found} holds the original compiler's build marker: not graded"
+        if refused:
+            metrics = {"cases_total": None, "cases_passed": 0, "reward": 0.0, "notes": [refused]}
+        else:
+            metrics = grade(SUBMISSION / "goose", tests / "private", prefix, owner)
         metrics["limits"] = limits
-        (output / "metrics.json").write_text(json.dumps(dict(metrics, status="completed"), indent=1, sort_keys=True) + "\n")
+        metrics["submission"] = identity(SUBMISSION / "goose")
+        metrics["host"] = recorder.host()
         (output / "reward.txt").write_text(f"{metrics['reward']:.6f}")
-        print(f"reward: {metrics['reward']:.6f} ({metrics['cases_passed']}/{metrics['cases_total']} cases)", flush=True)
         code = 0
+        print(f"reward: {metrics['reward']:.6f} ({metrics['cases_passed']}/{metrics['cases_total']} cases)", flush=True)
+        try:
+            (output / "metrics.json").write_text(json.dumps(dict(metrics, status="completed"), indent=1, sort_keys=True) + "\n")
+        except OSError:
+            pass
     except Exception as exc:  # noqa: BLE001 - every unexpected failure invalidates the evaluation
         message = str(exc) if isinstance(exc, EvaluationError) else f"Verifier error: {type(exc).__name__}"
         print(f"evaluation error: {message}", flush=True)
-        for name in REWARD_FILES:
-            (output / name).unlink(missing_ok=True)
-        (output / "metrics.json").write_text(json.dumps({"status": "evaluation_error", "error": message}) + "\n")
+        if code != 0:
+            for name in REWARD_FILES:
+                (output / name).unlink(missing_ok=True)
+            try:
+                (output / "metrics.json").write_text(json.dumps({"status": "evaluation_error", "error": message}) + "\n")
+            except OSError:
+                pass
     finally:
         if owner is not None:
             kill_user(owner[0])
