@@ -354,3 +354,38 @@ def test_the_candidate_cannot_replace_the_delivery_directory():
     assert owned < docker.index("chown root:root /app /app/server") and "chmod 1777 /app " in docker and "chmod 0777 /app/server" in docker
     assert "safe.directory '*'" in docker
 
+
+def test_set_id_bits_are_stripped_and_the_privilege_drop_sets_no_new_privs(tmp_path):
+    """A set-user-id file in the submission would otherwise run as its owner, root, and could read the private answers."""
+    probe = r"""
+import json, stat, sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+from verifier import replay
+root, outside = Path(sys.argv[2]) / "server", Path(sys.argv[2]) / "outside"
+(root / "bin").mkdir(parents=True)
+files = (root / "run", root / "bin" / "helper", outside)
+for path in files:
+    path.write_text("#!/bin/sh\n")
+    path.chmod(0o4755)
+(root / "bin" / "link").symlink_to(outside)
+before = [bool(path.stat().st_mode & stat.S_ISUID) for path in files]
+count = replay.strip_set_id(root)
+after = [stat.S_IMODE(path.stat().st_mode) for path in files]
+
+def status(uid, nnp="1", caps="0000000000000000", groups=""):
+    return (f"Name:\tcat\nUid:\t{uid}\t{uid}\t{uid}\t{uid}\nGid:\t65534\t65534\t65534\t65534\nGroups:\t{groups}\n"
+            f"NoNewPrivs:\t{nnp}\nCapPrm:\t{caps}\nCapEff:\t{caps}\nCapAmb:\t0000000000000000\n")
+
+dropped = [replay.privileges_dropped(text, 65534, 65534) for text in
+           (status(65534), status(0), status(65534, nnp="0"), status(65534, caps="000001ffffffffff"), status(65534, groups="0 27"))]
+print(json.dumps({"before": before, "count": count, "after": after, "sandbox": replay.SANDBOX, "dropped": dropped}))
+"""
+    done = subprocess.run([sys.executable, "-I", "-B", "-c", probe, str(STEP / "tests"), str(tmp_path)], capture_output=True, text=True, timeout=60)
+    assert done.returncode == 0, done.stderr[-2000:]
+    out = json.loads(done.stdout)
+    assert out["before"] == [True, True, True] and out["count"] == 2
+    assert out["after"][:2] == [0o755, 0o755] and out["after"][2] & 0o4000, "only files inside the submission are changed"
+    assert out["sandbox"][:1] == ["setpriv"] and "--no-new-privs" in out["sandbox"] and out["sandbox"][out["sandbox"].index("--reuid") + 1] == "nobody"
+    assert out["dropped"] == [True, False, False, False, False]
+

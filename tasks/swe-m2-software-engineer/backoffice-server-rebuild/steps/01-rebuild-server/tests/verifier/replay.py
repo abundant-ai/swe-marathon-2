@@ -14,11 +14,14 @@ import gzip
 import hashlib
 import http.client
 import json
+import grp
 import os
+import pwd
 import re
 import shutil
 import signal
 import socket
+import stat
 import subprocess
 import threading
 import time
@@ -26,7 +29,9 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
-RUN_AS = "nobody"
+RUN_AS, RUN_GROUP = "nobody", "nogroup"
+# no_new_privs: executing a set-user-id or set-group-id file, or one with file capabilities, grants nothing
+SANDBOX = ["setpriv", "--reuid", RUN_AS, "--regid", RUN_GROUP, "--clear-groups", "--no-new-privs"]
 START_SEC = 60
 REQUEST_SEC = 30  # a big upload or a 200-page PDF needs more than a JSON call
 RESTART_LIMIT = 25
@@ -70,7 +75,7 @@ class Candidate:
         data = self.work / f"data{self.generation}"
         data.mkdir(parents=True, exist_ok=True)
         os.chmod(data, 0o777)
-        prefix = ["setpriv", "--reuid", RUN_AS, "--regid", "nogroup", "--clear-groups"] if self.sandbox else []
+        prefix = SANDBOX if self.sandbox else []
         env = {"PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/go/bin", "HOME": str(data),
                "PORT": str(self.port), "DATA_DIR": str(data), "LC_ALL": "C.UTF-8", "LANG": "C.UTF-8",
                "PYTHONDONTWRITEBYTECODE": "1", "GOCACHE": str(data / "gocache"), "GOFLAGS": "-mod=mod"}
@@ -247,6 +252,48 @@ def play(candidate: Candidate, scenario: dict[str, Any], media: Media) -> dict[s
     return {"id": scenario["id"], "matched": False, "failed_step": -1, "reason": "no answer from the server"}
 
 
+def strip_set_id(root: Path) -> int:
+    """Clear the set-user-id and set-group-id bits of every file under `root`; returns how many had one.
+
+    Symbolic links are neither followed nor changed, so nothing outside the submission is touched.
+    """
+    count = 0
+    for folder, _, names in os.walk(root):
+        for name in names:
+            path = os.path.join(folder, name)
+            mode = os.lstat(path).st_mode
+            if stat.S_ISREG(mode) and mode & (stat.S_ISUID | stat.S_ISGID):
+                os.chmod(path, stat.S_IMODE(mode) & ~(stat.S_ISUID | stat.S_ISGID))
+                count += 1
+    return count
+
+
+def privileges_dropped(status: str, uid: int, gid: int) -> bool:
+    """Whether /proc/self/status shows a process with only `uid` and `gid`, no capabilities and no_new_privs."""
+    fields = dict(line.split(":", 1) for line in status.splitlines() if ":" in line)
+    if fields.get("Uid", "").split() != [str(uid)] * 4 or fields.get("Gid", "").split() != [str(gid)] * 4:
+        return False
+    if fields.get("Groups", "").split() not in ([], [str(gid)]) or fields.get("NoNewPrivs", "1").strip() != "1":
+        return False
+    return all(int(fields.get(name, "0"), 16) == 0 for name in ("CapPrm", "CapEff", "CapAmb"))
+
+
+def check_sandbox() -> None:
+    """Prove the privilege drop before any submitted code runs, with a process started exactly as the server will be.
+
+    Raises:
+        EvaluationError: The unprivileged user is missing, or a process started through the drop keeps
+            privileges or could gain them back.
+    """
+    try:
+        uid, gid = pwd.getpwnam(RUN_AS).pw_uid, grp.getgrnam(RUN_GROUP).gr_gid
+        done = subprocess.run(SANDBOX + ["cat", "/proc/self/status"], capture_output=True, text=True, timeout=60)
+    except (KeyError, OSError, subprocess.SubprocessError) as exc:
+        raise EvaluationError("Could not drop privileges; submitted code was not run") from exc
+    if done.returncode != 0 or not privileges_dropped(done.stdout, uid, gid):
+        raise EvaluationError("Could not drop privileges; submitted code was not run")
+
+
 def evaluate(source: Path, scenario_path: Path, work: Path, output: Path, sandbox: bool = True,
              media_dir: Path | None = None) -> dict[str, Any]:
     """Grade the server in `source` against the scenarios in `scenario_path`.
@@ -277,13 +324,14 @@ def evaluate(source: Path, scenario_path: Path, work: Path, output: Path, sandbo
     metrics: dict[str, Any] = {"scenarios_total": total, "scenarios_matched": 0, "reward": 0.0, "restarts": 0, "notes": [],
                                "by_theme": {t: {"total": sum(1 for s in scenarios if s["theme"] == t), "matched": 0} for t in themes}}
     if sandbox:
-        if shutil.which("setpriv") is None or subprocess.run(
-                ["setpriv", "--reuid", RUN_AS, "--regid", "nogroup", "--clear-groups", "true"], capture_output=True).returncode != 0:
-            raise EvaluationError("Could not drop privileges; submitted code was not run")
+        check_sandbox()
     runner = source / "run"
-    if not runner.is_file() or not os.access(runner, os.X_OK):
+    if source.is_symlink() or not runner.is_file() or not os.access(runner, os.X_OK):
         metrics["notes"].append("/app/server/run is missing or not executable")
         return metrics
+    stripped = strip_set_id(source)
+    if stripped:
+        metrics["notes"].append(f"set-user-id or set-group-id bits were removed from {stripped} submitted files")
     work.mkdir(parents=True, exist_ok=True)
     os.chmod(work, 0o755)
     if sandbox:
