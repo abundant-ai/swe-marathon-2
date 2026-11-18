@@ -43,6 +43,7 @@ import signal
 import socket
 import stat
 import subprocess
+import sys
 import threading
 import time
 from collections.abc import Iterator
@@ -534,13 +535,31 @@ def strip_set_id(root: Path) -> int:
     return count
 
 
+# Run under the drop: prints /proc/self/status, then what prctl(PR_GET_NO_NEW_PRIVS) says, since some
+# kernels (gVisor among them, possibly) do not list NoNewPrivs in the status file.
+NNP_PROBE = (
+    "import ctypes, sys\n"
+    "sys.stdout.write(open('/proc/self/status').read())\n"
+    "try:\n"
+    "    value = ctypes.CDLL(None, use_errno=True).prctl(39, 0, 0, 0, 0)\n"
+    "except Exception:\n"
+    "    value = -1\n"
+    "sys.stdout.write('PrctlNoNewPrivs:\\t%d\\n' % value)\n"
+)
+
+
 def privileges_dropped(status: str, uid: int, gid: int) -> bool:
-    """Whether /proc/self/status shows a process with only `uid` and `gid`, no capabilities and no_new_privs."""
+    """Whether a process's status shows only `uid` and `gid`, no capabilities and no_new_privs.
+
+    `status` is /proc/self/status, optionally followed by a `PrctlNoNewPrivs:` line from `NNP_PROBE`;
+    no_new_privs counts as set when either source says so.
+    """
     fields = dict(line.split(":", 1) for line in status.splitlines() if ":" in line)
     if fields.get("Uid", "").split() != [str(uid)] * 4 or fields.get("Gid", "").split() != [str(gid)] * 4:
         return False
-    if fields.get("Groups", "").split() not in ([], [str(gid)]) or fields.get("NoNewPrivs", "").strip() != "1":
-        return False  # a kernel that does not report NoNewPrivs cannot show that it holds: fail closed
+    no_new_privs = "1" in (fields.get("NoNewPrivs", "").strip(), fields.get("PrctlNoNewPrivs", "").strip())
+    if fields.get("Groups", "").split() not in ([], [str(gid)]) or not no_new_privs:
+        return False  # neither the status file nor prctl shows no_new_privs: fail closed
     return all(int(fields.get(name, "0"), 16) == 0 for name in ("CapPrm", "CapEff", "CapAmb"))
 
 
@@ -553,7 +572,10 @@ def check_sandbox() -> None:
     """
     try:
         uid, gid = pwd.getpwnam(RUN_AS).pw_uid, grp.getgrnam(RUN_GROUP).gr_gid
-        done = subprocess.run(SANDBOX + ["cat", "/proc/self/status"], capture_output=True, text=True, timeout=60)
+        done = subprocess.run(SANDBOX + [sys.executable, "-I", "-c", NNP_PROBE],
+                              capture_output=True, text=True, timeout=60)
+        if done.returncode != 0:  # this interpreter is not runnable by the user: the status file alone
+            done = subprocess.run(SANDBOX + ["cat", "/proc/self/status"], capture_output=True, text=True, timeout=60)
     except (KeyError, OSError, subprocess.SubprocessError) as exc:
         raise EvaluationError("Could not drop privileges; submitted code was not run") from exc
     if done.returncode != 0 or not privileges_dropped(done.stdout, uid, gid):

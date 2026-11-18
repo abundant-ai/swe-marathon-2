@@ -630,7 +630,8 @@ def status(uid, nnp="1", caps="0000000000000000", groups=""):
 
 dropped = [replay.privileges_dropped(text, 65534, 65534) for text in
            (status(65534), status(0), status(65534, nnp="0"), status(65534, caps="000001ffffffffff"), status(65534, groups="0 27"),
-            status(65534, nnp=None))]
+            status(65534, nnp=None), status(65534, nnp=None) + "PrctlNoNewPrivs:\t1\n",
+            status(65534, nnp=None) + "PrctlNoNewPrivs:\t-1\n")]
 print(json.dumps({"before": before, "count": count, "after": after, "sandbox": replay.SANDBOX, "dropped": dropped}))
 """
     done = subprocess.run([sys.executable, "-I", "-B", "-c", probe, str(STEP / "tests"), str(tmp_path)], capture_output=True, text=True, timeout=60)
@@ -639,7 +640,8 @@ print(json.dumps({"before": before, "count": count, "after": after, "sandbox": r
     assert out["before"] == [True, True, True] and out["count"] == 2
     assert out["after"][:2] == [0o755, 0o755] and out["after"][2] & 0o4000, "only files inside the submission are changed"
     assert out["sandbox"][:1] == ["setpriv"] and "--no-new-privs" in out["sandbox"] and out["sandbox"][out["sandbox"].index("--reuid") + 1] == "nobody"
-    assert out["dropped"] == [True, False, False, False, False, False], "a status without NoNewPrivs must fail closed"
+    assert out["dropped"] == [True, False, False, False, False, False, True, False], \
+        "no_new_privs counts from the status file or prctl; with neither it fails closed"
 
 
 def test_the_reward_is_written_before_the_diagnostics_and_survives_their_failure(tmp_path):

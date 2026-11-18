@@ -68,7 +68,7 @@ One step is implemented. See [Remaining work](#remaining-work).
   silent closes, the reward before the diagnostics), the comparison check rewritten, and the
   recording and reference checks now cover months, screens and both restarts; with
   `ci_checks`, 48 pass under Python 3.13, and `ci_checks/check_repository.py` passes.
-- Bundle `c9ee0b982e09` (1,115 files, 85 MB; scenarios 9.4 MB compressed) built twice with the
+- Bundle `0ffbed822f74` (1,115 files, 85 MB; scenarios 9.4 MB compressed) built twice with the
   same hash; `scripts/scan_uploads.py` finds no hidden upload, cut-short upload or file answer
   among the 481 files the agent image receives; Oddish preflight passes.
 
@@ -444,7 +444,7 @@ not yet exercised in a container).
 | Recording | round 2: Stockwell `d61d29c`, new private seeds | 2,287 scenarios (2,160 legacy, 83 media, 44 months), 3,999 units (1,413 trading days, 343 screens), 82,837 requests, no answer of 500 or above; 8 min 51 s locally |
 | Reference through the verifier, local, no sandbox | round 2 corpus and private media | 1.0 on every unit: 3,999 of 3,999 (2,287 of 2,287 scenarios), 9 planned restarts, no other restart, no retry; 393 s of replay, 6 min 33 s with loading |
 | `checks/` (21 tests) with `ci_checks` (27) | round 2 | 48 pass under Python 3.13; `ci_checks/check_repository.py` passes |
-| Bundle | round 2: `c9ee0b982e09`, 1,115 files, 85 MB (scenarios 9.4 MB compressed, private media 42 MB, samples 28 MB) | built twice with the same hash; Oddish preflight passes |
+| Bundle | round 2: `0ffbed822f74`, 1,115 files, 85 MB (scenarios 9.4 MB compressed, private media 42 MB, samples 28 MB) | built twice with the same hash; Oddish preflight passes |
 | Hidden uploads against the agent image (`scripts/scan_uploads.py`) | round 2: 2,287 scenarios, 82,837 requests, 655 base64 and 1,721 raw uploads, 1,195 file answers, 481 agent-image files | nothing found |
 | `checks/` (17 tests) with `ci_checks` (27) | adversarial QA fixes, 2026-11-19 | 44 pass under Python 3.13; `ci_checks/check_repository.py` passes; Oddish preflight passes |
 | Bundle | adversarial QA fixes: `2a602a3f17e6`, 705 files (the 19 fixtures gone) | built twice with the same hash |
@@ -481,7 +481,7 @@ python scripts/scan_uploads.py experiment/dist/bundles/<hash>/<task slug>   # hi
 
 ## Remaining work
 
-- Upload bundle `c9ee0b982e09` as a new version and run its baselines (reference twice, no-op twice):
+- Upload bundle `0ffbed822f74` as a new version and run its baselines (reference twice, no-op twice):
   the verifier, the corpus, the samples, the agent image and the instruction all changed. Model
   trials wait for the owner.
 - The privilege check now fails closed when `/proc/self/status` has no `NoNewPrivs` line; a
