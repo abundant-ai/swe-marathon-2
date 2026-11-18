@@ -5,7 +5,7 @@
 We run our wholesale business on Stockwell, a back-office product. The vendor is gone. What we
 have left is the web client and a sealed copy of the server that we can run but not read or
 change. I need a server of our own that behaves exactly like the sealed one, so that the client
-and the scripts our staff wrote against the API keep working.
+keeps working.
 
 ## Context
 
@@ -42,20 +42,24 @@ A server in `/app/server` with an executable file `/app/server/run` that starts 
   and answer `GET /api/health` once it is ready.
 - Everything it needs must be inside `/app/server`, apart from `python3` and its packages, which
   are also on the machine it will run on. It is started by a user that can read
-  that directory and write only to the directory named in `DATA_DIR`. It may keep its state in
-  memory.
+  that directory and write only to the directory named in `DATA_DIR`.
+- Everything a workspace holds must survive the server being stopped and started again with
+  the same `DATA_DIR`, even when it is stopped abruptly: a change it has answered is kept.
 - For every API request the sealed server accepts or refuses, your server gives the same
-  status code and the same JSON body. The exceptions are answers that depend on the wall clock
-  or on chance, which cannot be reproduced and need not match: the request log, sign-in,
-  sessions and API keys, and `/metrics`. The order of keys inside a JSON object does not matter;
-  everything else does, including the order of lists, the text of messages, and what a
-  workspace holds after a sequence of requests.
+  status code and the same JSON body, including the calls the web client makes when it opens
+  (`GET /api/version` and `GET /auth/me`). The exceptions are answers that depend on the wall
+  clock or on chance, which cannot be reproduced and need not match: the request log, signing in
+  with a password, sessions and API keys, and `/metrics`. The order of keys inside a JSON object
+  does not matter; everything else does, including the order of lists, the text of messages, the
+  difference between `1`, `1.0` and `true`, and what a workspace holds after a sequence of
+  requests.
 - Where the sealed server answers with a file instead of JSON, yours answers with the same
   bytes and the same `Content-Type`.
 - JSON request bodies of up to 6 MB, and file uploads of up to 64 MiB, must be accepted.
 - The one thing that may differ is the workspace id itself: yours may be any string of letters,
   digits and underscores of at most 40 characters.
-- It must cope with many workspaces in use at the same time.
+- It must serve up to 8 requests at once, in different workspaces, and answer each request
+  within 30 seconds.
 - Serving the web client's files is welcome but not required.
 
 ## Completion
