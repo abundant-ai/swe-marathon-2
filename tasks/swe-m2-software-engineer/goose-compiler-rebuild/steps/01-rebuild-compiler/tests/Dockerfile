@@ -10,9 +10,10 @@ RUN sh /hardening/apply.sh /src \
     && mkdir -p /opt/goose /usr/local/share/goose \
     && cp /build/goose /opt/goose/goose && cp -a /build/tcclib /opt/goose/tcclib && cp -a /src/stdlib /usr/local/share/goose/stdlib \
     && bash /hardening/smoke.sh /opt/goose/goose
-COPY verifier/runcases.py /record/runcases.py
+COPY verifier/runcases.py verifier/recording.py /record/
 COPY private/cases.json /record/cases.json
-RUN python3 /record/runcases.py record /opt/goose/goose /record/cases.json /record/expected.json --keep /record/kept.json
+RUN python3 /record/runcases.py record /opt/goose/goose /record/cases.json /record/expected.json --keep /record/kept.json \
+    && python3 /record/recording.py /record/kept.json /record/expected.json /record/recording.json
 
 FROM ubuntu:24.04
 ENV DEBIAN_FRONTEND=noninteractive PYTHONDONTWRITEBYTECODE=1 LC_ALL=C.UTF-8 LANG=C.UTF-8
@@ -24,6 +25,7 @@ COPY test.sh verify.py /tests/
 COPY verifier/ /tests/verifier/
 COPY --from=program /record/kept.json /tests/private/cases.json
 COPY --from=program /record/expected.json /tests/private/expected.json
+COPY --from=program /record/recording.json /tests/private/recording.json
 RUN mkdir -p /app /logs/verifier && chmod -R a+rX /usr/local/share/goose \
     && chown -R root:root /tests && chmod -R go-rwx /tests && chmod 0700 /tests/test.sh
 WORKDIR /

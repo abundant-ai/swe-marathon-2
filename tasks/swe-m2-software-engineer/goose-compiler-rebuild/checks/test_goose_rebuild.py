@@ -1,14 +1,17 @@
 """Development checks: cases are reproducible, comment-free and split by program; the recorder keeps
-only cases that finish the same way twice; the images and the reference solution build one hardened compiler."""
+only cases that finish the same way twice; the verifier counts what a submission does as its own failed
+cases; the images and the reference solution build one hardened compiler."""
 
 from __future__ import annotations
 
 import importlib.util
+import hashlib
 import json
 import re
 import shutil
 import subprocess
 import sys
+import textwrap
 from pathlib import Path
 
 TASK = Path(__file__).resolve().parent.parent
@@ -198,3 +201,82 @@ def test_the_smoke_test_fails_a_compiler_that_is_not_hardened(tmp_path):
     done = subprocess.run([shutil.which("bash"), str(HARDENING / "smoke.sh"), str(lax)], capture_output=True, text=True,
                           timeout=120, env={"PATH": f"{shim}:/usr/bin:/bin"})
     assert done.returncode != 0 and "hardening smoke test failed" in done.stderr
+
+
+def run_verifier(tmp_path: Path, script: str, cases: list[dict], expected: dict, case_sec: float = 2, read_limit: int | None = None) -> dict:
+    """grade() of the real verify.py, in a process of its own, with the workspace under tmp_path and
+    no privilege drop (macOS and CI runners have no setpriv): what the submission can do to its
+    workspace and its output is the same."""
+    program = tmp_path / "goose"
+    program.write_text("#!/bin/sh\n" + script)
+    program.chmod(0o755)
+    private = tmp_path / "private"
+    private.mkdir(exist_ok=True)
+    (private / "cases.json").write_text(json.dumps({"cases": cases}))
+    (private / "expected.json").write_text(json.dumps(expected))
+    driver = textwrap.dedent(f"""
+        import json, sys
+        from pathlib import Path
+        sys.path.insert(0, {str(STEP / 'tests')!r})
+        import verify
+        verify.runcases.WORKSPACE = Path({str(tmp_path / 'tmp' / 'goose-case')!r})
+        verify.runcases.CASE_SEC = {case_sec}
+        if {read_limit!r} is not None:
+            verify.runcases.READ_LIMIT = {read_limit!r}
+        print(json.dumps(verify.grade(Path({str(program)!r}), Path({str(private)!r}), [], None)))
+    """)
+    (tmp_path / "tmp").mkdir(exist_ok=True)
+    done = subprocess.run([sys.executable, "-B", "-c", driver], capture_output=True, text=True, timeout=600)
+    assert done.returncode == 0, done.stdout[-2000:] + done.stderr[-2000:]
+    return json.loads(done.stdout.strip().splitlines()[-1])
+
+
+def plain_cases(argvs: list[list[str]]) -> tuple[list[dict], dict]:
+    cases = [{"id": f"P{i}", "files": {"main.goose": "fn main() {}\n"}, "argv": argv, "stdin": None} for i, argv in enumerate(argvs)]
+    return cases, {case["id"]: {"exit": 0, "stdout": "ok\n"} for case in cases}
+
+
+def test_many_slow_runs_do_not_stop_the_count(tmp_path):
+    cases, expected = plain_cases([["slow"]] * 65 + [["fast"]] * 5)
+    metrics = run_verifier(tmp_path, 'case "$1" in slow) exec sleep 5;; esac\necho ok\n', cases, expected, case_sec=0.05)
+    assert metrics["cases_run"] == 70 and metrics["timeouts"] == 65 and metrics["cases_passed"] == 5
+    assert metrics["reward"] == round(5 / 70, 6) and not metrics["notes"]
+
+
+def test_a_swapped_or_stuck_workspace_is_a_failed_case_not_an_evaluation_error(tmp_path):
+    target = tmp_path / "elsewhere"
+    target.mkdir()
+    script = textwrap.dedent(f"""\
+        case "$1" in
+          swap) mv "$PWD" "$PWD.moved" && ln -s {target} "$PWD";;
+          stuck) mkdir -p locked/inner && chmod 0 locked;;
+        esac
+        echo ok
+    """)
+    cases, expected = plain_cases([["a"], ["swap"], ["b"], ["c"], ["stuck"], ["d"]])
+    metrics = run_verifier(tmp_path, script, cases, expected)
+    assert metrics["cases_run"] == 6 and metrics["cases_passed"] == 5, metrics
+    assert metrics["errors"] == 1 and list(target.iterdir()) == [], "the verifier wrote through the submission's link"
+    for locked in tmp_path.rglob("locked"):
+        locked.chmod(0o755)
+
+
+def test_output_is_read_up_to_a_bound(tmp_path):
+    cases, expected = plain_cases([["flood"], ["ok"]])
+    metrics = run_verifier(tmp_path, 'case "$1" in flood) head -c 20000000 /dev/zero;; esac\necho ok\n', cases, expected,
+                           read_limit=4096)
+    assert metrics["cases_passed"] == 1 and metrics["errors"] == 1 and metrics["failed_sample"] == ["P0"]
+
+
+def test_the_recording_report_counts_outputs_equal_to_upstream(tmp_path):
+    digest = hashlib.sha256(b"6\n").hexdigest()
+    cases = [{"id": "P1", "kind": "run", "upstream": digest}, {"id": "P2", "kind": "run", "upstream": digest},
+             {"id": "P3", "kind": "check"}]
+    expected = {"P1": {"exit": 0, "stdout": "6\n"}, "P2": {"exit": 0, "stdout": "7\n"}, "P3": {"exit": 1, "stdout": ""}}
+    (tmp_path / "kept.json").write_text(json.dumps({"cases": cases}))
+    (tmp_path / "expected.json").write_text(json.dumps(expected))
+    subprocess.run([sys.executable, "-B", str(STEP / "tests" / "verifier" / "recording.py"), str(tmp_path / "kept.json"),
+                    str(tmp_path / "expected.json"), str(tmp_path / "out.json")], check=True, capture_output=True, timeout=60)
+    report = json.loads((tmp_path / "out.json").read_text())
+    assert report["run_cases_with_upstream_output"] == 2 and report["run_cases_printing_upstream_output"] == 1
+    assert report["empty_stdout_by_exit"] == {"1": 1} and report["kinds_kept"] == {"check": 1, "run": 2}

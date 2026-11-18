@@ -14,43 +14,128 @@ from __future__ import annotations
 
 import json
 import os
+import selectors
 import shutil
 import signal
+import stat
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 WORKSPACE = Path("/tmp/goose-case")
 CASE_SEC = 2
-OUTPUT_LIMIT = 1_000_000
+OUTPUT_LIMIT = 1_000_000  # characters of standard output compared
+READ_LIMIT = 4 * OUTPUT_LIMIT  # bytes read at most: a UTF-8 character is at most four bytes
 
 
-def run_case(program: list[str], case: dict, prefix: list[str] | None = None, owner: str | None = None) -> dict:
-    """Run one case and return its exit code and standard output."""
-    shutil.rmtree(WORKSPACE, ignore_errors=True)
+def clear_workspace() -> None:
+    """Remove whatever is at the workspace path without following a symbolic link: a directory
+    with its contents, anything else by itself."""
+    try:
+        mode = os.lstat(WORKSPACE).st_mode
+    except FileNotFoundError:
+        return
+    if stat.S_ISDIR(mode):
+        shutil.rmtree(WORKSPACE)
+    else:
+        os.unlink(WORKSPACE)
+
+
+def prepare(case: dict, owner: tuple[int, int] | None) -> None:
+    """A new workspace holding the case's files, owned by `owner` (user and group ids) where given."""
+    clear_workspace()
     WORKSPACE.mkdir(parents=True)
     for name, text in case["files"].items():
         target = WORKSPACE / name
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(text, encoding="utf-8")
     if owner:
-        subprocess.run(["chown", "-R", owner, str(WORKSPACE)], check=False)
+        for root, directories, files in os.walk(WORKSPACE):
+            for name in directories + files:
+                os.lchown(os.path.join(root, name), *owner)
+        os.lchown(WORKSPACE, *owner)
+
+
+def collect(proc: subprocess.Popen, data: bytes, deadline: float) -> tuple[bytes, str | None]:
+    """Feed `data` to the program's standard input and read its standard output until it closes
+    it. Returns what was read and None, or what stopped the reading: "timeout" at the deadline,
+    "output limit" past READ_LIMIT bytes."""
+    chunks, size = [], 0
+    pending = memoryview(data)
+    with selectors.DefaultSelector() as selector:
+        selector.register(proc.stdout, selectors.EVENT_READ)
+        if pending:
+            os.set_blocking(proc.stdin.fileno(), False)
+            selector.register(proc.stdin, selectors.EVENT_WRITE)
+        else:
+            proc.stdin.close()
+        while selector.get_map():
+            left = deadline - time.monotonic()
+            if left <= 0:
+                return b"", "timeout"
+            for key, _ in selector.select(left):
+                if key.fileobj is proc.stdin:
+                    try:
+                        pending = pending[os.write(proc.stdin.fileno(), pending[:65536]):]
+                    except BlockingIOError:
+                        continue
+                    except OSError:  # the program closed its input
+                        pending = pending[:0]
+                    if not pending:
+                        selector.unregister(proc.stdin)
+                        proc.stdin.close()
+                    continue
+                chunk = os.read(proc.stdout.fileno(), 65536)
+                if not chunk:
+                    selector.unregister(proc.stdout)
+                    continue
+                size += len(chunk)
+                if size > READ_LIMIT:
+                    return b"", "output limit"
+                chunks.append(chunk)
+    return b"".join(chunks), None
+
+
+def stop(proc: subprocess.Popen) -> None:
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass
+    proc.wait()
+
+
+def run_case(program: list[str], case: dict, prefix: list[str] | None = None, owner: tuple[int, int] | None = None) -> dict:
+    """Run one case and return its exit code and standard output. A case that cannot be set up
+    or started, runs past CASE_SEC or prints more than READ_LIMIT bytes has no exit code and an
+    "error" instead."""
+    try:
+        prepare(case, owner)
+    except OSError as exc:
+        return {"exit": None, "stdout": None, "error": f"workspace: {type(exc).__name__}"}
     env = {"PATH": "/usr/local/bin:/usr/bin:/bin", "HOME": "/tmp", "LC_ALL": "C.UTF-8", "LANG": "C.UTF-8", "NO_COLOR": "1",
            "TERM": "dumb", "GOOSE_PROGRESS": "plain"}
     try:
         proc = subprocess.Popen((prefix or []) + program + case["argv"], cwd=WORKSPACE, env=env, stdin=subprocess.PIPE,
                                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, start_new_session=True)
-    except OSError:
+    except (OSError, subprocess.SubprocessError):
         return {"exit": None, "stdout": None, "error": "could not start"}
+    deadline = time.monotonic() + CASE_SEC
     try:
-        out, _ = proc.communicate((case["stdin"] or "").encode("utf-8"), timeout=CASE_SEC)
-    except subprocess.TimeoutExpired:
-        try:
-            os.killpg(proc.pid, signal.SIGKILL)
-        except (ProcessLookupError, PermissionError):
-            pass
-        proc.wait()
-        return {"exit": None, "stdout": None, "error": "timeout"}
+        out, problem = collect(proc, (case["stdin"] or "").encode("utf-8"), deadline)
+        if problem is None:
+            try:
+                proc.wait(timeout=max(0.0, deadline - time.monotonic()))
+            except subprocess.TimeoutExpired:
+                problem = "timeout"
+    finally:
+        if proc.returncode is None:
+            stop(proc)
+        for stream in (proc.stdin, proc.stdout):
+            if not stream.closed:
+                stream.close()
+    if problem:
+        return {"exit": None, "stdout": None, "error": problem}
     return {"exit": proc.returncode, "stdout": out.decode("utf-8", "replace")[:OUTPUT_LIMIT]}
 
 
@@ -68,9 +153,10 @@ def record(program: str, cases: list[dict]) -> tuple[list[dict], dict]:
 def main() -> None:
     """Record what a program prints for every case, or compare a program with recorded outputs."""
     mode, program, cases_path, expected_path = sys.argv[1:5]
-    cases = json.loads(Path(cases_path).read_text())["cases"]
+    cases = json.loads(Path(cases_path).read_text(encoding="utf-8"))["cases"]
     if mode == "record":
         kept, outputs = record(program, cases)
+        clear_workspace()
         if len(kept) < 0.85 * len(cases):
             raise SystemExit(f"only {len(kept)} of {len(cases)} cases finished the same way twice")
         Path(expected_path).write_text(json.dumps(outputs, sort_keys=True))
@@ -78,7 +164,7 @@ def main() -> None:
             Path(sys.argv[sys.argv.index("--keep") + 1]).write_text(json.dumps({"cases": kept}, sort_keys=True, ensure_ascii=False))
         print(f"recorded {len(kept)} of {len(cases)} cases")
         return
-    expected = json.loads(Path(expected_path).read_text())
+    expected = json.loads(Path(expected_path).read_text(encoding="utf-8"))
     passed = 0
     for case in cases:
         got, want = run_case([program], case), expected[case["id"]]
@@ -86,6 +172,7 @@ def main() -> None:
         passed += ok
         if not ok and "-v" in sys.argv:
             print(f"FAIL {case['id']}: goose {' '.join(case['argv'])} (exit {got['exit']}, expected {want['exit']})")
+    clear_workspace()
     print(f"{passed} of {len(cases)} cases pass")
 
 
