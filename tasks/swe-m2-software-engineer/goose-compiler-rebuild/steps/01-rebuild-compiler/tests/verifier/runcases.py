@@ -366,13 +366,15 @@ def fragments(stdout: str) -> set[str]:
 
 def select(cases: list[dict], outputs: dict, cli: set[str]) -> tuple[list[dict], dict[str, list[str]]]:
     """The recorded cases less, in this order and each time by id: those with a comment quoting any
-    case's answer (a program could collect them); `format -` cases whose input is already
+    run or check case's answer (a program could collect them; a format answer is its input, and
+    the command line's are its help); `format -` cases whose input is already
     formatted; beyond PAIR_SHARE of the cases, those with an answer that many others share (the
     command line aside); beyond CHECK_EMPTY_SHARE of the check cases, those answering []; and
     while more than FLOOR_SHARE of them can be answered without a compiler (free_cases), one of
     those in the largest group. Also the ids left out, by reason."""
     dropped: dict[str, list[str]] = defaultdict(list)
-    quoted = set().union(*(fragments(output["stdout"]) for output in outputs.values())) if outputs else set()
+    quoted = set().union(set(), *(fragments(outputs[case["id"]]["stdout"]) for case in cases
+                                  if case["id"] not in cli and not group(case).startswith("format")))
     kept = []
     for case in cases:
         said = "\n".join(note for text in list(case["files"].values()) + [case.get("stdin") or ""] for note in comments(text))

@@ -631,6 +631,8 @@ def test_selection_drops_shared_answers_quoted_answers_and_free_cases():
         outputs["P1000"] = {"exit": 0, "stdout": "fn main() {}\\n"}
         cases.append(case(1001, ["format"], stdin="// we hit unknown variable: name700 here\\nfn  main() {}\\n"))
         outputs["P1001"] = {"exit": 0, "stdout": "// we hit unknown variable: name700 here\\nfn main() {}\\n"}
+        cases.append(case(1022, ["format"], stdin="// a comment of its own, long enough\\nfn  main() {}\\n"))
+        outputs["P1022"] = {"exit": 0, "stdout": "// a comment of its own, long enough\\nfn main() {}\\n"}
         for i in range(1002, 1022):
             cases.append(case(i, ["help", str(i)]))
             outputs[cases[-1]["id"]] = {"exit": 1, "stdout": ""}
