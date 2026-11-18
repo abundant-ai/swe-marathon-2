@@ -6,6 +6,7 @@ import grp
 import json
 import os
 import pwd
+import resource
 import shutil
 import signal
 import stat
@@ -21,29 +22,125 @@ from verifier import runcases  # noqa: E402
 
 SANDBOX_USER = "nobody"
 SANDBOX_GROUP = "nogroup"
+SUBMISSION = Path("/app/rebuild")
 REWARD_FILES = ("reward.txt", "reward.json")
 TOTAL_SEC = 3300  # the step verifier has 3,600 s; 1,500 runs at the per-run limit take at most 3,000 s
 LEFTOVER_DIRS = ("/tmp", "/var/tmp", "/dev/shm")
+LIMIT_NAMES = {"Max stack size": resource.RLIMIT_STACK, "Max processes": resource.RLIMIT_NPROC,
+               "Max file size": resource.RLIMIT_FSIZE, "Max data size": resource.RLIMIT_DATA,
+               "Max core file size": resource.RLIMIT_CORE}
+STRICT_LIMITS = ("Max processes", "Max file size", "Max core file size")
+
 
 
 class EvaluationError(Exception):
     """Evaluation could not be carried out; no valid reward may be published."""
 
 
-def sandbox() -> tuple[list[str], tuple[int, int]]:
-    """The command prefix that runs submitted code as the unprivileged user, and that user's ids.
+def sandbox_problems(status: str, limits: str, owner: tuple[int, int]) -> tuple[list[str], dict]:
+    """What is wrong with a process meant to run submitted code, from its /proc/self/status and
+    /proc/self/limits, and the limits it has (soft values)."""
+    fields = dict(line.split(":", 1) for line in status.splitlines() if ":" in line)
+    uid, gid = (str(owner[0]), str(owner[1]))
+    problems = []
+    if fields.get("NoNewPrivs", "").strip() != "1":
+        problems.append("no_new_privs is not set")
+    if fields.get("Uid", "").split() != [uid] * 4:
+        problems.append("its user ids are not all the unprivileged user's")
+    if fields.get("Gid", "").split() != [gid] * 4:
+        problems.append("its group ids are not all the unprivileged group's")
+    if fields.get("Groups", "").split():
+        problems.append("it keeps supplementary groups")
+    for name in ("CapPrm", "CapEff", "CapAmb"):
+        try:
+            if int(fields[name].strip(), 16):
+                problems.append(f"it holds capabilities ({name})")
+        except (KeyError, ValueError):
+            problems.append(f"no {name} in its status")
+    found = {}
+    for line in limits.splitlines():
+        for name in LIMIT_NAMES:
+            if line.startswith(name + " "):
+                found[name] = line[len(name):].split()[0]
+    for name, which in LIMIT_NAMES.items():
+        if found.get(name) != str(runcases.LIMITS[which]) and name in STRICT_LIMITS:
+            problems.append(f"{name.lower()} is {found.get(name)}, not {runcases.LIMITS[which]}")
+    return problems, found
+
+
+def probe(prefix: list[str], argv: list[str]) -> str:
+    """What a command prints when started exactly as submitted code is."""
+    done = subprocess.run(prefix + argv, capture_output=True, text=True, timeout=30, preexec_fn=runcases.limit,
+                          env={"PATH": "/usr/local/bin:/usr/bin:/bin"})
+    if done.returncode != 0:
+        raise EvaluationError(f"Could not drop privileges: {argv[0]} exited {done.returncode}")
+    return done.stdout
+
+
+def sandbox() -> tuple[list[str], tuple[int, int], dict]:
+    """The command prefix that runs submitted code as the unprivileged user, that user's ids, and
+    the limits such a process has. A process started the same way must have dropped every
+    privilege, and a set-user-id root file started that way must gain nothing.
 
     Raises:
-        EvaluationError: The user is missing or privileges cannot be dropped.
+        EvaluationError: Privileges cannot be dropped or the drop does not hold.
     """
     try:
         owner = (pwd.getpwnam(SANDBOX_USER).pw_uid, grp.getgrnam(SANDBOX_GROUP).gr_gid)
     except KeyError as exc:
         raise EvaluationError("The unprivileged user is missing") from exc
-    prefix = ["setpriv", "--reuid", SANDBOX_USER, "--regid", SANDBOX_GROUP, "--clear-groups"]
-    if shutil.which("setpriv") is None or subprocess.run(prefix + ["true"], capture_output=True).returncode != 0:
-        raise EvaluationError("Could not drop privileges; submitted code was not run")
-    return prefix, owner
+    if shutil.which("setpriv") is None:
+        raise EvaluationError("setpriv is missing; submitted code was not run")
+    prefix = ["setpriv", "--reuid", SANDBOX_USER, "--regid", SANDBOX_GROUP, "--clear-groups", "--no-new-privs"]
+    problems, found = sandbox_problems(probe(prefix, ["cat", "/proc/self/status"]), probe(prefix, ["cat", "/proc/self/limits"]),
+                                       owner)
+    # A set-user-id and set-group-id copy of id(1), owned by root, beside the submission.
+    place = SUBMISSION.parent / ".setid-probe"
+    shutil.rmtree(place, ignore_errors=True)
+    try:
+        place.mkdir(mode=0o755)
+        os.chmod(place, 0o755)
+        shutil.copy(shutil.which("id") or "/usr/bin/id", place / "id")
+        os.chown(place / "id", 0, 0)
+        os.chmod(place / "id", 0o6755)
+        ids = (probe(prefix, [str(place / "id"), "-u"]).strip(), probe(prefix, [str(place / "id"), "-g"]).strip())
+    finally:
+        shutil.rmtree(place, ignore_errors=True)
+    if ids != (str(owner[0]), str(owner[1])):
+        problems.append(f"a set-id root file ran with user and group {ids}")
+    if problems:
+        raise EvaluationError("The unprivileged run does not hold: " + "; ".join(problems))
+    return prefix, owner, found
+
+
+def seal(top: Path, owner: tuple[int, int] = (0, 0)) -> None:
+    """Make the submission `owner`'s and read-only for anyone else, before any of it runs: no
+    set-user-id, set-group-id or sticky bit, executables 0755, other files 0644, directories 0755.
+    Links are left as they are and never followed; devices, pipes and sockets are removed.
+
+    Raises:
+        EvaluationError: An entry can be neither sealed nor removed.
+    """
+    if not top.is_dir() or top.is_symlink():
+        return
+    entries = [top]
+    for root, directories, files in os.walk(top):
+        entries += [Path(root) / name for name in directories + files]
+    for path in entries:
+        try:
+            info = os.lstat(path)
+            if stat.S_ISLNK(info.st_mode):
+                os.lchown(path, *owner)
+            elif stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode):
+                os.lchown(path, *owner)
+                os.chmod(path, 0o755 if stat.S_ISDIR(info.st_mode) or info.st_mode & 0o111 else 0o644)
+            else:
+                os.unlink(path)
+        except OSError as exc:
+            try:
+                shutil.rmtree(path) if path.is_dir() and not path.is_symlink() else path.unlink()
+            except OSError:
+                raise EvaluationError(f"Could not seal the submission: {type(exc).__name__}") from exc
 
 
 def kill_user(uid: int) -> None:
@@ -116,7 +213,6 @@ def grade(program: Path, private: Path, prefix: list[str], owner: tuple[int, int
     if not program.is_file() or not os.access(program, os.X_OK):
         metrics["notes"].append("/app/rebuild/goose is missing or not executable")
         return metrics
-    subprocess.run(["chmod", "-R", "a+rX", str(program.parent)], check=False)
     failed = []
     started = time.monotonic()
     for case in cases:
@@ -171,8 +267,14 @@ def main() -> int:
             raise EvaluationError("Verifier must start as root to isolate submitted code")
         for closed in (tests, output):
             closed.chmod(0o700)
-        prefix, owner = sandbox()
-        metrics = grade(Path("/app/rebuild/goose"), tests / "private", prefix, owner)
+        try:  # the out-of-memory killer takes a submission's process, never this one
+            Path("/proc/self/oom_score_adj").write_text("-1000")
+        except OSError:
+            pass
+        prefix, owner, limits = sandbox()
+        seal(SUBMISSION)
+        metrics = grade(SUBMISSION / "goose", tests / "private", prefix, owner)
+        metrics["limits"] = limits
         (output / "metrics.json").write_text(json.dumps(dict(metrics, status="completed"), indent=1, sort_keys=True) + "\n")
         (output / "reward.txt").write_text(f"{metrics['reward']:.6f}")
         print(f"reward: {metrics['reward']:.6f} ({metrics['cases_passed']}/{metrics['cases_total']} cases)", flush=True)

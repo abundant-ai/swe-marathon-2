@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -324,6 +325,66 @@ def test_the_recording_report_counts_outputs_equal_to_upstream(tmp_path):
     report = json.loads((tmp_path / "out.json").read_text())
     assert report["run_cases_with_upstream_output"] == 2 and report["run_cases_printing_upstream_output"] == 1
     assert report["empty_stdout_by_exit"] == {"1": 1} and report["kinds_kept"] == {"check": 1, "run": 2}
+
+
+def verifier_call(code: str) -> object:
+    """The JSON a snippet prints with the verifier importable, in a process of its own (another
+    task's checks have a package named `verifier` too)."""
+    done = subprocess.run([sys.executable, "-B", "-c", f"import sys; sys.path.insert(0, {str(STEP / 'tests')!r})\n" + code],
+                          capture_output=True, text=True, timeout=120)
+    assert done.returncode == 0, done.stdout[-2000:] + done.stderr[-2000:]
+    return json.loads(done.stdout.strip().splitlines()[-1])
+
+
+def test_every_run_gets_the_same_limits_and_its_own_stack(tmp_path):
+    report = verifier_call(textwrap.dedent(f"""
+        import json, sys
+        from pathlib import Path
+        from verifier import runcases
+        runcases.WORKSPACE = Path({str(tmp_path / 'goose-case')!r})
+        code = "import resource, json; print(json.dumps([resource.getrlimit(r) for r in "
+        code += "(resource.RLIMIT_STACK, resource.RLIMIT_FSIZE, resource.RLIMIT_CORE)]))"
+        case = {{"id": "P1", "files": {{}}, "argv": ["-c", code], "stdin": None}}
+        got = runcases.run_case([sys.executable], case)
+        print(json.dumps([json.loads(got["stdout"]), [runcases.LIMITS[r] for r in (runcases.resource.RLIMIT_STACK,
+              runcases.resource.RLIMIT_FSIZE, runcases.resource.RLIMIT_CORE)]]))
+    """))
+    limits, wanted = report
+    assert [soft for soft, _ in limits] == wanted and [hard for _, hard in limits] == wanted
+
+
+def test_a_set_id_file_gains_nothing(tmp_path):
+    """The submission loses its set-id bits and its write permission before anything runs, and the
+    privilege check refuses a process that keeps no_new_privs off, an id, a group or a capability."""
+    top = tmp_path / "rebuild"
+    (top / "lib").mkdir(parents=True)
+    for name, mode in (("goose", 0o4755), ("lib/helper", 0o2775), ("lib/data", 0o4666), ("lib", 0o1777)):
+        (top / name).touch() if name != "lib" else None
+        (top / name).chmod(mode)
+    os.mkfifo(top / "lib" / "pipe")
+    (top / "link").symlink_to("/etc/passwd")
+    report = verifier_call(textwrap.dedent(f"""
+        import json, os
+        from pathlib import Path
+        import verify
+        verify.seal(Path({str(top)!r}), (os.getuid(), os.getgid()))
+        status = "Uid:\\t65534\\t65534\\t65534\\t65534\\nGid:\\t65534\\t65534\\t65534\\t65534\\nGroups:\\t\\nNoNewPrivs:\\t1\\n"
+        status += "CapPrm:\\t0000000000000000\\nCapEff:\\t0000000000000000\\nCapAmb:\\t0000000000000000\\n"
+        limits = "Max processes             512                  512                  processes\\n"
+        limits += "Max file size             268435456            268435456            bytes\\n"
+        limits += "Max core file size        0                    0                    bytes\\n"
+        good = verify.sandbox_problems(status, limits, (65534, 65534))[0]
+        bad = [verify.sandbox_problems(status.replace(old, new), limits, (65534, 65534))[0] for old, new in
+               (("NoNewPrivs:\\t1", "NoNewPrivs:\\t0"), ("Uid:\\t65534\\t65534", "Uid:\\t65534\\t0"), ("Groups:\\t", "Groups:\\t0"),
+                ("CapEff:\\t0000000000000000", "CapEff:\\t0000000000000400"))]
+        bad.append(verify.sandbox_problems(status, limits.replace("512 ", "9999"), (65534, 65534))[0])
+        print(json.dumps([good, bad, "--no-new-privs" in Path(verify.__file__).read_text()]))
+    """))
+    good, bad, no_new_privs = report
+    assert good == [] and all(problems for problems in bad) and no_new_privs
+    modes = {path.relative_to(top).as_posix(): os.lstat(path).st_mode & 0o7777 for path in [top, *top.rglob("*")]}
+    assert modes == {".": 0o755, "goose": 0o755, "lib": 0o755, "lib/helper": 0o755, "lib/data": 0o644, "link": modes["link"]}
+    assert (top / "link").is_symlink()
 
 
 # ---------------------------------------------------------------- hardening and images

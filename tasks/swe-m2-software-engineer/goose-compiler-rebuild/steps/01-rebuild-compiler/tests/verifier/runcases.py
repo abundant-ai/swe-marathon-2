@@ -1,7 +1,8 @@
 """Run example cases against one compiler executable and compare what it prints.
 
 Each case is written into the same fixed directory, so that paths in an output are the same
-for every run.
+for every run. Every run gets the same resource limits: an 8 MB stack, which is where
+`goose run` runs a program, and bounds on processes, file size and data.
 
 usage: python3 <this file> check <program> <cases.json> <outputs.json> [-v]
        python3 <this file> record <program> <cases.json> <outputs.json> [--keep <cases-out.json>]
@@ -14,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+import resource
 import selectors
 import shutil
 import signal
@@ -27,6 +29,36 @@ WORKSPACE = Path("/tmp/goose-case")
 CASE_SEC = 2
 OUTPUT_LIMIT = 1_000_000  # characters of standard output compared
 READ_LIMIT = 4 * OUTPUT_LIMIT  # bytes read at most: a UTF-8 character is at most four bytes
+LIMITS = {
+    resource.RLIMIT_STACK: 8 << 20,   # `goose run` runs the program on the main thread's stack
+    resource.RLIMIT_NPROC: 512,       # processes and threads of the user running the case
+    resource.RLIMIT_FSIZE: 256 << 20,
+    # Writable private mappings: the original reserves 2 GB of address space per data stack
+    # (MAP_NORESERVE, counted here) and takes smaller stacks where refused, so the bound is high.
+    resource.RLIMIT_DATA: 256 << 30,
+    resource.RLIMIT_CORE: 0,
+}
+
+
+def limit() -> None:
+    """In a child about to run a case: the resource limits, the same for every run, and the first
+    claim on the out-of-memory killer. The process count only bounds runs that root starts: in a
+    user's own shell the user's other processes count too."""
+    for which, value in LIMITS.items():
+        if which == resource.RLIMIT_NPROC and os.geteuid() != 0:
+            continue
+        try:
+            resource.setrlimit(which, (value, value))
+        except (ValueError, OSError):  # a hard limit below the value, or a platform maximum (macOS's data size)
+            _, hard = resource.getrlimit(which)
+            try:
+                resource.setrlimit(which, (hard if hard != resource.RLIM_INFINITY and 0 <= hard < value else value, hard))
+            except (ValueError, OSError):
+                pass
+    try:
+        Path("/proc/self/oom_score_adj").write_text("1000")
+    except OSError:
+        pass
 
 
 def clear_workspace() -> None:
@@ -117,7 +149,7 @@ def run_case(program: list[str], case: dict, prefix: list[str] | None = None, ow
            "TERM": "dumb", "GOOSE_PROGRESS": "plain"}
     try:
         proc = subprocess.Popen((prefix or []) + program + case["argv"], cwd=WORKSPACE, env=env, stdin=subprocess.PIPE,
-                                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, start_new_session=True)
+                                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, start_new_session=True, preexec_fn=limit)
     except (OSError, subprocess.SubprocessError):
         return {"exit": None, "stdout": None, "error": "could not start"}
     deadline = time.monotonic() + CASE_SEC
