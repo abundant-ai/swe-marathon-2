@@ -276,7 +276,7 @@ One regeneration (same seed) carries every case change below. Not built: no loca
   comments 3 (labels), tab-indented lines 95 (whole tab-indented files); names ending in a number
   are upstream's own (`step1`). Cases with no change at all: 8. Private cases `ed4aa112`, visible
   `86b96475` (sha1 of the bundle's copies).
-- Preflight passes on bundle `9c510edafcec`.
+- Preflight passes on bundle `a296bbd1ed2d`.
 
 ## Current implementation
 
@@ -406,10 +406,10 @@ Licence: the upstream is Apache-2.0. Its `LICENSE` is shipped with the documenta
 | Check | Revision | Result |
 | --- | --- | --- |
 | `checks/` (27 tests) with `ci_checks` (27), Python 3.13, and `check_repository.py` | working tree, 2026-11-19, round 2 continued | pass |
-| Oddish preflight | bundles `ca4309ce85fc`, `19c1c91c58fc`; `f98273d8a455` (hardened build, new cases); `5cb265da1a10` (verifier round 2); `9c510edafcec` (round 2 continued) | pass |
-| Hardened build | bundle `9c510edafcec` | not built yet: `apply.sh` tested on a pristine copy of the six patched files (applies once, refuses twice), `smoke.sh` tested against stand-ins that do and do not refuse; the static link and the LangArena glue are untried |
-| Privilege drop | bundle `9c510edafcec` | not run as root yet: sealing, the refusal of a weak drop, the `prctl` fallback and the cleanup between cases are checked; the drop itself first runs in the first baseline |
-| Recorder selection | bundle `9c510edafcec` | checked against a stand-in compiler (settling, crashes, drops, baselines); first run on the original at the first build |
+| Oddish preflight | bundles `ca4309ce85fc`, `19c1c91c58fc`; `f98273d8a455` (hardened build, new cases); `5cb265da1a10` (verifier round 2); `a296bbd1ed2d` (round 2 continued) | pass |
+| Hardened build | bundle `a296bbd1ed2d` | not built yet: `apply.sh` tested on a pristine copy of the six patched files (applies once, refuses twice), `smoke.sh` tested against stand-ins that do and do not refuse; the static link and the LangArena glue are untried |
+| Privilege drop | bundle `a296bbd1ed2d` | not run as root yet: sealing, the refusal of a weak drop, the `prctl` fallback and the cleanup between cases are checked; the drop itself first runs in the first baseline |
+| Recorder selection | bundle `a296bbd1ed2d` | checked against a stand-in compiler (settling, crashes, drops, baselines); first run on the original at the first build |
 | Oddish baselines, version 1 | bundle `ca4309ce85fc` (earlier generator), task `...goose-compiler-rebuild-9979b548`, experiment `goose-compiler-rebuild-20261118` (https://www.oddish.app/experiments/4b947cc6), one row | reference 1.0 twice (1,500 of 1,500: the recording kept every case), no-op 0.0 twice. First build of both images and of the solution's compiler; Archil, no fault |
 | Oddish baselines, version 2 | bundle `19c1c91c58fc` (current generator), same task, experiment `goose-compiler-rebuild-v2-20261118` (https://www.oddish.app/experiments/f14b3da8), one row | reference 1.0 twice (1,500 of 1,500), no-op 0.0 twice |
 | Oddish source audit, version 2 | trial 13 | no must-fix finding. Two should-fix: upstream's `docs/implementation.md` says an equivalent implementation need not reproduce diagnostic wording, while the JSON diagnostics are compared exactly (answered in the instruction since); the example outputs are recorded at build time and cannot be inspected in the package (kept: the original must produce them) |
