@@ -62,8 +62,9 @@ Your implementation in `/app/rebuild`, with an executable `/app/rebuild/goose`.
   sources and the tools listed above.
 - Where it will be used, it runs as an unprivileged user that cannot write to `/app/rebuild`.
   Each run starts in a new working directory under `/tmp` that holds only that run's files,
-  with `HOME` set to `/tmp`, nothing left in `/tmp` from earlier runs, and the same resource
-  limits as `run_examples.py` applies (an 8 MB stack among them).
+  with `HOME` and `TMPDIR` set to new empty directories, nothing left from earlier runs
+  anywhere it can write, and the same resource limits as `run_examples.py` applies (an 8 MB
+  stack among them).
 - Each run finishes within 2 seconds; the released compiler takes a fraction of a second.
 - Out of scope: `goose build`, `goose fetch` and packages, `goose lsp`, `goose toolchain`,
   writing C with `-o`, the options that report on a compile (`--stats`, `--specs`, `--stacks`,

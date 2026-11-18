@@ -25,7 +25,10 @@ SANDBOX_GROUP = "nogroup"
 SUBMISSION = Path("/app/rebuild")
 REWARD_FILES = ("reward.txt", "reward.json")
 TOTAL_SEC = 3300  # the step verifier has 3,600 s; 1,500 runs at the per-run limit take at most 3,000 s
-LEFTOVER_DIRS = ("/tmp", "/var/tmp", "/dev/shm")
+# Where the unprivileged user can leave files: these, and every other world-writable directory
+# that writable_dirs() finds when the evaluation starts.
+LEFTOVER_DIRS = ["/tmp", "/var/tmp", "/dev/shm", "/dev/mqueue"]
+SYSV_IPC = (("shm", "-m"), ("sem", "-s"), ("msg", "-q"))  # /proc/sysvipc/<name> and ipcrm's flag for it
 LIMIT_NAMES = {"Max stack size": resource.RLIMIT_STACK, "Max processes": resource.RLIMIT_NPROC,
                "Max file size": resource.RLIMIT_FSIZE, "Max data size": resource.RLIMIT_DATA,
                "Max core file size": resource.RLIMIT_CORE}
@@ -164,9 +167,47 @@ def kill_user(uid: int) -> None:
         time.sleep(0.01)
 
 
+def writable_dirs(root: str = "/") -> list[str]:
+    """Every directory under `root` that anyone may write to, not following links and leaving out
+    the kernel's own trees: where a submission could leave a file for a later case."""
+    found = []
+    for top, directories, _ in os.walk(root):
+        if top == root:
+            directories[:] = [d for d in directories if d not in ("proc", "sys", "dev")]
+        try:
+            if os.lstat(top).st_mode & stat.S_IWOTH:
+                found.append(top)
+        except OSError:
+            continue
+    return found
+
+
+def remove_ipc(uid: int, root: Path = Path("/proc/sysvipc")) -> None:
+    """Remove the System V shared memory, semaphores and message queues the user owns or made:
+    they outlive the processes that made them."""
+    for name, flag in SYSV_IPC:
+        try:
+            header, *rows = (root / name).read_text().splitlines()
+        except (OSError, ValueError):
+            continue
+        columns = header.split()
+        for row in rows:
+            values = dict(zip(columns, row.split()))
+            if str(uid) in (values.get("uid"), values.get("cuid")) and values.get(columns[1], "").isdigit():
+                subprocess.run(["ipcrm", flag, values[columns[1]]], capture_output=True, check=False)
+
+
+def reset(uid: int) -> None:
+    """Before and after every case: none of the user's processes left, nothing of its files in a
+    directory it can write to, and none of its System V IPC objects."""
+    kill_user(uid)
+    remove_leftovers(uid)
+    remove_ipc(uid)
+
+
 def remove_leftovers(uid: int) -> None:
-    """Remove what the user left at the top of the shared temporary directories, never following
-    a link: every run starts with nothing of an earlier run's there."""
+    """Remove what the user left at the top of the directories it can write to, never following a
+    link: every run starts with nothing of an earlier run's there."""
     for top in LEFTOVER_DIRS:
         try:
             entries = list(os.scandir(top))
@@ -221,8 +262,7 @@ def grade(program: Path, private: Path, prefix: list[str], owner: tuple[int, int
             metrics["stopped"] = f"after {budget} seconds of runs; the remaining cases count as failed"
             break
         if owner is not None:
-            kill_user(owner[0])
-            remove_leftovers(owner[0])
+            reset(owner[0])
         try:
             got = runcases.run_case([str(program)], case, prefix=prefix, owner=owner)
         except OSError as exc:  # whatever the submission did to this machine is its own case's failure
@@ -245,8 +285,7 @@ def grade(program: Path, private: Path, prefix: list[str], owner: tuple[int, int
         else:
             failed.append(case["id"])
     if owner is not None:
-        kill_user(owner[0])
-        remove_leftovers(owner[0])
+        reset(owner[0])
     try:
         runcases.clear_workspace()
     except OSError:
@@ -284,6 +323,7 @@ def main() -> int:
             pass
         prefix, owner, limits = sandbox()
         seal(SUBMISSION)
+        LEFTOVER_DIRS.extend(top for top in writable_dirs() if top not in LEFTOVER_DIRS)
         metrics = grade(SUBMISSION / "goose", tests / "private", prefix, owner)
         metrics["limits"] = limits
         (output / "metrics.json").write_text(json.dumps(dict(metrics, status="completed"), indent=1, sort_keys=True) + "\n")

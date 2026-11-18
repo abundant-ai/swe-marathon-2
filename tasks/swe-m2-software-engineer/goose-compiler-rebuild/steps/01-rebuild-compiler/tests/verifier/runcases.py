@@ -1,8 +1,9 @@
 """Run example cases against one compiler executable and compare what it prints.
 
 Each case is written into the same fixed directory, so that paths in an output are the same
-for every run. Every run gets the same resource limits: an 8 MB stack, which is where
-`goose run` runs a program, and bounds on processes, file size and data.
+for every run, and each run gets new empty directories as its HOME and TMPDIR. Every run gets
+the same resource limits: an 8 MB stack, which is where `goose run` runs a program, and bounds
+on processes, file size and data.
 
 usage: python3 <this file> check <program> <cases.json> <outputs.json> [-v]
        python3 <this file> record <program> <cases.json> <outputs.json> [--keep <cases-out.json>] [--report <timing.json>]
@@ -28,6 +29,8 @@ import time
 from pathlib import Path
 
 WORKSPACE = Path("/tmp/goose-case")
+HOME = Path("/tmp/goose-home")   # HOME and TMPDIR of a run, new and empty for each
+TEMP = Path("/tmp/goose-tmp")
 CASE_SEC = 2
 KEEP_SEC = 0.5  # a recorded case finished in at most this, both times: a margin for slower machines
 OUTPUT_LIMIT = 1_000_000  # bytes of standard output read at most; more fails the run
@@ -65,31 +68,35 @@ def limit() -> None:
 
 
 def clear_workspace() -> None:
-    """Remove whatever is at the workspace path without following a symbolic link: a directory
-    with its contents, anything else by itself."""
-    try:
-        mode = os.lstat(WORKSPACE).st_mode
-    except FileNotFoundError:
-        return
-    if stat.S_ISDIR(mode):
-        shutil.rmtree(WORKSPACE)
-    else:
-        os.unlink(WORKSPACE)
+    """Remove whatever is at the workspace, HOME and TMPDIR paths without following a symbolic
+    link: a directory with its contents, anything else by itself."""
+    for path in (WORKSPACE, HOME, TEMP):
+        try:
+            mode = os.lstat(path).st_mode
+        except FileNotFoundError:
+            continue
+        if stat.S_ISDIR(mode):
+            shutil.rmtree(path)
+        else:
+            os.unlink(path)
 
 
 def prepare(case: dict, owner: tuple[int, int] | None) -> None:
-    """A new workspace holding the case's files, owned by `owner` (user and group ids) where given."""
+    """A new workspace holding the case's files and a new empty HOME and TMPDIR, all owned by
+    `owner` (user and group ids) where given."""
     clear_workspace()
-    WORKSPACE.mkdir(parents=True)
+    for path in (WORKSPACE, HOME, TEMP):
+        path.mkdir(parents=True)
     for name, text in case["files"].items():
         target = WORKSPACE / name
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(text, encoding="utf-8")
     if owner:
-        for root, directories, files in os.walk(WORKSPACE):
-            for name in directories + files:
-                os.lchown(os.path.join(root, name), *owner)
-        os.lchown(WORKSPACE, *owner)
+        for top in (WORKSPACE, HOME, TEMP):
+            for root, directories, files in os.walk(top):
+                for name in directories + files:
+                    os.lchown(os.path.join(root, name), *owner)
+            os.lchown(top, *owner)
 
 
 def collect(proc: subprocess.Popen, data: bytes, deadline: float) -> tuple[bytes, str | None]:
@@ -148,8 +155,8 @@ def run_case(program: list[str], case: dict, prefix: list[str] | None = None, ow
         prepare(case, owner)
     except OSError as exc:
         return {"exit": None, "stdout": None, "error": f"workspace: {type(exc).__name__}", "seconds": 0.0}
-    env = {"PATH": "/usr/local/bin:/usr/bin:/bin", "HOME": "/tmp", "LC_ALL": "C.UTF-8", "LANG": "C.UTF-8", "NO_COLOR": "1",
-           "TERM": "dumb", "GOOSE_PROGRESS": "plain"}
+    env = {"PATH": "/usr/local/bin:/usr/bin:/bin", "HOME": str(HOME), "TMPDIR": str(TEMP), "LC_ALL": "C.UTF-8",
+           "LANG": "C.UTF-8", "NO_COLOR": "1", "TERM": "dumb", "GOOSE_PROGRESS": "plain"}
     started = time.monotonic()
     try:
         proc = subprocess.Popen((prefix or []) + program + case["argv"], cwd=WORKSPACE, env=env, stdin=subprocess.PIPE,

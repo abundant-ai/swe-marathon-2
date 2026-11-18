@@ -237,6 +237,8 @@ def run_verifier(tmp_path: Path, script: str, cases: list[dict], expected: dict,
         sys.path.insert(0, {str(STEP / 'tests')!r})
         import verify
         verify.runcases.WORKSPACE = Path({str(tmp_path / 'tmp' / 'goose-case')!r})
+        verify.runcases.HOME = Path({str(tmp_path / 'tmp' / 'goose-home')!r})
+        verify.runcases.TEMP = Path({str(tmp_path / 'tmp' / 'goose-tmp')!r})
         verify.runcases.CASE_SEC = {case_sec}
         if {output_limit!r} is not None:
             verify.runcases.OUTPUT_LIMIT = {output_limit!r}
@@ -316,6 +318,7 @@ def test_every_run_gets_the_same_limits_and_its_own_stack(tmp_path):
         from pathlib import Path
         from verifier import runcases
         runcases.WORKSPACE = Path({str(tmp_path / 'goose-case')!r})
+        runcases.HOME, runcases.TEMP = Path({str(tmp_path / 'goose-home')!r}), Path({str(tmp_path / 'goose-tmp')!r})
         code = "import resource, json; print(json.dumps([resource.getrlimit(r) for r in "
         code += "(resource.RLIMIT_STACK, resource.RLIMIT_FSIZE, resource.RLIMIT_CORE)]))"
         case = {{"id": "P1", "files": {{}}, "argv": ["-c", code], "stdin": None}}
@@ -359,6 +362,62 @@ def test_a_set_id_file_gains_nothing(tmp_path):
     modes = {path.relative_to(top).as_posix(): os.lstat(path).st_mode & 0o7777 for path in [top, *top.rglob("*")]}
     assert modes == {".": 0o755, "goose": 0o755, "lib": 0o755, "lib/helper": 0o755, "lib/data": 0o644, "link": modes["link"]}
     assert (top / "link").is_symlink()
+
+
+def test_nothing_a_submission_writes_reaches_a_later_case(tmp_path):
+    """Each run has a new workspace, HOME and TMPDIR, and what the sandbox user left anywhere it
+    can write (here `shared`, standing for /tmp and the other world-writable directories) is gone
+    before the next case. kill_user is left out: here the sandbox user is the one running pytest."""
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    program = tmp_path / "goose"
+    program.write_text(textwrap.dedent(f"""\
+        #!/bin/sh
+        found=""
+        for place in "$PWD" "$HOME" "$TMPDIR" "{shared}" "{shared}/stash.d"; do
+            [ -e "$place/carried" ] && found="$found $place"
+        done
+        for place in "$PWD" "$HOME" "$TMPDIR" "{shared}"; do
+            echo x > "$place/carried"
+        done
+        mkdir -p "{shared}/stash.d" && echo y > "{shared}/stash.d/carried"
+        if [ -n "$found" ]; then echo "found:$found"; else echo ok; fi
+    """))
+    program.chmod(0o755)
+    private = tmp_path / "private"
+    private.mkdir()
+    cases, expected = plain_cases([["a"], ["b"], ["c"]])
+    (private / "cases.json").write_text(json.dumps({"cases": cases}))
+    (private / "expected.json").write_text(json.dumps(expected))
+    ipc = tmp_path / "sysvipc"
+    ipc.mkdir()
+    (ipc / "shm").write_text("key shmid perms size cpid lpid nattch uid gid cuid cgid\n"
+                             f"0 7 600 4096 1 1 0 {os.getuid()} 0 {os.getuid()} 0\n0 8 600 4096 1 1 0 4242 0 4242 0\n")
+    metrics, removed = verifier_call(textwrap.dedent(f"""
+        import json, os
+        from pathlib import Path
+        import verify
+        verify.runcases.WORKSPACE = Path({str(tmp_path / 'goose-case')!r})
+        verify.runcases.HOME = Path({str(tmp_path / 'goose-home')!r})
+        verify.runcases.TEMP = Path({str(tmp_path / 'goose-tmp')!r})
+        verify.LEFTOVER_DIRS[:] = [{str(shared)!r}]
+        verify.kill_user = lambda uid: None
+        removed = []
+        verify.subprocess.run = lambda argv, **kw: removed.append(argv)
+        root = Path({str(ipc)!r})
+        verify.remove_ipc = (lambda real: lambda uid: real(uid, root))(verify.remove_ipc)
+        metrics = verify.grade(Path({str(program)!r}), Path({str(private)!r}), [], (os.getuid(), os.getgid()))
+        print(json.dumps([metrics, removed]))
+    """))
+    assert metrics["cases_passed"] == 3, metrics
+    assert removed and all(argv == ["ipcrm", "-m", "7"] for argv in removed), removed
+    assert list(shared.iterdir()) == [], "the last case's files outlived the evaluation"
+    tree = tmp_path / "tree"
+    for name, mode in (("open", 0o777), ("closed", 0o755), ("open/inner", 0o1777)):
+        (tree / name).mkdir(parents=True)
+        (tree / name).chmod(mode)
+    found = verifier_call(f"import json, verify\nprint(json.dumps(verify.writable_dirs({str(tree)!r})))")
+    assert sorted(found) == [str(tree / "open"), str(tree / "open" / "inner")]
 
 
 def test_recorder_keeps_only_cases_that_finish_the_same_way_twice_and_soon(tmp_path):
