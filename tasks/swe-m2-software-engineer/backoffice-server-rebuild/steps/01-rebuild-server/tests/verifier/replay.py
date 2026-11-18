@@ -32,6 +32,7 @@ import json
 import os
 import pwd
 import re
+import select
 import shutil
 import signal
 import socket
@@ -224,6 +225,20 @@ class Candidate:
             self.stop()
 
 
+def closed_by_peer(sock: socket.socket) -> bool:
+    """Whether the server has closed this idle kept-alive connection; bytes it sent unasked are left for the next answer."""
+    try:
+        poller = select.poll()
+        poller.register(sock, select.POLLIN)
+        if not poller.poll(0):
+            return False
+        return sock.recv(1, socket.MSG_PEEK) == b""
+    except BlockingIOError:
+        return False
+    except (OSError, ValueError):
+        return True
+
+
 def exchange(connection: http.client.HTTPConnection, method: str, path: str, headers: dict[str, str], body: Any,
              raw: bytes | None = None) -> tuple[int, Any]:
     """Send one request on an open connection and read the answer.
@@ -240,15 +255,30 @@ def exchange(connection: http.client.HTTPConnection, method: str, path: str, hea
         payload = None if body is None else json.dumps(body).encode()
         if payload is not None:
             sent["Content-Type"] = "application/json"
-    refused_early = False
-    try:
-        connection.request(method, path, body=payload, headers=sent)
-    except (BrokenPipeError, ConnectionResetError):
-        # a server may answer an oversized upload (413) and close before reading it; its answer is still there
-        if raw is None:
+    for second_try in (False, True):
+        # a server may close a kept-alive connection without announcing it: notice that before sending, and if a
+        # reused connection still fails before any answer arrives, the request never reached it: send it once more
+        if connection.sock is not None and closed_by_peer(connection.sock):
+            connection.close()
+        reused, refused_early = connection.sock is not None, False
+        try:
+            connection.request(method, path, body=payload, headers=sent)
+        except (BrokenPipeError, ConnectionResetError):
+            if raw is not None:
+                refused_early = True  # an oversized upload answered (413) and closed before it was read: the answer is there
+            elif reused and not second_try:
+                connection.close()
+                continue
+            else:
+                raise
+        try:
+            response = connection.getresponse()
+        except (http.client.RemoteDisconnected, ConnectionResetError, BrokenPipeError):
+            if reused and not second_try:  # no answer at all, not even an early 413: the connection was closed before we sent
+                connection.close()
+                continue
             raise
-        refused_early = True
-    response = connection.getresponse()
+        break
     data = response.read(ANSWER_LIMIT + 1)
     if len(data) <= ANSWER_LIMIT and response.length:
         # the connection ended before the length the server announced: a cut answer is no answer (http.client does not raise)

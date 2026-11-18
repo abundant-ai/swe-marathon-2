@@ -400,6 +400,9 @@ def handle(conn):
                     break
                 name, value = header.decode("latin-1").split(":", 1)
                 length = int(value) if name.strip().lower() == "content-length" else length
+            if MODE == "silent" and length > 1_000_000:
+                send(conn, 413, b'{"error": "too large"}')
+                return  # refused from its length, closed without reading the upload or saying so
             reader.read(length)
             path = target.split("?")[0]
             if path == "/api/health":
@@ -424,6 +427,8 @@ def handle(conn):
                 send(conn, 200, b"[" * 100000 + b"]" * 100000)
             else:
                 send(conn, 200, json.dumps({"path": path.split("/", 4)[-1]}).encode())
+            if MODE == "silent":
+                return  # every answer is followed by a close nobody announced
     except (OSError, ValueError):
         return
     finally:
@@ -492,6 +497,16 @@ def test_replies_that_are_not_http_or_not_json_are_mismatches_not_evaluation_err
     assert {result["id"]: (result["failed_step"], result["reason"]) for result in odd["results"]} == {
         "S1": (2, "body differs"), "S2": (1, "body differs"), "S3": (None, None)}
     assert odd["metrics"]["scenarios_matched"] == 1 and odd["metrics"]["reward"] == round(1 / 3, 6)
+
+
+def test_a_server_that_closes_without_announcing_it_loses_nothing(tmp_path):
+    """QA 10 E10 and E3: right answers, each followed by a close the server never announced (one of them an early 413)."""
+    big = {"method": "POST", "path": "/files/upload", "query": {}, "headers": {"x-user": "U-01", "content-type": "application/octet-stream"},
+           "body_size": 2_000_000, "status": 413, "json": {"error": "too large"}}
+    scenarios = [{"id": f"S{i}", "theme": "t", "steps": [step("/items/1"), step("/items/2"), step("/items/3")]} for i in range(6)]
+    scenarios.append({"id": "S-big", "theme": "t", "steps": [step("/items/1"), big, step("/items/2")]})
+    out = drive(tmp_path, "silent", scenarios)
+    assert out["metrics"]["scenarios_matched"] == 7 and out["metrics"]["retried"] == 0, out["results"]
 
 
 def test_a_server_that_crashes_now_and_then_loses_only_the_scenarios_that_crash_it(tmp_path):
