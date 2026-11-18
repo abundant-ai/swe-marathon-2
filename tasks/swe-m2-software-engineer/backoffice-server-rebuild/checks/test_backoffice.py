@@ -6,7 +6,11 @@ builds an environment from the pinned checkout's lock file.
 
 from __future__ import annotations
 
+import base64
+import gzip
+import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -133,7 +137,7 @@ def test_bundles_hold_runtime_files_only(tmp_path):
             prefix = "" if flag else "steps/01-rebuild-server/"
             for required in ("task.toml", "environment/Dockerfile", "environment/requirements.txt", "environment/sealed/stockwell/app.py",
                              "environment/sealed/stockwell/media/pdf.py", "environment/client/dist/index.html", "environment/client/src/main.tsx",
-                             "environment/samples/clip.mp4", prefix + "instruction.md", prefix + "tests/verify.py", prefix + "tests/requirements.txt",
+                             prefix + "instruction.md", prefix + "tests/verify.py", prefix + "tests/requirements.txt",
                              prefix + "tests/private/scenarios.json.gz", prefix + "solution/oracle.py", prefix + "solution/data/stockwell/api_routes.py"):
                 assert (bundle / required).is_file(), required
             config = (bundle / "task.toml").read_text()
@@ -149,6 +153,19 @@ def test_bundles_hold_runtime_files_only(tmp_path):
             assert private_media and not private_media & shipped
             assert any((bundle / "environment" / "samples" / "pdf").iterdir())
             assert not (bundle / "environment" / "samples" / "manifest.json").exists()
+            # Stockwell's own test fixtures are inputs of the hidden `files` scenarios: none of them ships, under any name
+            fixtures = {path.read_bytes() for path in (REFERENCE / "backend" / "tests" / "fixtures").rglob("*") if path.is_file()}
+            assert len(fixtures) > 100 and not fixtures & shipped
+            if not flag:
+                # no upload in the hidden scenarios (base64 in a JSON body, or a raw file), no cut-short upload and no file
+                # answer is a file the candidate's image receives (scripts/scan_uploads.py reads the corpus once)
+                done = subprocess.run([sys.executable, "-I", "-B", str(TASK / "scripts" / "scan_uploads.py"), str(bundle)],
+                                      capture_output=True, text=True, timeout=600)
+                assert done.returncode in (0, 1) and done.stdout, done.stderr[-3000:]
+                report = json.loads(done.stdout)
+                assert done.returncode == 0 and report["leaks"] == [] and report["missing"] == [], done.stdout[-3000:]
+                if not created and not made_media:
+                    assert report["scenarios"] > 1000 and report["base64"] > 100 and report["body_file"] > 100 and report["file_answers"] > 100
             # nothing the agent can read names how the work is judged (the sealed server is bytecode it cannot read)
             words = re.compile(r"oracle|verifier|grading|hidden test|parity|record_corpus|scenario|benchmark|harbor|oddish|reward", re.I)
             for path in (bundle / "environment").rglob("*"):
@@ -288,3 +305,43 @@ print(json.dumps([first, second]))
     assert done.returncode == 0, done.stderr[-2000:]
     first, second = json.loads(done.stdout)
     assert first == [413, {"error": {"code": "body_too_large"}}] and second[0] == 413
+
+
+def test_the_upload_scan_finds_hidden_inputs_the_image_also_receives(tmp_path):
+    """Planted leaks: a sample uploaded as base64, the same sample cut short, a raw private file equal to a sample, a
+    file answer equal to a client file. Legitimate private uploads and answers are not reported."""
+    sample, other, page = os.urandom(300), os.urandom(300), b"<html>" + os.urandom(200).hex().encode()
+    bundle = tmp_path / "bundle"
+    private = bundle / "steps" / "s" / "tests" / "private"
+    for path, data in ((bundle / "environment" / "samples" / "photo.jpg", sample), (bundle / "environment" / "client" / "index.html", page),
+                       (private / "media" / "photo" / "p.jpg", sample), (private / "media" / "photo" / "q.jpg", other)):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+
+    def upload(data: bytes) -> dict:
+        return {"method": "POST", "path": "/files", "query": {}, "headers": {}, "body": {"name": "f", "content": base64.b64encode(data).decode()},
+                "status": 201, "json": {"id": "FILE-1"}}
+
+    def raw(name: str) -> dict:
+        return {"method": "POST", "path": "/files/upload", "query": {}, "headers": {}, "body_file": name, "status": 201, "json": {}}
+
+    answer = {"method": "GET", "path": "/files/FILE-1/content", "query": {}, "headers": {}, "body": None, "status": 200,
+              "json": {"binary": {"content_type": "text/html", "bytes": len(page), "sha256": hashlib.sha256(page).hexdigest(), "filename": None}}}
+    clean = {"method": "GET", "path": "/files/FILE-1/content", "query": {}, "headers": {}, "body": None, "status": 200,
+             "json": {"binary": {"content_type": "image/jpeg", "bytes": 300, "sha256": hashlib.sha256(other).hexdigest(), "filename": None}}}
+    corpus = {"recorded_with": {"seed": 1}, "scenarios": [
+        {"id": "S1", "theme": "files", "steps": [upload(other), upload(sample)]},
+        {"id": "S2", "theme": "files", "steps": [upload(sample[:150]), upload(sample[:10]), raw("photo/q.jpg"), clean]},
+        {"id": "S3", "theme": "media", "steps": [raw("photo/p.jpg"), answer, raw("photo/missing.jpg")]}]}
+    (private / "scenarios.json.gz").write_bytes(gzip.compress(json.dumps(corpus, indent=1).encode()))
+    done = subprocess.run([sys.executable, "-I", "-B", str(TASK / "scripts" / "scan_uploads.py"), str(bundle)], capture_output=True, text=True,
+                          timeout=60)
+    assert done.returncode == 1, done.stderr[-2000:]
+    report = json.loads(done.stdout)
+    found = sorted((leak["where"].split()[0], leak["what"], leak["file"]) for leak in report["leaks"])
+    assert found == [("S1", "base64 upload (equal)", "environment/samples/photo.jpg"),
+                     ("S2", "base64 upload (prefix)", "environment/samples/photo.jpg"),
+                     ("S3", "body_file upload (equal)", "environment/samples/photo.jpg"),
+                     ("S3", "file answer", "environment/client/index.html")]
+    assert report["scenarios"] == 3 and report["steps"] == 9 and len(report["missing"]) == 1 and report["file_answers"] == 2
+

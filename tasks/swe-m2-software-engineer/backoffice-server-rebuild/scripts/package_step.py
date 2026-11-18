@@ -67,9 +67,7 @@ def collect() -> dict[str, bytes]:
             relative = path.relative_to(client)
             if path.is_file() and not path.name.endswith(".map") and "test" not in relative.parts and "test" not in path.name.split("."):
                 content[f"environment/client/{path.relative_to(client).as_posix()}"] = path.read_bytes()
-    for path in sorted((source / "backend" / "tests" / "fixtures").iterdir()):
-        if path.is_file():
-            content[f"environment/samples/{path.name}"] = path.read_bytes()
+    # Stockwell's own test fixtures never ship: the hidden `files` scenarios upload them (scripts/scan_uploads.py)
     for kind, place in (("visible", "environment/samples"), ("private", f"{STEP}/tests/private/media")):
         for path in sorted((MEDIA / kind).rglob("*")):
             if path.is_file() and path.name != "manifest.json" and not path.name.startswith("."):
