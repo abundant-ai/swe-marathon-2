@@ -2,27 +2,30 @@
 
 ## Goal
 
-Goose is a systems programming language, first published in August 2026, that our tools are
-written in. Its compiler, `goose`, also runs Goose programs, checks them and formats them. We
-need an implementation of our own, written clean-room: the team that writes it works from the
-published documentation, the standard library's sources and the released compiler, which it may
-run as often as it likes, and never reads the compiler's source code. Write that implementation.
+Goose is a systems programming language. Its compiler, `goose`, also runs Goose programs, checks
+them and formats them. We run Goose snippets that people send us, in a playground, in CI and in
+an editor plugin, with a sandboxed build of the compiler. We need an implementation of that build
+of our own, written clean-room: the team that writes it works from the published documentation,
+the standard library's sources and the released build, which it may run as often as it likes,
+and never reads the compiler's source code. Write that implementation.
 
-It has to behave exactly like the released compiler. Our CI keeps the output, the formatting
-and the `--diagnostics json` errors recorded from it for thousands of programs, our editor
-plugin parses `goose check --diagnostics json` and shows each message at its position, and our
-scripts act on its exit codes. A different output, message or position breaks them.
+It has to behave exactly like the released build. The playground shows what a snippet prints
+and its exit code, CI keeps the output, the formatting and the `--diagnostics json` errors
+recorded from it for thousands of programs, and the editor plugin parses
+`goose check --diagnostics json` and shows each message at its position. A different output,
+message or position breaks them.
 
 ## Context
 
 - The released compiler is installed as `goose` on `PATH`. You can run it as often as you
   like. You cannot read the file, copy it or inspect it; you can only execute it.
-- It is our deployment build, which differs from the documentation in a few places: its
-  standard library has no `os` and no `ffi` module, it refuses `extern` declarations outside
-  the standard library's own files, it reads no sidecar `.build` files, it has no `-D`,
-  `--include`, `--stdlib` or `--unsafe-no-rf-check` option, and nothing in it writes C: there
-  is no `goose build` and no `-o`, `--standalone`, `--header`, `--emit-runtime` or
-  `--gen-runtime-header` option.
+- It is the sandboxed build, so it differs from the documentation in a few places: its standard
+  library has no `os` and no `ffi` module, it refuses `extern` declarations outside the
+  standard library's own files, it reads no sidecar `.build` files, it has no `-D`,
+  `--include`, `--stdlib` or `--unsafe-no-rf-check` option, nothing in it writes C (there is no
+  `goose build` and no `-o`, `--standalone`, `--header`, `--emit-runtime` or
+  `--gen-runtime-header` option), `embed_file` reads only files under the directory of the
+  file that calls it, and there is no `embed_shader`.
 - Its documentation is in `/app/docs`: the README, a tutorial, the language reference and
   specification, the standard library, the command line (`docs/command_line.md`), design notes,
   and sample programs (`samples/`). `goose help` and `goose help <command>` describe the
@@ -65,7 +68,8 @@ Your implementation in `/app/rebuild`, with an executable `/app/rebuild/goose`.
   with `HOME` and `TMPDIR` set to new empty directories, nothing left from earlier runs
   anywhere it can write, and the same resource limits as `run_examples.py` applies (an 8 MB
   stack among them).
-- Each run finishes within 2 seconds; the released compiler takes a fraction of a second.
+- Each run finishes within 2 seconds, as long as the playground and the editor plugin wait; the
+  released build takes a fraction of a second.
 - Out of scope: `goose build`, `goose fetch` and packages, `goose lsp`, `goose toolchain`,
   writing C with `-o`, the options that report on a compile (`--stats`, `--specs`, `--stacks`,
   `--bce-lines`, `-v`), threads, calling C (`extern` functions and `extern` blocks in a
