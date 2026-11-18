@@ -13,6 +13,65 @@ One step is implemented. See [Remaining work](#remaining-work).
 
 ## Development log
 
+### 2026-11-19 (adversarial QA: verifier, leaked samples, sealed-server link)
+
+- An adversarial QA wave (lenses 04, 06 and 10; the reports are kept outside the task) found two
+  failures and one concern, fixed below. The should-fixes not taken up are under
+  [Remaining work](#remaining-work).
+- Leaked samples (QA 06, fail): the 19 Stockwell test fixtures shipped in `/app/samples` are the
+  files the hidden `files` scenarios upload (267 base64 uploads, 20 more cut short, and 21 file
+  answers, in 78 of 2,483 scenarios), so their answers could be collected from the sealed server
+  in advance. They no longer ship; the generated visible media set stays as the samples.
+  `scripts/scan_uploads.py` compares every hidden upload (base64 in a JSON body, long text, or a
+  raw `body_file`), every upload of 64 bytes or more that is the start of a shipped file, and
+  every file answer with what the agent image receives. On the previous bundle it reports exactly
+  that leak; on the new one, nothing. The bundle check runs it and also checks that no Stockwell
+  fixture ships under any name.
+- Verifier (QA 10, fail):
+  - A set-user-id file in `/app/server` could arrive root-owned with its mode kept and run as
+    root, which could read the private answers. The server now starts through `setpriv ...
+    --no-new-privs`, set-id bits are cleared from the delivered files first, and every evaluation
+    checks the drop in `/proc/self/status` before any submitted code runs.
+  - The replay had no time limit of its own, so a hanging or slow server outlasted the step and
+    left no reward. It now has a 3,000-second deadline and 30 seconds of wall clock per request
+    (a watcher cuts a server that drips bytes); scenarios not played to the end count as not
+    matched, with a note.
+  - A health reply that is not HTTP, or JSON nested too deeply, raised an evaluation error. Any
+    reply is now a not-healthy server or an answer that matches nothing, and a failed restart is a
+    server that did not start.
+  - A cap of 25 restarts for the whole run let a server that crashes in one theme lose every later
+    scenario. There is no cap now: a scenario that got no answer is played once more on its own
+    after the others, and a dead or unresponsive server is restarted while the deadline holds.
+  - Two more defects turned up while writing the checks for these. An answer cut short of its
+    `Content-Length` was compared as a wrong answer, because `http.client` returns the short body
+    without raising; it is now no answer, which gets the retry. And a failed attempt kept its
+    connection open while waiting for the server's health check, which deadlocks a server that
+    serves one connection at a time; it now closes first.
+- Sealed-server link (QA 04, concern): the candidate owned `/app`, so it could replace
+  `/app/server` with a link to `/opt/stockwell/app`, and Harbor's collector, running as root,
+  would copy the sealed bytecode into the trial artifacts (no reward gain: the copy has no `run`).
+  `/app` is now root's with the sticky bit and `/app/server` root's and writable by everyone, so
+  the candidate works inside `/app/server` but cannot remove, rename or replace it. See
+  hackability row 7.
+- README corrections: Workload follows the current rules (one session per run, no chained
+  sessions, no time budget in the instruction); sizes are measured at `d61d29c`; the MirrorCode
+  figures were checked against Epoch AI's results page and a report on its full results; row 4
+  gives the current corpus.
+- QA 10's own experiments, rerun against the new verifier: E1 (garbage health reply) 0.0 with a
+  note instead of an evaluation error; E2 (deep JSON) a mismatch; E3 (early 413, closed without
+  announcing it) 1 of 1, was 0; E4 (a crash in every 26th scenario) 577 of 600, as deserved, was
+  208; E5 (a single-threaded server busy past the request limit) 7 of 8 with no restart, was 2
+  restarts of a live server; E6 (no answer to workspace creation) still 0 of 16, but at full
+  scale the deadline now ends the replay at 3,000 s, where QA estimated 28,300 s. Unchanged: E7,
+  E8, E9 and E10, which are should-fixes left open.
+- The instruction and the scenarios are unchanged. The limits the replay enforces (eight
+  requests at a time, 30 seconds per request, 3,000 seconds in all) are not stated in the
+  instruction; see Remaining work.
+- `checks/`: 17 tests pass, 7 of them new; with `ci_checks`, 44 pass under Python 3.13, and
+  `ci_checks/check_repository.py` passes. Bundle `2a602a3f17e6` (705 files) built twice with the
+  same hash; Oddish preflight passes. The reference, re-graded locally on the full corpus
+  without the sandbox, still scores 1.0 (2,483 of 2,483) in 264 s with no restarts.
+
 ### 2026-11-18 (real-world media)
 
 - The owner asked for messy PDFs and big media before anything else runs. Stockwell gained,
@@ -28,7 +87,9 @@ One step is implemented. See [Remaining work](#remaining-work).
   password, incremental, broken and truncated PDFs, a 150-page price list, 12-24 MP photos with
   EXIF, a CMYK JPEG, a large PNG, an animated GIF, 45-75 s videos in six containers, voice
   notes): `visible` (seed 20261121) ships as `/app/samples`, `private` (seed 20261122) only to
-  the verifier, so no private upload is a file the candidate has seen.
+  the verifier, so no private upload is a file the candidate has seen. (Not so at the time:
+  Stockwell's own test fixtures also shipped as samples, and the hidden `files` scenarios upload
+  them. Corrected on 2026-11-19.)
 - Corpus: 2,483 scenarios (83 in the new `media` theme), 63,033 requests, 749 raw uploads,
   558 file answers, no server error. A raw upload is a step with `body_file` (a file of the
   media set) or `body_size` (zero bytes, for the over-limit case); the replay sends it raw,
@@ -62,8 +123,9 @@ One step is implemented. See [Remaining work](#remaining-work).
 
 - Oddish QA rejected the sibling `markdown-linter-rebuild` (version 2) on information leaks
   alone. The classes that also apply here are fixed before this task is uploaded: the
-  instruction no longer describes the session lifecycle (it keeps the 48 hours and asks that
-  `/app/server/run` keep working); `task.toml` and the two Dockerfiles keep no authoring
+  instruction no longer describes the session lifecycle and asks that `/app/server/run` keep
+  working (it still named a 48-hour budget, removed at the next upload; the instruction now
+  states no time budget); `task.toml` and the two Dockerfiles keep no authoring
   comments, and neither does `start-sealed-server`; both build contexts have a
   `.dockerignore` (`**/.git`). This task never had a reference helper in the agent image:
   the solution ships the reference package itself.
@@ -76,7 +138,8 @@ One step is implemented. See [Remaining work](#remaining-work).
 
 - The reference is now the Stockwell repository (github.com/abundant-ai/stockwell, private) at
   the commit in `common/STOCKWELL_COMMIT`: the same API rebuilt as a production service
-  (FastAPI, Pydantic, SQLAlchemy; 232 endpoints, about 16,000 lines) with a React and
+  (FastAPI, Pydantic, SQLAlchemy; 232 endpoints; 15,954 lines at `722a647`, the commit pinned
+  then, and 22,988 at `d61d29c` after the media work) with a React and
   TypeScript client (85 screens). It answers every scenario recorded from the earlier
   standard-library server the same way (1,080 of 1,080 in its own parity check), except that
   a body with the wrong shape is reported on its shape alone.
@@ -142,9 +205,12 @@ Closest comparisons:
 
 - MirrorCode (Epoch AI and METR, https://epoch.ai/benchmarks/mirrorcode): rebuild a
   command-line program from an execute-only copy, graded on held-out tests. Same family.
-  Differences: a stateful multi-user service instead of a filter program, so behaviour
-  depends on sequences of requests; and the target is original, where MirrorCode's own
-  report notes its open-source targets are probably in pre-training.
+  Differences: MirrorCode gives the agent documentation of the program and visible tests, and
+  this task gives neither (only the running server, the client's source, the API description
+  the server publishes, without rules, and sample files); a stateful multi-user service instead
+  of a filter program, so behaviour depends on sequences of requests; and the target is
+  original, where MirrorCode's own report notes its open-source targets are probably in
+  pre-training.
 - SWE-Marathon v1 product clones (`slack-clone`, `stripe-clone`, `mastodon-clone`, `s3-clone`,
   `excel-clone`): build a product from a written specification of a well-known service.
   Here there is no written specification and no public product to remember.
@@ -183,29 +249,60 @@ Expected sources, not yet measured by any trial:
 ### Initial feasibility
 
 Solved by construction: the reference source passes every scenario. For an agent the rules
-are all observable through the API and the client; whether 48 hours suffice is unknown.
+are all observable through the API and the client; whether one session suffices is unknown.
 
 ## Workload
 
-The budget is 48 hours, run as five sessions of 9.6 hours because Oddish ends an attempt
-after 12 hours. v2 asks for about five days. The reference server is about 16,000 lines of
-Python, the size of MirrorCode's largest target, with a 20,000-line client to read. Follow-up
-steps remain options: a change request on the rebuilt server, a data migration.
+One agent session of up to 9.6 hours per run (`timeout_sec = 34560` in `task.toml`). There are
+no chained sessions or continuation tasks, and the instruction states no time budget. v2 asks
+for about five days of agent work, which one session does not reach. Follow-up steps remain open
+options for the owner: a change request on the rebuilt server, or a data migration (importing a
+year of legacy data).
+
+Size, measured at `d61d29c`: the reference server is 22,988 lines of Python in 192 files, 18,742
+of them code (without blank lines and comments), 6,672 of those in the media package. The client
+to read is 41,158 lines of TypeScript without tests, 22,282 of them the generated API types in
+`schema.d.ts`.
+
+For scale: gotree, the most complex target solved in MirrorCode's preliminary results, is 16,905
+lines of Go. Claude Opus 4.7 rebuilt it in 14 hours for $251, with the program's documentation
+and visible tests (Opus 4.6's Rust rebuild is 7,644 lines, so lines in different languages do
+not compare directly). Pkl, at 61,461 lines, was not solved, and no model solved any of
+MirrorCode's large targets. This task gives neither documentation nor visible tests. Sources:
+Epoch AI's preliminary results
+(https://epoch.ai/blog/mirrorcode-preliminary-results/) for the line counts, and a report on the
+full results
+(https://the-decoder.com/an-ai-model-programmed-nonstop-for-19-days-on-a-single-mirrorcode-task-that-cost-2600-to-run/)
+for the hours, the cost and the large targets.
 
 ## Verification
 
 The verifier runs in a separate image that holds the private scenarios and no copy of the
 reference server.
 
-1. `/app/server` arrives as the declared artifact. `/app/server/run` is started as user
-   `nobody` with `PORT` and `DATA_DIR` set, in its own process group, with no network.
+1. `/app/server` arrives as the declared artifact. Set-user-id and set-group-id bits are
+   cleared from its files, and `/app/server/run` is started as user `nobody` through
+   `setpriv --no-new-privs`, so no set-id bit or file capability can raise it, with `PORT` and
+   `DATA_DIR` set, in its own process group, with no network. Before that, a process started
+   the same way must show the unprivileged ids, no capabilities and `NoNewPrivs` in
+   `/proc/self/status`; otherwise the evaluation stops with an evaluation error.
 2. The server has 60 seconds to answer `GET /api/health`.
 3. Each scenario creates a workspace and replays its requests on one connection, eight
    scenarios at a time. An answer matches when the status code is equal and the JSON body is
-   equal after the workspace id is replaced by a placeholder.
-4. A request with no answer within 15 seconds ends that scenario attempt. The server is
-   restarted only if its health check then fails (at most 25 times), and the scenario is
-   tried again, up to three attempts, each in a new workspace.
+   equal after the workspace id is replaced by a placeholder; a file matches on its type,
+   length and SHA-256. A reply that is not HTTP, not JSON, larger than 4 MB of JSON or 16 MB
+   in all, or nested too deeply matches nothing. An answer cut short of its `Content-Length`
+   is no answer.
+4. Time: each request has 30 seconds of wall clock and the whole replay 3,000 seconds (the
+   step allows 3,600). A watcher cuts any request still running past either, even one whose
+   bytes keep arriving. Scenarios not played to the end by the deadline count as not matched,
+   with a note and a count in `metrics.json`.
+5. Restarts: every scenario is played once; each one that got no answer (the server died,
+   dropped the connection or ran out of time) is played once more on its own after all the
+   others, so the scenarios in flight beside a crash still count. A server that has died, or
+   has not answered its health check for 30 seconds, is restarted before the next attempt,
+   with no cap while the deadline holds, and given up after three starts in a row that never
+   answer. A failed attempt closes its connection before waiting on the server.
 
 ### Reward formula
 
@@ -214,32 +311,47 @@ reward = scenarios_matched / 2483
 ```
 
 - Continuous. A scenario matches only if every one of its answers matches.
-- The denominator is fixed. No `run` file, a server that never becomes healthy, or one that
-  cannot be restarted: the unanswered scenarios count as not matched.
-- An evaluation error (verifier not root, privileges cannot be dropped, scenarios
-  unreadable) leaves no reward file; `metrics.json` has `status: evaluation_error`.
+- The denominator is fixed. No `run` file, a server that never becomes healthy, one that
+  cannot be restarted, or one too slow or stuck to finish within the time limit: the
+  scenarios it did not answer count as not matched.
+- An evaluation error (verifier not root, privileges cannot be dropped or the drop does not
+  hold, scenarios unreadable, an upload the scenarios name is missing) leaves no reward file;
+  `metrics.json` has `status: evaluation_error`, and `verifier_error.txt` the traceback. No
+  reply from the submitted server can cause one; exhausting the container's memory, disk or
+  process table still can (see Remaining work).
 - One step; `multi_step_reward_strategy = "final"`.
 - Implementation: `tests/verifier/replay.py`. Tests: `checks/test_backoffice.py` (reference
   1.0; a one-character rounding defect scores between 0 and 1; a crashing or missing server
-  scores 0 with the full denominator).
+  scores 0 with the full denominator; tiny fake servers that hang, drip bytes, send a garbage
+  health reply, deep or non-JSON answers, or crash in every tenth scenario, which scores 72 of
+  80, as deserved; set-id bits are cleared and the drop sets `--no-new-privs`; the deadline
+  leaves at least 300 s of the step's limit, 600 s now).
 
 ## Hackability assessment
 
-Highest unresolved severity: 🟡 YELLOW / UNASSESSED (findings 1, 2, 5).
+Highest unresolved severity: 🟡 YELLOW (findings 1 and 2 unassessed; 5, 7 and 8 mitigated but
+not yet exercised in a container).
 
 | # | Attack and impact | Boundary | Evidence | Mitigation | Residual risk | Next validation | Severity |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | Read the sealed server's code and copy it | File permissions in the agent image | Not attacked | Server files are owned by user `stockwell`, mode 0700, shipped as bytecode only; the agent runs as `candidate`. `/opt/py` holds only public third-party packages, not the server | A way to become root or `stockwell` inside the container | Probe as `candidate`: read `/opt/stockwell`, `/proc/<pid>/mem`, ptrace | 🟡 YELLOW / UNASSESSED |
+| 1 | Read the sealed server's code and copy it | File permissions in the agent image | Inspected by adversarial QA 04 (2026-11-19): as `candidate`, the bytecode, the database and `/proc/<pid>/{mem,environ}` of the sealed server are not readable. Not executed in a container | Server files are owned by user `stockwell`, mode 0700, shipped as bytecode only; the agent runs as `candidate`. `/opt/py` holds only public third-party packages, not the server | A way to become root or `stockwell` inside the container. Anyone who can pull the image finds the plain source in the layer that copies it (QA 06 note) | Probe as `candidate`: read `/opt/stockwell`, `/proc/<pid>/mem`, ptrace | 🟡 YELLOW / UNASSESSED |
 | 2 | Agent harness starts as root and hands the model a root shell | Harness and `[agent] user` on Oddish | Not tested on Oddish | `user = "candidate"` in `task.toml` | Depends on each harness honouring it | Short model trial that prints `id` | 🟡 YELLOW / UNASSESSED |
 | 3 | Deliver a proxy to the sealed server | Separate verifier image | By design | The verifier image has no reference server and no network | None found | Keep | 🟢 GREEN / LOW |
-| 4 | Replay a table of recorded answers | Private scenarios | By design | Scenarios come from a private seed and vary quantities, customers, dates and order of operations; 60,929 requests in 2,400 scenarios | A table cannot cover them; the generator's shape could be guessed only in outline | Measure a lookup-table submission | 🟢 GREEN / LOW |
-| 5 | Submitted server attacks the verifier process or its files | Verifier sandbox | Not attacked | Submission runs as `nobody`; `/tests` and the output directory are mode 0700; process group killed at the end | Unknown | Red-team the verifier image | 🟡 YELLOW / UNASSESSED |
-| 6 | Tamper with reward files | Separate verifier container | By design | Verifier starts fresh with only `/app/server` | None found | Keep | 🟢 GREEN / LOW |
+| 4 | Replay a table of recorded answers, including answers collected for inputs the agent already holds | Private scenarios; what the agent image holds | QA 06 (2026-11-19): the 19 Stockwell test fixtures shipped in `/app/samples` were uploaded byte for byte by the hidden `files` scenarios (267 uploads, 20 more cut short, 21 file answers; 78 scenarios). Fixed. `scripts/scan_uploads.py` reports that leak on the old bundle `c4746eb643c6` and nothing on `2a602a3f17e6` | Scenarios come from a private seed and vary quantities, customers, dates and order of operations; 63,033 requests in 2,483 scenarios. The fixtures no longer ship, and the bundle check fails on any hidden upload, cut-short upload or file answer the agent image holds | A table cannot cover them; the generator's shape could be guessed only in outline. Private media reuse the sample names, and a few header-level facts do not depend on the seed (QA 06 note) | Measure a lookup-table submission | 🟢 GREEN / LOW |
+| 5 | Submitted server attacks the verifier process or its files | Verifier sandbox | QA 10 (2026-11-19) traced, without running it, a set-user-id binary in `/app/server` that arrives root-owned with its mode kept on Docker and, under the old drop, runs as root and can read `/tests/private`. Fixed | Runs as `nobody` through `setpriv --no-new-privs`; set-id bits cleared from the delivered files first; the drop is checked in `/proc/self/status` at every evaluation; `/tests` and the output directory are mode 0700; the server's user is killed at each restart and at the end | Not exercised in a container. Exhausting the container's memory, disk or process table (QA 10 should-fix) | Red-team the verifier image in a container | 🟡 YELLOW / MEDIUM |
+| 6 | Tamper with reward files | Separate verifier container | By design | Verifier starts fresh with only `/app/server`; the server can no longer become root (5) | None found | Keep | 🟢 GREEN / LOW |
+| 7 | Replace `/app/server` with a link to `/opt/stockwell/app`, so that Harbor's collector, running as root, copies the sealed bytecode into the trial artifacts and the verifier. Leaks the private reference; no reward (the copy has no `run`) | Ownership of `/app` in the agent image; Harbor's collector | QA 04 (2026-11-19), traced in Harbor 0.20: `tar -czf ... -C /app/server .` as root follows the top-level link, and GNU tar stores links below it as links. Not executed | `/app` is root's with the sticky bit and `/app/server` root's and writable by everyone: the agent creates and changes anything inside it but cannot remove, rename or replace it. A link inside it is archived as a link and dangles in the verifier | A provider whose collector follows links below the top (Harbor 0.20's `tar` and `docker compose cp` do not); not executed in a container | In the next container run, as `candidate`: `rm -rf /app/server` and `mv /app/server x` fail, and an inner link is archived as a link | 🟡 YELLOW / MEDIUM |
+| 8 | Submission makes the evaluation end without a reward (hangs past the step limit, a reply that is not HTTP, deep JSON, a crash storm); a run that errors may also be retried, which gives a bad run a second draw | Verifier | QA 10 E1, E2, E4 and E6 (2026-11-19), rerun after the fix; checks with fake servers that hang, drip, send garbage or crash | 3,000 s deadline and 30 s of wall clock per request; any reply is a not-healthy server or an answer that matches nothing; no restart cap, and one solo retry for a scenario that got no answer | Exhausting memory, disk or processes can still end the evaluation (QA 10 should-fix) | Run the server under `prlimit` and `choom`, bound its log | 🟡 YELLOW / MEDIUM |
 
 ## Validation
 
 | Check | Revision | Result |
 | --- | --- | --- |
+| `checks/` (17 tests) with `ci_checks` (27) | adversarial QA fixes, 2026-11-19 | 44 pass under Python 3.13; `ci_checks/check_repository.py` passes; Oddish preflight passes |
+| Bundle | adversarial QA fixes: `2a602a3f17e6`, 705 files (the 19 fixtures gone) | built twice with the same hash |
+| Hidden uploads against the agent image (`scripts/scan_uploads.py`) | adversarial QA fixes: 2,483 scenarios, 63,033 requests, 636 base64 and 712 raw uploads, 558 file answers, 469 agent-image files | nothing found; on the previous bundle `c4746eb643c6`, 308 (267 uploads, 20 cut short, 21 file answers), the QA 06 leak |
+| Reference through the verifier, local, no sandbox | adversarial QA fixes: Stockwell `d61d29c`, same corpus and private media | 1.0 (2,483 of 2,483), 264 s, no restarts, no notes |
+| QA 10's experiments E1 to E10, local, fake servers | adversarial QA fixes | see the development log, 2026-11-19 |
 | `checks/` (7 tests) | re-cut with leak fixes, 2026-11-18 | pass; Oddish preflight passes |
 | Bundle | re-cut with leak fixes: `a691f329ea71`, 574 files | built twice with the same hash |
 | `checks/` (6 tests) | re-cut, pinned to Stockwell 722a647, 2026-11-18 | pass |
@@ -261,12 +373,30 @@ cd tasks/swe-m2-software-engineer/backoffice-server-rebuild
 python scripts/record_scenarios.py --count 2160 --trading 240 --seed 20261120
 python scripts/package_step.py            # experiment/dist/bundles/<hash>/<task slug>/
 python scripts/package_step.py --flat     # same content without the steps wrapper
+python scripts/scan_uploads.py experiment/dist/bundles/<hash>/<task slug>   # hidden uploads or file answers the agent image also holds
 ```
 
 ## Remaining work
 
-- Read the platform's source audit of version 2 and fix what it finds. Model trials wait for the owner.
+- Upload bundle `2a602a3f17e6` as a new version and run its baselines (reference twice, no-op
+  twice): the verifier, the samples and the agent image all changed. Model trials wait for the
+  owner.
+- Undisclosed limits (QA 10 should-fix): the replay sends eight requests at a time, gives up on
+  a request after 30 seconds and stops at 3,000 seconds, and the instruction states none of it,
+  where the v2 rules ask that every enforced requirement be disclosed. The wording is the
+  owner's call; for example: "Our scripts send up to eight requests at once, each in its own
+  workspace, and give up on a request that has no answer after 30 seconds."
+- QA 10 should-fixes not taken up: a connection closed without `Connection: close` loses the
+  scenario (apart from the early 413); a JSON document that describes a file matches the file;
+  `true` equals `1` and `100` equals `100.0`; memory, disk and process exhaustion of the shared
+  container; the workspace-id rewrite still corrupts a correct answer that holds the id as a
+  value; a missing artifact directory scores 0.0 instead of an evaluation error; private media
+  are not checked against the set the answers were recorded with; unpinned base images.
+- QA 06 notes: the private seeds are printed in this README (rotate them at the next re-record
+  and keep them out of it); private media reuse the sample names; the image layer that copies
+  the sealed server holds its plain source (a multi-stage build would not); the agent account
+  is called `candidate`.
+- Exercise findings 5, 7 and 8 in a container; probe findings 1 and 2.
 - Record the first model trial and run more.
-- Probe findings 1, 2 and 5.
 - `harbor check` and ratings.
 - Decide how to reach the workload target: more modules or follow-up steps.
