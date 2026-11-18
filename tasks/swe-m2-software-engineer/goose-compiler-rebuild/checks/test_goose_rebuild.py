@@ -355,10 +355,19 @@ def test_a_set_id_file_gains_nothing(tmp_path):
                (("NoNewPrivs:\\t1", "NoNewPrivs:\\t0"), ("Uid:\\t65534\\t65534", "Uid:\\t65534\\t0"), ("Groups:\\t", "Groups:\\t0"),
                 ("CapEff:\\t0000000000000000", "CapEff:\\t0000000000000400"))]
         bad.append(verify.sandbox_problems(status, limits.replace("512 ", "9999"), (65534, 65534))[0])
-        print(json.dumps([good, bad, "--no-new-privs" in Path(verify.__file__).read_text()]))
+        # A kernel whose status file has no NoNewPrivs line (gVisor's may not): prctl decides.
+        unlisted = status.replace("NoNewPrivs:\\t1\\n", "")
+        by_prctl = [verify.sandbox_problems(unlisted + f"PrctlNoNewPrivs:\\t{{value}}\\n", limits, (65534, 65534))[0]
+                    for value in (1, 0, -1)] + [verify.sandbox_problems(unlisted, limits, (65534, 65534))[0]]
+        import subprocess, sys
+        probed = subprocess.run([sys.executable, "-I", "-c", verify.NNP_PROBE], capture_output=True, text=True).stdout
+        print(json.dumps([good, bad, "--no-new-privs" in Path(verify.__file__).read_text(), by_prctl,
+                          (probed.splitlines() or [""])[-1].split(":")[0], "Uid:" in probed]))
     """))
-    good, bad, no_new_privs = report
+    good, bad, no_new_privs, by_prctl, last, status_first = report
     assert good == [] and all(problems for problems in bad) and no_new_privs
+    assert by_prctl[0] == [] and all(problems == ["no_new_privs is not set"] for problems in by_prctl[1:])
+    assert last == "PrctlNoNewPrivs" and status_first or sys.platform != "linux", "the probe runs where /proc exists"
     modes = {path.relative_to(top).as_posix(): os.lstat(path).st_mode & 0o7777 for path in [top, *top.rglob("*")]}
     assert modes == {".": 0o755, "goose": 0o755, "lib": 0o755, "lib/helper": 0o755, "lib/data": 0o644, "link": modes["link"]}
     assert (top / "link").is_symlink()

@@ -33,6 +33,17 @@ LIMIT_NAMES = {"Max stack size": resource.RLIMIT_STACK, "Max processes": resourc
                "Max file size": resource.RLIMIT_FSIZE, "Max data size": resource.RLIMIT_DATA,
                "Max core file size": resource.RLIMIT_CORE}
 STRICT_LIMITS = ("Max processes", "Max file size", "Max core file size")
+# Run as submitted code is: /proc/self/status, then no_new_privs as prctl(PR_GET_NO_NEW_PRIVS)
+# reports it, for kernels (gVisor's among them) whose status file may not list NoNewPrivs.
+NNP_PROBE = (
+    "import ctypes, sys\n"
+    "sys.stdout.write(open('/proc/self/status').read())\n"
+    "try:\n"
+    "    value = ctypes.CDLL(None, use_errno=True).prctl(39, 0, 0, 0, 0)\n"
+    "except Exception:\n"
+    "    value = -1\n"
+    "sys.stdout.write('PrctlNoNewPrivs:\\t%d\\n' % value)\n"
+)
 
 
 class EvaluationError(Exception):
@@ -40,12 +51,13 @@ class EvaluationError(Exception):
 
 
 def sandbox_problems(status: str, limits: str, owner: tuple[int, int]) -> tuple[list[str], dict]:
-    """What is wrong with a process meant to run submitted code, from its /proc/self/status and
-    /proc/self/limits, and the limits it has (soft values)."""
+    """What is wrong with a process meant to run submitted code, from its /proc/self/status (which
+    NNP_PROBE follows with a PrctlNoNewPrivs line) and /proc/self/limits, and the limits it has
+    (soft values). no_new_privs holds where either the status file or prctl shows it."""
     fields = dict(line.split(":", 1) for line in status.splitlines() if ":" in line)
     uid, gid = (str(owner[0]), str(owner[1]))
     problems = []
-    if fields.get("NoNewPrivs", "").strip() != "1":
+    if "1" not in (fields.get("NoNewPrivs", "").strip(), fields.get("PrctlNoNewPrivs", "").strip()):
         problems.append("no_new_privs is not set")
     if fields.get("Uid", "").split() != [uid] * 4:
         problems.append("its user ids are not all the unprivileged user's")
@@ -70,13 +82,17 @@ def sandbox_problems(status: str, limits: str, owner: tuple[int, int]) -> tuple[
     return problems, found
 
 
-def probe(prefix: list[str], argv: list[str]) -> str:
-    """What a command prints when started exactly as submitted code is."""
-    done = subprocess.run(prefix + argv, capture_output=True, text=True, timeout=30, preexec_fn=runcases.limit,
-                          env={"PATH": "/usr/local/bin:/usr/bin:/bin"})
-    if done.returncode != 0:
-        raise EvaluationError(f"Could not drop privileges: {argv[0]} exited {done.returncode}")
-    return done.stdout
+def probe(prefix: list[str], argv: list[str], fallback: list[str] | None = None) -> str:
+    """What a command prints when started exactly as submitted code is; where it fails and a
+    `fallback` command is given, what that prints."""
+    for command in (argv, fallback):
+        if command is None:
+            break
+        done = subprocess.run(prefix + command, capture_output=True, text=True, timeout=30, preexec_fn=runcases.limit,
+                              env={"PATH": "/usr/local/bin:/usr/bin:/bin"})
+        if done.returncode == 0:
+            return done.stdout
+    raise EvaluationError(f"Could not drop privileges: {(fallback or argv)[0]} exited {done.returncode}")
 
 
 def sandbox() -> tuple[list[str], tuple[int, int], dict]:
@@ -94,8 +110,8 @@ def sandbox() -> tuple[list[str], tuple[int, int], dict]:
     if shutil.which("setpriv") is None:
         raise EvaluationError("setpriv is missing; submitted code was not run")
     prefix = ["setpriv", "--reuid", SANDBOX_USER, "--regid", SANDBOX_GROUP, "--clear-groups", "--no-new-privs"]
-    problems, found = sandbox_problems(probe(prefix, ["cat", "/proc/self/status"]), probe(prefix, ["cat", "/proc/self/limits"]),
-                                       owner)
+    status = probe(prefix, [sys.executable, "-I", "-c", NNP_PROBE], fallback=["cat", "/proc/self/status"])
+    problems, found = sandbox_problems(status, probe(prefix, ["cat", "/proc/self/limits"]), owner)
     # A set-user-id and set-group-id copy of id(1), owned by root, beside the submission.
     place = SUBMISSION.parent / ".setid-probe"
     shutil.rmtree(place, ignore_errors=True)
