@@ -1,0 +1,8 @@
+# Baselines for a new task version: the reference solution must score 1.0 and the
+# no-op agent 0.0 on every trial before any model runs.
+agents:
+  - name: oracle
+    n_trials: 2
+  - name: nop
+    n_trials: 2
+max_trial_attempts: 2
