@@ -1,0 +1,60 @@
+"""The reward formula: thresholds, fixed denominators and mandatory conditions."""
+
+import pytest
+
+
+def test_registry_lists_every_mandatory_check_once(scenario):
+    data = scenario("registry")
+    assert data["checks"] == data["mandatory"]
+    assert len(set(data["checks"])) == len(data["checks"]) == 5
+    assert all(needs == ["candidate_tree"] for name, needs in data["requires"].items() if name != "candidate_tree")
+
+
+def test_published_thresholds_are_loaded(scenario):
+    assert scenario("config")["scoring"] == {"unit_bar": 0.99, "call_bar": 0.9, "test_bar": 0.95}
+
+
+def test_reward_is_one_exactly_at_the_thresholds(scenario):
+    data = scenario("pass")
+    assert data["passed"] is True and data["reward_txt"] == "1"
+    assert data["metrics"]["unit_pass_rate"] == 0.99
+    assert data["metrics"]["call_match_rate"] == 0.9
+    assert data["metrics"]["test_pass_rate"] == 0.95
+    assert set(data["status"].values()) == {"passed"}
+
+
+@pytest.mark.parametrize(
+    ("case", "failed_check"),
+    [
+        ("units_below", "unit_restoration"),
+        ("calls_below", "reference_calls"),
+        ("tests_below", "repository_tests"),
+        ("tripped", "measurement_integrity"),
+    ],
+)
+def test_one_missed_condition_gives_reward_zero(scenario, case, failed_check):
+    data = scenario(case)
+    assert data["passed"] is False and data["reward_txt"] == "0"
+    assert data["status"][failed_check] == "failed"
+    assert [name for name, status in data["status"].items() if status != "passed"] == [failed_check]
+
+
+def test_partial_score_pools_fixed_denominators(scenario):
+    data = scenario("units_below")
+    assert data["metrics"]["partial_score"] == pytest.approx((98 + 400 + 200) / 700, abs=1e-6)
+    assert data["metrics_json"]["partial_score"] == data["metrics"]["partial_score"]
+    assert data["metrics_json"]["reward"] == 0
+
+
+@pytest.mark.parametrize("case", ["no_artifact", "nothing_restored"])
+def test_missing_work_fails_the_prerequisite_and_skips_the_rest(scenario, case):
+    data = scenario(case)
+    assert data["reward_txt"] == "0" and data["metrics"]["partial_score"] == 0.0
+    assert data["status"]["candidate_tree"] == "failed"
+    assert {status for name, status in data["status"].items() if name != "candidate_tree"} == {"skipped"}
+    assert data["report_status"] == "completed"
+
+
+def test_failure_text_states_the_measured_share(scenario):
+    text = scenario("candidate_failure_text")["explanation"]["unit_restoration"]
+    assert "98 of 100" in text and "0.99" in text

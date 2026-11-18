@@ -18,4 +18,8 @@ dev = ["pytest==8.4.2"]
 titans = ["abundant-titans"]
 
 [tool.pytest.ini_options]
-testpaths = ["ci_checks", "tasks/swe-m2-ai-engineer/knowledge-work-assistant/checks"]
+testpaths = [
+    "ci_checks",
+    "tasks/swe-m2-ai-engineer/knowledge-work-assistant/checks",
+    "tasks/swe-m2-scientific-computing/sympy-restoration/checks",
+]

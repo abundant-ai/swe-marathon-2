@@ -1,0 +1,52 @@
+schema_version = "1.4"
+multi_step_reward_strategy = "final"
+artifacts = ["/app/sympy"]
+
+[task]
+name = "abundant/swe-m2_scientific-computing_sympy-restoration"
+description = "Write back the bodies of 2,671 functions removed from SymPy 1.14.0, without network access, so that the library again behaves as its docstrings and tests say."
+authors = [{ name = "Neel Harsola", email = "work.neelharsola@gmail.com" }]
+
+[metadata]
+reward_type = "binary"
+open_internet_justification = "Only the environment build and agent setup have public egress, to install system packages, Python packages and the agent's own tooling. The work phase and the verifier run with network_mode = no-network."
+
+# One working session. The instruction gives 48 hours; they are run as five sessions of
+# 9.6 hours, because Oddish ends an attempt after 12 hours with grading included
+# (scripts/package_session.py builds the later sessions).
+[agent]
+timeout_sec = 34560
+network_mode = "no-network"
+
+[environment]
+network_mode = "public"
+build_timeout_sec = 1800
+cpus = 4
+memory_mb = 16384
+storage_mb = 20480
+gpus = 0
+workdir = "/app"
+
+[verifier]
+environment_mode = "separate"
+network_mode = "no-network"
+timeout_sec = 6600
+user = "root"
+
+[verifier.environment]
+network_mode = "no-network"
+build_timeout_sec = 1800
+cpus = 4
+memory_mb = 16384
+storage_mb = 20480
+gpus = 0
+
+[[steps]]
+name = "01-restore-bodies"
+
+[steps.agent]
+timeout_sec = 34560
+
+# Harbor's step verifier defaults to 600 seconds instead of inheriting the root limit.
+[steps.verifier]
+timeout_sec = 6600
