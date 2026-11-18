@@ -458,8 +458,8 @@ def privileges_dropped(status: str, uid: int, gid: int) -> bool:
     fields = dict(line.split(":", 1) for line in status.splitlines() if ":" in line)
     if fields.get("Uid", "").split() != [str(uid)] * 4 or fields.get("Gid", "").split() != [str(gid)] * 4:
         return False
-    if fields.get("Groups", "").split() not in ([], [str(gid)]) or fields.get("NoNewPrivs", "1").strip() != "1":
-        return False
+    if fields.get("Groups", "").split() not in ([], [str(gid)]) or fields.get("NoNewPrivs", "").strip() != "1":
+        return False  # a kernel that does not report NoNewPrivs cannot show that it holds: fail closed
     return all(int(fields.get(name, "0"), 16) == 0 for name in ("CapPrm", "CapEff", "CapAmb"))
 
 
@@ -553,5 +553,5 @@ def evaluate(source: Path, scenario_path: Path, work: Path, output: Path, sandbo
             metrics["notes"].append(f"the server stopped and did not come back after {START_FAILURES} restarts in a row")
     metrics["reward"] = round(metrics["scenarios_matched"] / total, 6)
     metrics["elapsed_sec"] = round(time.monotonic() - started, 1)
-    (output / "scenario_results.json").write_text(json.dumps(results))
+    metrics["results"] = results  # per-scenario diagnostics, written by the caller after the reward
     return metrics

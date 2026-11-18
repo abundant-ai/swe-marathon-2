@@ -9,6 +9,7 @@ import subprocess
 import sys
 import traceback
 from pathlib import Path
+from typing import Any
 
 # test.sh starts this file with Python -I; imports resolve only from this directory.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -17,6 +18,22 @@ from verifier.replay import EvaluationError, evaluate  # noqa: E402
 
 SANDBOX_USER = "nobody"
 REWARD_FILES = ("reward.txt", "reward.json")
+
+
+def publish(output: Path, metrics: dict[str, Any]) -> None:
+    """Write the reward first, then the summary, then the per-scenario diagnostics.
+
+    The reward is a few bytes; the diagnostics can be large. A full disk or any other failure
+    writing the diagnostics costs only those files, never the reward already written.
+    """
+    results = metrics.pop("results", [])
+    (output / "reward.txt").write_text(f"{metrics['reward']:.6f}")
+    for name, text in (("metrics.json", json.dumps(dict(metrics, status="completed"), indent=1, sort_keys=True) + "\n"),
+                       ("scenario_results.json", json.dumps(results))):
+        try:
+            (output / name).write_text(text)
+        except OSError as exc:
+            print(f"could not write {name}: {exc}", flush=True)
 
 
 def main() -> int:
@@ -39,8 +56,7 @@ def main() -> int:
             closed.chmod(0o700)
         scenarios = tests / "private" / "scenarios.json.gz"
         metrics = evaluate(Path("/app/server"), scenarios if scenarios.exists() else tests / "private" / "scenarios.json", Path("/work"), output)
-        (output / "metrics.json").write_text(json.dumps(dict(metrics, status="completed"), indent=1, sort_keys=True) + "\n")
-        (output / "reward.txt").write_text(f"{metrics['reward']:.6f}")
+        publish(output, metrics)
         print(f"reward: {metrics['reward']:.6f} ({metrics['scenarios_matched']}/{metrics['scenarios_total']} scenarios)", flush=True)
         code = 0
     except Exception as exc:  # noqa: BLE001 - every unexpected failure invalidates the evaluation

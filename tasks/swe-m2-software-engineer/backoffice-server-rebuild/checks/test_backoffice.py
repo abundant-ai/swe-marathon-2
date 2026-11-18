@@ -456,7 +456,7 @@ server.mkdir(parents=True)
 (work / "scenarios.json").write_text(json.dumps({"scenarios": spec["scenarios"]}))
 started = time.monotonic()
 metrics = replay.evaluate(server, work / "scenarios.json", work / "w", work, sandbox=False, media_dir=work / "media")
-results = json.loads((work / "scenario_results.json").read_text())
+results = metrics.pop("results")
 print(json.dumps({"metrics": metrics, "results": results, "seconds": time.monotonic() - started}))
 '''
 
@@ -539,10 +539,11 @@ after = [stat.S_IMODE(path.stat().st_mode) for path in files]
 
 def status(uid, nnp="1", caps="0000000000000000", groups=""):
     return (f"Name:\tcat\nUid:\t{uid}\t{uid}\t{uid}\t{uid}\nGid:\t65534\t65534\t65534\t65534\nGroups:\t{groups}\n"
-            f"NoNewPrivs:\t{nnp}\nCapPrm:\t{caps}\nCapEff:\t{caps}\nCapAmb:\t0000000000000000\n")
+            + (f"NoNewPrivs:\t{nnp}\n" if nnp is not None else "") + f"CapPrm:\t{caps}\nCapEff:\t{caps}\nCapAmb:\t0000000000000000\n")
 
 dropped = [replay.privileges_dropped(text, 65534, 65534) for text in
-           (status(65534), status(0), status(65534, nnp="0"), status(65534, caps="000001ffffffffff"), status(65534, groups="0 27"))]
+           (status(65534), status(0), status(65534, nnp="0"), status(65534, caps="000001ffffffffff"), status(65534, groups="0 27"),
+            status(65534, nnp=None))]
 print(json.dumps({"before": before, "count": count, "after": after, "sandbox": replay.SANDBOX, "dropped": dropped}))
 """
     done = subprocess.run([sys.executable, "-I", "-B", "-c", probe, str(STEP / "tests"), str(tmp_path)], capture_output=True, text=True, timeout=60)
@@ -551,7 +552,30 @@ print(json.dumps({"before": before, "count": count, "after": after, "sandbox": r
     assert out["before"] == [True, True, True] and out["count"] == 2
     assert out["after"][:2] == [0o755, 0o755] and out["after"][2] & 0o4000, "only files inside the submission are changed"
     assert out["sandbox"][:1] == ["setpriv"] and "--no-new-privs" in out["sandbox"] and out["sandbox"][out["sandbox"].index("--reuid") + 1] == "nobody"
-    assert out["dropped"] == [True, False, False, False, False]
+    assert out["dropped"] == [True, False, False, False, False, False], "a status without NoNewPrivs must fail closed"
+
+
+def test_the_reward_is_written_before_the_diagnostics_and_survives_their_failure(tmp_path):
+    """QA 10: write reward.txt before the bulky diagnostics, so a full disk or a failed write costs only the diagnostics."""
+    probe = r"""
+import json, sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+import verify
+out = {}
+for broken in ("scenario_results.json", "metrics.json"):
+    folder = Path(sys.argv[2]) / broken.split(".")[0]
+    (folder / broken).mkdir(parents=True)  # a directory where the file should go: writing it fails
+    verify.publish(folder, {"reward": 0.25, "units_matched": 1, "units_total": 4, "results": [{"id": "S1"}] * 1000})
+    out[broken] = sorted(path.name for path in folder.iterdir() if path.is_file())
+    out[broken + " reward"] = (folder / "reward.txt").read_text()
+print(json.dumps(out))
+"""
+    done = subprocess.run([sys.executable, "-I", "-B", "-c", probe, str(STEP / "tests"), str(tmp_path)], capture_output=True, text=True, timeout=60)
+    assert done.returncode == 0, done.stderr[-2000:]
+    out = json.loads(done.stdout.strip().splitlines()[-1])
+    assert out == {"scenario_results.json": ["metrics.json", "reward.txt"], "scenario_results.json reward": "0.250000",
+                   "metrics.json": ["reward.txt", "scenario_results.json"], "metrics.json reward": "0.250000"}
 
 
 def test_the_replay_ends_well_inside_the_step_time_limit():
