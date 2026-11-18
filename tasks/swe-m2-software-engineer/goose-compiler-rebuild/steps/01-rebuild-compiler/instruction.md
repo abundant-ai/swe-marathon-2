@@ -3,13 +3,14 @@
 ## Goal
 
 Goose is a systems programming language. Its compiler, `goose`, also runs Goose programs, checks
-them and formats them. We run Goose snippets that people send us, in a playground, in CI and in
-an editor plugin, with a sandboxed build of the compiler. We need an implementation of that build
-of our own, written clean-room: the team that writes it works from the published documentation,
-the standard library's sources and the released build, which it may run as often as it likes,
-and never reads the compiler's source code. Write that implementation.
+them and formats them. We run Goose programs that people send us, in a playground, in CI and in
+an editor plugin, with a sandboxed build of the compiler. We want to replace that build with an
+implementation we own outright and can change and license as we choose, so our lawyers have
+asked for it to be written clean-room: the team that writes it works from the published
+documentation, the standard library's sources and the sandboxed build, which it may run as
+often as it likes, and never reads the compiler's source code. Write that implementation.
 
-It has to behave exactly like the released build. The playground shows what a snippet prints
+It has to behave exactly like the sandboxed build. The playground shows what a program prints
 and its exit code, CI keeps the output, the formatting and the `--diagnostics json` errors
 recorded from it for thousands of programs, and the editor plugin parses
 `goose check --diagnostics json` and shows each message at its position. A different output,
@@ -17,66 +18,74 @@ message or position breaks them.
 
 ## Context
 
-- The released compiler is installed as `goose` on `PATH`. You can run it as often as you
-  like. You cannot read the file, copy it or inspect it; you can only execute it.
-- It is the sandboxed build, so it differs from the documentation in a few places: its standard
-  library has no `os` and no `ffi` module, it refuses `extern` declarations outside the
-  standard library's own files, it reads no sidecar `.build` files, it has no `-D`,
-  `--include`, `--stdlib` or `--unsafe-no-rf-check` option, nothing in it writes C (there is no
-  `goose build` and no `-o`, `--standalone`, `--header`, `--emit-runtime` or
-  `--gen-runtime-header` option), `embed_file` reads only files under the directory of the
-  file that calls it, and there is no `embed_shader`.
+- The sandboxed build is installed as `goose` on `PATH`. You can run it as often as you like.
+  You cannot read the file, copy it or inspect it; you can only execute it.
+- It differs from the documentation in a few places: its standard library has no `os` and no
+  `ffi` module, it refuses `extern` declarations outside the standard library's own files and
+  any program that comes with a sidecar `.build` file, it has no `-D`, `--include`, `--stdlib`
+  or `--unsafe-no-rf-check` option, it has no command or option that writes C (no
+  `goose build`, and no `-o`, `--standalone`, `--header`, `--emit-runtime` or
+  `--gen-runtime-header`), `embed_file` reads only files under the directory of the file that
+  calls it, and there is no `embed_shader`. Its own help describes it as it is.
 - Its documentation is in `/app/docs`: the README, a tutorial, the language reference and
   specification, the standard library, the command line (`docs/command_line.md`), design notes,
-  and sample programs (`samples/`). `goose help` and `goose help <command>` describe the
-  command line.
+  implementation notes (`docs/implementation.md`) and sample programs (`samples/`).
+  `goose help` and `goose help <command>` describe the command line.
 - The standard library's sources are in `/usr/local/share/goose/stdlib`, here and on the
-  machine where your implementation will run. The released compiler reads them from there.
+  machine where your implementation will run. The sandboxed build reads them from there.
 - `/app/examples/examples.json` holds example runs and `/app/examples/outputs.json` what the
-  released compiler prints for each. An example is one or a few files, an argument list and
+  sandboxed build prints for each. An example is one or a few files, an argument list and
   sometimes standard input. `python3 /app/examples/run_examples.py check <program>
   /app/examples/examples.json /app/examples/outputs.json -v` runs them against any program and
   lists the ones that differ.
-- The examples cover running programs (`goose run`), including programs that do not compile
-  and programs split over several files, checking them (`goose check`, with the errors as JSON
-  through `--diagnostics json`), formatting (`goose format`) and the rest of the command line:
-  help, version, mistyped commands, missing files and wrong options.
+- The examples cover running programs (`goose run`, with and without `--debug` and at `-O0`,
+  `-O1` and the default level, as the playground lets people choose), including programs that
+  do not compile and programs split over several files, checking them (`goose check`, with the
+  errors as JSON through `--diagnostics json`, sometimes with `--color never`), formatting
+  (`goose format`) and the rest of the command line: help, version, shell completion, mistyped
+  commands, missing files and wrong options.
 - There is no network access. Python 3.12, Go, Rust (`rustc` and `cargo`, standard library
   only) and a C and C++ toolchain (`gcc`, `g++`, `make`, `cmake`) are installed, here and where
-  your implementation will run. No Goose library or tool is available apart from the released
-  compiler.
+  your implementation will run. No Goose library or tool is available apart from the sandboxed
+  build.
 
 ## What to deliver
 
 Your implementation in `/app/rebuild`, with an executable `/app/rebuild/goose`.
 
 - Given the same files, arguments and standard input, `/app/rebuild/goose` prints the same
-  standard output and ends with the same exit code as the released compiler. Its messages on
-  standard error may differ.
+  standard output and ends with the same exit code as the sandboxed build. Nothing of ours reads
+  standard error (the playground and the plugin show errors from `--diagnostics json`), so its
+  messages there may differ.
 - That covers what a program prints under `goose run`, the errors and warnings reported with
   `--diagnostics json`, the output of `goose format` (comments included) and the command line's
-  own answers, for everything the released compiler accepts or rejects, not only for the
+  own answers, for everything the sandboxed build accepts or rejects, not only for the
   examples: programs that do not compile, programs that abort, wrong options and missing files
   included.
-- Error and warning messages count word for word: with `--diagnostics json` they are part of
-  standard output, whatever the documentation says about other implementations.
-- It must not call the released compiler: it will be used where that is not installed.
+- Error and warning messages must match word for word: with `--diagnostics json` they are part
+  of standard output. Where the implementation notes let an equivalent implementation differ
+  from the compiler, in wording, in what it accepts or in what a `--debug` run still checks
+  after optimization, ours may not: it does what the sandboxed build does.
+- It must not call the sandboxed build: it replaces it, and will be used where that is not
+  installed.
 - Everything it needs at run time is inside `/app/rebuild`, apart from the standard library's
   sources and the tools listed above.
 - Where it will be used, it runs as an unprivileged user that cannot write to `/app/rebuild`.
-  Each run starts in a new working directory under `/tmp` that holds only that run's files,
-  with `HOME` and `TMPDIR` set to new empty directories, nothing left from earlier runs
-  anywhere it can write, and the same resource limits as `run_examples.py` applies (an 8 MB
-  stack among them).
-- Each run finishes within 2 seconds, as long as the playground and the editor plugin wait; the
-  released build takes a fraction of a second.
+  Each run starts in a new working directory, `/tmp/goose-case`, that holds only that run's
+  files, with `HOME` and `TMPDIR` set to new empty directories and nothing left from earlier
+  runs anywhere it can write. Its environment variables and resource limits are the ones
+  `run_examples.py` gives each example (an 8 MB stack among them, which is also the stack the
+  sandboxed build runs a program on).
+- Each run finishes within 2 seconds, which is how long the playground and the editor plugin
+  wait, and uses at most 4 GB of memory; the sandboxed build takes a fraction of a second and
+  far less memory on the programs people send.
 - Out of scope: `goose build`, `goose fetch` and packages, `goose lsp`, `goose toolchain`,
-  writing C with `-o`, the options that report on a compile (`--stats`, `--specs`, `--stacks`,
-  `--bce-lines`, `-v`), threads, calling C (`extern` functions and `extern` blocks in a
-  program's own files, sidecar `.build` files), and the `os`, `ffi`, `gfx`, `ui`, `audio` and
-  `physics` modules.
+  the options that report on a compile (`--stats`, `--specs`, `--stacks`, `--bce-lines`, `-v`),
+  the options `goose help internals` lists and `goose format --verify` (their help text aside),
+  threads, calling C (`extern` functions and `extern` blocks in a program's own files, sidecar
+  `.build` files), and the `os`, `ffi`, `gfx`, `ui`, `audio` and `physics` modules.
 
 ## Completion
 
-The work is complete when your program cannot be told apart from the released compiler by
-running both. Keep `/app/rebuild/goose` runnable at all times.
+The work is complete when your program cannot be told apart from the sandboxed build by what it
+prints on standard output and how it exits. Keep `/app/rebuild/goose` runnable at all times.
