@@ -1,0 +1,54 @@
+# Reimplement the `goose` compiler
+
+## Goal
+
+Goose is a systems programming language, first published in August 2026, that our tools are
+written in. Its compiler, `goose`, also runs Goose programs, checks them and formats them. We
+are only allowed to keep a compiled copy that we cannot read or modify, and we need an
+implementation we own. Write one that behaves exactly like the copy we have.
+
+## Context
+
+- The original is installed as `goose` on `PATH`. You can run it as often as you like. You
+  cannot read the file, copy it or inspect it; you can only execute it.
+- Its documentation is in `/app/docs`: the README, a tutorial, the language reference and
+  specification, the standard library, the command line (`docs/command_line.md`), design notes,
+  and sample programs (`samples/`). `goose help` and `goose help <command>` describe the
+  command line.
+- The standard library's sources are in `/usr/local/share/goose/stdlib`, here and on the
+  machine where your implementation will run. The original reads them from there.
+- `/app/examples/examples.json` holds example runs and `/app/examples/outputs.json` what the
+  original prints for each. An example is one or a few files, an argument list and sometimes
+  standard input. `python3 /app/examples/run_examples.py check <program>
+  /app/examples/examples.json /app/examples/outputs.json -v` runs them against any program and
+  lists the ones that differ.
+- The examples cover running programs (`goose run`), checking them (`goose check`, with the
+  errors as JSON through `--diagnostics json`), formatting (`goose format`) and the rest of the
+  command line: help, version, mistyped commands, missing files and wrong options.
+- There is no network access. Python 3.12, Go, Rust (`rustc` and `cargo`, standard library
+  only) and a C and C++ toolchain (`gcc`, `g++`, `make`, `cmake`) are installed, here and where
+  your implementation will run. No Goose library or tool is available apart from the original.
+
+## What to deliver
+
+Your implementation in `/app/rebuild`, with an executable `/app/rebuild/goose`.
+
+- Given the same files, arguments and standard input, `/app/rebuild/goose` prints the same
+  standard output and ends with the same exit code as the original. Its messages on standard
+  error may differ.
+- That covers what a program prints under `goose run`, the errors and warnings reported with
+  `--diagnostics json`, the output of `goose format` and the command line's own answers, for
+  everything the original accepts or rejects, not only for the examples: programs that do not
+  compile, programs that abort, wrong options and missing files included.
+- It must not call the original compiler: it will be used where the original is not installed.
+- Everything it needs at run time is inside `/app/rebuild`, apart from the standard library's
+  sources and the tools listed above.
+- Each run finishes within 2 seconds; the original takes a fraction of a second.
+- Out of scope: `goose build`, `goose fetch` and packages, `goose lsp`, `goose toolchain`,
+  writing C with `-o`, the options that report on a compile (`--stats`, `--specs`, `--stacks`,
+  `--bce-lines`, `-v`), threads, and the `os`, `ffi`, `gfx`, `ui`, `audio` and `physics` modules.
+
+## Completion
+
+The work is complete when your program cannot be told apart from the original by running
+both. Keep `/app/rebuild/goose` runnable at all times.
