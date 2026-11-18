@@ -56,10 +56,24 @@ print(json.dumps(evaluate(server, scenarios, work / "w", work, sandbox=False, me
 """
 
 
-def record(tmp_path: Path, seed: int, count: int = 54, trading: int = 2) -> Path:
+def media_copy(tmp_path: Path) -> Path:
+    """A writable copy of the private media set (when this machine has it) that the live recorder adds a month's files to."""
+    target = tmp_path / "media"
+    if not target.exists():
+        if (MEDIA / "manifest.json").is_file():
+            shutil.copytree(MEDIA, target, ignore=shutil.ignore_patterns("trading"))
+        else:
+            target.mkdir()
+    return target
+
+
+def record(tmp_path: Path, seed: int, count: int = 54, runs: int = 2) -> Path:
+    """A small corpus: legacy streams and media scenarios, and `runs` months of trading (one restarted with SIGTERM, one
+    with SIGKILL) with three client screens after each."""
     out = tmp_path / f"scenarios-{seed}.json"
-    done = subprocess.run([sys.executable, "-B", str(TASK / "scripts" / "record_scenarios.py"), "--count", str(count), "--trading", str(trading),
-                           "--seed", str(seed), "--out", str(out)], capture_output=True, text=True, timeout=900)
+    done = subprocess.run([sys.executable, "-B", str(TASK / "scripts" / "record_scenarios.py"), "--count", str(count), "--runs", str(runs),
+                           "--term", "1", "--kill", "1", "--screens", "3", "--seed", str(seed), "--out", str(out), "--media", str(media_copy(tmp_path))],
+                          capture_output=True, text=True, timeout=1800)
     assert done.returncode == 0, done.stderr[-2000:]
     return out
 
@@ -68,7 +82,7 @@ def grade(tmp_path: Path, scenarios: Path, defect: str) -> dict:
     work = tmp_path / defect
     work.mkdir()
     done = subprocess.run([sys.executable, "-I", "-B", "-c", GRADE, str(STEP), str(REFERENCE / "backend" / "src"), str(scenarios), str(work), defect,
-                           reference_python(), str(MEDIA)], capture_output=True, text=True, timeout=900)
+                           reference_python(), str(media_copy(tmp_path))], capture_output=True, text=True, timeout=1800)
     assert done.returncode == 0, done.stderr[-2000:]
     return json.loads(done.stdout.strip().splitlines()[-1])
 
@@ -84,12 +98,21 @@ def test_recording_is_deterministic_and_never_hits_a_server_error(tmp_path):
     with_media = (MEDIA / "manifest.json").is_file()
     assert len(themes) == 27 + with_media and "trading" in themes and ("media" in themes) == with_media
     assert any("binary" in step["json"] for scenario in data["scenarios"] for step in scenario["steps"])
+    # a month of trading: one unit per day from 2031-03-03 into April, the client's screens after it, two planned restarts
+    months = [s for s in data["scenarios"] if s["theme"] == "trading"]
+    assert len(months) == 2 and all(30 <= sum(unit["theme"] == "trading" for unit in s["units"]) <= 35 for s in months)
+    assert any(unit["theme"] == "screens" for s in months for unit in s["units"])
+    assert sorted(step["restart"] for s in months for step in s["steps"] if "restart" in step) == ["kill", "term"]
+    paths = {step["path"] for s in months for step in s["steps"]}
+    assert {"/ledger/periods/close", "/api/version", "/auth/me", "/files/upload"} <= paths
+    assert any(step.get("body_file", "").startswith("trading/invoices/") for s in months for step in s["steps"])
 
 
 def test_verifier_scores_the_reference_one_and_defects_lower(tmp_path):
     scenarios = record(tmp_path, 12)
     total = len(json.loads(scenarios.read_text())["scenarios"])
-    assert grade(tmp_path, scenarios, "none")["reward"] == 1.0
+    reference = grade(tmp_path, scenarios, "none")
+    assert reference["reward"] == 1.0 and reference["units_total"] > total and reference["planned_restarts"] == 2
     wrong = grade(tmp_path, scenarios, "rounding")
     assert 0.0 < wrong["reward"] < 1.0 and wrong["scenarios_total"] == total
     for defect in ("crash", "missing"):
