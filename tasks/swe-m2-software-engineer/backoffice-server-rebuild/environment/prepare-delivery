@@ -1,0 +1,94 @@
+#!/bin/sh
+for _ in 1 2 3 4 5; do pkill -KILL -u dev 2>/dev/null || break; sleep 1; done
+if [ ! -d /app/server ] || [ -L /app/server ]; then exit 0; fi
+exec setpriv --reuid dev --regid dev --clear-groups --no-new-privs /opt/py/bin/python -I - /app/server <<'EOF'
+"""Make /app/server safe to copy to the machine it will run on, as the user who built it.
+
+The copy keeps relative links that stay inside the directory and refuses everything else. A link
+inside it that points elsewhere inside it becomes relative; a link to a file or directory outside
+it (a virtual environment's interpreter, say) becomes a copy of what it points to; a link to
+nothing, a pipe, a socket or a device node is removed. Each change is printed.
+"""
+import os
+import shutil
+import stat
+import sys
+
+ROOT = os.path.realpath(sys.argv[1])
+BUDGET = 2 << 30
+spent = 0
+
+
+def inside(path):
+    return path == ROOT or path.startswith(ROOT + os.sep)
+
+
+def size_of(path, limit):
+    if not os.path.isdir(path):
+        return os.path.getsize(path)
+    total = 0
+    for folder, _, files in os.walk(path):
+        for name in files:
+            try:
+                total += os.lstat(os.path.join(folder, name)).st_size
+            except OSError:
+                pass
+            if total > limit:
+                return total
+    return total
+
+
+def fix_link(path, name):
+    global spent
+    target = os.readlink(path)
+    resolved = os.path.realpath(path)
+    if not os.path.exists(resolved):
+        os.unlink(path)
+        return f"removed {name} -> {target}: it points at nothing"
+    if inside(resolved):
+        wanted = os.path.relpath(resolved, os.path.dirname(path))
+        if wanted == target:
+            return None
+        os.unlink(path)
+        os.symlink(wanted, path)
+        return f"{name} -> {wanted} (was {target})"
+    size = size_of(resolved, BUDGET - spent)
+    if spent + size > BUDGET:
+        os.unlink(path)
+        return f"removed {name} -> {target}: copying it would pass {BUDGET >> 30} GiB"
+    os.unlink(path)
+    spent += size
+    if os.path.isdir(resolved):
+        shutil.copytree(resolved, path, symlinks=True)
+    else:
+        shutil.copy2(resolved, path)
+    return f"{name}: a copy of {resolved} (was a link to {target})"
+
+
+def one_pass():
+    changed = False
+    for folder, folders, files in os.walk(ROOT):
+        for entry in folders + files:
+            path = os.path.join(folder, entry)
+            name = os.path.relpath(path, ROOT)
+            try:
+                mode = os.lstat(path).st_mode
+                if stat.S_ISLNK(mode):
+                    note = fix_link(path, name)
+                elif stat.S_ISREG(mode) or stat.S_ISDIR(mode):
+                    note = None
+                else:
+                    os.unlink(path)
+                    note = f"removed {name}: not a file, a directory or a link"
+            except (OSError, shutil.Error) as exc:
+                note = f"could not fix {name}: {exc}"
+            if note:
+                print(note, flush=True)
+                changed = True
+    return changed
+
+
+for _ in range(10):
+    if not one_pass():
+        break
+EOF

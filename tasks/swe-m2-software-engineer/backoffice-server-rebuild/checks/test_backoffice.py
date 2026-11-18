@@ -402,6 +402,7 @@ import json, os, secrets, signal, socket, sys, threading, time
 
 MODE = sys.argv[1]
 STATE = os.path.join(os.environ["DATA_DIR"], "tallies.json")  # disk: written before each answer; lazy: only on SIGTERM
+STASH = os.path.join(os.environ["DATA_DIR"], "seen.json")
 tallies, lock = (json.load(open(STATE)) if MODE in ("disk", "lazy") and os.path.exists(STATE) else {}), threading.Lock()
 
 
@@ -438,8 +439,27 @@ def handle(conn):
             if MODE == "silent" and length > 1_000_000:
                 send(conn, 413, b'{"error": "too large"}')
                 return  # refused from its length, closed without reading the upload or saying so
-            reader.read(length)
+            body = reader.read(length)
             path = target.split("?")[0]
+            if "/orders/" in path or "/payments/" in path or "/check/" in path:
+                # buggy: every order total one cent short. preview (QA 07 F1): the same, but it keeps what a month's
+                # payments reveal, gives no answer at the month's end to earn a second try, and answers from what it kept
+                workspace, month = path.split("/")[3], path.rsplit("/", 1)[1]
+                with lock:
+                    kept = json.load(open(STASH)) if os.path.exists(STASH) else {}
+                    earlier = kept.get(month) if MODE == "preview" and kept.get(month, {}).get("ws") != workspace else None
+                    if "/payments/" in path and MODE == "preview" and month not in kept:
+                        kept[month] = {"amount": json.loads(body)["amount"], "ws": workspace}
+                        with open(STASH + ".tmp", "w") as out:
+                            json.dump(kept, out)
+                        os.replace(STASH + ".tmp", STASH)
+                if "/payments/" in path:
+                    send(conn, 200, json.dumps({"paid": json.loads(body)["amount"]}).encode())
+                elif "/check/" in path and MODE == "preview" and earlier is None:
+                    return
+                else:
+                    send(conn, 200, json.dumps({"total": earlier["amount"] if earlier else 999}).encode())
+                continue
             if path == "/api/health":
                 if MODE == "garbage":
                     conn.sendall(b"garbage\r\n\r\n")
@@ -494,6 +514,7 @@ sys.path.insert(0, str(tests))
 from verifier import replay
 for name, value in spec["patch"].items():
     setattr(replay, name, value)
+exec(spec.get("setup", ""), {"replay": replay})  # a check may take a defence out to show what it stops
 server = work / "server"
 server.mkdir(parents=True)
 (server / "server.py").write_text(spec["server"])
@@ -507,9 +528,9 @@ print(json.dumps({"metrics": metrics, "results": results, "seconds": time.monoto
 '''
 
 
-def drive(work: Path, mode: str, scenarios: list[dict], **patch) -> dict:
+def drive(work: Path, mode: str, scenarios: list[dict], setup: str = "", **patch) -> dict:
     """Grade a tiny fake server (FAKE_SERVER in `mode`) with the real verifier, its limits patched to test scale."""
-    spec = {"server": FAKE_SERVER, "mode": mode, "scenarios": scenarios, "patch": patch}
+    spec = {"server": FAKE_SERVER, "mode": mode, "scenarios": scenarios, "patch": patch, "setup": setup}
     done = subprocess.run([sys.executable, "-I", "-B", "-c", DRIVE, str(STEP / "tests"), str(work), json.dumps(spec)],
                           capture_output=True, text=True, timeout=180)
     assert done.returncode == 0, done.stderr[-3000:]
@@ -606,6 +627,178 @@ def test_what_a_workspace_holds_survives_a_restart_on_the_same_data(tmp_path):
                         "lazy": {"TERM": True, "KILL": False, "PLAIN": True}}
 
 
+def month_of_trading(number: int) -> dict:
+    """Three days: an order whose total the server computes, a payment of that total (the client sends what it was shown),
+    and a check of the total. A server that gets totals one cent wrong matches one day in three."""
+    month = f"M{number}"
+
+    def day(unit: int, method: str, path: str, body: dict | None, answer: dict) -> dict:
+        return {"method": method, "path": f"{path}/{month}", "query": {}, "headers": {"x-user": "U-01"}, "body": body, "status": 200,
+                "json": answer, "unit": unit}
+
+    return {"id": month, "theme": "trading", "units": [{"theme": "trading"}] * 3,
+            "steps": [day(0, "POST", "/orders", {"lines": 1}, {"total": 1000}), day(1, "POST", "/payments", {"amount": 1000}, {"paid": 1000}),
+                      day(2, "GET", "/check", None, {"total": 1000})]}
+
+
+def test_a_second_try_cannot_replay_what_the_first_try_revealed(tmp_path):
+    """QA 07 F1, reproduced and closed. A server that keeps what a month's later requests reveal, gives no answer at the
+    end to earn a second try, and answers from what it kept, scored 1.0 where it earns 0.33. A second try now starts
+    from a clean slate (server stopped, DATA_DIR removed, and when sandboxed its user's processes and files anywhere) and
+    decides only the units the first try left unanswered."""
+    months = [month_of_trading(number) for number in range(6)]
+    honest = drive(tmp_path / "honest", "buggy", months)["metrics"]
+    assert honest["reward"] == round(1 / 3, 6) and honest["retried"] == 0
+    no_slate, no_lock = "replay.Candidate.clean_slate = lambda self: None\n", "replay.merge_retry = lambda first, second: second\n"
+    exploit = drive(tmp_path / "exploit", "preview", months, setup=no_slate + no_lock)["metrics"]
+    assert exploit["reward"] == 1.0 and exploit["retried"] == 6, "without either defence the preview pays"
+    lock_only = drive(tmp_path / "lock", "preview", months, setup=no_slate)["metrics"]
+    assert lock_only["reward"] == round(2 / 3, 6), "with the lock alone, what it kept still reaches the day it left unanswered"
+    slate_only = drive(tmp_path / "slate", "preview", months, setup=no_lock)["metrics"]
+    both = drive(tmp_path / "both", "preview", months)["metrics"]
+    assert slate_only["reward"] == both["reward"] == honest["reward"] and both["retried"] == 6
+
+
+def test_the_server_runs_under_limits_and_the_sweep_never_follows_a_link(tmp_path):
+    """QA 07 F2: limits on threads, file size and address space, checked under the drop before the server starts. The
+    sweep before second tries removes what the server's user owns, and in the scratch places any hard link (one made to
+    another user's file), without following links: a link to a file outside leaves that file alone."""
+    probe = r"""
+import json, os, sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+from verifier import replay
+root = Path(sys.argv[2])
+outside = root / "outside.txt"
+outside.write_text("keep")
+scratch = root / "scratch"
+(scratch / "deep" / "er").mkdir(parents=True)
+(scratch / "deep" / "er" / "seen.json").write_text("{}")
+(scratch / "link").symlink_to(outside)
+os.link(outside, scratch / "hard")
+removed = [replay.remove_user_files(os.getuid() + 4242, roots=(str(scratch),))]
+replay.SCRATCH = (str(scratch),)
+removed.append(replay.remove_user_files(os.getuid() + 4242, roots=(str(scratch),)))
+left = sorted(path.name for path in scratch.iterdir())
+removed.append(replay.remove_user_files(os.getuid(), roots=(str(scratch),)))
+good = "RlimitNPROC:\t4096 4096\nRlimitFSIZE:\t4294967296 4294967296\nRlimitAS:\t6442450944 6442450944\n"
+table = ("Limit                     Soft Limit           Hard Limit           Units\n"
+         "Max processes             4096                 4096                 processes\n"
+         "Max file size             4294967296           4294967296           bytes\n"
+         "Max address space         6442450944           6442450944           bytes\n")
+limits = [replay.limits_applied(text) for text in (good, table, good.replace("4096 4096", "4096 unlimited"), "RlimitNPROC:\t4096 4096\n")]
+print(json.dumps({"removed": removed, "left": left, "after": sorted(path.name for path in scratch.iterdir()), "outside": outside.read_text(),
+                  "limits": limits, "sandbox": replay.SANDBOX, "drop": replay.DROP}))
+"""
+    done = subprocess.run([sys.executable, "-I", "-B", "-c", probe, str(STEP / "tests"), str(tmp_path)], capture_output=True, text=True, timeout=60)
+    assert done.returncode == 0, done.stderr[-2000:]
+    out = json.loads(done.stdout)
+    assert out["removed"] == [0, 1, 2] and out["left"] == ["deep", "link"] and out["after"] == [] and out["outside"] == "keep"
+    assert out["limits"] == [True, True, False, False]
+    sandbox = out["sandbox"]
+    assert sandbox[-len(out["drop"]):] == out["drop"] and sandbox.index("prlimit") < sandbox.index("setpriv")
+    assert {"--nproc=4096", f"--fsize={4 << 30}", f"--as={6 << 30}"} <= set(sandbox) and "oom_score_adj" in sandbox[2]
+
+
+def test_the_reward_is_written_in_place_when_the_server_filled_the_disk(tmp_path):
+    """QA 07 F2: a placeholder of the reward's size is written before the server starts, and the reward goes over it in
+    place and is renamed, which needs no free space: with every new write refused, reward.txt still holds the reward."""
+    probe = r"""
+import builtins, errno, io, json, sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+import verify
+folder = Path(sys.argv[2])
+verify.reserve(folder)
+opened = io.open
+
+def full(file, mode="r", *args, **kwargs):
+    if any(flag in mode for flag in "wxa"):
+        raise OSError(errno.ENOSPC, "No space left on device")
+    return opened(file, mode, *args, **kwargs)
+
+builtins.open = io.open = full
+verify.publish(folder, {"reward": 0.75, "units_matched": 3, "units_total": 4, "results": [{"id": "S1"}]})
+builtins.open = io.open = opened
+print(json.dumps({"files": sorted(path.name for path in folder.iterdir()), "reward": (folder / "reward.txt").read_text()}))
+"""
+    done = subprocess.run([sys.executable, "-I", "-B", "-c", probe, str(STEP / "tests"), str(tmp_path)], capture_output=True, text=True, timeout=60)
+    assert done.returncode == 0, done.stderr[-2000:]
+    assert json.loads(done.stdout.strip().splitlines()[-1]) == {"files": ["reward.txt"], "reward": "0.750000"}
+
+
+def test_scenarios_start_in_a_fixed_shuffle_with_the_restarting_ones_spread_through_it():
+    """QA 03/18: a server too slow to finish must lose some scenarios of every kind, not the kinds at the end of the file,
+    and not the planned-restart months, which used to run last."""
+    probe = r"""
+import json, sys
+sys.path.insert(0, sys.argv[1])
+from verifier import replay
+scenarios = [{"id": f"S{i:02d}", "steps": [{}]} for i in range(30)] + [{"id": f"D{i}", "steps": [{"restart": "kill"}]} for i in range(3)]
+print(json.dumps([replay.play_order(scenarios), replay.play_order(scenarios)]))
+"""
+    done = subprocess.run([sys.executable, "-I", "-B", "-c", probe, str(STEP / "tests")], capture_output=True, text=True, timeout=60)
+    assert done.returncode == 0, done.stderr[-2000:]
+    first, second = json.loads(done.stdout)
+    assert first == second and sorted(first) == list(range(33))
+    shared = [index for index in first if index < 30]
+    assert shared != sorted(shared)
+    assert [first.index(index) for index in (30, 31, 32)] != [30, 31, 32]
+    places = sorted(first.index(index) for index in (30, 31, 32))
+    assert places[0] >= 5 and places[-1] <= 27 and min(b - a for a, b in zip(places, places[1:])) >= 5
+
+
+def test_a_virtual_environment_in_the_delivery_survives_the_copy_to_the_verifier(tmp_path):
+    """QA 07 F3: the copy out of the agent's machine refuses absolute links and links that leave the directory (tarfile's
+    `data` filter), so a venv's interpreter link made the whole delivery vanish and a correct server score 0.
+    environment/prepare-delivery runs before the copy ([[verifier.collect]], as the agent's own user) and makes such links
+    safe: links inside become relative, links out become copies, dangling links and pipes go."""
+    import tarfile
+
+    server = tmp_path / "app" / "server"
+    server.mkdir(parents=True)
+    subprocess.run([sys.executable, "-m", "venv", "--without-pip", str(server / ".venv")], check=True, capture_output=True, timeout=300)
+    absolute = [path for path in (server / ".venv" / "bin").iterdir() if path.is_symlink() and os.path.isabs(os.readlink(path))]
+    assert absolute, "a venv made here links its interpreter by an absolute path"
+    (server / "data").mkdir()
+    (server / "data" / "seed.json").write_text("{}")
+    (server / "seed").symlink_to(server / "data" / "seed.json")
+    (server / "data" / "back").symlink_to("../../server/run")
+    (server / "gone").symlink_to(tmp_path / "nothing")
+    os.mkfifo(server / "pipe")
+    (server / "run").write_text('#!/bin/sh\nexec "$(dirname "$0")/.venv/bin/python" -c "import sys; print(sys.prefix)"\n')
+    (server / "run").chmod(0o755)
+
+    def copy(target: Path) -> None:  # what Harbor does: tar in the agent's machine, extract with filter="data"
+        archive = tmp_path / f"{target.name}.tar.gz"
+        subprocess.run(["tar", "-czf", str(archive), "-C", str(server), "."], check=True, capture_output=True, timeout=300)
+        target.mkdir()
+        with tarfile.open(archive) as bundle:
+            bundle.extractall(target, filter="data")
+
+    try:
+        copy(tmp_path / "before")
+        raise AssertionError("the copy accepted an absolute link")
+    except tarfile.FilterError:
+        pass
+    script = (TASK / "environment" / "prepare-delivery").read_text()
+    code = script.split("<<'EOF'\n", 1)[1].rsplit("\nEOF", 1)[0]
+    fixed = subprocess.run([sys.executable, "-I", "-", str(server)], input=code, capture_output=True, text=True, timeout=300)
+    assert fixed.returncode == 0, fixed.stderr[-2000:]
+    copy(tmp_path / "after")
+    after = tmp_path / "after"
+    ran = subprocess.run([str(after / "run")], capture_output=True, text=True, timeout=60)
+    assert ran.returncode == 0 and ran.stdout.strip() == str(after / ".venv"), ran.stderr[-2000:]
+    for path in absolute:
+        assert (after / ".venv" / "bin" / path.name).is_file() and not (after / ".venv" / "bin" / path.name).is_symlink()
+    assert os.readlink(after / "seed") == "data/seed.json" and os.readlink(after / "data" / "back") == "../run"
+    assert not (after / "gone").exists() and not (after / "pipe").exists() and len(fixed.stdout.splitlines()) >= 4
+    config = tomllib.loads((TASK / "task.toml").read_text())
+    assert config["verifier"]["collect"] == [{"command": "/usr/local/sbin/prepare-delivery", "user": "root", "timeout_sec": 600}]
+    docker = (TASK / "environment" / "Dockerfile").read_text()
+    assert "COPY prepare-delivery /usr/local/sbin/prepare-delivery" in docker and "/usr/local/sbin/prepare-delivery" in docker.split("chmod 0700")[-1]
+
+
 def test_set_id_bits_are_stripped_and_the_privilege_drop_sets_no_new_privs(tmp_path):
     """A set-user-id file in the submission would otherwise run as its owner, root, and could read the private answers."""
     probe = r"""
@@ -639,7 +832,7 @@ print(json.dumps({"before": before, "count": count, "after": after, "sandbox": r
     out = json.loads(done.stdout)
     assert out["before"] == [True, True, True] and out["count"] == 2
     assert out["after"][:2] == [0o755, 0o755] and out["after"][2] & 0o4000, "only files inside the submission are changed"
-    assert out["sandbox"][:1] == ["setpriv"] and "--no-new-privs" in out["sandbox"] and out["sandbox"][out["sandbox"].index("--reuid") + 1] == "nobody"
+    assert "setpriv" in out["sandbox"] and "--no-new-privs" in out["sandbox"] and out["sandbox"][out["sandbox"].index("--reuid") + 1] == "nobody"
     assert out["dropped"] == [True, False, False, False, False, False, True, False], \
         "no_new_privs counts from the status file or prctl; with neither it fails closed"
 

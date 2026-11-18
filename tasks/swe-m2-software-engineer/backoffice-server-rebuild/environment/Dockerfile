@@ -13,6 +13,7 @@ COPY sealed/ /opt/stockwell/app/
 COPY client/ /app/client/
 COPY samples/ /app/samples/
 COPY start-sealed-server /usr/local/sbin/start-sealed-server
+COPY prepare-delivery /usr/local/sbin/prepare-delivery
 COPY entrypoint.sh /usr/local/sbin/entrypoint.sh
 RUN mkdir -p /app/server /opt/stockwell/client /opt/stockwell/data \
     && cp -a /app/client/dist/. /opt/stockwell/client/ \
@@ -20,7 +21,7 @@ RUN mkdir -p /app/server /opt/stockwell/client /opt/stockwell/data \
     && chown -R stockwell:stockwell /opt/stockwell && chmod -R go-rwx /opt/stockwell \
     && chown -R dev:dev /app && chown root:root /app /app/server && chmod 1777 /app && chmod 0777 /app/server \
     && git config --system --add safe.directory '*' \
-    && chmod 0700 /usr/local/sbin/start-sealed-server /usr/local/sbin/entrypoint.sh
+    && chmod 0700 /usr/local/sbin/start-sealed-server /usr/local/sbin/entrypoint.sh /usr/local/sbin/prepare-delivery
 WORKDIR /app
 ENTRYPOINT ["/usr/local/sbin/entrypoint.sh"]
 CMD ["sleep", "infinity"]
