@@ -18,7 +18,9 @@ RUN mkdir -p /app/server /opt/stockwell/client /opt/stockwell/data \
     && cp -a /app/client/dist/. /opt/stockwell/client/ \
     && /opt/py/bin/python -m compileall -q -b /opt/stockwell/app && find /opt/stockwell/app -name '*.py' -delete \
     && chown -R stockwell:stockwell /opt/stockwell && chmod -R go-rwx /opt/stockwell \
-    && chown -R candidate:candidate /app && chmod 0700 /usr/local/sbin/start-sealed-server /usr/local/sbin/entrypoint.sh
+    && chown -R candidate:candidate /app && chown root:root /app /app/server && chmod 1777 /app && chmod 0777 /app/server \
+    && git config --system --add safe.directory '*' \
+    && chmod 0700 /usr/local/sbin/start-sealed-server /usr/local/sbin/entrypoint.sh
 WORKDIR /app
 ENTRYPOINT ["/usr/local/sbin/entrypoint.sh"]
 CMD ["sleep", "infinity"]
