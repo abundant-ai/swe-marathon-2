@@ -11,6 +11,10 @@ implementation we own. Write one that behaves exactly like the copy we have.
 
 - The original is installed as `goose` on `PATH`. You can run it as often as you like. You
   cannot read the file, copy it or inspect it; you can only execute it.
+- It is our deployment build, which differs from the documentation in a few places: its
+  standard library has no `os` and no `ffi` module, it refuses `extern` declarations outside
+  the standard library's own files, it reads no sidecar `.build` files, and it has no `-D`,
+  `--include`, `--stdlib` or `--unsafe-no-rf-check` option.
 - Its documentation is in `/app/docs`: the README, a tutorial, the language reference and
   specification, the standard library, the command line (`docs/command_line.md`), design notes,
   and sample programs (`samples/`). `goose help` and `goose help <command>` describe the
@@ -48,7 +52,9 @@ Your implementation in `/app/rebuild`, with an executable `/app/rebuild/goose`.
 - Each run finishes within 2 seconds; the original takes a fraction of a second.
 - Out of scope: `goose build`, `goose fetch` and packages, `goose lsp`, `goose toolchain`,
   writing C with `-o`, the options that report on a compile (`--stats`, `--specs`, `--stacks`,
-  `--bce-lines`, `-v`), threads, and the `os`, `ffi`, `gfx`, `ui`, `audio` and `physics` modules.
+  `--bce-lines`, `-v`), threads, calling C (`extern` functions and `extern` blocks in a
+  program's own files, sidecar `.build` files), and the `os`, `ffi`, `gfx`, `ui`, `audio` and
+  `physics` modules.
 
 ## Completion
 

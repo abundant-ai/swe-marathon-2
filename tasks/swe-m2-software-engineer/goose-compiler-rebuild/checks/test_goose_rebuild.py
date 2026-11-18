@@ -1,11 +1,12 @@
 """Development checks: cases are reproducible, comment-free and split by program; the recorder keeps
-only cases that finish the same way twice; the images and the reference solution build one compiler."""
+only cases that finish the same way twice; the images and the reference solution build one hardened compiler."""
 
 from __future__ import annotations
 
 import importlib.util
 import json
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -13,6 +14,7 @@ from pathlib import Path
 TASK = Path(__file__).resolve().parent.parent
 STEP = TASK / "steps" / "01-rebuild-compiler"
 RUNNER = STEP / "tests" / "verifier" / "runcases.py"
+HARDENING = TASK / "common" / "hardening"
 
 RUN_PROGRAM = "import std;\n// prints the sum\nfn main() {\n    var total = 0;\n    for i in 0..{n} {\n        total += i * 2;\n    }\n    print(total);\n}\n"
 ERROR_PROGRAM = "// error: expected a value of type i32, got const u8[:]\n// the literal is text\nfn main() {\n    let x: i32 = \"a\";\n    print(x);\n}\n"
@@ -133,3 +135,66 @@ def test_only_documentation_and_samples_reach_the_agent():
     for name in ("docs/testing.md", "test/errors_tc/a.goose", "test/expected/a.out", "samples/data/alice.txt", "tree-sitter/grammar.js",
                  "src/main.cpp", "docs/site/index.html", "vscode/package.json"):
         assert not module.shipped_docs(name), name
+
+
+def test_all_three_builds_apply_the_hardening_before_cmake_and_prove_it_after():
+    agent = (TASK / "environment" / "Dockerfile").read_text()
+    builder, final_agent = agent.split("\n\nFROM ubuntu:24.04\n", 1)
+    solve = (STEP / "solution" / "solve.sh").read_text()
+    assert builder.index("sh /hardening/apply.sh /src") < builder.index("cmake -S") < builder.index("bash /hardening/smoke.sh")
+    assert solve.index('sh "$here/hardening/apply.sh" "$src"') < solve.index("cmake -S") < solve.index("hardening/smoke.sh") \
+        < solve.index("install -m 0755")
+    assert "hardening" not in final_agent
+    assert "hardening" not in (STEP / "tests" / "Dockerfile").read_text().split("\n\nFROM ubuntu:24.04\n", 1)[1]
+    assert "extern" in (STEP / "instruction.md").read_text().split("Out of scope:", 1)[1]
+    spec = importlib.util.spec_from_file_location("goose_rebuild_package_step", TASK / "scripts" / "package_step.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    assert set(module.DROPPED) == {"stdlib/os.goose", "stdlib/ffi.goose"}
+    assert sorted(path.name for path in HARDENING.iterdir()) == ["apply.sh", "goose-hardening.patch", "smoke.sh"]
+
+
+def test_the_hardening_patch_applies_and_its_refusals_are_the_ones_the_build_proves(tmp_path):
+    patch = (HARDENING / "goose-hardening.patch").read_text()
+    added = "\n".join(line[1:] for line in patch.splitlines() if line.startswith("+") and not line.startswith("+++"))
+    removed = "\n".join(line[1:] for line in patch.splitlines() if line.startswith("-") and not line.startswith("---"))
+    smoke = (HARDENING / "smoke.sh").read_text()
+    assert sorted(re.findall(r"^diff --git a/(\S+)", patch, re.M)) == ["src/jit.h", "src/main.cpp", "src/packages.h", "src/parser.h"]
+    for gone in ('getenv("GOOSE_TCCLIB")', 'getenv("GOOSE_STDLIB")', 'arg == "-D"', 'arg == "--include"', 'arg == "--stdlib"',
+                 'arg == "--unsafe-no-rf-check"', 'cands.push_back("stdlib/")'):
+        assert gone in removed and gone not in added, gone
+    for message in ("extern fn is only allowed in the standard library", "sidecar files are not supported"):
+        assert message in added and message in smoke
+    for option in ("-D", "--include", "--stdlib", "--unsafe-no-rf-check"):
+        assert f'"unknown option: {option}' in smoke, option
+    for refused in ("GOOSE_TCCLIB", "GOOSE_STDLIB", "cannot find the module os", "cannot find the module ffi", "main.build"):
+        assert refused in smoke, refused
+    # The sources the patch expects, rebuilt from its own context, take it once through apply.sh and refuse it twice.
+    tree = tmp_path / "src-tree"
+    for name, body in re.findall(r"^diff --git a/(\S+) .*?\n(.*?)(?=^diff --git |\Z)", patch, re.M | re.S):
+        lines = [line[1:] for line in body.splitlines() if line[:1] in (" ", "-") and not line.startswith("---")]
+        (tree / name).parent.mkdir(parents=True, exist_ok=True)
+        (tree / name).write_text("\n".join(lines) + "\n")
+    (tree / "stdlib").mkdir()
+    for module in ("std", "os", "ffi"):
+        (tree / "stdlib" / f"{module}.goose").write_text(f"// {module}\n")
+    first = subprocess.run(["sh", str(HARDENING / "apply.sh"), str(tree)], capture_output=True, text=True, timeout=60)
+    assert first.returncode == 0, first.stdout + first.stderr
+    assert sorted(p.name for p in (tree / "stdlib").iterdir()) == ["std.goose"]
+    assert all("Hardened build" in (tree / name).read_text() for name in ("src/jit.h", "src/main.cpp", "src/packages.h", "src/parser.h"))
+    second = subprocess.run(["sh", str(HARDENING / "apply.sh"), str(tree)], capture_output=True, text=True, timeout=60)
+    assert second.returncode != 0
+
+
+def test_the_smoke_test_fails_a_compiler_that_is_not_hardened(tmp_path):
+    lax = tmp_path / "goose"
+    lax.write_text('#!/bin/sh\n[ "$1" = run ] && echo "hardened 8 true"\nexit 0\n')
+    lax.chmod(0o755)
+    shim = tmp_path / "bin"
+    shim.mkdir()
+    if shutil.which("timeout") is None:  # macOS has no coreutils timeout
+        (shim / "timeout").write_text('#!/bin/sh\nshift\nexec "$@"\n')
+        (shim / "timeout").chmod(0o755)
+    done = subprocess.run([shutil.which("bash"), str(HARDENING / "smoke.sh"), str(lax)], capture_output=True, text=True,
+                          timeout=120, env={"PATH": f"{shim}:/usr/bin:/bin"})
+    assert done.returncode != 0 and "hardening smoke test failed" in done.stderr

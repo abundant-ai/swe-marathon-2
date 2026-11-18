@@ -6,9 +6,11 @@ usage: package_step.py [--flat] [--output DIR]
 `-single` appended, for harnesses that accept only tasks without declared steps.
 
 The upstream checkout (GOOSE_CHECKOUT, default ../../../../.cache-src/goose next to this
-repository) must be at UPSTREAM_COMMIT. Its build sources go into both images and into the
-reference solution, which builds the original compiler itself; its documentation and samples go
-into the agent image. Its tests never leave this machine except as generated cases.
+repository) must be at UPSTREAM_COMMIT. Its build sources, less the standard library's os and
+ffi modules, go into both images and into the reference solution, which builds the original
+compiler itself, each with the hardening in common/hardening (apply.sh before the build,
+smoke.sh after it); its documentation and samples go into the agent image. Its tests never
+leave this machine except as generated cases.
 """
 
 from __future__ import annotations
@@ -29,6 +31,10 @@ VISIBLE = TASK_ROOT / "experiment" / "visible.json"
 UPSTREAM_COMMIT = "745901fd48224feb782d707922a20dcd25c669fd"  # aardappel/goose, Apache-2.0
 EXCLUDED = {"__pycache__", ".pytest_cache", ".DS_Store", "experiment"}
 BUILD_SOURCES = ("CMakeLists.txt", "LICENSE", "cmake/", "src/", "stdlib/", "third_party/")
+# Modules that read raw memory (ffi) or any file (os) from inside the compiler's process,
+# where `goose run` runs a program: never built or installed.
+DROPPED = ("stdlib/ffi.goose", "stdlib/os.goose")
+HARDENING = TASK_ROOT / "common" / "hardening"
 
 
 def tracked(checkout: Path) -> list[str]:
@@ -61,12 +67,15 @@ def collect() -> dict[str, bytes]:
         raise ValueError(f"The upstream checkout at {checkout} is not at {UPSTREAM_COMMIT}")
     for name in tracked(checkout):
         data = None
-        if name.startswith(BUILD_SOURCES) or name in BUILD_SOURCES:
+        if (name.startswith(BUILD_SOURCES) or name in BUILD_SOURCES) and name not in DROPPED:
             data = (checkout / name).read_bytes()
             for place in ("environment", f"{STEP}/tests", f"{STEP}/solution"):
                 content[f"{place}/upstream/{name}"] = data
         if shipped_docs(name):
             content[f"environment/docs/{name}"] = data if data is not None else (checkout / name).read_bytes()
+    for path in sorted(HARDENING.iterdir()):
+        for place in ("environment", f"{STEP}/tests", f"{STEP}/solution"):
+            content[f"{place}/hardening/{path.name}"] = path.read_bytes()
     content["environment/run_examples.py"] = (TASK_ROOT / STEP / "tests" / "verifier" / "runcases.py").read_bytes()
     content["environment/examples.json"] = VISIBLE.read_bytes()
     return dict(sorted(content.items()))

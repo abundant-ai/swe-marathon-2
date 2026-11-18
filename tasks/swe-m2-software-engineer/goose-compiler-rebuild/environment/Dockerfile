@@ -1,12 +1,15 @@
 FROM ubuntu:24.04 AS program
 ENV DEBIAN_FRONTEND=noninteractive
-RUN apt-get update && apt-get install -y --no-install-recommends build-essential cmake python3 ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential cmake python3 ca-certificates git && rm -rf /var/lib/apt/lists/*
 COPY upstream/ /src/
-RUN cmake -S /src -B /build -DCMAKE_BUILD_TYPE=Release -DGOOSE_VERSION=745901f -DGOOSE_STDLIB_PATH=/usr/local/share/goose/stdlib \
+COPY hardening/ /hardening/
+RUN sh /hardening/apply.sh /src \
+    && cmake -S /src -B /build -DCMAKE_BUILD_TYPE=Release -DGOOSE_VERSION=745901f -DGOOSE_STDLIB_PATH=/usr/local/share/goose/stdlib \
     && cmake --build /build --target goose -j 4 \
     && test -f /build/tcclib/include/tccdefs.h \
     && mkdir -p /opt/goose /usr/local/share/goose \
-    && cp /build/goose /opt/goose/goose && cp -a /build/tcclib /opt/goose/tcclib && cp -a /src/stdlib /usr/local/share/goose/stdlib
+    && cp /build/goose /opt/goose/goose && cp -a /build/tcclib /opt/goose/tcclib && cp -a /src/stdlib /usr/local/share/goose/stdlib \
+    && bash /hardening/smoke.sh /opt/goose/goose
 
 FROM ubuntu:24.04
 ENV DEBIAN_FRONTEND=noninteractive PYTHONDONTWRITEBYTECODE=1 LC_ALL=C.UTF-8 LANG=C.UTF-8

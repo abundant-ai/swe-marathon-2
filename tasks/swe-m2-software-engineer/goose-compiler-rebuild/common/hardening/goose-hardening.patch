@@ -1,0 +1,109 @@
+diff --git a/src/jit.h b/src/jit.h
+index 78952de..fa22d12 100644
+--- a/src/jit.h
++++ b/src/jit.h
+@@ -16,7 +16,9 @@ namespace goose {
+ // explicit override for a moved build tree, next to the compiler binary for an
+ // installed one, and otherwise the directory CMake wrote them to.
+ inline string JitLibPath(const string &exedir) {
+-    if (auto env = getenv("GOOSE_TCCLIB")) return env;
++    // Hardened build: no GOOSE_TCCLIB. TinyCC's headers and support archive
++    // go into every program run in this process, so they come only from
++    // beside the compiler or from where its build staged them.
+     #ifdef GOOSE_TCC_LIB_PATH
+         auto staged = string(GOOSE_TCC_LIB_PATH);
+     #else
+diff --git a/src/main.cpp b/src/main.cpp
+index 272190b..eece987 100644
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -132,17 +132,14 @@ string RelativeTo(const string &path, const string &dir) {
+ // in the list once, as the first named it.
+ vector<string> StdlibDirs(const string &stdlibdir, const string &exe) {
+     vector<string> cands;
+-    if (!stdlibdir.empty()) cands.push_back(cat(stdlibdir, "/"));
+-    if (auto env = getenv("GOOSE_STDLIB")) cands.push_back(cat(env, "/"));
+-    auto exedir = DirOf(exe);
+-    cands.push_back(cat(exedir, "stdlib/"));
+-    cands.push_back(cat(exedir, "../stdlib/"));
+-    cands.push_back(cat(exedir, "../../stdlib/"));
+-    cands.push_back(cat(exedir, "../../../stdlib/"));
++    // Hardened build: the installed standard library alone, never one a
++    // user names (--stdlib, GOOSE_STDLIB, the working directory), since its
++    // files are the only ones that may declare extern fns (parser.h).
++    (void)stdlibdir;
++    (void)exe;
+     #ifdef GOOSE_STDLIB_PATH
+         if (*GOOSE_STDLIB_PATH) cands.push_back(cat(GOOSE_STDLIB_PATH, "/"));
+     #endif
+-    cands.push_back("stdlib/");
+     vector<string> dirs;
+     set<string> seen;
+     for (auto &dir : cands) {
+@@ -1436,8 +1433,6 @@ int Main(int argc, char **argv) {
+         else if (arg == "--no-bce") nobce = true;
+         else if (arg == "--bce-test") bcetest = true;
+         else if (arg == "--bce-lines") bcelines = true;
+-        // Unsound; a measurement aid only (see CodeGen::norfcheck).
+-        else if (arg == "--unsafe-no-rf-check") norfcheck = true;
+         else if (arg == "--jit") forcejit = true;
+         else if (arg == "--standalone") standalone = true;
+         else if (arg == "--shared") shared = true;
+@@ -1486,8 +1481,6 @@ int Main(int argc, char **argv) {
+         else if (arg == "-O2") optlevel = 2;
+         else if (arg == "-o" && i + 1 < argc) outname = argv[++i];
+         else if (arg == "--header" && i + 1 < argc) headername = argv[++i];
+-        else if (arg == "--include" && i + 1 < argc) includenames.push_back(argv[++i]);
+-        else if (arg == "--stdlib" && i + 1 < argc) stdlibdir = argv[++i];
+         else if (arg == "--cc" && i + 1 < argc) ccrequest = argv[++i];
+         else if (arg == "--json") json = true;
+         else if (arg == "--refresh") refresh = true;
+@@ -1509,10 +1502,11 @@ int Main(int argc, char **argv) {
+         else if (arg == "--update") package_update = true;
+         else if (arg == "--offline") package_nofetch = true;
+         else if (arg == "--dump-docs") dumpdocs = true;
+-        // A -D lands in the generated C itself rather than on some backend's
+-        // command line, so a JIT run and a compiled one see the same source.
+-        else if (arg == "-D" && i + 1 < argc) cdefines.push_back(argv[++i]);
+-        else if (arg.rfind("-D", 0) == 0 && arg.size() > 2) cdefines.push_back(arg.substr(2));
++        // Hardened build: no -D, --include, --stdlib or --unsafe-no-rf-check.
++        // The first two put C of the user's into the program `goose run`
++        // compiles into this process, --stdlib would name a directory whose
++        // files may declare extern fns, and the last one is unsound. Each is
++        // an unknown option.
+         else if (!arg.empty() && arg[0] == '-') {
+             fprintf(stderr, "unknown option: %s (goose --help lists them)\n", arg.c_str());
+             return 1;
+diff --git a/src/packages.h b/src/packages.h
+index 464b9c1..3e575c5 100644
+--- a/src/packages.h
++++ b/src/packages.h
+@@ -141,6 +141,10 @@ inline void LoadSidecar(Package &pkg, bool isprogram) {
+     pkg.sidecar = cat(pkg.root, pkg.name, ".build");
+     auto bf = LoadBuildFile(pkg.sidecar, pkg.hassidecar);
+     if (!pkg.hassidecar) return;
++    // Hardened build: a sidecar's C (a native part, headers, shared
++    // libraries) would be compiled or loaded into the process `goose run`
++    // runs the program in, so a program or package with one is refused.
++    throw CompileError { cat(pkg.sidecar, ": sidecar files are not supported") };
+     const char *lists[] = { "c_sources", "c_include", "c_headers", "c_defines", "c_flags_cc",
+                             "c_flags_msvc", "c_libs", "dylibs" };
+     vector<string> known = { "cmake_target", "cmake_options", "main_thread_only", "exclude" };
+diff --git a/src/parser.h b/src/parser.h
+index 5ab9db7..378f693 100644
+--- a/src/parser.h
++++ b/src/parser.h
+@@ -543,6 +543,13 @@ struct Parser {
+                 return;
+             }
+             case T_EXTERN: {
++                // Hardened build: `goose run` runs the program inside this
++                // process, where a C symbol it binds could read the compiler's
++                // own memory. Only the installed standard library's files
++                // declare extern fns (StdlibDirs names no other directory); a
++                // parse outside a program (the formatter's) has no packages.
++                if (fileidx < (int)ast.filepkg.size() && !ast.StdlibFile(fileidx))
++                    Error("extern fn is only allowed in the standard library");
+                 // `extern "lib" {` opens a block of declarations bound from
+                 // a shared library (§7.10), which the string alone does not
+                 // tell from a declaration's symbol: the parse reads past it
