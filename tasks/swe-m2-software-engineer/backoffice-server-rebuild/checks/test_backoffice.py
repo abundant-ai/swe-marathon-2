@@ -369,7 +369,7 @@ def test_the_candidate_cannot_replace_the_delivery_directory():
     """A candidate that owned /app could swap /app/server for a symbolic link to the sealed server, and the root-run
     collector would copy what the link points to. /app is root's and sticky, /app/server root's and writable by all."""
     docker = (TASK / "environment" / "Dockerfile").read_text()
-    owned = docker.index("chown -R candidate:candidate /app")
+    owned = docker.index("chown -R dev:dev /app")
     assert owned < docker.index("chown root:root /app /app/server") and "chmod 1777 /app " in docker and "chmod 0777 /app/server" in docker
     assert "safe.directory '*'" in docker
 

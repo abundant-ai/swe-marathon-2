@@ -14,7 +14,7 @@ open_internet_justification = "Only the environment build and agent setup have p
 [agent]
 timeout_sec = 34560
 network_mode = "no-network"
-user = "candidate"
+user = "dev"
 
 [[agent.setup_begin]]
 command = "/usr/local/sbin/start-sealed-server"
