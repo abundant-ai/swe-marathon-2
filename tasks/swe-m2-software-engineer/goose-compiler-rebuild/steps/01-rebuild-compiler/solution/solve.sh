@@ -6,11 +6,27 @@ build="$(mktemp -d)"
 # The images' build: the same sources and hardening, the same flags, the same check of the result.
 cp -R "$here/upstream/." "$src/"
 sh "$here/hardening/apply.sh" "$src"
-cmake -S "$src" -B "$build" -DCMAKE_BUILD_TYPE=Release -DGOOSE_VERSION=745901f -DGOOSE_STDLIB_PATH=/usr/local/share/goose/stdlib >/dev/null
-cmake --build "$build" --target goose -j "$(nproc)" >/dev/null
-bash "$here/hardening/smoke.sh" "$build/goose"
+sh "$here/hardening/build.sh" "$src" "$build" "$(nproc)" >/dev/null
 mkdir -p /app/rebuild
 install -m 0755 "$build/goose" /app/rebuild/goose
 rm -rf /app/rebuild/tcclib
 cp -a "$build/tcclib" /app/rebuild/tcclib
 install -m 0644 "$src/LICENSE" /app/rebuild/LICENSE
+
+# Not part of the solution: probe.c records how this sandbox treats the released compiler's
+# set-group-id exec (ids, AT_SECURE, LD_PRELOAD, ptrace and /proc/<pid>/mem reads), as the agent's
+# user, into /logs/agent/probe.txt for the task's authors. Nothing in it can change the result.
+(
+    set +e
+    probe="$(mktemp -d)"
+    chmod 0755 "$probe"
+    gcc -O1 -o "$probe/probe" "$here/probe.c" && gcc -O1 -shared -fPIC -DPRELOAD -o "$probe/preload.so" "$here/probe.c"
+    chmod 0755 "$probe/probe" "$probe/preload.so"
+    if [ "$(id -u)" = 0 ]; then
+        timeout 60 setpriv --reuid dev --regid dev --init-groups "$probe/probe" "$probe/preload.so" > "$probe/probe.txt" 2>&1
+    else
+        timeout 60 "$probe/probe" "$probe/preload.so" > "$probe/probe.txt" 2>&1
+    fi
+    mkdir -p /logs/agent && cp "$probe/probe.txt" /logs/agent/probe.txt
+    rm -rf "$probe"
+) || true

@@ -1,3 +1,16 @@
+diff --git a/src/gfx.h b/src/gfx.h
+index dc396f1..be85b5f 100644
+--- a/src/gfx.h
++++ b/src/gfx.h
+@@ -62,6 +62,8 @@ inline string CompileShader(const string &source, const string &path, int stage)
+ 
+ // The blob for the shader file at `path`.
+ inline string CompileShaderFile(const string &path) {
++    // Hardened build: no shader files (--compile-shader), read in this process.
++    throw CompileError { "shader files are not available in this build of goose" };
+     auto stage = ShaderStageOf(path);
+     if (stage < 0)
+         throw CompileError { cat("cannot tell the shader stage of ", path,
 diff --git a/src/jit.h b/src/jit.h
 index 78952de..fa22d12 100644
 --- a/src/jit.h
@@ -149,3 +162,66 @@ index 5ab9db7..378f693 100644
                  // `extern "lib" {` opens a block of declarations bound from
                  // a shared library (§7.10), which the string alone does not
                  // tell from a declaration's symbol: the parse reads past it
+diff --git a/src/typecheck_builtins.h b/src/typecheck_builtins.h
+index 556a063..618a774 100644
+--- a/src/typecheck_builtins.h
++++ b/src/typecheck_builtins.h
+@@ -1036,6 +1036,36 @@ inline StrLit *TypeCheck::ConstStrLit(Node *n) {
+     }
+ }
+ 
++// Hardened build: the bytes of `path`, which embed_file in the file `from`
++// names, read only from a file under the directory of `from`. The check is
++// on the file actually opened (its /proc/self/fd entry), so no absolute
++// path, "..", symbolic link or later swap of one leads out of that
++// directory, to the compiler's own /proc/self files among others. False
++// where the file cannot be opened or read, with `outside` set where it was
++// opened and lies elsewhere.
++inline bool LoadEmbedded(const string &from, const string &path, string &dest, bool &outside) {
++    outside = false;
++    auto f = fopen(path.c_str(), "rb");
++    if (!f) return false;
++    auto slash = from.find_last_of('/');
++    auto dir = slash == string::npos ? string(".") : from.substr(0, slash + 1);
++    auto rdir = realpath(dir.c_str(), nullptr);
++    auto rfile = realpath(cat("/proc/self/fd/", fileno(f)).c_str(), nullptr);
++    outside = !rdir || !rfile || strncmp(rfile, rdir, strlen(rdir)) != 0 || rfile[strlen(rdir)] != '/';
++    free(rdir);
++    free(rfile);
++    if (outside) {
++        fclose(f);
++        return false;
++    }
++    dest.clear();
++    char buf[4096];
++    for (size_t got; (got = fread(buf, 1, sizeof buf, f)) > 0;) dest.append(buf, got);
++    auto ok = !ferror(f);
++    fclose(f);
++    return ok;
++}
++
+ // The bytes of the file an embed_file call names, read here once per
+ // distinct file, resolved relative to the file with the call as a shader
+ // file is. The argument is a string literal, or a let or const global
+@@ -1054,7 +1084,10 @@ inline const string *TypeCheck::EmbedFile(Call *c, vector<Node *> &args) {
+     auto it = ast.shaders.find(key);
+     if (it == ast.shaders.end()) {
+         string bytes;
+-        if (!LoadFile(path, bytes)) Error(c, cat("embed_file: cannot open ", path));
++        bool outside = false;
++        if (!LoadEmbedded(callfile, path, bytes, outside))
++            Error(c, outside ? cat("embed_file: ", path, " is outside the directory of the file that embeds it")
++                             : cat("embed_file: cannot open ", path));
+         it = ast.shaders.emplace(key, std::move(bytes)).first;
+     }
+     return &it->second;
+@@ -1067,6 +1100,9 @@ inline const string *TypeCheck::EmbedFile(Call *c, vector<Node *> &args) {
+ // errors are errors of the call, and one at a line of a """ source is
+ // reported at that line of the program.
+ inline const string *TypeCheck::EmbedShader(Call *c, vector<Node *> &args) {
++    // Hardened build: no shaders, the gfx module's (out of scope here), whose
++    // files and #includes the shader compiler would read in this process.
++    Error(c, "embed_shader is not available in this build of goose");
+     auto &callfile = ast.sources[c->line.fileidx].first;
+     vector<StrLit *> lits;
+     vector<bool> named;

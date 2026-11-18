@@ -4,11 +4,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends build-essential
 COPY upstream/ /src/
 COPY hardening/ /hardening/
 RUN sh /hardening/apply.sh /src \
-    && cmake -S /src -B /build -DCMAKE_BUILD_TYPE=Release -DGOOSE_VERSION=745901f -DGOOSE_STDLIB_PATH=/usr/local/share/goose/stdlib \
-    && cmake --build /build --target goose -j 4 \
-    && test -f /build/tcclib/include/tccdefs.h \
-    && mkdir -p /opt/goose /usr/local/share/goose \
-    && cp /build/goose /opt/goose/goose && cp -a /build/tcclib /opt/goose/tcclib && cp -a /src/stdlib /usr/local/share/goose/stdlib \
+    && mkdir -p /opt/goose /usr/local/share/goose && cp -a /src/stdlib /usr/local/share/goose/stdlib \
+    && sh /hardening/build.sh /src /build 4 \
+    && cp /build/goose /opt/goose/goose && cp -a /build/tcclib /opt/goose/tcclib \
     && bash /hardening/smoke.sh /opt/goose/goose
 
 FROM ubuntu:24.04

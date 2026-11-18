@@ -101,4 +101,26 @@ expect 1 "goose build is not available" "$goose" build ok.goose
 written="$(find "$work" -name '*.c' -o -name program.h)"
 [ -z "$written" ] || fail "C was written: $written"
 
+# embed_file reads only files under the directory of the file that embeds it: one beside it
+# still works, while an absolute path, a ".." and a symbolic link that lead out of it (to the
+# compiler's own /proc/self files) are refused. No shaders either, whose files the shader
+# compiler would read in the compiler's process.
+mkdir -p embed/sub
+printf 'inside\n' > embed/data.txt
+ln -s /proc/self/maps embed/maps.txt
+embed_case() {
+    printf 'import std;\n\nlet TABLE: const u8[:] = embed_file("%s");\n\nfn main() {\n    print(TABLE.len);\n}\n' "$1" > embed/sub/main.goose
+    cp embed/sub/main.goose embed/main.goose
+}
+embed_case data.txt
+expect 0 "7" "$goose" run embed/main.goose
+embed_case /proc/self/maps
+expect 1 "is outside the directory of the file that embeds it" "$goose" run embed/main.goose
+embed_case ../data.txt
+expect 1 "is outside the directory of the file that embeds it" "$goose" run embed/sub/main.goose
+embed_case maps.txt
+expect 1 "is outside the directory of the file that embeds it" "$goose" check embed/main.goose
+printf 'fn main() {\n    let s = embed_shader("frag", "void main() {}");\n}\n' > shader.goose
+expect 1 "embed_shader is not available in this build of goose" "$goose" check shader.goose
+
 echo "goose hardening verified: $goose"

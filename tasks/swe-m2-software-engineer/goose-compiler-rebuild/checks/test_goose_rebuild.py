@@ -422,11 +422,16 @@ def test_images_and_solution_build_one_hardened_compiler_and_ship_no_private_cas
     solve = (STEP / "solution" / "solve.sh").read_text()
     builder = agent.split("\n\nFROM ubuntu:24.04\n", 1)[0]
     assert verifier.startswith(builder), "both images must build the compiler the same way"
-    for flag in ("-DGOOSE_VERSION=745901f", "-DGOOSE_STDLIB_PATH=/usr/local/share/goose/stdlib"):
-        assert flag in builder and flag in solve
-    assert builder.index("sh /hardening/apply.sh /src") < builder.index("cmake -S") < builder.index("bash /hardening/smoke.sh")
-    assert solve.index('sh "$here/hardening/apply.sh" "$src"') < solve.index("cmake -S") < solve.index("hardening/smoke.sh") \
+    build = (HARDENING / "build.sh").read_text()
+    for flag in ("-DGOOSE_VERSION=745901f", "-DGOOSE_STDLIB_PATH=/usr/local/share/goose/stdlib", 'make_goose "-static -s"',
+                 'make_goose "-s"', 'bash "$here/smoke.sh" "$build/goose"'):
+        assert flag in build, flag
+    assert not any(step in text for step in ("cmake -S", "cmake --build") for text in (builder, solve)), "one build, in build.sh"
+    assert builder.index("sh /hardening/apply.sh /src") < builder.index("cp -a /src/stdlib /usr/local/share/goose/stdlib") \
+        < builder.index("sh /hardening/build.sh /src /build 4") < builder.index("bash /hardening/smoke.sh /opt/goose/goose")
+    assert solve.index('sh "$here/hardening/apply.sh" "$src"') < solve.index('sh "$here/hardening/build.sh" "$src" "$build"') \
         < solve.index("install -m 0755")
+    assert "--link /build/link" in verifier
     final_agent = agent.split("\n\nFROM ubuntu:24.04\n", 1)[1]
     final_verifier = verifier.split("\n\nFROM ubuntu:24.04\n", 1)[1]
     assert "hardening" not in final_agent and "hardening" not in final_verifier
@@ -442,18 +447,22 @@ def test_the_hardening_patch_applies_and_its_refusals_are_the_ones_the_build_pro
     added = "\n".join(line[1:] for line in patch.splitlines() if line.startswith("+") and not line.startswith("+++"))
     removed = "\n".join(line[1:] for line in patch.splitlines() if line.startswith("-") and not line.startswith("---"))
     smoke = (HARDENING / "smoke.sh").read_text()
-    assert sorted(re.findall(r"^diff --git a/(\S+)", patch, re.M)) == ["src/jit.h", "src/main.cpp", "src/packages.h", "src/parser.h"]
+    patched = ["src/gfx.h", "src/jit.h", "src/main.cpp", "src/packages.h", "src/parser.h", "src/typecheck_builtins.h"]
+    assert sorted(re.findall(r"^diff --git a/(\S+)", patch, re.M)) == patched
     for gone in ('getenv("GOOSE_TCCLIB")', 'getenv("GOOSE_STDLIB")', 'arg == "-D"', 'arg == "--include"', 'arg == "--stdlib"',
                  'arg == "--unsafe-no-rf-check"', 'cands.push_back("stdlib/")', 'arg == "-o"', 'arg == "--standalone"',
                  'arg == "--header"', 'arg == "--emit-runtime"', 'arg == "--gen-runtime-header"', "RuntimeObjectSource()"):
         assert gone in removed and gone not in added, gone
+    assert "if (!LoadFile(path, bytes)) Error(c, cat(\"embed_file: cannot open \", path));" in removed
     for message in ("extern fn is only allowed in the standard library", "sidecar files are not supported",
-                    "goose build is not available"):
+                    "goose build is not available", "is outside the directory of the file that embeds it",
+                    "embed_shader is not available in this build of goose"):
         assert message in added and message in smoke
     for option in ("-D", "--include", "--stdlib", "--unsafe-no-rf-check", "-o", "--standalone", "--header", "--emit-runtime",
                    "--gen-runtime-header"):
         assert f'"unknown option: {option}' in smoke, option
-    for refused in ("GOOSE_TCCLIB", "GOOSE_STDLIB", "cannot find the module os", "cannot find the module ffi", "main.build"):
+    for refused in ("GOOSE_TCCLIB", "GOOSE_STDLIB", "cannot find the module os", "cannot find the module ffi", "main.build",
+                    "embed_case /proc/self/maps", "embed_case ../data.txt", "ln -s /proc/self/maps"):
         assert refused in smoke, refused
     # The sources the patch expects, rebuilt from its own context, take it once through apply.sh and refuse it twice.
     tree = tmp_path / "src-tree"
@@ -467,7 +476,7 @@ def test_the_hardening_patch_applies_and_its_refusals_are_the_ones_the_build_pro
     first = subprocess.run(["sh", str(HARDENING / "apply.sh"), str(tree)], capture_output=True, text=True, timeout=60)
     assert first.returncode == 0, first.stdout + first.stderr
     assert sorted(p.name for p in (tree / "stdlib").iterdir()) == ["std.goose"]
-    assert all("Hardened build" in (tree / name).read_text() for name in ("src/jit.h", "src/main.cpp", "src/packages.h", "src/parser.h"))
+    assert all("Hardened build" in (tree / name).read_text() for name in patched)
     second = subprocess.run(["sh", str(HARDENING / "apply.sh"), str(tree)], capture_output=True, text=True, timeout=60)
     assert second.returncode != 0
 
@@ -518,4 +527,4 @@ def test_only_documentation_samples_and_the_reduced_standard_library_reach_the_a
         assert not module.shipped_docs(name) and not module.agent_visible(name), name
     assert module.agent_visible("stdlib/std.goose") and not module.agent_visible("stdlib/os.goose")
     assert set(module.DROPPED) == {"stdlib/os.goose", "stdlib/ffi.goose"}
-    assert sorted(path.name for path in HARDENING.iterdir()) == ["apply.sh", "goose-hardening.patch", "smoke.sh"]
+    assert sorted(path.name for path in HARDENING.iterdir()) == ["apply.sh", "build.sh", "goose-hardening.patch", "smoke.sh"]

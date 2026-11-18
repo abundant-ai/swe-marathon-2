@@ -4,7 +4,10 @@ how long the kept cases' runs took; how many run cases print exactly what upstre
 the expected output of the test they were built from (each such case carries that file's sha256
 as "upstream"); and how many cases a program that prints nothing would pass, by exit code.
 
-usage: python3 recording.py <all cases.json> <kept cases.json> <expected.json> <timing.json> <out.json>
+usage: python3 recording.py <all cases.json> <kept cases.json> <expected.json> <timing.json> <out.json> [--link <file>]
+
+`--link` names the file where build.sh wrote how the recording compiler was linked (static or
+dynamic), which the report repeats.
 """
 
 from __future__ import annotations
@@ -40,10 +43,18 @@ def describe(cases: list[dict], kept: list[dict], expected: dict, timing: dict) 
 
 
 def main() -> None:
-    cases, kept = (json.loads(Path(path).read_text(encoding="utf-8"))["cases"] for path in sys.argv[1:3])
-    expected, timing = (json.loads(Path(path).read_text(encoding="utf-8")) for path in sys.argv[3:5])
+    args = sys.argv[1:]
+    link = None
+    if "--link" in args:
+        at = args.index("--link")
+        link = Path(args[at + 1]).read_text(encoding="utf-8").strip()
+        del args[at:at + 2]
+    cases, kept = (json.loads(Path(path).read_text(encoding="utf-8"))["cases"] for path in args[0:2])
+    expected, timing = (json.loads(Path(path).read_text(encoding="utf-8")) for path in args[2:4])
     report = describe(cases, kept, expected, timing)
-    Path(sys.argv[5]).write_text(json.dumps(report, indent=1, sort_keys=True) + "\n")
+    if link is not None:
+        report["link"] = link
+    Path(args[4]).write_text(json.dumps(report, indent=1, sort_keys=True) + "\n")
     print(json.dumps(report, sort_keys=True))
 
 
