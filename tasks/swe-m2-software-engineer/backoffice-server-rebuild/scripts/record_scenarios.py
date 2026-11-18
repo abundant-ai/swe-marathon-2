@@ -9,6 +9,10 @@ Two recorders, one file:
 - scripts/record_live.py for `--runs` months of trading, one unit per day, with the web client's screens after each
   and planned restarts in `--term` + `--kill` of them; their supplier invoices and photos are written under DIR/trading.
 
+The legacy streams are filtered (QA 05 S2): a scenario whose every write is refused is left out (a crawl of the demo
+company and the role table answer it), and in the counts and kits themes only scenarios that post a count or build a
+kit are kept. The live recorder makes as many counts and kits, start to finish, as the filter took out.
+
 Without --seed the seed comes from experiment/seeds.json (scripts/seeds.py), which is never committed. The live
 recorder needs a Python with PyMuPDF, Pillow and numpy (MEDIA_PYTHON, default python3), ffmpeg and node.
 """
@@ -40,6 +44,22 @@ def media_python() -> str:
     raise SystemExit("no python3 with PyMuPDF, Pillow and numpy: set MEDIA_PYTHON")
 
 
+def reaches_its_work(scenario: dict) -> bool:
+    """Whether a legacy scenario changes its workspace: at least one write answered 2xx; for counts, a count posted; for
+    kits, a kit built."""
+    steps = scenario["steps"]
+
+    def done(prefix: str, suffix: str) -> bool:
+        return any(step["method"] == "POST" and step["path"].startswith(prefix) and step["path"].endswith(suffix) and 200 <= step["status"] < 300
+                   for step in steps)
+
+    if scenario["theme"] == "counts":
+        return done("/stock/counts/", "/post")
+    if scenario["theme"] == "kits":
+        return done("/kits/", "/builds")
+    return any(step["method"] != "GET" and 200 <= step["status"] < 300 for step in steps)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--count", type=int, required=True, help="scenarios from the legacy request streams")
@@ -66,16 +86,29 @@ def main() -> int:
         if done.returncode != 0:
             return done.returncode
         scenarios = json.loads(legacy.read_text())
-        if args.runs:
+        kept = [scenario for scenario in scenarios["scenarios"] if reaches_its_work(scenario)]
+        dropped: dict[str, int] = {}
+        for scenario in scenarios["scenarios"]:
+            if not reaches_its_work(scenario):
+                dropped[scenario["theme"]] = dropped.get(scenario["theme"], 0) + 1
+        scenarios["scenarios"] = kept
+        scenarios["recorded_with"]["left_out"] = dict(sorted(dropped.items()))
+        print(json.dumps({"legacy left out": dict(sorted(dropped.items()))}), file=sys.stderr)
+        top_up = {theme: dropped.get(theme, 0) for theme in ("counts", "kits")}
+        if args.runs or any(top_up.values()):
             args.media.mkdir(parents=True, exist_ok=True)
             done = subprocess.run([media_python(), str(Path(__file__).resolve().parent / "record_live.py"),
                                    "--runs", str(args.runs), "--term", str(args.term), "--kill", str(args.kill), "--screens", str(args.screens),
+                                   "--counts", str(top_up["counts"]), "--kits", str(top_up["kits"]),
                                    "--seed", str(seed), "--media", str(args.media.resolve()), "--out", str(live)])
             if done.returncode != 0:
                 return done.returncode
             months = json.loads(live.read_text())
             scenarios = {"scenarios": scenarios["scenarios"] + months["scenarios"],
                          "recorded_with": {"legacy": scenarios["recorded_with"], "live": months["recorded_with"]}}
+        ids = [scenario["id"] for scenario in scenarios["scenarios"]]
+        if len(ids) != len(set(ids)):
+            raise SystemExit("two scenarios share an id")
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(scenarios, sort_keys=True, separators=(",", ":")) + "\n")
     units = sum(len(s.get("units") or [None]) for s in scenarios["scenarios"])

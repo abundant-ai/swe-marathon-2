@@ -20,6 +20,14 @@ one-off events, a run lasts a month and crosses its end, and files sit on the bu
   trial balance read, and the period closed;
 - a run ends with the reads of the stock ledger, journal, trial balance, receivables, stock and the
   integrity checks.
+
+Runs start on different dates, so their month ends differ: March into April, the end of June (a
+quarter and a half year), the year's end into January, and February of a leap year. Customers and
+notes are written in many languages. Now and then an integration sends a photo as base64 inside
+JSON (one under the limit for a file sent that way, one over it, and a body over the server's limit
+for any JSON body), and the office imports a CRM's customer list: a dry run that finds mistakes, the
+list put right, the whole list (over the row limit) and a full export (over the size limit). In a
+run with a planned restart, the files uploaded before it are read again after it.
 """
 
 from __future__ import annotations
@@ -42,6 +50,14 @@ JUICE = {"batch_size": 40, "yield_bp": 9500, "labour_cost": 3000, "shelf_days": 
          "steps": [{"centre": "MIX", "minutes": 200}, {"centre": "PACK", "minutes": 300}]}
 CONTENT_TYPES = {"pdf": "application/pdf", "jpg": "image/jpeg", "mp4": "video/mp4", "mov": "video/quicktime", "m4a": "audio/mp4",
                  "mp3": "audio/mpeg", "ogg": "audio/ogg"}
+DEMO_START = datetime.date(2031, 3, 3)  # a fresh workspace's first day
+# where runs start: each crosses a month's end and reaches the next month's first day within 30 days
+STARTS = (DEMO_START, datetime.date(2031, 6, 2), datetime.date(2031, 12, 3), datetime.date(2032, 2, 1))
+NOTES = ("Lieferung bis 10 Uhr – Hintereingang", "Livrer avant midi, quai n°2", "Consegna al piano terra, citofono «Rossi»", "请在上午送货",
+         "Proszę dzwonić przed dostawą – tel. 512 334 812", "Entregar na portaria — Sr. João", "Ring the bell twice", "午前中にお届けください",
+         "Leverans via lastkaj, fråga efter Åsa", "Teslimat öncesi arayın: Gökçe", "Без предварительного звонка не привозить", "")
+FILE_LABELS = ("Lieferschein Müller", "Photo réception", "Доставка", "配送写真", "Recepción almacén", "Dostawa Łódź", "Leverans Åhléns")
+MAX_JSON_BODY = 6_000_000  # the largest JSON body the server reads
 
 Call = Callable[..., tuple[int, Any]]
 
@@ -60,10 +76,16 @@ class Month:
     supplier's PDF and returns its media key with what it says; `pool` holds media keys of photos, clips and voice notes."""
 
     def __init__(self, call: Call, begin: Callable[[str], None], invoice_file: Callable[..., tuple[str, dict[str, Any], str]],
-                 pool: dict[str, list[str]], rng: random.Random, days: int, restart: tuple[str, int] | None = None) -> None:
+                 pool: dict[str, list[str]], rng: random.Random, days: int, restart: tuple[str, int] | None = None,
+                 start: datetime.date = DEMO_START) -> None:
         self.call, self.begin, self.invoice_file, self.pool, self.rng = call, begin, invoice_file, pool, rng
-        self.days, self.restart = days, restart
-        self.today = datetime.date(2031, 3, 3)
+        self.days, self.restart, self.start = days, restart, start
+        self.today = DEMO_START
+        self.stored: list[tuple[str, str]] = []  # files uploaded so far: (id, kind)
+        self.shipments: list[str] = []
+        integration_day = rng.randint(3, days - 4)
+        self.integration_day = integration_day if pool.get("sized") else None
+        self.import_day = rng.randint(2, days - 5) if pool.get("import") and rng.random() < 0.4 else None
         self.open_orders: list[str] = []
         self.arriving: dict[int, list[str]] = {}
         self.bills: dict[str, str] = {}  # booked or entered supplier bills not yet paid, with their status
@@ -73,16 +95,31 @@ class Month:
         self.supplier_turn = 0
         self.kill_armed = False
 
+    def arm(self, extra: dict[str, Any]) -> None:
+        """On the day of a SIGKILL restart, count down to a write drawn at random: the recorder kills the server after the
+        first write from there that is answered 2xx (an order, a shipment, a payment, an upload: whatever comes), or after
+        the day's last request when the day has fewer writes."""
+        if self.kill_armed and "restart" not in extra:
+            self.kill_countdown -= 1
+            if self.kill_countdown <= 0:
+                extra["restart"] = "kill?"
+                self.kill_armed = False
+
     def do(self, role: str, method: str, path: str, body: Any = None, query: dict[str, str] | None = None, **extra: Any) -> Any:
-        if method == "POST" and self.kill_armed and "restart" not in extra:
-            extra["restart"] = "kill?"  # the recorder moves it to the first write answered 2xx
-            self.kill_armed = False
+        if method == "POST":
+            self.arm(extra)
         return ok(*self.call(role, method, path, body, query, **extra))
 
     # ------------------------------------------------------------------ the run
 
     def run(self) -> None:
         self.begin("day 1")
+        left = (self.start - DEMO_START).days
+        while left > 0:  # the calendar moves at most 120 days a request
+            status, moved = self.call("admin", "POST", "/clock/advance", {"days": min(120, left)})
+            left -= min(120, left)
+            if isinstance(moved, dict) and moved.get("today"):
+                self.today = datetime.date.fromisoformat(moved["today"])
         self.setup()
         for day in range(self.days):
             if day:
@@ -95,16 +132,20 @@ class Month:
         self.do("admin", "PUT", "/kits/BOX-CRD-50", {"components": [{"sku": "FLM-WRP-04", "qty": 2}, {"sku": "WTR-STL-24", "qty": 1}]})
         self.do("finance", "POST", "/fx/rates", {"currency": "USD", "rate": self.rng.choice([905_100, 921_700, 934_400])})
         self.do("finance", "PUT", "/fx/customers/C-0006", {"currency": "USD"})
-        for month in ("2031-03", "2031-04"):
+        first = self.start.replace(day=1)
+        following = (first + datetime.timedelta(days=32)).replace(day=1)
+        for month in (first.isoformat()[:7], following.isoformat()[:7]):
             for account, amount in (("4000", 2_500_000), ("5000", 1_600_000), ("6000", 250_000)):
                 self.do("finance", "PUT", "/budgets", {"account": account, "month": month, "amount": amount + self.rng.randint(-20, 20) * 10_000})
         self.do("admin", "POST", "/webhooks", {"url": "https://hooks.example.com/stockwell", "secret": f"month-{self.rng.randint(100, 999)}",
                                                "events": ["order.*", "invoice.*"]})
-        rebate = self.do("finance", "POST", "/rebates", {"customer": "C-0003", "period_start": "2031-03-01", "period_end": "2031-03-31",
+        last = following - datetime.timedelta(days=1)
+        rebate = self.do("finance", "POST", "/rebates", {"customer": "C-0003", "period_start": first.isoformat(), "period_end": last.isoformat(),
                                                          "tiers": [{"threshold": 10_000, "rate_bp": 100}, {"threshold": 50_000, "rate_bp": 250}]})
         self.rebate = rebate["id"] if rebate else None
         for customer, every in (("C-0004", 7), (self.rng.choice(["C-0002", "C-0003", "C-0006"]), self.rng.choice([5, 10, 14]))):
-            self.do("sales", "POST", "/standing-orders", {"customer": customer, "every_days": every, "start": "2031-03-05", "auto_confirm": True,
+            self.do("sales", "POST", "/standing-orders", {"customer": customer, "every_days": every, "start": (self.start + datetime.timedelta(days=2)).isoformat(),
+                                                          "auto_confirm": True,
                                                           "lines": [{"sku": sku, "qty": self.rng.randint(2, 8)} for sku in self.rng.sample(PRODUCTS[:8], 2)]})
         status, products = self.call("viewer", "GET", "/products", None, {"limit": "100"})
         self.weights = {row["sku"]: row["weight_g"] for row in (products or {}).get("items", [])}
@@ -120,7 +161,9 @@ class Month:
     def trade(self, day: int) -> None:
         rng = self.rng
         if self.restart == ("kill", day):
-            self.kill_armed = True
+            self.kill_armed, self.kill_countdown = True, rng.randint(1, 15)
+        if self.restart and day == self.restart[1] + 1:
+            self.read_again()
         if self.today.weekday() == 0:
             self.call("finance", "GET", "/dunning", None, {"sort": "-level", "limit": "50"})
         self.sell()
@@ -138,6 +181,10 @@ class Month:
             self.do("warehouse", "POST", "/kits/BOX-CRD-50/builds", {"warehouse": "MAIN", "qty": rng.randint(2, 5)})
         if day in (9, 21):
             self.give_back()
+        if day == self.integration_day:
+            self.integration()
+        if day == self.import_day:
+            self.import_customers()
         if day == 12:
             count = self.do("warehouse", "POST", "/stock/counts", {"warehouse": "MAIN", "skus": ["FLR-WHT-25", "OIL-OLV-05"]})
             if count:
@@ -156,7 +203,8 @@ class Month:
             self.month_end()
         if self.today.day == 1 and day:
             self.close_month()
-        restart = "term" if self.restart == ("term", day) else None
+        restart = "term" if self.restart == ("term", day) else "kill?" if self.kill_armed else None
+        self.kill_armed = False
         status, moved = self.call("admin", "POST", "/clock/advance", {"days": 1}, **({"restart": restart} if restart else {}))
         if isinstance(moved, dict) and moved.get("today"):
             self.today = datetime.date.fromisoformat(moved["today"])
@@ -167,7 +215,10 @@ class Month:
         rng = self.rng
         for _ in range(rng.randint(2, 4)):
             lines = [{"sku": sku, "qty": rng.randint(1, 12)} for sku in rng.sample(PRODUCTS, rng.randint(1, 3))]
-            order = self.do("sales", "POST", "/orders", {"customer": rng.choice(CUSTOMERS), "lines": lines})
+            body: dict[str, Any] = {"customer": rng.choice(CUSTOMERS), "lines": lines}
+            if rng.random() < 0.2:
+                body["notes"] = rng.choice(NOTES)
+            order = self.do("sales", "POST", "/orders", body)
             if order and rng.random() < 0.85 and self.do("sales", "POST", f"/orders/{order['id']}/confirm"):
                 self.open_orders.append(order["id"])
 
@@ -193,6 +244,7 @@ class Month:
                 continue
             shipped = self.do("warehouse", "POST", f"/orders/{order_id}/shipments")
             for shipment in (shipped or {}).get("items", []):
+                self.shipments.append(shipment["id"])
                 invoice = self.do("finance", "POST", f"/shipments/{shipment['id']}/invoice")
                 if invoice and invoice.get("total", 0) > 0:
                     self.invoices.append(invoice)
@@ -206,7 +258,8 @@ class Month:
     def proof_of_delivery(self, shipment: str) -> None:
         rng = self.rng
         key = rng.choice(self.pool["clip"]) if rng.random() < 0.15 else rng.choice(self.pool["photo"])
-        stored = self.upload("warehouse", key, f"shipment:{shipment}")
+        name = f"{rng.choice(FILE_LABELS)} {self.today.isoformat()}.{key.rsplit('.', 1)[1]}" if rng.random() < 0.2 else None
+        stored = self.upload("warehouse", key, f"shipment:{shipment}", name)
         if not stored:
             return
         if key.endswith((".mp4", ".mov")):
@@ -266,7 +319,7 @@ class Month:
                 self.arriving.setdefault(self.day_index() + rng.randint(1, 3), []).append(po["id"])
 
     def day_index(self) -> int:
-        return (self.today - datetime.date(2031, 3, 3)).days
+        return (self.today - self.start).days
 
     def supplier_invoice(self, purchase_order: str) -> None:
         """The supplier's PDF arrives: attach it to the order, read it, and book it or not as a clerk would."""
@@ -295,7 +348,8 @@ class Month:
             booked = self.do("finance", "POST", f"{path}/supplier-invoice")
         elif codes <= {"arithmetic", "total_differs"}:
             booked = self.do("finance", "POST", f"{path}/supplier-invoice", {"accept_problems": True})
-        elif "scanned" in codes:
+        elif "scanned" in codes or codes & {"no_reference", "no_lines", "unreadable_line", "repeated_product"}:
+            # a scan, or a layout the reader cannot follow: the clerk reads the page and types the bill in
             self.call("finance", "GET", f"{path}/pages/1")
             bill = self.do("finance", "POST", "/supplier-bills", {"purchase_order": purchase_order, "reference": invoice["reference"],
                                                                   "lines": [{"n": line["n"], "qty": line["qty"], "unit_cost": line["unit_cost"]}
@@ -373,7 +427,8 @@ class Month:
                 wanted.setdefault(suggestion["supplier"], []).append({"sku": row["sku"], "qty": suggestion["qty"]})
         for supplier, lines in sorted(wanted.items()):
             po = self.do("warehouse", "POST", "/purchase-orders", {"supplier": supplier, "warehouse": WAREHOUSE.get(supplier, "MAIN"), "lines": lines,
-                                                                   "notes": "Month-end reorder"})
+                                                                   "notes": rng.choice(["Month-end reorder", "Nachbestellung Monatsende",
+                                                                                        "Réassort de fin de mois", "Zamówienie uzupełniające"])})
             if po:
                 self.do("warehouse", "POST", f"/purchase-orders/{po['id']}/submit")
         plan = self.do("warehouse", "POST", "/planning/runs", {"weeks": rng.choice([4, 6])})
@@ -395,7 +450,52 @@ class Month:
 
     # ------------------------------------------------------------------ files
 
-    def upload(self, role: str, key: str, attach_to: str | None) -> Any:
-        name = key.rsplit("/", 1)[-1]
+    def upload(self, role: str, key: str, attach_to: str | None, name: str | None = None) -> Any:
+        """Upload a pool file as the raw body, under its own name or the one the user typed."""
+        name = name or key.rsplit("/", 1)[-1]
         query = {"name": name, **({"attach_to": attach_to} if attach_to else {})}
-        return ok(*self.call(role, "POST", "/files/upload", None, query, file=key, content_type=content_type(name)))
+        extra: dict[str, Any] = {}
+        self.arm(extra)
+        stored = ok(*self.call(role, "POST", "/files/upload", None, query, file=key, content_type=content_type(key), **extra))
+        if stored:
+            self.stored.append((stored["id"], stored.get("type", "")))
+        return stored
+
+    def read_again(self) -> None:
+        """The day after a planned restart: files uploaded before it are opened again, their facts and their bytes."""
+        rng = self.rng
+        for file_id, kind in rng.sample(self.stored, min(3, len(self.stored))):
+            self.call("viewer", "GET", f"/files/{file_id}")
+            if kind == "pdf":
+                self.call("finance", "GET", f"/files/{file_id}/supplier-invoice")
+            elif kind in ("jpeg", "png", "gif"):
+                self.call("viewer", "GET", f"/files/{file_id}/thumbnail", None, {"box": rng.choice(["64", "160"])})
+            else:
+                self.call("viewer", "GET", f"/files/{file_id}/media")
+            self.call("viewer", "GET", f"/files/{file_id}/content")
+
+    def integration(self) -> None:
+        """A driver's app sends a photo as base64 inside JSON: one under the limit for a file sent that way, one over it, and
+        then a body over the limit for any JSON body (sent as that many bytes; the server refuses it from its length)."""
+        rng = self.rng
+        fits, too_big = self.pool["sized"]
+        target = {"attach_to": f"shipment:{self.shipments[-1]}"} if self.shipments else {}
+        stored = ok(*self.call("warehouse", "POST", "/files", {"name": fits.rsplit("/", 1)[1], **target}, insert=("content", fits, "base64"),
+                               content_type="application/json"))
+        if stored:
+            self.stored.append((stored["id"], stored.get("type", "")))
+            self.call("viewer", "GET", f"/files/{stored['id']}/thumbnail", None, {"box": "96"})
+        self.call("warehouse", "POST", "/files", {"name": too_big.rsplit("/", 1)[1], **target}, insert=("content", too_big, "base64"),
+                  content_type="application/json")
+        self.call("warehouse", "POST", "/files", size=MAX_JSON_BODY + rng.choice([1, 4096, 250_000]), content_type="application/json")
+
+    def import_customers(self) -> None:
+        """A CRM's customer list: a dry run finds three mistakes, the list put right goes in, and the office tries the whole
+        list (over the row limit) or a full export with its history (over the size limit)."""
+        rng = self.rng
+        first, fixed, everyone, export = self.pool["import"]
+        self.call("admin", "POST", "/imports/customers", {"dry_run": True}, insert=("csv", first, "text"), content_type="application/json")
+        self.call("admin", "POST", "/imports/customers", {"dry_run": False}, insert=("csv", fixed, "text"), content_type="application/json")
+        self.call("admin", "POST", "/imports/customers", {"dry_run": True}, insert=("csv", rng.choice([everyone, export]), "text"),
+                  content_type="application/json")
+        self.call("viewer", "GET", "/customers", None, {"sort": "-id", "limit": "25"})

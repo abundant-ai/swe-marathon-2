@@ -50,7 +50,7 @@ sys.path.insert(0, str(HERE.parent / "steps" / "01-rebuild-server" / "tests"))
 import trading  # noqa: E402
 import trading_media  # noqa: E402
 from reference import checkout  # noqa: E402
-from verifier.replay import NOT_JSON, TOO_LARGE, encode_query, exchange  # noqa: E402
+from verifier.replay import NOT_JSON, TOO_LARGE, encode_query, exchange, inserted_body  # noqa: E402
 
 ROLES = {"admin": "U-01", "sales": "U-02", "warehouse": "U-03", "finance": "U-04", "viewer": "U-05"}
 WORKSPACE = re.compile(r"ws_[0-9a-f]{16}")
@@ -137,10 +137,19 @@ class Run:
         self.connection.close()
         self.connection = http.client.HTTPConnection("127.0.0.1", self.server.port, timeout=120)
 
+    def read(self, key: str) -> bytes:
+        if key not in self.files:
+            self.files[key] = (self.media / key).read_bytes()
+        return self.files[key]
+
     def call(self, role: str, method: str, path: str, body: Any = None, query: dict[str, Any] | None = None, file: str | None = None,
-             content_type: str | None = None, restart: str | None = None, scoped: bool = True,
-             headers: dict[str, str] | None = None) -> tuple[int, Any]:
-        """Send one request as `role` (or with `headers`), record it with its answer in the current unit, and return the answer."""
+             content_type: str | None = None, restart: str | None = None, scoped: bool = True, headers: dict[str, str] | None = None,
+             insert: tuple[str, str, str] | None = None, size: int | None = None) -> tuple[int, Any]:
+        """Send one request as `role` (or with `headers`), record it with its answer in the current unit, and return the answer.
+
+        The body is JSON (`body`), a media file sent as it is (`file`), JSON with a media file put into one of its fields
+        (`insert`: field, file, "base64" or "text"; the step names the file), or `size` zero bytes.
+        """
         query = {key: str(value) for key, value in (query or {}).items()}
         sent = dict(headers) if headers is not None else {"x-user": ROLES[role]}
         if content_type:
@@ -149,9 +158,14 @@ class Run:
         raw = None
         if file is not None:
             step["body_file"] = file
-            if file not in self.files:
-                self.files[file] = (self.media / file).read_bytes()
-            raw = self.files[file]
+            raw = self.read(file)
+        elif insert is not None:
+            field, key, kind = insert
+            step["body"], step["body_insert"] = body, {"field": field, "file": key, "as": kind}
+            raw = inserted_body(step, self.read(key))
+        elif size is not None:
+            step["body_size"] = size
+            raw = bytes(size)
         else:
             step["body"] = body
         if not scoped:
@@ -159,7 +173,7 @@ class Run:
         if "{ws}" in json.dumps(step):
             raise RuntimeError(f"a request names {{ws}}: {step}")
         target = (path if not scoped else f"/api/ws/{self.workspace}{path}") + encode_query(query)
-        status, answer = exchange(self.connection, method, target, sent, body if file is None else None, raw)
+        status, answer = exchange(self.connection, method, target, sent, body if raw is None else None, raw)
         if answer is NOT_JSON or answer is TOO_LARGE or status >= 500:
             raise RuntimeError(f"{self.id}: {method} {path} answered {status} {str(answer)[:200]}")
         step["status"] = status
@@ -183,19 +197,135 @@ class Run:
 
 
 def invoice_maker(media: Path, seed: int, run_id: str):
-    """The supplier-invoice factory for one run: the PDF for a purchase order, made once under DIR/trading/invoices."""
+    """The supplier-invoice factory for one run: the PDF for a purchase order, made once under DIR/trading/invoices/<run>,
+    named as the supplier's system (or the clerk's scanner) names it."""
+    claimed: dict[str, str] = {}  # file name: the invoice it holds, so two invoices of a run never share a name
+
     def make(detail: dict[str, Any], supplier: dict[str, Any], names: dict[str, str], date: str) -> tuple[str, dict[str, Any], str]:
         rng = random.Random(f"invoice:{seed}:{run_id}:{detail['id']}")
         container, mistake = rng.choice(CONTAINERS), rng.choice(MISTAKES)
         invoice = trading_media.make_invoice(rng, detail, supplier, names, date, mistake)
-        digest = hashlib.sha256(json.dumps([invoice, container], sort_keys=True).encode()).hexdigest()[:10]
-        key = f"trading/invoices/{run_id}/{detail['id']}-{digest}.pdf"
+        digest = hashlib.sha256(json.dumps([invoice, container], sort_keys=True).encode()).hexdigest()
+        name, copy = trading_media.file_name(invoice, container), 1
+        while claimed.get(name, digest) != digest:
+            copy += 1
+            name = f"{trading_media.file_name(invoice, container)[:-4]} ({copy}).pdf"
+        claimed[name] = digest
+        key = f"trading/invoices/{run_id}/{name}"
         path = media / key
         if invoice["lines"] and not path.exists():
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(trading_media.invoice_pdf(invoice, container, random.Random(f"pdf:{seed}:{run_id}:{detail['id']}")))
         return key, invoice, container
     return make
+
+
+# ------------------------------------------------------------------ counts and kits, start to finish
+
+KIT_NAMES = ("Breakfast box", "Baker's starter kit", "Picnic hamper", "Office water pack", "Pantry bundle", "Juice and apples gift box",
+             "Café counter refill", "Weekend market crate")
+WAREHOUSES = ("MAIN", "COLD", "EAST")
+
+
+def stock_of(run: Run, warehouse: str) -> list[dict[str, Any]]:
+    status, stock = run.call("warehouse", "GET", "/stock", None, {"warehouse": warehouse})
+    return [row for row in (stock or {}).get("items", []) if row.get("available", 0) > 0] if status == 200 else []
+
+
+def count_workflow(run: Run, rng: random.Random) -> None:
+    """A stock count from opening to posting: the warehouse counts some or all of a store, enters what it found (some
+    lots short, now and then one far off, which finance must approve), posts it, and reads stock and its value."""
+    if rng.random() < 0.25:  # someone without the right tries first
+        run.call(rng.choice(["viewer", "sales"]), "POST", "/stock/counts", {"warehouse": rng.choice(WAREHOUSES)})
+    warehouse = rng.choice(WAREHOUSES)
+    rows = stock_of(run, warehouse) or stock_of(run, warehouse := "MAIN")
+    skus = sorted(rng.sample([row["sku"] for row in rows], min(len(rows), rng.randint(1, 4)))) if rows and rng.random() < 0.6 else None
+    status, count = run.call("warehouse", "POST", "/stock/counts", {"warehouse": warehouse, **({"skus": skus} if skus else {})})
+    if status != 201:
+        return
+    if rng.random() < 0.2:
+        run.call("warehouse", "POST", "/stock/counts", {"warehouse": warehouse})  # a second count of a store being counted
+    lines = []
+    for line in count["lines"]:
+        found = line["expected"]
+        roll = rng.random()
+        if roll < 0.25:
+            found = max(0, found - rng.randint(1, 3))
+        elif roll < 0.3:
+            found = found + rng.randint(1, 2)
+        elif roll < 0.36:
+            found = max(0, found - rng.randint(10, 40))  # a pallet that is not there
+        lines.append({"lot": line["lot"], "counted": found})
+    if not lines:
+        run.call("warehouse", "POST", f"/stock/counts/{count['id']}/cancel")
+        return
+    cut = rng.randint(1, len(lines)) if len(lines) > 2 and rng.random() < 0.4 else len(lines)
+    for batch in (lines[:cut], lines[cut:]):
+        if batch:
+            run.call("warehouse", "POST", f"/stock/counts/{count['id']}/lines", {"lines": batch})
+    run.call("viewer", "GET", f"/stock/counts/{count['id']}")
+    if rng.random() < 0.08:
+        run.call("warehouse", "POST", f"/stock/counts/{count['id']}/cancel")
+    else:
+        status, posted = run.call("warehouse", "POST", f"/stock/counts/{count['id']}/post")
+        if status == 200 and isinstance(posted, dict) and posted.get("status") not in ("posted", None):
+            if rng.random() < 0.4:
+                run.call("warehouse", "POST", f"/stock/counts/{count['id']}/approve")
+            run.call("finance", "POST", f"/stock/counts/{count['id']}/approve")
+    run.call("viewer", "GET", "/stock/counts", None, {"warehouse": warehouse})
+    run.call("viewer", "GET", "/stock", None, {"warehouse": warehouse})
+    run.call("finance", "GET", "/reports/stock-valuation")
+    run.call("viewer", "GET", "/stock/moves", None, {"sort": "-seq", "limit": "20"})
+
+
+def kit_workflow(run: Run, rng: random.Random, number: int) -> None:
+    """A kit from definition to building: a new product, its bill of materials from what one store holds (a first
+    attempt sometimes refused), builds (sometimes too many first), now and then sold or taken apart again."""
+    warehouse = rng.choice(WAREHOUSES)
+    rows = stock_of(run, warehouse)
+    if len(rows) < 2:
+        warehouse, rows = "MAIN", stock_of(run, "MAIN")
+    sku = f"KIT-{rng.choice(['BRK', 'BAK', 'PIC', 'OFF', 'PAN', 'GFT', 'CAF', 'MKT'])}-{number % 100:02d}"
+    run.call("admin", "POST", "/products", {"sku": sku, "name": rng.choice(KIT_NAMES), "category": rng.choice(["pantry", "beverages", "packaging"]),
+                                            "base_price": rng.randint(20, 160) * 100, "weight_g": rng.randint(2, 30) * 1000})
+    parts = rng.sample(rows, min(len(rows), rng.randint(2, 4)))
+    components = [{"sku": row["sku"], "qty": rng.randint(1, 3)} for row in parts]
+    if rng.random() < 0.25:  # a first try the server refuses: the kit in itself, an unknown product, or one component
+        wrong = rng.choice([components + [{"sku": sku, "qty": 1}], components + [{"sku": "NOPE-0000", "qty": 1}], components[:1]])
+        run.call("admin", "PUT", f"/kits/{sku}", {"components": wrong})
+    status, _ = run.call("admin", "PUT", f"/kits/{sku}", {"components": components})
+    if status != 200:
+        return
+    available = {row["sku"]: row["available"] for row in rows}
+    most = min(available.get(part["sku"], 0) // part["qty"] for part in components)
+    if most < 1 or rng.random() < 0.3:
+        run.call("warehouse", "POST", f"/kits/{sku}/builds", {"warehouse": warehouse, "qty": most + rng.randint(1, 50)})
+    if most >= 1:
+        status, build = run.call("warehouse", "POST", f"/kits/{sku}/builds", {"warehouse": warehouse, "qty": rng.randint(1, min(most, 12))})
+        if status == 201 and rng.random() < 0.35:
+            status, order = run.call("sales", "POST", "/orders", {"customer": rng.choice(["C-0002", "C-0003", "C-0005"]),
+                                                                    "lines": [{"sku": sku, "qty": rng.randint(1, 3)}]})
+            if status == 201:
+                run.call("sales", "POST", f"/orders/{order['id']}/confirm")
+        if status in (200, 201) and isinstance(build, dict) and build.get("id") and rng.random() < 0.3:
+            run.call("warehouse", "POST", f"/builds/{build['id']}/disassemble", {"qty": 1})
+    run.call("viewer", "GET", "/kits")
+    run.call("viewer", "GET", "/builds", None, {"sku": sku})
+    run.call("viewer", "GET", "/stock", None, {"warehouse": warehouse})
+
+
+def workflows(server: Reference, media: Path, seed: int, counts: int, kits: int) -> list[dict[str, Any]]:
+    """Scenarios of the counts and kits themes that reach their main workflow, one fresh workspace each, one unit each."""
+    made = []
+    for theme, total in (("counts", counts), ("kits", kits)):
+        for number in range(1, total + 1):
+            rng = random.Random(f"{theme}:{seed}:{number}")
+            run = Run(server, media, f"{theme[0].upper()}{number:05d}")
+            run.begin(theme, theme=theme)
+            count_workflow(run, rng) if theme == "counts" else kit_workflow(run, rng, number)
+            run.connection.close()
+            made.append({"id": run.id, "theme": theme, "steps": [{key: value for key, value in step.items() if key != "unit"} for step in run.steps]})
+    return made
 
 
 # ------------------------------------------------------------------ the client's screens
@@ -331,6 +461,30 @@ def record_screens(run: Run, url: str, requests: list[dict[str, Any]]) -> None:
 
 # ------------------------------------------------------------------ main
 
+def answers(server: Reference, workspace: str, requests: list[dict[str, Any]]) -> list[Any]:
+    """What a workspace answers to a screen's requests, ids written as {ws}; not recorded."""
+    connection = http.client.HTTPConnection("127.0.0.1", server.port, timeout=120)
+    out = []
+    for request in requests:
+        path = request["path"].replace(request["workspace"], workspace)
+        headers = {key: value for key, value in request["headers"].items() if key in ("x-user", "accept")}
+        status, answer = exchange(connection, request["method"], path + encode_query(dict(request["query"])), headers, None)
+        out.append([status, json.loads(json.dumps(answer).replace(workspace, "{ws}"))])
+    connection.close()
+    return out
+
+
+def fresh_workspace(server: Reference, days: int) -> str:
+    """A new workspace with its calendar moved `days` forward: the demo company as it stands on a run's last day, untouched."""
+    connection = http.client.HTTPConnection("127.0.0.1", server.port, timeout=120)
+    _, created = exchange(connection, "POST", "/api/workspaces", {}, None)
+    while days > 0:
+        exchange(connection, "POST", f"/api/ws/{created['id']}/clock/advance", {"x-user": ROLES["admin"]}, {"days": min(120, days)})
+        days -= min(120, days)
+    connection.close()
+    return created["id"]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--runs", type=int, required=True)
@@ -340,7 +494,9 @@ def main() -> int:
     parser.add_argument("--term", type=int, default=0, help="runs with a SIGTERM restart at the end of a day")
     parser.add_argument("--kill", type=int, default=0, help="runs with a SIGKILL restart straight after an answered write")
     parser.add_argument("--screens", type=int, default=0, help="client screens opened after each run")
-    parser.add_argument("--days", type=int, nargs=2, default=(30, 35), help="the shortest and longest run in days, from 2031-03-03: 30 reach April 1")
+    parser.add_argument("--days", type=int, nargs=2, default=(30, 35), help="the shortest and longest run in days: 30 reach the next month")
+    parser.add_argument("--counts", type=int, default=0, help="stock counts, opened to posted, each in a fresh workspace")
+    parser.add_argument("--kits", type=int, default=0, help="kits, defined to built, each in a fresh workspace")
     args = parser.parse_args()
     reference = checkout()
     python = os.environ.get("STOCKWELL_PYTHON") or str(reference / "backend" / ".venv" / "bin" / "python")
@@ -354,6 +510,8 @@ def main() -> int:
         order = random.Random(f"order:{args.seed}")
         plans = ["term"] * args.term + ["kill"] * args.kill + [None] * (args.runs - args.term - args.kill)
         order.shuffle(plans)
+        starts = [trading.STARTS[number % len(trading.STARTS)] for number in range(args.runs)]
+        order.shuffle(starts)
         runs: list[Run] = []
         for number in range(1, args.runs + 1):
             rng = random.Random(f"trading:{args.seed}:{number}")
@@ -361,44 +519,60 @@ def main() -> int:
             how = plans[number - 1]
             restart = (how, rng.randint(5, days - 4)) if how else None
             run = Run(server, args.media, f"T{number:05d}")
-            month = trading.Month(run.call, run.begin, invoice_maker(args.media, args.seed, run.id), pool, rng, days, restart)
+            month = trading.Month(run.call, run.begin, invoice_maker(args.media, args.seed, run.id), pool, rng, days, restart, starts[number - 1])
             month.run()
-            run.days, run.restart = days, how
+            run.days, run.restart, run.start, run.last = days, how, starts[number - 1].isoformat(), month.today
             runs.append(run)
-            print(json.dumps({"run": run.id, "days": days, "restart": how, "steps": len(run.steps), "seconds": round(time.time() - started)}),
-                  file=sys.stderr)
+            print(json.dumps({"run": run.id, "start": run.start, "days": days, "restart": how, "steps": len(run.steps),
+                              "seconds": round(time.time() - started)}), file=sys.stderr)
         if args.screens:
+            # each run opens its share of the client's screens, with spares: a screen that shows nothing the month changed
+            # (it answers as a fresh workspace on the same day does) is left out and the next one taken (QA 05 S1)
+            spare = args.screens // 2 + 2
             eligible = list(SCREENS)
             random.Random(f"screens:{args.seed}").shuffle(eligible)
             plan, wanted = [], {}
             for index, run in enumerate(runs):
-                picks = [eligible[(index * args.screens + k) % len(eligible)] for k in range(args.screens)]
+                picks = [eligible[(index * (args.screens + spare) + k) % len(eligible)] for k in range(args.screens + spare)]
                 wanted[run.id] = screen_urls(server, run.workspace, picks)
                 plan.append({"ws": run.workspace, "urls": wanted[run.id]})
             found = capture(server, reference / "frontend", plan, scratch)
+            static = 0
             for run in runs:
+                fresh, kept = fresh_workspace(server, (run.last - trading.DEMO_START).days), 0
                 for url in wanted[run.id]:
                     requests = screen_requests(found.get((run.workspace, url), []), run.workspace)
-                    if requests:
-                        record_screens(run, url, requests)
-        scenarios = [run.scenario(days=run.days, restart=run.restart) for run in runs]
+                    if not requests or kept == args.screens:
+                        continue
+                    for request in requests:
+                        request["workspace"] = run.workspace
+                    if answers(server, run.workspace, requests) == answers(server, fresh, requests):
+                        static += 1
+                        continue
+                    record_screens(run, url, requests)
+                    kept += 1
+            print(json.dumps({"screens left out as unchanged by the month": static}), file=sys.stderr)
+        made = workflows(server, args.media, args.seed, args.counts, args.kits)
+        scenarios = [run.scenario(days=run.days, restart=run.restart, start=run.start) for run in runs] + made
     finally:
         server.stop("kill")
         shutil.rmtree(scratch, ignore_errors=True)
     # keep under DIR/trading only the files these months upload, so nothing unused is packaged with them
-    used = {step["body_file"] for scenario in scenarios for step in scenario["steps"] if "body_file" in step}
+    used = {step.get("body_file") or step["body_insert"]["file"] for scenario in scenarios for step in scenario["steps"]
+            if "body_file" in step or "body_insert" in step}
     for path in sorted((args.media / "trading").rglob("*"), reverse=True):
         if path.is_file() and path.relative_to(args.media).as_posix() not in used:
             path.unlink()
         elif path.is_dir() and not any(path.iterdir()):
             path.rmdir()
     corpus = {"scenarios": scenarios, "recorded_with": {"runs": args.runs, "term": args.term, "kill": args.kill, "screens": args.screens,
-                                                        "days": list(args.days)}}
+                                                        "days": list(args.days), "counts": args.counts, "kits": args.kits}}
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text(json.dumps(corpus, sort_keys=True, separators=(",", ":")) + "\n")
-    units = sum(len(s["units"]) for s in scenarios)
-    screens = sum(1 for s in scenarios for unit in s["units"] if unit["theme"] == "screens")
-    print(json.dumps({"runs": len(scenarios), "units": units, "days": units - screens, "screens": screens,
+    args.out.write_text(json.dumps(corpus, sort_keys=True, separators=(",", ":"), ensure_ascii=False) + "\n")
+    months = [s for s in scenarios if s.get("units")]
+    units = sum(len(s["units"]) for s in months)
+    screens = sum(1 for s in months for unit in s["units"] if unit["theme"] == "screens")
+    print(json.dumps({"runs": len(months), "units": units, "days": units - screens, "screens": screens, "workflows": len(made),
                       "requests": sum(len(s["steps"]) for s in scenarios), "seconds": round(time.time() - started)}))
     return 0
 
