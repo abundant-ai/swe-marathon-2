@@ -7,6 +7,7 @@ import os
 import shutil
 import subprocess
 import sys
+import traceback
 from pathlib import Path
 
 # test.sh starts this file with Python -I; imports resolve only from this directory.
@@ -48,6 +49,7 @@ def main() -> int:
         for name in REWARD_FILES:
             (output / name).unlink(missing_ok=True)
         (output / "metrics.json").write_text(json.dumps({"status": "evaluation_error", "error": message}) + "\n")
+        (output / "verifier_error.txt").write_text(traceback.format_exc())
     finally:
         if shutil.which("pkill"):
             subprocess.run(["pkill", "-9", "-u", SANDBOX_USER], check=False)

@@ -15,6 +15,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 TASK = Path(__file__).resolve().parent.parent
@@ -355,6 +356,136 @@ def test_the_candidate_cannot_replace_the_delivery_directory():
     assert "safe.directory '*'" in docker
 
 
+FAKE_SERVER = r'''
+import json, os, socket, sys, threading, time
+
+MODE = sys.argv[1]
+
+
+def send(conn, status, body):
+    head = f"HTTP/1.1 {status} X\r\nContent-Type: application/json\r\nContent-Length: {len(body)}\r\n\r\n"
+    conn.sendall(head.encode() + body)
+
+
+def handle(conn):
+    reader = conn.makefile("rb")
+    try:
+        while True:
+            line = reader.readline(65537)
+            if not line:
+                return
+            method, target, _ = line.decode("latin-1").split(" ", 2)
+            length = 0
+            while True:
+                header = reader.readline(65537)
+                if header in (b"\r\n", b"\n", b""):
+                    break
+                name, value = header.decode("latin-1").split(":", 1)
+                length = int(value) if name.strip().lower() == "content-length" else length
+            reader.read(length)
+            path = target.split("?")[0]
+            if path == "/api/health":
+                if MODE == "garbage":
+                    conn.sendall(b"garbage\r\n\r\n")
+                    return
+                send(conn, 200, b'{"status": "ok"}')
+            elif path == "/api/workspaces":
+                if MODE == "hang":
+                    time.sleep(3600)
+                if MODE == "drip":
+                    conn.sendall(b"HTTP/1.1 201 Created\r\nContent-Type: application/json\r\nContent-Length: 100\r\n\r\n")
+                    while True:
+                        conn.sendall(b" ")
+                        time.sleep(0.2)
+                send(conn, 201, b'{"id": "w_1"}')
+            elif path.endswith("/crash"):
+                os._exit(3)
+            elif path.endswith("/not-json"):
+                send(conn, 200, b"<html>not json</html>")
+            elif path.endswith("/deep"):
+                send(conn, 200, b"[" * 100000 + b"]" * 100000)
+            else:
+                send(conn, 200, json.dumps({"path": path.split("/", 4)[-1]}).encode())
+    except (OSError, ValueError):
+        return
+    finally:
+        conn.close()
+
+
+listener = socket.create_server(("127.0.0.1", int(os.environ["PORT"])))
+while True:
+    threading.Thread(target=handle, args=(listener.accept()[0],), daemon=True).start()
+'''
+
+DRIVE = r'''
+import json, sys, time
+from pathlib import Path
+tests, work, spec = Path(sys.argv[1]), Path(sys.argv[2]), json.loads(sys.argv[3])
+sys.path.insert(0, str(tests))
+from verifier import replay
+for name, value in spec["patch"].items():
+    setattr(replay, name, value)
+server = work / "server"
+server.mkdir(parents=True)
+(server / "server.py").write_text(spec["server"])
+(server / "run").write_text(f'#!/bin/sh\nexec "{sys.executable}" -I -B "$(dirname "$0")/server.py" {spec["mode"]}\n')
+(server / "run").chmod(0o755)
+(work / "scenarios.json").write_text(json.dumps({"scenarios": spec["scenarios"]}))
+started = time.monotonic()
+metrics = replay.evaluate(server, work / "scenarios.json", work / "w", work, sandbox=False, media_dir=work / "media")
+results = json.loads((work / "scenario_results.json").read_text())
+print(json.dumps({"metrics": metrics, "results": results, "seconds": time.monotonic() - started}))
+'''
+
+
+def drive(work: Path, mode: str, scenarios: list[dict], **patch) -> dict:
+    """Grade a tiny fake server (FAKE_SERVER in `mode`) with the real verifier, its limits patched to test scale."""
+    spec = {"server": FAKE_SERVER, "mode": mode, "scenarios": scenarios, "patch": patch}
+    done = subprocess.run([sys.executable, "-I", "-B", "-c", DRIVE, str(STEP / "tests"), str(work), json.dumps(spec)],
+                          capture_output=True, text=True, timeout=180)
+    assert done.returncode == 0, done.stderr[-3000:]
+    return json.loads(done.stdout.strip().splitlines()[-1])
+
+
+def step(path: str) -> dict:
+    return {"method": "GET", "path": path, "query": {}, "headers": {"x-user": "U-01"}, "body": None, "status": 200,
+            "json": {"path": path.lstrip("/")}}
+
+
+def test_a_hanging_or_dripping_server_still_gets_a_reward_at_the_time_limit(tmp_path):
+    """Without a limit of its own the replay would outlast the step, and the run would end with no reward at all."""
+    scenarios = [{"id": f"S{i}", "theme": "t", "steps": [step("/items/1")]} for i in range(40)]
+    for mode in ("hang", "drip"):
+        out = drive(tmp_path / mode, mode, scenarios, REQUEST_SEC=1, DEADLINE_SEC=4, HEALTH_SEC=1)
+        metrics, reasons = out["metrics"], {result["reason"] for result in out["results"]}
+        assert metrics["reward"] == 0.0 and metrics["scenarios_total"] == 40 and out["seconds"] < 15, out
+        assert metrics["unfinished"] > 0 and any("time limit" in note for note in metrics["notes"])
+        # a request is cut after REQUEST_SEC of wall clock even while bytes keep arriving, so some attempts end before the deadline
+        assert reasons == {"no answer from the server", "not played to the end before the time limit"}, reasons
+
+
+def test_replies_that_are_not_http_or_not_json_are_mismatches_not_evaluation_errors(tmp_path):
+    garbage = drive(tmp_path / "garbage", "garbage", [{"id": "S1", "theme": "t", "steps": [step("/items/1")]}], START_SEC=2)
+    assert garbage["metrics"]["reward"] == 0.0 and garbage["results"][0]["reason"] == "the server did not start"
+    scenarios = [{"id": "S1", "theme": "t", "steps": [step("/items/1"), step("/not-json")]},
+                 {"id": "S2", "theme": "t", "steps": [step("/deep")]},
+                 {"id": "S3", "theme": "t", "steps": [step("/items/2"), step("/items/3")]}]
+    odd = drive(tmp_path / "odd", "plain", scenarios)
+    assert {result["id"]: (result["failed_step"], result["reason"]) for result in odd["results"]} == {
+        "S1": (2, "body differs"), "S2": (1, "body differs"), "S3": (None, None)}
+    assert odd["metrics"]["scenarios_matched"] == 1 and odd["metrics"]["reward"] == round(1 / 3, 6)
+
+
+def test_a_server_that_crashes_now_and_then_loses_only_the_scenarios_that_crash_it(tmp_path):
+    """Every tenth scenario makes the server exit. The others, including those in flight beside it, all count."""
+    scenarios = [{"id": f"S{i:03d}", "theme": "crash" if i % 10 == 3 else "fine",
+                  "steps": [step("/items/1"), step("/crash" if i % 10 == 3 else "/items/2"), step("/items/3")]} for i in range(80)]
+    out = drive(tmp_path, "plain", scenarios)
+    metrics = out["metrics"]
+    assert metrics["scenarios_matched"] == 72 and metrics["by_theme"] == {"crash": {"total": 8, "matched": 0}, "fine": {"total": 72, "matched": 72}}
+    assert metrics["restarts"] >= 8 and metrics["unfinished"] == 0 and not metrics["notes"]
+
+
 def test_set_id_bits_are_stripped_and_the_privilege_drop_sets_no_new_privs(tmp_path):
     """A set-user-id file in the submission would otherwise run as its owner, root, and could read the private answers."""
     probe = r"""
@@ -389,3 +520,13 @@ print(json.dumps({"before": before, "count": count, "after": after, "sandbox": r
     assert out["sandbox"][:1] == ["setpriv"] and "--no-new-privs" in out["sandbox"] and out["sandbox"][out["sandbox"].index("--reuid") + 1] == "nobody"
     assert out["dropped"] == [True, False, False, False, False]
 
+
+def test_the_replay_ends_well_inside_the_step_time_limit():
+    """The replay's own deadline leaves room to load the scenarios, cut the last requests and publish the reward."""
+    config = tomllib.loads((TASK / "task.toml").read_text())
+    limits = [config["verifier"]["timeout_sec"]] + [step["verifier"]["timeout_sec"] for step in config["steps"] if "timeout_sec" in step.get("verifier", {})]
+    probe = "import json, sys; sys.path.insert(0, sys.argv[1]); from verifier import replay as r; print(json.dumps([r.DEADLINE_SEC, r.START_SEC, r.REQUEST_SEC, r.HEALTH_SEC]))"
+    done = subprocess.run([sys.executable, "-I", "-B", "-c", probe, str(STEP / "tests")], capture_output=True, text=True, timeout=60)
+    assert done.returncode == 0, done.stderr[-2000:]
+    deadline, start, request, health = json.loads(done.stdout)
+    assert deadline + 300 <= min(limits) and start + request + health < deadline
