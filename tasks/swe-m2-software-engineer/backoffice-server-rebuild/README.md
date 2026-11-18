@@ -13,6 +13,19 @@ One step is implemented. See [Remaining work](#remaining-work).
 
 ## Development log
 
+### 2026-11-18 (after the version 2 audit)
+
+- Oddish source audit of version 2: one must-fix. The verifier wrote `{ws}` for the
+  candidate's workspace id by replacing it across the serialized JSON, so a valid server
+  whose ids are short (`1`, `a`) would have its answers corrupted, or crash the evaluation on
+  invalid JSON. Now only a string that is exactly the id, or the `/ws/<id>` segment of a
+  path, is rewritten (`normalise` in `verifier/replay.py`); a new check covers a one-character
+  id. One should-fix: no recorded request body is near the stated 6 MB limit; the media work
+  below adds large uploads and one just over the limit.
+- Next, before any further run (owner's rule: build it real first): real-world media in the
+  application (messy multi-page PDFs, large photos, long videos), new scenarios that upload
+  and inspect them, a re-recorded corpus.
+
 ### 2026-11-18 (re-cut uploaded)
 
 - The owner asked for no time budget in instructions: the completion section now keeps only

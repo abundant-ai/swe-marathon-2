@@ -174,3 +174,14 @@ def test_instruction_and_config_hold_no_session_or_grading_text():
     for name in ("Dockerfile", "start-sealed-server"):
         lines = (TASK / "environment" / name).read_text().splitlines()
         assert not any(line.startswith("#") for line in lines[1 if name != "Dockerfile" else 0:]), name
+
+
+def test_workspace_ids_are_rewritten_only_where_they_stand_alone():
+    """Any id the instruction allows, even one character long, must not corrupt an answer."""
+    probe = ("import json, sys; sys.path.insert(0, sys.argv[1]); from verifier.replay import normalise; "
+             "answer = {'workspace': '1', 'total': 1100, 'name': 'Plant 1', 'url': '/api/ws/1/files/F-1/content', "
+             "'list': ['1', 11, {'ws': '1'}], 'other': '/ws/12/x'}; print(json.dumps(normalise(answer, '1'), sort_keys=True))")
+    done = subprocess.run([sys.executable, "-I", "-B", "-c", probe, str(STEP / "tests")], capture_output=True, text=True, timeout=60)
+    assert done.returncode == 0, done.stderr[-2000:]
+    assert json.loads(done.stdout) == {"workspace": "{ws}", "total": 1100, "name": "Plant 1", "url": "/api/ws/{ws}/files/F-1/content",
+                                       "list": ["{ws}", 11, {"ws": "{ws}"}], "other": "/ws/12/x"}

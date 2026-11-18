@@ -151,6 +151,25 @@ def request(port: int, method: str, path: str, headers: dict[str, str], body: An
         connection.close()
 
 
+def normalise(value: Any, workspace: str) -> Any:
+    """The answer with this workspace's id written as {ws}.
+
+    Only a string that is exactly the id, and the `/ws/<id>` segment of a path, are rewritten;
+    nothing else is touched, so any id the instruction allows (even "1" or "a") is safe.
+    """
+    if isinstance(value, str):
+        if value == workspace:
+            return "{ws}"
+        if f"/ws/{workspace}" in value:
+            return re.sub(rf"/ws/{re.escape(workspace)}(?=[/?#]|$)", "/ws/{ws}", value)
+        return value
+    if isinstance(value, list):
+        return [normalise(item, workspace) for item in value]
+    if isinstance(value, dict):
+        return {key: normalise(item, workspace) for key, item in value.items()}
+    return value
+
+
 def encode_query(query: dict[str, str]) -> str:
     from urllib.parse import urlencode
 
@@ -176,7 +195,7 @@ def play(candidate: Candidate, scenario: dict[str, Any]) -> dict[str, Any]:
                                           headers, step["body"])
                 if status != step["status"]:
                     return {"id": scenario["id"], "matched": False, "failed_step": index, "reason": f"status {status}, expected {step['status']}"}
-                normal = json.loads(json.dumps(answer).replace(workspace, "{ws}")) if workspace in json.dumps(answer) else answer
+                normal = normalise(answer, workspace)
                 expected = step["json"]
                 if isinstance(expected, dict) and set(expected) == {"binary"}:
                     expected = {"binary": {key: value for key, value in expected["binary"].items() if key != "filename"}}
