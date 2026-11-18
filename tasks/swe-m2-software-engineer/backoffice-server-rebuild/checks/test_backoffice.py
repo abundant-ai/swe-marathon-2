@@ -211,15 +211,33 @@ def test_instruction_and_config_hold_no_session_or_grading_text():
         assert not any(line.startswith("#") for line in lines[1 if name != "Dockerfile" else 0:]), name
 
 
-def test_workspace_ids_are_rewritten_only_where_they_stand_alone():
-    """Any id the instruction allows, even one character long, must not corrupt an answer."""
-    probe = ("import json, sys; sys.path.insert(0, sys.argv[1]); from verifier.replay import normalise; "
-             "answer = {'workspace': '1', 'total': 1100, 'name': 'Plant 1', 'url': '/api/ws/1/files/F-1/content', "
-             "'list': ['1', 11, {'ws': '1'}], 'other': '/ws/12/x'}; print(json.dumps(normalise(answer, '1'), sort_keys=True))")
+def test_the_candidate_id_goes_where_the_recording_has_ws_and_types_must_match():
+    """The candidate's answer is compared as it is: its workspace id is put into the recorded answer where the recorder
+    wrote {ws}, so an id that is also a value elsewhere (QA 10 E9: id 1100 next to account code 1100) is no problem,
+    and `true` is not `1` and `100` is not `100.0` (E8)."""
+    probe = r"""
+import json, sys
+sys.path.insert(0, sys.argv[1])
+from verifier.replay import expand, same
+recorded = {"workspace": "{ws}", "code": "1100", "url": "/api/ws/{ws}/files/F-1/content", "list": ["{ws}", 11, {"{ws}": "x"}], "n": 1}
+answer = {"workspace": "1100", "code": "1100", "url": "/api/ws/1100/files/F-1/content", "list": ["1100", 11, {"1100": "x"}], "n": 1}
+checks = {
+    "expand": expand(recorded, "1100") == answer,
+    "e9": same(answer, recorded, "1100"),
+    "other id": same(dict(answer, workspace="ws_2"), recorded, "1100"),
+    "e8 bool": same({"active": 1}, {"active": True}, "w"),
+    "e8 float": same({"total": 100.0}, {"total": 100}, "w"),
+    "e8 int": same({"total": 100, "active": True}, {"total": 100, "active": True}, "w"),
+    "nested": same({"a": [{"b": 0}]}, {"a": [{"b": False}]}, "w"),
+    "binary": same({"binary": {"content_type": "image/png", "bytes": 3, "sha256": "ab"}},
+                   {"binary": {"content_type": "image/png", "bytes": 3, "sha256": "ab", "filename": "x.png"}}, "w"),
+}
+print(json.dumps(checks))
+"""
     done = subprocess.run([sys.executable, "-I", "-B", "-c", probe, str(STEP / "tests")], capture_output=True, text=True, timeout=60)
     assert done.returncode == 0, done.stderr[-2000:]
-    assert json.loads(done.stdout) == {"workspace": "{ws}", "total": 1100, "name": "Plant 1", "url": "/api/ws/{ws}/files/F-1/content",
-                                       "list": ["{ws}", 11, {"ws": "{ws}"}], "other": "/ws/12/x"}
+    assert json.loads(done.stdout) == {"expand": True, "e9": True, "other id": False, "e8 bool": False, "e8 float": False, "e8 int": True,
+                                       "nested": False, "binary": True}
 
 
 def test_replay_sends_files_and_sized_bodies_raw(tmp_path):

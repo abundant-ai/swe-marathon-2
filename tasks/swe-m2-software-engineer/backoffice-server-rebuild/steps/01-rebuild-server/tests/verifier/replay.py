@@ -300,23 +300,32 @@ class Media:
             return self.cache[name]
 
 
-def normalise(value: Any, workspace: str) -> Any:
-    """The answer with this workspace's id written as {ws}.
+def expand(value: Any, workspace: str) -> Any:
+    """The recorded answer with this workspace's id put back where the recorder wrote {ws}.
 
-    Only a string that is exactly the id, and the `/ws/<id>` segment of a path, are rewritten;
-    nothing else is touched, so any id the instruction allows (even "1" or "a") is safe.
+    The recorder wrote {ws} for the reference's own workspace id wherever it appeared in the answer
+    (a random `ws_` and 16 hex digits, so never by chance), and braces cannot occur in an id the
+    instruction allows. Putting the candidate's id back in the same places is the exact inverse; the
+    candidate's answer itself is never rewritten.
     """
     if isinstance(value, str):
-        if value == workspace:
-            return "{ws}"
-        if f"/ws/{workspace}" in value:
-            return re.sub(rf"/ws/{re.escape(workspace)}(?=[/?#]|$)", "/ws/{ws}", value)
-        return value
+        return value.replace("{ws}", workspace) if "{ws}" in value else value
     if isinstance(value, list):
-        return [normalise(item, workspace) for item in value]
+        return [expand(item, workspace) for item in value]
     if isinstance(value, dict):
-        return {key: normalise(item, workspace) for key, item in value.items()}
+        return {expand(key, workspace): expand(item, workspace) for key, item in value.items()}
     return value
+
+
+def identical(answer: Any, expected: Any) -> bool:
+    """Equal as JSON documents: the same types throughout, so `true` is not `1` and `100` is not `100.0`."""
+    if type(answer) is not type(expected):
+        return False
+    if isinstance(expected, dict):
+        return answer.keys() == expected.keys() and all(identical(answer[key], expected[key]) for key in expected)
+    if isinstance(expected, list):
+        return len(answer) == len(expected) and all(identical(a, e) for a, e in zip(answer, expected))
+    return answer == expected
 
 
 def same(answer: Any, expected: Any, workspace: str) -> bool:
@@ -324,7 +333,7 @@ def same(answer: Any, expected: Any, workspace: str) -> bool:
     if isinstance(expected, dict) and set(expected) == {"binary"}:
         expected = {"binary": {key: value for key, value in expected["binary"].items() if key != "filename"}}
     try:
-        return normalise(answer, workspace) == expected
+        return identical(answer, expand(expected, workspace))
     except RecursionError:  # nested deeper than any recorded answer
         return False
 
