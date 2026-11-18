@@ -38,6 +38,7 @@ the units it did not answer and nothing else.
 
 from __future__ import annotations
 
+import base64
 import contextlib
 import grp
 import gzip
@@ -83,7 +84,7 @@ HEALTH_SEC = 30  # how long a live server may leave its health check unanswered 
 STOP_SEC = 30  # how long a server stopped with SIGTERM may take to exit before it is killed
 START_FAILURES = 3  # starts in a row that never answer before the server is given up
 WORKERS = 8
-ANSWER_LIMIT = 16_000_000  # bytes read of one answer; the largest recorded file is about 3 MB
+ANSWER_LIMIT = 80 << 20  # bytes read of one answer, hashed as they arrive; the largest recorded file is under the 64 MiB upload limit
 JSON_LIMIT = 4_000_000  # a longer JSON answer is not parsed; the longest recorded one is about 65 KB
 WORKSPACE_ID = re.compile(r"[A-Za-z0-9_]{1,40}")
 NOT_JSON, TOO_LARGE = {"__not_json__": True}, {"__too_large__": True}
@@ -417,6 +418,23 @@ def closed_by_peer(sock: socket.socket) -> bool:
         return True
 
 
+def json_bytes(value: Any) -> bytes:
+    """A JSON request body, written as clients write it: UTF-8, not \\u escapes."""
+    return json.dumps(value, ensure_ascii=False).encode("utf-8")
+
+
+def inserted_body(step: dict[str, Any], data: bytes) -> bytes:
+    """A JSON body with a file's content in one of its fields, as base64 or as UTF-8 text.
+
+    Lets a body of megabytes (a photo sent as base64, a large CSV import) be recorded as a reference to
+    a file in the media folder instead of inside the scenarios; recorder and replay build the same bytes.
+    """
+    insert = step["body_insert"]
+    body = dict(step["body"])
+    body[insert["field"]] = base64.b64encode(data).decode("ascii") if insert["as"] == "base64" else data.decode("utf-8")
+    return json_bytes(body)
+
+
 def exchange(connection: http.client.HTTPConnection, method: str, path: str, headers: dict[str, str], body: Any,
              raw: bytes | None = None) -> tuple[int, Any]:
     """Send one request on an open connection and read the answer.
@@ -430,7 +448,7 @@ def exchange(connection: http.client.HTTPConnection, method: str, path: str, hea
     if raw is not None:
         payload: bytes | None = raw
     else:
-        payload = None if body is None else json.dumps(body).encode()
+        payload = None if body is None else json_bytes(body)
         if payload is not None:
             sent["Content-Type"] = "application/json"
     for second_try in (False, True):
@@ -457,21 +475,30 @@ def exchange(connection: http.client.HTTPConnection, method: str, path: str, hea
                 continue
             raise
         break
-    data = response.read(ANSWER_LIMIT + 1)
-    if len(data) <= ANSWER_LIMIT and response.length:
-        # the connection ended before the length the server announced: a cut answer is no answer (http.client does not raise)
-        raise http.client.IncompleteRead(data, response.length)
-    if refused_early or len(data) > ANSWER_LIMIT:
-        connection.close()  # the connection still holds the rest of the upload or of the answer
-    if len(data) > ANSWER_LIMIT:
-        return response.status, TOO_LARGE
+    # read in chunks: a file answer is hashed as it arrives, only a JSON answer is kept, so memory stays small
     kind = (response.getheader("Content-Type") or "").split(";")[0].strip().lower()
+    digest, kept, size = hashlib.sha256(), bytearray(), 0
+    while size <= ANSWER_LIMIT:
+        chunk = response.read(min(1 << 20, ANSWER_LIMIT + 1 - size))
+        if not chunk:
+            break
+        size += len(chunk)
+        digest.update(chunk)
+        if kind == "application/json" and len(kept) <= JSON_LIMIT:
+            kept += chunk
+    if size <= ANSWER_LIMIT and response.length:
+        # the connection ended before the length the server announced: a cut answer is no answer (http.client does not raise)
+        raise http.client.IncompleteRead(bytes(kept), response.length)
+    if refused_early or size > ANSWER_LIMIT:
+        connection.close()  # the connection still holds the rest of the upload or of the answer
+    if size > ANSWER_LIMIT:
+        return response.status, TOO_LARGE
     if kind != "application/json":
-        return response.status, {"binary": {"content_type": kind, "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()}}
-    if len(data) > JSON_LIMIT:
+        return response.status, {"binary": {"content_type": kind, "bytes": size, "sha256": digest.hexdigest()}}
+    if size > JSON_LIMIT:
         return response.status, TOO_LARGE
     try:
-        return response.status, json.loads(data.decode("utf-8"))
+        return response.status, json.loads(kept.decode("utf-8"))
     except (ValueError, UnicodeDecodeError, RecursionError, MemoryError):
         return response.status, NOT_JSON
 
@@ -493,10 +520,12 @@ class Media:
         self.folder, self.cache, self.lock = folder, {}, threading.Lock()
 
     def body(self, step: dict[str, Any]) -> bytes | None:
-        """The raw body a step sends: a named file, N zero bytes, or None for a JSON body."""
+        """The raw body a step sends: a named file, a JSON body built around a named file, N zero bytes, or None for a
+        JSON body the step holds."""
         if "body_size" in step:
             return bytes(int(step["body_size"]))
-        name = step.get("body_file")
+        insert = step.get("body_insert")
+        name = insert["file"] if insert else step.get("body_file")
         if name is None:
             return None
         with self.lock:
@@ -505,7 +534,8 @@ class Media:
                 if self.folder.resolve() not in path.parents or not path.is_file():
                     raise EvaluationError(f"a scenario names a missing upload: {name}")
                 self.cache[name] = path.read_bytes()
-            return self.cache[name]
+            data = self.cache[name]
+        return inserted_body(step, data) if insert else data
 
 
 def expand(value: Any, workspace: str) -> Any:

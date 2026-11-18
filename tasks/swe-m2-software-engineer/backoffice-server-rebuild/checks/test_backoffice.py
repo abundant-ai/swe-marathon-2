@@ -281,6 +281,8 @@ def test_replay_sends_files_and_sized_bodies_raw(tmp_path):
     """A step may upload a file from the media folder, or N zero bytes, as the raw request body."""
     (tmp_path / "media" / "video").mkdir(parents=True)
     (tmp_path / "media" / "video" / "clip.mp4").write_bytes(b"\x00\x00\x00\x18ftypisom" + b"x" * 100)
+    (tmp_path / "media" / "imports").mkdir()
+    (tmp_path / "media" / "imports" / "list.csv").write_text("name,region\nCafé Lumière 1,NORD\n", encoding="utf-8")
     probe = """
 import hashlib, http.client, json, sys, threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -298,6 +300,14 @@ class Echo(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(out)
 
+    def do_GET(self):  # a file answer larger than the old 16 MB read limit, sent in pieces
+        self.send_response(200)
+        self.send_header("Content-Type", "video/mp4")
+        self.send_header("Content-Length", str(40 * 1024 * 1024))
+        self.end_headers()
+        for _ in range(40):
+            self.wfile.write(bytes(range(256)) * 4096)
+
     def log_message(self, *args):
         pass
 
@@ -307,8 +317,15 @@ media = Media(Path(sys.argv[2]))
 connection = http.client.HTTPConnection("127.0.0.1", server.server_port)
 steps = [{"body_file": "video/clip.mp4", "headers": {"content-type": "video/mp4"}},
          {"body_size": 70000, "headers": {"content-type": "application/octet-stream"}},
-         {"body": {"a": 1}, "headers": {}}]
+         {"body": {"a": 1}, "headers": {}},
+         {"body": {"name": "Café.jpg"}, "body_insert": {"field": "content", "file": "video/clip.mp4", "as": "base64"},
+          "headers": {"content-type": "application/json"}},
+         {"body": {"dry_run": True}, "body_insert": {"field": "csv", "file": "imports/list.csv", "as": "text"},
+          "headers": {"content-type": "application/json"}}]
 out = [exchange(connection, "POST", "/x", step["headers"], step.get("body"), media.body(step)) for step in steps]
+expected = [hashlib.sha256(media.body(step)).hexdigest()[:8] for step in steps[3:]]
+built = [json.loads(media.body(step)) for step in steps[3:]]
+out.append({"expected": expected, "built": built, "big": exchange(connection, "GET", "/big", {}, None)})
 try:
     media.body({"body_file": "../escape.mp4"})
     out.append("no error")
@@ -319,10 +336,17 @@ print(json.dumps(out))
     done = subprocess.run([sys.executable, "-I", "-B", "-c", probe, str(STEP / "tests"), str(tmp_path / "media")],
                           capture_output=True, text=True, timeout=60)
     assert done.returncode == 0, done.stderr[-2000:]
-    first, sized, plain, escape = json.loads(done.stdout)
+    first, sized, plain, photo, csv, extra, escape = json.loads(done.stdout)
     assert first[0] == 201 and first[1]["type"] == "video/mp4" and first[1]["bytes"] == 112
     assert sized[0] == 201 and sized[1]["type"] == "application/octet-stream" and sized[1]["bytes"] == 70000
     assert plain[1]["type"] == "application/json" and escape == "refused"
+    # a JSON body built around a media file: base64 or UTF-8 text in the named field, sent as clients send JSON (UTF-8)
+    assert [photo[1]["sha"], csv[1]["sha"]] == extra["expected"] and photo[1]["type"] == csv[1]["type"] == "application/json"
+    assert extra["built"][0]["name"] == "Café.jpg" and base64.b64decode(extra["built"][0]["content"]).startswith(b"\x00\x00\x00\x18ftyp")
+    assert extra["built"][1] == {"dry_run": True, "csv": "name,region\nCafé Lumière 1,NORD\n"}
+    # a 40 MiB file answer is read in chunks and compared by type, length and SHA-256
+    big = bytes(range(256)) * 4096 * 40
+    assert extra["big"] == [200, {"binary": {"content_type": "video/mp4", "bytes": len(big), "sha256": hashlib.sha256(big).hexdigest()}}]
 
 
 def test_replay_reads_an_early_413_on_an_oversized_upload(tmp_path):
@@ -385,10 +409,15 @@ def test_the_upload_scan_finds_hidden_inputs_the_image_also_receives(tmp_path):
               "json": {"binary": {"content_type": "text/html", "bytes": len(page), "sha256": hashlib.sha256(page).hexdigest(), "filename": None}}}
     clean = {"method": "GET", "path": "/files/FILE-1/content", "query": {}, "headers": {}, "body": None, "status": 200,
              "json": {"binary": {"content_type": "image/jpeg", "bytes": 300, "sha256": hashlib.sha256(other).hexdigest(), "filename": None}}}
+    def inserted(name: str) -> dict:  # a media file put into a JSON body as base64 (a photo an integration sends)
+        return {"method": "POST", "path": "/files", "query": {}, "headers": {"content-type": "application/json"}, "body": {"name": "f"},
+                "body_insert": {"field": "content", "file": name, "as": "base64"}, "status": 201, "json": {}}
+
     corpus = {"recorded_with": {"seed": 1}, "scenarios": [
         {"id": "S1", "theme": "files", "steps": [upload(other), upload(sample)]},
         {"id": "S2", "theme": "files", "steps": [upload(sample[:150]), upload(sample[:10]), raw("photo/q.jpg"), clean]},
-        {"id": "S3", "theme": "media", "steps": [raw("photo/p.jpg"), answer, raw("photo/missing.jpg")]}]}
+        {"id": "S3", "theme": "media", "steps": [raw("photo/p.jpg"), answer, raw("photo/missing.jpg")]},
+        {"id": "S4", "theme": "trading", "steps": [inserted("photo/q.jpg"), inserted("photo/p.jpg")]}]}
     (private / "scenarios.json.gz").write_bytes(gzip.compress(json.dumps(corpus, indent=1).encode()))
     done = subprocess.run([sys.executable, "-I", "-B", str(TASK / "scripts" / "scan_uploads.py"), str(bundle)], capture_output=True, text=True,
                           timeout=60)
@@ -398,8 +427,10 @@ def test_the_upload_scan_finds_hidden_inputs_the_image_also_receives(tmp_path):
     assert found == [("S1", "base64 upload (equal)", "environment/samples/photo.jpg"),
                      ("S2", "base64 upload (prefix)", "environment/samples/photo.jpg"),
                      ("S3", "body_file upload (equal)", "environment/samples/photo.jpg"),
-                     ("S3", "file answer", "environment/client/index.html")]
-    assert report["scenarios"] == 3 and report["steps"] == 9 and len(report["missing"]) == 1 and report["file_answers"] == 2
+                     ("S3", "file answer", "environment/client/index.html"),
+                     ("S4", "body_insert upload (equal)", "environment/samples/photo.jpg")]
+    assert report["scenarios"] == 4 and report["steps"] == 11 and len(report["missing"]) == 1 and report["file_answers"] == 2
+    assert report["body_insert"] == 2
 
 
 def test_the_candidate_cannot_replace_the_delivery_directory():
