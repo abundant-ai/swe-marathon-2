@@ -1,8 +1,8 @@
 # Goose compiler rebuild
 
-Author notes. Nothing in this file is shipped to the candidate or to either image.
+Author notes. Nothing in this file is shipped to the agent or to either image.
 
-The candidate gets an execute-only copy of `goose`, the compiler of the Goose programming
+The agent gets an execute-only copy of `goose`, the compiler of the Goose programming
 language (github.com/aardappel/goose, Apache-2.0, first published 2026-08-30, pinned at
 `745901f`), with its documentation, its standard library's sources, its sample programs and
 example runs, and writes a compiler that prints the same output. It is a MirrorCode-style task
@@ -45,7 +45,7 @@ One step is implemented. See [Remaining work](#remaining-work).
 - Goose prints the absolute path of standard-library files in diagnostics and runtime errors,
   so the standard library sits at `/usr/local/share/goose/stdlib` in the agent image, the
   verifier image and every build (`-DGOOSE_STDLIB_PATH`), with none beside the binary. The
-  instruction tells the candidate where it is.
+  instruction tells the agent where it is.
 - The reference solution cannot read the execute-only program, so it ships the pinned build
   sources and builds the compiler in the agent container (`cmake`, `g++`), as the images do.
 - No local build: this Mac's swap was nearly full. Oddish baselines are the first build.
@@ -180,16 +180,114 @@ One step is implemented. See [Remaining work](#remaining-work).
 - Cases unchanged (private `cdc3a904`, visible `d3cb403c`). Preflight passes on bundle
   `5cb265da1a10`. Still not built.
 
+### 2026-11-19 (round 2, continued: QA passes 02, 04b, 05, 06b, 08, 09, 18)
+
+One regeneration (same seed) carries every case change below. Not built: no local Goose build.
+
+- **No C from the original (pass 08).** The patch also removes `goose build` (it leaves the
+  program's and the runtime's C on disk) and `-o`, `--standalone`, `--header`, `--emit-runtime`
+  and `--gen-runtime-header`. `smoke.sh` proves each refusal and that no `.c` file appeared; the
+  instruction lists them with the other differences from the documentation. No graded case used
+  them but the command-line case `run main.goose -o out.c`, which is gone.
+- **The agent's account is `dev` (pass 09).** It was `candidate`. Dockerfile, `task.toml` and
+  the checks, which also refuse the word in anything the agent sees.
+- **The original read from outside (pass 04b).** The shipped `goose` was dynamically linked: where
+  a sandbox runs a traced or plain exec without secure execution (gVisor is not proven either way),
+  the loader honours `LD_PRELOAD` and `LD_AUDIT` and an agent's library runs inside the compiler.
+  `common/hardening/build.sh`, now the one build of both images and the solution, links the
+  compiler static and stripped: no loader, so no preloading. The JIT does not need `dlsym` for it:
+  the compiler hands TinyCC every host symbol itself (`src/jit_runtime.c`, under `-nostdlib`), and
+  every standard-library extern binds to that table or to the runtime's own static C (checked
+  against the sources: all 53). Untried here: a static glibc link of the compiler itself. Where it
+  does not build or does not pass `smoke.sh`, `build.sh` builds the stripped dynamic link instead,
+  and `recording.json` says which (`link`). `solve.sh` ends with a non-scoring probe (`probe.c`,
+  built with `gcc`, run as `dev`) that writes the kernel, whether it is gVisor's, the compiler's
+  ids and `AT_SECURE` for a plain and a traced exec, whether an `LD_PRELOAD` constructor ran, and
+  whether `PTRACE_PEEKDATA` and `/proc/<pid>/mem` reads succeeded, to `/logs/agent/probe.txt`.
+- **`embed_file` (pass 04b).** It read any path at compile time in the compiler's process,
+  `/proc/self/maps` included. It now reads only a file under the directory of the file that embeds
+  it, checked on the file actually opened (its `/proc/self/fd` entry), so no absolute path, `..`,
+  link or swapped link leads out. `embed_shader` and shader files are refused (the shader compiler
+  would read them in-process; `gfx` is out of scope). `smoke.sh` proves all four.
+- **Nothing carried between cases (pass 06b).** Every run, recorded or graded, has new empty
+  `HOME` and `TMPDIR` directories besides its new workspace. Before and after every case the
+  verifier kills the sandbox user's processes, removes what it left in every world-writable
+  directory (found when the evaluation starts) and removes its System V IPC objects. A check runs
+  a submission that hides files in all of these and looks for them later.
+- **no_new_privs on gVisor (coordinator).** The status file may lack `NoNewPrivs`; a process started
+  as submitted code is now prints its status and then `prctl(PR_GET_NO_NEW_PRIVS)`, and either
+  source suffices. Neither still fails closed.
+- **Cases built for the recorder to vet (passes 02, 05, 06b, 18).** The generator emits, and the
+  recorder (`runcases.settle`, `select`) decides at build time, where the original is:
+  - run cases carry up to three edits of literals and printed words, never in an assert, a match,
+    an array size, a repeat count, an index or a shift, with the unedited program last; the
+    recorder keeps the first edit that ends as the unedited program does and prints something
+    else, else the unedited program, and drops the case where a program upstream expects to
+    complete does not. A check case on a program broken on purpose carries three breaking edits;
+    the first the original reports something for is kept;
+  - a recording run that ends by a signal, or with an internal-error, JIT, sanitizer or C++ abort
+    report on stderr, is a crash: the case is dropped, and more than 2% of them fails the build;
+  - then, by id: cases whose comments quote any case's answer (every diagnostic message, every
+    output line of 12 characters or more), `format -` input already formatted, any one (stdout,
+    exit code) answer beyond 1.2% of cases (the command line aside), check cases answering `[]`
+    beyond 5% of checks, and while more than 4.5% of cases can be answered with no compiler, one
+    such case at a time;
+  - `recording.json` reports each drop by reason, how cases were settled, the run answers equal to
+    upstream's expected file, the error cases whose messages are all (or some) upstream's text
+    verbatim, and four baselines: print nothing and exit 1, print nothing and exit 0, the
+    command-line table plus one constant answer per kind of case, and that plus a perfect formatter.
+- **Inputs people write (passes 02, 09).**
+  - Names: ordinary words, alone or two together, in the original's case (was `amber42`); never a
+    keyword; first the names an error or warning message mentions, so that more messages change;
+    in comments too.
+  - Format layouts: a style of the file's own (two-space indentation, tabs in about 4% of files,
+    operators written tight) or one to three slips (a line or block indented off, an operator or a
+    comma without its space, spaces inside brackets, a trailing comma left off, a column out of
+    line, a long line wrapped, trailing spaces, an extra blank line). No more random gaps, tabs or
+    nested block comments.
+  - Comments: the program's own, less those upstream's runner reads (`// error:`, `// warning:`,
+    `bce:`, run markers) and those quoting an answer upstream publishes for any program; otherwise
+    documentation lines, notes before statements (never before a closing bracket), trailing notes,
+    and in one file in ten an argument label (`f(/*count=*/3)`).
+  - `format --check` workspaces have files the recorder formats with the original first, next to
+    slipped ones: all, some or none formatted.
+- **Larger programs, every library module (passes 02, 18).** LangArena's benchmarks
+  (`bench/kostya`) join the pools: for each group of the suite's dispatch blocks, a main that runs
+  them once and prints the checksums, the harness replaced by a fixed configuration with no clock,
+  and the helper's C externs by `std`'s `format_flt`. 27 programs of 137 to 931 lines over csv,
+  base64, json, regex, dictionaries and slice pools; untried, so a glue error shows as cases
+  dropped for not completing. Programs are drawn by the square root of their size. The split is by
+  family (a test's name less its last word, a benchmark's first word, LangArena programs sharing a
+  module), adjusted so that three warning programs are visible and every library module has
+  programs on both sides.
+- **Fewer free answers (pass 05).** Format is 6.5% of cases (74 standard input, 9 `--check`
+  workspaces), rejected programs run with `--diagnostics json` but for 4 of 124, and the command
+  line has 19 cases, none an argument list the examples show or an alias of one.
+- **Instruction (pass 09).** The reason for the sandboxed build is now the product: snippets people
+  send, run in a playground, in CI and in an editor plugin. It adds the `embed_file` and
+  `embed_shader` limits, the new run conditions and why a run has 2 seconds.
+- **Counts (private 1,500; visible 300).** run 493, library 82, modules 130 (81 LangArena), check
+  569 (398 on error tests and warning programs, 171 broken on purpose), rejected 124, format 83,
+  command line 19; visible: run 88, library 24, modules 29, check 120, rejected 14, format 17,
+  command line 8. Programs behind the private cases: median 41 lines (was 18), 90th percentile
+  176, largest 931; 442 cases on programs of 80 lines or more. Private library use: base64 4,
+  binary 19, csv 5, dictionary 40, exception 35, json 12, mat 20, quat 13, regex 4 (csv and
+  base64 were 0). Runner markers in inputs 0, inputs starting with a blank line 0, block
+  comments 3 (labels), tab-indented lines 95 (whole tab-indented files); names ending in a number
+  are upstream's own (`step1`). Cases with no change at all: 8. Private cases `ed4aa112`, visible
+  `86b96475` (sha1 of the bundle's copies).
+- Preflight passes on bundle `9c510edafcec`.
+
 ## Current implementation
 
 | Part | State |
 | --- | --- |
 | Step `01-rebuild-compiler` | Implemented: instruction, agent image with the execute-only compiler, separate verifier image, reference solution. |
 | Further steps | Not designed. Candidates: the next upstream commits from their changelog; `goose build` with an external C compiler. |
-| Hardening | `common/hardening/`: the patch, `apply.sh` (before each build) and `smoke.sh` (after it), staged by packaging into both images' build contexts and the solution. |
+| Hardening | `common/hardening/`: the patch, `apply.sh` (before each build), `build.sh` (the build: static link first, `smoke.sh` on the result), staged by packaging into both images' build contexts and the solution. |
 | Private inputs | `steps/01-rebuild-compiler/tests/private/cases.json` and `experiment/visible.json`, Git-ignored, from `scripts/make_cases.py`. Outputs are recorded when the images are built; `recording.json` beside them describes the recording and appears in `metrics.json`. |
 | Upstream source | Not in Git. Packaging stages the build sources less `stdlib/os.goose` and `stdlib/ffi.goose` (into both images and the solution) and the documentation and samples (into the agent image) from a checkout at the pinned commit. |
-| Oracle | The original compiler, built by `solve.sh` from the shipped sources with the images' hardening and flags. |
+| Oracle | The original compiler, built by `solve.sh` from the shipped sources with the images' hardening and `build.sh`; then a non-scoring sandbox probe (`probe.c`) writes `/logs/agent/probe.txt`. |
 | Ratings (`harbor check`) | Not run. |
 
 ## Design dimensions
@@ -206,7 +304,7 @@ documentation.
 ### Verifiability
 
 Standard output and exit code are compared exactly; every kept case printed the same output
-twice from the original. Partial progress is the share of cases that match.
+twice from the original, without crashing. Partial progress is the share of cases that match.
 
 ### Realism
 
@@ -214,8 +312,9 @@ A clean-room implementation, written from the manual and the released binary by 
 not read the source, is how compatible second implementations are made (Wine, Samba, the PC
 BIOS). The exact bar has real consumers: golden files recorded from the compiler and editor
 tooling that parses its JSON diagnostics. The documentation, samples and standard library are
-the upstream's own; cases include programs that do not compile, programs over several files,
-the standard library's Goose modules and commented code to format.
+the upstream's own; cases include programs that do not compile, programs over several files
+(LangArena's benchmarks among them), every standard-library module written in Goose, and code to
+format laid out the way people leave it.
 
 ### Difficulty
 
@@ -227,6 +326,12 @@ it replaces was 12,000 lines; this target is about 75,000 lines of C++, of which
 analysis. The upstream compiler was written with AI in the image of its author's Lobster; that
 lends architecture, not the graded behaviour. QA passes 17 and 19 expect 0.25 to 0.55 for a
 strong model in one session. Not yet measured with a model.
+
+Floors without an implementation, by design (`recording.json` measures them at each build): a
+table of the command line's answers plus one constant answer per kind of case passes at most
+4.5%, enforced by the recorder; that plus a perfect formatter about 10% (format is 6.5% of
+cases); printing nothing and exiting 1 at most 1.2% plus the silent command-line cases. QA pass 05
+measured 16 to 19% and 27% for the previous cases.
 
 ### Initial feasibility
 
@@ -244,11 +349,12 @@ instruction states no time budget.
    limits, and a set-id root copy of `id` that must report `nobody`), then seals `/app/rebuild`:
    root-owned, read-only for anyone else, no set-id bits. Any failure of either is an evaluation
    error, before submitted code runs.
-3. Before each case it kills every process of `nobody`, removes what `nobody` left in `/tmp`,
-   `/var/tmp` and `/dev/shm`, and writes the case's files into a new `/tmp/goose-case`, owned by
-   `nobody`. `/app/rebuild/goose` runs there as `nobody` with no_new_privs, the case's arguments
-   and standard input, no network, the recorder's resource limits, 2 seconds, and at most
-   1,000,000 bytes of output.
+3. Before each case it kills every process of `nobody`, removes what `nobody` left in every
+   world-writable directory and its System V IPC objects, and writes the case's files into a new
+   `/tmp/goose-case`, owned by `nobody`, with new empty `HOME` and `TMPDIR` directories.
+   `/app/rebuild/goose` runs there as `nobody` with no_new_privs, the case's arguments and
+   standard input, no network, the recorder's resource limits, 2 seconds, and at most 1,000,000
+   bytes of output.
 4. A case passes when the exit code and the bytes of standard output equal the recorded ones. A
    case that cannot be set up or started, runs too long or prints too much fails; none of that is
    an evaluation error.
@@ -268,33 +374,29 @@ reward = cases_passed / cases_kept
   submission cannot be sealed, private inputs unreadable) leaves no reward file.
 - One step; `multi_step_reward_strategy = "final"`.
 - Implementation: `tests/verify.py` and `tests/verifier/runcases.py`; `tests/verifier/recording.py`
-  describes the recording (cases kept by kind, cases left out as slow or unsteady, run times,
-  run cases that print upstream's expected file, cases a program that prints nothing would pass)
-  for `metrics.json`.
-- Floor: an `exit 1` script passes at least 46 of 1,500 private cases (3.1%); see the log entry
-  of the second 2026-11-19 round for the rest.
+  describes the recording (cases kept by kind, cases left out and why, how each was settled, run
+  times, answers still upstream's, the four baselines, the link) for `metrics.json`.
+- Floor: see Difficulty; measured in `recording.json` (`baselines`) at each build.
 
 ## Hackability assessment
 
-Highest unresolved severity: 🟡 YELLOW / UNASSESSED (findings 1, 2, 3, 5, 10).
+Highest unresolved severity: 🟡 YELLOW / UNASSESSED (findings 1, 2, 3, 5, 10, 12).
 
 | # | Attack and impact | Boundary | Evidence | Mitigation | Residual risk | Next validation | Severity |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | Read, copy, trace or dump the compiler from outside its process | File mode and group of the program in the agent image | QA pass 04, finding 2 (reasoned, not run) | `/opt/goose/goose` is `root:goose`, mode 2711: execute-only and setgid, so secure execution ignores `LD_PRELOAD` and the process is not dumpable | A traced exec drops the gid; Linux still makes a process that runs a file it cannot read non-dumpable, but the sandbox runtime on Oddish was not tried | Probe as `candidate` on Oddish | 🟡 YELLOW / UNASSESSED |
-| 2 | Read the compiler from inside its process: `goose run` compiles the program into the compiler with TinyCC | Hardened build (`common/hardening/`) | QA pass 04, finding 1 (a 20-line program printed the code through `ffi`, `os` and a user `extern`); four further ways in found by the audit | No `os` or `ffi` module; `extern` only in the installed standard library; no `-D`, `--include`, `--stdlib`, `GOOSE_STDLIB` or `GOOSE_TCCLIB`; no sidecars; no unsound option. `smoke.sh` proves each refusal at every build of both images and of the solution; the remaining standard-library externs read nothing outside their arguments (audited) | A memory-safety bug in the compiler, its runtime or TinyCC; `embed_file` still reads, at compile time, any file the candidate can read anyway (the binary is not one) | The first build's smoke test, then pass 04's programs run as `candidate` on Oddish | 🟡 YELLOW / UNASSESSED |
-| 3 | Run as root, or as a user who can read the program | `[agent] user` on Oddish | Not tested on this task | `user = "candidate"` | Depends on each harness | Short trial that prints `id` | 🟡 YELLOW / UNASSESSED |
+| 1 | Read, copy, trace or dump the compiler from outside its process, or preload a library into it | File mode and group of the program; its link | QA passes 04 (finding 2) and 04b (findings A, B: a dynamic binary honours `LD_PRELOAD` where an exec is not secure; gVisor unknown) | `/opt/goose/goose` is `root:goose`, mode 2711: execute-only and setgid, so the process is not dumpable; `build.sh` links it static and stripped, so no loader runs at all (dynamic and stripped where the static link fails; `recording.json` says which) | Gid dropped on a traced exec and the sandbox's handling of both, unmeasured; a dynamic fallback | `/logs/agent/probe.txt` of the first oracle trial | 🟡 YELLOW / UNASSESSED |
+| 2 | Read the compiler from inside its process: `goose run` compiles the program into the compiler with TinyCC; or have it write its C | Hardened build (`common/hardening/`) | QA pass 04, finding 1 (a 20-line program printed the code through `ffi`, `os` and a user `extern`); four further ways in found by the audit; passes 04b (`embed_file("/proc/self/maps")`) and 08 (`--emit-runtime`, `-o`, `goose build` print or leave C) | No `os` or `ffi` module; `extern` only in the installed standard library; no `-D`, `--include`, `--stdlib`, `GOOSE_STDLIB` or `GOOSE_TCCLIB`; no sidecars; no unsound option; nothing writes C; `embed_file` only under the embedding file's directory, checked on the opened file; no shaders. `smoke.sh` proves each refusal at every build of both images and of the solution; the remaining standard-library externs read nothing outside their arguments (audited) | A memory-safety bug in the compiler, its runtime or TinyCC | The first build's smoke test, then pass 04's programs run as `dev` on Oddish | 🟡 YELLOW / UNASSESSED |
+| 3 | Run as root, or as a user who can read the program | `[agent] user` on Oddish | Not tested on this task | `user = "dev"` | Depends on each harness | Short trial that prints `id` (the probe prints it) | 🟡 YELLOW / UNASSESSED |
 | 4 | Deliver a wrapper that calls the original | Separate verifier image | By design | The final verifier image holds no copy of the compiler | None found | Keep | 🟢 GREEN / LOW |
 | 5 | Fetch the public source | Agent network policy | Not probed on this task | `network_mode = "no-network"` for the agent; the source is not in the agent image | The repository is public; a harness with network access would defeat the task | Probe from a trial | 🟡 YELLOW / UNASSESSED |
 | 6 | Lookup table over the visible cases or the shipped programs | Private cases | QA pass 06 (229 cases on shipped programs, one private test printed in a design note); by check since | No private case is built on a shipped program or a variant of one; a private program that a shipped file holds or that equals a visible program is left out; the generator and packaging refuse a private case whose input a shipped file or a visible case holds (checked) | Upstream tests that differ from a visible one by a few tokens (pass 06, note 4) | Keep | 🟢 GREEN / LOW |
-| 7 | Read expected output or errors out of the case files, across cases | Case generation | By check | No run or check input has a comment (the tests write expected errors and outputs in comments). Format inputs carry the program's own comments only where no other case is built on that program, since a submission could keep notes between cases in `/tmp`; otherwise neutral ones (checked) | A comment that reveals another program's answer | Read trajectories | 🟢 GREEN / LOW |
-| 8 | Recall upstream's published answers (tests beside their expected files) | Case generation | QA pass 19, finding 2 (39.5% of cases were upstream tests unchanged) | Every case renamed, moved or edited so its answer differs; 6 private cases unchanged; about 45 run cases (3%) estimated to still print upstream's expected file, counted exactly by `recording.py` at build | A model that recalls a test and also runs it correctly; that is the work | Read `recording` in the first baseline's `metrics.json` | 🟢 GREEN / LOW |
+| 7 | Read expected output or errors out of the case files, across cases | Case generation, recording and the verifier | QA pass 06b, finding 3 (format inputs quoted the exact message of 96 graded cases) | No run or check input has a comment. Format inputs carry the program's own comments only where no other case is built on its family, less runner markers and any comment quoting an answer upstream publishes; the recorder drops any case whose comments quote any recorded answer. Nothing a run writes reaches the next: new workspace, `HOME` and `TMPDIR`, every writable directory swept, IPC removed (checked) | Short numeric output quoted in a program's own comment, harmless where no other case uses the program | Read `dropped` in `recording.json` | 🟢 GREEN / LOW |
+| 8 | Recall upstream's published answers (tests beside their expected files) | Case generation and recording | QA passes 19 (39.5% of cases were upstream tests unchanged) and 06b (at least 45 run answers and 314 error messages still upstream's) | Cases are renamed, moved or edited, run cases preferring an edit whose output differs, error tests renaming first the names their messages mention; `recording.json` counts exactly the run answers equal to upstream's file and the error cases whose messages are upstream's text verbatim | Message text stays upstream's where no renamed name is in it: exact wording is the owner's choice (pass 01, F1). Goose was published after the training data of current models; recall becomes a risk for models trained later | Read `recording` in the first baseline's `metrics.json`; re-check before models trained after 2026-08-30 | 🟢 GREEN / LOW |
 | 9 | Tamper with the reward files, or suppress them by forcing an evaluation error | Separate verifier container | QA pass 10 (a symlinked workspace forced an evaluation error) | Verifier starts fresh with only `/app/rebuild`; the submission runs as `nobody`; the workspace is replaced without following links; a case that cannot be set up or started, runs too long or prints too much fails that case; `nobody`'s processes are killed and its files removed before every case and before the results are written; its runs hold the out-of-memory killer's first claim and the verifier none (checked) | Exhausting the disk within one case faster than the per-case cleanup | Keep | 🟢 GREEN / LOW |
-| 11 | Run as root in the verifier through a set-user-id or capable file in the submission, then read the recorded answers | Privilege drop and sealing | QA pass 10, F6, and the backoffice task's QA (a submitted file can arrive set-user-id root on Oddish's Docker backend) | The submission is sealed root-owned without set-id bits before anything runs; `setpriv --no-new-privs` keeps any file from adding privileges; a process started that way must show no_new_privs, the unprivileged ids, no groups and no capabilities, and a set-id root copy of `id` must report `nobody`, or nothing is graded (checked: sealing and the refusals) | A kernel or runtime that ignores no_new_privs; the run-time probe then refuses to grade | First baseline's verifier log | 🟢 GREEN / LOW |
 | 10 | Infer an evaluation from the files and text | Instruction and example files | Lesson from `markdown-linter-rebuild` | Neutral runner text; no reference, grading, session or time wording (checked) | An agent can still guess that more cases exist | Read the first trajectories | 🟡 YELLOW / UNASSESSED |
-
-The original also prints the C of its own runtime and of any program (`--emit-runtime`, `-o`),
-as upstream documents. That shows how programs are lowered and how values print, not the
-parser, checker or formatter; a candidate may use it like any other output of the original.
+| 11 | Run as root in the verifier through a set-user-id or capable file in the submission, then read the recorded answers | Privilege drop and sealing | QA pass 10, F6, and the backoffice task's QA (a submitted file can arrive set-user-id root on Oddish's Docker backend) | The submission is sealed root-owned without set-id bits before anything runs; `setpriv --no-new-privs` keeps any file from adding privileges; a process started that way must show no_new_privs (in its status file or by `prctl`), the unprivileged ids, no groups and no capabilities, and a set-id root copy of `id` must report `nobody`, or nothing is graded (checked: sealing and the refusals) | A kernel or runtime that ignores no_new_privs; the run-time probe then refuses to grade | First baseline's verifier log | 🟢 GREEN / LOW |
+| 12 | Pass cases with no compiler: the command line's answers, constant answers, a whitespace detector for `format --check`, a formatter clone | Case mix and the recorder's selection | QA pass 05 (16 to 19% with no implementation, about 27% with a formatter clone, on the previous cases) | Rejected programs answer in JSON; edits that leave a check clean or a run silent are passed over; any one answer is capped at 1.2% of cases and `[]` at 5% of checks; the recorder drops cases until a table plus constants passes at most 4.5%; format is 6.5% of cases and `--check` 9 workspaces with formatted and slipped files mixed; `recording.json` measures four baselines (checked: selection and baselines) | A formatter clone is legitimate work, worth about 5.5% | Read `baselines` in the first baseline's `metrics.json` | 🟡 YELLOW / UNASSESSED |
+| 13 | A crash of the original graded as an answer no implementation can give | Recording | QA pass 18, F2 | A recording run that ends by a signal or with an internal-error, JIT, sanitizer or C++ abort report is dropped; more than 2% fail the build (checked) | None found | Read `dropped_crashed` | 🟢 GREEN / LOW |
 
 Licence: the upstream is Apache-2.0. Its `LICENSE` is shipped with the documentation in
 `/app/docs` and with the reference solution's build.
@@ -303,10 +405,11 @@ Licence: the upstream is Apache-2.0. Its `LICENSE` is shipped with the documenta
 
 | Check | Revision | Result |
 | --- | --- | --- |
-| `checks/` (20 tests) with `ci_checks` (27), Python 3.13, and `check_repository.py` | working tree, 2026-11-19, round 2 | pass |
-| Oddish preflight | bundles `ca4309ce85fc`, `19c1c91c58fc`; `f98273d8a455` (hardened build, new cases); `5cb265da1a10` (verifier round 2) | pass |
-| Hardened build | bundle `5cb265da1a10` | not built yet: `apply.sh` tested on a pristine copy of `src/` (applies once, refuses twice), `smoke.sh` tested against stand-ins that do and do not refuse |
-| Privilege drop | bundle `5cb265da1a10` | not run as root yet: sealing and the refusal of a weak drop are checked; the drop itself, the status check and the set-id probe first run in the first baseline |
+| `checks/` (27 tests) with `ci_checks` (27), Python 3.13, and `check_repository.py` | working tree, 2026-11-19, round 2 continued | pass |
+| Oddish preflight | bundles `ca4309ce85fc`, `19c1c91c58fc`; `f98273d8a455` (hardened build, new cases); `5cb265da1a10` (verifier round 2); `9c510edafcec` (round 2 continued) | pass |
+| Hardened build | bundle `9c510edafcec` | not built yet: `apply.sh` tested on a pristine copy of the six patched files (applies once, refuses twice), `smoke.sh` tested against stand-ins that do and do not refuse; the static link and the LangArena glue are untried |
+| Privilege drop | bundle `9c510edafcec` | not run as root yet: sealing, the refusal of a weak drop, the `prctl` fallback and the cleanup between cases are checked; the drop itself first runs in the first baseline |
+| Recorder selection | bundle `9c510edafcec` | checked against a stand-in compiler (settling, crashes, drops, baselines); first run on the original at the first build |
 | Oddish baselines, version 1 | bundle `ca4309ce85fc` (earlier generator), task `...goose-compiler-rebuild-9979b548`, experiment `goose-compiler-rebuild-20261118` (https://www.oddish.app/experiments/4b947cc6), one row | reference 1.0 twice (1,500 of 1,500: the recording kept every case), no-op 0.0 twice. First build of both images and of the solution's compiler; Archil, no fault |
 | Oddish baselines, version 2 | bundle `19c1c91c58fc` (current generator), same task, experiment `goose-compiler-rebuild-v2-20261118` (https://www.oddish.app/experiments/f14b3da8), one row | reference 1.0 twice (1,500 of 1,500), no-op 0.0 twice |
 | Oddish source audit, version 2 | trial 13 | no must-fix finding. Two should-fix: upstream's `docs/implementation.md` says an equivalent implementation need not reproduce diagnostic wording, while the JSON diagnostics are compared exactly (answered in the instruction since); the example outputs are recorded at build time and cannot be inspected in the package (kept: the original must produce them) |
@@ -327,13 +430,16 @@ solution, and every build runs `apply.sh` before `cmake` and `smoke.sh` after it
 
 ## Remaining work
 
-- Baselines of the current bundle under a new experiment (one row): the first build of the
-  hardened compiler, whose smoke test must pass in both images and in the solution, and the
-  first run of the privilege checks as root. Read `recording` in the reference run's
-  `metrics.json` (cases kept by kind, slow and unsteady drops, run times, run cases that still
-  print upstream's expected file, the exact floor) and `limits`. Then the platform's source
-  audit. Model trials wait for the owner.
-- Probe findings 1, 2, 3, 5 and 10 from a trial; run pass 04's programs as `candidate`.
+- Baselines of the current bundle under the task's experiment (one row): the first build of the
+  hardened compiler (static or dynamic: `link`), whose smoke test must pass in both images and in
+  the solution, and the first run of the privilege checks as root. Read `recording` in the
+  reference run's `metrics.json`: drops by reason (LangArena cases dropped for not completing
+  mean a glue error), crashes, how cases were settled, answers still upstream's, the four
+  baselines; and `limits`. Read `/logs/agent/probe.txt`. Then the platform's source audit. Model
+  trials wait for the owner.
+- Probe findings 1, 2, 3, 5 and 10 from a trial; run pass 04's programs as `dev`.
+- Not done from pass 02: splitting single-file programs into modules with other root paths (F5),
+  comments in run and check inputs (F6), edits that make type errors (F7).
 - Open: a deterministic subset of `os` (standard input, arguments, files in the workspace) would
   bring input-reading programs back without `ffi` (pass 01, F4); the exact diagnostics bar is the
   owner's call (pass 01, F1).
