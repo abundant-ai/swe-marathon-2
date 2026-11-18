@@ -129,6 +129,57 @@ One step is implemented. See [Remaining work](#remaining-work).
 - Not built or uploaded: no local Goose build on this Mac. Oddish preflight passes on bundle
   `f98273d8a455`. The first baselines are also the first proof that the patch builds.
 
+### 2026-11-19 (round 2: the rest of QA pass 10)
+
+- **A set-id file could run as root (F6, must-fix).** The backoffice task's QA found that on
+  Oddish's Docker backend a submitted file can arrive set-user-id root. Before any submitted code
+  runs, the verifier now:
+  - seals `/app/rebuild` in place: root-owned, no set-id or sticky bit, executables 0755, other
+    files 0644, directories 0755, links left as they are, devices, pipes and sockets removed. It
+    stays where it is, since a submission may name its own files by absolute path, and it cannot
+    rewrite itself between cases;
+  - runs submitted code through `setpriv --reuid nobody --regid nogroup --clear-groups
+    --no-new-privs`, and fails closed (no reward file) unless a process started exactly that
+    way shows `NoNewPrivs: 1`, the unprivileged user and group in all four ids, no
+    supplementary group, no permitted, effective or ambient capability, and the process, file
+    size and core limits;
+  - copies `id(1)` beside the submission as a set-user-id and set-group-id root file, runs it
+    the same way and fails closed unless it reports `nobody` and `nogroup`: a set-id file gains
+    nothing.
+- **Resource limits (F6, F8).** Every run, at recording, in the examples runner and in grading,
+  starts with the same limits: an 8 MB stack (`goose run` runs programs on the main thread, so the
+  deep-recursion cases end at the same depth everywhere), 512 processes (only where root starts
+  the run), 256 MB files, no core files, and 256 GB of writable mappings. The data bound is high
+  on purpose: the original reserves 2 GB of address space per data stack (`MAP_NORESERVE`, which
+  `RLIMIT_DATA` counts) and silently takes smaller stacks when refused. Memory is guarded instead
+  by priority: the verifier sets its own `oom_score_adj` to -1000 and every run's to 1000.
+- **Run times (F4).** The recorder times both runs of each case and keeps only those that finish
+  in at most 0.5 seconds both times, a quarter of the limit; `recording.json` gives the cases
+  left out as slow or unsteady, by kind, and the kept runs' maximum, 99th percentile and total.
+  The recording fails if more than 15% of cases are unsteady or fewer than 60% are kept.
+- **Bytes (F7).** Standard output is compared byte for byte (two different invalid bytes no
+  longer compare equal); the recorded file holds it as text with surrogate escapes. More than
+  1,000,000 bytes fails a run.
+- **Run conditions in the instruction (F5).** It now says, as behaviour: an unprivileged user that
+  cannot write to `/app/rebuild`, a new working directory under `/tmp` holding only the run's
+  files, `HOME` at `/tmp` with nothing left there from earlier runs, and the same resource
+  limits as `run_examples.py`. The verifier makes that true: before each case it kills the user's
+  processes and removes what the user left in `/tmp`, `/var/tmp` and `/dev/shm`.
+- **Metrics (F10).** `metrics.json` gives cases run, passed and failed overall and by kind,
+  timeouts, outputs over the limit, setup errors, the total and longest run time, why it stopped
+  (if it did), the limits the sandbox has, and the recording's description.
+- **Trivial floor (F9).** A one-line `exit 1` script passes at least 46 of the 1,500 private cases
+  (3.1%): 13 command-line errors and 33 runs of programs that do not compile without
+  `--diagnostics json`. `exit 2` passes at least 1 (`format --check` of a missing file). Printing
+  nothing with exit 0 passes an unknown number (programs that print nothing, `format --check` over
+  files that need nothing). The exact counts, after the recording's drops, are
+  `empty_stdout_by_exit` in `recording.json`, which the first baseline's `metrics.json` carries.
+- **Smoke test.** Its positive program now checks `popcount(255) == 8` and `sqrt(16.0) == 4.0` with
+  `assert` and prints one word; the build compares only the exit status and that word. Upstream
+  confirms the old format anyway (`test/stdlib/stdlib_bits.goose:12` prints `true true true`).
+- Cases unchanged (private `cdc3a904`, visible `d3cb403c`). Preflight passes on bundle
+  `5cb265da1a10`. Still not built.
+
 ## Current implementation
 
 | Part | State |
@@ -189,16 +240,21 @@ instruction states no time budget.
 ## Verification
 
 1. `/app/rebuild` arrives as the declared artifact.
-2. Before each case the verifier kills every process of `nobody`, removes whatever is at
-   `/tmp/goose-case` without following a link, and writes the case's files into a new
-   directory there, owned by `nobody`. `/app/rebuild/goose` runs in it as `nobody` with the
-   case's arguments and standard input, no network, 2 seconds, and at most 4 MB of output read.
-3. A case passes when the exit code and standard output equal the recorded ones. A case that
-   cannot be set up or started, runs too long or prints too much fails; none of that is an
-   evaluation error.
-4. After 3,300 seconds of runs in all the verifier stops, and the rest count as failed (1,500
-   runs at the 2-second limit take about 3,000). At the end it removes what `nobody` left in the
-   temporary directories, then writes the results.
+2. The verifier checks the unprivileged run first (no_new_privs, ids, groups, capabilities,
+   limits, and a set-id root copy of `id` that must report `nobody`), then seals `/app/rebuild`:
+   root-owned, read-only for anyone else, no set-id bits. Any failure of either is an evaluation
+   error, before submitted code runs.
+3. Before each case it kills every process of `nobody`, removes what `nobody` left in `/tmp`,
+   `/var/tmp` and `/dev/shm`, and writes the case's files into a new `/tmp/goose-case`, owned by
+   `nobody`. `/app/rebuild/goose` runs there as `nobody` with no_new_privs, the case's arguments
+   and standard input, no network, the recorder's resource limits, 2 seconds, and at most
+   1,000,000 bytes of output.
+4. A case passes when the exit code and the bytes of standard output equal the recorded ones. A
+   case that cannot be set up or started, runs too long or prints too much fails; none of that is
+   an evaluation error.
+5. After 3,300 seconds of runs in all the verifier stops, and the rest count as failed (1,500
+   runs at the 2-second limit take about 3,000; every kept case took at most 0.5 seconds when
+   recorded). At the end it cleans up after `nobody` again, then writes the results.
 
 ### Reward formula
 
@@ -208,12 +264,15 @@ reward = cases_passed / cases_kept
 
 - Continuous, fixed denominator per image build (the private cases kept by the recording).
   No executable: reward 0.
-- An evaluation error (not root, privileges cannot be dropped, private inputs unreadable)
-  leaves no reward file.
+- An evaluation error (not root, privileges cannot be dropped or the drop does not hold, the
+  submission cannot be sealed, private inputs unreadable) leaves no reward file.
 - One step; `multi_step_reward_strategy = "final"`.
 - Implementation: `tests/verify.py` and `tests/verifier/runcases.py`; `tests/verifier/recording.py`
-  describes the recording (cases kept by kind, run cases that print upstream's expected file,
-  cases a program that prints nothing would pass) for `metrics.json`.
+  describes the recording (cases kept by kind, cases left out as slow or unsteady, run times,
+  run cases that print upstream's expected file, cases a program that prints nothing would pass)
+  for `metrics.json`.
+- Floor: an `exit 1` script passes at least 46 of 1,500 private cases (3.1%); see the log entry
+  of the second 2026-11-19 round for the rest.
 
 ## Hackability assessment
 
@@ -229,7 +288,8 @@ Highest unresolved severity: 🟡 YELLOW / UNASSESSED (findings 1, 2, 3, 5, 10).
 | 6 | Lookup table over the visible cases or the shipped programs | Private cases | QA pass 06 (229 cases on shipped programs, one private test printed in a design note); by check since | No private case is built on a shipped program or a variant of one; a private program that a shipped file holds or that equals a visible program is left out; the generator and packaging refuse a private case whose input a shipped file or a visible case holds (checked) | Upstream tests that differ from a visible one by a few tokens (pass 06, note 4) | Keep | 🟢 GREEN / LOW |
 | 7 | Read expected output or errors out of the case files, across cases | Case generation | By check | No run or check input has a comment (the tests write expected errors and outputs in comments). Format inputs carry the program's own comments only where no other case is built on that program, since a submission could keep notes between cases in `/tmp`; otherwise neutral ones (checked) | A comment that reveals another program's answer | Read trajectories | 🟢 GREEN / LOW |
 | 8 | Recall upstream's published answers (tests beside their expected files) | Case generation | QA pass 19, finding 2 (39.5% of cases were upstream tests unchanged) | Every case renamed, moved or edited so its answer differs; 6 private cases unchanged; about 45 run cases (3%) estimated to still print upstream's expected file, counted exactly by `recording.py` at build | A model that recalls a test and also runs it correctly; that is the work | Read `recording` in the first baseline's `metrics.json` | 🟢 GREEN / LOW |
-| 9 | Tamper with the reward files, or suppress them by forcing an evaluation error | Separate verifier container | QA pass 10 (a symlinked workspace forced an evaluation error) | Verifier starts fresh with only `/app/rebuild`; the submission runs as `nobody`; the workspace is replaced without following links; a case that cannot be set up or started, runs too long or prints too much fails that case; `nobody`'s processes are killed between cases and its files removed before the results are written (checked) | Exhausting memory or disk in ways the cleanup cannot undo in time | Keep | 🟢 GREEN / LOW |
+| 9 | Tamper with the reward files, or suppress them by forcing an evaluation error | Separate verifier container | QA pass 10 (a symlinked workspace forced an evaluation error) | Verifier starts fresh with only `/app/rebuild`; the submission runs as `nobody`; the workspace is replaced without following links; a case that cannot be set up or started, runs too long or prints too much fails that case; `nobody`'s processes are killed and its files removed before every case and before the results are written; its runs hold the out-of-memory killer's first claim and the verifier none (checked) | Exhausting the disk within one case faster than the per-case cleanup | Keep | 🟢 GREEN / LOW |
+| 11 | Run as root in the verifier through a set-user-id or capable file in the submission, then read the recorded answers | Privilege drop and sealing | QA pass 10, F6, and the backoffice task's QA (a submitted file can arrive set-user-id root on Oddish's Docker backend) | The submission is sealed root-owned without set-id bits before anything runs; `setpriv --no-new-privs` keeps any file from adding privileges; a process started that way must show no_new_privs, the unprivileged ids, no groups and no capabilities, and a set-id root copy of `id` must report `nobody`, or nothing is graded (checked: sealing and the refusals) | A kernel or runtime that ignores no_new_privs; the run-time probe then refuses to grade | First baseline's verifier log | 🟢 GREEN / LOW |
 | 10 | Infer an evaluation from the files and text | Instruction and example files | Lesson from `markdown-linter-rebuild` | Neutral runner text; no reference, grading, session or time wording (checked) | An agent can still guess that more cases exist | Read the first trajectories | 🟡 YELLOW / UNASSESSED |
 
 The original also prints the C of its own runtime and of any program (`--emit-runtime`, `-o`),
@@ -243,9 +303,10 @@ Licence: the upstream is Apache-2.0. Its `LICENSE` is shipped with the documenta
 
 | Check | Revision | Result |
 | --- | --- | --- |
-| `checks/` (17 tests) with `ci_checks` (27), Python 3.13, and `check_repository.py` | working tree, 2026-11-19 | pass |
-| Oddish preflight | bundles `ca4309ce85fc`, `19c1c91c58fc`; `f98273d8a455` (hardened build, new cases) | pass |
-| Hardened build | bundle `f98273d8a455` | not built yet: `apply.sh` tested on a pristine copy of `src/` (applies once, refuses twice), `smoke.sh` tested against stand-ins that do and do not refuse |
+| `checks/` (20 tests) with `ci_checks` (27), Python 3.13, and `check_repository.py` | working tree, 2026-11-19, round 2 | pass |
+| Oddish preflight | bundles `ca4309ce85fc`, `19c1c91c58fc`; `f98273d8a455` (hardened build, new cases); `5cb265da1a10` (verifier round 2) | pass |
+| Hardened build | bundle `5cb265da1a10` | not built yet: `apply.sh` tested on a pristine copy of `src/` (applies once, refuses twice), `smoke.sh` tested against stand-ins that do and do not refuse |
+| Privilege drop | bundle `5cb265da1a10` | not run as root yet: sealing and the refusal of a weak drop are checked; the drop itself, the status check and the set-id probe first run in the first baseline |
 | Oddish baselines, version 1 | bundle `ca4309ce85fc` (earlier generator), task `...goose-compiler-rebuild-9979b548`, experiment `goose-compiler-rebuild-20261118` (https://www.oddish.app/experiments/4b947cc6), one row | reference 1.0 twice (1,500 of 1,500: the recording kept every case), no-op 0.0 twice. First build of both images and of the solution's compiler; Archil, no fault |
 | Oddish baselines, version 2 | bundle `19c1c91c58fc` (current generator), same task, experiment `goose-compiler-rebuild-v2-20261118` (https://www.oddish.app/experiments/f14b3da8), one row | reference 1.0 twice (1,500 of 1,500), no-op 0.0 twice |
 | Oddish source audit, version 2 | trial 13 | no must-fix finding. Two should-fix: upstream's `docs/implementation.md` says an equivalent implementation need not reproduce diagnostic wording, while the JSON diagnostics are compared exactly (answered in the instruction since); the example outputs are recorded at build time and cannot be inspected in the package (kept: the original must produce them) |
@@ -267,15 +328,13 @@ solution, and every build runs `apply.sh` before `cmake` and `smoke.sh` after it
 ## Remaining work
 
 - Baselines of the current bundle under a new experiment (one row): the first build of the
-  hardened compiler, whose smoke test must pass in both images and in the solution. Read
-  `recording` in the reference run's `metrics.json` (cases kept by kind, run cases that still
-  print upstream's expected file, the floor of a program that prints nothing). Then the
-  platform's source audit. Model trials wait for the owner.
+  hardened compiler, whose smoke test must pass in both images and in the solution, and the
+  first run of the privilege checks as root. Read `recording` in the reference run's
+  `metrics.json` (cases kept by kind, slow and unsteady drops, run times, run cases that still
+  print upstream's expected file, the exact floor) and `limits`. Then the platform's source
+  audit. Model trials wait for the owner.
 - Probe findings 1, 2, 3, 5 and 10 from a trial; run pass 04's programs as `candidate`.
-- Open from the QA wave: tell the candidate that runs start as an unprivileged user with an
-  empty `/tmp` and cannot write `/app/rebuild` (pass 10, F5); record run times and keep only
-  cases with a margin under the limit (F4); compare bytes rather than decoded text (F7); pin the
-  stack limit (F8); a deterministic subset of `os` (standard input, arguments, files in the
-  workspace) would bring input-reading programs back without `ffi` (pass 01, F4); the exact
-  diagnostics bar is the owner's call (pass 01, F1).
+- Open: a deterministic subset of `os` (standard input, arguments, files in the workspace) would
+  bring input-reading programs back without `ffi` (pass 01, F4); the exact diagnostics bar is the
+  owner's call (pass 01, F1).
 - `harbor check` and ratings.
