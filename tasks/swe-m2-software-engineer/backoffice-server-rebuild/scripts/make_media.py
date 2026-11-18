@@ -212,7 +212,7 @@ def exif_block(rng: random.Random, orientation: int, thumbnail: bytes | None) ->
     exif_entries = [(0x9003, 2, text(taken)), (0x829A, 5, rational((1, rng.choice([60, 120, 250, 500])))),
                     (0x829D, 5, rational((rng.choice([18, 28, 40, 56]), 10))), (0x8827, 3, struct.pack("<H", rng.choice([50, 100, 400, 1600]))),
                     (0x920A, 5, rational((rng.choice([26, 52, 77]), 10)))]
-    gps_entries = [(0x0001, 2, b"N\0"), (0x0002, 5, dms(lat)), (0x0003, 2, b"E\0"), (0x0004, 5, dms(lon)),
+    gps_entries = [(0x0001, 2, b"N\0"), (0x0002, 5, dms(lat)), (0x0003, 2, b"E\0" if lon >= 0 else b"W\0"), (0x0004, 5, dms(abs(lon))),
                    (0x0006, 5, rational((rng.randint(0, 900), 1)))]
     make, model = rng.choice([("Pixelcraft", "PC-9 Pro"), ("Lumenor", "L12"), ("Fieldcam", "FC Mini")])
     # Lay out: header(8) | IFD0 | Exif IFD | GPS IFD | IFD1 | thumbnail
