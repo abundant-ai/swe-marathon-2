@@ -1,4 +1,9 @@
 #!/bin/sh
+if setpriv --reuid dev --regid dev --clear-groups --no-new-privs sh -c \
+    'test -r /opt/stockwell || test -x /opt/stockwell || test -r /opt/stockwell/app || ls /opt/stockwell/app' >/dev/null 2>&1; then
+    echo "the sealed server's files are readable by dev; stopping" >&2
+    exit 1
+fi
 if curl -fsS -m 3 http://127.0.0.1:8080/api/health >/dev/null 2>&1; then exit 0; fi
 cd /opt/stockwell/app || exit 1
 env -i PATH=/opt/py/bin:/usr/bin:/bin LC_ALL=C.UTF-8 LANG=C.UTF-8 HOME=/opt/stockwell/data \

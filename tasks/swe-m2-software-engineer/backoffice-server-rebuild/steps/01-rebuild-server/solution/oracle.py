@@ -29,7 +29,7 @@ def oracle(reference: Path, target: Path) -> None:
         RuntimeError: The reference package is missing.
     """
     package = reference / "stockwell"
-    if not (package / "app.py").is_file():
+    if not (package / "app.py").is_file() and not (package / "app.pyc").is_file():  # source, or the bytecode the bundle ships
         raise RuntimeError("Reference server package is missing")
     target.mkdir(parents=True, exist_ok=True)
     shutil.rmtree(target / "stockwell", ignore_errors=True)

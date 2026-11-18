@@ -17,7 +17,7 @@ COPY prepare-delivery /usr/local/sbin/prepare-delivery
 COPY entrypoint.sh /usr/local/sbin/entrypoint.sh
 RUN mkdir -p /app/server /opt/stockwell/client /opt/stockwell/data \
     && cp -a /app/client/dist/. /opt/stockwell/client/ \
-    && /opt/py/bin/python -m compileall -q -b /opt/stockwell/app && find /opt/stockwell/app -name '*.py' -delete \
+    && test -z "$(find /opt/stockwell/app -name '*.py' -print -quit)" \
     && chown -R stockwell:stockwell /opt/stockwell && chmod -R go-rwx /opt/stockwell \
     && chown -R dev:dev /app && chown root:root /app /app/server && chmod 1777 /app && chmod 0777 /app/server \
     && git config --system --add safe.directory '*' \

@@ -137,6 +137,12 @@ def test_client_reaches_nearly_every_endpoint_of_the_reference():
     assert len(endpoints) >= 230 and reached / len(endpoints) >= 0.95
 
 
+def digest(path: Path) -> str:
+    """A file's SHA-256, read in chunks: the bundle's media is a couple of hundred megabytes."""
+    with open(path, "rb") as file:
+        return hashlib.file_digest(file, "sha256").hexdigest()
+
+
 def test_bundles_hold_runtime_files_only(tmp_path):
     private = STEP / "tests" / "private" / "scenarios.json"
     created = not private.exists()
@@ -159,26 +165,30 @@ def test_bundles_hold_runtime_files_only(tmp_path):
             for excluded in ("README.md", "checks", "scripts", "common", "experiment"):
                 assert not (bundle / excluded).exists(), excluded
             prefix = "" if flag else "steps/01-rebuild-server/"
-            for required in ("task.toml", "environment/Dockerfile", "environment/requirements.txt", "environment/sealed/stockwell/app.py",
-                             "environment/sealed/stockwell/media/pdf.py", "environment/client/dist/index.html", "environment/client/src/main.tsx",
-                             prefix + "instruction.md", prefix + "tests/verify.py", prefix + "tests/requirements.txt",
-                             prefix + "tests/private/scenarios.json.gz", prefix + "solution/oracle.py", prefix + "solution/data/stockwell/api_routes.py"):
+            for required in ("task.toml", "environment/Dockerfile", "environment/requirements.txt", "environment/sealed/stockwell/app.pyc",
+                             "environment/sealed/stockwell/media/pdf.pyc", "environment/client/dist/index.html", "environment/client/src/main.tsx",
+                             "environment/prepare-delivery", prefix + "instruction.md", prefix + "tests/verify.py", prefix + "tests/requirements.txt",
+                             prefix + "tests/private/scenarios.json.gz", prefix + "solution/oracle.py", prefix + "solution/data/stockwell/api_routes.pyc"):
                 assert (bundle / required).is_file(), required
+            # QA 08: the reference ships as Python 3.12 bytecode only, sealed and as the solution's data, never as source
+            for folder in (bundle / "environment" / "sealed", bundle / f"{prefix}solution" / "data"):
+                assert not any(path.suffix == ".py" for path in folder.rglob("*")), folder
+                assert all(path.read_bytes()[:4] == b"\xcb\r\r\n" for path in folder.rglob("*.pyc")), "Python 3.12 bytecode"
             config = (bundle / "task.toml").read_text()
-            assert ("[[steps]]" in config) == (not flag)
+            assert ("[[steps]]" in config) == (not flag) and "[[verifier.collect]]" in config
             # the candidate image must never receive the scenarios, the verifier or the client's test helpers
             environment = list((bundle / "environment").rglob("*"))
             assert not any("scenarios" in path.name or "replay" in path.name for path in environment)
             assert not any(".test." in path.name or "smoke" in path.name for path in environment)
             assert not any(path.suffix == ".py" for path in (bundle / "environment" / "client").rglob("*"))
             # the visible media ships as samples; the private media reaches the verifier only, byte for byte nowhere else
-            private_media = {path.read_bytes() for path in (bundle / f"{prefix}tests/private/media").rglob("*") if path.is_file()}
-            shipped = {path.read_bytes() for path in (bundle / "environment").rglob("*") if path.is_file()}
+            private_media = {digest(path) for path in (bundle / f"{prefix}tests/private/media").rglob("*") if path.is_file()}
+            shipped = {digest(path) for path in (bundle / "environment").rglob("*") if path.is_file()}
             assert private_media and not private_media & shipped
             assert any((bundle / "environment" / "samples" / "pdf").iterdir())
             assert not (bundle / "environment" / "samples" / "manifest.json").exists()
             # Stockwell's own test fixtures are inputs of the hidden `files` scenarios: none of them ships, under any name
-            fixtures = {path.read_bytes() for path in (REFERENCE / "backend" / "tests" / "fixtures").rglob("*") if path.is_file()}
+            fixtures = {digest(path) for path in (REFERENCE / "backend" / "tests" / "fixtures").rglob("*") if path.is_file()}
             assert len(fixtures) > 100 and not fixtures & shipped
             if not flag:
                 # no upload in the hidden scenarios (base64 in a JSON body, or a raw file), no cut-short upload and no file
@@ -203,10 +213,14 @@ def test_bundles_hold_runtime_files_only(tmp_path):
 
 
 def test_the_sealed_server_is_started_as_its_own_user_from_bytecode():
+    """QA 08: the image receives bytecode only (no source in any layer, the build fails on a .py), and every start
+    first checks as dev that /opt/stockwell cannot be read or entered; if it can, the setup hook fails and the trial stops."""
     script = (TASK / "environment" / "start-sealed-server").read_text()
     docker = (TASK / "environment" / "Dockerfile").read_text()
     assert "setpriv --reuid stockwell" in script and "STOCKWELL_AUTH_MODE=proxy" in script
-    assert "compileall -q -b /opt/stockwell/app" in docker and "-name '*.py' -delete" in docker and "chmod -R go-rwx /opt/stockwell" in docker
+    check = script.index("setpriv --reuid dev")
+    assert check < script.index("curl") and "test -r /opt/stockwell" in script and "exit 1" in script[check:script.index("curl")]
+    assert "compileall" not in docker and "test -z \"$(find /opt/stockwell/app -name '*.py'" in docker and "chmod -R go-rwx /opt/stockwell" in docker
 
 
 def test_verifier_reads_the_gzipped_scenarios_the_image_ships(tmp_path):
