@@ -49,6 +49,12 @@ One step is implemented. See [Remaining work](#remaining-work).
   the generator then gained the string-aware comment scanner and edits that always change a
   program. Current bundle `19c1c91c58fc`.
 
+### 2026-11-18 (after the version 2 audit)
+
+- The instruction now says error and warning messages count word for word, against upstream's
+  implementation notes. Not uploaded: the owner's rule is that a task is built until it is
+  real before any further run.
+
 ## Current implementation
 
 | Part | State |
@@ -146,7 +152,8 @@ Licence: the upstream is Apache-2.0. Its `LICENSE` is shipped with the documenta
 | `checks/` (6 tests) | working tree, 2026-11-18 | pass |
 | Oddish preflight | bundles `ca4309ce85fc`, `19c1c91c58fc` | pass |
 | Oddish baselines, version 1 | bundle `ca4309ce85fc` (earlier generator), task `...goose-compiler-rebuild-9979b548`, experiment `goose-compiler-rebuild-20261118` (https://www.oddish.app/experiments/4b947cc6), one row | reference 1.0 twice (1,500 of 1,500: the recording kept every case), no-op 0.0 twice. First build of both images and of the solution's compiler; Archil, no fault |
-| Oddish baselines, version 2 | bundle `19c1c91c58fc` (current generator), same task, experiment `goose-compiler-rebuild-v2-20261118` (https://www.oddish.app/experiments/f14b3da8), one row | running |
+| Oddish baselines, version 2 | bundle `19c1c91c58fc` (current generator), same task, experiment `goose-compiler-rebuild-v2-20261118` (https://www.oddish.app/experiments/f14b3da8), one row | reference 1.0 twice (1,500 of 1,500), no-op 0.0 twice |
+| Oddish source audit, version 2 | trial 13 | no must-fix finding. Two should-fix: upstream's `docs/implementation.md` says an equivalent implementation need not reproduce diagnostic wording, while the JSON diagnostics are compared exactly (answered in the instruction since); the example outputs are recorded at build time and cannot be inspected in the package (kept: the original must produce them) |
 | `harbor check` | none | not run |
 
 ## Build and deliver

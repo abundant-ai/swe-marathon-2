@@ -40,6 +40,8 @@ Your implementation in `/app/rebuild`, with an executable `/app/rebuild/goose`.
   `--diagnostics json`, the output of `goose format` and the command line's own answers, for
   everything the original accepts or rejects, not only for the examples: programs that do not
   compile, programs that abort, wrong options and missing files included.
+- Error and warning messages count word for word: with `--diagnostics json` they are part of
+  standard output, whatever the documentation says about other implementations.
 - It must not call the original compiler: it will be used where the original is not installed.
 - Everything it needs at run time is inside `/app/rebuild`, apart from the standard library's
   sources and the tools listed above.
