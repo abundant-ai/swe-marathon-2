@@ -826,6 +826,18 @@ def deliver(name, build, entries="100000", size="1000000000", path="1000", secon
         (state / "free-at-start").write_text(start)
     (state / "session.json").write_text(json.dumps({"egress": {"pypi.org:443": "closed"}, "egress_open": False,
                                                     "agent_process_count": 1, "agent_processes": [{"pid": 7, "command": "sleep 99"}]}))
+    (state / "turn-started").write_text("1700000000\n")
+    if name == "good":  # what the link fixer printed: a copy of a system file, and a refused link to the user's own files
+        (state / "fixer.jsonl").write_text(json.dumps({
+            "kind": "copied", "path": "venv/bin/python3", "source": "/usr/bin/python3.12", "source_owner": 0,
+            "source_mtime": 1690000000.0, "source_ctime": 1690000000.0, "source_inode": [66, 1234],
+            "source_latest_ctime": 1690000000.0, "source_latest_mtime": 1690000000.0,
+            "note": "venv/bin/python3: a copy of /usr/bin/python3.12 (was a link to /usr/bin/python3.12)"}) + "\n" + json.dumps({
+            "kind": "refused", "path": "vendor", "source": "/home/dev/cache", "source_owner": 10001,
+            "source_mtime": 1700000500.0, "source_ctime": 1700000600.0, "source_inode": [66, 99],
+            "source_latest_ctime": 1700000600.0, "source_latest_mtime": 1700000500.0,
+            "note": "removed vendor -> /home/dev/cache: it leads outside /app/rebuild to something that is not part of the machine's "
+                    "installation (not owned by root), which is not copied"}) + "\n")
     build(rebuild)
     environment = dict(os.environ)
     if tar is not None:  # a stand-in for the copy's tar, first on the PATH
@@ -833,8 +845,8 @@ def deliver(name, build, entries="100000", size="1000000000", path="1000", secon
         (base / name / "bin" / "tar").write_text("#!/bin/sh\n" + tar)
         (base / name / "bin" / "tar").chmod(0o755)
         environment["PATH"] = f"{base / name / 'bin'}:{environment['PATH']}"
-    done = subprocess.run([sys.executable, "-I", "-", str(rebuild), entries, size, path, str(state), str(archives), seconds, "2", "0"],
-                          input=prelude + measure, capture_output=True, text=True, timeout=300, env=environment)
+    done = subprocess.run([sys.executable, "-I", "-", str(rebuild), entries, size, path, str(state), str(archives), seconds, "2", "0",
+                           "1700030000"], input=prelude + measure, capture_output=True, text=True, timeout=300, env=environment)
     assert done.returncode == 0, done.stderr
     assert not os.listdir(archives), "the trial pack is removed"
     return app, rebuild
@@ -904,6 +916,7 @@ record = json.loads((rebuild / ".delivery.json").read_text())
 out["record"] = [record["egress_open"], record["kill_rounds"], record["agent_processes_left"], record["delivered"],
                  record["listing_complete"], sorted(item["path"] for item in record["entries"]),
                  next(item for item in record["entries"] if item["path"] == "bpl")]
+out["copies"] = [record["turn_started"], record["hook_started"], record["copies"], record["links"], record["notes"]]
 out["summary"] = verify.delivery_record(rebuild)
 out["complete"] = notes(copy(rebuild, base / "good" / "copied"))
 partial = copy(rebuild, base / "good" / "partial")
@@ -943,17 +956,32 @@ for number in range(20):
     (outside / str(number)).write_text("x")
 fixed = base / "fixer" / "rebuild"
 fixed.mkdir(parents=True)
-(fixed / "lib").symlink_to(outside)
-done = subprocess.run([sys.executable, "-I", "-", str(fixed), "10", "1000000000"], input=fixer, capture_output=True, text=True, timeout=60)
-out["fixer"] = [done.returncode, done.stdout.strip(), os.path.lexists(fixed / "lib")]
+(fixed / "lib").symlink_to(outside)              # the user's own files outside: refused, whatever their count
+(fixed / "one").symlink_to(outside / "3")        # one file of the user's own: refused
+(fixed / "sh").symlink_to("/bin/sh")             # part of the machine's installation (root's): copied, with its source's facts
+(fixed / "real.txt").write_text("x")
+(fixed / "inner").symlink_to(fixed / "real.txt")  # inside, absolute: made relative
+done = subprocess.run([sys.executable, "-I", "-", str(fixed), "100000", "1000000000"], input=fixer, capture_output=True, text=True,
+                      timeout=60)
+changes = [json.loads(line) for line in done.stdout.splitlines()]
+out["fixer"] = [done.returncode, {change["path"]: change["kind"] for change in changes},
+                next(change for change in changes if change["kind"] == "copied"),
+                os.path.lexists(fixed / "lib"), os.path.lexists(fixed / "one"), os.path.isfile(fixed / "sh") and not os.path.islink(fixed / "sh"),
+                os.readlink(fixed / "inner")]
+(base / "processes.txt").write_text("    1     0     0 100 /sbin/init\n  777     1 10001  65 sleep 99\n  778   777 10001   3 /bin/sh -c curl x\n")
 checks = {}
 for name, prelude in (("closed", CLOSED), ("slow", SLOW)):
     started = __import__("time").monotonic()
-    done = subprocess.run([sys.executable, "-I", "-", str(base / f"session-{name}.json")], input=prelude + session,
-                          capture_output=True, text=True, timeout=60)
+    done = subprocess.run([sys.executable, "-I", "-", str(base / f"session-{name}.json"), str(base / "processes.txt")],
+                          input=prelude + session, capture_output=True, text=True, timeout=60)
     checks[name] = [done.returncode, json.loads((base / f"session-{name}.json").read_text()),
                     round(__import__("time").monotonic() - started)]
 out["session"] = checks
+long_mark = base / "long" / "rebuild"
+long_mark.mkdir(parents=True)
+(long_mark / "bpl").write_text("#!/bin/sh\n")
+(long_mark / ".delivered").write_text("delivered 1 10\n" + "".join(f"removed decoy{i} -> /home/dev/x{i}: it leads outside\n" for i in range(60)))
+out["long_mark"] = len(verify.delivery_notes(long_mark))
 print(json.dumps(out))
 """
 
@@ -974,8 +1002,17 @@ def test_the_delivery_is_bounded_recorded_and_marked_before_the_copy_and_graded_
     run = len("#!/bin/sh\nexec python3 src/main.py\n")
     # src, src/main.py, src/b, src/b/up, bpl, bpl-again, empty, inside: 8 entries; bpl and bpl-again are one file
     assert out["mark"][0] == f"delivered 8 {600 + run}", out["mark"]
-    assert sorted(out["mark"][1:]) == ["removed absolute: a link that leads outside /app/rebuild", "removed esc: a link that leads outside /app/rebuild",
+    assert out["mark"][1:3] == ["venv/bin/python3: a copy of /usr/bin/python3.12 (was a link to /usr/bin/python3.12)",
+                                "removed vendor -> /home/dev/cache: it leads outside /app/rebuild to something that is not part of the "
+                                "machine's installation (not owned by root), which is not copied"], "the fixer's notes, copies first"
+    assert sorted(out["mark"][3:]) == ["removed absolute: a link that leads outside /app/rebuild", "removed esc: a link that leads outside /app/rebuild",
                                        "removed outside: a link that leads outside /app/rebuild", "removed pipe: not a file, a directory or a link"]
+    turn_started, hook_started, copies, links, notes = out["copies"]
+    assert (turn_started, hook_started) == (1700000000, 1700030000) and len(notes) == 6
+    assert len(copies) == 1 and copies[0]["source"] == "/usr/bin/python3.12" and copies[0]["source_owner"] == 0
+    assert copies[0]["source_inode"] == [66, 1234] and copies[0]["outside_delivery"] is True
+    assert copies[0]["changed_since_session_started"] is False, "a system file from the image build"
+    assert links[0]["kind"] == "refused" and links[0]["changed_since_session_started"] is True and links[0]["outside_delivery"] is True
     assert out["left"] == [".delivered", ".delivery.json", "bpl", "bpl-again", "empty", "inside", "src"]
     egress_open, rounds, left, delivered, complete, paths, bpl = out["record"]
     assert [egress_open, rounds, left, delivered, complete] == [False, 2, 0, out["mark"][0], True]
@@ -984,6 +1021,10 @@ def test_the_delivery_is_bounded_recorded_and_marked_before_the_copy_and_graded_
     summary = out["summary"]
     assert summary["egress_open"] is False and summary["entries"] == 8 and summary["kill_rounds"] == 2 and summary["bpl"] == bpl
     assert summary["agent_processes"] == [{"pid": 7, "command": "sleep 99"}] and summary["latest_ctime"] >= bpl["ctime"]
+    assert summary["copies"] == copies and summary["links"] == links and summary["notes"] == notes, "the whole record reaches metrics.json"
+    assert summary["copies_outside_delivery"] == 1 and summary["copies_changed_since_session_started"] == 0
+    assert (summary["turn_started"], summary["hook_started"]) == (1700000000, 1700030000)
+    assert out["long_mark"] == 60, "the verifier reads the whole mark, however many notes"
     assert out["complete"] == [f"collect hook: {line}" for line in out["mark"][1:]], out["complete"]
     assert out["cut"][0].startswith(("ERROR The copy arrived incomplete", "the delivery arrived without", "ERROR Nothing")), out["cut"]
     assert out["nothing"][0].startswith("ERROR Nothing arrived") and out["unmarked"][0].startswith("the delivery arrived without")
@@ -1000,16 +1041,23 @@ def test_the_delivery_is_bounded_recorded_and_marked_before_the_copy_and_graded_
     assert out["inodes"][0] == "refused" and "No space left on device" in out["inodes"][1], out["inodes"]
     assert out["never_room"][0].startswith("delivered ") and any("room the machine did not have" in line for line in out["never_room"])
     assert out["nop"] == [["delivered 0 0"], [], 0]
-    assert out["fixer"][0] == 0 and "copying it would pass 10 entries" in out["fixer"][1] and out["fixer"][2] is False, out["fixer"]
+    code, kinds, copied, lib_left, one_left, sh_copied, inner = out["fixer"]
+    assert code == 0 and kinds == {"lib": "refused", "one": "refused", "sh": "copied", "inner": "relinked"}, out["fixer"]
+    assert copied["source"] == "/bin/sh" and copied["source_owner"] == 0 and len(copied["source_inode"]) == 2
+    assert copied["source_ctime"] > 1e9 and copied["source_mtime"] > 1e9 and "a copy of /bin/sh" in copied["note"]
+    assert not lib_left and not one_left and sh_copied and inner == "real.txt", "the user's own files outside are never copied in"
     closed, slow = out["session"]["closed"], out["session"]["slow"]
     assert closed[0] == 0 and closed[1]["egress_open"] is False and set(closed[1]["egress"]) == {"pypi.org:443", "github.com:443"}
+    assert [process["command"] for process in closed[1]["agent_processes"]] == ["sleep 99", "/bin/sh -c curl x"], "from the frozen listing"
+    assert closed[1]["agent_processes"][1]["running_seconds"] == 3 and closed[1]["agent_process_count"] == 2
     assert all(state.startswith("closed") for state in closed[1]["egress"].values())
     assert slow[0] == 0 and set(slow[1]["egress"].values()) == {"no answer within 3 s"} and slow[2] <= 9, slow
     hook = (TASK / "environment" / "prepare-delivery").read_text()
-    order = ["/usr/bin/python3 -I - \"$STATE/session.json\"", "kill -9 -1", "rm -f /var/lib/delivery/room",
+    order = ["kill -STOP -1", "ps -eo pid=,ppid=,uid=,etimes=,args= > \"$STATE/processes.txt\"", "kill -9 -1",
+             "/usr/bin/python3 -I - \"$STATE/session.json\" \"$STATE/processes.txt\"", "rm -f /var/lib/delivery/room",
              "rm -rf /var/lib/delivery/inodes", 'mv -f "/app/rebuild/$name" "$aside/"',
              "timeout 120 setpriv --reuid dev --regid dev --clear-groups --no-new-privs /usr/bin/python3 -I -",
-             'exec /usr/bin/python3 -I - /app/rebuild']
+             '> "$STATE/fixer.jsonl"', 'exec /usr/bin/python3 -I - /app/rebuild']
     assert [hook.index(step) for step in order] == sorted(hook.index(step) for step in order)
     for setting in ("LIMIT_ENTRIES=100000", "LIMIT_BYTES=1000000000", "LIMIT_PATH=1000", "PACK_SECONDS=100", "STATE=/var/lib/delivery"):
         assert setting in hook, setting
@@ -1017,6 +1065,8 @@ def test_the_delivery_is_bounded_recorded_and_marked_before_the_copy_and_graded_
     setup = (TASK / "environment" / "reserve-delivery-room").read_text()
     assert "fallocate -l 64M /var/lib/delivery/room" in setup and '/var/lib/delivery/inodes/$spare' in setup and "seq 1 64" in setup
     assert "stat -f -c '%a %S %d' /tmp > /var/lib/delivery/free-at-start" in setup
+    assert "date +%s > /var/lib/delivery/turn-started" in setup, "the session's start, for the record's flags"
+    assert hook.index("kill -STOP -1") < hook.index("/usr/bin/python3"), "nothing runs before the freeze but the hook's own settings"
     import tomllib
     config = tomllib.loads((TASK / "task.toml").read_text())
     assert config["verifier"]["collect"] == [{"command": "/usr/local/sbin/prepare-delivery", "user": "root", "timeout_sec": 600}]
@@ -1029,8 +1079,10 @@ def test_the_delivery_is_bounded_recorded_and_marked_before_the_copy_and_graded_
     main = verify[verify.index("def main() -> int:"):]
     assert main.index("delivery_notes(SUBMISSION)") < main.index("sandbox()") < main.index("seal(SUBMISSION)")
     assert "delivery_record=record" in main, "the record goes to metrics.json"
+    assert "[:20]" not in verify[verify.index("def delivery_notes"):verify.index("def delivery_record")], "every note of the mark"
     instruction = " ".join((STEP / "instruction.md").read_text().split())
     assert "at most 100,000 files and directories and 1 GB, with no path inside it longer than 1,000 bytes" in instruction
+    assert "only when that is part of the machine's installation (owned by root" in instruction
     assert "room left to copy it" in instruction
 
 

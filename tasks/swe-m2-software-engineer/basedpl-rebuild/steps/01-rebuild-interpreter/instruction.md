@@ -87,10 +87,12 @@ Your implementation in `/app/rebuild`, with an executable `/app/rebuild/bpl`.
   installed. Everything it needs at run time is inside `/app/rebuild`, apart from the tools listed
   above.
 - When you finish, `/app/rebuild` is copied as it stands to the machines it will run on. A link
-  that points outside the directory is replaced there by a copy of what it points to, and pipes,
-  sockets and devices are left out. With those copies it may hold at most 100,000 files and
-  directories and 1 GB, with no path inside it longer than 1,000 bytes, and the disk needs that
-  much room left to copy it; otherwise it is not copied.
+  that points outside the directory is replaced there by a copy of what it points to only when
+  that is part of the machine's installation (owned by root, as a virtual environment's link to
+  the system Python is); a link to files of your own anywhere else is dropped, and so are pipes,
+  sockets and devices. With those copies it may hold at most 100,000 files and directories and
+  1 GB, with no path inside it longer than 1,000 bytes, and the disk needs that much room left to
+  copy it; otherwise it is not copied.
 - Our job runner starts every `bpl` the same way, and it will start yours like this: as an
   unprivileged user that cannot write to `/app/rebuild`, in a new, empty working directory into
   which only that run's files are put, with `HOME` and `TMPDIR` set to new empty directories. Runs

@@ -469,7 +469,7 @@ def delivery_notes(top: Path) -> list[str]:
         lines = None
     if not lines:
         return [MISSING_MARK]
-    head, notes = lines[0].split(), [f"collect hook: {line}" for line in lines[1:] if line.strip()][:20]
+    head, notes = lines[0].split(), [f"collect hook: {line}" for line in lines[1:] if line.strip()]  # every note, no cap
     if head[:1] == ["refused"]:
         return notes or ["collect hook: the delivery was not copied"]
     if len(head) == 3 and head[0] == "delivered" and all(value.isascii() and value.isdigit() for value in head[1:]):
@@ -484,8 +484,11 @@ def delivery_notes(top: Path) -> list[str]:
 def delivery_record(top: Path) -> dict:
     """The collect hook's record, cut to what metrics.json holds: whether public egress was open
     when the session ended, the agent's processes then, how many rounds of killing they took and
-    how many were left, and a summary of the entries (count, latest change and modification times,
-    `bpl`'s own entry). Never raising, and never part of the reward."""
+    how many were left, when the session and the hook started, every link the hook copied (with
+    its source's path, owner, times and inode, and whether that source lies outside /app/rebuild or
+    changed since the session started) or refused, every note, and a summary of the entries
+    (count, latest change and modification times, `bpl`'s own entry). Never raising, and never part
+    of the reward."""
     path = top / DELIVERY_RECORD
     try:
         info = os.lstat(path)
@@ -494,11 +497,18 @@ def delivery_record(top: Path) -> dict:
         record = json.loads(path.read_text(encoding="utf-8", errors="replace"))
         listed = [item for item in record.get("entries", []) if isinstance(item, dict)]
         times = lambda key: max((item[key] for item in listed if isinstance(item.get(key), (int, float))), default=None)  # noqa: E731
+        copies = [item for item in record.get("copies", []) if isinstance(item, dict)]
         return {"checked_at": record.get("checked_at"), "egress": record.get("egress"), "egress_open": record.get("egress_open"),
                 "agent_process_count": record.get("agent_process_count"),
                 "agent_processes": (record.get("agent_processes") or [])[:50],
                 "kill_rounds": record.get("kill_rounds"), "agent_processes_left": record.get("agent_processes_left"),
+                "turn_started": record.get("turn_started"), "hook_started": record.get("hook_started"),
                 "delivered": record.get("delivered"), "listing_complete": record.get("listing_complete"),
+                "copies": copies,
+                "copies_outside_delivery": sum(1 for item in copies if item.get("outside_delivery")),
+                "copies_changed_since_session_started": sum(1 for item in copies if item.get("changed_since_session_started")),
+                "links": [item for item in record.get("links", []) if isinstance(item, dict)],
+                "notes": [str(note) for note in record.get("notes", [])],
                 "entries": len(listed), "latest_ctime": times("ctime"), "latest_mtime": times("mtime"),
                 "bpl": next((item for item in listed if item.get("path") == "bpl"), None)}
     except Exception as exc:  # noqa: BLE001 - a record, never a reason to lose the reward

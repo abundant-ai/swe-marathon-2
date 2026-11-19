@@ -1,21 +1,42 @@
 #!/bin/sh
-# Runs as root once the agent's session has ended, before /app/rebuild is copied to the machine it will run on. It
-# first records whether the public internet answers from here and which processes of the agent's user are alive, with
-# their command lines, and then ends them all: that record goes with the delivery and decides nothing. What it lets
-# through is what the copy can take: within the limits the instruction states, with nothing of the agent's running,
-# and packed here first the way the copy packs it. The mark says what was delivered; the record lists every entry.
+# Runs as root once the agent's session has ended, before /app/rebuild is copied to the machine it will run on. Its first
+# act stops every process of the agent's user; it then lists them, ends them, and records whether the public internet
+# answers from here. That record goes with the delivery and decides nothing. What it lets through is what the copy can
+# take: within the limits the instruction states, with nothing of the agent's running, and packed here first the way the
+# copy packs it. The mark says what was delivered; the record lists every entry and every link it changed, with where a
+# copied file came from.
 LIMIT_ENTRIES=100000
 LIMIT_BYTES=1000000000
 LIMIT_PATH=1000
 PACK_SECONDS=100
 STATE=/var/lib/delivery
+HOOK_STARTED=$(date +%s)
 mkdir -p "$STATE" && chmod 0700 "$STATE"
-# Egress and the agent's live processes, before anything changes them; three seconds for each host.
-timeout 30 /usr/bin/python3 -I - "$STATE/session.json" <<'EOF'
+# Freeze every process of the agent's user before anything else. `kill -STOP -1` as that user reaches all of them in one
+# system call, so a process that forks cannot outrun it; repeat until none is left running.
+for _ in $(seq 1 100); do
+  pgrep -u dev -r R,S,D >/dev/null 2>&1 || break
+  setpriv --reuid dev --regid dev --clear-groups kill -STOP -1 >/dev/null 2>&1
+  sleep 0.05
+done
+# The frozen processes, one command, then the kill: repeated until none is left.
+ps -eo pid=,ppid=,uid=,etimes=,args= > "$STATE/processes.txt" 2>/dev/null || :
+rounds=0
+for _ in $(seq 1 100); do
+  { pgrep -u dev || pgrep -U dev; } >/dev/null 2>&1 || break
+  rounds=$((rounds + 1))
+  setpriv --reuid dev --regid dev --clear-groups kill -9 -1 >/dev/null 2>&1
+  pkill -KILL -u dev >/dev/null 2>&1
+  pkill -KILL -U dev >/dev/null 2>&1
+  sleep 0.1
+done
+left=$({ pgrep -u dev; pgrep -U dev; } 2>/dev/null | sort -u | wc -l)
+# Egress, after the kill (killing changes nothing about it, and the kill waits for nothing); three seconds for each host.
+timeout 30 /usr/bin/python3 -I - "$STATE/session.json" "$STATE/processes.txt" <<'EOF'
 """Record whether the public internet answers from this machine (a TCP connection to port 443 of two public hosts,
-three seconds each) and which processes of the agent's user `dev` are alive, with their command lines."""
+three seconds each) and which processes of the agent's user `dev` were alive when the hook froze them (the `ps` listing
+taken then: pid, parent, uid, seconds since start, command line)."""
 import json
-import os
 import pwd
 import socket
 import sys
@@ -46,39 +67,21 @@ except KeyError:
     uid = None
 processes = []
 try:
-    pids = sorted((name for name in os.listdir("/proc") if name.isdigit()), key=int)
-except OSError:
-    pids = []
-for pid in pids:
-    try:
-        with open(f"/proc/{pid}/status") as handle:
-            status = dict(line.split(":", 1) for line in handle.read().splitlines() if ":" in line)
-        if uid is None or uid not in status.get("Uid", "").split():
-            continue
-        with open(f"/proc/{pid}/cmdline", "rb") as handle:
-            command = handle.read(4096).replace(b"\0", b" ").strip().decode(errors="backslashreplace")
-        processes.append({"pid": int(pid), "ppid": int(status.get("PPid", "0").strip() or 0),
-                          "name": status.get("Name", "").strip(), "command": command[:1000]})
-    except (OSError, ValueError):
-        continue
+    with open(sys.argv[2], errors="backslashreplace") as listing:
+        for line in listing:
+            fields = line.split(None, 4)
+            if len(fields) < 4 or (fields[2] != uid if uid is not None else fields[2] == "0"):
+                continue
+            processes.append({"pid": int(fields[0]), "ppid": int(fields[1]), "uid": int(fields[2]), "running_seconds": int(fields[3]),
+                              "command": (fields[4].strip() if len(fields) > 4 else "")[:1000]})
+except (OSError, ValueError):
+    pass
 record = {"checked_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "egress": egress,
           "egress_open": any(state == "open" for state in egress.values()),
           "agent_process_count": len(processes), "agent_processes": processes[:500]}
 with open(sys.argv[1], "w") as handle:
     json.dump(record, handle)
 EOF
-# End every process of the agent's user. `kill -9 -1` as that user reaches all of them in one system call, so a process
-# that forks cannot outrun it; repeat until none is left.
-rounds=0
-for _ in $(seq 1 100); do
-  { pgrep -u dev || pgrep -U dev; } >/dev/null 2>&1 || break
-  rounds=$((rounds + 1))
-  setpriv --reuid dev --regid dev --clear-groups kill -9 -1 >/dev/null 2>&1
-  pkill -KILL -u dev >/dev/null 2>&1
-  pkill -KILL -U dev >/dev/null 2>&1
-  sleep 0.1
-done
-left=$({ pgrep -u dev; pgrep -U dev; } 2>/dev/null | sort -u | wc -l)
 # Give back the room and the spare inodes set aside when the session started, so however full the disk was left, the
 # record, the mark, a refusal and the copy's archive can be written.
 rm -f /var/lib/delivery/room
@@ -90,16 +93,22 @@ for name in .delivered .delivery.json; do
     aside=$(mktemp -d /app/.aside.XXXXXX) && mv -f "/app/rebuild/$name" "$aside/" || exit 0
   fi
 done
-# Links, as the agent's user (it copies nothing that user could not read), within the limits and two minutes.
-timeout 120 setpriv --reuid dev --regid dev --clear-groups --no-new-privs /usr/bin/python3 -I - /app/rebuild "$LIMIT_ENTRIES" "$LIMIT_BYTES" <<'EOF'
+# Links, as the agent's user (it copies nothing that user could not read), within the limits and two minutes. Each change
+# is one JSON line on standard output, kept root-owned for the record.
+timeout 120 setpriv --reuid dev --regid dev --clear-groups --no-new-privs /usr/bin/python3 -I - /app/rebuild "$LIMIT_ENTRIES" "$LIMIT_BYTES" > "$STATE/fixer.jsonl" <<'EOF'
 """Make /app/rebuild safe to copy to the machine it will run on, as the user who built it.
 
 The copy keeps relative links that stay inside the directory and refuses everything else. A link
-inside it that points elsewhere inside it becomes relative; a link to a file or directory outside
-it becomes a copy of what it points to, if that is a file or a directory (devices, pipes and
-sockets in it are left out); a link to nothing or to a device, and a pipe, a socket or a device
-node, are removed. Each change is printed.
+inside it that points elsewhere inside it becomes relative. A link to a file or directory outside
+it becomes a copy of what it points to only when that is part of the machine's installation: owned
+by root, every file under a directory included (a virtual environment's link to the system Python,
+say). The copy takes the bytes and the mode, not the source's times. A link to anything else outside
+(the user's own files anywhere, which could have been written after the session ended), to nothing,
+or to a device, and a pipe, a socket or a device node, are removed. Each change is printed as one
+JSON line: what was done and why, and for a copy or a refusal the source's path, owner, modification
+and change times and inode, as found before copying.
 """
+import json
 import os
 import shutil
 import stat
@@ -115,22 +124,40 @@ def inside(path):
     return path == ROOT or path.startswith(ROOT + os.sep)
 
 
-def size_of(path, limit, most):
-    """Bytes and entries a copy of `path` would add; the count stops once either passes its limit."""
-    if not os.path.isdir(path):
-        return os.path.getsize(path), 1
+def facts(path):
+    """The source's owner, times and inode, from lstat, as the record keeps them."""
+    info = os.lstat(path)
+    return {"source": path, "source_owner": info.st_uid, "source_mtime": round(info.st_mtime, 3),
+            "source_ctime": round(info.st_ctime, 3), "source_inode": [info.st_dev, info.st_ino],
+            "source_latest_ctime": round(info.st_ctime, 3), "source_latest_mtime": round(info.st_mtime, 3)}
+
+
+def measure(path, limit, most, found):
+    """Bytes and entries a copy of `path` would add, and whether root owns everything in it; the
+    latest change and modification times under it go into `found`. The count stops once a figure
+    passes its limit or an entry is not root's."""
+    info = os.lstat(path)
+    if info.st_uid != 0:
+        return 0, 1, False
+    if not stat.S_ISDIR(info.st_mode):
+        return info.st_size, 1, True
     total, count = 0, 1
     for folder, folders, files in os.walk(path):
-        count += len(folders)
-        for name in files:
+        for name in folders + files:
             count += 1
             try:
-                total += os.lstat(os.path.join(folder, name)).st_size
+                entry = os.lstat(os.path.join(folder, name))
             except OSError:
-                pass
+                return total, count, False
+            if entry.st_uid != 0:
+                return total, count, False
+            found["source_latest_ctime"] = max(found["source_latest_ctime"], round(entry.st_ctime, 3))
+            found["source_latest_mtime"] = max(found["source_latest_mtime"], round(entry.st_mtime, 3))
+            if stat.S_ISREG(entry.st_mode):
+                total += entry.st_size
             if total > limit or count > most:
-                return total, count
-    return total, count
+                return total, count, True
+    return total, count, True
 
 
 def fix_link(path, name):
@@ -139,30 +166,43 @@ def fix_link(path, name):
     resolved = os.path.realpath(path)
     if not os.path.exists(resolved):
         os.unlink(path)
-        return f"removed {name} -> {target}: it points at nothing"
+        return {"kind": "removed", "note": f"removed {name} -> {target}: it points at nothing"}
     if inside(resolved):
         wanted = os.path.relpath(resolved, os.path.dirname(path))
         if wanted == target:
             return None
         os.unlink(path)
         os.symlink(wanted, path)
-        return f"{name} -> {wanted} (was {target})"
+        return {"kind": "relinked", "note": f"{name} -> {wanted} (was {target})"}
     mode = os.stat(resolved).st_mode
     if not (stat.S_ISREG(mode) or stat.S_ISDIR(mode)):
         os.unlink(path)
-        return f"removed {name} -> {target}: it points at a device, a pipe or a socket"
-    size, count = size_of(resolved, BUDGET - spent, ENTRIES - copied)
+        return {"kind": "removed", "note": f"removed {name} -> {target}: it points at a device, a pipe or a socket"}
+    found = facts(resolved)
+    size, count, system = measure(resolved, BUDGET - spent, ENTRIES - copied, found)
+    if not system:
+        os.unlink(path)
+        return dict(found, kind="refused", note=f"removed {name} -> {target}: it leads outside /app/rebuild to something that is "
+                                               "not part of the machine's installation (not owned by root), which is not copied")
     if spent + size > BUDGET or copied + count > ENTRIES:
         os.unlink(path)
-        return f"removed {name} -> {target}: copying it would pass {ENTRIES:,} entries or {BUDGET:,} bytes"
+        return dict(found, kind="refused", note=f"removed {name} -> {target}: copying it would pass {ENTRIES:,} entries or {BUDGET:,} bytes")
     os.unlink(path)
     spent += size
     copied += count
     if os.path.isdir(resolved):
-        shutil.copytree(resolved, path, symlinks=True, ignore=special_files)
+        shutil.copytree(resolved, path, symlinks=True, ignore=special_files, copy_function=copy_file)
     else:
-        shutil.copy2(resolved, path)
-    return f"{name}: a copy of {resolved} (was a link to {target})"
+        copy_file(resolved, path)
+    return dict(found, kind="copied", path=name, note=f"{name}: a copy of {resolved} (was a link to {target})")
+
+
+def copy_file(source, target):
+    """The file's bytes and mode, nothing else: the copy's times are the hook's, and the source's
+    are in the record (copy2 would carry over a modification time anyone can set, and fails on
+    flags it may not set)."""
+    shutil.copyfile(source, target)
+    os.chmod(target, stat.S_IMODE(os.stat(source).st_mode))
 
 
 def special_files(folder, names):
@@ -188,11 +228,11 @@ def one_pass():
                     note = None
                 else:
                     os.unlink(path)
-                    note = f"removed {name}: not a file, a directory or a link"
+                    note = {"kind": "removed", "note": f"removed {name}: not a file, a directory or a link"}
             except (OSError, shutil.Error) as exc:
-                note = f"could not fix {name}: {exc}"
+                note = {"kind": "failed", "note": f"could not fix {name}: {exc}"}
             if note:
-                print(note, flush=True)
+                print(json.dumps(dict(note, path=note.get("path", name)), ensure_ascii=False), flush=True)
                 changed = True
     return changed
 
@@ -202,7 +242,7 @@ for _ in range(10):
         break
 EOF
 # Measure, bound, pack once, list and mark, as root.
-exec /usr/bin/python3 -I - /app/rebuild "$LIMIT_ENTRIES" "$LIMIT_BYTES" "$LIMIT_PATH" "$STATE" /tmp "$PACK_SECONDS" "$rounds" "$left" <<'EOF'
+exec /usr/bin/python3 -I - /app/rebuild "$LIMIT_ENTRIES" "$LIMIT_BYTES" "$LIMIT_PATH" "$STATE" /tmp "$PACK_SECONDS" "$rounds" "$left" "$HOOK_STARTED" <<'EOF'
 """Measure /app/rebuild, bound it, pack it once, list it and mark it, as root, once nothing of the agent's runs.
 
 The tree is walked by directory descriptor, so no depth hides anything, and any step that cannot be completed refuses
@@ -211,10 +251,13 @@ one that resolves outside the directory. A delivery over the limits, or one that
 /tmp) cannot make within PACK_SECONDS, is moved aside whole and replaced by an empty directory; a pack that fails only
 for want of room or inodes the machine never had is left to the copy. The mark's first line is `delivered` with the
 number of entries (files, directories and links) and of bytes in its files (each file once, however many names it
-has), or `refused`; each line after it is a change made or the reason for the refusal. The record (.delivery.json)
-holds what was found before the agent's processes were ended (STATE/session.json), how many rounds of killing it took
-and how many processes were left, and every entry: its path, type, size, modification and change times, and a file's
-sha256 or a link's target. Neither file is counted among the entries.
+has), or `refused`; every line after it is a change made or the reason for the refusal, none left out. The record
+(.delivery.json) holds what was found before the agent's processes were ended (STATE/session.json), how many rounds of
+killing it took and how many processes were left, when the session started (STATE/turn-started, from the setup hook)
+and when this hook started, every change the link fixer made (STATE/fixer.jsonl: the copies first, each with its
+source's path, owner, times and inode, and whether the source changed since the session started), and every entry: its
+path, type, size, modification and change times, and a file's sha256 or a link's target. Neither file is counted among
+the entries.
 """
 import hashlib
 import json
@@ -227,7 +270,7 @@ import tempfile
 ROOT = os.path.realpath(sys.argv[1])
 LIMIT_ENTRIES, LIMIT_BYTES, LIMIT_PATH = int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4])
 STATE, ARCHIVES, PACK_SECONDS = sys.argv[5], sys.argv[6], float(sys.argv[7])
-ROUNDS, LEFT = (int(value) if value.strip().isdigit() else -1 for value in (sys.argv[8:10] + ["", ""])[:2])
+ROUNDS, LEFT, HOOK_STARTED = (int(value) if value.strip().isdigit() else -1 for value in (sys.argv[8:11] + ["", "", ""])[:3])
 MARK = os.path.join(ROOT, ".delivered")
 RECORD = os.path.join(ROOT, ".delivery.json")
 SPARE_INODES = 16
@@ -320,6 +363,22 @@ def trial_pack():
                 pass
 
 
+def state_json(name, default):
+    try:
+        with open(os.path.join(STATE, name)) as text:
+            return json.load(text)
+    except (OSError, ValueError):
+        return default
+
+
+def state_lines(name):
+    try:
+        with open(os.path.join(STATE, name), errors="backslashreplace") as text:
+            return text.read().splitlines()
+    except OSError:
+        return []
+
+
 reason = None
 complete = False
 sys.setrecursionlimit(max(10_000, LIMIT_PATH * 2))
@@ -359,25 +418,44 @@ if reason is None:
         else:
             reason = failed
 
+# The link fixer's changes: the copies first, each flagged when its source lies outside /app/rebuild (every copy does)
+# or changed since the session started; then the refusals and the rest.
+turn_started = next((int(line.split()[0]) for line in state_lines("turn-started") if line.split() and line.split()[0].isdigit()), None)
+changes = []
+for line in state_lines("fixer.jsonl"):
+    try:
+        change = json.loads(line)
+    except ValueError:
+        changes.append({"kind": "failed", "note": f"an unreadable line from the link fixer: {line[:200]}"})
+        continue
+    if "source" in change:
+        change["outside_delivery"] = not inside(os.path.realpath(change["source"]))
+        latest = max(change.get("source_latest_ctime", 0), change.get("source_latest_mtime", 0), change.get("source_ctime", 0),
+                     change.get("source_mtime", 0))
+        change["changed_since_session_started"] = None if turn_started is None else latest >= turn_started
+    changes.append(change)
+changes.sort(key=lambda change: {"copied": 0, "refused": 1}.get(change.get("kind"), 2))
+fixer_notes = [str(change.get("note", "")) for change in changes if change.get("note")]
+
 lines = [f"delivered {entries} {size}"]
 if reason is not None:
     os.rename(ROOT, os.path.join(os.path.dirname(ROOT), f".refused.{os.urandom(6).hex()}"))
     os.mkdir(ROOT)
     os.chmod(ROOT, 0o777)
     lines = ["refused", f"{reason}: it was not copied"]
-try:
-    with open(os.path.join(STATE, "session.json")) as text:
-        session = json.load(text)
-except (OSError, ValueError):
-    session = {"error": "the session record is missing"}
-record = dict(session, kill_rounds=ROUNDS, agent_processes_left=LEFT, delivered=lines[0], listing_complete=complete,
+session = state_json("session.json", {"error": "the session record is missing"})
+record = dict(session, kill_rounds=ROUNDS, agent_processes_left=LEFT, hook_started=HOOK_STARTED, turn_started=turn_started,
+              delivered=lines[0], listing_complete=complete,
+              copies=[change for change in changes if change.get("kind") == "copied"],
+              links=[change for change in changes if change.get("kind") != "copied"],
+              notes=fixer_notes + notes,
               entries=[dict(item, path=path) for path, item in sorted(listing.items())])
 descriptor = os.open(RECORD, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644)
 with os.fdopen(descriptor, "w", errors="backslashreplace") as out:
     json.dump(record, out, separators=(",", ":"))
 descriptor = os.open(MARK, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644)
 with os.fdopen(descriptor, "w", errors="backslashreplace") as mark:
-    mark.write("\n".join(lines + notes) + "\n")
-for line in lines[1:] + notes:
+    mark.write("\n".join(lines + fixer_notes + notes) + "\n")
+for line in lines[1:] + fixer_notes + notes:
     print(line.encode(errors="backslashreplace").decode(), flush=True)
 EOF
