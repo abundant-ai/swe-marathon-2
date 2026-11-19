@@ -13,6 +13,80 @@ One step is implemented. See [Remaining work](#remaining-work).
 
 ## Development log
 
+### 2026-11-19 (round 9: the Oddish source audit of version 8; housekeeping names; version 9)
+
+- The owner made the Oddish pre-trial source audit a hard gate: a version's audit must pass before
+  any model trial. The audit of version 8 (bundle `54f0913384e4`) returned two must-fix information
+  leaks, neither exploited: the header comment of `environment/precap-watchdog` carried the
+  platform's grading reasoning (a turn that runs into the cap is not graded, the separate image
+  fails to build after it), and the docstring of `solution/oracle.py` named the packaging script,
+  said the settings are shared with the recordings and gave the platform's `/solution` path. Both
+  are gone: the comment describes only what the script does, and the docstring only `data/` beside
+  the file and its contents (its error messages no longer name the packaging script either).
+- The audits of the sibling tasks are applied here before they are raised against this one.
+  Goose's: the helper names `reserve-delivery-room`, `prepare-delivery`, `precap-watchdog` and
+  `/var/lib/delivery` tell the solver that its submission is packed for grading and that a session
+  cap is enforced. SymPy's: a task.toml comment on the attempt time budget and the harness (this
+  task.toml has no comments; a check rejects any). BasedPL's: a verifier docstring naming the case
+  generator and the QA waves. Everything the agent can see of the hooks now reads as ordinary
+  system housekeeping, the family the Carve task also uses: `prepare-delivery` is `fsmaint-sweep`,
+  `precap-watchdog` is `fsmaint-timer`, the reserved room, the spare inodes and the free-space
+  record live in `/var/lib/fsmaint`, the timer's log and pid file are `/var/log/fsmaint-timer.log`
+  and `/run/fsmaint-timer.pid` (overrides `FSMAINT_TIMER_*`), the hook's mark is
+  `/app/server/.fsmaint-manifest` with a first line `complete <entries> <bytes>` or `refused`, the
+  timer's lines in it are prefixed `timer: `, and `verify.py` reports `ended_by_timer` and
+  `timer_log` in `metrics.json` (in place of `ended_by_watchdog` and `watchdog_log`; nothing outside
+  the task read them). The reserved room cannot live outside the agent's container under Harbor
+  (both hooks run inside it, and the room must be on the filesystem the copy's archive is written
+  to), so it is root-only system state under a housekeeping name instead. The timer wakes every
+  300 s rather than sleeping the whole 33,900 s at once, so the process list the agent can read
+  shows a root `sleep 300`, never the time left. The instruction, the scenarios, the limits, the
+  deadline and the scoring are unchanged.
+- The same pass stripped the shipped verifier and solution of authoring provenance: the
+  `(QA 07d M1)`-style tags in `verify.py` and `replay.py`, the mentions of Harbor and the platform,
+  "on the author's machine" and "baseline" (process talk), and the verifier's delivery vocabulary
+  (`manifest_record`, `manifest_notes`, `MANIFEST`, `MISSING_MANIFEST`). What stays is the
+  verifier's own vocabulary: `[verifier]` and `[[verifier.collect]]` are Harbor's schema keys,
+  `tests/verifier/` is the package, the replay's `deadline`, `attempt`, `submission`, `grader`, its
+  second-try unit `budget` and Python's `collections` and `round()` are the grading mechanics
+  described in the step's own tests, `CAP_SYS_RESOURCE` and `LogCapture` are what they are, and
+  `noqa` pragmas are not QA. The client, the bytecode, the requirements and the recorded traffic
+  hold the application's own words (delivery notes and budgets are Stockwell features, `platform`
+  is its utility package and a pip environment marker).
+- One behaviour fix found while renaming: the sweep now stops the timer (SIGTERM to the pid in its
+  pid file, then SIGKILL) before anything of its own runs as `dev`. In round 8 a session the timer
+  ended ran the collect hook while the timer was still sending SIGTERM to every process of `dev`
+  for up to 60 s, which would have killed the hook's link fixer (run as `dev` for up to two
+  minutes) and left a venv-based delivery with its absolute links to be removed as leading outside:
+  a correct server ended by the timer could have scored 0. The order is pinned by the checks.
+- Checks: the timer test now also pins the short sleep, the timer stop before the `dev` stage, and
+  that every name the agent sees (the hook commands, the installed paths, the state, log and pid
+  files) says nothing of judging, ending or packing its work; the bundle check scans the task's own
+  files in the agent image for the whole list of words the audits object to (`deliver`, `watchdog`,
+  `precap`, `submission`, `collect`, `audit`, `platform`, `budget`, `deadline`, `attempt`, `cap`,
+  `owner`, `round`, dates and the infrastructure names) and `task.toml` for comments and the same
+  words, and the scan of everything the agent image receives adds `watchdog`, `precap`,
+  `submission`, `audit` and `deadline`. With `ci_checks` (27), 68 pass under Python 3.13, and
+  `ci_checks/check_repository.py` passes.
+- The regrade uses only bundle `e129cb7c2b1b`: its `solution/` installed from an isolated copy by
+  its own `oracle.py` (only the interpreter path swapped for this Mac), its corpus and its media,
+  with Python's bytecode writing off. It scores 1.0 on every unit: 4,002 of 4,002 (2,262 of 2,262
+  scenarios), 9 planned restarts, no other restart, no second try, no answer of 500 or above, no
+  note, 52 scenarios alone, in 500.7 s; the slowest request took 4.1 s, the evaluation peaked at
+  452 MiB resident (the full check suite ran beside it for part of the run), and `DATA_DIR` held
+  1.42 GB at the end. An earlier build of this round, `bee7fae64cc4`, which differed from the final
+  one in a single docstring line of `replay.py`, scored the same in 545.6 s. The timer and the sweep
+  are not exercised by the regrade: this Mac is not the agent's container and `evaluate()` is
+  called directly; the checks drive both scripts.
+- Bundle `e129cb7c2b1b` (1,161 files, 247.3 MB) built twice with the same hash; flat
+  `679240b989a1`. `scripts/scan_uploads.py` finds nothing among the 496 agent-image files; Oddish
+  preflight passes. A grep of the packaged bundle for grad, platform, harbor, oddish, cap, budget,
+  deadline, attempt, qa, audit, owner, round, 2026-, delivery, submission, collect, watchdog and
+  verifier finds none of platform, harbor, oddish, audit, owner, 2026-, delivery or watchdog in any
+  task-authored file, and no word of the list at all in the files the task puts into the agent
+  image; the survivors are the verifier's own terms above. It becomes version 9, in place of
+  `54f0913384e4`, once the model trials on version 8 settle (an upload could retract their rows).
+
 ### 2026-11-19 (round 8: a root pre-cap watchdog, for the platform's ungraded capped runs; version 8)
 
 - On Oddish today, every v2 trial whose agent ran into the 9.6 h cap was never graded: the
@@ -787,22 +861,30 @@ reference server. The sealed server the agent studies, the recorders and the sol
 their settings from one file, `environment/stockwell.env` (the legacy recorder builds the same
 app in-process), so the server the agent learns from answers as the grader expects (QA 12 F1).
 
-**Run condition: the pre-cap watchdog.** A root watchdog started at `setup_complete` ends the
+**Run condition: the maintenance timer** (`environment/fsmaint-timer`; round 8's pre-cap watchdog
+under a housekeeping name since round 9). A root timer started at `setup_complete` ends the
 agent's session 11 minutes before the platform's 9.6 h cap (SIGTERM to every process of `dev`,
 then SIGKILL), because on the platform today a turn that runs into the cap is never graded (the
 separate verifier image fails to build right after the timeout; harbor-lh
 `ops/swe-marathon-v2/PLATFORM_VERIFIER_BUILD_AFTER_LONG_RUN.md`) while a turn that ends by itself
-is. A session it ended shows as `ended_by_watchdog: true` in `metrics.json`, with the log's last
-lines in `watchdog_log`; neither touches the reward. The agent is not told; the instruction states
-no budget either way. The sealed server and its supervisor run as other users and are untouched.
+is. It wakes every 300 s, so the process list the agent can read shows a root `sleep 300` under a
+housekeeping name, never the time left. A session it ended shows as `ended_by_timer: true` in
+`metrics.json`, with the log's last lines in `timer_log`; neither touches the reward. The agent is
+not told; the instruction states no budget either way, and nothing the agent can see of the hooks
+(the names in `/usr/local/sbin`, `/var/lib`, `/var/log` and `/run`, the process list) says what
+they are for. The sealed server and its supervisor run as other users and are untouched; the
+sweep stops the timer before anything of its own runs as `dev`.
 
 1. Delivery: before `/app/server` leaves the agent's machine, a `[[verifier.collect]]` hook runs
-   `environment/prepare-delivery` (root, mode 0700), so that nothing the agent leaves can make the
-   copy fail (QA 07e M4, 07f M4). It ends every process of `dev` with `kill -9 -1` as `dev`, one
-   system call that a forking process cannot outrun, until none is left; gives back 64 MiB and 64
-   spare inodes set aside when the session began (`start-sealed-server`, which also records the
-   free blocks and inodes then); and moves aside, never following, whatever was left under the
-   mark's name. Then, as `dev` and within two minutes, it makes links inside the directory
+   `environment/fsmaint-sweep` (root, mode 0700; `prepare-delivery` until round 9), so that
+   nothing the agent leaves can make the copy fail (QA 07e M4, 07f M4). It stops the maintenance
+   timer, so that the timer's SIGTERM rounds cannot reach the hook's own stage that runs as `dev`
+   (round 9); ends every process of `dev` with `kill -9 -1` as `dev`, one system call that a
+   forking process cannot outrun, until none is left; gives back 64 MiB and 64 spare inodes set
+   aside in `/var/lib/fsmaint` when the session began (`start-sealed-server`, which also records
+   the free blocks and inodes then; the room cannot live outside the agent's container under
+   Harbor, where both hooks run inside it, so it is root-only system state under a housekeeping
+   name); and moves aside, never following, whatever was left under the manifest's name. Then, as `dev` and within two minutes, it makes links inside the directory
    relative, replaces links that leave it with copies of the files or directories they point to
    (within the delivery's limits; devices, pipes and sockets are left out) and removes dangling
    links, links to devices, pipes, sockets and device nodes: Harbor's copy (tarfile's `data`
@@ -817,11 +899,12 @@ no budget either way. The sealed server and its supervisor run as other users an
    `/tmp`) within 100 s, below the copy's own limits (120 s on Archil, 600 s on Modal), and refuses
    it if that pack fails or overruns, unless it failed for want of room or inodes the machine did
    not have when the session began. A refused delivery is moved aside whole and replaced by an
-   empty directory. The mark, `/app/server/.delivered`, says `delivered`, the entries and the
-   bytes, or `refused` and why, with a line per change, and ends with the pre-cap watchdog log's
-   last lines (`watchdog:` lines, kept apart from the hook's notes). `verify.py` scores what arrived, with a
-   note when the mark is missing or says `refused`; a mark that counts more than arrived (a copy
-   the platform cut short) and an `/app/server` of which nothing arrived are evaluation errors.
+   empty directory. The manifest, `/app/server/.fsmaint-manifest` (`.delivered` until round 9),
+   says `complete`, the entries and the bytes, or `refused` and why, with a line per change, and
+   ends with the timer log's last lines (`timer:` lines, kept apart from the hook's notes).
+   `verify.py` scores what arrived, with a note when the manifest is missing or says `refused`; a
+   manifest that counts more than arrived (a copy the platform cut short) and an `/app/server` of
+   which nothing arrived are evaluation errors.
 2. Sandbox: set-user-id and set-group-id bits are cleared, the submission is made root's and
    read-only, and `/app/server/run` is started as user `nobody` through
    `setpriv --no-new-privs`, under `prlimit` (4,096 threads for the user, files of at most
@@ -984,16 +1067,19 @@ not yet exercised in a container; 10 keeps a residual the owner decides).
 | 8 | Submission makes the evaluation end without a reward (hangs past the step limit, a reply that is not HTTP, deep JSON, a crash storm, an answer that never ends, a `DATA_DIR` too big to delete in time); a run that errors may also be retried, which gives a bad run a second draw | Verifier | QA 10 E1, E2, E4 and E6, rerun after the fix; checks with fake servers that hang, drip, send garbage or crash; QA 07c E1 (`-1` chunk), fixed in round 4. QA 07d M1: an answer with `Connection: close`, HTTP/1.0 or no length took its socket out of the watcher's reach, and a drip held `evaluate()` at the server's pace (81 s for a 5 s deadline), the health check too; M2: an unbounded `rmtree` of `DATA_DIR` ran before the reward was published. Fixed in round 5; each new check fails against round 4 | A deadline and 30 s of wall clock per request; every read of an answer, the health check's included, is given only the time left, whatever its framing; `verify.py` publishes the reward 5,640 s after it starts from what was decided, whatever the evaluation is doing; nothing is deleted before the reward, and the clean slate moves what it takes away in constant time; any reply is a not-healthy server or an answer that matches nothing; an answer is bounded in every transfer encoding; no restart cap; resource exhaustion handled as in 5; the clean slate's search stops after two minutes and is skipped with less than five minutes left | A connect the kernel leaves hanging can outlast the deadline by its own 30 s, within the hard stop's margin | Exercise 5's container red team and QA 07d's items 1 and 2 (a drip after `HTTP/1.0 200 OK` on the health check; 50 million hard links in `DATA_DIR`) | 🟡 YELLOW / MEDIUM |
 | 9 | Pass the durable-state units without durable state: keep a workspace in a process that outlives the planned stop, or in memory written out only on SIGTERM | Verifier's planned restarts | Checks with fake servers that keep state on disk, in memory, or save only on SIGTERM. QA 07 F4: a helper that forks fast enough survived `pkill`; fixed in round 3. QA 07c F2: a process whose main thread exits while other threads run shows as a zombie, and the sweep skipped zombies, so it survived every stop and kept the log open; fixed in round 4, with a fake-/proc check | A planned stop kills the process group, then stops every process of `nobody` read from `/proc` (a zombie leader with live threads included) until a listing finds no new one, kills them all, runs `kill -9 -1` as `nobody` and kills the cgroup where there is one; SIGKILL comes straight after an answered write drawn at random; files uploaded before a restart are read again after it | State kept in `/tmp` (on disk) instead of `DATA_DIR` also survives a planned restart, but it is durable state all the same; state in SysV shared memory or `/dev/shm` does not, since every stop removes it (QA 07e M3) | Run QA 07c's zombie-leader repro sandboxed in a container | 🟡 YELLOW / MEDIUM |
 | 10 | Preview a month and answer from what later requests reveal: a month goes on after a wrong answer, and the client sends what it was shown, so later requests echo earlier answers (payments, bank statements) | Verifier's second tries; the corpus | QA 07 F1: a server with a one-cent bug scored 1.0 instead of 0.33 by previewing a month and replaying it on a second try; fixed in round 3 (`test_a_second_try_cannot_replay_what_the_first_try_revealed`). QA 07c F4: within one try, a server that adopts the amount the client then pays as the order's total earns 0.67 for the same bug, with no second try; 1,293 of 1,784 trading-day and screen units (72.5%) carry such an echo (upper bound) | A second try only after the server stopped, within 2% of units, on a clean slate, deciding only units the first try left unanswered: the preview no longer pays (0.33 with either defence). The within-try echo is pinned by the same check at 0.67 | The within-try echo: answer-fitting that can turn a cascading bug into a one-day loss | The owner's call: template echoed request fields from the candidate's own answers, or credit a day only when every earlier day of its month matched | 🟡 YELLOW / LOW |
-| 11 | A correct server scores 0: an absolute link in `/app/server` (a venv's interpreter) makes Harbor's copy refuse the whole delivery | Harbor's artifact copy (tarfile `data` filter) | QA 07 F3, confirmed: `AbsoluteLinkError` on the venv link; reproduced in `checks/` with a real venv; fixed in round 3. QA 07c N2: a link to `/dev/zero` was copied until the disk filled; fixed in round 4. QA 07d S2: a copy that failed arrived as an empty `/app/server` and scored 0; fixed in round 5. QA 07e M4: round 5 made a missing mark an evaluation error, and a submission could make its own copy fail (a 1 TiB sparse file, a full disk, a process the hook missed), turning its 0 into a re-run; fixed in round 6. QA 07f M4: round 6's bound walked by path name and missed what lay below PATH_MAX, where a 4 TiB sparse file made the copy's pack overrun; exhausted inodes did the same; fixed in round 7, with a check past macOS's PATH_MAX | `[[verifier.collect]]` runs `prepare-delivery` before the copy: links inside become relative, links out become copies of files or directories (as `dev`, within the delivery's limits and two minutes; devices, pipes and sockets left out), dangling links, links to devices and special files go; the instruction says such links are replaced by copies; the hook ends the agent's processes with `kill -9 -1` as their user, gives back room and inodes set aside at the start, walks the delivery by directory descriptor, removes what the copy would refuse (links resolved for real), refuses (moving aside, leaving an empty marked directory) a delivery it cannot measure, over 100,000 entries, 1 GB or a 1,000-byte path, or that the copy's own pack, tried first within 100 s, cannot make, and marks it with its entries and bytes; the verifier scores what arrived, with a note for a missing mark or a refusal, and a copy cut short or of which nothing arrived is an evaluation error | A link to more than the delivery's limits is removed rather than copied; the hook is best-effort in Harbor (a failure is logged, the copy goes on): a delivery copied without it is scored with a note. A machine whose `/tmp` never had room for a large delivery is left to the copy, which then fails as an evaluation error. A pack that takes the trial 100 s on a slow machine is refused though Modal's 600 s would have taken it | Run the hook in a container on a venv and a Go module cache | 🟡 YELLOW / LOW |
+| 11 | A correct server scores 0: an absolute link in `/app/server` (a venv's interpreter) makes Harbor's copy refuse the whole delivery | Harbor's artifact copy (tarfile `data` filter) | QA 07 F3, confirmed: `AbsoluteLinkError` on the venv link; reproduced in `checks/` with a real venv; fixed in round 3. QA 07c N2: a link to `/dev/zero` was copied until the disk filled; fixed in round 4. QA 07d S2: a copy that failed arrived as an empty `/app/server` and scored 0; fixed in round 5. QA 07e M4: round 5 made a missing mark an evaluation error, and a submission could make its own copy fail (a 1 TiB sparse file, a full disk, a process the hook missed), turning its 0 into a re-run; fixed in round 6. QA 07f M4: round 6's bound walked by path name and missed what lay below PATH_MAX, where a 4 TiB sparse file made the copy's pack overrun; exhausted inodes did the same; fixed in round 7, with a check past macOS's PATH_MAX | `[[verifier.collect]]` runs `fsmaint-sweep` (`prepare-delivery` until round 9) before the copy: links inside become relative, links out become copies of files or directories (as `dev`, within the delivery's limits and two minutes; devices, pipes and sockets left out), dangling links, links to devices and special files go; the instruction says such links are replaced by copies; the hook ends the agent's processes with `kill -9 -1` as their user, gives back room and inodes set aside at the start, walks the delivery by directory descriptor, removes what the copy would refuse (links resolved for real), refuses (moving aside, leaving an empty marked directory) a delivery it cannot measure, over 100,000 entries, 1 GB or a 1,000-byte path, or that the copy's own pack, tried first within 100 s, cannot make, and marks it with its entries and bytes; the verifier scores what arrived, with a note for a missing mark or a refusal, and a copy cut short or of which nothing arrived is an evaluation error | A link to more than the delivery's limits is removed rather than copied; the hook is best-effort in Harbor (a failure is logged, the copy goes on): a delivery copied without it is scored with a note. A machine whose `/tmp` never had room for a large delivery is left to the copy, which then fails as an evaluation error. A pack that takes the trial 100 s on a slow machine is refused though Modal's 600 s would have taken it | Run the hook in a container on a venv and a Go module cache | 🟡 YELLOW / LOW |
 | 12 | The server the agent studies answers differently from the grader, so doing exactly what the instruction asks loses units | The sealed server's configuration against the recorders' and the solution's | QA 12 F1 (2026-11-19): the sealed server served the web client, so `DELETE /nowhere` answered 405 `allowed: []` there and 404 `unknown_path` in the corpus; a perfect clone lost 6 units. Fixed in round 4 | One settings file, `environment/stockwell.env`, for the sealed server, the live recorder and the solution, with no client directory (the legacy recorder builds the same app in-process); a check ties every file to it and the instruction's numbers to the code; the regrade of the solution with that file is 1.0 on every unit | The Mac recording and the Ubuntu images run different Python, SQLite and zlib builds; reading the code found no dependence (QA 11, 12) | The Linux baselines: 4,002 of 4,002 for the solution | 🟢 GREEN / LOW |
 | 13 | A server that fails under concurrent load earns its units back on second tries played one at a time | Verifier's second tries | QA 20 (2026-11-19): second tries were uncapped and alone, and a sequential pass fits the deadline, so a server that crashes whenever requests overlap recovered most of its units. Fixed in round 4 | A second try only for a scenario in flight when the server stopped, never for a wrong answer or a request a live server left unanswered, and only while the units they decide stay within 2% of all units; the check pins the share and that a dropped request gets none | A server that crashes under load keeps 2% of the units at most | None | 🟢 GREEN / LOW |
 | 14 | A deliberately hostile submission makes the evaluation end in an error instead of 0, with no reward: about 99,000 crafted links outlast the delivery hook's 600 s (QA 07g F1); the link fixer uses up the spare inodes, so a refusal dies after `/app/server` is moved aside (07g F2); a link that resolves inside only through another link, hidden from the fixer, makes Harbor's extraction refuse the copy (07g F3); where neither a memory cgroup nor a VM's own meminfo can be read, a memfd that no process maps is not counted (07f) | Delivery hooks; Harbor's artifact copy; the verifier's memory guard | QA 07e, 07f and 07g (2026-11-19); 07g F3 run through Harbor's own extraction code, F1 timed on macOS | None of these gives reward, reads answers or touches honest work: an honest delivery holds no crafted link chains, no tens of thousands of links and does not exhaust inodes. Accepted on 2026-11-19 under a run policy: one attempt per trial; every errored trial is read; it scores 0 when its own files show the submission caused it, and is otherwise re-run as an infrastructure fault | A hostile run costs one trial and a read | The container red team repeats 07f's deep sparse file and full inodes and 07g's link chains | 🟡 YELLOW / LOW |
-| 15 | Outlast the pre-cap watchdog, so that the session runs into the platform's cap and goes ungraded, or stop it to gain time | Process ownership | Round 8; the design of BasedPL's round 5; probe `cap-watchdog-6eb19fc0` showed a run the watchdog ended is graded | The sleeper is root's and `dev` cannot signal it; its pid file and log are root-only (`/run`, `/var/log`, mode 0600); `pkill -TERM` then `pkill -KILL` as root reach every process of `dev`, a forked tree and a session of its own included (checked) | A harness that ran the agent as root, which row 2 gates on the first trial | The version 8 baselines' `metrics.json`: `watchdog_log` holding the `armed` line and `ended_by_watchdog: false` for the oracle and the no-op, which end long before 33,900 s | 🟢 GREEN / LOW |
+| 15 | Outlast the maintenance timer (`fsmaint-timer`, the pre-cap watchdog), so that the session runs into the platform's cap and goes ungraded, or stop it to gain time, or learn from it when the session ends | Process ownership; what the agent can see of the hooks | Round 8; the design of BasedPL's round 5; probe `cap-watchdog-6eb19fc0` showed a run the watchdog ended is graded. Round 9: the Oddish audits of version 8 and of the Goose task found that the helper names (`precap-watchdog`, `prepare-delivery`, `/var/lib/delivery`) and the watchdog's header comment told the solver that a cap is enforced and that its work is packed for grading | The sleeper is root's and `dev` cannot signal it; its pid file and log are root-only (`/run/fsmaint-timer.pid`, `/var/log/fsmaint-timer.log`, mode 0600); `pkill -TERM` then `pkill -KILL` as root reach every process of `dev`, a forked tree and a session of its own included (checked). Since round 9 every name the agent sees reads as system housekeeping (`fsmaint-timer`, `fsmaint-sweep`, `/var/lib/fsmaint`), the sleeper wakes every 300 s so the process list shows `sleep 300` and not the time left, and the checks pin both | A harness that ran the agent as root, which row 2 gates on the first trial; an agent that reads the root `sleep 300` loop as a timer all the same | The version 9 baselines' `metrics.json`: `timer_log` holding the `armed` line and `ended_by_timer: false` for the oracle and the no-op, which end long before 33,900 s | 🟢 GREEN / LOW |
 
 ## Validation
 
 | Check | Revision | Result |
 | --- | --- | --- |
+| Reference through the verifier, local, no sandbox | round 9: everything from bundle `e129cb7c2b1b`, its solution installed from an isolated copy (only the interpreter path swapped for this Mac), its corpus and its media | 1.0 on every unit: 4,002 of 4,002 (2,262 of 2,262 scenarios), 9 planned restarts, no other restart, no second try, no answer of 500 or above, no note; 500.7 s of replay against the 5,400 s deadline; 452 MiB peak resident |
+| `checks/` (41 tests) with `ci_checks` (27) | round 9 | 68 pass under Python 3.13; `ci_checks/check_repository.py` passes |
+| Bundle | round 9: `e129cb7c2b1b`, 1,161 files, 247.3 MB; flat `679240b989a1` | built twice with the same hash; Oddish preflight passes; no hidden upload among 496 agent-image files; no word of the audits' list in the files the task puts into the agent image, in `task.toml` or in the solution |
 | Reference through the verifier, local, no sandbox | round 8: everything from bundle `54f0913384e4`, its solution installed from an isolated copy (only the interpreter path swapped for this Mac), its corpus and its media | 1.0 on every unit: 4,002 of 4,002 (2,262 of 2,262 scenarios), 9 planned restarts, no other restart, no second try, no answer of 500 or above, no note; 466.5 s of replay against the 5,400 s deadline; 707 MB peak resident |
 | `checks/` (41 tests) with `ci_checks` (27) | round 8 | 68 pass under Python 3.13; `ci_checks/check_repository.py` passes |
 | Bundle | round 8: `54f0913384e4`, 1,161 files, 247.3 MB; flat `54767f9d067e` | built twice with the same hash; Oddish preflight passes; no hidden upload among 496 agent-image files |
@@ -1064,20 +1150,22 @@ python3 scripts/scan_uploads.py experiment/dist/bundles/<hash>/<task slug>   # h
 
 ## Remaining work
 
-- Upload bundle `54f0913384e4` (247.3 MB) as version 8 and run its baselines with `--no-archil`
-  (reference twice, no-op twice) before any model trial. Pass criteria for the reference: 4,002 of
-  4,002, `planned_restarts` 9, `restarts` 0, `retried` 0, `unfinished` 0, no answer of 500 or
-  above in `server_errors_by_theme`, no note of the hard stop, of a stop for disk or memory, or
-  from the collect hook, and `3.5 x elapsed_sec + 300 <= 5,400`. For both baselines:
-  `ended_by_watchdog: false` and a `watchdog_log` holding the watchdog's `armed` line (it armed at
-  `setup_complete` and never fired, since both end long before 33,900 s). Record `memory_measure`,
-  `server_peak_held_mib`, `free_space_mib`, `grader_oom_score_adj`, any note of an unwatched disk
-  and the environment, hook, collect and verifier-build times against the 12-hour lease (QA 07c
-  F7, QA 13 S3). For the no-op: 0.0 with `status: completed` and a mark of `delivered 0 0`.
-- Remove the pre-cap watchdog once the platform grades a run that hits the cap (the asks in
-  harbor-lh `ops/swe-marathon-v2/PLATFORM_VERIFIER_BUILD_AFTER_LONG_RUN.md`): a capped, ungraded
-  run is reported as lost, never as 0, and until then every v2 result is biased toward agents
-  that stop early.
+- Upload bundle `e129cb7c2b1b` (247.3 MB) as version 9 once the model trials on version 8 have
+  settled (an upload could retract their rows), run its baselines with `--no-archil` (reference
+  twice, no-op twice), and have its Oddish source audit pass before any model trial (the owner's
+  gate since version 8). Pass criteria for the reference: 4,002 of 4,002, `planned_restarts` 9,
+  `restarts` 0, `retried` 0, `unfinished` 0, no answer of 500 or above in
+  `server_errors_by_theme`, no note of the hard stop, of a stop for disk or memory, or from the
+  collect hook, and `3.5 x elapsed_sec + 300 <= 5,400`. For both baselines: `ended_by_timer: false`
+  and a `timer_log` holding the timer's `armed` line (it armed at `setup_complete` and never
+  fired, since both end long before 33,900 s). Record `memory_measure`, `server_peak_held_mib`,
+  `free_space_mib`, `grader_oom_score_adj`, any note of an unwatched disk and the environment,
+  hook, collect and verifier-build times against the 12-hour lease (QA 07c F7, QA 13 S3). For the
+  no-op: 0.0 with `status: completed` and a manifest of `complete 0 0`.
+- Remove the maintenance timer (`fsmaint-timer`) once the platform grades a run that hits the cap
+  (the asks in harbor-lh `ops/swe-marathon-v2/PLATFORM_VERIFIER_BUILD_AFTER_LONG_RUN.md`): a
+  capped, ungraded run is reported as lost, never as 0, and until then every v2 result is biased
+  toward agents that stop early.
 - The privilege and limits checks fail closed: a provider whose sandbox cannot set or report
   them ends every evaluation with an evaluation error. The baselines will show it, and whether
   the server's user can lower its OOM priority there (a note in `metrics.json`).

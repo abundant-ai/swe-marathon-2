@@ -1,4 +1,4 @@
-"""Harbor entry point: replay the private scenarios against the submitted server and publish the result."""
+"""Entry point of the step's tests: replay the private scenarios against the submitted server and publish the result."""
 
 from __future__ import annotations
 
@@ -24,12 +24,12 @@ from verifier.replay import RUN_AS, EvaluationError, Progress, end_user_processe
 REWARD_FILES = ("reward.txt", "reward.json")
 PENDING = ".reward.pending"
 PLACEHOLDER = b"0.000000"  # a reward in [0, 1] written with six decimals always has this length
-DELIVERY_MARKER = ".delivered"  # written into /app/server by the collect hook (environment/prepare-delivery)
-MISSING_MARK = ("the delivery arrived without the collect hook's mark (the hook did not run, or the copy was cut short); "
-                "it was scored as it arrived")
-# The step allows 6,000 s, and Harbor's clock also covers uploading the tests and collecting the results. The replay ends
-# at 5,400 s and winds down within about two minutes; whatever the evaluation is doing at this point, the reward is
-# published from what it has decided, with a note (QA 07d M1, N6).
+MANIFEST = ".fsmaint-manifest"  # written into /app/server by the collect hook (environment/fsmaint-sweep)
+MISSING_MANIFEST = ("/app/server arrived without the collect hook's manifest (the hook did not run, or the copy was cut short); "
+                    "it was scored as it arrived")
+# The step allows 6,000 s, and that clock also covers copying the tests in and the results out. The replay ends at
+# 5,400 s and winds down within about two minutes; whatever the evaluation is doing at this point, the reward is
+# published from what it has decided, with a note.
 HARD_STOP_SEC = 5_640
 RUNNING = {"status": "evaluation_error", "error": "the evaluation did not finish: no reward was published"}
 
@@ -38,10 +38,10 @@ def reserve(output: Path) -> None:
     """Before any submitted code runs, write a placeholder the size of the reward under another name, and a summary
     that calls the evaluation unfinished.
 
-    The server may fill the disk while it runs (QA 07 F2). The reward is later written over the
+    The server may fill the disk while it runs. The reward is later written over the
     placeholder's bytes in place and renamed, which needs no free space. If the evaluation dies before
     that (memory taken from it, say), no reward file exists, so the result is an evaluation error and
-    never a 0, and the summary says so (QA 07d M3).
+    never a 0, and the summary says so.
     """
     with open(output / PENDING, "wb") as placeholder:
         placeholder.write(PLACEHOLDER)
@@ -79,7 +79,7 @@ def publish(output: Path, metrics: dict[str, Any]) -> None:
 
 def run_bounded(call: Callable[[], dict[str, Any]], progress: Progress, seconds: float) -> dict[str, Any]:
     """Run the evaluation, and if it has not returned within `seconds`, stop waiting and return the reward from what it
-    has decided, with a note (QA 07d M1). The server's processes are ended after the reward is published.
+    has decided, with a note. The server's processes are ended after the reward is published.
 
     Raises:
         EvaluationError: The evaluation raised one, or ran out of time before it had read the scenarios.
@@ -99,7 +99,7 @@ def run_bounded(call: Callable[[], dict[str, Any]], progress: Progress, seconds:
         raise outcome["error"]
     if "metrics" in outcome:
         return outcome["metrics"]
-    if progress.ballast is not None:  # the evaluation's own clean-up has not run: room for the results (QA 07e S-b)
+    if progress.ballast is not None:  # the evaluation's own clean-up has not run: room for the results
         progress.ballast.release()
     metrics = progress.summary("the evaluation did not finish before the step's time limit: the reward counts the scenarios it "
                                "had decided, and the others as not matched")
@@ -109,8 +109,8 @@ def run_bounded(call: Callable[[], dict[str, Any]], progress: Progress, seconds:
 
 
 def arrived(server: Path) -> tuple[int, int]:
-    """Entries (files, directories and links; the mark left out) under `server`, and bytes in its files (each file once,
-    however many names it has), counted as the collect hook counts them."""
+    """Entries (files, directories and links; the manifest left out) under `server`, and bytes in its files (each file
+    once, however many names it has), counted as the collect hook counts them."""
     entries = size = 0
     files: set[tuple[int, int]] = set()
     folders = [str(server)]
@@ -122,7 +122,7 @@ def arrived(server: Path) -> tuple[int, int]:
             continue
         with listing:
             for entry in listing:
-                if folder == str(server) and entry.name == DELIVERY_MARKER:
+                if folder == str(server) and entry.name == MANIFEST:
                     continue
                 try:
                     info = entry.stat(follow_symlinks=False)
@@ -137,51 +137,51 @@ def arrived(server: Path) -> tuple[int, int]:
     return entries, size
 
 
-def delivery_notes(server: Path) -> list[str]:
-    return delivery_record(server)["notes"]
+def manifest_notes(server: Path) -> list[str]:
+    return manifest_record(server)["notes"]
 
 
-def delivery_record(server: Path) -> dict[str, Any]:
-    """What the collect hook's mark and the copy that arrived say about the delivery (QA 07d S2, 07e M4): `notes` for
-    metrics.json, and whether the pre-cap watchdog ended the agent's session (`ended_by_watchdog`, with the log's last
-    lines in `watchdog_log`), which is recorded and never a reason to change the reward.
+def manifest_record(server: Path) -> dict[str, Any]:
+    """What the collect hook's manifest and the copy that arrived say about /app/server: `notes` for metrics.json, and
+    whether the maintenance timer ended the agent's session (`ended_by_timer`, with the log's last lines in
+    `timer_log`), which is recorded and never a reason to change the reward.
 
-    The hook marks every delivery before the copy, an empty one too, after bounding it and packing it once the way the
-    copy packs it, so that nothing the agent leaves can make the copy fail (QA 07f M4). A delivery that arrived is scored
-    as it arrived, with a note when the mark is missing or says it was refused.
+    The hook writes the manifest before the copy, for an empty directory too, after bounding the tree and packing it
+    once the way the copy packs it, so that nothing the agent leaves can make the copy fail. A tree that arrived is
+    scored as it arrived, with a note when the manifest is missing or says the tree was refused.
 
     Raises:
-        EvaluationError: Nothing arrived at all, so the copy never happened; or the mark counts more than arrived, so the
-            copy was cut short, which only the platform can do (QA 07f S1).
+        EvaluationError: Nothing arrived at all, so the copy never happened; or the manifest counts more than arrived,
+            so the copy was cut short, which nothing the agent does can bring about.
     """
     try:
         empty = server.is_symlink() or not server.is_dir() or next(server.iterdir(), None) is None
     except OSError:
         empty = True
     if empty:
-        raise EvaluationError("Nothing arrived: /app/server is missing or empty, though the collect hook marks every delivery")
-    mark = server / DELIVERY_MARKER
+        raise EvaluationError("Nothing arrived: /app/server is missing or empty, though the collect hook writes a manifest for every tree")
+    manifest = server / MANIFEST
     try:
-        lines = mark.read_text(errors="replace").splitlines() if mark.is_file() and not mark.is_symlink() else None
+        lines = manifest.read_text(errors="replace").splitlines() if manifest.is_file() and not manifest.is_symlink() else None
     except OSError:
         lines = None
     if not lines:
-        return {"notes": [MISSING_MARK], "ended_by_watchdog": False, "watchdog_log": []}
+        return {"notes": [MISSING_MANIFEST], "ended_by_timer": False, "timer_log": []}
     rest = [line for line in lines[1:] if line.strip()]
-    watchdog_log = [line[len("watchdog: "):] for line in rest if line.startswith("watchdog: ")][-20:]
-    notes = [f"collect hook: {line}" for line in rest if not line.startswith("watchdog: ")][:20]
-    record = {"notes": notes, "ended_by_watchdog": any(" fired after " in line for line in watchdog_log), "watchdog_log": watchdog_log}
+    timer_log = [line[len("timer: "):] for line in rest if line.startswith("timer: ")][-20:]
+    notes = [f"collect hook: {line}" for line in rest if not line.startswith("timer: ")][:20]
+    record = {"notes": notes, "ended_by_timer": any(" fired after " in line for line in timer_log), "timer_log": timer_log}
     head = lines[0].split()
     if head[:1] == ["refused"]:
-        record["notes"] = notes or ["collect hook: the delivery was not copied"]
+        record["notes"] = notes or ["collect hook: /app/server was not copied"]
         return record
-    if len(head) == 3 and head[0] == "delivered" and all(value.isascii() and value.isdigit() for value in head[1:]):
+    if len(head) == 3 and head[0] == "complete" and all(value.isascii() and value.isdigit() for value in head[1:]):
         entries, size = arrived(server)
         if (entries, size) != (int(head[1]), int(head[2])):
             raise EvaluationError(f"The copy arrived incomplete: {entries:,} of {int(head[1]):,} entries and {size:,} of "
                                   f"{int(head[2]):,} bytes")
         return record
-    record["notes"] = notes + ["the collect hook's mark could not be read; the delivery was scored as it arrived"]
+    record["notes"] = notes + ["the collect hook's manifest could not be read; /app/server was scored as it arrived"]
     return record
 
 
@@ -206,20 +206,20 @@ def main() -> int:
             closed.chmod(0o700)
         reserve(output)
         server = Path("/app/server")
-        delivery = delivery_record(server)  # before the sandbox seals it; raises when nothing arrived
+        record = manifest_record(server)  # before the sandbox seals it; raises when nothing arrived
         scenarios = tests / "private" / "scenarios.json.gz"
         scenario_file = scenarios if scenarios.exists() else tests / "private" / "scenarios.json"
         progress = Progress()
         metrics = run_bounded(lambda: evaluate(server, scenario_file, Path("/work"), output, progress=progress), progress,
                               HARD_STOP_SEC - (time.monotonic() - started))
-        metrics["notes"] = delivery["notes"] + metrics["notes"]
-        # the pre-cap watchdog ended the agent's session before the platform's cap: recorded, never scored
-        metrics["ended_by_watchdog"], metrics["watchdog_log"] = delivery["ended_by_watchdog"], delivery["watchdog_log"]
+        metrics["notes"] = record["notes"] + metrics["notes"]
+        # whether the maintenance timer ended the agent's session: recorded, never scored
+        metrics["ended_by_timer"], metrics["timer_log"] = record["ended_by_timer"], record["timer_log"]
         publish(output, metrics)
         published, code = True, 0
         print(f"reward: {metrics['reward']:.6f} ({metrics['units_matched']}/{metrics['units_total']} units)", flush=True)
     except Exception as exc:  # noqa: BLE001 - every unexpected failure before the reward is out invalidates the evaluation
-        if not published:  # once published, a later failure (a print to a full disk) never takes the reward back (QA 07c N3)
+        if not published:  # once published, a later failure (a print to a full disk) never takes the reward back
             message = str(exc) if isinstance(exc, EvaluationError) else f"Verifier error: {type(exc).__name__}"
             with contextlib.suppress(Exception):
                 print(f"evaluation error: {message}", flush=True)

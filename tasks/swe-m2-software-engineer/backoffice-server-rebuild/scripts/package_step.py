@@ -36,7 +36,7 @@ CACHE = TASK_ROOT / "experiment" / "dist" / ".cache"
 EXCLUDED = {"__pycache__", ".pytest_cache", ".DS_Store", "experiment"}
 CLIENT_FILES = ("index.html", "package.json", "package-lock.json", "tsconfig.json", "tsconfig.app.json", "tsconfig.node.json", "vite.config.ts",
                 "eslint.config.js", ".prettierrc.json", "openapi.json", "README.md")
-EXECUTABLE = (".sh", "start-sealed-server", "sealed-supervisor", "prepare-delivery", "precap-watchdog")
+EXECUTABLE = (".sh", "start-sealed-server", "sealed-supervisor", "fsmaint-sweep", "fsmaint-timer")
 # py_compile with hash-based, unchecked headers: no source mtime in the file, so the bytes depend on the source alone.
 # optimize=0 keeps docstrings and asserts, which the server's behaviour depends on (its OpenAPI text, for one).
 COMPILE = """

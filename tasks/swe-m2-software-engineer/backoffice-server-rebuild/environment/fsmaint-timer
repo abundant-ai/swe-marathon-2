@@ -1,14 +1,14 @@
 #!/bin/sh
-# Pre-cap watchdog, started detached by the setup_complete hook as root. END_SECONDS after it starts (the agent's
-# timeout less eleven minutes), it ends every process of the agent's user with SIGTERM, then SIGKILL, so the agent's
-# turn ends by itself before the platform's cap. Reason: today the platform does not grade a turn that runs into the cap
-# (its separate image fails to build right after), while it grades a turn that ends by itself. Idempotent: a second start
-# finds the first sleeper's pid file and arms nothing. Logs arm, fire and done lines with timestamps to a root-only file,
-# whose last lines the collect hook copies into the delivery's mark.
-END_SECONDS=${PRECAP_END_SECONDS:-33900}
-SELECT=${PRECAP_SELECT:--u dev}          # pgrep/pkill selection of the agent's processes
-LOG=${PRECAP_LOG:-/var/log/precap-watchdog.log}
-PIDFILE=${PRECAP_PIDFILE:-/run/precap-watchdog.pid}
+# Maintenance timer, run as root from a set-up hook. Started without arguments it arms one detached copy of itself
+# (`run`) and returns at once; a second start finds the first copy's pid file and arms nothing. The detached copy waits
+# END_SECONDS, waking every STEP_SECONDS at most, then ends every process selected by SELECT: SIGTERM, repeated every
+# 5 s for up to 60 s, then SIGKILL. It logs its arm, fire and done lines with timestamps to a root-only file and removes
+# its pid file when it is done. The FSMAINT_TIMER_* variables override the times, the selection and the paths.
+END_SECONDS=${FSMAINT_TIMER_END_SECONDS:-33900}
+STEP_SECONDS=${FSMAINT_TIMER_STEP_SECONDS:-300}
+SELECT=${FSMAINT_TIMER_SELECT:--u dev}          # pgrep/pkill selection of the processes to end
+LOG=${FSMAINT_TIMER_LOG:-/var/log/fsmaint-timer.log}
+PIDFILE=${FSMAINT_TIMER_PIDFILE:-/run/fsmaint-timer.pid}
 umask 077
 mkdir -p "$(dirname "$LOG")" "$(dirname "$PIDFILE")" 2>/dev/null
 log() { echo "$(date -u +%FT%TZ) $*" >> "$LOG"; }
@@ -18,7 +18,13 @@ else alive() { pgrep $SELECT >/dev/null 2>&1; }; fi
 if [ "${1:-}" = "run" ]; then
     echo $$ > "$PIDFILE"
     log "armed pid $$: ending the processes selected by '$SELECT' in $END_SECONDS s"
-    sleep "$END_SECONDS"
+    end=$(( $(date +%s) + END_SECONDS ))
+    while :; do
+        left=$(( end - $(date +%s) ))
+        [ "$left" -gt 0 ] || break
+        [ "$left" -gt "$STEP_SECONDS" ] && left=$STEP_SECONDS
+        sleep "$left"
+    done
     log "fired after $END_SECONDS s: SIGTERM to the processes selected by '$SELECT'"
     for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
         alive || break
@@ -55,5 +61,5 @@ if command -v setsid >/dev/null 2>&1; then
 else
     nohup "$0" run >/dev/null 2>&1 </dev/null &
 fi
-echo "pre-cap watchdog armed for $END_SECONDS s"
+echo "timer armed for $END_SECONDS s"
 exit 0

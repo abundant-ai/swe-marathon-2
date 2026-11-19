@@ -88,8 +88,8 @@ SCRATCH = ("/tmp", "/var/tmp", "/dev/shm", "/dev/mqueue", "/run/lock", "/var/loc
 PROC = "/proc"
 START_SEC = 60
 REQUEST_SEC = 30  # wall clock for one request: a big upload or a 200-page PDF needs more than a JSON call
-# the whole replay; the step allows 6,000 s for everything. The reference replays the corpus in about 520 s on the author's
-# machine: a server three times slower than it (the pace the instruction asks for), on a machine three times slower, finishes
+# the whole replay; the step allows 6,000 s for everything. The reference replays the corpus in about 520 s on a laptop
+# with four cores: a server three times slower than it (the pace the instruction asks for), on a machine three times slower, finishes
 DEADLINE_SEC = 5400
 HEALTH_SEC = 30  # how long a live server may leave its health check unanswered before it is restarted
 STOP_SEC = 30  # how long a server stopped with SIGTERM may take to exit before it is killed
@@ -161,7 +161,7 @@ class Clock:
     @contextlib.contextmanager
     def limit(self, connection: http.client.HTTPConnection, seconds: float) -> Iterator[None]:
         """Bound what happens on `connection` inside this block by `seconds` and by the deadline: the watcher shuts the
-        socket down at the end, and on a `WatchedConnection` every read of the answer stops there too (QA 07d M1)."""
+        socket down at the end, and on a `WatchedConnection` every read of the answer stops there too."""
         end = min(time.monotonic() + seconds, self.deadline)
         if isinstance(connection, WatchedConnection):
             connection.end = end
@@ -193,10 +193,10 @@ class Clock:
 # ------------------------------------------------------------------ reading answers
 
 class Bounded(io.RawIOBase):
-    """A socket's byte stream that refuses to deliver more than `limit` bytes in all, or anything after `end` (a
+    """A socket's byte stream that refuses to yield more than `limit` bytes in all, or anything after `end` (a
     time.monotonic() value): every byte of an answer counts, its status line, headers, chunk sizes and trailers
-    included, whatever its transfer encoding (QA 07c F1), and no drip of bytes, however framed, keeps a read going
-    past its end (QA 07d M1)."""
+    included, whatever its transfer encoding, and no drip of bytes, however framed, keeps a read going
+    past its end."""
 
     def __init__(self, raw: io.RawIOBase, limit: int, sock: socket.socket | None = None, end: float = float("inf")) -> None:
         super().__init__()
@@ -224,7 +224,7 @@ class Bounded(io.RawIOBase):
                     self.sock.settimeout(self.timeout)
             if count == 0 and time.monotonic() >= self.end:
                 # the watcher's shutdown at the end reads as the end of the stream: an answer cut there is not complete
-                raise TimeoutError("the answer did not end in time")  # (QA 07e N-a)
+                raise TimeoutError("the answer did not end in time")
         self.left -= count
         return count
 
@@ -303,8 +303,8 @@ def proc_fields(pid: str) -> dict[str, str]:
 
 def user_processes(uid: int) -> list[int]:
     """Processes of real user `uid` with anything still running, read from /proc: that needs no new process, even with a
-    full process table. A process whose main thread has exited shows as a zombie while its other threads run (QA 07c
-    F2); it counts as alive while it has more than one thread or any thread that is not a zombie."""
+    full process table. A process whose main thread has exited shows as a zombie while its other threads run; it counts
+    as alive while it has more than one thread or any thread that is not a zombie."""
     found = []
     with contextlib.suppress(OSError):
         with os.scandir(PROC) as entries:
@@ -348,8 +348,8 @@ def kill_as_user(uid: int) -> None:
 def end_user_processes(uid: int, seconds: float = 20, group: Cgroup | None = None) -> bool:
     """Stop every process of `uid`, then kill them all; True when none is left.
 
-    A sweep that lists processes and then kills them can be outrun by one that forks fast enough
-    (QA 07 F4). A stopped process cannot fork: once every process listed is stopped and a new listing
+    A sweep that lists processes and then kills them can be outrun by one that forks fast enough.
+    A stopped process cannot fork: once every process listed is stopped and a new listing
     finds no other, none can appear, and all are killed. Each round also kills the user's processes
     from inside (`kill_as_user`) and the server's cgroup when there is one. Never raises.
     """
@@ -400,7 +400,7 @@ def reap_orphans() -> None:
 
 def remove_tree(path: Path | str, seconds: float = 600) -> None:
     """Remove a directory tree, however deep or wide, within `seconds`: one `rm -rf` killed at its time limit. An
-    in-process rmtree lists each directory whole before deleting it and has no time limit (QA 07d M2)."""
+    in-process rmtree lists each directory whole before deleting it and has no time limit."""
     if os.path.lexists(path):
         with contextlib.suppress(OSError, subprocess.SubprocessError):
             subprocess.run(["rm", "-rf", "--", str(path)], check=False, capture_output=True, timeout=max(1.0, seconds))
@@ -503,7 +503,7 @@ class LogCapture:
     """The server's standard output and error: a pipe a thread drains, keeping the first and the last LOG_KEEP bytes.
 
     The server never holds a file of the evaluation's, so it cannot fill the disk through its output, read it back, see
-    its size, or keep writing to it after the evaluation ends (QA 07c F3, F5).
+    its size, or keep writing to it after the evaluation ends.
     """
 
     def __init__(self) -> None:
@@ -559,7 +559,7 @@ class LogCapture:
 
 class Ballast:
     """Space set aside on the evaluation's disk before the server starts and given back for the results: however full the
-    server leaves the disk, the reward, the summary and the archive Harbor makes of them have room (QA 07c F3)."""
+    server leaves the disk, the reward, the summary and the archive made of them afterwards have room."""
 
     def __init__(self, path: Path, size: int = BALLAST) -> None:
         self.path: Path | None = None
@@ -586,7 +586,7 @@ class Ballast:
 
 def free_bytes(path: Path | str) -> int | None:
     """Free bytes on the filesystem of `path`, or None when it reports no size (a tmpfs without a limit reports no
-    blocks at all, QA 07d S1): such a filesystem cannot be watched."""
+    blocks at all): such a filesystem cannot be watched."""
     try:
         info = os.statvfs(path)
     except OSError:
@@ -641,7 +641,7 @@ def memory_backed_dirs() -> list[str]:
 def release_memory(uid: int, seconds: float = 10) -> None:
     """Free what the server's user can keep in memory without a process: its SysV shared memory segments, message queues
     and semaphores (removed as that user, since root lacks CAP_SYS_ADMIN on Docker's defaults) and its files in
-    memory-backed directories (QA 07e M3). Done at every stop and every halt, so memory parked there never outlives the
+    memory-backed directories. Done at every stop and every halt, so memory parked there never outlives the
     server. Never raises."""
     with contextlib.suppress(OSError, subprocess.SubprocessError):
         subprocess.run(DROP + ["ipcrm", "--all"], check=False, capture_output=True, timeout=seconds)
@@ -719,7 +719,7 @@ def processes_memory(uid: int) -> int:
 
 
 class MemoryMeter:
-    """How much memory the server holds that the kernel cannot reclaim, each page counted once (QA 07d M3, 07e M3, S-a).
+    """How much memory the server holds that the kernel cannot reclaim, each page counted once.
 
     The best source the machine has is chosen once, before the server starts:
     - "server cgroup": the server's own group (`Cgroup`), where the machine lets the evaluation make one; the kernel
@@ -751,7 +751,7 @@ class MemoryMeter:
                 info = read_fields(f"{PROC}/meminfo")
                 own = read_fields(f"{PROC}/self/status")
                 # gVisor reports MemFree as MemAvailable and no RssAnon: page cache would count, and the grader's own
-                # memory could not be taken off (QA 07f S2)
+                # memory could not be taken off
                 if "MemAvailable" in info and 0 < info.get("MemTotal", 0) <= MEMINFO_MACHINE and "RssAnon" in own:
                     self._usable("meminfo", f"{PROC}/meminfo")
         if self.kind == "none" and os.path.isdir(f"{PROC}/self"):
@@ -847,11 +847,11 @@ class Candidate:
             with contextlib.suppress(OSError):
                 os.killpg(proc.pid, signal.SIGKILL)
         if self.sandbox:
-            end_user_processes(self.uid, group=self.group)  # children that left the group, and any that hide (QA 07c F2)
+            end_user_processes(self.uid, group=self.group)  # children that left the group, and any that hide
 
     def stop(self) -> None:
         """Stop the server for good or before a start. Never raises: a server that has exhausted processes, memory or disk
-        must not turn a finished evaluation into an error (QA 07 F2)."""
+        must not turn a finished evaluation into an error."""
         self.note_memory()
         self.kill_all()
         if self.proc is not None:
@@ -859,7 +859,7 @@ class Candidate:
                 self.proc.wait(timeout=10)
         if self.sandbox:
             reap_orphans()
-            release_memory(self.uid)  # SysV objects and memory-backed files outlive the processes (QA 07e M3)
+            release_memory(self.uid)  # SysV objects and memory-backed files outlive the processes
         self.proc = None
 
     def clean_slate(self) -> None:
@@ -868,8 +868,8 @@ class Candidate:
 
         DATA_DIR and every directory the user owns are moved aside into a directory only root can enter (constant time,
         however much they hold; nothing is deleted), the search for the user's files stops after SWEEP_SEC and never
-        enters the evaluation's own folders (QA 07d M2). The submission is read-only to the server, so it starts again
-        exactly as delivered.
+        enters the evaluation's own folders. The submission is read-only to the server, so it starts again
+        exactly as it arrived.
         """
         with self.lock:
             self.stop()
@@ -973,10 +973,10 @@ class Candidate:
 
 class Guard:
     """While the server may run: every GUARD_SEC (10 ms) where one file reports it, else every 50 ms, stop the server for
-    good when it holds more than SERVER_MEMORY, measured by `meter`, so memory it takes cannot end the evaluation (QA 07c
-    F1, 07d M3, 07e M3); every 50 ms put its processes back at the front of the OOM killer's line; every second stop it
-    for good when a disk it can write has run low (QA 07c F3). A disk is watched only if it reports its size, had room
-    when the server started (QA 07d S1) and is one the server can write to (QA 07e S-d): a server cannot be blamed for a
+    good when it holds more than SERVER_MEMORY, measured by `meter`, so memory it takes cannot end the evaluation; every
+    50 ms put its processes back at the front of the OOM killer's line; every second stop it
+    for good when a disk it can write has run low. A disk is watched only if it reports its size, had room
+    when the server started and is one the server can write to: a server cannot be blamed for a
     disk the machine gave it full or one only the grader writes. `start_free` has what each path had."""
 
     def __init__(self, candidate: Candidate, paths: list[Path], meter: MemoryMeter) -> None:
@@ -1286,7 +1286,7 @@ def durable(scenario: dict[str, Any]) -> bool:
 def heavy(scenario: dict[str, Any], media: Media) -> bool:
     """A scenario that uploads a PDF of HEAVY_PDF bytes or more, or any file of HEAVY_FILE or more: the reference reads such
     a file in full, or stores it, while it holds the database's write lock, and a request queued behind it for longer
-    than SQLite's 15 s wait would fail (QA 11 S1). Such scenarios run alone."""
+    than SQLite's 15 s wait would fail. Such scenarios run alone."""
     for step in scenario["steps"]:
         name = step.get("body_file") or (step.get("body_insert") or {}).get("file")
         if name:
@@ -1331,7 +1331,7 @@ def iter_scenarios(text: str) -> Iterator[dict[str, Any]]:
 
 class Corpus:
     """The private scenarios, each held as compact JSON text and decoded only when it is played: the decoded corpus takes
-    several times the memory, and a small evaluation is a small target when memory runs out (QA 07c F1)."""
+    several times the memory, and a small evaluation is a small target when memory runs out."""
 
     def __init__(self, path: Path, media: Media) -> None:
         self.blobs: list[bytes] = []
@@ -1363,7 +1363,7 @@ class Corpus:
 
 
 class Stats:
-    """What makes a short baseline readable without the server's log (QA 11 S1): the slowest requests, and the answers of
+    """What makes a run readable without the server's log: the slowest requests, and the answers of
     500 or above by theme."""
 
     def __init__(self) -> None:
@@ -1473,7 +1473,7 @@ def not_played(themes: list[str], scenario_id: str, reason: str) -> dict[str, An
 
 
 def merge_retry(first: dict[str, Any], second: dict[str, Any]) -> dict[str, Any]:
-    """The verdict after a second try: it decides only the units the first try left unsettled (QA 07 F1).
+    """The verdict after a second try: it decides only the units the first try left unsettled.
 
     A month goes on after a wrong answer, and later requests echo many earlier answers, so a server could
     read a whole month on the first try, give no answer at the end to earn a second, and replay what it
@@ -1545,7 +1545,7 @@ def play_all(candidate: Candidate, corpus: Corpus, media: Media, clock: Clock, m
 
     Scenarios run WORKERS at a time in `play_order`; one that runs alone has nothing beside it. A second try is only for
     a scenario in flight when the server stopped, never for a wrong answer, and the units second tries decide stay within
-    RETRY_SHARE of all units, so they rescue a server that stops now and then, not one that fails under load (QA 20).
+    RETRY_SHARE of all units, so they rescue a server that stops now and then, not one that fails under load.
     Each result goes into `results` as soon as it is decided, where a caller can read it if the evaluation overruns.
     """
     results = results if results is not None else [None] * len(corpus)
@@ -1569,7 +1569,7 @@ def play_all(candidate: Candidate, corpus: Corpus, media: Media, clock: Clock, m
         pool.shutdown(cancel_futures=True)
     budget = int(RETRY_SHARE * sum(len(themes) for themes in corpus.themes))
     metrics["retry_budget_units"] = budget
-    # a second try only where it can decide something (QA 07d N7)
+    # a second try only where it can decide something
     again = [index for index in order if results[index]["reason"] in (CRASHED, DOWN) and results[index]["settled"].count(False)]
     if again and not candidate.halted and clock.left() > RETRY_MARGIN_SEC:
         candidate.clean_slate()
@@ -1590,7 +1590,7 @@ def strip_set_id(root: Path) -> int:
     """Clear the set-user-id and set-group-id bits of every file under `root`; returns how many had one.
 
     Symbolic links are neither followed nor changed, so nothing outside the submission is touched; a file that cannot be
-    read or changed is passed over (QA 07c N4).
+    read or changed is passed over.
     """
     count = 0
     for folder, _, names in os.walk(root):
@@ -1684,7 +1684,7 @@ def check_sandbox() -> list[str]:
 
 def seal_submission(source: Path) -> None:
     """Make the submission root's and read-only to the server's user: it cannot keep anything in its own files, and every
-    start runs exactly what was delivered. Links are not followed."""
+    start runs exactly what arrived. Links are not followed."""
     with contextlib.suppress(OSError, subprocess.SubprocessError):
         subprocess.run(["chown", "-R", "root:root", str(source)], check=False, capture_output=True, timeout=600)
         subprocess.run(["chmod", "-R", "a+rX,go-w", str(source)], check=False, capture_output=True, timeout=600)
@@ -1699,12 +1699,12 @@ def become_reaper() -> None:
 
 
 class Progress:
-    """What the evaluation has decided so far, shared with its caller: if the evaluation itself overruns (QA 07d M1), the
+    """What the evaluation has decided so far, shared with its caller: if the evaluation itself overruns, the
     caller publishes the reward from here, with a note, and the scenarios not yet decided count as not matched."""
 
     def __init__(self) -> None:
         self.started = time.monotonic()
-        self.ballast: Ballast | None = None  # given back by a caller that stops waiting (QA 07e S-b)
+        self.ballast: Ballast | None = None  # given back by a caller that stops waiting
         self.metrics: dict[str, Any] | None = None
         self.themes: list[list[str]] = []
         self.ids: list[str] = []
@@ -1754,7 +1754,7 @@ def evaluate(source: Path, scenario_path: Path, work: Path, output: Path, sandbo
 
     Returns:
         The reward and its breakdown. Nothing is deleted before it is returned: the container is discarded after the
-        run, and a deletion the server made long would only delay the reward (QA 07d M2).
+        run, and a deletion the server made long would only delay the reward.
 
     Raises:
         EvaluationError: The private scenarios are unreadable, privileges cannot be dropped, or the machine has too
@@ -1784,7 +1784,7 @@ def evaluate(source: Path, scenario_path: Path, work: Path, output: Path, sandbo
             metrics["grader_oom_score_adj"] = protect_grader()
         runner = source / "run"
         if source.is_symlink() or not source.is_dir():
-            # an /app/server that could not be copied out of the agent's machine (QA 07 F3) arrives as nothing at all
+            # an /app/server that could not be copied out of the agent's machine arrives as nothing at all
             metrics["notes"].append("/app/server did not arrive: it is missing, or it could not be copied from the machine it was built on")
             results = [not_played(themes[index], corpus.ids[index], "no server to run") for index in range(len(corpus))]
         elif not runner.is_file() or not os.access(runner, os.X_OK):
