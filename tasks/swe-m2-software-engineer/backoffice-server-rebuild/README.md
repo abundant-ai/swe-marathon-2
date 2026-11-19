@@ -13,6 +13,82 @@ One step is implemented. See [Remaining work](#remaining-work).
 
 ## Development log
 
+### 2026-11-19 (round 4: the final QA wave on round 3)
+
+- Started from round 3 as pushed (`2fcf14b`). QA 07c (the round 3 re-check, FAIL), 11, 12, 13 and
+  20. No re-record: every fix is in the verifier, the images, the solution or the instruction,
+  and none changes a recorded answer.
+- Answer cap (QA 07c F1, must-fix). A chunked answer with size line `-1` made http.client read to
+  the end of the stream: 300 MiB grew the verifier by 848 MiB against an 80 MiB cap. Answers are
+  now read through a reader that counts every byte in any transfer encoding (80 MiB plus 8 MiB
+  for headers, chunk sizes and trailers), and chunk sizes are plain hexadecimal or the answer is
+  broken. OOM: the server's `oom_score_adj` 1000 is raised again every second (without
+  CAP_SYS_RESOURCE it could lower it, and the sandbox probe now notes a machine where it can), the
+  grader asks for -1000 for itself, a cgroup caps the server's whole group where the machine lets
+  the verifier make one, and the grader is a smaller target: each scenario is held as compact
+  JSON and decoded when played, and uploads sit in a 192 MiB cache.
+- Processes that outlive cleanup (QA 07c F2, must-fix). A process whose main thread exits while
+  other threads run shows as a zombie, and the sweep skipped zombies. It now counts any process
+  of `nobody` with more than one thread or a live thread, and every kill round also runs
+  `kill -9 -1` as `nobody` (one system call for all its processes) and kills the cgroup where
+  there is one.
+- Disk (QA 07c F3, must-fix). On providers that pack `/logs/verifier` before reading the reward,
+  a full disk, a 4 GiB `server.log` or appends during the pack lost the reward. The server's
+  output now goes into a pipe the grader drains, keeping the first and last MiB, written out as
+  `server.log` after the final stop; a 256 MiB ballast set aside before the server starts is
+  given back for the results; a guard stops the server for good when free space falls under
+  512 MiB and fails its remaining scenarios with a note; `DATA_DIR` is removed within a minute
+  after the final stop. RLIMIT_FSIZE stays at 4 GiB per file.
+- One configuration (QA 12 F1, must-fix). The sealed server served the web client, so
+  `DELETE /nowhere` answered 405 `allowed: []` there and 404 `unknown_path` in the corpus, and a
+  perfect clone lost 6 units. `environment/stockwell.env` is now the one set of settings for the
+  sealed server, the live recorder and the solution (shipped in `solution/data`), with no client
+  directory; nothing needed the mounted client (the agent has its source and no browser). The
+  instruction no longer says the sealed server serves the client. A check ties every file to
+  the settings and the instruction's numbers to the code that enforces them. The replay of a clone
+  of the sealed server (the solution, installed from the bundle's bytecode with that file) scores
+  1.0 on every unit: 4,002 of 4,002 (2,262 of 2,262 scenarios), with its 9 planned restarts, no
+  other restart and no second try, in 472.5 s locally without the sandbox.
+- The sealed server (QA 20): a root supervisor (one only, through `flock`) restarts it when it
+  exits or misses its health check for a minute; the setup hook starts the supervisor. The
+  solution's `solve.sh` first checks, as the agent's user, that the sealed server answers and
+  gives a workspace, so a dead sealed server fails the oracle row.
+- Exact file bytes (QA 20): the instruction now says why: our document archive and our partners'
+  portals file everything we send by its checksum. The comparison is unchanged.
+- Second tries (QA 20): only for a scenario in flight when the server stopped; a wrong answer, or
+  a request a live server left unanswered, is final; and second tries decide at most 2% of all
+  units (80 here), so they rescue a server that stops now and then, not one that fails under
+  load.
+- The maintainability sentence (QA 20) is gone from the instruction.
+- SQLite lock waits (QA 11 S1). Stockwell hard-codes `busy_timeout=15000`, so the solution cannot
+  lengthen it. A scenario that uploads a PDF of 1 MiB or more or any file of 16 MiB or more
+  (the reference reads or stores it under the write lock) now runs with nothing beside it,
+  spread through the order like the planned restarts: 52 scenarios run alone, the 9 restart months
+  and 43 media scenarios. `metrics.json` now
+  lists the 20 slowest requests, answers of 500 or above by theme and the server's peak memory,
+  so a baseline under 1.0 can be read without the server's log.
+- `/opt/py` (QA 13 S2): `python3` was a link to the venv's interpreter, which does not activate
+  the venv, so the instruction's `python3 -m pip list` and `import fastapi` failed in both images.
+  `python3` and `python` are now wrappers that run `/opt/py/bin/python`, the system interpreter
+  sees `/opt/py`'s packages through a `.pth` file, and each image's build checks the imports as
+  `dev` and `nobody` (agent image) or `nobody` (verifier image).
+- Also from QA 07c: the clean slate moves `DATA_DIR` aside in constant time, bounds its sweep to
+  two minutes, removes SysV IPC as `nobody` (root lacks CAP_SYS_ADMIN on Docker's defaults) and
+  is skipped with less than five minutes left (F5, F6); a published reward is never taken back by
+  a later failure (N3); `strip_set_id` passes over files it cannot read (N4); the delivery hook
+  copies only files and directories, so a link to `/dev/zero` is removed (N2). Left as they are:
+  the within-try echo (F4, recorded as hackability row 10's residual), the 12 h lease margin (F7,
+  for the baselines to measure) and a uid unique to each trial (N1).
+- `checks/`: 32 tests pass, 6 of them new this round (the `-1` chunk and its relatives with the
+  grader's memory measured, zombie leaders in a fake `/proc`, the log pipe, the ballast and the
+  disk guard, second tries only after a stop and within the share with heavy uploads alone, one
+  configuration with the instruction's numbers, the `python3` wrappers), and the retry, preview,
+  seal and delivery checks updated; with `ci_checks` (27), 59 pass under Python 3.13, and
+  `ci_checks/check_repository.py` passes.
+- Bundle `d38fb62325c8` (1,160 files, 247.2 MB) built twice with the same hash; flat
+  `fb9bb0a0f2f4`. `scripts/scan_uploads.py` finds no hidden upload, cut-short upload or file answer
+  among the 495 files the agent image receives; Oddish preflight passes.
+
 ### 2026-11-19 (round 3: the retry preview, big inputs, the pace, varied inputs, the seal)
 
 - Started from round 2 plus the coordinator's `db47e87` (no_new_privs through prctl too). One
@@ -448,38 +524,51 @@ for the hours, the cost and the large targets.
 ## Verification
 
 The verifier runs in a separate image that holds the private scenarios and no copy of the
-reference server.
+reference server. The sealed server the agent studies, the recorders and the solution all take
+their settings from one file, `environment/stockwell.env` (the legacy recorder builds the same
+app in-process), so the server the agent learns from answers as the grader expects (QA 12 F1).
 
 1. Delivery: before `/app/server` leaves the agent's machine, a `[[verifier.collect]]` hook runs
    `environment/prepare-delivery` (root, mode 0700). It ends the agent's leftover processes,
    then, as `dev`, makes links inside the directory relative, replaces links that leave it with
-   copies of what they point to (at most 2 GiB in all) and removes dangling links, pipes,
-   sockets and device nodes. Harbor's copy (tarfile's `data` filter) refuses absolute links and
-   links that leave the directory, so without this a venv's interpreter link made a correct
-   delivery vanish (QA 07 F3). It runs as `dev`, so it copies nothing `dev` could not read. An
-   `/app/server` that never arrives is a note in `metrics.json`.
+   copies of the files or directories they point to (at most 2 GiB in all; devices, pipes and
+   sockets are left out) and removes dangling links, links to devices, pipes, sockets and device
+   nodes. Harbor's copy (tarfile's `data` filter) refuses absolute links and links that leave
+   the directory, so without this a venv's interpreter link made a correct delivery vanish (QA 07
+   F3). It runs as `dev`, so it copies nothing `dev` could not read. An `/app/server` that never
+   arrives is a note in `metrics.json`.
 2. Sandbox: set-user-id and set-group-id bits are cleared, the submission is made root's and
    read-only, and `/app/server/run` is started as user `nobody` through
    `setpriv --no-new-privs`, under `prlimit` (4,096 threads for the user, files of at most
-   4 GiB, 6 GiB of address space per process) and with `oom_score_adj` 1000 set before the
-   drop, with `PORT` and `DATA_DIR` set, in its own process group, with no network. Before
-   that, a process started the same way must show the unprivileged ids, no capabilities,
+   4 GiB, 6 GiB of address space per process), in a cgroup capping the whole group's memory and
+   processes where the machine lets the verifier make one, with `oom_score_adj` 1000 set before
+   the drop and raised again every second (without CAP_SYS_RESOURCE the server could lower it;
+   the probe notes when it can), with `PORT` and `DATA_DIR` set, in its own process group, with
+   no network. The grader asks for a low OOM priority for itself and holds each scenario as
+   compact JSON, decoded when played, and its uploads in a bounded cache. Before the server
+   starts, a process started the same way must show the unprivileged ids, no capabilities,
    no_new_privs (status file or prctl) and those limits; otherwise the evaluation stops with an
-   evaluation error. The server's log is root's, mode 0600, so it cannot read it back.
+   evaluation error. The server's output goes into a pipe the grader drains, keeping its first
+   and last MiB, so no file of the grader's is ever the server's to fill, read or hold open.
 3. The server has 60 seconds to answer `GET /api/health`.
 4. Each scenario creates a workspace and replays its requests on one connection, eight
    scenarios at a time, in a fixed shuffled order, so a server too slow to finish loses
-   scenarios of every kind. A step marked `scoped: false` names its full path (the client's
-   `GET /api/version`); the others are under `/api/ws/{workspace}`. A body is JSON, a media
-   file sent raw (`body_file`), JSON with a media file put into one field as base64 or text
-   (`body_insert`, for bodies near the 6 MB limit), or that many zero bytes (`body_size`, for
-   bodies over a limit). An answer matches when the status code is equal and the JSON body is
-   identical, types included, to the recorded one with the candidate's workspace id put where
-   the recorder wrote `{ws}`; a file matches on its type, length and SHA-256, hashed as it
-   arrives. A reply that is not HTTP, not JSON, larger than 4 MB of JSON or 80 MiB in all, or
-   nested too deeply matches nothing. An answer cut short of its `Content-Length` is no answer.
-   A connection the server closed while idle is reopened, and a request that never reached the
-   server is sent once more.
+   scenarios of every kind. A scenario with a planned restart, or one that uploads a PDF of
+   1 MiB or more or any file of 16 MiB or more (the reference holds SQLite's write lock while it
+   reads or stores such a file, and a request queued behind it for 15 s would fail; QA 11 S1),
+   runs with nothing beside it, at a fixed place spread through the order. A step marked
+   `scoped: false` names its full path (the client's `GET /api/version`); the others are under
+   `/api/ws/{workspace}`. A body is JSON, a media file sent raw (`body_file`), JSON with a media
+   file put into one field as base64 or text (`body_insert`, for bodies near the 6 MB limit), or
+   that many zero bytes (`body_size`, for bodies over a limit). An answer matches when the status
+   code is equal and the JSON body is identical, types included, to the recorded one with the
+   candidate's workspace id put where the recorder wrote `{ws}`; a file matches on its type,
+   length and SHA-256, hashed as it arrives. Every byte of an answer, headers, chunk sizes and
+   trailers included, counts against 80 MiB plus 8 MiB of headers, and a chunk size that is not
+   plain hexadecimal (`-1`, `+1a`, `0x10`) is a broken answer (QA 07c F1). A reply that is not
+   HTTP, not JSON, larger than 4 MB of JSON or 80 MiB in all, or nested too deeply matches
+   nothing. An answer cut short of its `Content-Length` is no answer. A connection the server
+   closed while idle is reopened, and a request that never reached the server is sent once more.
 5. Units: a scenario of the legacy, media, counts and kits themes is one unit and stops at its
    first difference. A month of trading lists its units, one per trading day and one per
    client screen opened after it, goes on after a difference and judges each unit on its own
@@ -491,24 +580,33 @@ reference server.
 7. Restarts: a server that has died, or has not answered its health check for 30 seconds, is
    restarted before the next attempt, with no cap while the deadline holds, and given up after
    three starts in a row that never answer. Every start uses the same `DATA_DIR`. A stop ends
-   the process group, then stops and kills every process of `nobody`, read from `/proc`: a
-   stopped process cannot fork, so a fork loop cannot outrun it (QA 07 F4). Orphans are reaped.
-8. Second tries: each scenario that got no answer (the server died, dropped the connection or
-   ran out of time) is played once more on its own after all the others, so the scenarios in
-   flight beside a crash still count. Before the first second try the slate is cleaned: the
-   server stopped, `DATA_DIR` and every file `nobody` owns on the root filesystem and in
-   `/tmp`, `/var/tmp`, `/dev/shm`, `/dev/mqueue` and `/run/lock` removed (with any hard link
-   there), SysV IPC removed, and a fresh server started. A second try decides only the units
-   the first try left unanswered (QA 07 F1).
-9. Durable state: a month with a step marked `restart` runs with nothing beside it, at a fixed
-   place spread through the shuffled order. After that step the server is stopped (SIGTERM at
-   the end of a trading day, with 30 seconds to exit, or SIGKILL straight after a write drawn
-   at random was answered), started again on the same `DATA_DIR`, and the month goes on in the
-   same workspace; the day after, files uploaded before the restart are read again.
-10. `verify.py` writes a placeholder of the reward's size before the server starts; the reward
-    goes over it in place and is renamed, which needs no free space, then `metrics.json`, then
-    the per-scenario results. A failure writing the last two costs only those files, and no
-    cleanup step can raise.
+   the process group, then stops and kills every process of `nobody` read from `/proc`,
+   including a process whose main thread has exited while others run (it shows as a zombie;
+   QA 07c F2), runs `kill -9 -1` as `nobody` and kills the cgroup where there is one, until none
+   is left: a stopped process cannot fork, so nothing outruns it. Orphans are reaped.
+8. Second tries: a scenario in flight when the server stopped (it died, or hung and was
+   stopped) is played once more on its own after all the others, so the scenarios beside a crash
+   still count; a wrong answer, or a request a live server left unanswered, is final. Second
+   tries decide at most 2% of all units, so they rescue a server that stops now and then, not
+   one that fails under load (QA 20). Before the first, the slate is cleaned: the server
+   stopped, `DATA_DIR` moved into a directory only root can enter, every file `nobody` owns on
+   the root filesystem and in `/tmp`, `/var/tmp`, `/dev/shm`, `/dev/mqueue` and `/run/lock`
+   removed (with any hard link there) within two minutes, SysV IPC removed as `nobody`, and a
+   fresh server started; none of this starts with less than five minutes left. A second try
+   decides only the units the first try left unanswered (QA 07 F1).
+9. Durable state: after a step marked `restart` the server is stopped (SIGTERM at the end of a
+   trading day, with 30 seconds to exit, or SIGKILL straight after a write drawn at random was
+   answered), started again on the same `DATA_DIR`, and the month goes on in the same workspace;
+   the day after, files uploaded before the restart are read again.
+10. Disk: a 256 MiB ballast is set aside before the server starts and given back for the
+    results, and a guard stops the server for good when free space on the grader's disks falls
+    under 512 MiB, its remaining scenarios failed with a note (QA 07c F3). After the final stop
+    `DATA_DIR` is removed within a minute. `verify.py` writes a placeholder of the reward's size
+    before the server starts; the reward goes over it in place and is renamed, which needs no
+    free space, then `metrics.json` (with the slowest requests, answers of 500 or above by theme
+    and the server's peak memory), then the per-scenario results. A failure writing the last two
+    costs only those files, a published reward is never taken back, and no cleanup step can
+    raise.
 
 ### Reward formula
 
@@ -534,25 +632,32 @@ reward = (matched scenarios + matched trading days + matched screens)
 - An evaluation error (verifier not root, privileges or limits cannot be set or do not hold,
   scenarios unreadable, an upload the scenarios name is missing) leaves no reward file;
   `metrics.json` has `status: evaluation_error`, and `verifier_error.txt` the traceback. No
-  reply from the submitted server can cause one, and since round 3 neither can a server that
-  fills the process table or the disk: its user's limits keep the table usable, the cleanup
-  never forks or raises, and the reward is written over a placeholder made before it ran.
+  reply from the submitted server can cause one, and neither can a server that fills the
+  process table, memory or the disk: its user's limits keep the table usable, the cleanup never
+  forks or raises and finds every process, an answer is bounded in every transfer encoding, the
+  server's output never reaches a file of the grader's, the reward goes over a placeholder made
+  before it ran, and a ballast keeps room for the results and their retrieval (round 4).
 - One step; `multi_step_reward_strategy = "final"`.
 - Implementation: `tests/verifier/replay.py`. Tests: `checks/test_backoffice.py` (reference
   1.0; a one-character rounding defect scores between 0 and 1; a crashing or missing server
   scores 0 with the full denominator; tiny fake servers that hang, drip bytes, send a garbage
   health reply, deep or non-JSON answers, or crash in every tenth scenario, which scores 72 of
-  80, as deserved; set-id bits are cleared and the drop sets `--no-new-privs` and the limits;
-  the QA 07 preview server gains nothing from a second try; the sweep never follows a link; the
-  reward is written when every new write fails; a real venv survives the data-filter copy; the
-  order is a fixed shuffle with the restarting months spread; files of 40 MiB are hashed as they
-  arrive and JSON bodies are built around media files; the deadline leaves at least 300 s of
-  the step's limit, 600 s now).
+  80 with room for second tries and decides no more than 2% of units without it; a live server
+  that drops a request gets no second try, and heavy uploads run alone; set-id bits are cleared
+  and the drop sets `--no-new-privs` and the limits; the QA 07 preview server gains nothing from
+  a second try, and the within-try echo is pinned at 0.67; the sweep never follows a link, and a
+  zombie leader with live threads is found and killed; a `-1` chunk and its relatives are broken
+  answers that cost the grader no memory; the server's output keeps its first and last MiB, the
+  ballast is given back and a low disk stops the server; the reward is written when every new
+  write fails; a real venv survives the data-filter copy and a link to `/dev/zero` is removed;
+  the order is a fixed shuffle with the restarting months spread; files of 40 MiB are hashed as
+  they arrive and JSON bodies are built around media files; one configuration and the
+  instruction's numbers; the deadline leaves at least 300 s of the step's limit, 600 s now).
 
 ## Hackability assessment
 
 Highest unresolved severity: 🟡 YELLOW (findings 1 and 2 unassessed; 5, 7, 8, 9 and 11 mitigated but
-not yet exercised in a container).
+not yet exercised in a container; 10 keeps a residual the owner decides).
 
 | # | Attack and impact | Boundary | Evidence | Mitigation | Residual risk | Next validation | Severity |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -560,18 +665,24 @@ not yet exercised in a container).
 | 2 | Agent harness starts as root and hands the model a root shell | Harness and `[agent] user` on Oddish | Not tested on Oddish | `user = "dev"` in `task.toml` | Depends on each harness honouring it | Short model trial that prints `id` | 🟡 YELLOW / UNASSESSED |
 | 3 | Deliver a proxy to the sealed server | Separate verifier image | By design | The verifier image has no reference server and no network | None found | Keep | 🟢 GREEN / LOW |
 | 4 | Replay a table of recorded answers, including answers collected for inputs the agent already holds | Private scenarios; what the agent image holds | QA 06 (2026-11-19): the 19 Stockwell test fixtures shipped in `/app/samples` were uploaded byte for byte by the hidden `files` scenarios; fixed in round 1, and `scripts/scan_uploads.py` checks every bundle. QA 05 (2026-11-19): a crawl of a fresh workspace, a day counter and cheap rules cover 2.2 to 3.5% of round 2's units, through screens the month never changed (67 of 343) and legacy scenarios whose every write is refused (53); left out in round 3 | Scenarios come from a private seed, rotated in round 3 and kept out of the repository: 89,524 requests in 2,262 scenarios (4,002 units), 44 of them months of trading from four start dates whose supplier invoices are made for each purchase order. No screen that answers as a fresh workspace on the same day and no legacy scenario that changes nothing is kept, and every count and kit scenario does its work. The private media share no file and no name with the samples, and the bundle check fails on any hidden upload, cut-short upload or file answer the agent image holds | A table cannot cover them; the generators' shape could be guessed only in outline | Measure a lookup-table submission on the round 3 corpus | 🟢 GREEN / LOW |
-| 5 | Submitted server attacks the verifier process or its files, or exhausts processes, memory or disk so that the evaluation publishes no reward | Verifier sandbox | QA 10 (2026-11-19): a set-user-id binary could run as root; fixed. QA 07 F2 (2026-11-19): with no limits, a full process table made the cleanup `pkill` raise and a full disk the `reward.txt` write fail, so no reward was published; reproduced by patching the spawn. Fixed in round 3 | Runs as `nobody` through `setpriv --no-new-privs` under `prlimit` (4,096 threads, 4 GiB files, 6 GiB address space per process) with `oom_score_adj` 1000 set before the drop; set-id bits cleared and the submission root's and read-only; the drop and the limits are checked at every evaluation; `/tests` and the output directory are mode 0700 and the server's log 0600; the cleanup reads `/proc` and signals without forking and never raises; the reward goes over a placeholder written before the server starts | Not exercised in a container. Total disk use is bounded per file only: many files can still fill the disk, which costs the diagnostics but not the reward | Red-team the verifier image in a container: fork loop, memory balloon, disk fill | 🟡 YELLOW / MEDIUM |
+| 5 | Submitted server attacks the verifier process or its files, or exhausts processes, memory or disk so that the evaluation publishes no reward | Verifier sandbox | QA 10: a set-user-id binary could run as root; fixed. QA 07 F2: a full process table or disk lost the reward; fixed in round 3. QA 07c F1 and F3 (round 3 re-check): a chunked answer with size `-1` made http.client read the whole stream (300 MiB grew the verifier by 848 MiB); the server could lower its own OOM priority without CAP_SYS_RESOURCE; on providers that pack `/logs/verifier` before reading the reward, a full disk, a 4 GiB `server.log` or appends to it during the pack lost the reward. Fixed in round 4; the `-1` case is a check | Runs as `nobody` through `setpriv --no-new-privs` under `prlimit` (4,096 threads, 4 GiB files, 6 GiB address space per process) and a cgroup where one can be made; `oom_score_adj` 1000 set before the drop and raised again every second; the grader asks for a low one and keeps the corpus as compact text and uploads in a bounded cache. Every byte of an answer counts against the limit and chunk sizes are strict. The server's output goes to a pipe the grader drains (first and last MiB kept), so it holds no file of the grader's. A 256 MiB ballast is given back for the results, and a guard stops the server for good under 512 MiB free. The cleanup never forks, never raises and finds what hides (9); the reward goes over a placeholder and is never taken back once published | Not exercised in a container. A burst faster than the one-second guard can still fill the disk, which costs the diagnostics but not the reward or its retrieval (the ballast) | QA 07c's container red team: OOM floor, `-1` chunk with 3 GB, full disk and big output on each provider | 🟡 YELLOW / MEDIUM |
 | 6 | Tamper with reward files | Separate verifier container | By design | Verifier starts fresh with only `/app/server`; the server cannot become root (5) and cannot reach `/logs/verifier` | None found | Keep | 🟢 GREEN / LOW |
 | 7 | Replace `/app/server` with a link to `/opt/stockwell/app`, so that Harbor's collector, running as root, copies the sealed bytecode into the trial artifacts and the verifier. Leaks the private reference; no reward (the copy has no `run`) | Ownership of `/app` in the agent image; Harbor's collector; the delivery hook | QA 04 (2026-11-19), traced in Harbor 0.20: `tar -czf ... -C /app/server .` as root follows the top-level link, and GNU tar stores links below it as links. Not executed | `/app` is root's with the sticky bit and `/app/server` root's and writable by everyone: the agent creates and changes anything inside it but cannot remove, rename or replace it. The delivery hook (11) copies what links point to only as `dev`, who cannot read `/opt/stockwell`, so such a link is removed as dangling | A provider whose collector follows links below the top; not executed in a container | In the next container run, as `dev`: `rm -rf /app/server` and `mv /app/server x` fail, and a link to `/opt/stockwell` is removed by the hook | 🟡 YELLOW / MEDIUM |
-| 8 | Submission makes the evaluation end without a reward (hangs past the step limit, a reply that is not HTTP, deep JSON, a crash storm); a run that errors may also be retried, which gives a bad run a second draw | Verifier | QA 10 E1, E2, E4 and E6 (2026-11-19), rerun after the fix; checks with fake servers that hang, drip, send garbage or crash | A deadline and 30 s of wall clock per request; any reply is a not-healthy server or an answer that matches nothing; no restart cap; resource exhaustion handled as in 5 | None found beyond 5 | Exercise 5's container red team | 🟡 YELLOW / MEDIUM |
-| 9 | Pass the durable-state units without durable state: keep a workspace in a process that outlives the planned stop, or in memory written out only on SIGTERM | Verifier's planned restarts | Checks with fake servers that keep state on disk, in memory, or save only on SIGTERM: they pass both restarts, neither, and only SIGTERM's. QA 07 F4: a helper that forks fast enough survived three `pkill` passes. Fixed in round 3 | A planned stop kills the server's process group, then stops every process of `nobody` read from `/proc` until a listing finds no new one (a stopped process cannot fork) and kills them all; SIGKILL comes straight after an answered write drawn at random, with no chance to save; files uploaded before a restart are read again after it | None found: state kept in `/tmp` instead of `DATA_DIR` also survives a planned restart, but it is durable state all the same | Run the restart checks in a container, sandboxed | 🟡 YELLOW / MEDIUM |
-| 10 | Preview a month on the first try and replay what later requests revealed on a second try: a month goes on after a wrong answer, later requests echo many earlier answers (payments, bank statements), and a scenario with no answer used to be replayed whole on the same `DATA_DIR` | Verifier's second tries | QA 07 F1 (2026-11-19): a server with a one-cent pricing bug scored 1.0 instead of 0.33; reproduced in `checks/` (`test_a_second_try_cannot_replay_what_the_first_try_revealed`). Fixed in round 3 | Before the second tries the slate is cleaned (server stopped; `DATA_DIR`, every file of `nobody` on the root filesystem and in the scratch places, any hard link there and SysV IPC removed; its log unreadable to it); a second try decides only the units the first try left unsettled. The check shows each defence alone and both together: 1.0 with neither, 0.67 with the unit lock alone, 0.33 (the honest score) with the clean slate or both | A stash the sweep does not reach (none known) could still help the single unit left unanswered | Run the check sandboxed in a container, with the stash in `/tmp` and `/dev/shm` | 🟢 GREEN / LOW |
-| 11 | A correct server scores 0: an absolute link in `/app/server` (a venv's interpreter) makes Harbor's copy refuse the whole delivery | Harbor's artifact copy (tarfile `data` filter) | QA 07 F3 (2026-11-19), confirmed: `AbsoluteLinkError` on the venv link. Reproduced in `checks/` with a real venv. Fixed in round 3 | `[[verifier.collect]]` runs `prepare-delivery` before the copy: links inside become relative, links out become copies (as `dev`, at most 2 GiB), dangling links and special files go; the instruction says such links are replaced by copies; a delivery that never arrives is a note | A link to more than 2 GiB is removed rather than copied; the hook is best-effort in Harbor (a failure is logged, the copy goes on) | Run the hook in a container on a venv and a Go module cache | 🟡 YELLOW / LOW |
+| 8 | Submission makes the evaluation end without a reward (hangs past the step limit, a reply that is not HTTP, deep JSON, a crash storm, an answer that never ends); a run that errors may also be retried, which gives a bad run a second draw | Verifier | QA 10 E1, E2, E4 and E6, rerun after the fix; checks with fake servers that hang, drip, send garbage or crash; QA 07c E1 (`-1` chunk), fixed in round 4 | A deadline and 30 s of wall clock per request; any reply is a not-healthy server or an answer that matches nothing; an answer is bounded in every transfer encoding; no restart cap; resource exhaustion handled as in 5; the clean slate is bounded in time and skipped with less than five minutes left | None found beyond 5 | Exercise 5's container red team | 🟡 YELLOW / MEDIUM |
+| 9 | Pass the durable-state units without durable state: keep a workspace in a process that outlives the planned stop, or in memory written out only on SIGTERM | Verifier's planned restarts | Checks with fake servers that keep state on disk, in memory, or save only on SIGTERM. QA 07 F4: a helper that forks fast enough survived `pkill`; fixed in round 3. QA 07c F2: a process whose main thread exits while other threads run shows as a zombie, and the sweep skipped zombies, so it survived every stop and kept the log open; fixed in round 4, with a fake-/proc check | A planned stop kills the process group, then stops every process of `nobody` read from `/proc` (a zombie leader with live threads included) until a listing finds no new one, kills them all, runs `kill -9 -1` as `nobody` and kills the cgroup where there is one; SIGKILL comes straight after an answered write drawn at random; files uploaded before a restart are read again after it | State kept in `/tmp` instead of `DATA_DIR` also survives a planned restart, but it is durable state all the same | Run QA 07c's zombie-leader repro sandboxed in a container | 🟡 YELLOW / MEDIUM |
+| 10 | Preview a month and answer from what later requests reveal: a month goes on after a wrong answer, and the client sends what it was shown, so later requests echo earlier answers (payments, bank statements) | Verifier's second tries; the corpus | QA 07 F1: a server with a one-cent bug scored 1.0 instead of 0.33 by previewing a month and replaying it on a second try; fixed in round 3 (`test_a_second_try_cannot_replay_what_the_first_try_revealed`). QA 07c F4: within one try, a server that adopts the amount the client then pays as the order's total earns 0.67 for the same bug, with no second try; 1,293 of 1,784 trading-day and screen units (72.5%) carry such an echo (upper bound) | A second try only after the server stopped, within 2% of units, on a clean slate, deciding only units the first try left unanswered: the preview no longer pays (0.33 with either defence). The within-try echo is pinned by the same check at 0.67 | The within-try echo: answer-fitting that can turn a cascading bug into a one-day loss | The owner's call: template echoed request fields from the candidate's own answers, or credit a day only when every earlier day of its month matched | 🟡 YELLOW / LOW |
+| 11 | A correct server scores 0: an absolute link in `/app/server` (a venv's interpreter) makes Harbor's copy refuse the whole delivery | Harbor's artifact copy (tarfile `data` filter) | QA 07 F3, confirmed: `AbsoluteLinkError` on the venv link; reproduced in `checks/` with a real venv; fixed in round 3. QA 07c N2: a link to `/dev/zero` was copied until the disk filled; fixed in round 4 | `[[verifier.collect]]` runs `prepare-delivery` before the copy: links inside become relative, links out become copies of files or directories (as `dev`, at most 2 GiB; devices, pipes and sockets left out), dangling links, links to devices and special files go; the instruction says such links are replaced by copies; a delivery that never arrives is a note | A link to more than 2 GiB is removed rather than copied; the hook is best-effort in Harbor (a failure is logged, the copy goes on) | Run the hook in a container on a venv and a Go module cache | 🟡 YELLOW / LOW |
+| 12 | The server the agent studies answers differently from the grader, so doing exactly what the instruction asks loses units | The sealed server's configuration against the recorders' and the solution's | QA 12 F1 (2026-11-19): the sealed server served the web client, so `DELETE /nowhere` answered 405 `allowed: []` there and 404 `unknown_path` in the corpus; a perfect clone lost 6 units. Fixed in round 4 | One settings file, `environment/stockwell.env`, for the sealed server, the live recorder and the solution, with no client directory (the legacy recorder builds the same app in-process); a check ties every file to it and the instruction's numbers to the code; the regrade of the solution with that file is 1.0 on every unit | The Mac recording and the Ubuntu images run different Python, SQLite and zlib builds; reading the code found no dependence (QA 11, 12) | The Linux baselines: 4,002 of 4,002 for the solution | 🟢 GREEN / LOW |
+| 13 | A server that fails under concurrent load earns its units back on second tries played one at a time | Verifier's second tries | QA 20 (2026-11-19): second tries were uncapped and alone, and a sequential pass fits the deadline, so a server that crashes whenever requests overlap recovered most of its units. Fixed in round 4 | A second try only for a scenario in flight when the server stopped, never for a wrong answer or a request a live server left unanswered, and only while the units they decide stay within 2% of all units; the check pins the share and that a dropped request gets none | A server that crashes under load keeps 2% of the units at most | None | 🟢 GREEN / LOW |
 
 ## Validation
 
 | Check | Revision | Result |
 | --- | --- | --- |
+| Reference through the verifier, local, no sandbox | round 4: the round 3 corpus; the solution from the bundle's bytecode with `environment/stockwell.env`, the sealed server's settings | 1.0 on every unit: 4,002 of 4,002 (2,262 of 2,262 scenarios), 9 planned restarts, no other restart, no second try; 472.5 s of replay against the 5,400 s deadline; 52 scenarios run alone; the corpus held in 98 MB |
+| `checks/` (32 tests) with `ci_checks` (27) | round 4 | 59 pass under Python 3.13; `ci_checks/check_repository.py` passes |
+| Bundle | round 4: `d38fb62325c8`, 1,160 files, 247.2 MB; flat `fb9bb0a0f2f4` | built twice with the same hash; Oddish preflight passes |
+| Hidden uploads against the agent image (`scripts/scan_uploads.py`) | round 4: the round 3 corpus, 495 agent-image files | nothing found |
 | Recording | round 3: Stockwell `d61d29c`, new private seeds | 2,262 scenarios (2,005 legacy, 130 counts and kits made live, 83 media, 44 months), 4,002 units (1,432 trading days, 352 screens), 89,524 requests, no answer of 500 or above; 10 min 52 s locally |
 | Reference through the verifier, local, no sandbox | round 3 corpus and private media, the oracle from the bundle's bytecode | 1.0 on every unit: 4,002 of 4,002 (2,262 of 2,262 scenarios), 9 planned restarts, no other restart, no second try; 518 s of replay against the 5,400 s deadline |
 | `checks/` (26 tests) with `ci_checks` (27) | round 3 | 53 pass under Python 3.13; `ci_checks/check_repository.py` passes |
@@ -618,22 +729,31 @@ python3 scripts/scan_uploads.py experiment/dist/bundles/<hash>/<task slug>   # h
 
 ## Remaining work
 
-- Upload the round 3 bundle as a new version and run its baselines (reference twice, no-op
-  twice). They will show on each provider: the reference's replay time against the deadline
-  (the pace sentence assumes a platform at most about three times slower than this Mac), that the
-  `[[verifier.collect]]` hook runs, that `prlimit` and the limits check hold, and that the
-  `/proc` sweep finds no file of `nobody` it should not touch. Model trials wait for the owner.
+- Upload bundle `d38fb62325c8` (247.2 MB) as a new version on its own first: Oddish preflight
+  checks no size, and Oddish once refused a 138 MB task (QA 20). Then run its baselines with
+  `--no-archil` (reference twice, no-op twice). Pass criteria for the reference: 4,002 of 4,002,
+  `planned_restarts` 9, `restarts` 0, `retried` 0, `unfinished` 0, no answer of 500 or above in
+  `server_errors_by_theme`, and `3.5 x elapsed_sec + 300 <= 5,400` (otherwise raise the deadline
+  and the verifier limit and shorten the agent's); record the environment, hook, collect and
+  verifier-build times against the 12-hour lease (QA 07c F7, QA 13 S3). For the no-op: 0.0 with
+  `status: completed`. Model trials wait for the owner.
 - The privilege and limits checks fail closed: a provider whose sandbox cannot set or report
-  them ends every evaluation with an evaluation error. The baselines will show it.
-- Total disk use is bounded per file only: a server that writes many files can fill the disk.
-  The reward survives that; the diagnostics may not.
+  them ends every evaluation with an evaluation error. The baselines will show it, and whether
+  the server's user can lower its OOM priority there (a note in `metrics.json`).
+- The within-try echo (hackability row 10): a server that adopts amounts the client echoes earns
+  some units back from a cascading bug. The owner decides between templating echoed request
+  fields from the candidate's own answers and crediting a day only when every earlier day of its
+  month matched.
+- A disk burst faster than the one-second guard can still fill the disk; the ballast keeps the
+  reward and its retrieval safe, the diagnostics may be lost.
 - The app answers 500 for `GET /files/{id}/content` when a file's name has a letter outside
   Latin-1 (the name goes into a `Content-Disposition` header). The corpus does not exercise it;
   report it to the app's owner rather than change the pinned app.
 - QA 10 should-fixes still open: a JSON document that describes a file matches the file (E7);
   private media are not checked against the set the answers were recorded with; unpinned base
-  images. A missing delivery is now a note, still scored 0.0 rather than an evaluation error.
+  images. QA 07c N1: `RLIMIT_NPROC` is counted per uid across a shared kernel.
 - QA 01 R3 and R4 (a data takeover, a change request) remain the candidates for further steps.
-- Exercise findings 5, 7, 8, 9, 10 and 11 in a container; probe findings 1 and 2.
+- Exercise findings 5, 7, 8, 9 and 11 in a container (QA 07c's red-team list); probe findings 1
+  and 2.
 - `harbor check` and ratings.
 - Decide how to reach the workload target: more modules or follow-up steps.
