@@ -1,23 +1,95 @@
 #!/bin/sh
 # Runs as root once the agent's session has ended, before /app/rebuild is copied to the machine that
-# runs it. What it lets through is what the copy can take: within the limits the instruction
-# states, with nothing of the agent's running, and with every link one the copy keeps. The mark
-# says what was delivered.
+# runs it. It first records whether the public internet answers from here and which processes of
+# the agent's user are alive, with their command lines, and then ends them all: that record goes
+# with the delivery and decides nothing. What it lets through is what the copy can take: within the
+# limits the instruction states, with nothing of the agent's running, and with every link one the
+# copy keeps. The mark says what was delivered; the record lists every entry.
 LIMIT_ENTRIES=200000
 LIMIT_BYTES=2000000000
+STATE=/var/lib/delivery
+mkdir -p "$STATE" && chmod 0700 "$STATE"
+# Egress and the agent's live processes, before anything changes them; three seconds for each host.
+timeout 30 /usr/bin/python3 -I - "$STATE/session.json" <<'EOF'
+"""Record whether the public internet answers from this machine (a TCP connection to port 443 of
+public hosts the original can be fetched from, three seconds each) and which processes of the
+agent's user `dev` are alive, with their command lines."""
+import json
+import os
+import pwd
+import socket
+import sys
+import threading
+import time
+
+HOSTS = (("github.com", 443), ("pypi.org", 443), ("proxy.golang.org", 443), ("registry.npmjs.org", 443))
+
+
+def reach(host, port, result):
+    try:
+        with socket.create_connection((host, port), timeout=3):
+            result["state"] = "open"
+    except OSError as exc:
+        result["state"] = f"closed ({exc.__class__.__name__})"
+
+
+egress = {}
+for host, port in HOSTS:
+    result = {"state": "no answer within 3 s"}
+    worker = threading.Thread(target=reach, args=(host, port, result), daemon=True)
+    worker.start()
+    worker.join(3)
+    egress[f"{host}:{port}"] = result["state"]
+try:
+    uid = str(pwd.getpwnam("dev").pw_uid)
+except KeyError:
+    uid = None
+processes = []
+try:
+    pids = sorted((name for name in os.listdir("/proc") if name.isdigit()), key=int)
+except OSError:
+    pids = []
+for pid in pids:
+    try:
+        with open(f"/proc/{pid}/status") as handle:
+            status = dict(line.split(":", 1) for line in handle.read().splitlines() if ":" in line)
+        if uid is None or uid not in status.get("Uid", "").split():
+            continue
+        with open(f"/proc/{pid}/cmdline", "rb") as handle:
+            command = handle.read(4096).replace(b"\0", b" ").strip().decode(errors="backslashreplace")
+        processes.append({"pid": int(pid), "ppid": int(status.get("PPid", "0").strip() or 0),
+                          "name": status.get("Name", "").strip(), "command": command[:1000]})
+    except (OSError, ValueError):
+        continue
+record = {"checked_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "egress": egress,
+          "egress_open": any(state == "open" for state in egress.values()),
+          "agent_process_count": len(processes), "agent_processes": processes[:500]}
+with open(sys.argv[1], "w") as handle:
+    json.dump(record, handle)
+EOF
 # End every process of the agent's user. `kill -9 -1` as that user reaches all of them in one system
 # call, so a process that forks cannot outrun it; repeat until none is left.
+rounds=0
 for _ in $(seq 1 100); do
-  pgrep -u dev >/dev/null 2>&1 || break
+  { pgrep -u dev || pgrep -U dev; } >/dev/null 2>&1 || break
+  rounds=$((rounds + 1))
   setpriv --reuid dev --regid dev --clear-groups kill -9 -1 >/dev/null 2>&1
   pkill -KILL -u dev >/dev/null 2>&1
+  pkill -KILL -U dev >/dev/null 2>&1
   sleep 0.1
 done
+left=$({ pgrep -u dev; pgrep -U dev; } 2>/dev/null | sort -u | wc -l)
+# Give back the room and the spare inodes set aside when the session started (reserve-delivery-room),
+# so however full the disk was left, the record, the mark and a refusal can be written.
+rm -f "$STATE/room"
+rm -rf "$STATE/inodes"
 if [ ! -d /app/rebuild ] || [ -L /app/rebuild ]; then exit 0; fi
-# Whatever was left under the mark's name is moved aside, never followed.
-if [ -e /app/rebuild/.delivered ] || [ -L /app/rebuild/.delivered ]; then
-  aside=$(mktemp -d /app/.aside.XXXXXX) && mv -f /app/rebuild/.delivered "$aside/" || exit 0
-fi
+# Whatever was left under the mark's or the record's name is moved aside, never followed.
+for name in .delivered .delivery.json; do
+  if [ -e "/app/rebuild/$name" ] || [ -L "/app/rebuild/$name" ]; then
+    aside=$(mktemp -d /app/.aside.XXXXXX) && mv -f "/app/rebuild/$name" "$aside/" || exit 0
+  fi
+done
 # Links, as the agent's user (it copies nothing that user could not read), within two minutes; what
 # it changes goes to the mark with the rest.
 notes=$(mktemp /tmp/.delivery-notes.XXXXXX 2>/dev/null) || notes=/dev/null
@@ -131,9 +203,9 @@ for _ in range(10):
     if not one_pass():
         break
 EOF
-# Measure, bound and mark, as root.
-exec /usr/bin/python3 -I - /app/rebuild "$LIMIT_ENTRIES" "$LIMIT_BYTES" "$notes" <<'EOF'
-"""Measure /app/rebuild, bound it and mark it, as root, once nothing of the agent's runs.
+# Measure, bound, list and mark, as root.
+exec /usr/bin/python3 -I - /app/rebuild "$LIMIT_ENTRIES" "$LIMIT_BYTES" "$notes" "$STATE" "$rounds" "$left" <<'EOF'
+"""Measure /app/rebuild, bound it, list it and mark it, as root, once nothing of the agent's runs.
 
 The tree is walked by directory descriptor, so no depth hides anything. Anything the copy would
 refuse is removed: a device, a pipe, a socket, a link with an absolute target or one that resolves
@@ -141,17 +213,27 @@ outside the directory. A delivery over the limits is moved aside whole and repla
 directory. The mark's first line is `delivered` with the number of entries (files, directories and
 links) and of bytes in its files (each file once, however many names it has), or `refused`; each
 line after it is a change made (the link fixing's first, from the file named fourth on the
-command line) or the reason for the refusal.
+command line) or the reason for the refusal. The record (.delivery.json) holds what was found
+before the agent's processes were ended (STATE/session.json), how many rounds of killing it took
+and how many processes were left, and every entry: its path, type, size, modification and change
+times, and a file's sha256 (within a byte budget).
 """
+import hashlib
+import json
 import os
 import stat
 import sys
 
 ROOT = os.path.realpath(sys.argv[1])
 LIMIT_ENTRIES, LIMIT_BYTES = int(sys.argv[2]), int(sys.argv[3])
+STATE = sys.argv[5] if len(sys.argv) > 5 else None
+ROUNDS = int(sys.argv[6]) if len(sys.argv) > 6 and sys.argv[6].isdigit() else None
+LEFT = int(sys.argv[7].strip()) if len(sys.argv) > 7 and sys.argv[7].strip().isdigit() else None
 MARK = os.path.join(ROOT, ".delivered")
-notes, links, files = [], [], set()
-entries = size = 0
+RECORD = os.path.join(ROOT, ".delivery.json")
+HASH_BUDGET = 2_000_000_000   # bytes hashed for the record, at most
+notes, links, files, catalogue = [], [], set(), []
+entries = size = hashed = 0
 EARLIER = sys.argv[4] if len(sys.argv) > 4 else None
 if EARLIER and EARLIER != "/dev/null":
     try:
@@ -185,17 +267,38 @@ def walk(fd, rel):
             notes.append(f"removed {path}: not a file, a directory or a link")
             continue
         entries += 1
+        kind = "link" if stat.S_ISLNK(info.st_mode) else "directory" if stat.S_ISDIR(info.st_mode) else "file"
+        item = {"path": path, "type": kind, "size": info.st_size, "mtime": round(info.st_mtime, 3),
+                "ctime": round(info.st_ctime, 3)}
+        catalogue.append(item)
         if stat.S_ISREG(info.st_mode) and (info.st_dev, info.st_ino) not in files:
             files.add((info.st_dev, info.st_ino))
             size += info.st_size
             if size > LIMIT_BYTES:
                 raise Refuse(f"it holds more than {LIMIT_BYTES:,} bytes, the most /app/rebuild may hold")
+            item["sha256"] = digest(name, fd, info.st_size)
         if stat.S_ISDIR(info.st_mode):
             child = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
             try:
                 walk(child, path)
             finally:
                 os.close(child)
+
+
+def digest(name, fd, length):
+    """The sha256 of a regular file in the directory open as `fd`, while the byte budget lasts."""
+    global hashed
+    if hashed + length > HASH_BUDGET:
+        return None
+    hashed += length
+    whole = hashlib.sha256()
+    handle = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=fd)
+    try:
+        while chunk := os.read(handle, 1 << 20):
+            whole.update(chunk)
+    finally:
+        os.close(handle)
+    return whole.hexdigest()
 
 
 def inside(path):
@@ -216,6 +319,7 @@ try:
             os.unlink(os.path.join(ROOT, path))
             entries -= 1
             notes.append(f"removed {path}: a link that leads outside /app/rebuild")
+            catalogue[:] = [item for item in catalogue if item["path"] != path]
 except Refuse as refusal:
     reason = str(refusal)
 except (OSError, RecursionError, ValueError) as exc:
@@ -227,6 +331,21 @@ if reason is not None:
     os.mkdir(ROOT)
     os.chmod(ROOT, 0o777)
     lines = ["refused", f"{reason}: it was not copied"]
+session = {}
+if STATE:
+    try:
+        with open(os.path.join(STATE, "session.json")) as handle:
+            session = json.load(handle)
+    except (OSError, ValueError):
+        session = {"error": "no session record"}
+record = dict(session, kill_rounds=ROUNDS, agent_processes_left=LEFT, delivered=lines[0],
+              listing_complete=reason is None and hashed <= HASH_BUDGET, entries=catalogue[:LIMIT_ENTRIES])
+try:
+    descriptor = os.open(RECORD, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644)
+    with os.fdopen(descriptor, "w") as handle:
+        json.dump(record, handle, separators=(",", ":"))
+except OSError as exc:
+    notes.append(f"the record could not be written ({exc.__class__.__name__})")
 descriptor = os.open(MARK, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644)
 with os.fdopen(descriptor, "w", errors="backslashreplace") as mark:
     mark.write("\n".join(lines + notes[:50]) + "\n")

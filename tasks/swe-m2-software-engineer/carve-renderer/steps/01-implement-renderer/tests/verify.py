@@ -25,6 +25,12 @@ from verifier import recorder, runcases  # noqa: E402
 SUBMISSION = Path("/app/rebuild")
 PROGRAM = SUBMISSION / "carve"
 DELIVERY_MARK = ".delivered"  # written into /app/rebuild by the collect hook (environment/prepare-delivery)
+DELIVERY_RECORD = ".delivery.json"  # the hook's record: egress, the agent's processes, every entry; never scored
+RECORD_LIMIT = 64 << 20  # bytes of the record read, at most
+# Every build of the original that upstream publishes ready to run, and text they all hold that a
+# renderer written from the specification does not (scripts/upstream_builds.py): a delivered file
+# that is one of them, or holds enough of that text, is a fetched original.
+UPSTREAM_BUILDS = Path(__file__).resolve().parent / "verifier" / "upstream_builds.json"
 REWARD_FILES = ("reward.txt", "reward.json")
 TOTAL_SEC = 5400  # the step verifier has 6,000 s; everything up to the reward file fits in this, even every run at 2 s
 MARGIN_SEC = 120  # no case starts when less than this is left of TOTAL_SEC
@@ -370,10 +376,11 @@ def arrived(top: Path) -> tuple[int, int]:
     regular files, each inode once, counted the way the collect hook counts them; never following
     a link, and stopping once past MAX_ENTRIES (the count is then only a bound)."""
     entries, size, files, folders = 0, 0, set(), [str(top)]
+    skipped = {str(top / DELIVERY_MARK), str(top / DELIVERY_RECORD)}
     while folders and entries <= MAX_ENTRIES:
         with os.scandir(folders.pop()) as listing:
             for entry in listing:
-                if entry.path == str(top / DELIVERY_MARK):
+                if entry.path in skipped:
                     continue
                 info = entry.stat(follow_symlinks=False)
                 entries += 1
@@ -421,6 +428,74 @@ def delivery(top: Path) -> tuple[list[str], bool]:
                                   f"{int(head[2]):,} bytes")
         return notes, False
     raise EvaluationError("The collect hook's mark cannot be read")
+
+
+def delivery_record(top: Path) -> dict:
+    """What the collect hook's record says, for metrics.json and the audit of a trial: whether the
+    public internet answered when the session ended, the agent's processes then alive, how many
+    rounds of killing ended them, and the delivery's entries (their number and the twenty with the
+    latest change times). Read in a bounded way; never raising, never scored."""
+    try:
+        path = top / DELIVERY_RECORD
+        if not path.is_file() or path.is_symlink() or path.stat().st_size > RECORD_LIMIT:
+            return {"error": "no readable record"}
+        record = json.loads(path.read_text(encoding="utf-8", errors="replace"))
+        entries = record.get("entries") or []
+        latest = sorted((item for item in entries if isinstance(item, dict)), key=lambda item: -float(item.get("ctime") or 0))
+        return {key: record.get(key) for key in ("checked_at", "egress", "egress_open", "agent_process_count", "kill_rounds",
+                                                 "agent_processes_left", "delivered", "listing_complete")} | {
+            "agent_processes": (record.get("agent_processes") or [])[:50], "entries_listed": len(entries),
+            "latest_changes": [{key: item.get(key) for key in ("path", "type", "size", "ctime", "sha256")} for item in latest[:20]]}
+    except Exception as exc:  # noqa: BLE001 - metadata, never a reason to lose the reward
+        return {"error": type(exc).__name__}
+
+
+def upstream_builds(path: Path = UPSTREAM_BUILDS) -> tuple[set[str], list[bytes], int]:
+    """The sha256 of upstream's published builds, the text they hold, and how many of those
+    strings make a file a fetched build (verifier/upstream_builds.json).
+
+    Raises:
+        EvaluationError: The list is unreadable or empty.
+    """
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        hashes, strings, needed = set(data["sha256"]), [text.encode() for text in data["strings"]], int(data["strings_needed"])
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise EvaluationError("The list of upstream's builds is unreadable") from exc
+    if not hashes or not strings or needed < 1:
+        raise EvaluationError("The list of upstream's builds is empty")
+    return hashes, strings, needed
+
+
+def fetched_build(top: Path, hashes: set[str], strings: list[bytes], needed: int) -> str | None:
+    """The first regular file under `top` (links not followed, each inode once) that is one of
+    upstream's builds by its sha256, or holds `needed` of `strings`, read in chunks that overlap by
+    the longest string; None where none does. seal() has bounded the bytes to read (MAX_BYTES)."""
+    overlap = max(map(len, strings))
+    seen = set()
+    for root, directories, files in os.walk(top):
+        directories.sort()
+        for name in sorted(files):
+            path = Path(root, name)
+            try:
+                info = os.lstat(path)
+                if not stat.S_ISREG(info.st_mode) or (info.st_dev, info.st_ino) in seen or path.name in (DELIVERY_MARK, DELIVERY_RECORD):
+                    continue
+                seen.add((info.st_dev, info.st_ino))
+                whole, found, tail = hashlib.sha256(), set(), b""
+                with open(path, "rb") as handle:
+                    while chunk := handle.read(1 << 20):
+                        whole.update(chunk)
+                        window = tail + chunk
+                        found.update(index for index, text in enumerate(strings) if text in window)
+                        tail = window[-overlap:]
+                if whole.hexdigest() in hashes:
+                    return f"/app/rebuild/{path.relative_to(top)} is a build of the original that upstream publishes"
+                if len(found) >= needed:
+                    return f"/app/rebuild/{path.relative_to(top)} holds the text of a build of the original that upstream publishes"
+            except OSError:
+                continue
+    return None
 
 
 def free_space() -> dict:
@@ -590,6 +665,8 @@ def main() -> int:
         # What arrived, read before anything of it runs: nothing, or less than the collect hook
         # counted, is the copy failing (an error); a delivery the hook refused scores 0.
         notes, refused_delivery = delivery(SUBMISSION)
+        record = delivery_record(SUBMISSION)
+        builds = upstream_builds()
         prefix, owner, limits = sandbox()
         refused = "the delivery was over the stated limits: not graded" if refused_delivery else None
         if refused is None:
@@ -597,6 +674,9 @@ def main() -> int:
                 seal(SUBMISSION)
             except EvaluationError as exc:  # a submission that cannot be made safe to run is not run
                 refused = f"{exc}: not graded"
+        if refused is None:  # the original itself, fetched after the session: nothing of it is the agent's work
+            found = fetched_build(SUBMISSION, *builds)
+            refused = f"{found}: not graded" if found else None
         LEFTOVER_DIRS[:] = sorted(set(LEFTOVER_DIRS) | set(writable_dirs()))
         program = identity(PROGRAM)
         if refused:
@@ -613,7 +693,7 @@ def main() -> int:
         print(f"reward: {metrics['reward']:.6f} ({metrics['cases_passed']}/{metrics['cases_total']} cases)", flush=True)
         try:
             metrics.update(limits=limits, submission=program, host=recorder.host(), free_at_start=start_space,
-                           free_at_end=free_space())
+                           free_at_end=free_space(), delivery_record=record)
             write_in_place(output / "metrics.json",
                            (json.dumps(dict(metrics, status="completed"), indent=1, sort_keys=True) + "\n").encode())
         except Exception:  # noqa: BLE001 - metadata only

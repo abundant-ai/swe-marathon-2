@@ -29,7 +29,8 @@ STEP = "steps/01-implement-renderer"
 
 
 def hook_programs(bundle: Path) -> list[str]:
-    """The two Python programs of the bundle's collect hook (environment/prepare-delivery)."""
+    """The Python programs of the bundle's collect hook (environment/prepare-delivery): the session
+    record, the link fixing and the measuring."""
     text = (bundle / "environment" / "prepare-delivery").read_text()
     return re.findall(r"<<'EOF'\n(.*?)\nEOF", text, re.S)
 
@@ -37,7 +38,7 @@ def hook_programs(bundle: Path) -> list[str]:
 def mark(bundle: Path, top: Path) -> str:
     """Run the hook's link fixing and its measuring on `top`, as this user, the second reading what
     the first printed; the mark's first line."""
-    fixing, measuring = hook_programs(bundle)
+    _, fixing, measuring = hook_programs(bundle)
     notes = top.parent / ".delivery-notes"
     with open(notes, "w") as handle:
         subprocess.run([sys.executable, "-I", "-", str(top), "200000", "2000000000"], input=fixing, text=True, check=True,
@@ -78,7 +79,14 @@ def main() -> None:
     deliveries = {}
     reference = work / "deliveries" / "reference" / "rebuild"
     reference.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(original, reference / "carve")
+    # As solve.sh installs it: the original with the bundle's blank.json strings overwritten in place.
+    binary = original.read_bytes()
+    for text in json.loads((bundle / STEP / "solution" / "blank.json").read_text())["strings"]:
+        binary = binary.replace(text.encode(), b"x" * len(text.encode()))
+    (reference / "carve").write_bytes(binary)
+    (reference / "carve").chmod(0o755)
+    if sys.platform == "darwin":  # a changed Mach-O needs a new ad-hoc signature to run
+        subprocess.run(["codesign", "-s", "-", "-f", str(reference / "carve")], check=True, capture_output=True, timeout=120)
     shutil.copy(bundle / STEP / "solution" / "LICENSE", reference / "LICENSE")
     empty = work / "deliveries" / "empty" / "rebuild"
     empty.mkdir(parents=True, exist_ok=True)
@@ -99,11 +107,15 @@ verify.runcases.HOME = work / "tmp" / "carve-home"
 verify.runcases.TEMP = work / "tmp" / "carve-tmp"
 (work / "tmp").mkdir(exist_ok=True)
 results = {{}}
+builds = verify.upstream_builds()
 for name in ("reference", "empty", "silent"):
     top = work / "deliveries" / name / "rebuild"
     notes, refused = verify.delivery(top)
+    fetched = verify.fetched_build(top, *builds)
     started = time.monotonic()
-    metrics = verify.grade(top / "carve", work / "private", [], None)
+    metrics = verify.grade(top / "carve", work / "private", [], None) if not (refused or fetched) else {{
+        "reward": 0.0, "cases_passed": 0, "cases_total": None, "notes": [fetched or "refused"], "by_kind": {{}}, "timeouts": 0,
+        "failed_sample": []}}
     results[name] = {{"reward": metrics["reward"], "passed": metrics["cases_passed"], "total": metrics["cases_total"],
                      "notes": notes + metrics["notes"], "seconds": round(time.monotonic() - started, 1),
                      "by_kind": metrics["by_kind"], "timeouts": metrics["timeouts"], "failed_sample": metrics["failed_sample"][:10]}}

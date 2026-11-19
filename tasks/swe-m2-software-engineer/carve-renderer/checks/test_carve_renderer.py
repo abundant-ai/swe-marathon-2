@@ -592,16 +592,23 @@ def hook_programs() -> list[str]:
 
 
 def run_hook(top: Path, entries: int = 200000, size: int = 2000000000) -> list[str]:
-    """The collect hook's two programs on `top`, as this user (the hook runs the first as the agent's
-    user, the second as root, handing it what the first printed); the mark's lines."""
-    fixing, measuring = hook_programs()
+    """The collect hook's link fixing and measuring on `top`, as this user (the hook runs the first
+    as the agent's user, the second as root, handing it what the first printed and the session
+    record), after a session record of its own; the mark's lines."""
+    session, fixing, measuring = hook_programs()
+    state = top.parent / f".{top.name}-state"
+    state.mkdir()
+    done = subprocess.run([sys.executable, "-I", "-", str(state / "session.json")], input=session.replace(
+        '("github.com", 443), ("pypi.org", 443), ("proxy.golang.org", 443), ("registry.npmjs.org", 443)', '("127.0.0.1", 9),'),
+        text=True, capture_output=True, timeout=60)
+    assert done.returncode == 0, done.stdout + done.stderr
     notes = top.parent / f".{top.name}-notes"
     with open(notes, "w") as handle:
         done = subprocess.run([sys.executable, "-I", "-", str(top), str(entries), str(size)], input=fixing, text=True,
                               stdout=handle, stderr=subprocess.STDOUT, timeout=300)
     assert done.returncode == 0, notes.read_text()
-    done = subprocess.run([sys.executable, "-I", "-", str(top), str(entries), str(size), str(notes)], input=measuring, text=True,
-                          capture_output=True, timeout=300)
+    done = subprocess.run([sys.executable, "-I", "-", str(top), str(entries), str(size), str(notes), str(state), "1", "0"],
+                          input=measuring, text=True, capture_output=True, timeout=300)
     assert done.returncode == 0, done.stdout + done.stderr
     assert not notes.exists(), "the notes file is consumed"
     return (top / ".delivered").read_text().splitlines()
@@ -658,6 +665,13 @@ def test_the_collect_hook_lets_honest_deliveries_through_the_copy(tmp_path):
     _, counted, size = lines[0].split()
     assert arrived[0] == [int(counted), int(size)] and arrived[1][1] is False, (lines, arrived)
     assert (copied / "carve").read_bytes() == b"\x7fELF binary"
+    record = json.loads((copied / ".delivery.json").read_text())
+    assert record["delivered"] == lines[0] and record["listing_complete"] is True and record["kill_rounds"] == 1
+    assert record["egress"] == {"127.0.0.1:9": record["egress"]["127.0.0.1:9"]} and record["egress_open"] is False
+    listed = {item["path"]: item for item in record["entries"]}
+    assert len(listed) == int(counted) and listed["carve"]["type"] == "link"
+    assert listed["src/target/release/deps/carve-0123abcd"]["sha256"] == hashlib.sha256(b"\x7fELF binary").hexdigest()
+    assert all("ctime" in item and "mtime" in item for item in record["entries"])
 
 
 def test_the_delivery_mark_decides_between_an_error_a_zero_and_grading(tmp_path):
@@ -697,9 +711,11 @@ def test_the_delivery_mark_decides_between_an_error_a_zero_and_grading(tmp_path)
     small.mkdir(parents=True)
     for index in range(12):
         (small / f"f{index}").write_text("x" * 100)
-    assert run_hook(small, entries=10)[0] == "refused" and sorted(os.listdir(small)) == [".delivered"]
+    assert run_hook(small, entries=10)[0] == "refused" and sorted(os.listdir(small)) == [".delivered", ".delivery.json"]
     toml = (TASK / "task.toml").read_text()
     assert '[[verifier.collect]]\ncommand = "/usr/local/sbin/prepare-delivery"\nuser = "root"' in toml
+    for phase in ("setup_begin", "setup_complete"):
+        assert f'[[agent.{phase}]]\ncommand = "/usr/local/sbin/reserve-delivery-room"' in toml, phase
 
 
 # ---------------------------------------------------------------- the recorder
@@ -849,7 +865,7 @@ def test_the_verifier_records_in_a_builder_stage_and_keeps_only_the_answers():
         ("/record/recording.json", "/tests/private/recording.json")]
     assert "chmod -R go-rwx /tests" in final, "the answers are root's alone"
     assert re.findall(r"^COPY .*$", agent, re.M) == ["COPY spec/ /app/spec/", "COPY docs/ /app/docs/",
-                                                    "COPY prepare-delivery /usr/local/sbin/prepare-delivery"]
+                                                    "COPY reserve-delivery-room prepare-delivery /usr/local/sbin/"]
     assert "carve" not in agent.replace("/app/rebuild", "").lower(), "no build of any Carve engine in the agent's image"
     assert 'install.py" "$here/carve.tar.gz" "$here/build.txt" /app/rebuild/carve' in solve
     for tool in ("python3", "golang-go", "rustc", "cargo"):
@@ -876,12 +892,23 @@ def test_the_installer_refuses_any_build_but_the_pinned_one(tmp_path):
     assert install(good, tmp_path / "ok" / "carve").returncode == 0 and (tmp_path / "ok" / "carve").read_bytes() == binary
     assert os.stat(tmp_path / "ok" / "carve").st_mode & 0o777 == 0o755
     assert install(bad, tmp_path / "no" / "carve").returncode != 0 and not (tmp_path / "no" / "carve").exists()
+    blank = tmp_path / "blank.json"
+    blank.write_text(json.dumps({"strings": ["ELF"]}))
+    done = subprocess.run([sys.executable, "-I", str(TASK / "common" / "original" / "install.py"), str(archive), str(good),
+                           str(tmp_path / "blanked" / "carve"), "--blank", str(blank)], capture_output=True, text=True, timeout=60)
+    assert done.returncode == 0 and (tmp_path / "blanked" / "carve").read_bytes() == b"\x7fxxx carve", "blanked in place, same length"
+    solve = (STEP / "solution" / "solve.sh").read_text()
+    verifier = (TESTS / "Dockerfile").read_text()
+    assert '/app/rebuild/carve --blank "$here/blank.json"' in solve and "--blank" not in verifier, "only the solution blanks"
+    package = (SCRIPTS / "package_step.py").read_text()
+    assert 'content[f"{STEP}/solution/blank.json"]' in package and '["strings"]' in package
 
 
 def test_the_agent_cannot_replace_the_artifact_directory():
     docker = (TASK / "environment" / "Dockerfile").read_text()
     assert "chown -R root:root /app" in docker and "chmod 1777 /app " in docker and "chmod 0777 /app/rebuild" in docker
-    assert "useradd --uid 10001 --create-home dev" in docker and "chmod 0700 /usr/local/sbin/prepare-delivery" in docker
+    assert "useradd --uid 10001 --create-home dev" in docker
+    assert "chmod 0700 /usr/local/sbin/reserve-delivery-room /usr/local/sbin/prepare-delivery" in docker
     toml = (TASK / "task.toml").read_text()
     assert 'user = "dev"' in toml and 'artifacts = ["/app/rebuild"]' in toml and 'environment_mode = "separate"' in toml
     assert toml.count('network_mode = "no-network"') == 3
@@ -948,3 +975,43 @@ def test_the_pins_are_stated_once_and_agree():
     readme = (TASK / "README.md").read_text()
     for key in ("SPEC_COMMIT", "CARVE_RS_COMMIT", "LINUX_BINARY_SHA256", "LINUX_ARCHIVE_SHA256"):
         assert pins[key] in readme, key
+
+
+def test_a_fetched_build_of_the_original_is_refused(tmp_path):
+    top = tmp_path / "rebuild"
+    (top / "bin").mkdir(parents=True)
+    fetched = b"\x7fELF" + b"q" * ((1 << 20) + 5)
+    (top / "bin" / "carve-real").write_bytes(fetched)
+    (top / "one-string.py").write_text("# Dropped code-block language is a phrase we never print\n")
+    (top / "link").symlink_to(top / "bin" / "carve-real")
+    two = tmp_path / "two.bin"
+    two.write_bytes(b"x" * ((1 << 20) - 10) + b"Dropped code-block language " + b"y" * 100 + b"round-trip carrier attribute ")
+    out = verifier_call(textwrap.dedent(f"""
+        import json, verify
+        from pathlib import Path
+        top = Path({str(top)!r})
+        hashes, strings, needed = verify.upstream_builds()
+        mine = {{"{hashlib.sha256(fetched).hexdigest()}"}}
+        first = verify.fetched_build(top, mine, strings, needed)
+        (top / "bin" / "carve-real").unlink()
+        (top / "two-strings.bin").write_bytes(Path({str(two)!r}).read_bytes())
+        second = verify.fetched_build(top, mine, strings, needed)
+        (top / "two-strings.bin").unlink()
+        third = verify.fetched_build(top, mine, strings, needed)
+        print(json.dumps([first, second, third, len(hashes), len(strings), needed]))
+    """))
+    first, second, third, hashes, strings, needed = out
+    assert first == "/app/rebuild/bin/carve-real is a build of the original that upstream publishes"
+    assert second == "/app/rebuild/two-strings.bin holds the text of a build of the original that upstream publishes", \
+        "two strings across a 1 MB chunk boundary"
+    assert third is None, "one string alone is no fetched build"
+    builds = json.loads((TESTS / "verifier" / "upstream_builds.json").read_text())
+    pins = dict(re.findall(r'^([A-Z0-9_]+) = "([^"]+)"', (SCRIPTS / "carve_text.py").read_text(), re.M))
+    assert pins["LINUX_BINARY_SHA256"] in builds["sha256"] and pins["LINUX_ARCHIVE_SHA256"] in builds["sha256"]
+    assert hashes >= 200 and strings >= 10 and needed == 2
+    instruction = (STEP / "instruction.md").read_text()
+    for text in builds["strings"]:
+        assert text not in instruction, text
+    verify = (TESTS / "verify.py").read_text()
+    main = verify[verify.index("def main() -> int:"):]
+    assert main.index("seal(SUBMISSION)") < main.index("fetched_build(SUBMISSION") < main.index("metrics = grade(PROGRAM")

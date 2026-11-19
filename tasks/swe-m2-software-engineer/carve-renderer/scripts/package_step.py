@@ -41,6 +41,7 @@ STEP = "steps/01-implement-renderer"
 HIDDEN = TASK_ROOT / STEP / "tests" / "private" / "cases.json"
 ORIGINAL = TASK_ROOT / "experiment" / "original"
 INSTALLER = TASK_ROOT / "common" / "original" / "install.py"
+UPSTREAM_BUILDS = TASK_ROOT / STEP / "tests" / "verifier" / "upstream_builds.json"
 EXCLUDED = {"__pycache__", ".pytest_cache", ".DS_Store", "experiment"}
 
 
@@ -104,6 +105,10 @@ def collect() -> dict[str, bytes]:
         content[f"{place}/build.txt"] = facts
         content[f"{place}/install.py"] = installer
     content[f"{STEP}/solution/LICENSE"] = licence
+    # What install.py --blank overwrites in the reference solution's copy: the text the verifier's
+    # refusal of published builds looks for (tests/verifier/upstream_builds.json), and nothing else.
+    strings = json.loads(UPSTREAM_BUILDS.read_text(encoding="utf-8"))["strings"]
+    content[f"{STEP}/solution/blank.json"] = (json.dumps({"strings": strings}, indent=1) + "\n").encode()
     return dict(sorted(content.items()))
 
 
@@ -140,7 +145,7 @@ def main() -> None:
         target = staging / name
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(data)
-        if name.endswith(".sh") or name.endswith("prepare-delivery"):
+        if name.endswith((".sh", "prepare-delivery", "reserve-delivery-room")):
             target.chmod(0o755)
     size = sum(len(data) for data in content.values())
     print(json.dumps({"task_path": str(staging), "content_sha256": digest, "files": len(content), "bytes": size}, indent=2))

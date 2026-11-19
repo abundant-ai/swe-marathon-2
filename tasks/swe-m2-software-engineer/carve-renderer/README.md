@@ -83,12 +83,34 @@ archive or binary.
   and python3-venv. Each fits a renderer: Python for a quick start, Go or Rust for speed on long
   documents. The verifier image installs the same packages, so whatever the agent builds runs
   there.
-- **Checks.** 35 task checks (registered in the root `pyproject.toml`) and the repository checks
+- **Checks.** 36 task checks (registered in the root `pyproject.toml`) and the repository checks
   pass with Python 3.13; `check_repository.py` passes. Packaged twice to the same hash; Oddish
   preflight passes; graded locally from the bundle (see [Validation](#validation)).
 - **Deadline.** The verifier's one deadline is 5,400 s inside a 6,000 s step, so that every one of
   the 2,142 cases can take the whole stated 2 s plus the sweeps between cases; agent and verifier
   together stay under 11.3 hours, inside Oddish's 12-hour attempt.
+- **The platform's egress window** (harbor-lh `ops/swe-marathon-v2/PLATFORM_EGRESS_WINDOW.md`,
+  found by the BasedPL QA today): Harbor gives the sandbox its public setup egress back when the
+  agent's turn ends, before the delivery is collected, so a process the agent leaves behind could
+  fetch carve-rs (every GitHub release attaches Linux builds), the `carve-lang` wheels on PyPI or
+  the carve-go module into `/app/rebuild`. The judges' conditions for exposed tasks (decision
+  2026-11-19, A 2-1) are in this version: the collect hook first records whether four public hosts
+  answer (TCP 443, 3 s each) and the agent's live processes with their command lines
+  (`/var/lib/delivery/session.json`), then kills them and counts the rounds, and writes a root-owned
+  record `.delivery.json` beside the mark: the session record, the kill rounds, and every entry with
+  type, size, modification and change times and sha256. `reserve-delivery-room` (setup begin and
+  complete) sets aside 64 MiB and 64 inodes the hook gives back, so a full disk still leaves room
+  for the record and the mark. The verifier refuses (reward 0, with a note) any delivered file
+  whose sha256 is one of 275 published builds (`scripts/upstream_builds.py`: every carve-rs release
+  asset's digest, the `carve` binary of each x86-64 Linux archive of all 15 releases, all 26 x86-64
+  Linux `carve-lang` wheels and the files in them, all 12 carve-go versions and their `.wasm`), or
+  that holds two of 23 strings every such build holds and no renderer written from the
+  specification would: carve-rs's own usage lines and messages of its importers, lint and
+  round-trip code, absent from the shipped text and from plain Rust builds. Any transformation
+  (compression, a rebuild from source) defeats these tripwires, as the judges noted; the record is
+  for the audit of every trial. The reference solution delivers the release build with exactly
+  those 23 strings overwritten in place by `x` (`install.py --blank`; same length, nothing on the
+  HTML path), so it is not refused; the recording uses the build unchanged.
 - Not built on Oddish and not run, on the owner's rule.
 
 ## Current implementation
@@ -98,8 +120,10 @@ archive or binary.
 | Step `01-implement-renderer` | Implemented: instruction, agent image with the specification and the documentation, collect hook, separate verifier image recording at build, reference solution. |
 | Further steps | Not designed. Candidates: the next spec release (0.1.x changes behaviour in patch releases), or a second target (canonical Carve with `fmt`, or Markdown) on the same renderer. |
 | The original | carve-rs 0.1.14's static Linux release archive, fetched by `scripts/setup_tools.py` into `experiment/original/` (not in Git) and packaged as released into the verifier's build context and the solution. |
+| Hooks | `environment/reserve-delivery-room` (setup begin and complete) and `environment/prepare-delivery` (the one root collect hook), both root-only in the agent image. |
+| Published builds | `steps/01-implement-renderer/tests/verifier/upstream_builds.json` from `scripts/upstream_builds.py`: 275 sha256 and 23 strings for the refusal of fetched builds. |
 | Private inputs | `steps/01-implement-renderer/tests/private/cases.json`, Git-ignored, from `scripts/make_cases.py` and `experiment/seeds.json`. Answers are recorded when the verifier image is built; `recording.json` beside them describes the recording and appears in `metrics.json`. |
-| Oracle | The original itself, installed from its release archive by `solve.sh` (as the agent's user). |
+| Oracle | The original itself, installed from its release archive by `solve.sh` (as the agent's user), with the 23 tripwire strings blanked in place. |
 | Ratings (`harbor check`) | Not run. |
 
 ## Design dimensions
@@ -228,8 +252,10 @@ instruction states no time budget.
 
 ## Verification
 
-1. The collect hook runs as root in the agent's container when the session ends (above) and
-   writes `/app/rebuild/.delivered`: `delivered ENTRIES BYTES` with its notes, or `refused`.
+1. The collect hook runs as root in the agent's container when the session ends (above): it
+   records egress and the agent's processes, kills them, fixes links, and writes
+   `/app/rebuild/.delivered` (`delivered ENTRIES BYTES` with its notes, or `refused`) and the
+   record `/app/rebuild/.delivery.json`.
 2. `/app/rebuild` arrives as the declared artifact in a fresh verifier container. The verifier
    reserves `.reward.tmp` and `metrics.json` before anything runs (no `reward.txt` exists until
    the real end, so an evaluation cut short is an error, never a 0), and requires 512 MB free in
@@ -240,7 +266,9 @@ instruction states no time budget.
    run first (no_new_privs from the status file or `prctl`, ids, groups, capabilities, limits, and a
    set-id root copy of `id` that must report that uid); a failure is an evaluation error. It seals
    `/app/rebuild` (root-owned, read-only, no set-id bits, at most 200,002 entries and 2 GiB): a
-   submission that cannot be sealed gets reward 0 with a note.
+   submission that cannot be sealed gets reward 0 with a note. Then every delivered file is hashed
+   and searched once: a published build of the original, or a file holding two of its strings,
+   gets reward 0 with a note. The record goes to `metrics.json` (`delivery_record`), never scored.
 4. Before each case it kills that uid's processes, sweeps what it left in every world-writable
    directory and its System V IPC objects, and writes the case's files into a new `/tmp/carve-case`
    with new empty `HOME` and `TMPDIR`. `/app/rebuild/carve` runs there as that uid with
@@ -285,11 +313,12 @@ reward = cases_passed / cases_kept
 
 ## Hackability assessment
 
-Highest unresolved severity: 🟡 YELLOW / UNASSESSED (findings 1, 4, 8, 9, 10, 11, 13).
+Highest unresolved severity: 🟡 YELLOW / UNASSESSED (findings 1, 4, 8, 9, 10, 11, 13). Finding 1 is the
+platform's egress window, shared by every task whose original is public.
 
 | # | Attack and impact | Boundary | Evidence | Mitigation | Residual risk | Next validation | Severity |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | Get carve-rs or another engine and deliver it, or call it | Agent network; agent image | Dockerfile read: no engine, no node, no carve source | `network_mode = "no-network"`; the agent image holds only the spec and docs pages; the verifier image has no engine | A harness with network access would defeat the task (upstream is public) | Probe from a first trial | 🟡 YELLOW / UNASSESSED |
+| 1 | Get carve-rs or another engine and deliver it, or call it: during the turn, or by a process left running into the platform's egress window after it | Agent network; the platform's egress window; agent image | Dockerfile read: no engine, no node, no carve source; Harbor 0.25's restore of setup egress read by the coordinator | `network_mode = "no-network"` during the turn; the hook records egress and live processes and kills them; 275 published builds and 23 of their strings refused by the verifier (check `test_a_fetched_build_of_the_original_is_refused`); the record lists every entry with its change time for the audit | The window stays open until the platform keeps the agent's policy through collection; a transformed or rebuilt engine passes the tripwires; the judges' run policy applies (audit every trial, void exploits, pause on the first) | Read `delivery_record` (egress, processes, latest changes) of every trial; the platform fix | 🟡 YELLOW |
 | 2 | Read the recorded answers | Separate verifier image; file modes | Same layout as Goose and BasedPL (their QA 07 passes) | Answers recorded in a builder stage; final image keeps three JSON files under root-only `/tests` (0700); submitted code runs as a mapped uid with no_new_privs | A kernel bug | Keep | 🟢 GREEN / LOW |
 | 3 | Copy answers from what is shipped | Case generation and packaging | Checked: leak index of every shipped page (fenced blocks, inline code, one-line `SOURCE -> RESULT` examples, the JSON contracts' sources); 297 corpus documents left out; checked again at packaging | No case is a shipped example or a skeleton copy of one; the generated example pages and the corpus are not shipped | The documentation's own examples teach behaviour by design | Keep | 🟢 GREEN / LOW |
 | 4 | Recall upstream's published answers | Rewrites | Every corpus-based case renamed with a changed answer (993 same structure, 7 changed) | Private-seed renaming; new documents and constructs (1,120 of 2,142); mutants | Structure of public edge cases is kept; models trained after mid-2026 may know the language | Pre-run QA recall probe; read `settled` | 🟡 YELLOW |
@@ -312,13 +341,14 @@ Licences: the specification, documentation and carve-rs are MIT. The spec's `LIC
 
 | Check | Revision | Result |
 | --- | --- | --- |
-| `checks/` (35 tests) with `ci_checks`, Python 3.13, and `check_repository.py` | working tree, 2026-11-19 | pass |
+| `checks/` (36 tests) with `ci_checks`, Python 3.13, and `check_repository.py` | working tree, 2026-11-19 | pass |
+| Tripwires on the reference | `install.py --blank` on the pinned Linux build | sha256 `353fa8cdaa863fcb8fb55b67aee6eb44c198d04041247a3d783732bbc351cf89` (same size), in no list, none of the 23 strings left; the unchanged build and the macOS build are refused |
 | Corpus agreement, spec model against carve-rs (macOS release) | spec `51c5631`, carve-rs 0.1.14 | 4,626 of 4,631 equal; model equals the corpus HTML on all |
 | Case generation | cases `8c021e92` (2,142) | 8 dropped as model disagreements, 57 with no answer-changing renaming, 108 shown in the docs, spec or pack |
-| Local recording with the macOS release build, through the bundle's recorder | bundle `3b9b6b82debb` | 2,142 of 2,142 kept; none slow, unsteady, crashed, differing or perturbed; slowest run 35 ms; kept ids sha256 `23c9858a` |
-| Packaging twice | `scripts/package_step.py` | the same hash both times: `3b9b6b82debb6e8a530ea23d8a31d3b823c8d555e1d59072e2339bf365d7f4f8`, 136 files, 16,897,184 bytes |
-| Oddish preflight | bundle `3b9b6b82debb` | pass |
-| Local grading from the bundle (`scripts/grade_locally.py`, no sandbox) | bundle `3b9b6b82debb` | reference (the original as `/app/rebuild/carve`, marked by the bundle's hook) 1.0 (2,142/2,142, 23 s); an empty delivery 0.0; a program that prints nothing 0.0 |
+| Local recording with the macOS release build, through the bundle's recorder | bundle `f738bb170bc6` | 2,142 of 2,142 kept; none slow, unsteady, crashed, differing or perturbed; slowest run 35 ms; kept ids sha256 `23c9858a` |
+| Packaging twice | `scripts/package_step.py` | the same hash both times: `f738bb170bc67dcf366708fb815fde774812ea2d0d810aa0a6c39388b838b1d5`, 139 files, 16,957,329 bytes |
+| Oddish preflight | bundle `f738bb170bc6` | pass |
+| Local grading from the bundle (`scripts/grade_locally.py`, no sandbox) | bundle `f738bb170bc6` | reference (the macOS build blanked as `solve.sh` does, re-signed, as `/app/rebuild/carve`, marked by the bundle's hook, passing the tripwires) 1.0 (2,142/2,142, 25 s); an empty delivery 0.0; a program that prints nothing 0.0 |
 | Oddish baselines, QA, `harbor check` | none | not run |
 
 ## Build and deliver
@@ -326,6 +356,7 @@ Licences: the specification, documentation and carve-rs are MIT. The spec's `LIC
 ```bash
 git clone https://github.com/markup-carve/carve ../.cache-src/carve   # beside the repository checkout; read by hash
 python scripts/setup_tools.py              # the release builds (sha256-checked) and the spec model with ohm-js and djot.js
+python scripts/upstream_builds.py          # published builds (GitHub, PyPI, Go proxy) -> tests/verifier/upstream_builds.json
 python scripts/make_cases.py               # private cases from experiment/seeds.json, checked against the model
 python scripts/package_step.py             # experiment/dist/bundles/<hash>/...; add --flat for a bundle without steps
 python scripts/grade_locally.py <bundle>   # the reference and two no-ops through the bundle's own verifier
@@ -344,4 +375,7 @@ image needs it.
   hook and of the delivery check, and the first run of the privilege checks as root. Two oracle
   trials should each score exactly 1.0; a no-op 0.
 - A recall probe: ask the models under test about Carve without the files.
+- The platform fix for the egress window (keep the agent's network policy through collection, or
+  kill the agent's processes before the restore), proved by the canary in
+  `ops/swe-marathon-v2/canary/`; until then, the scripted audit of every trial.
 - `harbor check` and ratings.

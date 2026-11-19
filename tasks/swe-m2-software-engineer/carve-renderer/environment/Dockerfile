@@ -7,9 +7,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN useradd --uid 10001 --create-home dev
 COPY spec/ /app/spec/
 COPY docs/ /app/docs/
-COPY prepare-delivery /usr/local/sbin/prepare-delivery
+COPY reserve-delivery-room prepare-delivery /usr/local/sbin/
 RUN mkdir -p /app/rebuild \
     && chown -R root:root /app && chmod -R a+rX,go-w /app/spec /app/docs \
     && chmod 1777 /app && chmod 0777 /app/rebuild \
-    && chmod 0700 /usr/local/sbin/prepare-delivery
+    && chmod 0700 /usr/local/sbin/reserve-delivery-room /usr/local/sbin/prepare-delivery
 WORKDIR /app
