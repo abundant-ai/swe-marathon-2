@@ -113,18 +113,20 @@ for name in .delivered .delivery.json; do
 done
 # The turn's end, as the watcher saw it (the time egress returned), for the link fixing below; the
 # hook's own start where the watcher never fired.
-turn_end=$(/usr/bin/python3 -I - "$STATE/restored" "$started" <<'EOF'
+set -- $(/usr/bin/python3 -I - "$STATE/restored" "$started" <<'EOF'
 import json, sys
 try:
-    print(float(json.load(open(sys.argv[1]))["restored_at"]))
+    print(float(json.load(open(sys.argv[1]))["restored_at"]), "watcher")
 except Exception:
-    print(sys.argv[2])
+    print(sys.argv[2], "start")
 EOF
 )
+turn_end=${1:-$started}
+turn_from=${2:-start}
 # Links, as the agent's user (it copies nothing that user could not read), within two minutes; what
 # it changes, and where each copy came from, goes to the record.
 notes=$(mktemp /tmp/.delivery-notes.XXXXXX 2>/dev/null) || notes=/dev/null
-timeout 120 setpriv --reuid dev --regid dev --clear-groups --no-new-privs /usr/bin/python3 -I - /app/rebuild "$LIMIT_ENTRIES" "$LIMIT_BYTES" "$turn_end" > "$notes" 2>&1 <<'EOF'
+timeout 120 setpriv --reuid dev --regid dev --clear-groups --no-new-privs /usr/bin/python3 -I - /app/rebuild "$LIMIT_ENTRIES" "$LIMIT_BYTES" "$turn_end" "$turn_from" > "$notes" 2>&1 <<'EOF'
 """Make /app/rebuild safe to copy to the machine it will run on, as the user who built it.
 
 The copy keeps relative links that stay inside the directory and refuses everything else. A link
@@ -146,7 +148,8 @@ ROOT = os.path.realpath(sys.argv[1])
 ENTRIES = int(sys.argv[2])
 BUDGET = int(sys.argv[3])
 TURN_END = float(sys.argv[4])
-MARGIN = 2.0
+TURN_FROM = sys.argv[5] if len(sys.argv) > 5 else "start"   # "watcher": the turn's end was seen; else the hook's start
+SKEW = 0.5   # forward only: a change later than the turn's end by more than this is after the turn (QA 07b F-b)
 spent = copied = 0
 
 
@@ -206,14 +209,16 @@ def fix_link(path, name):
         os.unlink(path)
         return {"note": f"removed {name} -> {target}: it points at a device, a pipe or a socket"}
     sources, size, count = sources_of(resolved, BUDGET - spent, ENTRIES - copied)
-    late = [item for item in sources if item["source_ctime"] >= TURN_END - MARGIN]
+    late = [item for item in sources if item["source_ctime"] > TURN_END + SKEW]
     record = {"path": name, "target": target, "source": resolved, "source_owner": sources[0]["source_owner"],
               "source_mtime": sources[0]["source_mtime"], "source_ctime": sources[0]["source_ctime"],
               "source_inode": sources[0]["source_inode"], "files": count, "bytes": size, "late_files": len(late),
               "latest_ctime": max(item["source_ctime"] for item in sources), "outside": True}
-    if late:
+    if late and TURN_FROM == "watcher":
         os.unlink(path)
         return {"refused": dict(record, reason=f"{len(late)} of its files changed after the turn ended")}
+    if late:  # the turn's end was not seen, so the reference is the hook's own start: copy, and flag it for the audit
+        record["flagged"] = f"{len(late)} of its files changed after the hook's start; the turn's end was not seen, so it is copied for the audit"
     if spent + size > BUDGET or copied + count > ENTRIES:
         os.unlink(path)
         return {"refused": dict(record, reason=f"copying it would pass {ENTRIES:,} entries or {BUDGET:,} bytes")}
@@ -264,7 +269,7 @@ for _ in range(10):
         break
 EOF
 # Measure, bound, list and mark, as root.
-exec /usr/bin/python3 -I - /app/rebuild "$LIMIT_ENTRIES" "$LIMIT_BYTES" "$notes" "$STATE" "$rounds" "$left" "$started" "$ended" "$turn_end" <<'EOF'
+exec /usr/bin/python3 -I - /app/rebuild "$LIMIT_ENTRIES" "$LIMIT_BYTES" "$notes" "$STATE" "$rounds" "$left" "$started" "$ended" "$turn_end" "$turn_from" <<'EOF'
 """Measure /app/rebuild, bound it, list it and mark it, as root, once nothing of the agent's runs.
 
 The tree is walked by directory descriptor, so no depth hides anything. Anything the copy would
@@ -293,6 +298,8 @@ NOTES, STATE = sys.argv[4], sys.argv[5]
 ROUNDS = int(sys.argv[6]) if sys.argv[6].isdigit() else None
 LEFT = int(sys.argv[7].strip()) if sys.argv[7].strip().isdigit() else None
 STARTED, ENDED, TURN_END = (float(value) for value in sys.argv[8:11])
+TURN_FROM = sys.argv[11] if len(sys.argv) > 11 else "start"   # "watcher": the turn's end was seen; else the hook's start
+SKEW = 0.5   # forward only, as in the link fixer
 MARK = os.path.join(ROOT, ".delivered")
 RECORD = os.path.join(ROOT, ".delivery.json")
 HASH_BUDGET = 2_000_000_000   # bytes hashed for the record, at most
@@ -444,11 +451,18 @@ try:
         os.kill(int(handle.read().strip()), signal.SIGTERM)
 except (OSError, ValueError):
     pass
+# Entries changed after the turn's end: a copied tree counts by its source's latest change time
+# (its own ctime is the hook's), everything else by its ctime, a forward skew only (QA 07b F-c).
+copied_paths = [copy["path"] for copy in copies]
+late_entries = (sum(1 for item in catalogue
+                    if not any(item["path"] == path or item["path"].startswith(path + "/") for path in copied_paths)
+                    and item["ctime"] > TURN_END + SKEW)
+                + sum(1 for copy in copies if (copy.get("latest_ctime") or 0) > TURN_END + SKEW))
 record = dict(egress or {"egress": None, "egress_open": None}, hook_started_at=STARTED, kill_ended_at=ENDED,
               turn_ended_at=TURN_END, turn_end_from=turn_end_from, watchdog=watchdog, restored=restored,
               agent_process_count=(processes or {}).get("agent_process_count"), agent_processes=(processes or {}).get("agent_processes", []),
               kill_rounds=ROUNDS, agent_processes_left=LEFT, delivered=lines[0], listing_complete=reason is None and hashed <= HASH_BUDGET,
-              copies=copies, refused_copies=refused, late_entries=sum(1 for item in catalogue if item["ctime"] >= TURN_END - 2.0),
+              copies=copies, refused_copies=refused, late_entries=late_entries,
               precap_watchdog=precap_log, ended_by_watchdog=ended_by_watchdog,
               notes=notes, entries=catalogue[:LIMIT_ENTRIES])
 try:

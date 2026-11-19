@@ -218,7 +218,7 @@ def cli_cases() -> list[dict]:
         c("cli:invalid-utf8", ["latin.crv"], {"latin.crv": "caf\udce9 au lait\n\n# R\udcc3\udca9sum\udce9\n"}),
         c("cli:invalid-utf8-stdin", [], stdin="\udcff\udcfe stray bytes\n"),
         c("cli:no-final-newline", ["tail.crv"], {"tail.crv": "last line without a newline"}),
-        c("cli:nul-byte", ["nul.crv"], {"nul.crv": "a\x00b\n"}),
+        c("cli:nul-byte", ["nul.crv"], {"nul.crv": "The build log ends\x00here, and the next page starts.\n"}),
     ]
 
 
@@ -351,6 +351,7 @@ def settle(item: dict, outputs: dict[tuple[int, int], dict], lookup: corpus_look
         if got["stdout"] in guesses_for(item, source, lookup):
             reasons["the corpus lookup gives it"] += 1
             continue
+        splice_guesses: list[str] = []
         if item["kind"] == "mutant":
             origin = item["origin"].split(":", 1)[0]
             published = corpus_html.get(origin, "").rstrip("\n") + "\n"
@@ -363,14 +364,21 @@ def settle(item: dict, outputs: dict[tuple[int, int], dict], lookup: corpus_look
             if shape is None or shape.get("exit") != 0 or any(run is None or run.get("exit") != 0 for run in own):
                 reasons["the host or a part does not render alone"] += 1
                 continue
-            spliced = hosts.splice(shape["stdout"], [run["stdout"] for run in own])
-            if spliced is not None and spliced == got["stdout"]:
+            # Every splice a program with the corpus and QA 12b's rules R1-R3 would print: the answer
+            # must be none of them, and must differ from each in more than whitespace and words.
+            splice_guesses = hosts.attacker_splices(shape["stdout"], [run["stdout"] for run in own])
+            if got["stdout"] in splice_guesses:
                 reasons["a splice of the host and the parts gives it"] += 1
+                continue
+            answer_shape = rewrite.structure(hosts.collapse_ws(got["stdout"]))
+            if any(answer_shape == rewrite.structure(hosts.collapse_ws(guess)) for guess in splice_guesses):
+                reasons["the host changed only whitespace or words of a splice"] += 1
                 continue
             if all(rewrite.structure(got["stdout"]) == rewrite.structure(run["stdout"]) for run in own):
                 reasons["the host left the structure as it was"] += 1
                 continue
-        return with_source(item, source) | {"answer_from": number}, f"{item['kind']}: {name}", reasons
+        return (with_source(item, source) | {"answer_from": number, "splice_guesses": splice_guesses},
+                f"{item['kind']}: {name}", reasons)
     return None, "no variant kept", reasons
 
 
@@ -506,7 +514,7 @@ def generate(seed: int, scale: float = 1.0) -> tuple[list[dict], list[dict], dic
             "id": f"P{number:05d}", "kind": item["kind"], "origin": item["origin"], "argv": item["argv"],
             "files": item["files"], "stdin": item["stdin"], "settled": item["settled"], "model": item["model"],
             "answer_sha256": answer_sha256(item["answer"]["exit"], stdout),
-            "lookup_sha256": sorted(answer_sha256(0, guess) for guess in item["guesses"])[:GUESS_LIMIT],
+            "lookup_sha256": sorted({answer_sha256(0, guess) for guess in list(item["guesses"]) + list(item.get("splice_guesses", []))})[:GUESS_LIMIT],
         }
         if item["kind"] != "cli":
             reply = djot.get(str(item["index"]), {})

@@ -615,7 +615,7 @@ def hook_programs() -> list[str]:
 
 
 def run_hook(top: Path, entries: int = 200000, size: int = 2000000000, turn_end: float | None = None,
-             env: dict[str, str] | None = None) -> list[str]:
+             env: dict[str, str] | None = None, turn_from: str = "start") -> list[str]:
     """The collect hook's five Python blocks on `top`, as the hook runs them: the process listing and
     the egress probe (into a state dir), the turn-end reader, the link fixing (as the agent's user)
     and the measuring (as root, handed the notes and the state). `turn_end` defaults far in the
@@ -633,11 +633,11 @@ def run_hook(top: Path, entries: int = 200000, size: int = 2000000000, turn_end:
     end = f"{time.time() + 10 ** 9 if turn_end is None else turn_end}"
     notes = top.parent / f".{top.name}-notes"
     with open(notes, "w") as handle:
-        done = subprocess.run([sys.executable, "-I", "-", str(top), str(entries), str(size), end], input=fixing, text=True,
-                              stdout=handle, stderr=subprocess.STDOUT, timeout=300)
+        done = subprocess.run([sys.executable, "-I", "-", str(top), str(entries), str(size), end, turn_from], input=fixing,
+                              text=True, stdout=handle, stderr=subprocess.STDOUT, timeout=300)
     assert done.returncode == 0, notes.read_text()
     done = subprocess.run([sys.executable, "-I", "-", str(top), str(entries), str(size), str(notes), str(state), "1", "0",
-                           end, end, end], input=measuring, text=True, capture_output=True, timeout=300,
+                           end, end, end, turn_from], input=measuring, text=True, capture_output=True, timeout=300,
                           env=dict(os.environ, **(env or {})))
     assert done.returncode == 0, done.stdout + done.stderr
     assert not notes.exists(), "the notes file is consumed"
@@ -1026,6 +1026,95 @@ def test_the_precap_watchdog_arms_once_fires_at_end_seconds_and_ends_the_tree(tm
         print(json.dumps(verify.delivery_record(Path({str(top)!r}))))
     """))
     assert summary["ended_by_watchdog"] is True and "pre-cap watchdog ended the session" in " ".join(summary["flags"])
+
+
+def test_hosts_draw_once_and_the_attacker_splice_is_rejected():
+    """QA 12b F1: every host draws its text once, so its placeholder form is the kept source with
+    the part replaced at the part's prefix (the shape a program with the public corpus rebuilds);
+    `attacker_splices` applies that program's rules (R3 here: a lazy placeholder line gives way to
+    the body inside its item); and `settle` rejects an answer any such splice reproduces, or one
+    that differs from a splice in whitespace only, while keeping a real interaction and storing
+    the splices for the recording's own check."""
+    out = scripts_call(textwrap.dedent('''
+        import json, random, hosts, make_cases, corpus_lookup
+        from documents import Writer
+        rng = random.Random(7)
+        w = Writer(rng)
+        names, stable = [], []
+        for host in hosts.single_hosts(w, rng) + hosts.composite_hosts(w, rng, 2):
+            parts = hosts.placeholders(host.arity)
+            names.append(host.name)
+            stable.append(host.source(parts) == host.source(parts))
+        tight = next(h for h in hosts.single_hosts(Writer(random.Random(3)), random.Random(3)) if h.name == "tight-item")
+        src, shape = tight.source(["> quoted body\\n"]), tight.source(hosts.placeholders(1))
+        same_prefix = src.split("\\n")[1][:2] == "  " and shape.split("\\n")[1] == "  qzjvx"
+        shape_html = "<ul>\\n  <li>lead text\\nqzjvx</li>\\n</ul>\\n"
+        body_html = "<blockquote>\\n<p>quoted body</p>\\n</blockquote>\\n"
+        tries = hosts.attacker_splices(shape_html, [body_html])
+        r3 = any("<li>lead text\\n    <blockquote>" in t and "</blockquote>\\n  </li>" in t for t in tries)
+        empty = corpus_lookup.Lookup({}, {})
+        item = {"kind": "snippet", "index": 0, "variants": [("v0", "s0")], "files": {"a.crv": "base"}, "stdin": None,
+                "argv": ["a.crv"], "source": "base", "origin": "x:0", "parts": ["p"]}
+        base = {"exit": 0, "stdout": "<p>base</p>\\n"}
+        def run(answer):
+            chosen, how, reasons = make_cases.settle(item, {(0, -1): base, (0, 0): {"exit": 0, "stdout": answer},
+                                                           (0, 100): {"exit": 0, "stdout": shape_html},
+                                                           (0, 200): {"exit": 0, "stdout": body_html}}, empty, {})
+            return [how, dict(reasons), None if chosen is None else len(chosen.get("splice_guesses", []))]
+        spliced = run(tries[-1])
+        spaced = run(tries[-1].replace("\\n    <blockquote>", "\\n      <blockquote>"))
+        real = run("<ul>\\n  <li>lead text\\n    <blockquote>\\n    <p>quoted body</p>\\n    </blockquote>\\n  </li>\\n</ul>\\n"
+                   "<section role=\\"doc-endnotes\\"></section>\\n")
+        print(json.dumps([names, stable, same_prefix, r3, len(tries), spliced, spaced, real]))
+    '''))
+    names, stable, same_prefix, r3, tries, spliced, spaced, real = out
+    assert len(names) == 18 and all(stable), dict(zip(names, stable))
+    assert same_prefix and r3 and tries >= 2
+    assert spliced == ["no variant kept", {"a splice of the host and the parts gives it": 1}, None]
+    assert spaced == ["no variant kept", {"the host changed only whitespace or words of a splice": 1}, None]
+    assert real[0] == "snippet: v0" and real[2] == tries, "a real interaction is kept, with the splices stored for the recording"
+    make = (SCRIPTS / "make_cases.py").read_text()
+    assert 'item.get("splice_guesses", [])' in make, "the splices' digests travel with the case in lookup_sha256"
+
+
+def test_a_source_changed_after_the_turn_is_refused_only_when_the_turn_end_was_seen(tmp_path):
+    """QA 07b F-b/F-c: the link fixer's cutoff is the turn's end with a forward skew only (no margin
+    reaching back into the turn). A source changed after the turn is refused when the watcher saw
+    the turn end, copied and flagged when the reference is only the hook's own start, and an honest
+    source finished before the turn's end is copied unflagged; late entries count a copy by its
+    source's change time."""
+    def delivery(name: str) -> Path:
+        outside = tmp_path / f"{name}-outside"
+        outside.mkdir()
+        (outside / "tool.py").write_text("x = 1\n")
+        top = tmp_path / name / "rebuild"
+        top.mkdir(parents=True)
+        (top / "carve").write_text("#!/bin/sh\nexit 0\n")
+        (top / "helpers").symlink_to(outside)
+        return top
+    past = time.time() - 10                                  # the turn ended before the outside tree was written
+    seen = delivery("seen")
+    run_hook(seen, turn_end=past, turn_from="watcher")
+    record = json.loads((seen / ".delivery.json").read_text())
+    assert not (seen / "helpers").exists() and len(record["refused_copies"]) == 1 and record["copies"] == []
+    assert "changed after the turn ended" in record["refused_copies"][0]["reason"]
+    unseen = delivery("unseen")
+    run_hook(unseen, turn_end=past, turn_from="start")
+    record = json.loads((unseen / ".delivery.json").read_text())
+    assert (unseen / "helpers" / "tool.py").is_file() and len(record["copies"]) == 1 and record["refused_copies"] == []
+    assert "turn's end was not seen" in record["copies"][0]["flagged"] and record["late_entries"] >= 1
+    flags = verifier_call(textwrap.dedent(f"""
+        import json, verify
+        from pathlib import Path
+        print(json.dumps(verify.delivery_record(Path({str(unseen)!r}))["flags"]))
+    """))
+    assert any("copied because the turn's end was not seen" in flag for flag in flags), flags
+    honest = delivery("honest")
+    run_hook(honest, turn_end=time.time() + 10 ** 6, turn_from="watcher")   # written well before the turn's end
+    record = json.loads((honest / ".delivery.json").read_text())
+    assert len(record["copies"]) == 1 and "flagged" not in record["copies"][0] and record["late_entries"] == 0
+    hook = HOOK.read_text()
+    assert hook.count("> TURN_END + SKEW") == 3 and "TURN_END - " not in hook, "no margin reaching back into the turn"
 
 
 def test_the_agent_cannot_replace_the_artifact_directory():

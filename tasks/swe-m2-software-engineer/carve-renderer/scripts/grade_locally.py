@@ -53,10 +53,10 @@ def mark(bundle: Path, top: Path) -> str:
     end = f"{time.time() + 10 ** 9}"
     notes = top.parent / ".delivery-notes"
     with open(notes, "w") as handle:
-        subprocess.run([sys.executable, "-I", "-", str(top), "200000", "2000000000", end], input=fixing, text=True,
+        subprocess.run([sys.executable, "-I", "-", str(top), "200000", "2000000000", end, "start"], input=fixing, text=True,
                        check=True, stdout=handle, stderr=subprocess.STDOUT, timeout=300)
     subprocess.run([sys.executable, "-I", "-", str(top), "200000", "2000000000", str(notes), str(state), "1", "0",
-                    end, end, end], input=measuring, text=True, check=True, capture_output=True, timeout=300)
+                    end, end, end, "start"], input=measuring, text=True, check=True, capture_output=True, timeout=300)
     return (top / ".delivered").read_text().splitlines()[0]
 
 
