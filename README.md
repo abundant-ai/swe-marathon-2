@@ -59,8 +59,9 @@ uv sync --frozen --group titans
 
 Include `--group titans` when running or syncing that environment.
 
-The new Titans training/evaluation prototype needs the current library checkout;
-the pinned release above predates its continuous-stream `pretrain` API. To run the
+The [Titans training task](tasks/swe-m2-ai-research/titans-training/README.md)
+uses the published `pretrain` API from library commit `e277e2b` or a compatible
+newer checkout. The dependency pin above still predates that API. To run the
 offline CPU probe against a local checkout without changing the lockfile:
 
 ```bash

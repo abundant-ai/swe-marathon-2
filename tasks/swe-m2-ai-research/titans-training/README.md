@@ -1,74 +1,109 @@
 # Titans training
 
-The first task asks an agent to improve a scratch-pretraining baseline with
-continual neural memory. Training and evaluation use next-token prediction on
-fixed corpus mixes. The earlier 125-case BABILong QA holdout is retained below
-for a later task. Compute allowances and success thresholds still need baseline
-measurements.
+Improve scratch pretraining with continual neural memory using
+[Abundant Titans](https://github.com/abundant-ai/titans). The task supplies fixed,
+pretokenized corpora and next-token evaluation. The library supplies the model,
+memory protocols and training loop.
 
-The runtime functions use the current local [Abundant Titans library](https://github.com/abundant-ai/titans)
-and its continuous-stream `pretrain` API. The development image still pins
-[`2260f95668a4c3d40fd6050292a1d2f74d8f5a5c`](https://github.com/abundant-ai/titans/commit/2260f95668a4c3d40fd6050292a1d2f74d8f5a5c),
-which predates that API. Update the image and dependency pin after the current
-library changes are published; the old image cannot run these functions yet.
+Use library commit [`e277e2b`](https://github.com/abundant-ai/titans/commit/e277e2be434f4b940fa1f742b799ca829f609329)
+or a compatible newer checkout. The root dependency and development image still
+pin `2260f956`, which predates `pretrain`. Follow the
+[local setup guide](../../../README.md#local-setup-and-checks) to use an editable
+checkout. Updating those pins and validating the image remain pending.
 
-## Training and streaming evaluation
+## Train and evaluate
 
-[common/titans_task/runner.py](common/titans_task/runner.py) provides two functions
-that accept an already constructed `ContinualModel`, including `TitansModel` or
-a model with another memory architecture and connection implementation:
+Add `tasks/swe-m2-ai-research/titans-training/common` to `PYTHONPATH` and run from
+the repository root after preparing the data:
 
 ```python
+from pathlib import Path
+from titans import TitansConfig, TitansModel
 from titans_task import evaluate, train
 
-training = train(model, data_dir=prepared_data, output_dir=checkpoint_dir,
-                 eval_every_steps=512)
+model = TitansModel.from_scratch(
+    TitansConfig(compile_kernels=False, use_liger=True), device="cuda", seed=17,
+)
+prepared_data = Path("tasks/swe-m2-ai-research/titans-training/experiment/data")
+training = train(
+    model, data_dir=prepared_data, output_dir="checkpoints/titans-pilot",
+    eval_every_steps=512,
+)
 loss = evaluate(model, data_dir=prepared_data, split="public")
 ```
 
-`train` updates the supplied model in place and returns the library's
-`TrainingResult`. The learning rate defaults to `1e-4`. Training uses FP32,
-batch size one, 4,096-token blocks, one AdamW step per block and gradient clipping
-at 1.0. Active memory continues across documents and blocks; ordinary attention
-KV resets at each block. The selected connection controls its internal execution
-boundaries. There are no task-specific Titans class checks or memory updates.
+This uses the library's fixed Llama-style decoder: 24 layers, width 1,024 and
+16 attention heads. The default Titans connection is MAC with 512-token segments
+and 16-token memory writes. Memory and connection implementations remain
+replaceable through the library protocols. `train` also accepts a scratch-backed
+`ContinualModel` using another method.
 
-`eval_every_steps` is a positive integer counting completed optimizer steps. Its
-default of 512 runs public evaluation every 2,097,152 training tokens. A final
-evaluation always runs after saving the final checkpoint, including when the
-last step is not a multiple of the interval. It runs only once when the interval
-lands on the final step. For the full 2,560-step pilot, the default evaluates at
-steps 512, 1,024, 1,536, 2,048 and 2,560. Set `eval_every_steps=None` to train
-without public evaluation.
+Training delegates to `model.pretrain`: FP32, batches shaped `[1, 4096]`, one
+averaged next-token loss and one AdamW step per batch, learning rate `1e-4`, and
+global gradient clipping at 1.0. The outer optimizer trains the backbone and
+shared method parameters; the inner algorithm updates active memory. Active
+memory continues across documents and batches, with gradient history detached
+after each step. Ordinary decoder KV resets between batches and the persistent
+prefix is recomputed. See the library's
+[pretraining guide](https://github.com/abundant-ai/titans/blob/main/docs/pretraining.md)
+for the full contract.
 
-Each intermediate checkpoint is saved under
-`<checkpoint_dir.name>.checkpoints/step-000512` beside `checkpoint_dir`; the final
-checkpoint retains the original `checkpoint_dir` path. Results are printed and
-appended to `public-eval.jsonl` in that sibling directory, with `step`,
-`tokens_processed`, `public_loss` and the checkpoint's absolute path. The loss
-uses the same public set and weighted mean as `evaluate`. Existing artifact
-directories are rejected to avoid mixing different runs.
+Public evaluation runs every 512 completed optimizer steps and once at completion,
+without duplicating the final evaluation. Set `eval_every_steps=None` to disable
+it. Intermediate checkpoints and `public-eval.jsonl` go in
+`checkpoints/titans-pilot.checkpoints/`; the final checkpoint goes in
+`checkpoints/titans-pilot/`. Use a fresh output directory. Checkpoints contain
+model parameters, not the live memory and optimizer needed to resume training.
 
-One library `pretrain` call owns the entire training stream and optimizer.
-Periodic evaluation runs when that call requests its next batch, after the
-previous step and memory detach. Evaluation uses fresh memory instead of the
-training instance's memory. Model modes, gradient flags, existing gradients and
-Python/NumPy/PyTorch random state are preserved so evaluation does not change
-subsequent training. The returned elapsed time includes scheduled evaluations.
-These checkpoints store shared model parameters; they are not full training
-resume files containing the optimizer and active memory.
+Evaluation freezes the backbone and shared memory/connection parameters while
+allowing active-memory updates. Each 65,536-token evaluation stream starts with
+fresh memory, then continues across its documents and 16 batches. It uses the
+same ordinary-KV reset policy as training. **Every target is scored before it
+enters memory**, including the target across a batch boundary. Periodic evaluation
+preserves the continuing training memory, model modes, gradients and random state.
 
-The corpus quotas are hard-coded in [data.py](common/titans_task/data.py):
+## Data and score
 
-| Phase | FineWeb-Edu input tokens | PG19 input tokens | WikiText-103 input tokens | Batches |
-| --- | ---: | ---: | ---: | ---: |
-| Training | 8,388,608 | 2,097,152 | 0 | 2,560 |
-| Public evaluation | 524,288 | 262,144 | 262,144 | 256 |
-| Private evaluation | 2,097,152 | 1,048,576 | 1,048,576 | 1,024 |
+All text is tokenized before training. The loader reads consecutive input/label
+pairs from memory-mapped token files, without shuffling or runtime tokenization.
+Document boundaries use EOS separators.
 
-Tokens include document separators. Each input predicts one next-token target.
-One additional source token supplies the final lookahead for each independent
-stream; it is not another input or another batch.
+| Phase | FineWeb-Edu tokens | PG19 tokens | WikiText-103 tokens | Total tokens | Batches |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Training | 8,388,608 | 2,097,152 | 0 | 10,485,760 | 2,560 |
+| Public evaluation | 524,288 | 262,144 | 262,144 | 1,048,576 | 256 |
+| Private evaluation | 2,097,152 | 1,048,576 | 1,048,576 | 4,194,304 | 1,024 |
+
+`evaluate` returns one Python `float`, the weighted mean next-token loss in nats
+per scored token. Lower is better:
+
+\[
+L = 0.50 L_{\mathrm{FineWeb}} + 0.25 L_{\mathrm{PG19}} + 0.25 L_{\mathrm{WikiText}}.
+\]
+
+Each corpus loss is its summed cross-entropy divided by its scored token count.
+Missing data or nonfinite losses fail evaluation. Private evaluation uses
+`split="private"`; keep that split outside candidate inputs.
+
+Preparation and CPU-check commands are in the
+[local setup guide](../../../README.md#local-setup-and-checks). The implementation
+is in [runner.py](common/titans_task/runner.py), with quotas and packing in
+[data.py](common/titans_task/data.py).
+
+## Status
+
+The library's 283 CPU tests and this task's train/eval and clipping checks passed.
+The data audit and GPU experiments are recorded in the development log below.
+Those dated observations do not establish a completed full-budget run or a
+validated benchmark. Candidate instructions, isolated private evaluation, compute
+allowances and success thresholds remain unfinished.
+
+The separate [Modal experiment](scripts/run_modal_training.py) uses its own
+recorded memory settings and training loop. Its diagnostics are not changes to
+the library defaults or the `train` example above.
+
+<details>
+<summary>Prepared files, source selection and validation details</summary>
 
 ### Prepared input files
 
@@ -194,7 +229,7 @@ including checks that make tokenizer calls fail during training and evaluation.
 [scripts/check_preparation.py](scripts/check_preparation.py) checks document
 screening, WikiText article reconstruction and exact-budget packing, then can
 audit the real data's checksums, token ranges, quotas and split separation.
-Both checks passed. No 10M-token training run or GPU job was launched. These
+Both checks passed before the GPU experiments recorded below. These
 functions are not an isolated private verifier; runtime packaging and evaluation
 isolation remain separate work.
 
@@ -203,6 +238,12 @@ isolation remain separate work.
 [environment/Dockerfile](environment/Dockerfile) fetches the pinned repository during the image build and keeps its Git checkout at `/app/titans`. The image starts in that directory as `candidate`, who can edit the source and installed environment. The editable installation uses the checkout's `pyproject.toml` and `uv.lock`, including its GPU extras and development dependencies. Python commands use `/opt/titans-venv`.
 
 The image includes CUDA development tools. A runner must attach a compatible GPU for GPU work. It does not download model weights or a training corpus. The prepared local inputs still need runtime packaging, and the compute allowance is undecided. Build and startup validation are pending because the local Docker daemon is unavailable. There is no candidate step or verifier yet, so this image is not a complete runnable benchmark task.
+
+
+</details>
+
+<details>
+<summary>Earlier QA proposal and author-only holdout manifest</summary>
 
 ## Earlier QA holdout for a later task
 
@@ -480,7 +521,13 @@ The [Titans paper](https://arxiv.org/abs/2501.00663) distinguishes outer-loop tr
 
 Status: the Abundant library's development image is defined above but has not been built or run here. No task verifier, candidate instruction, or task-trained baseline is available. GPU feasibility, learning quality, and achievable improvement under this task's eventual budget remain unverified.
 
+
+</details>
+
 ## Development log
+
+<details>
+<summary>Dated implementation and experiment notes</summary>
 
 ### 2026-11-17
 
@@ -683,3 +730,16 @@ tokens; its training loss was 6.673718. Peak allocated GPU memory remained near
 gradient diagnostics, run metadata and source/data provenance are persisted.
 The run remains active; these are intermediate results, not the final learning
 assessment or a completed multi-hour run.
+
+Simplified the task overview and checked its constructor, pretraining behavior,
+evaluation state policy and checkpoint descriptions against library commit
+`e277e2b`. Kept the earlier QA proposal, exact manifest and dated experiment
+entries in expandable sections. The dependency and image pins remain unchanged;
+the setup instructions explicitly require the newer editable checkout. This was
+a documentation-only update.
+
+Repository checks passed for 245 source files and two configured tasks, and
+`git diff --check` passed. The existing development entries and exact QA
+manifest were preserved; the Python example passed a syntax check.
+
+</details>
