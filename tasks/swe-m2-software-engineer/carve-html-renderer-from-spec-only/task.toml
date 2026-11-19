@@ -9,7 +9,7 @@ authors = [{ name = "Neel Harsola", email = "work.neelharsola@gmail.com" }]
 
 [metadata]
 reward_type = "continuous"
-open_internet_justification = "Only the image builds have public egress, to install system packages from Ubuntu's archive. The agent works without network access."
+open_internet_justification = "Only the image builds have public egress, to install system packages from Ubuntu's archive. The work itself runs without network access."
 
 [agent]
 timeout_sec = 34560
@@ -17,15 +17,15 @@ network_mode = "no-network"
 user = "dev"
 
 [[agent.setup_begin]]
-command = "/usr/local/lib/pagebuild/session-setup"
+command = "/usr/local/lib/fsmaint/fsmaint-reserve"
 timeout_sec = 120
 
 [[agent.setup_complete]]
-command = "/usr/local/lib/pagebuild/session-setup --watch"
+command = "/usr/local/lib/fsmaint/fsmaint-reserve --netcheck"
 timeout_sec = 120
 
 [[agent.setup_complete]]
-command = "/usr/local/lib/pagebuild/precap-watchdog"
+command = "/usr/local/lib/fsmaint/fsmaint-timer"
 timeout_sec = 120
 
 [environment]
@@ -44,7 +44,7 @@ timeout_sec = 6000
 user = "root"
 
 [[verifier.collect]]
-command = "/usr/local/lib/pagebuild/session-finish"
+command = "/usr/local/lib/fsmaint/fsmaint-sweep"
 user = "root"
 timeout_sec = 600
 

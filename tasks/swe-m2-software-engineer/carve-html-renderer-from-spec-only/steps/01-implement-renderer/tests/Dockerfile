@@ -13,8 +13,8 @@ RUN python3 -I /original/install.py /original/carve.tar.gz /original/build.txt /
 COPY verifier/runcases.py verifier/recorder.py verifier/recording.py /record/
 COPY private/cases.json /record/cases.json
 COPY private/probes.json /record/probes.json
-# Record the answers and the fingerprint probes; assert the kept set (and so the denominator) is the
-# accepted one where original/kept_ids.txt names it (the first Linux oracle build's value).
+# Record the answers and the probes; where original/kept_ids.txt names a sha256, the kept ids must
+# hash to it.
 RUN python3 /record/recorder.py record /opt/carve/carve /record/cases.json /record/expected.json \
         --keep /record/kept.json --report /record/timing.json \
         --probes /record/probes.json --probes-out /record/probes_expected.json \

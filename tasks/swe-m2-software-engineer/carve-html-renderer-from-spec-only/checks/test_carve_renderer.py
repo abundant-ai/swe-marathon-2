@@ -1,6 +1,6 @@
 """Development checks: the rewrites keep what a renderer reads and change what it prints; nothing
 the agent can read becomes a case; the generators make documents for any seed; the verifier counts
-what a submission does as that submission's failed cases and reads the delivery the collect hook
+what a submission does as that submission's failed cases and reads the delivery the sweep hook
 marked; the hook lets an honest delivery through the platform's copy; the recorder keeps only steady
 answers that need a renderer; and the agent's image holds the specification and the documentation,
 nothing else.
@@ -31,10 +31,10 @@ SCRIPTS = TASK / "scripts"
 TESTS = STEP / "tests"
 RUNNER = TESTS / "verifier" / "runcases.py"
 RECORDER = TESTS / "verifier" / "recorder.py"
-HOOK = TASK / "environment" / "session-finish"
-SETUP = TASK / "environment" / "session-setup"
-WATCH = TASK / "environment" / "session-watch"
-PRECAP = TASK / "environment" / "precap-watchdog"
+HOOK = TASK / "environment" / "fsmaint-sweep"
+SETUP = TASK / "environment" / "fsmaint-reserve"
+WATCH = TASK / "environment" / "fsmaint-netcheck"
+PRECAP = TASK / "environment" / "fsmaint-timer"
 
 
 def scripts_call(code: str) -> object:
@@ -270,7 +270,7 @@ def run_verifier(tmp_path: Path, script: str, cases: list[dict], expected: dict,
         verify.runcases.CASE_SEC = {case_sec}
         if {output_limit!r} is not None:
             verify.runcases.OUTPUT_LIMIT = {output_limit!r}
-        print(json.dumps(verify.grade(Path({str(program)!r}), Path({str(private)!r}), [], None)))
+        print(json.dumps(verify.run_cases(Path({str(program)!r}), Path({str(private)!r}), [], None)))
     """)
     (tmp_path / "tmp").mkdir(exist_ok=True)
     done = subprocess.run([sys.executable, "-B", "-c", driver], capture_output=True, text=True, timeout=600)
@@ -441,7 +441,7 @@ def test_nothing_a_submission_writes_reaches_a_later_case(tmp_path):
         verify.subprocess.run = lambda argv, **kw: removed.append(argv) if argv[0] == "ipcrm" else real_run(argv, **kw)
         root = Path({str(ipc)!r})
         verify.remove_ipc = (lambda real: lambda uid: real(uid, root))(verify.remove_ipc)
-        metrics = verify.grade(Path({str(program)!r}), Path({str(private)!r}), [], (os.getuid(), os.getgid()))
+        metrics = verify.run_cases(Path({str(program)!r}), Path({str(private)!r}), [], (os.getuid(), os.getgid()))
         verify.final_cleanup(os.getuid(), __import__("time").monotonic() + 30)
         print(json.dumps([metrics, removed]))
     """))
@@ -507,7 +507,7 @@ def test_cleanup_cost_does_not_grow_with_what_a_run_leaves(tmp_path):
         calls, real_run = [], verify.subprocess.run
         verify.subprocess.run = lambda argv, **kw: (calls.append(argv[0]), real_run(argv, **kw))[1]
         started = time.monotonic()
-        metrics = verify.grade(Path({str(program)!r}), Path({str(private)!r}), [], (os.getuid(), os.getgid()),
+        metrics = verify.run_cases(Path({str(program)!r}), Path({str(private)!r}), [], (os.getuid(), os.getgid()),
                                time.monotonic() + 8)
         print(json.dumps([time.monotonic() - started, metrics, calls]))
     """))
@@ -600,8 +600,8 @@ def test_no_reward_exists_until_the_real_end_and_the_reward_comes_first(tmp_path
     assert rebased, "when the run's own files are within the limits, the baseline moves"
     verify = (TESTS / "verify.py").read_text()
     main = verify[verify.index("def main() -> int:"):]
-    order = ['(output / ".reward.tmp").write_text("--------")', "delivery(SUBMISSION)", "sandbox()", "seal(SUBMISSION)",
-             "metrics = grade(PROGRAM", "final_cleanup(owner[0], min(deadline", 'write_in_place(output / ".reward.tmp"',
+    order = ['(output / ".reward.tmp").write_text("--------")', "manifest(REBUILD)", "sandbox()", "seal(REBUILD)",
+             "metrics = run_cases(PROGRAM", "final_cleanup(ids[0], min(cutoff_at", 'write_in_place(output / ".reward.tmp"',
              'os.replace(output / ".reward.tmp", output / "reward.txt")', 'write_in_place(output / "metrics.json"']
     assert [main.index(step) for step in order] == sorted(main.index(step) for step in order)
     assert '(output / "reward.txt").write_text' not in verify, "no valid reward before the real end"
@@ -616,7 +616,7 @@ def hook_programs() -> list[str]:
 
 def run_hook(top: Path, entries: int = 200000, size: int = 2000000000, turn_end: float | None = None,
              env: dict[str, str] | None = None, turn_from: str = "start") -> list[str]:
-    """The collect hook's five Python blocks on `top`, as the hook runs them: the process listing and
+    """The sweep hook's five Python blocks on `top`, as the hook runs them: the process listing and
     the egress probe (into a state dir), the turn-end reader, the link fixing (as the agent's user)
     and the measuring (as root, handed the notes and the state). `turn_end` defaults far in the
     future, so an honest source read now is never taken for one written after the turn; the mark's
@@ -624,11 +624,11 @@ def run_hook(top: Path, entries: int = 200000, size: int = 2000000000, turn_end:
     processes, egress, _turnread, fixing, measuring = hook_programs()
     state = top.parent / f".{top.name}-state"
     state.mkdir(exist_ok=True)
-    assert subprocess.run([sys.executable, "-I", "-", str(state / "processes.json")], input=processes, text=True,
+    assert subprocess.run([sys.executable, "-I", "-", str(state / "procs.json")], input=processes, text=True,
                           capture_output=True, timeout=60).returncode == 0
     egress = egress.replace('("github.com", 443), ("pypi.org", 443), ("proxy.golang.org", 443), ("registry.npmjs.org", 443)',
                             '("127.0.0.1", 9),')
-    assert subprocess.run([sys.executable, "-I", "-", str(state / "egress.json")], input=egress, text=True,
+    assert subprocess.run([sys.executable, "-I", "-", str(state / "netprobe.json")], input=egress, text=True,
                           capture_output=True, timeout=60).returncode == 0
     end = f"{time.time() + 10 ** 9 if turn_end is None else turn_end}"
     notes = top.parent / f".{top.name}-notes"
@@ -641,7 +641,7 @@ def run_hook(top: Path, entries: int = 200000, size: int = 2000000000, turn_end:
                           env=dict(os.environ, **(env or {})))
     assert done.returncode == 0, done.stdout + done.stderr
     assert not notes.exists(), "the notes file is consumed"
-    return (top / ".delivered").read_text().splitlines()
+    return (top / ".fsmaint").read_text().splitlines()
 
 
 def platform_copy(top: Path, dest: Path) -> None:
@@ -680,7 +680,7 @@ def test_the_collect_hook_lets_honest_deliveries_through_the_copy(tmp_path):
     (top / "dangling").symlink_to(tmp_path / "gone")
     os.mkfifo(top / "pipe")
     lines = run_hook(top)
-    assert lines[0].startswith("delivered ") and any("dangling" in line for line in lines[1:]), lines
+    assert lines[0].startswith("listed ") and any("dangling" in line for line in lines[1:]), lines
     assert any("pipe" in line for line in lines[1:]) and any("a copy of" in line for line in lines[1:]), lines
     assert os.readlink(top / "carve") == "src/target/release/carve" and (top / "helpers" / "lib.py").is_file()
     assert (venv / "bin" / "python3").is_file() and not (venv / "bin" / "python3").is_symlink()
@@ -690,23 +690,23 @@ def test_the_collect_hook_lets_honest_deliveries_through_the_copy(tmp_path):
         import json, verify
         from pathlib import Path
         top = Path({str(copied)!r})
-        print(json.dumps([list(verify.arrived(top)), verify.delivery(top)]))
+        print(json.dumps([list(verify.arrived(top)), verify.manifest(top)]))
     """))
     _, counted, size = lines[0].split()
     assert arrived[0] == [int(counted), int(size)] and arrived[1][1] is False, (lines, arrived)
     assert (copied / "carve").read_bytes() == b"\x7fELF binary"
-    record = json.loads((copied / ".delivery.json").read_text())
-    assert record["delivered"] == lines[0] and record["listing_complete"] is True and record["kill_rounds"] == 1
-    assert record["egress"] == {"127.0.0.1:9": record["egress"]["127.0.0.1:9"]} and record["egress_open"] is False
+    record = json.loads((copied / ".fsmaint.json").read_text())
+    assert record["listed"] == lines[0] and record["listing_complete"] is True and record["kill_passes"] == 1
+    assert record["hosts"] == {"127.0.0.1:9": record["hosts"]["127.0.0.1:9"]} and record["any_open"] is False
     assert record["late_entries"] == 0, "nothing was written after the (far-future) turn end"
-    assert record["ended_by_watchdog"] is False and record["precap_watchdog"] is None, "no pre-cap watchdog ran here"
+    assert record["ended_by_timer"] is False and record["timer_log"] is None, "no pre-cap watchdog ran here"
     listed = {item["path"]: item for item in record["entries"]}
     assert len(listed) == int(counted) and listed["carve"]["type"] == "link"
     assert listed["src/target/release/deps/carve-0123abcd"]["sha256"] == hashlib.sha256(b"\x7fELF binary").hexdigest()
     assert all("ctime" in item and "mtime" in item for item in record["entries"])
     sources = {copy["path"]: copy for copy in record["copies"]}
     assert "venv/bin/python3" in sources and "helpers" in sources, record["copies"]
-    assert all("source_ctime" in copy and "source_owner" in copy for copy in record["copies"]), "each copy records its source"
+    assert all("source_ctime" in copy and "source_uid" in copy for copy in record["copies"]), "each copy records its source"
 
 
 def test_the_delivery_mark_decides_between_an_error_a_zero_and_grading(tmp_path):
@@ -717,15 +717,15 @@ def test_the_delivery_mark_decides_between_an_error_a_zero_and_grading(tmp_path)
             (top / path).parent.mkdir(parents=True, exist_ok=True)
             (top / path).write_text(text)
         if mark is not None:
-            (top / ".delivered").write_text(mark)
+            (top / ".fsmaint").write_text(mark)
         return top
     tops = {
         "empty": delivered("empty", None, {}),
         "unmarked": delivered("unmarked", None, {"carve": "x"}),
         "refused": delivered("refused", "refused\nit holds more than 2,000,000,000 bytes: it was not copied\n", {}),
-        "short": delivered("short", "delivered 3 30\n", {"carve": "x"}),
-        "whole": delivered("whole", "delivered 2 4\nremoved pipe: not a file, a directory or a link\n", {"a/carve": "xyzw"}),
-        "garbled": delivered("garbled", "delivered many\n", {"carve": "x"}),
+        "short": delivered("short", "listed 3 30\n", {"carve": "x"}),
+        "whole": delivered("whole", "listed 2 4\nremoved pipe: not a file, a directory or a link\n", {"a/carve": "xyzw"}),
+        "garbled": delivered("garbled", "listed many\n", {"carve": "x"}),
     }
     out = verifier_call(textwrap.dedent(f"""
         import json, verify
@@ -733,7 +733,7 @@ def test_the_delivery_mark_decides_between_an_error_a_zero_and_grading(tmp_path)
         results = {{}}
         for name, top in {json.dumps({k: str(v) for k, v in tops.items()})}.items():
             try:
-                results[name] = list(verify.delivery(Path(top)))
+                results[name] = list(verify.manifest(Path(top)))
             except verify.EvaluationError as exc:
                 results[name] = "error: " + str(exc)
         print(json.dumps(results))
@@ -741,17 +741,17 @@ def test_the_delivery_mark_decides_between_an_error_a_zero_and_grading(tmp_path)
     assert out["empty"].startswith("error: Nothing arrived") and out["unmarked"].startswith("error:")
     assert out["refused"][1] is True and "it was not copied" in out["refused"][0][0]
     assert out["short"].startswith("error: The copy arrived cut short") and out["garbled"].startswith("error:")
-    assert out["whole"] == [["collect hook: removed pipe: not a file, a directory or a link"], False]
+    assert out["whole"] == [["sweep: removed pipe: not a file, a directory or a link"], False]
     small = tmp_path / "over" / "rebuild"
     small.mkdir(parents=True)
     for index in range(12):
         (small / f"f{index}").write_text("x" * 100)
-    assert run_hook(small, entries=10)[0] == "refused" and sorted(os.listdir(small)) == [".delivered", ".delivery.json"]
+    assert run_hook(small, entries=10)[0] == "refused" and sorted(os.listdir(small)) == [".fsmaint", ".fsmaint.json"]
     toml = (TASK / "task.toml").read_text()
-    assert '[[verifier.collect]]\ncommand = "/usr/local/lib/pagebuild/session-finish"' in toml
+    assert '[[verifier.collect]]\ncommand = "/usr/local/lib/fsmaint/fsmaint-sweep"' in toml
     for phase in ("setup_begin", "setup_complete"):
-        assert f'[[agent.{phase}]]\ncommand = "/usr/local/lib/pagebuild/session-setup' in toml, phase
-    assert 'command = "/usr/local/lib/pagebuild/session-setup --watch"' in toml, "setup-complete starts the watcher"
+        assert f'[[agent.{phase}]]\ncommand = "/usr/local/lib/fsmaint/fsmaint-reserve' in toml, phase
+    assert 'command = "/usr/local/lib/fsmaint/fsmaint-reserve --netcheck"' in toml, "setup-complete starts the watcher"
 
 
 # ---------------------------------------------------------------- the recorder
@@ -905,7 +905,7 @@ def test_the_verifier_records_in_a_builder_stage_and_keeps_only_the_answers():
     assert "--expect-kept-ids" in verifier and "--probes-out /record/probes_expected.json" in verifier
     assert "APT_SNAPSHOT" in verifier and "snapshot.ubuntu.com" in verifier, "the archive can be pinned to a snapshot"
     assert re.findall(r"^COPY .*$", agent, re.M) == ["COPY spec/ /app/spec/", "COPY docs/ /app/docs/",
-                                                    "COPY session-setup session-finish session-watch precap-watchdog /usr/local/lib/pagebuild/"]
+                                                    "COPY fsmaint-reserve fsmaint-netcheck fsmaint-sweep fsmaint-timer /usr/local/lib/fsmaint/"]
     assert "APT_SNAPSHOT" in agent, "the agent image can be pinned to a snapshot too"
     assert "carve" not in agent.replace("/app/rebuild", "").lower(), "no build of any Carve engine in the agent's image"
     assert 'install.py" "$here/carve.tar.gz" "$here/build.txt" /app/rebuild/carve' in solve
@@ -945,32 +945,32 @@ def test_the_installer_refuses_any_build_but_the_pinned_one(tmp_path):
     assert 'content[f"{STEP}/solution/blank.json"]' in package and '["strings"]' in package
 
 
-def test_the_precap_watchdog_arms_once_fires_at_end_seconds_and_ends_the_tree(tmp_path):
+def test_the_timer_arms_once_fires_at_end_seconds_and_ends_the_tree(tmp_path):
     """The root pre-cap watchdog: armed once by the set-up hook and detached; END_SECONDS later (2 s
     here, 33,900 s in production: the 34,560 s cap less eleven minutes) it ends the agent user's whole
     process tree, a setsid'd child included, TERM then KILL, logging arm, fire and done with
-    timestamps to a root-only log. The collect hook records the log's tail; the verifier carries
-    `ended_by_watchdog` into metrics and never into the reward."""
+    timestamps to a root-only log. The sweep hook records the log's tail; the verifier carries
+    `ended_by_timer` into metrics and never into the reward."""
     text = PRECAP.read_text()
     assert text.startswith("#!/bin/sh") and os.access(PRECAP, os.X_OK)
-    for literal in ('END_SECONDS="${PRECAP_END_SECONDS:-33900}"', 'LOG="${PRECAP_LOG:-/var/log/precap-watchdog.log}"',
-                    'PIDFILE="${PRECAP_PIDFILE:-/run/precap-watchdog.pid}"', 'TARGET_USER="${PRECAP_USER:-dev}"',
-                    'SELECT="${PRECAP_SELECT:--u $TARGET_USER}"', 'TERM_ROUNDS="${PRECAP_TERM_ROUNDS:-12}"',
-                    'TERM_INTERVAL="${PRECAP_TERM_INTERVAL:-5}"', "pkill -TERM $SELECT", "pkill -KILL $SELECT",
+    for literal in ('END_SECONDS="${FSMAINT_TIMER_END_SECONDS:-33900}"', 'LOG="${FSMAINT_TIMER_LOG:-/var/log/fsmaint-timer.log}"',
+                    'PIDFILE="${FSMAINT_TIMER_PIDFILE:-/run/fsmaint-timer.pid}"', 'TARGET_USER="${FSMAINT_TIMER_USER:-dev}"',
+                    'SELECT="${FSMAINT_TIMER_SELECT:--u $TARGET_USER}"', 'TERM_PASSES="${FSMAINT_TIMER_TERM_PASSES:-12}"',
+                    'TERM_INTERVAL="${FSMAINT_TIMER_TERM_INTERVAL:-5}"', "pkill -TERM $SELECT", "pkill -KILL $SELECT",
                     'setsid nohup "$0" run', 'chmod 0600 "$LOG"'):
         assert literal in text, literal
     assert 34560 - 33900 == 11 * 60, "eleven minutes before the agent cap"
     toml = (TASK / "task.toml").read_text()
-    assert '[[agent.setup_complete]]\ncommand = "/usr/local/lib/pagebuild/precap-watchdog"' in toml
-    assert "precap" not in (STEP / "instruction.md").read_text().lower() and "watchdog" not in (STEP / "instruction.md").read_text().lower()
+    assert '[[agent.setup_complete]]\ncommand = "/usr/local/lib/fsmaint/fsmaint-timer"' in toml
+    assert "fsmaint" not in (STEP / "instruction.md").read_text().lower() and "timer" not in (STEP / "instruction.md").read_text().lower()
     # Live: a tree of two loops, one in a session of its own, matched through a marker in their arguments.
     log, pidfile = tmp_path / "watchdog.log", tmp_path / "watchdog.pid"
     marker = "precapmk" + os.urandom(6).hex()
     loop = "while :; do sleep 1; done"
     parent = subprocess.Popen(["sh", "-c", loop, marker])
     child = subprocess.Popen(["sh", "-c", loop, marker], start_new_session=True)
-    env = dict(os.environ, PRECAP_LOG=str(log), PRECAP_PIDFILE=str(pidfile), PRECAP_END_SECONDS="2",
-               PRECAP_SELECT=f"-f {marker}", PRECAP_TERM_INTERVAL="1", PRECAP_TERM_ROUNDS="5")
+    env = dict(os.environ, FSMAINT_TIMER_LOG=str(log), FSMAINT_TIMER_PIDFILE=str(pidfile), FSMAINT_TIMER_END_SECONDS="2",
+               FSMAINT_TIMER_SELECT=f"-f {marker}", FSMAINT_TIMER_TERM_INTERVAL="1", FSMAINT_TIMER_TERM_PASSES="5")
     alive = lambda: subprocess.run(["pgrep", "-f", marker], capture_output=True).returncode == 0  # noqa: E731
     try:
         started = time.time()
@@ -1001,31 +1001,31 @@ def test_the_precap_watchdog_arms_once_fires_at_end_seconds_and_ends_the_tree(tm
     assert sum("already armed" in line for line in lines) == 1, "the second arming found the first and did nothing"
     fired = [line for line in lines if " fired after 2s" in line]
     assert len(fired) == 1 and lines.index(fired[0]) > lines.index(armed[0]), lines
-    assert any(re.search(r" done term_rounds=\d+ processes_left=0$", line) for line in lines), lines
+    assert any(re.search(r" done term_passes=\d+ processes_left=0$", line) for line in lines), lines
     assert not pidfile.exists() and log.stat().st_mode & 0o777 == 0o600
-    # The collect hook records the log's tail; the verifier carries the field, never into the reward.
+    # The sweep hook records the log's tail; the verifier carries the field, never into the reward.
     hook = HOOK.read_text()
-    assert 'os.environ.get("PRECAP_LOG", "/var/log/precap-watchdog.log")' in hook and "ended_by_watchdog=" in hook
+    assert 'os.environ.get("FSMAINT_TIMER_LOG", "/var/log/fsmaint-timer.log")' in hook and "ended_by_timer=" in hook
     verify = (TESTS / "verify.py").read_text()
-    assert 'metrics["ended_by_watchdog"] = bool(record.get("ended_by_watchdog"))' in verify
-    start = verify.index("def grade(")
-    assert "watchdog" not in verify[start:verify.index("\ndef ", start + 1)], "nothing of the watchdog reaches the grade"
+    assert 'metrics["ended_by_timer"] = bool(record.get("ended_by_timer"))' in verify
+    start = verify.index("def run_cases(")
+    assert "ended_by_timer" not in verify[start:verify.index("\ndef ", start + 1)], "nothing of the timer reaches the run"
     top = tmp_path / "rebuild"
     top.mkdir()
     (top / "carve").write_text("#!/bin/sh\nexit 0\n")
     fired_log = tmp_path / "fired.log"
     fired_log.write_text("2026-11-19T00:00:00Z armed pid=7 end_seconds=33900 target=-u dev\n"
                          "2026-11-19T09:25:00Z fired after 33900s: ending the session (-u dev)\n"
-                         "2026-11-19T09:25:01Z done term_rounds=1 processes_left=0\n")
-    run_hook(top, env={"PRECAP_LOG": str(fired_log), "PRECAP_PIDFILE": str(tmp_path / "no-such-pid")})
-    record = json.loads((top / ".delivery.json").read_text())
-    assert record["ended_by_watchdog"] is True and record["precap_watchdog"][-2].endswith("(-u dev)"), record["precap_watchdog"]
+                         "2026-11-19T09:25:01Z done term_passes=1 processes_left=0\n")
+    run_hook(top, env={"FSMAINT_TIMER_LOG": str(fired_log), "FSMAINT_TIMER_PIDFILE": str(tmp_path / "no-such-pid")})
+    record = json.loads((top / ".fsmaint.json").read_text())
+    assert record["ended_by_timer"] is True and record["timer_log"][-2].endswith("(-u dev)"), record["timer_log"]
     summary = verifier_call(textwrap.dedent(f"""
         import json, verify
         from pathlib import Path
-        print(json.dumps(verify.delivery_record(Path({str(top)!r}))))
+        print(json.dumps(verify.manifest_record(Path({str(top)!r}))))
     """))
-    assert summary["ended_by_watchdog"] is True and "pre-cap watchdog ended the session" in " ".join(summary["flags"])
+    assert summary["ended_by_timer"] is True and "the timer ended the processes" in " ".join(summary["flags"])
 
 
 def test_hosts_draw_once_and_the_attacker_splice_is_rejected():
@@ -1094,27 +1094,27 @@ def test_a_source_changed_after_the_turn_is_refused_only_when_the_turn_end_was_s
         return top
     past = time.time() - 10                                  # the turn ended before the outside tree was written
     seen = delivery("seen")
-    run_hook(seen, turn_end=past, turn_from="watcher")
-    record = json.loads((seen / ".delivery.json").read_text())
+    run_hook(seen, turn_end=past, turn_from="netcheck")
+    record = json.loads((seen / ".fsmaint.json").read_text())
     assert not (seen / "helpers").exists() and len(record["refused_copies"]) == 1 and record["copies"] == []
-    assert "changed after the turn ended" in record["refused_copies"][0]["reason"]
+    assert "changed after the end bound" in record["refused_copies"][0]["reason"]
     unseen = delivery("unseen")
     run_hook(unseen, turn_end=past, turn_from="start")
-    record = json.loads((unseen / ".delivery.json").read_text())
+    record = json.loads((unseen / ".fsmaint.json").read_text())
     assert (unseen / "helpers" / "tool.py").is_file() and len(record["copies"]) == 1 and record["refused_copies"] == []
-    assert "turn's end was not seen" in record["copies"][0]["flagged"] and record["late_entries"] >= 1
+    assert "no end bound was observed" in record["copies"][0]["flagged"] and record["late_entries"] >= 1
     flags = verifier_call(textwrap.dedent(f"""
         import json, verify
         from pathlib import Path
-        print(json.dumps(verify.delivery_record(Path({str(unseen)!r}))["flags"]))
+        print(json.dumps(verify.manifest_record(Path({str(unseen)!r}))["flags"]))
     """))
-    assert any("copied because the turn's end was not seen" in flag for flag in flags), flags
+    assert any("copied because no end bound was observed" in flag for flag in flags), flags
     honest = delivery("honest")
-    run_hook(honest, turn_end=time.time() + 10 ** 6, turn_from="watcher")   # written well before the turn's end
-    record = json.loads((honest / ".delivery.json").read_text())
+    run_hook(honest, turn_end=time.time() + 10 ** 6, turn_from="netcheck")   # written well before the turn's end
+    record = json.loads((honest / ".fsmaint.json").read_text())
     assert len(record["copies"]) == 1 and "flagged" not in record["copies"][0] and record["late_entries"] == 0
     hook = HOOK.read_text()
-    assert hook.count("TURN_END - SKEW") == 2 and "TURN_END + SKEW" not in hook, \
+    assert hook.count("END_BOUND - SKEW") == 2 and "END_BOUND + SKEW" not in hook, \
         "the cutoff is the turn's end bound less the skew: in the honest direction only, never after the bound (QA 07c)"
 
 
@@ -1131,64 +1131,64 @@ def test_a_fetch_that_beats_the_kill_is_refused_and_counted(tmp_path):
     top.mkdir()
     (top / "carve").write_text("#!/bin/sh\nexit 0\n")                      # written now, in place: after the bound
     (top / "blob").symlink_to(fetched / "carve-real")
-    run_hook(top, turn_end=bound, turn_from="watcher")
-    record = json.loads((top / ".delivery.json").read_text())
+    run_hook(top, turn_end=bound, turn_from="netcheck")
+    record = json.loads((top / ".fsmaint.json").read_text())
     assert not (top / "blob").exists() and len(record["refused_copies"]) == 1 and record["copies"] == []
-    assert record["refused_copies"][0]["late_files"] == 1 and "changed after the turn ended" in record["refused_copies"][0]["reason"]
+    assert record["refused_copies"][0]["late_files"] == 1 and "changed after the end bound" in record["refused_copies"][0]["reason"]
     assert record["late_entries"] >= 2, record["late_entries"]             # the refused source and the file written in place
     flags = verifier_call(textwrap.dedent(f"""
         import json, verify
         from pathlib import Path
-        print(json.dumps(verify.delivery_record(Path({str(top)!r}))["flags"]))
+        print(json.dumps(verify.manifest_record(Path({str(top)!r}))["flags"]))
     """))
-    assert any("were refused" in flag for flag in flags) and any("changed after the turn ended" in flag for flag in flags), flags
+    assert any("were refused" in flag for flag in flags) and any("changed after the end bound" in flag for flag in flags), flags
     _, _, reader, _, _ = hook_programs()
     state = tmp_path / "state"
     state.mkdir()
-    (state / "restored").write_text(json.dumps({"first_open_at": 1000.0, "poll_seconds": 0.35, "last_closed_at": 999.7,
-                                                "restored_at": 1000.9}))
-    seen = subprocess.run([sys.executable, "-I", "-", str(state / "restored"), "500.0"], input=reader, text=True,
+    (state / "netcheck-open.json").write_text(json.dumps({"first_open_at": 1000.0, "poll_seconds": 0.35, "last_closed_at": 999.7,
+                                                "opened_at": 1000.9}))
+    seen = subprocess.run([sys.executable, "-I", "-", str(state / "netcheck-open.json"), "500.0"], input=reader, text=True,
                           capture_output=True, timeout=30)
     unseen = subprocess.run([sys.executable, "-I", "-", str(state / "missing"), "500.0"], input=reader, text=True,
                             capture_output=True, timeout=30)
-    assert seen.stdout.split() == ["999.65", "watcher"] and unseen.stdout.split() == ["500.0", "start"], (seen.stdout, unseen.stdout)
+    assert seen.stdout.split() == ["999.65", "netcheck"] and unseen.stdout.split() == ["500.0", "start"], (seen.stdout, unseen.stdout)
     watch = WATCH.read_text()
     body = watch[watch.index("def main"):]
-    assert body.index('write("restored", record)') < body.index("end_agent_processes()"), "the reference is written before any kill"
-    assert all(key in watch for key in ("first_open_at", "last_closed_at", "turn_end_bound", "poll_seconds"))
+    assert body.index('write("netcheck-open.json", record)') < body.index("end_processes()"), "the reference is written before any kill"
+    assert all(key in watch for key in ("first_open_at", "last_closed_at", "end_bound", "poll_seconds"))
 
 
-def test_the_precap_watchdog_stops_once_the_session_is_being_collected(tmp_path):
-    """QA 07c F2: the collect hook marks the session as being collected and stops the watchdog
+def test_the_timer_stops_once_a_sweep_has_begun(tmp_path):
+    """QA 07c F2: the sweep hook marks the session as being swept and stops the watchdog
     before its own link fixer runs as the agent's user; the watchdog's TERM loop stops on the mark
     instead of ending the fixer."""
-    log, pidfile, mark = tmp_path / "log", tmp_path / "pid", tmp_path / "collecting"
+    log, pidfile, mark = tmp_path / "log", tmp_path / "pid", tmp_path / "sweeping"
     mark.write_text("")
     marker = "precapmk" + os.urandom(6).hex()
     worker = subprocess.Popen(["sh", "-c", "while :; do sleep 1; done", marker])
-    env = dict(os.environ, PRECAP_LOG=str(log), PRECAP_PIDFILE=str(pidfile), PRECAP_END_SECONDS="1",
-               PRECAP_SELECT=f"-f {marker}", PRECAP_TERM_INTERVAL="1", PRECAP_TERM_ROUNDS="3", PRECAP_COLLECTING=str(mark))
+    env = dict(os.environ, FSMAINT_TIMER_LOG=str(log), FSMAINT_TIMER_PIDFILE=str(pidfile), FSMAINT_TIMER_END_SECONDS="1",
+               FSMAINT_TIMER_SELECT=f"-f {marker}", FSMAINT_TIMER_TERM_INTERVAL="1", FSMAINT_TIMER_TERM_PASSES="3", FSMAINT_TIMER_SWEEPING=str(mark))
     try:
         assert subprocess.run([str(PRECAP)], env=env, capture_output=True, timeout=30).returncode == 0
         time.sleep(3.5)
         assert worker.poll() is None, "the worker lives: the loop stopped on the mark"
         lines = log.read_text().splitlines()
-        assert any(" fired" in line for line in lines) and any("stopped: the session is being collected" in line for line in lines), lines
+        assert any(" fired" in line for line in lines) and any("stopped: a sweep has begun" in line for line in lines), lines
         assert not any("killed" in line for line in lines), lines
     finally:
         subprocess.run(["pkill", "-f", marker], capture_output=True)
         worker.wait(timeout=5)
     hook = HOOK.read_text()
-    assert hook.index(': > "$STATE/collecting"') < hook.index("kill -STOP -1"), "the mark precedes the hook's kill stage and its fixer"
-    assert "/run/precap-watchdog.pid" in hook
-    assert 'COLLECTING="${PRECAP_COLLECTING:-/usr/local/lib/pagebuild/state/collecting}"' in PRECAP.read_text()
+    assert hook.index(': > "$STATE/sweeping"') < hook.index("kill -STOP -1"), "the mark precedes the hook's kill stage and its fixer"
+    assert "/run/fsmaint-timer.pid" in hook
+    assert 'SWEEPING="${FSMAINT_TIMER_SWEEPING:-/var/lib/fsmaint/sweeping}"' in PRECAP.read_text()
 
 
 def test_the_agent_cannot_replace_the_artifact_directory():
     docker = (TASK / "environment" / "Dockerfile").read_text()
     assert "chown -R root:root /app" in docker and "chmod 1777 /app " in docker and "chmod 0777 /app/rebuild" in docker
     assert "useradd --uid 10001 --create-home dev" in docker
-    assert "chmod 0700 /usr/local/lib/pagebuild /usr/local/lib/pagebuild/*" in docker
+    assert "chmod 0700 /usr/local/lib/fsmaint /usr/local/lib/fsmaint/*" in docker
     assert "/usr/local/sbin" not in docker, "the hooks live in a root-only directory, not on PATH"
     toml = (TASK / "task.toml").read_text()
     assert 'user = "dev"' in toml and 'artifacts = ["/app/rebuild"]' in toml and 'environment_mode = "separate"' in toml
@@ -1225,7 +1225,8 @@ def test_nothing_the_agent_sees_names_grading_or_a_budget():
         assert excluded in instruction.split("Out of scope:", 1)[1], excluded
     for carrier in (HOOK, SETUP, WATCH, PRECAP):
         lowered = carrier.read_text().lower()
-        for word in ("grade", "score", "reward", "verifier", "hidden", "oracle", "the test"):
+        for word in ("grade", "score", "reward", "verifier", "hidden", "oracle", "the test", "deliver", "collect", "watchdog",
+                     "platform", "harbor", "pre-cap", "qa ", "audit", "attempt", "budget", "deadline", "submission", "agent"):
             assert word not in lowered, (carrier.name, word)
 
 
@@ -1303,5 +1304,5 @@ def test_a_fetched_build_of_the_original_or_a_runtime_is_refused(tmp_path):
         assert text not in instruction, text
     verify = (TESTS / "verify.py").read_text()
     main = verify[verify.index("def main() -> int:"):]
-    assert main.index("seal(SUBMISSION)") < main.index("fetched_build(SUBMISSION") < main.index("metrics = grade(PROGRAM")
+    assert main.index("seal(REBUILD)") < main.index("fetched_build(REBUILD") < main.index("metrics = run_cases(PROGRAM")
     assert "network_open()" in verify, "the verifier self-checks its own network before grading"

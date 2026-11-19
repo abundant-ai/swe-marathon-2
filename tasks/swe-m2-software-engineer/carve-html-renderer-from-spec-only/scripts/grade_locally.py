@@ -6,9 +6,9 @@ Does what the bundle's verifier image does, with this machine's build of the ori
 experiment/original/carve-macos, the same carve-rs 0.1.14 release for macOS): records the
 bundle's private cases with the bundle's own recorder.py and recording.py into a private
 directory, as the builder stage does; then, with the bundle's own verify.py, reads three
-deliveries the way an evaluation reads /app/rebuild (marked by the bundle's own collect hook
+trees the way an evaluation reads /app/rebuild (marked by the bundle's own sweep
 program, run on a copy) and grades them: the reference (the original as /app/rebuild/carve), an
-empty delivery, and a program that prints nothing. The privilege drop, sealing and the sweeps
+empty tree, and a program that prints nothing. The privilege drop, sealing and the sweeps
 between cases need root and Linux, so they are left out; what the runs print is compared exactly
 as in an evaluation.
 """
@@ -30,34 +30,34 @@ STEP = "steps/01-implement-renderer"
 
 
 def hook_programs(bundle: Path) -> list[str]:
-    """The five Python blocks of the bundle's collect hook (environment/session-finish): the process
-    listing, the egress probe, the turn-end reader, the link fixing and the measuring."""
-    text = (bundle / "environment" / "session-finish").read_text()
+    """The five Python blocks of the bundle's sweep (environment/fsmaint-sweep): the process
+    listing, the egress probe, the end-bound reader, the link fixing and the measuring."""
+    text = (bundle / "environment" / "fsmaint-sweep").read_text()
     return re.findall(r"<<'EOF'\n(.*?)\nEOF", text, re.S)
 
 
 def mark(bundle: Path, top: Path) -> str:
-    """Run the hook's blocks on `top`, as this user: the process and egress records into a state dir,
-    the link fixing and the measuring (which reads the state and the notes). A far-future turn end,
-    so an honest source read now is never taken for one written after the turn; the mark's first
+    """Run the sweep's blocks on `top`, as this user: the process and egress records into a state dir,
+    the link fixing and the measuring (which reads the state and the notes). A far-future end bound,
+    so an honest source read now is never taken for one written after the end; the mark's first
     line."""
-    processes, egress, _turn, fixing, measuring = hook_programs(bundle)
+    processes, egress, _bound, fixing, measuring = hook_programs(bundle)
     state = top.parent / ".state"
     state.mkdir(exist_ok=True)
-    subprocess.run([sys.executable, "-I", "-", str(state / "processes.json")], input=processes, text=True,
+    subprocess.run([sys.executable, "-I", "-", str(state / "procs.json")], input=processes, text=True,
                    check=True, capture_output=True, timeout=120)
     egress = egress.replace('("github.com", 443), ("pypi.org", 443), ("proxy.golang.org", 443), ("registry.npmjs.org", 443)',
                             '("127.0.0.1", 9),')
-    subprocess.run([sys.executable, "-I", "-", str(state / "egress.json")], input=egress, text=True,
+    subprocess.run([sys.executable, "-I", "-", str(state / "netprobe.json")], input=egress, text=True,
                    check=True, capture_output=True, timeout=120)
     end = f"{time.time() + 10 ** 9}"
-    notes = top.parent / ".delivery-notes"
+    notes = top.parent / ".fsmaint-notes"
     with open(notes, "w") as handle:
         subprocess.run([sys.executable, "-I", "-", str(top), "200000", "2000000000", end, "start"], input=fixing, text=True,
                        check=True, stdout=handle, stderr=subprocess.STDOUT, timeout=300)
     subprocess.run([sys.executable, "-I", "-", str(top), "200000", "2000000000", str(notes), str(state), "1", "0",
                     end, end, end, "start"], input=measuring, text=True, check=True, capture_output=True, timeout=300)
-    return (top / ".delivered").read_text().splitlines()[0]
+    return (top / ".fsmaint").read_text().splitlines()[0]
 
 
 def main() -> None:
@@ -125,21 +125,21 @@ results = {{}}
 builds = verify.upstream_builds()
 for name in ("reference", "empty", "silent"):
     top = work / "deliveries" / name / "rebuild"
-    notes, refused = verify.delivery(top)
-    record = verify.delivery_record(top)
+    notes, refused = verify.manifest(top)
+    record = verify.manifest_record(top)
     fetched = verify.fetched_build(top, builds)
     started = time.monotonic()
     if refused or fetched:
         metrics = {{"reward": 0.0, "cases_passed": 0, "cases_total": None, "notes": [fetched or "refused"], "by_kind": {{}},
                    "timeouts": 0, "failed_sample": [], "fingerprint": {{}}, "diagnostics": {{}}}}
     else:
-        metrics = verify.grade(top / "carve", work / "private", [], None)
+        metrics = verify.run_cases(top / "carve", work / "private", [], None)
         metrics["fingerprint"] = verify.fingerprint(top / "carve", work / "private", [], None, time.monotonic() + 600)
     results[name] = {{"reward": metrics["reward"], "passed": metrics["cases_passed"], "total": metrics["cases_total"],
                      "notes": notes + metrics["notes"], "seconds": round(time.monotonic() - started, 1),
                      "by_kind": metrics["by_kind"], "timeouts": metrics["timeouts"], "failed_sample": metrics["failed_sample"][:10],
                      "fingerprint": metrics.get("fingerprint"), "diagnostics": metrics.get("diagnostics"),
-                     "delivery_flags": record.get("flags")}}
+                     "sweep_flags": record.get("flags")}}
 print(json.dumps(results))
 """
     done = subprocess.run([sys.executable, "-B", "-c", driver], capture_output=True, text=True, timeout=7200)
@@ -154,7 +154,7 @@ print(json.dumps(results))
                "results": results}
     (work / "summary.json").write_text(json.dumps(summary, indent=1) + "\n")
     print(json.dumps({name: {k: v for k, v in result.items() if k in ("reward", "passed", "total", "mark", "notes", "seconds",
-                                                                        "fingerprint", "delivery_flags")}
+                                                                        "fingerprint", "sweep_flags")}
                       for name, result in results.items()} | {"recording": summary["recording"]}, indent=1))
 
 

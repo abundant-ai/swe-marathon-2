@@ -1,18 +1,16 @@
-"""Record what the original, carve-rs 0.1.14, prints for each private case, when the verifier image
-is built, in a builder stage that the final image keeps nothing of but the answers.
+"""Record what the original, carve-rs 0.1.14, prints for each private case, and keep the steady cases.
 
 usage: python3 recorder.py record <program> <cases.json> <expected.json> [--keep <kept.json>] [--report <report.json>]
 
 Each case is run twice and a third time perturbed (another binary path, 4 KB of environment
 padding, a stack 256 KB smaller and one CPU), and kept if all three print the same and end the
 way a rendering ends (`crashed`), the first two used at most KEEP_CPU seconds of CPU and
-KEEP_SEC of wall time each, and the answer is the one the case generator checked against Carve's
-executable spec model on the author's machine (the case's `answer_sha256`): a case this build
-answers otherwise is dropped (`differs`). Last, by rule and by id, `select` leaves out the cases
-whose input holds their answer, those beyond PAIR_SHARE with an answer many others share, and,
-while a dispatcher with no renderer in it passes more than FLOOR_SHARE of the cases, one of those.
-`--keep` writes the cases kept (with only what grading reads), `--report` how every run went and
-why cases were left out.
+KEEP_SEC of wall time each, and the answer hashes to the digest the case carries
+(`answer_sha256`): a case this build answers otherwise is dropped (`differs`). Last, by rule and by
+id, `select` leaves out the cases whose input holds their answer, those beyond PAIR_SHARE with an
+answer many others share, and, while a dispatcher with no renderer in it passes more than
+FLOOR_SHARE of the cases, one of those. `--keep` writes the cases kept (with only the fields the
+runs read), `--report` how every run went and why cases were left out.
 """
 
 from __future__ import annotations
@@ -20,7 +18,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import platform
 import resource
 import shutil
 import sys
@@ -45,7 +42,7 @@ FLOOR_SHARE = 0.05   # cases a dispatcher with no renderer passes (free_cases), 
 LOOKUP_SHARE = 0.05  # cases a program with the public corpus and no renderer passes, at most
 QUOTE_LEN = 12       # an answer at least this long that the case's own input holds is free
 PERTURBED_ENV = {"CARVE_PERTURBED_PADDING": "p" * 4096}
-GRADED_FIELDS = ("id", "kind", "area", "argv", "files", "stdin", "features", "djot_exact", "djot_normalized")
+KEPT_FIELDS = ("id", "kind", "area", "argv", "files", "stdin", "features", "djot_exact", "djot_normalized")
 
 
 def digest(exit_code: int, stdout: bytes) -> str:
@@ -78,7 +75,7 @@ def free_cases(cases: list[dict], outputs: dict) -> dict[str, list[str]]:
         if name == "cli":
             free[name] = [case["id"] for case in members]
             continue
-        answer = lambda case: (outputs[case["id"]]["stdout"], outputs[case["id"]]["exit"])  # noqa: E731
+        answer = lambda case: (outputs[case["id"]]["stdout"], outputs[case["id"]]["exit"])
         common, shared = max(Counter(map(answer, members)).items(), key=lambda item: (item[1], repr(item[0])))
         free[name] = [case["id"] for case in members if answer(case) == common] if shared > 1 else []
     return free
@@ -86,7 +83,7 @@ def free_cases(cases: list[dict], outputs: dict) -> dict[str, list[str]]:
 
 def quoted(case: dict, answer: str) -> bool:
     """Whether the case's own input holds its whole answer (at least QUOTE_LEN characters of it):
-    a submission could print it without rendering anything."""
+    a program could print it without rendering anything."""
     text = answer.strip()
     if len(text) < QUOTE_LEN:
         return False
@@ -152,7 +149,7 @@ def relocated(program: str) -> str:
 
 def host() -> dict:
     """What of the machine could change an answer: CPU, kernel and CPUs usable."""
-    info = {"machine": platform.machine(), "cpus": len(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else None}
+    info = {"machine": os.uname().machine, "cpus": len(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else None}
     try:
         cpu = Path("/proc/cpuinfo").read_text(errors="replace")
         info["cpu"] = next((line.split(":", 1)[1].strip() for line in cpu.splitlines() if line.startswith("model name")), "")
@@ -163,7 +160,7 @@ def host() -> dict:
 
 
 def record(program: str, cases: list[dict]) -> tuple[list[dict], dict, dict]:
-    """The cases kept (with GRADED_FIELDS only), what the program printed for them, and a report:
+    """The cases kept (with KEPT_FIELDS only), what the program printed for them, and a report:
     how long and how much CPU every run took, and why the others were left out."""
     finished, outputs = [], {}
     started = time.monotonic()
@@ -202,13 +199,13 @@ def record(program: str, cases: list[dict]) -> tuple[list[dict], dict, dict]:
     for reason, ids in dropped.items():
         report["dropped"].setdefault(reason, []).extend(ids)
     report["wall_seconds"] = round(time.monotonic() - started, 1)
-    graded = [{key: case[key] for key in GRADED_FIELDS if key in case} for case in kept]
-    return graded, {case["id"]: outputs[case["id"]] for case in kept}, report
+    kept_fields = [{key: case[key] for key in KEPT_FIELDS if key in case} for case in kept]
+    return kept_fields, {case["id"]: outputs[case["id"]] for case in kept}, report
 
 
 def record_probes(program: str, probes: list[dict]) -> dict:
     """What the original prints for each fingerprint probe, run once (the probes are the original's
-    own disagreements and commands, never graded)."""
+    own disagreements and commands, never counted)."""
     answers = {}
     for probe in probes:
         got = run_case([program], probe)
@@ -219,11 +216,11 @@ def record_probes(program: str, probes: list[dict]) -> dict:
 
 
 def main() -> None:
-    """Record what a program prints for every case and keep the cases worth grading."""
+    """Record what a program prints for every case and keep the steady cases."""
     if len(sys.argv) < 5 or sys.argv[1] != "record":
         raise SystemExit(__doc__)
     program, cases_path, expected_path = sys.argv[2:5]
-    option = lambda name: sys.argv[sys.argv.index(name) + 1] if name in sys.argv else None  # noqa: E731
+    option = lambda name: sys.argv[sys.argv.index(name) + 1] if name in sys.argv else None
     cases = json.loads(Path(cases_path).read_text(encoding="utf-8"))["cases"]
     if option("--probes") and option("--probes-out"):
         probes = json.loads(Path(option("--probes")).read_text(encoding="utf-8"))["probes"]

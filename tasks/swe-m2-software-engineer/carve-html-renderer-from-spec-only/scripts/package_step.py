@@ -151,7 +151,7 @@ def main() -> None:
         target = staging / name
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(data)
-        if name.endswith((".sh", "prepare-delivery", "reserve-delivery-room")):
+        if name.endswith((".sh", "fsmaint-reserve", "fsmaint-netcheck", "fsmaint-sweep", "fsmaint-timer")):
             target.chmod(0o755)
     size = sum(len(data) for data in content.values())
     print(json.dumps({"task_path": str(staging), "content_sha256": digest, "files": len(content), "bytes": size}, indent=2))

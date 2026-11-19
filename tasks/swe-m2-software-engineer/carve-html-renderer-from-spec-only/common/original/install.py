@@ -8,9 +8,7 @@ sha256 is not build.txt's `sha256`. Writes only that binary, mode 0755, to <dest
 With --blank, every string of the JSON file's "strings" list is overwritten in place in the
 installed copy, byte for byte with `x`, so that its length and every offset stay the same: text of
 carve-rs's own usage and of the parts out of scope (importers, migration, lint, the other output
-targets), which the HTML path never prints. The reference solution installs the original that
-way, so that the evaluation's refusal of published builds (which looks for exactly that text and
-for the published binaries' sha256) does not refuse it; the recording installs it unchanged.
+targets), which the HTML path never prints.
 """
 
 import hashlib

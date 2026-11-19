@@ -3,17 +3,16 @@
 - The cases kept, by kind and by area; the ones left out, by reason: a run took more than the
   recorder's margin, did not finish the same way twice or perturbed, crashed, answered otherwise
   than the answer checked against the spec model, or the recorder's selection dropped them
-  (recorder.select); and how the generator settled them (renamed with the same structure, renamed
-  with another, as generated).
+  (recorder.select); and how each case was settled (`settled`).
 - How long the kept cases' runs took.
-- What submissions that implement nothing pass (`baselines`): printing nothing and exiting 0 or 2;
+- What programs that implement nothing pass (`baselines`): printing nothing and exiting 0 or 2;
   printing one empty line and exiting 0 (what the original prints for an empty document); a
   dispatcher with the command line's answers and one constant answer per kind of case
   (recorder.free_cases); and a program with the public conformance corpus and no renderer (the
   cases whose answer the corpus lookup would give, dropped at recording). The largest share any
   one answer holds.
 - What a stock Djot engine scores on the kept cases (djot.js on the most obvious rewrite of each
-  document into Djot, measured by the generator): exactly, and with the layout between tags
+  document into Djot, measured when the cases were made): exactly, and with the layout between tags
   forgiven. The share of cases that touch a place where Carve parses differently from Djot.
 - The recording program (`--build`: its sha256, the release archive's, its version and the spec
   it implements), the build host, the recording's wall time and the sha256 of the kept ids, so
@@ -33,7 +32,7 @@ from recorder import free_cases
 
 
 def baselines(kept: list[dict], expected: dict) -> dict:
-    """The share of the kept cases each trivial submission passes, and the largest share of any
+    """The share of the kept cases each trivial program passes, and the largest share of any
     one answer."""
     total = len(kept) or 1
     answers = [(expected[case["id"]]["stdout"], expected[case["id"]]["exit"]) for case in kept]
@@ -61,9 +60,9 @@ def describe(cases: list[dict], kept: list[dict], expected: dict, report: dict) 
     the recorder's report."""
     kind = {case["id"]: case.get("kind", "?") for case in cases}
     seconds = sorted(max(report["seconds"][case["id"]]) for case in kept)
-    by_kind = lambda ids: dict(sorted(Counter(kind[i] for i in ids).items()))  # noqa: E731
+    by_kind = lambda ids: dict(sorted(Counter(kind[i] for i in ids).items()))
     rendering = [case for case in kept if case.get("kind") != "cli"]
-    share = lambda count: round(count / (len(rendering) or 1), 4)  # noqa: E731
+    share = lambda count: round(count / (len(rendering) or 1), 4)
     generated = {case["id"]: case for case in cases}
     return {
         "cases_recorded": len(cases), "cases_kept": len(kept),

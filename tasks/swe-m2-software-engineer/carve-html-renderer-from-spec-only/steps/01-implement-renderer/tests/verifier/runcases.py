@@ -11,7 +11,7 @@ user owns under OWN_ROOTS (the directories it can write to), and the files its p
 hold open after deleting them; without a user of its own (recording), its workspace, HOME and
 TMPDIR. That count is taken whenever the free figures (statvfs) of /tmp's or /dev/shm's
 filesystem drop by more than a limit since the last count, so other writers on a shared
-filesystem never stop a run (QA 10); the per-file size limit (RLIMIT_FSIZE) holds everywhere.
+filesystem never stop a run; the per-file size limit (RLIMIT_FSIZE) holds everywhere.
 
 A case is {"argv": [...], "files": {path: text}, "stdin": text or null}; its texts, like the
 recorded answers, hold any byte that is not UTF-8 as a surrogate escape. A run passes when the
@@ -64,7 +64,7 @@ def limit() -> None:
             continue
         try:
             resource.setrlimit(which, (value, value))
-        except (ValueError, OSError):  # a hard limit below the value, or a platform maximum (macOS's data size)
+        except (ValueError, OSError):  # a hard limit below the value, or an OS maximum (macOS's data size)
             _, hard = resource.getrlimit(which)
             try:
                 resource.setrlimit(which, (hard if hard != resource.RLIM_INFINITY and 0 <= hard < value else value, hard))
@@ -104,9 +104,9 @@ def clear_workspace() -> None:
         remove_path(path)
 
 
-def prepare(case: dict, owner: tuple[int, int] | None) -> None:
+def prepare(case: dict, ids: tuple[int, int] | None) -> None:
     """A new workspace holding the case's files and a new empty HOME and TMPDIR, all owned by
-    `owner` (user and group ids) where given."""
+    `ids` (user and group ids) where given."""
     clear_workspace()
     for path in (WORKSPACE, HOME, TEMP):
         path.mkdir(parents=True)
@@ -114,12 +114,12 @@ def prepare(case: dict, owner: tuple[int, int] | None) -> None:
         target = WORKSPACE / name
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(text.encode(*ENCODING))
-    if owner:
+    if ids:
         for top in (WORKSPACE, HOME, TEMP):
             for root, directories, files in os.walk(top):
                 for name in directories + files:
-                    os.lchown(os.path.join(root, name), *owner)
-            os.lchown(top, *owner)
+                    os.lchown(os.path.join(root, name), *ids)
+            os.lchown(top, *ids)
 
 
 def disk_free(path: Path = WORKSPACE.parent) -> tuple[int, int, int]:
@@ -243,10 +243,10 @@ def memory_in_use(group: int, uid: int | None) -> int:
     return total
 
 
-def read_output(proc: subprocess.Popen, data: bytes, deadline: float, uid: int | None,
+def read_output(proc: subprocess.Popen, data: bytes, cutoff_at: float, uid: int | None,
                 free: dict[str, tuple[int, int, int]]) -> tuple[bytes, str | None]:
     """Feed `data` to the program's standard input and read its standard output until it closes
-    it. Returns what was read and None, or what stopped the reading: "timeout" at the deadline,
+    it. Returns what was read and None, or what stopped the reading: "timeout" at the cutoff_at,
     "output limit" past OUTPUT_LIMIT bytes, or a limit `over_limit` names."""
     chunks, size = [], 0
     pending = memoryview(data)
@@ -258,7 +258,7 @@ def read_output(proc: subprocess.Popen, data: bytes, deadline: float, uid: int |
         else:
             proc.stdin.close()
         while selector.get_map():
-            left = deadline - time.monotonic()
+            left = cutoff_at - time.monotonic()
             if left <= 0:
                 return b"", "timeout"
             problem = over_limit(proc.pid, uid, free)
@@ -295,7 +295,7 @@ def stop(proc: subprocess.Popen) -> None:
     proc.wait()
 
 
-def run_case(program: list[str], case: dict, prefix: list[str] | None = None, owner: tuple[int, int] | None = None,
+def run_case(program: list[str], case: dict, prefix: list[str] | None = None, ids: tuple[int, int] | None = None,
              keep_stderr: bool = False, env: dict | None = None, preexec=None) -> dict:
     """Run one case: its exit code, its standard output as bytes, how long it took and the CPU time
     it used, and with `keep_stderr` the first 64 KB of its standard error. `env` adds environment
@@ -303,7 +303,7 @@ def run_case(program: list[str], case: dict, prefix: list[str] | None = None, ow
     runs past CASE_SEC, prints more than OUTPUT_LIMIT bytes or passes a limit of `over_limit` has
     no exit code and an "error" instead."""
     try:
-        prepare(case, owner)
+        prepare(case, ids)
     except OSError as exc:
         return {"exit": None, "stdout": None, "error": f"workspace: {type(exc).__name__}", "seconds": 0.0, "cpu": 0.0}
     errors = tempfile.TemporaryFile() if keep_stderr else None
@@ -319,12 +319,12 @@ def run_case(program: list[str], case: dict, prefix: list[str] | None = None, ow
         if errors:
             errors.close()
         return {"exit": None, "stdout": None, "error": "could not start", "seconds": 0.0, "cpu": 0.0}
-    deadline = started + CASE_SEC
+    cutoff_at = started + CASE_SEC
     try:
-        uid = owner[0] if owner else None
-        out, problem = read_output(proc, (case.get("stdin") or "").encode(*ENCODING), deadline, uid, free)
+        uid = ids[0] if ids else None
+        out, problem = read_output(proc, (case.get("stdin") or "").encode(*ENCODING), cutoff_at, uid, free)
         while problem is None and proc.poll() is None:  # output closed: the limits hold to the end
-            problem = "timeout" if time.monotonic() > deadline else over_limit(proc.pid, uid, free)
+            problem = "timeout" if time.monotonic() > cutoff_at else over_limit(proc.pid, uid, free)
             if problem is None:
                 time.sleep(0.02)
     finally:

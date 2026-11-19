@@ -28,6 +28,38 @@ archive or binary.
 
 ## Development log
 
+### 2026-11-19 — round 5: shipped text says only what the code does; housekeeping names (v2 on Oddish)
+
+- **Why.** The Oddish pre-trial audit on the sibling tasks returned must-fix `info_leakage` findings that
+  Carve shared: hook comments that cited the platform, its cap and an operations document; helper names
+  (`reserve-delivery-room`/`session-setup`, `prepare-delivery`/`session-finish`, `precap-watchdog`,
+  `.delivered`) that told the solver its tree is packed for grading and that a cap is enforced; verifier
+  and solution docstrings that recorded packaging, provenance and QA rounds. Owner rule (17:45 UTC): the
+  audit must pass on a version before any model trial; until then only oracle and nop.
+- **Names.** The helpers are now an ordinary filesystem-maintenance set in `/usr/local/lib/fsmaint/`:
+  `fsmaint-reserve` (set-up; `--netcheck` starts the checker), `fsmaint-netcheck` (the egress check),
+  `fsmaint-sweep` (the collect hook) and `fsmaint-timer` (the pre-cap timer); their state under
+  `/var/lib/fsmaint/` (`room`, `inodes/`, `procs.json`, `netprobe.json`, `netcheck.json`,
+  `netcheck-open.json`, the `sweeping` mark), the timer's log `/var/log/fsmaint-timer.log` and pid
+  `/run/fsmaint-timer.pid`; the mark and record in `/app/rebuild` are `.fsmaint` (first line
+  `listed ENTRIES BYTES`, or `refused`) and `.fsmaint.json`; record keys `hosts`/`any_open`,
+  `process_count`/`processes`, `kill_passes`, `processes_left`, `end_bound`/`end_from`
+  (`netcheck`/`start`), `netcheck`/`netcheck_open`, `timer_log`/`ended_by_timer`, `source_uid`. The
+  verifier's vocabulary follows (`REBUILD`, `manifest`/`manifest_record`, `run_cases`, `cutoff_at`,
+  `retry`, `ids`; notes prefixed `sweep:`; flags say "review", "end bound", "net check", "timer").
+  The reserved room cannot live outside the container under Harbor, so it stays inside as root-only
+  (0700) service state that looks like any other.
+- **Text.** Every comment and docstring in the shipped hooks, both Dockerfiles, `task.toml`, `solve.sh`,
+  `install.py`, `verify.py` and the verifier modules now describes only what the code does: no
+  grading, platform, Harbor, Oddish, cap, budget, attempt, QA, audit, owner, round, date or document
+  path; the `# noqa` pragmas and the `platform` module import went too; `solve.sh` no longer copies
+  into `/logs/agent`; the `upstream_builds.json` comment names no script. The instruction is untouched;
+  the hidden cases and probes are untouched (the pool and its kept-ids are those of round 4).
+- **Grep of the packaged bundle** for grad, platform, harbor, oddish, cap, budget, deadline, attempt, QA,
+  audit, owner, round, 2026-, delivery, submission, collect, watchdog: the survivors are listed in
+  [Validation](#validation) with their reasons.
+- The checks follow the names (41 pass). Bundle and grades in [Validation](#validation).
+
 ### 2026-11-19 — round 4 (v2): the turn's end is the first observation of egress, never the kill (QA 07c)
 
 - **F1 [REWARD] must-fix.** Round 3b took the watcher's `restored_at` as the turn's end — but that
@@ -295,7 +327,7 @@ runtimes, the pool was regenerated at 1,944 cases under a new 128-bit seed, and 
 | Step `01-implement-renderer` | Implemented: instruction, agent image with the specification and the documentation, collect hook, separate verifier image recording at build, reference solution. |
 | Further steps | Not designed. Candidates: the next spec release (0.1.x changes behaviour in patch releases), or a second target (canonical Carve with `fmt`, or Markdown) on the same renderer. |
 | The original | carve-rs 0.1.14's static Linux release archive, fetched by `scripts/setup_tools.py` into `experiment/original/` (not in Git) and packaged as released into the verifier's build context and the solution. |
-| Hooks | `environment/session-setup` (setup begin and complete; `--watch` starts the egress watcher), `environment/session-watch` (the in-sandbox egress watchdog), `environment/precap-watchdog` (setup complete, as root: ends the session 33,900 s after arming, eleven minutes before the 9.6 h cap, so the deliverable is graded) and `environment/session-finish` (the one root collect hook), all root-only (`/usr/local/lib/pagebuild`, 0700) in the agent image. |
+| Hooks | `environment/fsmaint-reserve` (setup begin and complete; `--netcheck` starts the egress watcher), `environment/fsmaint-netcheck` (the in-sandbox egress watchdog), `environment/fsmaint-timer` (setup complete, as root: ends the session 33,900 s after arming, eleven minutes before the 9.6 h cap, so the deliverable is graded) and `environment/fsmaint-sweep` (the one root collect hook), all root-only (`/usr/local/lib/fsmaint`, 0700) in the agent image. |
 | Published builds | `steps/01-implement-renderer/tests/verifier/upstream_builds.json` from `scripts/upstream_builds.py`: 2,156 sha256, 14 strings (three needed) and foreign-runtime markers for seven runtimes (two needed), for the refusal of fetched builds and runtimes. |
 | Private inputs | `steps/01-implement-renderer/tests/private/cases.json` and `probes.json`, Git-ignored, from `scripts/make_cases.py` and `experiment/seeds.json`. Answers and probe answers are recorded when the verifier image is built; `recording.json` beside them describes the recording and appears in `metrics.json`. |
 | Oracle | The original itself, installed from its release archive by `solve.sh` (as the agent's user), with the 14 tripwire strings blanked in place. |
@@ -451,26 +483,26 @@ instruction states no time budget.
 v2 trial whose agent ran into the 9.6 h cap today: the separate verifier image failed to build right
 after the timeout (platform-side, harbor-lh `ops/swe-marathon-v2/PLATFORM_VERIFIER_BUILD_AFTER_LONG_RUN.md`),
 while runs that ended by themselves were graded. Until the platform fixes it, a root pre-cap
-watchdog (`environment/precap-watchdog`, armed at set-up complete) ends the agent's session 33,900 s
+watchdog (`environment/fsmaint-timer`, armed at set-up complete) ends the agent's session 33,900 s
 after arming — eleven minutes before the 34,560 s cap — with TERM every 5 s for up to a minute, then
-KILL, and logs arm/fire/done to root-only `/var/log/precap-watchdog.log`. The collect hook records
-the log's last lines and `ended_by_watchdog` in `.delivery.json`; the verifier copies that into
-`metrics.json` (and a note), never into the score. The hook writes `state/collecting` and stops the
+KILL, and logs arm/fire/done to root-only `/var/log/fsmaint-timer.log`. The collect hook records
+the log's last lines and `ended_by_timer` in `.fsmaint.json`; the verifier copies that into
+`metrics.json` (and a note), never into the score. The hook writes `/var/lib/fsmaint/sweeping` and stops the
 watchdog before its own kill stage, and the watchdog's loop stops on that mark, so the loop never
 reaches the hook's link fixer, which runs as `dev` (QA 07c F2). The agent, running as `dev`, cannot see, signal or
 outlast it; the instruction says nothing about it (it states no time budget).
 
-1. The collect hook (`session-finish`) runs as root in the agent's container when the session ends
+1. The collect hook (`fsmaint-sweep`) runs as root in the agent's container when the session ends
    (above): it records the agent's processes and whether egress is open, kills the agent's user and
-   counts the rounds, reads when the turn ended (the watcher `session-watch`'s first observation of
+   counts the rounds, reads when the turn ended (the watcher `fsmaint-netcheck`'s first observation of
    egress open less a poll, written before its kill — never the kill time, which a fetch can beat;
    else the hook's own start, which precedes its kill phase), fixes links — recording each copied
-   source's path, owner, times and inode; an outside source whose ctime or mtime is at or after that
-   bound less a 0.5 s skew (in the honest direction only, QA 07c F1) is refused when the watcher saw
-   the turn end and copied-and-flagged when the only reference is the hook's own start — and writes
-   `/app/rebuild/.delivered` (`delivered ENTRIES BYTES` with its notes, or `refused`) and the record
-   `/app/rebuild/.delivery.json` (every entry with its times and sha256, the copies, the refusals,
-   the late entries, the egress and process records).
+   source's path, uid, times and inode; an outside source whose ctime or mtime is at or after that
+   bound less a 0.5 s skew (in the honest direction only, QA 07c F1) is refused when the net check
+   observed the end, and copied and flagged when the only reference is the sweep's own start — and
+   writes `/app/rebuild/.fsmaint` (`listed ENTRIES BYTES` with its notes, or `refused`) and the record
+   `/app/rebuild/.fsmaint.json` (every entry with its times and sha256, the copies, the refusals,
+   the late entries, the net-probe and process records).
 2. `/app/rebuild` arrives as the declared artifact in a fresh verifier container. The verifier
    reserves `.reward.tmp` and `metrics.json` before anything runs (no `reward.txt` exists until
    the real end, so an evaluation cut short is an error, never a 0), and requires 512 MB free in
@@ -485,7 +517,7 @@ outlast it; the instruction says nothing about it (it states no time budget).
    and searched once: a file whose sha256 is one of 2,156 published builds, a file holding three of
    carve-rs's own strings, or a program embedding two markers of a foreign language runtime (which
    the stdlib-only rule forbids) gets reward 0 with a note. The record goes to `metrics.json`
-   (`delivery_record`, with its flags), never scored. Before grading the verifier also checks its
+   (`manifest_record`, with its flags), never scored. Before grading the verifier also checks its
    own network is closed (`network_open`); an open one is an evaluation error, never a reward.
 4. Before each case it kills that uid's processes, sweeps what it left in every world-writable
    directory and its System V IPC objects, and writes the case's files into a new `/tmp/carve-case`
@@ -542,7 +574,7 @@ platform's egress window, shared by every task whose original is public.
 
 | # | Attack and impact | Boundary | Evidence | Mitigation | Residual risk | Next validation | Severity |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | Get carve-rs or another engine and deliver it, or call it: during the turn, or by a process left running into the platform's egress window after it | Agent network; the platform's egress window; agent image | Dockerfile read: no engine, no node, no carve source; Harbor 0.25's restore of setup egress read by the coordinator | `network_mode = "no-network"` during the turn; the in-sandbox watchdog (`session-watch`) fires when egress returns and kills the agent's user; the hook records egress, live processes and each copy's source change time, and refuses a source changed after the turn; 2,156 published builds, 14 strings (three needed) and seven foreign runtimes refused by the verifier (check `test_a_fetched_build_of_the_original_or_a_runtime_is_refused`) | The egress watchdog is a race, not a wall: it polls every 50 ms (all hosts at once) and kills on the first answer, so a fetch that completes inside that first poll beats the kill — but not the record: the turn's end is placed at the first observation of egress open less a poll, never at the kill, and an outside source changed at or after it is refused, an in-place file counted (QA 07c F1); the window stays open until the platform keeps the agent's policy through collection; a transformed or rebuilt engine passes the tripwires; the judges' run policy applies (audit every trial, void exploits, pause on the first) | Read `delivery_record` (egress, processes, late entries, copies) of every trial; the platform fix | 🟡 YELLOW |
+| 1 | Get carve-rs or another engine and deliver it, or call it: during the turn, or by a process left running into the platform's egress window after it | Agent network; the platform's egress window; agent image | Dockerfile read: no engine, no node, no carve source; Harbor 0.25's restore of setup egress read by the coordinator | `network_mode = "no-network"` during the turn; the in-sandbox watchdog (`fsmaint-netcheck`) fires when egress returns and kills the agent's user; the hook records egress, live processes and each copy's source change time, and refuses a source changed after the turn; 2,156 published builds, 14 strings (three needed) and seven foreign runtimes refused by the verifier (check `test_a_fetched_build_of_the_original_or_a_runtime_is_refused`) | The egress watchdog is a race, not a wall: it polls every 50 ms (all hosts at once) and kills on the first answer, so a fetch that completes inside that first poll beats the kill — but not the record: the turn's end is placed at the first observation of egress open less a poll, never at the kill, and an outside source changed at or after it is refused, an in-place file counted (QA 07c F1); the window stays open until the platform keeps the agent's policy through collection; a transformed or rebuilt engine passes the tripwires; the judges' run policy applies (audit every trial, void exploits, pause on the first) | Read `manifest_record` (egress, processes, late entries, copies) of every trial; the platform fix | 🟡 YELLOW |
 | 2 | Read the recorded answers | Separate verifier image; file modes | Same layout as Goose and BasedPL (their QA 07 passes) | Answers recorded in a builder stage; final image keeps five JSON files (cases, expected, probes, probe answers, recording) under root-only `/tests` (0700); submitted code runs as a mapped uid with no_new_privs | A kernel bug | Keep | 🟢 GREEN / LOW |
 | 3 | Copy answers from what is shipped | Case generation and packaging | Checked: leak index of every shipped page (fenced blocks, inline code, one-line `SOURCE -> RESULT` examples, unescaped `\n`/`\t` spans, indented EBNF blocks, the JSON contracts' sources; 5,537 skeletons); 315 corpus documents left out; checked again at packaging | No case is a shipped example or a skeleton copy of one; the generated example pages and the corpus are not shipped | The documentation's own examples teach behaviour by design | Keep | 🟢 GREEN / LOW |
 | 4 | Recall upstream's published answers | Rewrites and hosting | Every corpus-based case renamed and hosted in a host that draws its text once; kept only when the answer changed, the corpus lookup misses, no splice of host and parts (plain, QA 12b's rules R1-R3, or 07c's tight-list rule R5) gives it, and it differs from every splice in more than whitespace and words (1,516/432/222/100/114 variants rejected) | Private-seed renaming; new documents and constructs (1,304 of 1,770); mutants kept only when structurally changed | Structure of public edge cases is kept; models trained after mid-2026 may know the language | Pre-run QA recall probe; read `settled` | 🟡 YELLOW |
@@ -557,7 +589,7 @@ platform's egress window, shared by every task whose original is public.
 | 13 | Infer an evaluation from the files and text | Instruction and image | Checked: no grading, hidden, budget or session wording; no examples shipped | Requester's voice; the hook is root-only and names no judging | An agent can still guess that pages exist to test it | Read the first trajectories | 🟡 YELLOW / UNASSESSED |
 | 14 | A case where carve-rs and the specification disagree | Selection | 30 candidates dropped by the model check; 6 corpus documents known to differ | Only cases the model renders identically are kept | None | Keep | 🟢 GREEN / LOW |
 | 15 | Behaviour outside the stated scope graded | Case generation | No source holds an include; options only `--safe`, `--html`, and unknown ones; CLI cases one per stated behaviour | Out-of-scope list in the instruction | None found | QA lens 12 | 🟢 GREEN / LOW |
-| 16 | Stop, delay or outlast the pre-cap watchdog, so the session runs into the platform's cap and is never graded (a 0 the audit cannot see), or exploit its kill | Agent user; root-only hooks | Checked: the watchdog runs as root from the set-up hook, its log and pid file are root's (0600, `/run`), `dev` cannot signal a root process; check `test_the_precap_watchdog_arms_once_fires_at_end_seconds_and_ends_the_tree` | It can be killed only as root; the kill is TERM then KILL of `dev`'s processes only, eleven minutes before the cap; its loop stops on the collect hook's `collecting` mark and the hook stops it before its own worker runs, so it never reaches the link fixer (QA 07c F2); `ended_by_watchdog` is recorded for the audit, never scored | A platform that itself kills root processes or arms the hook late; a run that ends 11 min early loses nothing the cap would not have taken | First capped trial: read `ended_by_watchdog` and the log tail in `metrics.json` | 🟢 GREEN / LOW |
+| 16 | Stop, delay or outlast the timer (`fsmaint-timer`), so the session runs into the platform's cap and is never graded (a 0 the audit cannot see), or exploit its kill | Agent user; root-only hooks | Checked: the timer runs as root from the set-up hook, its log and pid file are root's (0600, `/run`), `dev` cannot signal a root process; check `test_the_timer_arms_once_fires_at_end_seconds_and_ends_the_tree` | It can be killed only as root; the kill is TERM then KILL of `dev`'s processes only, eleven minutes before the cap; its loop stops on the sweep's `sweeping` mark and the sweep stops it before its own worker runs, so it never reaches the link fixer (QA 07c F2); `ended_by_timer` is recorded for the audit, never scored | A platform that itself kills root processes or arms the hook late; a run that ends 11 min early loses nothing the cap would not have taken | First capped trial: read `ended_by_timer` and the log tail in `metrics.json` | 🟢 GREEN / LOW |
 
 Licences: the specification, documentation and carve-rs are MIT. The spec's `LICENSE` ships in
 `/app/spec` and `/app/docs`, carve-rs's with the reference solution.
@@ -570,10 +602,11 @@ Licences: the specification, documentation and carve-rs are MIT. The spec's `LIC
 | Tripwires on the reference | `install.py --blank` on the pinned Linux build | blanked sha256 `f1a359cba59853ecf5087b2f7a6bac17fc208df99d09a63dc567268e1ec5fad0` (same 16,216,144 bytes), in no list, none of the 14 strings left; the unchanged Linux build (`05d0898d…`) and the macOS build are refused |
 | Corpus agreement, spec model against carve-rs (macOS release) | spec `51c5631`, carve-rs 0.1.14 | 4,626 of 4,631 equal; model equals the corpus HTML on all; 6 of the candidates drawn for cases disagreed and were dropped |
 | Case generation | cases sha1 `5db42245` (1,770) | 34 dropped as model disagreements, 720 with no variant kept (11 with none at all; 1,516 variants rejected as a splice, 432 as whitespace-only, 222 as lookup-reachable), 5 shown in the docs, spec or pack, 1 with its answer printed; corpus left out: 315 shown, 28 pack, 27 answer printed, 24 includes, 17 open readings, 1 long |
-| Local recording with the macOS release build, through the bundle's recorder | bundle `2d38ec5a060b` | 1,770 of 1,770 kept; none slow, unsteady, crashed, differing or perturbed; slowest run 30.1 ms; kept ids sha256 `7ace1c15…`; corpus floors on this pool with the reviewers' own 12b/07c scripts: the builder's lookup 0.0%, renderer-free 0.11% (2 cases), hybrid with a perfect host renderer 2.99% (53, one hosted) under R1-R3 and under R1-R3+R5 alike |
-| Packaging twice | `scripts/package_step.py` | the same hash both times: `2d38ec5a060b78c002e857aa10a89c11e5d075375b800fa11e6ff660285cca25`, 143 files, 17,819,918 bytes; the bundle directory is `swe-m2_software-engineering_carve-html-renderer-from-spec-only` |
-| Oddish preflight | bundle `2d38ec5a060b` | pass |
-| Local grading from the bundle (`scripts/grade_locally.py`, no sandbox) | bundle `2d38ec5a060b` | reference (the build blanked as `solve.sh` does, re-signed, as `/app/rebuild/carve`, marked by the bundle's hook, passing the tripwires) 1.0 (1,770/1,770, 22 s); an empty delivery 0.0; a program that prints nothing 0.0; no late entries, no refused or flagged copies, `ended_by_watchdog` false. Fingerprint: the blanked reference matches 47 of 49 probes — the two misses are the `-h`/`--help` probes whose output carries blanked help strings; production records probes from the unblanked oracle, and the fingerprint is diagnostic, never scored |
+| Local recording with the macOS release build, through the bundle's recorder | bundle `de2336a2a8fd` | 1,770 of 1,770 kept; none slow, unsteady, crashed, differing or perturbed; slowest run 30.1 ms; kept ids sha256 `7ace1c15…`; corpus floors on this pool with the reviewers' own 12b/07c scripts: the builder's lookup 0.0%, renderer-free 0.11% (2 cases), hybrid with a perfect host renderer 2.99% (53, one hosted) under R1-R3 and under R1-R3+R5 alike |
+| Packaging twice | `scripts/package_step.py` | the same hash both times: `de2336a2a8fd6c3658158713015e17dcf690699f5ead68ef248a37dabced6c8f`, 143 files, 17,815,800 bytes; the bundle directory is `swe-m2_software-engineering_carve-html-renderer-from-spec-only` |
+| Oddish preflight | bundle `de2336a2a8fd` | pass |
+| Word grep of the packaged bundle (grad, platform, harbor, oddish, cap, budget, deadline, attempt, QA, audit, owner, round, 2026-, delivery, submission, collect, watchdog) | bundle `de2336a2a8fd` | our shipped files: `fsmaint-netcheck` cap 4 (`capture_output`); `fsmaint-sweep` round 4 (`round()`); `instruction.md` cap 3 (captions, escaping), audit 2 (the requester's compliance audit, narrative), owner 1 (`plus-ownership.crv`, a spec file name); `blank.json` cap 2, round 1 (carve's own help strings: `--caption-hints`, escape, `--roundtrip`); `recorder.py` and `recording.py` round 9 (`round()`), collect 2 (`from collections`); `runcases.py` cap 3 (`surrogateescape`, `capture_output`), round 2 (`round()`); `upstream_builds.json` cap 28, budget 8, owner 8, round 6 (upstream file names: `bracket-escapes.js`, `abbr-budget.js`, `list-owner-columns.js`, `block-ownership.js`, `roundtrip-*`); `verify.py` cap 12 (`CapPrm`/`CapEff`/`CapAmb`, `escape`), round 3 (`round()`); `task.toml` collect 1 (`[[verifier.collect]]`, the required section key). Nothing else of ours matches. The spec, docs and LICENSE (upstream text) and the private case prose (round 4's pool, untouched) carry the remaining hits |
+| Local grading from the bundle (`scripts/grade_locally.py`, no sandbox) | bundle `de2336a2a8fd` | reference (the build blanked as `solve.sh` does, re-signed, as `/app/rebuild/carve`, marked by the bundle's sweep, passing the tripwires) 1.0 (1,770/1,770, 26 s); an empty tree 0.0; a program that prints nothing 0.0; no late entries, no refused or flagged copies, `ended_by_timer` false. Fingerprint: the blanked reference matches 47 of 49 probes — the two misses are the `-h`/`--help` probes whose output carries blanked help strings; production records probes from the unblanked oracle, and the fingerprint is diagnostic, never scored |
 | Oddish baselines, QA, `harbor check` | none | not run |
 
 ## Build and deliver
@@ -602,7 +635,7 @@ image needs it.
 - A recall probe: ask the models under test about Carve without the files.
 - The platform fix for the egress window (keep the agent's network policy through collection, or
   kill the agent's processes before the restore), proved by the canary in
-  `ops/swe-marathon-v2/canary/`; until then, the in-sandbox watchdog (`session-watch`, unproven on
+  `ops/swe-marathon-v2/canary/`; until then, the in-sandbox watchdog (`fsmaint-netcheck`, unproven on
   the platform — it has only been exercised locally) and the scripted audit of every trial.
 - The verifier image (and so the collect hook, the privilege checks, the kept-ids assertion and the
   Linux recording) has never been built or run on Linux here; the first build is the first test of

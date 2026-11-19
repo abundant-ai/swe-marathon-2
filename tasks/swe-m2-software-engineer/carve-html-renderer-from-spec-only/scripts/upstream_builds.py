@@ -258,9 +258,8 @@ def main() -> None:
     strings = distinctive([native, extension, wasm])
     usage = distinctive([native], only_first=True, prefixes=("src/main.rs",), most=12)   # the command line's own text
     record = {
-        "comment": "Builds of the original and of the other engines that upstream publishes, text every carve-rs build holds that "
-                   "an HTML renderer written from the specification does not, and markers of foreign runtimes; written by "
-                   "scripts/upstream_builds.py.",
+        "comment": "sha256 of the builds of the original and of the other engines that upstream publishes, text every carve-rs build "
+                   "holds, and markers of foreign runtimes.",
         "sha256": dict(sorted(found.items())),
         "strings": sorted(set(strings) | set(usage)),
         "strings_needed": STRINGS_NEEDED,

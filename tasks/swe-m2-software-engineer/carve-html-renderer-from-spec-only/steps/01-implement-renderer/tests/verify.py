@@ -1,4 +1,4 @@
-"""Harbor entry point: run the private cases against the submitted program and publish the result."""
+"""Entry point: run the private cases against the program in /app/rebuild and write the result."""
 
 from __future__ import annotations
 
@@ -21,24 +21,24 @@ from pathlib import Path
 # test.sh starts this file with Python -I; imports resolve only from this directory.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from verifier import recorder, runcases  # noqa: E402
+from verifier import recorder, runcases
 
-SUBMISSION = Path("/app/rebuild")
-PROGRAM = SUBMISSION / "carve"
-DELIVERY_MARK = ".delivered"  # written into /app/rebuild by the collect hook (environment/prepare-delivery)
-DELIVERY_RECORD = ".delivery.json"  # the hook's record: egress, the agent's processes, every entry; never scored
+REBUILD = Path("/app/rebuild")
+PROGRAM = REBUILD / "carve"
+MARK = ".fsmaint"  # written into /app/rebuild by the sweep (environment/fsmaint-sweep) once the work has ended
+RECORD = ".fsmaint.json"  # the sweep's record: the hosts probed, the processes found, every entry; never scored
 RECORD_LIMIT = 64 << 20  # bytes of the record read, at most
-# Public hosts the original can be fetched from; the verifier refuses to grade if it can reach one.
+# Public hosts the original can be fetched from; nothing runs if one of them can be reached.
 NETWORK_HOSTS = (("github.com", 443), ("pypi.org", 443), ("proxy.golang.org", 443), ("registry.npmjs.org", 443))
 # Every build of the original that upstream publishes ready to run, and text they all hold that a
-# renderer written from the specification does not (scripts/upstream_builds.py): a delivered file
+# renderer written from the specification does not (scripts/upstream_builds.py): a file in the tree
 # that is one of them, or holds enough of that text, is a fetched original.
 UPSTREAM_BUILDS = Path(__file__).resolve().parent / "verifier" / "upstream_builds.json"
 REWARD_FILES = ("reward.txt", "reward.json")
 TOTAL_SEC = 5400  # the step verifier has 6,000 s; everything up to the reward file fits in this, even every run at 2 s
 MARGIN_SEC = 120  # no case starts when less than this is left of TOTAL_SEC
-MAX_ENTRIES = 200_003  # entries in a submission, at most (the instruction's 200,000, its top, the mark and the record); more is not run
-MAX_BYTES = 2 << 30    # bytes of a submission's regular files (each inode once), at most; more is not run
+MAX_ENTRIES = 200_003  # entries in the tree, at most (the instruction's 200,000, its top, the mark and the record); more is not run
+MAX_BYTES = 2 << 30    # bytes of the tree's regular files (each inode once), at most; more is not run
 MAX_PROGRAM = 512 << 20  # bytes of /app/rebuild/carve hashed for metrics.json, at most
 RESERVE_BYTES = 512 << 20  # bytes kept free in /tmp and /logs/verifier: no case starts with less
 CLEANUP_SEC = 60  # the cleanup after the last case, at most
@@ -53,7 +53,7 @@ LIMIT_NAMES = {"Max stack size": resource.RLIMIT_STACK, "Max processes": resourc
                "Max file size": resource.RLIMIT_FSIZE, "Max data size": resource.RLIMIT_DATA,
                "Max core file size": resource.RLIMIT_CORE}
 STRICT_LIMITS = ("Max processes", "Max file size", "Max core file size")
-# Run as submitted code is: /proc/self/status, then no_new_privs as prctl(PR_GET_NO_NEW_PRIVS)
+# Run as the program is: /proc/self/status, then no_new_privs as prctl(PR_GET_NO_NEW_PRIVS)
 # reports it, for kernels (gVisor's among them) whose status file may not list NoNewPrivs.
 NNP_PROBE = (
     "import ctypes, sys\n"
@@ -70,12 +70,12 @@ class EvaluationError(Exception):
     """Evaluation could not be carried out; no valid reward may be published."""
 
 
-def sandbox_problems(status: str, limits: str, owner: tuple[int, int]) -> tuple[list[str], dict]:
-    """What is wrong with a process meant to run submitted code, from its /proc/self/status (which
+def sandbox_problems(status: str, limits: str, ids: tuple[int, int]) -> tuple[list[str], dict]:
+    """What is wrong with a process meant to run the program, from its /proc/self/status (which
     NNP_PROBE follows with a PrctlNoNewPrivs line) and /proc/self/limits, and the limits it has
     (soft values). no_new_privs holds where either the status file or prctl shows it."""
     fields = dict(line.split(":", 1) for line in status.splitlines() if ":" in line)
-    uid, gid = (str(owner[0]), str(owner[1]))
+    uid, gid = (str(ids[0]), str(ids[1]))
     problems = []
     if "1" not in (fields.get("NoNewPrivs", "").strip(), fields.get("PrctlNoNewPrivs", "").strip()):
         problems.append("no_new_privs is not set")
@@ -105,7 +105,7 @@ def sandbox_problems(status: str, limits: str, owner: tuple[int, int]) -> tuple[
 
 
 def probe(prefix: list[str], argv: list[str], fallback: list[str] | None = None) -> str:
-    """What a command prints when started exactly as submitted code is; where it fails and a
+    """What a command prints when started exactly as the program is; where it fails and a
     `fallback` command is given, what that prints."""
     for command in (argv, fallback):
         if command is None:
@@ -118,7 +118,7 @@ def probe(prefix: list[str], argv: list[str], fallback: list[str] | None = None)
 
 
 def pick_id(maps: tuple[str, ...] = ("/proc/self/uid_map", "/proc/self/gid_map")) -> int:
-    """An id for submitted code's user and group: inside every id map of this user namespace (a
+    """An id for the program's user and group: inside every id map of this user namespace (a
     rootless or remapped container maps only 65,536 ids), drawn at random from 20000-60000 so that
     no other container is likely to share it, and no user or group of the image's; 65534 where none
     fits."""
@@ -145,7 +145,7 @@ def pick_id(maps: tuple[str, ...] = ("/proc/self/uid_map", "/proc/self/gid_map")
 
 
 def sandbox() -> tuple[list[str], tuple[int, int], dict]:
-    """The command prefix that runs submitted code as an unprivileged user of this evaluation's own
+    """The command prefix that runs the program as an unprivileged user of this evaluation's own
     (a random uid and gid no other container shares, so that its process limit counts only its
     own runs), those ids, and the limits such a process has. A process started the same way must
     have dropped every privilege, and a set-user-id root file started that way must gain nothing.
@@ -154,11 +154,11 @@ def sandbox() -> tuple[list[str], tuple[int, int], dict]:
         EvaluationError: Privileges cannot be dropped or the drop does not hold.
     """
     uid = pick_id()
-    owner = (uid, uid)
+    ids = (uid, uid)
     if shutil.which("setpriv") is None:
-        raise EvaluationError("setpriv is missing; submitted code was not run")
+        raise EvaluationError("setpriv is missing; the program was not run")
     scratch = Path(tempfile.mkdtemp())
-    try:  # the workspaces will be chowned to the id: a filesystem that refuses it grades nothing
+    try:  # the workspaces will be chowned to the id: a filesystem that refuses it runs nothing
         os.chown(scratch, uid, uid)
     except OSError as exc:
         raise EvaluationError(f"Files cannot be given to uid {uid}: {type(exc).__name__}") from exc
@@ -166,9 +166,9 @@ def sandbox() -> tuple[list[str], tuple[int, int], dict]:
         shutil.rmtree(scratch, ignore_errors=True)
     prefix = ["setpriv", "--reuid", str(uid), "--regid", str(uid), "--clear-groups", "--no-new-privs"]
     status = probe(prefix, [sys.executable, "-I", "-c", NNP_PROBE], fallback=["cat", "/proc/self/status"])
-    problems, found = sandbox_problems(status, probe(prefix, ["cat", "/proc/self/limits"]), owner)
-    # A set-user-id and set-group-id copy of id(1), owned by root, beside the submission.
-    place = SUBMISSION.parent / ".setid-probe"
+    problems, found = sandbox_problems(status, probe(prefix, ["cat", "/proc/self/limits"]), ids)
+    # A set-user-id and set-group-id copy of id(1), owned by root, beside the tree.
+    place = REBUILD.parent / ".setid-probe"
     shutil.rmtree(place, ignore_errors=True)
     try:
         place.mkdir(mode=0o755)
@@ -179,21 +179,21 @@ def sandbox() -> tuple[list[str], tuple[int, int], dict]:
         ids = (probe(prefix, [str(place / "id"), "-u"]).strip(), probe(prefix, [str(place / "id"), "-g"]).strip())
     finally:
         shutil.rmtree(place, ignore_errors=True)
-    if ids != (str(owner[0]), str(owner[1])):
+    if ids != (str(ids[0]), str(ids[1])):
         problems.append(f"a set-id root file ran with user and group {ids}")
     if problems:
         raise EvaluationError("The unprivileged run does not hold: " + "; ".join(problems))
-    return prefix, owner, found
+    return prefix, ids, found
 
 
-def seal(top: Path, owner: tuple[int, int] = (0, 0)) -> None:
-    """Make the submission `owner`'s and read-only for anyone else, before any of it runs: no
+def seal(top: Path, ids: tuple[int, int] = (0, 0)) -> None:
+    """Make the tree `ids`'s and read-only for anyone else, before any of it runs: no
     set-user-id, set-group-id or sticky bit, executables 0755, other files 0644, directories 0755.
     Links are left as they are and never followed; devices, pipes and sockets are removed. Entries
     are counted as they are read, and the walk stops at MAX_ENTRIES.
 
     Raises:
-        EvaluationError: The submission holds more than MAX_ENTRIES entries or MAX_BYTES bytes of
+        EvaluationError: The tree holds more than MAX_ENTRIES entries or MAX_BYTES bytes of
             files, or an entry can be neither sealed nor removed.
     """
     if not top.is_dir() or top.is_symlink():
@@ -208,7 +208,7 @@ def seal(top: Path, owner: tuple[int, int] = (0, 0)) -> None:
             for entry in listing:
                 entries.append(Path(entry.path))
                 if len(entries) > MAX_ENTRIES:
-                    raise EvaluationError(f"The submission holds more than {MAX_ENTRIES} entries")
+                    raise EvaluationError(f"The tree holds more than {MAX_ENTRIES} entries")
                 try:
                     info = entry.stat(follow_symlinks=False)
                 except OSError:
@@ -219,14 +219,14 @@ def seal(top: Path, owner: tuple[int, int] = (0, 0)) -> None:
                     seen.add((info.st_dev, info.st_ino))
                     size += info.st_size
                     if size > MAX_BYTES:
-                        raise EvaluationError(f"The submission's files hold more than {MAX_BYTES} bytes")
+                        raise EvaluationError(f"The tree's files hold more than {MAX_BYTES} bytes")
     for path in entries:
         try:
             info = os.lstat(path)
             if stat.S_ISLNK(info.st_mode):
-                os.lchown(path, *owner)
+                os.lchown(path, *ids)
             elif stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode):
-                os.lchown(path, *owner)
+                os.lchown(path, *ids)
                 os.chmod(path, 0o755 if stat.S_ISDIR(info.st_mode) or info.st_mode & 0o111 else 0o644)
             else:
                 os.unlink(path)
@@ -234,7 +234,7 @@ def seal(top: Path, owner: tuple[int, int] = (0, 0)) -> None:
             try:
                 runcases.remove_path(path)
             except OSError:
-                raise EvaluationError(f"Could not seal the submission: {type(exc).__name__}") from exc
+                raise EvaluationError(f"Could not seal the tree: {type(exc).__name__}") from exc
 
 
 def as_user(uid: int, argv: list[str], timeout: float) -> None:
@@ -283,7 +283,7 @@ def kill_user(uid: int) -> None:
 
 
 def reap() -> None:
-    """Collect the exit of every child this process has (orphans included, as their subreaper)."""
+    """Reap the exit of every child this process has (orphans included, as their subreaper)."""
     while True:
         try:
             pid, _ = os.waitpid(-1, os.WNOHANG)
@@ -295,12 +295,12 @@ def reap() -> None:
 
 def writable_dirs(root: str = "/") -> list[str]:
     """Every directory under `root` that anyone may write to, not following links and leaving out
-    the kernel's own trees: where a submission could leave a file for a later case."""
+    the kernel's own trees: where a tree could leave a file for a later case."""
     found = []
     for top, directories, _ in os.walk(root):
-        if top == root:  # the kernel's trees, and /logs, which holds the agent's own artifacts
+        if top == root:  # the kernel's trees, and /logs, which holds the session's own files
             directories[:] = [d for d in directories if d not in ("proc", "sys", "dev", "logs")]
-        if os.path.realpath(top) == str(SUBMISSION):  # sealed: nothing in it is writable
+        if os.path.realpath(top) == str(REBUILD):  # sealed: nothing in it is writable
             directories[:] = []
             continue
         try:
@@ -314,7 +314,7 @@ def writable_dirs(root: str = "/") -> list[str]:
 def remove_ipc(uid: int, root: Path = Path("/proc/sysvipc")) -> None:
     """Remove the System V shared memory, semaphores and message queues the user owns or made:
     they outlive the processes that made them. First as the user itself (ipcrm --all, which any
-    owner may do and which finds them without /proc/sysvipc), then as root, which may lack the
+    ids may do and which finds them without /proc/sysvipc), then as root, which may lack the
     capability to."""
     as_user(uid, ["ipcrm", "--all"], 60)
     for name, flag in SYSV_IPC:
@@ -372,16 +372,16 @@ def identity(path: Path) -> dict:
             while chunk := handle.read(1 << 20):
                 whole.update(chunk)
         return {"size": info.st_size, "sha256": whole.hexdigest()}
-    except Exception as exc:  # noqa: BLE001 - metadata, never a reason to lose the reward
+    except Exception as exc:
         return {"error": type(exc).__name__}
 
 
 def arrived(top: Path) -> tuple[int, int]:
     """The entries below `top` (files, directories and links, the mark aside) and the bytes of its
-    regular files, each inode once, counted the way the collect hook counts them; never following
+    regular files, each inode once, counted the way the sweep counts them; never following
     a link, and stopping once past MAX_ENTRIES (the count is then only a bound)."""
     entries, size, files, folders = 0, 0, set(), [str(top)]
-    skipped = {str(top / DELIVERY_MARK), str(top / DELIVERY_RECORD)}
+    skipped = {str(top / MARK), str(top / RECORD)}
     while folders and entries <= MAX_ENTRIES:
         with os.scandir(folders.pop()) as listing:
             for entry in listing:
@@ -397,11 +397,11 @@ def arrived(top: Path) -> tuple[int, int]:
     return entries, size
 
 
-def delivery(top: Path) -> tuple[list[str], bool]:
-    """What the collect hook's mark and the copy that arrived say about the delivery: notes, and
-    whether it was refused (over the stated limits: reward 0). The hook marks every delivery
+def manifest(top: Path) -> tuple[list[str], bool]:
+    """What the sweep's mark and the copy that arrived say about the tree: notes, and
+    whether it was refused (over the stated limits: reward 0). The hook marks every tree
     before it is copied, an empty one too, so an arrival with no mark, or with fewer entries or
-    bytes than the mark counts, is the copy failing, not the submission.
+    bytes than the mark counts, is the copy failing, not the tree.
 
     Raises:
         EvaluationError: Nothing arrived at all, or the copy arrived cut short.
@@ -411,81 +411,81 @@ def delivery(top: Path) -> tuple[list[str], bool]:
     except OSError:
         empty = True
     if empty:
-        raise EvaluationError("Nothing arrived: /app/rebuild is missing or empty, though the collect hook marks every delivery")
-    mark = top / DELIVERY_MARK
+        raise EvaluationError("Nothing arrived: /app/rebuild is missing or empty, though the sweep marks every tree")
+    mark = top / MARK
     try:
         lines = mark.read_text(errors="replace").splitlines()[:40] if mark.is_file() and not mark.is_symlink() \
             and mark.stat().st_size < (1 << 20) else None
     except OSError:
         lines = None
     if not lines:
-        raise EvaluationError("The delivery arrived without the collect hook's mark")
-    head, notes = lines[0].split(), [f"collect hook: {line}" for line in lines[1:] if line.strip()][:20]
+        raise EvaluationError("The tree arrived without the sweep's mark")
+    head, notes = lines[0].split(), [f"sweep: {line}" for line in lines[1:] if line.strip()][:20]
     if head[:1] == ["refused"]:
-        return (notes or ["collect hook: the delivery was not copied"]), True
-    if len(head) == 3 and head[0] == "delivered" and all(value.isascii() and value.isdigit() for value in head[1:]):
+        return (notes or ["sweep: the tree was not copied"]), True
+    if len(head) == 3 and head[0] == "listed" and all(value.isascii() and value.isdigit() for value in head[1:]):
         try:
             entries, size = arrived(top)
         except OSError as exc:
-            raise EvaluationError(f"The delivery could not be measured: {type(exc).__name__}") from exc
+            raise EvaluationError(f"The tree could not be measured: {type(exc).__name__}") from exc
         if entries < int(head[1]) or size < int(head[2]):
             raise EvaluationError(f"The copy arrived cut short: {entries:,} of {int(head[1]):,} entries and {size:,} of "
                                   f"{int(head[2]):,} bytes")
         return notes, False
-    raise EvaluationError("The collect hook's mark cannot be read")
+    raise EvaluationError("The sweep's mark cannot be read")
 
 
-def delivery_record(top: Path) -> dict:
-    """What the collect hook's record says, for metrics.json and the audit of a trial: whether the
-    public internet answered when the session ended, the agent's processes then alive, how many
-    rounds of killing ended them, and the delivery's entries (their number and the twenty with the
+def manifest_record(top: Path) -> dict:
+    """What the sweep's record says, for metrics.json and review: whether the
+    public internet answered when the session ended, the processes then alive, how many
+    passes of ending ended them, and the tree's entries (their number and the twenty with the
     latest change times). Read in a bounded way; never raising, never scored."""
     try:
-        path = top / DELIVERY_RECORD
+        path = top / RECORD
         if not path.is_file() or path.is_symlink() or path.stat().st_size > RECORD_LIMIT:
             return {"error": "no readable record"}
         record = json.loads(path.read_text(encoding="utf-8", errors="replace"))
         entries = record.get("entries") or []
         latest = sorted((item for item in entries if isinstance(item, dict)), key=lambda item: -float(item.get("ctime") or 0))
-        summary = {key: record.get(key) for key in ("egress", "egress_open", "agent_process_count", "kill_rounds",
-                                                    "agent_processes_left", "delivered", "listing_complete", "turn_ended_at",
-                                                    "turn_end_from", "hook_started_at", "late_entries")}
-        summary |= {"agent_processes": (record.get("agent_processes") or [])[:50], "entries_listed": len(entries),
+        summary = {key: record.get(key) for key in ("hosts", "any_open", "process_count", "kill_passes",
+                                                    "processes_left", "listed", "listing_complete", "end_bound",
+                                                    "end_from", "sweep_started_at", "late_entries")}
+        summary |= {"processes": (record.get("processes") or [])[:50], "entries_listed": len(entries),
                     "copies": record.get("copies", []), "refused_copies": record.get("refused_copies", []),
-                    "watchdog": record.get("watchdog"), "restored": record.get("restored"),
-                    "precap_watchdog": (record.get("precap_watchdog") or [])[-20:],
-                    "ended_by_watchdog": bool(record.get("ended_by_watchdog")),
+                    "netcheck": record.get("netcheck"), "netcheck_open": record.get("netcheck_open"),
+                    "timer_log": (record.get("timer_log") or [])[-20:],
+                    "ended_by_timer": bool(record.get("ended_by_timer")),
                     "latest_changes": [{key: item.get(key) for key in ("path", "type", "size", "ctime", "sha256")} for item in latest[:20]]}
         flags = []
-        if record.get("ended_by_watchdog"):
-            flags.append("the pre-cap watchdog ended the session before the platform's cap")
-        if record.get("egress_open"):
-            flags.append("the public internet answered when the session ended")
-        if record.get("agent_processes_left"):
-            flags.append(f"{record.get('agent_processes_left')} of the agent's processes survived the kill")
+        if record.get("ended_by_timer"):
+            flags.append("the timer ended the processes before the sweep")
+        if record.get("any_open"):
+            flags.append("a public host answered after the end")
+        if record.get("processes_left"):
+            flags.append(f"{record.get('processes_left')} processes survived the kill")
         if record.get("late_entries"):
-            flags.append(f"{record.get('late_entries')} delivered entries changed after the turn ended")
+            flags.append(f"{record.get('late_entries')} listed entries changed after the end bound")
         if record.get("copies"):
             flags.append(f"{len(record['copies'])} files were copied in from links out of /app/rebuild")
         flagged = [copy for copy in (record.get("copies") or []) if isinstance(copy, dict) and copy.get("flagged")]
         if flagged:
-            flags.append(f"{len(flagged)} copies hold files changed after the hook's start, copied because the turn's end "
-                         "was not seen: audit them")
+            flags.append(f"{len(flagged)} copies hold files changed after the sweep's start, copied because no end bound "
+                         "was observed: review them")
         refused_late = [item for item in (record.get("refused_copies") or []) if isinstance(item, dict) and item.get("late_files")]
         if refused_late:
-            flags.append(f"{len(refused_late)} outside sources changed at or after the turn's end were refused: audit them")
-        if not (record.get("restored") or {}).get("restored_at"):
-            flags.append("the egress watcher did not see the turn end; the turn-end time is the hook's start")
+            flags.append(f"{len(refused_late)} outside sources changed at or after the end bound were refused: review them")
+        if not (record.get("netcheck_open") or {}).get("first_open_at"):
+            flags.append("no net check observed the end; the end bound is the sweep's start")
         summary["flags"] = flags
         return summary
-    except Exception as exc:  # noqa: BLE001 - metadata, never a reason to lose the reward
+    except Exception as exc:
         return {"error": type(exc).__name__}
 
 
 def upstream_builds(path: Path = UPSTREAM_BUILDS) -> dict:
     """The sha256 of upstream's published builds and of the other engines, the carve-rs text that
-    marks a build, the markers of foreign language runtimes, and how many of each make a delivered
-    file a fetched engine (verifier/upstream_builds.json).
+    marks a build, the markers of foreign language runtimes, and how many of each make a file
+    in the tree a fetched engine (verifier/upstream_builds.json).
 
     Raises:
         EvaluationError: The list is unreadable or empty.
@@ -514,7 +514,7 @@ def fetched_build(top: Path, builds: dict) -> str | None:
     runtimes, runtime_needed = builds["runtimes"], builds["runtime_needed"]
     markers = [(name, marker) for name, group in runtimes.items() for marker in group]
     overlap = max((len(text) for text in strings + [marker for _, marker in markers]), default=1)
-    skip = {str(top / DELIVERY_MARK), str(top / DELIVERY_RECORD)}
+    skip = {str(top / MARK), str(top / RECORD)}
     seen = set()
     for root, directories, files in os.walk(top):
         directories.sort()
@@ -551,7 +551,7 @@ def network_open() -> str | None:
     """A public host the verifier can reach, or None: the separate verifier must have no network,
     and a provider that left it open would let a case fetch the original. Each host is tried once,
     half a second."""
-    import socket  # noqa: PLC0415
+    import socket
     for host, port in NETWORK_HOSTS:
         try:
             with socket.create_connection((host, port), timeout=0.5):
@@ -567,7 +567,7 @@ def free_space() -> dict:
 
 
 def low_on_disk() -> bool:
-    """Whether /tmp or /logs/verifier has less than RESERVE_BYTES free (what Harbor needs to fetch
+    """Whether /tmp or /logs/verifier has less than RESERVE_BYTES free (what is needed to fetch
     the results, and the results themselves); a filesystem that reports no size never is."""
     return any(0 <= free < RESERVE_BYTES for free in free_space().values())
 
@@ -606,7 +606,7 @@ def sort_attrs(html: bytes) -> bytes:
 
 
 def near_miss(got: dict, want: dict, counts: dict) -> None:
-    """Record, without scoring, how close a failed answer is to the expected one (QA 19 F2)."""
+    """Record, without scoring, how close a failed answer is to the expected one."""
     if got.get("stdout") is None:
         return
     mine = got["stdout"]
@@ -621,9 +621,9 @@ def near_miss(got: dict, want: dict, counts: dict) -> None:
             counts["equal_text_only"] += 1
 
 
-def fingerprint(program: Path, private: Path, prefix: list[str], owner: tuple[int, int] | None, deadline: float) -> dict:
-    """Run the delivered program on the fingerprint probes and count how many match the original's
-    answer (QA 04 F3): documents where the original and the spec model disagree, and the original's
+def fingerprint(program: Path, private: Path, prefix: list[str], ids: tuple[int, int] | None, cutoff_at: float) -> dict:
+    """Run the program on the fingerprint probes and count how many match the original's
+    answer: documents where the original and the spec model disagree, and the original's
     own out-of-scope commands. A renderer written from the specification matches few; the original,
     however re-encoded, matches all. Never scored. Private inputs missing is no error."""
     try:
@@ -633,15 +633,15 @@ def fingerprint(program: Path, private: Path, prefix: list[str], owner: tuple[in
         return {}
     result = {"total": 0, "matches_original": 0, "by_kind": {}}
     for probe in probes:
-        if probe["id"] not in answers or time.monotonic() > deadline - MARGIN_SEC:
+        if probe["id"] not in answers or time.monotonic() > cutoff_at - MARGIN_SEC:
             continue
         kind = probe.get("kind", "?").split(":", 1)[0]
         tally = result["by_kind"].setdefault(kind, {"total": 0, "matches": 0})
         try:
-            if owner is not None:
-                reset(owner[0])
-            got = runcases.run_case([str(program)], probe, prefix=prefix, owner=owner)
-        except Exception:  # noqa: BLE001
+            if ids is not None:
+                reset(ids[0])
+            got = runcases.run_case([str(program)], probe, prefix=prefix, ids=ids)
+        except Exception:
             continue
         result["total"] += 1
         tally["total"] += 1
@@ -651,14 +651,14 @@ def fingerprint(program: Path, private: Path, prefix: list[str], owner: tuple[in
     return result
 
 
-def grade(program: Path, private: Path, prefix: list[str], owner: tuple[int, int] | None,
-          deadline: float | None = None) -> dict:
-    """Run every private case through `prefix` (as `owner`) and count exact matches, starting no
-    case, and no reset, within MARGIN_SEC of `deadline` (time.monotonic(); by default TOTAL_SEC
+def run_cases(program: Path, private: Path, prefix: list[str], ids: tuple[int, int] | None,
+          cutoff_at: float | None = None) -> dict:
+    """Run every private case through `prefix` (as `ids`) and count exact matches, starting no
+    case, and no reset, within MARGIN_SEC of `cutoff_at` (time.monotonic(); by default TOTAL_SEC
     from now): the cases left count as failed. The cleanup after the last case is the caller's.
 
     A case that cannot be set up or started, runs too long or prints too much counts as failed:
-    what the submission does never makes the evaluation an error.
+    what the tree does never makes the evaluation an error.
 
     Raises:
         EvaluationError: Private inputs are unreadable.
@@ -679,8 +679,8 @@ def grade(program: Path, private: Path, prefix: list[str], owner: tuple[int, int
         metrics["recording"] = json.loads((private / "recording.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         pass
-    kind = lambda case: case.get("kind", "?")  # noqa: E731
-    area = lambda case: case.get("area", "cli")  # noqa: E731
+    kind = lambda case: case.get("kind", "?")
+    area = lambda case: case.get("area", "cli")
     metrics["by_area"] = {}
     for case in cases:
         metrics["by_kind"].setdefault(kind(case), {"total": 0, "run": 0, "passed": 0, "failed": 0})["total"] += 1
@@ -689,32 +689,32 @@ def grade(program: Path, private: Path, prefix: list[str], owner: tuple[int, int
     if not program.is_file() or not os.access(program, os.X_OK):
         metrics["notes"].append("/app/rebuild/carve is missing or not executable")
         cases = []
-    deadline = time.monotonic() + TOTAL_SEC if deadline is None else deadline
+    cutoff_at = time.monotonic() + TOTAL_SEC if cutoff_at is None else cutoff_at
     for case in cases:
-        if time.monotonic() > deadline - MARGIN_SEC:
+        if time.monotonic() > cutoff_at - MARGIN_SEC:
             metrics["stopped"] = "out of time; the remaining cases count as failed"
             break
         stop = None
-        for attempt in range(2):
-            try:  # whatever the submission did to this machine is its own case's failure, never an error
-                if owner is not None:
+        for retry in range(2):
+            try:  # whatever the tree did to this machine is its own case's failure, never an error
+                if ids is not None:
                     began = time.monotonic()
-                    reset(owner[0])
+                    reset(ids[0])
                     metrics["reset_seconds"] = round(metrics["reset_seconds"] + time.monotonic() - began, 3)
-                    if time.monotonic() > deadline - MARGIN_SEC:
+                    if time.monotonic() > cutoff_at - MARGIN_SEC:
                         stop = "out of time after a cleanup; the remaining cases count as failed"
                         break
-                    if low_on_disk():  # the host's or the log mount's disk, not the submission's: an error
-                        if runcases.own_use(owner[0]) == (0, 0):
-                            raise EvaluationError("Less than the reserved space free during grading, and the submission holds nothing")
+                    if low_on_disk():  # the host's or the log mount's disk, not the tree's: an error
+                        if runcases.own_use(ids[0]) == (0, 0):
+                            raise EvaluationError("Less than the reserved space free during the run, and the tree holds nothing")
                         stop = "out of disk space after a cleanup; the remaining cases count as failed"
                         break
-                got = runcases.run_case([str(program)], case, prefix=prefix, owner=owner)
+                got = runcases.run_case([str(program)], case, prefix=prefix, ids=ids)
             except EvaluationError:
                 raise
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 got = {"exit": None, "stdout": None, "error": f"run: {type(exc).__name__}", "seconds": 0.0, "cpu": 0.0}
-            if attempt:
+            if retry:
                 break
             if got.get("error") in RETRIED_LIMITS:
                 metrics["limit_retries"] += 1
@@ -773,7 +773,7 @@ def final_cleanup(uid: int, until: float) -> None:
         if time.monotonic() < until:
             remove_ipc(uid)
         runcases.clear_workspace()
-    except Exception:  # noqa: BLE001 - the results are written whatever is left
+    except Exception:
         pass
 
 
@@ -781,71 +781,71 @@ def main() -> int:
     """Run one evaluation in this fresh container.
 
     Returns:
-        Zero for a completed evaluation, including a failed submission; one for
+        Zero for a completed evaluation, including a failed tree; one for
         an evaluation error, which leaves no reward file.
     """
-    deadline = time.monotonic() + TOTAL_SEC
+    cutoff_at = time.monotonic() + TOTAL_SEC
     tests = Path(__file__).resolve().parent
     output = Path("/logs/verifier")
     output.mkdir(parents=True, exist_ok=True)
     for name in REWARD_FILES + ("metrics.json",):
         (output / name).unlink(missing_ok=True)
     code = 1
-    owner = None
+    ids = None
     try:
         if os.geteuid() != 0:
-            raise EvaluationError("Verifier must start as root to isolate submitted code")
-        for closed in (tests, output, Path("/logs/artifacts")):  # the agent's artifacts: never read, never written
+            raise EvaluationError("Verifier must start as root to isolate the program")
+        for closed in (tests, output, Path("/logs/artifacts")):  # /logs/artifacts: never read, never written
             if closed.is_dir() and not closed.is_symlink():
                 closed.chmod(0o700)
-        # The results' space, taken before any submitted code runs: written in place at the end,
+        # The results' space, taken before any the program runs: written in place at the end,
         # they need no new space, however full a run leaves the disk. The reward's is a file of its
         # own, renamed onto reward.txt only at the real end: until then no reward exists, so an
         # evaluation that ends early is an error, never a 0.
         (output / ".reward.tmp").write_text("--------")
         (output / "metrics.json").write_text(json.dumps({"status": "running"}).ljust(METRICS_SPACE) + "\n")
         start_space = free_space()
-        if low_on_disk():  # the environment's fault, before any submitted code: no reward at all
-            raise EvaluationError(f"Less than {RESERVE_BYTES} bytes free before grading: {start_space}")
-        try:  # the out-of-memory killer takes a submission's process, never this one
+        if low_on_disk():  # the environment's fault, before any the program: no reward at all
+            raise EvaluationError(f"Less than {RESERVE_BYTES} bytes free before the run: {start_space}")
+        try:  # the out-of-memory killer takes a tree's process, never this one
             Path("/proc/self/oom_score_adj").write_text("-1000")
         except OSError:
             pass
-        try:  # orphans of submitted code are reparented here and reaped (kill_user)
+        try:  # orphans of the program are reparented here and reaped (kill_user)
             ctypes.CDLL(None, use_errno=True).prctl(36, 1, 0, 0, 0)
         except (OSError, AttributeError):
             pass
-        # What arrived, read before anything of it runs: nothing, or less than the collect hook
-        # counted, is the copy failing (an error); a delivery the hook refused scores 0.
-        notes, refused_delivery = delivery(SUBMISSION)
-        record = delivery_record(SUBMISSION)
-        notes = notes + [f"delivery: {flag}" for flag in record.get("flags", [])]
+        # What arrived, read before anything of it runs: nothing, or less than the sweep
+        # counted, is the copy failing (an error); a tree the sweep refused scores 0.
+        notes, refused_tree = manifest(REBUILD)
+        record = manifest_record(REBUILD)
+        notes = notes + [f"sweep: {flag}" for flag in record.get("flags", [])]
         builds = upstream_builds()
         reachable = network_open()
-        if reachable is not None:  # the verifier must have no network; a provider that left it open grades nothing
-            raise EvaluationError(f"The verifier can reach {reachable}; it must grade with no network")
-        prefix, owner, limits = sandbox()
-        refused = "the delivery was over the stated limits: not graded" if refused_delivery else None
+        if reachable is not None:  # the verifier must have no network; a provider that left it open runs nothing
+            raise EvaluationError(f"The verifier can reach {reachable}; it must run with no network")
+        prefix, ids, limits = sandbox()
+        refused = "the tree was over the stated limits: not run" if refused_tree else None
         if refused is None:
             try:
-                seal(SUBMISSION)
-            except EvaluationError as exc:  # a submission that cannot be made safe to run is not run
-                refused = f"{exc}: not graded"
-        if refused is None:  # the original or another engine, fetched after the session: nothing of it is the agent's work
-            found = fetched_build(SUBMISSION, builds)
-            refused = f"{found}: not graded" if found else None
+                seal(REBUILD)
+            except EvaluationError as exc:  # a tree that cannot be made safe to run is not run
+                refused = f"{exc}: not run"
+        if refused is None:  # the original or another engine, fetched after the work ended: nothing of it was written here
+            found = fetched_build(REBUILD, builds)
+            refused = f"{found}: not run" if found else None
         LEFTOVER_DIRS[:] = sorted(set(LEFTOVER_DIRS) | set(writable_dirs()))
         program = identity(PROGRAM)
         if refused:
             metrics = {"cases_total": None, "cases_passed": 0, "reward": 0.0, "notes": [refused]}
         else:
-            metrics = grade(PROGRAM, tests / "private", prefix, owner, deadline)
-            metrics["fingerprint"] = fingerprint(PROGRAM, tests / "private", prefix, owner, deadline)
-            final_cleanup(owner[0], min(deadline, time.monotonic() + CLEANUP_SEC))
+            metrics = run_cases(PROGRAM, tests / "private", prefix, ids, cutoff_at)
+            metrics["fingerprint"] = fingerprint(PROGRAM, tests / "private", prefix, ids, cutoff_at)
+            final_cleanup(ids[0], min(cutoff_at, time.monotonic() + CLEANUP_SEC))
         metrics["notes"] = notes + metrics["notes"]
-        # Whether the pre-cap watchdog ended the session (the collect hook's record): for the audit
+        # Whether the timer ended the processes (the sweep's record): for review
         # and the run log only, never a term of the reward.
-        metrics["ended_by_watchdog"] = bool(record.get("ended_by_watchdog"))
+        metrics["ended_by_timer"] = bool(record.get("ended_by_timer"))
         # The reward first, in its reserved place, then renamed (no new space): nothing after it
         # can cost it.
         write_in_place(output / ".reward.tmp", f"{metrics['reward']:.6f}".encode())
@@ -853,13 +853,13 @@ def main() -> int:
         code = 0
         print(f"reward: {metrics['reward']:.6f} ({metrics['cases_passed']}/{metrics['cases_total']} cases)", flush=True)
         try:
-            metrics.update(limits=limits, submission=program, host=recorder.host(), free_at_start=start_space,
-                           free_at_end=free_space(), delivery_record=record)
+            metrics.update(limits=limits, program=program, host=recorder.host(), free_at_start=start_space,
+                           free_at_end=free_space(), manifest_record=record)
             write_in_place(output / "metrics.json",
                            (json.dumps(dict(metrics, status="completed"), indent=1, sort_keys=True) + "\n").encode())
-        except Exception:  # noqa: BLE001 - metadata only
+        except Exception:
             pass
-    except Exception as exc:  # noqa: BLE001 - every unexpected failure invalidates the evaluation
+    except Exception as exc:
         message = str(exc) if isinstance(exc, EvaluationError) else f"Verifier error: {type(exc).__name__}"
         print(f"evaluation error: {message}", flush=True)
         if code != 0:
@@ -870,8 +870,8 @@ def main() -> int:
             except OSError:
                 pass
     finally:
-        if owner is not None:  # nothing running or left behind while Harbor packs the results
-            final_cleanup(owner[0], time.monotonic() + CLEANUP_SEC)
+        if ids is not None:  # nothing running or left behind while the results are packed
+            final_cleanup(ids[0], time.monotonic() + CLEANUP_SEC)
         try:
             subprocess.run(["chmod", "-R", "a+rX", str(output)], check=False)
         except OSError:
