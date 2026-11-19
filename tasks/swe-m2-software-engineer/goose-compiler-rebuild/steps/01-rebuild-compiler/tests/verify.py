@@ -486,13 +486,9 @@ def main() -> int:
         except EvaluationError as exc:  # a submission that cannot be made safe to run is not run
             refused = f"{exc}: not graded"
         LEFTOVER_DIRS.extend(top for top in writable_dirs() if top not in LEFTOVER_DIRS)
+        # The marker-free hash is no reason to refuse: the reference solution builds the same
+        # compiler from source, with an all-zero marker, and may match it byte for byte.
         program = identity(SUBMISSION / "goose")
-        try:
-            original = json.loads((tests / "private" / "recording.json").read_text())["build"]["sha256_without_marker"]
-        except (OSError, ValueError, KeyError, TypeError):
-            original = None
-        if not refused and original and program.get("sha256_without_marker") == original:
-            refused = "/app/rebuild/goose is the original compiler, whatever its marker: not graded"
         marker = MARKER.read_text(encoding="utf-8").strip() if MARKER.is_file() else ""
         found = holds_marker(SUBMISSION, f"GOOSE-BUILD-MARKER-{marker}".encode()) if marker and not refused else None
         if found:  # the original compiler itself, delivered: nothing of it is the agent's work

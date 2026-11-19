@@ -366,8 +366,8 @@ Verifier and patch only; the cases are unchanged.
   runs as the names need; IPC objects go in one `ipcrm` per kind. A submission of more than 200,000
   entries or 4 GB of files is not run (reward 0, a note), so sealing and the marker search are
   bounded too, and the search can no longer run out of budget and pass a file it did not read
-  (07b S4). A `goose` whose marker-free hash is the recording compiler's is refused whatever its
-  marker.
+  (07b S4). A `goose` whose marker-free hash is the recording compiler's is not refused for that:
+  the reference solution builds the same compiler, with an all-zero marker, and may match it.
 - **Processes and memory (07b S1, S2).** Every pid of the uid is killed whatever its leader's state
   (a leader that exited with threads left reads Z), and the memory watchdog keeps watching after
   standard output closes.
