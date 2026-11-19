@@ -700,9 +700,23 @@ def record(tmp_path: Path, cases: list[dict]) -> tuple[subprocess.CompletedProce
     program.chmod(0o755)
     source = tmp_path / "cases.json"
     source.write_text(json.dumps({"cases": cases}))
-    done = subprocess.run([sys.executable, "-B", str(RECORDER), "record", str(program), str(source), str(tmp_path / "expected.json"),
-                           "--keep", str(tmp_path / "kept.json"), "--report", str(tmp_path / "report.json")],
-                          capture_output=True, text=True, timeout=300)
+    # recorder.py's own main(), with the runs' directories under tmp_path rather than /tmp/bpl-*, so
+    # that nothing else recording on this machine shares them.
+    driver = textwrap.dedent(f"""
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, {str(RECORDER.parent)!r})
+        import runcases
+        runcases.WORKSPACE = Path({str(tmp_path / 'runs' / 'bpl-case')!r})
+        runcases.HOME = Path({str(tmp_path / 'runs' / 'bpl-home')!r})
+        runcases.TEMP = Path({str(tmp_path / 'runs' / 'bpl-tmp')!r})
+        import recorder
+        sys.argv = ["recorder.py", "record", {str(program)!r}, {str(source)!r}, {str(tmp_path / 'expected.json')!r},
+                    "--keep", {str(tmp_path / 'kept.json')!r}, "--report", {str(tmp_path / 'report.json')!r}]
+        recorder.main()
+    """)
+    (tmp_path / "runs").mkdir(exist_ok=True)
+    done = subprocess.run([sys.executable, "-B", "-c", driver], capture_output=True, text=True, timeout=300)
     return done, tmp_path
 
 
