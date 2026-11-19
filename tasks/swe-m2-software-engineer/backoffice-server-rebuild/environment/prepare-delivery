@@ -1,8 +1,8 @@
 #!/bin/sh
 for _ in 1 2 3 4 5; do pkill -KILL -u dev 2>/dev/null || break; sleep 1; done
 if [ ! -d /app/server ] || [ -L /app/server ]; then exit 0; fi
-# Mark the delivery, an empty one too: the verifier takes an /app/server without this mark for a copy that failed (an
-# evaluation error), not for a submission. Whatever the agent left under the name is moved aside first, never followed.
+# Mark the delivery, an empty one too: an /app/server that arrives without this mark is a copy that failed, not a
+# delivery. Whatever was left under the name is moved aside first, never followed.
 if [ -e /app/server/.delivered ] || [ -L /app/server/.delivered ]; then
   aside=$(mktemp -d /app/.aside.XXXXXX) && mv -f /app/server/.delivered "$aside/" || exit 0
 fi
