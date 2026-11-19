@@ -1,0 +1,13 @@
+[project]
+name = "orange-chroma-service"
+version = "0.1.0"
+requires-python = ">=3.12,<3.14"
+dependencies = [
+    "chromadb==1.5.9",
+    "fastapi==0.162.5",
+    "uvicorn==0.54.0",
+    "opentelemetry-instrumentation-fastapi==0.65b0",
+]
+
+[tool.uv]
+package = false

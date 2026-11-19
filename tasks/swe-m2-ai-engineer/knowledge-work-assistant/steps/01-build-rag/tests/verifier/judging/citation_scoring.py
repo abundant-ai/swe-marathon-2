@@ -2,13 +2,45 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
+from pydantic_ai import ModelRetry, RunContext
+
 from verifier.contracts import ClaimAssessment, ClaimEvidence, EvaluationError, Judgment, SourceDocument
 from verifier.judging.schemas import CitationRating
 
 
+@dataclass(frozen=True)
+class CitationInputs:
+    """Trusted request evidence for validating structured citation assessments."""
+
+    citations: list[dict[str, str]]
+    documents: list[SourceDocument]
+
+
+def retry_invalid_citation(context: RunContext[CitationInputs], rating: CitationRating) -> CitationRating:
+    """Repair fabricated or mislocated evidence within the configured output budget.
+
+    Args:
+        context: Trusted quotations and original documents for this request.
+        rating: Provider output that passed the structural schema.
+
+    Returns:
+        The unchanged rating after request-specific evidence validation.
+
+    Raises:
+        ModelRetry: An evidence reference or excerpt does not match the inputs.
+    """
+    try:
+        finalize_citation_judgment(rating, "validation", context.deps.citations, context.deps.documents)
+    except EvaluationError as error:
+        raise ModelRetry(str(error)) from error
+    return rating
+
+
 def finalize_citation_judgment(rating: CitationRating, response_id: str,
                                citations: list[dict[str, str]], documents: list[SourceDocument]) -> Judgment:
-    """Apply the zero-support rule while retaining the judge's original proposal.
+    """Compute citation credit entirely from validated claim assessments.
 
     Args:
         rating: Validated structured output from the citation judge.
@@ -17,8 +49,8 @@ def finalize_citation_judgment(rating: CitationRating, response_id: str,
         documents: Authoritative originals supplied alongside those quotations.
 
     Returns:
-        Effective percentage and full claim audit. With no supported material
-        claims, the effective score is zero regardless of the proposed band.
+        Computed percentage and full claim audit: zero for no support or a central
+        contradiction, fifty for mixed support, and one hundred for full support.
 
     Raises:
         EvaluationError: The judge references an absent citation, mismatched
@@ -39,10 +71,20 @@ def finalize_citation_judgment(rating: CitationRating, response_id: str,
             quote = citation["quote"]
             if not quote.strip() or not (quote in original["content"] or quote in original["title"]):
                 raise EvaluationError("Citation judge evidence has no authoritative quotation provenance")
-            references.append(ClaimEvidence(evidence.citation_index, evidence.doc_id))
+            if not evidence.excerpt.strip():
+                raise EvaluationError("Citation judge evidence excerpt is blank")
+            allowed = (quote,) if claim.support == "supported" else (original["content"], original["title"])
+            if not any(evidence.excerpt in source for source in allowed):
+                raise EvaluationError("A supported claim needs an exact excerpt from the candidate quotation; context alone cannot supply support")
+            references.append(ClaimEvidence(evidence.citation_index, evidence.doc_id, evidence.excerpt))
         claims.append(ClaimAssessment(claim.claim, claim.importance, claim.support,
                                       tuple(references), claim.reason))
-    proposed_score = round(rating.score * 100)
     supported = any(claim.support == "supported" for claim in claims)
-    return Judgment(proposed_score if supported else 0, rating.reason, response_id,
-                    proposed_score, tuple(claims), None if supported else "no_supported_material_claims")
+    central_contradiction = any(claim.importance == "central" and claim.support == "contradicted" for claim in claims)
+    if not supported or central_contradiction:
+        adjustment = "no_supported_material_claims" if not supported else "central_claim_contradicted"
+        return Judgment(0, rating.reason, response_id, tuple(claims), adjustment)
+    incomplete = any(claim.support != "supported" for claim in claims)
+    score = 50 if incomplete else 100
+    return Judgment(score, rating.reason, response_id, tuple(claims),
+                    "unsupported_material_claims" if incomplete else None)

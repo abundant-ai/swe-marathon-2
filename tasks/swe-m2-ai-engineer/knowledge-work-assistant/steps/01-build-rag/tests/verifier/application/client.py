@@ -33,9 +33,11 @@ class ApplicationClient:
         self.root = app_dir.resolve()
         self.uid = uid
         self.environment = {
-            "PATH": f"{self.root}:/opt/runtime/bin:/usr/local/bin:/usr/bin:/bin",
+            "PATH": f"{self.root}:/opt/application/bin:/opt/runtime/bin:/usr/local/bin:/usr/bin:/bin",
             "HOME": str(self.root), "TMPDIR": "/tmp", "LANG": "C.UTF-8",
             "PYTHONPATH": "/opt/resources",
+            "ORANGE_CHROMA_HOST": os.environ.get("ORANGE_CHROMA_HOST", "chroma"),
+            "ORANGE_CHROMA_PORT": os.environ.get("ORANGE_CHROMA_PORT", "8000"),
             **dict(environment or {}),
         }
         self.inputs = self.root / f".verification-{uuid.uuid4().hex}"
@@ -44,15 +46,18 @@ class ApplicationClient:
             os.chown(self.inputs, uid, uid)
 
     def python(self) -> str:
-        """Choose the submitted venv interpreter, or the environment interpreter.
+        """Choose the submitted venv, supplied application runtime, or local Python.
 
         Returns:
             An executable path; its code runs only with the candidate identity.
         """
         candidate = self.root / ".venv/bin/python"
+        application = Path("/opt/application/bin/python")
         runtime = Path("/opt/runtime/bin/python")
         if candidate.exists():
             return str(candidate)
+        if application.exists():
+            return str(application)
         return str(runtime) if runtime.exists() else sys.executable
 
     def run(
@@ -91,6 +96,23 @@ class ApplicationClient:
             The bounded process result.
         """
         return self.run([str(self.root / "orange"), *args], stdin=stdin, timeout=timeout, require_success=require_success)
+
+    def bounded_cli(self, *args: str, max_retrieval_calls: int, timeout: int,
+                    stdin: str = "") -> CommandResult:
+        """Run one answer command under the verifier's retrieval-call ceiling.
+
+        Args:
+            args: Actual CLI arguments for one question.
+            max_retrieval_calls: Shared budget across all retrieval methods and children.
+            timeout: Whole-question deadline in seconds.
+            stdin: Optional JSON question input.
+
+        Returns:
+            Successful CLI output; violations raise CandidateFailure.
+        """
+        from verifier.application.budget import run_bounded_cli
+
+        return run_bounded_cli(self, args, limit=max_retrieval_calls, timeout=timeout, stdin=stdin)
 
     def probe(self, operation: str, payload: object = None, *, timeout: int = 180) -> dict[str, Any]:
         """Collect untrusted runtime observations, with no private inputs.
@@ -228,11 +250,20 @@ class ApplicationClient:
             raise CandidateFailure(f"Invalid artifact {path.name}: {exc}") from exc
 
     def clear_state(self) -> None:
-        """Remove transferred index state before checking a fresh application.
+        """Clear the isolated service and auxiliary state before a fresh check.
 
         Symlinks are unlinked without following their targets. The submitted
         source and development artifacts remain available.
         """
+        import chromadb
+        from chromadb.config import Settings
+
+        client = chromadb.HttpClient(host=self.environment["ORANGE_CHROMA_HOST"],
+                                    port=int(self.environment["ORANGE_CHROMA_PORT"]),
+                                    settings=Settings(anonymized_telemetry=False))
+        while collections := client.list_collections(limit=100):
+            for collection in collections:
+                client.delete_collection(collection.name)
         state = self.root / "state"
         if state.is_symlink() or state.is_file():
             state.unlink()

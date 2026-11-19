@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Mapping
 from string import Formatter
 
@@ -11,18 +12,24 @@ def split_prompt(template: str) -> tuple[str, str]:
     """Separate Markdown instructions from the input template.
 
     Args:
-        template: Judge Markdown with exactly one standalone Inputs heading.
+        template: Judge Markdown with one Inputs or Questions section boundary.
 
     Returns:
-        Static instructions and the unrendered evidence section.
+        Static instructions and the unrendered evidence section. A Questions
+        heading is retained so the author's input layout stays intact.
 
     Raises:
         ValueError: The boundary is missing, repeated, or leaves an empty section.
     """
-    sections = template.split("\n## Inputs\n")
-    if len(sections) != 2 or not all(section.strip() for section in sections):
-        raise ValueError("Judge template requires one nonempty Inputs section")
-    return sections[0].strip(), sections[1].strip()
+    boundaries = list(re.finditer(r"(?m)^## (Inputs|Questions)[ \t]*\n", template))
+    if len(boundaries) != 1:
+        raise ValueError("Judge template requires one Inputs or Questions boundary")
+    boundary = boundaries[0]
+    instructions = template[:boundary.start()].strip()
+    if not instructions or not template[boundary.end():].strip():
+        raise ValueError("Judge template requires nonempty instructions and inputs")
+    start = boundary.end() if boundary[1] == "Inputs" else boundary.start()
+    return instructions, template[start:].strip()
 
 
 def render_inputs(template: str, values: Mapping[str, object]) -> str:

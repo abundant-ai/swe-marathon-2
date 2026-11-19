@@ -6,22 +6,25 @@ import hashlib
 import json
 import subprocess
 import sys
+import os
 from pathlib import Path
 
 from task_paths import TASK_ROOT
 
 
-def test_probe_reads_large_document_and_chunk_collections(tmp_path: Path) -> None:
+def test_probe_reads_large_document_and_chunk_collections(tmp_path: Path, chroma_endpoint: dict[str, str]) -> None:
     """Verify complete body hashes and chunk owners across bounded read pages.
 
     Args:
         tmp_path: Isolated Chroma store containing more than 32,766 records per
             collection, reproducing the full-corpus verifier's previous failure.
+        chroma_endpoint: Production HTTP service enforcing 100-record read pages.
     """
     build = """
 import sys
+import os
 import chromadb
-client = chromadb.PersistentClient(path=sys.argv[1])
+client = chromadb.HttpClient(host=os.environ['ORANGE_CHROMA_HOST'], port=int(os.environ['ORANGE_CHROMA_PORT']))
 docs = client.create_collection('documents', embedding_function=None)
 chunks = client.create_collection('chunks', embedding_function=None)
 for offset in range(0, 33000, 1000):
@@ -36,6 +39,7 @@ for offset in range(0, 33000, 1000):
                             check=True, capture_output=True, text=True, timeout=180)
     snapshot = json.loads(result.stdout)
     expected = {str(i): hashlib.sha256(str(i).encode()).hexdigest() for i in range(33000)}
-    assert snapshot["hashes"] == expected
-    assert set(snapshot["chunk_owners"]) == set(expected)
-    assert len(snapshot["chunk_owners"]) == len(expected)
+    assert snapshot["body_digest"] == hashlib.sha256(json.dumps(expected, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    assert snapshot["document_count"] == len(expected)
+    assert snapshot["invalid_chunk_owners"] == 0
+    assert snapshot["chunk_count"] == len(expected)

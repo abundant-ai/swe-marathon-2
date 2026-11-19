@@ -244,6 +244,7 @@ def test_accuracy_uses_only_cli_and_forces_refresh(context: VerificationContext,
     """
     calls: list[tuple[str, ...]] = []
     original = context.app.cli
+    original_bounded = context.app.bounded_cli
 
     def cli(*args: str, **kwargs: Any) -> Any:
         """Record CLI arguments and delegate execution.
@@ -258,6 +259,19 @@ def test_accuracy_uses_only_cli_and_forces_refresh(context: VerificationContext,
         calls.append(args)
         return original(*args, **kwargs)
 
+    def bounded_cli(*args: str, **kwargs: Any) -> Any:
+        """Observe answer commands while preserving real budget enforcement.
+
+        Args:
+            args: Public command arguments.
+            kwargs: Retrieval budget and subprocess options.
+
+        Returns:
+            The real bounded child-process result.
+        """
+        calls.append(args)
+        return original_bounded(*args, **kwargs)
+
     def forbidden(*args: Any, **kwargs: Any) -> None:
         """Fail if accuracy tries to invoke an API probe.
 
@@ -268,6 +282,7 @@ def test_accuracy_uses_only_cli_and_forces_refresh(context: VerificationContext,
         raise AssertionError("Accuracy must use the CLI only")
 
     monkeypatch.setattr(context.app, "cli", cli)
+    monkeypatch.setattr(context.app, "bounded_cli", bounded_cli)
     monkeypatch.setattr(context.app, "probe", forbidden)
     assert accuracy.test_holdout_accuracy(context).status == "passed"
     assert calls[0][0] == "ingest" and "--refresh" in calls[0]
@@ -420,9 +435,11 @@ def test_each_retrieval_behavior_rejects_empty_results(context: VerificationCont
         method: Mode that silently returns no evidence.
     """
     path = context.app.root / "main.py"
-    path.write_text(path.read_text().replace(
-        "    if not STATE.exists():",
-        f"    if retrieval_method == {method!r}:\n        return RetrievedItem(passages=[])\n    if not STATE.exists():",
+    source = path.read_text()
+    anchor = '    data = client().get_collection("documents", embedding_function=None).get('
+    assert anchor in source
+    path.write_text(source.replace(
+        anchor, f"    if retrieval_method == {method!r}:\n        return RetrievedItem(passages=[])\n" + anchor,
     ))
     check = getattr(retrieval, f"test_{method}_behavior")
     with pytest.raises(CandidateFailure, match=f"{method} behavior"):

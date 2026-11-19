@@ -36,6 +36,14 @@ def scoring_environment() -> dict[str, str]:
     ("ORANGE_EVAL_QUESTION_CONCURRENCY", "-1"),
     ("ORANGE_EVAL_QUESTION_CONCURRENCY", "1.5"),
     ("ORANGE_EVAL_QUESTION_CONCURRENCY", "nan"),
+    ("ORANGE_EVAL_REQUIRED_WEIGHT", None),
+    ("ORANGE_EVAL_CONDITIONAL_WEIGHT", None),
+    ("ORANGE_EVAL_REQUIRED_WEIGHT", "nan"),
+    ("ORANGE_EVAL_CONDITIONAL_WEIGHT", "inf"),
+    ("ORANGE_EVAL_REQUIRED_WEIGHT", "-0.1"),
+    ("ORANGE_EVAL_CONDITIONAL_WEIGHT", "1.1"),
+    ("ORANGE_EVAL_CONDITIONAL_WEIGHT", "0.3"),
+    ("ORANGE_EVAL_REQUIRED_WEIGHT", "bad"),
     ("ORANGE_EVAL_QUALITY_WEIGHT", None),
     ("ORANGE_EVAL_QUALITY_WEIGHT", "not-a-number"),
     ("ORANGE_EVAL_ANSWER_WEIGHT", "nan"),
@@ -111,6 +119,9 @@ def test_report_records_effective_policy(context: VerificationContext) -> None:
     write_report(context.output_dir, context, result, None)
     report = json.loads((context.output_dir / "report.json").read_text())
     assert report["scoring_config"] == asdict(context.scoring)
+    assert report["citation_score_policy"].startswith("decision_only_v2: single_full_context_judge;")
+    assert report["citation_score_bands"] == [0, 0.5, 1]
+    assert not any(key.startswith("quotation_") for key in report)
 
 
 def test_failed_and_skipped_contracts_remain_in_denominator(scoring_environment: dict[str, str]) -> None:
@@ -130,7 +141,8 @@ def test_failed_and_skipped_contracts_remain_in_denominator(scoring_environment:
     assert result.metrics["reward"] == pytest.approx(.8 + .2 / 3)
 
 
-@pytest.mark.parametrize("variable", ["ORANGE_EVAL_ANSWER_WEIGHT", "ORANGE_EVAL_QUESTION_CONCURRENCY"])
+@pytest.mark.parametrize("variable", ["ORANGE_EVAL_ANSWER_WEIGHT", "ORANGE_EVAL_QUESTION_CONCURRENCY",
+                                      "ORANGE_EVAL_REQUIRED_WEIGHT", "ORANGE_EVAL_CONDITIONAL_WEIGHT"])
 def test_scoring_settings_are_not_forwarded_to_candidate(context: VerificationContext, monkeypatch: pytest.MonkeyPatch, variable: str) -> None:
     """Keep grading policy in the trusted verifier environment.
 

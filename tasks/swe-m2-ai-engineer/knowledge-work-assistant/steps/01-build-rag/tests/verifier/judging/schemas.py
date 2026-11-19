@@ -6,47 +6,20 @@ from typing import Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from verifier.contracts import AnswerVerdict, ClaimImportance, ClaimSupport
+from verifier.contracts import ClaimImportance, ClaimSupport
 
-ScoreBand = Literal[0.0, 0.25, 0.5, 0.75, 1.0]
+CitationScoreBand = Literal[0.0, 0.5, 1.0]
 
 
-class RatingBase(BaseModel):
-    """Shared strict rating fields and validation; subclasses specify the rubric."""
+class AssessmentBase(BaseModel):
+    """Shared explanation validation for decision-only citation outputs."""
 
     model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
 
-    score: ScoreBand = Field(description=(
-        "Choose the band justified by citation support in the full original documents. "
-        "0: no material claims are supported, or the cited context contradicts the central answer. "
-        "0.25: only a few minor claims are supported; most material claims lack support or use misleading quotes. "
-        "0.5: some central claims are supported, but substantial gaps or misrepresentations remain. "
-        "0.75: most material claims are supported in context, with minor coverage gaps. "
-        "1: every material factual claim is supported by the cited passages in their full original context. "
-        "Irrelevant quotes do not count. Justify the selected band in reason."
-    ))
     reason: str = Field(min_length=1, description=(
-        "Justify the selected citation band using supported, unsupported, or contradicted claims "
+        "Explain the supported, unsupported, or contradicted claims "
         "and the relevant document IDs. Explain any misleading quotation in its original context."
     ))
-
-    @field_validator("score", mode="before")
-    @classmethod
-    def require_numeric_band(cls, value: object) -> object:
-        """Reject boolean and string values before validating the score enum.
-
-        Args:
-            value: Raw JSON score value.
-
-        Returns:
-            The numeric value for literal-band validation.
-
-        Raises:
-            ValueError: The provider supplied a nonnumeric score.
-        """
-        if isinstance(value, bool) or not isinstance(value, (int, float)):
-            raise ValueError("score must be a numeric band")
-        return value
 
     @field_validator("reason")
     @classmethod
@@ -68,23 +41,29 @@ class RatingBase(BaseModel):
 
 
 class CitationEvidence(BaseModel):
-    """Reference an exact supplied quotation without asking the model to copy it."""
+    """Pin the assessment to a verifiable excerpt of the candidate's quotation."""
 
     model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
 
     citation_index: int = Field(ge=0, description="Zero-based index into the supplied citations array.")
     doc_id: str = Field(min_length=1, description="Document ID of that same supplied citation; do not invent IDs.")
+    excerpt: str = Field(min_length=1, description=(
+        "Exact contiguous text establishing this assessment. For a supported claim, copy it from the "
+        "candidate's quotation at citation_index, never from uncited text elsewhere in the original. "
+        "For contradicted or unverified claims, an exact excerpt of the original document is allowed."
+    ))
 
 
 class CitationClaim(BaseModel):
-    """Assessment of one material claim, before selecting an overall citation band."""
+    """Assessment of one material claim; Python computes the overall score."""
 
     model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
 
     claim: str = Field(min_length=1, description=(
         "One atomic material factual claim actually made in the candidate answer. "
         "Include factual additions and role, date, entity, or number qualifications. "
-        "Exclude generic topic overlap, politeness, and facts absent from the answer."
+        "Exclude generic topic overlap, politeness, facts absent from the answer, and assertions "
+        "explicitly retracted and replaced by a correction. Assess the corrected assertion."
     ))
     importance: ClaimImportance = Field(description=(
         "central if needed to answer the question; secondary for another substantive factual assertion. "
@@ -135,51 +114,78 @@ class CitationClaim(BaseModel):
         return self
 
 
-class CitationRating(RatingBase):
-    """Provider-proposed band plus claim assessments used for deterministic enforcement."""
+class CitationRating(AssessmentBase):
+    """Claim decisions only; the verifier owns all numerical citation scoring."""
 
     claims: list[CitationClaim] = Field(description=(
-        "Assess every material factual claim actually made in the answer before choosing the score. "
+        "Assess every material factual claim actually made in the answer. "
         "An empty list is appropriate only when the answer makes no material factual claims. "
-        "If no claim is supported, the citation score must be zero; the verifier enforces this rule."
+        "Return claim assessments and an explanation, without a numerical score or band. "
+        "The verifier computes citation credit from the final support decisions."
     ))
 
 
-class AnswerRating(RatingBase):
-    """Answer correctness rating with a verdict controlling citation eligibility."""
+class CriterionRating(BaseModel):
+    """One factual decision; arithmetic and applicability are checked by Python."""
 
-    score: ScoreBand = Field(description=(
-        "Choose the band justified by accuracy, completeness, and relevance; consider material facts, not answer length. "
-        "0: incorrect, irrelevant, or no correct substance addressing the question. "
-        "0.25: a few relevant facts are correct, but the central answer is absent or largely wrong. "
-        "0.5: a meaningful part of the central answer is correct, with major omissions, errors, or unsupported additions. "
-        "0.75: the central answer is correct and mostly complete, with only minor omissions or inaccuracies. "
-        "1: accurate, complete, relevant, and free of unsupported material factual additions. "
-        "Validate extra factual claims against the authoritative source documents. "
-        "Do not penalize relevant additions supported by those documents merely because the reference omits them. "
-        "Absence from the reference alone does not establish that a claim is unsupported; "
-        "materially contradicting additions cap the score at 0.5. Do not penalize equivalent wording. "
-        "Justify the selected band in reason."
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
+
+    rubric_index: int = Field(ge=0, description="Zero-based index in the supplied must-have list; assess every index exactly once.")
+    status: Literal["passed", "failed", "not_applicable"] = Field(description=(
+        "For a required point: passed means the candidate states the substantive fact or an accepted alternative; "
+        "failed means wrong or absent. Required points cannot be not_applicable. "
+        "For an optional condition: passed means a present claim satisfies it; failed means a present claim "
+        "demonstrably violates it; not_applicable means the claim is absent or cannot be checked against supplied facts. "
+        "An unverified addition is not a demonstrated error. Never award credit for a fact present only in the reference."
+    ))
+    candidate_quote: str = Field(description=(
+        "Exact contiguous excerpt from the candidate answer bearing on this decision. "
+        "Required for passed decisions and failed optional conditions; empty for an omitted required fact "
+        "or an absent optional claim. Do not quote the reference as candidate evidence."
     ))
     reason: str = Field(min_length=1, description=(
-        "Justify the selected answer band with the decisive supported facts, omissions, or errors, "
-        "citing relevant document IDs. Distinguish contradictions from claims the supplied evidence does not establish."
+        "Explain the factual match, omission, or contradiction for this one point, accepting paraphrases. "
+        "Distinguish a false claim from an unverified one. Do not assess style or optional coverage."
     ))
-    verdict: AnswerVerdict = Field(description=(
-        "Use incorrect for score 0, partial for 0.25/0.5/0.75, and correct for 1."
+    duplicate_of: int | None = Field(description=(
+        "Index of an earlier failed point assessing exactly the same false assertion, otherwise null. "
+        "This is audit metadata; every applicable rubric item still counts in scoring. "
+        "Only failed optional points can be duplicates. Reuse its exact candidate_quote; "
+        "independent errors in the same sentence are not duplicates."
     ))
 
-    @model_validator(mode="after")
-    def check_verdict_score(self) -> Self:
-        """Match incorrect, partial, and correct verdicts to their score bands.
+    @field_validator("reason")
+    @classmethod
+    def reject_blank_reason(cls, value: str) -> str:
+        """Reject empty reasoning in provider assessments.
+
+        Args:
+            value: Provider explanation for one criterion.
 
         Returns:
-            The validated answer rating.
+            Original nonblank explanation.
 
         Raises:
-            ValueError: The verdict and zero/nonzero score disagree.
+            ValueError: The explanation is whitespace only.
         """
-        expected = "incorrect" if self.score == 0 else "correct" if self.score == 1 else "partial"
-        if self.verdict != expected:
-            raise ValueError("incorrect requires 0, partial requires 0.25/0.5/0.75, and correct requires 1")
-        return self
+        if not value.strip():
+            raise ValueError("Criterion reason must contain text")
+        return value
+
+
+class AnswerRating(BaseModel):
+    """Structured factual decisions; the model cannot choose an aggregate score."""
+
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
+
+    criteria: list[CriterionRating] = Field(min_length=1, description=(
+        "Assess every supplied rubric index exactly once. Required indices are trusted metadata. "
+        "Required and applicable conditional items are scored in separate groups. "
+        "Passed conditional items earn credit; not_applicable items are excluded from that group. "
+        "Return per-item decisions only, without a numerical score or overall verdict. "
+        "The verifier calculates the aggregate accuracy and verdict."
+    ))
+    unverified_claims: list[str] = Field(description=(
+        "Exact excerpts of material candidate claims the supplied rubric and reference cannot establish or refute. "
+        "These are audit notes, not factual errors or invented additional criteria. Use an empty list if none."
+    ))

@@ -1,0 +1,26 @@
+{
+  "CollaborateForce:content:13": {
+    "expected_answer_score": 1.0,
+    "reason": "The candidate explicitly identifies CForceAIX as the subject of the extra comparison. This is a qualified change of subject, not a false rename or attribution to CollaborateForce. Irrelevant but true context is not a factual error."
+  },
+  "EdgeForce:content:4": {
+    "expected_answer_score": 1.0,
+    "reason": "The source names QA as the reporting channel, but does not establish that customers never reported the same issues; one record explicitly describes affected users. The candidate accurately reports release issues without naming a contradictory reporter. The source audit inferred exclusivity that the evidence does not establish."
+  },
+  "KnowledgeForce:content:1": {
+    "expected_answer_score": 0.25,
+    "reason": "The question specifically asks for Marketing Manager suggestions. The candidate supplies an unqualified list including three proposals attributed to other roles. Calling them report feedback does not explicitly identify those items as coming from other roles or broaden the scope; each distinct author-role misattribution counts once, consistently with CollaborateForce:content:11. This overrides the source audit’s permissive interpretation, not the source facts."
+  },
+  "ProposalForce:content:4": {
+    "expected_answer_score": 0.14285714285714285,
+    "reason": "The unqualified CPO-answer list attributes six independently documented colleagues’ suggestions to the CPO. Merely calling them document feedback does not separate the broader team contributions. The repaired rubric contains one factual point per attribution; the data-driven marketing core passes."
+  },
+  "SecurityForce:content:1": {
+    "expected_answer_score": 0.16666666666666666,
+    "reason": "The direct answer to the Marketing Manager question includes five proposals from other documented roles. These are five distinct factual attributions; split the former combined guard instead of treating all five as one error."
+  },
+  "VizForce:content:9": {
+    "expected_answer_score": 0.14285714285714285,
+    "reason": "The core user-feedback suggestion is correct. AWS/Azure, algorithm details, accessibility, plugin constraints, quarterly audits, and partnerships are six distinct proposals from non-Engineering-Lead roles, as shown by the original messages and employee IDs. The original audit bundled these attribution errors."
+  }
+}

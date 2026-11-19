@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from math import isfinite
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Literal, Mapping, Protocol, TypedDict
 
@@ -40,12 +41,17 @@ class VerificationResult:
 
 @dataclass(frozen=True)
 class HeldOutCase:
-    """A private question, reference, and complete dataset-selected source records."""
+    """Private question, factual rubric, and retained source provenance for audits."""
 
     question_id: str
     question: str
     reference: str | list[str]
     documents: tuple[SourceDocument, ...] = ()
+    answer_facts: tuple[str, ...] = ()
+    question_type: str = "basic"
+    evidence_mode: Literal["gold", "reference_only", "unanswerable"] = "gold"
+    rubric: tuple[str, ...] = ()
+    required_rubric_indices: tuple[int, ...] = ()
 
 
 class SourceDocument(TypedDict):
@@ -67,6 +73,7 @@ class ClaimEvidence:
 
     citation_index: int
     doc_id: str
+    excerpt: str
 
 
 @dataclass(frozen=True)
@@ -82,27 +89,47 @@ class ClaimAssessment:
 
 @dataclass(frozen=True)
 class Judgment:
-    """Citation rating after enforcement, retaining the model proposal and claims."""
+    """Computed citation score and the final claim assessments used to derive it."""
 
     score: int
     reason: str
     response_id: str = ""
-    proposed_score: int | None = None
     claims: tuple[ClaimAssessment, ...] = ()
-    adjustment: Literal["no_supported_material_claims"] | None = None
+    adjustment: Literal["no_supported_material_claims", "central_claim_contradicted", "unsupported_material_claims"] | None = None
 
 
 AnswerVerdict = Literal["correct", "partial", "incorrect"]
 
 
 @dataclass(frozen=True)
-class AnswerJudgment:
-    """Answer rating and explicit verdict controlling citation eligibility."""
+class CriterionAssessment:
+    """One checked rubric decision, with exact candidate evidence for auditing."""
 
-    score: int
+    rubric_index: int
+    status: Literal["passed", "failed", "not_applicable"]
+    candidate_quote: str
+    reason: str
+    duplicate_of: int | None = None
+
+
+@dataclass(frozen=True)
+class AnswerJudgment:
+    """Computed criterion percentage, audit decisions, and citation eligibility."""
+
+    score: float
     reason: str
     verdict: AnswerVerdict
     response_id: str = ""
+    criteria: tuple[CriterionAssessment, ...] = ()
+    passed_required: int = 0
+    required_count: int = 0
+    violated_optional: int = 0
+    unverified_claims: tuple[str, ...] = ()
+    passed_conditional: int = 0
+    conditional_count: int = 0
+    not_applicable_conditional: int = 0
+    required_fraction: float = 0.0
+    conditional_fraction: float | None = None
 
     def __post_init__(self) -> None:
         """Reject invalid verdicts and scores before they can control grading.
@@ -113,10 +140,12 @@ class AnswerJudgment:
         """
         if self.verdict not in ("correct", "partial", "incorrect"):
             raise EvaluationError("Answer judge returned an invalid verdict")
-        if type(self.score) is not int or not 0 <= self.score <= 100:
+        if type(self.score) not in (int, float) or not isfinite(self.score) or not 0 <= self.score <= 100:
             raise EvaluationError("Answer judge returned an invalid score")
         if (self.verdict == "incorrect") != (self.score == 0):
             raise EvaluationError("Answer judge score and verdict disagree")
+        if (self.verdict == "correct") != (self.score == 100):
+            raise EvaluationError("Full answer credit and correct verdict disagree")
         if not isinstance(self.reason, str) or not self.reason.strip():
             raise EvaluationError("Answer judge returned an invalid reason")
 
@@ -198,6 +227,7 @@ class VerificationContext:
     output_dir: Path
     scoring: ScoringConfig
     generation: GenerationConfig
+    ingestion_timeout_sec: int
     completed: list[CheckResult] = field(default_factory=list)
 
 

@@ -6,25 +6,35 @@ import argparse
 import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from verifier.contracts import Judge
 
 import modal
 
 app = modal.App("orange-judge-calibration")
 
 
-def run_calibration(fixtures: dict[str, Any], repeats: int) -> dict[str, Any]:
+def run_calibration(fixtures: dict[str, Any], repeats: int, runtime: Path | None = None,
+                    *, tracing: bool = False, judge: Judge | None = None) -> dict[str, Any]:
     """Execute live judgments on Modal with a fresh controlled replay workspace.
 
     Args:
         fixtures: Private questions, original sources, and pre-labeled answer variants.
         repeats: Independent repetitions of each variant; no judge result caching.
+        runtime: Local tests directory, or None for the isolated Modal image.
+        tracing: Explicit authorization to emit hosted Logfire traces. A saved
+            token alone does not enable tracing.
+        judge: Optional test-client injection using the structured judge contract.
+            None uses the production PydanticAI Responses API judge.
 
     Returns:
         Judgments, actual call sequence, policy, prompt hashes, and any run error.
         This measures judge behavior, not retrieval or candidate implementation quality.
     """
     import hashlib
+    from contextlib import nullcontext
     import time
     from contextvars import ContextVar
     import os
@@ -34,29 +44,42 @@ def run_calibration(fixtures: dict[str, Any], repeats: int) -> dict[str, Any]:
     from dataclasses import asdict
     from datetime import datetime, timezone
 
-    sys.path.insert(0, "/opt/calibration")
+    runtime = runtime or Path("/opt/calibration")
+    sys.path.insert(0, str(runtime))
     from verifier.application.client import ApplicationClient
     from verifier.checks.test_accuracy import test_holdout_accuracy
-    from verifier.config import load_generation_config, load_scoring_config
-    from verifier.contracts import AnswerJudgment, HeldOutCase, Judgment, SourceDocument, VerificationContext
+    from verifier.config import load_ingestion_timeout, load_generation_config, load_scoring_config
+    from verifier.contracts import AnswerJudgment, HeldOutCase, Judge, Judgment, SourceDocument, VerificationContext
     from verifier.judging.client import (
         ANSWER_PROMPT_SHA256, ANSWER_SCHEMA_SHA256, CITATION_PROMPT_SHA256,
-        CITATION_SCHEMA_SHA256, HerbJudge, JUDGE_MODEL, JUDGE_REASONING,
+        CITATION_SCHEMA_SHA256, KnowledgeJudge, JUDGE_MODEL, JUDGE_REASONING,
     )
 
-    os.environ["ORANGE_JUDGE_API_KEY"] = os.environ["OPENAI_API_KEY"]
+    if judge is None and "ORANGE_JUDGE_API_KEY" not in os.environ:
+        os.environ["ORANGE_JUDGE_API_KEY"] = os.environ["OPENAI_API_KEY"]
+    if tracing:
+        import logfire
+
     calls: list[dict[str, Any]] = []
     active_case: ContextVar[str] = ContextVar("calibration_case")
     concurrency = {"active": 0, "peak": 0}
 
-    class ObservedJudge(HerbJudge):
+    class ObservedJudge(Judge):
         """Record real provider calls while retaining production judgment behavior."""
+
+        def __init__(self, delegate: Judge) -> None:
+            """Bind the production or explicitly selected calibration provider.
+
+            Args:
+                delegate: Judge implementing the same structured output contracts.
+            """
+            self.delegate = delegate
 
         async def grade_async(self, case: HeldOutCase, answer: str) -> AnswerJudgment:
             """Judge an answer and record its band and trace ID.
 
             Args:
-                case: Private reference and complete source records.
+                case: Private reference and reviewed question-specific rubric.
                 answer: Controlled answer variant.
 
             Returns:
@@ -67,7 +90,13 @@ def run_calibration(fixtures: dict[str, Any], repeats: int) -> dict[str, Any]:
             concurrency["active"] += 1
             concurrency["peak"] = max(concurrency["peak"], concurrency["active"])
             try:
-                result = await super().grade_async(case, answer)
+                with (logfire.span("swem2.knowledge-work-assistant.test_accuracy.jugde.answer",
+                                   question_id=case.question_id, question_type=case.question_type,
+                                   question=case.question, reference=case.reference, rubric=case.rubric,
+                                   answer=answer) if tracing else nullcontext()) as span:
+                    result = await self.delegate.grade_async(case, answer)
+                    if span is not None:
+                        span.set_attribute("judgment", asdict(result))
             finally:
                 concurrency["active"] -= 1
             calls.append({"kind": "answer", "case_id": case.question_id, "started": started, "finished": time.monotonic(), **asdict(result)})
@@ -94,7 +123,12 @@ def run_calibration(fixtures: dict[str, Any], repeats: int) -> dict[str, Any]:
             concurrency["active"] += 1
             concurrency["peak"] = max(concurrency["peak"], concurrency["active"])
             try:
-                result = await super().grade_citations_async(question, answer, citations, documents)
+                with (logfire.span("swem2.knowledge-work-assistant.test_accuracy.jugde.citation",
+                                   question_id=case_id, question=question, answer=answer,
+                                   citations=citations, documents=documents) if tracing else nullcontext()) as span:
+                    result = await self.delegate.grade_citations_async(question, answer, citations, documents)
+                    if span is not None:
+                        span.set_attribute("judgment", asdict(result))
             finally:
                 concurrency["active"] -= 1
             calls.append({"kind": "citation", "case_id": case_id, "started": started, "finished": time.monotonic(), **asdict(result)})
@@ -103,7 +137,7 @@ def run_calibration(fixtures: dict[str, Any], repeats: int) -> dict[str, Any]:
                 print(result.reason, flush=True)
             return result
 
-    settings = tomllib.loads(Path("/opt/calibration/task.toml").read_text())["verifier"]["env"]
+    settings = tomllib.loads((runtime / "task.toml" if (runtime / "task.toml").exists() else runtime.parents[2] / "task.toml").read_text())["verifier"]["env"]
     os.environ["ORANGE_JUDGE_OUTPUT_RETRIES"] = settings["ORANGE_JUDGE_OUTPUT_RETRIES"]
     policy = load_scoring_config(settings)
     cases: list[HeldOutCase] = []
@@ -113,9 +147,14 @@ def run_calibration(fixtures: dict[str, Any], repeats: int) -> dict[str, Any]:
               for doc in [*entry["documents"], *entry.get("citation_documents", [])]}
     for repeat in range(repeats):
         for entry in fixtures["cases"]:
+            if not entry.get("rubric") or not entry.get("required_rubric_indices"):
+                raise ValueError("Calibration fixtures must include reviewed rubrics and required indices")
             for variant in entry["variants"]:
                 identity = f"{entry['question_id']}/{variant['name']}/repeat-{repeat + 1}"
-                cases.append(HeldOutCase(identity, entry["question"], entry["reference"], tuple(entry["documents"])))
+                cases.append(HeldOutCase(identity, entry["question"], entry["reference"], tuple(entry["documents"]),
+                                         tuple(entry.get("answer_facts", [])), entry.get("question_type", "basic"),
+                                         entry.get("evidence_mode", "gold"), tuple(entry["rubric"]),
+                                         tuple(entry["required_rubric_indices"])))
                 answers.append({"question_id": len(answers), "question": entry["question"],
                                 "answer": variant["answer"], "citations": variant["citations"]})
                 labels[identity] = {"source_question_id": entry["question_id"], "repeat": repeat + 1,
@@ -129,6 +168,18 @@ def run_calibration(fixtures: dict[str, Any], repeats: int) -> dict[str, Any]:
         corpus_path = root / "corpus.json"
         corpus_path.write_text(json.dumps(list(corpus.values())))
         (workspace / "answers.json").write_text(json.dumps(answers))
+        (workspace / "main.py").write_text('''async def retrieve(query: str, retrieval_method: str = "hybrid") -> None:
+    """Expose an unused hook so the replay CLI can use production instrumentation.
+
+    Args:
+        query: Unused; this calibration replays previously generated answers.
+        retrieval_method: Unused compatibility parameter.
+
+    Returns:
+        None. No retrieval or application-performance claim is made by replay.
+    """
+    return None
+''')
         # A deterministic CLI transports labeled variants through the real accuracy
         # check. It deliberately makes no claim to implement a retrieval system.
         launcher = workspace / "orange"
@@ -146,10 +197,12 @@ else:
 ''')
         launcher.chmod(0o755)
         context = VerificationContext(ApplicationClient(workspace), corpus_path, tuple(cases),
-                                      ObservedJudge(), output, policy, load_generation_config(settings))
+                                      ObservedJudge(judge or KnowledgeJudge(answer_scoring=policy.answer_criteria)), output, policy, load_generation_config(settings), load_ingestion_timeout(settings))
         error = None
         try:
-            test_holdout_accuracy(context)
+            outcome = test_holdout_accuracy(context)
+            if outcome.metrics["invalid_answers"] or outcome.metrics["unassigned_answer_records"]:
+                raise RuntimeError("Calibration replay failed to transport all labelled answers")
         except Exception as exc:
             error = type(exc).__name__
             cause = exc.__cause__
@@ -157,8 +210,9 @@ else:
                 error += f": {type(cause).__name__} status={getattr(cause, 'status_code', None)}"
         path = output / "judgments.json"
         judgments = json.loads(path.read_text()) if path.exists() else []
-        return {"timestamp": datetime.now(timezone.utc).isoformat(), "model": JUDGE_MODEL,
-                "reasoning": JUDGE_REASONING, "policy": asdict(policy), "repeats": repeats,
+        return {"timestamp": datetime.now(timezone.utc).isoformat(), "model": getattr(judge, "model_name", JUDGE_MODEL),
+                "reasoning": getattr(judge, "reasoning", JUDGE_REASONING),
+                "transport": getattr(judge, "transport_name", "openai_responses_pydantic_ai"), "policy": asdict(policy), "repeats": repeats,
                 "peak_concurrent_requests": concurrency["peak"], "expected_rows": len(cases), "labels": labels, "calls": calls, "judgments": judgments,
                 "error": error, "fixture_sha256": hashlib.sha256(json.dumps(fixtures, sort_keys=True).encode()).hexdigest(),
                 "hashes": {"answer_prompt": ANSWER_PROMPT_SHA256, "answer_schema": ANSWER_SCHEMA_SHA256,

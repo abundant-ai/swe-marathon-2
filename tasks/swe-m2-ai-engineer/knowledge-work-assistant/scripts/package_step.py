@@ -15,6 +15,20 @@ from harbor.models.task.task import Task
 
 from task_paths import EXPERIMENT_ROOT, TASK_ROOT
 
+
+def file_hash(path: Path) -> str:
+    """Stream a runtime artifact into SHA-256 without loading a multi-GB corpus.
+
+    Args:
+        path: Existing regular file selected for packaging.
+
+    Returns:
+        Lowercase SHA-256 digest of its bytes.
+    """
+    with path.open("rb") as stream:
+        return hashlib.file_digest(stream, "sha256").hexdigest()
+
+
 ROOT_FILES = ("task.toml",)
 INPUT_DIRS = ("environment", "steps/01-build-rag")
 EXCLUDED_PARTS = {".venv", "__pycache__", ".pytest_cache", ".DS_Store", "experiment"}
@@ -36,6 +50,7 @@ def selected_files(task_root: Path) -> list[Path]:
         "environment/data/corpus.json", "environment/resources/README.md",
         "steps/01-build-rag/tests/private/cases.json",
         "steps/01-build-rag/tests/private/corpus.json",
+        "steps/01-build-rag/tests/private/rubrics.json",
     ):
         if not (task_root / required).is_file():
             raise ValueError(f"Prepare task data first; missing {required}")
@@ -46,7 +61,7 @@ def selected_files(task_root: Path) -> list[Path]:
                 continue
             if path.is_symlink():
                 raise ValueError(f"Bundle inputs cannot be symlinks: {path}")
-            if path.is_file() and path.suffix != ".pyc":
+            if path.is_file() and path.suffix != ".pyc" and ".pending." not in path.name:
                 files.append(path)
     return sorted(files)
 
@@ -73,13 +88,27 @@ def package_step(task_root: Path, destination: Path) -> dict[str, Any]:
     task_slug = config.task.name.rsplit("/", 1)[-1]
     files = selected_files(task_root)
     inputs = {str(path.relative_to(task_root)): path for path in files}
+    # Both isolated Harbor environments start their own protected CPU database.
+    service = task_root / "common/chroma-service"
+    for required in ("Dockerfile", "pyproject.toml", "uv.lock", "orange_chroma/server.py"):
+        if not (service / required).is_file():
+            raise ValueError(f"Missing protected Chroma service input: {required}")
+    for path in sorted(service.rglob("*")):
+        if EXCLUDED_PARTS.intersection(path.relative_to(service).parts):
+            continue
+        if path.is_symlink():
+            raise ValueError(f"Service inputs cannot be symlinks: {path}")
+        if path.is_file() and path.suffix != ".pyc":
+            for target_context in ("environment", "steps/01-build-rag/tests"):
+                inputs[str(Path(target_context) / "chroma-service" / path.relative_to(service))] = path
+    inputs["steps/01-build-rag/tests/docker-compose.yaml"] = task_root / "environment/docker-compose.yaml"
     # Harbor builds the verifier with tests/ as its isolated Docker context.
     # Stage identical GPU inputs there without maintaining a second source copy.
     for path in files:
         relative = path.relative_to(task_root)
-        if relative.parts[0] == "environment" and relative.name not in {"Dockerfile", ".dockerignore"}:
+        if relative.parts[0] == "environment" and relative.name not in {"Dockerfile", ".dockerignore", "docker-compose.yaml"}:
             inputs[str(Path("steps/01-build-rag/tests/gpu-runtime") / relative.relative_to("environment"))] = path
-    hashes = {name: hashlib.sha256(path.read_bytes()).hexdigest() for name, path in inputs.items()}
+    hashes = {name: file_hash(path) for name, path in inputs.items()}
     digest = hashlib.sha256(json.dumps(hashes, sort_keys=True).encode()).hexdigest()
     staging = destination / "bundles" / digest[:12] / task_slug
     staging.mkdir(parents=True, exist_ok=True)
@@ -103,7 +132,7 @@ def package_step(task_root: Path, destination: Path) -> dict[str, Any]:
                 with path.open("rb") as stream:
                     bundle.addfile(entry, stream)
     archive.chmod(0o600)
-    archive_hash = hashlib.sha256(archive.read_bytes()).hexdigest()
+    archive_hash = file_hash(archive)
     archive.with_suffix(archive.suffix + ".sha256").write_text(f"{archive_hash}  {archive.name}\n")
     return {"task_path": str(staging.resolve()), "archive": str(archive.resolve()), "archive_sha256": archive_hash, "content_sha256": digest, "files": len(hashes), "bytes": archive.stat().st_size}
 

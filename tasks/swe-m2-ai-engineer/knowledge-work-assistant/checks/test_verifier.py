@@ -1,4 +1,4 @@
-"""Controlled application and judge tests; these do not establish HERB accuracy."""
+"""Controlled application and judge tests; these do not establish dataset accuracy."""
 
 from __future__ import annotations
 
@@ -17,11 +17,10 @@ from typing import Any
 import pytest
 
 from verifier.application.client import ApplicationClient
-from verifier.config import load_generation_config, load_scoring_config
+from verifier.config import load_ingestion_timeout, load_generation_config, load_scoring_config
 from verifier.contracts import Judge
 from verifier.contracts import AnswerJudgment, CandidateFailure, CheckResult, EvaluationError, HeldOutCase, Judgment, SourceDocument, RegisteredCheck, VerificationContext
-from verifier.judging.client import HERB_PROMPT
-from prepare_data import SAMPLE_FRACTION, SAMPLE_SEED, collect_records
+from prepare_data import SAMPLE_FRACTION, SAMPLE_SEED
 from verifier.checks import test_cli as cli, test_interfaces as interfaces, test_progress as progress
 from verifier.checks import support
 from verifier.checks import test_accuracy as accuracy
@@ -29,6 +28,7 @@ from verifier.checks import test_storage as storage
 from verifier import runner as verifier
 from verifier import checks as requirement_package
 from verifier.inputs import load_inputs
+from verifier.dataset import QUESTION_COUNT
 from verifier.reporting import write_report
 
 
@@ -66,14 +66,15 @@ class ExactJudge(Judge):
 
 
 @pytest.fixture
-def context(tmp_path: Path) -> VerificationContext:
+def context(tmp_path: Path, chroma_endpoint: dict[str, str]) -> VerificationContext:
     """Create an isolated fixture application, its dev artifacts, and two cases.
 
     Args:
         tmp_path: Pytest-managed temporary workspace.
+        chroma_endpoint: Fresh real HTTP service supplied by the fixture.
 
     Returns:
-        A local context with no production credentials or private HERB content.
+        A local context with no production credentials or private dataset content.
     """
     app = tmp_path / "app"
     shutil.copytree(Path(__file__).parent / "fixtures", app, ignore=shutil.ignore_patterns("__pycache__"))
@@ -96,7 +97,7 @@ def context(tmp_path: Path) -> VerificationContext:
     output = tmp_path / "logs"
     output.mkdir()
     settings = tomllib.loads((TASK_ROOT / "task.toml").read_text())["verifier"]["env"]
-    return VerificationContext(ApplicationClient(app), corpus, cases, ExactJudge(), output, load_scoring_config(settings), load_generation_config(settings))
+    return VerificationContext(ApplicationClient(app), corpus, cases, ExactJudge(), output, load_scoring_config(settings), load_generation_config(settings), load_ingestion_timeout(settings))
 
 
 def test_working_fixture_passes_all_registered_checks(context: VerificationContext) -> None:
@@ -188,10 +189,11 @@ def test_application_uses_runtime_instead_of_judge_interpreter(context: Verifica
         Returns:
             True for the container runtime or any existing local path.
         """
-        return str(path) == "/opt/runtime/bin/python" or original(path)
+        return str(path) in {"/opt/application/bin/python", "/opt/runtime/bin/python"} or original(path)
 
     monkeypatch.setattr(Path, "exists", exists)
-    assert context.app.python() == "/opt/runtime/bin/python"
+    assert context.app.python() == "/opt/application/bin/python"
+    assert context.app.environment["PATH"].split(":")[1:3] == ["/opt/application/bin", "/opt/runtime/bin"]
     submitted = context.app.root / ".venv/bin/python"
     submitted.parent.mkdir(parents=True)
     submitted.touch()
@@ -385,34 +387,27 @@ def test_actual_prepared_bundle_has_only_a_uniform_sample() -> None:
     """Check generated public inputs and private denominator against pinned data.
 
     This check skips when author-generated data is absent from a clean checkout.
-    It never downloads HERB or prints private question text.
+    It never downloads dataset or prints private question text.
     """
     task = TASK_ROOT
     private = task / "steps/01-build-rag/tests/private"
     if not private.exists():
         pytest.skip("Run scripts/prepare_data.py before checking real bundle")
     corpus_path, cases, manifest = load_inputs(private)
-    corpus = json.loads(corpus_path.read_text())
+    from verifier.corpus import open_corpus
+    corpus = open_corpus(corpus_path)
     public = json.loads((task / "environment/data/corpus.json").read_text())
     import random
 
-    assert public == random.Random(SAMPLE_SEED).sample(corpus, int(len(corpus) * SAMPLE_FRACTION))
+    ids = list(corpus)
+    assert public == [corpus[ids[index]] for index in random.Random(SAMPLE_SEED).sample(range(len(corpus)), int(len(corpus) * SAMPLE_FRACTION))]
     assert 0 < len(public) / len(corpus) < 0.05
-    assert len(cases) == 238
-    assert all(set(row) == {"doc_id", "source_type", "title", "content"} for row in corpus)
+    assert len(cases) == QUESTION_COUNT
+    policy = json.loads((task / "scripts/holdout_exclusions.json").read_text())
+    assert not {case.question_id for case in cases} & set(policy["excluded_question_ids"])
+    assert manifest["excluded_question_ids"] == policy["excluded_question_ids"]
+    assert all(set(row) == {"doc_id", "source_type", "title", "content"} for row in public)
     assert manifest["sample_records"] == len(public)
-
-
-def test_prompt_matches_upstream_if_checkout_is_present() -> None:
-    """Compare the full prompt template to HERB's pinned source without imports."""
-    root = Path(__file__).resolve().parents[4]
-    source = root / "HERB/code/evaluate.py"
-    if not source.exists():
-        pytest.skip("Optional author-side HERB checkout is absent")
-    tree = ast.parse(source.read_text())
-    function = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == "answer_likert_score")
-    assignment = function.body[0]
-    assert ast.literal_eval(assignment.value.func.value) == HERB_PROMPT
 
 
 @pytest.mark.parametrize("check", ["cli_stdin", "cli_question_files"])

@@ -31,7 +31,7 @@ def main() -> None:
     root.mkdir()
     # Controlled smoke images provide the trusted task configuration at /task.toml.
     fixture_support.TASK_ROOT = Path("/")
-    fixture = context_fixture.__wrapped__(root)
+    fixture = context_fixture.__wrapped__(root, {})
     shutil.copytree(fixture.app.root, "/app", dirs_exist_ok=True)
 
     def inputs(private: Path) -> tuple[Path, tuple[HeldOutCase, ...], dict[str, Any]]:
@@ -60,7 +60,9 @@ def main() -> None:
     verify.load_scoring_config = scoring
     os.environ["ORANGE_EVAL_GENERATION_CONCURRENCY"] = str(fixture.generation.concurrency)
     os.environ["ORANGE_EVAL_GENERATION_TIMEOUT_SEC"] = str(fixture.generation.timeout_sec)
-    verify.HerbJudge = ExactJudge
+    os.environ["ORANGE_EVAL_MAX_RETRIEVAL_CALLS"] = str(fixture.generation.max_retrieval_calls)
+    os.environ["ORANGE_EVAL_INGEST_TIMEOUT_SEC"] = str(fixture.ingestion_timeout_sec)
+    verify.KnowledgeJudge = ExactJudge
     os.environ["OPENAI_API_KEY"] = "synthetic-judge-only"
     os.environ["ORANGE_JUDGE_API_KEY"] = "synthetic-judge-only"
     os.environ["ORANGE_OPENAI_API_KEY"] = "synthetic-application-key"

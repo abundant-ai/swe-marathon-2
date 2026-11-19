@@ -281,6 +281,8 @@ boundary acceptable. Keep the assessment author-only.
   Harbor review to assess its findings and record task-quality metadata.
 - Use [funtional-programmer](skills/funtional-programmer/SKILL.md) when creating or
   changing functions, including tests and helpers.
+- Use [judge-prompt-writing](skills/judge-prompt-writing/SKILL.md) when writing or
+  revising LLM judge prompts, structured outputs, or rendered evaluation examples.
 - Use [Humanizer](skills/humanizer/SKILL.md) when drafting or editing prose,
   including task instructions and author documentation.
 
