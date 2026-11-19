@@ -14,11 +14,21 @@ The copy is a hardened build (`common/hardening/`), built once on the author's m
 installed unchanged in both images and in the reference solution. One step is implemented. QA
 waves 1 and 2 (20 passes) have been answered in rounds 1 and 2, and Carve's finding on the shared
 collect hook and the round-2 re-checks in round 3, the round-3 re-check in round 4, and the
-platform's ungraded capped runs in round 5; bundle `1a08cdb471d0` is the first to upload and
-replaces the retired `4164eb806274`, `7462d71fe5a7`, `f0da94435d6b`, `cfc9d42f3e68` and
-`80d7f600cab8`. See [Remaining work](#remaining-work).
+platform's ungraded capped runs in round 5; the task was then renamed
+`basedpl-interpreter-rebuild-no-examples` (bundle `3f82e0819e82`, the first to upload, the
+same content as round 5's `1a08cdb471d0`), replacing the retired `4164eb806274`, `7462d71fe5a7`,
+`f0da94435d6b`, `cfc9d42f3e68` and `80d7f600cab8`. See [Remaining work](#remaining-work).
 
 ## Development log
+
+### 2026-11-19 (the name: `basedpl-interpreter-rebuild-no-examples`)
+
+- Owner decision, 17:05 UTC: the task is `abundant/swe-m2_software-engineering_basedpl-interpreter-rebuild-no-examples`,
+  in `tasks/swe-m2-software-engineer/basedpl-interpreter-rebuild-no-examples`. The content is
+  round 5's; only the directory, the `[task] name`, the root `pyproject.toml` registration and
+  the bundle directory's name change. The private seed, the cases and the build (Git-ignored)
+  moved with the directory. The three model trials of the old name run on until about 00:20 UTC
+  and stay under it as history; the new name goes to Oddish after they settle.
 
 ### 2026-11-19 (round 5: a root pre-cap watchdog, for the platform's ungraded capped runs)
 
@@ -570,15 +580,15 @@ Licence: the upstream is Apache-2.0. Its `LICENSE` is shipped with the documenta
 
 | Check | Revision | Result |
 | --- | --- | --- |
-| `checks/` (44 tests) with `ci_checks` (27), Python 3.13, and `check_repository.py` | round 5 | pass |
+| `checks/` (44 tests) with `ci_checks` (27), Python 3.13, and `check_repository.py` | the renamed task (round 5's content) | pass |
 | Local build of the hardened original | `scripts/build_original.py`, 2026-11-19 | builds (one warning); static, not PIE; marker once; no local path |
 | `apply.sh` | a fresh export of v0.1.95 | applies once, refuses a second time; result identical to the patched tree that was built |
 | `smoke.sh` | upstream's v0.1.95 macOS release binary | fails at the first hardening check, as it must; never yet run on the hardened Linux binary (no Linux here) |
 | Upstream's published builds | `scripts/upstream_builds.py`, 2026-11-19 | 21 executables in 3 release assets and 9 wheels, 12 distinct hashes; upstream's Linux build holds the unhardened usage text twice, the hardened build and the docs never |
 | Local recording (the private cases, upstream's macOS release binary) | cases `91236578`, `experiment/local-recording-8` | 1,673 of 1,777 kept (83 display settings that change nothing, 17 last bits, 4 quoted); none unsteady, crashed, machine-dependent or perturbed; the strongest no-interpreter dispatcher 4.1% (command line 19, constants 17, error lookup 13, last literal 19), largest answer 0.6%, nothing with exit 1 0.6%; `∂` 6.1%; 40 of 41 piped cases end with exit 1 after a failing line |
-| Local grading from the packaged bundle (`1a08cdb471d0`), through the collect hook's pre-scan and measuring scripts and a tar round trip with the `data` filter | stand-in reference behind a wrapper; no-op; the dispatcher as a program, with every strategy the recorder measures | 1.0 (1,673/1,673, 28.4 s); 0.0; 0.0269 (45/1,673: cli 19, error 13, expr 7, script 6) |
-| Packaging | `scripts/package_step.py`, twice into separate directories | `1a08cdb471d0`, 249 files, the same hash both times |
-| Oddish preflight | bundle `1a08cdb471d0`, no-Archil CLI, locally | pass |
+| Local grading from the packaged bundle (`3f82e0819e82`; the dispatcher's 0.0269 was measured on round 5's `1a08cdb471d0`, whose grading code is the same), through the collect hook's pre-scan and measuring scripts and a tar round trip with the `data` filter | stand-in reference behind a wrapper; no-op; the dispatcher as a program, with every strategy the recorder measures | 1.0 (1,673/1,673, 33.0 s); 0.0; 0.0269 (45/1,673: cli 19, error 13, expr 7, script 6) |
+| Packaging | `scripts/package_step.py`, twice into separate directories | `3f82e0819e82`, 249 files, the same hash both times; bundle directory `swe-m2_software-engineering_basedpl-interpreter-rebuild-no-examples` |
+| Oddish preflight | bundle `3f82e0819e82`, no-Archil CLI, locally | pass |
 | Oddish baselines, QA, `harbor check` | none | not run |
 
 ## Build and deliver
@@ -599,7 +609,8 @@ sha256 is not build.txt's.
 
 ## Remaining work
 
-- Baselines of bundle `1a08cdb471d0` under the task's one experiment, on the owner's word. The
+- Baselines of bundle `3f82e0819e82` under the task's one experiment, on the owner's word, after
+  the old name's three model trials settle (about 00:20 UTC). The
   two oracle trials on different workers are a hard gate: each must score exactly 1.0, with the
   same `kept_ids_sha256` and `expected_sha256`. A failed id goes on a deny-list and the cases are
   recorded again. Then the no-op, which must score exactly 0. These are the first run of the

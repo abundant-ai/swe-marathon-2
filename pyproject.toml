@@ -19,4 +19,4 @@ titans = ["abundant-titans"]
 
 [tool.pytest.ini_options]
 testpaths = ["ci_checks", "tasks/swe-m2-ai-engineer/knowledge-work-assistant/checks",
-             "tasks/swe-m2-software-engineer/basedpl-rebuild/checks"]
+             "tasks/swe-m2-software-engineer/basedpl-interpreter-rebuild-no-examples/checks"]
