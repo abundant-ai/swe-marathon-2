@@ -28,6 +28,36 @@ archive or binary.
 
 ## Development log
 
+### 2026-11-19/20 — round 6: the v2 oracle scored 0.0 on the platform; one renamed identifier was the cause
+
+- **What happened.** Round 5 went up as Carve v2 (task `…-d3bd3d08`) and both oracle baselines scored
+  0.0 on Modal: 1,770 cases run, 1,770 `setup_errors`, `seconds_total` 0.0, fingerprint 0 probes, while
+  the tree itself arrived whole (`listed 2 16217230`, the blanked build hashed, record complete) and v1
+  (round 4) had scored 1.0 on the same platform minutes before. The macOS local grade had said 1.0
+  because it passes `[]` and `None` for the privilege drop; the checks never ran `sandbox()` either.
+- **Root cause.** Round 5's blanket rename `owner` → `ids` in `verify.py` collided with a local that
+  `sandbox()` already had: the set-user-id probe's output, a tuple of *strings*. After the rename that
+  tuple overwrote the drawn `(uid, uid)`, the set-id check compared the probe with itself (always
+  equal), and `sandbox()` returned strings; `runcases.prepare()` then called `os.lchown(path, "23456",
+  "23456")`, which raises `TypeError` before any system call, so every case (and every probe) ended as
+  a setup error at 0.0 s. The drop prefix, the seal, the mark (`listed`), the record, `test.sh` and the
+  Dockerfiles were all correct; the sweep's record on the pulled tree matches the local one exactly.
+- **Fix.** The probe's result is `seen`, compared with `(str(uid), str(uid))`; `ids = (uid, uid)` is what
+  `sandbox()` returns (one line each; `tests/verify.py`). Nothing else in the bundle changed.
+- **Checks that would have caught it** (43 now). `sandbox()` itself now runs under the checks, with only
+  what needs root or Linux stood in (the id drawn is this user's, `chown` a no-op, `lchown` giving files
+  to this user but still demanding integers as the real call does, `setpriv` "found", the probes
+  answering as a correct unprivileged process would): one check pins that it hands back the integer ids
+  it drew and refuses a set-id root escape; the other replays the tree pulled from the failed oracle
+  trial (`checks/fixtures/pulled-d3bd3d08-v2-trial10/`: its real `.fsmaint` mark and `.fsmaint.json`
+  record, on a stand-in tree of the same shape and sizes) through `main()`'s own steps — manifest,
+  record, sandbox, seal, tripwires, cases, fingerprint, cleanup — and expects 1.0 with no setup error
+  and the flags the platform's metrics showed. Both fail against round 5's `verify.py` (ids
+  `['501', '501']`, types `str`, no refusal; replay 0/4) and pass against the fix.
+- **Lesson** (for the dev log): a mechanical rename over a whole module must be checked against every
+  pre-existing binding of the new name, and the Linux-only path (`sandbox()` → `run_cases()`) needs
+  a check that runs its real body, not a stand-in return value.
+
 ### 2026-11-19 — round 5: shipped text says only what the code does; housekeeping names (v2 on Oddish)
 
 - **Why.** The Oddish pre-trial audit on the sibling tasks returned must-fix `info_leakage` findings that
@@ -598,16 +628,17 @@ Licences: the specification, documentation and carve-rs are MIT. The spec's `LIC
 
 | Check | Revision | Result |
 | --- | --- | --- |
-| `checks/` (41 tests) with `ci_checks`, Python 3.13, and `check_repository.py` | working tree, 2026-11-19 | pass (41 passed; repository checks passed) |
+| `checks/` (43 tests) with `ci_checks`, Python 3.13, and `check_repository.py` | working tree, 2026-11-20 | pass (43 passed; repository checks passed) |
 | Tripwires on the reference | `install.py --blank` on the pinned Linux build | blanked sha256 `f1a359cba59853ecf5087b2f7a6bac17fc208df99d09a63dc567268e1ec5fad0` (same 16,216,144 bytes), in no list, none of the 14 strings left; the unchanged Linux build (`05d0898d…`) and the macOS build are refused |
 | Corpus agreement, spec model against carve-rs (macOS release) | spec `51c5631`, carve-rs 0.1.14 | 4,626 of 4,631 equal; model equals the corpus HTML on all; 6 of the candidates drawn for cases disagreed and were dropped |
 | Case generation | cases sha1 `5db42245` (1,770) | 34 dropped as model disagreements, 720 with no variant kept (11 with none at all; 1,516 variants rejected as a splice, 432 as whitespace-only, 222 as lookup-reachable), 5 shown in the docs, spec or pack, 1 with its answer printed; corpus left out: 315 shown, 28 pack, 27 answer printed, 24 includes, 17 open readings, 1 long |
-| Local recording with the macOS release build, through the bundle's recorder | bundle `de2336a2a8fd` | 1,770 of 1,770 kept; none slow, unsteady, crashed, differing or perturbed; slowest run 30.1 ms; kept ids sha256 `7ace1c15…`; corpus floors on this pool with the reviewers' own 12b/07c scripts: the builder's lookup 0.0%, renderer-free 0.11% (2 cases), hybrid with a perfect host renderer 2.99% (53, one hosted) under R1-R3 and under R1-R3+R5 alike |
-| Packaging twice | `scripts/package_step.py` | the same hash both times: `de2336a2a8fd6c3658158713015e17dcf690699f5ead68ef248a37dabced6c8f`, 143 files, 17,815,800 bytes; the bundle directory is `swe-m2_software-engineering_carve-html-renderer-from-spec-only` |
-| Oddish preflight | bundle `de2336a2a8fd` | pass |
-| Word grep of the packaged bundle (grad, platform, harbor, oddish, cap, budget, deadline, attempt, QA, audit, owner, round, 2026-, delivery, submission, collect, watchdog) | bundle `de2336a2a8fd` | our shipped files: `fsmaint-netcheck` cap 4 (`capture_output`); `fsmaint-sweep` round 4 (`round()`); `instruction.md` cap 3 (captions, escaping), audit 2 (the requester's compliance audit, narrative), owner 1 (`plus-ownership.crv`, a spec file name); `blank.json` cap 2, round 1 (carve's own help strings: `--caption-hints`, escape, `--roundtrip`); `recorder.py` and `recording.py` round 9 (`round()`), collect 2 (`from collections`); `runcases.py` cap 3 (`surrogateescape`, `capture_output`), round 2 (`round()`); `upstream_builds.json` cap 28, budget 8, owner 8, round 6 (upstream file names: `bracket-escapes.js`, `abbr-budget.js`, `list-owner-columns.js`, `block-ownership.js`, `roundtrip-*`); `verify.py` cap 12 (`CapPrm`/`CapEff`/`CapAmb`, `escape`), round 3 (`round()`); `task.toml` collect 1 (`[[verifier.collect]]`, the required section key). Nothing else of ours matches. The spec, docs and LICENSE (upstream text) and the private case prose (round 4's pool, untouched) carry the remaining hits |
-| Local grading from the bundle (`scripts/grade_locally.py`, no sandbox) | bundle `de2336a2a8fd` | reference (the build blanked as `solve.sh` does, re-signed, as `/app/rebuild/carve`, marked by the bundle's sweep, passing the tripwires) 1.0 (1,770/1,770, 26 s); an empty tree 0.0; a program that prints nothing 0.0; no late entries, no refused or flagged copies, `ended_by_timer` false. Fingerprint: the blanked reference matches 47 of 49 probes — the two misses are the `-h`/`--help` probes whose output carries blanked help strings; production records probes from the unblanked oracle, and the fingerprint is diagnostic, never scored |
-| Oddish baselines, QA, `harbor check` | none | not run |
+| Local recording with the macOS release build, through the bundle's recorder | bundle `c871cb7a1765` | 1,770 of 1,770 kept; none slow, unsteady, crashed, differing or perturbed; slowest run 30.1 ms; kept ids sha256 `7ace1c15…`; corpus floors on this pool with the reviewers' own 12b/07c scripts: the builder's lookup 0.0%, renderer-free 0.11% (2 cases), hybrid with a perfect host renderer 2.99% (53, one hosted) under R1-R3 and under R1-R3+R5 alike |
+| Packaging twice | `scripts/package_step.py` | the same hash both times: `c871cb7a17658edc6d3c00b797e007c522c2f304c1718e2b1865d16d028bf649`, 143 files, 17,815,797 bytes; the bundle directory is `swe-m2_software-engineering_carve-html-renderer-from-spec-only` |
+| Oddish preflight | bundle `c871cb7a1765` | pass |
+| Replay of the tree pulled from the v2 oracle trial on the platform (task `…-d3bd3d08`, trial 10, 2026-11-19: reward 0.0, 1,770 setup errors) | `checks/fixtures/pulled-d3bd3d08-v2-trial10/` through `main()`'s steps with `sandbox()` stood in only where it needs root or Linux | 4/4 cases, no setup error, fingerprint 1/1, the platform's two flags reproduced; the same replay fails against round 5's `verify.py` (string ids) |
+| Word grep of the packaged bundle (grad, platform, harbor, oddish, cap, budget, deadline, attempt, QA, audit, owner, round, 2026-, delivery, submission, collect, watchdog) | bundle `c871cb7a1765` (round 6 changed three identifiers only) | our shipped files: `fsmaint-netcheck` cap 4 (`capture_output`); `fsmaint-sweep` round 4 (`round()`); `instruction.md` cap 3 (captions, escaping), audit 2 (the requester's compliance audit, narrative), owner 1 (`plus-ownership.crv`, a spec file name); `blank.json` cap 2, round 1 (carve's own help strings: `--caption-hints`, escape, `--roundtrip`); `recorder.py` and `recording.py` round 9 (`round()`), collect 2 (`from collections`); `runcases.py` cap 3 (`surrogateescape`, `capture_output`), round 2 (`round()`); `upstream_builds.json` cap 28, budget 8, owner 8, round 6 (upstream file names: `bracket-escapes.js`, `abbr-budget.js`, `list-owner-columns.js`, `block-ownership.js`, `roundtrip-*`); `verify.py` cap 12 (`CapPrm`/`CapEff`/`CapAmb`, `escape`), round 3 (`round()`); `task.toml` collect 1 (`[[verifier.collect]]`, the required section key). Nothing else of ours matches. The spec, docs and LICENSE (upstream text) and the private case prose (round 4's pool, untouched) carry the remaining hits |
+| Local grading from the bundle (`scripts/grade_locally.py`, no sandbox) | bundle `c871cb7a1765` | reference (the build blanked as `solve.sh` does, re-signed, as `/app/rebuild/carve`, marked by the bundle's sweep, passing the tripwires) 1.0 (1,770/1,770, 20 s); an empty tree 0.0; a program that prints nothing 0.0; no late entries, no refused or flagged copies, `ended_by_timer` false. Fingerprint: the blanked reference matches 47 of 49 probes — the two misses are the `-h`/`--help` probes whose output carries blanked help strings; production records probes from the unblanked oracle, and the fingerprint is diagnostic, never scored |
+| Oddish baselines | v1 (round 4, `…-d3bd3d08` v1): oracle 1.0 ×2, nop 0.0 ×2; v2 (round 5): oracle 0.0 ×2 (the string-ids defect above) | round 6 not yet uploaded |
 
 ## Build and deliver
 

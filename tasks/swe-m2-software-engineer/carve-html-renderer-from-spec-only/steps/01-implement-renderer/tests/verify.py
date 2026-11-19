@@ -176,11 +176,11 @@ def sandbox() -> tuple[list[str], tuple[int, int], dict]:
         shutil.copy(shutil.which("id") or "/usr/bin/id", place / "id")
         os.chown(place / "id", 0, 0)
         os.chmod(place / "id", 0o6755)
-        ids = (probe(prefix, [str(place / "id"), "-u"]).strip(), probe(prefix, [str(place / "id"), "-g"]).strip())
+        seen = (probe(prefix, [str(place / "id"), "-u"]).strip(), probe(prefix, [str(place / "id"), "-g"]).strip())
     finally:
         shutil.rmtree(place, ignore_errors=True)
-    if ids != (str(ids[0]), str(ids[1])):
-        problems.append(f"a set-id root file ran with user and group {ids}")
+    if seen != (str(uid), str(uid)):
+        problems.append(f"a set-id root file ran with user and group {seen}")
     if problems:
         raise EvaluationError("The unprivileged run does not hold: " + "; ".join(problems))
     return prefix, ids, found

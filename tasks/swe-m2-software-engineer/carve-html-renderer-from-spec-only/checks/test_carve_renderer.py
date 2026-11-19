@@ -361,6 +361,132 @@ def test_every_run_gets_the_same_limits(tmp_path):
     assert [soft for soft, _ in limits] == wanted and [hard for _, hard in limits] == wanted
 
 
+PULLED = TASK / "checks" / "fixtures" / "pulled-d3bd3d08-v2-trial10"
+
+# sandbox() itself, with only what needs root or Linux stood in: the id it draws is this user's,
+# chown is a no-op and lchown gives files to this user (both still demand integer ids, as the real
+# calls do: os.lchown raises TypeError for a string before any system call), setpriv is "found", and
+# the probes answer as a correct unprivileged process would (the set-id probe with the answer
+# given). The prefix it builds is never run here.
+SANDBOX_STAND_IN = '''
+import json, os
+from pathlib import Path
+import verify
+real_lchown = os.lchown
+
+
+def lchown_as_this_user(path, uid, gid, *args, **kw):
+    if not (isinstance(uid, int) and isinstance(gid, int)):
+        raise TypeError(f"an integer is required, not {type(uid).__name__}")
+    return real_lchown(path, os.getuid(), os.getgid(), *args, **kw)
+
+
+verify.os.lchown = lchown_as_this_user
+u = str(os.getuid())
+STATUS = ("Uid:\\t" + "\\t".join([u] * 4) + "\\nGid:\\t" + "\\t".join([u] * 4) + "\\nGroups:\\t\\nNoNewPrivs:\\t1\\n"
+          "CapPrm:\\t0000000000000000\\nCapEff:\\t0000000000000000\\nCapAmb:\\t0000000000000000\\n")
+LIMITS = ("Max processes             512                  512                  processes\\n"
+          "Max file size             268435456            268435456            bytes\\n"
+          "Max core file size        0                    0                    bytes\\n")
+
+
+def probe_answering(set_id_answer):
+    def probe(prefix, argv, fallback=None):
+        if argv[-1] == "/proc/self/limits":
+            return LIMITS
+        if argv[-1] in ("-u", "-g"):
+            return set_id_answer + "\\n"
+        return STATUS
+    return probe
+
+
+verify.pick_id = lambda maps=None: os.getuid()
+verify.os.chown = lambda *args, **kw: None
+verify.shutil.which = lambda name: "/usr/bin/id" if name == "id" else "/usr/bin/setpriv"
+verify.probe = probe_answering(u)
+'''
+
+
+def test_sandbox_hands_the_run_the_integer_ids_it_drew_and_refuses_a_set_id_escape(tmp_path):
+    """sandbox() returns the ids it drew as integers (os.lchown needs them: the first v2 oracle
+    trial on the platform, 2026-11-19, returned the set-id probe's strings instead, and every case
+    was a setup error), and refuses a sandbox in which a set-id root file runs as root."""
+    report = verifier_call(SANDBOX_STAND_IN + textwrap.dedent(f"""
+        verify.REBUILD = Path({str(tmp_path / "rebuild")!r})
+        prefix, ids, found = verify.sandbox()
+        verify.probe = probe_answering("0")
+        try:
+            verify.sandbox()
+            escaped = None
+        except verify.EvaluationError as exc:
+            escaped = str(exc)
+        print(json.dumps([prefix[:2], list(ids), [type(value).__name__ for value in ids], sorted(found), escaped]))
+    """))
+    prefix, ids, kinds, found, escaped = report
+    assert prefix == ["setpriv", "--reuid"] and ids == [os.getuid(), os.getuid()] and kinds == ["int", "int"], report
+    assert found and escaped and "a set-id root file ran with user and group ('0', '0')" in escaped, report
+
+
+def test_the_tree_pulled_from_the_v2_oracle_trial_replays_through_the_whole_run(tmp_path):
+    """The mark and record /app/rebuild carried in the first v2 oracle trial on the platform
+    (2026-11-19, task ...-d3bd3d08, trial 10: reward 0.0, every case a setup error), replayed on a
+    tree of the same shape through main()'s own steps: manifest, record, sandbox (stood in only
+    where it needs root or Linux), seal, the tripwires, the cases, the fingerprint and the cleanup.
+    The stand-in `carve` answers every case and the privilege-drop prefix is not run."""
+    top = tmp_path / "rebuild"
+    top.mkdir()
+    shutil.copy(PULLED / ".fsmaint", top / ".fsmaint")
+    shutil.copy(PULLED / ".fsmaint.json", top / ".fsmaint.json")
+    (top / "LICENSE").write_bytes(b"MIT License\n".ljust(1086, b"."))      # the pulled LICENSE's size
+    script = b"#!/bin/sh\necho ok\n"
+    (top / "carve").write_bytes(script + b"#" * (16216144 - len(script) - 1) + b"\n")  # the pulled binary's size
+    (top / "carve").chmod(0o755)
+    assert sum(path.stat().st_size for path in top.iterdir() if not path.name.startswith(".")) == 16217230
+    private = tmp_path / "private"
+    private.mkdir()
+    cases, expected = plain_cases([["a"], ["b"], ["c"], ["d"]], kinds=["document", "snippet", "inline", "command"])
+    (private / "cases.json").write_text(json.dumps({"cases": cases}))
+    (private / "expected.json").write_text(json.dumps(expected))
+    probe = {"id": "F1", "files": {"page.crv": "# T\n"}, "argv": ["--probe"], "stdin": None, "kind": "disagreement"}
+    (private / "probes.json").write_text(json.dumps({"probes": [probe]}))
+    (private / "probes_expected.json").write_text(json.dumps({"F1": {"exit": 0, "stdout": "ok\n"}}))
+    leftovers = tmp_path / "leftovers"
+    leftovers.mkdir()
+    (tmp_path / "tmp").mkdir()
+    report = verifier_call(SANDBOX_STAND_IN + textwrap.dedent(f"""
+        import time
+        verify.REBUILD = Path({str(top)!r})
+        verify.PROGRAM = verify.REBUILD / "carve"
+        verify.runcases.WORKSPACE = Path({str(tmp_path / 'tmp' / 'carve-case')!r})
+        verify.runcases.HOME = Path({str(tmp_path / 'tmp' / 'carve-home')!r})
+        verify.runcases.TEMP = Path({str(tmp_path / 'tmp' / 'carve-tmp')!r})
+        verify.LEFTOVER_DIRS[:] = [{str(leftovers)!r}]
+        verify.kill_user = lambda uid: None
+        verify.remove_ipc = lambda *args, **kw: None
+        notes, refused = verify.manifest(verify.REBUILD)
+        record = verify.manifest_record(verify.REBUILD)
+        prefix, ids, limits = verify.sandbox()
+        verify.seal(verify.REBUILD, (os.getuid(), os.getgid()))   # main() seals to root, itself; here to this user
+        fetched = verify.fetched_build(verify.REBUILD, verify.upstream_builds())
+        cutoff_at = time.monotonic() + 600
+        private = Path({str(private)!r})
+        metrics = verify.run_cases(verify.PROGRAM, private, [], ids, cutoff_at)
+        metrics["fingerprint"] = verify.fingerprint(verify.PROGRAM, private, [], ids, cutoff_at)
+        verify.final_cleanup(ids[0], time.monotonic() + 30)
+        print(json.dumps([notes, refused, record, list(ids), fetched, metrics]))
+    """))
+    notes, refused, record, ids, fetched, metrics = report
+    assert notes == [] and refused is False and fetched is None and ids == [os.getuid(), os.getuid()], report[:5]
+    assert record["listed"] == "listed 2 16217230" and record["entries_listed"] == 2 and record["listing_complete"] is True
+    assert record["any_open"] is True and record["end_from"] == "start" and record["ended_by_timer"] is False
+    assert record["process_count"] == 0 and record["kill_passes"] == 0 and record["late_entries"] == 0, record
+    assert record["flags"] == ["a public host answered after the end",
+                               "no net check observed the end; the end bound is the sweep's start"], record["flags"]
+    assert metrics["cases_run"] == 4 and metrics["setup_errors"] == 0 and metrics["cases_passed"] == 4, metrics
+    assert metrics["reward"] == 1.0 and metrics["fingerprint"] == {"total": 1, "matches_original": 1,
+                                                                   "by_kind": {"disagreement": {"total": 1, "matches": 1}}}, metrics
+
+
 def test_a_set_id_file_gains_nothing(tmp_path):
     """The submission loses its set-id bits and its write permission before anything runs, and the
     privilege check refuses a process that keeps no_new_privs off, an id, a group or a capability."""
