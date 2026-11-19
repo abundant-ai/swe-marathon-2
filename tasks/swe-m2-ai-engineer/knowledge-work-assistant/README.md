@@ -25,8 +25,10 @@ Clean-checkout preparation produced 39,268 corpus records, a 1,570-record public
 sample, and 218 structural rubric fixtures without private data or model
 credentials. All 36 focused report and input-validation checks passed, including
 rejection of CI fixtures by normal evaluation. Source and task-layout checks
-also passed in the isolated checkout. These checks establish CI reproducibility
-and input separation, not semantic judge quality.
+also passed in the isolated checkout. The full local run passed 422 tests and
+found one more author-only sample check that needed to permit CI fixtures;
+after correcting that caller, it and the 20 input checks passed. These checks
+establish CI reproducibility and input separation, not semantic judge quality.
 
 ### 2026-11-19 — platform credentials and parallel calibration/trial launches
 

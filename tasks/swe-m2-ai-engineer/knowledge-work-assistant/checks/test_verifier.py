@@ -393,7 +393,7 @@ def test_actual_prepared_bundle_has_only_a_uniform_sample() -> None:
     private = task / "steps/01-build-rag/tests/private"
     if not private.exists():
         pytest.skip("Run scripts/prepare_data.py before checking real bundle")
-    corpus_path, cases, manifest = load_inputs(private)
+    corpus_path, cases, manifest = load_inputs(private, allow_ci_fixtures=True)
     from verifier.corpus import open_corpus
     corpus = open_corpus(corpus_path)
     public = json.loads((task / "environment/data/corpus.json").read_text())
