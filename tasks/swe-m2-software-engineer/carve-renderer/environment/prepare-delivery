@@ -1,0 +1,224 @@
+#!/bin/sh
+# Runs as root once the agent's session has ended, before /app/rebuild is copied to the machine that
+# runs it. What it lets through is what the copy can take: within the limits the instruction
+# states, with nothing of the agent's running, and with every link one the copy keeps. The mark
+# says what was delivered.
+LIMIT_ENTRIES=200000
+LIMIT_BYTES=2000000000
+# End every process of the agent's user. `kill -9 -1` as that user reaches all of them in one system
+# call, so a process that forks cannot outrun it; repeat until none is left.
+for _ in $(seq 1 100); do
+  pgrep -u dev >/dev/null 2>&1 || break
+  setpriv --reuid dev --regid dev --clear-groups kill -9 -1 >/dev/null 2>&1
+  pkill -KILL -u dev >/dev/null 2>&1
+  sleep 0.1
+done
+if [ ! -d /app/rebuild ] || [ -L /app/rebuild ]; then exit 0; fi
+# Whatever was left under the mark's name is moved aside, never followed.
+if [ -e /app/rebuild/.delivered ] || [ -L /app/rebuild/.delivered ]; then
+  aside=$(mktemp -d /app/.aside.XXXXXX) && mv -f /app/rebuild/.delivered "$aside/" || exit 0
+fi
+# Links, as the agent's user (it copies nothing that user could not read), within two minutes.
+timeout 120 setpriv --reuid dev --regid dev --clear-groups --no-new-privs /usr/bin/python3 -I - /app/rebuild "$LIMIT_ENTRIES" "$LIMIT_BYTES" <<'EOF'
+"""Make /app/rebuild safe to copy to the machine it will run on, as the user who built it.
+
+The copy keeps relative links that stay inside the directory and refuses everything else. A link
+inside it that points elsewhere inside it becomes relative; a link to a file or directory outside
+it (a virtual environment's interpreter, say) becomes a copy of what it points to, if that is a
+file or a directory (devices, pipes and sockets in it are left out); a link to nothing or to a
+device, and a pipe, a socket or a device node, are removed. Each change is printed.
+"""
+import os
+import shutil
+import stat
+import sys
+
+ROOT = os.path.realpath(sys.argv[1])
+ENTRIES = int(sys.argv[2])
+BUDGET = int(sys.argv[3])
+spent = copied = 0
+
+
+def inside(path):
+    return path == ROOT or path.startswith(ROOT + os.sep)
+
+
+def size_of(path, limit, most):
+    """Bytes and entries a copy of `path` would add; the count stops once either passes its limit."""
+    if not os.path.isdir(path):
+        return os.path.getsize(path), 1
+    total, count = 0, 1
+    for folder, folders, files in os.walk(path):
+        count += len(folders)
+        for name in files:
+            count += 1
+            try:
+                total += os.lstat(os.path.join(folder, name)).st_size
+            except OSError:
+                pass
+            if total > limit or count > most:
+                return total, count
+    return total, count
+
+
+def special_files(folder, names):
+    left_out = []
+    for entry in names:
+        mode = os.lstat(os.path.join(folder, entry)).st_mode
+        if not (stat.S_ISREG(mode) or stat.S_ISDIR(mode) or stat.S_ISLNK(mode)):
+            left_out.append(entry)
+    return left_out
+
+
+def fix_link(path, name):
+    global spent, copied
+    target = os.readlink(path)
+    resolved = os.path.realpath(path)
+    if not os.path.exists(resolved):
+        os.unlink(path)
+        return f"removed {name} -> {target}: it points at nothing"
+    if inside(resolved):
+        wanted = os.path.relpath(resolved, os.path.dirname(path))
+        if wanted == target:
+            return None
+        os.unlink(path)
+        os.symlink(wanted, path)
+        return f"{name} -> {wanted} (was {target})"
+    mode = os.stat(resolved).st_mode
+    if not (stat.S_ISREG(mode) or stat.S_ISDIR(mode)):
+        os.unlink(path)
+        return f"removed {name} -> {target}: it points at a device, a pipe or a socket"
+    size, count = size_of(resolved, BUDGET - spent, ENTRIES - copied)
+    if spent + size > BUDGET or copied + count > ENTRIES:
+        os.unlink(path)
+        return f"removed {name} -> {target}: copying it would pass {ENTRIES:,} entries or {BUDGET:,} bytes"
+    os.unlink(path)
+    spent += size
+    copied += count
+    if os.path.isdir(resolved):
+        shutil.copytree(resolved, path, symlinks=True, ignore=special_files)
+    else:
+        shutil.copy2(resolved, path)
+    return f"{name}: a copy of {resolved} (was a link to {target})"
+
+
+def one_pass():
+    changed = False
+    for folder, folders, files in os.walk(ROOT):
+        for entry in folders + files:
+            path = os.path.join(folder, entry)
+            name = os.path.relpath(path, ROOT)
+            try:
+                mode = os.lstat(path).st_mode
+                if stat.S_ISLNK(mode):
+                    note = fix_link(path, name)
+                elif stat.S_ISREG(mode) or stat.S_ISDIR(mode):
+                    note = None
+                else:
+                    os.unlink(path)
+                    note = f"removed {name}: not a file, a directory or a link"
+            except (OSError, shutil.Error) as exc:
+                note = f"could not fix {name}: {exc}"
+            if note:
+                print(note, flush=True)
+                changed = True
+    return changed
+
+
+for _ in range(10):
+    if not one_pass():
+        break
+EOF
+# Measure, bound and mark, as root.
+exec /usr/bin/python3 -I - /app/rebuild "$LIMIT_ENTRIES" "$LIMIT_BYTES" <<'EOF'
+"""Measure /app/rebuild, bound it and mark it, as root, once nothing of the agent's runs.
+
+The tree is walked by directory descriptor, so no depth hides anything. Anything the copy would
+refuse is removed: a device, a pipe, a socket, a link with an absolute target or one that resolves
+outside the directory. A delivery over the limits is moved aside whole and replaced by an empty
+directory. The mark's first line is `delivered` with the number of entries (files, directories and
+links) and of bytes in its files (each file once, however many names it has), or `refused`; each
+line after it is a change made or the reason for the refusal.
+"""
+import os
+import stat
+import sys
+
+ROOT = os.path.realpath(sys.argv[1])
+LIMIT_ENTRIES, LIMIT_BYTES = int(sys.argv[2]), int(sys.argv[3])
+MARK = os.path.join(ROOT, ".delivered")
+notes, links, files = [], [], set()
+entries = size = 0
+
+
+class Refuse(Exception):
+    pass
+
+
+def walk(fd, rel):
+    """Count, and remove what the copy would refuse, below the directory open as `fd` (`rel` inside ROOT)."""
+    global entries, size
+    with os.scandir(fd) as listing:
+        names = []
+        for entry in listing:
+            names.append(entry.name)
+            if entries + len(names) > LIMIT_ENTRIES:
+                raise Refuse(f"it holds more than {LIMIT_ENTRIES:,} files and directories, the most /app/rebuild may hold")
+    for name in names:
+        path = f"{rel}/{name}" if rel else name
+        info = os.stat(name, dir_fd=fd, follow_symlinks=False)
+        if stat.S_ISLNK(info.st_mode):
+            links.append(path)
+        elif not (stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode)):
+            os.unlink(name, dir_fd=fd)
+            notes.append(f"removed {path}: not a file, a directory or a link")
+            continue
+        entries += 1
+        if stat.S_ISREG(info.st_mode) and (info.st_dev, info.st_ino) not in files:
+            files.add((info.st_dev, info.st_ino))
+            size += info.st_size
+            if size > LIMIT_BYTES:
+                raise Refuse(f"it holds more than {LIMIT_BYTES:,} bytes, the most /app/rebuild may hold")
+        if stat.S_ISDIR(info.st_mode):
+            child = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+            try:
+                walk(child, path)
+            finally:
+                os.close(child)
+
+
+def inside(path):
+    return path == ROOT or path.startswith(ROOT + os.sep)
+
+
+reason = None
+sys.setrecursionlimit(100_000)
+try:
+    top = os.open(ROOT, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        walk(top, "")
+    finally:
+        os.close(top)
+    for path in links:
+        target = os.readlink(os.path.join(ROOT, path))
+        if os.path.isabs(target) or not inside(os.path.realpath(os.path.join(ROOT, path))):
+            os.unlink(os.path.join(ROOT, path))
+            entries -= 1
+            notes.append(f"removed {path}: a link that leads outside /app/rebuild")
+except Refuse as refusal:
+    reason = str(refusal)
+except (OSError, RecursionError, ValueError) as exc:
+    reason = f"it could not be measured ({exc.__class__.__name__}: {exc})"
+
+lines = [f"delivered {entries} {size}"]
+if reason is not None:
+    os.rename(ROOT, os.path.join(os.path.dirname(ROOT), f".refused.{os.urandom(6).hex()}"))
+    os.mkdir(ROOT)
+    os.chmod(ROOT, 0o777)
+    lines = ["refused", f"{reason}: it was not copied"]
+descriptor = os.open(MARK, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644)
+with os.fdopen(descriptor, "w", errors="backslashreplace") as mark:
+    mark.write("\n".join(lines + notes[:50]) + "\n")
+for line in lines[1:] + notes[:50]:
+    print(line.encode(errors="backslashreplace").decode(), flush=True)
+EOF
