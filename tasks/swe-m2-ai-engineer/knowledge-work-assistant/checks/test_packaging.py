@@ -80,7 +80,7 @@ def test_complete_bundle_round_trip(tmp_path: Path, chroma_endpoint: dict[str, s
         if source.is_file() and source.name not in {"Dockerfile", ".dockerignore", "docker-compose.yaml"} and "chroma-service" not in source.parts:
             staged = definition.directory / "gpu-runtime" / source.relative_to(root / "environment")
             assert staged.read_bytes() == source.read_bytes()
-    _, cases, manifest = load_inputs(root / "steps/01-build-rag/tests/private")
+    _, cases, manifest = load_inputs(root / "steps/01-build-rag/tests/private", allow_ci_fixtures=True)
     assert len(cases) == QUESTION_COUNT
     assert all(case.rubric for case in cases)
     assert manifest["sample_records"] == 1570

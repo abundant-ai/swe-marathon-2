@@ -10,7 +10,7 @@ from pydantic import ValidationError
 
 from factual_rubrics.build import export_results, resolve_profiles, write_json
 from factual_rubrics.models import CaseInput, Grounding, RubricDraft, SourceDocument, validate_grounding
-from factual_rubrics.report import make_review_report
+from factual_rubrics.gold_report import make_review_report
 
 
 @pytest.fixture

@@ -73,11 +73,13 @@ def load_rubrics(private: Path, rows: list[dict[str, Any]]) -> dict[str, Reviewe
     return result
 
 
-def load_inputs(private: Path) -> tuple[Path, tuple[HeldOutCase, ...], dict[str, Any]]:
+def load_inputs(private: Path, *, allow_ci_fixtures: bool = False) -> tuple[Path, tuple[HeldOutCase, ...], dict[str, Any]]:
     """Validate pinned private input hashes and the complete scoring denominator.
 
     Args:
         private: Trusted directory populated by scripts/prepare_data.py.
+        allow_ci_fixtures: Permit explicitly marked structural fixtures in author
+            packaging checks only. The production entry point never enables this.
 
     Returns:
         Corpus path, retained content cases with authenticated must-have rubrics
@@ -88,6 +90,8 @@ def load_inputs(private: Path) -> tuple[Path, tuple[HeldOutCase, ...], dict[str,
     """
     try:
         manifest = json.loads((private / "manifest.json").read_text())
+        if manifest.get("ci_fixture_only") and not allow_ci_fixtures:
+            raise ValueError("CI rubric fixtures cannot be used for evaluation")
         if manifest["herb_revision"] != DATASET_REVISION:
             raise ValueError("HERB revision mismatch")
         for filename, key in (("corpus.json", "corpus_sha256"), ("cases.json", "cases_sha256"),

@@ -6,6 +6,28 @@ agent to build the assistant and improve it over successive steps.
 
 ## Development log
 
+### 2026-11-19 — reproducible CI preparation and reference-review reporting
+
+The branch's first Task validation run failed before pytest: a clean checkout
+had no private reviewed `rubrics.json`. CI now runs `prepare_ci_inputs.py`,
+which uses the pinned public corpus and production preparation code with
+deterministic structural rubric fixtures. The generated manifest marks these
+inputs as CI-only. Normal evaluation rejects them; only the author packaging
+test explicitly permits them. Preparation refuses to overwrite existing private
+inputs. Real evaluations still require the reviewed private rubric set.
+
+Restored reference-review reporting in `factual_rubrics/gold_report.py` and
+corrected its test import. The historical calibration report remains separate.
+The reference report preserves original gold answers and source documents,
+and requires triage coverage for every flagged question.
+
+Clean-checkout preparation produced 39,268 corpus records, a 1,570-record public
+sample, and 218 structural rubric fixtures without private data or model
+credentials. All 36 focused report and input-validation checks passed, including
+rejection of CI fixtures by normal evaluation. Source and task-layout checks
+also passed in the isolated checkout. These checks establish CI reproducibility
+and input separation, not semantic judge quality.
+
 ### 2026-11-19 — platform credentials and parallel calibration/trial launches
 
 Added an explicit `[solution.env]` mapping from Oddish's `${OPENAI_API_KEY}`

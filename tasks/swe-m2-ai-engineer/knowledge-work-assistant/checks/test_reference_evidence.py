@@ -73,7 +73,7 @@ def test_bad_reference_citations_fail_preparation(source_data: Path, defect: str
         collect_records(source_data)
 
 
-@pytest.mark.parametrize("defect", [None, "missing", "duplicate", "empty", "old_format", "excluded", "count",
+@pytest.mark.parametrize("defect", [None, "ci_fixture", "missing", "duplicate", "empty", "old_format", "excluded", "count",
                                      "rubric_missing", "rubric_duplicate", "rubric_empty", "rubric_invalid",
                                      "rubric_question_changed", "rubric_reference_changed", "rubric_hash"])
 def test_private_loader_requires_resolvable_evidence(tmp_path: Path, defect: str | None) -> None:
@@ -107,6 +107,8 @@ def test_private_loader_requires_resolvable_evidence(tmp_path: Path, defect: str
     elif defect in {"missing", "duplicate", "empty"}:
         rows[0]["evidence_doc_ids"] = {"missing": ["unknown"], "duplicate": ["d", "d"], "empty": []}[defect]
     manifest = {"herb_revision": HERB_REVISION, "content_questions": QUESTION_COUNT}
+    if defect == "ci_fixture":
+        manifest["ci_fixture_only"] = True
     if defect == "excluded":
         manifest["excluded_question_ids"] = [rows[0]["question_id"]]
     elif defect == "count":
@@ -123,6 +125,8 @@ def test_private_loader_requires_resolvable_evidence(tmp_path: Path, defect: str
     if defect is not None:
         with pytest.raises(EvaluationError):
             load_inputs(tmp_path)
+        if defect == "ci_fixture":
+            assert len(load_inputs(tmp_path, allow_ci_fixtures=True)[1]) == QUESTION_COUNT
     else:
         _, cases, _ = load_inputs(tmp_path)
         assert len(cases) == QUESTION_COUNT

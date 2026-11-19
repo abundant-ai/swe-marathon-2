@@ -42,7 +42,7 @@ jobs:
           path: HERB
           persist-credentials: false
       - name: Prepare the actual packaging test inputs
-        run: uv run --frozen python tasks/swe-m2-ai-engineer/knowledge-work-assistant/scripts/prepare_data.py --herb HERB
+        run: uv run --frozen python tasks/swe-m2-ai-engineer/knowledge-work-assistant/scripts/prepare_ci_inputs.py --herb HERB
       - name: Run all author and CI regression tests
         run: |
           rm -f ci-results/pytest.xml
