@@ -283,6 +283,7 @@ modification and change times, and a file's sha256 (within a byte budget).
 import hashlib
 import json
 import os
+import signal
 import stat
 import sys
 
@@ -419,11 +420,36 @@ if reason is not None:
     lines = ["refused", f"{reason}: it was not copied"]
 watchdog, restored, processes, egress = (read_json(name) for name in ("watchdog.json", "restored", "processes.json", "egress.json"))
 turn_end_from = "watcher" if restored and "restored_at" in restored else "the hook's start"
+
+
+def log_tail(path, limit=20):
+    """The last `limit` lines of a root-only log, read from its tail only; None where it is unreadable."""
+    try:
+        with open(path, "rb") as handle:
+            handle.seek(0, os.SEEK_END)
+            handle.seek(max(0, handle.tell() - 65536))
+            return handle.read().decode("utf-8", "replace").splitlines()[-limit:]
+    except OSError:
+        return None
+
+
+# The pre-cap watchdog (precap-watchdog, armed at set-up complete) ends the session itself shortly
+# before the platform's cap; its log says whether it fired. A copy still sleeping is stopped here.
+PRECAP_LOG = os.environ.get("PRECAP_LOG", "/var/log/precap-watchdog.log")
+PRECAP_PIDFILE = os.environ.get("PRECAP_PIDFILE", "/run/precap-watchdog.pid")
+precap_log = log_tail(PRECAP_LOG)
+ended_by_watchdog = bool(precap_log) and any(" fired" in line for line in precap_log)
+try:
+    with open(PRECAP_PIDFILE) as handle:
+        os.kill(int(handle.read().strip()), signal.SIGTERM)
+except (OSError, ValueError):
+    pass
 record = dict(egress or {"egress": None, "egress_open": None}, hook_started_at=STARTED, kill_ended_at=ENDED,
               turn_ended_at=TURN_END, turn_end_from=turn_end_from, watchdog=watchdog, restored=restored,
               agent_process_count=(processes or {}).get("agent_process_count"), agent_processes=(processes or {}).get("agent_processes", []),
               kill_rounds=ROUNDS, agent_processes_left=LEFT, delivered=lines[0], listing_complete=reason is None and hashed <= HASH_BUDGET,
               copies=copies, refused_copies=refused, late_entries=sum(1 for item in catalogue if item["ctime"] >= TURN_END - 2.0),
+              precap_watchdog=precap_log, ended_by_watchdog=ended_by_watchdog,
               notes=notes, entries=catalogue[:LIMIT_ENTRIES])
 try:
     descriptor = os.open(RECORD, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644)

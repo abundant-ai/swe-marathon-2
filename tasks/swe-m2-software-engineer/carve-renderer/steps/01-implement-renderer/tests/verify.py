@@ -453,8 +453,12 @@ def delivery_record(top: Path) -> dict:
         summary |= {"agent_processes": (record.get("agent_processes") or [])[:50], "entries_listed": len(entries),
                     "copies": record.get("copies", []), "refused_copies": record.get("refused_copies", []),
                     "watchdog": record.get("watchdog"), "restored": record.get("restored"),
+                    "precap_watchdog": (record.get("precap_watchdog") or [])[-20:],
+                    "ended_by_watchdog": bool(record.get("ended_by_watchdog")),
                     "latest_changes": [{key: item.get(key) for key in ("path", "type", "size", "ctime", "sha256")} for item in latest[:20]]}
         flags = []
+        if record.get("ended_by_watchdog"):
+            flags.append("the pre-cap watchdog ended the session before the platform's cap")
         if record.get("egress_open"):
             flags.append("the public internet answered when the session ended")
         if record.get("agent_processes_left"):
@@ -832,6 +836,9 @@ def main() -> int:
             metrics["fingerprint"] = fingerprint(PROGRAM, tests / "private", prefix, owner, deadline)
             final_cleanup(owner[0], min(deadline, time.monotonic() + CLEANUP_SEC))
         metrics["notes"] = notes + metrics["notes"]
+        # Whether the pre-cap watchdog ended the session (the collect hook's record): for the audit
+        # and the run log only, never a term of the reward.
+        metrics["ended_by_watchdog"] = bool(record.get("ended_by_watchdog"))
         # The reward first, in its reserved place, then renamed (no new space): nothing after it
         # can cost it.
         write_in_place(output / ".reward.tmp", f"{metrics['reward']:.6f}".encode())

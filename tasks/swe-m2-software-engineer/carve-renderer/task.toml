@@ -24,6 +24,10 @@ timeout_sec = 120
 command = "/usr/local/lib/pagebuild/session-setup --watch"
 timeout_sec = 120
 
+[[agent.setup_complete]]
+command = "/usr/local/lib/pagebuild/precap-watchdog"
+timeout_sec = 120
+
 [environment]
 network_mode = "public"
 build_timeout_sec = 3600

@@ -34,6 +34,7 @@ RECORDER = TESTS / "verifier" / "recorder.py"
 HOOK = TASK / "environment" / "session-finish"
 SETUP = TASK / "environment" / "session-setup"
 WATCH = TASK / "environment" / "session-watch"
+PRECAP = TASK / "environment" / "precap-watchdog"
 
 
 def scripts_call(code: str) -> object:
@@ -613,7 +614,8 @@ def hook_programs() -> list[str]:
     return re.findall(r"<<'EOF'\n(.*?)\nEOF", HOOK.read_text(), re.S)
 
 
-def run_hook(top: Path, entries: int = 200000, size: int = 2000000000, turn_end: float | None = None) -> list[str]:
+def run_hook(top: Path, entries: int = 200000, size: int = 2000000000, turn_end: float | None = None,
+             env: dict[str, str] | None = None) -> list[str]:
     """The collect hook's five Python blocks on `top`, as the hook runs them: the process listing and
     the egress probe (into a state dir), the turn-end reader, the link fixing (as the agent's user)
     and the measuring (as root, handed the notes and the state). `turn_end` defaults far in the
@@ -635,7 +637,8 @@ def run_hook(top: Path, entries: int = 200000, size: int = 2000000000, turn_end:
                               stdout=handle, stderr=subprocess.STDOUT, timeout=300)
     assert done.returncode == 0, notes.read_text()
     done = subprocess.run([sys.executable, "-I", "-", str(top), str(entries), str(size), str(notes), str(state), "1", "0",
-                           end, end, end], input=measuring, text=True, capture_output=True, timeout=300)
+                           end, end, end], input=measuring, text=True, capture_output=True, timeout=300,
+                          env=dict(os.environ, **(env or {})))
     assert done.returncode == 0, done.stdout + done.stderr
     assert not notes.exists(), "the notes file is consumed"
     return (top / ".delivered").read_text().splitlines()
@@ -696,6 +699,7 @@ def test_the_collect_hook_lets_honest_deliveries_through_the_copy(tmp_path):
     assert record["delivered"] == lines[0] and record["listing_complete"] is True and record["kill_rounds"] == 1
     assert record["egress"] == {"127.0.0.1:9": record["egress"]["127.0.0.1:9"]} and record["egress_open"] is False
     assert record["late_entries"] == 0, "nothing was written after the (far-future) turn end"
+    assert record["ended_by_watchdog"] is False and record["precap_watchdog"] is None, "no pre-cap watchdog ran here"
     listed = {item["path"]: item for item in record["entries"]}
     assert len(listed) == int(counted) and listed["carve"]["type"] == "link"
     assert listed["src/target/release/deps/carve-0123abcd"]["sha256"] == hashlib.sha256(b"\x7fELF binary").hexdigest()
@@ -901,7 +905,7 @@ def test_the_verifier_records_in_a_builder_stage_and_keeps_only_the_answers():
     assert "--expect-kept-ids" in verifier and "--probes-out /record/probes_expected.json" in verifier
     assert "APT_SNAPSHOT" in verifier and "snapshot.ubuntu.com" in verifier, "the archive can be pinned to a snapshot"
     assert re.findall(r"^COPY .*$", agent, re.M) == ["COPY spec/ /app/spec/", "COPY docs/ /app/docs/",
-                                                    "COPY session-setup session-finish session-watch /usr/local/lib/pagebuild/"]
+                                                    "COPY session-setup session-finish session-watch precap-watchdog /usr/local/lib/pagebuild/"]
     assert "APT_SNAPSHOT" in agent, "the agent image can be pinned to a snapshot too"
     assert "carve" not in agent.replace("/app/rebuild", "").lower(), "no build of any Carve engine in the agent's image"
     assert 'install.py" "$here/carve.tar.gz" "$here/build.txt" /app/rebuild/carve' in solve
@@ -939,6 +943,89 @@ def test_the_installer_refuses_any_build_but_the_pinned_one(tmp_path):
     assert '/app/rebuild/carve --blank "$here/blank.json"' in solve and "--blank" not in verifier, "only the solution blanks"
     package = (SCRIPTS / "package_step.py").read_text()
     assert 'content[f"{STEP}/solution/blank.json"]' in package and '["strings"]' in package
+
+
+def test_the_precap_watchdog_arms_once_fires_at_end_seconds_and_ends_the_tree(tmp_path):
+    """The root pre-cap watchdog: armed once by the set-up hook and detached; END_SECONDS later (2 s
+    here, 33,900 s in production: the 34,560 s cap less eleven minutes) it ends the agent user's whole
+    process tree, a setsid'd child included, TERM then KILL, logging arm, fire and done with
+    timestamps to a root-only log. The collect hook records the log's tail; the verifier carries
+    `ended_by_watchdog` into metrics and never into the reward."""
+    text = PRECAP.read_text()
+    assert text.startswith("#!/bin/sh") and os.access(PRECAP, os.X_OK)
+    for literal in ('END_SECONDS="${PRECAP_END_SECONDS:-33900}"', 'LOG="${PRECAP_LOG:-/var/log/precap-watchdog.log}"',
+                    'PIDFILE="${PRECAP_PIDFILE:-/run/precap-watchdog.pid}"', 'TARGET_USER="${PRECAP_USER:-dev}"',
+                    'SELECT="${PRECAP_SELECT:--u $TARGET_USER}"', 'TERM_ROUNDS="${PRECAP_TERM_ROUNDS:-12}"',
+                    'TERM_INTERVAL="${PRECAP_TERM_INTERVAL:-5}"', "pkill -TERM $SELECT", "pkill -KILL $SELECT",
+                    'setsid nohup "$0" run', 'chmod 0600 "$LOG"'):
+        assert literal in text, literal
+    assert 34560 - 33900 == 11 * 60, "eleven minutes before the agent cap"
+    toml = (TASK / "task.toml").read_text()
+    assert '[[agent.setup_complete]]\ncommand = "/usr/local/lib/pagebuild/precap-watchdog"' in toml
+    assert "precap" not in (STEP / "instruction.md").read_text().lower() and "watchdog" not in (STEP / "instruction.md").read_text().lower()
+    # Live: a tree of two loops, one in a session of its own, matched through a marker in their arguments.
+    log, pidfile = tmp_path / "watchdog.log", tmp_path / "watchdog.pid"
+    marker = "precapmk" + os.urandom(6).hex()
+    loop = "while :; do sleep 1; done"
+    parent = subprocess.Popen(["sh", "-c", loop, marker])
+    child = subprocess.Popen(["sh", "-c", loop, marker], start_new_session=True)
+    env = dict(os.environ, PRECAP_LOG=str(log), PRECAP_PIDFILE=str(pidfile), PRECAP_END_SECONDS="2",
+               PRECAP_SELECT=f"-f {marker}", PRECAP_TERM_INTERVAL="1", PRECAP_TERM_ROUNDS="5")
+    alive = lambda: subprocess.run(["pgrep", "-f", marker], capture_output=True).returncode == 0  # noqa: E731
+    try:
+        started = time.time()
+        first = subprocess.run([str(PRECAP)], env=env, capture_output=True, text=True, timeout=30)
+        armed_in = time.time() - started
+        second = subprocess.run([str(PRECAP)], env=env, capture_output=True, text=True, timeout=30)
+        assert first.returncode == 0 and second.returncode == 0 and armed_in < 5, (first, second, armed_in)
+        pid = int(pidfile.read_text().strip())
+        assert alive(), "the tree lives until the watchdog fires"
+        deadline = time.time() + 20
+        while alive() and time.time() < deadline:
+            time.sleep(0.2)
+        ended_in = time.time() - started
+        assert not alive(), "the tree, the setsid'd child included, is ended"
+        assert 2 <= ended_in <= 12, ended_in
+        time.sleep(1.5)
+        lines = log.read_text().splitlines()
+    finally:
+        subprocess.run(["pkill", "-f", marker], capture_output=True)
+        for process in (parent, child):
+            try:
+                process.wait(timeout=2)
+            except Exception:  # noqa: BLE001 - the loops are dead or being killed
+                pass
+    assert all(re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ", line.split(" ", 1)[0]) for line in lines), lines
+    armed = [line for line in lines if re.search(r"Z armed pid=\d+ end_seconds=2 ", line)]
+    assert len(armed) == 1 and f"pid={pid} " in armed[0], lines
+    assert sum("already armed" in line for line in lines) == 1, "the second arming found the first and did nothing"
+    fired = [line for line in lines if " fired after 2s" in line]
+    assert len(fired) == 1 and lines.index(fired[0]) > lines.index(armed[0]), lines
+    assert any(re.search(r" done term_rounds=\d+ processes_left=0$", line) for line in lines), lines
+    assert not pidfile.exists() and log.stat().st_mode & 0o777 == 0o600
+    # The collect hook records the log's tail; the verifier carries the field, never into the reward.
+    hook = HOOK.read_text()
+    assert 'os.environ.get("PRECAP_LOG", "/var/log/precap-watchdog.log")' in hook and "ended_by_watchdog=" in hook
+    verify = (TESTS / "verify.py").read_text()
+    assert 'metrics["ended_by_watchdog"] = bool(record.get("ended_by_watchdog"))' in verify
+    start = verify.index("def grade(")
+    assert "watchdog" not in verify[start:verify.index("\ndef ", start + 1)], "nothing of the watchdog reaches the grade"
+    top = tmp_path / "rebuild"
+    top.mkdir()
+    (top / "carve").write_text("#!/bin/sh\nexit 0\n")
+    fired_log = tmp_path / "fired.log"
+    fired_log.write_text("2026-11-19T00:00:00Z armed pid=7 end_seconds=33900 target=-u dev\n"
+                         "2026-11-19T09:25:00Z fired after 33900s: ending the session (-u dev)\n"
+                         "2026-11-19T09:25:01Z done term_rounds=1 processes_left=0\n")
+    run_hook(top, env={"PRECAP_LOG": str(fired_log), "PRECAP_PIDFILE": str(tmp_path / "no-such-pid")})
+    record = json.loads((top / ".delivery.json").read_text())
+    assert record["ended_by_watchdog"] is True and record["precap_watchdog"][-2].endswith("(-u dev)"), record["precap_watchdog"]
+    summary = verifier_call(textwrap.dedent(f"""
+        import json, verify
+        from pathlib import Path
+        print(json.dumps(verify.delivery_record(Path({str(top)!r}))))
+    """))
+    assert summary["ended_by_watchdog"] is True and "pre-cap watchdog ended the session" in " ".join(summary["flags"])
 
 
 def test_the_agent_cannot_replace_the_artifact_directory():
@@ -980,7 +1067,7 @@ def test_nothing_the_agent_sees_names_grading_or_a_budget():
     for excluded in ("{{ path }}", "`fmt`", "`lint`", "`migrate`", "Markdown", "the AST as JSON", "importers", "static mode",
                      "`--help`", "`--version`"):
         assert excluded in instruction.split("Out of scope:", 1)[1], excluded
-    for carrier in (HOOK, SETUP, WATCH):
+    for carrier in (HOOK, SETUP, WATCH, PRECAP):
         lowered = carrier.read_text().lower()
         for word in ("grade", "score", "reward", "verifier", "hidden", "oracle", "the test"):
             assert word not in lowered, (carrier.name, word)

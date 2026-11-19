@@ -14,7 +14,7 @@ RUN if [ -n "$APT_SNAPSHOT" ]; then \
 RUN useradd --uid 10001 --create-home dev
 COPY spec/ /app/spec/
 COPY docs/ /app/docs/
-COPY session-setup session-finish session-watch /usr/local/lib/pagebuild/
+COPY session-setup session-finish session-watch precap-watchdog /usr/local/lib/pagebuild/
 RUN mkdir -p /app/rebuild \
     && chown -R root:root /app && chmod -R a+rX,go-w /app/spec /app/docs \
     && chmod 1777 /app && chmod 0777 /app/rebuild \

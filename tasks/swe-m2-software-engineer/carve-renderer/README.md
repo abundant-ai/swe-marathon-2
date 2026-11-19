@@ -28,6 +28,28 @@ archive or binary.
 
 ## Development log
 
+### 2026-11-19 — round 3: the pre-cap watchdog (off the reward path)
+
+- **Why.** On Oddish today every v2 trial whose agent ran into the 9.6 h cap was never graded: the
+  separate verifier image failed to build right after the timeout (platform-side; write-up in
+  harbor-lh `ops/swe-marathon-v2/PLATFORM_VERIFIER_BUILD_AFTER_LONG_RUN.md`), while every run that
+  ended by itself was graded. Until the platform fixes it, the task ends the agent's session itself
+  shortly before the cap, so the deliverable is always graded.
+- **What.** `environment/precap-watchdog` (sh, root-only), armed by a second
+  `[[agent.setup_complete]]` hook as root: it starts itself detached (`setsid nohup "$0" run &`)
+  and returns; the detached copy sleeps `END_SECONDS = 33,900` (34,560 less eleven minutes), then
+  sends TERM to every process of the agent's user every 5 s for up to 60 s, then KILL, logging
+  arm/fire/done with timestamps to root-only `/var/log/precap-watchdog.log`; idempotent through a
+  pid file under `/run`. The collect hook records the log's last lines in `.delivery.json`
+  (`precap_watchdog`, `ended_by_watchdog`) and stops a copy still sleeping; the verifier copies
+  `ended_by_watchdog` into `metrics.json` and flags it in the notes, never into the score. The
+  instruction says nothing about it. The same design as BasedPL's round 5.
+- **Checks.** Arms once (a second arming logs "already armed"); fires at `END_SECONDS` (overridden
+  to 2 s in the check); ends a process tree including a `setsid`'d child; logs with timestamps; the
+  production defaults are asserted from the script text; the collect hook and verifier carry the
+  field. 37 checks pass. Separate commit on top of the round 1-2 commits, so the re-checks 07b and
+  12b can read it last.
+
 ### 2026-11-19 — hardening (QA rounds 1-2)
 
 Two coordinator review rounds, folded in before any run. Measured numbers below are from the
@@ -194,7 +216,7 @@ runtimes, the pool was regenerated at 1,944 cases under a new 128-bit seed, and 
 | Step `01-implement-renderer` | Implemented: instruction, agent image with the specification and the documentation, collect hook, separate verifier image recording at build, reference solution. |
 | Further steps | Not designed. Candidates: the next spec release (0.1.x changes behaviour in patch releases), or a second target (canonical Carve with `fmt`, or Markdown) on the same renderer. |
 | The original | carve-rs 0.1.14's static Linux release archive, fetched by `scripts/setup_tools.py` into `experiment/original/` (not in Git) and packaged as released into the verifier's build context and the solution. |
-| Hooks | `environment/session-setup` (setup begin and complete; `--watch` starts the egress watcher), `environment/session-watch` (the in-sandbox watchdog) and `environment/session-finish` (the one root collect hook), all root-only (`/usr/local/lib/pagebuild`, 0700) in the agent image. |
+| Hooks | `environment/session-setup` (setup begin and complete; `--watch` starts the egress watcher), `environment/session-watch` (the in-sandbox egress watchdog), `environment/precap-watchdog` (setup complete, as root: ends the session 33,900 s after arming, eleven minutes before the 9.6 h cap, so the deliverable is graded) and `environment/session-finish` (the one root collect hook), all root-only (`/usr/local/lib/pagebuild`, 0700) in the agent image. |
 | Published builds | `steps/01-implement-renderer/tests/verifier/upstream_builds.json` from `scripts/upstream_builds.py`: 2,156 sha256, 14 strings (three needed) and foreign-runtime markers for seven runtimes (two needed), for the refusal of fetched builds and runtimes. |
 | Private inputs | `steps/01-implement-renderer/tests/private/cases.json` and `probes.json`, Git-ignored, from `scripts/make_cases.py` and `experiment/seeds.json`. Answers and probe answers are recorded when the verifier image is built; `recording.json` beside them describes the recording and appears in `metrics.json`. |
 | Oracle | The original itself, installed from its release archive by `solve.sh` (as the agent's user), with the 14 tripwire strings blanked in place. |
@@ -339,6 +361,17 @@ instruction states no time budget.
 
 ## Verification
 
+**Run condition on the platform: the session ends itself before the cap.** Oddish did not grade any
+v2 trial whose agent ran into the 9.6 h cap today: the separate verifier image failed to build right
+after the timeout (platform-side, harbor-lh `ops/swe-marathon-v2/PLATFORM_VERIFIER_BUILD_AFTER_LONG_RUN.md`),
+while runs that ended by themselves were graded. Until the platform fixes it, a root pre-cap
+watchdog (`environment/precap-watchdog`, armed at set-up complete) ends the agent's session 33,900 s
+after arming — eleven minutes before the 34,560 s cap — with TERM every 5 s for up to a minute, then
+KILL, and logs arm/fire/done to root-only `/var/log/precap-watchdog.log`. The collect hook records
+the log's last lines and `ended_by_watchdog` in `.delivery.json`; the verifier copies that into
+`metrics.json` (and a note), never into the score. The agent, running as `dev`, cannot see, signal or
+outlast it; the instruction says nothing about it (it states no time budget).
+
 1. The collect hook (`session-finish`) runs as root in the agent's container when the session ends
    (above): it records the agent's processes and whether egress is open, kills the agent's user and
    counts the rounds, reads when the turn ended (from the watchdog `session-watch`, which fired when
@@ -433,6 +466,7 @@ platform's egress window, shared by every task whose original is public.
 | 13 | Infer an evaluation from the files and text | Instruction and image | Checked: no grading, hidden, budget or session wording; no examples shipped | Requester's voice; the hook is root-only and names no judging | An agent can still guess that pages exist to test it | Read the first trajectories | 🟡 YELLOW / UNASSESSED |
 | 14 | A case where carve-rs and the specification disagree | Selection | 30 candidates dropped by the model check; 6 corpus documents known to differ | Only cases the model renders identically are kept | None | Keep | 🟢 GREEN / LOW |
 | 15 | Behaviour outside the stated scope graded | Case generation | No source holds an include; options only `--safe`, `--html`, and unknown ones; CLI cases one per stated behaviour | Out-of-scope list in the instruction | None found | QA lens 12 | 🟢 GREEN / LOW |
+| 16 | Stop, delay or outlast the pre-cap watchdog, so the session runs into the platform's cap and is never graded (a 0 the audit cannot see), or exploit its kill | Agent user; root-only hooks | Checked: the watchdog runs as root from the set-up hook, its log and pid file are root's (0600, `/run`), `dev` cannot signal a root process; check `test_the_precap_watchdog_arms_once_fires_at_end_seconds_and_ends_the_tree` | It can be killed only as root; the kill is TERM then KILL of `dev`'s processes only, eleven minutes before the cap; `ended_by_watchdog` is recorded for the audit, never scored | A platform that itself kills root processes or arms the hook late; a run that ends 11 min early loses nothing the cap would not have taken | First capped trial: read `ended_by_watchdog` and the log tail in `metrics.json` | 🟢 GREEN / LOW |
 
 Licences: the specification, documentation and carve-rs are MIT. The spec's `LICENSE` ships in
 `/app/spec` and `/app/docs`, carve-rs's with the reference solution.
