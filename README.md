@@ -50,11 +50,45 @@ uv tool install "oddish @ git+https://github.com/abundant-ai/oddish.git@main#sub
 Run it as `oddish ...`. Follow [Oddish guidance](resources/ODDISH.md) for packaging
 and running a task.
 
-For Titans work, install the optional dependency group with access to its private
-repository:
+For Titans work, install the optional dependency group from the
+[public Abundant Titans repository](https://github.com/abundant-ai/titans):
 
 ```bash
 uv sync --frozen --group titans
 ```
 
 Include `--group titans` when running or syncing that environment.
+
+The new Titans training/evaluation prototype needs the current library checkout;
+the pinned release above predates its continuous-stream `pretrain` API. To run the
+offline CPU probe against a local checkout without changing the lockfile:
+
+```bash
+uv run --frozen --no-sync --with-editable /path/to/titans python \
+  tasks/swe-m2-ai-research/titans-training/scripts/check_train_eval.py
+```
+
+For application code importing `titans_task`, add
+`tasks/swe-m2-ai-research/titans-training/common` to `PYTHONPATH`. The probe sets
+that import path itself. It uses synthetic text and tiny decoders, not a GPU or
+the production training corpus.
+
+Prepare the fixed FineWeb-Edu, PG19 and WikiText token streams once before
+pretraining. The `titans-data` group adds the pinned Parquet reader; this command
+uses the same local library checkout:
+
+```bash
+uv run --frozen --group titans-data --with-editable /path/to/titans python \
+  tasks/swe-m2-ai-research/titans-training/scripts/prepare_data.py
+```
+
+The default output is the task's Git-ignored `experiment/data/`, with downloads
+cached in `experiment/source-cache/`. Use `--output-dir` for a fresh destination
+or `--validate-only` to check existing token files. Train/eval load those files
+without tokenizing text. To run the preparation checks and audit the full output:
+
+```bash
+uv run --frozen --group titans-data --with-editable /path/to/titans python \
+  tasks/swe-m2-ai-research/titans-training/scripts/check_preparation.py \
+  --data-dir tasks/swe-m2-ai-research/titans-training/experiment/data
+```

@@ -10,12 +10,13 @@ package = false
 
 [tool.uv.sources]
 orange-task-authoring = { path = "tasks/swe-m2-ai-engineer/knowledge-work-assistant", package = false }
-abundant-titans = { git = "ssh://git@github.com/abundant-ai/titans.git", rev = "2260f95668a4c3d40fd6050292a1d2f74d8f5a5c" }
+abundant-titans = { git = "https://github.com/abundant-ai/titans.git", rev = "2260f95668a4c3d40fd6050292a1d2f74d8f5a5c" }
 
 [dependency-groups]
 dev = ["pytest==8.4.2"]
-# Private training dependencies; opt in with --group titans.
+# Optional training dependencies; opt in with --group titans.
 titans = ["abundant-titans"]
+titans-data = ["pyarrow==23.0.1"]
 
 [tool.pytest.ini_options]
 testpaths = ["ci_checks", "tasks/swe-m2-ai-engineer/knowledge-work-assistant/checks"]
