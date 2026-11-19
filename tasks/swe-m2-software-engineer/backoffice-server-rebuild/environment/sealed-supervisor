@@ -1,0 +1,21 @@
+#!/bin/sh
+exec 9>/run/stockwell-supervisor.lock
+flock -n 9 || exit 0
+{ echo -900 > /proc/self/oom_score_adj; } 2>/dev/null
+cd /opt/stockwell/app || exit 1
+while :; do
+    env -i PATH=/opt/py/bin:/usr/bin:/bin LC_ALL=C.UTF-8 LANG=C.UTF-8 HOME=/opt/stockwell/data \
+        PYTHONPATH=/opt/stockwell/app PYTHONDONTWRITEBYTECODE=1 \
+        $(sed 's|{data}|/opt/stockwell/data|g' /usr/local/lib/stockwell/stockwell.env) \
+        setsid -w setpriv --reuid stockwell --regid stockwell --clear-groups \
+        /opt/py/bin/python -m stockwell serve --host 127.0.0.1 --port 8080 --workers 1 >/dev/null 2>&1 </dev/null &
+    server=$!
+    misses=0
+    while kill -0 "$server" 2>/dev/null; do
+        sleep 15
+        if curl -fsS -m 10 http://127.0.0.1:8080/api/health >/dev/null 2>&1; then misses=0; else misses=$((misses + 1)); fi
+        if [ "$misses" -ge 4 ]; then pkill -KILL -u stockwell; fi
+    done
+    wait "$server" 2>/dev/null
+    sleep 2
+done

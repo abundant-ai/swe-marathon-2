@@ -73,6 +73,16 @@ SCREENS = ("/", "/activity", "/sales/orders", "/sales/orders/{order}", "/sales/q
            "/admin/files/{pdf}", "/admin/files/{picture}", "/admin/integrity", "/admin/clock")
 
 
+SETTINGS = HERE.parent / "environment" / "stockwell.env"
+
+
+def settings(data: Path) -> dict[str, str]:
+    """The server's settings from environment/stockwell.env, the one file the sealed server, the recordings and the
+    solution share (QA 12 F1: the sealed server once served the client as well, and answered six requests differently)."""
+    pairs = (line.split("=", 1) for line in SETTINGS.read_text().splitlines() if line.strip())
+    return {key: value.replace("{data}", str(data)) for key, value in pairs}
+
+
 class Reference:
     """The reference server as a process on one data directory, stopped and started as an operator would."""
 
@@ -87,9 +97,7 @@ class Reference:
             self.port = probe.getsockname()[1]
         self.data.mkdir(parents=True, exist_ok=True)
         env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "PYTHONPATH": str(self.source), "PYTHONDONTWRITEBYTECODE": "1",
-               "STOCKWELL_AUTH_MODE": "proxy", "STOCKWELL_CREATE_SCHEMA": "true", "STOCKWELL_DATABASE_URL": f"sqlite:///{self.data}/stockwell.db",
-               "STOCKWELL_DATA_DIR": str(self.data), "STOCKWELL_LOG_LEVEL": "WARNING", "STOCKWELL_ACCESS_LOG": "false",
-               "STOCKWELL_REQUEST_LOG": "false", "STOCKWELL_METRICS_ENABLED": "false"}
+               **settings(self.data)}
         self.proc = subprocess.Popen([self.python, "-B", "-m", "stockwell", "serve", "--host", "127.0.0.1", "--port", str(self.port), "--workers", "1"],
                                      env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL, start_new_session=True)
         deadline = time.monotonic() + 60

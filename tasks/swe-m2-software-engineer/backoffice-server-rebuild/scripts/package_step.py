@@ -36,7 +36,7 @@ CACHE = TASK_ROOT / "experiment" / "dist" / ".cache"
 EXCLUDED = {"__pycache__", ".pytest_cache", ".DS_Store", "experiment"}
 CLIENT_FILES = ("index.html", "package.json", "package-lock.json", "tsconfig.json", "tsconfig.app.json", "tsconfig.node.json", "vite.config.ts",
                 "eslint.config.js", ".prettierrc.json", "openapi.json", "README.md")
-EXECUTABLE = (".sh", "start-sealed-server", "prepare-delivery")
+EXECUTABLE = (".sh", "start-sealed-server", "sealed-supervisor", "prepare-delivery")
 # py_compile with hash-based, unchecked headers: no source mtime in the file, so the bytes depend on the source alone.
 # optimize=0 keeps docstrings and asserts, which the server's behaviour depends on (its OpenAPI text, for one).
 COMPILE = """
@@ -121,6 +121,8 @@ def collect() -> dict[str, Source]:
             if path.is_file() and not EXCLUDED.intersection(relative.parts) and path.suffix != ".pyc" and path != SCENARIOS:
                 content[relative.as_posix()] = path
     content[f"{STEP}/tests/private/scenarios.json.gz"] = compressed_scenarios()
+    # the server's settings: one file for the sealed server, the recordings and the solution (QA 12 F1)
+    content[f"{STEP}/solution/data/stockwell.env"] = TASK_ROOT / "environment" / "stockwell.env"
     source = checkout()
     content.update(compiled(source))
     content["environment/requirements.txt"] = source / "requirements.txt"

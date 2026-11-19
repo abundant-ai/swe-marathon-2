@@ -6,8 +6,9 @@ exec setpriv --reuid dev --regid dev --clear-groups --no-new-privs /opt/py/bin/p
 
 The copy keeps relative links that stay inside the directory and refuses everything else. A link
 inside it that points elsewhere inside it becomes relative; a link to a file or directory outside
-it (a virtual environment's interpreter, say) becomes a copy of what it points to; a link to
-nothing, a pipe, a socket or a device node is removed. Each change is printed.
+it (a virtual environment's interpreter, say) becomes a copy of what it points to, if that is a
+file or a directory (devices, pipes and sockets in it are left out); a link to nothing or to a
+device, and a pipe, a socket or a device node, are removed. Each change is printed.
 """
 import os
 import shutil
@@ -52,6 +53,10 @@ def fix_link(path, name):
         os.unlink(path)
         os.symlink(wanted, path)
         return f"{name} -> {wanted} (was {target})"
+    mode = os.stat(resolved).st_mode
+    if not (stat.S_ISREG(mode) or stat.S_ISDIR(mode)):
+        os.unlink(path)
+        return f"removed {name} -> {target}: it points at a device, a pipe or a socket"
     size = size_of(resolved, BUDGET - spent)
     if spent + size > BUDGET:
         os.unlink(path)
@@ -59,10 +64,19 @@ def fix_link(path, name):
     os.unlink(path)
     spent += size
     if os.path.isdir(resolved):
-        shutil.copytree(resolved, path, symlinks=True)
+        shutil.copytree(resolved, path, symlinks=True, ignore=special_files)
     else:
         shutil.copy2(resolved, path)
     return f"{name}: a copy of {resolved} (was a link to {target})"
+
+
+def special_files(folder, names):
+    kept = []
+    for entry in names:
+        mode = os.lstat(os.path.join(folder, entry)).st_mode
+        if not (stat.S_ISREG(mode) or stat.S_ISDIR(mode) or stat.S_ISLNK(mode)):
+            kept.append(entry)
+    return kept
 
 
 def one_pass():

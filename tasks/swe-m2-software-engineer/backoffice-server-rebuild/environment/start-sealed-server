@@ -5,15 +5,7 @@ if setpriv --reuid dev --regid dev --clear-groups --no-new-privs sh -c \
     exit 1
 fi
 if curl -fsS -m 3 http://127.0.0.1:8080/api/health >/dev/null 2>&1; then exit 0; fi
-cd /opt/stockwell/app || exit 1
-env -i PATH=/opt/py/bin:/usr/bin:/bin LC_ALL=C.UTF-8 LANG=C.UTF-8 HOME=/opt/stockwell/data \
-    PYTHONPATH=/opt/stockwell/app PYTHONDONTWRITEBYTECODE=1 \
-    STOCKWELL_AUTH_MODE=proxy STOCKWELL_CREATE_SCHEMA=true \
-    STOCKWELL_DATABASE_URL=sqlite:////opt/stockwell/data/stockwell.db \
-    STOCKWELL_CLIENT_DIR=/opt/stockwell/client STOCKWELL_DATA_DIR=/opt/stockwell/data \
-    STOCKWELL_LOG_LEVEL=WARNING STOCKWELL_ACCESS_LOG=false STOCKWELL_REQUEST_LOG=false \
-    setsid setpriv --reuid stockwell --regid stockwell --clear-groups \
-    /opt/py/bin/python -m stockwell serve --host 127.0.0.1 --port 8080 --workers 1 >/dev/null 2>&1 </dev/null &
+setsid /usr/local/sbin/sealed-supervisor >/dev/null 2>&1 </dev/null &
 for _ in $(seq 1 90); do
     if curl -fsS -m 3 http://127.0.0.1:8080/api/health >/dev/null 2>&1; then exit 0; fi
     sleep 1

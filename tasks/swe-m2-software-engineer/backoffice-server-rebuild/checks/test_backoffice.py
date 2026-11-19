@@ -214,13 +214,62 @@ def test_bundles_hold_runtime_files_only(tmp_path):
 
 def test_the_sealed_server_is_started_as_its_own_user_from_bytecode():
     """QA 08: the image receives bytecode only (no source in any layer, the build fails on a .py), and every start
-    first checks as dev that /opt/stockwell cannot be read or entered; if it can, the setup hook fails and the trial stops."""
+    first checks as dev that /opt/stockwell cannot be read or entered; if it can, the setup hook fails and the trial stops.
+    QA 20: a root supervisor keeps the sealed server running for the whole session, restarting it when it exits or stops
+    answering its health check."""
     script = (TASK / "environment" / "start-sealed-server").read_text()
+    supervisor = (TASK / "environment" / "sealed-supervisor").read_text()
     docker = (TASK / "environment" / "Dockerfile").read_text()
-    assert "setpriv --reuid stockwell" in script and "STOCKWELL_AUTH_MODE=proxy" in script
     check = script.index("setpriv --reuid dev")
     assert check < script.index("curl") and "test -r /opt/stockwell" in script and "exit 1" in script[check:script.index("curl")]
+    assert "setsid /usr/local/sbin/sealed-supervisor" in script and "setpriv --reuid stockwell" not in script
+    assert "flock -n 9" in supervisor and "while :; do" in supervisor and "setpriv --reuid stockwell" in supervisor
+    assert "pkill -KILL -u stockwell" in supervisor and "/usr/local/lib/stockwell/stockwell.env" in supervisor
     assert "compileall" not in docker and "test -z \"$(find /opt/stockwell/app -name '*.py'" in docker and "chmod -R go-rwx /opt/stockwell" in docker
+    assert "COPY sealed-supervisor /usr/local/sbin/sealed-supervisor" in docker and "/usr/local/sbin/sealed-supervisor" in docker.split("chmod 0700")[-1]
+
+
+def test_one_configuration_for_the_sealed_server_the_recordings_and_the_solution():
+    """QA 12 F1/F3: the sealed server served the web client as well, so `DELETE /nowhere` answered it 405 where the
+    recordings hold 404 and a perfect clone lost 6 units. The sealed server, the live recorder and the solution now take
+    their settings from one file, environment/stockwell.env, with no client directory; the legacy recorder builds the
+    same app in-process without one. The instruction's numbers are the ones the code enforces."""
+    settings = (TASK / "environment" / "stockwell.env").read_text()
+    assert "CLIENT_DIR" not in settings and "STOCKWELL_AUTH_MODE=proxy" in settings and "{data}" in settings
+    docker = (TASK / "environment" / "Dockerfile").read_text()
+    assert "COPY stockwell.env /usr/local/lib/stockwell/stockwell.env" in docker and "/opt/stockwell/client" not in docker
+    for path in (TASK / "environment" / "start-sealed-server", TASK / "environment" / "sealed-supervisor", STEP / "solution" / "oracle.py",
+                 TASK / "scripts" / "record_live.py"):
+        text = path.read_text()
+        assert "CLIENT_DIR" not in text and not re.search(r"STOCKWELL_(AUTH_MODE|DATABASE_URL|METRICS|REQUEST_LOG)=", text), path
+    assert "stockwell.env" in (STEP / "solution" / "oracle.py").read_text() and "stockwell.env" in (TASK / "scripts" / "record_live.py").read_text()
+    assert 'solution/data/stockwell.env"] = TASK_ROOT / "environment" / "stockwell.env"' in (TASK / "scripts" / "package_step.py").read_text()
+    instruction = " ".join((STEP / "instruction.md").read_text().split())
+    assert "serves the web client at" not in instruction and "inherit" not in instruction and "checksum" in instruction
+    probe = ("import json, sys; sys.path.insert(0, sys.argv[1]); from verifier import replay as r; "
+             "print(json.dumps([r.WORKERS, r.REQUEST_SEC, r.START_SEC, r.THREAD_LIMIT, r.FILE_LIMIT, r.MEMORY_LIMIT, r.WORKSPACE_ID.pattern]))")
+    done = subprocess.run([sys.executable, "-I", "-B", "-c", probe, str(STEP / "tests")], capture_output=True, text=True, timeout=60)
+    assert done.returncode == 0, done.stderr[-2000:]
+    workers, request, start, threads, file_limit, memory, workspace = json.loads(done.stdout)
+    source = (REFERENCE / "backend" / "src" / "stockwell" / "settings.py").read_text()
+    assert "max_body_bytes: int = 6_000_000" in source and "6 MB" in instruction
+    assert "max_upload_bytes: int = Field(64 * 1024 * 1024" in source and "64 MiB" in instruction
+    assert (workers, request, start) == (8, 30, 60) and "up to 8 requests" in instruction and "after 30 seconds" in instruction
+    assert "gives it 60 seconds" in instruction and threads == 4096 and "4,096 threads" in instruction
+    assert (file_limit, memory) == (4 << 30, 6 << 30) and "files of at most 4 GB" in instruction and "6 GB of address space" in instruction
+    assert workspace == "[A-Za-z0-9_]{1,40}" and "at most 40 characters" in instruction
+
+
+def test_python3_in_both_images_has_the_packages_the_instruction_names():
+    """QA 13 S2: `python3` was a link to the venv's interpreter, and a venv is not active through a link outside it, so
+    `python3 -c "import fastapi"` failed in both images. It is now a wrapper that runs /opt/py's interpreter, the system
+    interpreter also sees /opt/py's packages, and each image's build checks both as its users."""
+    for path, users in ((TASK / "environment" / "Dockerfile", ("dev", "nobody")), (STEP / "tests" / "Dockerfile", ("nobody",))):
+        docker = path.read_text()
+        assert "ln -sf /opt/py/bin/python" not in docker and 'exec /opt/py/bin/python "$@"' in docker, path
+        assert "opt-py.pth" in docker and 'python3 -c "import fastapi' in docker and '/usr/bin/python3 -c "import fastapi' in docker, path
+        for user in users:
+            assert f"--reuid {user}" in docker or ("for user in dev nobody" in docker and user in ("dev", "nobody")), (path, user)
 
 
 def test_verifier_reads_the_gzipped_scenarios_the_image_ships(tmp_path):
@@ -884,6 +933,7 @@ def test_a_virtual_environment_in_the_delivery_survives_the_copy_to_the_verifier
     (server / "seed").symlink_to(server / "data" / "seed.json")
     (server / "data" / "back").symlink_to("../../server/run")
     (server / "gone").symlink_to(tmp_path / "nothing")
+    (server / "zeros").symlink_to("/dev/zero")  # QA 07c N2: copied, it would stream until the disk fills
     os.mkfifo(server / "pipe")
     (server / "run").write_text('#!/bin/sh\nexec "$(dirname "$0")/.venv/bin/python" -c "import sys; print(sys.prefix)"\n')
     (server / "run").chmod(0o755)
@@ -911,7 +961,8 @@ def test_a_virtual_environment_in_the_delivery_survives_the_copy_to_the_verifier
     for path in absolute:
         assert (after / ".venv" / "bin" / path.name).is_file() and not (after / ".venv" / "bin" / path.name).is_symlink()
     assert os.readlink(after / "seed") == "data/seed.json" and os.readlink(after / "data" / "back") == "../run"
-    assert not (after / "gone").exists() and not (after / "pipe").exists() and len(fixed.stdout.splitlines()) >= 4
+    assert not (after / "gone").exists() and not (after / "pipe").exists() and not os.path.lexists(after / "zeros")
+    assert len(fixed.stdout.splitlines()) >= 5 and "points at a device" in fixed.stdout
     config = tomllib.loads((TASK / "task.toml").read_text())
     assert config["verifier"]["collect"] == [{"command": "/usr/local/sbin/prepare-delivery", "user": "root", "timeout_sec": 600}]
     docker = (TASK / "environment" / "Dockerfile").read_text()

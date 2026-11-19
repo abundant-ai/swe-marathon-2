@@ -10,12 +10,12 @@ our accounting export, which compare every value they receive, and its type, exa
 
 ## Context
 
-- The sealed server is running at `http://127.0.0.1:8080`. It serves the web client at `/` and a
-  JSON API under `/api`; it also describes its endpoints and their request bodies at
-  `/api/openapi.json`. It runs under its own account, so all we can do is use it.
-- The web client's source is in `/app/client`: React and TypeScript, with the built copy the
-  sealed server serves in `/app/client/dist`. It uses most of the API, its screens show what each
-  record means to our staff, and nothing in it needs changing.
+- The sealed server is running at `http://127.0.0.1:8080`. It answers a JSON API under `/api`
+  and describes its endpoints and their request bodies at `/api/openapi.json`. It runs under its
+  own account, so all we can do is use it.
+- The web client's source is in `/app/client`: React and TypeScript, with its built copy in
+  `/app/client/dist`. It uses most of the API, its screens show what each record means to our
+  staff, and nothing in it needs changing.
 - The API is large: over two hundred endpoints across selling, stock, buying, production,
   planning and the books.
 - Staff attach phone photos, videos, voice notes and supplier PDFs to records, the server reads
@@ -38,9 +38,7 @@ our accounting export, which compare every value they receive, and its type, exa
 
 ## What to deliver
 
-A server in `/app/server` with an executable file `/app/server/run` that starts it. We will
-maintain it ourselves from now on, so build it the way you would want to inherit it: the business
-rules in focused modules by area, kept apart from storage and HTTP handling.
+A server in `/app/server` with an executable file `/app/server/run` that starts it.
 
 - `run` takes no arguments. It listens on `127.0.0.1` on the port given in the `PORT`
   environment variable and keeps running until it is stopped with SIGTERM, after which it should
@@ -65,8 +63,10 @@ rules in focused modules by area, kept apart from storage and HTTP handling.
 - Some answers will differ whatever you do, because they carry the real time or a random token:
   password sign-in, sessions and API keys, which we do not use, and the request log and
   `/metrics`, which are for operators. Those need not match.
-- Where the sealed server answers with a file instead of JSON, yours answers with the same
-  bytes and the same `Content-Type`.
+- Where the sealed server answers with a file instead of JSON (a document, a label, a
+  thumbnail), yours answers with the same bytes and the same `Content-Type`: our document archive
+  and our partners' portals file everything we send by its checksum, so a file that differs by
+  one byte is a different document to them.
 - It takes what the sealed server takes: JSON request bodies of up to 6 MB and file uploads of
   up to 64 MiB.
 - Apart from those exceptions, the one thing that may differ is the workspace id itself: our
