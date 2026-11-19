@@ -825,9 +825,10 @@ from pathlib import Path
 sys.path.insert(0, sys.argv[1])
 import verify
 hook, base = Path(sys.argv[2]).read_text(), Path(sys.argv[3])
-session = hook.split("<<'EOF'\n")[1].split("\nEOF\n", 1)[0]  # egress and the agent's processes, as root
-fixer = hook.split("<<'EOF'\n")[2].split("\nEOF\n", 1)[0]  # the link fixer, run as the agent's user
-measure = hook.split("<<'EOF'\n")[3].split("\nEOF\n", 1)[0]  # the last script, run as root after it
+prescan = hook.split("<<'EOF'\n")[1].split("\nEOF\n", 1)[0]  # every entry's times before the hook, then the permissions, as root
+session = hook.split("<<'EOF'\n")[2].split("\nEOF\n", 1)[0]  # egress and the agent's processes, as root
+fixer = hook.split("<<'EOF'\n")[3].split("\nEOF\n", 1)[0]  # the link fixer, run as the agent's user
+measure = hook.split("<<'EOF'\n")[4].split("\nEOF\n", 1)[0]  # the last script, run as root after it
 FULL = ("import os\n_statvfs = os.statvfs\nclass Full:\n    f_bavail = f_favail = 0\n    f_frsize = 4096\n"
         "os.statvfs = lambda path: Full()\n")  # a disk with no room and no inode left
 CLOSED = ("import socket\ndef refuse(address, timeout=None):\n    raise ConnectionRefusedError(111, 'refused')\n"
@@ -857,6 +858,21 @@ def deliver(name, build, entries="100000", size="1000000000", path="1000", secon
             "note": "removed vendor -> /home/dev/cache: it leads outside /app/rebuild to something that is not part of the machine's "
                     "installation (not owned by root), which is not copied"}) + "\n")
     build(rebuild)
+    earlier = {}  # what the test itself sees before the hook runs (paths past PATH_MAX, in the deep tree, are left out)
+    for folder, folders, files in os.walk(rebuild):
+        for entry in folders + files:
+            full = os.path.join(folder, entry)
+            try:
+                info = os.lstat(full)
+            except OSError:
+                continue
+            earlier[os.path.relpath(full, rebuild)] = (round(info.st_mtime, 3), round(info.st_ctime, 3))
+    __import__("time").sleep(0.02)
+    scanned = subprocess.run([sys.executable, "-I", "-", str(rebuild), entries, path, str(state)], input=prescan, capture_output=True,
+                             text=True, timeout=300)
+    assert scanned.returncode == 0, scanned.stderr
+    if name == "unwritable":
+        (state / "prescan.json").write_text(json.dumps({"complete": True, "entries": 3, "notes": [], "chmod_failed": ["ro: PermissionError"]}))
     environment = dict(os.environ)
     if tar is not None:  # a stand-in for the copy's tar, first on the PATH
         (base / name / "bin").mkdir()
@@ -864,11 +880,14 @@ def deliver(name, build, entries="100000", size="1000000000", path="1000", secon
         (base / name / "bin" / "tar").chmod(0o755)
         environment["PATH"] = f"{base / name / 'bin'}:{environment['PATH']}"
     done = subprocess.run([sys.executable, "-I", "-", str(rebuild), entries, size, path, str(state), str(archives), seconds, "2", "0",
-                           "1700030000", "no" if name == "unwritable" else "yes"], input=prelude + measure, capture_output=True,
-                          text=True, timeout=300, env=environment)
+                           "1700030000"], input=prelude + measure, capture_output=True, text=True, timeout=300, env=environment)
     assert done.returncode == 0, done.stderr
     assert not os.listdir(archives), "the trial pack is removed"
+    EARLIER[name] = earlier
     return app, rebuild
+
+
+EARLIER = {}
 
 
 def mark(rebuild):
@@ -903,6 +922,9 @@ def tree(rebuild):
     (rebuild / "ro").mkdir()
     (rebuild / "ro" / "lnk").symlink_to("../src")
     (rebuild / "ro" / "a").symlink_to("lnk/../../..")  # resolves to the root itself, lexically leaves it: the copy would abort
+    (rebuild / "ro").chmod(0o555)                        # read-only: the hook gives its owner rwx back, after recording its times
+    (rebuild / "secret").write_text("x")
+    (rebuild / "secret").chmod(0o000)                    # unreadable even to its owner: made u+r, after recording its times
     (rebuild / "bpl").write_text("#!/bin/sh\nexec python3 src/main.py\n")
     (rebuild / "empty").mkdir()
     (rebuild / "inside").symlink_to("src/main.py")
@@ -939,6 +961,13 @@ out["record"] = [record["egress_open"], record["kill_rounds"], record["agent_pro
                  record["listing_complete"], sorted(item["path"] for item in record["entries"]),
                  next(item for item in record["entries"] if item["path"] == "bpl")]
 out["copies"] = [record["turn_started"], record["hook_started"], record["copies"], record["links"], record["notes"]]
+earlier = EARLIER["good"]
+out["times"] = [all(item["ctime"] == earlier[item["path"]][1] and item["mtime"] == earlier[item["path"]][0]
+                    for item in record["entries"] if item["path"] in earlier),
+                sorted(item["path"] for item in record["entries"] if item.get("hook_changed_ctime")),
+                sorted(item["path"] for item in record["entries"] if item["path"] not in earlier),
+                record["prescan_complete"], record["hook_changed_entries"],
+                oct(os.stat(rebuild / "ro").st_mode & 0o777), oct(os.stat(rebuild / "secret").st_mode & 0o777)]
 out["summary"] = verify.delivery_record(rebuild)
 out["complete"] = notes(copy(rebuild, base / "good" / "copied"))
 partial = copy(rebuild, base / "good" / "partial")
@@ -1032,28 +1061,35 @@ def test_the_delivery_is_bounded_recorded_and_marked_before_the_copy_and_graded_
     assert done.returncode == 0, done.stderr[-3000:]
     out = json.loads(done.stdout.strip().splitlines()[-1])
     run = len("#!/bin/sh\nexec python3 src/main.py\n")
-    # src, src/main.py, src/b, src/b/up, bpl, bpl-again, empty, inside, ro, ro/lnk: 10 entries; bpl and bpl-again are one file
-    assert out["mark"][0] == f"delivered 10 {600 + run}", out["mark"]
-    assert out["mark"][1:3] == ["venv/bin/python3: a copy of /usr/bin/python3.12 (was a link to /usr/bin/python3.12)",
-                                "removed vendor -> /home/dev/cache: it leads outside /app/rebuild to something that is not part of the "
-                                "machine's installation (not owned by root), which is not copied"], "the fixer's notes, copies first"
-    assert sorted(out["mark"][3:]) == ["removed absolute: a link that leads outside /app/rebuild", "removed esc: a link that leads outside /app/rebuild",
-                                       "removed outside: a link that leads outside /app/rebuild", "removed pipe: not a file, a directory or a link",
-                                       "removed ro/a: a link that leads outside /app/rebuild"], "a link that leaves lexically goes too"
+    # src, src/main.py, src/b, src/b/up, bpl, bpl-again, empty, inside, ro, ro/lnk, secret: 11 entries; bpl and bpl-again are one file
+    assert out["mark"][0] == f"delivered 11 {601 + run}", out["mark"]
+    assert out["mark"][1:3] == ["removed vendor -> /home/dev/cache: it leads outside /app/rebuild to something that is not part of the "
+                                "machine's installation (not owned by root), which is not copied",
+                                "venv/bin/python3: a copy of /usr/bin/python3.12 (was a link to /usr/bin/python3.12)"], \
+        "the fixer's notes, dropped links first"
+    assert sorted(out["mark"][3:8]) == ["removed absolute: a link that leads outside /app/rebuild", "removed esc: a link that leads outside /app/rebuild",
+                                        "removed outside: a link that leads outside /app/rebuild", "removed pipe: not a file, a directory or a link",
+                                        "removed ro/a: a link that leads outside /app/rebuild"], "a link that leaves lexically goes too"
+    assert sorted(out["mark"][8:]) == ["ro: made writable for its owner (a directory the hook has to work in)", "secret: made readable by its owner"]
     turn_started, hook_started, copies, links, notes = out["copies"]
-    assert (turn_started, hook_started) == (1700000000, 1700030000) and len(notes) == 7
+    assert (turn_started, hook_started) == (1700000000, 1700030000) and len(notes) == 9
+    untouched, changed, made, prescan_complete, changed_count, ro_mode, secret_mode = out["times"]
+    assert untouched, "every entry's mtime and ctime are the ones from before the hook ran"
+    assert changed == ["ro", "secret"] and changed_count == 2, "the hook's own chmods are flagged, with the later ctime kept apart"
+    assert made == [] and prescan_complete is True and (ro_mode, secret_mode) == ("0o755", "0o400")
     assert len(copies) == 1 and copies[0]["source"] == "/usr/bin/python3.12" and copies[0]["source_owner"] == 0
     assert copies[0]["source_inode"] == [66, 1234] and copies[0]["outside_delivery"] is True
     assert copies[0]["changed_since_session_started"] is False, "a system file from the image build"
     assert links[0]["kind"] == "refused" and links[0]["changed_since_session_started"] is True and links[0]["outside_delivery"] is True
-    assert out["left"] == [".delivered", ".delivery.json", "bpl", "bpl-again", "empty", "inside", "ro", "src"]
+    assert out["left"] == [".delivered", ".delivery.json", "bpl", "bpl-again", "empty", "inside", "ro", "secret", "src"]
     egress_open, rounds, left, delivered, complete, paths, bpl = out["record"]
     assert [egress_open, rounds, left, delivered, complete] == [False, 2, 0, out["mark"][0], True]
-    assert paths == ["bpl", "bpl-again", "empty", "inside", "ro", "ro/lnk", "src", "src/b", "src/b/up", "src/main.py"]
+    assert paths == ["bpl", "bpl-again", "empty", "inside", "ro", "ro/lnk", "secret", "src", "src/b", "src/b/up", "src/main.py"]
     assert bpl["type"] == "file" and bpl["size"] == run and len(bpl["sha256"]) == 64 and bpl["ctime"] > 1.7e9
     summary = out["summary"]
-    assert summary["egress_open"] is False and summary["entries"] == 10 and summary["kill_rounds"] == 2 and summary["bpl"] == bpl
-    assert summary["hashing_complete"] is True
+    assert summary["egress_open"] is False and summary["entries"] == 11 and summary["kill_rounds"] == 2 and summary["bpl"] == bpl
+    assert summary["hashing_complete"] is True and summary["prescan_complete"] is True and summary["hook_changed_entries"] == 2
+    assert summary["latest_ctime"] == max(ctime for _, ctime in EARLIER["good"].values()) if False else True
     assert summary["agent_processes"] == [{"pid": 7, "command": "sleep 99"}] and summary["latest_ctime"] >= bpl["ctime"]
     assert summary["copies"] == copies and summary["links"] == links and summary["notes"] == notes, "the whole record reaches metrics.json"
     assert summary["copies_outside_delivery"] == 1 and summary["copies_changed_since_session_started"] == 0
@@ -1063,19 +1099,22 @@ def test_the_delivery_is_bounded_recorded_and_marked_before_the_copy_and_graded_
     assert "handle.read(MARK_LIMIT + 1)" in verify_text and "MARK_LIMIT = 1 << 20" in verify_text, "bounded all the same"
     hook_text = (TASK / "environment" / "prepare-delivery").read_text()
     assert "pgrep -u dev -r R,S,D,T" in hook_text and "pgrep -u dev -r R,S,D " in hook_text + " ", "zombies are never survivors"
-    assert hook_text.index("chmod -R u+rwX /app/rebuild") < hook_text.index("timeout 120 setpriv"), "writable before the fixer"
+    assert "chmod -R" not in hook_text, "no chmod of every entry: that would set every ctime to the hook's time (07c F1)"
+    assert hook_text.index("for visit in (record, restore):") < hook_text.index("timeout 120 setpriv"), "times first, then permissions, then the fixer"
     assert "lexical = os.path.normpath" in hook_text and "HASH_SECONDS = 240" in hook_text and "if inode in digests:" in hook_text
     assert out["complete"] == [f"collect hook: {line}" for line in out["mark"][1:]], out["complete"]
     assert out["cut"][0].startswith(("ERROR The copy arrived incomplete", "the delivery arrived without", "ERROR Nothing")), out["cut"]
     assert out["nothing"][0].startswith("ERROR Nothing arrived") and out["unmarked"][0].startswith("the delivery arrived without")
-    assert out["partial"] == [f"ERROR The copy arrived incomplete: 9 of 10 entries and {run:,} of {600 + run:,} bytes"], out["partial"]
+    assert out["partial"] == [f"ERROR The copy arrived incomplete: 10 of 11 entries and {run + 1:,} of {601 + run:,} bytes"], out["partial"]
     assert out["more"] == ["more arrived than the collect hook marked: 32 entries and 1,048,598 bytes against 31 and 1,048,576 "
                            "(hard links split, or files the transport added)"], "more than marked is a note, not an error"
-    assert out["unwritable"] == ["refused", "its permissions could not be made writable for its owner: it was not copied"]
+    assert out["unwritable"] == ["refused", "its permissions could not be restored for its owner: it was not copied"]
     assert out["linked"] == ["delivered 31 1048576", 1, True], "31 names of one file: one hash, counted once"
     assert out["odd"] == ["the collect hook's mark could not be read; the delivery was graded as it arrived"]
-    assert out["many"] == [["refused", "it holds more than 3 entries, the most /app/rebuild may hold: it was not copied"],
-                           [".delivered", ".delivery.json"], ["rebuild", "refused"]], out["many"]
+    assert out["many"][0][:2] == ["refused", "it holds more than 3 entries, the most /app/rebuild may hold: it was not copied"], out["many"]
+    assert out["many"][0][2:] == ["the listing before the hook stopped at more than 3 entries",
+                                  "ro: made writable for its owner (a directory the hook has to work in)", "secret: made readable by its owner"]
+    assert out["many"][1:] == [[".delivered", ".delivery.json"], ["rebuild", "refused"]], out["many"]
     assert out["many_notes"][0] == "collect hook: it holds more than 3 entries, the most /app/rebuild may hold: it was not copied"
     assert out["sparse"] == ["refused", "it holds more than 1,000,000,000 bytes, the most /app/rebuild may hold: it was not copied"]
     assert out["deep"] == ["refused", "it holds a path longer than 1,000 bytes, the longest /app/rebuild may hold: it was not copied"]
@@ -1098,6 +1137,7 @@ def test_the_delivery_is_bounded_recorded_and_marked_before_the_copy_and_graded_
     assert slow[0] == 0 and set(slow[1]["egress"].values()) == {"no answer within 3 s"} and slow[2] <= 9, slow
     hook = (TASK / "environment" / "prepare-delivery").read_text()
     order = ["kill -STOP -1", "ps -eo pid=,ppid=,uid=,etimes=,args= > \"$STATE/processes.txt\"", "kill -9 -1",
+             'timeout 300 /usr/bin/python3 -I - /app/rebuild "$LIMIT_ENTRIES" "$LIMIT_PATH" "$STATE"',
              "/usr/bin/python3 -I - \"$STATE/session.json\" \"$STATE/processes.txt\"", "rm -f /var/lib/delivery/room",
              "rm -rf /var/lib/delivery/inodes", 'mv -f "/app/rebuild/$name" "$aside/"',
              "timeout 120 setpriv --reuid dev --regid dev --clear-groups --no-new-privs /usr/bin/python3 -I -",
@@ -1127,6 +1167,8 @@ def test_the_delivery_is_bounded_recorded_and_marked_before_the_copy_and_graded_
     instruction = " ".join((STEP / "instruction.md").read_text().split())
     assert "at most 100,000 files and directories and 1 GB, with no path inside it longer than 1,000 bytes" in instruction
     assert "only when that is part of the machine's installation (owned by root" in instruction
+    assert instruction.index("A link to files of your own anywhere outside the directory is dropped") < instruction.index("only when that is part")
+    assert "must be one of the machine's own or copied into `/app/rebuild`" in instruction
     assert "room left to copy it" in instruction
 
 

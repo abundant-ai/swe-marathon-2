@@ -13,10 +13,35 @@ by running it. A judge panel chose the target (harbor-lh `ops/swe-marathon-v2/de
 The copy is a hardened build (`common/hardening/`), built once on the author's machine and
 installed unchanged in both images and in the reference solution. One step is implemented. QA
 waves 1 and 2 (20 passes) have been answered in rounds 1 and 2, and Carve's finding on the shared
-collect hook and the round-2 re-checks in round 3; bundle `cfc9d42f3e68` replaces the retired
-`4164eb806274`, `7462d71fe5a7` and `f0da94435d6b`. See [Remaining work](#remaining-work).
+collect hook and the round-2 re-checks in round 3, and the round-3 re-check in round 4; bundle
+`80d7f600cab8` replaces the retired `4164eb806274`, `7462d71fe5a7`, `f0da94435d6b` and
+`cfc9d42f3e68`. See [Remaining work](#remaining-work).
 
 ## Development log
+
+### 2026-11-19 (round 4: the hook's chmod masked every ctime, from the round-3 re-check 07c)
+
+- Round 3's `chmod -R u+rwX` ran before the measuring walk, so every entry's recorded ctime was
+  the hook's own time: the egress audit's condition ("deliverable ctime later than the agent's
+  finish") held for every delivery, honest or not, and could not tell a file fetched into
+  `/app/rebuild` after the turn from honest work.
+- The hook now records every entry's lstat (path, type, size, mode, owner, mtime, ctime, inode)
+  as root, walking by directory descriptor, right after the kill and before any step of its own
+  touches the delivery (`before.jsonl`). Only then does it restore permissions, and only where
+  needed: directories get u+rwx (the fixer has to rewrite links in them), and a regular file its
+  owner cannot read gets u+r; each change is noted in the mark and the record, and a change that
+  fails refuses the delivery. The manifest's `mtime` and `ctime` are the pre-hook values, matched
+  by path and type; where the hook's own steps changed an entry (the chmods, the fixer's unlinks),
+  the entry says so (`hook_changed_ctime`) and carries the later values apart
+  (`ctime_after_hook`); an entry the hook made (a copy, a link made relative) is marked `times:
+  "after the hook"`. `verify.py` reports `prescan_complete` and `hook_changed_entries`.
+- The dropped-link warning now comes first in the instruction's delivery paragraph, with the rule
+  that an interpreter must be one of the machine's own or copied into `/app/rebuild`; the fixer's
+  refusal note says the same, and dropped links come first in the mark (07c F2).
+- Checks: the test lstats the tree before the hook, runs the pre-scan and the measuring script,
+  and asserts that every entry's manifest times equal the pre-hook ones; a 0555 directory and a
+  0000 file are restored (0755, 0400), flagged and noted; no `chmod -R` in the hook; the order
+  of the steps.
 
 ### 2026-11-19 (round 3: the collect hook's link copying, from Carve's QA 04 F1 and F2)
 
@@ -424,11 +449,13 @@ instruction states no time budget.
 ## Verification
 
 1. **Collection.** When the agent's turn ends, the root collect hook freezes `dev`'s processes,
-   lists them, kills them, and records egress. It fixes links (a link to a root-owned system file
-   or directory becomes a copy, with the source's path, owner, times and inode recorded; a link to
-   anything else outside is removed), bounds `/app/rebuild`, packs it once as the copy will, and
-   marks and records it (see the development log). Harbor then copies `/app/rebuild`, the
-   declared artifact, into the verifier.
+   lists them and kills them, records every entry's own times before touching anything, and
+   records egress. It restores permissions only where needed (directories u+rwx, unreadable files
+   u+r, each noted), fixes links (a link to a root-owned system file or directory becomes a copy,
+   with the source's path, owner, times and inode recorded; a link to anything else outside is
+   removed and noted first in the mark), bounds `/app/rebuild`, packs it once as the copy will,
+   and marks and records it with the pre-hook times as the authoritative ones (see the
+   development log). Harbor then copies `/app/rebuild`, the declared artifact, into the verifier.
 2. **Before any submitted code runs**, the verifier:
    - reserves `.reward.tmp` and `metrics.json`;
    - raises an evaluation error with less than 512 MB free;
@@ -503,7 +530,7 @@ Highest unresolved severity: 🟡 YELLOW / UNASSESSED (findings 1, 2, 3, 5, 10, 
 | 13 | A crash of the original graded as an answer | Recording | Checked with a stand-in | Signals, exit statuses other than 0, 1 and 2, panics and allocation failures are dropped; more than 2% fail the build | None found | Read `dropped_crashed` | 🟢 GREEN / LOW |
 | 14 | Answers that depend on the machine or on the maths library's last bits: thread counts, hash order, the memory limit, CPU features, approximation bits | Recording | Local recording: no case unsteady or perturbed; 16 last-bit answers dropped (QA 18 confirmed 12) | Three runs pinned to four worker threads and a perturbed one (one CPU, one worker thread); memory-limit text dropped from either stream; last-bit answers dropped; rustymath chooses SIMD paths at compile time (`x86-64-v3`); `expected_sha256` lets two builds be compared | A host without AVX2 cannot run the original (the smoke test then fails the build, and an oracle row below 1.0 with `host.avx2` false is infrastructure); the x86-64 build's bits are first seen at its own recording | Two oracle trials must each score 1.0 with the same `kept_ids_sha256` and `expected_sha256` before any model trial | 🟡 YELLOW / UNASSESSED |
 | 15 | A busy host fails a graded run spuriously | Disk and file limits | QA 10: a `sleep 10` submission was stopped for a file limit by the whole-filesystem figures | The limits count only the run's own files (its uid's under the writable directories, and deleted files it holds open), and only when the free figures fall past a limit; a case stopped by a limit runs once more; host shortages after a sweep are evaluation errors | None found | Read `disk_limits`, `file_limits` and `limit_retries` in the first trials' `metrics.json` | 🟢 GREEN / LOW |
-| 16 | Make Harbor's copy drop an honest delivery (a running build, links that leave the directory, FIFOs, a sparse file, a full disk) so that it scores a valid 0, make the copy fail at will, or launder a file fetched after the turn through a link the hook copies in | The collect hook and the mark | QA 07 F2-F3 (ported from the back-office task, rounds 6-7); Carve QA 04 F1-F2 on the ported hook | The hook freezes and kills `dev`'s processes first, gives back reserved room and inodes, copies an outside link's target only when root owns it (every file under a directory included) and records the source's path, owner, mtime, ctime and inode, removes every other outside link and all special files, bounds entries, bytes and path length, packs once within 100 s, and marks the delivery with every note; the verifier grades what arrived, reads the whole mark, copies every change into `metrics.json` with flags (source outside the delivery, source changed since the session started), and treats nothing arriving or a short copy as an evaluation error | A platform copy that fails after the hook's trial pack succeeded (an error, then a re-run); a fetched file written straight into `/app/rebuild` after the turn, which only the ctime audit against the trial's finish catches | Read `delivery_record` (copies, links, notes, ctimes against the trial's finish) in every trial | 🟢 GREEN / LOW |
+| 16 | Make Harbor's copy drop an honest delivery (a running build, links that leave the directory, FIFOs, a sparse file, a full disk, a read-only folder) so that it scores a valid 0, make the copy fail at will, launder a file fetched after the turn through a link the hook copies in, or hide a post-turn write behind the hook's own changes to ctimes | The collect hook and the mark | QA 07 F2-F3 (ported from the back-office task, rounds 6-7); Carve QA 04 F1-F2; re-checks 07b and 07c | The hook freezes and kills `dev`'s processes first, records every entry's own times before touching anything (the manifest's authoritative mtime and ctime), gives back reserved room and inodes, restores permissions only where needed and notes each change, copies an outside link's target only when root owns it (every file under a directory included) and records the source's path, owner, mtime, ctime and inode, removes every other outside link (noted first in the mark) and all special files, bounds entries, bytes and path length, hashes once per inode, packs once within 100 s, and marks the delivery with every note; the verifier grades what arrived, reads the whole mark, copies every change into `metrics.json` with flags, and treats nothing arriving or a short copy as an evaluation error | A platform copy that fails after the hook's trial pack succeeded (an error, then a re-run); a fetched file written straight into `/app/rebuild` after the turn, which the ctime audit against the trial's finish now can catch, since the recorded ctimes are the session's own | Read `delivery_record` (copies, links, notes, `latest_ctime` and `hook_changed_entries` against the trial's finish) in every trial | 🟢 GREEN / LOW |
 | 17 | Read the build's own file through the hardened read path from a start directory whose rule lets it through (`/`, `/opt`, `/opt/bpl`) | File mode; the path rule | QA 04 F4, QA 12 F2 | The 2711 mode refuses the read for `dev`; the agent image's final stage proves it as `dev` (with the whole smoke test on the set-group-id build) and `solve.sh` records it in the trial | A kernel that let a non-dumpable set-group-id process read its own executable | `/logs/agent/reads.txt` of the first oracle trial | 🟢 GREEN / LOW |
 
 Licence: the upstream is Apache-2.0. Its `LICENSE` is shipped with the documentation in
@@ -513,15 +540,15 @@ Licence: the upstream is Apache-2.0. Its `LICENSE` is shipped with the documenta
 
 | Check | Revision | Result |
 | --- | --- | --- |
-| `checks/` (43 tests) with `ci_checks` (27), Python 3.13, and `check_repository.py` | round 3, with the re-check items | pass |
+| `checks/` (43 tests) with `ci_checks` (27), Python 3.13, and `check_repository.py` | round 4 | pass |
 | Local build of the hardened original | `scripts/build_original.py`, 2026-11-19 | builds (one warning); static, not PIE; marker once; no local path |
 | `apply.sh` | a fresh export of v0.1.95 | applies once, refuses a second time; result identical to the patched tree that was built |
 | `smoke.sh` | upstream's v0.1.95 macOS release binary | fails at the first hardening check, as it must; never yet run on the hardened Linux binary (no Linux here) |
 | Upstream's published builds | `scripts/upstream_builds.py`, 2026-11-19 | 21 executables in 3 release assets and 9 wheels, 12 distinct hashes; upstream's Linux build holds the unhardened usage text twice, the hardened build and the docs never |
 | Local recording (the private cases, upstream's macOS release binary) | cases `91236578`, `experiment/local-recording-8` | 1,673 of 1,777 kept (83 display settings that change nothing, 17 last bits, 4 quoted); none unsteady, crashed, machine-dependent or perturbed; the strongest no-interpreter dispatcher 4.1% (command line 19, constants 17, error lookup 13, last literal 19), largest answer 0.6%, nothing with exit 1 0.6%; `∂` 6.1%; 40 of 41 piped cases end with exit 1 after a failing line |
-| Local grading from the packaged bundle (`cfc9d42f3e68`), through the collect hook's measuring script and a tar round trip with the `data` filter | stand-in reference behind a wrapper; no-op; the dispatcher as a program, with every strategy the recorder measures | 1.0 (1,673/1,673, 24.0 s); 0.0; 0.0269 (45/1,673: cli 19, error 13, expr 7, script 6) |
-| Packaging | `scripts/package_step.py`, twice into separate directories | `cfc9d42f3e68`, 248 files, the same hash both times |
-| Oddish preflight | bundle `cfc9d42f3e68`, no-Archil CLI, locally | pass |
+| Local grading from the packaged bundle (`80d7f600cab8`), through the collect hook's pre-scan and measuring scripts and a tar round trip with the `data` filter | stand-in reference behind a wrapper; no-op; the dispatcher as a program, with every strategy the recorder measures | 1.0 (1,673/1,673, 30.4 s); 0.0; 0.0269 (45/1,673: cli 19, error 13, expr 7, script 6) |
+| Packaging | `scripts/package_step.py`, twice into separate directories | `80d7f600cab8`, 248 files, the same hash both times |
+| Oddish preflight | bundle `80d7f600cab8`, no-Archil CLI, locally | pass |
 | Oddish baselines, QA, `harbor check` | none | not run |
 
 ## Build and deliver
@@ -542,7 +569,7 @@ sha256 is not build.txt's.
 
 ## Remaining work
 
-- Baselines of bundle `cfc9d42f3e68` under the task's one experiment, on the owner's word. The
+- Baselines of bundle `80d7f600cab8` under the task's one experiment, on the owner's word. The
   two oracle trials on different workers are a hard gate: each must score exactly 1.0, with the
   same `kept_ids_sha256` and `expected_sha256`. A failed id goes on a deny-list and the cases are
   recorded again. Then the no-op, which must score exactly 0. These are the first run of the
