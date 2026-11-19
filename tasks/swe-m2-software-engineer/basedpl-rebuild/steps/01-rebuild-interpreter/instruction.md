@@ -43,7 +43,8 @@ them.
 
 ## What to deliver
 
-Your implementation in `/app/rebuild`, with an executable `/app/rebuild/bpl`.
+Your implementation in `/app/rebuild`, with an executable `/app/rebuild/bpl`. Keep `/app/rebuild`
+under 4 GB and 200,000 files.
 
 - Given the same files, arguments and standard input, `/app/rebuild/bpl` prints the same standard
   output and ends with the same exit status as the sandboxed build. Nothing of ours reads standard

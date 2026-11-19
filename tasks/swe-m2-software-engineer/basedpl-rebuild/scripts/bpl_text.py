@@ -316,14 +316,21 @@ def reference_records(name: str, text: str) -> tuple[str, list[dict]]:
 
 
 def git_files(checkout: Path, prefix: str = "") -> list[str]:
-    """Paths of the files at the pinned commit under `prefix` (all files for "")."""
+    """Paths of the files at the pinned commit under `prefix` (all files for ""). `checkout` is a
+    git checkout that holds the commit (any branch may be checked out), or a plain directory that
+    holds the commit's files (an export, or a test's stand-in), read as it is."""
+    if not (checkout / ".git").exists():
+        top = checkout / prefix if prefix else checkout
+        return sorted(path.relative_to(checkout).as_posix() for path in top.rglob("*") if path.is_file())
     listed = subprocess.run(["git", "-C", str(checkout), "ls-tree", "-r", "--name-only", UPSTREAM_COMMIT, "--", prefix or "."],
                             capture_output=True, text=True, check=True).stdout
     return [line for line in listed.split("\n") if line]
 
 
 def git_bytes(checkout: Path, path: str) -> bytes:
-    """A file's bytes at the pinned commit."""
+    """A file's bytes at the pinned commit (see `git_files` for `checkout`)."""
+    if not (checkout / ".git").exists():
+        return (checkout / path).read_bytes()
     return subprocess.run(["git", "-C", str(checkout), "show", f"{UPSTREAM_COMMIT}:{path}"], capture_output=True,
                           check=True).stdout
 

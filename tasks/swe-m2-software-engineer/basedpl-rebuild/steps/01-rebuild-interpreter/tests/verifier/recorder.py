@@ -28,9 +28,11 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 try:  # run as a script beside runcases.py, or imported from the verifier package
-    from runcases import ENCODING, LIMITS, clear_workspace, limit, run_case
+    from runcases import ENCODING, LIMITS, clear_workspace, limit
+    from runcases import run_case as run_once
 except ImportError:
-    from .runcases import ENCODING, LIMITS, clear_workspace, limit, run_case
+    from .runcases import ENCODING, LIMITS, clear_workspace, limit
+    from .runcases import run_case as run_once
 
 KEEP_SEC = 1.0    # wall time of each of the two runs, at most: generous, since a busy builder is slow
 KEEP_CPU = 0.25   # CPU time of each, at most, which a busy builder hardly changes: an eighth of the run limit
@@ -43,6 +45,17 @@ PAIR_SHARE = 0.015   # cases kept with any one (stdout, exit code), the command 
 FLOOR_SHARE = 0.05   # cases a dispatcher with no interpreter passes (free_cases), at most
 QUOTE_LEN = 12       # an answer at least this long that the case's own input holds is free
 PERTURBED_ENV = {"BPL_PERTURBED_PADDING": "p" * 4096, "RAYON_NUM_THREADS": "1"}
+
+
+def run_case(program: list[str], case: dict, **options) -> dict:
+    """runcases.run_case, again (twice at most) where the run was stopped by the disk or file
+    limit: those measure the whole filesystem that holds /tmp, which other processes on a busy
+    builder also write to, and the original never writes a file."""
+    for _ in range(2):
+        got = run_once(program, case, **options)
+        if got.get("error") not in ("disk limit", "file limit"):
+            return got
+    return run_once(program, case, **options)
 
 
 def crashed(got: dict) -> bool:
@@ -193,8 +206,8 @@ def record(program: str, cases: list[dict]) -> tuple[list[dict], dict, dict]:
     finished, outputs = [], {}
     started = time.monotonic()
     report = {"keep_seconds": KEEP_SEC, "keep_cpu": KEEP_CPU, "seconds": {}, "cpu": {}, "slow": [], "unsteady": [],
-              "crashed": [], "machine": [], "output_limit": [], "memory_limit": [], "perturbed": [], "settled": {},
-              "dropped": {}, "host": host()}
+              "crashed": [], "machine": [], "output_limit": [], "memory_limit": [], "disk_limit": [], "perturbed": [],
+              "settled": {}, "dropped": {}, "host": host()}
     elsewhere = relocated(program)
     for case in cases:
         plan = case.get("record", {})
@@ -207,7 +220,8 @@ def record(program: str, cases: list[dict]) -> tuple[list[dict], dict, dict]:
         errors = {first.get("error"), second.get("error")} - {None}
         if errors:
             report["slow" if "timeout" in errors else "output_limit" if "output limit" in errors else
-                   "memory_limit" if "memory limit" in errors else "unsteady"].append(case["id"])
+                   "memory_limit" if "memory limit" in errors else
+                   "disk_limit" if errors & {"disk limit", "file limit"} else "unsteady"].append(case["id"])
         elif (first["exit"], first["stdout"]) != (second["exit"], second["stdout"]):
             report["unsteady"].append(case["id"])
         elif crashed(first) or crashed(second):
