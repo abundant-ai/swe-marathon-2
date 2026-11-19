@@ -491,3 +491,10 @@ sha256 is not build.txt's.
 - A static PIE: build with a linker that produces `-static-pie` for musl (rust-lld with Rust's
   self-contained musl, or a Linux builder), then rebuild every image from that binary.
 - `harbor check` and ratings.
+- Shelf life (QA 20 item 4): the cases suit models trained before 2026-09-16, when BasedPL was
+  first published. `core.bpl` supplies most of them, and the generator goes public with this
+  branch. Check recall before reading a score from any model trained later, and plan a re-seed
+  with new templates when that happens.
+- Notices (QA 20 item 6): only upstream's `LICENSE` ships beside the redistributed binary. Before
+  bundles leave Abundant, generate third-party notices for the 281 statically linked crates
+  (`cargo about`) into `/app/docs` and the solution.
