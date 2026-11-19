@@ -13,8 +13,8 @@ by running it. A judge panel chose the target (harbor-lh `ops/swe-marathon-v2/de
 The copy is a hardened build (`common/hardening/`), built once on the author's machine and
 installed unchanged in both images and in the reference solution. One step is implemented. QA
 waves 1 and 2 (20 passes) have been answered in rounds 1 and 2, and Carve's finding on the shared
-collect hook in round 3; bundle `f0da94435d6b` replaces the retired `4164eb806274` and
-`7462d71fe5a7`. See [Remaining work](#remaining-work).
+collect hook and the round-2 re-checks in round 3; bundle `cfc9d42f3e68` replaces the retired
+`4164eb806274`, `7462d71fe5a7` and `f0da94435d6b`. See [Remaining work](#remaining-work).
 
 ## Development log
 
@@ -43,6 +43,39 @@ collect hook in round 3; bundle `f0da94435d6b` replaces the retired `4164eb80627
   system's `/bin/sh` with its source's facts, and makes an absolute inside link relative; the
   record carries the copies and flags; a mark with 60 notes reaches the verifier whole; the order
   of the hook's steps.
+- **Also in this round, from the round-2 re-checks 07b and 12b.**
+  - Hook (07b): as root, `chmod -R u+rwX` on the delivery before the fixer runs, and a tree that
+    cannot be made writable is refused (a read-only folder stopped the fixer, and a link in it
+    that leaves the directory lexically then aborted Harbor's extraction); the root pass removes
+    any link whose lexical target leaves the directory, as the copy's filter judges it; files are
+    hashed once per inode (400 names of one 20 MB file had cost 3.4 s each) within a 240 s budget,
+    past which the rest are listed without a hash and the record says so; only processes in
+    states R, S, D and T count as alive, so zombies are not survivors.
+  - Verifier (07b): the mark is read up to 1 MB; fewer entries or bytes than marked is the
+    evaluation error, more is a note (hard links split, or files the transport added); the
+    unhardened usage text is refused only in an ELF file, so a note or a script that quotes it is
+    not a fetched build; the drain past the deadline runs only when no process of the run's user
+    or group is alive, so a child holding the pipe open is a timeout. `smoke.sh` skips its
+    unprivileged section when the binary is readable by the caller, so the solution's log no
+    longer reports a failure that is not one.
+  - Cases (12b): the last-bit rule also covers monadic `∧` (the build's own atan2), `•special`
+    and roots other than the square root, and a float with a tiny exponent counts only with ten
+    or more digits (`1ₑ¯17` is an exact literal); piped cases now get their failing line (the
+    one-line error records are chosen before the error and worker draws take them), and the
+    command line's piped case holds a real error; the value printed before an uncaught error is a
+    one-line value record of the reference suite, rewritten under the seed, rather than one of
+    eight fixed forms; the `•prefs` request of a worker session ends in `◇ 0`, so its reply is a
+    number rather than the whole settings record, and the instruction says `•prefs` still reports
+    the out-of-scope settings.
+  - Floor (12b): the recorder's dispatcher now also echoes the program's last number strand or
+    string literal, evaluates the eight lead forms, and looks error messages up by nearest glyph
+    features, trained on the other cases' own answers (leave one out: a bound no submission can
+    reach). That is the strongest no-interpreter strategy the re-check built. The pool is held at
+    or below 5% against it by `select` and by the build failing above it; the local recording
+    measures 4.1%.
+  - Not taken: splitting a worker session to drop only its last-bit request (12b F7), since a
+    changed session is a different case; per-setting display quotas (12b F6); a path-by-path
+    comparison of the arrived copy against the record (07b F4), beyond fewer-is-an-error.
 
 ### 2026-11-19 (rounds 1 and 2: QA waves 1 and 2)
 
@@ -303,7 +336,7 @@ standard input, validators that report what went wrong, and modules.
 - About 70 primitive functions and 25 operators, over a number tower with exact and fixed-width
   integers, rationals, complex numbers and three float widths.
 - Dfns with predicates, guards and recursion; keyed axes and records; modules.
-- Differentiation (`∂`). It is 5.7% of kept cases, down from 12.1% in upstream's suite, and the
+- Differentiation (`∂`). It is 6.1% of kept cases, down from 12.1% in upstream's suite, and the
   instruction names it.
 - The display engine (precision, exponent forms, boxes, elision, widths, trees, notation) and `⍕`.
 - Error messages with their kinds, positions and carets.
@@ -325,15 +358,18 @@ any order, and nothing short of a real interpreter scores above the floor.
 
 None of these is measured yet.
 
-**The tail.** The recorder drops answers that show the maths library's last bits: 16 in the local
-recording, against 12 confirmed by QA 18. What remains of the float tail is fixed and visible but
+**The tail.** The recorder drops answers that show the maths library's last bits: 17 in the local
+recording, against 12 confirmed by QA 18 and one more by the re-check (the build's own atan2). What remains of the float tail is fixed and visible but
 obscure: `+/` grouping, and solver residues at ten digits. QA 15 bounds it at 2.4%.
 
 **Floors without an implementation**, measured at every build (`baselines` in `recording.json`):
-- the strongest dispatcher with no interpreter in it (`recorder.no_interpreter`) passes at most
-  5%, enforced by dropping cases and by failing the build; 2.1% locally;
+- the strongest dispatcher with no interpreter in it (`recorder.no_interpreter`: the command
+  line's table, echoed leading literals, the generator's lead forms evaluated, the last number
+  strand or string echoed, an error-message lookup trained on the other cases' own answers, and
+  one constant per visible shape) passes at most 5%, enforced by dropping cases and by failing
+  the build; 4.1% locally, most of it the hidden-data lookup and the command line;
 - any one answer is at most 1.5% of the cases;
-- printing nothing and exiting 1 passes 0.5%.
+- printing nothing and exiting 1 passes 0.6%.
 
 ### Initial feasibility
 
@@ -346,16 +382,16 @@ the local stand-in recording):
 
 | Kind | Generated | Kept | What it asks | Source |
 | --- | --- | --- | --- | --- |
-| `expr` | 419 | 417 | `bpl -e CODE`: one expression's displayed value | upstream's own reference records (core, static, regex, the mathish files), rewritten |
-| `script` | 167 | 167 | `bpl main.bpl`: multi-line programs, setups, settings, `⎕←` output | the same, multi-line |
+| `expr` | 418 | 416 | `bpl -e CODE`: one expression's displayed value | upstream's own reference records (core, static, regex, the mathish files), rewritten |
+| `script` | 166 | 165 | `bpl main.bpl`: multi-line programs, setups, settings, `⎕←` output | the same, multi-line |
 | `apl` | 120 | 119 | as `expr`, from records ported from APL suites | APLcart, April, ngn, Dyalog, BQN ports; with their error records and sessions 10% of kept cases |
-| `error` | 235 | 235 | errors caught by a guard that prints the message (`$e`, the message, kind and message, or line, column and message): 156; uncaught errors in the worker, whose reply carries kind, message, span and display: 57, every syntax error among them; a run that prints a computed value and ends in an error (exit 1): 22 | upstream's error records (a fifth from the APL ports) |
-| `worker` | 189 | 174 | `bpl --worker` sessions in notebook form: records' code, definitions used by later requests, a function defined then called, a display setting then values, bindings of arrays used again, calls on encoded arguments; replies with exact values, displays and errors with spans | upstream's records |
-| `display` | 230 | 144 | values and functions under `]display` (65), `]dissect` (29), `•prefs` box (13), trees (8), width (8), notation (6), limit and edges (6), prec (4), and `⍕` with format specs (6); kept only where the setting changes what is shown | upstream's records, and values built here |
-| `stdin` | 89 | 88 | multi-line programs given with `bpl -`, lines piped into `bpl` with a failing line among them, programs reading `⎕` lines | upstream's records |
-| `module` | 50 | 50 | a main program loading upstream's library modules (`lib/`) with `•load` | upstream's library records |
+| `error` | 235 | 234 | errors caught by a guard that prints the message (`$e`, the message, kind and message, or line, column and message): 161; uncaught errors in the worker, whose reply carries kind, message, span and display: 57, every syntax error among them; a run that prints a value (a one-line record of the reference suite) and ends in an error (exit 1): 16 | upstream's error records (a fifth from the APL ports) |
+| `worker` | 190 | 176 | `bpl --worker` sessions in notebook form: records' code, definitions used by later requests, a function defined then called, a display setting then values, bindings of arrays used again, calls on encoded arguments; replies with exact values, displays and errors with spans | upstream's records |
+| `display` | 230 | 146 | values and functions under `]display` (63), `]dissect` (34), `•prefs` box (14), limit and edges (13), notation (9), width (3), trees (3), prec (3), and `⍕` with format specs (4); kept only where the setting changes what is shown | upstream's records, and values built here |
+| `stdin` | 89 | 89 | multi-line programs given with `bpl -` (41), lines piped into `bpl` with a failing line among them (41, of which 40 end with exit 1 after the other lines' output), programs reading `⎕` lines (7) | upstream's records |
+| `module` | 50 | 49 | a main program loading upstream's library modules (`lib/`) with `•load` | upstream's library records |
 | `program` | 260 | 260 | 25 new programs with seeded data: reports, a word counter, a ledger, a grade book, validators with custom error kinds, CSV and JSON on standard input, number theory, matrices, exact rationals, complex roots, ciphers, a module of one's own, `bpl -` with arguments | `scripts/programs.py` |
-| `cli` | 19 | 19 | the command line's own answers, one case per behaviour: help, version, removed modes, wrong arguments, missing and refused files, arguments, the worker's request errors, piped errors | `make_cases.cli_cases` |
+| `cli` | 19 | 19 | the command line's own answers, one case per behaviour: help, version, removed modes, wrong arguments, missing and refused files, arguments, the worker's request errors, piped lines with a failing one | `make_cases.cli_cases` |
 
 **Rewrites** (private seed, `scripts/rewrite.py`).
 - Every name the code assigns becomes an unused ordinary word, consistently. Keys, module names
@@ -374,7 +410,7 @@ the shipped documentation holds it, its skeleton (names, numbers and text abstra
 skeleton as a whole block, a statement or a run of 2-6 consecutive statements. Packaging repeats
 the check on the real files.
 
-Records with `∂` are drawn at 55%, which puts differentiation at about 5.7% of cases.
+Records with `∂` are drawn at 48%, which puts differentiation at about 6% of the kept cases.
 
 **Left out:** randomness, the clock, files, the network, drawing, `•hash`, `•deflate`, `•mime`,
 `⇄`, `•storage`, `•memory`, `•explain`, `•index`, `•host` facts other than the command line's,
@@ -457,13 +493,13 @@ Highest unresolved severity: 🟡 YELLOW / UNASSESSED (findings 1, 2, 3, 5, 10, 
 | 3 | Run as root, or as a user who can read the program | `[agent] user` | Not tested on this task | `user = "dev"` | Depends on each harness | Short trial that prints `id` (the probe prints it) | 🟡 YELLOW / UNASSESSED |
 | 4 | Deliver the original, a published build of it, or a wrapper that calls it | Verifier image; `/app` ownership; the marker; upstream's hashes | Goose QA passes 07 and 13; QA 04, 08, 20 | The verifier image holds no copy; `/app` is root's and sticky, so `dev` cannot replace `/app/rebuild`; a submission holding the images' marker, upstream's unhardened usage text, or a file with the sha256 of any of the 12 builds upstream publishes for 0.1.95 is refused (checked: the search, its chunking, the hashing by size, the images-only staging); a missing or malformed marker is an evaluation error | A copy transformed to hide both the marker and the hash | First trial as `dev`: `/app/rebuild` cannot be renamed | 🟢 GREEN / LOW |
 | 5 | Fetch the public source, upstream's tests or a published build, including in the window after the turn when the platform reopens egress | Agent network; the collect hook; the refusals of row 4 | QA 04 and 08 (platform finding `PLATFORM_EGRESS_WINDOW.md`); decision 2026-11-19 (A, with conditions) | `network_mode = "no-network"` for the turn; the root collect hook kills every process of `dev` before anything is copied and records whether egress was open and what was running (`delivery_record`); published builds and the unhardened usage text are refused; no upstream source, test, notebook result or design note in the image | The window stays open until the platform keeps the agent-phase policy through collection; a transformed fetched build escapes the refusals; a harness with network access would defeat the task | Audit every trial (`delivery_record`: survivors, egress, ctimes after the turn) before its score is recorded | 🟡 YELLOW / UNASSESSED |
-| 6 | Look up answers from what is shipped | Case generation | Checked on a stand-in upstream and on the real files at packaging | No example runs ship; no case holds a documented program or a near-copy (skeleton match: 311 core records left out); `make_cases.leaks` runs again at packaging | The documentation's examples teach behaviour by design (they show values in source form, not as displayed) | Keep | 🟢 GREEN / LOW |
+| 6 | Look up answers from what is shipped | Case generation | Checked on a stand-in upstream and on the real files at packaging; QA 06 and 12b | No example runs ship; no case holds a documented program or a near-copy, in any rewrite the recorder may settle on (whole blocks, statements and runs of 2-6 statements; 311 core records left out); `make_cases.leaks` runs again at packaging | The documentation's examples teach behaviour by design: about three quarters of its runnable one-liners state their displayed value in a comment, so replaying them is the agent's first corpus; three worker requests are near-copies of documented one-liners with the same value, one reply each in sessions of about ten | Keep | 🟢 GREEN / LOW |
 | 7 | Read an answer out of the case's own input | Generation and recording | Checked | Comments removed from upstream's code (some state results); the recorder drops a case whose input holds its whole answer (5 in the local recording) | Short answers a program spells out literally | Read `dropped` in `recording.json` | 🟢 GREEN / LOW |
 | 8 | Recall upstream's published expectations | Rewrites | Local recording: 248 of 1,739 kept cases in upstream's code form | Names, value literals and prose words rewritten under the private seed; the recorder prefers rewrites that change the answer; `recording.json` counts the cases still in upstream's form (`kept_as_upstream_code`, mostly error records, whose messages are the same for any implementation) | BasedPL was published 2026-09-16; models trained later may know it, and its reference files | Read `kept_as_upstream_code`; re-check for models trained after 2026-09 | 🟢 GREEN / LOW |
 | 9 | Tamper with the reward files, or suppress them by forcing an evaluation error | Separate verifier container | Goose QA passes 07, 07b, 10, 10b, round 6 (the same verifier) | No reward exists until the real end (`.reward.tmp` renamed onto `reward.txt`); bounded, link-refusing reads; one deadline; capped submissions; `rm -rf` sweeps; every per-case exception a failed case; host disk shortages are errors only after the sweep has taken back everything the uid held (checked) | Kernel keyrings survive between cases; they carry no answer | Keep | 🟢 GREEN / LOW |
 | 10 | Infer an evaluation from the files and text | Instruction and image | Checked: no grading, hidden, budget or session wording; no examples or runner shipped | Neutral requester text | An agent can still guess that more programs exist | Read the first trajectories | 🟡 YELLOW / UNASSESSED |
 | 11 | Run as root in the verifier through a set-id or capable file | Privilege drop and sealing | Goose QA pass 10 F6 | Sealed root-owned without set-id bits; `setpriv --no-new-privs`; the drop is checked by status or `prctl` and a set-id `id`, or nothing is graded (checked) | A kernel that ignores no_new_privs; the probe then refuses to grade | First baseline's verifier log | 🟢 GREEN / LOW |
-| 12 | Pass cases with no interpreter: the command line's answers, echoed literals, constant answers per visible shape | Case mix and selection | QA 02, 05, 13, 17 measured 5.5-7.3% on the first cases; local recording now: 2.1% (recorder), 1.85% (the dispatcher run as a program) | Leads are computed values; uncaught errors mostly graded through the worker's reply with message and span; handlers always print the message; any one answer capped at 1.5%; `select` holds the strongest dispatcher (`recorder.no_interpreter`) to 5% and the recorder fails the build above it | Display of simple literals is legitimate early work | Read `baselines.no_interpreter_dispatcher` in the first baseline's `metrics.json` | 🟢 GREEN / LOW |
+| 12 | Pass cases with no interpreter: the command line's answers, echoed literals, the generator's lead forms, the last strand of a program, an error-message lookup, constant answers per visible shape | Case mix and selection | QA 02, 05, 13, 17 measured 5.5-7.3% on the first cases; the round-2 re-check 2.8% by echoes and 5.7% with a lookup trained on hidden data; local recording now: 4.1% by the recorder's union of every strategy, 2.7% when the dispatcher is run as a program | Leads are one-line value records of the pool; uncaught errors mostly graded through the worker's reply with message and span; handlers always print the message; any one answer capped at 1.5%; `select` holds the strongest dispatcher (`recorder.no_interpreter`, every strategy above) to 5% and the recorder fails the build above it | Display of simple literals is legitimate early work; the lookup's share is a bound no submission reaches | Read `baselines.no_interpreter_dispatcher_by_strategy` in the first baseline's `metrics.json` | 🟢 GREEN / LOW |
 | 13 | A crash of the original graded as an answer | Recording | Checked with a stand-in | Signals, exit statuses other than 0, 1 and 2, panics and allocation failures are dropped; more than 2% fail the build | None found | Read `dropped_crashed` | 🟢 GREEN / LOW |
 | 14 | Answers that depend on the machine or on the maths library's last bits: thread counts, hash order, the memory limit, CPU features, approximation bits | Recording | Local recording: no case unsteady or perturbed; 16 last-bit answers dropped (QA 18 confirmed 12) | Three runs pinned to four worker threads and a perturbed one (one CPU, one worker thread); memory-limit text dropped from either stream; last-bit answers dropped; rustymath chooses SIMD paths at compile time (`x86-64-v3`); `expected_sha256` lets two builds be compared | A host without AVX2 cannot run the original (the smoke test then fails the build, and an oracle row below 1.0 with `host.avx2` false is infrastructure); the x86-64 build's bits are first seen at its own recording | Two oracle trials must each score 1.0 with the same `kept_ids_sha256` and `expected_sha256` before any model trial | 🟡 YELLOW / UNASSESSED |
 | 15 | A busy host fails a graded run spuriously | Disk and file limits | QA 10: a `sleep 10` submission was stopped for a file limit by the whole-filesystem figures | The limits count only the run's own files (its uid's under the writable directories, and deleted files it holds open), and only when the free figures fall past a limit; a case stopped by a limit runs once more; host shortages after a sweep are evaluation errors | None found | Read `disk_limits`, `file_limits` and `limit_retries` in the first trials' `metrics.json` | 🟢 GREEN / LOW |
@@ -477,15 +513,15 @@ Licence: the upstream is Apache-2.0. Its `LICENSE` is shipped with the documenta
 
 | Check | Revision | Result |
 | --- | --- | --- |
-| `checks/` (43 tests) with `ci_checks` (27), Python 3.13, and `check_repository.py` | round 3 | pass |
+| `checks/` (43 tests) with `ci_checks` (27), Python 3.13, and `check_repository.py` | round 3, with the re-check items | pass |
 | Local build of the hardened original | `scripts/build_original.py`, 2026-11-19 | builds (one warning); static, not PIE; marker once; no local path |
 | `apply.sh` | a fresh export of v0.1.95 | applies once, refuses a second time; result identical to the patched tree that was built |
 | `smoke.sh` | upstream's v0.1.95 macOS release binary | fails at the first hardening check, as it must; never yet run on the hardened Linux binary (no Linux here) |
 | Upstream's published builds | `scripts/upstream_builds.py`, 2026-11-19 | 21 executables in 3 release assets and 9 wheels, 12 distinct hashes; upstream's Linux build holds the unhardened usage text twice, the hardened build and the docs never |
-| Local recording (the private cases, upstream's macOS release binary) | cases `01f5d1d2`, `experiment/local-recording-6` | 1,673 of 1,778 kept (86 display settings that change nothing, 16 last bits, 3 quoted); none unsteady, crashed, machine-dependent or perturbed; no-interpreter dispatcher 2.1%, largest answer 0.5%, nothing with exit 1 0.5%; `∂` 5.7% |
-| Local grading from the packaged bundle (`7462d71fe5a7`; round 3 changed only the hook and the delivery record, not grading), through the collect hook's measuring script and a tar round trip with the `data` filter | stand-in reference behind a wrapper; no-op; the dispatcher as a program | 1.0 (1,673/1,673, 29.5 s); 0.0; 0.0185 (31/1,673: cli 19, expr 7, error 5) |
-| Packaging | `scripts/package_step.py`, twice into separate directories | `f0da94435d6b`, 248 files, the same hash both times |
-| Oddish preflight | bundle `f0da94435d6b`, no-Archil CLI, locally | pass |
+| Local recording (the private cases, upstream's macOS release binary) | cases `91236578`, `experiment/local-recording-8` | 1,673 of 1,777 kept (83 display settings that change nothing, 17 last bits, 4 quoted); none unsteady, crashed, machine-dependent or perturbed; the strongest no-interpreter dispatcher 4.1% (command line 19, constants 17, error lookup 13, last literal 19), largest answer 0.6%, nothing with exit 1 0.6%; `∂` 6.1%; 40 of 41 piped cases end with exit 1 after a failing line |
+| Local grading from the packaged bundle (`cfc9d42f3e68`), through the collect hook's measuring script and a tar round trip with the `data` filter | stand-in reference behind a wrapper; no-op; the dispatcher as a program, with every strategy the recorder measures | 1.0 (1,673/1,673, 24.0 s); 0.0; 0.0269 (45/1,673: cli 19, error 13, expr 7, script 6) |
+| Packaging | `scripts/package_step.py`, twice into separate directories | `cfc9d42f3e68`, 248 files, the same hash both times |
+| Oddish preflight | bundle `cfc9d42f3e68`, no-Archil CLI, locally | pass |
 | Oddish baselines, QA, `harbor check` | none | not run |
 
 ## Build and deliver
@@ -506,7 +542,7 @@ sha256 is not build.txt's.
 
 ## Remaining work
 
-- Baselines of bundle `f0da94435d6b` under the task's one experiment, on the owner's word. The
+- Baselines of bundle `cfc9d42f3e68` under the task's one experiment, on the owner's word. The
   two oracle trials on different workers are a hard gate: each must score exactly 1.0, with the
   same `kept_ids_sha256` and `expected_sha256`. A failed id goes on a deny-list and the cases are
   recorded again. Then the no-op, which must score exactly 0. These are the first run of the

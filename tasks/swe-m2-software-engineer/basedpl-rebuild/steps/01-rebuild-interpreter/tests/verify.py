@@ -35,6 +35,7 @@ UNHARDENED_USAGE = b"--kernel -f CONNECTION_FILE"
 DELIVERY_MARK = ".delivered"
 DELIVERY_RECORD = ".delivery.json"
 RECORD_LIMIT = 64 << 20  # bytes of the record read, at most
+MARK_LIMIT = 1 << 20     # bytes of the mark read, at most (a planted multi-GB mark is no reason to run out of memory)
 MISSING_MARK = ("the delivery arrived without the collect hook's mark (the hook did not run, or the copy was cut short); "
                 "it was scored as it arrived")
 MARKER_RE = re.compile(rb"BPL-BUILD-MARKER-[0-9a-f]{32}")
@@ -362,14 +363,17 @@ def remove_leftovers(uid: int) -> None:
             continue
 
 
-def holds_original(top: Path, needles: dict[bytes, str], builds: dict[str, set[int]] | None = None) -> str | None:
+def holds_original(top: Path, needles: dict[bytes, str], builds: dict[str, set[int]] | None = None,
+                   binary_needles: dict[bytes, str] | None = None) -> str | None:
     """Why the delivery under `top` holds the original, or None: the first regular file (links not
     followed, each inode once, `bpl` first) that contains one of `needles` (read in chunks that
-    overlap by the longest needle's length), or whose sha256 is one of `builds` (sha256: sizes;
-    only files of one of those sizes are hashed). seal() has bounded the bytes to read (MAX_BYTES)."""
-    builds = builds or {}
+    overlap by the longest needle's length), or, for an ELF file, one of `binary_needles` (text a
+    note or a script may quote without being the original), or whose sha256 is one of `builds`
+    (sha256: sizes; only files of one of those sizes are hashed). seal() has bounded the bytes to
+    read (MAX_BYTES)."""
+    builds, binary_needles = builds or {}, binary_needles or {}
     sizes = {size for found in builds.values() for size in found}
-    overlap = max((len(needle) for needle in needles), default=1)
+    overlap = max((len(needle) for needle in (*needles, *binary_needles)), default=1)
     paths, seen = [top / "bpl"], set()
     for root, directories, files in os.walk(top):
         directories.sort()
@@ -382,9 +386,11 @@ def holds_original(top: Path, needles: dict[bytes, str], builds: dict[str, set[i
             seen.add((info.st_dev, info.st_ino))
             whole = hashlib.sha256() if info.st_size in sizes else None
             with open(path, "rb") as handle:
-                tail = b""
+                tail, wanted = b"", dict(needles)
                 while chunk := handle.read(1 << 20):
-                    for needle, what in needles.items():
+                    if not tail and chunk.startswith(b"\x7fELF"):
+                        wanted.update(binary_needles)
+                    for needle, what in wanted.items():
                         if needle in tail + chunk:
                             return f"/app/rebuild/{path.relative_to(top)} holds {what}"
                     if whole is not None:
@@ -453,8 +459,9 @@ def delivery_notes(top: Path) -> list[str]:
     was refused.
 
     Raises:
-        EvaluationError: Nothing arrived at all, so the copy never happened; or the mark counts
-            more than arrived, so the copy was cut short, which only the platform can do.
+        EvaluationError: Nothing arrived at all, so the copy never happened; or fewer entries or
+            bytes arrived than the mark counts, so the copy was cut short, which only the platform
+            can do. More than marked (hard links split, or files the transport added) is a note.
     """
     try:
         empty = top.is_symlink() or not top.is_dir() or next(top.iterdir(), None) is None
@@ -464,19 +471,27 @@ def delivery_notes(top: Path) -> list[str]:
         raise EvaluationError("Nothing arrived: /app/rebuild is missing or empty, though the collect hook marks every delivery")
     mark = top / DELIVERY_MARK
     try:
-        lines = mark.read_text(errors="replace").splitlines() if mark.is_file() and not mark.is_symlink() else None
+        with open(mark, "r", errors="replace") as handle:  # bounded: the mark is read before sealing
+            text = handle.read(MARK_LIMIT + 1) if mark.is_file() and not mark.is_symlink() else ""
     except OSError:
-        lines = None
+        text = ""
+    lines = text[:MARK_LIMIT].splitlines()
     if not lines:
         return [MISSING_MARK]
     head, notes = lines[0].split(), [f"collect hook: {line}" for line in lines[1:] if line.strip()]  # every note, no cap
+    if len(text) > MARK_LIMIT:
+        notes.append(f"the collect hook's mark is longer than {MARK_LIMIT:,} bytes; its first {MARK_LIMIT:,} were read")
     if head[:1] == ["refused"]:
         return notes or ["collect hook: the delivery was not copied"]
     if len(head) == 3 and head[0] == "delivered" and all(value.isascii() and value.isdigit() for value in head[1:]):
         entries, size = arrived(top)
-        if (entries, size) != (int(head[1]), int(head[2])):
-            raise EvaluationError(f"The copy arrived incomplete: {entries:,} of {int(head[1]):,} entries and {size:,} of "
-                                  f"{int(head[2]):,} bytes")
+        marked = (int(head[1]), int(head[2]))
+        if entries < marked[0] or size < marked[1]:
+            raise EvaluationError(f"The copy arrived incomplete: {entries:,} of {marked[0]:,} entries and {size:,} of "
+                                  f"{marked[1]:,} bytes")
+        if (entries, size) != marked:
+            notes.append(f"more arrived than the collect hook marked: {entries:,} entries and {size:,} bytes against "
+                         f"{marked[0]:,} and {marked[1]:,} (hard links split, or files the transport added)")
         return notes
     return notes + ["the collect hook's mark could not be read; the delivery was graded as it arrived"]
 
@@ -504,6 +519,7 @@ def delivery_record(top: Path) -> dict:
                 "kill_rounds": record.get("kill_rounds"), "agent_processes_left": record.get("agent_processes_left"),
                 "turn_started": record.get("turn_started"), "hook_started": record.get("hook_started"),
                 "delivered": record.get("delivered"), "listing_complete": record.get("listing_complete"),
+                "hashing_complete": record.get("hashing_complete"),
                 "copies": copies,
                 "copies_outside_delivery": sum(1 for item in copies if item.get("outside_delivery")),
                 "copies_changed_since_session_started": sum(1 for item in copies if item.get("changed_since_session_started")),
@@ -734,9 +750,9 @@ def main() -> int:
         marker = MARKER.read_text(encoding="utf-8").strip() if MARKER.is_file() else ""
         if not re.fullmatch(r"[0-9a-f]{32}", marker) or marker == "0" * 32:
             raise EvaluationError("The original's build marker is missing or malformed")
-        needles = {f"BPL-BUILD-MARKER-{marker}".encode(): "the original interpreter's build marker",
-                   UNHARDENED_USAGE: "upstream's own usage text, which the hardened build lacks"}
-        found = holds_original(SUBMISSION, needles, builds) if not refused else None
+        needles = {f"BPL-BUILD-MARKER-{marker}".encode(): "the original interpreter's build marker"}
+        binary_needles = {UNHARDENED_USAGE: "upstream's own usage text, which the hardened build lacks"}  # in an ELF file only
+        found = holds_original(SUBMISSION, needles, builds, binary_needles) if not refused else None
         if found:  # the original interpreter, delivered or fetched: nothing of it is the agent's work
             refused = f"{found}: not graded"
         if refused:

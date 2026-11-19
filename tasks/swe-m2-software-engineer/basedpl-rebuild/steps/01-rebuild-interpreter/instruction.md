@@ -113,7 +113,8 @@ Your implementation in `/app/rebuild`, with an executable `/app/rebuild/bpl`.
   `•svg`, `•image`, `•canvas`) is out. We use none of `•fetch`, the refused file functions,
   `•hash`, `•deflate`, `•mime`, `•js` or `⇄`. The interpreter's reports on itself (`•storage`,
   `•memory`, `•explain`, `•index`, and the `fusion`, `threads` and `seed` settings) describe
-  upstream's engine, not yours, and of `•host` we need only `"args"` and `"version"`. Our
+  upstream's engine, not yours, though `•prefs` still reports those settings with their values,
+  and of `•host` we need only `"args"` and `"version"`. Our
   notebook service enforces its own deadlines by restarting the worker, so the worker's
   `timeout_ms` and `interrupt` are out, as are `]help`, `]clear` and the interactive REPL's line
   editing. You need not make any of these work, but a program or module that mentions them in

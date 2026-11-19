@@ -57,9 +57,11 @@ MAIN_RUNS = 3
 # exp and power, gamma and binomials, matrix division, decompositions, numeric inverses. A case whose
 # own code uses one and whose answer shows a float to 15 or more significant digits, an exponent of
 # -12 or lower, or a 32- or 16-bit float, prints those bits, which no clean-room build can derive.
-LAST_BIT_CODE = ("○", "*", "⊛", "!", "⌹", "⌻", "⨸", "•decompose")
+LAST_BIT_CODE = ("○", "*", "⊛", "!", "⌹", "⌻", "⨸", "•decompose", "•special", "∧")
 NUMERIC_INVERSE = re.compile(r"(?<![A-Za-z])⁻")  # ⁻ after a function, not a system function's own inverse (•csv⁻)
+DYADIC_ROOT = re.compile(r"[\dωα)\]∞]\s*√")  # a root other than the square root: an approximation too
 FLOAT_RE = re.compile(r"(?<![\w.])[¯-]?(\d+)(?:\.(\d+))?(?:[eEₑ]([¯+-]?\d+))?([ₛₕ])?")
+RESIDUE_DIGITS = 10  # a float with an exponent of -12 or lower shows last bits only with this many digits or more
 TRIVIAL = {"0", "⍬", "$f", "0ₓ", "0.0", '""', "''"}  # tokens of an answer that tells nothing
 
 
@@ -142,14 +144,16 @@ def own_code(case: dict) -> str:
 
 
 def shows_bits(text: str) -> bool:
-    """Whether text shows a float to 15 or more significant digits, with an exponent of -12 or
-    lower, or as a 32- or 16-bit float."""
+    """Whether text shows a float to 15 or more significant digits, as a residue (an exponent of
+    -12 or lower with RESIDUE_DIGITS or more digits; 1ₑ¯17 is an exact literal, 2.220446049ₑ¯16 is
+    not), or as a 32- or 16-bit float."""
     for whole, fraction, exponent, small in FLOAT_RE.findall(text):
         if not fraction and not exponent:
             continue  # an integer is exact
-        if small or len((whole + fraction).lstrip("0")) >= 15:
+        digits = len((whole + fraction).lstrip("0"))
+        if small or digits >= 15:
             return True
-        if exponent and int(exponent.replace("¯", "-")) <= -12:
+        if exponent and int(exponent.replace("¯", "-")) <= -12 and digits >= RESIDUE_DIGITS:
             return True
     return False
 
@@ -160,7 +164,8 @@ def last_bits(case: dict, answer: str) -> bool:
     whose own code uses one. In a worker session, whose replies carry every float in full, it is
     the reply to a request that uses one (one reply per request, in order; a request's reply holds
     its value even with echo off, so an assignment shows the bits where they arise)."""
-    uses = lambda text: any(name in text for name in LAST_BIT_CODE) or bool(NUMERIC_INVERSE.search(text))  # noqa: E731
+    uses = lambda text: (any(name in text for name in LAST_BIT_CODE) or bool(NUMERIC_INVERSE.search(text))  # noqa: E731
+                         or bool(DYADIC_ROOT.search(text)))
     if not uses(own_code(case)):
         return False
     if case["argv"][:1] != ["--worker"]:
@@ -188,12 +193,31 @@ def statements(text: str) -> list[str]:
 
 
 LITERAL_RE = re.compile(r'^(?:"[^"\\]*"|ι\d+|[¯\d. ]+)$')
+INTEGERS = r"¯?\d+(?: ¯?\d+)*"
+# The generator's own lead forms (make_cases.LEADS), as a dispatcher with no interpreter could still
+# evaluate them: the number N, and how the original shows the value.
+LEAD_FORMS = (
+    (re.compile(r"^\+/ι(\d+)$"), lambda m: str(int(m[1]) * (int(m[1]) - 1) // 2)),
+    (re.compile(r"^(\d+)×ι(\d+)$"), lambda m: " ".join(str(int(m[1]) * i) for i in range(int(m[2])))),
+    (re.compile(r"^⌽ι(\d+)$"), lambda m: " ".join(str(i) for i in reversed(range(int(m[1]))))),
+    (re.compile(r'^⌽"([^"]*)"$'), lambda m: '"' + m[1][::-1] + '"'),
+    (re.compile(r'^≢"([^"]*)"$'), lambda m: f"{len(m[1])}ₓ"),
+    (re.compile(rf"^⌈/({INTEGERS})$"), lambda m: str(max(int(v.replace("¯", "-")) for v in m[1].split())).replace("-", "¯")),
+    (re.compile(rf"^\+/({INTEGERS})$"), lambda m: str(sum(int(v.replace("¯", "-")) for v in m[1].split())).replace("-", "¯")),
+    (re.compile(r"^(\d+)\+(\d+)×(\d+)$"), lambda m: str(int(m[1]) + int(m[2]) * int(m[3]))),
+)
 
 
-def literal_value(text: str) -> str | None:
+def literal_value(text: str, evaluate: bool = False) -> str | None:
     """How the original shows a literal a dispatcher can echo: a string (quoted), ιN (0 to N-1)
-    or a strand of plain numbers; None for anything else."""
+    or a strand of plain numbers; with `evaluate`, also the value of one of the generator's lead
+    forms (LEAD_FORMS); None for anything else."""
     text = text.strip()
+    if evaluate:
+        for form, value in LEAD_FORMS:
+            match = form.match(text)
+            if match:
+                return value(match)
     if not LITERAL_RE.match(text) or not text:
         return None
     if text.startswith("ι"):
@@ -204,6 +228,74 @@ def literal_value(text: str) -> str | None:
     return " ".join(numbers) if numbers and all(re.fullmatch(r"¯?\d+", number) for number in numbers) else None
 
 
+def program_of(case: dict) -> str | None:
+    """The program a dispatcher reads: the `-e` code, the file named first, or standard input for
+    `-` or no arguments; None for the worker and the other command-line cases."""
+    argv = case["argv"]
+    if argv[:1] == ["-e"] and len(argv) > 1:
+        return argv[1]
+    if argv and argv[0] in case["files"]:
+        return case["files"][argv[0]]
+    if argv[:1] == ["-"] or not argv:
+        return case.get("stdin")
+    return None
+
+
+STRAND_RE = re.compile(r'"[^"\\]*"|(?<![\w.¯])¯?\d+(?:\.\d+)?(?: ¯?\d+(?:\.\d+)?)*')
+
+
+def last_literal(case: dict) -> tuple[str, int] | None:
+    """The answer of a dispatcher that echoes the last number strand or string literal anywhere in
+    the program (a value assigned and then named, say); None where there is none."""
+    program = program_of(case)
+    found = STRAND_RE.findall("\n".join(statements(program))) if program else []
+    return (found[-1] + "\n", 0) if found else None
+
+
+def error_instances(cases: list[dict], outputs: dict) -> list[tuple[str, str, set[str], tuple[str, int]]]:
+    """The guarded error cases whose handler prints the message (`$e.message`) or the kind and the
+    message: their id, handler, the glyph features of the code inside the guard (system names,
+    glyphs, glyph bigrams) and their answer."""
+    found = []
+    for case in cases:
+        text = case["files"].get("main.bpl") if case.get("kind") == "error" else None
+        match = re.search(r"\{∞::(.*?)(?: ◇ |\n)", text, re.S) if text else None
+        if not match or match[1].strip() not in ("$e.message", '$e.kind,": ",$e.message'):
+            continue
+        body = text[match.end():]
+        names = set(re.findall(r"•\w+", body))
+        glyphs = [ch for ch in re.sub(r"•\w+", " ", body) if not (ch.isalnum() or ch in " \n\"'_.") or ch in "ιρωαₓⱼᵣₑ"]
+        found.append((case["id"], match[1].strip(), names | set(glyphs) | {a + b for a, b in zip(glyphs, glyphs[1:])},
+                      (outputs[case["id"]]["stdout"], outputs[case["id"]]["exit"])))
+    return found
+
+
+def error_lookup(cases: list[dict], outputs: dict) -> list[str]:
+    """The guarded error cases a lookup trained on the other cases' own answers (leave one out: a
+    generous bound, since no submission sees them) gets right: the message of the case whose code
+    shares the most glyph features (Jaccard; ties to the more common message), shown the way the
+    case's handler shows it."""
+    instances = error_instances(cases, outputs)
+    message = lambda answer: answer[0].strip().strip('"').split(": ", 1)[-1]  # noqa: E731
+    kind = lambda answer: answer[0].strip().strip('"').split(": ", 1)[0] if ": " in answer[0] else "DOMAIN"  # noqa: E731
+    common = Counter(message(answer) for *_, answer in instances)
+    hits = []
+    for ident, handler, feats, answer in instances:
+        best, score = None, -1.0
+        for other_id, _, other_feats, other_answer in instances:
+            if other_id == ident:
+                continue
+            overlap = len(feats & other_feats) / (len(feats | other_feats) or 1)
+            if overlap > score or (overlap == score and common[message(other_answer)] > common[message(best)]):
+                best, score = other_answer, overlap
+        if best is None:
+            continue
+        guess = f'"{message(best)}"\n' if handler == "$e.message" else f'"{kind(best)}: {message(best)}"\n'
+        if (guess, 0) == answer:
+            hits.append(ident)
+    return hits
+
+
 def shape(case: dict) -> tuple:
     """What a submission sees of a case before reading its program: the arguments with programs and
     paths replaced by placeholders, whether standard input is given, and how many files."""
@@ -212,13 +304,14 @@ def shape(case: dict) -> tuple:
     return argv, case.get("stdin") is not None, len(case["files"])
 
 
-def echoed(case: dict) -> tuple[str, int] | None:
-    """The answer of a dispatcher that echoes a program's leading `⎕←` literals and exits 1 at the
-    first other statement (0 where there is none); for `-e` with a single literal, that literal.
-    None where the case's program does not start with a literal."""
+def echoed(case: dict, evaluate: bool = False) -> tuple[str, int] | None:
+    """The answer of a dispatcher that echoes a program's leading `⎕←` literals (with `evaluate`,
+    the generator's lead forms too) and exits 1 at the first other statement (0 where there is
+    none); for `-e` with a single literal, that literal. None where the case's program does not
+    start with one."""
     argv = case["argv"]
     if argv[:1] == ["-e"] and len(argv) > 1:
-        shown = literal_value(argv[1])
+        shown = literal_value(argv[1], evaluate)
         return (shown + "\n", 0) if shown is not None else None
     program = case["files"].get(argv[0]) if argv and argv[0] in case["files"] else \
         (case.get("stdin") if argv[:1] == ["-"] else None)
@@ -226,7 +319,7 @@ def echoed(case: dict) -> tuple[str, int] | None:
         return None
     printed = []
     for statement in statements(program):
-        shown = literal_value(statement[2:]) if statement.startswith("⎕←") else None
+        shown = literal_value(statement[2:], evaluate) if statement.startswith("⎕←") else None
         if shown is None:
             return ("".join(line + "\n" for line in printed), 1) if printed else None
         printed.append(shown)
@@ -234,11 +327,15 @@ def echoed(case: dict) -> tuple[str, int] | None:
 
 
 def no_interpreter(cases: list[dict], outputs: dict) -> dict[str, list[str]]:
-    """The cases that the strongest dispatcher with no interpreter in it answers (QA wave 1 and 2:
-    a stub, trivial heuristics, an echo of leading literals), by how: every command-line case (a
-    table of the original's answers); a program that starts with `⎕←` literals, echoed and then
-    exit 1 at the first other statement (`echoed`); and for everything else, the most common answer
-    among the cases of the same visible shape (`shape`) where two or more share it."""
+    """The cases that the strongest dispatcher with no interpreter in it answers (QA waves 1 and 2
+    and the round-2 re-check: a stub, trivial heuristics, echoes, a lookup), by strategy; a case
+    may fall to more than one. The strategies: every command-line case (a table of the original's
+    answers); a program that starts with `⎕←` literals, echoed and then exit 1 at the first other
+    statement (`echoed`), and the same with the generator's lead forms evaluated (`LEAD_FORMS`);
+    an echo of the program's last number strand or string literal (`last_literal`); a lookup of
+    error messages trained on the other cases' own answers (`error_lookup`); and for the rest, the
+    most common answer among the cases of the same visible shape (`shape`) where two or more share
+    it. `free_union` is what a dispatcher using all of them passes."""
     answer = lambda case: (outputs[case["id"]]["stdout"], outputs[case["id"]]["exit"])  # noqa: E731
     free: dict[str, list[str]] = defaultdict(list)
     rest: dict[tuple, list[dict]] = defaultdict(list)
@@ -246,17 +343,25 @@ def no_interpreter(cases: list[dict], outputs: dict) -> dict[str, list[str]]:
         if group(case) == "cli":
             free["command-line table"].append(case["id"])
             continue
-        guess = echoed(case)
-        if guess is not None:
-            if guess == answer(case):
-                free["echoed literals"].append(case["id"])
-            continue
-        rest[shape(case)].append(case)
+        if echoed(case) == answer(case):
+            free["echoed literals"].append(case["id"])
+        elif echoed(case, evaluate=True) == answer(case):
+            free["lead forms evaluated"].append(case["id"])
+        if last_literal(case) == answer(case):
+            free["last literal echoed"].append(case["id"])
+        if echoed(case) is None and echoed(case, evaluate=True) is None:
+            rest[shape(case)].append(case)
+    free["error lookup"] = error_lookup(cases, outputs)
     for key, members in rest.items():
         common, shared = max(Counter(map(answer, members)).items(), key=lambda item: (item[1], repr(item[0])))
         if shared > 1:
             free[f"constant for {' '.join(key[0]) or 'no arguments'}"] += [case["id"] for case in members if answer(case) == common]
-    return dict(free)
+    return {how: ids for how, ids in free.items() if ids}
+
+
+def free_union(free: dict[str, list[str]]) -> set[str]:
+    """The cases any strategy of `no_interpreter` passes, each once."""
+    return {ident for ids in free.values() for ident in ids}
 
 
 def free_cases(cases: list[dict], outputs: dict) -> dict[str, list[str]]:
@@ -303,7 +408,7 @@ def select(cases: list[dict], outputs: dict) -> tuple[list[dict], dict[str, list
     while True:
         free = free_cases(kept, outputs)
         groups = [name for name in free if name != "command-line table" and free[name]]
-        if sum(map(len, free.values())) <= FLOOR_SHARE * len(kept) or not groups:
+        if len(free_union(free)) <= FLOOR_SHARE * len(kept) or not groups:
             break
         victim = max(free[max(groups, key=lambda name: (len(free[name]), name))])
         dropped["passed with no interpreter"].append(victim)
@@ -429,7 +534,7 @@ def main() -> None:
         raise SystemExit(f"kept {len(kept)} of {len(cases)} cases: {len(report['unsteady'])} did not finish the same "
                          f"way twice, {len(report['crashed'])} crashed, {len(report['perturbed'])} changed when "
                          f"perturbed, {len(report['slow'])} were slow")
-    free = {i for ids in free_cases(kept, outputs).values() for i in ids}
+    free = free_union(free_cases(kept, outputs))
     if len(free) > FLOOR_SHARE * len(kept):  # select() drops them; only the command line's own cases can stay
         raise SystemExit(f"{len(free)} of {len(kept)} kept cases pass with no interpreter, more than {FLOOR_SHARE:.0%}")
     report["kept_ids_sha256"] = hashlib.sha256("\n".join(case["id"] for case in kept).encode()).hexdigest()

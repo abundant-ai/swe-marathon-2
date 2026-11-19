@@ -63,7 +63,8 @@ expect 1 "reads only files under its working directory" "$bpl" maps.bpl
 # Unprivileged, as the agent runs it (set-group-id, not dumpable): the build's own file stays out of
 # reach from every start directory, even those whose rule lets its path through (/, /opt, /opt/bpl).
 # A read that got through and failed only on decoding would say so; refusals name the permission.
-if [ "$(id -u)" -ne 0 ]; then
+# Only where the file is unreadable to the caller (the agent image); a solution's 0755 copy skips it.
+if [ "$(id -u)" -ne 0 ] && [ ! -r "$bpl" ]; then
     for start in / "$(dirname "$(dirname "$bpl")")" "$(dirname "$bpl")"; do
         for target in "$bpl" /proc/self/exe; do
             status=0

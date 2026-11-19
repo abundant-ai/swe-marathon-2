@@ -67,7 +67,7 @@ EXCLUDED = ("¿", "•rand", "•distribution", "•time", "•date", "•delay"
             "•remove", "•mkdir", "•nput", "•nget", "•load", "testpath", "⇄", "•host", "•mime", "•deflate", "•js",
             "]help", '"threads"', '"seed"', '"fusion"', "•hash", "]clear")
 MAX_CODE = 1500  # characters of a record's code, at most
-DERIVATIVE_KEEP = 0.55  # of the reference records that use ∂, the share drawn from: about 5-6% of the cases
+DERIVATIVE_KEEP = 0.48  # of the reference records that use ∂, the share drawn from: about 6% of the kept cases
 
 
 def load_records(checkout: Path) -> dict[str, tuple[str, list[dict]]]:
@@ -195,12 +195,16 @@ def guarded_case(record: dict, setup: str, rng: random.Random) -> dict:
                 variants=[{"files": {"main.bpl": edit + "\n"}} for edit in edits], form="guarded")
 
 
-def plain_error_case(record: dict, setup: str, rng: random.Random, reply: bool = False) -> dict:
-    """A record that raises an error with nothing to catch it, after a computed value (LEADS). As a
+def plain_error_case(record: dict, setup: str, rng: random.Random, reply: bool = False,
+                     lead_record: tuple[dict, str] | None = None) -> dict:
+    """A record that raises an error with nothing to catch it, after a computed value (a record of
+    the pool, else one of LEADS). As a
     worker request (form "reply", most of them), the reply carries the error's kind, message, span
     and display; run as a program (form "plain"), standard output holds the value printed before
     the error and the run ends with exit status 1 (the message goes to standard error)."""
-    lead = rng.choice(LEADS)(rng)
+    # The value printed before the error: a one-line value record of the reference suite, rewritten
+    # under the seed (evaluating it takes an interpreter), or one of LEADS when the pool is dry.
+    lead = "⎕←" + rewritten(lead_record[0]["code"], rng, True)[0] if lead_record else rng.choice(LEADS)(rng)
     source = f"{record['file']}:{record['line']}"
     if reply or rng.random() < 0.6:
         setup_lines = "\n".join(part for part in (record.get("prefs", ""), setup) if part)
@@ -235,7 +239,7 @@ def notebook_state(lines: list[dict], rng: random.Random) -> list[dict]:
          {"code": f"{name}←{name},{rng.randint(1, 50)}", "echo": False}, {"code": rng.choice([f"≢{name}", f"⌈/{name}", f"⌽{name}"])}],
         [{"code": f"scale←{{ω×{rng.randint(2, 9)}}}", "echo": False}, {"code": f"scale {values}"},
          {"code": f"scale scale {rng.randint(1, 20)}"}],
-        [{"code": f'•prefs ["prec":{rng.choice([3, 4, 5, 6])}]', "echo": False}, {"code": f"÷{rng.randint(3, 13)}"},
+        [{"code": f'•prefs ["prec":{rng.choice([3, 4, 5, 6])}] ◇ 0', "echo": False}, {"code": f"÷{rng.randint(3, 13)}"},
          {"code": f"{rng.randint(1, 9)}÷7"}],
     ]
     bound = [line for line in lines if "bindings" in line]
@@ -417,7 +421,7 @@ def cli_cases() -> list[dict]:
         case("cli", "cli:version-fact", ["-e", '•host "version"']),
         case("cli", "cli:shebang", ["run.bpl"], {"run.bpl": "#!/usr/bin/env bpl\n⎕←2+3\n"}),
         case("cli", "cli:worker-errors", ["--worker"], stdin=worker_errors),
-        case("cli", "cli:pipe-errors", [], stdin="x←4\nx×\n÷0\nx+1\n"),
+        case("cli", "cli:pipe-errors", [], stdin="x←4\n1 2+1 2 3\nx×\nx+1\n"),
         case("cli", "cli:dash-reads-input", ["-"], stdin='⎕←"before"\n⎕\n⎕←"after"\n'),
         case("cli", "cli:outside", ["/etc/passwd"]),
     ]
@@ -491,6 +495,10 @@ def generate(checkout: Path, seed: int, scale: float = 1.0) -> list[dict]:
     readers = [pair for pair in own + apl if "input" in pair[0]]
     for pool in (single, multi, plain, own_errors, apl_values, apl_errors, readers):
         rng.shuffle(pool)
+    # One-line error records without a setup, for the failing line of a piped case: chosen before the
+    # error and worker draws take the pool, and never removed from it (a line that fails on standard
+    # error gives its case nothing).
+    breakers = [pair for pair in own_errors + apl_errors if "\n" not in pair[0]["code"] and not pair[1]]
     take = lambda pool, n: [pool.pop() for _ in range(min(max(n, 0), len(pool)))]  # noqa: E731
     suite = lambda pair: "apl" if pair[0]["file"] in APL_SUITES else "own"  # noqa: E731
     cases: list[dict] = []
@@ -506,7 +514,8 @@ def generate(checkout: Path, seed: int, scale: float = 1.0) -> list[dict]:
         # A syntax error stops the whole program before any guard or lead runs, so only a worker
         # reply shows it (plain_error_case's "reply" form).
         syntax = "SYNTAX" in str(pair[0].get("expected_error", ""))
-        built = plain_error_case(*pair, rng, syntax) if syntax or rng.random() >= 0.8 else guarded_case(*pair, rng)
+        built = plain_error_case(*pair, rng, syntax, lead_record=(take(single, 1) or [None])[0]) if syntax or rng.random() >= 0.8 \
+            else guarded_case(*pair, rng)
         cases.append(dict(built, suite=suite(pair)))
     # What the value kinds leave goes to the worker sessions (with records that cannot change their
     # answers among them: a session's other requests still do), the displays and stdin.
@@ -523,7 +532,6 @@ def generate(checkout: Path, seed: int, scale: float = 1.0) -> list[dict]:
     cases += built_displays
     for pair in readers[:counts["stdin"] // 3]:
         cases.append(dict(expression_case("stdin", *pair, rng), suite=suite(pair)))
-    breakers = [pair for pair in own_errors if "\n" not in pair[0]["code"] and not pair[1]]
     for pair in piped:
         cases.append(dict(stdin_case(*pair, rng, rng.choice(breakers)[0]["code"] if breakers else None), suite=suite(pair)))
     library = {path.rsplit("/", 1)[1]: git_text(checkout, path) for path in git_files(checkout, "lib") if path.endswith(".bpl")}

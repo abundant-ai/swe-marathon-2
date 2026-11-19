@@ -214,6 +214,23 @@ def over_limit(group: int, uid: int | None, baseline: dict[str, tuple[int, int, 
     return None
 
 
+def alive(group: int, uid: int | None) -> bool:
+    """Whether any process of user `uid` (where given) or of process group `group` is still alive,
+    zombies aside; False where /proc cannot tell."""
+    for pid in _listdir("/proc"):
+        if not pid.isdigit():
+            continue
+        try:
+            fields = Path(f"/proc/{pid}/stat").read_bytes().rsplit(b")", 1)[1].split()
+            if fields[0] == b"Z":
+                continue
+            if (os.stat(f"/proc/{pid}").st_uid == uid) if uid is not None else int(fields[2]) == group:
+                return True
+        except (OSError, IndexError, ValueError):
+            continue
+    return False
+
+
 def memory_in_use(group: int, uid: int | None) -> int:
     """The memory a run's processes use: the resident memory of those of user `uid` where given,
     with the shared memory segments that user owns or created, else of those of process group
@@ -248,8 +265,9 @@ def read_output(proc: subprocess.Popen, data: bytes, deadline: float, uid: int |
                 free: dict[str, tuple[int, int, int]]) -> tuple[bytes, str | None]:
     """Feed `data` to the program's standard input and read its standard output until it closes
     it. Returns what was read and None, or what stopped the reading: "timeout" at the deadline while
-    the program still runs (one that already ended has its output drained and read as usual),
-    "output limit" past OUTPUT_LIMIT bytes, or a limit `over_limit` names."""
+    the program, or any process of its user or group, still runs (one that ended with nothing of
+    its own left has its output drained and read as usual), "output limit" past OUTPUT_LIMIT bytes,
+    or a limit `over_limit` names."""
     chunks, size = [], 0
     pending = memoryview(data)
     with selectors.DefaultSelector() as selector:
@@ -262,7 +280,7 @@ def read_output(proc: subprocess.Popen, data: bytes, deadline: float, uid: int |
         while selector.get_map():
             left = deadline - time.monotonic()
             if left <= 0:
-                if proc.poll() is None or left < -DRAIN_SEC:  # still running, or a child holds the pipe open
+                if proc.poll() is None or left < -DRAIN_SEC or alive(proc.pid, uid):  # the run, or a child of it, still runs
                     return b"", "timeout"
                 left = 0.05  # it ended in time and the verifier was late to read: drain what is left
             else:

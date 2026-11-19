@@ -27,7 +27,7 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-from recorder import free_cases
+from recorder import free_cases, free_union
 
 UPSTREAM_KINDS = ("expr", "apl", "script", "error", "worker", "display", "stdin", "module")
 
@@ -38,7 +38,7 @@ def baselines(kept: list[dict], expected: dict) -> dict:
     total = len(kept) or 1
     answers = [(expected[case["id"]]["stdout"], expected[case["id"]]["exit"]) for case in kept]
     free = free_cases(kept, expected)
-    dispatcher = {i for ids in free.values() for i in ids}
+    dispatcher = free_union(free)
     common = Counter(answers).most_common(1)
     return {
         "print_nothing_exit_0": round(answers.count(("", 0)) / total, 4),

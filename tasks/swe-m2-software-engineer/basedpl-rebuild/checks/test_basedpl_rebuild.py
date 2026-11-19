@@ -248,9 +248,19 @@ def test_cases_need_an_interpreter_carry_state_and_leave_out_what_the_docs_show(
     assert all("$e.message" in handler or handler == "$e" for handler in make_cases.HANDLERS)
     assert make_cases.DERIVATIVE_KEEP <= 0.6
     rng = random.Random(3)
-    for _ in range(200):  # no lead is a literal that an echo could copy
+    for _ in range(200):  # no lead is a literal that an echo could copy, and every lead form is one the recorder evaluates
         lead = rng.choice(make_cases.LEADS)(rng)
         assert lead.startswith("⎕←") and recorder.literal_value(lead[2:]) is None, lead
+        assert recorder.literal_value(lead[2:], evaluate=True) is not None, lead
+    assert [recorder.literal_value(code, True) for code in ("+/ι10", '⌽"plum"', '≢"size palm"', "3×ι4", "⌈/5 9 2", "18+4×9")] \
+        == ["45", '"mulp"', "9ₓ", "0 3 6 9", "9", "54"]
+    pooled = make_cases.plain_error_case({"code": "1 2+3 4 5", "file": "core.bpl", "line": 7, "expected_error": "LENGTH ERROR"}, "",
+                                         random.Random(5), lead_record=({"code": "2×3 4", "file": "core.bpl", "line": 1}, ""))
+    lead_line = (pooled["files"]["main.bpl"].splitlines()[0] if pooled["form"] == "plain"
+                 else json.loads(pooled["stdin"].splitlines()[0])["code"])
+    assert "2×" in lead_line and "4" in lead_line and recorder.literal_value(lead_line.removeprefix("⎕←"), True) is None, \
+        "a lead from the record pool is no form the dispatcher evaluates"
+    assert next(case for case in make_cases.cli_cases() if case["source"] == "cli:pipe-errors")["stdin"].count("1 2+1 2 3") == 1
     error = {"code": "1 2+3 4 5", "file": "core.bpl", "line": 7, "expected_error": "LENGTH ERROR"}
     forms = [make_cases.plain_error_case(error, "", random.Random(seed)) for seed in range(40)]
     assert {case["form"] for case in forms} == {"reply", "plain"} and sum(case["form"] == "reply" for case in forms) > 15
@@ -552,6 +562,10 @@ def test_the_original_is_refused_by_its_marker_and_only_the_images_carry_one(tmp
     usage = tmp_path / "usage"
     usage.mkdir()
     (usage / "bpl").write_bytes(b"\x7fELF" + b"y" * ((1 << 20) - 12) + b"Use --kernel -f CONNECTION_FILE to run a kernel")
+    quoted = tmp_path / "quoted"
+    quoted.mkdir()
+    (quoted / "bpl").write_text("#!/bin/sh\necho hi\n")
+    (quoted / "NOTES.md").write_text("upstream also had `--kernel -f CONNECTION_FILE`, which this build lacks\n")
     published = hashlib.sha256((fetched / "lib" / "_core.so").read_bytes()).hexdigest()
     builds = tmp_path / "builds.json"
     builds.write_text(json.dumps({"builds": [{"sha256": published, "size": (fetched / "lib" / "_core.so").stat().st_size,
@@ -563,17 +577,21 @@ def test_the_original_is_refused_by_its_marker_and_only_the_images_carry_one(tmp
         needles = {{{marker!r}: "the marker", verify.UNHARDENED_USAGE: "the usage text"}}
         builds = verify.upstream_builds(Path({str(builds)!r}))
         shipped = verify.upstream_builds()
+        marker_only = {{{marker!r}: "the marker"}}
+        binary = {{verify.UNHARDENED_USAGE: "the usage text"}}
         print(json.dumps([verify.holds_original(top, needles), verify.holds_original(top / "bin", needles),
                           verify.identity(top / "bin" / "clean"), verify.identity(top / "bpl"),
                           verify.holds_original(Path({str(fetched)!r}), needles, builds),
-                          verify.holds_original(Path({str(usage)!r}), needles, builds),
-                          len(shipped), sorted(size for sizes in shipped.values() for size in sizes)[:1]]))
+                          verify.holds_original(Path({str(usage)!r}), marker_only, builds, binary),
+                          len(shipped), sorted(size for sizes in shipped.values() for size in sizes)[:1],
+                          verify.holds_original(Path({str(quoted)!r}), marker_only, builds, binary)]))
     """))
     assert found[0] == "/app/rebuild/bpl holds the marker" and found[1] is None, "found across a 1 MB chunk boundary, never through a link"
     assert found[2]["sha256"] == found[2]["sha256_without_marker"] and found[3]["sha256"] != found[3]["sha256_without_marker"]
     assert found[4] == "/app/rebuild/lib/_core.so is a build of BasedPL that upstream publishes"
     assert found[5] == "/app/rebuild/bpl holds the usage text", "found across a 1 MB chunk boundary"
     assert found[6] == 12 and found[7][0] > 30_000_000, "three release binaries and nine Python extensions, all distinct"
+    assert found[8] is None, "the usage text in a note or a script is no fetched build"
     shipped = json.loads((STEP / "tests" / "verifier" / "upstream_builds.json").read_text())["builds"]
     assert {build["source"].split(":")[0] for build in shipped} >= {"GitHub release v0.1.95"}
     assert sum("bpl-linux-x86_64" in build["source"] for build in shipped) == 1
@@ -583,7 +601,7 @@ def test_the_original_is_refused_by_its_marker_and_only_the_images_carry_one(tmp
     solve = (STEP / "solution" / "solve.sh").read_text()
     assert '"$here/build.txt" - /app/rebuild/bpl' in solve, "the solution installs the build with no marker"
     verify = (STEP / "tests" / "verify.py").read_text()
-    assert verify.index("holds_original(SUBMISSION, needles, builds)") < verify.index("metrics = grade(")
+    assert verify.index("holds_original(SUBMISSION, needles, builds, binary_needles)") < verify.index("metrics = grade(")
     assert 'raise EvaluationError("The original\'s build marker is missing or malformed")' in verify, "never fails open"
 
 
@@ -846,7 +864,8 @@ def deliver(name, build, entries="100000", size="1000000000", path="1000", secon
         (base / name / "bin" / "tar").chmod(0o755)
         environment["PATH"] = f"{base / name / 'bin'}:{environment['PATH']}"
     done = subprocess.run([sys.executable, "-I", "-", str(rebuild), entries, size, path, str(state), str(archives), seconds, "2", "0",
-                           "1700030000"], input=prelude + measure, capture_output=True, text=True, timeout=300, env=environment)
+                           "1700030000", "no" if name == "unwritable" else "yes"], input=prelude + measure, capture_output=True,
+                          text=True, timeout=300, env=environment)
     assert done.returncode == 0, done.stderr
     assert not os.listdir(archives), "the trial pack is removed"
     return app, rebuild
@@ -881,6 +900,9 @@ def notes(rebuild):
 def tree(rebuild):
     (rebuild / "src").mkdir()
     (rebuild / "src" / "main.py").write_text("print('hi')\n" * 50)
+    (rebuild / "ro").mkdir()
+    (rebuild / "ro" / "lnk").symlink_to("../src")
+    (rebuild / "ro" / "a").symlink_to("lnk/../../..")  # resolves to the root itself, lexically leaves it: the copy would abort
     (rebuild / "bpl").write_text("#!/bin/sh\nexec python3 src/main.py\n")
     (rebuild / "empty").mkdir()
     (rebuild / "inside").symlink_to("src/main.py")
@@ -950,6 +972,16 @@ app, rebuild = deliver("never-room", tree, tar=failing, prelude=FULL)
 out["never_room"] = mark(rebuild)
 app, rebuild = deliver("nop", lambda rebuild: None)
 out["nop"] = [mark(rebuild), notes(copy(rebuild, base / "nop" / "copied")), verify.delivery_record(base / "nop" / "copied")["entries"]]
+app, rebuild = deliver("unwritable", tree)
+out["unwritable"] = mark(rebuild)[:2]
+linked = base / "linked" / "app" / "rebuild"
+app, rebuild = deliver("linked", lambda rebuild: [(rebuild / "big").write_bytes(os.urandom(1 << 20)),
+                                                   *(os.link(rebuild / "big", rebuild / f"big{i}") for i in range(30))])
+record = json.loads((rebuild / ".delivery.json").read_text())
+out["linked"] = [mark(rebuild)[0], len({item["sha256"] for item in record["entries"]}), record["hashing_complete"]]
+more = copy(rebuild, base / "linked" / "copied")
+(more / "extra").write_text("added by the transport")
+out["more"] = notes(more)
 outside = base / "venv-like"
 outside.mkdir()
 for number in range(20):
@@ -1000,35 +1032,47 @@ def test_the_delivery_is_bounded_recorded_and_marked_before_the_copy_and_graded_
     assert done.returncode == 0, done.stderr[-3000:]
     out = json.loads(done.stdout.strip().splitlines()[-1])
     run = len("#!/bin/sh\nexec python3 src/main.py\n")
-    # src, src/main.py, src/b, src/b/up, bpl, bpl-again, empty, inside: 8 entries; bpl and bpl-again are one file
-    assert out["mark"][0] == f"delivered 8 {600 + run}", out["mark"]
+    # src, src/main.py, src/b, src/b/up, bpl, bpl-again, empty, inside, ro, ro/lnk: 10 entries; bpl and bpl-again are one file
+    assert out["mark"][0] == f"delivered 10 {600 + run}", out["mark"]
     assert out["mark"][1:3] == ["venv/bin/python3: a copy of /usr/bin/python3.12 (was a link to /usr/bin/python3.12)",
                                 "removed vendor -> /home/dev/cache: it leads outside /app/rebuild to something that is not part of the "
                                 "machine's installation (not owned by root), which is not copied"], "the fixer's notes, copies first"
     assert sorted(out["mark"][3:]) == ["removed absolute: a link that leads outside /app/rebuild", "removed esc: a link that leads outside /app/rebuild",
-                                       "removed outside: a link that leads outside /app/rebuild", "removed pipe: not a file, a directory or a link"]
+                                       "removed outside: a link that leads outside /app/rebuild", "removed pipe: not a file, a directory or a link",
+                                       "removed ro/a: a link that leads outside /app/rebuild"], "a link that leaves lexically goes too"
     turn_started, hook_started, copies, links, notes = out["copies"]
-    assert (turn_started, hook_started) == (1700000000, 1700030000) and len(notes) == 6
+    assert (turn_started, hook_started) == (1700000000, 1700030000) and len(notes) == 7
     assert len(copies) == 1 and copies[0]["source"] == "/usr/bin/python3.12" and copies[0]["source_owner"] == 0
     assert copies[0]["source_inode"] == [66, 1234] and copies[0]["outside_delivery"] is True
     assert copies[0]["changed_since_session_started"] is False, "a system file from the image build"
     assert links[0]["kind"] == "refused" and links[0]["changed_since_session_started"] is True and links[0]["outside_delivery"] is True
-    assert out["left"] == [".delivered", ".delivery.json", "bpl", "bpl-again", "empty", "inside", "src"]
+    assert out["left"] == [".delivered", ".delivery.json", "bpl", "bpl-again", "empty", "inside", "ro", "src"]
     egress_open, rounds, left, delivered, complete, paths, bpl = out["record"]
     assert [egress_open, rounds, left, delivered, complete] == [False, 2, 0, out["mark"][0], True]
-    assert paths == ["bpl", "bpl-again", "empty", "inside", "src", "src/b", "src/b/up", "src/main.py"]
+    assert paths == ["bpl", "bpl-again", "empty", "inside", "ro", "ro/lnk", "src", "src/b", "src/b/up", "src/main.py"]
     assert bpl["type"] == "file" and bpl["size"] == run and len(bpl["sha256"]) == 64 and bpl["ctime"] > 1.7e9
     summary = out["summary"]
-    assert summary["egress_open"] is False and summary["entries"] == 8 and summary["kill_rounds"] == 2 and summary["bpl"] == bpl
+    assert summary["egress_open"] is False and summary["entries"] == 10 and summary["kill_rounds"] == 2 and summary["bpl"] == bpl
+    assert summary["hashing_complete"] is True
     assert summary["agent_processes"] == [{"pid": 7, "command": "sleep 99"}] and summary["latest_ctime"] >= bpl["ctime"]
     assert summary["copies"] == copies and summary["links"] == links and summary["notes"] == notes, "the whole record reaches metrics.json"
     assert summary["copies_outside_delivery"] == 1 and summary["copies_changed_since_session_started"] == 0
     assert (summary["turn_started"], summary["hook_started"]) == (1700000000, 1700030000)
     assert out["long_mark"] == 60, "the verifier reads the whole mark, however many notes"
+    verify_text = (STEP / "tests" / "verify.py").read_text()
+    assert "handle.read(MARK_LIMIT + 1)" in verify_text and "MARK_LIMIT = 1 << 20" in verify_text, "bounded all the same"
+    hook_text = (TASK / "environment" / "prepare-delivery").read_text()
+    assert "pgrep -u dev -r R,S,D,T" in hook_text and "pgrep -u dev -r R,S,D " in hook_text + " ", "zombies are never survivors"
+    assert hook_text.index("chmod -R u+rwX /app/rebuild") < hook_text.index("timeout 120 setpriv"), "writable before the fixer"
+    assert "lexical = os.path.normpath" in hook_text and "HASH_SECONDS = 240" in hook_text and "if inode in digests:" in hook_text
     assert out["complete"] == [f"collect hook: {line}" for line in out["mark"][1:]], out["complete"]
     assert out["cut"][0].startswith(("ERROR The copy arrived incomplete", "the delivery arrived without", "ERROR Nothing")), out["cut"]
     assert out["nothing"][0].startswith("ERROR Nothing arrived") and out["unmarked"][0].startswith("the delivery arrived without")
-    assert out["partial"] == [f"ERROR The copy arrived incomplete: 7 of 8 entries and {run:,} of {600 + run:,} bytes"], out["partial"]
+    assert out["partial"] == [f"ERROR The copy arrived incomplete: 9 of 10 entries and {run:,} of {600 + run:,} bytes"], out["partial"]
+    assert out["more"] == ["more arrived than the collect hook marked: 32 entries and 1,048,598 bytes against 31 and 1,048,576 "
+                           "(hard links split, or files the transport added)"], "more than marked is a note, not an error"
+    assert out["unwritable"] == ["refused", "its permissions could not be made writable for its owner: it was not copied"]
+    assert out["linked"] == ["delivered 31 1048576", 1, True], "31 names of one file: one hash, counted once"
     assert out["odd"] == ["the collect hook's mark could not be read; the delivery was graded as it arrived"]
     assert out["many"] == [["refused", "it holds more than 3 entries, the most /app/rebuild may hold: it was not copied"],
                            [".delivered", ".delivery.json"], ["rebuild", "refused"]], out["many"]
@@ -1115,6 +1159,9 @@ def test_a_host_short_of_disk_mid_evaluation_is_an_error_and_a_run_that_ended_in
     """))
     assert out[0].startswith("Less than") and "after a cleanup, mid-evaluation" in out[0], out
     assert out[1:] == ["late but in time", None]
+    runner = RUNNER.read_text()
+    assert "or alive(proc.pid, uid)" in runner and "def alive(group: int, uid: int | None) -> bool:" in runner, \
+        "a child that holds the pipe open past the deadline is a timeout"
 
 
 def test_the_agent_cannot_replace_the_artifact_directory():
@@ -1260,11 +1307,15 @@ def test_answers_that_show_the_maths_librarys_last_bits_are_left_out():
             recorder.last_bits(e("(1○1.2)-0.932"), "3.9085967226ₑ¯17\\n"),  # a residue below 1e-12
             recorder.last_bits(e("1○1.2ₛ"), "0.93203914ₛ\\n"),              # a 32-bit float
             recorder.last_bits(e("•csv⁻ \\"1.5\\""), "1.234567890123456\\n"),  # a parse, no maths library
+            recorder.last_bits(e("∧3j4"), "5 0.9272952180016123\\n"),            # polar: the build's own atan2 (12b F1)
+            recorder.last_bits(e("{¯1+*ω}1E¯17"), "1ₑ¯17\\n"),                  # an exact tiny literal, not a residue (12b F7)
+            recorder.last_bits(e("¯2√8"), "0.35355339059327373\\n"),            # a root other than the square root
+            recorder.last_bits(e("√2"), "1.4142135623730951\\n"),               # the square root is correctly rounded
             recorder.last_bits(worker("x←÷3", "⌊100×1○1.2"), reply(0.3333333333333333) + "\\n" + reply(93) + "\\n"),
             recorder.last_bits(worker("x←÷3", "1○1.2"), reply(0.3333333333333333) + "\\n" + reply(0.9320390859672262) + "\\n"),
         ]))
     """))
-    assert out == [True, False, False, True, True, False, False, True], out
+    assert out == [True, False, False, True, True, False, True, False, True, False, False, True], out
     recorder = (STEP / "tests" / "verifier" / "recorder.py").read_text()
     assert 'dropped["prints the maths library\'s last bits"]' in recorder
 
@@ -1282,18 +1333,25 @@ def test_no_dispatcher_without_an_interpreter_passes_more_than_five_percent():
             add(i, "script", f"x←{i}\\n⎕←x×2", (f"{2 * i}\\n", 0))
         for i in range(900, 1000):  # a literal lead, then an error: echo and exit 1 passes
             add(i, "error", f'⎕←"step {i}"\\n1 2+3 4 5', (f'"step {i}"\\n', 1))
-        for i in range(1000, 1040):  # a computed lead cannot be echoed
+        for i in range(1000, 1040):  # one of the generator's own lead forms: evaluated without an interpreter
             add(i, "error", f"⎕←+/ι{i}\\n1 2+3 4 5", (f"{i * (i - 1) // 2}\\n", 1))
         for i in range(1040, 1070):  # one answer for one shape of -e
             add(i, "expr", "", ("DOMAIN ERROR\\n", 0), argv=["-e", f"code{i}"])
+        for i in range(1070, 1080):  # a value assigned and then named: its last strand is the answer
+            add(i, "script", f"x←{i} 7\\nx", (f"{i} 7\\n", 0))
+        for i, body in enumerate(["(1 2 3)+4 5", "(1 2 3)-4 5", "(1 2 3)×4 5", "(1 2 3)÷4 5", '(ι"a")+1', '(ι"b")+2'], 1080):
+            same = "lengths 3 and 2 don't agree" if i < 1084 else "ι needs a number"  # a lookup trained on the others gets the four
+            add(i, "error", "{∞::$e.message ◇ " + body + "}0", (f'"{same}"\\n', 0))
         free = recorder.no_interpreter(cases, outputs)
         kept, dropped = recorder.select(cases, outputs)
         after = recorder.no_interpreter(kept, outputs)
-        print(json.dumps([{how: len(ids) for how, ids in free.items()}, len(kept), sum(map(len, after.values())),
+        print(json.dumps([{how: len(ids) for how, ids in free.items()}, len(kept), len(recorder.free_union(after)),
                           len(dropped.get("passed with no interpreter", []))]))
     """))
     before, kept, free_after, dropped = out
-    assert before["echoed literals"] == 100 and before["constant for -e CODE"] == 30, before
+    assert before["echoed literals"] == 100 and before["lead forms evaluated"] == 40 and before["constant for -e CODE"] == 30, before
+    # the ten, and `x←0 ◇ ⎕←x×2`; the two ι cases are each other's nearest, and the `+` length case's nearest is one of them
+    assert before["last literal echoed"] == 11 and before["error lookup"] == 5, before
     assert free_after <= 0.05 * kept and dropped > 0, out
     recorder = (STEP / "tests" / "verifier" / "recorder.py").read_text()
     assert "raise SystemExit(f\"{len(free)} of {len(kept)} kept cases pass with no interpreter" in recorder
@@ -1493,6 +1551,6 @@ def test_only_the_documentation_and_the_binary_reach_the_agent():
         "setpriv --reuid dev --regid dev --clear-groups env HOME=/tmp bash /tmp/bpl-smoke.sh /opt/bpl/bpl") \
         < final.index("rm -f /tmp/bpl-smoke.sh"), "the installed build is proved as the agent runs it, set-group-id"
     smoke = (HARDENING / "smoke.sh").read_text()
-    assert 'if [ "$(id -u)" -ne 0 ]; then' in smoke and 'for target in "$bpl" /proc/self/exe; do' in smoke
+    assert 'if [ "$(id -u)" -ne 0 ] && [ ! -r "$bpl" ]; then' in smoke and 'for target in "$bpl" /proc/self/exe; do' in smoke
     assert sorted(path.name for path in HARDENING.iterdir()) == ["Cargo.lock", "apply.sh", "basedpl-hardening.patch", "mark.py",
                                                                  "smoke.sh"]

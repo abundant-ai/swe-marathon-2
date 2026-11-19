@@ -23,14 +23,14 @@ done
 ps -eo pid=,ppid=,uid=,etimes=,args= > "$STATE/processes.txt" 2>/dev/null || :
 rounds=0
 for _ in $(seq 1 100); do
-  { pgrep -u dev || pgrep -U dev; } >/dev/null 2>&1 || break
+  { pgrep -u dev -r R,S,D,T || pgrep -U dev -r R,S,D,T; } >/dev/null 2>&1 || break  # zombies are not survivors
   rounds=$((rounds + 1))
   setpriv --reuid dev --regid dev --clear-groups kill -9 -1 >/dev/null 2>&1
   pkill -KILL -u dev >/dev/null 2>&1
   pkill -KILL -U dev >/dev/null 2>&1
   sleep 0.1
 done
-left=$({ pgrep -u dev; pgrep -U dev; } 2>/dev/null | sort -u | wc -l)
+left=$({ pgrep -u dev -r R,S,D,T; pgrep -U dev -r R,S,D,T; } 2>/dev/null | sort -u | wc -l)
 # Egress, after the kill (killing changes nothing about it, and the kill waits for nothing); three seconds for each host.
 timeout 30 /usr/bin/python3 -I - "$STATE/session.json" "$STATE/processes.txt" <<'EOF'
 """Record whether the public internet answers from this machine (a TCP connection to port 443 of two public hosts,
@@ -93,6 +93,10 @@ for name in .delivered .delivery.json; do
     aside=$(mktemp -d /app/.aside.XXXXXX) && mv -f "/app/rebuild/$name" "$aside/" || exit 0
   fi
 done
+# The user's own permissions back on everything in the delivery (a read-only folder would stop the link fixer and then
+# the copy), as root, never following links; a tree that cannot be made writable is refused.
+writable=yes
+chmod -R u+rwX /app/rebuild >/dev/null 2>&1 || writable=no
 # Links, as the agent's user (it copies nothing that user could not read), within the limits and two minutes. Each change
 # is one JSON line on standard output, kept root-owned for the record.
 timeout 120 setpriv --reuid dev --regid dev --clear-groups --no-new-privs /usr/bin/python3 -I - /app/rebuild "$LIMIT_ENTRIES" "$LIMIT_BYTES" > "$STATE/fixer.jsonl" <<'EOF'
@@ -242,14 +246,16 @@ for _ in range(10):
         break
 EOF
 # Measure, bound, pack once, list and mark, as root.
-exec /usr/bin/python3 -I - /app/rebuild "$LIMIT_ENTRIES" "$LIMIT_BYTES" "$LIMIT_PATH" "$STATE" /tmp "$PACK_SECONDS" "$rounds" "$left" "$HOOK_STARTED" <<'EOF'
+exec /usr/bin/python3 -I - /app/rebuild "$LIMIT_ENTRIES" "$LIMIT_BYTES" "$LIMIT_PATH" "$STATE" /tmp "$PACK_SECONDS" "$rounds" "$left" "$HOOK_STARTED" "$writable" <<'EOF'
 """Measure /app/rebuild, bound it, pack it once, list it and mark it, as root, once nothing of the agent's runs.
 
 The tree is walked by directory descriptor, so no depth hides anything, and any step that cannot be completed refuses
 the delivery. Anything the copy would refuse is removed: a device, a pipe, a socket, a link with an absolute target or
-one that resolves outside the directory. A delivery over the limits, or one that the copy's own pack (tar -czf into
-/tmp) cannot make within PACK_SECONDS, is moved aside whole and replaced by an empty directory; a pack that fails only
-for want of room or inodes the machine never had is left to the copy. The mark's first line is `delivered` with the
+one that leaves the directory, lexically (as the copy's extraction judges it) or through other links. A delivery over
+the limits, one whose permissions could not be made writable, or one that the copy's own pack (tar -czf into /tmp)
+cannot make within PACK_SECONDS, is moved aside whole and replaced by an empty directory; a pack that fails only for
+want of room or inodes the machine never had is left to the copy. Files are hashed once per inode, within HASH_SECONDS
+in all; past that, the remaining files are listed without a hash and the record says so. The mark's first line is `delivered` with the
 number of entries (files, directories and links) and of bytes in its files (each file once, however many names it
 has), or `refused`; every line after it is a change made or the reason for the refusal, none left out. The record
 (.delivery.json) holds what was found before the agent's processes were ended (STATE/session.json), how many rounds of
@@ -266,31 +272,45 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 
 ROOT = os.path.realpath(sys.argv[1])
 LIMIT_ENTRIES, LIMIT_BYTES, LIMIT_PATH = int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4])
 STATE, ARCHIVES, PACK_SECONDS = sys.argv[5], sys.argv[6], float(sys.argv[7])
 ROUNDS, LEFT, HOOK_STARTED = (int(value) if value.strip().isdigit() else -1 for value in (sys.argv[8:11] + ["", "", ""])[:3])
+WRITABLE = (sys.argv[11:12] or ["yes"])[0] == "yes"
 MARK = os.path.join(ROOT, ".delivered")
 RECORD = os.path.join(ROOT, ".delivery.json")
 SPARE_INODES = 16
+HASH_SECONDS = 240
 notes, links, files = [], [], set()
 listing = {}
+digests = {}
 entries = size = 0
+hashing_started = time.monotonic()
+hashing_complete = True
 
 
 class Refuse(Exception):
     pass
 
 
-def digest(name, fd):
-    """The sha256 of the regular file `name` in the directory open as `fd`, never following a link."""
+def digest(name, fd, inode):
+    """The sha256 of the regular file `name` in the directory open as `fd`, never following a link;
+    once per inode (hard links share it), and None once HASH_SECONDS of hashing are spent."""
+    global hashing_complete
+    if inode in digests:
+        return digests[inode]
+    if time.monotonic() - hashing_started > HASH_SECONDS:
+        hashing_complete = False
+        return None
     handle = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_NONBLOCK", 0), dir_fd=fd)
     try:
         value = hashlib.sha256()
         while chunk := os.read(handle, 1 << 20):
             value.update(chunk)
-        return value.hexdigest()
+        digests[inode] = value.hexdigest()
+        return digests[inode]
     finally:
         os.close(handle)
 
@@ -325,7 +345,7 @@ def walk(fd, rel):
                 size += info.st_size
                 if size > LIMIT_BYTES:
                     raise Refuse(f"it holds more than {LIMIT_BYTES:,} bytes, the most /app/rebuild may hold")
-            item["sha256"] = digest(name, fd)
+            item["sha256"] = digest(name, fd, (info.st_dev, info.st_ino))
         listing[path] = item
         if stat.S_ISDIR(info.st_mode):
             item["type"] = "directory"
@@ -391,11 +411,14 @@ try:
     complete = True
     for path in links:
         target = os.readlink(os.path.join(ROOT, path))
-        if os.path.isabs(target) or not inside(os.path.realpath(os.path.join(ROOT, path))):
+        lexical = os.path.normpath(os.path.join(os.path.dirname(os.path.join(ROOT, path)), target))
+        if os.path.isabs(target) or not inside(lexical) or not inside(os.path.realpath(os.path.join(ROOT, path))):
             os.unlink(os.path.join(ROOT, path))
             entries -= 1
             listing.pop(path, None)
             notes.append(f"removed {path}: a link that leads outside /app/rebuild")
+    if not WRITABLE:
+        raise Refuse("its permissions could not be made writable for its owner")
 except Refuse as refusal:
     reason = str(refusal)
 except (OSError, RecursionError, ValueError) as exc:
@@ -444,8 +467,10 @@ if reason is not None:
     os.chmod(ROOT, 0o777)
     lines = ["refused", f"{reason}: it was not copied"]
 session = state_json("session.json", {"error": "the session record is missing"})
+if not hashing_complete:
+    notes.append(f"files were hashed for {HASH_SECONDS} s; the rest are listed without a hash")
 record = dict(session, kill_rounds=ROUNDS, agent_processes_left=LEFT, hook_started=HOOK_STARTED, turn_started=turn_started,
-              delivered=lines[0], listing_complete=complete,
+              delivered=lines[0], listing_complete=complete, hashing_complete=hashing_complete,
               copies=[change for change in changes if change.get("kind") == "copied"],
               links=[change for change in changes if change.get("kind") != "copied"],
               notes=fixer_notes + notes,
