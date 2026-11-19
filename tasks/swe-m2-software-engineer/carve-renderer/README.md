@@ -28,7 +28,81 @@ archive or binary.
 
 ## Development log
 
-### 2026-11-19
+### 2026-11-19 — hardening (QA rounds 1-2)
+
+Two coordinator review rounds, folded in before any run. Measured numbers below are from the
+regenerated pool (private seed redrawn at 128 bits) and the local recording/grading of bundle
+`33c04fff63ad`.
+
+- **Corpus-lookup closed (QA 05).** A renderer-free program that maps a source to published HTML by
+  skeleton and word-mapping (the "corpus-lookup baseline", `scripts/corpus_lookup.py`) scored 32%
+  of the old pool. The generator now hosts every snippet and composite inside a real construct (a
+  quote, a list item, a section, an admonition, a definition, a figure, nested containers —
+  `scripts/hosts.py`) so the body interacts with its host, and keeps a case only when it is **not**
+  a splice of the host rendered with placeholders and the parts rendered alone (`hosts.splice`),
+  not a value the lookup returns, and (for a mutant) structurally different from its published
+  source. The renderer-free corpus-mapping score over the whole corpus is now **0.0%** (was 32.3%),
+  and `recording.json`'s `corpus_lookup` baseline is 0.0%. Corpus-derived cases are 33% of the pool
+  (was 47%). The drop is measured again at recording and the build fails above 5%.
+- **Prose, not templates (QA 02).** The 520 documents and 720 constructs used to be filled from a
+  word list through eight clause templates (word salad, never a diacritic, apostrophe, URL or path).
+  `scripts/prose.py` is a bank of original sentences across five registers (reference, narrative,
+  instruction, announcement, retrospective) with the hazards real writing carries: names and places
+  with diacritics, contractions, typed dashes and quotes, bare URLs, file paths, identifiers, query
+  strings, fragments, a CJK line, an emoji. Renaming (`rewrite.py`) never touches a syntax word or a
+  word adjacent to a non-ASCII character.
+- **Seed and leak index (QA 06).** The private seed is 128 bits (`secrets.randbits`). The leak index
+  that keeps a case off the board if a shipped page shows it now also abstracts unescaped `\n`/`\t`
+  spans and indented EBNF example blocks, and checks the answer side (`carve_text.answer_shown`).
+- **Open readings dropped (QA 18).** Cases that rest on a reading the specification leaves open — an
+  inline extension directive (`:name[...]`) or an inline note on a heading line — are filtered at
+  generation (`make_cases.open_reading`).
+- **Instruction rewritten (QA 01, 03, 09, 11).** One consistent reason runs through it: the audit
+  admits only the specification and these documentation pages; carve-rs, the other engines, the
+  corpus, the pack, the gallery and the executable model "were not reviewed and are not here … they
+  may not be brought in"; the pages hold customer and incident data, so neither they nor their HTML
+  leaves the build. Run conditions are stated as behaviour (an unprivileged user, a fresh directory,
+  the environment, pipes, "processes and threads", the 2 GB / 200,000-file reasons); standard error
+  "is discarded"; `--` is counted as an unknown option; the hooks are named neutrally.
+- **Egress window hardened (QA 04).** An in-sandbox watchdog (`environment/session-watch`, started
+  by the setup-complete hook) arms after ~30 s with no egress and fires on the first reachable poll
+  of the hosts the original is fetched from, killing the agent's user and recording when the turn
+  ended. The collect hook's link fixer records every copied source's path, owner, mtime, **ctime**
+  and inode, and refuses a source whose change time is after the turn ended (margin 2 s); the record
+  flags any late entry. The hooks are renamed `session-setup` / `session-finish` / `session-watch`
+  and live in root-only `/usr/local/lib/pagebuild` (0700), off `PATH`.
+- **Own-file disk limits (QA 10).** The per-case disk and file limits count only the submission
+  uid's own files (`runcases.own_use`, ported from BasedPL `4b2c182`), not the whole filesystem, so
+  a neighbour filling `/tmp` cannot fail an honest run; one retry on a limit.
+- **Tripwires widened (QA 04 F1).** `upstream_builds.json` now holds 2,156 sha256 (every carve-rs
+  release asset and Linux `carve` binary, all `carve-lang` wheels and their contents, carve-go and
+  the docs wasm across tags, the spec-model files at every tag, ohm-js 17.x, carve-js), 14 strings
+  (each ≥72 chars, three needed), and foreign-runtime markers for seven runtimes (node, bun, deno,
+  quickjs, wasm, php, ruby; two needed) — a delivered program embedding a runtime the stdlib-only
+  rule forbids is refused.
+- **Denominator pinned and archive pinnable (QA 11).** The verifier image asserts the accepted
+  kept-ids sha256 (`--expect-kept-ids`, from `tests/original/kept_ids.txt`) so the denominator
+  cannot drift between builds, and both images take an `APT_SNAPSHOT` build-arg to pin the Ubuntu
+  archive to one `snapshot.ubuntu.com` date.
+- **Near-miss diagnostics (QA 15) and fingerprint (QA 04 F2).** The recording keeps an ungraded,
+  clause-keyed record of how close each failing case came (right exit/wrong bytes, equal but for
+  collapsing whitespace, sorting attributes, text only), and the image records 45 ungraded
+  fingerprint probes (34 spec-model disagreements and 11 out-of-scope commands) for the audit;
+  neither affects the reward.
+- **Upstream docs kept authentic (QA 01, 09 F6).** "corpus" / "conformance" / "carve-rs" appear
+  across ~40 of the 69 shipped documentation pages — it is real, pervasive upstream text, not one
+  editable line, and no page gives an implementer a corpus-lookup recipe. Editing it would cost the
+  authenticity those pages exist for and break their cross-references, so the pages ship unaltered;
+  the instruction's explicit prohibition and the measured 0.0% corpus floor are the mitigation.
+- Checks (36) pass under Python 3.13; `check_repository.py` passes; packaged twice to the same hash
+  `33c04fff63ad`; preflight passes; graded locally (reference 1.0, see [Validation](#validation)).
+
+### 2026-11-19 — first build
+
+*Superseded in part by the hardening entry above: the hooks were renamed (`session-setup` /
+`session-finish` / `session-watch`), the tripwires grew to 2,156 sha256 / 14 strings / seven
+runtimes, the pool was regenerated at 1,944 cases under a new 128-bit seed, and the bundle is now
+`33c04fff63ad`. The counts and names below are the first-build state, kept as history.*
 
 - Started from the judge panel's choice for idea 10: Carve, pinned at spec tag 0.1.14, graded
   against carve-rs 0.1.14's release build, HTML rendering only (no includes, importers, lint, AST
@@ -120,10 +194,10 @@ archive or binary.
 | Step `01-implement-renderer` | Implemented: instruction, agent image with the specification and the documentation, collect hook, separate verifier image recording at build, reference solution. |
 | Further steps | Not designed. Candidates: the next spec release (0.1.x changes behaviour in patch releases), or a second target (canonical Carve with `fmt`, or Markdown) on the same renderer. |
 | The original | carve-rs 0.1.14's static Linux release archive, fetched by `scripts/setup_tools.py` into `experiment/original/` (not in Git) and packaged as released into the verifier's build context and the solution. |
-| Hooks | `environment/reserve-delivery-room` (setup begin and complete) and `environment/prepare-delivery` (the one root collect hook), both root-only in the agent image. |
-| Published builds | `steps/01-implement-renderer/tests/verifier/upstream_builds.json` from `scripts/upstream_builds.py`: 275 sha256 and 23 strings for the refusal of fetched builds. |
-| Private inputs | `steps/01-implement-renderer/tests/private/cases.json`, Git-ignored, from `scripts/make_cases.py` and `experiment/seeds.json`. Answers are recorded when the verifier image is built; `recording.json` beside them describes the recording and appears in `metrics.json`. |
-| Oracle | The original itself, installed from its release archive by `solve.sh` (as the agent's user), with the 23 tripwire strings blanked in place. |
+| Hooks | `environment/session-setup` (setup begin and complete; `--watch` starts the egress watcher), `environment/session-watch` (the in-sandbox watchdog) and `environment/session-finish` (the one root collect hook), all root-only (`/usr/local/lib/pagebuild`, 0700) in the agent image. |
+| Published builds | `steps/01-implement-renderer/tests/verifier/upstream_builds.json` from `scripts/upstream_builds.py`: 2,156 sha256, 14 strings (three needed) and foreign-runtime markers for seven runtimes (two needed), for the refusal of fetched builds and runtimes. |
+| Private inputs | `steps/01-implement-renderer/tests/private/cases.json` and `probes.json`, Git-ignored, from `scripts/make_cases.py` and `experiment/seeds.json`. Answers and probe answers are recorded when the verifier image is built; `recording.json` beside them describes the recording and appears in `metrics.json`. |
+| Oracle | The original itself, installed from its release archive by `solve.sh` (as the agent's user), with the 14 tripwire strings blanked in place. |
 | Ratings (`harbor check`) | Not run. |
 
 ## Design dimensions
@@ -170,10 +244,9 @@ carve-rs spends about 80,000 lines on it. Upstream's own engines still disagree 
 5 of 4,631 corpus documents. Not yet measured with a model; QA passes give estimates.
 
 Floors without an implementation (measured on the private cases, `recording.json` `baselines`):
-the command line's answers plus one constant answer per kind 1.12%; the largest share of any one
-answer 0.28%; printing one newline 0.23%; printing nothing and exiting 0, 0%. A few lines of code
-that wrap each paragraph in `<p>` and escape it pass 1.2%. A stock Djot engine passes 2.88% (see
-[Case mix](#case-mix)).
+the command line's answers plus one constant answer per kind 1.65%; the largest share of any one
+answer 0.57%; printing one newline 0.57%; printing nothing and exiting 0, 0%; a renderer-free
+corpus lookup 0.0%. A stock Djot engine passes 1.87% (see [Case mix](#case-mix)).
 
 ### Initial feasibility
 
@@ -182,57 +255,68 @@ implementation written from the specification alone can pass all of them. For an
 
 ## Case mix
 
-2,142 private cases, by kind and by area (`recording.json` `kinds_kept` and `areas_kept`; the
+1,944 private cases, by kind and by area (`recording.json` `kinds_kept` and `areas_kept`; the
 area of a corpus case is read from its source by `features.area`):
 
 | Kind | Document | Inline | Block | Attributes | Layout | Resolution | Divergence | Edge | CLI | Total |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `document` | 520 | | | | | | | | | 520 |
-| `construct` | | 99 | 93 | 105 | 110 | 98 | 95 | | | 600 |
-| `snippet` | | 46 | 117 | 66 | 303 | 68 | | | | 600 |
-| `composite` | | | 7 | 12 | 130 | 11 | | | | 160 |
-| `mutant` | | | | | | | | 240 | | 240 |
-| `cli` | | | | | | | | | 22 | 22 |
+| `document` | 560 | | | | | | | | | 560 |
+| `construct` | | 136 | 140 | 128 | 101 | 101 | 114 | | | 720 |
+| `snippet` | | | 65 | 30 | 237 | 48 | | | | 380 |
+| `composite` | | | 3 | 3 | 90 | 4 | | | | 100 |
+| `mutant` | | | | | | | | 160 | | 160 |
+| `cli` | | | | | | | | | 24 | 24 |
+| Total | 560 | 136 | 208 | 161 | 428 | 153 | 114 | 160 | 24 | 1,944 |
 
 | Kind | What it asks | Source | Median size |
 | --- | --- | --- | --- |
-| `document` | whole documents: READMEs, articles, meeting notes, changelogs, API references, recipes, handbooks with an FAQ, quarterly reports, postmortems, course notes, release announcements, journals | `documents.document`, written for this task with seeded content | 42 lines (up to 135) |
-| `construct` | one area of the language in a short source: dense inline markup; everyday blocks; attributes on blocks, spans and list markers; layout (nesting by column, `+`, lazy lines, quotes, tabs); resolution (headings and references, footnotes, abbreviations, numbered captions); and one of the 21 places Carve parses differently from Djot, in context | `documents.construct` | 8 lines |
-| `snippet` | one edge case of the normative clauses | a conformance-corpus document, renamed | 4 lines |
-| `composite` | two to four edge cases in one document | corpus documents joined, renamed | 13 lines |
-| `mutant` | an edge case no published example shows | a corpus document after one to three local edits (`rewrite.mutate`), renamed | 4 lines |
-| `cli` | the command line's own answers, one case per behaviour: missing file, directory, two files, unknown options, `--`, standard input with and without `-`, `--safe` and `--html` before and after the file, nested paths, empty input, a byte order mark, CRLF, ill-formed UTF-8 in a file and on standard input, NUL, no final newline | `make_cases.cli_cases` | |
+| `document` | whole documents: READMEs, articles, meeting notes, changelogs, API references, recipes, handbooks with an FAQ, quarterly reports, postmortems, course notes, release announcements, journals | `documents.document`, written for this task from the prose bank (`prose.py`) under the seed | 42 lines (up to 135) |
+| `construct` | one area of the language in a short source: dense inline markup; everyday blocks; attributes on blocks, spans and list markers; layout (nesting by column, `+`, lazy lines, quotes, tabs); resolution (headings and references, footnotes, abbreviations, numbered captions); and one of the places Carve parses differently from Djot, in context | `documents.construct` | 8 lines |
+| `snippet` | one edge case of the normative clauses, rendered **inside a host construct** so the body interacts with it | a conformance-corpus document, renamed, hosted (`hosts.py`) | 4 lines |
+| `composite` | two to four hosted edge cases in one document | corpus documents joined inside a host, renamed | 13 lines |
+| `mutant` | an edge case no published example shows | a corpus document after one to three local edits (`rewrite.mutate`), renamed, kept only when its structure changed | 4 lines |
+| `cli` | the command line's own answers, one case per behaviour: missing file, directory, two files, unknown options, `--`, standard input with and without `-`, `--safe` and `--html` before and after the file, a `--safe` include left literal, nested paths, empty input, a byte order mark, CRLF, a lone CR, ill-formed UTF-8 in a file and on standard input, NUL, no final newline | `make_cases.cli_cases` | |
 
-Deliveries: 515 cases come on standard input (199 of them with `-`), the rest as a file; 171 use
-`--safe` (most of the documents that hold raw HTML) and 87 `--html`.
+Deliveries: 504 cases come on standard input, the rest as a file; 164 use `--safe` (most of the
+documents that hold raw HTML) and 60 `--html`.
 
 Rewrites (private seed, `rewrite.py`): every corpus-based case is renamed: each ASCII word in prose
 position becomes an unused word of the same length and letter case, consistently, so references,
 labels and abbreviations still resolve; container types, fence info strings, attribute keys and
-values, entities, schemes, task states, letter and roman markers, `(tm)` forms, backslash words and
-file extensions are kept. Of up to three renamings the first whose answer differs from the
-unrenamed source's and keeps its element structure is kept (993 cases), else the first whose answer
-differs (7); a case with no answer-changing renaming is dropped (57). Nothing the agent can read
+values, entities, schemes, task states, letter and roman markers, `(tm)` forms, backslash words,
+file extensions, and any word adjacent to a non-ASCII character are kept. A hosted or mutated case
+is kept only when its answer differs from the plain document, is not a value the corpus lookup
+returns, is not a splice of its host and parts (`hosts.splice`), and — for a mutant — is
+structurally different from its published source; 299 variants were rejected as splice-equal, 233
+as lookup-reachable, 96 as unchanged, 90 as structure-preserving. Nothing the agent can read
 becomes a case: no corpus document the shipped specification or documentation shows, or whose
-skeleton (letters and digits abstracted) any shipped example has (297 left out), no case of the
-public pack or a renamed copy of one, and no source with an include (`{{`); the generator checks
-every kept case again and packaging repeats the check on the real files.
+skeleton (letters and digits abstracted; 5,537 skeletons) any shipped example has (315 corpus
+documents left out), no case of the public pack or a renamed copy of one (28), no source with an
+include (`{{`, 24) and no case that rests on a reading the specification leaves open (17); the
+generator checks every kept case again and packaging repeats the check on the real files.
 
 Weight toward Djot's divergences: corpus documents are drawn with weights by the divergence
 features they show (`features.DIVERGENCE`, from `docs/divergence-from-djot.md`), and one construct
-area exists for them. 94.9% of the rendering cases touch at least one divergence feature other
-than smart typography; the most common are visual-mnemonic emphasis (43%), heading ids (38%),
-mentions and tags (37%), editorial marks (32%), block openers interrupting paragraphs (30%),
-content columns (29%), colon fences (26%), semantic spans (19%), captions (17%), the `+` marker
-(17%), comments (17%), definition lists (16%), heading references (16%), tables (16%) and typed
-containers (14%).
+area exists for them. 97.3% of the rendering cases touch at least one divergence feature other than
+smart typography; the most common are visual-mnemonic emphasis (55%), mentions and tags (48%),
+heading ids (45%), editorial marks (41%), block openers interrupting paragraphs (32%), content
+columns (27%), colon fences (27%), semantic spans (26%), captions (23%), heading references (18%),
+tables (17%), comments (16%), plus-continuation (16%), definition lists (15%) and typed containers
+(14%).
+
+**Layout decides most cases (QA 19).** The PART 0 layout automaton, driven by indentation, blank
+lines and container markers, fixes the block structure of the vast majority of cases: 94.7% of the
+rendering cases carry block structure the automaton must resolve (a container or continuation
+marker, a blank-line boundary, or real leading indentation) and 41.2% carry leading indentation
+whose column alone changes the parse. Getting indentation right is a precondition for most of the
+pool, not an afterthought.
 
 **Stock Djot engine.** djot.js 0.3.2 run on the most obvious rewrite of each source into Djot
 (`features.to_djot`: `/i/` to `_i_`, `_u_` to `{+u+}`, `~s~` to `{-s-}`, `=h=` to `{=h=}`, braced
 super- and subscripts to bare ones, `. ` items to `1. `, `%%` to `{% %}`, `::`/`:` definitions to
-Djot's, a `|=` header row to a row and a separator) passes **2.88%** of the rendering cases
-exactly, and 4.72% if layout between tags is forgiven. By area: inline 13.8%, divergence 7.4%,
-attributes 5.5%, edge 5.0%, block 3.2%, resolution 2.3%, layout 0.2%, whole documents 0.0%.
+Djot's, a `|=` header row to a row and a separator) passes **1.87%** of the rendering cases
+exactly, and 3.54% if layout between tags is forgiven. By kind: construct 4.17% exact, mutant
+3.75%, snippet/composite/document ~0%.
 
 ## Recall risk
 
@@ -243,7 +327,10 @@ mitigations: every case is new (generated documents and constructs) or renamed o
 the private seed, so no answer is one upstream publishes; corpus-based cases keep the structure of
 public edge cases, though (`settled` in `recording.json` counts them). Behaviour also moves between
 0.1.x patch releases (the changelog records breaking changes in each), so recall of an older
-version is not enough. The pre-run QA should probe how much a model recalls without the files.
+version is not enough. Because the renderer-free corpus-mapping score is 0.0%, recalling the
+published HTML of corpus documents alone passes nothing; the real exposure is recalling the
+language's rules well enough to re-derive the exact bytes, which the pre-run QA should probe by
+asking the models under test about Carve without the files (no per-model exposure measured yet).
 
 ## Workload
 
@@ -252,10 +339,14 @@ instruction states no time budget.
 
 ## Verification
 
-1. The collect hook runs as root in the agent's container when the session ends (above): it
-   records egress and the agent's processes, kills them, fixes links, and writes
-   `/app/rebuild/.delivered` (`delivered ENTRIES BYTES` with its notes, or `refused`) and the
-   record `/app/rebuild/.delivery.json`.
+1. The collect hook (`session-finish`) runs as root in the agent's container when the session ends
+   (above): it records the agent's processes and whether egress is open, kills the agent's user and
+   counts the rounds, reads when the turn ended (from the watchdog `session-watch`, which fired when
+   egress returned, else the hook's own start), fixes links — recording each copied source's path,
+   owner, times and inode and refusing a source changed after the turn — and writes
+   `/app/rebuild/.delivered` (`delivered ENTRIES BYTES` with its notes, or `refused`) and the record
+   `/app/rebuild/.delivery.json` (every entry with its times and sha256, the copies, the refusals,
+   the late entries, the egress and process records).
 2. `/app/rebuild` arrives as the declared artifact in a fresh verifier container. The verifier
    reserves `.reward.tmp` and `metrics.json` before anything runs (no `reward.txt` exists until
    the real end, so an evaluation cut short is an error, never a 0), and requires 512 MB free in
@@ -265,10 +356,13 @@ instruction states no time budget.
 3. It picks a uid inside the user namespace's map for submitted code and checks the unprivileged
    run first (no_new_privs from the status file or `prctl`, ids, groups, capabilities, limits, and a
    set-id root copy of `id` that must report that uid); a failure is an evaluation error. It seals
-   `/app/rebuild` (root-owned, read-only, no set-id bits, at most 200,002 entries and 2 GiB): a
+   `/app/rebuild` (root-owned, read-only, no set-id bits, at most 200,003 entries and 2 GiB): a
    submission that cannot be sealed gets reward 0 with a note. Then every delivered file is hashed
-   and searched once: a published build of the original, or a file holding two of its strings,
-   gets reward 0 with a note. The record goes to `metrics.json` (`delivery_record`), never scored.
+   and searched once: a file whose sha256 is one of 2,156 published builds, a file holding three of
+   carve-rs's own strings, or a program embedding two markers of a foreign language runtime (which
+   the stdlib-only rule forbids) gets reward 0 with a note. The record goes to `metrics.json`
+   (`delivery_record`, with its flags), never scored. Before grading the verifier also checks its
+   own network is closed (`network_open`); an open one is an evaluation error, never a reward.
 4. Before each case it kills that uid's processes, sweeps what it left in every world-writable
    directory and its System V IPC objects, and writes the case's files into a new `/tmp/carve-case`
    with new empty `HOME` and `TMPDIR`. `/app/rebuild/carve` runs there as that uid with
@@ -290,9 +384,15 @@ The recording (verifier image build, builder stage): each case runs twice and on
 when all three print the same, it exits 0 or 2 without a panic or signal, each run takes at most
 1 s and 0.25 s of CPU, and its answer's sha256 equals the one the generator checked against the
 spec model. Then any one answer is capped at 1.5% of the cases, cases whose input holds their
-answer are dropped, and cases are dropped until a dispatcher with the command line's answers and
-one constant per kind passes at most 5%. More than 2% unsteady, crashed, perturbed or differing
-cases, or fewer than 90% kept, fails the build.
+answer are dropped, cases the corpus lookup reaches are dropped (the corpus-lookup baseline is held
+under 5%), and cases are dropped until a dispatcher with the command line's answers and one constant
+per kind passes at most 5%. More than 2% unsteady, crashed, perturbed or differing cases, or fewer
+than 88% kept, fails the build, and the build asserts the kept-ids sha256 is the accepted one
+(`--expect-kept-ids`) so the denominator cannot drift. The image also records 45 ungraded
+fingerprint probes (34 spec-model disagreements and 11 out-of-scope commands); at grade time the
+verifier notes how each failing case missed (`near_miss`: right exit but wrong bytes, equal but for
+collapsing whitespace, sorting attributes, or text only) and how the submission answered the probes
+(`fingerprint`), both for the audit only.
 
 ### Reward formula
 
@@ -318,20 +418,20 @@ platform's egress window, shared by every task whose original is public.
 
 | # | Attack and impact | Boundary | Evidence | Mitigation | Residual risk | Next validation | Severity |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | Get carve-rs or another engine and deliver it, or call it: during the turn, or by a process left running into the platform's egress window after it | Agent network; the platform's egress window; agent image | Dockerfile read: no engine, no node, no carve source; Harbor 0.25's restore of setup egress read by the coordinator | `network_mode = "no-network"` during the turn; the hook records egress and live processes and kills them; 275 published builds and 23 of their strings refused by the verifier (check `test_a_fetched_build_of_the_original_is_refused`); the record lists every entry with its change time for the audit | The window stays open until the platform keeps the agent's policy through collection; a transformed or rebuilt engine passes the tripwires; the judges' run policy applies (audit every trial, void exploits, pause on the first) | Read `delivery_record` (egress, processes, latest changes) of every trial; the platform fix | 🟡 YELLOW |
-| 2 | Read the recorded answers | Separate verifier image; file modes | Same layout as Goose and BasedPL (their QA 07 passes) | Answers recorded in a builder stage; final image keeps three JSON files under root-only `/tests` (0700); submitted code runs as a mapped uid with no_new_privs | A kernel bug | Keep | 🟢 GREEN / LOW |
-| 3 | Copy answers from what is shipped | Case generation and packaging | Checked: leak index of every shipped page (fenced blocks, inline code, one-line `SOURCE -> RESULT` examples, the JSON contracts' sources); 297 corpus documents left out; checked again at packaging | No case is a shipped example or a skeleton copy of one; the generated example pages and the corpus are not shipped | The documentation's own examples teach behaviour by design | Keep | 🟢 GREEN / LOW |
-| 4 | Recall upstream's published answers | Rewrites | Every corpus-based case renamed with a changed answer (993 same structure, 7 changed) | Private-seed renaming; new documents and constructs (1,120 of 2,142); mutants | Structure of public edge cases is kept; models trained after mid-2026 may know the language | Pre-run QA recall probe; read `settled` | 🟡 YELLOW |
-| 5 | Pass cases with no renderer: constant answers, a command-line table | Case mix and selection | Recording: dispatcher 1.12%, largest answer 0.28%, a paragraph wrapper 1.2% | Answer cap 1.5% and floor 5% enforced at build; `recording.json` measures them | None found | Read `baselines` in the first baseline's `metrics.json` | 🟢 GREEN / LOW |
-| 6 | Port a Djot engine | Case mix | Measured: djot.js 2.88% exact, 4.72% layout forgiven | Mix weighted to Carve's divergences (94.9% touch one) | None | Keep | 🟢 GREEN / LOW |
+| 1 | Get carve-rs or another engine and deliver it, or call it: during the turn, or by a process left running into the platform's egress window after it | Agent network; the platform's egress window; agent image | Dockerfile read: no engine, no node, no carve source; Harbor 0.25's restore of setup egress read by the coordinator | `network_mode = "no-network"` during the turn; the in-sandbox watchdog (`session-watch`) fires when egress returns and kills the agent's user; the hook records egress, live processes and each copy's source change time, and refuses a source changed after the turn; 2,156 published builds, 14 strings (three needed) and seven foreign runtimes refused by the verifier (check `test_a_fetched_build_of_the_original_or_a_runtime_is_refused`) | The window stays open until the platform keeps the agent's policy through collection; a transformed or rebuilt engine passes the tripwires; the judges' run policy applies (audit every trial, void exploits, pause on the first) | Read `delivery_record` (egress, processes, late entries, copies) of every trial; the platform fix | 🟡 YELLOW |
+| 2 | Read the recorded answers | Separate verifier image; file modes | Same layout as Goose and BasedPL (their QA 07 passes) | Answers recorded in a builder stage; final image keeps five JSON files (cases, expected, probes, probe answers, recording) under root-only `/tests` (0700); submitted code runs as a mapped uid with no_new_privs | A kernel bug | Keep | 🟢 GREEN / LOW |
+| 3 | Copy answers from what is shipped | Case generation and packaging | Checked: leak index of every shipped page (fenced blocks, inline code, one-line `SOURCE -> RESULT` examples, unescaped `\n`/`\t` spans, indented EBNF blocks, the JSON contracts' sources; 5,537 skeletons); 315 corpus documents left out; checked again at packaging | No case is a shipped example or a skeleton copy of one; the generated example pages and the corpus are not shipped | The documentation's own examples teach behaviour by design | Keep | 🟢 GREEN / LOW |
+| 4 | Recall upstream's published answers | Rewrites and hosting | Every corpus-based case renamed and hosted; kept only when the answer changed, the corpus lookup misses, and the splice differs (299/233/96/90 variants rejected) | Private-seed renaming; new documents and constructs (1,304 of 1,944); mutants kept only when structurally changed | Structure of public edge cases is kept; models trained after mid-2026 may know the language | Pre-run QA recall probe; read `settled` | 🟡 YELLOW |
+| 5 | Pass cases with no renderer: constant answers, a command-line table, a corpus lookup | Case mix and selection | Recording: command-line table and constants 1.65%, largest answer 0.57%, corpus lookup **0.0%** (renderer-free full-corpus mapping also 0.0%); a paragraph wrapper's share is bounded by the 1.5% answer cap | Answer cap 1.5%, corpus-lookup and dispatcher floors 5% enforced at build; `recording.json` measures them | None found | Read `baselines` in the first baseline's `metrics.json` | 🟢 GREEN / LOW |
+| 6 | Port a Djot engine | Case mix | Measured: djot.js 1.87% exact, 3.54% layout forgiven | Mix weighted to Carve's divergences (97.3% touch one) | None | Keep | 🟢 GREEN / LOW |
 | 7 | Deliver a link to something else, or replace `/app/rebuild` | Agent image modes; collect hook | Checked in the Dockerfile; links rewritten or copied by the hook | `/app` root's and sticky, `/app/rebuild` root's and writable; the hook leaves only relative links inside the delivery | None found | First trial as `dev` | 🟢 GREEN / LOW |
 | 8 | Make the copy fail so grading errors (deep paths, sparse or huge files, inode exhaustion, link mazes past the hook's two minutes, a full disk before the mark) | Platform copy | Reasoned from Harbor 0.25's `tar -czf` and `extractall(filter="data")`; the backoffice QA 07f-07g found these | The hook walks by descriptor, refuses over 2 GB or 200,000 entries and marks what it lets through; a missing or short arrival is an evaluation error, never a reward | [HOSTILE-ERROR]: a hostile submission can turn its own 0 into an evaluation error; run policy: one attempt per trial, read every errored trial, score 0 when its files show the submission caused it | Read errored trials | 🟡 YELLOW |
 | 9 | An honest delivery refused or cut short (a venv's absolute links, cargo's hard links, links to files outside) | Collect hook; platform copy | Check `test_the_collect_hook_lets_honest_deliveries_through_the_copy` (tar plus `data` filter on such a tree) | Links fixed as the agent's user; copies counted against the limits | Modal's GNU tar on the real platform unmeasured; a delivery over the stated limits is refused | First baselines and trials: read the marks in `metrics.json` notes | 🟡 YELLOW / UNASSESSED |
-| 10 | Answers that depend on the machine | Recording | Local: 2,142 of 2,142 steady, none perturbed; the Linux build must reproduce the macOS answer the model agreed with | Two runs and a perturbed one; `differs` dropped; static-pie musl build | The Linux build has not run yet (no Linux here) | Read `dropped_differs` and `dropped_unsteady` in the first recording | 🟡 YELLOW / UNASSESSED |
+| 10 | Answers that depend on the machine | Recording | Local: 1,944 of 1,944 steady, none perturbed; the Linux build must reproduce the macOS answer the model agreed with | Two runs and a perturbed one; `differs` dropped; static-pie musl build; the kept-ids sha256 asserted at build | The Linux build has not run yet (no Linux here) | Read `dropped_differs` and `dropped_unsteady` in the first recording | 🟡 YELLOW / UNASSESSED |
 | 11 | Tamper with the result files, or force an evaluation error from inside a run | Separate verifier; reward placeholder | Goose QA 07e passed on the same code; delivery check added here | Reward reserved and renamed only at the end; bounded reads; one deadline; every per-case exception a failed case | The delivery check is new code | Narrow re-check in the QA round | 🟡 YELLOW / UNASSESSED |
 | 12 | Run as root in the verifier through a set-id or capable file | Privilege drop and sealing | Goose QA pass 10 F6; checks here | Sealed root-owned without set-id bits; `setpriv --no-new-privs`; the drop is checked or nothing is graded | A kernel that ignores no_new_privs (the probe then refuses to grade) | First baseline's verifier log | 🟢 GREEN / LOW |
 | 13 | Infer an evaluation from the files and text | Instruction and image | Checked: no grading, hidden, budget or session wording; no examples shipped | Requester's voice; the hook is root-only and names no judging | An agent can still guess that pages exist to test it | Read the first trajectories | 🟡 YELLOW / UNASSESSED |
-| 14 | A case where carve-rs and the specification disagree | Selection | 8 candidates dropped by the model check; 5 corpus documents known to differ | Only cases the model renders identically are kept | None | Keep | 🟢 GREEN / LOW |
+| 14 | A case where carve-rs and the specification disagree | Selection | 30 candidates dropped by the model check; 6 corpus documents known to differ | Only cases the model renders identically are kept | None | Keep | 🟢 GREEN / LOW |
 | 15 | Behaviour outside the stated scope graded | Case generation | No source holds an include; options only `--safe`, `--html`, and unknown ones; CLI cases one per stated behaviour | Out-of-scope list in the instruction | None found | QA lens 12 | 🟢 GREEN / LOW |
 
 Licences: the specification, documentation and carve-rs are MIT. The spec's `LICENSE` ships in
@@ -341,14 +441,14 @@ Licences: the specification, documentation and carve-rs are MIT. The spec's `LIC
 
 | Check | Revision | Result |
 | --- | --- | --- |
-| `checks/` (36 tests) with `ci_checks`, Python 3.13, and `check_repository.py` | working tree, 2026-11-19 | pass |
-| Tripwires on the reference | `install.py --blank` on the pinned Linux build | sha256 `353fa8cdaa863fcb8fb55b67aee6eb44c198d04041247a3d783732bbc351cf89` (same size), in no list, none of the 23 strings left; the unchanged build and the macOS build are refused |
-| Corpus agreement, spec model against carve-rs (macOS release) | spec `51c5631`, carve-rs 0.1.14 | 4,626 of 4,631 equal; model equals the corpus HTML on all |
-| Case generation | cases `8c021e92` (2,142) | 8 dropped as model disagreements, 57 with no answer-changing renaming, 108 shown in the docs, spec or pack |
-| Local recording with the macOS release build, through the bundle's recorder | bundle `f738bb170bc6` | 2,142 of 2,142 kept; none slow, unsteady, crashed, differing or perturbed; slowest run 35 ms; kept ids sha256 `23c9858a` |
-| Packaging twice | `scripts/package_step.py` | the same hash both times: `f738bb170bc67dcf366708fb815fde774812ea2d0d810aa0a6c39388b838b1d5`, 139 files, 16,957,329 bytes |
-| Oddish preflight | bundle `f738bb170bc6` | pass |
-| Local grading from the bundle (`scripts/grade_locally.py`, no sandbox) | bundle `f738bb170bc6` | reference (the macOS build blanked as `solve.sh` does, re-signed, as `/app/rebuild/carve`, marked by the bundle's hook, passing the tripwires) 1.0 (2,142/2,142, 25 s); an empty delivery 0.0; a program that prints nothing 0.0 |
+| `checks/` (36 tests) with `ci_checks`, Python 3.13, and `check_repository.py` | working tree, 2026-11-19 | pass (36 passed; repository checks passed) |
+| Tripwires on the reference | `install.py --blank` on the pinned Linux build | blanked sha256 `f1a359cba59853ecf5087b2f7a6bac17fc208df99d09a63dc567268e1ec5fad0` (same 16,216,144 bytes), in no list, none of the 14 strings left; the unchanged Linux build (`05d0898d…`) and the macOS build are refused |
+| Corpus agreement, spec model against carve-rs (macOS release) | spec `51c5631`, carve-rs 0.1.14 | 4,626 of 4,631 equal; model equals the corpus HTML on all; 6 of the candidates drawn for cases disagreed and were dropped |
+| Case generation | cases sha1 `934d6a04` (1,944) | 30 dropped as model disagreements, 141 with no answer-changing variant kept (15 with none at all), 9 shown in the docs, spec or pack; corpus left out: 315 shown, 28 pack, 27 answer printed, 24 includes, 17 open readings, 1 long |
+| Local recording with the macOS release build, through the bundle's recorder | bundle `33c04fff63ad` | 1,944 of 1,944 kept; none slow, unsteady, crashed, differing or perturbed; slowest run 27.5 ms; kept ids sha256 `72afcf83…`; renderer-free corpus-mapping score 0.0% |
+| Packaging twice | `scripts/package_step.py` | the same hash both times: `33c04fff63addfb70f208d281ead8a89a9e1f9330da18299fbc4f7d42d2e726a`, 142 files, 17,870,379 bytes |
+| Oddish preflight | bundle `33c04fff63ad` | pass |
+| Local grading from the bundle (`scripts/grade_locally.py`, no sandbox) | bundle `33c04fff63ad` | reference (the build blanked as `solve.sh` does, re-signed, as `/app/rebuild/carve`, marked by the bundle's hook, passing the tripwires) 1.0 (1,944/1,944, 26 s); an empty delivery 0.0; a program that prints nothing 0.0. Fingerprint: the blanked reference matches 43 of 45 probes — the two misses are the `-h`/`--help` probes whose output carries blanked help strings; production records probes from the unblanked oracle, and the fingerprint is diagnostic, never scored |
 | Oddish baselines, QA, `harbor check` | none | not run |
 
 ## Build and deliver
@@ -377,5 +477,9 @@ image needs it.
 - A recall probe: ask the models under test about Carve without the files.
 - The platform fix for the egress window (keep the agent's network policy through collection, or
   kill the agent's processes before the restore), proved by the canary in
-  `ops/swe-marathon-v2/canary/`; until then, the scripted audit of every trial.
+  `ops/swe-marathon-v2/canary/`; until then, the in-sandbox watchdog (`session-watch`, unproven on
+  the platform — it has only been exercised locally) and the scripted audit of every trial.
+- The verifier image (and so the collect hook, the privilege checks, the kept-ids assertion and the
+  Linux recording) has never been built or run on Linux here; the first build is the first test of
+  all of it. Optionally pin `APT_SNAPSHOT` once a date is chosen.
 - `harbor check` and ratings.

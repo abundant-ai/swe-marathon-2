@@ -22,6 +22,7 @@ import subprocess
 import sys
 import tarfile
 import textwrap
+import time
 from pathlib import Path
 
 TASK = Path(__file__).resolve().parent.parent
@@ -30,7 +31,9 @@ SCRIPTS = TASK / "scripts"
 TESTS = STEP / "tests"
 RUNNER = TESTS / "verifier" / "runcases.py"
 RECORDER = TESTS / "verifier" / "recorder.py"
-HOOK = TASK / "environment" / "prepare-delivery"
+HOOK = TASK / "environment" / "session-finish"
+SETUP = TASK / "environment" / "session-setup"
+WATCH = TASK / "environment" / "session-watch"
 
 
 def scripts_call(code: str) -> object:
@@ -188,31 +191,44 @@ def test_features_and_areas_read_the_source():
     assert "typed-containers" in out[7] and "colon-fences" in out[7] and "task-states" in out[8]
 
 
-def test_settle_prefers_a_rename_that_changes_the_answer_and_keeps_its_structure():
+def test_settle_keeps_a_variant_only_when_the_host_and_lookup_cannot_reach_it():
     out = scripts_call(textwrap.dedent('''
-        import json, make_cases
-        item = lambda kind, variants: {"kind": kind, "index": 0, "variants": variants, "files": {"a.crv": "base"}, "stdin": None,
-                                       "argv": ["a.crv"], "source": "base"}
-        def run(outputs, kind="snippet", variants=("v0", "v1", "v2")):
-            chosen, how = make_cases.settle(item(kind, list(variants)), outputs)
-            return [chosen["source"] if chosen else None, how]
+        import json, make_cases, corpus_lookup
+        empty = corpus_lookup.Lookup({}, {})
+        def item(kind, variants, parts=1, origin="x:0"):
+            return {"kind": kind, "index": 0, "variants": [(f"v{i}", s) for i, s in enumerate(variants)],
+                    "files": {"a.crv": "base"}, "stdin": None, "argv": ["a.crv"], "source": "base",
+                    "origin": origin, "parts": ["p"] * parts}
+        def run(it, outputs, corpus_html=None):
+            chosen, how, reasons = make_cases.settle(it, outputs, empty, corpus_html or {})
+            return [None if chosen is None else chosen["source"], how, dict(reasons)]
         base = {"exit": 0, "stdout": "<p>base</p>\\n"}
-        same = {"exit": 0, "stdout": "<p>base</p>\\n"}
-        other = {"exit": 0, "stdout": "<p>word</p>\\n"}
-        shape = {"exit": 0, "stdout": "<h1>word</h1>\\n"}
-        print(json.dumps([
-            run({(0, -1): base, (0, 0): same, (0, 1): shape, (0, 2): other}),
-            run({(0, -1): base, (0, 0): shape, (0, 1): same, (0, 2): same}),
-            run({(0, -1): base, (0, 0): same, (0, 1): same, (0, 2): same}),
-            run({(0, -1): base}, kind="document", variants=()),
-            run({(0, -1): {"exit": None, "error": "timeout"}}),
-            make_cases.js_trim("\\ufeff\\u00a0 x \\u2028\\n"), make_cases.answer_sha256(0, "<p>x</p>\\n")]))
+        # a snippet whose only variant renders exactly as the plain document is dropped
+        same = run(item("snippet", ["s0"]), {(0, -1): base, (0, 0): dict(base), (0, 100): {"exit": 0, "stdout": "<p>h</p>\\n"},
+                                             (0, 200): {"exit": 0, "stdout": "<p>base</p>\\n"}})
+        # a snippet whose variant differs, the lookup misses, the host/part render and the splice differs is kept
+        got = {"exit": 0, "stdout": "<blockquote>\\n<p>word</p>\\n</blockquote>\\n"}
+        kept = run(item("snippet", ["s0"]), {(0, -1): base, (0, 0): got, (0, 100): {"exit": 0, "stdout": "<p>HOST</p>\\n"},
+                                             (0, 200): {"exit": 0, "stdout": "<p>word</p>\\n"}})
+        # a mutant whose edits leave the published structure is dropped
+        mut = run(item("mutant", ["m0"], origin="doc:0"),
+                  {(0, -1): base, (0, 0): {"exit": 0, "stdout": "<p>other</p>\\n"}},
+                  corpus_html={"doc": "<p>published</p>"})
+        nov = run(item("snippet", []), {(0, -1): base})
+        timed = run(item("snippet", ["s0"]), {(0, -1): {"exit": None, "error": "timeout"}})
+        doc = run(item("document", []), {(0, -1): base})
+        print(json.dumps([same, kept, mut, nov, timed, doc,
+                          make_cases.js_trim("\\ufeff\\u00a0 x \\u2028\\n"), make_cases.answer_sha256(0, "<p>x</p>\\n")]))
     '''))
-    assert out[0] == ["v2", "renamed, same structure"] and out[1] == ["v0", "renamed, structure changed"]
-    assert out[2] == [None, "no renaming changes the answer"] and out[3] == ["base", "as generated"]
-    assert out[4][0] is None and out[5] == "x"
+    same, kept, mut, nov, timed, doc = out[:6]
+    assert same[0] is None and same[1] == "no variant kept" and same[2] == {"same answer as the plain document": 1}
+    assert kept[0] and kept[1] == "snippet: v0" and kept[2] == {}, kept
+    assert mut[0] is None and mut[2] == {"the edits kept the published structure": 1}, mut
+    assert nov == [None, "no variant", {}] and timed[1] == "the original timed out"
+    assert doc == ["base", "as generated", {}]
+    assert out[6] == "x"
     digest = verifier_call('import json\nfrom verifier import recorder\nprint(json.dumps(recorder.digest(0, b"<p>x</p>\\n")))')
-    assert out[6] == digest, "the build's recording compares the digest the generator stored"
+    assert out[7] == digest, "the build's recording compares the digest the generator stored"
 
 
 def test_command_line_cases_are_one_per_behaviour():
@@ -542,7 +558,7 @@ def test_an_oversized_submission_is_not_run(tmp_path):
     hook = HOOK.read_text()
     assert "LIMIT_ENTRIES=200000" in hook and "LIMIT_BYTES=2000000000" in hook
     verify = (TESTS / "verify.py").read_text()
-    assert "MAX_ENTRIES = 200_002" in verify and "MAX_BYTES = 2 << 30" in verify
+    assert "MAX_ENTRIES = 200_003" in verify and "MAX_BYTES = 2 << 30" in verify
 
 
 def test_no_reward_exists_until_the_real_end_and_the_reward_comes_first(tmp_path):
@@ -562,19 +578,25 @@ def test_no_reward_exists_until_the_real_end_and_the_reward_comes_first(tmp_path
         found = verify.writable_dirs({str(tree)!r})
         rc = verify.runcases
         rc.memory_in_use = lambda group, uid: 0
-        before = (10 << 30, 1_000_000, 2_000_000)
+        # The free figures drop past a limit, but the run's own files are the real measure (QA 10).
+        base = {{place: (10 << 30, 1_000_000, 2_000_000) for place in rc.WATCHED_FILESYSTEMS}}
         rc.disk_free = lambda path=None: ((10 << 30) - (2 << 30), 1_000_000, 2_000_000)
-        disk = rc.over_limit(1, None, before)
-        rc.disk_free = lambda path=None: (10 << 30, 1_000_000 - 200_000, 2_000_000)
-        files = rc.over_limit(1, None, before)
+        rc.own_use = lambda uid, most_bytes=0, most_files=0: ((2 << 30), 10)   # the run itself holds 2 GiB
+        disk = rc.over_limit(1, 999, dict(base))
+        rc.own_use = lambda uid, most_bytes=0, most_files=0: (1000, 200_001)   # and 200,001 entries
+        files = rc.over_limit(1, 999, dict(base))
+        rc.own_use = lambda uid, most_bytes=0, most_files=0: (1000, 10)        # a neighbour wrote the difference
+        moved = dict(base)
+        neighbour = rc.over_limit(1, 999, moved)
         rc.disk_free = lambda path=None: (-1, -1, -1)
-        unknown = rc.over_limit(1, None, before)
-        print(json.dumps([sorted(found), disk, files, unknown]))
+        unknown = rc.over_limit(1, 999, dict(base))
+        print(json.dumps([sorted(found), disk, files, neighbour, unknown, moved != base]))
     """))
-    found, disk, files, unknown = out
+    found, disk, files, neighbour, unknown, rebased = out
     assert reserved.read_text() == "0.731000" and json.loads(metrics.read_text()) == {"reward": 0.731}
     assert not any("logs" in path for path in found) and str(tree / "tmp") in found
-    assert disk == "disk limit" and files == "file limit" and unknown is None
+    assert disk == "disk limit" and files == "file limit" and neighbour is None and unknown is None
+    assert rebased, "when the run's own files are within the limits, the baseline moves"
     verify = (TESTS / "verify.py").read_text()
     main = verify[verify.index("def main() -> int:"):]
     order = ['(output / ".reward.tmp").write_text("--------")', "delivery(SUBMISSION)", "sandbox()", "seal(SUBMISSION)",
@@ -591,24 +613,29 @@ def hook_programs() -> list[str]:
     return re.findall(r"<<'EOF'\n(.*?)\nEOF", HOOK.read_text(), re.S)
 
 
-def run_hook(top: Path, entries: int = 200000, size: int = 2000000000) -> list[str]:
-    """The collect hook's link fixing and measuring on `top`, as this user (the hook runs the first
-    as the agent's user, the second as root, handing it what the first printed and the session
-    record), after a session record of its own; the mark's lines."""
-    session, fixing, measuring = hook_programs()
+def run_hook(top: Path, entries: int = 200000, size: int = 2000000000, turn_end: float | None = None) -> list[str]:
+    """The collect hook's five Python blocks on `top`, as the hook runs them: the process listing and
+    the egress probe (into a state dir), the turn-end reader, the link fixing (as the agent's user)
+    and the measuring (as root, handed the notes and the state). `turn_end` defaults far in the
+    future, so an honest source read now is never taken for one written after the turn; the mark's
+    lines."""
+    processes, egress, _turnread, fixing, measuring = hook_programs()
     state = top.parent / f".{top.name}-state"
-    state.mkdir()
-    done = subprocess.run([sys.executable, "-I", "-", str(state / "session.json")], input=session.replace(
-        '("github.com", 443), ("pypi.org", 443), ("proxy.golang.org", 443), ("registry.npmjs.org", 443)', '("127.0.0.1", 9),'),
-        text=True, capture_output=True, timeout=60)
-    assert done.returncode == 0, done.stdout + done.stderr
+    state.mkdir(exist_ok=True)
+    assert subprocess.run([sys.executable, "-I", "-", str(state / "processes.json")], input=processes, text=True,
+                          capture_output=True, timeout=60).returncode == 0
+    egress = egress.replace('("github.com", 443), ("pypi.org", 443), ("proxy.golang.org", 443), ("registry.npmjs.org", 443)',
+                            '("127.0.0.1", 9),')
+    assert subprocess.run([sys.executable, "-I", "-", str(state / "egress.json")], input=egress, text=True,
+                          capture_output=True, timeout=60).returncode == 0
+    end = f"{time.time() + 10 ** 9 if turn_end is None else turn_end}"
     notes = top.parent / f".{top.name}-notes"
     with open(notes, "w") as handle:
-        done = subprocess.run([sys.executable, "-I", "-", str(top), str(entries), str(size)], input=fixing, text=True,
+        done = subprocess.run([sys.executable, "-I", "-", str(top), str(entries), str(size), end], input=fixing, text=True,
                               stdout=handle, stderr=subprocess.STDOUT, timeout=300)
     assert done.returncode == 0, notes.read_text()
-    done = subprocess.run([sys.executable, "-I", "-", str(top), str(entries), str(size), str(notes), str(state), "1", "0"],
-                          input=measuring, text=True, capture_output=True, timeout=300)
+    done = subprocess.run([sys.executable, "-I", "-", str(top), str(entries), str(size), str(notes), str(state), "1", "0",
+                           end, end, end], input=measuring, text=True, capture_output=True, timeout=300)
     assert done.returncode == 0, done.stdout + done.stderr
     assert not notes.exists(), "the notes file is consumed"
     return (top / ".delivered").read_text().splitlines()
@@ -668,10 +695,14 @@ def test_the_collect_hook_lets_honest_deliveries_through_the_copy(tmp_path):
     record = json.loads((copied / ".delivery.json").read_text())
     assert record["delivered"] == lines[0] and record["listing_complete"] is True and record["kill_rounds"] == 1
     assert record["egress"] == {"127.0.0.1:9": record["egress"]["127.0.0.1:9"]} and record["egress_open"] is False
+    assert record["late_entries"] == 0, "nothing was written after the (far-future) turn end"
     listed = {item["path"]: item for item in record["entries"]}
     assert len(listed) == int(counted) and listed["carve"]["type"] == "link"
     assert listed["src/target/release/deps/carve-0123abcd"]["sha256"] == hashlib.sha256(b"\x7fELF binary").hexdigest()
     assert all("ctime" in item and "mtime" in item for item in record["entries"])
+    sources = {copy["path"]: copy for copy in record["copies"]}
+    assert "venv/bin/python3" in sources and "helpers" in sources, record["copies"]
+    assert all("source_ctime" in copy and "source_owner" in copy for copy in record["copies"]), "each copy records its source"
 
 
 def test_the_delivery_mark_decides_between_an_error_a_zero_and_grading(tmp_path):
@@ -713,9 +744,10 @@ def test_the_delivery_mark_decides_between_an_error_a_zero_and_grading(tmp_path)
         (small / f"f{index}").write_text("x" * 100)
     assert run_hook(small, entries=10)[0] == "refused" and sorted(os.listdir(small)) == [".delivered", ".delivery.json"]
     toml = (TASK / "task.toml").read_text()
-    assert '[[verifier.collect]]\ncommand = "/usr/local/sbin/prepare-delivery"\nuser = "root"' in toml
+    assert '[[verifier.collect]]\ncommand = "/usr/local/lib/pagebuild/session-finish"' in toml
     for phase in ("setup_begin", "setup_complete"):
-        assert f'[[agent.{phase}]]\ncommand = "/usr/local/sbin/reserve-delivery-room"' in toml, phase
+        assert f'[[agent.{phase}]]\ncommand = "/usr/local/lib/pagebuild/session-setup' in toml, phase
+    assert 'command = "/usr/local/lib/pagebuild/session-setup --watch"' in toml, "setup-complete starts the watcher"
 
 
 # ---------------------------------------------------------------- the recorder
@@ -862,10 +894,15 @@ def test_the_verifier_records_in_a_builder_stage_and_keeps_only_the_answers():
     assert "original" not in final and "/opt/carve" not in final and "carve.tar.gz" not in final
     assert re.findall(r"^COPY --from=program (\S+) (\S+)$", final, re.M) == [
         ("/record/kept.json", "/tests/private/cases.json"), ("/record/expected.json", "/tests/private/expected.json"),
+        ("/record/probes.json", "/tests/private/probes.json"),
+        ("/record/probes_expected.json", "/tests/private/probes_expected.json"),
         ("/record/recording.json", "/tests/private/recording.json")]
     assert "chmod -R go-rwx /tests" in final, "the answers are root's alone"
+    assert "--expect-kept-ids" in verifier and "--probes-out /record/probes_expected.json" in verifier
+    assert "APT_SNAPSHOT" in verifier and "snapshot.ubuntu.com" in verifier, "the archive can be pinned to a snapshot"
     assert re.findall(r"^COPY .*$", agent, re.M) == ["COPY spec/ /app/spec/", "COPY docs/ /app/docs/",
-                                                    "COPY reserve-delivery-room prepare-delivery /usr/local/sbin/"]
+                                                    "COPY session-setup session-finish session-watch /usr/local/lib/pagebuild/"]
+    assert "APT_SNAPSHOT" in agent, "the agent image can be pinned to a snapshot too"
     assert "carve" not in agent.replace("/app/rebuild", "").lower(), "no build of any Carve engine in the agent's image"
     assert 'install.py" "$here/carve.tar.gz" "$here/build.txt" /app/rebuild/carve' in solve
     for tool in ("python3", "golang-go", "rustc", "cargo"):
@@ -908,7 +945,8 @@ def test_the_agent_cannot_replace_the_artifact_directory():
     docker = (TASK / "environment" / "Dockerfile").read_text()
     assert "chown -R root:root /app" in docker and "chmod 1777 /app " in docker and "chmod 0777 /app/rebuild" in docker
     assert "useradd --uid 10001 --create-home dev" in docker
-    assert "chmod 0700 /usr/local/sbin/reserve-delivery-room /usr/local/sbin/prepare-delivery" in docker
+    assert "chmod 0700 /usr/local/lib/pagebuild /usr/local/lib/pagebuild/*" in docker
+    assert "/usr/local/sbin" not in docker, "the hooks live in a root-only directory, not on PATH"
     toml = (TASK / "task.toml").read_text()
     assert 'user = "dev"' in toml and 'artifacts = ["/app/rebuild"]' in toml and 'environment_mode = "separate"' in toml
     assert toml.count('network_mode = "no-network"') == 3
@@ -942,9 +980,10 @@ def test_nothing_the_agent_sees_names_grading_or_a_budget():
     for excluded in ("{{ path }}", "`fmt`", "`lint`", "`migrate`", "Markdown", "the AST as JSON", "importers", "static mode",
                      "`--help`", "`--version`"):
         assert excluded in instruction.split("Out of scope:", 1)[1], excluded
-    hook = HOOK.read_text().lower()
-    for word in ("grade", "score", "reward", "verifier", "hidden", "test"):
-        assert word not in hook, word
+    for carrier in (HOOK, SETUP, WATCH):
+        lowered = carrier.read_text().lower()
+        for word in ("grade", "score", "reward", "verifier", "hidden", "oracle", "the test"):
+            assert word not in lowered, (carrier.name, word)
 
 
 def test_packaging_ships_runtime_files_only_and_flattens_cleanly():
@@ -977,41 +1016,49 @@ def test_the_pins_are_stated_once_and_agree():
         assert pins[key] in readme, key
 
 
-def test_a_fetched_build_of_the_original_is_refused(tmp_path):
+def test_a_fetched_build_of_the_original_or_a_runtime_is_refused(tmp_path):
     top = tmp_path / "rebuild"
     (top / "bin").mkdir(parents=True)
     fetched = b"\x7fELF" + b"q" * ((1 << 20) + 5)
     (top / "bin" / "carve-real").write_bytes(fetched)
-    (top / "one-string.py").write_text("# Dropped code-block language is a phrase we never print\n")
     (top / "link").symlink_to(top / "bin" / "carve-real")
-    two = tmp_path / "two.bin"
-    two.write_bytes(b"x" * ((1 << 20) - 10) + b"Dropped code-block language " + b"y" * 100 + b"round-trip carrier attribute ")
     out = verifier_call(textwrap.dedent(f"""
         import json, verify
         from pathlib import Path
         top = Path({str(top)!r})
-        hashes, strings, needed = verify.upstream_builds()
-        mine = {{"{hashlib.sha256(fetched).hexdigest()}"}}
-        first = verify.fetched_build(top, mine, strings, needed)
+        builds = verify.upstream_builds()
+        mine = dict(builds, hashes=set(builds["hashes"]) | {{"{hashlib.sha256(fetched).hexdigest()}"}})
+        first = verify.fetched_build(top, mine)
         (top / "bin" / "carve-real").unlink()
-        (top / "two-strings.bin").write_bytes(Path({str(two)!r}).read_bytes())
-        second = verify.fetched_build(top, mine, strings, needed)
-        (top / "two-strings.bin").unlink()
-        third = verify.fetched_build(top, mine, strings, needed)
-        print(json.dumps([first, second, third, len(hashes), len(strings), needed]))
+        s = builds["strings"]
+        # three of carve-rs's own strings, one straddling the 1 MB read boundary
+        (top / "many-strings.bin").write_bytes(b"x" * ((1 << 20) - 5) + s[0] + b"y" * 50 + s[1] + b"z" * 50 + s[2])
+        second = verify.fetched_build(top, mine)
+        (top / "many-strings.bin").write_bytes(b"x" * 1000 + s[0] + b"y" * 50 + s[1])   # two is not enough
+        third = verify.fetched_build(top, mine)
+        (top / "many-strings.bin").unlink()
+        name, group = next(iter(builds["runtimes"].items()))
+        (top / "engine").write_bytes(b"z" * 1000 + group[0] + b"z" * 50 + group[1])     # two markers of one runtime
+        fourth = verify.fetched_build(top, mine)
+        (top / "engine").unlink()
+        print(json.dumps([first, second, third, fourth, name, len(builds["hashes"]), len(builds["strings"]),
+                          builds["strings_needed"], builds["runtime_needed"], sorted(builds["runtimes"])]))
     """))
-    first, second, third, hashes, strings, needed = out
-    assert first == "/app/rebuild/bin/carve-real is a build of the original that upstream publishes"
-    assert second == "/app/rebuild/two-strings.bin holds the text of a build of the original that upstream publishes", \
-        "two strings across a 1 MB chunk boundary"
-    assert third is None, "one string alone is no fetched build"
+    first, second, third, fourth, runtime, hashes, strings, needed, runtime_needed, runtimes = out
+    assert first == "/app/rebuild/bin/carve-real is a build of the original or another engine that upstream publishes"
+    assert second == "/app/rebuild/many-strings.bin holds the text of a build of the original", \
+        "three strings across a 1 MB chunk boundary"
+    assert third is None, "two strings alone is no fetched build"
+    assert fourth == f"/app/rebuild/engine embeds a {runtime} runtime, which the instruction does not allow"
     builds = json.loads((TESTS / "verifier" / "upstream_builds.json").read_text())
     pins = dict(re.findall(r'^([A-Z0-9_]+) = "([^"]+)"', (SCRIPTS / "carve_text.py").read_text(), re.M))
     assert pins["LINUX_BINARY_SHA256"] in builds["sha256"] and pins["LINUX_ARCHIVE_SHA256"] in builds["sha256"]
-    assert hashes >= 200 and strings >= 10 and needed == 2
+    assert hashes >= 1000 and strings >= 10 and needed == 3 and runtime_needed == 2
+    assert min(len(t) for t in builds["strings"]) >= 40 and set(runtimes) >= {"node", "wasm", "php"}
     instruction = (STEP / "instruction.md").read_text()
     for text in builds["strings"]:
         assert text not in instruction, text
     verify = (TESTS / "verify.py").read_text()
     main = verify[verify.index("def main() -> int:"):]
     assert main.index("seal(SUBMISSION)") < main.index("fetched_build(SUBMISSION") < main.index("metrics = grade(PROGRAM")
+    assert "network_open()" in verify, "the verifier self-checks its own network before grading"

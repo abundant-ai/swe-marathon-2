@@ -39,6 +39,8 @@ import carve_text as ct  # noqa: E402
 TASK_ROOT = Path(__file__).resolve().parent.parent
 STEP = "steps/01-implement-renderer"
 HIDDEN = TASK_ROOT / STEP / "tests" / "private" / "cases.json"
+PROBES = TASK_ROOT / STEP / "tests" / "private" / "probes.json"
+KEPT_IDS = TASK_ROOT / "experiment" / "kept_ids.txt"
 ORIGINAL = TASK_ROOT / "experiment" / "original"
 INSTALLER = TASK_ROOT / "common" / "original" / "install.py"
 UPSTREAM_BUILDS = TASK_ROOT / STEP / "tests" / "verifier" / "upstream_builds.json"
@@ -77,8 +79,8 @@ def original() -> tuple[bytes, bytes]:
 
 def collect() -> dict[str, bytes]:
     """Every file of the bundle, by its path in the bundle."""
-    if not HIDDEN.is_file():
-        raise ValueError("Generate the cases first (scripts/make_cases.py); the private cases.json is missing")
+    if not HIDDEN.is_file() or not PROBES.is_file():
+        raise ValueError("Generate the cases first (scripts/make_cases.py); the private cases.json or probes.json is missing")
     content: dict[str, bytes] = {"task.toml": (TASK_ROOT / "task.toml").read_bytes()}
     for directory in ("environment", STEP):
         for path in (TASK_ROOT / directory).rglob("*"):
@@ -104,6 +106,10 @@ def collect() -> dict[str, bytes]:
         content[f"{place}/carve.tar.gz"] = archive
         content[f"{place}/build.txt"] = facts
         content[f"{place}/install.py"] = installer
+    # The accepted kept-ids sha256 (the first Linux oracle build's value), which the verifier image
+    # build asserts so the denominator cannot drift; empty until that build sets it.
+    kept_ids = KEPT_IDS.read_text(encoding="utf-8").strip() if KEPT_IDS.is_file() else ""
+    content[f"{STEP}/tests/original/kept_ids.txt"] = (kept_ids + "\n").encode()
     content[f"{STEP}/solution/LICENSE"] = licence
     # What install.py --blank overwrites in the reference solution's copy: the text the verifier's
     # refusal of published builds looks for (tests/verifier/upstream_builds.json), and nothing else.

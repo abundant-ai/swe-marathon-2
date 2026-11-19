@@ -22,6 +22,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 TASK_ROOT = Path(__file__).resolve().parent.parent
@@ -29,22 +30,33 @@ STEP = "steps/01-implement-renderer"
 
 
 def hook_programs(bundle: Path) -> list[str]:
-    """The Python programs of the bundle's collect hook (environment/prepare-delivery): the session
-    record, the link fixing and the measuring."""
-    text = (bundle / "environment" / "prepare-delivery").read_text()
+    """The five Python blocks of the bundle's collect hook (environment/session-finish): the process
+    listing, the egress probe, the turn-end reader, the link fixing and the measuring."""
+    text = (bundle / "environment" / "session-finish").read_text()
     return re.findall(r"<<'EOF'\n(.*?)\nEOF", text, re.S)
 
 
 def mark(bundle: Path, top: Path) -> str:
-    """Run the hook's link fixing and its measuring on `top`, as this user, the second reading what
-    the first printed; the mark's first line."""
-    _, fixing, measuring = hook_programs(bundle)
+    """Run the hook's blocks on `top`, as this user: the process and egress records into a state dir,
+    the link fixing and the measuring (which reads the state and the notes). A far-future turn end,
+    so an honest source read now is never taken for one written after the turn; the mark's first
+    line."""
+    processes, egress, _turn, fixing, measuring = hook_programs(bundle)
+    state = top.parent / ".state"
+    state.mkdir(exist_ok=True)
+    subprocess.run([sys.executable, "-I", "-", str(state / "processes.json")], input=processes, text=True,
+                   check=True, capture_output=True, timeout=120)
+    egress = egress.replace('("github.com", 443), ("pypi.org", 443), ("proxy.golang.org", 443), ("registry.npmjs.org", 443)',
+                            '("127.0.0.1", 9),')
+    subprocess.run([sys.executable, "-I", "-", str(state / "egress.json")], input=egress, text=True,
+                   check=True, capture_output=True, timeout=120)
+    end = f"{time.time() + 10 ** 9}"
     notes = top.parent / ".delivery-notes"
     with open(notes, "w") as handle:
-        subprocess.run([sys.executable, "-I", "-", str(top), "200000", "2000000000"], input=fixing, text=True, check=True,
-                       stdout=handle, stderr=subprocess.STDOUT, timeout=300)
-    subprocess.run([sys.executable, "-I", "-", str(top), "200000", "2000000000", str(notes)], input=measuring, text=True,
-                   check=True, capture_output=True, timeout=300)
+        subprocess.run([sys.executable, "-I", "-", str(top), "200000", "2000000000", end], input=fixing, text=True,
+                       check=True, stdout=handle, stderr=subprocess.STDOUT, timeout=300)
+    subprocess.run([sys.executable, "-I", "-", str(top), "200000", "2000000000", str(notes), str(state), "1", "0",
+                    end, end, end], input=measuring, text=True, check=True, capture_output=True, timeout=300)
     return (top / ".delivered").read_text().splitlines()[0]
 
 
@@ -65,7 +77,8 @@ def main() -> None:
     original = args.original.resolve()
     verifier = tests / "verifier"
     subprocess.run([sys.executable, "-B", str(verifier / "recorder.py"), "record", str(original), str(tests / "private" / "cases.json"),
-                    str(record / "expected.json"), "--keep", str(record / "kept.json"), "--report", str(record / "timing.json")],
+                    str(record / "expected.json"), "--keep", str(record / "kept.json"), "--report", str(record / "timing.json"),
+                    "--probes", str(tests / "private" / "probes.json"), "--probes-out", str(record / "probes_expected.json")],
                    check=True, timeout=3600)
     (record / "build.txt").write_text(f"version carve-rs 0.1.14 (local build {original.name})\n")
     subprocess.run([sys.executable, "-B", str(verifier / "recording.py"), str(tests / "private" / "cases.json"), str(record / "kept.json"),
@@ -76,6 +89,8 @@ def main() -> None:
     shutil.copy(record / "kept.json", private / "cases.json")
     shutil.copy(record / "expected.json", private / "expected.json")
     shutil.copy(record / "recording.json", private / "recording.json")
+    shutil.copy(tests / "private" / "probes.json", private / "probes.json")
+    shutil.copy(record / "probes_expected.json", private / "probes_expected.json")
     deliveries = {}
     reference = work / "deliveries" / "reference" / "rebuild"
     reference.mkdir(parents=True, exist_ok=True)
@@ -111,14 +126,20 @@ builds = verify.upstream_builds()
 for name in ("reference", "empty", "silent"):
     top = work / "deliveries" / name / "rebuild"
     notes, refused = verify.delivery(top)
-    fetched = verify.fetched_build(top, *builds)
+    record = verify.delivery_record(top)
+    fetched = verify.fetched_build(top, builds)
     started = time.monotonic()
-    metrics = verify.grade(top / "carve", work / "private", [], None) if not (refused or fetched) else {{
-        "reward": 0.0, "cases_passed": 0, "cases_total": None, "notes": [fetched or "refused"], "by_kind": {{}}, "timeouts": 0,
-        "failed_sample": []}}
+    if refused or fetched:
+        metrics = {{"reward": 0.0, "cases_passed": 0, "cases_total": None, "notes": [fetched or "refused"], "by_kind": {{}},
+                   "timeouts": 0, "failed_sample": [], "fingerprint": {{}}, "diagnostics": {{}}}}
+    else:
+        metrics = verify.grade(top / "carve", work / "private", [], None)
+        metrics["fingerprint"] = verify.fingerprint(top / "carve", work / "private", [], None, time.monotonic() + 600)
     results[name] = {{"reward": metrics["reward"], "passed": metrics["cases_passed"], "total": metrics["cases_total"],
                      "notes": notes + metrics["notes"], "seconds": round(time.monotonic() - started, 1),
-                     "by_kind": metrics["by_kind"], "timeouts": metrics["timeouts"], "failed_sample": metrics["failed_sample"][:10]}}
+                     "by_kind": metrics["by_kind"], "timeouts": metrics["timeouts"], "failed_sample": metrics["failed_sample"][:10],
+                     "fingerprint": metrics.get("fingerprint"), "diagnostics": metrics.get("diagnostics"),
+                     "delivery_flags": record.get("flags")}}
 print(json.dumps(results))
 """
     done = subprocess.run([sys.executable, "-B", "-c", driver], capture_output=True, text=True, timeout=7200)
@@ -132,7 +153,8 @@ print(json.dumps(results))
                                                                               "kept_ids_sha256", "wall_seconds")},
                "results": results}
     (work / "summary.json").write_text(json.dumps(summary, indent=1) + "\n")
-    print(json.dumps({name: {k: v for k, v in result.items() if k in ("reward", "passed", "total", "mark", "notes", "seconds")}
+    print(json.dumps({name: {k: v for k, v in result.items() if k in ("reward", "passed", "total", "mark", "notes", "seconds",
+                                                                        "fingerprint", "delivery_flags")}
                       for name, result in results.items()} | {"recording": summary["recording"]}, indent=1))
 
 
