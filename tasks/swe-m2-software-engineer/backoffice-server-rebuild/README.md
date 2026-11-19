@@ -13,6 +13,49 @@ One step is implemented. See [Remaining work](#remaining-work).
 
 ## Development log
 
+### 2026-11-19 (round 8: a root pre-cap watchdog, for the platform's ungraded capped runs; version 8)
+
+- On Oddish today, every v2 trial whose agent ran into the 9.6 h cap was never graded: the
+  separate verifier image failed to build right after the timeout (harbor-lh
+  `ops/swe-marathon-v2/PLATFORM_VERIFIER_BUILD_AFTER_LONG_RUN.md`), while runs that ended by
+  themselves were graded. On version 6, trial 58 (ended by itself) scored 0.227 and trial 60
+  (ended 27 minutes before the cap) 0.422; trial 59 hit the cap and was lost. A probe
+  (`cap-watchdog-6eb19fc0`) showed that a root watchdog ending the agent before the cap gets the
+  run graded. Until the platform fixes it, the task ends the agent's session itself, shortly
+  before the cap, with the design of BasedPL's round 5.
+- `environment/precap-watchdog`, started as root by a second `[[agent.setup_complete]]` entry
+  (Harbor wants both setup boundaries configured or neither; both already ran
+  `start-sealed-server`), arms one detached sleeper (`setsid nohup`; a pid file under `/run`
+  makes a second start a no-op). After 33,900 s (the agent's 34,560 s less eleven minutes) it
+  sends SIGTERM to every process of `dev`, repeating every 5 s for up to 60 s, then SIGKILL, and
+  logs arm, fire and done lines with timestamps to the root-only `/var/log/precap-watchdog.log`.
+  The sealed server (user `stockwell`) and its root supervisor are out of its reach. The collect
+  hook copies the log's last lines into the delivery's mark as `watchdog:` lines, which the
+  verifier keeps apart from the hook's notes, and `verify.py` reports `ended_by_watchdog` and
+  `watchdog_log` in `metrics.json`, never in the score. The instruction says nothing of it: it
+  states no time budget, and a session the watchdog ends is one that would otherwise have hit
+  the cap.
+- Checks: the watchdog arms once (a second start logs "already armed"), fires at `END_SECONDS`
+  (an environment override in the test), ends a process tree and a process in a session of its
+  own, logs each step and removes its pid file; the task's two `setup_complete` entries; the
+  image installs it root-only (mode 0700); the hook's `tail` into the mark; a mark with a fired
+  log reads back as `ended_by_watchdog: true` with the three lines, the no-op's as `false`; the
+  flag appears nowhere in `replay.py`; the instruction mentions no watchdog. With `ci_checks` (27), 68 pass under Python 3.13, and
+  `ci_checks/check_repository.py` passes.
+- The regrade uses only bundle `54f0913384e4`: its `solution/` installed from an isolated copy by
+  its own `oracle.py` (only the interpreter path swapped for this Mac), its corpus and its media,
+  with Python's bytecode writing off. It scores 1.0 on every unit: 4,002 of 4,002 (2,262 of 2,262
+  scenarios), 9 planned restarts, no other restart, no second try, no answer of 500 or above, no
+  note, 52 scenarios alone, in 466.5 s; the slowest request took 4.2 s, the evaluation peaked at
+  707 MB resident (the full check suite ran beside it), and `DATA_DIR` held 1.42 GB at the end.
+  The watchdog itself is not exercised by the regrade: this Mac is not the agent's container, and
+  `evaluate()` is called directly; the checks drive the script, and the version 8 baselines show
+  its `armed` line in `watchdog_log`.
+- Bundle `54f0913384e4` (1,161 files, 247.3 MB) built twice with the same hash; flat
+  `54767f9d067e`. `scripts/scan_uploads.py` finds nothing among the 496 agent-image files (the
+  watchdog is one of them now); Oddish preflight passes. It becomes version 8, in place of
+  `cdde8d8e6e42`.
+
 ### 2026-11-19 (round 7: QA 07f, version 7)
 
 - Started from `5f34e43` as pushed. Version 7 is still local; it goes up once the model trials on
@@ -744,6 +787,15 @@ reference server. The sealed server the agent studies, the recorders and the sol
 their settings from one file, `environment/stockwell.env` (the legacy recorder builds the same
 app in-process), so the server the agent learns from answers as the grader expects (QA 12 F1).
 
+**Run condition: the pre-cap watchdog.** A root watchdog started at `setup_complete` ends the
+agent's session 11 minutes before the platform's 9.6 h cap (SIGTERM to every process of `dev`,
+then SIGKILL), because on the platform today a turn that runs into the cap is never graded (the
+separate verifier image fails to build right after the timeout; harbor-lh
+`ops/swe-marathon-v2/PLATFORM_VERIFIER_BUILD_AFTER_LONG_RUN.md`) while a turn that ends by itself
+is. A session it ended shows as `ended_by_watchdog: true` in `metrics.json`, with the log's last
+lines in `watchdog_log`; neither touches the reward. The agent is not told; the instruction states
+no budget either way. The sealed server and its supervisor run as other users and are untouched.
+
 1. Delivery: before `/app/server` leaves the agent's machine, a `[[verifier.collect]]` hook runs
    `environment/prepare-delivery` (root, mode 0700), so that nothing the agent leaves can make the
    copy fail (QA 07e M4, 07f M4). It ends every process of `dev` with `kill -9 -1` as `dev`, one
@@ -766,7 +818,8 @@ app in-process), so the server the agent learns from answers as the grader expec
    it if that pack fails or overruns, unless it failed for want of room or inodes the machine did
    not have when the session began. A refused delivery is moved aside whole and replaced by an
    empty directory. The mark, `/app/server/.delivered`, says `delivered`, the entries and the
-   bytes, or `refused` and why, with a line per change. `verify.py` scores what arrived, with a
+   bytes, or `refused` and why, with a line per change, and ends with the pre-cap watchdog log's
+   last lines (`watchdog:` lines, kept apart from the hook's notes). `verify.py` scores what arrived, with a
    note when the mark is missing or says `refused`; a mark that counts more than arrived (a copy
    the platform cut short) and an `/app/server` of which nothing arrived are evaluation errors.
 2. Sandbox: set-user-id and set-group-id bits are cleared, the submission is made root's and
@@ -935,11 +988,16 @@ not yet exercised in a container; 10 keeps a residual the owner decides).
 | 12 | The server the agent studies answers differently from the grader, so doing exactly what the instruction asks loses units | The sealed server's configuration against the recorders' and the solution's | QA 12 F1 (2026-11-19): the sealed server served the web client, so `DELETE /nowhere` answered 405 `allowed: []` there and 404 `unknown_path` in the corpus; a perfect clone lost 6 units. Fixed in round 4 | One settings file, `environment/stockwell.env`, for the sealed server, the live recorder and the solution, with no client directory (the legacy recorder builds the same app in-process); a check ties every file to it and the instruction's numbers to the code; the regrade of the solution with that file is 1.0 on every unit | The Mac recording and the Ubuntu images run different Python, SQLite and zlib builds; reading the code found no dependence (QA 11, 12) | The Linux baselines: 4,002 of 4,002 for the solution | 🟢 GREEN / LOW |
 | 13 | A server that fails under concurrent load earns its units back on second tries played one at a time | Verifier's second tries | QA 20 (2026-11-19): second tries were uncapped and alone, and a sequential pass fits the deadline, so a server that crashes whenever requests overlap recovered most of its units. Fixed in round 4 | A second try only for a scenario in flight when the server stopped, never for a wrong answer or a request a live server left unanswered, and only while the units they decide stay within 2% of all units; the check pins the share and that a dropped request gets none | A server that crashes under load keeps 2% of the units at most | None | 🟢 GREEN / LOW |
 | 14 | A deliberately hostile submission makes the evaluation end in an error instead of 0, with no reward: about 99,000 crafted links outlast the delivery hook's 600 s (QA 07g F1); the link fixer uses up the spare inodes, so a refusal dies after `/app/server` is moved aside (07g F2); a link that resolves inside only through another link, hidden from the fixer, makes Harbor's extraction refuse the copy (07g F3); where neither a memory cgroup nor a VM's own meminfo can be read, a memfd that no process maps is not counted (07f) | Delivery hooks; Harbor's artifact copy; the verifier's memory guard | QA 07e, 07f and 07g (2026-11-19); 07g F3 run through Harbor's own extraction code, F1 timed on macOS | None of these gives reward, reads answers or touches honest work: an honest delivery holds no crafted link chains, no tens of thousands of links and does not exhaust inodes. Accepted on 2026-11-19 under a run policy: one attempt per trial; every errored trial is read; it scores 0 when its own files show the submission caused it, and is otherwise re-run as an infrastructure fault | A hostile run costs one trial and a read | The container red team repeats 07f's deep sparse file and full inodes and 07g's link chains | 🟡 YELLOW / LOW |
+| 15 | Outlast the pre-cap watchdog, so that the session runs into the platform's cap and goes ungraded, or stop it to gain time | Process ownership | Round 8; the design of BasedPL's round 5; probe `cap-watchdog-6eb19fc0` showed a run the watchdog ended is graded | The sleeper is root's and `dev` cannot signal it; its pid file and log are root-only (`/run`, `/var/log`, mode 0600); `pkill -TERM` then `pkill -KILL` as root reach every process of `dev`, a forked tree and a session of its own included (checked) | A harness that ran the agent as root, which row 2 gates on the first trial | The version 8 baselines' `metrics.json`: `watchdog_log` holding the `armed` line and `ended_by_watchdog: false` for the oracle and the no-op, which end long before 33,900 s | 🟢 GREEN / LOW |
 
 ## Validation
 
 | Check | Revision | Result |
 | --- | --- | --- |
+| Reference through the verifier, local, no sandbox | round 8: everything from bundle `54f0913384e4`, its solution installed from an isolated copy (only the interpreter path swapped for this Mac), its corpus and its media | 1.0 on every unit: 4,002 of 4,002 (2,262 of 2,262 scenarios), 9 planned restarts, no other restart, no second try, no answer of 500 or above, no note; 466.5 s of replay against the 5,400 s deadline; 707 MB peak resident |
+| `checks/` (41 tests) with `ci_checks` (27) | round 8 | 68 pass under Python 3.13; `ci_checks/check_repository.py` passes |
+| Bundle | round 8: `54f0913384e4`, 1,161 files, 247.3 MB; flat `54767f9d067e` | built twice with the same hash; Oddish preflight passes; no hidden upload among 496 agent-image files |
+| Oddish baselines | round 7: bundle `cdde8d8e6e42`, version 7, `--no-archil` | reference 1.0 twice (4,002 of 4,002), no-op 0.0 twice (reported by the coordinator) |
 | Narrow adversarial re-check (QA 07g) | round 7: `e8a8cc9`, bundle `cdde8d8e6e42` | CONCERN: no finding that gives reward, reads answers or harms honest work; three paths by which only a hostile submission ends the run in an error (hackability row 14) and two minor notes. Bundle `cdde8d8e6e42` is version 7 as checked |
 | Reference through the verifier, local, no sandbox | round 7: everything from bundle `cdde8d8e6e42`, its solution installed from an isolated copy (only the interpreter path swapped for this Mac), its corpus and its media | 1.0 on every unit: 4,002 of 4,002 (2,262 of 2,262 scenarios), 9 planned restarts, no other restart, no second try, no answer of 500 or above, no note; 499.2 s of replay against the 5,400 s deadline; 571 MB peak resident |
 | `checks/` (40 tests) with `ci_checks` (27) | round 7 | 67 pass under Python 3.13; `ci_checks/check_repository.py` passes; round 6's hook marks the deep sparse tree `delivered`, round 7's refuses it |
@@ -1006,18 +1064,20 @@ python3 scripts/scan_uploads.py experiment/dist/bundles/<hash>/<task slug>   # h
 
 ## Remaining work
 
-- Upload bundle `cdde8d8e6e42` (247.3 MB) as version 7, in place of round 6's `2362781131b0`,
-  once the model trials on version 6 have settled (an upload could retract their rows), and run
-  its baselines with `--no-archil`
-  (reference twice, no-op twice). Pass criteria for the reference: 4,002 of 4,002,
-  `planned_restarts` 9, `restarts` 0, `retried` 0, `unfinished` 0, no answer of 500 or above in
-  `server_errors_by_theme`, no note of the hard stop, of a stop for disk or memory, or from the
-  collect hook (its mark counts what arrived), and `3.5 x elapsed_sec + 300 <= 5,400`. Record
-  `memory_measure` (which source the guard read: a cgroup, meminfo or the processes),
-  `server_peak_held_mib` (the reference's own memory as the guard counted it), `free_space_mib`,
-  `grader_oom_score_adj`, any note of an unwatched disk (a fact about the provider) and the
-  environment, hook, collect and verifier-build times against the 12-hour lease (QA 07c F7, QA 13
-  S3). For the no-op: 0.0 with `status: completed` and a mark of `delivered 0 0`.
+- Upload bundle `54f0913384e4` (247.3 MB) as version 8 and run its baselines with `--no-archil`
+  (reference twice, no-op twice) before any model trial. Pass criteria for the reference: 4,002 of
+  4,002, `planned_restarts` 9, `restarts` 0, `retried` 0, `unfinished` 0, no answer of 500 or
+  above in `server_errors_by_theme`, no note of the hard stop, of a stop for disk or memory, or
+  from the collect hook, and `3.5 x elapsed_sec + 300 <= 5,400`. For both baselines:
+  `ended_by_watchdog: false` and a `watchdog_log` holding the watchdog's `armed` line (it armed at
+  `setup_complete` and never fired, since both end long before 33,900 s). Record `memory_measure`,
+  `server_peak_held_mib`, `free_space_mib`, `grader_oom_score_adj`, any note of an unwatched disk
+  and the environment, hook, collect and verifier-build times against the 12-hour lease (QA 07c
+  F7, QA 13 S3). For the no-op: 0.0 with `status: completed` and a mark of `delivered 0 0`.
+- Remove the pre-cap watchdog once the platform grades a run that hits the cap (the asks in
+  harbor-lh `ops/swe-marathon-v2/PLATFORM_VERIFIER_BUILD_AFTER_LONG_RUN.md`): a capped, ungraded
+  run is reported as lost, never as 0, and until then every v2 result is biased toward agents
+  that stop early.
 - The privilege and limits checks fail closed: a provider whose sandbox cannot set or report
   them ends every evaluation with an evaluation error. The baselines will show it, and whether
   the server's user can lower its OOM priority there (a note in `metrics.json`).
