@@ -44,7 +44,12 @@ def main() -> None:
         raise SystemExit(f"{archive}: its carve binary is not the build build.txt names")
     if blank:
         for text in blank:
+            if text not in binary:
+                raise SystemExit(f"{archive}: the build does not hold a string to blank: {text[:40]!r}")
             binary = binary.replace(text, b"x" * len(text))
+        left = [text for text in blank if text in binary]
+        if left:
+            raise SystemExit(f"{archive}: {len(left)} strings are still in the build after blanking")
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_bytes(binary)
     destination.chmod(0o755)

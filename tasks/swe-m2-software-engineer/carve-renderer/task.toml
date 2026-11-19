@@ -17,11 +17,11 @@ network_mode = "no-network"
 user = "dev"
 
 [[agent.setup_begin]]
-command = "/usr/local/sbin/reserve-delivery-room"
+command = "/usr/local/lib/pagebuild/session-setup"
 timeout_sec = 120
 
 [[agent.setup_complete]]
-command = "/usr/local/sbin/reserve-delivery-room"
+command = "/usr/local/lib/pagebuild/session-setup --watch"
 timeout_sec = 120
 
 [environment]
@@ -40,7 +40,7 @@ timeout_sec = 6000
 user = "root"
 
 [[verifier.collect]]
-command = "/usr/local/sbin/prepare-delivery"
+command = "/usr/local/lib/pagebuild/session-finish"
 user = "root"
 timeout_sec = 600
 
