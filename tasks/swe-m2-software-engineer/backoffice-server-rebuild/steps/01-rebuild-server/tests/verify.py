@@ -70,7 +70,7 @@ def main() -> int:
     output.mkdir(parents=True, exist_ok=True)
     for name in REWARD_FILES + ("metrics.json", PENDING):
         (output / name).unlink(missing_ok=True)
-    code = 1
+    code, published = 1, False
     try:
         if os.geteuid() != 0:
             raise EvaluationError("Verifier must start as root to isolate submitted code")
@@ -80,17 +80,19 @@ def main() -> int:
         scenarios = tests / "private" / "scenarios.json.gz"
         metrics = evaluate(Path("/app/server"), scenarios if scenarios.exists() else tests / "private" / "scenarios.json", Path("/work"), output)
         publish(output, metrics)
+        published, code = True, 0
         print(f"reward: {metrics['reward']:.6f} ({metrics['units_matched']}/{metrics['units_total']} units)", flush=True)
-        code = 0
-    except Exception as exc:  # noqa: BLE001 - every unexpected failure invalidates the evaluation
-        message = str(exc) if isinstance(exc, EvaluationError) else f"Verifier error: {type(exc).__name__}"
-        print(f"evaluation error: {message}", flush=True)
-        for name in REWARD_FILES + (PENDING,):
+    except Exception as exc:  # noqa: BLE001 - every unexpected failure before the reward is out invalidates the evaluation
+        if not published:  # once published, a later failure (a print to a full disk) never takes the reward back (QA 07c N3)
+            message = str(exc) if isinstance(exc, EvaluationError) else f"Verifier error: {type(exc).__name__}"
+            with contextlib.suppress(Exception):
+                print(f"evaluation error: {message}", flush=True)
+            for name in REWARD_FILES + (PENDING,):
+                with contextlib.suppress(OSError):
+                    (output / name).unlink(missing_ok=True)
             with contextlib.suppress(OSError):
-                (output / name).unlink(missing_ok=True)
-        with contextlib.suppress(OSError):
-            (output / "metrics.json").write_text(json.dumps({"status": "evaluation_error", "error": message}) + "\n")
-            (output / "verifier_error.txt").write_text(traceback.format_exc())
+                (output / "metrics.json").write_text(json.dumps({"status": "evaluation_error", "error": message}) + "\n")
+                (output / "verifier_error.txt").write_text(traceback.format_exc())
     finally:
         with contextlib.suppress(Exception):
             end_user_processes(pwd.getpwnam(RUN_AS).pw_uid)

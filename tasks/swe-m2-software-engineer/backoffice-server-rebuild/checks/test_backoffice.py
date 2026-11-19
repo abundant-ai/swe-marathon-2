@@ -443,11 +443,36 @@ def test_the_candidate_cannot_replace_the_delivery_directory():
 
 
 FAKE_SERVER = r'''
-import json, os, secrets, signal, socket, sys, threading, time
+import json, os, secrets, signal, socket, sys, threading, time, urllib.parse
 
 MODE = sys.argv[1]
 STATE = os.path.join(os.environ["DATA_DIR"], "tallies.json")  # disk: written before each answer; lazy: only on SIGTERM
 STASH = os.path.join(os.environ["DATA_DIR"], "seen.json")
+adopted, inflight, overlaps = {}, [0], {}
+
+
+def overlap(target, path, conn):
+    """overlap mode: how many requests are in flight while an upload is handled, kept in DATA_DIR/overlap.json; /drop
+    closes the connection without an answer while the server stays up. Returns True when the request is dealt with."""
+    with lock:
+        inflight[0] += 1
+        at_start = inflight[0]
+    try:
+        if path.endswith("/files/upload"):
+            name = dict(urllib.parse.parse_qsl(target.split("?", 1)[1] if "?" in target else "")).get("name", "")
+            time.sleep(0.3)
+            with lock:
+                overlaps.setdefault(name, []).append(max(at_start, inflight[0]))
+                with open(os.path.join(os.environ["DATA_DIR"], "overlap.json"), "w") as out:
+                    json.dump(overlaps, out)
+        elif path.endswith("/drop"):
+            return True
+        else:
+            time.sleep(0.05)
+        return False
+    finally:
+        with lock:
+            inflight[0] -= 1
 tallies, lock = (json.load(open(STATE)) if MODE in ("disk", "lazy") and os.path.exists(STATE) else {}), threading.Lock()
 
 
@@ -486,9 +511,12 @@ def handle(conn):
                 return  # refused from its length, closed without reading the upload or saying so
             body = reader.read(length)
             path = target.split("?")[0]
+            if MODE == "overlap" and overlap(target, path, conn):
+                return
             if "/orders/" in path or "/payments/" in path or "/check/" in path:
                 # buggy: every order total one cent short. preview (QA 07 F1): the same, but it keeps what a month's
-                # payments reveal, gives no answer at the month's end to earn a second try, and answers from what it kept
+                # payments reveal, crashes at the month's end to earn a second try, and answers from what it kept. echo
+                # (QA 07c F4): adopts the amount the client then pays as the order's total, within the same try
                 workspace, month = path.split("/")[3], path.rsplit("/", 1)[1]
                 with lock:
                     kept = json.load(open(STASH)) if os.path.exists(STASH) else {}
@@ -498,10 +526,14 @@ def handle(conn):
                         with open(STASH + ".tmp", "w") as out:
                             json.dump(kept, out)
                         os.replace(STASH + ".tmp", STASH)
+                    if "/payments/" in path:
+                        adopted[(workspace, month)] = json.loads(body)["amount"]
                 if "/payments/" in path:
                     send(conn, 200, json.dumps({"paid": json.loads(body)["amount"]}).encode())
                 elif "/check/" in path and MODE == "preview" and earlier is None:
-                    return
+                    os._exit(3)
+                elif "/check/" in path and MODE == "echo":
+                    send(conn, 200, json.dumps({"total": adopted.get((workspace, month), 999)}).encode())
                 else:
                     send(conn, 200, json.dumps({"total": earlier["amount"] if earlier else 999}).encode())
                 continue
@@ -532,6 +564,9 @@ def handle(conn):
                 send(conn, 200, json.dumps({"count": count}).encode())
             elif path.endswith("/crash"):
                 os._exit(3)
+            elif path.endswith("/fill"):
+                open(os.path.join(os.environ["DATA_DIR"], "fill"), "w").close()
+                send(conn, 200, json.dumps({"path": path.split("/", 4)[-1]}).encode())
             elif path.endswith("/not-json"):
                 send(conn, 200, b"<html>not json</html>")
             elif path.endswith("/deep"):
@@ -622,13 +657,45 @@ def test_a_server_that_closes_without_announcing_it_loses_nothing(tmp_path):
 
 
 def test_a_server_that_crashes_now_and_then_loses_only_the_scenarios_that_crash_it(tmp_path):
-    """Every tenth scenario makes the server exit. The others, including those in flight beside it, all count."""
+    """Every tenth scenario makes the server exit. With room for second tries (RETRY_SHARE raised for this small corpus),
+    the scenarios in flight beside each crash are played again alone and all count: 72 of 80. With the share the full
+    corpus gets (2% of units), second tries decide no more units than that (QA 20)."""
     scenarios = [{"id": f"S{i:03d}", "theme": "crash" if i % 10 == 3 else "fine",
                   "steps": [step("/items/1"), step("/crash" if i % 10 == 3 else "/items/2"), step("/items/3")]} for i in range(80)]
-    out = drive(tmp_path, "plain", scenarios)
+    out = drive(tmp_path / "room", "plain", scenarios, RETRY_SHARE=1.0)
     metrics = out["metrics"]
     assert metrics["scenarios_matched"] == 72 and metrics["by_theme"] == {"crash": {"total": 8, "matched": 0}, "fine": {"total": 72, "matched": 72}}
     assert metrics["restarts"] >= 8 and metrics["unfinished"] == 0 and not metrics["notes"]
+    assert {result["reason"] for result in out["results"] if not result["matched"]} == {"the server stopped while the scenario was played"}
+    capped = drive(tmp_path / "capped", "plain", scenarios)["metrics"]
+    assert capped["retry_budget_units"] == 1 and capped["retried_units"] <= 1 and capped["by_theme"]["crash"]["matched"] == 0
+
+
+def test_a_second_try_is_only_for_a_server_that_stopped_and_heavy_uploads_run_alone(tmp_path):
+    """QA 20 (a): a live server that leaves requests unanswered, or answers wrongly, gets no second try. QA 11 S1: a
+    scenario that uploads a long PDF or a file of tens of megabytes runs with nothing beside it, so no request waits behind
+    it for the database's write lock."""
+    media = tmp_path / "run" / "media" / "pdf"  # drive() reads uploads from its work folder's media
+    media.mkdir(parents=True)
+    (media / "long.pdf").write_bytes(b"%PDF-1.7\n" + bytes(1 << 20))
+    (media / "short.pdf").write_bytes(b"%PDF-1.7\n" + bytes(1000))
+
+    def upload(name: str) -> dict:
+        return {"method": "POST", "path": "/files/upload", "query": {}, "headers": {"x-user": "U-01", "content-type": "application/pdf"},
+                "body_file": f"pdf/{name}", "status": 200, "json": {"path": "files/upload"}}
+
+    slow = [{"id": f"S{i:02d}", "theme": "slow", "steps": [step("/items/1"), step("/items/2")]} for i in range(24)]
+    dropped = [{"id": "D1", "theme": "dropped", "steps": [step("/items/1"), step("/drop")]}]
+    heavy = [{"id": f"H{i}", "theme": "heavy", "steps": [step("/items/1"), dict(upload("long.pdf"), query={"name": "long.pdf"})]}
+             for i in range(3)]
+    light = [{"id": f"L{i}", "theme": "light", "steps": [step("/items/1"), dict(upload("short.pdf"), query={"name": "short.pdf"})]}
+             for i in range(3)]
+    out = drive(tmp_path / "run", "overlap", slow + dropped + heavy + light, RETRY_SHARE=1.0)
+    metrics, results = out["metrics"], {result["id"]: result for result in out["results"]}
+    assert results["D1"]["reason"] == "no answer from the server" and metrics["retried"] == 0 and metrics["alone"] == 3
+    seen = json.loads((tmp_path / "run" / "w" / "data" / "overlap.json").read_text())
+    assert seen["long.pdf"] == [1, 1, 1], "nothing ran beside a heavy upload"
+    assert metrics["by_theme"]["heavy"]["matched"] == 3 and metrics["by_theme"]["light"]["matched"] == 3
 
 
 def test_each_trading_day_and_screen_counts_alone_and_the_reward_counts_units(tmp_path):
@@ -687,21 +754,28 @@ def month_of_trading(number: int) -> dict:
 
 
 def test_a_second_try_cannot_replay_what_the_first_try_revealed(tmp_path):
-    """QA 07 F1, reproduced and closed. A server that keeps what a month's later requests reveal, gives no answer at the
-    end to earn a second try, and answers from what it kept, scored 1.0 where it earns 0.33. A second try now starts
-    from a clean slate (server stopped, DATA_DIR removed, and when sandboxed its user's processes and files anywhere) and
-    decides only the units the first try left unanswered."""
+    """QA 07 F1, reproduced and closed. A server that keeps what a month's later requests reveal, crashes at the end to
+    earn a second try, and answers from what it kept, scored 1.0 where it earns 0.33. A second try now starts from a
+    clean slate (server stopped, DATA_DIR set aside, and when sandboxed its user's processes and files anywhere) and
+    decides only the units the first try left unanswered. Months run one at a time here, so every first try sees its
+    payment, and the retry share is raised for this small corpus.
+
+    QA 07c F4, the known residual: a server that adopts, within one try, the amount the client then pays as the order's
+    total also earns 0.67 with both defences on. The client sends what it was shown, so later requests carry earlier
+    answers; the README records it."""
     months = [month_of_trading(number) for number in range(6)]
-    honest = drive(tmp_path / "honest", "buggy", months)["metrics"]
+    honest = drive(tmp_path / "honest", "buggy", months, WORKERS=1, RETRY_SHARE=1.0)["metrics"]
     assert honest["reward"] == round(1 / 3, 6) and honest["retried"] == 0
     no_slate, no_lock = "replay.Candidate.clean_slate = lambda self: None\n", "replay.merge_retry = lambda first, second: second\n"
-    exploit = drive(tmp_path / "exploit", "preview", months, setup=no_slate + no_lock)["metrics"]
+    exploit = drive(tmp_path / "exploit", "preview", months, setup=no_slate + no_lock, WORKERS=1, RETRY_SHARE=1.0)["metrics"]
     assert exploit["reward"] == 1.0 and exploit["retried"] == 6, "without either defence the preview pays"
-    lock_only = drive(tmp_path / "lock", "preview", months, setup=no_slate)["metrics"]
+    lock_only = drive(tmp_path / "lock", "preview", months, setup=no_slate, WORKERS=1, RETRY_SHARE=1.0)["metrics"]
     assert lock_only["reward"] == round(2 / 3, 6), "with the lock alone, what it kept still reaches the day it left unanswered"
-    slate_only = drive(tmp_path / "slate", "preview", months, setup=no_lock)["metrics"]
-    both = drive(tmp_path / "both", "preview", months)["metrics"]
+    slate_only = drive(tmp_path / "slate", "preview", months, setup=no_lock, WORKERS=1, RETRY_SHARE=1.0)["metrics"]
+    both = drive(tmp_path / "both", "preview", months, WORKERS=1, RETRY_SHARE=1.0)["metrics"]
     assert slate_only["reward"] == both["reward"] == honest["reward"] and both["retried"] == 6
+    echo = drive(tmp_path / "echo", "echo", months)["metrics"]
+    assert echo["reward"] == round(2 / 3, 6) and echo["retried"] == 0
 
 
 def test_the_server_runs_under_limits_and_the_sweep_never_follows_a_link(tmp_path):
@@ -842,6 +916,135 @@ def test_a_virtual_environment_in_the_delivery_survives_the_copy_to_the_verifier
     assert config["verifier"]["collect"] == [{"command": "/usr/local/sbin/prepare-delivery", "user": "root", "timeout_sec": 600}]
     docker = (TASK / "environment" / "Dockerfile").read_text()
     assert "COPY prepare-delivery /usr/local/sbin/prepare-delivery" in docker and "/usr/local/sbin/prepare-delivery" in docker.split("chmod 0700")[-1]
+
+
+def test_no_answer_can_make_the_evaluation_read_past_its_limit(tmp_path):
+    """QA 07c F1: http.client read a chunked answer whose size line was -1 to the end of the stream, so 300 MiB grew the
+    verifier by 848 MiB. Chunk sizes are now parsed strictly (no sign, no prefix, hexadecimal only) and every byte read
+    counts against the limit, whatever the transfer encoding."""
+    probe = r"""
+import json, resource, socket, sys, threading
+sys.path.insert(0, sys.argv[1])
+from verifier import replay
+
+def serve(head, megabytes):
+    listener = socket.create_server(("127.0.0.1", 0))
+    def run():
+        conn, _ = listener.accept()
+        conn.recv(65536)
+        try:
+            conn.sendall(head)
+            block = bytes(1 << 20)
+            for _ in range(megabytes):
+                conn.sendall(block)
+        except OSError:
+            pass
+        conn.close()
+    threading.Thread(target=run, daemon=True).start()
+    return listener.getsockname()[1]
+
+def rss():
+    peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    return peak / (1 << 20) if sys.platform == "darwin" else peak / 1024
+
+chunked = b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nContent-Type: application/octet-stream\r\n\r\n"
+cases = {"negative": (chunked + b"-1\r\n", 300), "signed": (chunked + b"+1a\r\n", 20), "prefixed": (chunked + b"0x10\r\n", 20),
+         "underscore": (chunked + b"1_0\r\n", 20), "huge chunk": (chunked + b"fffffff\r\n", 120),
+         "until close": (b"HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nConnection: close\r\n\r\n", 120),
+         "fine": (b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nContent-Type: application/json\r\n\r\n2;x=1\r\n{}\r\n0\r\n\r\n", 0)}
+out, before = {}, rss()
+for label, (head, megabytes) in cases.items():
+    connection = replay.connect(serve(head, megabytes), 30)
+    try:
+        status, answer = replay.exchange(connection, "GET", "/x", {}, None)
+        out[label] = "too large" if answer == replay.TOO_LARGE else answer
+    except Exception as exc:
+        out[label] = type(exc).__name__
+    connection.close()
+out["grew"] = rss() - before
+print(json.dumps(out))
+"""
+    done = subprocess.run([sys.executable, "-I", "-B", "-c", probe, str(STEP / "tests")], capture_output=True, text=True, timeout=300)
+    assert done.returncode == 0, done.stderr[-2000:]
+    out = json.loads(done.stdout.strip().splitlines()[-1])
+    assert {out[label] for label in ("negative", "signed", "prefixed", "underscore")} == {"IncompleteRead"}, out
+    assert out["huge chunk"] == out["until close"] == "too large" and out["fine"] == {}, out
+    assert out["grew"] < 200, f"the evaluation grew by {out['grew']:.0f} MiB"
+
+
+def test_a_process_whose_main_thread_exited_is_still_found_and_killed(tmp_path):
+    """QA 07c F2: a process whose leader thread called exit() while other threads run shows State Z in /proc, and the
+    sweep skipped zombies, so it survived every stop. It now counts as alive while it has more than one thread or a
+    thread that is not a zombie; each kill round also runs `kill -9 -1` as the user. A real zombie is left to the reaper."""
+    proc = tmp_path / "proc"
+    for pid, uid, state, threads, tasks in (("100", 65534, "S (sleeping)", 1, ["S"]), ("200", 65534, "Z (zombie)", 3, ["Z", "S", "R"]),
+                                            ("300", 65534, "Z (zombie)", 1, ["Z"]), ("400", 0, "S (sleeping)", 1, ["S"]),
+                                            ("500", 65534, "Z (zombie)", 1, ["Z", "R"])):
+        (proc / pid).mkdir(parents=True)
+        (proc / pid / "status").write_text(f"Name:\tx\nState:\t{state}\nUid:\t{uid}\t{uid}\t{uid}\t{uid}\nThreads:\t{threads}\n")
+        for number, task_state in enumerate(tasks):
+            (proc / pid / "task" / str(int(pid) + number)).mkdir(parents=True)
+            (proc / pid / "task" / str(int(pid) + number) / "stat").write_text(f"{pid} (a b) {task_state} 1 1 1")
+    probe = r"""
+import json, signal, sys
+sys.path.insert(0, sys.argv[1])
+from verifier import replay
+replay.PROC = sys.argv[2]
+alive = replay.user_processes(65534)
+sent = []
+replay.os.kill = lambda pid, sig: sent.append([pid, int(sig)])
+replay.kill_as_user = lambda uid: sent.append(["as user", uid])
+gone = replay.end_user_processes(65534, seconds=0.4)
+print(json.dumps({"alive": sorted(alive), "gone": gone, "stopped": sorted({p for p, s in sent if s == int(signal.SIGSTOP)}),
+                  "killed": sorted({p for p, s in sent if s == int(signal.SIGKILL)}), "as user": ["as user", 65534] in sent}))
+"""
+    done = subprocess.run([sys.executable, "-I", "-B", "-c", probe, str(STEP / "tests"), str(proc)], capture_output=True, text=True, timeout=60)
+    assert done.returncode == 0, done.stderr[-2000:]
+    out = json.loads(done.stdout.strip().splitlines()[-1])
+    assert out == {"alive": [100, 200, 500], "gone": False, "stopped": [100, 200, 500], "killed": [100, 200, 500], "as user": True}
+
+
+def test_the_server_cannot_fill_the_disk_through_its_log_and_a_low_disk_stops_it(tmp_path):
+    """QA 07c F3: on providers that pack /logs/verifier before reading the reward, a full disk or a huge server.log lost
+    the reward. The server's output now goes into a pipe the evaluation drains, keeping its first and last LOG_KEEP bytes;
+    a ballast set aside before the server starts is given back for the results; and when the disk runs low the server is
+    stopped for good and the scenarios it had left fail, with a note."""
+    probe = r"""
+import json, os, sys, threading
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+from verifier import replay
+folder = Path(sys.argv[2])
+log = replay.LogCapture()
+log.note("==== start 1 ====\n")
+def write():
+    for number in range(160):
+        os.write(log.fd, (b"%03d" % (number % 1000)) * (65536 // 3) + b"\n")
+writer = threading.Thread(target=write)
+writer.start()
+writer.join()
+log.close(folder / "server.log")
+kept = (folder / "server.log").read_bytes()
+ballast = replay.Ballast(folder / "ballast", 8 << 20)
+size = (folder / "ballast").stat().st_size
+ballast.release()
+print(json.dumps({"kept": len(kept), "head": kept[:17].decode(), "tail": kept.rstrip()[-6:].decode(), "marker": b"bytes left out" in kept,
+                  "ballast": size, "released": not (folder / "ballast").exists()}))
+"""
+    done = subprocess.run([sys.executable, "-I", "-B", "-c", probe, str(STEP / "tests"), str(tmp_path)], capture_output=True, text=True, timeout=120)
+    assert done.returncode == 0, done.stderr[-2000:]
+    out = json.loads(done.stdout.strip().splitlines()[-1])
+    assert out["kept"] <= (2 << 20) + 100 and out["head"] == "==== start 1 ====" and out["tail"] == "159159" and out["marker"]
+    assert out["ballast"] == 8 << 20 and out["released"]
+    marker = tmp_path / "run" / "w" / "data" / "fill"
+    setup = (f"import os\nreplay.GUARD_SEC = 0.1\n_free = replay.free_bytes\n"
+             f"replay.free_bytes = lambda path: 0 if os.path.exists({str(marker)!r}) else _free(path)\n")
+    scenarios = [{"id": f"S{i:02d}", "theme": "t", "steps": [step("/items/1"), step("/items/2")]} for i in range(60)]
+    scenarios.insert(5, {"id": "FILL", "theme": "fill", "steps": [step("/fill")]})
+    run = drive(tmp_path / "run", "overlap", scenarios, setup=setup, RETRY_SHARE=1.0)
+    metrics, reasons = run["metrics"], [result["reason"] for result in run["results"]]
+    assert "the server was stopped when the disk ran low" in reasons and metrics["retried"] == 0, reasons
+    assert any("disk ran low" in note for note in metrics["notes"]) and 0 < metrics["reward"] < 1
 
 
 def test_set_id_bits_are_stripped_and_the_privilege_drop_sets_no_new_privs(tmp_path):

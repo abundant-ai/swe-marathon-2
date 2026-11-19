@@ -11,39 +11,45 @@ the units it did not answer and nothing else.
 - Time: a request has REQUEST_SEC of wall clock and the whole replay DEADLINE_SEC;
   a request still running past either has its connection shut down. Scenarios not
   played to the end by the deadline count as not matched.
-- Restarts: every scenario is played once, WORKERS at a time, in a fixed shuffled
-  order, so a server too slow to finish loses scenarios of every kind. One that got
-  no answer (the server died, dropped the connection or ran out of time) is played
-  once more on its own after the others, so a server that crashes now and then
-  loses only the scenarios that crash it. A server that has died, or has left its
-  health check unanswered for HEALTH_SEC, is restarted before the next attempt, as
-  often as needed while the deadline holds; after START_FAILURES starts in a row
-  that never answer it is given up. Every start uses the same DATA_DIR.
-- Second tries start from nothing: the server is stopped, every process of its user
-  is ended, DATA_DIR and every file its user owns are removed with the shared memory
-  and message queues, and a fresh server is started. A second try decides only the
-  units the first try left unanswered, so nothing seen on the first try (a later
-  request of a month echoes many earlier answers) can be put to use on the second.
-- Planned restarts: a scenario with a step marked `restart` runs with nothing beside
-  it, at a fixed place among the others. After that step the server is stopped
-  (SIGTERM, or SIGKILL straight after the answer) and started again on the same
-  DATA_DIR, and the scenario goes on in the same workspace: what a workspace holds
-  must survive.
+- Order: every scenario is played once, WORKERS at a time, in a fixed shuffled
+  order, so a server too slow to finish loses scenarios of every kind. A scenario
+  with a planned restart, or with an upload heavy enough to hold the database's
+  write lock for long (a long PDF, a file of tens of megabytes), runs with nothing
+  beside it, at a fixed place spread through that order.
+- Restarts: a server that has died, or has left its health check unanswered for
+  HEALTH_SEC, is restarted before the next attempt, as often as needed while the
+  deadline holds; after START_FAILURES starts in a row that never answer it is given
+  up. Every start uses the same DATA_DIR.
+- Second tries: a scenario in flight when the server stopped (it died, or hung and
+  was stopped) is played once more after the others, alone, while the units they
+  decide stay within RETRY_SHARE of all units. A wrong answer, or a request the live
+  server left unanswered, is final. Second tries start from nothing: the server
+  stopped, every process of its user ended, DATA_DIR set aside and every file its user
+  owns removed with its shared memory and message queues, and a fresh server started.
+  A second try decides only the units the first try left unanswered.
+- Planned restarts: after a step marked `restart` the server is stopped (SIGTERM, or
+  SIGKILL straight after the answer) and started again on the same DATA_DIR, and the
+  scenario goes on in the same workspace: what a workspace holds must survive.
 - Nothing the server sends or does makes the evaluation fail: a reply that is not
-  HTTP, not JSON, too large or nested too deeply is an answer that matches nothing;
-  the server runs as an unprivileged user under limits on threads, file size and
-  memory, cannot write its own files, and is the first process ended when memory
-  runs out.
+  HTTP, not JSON, too large in any transfer encoding or nested too deeply is an answer
+  that matches nothing. The server runs as an unprivileged user under limits on
+  threads, file size and memory, cannot write its own files, is the first process
+  ended when memory runs out, writes its output into a pipe the evaluation reads
+  (keeping the first and last LOG_KEEP bytes), and is stopped for good, its remaining
+  scenarios failed, when the disk runs low.
 """
 
 from __future__ import annotations
 
 import base64
+import collections
 import contextlib
 import grp
 import gzip
 import hashlib
+import heapq
 import http.client
+import io
 import json
 import os
 import pwd
@@ -68,15 +74,18 @@ RUN_AS, RUN_GROUP = "nobody", "nogroup"
 # user across a shared kernel, so it is set well above what one server needs.
 THREAD_LIMIT = 4096
 FILE_LIMIT = 4 << 30  # bytes in any one file it writes
-MEMORY_LIMIT = 6 << 30  # address space of each of its processes, on a machine with 8 GB
-# set as root before the drop, so the server cannot lower it: when memory runs out the kernel ends the server first
-OOM_FIRST = ["sh", "-c", '{ echo 1000 > /proc/self/oom_score_adj; } 2>/dev/null; exec "$@"', "sh"]
+MEMORY_LIMIT = 6 << 30  # address space of each of its processes, on a machine with 8 GB; the same for the whole group in a cgroup
+# Run as root before the drop: puts the server first in line for the OOM killer (the evaluation raises it again every
+# GUARD_SEC, since without CAP_SYS_RESOURCE the server could lower it), and into its cgroup when there is one ($1, or -).
+OOM_FIRST = ["sh", "-c", '{ echo 1000 > /proc/self/oom_score_adj; } 2>/dev/null; [ "$1" = - ] || { echo $$ > "$1"; } 2>/dev/null; '
+             'shift; exec "$@"', "sh"]
 LIMITS = ["prlimit", f"--nproc={THREAD_LIMIT}", f"--fsize={FILE_LIMIT}", f"--as={MEMORY_LIMIT}", "--"]
 # no_new_privs: executing a set-user-id or set-group-id file, or one with file capabilities, grants nothing
 DROP = ["setpriv", "--reuid", RUN_AS, "--regid", RUN_GROUP, "--clear-groups", "--no-new-privs"]
-SANDBOX = OOM_FIRST + LIMITS + DROP
+SANDBOX = OOM_FIRST + ["-"] + LIMITS + DROP
 # where any user can create files, besides the root filesystem: swept before the second tries
 SCRATCH = ("/tmp", "/var/tmp", "/dev/shm", "/dev/mqueue", "/run/lock", "/var/lock", "/run/shm")
+PROC = "/proc"
 START_SEC = 60
 REQUEST_SEC = 30  # wall clock for one request: a big upload or a 200-page PDF needs more than a JSON call
 # the whole replay; the step allows 6,000 s for everything. The reference replays the corpus in about 520 s on the author's
@@ -86,13 +95,27 @@ HEALTH_SEC = 30  # how long a live server may leave its health check unanswered 
 STOP_SEC = 30  # how long a server stopped with SIGTERM may take to exit before it is killed
 START_FAILURES = 3  # starts in a row that never answer before the server is given up
 WORKERS = 8
+RETRY_SHARE = 0.02  # the units second tries may decide, as a share of all units
+RETRY_MARGIN_SEC = 300  # no clean slate and no second try with less time than this left
+SWEEP_SEC = 120  # the longest the clean slate spends finding the server's files
 ANSWER_LIMIT = 80 << 20  # bytes read of one answer, hashed as they arrive; the largest recorded file is under the 64 MiB upload limit
+HEADER_ROOM = 8 << 20  # bytes allowed besides the answer itself: status line, headers, chunk sizes and trailers
 JSON_LIMIT = 4_000_000  # a longer JSON answer is not parsed; the longest recorded one is about 65 KB
+HEAVY_PDF = 1 << 20  # an uploaded PDF this large is read in full while the write lock is held
+HEAVY_FILE = 16 << 20  # so is any upload this large while it is stored
+LOG_KEEP = 1 << 20  # bytes of the server's output kept from its start and from its end
+GUARD_SEC = 1.0
+DISK_RESERVE = 512 << 20  # free bytes below which the server is stopped for good
+BALLAST = 256 << 20  # set aside before the server starts and given back for the results
+MEDIA_CACHE = 192 << 20  # bytes of uploads kept in memory between uses
 WORKSPACE_ID = re.compile(r"[A-Za-z0-9_]{1,40}")
+CHUNK_SIZE = re.compile(rb"[0-9A-Fa-f]{1,15}")
 NOT_JSON, TOO_LARGE = {"__not_json__": True}, {"__too_large__": True}
 LATE = "not played to the end before the time limit"
 NO_ANSWER = "no answer from the server"
+CRASHED = "the server stopped while the scenario was played"
 DOWN = "server not running"
+DISK = "the server was stopped when the disk ran low"
 
 
 class EvaluationError(Exception):
@@ -101,6 +124,10 @@ class EvaluationError(Exception):
 
 class NoAnswer(Exception):
     """No complete reply came: the server died, dropped the connection, sent something that is not HTTP or ran out of time."""
+
+
+class AnswerTooLarge(Exception):
+    """The server sent more than one answer may hold."""
 
 
 class Clock:
@@ -121,6 +148,9 @@ class Clock:
 
     def expired(self) -> bool:
         return time.monotonic() >= self.deadline
+
+    def left(self) -> float:
+        return self.deadline - time.monotonic()
 
     @contextlib.contextmanager
     def limit(self, connection: http.client.HTTPConnection, seconds: float) -> Iterator[None]:
@@ -148,6 +178,64 @@ class Clock:
         self.watcher.join(timeout=5)
 
 
+# ------------------------------------------------------------------ reading answers
+
+class Bounded(io.RawIOBase):
+    """A socket's byte stream that refuses to deliver more than `limit` bytes in all: every byte of an answer counts,
+    its status line, headers, chunk sizes and trailers included, whatever its transfer encoding (QA 07c F1)."""
+
+    def __init__(self, raw: io.RawIOBase, limit: int) -> None:
+        super().__init__()
+        self.raw, self.left = raw, limit
+
+    def readable(self) -> bool:
+        return True
+
+    def readinto(self, buffer: Any) -> int:
+        if self.left <= 0:
+            raise AnswerTooLarge()
+        view = memoryview(buffer)
+        count = self.raw.readinto(view[:min(len(view), self.left)]) or 0
+        self.left -= count
+        return count
+
+    def close(self) -> None:
+        with contextlib.suppress(OSError):
+            self.raw.close()
+        super().close()
+
+
+class BoundedResponse(http.client.HTTPResponse):
+    """http.client's response read through `Bounded`, with chunk sizes parsed strictly: a size that is negative, signed,
+    prefixed or not hexadecimal is a broken answer, not a request to read to the end of the stream."""
+
+    LIMIT = ANSWER_LIMIT + HEADER_ROOM
+
+    def __init__(self, sock: socket.socket, debuglevel: int = 0, method: str | None = None, url: str | None = None) -> None:
+        super().__init__(sock, debuglevel, method, url)
+        self.fp.close()  # the reader the base class made; nothing has been read from it yet
+        self.fp = io.BufferedReader(Bounded(sock.makefile("rb", buffering=0), self.LIMIT), 1 << 16)
+
+    def _read_next_chunk_size(self) -> int:
+        line = self.fp.readline(http.client._MAXLINE + 1)  # type: ignore[attr-defined]
+        if len(line) > http.client._MAXLINE:  # type: ignore[attr-defined]
+            raise http.client.LineTooLong("chunk size")
+        size = line.split(b";", 1)[0].strip(b" \t\r\n")
+        if not CHUNK_SIZE.fullmatch(size):
+            raise ValueError("not a chunk size")  # http.client turns this into IncompleteRead
+        return int(size, 16)
+
+
+class HealthResponse(BoundedResponse):
+    LIMIT = 1 << 20
+
+
+def connect(port: int, timeout: float, response_class: type = BoundedResponse) -> http.client.HTTPConnection:
+    connection = http.client.HTTPConnection("127.0.0.1", port, timeout=timeout)
+    connection.response_class = response_class
+    return connection
+
+
 def free_port() -> int:
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
@@ -156,7 +244,7 @@ def free_port() -> int:
 
 def healthy(port: int, clock: Clock, seconds: float = 5) -> bool:
     """Whether the server answers GET /api/health with 200 in time; any other reply, or none, is no."""
-    connection = http.client.HTTPConnection("127.0.0.1", port, timeout=seconds)
+    connection = connect(port, seconds, HealthResponse)
     try:
         with clock.limit(connection, seconds):
             connection.request("GET", "/api/health")
@@ -169,30 +257,64 @@ def healthy(port: int, clock: Clock, seconds: float = 5) -> bool:
         connection.close()
 
 
+# ------------------------------------------------------------------ the server's processes and files
+
+def proc_fields(pid: str) -> dict[str, str]:
+    with open(f"{PROC}/{pid}/status", encoding="latin-1") as status:
+        return dict(line.split(":", 1) for line in status if ":" in line)
+
+
 def user_processes(uid: int) -> list[int]:
-    """Live processes whose real user is `uid`, read from /proc: that needs no new process, even with a full process table."""
+    """Processes of real user `uid` with anything still running, read from /proc: that needs no new process, even with a
+    full process table. A process whose main thread has exited shows as a zombie while its other threads run (QA 07c
+    F2); it counts as alive while it has more than one thread or any thread that is not a zombie."""
     found = []
     with contextlib.suppress(OSError):
-        with os.scandir("/proc") as entries:
+        with os.scandir(PROC) as entries:
             for entry in entries:
                 if not entry.name.isdigit():
                     continue
                 try:
-                    with open(f"/proc/{entry.name}/status", encoding="latin-1") as status:
-                        fields = dict(line.split(":", 1) for line in status if ":" in line)
+                    fields = proc_fields(entry.name)
                 except (OSError, ValueError):
                     continue
-                if fields.get("Uid", "").split()[:1] == [str(uid)] and not fields.get("State", "").strip().startswith(("Z", "X")):
+                if fields.get("Uid", "").split()[:1] != [str(uid)]:
+                    continue
+                if not fields.get("State", "").strip().startswith(("Z", "X")) or live_threads(entry.name, fields):
                     found.append(int(entry.name))
     return found
 
 
-def end_user_processes(uid: int, seconds: float = 20) -> bool:
+def live_threads(pid: str, fields: dict[str, str]) -> bool:
+    with contextlib.suppress(ValueError):
+        if int(fields.get("Threads", "1").strip() or 1) > 1:
+            return True
+    with contextlib.suppress(OSError):
+        for task in os.scandir(f"{PROC}/{pid}/task"):
+            with contextlib.suppress(OSError, ValueError):
+                with open(f"{task.path}/stat", encoding="latin-1") as stat_file:
+                    state = stat_file.read().rsplit(")", 1)[1].split()[0]
+                if state not in ("Z", "X"):
+                    return True
+    return False
+
+
+def kill_as_user(uid: int) -> None:
+    """`kill -9 -1` run as the user itself: the kernel signals every process the user owns in one call, except the caller,
+    so nothing can fork its way out of it. Needs one new process; the /proc sweep works without one."""
+    if uid < 0:
+        return
+    with contextlib.suppress(OSError, subprocess.SubprocessError):
+        subprocess.run(DROP + ["kill", "-9", "-1"], check=False, capture_output=True, timeout=10)
+
+
+def end_user_processes(uid: int, seconds: float = 20, group: Cgroup | None = None) -> bool:
     """Stop every process of `uid`, then kill them all; True when none is left.
 
     A sweep that lists processes and then kills them can be outrun by one that forks fast enough
     (QA 07 F4). A stopped process cannot fork: once every process listed is stopped and a new listing
-    finds no other, none can appear, and all are killed. Never raises.
+    finds no other, none can appear, and all are killed. Each round also kills the user's processes
+    from inside (`kill_as_user`) and the server's cgroup when there is one. Never raises.
     """
     end = time.monotonic() + seconds
     stopped: set[int] = set()
@@ -206,8 +328,29 @@ def end_user_processes(uid: int, seconds: float = 20) -> bool:
                 os.kill(pid, signal.SIGSTOP if fresh else signal.SIGKILL)
         stopped |= fresh
         if not fresh:
+            if group is not None:
+                group.kill()
+            kill_as_user(uid)
             time.sleep(0.05)
     return not user_processes(uid)
+
+
+def raise_oom_priority(uid: int) -> None:
+    """Put every process of `uid` back at the front of the OOM killer's line; raising the value needs no capability."""
+    with contextlib.suppress(OSError):
+        with os.scandir(PROC) as entries:
+            for entry in entries:
+                if not entry.name.isdigit():
+                    continue
+                with contextlib.suppress(OSError, ValueError):
+                    if proc_fields(entry.name).get("Uid", "").split()[:1] != [str(uid)]:
+                        continue
+                    path = f"{PROC}/{entry.name}/oom_score_adj"
+                    with open(path) as current:
+                        if current.read().strip() == "1000":
+                            continue
+                    with open(path, "w") as adjust:
+                        adjust.write("1000")
 
 
 def reap_orphans() -> None:
@@ -218,7 +361,7 @@ def reap_orphans() -> None:
             pass
 
 
-def remove_tree(path: Path | str) -> None:
+def remove_tree(path: Path | str, seconds: float = 600) -> None:
     """Remove a directory tree however deep it is (a deep enough one makes shutil.rmtree recurse past Python's limit)."""
     try:
         shutil.rmtree(path, ignore_errors=True)
@@ -226,19 +369,25 @@ def remove_tree(path: Path | str) -> None:
         pass
     if os.path.lexists(path):
         with contextlib.suppress(OSError, subprocess.SubprocessError):
-            subprocess.run(["rm", "-rf", "--", str(path)], check=False, capture_output=True, timeout=600)
+            subprocess.run(["rm", "-rf", "--", str(path)], check=False, capture_output=True, timeout=max(1, seconds))
 
 
-def remove_user_files(uid: int, roots: tuple[str, ...] = ("/",) + SCRATCH) -> int:
+def remove_user_files(uid: int, roots: tuple[str, ...] = ("/",) + SCRATCH, until: float | None = None) -> int:
     """Remove every file and directory `uid` owns under `roots` (each walked on its own filesystem, links never followed),
-    and in the scratch places every hard link, which can only be one made to another user's file; returns how many."""
+    and in the scratch places every hard link, which can only be one made to another user's file; returns how many.
+    Stops walking at `until` (a time.monotonic() value), so a tree made to be slow cannot hold the evaluation."""
     removed = 0
+
+    def late() -> bool:
+        return until is not None and time.monotonic() >= until
 
     def sweep(folder: str, device: int, scratch: bool) -> None:
         nonlocal removed
         try:
             with os.scandir(folder) as entries:
                 for entry in entries:
+                    if late():
+                        return
                     try:
                         info = entry.stat(follow_symlinks=False)
                     except OSError:
@@ -247,7 +396,7 @@ def remove_user_files(uid: int, roots: tuple[str, ...] = ("/",) + SCRATCH) -> in
                     if info.st_uid == uid or (scratch and not directory and info.st_nlink > 1):
                         removed += 1
                         if directory:
-                            remove_tree(entry.path)
+                            remove_tree(entry.path, until - time.monotonic() if until is not None else 600)
                         else:
                             with contextlib.suppress(OSError):
                                 os.unlink(entry.path)
@@ -261,25 +410,150 @@ def remove_user_files(uid: int, roots: tuple[str, ...] = ("/",) + SCRATCH) -> in
             top = os.lstat(root)
         except OSError:
             continue
-        if stat.S_ISDIR(top.st_mode):
+        if stat.S_ISDIR(top.st_mode) and not late():
             sweep(root, top.st_dev, root in SCRATCH)
     return removed
 
 
-def open_log(path: Path) -> int:
-    """The server's log, opened for appending and readable by root only: the server writes to it but cannot read it back
-    through /proc/self/fd, so it carries nothing from one start of the server to the next."""
-    descriptor = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
-    with contextlib.suppress(OSError):
-        os.fchmod(descriptor, 0o600)
-    return descriptor
+class Cgroup:
+    """A cgroup v2 group of the server's own, where this machine lets the evaluation make one: memory and processes capped
+    for the whole group, its processes killed as one. Where it cannot (a read-only /sys/fs/cgroup, as on Docker's
+    defaults), the per-process limits and the /proc sweep stand alone."""
 
+    ROOT = Path("/sys/fs/cgroup")
+
+    def __init__(self) -> None:
+        self.path: Path | None = None
+        with contextlib.suppress(OSError):
+            if not (self.ROOT / "cgroup.controllers").is_file():
+                return
+            with contextlib.suppress(OSError):
+                (self.ROOT / "cgroup.subtree_control").write_text("+memory +pids")
+            path = self.ROOT / f"stockwell-server-{os.getpid()}"
+            path.mkdir()
+            for name, value in (("memory.max", str(MEMORY_LIMIT)), ("memory.swap.max", "0"), ("pids.max", str(THREAD_LIMIT)),
+                                ("memory.oom.group", "1")):
+                with contextlib.suppress(OSError):
+                    (path / name).write_text(value)
+            if (path / "cgroup.procs").exists():
+                self.path = path
+
+    @property
+    def procs(self) -> str:
+        return str(self.path / "cgroup.procs") if self.path else "-"
+
+    def kill(self) -> None:
+        if self.path is not None:
+            with contextlib.suppress(OSError):
+                (self.path / "cgroup.kill").write_text("1")
+
+    def remove(self) -> None:
+        if self.path is not None:
+            self.kill()
+            with contextlib.suppress(OSError):
+                self.path.rmdir()
+
+
+class LogCapture:
+    """The server's standard output and error: a pipe a thread drains, keeping the first and the last LOG_KEEP bytes.
+
+    The server never holds a file of the evaluation's, so it cannot fill the disk through its output, read it back, see
+    its size, or keep writing to it after the evaluation ends (QA 07c F3, F5).
+    """
+
+    def __init__(self) -> None:
+        self.read_end, self.fd = os.pipe()
+        os.set_blocking(self.read_end, False)
+        self.head, self.tail, self.total = bytearray(), collections.deque(), 0
+        self.tail_bytes = 0
+        self.lock, self.done = threading.Lock(), threading.Event()
+        self.thread = threading.Thread(target=self._drain, daemon=True)
+        self.thread.start()
+
+    def note(self, text: str) -> None:
+        self._keep(text.encode())
+
+    def _keep(self, data: bytes) -> None:
+        with self.lock:
+            self.total += len(data)
+            room = LOG_KEEP - len(self.head)
+            if room > 0:
+                self.head += data[:room]
+                data = data[room:]
+            if data:
+                self.tail.append(data)
+                self.tail_bytes += len(data)
+                while self.tail and self.tail_bytes - len(self.tail[0]) >= LOG_KEEP:
+                    self.tail_bytes -= len(self.tail.popleft())
+
+    def _drain(self) -> None:
+        while not self.done.is_set():
+            with contextlib.suppress(OSError, ValueError):
+                ready, _, _ = select.select([self.read_end], [], [], 0.2)
+                if ready:
+                    data = os.read(self.read_end, 1 << 16)
+                    if data:
+                        self._keep(data)
+
+    def close(self, path: Path | None = None) -> None:
+        """Stop reading, close the pipe (a process still writing gets EPIPE), and write what was kept to `path`."""
+        self.done.set()
+        self.thread.join(timeout=5)
+        for descriptor in (self.fd, self.read_end):
+            with contextlib.suppress(OSError):
+                os.close(descriptor)
+        if path is None:
+            return
+        with self.lock:
+            tail = b"".join(self.tail)[-LOG_KEEP:]
+            left_out = self.total - len(self.head) - len(tail)
+            text = bytes(self.head) + (f"\n[... {left_out} bytes left out ...]\n".encode() if left_out > 0 else b"") + tail
+        with contextlib.suppress(OSError):
+            path.write_bytes(text)
+
+
+class Ballast:
+    """Space set aside on the evaluation's disk before the server starts and given back for the results: however full the
+    server leaves the disk, the reward, the summary and the archive Harbor makes of them have room (QA 07c F3)."""
+
+    def __init__(self, path: Path, size: int = BALLAST) -> None:
+        self.path: Path | None = None
+        with contextlib.suppress(OSError):
+            descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            try:
+                try:
+                    os.posix_fallocate(descriptor, 0, size)
+                except (AttributeError, OSError):
+                    block = bytes(1 << 20)
+                    for _ in range(size >> 20):
+                        os.write(descriptor, block)
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
+            self.path = path
+
+    def release(self) -> None:
+        if self.path is not None:
+            with contextlib.suppress(OSError):
+                self.path.unlink()
+            self.path = None
+
+
+def free_bytes(path: Path | str) -> int:
+    try:
+        info = os.statvfs(path)
+    except OSError:
+        return 1 << 62
+    return info.f_bavail * info.f_frsize
+
+
+# ------------------------------------------------------------------ the server
 
 class Candidate:
     """The submitted server process and the means to restart it."""
 
-    def __init__(self, source: Path, work: Path, log_path: Path, sandbox: bool, clock: Clock) -> None:
-        self.source, self.work, self.log_path, self.sandbox, self.clock = source, work, log_path, sandbox, clock
+    def __init__(self, source: Path, work: Path, log: LogCapture, sandbox: bool, clock: Clock) -> None:
+        self.source, self.work, self.log, self.sandbox, self.clock = source, work, log, sandbox, clock
         self.data = work / "data"  # one DATA_DIR for every start, planned or after a crash: what a workspace holds must survive
         self.lock = threading.Lock()
         self.proc: subprocess.Popen[bytes] | None = None
@@ -288,16 +562,39 @@ class Candidate:
         self.restarts = 0
         self.planned = 0
         self.failed_starts = 0
+        self.disk_full = False
+        self.peak_memory = 0  # the largest VmPeak seen of the server's main process, in kB
         self.uid = pwd.getpwnam(RUN_AS).pw_uid if sandbox else -1
+        self.group = Cgroup() if sandbox else None
+
+    def command(self) -> list[str]:
+        if not self.sandbox:
+            return [str(self.source / "run")]
+        return OOM_FIRST + [self.group.procs if self.group else "-"] + LIMITS + DROP + [str(self.source / "run")]
+
+    def note_memory(self) -> None:
+        proc = self.proc
+        if proc is None:
+            return
+        with contextlib.suppress(OSError, ValueError, IndexError):
+            peak = proc_fields(str(proc.pid)).get("VmPeak", "0 kB").split()[0]
+            self.peak_memory = max(self.peak_memory, int(peak))
+
+    def kill_all(self) -> None:
+        """Kill the server's process group and, when sandboxed, every process its user still runs. Never raises; the disk
+        guard calls it from its own thread."""
+        proc = self.proc
+        if proc is not None:
+            with contextlib.suppress(OSError):
+                os.killpg(proc.pid, signal.SIGKILL)
+        if self.sandbox:
+            end_user_processes(self.uid, group=self.group)  # children that left the group, and any that hide (QA 07c F2)
 
     def stop(self) -> None:
-        """Kill the server's process group and, when sandboxed, every process its user still runs. Never raises: a server
-        that has exhausted processes, memory or disk must not turn a finished evaluation into an error (QA 07 F2)."""
-        if self.proc is not None:
-            with contextlib.suppress(OSError):
-                os.killpg(self.proc.pid, signal.SIGKILL)
-        if self.sandbox:
-            end_user_processes(self.uid)  # children that left the group too
+        """Stop the server for good or before a start. Never raises: a server that has exhausted processes, memory or disk
+        must not turn a finished evaluation into an error (QA 07 F2)."""
+        self.note_memory()
+        self.kill_all()
         if self.proc is not None:
             with contextlib.suppress(subprocess.TimeoutExpired, OSError):
                 self.proc.wait(timeout=10)
@@ -306,19 +603,27 @@ class Candidate:
         self.proc = None
 
     def clean_slate(self) -> None:
-        """Before the second tries: stop the server and remove everything it could have kept from the first pass, its
+        """Before the second tries: stop the server and take away everything it could have kept from the first pass, its
         data, its user's processes and files anywhere, shared memory and message queues; then start it afresh.
 
-        The submission itself is read-only to the server, so it starts again exactly as delivered.
+        DATA_DIR is moved aside into a directory only root can enter (constant time, however much it holds), and the
+        search for the user's other files stops after SWEEP_SEC. The submission is read-only to the server, so it starts
+        again exactly as delivered.
         """
         with self.lock:
             self.stop()
-            remove_tree(self.data)
+            aside = self.work / "set-aside"
+            with contextlib.suppress(OSError):
+                aside.mkdir(mode=0o700, exist_ok=True)
+                os.chmod(aside, 0o700)
+                os.rename(self.data, aside / f"data-{self.generation}")
+            if os.path.lexists(self.data):
+                remove_tree(self.data, min(SWEEP_SEC, max(1, self.clock.left() - RETRY_MARGIN_SEC)))
             if self.sandbox:
-                remove_user_files(self.uid)
-                with contextlib.suppress(OSError, subprocess.SubprocessError):
-                    subprocess.run(["ipcrm", "--all"], check=False, capture_output=True, timeout=60)
-            if not self.clock.expired() and self.start():
+                remove_user_files(self.uid, until=time.monotonic() + min(SWEEP_SEC, max(1, self.clock.left() - RETRY_MARGIN_SEC)))
+                with contextlib.suppress(OSError, subprocess.SubprocessError):  # run as the user, who owns its objects
+                    subprocess.run(DROP + ["ipcrm", "--all"], check=False, capture_output=True, timeout=60)
+            if not self.clock.expired() and not self.disk_full and self.start():
                 self.failed_starts = 0
             else:
                 self.failed_starts += 1  # the next attempt tries again, as after a crash
@@ -326,6 +631,8 @@ class Candidate:
     def start(self) -> bool:
         """Start the server on the shared data directory and wait for its health check; False if it does not come up."""
         self.stop()
+        if self.disk_full:
+            return False
         self.generation += 1
         try:
             self.port = free_port()
@@ -335,19 +642,14 @@ class Candidate:
             env = {"PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/go/bin", "HOME": str(data),
                    "PORT": str(self.port), "DATA_DIR": str(data), "LC_ALL": "C.UTF-8", "LANG": "C.UTF-8",
                    "PYTHONDONTWRITEBYTECODE": "1", "GOCACHE": str(data / "gocache"), "GOFLAGS": "-mod=mod"}
-            log = open_log(self.log_path)
-            try:
-                with contextlib.suppress(OSError):
-                    os.write(log, f"\n==== start {self.generation} on port {self.port} ====\n".encode())
-                self.proc = subprocess.Popen((SANDBOX if self.sandbox else []) + [str(self.source / "run")], cwd=self.source, env=env,
-                                             stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, start_new_session=True)
-            finally:
-                os.close(log)
+            self.log.note(f"\n==== start {self.generation} on port {self.port} ====\n")
+            self.proc = subprocess.Popen(self.command(), cwd=self.source, env=env, stdout=self.log.fd, stderr=subprocess.STDOUT,
+                                         stdin=subprocess.DEVNULL, start_new_session=True)
         except OSError:  # no free port, a full disk, or a `run` that cannot be executed
             self.proc = None
             return False
         end = min(time.monotonic() + START_SEC, self.clock.deadline)
-        while time.monotonic() < end and self.proc.poll() is None:
+        while time.monotonic() < end and self.proc.poll() is None and not self.disk_full:
             if healthy(self.port, self.clock):
                 return True
             time.sleep(0.25)
@@ -357,10 +659,10 @@ class Candidate:
     def current(self) -> tuple[int, int] | None:
         """Generation and port of the running server, restarted first if it is down; None if it cannot run."""
         with self.lock:
-            if self.proc is not None and self.proc.poll() is None:
+            if self.proc is not None and self.proc.poll() is None and not self.disk_full:
                 return self.generation, self.port
             self.stop()
-            if self.clock.expired() or self.failed_starts >= START_FAILURES:
+            if self.clock.expired() or self.failed_starts >= START_FAILURES or self.disk_full:
                 return None
             self.restarts += 1
             if not self.start():
@@ -375,7 +677,8 @@ class Candidate:
         with self.lock:
             self.planned += 1
             if self.proc is not None:
-                with contextlib.suppress(ProcessLookupError, PermissionError):
+                self.note_memory()
+                with contextlib.suppress(OSError):
                     os.killpg(self.proc.pid, signal.SIGTERM if how == "term" else signal.SIGKILL)
                 if how == "term":
                     with contextlib.suppress(subprocess.TimeoutExpired):
@@ -387,24 +690,63 @@ class Candidate:
             self.failed_starts = 0
             return self.generation, self.port
 
-    def recover(self, seen: int) -> None:
-        """After a request got no answer: stop the server if it has died or no longer answers its health check.
+    def recover(self, seen: int) -> bool:
+        """After a request got no answer: stop the server if it has died or no longer answers its health check. True when
+        the server had stopped or is stopped here, False when it is alive and answers.
 
         A live server has HEALTH_SEC to answer, so one busy with a long request is left alone. The next
         attempt restarts a stopped server.
         """
         with self.lock:
             if self.generation != seen or self.proc is None:
-                return
+                return True
             end = min(time.monotonic() + HEALTH_SEC, self.clock.deadline)
             while self.proc.poll() is None:
                 if healthy(self.port, self.clock):
-                    return
+                    return False
                 if time.monotonic() >= end:
                     break
                 time.sleep(1)
             self.stop()
+            return True
 
+
+class Guard:
+    """Every GUARD_SEC, while the server may run: put its processes back at the front of the OOM killer's line, and stop
+    it for good when a disk the evaluation needs runs low (QA 07c F1, F3)."""
+
+    def __init__(self, candidate: Candidate, paths: list[Path]) -> None:
+        self.candidate, self.paths, self.low = candidate, paths, False
+        self.done = threading.Event()
+        self.thread = threading.Thread(target=self._watch, daemon=True)
+        self.thread.start()
+
+    def _watch(self) -> None:
+        candidate = self.candidate
+        while not self.done.wait(GUARD_SEC):
+            if candidate.sandbox:
+                raise_oom_priority(candidate.uid)
+            if not candidate.disk_full and min(free_bytes(path) for path in self.paths) < DISK_RESERVE:
+                candidate.disk_full = self.low = True
+                candidate.kill_all()
+
+    def stop(self) -> None:
+        self.done.set()
+        self.thread.join(timeout=5)
+
+
+def protect_grader() -> str:
+    """Ask the kernel to end the evaluation last when memory runs out. Lowering the value needs CAP_SYS_RESOURCE, which
+    Docker's defaults do not give, so this may not take; the server's own value is kept at 1000 either way."""
+    for value in ("-1000", "-900", "-500"):
+        with contextlib.suppress(OSError):
+            with open("/proc/self/oom_score_adj", "w") as adjust:
+                adjust.write(value)
+            return value
+    return "0"
+
+
+# ------------------------------------------------------------------ requests
 
 def closed_by_peer(sock: socket.socket) -> bool:
     """Whether the server has closed this idle kept-alive connection; bytes it sent unasked are left for the next answer."""
@@ -444,7 +786,8 @@ def exchange(connection: http.client.HTTPConnection, method: str, path: str, hea
     `raw` is a file sent as the request body as it is, with the content type the step names;
     otherwise `body` is sent as JSON. A JSON answer that cannot be parsed (not JSON, too long,
     nested too deeply) becomes a value no recorded answer equals; a file is compared by its
-    type, its length and its SHA-256.
+    type, its length and its SHA-256. On a connection made by `connect`, no answer can make the
+    evaluation read more than ANSWER_LIMIT and HEADER_ROOM bytes.
     """
     sent = dict(headers)
     if raw is not None:
@@ -476,18 +819,24 @@ def exchange(connection: http.client.HTTPConnection, method: str, path: str, hea
                 connection.close()
                 continue
             raise
+        except AnswerTooLarge:
+            connection.close()
+            return 0, TOO_LARGE
         break
     # read in chunks: a file answer is hashed as it arrives, only a JSON answer is kept, so memory stays small
     kind = (response.getheader("Content-Type") or "").split(";")[0].strip().lower()
     digest, kept, size = hashlib.sha256(), bytearray(), 0
-    while size <= ANSWER_LIMIT:
-        chunk = response.read(min(1 << 20, ANSWER_LIMIT + 1 - size))
-        if not chunk:
-            break
-        size += len(chunk)
-        digest.update(chunk)
-        if kind == "application/json" and len(kept) <= JSON_LIMIT:
-            kept += chunk
+    try:
+        while size <= ANSWER_LIMIT:
+            chunk = response.read(min(1 << 20, ANSWER_LIMIT + 1 - size))
+            if not chunk:
+                break
+            size += len(chunk)
+            digest.update(chunk)
+            if kind == "application/json" and len(kept) <= JSON_LIMIT:
+                kept += chunk
+    except AnswerTooLarge:
+        size = ANSWER_LIMIT + 1
     if size <= ANSWER_LIMIT and response.length:
         # the connection ended before the length the server announced: a cut answer is no answer (http.client does not raise)
         raise http.client.IncompleteRead(bytes(kept), response.length)
@@ -516,10 +865,42 @@ def ask(clock: Clock, connection: http.client.HTTPConnection, method: str, path:
 
 
 class Media:
-    """The files the scenarios upload, read once and shared by every worker."""
+    """The files the scenarios upload, kept in memory between uses up to MEDIA_CACHE bytes, the least recent let go."""
 
     def __init__(self, folder: Path) -> None:
-        self.folder, self.cache, self.lock = folder, {}, threading.Lock()
+        self.folder, self.lock = folder, threading.Lock()
+        self.cache: collections.OrderedDict[str, bytes] = collections.OrderedDict()
+        self.cached = 0
+        self.sizes: dict[str, int] = {}
+
+    def path(self, name: str) -> Path:
+        path = (self.folder / name).resolve()
+        if self.folder.resolve() not in path.parents or not path.is_file():
+            raise EvaluationError(f"a scenario names a missing upload: {name}")
+        return path
+
+    def size(self, name: str) -> int:
+        if name not in self.sizes:
+            try:
+                self.sizes[name] = self.path(name).stat().st_size
+            except (EvaluationError, OSError):
+                self.sizes[name] = 0
+        return self.sizes[name]
+
+    def read(self, name: str) -> bytes:
+        with self.lock:
+            if name in self.cache:
+                self.cache.move_to_end(name)
+                return self.cache[name]
+        data = self.path(name).read_bytes()
+        if len(data) <= MEDIA_CACHE // 2:
+            with self.lock:
+                if name not in self.cache:
+                    self.cache[name] = data
+                    self.cached += len(data)
+                    while self.cached > MEDIA_CACHE:
+                        self.cached -= len(self.cache.popitem(last=False)[1])
+        return data
 
     def body(self, step: dict[str, Any]) -> bytes | None:
         """The raw body a step sends: a named file, a JSON body built around a named file, N zero bytes, or None for a
@@ -530,13 +911,7 @@ class Media:
         name = insert["file"] if insert else step.get("body_file")
         if name is None:
             return None
-        with self.lock:
-            if name not in self.cache:
-                path = (self.folder / name).resolve()
-                if self.folder.resolve() not in path.parents or not path.is_file():
-                    raise EvaluationError(f"a scenario names a missing upload: {name}")
-                self.cache[name] = path.read_bytes()
-            data = self.cache[name]
+        data = self.read(name)
         return inserted_body(step, data) if insert else data
 
 
@@ -582,6 +957,8 @@ def encode_query(query: dict[str, str]) -> str:
     return ("?" + urlencode(query)) if query else ""
 
 
+# ------------------------------------------------------------------ scenarios
+
 def unit_count(scenario: dict[str, Any]) -> int:
     """A scenario is one unit, or as many as it lists in `units` (the days and screens of a trading run)."""
     return len(scenario["units"]) if scenario.get("units") else 1
@@ -605,7 +982,110 @@ def durable(scenario: dict[str, Any]) -> bool:
     return any("restart" in step for step in scenario["steps"])
 
 
-def attempt(candidate: Candidate, scenario: dict[str, Any], media: Media, clock: Clock) -> dict[str, Any]:
+def heavy(scenario: dict[str, Any], media: Media) -> bool:
+    """A scenario that uploads a PDF of HEAVY_PDF bytes or more, or any file of HEAVY_FILE or more: the reference reads such
+    a file in full, or stores it, while it holds the database's write lock, and a request queued behind it for longer
+    than SQLite's 15 s wait would fail (QA 11 S1). Such scenarios run alone."""
+    for step in scenario["steps"]:
+        name = step.get("body_file") or (step.get("body_insert") or {}).get("file")
+        if name:
+            size = media.size(name)
+            if size >= HEAVY_FILE or (size >= HEAVY_PDF and name.lower().endswith(".pdf")):
+                return True
+    return False
+
+
+def iter_scenarios(text: str) -> Iterator[dict[str, Any]]:
+    """The scenarios of a corpus document, decoded one at a time; the whole list would need many times the memory."""
+    decoder, whitespace = json.JSONDecoder(), json.decoder.WHITESPACE
+
+    def skip(index: int) -> int:
+        return whitespace.match(text, index).end()
+
+    def expect(index: int, char: str) -> int:
+        index = skip(index)
+        if text[index:index + 1] != char:
+            raise ValueError(f"expected {char!r} at offset {index}")
+        return skip(index + 1)
+
+    index = expect(0, "{")
+    while text[index:index + 1] != "}":
+        key, index = decoder.raw_decode(text, index)
+        index = expect(index, ":")
+        if key != "scenarios":
+            _, index = decoder.raw_decode(text, index)
+        else:
+            index = expect(index, "[")
+            while text[index:index + 1] != "]":
+                scenario, index = decoder.raw_decode(text, index)
+                yield scenario
+                index = skip(index)
+                if text[index:index + 1] == ",":
+                    index = skip(index + 1)
+            index += 1
+        index = skip(index)
+        if text[index:index + 1] == ",":
+            index = skip(index + 1)
+
+
+class Corpus:
+    """The private scenarios, each held as compact JSON text and decoded only when it is played: the decoded corpus takes
+    several times the memory, and a small evaluation is a small target when memory runs out (QA 07c F1)."""
+
+    def __init__(self, path: Path, media: Media) -> None:
+        self.blobs: list[bytes] = []
+        self.ids: list[str] = []
+        self.themes: list[list[str]] = []
+        self.alone: list[bool] = []
+        self.restarting: list[bool] = []
+        try:
+            raw = path.read_bytes()
+            text = (gzip.decompress(raw) if path.suffix == ".gz" else raw).decode("utf-8")
+            del raw
+            for scenario in iter_scenarios(text):
+                self.themes.append(unit_themes(scenario))  # also checks that every unit has steps
+                self.ids.append(str(scenario["id"]))
+                self.restarting.append(durable(scenario))
+                self.alone.append(self.restarting[-1] or heavy(scenario, media))
+                self.blobs.append(json.dumps(scenario, separators=(",", ":")).encode())
+            del text
+        except (OSError, ValueError, KeyError, TypeError, EOFError) as exc:
+            raise EvaluationError("Private scenarios are unreadable") from exc
+        if not self.blobs:
+            raise EvaluationError("Private scenarios are empty")
+
+    def __len__(self) -> int:
+        return len(self.blobs)
+
+    def scenario(self, index: int) -> dict[str, Any]:
+        return json.loads(self.blobs[index])
+
+
+class Stats:
+    """What makes a short baseline readable without the server's log (QA 11 S1): the slowest requests, and the answers of
+    500 or above by theme."""
+
+    def __init__(self) -> None:
+        self.lock = threading.Lock()
+        self.slowest: list[tuple[float, str, int, str]] = []
+        self.server_errors: collections.Counter[str] = collections.Counter()
+
+    def note(self, seconds: float, scenario: str, step: int, request: str, status: int, theme: str) -> None:
+        with self.lock:
+            entry = (round(seconds, 3), scenario, step, request)
+            if len(self.slowest) < 20:
+                heapq.heappush(self.slowest, entry)
+            elif entry > self.slowest[0]:
+                heapq.heapreplace(self.slowest, entry)
+            if status >= 500:
+                self.server_errors[theme] += 1
+
+    def report(self) -> dict[str, Any]:
+        return {"slowest_requests": [{"seconds": s, "scenario": i, "step": n, "request": r} for s, i, n, r in sorted(self.slowest, reverse=True)],
+                "server_errors_by_theme": dict(sorted(self.server_errors.items()))}
+
+
+def attempt(candidate: Candidate, scenario: dict[str, Any], media: Media, clock: Clock, stats: Stats | None = None) -> dict[str, Any]:
     """Play a scenario once in a fresh workspace.
 
     A scenario without units is one unit and stops at its first difference. A scenario with units goes on
@@ -615,6 +1095,7 @@ def attempt(candidate: Candidate, scenario: dict[str, Any], media: Media, clock:
     """
     steps, multi = scenario["steps"], bool(scenario.get("units"))
     count = unit_count(scenario)
+    themes = unit_themes(scenario)
     needed, answered, wrong = [0] * count, [0] * count, [False] * count
     for step in steps:
         needed[step.get("unit", 0)] += 1
@@ -627,13 +1108,16 @@ def attempt(candidate: Candidate, scenario: dict[str, Any], media: Media, clock:
         return {"id": scenario["id"], "matched": all(verdicts), "units": verdicts, "settled": settled, "failed_step": failed_step,
                 "reason": reason}
 
+    def stopped() -> str:
+        return LATE if clock.expired() else DISK if candidate.disk_full else DOWN
+
     if clock.expired():
         return result(0, LATE)
     running = candidate.current()
     if running is None:
-        return result(0, LATE if clock.expired() else DOWN)
+        return result(0, stopped())
     generation, port = running
-    connection = http.client.HTTPConnection("127.0.0.1", port, timeout=REQUEST_SEC)
+    connection = connect(port, REQUEST_SEC)
     index = 0
     try:
         status, created = ask(clock, connection, "POST", "/api/workspaces", {}, None)
@@ -646,8 +1130,11 @@ def attempt(candidate: Candidate, scenario: dict[str, Any], media: Media, clock:
             unit = step.get("unit", 0)
             # most paths are the workspace's own; a step marked scoped: false names its full path (the client's /api/version)
             path = step["path"] if step.get("scoped", True) is False else f"/api/ws/{workspace}{step['path']}"
+            began = time.monotonic()
             status, answer = ask(clock, connection, step["method"], path + encode_query(step["query"]), step["headers"], step.get("body"),
                                  media.body(step))
+            if stats is not None:
+                stats.note(time.monotonic() - began, str(scenario["id"]), index, f"{step['method']} {step['path']}", status, themes[unit])
             reason = (f"status {status}, expected {step['status']}" if status != step["status"]
                       else None if same(answer, step["json"], workspace) else "body differs")
             if reason is not None:
@@ -662,23 +1149,26 @@ def attempt(candidate: Candidate, scenario: dict[str, Any], media: Media, clock:
                 connection.close()
                 running = candidate.planned_restart(step["restart"])
                 if running is None:
-                    return result(index, LATE if clock.expired() else DOWN)
+                    return result(index, stopped())
                 generation, port = running
-                connection = http.client.HTTPConnection("127.0.0.1", port, timeout=REQUEST_SEC)
+                connection = connect(port, REQUEST_SEC)
         return result(*(difference or (None, None)))
     except NoAnswer:
         connection.close()  # before waiting on the server: a server that serves one connection at a time may be waiting on this one
         if clock.expired():
             return result(index, LATE)
-        candidate.recover(generation)
-        return result(index, NO_ANSWER)
+        if candidate.disk_full:
+            return result(index, DISK)
+        # the server stopped (it died, or hung and was stopped): CRASHED, which may earn a second try; a live server that
+        # left the request unanswered: NO_ANSWER, final
+        return result(index, CRASHED if candidate.recover(generation) else NO_ANSWER)
     finally:
         connection.close()
 
 
-def not_played(scenario: dict[str, Any], reason: str) -> dict[str, Any]:
-    count = unit_count(scenario)
-    return {"id": scenario["id"], "matched": False, "units": [False] * count, "settled": [False] * count, "failed_step": 0, "reason": reason}
+def not_played(themes: list[str], scenario_id: str, reason: str) -> dict[str, Any]:
+    count = len(themes)
+    return {"id": scenario_id, "matched": False, "units": [False] * count, "settled": [False] * count, "failed_step": 0, "reason": reason}
 
 
 def merge_retry(first: dict[str, Any], second: dict[str, Any]) -> dict[str, Any]:
@@ -695,26 +1185,29 @@ def merge_retry(first: dict[str, Any], second: dict[str, Any]) -> dict[str, Any]
                 failed_step=second["failed_step"] if second["reason"] else None)
 
 
-def play_order(scenarios: list[dict[str, Any]]) -> list[int]:
+def play_order(scenarios: list[dict[str, Any]], alone: list[bool] | None = None) -> list[int]:
     """The order scenarios are started in: a fixed shuffle, so a server too slow to finish loses some of every kind rather
-    than the kinds that come last, with the scenarios that restart the server spread evenly through it."""
+    than the kinds that come last, with the scenarios that run alone (`alone`, by default those that restart the server)
+    spread evenly through it."""
+    alone = alone if alone is not None else [durable(scenario) for scenario in scenarios]
+
     def mixed(indexes: list[int]) -> list[int]:
         return sorted(indexes, key=lambda index: hashlib.sha256(str(scenarios[index]["id"]).encode()).digest())
 
-    shared = mixed([index for index, scenario in enumerate(scenarios) if not durable(scenario)])
-    restarting = mixed([index for index, scenario in enumerate(scenarios) if durable(scenario)])
+    shared = mixed([index for index in range(len(scenarios)) if not alone[index]])
+    single = mixed([index for index in range(len(scenarios)) if alone[index]])
     order: list[int] = []
     taken = 0
-    for number, index in enumerate(restarting, start=1):
-        upto = len(shared) * number // (len(restarting) + 1)
+    for number, index in enumerate(single, start=1):
+        upto = len(shared) * number // (len(single) + 1)
         order += shared[taken:upto] + [index]
         taken = upto
     return order + shared[taken:]
 
 
 class Gate:
-    """Lets scenarios run side by side, except one with a planned restart, which waits until it is alone and holds back
-    those after it until it is done, so stopping the server disturbs no other scenario."""
+    """Lets scenarios run side by side, except one that runs alone (a planned restart, a heavy upload), which waits until
+    it is alone and holds back those after it until it is done."""
 
     def __init__(self) -> None:
         self.condition = threading.Condition()
@@ -744,57 +1237,70 @@ class Gate:
                 self.condition.notify_all()
 
 
-def play_all(candidate: Candidate, scenarios: list[dict[str, Any]], media: Media, clock: Clock,
-             metrics: dict[str, Any]) -> list[dict[str, Any]]:
-    """Play every scenario, then give each that got no answer one more try, alone, on a clean slate, while time remains.
+def play_all(candidate: Candidate, corpus: Corpus, media: Media, clock: Clock, metrics: dict[str, Any],
+             stats: Stats | None = None) -> list[dict[str, Any]]:
+    """Play every scenario, then give the scenarios the server's stops interrupted one more try, alone, on a clean slate,
+    while time and the retry share remain.
 
-    Scenarios run WORKERS at a time in `play_order`; one with a planned restart runs with nothing beside
-    it. The second tries are what keep a server that crashes now and then from losing the scenarios in
-    flight beside the one that crashed it.
+    Scenarios run WORKERS at a time in `play_order`; one that runs alone has nothing beside it. A second try is only for
+    a scenario in flight when the server stopped, never for a wrong answer, and the units second tries decide stay within
+    RETRY_SHARE of all units, so they rescue a server that stops now and then, not one that fails under load (QA 20).
     """
-    results: list[dict[str, Any] | None] = [None] * len(scenarios)
+    results: list[dict[str, Any] | None] = [None] * len(corpus)
     gate = Gate()
 
     def play(index: int) -> dict[str, Any]:
-        with gate.enter(durable(scenarios[index])):
-            return attempt(candidate, scenarios[index], media, clock)
+        with gate.enter(corpus.alone[index]):
+            if clock.expired():
+                return not_played(corpus.themes[index], corpus.ids[index], LATE)
+            return attempt(candidate, corpus.scenario(index), media, clock, stats)
 
-    order = play_order(scenarios)
+    order = play_order([{"id": scenario_id} for scenario_id in corpus.ids], corpus.alone)
     pool = ThreadPoolExecutor(WORKERS)
     try:
         for index, result in zip(order, pool.map(play, order)):
             results[index] = result
     finally:
         pool.shutdown(cancel_futures=True)
-    again = [index for index in order if results[index]["reason"] in (NO_ANSWER, DOWN)]
-    if again and not clock.expired():
+    budget = int(RETRY_SHARE * sum(len(themes) for themes in corpus.themes))
+    metrics["retry_budget_units"] = budget
+    again = [index for index in order if results[index]["reason"] in (CRASHED, DOWN)]
+    if again and not candidate.disk_full and clock.left() > RETRY_MARGIN_SEC:
         candidate.clean_slate()
         for index in again:
-            if clock.expired():
+            open_units = results[index]["settled"].count(False)
+            if open_units > budget:
+                continue
+            if clock.left() <= 0 or candidate.disk_full:
                 break
+            budget -= open_units
             metrics["retried"] += 1
-            results[index] = merge_retry(results[index], attempt(candidate, scenarios[index], media, clock))
-    return results
+            metrics["retried_units"] += open_units
+            results[index] = merge_retry(results[index], attempt(candidate, corpus.scenario(index), media, clock, stats))
+    return results  # type: ignore[return-value]
 
 
 def strip_set_id(root: Path) -> int:
     """Clear the set-user-id and set-group-id bits of every file under `root`; returns how many had one.
 
-    Symbolic links are neither followed nor changed, so nothing outside the submission is touched.
+    Symbolic links are neither followed nor changed, so nothing outside the submission is touched; a file that cannot be
+    read or changed is passed over (QA 07c N4).
     """
     count = 0
     for folder, _, names in os.walk(root):
         for name in names:
-            path = os.path.join(folder, name)
-            mode = os.lstat(path).st_mode
-            if stat.S_ISREG(mode) and mode & (stat.S_ISUID | stat.S_ISGID):
-                os.chmod(path, stat.S_IMODE(mode) & ~(stat.S_ISUID | stat.S_ISGID))
-                count += 1
+            with contextlib.suppress(OSError):
+                path = os.path.join(folder, name)
+                mode = os.lstat(path).st_mode
+                if stat.S_ISREG(mode) and mode & (stat.S_ISUID | stat.S_ISGID):
+                    os.chmod(path, stat.S_IMODE(mode) & ~(stat.S_ISUID | stat.S_ISGID))
+                    count += 1
     return count
 
 
 # Run under the drop: prints /proc/self/status, then what prctl(PR_GET_NO_NEW_PRIVS) says, since some
-# kernels (gVisor among them, possibly) do not list NoNewPrivs in the status file, then the limits.
+# kernels (gVisor among them, possibly) do not list NoNewPrivs in the status file, then the limits, then
+# whether the process could lower its own OOM priority (it may, without CAP_SYS_RESOURCE).
 NNP_PROBE = (
     "import ctypes, resource, sys\n"
     "sys.stdout.write(open('/proc/self/status').read())\n"
@@ -805,6 +1311,12 @@ NNP_PROBE = (
     "sys.stdout.write('PrctlNoNewPrivs:\\t%d\\n' % value)\n"
     "for name in ('NPROC', 'FSIZE', 'AS'):\n"
     "    sys.stdout.write('Rlimit%s:\\t%d %d\\n' % ((name,) + resource.getrlimit(getattr(resource, 'RLIMIT_' + name))))\n"
+    "try:\n"
+    "    open('/proc/self/oom_score_adj', 'w').write('0')\n"
+    "    lowered = 1\n"
+    "except Exception:\n"
+    "    lowered = 0\n"
+    "sys.stdout.write('OomLowered:\\t%d\\n' % lowered)\n"
 )
 LIMIT_LINES = {"NPROC": ("Max processes", THREAD_LIMIT), "FSIZE": ("Max file size", FILE_LIMIT), "AS": ("Max address space", MEMORY_LIMIT)}
 
@@ -837,8 +1349,11 @@ def privileges_dropped(status: str, uid: int, gid: int) -> bool:
     return all(int(fields.get(name, "0"), 16) == 0 for name in ("CapPrm", "CapEff", "CapAmb"))
 
 
-def check_sandbox() -> None:
+def check_sandbox() -> list[str]:
     """Prove the privilege drop before any submitted code runs, with a process started exactly as the server will be.
+
+    Returns:
+        Notes for metrics.json: a machine where the server's user can lower its own OOM priority.
 
     Raises:
         EvaluationError: The unprivileged user is missing, or a process started through the drop keeps
@@ -856,6 +1371,9 @@ def check_sandbox() -> None:
         raise EvaluationError("Could not drop privileges; submitted code was not run")
     if not limits_applied(done.stdout):
         raise EvaluationError("Could not limit the server's threads, file size and memory; submitted code was not run")
+    if "OomLowered:\t1" in done.stdout:
+        return ["the server's user can lower its own OOM priority on this machine; the evaluation raises it again every second"]
+    return []
 
 
 def seal_submission(source: Path) -> None:
@@ -894,32 +1412,32 @@ def evaluate(source: Path, scenario_path: Path, work: Path, output: Path, sandbo
     """
     started = time.monotonic()
     clock = Clock(DEADLINE_SEC)
+    candidate: Candidate | None = None
+    log: LogCapture | None = None
+    ballast: Ballast | None = None
+    guard: Guard | None = None
+    stats = Stats()
     try:
-        try:
-            raw = scenario_path.read_bytes()
-            scenarios = json.loads(gzip.decompress(raw) if scenario_path.suffix == ".gz" else raw)["scenarios"]
-        except (OSError, ValueError, KeyError) as exc:
-            raise EvaluationError("Private scenarios are unreadable") from exc
-        if not scenarios:
-            raise EvaluationError("Private scenarios are empty")
-        themes = [unit_themes(scenario) for scenario in scenarios]  # also checks that every unit has steps
+        media = Media(media_dir or scenario_path.parent / "media")
+        corpus = Corpus(scenario_path, media)
+        themes = corpus.themes
         total = sum(len(names) for names in themes)
         by_theme = {name: {"total": sum(names.count(name) for names in themes), "matched": 0} for name in sorted({n for ns in themes for n in ns})}
-        metrics: dict[str, Any] = {"units_total": total, "units_matched": 0, "reward": 0.0, "scenarios_total": len(scenarios),
-                                   "scenarios_matched": 0, "restarts": 0, "planned_restarts": 0, "retried": 0, "unfinished": 0, "notes": [],
-                                   "by_theme": by_theme}
+        metrics: dict[str, Any] = {"units_total": total, "units_matched": 0, "reward": 0.0, "scenarios_total": len(corpus),
+                                   "scenarios_matched": 0, "restarts": 0, "planned_restarts": 0, "retried": 0, "retried_units": 0,
+                                   "unfinished": 0, "notes": [], "by_theme": by_theme, "alone": sum(corpus.alone)}
         if sandbox:
-            check_sandbox()
+            metrics["notes"] += check_sandbox()
             become_reaper()
-        candidate: Candidate | None = None
+            metrics["grader_oom_score_adj"] = protect_grader()
         runner = source / "run"
         if source.is_symlink() or not source.is_dir():
             # an /app/server that could not be copied out of the agent's machine (QA 07 F3) arrives as nothing at all
             metrics["notes"].append("/app/server did not arrive: it is missing, or it could not be copied from the machine it was built on")
-            results = [not_played(scenario, "no server to run") for scenario in scenarios]
+            results = [not_played(themes[index], corpus.ids[index], "no server to run") for index in range(len(corpus))]
         elif not runner.is_file() or not os.access(runner, os.X_OK):
             metrics["notes"].append("/app/server/run is missing or not executable")
-            results = [not_played(scenario, "no server to run") for scenario in scenarios]
+            results = [not_played(themes[index], corpus.ids[index], "no server to run") for index in range(len(corpus))]
         else:
             stripped = strip_set_id(source)
             if stripped:
@@ -928,17 +1446,30 @@ def evaluate(source: Path, scenario_path: Path, work: Path, output: Path, sandbo
             os.chmod(work, 0o755)
             if sandbox:
                 seal_submission(source)
-            candidate = Candidate(source, work, output / "server.log", sandbox, clock)
-            try:
-                if candidate.start():
-                    results = play_all(candidate, scenarios, Media(media_dir or scenario_path.parent / "media"), clock, metrics)
-                else:
-                    metrics["notes"].append(f"the server did not answer GET /api/health within {START_SEC} seconds")
-                    results = [not_played(scenario, "the server did not start") for scenario in scenarios]
-            finally:
-                candidate.stop()
+                ballast = Ballast(work / "ballast")
+            log = LogCapture()
+            candidate = Candidate(source, work, log, sandbox, clock)
+            guard = Guard(candidate, [work, output, Path("/tmp")])
+            if candidate.start():
+                results = play_all(candidate, corpus, media, clock, metrics, stats)
+            else:
+                metrics["notes"].append(f"the server did not answer GET /api/health within {START_SEC} seconds")
+                results = [not_played(themes[index], corpus.ids[index], "the server did not start") for index in range(len(corpus))]
     finally:
         clock.stop()
+        if guard is not None:
+            guard.stop()
+        if candidate is not None:
+            candidate.stop()
+            if candidate.group is not None:
+                candidate.group.remove()
+        if log is not None:
+            log.close(output / "server.log")
+        if ballast is not None:
+            ballast.release()  # room for the results however full the server left the disk
+        if sandbox and candidate is not None:
+            remove_tree(candidate.data, 60)  # and more, within a minute
+            remove_tree(work / "set-aside", 30)
     for names, result in zip(themes, results):
         metrics["scenarios_matched"] += result["matched"]
         for name, verdict in zip(names, result["units"]):
@@ -950,8 +1481,13 @@ def evaluate(source: Path, scenario_path: Path, work: Path, output: Path, sandbo
                                 f"{metrics['unfinished']} scenarios were not played to the end")
     if candidate is not None:
         metrics["restarts"], metrics["planned_restarts"] = candidate.restarts, candidate.planned
+        metrics["server_peak_memory_kb"] = candidate.peak_memory
         if candidate.failed_starts >= START_FAILURES:
             metrics["notes"].append(f"the server stopped and did not come back after {START_FAILURES} restarts in a row")
+        if candidate.disk_full:
+            stopped = sum(1 for result in results if result["reason"] == DISK)
+            metrics["notes"].append(f"the server was stopped for good when the disk ran low; {stopped} scenarios were not played to the end")
+    metrics.update(stats.report())
     metrics["reward"] = round(metrics["units_matched"] / total, 6)
     metrics["elapsed_sec"] = round(time.monotonic() - started, 1)
     metrics["results"] = results  # per-scenario diagnostics, written by the caller after the reward
