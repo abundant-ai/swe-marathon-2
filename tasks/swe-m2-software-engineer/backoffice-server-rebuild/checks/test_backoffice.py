@@ -44,7 +44,7 @@ from verifier.replay import evaluate
 import oracle
 server = work / "server"
 if defect != "missing":
-    oracle.oracle(common, server)
+    oracle.oracle(common, server, step.parents[1] / "environment" / "stockwell.env")  # the source, with the task's settings
     run = server / "run"
     run.write_text(run.read_text().replace("/opt/py/bin/python", interpreter))
 if defect == "rounding":
@@ -137,6 +137,39 @@ def test_client_reaches_nearly_every_endpoint_of_the_reference():
     assert len(endpoints) >= 230 and reached / len(endpoints) >= 0.95
 
 
+def serve_once(server: Path) -> bool:
+    """Start a delivered server as the verifier does (PORT, DATA_DIR, no arguments), with the reference's packages, and
+    check that it answers its health check and gives a workspace."""
+    import http.client
+    import signal
+    import socket
+    import time
+
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    data = server.parent / "data"
+    data.mkdir(exist_ok=True)
+    env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "PORT": str(port), "DATA_DIR": str(data), "STOCKWELL_PYTHON": reference_python()}
+    proc = subprocess.Popen([str(server / "run")], cwd=server, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    try:
+        end = time.monotonic() + 60
+        while time.monotonic() < end and proc.poll() is None:
+            try:
+                connection = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+                connection.request("GET", "/api/health")
+                if connection.getresponse().status == 200:
+                    connection = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+                    connection.request("POST", "/api/workspaces")
+                    return connection.getresponse().status == 201
+            except OSError:
+                time.sleep(0.25)
+        return False
+    finally:
+        os.killpg(proc.pid, signal.SIGKILL)
+        proc.wait(timeout=10)
+
+
 def digest(path: Path) -> str:
     """A file's SHA-256, read in chunks: the bundle's media is a couple of hundred megabytes."""
     with open(path, "rb") as file:
@@ -168,8 +201,23 @@ def test_bundles_hold_runtime_files_only(tmp_path):
             for required in ("task.toml", "environment/Dockerfile", "environment/requirements.txt", "environment/sealed/stockwell/app.pyc",
                              "environment/sealed/stockwell/media/pdf.pyc", "environment/client/dist/index.html", "environment/client/src/main.tsx",
                              "environment/prepare-delivery", prefix + "instruction.md", prefix + "tests/verify.py", prefix + "tests/requirements.txt",
-                             prefix + "tests/private/scenarios.json.gz", prefix + "solution/oracle.py", prefix + "solution/data/stockwell/api_routes.pyc"):
+                             prefix + "tests/private/scenarios.json.gz", prefix + "solution/oracle.py", prefix + "solution/data/stockwell/api_routes.pyc",
+                             prefix + "solution/data/stockwell.env"):
                 assert (bundle / required).is_file(), required
+            # the solution as the platform runs it: from its own folder with nothing of the task around it (the round 4
+            # oracle looked beside the task's tree, crashed on Oddish and scored 0): it installs a server that starts
+            alone = tmp_path / f"alone-{kind}"
+            shutil.copytree(bundle / f"{prefix}solution", alone / "solution")
+            # on the platform it runs from /solution, which has one parent: it must never look above its own folder
+            assert ".parents" not in (alone / "solution" / "oracle.py").read_text()
+            installed = alone / "server"
+            done = subprocess.run([sys.executable, "-I", "-B", str(alone / "solution" / "oracle.py"), str(installed)], cwd=alone,
+                                  capture_output=True, text=True, timeout=120)
+            assert done.returncode == 0, done.stdout[-1000:] + done.stderr[-2000:]
+            assert (installed / "stockwell.env").read_text() == (TASK / "environment" / "stockwell.env").read_text()
+            assert (installed / "stockwell" / "app.pyc").is_file() and not any(installed.rglob("*.py")) and os.access(installed / "run", os.X_OK)
+            if not flag:
+                assert serve_once(installed), "the packaged solution's server did not start and give a workspace"
             # QA 08: the reference ships as Python 3.12 bytecode only, sealed and as the solution's data, never as source
             for folder in (bundle / "environment" / "sealed", bundle / f"{prefix}solution" / "data"):
                 assert not any(path.suffix == ".py" for path in folder.rglob("*")), folder
