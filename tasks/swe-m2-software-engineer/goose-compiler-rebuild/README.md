@@ -16,8 +16,8 @@ process is removed, and each build proves it before the image is used.
 One step is implemented. Round 7 answered two platform findings of 2026-11-19 (public egress
 returns to the sandbox between the agent's turn and the collection of `/app/rebuild`, and a
 turn that runs into the platform's 9.6 h cap is never graded); round 8 answers the pre-trial
-audit of version 5, which read the hooks' names and comments as cues to the solver. See
-[Remaining work](#remaining-work).
+audit of version 5, which read the hooks' names and comments as cues to the solver, and round 9
+the re-check of round 8 (QA pass 07g). See [Remaining work](#remaining-work).
 
 ## Development log
 
@@ -575,7 +575,8 @@ system state instead, and the reasons for all of it live here, not in the bundle
   no longer says what is shipped to the agent (the same pattern the backoffice v8, SymPy v4 and
   BasedPL v2 audits flagged).
 - **The reaper waits in sleeps of at most 60 s** instead of one `sleep 33900`, so `ps` shows no
-  long timer; it fires at the same second.
+  long timer; it fires at the same second. (Replaced in round 9: that loop could end without
+  firing.)
 - **From QA pass 07f** (should-fix items, folded in because each is small and outside the
   score): F3, `app-manifest` stops the reaper's sleeper (`pkill -P` and `kill` on
   `/run/proc-reaper.pid`) right after ending `dev`'s processes, so the reaper can never hit the
@@ -591,6 +592,102 @@ system state instead, and the reasons for all of it live here, not in the bundle
   the hygiene check reads the three scripts, the Dockerfile and task.toml for the words the audit
   flagged). Preflight passes on bundle `df36b9e90f1d` (947 files, 40,413,350 bytes), packaged
   twice with the same hash. Not built; not uploaded while version 5's model trials run.
+
+### 2026-11-20 (round 9: QA pass 07g on round 8)
+
+The reaper, two places in the hook, and the checks; the cases, the grading and the instruction
+are unchanged, and nothing was uploaded in between. Pass 07g re-checked round 8 (no rename
+collides in any scope, writers and readers agree, the real hook and `verify.main()` score as
+version 5 does) and found one [REWARD] should-fix that round 8 itself had brought in, and six
+minor points.
+
+- **G1: the wait could end without firing.** Round 8's loop read the clock and started a sleep
+  every minute (566 `date` and 565 `sleep` over a session, where version 5 started one `sleep`).
+  Under dash, the image's `/bin/sh`, a script ends on the spot when a command cannot be started
+  ("Cannot fork") or when an empty clock answer lands in arithmetic. A moment with no process to
+  be had, which a runaway loop of the agent's own makes, would have ended the sleeper without a
+  word; the session then runs into the platform's cap and is not graded. Now:
+  - the wait is one child (`python3 -I -`, the reviewer's proposal), which starts nothing and
+    counts by the seconds since boot (`CLOCK_BOOTTIME`, else the interpreter's steady clock), so
+    nothing has to be started during the wait and `ps` shows no number. A child that finished is
+    final: no clock is read after it, and the sleeper fires;
+  - every command the sleeper calls once armed goes through `try` (`command eval`): measured
+    here under dash with this user's process limit below what runs, a plain command ends the
+    script with status 2, the same command through `command eval` returns 2 and the script goes
+    on (bash ends either way; the image is pinned to dash);
+  - the end of the wait is worked out once, by the seconds since boot (`/proc/uptime`, which the
+    shell reads with its own `read`, no process), else by the wall clock, else by counting the
+    waits that were completed, and is used only where the child did not finish; nothing goes
+    into arithmetic unchecked (digits only, and no leading
+    zero, which dash reads as octal and for `08` ends on); a clock that does not answer is counted
+    and logged like a command that cannot be started;
+  - where the child cannot be started or is ended early, the rest of the wait runs in sleeps of a
+    minute at most, and where no sleep can be started either, the boot clock is read until it
+    has moved that far;
+  - when the time has come and `pgrep` or `pkill` cannot be started, the shell's own `kill` goes
+    to each process whose `/proc/<pid>/status` names the user's number, never a zombie's and
+    never another user's. That is also what ends an outage of the user's own making;
+  - failures are counted, the first five logged, the count logged before `done`.
+
+  It never fires early: a failure makes it wait by a clock, not skip ahead. Firing at once on any
+  failure was rejected, since it would record a shortened session as a valid score.
+- **G2: the wall clock.** The wait no longer follows `date`. The child's clock does not move with
+  a clock change, and a child that finished is final. The seconds since boot are read only where
+  the child did not finish. On a Linux kernel they do not move with a clock change either. In a
+  gVisor sandbox they do: gVisor's `/proc/uptime` is the wall clock less the time of boot
+  (`pkg/sentry/fsimpl/proc/tasks_files.go`, `ktime.NowFromContext`, the realtime clock). There,
+  a step of the wall clock moves only that fallback wait. The first version of this round also
+  read them after a finished child, so a step back during the wait would have held the firing
+  back by the step. The wall clock is the fallback only where `/proc/uptime` cannot be read, and
+  then the completed waits bound it.
+- **G3: which pid the hook signals.** `app-manifest` signals the pid in `/run/proc-reaper.pid`
+  only where `ps` shows a process of the hook's own user whose command line ends in
+  `proc-reaper run`. It lists that process's children first, ends the sleeper, then the children
+  (the other order made the sleeper log a failure and start a sleep before it was ended).
+- **G4: an honest file under the mark's name.** Whatever already sits at `.manifest` or
+  `.manifest.json` is still moved aside, or removed where it cannot be moved, and is now a note
+  in the mark and in `metrics.json` (`.manifest was already in /app/rebuild and was moved aside`).
+- **G5: the reaper check could not fail.** It used copies of `/bin/sleep`, which macOS ends as
+  they start, so it passed with the signalling lines taken out. Three checks replace it, with
+  interpreters that live as stand-ins: armed once and fired at its time, SIGTERM for a plain
+  process and for a parent with its child, SIGKILL after a minute for one that ignores SIGTERM,
+  under dash and under this machine's `sh`; the wait keeping to its time with `date` failing
+  part-way, with the child ended, with no child, by the seconds since boot, and with the seconds
+  since boot stepping back half a minute while the child waits; and the sleeper where nothing
+  can be started, once with failing stand-ins and once under dash with every start really
+  refused. Each new check was run against a scratch copy of the task with one defect and fails
+  on it: signalling removed, `command eval` removed, round 8's wait put back, a wait that fires
+  when its child dies, the clock read after a finished child, the hook signalling any pid, the
+  hook leaving the sleeper, the note for a name moved aside dropped, a wrong name in `main()`,
+  `sandbox()` returning the probe's strings.
+- **G6: nothing ran `main()` or `sandbox()`.** Two checks: `sandbox()`'s own body with only root
+  and Linux stood in (ported from the Carve task), and the task's `fs-reserve` and
+  `app-manifest` run as shell scripts under dash with their absolute paths moved into a work
+  folder and what needs root stood in, a tar copy as the platform makes it, then `verify.main()`
+  itself: 1.0 for the reference's layout with the sleeper stopped and two names moved aside, an
+  evaluation error and no reward for a copy cut short, 0.0 for nothing built, no signal for a pid
+  that is not the sleeper, and both notes for a fixer stopped at its limit.
+- **G7** (notes, nothing changed): listed under Remaining work.
+- **Finished in a second pass.** The first pass stopped before it could commit. Its diff was
+  kept and reviewed against G1 to G7 under dash, and three things changed:
+  - A child that finished is final (G2 above): the sleeper no longer reads `/proc/uptime`
+    after it. A fifth fault in the timing check steps the seconds since boot back half a minute
+    while the child waits. Against the first version the stand-in was still alive 24 s in;
+    against this one it was ended at 6.5 s.
+  - The end-to-end check's cleanup looked for a sleeper left running under the last
+    scenario's folder, not the one it was armed from.
+  - The mutants were run again: six from the list above, and the two of this pass (the clock
+    read after a finished child; any exit of the child taken as finished). Each fails its
+    check.
+
+  The first pass's bundle, `6ea37c091653`, is superseded.
+- Checks: the 44 task checks pass under Python 3.12.13, the image's version (187 s), and under
+  3.13.13 with pytest 8.4.2 (180 s). `ci_checks` (27) and `check_repository.py` pass.
+  Preflight passes on bundle `e15affef6c60` (947 files, 40,420,881 bytes), packaged twice into
+  separate folders with the same hash. It differs from round 8's bundle only in
+  `environment/proc-reaper` and `environment/app-manifest`, and neither holds a word of the
+  hygiene list. The bundle's other hits are in files unchanged since round 8: upstream's text,
+  the verifier, case data, `--verify`, `LD_AUDIT`, `oom_score_adj`. Not built; not uploaded.
 
 ## Current implementation
 
@@ -665,9 +762,11 @@ cap is never graded (the separate verifier image fails to build right after the 
 harbor-lh `ops/swe-marathon-v2/PLATFORM_VERIFIER_BUILD_AFTER_LONG_RUN.md`) while a turn that
 ends by itself is. A session it ended shows as `ended_by_reaper: true` in `metrics.json`
 (`manifest`). The agent is not told; the instruction states no budget either way, and nothing
-the agent can list (the script's name, its pid file and log, the `sleep 60` in `ps`) says what
-the process is for. Model trials run with one attempt each (`scripts/oddish/agents.yaml`), so an
-errored trial is read before any re-run.
+the agent can list (the script's name, its pid file and log, the root `python3 -I -` that does
+the waiting) says what the process is for or how long it waits. Once armed it stops only by
+being ended by the collect hook or by finishing: a command that cannot be started and a clock
+that does not answer are counted, logged and tried again (round 9). Model trials run with one
+attempt each (`scripts/oddish/agents.yaml`), so an errored trial is read before any re-run.
 
 **Platform copy budget.** Harbor copies `/app/rebuild` out of the agent's container in `docker
 compose cp` hops of 120 s each (QA 07f, F2), tighter for a multi-GB delivery on a slow disk than
@@ -750,7 +849,7 @@ Highest unresolved severity: 🟡 YELLOW / UNASSESSED (findings 1, 2, 3, 5, 10, 
 | 12 | Pass cases with no compiler: the command line's answers, constant answers, a whitespace detector for `format --check`, a formatter clone | Case mix and the recorder's selection | QA pass 05 (16 to 19% with no implementation, about 27% with a formatter clone, on the previous cases) | Rejected programs answer in JSON; edits that leave a check clean or a run silent are passed over; any one answer is capped at 1.2% of cases and `[]` at 5% of checks; the recorder drops cases until a table plus constants passes at most 4.5%; format is 103 of 1,500 cases and `--check` 18 workspaces with formatted and slipped files mixed; `recording.json` measures four baselines (checked: selection and baselines) | A formatter clone is legitimate work, worth about 5.5% | Read `baselines` in the first baseline's `metrics.json` | 🟡 YELLOW / UNASSESSED |
 | 13 | A crash of the original graded as an answer no implementation can give | Recording | QA pass 18, F2 | A recording run that ends by a signal or with an internal-error, JIT, sanitizer or C++ abort report is dropped; more than 2% fail the build (checked) | None found | Read `dropped_crashed` | 🟢 GREEN / LOW |
 | 14 | Make Harbor's copy drop an honest delivery (a running build, links that leave the directory, FIFOs, a sparse file, a full disk, a read-only folder) so that it scores a valid 0, make the copy fail at will, launder a file fetched after the turn through a link the hook copies in, or hide a post-turn write behind the hook's own changes to ctimes | The collect hook and the mark | BasedPL QA 07 F2-F3, Carve QA 04 F1-F2 and BasedPL's re-checks 07b and 07c, on the same hook; ported in round 7 | The hook freezes and kills `dev`'s processes first, records every entry's own times before touching anything (the manifest's authoritative mtime and ctime), gives back reserved room and inodes, restores permissions only where needed and notes each change, copies an outside link's target only when root owns it (every file under a directory included) and records the source's path, owner, mtime, ctime and inode, removes every other outside link (noted first in the mark) and all special files, bounds entries, bytes and path length at the instruction's figures, hashes once per inode, packs once within 300 s, and marks the delivery with every note; the verifier grades what arrived, reads the whole mark, copies every change into `metrics.json` with flags, and treats nothing arriving or a short copy as an evaluation error (checked, end to end) | A platform copy that fails after the hook's trial pack succeeded (an error, then a re-run); a fetched file written straight into `/app/rebuild` after the turn, which the ctime audit against the trial's finish can catch, since the recorded ctimes are the session's own; the hook has not yet run on a platform | Read `manifest` in `metrics.json` (copies, links, notes, `latest_ctime` and `changed_entries` against the trial's finish) in every trial, the version-6 baselines first | 🟢 GREEN / LOW |
-| 15 | Outlast the pre-cap reaper, so that the session runs into the platform's cap and goes ungraded, or stop it to gain time, or learn from it that the session is timed | Process ownership; names | Round 7; the version-5 audit (round 8) | The sleeper is root's and `dev` cannot signal it; its pid file and log are root-only (`/run`, `/var/log`, mode 0600); `kill -TERM` then `kill -KILL` as root reach every process of `dev` (checked: arms once, fires, ends a tree and a detached process); it is named `proc-reaper`, waits in `sleep 60` steps, and nothing the agent can list says why it exists (checked) | A harness that ran the agent as root, which row 3 gates on the first trial; `sudo` is installed but no rule lets `dev` use it; an agent that reads a root `sleep 60` loop as a timer | Read `ended_by_reaper` and `reaper_log` in `manifest`; the first trajectories for any mention of the reaper | 🟢 GREEN / LOW |
+| 15 | Outlast the pre-cap reaper, so that the session runs into the platform's cap and goes ungraded (by stopping it, or by leaving it no process to start: a fork bomb, on purpose or not), or learn from it that the session is timed | Process ownership; names; the sleeper's own failure handling | Round 7; the version-5 audit (round 8); QA 07g G1 (round 8's wait ended for good on one failed start or clock read) | The sleeper is root's and `dev` cannot signal it; its pid file and log are root-only (`/run`, `/var/log`, mode 0600); its wait is one child that starts nothing and counts by the seconds since boot; every command it calls goes through `command eval`, so a start that fails is a status, logged and tried again, never the end of the script; where `pgrep` and `pkill` cannot be started the shell's own `kill` reaches every process of `dev` by `/proc/<pid>/status` (checked against processes that live: arms once, fires at its time and not before, SIGTERM then SIGKILL, with the clock or the child failing, and under dash with every start really refused; each check fails on its mutants); it is named `proc-reaper`, its child shows no number, and nothing the agent can list says why it exists (checked) | A harness that ran the agent as root, which row 3 gates on the first trial; `sudo` is installed but no rule lets `dev` use it; the failed-start path has run under macOS's dash, not yet under the image's dash 0.5.12, where a difference would mean round 7's behaviour (the script ends), no worse; where the child does not finish, the rest of the wait goes by `/proc/uptime`, which in a gVisor sandbox moves with a step of the wall clock; a root `python3 -I -` that an agent takes for a timer | Read `ended_by_reaper` and `reaper_log` in `manifest` (one `armed` line and no failure line in an ordinary trial); the first trajectories for any mention of the reaper | 🟢 GREEN / LOW |
 
 Licence: the upstream is Apache-2.0. Its `LICENSE` is shipped with the documentation in
 `/app/docs` and with the reference solution's build.
@@ -759,11 +858,12 @@ Licence: the upstream is Apache-2.0. Its `LICENSE` is shipped with the documenta
 
 | Check | Revision | Result |
 | --- | --- | --- |
-| `checks/` (40 tests) with `ci_checks` (27), Python 3.13, and `check_repository.py` | working tree, 2026-11-19, round 8 | pass |
-| Collect hook and reaper | `checks/`, this Mac, 2026-11-19 | the hook's four embedded programs run end to end on a tree of links, pipes, hard links, sparse and deep trees, a read-only folder and an unreadable file, through the copy's tar round trip, with a fixer cut at its time limit; the reaper arms once, fires and ends a tree and a detached process; not yet run on a platform |
+| `checks/` (44 tests) with `ci_checks` (27), Python 3.12.13 and 3.13.13, and `check_repository.py` | working tree, 2026-11-20, round 9 | pass |
+| Collect hook | `checks/`, this Mac, 2026-11-20 | the hook's four embedded programs on a tree of links, pipes, hard links, sparse and deep trees, a read-only folder and an unreadable file, through the copy's tar round trip, with a fixer cut at its time limit; and the hook's and `fs-reserve`'s own shell lines under dash (absolute paths moved into a work folder; `setpriv`, `pgrep`, `pkill`, `ps` stood in), then a tar copy and `verify.main()` with `sandbox()`, root and Linux stood in: 1.0, an evaluation error for a copy cut short, 0.0 for nothing built. Not run here: lines 20 and 29 to 31 of `app-manifest` (they need a live process of `dev`; unchanged since version 5); anything as root; the platform's procps, util-linux and GNU `stat` |
+| Reaper | `checks/`, this Mac, 2026-11-20 | under dash and under `sh` against processes that live: arms once, fires at its time and not before, SIGTERM ends a plain process and a parent with its child, SIGKILL after a minute ends one that ignores SIGTERM; keeps to its time with `date` failing part-way, with its child ended, with no child, by the seconds since boot, and with them stepping back half a minute while the child waits; under dash with every start really refused (a process limit below what runs), waits by the boot clock and ends the stand-ins with the shell's own `kill`. Each check fails on its mutants (see round 9). Not run here: `setsid`, `pgrep -r`, a real `/proc`, root, the image's dash 0.5.12, and a wait of 9.4 hours |
 | Upstream's published builds | `scripts/upstream_builds.py`, 2026-11-19 | 21 archives (16 GitHub release assets of v2026.1 to v2026.4, 5 Homebrew bottles of 2026.4), 42 distinct hashes; every compiler from v2026.2 on holds both refused help lines, v2026.1's four none; no shipped document holds either line |
-| Packaging | `scripts/package_step.py`, twice into separate directories | `df36b9e90f1d`, 947 files, 40,413,350 bytes, the same hash both times |
-| Oddish preflight | bundles `ca4309ce85fc`, `19c1c91c58fc`; `f98273d8a455` (hardened build, new cases); `5cb265da1a10` (verifier round 2); `a296bbd1ed2d` (round 2 continued); `2c5b8eacb5a2` (round 3); `4b49722be3b5` (round 4); `99c40062a50a` (round 5); `2c741b13a097` (round 6, uploaded as version 4); `c6ceb896f397` (round 7, uploaded as version 5); `df36b9e90f1d` (round 8) | pass |
+| Packaging | `scripts/package_step.py`, twice into separate directories | `e15affef6c60`, 947 files, 40,420,881 bytes, the same hash both times |
+| Oddish preflight | bundles `ca4309ce85fc`, `19c1c91c58fc`; `f98273d8a455` (hardened build, new cases); `5cb265da1a10` (verifier round 2); `a296bbd1ed2d` (round 2 continued); `2c5b8eacb5a2` (round 3); `4b49722be3b5` (round 4); `99c40062a50a` (round 5); `2c741b13a097` (round 6, uploaded as version 4); `c6ceb896f397` (round 7, uploaded as version 5); `df36b9e90f1d` (round 8, never uploaded); `e15affef6c60` (round 9) | pass |
 | Hardened build | bundle `2c741b13a097` | not built yet: `apply.sh` tested on a pristine copy of the seven patched files (applies once, refuses twice), `smoke.sh` tested against stand-ins that do and do not refuse; the static PIE and static links, the marker, the help text, the `/proc` refusals and the LangArena glue are untried |
 | Privilege drop | bundle `2c741b13a097` | not run as root yet: sealing, the refusal of a weak drop, the `prctl` and `CapAmb` fallbacks, the marker search, bounded hashing, mapped ids, size caps and the cleanup between cases (deep trees and 20,000 leftovers per run included) are checked; the drop itself first runs in the first baseline |
 | Recorder | bundle `2c741b13a097` | checked against a stand-in compiler (settling, the perturbed run, crashes, drops, renumbering, baselines); first run on the original at the first build |
@@ -793,14 +893,23 @@ which runs `smoke.sh` on the result.
 
 ## Remaining work
 
-- Upload the round-8 bundle as version 6 once version 5's model trials have settled, then its
-  pre-trial audit, then baselines under the task's experiment (one row): the first run of the
-  collect hook, the setup hooks and the reaper on a platform under their new names. Read
-  `manifest` in both oracle and both no-op runs' `metrics.json` (`manifest N B`, no survivors,
-  `egress`, `ended_by_reaper` false, `fixer_status` 0, `changed_entries`, the notes) and
-  `reward.txt` (1.0 and 0.0). The version-4 results to keep an eye on stand: `recording` (drops
-  by reason, crashes, settling, answers still upstream's, the four baselines), `limits`,
-  `/logs/agent/probe.txt`. Model trials wait for a passed audit.
+- Upload the round-9 bundle as version 6 once its re-check is clean and version 5's model
+  trials have settled, then its pre-trial audit, then baselines under the task's experiment (one
+  row): the first run of the collect hook, the setup hooks and the reaper on a platform under
+  their new names. Read `manifest` in both oracle and both no-op runs' `metrics.json`
+  (`manifest N B`, no survivors, `egress`, `ended_by_reaper` false, one `armed` line and neither
+  `fired` nor a failure line in `reaper_log`, `fixer_status` 0, `processes_left` 0,
+  `changed_entries`, the notes) and `reward.txt` (1.0 and 0.0). The version-4 results to keep an
+  eye on stand: `recording` (drops by reason, crashes, settling, answers still upstream's, the
+  four baselines), `limits`, `/logs/agent/probe.txt`. Model trials wait for a passed audit.
+- Before relying on the reaper's firing lines (`pgrep`, `pkill`, the two loops: version 5's,
+  unchanged in substance), read `ended_by_watchdog` and `watchdog_log` of version 5's model
+  trials, the first Goose sessions a timer ends on the platform (QA 07g, G7).
+- From QA 07g, G7, left as they are: the last program of `app-manifest` has `STARTED` (its own
+  start) and `started` (the user's) in one scope, which a blanket rename would merge; an empty
+  pid file reads as "already armed" for good, and the arming entry says `armed` whether or not
+  the sleeper could start; once the hook has stopped the sleeper its pid file stays, so a later
+  start would arm a whole new wait (one step today, so nothing starts it twice).
 - Audit every trial before its score is recorded, per the egress decision: survivors and egress
   in `manifest`, deliverable ctimes later than the agent's turn, and trajectory commands that
   detach or loop a fetch.

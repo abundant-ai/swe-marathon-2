@@ -32,11 +32,22 @@ for _ in $(seq 1 100); do
   sleep 0.1
 done
 left=$({ pgrep -u dev -r R,S,D,T; pgrep -U dev -r R,S,D,T; } 2>/dev/null | sort -u | wc -l)
-# proc-reaper, if its sleeper is still waiting, is stopped now: it would end every process of dev, and the link fixer
-# below runs as dev. Its log so far goes into the record either way.
-if reaper=$(cat /run/proc-reaper.pid 2>/dev/null) && [ -n "$reaper" ]; then
-  pkill -P "$reaper" >/dev/null 2>&1
-  kill "$reaper" >/dev/null 2>&1
+# proc-reaper's sleeper, if it is still waiting, is stopped now with its children: it would end every process of dev, and
+# the link fixer below runs as dev. The pid its file names is signalled only where that is a process of this script's own
+# user running proc-reaper's sleeper, never whatever else has come to carry the number. The log it has written so far goes
+# into the record either way.
+reaper=$(cat /run/proc-reaper.pid 2>/dev/null)
+case $reaper in ''|*[!0-9]*) reaper= ;; esac
+if [ -n "$reaper" ]; then
+  running=$(ps -ww -o uid=,args= -p "$reaper" 2>/dev/null)
+  running=${running#"${running%%[! ]*}"}
+  case "$running " in
+    "$(id -u) "*"proc-reaper run ")
+      children=$(pgrep -P "$reaper" 2>/dev/null)
+      kill "$reaper" >/dev/null 2>&1
+      [ -z "$children" ] || kill $children >/dev/null 2>&1
+      ;;
+  esac
 fi
 tail -n 20 /var/log/proc-reaper.log > "$STATE/reaper.txt" 2>/dev/null || :
 # Every entry's own times, before anything else here touches the tree: a chmod changes a ctime, and the ctime is the one
@@ -179,13 +190,19 @@ rm -f /var/lib/app-manifest/reserve
 rm -rf /var/lib/app-manifest/inodes
 if [ ! -d /app/rebuild ] || [ -L /app/rebuild ]; then exit 0; fi
 # Whatever was left under the mark's or the record's name is moved aside, never followed; what cannot be moved is removed.
+# Either is noted for the mark, so that a file of the user's own under such a name does not go without a word.
+rm -f /var/lib/app-manifest/aside.txt
 for name in .manifest .manifest.json; do
   if [ -e "/app/rebuild/$name" ] || [ -L "/app/rebuild/$name" ]; then
-    aside=$(mktemp -d /app/.aside.XXXXXX) && mv -f "/app/rebuild/$name" "$aside/" && continue
+    if aside=$(mktemp -d /app/.aside.XXXXXX) && mv -f "/app/rebuild/$name" "$aside/"; then
+      echo "$name moved aside" >> "$STATE/aside.txt"
+      continue
+    fi
     case $name in
       .manifest) rm -rf -- /app/rebuild/.manifest ;;
       .manifest.json) rm -rf -- /app/rebuild/.manifest.json ;;
     esac
+    echo "$name removed" >> "$STATE/aside.txt"
   fi
 done
 # Links, as the user (it copies nothing that user could not read), within the limits and two minutes. Each change is one
@@ -358,7 +375,8 @@ proc-reaper's last log lines and whether it fired (STATE/reaper.txt, `ended_by_r
 (`fixer_status`, and `fixer_timed_out` where its two minutes ran out), every change the link fixer made (STATE/fixer.jsonl:
 the copies first, each with its source's path, owner, times and inode, and whether the source changed since the user
 started), and every entry: its path, type, size, modification and change times, and a file's sha256 or a link's target.
-Neither file is counted among the entries.
+Neither file is counted among the entries. A file or directory that already had the mark's or the record's name was
+moved aside or removed before this ran (STATE/aside.txt), and each is a note here.
 """
 import hashlib
 import json
@@ -495,6 +513,9 @@ def state_lines(name):
 
 
 prescan = state_json("prescan.json", {"complete": False, "notes": ["the first listing is missing"], "chmod_failed": []})
+# A name of the mark's or the record's that was already there, and what became of it.
+notes.extend(f"{name} was already in /app/rebuild and was {what}"
+             for name, _, what in (line.partition(" ") for line in state_lines("aside.txt")) if name and what)
 before = {}
 for line in state_lines("before.jsonl"):
     try:
