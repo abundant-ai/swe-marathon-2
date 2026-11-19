@@ -142,14 +142,18 @@ def select(cases: list[dict], outputs: dict) -> tuple[list[dict], dict[str, list
             dropped["input holds the answer"].append(case["id"])
         else:
             kept.append(case)
-    limit_, seen, cases, kept = max(1, int(PAIR_SHARE * len(kept))), Counter(), kept, []
+    # The command-line cases are never dropped, so they take their share of an answer first.
+    limit_, cases = max(1, int(PAIR_SHARE * len(kept))), kept
+    seen = Counter((outputs[case["id"]]["stdout"], outputs[case["id"]]["exit"]) for case in cases if group(case) == "cli")
+    kept = []
     for case in cases:
         answer = (outputs[case["id"]]["stdout"], outputs[case["id"]]["exit"])
-        seen[answer] += 1
-        if seen[answer] > limit_ and group(case) != "cli":
-            dropped["answer shared by many cases"].append(case["id"])
-        else:
-            kept.append(case)
+        if group(case) != "cli":
+            seen[answer] += 1
+            if seen[answer] > limit_:
+                dropped["answer shared by many cases"].append(case["id"])
+                continue
+        kept.append(case)
     while True:
         free = free_cases(kept, outputs)
         groups = [name for name in free if name != "cli" and free[name]]
