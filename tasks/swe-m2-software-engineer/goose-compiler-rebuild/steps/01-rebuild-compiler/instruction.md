@@ -69,8 +69,14 @@ Your implementation in `/app/rebuild`, with an executable `/app/rebuild/goose`.
 - It must not call the sandboxed build: it replaces it, and will be used where that is not
   installed.
 - Everything it needs at run time is inside `/app/rebuild`, apart from the standard library's
-  sources and the tools listed above. `/app/rebuild` is copied to where it is used: keep it
-  under 4 GB and 200,000 files.
+  sources and the tools listed above. When you finish, `/app/rebuild` is copied as it stands to
+  where it is used. A link to files of your own anywhere outside the directory is dropped in that
+  copy, so an interpreter your program runs on must be one of the machine's own or copied into
+  `/app/rebuild`; a link that points outside is replaced by a copy of what it points to only when
+  that is part of the machine's installation (owned by root, as a virtual environment's link to
+  the system Python is). Pipes, sockets and devices are dropped too. With those copies, keep it
+  under 4 GB and 200,000 files, with no path inside it longer than 1,000 bytes, and leave the
+  disk that much room to copy it; otherwise it is not copied.
 - Where it will be used, it runs as an unprivileged user that cannot write to `/app/rebuild`.
   Each run starts in a new working directory, `/tmp/goose-case`, that holds only that run's
   files, with `HOME` and `TMPDIR` set to new empty directories and nothing left from earlier
