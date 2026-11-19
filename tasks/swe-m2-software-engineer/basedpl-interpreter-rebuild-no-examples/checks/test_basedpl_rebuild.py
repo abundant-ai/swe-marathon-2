@@ -15,10 +15,12 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import textwrap
 import time
+import uuid
 from pathlib import Path
 
 TASK = Path(__file__).resolve().parent.parent
@@ -837,7 +839,8 @@ CLOSED = ("import socket\ndef refuse(address, timeout=None):\n    raise Connecti
 SLOW = "import socket, time\nsocket.create_connection = lambda address, timeout=None: time.sleep(30)\n"
 
 
-def deliver(name, build, entries="100000", size="1000000000", path="1000", seconds="100", start=None, tar=None, prelude=""):
+def deliver(name, build, entries="100000", size="1000000000", path="1000", seconds="100", start=None, tar=None, prelude="",
+            fixer_status="0", aside=()):
     app = base / name / "app"
     rebuild, state, archives = app / "rebuild", base / name / "state", base / name / "tmp"
     for folder in (rebuild, state, archives):
@@ -847,7 +850,9 @@ def deliver(name, build, entries="100000", size="1000000000", path="1000", secon
     (state / "session.json").write_text(json.dumps({"connectivity": {"pypi.org:443": "closed"}, "connectivity_open": False,
                                                     "user_process_count": 1, "user_processes": [{"pid": 7, "command": "sleep 99"}]}))
     (state / "turn-started").write_text("1700000000\n")
-    if name == "good":  # the pre-cap watchdog fired in this session
+    if aside:  # the names the shell moved out of the directory before the fixer ran
+        (state / "aside.txt").write_text("".join(f"{moved}\n" for moved in aside))
+    if name == "good":  # the session timer fired in this session
         (state / "timer.txt").write_text("2026-11-19T12:00:00Z armed pid 77: ending the processes selected by '-u dev' in 33900 s\n"
                                             "2026-11-19T21:25:00Z fired after 33900 s: SIGTERM to the processes selected by '-u dev'\n"
                                             "2026-11-19T21:25:05Z done: 0 process(es) of the selection left\n")
@@ -885,7 +890,8 @@ def deliver(name, build, entries="100000", size="1000000000", path="1000", secon
         (base / name / "bin" / "tar").chmod(0o755)
         environment["PATH"] = f"{base / name / 'bin'}:{environment['PATH']}"
     done = subprocess.run([sys.executable, "-I", "-", str(rebuild), entries, size, path, str(state), str(archives), seconds, "2", "0",
-                           "1700030000"], input=prelude + measure, capture_output=True, text=True, timeout=300, env=environment)
+                           "1700030000", *([fixer_status] if fixer_status is not None else [])], input=prelude + measure,
+                          capture_output=True, text=True, timeout=300, env=environment)
     assert done.returncode == 0, done.stderr
     assert not os.listdir(archives), "the trial pack is removed"
     EARLIER[name] = earlier
@@ -975,6 +981,7 @@ out["times"] = [all(item["ctime"] == earlier[item["path"]][1] and item["mtime"] 
                 record["prescan_complete"], record["hook_changed_entries"],
                 oct(os.stat(rebuild / "ro").st_mode & 0o777), oct(os.stat(rebuild / "secret").st_mode & 0o777)]
 out["summary"] = verify.delivery_record(rebuild)
+out["latest"] = max(earlier[item["path"]][1] for item in record["entries"])  # the latest change the session itself made
 out["complete"] = notes(copy(rebuild, base / "good" / "copied"))
 partial = copy(rebuild, base / "good" / "partial")
 (partial / "src" / "main.py").unlink()  # the mark arrived, a file did not
@@ -1008,6 +1015,11 @@ out["never_room"] = mark(rebuild)
 app, rebuild = deliver("nop", lambda rebuild: None)
 out["nop"] = [mark(rebuild), notes(copy(rebuild, base / "nop" / "copied")), verify.delivery_record(base / "nop" / "copied")["entries"]]
 out["watchdog"].append(verify.delivery_record(base / "nop" / "copied")["ended_by_timer"])
+app, rebuild = deliver("cut-short", tree, fixer_status="143", aside=(".manifest", ".manifest.json"))  # the fixer was ended by a signal
+record = json.loads((rebuild / ".manifest.json").read_text())
+out["cut_short"] = [mark(rebuild), record["fixer_status"], notes(copy(rebuild, base / "cut-short" / "copied"))]
+app, rebuild = deliver("old-arguments", lambda rebuild: None, fixer_status=None)  # without the status: no note, never an error
+out["old_arguments"] = [mark(rebuild), json.loads((rebuild / ".manifest.json").read_text())["fixer_status"]]
 app, rebuild = deliver("unwritable", tree)
 out["unwritable"] = mark(rebuild)[:2]
 linked = base / "linked" / "app" / "rebuild"
@@ -1097,7 +1109,7 @@ def test_the_delivery_is_bounded_recorded_and_marked_before_the_copy_and_graded_
     summary = out["summary"]
     assert summary["connectivity_open"] is False and summary["entries"] == 11 and summary["kill_rounds"] == 2 and summary["bpl"] == bpl
     assert summary["hashing_complete"] is True and summary["prescan_complete"] is True and summary["hook_changed_entries"] == 2
-    assert summary["latest_ctime"] == max(ctime for _, ctime in EARLIER["good"].values()) if False else True
+    assert summary["latest_ctime"] == out["latest"], "the latest ctime in metrics is the session's own, not the hook's"
     assert summary["user_processes"] == [{"pid": 7, "command": "sleep 99"}] and summary["latest_ctime"] >= bpl["ctime"]
     assert summary["copies"] == copies and summary["links"] == links and summary["notes"] == notes, "the whole record reaches metrics.json"
     assert summary["copies_outside_delivery"] == 1 and summary["copies_changed_since_session_started"] == 0
@@ -1132,6 +1144,14 @@ def test_the_delivery_is_bounded_recorded_and_marked_before_the_copy_and_graded_
     assert out["inodes"][0] == "refused" and "No space left on device" in out["inodes"][1], out["inodes"]
     assert out["never_room"][0].startswith("delivered ") and any("room the machine did not have" in line for line in out["never_room"])
     assert out["nop"] == [["delivered 0 0"], [], 0]
+    cut_mark, cut_status, cut_notes = out["cut_short"]  # QA 07e F1 and F5: neither is silent any more
+    assert cut_mark[0] == out["mark"][0] and cut_status == 143 and len(cut_mark) == 11, cut_mark
+    assert cut_mark[1] == ("the link fixer ended with status 143: the links it had not reached were not fixed, and those that lead "
+                           "outside /app/rebuild are removed"), "a fixer that was cut short is said first, before the links removed for it"
+    assert cut_mark[7:9] == [f"moved {name} out of /app/rebuild: this step writes a file of that name there"
+                             for name in (".manifest", ".manifest.json")], "a file the session left under the hook's own names is noted"
+    assert cut_notes == [f"maintenance step: {line}" for line in cut_mark[1:]], "and both reach the trial's notes"
+    assert out["old_arguments"] == [["delivered 0 0"], -1]
     assert "never a reason to change the reward" in (STEP / "tests" / "verify.py").read_text(), "the watchdog flag is never scored"
     code, kinds, copied, lib_left, one_left, sh_copied, inner = out["fixer"]
     assert code == 0 and kinds == {"lib": "refused", "one": "refused", "sh": "copied", "inner": "relinked"}, out["fixer"]
@@ -1145,13 +1165,19 @@ def test_the_delivery_is_bounded_recorded_and_marked_before_the_copy_and_graded_
     assert all(state.startswith("closed") for state in closed[1]["connectivity"].values())
     assert slow[0] == 0 and set(slow[1]["connectivity"].values()) == {"no answer within 3 s"} and slow[2] <= 9, slow
     hook = (TASK / "environment" / "reclaim-scratch").read_text()
-    order = ["kill -STOP -1", "ps -eo pid=,ppid=,uid=,etimes=,args= > \"$STATE/processes.txt\"", "kill -9 -1",
+    order = ['echo "$HOOK_STARTED" > "$STATE/reclaiming"', "\nstop_timer\n", "kill -STOP -1",
+             "ps -eo pid=,ppid=,uid=,etimes=,args= > \"$STATE/processes.txt\"", "kill -9 -1",
+             'tail -n 20 /var/log/session-timer.log > "$STATE/timer.txt"',
              'timeout 300 /usr/bin/python3 -I - /app/rebuild "$LIMIT_ENTRIES" "$LIMIT_PATH" "$STATE"',
              "/usr/bin/python3 -I - \"$STATE/session.json\" \"$STATE/processes.txt\"", "rm -f /var/lib/scratch/room",
-             "rm -rf /var/lib/scratch/inodes", 'mv -f "/app/rebuild/$name" "$aside/"',
+             "rm -rf /var/lib/scratch/inodes", 'mv -f "/app/rebuild/$name" "$aside/"', 'echo "$name" >> "$STATE/aside.txt"',
              "timeout 120 setpriv --reuid dev --regid dev --clear-groups --no-new-privs /usr/bin/python3 -I -",
-             '> "$STATE/fixer.jsonl"', 'exec /usr/bin/python3 -I - /app/rebuild']
+             '> "$STATE/fixer.jsonl"', "\nEOF\nfixer_status=$?\n",
+             '\n/usr/bin/python3 -I - /app/rebuild "$LIMIT_ENTRIES" "$LIMIT_BYTES" "$LIMIT_PATH" "$STATE" /tmp "$PACK_SECONDS" "$rounds" '
+             '"$left" "$HOOK_STARTED" "$fixer_status" <<',
+             '\nEOF\nstatus=$?\nstop_timer\nexit "$status"\n']
     assert [hook.index(step) for step in order] == sorted(hook.index(step) for step in order)
+    assert "exec /usr/bin/python3" not in hook and hook.endswith(order[-1]), "the script goes on past its last step, to end the timer again"
     for setting in ("LIMIT_ENTRIES=100000", "LIMIT_BYTES=1000000000", "LIMIT_PATH=1000", "PACK_SECONDS=100", "STATE=/var/lib/scratch"):
         assert setting in hook, setting
     assert "rm -rf \"$" not in hook and "rm -f \"$" not in hook, "nothing is removed through a variable"
@@ -1159,7 +1185,7 @@ def test_the_delivery_is_bounded_recorded_and_marked_before_the_copy_and_graded_
     assert "fallocate -l 64M /var/lib/scratch/room" in setup and '/var/lib/scratch/inodes/$spare' in setup and "seq 1 64" in setup
     assert "stat -f -c '%a %S %d' /tmp > /var/lib/scratch/free-at-start" in setup
     assert "date +%s > /var/lib/scratch/turn-started" in setup, "the session's start, for the record's flags"
-    assert hook.index("kill -STOP -1") < hook.index("/usr/bin/python3"), "nothing runs before the freeze but the hook's own settings"
+    assert hook.index("kill -STOP -1") < hook.index("/usr/bin/python3"), "before the freeze: the hook's settings, the mark and the timer's end"
     import tomllib
     config = tomllib.loads((TASK / "task.toml").read_text())
     assert config["verifier"]["collect"] == [{"command": "/usr/local/sbin/reclaim-scratch", "user": "root", "timeout_sec": 600}]
@@ -1217,48 +1243,645 @@ def test_a_host_short_of_disk_mid_evaluation_is_an_error_and_a_run_that_ended_in
         "a child that holds the pipe open past the deadline is a timeout"
 
 
-def test_the_pre_cap_watchdog_arms_once_fires_and_ends_the_users_processes(tmp_path):
-    """The root watchdog started at setup_complete ends the agent's session shortly before the
-    platform's cap, since a turn that runs into the cap is not graded today while one that ends by
-    itself is. It arms one sleeper however often it is started, fires after END_SECONDS, ends every
-    selected process (a tree, and a process in a session of its own), and logs each step."""
-    import uuid
-    marker = f"precap-sleep-{uuid.uuid4().hex[:12]}"
-    sleeper = tmp_path / marker
-    shutil.copy(shutil.which("sleep"), sleeper)
-    sleeper.chmod(0o755)
-    env = dict(os.environ, MAINT_END_SECONDS="2", MAINT_PIDFILE=str(tmp_path / "watchdog.pid"), MAINT_LOG=str(tmp_path / "watchdog.log"),
-               MAINT_SELECT=f"-f {marker}")
-    tree = subprocess.Popen(["sh", "-c", f"{sleeper} 300 & {sleeper} 300"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    alone = subprocess.Popen([str(sleeper), "300"], start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+# ---------------------------------------------------------------- the session timer and the hook's stop
+
+# Stand-ins for the user's processes: real Python processes of this user that carry a random marker on their command
+# lines, which is the timer's selection here (`-f <marker>`), so nothing else is ever signalled. A copy of /bin/sleep
+# is killed at exec on macOS, so a check built on one passes whatever the timer does (QA 07e F2).
+READY = "import time\nprint('ready', flush=True)\ntime.sleep(300)\n"
+STUBBORN = "import signal, time\nsignal.signal(signal.SIGTERM, signal.SIG_IGN)\nprint('ready', flush=True)\ntime.sleep(300)\n"
+PARENT = ("import subprocess, sys, time\n"
+          "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(300)', sys.argv[1]])\n"
+          "print(child.pid, flush=True)\ntime.sleep(300)\n")
+
+
+def timer_setup(top: Path, **settings: str) -> tuple[Path, dict, str]:
+    """A copy of environment/session-timer in a directory of its own, the environment that points it there, and the
+    marker its selection matches."""
+    assert " " not in str(top)
+    top.mkdir(parents=True)
+    script = top / "session-timer"
+    shutil.copy(TASK / "environment" / "session-timer", script)
+    script.chmod(0o700)  # as the Dockerfile sets it
+    marker = f"st-{uuid.uuid4().hex[:12]}"
+    env = dict(os.environ, MAINT_PIDFILE=str(top / "timer.pid"), MAINT_LOG=str(top / "timer.log"),
+               MAINT_MARK=str(top / "state" / "reclaiming"), MAINT_SELECT=f"-f {marker}", **settings)
+    return script, env, marker
+
+
+def stand_in(marker: str, code: str = READY, **options) -> subprocess.Popen:
+    """A process the timer's selection matches, up (its first line printed) before it is returned."""
+    proc = subprocess.Popen([sys.executable, "-c", code, marker], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, **options)
+    proc.first_line = proc.stdout.readline().strip()
+    assert proc.first_line and proc.poll() is None, "the stand-in is up"
+    return proc
+
+
+def arm(script: Path, env: dict) -> tuple[subprocess.CompletedProcess, int | None]:
+    """Start the timer as the setup hook does and return what it printed and the sleeper's pid. The start is in a
+    session of its own, so that the sleeper's process group is the timer's alone and the test can end it."""
+    done = subprocess.run(["sh", str(script)], env=env, capture_output=True, text=True, timeout=30, start_new_session=True)
+    found = re.search(r"\(pid (\d+)", done.stdout)
+    return done, int(found.group(1)) if found else None
+
+
+def gone(pid: int, seconds: float = 0.0) -> bool:
+    """Within `seconds`: no such process, or one that has exited and waits to be reaped."""
+    until = time.monotonic() + seconds
+    while True:
+        state = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True).stdout.strip()
+        if not state or state.startswith("Z"):
+            return True
+        if time.monotonic() >= until:
+            return False
+        time.sleep(0.05)
+
+
+def logged(path: Path, text: str, seconds: float) -> bool:
+    until = time.monotonic() + seconds
+    while time.monotonic() < until:
+        if path.exists() and text in path.read_text():
+            return True
+        time.sleep(0.05)
+    return False
+
+
+def end_all(processes: list, sleepers: list, root: Path) -> None:
+    """End a test's own stand-ins, and its timers by their process groups (never this process's own): the sleepers
+    it knows, and any other copy of the timer still running from under `root` (a test that failed before it learnt
+    the pid)."""
+    for proc in processes:
+        if proc.poll() is None:
+            proc.kill()
+        proc.wait(timeout=10)
+        if proc.stdout is not None:
+            proc.stdout.close()
+    listing = subprocess.run(["ps", "-ww", "-eo", "pid=,args="], capture_output=True, text=True).stdout.splitlines()
+    strays = [int(line.split()[0]) for line in listing if f" {root}/" in line and line.rstrip().endswith("/session-timer run")]
+    for pid in [*sleepers, *strays]:
+        try:
+            group = os.getpgid(pid)
+            if group not in (os.getpgrp(), os.getpid()):
+                os.killpg(group, signal.SIGKILL)
+        except (OSError, TypeError):  # gone already, or never started
+            continue
+
+
+def child_of(pid: int) -> int:
+    """A sleeper's one child: its sleep, once the armed line's own `date` is gone."""
+    children, until = [], time.monotonic() + 5
+    while len(children) != 1 and time.monotonic() < until:
+        time.sleep(0.1)
+        children = [int(child) for child in subprocess.run(["pgrep", "-P", str(pid)], capture_output=True, text=True).stdout.split()]
+    assert len(children) == 1 and not gone(children[0]), children
+    return children[0]
+
+
+def hook_prologue(top: Path) -> str:
+    """The first lines of environment/reclaim-scratch as shipped, up to and including its first `stop_timer` (the
+    settings, the mark, the function, the call), with only the three absolute paths rewritten into `top`."""
+    hook = (TASK / "environment" / "reclaim-scratch").read_text()
+    text = hook[:hook.index("\nstop_timer\n")] + "\nstop_timer\n"
+    assert "setpriv" not in text and "pgrep" not in text and "python3" not in text, "nothing but the settings and the timer's end"
+    for old, new in (("/var/lib/scratch", top / "state"), ("/run/session-timer.pid", top / "timer.pid"),
+                     ("/var/log/session-timer.log", top / "timer.log")):
+        assert old in text, old
+        text = text.replace(old, str(new))
+    return text
+
+
+def test_the_session_timer_arms_once_fires_and_ends_the_users_processes(tmp_path):
+    """With no reclaim-scratch running, the root timer started at setup_complete ends the user's session shortly before
+    the platform's cap, since a turn that runs into the cap is not graded today while one that ends by itself is. It
+    arms one sleeper however often it is started, fires after END_SECONDS, sends SIGTERM to every selected process (a
+    parent and its child, a process in a session of its own, and one started after it fired: the case QA 07e F1
+    reproduced, which is what the timer is for when no hook is running), then SIGKILL to the one that ignores SIGTERM,
+    and logs each step. Each stand-in must be alive before the timer is armed and end by exactly that signal."""
+    top = tmp_path / "timer"
+    script, env, marker = timer_setup(top, MAINT_END_SECONDS="2", MAINT_ROUND_SECONDS="0.3")
+    log, pidfile = top / "timer.log", top / "timer.pid"
+    processes, sleepers = [], []
     try:
-        first = subprocess.run(["sh", str(TASK / "environment" / "session-timer")], env=env, capture_output=True, text=True, timeout=30)
-        assert first.returncode == 0 and "armed for 2 s" in first.stdout, first
-        deadline = time.monotonic() + 10
-        while time.monotonic() < deadline and not (tmp_path / "watchdog.pid").read_text().strip():
-            time.sleep(0.05)
-        armed_pid = (tmp_path / "watchdog.pid").read_text().strip()
-        second = subprocess.run(["sh", str(TASK / "environment" / "session-timer")], env=env, capture_output=True, text=True, timeout=30)
-        assert second.returncode == 0 and second.stdout == "", "a second start arms nothing"
-        deadline = time.monotonic() + 40
-        while time.monotonic() < deadline and "done:" not in (tmp_path / "watchdog.log").read_text():
-            time.sleep(0.2)
-        log = (tmp_path / "watchdog.log").read_text()
-        assert log.count(" armed pid ") == 1 and f"armed pid {armed_pid}" in log and "already armed" in log, log
-        assert " fired after 2 s" in log and "done: 0 process(es)" in log, log
-        assert tree.wait(timeout=10) != 0 and alone.wait(timeout=10) != 0, "the tree and the process in its own session are ended"
-        left = subprocess.run(["pgrep", "-f", marker], capture_output=True, text=True)
-        assert left.stdout.strip() == "", left.stdout
-        assert not (tmp_path / "watchdog.pid").exists(), "the pid file goes with the sleeper"
+        tree, alone = stand_in(marker, PARENT), stand_in(marker, start_new_session=True)
+        stubborn = stand_in(marker, STUBBORN, start_new_session=True)
+        processes += [tree, alone, stubborn]
+        child = int(tree.first_line)
+        assert all(proc.poll() is None for proc in processes) and not gone(child), "alive before the timer is armed"
+        assert len(subprocess.run(["pgrep", "-f", marker], capture_output=True, text=True).stdout.split()) == 4, "the selection"
+        first, sleeper = arm(script, env)
+        sleepers.append(sleeper)
+        assert first.returncode == 0 and first.stdout == f"maintenance timer armed for 2 s (pid {sleeper})\n" and first.stderr == "", first
+        assert pidfile.read_text().strip() == str(sleeper), "the pid it names is the pid file's"
+        second, _ = arm(script, env)
+        assert second.returncode == 0 and second.stdout == "" and second.stderr == "", "a second start arms nothing"
+        assert logged(log, " fired after 2 s", 15), log.read_text()
+        late = subprocess.Popen([sys.executable, "-c", READY, marker], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                start_new_session=True)  # started in the rounds, as the hook's link fixer could be
+        processes.append(late)
+        assert logged(log, "done:", 40), log.read_text()
+        text = log.read_text()
+        assert text.count(" armed pid ") == 1 and f" armed pid {sleeper}: " in text and f"already armed (pid {sleeper})" in text, text
+        assert "SIGKILL to what is left" in text and "done: 0 process(es)" in text and "stopped" not in text, text
+        ends = [proc.wait(timeout=10) for proc in (tree, alone, late, stubborn)]
+        assert ends == [-signal.SIGTERM, -signal.SIGTERM, -signal.SIGTERM, -signal.SIGKILL], ends
+        assert gone(child, 5), "the child of the tree is ended too"
+        assert subprocess.run(["pgrep", "-f", marker], capture_output=True, text=True).stdout.strip() == ""
+        assert not pidfile.exists() and gone(sleeper, 5), "the pid file goes with the sleeper"
     finally:
-        for proc in (tree, alone):
-            if proc.poll() is None:
-                proc.kill()
+        end_all(processes, sleepers, tmp_path)
     script = (TASK / "environment" / "session-timer").read_text()
     assert "END_SECONDS=${MAINT_END_SECONDS:-33900}" in script, "the agent's 34,560 s less eleven minutes"
+    assert "ROUND_SECONDS=${MAINT_ROUND_SECONDS:-5}" in script and 'sleep "$ROUND_SECONDS"' in script, "twelve rounds, a minute"
     agent = int(re.search(r"\[agent\]\s*timeout_sec = (\d+)", (TASK / "task.toml").read_text()).group(1))
     assert agent - 33900 == 660
-    assert "watchdog" not in (STEP / "instruction.md").read_text().lower() and "cap" not in (STEP / "instruction.md").read_text().lower()
+    instruction = (STEP / "instruction.md").read_text().lower()
+    assert "watchdog" not in instruction and "cap" not in instruction and "timer" not in instruction
+
+
+def test_the_session_timer_says_armed_only_for_a_sleeper_it_sees(tmp_path):
+    """QA 07e F4. A start with no running sleeper arms one whatever the pid file holds (nothing, the pid of a process
+    that is gone, the pid of a live process that is no sleeper) and prints "armed" only once the sleeper is seen
+    running, with its pid. Where the pid file cannot be written the sleeper runs all the same and the line says so.
+    Where no sleeper can start, the line says "not armed", on standard error. The start exits 0 in every case: a setup
+    hook that fails ends the trial."""
+    spent = subprocess.Popen(["true"])
+    spent.wait()
+    processes, sleepers = [], []
+    try:
+        for name, content in (("empty", ""), ("spent", f"{spent.pid}\n"), ("other", f"{os.getpid()}\n")):
+            script, env, _ = timer_setup(tmp_path / name, MAINT_END_SECONDS="300")
+            (tmp_path / name / "timer.pid").write_text(content)
+            done, sleeper = arm(script, env)
+            sleepers.append(sleeper)
+            assert done.returncode == 0 and done.stdout == f"maintenance timer armed for 300 s (pid {sleeper})\n", (name, done)
+            assert (tmp_path / name / "timer.pid").read_text().strip() == str(sleeper) and not gone(sleeper), name
+            assert logged(tmp_path / name / "timer.log", f" armed pid {sleeper}: ", 5), name
+        script, env, _ = timer_setup(tmp_path / "unwritable", MAINT_END_SECONDS="300")
+        (tmp_path / "unwritable" / "blocked").write_text("")  # the pid file's directory is a file
+        env["MAINT_PIDFILE"] = str(tmp_path / "unwritable" / "blocked" / "timer.pid")
+        done, sleeper = arm(script, env)
+        sleepers.append(sleeper)
+        assert done.returncode == 0 and done.stdout == f"maintenance timer armed for 300 s (pid {sleeper}, no pid file)\n", done
+        text = (tmp_path / "unwritable" / "timer.log").read_text()
+        assert not gone(sleeper) and f" armed pid {sleeper}: " in text and f"pid {sleeper} runs without a pid file" in text, text
+        script, env, _ = timer_setup(tmp_path / "broken", MAINT_END_SECONDS="300")
+        script.chmod(0o600)  # the detached copy cannot be executed
+        done, sleeper = arm(script, env)
+        sleepers.append(sleeper)
+        assert done.returncode == 0 and done.stdout == "" and sleeper is None, done
+        assert done.stderr == "maintenance timer not armed: no sleeper was seen running within 2 s\n", done
+        text = (tmp_path / "broken" / "timer.log").read_text()
+        assert "not armed: no sleeper was seen running within 2 s" in text and " armed pid " not in text, text
+    finally:
+        end_all(processes, sleepers, tmp_path)
+    script = (TASK / "environment" / "session-timer").read_text()
+    assert "set -C" not in script and script.rstrip().endswith("fi\nexit 0"), "no reservation that can leave it unarmed; every path exits 0"
+    assert script.index("armed && break") < script.index('echo "maintenance timer armed'), "it looks before it says so"
+
+
+def test_reclaim_scratch_ends_the_session_timer_before_its_own_work_as_the_user(tmp_path):
+    """QA 07e F1. A timer that has fired sends SIGTERM to every process of the user every few seconds for up to a
+    minute, and the hook's link fixer runs as that user: a round that landed on it left links unfixed, the root step
+    then removed them, and the notes read like the agent's fault. The hook's first lines, run here as shipped with only
+    their paths rewritten, write the mark and end the sleeper and its sleep. With a timer in its rounds, the hook's own
+    fixer is ended part way when those lines have not run (the control) and fixes every link when they have. A timer
+    that is not ended (no pid file, say) ends nothing once the mark exists, and one that wakes up with the mark in
+    place never fires."""
+    processes, sleepers = [], []
+    try:
+        # A sleeper still waiting, the usual case: ended with its sleep, and the log says which pid.
+        top = tmp_path / "waiting"
+        script, env, marker = timer_setup(top, MAINT_END_SECONDS="300")
+        idle = stand_in(marker)
+        processes.append(idle)
+        done, sleeper = arm(script, env)
+        sleepers.append(sleeper)
+        assert sleeper and logged(top / "timer.log", f" armed pid {sleeper}: ", 5)
+        its_sleep = child_of(sleeper)
+        (top / "prologue").write_text(hook_prologue(top))
+        ran = subprocess.run(["sh", str(top / "prologue")], capture_output=True, text=True, timeout=30)
+        assert ran.returncode == 0 and ran.stdout == "" and ran.stderr == "", ran
+        assert gone(sleeper, 5) and gone(its_sleep, 5), "the sleeper and its sleep are both ended"
+        assert (top / "state" / "reclaiming").read_text().strip().isdigit() and not (top / "timer.pid").exists()
+        assert (top / "state").stat().st_mode & 0o777 == 0o700, "the mark is in a directory only root reads"
+        text = (top / "timer.log").read_text()
+        assert f"stopped pid {sleeper}: reclaim-scratch has begun" in text and " fired after " not in text, text
+        assert idle.poll() is None, "ending the timer ends nothing of the user's"
+        again = subprocess.run(["sh", str(top / "prologue")], capture_output=True, text=True, timeout=30)
+        assert again.returncode == 0 and (top / "timer.log").read_text() == text, "with no sleeper left, a second stop does nothing"
+
+        # A timer in its rounds (07e's reproduction) while the hook's own link fixer works as the user, on a tree whose
+        # path carries the marker, so the timer's selection matches the fixer's command line. First without the hook's
+        # first lines: a round ends the fixer part way. Then with them: the same fixer finishes every link.
+        fixer = (TASK / "environment" / "reclaim-scratch").read_text().split("<<'EOF'\n")[3].split("\nEOF\n", 1)[0]
+        links = 20000
+        for name in ("rounds-without-the-stop", "rounds"):
+            top = tmp_path / name
+            script, env, marker = timer_setup(top, MAINT_END_SECONDS="1", MAINT_ROUND_SECONDS="0.05")
+            tree = top / marker / "rebuild"
+            (tree / "links").mkdir(parents=True)
+            (tree / "real.txt").write_text("x")
+            for number in range(links):
+                os.symlink(tree / "real.txt", tree / "links" / f"l{number}")  # inside, absolute: the fixer makes each relative
+            stubborn = stand_in(marker, STUBBORN, start_new_session=True)  # keeps the rounds going
+            processes.append(stubborn)
+            done, sleeper = arm(script, env)
+            sleepers.append(sleeper)
+            assert sleeper and logged(top / "timer.log", " fired after 1 s", 15)
+            if name == "rounds":
+                (top / "prologue").write_text(hook_prologue(top))
+                ran = subprocess.run(["sh", str(top / "prologue")], capture_output=True, text=True, timeout=30)
+                assert ran.returncode == 0, ran
+            worked = subprocess.run([sys.executable, "-I", "-", str(tree), "100000", "1000000000"], input=fixer, capture_output=True,
+                                    text=True, timeout=120)  # as the hook starts it, less the drop to the user
+            fixed = sum(1 for number in range(links) if os.path.lexists(tree / "links" / f"l{number}")
+                        and not os.path.isabs(os.readlink(tree / "links" / f"l{number}")))
+            if name == "rounds-without-the-stop":
+                assert worked.returncode in (-signal.SIGTERM, -signal.SIGKILL) and fixed < links, \
+                    f"the control: a round ends the fixer part way ({worked.returncode}, {fixed} of {links} links fixed)"
+                continue
+            assert worked.returncode == 0 and fixed == links == len(worked.stdout.splitlines()), (worked.returncode, fixed, worked.stderr[-500:])
+            assert stubborn.poll() is None, "nothing of the user's is ended once the hook has begun"
+            text = (top / "timer.log").read_text()
+            assert gone(sleeper) and f"stopped pid {sleeper}: reclaim-scratch has begun" in text, text
+            assert "SIGKILL" not in text and "done:" not in text and not (top / "timer.pid").exists(), text
+
+        # The mark alone, with the sleeper left running: its own rounds stop on it.
+        top = tmp_path / "mark-only"
+        script, env, marker = timer_setup(top, MAINT_END_SECONDS="1", MAINT_ROUND_SECONDS="1")
+        stubborn = stand_in(marker, STUBBORN, start_new_session=True)
+        processes.append(stubborn)
+        done, sleeper = arm(script, env)
+        sleepers.append(sleeper)
+        assert sleeper and logged(top / "timer.log", " fired after 1 s", 15)
+        (top / "state").mkdir()
+        (top / "state" / "reclaiming").write_text("")
+        time.sleep(0.3)  # a round already in flight is over; every later one finds the mark
+        worker = stand_in(marker, start_new_session=True)
+        processes.append(worker)
+        assert logged(top / "timer.log", "stopped: reclaim-scratch has begun, nothing more is ended", 10), (top / "timer.log").read_text()
+        time.sleep(1.5)
+        assert worker.poll() is None and stubborn.poll() is None, "the timer's rounds end nothing once the mark exists"
+        text = (top / "timer.log").read_text()
+        assert gone(sleeper, 5) and not (top / "timer.pid").exists() and "SIGKILL" not in text and "done:" not in text, text
+
+        # The mark in place when the sleeper wakes up: it never fires.
+        top = tmp_path / "before-the-fire"
+        script, env, marker = timer_setup(top, MAINT_END_SECONDS="1")
+        (top / "state").mkdir()
+        (top / "state" / "reclaiming").write_text("")
+        idle = stand_in(marker)
+        processes.append(idle)
+        done, sleeper = arm(script, env)
+        sleepers.append(sleeper)
+        assert sleeper and logged(top / "timer.log", "stopped: reclaim-scratch has begun", 10)
+        text = (top / "timer.log").read_text()
+        assert " fired after " not in text and idle.poll() is None and gone(sleeper, 5), text
+    finally:
+        end_all(processes, sleepers, tmp_path)
+    hook = (TASK / "environment" / "reclaim-scratch").read_text()
+    timer = (TASK / "environment" / "session-timer").read_text()
+    assert "MARK=${MAINT_MARK:-/var/lib/scratch/reclaiming}" in timer and 'echo "$HOOK_STARTED" > "$STATE/reclaiming"' in hook
+    assert "STATE=/var/lib/scratch\n" in hook, "the mark the hook writes is the one the timer looks for"
+    assert "PIDFILE=${MAINT_PIDFILE:-/run/session-timer.pid}" in timer and "timer=$(cat /run/session-timer.pid 2>/dev/null)" in hook
+    stop = hook[hook.index("stop_timer() {"):hook.index("\n}\n", hook.index("stop_timer() {"))]
+    steps = ["grep -q 'session-timer run' || return 0", 'kill -STOP "$timer"', 'pkill -KILL -P "$timer"', 'kill -KILL "$timer"',
+             "rm -f /run/session-timer.pid"]
+    assert [stop.index(step) for step in steps] == sorted(stop.index(step) for step in steps), "only a sleeper; stopped, its children, then itself"
+    assert hook.index('"$STATE/reclaiming"') < hook.index("\nstop_timer\n") < hook.index("setpriv"), "before anything runs as the user"
+    assert timer.count("stopped\n") == 4, "before the fire, before each SIGTERM round, before SIGKILL and before each of its rounds"
+    assert timer.index("    stopped\n    log \"fired after") > 0 and timer.index("        stopped\n        pkill -TERM") > 0
+    assert timer.index("        stopped\n        log \"SIGKILL") > 0 and timer.index("            stopped\n            pkill -KILL") > 0
+
+
+def test_both_hooks_run_whole_with_the_root_and_linux_tools_stood_in(tmp_path):
+    """QA 07e F3: every shell line of provision-scratch and reclaim-scratch, as shipped, under `sh`, with only their
+    absolute paths rewritten into a directory of the test's and, first on PATH, stand-ins for what needs root or Linux
+    (after the reviewer's replay): setpriv drops its options and never runs a kill; pgrep and pkill find none of the
+    user's processes; `ps -eo` prints a fixed listing; fallocate fails, so the fallback writes the room; GNU `stat -f
+    -c` and `timeout` are stood in; python3 is this Python with outbound connections refused. The session timer is the
+    real one, still waiting when the hook starts, and the session left both of the hook's own names, links for the
+    fixer and a pipe."""
+    top = tmp_path / "t"
+    script, env, _ = timer_setup(top, MAINT_END_SECONDS="300")
+    shims, rebuild, state = top / "bin", top / "app" / "rebuild", top / "state"
+    for folder in (shims, rebuild, top / "tmp"):
+        folder.mkdir(parents=True)
+    real = {name: shutil.which(name) for name in ("pgrep", "pkill", "ps")}
+    (shims / "run_stdin.py").write_text(
+        "import socket, sys\n\n\ndef refuse(address, timeout=None, *args, **kwargs):\n    raise ConnectionRefusedError(111, 'refused')\n\n\n"
+        "socket.create_connection = refuse\nassert sys.argv[1:3] == ['-I', '-'], sys.argv\nsys.argv = ['-'] + sys.argv[3:]\n"
+        "exec(compile(sys.stdin.read(), '<stdin>', 'exec'), {'__name__': '__main__', '__builtins__': __builtins__})\n")
+    stand_ins = {
+        "python3": f'exec "{sys.executable}" -I "{shims}/run_stdin.py" "$@"\n',
+        "setpriv": 'for word in "$@"; do case "$word" in kill) exit 0 ;; esac; done\n'
+                   'while [ $# -gt 0 ]; do case "$1" in --reuid|--regid) shift 2 ;; --clear-groups|--no-new-privs) shift ;; *) break ;; esac; done\n'
+                   'exec "$@"\n',
+        "pgrep": f'[ "$1" = "-P" ] && exec {real["pgrep"]} "$@"\nexit 1\n',
+        "pkill": f'[ "$1" = "-KILL" ] && [ "$2" = "-P" ] && exec {real["pkill"]} "$@"\nexit 1\n',
+        "ps": f'case "$*" in "-ww -o args= -p "*) exec {real["ps"]} "$@" ;; esac\n'
+              'printf "    1     0     0 100 /sbin/init\\n  777     1 10001  65 sleep 99\\n"\n',
+        "fallocate": "exit 1\n",
+        "stat": 'echo "2500000 4096 1300000"\n',
+        "timeout": 'shift\nexec "$@"\n',
+    }
+    for name, body in stand_ins.items():
+        (shims / name).write_text("#!/bin/sh\n" + body)
+        (shims / name).chmod(0o755)
+    rewrites = [("/usr/bin/python3", f"{shims}/python3"), ("/app/.aside.XXXXXX", f"{top}/app/.aside.XXXXXX"), ("/app/rebuild", str(rebuild)),
+                ("/var/lib/scratch", str(state)), ("/var/log/session-timer.log", str(top / "timer.log")),
+                ("/run/session-timer.pid", str(top / "timer.pid")), ('"$STATE" /tmp "$PACK_SECONDS"', f'"$STATE" {top}/tmp "$PACK_SECONDS"')]
+    for name in ("provision-scratch", "reclaim-scratch"):
+        text = (TASK / "environment" / name).read_text()
+        for old, new in rewrites:
+            assert old in text or name == "provision-scratch", (name, old)
+            text = text.replace(old, new)
+        (top / name).write_text(text)
+        for _, new in rewrites:
+            text = text.replace(new, "")
+        assert not any(place in text for place in ("/app/", "/var/", "/run/", "/usr/")), f"{name}: every absolute path is rewritten"
+    hook_env = dict(os.environ, PATH=f"{shims}:{os.environ['PATH']}", LC_ALL="C")
+    sleepers = []
+    try:
+        for _ in ("setup_begin", "setup_complete"):  # as task.toml runs it
+            done = subprocess.run(["sh", str(top / "provision-scratch")], env=hook_env, capture_output=True, text=True, timeout=120)
+            assert done.returncode == 0 and done.stdout == "" and done.stderr == "", done
+        assert (state / "room").stat().st_size == 64 << 20 and len(list((state / "inodes").iterdir())) == 64
+        assert state.stat().st_mode & 0o777 == 0o700 and (state / "free-at-start").read_text() == "2500000 4096 1300000\n"
+        turn_started = int((state / "turn-started").read_text())
+        rebuild.chmod(0o777)
+        (rebuild / "bpl").write_text("#!/bin/sh\necho hi\n")
+        (rebuild / "bpl").chmod(0o755)
+        (rebuild / "LICENSE").write_text("Apache License\n")
+        (rebuild / "tools").mkdir()
+        (rebuild / "tools" / "sh").symlink_to("/bin/sh")            # the machine's own: copied
+        (rebuild / "abs").symlink_to(rebuild / "LICENSE")           # inside, absolute: made relative
+        (rebuild / "gone").symlink_to("nowhere")                    # points at nothing: removed
+        os.mkfifo(rebuild / "pipe")                                 # removed
+        (rebuild / ".manifest").symlink_to("/etc/hosts")            # the hook's own two names, left by the session
+        (rebuild / ".manifest.json").write_text('{"delivered": "delivered 999 999"}\n')
+        done, sleeper = arm(script, env)
+        sleepers.append(sleeper)
+        assert sleeper and logged(top / "timer.log", f" armed pid {sleeper}: ", 5)
+        its_sleep = child_of(sleeper)
+        ran = subprocess.run(["sh", str(top / "reclaim-scratch")], env=hook_env, cwd=top / "app", capture_output=True, text=True, timeout=300)
+        assert ran.returncode == 0 and ran.stderr == "", ran
+        mark = [line.replace(str(top), "") for line in (rebuild / ".manifest").read_text().splitlines()]
+        assert mark[0].startswith("delivered 5 ") and mark[1:] == [
+            "tools/sh: a copy of /bin/sh (was a link to /bin/sh)", "removed pipe: not a file, a directory or a link",
+            "removed gone -> nowhere: it points at nothing", "abs -> LICENSE (was /app/rebuild/LICENSE)",
+            "moved .manifest out of /app/rebuild: this step writes a file of that name there",
+            "moved .manifest.json out of /app/rebuild: this step writes a file of that name there"], mark
+        assert ran.stdout.replace(str(top), "").splitlines() == mark[1:], "what the hook prints is the mark's notes"
+        assert not (rebuild / ".manifest").is_symlink() and (rebuild / ".manifest").stat().st_mode & 0o777 == 0o644
+        assert sorted(path.name for path in rebuild.iterdir()) == [".manifest", ".manifest.json", "LICENSE", "abs", "bpl", "tools"]
+        assert (rebuild / "tools" / "sh").is_file() and not (rebuild / "tools" / "sh").is_symlink() and os.readlink(rebuild / "abs") == "LICENSE"
+        aside = sorted(path for path in (top / "app").iterdir() if path.name.startswith(".aside."))
+        assert sorted(item.name for folder in aside for item in folder.iterdir()) == [".manifest", ".manifest.json"], "moved, never followed"
+        assert sorted(path.name for path in state.iterdir()) == ["aside.txt", "before.jsonl", "fixer.jsonl", "free-at-start", "prescan.json",
+                                                                 "processes.txt", "reclaiming", "session.json", "timer.txt", "turn-started"], \
+            "the room and the spare inodes are given back"
+        record = json.loads((rebuild / ".manifest.json").read_text())
+        assert record["delivered"] == mark[0] and record["fixer_status"] == 0 and record["listing_complete"] is True, record["delivered"]
+        assert [record["kill_rounds"], record["user_processes_left"], record["user_process_count"]] == [0, 0, 1]
+        assert record["user_processes"][0]["command"] == "sleep 99" and record["connectivity_open"] is False
+        assert set(record["connectivity"]) == {"pypi.org:443", "github.com:443"} and record["turn_started"] == turn_started
+        assert record["hook_started"] >= turn_started and record["ended_by_timer"] is False
+        assert [line.split(" ", 1)[1].split(":")[0] for line in record["timer_log"]] == [f"armed pid {sleeper}", f"stopped pid {sleeper}"]
+        assert gone(sleeper, 5) and gone(its_sleep, 5) and not (top / "timer.pid").exists(), "the hook ended the waiting sleeper and its sleep"
+    finally:
+        end_all([], sleepers, tmp_path)
+
+
+# ---------------------------------------------------------------- the whole evaluation, with root and Linux stood in
+
+WHOLE_RUN = r'''
+"""One evaluation through verify.main() itself, on a delivery the collect hook's own scripts marked and Harbor's
+copy carried. Stand-ins only for what needs root or Linux, in verify's and runcases' namespaces: the effective uid
+reads 0; chown and lchown demand integer ids, as the real calls do (a string raises TypeError before any system call),
+and change nothing; setpriv is "found"; a command behind the privilege drop is answered as a correct unprivileged
+Linux process would answer it (the set-id copy of id(1) with sys.argv[4]), or, for a case, started without the drop
+once the drop's arguments are checked against the ids sandbox() returned; kill -1, ipcrm and find are counted, not
+run; /logs and the verifier's own directory map into the scratch directory; writable_dirs() does not walk this
+machine."""
+import collections, json, os, shutil, subprocess, sys, tarfile
+from pathlib import Path
+sys.dont_write_bytecode = True
+sys.path.insert(0, sys.argv[1])
+import verify
+rc = verify.runcases
+hook, base, set_id_answer, delivered = Path(sys.argv[2]).read_text(), Path(sys.argv[3]), sys.argv[4], sys.argv[5] == "program"
+prescan, measure = (hook.split("<<'EOF'\n")[n].split("\nEOF\n", 1)[0] for n in (1, 4))
+agent, state, archives = base / "agent" / "app" / "rebuild", base / "agent" / "state", base / "agent" / "tmp"
+for folder in (agent, state, archives, base / "tmp", base / "tmpdir", base / "tests" / "private", base / "v" / "app" / "rebuild",
+               base / "logs" / "artifacts"):
+    folder.mkdir(parents=True)
+if delivered:
+    (agent / "bpl").write_text('#!/bin/sh\necho "$2"\n')
+    (agent / "bpl").chmod(0o755)
+    (agent / "LICENSE").write_text("Apache License\n")
+(state / "session.json").write_text(json.dumps({"checked_at": "2026-11-20T01:00:00Z", "connectivity": {"pypi.org:443": "closed (OSError)"},
+                                                "connectivity_open": False, "user_process_count": 0, "user_processes": []}))
+(state / "turn-started").write_text("1700000000\n")
+(state / "timer.txt").write_text("2026-11-20T00:00:00Z armed pid 77: ending the processes selected by '-u dev' in 33900 s\n"
+                                 "2026-11-20T01:00:00Z stopped pid 77: reclaim-scratch has begun\n")
+for script, arguments in ((prescan, ["100000", "1000", str(state)]),
+                          (measure, ["100000", "1000000000", "1000", str(state), str(archives), "100", "0", "0", "1700030000", "0"])):
+    done = subprocess.run([sys.executable, "-I", "-", str(agent), *arguments], input=script, capture_output=True, text=True, timeout=300)
+    assert done.returncode == 0, done.stderr
+copied = base / "v" / "app" / "rebuild"
+subprocess.run(["tar", "-cf", str(base / "copy.tar"), "-C", str(agent), "."], check=True, capture_output=True, timeout=120,
+               env=dict(os.environ, COPYFILE_DISABLE="1"))
+with tarfile.open(base / "copy.tar") as bundle:
+    bundle.extractall(copied, filter="data")
+cases = [{"id": f"C{i}", "kind": kind, "argv": ["-e", str(i)], "files": {"main.bpl": "1\n"}, "stdin": None}
+         for i, kind in enumerate(["expr", "expr", "script", "worker"])]
+(base / "tests" / "private" / "cases.json").write_text(json.dumps({"cases": cases}))
+(base / "tests" / "private" / "expected.json").write_text(json.dumps({case["id"]: {"exit": 0, "stdout": case["argv"][1] + "\n"} for case in cases}))
+(base / "tests" / "private" / "marker").write_text("0123456789abcdef0123456789abcdef\n")
+
+RealPath = Path
+events = {"chown": 0, "lchown_in_seal": 0, "lchown_in_prepare": 0, "not_run": collections.Counter(), "probes": [], "through_the_drop": 0,
+          "sandbox": None}
+STATUS = ("Name:\tpython3\nUid:\t{u}\t{u}\t{u}\t{u}\nGid:\t{u}\t{u}\t{u}\t{u}\nGroups:\t \nNoNewPrivs:\t1\nCapPrm:\t0000000000000000\n"
+          "CapEff:\t0000000000000000\nCapBnd:\t000001ffffffffff\nCapAmb:\t0000000000000000\n")
+LIMITS = ("Limit                     Soft Limit           Hard Limit           Units     \n"
+          "Max file size             268435456            268435456            bytes     \n"
+          "Max data size             274877906944         274877906944         bytes     \n"
+          "Max stack size            8388608              8388608              bytes     \n"
+          "Max core file size        0                    0                    bytes     \n"
+          "Max processes             512                  512                  processes \n")
+MAPPED = {"/logs/verifier": base / "logs" / "verifier", "/logs/artifacts": base / "logs" / "artifacts",
+          str(RealPath(verify.__file__)): base / "tests" / "verify.py"}
+
+
+def integers(*values):
+    for value in values:
+        if type(value) is not int:  # what os.chown and os.lchown do with anything else
+            raise TypeError(f"an integer is required (got type {type(value).__name__})")
+
+
+class StandIn:
+    def __init__(self, real):
+        self.__dict__["_real"] = real
+
+    def __getattr__(self, name):
+        return getattr(self._real, name)
+
+
+class VerifyOs(StandIn):
+    def geteuid(self):
+        return 0
+
+    def chown(self, path, uid, gid, **options):
+        integers(uid, gid)
+        events["chown"] += 1
+
+    def lchown(self, path, uid, gid):
+        integers(uid, gid)
+        events["lchown_in_seal"] += 1
+
+    def kill(self, pid, sig):
+        raise AssertionError("the verifier signalled a process of this machine")
+
+
+class VerifyShutil(StandIn):
+    def which(self, name, *args, **options):
+        return "/usr/bin/setpriv" if name == "setpriv" else self._real.which(name, *args, **options)
+
+
+class VerifySubprocess(StandIn):
+    def run(self, argv, **options):
+        argv = [str(item) for item in argv]
+        if argv[0] == "setpriv":
+            assert argv[1] == "--reuid" and argv[3] == "--regid" and argv[5] == "--clear-groups", argv
+            assert argv[2].isdigit() and argv[2] == argv[4], argv
+            rest = argv[6:]
+            while rest and rest[0] in ("--no-new-privs", "--"):
+                rest = rest[1:]
+            if rest[:1] in (["kill"], ["ipcrm"]):
+                events["not_run"][" ".join(rest)] += 1
+                return subprocess.CompletedProcess(argv, 0, stdout=b"", stderr=b"")
+            if rest[:3] == [sys.executable, "-I", "-c"]:
+                answer = STATUS.format(u=argv[2]) + "PrctlNoNewPrivs:\t1\n"
+            elif rest == ["cat", "/proc/self/limits"]:
+                answer = LIMITS
+            elif len(rest) == 2 and rest[0].endswith("/.setid-probe/id") and rest[1] in ("-u", "-g"):
+                assert os.stat(rest[0]).st_mode & 0o4000, "the probe file is set-id when it is run"
+                answer = (argv[2] if set_id_answer == "own" else set_id_answer) + "\n"
+            else:
+                raise AssertionError(f"an unexpected command behind the drop: {rest}")
+            events["probes"].append(" ".join(rest[-2:])[-24:])
+            return subprocess.CompletedProcess(argv, 0, stdout=answer, stderr="")
+        if argv[0] in ("find", "ipcrm"):
+            events["not_run"][argv[0]] += 1
+            return subprocess.CompletedProcess(argv, 0, stdout=b"", stderr=b"")
+        if argv[:3] == ["chmod", "-R", "a+rX"] and argv[3].startswith(str(base)):
+            return subprocess.run(argv, **options)
+        raise AssertionError(f"an unexpected command from the verifier: {argv}")
+
+
+class RunOs(StandIn):
+    def lchown(self, path, uid, gid):
+        integers(uid, gid)
+        events["lchown_in_prepare"] += 1
+
+
+class RunSubprocess(StandIn):
+    def Popen(self, argv, **options):  # noqa: N802 - subprocess's own name
+        argv = [str(item) for item in argv]
+        if argv[0] == "setpriv":  # the drop itself cannot run here: its arguments are checked, then the command starts directly
+            uid = events["sandbox"][1][0]
+            assert argv[:7] == ["setpriv", "--reuid", str(uid), "--regid", str(uid), "--clear-groups", "--no-new-privs"], argv[:7]
+            argv = argv[7:]
+            events["through_the_drop"] += 1
+        return subprocess.Popen(argv, **options)
+
+    def run(self, argv, **options):
+        argv = [str(item) for item in argv]
+        assert argv[:3] == ["rm", "-rf", "--"] and len(argv) == 4 and argv[3].startswith(str(base / "tmp") + os.sep), argv
+        return subprocess.run(argv, **options)
+
+
+def path_stand_in(*parts):
+    made = RealPath(*parts)
+    return MAPPED.get(str(made), made)
+
+
+real_sandbox = verify.sandbox
+
+
+def sandbox_recorded():
+    events["sandbox"] = real_sandbox()
+    return events["sandbox"]
+
+
+verify.os, verify.shutil, verify.subprocess, verify.Path = VerifyOs(os), VerifyShutil(shutil), VerifySubprocess(subprocess), path_stand_in
+rc.os, rc.subprocess = RunOs(os), RunSubprocess(subprocess)
+verify.sandbox = sandbox_recorded
+verify.SUBMISSION, verify.MARKER = copied, base / "tests" / "private" / "marker"
+verify.LEFTOVER_DIRS[:] = [str(base / "tmp")]
+verify.writable_dirs = lambda root="/": []
+verify.RESERVE_BYTES = 1 << 20  # this machine's free space is not what is checked here
+verify.tempfile.tempdir = str(base / "tmpdir")
+rc.WORKSPACE, rc.HOME, rc.TEMP = base / "tmp" / "bpl-run", base / "tmp" / "bpl-home", base / "tmp" / "bpl-tmp"
+code = verify.main()
+results = base / "logs" / "verifier"
+metrics = json.loads((results / "metrics.json").read_text())
+prefix, owner, limits = events["sandbox"] or ([], (), {})
+print(json.dumps({"exit": code, "reward": (results / "reward.txt").read_text() if (results / "reward.txt").exists() else None,
+                  "left": sorted(path.name for path in results.iterdir()), "metrics": metrics, "prefix": prefix, "owner": list(owner),
+                  "owner_types": [type(value).__name__ for value in owner], "limits": limits,
+                  "events": dict(events, not_run=dict(events["not_run"]), sandbox=None),
+                  "probe_left": (copied.parent / ".setid-probe").exists(), "scratch": sorted(path.name for path in (base / "tmp").iterdir())}))
+'''
+
+
+def whole_run(tmp_path: Path, set_id_answer: str, delivery: str) -> dict:
+    done = subprocess.run([sys.executable, "-B", "-c", WHOLE_RUN, str(STEP / "tests"), str(TASK / "environment" / "reclaim-scratch"),
+                           str(tmp_path), set_id_answer, delivery], capture_output=True, text=True, timeout=600)
+    assert done.returncode == 0, done.stdout[-2000:] + done.stderr[-3000:]
+    return json.loads(done.stdout.strip().splitlines()[-1])
+
+
+def test_the_whole_evaluation_runs_with_only_root_and_linux_stood_in(tmp_path):
+    """QA 07e F3. No other check enters main(), sandbox() or probe(), or reaches prepare()'s chown walk with an owner:
+    the gap in which the sibling task returned the set-id probe's strings as the run's ids, so that every case of its
+    first trial on the platform was a setup error. Here main() runs whole, three times: a delivery whose program answers
+    every case, the hook's mark over nothing, and a sandbox in which a set-id root file runs as root."""
+    graded = whole_run(tmp_path / "graded", "own", "program")
+    metrics, events = graded["metrics"], graded["events"]
+    assert graded["exit"] == 0 and graded["reward"] == "1.000000" and metrics["status"] == "completed", graded
+    assert graded["left"] == ["metrics.json", "reward.txt"], "the reserved reward file is renamed, nothing else is left"
+    assert [metrics[key] for key in ("cases_total", "cases_run", "cases_passed", "setup_errors", "timeouts")] == [4, 4, 4, 0, 0], metrics
+    assert metrics["notes"] == [] and metrics["seconds_total"] > 0 and metrics["by_kind"]["expr"]["passed"] == 2, metrics
+    uid = graded["owner"][0]
+    assert graded["owner_types"] == ["int", "int"] and graded["owner"] == [uid, uid] and 20000 <= uid < 60000, graded["owner"]
+    assert graded["prefix"] == ["setpriv", "--reuid", str(uid), "--regid", str(uid), "--clear-groups", "--no-new-privs"]
+    assert events["through_the_drop"] == 4, "every case started through the prefix sandbox() returned"
+    assert events["lchown_in_prepare"] >= 4 * 4 and events["lchown_in_seal"] == 5, "integer ids reached every chown (a string raises)"
+    assert events["chown"] == 2, "the scratch directory, and the set-id probe file"
+    assert len(events["probes"]) == 4 and [probe.split()[-1] for probe in events["probes"][2:]] == ["-u", "-g"], events["probes"]
+    assert events["not_run"]["kill -KILL -1"] >= 5 and events["not_run"]["find"] >= 5 and events["not_run"]["ipcrm --all"] >= 5
+    assert graded["limits"]["Max processes"] == "512" and metrics["limits"] == graded["limits"]
+    assert not graded["probe_left"] and graded["scratch"] == [], "the probe and the workspaces are removed"
+    record = metrics["delivery_record"]
+    size = len('#!/bin/sh\necho "$2"\n') + len("Apache License\n")
+    assert record["delivered"] == f"delivered 2 {size}", record
+    assert record["entries"] == 2 and record["connectivity_open"] is False and record["ended_by_timer"] is False
+    assert [line.split(" ", 1)[1][:15] for line in record["timer_log"]] == ["armed pid 77: e", "stopped pid 77:"], record["timer_log"]
+    assert metrics["submission"]["size"] == record["bpl"]["size"] and record["listing_complete"] is True
+
+    nothing = whole_run(tmp_path / "nothing", "own", "nothing")
+    assert nothing["exit"] == 0 and nothing["reward"] == "0.000000" and nothing["metrics"]["cases_passed"] == 0, nothing
+    assert nothing["metrics"]["notes"] == ["/app/rebuild/bpl is missing or not executable"], nothing["metrics"]["notes"]
+    assert nothing["metrics"]["delivery_record"]["delivered"] == "delivered 0 0" and nothing["events"]["through_the_drop"] == 0
+
+    escape = whole_run(tmp_path / "escape", "0", "program")
+    assert escape["exit"] == 1 and escape["reward"] is None and escape["left"] == ["metrics.json"], escape
+    assert escape["metrics"]["status"] == "evaluation_error", escape["metrics"]
+    assert "a set-id root file ran with user and group ('0', '0')" in escape["metrics"]["error"], escape["metrics"]
+    assert escape["events"]["through_the_drop"] == 0, "no case runs in a sandbox that does not hold"
 
 
 def test_the_agent_cannot_replace_the_artifact_directory():
