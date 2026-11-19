@@ -86,6 +86,9 @@ archive or binary.
 - **Checks.** 35 task checks (registered in the root `pyproject.toml`) and the repository checks
   pass with Python 3.13; `check_repository.py` passes. Packaged twice to the same hash; Oddish
   preflight passes; graded locally from the bundle (see [Validation](#validation)).
+- **Deadline.** The verifier's one deadline is 5,400 s inside a 6,000 s step, so that every one of
+  the 2,142 cases can take the whole stated 2 s plus the sweeps between cases; agent and verifier
+  together stay under 11.3 hours, inside Oddish's 12-hour attempt.
 - Not built on Oddish and not run, on the owner's rule.
 
 ## Current implementation
@@ -247,8 +250,10 @@ instruction states no time budget.
 5. A case passes when the exit status and the bytes of standard output equal the recorded ones.
    A case that cannot be set up or started, runs too long, prints too much or passes a limit fails;
    none of that is an evaluation error.
-6. One deadline (3,300 s from the start) covers the delivery check, sealing, scans, cleanup and
-   cases; the cases left count as failed. At the end the verifier cleans up, writes the reward into
+6. One deadline (5,400 s from the start, inside the step's 6,000 s) covers the delivery check,
+   sealing, scans, cleanup and cases; it leaves room for every case to take the whole stated 2 s
+   plus the sweeps, so only a renderer slower than stated loses cases to it; the cases left count
+   as failed. At the end the verifier cleans up, writes the reward into
    its reserved file and renames it to `reward.txt`, then writes `metrics.json` (by kind, by area,
    timings, the recording).
 
@@ -310,10 +315,10 @@ Licences: the specification, documentation and carve-rs are MIT. The spec's `LIC
 | `checks/` (35 tests) with `ci_checks`, Python 3.13, and `check_repository.py` | working tree, 2026-11-19 | pass |
 | Corpus agreement, spec model against carve-rs (macOS release) | spec `51c5631`, carve-rs 0.1.14 | 4,626 of 4,631 equal; model equals the corpus HTML on all |
 | Case generation | cases `8c021e92` (2,142) | 8 dropped as model disagreements, 57 with no answer-changing renaming, 108 shown in the docs, spec or pack |
-| Local recording with the macOS release build, through the bundle's recorder | bundle `9f4aa6872d03` | 2,142 of 2,142 kept; none slow, unsteady, crashed, differing or perturbed; slowest run 35 ms |
-| Packaging twice | `scripts/package_step.py` | the same hash both times: `9f4aa6872d032e3c1c5f981ed34d2b01a29968a3500fd5c23a9aa3a630d54687`, 136 files, 16,897,065 bytes |
-| Oddish preflight | bundle `9f4aa6872d03` | pass |
-| Local grading from the bundle (`scripts/grade_locally.py`, no sandbox) | bundle `9f4aa6872d03` | reference (the original as `/app/rebuild/carve`, marked by the bundle's hook) 1.0 (2,142/2,142, 24 s); an empty delivery 0.0; a program that prints nothing 0.0 |
+| Local recording with the macOS release build, through the bundle's recorder | bundle `3b9b6b82debb` | 2,142 of 2,142 kept; none slow, unsteady, crashed, differing or perturbed; slowest run 35 ms; kept ids sha256 `23c9858a` |
+| Packaging twice | `scripts/package_step.py` | the same hash both times: `3b9b6b82debb6e8a530ea23d8a31d3b823c8d555e1d59072e2339bf365d7f4f8`, 136 files, 16,897,184 bytes |
+| Oddish preflight | bundle `3b9b6b82debb` | pass |
+| Local grading from the bundle (`scripts/grade_locally.py`, no sandbox) | bundle `3b9b6b82debb` | reference (the original as `/app/rebuild/carve`, marked by the bundle's hook) 1.0 (2,142/2,142, 23 s); an empty delivery 0.0; a program that prints nothing 0.0 |
 | Oddish baselines, QA, `harbor check` | none | not run |
 
 ## Build and deliver

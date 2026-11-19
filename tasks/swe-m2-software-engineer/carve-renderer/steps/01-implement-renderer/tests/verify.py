@@ -26,7 +26,7 @@ SUBMISSION = Path("/app/rebuild")
 PROGRAM = SUBMISSION / "carve"
 DELIVERY_MARK = ".delivered"  # written into /app/rebuild by the collect hook (environment/prepare-delivery)
 REWARD_FILES = ("reward.txt", "reward.json")
-TOTAL_SEC = 3300  # the step verifier has 3,600 s; everything up to the reward file fits in this
+TOTAL_SEC = 5400  # the step verifier has 6,000 s; everything up to the reward file fits in this, even every run at 2 s
 MARGIN_SEC = 120  # no case starts when less than this is left of TOTAL_SEC
 MAX_ENTRIES = 200_002  # entries in a submission, at most (the instruction's 200,000, its top and the mark); more is not run
 MAX_BYTES = 2 << 30    # bytes of a submission's regular files (each inode once), at most; more is not run
@@ -368,9 +368,9 @@ def identity(path: Path) -> dict:
 def arrived(top: Path) -> tuple[int, int]:
     """The entries below `top` (files, directories and links, the mark aside) and the bytes of its
     regular files, each inode once, counted the way the collect hook counts them; never following
-    a link."""
+    a link, and stopping once past MAX_ENTRIES (the count is then only a bound)."""
     entries, size, files, folders = 0, 0, set(), [str(top)]
-    while folders:
+    while folders and entries <= MAX_ENTRIES:
         with os.scandir(folders.pop()) as listing:
             for entry in listing:
                 if entry.path == str(top / DELIVERY_MARK):

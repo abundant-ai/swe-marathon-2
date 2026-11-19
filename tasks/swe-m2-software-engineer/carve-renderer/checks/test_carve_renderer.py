@@ -891,8 +891,11 @@ def test_every_run_fits_inside_the_step_verifier_time():
     per_run = int(re.search(r"^CASE_SEC = (\d+)$", RUNNER.read_text(), re.M).group(1))
     total = int(re.search(r"^TOTAL_SEC = (\d+)", (TESTS / "verify.py").read_text(), re.M).group(1))
     step_verifier = int(re.search(r"\[steps\.verifier\]\s*timeout_sec = (\d+)", (TASK / "task.toml").read_text()).group(1))
-    assert 1500 * per_run <= total < step_verifier
+    margin = int(re.search(r"^MARGIN_SEC = (\d+)", (TESTS / "verify.py").read_text(), re.M).group(1))
+    assert 2200 * (per_run + 0.25) <= total - margin and total < step_verifier, \
+        "a renderer that takes the whole stated time on every page still has every page run"
     assert f"Each run finishes within {per_run} seconds" in (STEP / "instruction.md").read_text()
+    assert int(re.search(r"\[agent\]\ntimeout_sec = (\d+)", (TASK / "task.toml").read_text()).group(1)) + step_verifier <= 41000
 
 
 def test_nothing_the_agent_sees_names_grading_or_a_budget():
