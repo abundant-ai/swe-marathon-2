@@ -401,7 +401,7 @@ def videos(rng: random.Random, names: Names, tmp: Path, small: bool, big: bool) 
     yield names.video("mp4"), trimmed
     # a phone's own 1080p recording: a busy, grainy picture, so the encoder spends its whole bitrate. At full size it is
     # just under the 64 MiB upload limit; a shipment takes it (under five minutes)
-    clip_seconds, clip_rate = (3, 2000) if small else (47, 9500) if big else (12, 7000)
+    clip_seconds, clip_rate = (3, 2000) if small else (47, 9500) if big else (6, 7000)
     yield names.video("mp4"), ffmpeg(["-f", "lavfi", "-i", f"testsrc2=size={'640x360' if small else '1920x1080'}:rate=30",
                                       "-f", "lavfi", "-i", f"anoisesrc=d={clip_seconds}:c=brown:a=0.06", "-t", str(clip_seconds),
                                       "-vf", "noise=alls=22:allf=t+u,format=yuv420p", "-c:v", "libx264", "-preset", "veryfast",
@@ -409,7 +409,7 @@ def videos(rng: random.Random, names: Names, tmp: Path, small: bool, big: bool) 
                                       "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart"], tmp / "h.mp4")
     # a yard camera's export: hours of footage are cut to a few minutes, over the five a shipment takes
     camera_seconds = 20 if small else 380
-    size, rate = ("320x240", 150) if small or not big else ("1280x720", 450)
+    size, rate = ("320x240", 150) if small else ("1280x720", 450) if big else ("320x240", 100)
     yield names.camera("mp4"), ffmpeg(["-f", "lavfi", "-i", f"life=size={size}:rate=12:ratio=0.1:life_color=#9a9a9a:death_color=#202020",
                                        "-t", str(camera_seconds), "-vf", "noise=alls=14:allf=t,format=yuv420p", "-c:v", "libx264",
                                        "-preset", "veryfast", "-b:v", f"{rate}k", "-maxrate", f"{rate}k", "-bufsize", f"{rate * 2}k",
