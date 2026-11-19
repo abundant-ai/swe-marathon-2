@@ -10,7 +10,8 @@ example pages the site generates from the corpus (resources/examples/).
 `leak_index` turns everything shipped into the set of example skeletons and the compact text
 that make_cases.leaks() checks every private case against: no case may be an example the
 agent can read, or a near-copy of one (the same text with its words, numbers or letters
-changed).
+changed). Examples written with `\n` and `\t` escapes (the ownership ledger's code spans) are
+unescaped first, and the indented example blocks of the EBNF modules are read too (QA 06).
 """
 
 from __future__ import annotations
@@ -91,12 +92,50 @@ def documentation(checkout: Path = SPEC_CHECKOUT) -> dict[str, str]:
 
 FENCE = re.compile(r"^( {0,3})(`{3,}|~{3,})([^\n]*)\n(.*?)^\1\2[ \t]*$", re.M | re.S)
 INLINE_CODE = re.compile(r"(?<!`)(`+)(?!`)(.+?)(?<!`)\1(?!`)")
+INDENTED = re.compile(r"^((?: {5,}|\t+)[^\n]*\n)+", re.M)
+ESCAPES = {"\\n": "\n", "\\t": "\t", "\\r": "\r", "⇥": "\t", "<TAB>": "\t", "<SP>": " ", "<BOM>": "\ufeff", "<U+FEFF>": "\ufeff",
+           "<U+200B>": "\u200b", "<U+00A0>": "\u00a0"}
 LETTERS = re.compile(r"[^\W\d_]+")
 DIGITS = re.compile(r"\d+")
 
 
 SOURCE_FIELDS = re.compile(r'"(?:source|canonical|aligned|input|carve)"\s*:\s*"((?:[^"\\]|\\.)*)"')
 ARROW = re.compile(r"\s*(?:->|→|=>|\bgives\b|\brenders\b|Djot:|Carve:)")
+
+
+def unescaped(text: str) -> str:
+    """`text` with the written escapes of an example (`\\n`, `\\t`, `⇥`, `<TAB>`, `<BOM>`) as the
+    characters they stand for."""
+    for written, char in ESCAPES.items():
+        text = text.replace(written, char)
+    return text
+
+
+def with_parts(piece: str) -> list[str]:
+    """`piece`, its unescaped form, and each blank-line-separated part of either."""
+    forms = [piece]
+    other = unescaped(piece)
+    if other != piece:
+        forms.append(other)
+    found = list(forms)
+    for form in forms:
+        found += [part for part in re.split(r"\n[ \t]*\n", form) if part.strip() and part.strip() != form.strip()]
+    return found
+
+
+def indented_blocks(text: str) -> list[str]:
+    """The indented example blocks of a specification module (runs of lines indented by five
+    spaces or more inside its prose), dedented, with any `->` or `→` result column cut off."""
+    found = []
+    for match in INDENTED.finditer(text):
+        lines = match.group(0).rstrip("\n").split("\n")
+        width = min(len(line) - len(line.lstrip(" \t")) for line in lines if line.strip())
+        body = "\n".join(line[width:] for line in lines)
+        found.append(body)
+        cut = [re.split(r"\s+(?:->|→)\s", line, maxsplit=1)[0] for line in body.split("\n")]
+        if cut != body.split("\n"):
+            found.append("\n".join(cut))
+    return found
 
 
 def example_sides(line: str) -> list[str]:
@@ -123,22 +162,24 @@ def snippets(text: str, name: str = "page.md") -> list[str]:
     if name.endswith(".json"):
         for match in SOURCE_FIELDS.finditer(text):
             try:
-                found.append(json.loads(f'"{match.group(1)}"'))
+                found += with_parts(json.loads(f'"{match.group(1)}"'))
             except ValueError:
                 continue
         return found
+    if name.endswith((".ebnf", ".txt")):
+        for block in indented_blocks(text):
+            found += with_parts(block)
     for match in FENCE.finditer(text):
         info = match.group(3).strip().lower()
         if info.startswith(("html", "json", "js", "ts", "php", "rust", "rs", "bash", "sh", "toml", "yaml", "ebnf", "css")):
             continue
         body = match.group(4)
-        found.append(body)
-        found += [part for part in re.split(r"\n[ \t]*\n", body) if part.strip()]
+        found += with_parts(body)
         for line in body.splitlines():
             found += example_sides(line)
     for match in INLINE_CODE.finditer(text):
         if len(match.group(2).strip()) >= 3:
-            found.append(match.group(2).strip())
+            found += with_parts(match.group(2).strip())
     for line in text.splitlines():
         found += example_sides(line)
     return found
@@ -159,14 +200,28 @@ def compact(text: str) -> str:
 
 
 def leak_index(pages: dict[str, str]) -> tuple[set[str], str]:
-    """The skeletons of every example the pages show, and all their text compacted."""
+    """The skeletons of every example the pages show, and all their text compacted, both with the
+    written escapes unescaped."""
     skeletons = set()
     for name, text in pages.items():
         for piece in snippets(text, name):
             shape = skeleton(piece)
             if len(compact(shape)) >= 3:
                 skeletons.add(shape)
-    return skeletons, "\n".join(compact(text) for text in pages.values())
+    return skeletons, "\n".join(compact(text) + "\n" + compact(unescaped(text)) for text in pages.values())
+
+
+ANSWER_LEN = 20  # characters of a compacted answer, at least, for it to count as shown
+
+
+def answer_shown(html: str, blob: str) -> bool:
+    """Whether the shipped text holds a rendered answer (compacted, at least ANSWER_LEN characters
+    or three tags): the docs print the HTML of some examples, and a case whose answer they print
+    is a leak whatever its source looks like."""
+    flat = compact(html)
+    if len(flat) < ANSWER_LEN and flat.count("<") < 3:
+        return False
+    return flat in blob
 
 
 INCLUDE = re.compile(r"\{\{")

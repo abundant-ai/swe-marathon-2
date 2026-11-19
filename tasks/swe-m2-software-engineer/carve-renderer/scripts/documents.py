@@ -18,7 +18,10 @@ from __future__ import annotations
 import random
 import re
 
-from words import ADJECTIVES, ADVERBS, FIRST_NAMES, LAST_NAMES, NOUNS, PLACES, VERBS
+import prose
+from words import ADJECTIVES, ADVERBS, NOUNS, VERBS
+
+HANDLES = ["alex", "sam", "robin", "mori", "lee", "noor", "ola", "pat", "kay", "rin"]
 
 LANGS = {
     "bash": ["{tool} install {pkg}", "export {VAR}={value}", "{tool} run {noun} --{flag}", "mkdir -p {noun}/{noun2}",
@@ -61,14 +64,18 @@ class Writer:
     """The seeded state of one document: its random source, the ids it has minted, its footnotes,
     references and abbreviations."""
 
-    def __init__(self, rng: random.Random):
+    def __init__(self, rng: random.Random, register: str | None = None):
         self.rng = rng
+        self.register = register or rng.choice(list(prose.REGISTERS))
+        self.sentences = list(prose.sentences(self.register))
+        rng.shuffle(self.sentences)
+        self.at = 0
         self.headings: list[str] = []
         self.ids: list[str] = []
         self.notes: list[tuple[str, str]] = []
         self.refs: dict[str, str] = {}
         self.abbrs: dict[str, str] = {}
-        self.people = [f"{rng.choice(FIRST_NAMES)}" for _ in range(4)]
+        self.people = [prose.person(rng).split(" ")[0] for _ in range(4)]
         self.project = rng.choice(NOUNS).capitalize() + rng.choice(["", "", "ly", "kit", "box", "flow", "base"])
 
     # --- words -------------------------------------------------------------------------------
@@ -84,32 +91,27 @@ class Writer:
     def url(self) -> str:
         scheme = self.pick(SCHEMES)
         if scheme == "mailto:":
-            return f"mailto:{self.pick(FIRST_NAMES).lower()}@{self.pick(HOSTS)}"
+            return f"mailto:{self.pick(HANDLES)}@{self.pick(HOSTS)}"
         path = "/".join(self.pick(NOUNS) for _ in range(self.rng.randint(0, 3)))
         return f"{scheme}{self.pick(HOSTS)}/{path}" + (f"?page={self.number(1, 9)}" if self.chance(0.1) else "")
 
     def person(self) -> str:
-        return f"{self.pick(FIRST_NAMES)} {self.pick(LAST_NAMES)}"
+        return prose.person(self.rng)
 
-    def indefinite(self, word: str) -> list[str]:
-        return [article_for(word), word]
+    def plain_sentence(self) -> str:
+        """The next real sentence of the document's register, cycling with a reshuffle."""
+        if self.at >= len(self.sentences):
+            self.rng.shuffle(self.sentences)
+            self.at = 0
+        sentence = self.sentences[self.at]
+        self.at += 1
+        return sentence
 
     def phrase(self) -> list[str]:
-        """A clause of plain words."""
-        rng = self.rng
-        shapes = [
-            ["the", self.pick(ADJECTIVES), self.pick(NOUNS), third_person(self.pick(VERBS)), "the", self.pick(NOUNS)],
-            ["we", self.pick(VERBS), "every", self.pick(NOUNS), "before", "the", self.pick(NOUNS), third_person(self.pick(VERBS))],
-            ["each", self.pick(NOUNS), "can", self.pick(VERBS), *self.indefinite(self.pick(ADJECTIVES)), self.pick(NOUNS)],
-            ["this", self.pick(NOUNS), "is", self.pick(ADVERBS), self.pick(ADJECTIVES)],
-            ["you", "should", self.pick(VERBS), "the", self.pick(NOUNS), "when", "the", self.pick(NOUNS), "is", self.pick(ADJECTIVES)],
-            [self.pick(self.people), third_person(self.pick(VERBS)), "the", self.pick(NOUNS), "in", self.pick(PLACES)],
-            ["after", self.pick(["one", "two", "three", "a few"]), self.pick(["days", "weeks", "releases", "runs"]), "the",
-             self.pick(NOUNS), "was", self.pick(ADVERBS), self.pick(ADJECTIVES)],
-            ["it", "takes", str(self.number()), self.pick(UNITS), "to", self.pick(VERBS), *self.indefinite(self.pick(NOUNS))],
-        ]
-        words = list(rng.choice(shapes))
-        return " ".join(words).split(" ")
+        """The words of a real sentence, without its final punctuation: a clause to slice for a
+        heading, a caption or an inline note."""
+        sentence = self.plain_sentence().rstrip(".!?")
+        return sentence.split(" ")
 
     def inline(self, words: list[str]) -> list[str]:
         """`words` with up to two spans of inline markup."""
@@ -156,7 +158,7 @@ class Writer:
             self.refs.setdefault(label, self.url())
             return f"[{span}][{label}]" if rng.random() < 0.8 else f"[{label}][]"
         if kind == "auto":
-            return f"<{self.url()}>" if rng.random() < 0.8 else f"{span} <{self.pick(FIRST_NAMES).lower()}@{self.pick(HOSTS)}>"
+            return f"<{self.url()}>" if rng.random() < 0.8 else f"{span} <{self.pick(HANDLES)}@{self.pick(HOSTS)}>"
         if kind == "kbd":
             return f"[{self.pick(['Ctrl', 'Shift', 'Alt', 'Cmd'])}+{self.pick(list('ABCDEFKLPQRSTZ'))}]{{kbd}}"
         if kind == "abbr":
@@ -171,7 +173,7 @@ class Writer:
         if kind == "quote":
             return f'"{span}"' if rng.random() < 0.7 else f"'{span}'"
         if kind == "mention":
-            return f"@{self.pick(FIRST_NAMES).lower()}"
+            return f"@{self.pick(HANDLES)}"
         if kind == "tag":
             return f"#{self.pick(TAGS)}"
         if kind == "symbol":
@@ -193,7 +195,7 @@ class Writer:
         if kind == "subst":
             return f"{{~{span}~>{self.pick(NOUNS)}~}}"
         if kind == "critic":
-            return f"{span} {{#{self.pick(['check this', 'source?', 'reword', 'ask ' + self.pick(FIRST_NAMES)])}#}}"
+            return f"{span} {{#{self.pick(['check this', 'source?', 'reword', 'ask ' + self.pick(HANDLES).capitalize()])}#}}"
         if kind == "class":
             return f"[{span}]{{.{self.pick(['muted', 'lead', 'term', 'badge', 'new'])}}}"
         if kind == "escape":
@@ -205,19 +207,22 @@ class Writer:
         return f"{{*{span}*}}"
 
     def sentence(self, plain: bool = False) -> str:
-        words = self.phrase()
-        if not plain:
-            words = self.inline(words)
-        text = " ".join(words)
-        text = text[0].upper() + text[1:] if text[0].islower() else text
-        end = self.rng.choices([".", ".", ".", "!", "?", "...", " -- for now.", ":"], weights=[30, 30, 30, 2, 3, 2, 1, 1])[0]
-        if not plain and self.chance(0.08):
-            text += self.pick([" (tm)", " -> done", " --- mostly", ", isn't it", " (c) " + str(self.number(2019, 2026))])
-        return text + end
+        """A real sentence, with inline markup woven through it unless `plain`. Its own punctuation
+        is kept; a hazard line sometimes stands in for it."""
+        if not plain and self.chance(0.18):
+            return prose.hazard_line(self.rng)
+        sentence = self.plain_sentence()
+        if plain:
+            return sentence
+        body, end = (sentence[:-1], sentence[-1]) if sentence[-1:] in ".!?" else (sentence, "")
+        return " ".join(self.inline(body.split(" "))) + end
 
     def paragraph(self, sentences: int | None = None) -> str:
         count = sentences or self.rng.randint(1, 5)
-        text = " ".join(self.sentence() for _ in range(count))
+        parts = [self.sentence() for _ in range(count)]
+        if self.chance(0.3):
+            parts.insert(self.rng.randrange(len(parts) + 1), prose.hazard_line(self.rng))
+        text = " ".join(parts)
         if self.chance(0.06):
             text += " %% " + self.pick(["TODO: check numbers", "draft", "ask legal", "old wording below"])
         return self.wrap(text)
@@ -375,15 +380,24 @@ class Writer:
     def line_block(self) -> str:
         if self.chance(0.5):
             return "::: |\n" + "\n".join([self.person(), f"{self.number(1, 200)} {self.pick(NOUNS).capitalize()} Street",
-                                          f"{self.pick(PLACES)} {self.number(1000, 9999)}"]) + "\n:::"
+                                          f"{prose.place(self.rng)} {self.number(1000, 9999)}"]) + "\n:::"
         return "::: |\n" + "\n".join(("  " if i % 2 else "") + " ".join(self.phrase()[:5]) for i in range(4)) + "\n:::"
 
     def crossref(self) -> str:
-        if self.ids and self.chance(0.6):
-            return f"See </#{self.pick(self.ids)}> for details."
+        rng = self.rng
+        if self.ids and self.chance(0.5):
+            ident = self.pick(self.ids)
+            return rng.choice([f"See </#{ident}> for the details.", f"The steps are under </#{ident}>.",
+                               f"We cover this in </#{ident}>.", f"</#{ident}> has the full list.",
+                               f"For the rationale, read </#{ident}>."])
         if self.headings:
             target = self.pick(self.headings)
-            return f"As described in [{target}][], " + " ".join(self.phrase()) + "."
+            lower = target[0].lower() + target[1:]
+            return rng.choice([f"As we noted in [{target}][], this matters here too.",
+                               f"The [{target}][] section covers the background.",
+                               f"See [{target}][] above, and the note after it.",
+                               f"This follows from what [{lower}][] describes.",
+                               f"Compare [{target}][] with the case below."])
         return self.sentence()
 
     def finish(self, parts: list[str]) -> str:
@@ -449,7 +463,7 @@ def article(w: Writer) -> str:
 def meeting(w: Writer) -> str:
     date = f"2026-{w.number(1, 12):02d}-{w.number(1, 28):02d}"
     parts = [w.heading(1, f"{w.pick(['Weekly sync', 'Planning', 'Retro', 'Design review', 'Standup'])} -- {date}")]
-    parts.append("Attendees: " + ", ".join(f"@{name.lower()}" for name in w.people) + (" %% " + w.pick(FIRST_NAMES) + " was out" if w.chance(0.3) else ""))
+    parts.append("Attendees: " + ", ".join(f"@{name.lower()}" for name in w.people) + (" %% " + w.pick(HANDLES).capitalize() + " was out" if w.chance(0.3) else ""))
     parts.append(w.heading(2, "Agenda"))
     parts.append(w.ordered())
     parts.append(w.heading(2, "Notes"))
@@ -590,7 +604,7 @@ def announcement(w: Writer) -> str:
 
 
 def journal(w: Writer) -> str:
-    parts = [w.heading(1, f"{w.pick(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'])}, {w.pick(PLACES)}")]
+    parts = [w.heading(1, f"{w.pick(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'])}, {prose.place(w.rng)}")]
     for _ in range(w.rng.randint(2, 4)):
         parts.append(w.rng.choices([w.paragraph, w.quote, w.line_block, w.bullets], weights=[6, 2, 1, 2])[0]())
     if w.chance(0.3):
@@ -749,7 +763,7 @@ def divergence_construct(w: Writer) -> str:
         lambda: f"Use /{noun}/ and _{other}_ and ~{noun}~, not ^{other}^ or ,{noun}, -- but {{^{w.number(2, 9)}^}} and H{{,2,}}O work; "
                 f"{noun}_{other}_x, a/b/c, x = 5 and key=value stay as written.",                                                       # 4
         lambda: "\n".join(f"({label}) {w.sentence()}" for label in w.pick([["1", "2", "3"], ["a", "b"], ["i", "ii"]])),                 # 5
-        lambda: f"{w.sentence()} %% {w.pick(['check with', 'ask'])} {w.pick(FIRST_NAMES)}\n{w.sentence()} {{% hidden note %}} {w.sentence()}\n\n%%%\n{w.sentence()}\n%%%",  # 6
+        lambda: f"{w.sentence()} %% {w.pick(['check with', 'ask'])} {w.pick(HANDLES).capitalize()}\n{w.sentence()} {{% hidden note %}} {w.sentence()}\n\n%%%\n{w.sentence()}\n%%%",  # 6
         lambda: f"{w.sentence()}\n" + w.pick([f"# {title}", f"> {w.sentence()}", f"```\n{noun}\n```", f"| {noun} | {other} |",
                                                f"::: note\n{w.sentence()}\n:::", f"- {w.sentence()}", f"1. {w.sentence()}"]) + f"\n\n{w.sentence()}",  # 7
         lambda: f"React with :+1: or :{noun}: but not :_{other}: -- the time 10:30: and a:b:c stay {w.pick(ADJECTIVES)}.",               # 8

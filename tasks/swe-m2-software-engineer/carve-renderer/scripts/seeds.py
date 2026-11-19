@@ -1,4 +1,4 @@
-"""The private seed: experiment/seeds.json, made once at random and never committed.
+"""The private seed: experiment/seeds.json, a 128-bit number made once at random and never committed.
 
 usage: seeds.py cases   prints the case seed, making the file first if needed
 
@@ -22,7 +22,7 @@ def value(name: str) -> int:
     """The seed called `name`, from experiment/seeds.json, which is made when missing."""
     seeds = json.loads(FILE.read_text()) if FILE.is_file() else {}
     if any(key not in seeds for key in NAMES):
-        seeds = {key: seeds.get(key) or 10**8 + secrets.randbelow(9 * 10**8) for key in NAMES}
+        seeds = {key: seeds.get(key) or secrets.randbits(128) for key in NAMES}
         FILE.parent.mkdir(parents=True, exist_ok=True)
         FILE.write_text(json.dumps(seeds, indent=1, sort_keys=True) + "\n")
     return int(seeds[name])

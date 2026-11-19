@@ -3,7 +3,8 @@
 Two kinds:
 
 - `renamed`: every ASCII word in prose position becomes another word of the same length and the
-  same letter case, consistently across the document (so a cross-reference, a heading
+  same letter case, consistently across the document (a word touching a non-ASCII character, a
+  letter with a diacritic or a combining mark, is kept, so that nothing is renamed by halves) (so a cross-reference, a heading
   reference, a footnote label or an abbreviation still finds what it found before). Words that
   are syntax or that the renderer treats specially are kept everywhere in the document: a
   container's type word, a code or raw fence's info string, an attribute block other than its
@@ -28,7 +29,7 @@ import re
 from words import WORDS_BY_LENGTH
 
 WORD = re.compile(r"[A-Za-z]+")
-CONTAINER_TYPE = re.compile(r"^[ \t]*(?:>[ \t]?)*:{3,}[ \t]*([^\s{\"\[]+)", re.M)
+CONTAINER_TYPE = re.compile(r"^[ \t]*(?:(?:>|[-*+]|\d+[.)]|\.|::?|\[\^[^\]\n]*\]:)[ \t]+)*(?:>[ \t]?)*:{3,}[ \t]*([^\s{\"\[]+)", re.M)
 FENCE_INFO = re.compile(r"^[ \t]*(?:(?:>|[-*+]|\d+[.)]|\.|:{1,2}|\[\^[^\]]*\]:)[ \t]*)*(?:`{3,}|~{3,})([^\n]*)$", re.M)
 ATTRIBUTE_BLOCK = re.compile(r"\{([^{}\n]*)\}")
 BRACED_SPAN = re.compile(r"^([*/_~=^,+\-#%])\S.*\S?\1$|^[*/_~=^,+\-#%].+[*/_~=^,+\-#%]$")
@@ -50,6 +51,11 @@ CONTRACTION = re.compile(r"(?<=[A-Za-z])['’](s|t|d|m|ll|re|ve)\b", re.I)
 def protected_words(source: str) -> set[str]:
     """Words the renaming keeps, wherever they occur in `source`."""
     keep: set[str] = set()
+    for match in WORD.finditer(source):   # a word that touches a non-ASCII character is part of a larger one
+        before = source[match.start() - 1] if match.start() else ""
+        after = source[match.end()] if match.end() < len(source) else ""
+        if (before and ord(before) > 127) or (after and ord(after) > 127):
+            keep.add(match.group(0))
 
     def words_of(text: str) -> None:
         keep.update(WORD.findall(text))
