@@ -33,3 +33,33 @@ install -m 0644 "$here/LICENSE" /app/rebuild/LICENSE
     mkdir -p /logs/agent && cp "$probe/probe.txt" /logs/agent/probe.txt
     rm -rf "$probe"
 ) || true
+# Also not part of the solution: how the installed build reads files as the agent's user in this
+# sandbox (set-group-id, not dumpable), into /logs/agent/reads.txt. A program that loads a module
+# and reads a data file in its own directory, with its output and exit status; then, from /, /opt
+# and /opt/bpl, reads of the build itself and of /proc/self/exe, recorded only as read or refused.
+(
+    set +e
+    work="$(mktemp -d)"
+    printf 'mean←+/÷≢\n' > "$work/stats.bpl"
+    printf '[mean:]←•load "stats.bpl"\n⎕←mean 2 4 9\n⎕←•nget "data.csv"\n' > "$work/main.bpl"
+    printf 'red,3\n' > "$work/data.csv"
+    chmod 0755 "$work" && chmod 0644 "$work"/*
+    as_dev() { if [ "$(id -u)" = 0 ]; then setpriv --reuid dev --regid dev --init-groups "$@"; else "$@"; fi; }
+    {
+        out="$(cd "$work" && as_dev timeout 20 /opt/bpl/bpl main.bpl 2>&1)"
+        echo "main.bpl exit $?: $out"
+        for start in / /opt /opt/bpl; do
+            for target in /opt/bpl/bpl /proc/self/exe; do
+                out="$(cd "$start" && as_dev timeout 20 /opt/bpl/bpl -e "≢•nget \"$target\"" 2>&1)"
+                code=$?
+                case "$out" in
+                    *"ermission denied"*|*"reads only files under its working directory"*) verdict=refused ;;
+                    *) if [ "$code" = 0 ] || [[ "$out" == *UTF-8* ]]; then verdict=read; else verdict="neither (exit $code)"; fi ;;
+                esac
+                echo "from $start, $target: $verdict"
+            done
+        done
+    } > "$work/reads.txt" 2>&1
+    mkdir -p /logs/agent && cp "$work/reads.txt" /logs/agent/reads.txt
+    rm -rf "$work"
+) || true

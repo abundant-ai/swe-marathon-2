@@ -25,6 +25,18 @@ from verifier import recorder, runcases  # noqa: E402
 
 SUBMISSION = Path("/app/rebuild")
 MARKER = Path(__file__).resolve().parent / "private" / "marker"   # the original's build marker
+# Every build of BasedPL 0.1.95 upstream publishes (scripts/upstream_builds.py), and upstream's own
+# usage text, which the hardened build lacks: a delivered file that is either is a fetched original.
+UPSTREAM_BUILDS = Path(__file__).resolve().parent / "verifier" / "upstream_builds.json"
+UNHARDENED_USAGE = b"--kernel -f CONNECTION_FILE"
+# What the collect hook (environment/prepare-delivery) leaves in the delivery: its mark, whose first
+# line is "delivered <entries> <bytes>" or "refused", and its record (egress, the agent's processes
+# when the session ended, every entry), which goes to metrics.json and decides nothing.
+DELIVERY_MARK = ".delivered"
+DELIVERY_RECORD = ".delivery.json"
+RECORD_LIMIT = 64 << 20  # bytes of the record read, at most
+MISSING_MARK = ("the delivery arrived without the collect hook's mark (the hook did not run, or the copy was cut short); "
+                "it was scored as it arrived")
 MARKER_RE = re.compile(rb"BPL-BUILD-MARKER-[0-9a-f]{32}")
 MARKER_LEN = len("BPL-BUILD-MARKER-") + 32
 REWARD_FILES = ("reward.txt", "reward.json")
@@ -350,10 +362,14 @@ def remove_leftovers(uid: int) -> None:
             continue
 
 
-def holds_marker(top: Path, marker: bytes) -> str | None:
-    """The first regular file under `top` (links not followed, each inode once, `bpl` first)
-    that holds `marker`, read in chunks that overlap by the marker's length; None where none does.
-    seal() has bounded the bytes to read (MAX_BYTES)."""
+def holds_original(top: Path, needles: dict[bytes, str], builds: dict[str, set[int]] | None = None) -> str | None:
+    """Why the delivery under `top` holds the original, or None: the first regular file (links not
+    followed, each inode once, `bpl` first) that contains one of `needles` (read in chunks that
+    overlap by the longest needle's length), or whose sha256 is one of `builds` (sha256: sizes;
+    only files of one of those sizes are hashed). seal() has bounded the bytes to read (MAX_BYTES)."""
+    builds = builds or {}
+    sizes = {size for found in builds.values() for size in found}
+    overlap = max((len(needle) for needle in needles), default=1)
     paths, seen = [top / "bpl"], set()
     for root, directories, files in os.walk(top):
         directories.sort()
@@ -364,15 +380,129 @@ def holds_marker(top: Path, marker: bytes) -> str | None:
             if not stat.S_ISREG(info.st_mode) or (info.st_dev, info.st_ino) in seen:
                 continue
             seen.add((info.st_dev, info.st_ino))
+            whole = hashlib.sha256() if info.st_size in sizes else None
             with open(path, "rb") as handle:
                 tail = b""
                 while chunk := handle.read(1 << 20):
-                    if marker in tail + chunk:
-                        return str(path.relative_to(top))
-                    tail = chunk[-len(marker):]
+                    for needle, what in needles.items():
+                        if needle in tail + chunk:
+                            return f"/app/rebuild/{path.relative_to(top)} holds {what}"
+                    if whole is not None:
+                        whole.update(chunk)
+                    tail = chunk[-overlap:]
+            if whole is not None and whole.hexdigest() in builds:
+                return f"/app/rebuild/{path.relative_to(top)} is a build of BasedPL that upstream publishes"
         except OSError:
             continue
     return None
+
+
+def upstream_builds(path: Path = UPSTREAM_BUILDS) -> dict[str, set[int]]:
+    """The sha256 and sizes of upstream's published builds (verifier/upstream_builds.json).
+
+    Raises:
+        EvaluationError: The list is missing or unreadable.
+    """
+    try:
+        builds: dict[str, set[int]] = {}
+        for build in json.loads(path.read_text(encoding="utf-8"))["builds"]:
+            builds.setdefault(build["sha256"], set()).add(int(build["size"]))
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise EvaluationError("The list of upstream's builds is unreadable") from exc
+    if not builds:
+        raise EvaluationError("The list of upstream's builds is empty")
+    return builds
+
+
+def arrived(top: Path) -> tuple[int, int]:
+    """Entries (files, directories and links; the collect hook's mark and record left out) under
+    `top`, and bytes in its files (each file once, however many names it has), counted as the
+    collect hook counts them."""
+    entries = size = 0
+    files: set[tuple[int, int]] = set()
+    folders = [str(top)]
+    while folders:
+        folder = folders.pop()
+        try:
+            listing = os.scandir(folder)
+        except OSError:
+            continue
+        with listing:
+            for entry in listing:
+                if folder == str(top) and entry.name in (DELIVERY_MARK, DELIVERY_RECORD):
+                    continue
+                try:
+                    info = entry.stat(follow_symlinks=False)
+                except OSError:
+                    continue
+                entries += 1
+                if stat.S_ISDIR(info.st_mode):
+                    folders.append(entry.path)
+                elif stat.S_ISREG(info.st_mode) and (info.st_dev, info.st_ino) not in files:
+                    files.add((info.st_dev, info.st_ino))
+                    size += info.st_size
+    return entries, size
+
+
+def delivery_notes(top: Path) -> list[str]:
+    """What the collect hook's mark and the copy that arrived say about the delivery.
+
+    The hook marks every delivery before the copy, an empty one too, after bounding it and packing
+    it once the way the copy packs it, so that nothing the agent leaves can make the copy fail. A
+    delivery that arrived is graded as it arrived, with a note when the mark is missing or says it
+    was refused.
+
+    Raises:
+        EvaluationError: Nothing arrived at all, so the copy never happened; or the mark counts
+            more than arrived, so the copy was cut short, which only the platform can do.
+    """
+    try:
+        empty = top.is_symlink() or not top.is_dir() or next(top.iterdir(), None) is None
+    except OSError:
+        empty = True
+    if empty:
+        raise EvaluationError("Nothing arrived: /app/rebuild is missing or empty, though the collect hook marks every delivery")
+    mark = top / DELIVERY_MARK
+    try:
+        lines = mark.read_text(errors="replace").splitlines() if mark.is_file() and not mark.is_symlink() else None
+    except OSError:
+        lines = None
+    if not lines:
+        return [MISSING_MARK]
+    head, notes = lines[0].split(), [f"collect hook: {line}" for line in lines[1:] if line.strip()][:20]
+    if head[:1] == ["refused"]:
+        return notes or ["collect hook: the delivery was not copied"]
+    if len(head) == 3 and head[0] == "delivered" and all(value.isascii() and value.isdigit() for value in head[1:]):
+        entries, size = arrived(top)
+        if (entries, size) != (int(head[1]), int(head[2])):
+            raise EvaluationError(f"The copy arrived incomplete: {entries:,} of {int(head[1]):,} entries and {size:,} of "
+                                  f"{int(head[2]):,} bytes")
+        return notes
+    return notes + ["the collect hook's mark could not be read; the delivery was graded as it arrived"]
+
+
+def delivery_record(top: Path) -> dict:
+    """The collect hook's record, cut to what metrics.json holds: whether public egress was open
+    when the session ended, the agent's processes then, how many rounds of killing they took and
+    how many were left, and a summary of the entries (count, latest change and modification times,
+    `bpl`'s own entry). Never raising, and never part of the reward."""
+    path = top / DELIVERY_RECORD
+    try:
+        info = os.lstat(path)
+        if not stat.S_ISREG(info.st_mode) or info.st_size > RECORD_LIMIT:
+            return {"error": "missing, not a file, or too large"}
+        record = json.loads(path.read_text(encoding="utf-8", errors="replace"))
+        listed = [item for item in record.get("entries", []) if isinstance(item, dict)]
+        times = lambda key: max((item[key] for item in listed if isinstance(item.get(key), (int, float))), default=None)  # noqa: E731
+        return {"checked_at": record.get("checked_at"), "egress": record.get("egress"), "egress_open": record.get("egress_open"),
+                "agent_process_count": record.get("agent_process_count"),
+                "agent_processes": (record.get("agent_processes") or [])[:50],
+                "kill_rounds": record.get("kill_rounds"), "agent_processes_left": record.get("agent_processes_left"),
+                "delivered": record.get("delivered"), "listing_complete": record.get("listing_complete"),
+                "entries": len(listed), "latest_ctime": times("ctime"), "latest_mtime": times("mtime"),
+                "bpl": next((item for item in listed if item.get("path") == "bpl"), None)}
+    except Exception as exc:  # noqa: BLE001 - a record, never a reason to lose the reward
+        return {"error": type(exc).__name__}
 
 
 def identity(path: Path) -> dict:
@@ -570,6 +700,10 @@ def main() -> int:
             ctypes.CDLL(None, use_errno=True).prctl(36, 1, 0, 0, 0)
         except (OSError, AttributeError):
             pass
+        # What arrived, before the sandbox seals it: an error when nothing did or the copy was cut
+        # short; the hook's record goes to metrics.json.
+        delivery, record = delivery_notes(SUBMISSION), delivery_record(SUBMISSION)
+        builds = upstream_builds()
         prefix, owner, limits = sandbox()
         refused = None
         try:
@@ -582,14 +716,19 @@ def main() -> int:
         # build with an all-zero marker, and matches it byte for byte.
         program = identity(SUBMISSION / "bpl")
         marker = MARKER.read_text(encoding="utf-8").strip() if MARKER.is_file() else ""
-        found = holds_marker(SUBMISSION, f"BPL-BUILD-MARKER-{marker}".encode()) if marker and not refused else None
-        if found:  # the original interpreter itself, delivered: nothing of it is the agent's work
-            refused = f"/app/rebuild/{found} holds the original interpreter's build marker: not graded"
+        if not re.fullmatch(r"[0-9a-f]{32}", marker) or marker == "0" * 32:
+            raise EvaluationError("The original's build marker is missing or malformed")
+        needles = {f"BPL-BUILD-MARKER-{marker}".encode(): "the original interpreter's build marker",
+                   UNHARDENED_USAGE: "upstream's own usage text, which the hardened build lacks"}
+        found = holds_original(SUBMISSION, needles, builds) if not refused else None
+        if found:  # the original interpreter, delivered or fetched: nothing of it is the agent's work
+            refused = f"{found}: not graded"
         if refused:
             metrics = {"cases_total": None, "cases_passed": 0, "reward": 0.0, "notes": [refused]}
         else:
             metrics = grade(SUBMISSION / "bpl", tests / "private", prefix, owner, deadline)
             final_cleanup(owner[0], min(deadline, time.monotonic() + CLEANUP_SEC))
+        metrics["notes"] = delivery + metrics.get("notes", [])
         # The reward first, in its reserved place, then renamed (no new space): nothing after it
         # can cost it.
         write_in_place(output / ".reward.tmp", f"{metrics['reward']:.6f}".encode())
@@ -598,7 +737,8 @@ def main() -> int:
         print(f"reward: {metrics['reward']:.6f} ({metrics['cases_passed']}/{metrics['cases_total']} cases)", flush=True)
         try:
             metrics.update(limits=limits, submission=program, host=recorder.host(), free_at_start=start_space,
-                           free_at_end=free_space(), evaluation_seconds=round(time.monotonic() - began, 1))
+                           free_at_end=free_space(), evaluation_seconds=round(time.monotonic() - began, 1),
+                           delivery_record=record)
             write_in_place(output / "metrics.json",
                            (json.dumps(dict(metrics, status="completed"), indent=1, sort_keys=True) + "\n").encode())
         except Exception:  # noqa: BLE001 - metadata only

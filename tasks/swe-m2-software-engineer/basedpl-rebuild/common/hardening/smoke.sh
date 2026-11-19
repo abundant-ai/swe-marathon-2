@@ -60,6 +60,20 @@ for path in /proc/self/maps /proc/self/environ /proc/self/mem /sys/kernel/mm/tra
 done
 ln -s /proc/self/maps maps.bpl
 expect 1 "reads only files under its working directory" "$bpl" maps.bpl
+# Unprivileged, as the agent runs it (set-group-id, not dumpable): the build's own file stays out of
+# reach from every start directory, even those whose rule lets its path through (/, /opt, /opt/bpl).
+# A read that got through and failed only on decoding would say so; refusals name the permission.
+if [ "$(id -u)" -ne 0 ]; then
+    for start in / "$(dirname "$(dirname "$bpl")")" "$(dirname "$bpl")"; do
+        for target in "$bpl" /proc/self/exe; do
+            status=0
+            out="$(cd "$start" && timeout 60 "$bpl" -e "≢•nget \"$target\"" 2>&1 < /dev/null)" || status=$?
+            [ "$status" -eq 1 ] || fail "•nget $target from $start exited $status: ${out:0:300}"
+            [[ "$out" == *"ermission denied"* || "$out" == *"reads only files under its working directory"* ]] \
+                || fail "•nget $target from $start was not refused: ${out:0:300}"
+        done
+    done
+fi
 
 # No file is written, listed, copied, moved, removed or made.
 expect 1 "this build of bpl writes no files" "$bpl" -e '"out.txt" •nput "x"'
