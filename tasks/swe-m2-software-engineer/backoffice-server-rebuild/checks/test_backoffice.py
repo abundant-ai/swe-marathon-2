@@ -1242,8 +1242,9 @@ print(json.dumps({"bounded": bounded, "taken": taken, "moved": time.monotonic() 
 def test_memory_the_server_takes_stops_it_and_a_dead_grader_leaves_no_reward(tmp_path):
     """QA 07d M3: without a cgroup, a server could lower its OOM priority between the guard's re-raises and take the
     memory the grader needs. The guard now runs every 50 ms and stops the server for good once its processes hold more
-    than 6 GiB in all; and if the grader dies anyway, no reward file exists, so the result is an evaluation error,
-    never a 0."""
+    than 6 GiB in all (anonymous and shared memory, read from /proc: the pages of a file several processes map can be
+    dropped and are not counted once per process); and if the grader dies anyway, no reward file exists, so the result
+    is an evaluation error, never a 0."""
     marker = tmp_path / "run" / "w" / "data" / "fill"
     setup = (f"import os\nreplay.GUARD_SEC = 0.05\n"
              f"replay.server_memory = lambda uid, raise_priority=False: (8 << 30) if os.path.exists({str(marker)!r}) else 0\n")
@@ -1253,6 +1254,21 @@ def test_memory_the_server_takes_stops_it_and_a_dead_grader_leaves_no_reward(tmp
     reasons = [result["reason"] for result in run["results"]]
     assert "the server was stopped when its processes held more than 6 GiB of memory" in reasons and run["metrics"]["retried"] == 0
     assert any("6 GiB of memory" in note for note in run["metrics"]["notes"])
+    proc = tmp_path / "proc"
+    for pid, uid, fields in ((101, 65534, "VmRSS:\t3500000 kB\nRssAnon:\t102400 kB\nRssFile:\t3345000 kB\nRssShmem:\t51200 kB\n"),
+                             (102, 65534, "VmRSS:\t204800 kB\nRssAnon:\t204800 kB\nRssFile:\t0 kB\nRssShmem:\t0 kB\n"),
+                             (103, 65534, "VmRSS:\t10240 kB\n"),
+                             (104, 0, "VmRSS:\t5000000 kB\nRssAnon:\t5000000 kB\nRssShmem:\t0 kB\n")):
+        (proc / str(pid)).mkdir(parents=True)
+        (proc / str(pid) / "status").write_text(f"Name:\tx\nState:\tS (sleeping)\nUid:\t{uid}\t{uid}\t{uid}\t{uid}\n{fields}")
+        (proc / str(pid) / "oom_score_adj").write_text("0\n")
+    counted = subprocess.run([sys.executable, "-I", "-B", "-c", "import json, sys; sys.path.insert(0, sys.argv[1]); from verifier import replay; "
+                              "replay.PROC = sys.argv[2]; print(json.dumps(replay.server_memory(65534, True)))", str(STEP / "tests"), str(proc)],
+                             capture_output=True, text=True, timeout=60)
+    assert counted.returncode == 0, counted.stderr[-2000:]
+    # a mapped file's pages (pid 101's 3.3 GB) and another user's memory are left out; anonymous and shared memory count
+    assert json.loads(counted.stdout) == (102400 + 51200 + 204800 + 10240) << 10
+    assert [(proc / str(pid) / "oom_score_adj").read_text() for pid in (101, 102, 103, 104)] == ["1000", "1000", "1000", "0\n"]
     probe = r"""
 import json, sys
 from pathlib import Path

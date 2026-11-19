@@ -107,7 +107,7 @@ LOG_KEEP = 1 << 20  # bytes of the server's output kept from its start and from 
 GUARD_SEC = 0.05  # how often the server's OOM priority and its memory are checked; the disk every DISK_EVERY of these
 DISK_EVERY = 20
 DISK_RESERVE = 512 << 20  # free bytes below which the server is stopped for good
-SERVER_MEMORY = 6 << 30  # resident bytes the server's processes may hold in all before it is stopped for good
+SERVER_MEMORY = 6 << 30  # bytes the server's processes may hold in all (server_memory) before it is stopped for good
 BALLAST = 256 << 20  # set aside before the server starts and given back for the results
 MEDIA_CACHE = 192 << 20  # bytes of uploads kept in memory between uses
 WORKSPACE_ID = re.compile(r"[A-Za-z0-9_]{1,40}")
@@ -367,9 +367,11 @@ def end_user_processes(uid: int, seconds: float = 20, group: Cgroup | None = Non
 
 
 def server_memory(uid: int, raise_priority: bool = False) -> int:
-    """Bytes resident in memory across every process of `uid` (VmRSS of each, from /proc); with `raise_priority`, also
-    put each of them back at the front of the OOM killer's line, which needs no capability. One walk of /proc does both,
-    so the guard can afford to run every 50 ms."""
+    """Bytes of memory the processes of `uid` hold that the kernel cannot drop under pressure: resident anonymous and
+    shared-memory pages (RssAnon and RssShmem of each, from /proc; VmRSS where the kernel reports neither). Pages of a
+    file a server maps, its SQLite database say, can be dropped and are left out, so several processes mapping one file
+    are not counted many times. With `raise_priority`, also put each process back at the front of the OOM killer's
+    line, which needs no capability. One walk of /proc does both, so the guard can afford to run every 50 ms."""
     total = 0
     with contextlib.suppress(OSError):
         with os.scandir(PROC) as entries:
@@ -380,7 +382,10 @@ def server_memory(uid: int, raise_priority: bool = False) -> int:
                     fields = proc_fields(entry.name)
                     if fields.get("Uid", "").split()[:1] != [str(uid)]:
                         continue
-                    total += int(fields.get("VmRSS", "0 kB").split()[0]) << 10
+                    if "RssAnon" in fields:
+                        total += (int(fields["RssAnon"].split()[0]) + int(fields.get("RssShmem", "0 kB").split()[0])) << 10
+                    else:
+                        total += int(fields.get("VmRSS", "0 kB").split()[0]) << 10
                     if not raise_priority:
                         continue
                     path = f"{PROC}/{entry.name}/oom_score_adj"
