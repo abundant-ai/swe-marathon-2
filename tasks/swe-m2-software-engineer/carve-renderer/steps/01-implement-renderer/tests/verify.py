@@ -6,6 +6,7 @@ import ctypes
 import hashlib
 import json
 import os
+import re
 import resource
 import secrets
 import shutil
@@ -27,6 +28,8 @@ PROGRAM = SUBMISSION / "carve"
 DELIVERY_MARK = ".delivered"  # written into /app/rebuild by the collect hook (environment/prepare-delivery)
 DELIVERY_RECORD = ".delivery.json"  # the hook's record: egress, the agent's processes, every entry; never scored
 RECORD_LIMIT = 64 << 20  # bytes of the record read, at most
+# Public hosts the original can be fetched from; the verifier refuses to grade if it can reach one.
+NETWORK_HOSTS = (("github.com", 443), ("pypi.org", 443), ("proxy.golang.org", 443), ("registry.npmjs.org", 443))
 # Every build of the original that upstream publishes ready to run, and text they all hold that a
 # renderer written from the specification does not (scripts/upstream_builds.py): a delivered file
 # that is one of them, or holds enough of that text, is a fetched original.
@@ -34,11 +37,13 @@ UPSTREAM_BUILDS = Path(__file__).resolve().parent / "verifier" / "upstream_build
 REWARD_FILES = ("reward.txt", "reward.json")
 TOTAL_SEC = 5400  # the step verifier has 6,000 s; everything up to the reward file fits in this, even every run at 2 s
 MARGIN_SEC = 120  # no case starts when less than this is left of TOTAL_SEC
-MAX_ENTRIES = 200_002  # entries in a submission, at most (the instruction's 200,000, its top and the mark); more is not run
+MAX_ENTRIES = 200_003  # entries in a submission, at most (the instruction's 200,000, its top, the mark and the record); more is not run
 MAX_BYTES = 2 << 30    # bytes of a submission's regular files (each inode once), at most; more is not run
 MAX_PROGRAM = 512 << 20  # bytes of /app/rebuild/carve hashed for metrics.json, at most
 RESERVE_BYTES = 512 << 20  # bytes kept free in /tmp and /logs/verifier: no case starts with less
 CLEANUP_SEC = 60  # the cleanup after the last case, at most
+RETRIED_LIMITS = ("memory limit", "disk limit", "file limit")  # a case stopped by one runs once more
+STALL_CPU = 1.0   # a timeout or a failed start that used under this much CPU is a stall: run it once more
 METRICS_SPACE = 1 << 18  # bytes metrics.json holds from the start, so that writing it needs no new space
 # Where the unprivileged user can leave files: these, and every other world-writable directory
 # that writable_dirs() finds when the evaluation starts.
@@ -442,36 +447,63 @@ def delivery_record(top: Path) -> dict:
         record = json.loads(path.read_text(encoding="utf-8", errors="replace"))
         entries = record.get("entries") or []
         latest = sorted((item for item in entries if isinstance(item, dict)), key=lambda item: -float(item.get("ctime") or 0))
-        return {key: record.get(key) for key in ("checked_at", "egress", "egress_open", "agent_process_count", "kill_rounds",
-                                                 "agent_processes_left", "delivered", "listing_complete")} | {
-            "agent_processes": (record.get("agent_processes") or [])[:50], "entries_listed": len(entries),
-            "latest_changes": [{key: item.get(key) for key in ("path", "type", "size", "ctime", "sha256")} for item in latest[:20]]}
+        summary = {key: record.get(key) for key in ("egress", "egress_open", "agent_process_count", "kill_rounds",
+                                                    "agent_processes_left", "delivered", "listing_complete", "turn_ended_at",
+                                                    "turn_end_from", "hook_started_at", "late_entries")}
+        summary |= {"agent_processes": (record.get("agent_processes") or [])[:50], "entries_listed": len(entries),
+                    "copies": record.get("copies", []), "refused_copies": record.get("refused_copies", []),
+                    "watchdog": record.get("watchdog"), "restored": record.get("restored"),
+                    "latest_changes": [{key: item.get(key) for key in ("path", "type", "size", "ctime", "sha256")} for item in latest[:20]]}
+        flags = []
+        if record.get("egress_open"):
+            flags.append("the public internet answered when the session ended")
+        if record.get("agent_processes_left"):
+            flags.append(f"{record.get('agent_processes_left')} of the agent's processes survived the kill")
+        if record.get("late_entries"):
+            flags.append(f"{record.get('late_entries')} delivered entries changed after the turn ended")
+        if record.get("copies"):
+            flags.append(f"{len(record['copies'])} files were copied in from links out of /app/rebuild")
+        if not (record.get("restored") or {}).get("restored_at"):
+            flags.append("the egress watcher did not see the turn end; the turn-end time is the hook's start")
+        summary["flags"] = flags
+        return summary
     except Exception as exc:  # noqa: BLE001 - metadata, never a reason to lose the reward
         return {"error": type(exc).__name__}
 
 
-def upstream_builds(path: Path = UPSTREAM_BUILDS) -> tuple[set[str], list[bytes], int]:
-    """The sha256 of upstream's published builds, the text they hold, and how many of those
-    strings make a file a fetched build (verifier/upstream_builds.json).
+def upstream_builds(path: Path = UPSTREAM_BUILDS) -> dict:
+    """The sha256 of upstream's published builds and of the other engines, the carve-rs text that
+    marks a build, the markers of foreign language runtimes, and how many of each make a delivered
+    file a fetched engine (verifier/upstream_builds.json).
 
     Raises:
         EvaluationError: The list is unreadable or empty.
     """
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-        hashes, strings, needed = set(data["sha256"]), [text.encode() for text in data["strings"]], int(data["strings_needed"])
+        builds = {"hashes": set(data["sha256"]), "strings": [text.encode() for text in data["strings"]],
+                  "strings_needed": int(data["strings_needed"]),
+                  "runtimes": {name: [marker.encode() for marker in markers] for name, markers in data.get("runtimes", {}).items()},
+                  "runtime_needed": int(data.get("runtime_markers_needed", 2))}
     except (OSError, ValueError, KeyError, TypeError) as exc:
         raise EvaluationError("The list of upstream's builds is unreadable") from exc
-    if not hashes or not strings or needed < 1:
+    if not builds["hashes"] or not builds["strings"] or builds["strings_needed"] < 1:
         raise EvaluationError("The list of upstream's builds is empty")
-    return hashes, strings, needed
+    return builds
 
 
-def fetched_build(top: Path, hashes: set[str], strings: list[bytes], needed: int) -> str | None:
-    """The first regular file under `top` (links not followed, each inode once) that is one of
-    upstream's builds by its sha256, or holds `needed` of `strings`, read in chunks that overlap by
-    the longest string; None where none does. seal() has bounded the bytes to read (MAX_BYTES)."""
-    overlap = max(map(len, strings))
+def fetched_build(top: Path, builds: dict) -> str | None:
+    """The first regular file under `top` (links not followed, each inode once) that is a fetched
+    engine: one of upstream's builds by its sha256, a file holding `strings_needed` of carve-rs's
+    strings, or a program holding `runtime_needed` markers of one foreign language runtime (which
+    the instruction's stdlib-only rule forbids). Read in chunks that overlap by the longest needle;
+    None where none does. The top-level mark and record are skipped; seal() has bounded the bytes
+    (MAX_BYTES)."""
+    strings, hashes, needed = builds["strings"], builds["hashes"], builds["strings_needed"]
+    runtimes, runtime_needed = builds["runtimes"], builds["runtime_needed"]
+    markers = [(name, marker) for name, group in runtimes.items() for marker in group]
+    overlap = max((len(text) for text in strings + [marker for _, marker in markers]), default=1)
+    skip = {str(top / DELIVERY_MARK), str(top / DELIVERY_RECORD)}
     seen = set()
     for root, directories, files in os.walk(top):
         directories.sort()
@@ -479,22 +511,42 @@ def fetched_build(top: Path, hashes: set[str], strings: list[bytes], needed: int
             path = Path(root, name)
             try:
                 info = os.lstat(path)
-                if not stat.S_ISREG(info.st_mode) or (info.st_dev, info.st_ino) in seen or path.name in (DELIVERY_MARK, DELIVERY_RECORD):
+                if not stat.S_ISREG(info.st_mode) or (info.st_dev, info.st_ino) in seen or str(path) in skip:
                     continue
                 seen.add((info.st_dev, info.st_ino))
-                whole, found, tail = hashlib.sha256(), set(), b""
+                whole, found, runtime_hits, tail = hashlib.sha256(), set(), {}, b""
                 with open(path, "rb") as handle:
                     while chunk := handle.read(1 << 20):
                         whole.update(chunk)
                         window = tail + chunk
                         found.update(index for index, text in enumerate(strings) if text in window)
+                        for rname, marker in markers:
+                            if marker in window:
+                                runtime_hits.setdefault(rname, set()).add(marker)
                         tail = window[-overlap:]
                 if whole.hexdigest() in hashes:
-                    return f"/app/rebuild/{path.relative_to(top)} is a build of the original that upstream publishes"
+                    return f"/app/rebuild/{path.relative_to(top)} is a build of the original or another engine that upstream publishes"
                 if len(found) >= needed:
-                    return f"/app/rebuild/{path.relative_to(top)} holds the text of a build of the original that upstream publishes"
+                    return f"/app/rebuild/{path.relative_to(top)} holds the text of a build of the original"
+                for rname, hits in runtime_hits.items():
+                    if len(hits) >= runtime_needed:
+                        return f"/app/rebuild/{path.relative_to(top)} embeds a {rname} runtime, which the instruction does not allow"
             except OSError:
                 continue
+    return None
+
+
+def network_open() -> str | None:
+    """A public host the verifier can reach, or None: the separate verifier must have no network,
+    and a provider that left it open would let a case fetch the original. Each host is tried once,
+    half a second."""
+    import socket  # noqa: PLC0415
+    for host, port in NETWORK_HOSTS:
+        try:
+            with socket.create_connection((host, port), timeout=0.5):
+                return f"{host}:{port}"
+        except OSError:
+            continue
     return None
 
 
@@ -520,6 +572,74 @@ def write_in_place(path: Path, data: bytes) -> None:
         path.write_bytes(data)
 
 
+NEAR_MISS = ("exit_right_stdout_wrong", "equal_collapsing_whitespace", "equal_sorting_attributes", "equal_text_only")
+TAG = re.compile(rb"<[^>]+>")
+ATTR = re.compile(rb'(\w[\w:-]*)="[^"]*"|(\w[\w:-]*)')
+
+
+def collapse_ws(html: bytes) -> bytes:
+    """`html` with the whitespace between tags removed and every other run made one space."""
+    return re.sub(rb"\s+", b" ", re.sub(rb">\s+<", b"><", html)).strip()
+
+
+def sort_attrs(html: bytes) -> bytes:
+    """`collapse_ws`, with each tag's attributes sorted and `<x />` written `<x>`: equal here means
+    the structure and the attribute values are right and only their order or spacing differs."""
+    def one(match):
+        inner = match.group(0)[1:-1].rstrip(b"/").strip()
+        if inner.startswith(b"/") or b" " not in inner:
+            return b"<" + inner + b">"
+        name, rest = inner.split(b" ", 1)
+        return b"<" + name + b" " + b" ".join(sorted(rest.split())) + b">"
+    return TAG.sub(one, collapse_ws(html))
+
+
+def near_miss(got: dict, want: dict, counts: dict) -> None:
+    """Record, without scoring, how close a failed answer is to the expected one (QA 19 F2)."""
+    if got.get("stdout") is None:
+        return
+    mine = got["stdout"]
+    theirs = want["stdout"].encode("utf-8", "surrogateescape")
+    if got.get("exit") == want["exit"]:
+        counts["exit_right_stdout_wrong"] += 1
+        if collapse_ws(mine) == collapse_ws(theirs):
+            counts["equal_collapsing_whitespace"] += 1
+        if sort_attrs(mine) == sort_attrs(theirs):
+            counts["equal_sorting_attributes"] += 1
+        if TAG.sub(b"", collapse_ws(mine)) == TAG.sub(b"", collapse_ws(theirs)):
+            counts["equal_text_only"] += 1
+
+
+def fingerprint(program: Path, private: Path, prefix: list[str], owner: tuple[int, int] | None, deadline: float) -> dict:
+    """Run the delivered program on the fingerprint probes and count how many match the original's
+    answer (QA 04 F3): documents where the original and the spec model disagree, and the original's
+    own out-of-scope commands. A renderer written from the specification matches few; the original,
+    however re-encoded, matches all. Never scored. Private inputs missing is no error."""
+    try:
+        probes = json.loads((private / "probes.json").read_text(encoding="utf-8"))["probes"]
+        answers = json.loads((private / "probes_expected.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError, KeyError):
+        return {}
+    result = {"total": 0, "matches_original": 0, "by_kind": {}}
+    for probe in probes:
+        if probe["id"] not in answers or time.monotonic() > deadline - MARGIN_SEC:
+            continue
+        kind = probe.get("kind", "?").split(":", 1)[0]
+        tally = result["by_kind"].setdefault(kind, {"total": 0, "matches": 0})
+        try:
+            if owner is not None:
+                reset(owner[0])
+            got = runcases.run_case([str(program)], probe, prefix=prefix, owner=owner)
+        except Exception:  # noqa: BLE001
+            continue
+        result["total"] += 1
+        tally["total"] += 1
+        if runcases.matches(got, answers[probe["id"]]):
+            result["matches_original"] += 1
+            tally["matches"] += 1
+    return result
+
+
 def grade(program: Path, private: Path, prefix: list[str], owner: tuple[int, int] | None,
           deadline: float | None = None) -> dict:
     """Run every private case through `prefix` (as `owner`) and count exact matches, starting no
@@ -541,9 +661,9 @@ def grade(program: Path, private: Path, prefix: list[str], owner: tuple[int, int
         raise EvaluationError("Private cases and recorded answers do not match")
     metrics = {"cases_total": len(cases), "cases_run": 0, "cases_passed": 0, "cases_failed": 0, "reward": 0.0,
                "timeouts": 0, "output_limits": 0, "memory_limits": 0, "disk_limits": 0, "file_limits": 0,
-               "setup_errors": 0, "seconds_total": 0.0,
+               "setup_errors": 0, "limit_retries": 0, "stall_retries": 0, "seconds_total": 0.0, "reset_seconds": 0.0,
                "seconds_max": 0.0,
-               "stopped": None, "notes": [], "by_kind": {}}
+               "stopped": None, "notes": [], "by_kind": {}, "diagnostics": dict.fromkeys(NEAR_MISS, 0)}
     try:
         metrics["recording"] = json.loads((private / "recording.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -563,18 +683,39 @@ def grade(program: Path, private: Path, prefix: list[str], owner: tuple[int, int
         if time.monotonic() > deadline - MARGIN_SEC:
             metrics["stopped"] = "out of time; the remaining cases count as failed"
             break
-        try:  # whatever the submission did to this machine is its own case's failure, never an error
-            if owner is not None:
-                reset(owner[0])
-                if time.monotonic() > deadline - MARGIN_SEC:
-                    metrics["stopped"] = "out of time after a cleanup; the remaining cases count as failed"
-                    break
-                if low_on_disk():  # what the runs left that the cleanup could not take back
-                    metrics["stopped"] = "out of disk space after a cleanup; the remaining cases count as failed"
-                    break
-            got = runcases.run_case([str(program)], case, prefix=prefix, owner=owner)
-        except Exception as exc:  # noqa: BLE001
-            got = {"exit": None, "stdout": None, "error": f"run: {type(exc).__name__}", "seconds": 0.0}
+        stop = None
+        for attempt in range(2):
+            try:  # whatever the submission did to this machine is its own case's failure, never an error
+                if owner is not None:
+                    began = time.monotonic()
+                    reset(owner[0])
+                    metrics["reset_seconds"] = round(metrics["reset_seconds"] + time.monotonic() - began, 3)
+                    if time.monotonic() > deadline - MARGIN_SEC:
+                        stop = "out of time after a cleanup; the remaining cases count as failed"
+                        break
+                    if low_on_disk():  # the host's or the log mount's disk, not the submission's: an error
+                        if runcases.own_use(owner[0]) == (0, 0):
+                            raise EvaluationError("Less than the reserved space free during grading, and the submission holds nothing")
+                        stop = "out of disk space after a cleanup; the remaining cases count as failed"
+                        break
+                got = runcases.run_case([str(program)], case, prefix=prefix, owner=owner)
+            except EvaluationError:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                got = {"exit": None, "stdout": None, "error": f"run: {type(exc).__name__}", "seconds": 0.0, "cpu": 0.0}
+            if attempt:
+                break
+            if got.get("error") in RETRIED_LIMITS:
+                metrics["limit_retries"] += 1
+                continue
+            if got.get("error") in ("timeout", "could not start", None) and got.get("cpu", 0.0) < STALL_CPU \
+                    and not runcases.matches(got, expected[case["id"]]) and got.get("error"):
+                metrics["stall_retries"] += 1
+                continue
+            break
+        if stop is not None:
+            metrics["stopped"] = stop
+            break
         tally = metrics["by_kind"][kind(case)]
         metrics["cases_run"] += 1
         tally["run"] += 1
@@ -598,6 +739,7 @@ def grade(program: Path, private: Path, prefix: list[str], owner: tuple[int, int
             metrics["by_area"][area(case)]["passed"] += 1
         else:
             failed.append(case["id"])
+            near_miss(got, expected[case["id"]], metrics["diagnostics"])
     seconds.sort()
     metrics["seconds_p99"] = seconds[int(0.99 * (len(seconds) - 1))] if seconds else 0.0
     metrics["runs_over_half_a_second"] = sum(value > 0.5 for value in seconds)
@@ -666,7 +808,11 @@ def main() -> int:
         # counted, is the copy failing (an error); a delivery the hook refused scores 0.
         notes, refused_delivery = delivery(SUBMISSION)
         record = delivery_record(SUBMISSION)
+        notes = notes + [f"delivery: {flag}" for flag in record.get("flags", [])]
         builds = upstream_builds()
+        reachable = network_open()
+        if reachable is not None:  # the verifier must have no network; a provider that left it open grades nothing
+            raise EvaluationError(f"The verifier can reach {reachable}; it must grade with no network")
         prefix, owner, limits = sandbox()
         refused = "the delivery was over the stated limits: not graded" if refused_delivery else None
         if refused is None:
@@ -674,8 +820,8 @@ def main() -> int:
                 seal(SUBMISSION)
             except EvaluationError as exc:  # a submission that cannot be made safe to run is not run
                 refused = f"{exc}: not graded"
-        if refused is None:  # the original itself, fetched after the session: nothing of it is the agent's work
-            found = fetched_build(SUBMISSION, *builds)
+        if refused is None:  # the original or another engine, fetched after the session: nothing of it is the agent's work
+            found = fetched_build(SUBMISSION, builds)
             refused = f"{found}: not graded" if found else None
         LEFTOVER_DIRS[:] = sorted(set(LEFTOVER_DIRS) | set(writable_dirs()))
         program = identity(PROGRAM)
@@ -683,6 +829,7 @@ def main() -> int:
             metrics = {"cases_total": None, "cases_passed": 0, "reward": 0.0, "notes": [refused]}
         else:
             metrics = grade(PROGRAM, tests / "private", prefix, owner, deadline)
+            metrics["fingerprint"] = fingerprint(PROGRAM, tests / "private", prefix, owner, deadline)
             final_cleanup(owner[0], min(deadline, time.monotonic() + CLEANUP_SEC))
         metrics["notes"] = notes + metrics["notes"]
         # The reward first, in its reserved place, then renamed (no new space): nothing after it

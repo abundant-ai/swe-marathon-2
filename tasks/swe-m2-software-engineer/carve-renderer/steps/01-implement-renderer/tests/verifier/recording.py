@@ -9,7 +9,9 @@
 - What submissions that implement nothing pass (`baselines`): printing nothing and exiting 0 or 2;
   printing one empty line and exiting 0 (what the original prints for an empty document); a
   dispatcher with the command line's answers and one constant answer per kind of case
-  (recorder.free_cases). The largest share any one answer holds.
+  (recorder.free_cases); and a program with the public conformance corpus and no renderer (the
+  cases whose answer the corpus lookup would give, dropped at recording). The largest share any
+  one answer holds.
 - What a stock Djot engine scores on the kept cases (djot.js on the most obvious rewrite of each
   document into Djot, measured by the generator): exactly, and with the layout between tags
   forgiven. The share of cases that touch a place where Carve parses differently from Djot.
@@ -46,6 +48,14 @@ def baselines(kept: list[dict], expected: dict) -> dict:
     }
 
 
+def corpus_lookup_share(kept: list[dict], report: dict) -> float:
+    """The share of the cases a program with the public corpus and no renderer passes: those the
+    recorder dropped because the corpus lookup gives their answer, over the cases that were steady
+    enough to reach that check (the kept cases plus those dropped ones)."""
+    lookup = len(report.get("lookup", []))
+    return round(lookup / ((len(kept) + lookup) or 1), 4)
+
+
 def describe(cases: list[dict], kept: list[dict], expected: dict, report: dict) -> dict:
     """The recording's description, from the generated cases, the kept cases, their answers and
     the recorder's report."""
@@ -65,6 +75,7 @@ def describe(cases: list[dict], kept: list[dict], expected: dict, report: dict) 
         "dropped_crashed": by_kind(report.get("crashed", [])),
         "dropped_differs": by_kind(report.get("differs", [])),
         "dropped_perturbed": by_kind(report.get("perturbed", [])),
+        "dropped_corpus_lookup": by_kind(report.get("lookup", [])),
         "dropped_output_limit": by_kind(report.get("output_limit", [])),
         "dropped_memory_limit": by_kind(report.get("memory_limit", [])),
         "dropped_disk_limit": by_kind(report.get("disk_limit", [])),
@@ -80,7 +91,7 @@ def describe(cases: list[dict], kept: list[dict], expected: dict, report: dict) 
         "kept_seconds_total": round(sum(seconds), 3),
         "empty_stdout_by_exit": dict(sorted(Counter(str(expected[case["id"]]["exit"]) for case in kept
                                                     if expected[case["id"]]["stdout"] == "").items())),
-        "baselines": baselines(kept, expected),
+        "baselines": dict(baselines(kept, expected), corpus_lookup=corpus_lookup_share(kept, report)),
         "djot_engine": {"exact": share(sum(bool(case.get("djot_exact")) for case in rendering)),
                         "layout_forgiven": share(sum(bool(case.get("djot_normalized")) for case in rendering))},
         "divergence_share": share(sum(1 for case in rendering if set(case.get("features", [])) - {"smart-typography"})),

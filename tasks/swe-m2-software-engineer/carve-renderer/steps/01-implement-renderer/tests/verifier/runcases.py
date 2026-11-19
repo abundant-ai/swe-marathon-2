@@ -4,14 +4,14 @@ Each case is written into the same fixed directory, so that paths in an output a
 run, and each run gets new empty directories as its HOME and TMPDIR, a fixed set of environment
 variables, and the same resource limits: an 8 MB stack, bounds on processes, file size and data, at
 most MEMORY_LIMIT bytes of memory in use, and at most DISK_LIMIT bytes and FILES_LIMIT files and
-directories added to the filesystem that holds /tmp.
+directories of its own on disk.
 
-The disk and file limits read that filesystem's free figures (statvfs) before and during a run, so
-they hold where those figures track what the run writes: a filesystem of the run's own with a
-fixed inode table (ext4, a sized tmpfs). Where the file count moves with free space (XFS, APFS)
-the file limit is skipped; where the figures are fixed or missing (a tmpfs without a size) neither
-limit can fire; on a filesystem other writers share, others' writes count too. The per-file size
-limit (RLIMIT_FSIZE) holds everywhere.
+The disk and file limits count only what the run itself holds: the files, directories and links its
+user owns under OWN_ROOTS (the directories it can write to), and the files its processes still
+hold open after deleting them; without a user of its own (recording), its workspace, HOME and
+TMPDIR. That count is taken whenever the free figures (statvfs) of /tmp's or /dev/shm's
+filesystem drop by more than a limit since the last count, so other writers on a shared
+filesystem never stop a run (QA 10); the per-file size limit (RLIMIT_FSIZE) holds everywhere.
 
 A case is {"argv": [...], "files": {path: text}, "stdin": text or null}; its texts, like the
 recorded answers, hold any byte that is not UTF-8 as a surrogate escape. A run passes when the
@@ -36,8 +36,11 @@ TEMP = Path("/tmp/carve-tmp")
 CASE_SEC = 2
 OUTPUT_LIMIT = 1_000_000  # bytes of standard output read at most; more fails the run
 MEMORY_LIMIT = 4 << 30    # bytes of memory in use (resident, and shared memory) by a run's processes at most
-DISK_LIMIT = 1 << 30      # bytes a run takes from the filesystem holding /tmp, at most
-FILES_LIMIT = 100_000     # files and directories a run adds to it, at most
+DISK_LIMIT = 1 << 30      # bytes of files of its own a run holds on disk, at most
+FILES_LIMIT = 100_000     # files, directories and links of its own, at most
+# Where a run's user can leave files; verify.py adds every world-writable directory it finds.
+OWN_ROOTS = ["/tmp", "/var/tmp", "/dev/shm"]
+WATCHED_FILESYSTEMS = ("/tmp", "/dev/shm")  # whose free figures prompt a count of the run's own files
 LIMITS = {
     resource.RLIMIT_STACK: 8 << 20,
     resource.RLIMIT_NPROC: 512,       # processes and threads of the user running the case
@@ -130,17 +133,83 @@ def disk_free(path: Path = WORKSPACE.parent) -> tuple[int, int, int]:
             info.f_files if info.f_files else -1)
 
 
-def over_limit(group: int, uid: int | None, free: tuple[int, int, int]) -> str | None:
-    """What limit a run is past, given what was free on /tmp's filesystem when it started. The
-    file count counts only where the filesystem's total of files stayed the same (it moves with
-    free space on XFS and APFS)."""
+def disk_baseline() -> dict[str, tuple[int, int, int]]:
+    """The free figures of each watched filesystem now, the point a run's disk use is measured from."""
+    return {place: disk_free(Path(place)) for place in WATCHED_FILESYSTEMS}
+
+
+def own_use(uid: int | None, most_bytes: int = DISK_LIMIT, most_files: int = FILES_LIMIT) -> tuple[int, int]:
+    """The bytes allocated to, and the number of, the files, directories and links a run holds of
+    its own: with a user of its own, those it owns under OWN_ROOTS (descending only into directories
+    it owns or anyone may write to) and the files its processes hold open after deleting them;
+    without one, everything under the workspace, HOME and TMPDIR. The count stops once either figure
+    passes its limit. Links are never followed."""
+    used = entries = 0
+    seen: set[tuple[int, int]] = set()
+    roots = OWN_ROOTS if uid is not None else [str(WORKSPACE), str(HOME), str(TEMP)]
+    folders = [root for root in dict.fromkeys(roots) if os.path.isdir(root) and not os.path.islink(root)]
+    while folders and used <= most_bytes and entries <= most_files:
+        folder = folders.pop()
+        try:
+            listing = os.scandir(folder)
+        except OSError:
+            continue
+        with listing:
+            for entry in listing:
+                try:
+                    info = entry.stat(follow_symlinks=False)
+                except OSError:
+                    continue
+                mine = uid is None or info.st_uid == uid
+                if mine and (info.st_dev, info.st_ino) not in seen:
+                    seen.add((info.st_dev, info.st_ino))
+                    entries += 1
+                    if stat.S_ISREG(info.st_mode):
+                        used += info.st_blocks * 512
+                if stat.S_ISDIR(info.st_mode) and (mine or info.st_mode & stat.S_IWOTH):
+                    folders.append(entry.path)
+    if uid is not None:
+        for pid in (name for name in _listdir("/proc") if name.isdigit()):
+            try:
+                if os.stat(f"/proc/{pid}").st_uid != uid:
+                    continue
+                for fd in _listdir(f"/proc/{pid}/fd"):
+                    info = os.stat(f"/proc/{pid}/fd/{fd}")  # the open file itself, deleted or not
+                    if stat.S_ISREG(info.st_mode) and info.st_nlink == 0 and (info.st_dev, info.st_ino) not in seen:
+                        seen.add((info.st_dev, info.st_ino))
+                        used += info.st_blocks * 512
+            except OSError:
+                continue
+    return used, entries
+
+
+def _listdir(path: str) -> list[str]:
+    """The names in a directory, or none where it cannot be read."""
+    try:
+        return os.listdir(path)
+    except OSError:
+        return []
+
+
+def over_limit(group: int, uid: int | None, baseline: dict[str, tuple[int, int, int]]) -> str | None:
+    """What limit a run is past. Memory is read every time. The disk and file limits are checked by
+    counting the run's own files (own_use) only when a watched filesystem's free bytes or files have
+    dropped by more than a limit since `baseline`; when the run's own files are within the limits,
+    others wrote the difference, and `baseline` (changed in place) starts from the figures now."""
     if memory_in_use(group, uid) > MEMORY_LIMIT:
         return "memory limit"
-    now = disk_free()
-    if free[0] >= 0 and now[0] >= 0 and free[0] - now[0] > DISK_LIMIT:
+    now = disk_baseline()
+    dropped = any(before[0] >= 0 and after[0] >= 0 and before[0] - after[0] > DISK_LIMIT
+                  or before[1] >= 0 and after[1] >= 0 and before[1] - after[1] > FILES_LIMIT
+                  for before, after in ((baseline.get(place, after), after) for place, after in now.items()))
+    if not dropped:
+        return None
+    used, entries = own_use(uid)
+    if used > DISK_LIMIT:
         return "disk limit"
-    if free[1] >= 0 and now[1] >= 0 and free[2] == now[2] and free[1] - now[1] > FILES_LIMIT:
+    if entries > FILES_LIMIT:
         return "file limit"
+    baseline.update(now)
     return None
 
 
@@ -175,7 +244,7 @@ def memory_in_use(group: int, uid: int | None) -> int:
 
 
 def read_output(proc: subprocess.Popen, data: bytes, deadline: float, uid: int | None,
-                free: tuple[int, int, int]) -> tuple[bytes, str | None]:
+                free: dict[str, tuple[int, int, int]]) -> tuple[bytes, str | None]:
     """Feed `data` to the program's standard input and read its standard output until it closes
     it. Returns what was read and None, or what stopped the reading: "timeout" at the deadline,
     "output limit" past OUTPUT_LIMIT bytes, or a limit `over_limit` names."""
@@ -238,7 +307,7 @@ def run_case(program: list[str], case: dict, prefix: list[str] | None = None, ow
     except OSError as exc:
         return {"exit": None, "stdout": None, "error": f"workspace: {type(exc).__name__}", "seconds": 0.0, "cpu": 0.0}
     errors = tempfile.TemporaryFile() if keep_stderr else None
-    free = disk_free()
+    free = disk_baseline()
     before = resource.getrusage(resource.RUSAGE_CHILDREN)
     started = time.monotonic()
     try:

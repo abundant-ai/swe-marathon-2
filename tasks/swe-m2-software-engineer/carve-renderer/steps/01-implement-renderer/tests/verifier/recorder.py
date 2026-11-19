@@ -42,6 +42,7 @@ EXITS = (0, 2)
 CRASH_MARKERS = (b"panicked at", b"RUST_BACKTRACE", b"stack overflow", b"memory allocation of", b"core dumped")
 PAIR_SHARE = 0.015   # cases kept with any one (stdout, exit code), the command line aside, at most
 FLOOR_SHARE = 0.05   # cases a dispatcher with no renderer passes (free_cases), at most
+LOOKUP_SHARE = 0.05  # cases a program with the public corpus and no renderer passes, at most
 QUOTE_LEN = 12       # an answer at least this long that the case's own input holds is free
 PERTURBED_ENV = {"CARVE_PERTURBED_PADDING": "p" * 4096}
 GRADED_FIELDS = ("id", "kind", "area", "argv", "files", "stdin", "features", "djot_exact", "djot_normalized")
@@ -167,8 +168,8 @@ def record(program: str, cases: list[dict]) -> tuple[list[dict], dict, dict]:
     finished, outputs = [], {}
     started = time.monotonic()
     report = {"keep_seconds": KEEP_SEC, "keep_cpu": KEEP_CPU, "seconds": {}, "cpu": {}, "slow": [], "unsteady": [],
-              "crashed": [], "differs": [], "output_limit": [], "memory_limit": [], "disk_limit": [], "perturbed": [],
-              "dropped": {}, "host": host()}
+              "crashed": [], "differs": [], "lookup": [], "output_limit": [], "memory_limit": [], "disk_limit": [],
+              "perturbed": [], "dropped": {}, "host": host()}
     elsewhere = relocated(program)
     for case in cases:
         first, second = (run_case([program], case, keep_stderr=True) for _ in range(2))
@@ -185,6 +186,8 @@ def record(program: str, cases: list[dict]) -> tuple[list[dict], dict, dict]:
             report["crashed"].append(case["id"])
         elif case.get("answer_sha256") and digest(first["exit"], first["stdout"]) != case["answer_sha256"]:
             report["differs"].append(case["id"])
+        elif digest(first["exit"], first["stdout"]) in set(case.get("lookup_sha256", [])):
+            report["lookup"].append(case["id"])   # the corpus-lookup program would give this answer
         elif max(first["seconds"], second["seconds"]) > KEEP_SEC or max(first["cpu"], second["cpu"]) > KEEP_CPU:
             report["slow"].append(case["id"])
         else:
@@ -203,6 +206,18 @@ def record(program: str, cases: list[dict]) -> tuple[list[dict], dict, dict]:
     return graded, {case["id"]: outputs[case["id"]] for case in kept}, report
 
 
+def record_probes(program: str, probes: list[dict]) -> dict:
+    """What the original prints for each fingerprint probe, run once (the probes are the original's
+    own disagreements and commands, never graded)."""
+    answers = {}
+    for probe in probes:
+        got = run_case([program], probe)
+        if got["exit"] is not None:
+            answers[probe["id"]] = {"exit": got["exit"], "stdout": got["stdout"].decode(*ENCODING)}
+    clear_workspace()
+    return answers
+
+
 def main() -> None:
     """Record what a program prints for every case and keep the cases worth grading."""
     if len(sys.argv) < 5 or sys.argv[1] != "record":
@@ -210,16 +225,22 @@ def main() -> None:
     program, cases_path, expected_path = sys.argv[2:5]
     option = lambda name: sys.argv[sys.argv.index(name) + 1] if name in sys.argv else None  # noqa: E731
     cases = json.loads(Path(cases_path).read_text(encoding="utf-8"))["cases"]
+    if option("--probes") and option("--probes-out"):
+        probes = json.loads(Path(option("--probes")).read_text(encoding="utf-8"))["probes"]
+        Path(option("--probes-out")).write_text(json.dumps(record_probes(program, probes), sort_keys=True))
     kept, outputs, report = record(program, cases)
     clear_workspace()
+    report["kept_ids_sha256"] = hashlib.sha256("\n".join(case["id"] for case in kept).encode()).hexdigest()
+    lookup_share = len(report["lookup"]) / (len(kept) + len(report["lookup"]) or 1)
     if len(report["unsteady"]) > 0.02 * len(cases) or len(report["crashed"]) > 0.02 * len(cases) \
             or len(report["perturbed"]) > 0.02 * len(cases) or len(report["differs"]) > 0.02 * len(cases) \
-            or len(kept) < 0.9 * len(cases):
+            or lookup_share > LOOKUP_SHARE or len(kept) < 0.88 * len(cases):
         raise SystemExit(f"kept {len(kept)} of {len(cases)} cases: {len(report['unsteady'])} did not finish the same "
                          f"way twice, {len(report['crashed'])} crashed, {len(report['perturbed'])} changed when "
                          f"perturbed, {len(report['differs'])} answered otherwise than the checked answer, "
-                         f"{len(report['slow'])} were slow")
-    report["kept_ids_sha256"] = hashlib.sha256("\n".join(case["id"] for case in kept).encode()).hexdigest()
+                         f"{len(report['lookup'])} ({lookup_share:.1%}) the corpus lookup gives, {len(report['slow'])} were slow")
+    if option("--expect-kept-ids") and report["kept_ids_sha256"] != option("--expect-kept-ids"):
+        raise SystemExit(f"kept-ids sha256 {report['kept_ids_sha256']} is not the accepted {option('--expect-kept-ids')}")
     Path(expected_path).write_text(json.dumps(outputs, sort_keys=True))
     if option("--keep"):
         Path(option("--keep")).write_text(json.dumps({"cases": kept}, sort_keys=True))
