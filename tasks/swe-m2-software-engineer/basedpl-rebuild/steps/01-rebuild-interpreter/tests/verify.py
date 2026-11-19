@@ -561,6 +561,10 @@ def grade(program: Path, private: Path, prefix: list[str], owner: tuple[int, int
     disk or file limit runs once more after a cleanup (RETRIED_LIMITS), and the second run counts.
 
     Raises:
+        EvaluationError: Private inputs are unreadable, or less than RESERVE_BYTES is free after a
+            cleanup has removed everything the user held (the host's shortage, not the submission's).
+
+    Raises:
         EvaluationError: Private inputs are unreadable.
     """
     try:
@@ -601,10 +605,12 @@ def grade(program: Path, private: Path, prefix: list[str], owner: tuple[int, int
                     if time.monotonic() > deadline - MARGIN_SEC:
                         stop = "out of time after a cleanup; the remaining cases count as failed"
                         break
-                    if low_on_disk():  # what the runs left that the cleanup could not take back
-                        stop = "out of disk space after a cleanup; the remaining cases count as failed"
-                        break
+                    if low_on_disk():  # the cleanup took back all the user held: the host's shortage
+                        raise EvaluationError(f"Less than {RESERVE_BYTES} bytes free after a cleanup, mid-evaluation: "
+                                              f"{free_space()}")
                 got = runcases.run_case([str(program)], case, prefix=prefix, owner=owner)
+            except EvaluationError:  # the host's fault, found between runs: never a case's failure
+                raise
             except Exception as exc:  # noqa: BLE001
                 got = {"exit": None, "stdout": None, "error": f"run: {type(exc).__name__}", "seconds": 0.0}
             if attempt or got.get("error") not in RETRIED_LIMITS:

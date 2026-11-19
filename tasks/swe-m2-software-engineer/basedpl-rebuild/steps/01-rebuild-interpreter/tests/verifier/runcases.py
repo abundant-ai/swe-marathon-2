@@ -34,6 +34,7 @@ WORKSPACE = Path("/tmp/bpl-run")
 HOME = Path("/tmp/bpl-home")   # HOME and TMPDIR of a run, new and empty for each
 TEMP = Path("/tmp/bpl-tmp")
 CASE_SEC = 2
+DRAIN_SEC = 0.5  # past the deadline, the output of a run that already ended is still read for this long
 OUTPUT_LIMIT = 1_000_000  # bytes of standard output read at most; more fails the run
 MEMORY_LIMIT = 4 << 30    # bytes of memory in use (resident, and shared memory) by a run's processes at most
 DISK_LIMIT = 1 << 30      # bytes of files of its own a run holds on disk, at most
@@ -246,7 +247,8 @@ def memory_in_use(group: int, uid: int | None) -> int:
 def read_output(proc: subprocess.Popen, data: bytes, deadline: float, uid: int | None,
                 free: dict[str, tuple[int, int, int]]) -> tuple[bytes, str | None]:
     """Feed `data` to the program's standard input and read its standard output until it closes
-    it. Returns what was read and None, or what stopped the reading: "timeout" at the deadline,
+    it. Returns what was read and None, or what stopped the reading: "timeout" at the deadline while
+    the program still runs (one that already ended has its output drained and read as usual),
     "output limit" past OUTPUT_LIMIT bytes, or a limit `over_limit` names."""
     chunks, size = [], 0
     pending = memoryview(data)
@@ -260,10 +262,13 @@ def read_output(proc: subprocess.Popen, data: bytes, deadline: float, uid: int |
         while selector.get_map():
             left = deadline - time.monotonic()
             if left <= 0:
-                return b"", "timeout"
-            problem = over_limit(proc.pid, uid, free)
-            if problem:
-                return b"", problem
+                if proc.poll() is None or left < -DRAIN_SEC:  # still running, or a child holds the pipe open
+                    return b"", "timeout"
+                left = 0.05  # it ended in time and the verifier was late to read: drain what is left
+            else:
+                problem = over_limit(proc.pid, uid, free)
+                if problem:
+                    return b"", problem
             for key, _ in selector.select(min(left, 0.05)):
                 if key.fileobj is proc.stdin:
                     try:
