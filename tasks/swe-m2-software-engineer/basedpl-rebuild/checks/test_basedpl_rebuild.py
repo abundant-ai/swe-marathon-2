@@ -18,6 +18,7 @@ import shutil
 import subprocess
 import sys
 import textwrap
+import time
 from pathlib import Path
 
 TASK = Path(__file__).resolve().parent.parent
@@ -846,6 +847,10 @@ def deliver(name, build, entries="100000", size="1000000000", path="1000", secon
     (state / "session.json").write_text(json.dumps({"egress": {"pypi.org:443": "closed"}, "egress_open": False,
                                                     "agent_process_count": 1, "agent_processes": [{"pid": 7, "command": "sleep 99"}]}))
     (state / "turn-started").write_text("1700000000\n")
+    if name == "good":  # the pre-cap watchdog fired in this session
+        (state / "watchdog.txt").write_text("2026-11-19T12:00:00Z armed pid 77: ending the processes selected by '-u dev' in 33900 s\n"
+                                            "2026-11-19T21:25:00Z fired after 33900 s: SIGTERM to the processes selected by '-u dev'\n"
+                                            "2026-11-19T21:25:05Z done: 0 process(es) of the selection left\n")
     if name == "good":  # what the link fixer printed: a copy of a system file, and a refused link to the user's own files
         (state / "fixer.jsonl").write_text(json.dumps({
             "kind": "copied", "path": "venv/bin/python3", "source": "/usr/bin/python3.12", "source_owner": 0,
@@ -961,6 +966,7 @@ out["record"] = [record["egress_open"], record["kill_rounds"], record["agent_pro
                  record["listing_complete"], sorted(item["path"] for item in record["entries"]),
                  next(item for item in record["entries"] if item["path"] == "bpl")]
 out["copies"] = [record["turn_started"], record["hook_started"], record["copies"], record["links"], record["notes"]]
+out["watchdog"] = [record["ended_by_watchdog"], len(record["watchdog_log"]), verify.delivery_record(rebuild)["ended_by_watchdog"]]
 earlier = EARLIER["good"]
 out["times"] = [all(item["ctime"] == earlier[item["path"]][1] and item["mtime"] == earlier[item["path"]][0]
                     for item in record["entries"] if item["path"] in earlier),
@@ -1001,6 +1007,7 @@ app, rebuild = deliver("never-room", tree, tar=failing, prelude=FULL)
 out["never_room"] = mark(rebuild)
 app, rebuild = deliver("nop", lambda rebuild: None)
 out["nop"] = [mark(rebuild), notes(copy(rebuild, base / "nop" / "copied")), verify.delivery_record(base / "nop" / "copied")["entries"]]
+out["watchdog"].append(verify.delivery_record(base / "nop" / "copied")["ended_by_watchdog"])
 app, rebuild = deliver("unwritable", tree)
 out["unwritable"] = mark(rebuild)[:2]
 linked = base / "linked" / "app" / "rebuild"
@@ -1077,6 +1084,7 @@ def test_the_delivery_is_bounded_recorded_and_marked_before_the_copy_and_graded_
     assert untouched, "every entry's mtime and ctime are the ones from before the hook ran"
     assert changed == ["ro", "secret"] and changed_count == 2, "the hook's own chmods are flagged, with the later ctime kept apart"
     assert made == [] and prescan_complete is True and (ro_mode, secret_mode) == ("0o755", "0o400")
+    assert out["watchdog"] == [True, 3, True, False], "a session the watchdog ended is visible in the record and in metrics"
     assert len(copies) == 1 and copies[0]["source"] == "/usr/bin/python3.12" and copies[0]["source_owner"] == 0
     assert copies[0]["source_inode"] == [66, 1234] and copies[0]["outside_delivery"] is True
     assert copies[0]["changed_since_session_started"] is False, "a system file from the image build"
@@ -1124,6 +1132,7 @@ def test_the_delivery_is_bounded_recorded_and_marked_before_the_copy_and_graded_
     assert out["inodes"][0] == "refused" and "No space left on device" in out["inodes"][1], out["inodes"]
     assert out["never_room"][0].startswith("delivered ") and any("room the machine did not have" in line for line in out["never_room"])
     assert out["nop"] == [["delivered 0 0"], [], 0]
+    assert "never a reason to change the reward" in (STEP / "tests" / "verify.py").read_text(), "the watchdog flag is never scored"
     code, kinds, copied, lib_left, one_left, sh_copied, inner = out["fixer"]
     assert code == 0 and kinds == {"lib": "refused", "one": "refused", "sh": "copied", "inner": "relinked"}, out["fixer"]
     assert copied["source"] == "/bin/sh" and copied["source_owner"] == 0 and len(copied["source_inode"]) == 2
@@ -1154,11 +1163,13 @@ def test_the_delivery_is_bounded_recorded_and_marked_before_the_copy_and_graded_
     import tomllib
     config = tomllib.loads((TASK / "task.toml").read_text())
     assert config["verifier"]["collect"] == [{"command": "/usr/local/sbin/prepare-delivery", "user": "root", "timeout_sec": 600}]
-    for phase in ("setup_begin", "setup_complete"):
-        assert config["agent"][phase] == [{"command": "/usr/local/sbin/reserve-delivery-room", "timeout_sec": 120}]
+    assert config["agent"]["setup_begin"] == [{"command": "/usr/local/sbin/reserve-delivery-room", "timeout_sec": 120}]
+    assert config["agent"]["setup_complete"] == [{"command": "/usr/local/sbin/reserve-delivery-room", "timeout_sec": 120},
+                                                 {"command": "/usr/local/sbin/precap-watchdog", "user": "root", "timeout_sec": 60}]
     docker = (TASK / "environment" / "Dockerfile").read_text()
-    assert "COPY reserve-delivery-room prepare-delivery /usr/local/sbin/" in docker
-    assert "chmod 0700 /usr/local/sbin/reserve-delivery-room /usr/local/sbin/prepare-delivery" in docker
+    assert "COPY reserve-delivery-room prepare-delivery precap-watchdog /usr/local/sbin/" in docker
+    assert "chmod 0700 /usr/local/sbin/reserve-delivery-room /usr/local/sbin/prepare-delivery /usr/local/sbin/precap-watchdog" in docker
+    assert 'tail -n 20 /var/log/precap-watchdog.log > "$STATE/watchdog.txt"' in hook_text
     verify = (STEP / "tests" / "verify.py").read_text()
     main = verify[verify.index("def main() -> int:"):]
     assert main.index("delivery_notes(SUBMISSION)") < main.index("sandbox()") < main.index("seal(SUBMISSION)")
@@ -1204,6 +1215,50 @@ def test_a_host_short_of_disk_mid_evaluation_is_an_error_and_a_run_that_ended_in
     runner = RUNNER.read_text()
     assert "or alive(proc.pid, uid)" in runner and "def alive(group: int, uid: int | None) -> bool:" in runner, \
         "a child that holds the pipe open past the deadline is a timeout"
+
+
+def test_the_pre_cap_watchdog_arms_once_fires_and_ends_the_users_processes(tmp_path):
+    """The root watchdog started at setup_complete ends the agent's session shortly before the
+    platform's cap, since a turn that runs into the cap is not graded today while one that ends by
+    itself is. It arms one sleeper however often it is started, fires after END_SECONDS, ends every
+    selected process (a tree, and a process in a session of its own), and logs each step."""
+    import uuid
+    marker = f"precap-sleep-{uuid.uuid4().hex[:12]}"
+    sleeper = tmp_path / marker
+    shutil.copy(shutil.which("sleep"), sleeper)
+    sleeper.chmod(0o755)
+    env = dict(os.environ, PRECAP_END_SECONDS="2", PRECAP_PIDFILE=str(tmp_path / "watchdog.pid"), PRECAP_LOG=str(tmp_path / "watchdog.log"),
+               PRECAP_SELECT=f"-f {marker}")
+    tree = subprocess.Popen(["sh", "-c", f"{sleeper} 300 & {sleeper} 300"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    alone = subprocess.Popen([str(sleeper), "300"], start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        first = subprocess.run(["sh", str(TASK / "environment" / "precap-watchdog")], env=env, capture_output=True, text=True, timeout=30)
+        assert first.returncode == 0 and "armed for 2 s" in first.stdout, first
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline and not (tmp_path / "watchdog.pid").read_text().strip():
+            time.sleep(0.05)
+        armed_pid = (tmp_path / "watchdog.pid").read_text().strip()
+        second = subprocess.run(["sh", str(TASK / "environment" / "precap-watchdog")], env=env, capture_output=True, text=True, timeout=30)
+        assert second.returncode == 0 and second.stdout == "", "a second start arms nothing"
+        deadline = time.monotonic() + 40
+        while time.monotonic() < deadline and "done:" not in (tmp_path / "watchdog.log").read_text():
+            time.sleep(0.2)
+        log = (tmp_path / "watchdog.log").read_text()
+        assert log.count(" armed pid ") == 1 and f"armed pid {armed_pid}" in log and "already armed" in log, log
+        assert " fired after 2 s" in log and "done: 0 process(es)" in log, log
+        assert tree.wait(timeout=10) != 0 and alone.wait(timeout=10) != 0, "the tree and the process in its own session are ended"
+        left = subprocess.run(["pgrep", "-f", marker], capture_output=True, text=True)
+        assert left.stdout.strip() == "", left.stdout
+        assert not (tmp_path / "watchdog.pid").exists(), "the pid file goes with the sleeper"
+    finally:
+        for proc in (tree, alone):
+            if proc.poll() is None:
+                proc.kill()
+    script = (TASK / "environment" / "precap-watchdog").read_text()
+    assert "END_SECONDS=${PRECAP_END_SECONDS:-33900}" in script, "the agent's 34,560 s less eleven minutes"
+    agent = int(re.search(r"\[agent\]\s*timeout_sec = (\d+)", (TASK / "task.toml").read_text()).group(1))
+    assert agent - 33900 == 660
+    assert "watchdog" not in (STEP / "instruction.md").read_text().lower() and "cap" not in (STEP / "instruction.md").read_text().lower()
 
 
 def test_the_agent_cannot_replace_the_artifact_directory():
@@ -1569,8 +1624,8 @@ def test_nothing_the_agent_sees_names_a_reference_answer_or_a_budget():
         assert str(place) not in seen["instruction.md"], place
     assert not re.search(r"\btests?\b", seen["instruction.md"].lower()), "no suite is implied"
     assert "#" not in seen["task.toml"]
-    assert sorted(path.name for path in (TASK / "environment").iterdir()) == [".dockerignore", "Dockerfile", "prepare-delivery",
-                                                                          "reserve-delivery-room"]
+    assert sorted(path.name for path in (TASK / "environment").iterdir()) == [".dockerignore", "Dockerfile", "precap-watchdog",
+                                                                          "prepare-delivery", "reserve-delivery-room"]
     instruction = seen["instruction.md"]
     assert "no example" not in instruction.lower() and "Out of scope:" in instruction
     flat = " ".join(instruction.split())
@@ -1586,7 +1641,8 @@ def test_only_the_documentation_and_the_binary_reach_the_agent():
     agent = (TASK / "environment" / "Dockerfile").read_text()
     assert re.findall(r"^COPY .*$", agent, re.M) == ["COPY original/ /original/", "COPY --from=program /opt/bpl/bpl /opt/bpl/bpl",
                                                     "COPY --from=program /original/smoke.sh /tmp/bpl-smoke.sh",
-                                                    "COPY docs/ /app/docs/", "COPY reserve-delivery-room prepare-delivery /usr/local/sbin/"]
+                                                    "COPY docs/ /app/docs/",
+                                                    "COPY reserve-delivery-room prepare-delivery precap-watchdog /usr/local/sbin/"]
     final = agent.split("\nFROM ", 1)[1]
     assert "sudo" not in agent, "no set-user-id helper the agent's user cannot use anyway"
     assert final.index("chmod 2711 /opt/bpl/bpl") < final.index(

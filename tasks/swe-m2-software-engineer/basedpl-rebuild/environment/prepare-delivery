@@ -32,6 +32,8 @@ for _ in $(seq 1 100); do
   sleep 0.1
 done
 left=$({ pgrep -u dev -r R,S,D,T; pgrep -U dev -r R,S,D,T; } 2>/dev/null | sort -u | wc -l)
+# The pre-cap watchdog's last lines: whether it ended the session goes into the record, never into the score.
+tail -n 20 /var/log/precap-watchdog.log > "$STATE/watchdog.txt" 2>/dev/null || :
 # Every entry's own times, before anything of the hook's touches the delivery: a chmod changes a ctime, and the ctime is
 # the one time the agent cannot set, so the manifest's authoritative times come from here. Then, as root, directories get
 # their owner's rwx back (a read-only folder would stop the link fixer and the copy) and a file its owner cannot read gets
@@ -343,7 +345,8 @@ number of entries (files, directories and links) and of bytes in its files (each
 has), or `refused`; every line after it is a change made or the reason for the refusal, none left out. The record
 (.delivery.json) holds what was found before the agent's processes were ended (STATE/session.json), how many rounds of
 killing it took and how many processes were left, when the session started (STATE/turn-started, from the setup hook)
-and when this hook started, every change the link fixer made (STATE/fixer.jsonl: the copies first, each with its
+and when this hook started, the pre-cap watchdog's last log lines and whether it fired (STATE/watchdog.txt,
+`ended_by_watchdog`), every change the link fixer made (STATE/fixer.jsonl: the copies first, each with its
 source's path, owner, times and inode, and whether the source changed since the session started), and every entry: its
 path, type, size, modification and change times, and a file's sha256 or a link's target. Neither file is counted among
 the entries.
@@ -571,7 +574,9 @@ if reason is not None:
 session = state_json("session.json", {"error": "the session record is missing"})
 if not hashing_complete:
     notes.append(f"files were hashed for {HASH_SECONDS} s; the rest are listed without a hash")
+watchdog = state_lines("watchdog.txt")[-20:]
 record = dict(session, kill_rounds=ROUNDS, agent_processes_left=LEFT, hook_started=HOOK_STARTED, turn_started=turn_started,
+              watchdog_log=watchdog, ended_by_watchdog=any(" fired after " in line for line in watchdog),
               delivered=lines[0], listing_complete=complete, hashing_complete=hashing_complete,
               prescan_complete=bool(prescan.get("complete")), hook_changed_entries=hook_changed,
               copies=[change for change in changes if change.get("kind") == "copied"],

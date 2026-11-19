@@ -13,11 +13,32 @@ by running it. A judge panel chose the target (harbor-lh `ops/swe-marathon-v2/de
 The copy is a hardened build (`common/hardening/`), built once on the author's machine and
 installed unchanged in both images and in the reference solution. One step is implemented. QA
 waves 1 and 2 (20 passes) have been answered in rounds 1 and 2, and Carve's finding on the shared
-collect hook and the round-2 re-checks in round 3, and the round-3 re-check in round 4; bundle
-`80d7f600cab8` replaces the retired `4164eb806274`, `7462d71fe5a7`, `f0da94435d6b` and
-`cfc9d42f3e68`. See [Remaining work](#remaining-work).
+collect hook and the round-2 re-checks in round 3, the round-3 re-check in round 4, and the
+platform's ungraded capped runs in round 5; bundle `1a08cdb471d0` is the first to upload and
+replaces the retired `4164eb806274`, `7462d71fe5a7`, `f0da94435d6b`, `cfc9d42f3e68` and
+`80d7f600cab8`. See [Remaining work](#remaining-work).
 
 ## Development log
+
+### 2026-11-19 (round 5: a root pre-cap watchdog, for the platform's ungraded capped runs)
+
+- On Oddish today, every v2 trial whose agent ran into the 9.6 h cap was never graded: the
+  separate verifier image failed to build right after the timeout (harbor-lh
+  `ops/swe-marathon-v2/PLATFORM_VERIFIER_BUILD_AFTER_LONG_RUN.md`), while runs that ended by
+  themselves were graded. Until the platform fixes it, the task ends the agent's session itself,
+  shortly before the cap.
+- `environment/precap-watchdog`, started as root by a second `[[agent.setup_complete]]` entry,
+  arms one detached sleeper (a pid file under `/run` makes a second start a no-op). After
+  33,900 s (the agent's 34,560 s less eleven minutes) it sends SIGTERM to every process of
+  `dev`, repeating every 5 s for up to 60 s, then SIGKILL, and logs arm, fire and done lines
+  with timestamps to the root-only `/var/log/precap-watchdog.log`. The collect hook copies the
+  log's last lines into the record, and the verifier reports `ended_by_watchdog` in
+  `metrics.json`, never in the score. The instruction says nothing of it: it states no time
+  budget, and a session it ends is one that would otherwise have hit the cap.
+- Checks: the watchdog arms once (a second start logs "already armed"), fires at `END_SECONDS`
+  (an environment override in the test), ends a process tree and a process in a session of its
+  own, logs each step and removes its pid file; the task's two setup_complete entries; the image
+  installs it root-only; the instruction mentions neither it nor a cap.
 
 ### 2026-11-19 (round 4: the hook's chmod masked every ctime, from the round-3 re-check 07c)
 
@@ -446,6 +467,14 @@ Records with `∂` are drawn at 48%, which puts differentiation at about 6% of t
 A run is one trial of 9.6 hours (one task row per experiment, no continuation tasks). The
 instruction states no time budget.
 
+**Run condition: the pre-cap watchdog.** A root watchdog started at `setup_complete` ends the
+agent's session 11 minutes before the platform's 9.6 h cap (SIGTERM to every process of `dev`,
+then SIGKILL), because on the platform today a turn that runs into the cap is never graded (the
+separate verifier image fails to build right after the timeout; harbor-lh
+`ops/swe-marathon-v2/PLATFORM_VERIFIER_BUILD_AFTER_LONG_RUN.md`) while a turn that ends by itself
+is. A session it ended shows as `ended_by_watchdog: true` in `metrics.json`. The agent is not
+told; the instruction states no budget either way.
+
 ## Verification
 
 1. **Collection.** When the agent's turn ends, the root collect hook freezes `dev`'s processes,
@@ -532,6 +561,7 @@ Highest unresolved severity: 🟡 YELLOW / UNASSESSED (findings 1, 2, 3, 5, 10, 
 | 15 | A busy host fails a graded run spuriously | Disk and file limits | QA 10: a `sleep 10` submission was stopped for a file limit by the whole-filesystem figures | The limits count only the run's own files (its uid's under the writable directories, and deleted files it holds open), and only when the free figures fall past a limit; a case stopped by a limit runs once more; host shortages after a sweep are evaluation errors | None found | Read `disk_limits`, `file_limits` and `limit_retries` in the first trials' `metrics.json` | 🟢 GREEN / LOW |
 | 16 | Make Harbor's copy drop an honest delivery (a running build, links that leave the directory, FIFOs, a sparse file, a full disk, a read-only folder) so that it scores a valid 0, make the copy fail at will, launder a file fetched after the turn through a link the hook copies in, or hide a post-turn write behind the hook's own changes to ctimes | The collect hook and the mark | QA 07 F2-F3 (ported from the back-office task, rounds 6-7); Carve QA 04 F1-F2; re-checks 07b and 07c | The hook freezes and kills `dev`'s processes first, records every entry's own times before touching anything (the manifest's authoritative mtime and ctime), gives back reserved room and inodes, restores permissions only where needed and notes each change, copies an outside link's target only when root owns it (every file under a directory included) and records the source's path, owner, mtime, ctime and inode, removes every other outside link (noted first in the mark) and all special files, bounds entries, bytes and path length, hashes once per inode, packs once within 100 s, and marks the delivery with every note; the verifier grades what arrived, reads the whole mark, copies every change into `metrics.json` with flags, and treats nothing arriving or a short copy as an evaluation error | A platform copy that fails after the hook's trial pack succeeded (an error, then a re-run); a fetched file written straight into `/app/rebuild` after the turn, which the ctime audit against the trial's finish now can catch, since the recorded ctimes are the session's own | Read `delivery_record` (copies, links, notes, `latest_ctime` and `hook_changed_entries` against the trial's finish) in every trial | 🟢 GREEN / LOW |
 | 17 | Read the build's own file through the hardened read path from a start directory whose rule lets it through (`/`, `/opt`, `/opt/bpl`) | File mode; the path rule | QA 04 F4, QA 12 F2 | The 2711 mode refuses the read for `dev`; the agent image's final stage proves it as `dev` (with the whole smoke test on the set-group-id build) and `solve.sh` records it in the trial | A kernel that let a non-dumpable set-group-id process read its own executable | `/logs/agent/reads.txt` of the first oracle trial | 🟢 GREEN / LOW |
+| 18 | Outlast the pre-cap watchdog, so that the session runs into the platform's cap and goes ungraded, or stop it to gain time | Process ownership | Round 5 | The sleeper is root's and `dev` cannot signal it; its pid file and log are root-only (`/run`, `/var/log`, mode 0600); `kill -TERM` then `kill -KILL` as root reach every process of `dev` | A harness that ran the agent as root, which hackability row 3 gates on the first trial | Read `ended_by_watchdog` and `watchdog_log` in `delivery_record` | 🟢 GREEN / LOW |
 
 Licence: the upstream is Apache-2.0. Its `LICENSE` is shipped with the documentation in
 `/app/docs` and with the reference solution.
@@ -540,15 +570,15 @@ Licence: the upstream is Apache-2.0. Its `LICENSE` is shipped with the documenta
 
 | Check | Revision | Result |
 | --- | --- | --- |
-| `checks/` (43 tests) with `ci_checks` (27), Python 3.13, and `check_repository.py` | round 4 | pass |
+| `checks/` (44 tests) with `ci_checks` (27), Python 3.13, and `check_repository.py` | round 5 | pass |
 | Local build of the hardened original | `scripts/build_original.py`, 2026-11-19 | builds (one warning); static, not PIE; marker once; no local path |
 | `apply.sh` | a fresh export of v0.1.95 | applies once, refuses a second time; result identical to the patched tree that was built |
 | `smoke.sh` | upstream's v0.1.95 macOS release binary | fails at the first hardening check, as it must; never yet run on the hardened Linux binary (no Linux here) |
 | Upstream's published builds | `scripts/upstream_builds.py`, 2026-11-19 | 21 executables in 3 release assets and 9 wheels, 12 distinct hashes; upstream's Linux build holds the unhardened usage text twice, the hardened build and the docs never |
 | Local recording (the private cases, upstream's macOS release binary) | cases `91236578`, `experiment/local-recording-8` | 1,673 of 1,777 kept (83 display settings that change nothing, 17 last bits, 4 quoted); none unsteady, crashed, machine-dependent or perturbed; the strongest no-interpreter dispatcher 4.1% (command line 19, constants 17, error lookup 13, last literal 19), largest answer 0.6%, nothing with exit 1 0.6%; `∂` 6.1%; 40 of 41 piped cases end with exit 1 after a failing line |
-| Local grading from the packaged bundle (`80d7f600cab8`), through the collect hook's pre-scan and measuring scripts and a tar round trip with the `data` filter | stand-in reference behind a wrapper; no-op; the dispatcher as a program, with every strategy the recorder measures | 1.0 (1,673/1,673, 30.4 s); 0.0; 0.0269 (45/1,673: cli 19, error 13, expr 7, script 6) |
-| Packaging | `scripts/package_step.py`, twice into separate directories | `80d7f600cab8`, 248 files, the same hash both times |
-| Oddish preflight | bundle `80d7f600cab8`, no-Archil CLI, locally | pass |
+| Local grading from the packaged bundle (`1a08cdb471d0`), through the collect hook's pre-scan and measuring scripts and a tar round trip with the `data` filter | stand-in reference behind a wrapper; no-op; the dispatcher as a program, with every strategy the recorder measures | 1.0 (1,673/1,673, 28.4 s); 0.0; 0.0269 (45/1,673: cli 19, error 13, expr 7, script 6) |
+| Packaging | `scripts/package_step.py`, twice into separate directories | `1a08cdb471d0`, 249 files, the same hash both times |
+| Oddish preflight | bundle `1a08cdb471d0`, no-Archil CLI, locally | pass |
 | Oddish baselines, QA, `harbor check` | none | not run |
 
 ## Build and deliver
@@ -569,7 +599,7 @@ sha256 is not build.txt's.
 
 ## Remaining work
 
-- Baselines of bundle `80d7f600cab8` under the task's one experiment, on the owner's word. The
+- Baselines of bundle `1a08cdb471d0` under the task's one experiment, on the owner's word. The
   two oracle trials on different workers are a hard gate: each must score exactly 1.0, with the
   same `kept_ids_sha256` and `expected_sha256`. A failed id goes on a deny-list and the cases are
   recorded again. Then the no-op, which must score exactly 0. These are the first run of the

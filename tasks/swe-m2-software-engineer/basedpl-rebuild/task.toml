@@ -24,6 +24,11 @@ timeout_sec = 120
 command = "/usr/local/sbin/reserve-delivery-room"
 timeout_sec = 120
 
+[[agent.setup_complete]]
+command = "/usr/local/sbin/precap-watchdog"
+user = "root"
+timeout_sec = 60
+
 [environment]
 network_mode = "public"
 build_timeout_sec = 3600

@@ -499,7 +499,8 @@ def delivery_notes(top: Path) -> list[str]:
 def delivery_record(top: Path) -> dict:
     """The collect hook's record, cut to what metrics.json holds: whether public egress was open
     when the session ended, the agent's processes then, how many rounds of killing they took and
-    how many were left, when the session and the hook started, every link the hook copied (with
+    how many were left, when the session and the hook started, whether the pre-cap watchdog ended
+    the session (never a reason to change the reward), every link the hook copied (with
     its source's path, owner, times and inode, and whether that source lies outside /app/rebuild or
     changed since the session started) or refused, every note, and a summary of the entries
     (count, latest change and modification times, `bpl`'s own entry). Never raising, and never part
@@ -519,6 +520,8 @@ def delivery_record(top: Path) -> dict:
                 "agent_processes": (record.get("agent_processes") or [])[:50],
                 "kill_rounds": record.get("kill_rounds"), "agent_processes_left": record.get("agent_processes_left"),
                 "turn_started": record.get("turn_started"), "hook_started": record.get("hook_started"),
+                "ended_by_watchdog": bool(record.get("ended_by_watchdog")),  # the pre-cap watchdog ended the session
+                "watchdog_log": [str(line) for line in record.get("watchdog_log", [])][-20:],
                 "delivered": record.get("delivered"), "listing_complete": record.get("listing_complete"),
                 "hashing_complete": record.get("hashing_complete"), "prescan_complete": record.get("prescan_complete"),
                 "hook_changed_entries": record.get("hook_changed_entries"),

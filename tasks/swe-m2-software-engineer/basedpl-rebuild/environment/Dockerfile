@@ -14,14 +14,14 @@ RUN useradd --uid 10001 --create-home dev && groupadd --system bpl
 COPY --from=program /opt/bpl/bpl /opt/bpl/bpl
 COPY --from=program /original/smoke.sh /tmp/bpl-smoke.sh
 COPY docs/ /app/docs/
-COPY reserve-delivery-room prepare-delivery /usr/local/sbin/
+COPY reserve-delivery-room prepare-delivery precap-watchdog /usr/local/sbin/
 RUN ln -s /opt/bpl/bpl /usr/local/bin/bpl \
     && mkdir -p /app/rebuild \
     && chown -R root:root /app && chmod -R a+rX,go-w /app/docs \
     && chmod 1777 /app && chmod 0777 /app/rebuild \
     && chmod 0755 /opt/bpl && chown root:bpl /opt/bpl/bpl && chmod 2711 /opt/bpl/bpl \
-    && chown root:root /usr/local/sbin/reserve-delivery-room /usr/local/sbin/prepare-delivery \
-    && chmod 0700 /usr/local/sbin/reserve-delivery-room /usr/local/sbin/prepare-delivery \
+    && chown root:root /usr/local/sbin/reserve-delivery-room /usr/local/sbin/prepare-delivery /usr/local/sbin/precap-watchdog \
+    && chmod 0700 /usr/local/sbin/reserve-delivery-room /usr/local/sbin/prepare-delivery /usr/local/sbin/precap-watchdog \
     && chmod 0644 /tmp/bpl-smoke.sh \
     && setpriv --reuid dev --regid dev --clear-groups env HOME=/tmp bash /tmp/bpl-smoke.sh /opt/bpl/bpl \
     && rm -f /tmp/bpl-smoke.sh
