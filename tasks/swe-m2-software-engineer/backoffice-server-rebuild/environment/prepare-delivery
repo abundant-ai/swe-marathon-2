@@ -1,6 +1,12 @@
 #!/bin/sh
 for _ in 1 2 3 4 5; do pkill -KILL -u dev 2>/dev/null || break; sleep 1; done
 if [ ! -d /app/server ] || [ -L /app/server ]; then exit 0; fi
+# Mark the delivery, an empty one too: the verifier takes an /app/server without this mark for a copy that failed (an
+# evaluation error), not for a submission. Whatever the agent left under the name is moved aside first, never followed.
+if [ -e /app/server/.delivered ] || [ -L /app/server/.delivered ]; then
+  aside=$(mktemp -d /app/.aside.XXXXXX) && mv -f /app/server/.delivered "$aside/" || exit 0
+fi
+(set -C; printf 'delivered\n' > /app/server/.delivered) || exit 0
 exec setpriv --reuid dev --regid dev --clear-groups --no-new-privs /opt/py/bin/python -I - /app/server <<'EOF'
 """Make /app/server safe to copy to the machine it will run on, as the user who built it.
 

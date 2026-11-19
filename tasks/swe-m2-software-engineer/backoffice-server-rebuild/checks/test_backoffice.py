@@ -546,6 +546,10 @@ MODE = sys.argv[1]
 STATE = os.path.join(os.environ["DATA_DIR"], "tallies.json")  # disk: written before each answer; lazy: only on SIGTERM
 STASH = os.path.join(os.environ["DATA_DIR"], "seen.json")
 adopted, inflight, overlaps = {}, [0], {}
+DRIPS = {"close": b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 100\r\nConnection: close\r\n\r\n",
+         "nolength": b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n",
+         "http10": b"HTTP/1.0 200 OK\r\nContent-Type: application/json\r\n\r\n",
+         "chunkclose": b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n"}
 
 
 def overlap(target, path, conn):
@@ -610,6 +614,17 @@ def handle(conn):
             path = target.split("?")[0]
             if MODE == "overlap" and overlap(target, path, conn):
                 return
+            if MODE == "healthdrip" and path == "/api/health":
+                conn.sendall(b"HTTP/1.0 200 OK\r\n\r\n")
+                while True:  # QA 07d M1: one byte now and then, never an end
+                    conn.sendall(b" ")
+                    time.sleep(0.5)
+            kind = path.rsplit("/", 1)[-1]
+            if MODE == "drip" and kind in DRIPS:
+                conn.sendall(DRIPS[kind])
+                while True:
+                    conn.sendall(b"1\r\n \r\n" if kind == "chunkclose" else b" ")
+                    time.sleep(0.5)
             if "/orders/" in path or "/payments/" in path or "/check/" in path:
                 # buggy: every order total one cent short. preview (QA 07 F1): the same, but it keeps what a month's
                 # payments reveal, crashes at the month's end to earn a second try, and answers from what it kept. echo
@@ -1136,7 +1151,7 @@ print(json.dumps({"kept": len(kept), "head": kept[:17].decode(), "tail": kept.rs
     assert out["kept"] <= (2 << 20) + 100 and out["head"] == "==== start 1 ====" and out["tail"] == "159159" and out["marker"]
     assert out["ballast"] == 8 << 20 and out["released"]
     marker = tmp_path / "run" / "w" / "data" / "fill"
-    setup = (f"import os\nreplay.GUARD_SEC = 0.1\n_free = replay.free_bytes\n"
+    setup = (f"import os\nreplay.GUARD_SEC = 0.1\nreplay.DISK_EVERY = 1\n_free = replay.free_bytes\n"
              f"replay.free_bytes = lambda path: 0 if os.path.exists({str(marker)!r}) else _free(path)\n")
     scenarios = [{"id": f"S{i:02d}", "theme": "t", "steps": [step("/items/1"), step("/items/2")]} for i in range(60)]
     scenarios.insert(5, {"id": "FILL", "theme": "fill", "steps": [step("/fill")]})
@@ -1144,6 +1159,169 @@ print(json.dumps({"kept": len(kept), "head": kept[:17].decode(), "tail": kept.rs
     metrics, reasons = run["metrics"], [result["reason"] for result in run["results"]]
     assert "the server was stopped when the disk ran low" in reasons and metrics["retried"] == 0, reasons
     assert any("disk ran low" in note for note in metrics["notes"]) and 0 < metrics["reward"] < 1
+
+
+def test_a_drip_after_any_framing_ends_at_the_deadline_health_check_included(tmp_path):
+    """QA 07d M1: http.client lets go of the connection's socket once an answer will close it (Connection: close,
+    HTTP/1.0, no length, chunked and closing), so the watcher could not reach it, and one byte every few seconds held
+    evaluate() at the server's pace (81 s for a 5 s deadline); a dripped health check held start() under the server's
+    lock. Every read of an answer now stops at its end time, and the watcher keeps a handle on every socket."""
+    scenarios = [{"id": f"S-{kind}", "theme": "t", "steps": [step(f"/{kind}")]} for kind in ("close", "nolength", "http10", "chunkclose")]
+    scenarios += [{"id": f"F{i}", "theme": "t", "steps": [step("/items/1")]} for i in range(4)]
+    out = drive(tmp_path / "answers", "drip", scenarios, REQUEST_SEC=1, DEADLINE_SEC=6, HEALTH_SEC=1)
+    reasons = {result["id"]: result["reason"] for result in out["results"]}
+    assert out["seconds"] < 15, out["seconds"]
+    assert {reasons[f"S-{kind}"] for kind in ("close", "nolength", "http10", "chunkclose")} <= {"no answer from the server",
+                                                                                                 "not played to the end before the time limit"}
+    health = drive(tmp_path / "health", "healthdrip", scenarios[:2], START_SEC=3, DEADLINE_SEC=6)
+    assert health["seconds"] < 15 and health["results"][0]["reason"] == "the server did not start", health
+
+
+def test_nothing_is_deleted_before_the_reward_and_deletion_is_bounded(tmp_path):
+    """QA 07d M2: evaluate() removed DATA_DIR with an unbounded rmtree before returning, and the clean slate deleted
+    every directory of the server's user the same way, so tens of millions of hard links could hold the reward past the
+    step limit. Nothing is deleted before the reward any more (the container is discarded); the clean slate moves what
+    it takes away into a root-only directory (constant time) and never walks the evaluation's own folders; and what is
+    still deleted goes through one `rm -rf` killed at its time limit, however slow the filesystem."""
+    probe = r"""
+import json, os, sys, time
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+from verifier import replay
+folder = Path(sys.argv[2])
+wide = folder / "wide"
+for part in range(4):
+    (wide / str(part)).mkdir(parents=True)
+    for number in range(1000):
+        os.symlink("x", wide / str(part) / str(number))
+fake = folder / "bin"
+fake.mkdir()
+(fake / "rm").write_text("#!/bin/sh\nexec sleep 30\n")
+(fake / "rm").chmod(0o755)
+os.environ["PATH"] = f"{fake}:{os.environ['PATH']}"
+_unlink, _rmdir = os.unlink, os.rmdir
+def slow_unlink(*args, **options):
+    time.sleep(0.002)
+    return _unlink(*args, **options)
+def slow_rmdir(*args, **options):
+    time.sleep(0.002)
+    return _rmdir(*args, **options)
+os.unlink, os.rmdir = slow_unlink, slow_rmdir
+began = time.monotonic()
+replay.remove_tree(wide, 0.3)
+bounded = time.monotonic() - began
+os.unlink, os.rmdir = _unlink, _rmdir
+root, aside = folder / "root", folder / "aside"
+(root / "data" / "deep").mkdir(parents=True)
+(root / "data" / "deep" / "kept").write_text("still here")
+aside.mkdir()
+began = time.monotonic()
+taken = replay.remove_user_files(os.getuid(), roots=(str(root),), until=time.monotonic() + 5, aside=aside)
+print(json.dumps({"bounded": bounded, "taken": taken, "moved": time.monotonic() - began, "left": sorted(os.listdir(root)),
+                  "aside": (aside / "swept-1" / "deep" / "kept").read_text()}))
+"""
+    done = subprocess.run([sys.executable, "-I", "-B", "-c", probe, str(STEP / "tests"), str(tmp_path)], capture_output=True, text=True,
+                          timeout=300)
+    assert done.returncode == 0, done.stderr[-2000:]
+    out = json.loads(done.stdout.strip().splitlines()[-1])
+    assert out["bounded"] < 3, out
+    assert out["taken"] == 1 and out["left"] == [] and out["aside"] == "still here" and out["moved"] < 1, out
+    source = (STEP / "tests" / "verifier" / "replay.py").read_text()
+    evaluate_source = source[source.index("def evaluate("):]
+    clean_slate = source[source.index("    def clean_slate(self)"):source.index("    def start(self)")]
+    assert "shutil.rmtree" not in source and "remove_tree(" not in evaluate_source and "remove_user_files(" not in evaluate_source
+    assert "aside=aside" in clean_slate and "skip=(str(self.work), str(self.source))" in clean_slate
+    scenarios = [{"id": f"S{i:03d}", "theme": "crash" if i % 10 == 3 else "fine",
+                  "steps": [step("/items/1"), step("/crash" if i % 10 == 3 else "/items/2")]} for i in range(30)]
+    out = drive(tmp_path / "run", "disk", scenarios, RETRY_SHARE=1.0)
+    work = tmp_path / "run" / "w"
+    assert out["metrics"]["retried"] > 0 and (work / "data").is_dir(), "DATA_DIR is left in place at the end"
+    assert any(path.name.startswith("data-") for path in (work / "set-aside").iterdir()), "the clean slate moved DATA_DIR aside"
+
+
+def test_memory_the_server_takes_stops_it_and_a_dead_grader_leaves_no_reward(tmp_path):
+    """QA 07d M3: without a cgroup, a server could lower its OOM priority between the guard's re-raises and take the
+    memory the grader needs. The guard now runs every 50 ms and stops the server for good once its processes hold more
+    than 6 GiB in all; and if the grader dies anyway, no reward file exists, so the result is an evaluation error,
+    never a 0."""
+    marker = tmp_path / "run" / "w" / "data" / "fill"
+    setup = (f"import os\nreplay.GUARD_SEC = 0.05\n"
+             f"replay.server_memory = lambda uid, raise_priority=False: (8 << 30) if os.path.exists({str(marker)!r}) else 0\n")
+    scenarios = [{"id": f"S{i:02d}", "theme": "t", "steps": [step("/items/1"), step("/items/2")]} for i in range(60)]
+    scenarios.insert(5, {"id": "FILL", "theme": "fill", "steps": [step("/fill")]})
+    run = drive(tmp_path / "run", "overlap", scenarios, setup=setup, RETRY_SHARE=1.0)
+    reasons = [result["reason"] for result in run["results"]]
+    assert "the server was stopped when its processes held more than 6 GiB of memory" in reasons and run["metrics"]["retried"] == 0
+    assert any("6 GiB of memory" in note for note in run["metrics"]["notes"])
+    probe = r"""
+import json, sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+import verify
+folder = Path(sys.argv[2])
+verify.reserve(folder)
+print(json.dumps({"files": sorted(path.name for path in folder.iterdir()), "summary": json.loads((folder / "metrics.json").read_text())}))
+"""
+    (tmp_path / "out").mkdir()
+    done = subprocess.run([sys.executable, "-I", "-B", "-c", probe, str(STEP / "tests"), str(tmp_path / "out")], capture_output=True, text=True,
+                          timeout=60)
+    assert done.returncode == 0, done.stderr[-2000:]
+    found = json.loads(done.stdout.strip().splitlines()[-1])
+    assert found["files"] == [".reward.pending", "metrics.json"] and found["summary"]["status"] == "evaluation_error"
+
+
+def test_only_a_disk_that_had_room_when_the_server_started_is_watched(tmp_path):
+    """QA 07d S1: a filesystem that reports no size (a tmpfs without a limit has no blocks) read as full, and one the
+    machine gave already low stopped the server at once, so an honest server scored 0. Such a path is now left out of
+    the watch with a note; a machine without room where the evaluation itself writes is an evaluation error."""
+    scenarios = [{"id": f"S{i}", "theme": "t", "steps": [step("/items/1")]} for i in range(6)]
+    for name, value in (("unsized", "None"), ("low", "100 << 20")):
+        setup = f"_free = replay.free_bytes\nreplay.free_bytes = lambda path: {value} if str(path) == '/tmp' else _free(path)\n"
+        out = drive(tmp_path / name, "plain", scenarios, setup=setup)
+        assert out["metrics"]["reward"] == 1.0, out["metrics"]
+        assert any(note.startswith("/tmp ") and "not watched" in note for note in out["metrics"]["notes"]), out["metrics"]["notes"]
+        assert out["metrics"]["free_space_mib"]["/tmp"][0] == (None if name == "unsized" else 100)
+    work = tmp_path / "full" / "w"
+    setup = (f"_free = replay.free_bytes\nreplay.free_bytes = lambda path: (100 << 20) if str(path) == {str(work)!r} else _free(path)\n"
+             "_evaluate = replay.evaluate\n"
+             "def evaluate(*args, **options):\n"
+             "    try:\n        return _evaluate(*args, **options)\n"
+             "    except replay.EvaluationError as exc:\n        return {'results': [], 'error': str(exc)}\n"
+             "replay.evaluate = evaluate\n")
+    full = drive(tmp_path / "full", "plain", scenarios, setup=setup)
+    assert "MiB free on" in full["metrics"]["error"] and str(work) in full["metrics"]["error"], full
+
+
+def test_the_reward_is_published_before_the_step_limit_whatever_the_evaluation_is_doing(tmp_path):
+    """QA 07d M1: whatever the evaluation is stuck on, verify.py stops waiting before the step's limit and publishes the
+    reward from what was decided, with a note; the scenarios not decided count as not matched. The collect hook marks
+    every delivery, and a delivery without the mark is an evaluation error, not a 0 (QA 07d S2)."""
+    probe = r"""
+import json, sys, time
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+import verify
+from verifier import replay
+progress = replay.Progress()
+progress.themes, progress.ids = [["t"], ["t", "t"], ["u"]], ["A", "B", "C"]
+progress.metrics = {"units_total": 4, "units_matched": 0, "reward": 0.0, "scenarios_total": 3, "scenarios_matched": 0, "notes": [],
+                    "by_theme": {"t": {"total": 3, "matched": 0}, "u": {"total": 1, "matched": 0}}}
+progress.results = [{"id": "A", "matched": True, "units": [True], "settled": [True], "failed_step": None, "reason": None},
+                    {"id": "B", "matched": False, "units": [True, False], "settled": [True, False], "failed_step": 3, "reason": "x"}, None]
+began = time.monotonic()
+metrics = verify.run_bounded(lambda: time.sleep(60), progress, 0.5)
+print(json.dumps({"seconds": time.monotonic() - began, "reward": metrics["reward"], "notes": metrics["notes"],
+                  "unfinished": metrics["unfinished"], "marker": verify.DELIVERY_MARKER}))
+"""
+    done = subprocess.run([sys.executable, "-I", "-B", "-c", probe, str(STEP / "tests")], capture_output=True, text=True, timeout=60)
+    assert done.returncode == 0, done.stderr[-2000:]
+    out = json.loads(done.stdout.strip().splitlines()[-1])
+    assert out["seconds"] < 5 and out["reward"] == 0.5 and out["unfinished"] == 1 and any("did not finish" in note for note in out["notes"])
+    hook = (TASK / "environment" / "prepare-delivery").read_text()
+    assert out["marker"] == ".delivered" and hook.index("(set -C; printf 'delivered\\n' > /app/server/.delivered)") < hook.index("exec setpriv")
+    assert hook.index('mv -f /app/server/.delivered "$aside/"') < hook.index("(set -C;"), "what the agent left there is moved aside, never followed"
+    verify_source = (STEP / "tests" / "verify.py").read_text()
+    assert "HARD_STOP_SEC = 5_640" in verify_source and "DELIVERY_MARKER).is_file()" in verify_source
 
 
 def test_set_id_bits_are_stripped_and_the_privilege_drop_sets_no_new_privs(tmp_path):
@@ -1208,11 +1386,14 @@ print(json.dumps(out))
 
 
 def test_the_replay_ends_well_inside_the_step_time_limit():
-    """The replay's own deadline leaves room to load the scenarios, cut the last requests and publish the reward."""
+    """The replay's own deadline leaves room to load the scenarios, cut the last requests and wind down (about two
+    minutes, QA 07d N6) before verify.py's hard stop, which leaves Harbor six minutes to upload the tests before and
+    collect the results after."""
     config = tomllib.loads((TASK / "task.toml").read_text())
     limits = [config["verifier"]["timeout_sec"]] + [step["verifier"]["timeout_sec"] for step in config["steps"] if "timeout_sec" in step.get("verifier", {})]
-    probe = "import json, sys; sys.path.insert(0, sys.argv[1]); from verifier import replay as r; print(json.dumps([r.DEADLINE_SEC, r.START_SEC, r.REQUEST_SEC, r.HEALTH_SEC]))"
+    probe = ("import json, sys; sys.path.insert(0, sys.argv[1]); import verify; from verifier import replay as r; "
+             "print(json.dumps([r.DEADLINE_SEC, r.START_SEC, r.REQUEST_SEC, r.HEALTH_SEC, verify.HARD_STOP_SEC]))")
     done = subprocess.run([sys.executable, "-I", "-B", "-c", probe, str(STEP / "tests")], capture_output=True, text=True, timeout=60)
     assert done.returncode == 0, done.stderr[-2000:]
-    deadline, start, request, health = json.loads(done.stdout)
-    assert deadline + 300 <= min(limits) and start + request + health < deadline
+    deadline, start, request, health, hard_stop = json.loads(done.stdout)
+    assert deadline + 240 <= hard_stop and hard_stop + 360 <= min(limits) and start + request + health < deadline

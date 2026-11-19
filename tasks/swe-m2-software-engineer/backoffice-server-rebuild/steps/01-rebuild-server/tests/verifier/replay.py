@@ -104,8 +104,10 @@ JSON_LIMIT = 4_000_000  # a longer JSON answer is not parsed; the longest record
 HEAVY_PDF = 1 << 20  # an uploaded PDF this large is read in full while the write lock is held
 HEAVY_FILE = 16 << 20  # so is any upload this large while it is stored
 LOG_KEEP = 1 << 20  # bytes of the server's output kept from its start and from its end
-GUARD_SEC = 1.0
+GUARD_SEC = 0.05  # how often the server's OOM priority and its memory are checked; the disk every DISK_EVERY of these
+DISK_EVERY = 20
 DISK_RESERVE = 512 << 20  # free bytes below which the server is stopped for good
+SERVER_MEMORY = 6 << 30  # resident bytes the server's processes may hold in all before it is stopped for good
 BALLAST = 256 << 20  # set aside before the server starts and given back for the results
 MEDIA_CACHE = 192 << 20  # bytes of uploads kept in memory between uses
 WORKSPACE_ID = re.compile(r"[A-Za-z0-9_]{1,40}")
@@ -116,6 +118,7 @@ NO_ANSWER = "no answer from the server"
 CRASHED = "the server stopped while the scenario was played"
 DOWN = "server not running"
 DISK = "the server was stopped when the disk ran low"
+MEMORY = "the server was stopped when its processes held more than 6 GiB of memory"
 
 
 class EvaluationError(Exception):
@@ -154,9 +157,13 @@ class Clock:
 
     @contextlib.contextmanager
     def limit(self, connection: http.client.HTTPConnection, seconds: float) -> Iterator[None]:
-        """Bound what happens on `connection` inside this block by `seconds` and by the deadline."""
+        """Bound what happens on `connection` inside this block by `seconds` and by the deadline: the watcher shuts the
+        socket down at the end, and on a `WatchedConnection` every read of the answer stops there too (QA 07d M1)."""
+        end = min(time.monotonic() + seconds, self.deadline)
+        if isinstance(connection, WatchedConnection):
+            connection.end = end
         with self.lock:
-            self.running[id(connection)] = (connection, min(time.monotonic() + seconds, self.deadline))
+            self.running[id(connection)] = (connection, end)
         try:
             yield
         finally:
@@ -168,7 +175,9 @@ class Clock:
             now = time.monotonic()
             with self.lock:
                 for connection, end in self.running.values():
-                    sock = connection.sock
+                    # http.client lets go of `connection.sock` once an answer will close the connection (Connection:
+                    # close, HTTP/1.0, no length) and reads it through the answer: `watched` keeps the socket in reach
+                    sock = getattr(connection, "watched", None) or connection.sock
                     if now >= end and sock is not None:
                         with contextlib.suppress(OSError):
                             sock.shutdown(socket.SHUT_RDWR)
@@ -181,12 +190,15 @@ class Clock:
 # ------------------------------------------------------------------ reading answers
 
 class Bounded(io.RawIOBase):
-    """A socket's byte stream that refuses to deliver more than `limit` bytes in all: every byte of an answer counts,
-    its status line, headers, chunk sizes and trailers included, whatever its transfer encoding (QA 07c F1)."""
+    """A socket's byte stream that refuses to deliver more than `limit` bytes in all, or anything after `end` (a
+    time.monotonic() value): every byte of an answer counts, its status line, headers, chunk sizes and trailers
+    included, whatever its transfer encoding (QA 07c F1), and no drip of bytes, however framed, keeps a read going
+    past its end (QA 07d M1)."""
 
-    def __init__(self, raw: io.RawIOBase, limit: int) -> None:
+    def __init__(self, raw: io.RawIOBase, limit: int, sock: socket.socket | None = None, end: float = float("inf")) -> None:
         super().__init__()
-        self.raw, self.left = raw, limit
+        self.raw, self.left, self.sock, self.end = raw, limit, sock, end
+        self.timeout = sock.gettimeout() if sock is not None else None
 
     def readable(self) -> bool:
         return True
@@ -194,8 +206,19 @@ class Bounded(io.RawIOBase):
     def readinto(self, buffer: Any) -> int:
         if self.left <= 0:
             raise AnswerTooLarge()
-        view = memoryview(buffer)
-        count = self.raw.readinto(view[:min(len(view), self.left)]) or 0
+        view = memoryview(buffer)[:self.left]
+        if self.sock is None or self.end == float("inf"):
+            count = self.raw.readinto(view) or 0
+        else:
+            remaining = self.end - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("the answer did not end in time")
+            self.sock.settimeout(remaining if self.timeout is None else min(remaining, self.timeout))
+            try:
+                count = self.raw.readinto(view) or 0
+            finally:  # the connection's own timeout again, for whatever is sent on it next
+                with contextlib.suppress(OSError):
+                    self.sock.settimeout(self.timeout)
         self.left -= count
         return count
 
@@ -209,12 +232,11 @@ class BoundedResponse(http.client.HTTPResponse):
     """http.client's response read through `Bounded`, with chunk sizes parsed strictly: a size that is negative, signed,
     prefixed or not hexadecimal is a broken answer, not a request to read to the end of the stream."""
 
-    LIMIT = ANSWER_LIMIT + HEADER_ROOM
-
-    def __init__(self, sock: socket.socket, debuglevel: int = 0, method: str | None = None, url: str | None = None) -> None:
+    def __init__(self, sock: socket.socket, debuglevel: int = 0, method: str | None = None, url: str | None = None, *,
+                 limit: int = ANSWER_LIMIT + HEADER_ROOM, end: float = float("inf")) -> None:
         super().__init__(sock, debuglevel, method, url)
         self.fp.close()  # the reader the base class made; nothing has been read from it yet
-        self.fp = io.BufferedReader(Bounded(sock.makefile("rb", buffering=0), self.LIMIT), 1 << 16)
+        self.fp = io.BufferedReader(Bounded(sock.makefile("rb", buffering=0), limit, sock, end), 1 << 16)
 
     def _read_next_chunk_size(self) -> int:
         line = self.fp.readline(http.client._MAXLINE + 1)  # type: ignore[attr-defined]
@@ -226,14 +248,23 @@ class BoundedResponse(http.client.HTTPResponse):
         return int(size, 16)
 
 
-class HealthResponse(BoundedResponse):
-    LIMIT = 1 << 20
+class WatchedConnection(http.client.HTTPConnection):
+    """A connection whose socket the watcher can always shut down (`watched`, which http.client never lets go of), and
+    whose answers are read through `BoundedResponse`, up to `limit` bytes and no later than `end`."""
+
+    def __init__(self, port: int, timeout: float, limit: int = ANSWER_LIMIT + HEADER_ROOM) -> None:
+        super().__init__("127.0.0.1", port, timeout=timeout)
+        self.limit, self.end = limit, float("inf")
+        self.watched: socket.socket | None = None
+        self.response_class = lambda sock, *args, **options: BoundedResponse(sock, *args, limit=self.limit, end=self.end, **options)
+
+    def connect(self) -> None:
+        super().connect()
+        self.watched = self.sock
 
 
-def connect(port: int, timeout: float, response_class: type = BoundedResponse) -> http.client.HTTPConnection:
-    connection = http.client.HTTPConnection("127.0.0.1", port, timeout=timeout)
-    connection.response_class = response_class
-    return connection
+def connect(port: int, timeout: float, limit: int = ANSWER_LIMIT + HEADER_ROOM) -> WatchedConnection:
+    return WatchedConnection(port, timeout, limit)
 
 
 def free_port() -> int:
@@ -244,7 +275,7 @@ def free_port() -> int:
 
 def healthy(port: int, clock: Clock, seconds: float = 5) -> bool:
     """Whether the server answers GET /api/health with 200 in time; any other reply, or none, is no."""
-    connection = connect(port, seconds, HealthResponse)
+    connection = connect(port, seconds, 1 << 20)
     try:
         with clock.limit(connection, seconds):
             connection.request("GET", "/api/health")
@@ -335,15 +366,22 @@ def end_user_processes(uid: int, seconds: float = 20, group: Cgroup | None = Non
     return not user_processes(uid)
 
 
-def raise_oom_priority(uid: int) -> None:
-    """Put every process of `uid` back at the front of the OOM killer's line; raising the value needs no capability."""
+def server_memory(uid: int, raise_priority: bool = False) -> int:
+    """Bytes resident in memory across every process of `uid` (VmRSS of each, from /proc); with `raise_priority`, also
+    put each of them back at the front of the OOM killer's line, which needs no capability. One walk of /proc does both,
+    so the guard can afford to run every 50 ms."""
+    total = 0
     with contextlib.suppress(OSError):
         with os.scandir(PROC) as entries:
             for entry in entries:
                 if not entry.name.isdigit():
                     continue
-                with contextlib.suppress(OSError, ValueError):
-                    if proc_fields(entry.name).get("Uid", "").split()[:1] != [str(uid)]:
+                with contextlib.suppress(OSError, ValueError, IndexError):
+                    fields = proc_fields(entry.name)
+                    if fields.get("Uid", "").split()[:1] != [str(uid)]:
+                        continue
+                    total += int(fields.get("VmRSS", "0 kB").split()[0]) << 10
+                    if not raise_priority:
                         continue
                     path = f"{PROC}/{entry.name}/oom_score_adj"
                     with open(path) as current:
@@ -351,6 +389,7 @@ def raise_oom_priority(uid: int) -> None:
                             continue
                     with open(path, "w") as adjust:
                         adjust.write("1000")
+    return total
 
 
 def reap_orphans() -> None:
@@ -362,27 +401,40 @@ def reap_orphans() -> None:
 
 
 def remove_tree(path: Path | str, seconds: float = 600) -> None:
-    """Remove a directory tree however deep it is (a deep enough one makes shutil.rmtree recurse past Python's limit)."""
-    try:
-        shutil.rmtree(path, ignore_errors=True)
-    except RecursionError:
-        pass
+    """Remove a directory tree, however deep or wide, within `seconds`: one `rm -rf` killed at its time limit. An
+    in-process rmtree lists each directory whole before deleting it and has no time limit (QA 07d M2)."""
     if os.path.lexists(path):
         with contextlib.suppress(OSError, subprocess.SubprocessError):
-            subprocess.run(["rm", "-rf", "--", str(path)], check=False, capture_output=True, timeout=max(1, seconds))
+            subprocess.run(["rm", "-rf", "--", str(path)], check=False, capture_output=True, timeout=max(1.0, seconds))
 
 
-def remove_user_files(uid: int, roots: tuple[str, ...] = ("/",) + SCRATCH, until: float | None = None) -> int:
-    """Remove every file and directory `uid` owns under `roots` (each walked on its own filesystem, links never followed),
-    and in the scratch places every hard link, which can only be one made to another user's file; returns how many.
-    Stops walking at `until` (a time.monotonic() value), so a tree made to be slow cannot hold the evaluation."""
+def remove_user_files(uid: int, roots: tuple[str, ...] = ("/",) + SCRATCH, until: float | None = None,
+                      aside: Path | None = None, skip: tuple[str, ...] = ()) -> int:
+    """Take away every file and directory `uid` owns under `roots` (each walked on its own filesystem, links never
+    followed), and in the scratch places every hard link, which can only be one made to another user's file; returns
+    how many. A directory is moved into `aside` (a root-only directory: constant time, however big it is), or, on
+    another filesystem, removed by `remove_tree` within the time left. The walk stops at `until` (a time.monotonic()
+    value) and never enters `skip` (the evaluation's own folders)."""
     removed = 0
+    skipped = {os.path.realpath(path) for path in skip}
 
     def late() -> bool:
         return until is not None and time.monotonic() >= until
 
-    def sweep(folder: str, device: int, scratch: bool) -> None:
+    def take(path: str, directory: bool) -> None:
         nonlocal removed
+        removed += 1
+        if not directory:
+            with contextlib.suppress(OSError):
+                os.unlink(path)
+            return
+        if aside is not None:
+            with contextlib.suppress(OSError):
+                os.rename(path, aside / f"swept-{removed}")
+                return
+        remove_tree(path, until - time.monotonic() if until is not None else 600)
+
+    def sweep(folder: str, device: int, scratch: bool) -> None:
         try:
             with os.scandir(folder) as entries:
                 for entry in entries:
@@ -394,13 +446,8 @@ def remove_user_files(uid: int, roots: tuple[str, ...] = ("/",) + SCRATCH, until
                         continue
                     directory = stat.S_ISDIR(info.st_mode)
                     if info.st_uid == uid or (scratch and not directory and info.st_nlink > 1):
-                        removed += 1
-                        if directory:
-                            remove_tree(entry.path, until - time.monotonic() if until is not None else 600)
-                        else:
-                            with contextlib.suppress(OSError):
-                                os.unlink(entry.path)
-                    elif directory and info.st_dev == device:
+                        take(entry.path, directory)
+                    elif directory and info.st_dev == device and entry.path not in skipped:  # never a link: canonical
                         sweep(entry.path, device, scratch)
         except (OSError, RecursionError):
             pass
@@ -410,7 +457,7 @@ def remove_user_files(uid: int, roots: tuple[str, ...] = ("/",) + SCRATCH, until
             top = os.lstat(root)
         except OSError:
             continue
-        if stat.S_ISDIR(top.st_mode) and not late():
+        if stat.S_ISDIR(top.st_mode) and not late() and os.path.realpath(root) not in skipped:
             sweep(root, top.st_dev, root in SCRATCH)
     return removed
 
@@ -539,11 +586,15 @@ class Ballast:
             self.path = None
 
 
-def free_bytes(path: Path | str) -> int:
+def free_bytes(path: Path | str) -> int | None:
+    """Free bytes on the filesystem of `path`, or None when it reports no size (a tmpfs without a limit reports no
+    blocks at all, QA 07d S1): such a filesystem cannot be watched."""
     try:
         info = os.statvfs(path)
     except OSError:
-        return 1 << 62
+        return None
+    if info.f_blocks == 0:
+        return None
     return info.f_bavail * info.f_frsize
 
 
@@ -562,7 +613,7 @@ class Candidate:
         self.restarts = 0
         self.planned = 0
         self.failed_starts = 0
-        self.disk_full = False
+        self.halted: str | None = None  # why the server was stopped for good (DISK or MEMORY), if it was
         self.peak_memory = 0  # the largest VmPeak seen of the server's main process, in kB
         self.uid = pwd.getpwnam(RUN_AS).pw_uid if sandbox else -1
         self.group = Cgroup() if sandbox else None
@@ -606,9 +657,10 @@ class Candidate:
         """Before the second tries: stop the server and take away everything it could have kept from the first pass, its
         data, its user's processes and files anywhere, shared memory and message queues; then start it afresh.
 
-        DATA_DIR is moved aside into a directory only root can enter (constant time, however much it holds), and the
-        search for the user's other files stops after SWEEP_SEC. The submission is read-only to the server, so it starts
-        again exactly as delivered.
+        DATA_DIR and every directory the user owns are moved aside into a directory only root can enter (constant time,
+        however much they hold; nothing is deleted), the search for the user's files stops after SWEEP_SEC and never
+        enters the evaluation's own folders (QA 07d M2). The submission is read-only to the server, so it starts again
+        exactly as delivered.
         """
         with self.lock:
             self.stop()
@@ -617,13 +669,14 @@ class Candidate:
                 aside.mkdir(mode=0o700, exist_ok=True)
                 os.chmod(aside, 0o700)
                 os.rename(self.data, aside / f"data-{self.generation}")
+            budget = min(SWEEP_SEC, max(1.0, self.clock.left() - RETRY_MARGIN_SEC))
             if os.path.lexists(self.data):
-                remove_tree(self.data, min(SWEEP_SEC, max(1, self.clock.left() - RETRY_MARGIN_SEC)))
+                remove_tree(self.data, budget)
             if self.sandbox:
-                remove_user_files(self.uid, until=time.monotonic() + min(SWEEP_SEC, max(1, self.clock.left() - RETRY_MARGIN_SEC)))
+                remove_user_files(self.uid, until=time.monotonic() + budget, aside=aside, skip=(str(self.work), str(self.source)))
                 with contextlib.suppress(OSError, subprocess.SubprocessError):  # run as the user, who owns its objects
                     subprocess.run(DROP + ["ipcrm", "--all"], check=False, capture_output=True, timeout=60)
-            if not self.clock.expired() and not self.disk_full and self.start():
+            if not self.clock.expired() and not self.halted and self.start():
                 self.failed_starts = 0
             else:
                 self.failed_starts += 1  # the next attempt tries again, as after a crash
@@ -631,7 +684,7 @@ class Candidate:
     def start(self) -> bool:
         """Start the server on the shared data directory and wait for its health check; False if it does not come up."""
         self.stop()
-        if self.disk_full:
+        if self.halted:
             return False
         self.generation += 1
         try:
@@ -649,7 +702,7 @@ class Candidate:
             self.proc = None
             return False
         end = min(time.monotonic() + START_SEC, self.clock.deadline)
-        while time.monotonic() < end and self.proc.poll() is None and not self.disk_full:
+        while time.monotonic() < end and self.proc.poll() is None and not self.halted:
             if healthy(self.port, self.clock):
                 return True
             time.sleep(0.25)
@@ -659,10 +712,10 @@ class Candidate:
     def current(self) -> tuple[int, int] | None:
         """Generation and port of the running server, restarted first if it is down; None if it cannot run."""
         with self.lock:
-            if self.proc is not None and self.proc.poll() is None and not self.disk_full:
+            if self.proc is not None and self.proc.poll() is None and not self.halted:
                 return self.generation, self.port
             self.stop()
-            if self.clock.expired() or self.failed_starts >= START_FAILURES or self.disk_full:
+            if self.clock.expired() or self.failed_starts >= START_FAILURES or self.halted:
                 return None
             self.restarts += 1
             if not self.start():
@@ -712,23 +765,45 @@ class Candidate:
 
 
 class Guard:
-    """Every GUARD_SEC, while the server may run: put its processes back at the front of the OOM killer's line, and stop
-    it for good when a disk the evaluation needs runs low (QA 07c F1, F3)."""
+    """While the server may run, every GUARD_SEC (50 ms): put its processes back at the front of the OOM killer's line,
+    and stop it for good when they hold more than SERVER_MEMORY in all, so memory it takes cannot end the evaluation
+    (QA 07c F1, 07d M3); every DISK_EVERY ticks, stop it for good when a disk the evaluation needs has run low while it
+    ran (QA 07c F3). Only a filesystem that reports its size and had room when the server started is watched (QA 07d
+    S1): a server cannot be blamed for a disk the machine gave it full. `start_free` has what each path had."""
 
     def __init__(self, candidate: Candidate, paths: list[Path]) -> None:
-        self.candidate, self.paths, self.low = candidate, paths, False
+        self.candidate = candidate
+        self.start_free = {str(path): free_bytes(path) for path in paths}
+        self.paths = [path for path in paths if (self.start_free[str(path)] or 0) >= DISK_RESERVE]
         self.done = threading.Event()
         self.thread = threading.Thread(target=self._watch, daemon=True)
         self.thread.start()
 
-    def _watch(self) -> None:
+    def halt(self, reason: str) -> None:
         candidate = self.candidate
+        if not candidate.halted:
+            candidate.halted = reason
+            candidate.kill_all()
+
+    def _watch(self) -> None:
+        candidate, tick = self.candidate, 0
         while not self.done.wait(GUARD_SEC):
-            if candidate.sandbox:
-                raise_oom_priority(candidate.uid)
-            if not candidate.disk_full and min(free_bytes(path) for path in self.paths) < DISK_RESERVE:
-                candidate.disk_full = self.low = True
-                candidate.kill_all()
+            tick += 1
+            if candidate.halted:
+                continue
+            if server_memory(candidate.uid, candidate.sandbox) > SERVER_MEMORY:
+                self.halt(MEMORY)
+                continue
+            if tick % DISK_EVERY == 0 and any((free := free_bytes(path)) is not None and free < DISK_RESERVE for path in self.paths):
+                self.halt(DISK)  # a path whose size cannot be read this time is not taken for full
+
+    def free_now(self) -> dict[str, list[int | None]]:
+        """Free MiB on each path, when the server started and now."""
+        found: dict[str, list[int | None]] = {}
+        for path, start in self.start_free.items():
+            now = free_bytes(path)
+            found[path] = [start >> 20 if start is not None else None, now >> 20 if now is not None else None]
+        return found
 
     def stop(self) -> None:
         self.done.set()
@@ -1109,7 +1184,7 @@ def attempt(candidate: Candidate, scenario: dict[str, Any], media: Media, clock:
                 "reason": reason}
 
     def stopped() -> str:
-        return LATE if clock.expired() else DISK if candidate.disk_full else DOWN
+        return LATE if clock.expired() else candidate.halted or DOWN
 
     if clock.expired():
         return result(0, LATE)
@@ -1157,8 +1232,8 @@ def attempt(candidate: Candidate, scenario: dict[str, Any], media: Media, clock:
         connection.close()  # before waiting on the server: a server that serves one connection at a time may be waiting on this one
         if clock.expired():
             return result(index, LATE)
-        if candidate.disk_full:
-            return result(index, DISK)
+        if candidate.halted:
+            return result(index, candidate.halted)
         # the server stopped (it died, or hung and was stopped): CRASHED, which may earn a second try; a live server that
         # left the request unanswered: NO_ANSWER, final
         return result(index, CRASHED if candidate.recover(generation) else NO_ANSWER)
@@ -1238,40 +1313,45 @@ class Gate:
 
 
 def play_all(candidate: Candidate, corpus: Corpus, media: Media, clock: Clock, metrics: dict[str, Any],
-             stats: Stats | None = None) -> list[dict[str, Any]]:
+             stats: Stats | None = None, results: list[dict[str, Any] | None] | None = None) -> list[dict[str, Any]]:
     """Play every scenario, then give the scenarios the server's stops interrupted one more try, alone, on a clean slate,
     while time and the retry share remain.
 
     Scenarios run WORKERS at a time in `play_order`; one that runs alone has nothing beside it. A second try is only for
     a scenario in flight when the server stopped, never for a wrong answer, and the units second tries decide stay within
     RETRY_SHARE of all units, so they rescue a server that stops now and then, not one that fails under load (QA 20).
+    Each result goes into `results` as soon as it is decided, where a caller can read it if the evaluation overruns.
     """
-    results: list[dict[str, Any] | None] = [None] * len(corpus)
+    results = results if results is not None else [None] * len(corpus)
     gate = Gate()
 
     def play(index: int) -> dict[str, Any]:
         with gate.enter(corpus.alone[index]):
             if clock.expired():
-                return not_played(corpus.themes[index], corpus.ids[index], LATE)
-            return attempt(candidate, corpus.scenario(index), media, clock, stats)
+                found = not_played(corpus.themes[index], corpus.ids[index], LATE)
+            else:
+                found = attempt(candidate, corpus.scenario(index), media, clock, stats)
+        results[index] = found
+        return found
 
     order = play_order([{"id": scenario_id} for scenario_id in corpus.ids], corpus.alone)
     pool = ThreadPoolExecutor(WORKERS)
     try:
-        for index, result in zip(order, pool.map(play, order)):
-            results[index] = result
+        for _ in pool.map(play, order):
+            pass
     finally:
         pool.shutdown(cancel_futures=True)
     budget = int(RETRY_SHARE * sum(len(themes) for themes in corpus.themes))
     metrics["retry_budget_units"] = budget
-    again = [index for index in order if results[index]["reason"] in (CRASHED, DOWN)]
-    if again and not candidate.disk_full and clock.left() > RETRY_MARGIN_SEC:
+    # a second try only where it can decide something (QA 07d N7)
+    again = [index for index in order if results[index]["reason"] in (CRASHED, DOWN) and results[index]["settled"].count(False)]
+    if again and not candidate.halted and clock.left() > RETRY_MARGIN_SEC:
         candidate.clean_slate()
         for index in again:
             open_units = results[index]["settled"].count(False)
             if open_units > budget:
                 continue
-            if clock.left() <= 0 or candidate.disk_full:
+            if clock.left() <= 0 or candidate.halted:
                 break
             budget -= open_units
             metrics["retried"] += 1
@@ -1392,8 +1472,48 @@ def become_reaper() -> None:
         ctypes.CDLL(None, use_errno=True).prctl(36, 1, 0, 0, 0)
 
 
+class Progress:
+    """What the evaluation has decided so far, shared with its caller: if the evaluation itself overruns (QA 07d M1), the
+    caller publishes the reward from here, with a note, and the scenarios not yet decided count as not matched."""
+
+    def __init__(self) -> None:
+        self.started = time.monotonic()
+        self.metrics: dict[str, Any] | None = None
+        self.themes: list[list[str]] = []
+        self.ids: list[str] = []
+        self.results: list[dict[str, Any] | None] = []
+
+    def summary(self, note: str) -> dict[str, Any] | None:
+        """The reward and its breakdown from what is decided now, with `note`; None when the scenarios were never read."""
+        if self.metrics is None:
+            return None
+        decided = list(self.results)
+        results = [found or not_played(themes, scenario_id, LATE) for found, themes, scenario_id in zip(decided, self.themes, self.ids)]
+        return tally(dict(self.metrics, notes=list(self.metrics["notes"]) + [note]), self.themes, results, self.started)
+
+
+def tally(metrics: dict[str, Any], themes: list[list[str]], results: list[dict[str, Any]], started: float) -> dict[str, Any]:
+    """The reward and its breakdown from the results: matched units over all units, by theme."""
+    metrics = dict(metrics, notes=list(metrics["notes"]))
+    metrics["by_theme"] = {name: {"total": value["total"], "matched": 0} for name, value in metrics["by_theme"].items()}
+    metrics["scenarios_matched"] = metrics["units_matched"] = 0
+    for names, result in zip(themes, results):
+        metrics["scenarios_matched"] += result["matched"]
+        for name, verdict in zip(names, result["units"]):
+            metrics["units_matched"] += verdict
+            metrics["by_theme"][name]["matched"] += verdict
+    metrics["unfinished"] = sum(1 for result in results if result["reason"] == LATE)
+    if metrics["unfinished"]:
+        metrics["notes"].append(f"the replay reached its time limit of {DEADLINE_SEC} seconds; "
+                                f"{metrics['unfinished']} scenarios were not played to the end")
+    metrics["reward"] = round(metrics["units_matched"] / metrics["units_total"], 6)
+    metrics["elapsed_sec"] = round(time.monotonic() - started, 1)
+    metrics["results"] = results  # per-scenario diagnostics, written by the caller after the reward
+    return metrics
+
+
 def evaluate(source: Path, scenario_path: Path, work: Path, output: Path, sandbox: bool = True,
-             media_dir: Path | None = None) -> dict[str, Any]:
+             media_dir: Path | None = None, progress: Progress | None = None) -> dict[str, Any]:
     """Grade the server in `source` against the scenarios in `scenario_path`.
 
     Args:
@@ -1403,14 +1523,17 @@ def evaluate(source: Path, scenario_path: Path, work: Path, output: Path, sandbo
         output: Directory for diagnostic files.
         sandbox: Run the server as the unprivileged user (off only in development checks).
         media_dir: The files the scenarios upload (default: `media` beside the scenarios).
+        progress: Where the results go as they are decided, for a caller that may have to stop waiting.
 
     Returns:
-        The reward and its breakdown.
+        The reward and its breakdown. Nothing is deleted before it is returned: the container is discarded after the
+        run, and a deletion the server made long would only delay the reward (QA 07d M2).
 
     Raises:
-        EvaluationError: The private scenarios are unreadable or privileges cannot be dropped.
+        EvaluationError: The private scenarios are unreadable, privileges cannot be dropped, or the machine has too
+            little disk before the server starts.
     """
-    started = time.monotonic()
+    progress = progress or Progress()
     clock = Clock(DEADLINE_SEC)
     candidate: Candidate | None = None
     log: LogCapture | None = None
@@ -1426,6 +1549,8 @@ def evaluate(source: Path, scenario_path: Path, work: Path, output: Path, sandbo
         metrics: dict[str, Any] = {"units_total": total, "units_matched": 0, "reward": 0.0, "scenarios_total": len(corpus),
                                    "scenarios_matched": 0, "restarts": 0, "planned_restarts": 0, "retried": 0, "retried_units": 0,
                                    "unfinished": 0, "notes": [], "by_theme": by_theme, "alone": sum(corpus.alone)}
+        progress.themes, progress.ids, progress.results = themes, corpus.ids, [None] * len(corpus)
+        progress.metrics = metrics
         if sandbox:
             metrics["notes"] += check_sandbox()
             become_reaper()
@@ -1447,11 +1572,20 @@ def evaluate(source: Path, scenario_path: Path, work: Path, output: Path, sandbo
             if sandbox:
                 seal_submission(source)
                 ballast = Ballast(work / "ballast")
+            for path in (work, output):  # the evaluation needs room here: a machine that has none is not the server's fault
+                free = free_bytes(path)
+                if free is not None and free < DISK_RESERVE:
+                    raise EvaluationError(f"The machine has less than {DISK_RESERVE >> 20} MiB free on {path} before the server starts")
             log = LogCapture()
             candidate = Candidate(source, work, log, sandbox, clock)
             guard = Guard(candidate, [work, output, Path("/tmp")])
+            for path, free in guard.start_free.items():
+                if free is None:
+                    metrics["notes"].append(f"{path} reports no size, so its free space is not watched")
+                elif free < DISK_RESERVE:
+                    metrics["notes"].append(f"{path} had {free >> 20} MiB free before the server started, so it is not watched")
             if candidate.start():
-                results = play_all(candidate, corpus, media, clock, metrics, stats)
+                results = play_all(candidate, corpus, media, clock, metrics, stats, progress.results)
             else:
                 metrics["notes"].append(f"the server did not answer GET /api/health within {START_SEC} seconds")
                 results = [not_played(themes[index], corpus.ids[index], "the server did not start") for index in range(len(corpus))]
@@ -1467,28 +1601,15 @@ def evaluate(source: Path, scenario_path: Path, work: Path, output: Path, sandbo
             log.close(output / "server.log")
         if ballast is not None:
             ballast.release()  # room for the results however full the server left the disk
-        if sandbox and candidate is not None:
-            remove_tree(candidate.data, 60)  # and more, within a minute
-            remove_tree(work / "set-aside", 30)
-    for names, result in zip(themes, results):
-        metrics["scenarios_matched"] += result["matched"]
-        for name, verdict in zip(names, result["units"]):
-            metrics["units_matched"] += verdict
-            metrics["by_theme"][name]["matched"] += verdict
-    metrics["unfinished"] = sum(1 for result in results if result["reason"] == LATE)
-    if metrics["unfinished"]:
-        metrics["notes"].append(f"the replay reached its time limit of {DEADLINE_SEC} seconds; "
-                                f"{metrics['unfinished']} scenarios were not played to the end")
     if candidate is not None:
         metrics["restarts"], metrics["planned_restarts"] = candidate.restarts, candidate.planned
         metrics["server_peak_memory_kb"] = candidate.peak_memory
         if candidate.failed_starts >= START_FAILURES:
             metrics["notes"].append(f"the server stopped and did not come back after {START_FAILURES} restarts in a row")
-        if candidate.disk_full:
-            stopped = sum(1 for result in results if result["reason"] == DISK)
-            metrics["notes"].append(f"the server was stopped for good when the disk ran low; {stopped} scenarios were not played to the end")
+        if candidate.halted:
+            stopped = sum(1 for result in results if result["reason"] == candidate.halted)
+            metrics["notes"].append(f"{candidate.halted}; {stopped} scenarios were not played to the end")
+    if guard is not None:
+        metrics["free_space_mib"] = guard.free_now()  # each watched path when the server started, and at the end
     metrics.update(stats.report())
-    metrics["reward"] = round(metrics["units_matched"] / total, 6)
-    metrics["elapsed_sec"] = round(time.monotonic() - started, 1)
-    metrics["results"] = results  # per-scenario diagnostics, written by the caller after the reward
-    return metrics
+    return tally(metrics, themes, results, progress.started)
