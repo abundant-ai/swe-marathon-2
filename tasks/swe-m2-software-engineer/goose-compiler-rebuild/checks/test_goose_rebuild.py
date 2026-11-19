@@ -14,6 +14,7 @@ import shutil
 import subprocess
 import sys
 import textwrap
+import time
 from pathlib import Path
 
 TASK = Path(__file__).resolve().parent.parent
@@ -681,29 +682,81 @@ def test_a_deep_tree_never_turns_grading_into_an_error(tmp_path):
     assert not list((tmp_path / "tmp").rglob("d")), "the deep tree was left behind"
 
 
-def test_the_original_is_refused_by_its_marker_and_only_the_images_carry_one(tmp_path):
+def test_the_original_is_refused_by_its_marker_a_published_build_or_upstreams_help_text(tmp_path):
+    """A delivery holding the images' build marker, a file with the sha256 of any build upstream
+    publishes (every release archive, the compiler inside each, Homebrew's bottles), or an ELF file
+    with a line of upstream's help text that the hardened build lacks, is refused; a note or a script
+    that quotes the text is not; only the images carry a marker, the solution none."""
     marker = b"GOOSE-BUILD-MARKER-" + b"f" * 32
     top = tmp_path / "rebuild"
     (top / "bin").mkdir(parents=True)
     (top / "goose").write_bytes(b"\x7fELF" + b"x" * ((1 << 20) - 10) + marker + b"tail")
     (top / "bin" / "clean").write_bytes(b"GOOSE-BUILD-MARKER-" + b"0" * 32)
     (top / "link").symlink_to(top / "goose")
+    fetched = tmp_path / "fetched"
+    (fetched / "lib").mkdir(parents=True)
+    (fetched / "goose").write_text("#!/bin/sh\nexec \"$(dirname \"$0\")/lib/engine\" \"$@\"\n")
+    (fetched / "lib" / "engine").write_bytes(b"\x7fELF published build" * 1000)
+    usage = tmp_path / "usage"
+    usage.mkdir()
+    (usage / "goose").write_bytes(b"\x7fELF" + b"y" * ((1 << 20) - 12) + b"goose help c covers writing the C yourself (goose -o out.c), and")
+    quoted = tmp_path / "quoted"
+    quoted.mkdir()
+    (quoted / "goose").write_text("#!/bin/sh\necho hi\n")
+    (quoted / "NOTES.md").write_text("upstream's help ends: goose help c covers writing the C yourself (goose -o out.c); ours does not\n")
+    published = hashlib.sha256((fetched / "lib" / "engine").read_bytes()).hexdigest()
+    builds = tmp_path / "builds.json"
+    builds.write_text(json.dumps({"builds": [{"sha256": published, "size": (fetched / "lib" / "engine").stat().st_size,
+                                              "source": "GitHub release"}]}))
     found = verifier_call(textwrap.dedent(f"""
         import json, verify
         from pathlib import Path
         top = Path({str(top)!r})
-        print(json.dumps([verify.holds_marker(top, {marker!r}), verify.holds_marker(top / "bin", {marker!r}),
-                          verify.identity(top / "bin" / "clean"), verify.identity(top / "goose")]))
+        marker_only = {{{marker!r}: "the marker"}}
+        binary = {{text: "the usage text" for text in verify.UNHARDENED_USAGE}}
+        builds = verify.upstream_builds(Path({str(builds)!r}))
+        shipped = verify.upstream_builds()
+        print(json.dumps([verify.holds_original(top, marker_only), verify.holds_original(top / "bin", marker_only),
+                          verify.identity(top / "bin" / "clean"), verify.identity(top / "goose"),
+                          verify.holds_original(Path({str(fetched)!r}), marker_only, builds),
+                          verify.holds_original(Path({str(usage)!r}), marker_only, builds, binary),
+                          len(shipped), min(size for sizes in shipped.values() for size in sizes),
+                          verify.holds_original(Path({str(quoted)!r}), marker_only, builds, binary),
+                          verify.holds_original(Path({str(usage)!r}), marker_only, builds)]))
     """))
-    assert found[0] == "goose" and found[1] is None, "found across a 1 MB chunk boundary, never through a link"
+    assert found[0] == "/app/rebuild/goose holds the marker" and found[1] is None, "found across a 1 MB chunk boundary, never through a link"
     assert found[2]["sha256"] == found[2]["sha256_without_marker"] and found[3]["sha256"] != found[3]["sha256_without_marker"]
+    assert found[4] == "/app/rebuild/lib/engine is a build of Goose that upstream publishes", "behind a wrapper, under any name"
+    assert found[5] == "/app/rebuild/goose holds the usage text", "found across a 1 MB chunk boundary"
+    assert found[6] >= 40 and found[7] > 1_000_000, "every release archive, the compiler inside each, and Homebrew's bottles, all distinct"
+    assert found[8] is None and found[9] is None, "the usage text in a note or a script is no fetched build; nor is an ELF file checked without it"
+    shipped = json.loads((STEP / "tests" / "verifier" / "upstream_builds.json").read_text())
+    sources = [build["source"] for build in shipped["builds"]]
+    assert {source.split(":")[0] for source in sources} >= {f"GitHub release v2026.{n}" for n in (1, 2, 3, 4)} | \
+        {"Homebrew bottle goose-lang 2026.4 x86_64_linux", "Homebrew bottle goose-lang 2026.4 arm64_linux"}
+    assert sum(source.endswith("linux-x64.tar.gz") for source in sources) == 4, "each Linux release archive once"
+    assert sum(source.endswith("linux-x64/goose") for source in sources) == 4, "and the compiler inside each"
+    assert sum("/bin/goose" in source for source in sources) == 5, "the compiler inside each bottle"
+    compilers = [build for build in shipped["builds"] if "usage_text" in build]
+    lacking = sorted(build["source"] for build in compilers if not all(build["usage_text"].values()))
+    assert len(compilers) == 21 and len(lacking) == 4 and all(source.startswith("GitHub release v2026.1:") for source in lacking), \
+        "every published compiler from v2026.2 on holds both lines of the help text the verifier refuses; v2026.1 (older help) by hash alone"
+    assert not any(source.endswith((".o", ".a")) for source in sources), "never TinyCC's objects, which the task's own build also makes"
+    verify = (STEP / "tests" / "verify.py").read_text()
+    assert all(f'b"{text}"' in verify for text in shipped["usage_text"]) and len(shipped["usage_text"]) == 2
+    docs = TASK / "environment" / "docs"
+    if docs.is_dir():  # a staged checkout's documentation: nothing in it quotes the refused lines
+        for page in docs.rglob("*"):
+            if page.is_file():
+                assert not any(text.encode() in page.read_bytes() for text in shipped["usage_text"]), page
     package = (SCRIPTS / "package_step.py").read_text()
     assert 'for place in ("environment", f"{STEP}/tests"):\n        content[f"{place}/hardening/marker"] = marker' in package
     build = (HARDENING / "build.sh").read_text()
     assert 'if [ -f "$here/marker" ]' in build and "goose_marker.h" in build and 'grep -qF "$marker"' in build
     assert "marker" not in (STEP / "solution" / "solve.sh").read_text().split("hardening/build.sh", 1)[0]
-    verify = (STEP / "tests" / "verify.py").read_text()
-    assert verify.index("holds_marker(SUBMISSION") < verify.index("metrics = grade(")
+    assert verify.index("holds_original(SUBMISSION, needles, builds, binary_needles)") < verify.index("metrics = grade(")
+    assert 'raise EvaluationError("The original\'s build marker is missing or malformed")' in verify, "never fails open"
+    assert verify.index("builds = upstream_builds()") < verify.index("prefix, owner, limits = sandbox()"), "the list is read before anything runs"
 
 
 def test_hashing_a_submission_is_bounded_and_never_raises(tmp_path):
@@ -888,6 +941,417 @@ def test_the_entry_cap_stops_the_walk(tmp_path):
     assert "more than 50 entries" in message and read <= 51, "the walk stops at the cap"
 
 
+# ---------------------------------------------------------------- the collect hook and the watchdog
+
+DELIVERY = r"""
+import json, os, subprocess, sys, tarfile
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+import verify
+hook, base = Path(sys.argv[2]).read_text(), Path(sys.argv[3])
+prescan = hook.split("<<'EOF'\n")[1].split("\nEOF\n", 1)[0]  # every entry's times before the hook, then the permissions, as root
+session = hook.split("<<'EOF'\n")[2].split("\nEOF\n", 1)[0]  # egress and the agent's processes, as root
+fixer = hook.split("<<'EOF'\n")[3].split("\nEOF\n", 1)[0]  # the link fixer, run as the agent's user
+measure = hook.split("<<'EOF'\n")[4].split("\nEOF\n", 1)[0]  # the last script, run as root after it
+FULL = ("import os\n_statvfs = os.statvfs\nclass Full:\n    f_bavail = f_favail = 0\n    f_frsize = 4096\n"
+        "os.statvfs = lambda path: Full()\n")  # a disk with no room and no inode left
+CLOSED = ("import socket\ndef refuse(address, timeout=None):\n    raise ConnectionRefusedError(111, 'refused')\n"
+          "socket.create_connection = refuse\n")
+SLOW = "import socket, time\nsocket.create_connection = lambda address, timeout=None: time.sleep(30)\n"
+
+
+def deliver(name, build, entries="200000", size="4000000000", path="1000", seconds="300", start=None, tar=None, prelude=""):
+    app = base / name / "app"
+    rebuild, state, archives = app / "rebuild", base / name / "state", base / name / "tmp"
+    for folder in (rebuild, state, archives):
+        folder.mkdir(parents=True)
+    if start is not None:
+        (state / "free-at-start").write_text(start)
+    (state / "session.json").write_text(json.dumps({"egress": {"pypi.org:443": "closed"}, "egress_open": False,
+                                                    "agent_process_count": 1, "agent_processes": [{"pid": 7, "command": "sleep 99"}]}))
+    (state / "turn-started").write_text("1700000000\n")
+    if name == "good":  # the pre-cap watchdog fired in this session
+        (state / "watchdog.txt").write_text("2026-11-19T12:00:00Z armed pid 77: ending the processes selected by '-u dev' in 33900 s\n"
+                                            "2026-11-19T21:25:00Z fired after 33900 s: SIGTERM to the processes selected by '-u dev'\n"
+                                            "2026-11-19T21:25:05Z done: 0 process(es) of the selection left\n")
+    if name == "good":  # what the link fixer printed: a copy of a system file, and a refused link to the user's own files
+        (state / "fixer.jsonl").write_text(json.dumps({
+            "kind": "copied", "path": "venv/bin/python3", "source": "/usr/bin/python3.12", "source_owner": 0,
+            "source_mtime": 1690000000.0, "source_ctime": 1690000000.0, "source_inode": [66, 1234],
+            "source_latest_ctime": 1690000000.0, "source_latest_mtime": 1690000000.0,
+            "note": "venv/bin/python3: a copy of /usr/bin/python3.12 (was a link to /usr/bin/python3.12)"}) + "\n" + json.dumps({
+            "kind": "refused", "path": "vendor", "source": "/home/dev/cache", "source_owner": 10001,
+            "source_mtime": 1700000500.0, "source_ctime": 1700000600.0, "source_inode": [66, 99],
+            "source_latest_ctime": 1700000600.0, "source_latest_mtime": 1700000500.0,
+            "note": "removed vendor -> /home/dev/cache: it leads outside /app/rebuild to something that is not part of the machine's "
+                    "installation (not owned by root), which is not copied"}) + "\n")
+    build(rebuild)
+    earlier = {}  # what the test itself sees before the hook runs (paths past PATH_MAX, in the deep tree, are left out)
+    for folder, folders, files in os.walk(rebuild):
+        for entry in folders + files:
+            full = os.path.join(folder, entry)
+            try:
+                info = os.lstat(full)
+            except OSError:
+                continue
+            earlier[os.path.relpath(full, rebuild)] = (round(info.st_mtime, 3), round(info.st_ctime, 3))
+    __import__("time").sleep(0.02)
+    scanned = subprocess.run([sys.executable, "-I", "-", str(rebuild), entries, path, str(state)], input=prescan, capture_output=True,
+                             text=True, timeout=300)
+    assert scanned.returncode == 0, scanned.stderr
+    if name == "unwritable":
+        (state / "prescan.json").write_text(json.dumps({"complete": True, "entries": 3, "notes": [], "chmod_failed": ["ro: PermissionError"]}))
+    environment = dict(os.environ)
+    if tar is not None:  # a stand-in for the copy's tar, first on the PATH
+        (base / name / "bin").mkdir()
+        (base / name / "bin" / "tar").write_text("#!/bin/sh\n" + tar)
+        (base / name / "bin" / "tar").chmod(0o755)
+        environment["PATH"] = f"{base / name / 'bin'}:{environment['PATH']}"
+    done = subprocess.run([sys.executable, "-I", "-", str(rebuild), entries, size, path, str(state), str(archives), seconds, "2", "0",
+                           "1700030000"], input=prelude + measure, capture_output=True, text=True, timeout=300, env=environment)
+    assert done.returncode == 0, done.stderr
+    assert not os.listdir(archives), "the trial pack is removed"
+    EARLIER[name] = earlier
+    return app, rebuild
+
+
+EARLIER = {}
+
+
+def mark(rebuild):
+    return (rebuild / ".delivered").read_text().splitlines()
+
+
+def copy(rebuild, target, cut=None):  # what Harbor does: tar on the agent's machine, extract with the data filter
+    archive = target.parent / (target.name + ".tar")
+    subprocess.run(["tar", "-cf", str(archive), "-C", str(rebuild), "."], check=True, capture_output=True, timeout=120,
+                   env=dict(os.environ, COPYFILE_DISABLE="1"))  # macOS's tar would add ._ files for extended attributes
+    if cut is not None:
+        archive.write_bytes(archive.read_bytes()[:cut])
+    target.mkdir()
+    try:
+        with tarfile.open(archive) as bundle:
+            bundle.extractall(target, filter="data")
+    except (tarfile.TarError, OSError):
+        pass  # the copy failed part way: what was extracted stays, as on the platform
+    return target
+
+
+def notes(rebuild):
+    try:
+        return verify.delivery_notes(rebuild)
+    except verify.EvaluationError as exc:
+        return ["ERROR " + str(exc)]
+
+
+def tree(rebuild):
+    (rebuild / "src").mkdir()
+    (rebuild / "src" / "main.py").write_text("print('hi')\n" * 50)
+    (rebuild / "ro").mkdir()
+    (rebuild / "ro" / "lnk").symlink_to("../src")
+    (rebuild / "ro" / "a").symlink_to("lnk/../../..")  # resolves to the root itself, lexically leaves it: the copy would abort
+    (rebuild / "ro").chmod(0o555)                        # read-only: the hook gives its owner rwx back, after recording its times
+    (rebuild / "secret").write_text("x")
+    (rebuild / "secret").chmod(0o000)                    # unreadable even to its owner: made u+r, after recording its times
+    (rebuild / "goose").write_text("#!/bin/sh\nexec python3 src/main.py\n")
+    (rebuild / "empty").mkdir()
+    (rebuild / "inside").symlink_to("src/main.py")
+    (rebuild / "outside").symlink_to("../../../../etc/hosts")
+    (rebuild / "absolute").symlink_to("/etc/hosts")
+    (rebuild / "src" / "b").mkdir()
+    (rebuild / "src" / "b" / "up").symlink_to("..")  # resolves inside
+    (rebuild / "esc").symlink_to("src/b/up/../..")  # lexically inside, resolves outside
+    os.mkfifo(rebuild / "pipe")
+    os.link(rebuild / "goose", rebuild / "goose-again")
+
+
+def deep(rebuild, levels=6, length=200, pad=1 << 32):
+    # a path longer than this machine's PATH_MAX (1,024 bytes on macOS, 4,096 on Linux), made by directory descriptor
+    fd = os.open(rebuild, os.O_RDONLY)
+    for _ in range(levels):
+        os.mkdir("d" * length, dir_fd=fd)
+        child = os.open("d" * length, os.O_RDONLY, dir_fd=fd)
+        os.close(fd)
+        fd = child
+    padding = os.open("pad", os.O_WRONLY | os.O_CREAT, 0o644, dir_fd=fd)
+    os.ftruncate(padding, pad)  # takes no room: the copy's tar would read every byte
+    os.close(padding)
+    os.close(fd)
+    (rebuild / "goose").write_text("#!/bin/sh\n")
+
+
+out = {}
+app, rebuild = deliver("good", tree)
+out["mark"] = mark(rebuild)
+out["left"] = sorted(path.name for path in rebuild.iterdir())
+record = json.loads((rebuild / ".delivery.json").read_text())
+out["record"] = [record["egress_open"], record["kill_rounds"], record["agent_processes_left"], record["delivered"],
+                 record["listing_complete"], sorted(item["path"] for item in record["entries"]),
+                 next(item for item in record["entries"] if item["path"] == "goose")]
+out["copies"] = [record["turn_started"], record["hook_started"], record["copies"], record["links"], record["notes"]]
+out["watchdog"] = [record["ended_by_watchdog"], len(record["watchdog_log"]), verify.delivery_record(rebuild)["ended_by_watchdog"]]
+earlier = EARLIER["good"]
+out["times"] = [all(item["ctime"] == earlier[item["path"]][1] and item["mtime"] == earlier[item["path"]][0]
+                    for item in record["entries"] if item["path"] in earlier),
+                sorted(item["path"] for item in record["entries"] if item.get("hook_changed_ctime")),
+                sorted(item["path"] for item in record["entries"] if item["path"] not in earlier),
+                record["prescan_complete"], record["hook_changed_entries"],
+                oct(os.stat(rebuild / "ro").st_mode & 0o777), oct(os.stat(rebuild / "secret").st_mode & 0o777)]
+out["summary"] = verify.delivery_record(rebuild)
+out["complete"] = notes(copy(rebuild, base / "good" / "copied"))
+partial = copy(rebuild, base / "good" / "partial")
+(partial / "src" / "main.py").unlink()  # the mark arrived, a file did not
+out["partial"] = notes(partial)
+size = os.path.getsize(base / "good" / "copied.tar")
+out["cut"] = notes(copy(rebuild, base / "good" / "cut", cut=size // 3))
+out["nothing"] = notes(copy(rebuild, base / "good" / "empty", cut=0))
+(rebuild / ".delivered").write_text("delivered ² 5\n")  # not ASCII digits: a mark the hook did not write
+out["odd"] = notes(rebuild)
+(rebuild / ".delivered").unlink()
+out["unmarked"] = notes(copy(rebuild, base / "good" / "unmarked"))
+app, rebuild = deliver("many", tree, entries="3")
+out["many"] = [mark(rebuild), sorted(path.name for path in rebuild.iterdir()),
+               sorted(path.name.split(".")[1] if path.name.startswith(".") else path.name for path in app.iterdir())]
+out["many_notes"] = notes(copy(rebuild, base / "many" / "copied"))
+app, rebuild = deliver("sparse", lambda rebuild: deep(rebuild, levels=0))
+out["sparse"] = mark(rebuild)[:2]
+app, rebuild = deliver("deep", deep)  # past PATH_MAX, the path limit refuses it
+out["deep"] = mark(rebuild)[:2]
+app, rebuild = deliver("deep-seen", deep, path="100000")  # with no path limit, the walk still sees the 4 GiB below
+out["deep_seen"] = mark(rebuild)[:2]
+app, rebuild = deliver("slow", tree, seconds="1", tar="sleep 30\n")
+out["slow"] = mark(rebuild)[:2]
+app, rebuild = deliver("broken", tree, tar="echo 'tar: ./x: Cannot open: Input/output error' >&2; exit 2\n")
+out["broken"] = mark(rebuild)[:2]
+failing = "echo 'tar: /tmp/x: Cannot open: No space left on device' >&2; exit 2\n"
+app, rebuild = deliver("inodes", tree, start="2500000 4096 1300000\n", tar=failing, prelude=FULL)
+out["inodes"] = mark(rebuild)[:2]
+app, rebuild = deliver("never-room", tree, tar=failing, prelude=FULL)
+out["never_room"] = mark(rebuild)
+app, rebuild = deliver("nop", lambda rebuild: None)
+out["nop"] = [mark(rebuild), notes(copy(rebuild, base / "nop" / "copied")), verify.delivery_record(base / "nop" / "copied")["entries"]]
+out["watchdog"].append(verify.delivery_record(base / "nop" / "copied")["ended_by_watchdog"])
+app, rebuild = deliver("unwritable", tree)
+out["unwritable"] = mark(rebuild)[:2]
+app, rebuild = deliver("linked", lambda rebuild: [(rebuild / "big").write_bytes(os.urandom(1 << 20)),
+                                                   *(os.link(rebuild / "big", rebuild / f"big{i}") for i in range(30))])
+record = json.loads((rebuild / ".delivery.json").read_text())
+out["linked"] = [mark(rebuild)[0], len({item["sha256"] for item in record["entries"]}), record["hashing_complete"]]
+more = copy(rebuild, base / "linked" / "copied")
+(more / "extra").write_text("added by the transport")
+out["more"] = notes(more)
+outside = base / "venv-like"
+outside.mkdir()
+for number in range(20):
+    (outside / str(number)).write_text("x")
+fixed = base / "fixer" / "rebuild"
+fixed.mkdir(parents=True)
+(fixed / "lib").symlink_to(outside)              # the user's own files outside: refused, whatever their count
+(fixed / "one").symlink_to(outside / "3")        # one file of the user's own: refused
+(fixed / "sh").symlink_to("/bin/sh")             # part of the machine's installation (root's): copied, with its source's facts
+(fixed / "real.txt").write_text("x")
+(fixed / "inner").symlink_to(fixed / "real.txt")  # inside, absolute: made relative
+done = subprocess.run([sys.executable, "-I", "-", str(fixed), "200000", "4000000000"], input=fixer, capture_output=True, text=True,
+                      timeout=60)
+changes = [json.loads(line) for line in done.stdout.splitlines()]
+out["fixer"] = [done.returncode, {change["path"]: change["kind"] for change in changes},
+                next(change for change in changes if change["kind"] == "copied"),
+                os.path.lexists(fixed / "lib"), os.path.lexists(fixed / "one"), os.path.isfile(fixed / "sh") and not os.path.islink(fixed / "sh"),
+                os.readlink(fixed / "inner")]
+(base / "processes.txt").write_text("    1     0     0 100 /sbin/init\n  777     1 10001  65 sleep 99\n  778   777 10001   3 /bin/sh -c curl x\n")
+checks = {}
+for name, prelude in (("closed", CLOSED), ("slow", SLOW)):
+    started = __import__("time").monotonic()
+    done = subprocess.run([sys.executable, "-I", "-", str(base / f"session-{name}.json"), str(base / "processes.txt")],
+                          input=prelude + session, capture_output=True, text=True, timeout=60)
+    checks[name] = [done.returncode, json.loads((base / f"session-{name}.json").read_text()),
+                    round(__import__("time").monotonic() - started)]
+out["session"] = checks
+long_mark = base / "long" / "rebuild"
+long_mark.mkdir(parents=True)
+(long_mark / "goose").write_text("#!/bin/sh\n")
+(long_mark / ".delivered").write_text("delivered 1 10\n" + "".join(f"removed decoy{i} -> /home/dev/x{i}: it leads outside\n" for i in range(60)))
+out["long_mark"] = len(verify.delivery_notes(long_mark))
+print(json.dumps(out))
+"""
+
+
+def test_the_delivery_is_bounded_recorded_and_marked_before_the_copy_and_graded_as_it_arrives(tmp_path):
+    """The collect hook (environment/prepare-delivery, root, the one [[verifier.collect]]) freezes and lists the agent's
+    processes, ends them with `kill -9 -1` as their user until none is left, records whether the public internet answers
+    (two hosts, 3 s each), records every entry's own times before touching anything, gives back room and inodes set aside
+    at setup, fixes links as the agent's user (copies only root-owned targets, with the source's facts), then as root
+    walks the delivery by directory descriptor, refuses on anything it cannot complete or past 200,000 entries, 4 GB
+    (each file once) or paths of 1,000 bytes, removes what the copy would refuse, packs it once the way the copy does
+    within 300 s, and writes a record of every entry (path, size, times, sha256) and the mark. The verifier grades what
+    arrived, with a note when the mark is missing or says refused; nothing arriving, or a mark that counts more than
+    arrived, is an evaluation error (ported from the BasedPL task, dd2a450..42c6007)."""
+    done = subprocess.run([sys.executable, "-I", "-B", "-c", DELIVERY, str(STEP / "tests"), str(TASK / "environment" / "prepare-delivery"),
+                           str(tmp_path)], capture_output=True, text=True, timeout=600)
+    assert done.returncode == 0, done.stderr[-3000:]
+    out = json.loads(done.stdout.strip().splitlines()[-1])
+    run = len("#!/bin/sh\nexec python3 src/main.py\n")
+    # src, src/main.py, src/b, src/b/up, goose, goose-again, empty, inside, ro, ro/lnk, secret: 11 entries; goose and goose-again are one file
+    assert out["mark"][0] == f"delivered 11 {601 + run}", out["mark"]
+    assert out["mark"][1:3] == ["removed vendor -> /home/dev/cache: it leads outside /app/rebuild to something that is not part of the "
+                                "machine's installation (not owned by root), which is not copied",
+                                "venv/bin/python3: a copy of /usr/bin/python3.12 (was a link to /usr/bin/python3.12)"], \
+        "the fixer's notes, dropped links first"
+    assert sorted(out["mark"][3:8]) == ["removed absolute: a link that leads outside /app/rebuild", "removed esc: a link that leads outside /app/rebuild",
+                                        "removed outside: a link that leads outside /app/rebuild", "removed pipe: not a file, a directory or a link",
+                                        "removed ro/a: a link that leads outside /app/rebuild"], "a link that leaves lexically goes too"
+    assert sorted(out["mark"][8:]) == ["ro: made writable for its owner (a directory the hook has to work in)", "secret: made readable by its owner"]
+    turn_started, hook_started, copies, links, notes = out["copies"]
+    assert (turn_started, hook_started) == (1700000000, 1700030000) and len(notes) == 9
+    untouched, changed, made, prescan_complete, changed_count, ro_mode, secret_mode = out["times"]
+    assert untouched, "every entry's mtime and ctime are the ones from before the hook ran"
+    assert changed == ["ro", "secret"] and changed_count == 2, "the hook's own chmods are flagged, with the later ctime kept apart"
+    assert made == [] and prescan_complete is True and (ro_mode, secret_mode) == ("0o755", "0o400")
+    assert out["watchdog"] == [True, 3, True, False], "a session the watchdog ended is visible in the record and in metrics"
+    assert len(copies) == 1 and copies[0]["source"] == "/usr/bin/python3.12" and copies[0]["source_owner"] == 0
+    assert copies[0]["source_inode"] == [66, 1234] and copies[0]["outside_delivery"] is True
+    assert copies[0]["changed_since_session_started"] is False, "a system file from the image build"
+    assert links[0]["kind"] == "refused" and links[0]["changed_since_session_started"] is True and links[0]["outside_delivery"] is True
+    assert out["left"] == [".delivered", ".delivery.json", "empty", "goose", "goose-again", "inside", "ro", "secret", "src"]
+    egress_open, rounds, left, delivered, complete, paths, goose = out["record"]
+    assert [egress_open, rounds, left, delivered, complete] == [False, 2, 0, out["mark"][0], True]
+    assert paths == ["empty", "goose", "goose-again", "inside", "ro", "ro/lnk", "secret", "src", "src/b", "src/b/up", "src/main.py"]
+    assert goose["type"] == "file" and goose["size"] == run and len(goose["sha256"]) == 64 and goose["ctime"] > 1.7e9
+    summary = out["summary"]
+    assert summary["egress_open"] is False and summary["entries"] == 11 and summary["kill_rounds"] == 2 and summary["goose"] == goose
+    assert summary["hashing_complete"] is True and summary["prescan_complete"] is True and summary["hook_changed_entries"] == 2
+    assert summary["agent_processes"] == [{"pid": 7, "command": "sleep 99"}] and summary["latest_ctime"] >= goose["ctime"]
+    assert summary["copies"] == copies and summary["links"] == links and summary["notes"] == notes, "the whole record reaches metrics.json"
+    assert summary["copies_outside_delivery"] == 1 and summary["copies_changed_since_session_started"] == 0
+    assert (summary["turn_started"], summary["hook_started"]) == (1700000000, 1700030000)
+    assert out["long_mark"] == 60, "the verifier reads the whole mark, however many notes"
+    verify_text = (STEP / "tests" / "verify.py").read_text()
+    assert "handle.read(MARK_LIMIT + 1)" in verify_text and "MARK_LIMIT = 1 << 20" in verify_text, "bounded all the same"
+    hook_text = (TASK / "environment" / "prepare-delivery").read_text()
+    assert "pgrep -u dev -r R,S,D,T" in hook_text and "pgrep -u dev -r R,S,D " in hook_text + " ", "zombies are never survivors"
+    assert "chmod -R" not in hook_text, "no chmod of every entry: that would set every ctime to the hook's time"
+    assert hook_text.index("for visit in (record, restore):") < hook_text.index("timeout 120 setpriv"), "times first, then permissions, then the fixer"
+    assert "lexical = os.path.normpath" in hook_text and "HASH_SECONDS = 240" in hook_text and "if inode in digests:" in hook_text
+    assert out["complete"] == [f"collect hook: {line}" for line in out["mark"][1:]], out["complete"]
+    assert out["cut"][0].startswith(("ERROR The copy arrived incomplete", "the delivery arrived without", "ERROR Nothing")), out["cut"]
+    assert out["nothing"][0].startswith("ERROR Nothing arrived") and out["unmarked"][0].startswith("the delivery arrived without")
+    assert out["partial"] == [f"ERROR The copy arrived incomplete: 10 of 11 entries and {run + 1:,} of {601 + run:,} bytes"], out["partial"]
+    assert out["more"] == ["more arrived than the collect hook marked: 32 entries and 1,048,598 bytes against 31 and 1,048,576 "
+                           "(hard links split, or files the transport added)"], "more than marked is a note, not an error"
+    assert out["unwritable"] == ["refused", "its permissions could not be restored for its owner: it was not copied"]
+    assert out["linked"] == ["delivered 31 1048576", 1, True], "31 names of one file: one hash, counted once"
+    assert out["odd"] == ["the collect hook's mark could not be read; the delivery was graded as it arrived"]
+    assert out["many"][0][:2] == ["refused", "it holds more than 3 entries, the most /app/rebuild may hold: it was not copied"], out["many"]
+    assert out["many"][0][2:] == ["the listing before the hook stopped at more than 3 entries",
+                                  "ro: made writable for its owner (a directory the hook has to work in)", "secret: made readable by its owner"]
+    assert out["many"][1:] == [[".delivered", ".delivery.json"], ["rebuild", "refused"]], out["many"]
+    assert out["many_notes"][0] == "collect hook: it holds more than 3 entries, the most /app/rebuild may hold: it was not copied"
+    assert out["sparse"] == ["refused", "it holds more than 4,000,000,000 bytes, the most /app/rebuild may hold: it was not copied"]
+    assert out["deep"] == ["refused", "it holds a path longer than 1,000 bytes, the longest /app/rebuild may hold: it was not copied"]
+    assert out["deep_seen"] == out["sparse"], out["deep_seen"]
+    assert out["slow"] == ["refused", "the copy's pack of it took more than 1 seconds: it was not copied"]
+    assert out["broken"] == ["refused", "the copy's pack of it failed (tar: ./x: Cannot open: Input/output error): it was not copied"]
+    assert out["inodes"][0] == "refused" and "No space left on device" in out["inodes"][1], out["inodes"]
+    assert out["never_room"][0].startswith("delivered ") and any("room the machine did not have" in line for line in out["never_room"])
+    assert out["nop"] == [["delivered 0 0"], [], 0], "an empty delivery is marked, arrives, and grades as 0, never as an error"
+    assert "never a reason to change the reward" in verify_text, "the watchdog flag is never scored"
+    code, kinds, copied, lib_left, one_left, sh_copied, inner = out["fixer"]
+    assert code == 0 and kinds == {"lib": "refused", "one": "refused", "sh": "copied", "inner": "relinked"}, out["fixer"]
+    assert copied["source"] == "/bin/sh" and copied["source_owner"] == 0 and len(copied["source_inode"]) == 2
+    assert copied["source_ctime"] > 1e9 and copied["source_mtime"] > 1e9 and "a copy of /bin/sh" in copied["note"]
+    assert not lib_left and not one_left and sh_copied and inner == "real.txt", "the user's own files outside are never copied in"
+    closed, slow = out["session"]["closed"], out["session"]["slow"]
+    assert closed[0] == 0 and closed[1]["egress_open"] is False and set(closed[1]["egress"]) == {"pypi.org:443", "github.com:443"}
+    assert [process["command"] for process in closed[1]["agent_processes"]] == ["sleep 99", "/bin/sh -c curl x"], "from the frozen listing"
+    assert closed[1]["agent_processes"][1]["running_seconds"] == 3 and closed[1]["agent_process_count"] == 2
+    assert all(state.startswith("closed") for state in closed[1]["egress"].values())
+    assert slow[0] == 0 and set(slow[1]["egress"].values()) == {"no answer within 3 s"} and slow[2] <= 9, slow
+    order = ["kill -STOP -1", "ps -eo pid=,ppid=,uid=,etimes=,args= > \"$STATE/processes.txt\"", "kill -9 -1",
+             'timeout 300 /usr/bin/python3 -I - /app/rebuild "$LIMIT_ENTRIES" "$LIMIT_PATH" "$STATE"',
+             "/usr/bin/python3 -I - \"$STATE/session.json\" \"$STATE/processes.txt\"", "rm -f /var/lib/delivery/room",
+             "rm -rf /var/lib/delivery/inodes", 'mv -f "/app/rebuild/$name" "$aside/"',
+             "timeout 120 setpriv --reuid dev --regid dev --clear-groups --no-new-privs /usr/bin/python3 -I -",
+             '> "$STATE/fixer.jsonl"', 'exec /usr/bin/python3 -I - /app/rebuild']
+    assert [hook_text.index(step) for step in order] == sorted(hook_text.index(step) for step in order)
+    for setting in ("LIMIT_ENTRIES=200000", "LIMIT_BYTES=4000000000", "LIMIT_PATH=1000", "PACK_SECONDS=300", "STATE=/var/lib/delivery"):
+        assert setting in hook_text, setting
+    assert "rm -rf \"$" not in hook_text and "rm -f \"$" not in hook_text, "nothing is removed through a variable"
+    setup = (TASK / "environment" / "reserve-delivery-room").read_text()
+    assert "fallocate -l 64M /var/lib/delivery/room" in setup and '/var/lib/delivery/inodes/$spare' in setup and "seq 1 64" in setup
+    assert "stat -f -c '%a %S %d' /tmp > /var/lib/delivery/free-at-start" in setup
+    assert "date +%s > /var/lib/delivery/turn-started" in setup, "the session's start, for the record's flags"
+    assert hook_text.index("kill -STOP -1") < hook_text.index("/usr/bin/python3"), "nothing runs before the freeze but the hook's own settings"
+    assert 'tail -n 20 /var/log/precap-watchdog.log > "$STATE/watchdog.txt"' in hook_text
+    import tomllib
+    config = tomllib.loads((TASK / "task.toml").read_text())
+    assert config["verifier"]["collect"] == [{"command": "/usr/local/sbin/prepare-delivery", "user": "root", "timeout_sec": 900}]
+    assert config["agent"]["setup_begin"] == [{"command": "/usr/local/sbin/reserve-delivery-room", "timeout_sec": 120}]
+    assert config["agent"]["setup_complete"] == [{"command": "/usr/local/sbin/reserve-delivery-room", "timeout_sec": 120},
+                                                 {"command": "/usr/local/sbin/precap-watchdog", "user": "root", "timeout_sec": 60}]
+    docker = (TASK / "environment" / "Dockerfile").read_text()
+    assert "COPY reserve-delivery-room prepare-delivery precap-watchdog /usr/local/sbin/" in docker
+    assert "chmod 0700 /usr/local/sbin/reserve-delivery-room /usr/local/sbin/prepare-delivery /usr/local/sbin/precap-watchdog" in docker
+    assert docker.index("COPY reserve-delivery-room") > docker.index("\nFROM "), "in the final image only"
+    main = verify_text[verify_text.index("def main() -> int:"):]
+    assert main.index("delivery_notes(SUBMISSION)") < main.index("sandbox()") < main.index("seal(SUBMISSION)")
+    assert "delivery_record=record" in main, "the record goes to metrics.json"
+    assert "[:20]" not in verify_text[verify_text.index("def delivery_notes"):verify_text.index("def delivery_record")], "every note of the mark"
+    assert int(re.search(r"^MAX_ENTRIES = ([\d_]+)", verify_text, re.M).group(1).replace("_", "")) >= 200_000 + 3, \
+        "the verifier's cap leaves room for the hook's 200,000 entries, its two files and the root"
+    instruction = " ".join((STEP / "instruction.md").read_text().split())
+    assert "under 4 GB and 200,000 files, with no path inside it longer than 1,000 bytes" in instruction
+    assert "only when that is part of the machine's installation (owned by root" in instruction
+    assert instruction.index("A link to files of your own anywhere outside the directory is dropped") < instruction.index("only when that is part")
+    assert "must be one of the machine's own or copied into `/app/rebuild`" in instruction
+    assert "room to copy it" in instruction
+
+
+def test_the_pre_cap_watchdog_arms_once_fires_and_ends_the_users_processes(tmp_path):
+    """The root watchdog started at setup_complete ends the agent's session shortly before the
+    platform's cap, since a turn that runs into the cap is not graded today while one that ends by
+    itself is. It arms one sleeper however often it is started, fires after END_SECONDS, ends every
+    selected process (a tree, and a process in a session of its own), and logs each step."""
+    import uuid
+    marker = f"precap-sleep-{uuid.uuid4().hex[:12]}"
+    sleeper = tmp_path / marker
+    shutil.copy(shutil.which("sleep"), sleeper)
+    sleeper.chmod(0o755)
+    env = dict(os.environ, PRECAP_END_SECONDS="2", PRECAP_PIDFILE=str(tmp_path / "watchdog.pid"), PRECAP_LOG=str(tmp_path / "watchdog.log"),
+               PRECAP_SELECT=f"-f {marker}")
+    tree = subprocess.Popen(["sh", "-c", f"{sleeper} 300 & {sleeper} 300"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    alone = subprocess.Popen([str(sleeper), "300"], start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        first = subprocess.run(["sh", str(TASK / "environment" / "precap-watchdog")], env=env, capture_output=True, text=True, timeout=30)
+        assert first.returncode == 0 and "armed for 2 s" in first.stdout, first
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline and not (tmp_path / "watchdog.pid").read_text().strip():
+            time.sleep(0.05)
+        armed_pid = (tmp_path / "watchdog.pid").read_text().strip()
+        second = subprocess.run(["sh", str(TASK / "environment" / "precap-watchdog")], env=env, capture_output=True, text=True, timeout=30)
+        assert second.returncode == 0 and second.stdout == "", "a second start arms nothing"
+        deadline = time.monotonic() + 40
+        while time.monotonic() < deadline and "done:" not in (tmp_path / "watchdog.log").read_text():
+            time.sleep(0.2)
+        log = (tmp_path / "watchdog.log").read_text()
+        assert log.count(" armed pid ") == 1 and f"armed pid {armed_pid}" in log and "already armed" in log, log
+        assert " fired after 2 s" in log and "done: 0 process(es)" in log, log
+        assert tree.wait(timeout=10) != 0 and alone.wait(timeout=10) != 0, "the tree and the process in its own session are ended"
+        left = subprocess.run(["pgrep", "-f", marker], capture_output=True, text=True)
+        assert left.stdout.strip() == "", left.stdout
+        assert not (tmp_path / "watchdog.pid").exists(), "the pid file goes with the sleeper"
+    finally:
+        for proc in (tree, alone):
+            if proc.poll() is None:
+                proc.kill()
+    script = (TASK / "environment" / "precap-watchdog").read_text()
+    assert "END_SECONDS=${PRECAP_END_SECONDS:-33900}" in script, "the agent's 34,560 s less eleven minutes"
+    assert "umask 077" in script and 'LOG=${PRECAP_LOG:-/var/log/precap-watchdog.log}' in script, "a root-only log"
+    agent = int(re.search(r"\[agent\]\s*timeout_sec = (\d+)", (TASK / "task.toml").read_text()).group(1))
+    assert agent - 33900 == 660
+    instruction = (STEP / "instruction.md").read_text().lower()
+    assert "watchdog" not in instruction and "cap" not in instruction and "budget" not in instruction
+
+
 def test_the_agent_cannot_replace_the_artifact_directory():
     """/app is root's and sticky, /app/rebuild root's and writable by all: the agent cannot swap the
     artifact for a link to the original, which the root-run collector would follow."""
@@ -1064,15 +1528,19 @@ def test_nothing_the_agent_sees_names_a_reference_answer_or_a_budget():
                      "candidate"):
             assert word not in lowered, (name, word)
     assert "#" not in seen["task.toml"]
-    assert sorted(path.name for path in (TASK / "environment").iterdir()) == [".dockerignore", "Dockerfile"]
+    assert sorted(path.name for path in (TASK / "environment").iterdir()) == [".dockerignore", "Dockerfile", "precap-watchdog",
+                                                                          "prepare-delivery", "reserve-delivery-room"]
     assert "extern" in seen["instruction.md"].split("Out of scope:", 1)[1]
 
 
 def test_every_run_fits_inside_the_step_verifier_time():
     per_run = int(re.search(r"^CASE_SEC = (\d+)$", RUNNER.read_text(), re.M).group(1))
     total = int(re.search(r"^TOTAL_SEC = (\d+)", (STEP / "tests" / "verify.py").read_text(), re.M).group(1))
-    step_verifier = int(re.search(r"\[steps\.verifier\]\s*timeout_sec = (\d+)", (TASK / "task.toml").read_text()).group(1))
+    toml = (TASK / "task.toml").read_text()
+    step_verifier = int(re.search(r"\[steps\.verifier\]\s*timeout_sec = (\d+)", toml).group(1))
     assert 1500 * per_run <= total < step_verifier
+    agent = int(re.search(r"\[steps\.agent\]\s*timeout_sec = (\d+)", toml).group(1))
+    assert agent + step_verifier <= 11 * 3600, "the attempt stays inside the platform's 12 hours"
     assert f"Each run finishes within {per_run} seconds" in (STEP / "instruction.md").read_text()
 
 
