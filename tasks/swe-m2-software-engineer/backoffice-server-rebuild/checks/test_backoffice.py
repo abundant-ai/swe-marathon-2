@@ -1449,13 +1449,15 @@ FULL = ("import os\n_statvfs = os.statvfs\nclass Full:\n    f_bavail = f_favail 
         "os.statvfs = lambda path: Full()\n")  # a disk with no room and no inode left
 
 
-def deliver(name, build, entries="100000", size="1000000000", path="1000", seconds="100", start=None, tar=None, prelude=""):
+def deliver(name, build, entries="100000", size="1000000000", path="1000", seconds="100", start=None, tar=None, prelude="", watchdog=None):
     app = base / name / "app"
     server, state, archives = app / "server", base / name / "state", base / name / "tmp"
     for folder in (server, state, archives):
         folder.mkdir(parents=True)
     if start is not None:
         (state / "free-at-start").write_text(start)
+    if watchdog is not None:  # what the hook's `tail` of /var/log/precap-watchdog.log left
+        (state / "watchdog.txt").write_text(watchdog)
     build(server)
     environment = dict(os.environ)
     if tar is not None:  # a stand-in for the copy's tar, first on the PATH
@@ -1527,10 +1529,11 @@ def deep(server, levels=6, length=200, pad=1 << 32):
 
 
 out = {}
-app, server = deliver("good", server_tree)
+app, server = deliver("good", server_tree, watchdog=sys.argv[4] + "\n")
 out["mark"] = mark(server)
 out["left"] = sorted(path.name for path in server.iterdir())
 out["complete"] = notes(copy(server, base / "good" / "copied"))
+out["record"] = {key: value for key, value in verify.delivery_record(base / "good" / "copied").items() if key != "notes"}
 partial = copy(server, base / "good" / "partial")
 (partial / "app" / "main.py").unlink()  # the mark arrived, a file did not
 out["partial"] = notes(partial)
@@ -1561,7 +1564,7 @@ out["inodes"] = mark(server)[:2]
 app, server = deliver("never-room", server_tree, tar=failing, prelude=FULL)
 out["never_room"] = mark(server)
 app, server = deliver("nop", lambda server: None)
-out["nop"] = [mark(server), notes(copy(server, base / "nop" / "copied"))]
+out["nop"] = [mark(server), notes(copy(server, base / "nop" / "copied")), verify.delivery_record(base / "nop" / "copied")["ended_by_watchdog"]]
 outside = base / "venv-like"
 outside.mkdir()
 for number in range(20):
@@ -1588,16 +1591,19 @@ def test_a_delivery_the_agent_can_make_uncopyable_is_bounded_before_the_copy_and
     when the mark is missing or says refused; a mark that counts more than arrived (a copy the platform cut short, QA
     07f S1) and an /app/server of which nothing arrived are evaluation errors."""
     done = subprocess.run([sys.executable, "-I", "-B", "-c", DELIVERY, str(STEP / "tests"), str(TASK / "environment" / "prepare-delivery"),
-                           str(tmp_path)], capture_output=True, text=True, timeout=600)
+                           str(tmp_path), "\n".join(WATCHDOG_LINES)], capture_output=True, text=True, timeout=600)
     assert done.returncode == 0, done.stderr[-3000:]
     out = json.loads(done.stdout.strip().splitlines()[-1])
     run = len("#!/bin/sh\nexec python3 app/main.py\n")
     # app, app/main.py, app/b, app/b/up, run, run-again, empty, inside: 8 entries; run and run-again are one file
     assert out["mark"][0] == f"delivered 8 {600 + run}", out["mark"]
-    assert sorted(out["mark"][1:]) == ["removed absolute: a link that leads outside /app/server", "removed esc: a link that leads outside /app/server",
-                                       "removed outside: a link that leads outside /app/server", "removed pipe: not a file, a directory or a link"]
+    hook_lines = [line for line in out["mark"][1:] if not line.startswith("watchdog: ")]
+    assert sorted(hook_lines) == ["removed absolute: a link that leads outside /app/server", "removed esc: a link that leads outside /app/server",
+                                  "removed outside: a link that leads outside /app/server", "removed pipe: not a file, a directory or a link"]
+    assert out["mark"][-3:] == [f"watchdog: {line}" for line in WATCHDOG_LINES], "the log's last lines close the mark"
+    assert out["record"] == {"ended_by_watchdog": True, "watchdog_log": list(WATCHDOG_LINES)}
     assert out["left"] == [".delivered", "app", "empty", "inside", "run", "run-again"]
-    assert out["complete"] == [f"collect hook: {line}" for line in out["mark"][1:]], out["complete"]
+    assert out["complete"] == [f"collect hook: {line}" for line in hook_lines], out["complete"]
     # a copy cut short is never scored as complete: the mark counts more than arrived (an error), the mark is missing
     # (scored with a note), or nothing came (an error)
     assert out["cut"][0].startswith(("ERROR The copy arrived incomplete", "the delivery arrived without", "ERROR Nothing")), out["cut"]
@@ -1614,7 +1620,7 @@ def test_a_delivery_the_agent_can_make_uncopyable_is_bounded_before_the_copy_and
     assert out["broken"] == ["refused", "the copy's pack of it failed (tar: ./x: Cannot open: Input/output error): it was not copied"]
     assert out["inodes"][0] == "refused" and "No space left on device" in out["inodes"][1], out["inodes"]
     assert out["never_room"][0].startswith("delivered ") and any("room the machine did not have" in line for line in out["never_room"])
-    assert out["nop"] == [["delivered 0 0"], []]
+    assert out["nop"] == [["delivered 0 0"], [], False]
     assert out["fixer"][0] == 0 and "copying it would pass 10 entries" in out["fixer"][1] and out["fixer"][2] is False, out["fixer"]
     hook = (TASK / "environment" / "prepare-delivery").read_text()
     assert hook.index("kill -9 -1") < hook.index('rm -f "$STATE/room"') < hook.index('rm -rf "$STATE/inodes"') < hook.index('mv -f /app/server/.delivered "$aside/"')
@@ -1627,6 +1633,69 @@ def test_a_delivery_the_agent_can_make_uncopyable_is_bounded_before_the_copy_and
     instruction = " ".join((STEP / "instruction.md").read_text().split())
     assert "at most 100,000 files and directories and 1 GB, with no path inside it longer than 1,000 bytes" in instruction
     assert "room left to copy it" in instruction
+
+
+WATCHDOG_LINES = ("2026-11-19T12:00:00Z armed pid 77: ending the processes selected by '-u dev' in 33900 s",
+                  "2026-11-19T21:25:00Z fired after 33900 s: SIGTERM to the processes selected by '-u dev'",
+                  "2026-11-19T21:25:05Z done: 0 process(es) of the selection left")
+
+
+def test_the_pre_cap_watchdog_arms_once_fires_and_ends_the_users_processes(tmp_path):
+    """On the platform today a turn that runs into the 9.6 h agent cap is never graded (its separate verifier image fails
+    to build right after the timeout; harbor-lh ops/swe-marathon-v2/PLATFORM_VERIFIER_BUILD_AFTER_LONG_RUN.md), while one
+    that ends by itself is. A root watchdog started at setup_complete ends the agent's session eleven minutes before the
+    cap (BasedPL's round 5 design). It arms one sleeper however often it is started, fires after END_SECONDS, ends every
+    selected process (a tree, and a process in a session of its own), logs each step and removes its pid file. The hook
+    copies the log's last lines into the mark and verify.py reports ended_by_watchdog in metrics.json, never in the score."""
+    import shutil
+    import time
+    import uuid
+    marker = f"precap-sleep-{uuid.uuid4().hex[:12]}"
+    sleeper = tmp_path / marker
+    shutil.copy(shutil.which("sleep"), sleeper)
+    sleeper.chmod(0o755)
+    env = dict(os.environ, PRECAP_END_SECONDS="2", PRECAP_PIDFILE=str(tmp_path / "watchdog.pid"), PRECAP_LOG=str(tmp_path / "watchdog.log"),
+               PRECAP_SELECT=f"-f {marker}")
+    tree = subprocess.Popen(["sh", "-c", f"{sleeper} 300 & {sleeper} 300"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    alone = subprocess.Popen([str(sleeper), "300"], start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        first = subprocess.run(["sh", str(TASK / "environment" / "precap-watchdog")], env=env, capture_output=True, text=True, timeout=30)
+        assert first.returncode == 0 and "armed for 2 s" in first.stdout, first
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline and not (tmp_path / "watchdog.pid").read_text().strip():
+            time.sleep(0.05)
+        armed_pid = (tmp_path / "watchdog.pid").read_text().strip()
+        second = subprocess.run(["sh", str(TASK / "environment" / "precap-watchdog")], env=env, capture_output=True, text=True, timeout=30)
+        assert second.returncode == 0 and second.stdout == "", "a second start arms nothing"
+        deadline = time.monotonic() + 40
+        while time.monotonic() < deadline and "done:" not in (tmp_path / "watchdog.log").read_text():
+            time.sleep(0.2)
+        log = (tmp_path / "watchdog.log").read_text()
+        assert log.count(" armed pid ") == 1 and f"armed pid {armed_pid}" in log and "already armed" in log, log
+        assert " fired after 2 s" in log and "done: 0 process(es)" in log, log
+        assert tree.wait(timeout=10) != 0 and alone.wait(timeout=10) != 0, "the tree and the process in its own session are ended"
+        left = subprocess.run(["pgrep", "-f", marker], capture_output=True, text=True)
+        assert left.stdout.strip() == "", left.stdout
+        assert not (tmp_path / "watchdog.pid").exists(), "the pid file goes with the sleeper"
+    finally:
+        for proc in (tree, alone):
+            if proc.poll() is None:
+                proc.kill()
+    script = (TASK / "environment" / "precap-watchdog").read_text()
+    assert "END_SECONDS=${PRECAP_END_SECONDS:-33900}" in script, "the agent's 34,560 s less eleven minutes"
+    config = tomllib.loads((TASK / "task.toml").read_text())
+    assert config["agent"]["timeout_sec"] - 33900 == 660
+    assert config["agent"]["setup_begin"] == [{"command": "/usr/local/sbin/start-sealed-server", "timeout_sec": 120}]
+    assert config["agent"]["setup_complete"] == [{"command": "/usr/local/sbin/start-sealed-server", "timeout_sec": 120},
+                                                 {"command": "/usr/local/sbin/precap-watchdog", "user": "root", "timeout_sec": 60}]
+    docker = (TASK / "environment" / "Dockerfile").read_text()
+    assert "COPY precap-watchdog /usr/local/sbin/precap-watchdog" in docker and "/usr/local/sbin/precap-watchdog" in docker.split("chmod 0700")[-1]
+    hook = (TASK / "environment" / "prepare-delivery").read_text()
+    assert 'tail -n 20 /var/log/precap-watchdog.log > "$STATE/watchdog.txt"' in hook and hook.index("tail -n 20") < hook.index('rm -f "$STATE/room"')
+    assert '"prepare-delivery", "precap-watchdog")' in (TASK / "scripts" / "package_step.py").read_text()
+    assert "watchdog" not in (STEP / "tests" / "verifier" / "replay.py").read_text(), "the flag is never scored"
+    assert "never a reason to change the reward" in (STEP / "tests" / "verify.py").read_text()
+    assert "watchdog" not in (STEP / "instruction.md").read_text().lower()
 
 
 def test_a_read_cut_at_its_end_is_a_timeout_and_a_disk_the_server_cannot_write_is_not_watched(tmp_path):

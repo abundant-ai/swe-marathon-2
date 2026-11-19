@@ -15,6 +15,9 @@ for _ in $(seq 1 100); do
   pkill -KILL -u dev >/dev/null 2>&1
   sleep 0.1
 done
+# The pre-cap watchdog's last lines, for the delivery's mark: whether it ended the session is recorded, never scored.
+mkdir -p "$STATE" 2>/dev/null
+tail -n 20 /var/log/precap-watchdog.log > "$STATE/watchdog.txt" 2>/dev/null || :
 # Give back the room and the spare inodes set aside when the session started, so however full the disk was left, the
 # mark, a refusal and the copy's archive can be written.
 rm -f "$STATE/room"
@@ -145,7 +148,8 @@ one that resolves outside the directory. A delivery over the limits, or one that
 /tmp) cannot make within PACK_SECONDS, is moved aside whole and replaced by an empty directory; a pack that fails only
 for want of room or inodes the machine never had is left to the copy. The mark's first line is `delivered` with the
 number of entries (files, directories and links) and of bytes in its files (each file once, however many names it
-has), or `refused`; each line after it is a change made or the reason for the refusal.
+has), or `refused`; each line after it is a change made or the reason for the refusal, and the last lines of the pre-cap
+watchdog's log follow, each prefixed `watchdog: `.
 """
 import os
 import stat
@@ -263,6 +267,12 @@ if reason is None:
         else:
             reason = failed
 
+watchdog = []
+try:
+    with open(os.path.join(STATE, "watchdog.txt"), errors="backslashreplace") as text:
+        watchdog = [f"watchdog: {line.rstrip()}" for line in text if line.strip()][-20:]
+except OSError:
+    pass
 lines = [f"delivered {entries} {size}"]
 if reason is not None:
     os.rename(ROOT, os.path.join(os.path.dirname(ROOT), f".refused.{os.urandom(6).hex()}"))
@@ -271,7 +281,7 @@ if reason is not None:
     lines = ["refused", f"{reason}: it was not copied"]
 descriptor = os.open(MARK, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644)
 with os.fdopen(descriptor, "w", errors="backslashreplace") as mark:
-    mark.write("\n".join(lines + notes) + "\n")
-for line in lines[1:] + notes:
+    mark.write("\n".join(lines + notes + watchdog) + "\n")
+for line in lines[1:] + notes + watchdog:
     print(line.encode(errors="backslashreplace").decode(), flush=True)
 EOF

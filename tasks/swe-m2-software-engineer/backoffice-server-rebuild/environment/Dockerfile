@@ -23,6 +23,7 @@ COPY stockwell.env /usr/local/lib/stockwell/stockwell.env
 COPY start-sealed-server /usr/local/sbin/start-sealed-server
 COPY sealed-supervisor /usr/local/sbin/sealed-supervisor
 COPY prepare-delivery /usr/local/sbin/prepare-delivery
+COPY precap-watchdog /usr/local/sbin/precap-watchdog
 COPY entrypoint.sh /usr/local/sbin/entrypoint.sh
 RUN mkdir -p /app/server /opt/stockwell/data \
     && test -z "$(find /opt/stockwell/app -name '*.py' -print -quit)" \
@@ -31,7 +32,7 @@ RUN mkdir -p /app/server /opt/stockwell/data \
     && git config --system --add safe.directory '*' \
     && chmod 0600 /usr/local/lib/stockwell/stockwell.env \
     && chmod 0700 /usr/local/sbin/start-sealed-server /usr/local/sbin/sealed-supervisor /usr/local/sbin/entrypoint.sh \
-        /usr/local/sbin/prepare-delivery
+        /usr/local/sbin/prepare-delivery /usr/local/sbin/precap-watchdog
 WORKDIR /app
 ENTRYPOINT ["/usr/local/sbin/entrypoint.sh"]
 CMD ["sleep", "infinity"]

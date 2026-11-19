@@ -138,7 +138,13 @@ def arrived(server: Path) -> tuple[int, int]:
 
 
 def delivery_notes(server: Path) -> list[str]:
-    """What the collect hook's mark and the copy that arrived say about the delivery (QA 07d S2, 07e M4).
+    return delivery_record(server)["notes"]
+
+
+def delivery_record(server: Path) -> dict[str, Any]:
+    """What the collect hook's mark and the copy that arrived say about the delivery (QA 07d S2, 07e M4): `notes` for
+    metrics.json, and whether the pre-cap watchdog ended the agent's session (`ended_by_watchdog`, with the log's last
+    lines in `watchdog_log`), which is recorded and never a reason to change the reward.
 
     The hook marks every delivery before the copy, an empty one too, after bounding it and packing it once the way the
     copy packs it, so that nothing the agent leaves can make the copy fail (QA 07f M4). A delivery that arrived is scored
@@ -160,17 +166,23 @@ def delivery_notes(server: Path) -> list[str]:
     except OSError:
         lines = None
     if not lines:
-        return [MISSING_MARK]
-    head, notes = lines[0].split(), [f"collect hook: {line}" for line in lines[1:] if line.strip()][:20]
+        return {"notes": [MISSING_MARK], "ended_by_watchdog": False, "watchdog_log": []}
+    rest = [line for line in lines[1:] if line.strip()]
+    watchdog_log = [line[len("watchdog: "):] for line in rest if line.startswith("watchdog: ")][-20:]
+    notes = [f"collect hook: {line}" for line in rest if not line.startswith("watchdog: ")][:20]
+    record = {"notes": notes, "ended_by_watchdog": any(" fired after " in line for line in watchdog_log), "watchdog_log": watchdog_log}
+    head = lines[0].split()
     if head[:1] == ["refused"]:
-        return notes or ["collect hook: the delivery was not copied"]
+        record["notes"] = notes or ["collect hook: the delivery was not copied"]
+        return record
     if len(head) == 3 and head[0] == "delivered" and all(value.isascii() and value.isdigit() for value in head[1:]):
         entries, size = arrived(server)
         if (entries, size) != (int(head[1]), int(head[2])):
             raise EvaluationError(f"The copy arrived incomplete: {entries:,} of {int(head[1]):,} entries and {size:,} of "
                                   f"{int(head[2]):,} bytes")
-        return notes
-    return notes + ["the collect hook's mark could not be read; the delivery was scored as it arrived"]
+        return record
+    record["notes"] = notes + ["the collect hook's mark could not be read; the delivery was scored as it arrived"]
+    return record
 
 
 def main() -> int:
@@ -194,13 +206,15 @@ def main() -> int:
             closed.chmod(0o700)
         reserve(output)
         server = Path("/app/server")
-        delivery = delivery_notes(server)  # before the sandbox seals it; raises when nothing arrived
+        delivery = delivery_record(server)  # before the sandbox seals it; raises when nothing arrived
         scenarios = tests / "private" / "scenarios.json.gz"
         scenario_file = scenarios if scenarios.exists() else tests / "private" / "scenarios.json"
         progress = Progress()
         metrics = run_bounded(lambda: evaluate(server, scenario_file, Path("/work"), output, progress=progress), progress,
                               HARD_STOP_SEC - (time.monotonic() - started))
-        metrics["notes"] = delivery + metrics["notes"]
+        metrics["notes"] = delivery["notes"] + metrics["notes"]
+        # the pre-cap watchdog ended the agent's session before the platform's cap: recorded, never scored
+        metrics["ended_by_watchdog"], metrics["watchdog_log"] = delivery["ended_by_watchdog"], delivery["watchdog_log"]
         publish(output, metrics)
         published, code = True, 0
         print(f"reward: {metrics['reward']:.6f} ({metrics['units_matched']}/{metrics['units_total']} units)", flush=True)
