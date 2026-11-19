@@ -3,7 +3,8 @@
 Each case is written into the same fixed directory, so that paths in an output are the same for every
 run, and each run gets new empty directories as its HOME and TMPDIR, a fixed set of environment
 variables, and the same resource limits: an 8 MB stack, which is where `goose run` runs a program,
-bounds on processes, file size and data, and at most MEMORY_LIMIT bytes of memory in use.
+bounds on processes, file size and data, at most MEMORY_LIMIT bytes of memory in use, and at most
+DISK_LIMIT bytes and FILES_LIMIT files and directories added to the filesystem that holds /tmp.
 
 usage: python3 <this file> check <program> <cases.json> <outputs.json> [-v]
 
@@ -30,7 +31,9 @@ HOME = Path("/tmp/goose-home")   # HOME and TMPDIR of a run, new and empty for e
 TEMP = Path("/tmp/goose-tmp")
 CASE_SEC = 2
 OUTPUT_LIMIT = 1_000_000  # bytes of standard output read at most; more fails the run
-MEMORY_LIMIT = 4 << 30    # bytes of memory in use (resident) by a run's processes at most; more fails it
+MEMORY_LIMIT = 4 << 30    # bytes of memory in use (resident, and shared memory) by a run's processes at most
+DISK_LIMIT = 1 << 30      # bytes a run takes from the filesystem holding /tmp, at most
+FILES_LIMIT = 100_000     # files and directories a run adds to it, at most
 LIMITS = {
     resource.RLIMIT_STACK: 8 << 20,   # `goose run` runs the program on the main thread's stack
     resource.RLIMIT_NPROC: 512,       # processes and threads of the user running the case
@@ -114,14 +117,47 @@ def prepare(case: dict, owner: tuple[int, int] | None) -> None:
             os.lchown(top, *owner)
 
 
+def disk_free(path: Path = WORKSPACE.parent) -> tuple[int, int]:
+    """The bytes and the files (inodes) free on the filesystem holding `path`, -1 for one it does
+    not count."""
+    try:
+        info = os.statvfs(path)
+    except (OSError, AttributeError):
+        return -1, -1
+    return info.f_bavail * info.f_frsize, info.f_favail if info.f_files else -1
+
+
+def over_limit(group: int, uid: int | None, free: tuple[int, int]) -> str | None:
+    """What limit a run is past, given what was free on /tmp's filesystem when it started."""
+    if memory_in_use(group, uid) > MEMORY_LIMIT:
+        return "memory limit"
+    now = disk_free()
+    if free[0] >= 0 and now[0] >= 0 and free[0] - now[0] > DISK_LIMIT:
+        return "disk limit"
+    if free[1] >= 0 and now[1] >= 0 and free[1] - now[1] > FILES_LIMIT:
+        return "file limit"
+    return None
+
+
 def memory_in_use(group: int, uid: int | None) -> int:
-    """The resident memory of a run's processes: those of user `uid` where given, else those of
-    process group `group`; 0 where /proc cannot tell."""
+    """The memory a run's processes use: the resident memory of those of user `uid` where given,
+    with the shared memory segments that user owns, else of those of process group `group`; 0
+    where /proc cannot tell."""
     total = 0
+    if uid is not None:
+        try:
+            header, *rows = Path("/proc/sysvipc/shm").read_text().splitlines()
+            columns = header.split()
+            for row in rows:
+                values = dict(zip(columns, row.split()))
+                if values.get("uid") == str(uid):
+                    total += int(values.get("rss", values.get("size", "0")))
+        except (OSError, ValueError):
+            pass
     try:
         entries = [entry for entry in os.listdir("/proc") if entry.isdigit()]
     except OSError:
-        return 0
+        return total
     for pid in entries:
         try:
             fields = Path(f"/proc/{pid}/stat").read_bytes().rsplit(b")", 1)[1].split()
@@ -133,10 +169,11 @@ def memory_in_use(group: int, uid: int | None) -> int:
     return total
 
 
-def read_output(proc: subprocess.Popen, data: bytes, deadline: float, uid: int | None) -> tuple[bytes, str | None]:
+def read_output(proc: subprocess.Popen, data: bytes, deadline: float, uid: int | None,
+                free: tuple[int, int]) -> tuple[bytes, str | None]:
     """Feed `data` to the program's standard input and read its standard output until it closes
     it. Returns what was read and None, or what stopped the reading: "timeout" at the deadline,
-    "output limit" past OUTPUT_LIMIT bytes, "memory limit" past MEMORY_LIMIT bytes in use."""
+    "output limit" past OUTPUT_LIMIT bytes, or a limit `over_limit` names."""
     chunks, size = [], 0
     pending = memoryview(data)
     with selectors.DefaultSelector() as selector:
@@ -150,8 +187,9 @@ def read_output(proc: subprocess.Popen, data: bytes, deadline: float, uid: int |
             left = deadline - time.monotonic()
             if left <= 0:
                 return b"", "timeout"
-            if memory_in_use(proc.pid, uid) > MEMORY_LIMIT:
-                return b"", "memory limit"
+            problem = over_limit(proc.pid, uid, free)
+            if problem:
+                return b"", problem
             for key, _ in selector.select(min(left, 0.05)):
                 if key.fileobj is proc.stdin:
                     try:
@@ -188,13 +226,14 @@ def run_case(program: list[str], case: dict, prefix: list[str] | None = None, ow
     """Run one case: its exit code, its standard output as bytes, how long it took and the CPU time
     it used, and with `keep_stderr` the first 64 KB of its standard error. `env` adds environment
     variables and `preexec` replaces `limit` in the child. A case that cannot be set up or started,
-    runs past CASE_SEC, prints more than OUTPUT_LIMIT bytes or uses more than MEMORY_LIMIT bytes
-    has no exit code and an "error" instead."""
+    runs past CASE_SEC, prints more than OUTPUT_LIMIT bytes or passes a limit of `over_limit` has
+    no exit code and an "error" instead."""
     try:
         prepare(case, owner)
     except OSError as exc:
         return {"exit": None, "stdout": None, "error": f"workspace: {type(exc).__name__}", "seconds": 0.0, "cpu": 0.0}
     errors = tempfile.TemporaryFile() if keep_stderr else None
+    free = disk_free()
     before = resource.getrusage(resource.RUSAGE_CHILDREN)
     started = time.monotonic()
     try:
@@ -209,13 +248,10 @@ def run_case(program: list[str], case: dict, prefix: list[str] | None = None, ow
     deadline = started + CASE_SEC
     try:
         uid = owner[0] if owner else None
-        out, problem = read_output(proc, (case["stdin"] or "").encode("utf-8"), deadline, uid)
+        out, problem = read_output(proc, (case["stdin"] or "").encode("utf-8"), deadline, uid, free)
         while problem is None and proc.poll() is None:  # output closed: the limits hold to the end
-            if time.monotonic() > deadline:
-                problem = "timeout"
-            elif memory_in_use(proc.pid, uid) > MEMORY_LIMIT:
-                problem = "memory limit"
-            else:
+            problem = "timeout" if time.monotonic() > deadline else over_limit(proc.pid, uid, free)
+            if problem is None:
                 time.sleep(0.02)
     finally:
         if proc.returncode is None:

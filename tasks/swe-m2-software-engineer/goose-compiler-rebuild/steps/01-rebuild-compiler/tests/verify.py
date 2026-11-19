@@ -33,6 +33,9 @@ MARGIN_SEC = 120  # no case starts when less than this is left of TOTAL_SEC
 MAX_ENTRIES = 200_000  # files, directories and links in a submission, at most; more is not run
 MAX_BYTES = 4 << 30    # bytes of a submission's regular files (each inode once), at most; more is not run
 MAX_PROGRAM = 512 << 20  # bytes of /app/rebuild/goose hashed for metrics.json, at most
+RESERVE_BYTES = 512 << 20  # bytes kept free in /tmp and /logs/verifier: no case starts with less
+CLEANUP_SEC = 60  # the cleanup after the last case, at most
+METRICS_SPACE = 1 << 18  # bytes metrics.json holds from the start, so that writing it needs no new space
 # Where the unprivileged user can leave files: these, and every other world-writable directory
 # that writable_dirs() finds when the evaluation starts.
 LEFTOVER_DIRS = ["/tmp", "/var/tmp", "/dev/shm", "/dev/mqueue"]
@@ -177,28 +180,37 @@ def sandbox() -> tuple[list[str], tuple[int, int], dict]:
 def seal(top: Path, owner: tuple[int, int] = (0, 0)) -> None:
     """Make the submission `owner`'s and read-only for anyone else, before any of it runs: no
     set-user-id, set-group-id or sticky bit, executables 0755, other files 0644, directories 0755.
-    Links are left as they are and never followed; devices, pipes and sockets are removed.
+    Links are left as they are and never followed; devices, pipes and sockets are removed. Entries
+    are counted as they are read, and the walk stops at MAX_ENTRIES.
 
     Raises:
-        EvaluationError: An entry can be neither sealed nor removed.
+        EvaluationError: The submission holds more than MAX_ENTRIES entries or MAX_BYTES bytes of
+            files, or an entry can be neither sealed nor removed.
     """
     if not top.is_dir() or top.is_symlink():
         return
-    entries, size, seen = [top], 0, set()
-    for root, directories, files in os.walk(top):
-        entries += [Path(root) / name for name in directories + files]
-        if len(entries) > MAX_ENTRIES:
-            raise EvaluationError(f"The submission holds more than {MAX_ENTRIES} entries")
-        for name in files:
-            try:
-                info = os.lstat(os.path.join(root, name))
-            except OSError:
-                continue
-            if stat.S_ISREG(info.st_mode) and (info.st_dev, info.st_ino) not in seen:
-                seen.add((info.st_dev, info.st_ino))
-                size += info.st_size
-        if size > MAX_BYTES:
-            raise EvaluationError(f"The submission's files hold more than {MAX_BYTES} bytes")
+    entries, size, seen, todo = [top], 0, set(), [top]
+    while todo:
+        try:
+            listing = os.scandir(todo.pop())
+        except OSError:
+            continue
+        with listing:
+            for entry in listing:
+                entries.append(Path(entry.path))
+                if len(entries) > MAX_ENTRIES:
+                    raise EvaluationError(f"The submission holds more than {MAX_ENTRIES} entries")
+                try:
+                    info = entry.stat(follow_symlinks=False)
+                except OSError:
+                    continue
+                if stat.S_ISDIR(info.st_mode):
+                    todo.append(Path(entry.path))
+                elif stat.S_ISREG(info.st_mode) and (info.st_dev, info.st_ino) not in seen:
+                    seen.add((info.st_dev, info.st_ino))
+                    size += info.st_size
+                    if size > MAX_BYTES:
+                        raise EvaluationError(f"The submission's files hold more than {MAX_BYTES} bytes")
     for path in entries:
         try:
             info = os.lstat(path)
@@ -216,10 +228,25 @@ def seal(top: Path, owner: tuple[int, int] = (0, 0)) -> None:
                 raise EvaluationError(f"Could not seal the submission: {type(exc).__name__}") from exc
 
 
+def as_user(uid: int, argv: list[str], timeout: float) -> None:
+    """Run a command as `uid` (and its group), only where root can drop to it and it is not this
+    process's own uid (a kill -1 as oneself would end the evaluation)."""
+    if os.geteuid() != 0 or uid == os.geteuid() or shutil.which("setpriv") is None:
+        return
+    try:
+        subprocess.run(["setpriv", "--reuid", str(uid), "--regid", str(uid), "--clear-groups", "--", *argv],
+                       capture_output=True, check=False, timeout=timeout)
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
 def kill_user(uid: int) -> None:
-    """Kill every process of the user (owner of its /proc entry), repeatedly until none is left,
-    without starting one, and reap what this process is left to reap."""
+    """End every process of the user: kill -KILL -1 run as the user itself, which reaches all of
+    them at once (a fork cannot race it), repeated, with a walk of /proc that signals any pid the
+    user owns, whatever its state (a leader that exited with threads left reads Z), as the
+    backstop and the test that none is left. Reaps what this process is left to reap."""
     for _ in range(50):
+        as_user(uid, ["kill", "-KILL", "-1"], 10)
         found = False
         try:
             entries = [entry.name for entry in os.scandir("/proc") if entry.name.isdigit()]
@@ -229,21 +256,17 @@ def kill_user(uid: int) -> None:
             try:
                 if os.stat(f"/proc/{pid}").st_uid != uid:
                     continue
-                # Whatever the leader's state: one that exited with threads left reads Z, and a
-                # signal to it reaches them; to a dead one it is harmless.
-                tasks = [entry.name for entry in os.scandir(f"/proc/{pid}/task")]
-                alive = any(Path(f"/proc/{pid}/task/{task}/stat").read_bytes().rsplit(b")", 1)[1].split()[0]
-                            not in (b"Z", b"X") for task in tasks)
-                os.kill(int(pid), signal.SIGKILL)
-                found = found or alive
-            except (FileNotFoundError, ProcessLookupError):
+            except OSError:
                 continue
-            except (OSError, IndexError, ValueError):
-                try:
-                    os.kill(int(pid), signal.SIGKILL)
-                    found = True
-                except OSError:
-                    continue
+            try:
+                os.kill(int(pid), signal.SIGKILL)
+            except OSError:
+                continue
+            try:
+                found = found or any(Path(f"/proc/{pid}/task/{task.name}/stat").read_bytes().rsplit(b")", 1)[1].split()[0]
+                                     not in (b"Z", b"X") for task in os.scandir(f"/proc/{pid}/task"))
+            except (OSError, IndexError):
+                found = True  # a task that vanished while read: look again
         reap()
         if not found:
             return
@@ -266,8 +289,8 @@ def writable_dirs(root: str = "/") -> list[str]:
     the kernel's own trees: where a submission could leave a file for a later case."""
     found = []
     for top, directories, _ in os.walk(root):
-        if top == root:
-            directories[:] = [d for d in directories if d not in ("proc", "sys", "dev")]
+        if top == root:  # the kernel's trees, and /logs, which holds the agent's own artifacts
+            directories[:] = [d for d in directories if d not in ("proc", "sys", "dev", "logs")]
         if os.path.realpath(top) == str(SUBMISSION):  # sealed: nothing in it is writable
             directories[:] = []
             continue
@@ -281,7 +304,10 @@ def writable_dirs(root: str = "/") -> list[str]:
 
 def remove_ipc(uid: int, root: Path = Path("/proc/sysvipc")) -> None:
     """Remove the System V shared memory, semaphores and message queues the user owns or made:
-    they outlive the processes that made them."""
+    they outlive the processes that made them. First as the user itself (ipcrm --all, which any
+    owner may do and which finds them without /proc/sysvipc), then as root, which may lack the
+    capability to."""
+    as_user(uid, ["ipcrm", "--all"], 60)
     for name, flag in SYSV_IPC:
         try:
             header, *rows = (root / name).read_text().splitlines()
@@ -371,6 +397,27 @@ def identity(path: Path) -> dict:
         return {"error": type(exc).__name__}
 
 
+def low_on_disk() -> bool:
+    """Whether /tmp or /logs/verifier has less than RESERVE_BYTES free (what Harbor needs to fetch
+    the results, and the results themselves)."""
+    for place in (runcases.WORKSPACE.parent, Path("/logs/verifier")):
+        free = runcases.disk_free(place)[0]
+        if 0 <= free < RESERVE_BYTES:
+            return True
+    return False
+
+
+def write_in_place(path: Path, data: bytes) -> None:
+    """Overwrite a file reserved at the start without truncating it first, so that no new space is
+    needed where it already held as much, then cut it to length."""
+    try:
+        with open(path, "r+b") as handle:
+            handle.write(data)
+            handle.truncate(len(data))
+    except FileNotFoundError:
+        path.write_bytes(data)
+
+
 def grade(program: Path, private: Path, prefix: list[str], owner: tuple[int, int] | None,
           deadline: float | None = None) -> dict:
     """Run every private case through `prefix` (as `owner`) and count exact matches, starting no
@@ -409,6 +456,9 @@ def grade(program: Path, private: Path, prefix: list[str], owner: tuple[int, int
     for case in cases:
         if time.monotonic() > deadline - MARGIN_SEC:
             metrics["stopped"] = "out of time; the remaining cases count as failed"
+            break
+        if low_on_disk():
+            metrics["stopped"] = "out of disk space; the remaining cases count as failed"
             break
         try:  # whatever the submission did to this machine is its own case's failure, never an error
             if owner is not None:
@@ -451,6 +501,20 @@ def grade(program: Path, private: Path, prefix: list[str], owner: tuple[int, int
     return metrics
 
 
+def final_cleanup(uid: int, until: float) -> None:
+    """After the last case, before the results: end the user's processes, then sweep what it left
+    and its IPC objects, best effort and only while time is left (`until`, time.monotonic())."""
+    try:
+        kill_user(uid)
+        if time.monotonic() < until:
+            remove_leftovers(uid)
+        if time.monotonic() < until:
+            remove_ipc(uid)
+        runcases.clear_workspace()
+    except Exception:  # noqa: BLE001 - the results are written whatever is left
+        pass
+
+
 def main() -> int:
     """Run one evaluation in this fresh container.
 
@@ -469,8 +533,13 @@ def main() -> int:
     try:
         if os.geteuid() != 0:
             raise EvaluationError("Verifier must start as root to isolate submitted code")
-        for closed in (tests, output):
-            closed.chmod(0o700)
+        for closed in (tests, output, Path("/logs/artifacts")):  # the agent's artifacts: never read, never written
+            if closed.is_dir() and not closed.is_symlink():
+                closed.chmod(0o700)
+        # The results' space, taken before any submitted code runs: written in place at the end,
+        # they need no new space, however full a run leaves the disk.
+        (output / "reward.txt").write_text("0.000000")
+        (output / "metrics.json").write_text(json.dumps({"status": "running"}).ljust(METRICS_SPACE) + "\n")
         try:  # the out-of-memory killer takes a submission's process, never this one
             Path("/proc/self/oom_score_adj").write_text("-1000")
         except OSError:
@@ -485,7 +554,7 @@ def main() -> int:
             seal(SUBMISSION)
         except EvaluationError as exc:  # a submission that cannot be made safe to run is not run
             refused = f"{exc}: not graded"
-        LEFTOVER_DIRS.extend(top for top in writable_dirs() if top not in LEFTOVER_DIRS)
+        LEFTOVER_DIRS[:] = sorted(set(LEFTOVER_DIRS) | set(writable_dirs()))
         # The marker-free hash is no reason to refuse: the reference solution builds the same
         # compiler from source, with an all-zero marker, and may match it byte for byte.
         program = identity(SUBMISSION / "goose")
@@ -497,13 +566,15 @@ def main() -> int:
             metrics = {"cases_total": None, "cases_passed": 0, "reward": 0.0, "notes": [refused]}
         else:
             metrics = grade(SUBMISSION / "goose", tests / "private", prefix, owner, deadline)
-        # The reward first: nothing after it, the submission's doing or not, can cost it.
-        (output / "reward.txt").write_text(f"{metrics['reward']:.6f}")
+            final_cleanup(owner[0], min(deadline, time.monotonic() + CLEANUP_SEC))
+        # The reward first, in its reserved place: nothing after it can cost it.
+        write_in_place(output / "reward.txt", f"{metrics['reward']:.6f}".encode())
         code = 0
         print(f"reward: {metrics['reward']:.6f} ({metrics['cases_passed']}/{metrics['cases_total']} cases)", flush=True)
         try:
             metrics.update(limits=limits, submission=program, host=recorder.host())
-            (output / "metrics.json").write_text(json.dumps(dict(metrics, status="completed"), indent=1, sort_keys=True) + "\n")
+            write_in_place(output / "metrics.json",
+                           (json.dumps(dict(metrics, status="completed"), indent=1, sort_keys=True) + "\n").encode())
         except Exception:  # noqa: BLE001 - metadata only
             pass
     except Exception as exc:  # noqa: BLE001 - every unexpected failure invalidates the evaluation
@@ -513,12 +584,12 @@ def main() -> int:
             for name in REWARD_FILES:
                 (output / name).unlink(missing_ok=True)
             try:
-                (output / "metrics.json").write_text(json.dumps({"status": "evaluation_error", "error": message}) + "\n")
+                write_in_place(output / "metrics.json", (json.dumps({"status": "evaluation_error", "error": message}) + "\n").encode())
             except OSError:
                 pass
     finally:
-        if owner is not None:
-            kill_user(owner[0])
+        if owner is not None:  # nothing running or left behind while Harbor packs the results
+            final_cleanup(owner[0], time.monotonic() + CLEANUP_SEC)
         try:
             subprocess.run(["chmod", "-R", "a+rX", str(output)], check=False)
         except OSError:

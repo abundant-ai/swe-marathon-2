@@ -507,7 +507,7 @@ def test_nothing_a_submission_writes_reaches_a_later_case(tmp_path):
         root = Path({str(ipc)!r})
         verify.remove_ipc = (lambda real: lambda uid: real(uid, root))(verify.remove_ipc)
         metrics = verify.grade(Path({str(program)!r}), Path({str(private)!r}), [], (os.getuid(), os.getgid()))
-        verify.reset(os.getuid())  # main() does this after the reward is written
+        verify.final_cleanup(os.getuid(), __import__("time").monotonic() + 30)  # main() does this before the reward
         print(json.dumps([metrics, removed]))
     """))
     assert metrics["cases_passed"] == 3, metrics
@@ -806,6 +806,81 @@ def test_an_oversized_submission_is_not_run(tmp_path):
         print(json.dumps(results))
     """))
     assert "more than 20 entries" in out[0] and "more than 4096 bytes" in out[1]
+
+
+def test_results_are_reserved_written_in_place_and_logs_never_swept(tmp_path):
+    """The reward and metrics take their space at the start and are overwritten in place; /logs
+    (the agent's own artifacts) is never a directory to sweep; a run past the disk or file limit
+    fails."""
+    reserved = tmp_path / "reward.txt"
+    reserved.write_text("0.000000")
+    metrics = tmp_path / "metrics.json"
+    metrics.write_text("{}".ljust(4096))
+    tree = tmp_path / "root"
+    for name in ("tmp", "logs/artifacts/open", "var/tmp"):
+        (tree / name).mkdir(parents=True)
+        (tree / name).chmod(0o777)
+    out = verifier_call(textwrap.dedent(f"""
+        import json, verify
+        from pathlib import Path
+        verify.write_in_place(Path({str(reserved)!r}), b"0.731000")
+        verify.write_in_place(Path({str(metrics)!r}), b'{{"reward": 0.731}}')
+        found = verify.writable_dirs({str(tree)!r})
+        rc = verify.runcases
+        rc.memory_in_use = lambda group, uid: 0
+        before = (10 << 30, 1_000_000)
+        rc.disk_free = lambda path=None: ((10 << 30) - (2 << 30), 1_000_000)
+        disk = rc.over_limit(1, None, before)
+        rc.disk_free = lambda path=None: (10 << 30, 1_000_000 - 200_000)
+        files = rc.over_limit(1, None, before)
+        rc.disk_free = lambda path=None: (-1, -1)
+        unknown = rc.over_limit(1, None, before)
+        print(json.dumps([sorted(found), disk, files, unknown]))
+    """))
+    found, disk, files, unknown = out
+    assert reserved.read_text() == "0.731000" and json.loads(metrics.read_text()) == {"reward": 0.731}
+    assert not any("logs" in path for path in found) and str(tree / "tmp") in found
+    assert disk == "disk limit" and files == "file limit" and unknown is None
+    verify = (STEP / "tests" / "verify.py").read_text()
+    main = verify[verify.index("def main() -> int:"):]
+    assert main.index('(output / "reward.txt").write_text("0.000000")') < main.index("sandbox()") \
+        < main.index("final_cleanup(owner[0], min(deadline") < main.index('write_in_place(output / "reward.txt"')
+    assert "as_user(uid, [\"kill\", \"-KILL\", \"-1\"], 10)" in verify and 'as_user(uid, ["ipcrm", "--all"], 60)' in verify
+    assert "if os.geteuid() != 0 or uid == os.geteuid()" in verify, "never kill -1 as the verifier's own uid"
+    instruction = (STEP / "instruction.md").read_text()
+    assert "under 4 GB and 200,000 files" in instruction and "writes at most 1 GB and 100,000 files" in instruction
+
+
+def test_the_entry_cap_stops_the_walk(tmp_path):
+    many = tmp_path / "many"
+    many.mkdir()
+    for index in range(500):
+        (many / f"f{index}").write_text("")
+    out = verifier_call(textwrap.dedent(f"""
+        import json, os, verify
+        from pathlib import Path
+        verify.MAX_ENTRIES = 50
+        seen = []
+        real = verify.os.scandir
+        def counting(path):
+            listing = real(path)
+            class Wrapped:
+                def __enter__(self): return self
+                def __exit__(self, *a): listing.close()
+                def __iter__(self):
+                    for entry in listing:
+                        seen.append(entry.name)
+                        yield entry
+            return Wrapped()
+        verify.os.scandir = counting
+        try:
+            verify.seal(Path({str(many)!r}), (os.getuid(), os.getgid()))
+            print(json.dumps(["sealed", len(seen)]))
+        except verify.EvaluationError as exc:
+            print(json.dumps([str(exc), len(seen)]))
+    """))
+    message, read = out
+    assert "more than 50 entries" in message and read <= 51, "the walk stops at the cap"
 
 
 def test_the_agent_cannot_replace_the_artifact_directory():

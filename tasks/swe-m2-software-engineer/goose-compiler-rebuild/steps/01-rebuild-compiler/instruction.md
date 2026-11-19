@@ -69,7 +69,8 @@ Your implementation in `/app/rebuild`, with an executable `/app/rebuild/goose`.
 - It must not call the sandboxed build: it replaces it, and will be used where that is not
   installed.
 - Everything it needs at run time is inside `/app/rebuild`, apart from the standard library's
-  sources and the tools listed above.
+  sources and the tools listed above. `/app/rebuild` is copied to where it is used: keep it
+  under 4 GB and 200,000 files.
 - Where it will be used, it runs as an unprivileged user that cannot write to `/app/rebuild`.
   Each run starts in a new working directory, `/tmp/goose-case`, that holds only that run's
   files, with `HOME` and `TMPDIR` set to new empty directories and nothing left from earlier
@@ -77,8 +78,8 @@ Your implementation in `/app/rebuild`, with an executable `/app/rebuild/goose`.
   `run_examples.py` gives each example (an 8 MB stack among them, which is also the stack the
   sandboxed build runs a program on).
 - Each run finishes within 2 seconds, which is how long the playground and the editor plugin
-  wait, and uses at most 4 GB of memory; the sandboxed build takes a fraction of a second and
-  far less memory on the programs people send.
+  wait, uses at most 4 GB of memory, and writes at most 1 GB and 100,000 files; the sandboxed
+  build takes a fraction of a second and far less of each on the programs people send.
 - Out of scope: `goose build`, `goose fetch` and packages, `goose lsp`, `goose toolchain`,
   the options that report on a compile (`--stats`, `--specs`, `--stacks`, `--bce-lines`, `-v`),
   the options `goose help internals` lists and `goose format --verify` (their help text aside),
