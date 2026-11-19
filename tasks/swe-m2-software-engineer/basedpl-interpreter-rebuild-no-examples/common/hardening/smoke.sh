@@ -106,4 +106,4 @@ out="$(printf '{"id":1,"case":{"code":"1+1","expected_code":"2"}}\n{"id":2,"chec
 [ "$(printf '%s\n' "$out" | grep -c '"expected code, call or bindings"')" -eq 2 ] || fail "the worker ran a test request: $out"
 [[ "$out" == *'"id":3,"result":{"value":3.0'* ]] || fail "the worker did not evaluate code: $out"
 
-echo "bpl hardening verified: $bpl"
+echo "bpl hardening confirmed: $bpl"

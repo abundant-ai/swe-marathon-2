@@ -15,13 +15,65 @@ installed unchanged in both images and in the reference solution. One step is im
 waves 1 and 2 (20 passes) have been answered in rounds 1 and 2, and Carve's finding on the shared
 collect hook and the round-2 re-checks in round 3, the round-3 re-check in round 4, and the
 platform's ungraded capped runs in round 5; the task was then renamed
-`basedpl-interpreter-rebuild-no-examples`, scrubbed for the pre-trial audit in round 6, and the
-scrub's re-check answered in round 7. Bundle `b206089bd38b` is the first to upload under the new
-name. It replaces round 6's `ffcf88e892e2`, which was never uploaded, and the earlier bundles
-`4164eb806274`, `7462d71fe5a7`, `f0da94435d6b`, `cfc9d42f3e68`, `80d7f600cab8` and
-`1a08cdb471d0`. See [Remaining work](#remaining-work) and [Validation gaps](#validation-gaps).
+`basedpl-interpreter-rebuild-no-examples`, scrubbed for the pre-trial audit in round 6, the
+scrub's re-check answered in round 7, and round 7's re-check in round 8. Bundle `43b39e11805c` is
+the first to upload under the new name. It replaces round 7's `b206089bd38b` and round 6's
+`ffcf88e892e2`, neither of which was uploaded, and the earlier bundles `4164eb806274`,
+`7462d71fe5a7`, `f0da94435d6b`, `cfc9d42f3e68`, `80d7f600cab8` and `1a08cdb471d0`. See
+[Remaining work](#remaining-work) and [Validation gaps](#validation-gaps).
 
 ## Development log
+
+### 2026-11-19 (round 8: the freeze before the timer's end, from the re-check 07f)
+
+- The re-check of round 7 (harbor-lh `ops/swe-marathon-v2/qa/basedpl/07f-round7-recheck.md`)
+  found F1 closed and no must-fix, and three should-fixes: G1 (design), G2 and G3 (minor). This
+  round answers them in one commit. The verifier's sources and paths are byte-identical to round
+  7's (`verify.py`, `runcases.py`, `recorder.py`, `recording.py`, `upstream_builds.json`,
+  `test.sh`, its `Dockerfile`); of what ships, `environment/reclaim-scratch` changed, and three
+  lines of the shared smoke test and the solution were reworded (G3).
+- **G1, the timer's end came before the freeze.** Round 7 ended the session timer first and froze
+  `dev`'s processes after it, while those processes already had public connectivity again: six
+  more process starts before the first SIGSTOP, one of them a scan of every `/proc` entry (19 ms
+  more on the re-check's Mac). The hook now writes the mark, freezes `dev`'s processes, and only
+  then ends the timer, before the listing, the kill and its own work as `dev` (the link fixer);
+  the second stop at its end stays. The first SIGSTOP again comes after the seven process starts
+  it had before round 7 (`date`, `mkdir`, `chmod`, `seq`, `pgrep`, `setpriv`, which runs `kill`).
+  F1 stays closed: the mark alone keeps the timer from ending anything (it looks before it fires
+  and before every round), and a round that had already looked can reach only `dev`'s processes,
+  which the hook freezes and ends anyway; the fixer starts seconds later.
+  - Not taken: moving the freeze above `date`, `mkdir` and `chmod` too (three more starts, a few
+    milliseconds against a window of at least 0.6 s). The mark keeps the hook's start time, and
+    the state directory is made there if setup did not make it.
+  - Checks: `test_reclaim_scratch_writes_the_mark_then_freezes_the_user_then_ends_the_timer` runs
+    the hook's lines before its listing as shipped, with stand-ins for the freeze's `pgrep` and
+    `setpriv`, against a real waiting sleeper: the freeze is sent with the mark written and the
+    sleeper still running, and the sleeper and its sleep are ended after it; the text keeps that
+    order, with nothing run between the mark and the freeze. The delivery check's order list and
+    the F1 check follow the new order. In the F1 check's case of a timer in its rounds, the timer
+    can now see the mark and exit with its own `stopped:` line before the hook's stop finds it;
+    either line is accepted, and the fixer still fixes all 20,000 links. A copy with round 7's
+    order fails the new check (its freeze found "timer ended") and the delivery check's order
+    list; the F1 check passes on it, as it should.
+- **G2, `fixer_status` is not in `metrics.json`.** `verify.py` copies a fixed list of the
+  record's keys and is not changed for this. Written down under
+  [Validation gaps](#validation-gaps), with what a reader of the first trials sees instead.
+- **G3, the words the audit's scan flags.** In `reclaim-scratch`, the link fixer's byte allowance
+  `BUDGET` is now `COPY_BYTES` (one assignment, three reads) and the measuring script's
+  `trial_pack()` is now `pack_once()` (its definition and its one call). Nothing else in the task
+  (hooks, checks, verifier, this file, scripts) or in the local grader and replay named either,
+  and neither new name was in use anywhere. A scan of every shipped file for
+  `grade|score|verif|harness|oddish|modal|harbor|\bcap\b|budget|attempt|audit|QA|round [0-9]|trial`
+  then found three more lines of ours, all outside the agent's view, now reworded: the smoke
+  test's last line ("bpl hardening confirmed", in both images' build stages and the solution),
+  and comments in `probe.c` ("the sandbox it runs in") and `solve.sh` ("the run's logs"). What
+  remains is the verifier's own sources and paths, `task.toml`'s `[verifier]` tables, upstream's
+  manual (APL's grade, for one) and words in the hidden cases' programs (`scores`, `grades.bpl`;
+  `harbor` and `budget` from the rewrite word list and the programs' place names), all in the
+  verifier image or the documentation. A new check,
+  `test_no_shipped_file_of_ours_outside_the_verifier_uses_a_word_the_audit_scan_flags`, scans the
+  ten files of ours that ship outside the verifier.
+- 50 task checks and the 27 repository checks pass; see [Validation](#validation).
 
 ### 2026-11-19 (round 7: the collect hook ends the session timer first, from the re-check 07e)
 
@@ -51,7 +103,8 @@ name. It replaces round 6's `ffcf88e892e2`, which was never uploaded, and the ea
     SIGSTOP first, then the children, needs no wait.
   - The fixer's exit status now reaches the last script. A status other than 0 (124: its two
     minutes ran out; 128 plus a signal's number) is a note in the mark and `fixer_status` in the
-    record; before, a fixer that was cut short left no trace.
+    record (`.manifest.json` only; `metrics.json` shows the note, not the key: see Validation
+    gaps); before, a fixer that was cut short left no trace.
 - **F4, "armed" was printed before anything was known.** A start with no running sleeper now arms
   one whatever the pid file holds (empty, a pid that is gone, the pid of some other live
   process; the no-clobber reservation that could leave it unarmed is gone), waits up to 2 s, and
@@ -574,9 +627,10 @@ ends the agent's session 11 minutes before the platform's 9.6 h cap (SIGTERM to 
 `dev`, then SIGKILL), because on the platform today a turn that runs into the cap is never graded
 (the separate verifier image fails to build right after the timeout; harbor-lh
 `ops/swe-marathon-v2/PLATFORM_VERIFIER_BUILD_AFTER_LONG_RUN.md`) while a turn that ends by itself
-is. A session it ended shows as `ended_by_timer: true` in `metrics.json`. The collect hook ends the
-timer before anything else, so none of its rounds can reach the hook's own work as `dev`. The agent
-is not told; the instruction states no budget either way. The installed scripts and their state are
+is. A session it ended shows as `ended_by_timer: true` in `metrics.json`. The collect hook first
+writes the mark the timer stops on, then freezes `dev`'s processes and ends the timer, so none of
+its rounds can reach the hook's own work as `dev`. The agent is not told; the instruction states
+no budget either way. The installed scripts and their state are
 named for ordinary housekeeping (`provision-scratch`, `reclaim-scratch`, `session-timer`,
 `/var/lib/scratch`) so that a solver listing the container reads nothing about grading, a cap or a
 deadline from them. One thing does show: `ps` lists root's `session-timer run` and its
@@ -586,9 +640,10 @@ the number shows nowhere).
 ## Verification
 
 1. **Collection.** When the agent's turn ends, the root collect hook writes the mark the session
-   timer stops on and ends the timer, freezes `dev`'s processes, lists them and kills them, records
-   every entry's own times before touching anything, and records connectivity. It restores permissions only where needed (directories u+rwx, unreadable files
-   u+r, each noted), fixes links (a link to a root-owned system file or directory becomes a copy,
+   timer stops on, freezes `dev`'s processes, ends the timer, lists the processes and kills them,
+   records every entry's own times before touching anything, and records connectivity. It
+   restores permissions only where needed (directories u+rwx, unreadable files u+r, each noted),
+   fixes links (a link to a root-owned system file or directory becomes a copy,
    with the source's path, owner, times and inode recorded; a link to anything else outside is
    removed and noted first in the mark), bounds `/app/rebuild`, packs it once as the copy will,
    and marks and records it with the pre-hook times as the authoritative ones (see the
@@ -667,10 +722,10 @@ Highest unresolved severity: 🟡 YELLOW / UNASSESSED (findings 1, 2, 3, 5, 10, 
 | 13 | A crash of the original graded as an answer | Recording | Checked with a stand-in | Signals, exit statuses other than 0, 1 and 2, panics and allocation failures are dropped; more than 2% fail the build | None found | Read `dropped_crashed` | 🟢 GREEN / LOW |
 | 14 | Answers that depend on the machine or on the maths library's last bits: thread counts, hash order, the memory limit, CPU features, approximation bits | Recording | Local recording: no case unsteady or perturbed; 16 last-bit answers dropped (QA 18 confirmed 12) | Three runs pinned to four worker threads and a perturbed one (one CPU, one worker thread); memory-limit text dropped from either stream; last-bit answers dropped; rustymath chooses SIMD paths at compile time (`x86-64-v3`); `expected_sha256` lets two builds be compared | A host without AVX2 cannot run the original (the smoke test then fails the build, and an oracle row below 1.0 with `host.avx2` false is infrastructure); the x86-64 build's bits are first seen at its own recording | Two oracle trials must each score 1.0 with the same `kept_ids_sha256` and `expected_sha256` before any model trial | 🟡 YELLOW / UNASSESSED |
 | 15 | A busy host fails a graded run spuriously | Disk and file limits | QA 10: a `sleep 10` submission was stopped for a file limit by the whole-filesystem figures | The limits count only the run's own files (its uid's under the writable directories, and deleted files it holds open), and only when the free figures fall past a limit; a case stopped by a limit runs once more; host shortages after a sweep are evaluation errors | None found | Read `disk_limits`, `file_limits` and `limit_retries` in the first trials' `metrics.json` | 🟢 GREEN / LOW |
-| 16 | Make Harbor's copy drop an honest delivery (a running build, links that leave the directory, FIFOs, a sparse file, a full disk, a read-only folder) so that it scores a valid 0, make the copy fail at will, launder a file fetched after the turn through a link the hook copies in, or hide a post-turn write behind the hook's own changes to ctimes | The collect hook and the mark | QA 07 F2-F3 (ported from the back-office task, rounds 6-7); Carve QA 04 F1-F2; re-checks 07b and 07c | The hook freezes and kills `dev`'s processes first, records every entry's own times before touching anything (the manifest's authoritative mtime and ctime), gives back reserved room and inodes, restores permissions only where needed and notes each change, copies an outside link's target only when root owns it (every file under a directory included) and records the source's path, owner, mtime, ctime and inode, removes every other outside link (noted first in the mark) and all special files, bounds entries, bytes and path length, hashes once per inode, packs once within 100 s, and marks the delivery with every note; the verifier grades what arrived, reads the whole mark, copies every change into `metrics.json` with flags, and treats nothing arriving or a short copy as an evaluation error | A platform copy that fails after the hook's trial pack succeeded (an error, then a re-run); a fetched file written straight into `/app/rebuild` after the turn, which the ctime audit against the trial's finish now can catch, since the recorded ctimes are the session's own | Read `delivery_record` (copies, links, notes, `latest_ctime` and `hook_changed_entries` against the trial's finish) in every trial | 🟢 GREEN / LOW |
+| 16 | Make Harbor's copy drop an honest delivery (a running build, links that leave the directory, FIFOs, a sparse file, a full disk, a read-only folder) so that it scores a valid 0, make the copy fail at will, launder a file fetched after the turn through a link the hook copies in, or hide a post-turn write behind the hook's own changes to ctimes | The collect hook and the mark | QA 07 F2-F3 (ported from the back-office task, rounds 6-7); Carve QA 04 F1-F2; re-checks 07b and 07c | The hook freezes and kills `dev`'s processes first, records every entry's own times before touching anything (the manifest's authoritative mtime and ctime), gives back reserved room and inodes, restores permissions only where needed and notes each change, copies an outside link's target only when root owns it (every file under a directory included) and records the source's path, owner, mtime, ctime and inode, removes every other outside link (noted first in the mark) and all special files, bounds entries, bytes and path length, hashes once per inode, packs once within 100 s, and marks the delivery with every note; the verifier grades what arrived, reads the whole mark, copies every change into `metrics.json` with flags, and treats nothing arriving or a short copy as an evaluation error | A platform copy that fails after the hook's own pack succeeded (an error, then a re-run); a fetched file written straight into `/app/rebuild` after the turn, which the ctime audit against the trial's finish now can catch, since the recorded ctimes are the session's own | Read `delivery_record` (copies, links, notes, `latest_ctime` and `hook_changed_entries` against the trial's finish) in every trial | 🟢 GREEN / LOW |
 | 17 | Read the build's own file through the hardened read path from a start directory whose rule lets it through (`/`, `/opt`, `/opt/bpl`) | File mode; the path rule | QA 04 F4, QA 12 F2 | The 2711 mode refuses the read for `dev`; the agent image's final stage proves it as `dev` (with the whole smoke test on the set-group-id build) and `solve.sh` records it in the trial | A kernel that let a non-dumpable set-group-id process read its own executable | `/logs/agent/reads.txt` of the first oracle trial | 🟢 GREEN / LOW |
 | 18 | Outlast the session timer, so that the session runs into the platform's cap and goes ungraded, or stop it to gain time | Process ownership | Round 5; re-check 07e | The sleeper is root's and `dev` cannot signal it; its pid file, log and the hook's mark are root-only (`/run`, `/var/log`, `/var/lib/scratch`); `kill -TERM` then `kill -KILL` as root reach every process of `dev` | A harness that ran the agent as root, which hackability row 3 gates on the first trial | Read `ended_by_timer` and `timer_log` in `delivery_record`: `armed pid N` first, then `stopped pid N` when the hook found the sleeper still running, or `fired after 33900 s` when it ended the session | 🟢 GREEN / LOW |
-| 19 | The session timer's own rounds end the collect hook's link fixer, which runs as `dev`: links not yet fixed are then removed and honest work scores 0, with notes that read like the agent's fault | The collect hook and the timer | Re-check 07e F1 (reproduced with the unmodified timer) | The hook writes a root-only mark and ends the sleeper (SIGSTOP, its children, SIGKILL) before anything of its own runs as `dev`; the timer stops on the mark before it fires and before every round; a fixer that does not end with status 0 is noted in the mark (checked: the hook's real fixer under a timer in its rounds, ended without the hook's first lines, finishing 20,000 links with them) | The real `setpriv`, procps and `/proc` have not run yet (Validation gaps) | `timer_log` and `notes` in the first trials' `delivery_record` | 🟢 GREEN / LOW |
+| 19 | The session timer's own rounds end the collect hook's link fixer, which runs as `dev`: links not yet fixed are then removed and honest work scores 0, with notes that read like the agent's fault | The collect hook and the timer | Re-check 07e F1 (reproduced with the unmodified timer); 07f G1 (the order) | The hook writes a root-only mark first, freezes `dev`'s processes, then ends the sleeper (SIGSTOP, its children, SIGKILL), all before its own work as `dev` (the link fixer); the timer stops on the mark before it fires and before every round; a fixer that does not end with status 0 is noted in the mark (checked: the hook's real fixer under a timer in its rounds, ended without the hook's first lines, finishing 20,000 links with them) | The real `setpriv`, procps and `/proc` have not run yet (Validation gaps) | `timer_log` and `notes` in the first trials' `delivery_record` | 🟢 GREEN / LOW |
 
 Licence: the upstream is Apache-2.0. Its `LICENSE` is shipped with the documentation in
 `/app/docs` and with the reference solution.
@@ -679,16 +734,17 @@ Licence: the upstream is Apache-2.0. Its `LICENSE` is shipped with the documenta
 
 | Check | Revision | Result |
 | --- | --- | --- |
-| `checks/` (48 tests) with `ci_checks` (27), Python 3.13, and `check_repository.py` | round 7 | pass |
+| `checks/` (50 tests) with `ci_checks` (27), Python 3.13, and `check_repository.py` | round 8 | pass |
+| The order check against a copy with round 7's order (the timer's end before the freeze) | round 8 | the new order check fails (its freeze found "timer ended") and so does the delivery check's order list; the F1 check passes |
 | Local build of the hardened original | `scripts/build_original.py`, 2026-11-19 | builds (one warning); static, not PIE; marker once; no local path |
 | `apply.sh` | a fresh export of v0.1.95 | applies once, refuses a second time; result identical to the patched tree that was built |
 | `smoke.sh` | upstream's v0.1.95 macOS release binary | fails at the first hardening check, as it must; never yet run on the hardened Linux binary (no Linux here) |
 | Upstream's published builds | `scripts/upstream_builds.py`, 2026-11-19 | 21 executables in 3 release assets and 9 wheels, 12 distinct hashes; upstream's Linux build holds the unhardened usage text twice, the hardened build and the docs never |
 | Local recording (the private cases, upstream's macOS release binary) | cases `91236578`, `experiment/local-recording-8` | 1,673 of 1,777 kept (83 display settings that change nothing, 17 last bits, 4 quoted); none unsteady, crashed, machine-dependent or perturbed; the strongest no-interpreter dispatcher 4.1% (command line 19, constants 17, error lookup 13, last literal 19), largest answer 0.6%, nothing with exit 1 0.6%; `∂` 6.1%; 40 of 41 piped cases end with exit 1 after a failing line |
-| Local grading from the packaged bundle (`b206089bd38b`; the dispatcher's 0.0269 was measured on round 5's `1a08cdb471d0`, whose grading code is the same), through the collect hook's pre-scan and measuring scripts and a tar round trip with the `data` filter | stand-in reference behind a wrapper; no-op; the dispatcher as a program, with every strategy the recorder measures | 1.0 (1,673/1,673, 31.2 s); 0.0; 0.0269 (45/1,673: cli 19, error 13, expr 7, script 6) |
-| A whole trial replayed from the packaged bundle (`b206089bd38b`) with a copy of QA 07e's `replay.py`, adapted to the hook's new lines (kept with its three reports in the Git-ignored `experiment/replay-r7/`): both hooks' shell under `/bin/dash` (paths rewritten, stand-ins for `setpriv`, `pgrep`, `fallocate`, GNU `stat` and `timeout`), the real timer against stand-in processes, tar and the `data` filter, then `verify.main()` with root and Linux stood in | reference; reference with planted `.manifest` names, links and a pipe; no-op with a sleeper still waiting | 1.0 (1,673/1,673), no notes, `ended_by_timer` true; 1.0 with both moved-aside notes; 0.0, and the hook ended the sleeper and its `sleep` (`stopped pid N` in `timer_log`) |
-| Packaging | `scripts/package_step.py`, twice into separate directories | `b206089bd38b`, 249 files, 33,152,256 bytes, the same hash both times; bundle directory `swe-m2_software-engineering_basedpl-interpreter-rebuild-no-examples` |
-| Oddish preflight | bundle `b206089bd38b`, no-Archil CLI, locally | pass |
+| Local grading from the packaged bundle (`43b39e11805c`; the dispatcher's 0.0269 was measured on round 5's `1a08cdb471d0`, whose grading code is the same), through the collect hook's pre-scan and measuring scripts and a tar round trip with the `data` filter | stand-in reference behind a wrapper; no-op; the dispatcher as a program, with every strategy the recorder measures | 1.0 (1,673/1,673, 35.3 s); 0.0; 0.0269 (45/1,673: cli 19, error 13, expr 7, script 6) |
+| A whole trial replayed from the packaged bundle (`43b39e11805c`) with a copy of round 7's replay (itself QA 07e's), adapted to round 8's order (kept with its three reports and a `NOTE.txt` of what was adapted in the Git-ignored `experiment/replay-r8/`): both hooks' shell under `/bin/dash` (paths rewritten, stand-ins for `setpriv`, `pgrep`, `fallocate`, GNU `stat` and `timeout`), the real timer against stand-in processes, tar and the `data` filter, then `verify.main()` with root and Linux stood in; the hook's order is read from its calls | reference; reference with planted `.manifest` names, links and a pipe; no-op with a sleeper still waiting | 1.0 (1,673/1,673), no notes, `ended_by_timer` true; 1.0 with both moved-aside notes; 0.0: both freezes sent with the mark written and the sleeper running, then the hook ended the sleeper and its `sleep` (`stopped pid N` in `timer_log`) |
+| Packaging | `scripts/package_step.py`, twice into separate directories | `43b39e11805c`, 249 files, 33,152,594 bytes, the same hash both times; bundle directory `swe-m2_software-engineering_basedpl-interpreter-rebuild-no-examples` |
+| Oddish preflight | bundle `43b39e11805c`, no-Archil CLI, locally | pass |
 | Oddish baselines, QA, `harbor check` | none | not run |
 
 ### Validation gaps
@@ -730,6 +786,12 @@ ordinary user, so these are read, not run (re-check 07e, F2, F3 and F7):
   setup hook and was still waiting when the hook ended it. A first line that says `not armed`, or
   no `stopped pid` line, means capped runs would go ungraded: fix that before any model trial.
 - `ended_by_timer` is false.
+- `fixer_status`, the link fixer's exit status, is a key of the record `.manifest.json` in the
+  collected `/app/rebuild`, not of `metrics.json`: `verify.py` copies a fixed list of the record's
+  keys into `delivery_record` and is not changed for it. A status other than 0 does reach
+  `metrics.json`, as the note `the link fixer ended with status N: …` (in `notes`, after
+  `maintenance step: `, and in `delivery_record.notes`). A fixer that ended with 0 leaves no
+  trace there, so the oracle's empty `notes` also means status 0.
 
 ## Build and deliver
 
@@ -749,9 +811,9 @@ sha256 is not build.txt's.
 
 ## Remaining work
 
-- Baselines of bundle `b206089bd38b` under the task's one experiment, on the owner's word, after
-  the independent re-check of round 7 and after the old name's three model trials settle (about
-  00:20 UTC). The
+- Baselines of bundle `43b39e11805c` under the task's one experiment, on the owner's word, after
+  the old name's three model trials settle (about 00:20 UTC); round 8 answers the re-check of
+  round 7. The
   two oracle trials on different workers are a hard gate: each must score exactly 1.0, with the
   same `kept_ids_sha256` and `expected_sha256`. A failed id goes on a deny-list and the cases are
   recorded again. Then the no-op, which must score exactly 0. These are the first run of the

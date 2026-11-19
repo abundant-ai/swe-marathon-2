@@ -4,8 +4,8 @@ here="$(cd "$(dirname "$0")" && pwd)"
 # Installs the original interpreter, with the all-zero build marker; mark.py accepts only that build.
 mkdir -p /app/rebuild
 python3 "$here/mark.py" "$here/bpl.xz" "$here/build.txt" - /app/rebuild/bpl
-# Its build facts (link, sha256 with and without the marker) go to the trial's logs, to set beside
-# recording.json's.
+# Its build facts (link, sha256 with and without the marker) go to the run's logs in /logs/agent, to
+# set beside recording.json's.
 (mkdir -p /logs/agent && cp /app/rebuild/build.txt /logs/agent/build.txt) || true
 rm -f /app/rebuild/build.txt
 install -m 0644 "$here/LICENSE" /app/rebuild/LICENSE

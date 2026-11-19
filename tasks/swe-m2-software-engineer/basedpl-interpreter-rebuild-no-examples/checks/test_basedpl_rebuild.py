@@ -1165,7 +1165,7 @@ def test_the_delivery_is_bounded_recorded_and_marked_before_the_copy_and_graded_
     assert all(state.startswith("closed") for state in closed[1]["connectivity"].values())
     assert slow[0] == 0 and set(slow[1]["connectivity"].values()) == {"no answer within 3 s"} and slow[2] <= 9, slow
     hook = (TASK / "environment" / "reclaim-scratch").read_text()
-    order = ['echo "$HOOK_STARTED" > "$STATE/reclaiming"', "\nstop_timer\n", "kill -STOP -1",
+    order = ['echo "$HOOK_STARTED" > "$STATE/reclaiming"', "--clear-groups kill -STOP -1 >", "\nstop_timer\n",
              "ps -eo pid=,ppid=,uid=,etimes=,args= > \"$STATE/processes.txt\"", "kill -9 -1",
              'tail -n 20 /var/log/session-timer.log > "$STATE/timer.txt"',
              'timeout 300 /usr/bin/python3 -I - /app/rebuild "$LIMIT_ENTRIES" "$LIMIT_PATH" "$STATE"',
@@ -1185,7 +1185,7 @@ def test_the_delivery_is_bounded_recorded_and_marked_before_the_copy_and_graded_
     assert "fallocate -l 64M /var/lib/scratch/room" in setup and '/var/lib/scratch/inodes/$spare' in setup and "seq 1 64" in setup
     assert "stat -f -c '%a %S %d' /tmp > /var/lib/scratch/free-at-start" in setup
     assert "date +%s > /var/lib/scratch/turn-started" in setup, "the session's start, for the record's flags"
-    assert hook.index("kill -STOP -1") < hook.index("/usr/bin/python3"), "before the freeze: the hook's settings, the mark and the timer's end"
+    assert hook.index("--clear-groups kill -STOP -1 >") < hook.index("/usr/bin/python3"), "before the freeze: the hook's settings and the mark"
     import tomllib
     config = tomllib.loads((TASK / "task.toml").read_text())
     assert config["verifier"]["collect"] == [{"command": "/usr/local/sbin/reclaim-scratch", "user": "root", "timeout_sec": 600}]
@@ -1338,16 +1338,36 @@ def child_of(pid: int) -> int:
 
 
 def hook_prologue(top: Path) -> str:
-    """The first lines of environment/reclaim-scratch as shipped, up to and including its first `stop_timer` (the
-    settings, the mark, the function, the call), with only the three absolute paths rewritten into `top`."""
+    """The first lines of environment/reclaim-scratch as shipped, everything before its listing of the user's processes
+    (the settings, the mark, the freeze, the timer's end, in the hook's own order), with only the three absolute paths
+    rewritten into `top`. Run it with prologue_env(top)."""
     hook = (TASK / "environment" / "reclaim-scratch").read_text()
-    text = hook[:hook.index("\nstop_timer\n")] + "\nstop_timer\n"
-    assert "setpriv" not in text and "pgrep" not in text and "python3" not in text, "nothing but the settings and the timer's end"
+    text = hook[:hook.index("ps -eo pid=")]
+    assert "\nstop_timer\n" in text and "kill -STOP -1" in text and text.count("setpriv") == 1, "the mark, the freeze, the timer's end"
+    assert "python3" not in text and "kill -9" not in text and "pkill -KILL -u" not in text, "nothing of the later steps"
     for old, new in (("/var/lib/scratch", top / "state"), ("/run/session-timer.pid", top / "timer.pid"),
                      ("/var/log/session-timer.log", top / "timer.log")):
         assert old in text, old
         text = text.replace(old, str(new))
     return text
+
+
+def prologue_env(top: Path) -> dict:
+    """The environment hook_prologue(top) runs in: stand-ins first on PATH for the freeze's two Linux tools, so that
+    nothing is ever stopped here. `pgrep` answers that a process of the user runs until one freeze has been sent, and
+    none after; `setpriv` runs nothing and adds to `top/trace` whether the mark had been written and whether the
+    sleeper named by the pid file was still running when the freeze was sent."""
+    tools, trace = top / "freeze-tools", top / "trace"
+    tools.mkdir(parents=True, exist_ok=True)
+    (tools / "pgrep").write_text(f'#!/bin/sh\necho "pgrep $*" >> "{trace}"\ngrep -q "^setpriv " "{trace}" && exit 1\nexit 0\n')
+    (tools / "setpriv").write_text(
+        f'#!/bin/sh\nif [ -e "{top}/state/reclaiming" ]; then mark=written; else mark=missing; fi\n'
+        f'pid=$(cat "{top}/timer.pid" 2>/dev/null)\ntimer=ended\n'
+        'case "$pid" in ""|*[!0-9]*) ;; *) kill -0 "$pid" 2>/dev/null && timer=running ;; esac\n'
+        f'echo "setpriv $* (mark $mark, timer $timer)" >> "{trace}"\n')
+    for tool in ("pgrep", "setpriv"):
+        (tools / tool).chmod(0o755)
+    return dict(os.environ, PATH=f"{tools}:{os.environ['PATH']}")
 
 
 def test_the_session_timer_arms_once_fires_and_ends_the_users_processes(tmp_path):
@@ -1459,7 +1479,7 @@ def test_reclaim_scratch_ends_the_session_timer_before_its_own_work_as_the_user(
         assert sleeper and logged(top / "timer.log", f" armed pid {sleeper}: ", 5)
         its_sleep = child_of(sleeper)
         (top / "prologue").write_text(hook_prologue(top))
-        ran = subprocess.run(["sh", str(top / "prologue")], capture_output=True, text=True, timeout=30)
+        ran = subprocess.run(["sh", str(top / "prologue")], env=prologue_env(top), capture_output=True, text=True, timeout=30)
         assert ran.returncode == 0 and ran.stdout == "" and ran.stderr == "", ran
         assert gone(sleeper, 5) and gone(its_sleep, 5), "the sleeper and its sleep are both ended"
         assert (top / "state" / "reclaiming").read_text().strip().isdigit() and not (top / "timer.pid").exists()
@@ -1467,7 +1487,7 @@ def test_reclaim_scratch_ends_the_session_timer_before_its_own_work_as_the_user(
         text = (top / "timer.log").read_text()
         assert f"stopped pid {sleeper}: reclaim-scratch has begun" in text and " fired after " not in text, text
         assert idle.poll() is None, "ending the timer ends nothing of the user's"
-        again = subprocess.run(["sh", str(top / "prologue")], capture_output=True, text=True, timeout=30)
+        again = subprocess.run(["sh", str(top / "prologue")], env=prologue_env(top), capture_output=True, text=True, timeout=30)
         assert again.returncode == 0 and (top / "timer.log").read_text() == text, "with no sleeper left, a second stop does nothing"
 
         # A timer in its rounds (07e's reproduction) while the hook's own link fixer works as the user, on a tree whose
@@ -1490,7 +1510,7 @@ def test_reclaim_scratch_ends_the_session_timer_before_its_own_work_as_the_user(
             assert sleeper and logged(top / "timer.log", " fired after 1 s", 15)
             if name == "rounds":
                 (top / "prologue").write_text(hook_prologue(top))
-                ran = subprocess.run(["sh", str(top / "prologue")], capture_output=True, text=True, timeout=30)
+                ran = subprocess.run(["sh", str(top / "prologue")], env=prologue_env(top), capture_output=True, text=True, timeout=30)
                 assert ran.returncode == 0, ran
             worked = subprocess.run([sys.executable, "-I", "-", str(tree), "100000", "1000000000"], input=fixer, capture_output=True,
                                     text=True, timeout=120)  # as the hook starts it, less the drop to the user
@@ -1503,7 +1523,10 @@ def test_reclaim_scratch_ends_the_session_timer_before_its_own_work_as_the_user(
             assert worked.returncode == 0 and fixed == links == len(worked.stdout.splitlines()), (worked.returncode, fixed, worked.stderr[-500:])
             assert stubborn.poll() is None, "nothing of the user's is ended once the hook has begun"
             text = (top / "timer.log").read_text()
-            assert gone(sleeper) and f"stopped pid {sleeper}: reclaim-scratch has begun" in text, text
+            # The freeze comes between the mark and the stop, so a timer in its rounds can see the mark first and exit
+            # with its own line; or the hook's stop finds it first. Either way it is gone before the fixer starts.
+            assert gone(sleeper) and (f"stopped pid {sleeper}: reclaim-scratch has begun" in text
+                                      or "stopped: reclaim-scratch has begun, nothing more is ended" in text), text
             assert "SIGKILL" not in text and "done:" not in text and not (top / "timer.pid").exists(), text
 
         # The mark alone, with the sleeper left running: its own rounds stop on it.
@@ -1548,10 +1571,44 @@ def test_reclaim_scratch_ends_the_session_timer_before_its_own_work_as_the_user(
     steps = ["grep -q 'session-timer run' || return 0", 'kill -STOP "$timer"', 'pkill -KILL -P "$timer"', 'kill -KILL "$timer"',
              "rm -f /run/session-timer.pid"]
     assert [stop.index(step) for step in steps] == sorted(stop.index(step) for step in steps), "only a sleeper; stopped, its children, then itself"
-    assert hook.index('"$STATE/reclaiming"') < hook.index("\nstop_timer\n") < hook.index("setpriv"), "before anything runs as the user"
+    assert hook.index('"$STATE/reclaiming"') < hook.index("\nstop_timer\n") < hook.index("timeout 120 setpriv"), \
+        "before the hook's own work as the user"
     assert timer.count("stopped\n") == 4, "before the fire, before each SIGTERM round, before SIGKILL and before each of its rounds"
     assert timer.index("    stopped\n    log \"fired after") > 0 and timer.index("        stopped\n        pkill -TERM") > 0
     assert timer.index("        stopped\n        log \"SIGKILL") > 0 and timer.index("            stopped\n            pkill -KILL") > 0
+
+
+def test_reclaim_scratch_writes_the_mark_then_freezes_the_user_then_ends_the_timer(tmp_path):
+    """QA 07f G1. Public connectivity is back shortly after the turn, so the user's processes are frozen right after the
+    mark, before the timer's end (several process starts and a scan of /proc). The mark alone already keeps the timer
+    from ending anything, so freezing first costs nothing. Run as shipped, with the freeze's tools stood in: when the
+    freeze is sent, the mark is written and the waiting sleeper still runs; the sleeper and its sleep are ended after
+    it. The text keeps that order too, with nothing run between the mark and the freeze, and the hook's own work as
+    the user starts only after the timer's end."""
+    top = tmp_path / "order"
+    script, env, _ = timer_setup(top, MAINT_END_SECONDS="300")
+    sleepers = []
+    try:
+        done, sleeper = arm(script, env)
+        sleepers.append(sleeper)
+        assert sleeper and logged(top / "timer.log", f" armed pid {sleeper}: ", 5)
+        its_sleep = child_of(sleeper)
+        (top / "prologue").write_text(hook_prologue(top))
+        ran = subprocess.run(["sh", str(top / "prologue")], env=prologue_env(top), capture_output=True, text=True, timeout=30)
+        assert ran.returncode == 0 and ran.stdout == "" and ran.stderr == "", ran
+        trace = (top / "trace").read_text().splitlines()
+        assert trace == ["pgrep -u dev -r R,S,D", "setpriv --reuid dev --regid dev --clear-groups kill -STOP -1 (mark written, timer running)",
+                         "pgrep -u dev -r R,S,D"], trace
+        assert gone(sleeper, 5) and gone(its_sleep, 5) and not (top / "timer.pid").exists(), "the timer is ended after the freeze"
+        assert f"stopped pid {sleeper}: reclaim-scratch has begun" in (top / "timer.log").read_text()
+    finally:
+        end_all([], sleepers, tmp_path)
+    hook = (TASK / "environment" / "reclaim-scratch").read_text()
+    mark, freeze = 'echo "$HOOK_STARTED" > "$STATE/reclaiming"\n', "for _ in $(seq 1 100); do\n  pgrep -u dev -r R,S,D >"
+    steps = [mark, freeze, "--clear-groups kill -STOP -1 >", "\nstop_timer\n", "ps -eo pid=", "timeout 120 setpriv"]
+    assert [hook.index(step) for step in steps] == sorted(hook.index(step) for step in steps), "the mark, the freeze, the timer's end"
+    between = hook[hook.index(mark) + len(mark):hook.index(freeze)]
+    assert all(line.startswith("#") for line in between.splitlines()), "nothing runs between the mark and the freeze"
 
 
 def test_both_hooks_run_whole_with_the_root_and_linux_tools_stood_in(tmp_path):
@@ -2255,6 +2312,20 @@ def test_nothing_the_agent_sees_names_a_reference_answer_or_a_budget():
     assert "All of the manual is in scope" in flat and "derivatives with `∂` among them" in flat, "the scope is the whole manual"
     for excluded in ("¿", "•time", "•plot", "•storage", "•explain", "•hash", "timeout_ms", "]help"):
         assert excluded in instruction.split("Out of scope:", 1)[1], excluded
+
+
+def test_no_shipped_file_of_ours_outside_the_verifier_uses_a_word_the_audit_scan_flags():
+    """QA 07f G3. The pre-trial audit's word scan stops on these words. They appear in no file of ours that ships
+    outside the verifier image's own sources (whose vocabulary is their job) and task.toml (whose `[verifier]` tables
+    are the schema's): the agent image's files and installed scripts, the hardening tools both images and the solution
+    take, the instruction and the solution."""
+    flagged = re.compile(r"grade|score|verif|harness|oddish|modal|harbor|\bcap\b|budget|attempt|audit|QA|round [0-9]|trial", re.I)
+    assert 'SHIPPED_TOOLS = ("mark.py", "smoke.sh")' in (SCRIPTS / "package_step.py").read_text(), "what of common/hardening ships"
+    assert sorted(path.name for path in (STEP / "solution").iterdir() if path.name != "__pycache__") == ["probe.c", "solve.sh"]
+    shipped = [*sorted((TASK / "environment").iterdir()), HARDENING / "mark.py", HARDENING / "smoke.sh", STEP / "instruction.md",
+               *sorted((STEP / "solution").iterdir())]
+    found = {path.relative_to(TASK).as_posix(): flagged.findall(path.read_text()) for path in shipped if path.is_file()}
+    assert len(found) == 10 and not any(found.values()), {name: words for name, words in found.items() if words}
 
 
 def test_only_the_documentation_and_the_binary_reach_the_agent():

@@ -1,5 +1,5 @@
-/* A record of how a trial's sandbox treats the released interpreter's set-group-id exec, for the
-   task's authors. It is not part of the solution and nothing in it changes the solution's result:
+/* A record of how the sandbox it runs in treats the released interpreter's set-group-id exec, for
+   the task's authors. It is not part of the solution and nothing in it changes the solution's result:
    solve.sh builds it with gcc once the solution is installed, runs it as the agent's user and
    copies what it prints to /logs/agent/probe.txt. It reads no byte of the interpreter; it records
    only whether each way of reading one would have worked.
