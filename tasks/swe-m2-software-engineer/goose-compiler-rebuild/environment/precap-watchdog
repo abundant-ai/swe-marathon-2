@@ -1,0 +1,59 @@
+#!/bin/sh
+# Pre-cap watchdog, started detached by the setup_complete hook as root. END_SECONDS after it starts (the agent's
+# timeout less eleven minutes), it ends every process of the agent's user with SIGTERM, then SIGKILL, so the agent's
+# turn ends by itself before the platform's cap. Reason: a turn that runs into the cap is not graded on the platform today
+# (the separate verifier image fails to build right after; harbor-lh ops/swe-marathon-v2/PLATFORM_VERIFIER_BUILD_AFTER_LONG_RUN.md),
+# while a turn that ends by itself is. Idempotent: a second start finds the first sleeper's pid file and arms nothing.
+# Logs arm, fire and done lines to a root-only file, which the collect hook copies into the delivery's record.
+END_SECONDS=${PRECAP_END_SECONDS:-33900}
+SELECT=${PRECAP_SELECT:--u dev}          # pgrep/pkill selection of the agent's processes
+LOG=${PRECAP_LOG:-/var/log/precap-watchdog.log}
+PIDFILE=${PRECAP_PIDFILE:-/run/precap-watchdog.pid}
+umask 077
+mkdir -p "$(dirname "$LOG")" "$(dirname "$PIDFILE")" 2>/dev/null
+log() { echo "$(date -u +%FT%TZ) $*" >> "$LOG"; }
+# pgrep's state filter (procps) leaves zombies out; where pgrep lacks it, every match counts.
+if pgrep -r R,S,D,T -u 0 >/dev/null 2>&1; then alive() { pgrep $SELECT -r R,S,D,T >/dev/null 2>&1; }
+else alive() { pgrep $SELECT >/dev/null 2>&1; }; fi
+if [ "${1:-}" = "run" ]; then
+    echo $$ > "$PIDFILE"
+    log "armed pid $$: ending the processes selected by '$SELECT' in $END_SECONDS s"
+    sleep "$END_SECONDS"
+    log "fired after $END_SECONDS s: SIGTERM to the processes selected by '$SELECT'"
+    for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
+        alive || break
+        pkill -TERM $SELECT >/dev/null 2>&1
+        sleep 5
+    done
+    if alive; then
+        log "SIGKILL to what is left"
+        for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+            alive || break
+            pkill -KILL $SELECT >/dev/null 2>&1
+            sleep 0.5
+        done
+    fi
+    log "done: $(pgrep $SELECT 2>/dev/null | wc -l | tr -d ' ') process(es) of the selection left"
+    rm -f "$PIDFILE"
+    exit 0
+fi
+# The hook's entry: arm one sleeper, detached, and return at once.
+if [ -f "$PIDFILE" ]; then
+    old=$(cat "$PIDFILE" 2>/dev/null)
+    if [ -z "$old" ] || kill -0 "$old" 2>/dev/null; then
+        log "already armed (pid ${old:-being written}); nothing started"
+        exit 0
+    fi
+    rm -f "$PIDFILE"   # a sleeper that is gone
+fi
+if ! ( set -C; : > "$PIDFILE" ) 2>/dev/null; then
+    log "already arming; nothing started"
+    exit 0
+fi
+if command -v setsid >/dev/null 2>&1; then
+    setsid nohup "$0" run >/dev/null 2>&1 </dev/null &
+else
+    nohup "$0" run >/dev/null 2>&1 </dev/null &
+fi
+echo "pre-cap watchdog armed for $END_SECONDS s"
+exit 0

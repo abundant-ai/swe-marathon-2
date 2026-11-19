@@ -25,9 +25,12 @@ COPY docs/ /app/docs/
 COPY run_examples.py /app/examples/
 COPY --from=program /record/kept.json /app/examples/examples.json
 COPY --from=program /record/outputs.json /app/examples/outputs.json
+COPY reserve-delivery-room prepare-delivery precap-watchdog /usr/local/sbin/
 RUN ln -s /opt/goose/goose /usr/local/bin/goose \
     && mkdir -p /app/rebuild && chown -R dev:dev /app \
     && chown root:root /app /app/rebuild && chmod 1777 /app && chmod 0777 /app/rebuild \
     && chmod -R a+rX /usr/local/share/goose /opt/goose/tcclib && chmod 0755 /opt/goose \
-    && chown root:goose /opt/goose/goose && chmod 2711 /opt/goose/goose
+    && chown root:goose /opt/goose/goose && chmod 2711 /opt/goose/goose \
+    && chown root:root /usr/local/sbin/reserve-delivery-room /usr/local/sbin/prepare-delivery /usr/local/sbin/precap-watchdog \
+    && chmod 0700 /usr/local/sbin/reserve-delivery-room /usr/local/sbin/prepare-delivery /usr/local/sbin/precap-watchdog
 WORKDIR /app
