@@ -327,9 +327,8 @@ def echoed(case: dict, evaluate: bool = False) -> tuple[str, int] | None:
 
 
 def no_interpreter(cases: list[dict], outputs: dict) -> dict[str, list[str]]:
-    """The cases that the strongest dispatcher with no interpreter in it answers (QA waves 1 and 2
-    and the round-2 re-check: a stub, trivial heuristics, echoes, a lookup), by strategy; a case
-    may fall to more than one. The strategies: every command-line case (a table of the original's
+    """The cases that a program with no interpreter in it could answer, by strategy; a case may fall
+    to more than one. The strategies: every command-line case (a table of the original's
     answers); a program that starts with `⎕←` literals, echoed and then exit 1 at the first other
     statement (`echoed`), and the same with the generator's lead forms evaluated (`LEAD_FORMS`);
     an echo of the program's last number strand or string literal (`last_literal`); a lookup of
@@ -521,7 +520,7 @@ def record(program: str, cases: list[dict]) -> tuple[list[dict], dict, dict]:
 
 
 def main() -> None:
-    """Record what a program prints for every case and keep the cases worth grading."""
+    """Record what a program prints for every case and keep the cases worth recording."""
     if len(sys.argv) < 5 or sys.argv[1] != "record":
         raise SystemExit(__doc__)
     program, cases_path, expected_path = sys.argv[2:5]

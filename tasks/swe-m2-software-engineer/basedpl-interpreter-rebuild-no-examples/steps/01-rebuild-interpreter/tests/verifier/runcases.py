@@ -65,7 +65,7 @@ def limit() -> None:
             continue
         try:
             resource.setrlimit(which, (value, value))
-        except (ValueError, OSError):  # a hard limit below the value, or a platform maximum (macOS's data size)
+        except (ValueError, OSError):  # a hard limit below the value, or an OS maximum (macOS's data size)
             _, hard = resource.getrlimit(which)
             try:
                 resource.setrlimit(which, (hard if hard != resource.RLIM_INFINITY and 0 <= hard < value else value, hard))

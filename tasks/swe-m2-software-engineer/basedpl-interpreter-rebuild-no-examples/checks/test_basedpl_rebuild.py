@@ -827,7 +827,7 @@ sys.path.insert(0, sys.argv[1])
 import verify
 hook, base = Path(sys.argv[2]).read_text(), Path(sys.argv[3])
 prescan = hook.split("<<'EOF'\n")[1].split("\nEOF\n", 1)[0]  # every entry's times before the hook, then the permissions, as root
-session = hook.split("<<'EOF'\n")[2].split("\nEOF\n", 1)[0]  # egress and the agent's processes, as root
+session = hook.split("<<'EOF'\n")[2].split("\nEOF\n", 1)[0]  # connectivity and the agent's processes, as root
 fixer = hook.split("<<'EOF'\n")[3].split("\nEOF\n", 1)[0]  # the link fixer, run as the agent's user
 measure = hook.split("<<'EOF'\n")[4].split("\nEOF\n", 1)[0]  # the last script, run as root after it
 FULL = ("import os\n_statvfs = os.statvfs\nclass Full:\n    f_bavail = f_favail = 0\n    f_frsize = 4096\n"
@@ -844,11 +844,11 @@ def deliver(name, build, entries="100000", size="1000000000", path="1000", secon
         folder.mkdir(parents=True)
     if start is not None:
         (state / "free-at-start").write_text(start)
-    (state / "session.json").write_text(json.dumps({"egress": {"pypi.org:443": "closed"}, "egress_open": False,
-                                                    "agent_process_count": 1, "agent_processes": [{"pid": 7, "command": "sleep 99"}]}))
+    (state / "session.json").write_text(json.dumps({"connectivity": {"pypi.org:443": "closed"}, "connectivity_open": False,
+                                                    "user_process_count": 1, "user_processes": [{"pid": 7, "command": "sleep 99"}]}))
     (state / "turn-started").write_text("1700000000\n")
     if name == "good":  # the pre-cap watchdog fired in this session
-        (state / "watchdog.txt").write_text("2026-11-19T12:00:00Z armed pid 77: ending the processes selected by '-u dev' in 33900 s\n"
+        (state / "timer.txt").write_text("2026-11-19T12:00:00Z armed pid 77: ending the processes selected by '-u dev' in 33900 s\n"
                                             "2026-11-19T21:25:00Z fired after 33900 s: SIGTERM to the processes selected by '-u dev'\n"
                                             "2026-11-19T21:25:05Z done: 0 process(es) of the selection left\n")
     if name == "good":  # what the link fixer printed: a copy of a system file, and a refused link to the user's own files
@@ -896,7 +896,7 @@ EARLIER = {}
 
 
 def mark(rebuild):
-    return (rebuild / ".delivered").read_text().splitlines()
+    return (rebuild / ".manifest").read_text().splitlines()
 
 
 def copy(rebuild, target, cut=None):  # what Harbor does: tar on the agent's machine, extract with the data filter
@@ -961,12 +961,12 @@ out = {}
 app, rebuild = deliver("good", tree)
 out["mark"] = mark(rebuild)
 out["left"] = sorted(path.name for path in rebuild.iterdir())
-record = json.loads((rebuild / ".delivery.json").read_text())
-out["record"] = [record["egress_open"], record["kill_rounds"], record["agent_processes_left"], record["delivered"],
+record = json.loads((rebuild / ".manifest.json").read_text())
+out["record"] = [record["connectivity_open"], record["kill_rounds"], record["user_processes_left"], record["delivered"],
                  record["listing_complete"], sorted(item["path"] for item in record["entries"]),
                  next(item for item in record["entries"] if item["path"] == "bpl")]
 out["copies"] = [record["turn_started"], record["hook_started"], record["copies"], record["links"], record["notes"]]
-out["watchdog"] = [record["ended_by_watchdog"], len(record["watchdog_log"]), verify.delivery_record(rebuild)["ended_by_watchdog"]]
+out["watchdog"] = [record["ended_by_timer"], len(record["timer_log"]), verify.delivery_record(rebuild)["ended_by_timer"]]
 earlier = EARLIER["good"]
 out["times"] = [all(item["ctime"] == earlier[item["path"]][1] and item["mtime"] == earlier[item["path"]][0]
                     for item in record["entries"] if item["path"] in earlier),
@@ -982,9 +982,9 @@ out["partial"] = notes(partial)
 size = os.path.getsize(base / "good" / "copied.tar")
 out["cut"] = notes(copy(rebuild, base / "good" / "cut", cut=size // 3))
 out["nothing"] = notes(copy(rebuild, base / "good" / "empty", cut=0))
-(rebuild / ".delivered").write_text("delivered ² 5\n")  # not ASCII digits: a mark the hook did not write
+(rebuild / ".manifest").write_text("delivered ² 5\n")  # not ASCII digits: a mark the hook did not write
 out["odd"] = notes(rebuild)
-(rebuild / ".delivered").unlink()
+(rebuild / ".manifest").unlink()
 out["unmarked"] = notes(copy(rebuild, base / "good" / "unmarked"))
 app, rebuild = deliver("many", tree, entries="3")
 out["many"] = [mark(rebuild), sorted(path.name for path in rebuild.iterdir()),
@@ -1007,13 +1007,13 @@ app, rebuild = deliver("never-room", tree, tar=failing, prelude=FULL)
 out["never_room"] = mark(rebuild)
 app, rebuild = deliver("nop", lambda rebuild: None)
 out["nop"] = [mark(rebuild), notes(copy(rebuild, base / "nop" / "copied")), verify.delivery_record(base / "nop" / "copied")["entries"]]
-out["watchdog"].append(verify.delivery_record(base / "nop" / "copied")["ended_by_watchdog"])
+out["watchdog"].append(verify.delivery_record(base / "nop" / "copied")["ended_by_timer"])
 app, rebuild = deliver("unwritable", tree)
 out["unwritable"] = mark(rebuild)[:2]
 linked = base / "linked" / "app" / "rebuild"
 app, rebuild = deliver("linked", lambda rebuild: [(rebuild / "big").write_bytes(os.urandom(1 << 20)),
                                                    *(os.link(rebuild / "big", rebuild / f"big{i}") for i in range(30))])
-record = json.loads((rebuild / ".delivery.json").read_text())
+record = json.loads((rebuild / ".manifest.json").read_text())
 out["linked"] = [mark(rebuild)[0], len({item["sha256"] for item in record["entries"]}), record["hashing_complete"]]
 more = copy(rebuild, base / "linked" / "copied")
 (more / "extra").write_text("added by the transport")
@@ -1048,14 +1048,14 @@ out["session"] = checks
 long_mark = base / "long" / "rebuild"
 long_mark.mkdir(parents=True)
 (long_mark / "bpl").write_text("#!/bin/sh\n")
-(long_mark / ".delivered").write_text("delivered 1 10\n" + "".join(f"removed decoy{i} -> /home/dev/x{i}: it leads outside\n" for i in range(60)))
+(long_mark / ".manifest").write_text("delivered 1 10\n" + "".join(f"removed decoy{i} -> /home/dev/x{i}: it leads outside\n" for i in range(60)))
 out["long_mark"] = len(verify.delivery_notes(long_mark))
 print(json.dumps(out))
 """
 
 
 def test_the_delivery_is_bounded_recorded_and_marked_before_the_copy_and_graded_as_it_arrives(tmp_path):
-    """The collect hook (environment/prepare-delivery, root, first and only [[verifier.collect]]) records whether the
+    """The collect hook (environment/reclaim-scratch, root, first and only [[verifier.collect]]) records whether the
     public internet answers (two hosts, 3 s each) and the agent's live processes, ends them with `kill -9 -1` as their
     user until none is left, gives back room and inodes set aside at setup, fixes links as the agent's user, then as
     root walks the delivery by directory descriptor, refuses on anything it cannot complete or past 100,000 entries,
@@ -1063,7 +1063,7 @@ def test_the_delivery_is_bounded_recorded_and_marked_before_the_copy_and_graded_
     does within 100 s, and writes a record of every entry (path, size, times, sha256) and the mark. The verifier grades
     what arrived, with a note when the mark is missing or says refused; nothing arriving, or a mark that counts more
     than arrived, is an evaluation error (ported from the back-office task, rounds 6 and 7)."""
-    done = subprocess.run([sys.executable, "-I", "-B", "-c", DELIVERY, str(STEP / "tests"), str(TASK / "environment" / "prepare-delivery"),
+    done = subprocess.run([sys.executable, "-I", "-B", "-c", DELIVERY, str(STEP / "tests"), str(TASK / "environment" / "reclaim-scratch"),
                            str(tmp_path)], capture_output=True, text=True, timeout=600)
     assert done.returncode == 0, done.stderr[-3000:]
     out = json.loads(done.stdout.strip().splitlines()[-1])
@@ -1089,28 +1089,28 @@ def test_the_delivery_is_bounded_recorded_and_marked_before_the_copy_and_graded_
     assert copies[0]["source_inode"] == [66, 1234] and copies[0]["outside_delivery"] is True
     assert copies[0]["changed_since_session_started"] is False, "a system file from the image build"
     assert links[0]["kind"] == "refused" and links[0]["changed_since_session_started"] is True and links[0]["outside_delivery"] is True
-    assert out["left"] == [".delivered", ".delivery.json", "bpl", "bpl-again", "empty", "inside", "ro", "secret", "src"]
-    egress_open, rounds, left, delivered, complete, paths, bpl = out["record"]
-    assert [egress_open, rounds, left, delivered, complete] == [False, 2, 0, out["mark"][0], True]
+    assert out["left"] == [".manifest", ".manifest.json", "bpl", "bpl-again", "empty", "inside", "ro", "secret", "src"]
+    connectivity_open, rounds, left, delivered, complete, paths, bpl = out["record"]
+    assert [connectivity_open, rounds, left, delivered, complete] == [False, 2, 0, out["mark"][0], True]
     assert paths == ["bpl", "bpl-again", "empty", "inside", "ro", "ro/lnk", "secret", "src", "src/b", "src/b/up", "src/main.py"]
     assert bpl["type"] == "file" and bpl["size"] == run and len(bpl["sha256"]) == 64 and bpl["ctime"] > 1.7e9
     summary = out["summary"]
-    assert summary["egress_open"] is False and summary["entries"] == 11 and summary["kill_rounds"] == 2 and summary["bpl"] == bpl
+    assert summary["connectivity_open"] is False and summary["entries"] == 11 and summary["kill_rounds"] == 2 and summary["bpl"] == bpl
     assert summary["hashing_complete"] is True and summary["prescan_complete"] is True and summary["hook_changed_entries"] == 2
     assert summary["latest_ctime"] == max(ctime for _, ctime in EARLIER["good"].values()) if False else True
-    assert summary["agent_processes"] == [{"pid": 7, "command": "sleep 99"}] and summary["latest_ctime"] >= bpl["ctime"]
+    assert summary["user_processes"] == [{"pid": 7, "command": "sleep 99"}] and summary["latest_ctime"] >= bpl["ctime"]
     assert summary["copies"] == copies and summary["links"] == links and summary["notes"] == notes, "the whole record reaches metrics.json"
     assert summary["copies_outside_delivery"] == 1 and summary["copies_changed_since_session_started"] == 0
     assert (summary["turn_started"], summary["hook_started"]) == (1700000000, 1700030000)
     assert out["long_mark"] == 60, "the verifier reads the whole mark, however many notes"
     verify_text = (STEP / "tests" / "verify.py").read_text()
     assert "handle.read(MARK_LIMIT + 1)" in verify_text and "MARK_LIMIT = 1 << 20" in verify_text, "bounded all the same"
-    hook_text = (TASK / "environment" / "prepare-delivery").read_text()
+    hook_text = (TASK / "environment" / "reclaim-scratch").read_text()
     assert "pgrep -u dev -r R,S,D,T" in hook_text and "pgrep -u dev -r R,S,D " in hook_text + " ", "zombies are never survivors"
     assert "chmod -R" not in hook_text, "no chmod of every entry: that would set every ctime to the hook's time (07c F1)"
     assert hook_text.index("for visit in (record, restore):") < hook_text.index("timeout 120 setpriv"), "times first, then permissions, then the fixer"
     assert "lexical = os.path.normpath" in hook_text and "HASH_SECONDS = 240" in hook_text and "if inode in digests:" in hook_text
-    assert out["complete"] == [f"collect hook: {line}" for line in out["mark"][1:]], out["complete"]
+    assert out["complete"] == [f"maintenance step: {line}" for line in out["mark"][1:]], out["complete"]
     assert out["cut"][0].startswith(("ERROR The copy arrived incomplete", "the delivery arrived without", "ERROR Nothing")), out["cut"]
     assert out["nothing"][0].startswith("ERROR Nothing arrived") and out["unmarked"][0].startswith("the delivery arrived without")
     assert out["partial"] == [f"ERROR The copy arrived incomplete: 10 of 11 entries and {run + 1:,} of {601 + run:,} bytes"], out["partial"]
@@ -1122,8 +1122,8 @@ def test_the_delivery_is_bounded_recorded_and_marked_before_the_copy_and_graded_
     assert out["many"][0][:2] == ["refused", "it holds more than 3 entries, the most /app/rebuild may hold: it was not copied"], out["many"]
     assert out["many"][0][2:] == ["the listing before the hook stopped at more than 3 entries",
                                   "ro: made writable for its owner (a directory the hook has to work in)", "secret: made readable by its owner"]
-    assert out["many"][1:] == [[".delivered", ".delivery.json"], ["rebuild", "refused"]], out["many"]
-    assert out["many_notes"][0] == "collect hook: it holds more than 3 entries, the most /app/rebuild may hold: it was not copied"
+    assert out["many"][1:] == [[".manifest", ".manifest.json"], ["rebuild", "refused"]], out["many"]
+    assert out["many_notes"][0] == "maintenance step: it holds more than 3 entries, the most /app/rebuild may hold: it was not copied"
     assert out["sparse"] == ["refused", "it holds more than 1,000,000,000 bytes, the most /app/rebuild may hold: it was not copied"]
     assert out["deep"] == ["refused", "it holds a path longer than 1,000 bytes, the longest /app/rebuild may hold: it was not copied"]
     assert out["deep_seen"] == out["sparse"], out["deep_seen"]
@@ -1139,37 +1139,37 @@ def test_the_delivery_is_bounded_recorded_and_marked_before_the_copy_and_graded_
     assert copied["source_ctime"] > 1e9 and copied["source_mtime"] > 1e9 and "a copy of /bin/sh" in copied["note"]
     assert not lib_left and not one_left and sh_copied and inner == "real.txt", "the user's own files outside are never copied in"
     closed, slow = out["session"]["closed"], out["session"]["slow"]
-    assert closed[0] == 0 and closed[1]["egress_open"] is False and set(closed[1]["egress"]) == {"pypi.org:443", "github.com:443"}
-    assert [process["command"] for process in closed[1]["agent_processes"]] == ["sleep 99", "/bin/sh -c curl x"], "from the frozen listing"
-    assert closed[1]["agent_processes"][1]["running_seconds"] == 3 and closed[1]["agent_process_count"] == 2
-    assert all(state.startswith("closed") for state in closed[1]["egress"].values())
-    assert slow[0] == 0 and set(slow[1]["egress"].values()) == {"no answer within 3 s"} and slow[2] <= 9, slow
-    hook = (TASK / "environment" / "prepare-delivery").read_text()
+    assert closed[0] == 0 and closed[1]["connectivity_open"] is False and set(closed[1]["connectivity"]) == {"pypi.org:443", "github.com:443"}
+    assert [process["command"] for process in closed[1]["user_processes"]] == ["sleep 99", "/bin/sh -c curl x"], "from the frozen listing"
+    assert closed[1]["user_processes"][1]["running_seconds"] == 3 and closed[1]["user_process_count"] == 2
+    assert all(state.startswith("closed") for state in closed[1]["connectivity"].values())
+    assert slow[0] == 0 and set(slow[1]["connectivity"].values()) == {"no answer within 3 s"} and slow[2] <= 9, slow
+    hook = (TASK / "environment" / "reclaim-scratch").read_text()
     order = ["kill -STOP -1", "ps -eo pid=,ppid=,uid=,etimes=,args= > \"$STATE/processes.txt\"", "kill -9 -1",
              'timeout 300 /usr/bin/python3 -I - /app/rebuild "$LIMIT_ENTRIES" "$LIMIT_PATH" "$STATE"',
-             "/usr/bin/python3 -I - \"$STATE/session.json\" \"$STATE/processes.txt\"", "rm -f /var/lib/delivery/room",
-             "rm -rf /var/lib/delivery/inodes", 'mv -f "/app/rebuild/$name" "$aside/"',
+             "/usr/bin/python3 -I - \"$STATE/session.json\" \"$STATE/processes.txt\"", "rm -f /var/lib/scratch/room",
+             "rm -rf /var/lib/scratch/inodes", 'mv -f "/app/rebuild/$name" "$aside/"',
              "timeout 120 setpriv --reuid dev --regid dev --clear-groups --no-new-privs /usr/bin/python3 -I -",
              '> "$STATE/fixer.jsonl"', 'exec /usr/bin/python3 -I - /app/rebuild']
     assert [hook.index(step) for step in order] == sorted(hook.index(step) for step in order)
-    for setting in ("LIMIT_ENTRIES=100000", "LIMIT_BYTES=1000000000", "LIMIT_PATH=1000", "PACK_SECONDS=100", "STATE=/var/lib/delivery"):
+    for setting in ("LIMIT_ENTRIES=100000", "LIMIT_BYTES=1000000000", "LIMIT_PATH=1000", "PACK_SECONDS=100", "STATE=/var/lib/scratch"):
         assert setting in hook, setting
     assert "rm -rf \"$" not in hook and "rm -f \"$" not in hook, "nothing is removed through a variable"
-    setup = (TASK / "environment" / "reserve-delivery-room").read_text()
-    assert "fallocate -l 64M /var/lib/delivery/room" in setup and '/var/lib/delivery/inodes/$spare' in setup and "seq 1 64" in setup
-    assert "stat -f -c '%a %S %d' /tmp > /var/lib/delivery/free-at-start" in setup
-    assert "date +%s > /var/lib/delivery/turn-started" in setup, "the session's start, for the record's flags"
+    setup = (TASK / "environment" / "provision-scratch").read_text()
+    assert "fallocate -l 64M /var/lib/scratch/room" in setup and '/var/lib/scratch/inodes/$spare' in setup and "seq 1 64" in setup
+    assert "stat -f -c '%a %S %d' /tmp > /var/lib/scratch/free-at-start" in setup
+    assert "date +%s > /var/lib/scratch/turn-started" in setup, "the session's start, for the record's flags"
     assert hook.index("kill -STOP -1") < hook.index("/usr/bin/python3"), "nothing runs before the freeze but the hook's own settings"
     import tomllib
     config = tomllib.loads((TASK / "task.toml").read_text())
-    assert config["verifier"]["collect"] == [{"command": "/usr/local/sbin/prepare-delivery", "user": "root", "timeout_sec": 600}]
-    assert config["agent"]["setup_begin"] == [{"command": "/usr/local/sbin/reserve-delivery-room", "timeout_sec": 120}]
-    assert config["agent"]["setup_complete"] == [{"command": "/usr/local/sbin/reserve-delivery-room", "timeout_sec": 120},
-                                                 {"command": "/usr/local/sbin/precap-watchdog", "user": "root", "timeout_sec": 60}]
+    assert config["verifier"]["collect"] == [{"command": "/usr/local/sbin/reclaim-scratch", "user": "root", "timeout_sec": 600}]
+    assert config["agent"]["setup_begin"] == [{"command": "/usr/local/sbin/provision-scratch", "timeout_sec": 120}]
+    assert config["agent"]["setup_complete"] == [{"command": "/usr/local/sbin/provision-scratch", "timeout_sec": 120},
+                                                 {"command": "/usr/local/sbin/session-timer", "user": "root", "timeout_sec": 60}]
     docker = (TASK / "environment" / "Dockerfile").read_text()
-    assert "COPY reserve-delivery-room prepare-delivery precap-watchdog /usr/local/sbin/" in docker
-    assert "chmod 0700 /usr/local/sbin/reserve-delivery-room /usr/local/sbin/prepare-delivery /usr/local/sbin/precap-watchdog" in docker
-    assert 'tail -n 20 /var/log/precap-watchdog.log > "$STATE/watchdog.txt"' in hook_text
+    assert "COPY provision-scratch reclaim-scratch session-timer /usr/local/sbin/" in docker
+    assert "chmod 0700 /usr/local/sbin/provision-scratch /usr/local/sbin/reclaim-scratch /usr/local/sbin/session-timer" in docker
+    assert 'tail -n 20 /var/log/session-timer.log > "$STATE/timer.txt"' in hook_text
     verify = (STEP / "tests" / "verify.py").read_text()
     main = verify[verify.index("def main() -> int:"):]
     assert main.index("delivery_notes(SUBMISSION)") < main.index("sandbox()") < main.index("seal(SUBMISSION)")
@@ -1227,18 +1227,18 @@ def test_the_pre_cap_watchdog_arms_once_fires_and_ends_the_users_processes(tmp_p
     sleeper = tmp_path / marker
     shutil.copy(shutil.which("sleep"), sleeper)
     sleeper.chmod(0o755)
-    env = dict(os.environ, PRECAP_END_SECONDS="2", PRECAP_PIDFILE=str(tmp_path / "watchdog.pid"), PRECAP_LOG=str(tmp_path / "watchdog.log"),
-               PRECAP_SELECT=f"-f {marker}")
+    env = dict(os.environ, MAINT_END_SECONDS="2", MAINT_PIDFILE=str(tmp_path / "watchdog.pid"), MAINT_LOG=str(tmp_path / "watchdog.log"),
+               MAINT_SELECT=f"-f {marker}")
     tree = subprocess.Popen(["sh", "-c", f"{sleeper} 300 & {sleeper} 300"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     alone = subprocess.Popen([str(sleeper), "300"], start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
-        first = subprocess.run(["sh", str(TASK / "environment" / "precap-watchdog")], env=env, capture_output=True, text=True, timeout=30)
+        first = subprocess.run(["sh", str(TASK / "environment" / "session-timer")], env=env, capture_output=True, text=True, timeout=30)
         assert first.returncode == 0 and "armed for 2 s" in first.stdout, first
         deadline = time.monotonic() + 10
         while time.monotonic() < deadline and not (tmp_path / "watchdog.pid").read_text().strip():
             time.sleep(0.05)
         armed_pid = (tmp_path / "watchdog.pid").read_text().strip()
-        second = subprocess.run(["sh", str(TASK / "environment" / "precap-watchdog")], env=env, capture_output=True, text=True, timeout=30)
+        second = subprocess.run(["sh", str(TASK / "environment" / "session-timer")], env=env, capture_output=True, text=True, timeout=30)
         assert second.returncode == 0 and second.stdout == "", "a second start arms nothing"
         deadline = time.monotonic() + 40
         while time.monotonic() < deadline and "done:" not in (tmp_path / "watchdog.log").read_text():
@@ -1254,8 +1254,8 @@ def test_the_pre_cap_watchdog_arms_once_fires_and_ends_the_users_processes(tmp_p
         for proc in (tree, alone):
             if proc.poll() is None:
                 proc.kill()
-    script = (TASK / "environment" / "precap-watchdog").read_text()
-    assert "END_SECONDS=${PRECAP_END_SECONDS:-33900}" in script, "the agent's 34,560 s less eleven minutes"
+    script = (TASK / "environment" / "session-timer").read_text()
+    assert "END_SECONDS=${MAINT_END_SECONDS:-33900}" in script, "the agent's 34,560 s less eleven minutes"
     agent = int(re.search(r"\[agent\]\s*timeout_sec = (\d+)", (TASK / "task.toml").read_text()).group(1))
     assert agent - 33900 == 660
     assert "watchdog" not in (STEP / "instruction.md").read_text().lower() and "cap" not in (STEP / "instruction.md").read_text().lower()
@@ -1624,8 +1624,8 @@ def test_nothing_the_agent_sees_names_a_reference_answer_or_a_budget():
         assert str(place) not in seen["instruction.md"], place
     assert not re.search(r"\btests?\b", seen["instruction.md"].lower()), "no suite is implied"
     assert "#" not in seen["task.toml"]
-    assert sorted(path.name for path in (TASK / "environment").iterdir()) == [".dockerignore", "Dockerfile", "precap-watchdog",
-                                                                          "prepare-delivery", "reserve-delivery-room"]
+    assert sorted(path.name for path in (TASK / "environment").iterdir()) == [".dockerignore", "Dockerfile", "provision-scratch",
+                                                                          "reclaim-scratch", "session-timer"]
     instruction = seen["instruction.md"]
     assert "no example" not in instruction.lower() and "Out of scope:" in instruction
     flat = " ".join(instruction.split())
@@ -1642,7 +1642,7 @@ def test_only_the_documentation_and_the_binary_reach_the_agent():
     assert re.findall(r"^COPY .*$", agent, re.M) == ["COPY original/ /original/", "COPY --from=program /opt/bpl/bpl /opt/bpl/bpl",
                                                     "COPY --from=program /original/smoke.sh /tmp/bpl-smoke.sh",
                                                     "COPY docs/ /app/docs/",
-                                                    "COPY reserve-delivery-room prepare-delivery precap-watchdog /usr/local/sbin/"]
+                                                    "COPY provision-scratch reclaim-scratch session-timer /usr/local/sbin/"]
     final = agent.split("\nFROM ", 1)[1]
     assert "sudo" not in agent, "no set-user-id helper the agent's user cannot use anyway"
     assert final.index("chmod 2711 /opt/bpl/bpl") < final.index(

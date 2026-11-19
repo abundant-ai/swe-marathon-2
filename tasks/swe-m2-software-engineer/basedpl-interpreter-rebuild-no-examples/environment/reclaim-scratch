@@ -1,19 +1,19 @@
 #!/bin/sh
-# Runs as root once the agent's session has ended, before /app/rebuild is copied to the machine it will run on. Its first
-# act stops every process of the agent's user; it then lists them, ends them, records every entry's own times before
-# anything of its own touches the delivery, and records whether the public internet answers from here. That record goes
-# with the delivery and decides nothing. What it lets through is what the copy can take: within the limits the
-# instruction states, with nothing of the agent's running, and packed here first the way the copy packs it. The mark says
-# what was delivered; the record lists every entry with the times it had when the session ended, and every link the hook
-# changed, with where a copied file came from.
+# Runs as root once the unprivileged user's session has ended, before /app/rebuild is copied to the machines it will
+# run on. Its first act stops every process of that user; it then lists them, ends them, records every entry's own times
+# before anything of its own touches the tree, and records whether this host has outbound connectivity, for the
+# maintenance log. What it lets through is what the copy can take: within the limits the instruction states, with nothing
+# of that user's processes running, and packed here first the way the copy packs it. The .manifest file lists what was
+# packed; the .manifest.json record lists every entry with the times it had when the session ended, and every link the
+# step changed, with where a copied file came from.
 LIMIT_ENTRIES=100000
 LIMIT_BYTES=1000000000
 LIMIT_PATH=1000
 PACK_SECONDS=100
-STATE=/var/lib/delivery
+STATE=/var/lib/scratch
 HOOK_STARTED=$(date +%s)
 mkdir -p "$STATE" && chmod 0700 "$STATE"
-# Freeze every process of the agent's user before anything else. `kill -STOP -1` as that user reaches all of them in one
+# Freeze every process of the unprivileged user before anything else. `kill -STOP -1` as that user reaches all of them in one
 # system call, so a process that forks cannot outrun it; repeat until none is left running.
 for _ in $(seq 1 100); do
   pgrep -u dev -r R,S,D >/dev/null 2>&1 || break
@@ -32,10 +32,10 @@ for _ in $(seq 1 100); do
   sleep 0.1
 done
 left=$({ pgrep -u dev -r R,S,D,T; pgrep -U dev -r R,S,D,T; } 2>/dev/null | sort -u | wc -l)
-# The pre-cap watchdog's last lines: whether it ended the session goes into the record, never into the score.
-tail -n 20 /var/log/precap-watchdog.log > "$STATE/watchdog.txt" 2>/dev/null || :
-# Every entry's own times, before anything of the hook's touches the delivery: a chmod changes a ctime, and the ctime is
-# the one time the agent cannot set, so the manifest's authoritative times come from here. Then, as root, directories get
+# The maintenance timer's last log lines go into the record.
+tail -n 20 /var/log/session-timer.log > "$STATE/timer.txt" 2>/dev/null || :
+# Every entry's own times, before anything of this step touches the tree: a chmod changes a ctime, and the ctime is
+# the one time a user cannot set, so the manifest's authoritative times come from here. Then, as root, directories get
 # their owner's rwx back (a read-only folder would stop the link fixer and the copy) and a file its owner cannot read gets
 # u+r; each change is noted, and a change that fails refuses the delivery.
 if [ -d /app/rebuild ] && [ ! -L /app/rebuild ]; then
@@ -117,10 +117,10 @@ with open(os.path.join(STATE, "prescan.json"), "w") as out:
     json.dump({"complete": complete, "entries": len(found), "notes": notes, "chmod_failed": failed}, out)
 EOF
 fi
-# Egress, after the kill (killing changes nothing about it, and the kill waits for nothing); three seconds for each host.
+# Connectivity, after the processes are ended (ending them changes nothing about it); three seconds for each host.
 timeout 30 /usr/bin/python3 -I - "$STATE/session.json" "$STATE/processes.txt" <<'EOF'
-"""Record whether the public internet answers from this machine (a TCP connection to port 443 of two public hosts,
-three seconds each) and which processes of the agent's user `dev` were alive when the hook froze them (the `ps` listing
+"""Record whether this host has outbound connectivity (a TCP connection to port 443 of two public hosts,
+three seconds each) and which processes of the unprivileged user `dev` were alive when they were frozen (the `ps` listing
 taken then: pid, parent, uid, seconds since start, command line)."""
 import json
 import pwd
@@ -140,13 +140,13 @@ def reach(host, port, result):
         result["state"] = f"closed ({exc.__class__.__name__})"
 
 
-egress = {}
+connectivity = {}
 for host, port in HOSTS:
     result = {"state": "no answer within 3 s"}
     worker = threading.Thread(target=reach, args=(host, port, result), daemon=True)
     worker.start()
     worker.join(3)
-    egress[f"{host}:{port}"] = result["state"]
+    connectivity[f"{host}:{port}"] = result["state"]
 try:
     uid = str(pwd.getpwnam("dev").pw_uid)
 except KeyError:
@@ -162,24 +162,24 @@ try:
                               "command": (fields[4].strip() if len(fields) > 4 else "")[:1000]})
 except (OSError, ValueError):
     pass
-record = {"checked_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "egress": egress,
-          "egress_open": any(state == "open" for state in egress.values()),
-          "agent_process_count": len(processes), "agent_processes": processes[:500]}
+record = {"checked_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "connectivity": connectivity,
+          "connectivity_open": any(state == "open" for state in connectivity.values()),
+          "user_process_count": len(processes), "user_processes": processes[:500]}
 with open(sys.argv[1], "w") as handle:
     json.dump(record, handle)
 EOF
 # Give back the room and the spare inodes set aside when the session started, so however full the disk was left, the
 # record, the mark, a refusal and the copy's archive can be written.
-rm -f /var/lib/delivery/room
-rm -rf /var/lib/delivery/inodes
+rm -f /var/lib/scratch/room
+rm -rf /var/lib/scratch/inodes
 if [ ! -d /app/rebuild ] || [ -L /app/rebuild ]; then exit 0; fi
 # Whatever was left under the mark's or the record's name is moved aside, never followed.
-for name in .delivered .delivery.json; do
+for name in .manifest .manifest.json; do
   if [ -e "/app/rebuild/$name" ] || [ -L "/app/rebuild/$name" ]; then
     aside=$(mktemp -d /app/.aside.XXXXXX) && mv -f "/app/rebuild/$name" "$aside/" || exit 0
   fi
 done
-# Links, as the agent's user (it copies nothing that user could not read), within the limits and two minutes. Each change
+# Links, as the unprivileged user (it copies nothing that user could not read), within the limits and two minutes. Each change
 # is one JSON line on standard output, kept root-owned for the record.
 timeout 120 setpriv --reuid dev --regid dev --clear-groups --no-new-privs /usr/bin/python3 -I - /app/rebuild "$LIMIT_ENTRIES" "$LIMIT_BYTES" > "$STATE/fixer.jsonl" <<'EOF'
 """Make /app/rebuild safe to copy to the machine it will run on, as the user who built it.
@@ -330,7 +330,7 @@ for _ in range(10):
 EOF
 # Measure, bound, pack once, list and mark, as root.
 exec /usr/bin/python3 -I - /app/rebuild "$LIMIT_ENTRIES" "$LIMIT_BYTES" "$LIMIT_PATH" "$STATE" /tmp "$PACK_SECONDS" "$rounds" "$left" "$HOOK_STARTED" <<'EOF'
-"""Measure /app/rebuild, bound it, pack it once, list it and mark it, as root, once nothing of the agent's runs.
+"""Measure /app/rebuild, bound it, pack it once, list it and mark it, as root, once nothing of the user's runs.
 
 The tree is walked by directory descriptor, so no depth hides anything, and any step that cannot be completed refuses
 the delivery. Anything the copy would refuse is removed: a device, a pipe, a socket, a link with an absolute target or
@@ -343,10 +343,10 @@ mtime and ctime are the ones recorded before the hook touched anything (STATE/be
 type); where the hook's own steps changed them, the entry says so and carries the later values apart. The mark's first line is `delivered` with the
 number of entries (files, directories and links) and of bytes in its files (each file once, however many names it
 has), or `refused`; every line after it is a change made or the reason for the refusal, none left out. The record
-(.delivery.json) holds what was found before the agent's processes were ended (STATE/session.json), how many rounds of
+(.manifest.json) holds what was found before the user's processes were ended (STATE/session.json), how many rounds of
 killing it took and how many processes were left, when the session started (STATE/turn-started, from the setup hook)
-and when this hook started, the pre-cap watchdog's last log lines and whether it fired (STATE/watchdog.txt,
-`ended_by_watchdog`), every change the link fixer made (STATE/fixer.jsonl: the copies first, each with its
+and when this step started, the maintenance timer's last log lines and whether it fired (STATE/timer.txt,
+`ended_by_timer`), every change the link fixer made (STATE/fixer.jsonl: the copies first, each with its
 source's path, owner, times and inode, and whether the source changed since the session started), and every entry: its
 path, type, size, modification and change times, and a file's sha256 or a link's target. Neither file is counted among
 the entries.
@@ -364,8 +364,8 @@ ROOT = os.path.realpath(sys.argv[1])
 LIMIT_ENTRIES, LIMIT_BYTES, LIMIT_PATH = int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4])
 STATE, ARCHIVES, PACK_SECONDS = sys.argv[5], sys.argv[6], float(sys.argv[7])
 ROUNDS, LEFT, HOOK_STARTED = (int(value) if value.strip().isdigit() else -1 for value in (sys.argv[8:11] + ["", "", ""])[:3])
-MARK = os.path.join(ROOT, ".delivered")
-RECORD = os.path.join(ROOT, ".delivery.json")
+MARK = os.path.join(ROOT, ".manifest")
+RECORD = os.path.join(ROOT, ".manifest.json")
 SPARE_INODES = 16
 HASH_SECONDS = 240
 notes, links, files = [], [], set()
@@ -574,9 +574,9 @@ if reason is not None:
 session = state_json("session.json", {"error": "the session record is missing"})
 if not hashing_complete:
     notes.append(f"files were hashed for {HASH_SECONDS} s; the rest are listed without a hash")
-watchdog = state_lines("watchdog.txt")[-20:]
-record = dict(session, kill_rounds=ROUNDS, agent_processes_left=LEFT, hook_started=HOOK_STARTED, turn_started=turn_started,
-              watchdog_log=watchdog, ended_by_watchdog=any(" fired after " in line for line in watchdog),
+timer = state_lines("timer.txt")[-20:]
+record = dict(session, kill_rounds=ROUNDS, user_processes_left=LEFT, hook_started=HOOK_STARTED, turn_started=turn_started,
+              timer_log=timer, ended_by_timer=any(" fired after " in line for line in timer),
               delivered=lines[0], listing_complete=complete, hashing_complete=hashing_complete,
               prescan_complete=bool(prescan.get("complete")), hook_changed_entries=hook_changed,
               copies=[change for change in changes if change.get("kind") == "copied"],

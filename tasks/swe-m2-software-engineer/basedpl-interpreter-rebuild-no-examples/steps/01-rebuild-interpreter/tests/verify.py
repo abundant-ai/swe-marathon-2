@@ -1,4 +1,4 @@
-"""Harbor entry point: run the private cases against the submitted program and publish the result."""
+"""Entry point: run the private cases against the submitted program and publish the result."""
 
 from __future__ import annotations
 
@@ -29,11 +29,11 @@ MARKER = Path(__file__).resolve().parent / "private" / "marker"   # the original
 # usage text, which the hardened build lacks: a delivered file that is either is a fetched original.
 UPSTREAM_BUILDS = Path(__file__).resolve().parent / "verifier" / "upstream_builds.json"
 UNHARDENED_USAGE = b"--kernel -f CONNECTION_FILE"
-# What the collect hook (environment/prepare-delivery) leaves in the delivery: its mark, whose first
-# line is "delivered <entries> <bytes>" or "refused", and its record (egress, the agent's processes
+# What the collect hook (environment/reclaim-scratch) leaves in the delivery: its mark, whose first
+# line is "delivered <entries> <bytes>" or "refused", and its record (connectivity, the agent's processes
 # when the session ended, every entry), which goes to metrics.json and decides nothing.
-DELIVERY_MARK = ".delivered"
-DELIVERY_RECORD = ".delivery.json"
+DELIVERY_MARK = ".manifest"
+DELIVERY_RECORD = ".manifest.json"
 RECORD_LIMIT = 64 << 20  # bytes of the record read, at most
 MARK_LIMIT = 1 << 20     # bytes of the mark read, at most (a planted multi-GB mark is no reason to run out of memory)
 MISSING_MARK = ("the delivery arrived without the collect hook's mark (the hook did not run, or the copy was cut short); "
@@ -460,7 +460,7 @@ def delivery_notes(top: Path) -> list[str]:
 
     Raises:
         EvaluationError: Nothing arrived at all, so the copy never happened; or fewer entries or
-            bytes arrived than the mark counts, so the copy was cut short, which only the platform
+            bytes arrived than the mark counts, so the copy was cut short, which only the runner
             can do. More than marked (hard links split, or files the transport added) is a note.
     """
     try:
@@ -478,7 +478,7 @@ def delivery_notes(top: Path) -> list[str]:
     lines = text[:MARK_LIMIT].splitlines()
     if not lines:
         return [MISSING_MARK]
-    head, notes = lines[0].split(), [f"collect hook: {line}" for line in lines[1:] if line.strip()]  # every note, no cap
+    head, notes = lines[0].split(), [f"maintenance step: {line}" for line in lines[1:] if line.strip()]  # every note, unbounded
     if len(text) > MARK_LIMIT:
         notes.append(f"the collect hook's mark is longer than {MARK_LIMIT:,} bytes; its first {MARK_LIMIT:,} were read")
     if head[:1] == ["refused"]:
@@ -497,9 +497,9 @@ def delivery_notes(top: Path) -> list[str]:
 
 
 def delivery_record(top: Path) -> dict:
-    """The collect hook's record, cut to what metrics.json holds: whether public egress was open
+    """The collect hook's record, cut to what metrics.json holds: whether public connectivity was open
     when the session ended, the agent's processes then, how many rounds of killing they took and
-    how many were left, when the session and the hook started, whether the pre-cap watchdog ended
+    how many were left, when the session and the step started, whether the maintenance timer ended
     the session (never a reason to change the reward), every link the hook copied (with
     its source's path, owner, times and inode, and whether that source lies outside /app/rebuild or
     changed since the session started) or refused, every note, and a summary of the entries
@@ -515,13 +515,13 @@ def delivery_record(top: Path) -> dict:
         listed = [item for item in record.get("entries", []) if isinstance(item, dict)]
         times = lambda key: max((item[key] for item in listed if isinstance(item.get(key), (int, float))), default=None)  # noqa: E731
         copies = [item for item in record.get("copies", []) if isinstance(item, dict)]
-        return {"checked_at": record.get("checked_at"), "egress": record.get("egress"), "egress_open": record.get("egress_open"),
-                "agent_process_count": record.get("agent_process_count"),
-                "agent_processes": (record.get("agent_processes") or [])[:50],
-                "kill_rounds": record.get("kill_rounds"), "agent_processes_left": record.get("agent_processes_left"),
+        return {"checked_at": record.get("checked_at"), "connectivity": record.get("connectivity"), "connectivity_open": record.get("connectivity_open"),
+                "user_process_count": record.get("user_process_count"),
+                "user_processes": (record.get("user_processes") or [])[:50],
+                "kill_rounds": record.get("kill_rounds"), "user_processes_left": record.get("user_processes_left"),
                 "turn_started": record.get("turn_started"), "hook_started": record.get("hook_started"),
-                "ended_by_watchdog": bool(record.get("ended_by_watchdog")),  # the pre-cap watchdog ended the session
-                "watchdog_log": [str(line) for line in record.get("watchdog_log", [])][-20:],
+                "ended_by_timer": bool(record.get("ended_by_timer")),  # the maintenance timer ended the session
+                "timer_log": [str(line) for line in record.get("timer_log", [])][-20:],
                 "delivered": record.get("delivered"), "listing_complete": record.get("listing_complete"),
                 "hashing_complete": record.get("hashing_complete"), "prescan_complete": record.get("prescan_complete"),
                 "hook_changed_entries": record.get("hook_changed_entries"),
@@ -565,7 +565,7 @@ def free_space() -> dict:
 
 
 def low_on_disk() -> bool:
-    """Whether /tmp or /logs/verifier has less than RESERVE_BYTES free (what Harbor needs to fetch
+    """Whether /tmp or /logs/verifier has less than RESERVE_BYTES free (what the runner needs to fetch
     the results, and the results themselves); a filesystem that reports no size never is."""
     return any(0 <= free < RESERVE_BYTES for free in free_space().values())
 
@@ -728,7 +728,7 @@ def main() -> int:
         (output / "metrics.json").write_text(json.dumps({"status": "running"}).ljust(METRICS_SPACE) + "\n")
         start_space = free_space()
         if low_on_disk():  # the environment's fault, before any submitted code: no reward at all
-            raise EvaluationError(f"Less than {RESERVE_BYTES} bytes free before grading: {start_space}")
+            raise EvaluationError(f"Less than {RESERVE_BYTES} bytes free before the run: {start_space}")
         try:  # the out-of-memory killer takes a submission's process, never this one
             Path("/proc/self/oom_score_adj").write_text("-1000")
         except OSError:
@@ -791,7 +791,7 @@ def main() -> int:
             except OSError:
                 pass
     finally:
-        if owner is not None:  # nothing running or left behind while Harbor packs the results
+        if owner is not None:  # nothing running or left behind while the runner packs the results
             final_cleanup(owner[0], time.monotonic() + CLEANUP_SEC)
         try:
             subprocess.run(["chmod", "-R", "a+rX", str(output)], check=False)

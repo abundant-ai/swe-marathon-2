@@ -6,7 +6,7 @@ The compressed binary is the one build of the hardened original (scripts/build_o
 with the all-zero marker `BPL-BUILD-MARKER-000…0`. Before anything is installed, its sha256 must be
 the one build.txt records, so every image and the reference solution hold that build and nothing
 else. With a marker file (both images' builds; never the solution's), the 32 hex digits it holds
-replace the zeros, which occur exactly once; the verifier refuses any submission that holds them.
+replace the zeros, which occur exactly once; a build that is not this one is rejected.
 Writes the installed binary (mode 0755) and, beside it, build.txt with the link mode, the sha256 of
 the installed binary and the sha256 of the build without its marker.
 """

@@ -1,0 +1,12 @@
+#!/bin/sh
+# Runs as root at session setup, before and after the unprivileged user's tools install themselves. It sets aside disk
+# room and spare inodes that a later maintenance step reclaims once the session has ended, so that however full the disk
+# is left, that step can still do its work, and it records how much was free, and the time, when the session began.
+mkdir -p /var/lib/scratch/inodes && chmod 0700 /var/lib/scratch
+if [ ! -e /var/lib/scratch/room ]; then
+    fallocate -l 64M /var/lib/scratch/room 2>/dev/null || head -c 67108864 /dev/zero > /var/lib/scratch/room 2>/dev/null
+fi
+for spare in $(seq 1 64); do [ -e "/var/lib/scratch/inodes/$spare" ] || : > "/var/lib/scratch/inodes/$spare"; done
+stat -f -c '%a %S %d' /tmp > /var/lib/scratch/free-at-start 2>/dev/null
+date +%s > /var/lib/scratch/turn-started 2>/dev/null
+exit 0

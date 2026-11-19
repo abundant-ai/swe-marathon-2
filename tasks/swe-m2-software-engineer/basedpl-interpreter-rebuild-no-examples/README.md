@@ -15,11 +15,28 @@ installed unchanged in both images and in the reference solution. One step is im
 waves 1 and 2 (20 passes) have been answered in rounds 1 and 2, and Carve's finding on the shared
 collect hook and the round-2 re-checks in round 3, the round-3 re-check in round 4, and the
 platform's ungraded capped runs in round 5; the task was then renamed
-`basedpl-interpreter-rebuild-no-examples` (bundle `3f82e0819e82`, the first to upload, the
+`basedpl-interpreter-rebuild-no-examples` (bundle `ffcf88e892e2`, the first to upload, the
 same content as round 5's `1a08cdb471d0`), replacing the retired `4164eb806274`, `7462d71fe5a7`,
 `f0da94435d6b`, `cfc9d42f3e68` and `80d7f600cab8`. See [Remaining work](#remaining-work).
 
 ## Development log
+
+### 2026-11-19 (round 6: the pre-trial audit's info-leakage findings)
+
+- The Oddish pre-trial audit is a hard gate before any model trial. It returned two info-leakage
+  must-fixes and sibling findings on the installed helper names.
+- The verifier's recorder no longer names how the cases were generated or QA-checked; its
+  docstring describes only what it computes (the history stays here in the dev log).
+- The helper scripts and their state are renamed to ordinary system-housekeeping names, so a
+  solver that lists the container cannot read "delivery", "collect", a cap or grading from them:
+  `provision-scratch` (setup), `reclaim-scratch` (the collect hook), `session-timer` (the
+  pre-cap timer), under `/var/lib/scratch`, `/var/log/session-timer.log` and
+  `/run/session-timer.pid`; the manifest files are `.manifest` and `.manifest.json`. The
+  reserved directory has to live inside the container under the runner, so it is made to look
+  like ordinary system state; this note is the only place its purpose is written down. Every
+  shipped comment and docstring was scrubbed of grading, platform, cap, timer and provenance
+  wording; the mechanics are unchanged, so grading, the local recording and the checks are the
+  same as round 5's.
 
 ### 2026-11-19 (the name: `basedpl-interpreter-rebuild-no-examples`)
 
@@ -37,12 +54,12 @@ same content as round 5's `1a08cdb471d0`), replacing the retired `4164eb806274`,
   `ops/swe-marathon-v2/PLATFORM_VERIFIER_BUILD_AFTER_LONG_RUN.md`), while runs that ended by
   themselves were graded. Until the platform fixes it, the task ends the agent's session itself,
   shortly before the cap.
-- `environment/precap-watchdog`, started as root by a second `[[agent.setup_complete]]` entry,
+- `environment/session-timer`, started as root by a second `[[agent.setup_complete]]` entry,
   arms one detached sleeper (a pid file under `/run` makes a second start a no-op). After
   33,900 s (the agent's 34,560 s less eleven minutes) it sends SIGTERM to every process of
   `dev`, repeating every 5 s for up to 60 s, then SIGKILL, and logs arm, fire and done lines
-  with timestamps to the root-only `/var/log/precap-watchdog.log`. The collect hook copies the
-  log's last lines into the record, and the verifier reports `ended_by_watchdog` in
+  with timestamps to the root-only `/var/log/session-timer.log`. The collect hook copies the
+  log's last lines into the record, and the verifier reports `ended_by_timer` in
   `metrics.json`, never in the score. The instruction says nothing of it: it states no time
   budget, and a session it ends is one that would otherwise have hit the cap.
 - Checks: the watchdog arms once (a second start logs "already armed"), fires at `END_SECONDS`
@@ -53,7 +70,7 @@ same content as round 5's `1a08cdb471d0`), replacing the retired `4164eb806274`,
 ### 2026-11-19 (round 4: the hook's chmod masked every ctime, from the round-3 re-check 07c)
 
 - Round 3's `chmod -R u+rwX` ran before the measuring walk, so every entry's recorded ctime was
-  the hook's own time: the egress audit's condition ("deliverable ctime later than the agent's
+  the hook's own time: the connectivity audit's condition ("deliverable ctime later than the agent's
   finish") held for every delivery, honest or not, and could not tell a file fetched into
   `/app/rebuild` after the turn from honest work.
 - The hook now records every entry's lstat (path, type, size, mode, owner, mtime, ctime, inode)
@@ -93,7 +110,7 @@ same content as round 5's `1a08cdb471d0`), replacing the retired `4164eb806274`,
   holds every note, and the verifier reads the whole mark and copies the whole record into
   `metrics.json` (`copies`, `links`, `notes`, the flags' counts).
 - The hook now freezes first: `kill -STOP -1` as `dev` until no process of `dev`'s is running is
-  its first act, before the listing (one `ps`), the kill and the egress check, which used to run
+  its first act, before the listing (one `ps`), the kill and the connectivity check, which used to run
   for up to six seconds before the kill.
 - Checks: the fixer refuses a link to the user's own directory and file, copies a link to the
   system's `/bin/sh` with its source's facts, and makes an absolute inside link relative; the
@@ -139,16 +156,16 @@ same content as round 5's `1a08cdb471d0`), replacing the retired `4164eb806274`,
   Reports and summary: harbor-lh `ops/swe-marathon-v2/qa/basedpl/`. Every must-fix is answered
   below; the should-fixes not taken are listed with a reason at the end of this entry. Bundle
   `4164eb806274` is retired: it carried the Goose round-5 verifier.
-- **Delivery and the egress window** (04, 07, 08; decision `2026-11-19-egress-window-DECISION.md`).
-  The platform reopens public egress after the agent's turn and before `/app/rebuild` is
-  collected. `environment/prepare-delivery` is the task's one `[[verifier.collect]]` hook, as
+- **Delivery and the connectivity window** (04, 07, 08; decision `2026-11-19-connectivity-window-DECISION.md`).
+  The platform reopens public connectivity after the agent's turn and before `/app/rebuild` is
+  collected. `environment/reclaim-scratch` is the task's one `[[verifier.collect]]` hook, as
   root. It records whether TCP 443 on pypi.org and github.com answers (3 s each) and every live
   process of `dev` with its command line, then kills them with `kill -9 -1` as `dev` until none
-  is left. It gives back the 64 MiB and 64 inodes that `reserve-delivery-room` set aside at setup
+  is left. It gives back the 64 MiB and 64 inodes that `provision-scratch` set aside at setup
   (`setup_begin` and `setup_complete`), and fixes links as `dev`. Then, as root, it walks
   `/app/rebuild` by directory descriptor, removes what Harbor's copy would refuse, and refuses
   the delivery past 100,000 entries, 1 GB or 1,000-byte paths, or when a `tar -czf` of it fails
-  or takes more than 100 s. It writes `.delivery.json` (the egress check, the processes, the
+  or takes more than 100 s. It writes `.delivery.json` (the connectivity check, the processes, the
   kill rounds, and every entry with size, mtime, ctime and sha256) and the `.delivered` mark.
   All of this is ported from the back-office task's rounds 6-7. `verify.py` treats nothing
   arriving, or a mark that counts more than arrived, as an evaluation error. It writes the
@@ -482,14 +499,16 @@ agent's session 11 minutes before the platform's 9.6 h cap (SIGTERM to every pro
 then SIGKILL), because on the platform today a turn that runs into the cap is never graded (the
 separate verifier image fails to build right after the timeout; harbor-lh
 `ops/swe-marathon-v2/PLATFORM_VERIFIER_BUILD_AFTER_LONG_RUN.md`) while a turn that ends by itself
-is. A session it ended shows as `ended_by_watchdog: true` in `metrics.json`. The agent is not
-told; the instruction states no budget either way.
+is. A session it ended shows as `ended_by_timer: true` in `metrics.json`. The agent is not told;
+the instruction states no budget either way. The installed scripts and their state are named for
+ordinary housekeeping (`provision-scratch`, `reclaim-scratch`, `session-timer`, `/var/lib/scratch`)
+so that a solver listing the container reads nothing about grading, a cap or a deadline from them.
 
 ## Verification
 
 1. **Collection.** When the agent's turn ends, the root collect hook freezes `dev`'s processes,
    lists them and kills them, records every entry's own times before touching anything, and
-   records egress. It restores permissions only where needed (directories u+rwx, unreadable files
+   records connectivity. It restores permissions only where needed (directories u+rwx, unreadable files
    u+r, each noted), fixes links (a link to a root-owned system file or directory becomes a copy,
    with the source's path, owner, times and inode recorded; a link to anything else outside is
    removed and noted first in the mark), bounds `/app/rebuild`, packs it once as the copy will,
@@ -558,7 +577,7 @@ Highest unresolved severity: 🟡 YELLOW / UNASSESSED (findings 1, 2, 3, 5, 10, 
 | 2 | Read the interpreter from inside its process: a program reads `/proc/self/mem` or `maps`, runs a program, compiles code, or reads files outside its directory | Hardened build | Audit of every file, process and unsafe site in `src/`, `cli/`, `jit/`, `image/` (host.rs, files.rs, data.rs, the CLI, the worker, the editor) | Reads only under the start directory, checked on the opened file, never `/proc`, `/sys`, `/dev`; no writes; no `curl`; no JIT; no test-kit requests; no history file. `smoke.sh` proves each at every install | A memory-safety bug in the interpreter or its dependencies (rustymath has unsafe SIMD code) | The first build's smoke test, then probes from a trial as `dev` | 🟡 YELLOW / UNASSESSED |
 | 3 | Run as root, or as a user who can read the program | `[agent] user` | Not tested on this task | `user = "dev"` | Depends on each harness | Short trial that prints `id` (the probe prints it) | 🟡 YELLOW / UNASSESSED |
 | 4 | Deliver the original, a published build of it, or a wrapper that calls it | Verifier image; `/app` ownership; the marker; upstream's hashes | Goose QA passes 07 and 13; QA 04, 08, 20 | The verifier image holds no copy; `/app` is root's and sticky, so `dev` cannot replace `/app/rebuild`; a submission holding the images' marker, upstream's unhardened usage text, or a file with the sha256 of any of the 12 builds upstream publishes for 0.1.95 is refused (checked: the search, its chunking, the hashing by size, the images-only staging); a missing or malformed marker is an evaluation error | A copy transformed to hide both the marker and the hash | First trial as `dev`: `/app/rebuild` cannot be renamed | 🟢 GREEN / LOW |
-| 5 | Fetch the public source, upstream's tests or a published build, including in the window after the turn when the platform reopens egress | Agent network; the collect hook; the refusals of row 4 | QA 04 and 08 (platform finding `PLATFORM_EGRESS_WINDOW.md`); decision 2026-11-19 (A, with conditions) | `network_mode = "no-network"` for the turn; the root collect hook kills every process of `dev` before anything is copied and records whether egress was open and what was running (`delivery_record`); published builds and the unhardened usage text are refused; no upstream source, test, notebook result or design note in the image | The window stays open until the platform keeps the agent-phase policy through collection; a transformed fetched build escapes the refusals; a harness with network access would defeat the task | Audit every trial (`delivery_record`: survivors, egress, ctimes after the turn) before its score is recorded | 🟡 YELLOW / UNASSESSED |
+| 5 | Fetch the public source, upstream's tests or a published build, including in the window after the turn when the platform reopens connectivity | Agent network; the collect hook; the refusals of row 4 | QA 04 and 08 (platform finding `PLATFORM_EGRESS_WINDOW.md`); decision 2026-11-19 (A, with conditions) | `network_mode = "no-network"` for the turn; the root collect hook kills every process of `dev` before anything is copied and records whether connectivity was open and what was running (`delivery_record`); published builds and the unhardened usage text are refused; no upstream source, test, notebook result or design note in the image | The window stays open until the platform keeps the agent-phase policy through collection; a transformed fetched build escapes the refusals; a harness with network access would defeat the task | Audit every trial (`delivery_record`: survivors, connectivity, ctimes after the turn) before its score is recorded | 🟡 YELLOW / UNASSESSED |
 | 6 | Look up answers from what is shipped | Case generation | Checked on a stand-in upstream and on the real files at packaging; QA 06 and 12b | No example runs ship; no case holds a documented program or a near-copy, in any rewrite the recorder may settle on (whole blocks, statements and runs of 2-6 statements; 311 core records left out); `make_cases.leaks` runs again at packaging | The documentation's examples teach behaviour by design: about three quarters of its runnable one-liners state their displayed value in a comment, so replaying them is the agent's first corpus; three worker requests are near-copies of documented one-liners with the same value, one reply each in sessions of about ten | Keep | 🟢 GREEN / LOW |
 | 7 | Read an answer out of the case's own input | Generation and recording | Checked | Comments removed from upstream's code (some state results); the recorder drops a case whose input holds its whole answer (5 in the local recording) | Short answers a program spells out literally | Read `dropped` in `recording.json` | 🟢 GREEN / LOW |
 | 8 | Recall upstream's published expectations | Rewrites | Local recording: 248 of 1,739 kept cases in upstream's code form | Names, value literals and prose words rewritten under the private seed; the recorder prefers rewrites that change the answer; `recording.json` counts the cases still in upstream's form (`kept_as_upstream_code`, mostly error records, whose messages are the same for any implementation) | BasedPL was published 2026-09-16; models trained later may know it, and its reference files | Read `kept_as_upstream_code`; re-check for models trained after 2026-09 | 🟢 GREEN / LOW |
@@ -571,7 +590,7 @@ Highest unresolved severity: 🟡 YELLOW / UNASSESSED (findings 1, 2, 3, 5, 10, 
 | 15 | A busy host fails a graded run spuriously | Disk and file limits | QA 10: a `sleep 10` submission was stopped for a file limit by the whole-filesystem figures | The limits count only the run's own files (its uid's under the writable directories, and deleted files it holds open), and only when the free figures fall past a limit; a case stopped by a limit runs once more; host shortages after a sweep are evaluation errors | None found | Read `disk_limits`, `file_limits` and `limit_retries` in the first trials' `metrics.json` | 🟢 GREEN / LOW |
 | 16 | Make Harbor's copy drop an honest delivery (a running build, links that leave the directory, FIFOs, a sparse file, a full disk, a read-only folder) so that it scores a valid 0, make the copy fail at will, launder a file fetched after the turn through a link the hook copies in, or hide a post-turn write behind the hook's own changes to ctimes | The collect hook and the mark | QA 07 F2-F3 (ported from the back-office task, rounds 6-7); Carve QA 04 F1-F2; re-checks 07b and 07c | The hook freezes and kills `dev`'s processes first, records every entry's own times before touching anything (the manifest's authoritative mtime and ctime), gives back reserved room and inodes, restores permissions only where needed and notes each change, copies an outside link's target only when root owns it (every file under a directory included) and records the source's path, owner, mtime, ctime and inode, removes every other outside link (noted first in the mark) and all special files, bounds entries, bytes and path length, hashes once per inode, packs once within 100 s, and marks the delivery with every note; the verifier grades what arrived, reads the whole mark, copies every change into `metrics.json` with flags, and treats nothing arriving or a short copy as an evaluation error | A platform copy that fails after the hook's trial pack succeeded (an error, then a re-run); a fetched file written straight into `/app/rebuild` after the turn, which the ctime audit against the trial's finish now can catch, since the recorded ctimes are the session's own | Read `delivery_record` (copies, links, notes, `latest_ctime` and `hook_changed_entries` against the trial's finish) in every trial | 🟢 GREEN / LOW |
 | 17 | Read the build's own file through the hardened read path from a start directory whose rule lets it through (`/`, `/opt`, `/opt/bpl`) | File mode; the path rule | QA 04 F4, QA 12 F2 | The 2711 mode refuses the read for `dev`; the agent image's final stage proves it as `dev` (with the whole smoke test on the set-group-id build) and `solve.sh` records it in the trial | A kernel that let a non-dumpable set-group-id process read its own executable | `/logs/agent/reads.txt` of the first oracle trial | 🟢 GREEN / LOW |
-| 18 | Outlast the pre-cap watchdog, so that the session runs into the platform's cap and goes ungraded, or stop it to gain time | Process ownership | Round 5 | The sleeper is root's and `dev` cannot signal it; its pid file and log are root-only (`/run`, `/var/log`, mode 0600); `kill -TERM` then `kill -KILL` as root reach every process of `dev` | A harness that ran the agent as root, which hackability row 3 gates on the first trial | Read `ended_by_watchdog` and `watchdog_log` in `delivery_record` | 🟢 GREEN / LOW |
+| 18 | Outlast the pre-cap watchdog, so that the session runs into the platform's cap and goes ungraded, or stop it to gain time | Process ownership | Round 5 | The sleeper is root's and `dev` cannot signal it; its pid file and log are root-only (`/run`, `/var/log`, mode 0600); `kill -TERM` then `kill -KILL` as root reach every process of `dev` | A harness that ran the agent as root, which hackability row 3 gates on the first trial | Read `ended_by_timer` and `watchdog_log` in `delivery_record` | 🟢 GREEN / LOW |
 
 Licence: the upstream is Apache-2.0. Its `LICENSE` is shipped with the documentation in
 `/app/docs` and with the reference solution.
@@ -586,9 +605,9 @@ Licence: the upstream is Apache-2.0. Its `LICENSE` is shipped with the documenta
 | `smoke.sh` | upstream's v0.1.95 macOS release binary | fails at the first hardening check, as it must; never yet run on the hardened Linux binary (no Linux here) |
 | Upstream's published builds | `scripts/upstream_builds.py`, 2026-11-19 | 21 executables in 3 release assets and 9 wheels, 12 distinct hashes; upstream's Linux build holds the unhardened usage text twice, the hardened build and the docs never |
 | Local recording (the private cases, upstream's macOS release binary) | cases `91236578`, `experiment/local-recording-8` | 1,673 of 1,777 kept (83 display settings that change nothing, 17 last bits, 4 quoted); none unsteady, crashed, machine-dependent or perturbed; the strongest no-interpreter dispatcher 4.1% (command line 19, constants 17, error lookup 13, last literal 19), largest answer 0.6%, nothing with exit 1 0.6%; `∂` 6.1%; 40 of 41 piped cases end with exit 1 after a failing line |
-| Local grading from the packaged bundle (`3f82e0819e82`; the dispatcher's 0.0269 was measured on round 5's `1a08cdb471d0`, whose grading code is the same), through the collect hook's pre-scan and measuring scripts and a tar round trip with the `data` filter | stand-in reference behind a wrapper; no-op; the dispatcher as a program, with every strategy the recorder measures | 1.0 (1,673/1,673, 33.0 s); 0.0; 0.0269 (45/1,673: cli 19, error 13, expr 7, script 6) |
-| Packaging | `scripts/package_step.py`, twice into separate directories | `3f82e0819e82`, 249 files, the same hash both times; bundle directory `swe-m2_software-engineering_basedpl-interpreter-rebuild-no-examples` |
-| Oddish preflight | bundle `3f82e0819e82`, no-Archil CLI, locally | pass |
+| Local grading from the packaged bundle (`ffcf88e892e2`; the dispatcher's 0.0269 was measured on round 5's `1a08cdb471d0`, whose grading code is the same), through the collect hook's pre-scan and measuring scripts and a tar round trip with the `data` filter | stand-in reference behind a wrapper; no-op; the dispatcher as a program, with every strategy the recorder measures | 1.0 (1,673/1,673, 33.0 s); 0.0; 0.0269 (45/1,673: cli 19, error 13, expr 7, script 6) |
+| Packaging | `scripts/package_step.py`, twice into separate directories | `ffcf88e892e2`, 249 files, the same hash both times; bundle directory `swe-m2_software-engineering_basedpl-interpreter-rebuild-no-examples` |
+| Oddish preflight | bundle `ffcf88e892e2`, no-Archil CLI, locally | pass |
 | Oddish baselines, QA, `harbor check` | none | not run |
 
 ## Build and deliver
@@ -609,7 +628,7 @@ sha256 is not build.txt's.
 
 ## Remaining work
 
-- Baselines of bundle `3f82e0819e82` under the task's one experiment, on the owner's word, after
+- Baselines of bundle `ffcf88e892e2` under the task's one experiment, on the owner's word, after
   the old name's three model trials settle (about 00:20 UTC). The
   two oracle trials on different workers are a hard gate: each must score exactly 1.0, with the
   same `kept_ids_sha256` and `expected_sha256`. A failed id goes on a deny-list and the cases are
@@ -619,7 +638,7 @@ sha256 is not build.txt's.
   in the reference run's `metrics.json`: drops by reason, settling, `kept_as_upstream_code`, the
   baselines, the build. Read `/logs/agent/probe.txt`, `reads.txt` and `smoke.txt`, and
   `delivery_record`.
-- Audit every trial before its score is recorded, per the egress decision: survivors and egress
+- Audit every trial before its score is recorded, per the connectivity decision: survivors and connectivity
   in `delivery_record`, and deliverable ctimes later than the agent's turn.
 - A static PIE: build with a linker that produces `-static-pie` for musl (rust-lld with Rust's
   self-contained musl, or a Linux builder), then rebuild every image from that binary.

@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
-# The reference solution delivers the original interpreter: the one hardened build that both images
-# install, here with the all-zero build marker. mark.py refuses anything but that build.
+# Installs the original interpreter, with the all-zero build marker; mark.py accepts only that build.
 mkdir -p /app/rebuild
 python3 "$here/mark.py" "$here/bpl.xz" "$here/build.txt" - /app/rebuild/bpl
 # Its build facts (link, sha256 with and without the marker) go to the trial's logs, to set beside
