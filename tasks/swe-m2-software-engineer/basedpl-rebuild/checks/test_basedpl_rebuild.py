@@ -287,7 +287,7 @@ def run_verifier(tmp_path: Path, script: str, cases: list[dict], expected: dict,
         from pathlib import Path
         sys.path.insert(0, {str(STEP / 'tests')!r})
         import verify
-        verify.runcases.WORKSPACE = Path({str(tmp_path / 'tmp' / 'bpl-case')!r})
+        verify.runcases.WORKSPACE = Path({str(tmp_path / 'tmp' / 'bpl-run')!r})
         verify.runcases.HOME = Path({str(tmp_path / 'tmp' / 'bpl-home')!r})
         verify.runcases.TEMP = Path({str(tmp_path / 'tmp' / 'bpl-tmp')!r})
         verify.runcases.CASE_SEC = {case_sec}
@@ -367,7 +367,7 @@ def test_every_run_gets_the_same_limits_and_its_own_stack(tmp_path):
         import json, sys
         from pathlib import Path
         from verifier import runcases
-        runcases.WORKSPACE = Path({str(tmp_path / 'bpl-case')!r})
+        runcases.WORKSPACE = Path({str(tmp_path / 'bpl-run')!r})
         runcases.HOME, runcases.TEMP = Path({str(tmp_path / 'bpl-home')!r}), Path({str(tmp_path / 'bpl-tmp')!r})
         code = "import resource, json; print(json.dumps([resource.getrlimit(r) for r in "
         code += "(resource.RLIMIT_STACK, resource.RLIMIT_FSIZE, resource.RLIMIT_CORE)]))"
@@ -451,7 +451,7 @@ def test_nothing_a_submission_writes_reaches_a_later_case(tmp_path):
         import json, os
         from pathlib import Path
         import verify
-        verify.runcases.WORKSPACE = Path({str(tmp_path / 'bpl-case')!r})
+        verify.runcases.WORKSPACE = Path({str(tmp_path / 'bpl-run')!r})
         verify.runcases.HOME = Path({str(tmp_path / 'bpl-home')!r})
         verify.runcases.TEMP = Path({str(tmp_path / 'bpl-tmp')!r})
         verify.LEFTOVER_DIRS[:] = [{str(shared)!r}]
@@ -564,7 +564,7 @@ def test_cleanup_cost_does_not_grow_with_what_a_run_leaves(tmp_path):
         import json, os, time
         from pathlib import Path
         import verify
-        verify.runcases.WORKSPACE = Path({str(tmp_path / 'bpl-case')!r})
+        verify.runcases.WORKSPACE = Path({str(tmp_path / 'bpl-run')!r})
         verify.runcases.HOME = Path({str(tmp_path / 'bpl-home')!r})
         verify.runcases.TEMP = Path({str(tmp_path / 'bpl-tmp')!r})
         verify.runcases.CASE_SEC = 10
@@ -625,40 +625,96 @@ def test_an_oversized_submission_is_not_run(tmp_path):
 
 
 def test_results_are_reserved_written_in_place_and_limits_hold(tmp_path):
-    reserved = tmp_path / "reward.txt"
-    reserved.write_text("0.000000")
+    reserved = tmp_path / ".reward.tmp"
+    reserved.write_text("--------")
     metrics = tmp_path / "metrics.json"
     metrics.write_text("{}".ljust(4096))
     tree = tmp_path / "root"
     for name in ("tmp", "logs/artifacts/open", "var/tmp"):
         (tree / name).mkdir(parents=True)
         (tree / name).chmod(0o777)
+    run = tmp_path / "run"
+    (run / "deep" / "er").mkdir(parents=True)
     out = verifier_call(textwrap.dedent(f"""
-        import json, verify
+        import json, os, verify
         from pathlib import Path
         verify.write_in_place(Path({str(reserved)!r}), b"0.731000")
         verify.write_in_place(Path({str(metrics)!r}), b'{{"reward": 0.731}}')
         found = verify.writable_dirs({str(tree)!r})
         rc = verify.runcases
         rc.memory_in_use = lambda group, uid: 0
-        before = (10 << 30, 1_000_000)
-        rc.disk_free = lambda path=None: ((10 << 30) - (2 << 30), 1_000_000)
-        disk = rc.over_limit(1, None, before)
-        rc.disk_free = lambda path=None: (10 << 30, 1_000_000 - 200_000)
-        files = rc.over_limit(1, None, before)
-        rc.disk_free = lambda path=None: (-1, -1)
-        unknown = rc.over_limit(1, None, before)
-        print(json.dumps([sorted(found), disk, files, unknown]))
+        rc.WORKSPACE, rc.HOME, rc.TEMP = Path({str(run)!r}), Path({str(run / 'home')!r}), Path({str(run / 'tmp')!r})
+        rc.DISK_LIMIT, rc.FILES_LIMIT = 1 << 20, 50
+        free = {{"/tmp": (10 << 30, 1_000_000, 2_000_000), "/dev/shm": (1 << 30, 1000, 1000)}}
+        rc.disk_baseline = lambda: dict(free)
+        quiet = rc.over_limit(1, None, rc.disk_baseline())
+        # Others write 2 GB and 200,000 files: the run's own files are few, so nothing stops, and the
+        # count starts again from the figures now.
+        start = rc.disk_baseline()
+        free["/tmp"] = ((10 << 30) - (2 << 30), 800_000, 2_000_000)
+        others = rc.over_limit(1, None, start)
+        moved = start == rc.disk_baseline()
+        # The run itself writes 2 MB, then 60 files: those stop it.
+        with open(Path({str(run / 'deep' / 'er' / 'big')!r}), "wb") as handle:
+            handle.write(os.urandom(2 << 20))
+        start = rc.disk_baseline()
+        free["/tmp"] = ((10 << 30) - (5 << 30), 800_000, 2_000_000)
+        disk = rc.over_limit(1, None, start)
+        os.remove(Path({str(run / 'deep' / 'er' / 'big')!r}))
+        for index in range(60):
+            Path({str(run / 'deep')!r}, f"f{{index}}").write_text("x")
+        start = rc.disk_baseline()
+        free["/dev/shm"] = (1 << 30, 900, 1000)
+        files = rc.over_limit(1, None, start)
+        free["/tmp"] = free["/dev/shm"] = (-1, -1, -1)
+        unknown = rc.over_limit(1, None, start)
+        print(json.dumps([sorted(found), quiet, others, moved, disk, files, unknown]))
     """))
-    found, disk, files, unknown = out
+    found, quiet, others, moved, disk, files, unknown = out
     assert reserved.read_text() == "0.731000" and json.loads(metrics.read_text()) == {"reward": 0.731}
     assert not any("logs" in path for path in found) and str(tree / "tmp") in found
+    assert quiet is None and others is None and moved, "other writers on the filesystem never stop a run"
     assert disk == "disk limit" and files == "file limit" and unknown is None
     verify = (STEP / "tests" / "verify.py").read_text()
     main = verify[verify.index("def main() -> int:"):]
-    assert main.index('(output / "reward.txt").write_text("0.000000")') < main.index("sandbox()") \
-        < main.index("final_cleanup(owner[0], min(deadline") < main.index('write_in_place(output / "reward.txt"')
+    assert main.index('(output / ".reward.tmp").write_text("--------")') < main.index("raise EvaluationError(f\"Less than") \
+        < main.index("sandbox()") < main.index("final_cleanup(owner[0], min(deadline") \
+        < main.index('write_in_place(output / ".reward.tmp"') < main.index('os.replace(output / ".reward.tmp", output / "reward.txt")')
+    assert 'reward.txt").write_text' not in main, "no reward exists until the real end"
+    assert "runcases.OWN_ROOTS[:] = LEFTOVER_DIRS" in main
+    assert 'if str(uid) in (values.get("uid"), values.get("cuid"))' in RUNNER.read_text(), "shared memory by its creator too"
     assert "if os.geteuid() != 0 or uid == os.geteuid()" in verify, "never kill -1 as the verifier's own uid"
+
+
+def test_a_case_stopped_by_a_resource_limit_runs_once_more(tmp_path):
+    private = tmp_path / "private"
+    private.mkdir()
+    cases = [{"id": "C1", "kind": "expr", "argv": ["-e", "1"], "files": {}, "stdin": None},
+             {"id": "C2", "kind": "expr", "argv": ["-e", "2"], "files": {}, "stdin": None}]
+    (private / "cases.json").write_text(json.dumps({"cases": cases}))
+    (private / "expected.json").write_text(json.dumps({"C1": {"exit": 0, "stdout": "1\n"}, "C2": {"exit": 0, "stdout": "2\n"}}))
+    program = tmp_path / "bpl"
+    program.write_text("#!/bin/sh\nexit 0\n")
+    program.chmod(0o755)
+    out = verifier_call(textwrap.dedent(f"""
+        import json, verify
+        from pathlib import Path
+        calls = []
+        def fake(program, case, prefix=None, owner=None):
+            calls.append(case["id"])
+            if case["id"] == "C1" and calls.count("C1") == 1:  # a spurious stop, then a clean run
+                return {{"exit": None, "stdout": None, "error": "file limit", "seconds": 0.1}}
+            if case["id"] == "C2":  # a real disk filler: stopped both times
+                return {{"exit": None, "stdout": None, "error": "disk limit", "seconds": 0.1}}
+            return {{"exit": 0, "stdout": b"1\\n", "seconds": 0.1}}
+        verify.runcases.run_case = fake
+        verify.low_on_disk = lambda: False
+        metrics = verify.grade(Path({str(program)!r}), Path({str(private)!r}), [], None)
+        print(json.dumps([calls, metrics["cases_passed"], metrics["limit_retries"], metrics["disk_limits"],
+                          metrics["file_limits"]]))
+    """))
+    calls, passed, retries, disk, files = out
+    assert calls == ["C1", "C1", "C2", "C2"] and passed == 1 and retries == 2 and disk == 1 and files == 0
 
 
 def test_the_agent_cannot_replace_the_artifact_directory():
@@ -668,10 +724,22 @@ def test_the_agent_cannot_replace_the_artifact_directory():
 
 
 def test_every_run_fits_inside_the_step_verifier_time():
+    """Every generated case at its full time limit, with a cleanup of 0.1 s before it, the margin no
+    case starts in, and two minutes for sealing and scanning the delivery, fits in TOTAL_SEC, and
+    that in both verifier timeouts with five minutes to spare."""
     per_run = int(re.search(r"^CASE_SEC = (\d+)$", RUNNER.read_text(), re.M).group(1))
-    total = int(re.search(r"^TOTAL_SEC = (\d+)", (STEP / "tests" / "verify.py").read_text(), re.M).group(1))
-    step_verifier = int(re.search(r"\[steps\.verifier\]\s*timeout_sec = (\d+)", (TASK / "task.toml").read_text()).group(1))
-    assert 1500 * per_run <= total < step_verifier
+    verify = (STEP / "tests" / "verify.py").read_text()
+    total = int(re.search(r"^TOTAL_SEC = (\d+)", verify, re.M).group(1))
+    margin = int(re.search(r"^MARGIN_SEC = (\d+)", verify, re.M).group(1))
+    toml = (TASK / "task.toml").read_text()
+    step_verifier = int(re.search(r"\[steps\.verifier\]\s*timeout_sec = (\d+)", toml).group(1))
+    verifier = int(re.search(r"\[verifier\][^\[]*?timeout_sec = (\d+)", toml).group(1))
+    sys.path.insert(0, str(SCRIPTS))
+    import make_cases
+    cases = sum(make_cases.KIND_COUNTS.values())
+    assert cases * (per_run + 0.1) + margin + 120 <= total and total + 300 <= min(step_verifier, verifier)
+    agent = int(re.search(r"\[steps\.agent\]\s*timeout_sec = (\d+)", toml).group(1))
+    assert agent + step_verifier <= 11 * 3600, "the attempt stays inside the platform's 12 hours"
     assert f"Each run finishes within {per_run} seconds" in (STEP / "instruction.md").read_text()
 
 
@@ -707,7 +775,7 @@ def record(tmp_path: Path, cases: list[dict]) -> tuple[subprocess.CompletedProce
         from pathlib import Path
         sys.path.insert(0, {str(RECORDER.parent)!r})
         import runcases
-        runcases.WORKSPACE = Path({str(tmp_path / 'runs' / 'bpl-case')!r})
+        runcases.WORKSPACE = Path({str(tmp_path / 'runs' / 'bpl-run')!r})
         runcases.HOME = Path({str(tmp_path / 'runs' / 'bpl-home')!r})
         runcases.TEMP = Path({str(tmp_path / 'runs' / 'bpl-tmp')!r})
         import recorder

@@ -49,8 +49,9 @@ PERTURBED_ENV = {"BPL_PERTURBED_PADDING": "p" * 4096, "RAYON_NUM_THREADS": "1"}
 
 def run_case(program: list[str], case: dict, **options) -> dict:
     """runcases.run_case, again (twice at most) where the run was stopped by the disk or file
-    limit: those measure the whole filesystem that holds /tmp, which other processes on a busy
-    builder also write to, and the original never writes a file."""
+    limit. Those count only the run's own files, which the original never writes, so a stop there
+    is the builder's doing (a workspace on a filesystem that cannot be counted); never kept as an
+    answer either way."""
     for _ in range(2):
         got = run_once(program, case, **options)
         if got.get("error") not in ("disk limit", "file limit"):

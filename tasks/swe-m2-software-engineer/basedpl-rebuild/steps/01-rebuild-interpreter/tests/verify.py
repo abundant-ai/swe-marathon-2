@@ -28,13 +28,14 @@ MARKER = Path(__file__).resolve().parent / "private" / "marker"   # the original
 MARKER_RE = re.compile(rb"BPL-BUILD-MARKER-[0-9a-f]{32}")
 MARKER_LEN = len("BPL-BUILD-MARKER-") + 32
 REWARD_FILES = ("reward.txt", "reward.json")
-TOTAL_SEC = 3300  # the step verifier has 3,600 s; everything up to the reward file fits in this
+TOTAL_SEC = 4200  # the step verifier has 4,500 s; everything up to the reward file fits in this
 MARGIN_SEC = 120  # no case starts when less than this is left of TOTAL_SEC
 MAX_ENTRIES = 200_000  # files, directories and links in a submission, at most; more is not run
 MAX_BYTES = 4 << 30    # bytes of a submission's regular files (each inode once), at most; more is not run
 MAX_PROGRAM = 512 << 20  # bytes of /app/rebuild/bpl hashed for metrics.json, at most
 RESERVE_BYTES = 512 << 20  # bytes kept free in /tmp and /logs/verifier: no case starts with less
 CLEANUP_SEC = 60  # the cleanup after the last case, at most
+RETRIED_LIMITS = ("memory limit", "disk limit", "file limit")  # a case stopped by one runs once more
 METRICS_SPACE = 1 << 18  # bytes metrics.json holds from the start, so that writing it needs no new space
 # Where the unprivileged user can leave files: these, and every other world-writable directory
 # that writable_dirs() finds when the evaluation starts.
@@ -397,14 +398,15 @@ def identity(path: Path) -> dict:
         return {"error": type(exc).__name__}
 
 
+def free_space() -> dict:
+    """The bytes free in /tmp and /logs/verifier, -1 where a filesystem reports no size."""
+    return {str(place): runcases.disk_free(place)[0] for place in (runcases.WORKSPACE.parent, Path("/logs/verifier"))}
+
+
 def low_on_disk() -> bool:
     """Whether /tmp or /logs/verifier has less than RESERVE_BYTES free (what Harbor needs to fetch
-    the results, and the results themselves)."""
-    for place in (runcases.WORKSPACE.parent, Path("/logs/verifier")):
-        free = runcases.disk_free(place)[0]
-        if 0 <= free < RESERVE_BYTES:
-            return True
-    return False
+    the results, and the results themselves); a filesystem that reports no size never is."""
+    return any(0 <= free < RESERVE_BYTES for free in free_space().values())
 
 
 def write_in_place(path: Path, data: bytes) -> None:
@@ -425,7 +427,8 @@ def grade(program: Path, private: Path, prefix: list[str], owner: tuple[int, int
     from now): the cases left count as failed. The cleanup after the last case is the caller's.
 
     A case that cannot be set up or started, runs too long or prints too much counts as failed:
-    what the submission does never makes the evaluation an error.
+    what the submission does never makes the evaluation an error. A case stopped by the memory,
+    disk or file limit runs once more after a cleanup (RETRIED_LIMITS), and the second run counts.
 
     Raises:
         EvaluationError: Private inputs are unreadable.
@@ -438,8 +441,8 @@ def grade(program: Path, private: Path, prefix: list[str], owner: tuple[int, int
     if not cases or any(case["id"] not in expected for case in cases):
         raise EvaluationError("Private cases and recorded answers do not match")
     metrics = {"cases_total": len(cases), "cases_run": 0, "cases_passed": 0, "cases_failed": 0, "reward": 0.0,
-               "timeouts": 0, "output_limits": 0, "memory_limits": 0, "disk_limits": 0, "setup_errors": 0,
-               "seconds_total": 0.0,
+               "timeouts": 0, "output_limits": 0, "memory_limits": 0, "disk_limits": 0, "file_limits": 0,
+               "limit_retries": 0, "setup_errors": 0, "seconds_total": 0.0, "reset_seconds": 0.0,
                "seconds_max": 0.0,
                "stopped": None, "notes": [], "by_kind": {}}
     try:
@@ -458,18 +461,28 @@ def grade(program: Path, private: Path, prefix: list[str], owner: tuple[int, int
         if time.monotonic() > deadline - MARGIN_SEC:
             metrics["stopped"] = "out of time; the remaining cases count as failed"
             break
-        if low_on_disk():
-            metrics["stopped"] = "out of disk space; the remaining cases count as failed"
+        stop = None
+        for attempt in range(2):
+            try:  # whatever the submission did to this machine is its own case's failure, never an error
+                if owner is not None:
+                    began = time.monotonic()
+                    reset(owner[0])
+                    metrics["reset_seconds"] = round(metrics["reset_seconds"] + time.monotonic() - began, 3)
+                    if time.monotonic() > deadline - MARGIN_SEC:
+                        stop = "out of time after a cleanup; the remaining cases count as failed"
+                        break
+                    if low_on_disk():  # what the runs left that the cleanup could not take back
+                        stop = "out of disk space after a cleanup; the remaining cases count as failed"
+                        break
+                got = runcases.run_case([str(program)], case, prefix=prefix, owner=owner)
+            except Exception as exc:  # noqa: BLE001
+                got = {"exit": None, "stdout": None, "error": f"run: {type(exc).__name__}", "seconds": 0.0}
+            if attempt or got.get("error") not in RETRIED_LIMITS:
+                break
+            metrics["limit_retries"] += 1
+        if stop is not None:
+            metrics["stopped"] = stop
             break
-        try:  # whatever the submission did to this machine is its own case's failure, never an error
-            if owner is not None:
-                reset(owner[0])
-                if time.monotonic() > deadline - MARGIN_SEC:
-                    metrics["stopped"] = "out of time after a cleanup; the remaining cases count as failed"
-                    break
-            got = runcases.run_case([str(program)], case, prefix=prefix, owner=owner)
-        except Exception as exc:  # noqa: BLE001
-            got = {"exit": None, "stdout": None, "error": f"run: {type(exc).__name__}", "seconds": 0.0}
         tally = metrics["by_kind"][kind(case)]
         metrics["cases_run"] += 1
         tally["run"] += 1
@@ -484,7 +497,7 @@ def grade(program: Path, private: Path, prefix: list[str], owner: tuple[int, int
         elif error == "memory limit":
             metrics["memory_limits"] += 1
         elif error in ("disk limit", "file limit"):
-            metrics["disk_limits"] += 1
+            metrics[error.replace(" ", "_") + "s"] += 1
         elif error:
             metrics["setup_errors"] += 1
         if runcases.matches(got, expected[case["id"]]):
@@ -525,11 +538,12 @@ def main() -> int:
         Zero for a completed evaluation, including a failed submission; one for
         an evaluation error, which leaves no reward file.
     """
-    deadline = time.monotonic() + TOTAL_SEC
+    began = time.monotonic()
+    deadline = began + TOTAL_SEC
     tests = Path(__file__).resolve().parent
     output = Path("/logs/verifier")
     output.mkdir(parents=True, exist_ok=True)
-    for name in REWARD_FILES + ("metrics.json",):
+    for name in REWARD_FILES + ("metrics.json", ".reward.tmp"):
         (output / name).unlink(missing_ok=True)
     code = 1
     owner = None
@@ -540,9 +554,14 @@ def main() -> int:
             if closed.is_dir() and not closed.is_symlink():
                 closed.chmod(0o700)
         # The results' space, taken before any submitted code runs: written in place at the end,
-        # they need no new space, however full a run leaves the disk.
-        (output / "reward.txt").write_text("0.000000")
+        # they need no new space, however full a run leaves the disk. The reward's is a file of its
+        # own, renamed onto reward.txt only at the real end: until then no reward exists, so an
+        # evaluation that ends early is an error, never a 0.
+        (output / ".reward.tmp").write_text("--------")
         (output / "metrics.json").write_text(json.dumps({"status": "running"}).ljust(METRICS_SPACE) + "\n")
+        start_space = free_space()
+        if low_on_disk():  # the environment's fault, before any submitted code: no reward at all
+            raise EvaluationError(f"Less than {RESERVE_BYTES} bytes free before grading: {start_space}")
         try:  # the out-of-memory killer takes a submission's process, never this one
             Path("/proc/self/oom_score_adj").write_text("-1000")
         except OSError:
@@ -558,6 +577,7 @@ def main() -> int:
         except EvaluationError as exc:  # a submission that cannot be made safe to run is not run
             refused = f"{exc}: not graded"
         LEFTOVER_DIRS[:] = sorted(set(LEFTOVER_DIRS) | set(writable_dirs()))
+        runcases.OWN_ROOTS[:] = LEFTOVER_DIRS  # where a run's own files are counted against its disk limits
         # The marker-free hash is no reason to refuse: the reference solution delivers the same
         # build with an all-zero marker, and matches it byte for byte.
         program = identity(SUBMISSION / "bpl")
@@ -570,12 +590,15 @@ def main() -> int:
         else:
             metrics = grade(SUBMISSION / "bpl", tests / "private", prefix, owner, deadline)
             final_cleanup(owner[0], min(deadline, time.monotonic() + CLEANUP_SEC))
-        # The reward first, in its reserved place: nothing after it can cost it.
-        write_in_place(output / "reward.txt", f"{metrics['reward']:.6f}".encode())
+        # The reward first, in its reserved place, then renamed (no new space): nothing after it
+        # can cost it.
+        write_in_place(output / ".reward.tmp", f"{metrics['reward']:.6f}".encode())
+        os.replace(output / ".reward.tmp", output / "reward.txt")
         code = 0
         print(f"reward: {metrics['reward']:.6f} ({metrics['cases_passed']}/{metrics['cases_total']} cases)", flush=True)
         try:
-            metrics.update(limits=limits, submission=program, host=recorder.host())
+            metrics.update(limits=limits, submission=program, host=recorder.host(), free_at_start=start_space,
+                           free_at_end=free_space(), evaluation_seconds=round(time.monotonic() - began, 1))
             write_in_place(output / "metrics.json",
                            (json.dumps(dict(metrics, status="completed"), indent=1, sort_keys=True) + "\n").encode())
         except Exception:  # noqa: BLE001 - metadata only
@@ -584,7 +607,7 @@ def main() -> int:
         message = str(exc) if isinstance(exc, EvaluationError) else f"Verifier error: {type(exc).__name__}"
         print(f"evaluation error: {message}", flush=True)
         if code != 0:
-            for name in REWARD_FILES:
+            for name in REWARD_FILES + (".reward.tmp",):
                 (output / name).unlink(missing_ok=True)
             try:
                 write_in_place(output / "metrics.json", (json.dumps({"status": "evaluation_error", "error": message}) + "\n").encode())

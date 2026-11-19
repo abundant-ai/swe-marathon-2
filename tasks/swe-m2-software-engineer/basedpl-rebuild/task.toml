@@ -28,7 +28,7 @@ workdir = "/app"
 [verifier]
 environment_mode = "separate"
 network_mode = "no-network"
-timeout_sec = 3600
+timeout_sec = 4500
 user = "root"
 
 [verifier.environment]
@@ -46,4 +46,4 @@ name = "01-rebuild-interpreter"
 timeout_sec = 34560
 
 [steps.verifier]
-timeout_sec = 3600
+timeout_sec = 4500
