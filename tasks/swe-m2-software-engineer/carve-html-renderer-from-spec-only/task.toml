@@ -3,7 +3,7 @@ multi_step_reward_strategy = "final"
 artifacts = ["/app/rebuild"]
 
 [task]
-name = "abundant/swe-m2_software-engineering_carve-renderer"
+name = "abundant/swe-m2_software-engineering_carve-html-renderer-from-spec-only"
 description = "Implement a renderer for a markup language first published in 2026 from its normative specification and documentation alone, producing byte for byte the HTML of the reference implementation, which the implementer never sees."
 authors = [{ name = "Neel Harsola", email = "work.neelharsola@gmail.com" }]
 

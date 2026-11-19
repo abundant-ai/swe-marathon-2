@@ -19,4 +19,4 @@ titans = ["abundant-titans"]
 titans-data = ["pyarrow==23.0.1"]
 
 [tool.pytest.ini_options]
-testpaths = ["ci_checks", "tasks/swe-m2-ai-engineer/knowledge-work-assistant/checks", "tasks/swe-m2-software-engineer/carve-renderer/checks"]
+testpaths = ["ci_checks", "tasks/swe-m2-ai-engineer/knowledge-work-assistant/checks", "tasks/swe-m2-software-engineer/carve-html-renderer-from-spec-only/checks"]

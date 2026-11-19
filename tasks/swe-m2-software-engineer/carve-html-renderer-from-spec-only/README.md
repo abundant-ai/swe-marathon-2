@@ -62,9 +62,16 @@ archive or binary.
   (0.11%), hybrid 53 (2.99%, one hosted) — identical under R1-R3 and under R1-R3+R5**, so R5 adds
   no case; the builder's lookup 0.0%. The hybrid's 52 other hits are generated sources holding a
   corpus-shaped span, which need a renderer for the rest.
-- 41 checks pass. Bundle `c8be4429472e` (143 files) replaces `f4176efb9c8c` and becomes **v2** (the
-  pool and the hooks changed); its baselines run before the models. Grades in
-  [Validation](#validation).
+- 41 checks pass. Bundle `c8be4429472e` (143 files) replaced `f4176efb9c8c`; the pool and the hooks
+  changed, so this is **v2** and its baselines run before the models.
+- **Renamed (owner decision, 2026-11-19 17:05 UTC).** The task is now
+  `abundant/swe-m2_software-engineering_carve-html-renderer-from-spec-only`, directory
+  `tasks/swe-m2-software-engineer/carve-html-renderer-from-spec-only`; content otherwise identical.
+  Only `task.toml`'s name and the root `pyproject.toml` registration carried the old slug (checks and
+  scripts use relative paths; the ignore rules are patterns, so the private inputs moved with the
+  directory and stay ignored). Re-packaged under the new name: bundle `2d38ec5a060b` (143 files,
+  20 bytes more than `c8be4429472e` — the longer name in `task.toml`), same hash twice, preflight
+  passes, reference 1.0 again; grades in [Validation](#validation).
 
 ### 2026-11-19 — round 3b: the splice filter and the fixer's cutoff (QA 12b F1-F2, 07b F-b/F-c)
 
@@ -563,10 +570,10 @@ Licences: the specification, documentation and carve-rs are MIT. The spec's `LIC
 | Tripwires on the reference | `install.py --blank` on the pinned Linux build | blanked sha256 `f1a359cba59853ecf5087b2f7a6bac17fc208df99d09a63dc567268e1ec5fad0` (same 16,216,144 bytes), in no list, none of the 14 strings left; the unchanged Linux build (`05d0898d…`) and the macOS build are refused |
 | Corpus agreement, spec model against carve-rs (macOS release) | spec `51c5631`, carve-rs 0.1.14 | 4,626 of 4,631 equal; model equals the corpus HTML on all; 6 of the candidates drawn for cases disagreed and were dropped |
 | Case generation | cases sha1 `5db42245` (1,770) | 34 dropped as model disagreements, 720 with no variant kept (11 with none at all; 1,516 variants rejected as a splice, 432 as whitespace-only, 222 as lookup-reachable), 5 shown in the docs, spec or pack, 1 with its answer printed; corpus left out: 315 shown, 28 pack, 27 answer printed, 24 includes, 17 open readings, 1 long |
-| Local recording with the macOS release build, through the bundle's recorder | bundle `c8be4429472e` | 1,770 of 1,770 kept; none slow, unsteady, crashed, differing or perturbed; slowest run 30.1 ms; kept ids sha256 `7ace1c15…`; corpus floors on this pool with the reviewers' own 12b/07c scripts: the builder's lookup 0.0%, renderer-free 0.11% (2 cases), hybrid with a perfect host renderer 2.99% (53, one hosted) under R1-R3 and under R1-R3+R5 alike |
-| Packaging twice | `scripts/package_step.py` | the same hash both times: `c8be4429472ec1dcb0872d1908d12f742e6aa091137f26b4ad5ee2c7c427bd8e`, 143 files, 17,819,898 bytes |
-| Oddish preflight | bundle `c8be4429472e` | pass |
-| Local grading from the bundle (`scripts/grade_locally.py`, no sandbox) | bundle `c8be4429472e` | reference (the build blanked as `solve.sh` does, re-signed, as `/app/rebuild/carve`, marked by the bundle's hook, passing the tripwires) 1.0 (1,770/1,770, 20 s); an empty delivery 0.0; a program that prints nothing 0.0; no late entries, no refused or flagged copies, `ended_by_watchdog` false. Fingerprint: the blanked reference matches 47 of 49 probes — the two misses are the `-h`/`--help` probes whose output carries blanked help strings; production records probes from the unblanked oracle, and the fingerprint is diagnostic, never scored |
+| Local recording with the macOS release build, through the bundle's recorder | bundle `2d38ec5a060b` | 1,770 of 1,770 kept; none slow, unsteady, crashed, differing or perturbed; slowest run 30.1 ms; kept ids sha256 `7ace1c15…`; corpus floors on this pool with the reviewers' own 12b/07c scripts: the builder's lookup 0.0%, renderer-free 0.11% (2 cases), hybrid with a perfect host renderer 2.99% (53, one hosted) under R1-R3 and under R1-R3+R5 alike |
+| Packaging twice | `scripts/package_step.py` | the same hash both times: `2d38ec5a060b78c002e857aa10a89c11e5d075375b800fa11e6ff660285cca25`, 143 files, 17,819,918 bytes; the bundle directory is `swe-m2_software-engineering_carve-html-renderer-from-spec-only` |
+| Oddish preflight | bundle `2d38ec5a060b` | pass |
+| Local grading from the bundle (`scripts/grade_locally.py`, no sandbox) | bundle `2d38ec5a060b` | reference (the build blanked as `solve.sh` does, re-signed, as `/app/rebuild/carve`, marked by the bundle's hook, passing the tripwires) 1.0 (1,770/1,770, 22 s); an empty delivery 0.0; a program that prints nothing 0.0; no late entries, no refused or flagged copies, `ended_by_watchdog` false. Fingerprint: the blanked reference matches 47 of 49 probes — the two misses are the `-h`/`--help` probes whose output carries blanked help strings; production records probes from the unblanked oracle, and the fingerprint is diagnostic, never scored |
 | Oddish baselines, QA, `harbor check` | none | not run |
 
 ## Build and deliver
