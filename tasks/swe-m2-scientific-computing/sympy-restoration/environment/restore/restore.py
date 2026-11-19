@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""restore - workspace helper for the SymPy body-restoration task.
+"""restore - workspace helper for restoring SymPy's function bodies.
 
   restore status                 progress summary
   restore next [N] [--file F]    next N units still to restore; F is a file or a directory
@@ -15,8 +15,8 @@
                                  in it is rejected or the file does not parse)
   restore reset FILE             put FILE back to its original skeleton state
 
-Only the bodies of the restorable functions are delivered (see instruction).
-`check` and `pytest` evaluate exactly that form of your work tree.
+Only the bodies of the restorable functions are delivered.
+`check` and `pytest` run on exactly that form of your work tree.
 """
 from __future__ import annotations
 
@@ -388,7 +388,7 @@ def cmd_pytest(args):
     if not any(a.startswith("--timeout") for a in args):
         base += ["--timeout", "60"]
     # paths inside the work tree, absolute or relative to the current directory, are run
-    # in the evaluated view of the tree
+    # in the delivered form of the tree
     mapped = []
     root = os.path.realpath(WORK)
     for a in args:

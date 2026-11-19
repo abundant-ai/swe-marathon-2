@@ -28,8 +28,8 @@ The restored bodies, in place, in `/app/sympy`.
 A body is right when the function behaves as SymPy 1.14.0 does: for the examples in its
 docstring, for the repository's tests, and for every other valid input. Returning the
 documented outputs for the documented inputs is not a restoration. Speed is part of the
-behaviour: restored code should not be more than about three times slower than the original
-on the library's own examples and tests.
+behaviour: restored code should not be more than about three times slower than SymPy 1.14.0
+itself on the library's own examples and tests.
 
 Only the bodies of the units are part of the deliverable:
 
@@ -46,11 +46,11 @@ Only the bodies of the units are part of the deliverable:
   `exec`, `compile`, `open`, `__import__`, `globals` and `locals`; and attributes that
   expose interpreter internals, such as `__globals__`, `__code__`, `__subclasses__`,
   `f_back`, `stdout` or `stderr`. `restore rules` prints the complete list. No original
-  body needed any of these, and a body that uses one does not count as restored.
+  body needed any of these, and a body that uses one is rejected.
   `restore check` shows such a body as `BROKEN` and names the construct.
 - Do not change how the library's examples or tests are run or how they report results.
 - Keep every file a regular, UTF-8 encoded Python file under 4 MB that parses. If a file
-  does not parse, none of its units count.
+  does not parse, none of the bodies in it can be used.
 
 ## Tools
 
@@ -80,11 +80,13 @@ the original skeleton with your unit bodies in it, and nothing else from your tr
 
 ## Time and completion
 
-- You have 48 hours of wall-clock time; `/app/timer.sh` prints the seconds that remain.
-- The 48 hours are spread over several working sessions. A session can end at any moment.
-  The next one starts with a fresh context and with the unit bodies delivered so far in
-  `/app/sympy`. Nothing else is kept: no notes, no files outside the unit bodies, no results
-  of earlier checks. `restore status` shows where the work stands.
+- You have 12 hours of wall-clock time at most, and the run can end before then;
+  `/app/timer.sh` prints the seconds that remain. Plan the work to fit, and keep going until
+  the work is complete or the time is up.
+- Keep a running log in `/app/PROGRESS.md`, so that anyone looking in can see where the work
+  stands. When you start, then at least every 30 minutes and whenever you finish a module,
+  append one line with the time (`date -u`), the counts that `restore status` prints, and
+  what you will do next.
 - The work is complete when no unit is left to restore, `restore check --all` reports every
   unit as `PASS`, and the repository tests pass under `restore pytest`. Work that is not
   finished is delivered as it stands.

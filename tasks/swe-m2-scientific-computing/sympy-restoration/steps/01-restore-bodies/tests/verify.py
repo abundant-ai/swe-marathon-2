@@ -1,4 +1,4 @@
-"""Harbor entry point: build the trusted context, run the verifier, publish the result."""
+"""Verifier entry point: build the trusted context, run the verifier, publish the result."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ SANDBOX_USER = "nobody"
 
 
 def main() -> int:
-    """Run one evaluation in this fresh container and map it to Harbor's files.
+    """Run one evaluation in this fresh container and write the result files.
 
     Returns:
         Zero for a completed evaluation, including a failed submission; one for

@@ -2,6 +2,7 @@
 
 import json
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -128,68 +129,19 @@ def test_regrade_bundle_swaps_the_reference_for_a_stored_submission(task_root, t
     assert not (tmp_path / "out2").exists()
 
 
-def test_session_bundles_carry_the_budget_and_the_previous_sessions_files(task_root, tmp_path):
-    import io
-    import tarfile
-
+def test_session_packaging_is_retired_and_the_stated_hours_match_the_timer(task_root, tmp_path):
+    """The 48-hour chain of sessions gave way to one 12-hour session; its packager refuses this task."""
     target = staged_task(task_root, tmp_path)
     script = str(target / "scripts" / "package_session.py")
-    data_dir = target / "steps/01-restore-bodies/solution/data"
-    reference = sorted(path.relative_to(data_dir).as_posix() for path in data_dir.rglob("*.py"))
-
-    def run(*arguments):
-        return subprocess.run([sys.executable, "-B", script, *arguments, "--output", str(tmp_path / "out")],
-                              capture_output=True, text=True, timeout=120, cwd=target / "scripts")
-
-    first = run("--session", "1")
-    assert first.returncode == 0, first.stderr[-2000:]
-    report = json.loads(first.stdout)
-    bundle = Path(report["task_path"])
-    assert bundle.name == "swe-m2_scientific-computing_sympy-restoration-48h-s1"
-    assert (report["session_sec"], report["used_before_sec"], report["total_sec"], report["last_session"]) == (34560, 0, 172800, False)
-    config = (bundle / "task.toml").read_text()
-    assert 'name = "abundant/swe-m2_scientific-computing_sympy-restoration-48h-s1"' in config
-    assert "[[steps]]" not in config and "timeout_sec = 34560" in config
-    assert "USED_BEFORE_SEC=0\n" in (bundle / "environment/timer.sh").read_text()
-    assert "You have 48 hours of wall-clock time" in (bundle / "instruction.md").read_text()
-    assert "progress.tar.gz" not in (bundle / "environment/Dockerfile").read_text()
-    assert not (bundle / "environment/data/progress.tar.gz").exists()
-
-    archive = tmp_path / "candidate_unit_files.tar.gz"
-    with tarfile.open(archive, "w:gz") as tar:
-        for name in reference:
-            data = f"# delivered {name}\n".encode()
-            info = tarfile.TarInfo(name)
-            info.size = len(data)
-            tar.addfile(info, io.BytesIO(data))
-    fifth = run("--session", "5", "--chain", "cc-deepseek-a", "--archive", str(archive))
-    assert fifth.returncode == 0, fifth.stderr[-2000:]
-    report = json.loads(fifth.stdout)
-    bundle = Path(report["task_path"])
-    assert bundle.name == "swe-m2_scientific-computing_sympy-restoration-48h-cc-deepseek-a-s5"
-    # four sessions of 9.6 hours are used; the fifth ends exactly with the budget
-    assert (report["used_before_sec"], report["last_session"]) == (138240, True)
-    assert "USED_BEFORE_SEC=138240\n" in (bundle / "environment/timer.sh").read_text()
-    dockerfile = (bundle / "environment/Dockerfile").read_text()
-    overlay = dockerfile.index("COPY data/progress.tar.gz /tmp/progress.tar.gz")
-    # the delivered files go over the workspace after the skeleton copy is taken and before the timer
-    assert dockerfile.index("/opt/restore/skeleton/") < overlay < dockerfile.index("COPY timer.sh /app/timer.sh")
-    with tarfile.open(bundle / "environment/data/progress.tar.gz") as tar:
-        assert sorted(tar.getnames()) == reference
-        assert all(tar.extractfile(name).read() == f"# delivered {name}\n".encode() for name in reference)
-    # the instruction, the verifier and the reference solution are those of the task
-    step = target / "steps/01-restore-bodies"
-    assert (bundle / "instruction.md").read_bytes() == (step / "instruction.md").read_bytes()
-    assert (bundle / "tests/verifier/engine.py").read_bytes() == (step / "tests/verifier/engine.py").read_bytes()
-    assert sorted(path.relative_to(bundle / "solution/data").as_posix() for path in (bundle / "solution/data").rglob("*.py")) == reference
-    # the same inputs give the same bundle
-    again = run("--session", "5", "--chain", "cc-deepseek-a", "--archive", str(archive))
-    assert json.loads(again.stdout)["content_sha256"] == report["content_sha256"]
-
-    for arguments, message in (
-        (("--session", "6", "--chain", "x", "--archive", str(archive)), "budget is used up"),
-        (("--session", "2",), "later sessions need both"),
-        (("--session", "1", "--chain", "x", "--archive", str(archive)), "Session 1 takes no chain"),
-    ):
-        refused = run(*arguments)
-        assert refused.returncode != 0 and message in refused.stderr, refused.stderr[-500:]
+    refused = subprocess.run([sys.executable, "-B", script, "--session", "1", "--output", str(tmp_path / "out")],
+                             capture_output=True, text=True, timeout=120, cwd=target / "scripts")
+    assert refused.returncode != 0 and "USED_BEFORE_SEC" in refused.stderr, refused.stderr[-500:]
+    assert not (tmp_path / "out").exists()
+    # the hours the instruction states, the timer's total and the agent limit agree
+    instruction = (task_root / "steps/01-restore-bodies/instruction.md").read_text()
+    hours = int(re.search(r"You have (\d+) hours of wall-clock time at most", instruction).group(1))
+    timer = (task_root / "environment/timer.sh").read_text()
+    total_sec = int(re.search(r"^TOTAL_SEC=(\d+)$", timer, flags=re.M).group(1))
+    agent_sec = int(re.search(r"^\[agent\]\ntimeout_sec = (\d+)$", (task_root / "task.toml").read_text(), flags=re.M).group(1))
+    assert hours * 3600 == total_sec == 43200
+    assert agent_sec <= total_sec and "USED_BEFORE_SEC" not in timer

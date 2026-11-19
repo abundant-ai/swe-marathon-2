@@ -11,9 +11,6 @@ authors = [{ name = "Neel Harsola", email = "work.neelharsola@gmail.com" }]
 reward_type = "binary"
 open_internet_justification = "Only the environment build and agent setup have public egress, to install system packages, Python packages and the agent's own tooling. The work phase and the verifier run with network_mode = no-network."
 
-# One working session. The instruction gives 48 hours; they are run as five sessions of
-# 9.6 hours, because Oddish ends an attempt after 12 hours with grading included
-# (scripts/package_session.py builds the later sessions).
 [agent]
 timeout_sec = 34560
 network_mode = "no-network"
@@ -47,6 +44,6 @@ name = "01-restore-bodies"
 [steps.agent]
 timeout_sec = 34560
 
-# Harbor's step verifier defaults to 600 seconds instead of inheriting the root limit.
+# Without this, the step verifier defaults to 600 seconds instead of the root limit.
 [steps.verifier]
 timeout_sec = 6600

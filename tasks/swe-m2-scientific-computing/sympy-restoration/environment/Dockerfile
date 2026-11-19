@@ -1,5 +1,5 @@
-# Agent image. The build context is environment/; packaging stages data/ and
-# restore/lib/restorelib.py into it.
+# Agent image. The build context is this directory, with data/ and
+# restore/lib/restorelib.py in place.
 FROM ubuntu:24.04
 COPY --from=ghcr.io/astral-sh/uv:0.13.7 /uv /usr/local/bin/uv
 ENV DEBIAN_FRONTEND=noninteractive PYTHONDONTWRITEBYTECODE=1 PIP_NO_CACHE_DIR=1 LC_ALL=C.UTF-8 LANG=C.UTF-8

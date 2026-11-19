@@ -7,9 +7,11 @@ SymPy 1.14.0 with the bodies of 2,671 functions and methods in 355 files removed
 stay. The candidate writes the bodies back, without network access, using a small
 `restore` command that reports progress and checks work against the graded view.
 
-This is a pilot brought over from a v1-style task. It has one implemented step
-with a 48-hour budget, run as five working sessions. It does not yet meet the v2
-workload target; see [Workload](#workload) and [Remaining work](#remaining-work).
+This is a pilot brought over from a v1-style task. It has one implemented step,
+run as one 12-hour working session (the version on Oddish since 2026-11-19; the
+48-hour chain of sessions it replaced is described under [Workload](#workload)).
+It does not yet meet the v2 workload target; see [Workload](#workload) and
+[Remaining work](#remaining-work).
 
 ## Development log
 
@@ -104,6 +106,38 @@ workload target; see [Workload](#workload) and [Remaining work](#remaining-work)
   (https://www.oddish.app/experiments/ebb4e086) at 17:07 UTC. No result yet.
 - Not done: `harbor check` with the v2 rubric, task ratings, any attack on the
   new entry point.
+
+### 2026-11-18
+
+- Held the six 48-hour runs after session 2 (19.2 hours, all reward 0, best 2,568
+  of 2,671 units): every further session is a new task row, and the owner wants
+  one task row per experiment. Numbers under [Validation](#validation).
+
+### 2026-11-19
+
+- Replaced the 48-hour chain with one 12-hour working session, on the owner's
+  decision. The instruction states 12 hours at most and that the run can end
+  before then, and asks for a `/app/PROGRESS.md` log every 30 minutes;
+  `/app/timer.sh` counts 12 hours from the container's first process and keeps
+  no state file. Ran first as version 2 of the `-48h-s1` task row: six model
+  trials (Proximus and claude-code, DeepSeek v4.1 Flash and GLM 5.3), all
+  reward 0, best 82.3% of units, and no early stops once claude-code ran with
+  `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`. Then uploaded as version 4 of the
+  task's own row, `swe-m2_scientific-computing_sympy-restoration-66d29774`,
+  where six more model trials run. This is the version this repository carries.
+- Oddish's pre-trial audit of version 4 (now a gate before any model trial)
+  returned one must-fix finding, information leakage, not exploited: an authoring
+  comment in `task.toml` recorded the dated time decision and named the harness
+  and its attempt limit. Removed it, and the same class of text elsewhere in the
+  shipped files: the packaging notes at the top of both Dockerfiles, the harness
+  name in `tests/verify.py` and `tests/Dockerfile`, and the word "budget" in
+  `timer.sh`. Comments and docstrings only; no value, code, threshold or
+  instruction text changed. The cleaned files go up as version 5 once the
+  running trials settle.
+- `scripts/package_session.py` stays for the record but cannot stage this task
+  any more (the 12-hour timer has no `USED_BEFORE_SEC` line). Its check now
+  asserts that refusal, and that the hours the instruction states, the timer's
+  total and the agent limit agree. 35 checks pass.
 
 ## Current implementation
 
@@ -210,11 +244,13 @@ with either model tried.
 ## Workload
 
 v2 asks for at least five days of agent execution. This task does not meet that.
-The budget is 48 hours. With the earlier 9-hour limit the best run used all of it
-at about 4,300 steps per hour and reached 96.2% of units; what the remaining 39
-hours buy is being measured (experiment `sympy-restoration-v2-48h-20261117`).
+Since 2026-11-19 a trial is one 12-hour session. With the earlier 9-hour limit the
+best run used all of it at about 4,300 steps per hour and reached 96.2% of units;
+one 12-hour session reached 82.3% at best; two 48-hour sessions (19.2 hours)
+reached 2,568 of 2,671 units at best (experiment `sympy-restoration-v2-48h-20261117`).
 
-How the 48 hours run. Oddish ends an attempt after 12 hours, grading included,
+How the 48 hours ran (retired on 2026-11-19 in favour of the single 12-hour
+session; kept for the record). Oddish ends an attempt after 12 hours, grading included,
 and does not compare a task's limit with that, so a 48-hour agent limit in one
 trial would end ungraded. The agent limit in `task.toml` is therefore one
 working session of 9.6 hours, and five sessions make the budget:
@@ -418,7 +454,7 @@ Proximus on the v1 package, base experiment, 2026-11-17:
 
 | Check | Revision | Result |
 | --- | --- | --- |
-| `checks/` (35 tests) | working tree, 2026-11-17 | pass |
+| `checks/` (35 tests) | working tree, 2026-11-17 and 2026-11-19 | pass |
 | `oddish preflight` | bundles `e043dc4facdd` and `8180b51500b1` | pass |
 | Reference and no-op baselines on Oddish | bundle `e043dc4facdd` (v1 instruction text, v2 verifier), task version 1, experiment `sympy-restoration-v2-20261117` | reference 1.0 twice (2,671 / 13,384 / 10,428, five checks passed, grading 652 s and 691 s); no-op 0.0 twice (`candidate_tree` failed, four checks skipped, report `completed`) |
 | Reference and no-op baselines on Oddish | bundle `8180b51500b1` (rewritten instruction and tool text), task version 2, experiment `sympy-restoration-v2-final-20261117` (https://www.oddish.app/experiments/0b7a142f) | reference 1.0 twice (trials 9, 10: 2,671 / 13,384 / 10,428, five checks passed, grading 658 s and 649 s); no-op 0.0 twice (trials 11, 12). A first attempt at 04:47 UTC targeted the version-1 experiment and created no trials |
@@ -430,6 +466,7 @@ Proximus on the v1 package, base experiment, 2026-11-17:
 | Final verifier: two grades of one stored submission | trial 17's submission (`...-regrade-t17-a3369a0f` version 3) and single-step trial 6's (`...-regrade-p6-2f6816d9` version 2), same experiment | trial 17: 2,481 units and 12,270 calls in both grades, as in the original grade; 9,298 and 9,305 tests, none unreached (7,453 with 2,267 unreached originally). Trial 6: both grades identical, 1,077 units, 5,227 calls, 3,002 tests with 8,646 settled (0 of 10,428 originally); one test file, `sympy/physics/quantum/tests/test_represent.py`, never finishes importing and had blocked the whole session. All reward 0 |
 | 48-hour session 1: reference and no-op baselines | bundle `6d30d72c0afb`, task `...-48h-s1-6519a8c3` version 1, experiment `sympy-restoration-v2-48h-20261117` (https://www.oddish.app/experiments/ebb4e086) | reference 1.0 twice (trials 1, 2), no-op 0.0 twice (trials 3, 4). Model trials 6 to 11 (session 1 of six runs) started 2026-11-17 17:07 UTC |
 | 48-hour runs after two sessions (19.2 h) | session 1 on `...-48h-s1-6519a8c3`; session 2 on one continuation task per run (`...-48h-<run>-s2-...`), same experiment; each session-2 no-op repeated its session-1 unit count exactly | all reward 0. Units passing, session 1 -> 2: cc-deepseek-a 2,375 -> 2,568; cc-deepseek-b 2,338 -> 2,494; cc-glm-a 1,976 -> 2,535; px-deepseek-a 1,159 -> 1,590; px-deepseek-b 1,289 -> 1,723; px-glm-a 1,031 -> 1,509 (of 2,671). Hidden tests passing after session 2: 9,693 / 9,009 / 9,603 / 5,584 / 6,231 / 5,473 (of 10,428). Held after session 2: the owner wants every experiment to be one task row, so no further continuation tasks without his word |
+| 12-hour single session | `...-48h-s1-6519a8c3` version 2, experiment ebb4e086, 2026-11-19; the same files under the task's own name as `...-66d29774` version 4 | reference 1.0 twice, no-op 0.0 twice; six model trials all reward 0: claude-code 82.3%, 51.8% and 51.3% of units at the 9.6 h limit, Proximus 48.1%, 46.9% and 40.2%. Version 4: pre-trial audit one must-fix (the `task.toml` comment), fixed in this commit for version 5 |
 | `harbor check` with `resources/task-implementation.toml` | working tree, 2026-11-17 | attempted on Modal; failed before review with `NotFoundError: Environment not found` (no default Modal environment). Not run in local Docker. No ratings |
 | Local image builds | none | not run for the v2 Dockerfiles; the Oddish baselines are the first build |
 
@@ -457,7 +494,7 @@ Other bundles, all from the same sources:
 
 ```bash
 python package_single_step.py                 # same content without the steps wrapper (Proximus)
-python package_session.py --session 1         # first working session of the 48 hours
+python package_session.py --session 1         # 48-hour chain, retired 2026-11-19: refused on the 12-hour timer
 python package_session.py --session 2 --chain <run> --archive <candidate_unit_files.tar.gz>
 python package_regrade.py <candidate_unit_files.tar.gz> --label <name>   # grade a stored submission again
 ```
@@ -470,9 +507,9 @@ uv run --frozen pytest -q tasks/swe-m2-scientific-computing/sympy-restoration/ch
 
 ## Remaining work
 
-- The six 48-hour runs are held after session 2 (2026-11-18): each further session is a new
-  task, one more row per run, and the owner wants one row per experiment. Sessions 3-5 only on
-  his word; future runs of this task are single trials on one task.
+- The 48-hour chain is retired (2026-11-18 and 19): one task row per experiment,
+  one 12-hour session per trial. The six held runs stay as history in experiment
+  ebb4e086.
 - Apply the same change to the v1 package's `grade.py` if that package is used
   again.
 - Run `harbor check` with the v2 rubric and record ratings with the task-rating

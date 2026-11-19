@@ -1,6 +1,6 @@
-"""How a work tree is turned into the tree that is evaluated.
+"""How a work tree is turned into its delivered form.
 
-A candidate tree is built from the reference skeleton by replacing, for every
+The delivered tree is built from the original skeleton by replacing, for every
 restorable unit, the placeholder statement with the body found in the work tree
 for the function of the same qualified name in the same file.  Nothing else
 from the work tree is used.
@@ -322,7 +322,7 @@ def load_units(path: str):
 def build_candidate(skel_root: str, work_root: str, cand_root: str, byfile: dict, cache: dict | None = None):
     """Refresh candidate files for all unit-bearing files. Returns {uid: state}.
 
-    work_root/<file> is read; skel_root/<file> is the reference; the result is written to
+    work_root/<file> is read; skel_root/<file> is the original skeleton; the result is written to
     cand_root/<file>.  `cache` (mutable dict) memoises per-file results on (mtime_ns, size).
     """
     states = {}
