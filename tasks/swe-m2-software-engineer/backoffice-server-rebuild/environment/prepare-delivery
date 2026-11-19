@@ -1,8 +1,12 @@
 #!/bin/sh
-# Runs as root once the agent's session has ended, before /app/server is copied to the machine that runs it. The copy is
-# then bounded (the limits the instruction states), nothing of the agent's runs, and the mark says what was delivered.
+# Runs as root once the agent's session has ended, before /app/server is copied to the machine that runs it. What it lets
+# through is what the copy can take: within the limits the instruction states, with nothing of the agent's running, and
+# packed here first the way the copy packs it. The mark says what was delivered.
 LIMIT_ENTRIES=100000
 LIMIT_BYTES=1000000000
+LIMIT_PATH=1000
+PACK_SECONDS=100
+STATE=/var/lib/delivery
 # End every process of the agent's user. `kill -9 -1` as that user reaches all of them in one system call, so a process
 # that forks cannot outrun it; repeat until none is left.
 for _ in $(seq 1 100); do
@@ -11,15 +15,17 @@ for _ in $(seq 1 100); do
   pkill -KILL -u dev >/dev/null 2>&1
   sleep 0.1
 done
-# Give back the room set aside when the session started, so however full the disk was left, the mark can be written and
-# a delivery that cannot be copied can be replaced by an empty one.
-rm -f /var/lib/delivery/room
+# Give back the room and the spare inodes set aside when the session started, so however full the disk was left, the
+# mark, a refusal and the copy's archive can be written.
+rm -f "$STATE/room"
+rm -rf "$STATE/inodes"
 if [ ! -d /app/server ] || [ -L /app/server ]; then exit 0; fi
 # Whatever was left under the mark's name is moved aside, never followed.
 if [ -e /app/server/.delivered ] || [ -L /app/server/.delivered ]; then
   aside=$(mktemp -d /app/.aside.XXXXXX) && mv -f /app/server/.delivered "$aside/" || exit 0
 fi
-setpriv --reuid dev --regid dev --clear-groups --no-new-privs /opt/py/bin/python -I - /app/server <<'EOF'
+# Links, as the agent's user (it copies nothing that user could not read), within the limits and two minutes.
+timeout 120 setpriv --reuid dev --regid dev --clear-groups --no-new-privs /opt/py/bin/python -I - /app/server "$LIMIT_ENTRIES" "$LIMIT_BYTES" <<'EOF'
 """Make /app/server safe to copy to the machine it will run on, as the user who built it.
 
 The copy keeps relative links that stay inside the directory and refuses everything else. A link
@@ -34,31 +40,35 @@ import stat
 import sys
 
 ROOT = os.path.realpath(sys.argv[1])
-BUDGET = 1_000_000_000  # what /app/server may hold in all
-spent = 0
+ENTRIES = int(sys.argv[2]) if len(sys.argv) > 2 else 100_000  # what /app/server may hold in all
+BUDGET = int(sys.argv[3]) if len(sys.argv) > 3 else 1_000_000_000
+spent = copied = 0
 
 
 def inside(path):
     return path == ROOT or path.startswith(ROOT + os.sep)
 
 
-def size_of(path, limit):
+def size_of(path, limit, most):
+    """Bytes and entries a copy of `path` would add; the count stops once either passes its limit."""
     if not os.path.isdir(path):
-        return os.path.getsize(path)
-    total = 0
-    for folder, _, files in os.walk(path):
+        return os.path.getsize(path), 1
+    total, count = 0, 1
+    for folder, folders, files in os.walk(path):
+        count += len(folders)
         for name in files:
+            count += 1
             try:
                 total += os.lstat(os.path.join(folder, name)).st_size
             except OSError:
                 pass
-            if total > limit:
-                return total
-    return total
+            if total > limit or count > most:
+                return total, count
+    return total, count
 
 
 def fix_link(path, name):
-    global spent
+    global spent, copied
     target = os.readlink(path)
     resolved = os.path.realpath(path)
     if not os.path.exists(resolved):
@@ -75,12 +85,13 @@ def fix_link(path, name):
     if not (stat.S_ISREG(mode) or stat.S_ISDIR(mode)):
         os.unlink(path)
         return f"removed {name} -> {target}: it points at a device, a pipe or a socket"
-    size = size_of(resolved, BUDGET - spent)
-    if spent + size > BUDGET:
+    size, count = size_of(resolved, BUDGET - spent, ENTRIES - copied)
+    if spent + size > BUDGET or copied + count > ENTRIES:
         os.unlink(path)
-        return f"removed {name} -> {target}: copying it would pass 1 GB"
+        return f"removed {name} -> {target}: copying it would pass {ENTRIES:,} entries or {BUDGET:,} bytes"
     os.unlink(path)
     spent += size
+    copied += count
     if os.path.isdir(resolved):
         shutil.copytree(resolved, path, symlinks=True, ignore=special_files)
     else:
@@ -124,96 +135,143 @@ for _ in range(10):
     if not one_pass():
         break
 EOF
+# Measure, bound, pack once and mark, as root.
+exec /opt/py/bin/python -I - /app/server "$LIMIT_ENTRIES" "$LIMIT_BYTES" "$LIMIT_PATH" "$STATE" /tmp "$PACK_SECONDS" <<'EOF'
+"""Measure /app/server, bound it, pack it once and mark it, as root, once nothing of the agent's runs.
 
-# Measure, bound and mark, as root.
-exec /opt/py/bin/python -I - /app/server "$LIMIT_ENTRIES" "$LIMIT_BYTES" <<'EOF'
-"""Measure /app/server, bound it and mark it, as root, once nothing of the agent's runs.
-
-Anything the copy would refuse is removed: a device, a pipe, a socket, a link with an absolute target or one that leaves
-the directory. A delivery over the limits, or one the disk has no room left to copy after the session used up the room
-it had when it began, is moved aside whole and replaced by an empty directory. The mark's first line is `delivered`
-with the number of entries (files, directories and links) and of bytes in its files, or `refused`; each line after it
-is a change made or the reason for the refusal.
+The tree is walked by directory descriptor, so no depth hides anything, and any step that cannot be completed refuses
+the delivery. Anything the copy would refuse is removed: a device, a pipe, a socket, a link with an absolute target or
+one that resolves outside the directory. A delivery over the limits, or one that the copy's own pack (tar -czf into
+/tmp) cannot make within PACK_SECONDS, is moved aside whole and replaced by an empty directory; a pack that fails only
+for want of room or inodes the machine never had is left to the copy. The mark's first line is `delivered` with the
+number of entries (files, directories and links) and of bytes in its files (each file once, however many names it
+has), or `refused`; each line after it is a change made or the reason for the refusal.
 """
 import os
 import stat
+import subprocess
 import sys
 import tempfile
 
 ROOT = os.path.realpath(sys.argv[1])
-LIMIT_ENTRIES, LIMIT_BYTES = int(sys.argv[2]), int(sys.argv[3])
+LIMIT_ENTRIES, LIMIT_BYTES, LIMIT_PATH = int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4])
+STATE, ARCHIVES, PACK_SECONDS = sys.argv[5], sys.argv[6], float(sys.argv[7])
 MARK = os.path.join(ROOT, ".delivered")
-FREE_AT_START = "/var/lib/delivery/free-at-start"
-notes = []
-
-
-def leaves(path, target):
-    if os.path.isabs(target):
-        return True
-    joined = os.path.normpath(os.path.join(os.path.dirname(os.path.relpath(path, ROOT)), target))
-    return joined == ".." or joined.startswith(".." + os.sep)
-
-
+SPARE_INODES = 16
+notes, links, files = [], [], set()
 entries = size = 0
-over = False
-stack = [ROOT]
-while stack and not over:
-    folder = stack.pop()
-    try:
-        listing = os.scandir(folder)
-    except OSError:
-        continue
-    with listing:
+
+
+class Refuse(Exception):
+    pass
+
+
+def walk(fd, rel):
+    """Count, and remove what the copy would refuse, below the directory open as `fd` (`rel` inside ROOT)."""
+    global entries, size
+    with os.scandir(fd) as listing:
+        names = []
         for entry in listing:
-            name = os.path.relpath(entry.path, ROOT)
+            names.append(entry.name)
+            if entries + len(names) > LIMIT_ENTRIES:
+                raise Refuse(f"it holds more than {LIMIT_ENTRIES:,} entries, the most /app/server may hold")
+    for name in names:
+        path = f"{rel}/{name}" if rel else name
+        if len(os.fsencode(path)) > LIMIT_PATH:
+            raise Refuse(f"it holds a path longer than {LIMIT_PATH:,} bytes, the longest /app/server may hold")
+        info = os.stat(name, dir_fd=fd, follow_symlinks=False)
+        if stat.S_ISLNK(info.st_mode):
+            links.append(path)
+        elif not (stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode)):
+            os.unlink(name, dir_fd=fd)
+            notes.append(f"removed {path}: not a file, a directory or a link")
+            continue
+        entries += 1
+        if stat.S_ISREG(info.st_mode) and (info.st_dev, info.st_ino) not in files:
+            files.add((info.st_dev, info.st_ino))
+            size += info.st_size
+            if size > LIMIT_BYTES:
+                raise Refuse(f"it holds more than {LIMIT_BYTES:,} bytes, the most /app/server may hold")
+        if stat.S_ISDIR(info.st_mode):
+            child = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
             try:
-                info = entry.stat(follow_symlinks=False)
-                if stat.S_ISLNK(info.st_mode) and leaves(entry.path, os.readlink(entry.path)):
-                    os.unlink(entry.path)
-                    notes.append(f"removed {name}: a link that leaves /app/server")
-                    continue
-                if not (stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode) or stat.S_ISLNK(info.st_mode)):
-                    os.unlink(entry.path)
-                    notes.append(f"removed {name}: not a file, a directory or a link")
-                    continue
+                walk(child, path)
+            finally:
+                os.close(child)
+
+
+def inside(path):
+    return path == ROOT or path.startswith(ROOT + os.sep)
+
+
+def trial_pack():
+    """None when the copy's own pack of ROOT succeeds within PACK_SECONDS; else why not."""
+    probe = None
+    try:
+        descriptor, probe = tempfile.mkstemp(prefix=".delivery-pack.", suffix=".tar.gz", dir=ARCHIVES)
+        os.close(descriptor)
+        done = subprocess.run(["tar", "-czf", probe, "-C", ROOT, "."], capture_output=True, timeout=PACK_SECONDS)
+        if done.returncode != 0:
+            last = done.stderr.decode(errors="backslashreplace").strip().splitlines()[-1:] or [f"exit status {done.returncode}"]
+            return f"the copy's pack of it failed ({last[0][:200]})"
+        return None
+    except subprocess.TimeoutExpired:
+        return f"the copy's pack of it took more than {PACK_SECONDS:.0f} seconds"
+    except OSError as exc:
+        return f"the copy's pack of it could not be made ({exc})"
+    finally:
+        if probe is not None:
+            try:
+                os.unlink(probe)
             except OSError:
-                continue
-            entries += 1
-            if stat.S_ISDIR(info.st_mode):
-                stack.append(entry.path)
-            elif stat.S_ISREG(info.st_mode):
-                size += info.st_size
-            if entries > LIMIT_ENTRIES or size > LIMIT_BYTES:
-                over = True
-                break
+                pass
+
 
 reason = None
-if over:
-    reason = (f"it holds more than {LIMIT_ENTRIES:,} entries or {LIMIT_BYTES:,} bytes, the most /app/server may hold (the "
-              f"count stopped at {entries:,} {'entry' if entries == 1 else 'entries'} and {size:,} bytes): it was not copied")
-else:
-    need = size + entries * 1024 + (16 << 20)
-    disk = os.statvfs("/tmp")
-    free = disk.f_bavail * disk.f_frsize
+sys.setrecursionlimit(max(10_000, LIMIT_PATH * 2))
+try:
+    top = os.open(ROOT, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
-        with open(FREE_AT_START) as text:
-            at_start = int(text.read().split()[0])
-    except (OSError, ValueError, IndexError):
-        at_start = None
-    if free < need and at_start is not None and at_start >= need:
-        reason = (f"the disk had {free:,} bytes free when the session ended, {at_start:,} when it began, and copying "
-                  f"/app/server needs {need:,}: it was not copied")
+        walk(top, "")
+    finally:
+        os.close(top)
+    for path in links:
+        target = os.readlink(os.path.join(ROOT, path))
+        if os.path.isabs(target) or not inside(os.path.realpath(os.path.join(ROOT, path))):
+            os.unlink(os.path.join(ROOT, path))
+            entries -= 1
+            notes.append(f"removed {path}: a link that leads outside /app/server")
+except Refuse as refusal:
+    reason = str(refusal)
+except (OSError, RecursionError, ValueError) as exc:
+    reason = f"it could not be measured ({exc.__class__.__name__}: {exc})"
+
+if reason is None:
+    failed = trial_pack()
+    if failed is not None:
+        disk = os.statvfs(ARCHIVES)
+        need = size + entries * 1024 + (16 << 20)
+        short = disk.f_bavail * disk.f_frsize < need or disk.f_favail < SPARE_INODES
+        try:
+            with open(os.path.join(STATE, "free-at-start")) as text:  # free blocks, block size, free inodes
+                blocks, block, start_inodes = (int(value) for value in text.read().split()[:3])
+            had_room = blocks * block >= need and start_inodes >= SPARE_INODES
+        except (OSError, ValueError):
+            had_room = False
+        if short and not had_room:
+            notes.append(f"{failed}, for want of room the machine did not have when the session began")
+        else:
+            reason = failed
 
 lines = [f"delivered {entries} {size}"]
 if reason is not None:
-    aside = tempfile.mkdtemp(prefix=".refused.", dir=os.path.dirname(ROOT))
-    os.rename(ROOT, os.path.join(aside, "server"))
+    os.rename(ROOT, os.path.join(os.path.dirname(ROOT), f".refused.{os.urandom(6).hex()}"))
     os.mkdir(ROOT)
     os.chmod(ROOT, 0o777)
-    lines = ["refused", reason]
+    lines = ["refused", f"{reason}: it was not copied"]
 descriptor = os.open(MARK, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644)
-with os.fdopen(descriptor, "w") as mark:
+with os.fdopen(descriptor, "w", errors="backslashreplace") as mark:
     mark.write("\n".join(lines + notes) + "\n")
 for line in lines[1:] + notes:
-    print(line, flush=True)
+    print(line.encode(errors="backslashreplace").decode(), flush=True)
 EOF

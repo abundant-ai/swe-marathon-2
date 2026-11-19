@@ -48,10 +48,11 @@ A server in `/app/server` with an executable file `/app/server/run` that starts 
   `python3` and its packages, Node.js and Go. A link that points outside the directory is
   replaced there by a copy of what it points to; everything else the server needs must be inside
   `/app/server`. With those copies it may hold at most 100,000 files and directories and 1 GB,
-  and the disk needs that much room left to copy it; otherwise it is not copied. It runs as an
-  unprivileged user that can read that directory and write only to the directory named in
-  `DATA_DIR`, with at most 4,096 threads, files of at most 4 GB, 6 GB of address space per
-  process and 6 GB of memory in all, shared memory included.
+  with no path inside it longer than 1,000 bytes, and the disk needs that much room left to copy
+  it; otherwise it is not copied. It runs as an unprivileged user that can read that directory
+  and write only to the directory named in `DATA_DIR`, with at most 4,096 threads, files of at
+  most 4 GB, 6 GB of address space per process and 6 GB of memory in all, shared memory
+  included.
 - One server holds thousands of workspaces in that `DATA_DIR`: each branch's books, and the
   copies we make for training and trials. Everything a workspace holds must survive the server
   being stopped and started again with the same `DATA_DIR`, even when it is killed without

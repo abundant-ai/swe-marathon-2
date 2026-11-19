@@ -1290,6 +1290,9 @@ put("proc/meminfo", f"MemTotal:\t{8 * GiB >> 10} kB\nMemFree:\t{GiB >> 10} kB\nM
 machine = replay.MemoryMeter(65534)
 put("proc/meminfo", f"MemTotal:\t{8 * GiB >> 10} kB\nMemFree:\t{GiB >> 10} kB\nMemAvailable:\t{GiB >> 10} kB\n")
 out["meminfo"] = [machine.kind, machine.server_bytes() >> 20]
+put("proc/self/status", "Name:\tpython3\nVmRSS:\t409600 kB\n")  # gVisor: no RssAnon, and MemAvailable is MemFree
+out["gvisor"] = replay.MemoryMeter(65534).kind
+grader(400 * MiB)
 put("proc/meminfo", f"MemTotal:\t{64 * GiB >> 10} kB\nMemAvailable:\t{GiB >> 10} kB\n")  # a shared host's: not this machine's
 # only the server's processes: proportional set size, unattached SysV segments, unmapped files in memory-backed places
 # (the user here is this check's own, who can own a file)
@@ -1333,6 +1336,7 @@ def test_the_memory_guard_counts_every_page_the_server_holds_once(tmp_path):
     assert out["parked"] == 900 + 300 + 5600 > 6 << 10, out  # over the 6 GiB the instruction allows, though no process maps it
     assert out["v1"] == ["cgroup v1", 900 + (7 << 10)]
     assert out["meminfo"] == ["meminfo", 5 << 10], out
+    assert out["gvisor"] == "processes", out  # QA 07f S2: meminfo is not read where the kernel reports no RssAnon
     # 2 x (500 + 150) MiB of proportional set size, the unattached 1 GiB segment of the server's user (not the attached
     # one, whose pages are in the set size, nor root's), and the file parked in /dev/shm that no process maps
     kind, held, parked = out["processes"]
@@ -1439,17 +1443,35 @@ sys.path.insert(0, sys.argv[1])
 import verify
 from verifier.replay import EvaluationError
 hook, base = Path(sys.argv[2]).read_text(), Path(sys.argv[3])
-measure = hook.split("<<'EOF'\n")[2].split("\nEOF\n", 1)[0]  # the hook's second script, run as root after the link fixer
+fixer = hook.split("<<'EOF'\n")[1].split("\nEOF\n", 1)[0]  # the link fixer, run as the agent's user
+measure = hook.split("<<'EOF'\n")[2].split("\nEOF\n", 1)[0]  # the second script, run as root after it
+FULL = ("import os\n_statvfs = os.statvfs\nclass Full:\n    f_bavail = f_favail = 0\n    f_frsize = 4096\n"
+        "os.statvfs = lambda path: Full()\n")  # a disk with no room and no inode left
 
 
-def deliver(name, build, entries="100000", size="1000000000"):
+def deliver(name, build, entries="100000", size="1000000000", path="1000", seconds="100", start=None, tar=None, prelude=""):
     app = base / name / "app"
-    server = app / "server"
-    server.mkdir(parents=True)
+    server, state, archives = app / "server", base / name / "state", base / name / "tmp"
+    for folder in (server, state, archives):
+        folder.mkdir(parents=True)
+    if start is not None:
+        (state / "free-at-start").write_text(start)
     build(server)
-    done = subprocess.run([sys.executable, "-I", "-", str(server), entries, size], input=measure, capture_output=True, text=True, timeout=120)
+    environment = dict(os.environ)
+    if tar is not None:  # a stand-in for the copy's tar, first on the PATH
+        (base / name / "bin").mkdir()
+        (base / name / "bin" / "tar").write_text("#!/bin/sh\n" + tar)
+        (base / name / "bin" / "tar").chmod(0o755)
+        environment["PATH"] = f"{base / name / 'bin'}:{environment['PATH']}"
+    done = subprocess.run([sys.executable, "-I", "-", str(server), entries, size, path, str(state), str(archives), seconds],
+                          input=prelude + measure, capture_output=True, text=True, timeout=300, env=environment)
     assert done.returncode == 0, done.stderr
+    assert not os.listdir(archives), "the trial pack is removed"
     return app, server
+
+
+def mark(server):
+    return (server / ".delivered").read_text().splitlines()
 
 
 def copy(server, target, cut=None):  # what Harbor does: tar on the agent's machine, extract with the data filter
@@ -1457,8 +1479,7 @@ def copy(server, target, cut=None):  # what Harbor does: tar on the agent's mach
     subprocess.run(["tar", "-cf", str(archive), "-C", str(server), "."], check=True, capture_output=True, timeout=120,
                    env=dict(os.environ, COPYFILE_DISABLE="1"))  # macOS's tar would add ._ files for extended attributes
     if cut is not None:
-        data = archive.read_bytes()
-        archive.write_bytes(data[:cut])
+        archive.write_bytes(archive.read_bytes()[:cut])
     target.mkdir()
     try:
         with tarfile.open(archive) as bundle:
@@ -1483,73 +1504,129 @@ def server_tree(server):
     (server / "inside").symlink_to("app/main.py")
     (server / "outside").symlink_to("../../../../etc/hosts")
     (server / "absolute").symlink_to("/etc/hosts")
+    (server / "app" / "b").mkdir()
+    (server / "app" / "b" / "up").symlink_to("..")  # resolves inside
+    (server / "esc").symlink_to("app/b/up/../..")  # lexically inside, resolves outside (QA 07f S4)
     os.mkfifo(server / "pipe")
     os.link(server / "run", server / "run-again")
 
 
+def deep(server, levels=6, length=200, pad=1 << 32):
+    # a path longer than this machine's PATH_MAX (1,024 bytes on macOS, 4,096 on Linux), made by directory descriptor
+    fd = os.open(server, os.O_RDONLY)
+    for _ in range(levels):
+        os.mkdir("d" * length, dir_fd=fd)
+        child = os.open("d" * length, os.O_RDONLY, dir_fd=fd)
+        os.close(fd)
+        fd = child
+    padding = os.open("pad", os.O_WRONLY | os.O_CREAT, 0o644, dir_fd=fd)
+    os.ftruncate(padding, pad)  # takes no room: the copy's tar would read every byte
+    os.close(padding)
+    os.close(fd)
+    (server / "run").write_text("#!/bin/sh\n")
+
+
 out = {}
 app, server = deliver("good", server_tree)
-mark = (server / ".delivered").read_text().splitlines()
-out["mark"] = mark
+out["mark"] = mark(server)
 out["left"] = sorted(path.name for path in server.iterdir())
 out["complete"] = notes(copy(server, base / "good" / "copied"))
+partial = copy(server, base / "good" / "partial")
+(partial / "app" / "main.py").unlink()  # the mark arrived, a file did not
+out["partial"] = notes(partial)
 size = os.path.getsize(base / "good" / "copied.tar")
 out["cut"] = notes(copy(server, base / "good" / "cut", cut=size // 3))
 out["nothing"] = notes(copy(server, base / "good" / "empty", cut=0))
+(server / ".delivered").write_text("delivered ² 5\n")  # not ASCII digits: a mark the hook did not write (QA 07f N1)
+out["odd"] = notes(server)
 (server / ".delivered").unlink()
 out["unmarked"] = notes(copy(server, base / "good" / "unmarked"))
-app, server = deliver("big", server_tree, entries="3")
-out["refused"] = [(server / ".delivered").read_text().splitlines()[0], sorted(path.name for path in server.iterdir()),
-                  [path.name.split(".")[1] for path in app.iterdir() if path.name.startswith(".refused.")]]
-out["refused_notes"] = notes(copy(server, base / "big" / "copied"))
-def sparse(server):  # 4 GiB that take no room: the platform's tar would read them all
-    (server / "pad").touch()
-    os.truncate(server / "pad", 1 << 32)
-
-
-app, server = deliver("sparse", sparse)
-out["sparse"] = (server / ".delivered").read_text().splitlines()[:2]
+app, server = deliver("many", server_tree, entries="3")
+out["many"] = [mark(server), sorted(path.name for path in server.iterdir()),
+               sorted(path.name.split(".")[1] if path.name.startswith(".") else path.name for path in app.iterdir())]
+out["many_notes"] = notes(copy(server, base / "many" / "copied"))
+app, server = deliver("sparse", lambda server: deep(server, levels=0))
+out["sparse"] = mark(server)[:2]
+app, server = deliver("deep", deep)  # QA 07f M4: past PATH_MAX, the path limit refuses it
+out["deep"] = mark(server)[:2]
+app, server = deliver("deep-seen", deep, path="100000")  # with no path limit, the walk still sees the 4 GiB below
+out["deep_seen"] = mark(server)[:2]
+app, server = deliver("slow", server_tree, seconds="1", tar="sleep 30\n")
+out["slow"] = mark(server)[:2]
+app, server = deliver("broken", server_tree, tar="echo 'tar: ./x: Cannot open: Input/output error' >&2; exit 2\n")
+out["broken"] = mark(server)[:2]
+failing = "echo 'tar: /tmp/x: Cannot open: No space left on device' >&2; exit 2\n"
+app, server = deliver("inodes", server_tree, start="2500000 4096 1300000\n", tar=failing, prelude=FULL)
+out["inodes"] = mark(server)[:2]
+app, server = deliver("never-room", server_tree, tar=failing, prelude=FULL)
+out["never_room"] = mark(server)
 app, server = deliver("nop", lambda server: None)
-out["nop"] = [(server / ".delivered").read_text().splitlines(), notes(copy(server, base / "nop" / "copied"))]
+out["nop"] = [mark(server), notes(copy(server, base / "nop" / "copied"))]
+outside = base / "venv-like"
+outside.mkdir()
+for number in range(20):
+    (outside / str(number)).write_text("x")
+fixed = base / "fixer" / "server"
+fixed.mkdir(parents=True)
+(fixed / "lib").symlink_to(outside)
+done = subprocess.run([sys.executable, "-I", "-", str(fixed), "10", "1000000000"], input=fixer, capture_output=True, text=True, timeout=60)
+out["fixer"] = [done.returncode, done.stdout.strip(), os.path.lexists(fixed / "lib")]
 print(json.dumps(out))
 """
 
 
 def test_a_delivery_the_agent_can_make_uncopyable_is_bounded_before_the_copy_and_scored_as_it_arrives(tmp_path):
-    """QA 07e M4: round 5 took a missing mark for a failed copy and made it an evaluation error, so a submission could turn
-    its 0 into an error and a re-run at will: a 1 TiB sparse file makes the platform's tar outlast its limit, a full disk
-    leaves it no room for the archive, a process the hook missed changes files while they are copied. Now the hook ends
-    the agent's processes with one `kill -9 -1` as their user, gives back room set aside when the session began, and
-    bounds what is copied: it removes what the copy would refuse, and moves a delivery over the instruction's limits, or
-    one the disk the agent filled has no room to copy, aside whole, leaving an empty one marked `refused` and why.
-    Its mark counts the entries and bytes. The verifier scores whatever arrived, with a note when the mark is missing,
-    says `refused` or counts more than arrived; only a copy of which nothing at all arrived is an evaluation error."""
+    """QA 07e M4 and 07f M4: the agent must not be able to make the copy of /app/server fail, which would leave no result
+    and a re-run. Round 6's bound walked by path name and skipped, silently, anything below PATH_MAX, where a 4 TiB
+    sparse file made the platform's pack outlast its limit; full inodes did the same. The hook now ends the agent's
+    processes with one `kill -9 -1` as their user, gives back room and inodes set aside when the session began, walks
+    the delivery by directory descriptor and refuses on anything it cannot complete or past the instruction's limits
+    (100,000 entries, 1 GB counting each file once, paths of 1,000 bytes), removes what the copy would refuse (a link
+    that resolves outside, through other links too), and then packs it once the way the copy does, within 100 s: a pack
+    that fails or overruns is refused, unless it failed for want of room or inodes the machine never had. A refused
+    delivery arrives as an empty directory marked `refused` and scores 0. The verifier scores what arrived, with a note
+    when the mark is missing or says refused; a mark that counts more than arrived (a copy the platform cut short, QA
+    07f S1) and an /app/server of which nothing arrived are evaluation errors."""
     done = subprocess.run([sys.executable, "-I", "-B", "-c", DELIVERY, str(STEP / "tests"), str(TASK / "environment" / "prepare-delivery"),
-                           str(tmp_path)], capture_output=True, text=True, timeout=300)
+                           str(tmp_path)], capture_output=True, text=True, timeout=600)
     assert done.returncode == 0, done.stderr[-3000:]
     out = json.loads(done.stdout.strip().splitlines()[-1])
-    # app, app/main.py, run, run-again, empty, inside: 6 entries; the links that leave and the pipe are removed
-    assert out["mark"][0] == f"delivered 6 {600 + 2 * len('#!/bin/sh' + chr(10) + 'exec python3 app/main.py' + chr(10))}", out["mark"]
-    assert sorted(out["mark"][1:]) == ["removed absolute: a link that leaves /app/server", "removed outside: a link that leaves /app/server",
-                                       "removed pipe: not a file, a directory or a link"]
+    run = len("#!/bin/sh\nexec python3 app/main.py\n")
+    # app, app/main.py, app/b, app/b/up, run, run-again, empty, inside: 8 entries; run and run-again are one file
+    assert out["mark"][0] == f"delivered 8 {600 + run}", out["mark"]
+    assert sorted(out["mark"][1:]) == ["removed absolute: a link that leads outside /app/server", "removed esc: a link that leads outside /app/server",
+                                       "removed outside: a link that leads outside /app/server", "removed pipe: not a file, a directory or a link"]
     assert out["left"] == [".delivered", "app", "empty", "inside", "run", "run-again"]
-    assert out["complete"] == [f"collect hook: {line}" for line in out["mark"][1:]]
-    # a copy cut short is never scored as complete: the mark counts more than arrived, the mark is missing, or nothing came
-    assert out["cut"] and (out["cut"][0].startswith(("the copy arrived incomplete", "the delivery arrived without", "ERROR Nothing"))
-                           or any(note.startswith("the copy arrived incomplete") for note in out["cut"])), out["cut"]
+    assert out["complete"] == [f"collect hook: {line}" for line in out["mark"][1:]], out["complete"]
+    # a copy cut short is never scored as complete: the mark counts more than arrived (an error), the mark is missing
+    # (scored with a note), or nothing came (an error)
+    assert out["cut"][0].startswith(("ERROR The copy arrived incomplete", "the delivery arrived without", "ERROR Nothing")), out["cut"]
     assert out["nothing"][0].startswith("ERROR Nothing arrived") and out["unmarked"][0].startswith("the delivery arrived without")
-    assert out["refused"] == ["refused", [".delivered"], ["refused"]]
-    assert out["refused_notes"][0].startswith("collect hook: it holds more than 3 entries")
-    assert out["sparse"][0] == "refused" and "1,000,000,000 bytes" in out["sparse"][1], out["sparse"]
+    assert out["partial"] == [f"ERROR The copy arrived incomplete: 7 of 8 entries and {run:,} of {600 + run:,} bytes"], out["partial"]
+    assert out["odd"] == ["the collect hook's mark could not be read; the delivery was scored as it arrived"]
+    assert out["many"] == [["refused", "it holds more than 3 entries, the most /app/server may hold: it was not copied"], [".delivered"],
+                           ["refused", "server"]], out["many"]
+    assert out["many_notes"][0] == "collect hook: it holds more than 3 entries, the most /app/server may hold: it was not copied"
+    assert out["sparse"] == ["refused", "it holds more than 1,000,000,000 bytes, the most /app/server may hold: it was not copied"]
+    assert out["deep"] == ["refused", "it holds a path longer than 1,000 bytes, the longest /app/server may hold: it was not copied"]
+    assert out["deep_seen"] == out["sparse"], out["deep_seen"]
+    assert out["slow"] == ["refused", "the copy's pack of it took more than 1 seconds: it was not copied"]
+    assert out["broken"] == ["refused", "the copy's pack of it failed (tar: ./x: Cannot open: Input/output error): it was not copied"]
+    assert out["inodes"][0] == "refused" and "No space left on device" in out["inodes"][1], out["inodes"]
+    assert out["never_room"][0].startswith("delivered ") and any("room the machine did not have" in line for line in out["never_room"])
     assert out["nop"] == [["delivered 0 0"], []]
+    assert out["fixer"][0] == 0 and "copying it would pass 10 entries" in out["fixer"][1] and out["fixer"][2] is False, out["fixer"]
     hook = (TASK / "environment" / "prepare-delivery").read_text()
-    assert hook.index("kill -9 -1") < hook.index("rm -f /var/lib/delivery/room") < hook.index('mv -f /app/server/.delivered "$aside/"')
-    assert hook.index('mv -f /app/server/.delivered "$aside/"') < hook.index("setpriv --reuid dev --regid dev --clear-groups --no-new-privs")
-    assert "LIMIT_ENTRIES=100000" in hook and "LIMIT_BYTES=1000000000" in hook and "BUDGET = 1_000_000_000" in hook
+    assert hook.index("kill -9 -1") < hook.index('rm -f "$STATE/room"') < hook.index('rm -rf "$STATE/inodes"') < hook.index('mv -f /app/server/.delivered "$aside/"')
+    assert hook.index('mv -f /app/server/.delivered "$aside/"') < hook.index("timeout 120 setpriv --reuid dev --regid dev --clear-groups --no-new-privs")
+    for setting in ("LIMIT_ENTRIES=100000", "LIMIT_BYTES=1000000000", "LIMIT_PATH=1000", "PACK_SECONDS=100", "STATE=/var/lib/delivery"):
+        assert setting in hook, setting
     setup = (TASK / "environment" / "start-sealed-server").read_text()
-    assert "fallocate -l 64M /var/lib/delivery/room" in setup and "/var/lib/delivery/free-at-start" in setup
+    assert "fallocate -l 64M /var/lib/delivery/room" in setup and '/var/lib/delivery/inodes/$spare' in setup and "seq 1 64" in setup
+    assert "stat -f -c '%a %S %d' /tmp > /var/lib/delivery/free-at-start" in setup
     instruction = " ".join((STEP / "instruction.md").read_text().split())
-    assert "at most 100,000 files and directories and 1 GB" in instruction and "room left to copy it" in instruction
+    assert "at most 100,000 files and directories and 1 GB, with no path inside it longer than 1,000 bytes" in instruction
+    assert "room left to copy it" in instruction
 
 
 def test_a_read_cut_at_its_end_is_a_timeout_and_a_disk_the_server_cannot_write_is_not_watched(tmp_path):

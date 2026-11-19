@@ -109,9 +109,10 @@ def run_bounded(call: Callable[[], dict[str, Any]], progress: Progress, seconds:
 
 
 def arrived(server: Path) -> tuple[int, int]:
-    """Entries (files, directories and links; the mark left out) under `server`, and bytes in its files, counted as the
-    collect hook counts them."""
+    """Entries (files, directories and links; the mark left out) under `server`, and bytes in its files (each file once,
+    however many names it has), counted as the collect hook counts them."""
     entries = size = 0
+    files: set[tuple[int, int]] = set()
     folders = [str(server)]
     while folders:
         folder = folders.pop()
@@ -130,7 +131,8 @@ def arrived(server: Path) -> tuple[int, int]:
                 entries += 1
                 if stat.S_ISDIR(info.st_mode):
                     folders.append(entry.path)
-                elif stat.S_ISREG(info.st_mode):
+                elif stat.S_ISREG(info.st_mode) and (info.st_dev, info.st_ino) not in files:
+                    files.add((info.st_dev, info.st_ino))
                     size += info.st_size
     return entries, size
 
@@ -138,12 +140,13 @@ def arrived(server: Path) -> tuple[int, int]:
 def delivery_notes(server: Path) -> list[str]:
     """What the collect hook's mark and the copy that arrived say about the delivery (QA 07d S2, 07e M4).
 
-    The hook marks every delivery before the copy, an empty one too, after bounding it so that nothing the agent leaves
-    can make the copy fail. A delivery that arrived is scored as it arrived, with a note when the mark is missing, says
-    it was refused, or names more than arrived.
+    The hook marks every delivery before the copy, an empty one too, after bounding it and packing it once the way the
+    copy packs it, so that nothing the agent leaves can make the copy fail (QA 07f M4). A delivery that arrived is scored
+    as it arrived, with a note when the mark is missing or says it was refused.
 
     Raises:
-        EvaluationError: Nothing arrived at all, so the copy never happened.
+        EvaluationError: Nothing arrived at all, so the copy never happened; or the mark counts more than arrived, so the
+            copy was cut short, which only the platform can do (QA 07f S1).
     """
     try:
         empty = server.is_symlink() or not server.is_dir() or next(server.iterdir(), None) is None
@@ -161,11 +164,11 @@ def delivery_notes(server: Path) -> list[str]:
     head, notes = lines[0].split(), [f"collect hook: {line}" for line in lines[1:] if line.strip()][:20]
     if head[:1] == ["refused"]:
         return notes or ["collect hook: the delivery was not copied"]
-    if len(head) == 3 and head[0] == "delivered" and head[1].isdigit() and head[2].isdigit():
+    if len(head) == 3 and head[0] == "delivered" and all(value.isascii() and value.isdigit() for value in head[1:]):
         entries, size = arrived(server)
         if (entries, size) != (int(head[1]), int(head[2])):
-            notes.append(f"the copy arrived incomplete: {entries:,} of {int(head[1]):,} entries and {size:,} of "
-                         f"{int(head[2]):,} bytes; it was scored as it arrived")
+            raise EvaluationError(f"The copy arrived incomplete: {entries:,} of {int(head[1]):,} entries and {size:,} of "
+                                  f"{int(head[2]):,} bytes")
         return notes
     return notes + ["the collect hook's mark could not be read; the delivery was scored as it arrived"]
 

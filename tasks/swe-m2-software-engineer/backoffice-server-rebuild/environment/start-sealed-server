@@ -4,11 +4,12 @@ if setpriv --reuid dev --regid dev --clear-groups --no-new-privs sh -c \
     echo "the sealed server's files are readable by dev; stopping" >&2
     exit 1
 fi
-mkdir -p /var/lib/delivery && chmod 0700 /var/lib/delivery
+mkdir -p /var/lib/delivery/inodes && chmod 0700 /var/lib/delivery
 if [ ! -e /var/lib/delivery/room ]; then
     fallocate -l 64M /var/lib/delivery/room 2>/dev/null || head -c 67108864 /dev/zero > /var/lib/delivery/room 2>/dev/null
 fi
-df -P -B1 /tmp 2>/dev/null | awk 'NR == 2 {print $4}' > /var/lib/delivery/free-at-start
+for spare in $(seq 1 64); do [ -e "/var/lib/delivery/inodes/$spare" ] || : > "/var/lib/delivery/inodes/$spare"; done
+stat -f -c '%a %S %d' /tmp > /var/lib/delivery/free-at-start 2>/dev/null
 if curl -fsS -m 3 http://127.0.0.1:8080/api/health >/dev/null 2>&1; then exit 0; fi
 setsid /usr/local/sbin/sealed-supervisor >/dev/null 2>&1 </dev/null &
 for _ in $(seq 1 90); do
