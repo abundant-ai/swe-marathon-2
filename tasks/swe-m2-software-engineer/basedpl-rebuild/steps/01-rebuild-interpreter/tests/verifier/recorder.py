@@ -3,12 +3,16 @@
 usage: python3 recorder.py record <program> <cases.json> <expected.json> [--keep <kept.json>] [--report <report.json>]
 
 Each case is first settled (`settle`): of the rewrites the generator made of it, the first that
-ends the way the case's own inputs do and prints something else is chosen (the base where none
-does). The settled case is run twice and a third time perturbed (`perturbed`: another binary path,
-padding in the environment, a smaller stack, one CPU and a single worker thread), and kept if all
-three print the same and end normally (`crashed`), print nothing that depends on the machine
-(`MACHINE`), and the first two used at most KEEP_CPU seconds of CPU and KEEP_SEC of wall time each.
-Last, by rule and by id, `select` leaves out the cases whose answers take no interpreter to give.
+ends the way the case's own inputs do and prints something else, and nothing trivial where the base
+does not, is chosen (the base where none does). The settled case is run three times with four
+worker threads (MAIN_ENV, so the builder's core count changes nothing) and a fourth time perturbed
+(`perturbed`: another binary path, padding in the environment, a smaller stack, one CPU and a single
+worker thread), and kept if all four print the same and end normally (`crashed`), print nothing that
+depends on the machine (`MACHINE`, on either output stream), the three used at most KEEP_CPU seconds
+of CPU and KEEP_SEC of wall time each, and, for a display case, its display setting changes what it
+prints (`unset`). Last, by rule and by id, `select` leaves out the cases whose answers take no
+interpreter to give (`no_interpreter`) and those that print the last bits of the maths library
+(`last_bits`).
 `--keep` writes the cases kept, without their "record" entries, and `--report` how each run went
 and why cases were left out.
 """
@@ -19,6 +23,7 @@ import hashlib
 import json
 import os
 import platform
+import re
 import resource
 import shutil
 import sys
@@ -45,6 +50,17 @@ PAIR_SHARE = 0.015   # cases kept with any one (stdout, exit code), the command 
 FLOOR_SHARE = 0.05   # cases a dispatcher with no interpreter passes (free_cases), at most
 QUOTE_LEN = 12       # an answer at least this long that the case's own input holds is free
 PERTURBED_ENV = {"BPL_PERTURBED_PADDING": "p" * 4096, "RAYON_NUM_THREADS": "1"}
+MAIN_ENV = {"RAYON_NUM_THREADS": "4"}  # the main runs' worker threads: the verifier's and the agent's CPU count
+MAIN_RUNS = 3
+# What the original computes with its own approximations and solvers, whose last bits the docs do
+# not promise (within 4 ULP; "need not agree bit for bit"): circular functions and their inverses,
+# exp and power, gamma and binomials, matrix division, decompositions, numeric inverses. A case whose
+# own code uses one and whose answer shows a float to 15 or more significant digits, an exponent of
+# -12 or lower, or a 32- or 16-bit float, prints those bits, which no clean-room build can derive.
+LAST_BIT_CODE = ("○", "*", "⊛", "!", "⌹", "⌻", "⨸", "•decompose")
+NUMERIC_INVERSE = re.compile(r"(?<![A-Za-z])⁻")  # ⁻ after a function, not a system function's own inverse (•csv⁻)
+FLOAT_RE = re.compile(r"(?<![\w.])[¯-]?(\d+)(?:\.(\d+))?(?:[eEₑ]([¯+-]?\d+))?([ₛₕ])?")
+TRIVIAL = {"0", "⍬", "$f", "0ₓ", "0.0", '""', "''"}  # tokens of an answer that tells nothing
 
 
 def run_case(program: list[str], case: dict, **options) -> dict:
@@ -83,12 +99,14 @@ def settle(program: str, case: dict, plan: dict) -> tuple[dict, str]:
     options = plan.get("variants", [])
     if not options:
         return case, "as generated"
-    base = run_case([program], case, keep_stderr=True)
+    base = run_case([program], case, keep_stderr=True, env=MAIN_ENV)
     fallback = None
     for index, option in enumerate(options):
         candidate = inputs(case, option)
-        got = run_case([program], candidate, keep_stderr=True)
+        got = run_case([program], candidate, keep_stderr=True, env=MAIN_ENV)
         if got["exit"] is None or crashed(got) or got["exit"] != base["exit"] or (base["stdout"] and not got["stdout"]):
+            continue
+        if trivial(got["stdout"]) and not trivial(base["stdout"]):  # a rewrite that left nothing to check
             continue
         if got["stdout"] != base["stdout"]:
             return candidate, f"variant {index}"
@@ -98,27 +116,152 @@ def settle(program: str, case: dict, plan: dict) -> tuple[dict, str]:
     return case, "base"
 
 
+def trivial(stdout: bytes | str) -> bool:
+    """Whether an answer tells nothing: empty, or only zeros, empty vectors and falses."""
+    text = stdout.decode(*ENCODING) if isinstance(stdout, bytes) else stdout
+    return all(token in TRIVIAL for token in re.split(r"[\s\[\]◇]+", text) if token)
+
+
 def group(case: dict) -> str:
     """What a case asks, as a dispatcher could tell without reading its program: its kind."""
     return case.get("kind", "?")
 
 
-def free_cases(cases: list[dict], outputs: dict) -> dict[str, list[str]]:
-    """The cases a program with no interpreter in it answers, by group (`group`): every command-line
-    case (a table of the original's answers), and in each other group the cases that answer its most
-    common (stdout, exit code) where two or more share it."""
-    groups: dict[str, list[dict]] = defaultdict(list)
+def own_code(case: dict) -> str:
+    """The text of a case that is its own: its files (upstream's libraries under lib/ aside), its
+    arguments and its standard input."""
+    files = [text for path, text in sorted(case["files"].items()) if not path.startswith("lib/")]
+    requests = []
+    if case["argv"][:1] == ["--worker"]:  # a request's code as the worker reads it, escapes undone
+        for line in (case.get("stdin") or "").splitlines():
+            try:
+                requests.append(json.dumps(json.loads(line), ensure_ascii=False))
+            except ValueError:
+                continue
+    return "\n".join(files + case["argv"] + [case.get("stdin") or ""] + requests)
+
+
+def shows_bits(text: str) -> bool:
+    """Whether text shows a float to 15 or more significant digits, with an exponent of -12 or
+    lower, or as a 32- or 16-bit float."""
+    for whole, fraction, exponent, small in FLOAT_RE.findall(text):
+        if not fraction and not exponent:
+            continue  # an integer is exact
+        if small or len((whole + fraction).lstrip("0")) >= 15:
+            return True
+        if exponent and int(exponent.replace("¯", "-")) <= -12:
+            return True
+    return False
+
+
+def last_bits(case: dict, answer: str) -> bool:
+    """Whether the answer shows the last bits of a result the original computes with its own
+    approximations or solvers (LAST_BIT_CODE, NUMERIC_INVERSE): a float `shows_bits`, from a case
+    whose own code uses one. In a worker session, whose replies carry every float in full, it is
+    the reply to a request that uses one (one reply per request, in order; a request's reply holds
+    its value even with echo off, so an assignment shows the bits where they arise)."""
+    uses = lambda text: any(name in text for name in LAST_BIT_CODE) or bool(NUMERIC_INVERSE.search(text))  # noqa: E731
+    if not uses(own_code(case)):
+        return False
+    if case["argv"][:1] != ["--worker"]:
+        return shows_bits(answer)
+    try:
+        requests = [json.loads(line) for line in (case.get("stdin") or "").splitlines() if line.strip()]
+    except ValueError:
+        return shows_bits(answer)
+    replies = answer.splitlines()
+    if len(replies) != len(requests):  # not one reply per request: judge the session whole
+        return shows_bits(answer)
+    return any(uses(json.dumps(request, ensure_ascii=False)) and shows_bits(reply) for request, reply in zip(requests, replies))
+
+
+def statements(text: str) -> list[str]:
+    """A program's statements as a dispatcher would split them: by line and by ◇, blank and
+    comment-only lines left out."""
+    found = []
+    for line in text.splitlines():
+        for part in line.split("◇"):
+            part = part.split("⍝", 1)[0].strip()
+            if part:
+                found.append(part)
+    return found
+
+
+LITERAL_RE = re.compile(r'^(?:"[^"\\]*"|ι\d+|[¯\d. ]+)$')
+
+
+def literal_value(text: str) -> str | None:
+    """How the original shows a literal a dispatcher can echo: a string (quoted), ιN (0 to N-1)
+    or a strand of plain numbers; None for anything else."""
+    text = text.strip()
+    if not LITERAL_RE.match(text) or not text:
+        return None
+    if text.startswith("ι"):
+        return " ".join(str(index) for index in range(int(text[1:])))
+    if text.startswith('"'):
+        return text
+    numbers = text.split()
+    return " ".join(numbers) if numbers and all(re.fullmatch(r"¯?\d+", number) for number in numbers) else None
+
+
+def shape(case: dict) -> tuple:
+    """What a submission sees of a case before reading its program: the arguments with programs and
+    paths replaced by placeholders, whether standard input is given, and how many files."""
+    argv = tuple("CODE" if index and case["argv"][index - 1] == "-e" else "FILE" if value in case["files"] else value
+                 for index, value in enumerate(case["argv"]))
+    return argv, case.get("stdin") is not None, len(case["files"])
+
+
+def echoed(case: dict) -> tuple[str, int] | None:
+    """The answer of a dispatcher that echoes a program's leading `⎕←` literals and exits 1 at the
+    first other statement (0 where there is none); for `-e` with a single literal, that literal.
+    None where the case's program does not start with a literal."""
+    argv = case["argv"]
+    if argv[:1] == ["-e"] and len(argv) > 1:
+        shown = literal_value(argv[1])
+        return (shown + "\n", 0) if shown is not None else None
+    program = case["files"].get(argv[0]) if argv and argv[0] in case["files"] else \
+        (case.get("stdin") if argv[:1] == ["-"] else None)
+    if program is None:
+        return None
+    printed = []
+    for statement in statements(program):
+        shown = literal_value(statement[2:]) if statement.startswith("⎕←") else None
+        if shown is None:
+            return ("".join(line + "\n" for line in printed), 1) if printed else None
+        printed.append(shown)
+    return "".join(line + "\n" for line in printed), 0
+
+
+def no_interpreter(cases: list[dict], outputs: dict) -> dict[str, list[str]]:
+    """The cases that the strongest dispatcher with no interpreter in it answers (QA wave 1 and 2:
+    a stub, trivial heuristics, an echo of leading literals), by how: every command-line case (a
+    table of the original's answers); a program that starts with `⎕←` literals, echoed and then
+    exit 1 at the first other statement (`echoed`); and for everything else, the most common answer
+    among the cases of the same visible shape (`shape`) where two or more share it."""
+    answer = lambda case: (outputs[case["id"]]["stdout"], outputs[case["id"]]["exit"])  # noqa: E731
+    free: dict[str, list[str]] = defaultdict(list)
+    rest: dict[tuple, list[dict]] = defaultdict(list)
     for case in cases:
-        groups[group(case)].append(case)
-    free = {}
-    for name, members in groups.items():
-        if name == "cli":
-            free[name] = [case["id"] for case in members]
+        if group(case) == "cli":
+            free["command-line table"].append(case["id"])
             continue
-        answer = lambda case: (outputs[case["id"]]["stdout"], outputs[case["id"]]["exit"])  # noqa: E731
+        guess = echoed(case)
+        if guess is not None:
+            if guess == answer(case):
+                free["echoed literals"].append(case["id"])
+            continue
+        rest[shape(case)].append(case)
+    for key, members in rest.items():
         common, shared = max(Counter(map(answer, members)).items(), key=lambda item: (item[1], repr(item[0])))
-        free[name] = [case["id"] for case in members if answer(case) == common] if shared > 1 else []
-    return free
+        if shared > 1:
+            free[f"constant for {' '.join(key[0]) or 'no arguments'}"] += [case["id"] for case in members if answer(case) == common]
+    return dict(free)
+
+
+def free_cases(cases: list[dict], outputs: dict) -> dict[str, list[str]]:
+    """The cases a program with no interpreter in it answers, by how (`no_interpreter`)."""
+    return no_interpreter(cases, outputs)
 
 
 def quoted(case: dict, answer: str) -> bool:
@@ -141,6 +284,8 @@ def select(cases: list[dict], outputs: dict) -> tuple[list[dict], dict[str, list
     for case in cases:
         if quoted(case, outputs[case["id"]]["stdout"]):
             dropped["input holds the answer"].append(case["id"])
+        elif last_bits(case, outputs[case["id"]]["stdout"]):
+            dropped["prints the maths library's last bits"].append(case["id"])
         else:
             kept.append(case)
     # The command-line cases are never dropped, so they take their share of an answer first.
@@ -157,7 +302,7 @@ def select(cases: list[dict], outputs: dict) -> tuple[list[dict], dict[str, list
         kept.append(case)
     while True:
         free = free_cases(kept, outputs)
-        groups = [name for name in free if name != "cli" and free[name]]
+        groups = [name for name in free if name != "command-line table" and free[name]]
         if sum(map(len, free.values())) <= FLOOR_SHARE * len(kept) or not groups:
             break
         victim = max(free[max(groups, key=lambda name: (len(free[name]), name))])
@@ -204,41 +349,61 @@ def host() -> dict:
     return info
 
 
+def unchanged_by_setting(program: str, settled: dict, plan: dict, first: dict) -> bool:
+    """For a case whose plan names its display setting (`unset`: the file, the text to take out of
+    it and what to put in its place), whether the program prints the same without it: such a case
+    grades nothing of the setting."""
+    unset = plan.get("unset")
+    if not unset or len(unset) != 3:
+        return False
+    path, old, new = unset
+    text = settled["files"].get(path)
+    if text is None or old not in text:
+        return False
+    plain = dict(settled, files=dict(settled["files"], **{path: text.replace(old, new, 1)}))
+    got = run_case([program], plain, keep_stderr=True, env=MAIN_ENV)
+    return (got["exit"], got["stdout"]) == (first["exit"], first["stdout"])
+
+
 def record(program: str, cases: list[dict]) -> tuple[list[dict], dict, dict]:
     """The cases kept (settled, without their "record" entries), what the program printed for them,
     and a report: how long and how much CPU every run took, how each case was settled, and why the
     others were left out."""
     finished, outputs = [], {}
     started = time.monotonic()
-    report = {"keep_seconds": KEEP_SEC, "keep_cpu": KEEP_CPU, "seconds": {}, "cpu": {}, "slow": [], "unsteady": [],
-              "crashed": [], "machine": [], "output_limit": [], "memory_limit": [], "disk_limit": [], "perturbed": [],
-              "settled": {}, "dropped": {}, "host": host()}
+    report = {"keep_seconds": KEEP_SEC, "keep_cpu": KEEP_CPU, "main_runs": MAIN_RUNS, "main_env": MAIN_ENV, "seconds": {},
+              "cpu": {}, "slow": [], "unsteady": [], "crashed": [], "machine": [], "output_limit": [], "memory_limit": [],
+              "disk_limit": [], "perturbed": [], "setting_changes_nothing": [], "settled": {}, "dropped": {}, "host": host()}
     elsewhere = relocated(program)
     for case in cases:
         plan = case.get("record", {})
         case = {key: value for key, value in case.items() if key != "record"}
         settled, how = settle(program, case, plan)
         report["settled"][case["id"]] = how
-        first, second = (run_case([program], settled, keep_stderr=True) for _ in range(2))
-        report["seconds"][case["id"]] = [first["seconds"], second["seconds"]]
-        report["cpu"][case["id"]] = [first["cpu"], second["cpu"]]
-        errors = {first.get("error"), second.get("error")} - {None}
+        runs = [run_case([program], settled, keep_stderr=True, env=MAIN_ENV) for _ in range(MAIN_RUNS)]
+        first = runs[0]
+        report["seconds"][case["id"]] = [run["seconds"] for run in runs]
+        report["cpu"][case["id"]] = [run["cpu"] for run in runs]
+        errors = {run.get("error") for run in runs} - {None}
         if errors:
             report["slow" if "timeout" in errors else "output_limit" if "output limit" in errors else
                    "memory_limit" if "memory limit" in errors else
                    "disk_limit" if errors & {"disk limit", "file limit"} else "unsteady"].append(case["id"])
-        elif (first["exit"], first["stdout"]) != (second["exit"], second["stdout"]):
+        elif any((run["exit"], run["stdout"]) != (first["exit"], first["stdout"]) for run in runs):
             report["unsteady"].append(case["id"])
-        elif crashed(first) or crashed(second):
+        elif any(crashed(run) for run in runs):
             report["crashed"].append(case["id"])
-        elif any(marker in first["stdout"] for marker in MACHINE):
+        elif any(marker in first["stdout"] or marker in first.get("stderr", b"") for marker in MACHINE):
             report["machine"].append(case["id"])
-        elif max(first["seconds"], second["seconds"]) > KEEP_SEC or max(first["cpu"], second["cpu"]) > KEEP_CPU:
+        elif max(run["seconds"] for run in runs) > KEEP_SEC or max(run["cpu"] for run in runs) > KEEP_CPU:
             report["slow"].append(case["id"])
         else:
-            third = run_case([elsewhere], settled, keep_stderr=True, env=PERTURBED_ENV, preexec=perturbed_limits)
-            if (third["exit"], third["stdout"]) != (first["exit"], first["stdout"]):
+            perturbed = run_case([elsewhere], settled, keep_stderr=True, env=PERTURBED_ENV, preexec=perturbed_limits)
+            if (perturbed["exit"], perturbed["stdout"]) != (first["exit"], first["stdout"]):
                 report["perturbed"].append(case["id"])
+                continue
+            if unchanged_by_setting(program, settled, plan, first):
+                report["setting_changes_nothing"].append(case["id"])
                 continue
             finished.append(settled)
             outputs[case["id"]] = {"exit": first["exit"], "stdout": first["stdout"].decode(*ENCODING)}
@@ -264,6 +429,9 @@ def main() -> None:
         raise SystemExit(f"kept {len(kept)} of {len(cases)} cases: {len(report['unsteady'])} did not finish the same "
                          f"way twice, {len(report['crashed'])} crashed, {len(report['perturbed'])} changed when "
                          f"perturbed, {len(report['slow'])} were slow")
+    free = {i for ids in free_cases(kept, outputs).values() for i in ids}
+    if len(free) > FLOOR_SHARE * len(kept):  # select() drops them; only the command line's own cases can stay
+        raise SystemExit(f"{len(free)} of {len(kept)} kept cases pass with no interpreter, more than {FLOOR_SHARE:.0%}")
     report["kept_ids_sha256"] = hashlib.sha256("\n".join(case["id"] for case in kept).encode()).hexdigest()
     Path(expected_path).write_text(json.dumps(outputs, sort_keys=True))
     if option("--keep"):
@@ -272,7 +440,8 @@ def main() -> None:
         Path(option("--report")).write_text(json.dumps(report, sort_keys=True))
     print(f"recorded {len(kept)} of {len(cases)} cases in {report['wall_seconds']} s ({len(report['slow'])} slow, "
           f"{len(report['unsteady'])} unsteady, {len(report['crashed'])} crashed, {len(report['machine'])} machine, "
-          f"{len(report['perturbed'])} perturbed, " + ", ".join(f"{len(ids)} {why}" for why, ids in report["dropped"].items()) + ")")
+          f"{len(report['perturbed'])} perturbed, {len(report['setting_changes_nothing'])} unchanged by their setting, "
+          + ", ".join(f"{len(ids)} {why}" for why, ids in report["dropped"].items()) + ")")
 
 
 if __name__ == "__main__":

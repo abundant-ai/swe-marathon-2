@@ -527,15 +527,22 @@ def display_cases(rng: random.Random, count: int) -> list[dict]:
             program = f"{head}\nf←{function}\nf\n"
         else:
             value = rng.choice(DISPLAY_VALUES)(rng)
-            head = rng.choice(['•prefs ["box":$t]', f'•prefs ["limit":{rng.choice([10, 30, 100])} "edges":{rng.randint(1, 4)}]',
+            head = rng.choice(['•prefs ["box":$t]', f'•prefs ["limit":{rng.choice([3, 4, 6])} "edges":{rng.randint(1, 2)}]',
                                f'•prefs ["width":{rng.choice([16, 24, 40, 72])}]', f'•prefs ["prec":{rng.randint(2, 16)}]',
                                "", "", f"{rng.choice(['2', '¯3', '8 2', '⍬', '0 1', '6 0'])}⍕"])
+            if head.endswith("⍕") and ('"' in value or "⊂" in value):  # a format spec takes numbers only
+                head = ""
             if head.endswith("⍕"):
                 program = f"{head}{value}\n"
             elif head:
                 program = f"{head}\n{value}\n⎕←{value}\n"
             else:
                 program = f"]display {value}\n"
-        found.append({"kind": "display", "source": "display", "argv": ["show.bpl"], "files": {"show.bpl": program},
-                      "stdin": None, "form": "built"})
+        built = {"kind": "display", "source": "display", "argv": ["show.bpl"], "files": {"show.bpl": program},
+                 "stdin": None, "form": "built"}
+        setting = next((line for line in program.splitlines() if line.startswith("•prefs")), None)
+        if setting is not None or program.startswith("]display "):  # kept only where the setting shows
+            built["record"] = {"variants": [], "want": "same",
+                               "unset": ["show.bpl", setting + "\n", ""] if setting is not None else ["show.bpl", "]display ", ""]}
+        found.append(built)
     return found

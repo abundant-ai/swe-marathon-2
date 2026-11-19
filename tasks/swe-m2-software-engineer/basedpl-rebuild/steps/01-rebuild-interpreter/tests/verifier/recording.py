@@ -9,17 +9,19 @@
   form is upstream's code with at most its names changed (settled "base" or "as generated"), by
   kind; and the share of cases ported from APL suites.
 - What submissions that implement nothing pass (`baselines`): printing nothing and exiting 0, 1
-  or 2; and a dispatcher with the command line's answers and one constant answer per kind of case
-  (recorder.free_cases). The largest share any one answer holds.
+  or 2; and the strongest dispatcher with no interpreter in it (recorder.no_interpreter: the
+  command line's answers, an echo of a program's leading literals, one constant per visible shape
+  of case), by strategy. The largest share any one answer holds.
 - The recording program (`--build`: its link, size and sha256, with the marker zeroed as the
-  reference solution's copy has it), the build host, the recording's wall time and the sha256 of
-  the kept ids, so that two builds can be compared.
+  reference solution's copy has it), the build host, the recording's wall time, the sha256 of the
+  kept ids and of the answers, so that two builds can be compared.
 
 usage: python3 recording.py <all cases.json> <kept cases.json> <expected.json> <report.json> <out.json> [--build <build.txt>]
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sys
 from collections import Counter
@@ -35,13 +37,15 @@ def baselines(kept: list[dict], expected: dict) -> dict:
     one answer."""
     total = len(kept) or 1
     answers = [(expected[case["id"]]["stdout"], expected[case["id"]]["exit"]) for case in kept]
-    dispatcher = {i for ids in free_cases(kept, expected).values() for i in ids}
+    free = free_cases(kept, expected)
+    dispatcher = {i for ids in free.values() for i in ids}
     common = Counter(answers).most_common(1)
     return {
         "print_nothing_exit_0": round(answers.count(("", 0)) / total, 4),
         "print_nothing_exit_1": round(answers.count(("", 1)) / total, 4),
         "print_nothing_exit_2": round(answers.count(("", 2)) / total, 4),
-        "command_line_table_and_constants": round(len(dispatcher) / total, 4),
+        "no_interpreter_dispatcher": round(len(dispatcher) / total, 4),
+        "no_interpreter_dispatcher_by_strategy": {how: len(ids) for how, ids in sorted(free.items())},
         "largest_answer_share": round(common[0][1] / total, 4) if common else 0.0,
     }
 
@@ -68,8 +72,13 @@ def describe(cases: list[dict], kept: list[dict], expected: dict, report: dict) 
         "dropped_output_limit": by_kind(report.get("output_limit", [])),
         "dropped_memory_limit": by_kind(report.get("memory_limit", [])),
         "dropped_disk_limit": by_kind(report.get("disk_limit", [])),
+        "dropped_setting_changes_nothing": by_kind(report.get("setting_changes_nothing", [])),
+        "main_runs": report.get("main_runs"), "main_env": report.get("main_env"),
         "host": report.get("host", {}), "wall_seconds": report.get("wall_seconds"),
         "kept_ids_sha256": report.get("kept_ids_sha256"),
+        # The answers as the recorder wrote expected.json: two builds that keep the same ids and
+        # record other bytes differ here.
+        "expected_sha256": hashlib.sha256(json.dumps(expected, sort_keys=True).encode()).hexdigest(),
         "dropped": {reason: by_kind(ids) for reason, ids in sorted(report.get("dropped", {}).items())},
         "settled": dict(sorted(Counter(settled.values()).items())),
         "kept_as_upstream_code": by_kind(as_upstream),

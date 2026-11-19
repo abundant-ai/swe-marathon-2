@@ -227,6 +227,66 @@ def test_cases_are_reproducible_and_nothing_documented_or_excluded_becomes_a_cas
                              for variant in case["record"]["variants"])
 
 
+def test_cases_need_an_interpreter_carry_state_and_leave_out_what_the_docs_show():
+    """QA waves 1 and 2: error cases print a computed value before the error, never a literal an
+    echo could copy, and most of the uncaught ones (and every syntax error) run in the worker, whose
+    reply carries the message and span; guards always print the message; worker sessions keep
+    state between requests; piped input is several lines with a failing one among them; display
+    cases name their setting for the recorder; derivatives are thinned; a `_` subscript needs a
+    digit; a literal beside `=` is never rewritten; and runs of documented statements count as
+    documented, in every rewrite too."""
+    import random
+    sys.path.insert(0, str(SCRIPTS))
+    import bpl_text
+    import make_cases
+    import rewrite
+    sys.path.insert(0, str(STEP / "tests" / "verifier"))
+    import recorder
+    assert [(token.kind, token.text) for token in bpl_text.tokenize("_←x¨ 1")][:3] == [("name", "_"), ("glyph", "←"), ("name", "x")]
+    assert bpl_text.tokenize("x_12←3")[0].text == "x_12"
+    assert not rewrite.number_sites("x←3 4=3 5") and rewrite.number_sites("x←3 4+3 5")
+    assert all("$e.message" in handler or handler == "$e" for handler in make_cases.HANDLERS)
+    assert make_cases.DERIVATIVE_KEEP <= 0.6
+    rng = random.Random(3)
+    for _ in range(200):  # no lead is a literal that an echo could copy
+        lead = rng.choice(make_cases.LEADS)(rng)
+        assert lead.startswith("⎕←") and recorder.literal_value(lead[2:]) is None, lead
+    error = {"code": "1 2+3 4 5", "file": "core.bpl", "line": 7, "expected_error": "LENGTH ERROR"}
+    forms = [make_cases.plain_error_case(error, "", random.Random(seed)) for seed in range(40)]
+    assert {case["form"] for case in forms} == {"reply", "plain"} and sum(case["form"] == "reply" for case in forms) > 15
+    reply = next(case for case in forms if case["form"] == "reply")
+    requests = [json.loads(line) for line in reply["stdin"].splitlines()]
+    assert reply["argv"] == ["--worker"] and requests[-1]["code"] == "1 2+3 4 5" and reply["record"]["scaffold_lines"] == [0]
+    syntax = make_cases.plain_error_case(dict(error, code="(9+7", expected_error="SYNTAX ERROR"), "", random.Random(1), True)
+    assert syntax["form"] == "reply"
+    records = [({"code": f"{name}←{value} ◇ {name}×2", "file": "core.bpl", "line": value}, "") for value, name in ((3, "a"), (4, "b"))]
+    sessions = [make_cases.worker_case(records, random.Random(seed)) for seed in range(10)]
+    for session in sessions:
+        lines = [json.loads(line) for line in session["stdin"].splitlines()]
+        earlier, carried, setting = set(), False, False  # what an earlier request left (names, a display setting) in use later
+        for line in lines:
+            code = line.get("code", "")
+            here = set(re.findall(r"([A-Za-z]+)←", code)) | set(line.get("bindings", {}))
+            carried = carried or bool((set(re.findall(r"[A-Za-z]+", code)) - here) & earlier) or (setting and bool(code))
+            earlier |= here
+            setting = setting or "•prefs" in code
+        assert carried, [line.get("code") for line in lines]
+        assert set(session["record"]["scaffold_lines"]) and all(isinstance(number, int) for number in session["record"]["scaffold_lines"])
+    multi = {"code": "total←3 4 5\ncount←≢total\ntotal÷count", "file": "core.bpl", "line": 9}
+    piped = [make_cases.stdin_case(multi, "", random.Random(seed), "1 2+3 4 5") for seed in range(12)]
+    pipe = next(case for case in piped if case["form"] == "pipe")
+    assert pipe["argv"] == [] and pipe["stdin"].count("\n") == 4 and pipe["stdin"].splitlines()[1] == "1 2+3 4 5"
+    shown = make_cases.display_case({"code": "2.5×ι12", "file": "core.bpl", "line": 3}, "", random.Random(2))
+    assert shown["record"]["unset"][0] == "main.bpl" and shown["record"]["unset"][1] in shown["files"]["main.bpl"]
+    pages = {"arrays.md": "# Arrays\n\n```bpl\nm←3 4ρι12\nx←[[+ ×] [- ÷]]\nf←1⊃0⊃x\n2 f 3\n```\n"}
+    skeletons, texts = bpl_text.leak_index(pages)
+    run = "y←[[+ ×] [- ÷]]\ng←1⊃0⊃y\n2 g 3"  # the block's last three statements, renamed
+    assert bpl_text.skeleton(run) in skeletons, "a run of documented statements is the docs' program"
+    case = {"kind": "script", "argv": ["main.bpl"], "files": {"main.bpl": "⎕←1\n"}, "stdin": None,
+            "record": {"variants": [{"files": {"main.bpl": run + "\n"}}], "want": "same"}}
+    assert make_cases.leaks([case], skeletons, texts) == ["0"], "a rewrite the recorder may settle on is checked too"
+
+
 def test_command_line_cases_are_one_per_behaviour():
     cases = scripts_call("import json, make_cases\nprint(json.dumps(make_cases.cli_cases()))")
     keys = [json.dumps([case["argv"], case["files"], case["stdin"]], sort_keys=True) for case in cases]
@@ -974,6 +1034,37 @@ def test_the_delivery_is_bounded_recorded_and_marked_before_the_copy_and_graded_
     assert "room left to copy it" in instruction
 
 
+def test_a_host_short_of_disk_mid_evaluation_is_an_error_and_a_run_that_ended_in_time_is_read(tmp_path):
+    """QA 11: after a cleanup has taken back everything the user held, a short disk is the host's
+    doing, so the evaluation is an error rather than a reward that fails the remaining cases; and a
+    run that ended before its deadline is read in full however late the verifier gets to it."""
+    private = tmp_path / "private"
+    private.mkdir()
+    (private / "cases.json").write_text(json.dumps({"cases": [{"id": "C1", "kind": "expr", "argv": ["-e", "1"], "files": {},
+                                                               "stdin": None}]}))
+    (private / "expected.json").write_text(json.dumps({"C1": {"exit": 0, "stdout": "1\n"}}))
+    program = tmp_path / "bpl"
+    program.write_text("#!/bin/sh\necho 1\n")
+    program.chmod(0o755)
+    out = verifier_call(textwrap.dedent(f"""
+        import json, os, subprocess, time, verify
+        from pathlib import Path
+        verify.reset = lambda uid: None
+        verify.low_on_disk = lambda: True
+        try:
+            verify.grade(Path({str(program)!r}), Path({str(private)!r}), [], (os.getuid(), os.getgid()))
+            outcome = "graded"
+        except verify.EvaluationError as exc:
+            outcome = str(exc)
+        proc = subprocess.Popen(["printf", "late but in time"], stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+        proc.wait()
+        read = verify.runcases.read_output(proc, b"", time.monotonic() - 0.2, None, {{}})
+        print(json.dumps([outcome, read[0].decode(), read[1]]))
+    """))
+    assert out[0].startswith("Less than") and "after a cleanup, mid-evaluation" in out[0], out
+    assert out[1:] == ["late but in time", None]
+
+
 def test_the_agent_cannot_replace_the_artifact_directory():
     docker = (TASK / "environment" / "Dockerfile").read_text()
     assert "chown -R root:root /app" in docker and "chmod 1777 /app " in docker and "chmod 0777 /app/rebuild" in docker
@@ -1014,6 +1105,11 @@ elif "PANIC" in text:
 elif "SEGV" in text: os.kill(os.getpid(), signal.SIGSEGV)
 elif "MEMORY" in text: print("LIMIT: an array of 9 items would take the process past its memory limit of 512 MiB")
 elif "THREADS" in text: print(os.environ.get("RAYON_NUM_THREADS", "many"))
+elif "STDERRMEM" in text:
+    sys.stderr.write("LIMIT ERROR: an array would take the process past its memory limit of 64 MiB\\n"); sys.exit(1)
+elif "BOXED" in text: print("boxed" if "•prefs" in text else "plain")
+elif "SETTING" in text: print("same either way")
+elif "ZERO" in text: print("0 0 0")
 elif "FAIL" in text: print("partial"); sys.exit(1)
 else: print(text.split()[0] if text.split() else "", sorted(os.listdir(".")))
 """
@@ -1063,6 +1159,7 @@ def test_the_recorder_keeps_steady_quick_answers_and_drops_crashes_and_machine_t
     assert report["unsteady"] == ["P190"] and report["crashed"] == ["P191"] and report["slow"] == ["P192"]
     assert report["machine"] == ["P193"] and report["perturbed"] == ["P194"], "one worker thread changes this answer"
     assert "P195" in kept and len(kept) == 101 and len(report["kept_ids_sha256"]) == 64
+    assert report["main_runs"] == 3 and len(report["seconds"]["P0"]) == 3 and report["main_env"] == {"RAYON_NUM_THREADS": "4"}
     expected = json.loads((out / "expected.json").read_text())
     assert expected["P195"] == {"exit": 1, "stdout": "partial\n"} and expected["P0"]["stdout"].startswith("word0 ['main.bpl']")
 
@@ -1080,6 +1177,75 @@ def test_the_recorder_settles_each_case_on_a_rewrite_that_changes_its_answer(tmp
     assert got["P1"]["files"] == {"main.bpl": "other"}, "the first rewrite that ends as the case does and prints otherwise"
     assert report["settled"]["P2"] == "variant 0, output as the base's" and report["settled"]["P3"] == "base"
     assert got["P4"]["argv"] == ["-e", "two"] and all("record" not in case for case in got.values())
+
+
+def test_the_recorder_drops_settings_that_change_nothing_memory_text_on_stderr_and_trivial_rewrites(tmp_path):
+    head = '•prefs ["box":$t]\n'
+    cases = [script(300, head + "SETTING", unset=["main.bpl", head, ""]), script(301, head + "BOXED", unset=["main.bpl", head, ""]),
+             script(302, "STDERRMEM"),
+             script(303, "base", variants=[{"files": {"main.bpl": "ZERO"}}, {"files": {"main.bpl": "other"}}], want="same")]
+    done, out = record(tmp_path, cases + [script(i, f"w{i}") for i in range(10, 90)])
+    assert done.returncode == 0, done.stdout + done.stderr
+    report = json.loads((out / "report.json").read_text())
+    got = {case["id"]: case for case in json.loads((out / "kept.json").read_text())["cases"]}
+    assert report["setting_changes_nothing"] == ["P300"] and "P301" in got, "a display setting must change what is shown"
+    assert report["machine"] == ["P302"], "a memory limit named on standard error depends on the builder"
+    assert got["P303"]["files"] == {"main.bpl": "other"}, "a rewrite whose answer is all zeros is passed over"
+
+
+def test_answers_that_show_the_maths_librarys_last_bits_are_left_out():
+    out = verifier_call(textwrap.dedent("""
+        import json
+        from verifier import recorder
+        e = lambda code: {"id": "E", "kind": "expr", "files": {}, "argv": ["-e", code], "stdin": None}
+        worker = lambda *codes: {"id": "W", "kind": "worker", "files": {}, "argv": ["--worker"], "stdin": None if not codes else
+                                 "".join(json.dumps({"id": i, "code": code}) + "\\n" for i, code in enumerate(codes))}
+        reply = lambda value: json.dumps({"id": 0, "result": {"value": value, "output": [], "error": None}})
+        print(json.dumps([
+            recorder.last_bits(e("1○1.2"), "0.9320390859672262\\n"),        # every digit of a sine
+            recorder.last_bits(e("1○1.2"), "0.932039086\\n"),               # the default ten digits
+            recorder.last_bits(e("÷3"), "0.3333333333333333\\n"),           # exact division, correctly rounded
+            recorder.last_bits(e("(1○1.2)-0.932"), "3.9085967226ₑ¯17\\n"),  # a residue below 1e-12
+            recorder.last_bits(e("1○1.2ₛ"), "0.93203914ₛ\\n"),              # a 32-bit float
+            recorder.last_bits(e("•csv⁻ \\"1.5\\""), "1.234567890123456\\n"),  # a parse, no maths library
+            recorder.last_bits(worker("x←÷3", "⌊100×1○1.2"), reply(0.3333333333333333) + "\\n" + reply(93) + "\\n"),
+            recorder.last_bits(worker("x←÷3", "1○1.2"), reply(0.3333333333333333) + "\\n" + reply(0.9320390859672262) + "\\n"),
+        ]))
+    """))
+    assert out == [True, False, False, True, True, False, False, True], out
+    recorder = (STEP / "tests" / "verifier" / "recorder.py").read_text()
+    assert 'dropped["prints the maths library\'s last bits"]' in recorder
+
+
+def test_no_dispatcher_without_an_interpreter_passes_more_than_five_percent():
+    out = verifier_call(textwrap.dedent("""
+        import json
+        from verifier import recorder
+        cases, outputs = [], {}
+        def add(i, kind, text, answer, argv=None):
+            cases.append({"id": f"P{i:04d}", "kind": kind, "files": {"main.bpl": text} if argv is None else {}, "stdin": None,
+                          "argv": argv or ["main.bpl"]})
+            outputs[cases[-1]["id"]] = {"stdout": answer[0], "exit": answer[1]}
+        for i in range(900):  # programs with answers of their own
+            add(i, "script", f"x←{i}\\n⎕←x×2", (f"{2 * i}\\n", 0))
+        for i in range(900, 1000):  # a literal lead, then an error: echo and exit 1 passes
+            add(i, "error", f'⎕←"step {i}"\\n1 2+3 4 5', (f'"step {i}"\\n', 1))
+        for i in range(1000, 1040):  # a computed lead cannot be echoed
+            add(i, "error", f"⎕←+/ι{i}\\n1 2+3 4 5", (f"{i * (i - 1) // 2}\\n", 1))
+        for i in range(1040, 1070):  # one answer for one shape of -e
+            add(i, "expr", "", ("DOMAIN ERROR\\n", 0), argv=["-e", f"code{i}"])
+        free = recorder.no_interpreter(cases, outputs)
+        kept, dropped = recorder.select(cases, outputs)
+        after = recorder.no_interpreter(kept, outputs)
+        print(json.dumps([{how: len(ids) for how, ids in free.items()}, len(kept), sum(map(len, after.values())),
+                          len(dropped.get("passed with no interpreter", []))]))
+    """))
+    before, kept, free_after, dropped = out
+    assert before["echoed literals"] == 100 and before["constant for -e CODE"] == 30, before
+    assert free_after <= 0.05 * kept and dropped > 0, out
+    recorder = (STEP / "tests" / "verifier" / "recorder.py").read_text()
+    assert "raise SystemExit(f\"{len(free)} of {len(kept)} kept cases pass with no interpreter" in recorder
+    assert "FLOOR_SHARE = 0.05" in recorder
 
 
 def test_selection_drops_shared_answers_answers_in_the_input_and_free_cases():
@@ -1139,7 +1305,9 @@ def test_the_recording_report_counts_upstream_answers_and_the_baselines(tmp_path
     assert report["dropped_slow"] == {"module": 1} and report["dropped_unsteady"] == {"expr": 1}
     baselines = report["baselines"]
     assert baselines["print_nothing_exit_1"] == round(2 / 8, 4) and baselines["print_nothing_exit_0"] == 0
-    assert baselines["command_line_table_and_constants"] == round(3 / 8, 4), "the help case and the two silent programs"
+    assert baselines["no_interpreter_dispatcher"] == round(3 / 8, 4), "the help case and the two silent programs"
+    assert baselines["no_interpreter_dispatcher_by_strategy"] == {"command-line table": 1, "constant for FILE": 2}
+    assert report["expected_sha256"] == hashlib.sha256(json.dumps(expected, sort_keys=True).encode()).hexdigest()
     assert baselines["largest_answer_share"] == round(2 / 8, 4)
 
 
@@ -1253,6 +1421,8 @@ def test_nothing_the_agent_sees_names_a_reference_answer_or_a_budget():
                                                                           "reserve-delivery-room"]
     instruction = seen["instruction.md"]
     assert "no example" not in instruction.lower() and "Out of scope:" in instruction
+    flat = " ".join(instruction.split())
+    assert "All of the manual is in scope" in flat and "derivatives with `∂` among them" in flat, "the scope is the whole manual"
     for excluded in ("¿", "•time", "•plot", "•storage", "•explain", "•hash", "timeout_ms", "]help"):
         assert excluded in instruction.split("Out of scope:", 1)[1], excluded
 

@@ -233,6 +233,8 @@ def number_sites(code: str) -> list[int]:
             continue
         if after is not None and after.text in (":",):
             continue
+        if any(near is not None and near.kind == "glyph" and near.text in "=≠" for near in (before, after)):
+            continue  # a value compared with another: changing one side makes the check trivially false
         sites.append(index)
     return sites
 

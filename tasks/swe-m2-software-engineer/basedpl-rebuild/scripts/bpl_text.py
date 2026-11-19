@@ -118,7 +118,7 @@ def tokenize(code: str) -> list[Token]:
             key = bool(tokens) and tokens[-1].text == "."
             end = at
             while end < size:
-                if code[end] == "_" and end + 1 < size and not code[end + 1].isspace():
+                if code[end] == "_" and end + 1 < size and code[end + 1] in DIGITS:  # a subscript: x_1
                     end += 2
                     while end < size and code[end] in DIGITS:
                         end += 1
@@ -415,7 +415,11 @@ def leak_index(pages: dict[str, str]) -> tuple[set[str], set[str]]:
     """
     skeletons, texts = set(), set()
     for piece in doc_programs(pages):
-        for part in [piece] + statements(piece):
+        parts = statements(piece)
+        # The block whole, each statement, and each run of 2 to 6 consecutive statements: a record
+        # that is the start or the middle of a longer documented block is still the docs' program.
+        runs = ["\n".join(parts[start:start + length]) for length in range(2, 7) for start in range(len(parts) - length + 1)]
+        for part in [piece] + parts + runs:
             shape = skeleton(part)
             if len(shape) >= 3:
                 skeletons.add(shape)

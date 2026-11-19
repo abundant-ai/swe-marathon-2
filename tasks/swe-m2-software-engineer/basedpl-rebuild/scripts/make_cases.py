@@ -51,11 +51,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import bpl_text  # noqa: E402
 import programs  # noqa: E402
 import rewrite  # noqa: E402
-from bpl_text import compact, documentation, git_files, git_text, leak_index, reference_records, skeleton  # noqa: E402
+from bpl_text import compact, documentation, git_files, git_text, leak_index, reference_records, skeleton, tokenize  # noqa: E402
 
 TASK_ROOT = Path(__file__).resolve().parent.parent
 OUT = TASK_ROOT / "steps" / "01-rebuild-interpreter" / "tests" / "private" / "cases.json"
-KIND_COUNTS = {"expr": 420, "apl": 120, "script": 230, "error": 220, "worker": 170, "display": 170, "stdin": 90,
+KIND_COUNTS = {"expr": 420, "apl": 120, "script": 170, "error": 240, "worker": 190, "display": 230, "stdin": 90,
                "module": 50, "program": 260, "cli": 19}
 OWN_SUITES = ("core.bpl", "core_mathish.bpl", "static.bpl", "static-int32.bpl", "regex.bpl")
 APL_SUITES = ("aplcart.bpl", "aplcart_mathish.bpl", "april.bpl", "april_mathish.bpl", "ngn.bpl", "ngn_mathish.bpl",
@@ -67,6 +67,7 @@ EXCLUDED = ("¿", "•rand", "•distribution", "•time", "•date", "•delay"
             "•remove", "•mkdir", "•nput", "•nget", "•load", "testpath", "⇄", "•host", "•mime", "•deflate", "•js",
             "]help", '"threads"', '"seed"', '"fusion"', "•hash", "]clear")
 MAX_CODE = 1500  # characters of a record's code, at most
+DERIVATIVE_KEEP = 0.55  # of the reference records that use ∂, the share drawn from: about 5-6% of the cases
 
 
 def load_records(checkout: Path) -> dict[str, tuple[str, list[dict]]]:
@@ -164,8 +165,19 @@ def expression_case(kind: str, record: dict, setup: str, rng: random.Random) -> 
                 variants=[{"files": {"main.bpl": whole(edit)}} for edit in edits])
 
 
-HANDLERS = ("$e", "$e.message", '$e.kind,": ",$e.message', '(⍕$e.line),":",(⍕$e.column),": ",$e.message',
-            '"error: ",$e.kind')
+# Each handler prints the error's message, so that no guess of its kind alone passes.
+HANDLERS = ("$e", "$e.message", '$e.kind,": ",$e.message', '(⍕$e.line),":",(⍕$e.column),": ",$e.message')
+# What a run prints before its error: a value it has to compute (a literal could be echoed).
+LEADS = (
+    lambda rng: f"⎕←+/ι{rng.randint(5, 60)}",
+    lambda rng: f"⎕←{rng.randint(2, 9)}×ι{rng.randint(3, 7)}",
+    lambda rng: f"⎕←⌽ι{rng.randint(3, 9)}",
+    lambda rng: f'⎕←⌽"{rng.choice(rewrite.WORDS)}"',
+    lambda rng: f'⎕←≢"{rng.choice(rewrite.WORDS)} {rng.choice(rewrite.WORDS)}"',
+    lambda rng: "⎕←⌈/" + " ".join(str(rng.randint(1, 99)) for _ in range(rng.randint(3, 6))),
+    lambda rng: "⎕←+/" + " ".join(str(rng.randint(1, 99)) for _ in range(rng.randint(3, 6))),
+    lambda rng: f"⎕←{rng.randint(2, 30)}+{rng.randint(2, 9)}×{rng.randint(2, 9)}",
+)
 
 
 def guarded_case(record: dict, setup: str, rng: random.Random) -> dict:
@@ -183,14 +195,65 @@ def guarded_case(record: dict, setup: str, rng: random.Random) -> dict:
                 variants=[{"files": {"main.bpl": edit + "\n"}} for edit in edits], form="guarded")
 
 
-def plain_error_case(record: dict, setup: str, rng: random.Random) -> dict:
-    """A record that raises an error, run plainly with some output before it: standard output up
-    to the error, then exit status 1 (the message goes to standard error)."""
-    lead = rng.choice(['⎕←"checking"', '⎕←"start"', "⎕←ι3", '⎕←"step 1"'])
+def plain_error_case(record: dict, setup: str, rng: random.Random, reply: bool = False) -> dict:
+    """A record that raises an error with nothing to catch it, after a computed value (LEADS). As a
+    worker request (form "reply", most of them), the reply carries the error's kind, message, span
+    and display; run as a program (form "plain"), standard output holds the value printed before
+    the error and the run ends with exit status 1 (the message goes to standard error)."""
+    lead = rng.choice(LEADS)(rng)
+    source = f"{record['file']}:{record['line']}"
+    if reply or rng.random() < 0.6:
+        setup_lines = "\n".join(part for part in (record.get("prefs", ""), setup) if part)
+        code, edits = rewritten(record["code"], rng, True)
+        ident = rng.randint(1, 60)
+        requests = lambda body: [{"id": ident, "code": lead[2:]}] + (  # noqa: E731
+            [{"id": ident + 1, "code": setup_lines, "echo": False}] if setup_lines else []) + [{"id": ident + 2, "code": body}]
+        text = lambda body: "".join(json.dumps(line, ensure_ascii=False) + "\n" for line in requests(body))  # noqa: E731
+        built = case("error", source, ["--worker"], stdin=text(code), variants=[{"stdin": text(edit)} for edit in edits],
+                     form="reply")
+        built.setdefault("record", {"variants": [], "want": "same"})["scaffold_lines"] = [0]
+        return built
     program = "\n".join(part for part in (record.get("prefs", ""), setup, lead, record["code"]) if part)
     base, edits = rewritten(program, rng, True)
-    return case("error", f"{record['file']}:{record['line']}", ["main.bpl"], {"main.bpl": base + "\n"},
+    return case("error", source, ["main.bpl"], {"main.bpl": base + "\n"},
                 variants=[{"files": {"main.bpl": edit + "\n"}} for edit in edits], form="plain")
+
+
+STATE_NAMES = ("sales", "totals", "rates", "stock", "scores", "costs", "counts", "levels", "margins", "volumes")
+
+
+def notebook_state(lines: list[dict], rng: random.Random) -> list[dict]:
+    """A worker session's requests with a notebook's state between them, at seeded places: a value
+    defined in one request and used in later ones, a function defined and then called, a display
+    setting followed by values it shows, and a bound name used again after its own request. Every
+    request after the first state request depends on what earlier requests left."""
+    ident = max((line["id"] for line in lines if isinstance(line.get("id"), int)), default=0) + 1
+    name = rng.choice(STATE_NAMES)
+    values = " ".join(f"¯{-value}" if value < 0 else str(value) for value in (rng.randint(-20, 90) for _ in range(rng.randint(3, 7))))
+    steps: list[list[dict]] = [
+        [{"code": f"{name}←{values}", "echo": False}, {"code": f"+/{name}"},
+         {"code": f"{name}←{name},{rng.randint(1, 50)}", "echo": False}, {"code": rng.choice([f"≢{name}", f"⌈/{name}", f"⌽{name}"])}],
+        [{"code": f"scale←{{ω×{rng.randint(2, 9)}}}", "echo": False}, {"code": f"scale {values}"},
+         {"code": f"scale scale {rng.randint(1, 20)}"}],
+        [{"code": f'•prefs ["prec":{rng.choice([3, 4, 5, 6])}]', "echo": False}, {"code": f"÷{rng.randint(3, 13)}"},
+         {"code": f"{rng.randint(1, 9)}÷7"}],
+    ]
+    bound = [line for line in lines if "bindings" in line]
+    if bound:
+        used = next(iter(bound[0]["bindings"]))
+        steps.append([{"code": rng.choice([f"{used}+1", f"⌽{used}", f"+/{used}×2"])}])
+    chosen = [step for step in steps if rng.random() < 0.55] or [rng.choice(steps)]
+    out = list(lines)
+    for step in chosen:
+        at = rng.randint(0, len(out))
+        numbered = []
+        for request in step:
+            numbered.append({"id": ident, **request})
+            ident += 1
+        if "bindings" not in str(step) and step is steps[-1] and bound:
+            at = len(out)  # a use of the bound name comes after the binding
+        out[at:at] = numbered
+    return out
 
 
 def worker_case(records: list[tuple[dict, str]], rng: random.Random) -> dict:
@@ -224,6 +287,9 @@ def worker_case(records: list[tuple[dict, str]], rng: random.Random) -> dict:
             args.insert(0, rng.randint(1, 9))
         lines.append({"id": ident, "call": rng.choice(["+", "×", "⌈", "{α+ω}", "+/", "⌽", "ρ"]), "args": args})
         ident += 1
+    own = [id(line) for line in lines if "code" in line and "bindings" not in line]  # the records' requests and setups
+    lines = notebook_state(lines, rng)
+    scaffold = [number for number, line in enumerate(lines) if id(line) not in own]
     text = "".join(json.dumps(line, ensure_ascii=False) + "\n" for line in lines)
     edits = []
     for share in (1.0, 0.5):
@@ -237,8 +303,10 @@ def worker_case(records: list[tuple[dict, str]], rng: random.Random) -> dict:
         variant = "".join(json.dumps(line, ensure_ascii=False) + "\n" for line in changed)
         if variant != text:
             edits.append({"stdin": variant})
-    return case("worker", ",".join(f"{record['file']}:{record['line']}" for record, _ in records), ["--worker"], stdin=text,
-                variants=edits)
+    built = case("worker", ",".join(f"{record['file']}:{record['line']}" for record, _ in records), ["--worker"], stdin=text,
+                 variants=edits)
+    built.setdefault("record", {"variants": [], "want": "same"})["scaffold_lines"] = scaffold
+    return built
 
 
 def display_case(record: dict, setup: str, rng: random.Random) -> dict:
@@ -246,7 +314,7 @@ def display_case(record: dict, setup: str, rng: random.Random) -> dict:
     diagram, `]dissect`, function trees or another notation. The record's own code is rewritten
     under the seed; the settings line stays as written."""
     code, edits = rewritten(record["code"], rng, not checks_a_result(record))
-    form = rng.choice(["box", "prec", "width", "limit", "diagram", "dissect", "trees", "notation"])
+    form = rng.choice(display_forms(code))
     head = {"box": '•prefs ["box":$t]', "prec": f'•prefs ["prec":{rng.choice([3, 4, 6, 8, 12, 15])}]',
             "width": f'•prefs ["width":{rng.choice([20, 32, 40, 60])}]',
             "limit": f'•prefs ["limit":{rng.choice([4, 6, 10, 20])} "edges":{rng.choice([1, 2, 3])}]',
@@ -258,20 +326,55 @@ def display_case(record: dict, setup: str, rng: random.Random) -> dict:
         if form in ("diagram", "dissect") and "\n" not in body:
             return "\n".join(lead + [("]display " if form == "diagram" else "]dissect ") + body]) + "\n"
         return "\n".join(lead + ([head] if head else []) + [body]) + "\n"
-    return case("display", f"{record['file']}:{record['line']}", ["main.bpl"], {"main.bpl": shown_as(code)},
-                variants=[{"files": {"main.bpl": shown_as(edit)}} for edit in edits], form=form)
+    built = case("display", f"{record['file']}:{record['line']}", ["main.bpl"], {"main.bpl": shown_as(code)},
+                 variants=[{"files": {"main.bpl": shown_as(edit)}} for edit in edits], form=form)
+    unset = ["main.bpl", head + "\n", ""] if head else (["main.bpl", "]display " if form == "diagram" else "]dissect ", ""]
+                                                         if "\n" not in code else None)
+    if unset:  # the recorder keeps the case only if the setting changes what it prints
+        built.setdefault("record", {"variants": [], "want": "same"})["unset"] = unset
+    return built
 
 
-def stdin_case(record: dict, setup: str, rng: random.Random) -> dict:
-    """A record given on standard input: as a program (`bpl -`), or as lines piped into `bpl` with
-    no arguments, where every line runs and an error does not stop the rest."""
+def display_forms(code: str) -> list[str]:
+    """The display settings worth trying on a value from its code: precision where it computes
+    fractions, the item limit and the width where it makes long or wide arrays, and boxes, diagrams
+    and dissection anywhere."""
+    forms = ["box", "diagram", "diagram", "dissect", "dissect"]
+    numbers = [int(value) for value in re.findall(r"(?<![\d.])\d+(?![\d.])", code) if len(value) < 7]
+    if re.search(r"\d\.\d|[÷○*√⍟]", code):
+        forms += ["prec"] * 2
+    if re.search(r"[ι⍳ρ↕]", code) and any(value >= 10 for value in numbers) or len(numbers) >= 12:
+        forms += ["limit", "width"] * 2
+    return forms  # notation and trees show functions, which the built displays hold
+
+
+def stdin_case(record: dict, setup: str, rng: random.Random, breaker: str | None = None) -> dict:
+    """A multi-line record given on standard input: as a program (`bpl -`), or as lines piped into
+    `bpl` with no arguments, where every line runs, an error does not stop the rest and later lines
+    use what earlier ones defined. A piped record gets a line that fails (`breaker`, a one-line
+    record that raises an error) after its first statement."""
     text = program_text(record, setup)
     base, edits = rewritten(text, rng, not checks_a_result(record))
     if rng.random() < 0.5:
         return case("stdin", f"{record['file']}:{record['line']}", ["-"], stdin=base + "\n",
                     variants=[{"stdin": edit + "\n"} for edit in edits], form="dash")
-    return case("stdin", f"{record['file']}:{record['line']}", [], stdin=base + "\n",
-                variants=[{"stdin": edit + "\n"} for edit in edits], form="pipe")
+
+    def piped(program: str) -> str:
+        lines = program.split("\n")
+        depth, boundaries = 0, []
+        for number, line in enumerate(lines[:-1], 1):  # after a line that closes every bracket it opened
+            for token in tokenize(line):
+                if token.kind == "glyph" and token.text in "([{":
+                    depth += 1
+                elif token.kind == "glyph" and token.text in ")]}":
+                    depth = max(0, depth - 1)
+            if depth == 0:
+                boundaries.append(number)
+        if breaker is not None and boundaries:
+            lines.insert(boundaries[0], breaker)
+        return "\n".join(lines) + "\n"
+    return case("stdin", f"{record['file']}:{record['line']}", [], stdin=piped(base),
+                variants=[{"stdin": piped(edit)} for edit in edits], form="pipe")
 
 
 LIBRARY_LOADS = {"array.bpl": [], "string.bpl": [], "power.bpl": [], "tree.bpl": [], "regex.bpl": [],
@@ -322,21 +425,27 @@ def cli_cases() -> list[dict]:
 
 def leaks(cases: list[dict], skeletons: set[str], texts: set[str]) -> list[str]:
     """Indexes (as strings) of the cases whose program the documentation holds, exactly or as a
-    near-copy: a file, the `-e` code or a worker request whose skeleton is a documented
-    program's, or whose compact text a documented program holds."""
+    near-copy, in their own inputs or in any rewrite the recorder may settle on: a file, the `-e`
+    code or a worker request whose skeleton is a documented program's (a whole block, a statement
+    or a run of 2-6 of its statements), or whose compact text a documented program holds."""
     found = []
     blob = "\n".join(texts)
     for index, item in enumerate(cases):
         if item["kind"] == "cli":
             continue
-        pieces = [text for name, text in item["files"].items() if not name.startswith("lib/")]
-        if item["argv"][:1] == ["-e"]:
-            pieces.append(item["argv"][1])
-        if item["stdin"] and item["kind"] == "worker":  # the records' requests; not the short ones on bound data
-            pieces += [request.get("code", "") for request in map(json.loads, item["stdin"].splitlines())
-                       if "bindings" not in request]
-        elif item["stdin"]:
-            pieces.append(item["stdin"])
+        pieces = []
+        # The case's own inputs and every rewrite of them the recorder may settle on.
+        for option in [item] + item.get("record", {}).get("variants", []):
+            shown = dict(item, **{key: option[key] for key in ("argv", "files", "stdin") if key in option})
+            pieces += [text for name, text in shown["files"].items() if not name.startswith("lib/")]
+            if shown["argv"][:1] == ["-e"]:
+                pieces.append(shown["argv"][1])
+            if shown["stdin"] and shown["argv"][:1] == ["--worker"]:  # the records' requests, not the generator's own
+                scaffold = set(item.get("record", {}).get("scaffold_lines", []))
+                pieces += [request.get("code", "") for number, request in enumerate(map(json.loads, shown["stdin"].splitlines()))
+                           if "bindings" not in request and number not in scaffold]
+            elif shown["stdin"]:
+                pieces.append(shown["stdin"])
         for piece in pieces:
             if not piece.strip():
                 continue
@@ -365,6 +474,10 @@ def generate(checkout: Path, seed: int, scale: float = 1.0) -> list[dict]:
     pairs = lambda suites: [(record, files[name][0]) for name in suites if name in files for record in files[name][1]  # noqa: E731
                             if usable(record, files[name][0]) and not shown(record)]
     own, apl = pairs(OWN_SUITES), pairs(APL_SUITES)
+    # Differentiation fills a large part of upstream's reference suite; keep DERIVATIVE_KEEP of
+    # those records, so that it weighs about as much as the other parts of the manual.
+    thin = lambda pool: [pair for pair in pool if "∂" not in pair[0]["code"] + pair[1] or rng.random() < DERIVATIVE_KEEP]  # noqa: E731
+    own, apl = thin(own), thin(apl)
     # A value case needs a literal the seed can change, so that its answer is not upstream's own.
     editable = lambda pair: not checks_a_result(pair[0]) and bool(  # noqa: E731
         rewrite.number_sites(pair[0]["code"]) or rewrite.text_sites(pair[0]["code"]))
@@ -381,6 +494,7 @@ def generate(checkout: Path, seed: int, scale: float = 1.0) -> list[dict]:
     take = lambda pool, n: [pool.pop() for _ in range(min(max(n, 0), len(pool)))]  # noqa: E731
     suite = lambda pair: "apl" if pair[0]["file"] in APL_SUITES else "own"  # noqa: E731
     cases: list[dict] = []
+    piped = take(multi, counts["stdin"] - min(len(readers), counts["stdin"] // 3))  # multi-line, before scripts take them
     for pair in take(single, counts["expr"]):
         cases.append(dict(expression_case("expr", *pair, rng), suite=suite(pair)))
     for pair in take(multi, counts["script"]):
@@ -389,25 +503,29 @@ def generate(checkout: Path, seed: int, scale: float = 1.0) -> list[dict]:
         cases.append(dict(expression_case("apl", *pair, rng), suite=suite(pair)))
     errors = take(own_errors, counts["error"] - counts["error"] // 5) + take(apl_errors, counts["error"] // 5)
     for pair in errors:
-        built = guarded_case(*pair, rng) if rng.random() < 0.8 else plain_error_case(*pair, rng)
+        # A syntax error stops the whole program before any guard or lead runs, so only a worker
+        # reply shows it (plain_error_case's "reply" form).
+        syntax = "SYNTAX" in str(pair[0].get("expected_error", ""))
+        built = plain_error_case(*pair, rng, syntax) if syntax or rng.random() >= 0.8 else guarded_case(*pair, rng)
         cases.append(dict(built, suite=suite(pair)))
     # What the value kinds leave goes to the worker sessions (with records that cannot change their
     # answers among them: a session's other requests still do), the displays and stdin.
-    reserve = take(single + multi, counts["display"] + counts["stdin"])
+    reserve = take(single + multi, counts["display"])
     session_pool = single + multi + plain
     rng.shuffle(session_pool)
     for _ in range(counts["worker"]):
         picked = take(session_pool, rng.randint(2, 4)) + take(own_errors, 1 if rng.random() < 0.6 else 0)
         if picked:
             cases.append(dict(worker_case(picked, rng), suite="apl" if any(suite(pair) == "apl" for pair in picked) else "own"))
-    built_displays = programs.display_cases(rng, counts["display"] // 3)
+    built_displays = programs.display_cases(rng, counts["display"] // 2)
     for pair in take(reserve, counts["display"] - len(built_displays)):
         cases.append(dict(display_case(*pair, rng), suite=suite(pair)))
     cases += built_displays
     for pair in readers[:counts["stdin"] // 3]:
         cases.append(dict(expression_case("stdin", *pair, rng), suite=suite(pair)))
-    for pair in take(reserve, counts["stdin"] - min(len(readers), counts["stdin"] // 3)):
-        cases.append(dict(stdin_case(*pair, rng), suite=suite(pair)))
+    breakers = [pair for pair in own_errors if "\n" not in pair[0]["code"] and not pair[1]]
+    for pair in piped:
+        cases.append(dict(stdin_case(*pair, rng, rng.choice(breakers)[0]["code"] if breakers else None), suite=suite(pair)))
     library = {path.rsplit("/", 1)[1]: git_text(checkout, path) for path in git_files(checkout, "lib") if path.endswith(".bpl")}
     lib_records = [record for record in files.get("lib.bpl", ("", []))[1] + files.get("lib_mathish.bpl", ("", []))[1]
                    if record.get("code") and not record.get("timed") and not excluded(record["code"], ("•load",))]

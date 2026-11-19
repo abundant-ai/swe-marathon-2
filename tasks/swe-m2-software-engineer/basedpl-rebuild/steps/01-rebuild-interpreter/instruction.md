@@ -21,8 +21,7 @@ It has to behave exactly like the sandboxed build:
 - Shell jobs pipe data into BPL programs and act on the exit status, and our wrapper scripts show
   `bpl --help` in their own usage text.
 - Analysts also use `bpl` straight from their shells, piping lines into it, and between the
-  notebooks and the scripts they use the whole language, derivatives with `∂` included: there is
-  no part of it we can do without.
+  notebooks and the scripts they use the whole language: there is no part of it we can do without.
 
 A different output, message or exit status breaks one of them.
 
@@ -60,6 +59,11 @@ A different output, message or exit status breaks one of them.
 
 Your implementation in `/app/rebuild`, with an executable `/app/rebuild/bpl`.
 
+- All of the manual is in scope, apart from the out-of-scope list at the end: every page under
+  `/app/docs/glyphs` and `/app/docs/system`, every language feature the guides describe
+  (derivatives with `∂` among them), the worker protocol and the command line. A part that works
+  on the documentation's own examples is a start, not the end: our scripts use these features in
+  every combination, with their corner conditions and their errors.
 - Given the same files, arguments and standard input, `/app/rebuild/bpl` prints the same standard
   output and ends with the same exit status as the sandboxed build. Nothing reads standard error
   (CI keeps standard output and the status, and the notebook service reads errors from the
