@@ -397,14 +397,15 @@ def identity(path: Path) -> dict:
         return {"error": type(exc).__name__}
 
 
+def free_space() -> dict:
+    """The bytes free in /tmp and /logs/verifier, -1 where a filesystem reports no size."""
+    return {str(place): runcases.disk_free(place)[0] for place in (runcases.WORKSPACE.parent, Path("/logs/verifier"))}
+
+
 def low_on_disk() -> bool:
     """Whether /tmp or /logs/verifier has less than RESERVE_BYTES free (what Harbor needs to fetch
-    the results, and the results themselves)."""
-    for place in (runcases.WORKSPACE.parent, Path("/logs/verifier")):
-        free = runcases.disk_free(place)[0]
-        if 0 <= free < RESERVE_BYTES:
-            return True
-    return False
+    the results, and the results themselves); a filesystem that reports no size never is."""
+    return any(0 <= free < RESERVE_BYTES for free in free_space().values())
 
 
 def write_in_place(path: Path, data: bytes) -> None:
@@ -438,7 +439,8 @@ def grade(program: Path, private: Path, prefix: list[str], owner: tuple[int, int
     if not cases or any(case["id"] not in expected for case in cases):
         raise EvaluationError("Private cases and recorded answers do not match")
     metrics = {"cases_total": len(cases), "cases_run": 0, "cases_passed": 0, "cases_failed": 0, "reward": 0.0,
-               "timeouts": 0, "output_limits": 0, "memory_limits": 0, "setup_errors": 0, "seconds_total": 0.0,
+               "timeouts": 0, "output_limits": 0, "memory_limits": 0, "disk_limits": 0, "file_limits": 0,
+               "setup_errors": 0, "seconds_total": 0.0,
                "seconds_max": 0.0,
                "stopped": None, "notes": [], "by_kind": {}}
     try:
@@ -457,14 +459,14 @@ def grade(program: Path, private: Path, prefix: list[str], owner: tuple[int, int
         if time.monotonic() > deadline - MARGIN_SEC:
             metrics["stopped"] = "out of time; the remaining cases count as failed"
             break
-        if low_on_disk():
-            metrics["stopped"] = "out of disk space; the remaining cases count as failed"
-            break
         try:  # whatever the submission did to this machine is its own case's failure, never an error
             if owner is not None:
                 reset(owner[0])
                 if time.monotonic() > deadline - MARGIN_SEC:
                     metrics["stopped"] = "out of time after a cleanup; the remaining cases count as failed"
+                    break
+                if low_on_disk():  # what the runs left that the cleanup could not take back
+                    metrics["stopped"] = "out of disk space after a cleanup; the remaining cases count as failed"
                     break
             got = runcases.run_case([str(program)], case, prefix=prefix, owner=owner)
         except Exception as exc:  # noqa: BLE001
@@ -482,6 +484,8 @@ def grade(program: Path, private: Path, prefix: list[str], owner: tuple[int, int
             metrics["output_limits"] += 1
         elif error == "memory limit":
             metrics["memory_limits"] += 1
+        elif error in ("disk limit", "file limit"):
+            metrics[error.replace(" ", "_") + "s"] += 1
         elif error:
             metrics["setup_errors"] += 1
         if runcases.matches(got, expected[case["id"]]):
@@ -537,9 +541,14 @@ def main() -> int:
             if closed.is_dir() and not closed.is_symlink():
                 closed.chmod(0o700)
         # The results' space, taken before any submitted code runs: written in place at the end,
-        # they need no new space, however full a run leaves the disk.
-        (output / "reward.txt").write_text("0.000000")
+        # they need no new space, however full a run leaves the disk. The reward's is a file of its
+        # own, renamed onto reward.txt only at the real end: until then no reward exists, so an
+        # evaluation that ends early is an error, never a 0.
+        (output / ".reward.tmp").write_text("--------")
         (output / "metrics.json").write_text(json.dumps({"status": "running"}).ljust(METRICS_SPACE) + "\n")
+        start_space = free_space()
+        if low_on_disk():  # the environment's fault, before any submitted code: no reward at all
+            raise EvaluationError(f"Less than {RESERVE_BYTES} bytes free before grading: {start_space}")
         try:  # the out-of-memory killer takes a submission's process, never this one
             Path("/proc/self/oom_score_adj").write_text("-1000")
         except OSError:
@@ -567,12 +576,15 @@ def main() -> int:
         else:
             metrics = grade(SUBMISSION / "goose", tests / "private", prefix, owner, deadline)
             final_cleanup(owner[0], min(deadline, time.monotonic() + CLEANUP_SEC))
-        # The reward first, in its reserved place: nothing after it can cost it.
-        write_in_place(output / "reward.txt", f"{metrics['reward']:.6f}".encode())
+        # The reward first, in its reserved place, then renamed (no new space): nothing after it
+        # can cost it.
+        write_in_place(output / ".reward.tmp", f"{metrics['reward']:.6f}".encode())
+        os.replace(output / ".reward.tmp", output / "reward.txt")
         code = 0
         print(f"reward: {metrics['reward']:.6f} ({metrics['cases_passed']}/{metrics['cases_total']} cases)", flush=True)
         try:
-            metrics.update(limits=limits, submission=program, host=recorder.host())
+            metrics.update(limits=limits, submission=program, host=recorder.host(), free_at_start=start_space,
+                           free_at_end=free_space())
             write_in_place(output / "metrics.json",
                            (json.dumps(dict(metrics, status="completed"), indent=1, sort_keys=True) + "\n").encode())
         except Exception:  # noqa: BLE001 - metadata only
@@ -581,7 +593,7 @@ def main() -> int:
         message = str(exc) if isinstance(exc, EvaluationError) else f"Verifier error: {type(exc).__name__}"
         print(f"evaluation error: {message}", flush=True)
         if code != 0:
-            for name in REWARD_FILES:
+            for name in REWARD_FILES + (".reward.tmp",):
                 (output / name).unlink(missing_ok=True)
             try:
                 write_in_place(output / "metrics.json", (json.dumps({"status": "evaluation_error", "error": message}) + "\n").encode())

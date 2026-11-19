@@ -298,7 +298,8 @@ def record(program: str, cases: list[dict]) -> tuple[list[dict], dict, dict]:
     finished, outputs, cli = [], {}, set()
     started = time.monotonic()
     report = {"keep_seconds": KEEP_SEC, "keep_cpu": KEEP_CPU, "seconds": {}, "cpu": {}, "slow": [], "unsteady": [],
-              "crashed": [], "output_limit": [], "memory_limit": [], "perturbed": [], "settled": {}, "dropped": {},
+              "crashed": [], "output_limit": [], "memory_limit": [], "disk_limit": [], "perturbed": [], "settled": {},
+              "dropped": {},
               "host": host()}
     elsewhere = relocated(program)
     for case in cases:
@@ -317,7 +318,8 @@ def record(program: str, cases: list[dict]) -> tuple[list[dict], dict, dict]:
         errors = {first.get("error"), second.get("error")} - {None}
         if errors:
             report["slow" if "timeout" in errors else "output_limit" if "output limit" in errors else
-                   "memory_limit" if "memory limit" in errors else "unsteady"].append(case["id"])
+                   "memory_limit" if "memory limit" in errors else "disk_limit" if errors & {"disk limit", "file limit"}
+                   else "unsteady"].append(case["id"])
         elif (first["exit"], first["stdout"]) != (second["exit"], second["stdout"]):
             report["unsteady"].append(case["id"])
         elif crashed(first) or crashed(second):

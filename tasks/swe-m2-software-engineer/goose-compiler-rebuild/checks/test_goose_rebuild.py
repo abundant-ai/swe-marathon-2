@@ -812,8 +812,8 @@ def test_results_are_reserved_written_in_place_and_logs_never_swept(tmp_path):
     """The reward and metrics take their space at the start and are overwritten in place; /logs
     (the agent's own artifacts) is never a directory to sweep; a run past the disk or file limit
     fails."""
-    reserved = tmp_path / "reward.txt"
-    reserved.write_text("0.000000")
+    reserved = tmp_path / ".reward.tmp"
+    reserved.write_text("--------")
     metrics = tmp_path / "metrics.json"
     metrics.write_text("{}".ljust(4096))
     tree = tmp_path / "root"
@@ -828,23 +828,28 @@ def test_results_are_reserved_written_in_place_and_logs_never_swept(tmp_path):
         found = verify.writable_dirs({str(tree)!r})
         rc = verify.runcases
         rc.memory_in_use = lambda group, uid: 0
-        before = (10 << 30, 1_000_000)
-        rc.disk_free = lambda path=None: ((10 << 30) - (2 << 30), 1_000_000)
+        before = (10 << 30, 1_000_000, 2_000_000)
+        rc.disk_free = lambda path=None: ((10 << 30) - (2 << 30), 1_000_000, 2_000_000)
         disk = rc.over_limit(1, None, before)
-        rc.disk_free = lambda path=None: (10 << 30, 1_000_000 - 200_000)
+        rc.disk_free = lambda path=None: (10 << 30, 1_000_000 - 200_000, 2_000_000)
         files = rc.over_limit(1, None, before)
-        rc.disk_free = lambda path=None: (-1, -1)
+        rc.disk_free = lambda path=None: (10 << 30, 1_000_000 - 200_000, 1_900_000)  # XFS, APFS: the total moves
+        moving = rc.over_limit(1, None, before)
+        rc.disk_free = lambda path=None: (-1, -1, -1)
         unknown = rc.over_limit(1, None, before)
-        print(json.dumps([sorted(found), disk, files, unknown]))
+        print(json.dumps([sorted(found), disk, files, unknown, moving]))
     """))
-    found, disk, files, unknown = out
+    found, disk, files, unknown, moving = out
     assert reserved.read_text() == "0.731000" and json.loads(metrics.read_text()) == {"reward": 0.731}
     assert not any("logs" in path for path in found) and str(tree / "tmp") in found
-    assert disk == "disk limit" and files == "file limit" and unknown is None
+    assert disk == "disk limit" and files == "file limit" and unknown is None and moving is None
     verify = (STEP / "tests" / "verify.py").read_text()
     main = verify[verify.index("def main() -> int:"):]
-    assert main.index('(output / "reward.txt").write_text("0.000000")') < main.index("sandbox()") \
-        < main.index("final_cleanup(owner[0], min(deadline") < main.index('write_in_place(output / "reward.txt"')
+    assert main.index('(output / ".reward.tmp").write_text("--------")') < main.index("raise EvaluationError(f\"Less than") \
+        < main.index("sandbox()") < main.index("final_cleanup(owner[0], min(deadline") \
+        < main.index('write_in_place(output / ".reward.tmp"') < main.index('os.replace(output / ".reward.tmp", output / "reward.txt")')
+    assert 'reward.txt").write_text' not in main, "no reward exists until the real end"
+    assert 'if str(uid) in (values.get("uid"), values.get("cuid"))' in RUNNER.read_text(), "shared memory by its creator too"
     assert "as_user(uid, [\"kill\", \"-KILL\", \"-1\"], 10)" in verify and 'as_user(uid, ["ipcrm", "--all"], 60)' in verify
     assert "if os.geteuid() != 0 or uid == os.geteuid()" in verify, "never kill -1 as the verifier's own uid"
     instruction = (STEP / "instruction.md").read_text()

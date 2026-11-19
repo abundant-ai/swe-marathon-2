@@ -6,6 +6,13 @@ variables, and the same resource limits: an 8 MB stack, which is where `goose ru
 bounds on processes, file size and data, at most MEMORY_LIMIT bytes of memory in use, and at most
 DISK_LIMIT bytes and FILES_LIMIT files and directories added to the filesystem that holds /tmp.
 
+The disk and file limits read that filesystem's free figures (statvfs) before and during a run, so
+they hold where those figures track what the run writes: a filesystem of the run's own with a
+fixed inode table (ext4, a sized tmpfs). Where the file count moves with free space (XFS, APFS)
+the file limit is skipped; where the figures are fixed or missing (a tmpfs without a size) neither
+limit can fire; on a filesystem other writers share, others' writes count too. The per-file size
+limit (RLIMIT_FSIZE) holds everywhere.
+
 usage: python3 <this file> check <program> <cases.json> <outputs.json> [-v]
 
 A case passes when the program's exit code and the bytes of its standard output equal the expected
@@ -117,32 +124,35 @@ def prepare(case: dict, owner: tuple[int, int] | None) -> None:
             os.lchown(top, *owner)
 
 
-def disk_free(path: Path = WORKSPACE.parent) -> tuple[int, int]:
-    """The bytes and the files (inodes) free on the filesystem holding `path`, -1 for one it does
-    not count."""
+def disk_free(path: Path = WORKSPACE.parent) -> tuple[int, int, int]:
+    """The bytes and the files (inodes) free on the filesystem holding `path`, and its total of
+    files; -1 for a figure it does not report (no size, no inode table)."""
     try:
         info = os.statvfs(path)
     except (OSError, AttributeError):
-        return -1, -1
-    return info.f_bavail * info.f_frsize, info.f_favail if info.f_files else -1
+        return -1, -1, -1
+    return (info.f_bavail * info.f_frsize if info.f_blocks else -1, info.f_favail if info.f_files else -1,
+            info.f_files if info.f_files else -1)
 
 
-def over_limit(group: int, uid: int | None, free: tuple[int, int]) -> str | None:
-    """What limit a run is past, given what was free on /tmp's filesystem when it started."""
+def over_limit(group: int, uid: int | None, free: tuple[int, int, int]) -> str | None:
+    """What limit a run is past, given what was free on /tmp's filesystem when it started. The
+    file count counts only where the filesystem's total of files stayed the same (it moves with
+    free space on XFS and APFS)."""
     if memory_in_use(group, uid) > MEMORY_LIMIT:
         return "memory limit"
     now = disk_free()
     if free[0] >= 0 and now[0] >= 0 and free[0] - now[0] > DISK_LIMIT:
         return "disk limit"
-    if free[1] >= 0 and now[1] >= 0 and free[1] - now[1] > FILES_LIMIT:
+    if free[1] >= 0 and now[1] >= 0 and free[2] == now[2] and free[1] - now[1] > FILES_LIMIT:
         return "file limit"
     return None
 
 
 def memory_in_use(group: int, uid: int | None) -> int:
     """The memory a run's processes use: the resident memory of those of user `uid` where given,
-    with the shared memory segments that user owns, else of those of process group `group`; 0
-    where /proc cannot tell."""
+    with the shared memory segments that user owns or created, else of those of process group
+    `group`; 0 where /proc cannot tell."""
     total = 0
     if uid is not None:
         try:
@@ -150,7 +160,7 @@ def memory_in_use(group: int, uid: int | None) -> int:
             columns = header.split()
             for row in rows:
                 values = dict(zip(columns, row.split()))
-                if values.get("uid") == str(uid):
+                if str(uid) in (values.get("uid"), values.get("cuid")):  # cuid: no IPC_SET changes it
                     total += int(values.get("rss", values.get("size", "0")))
         except (OSError, ValueError):
             pass
@@ -170,7 +180,7 @@ def memory_in_use(group: int, uid: int | None) -> int:
 
 
 def read_output(proc: subprocess.Popen, data: bytes, deadline: float, uid: int | None,
-                free: tuple[int, int]) -> tuple[bytes, str | None]:
+                free: tuple[int, int, int]) -> tuple[bytes, str | None]:
     """Feed `data` to the program's standard input and read its standard output until it closes
     it. Returns what was read and None, or what stopped the reading: "timeout" at the deadline,
     "output limit" past OUTPUT_LIMIT bytes, or a limit `over_limit` names."""

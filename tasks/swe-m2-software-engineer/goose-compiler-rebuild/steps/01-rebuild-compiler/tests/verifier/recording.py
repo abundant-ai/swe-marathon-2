@@ -75,6 +75,7 @@ def describe(cases: list[dict], kept: list[dict], expected: dict, report: dict) 
         "dropped_perturbed": by_kind(report.get("perturbed", [])),
         "dropped_output_limit": by_kind(report.get("output_limit", [])),
         "dropped_memory_limit": by_kind(report.get("memory_limit", [])),
+        "dropped_disk_limit": by_kind(report.get("disk_limit", [])),
         "keep_cpu": report.get("keep_cpu"), "host": report.get("host", {}), "wall_seconds": report.get("wall_seconds"),
         "kept_ids_sha256": report.get("kept_ids_sha256"),
         "dropped": {reason: by_kind(ids) for reason, ids in sorted(report.get("dropped", {}).items())},
