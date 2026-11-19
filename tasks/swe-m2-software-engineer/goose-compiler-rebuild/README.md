@@ -13,7 +13,10 @@ The copy is a hardened build (`common/hardening/`): `goose run` runs a program i
 compiler's own process, so every way for a program to bring code or a raw memory read into that
 process is removed, and each build proves it before the image is used.
 
-One step is implemented. See [Remaining work](#remaining-work).
+One step is implemented. Round 7 answers two platform findings of 2026-11-19: public egress
+returns to the sandbox between the agent's turn and the collection of `/app/rebuild`, and a
+turn that runs into the platform's 9.6 h cap is never graded. See
+[Remaining work](#remaining-work).
 
 ## Development log
 
@@ -445,6 +448,91 @@ the set-group-id honoured, ptrace reads blocked and LD_PRELOAD never run.
   recorder files such drops apart from unsteady ones (`dropped_disk_limit`).
 - Checks: 38 task checks. Preflight passes on bundle `2c741b13a097`.
 
+### 2026-11-19 (round 7: the platform's egress window and its ungraded capped runs)
+
+Hooks, verifier, instruction and run configs only; the cases are unchanged. Version 4 (bundle
+`2c741b13a097`) ran on Oddish in f14b3da8 (coordinator): oracle 1.0 twice, no-op 0.0 twice; its
+three model trials (33-35) ran into the 9.6 h cap and were never graded.
+
+- **Egress returns after the turn** (harbor-lh `ops/swe-marathon-v2/PLATFORM_EGRESS_WINDOW.md`;
+  decision `2026-11-19-egress-window-DECISION.md`). Harbor restores the environment's public
+  network policy when the agent's turn ends and collects `/app/rebuild` afterwards; a canary saw a
+  process the agent left behind reach pypi.org 0.2 s after the turn. A detached loop could fetch
+  one of upstream's release archives or Homebrew bottles (both carry a Linux compiler) and drop
+  it into `/app/rebuild`. Ported from the BasedPL task (dd2a450..21a8146), adapted to this
+  task's deliverable and limits:
+  - `environment/prepare-delivery` is the task's one `[[verifier.collect]]` hook, as root, with
+    900 s. Its first act freezes every process of `dev` (`kill -STOP -1` as `dev`); it lists them
+    (one `ps`), kills them (`kill -9 -1` as `dev`, then `pkill`) until none is left, copies the
+    watchdog log's last lines, records every entry's lstat (path, type, size, mode, owner, mtime,
+    ctime, inode) by directory descriptor before anything of its own touches the delivery, and
+    records whether TCP 443 on pypi.org and github.com answers (3 s each). It gives back the
+    64 MiB and 64 inodes that `reserve-delivery-room` set aside at `setup_begin` and
+    `setup_complete` (which also stamp the session's start and the free figures), restores
+    permissions only where needed (directories u+rwx, unreadable files u+r, each noted; no
+    `chmod -R`), and fixes links as `dev`: a link to a root-owned file or directory outside the
+    delivery becomes a copy (bytes and mode, with the source's path, owner, times and inode
+    recorded), a link to anything else outside is removed and noted first in the mark, and so are
+    pipes, sockets and devices. Then, as root, it walks the delivery, removes any link that leaves
+    it lexically or through other links, refuses it past 200,000 entries, 4,000,000,000 bytes
+    (each file once) or 1,000-byte paths (the instruction's figures; BasedPL's are 100,000 and
+    1 GB), packs it once with `tar -czf` into `/tmp` within 300 s (a pack that fails only for room
+    the machine never had is left to the copy), hashes files once per inode within 240 s, and
+    writes the root-owned record `.delivery.json` and the mark `.delivered` (`delivered
+    <entries> <bytes>` or `refused`, then every note). A refused delivery is moved aside whole and
+    replaced by an empty directory.
+  - `verify.py` reads the mark before anything else: nothing arriving, or fewer entries or bytes
+    than marked, is an evaluation error (only the platform can cut the copy short); more is a
+    note; a missing mark is a note. The record goes to `metrics.json` as `delivery_record`
+    (egress, the processes, kill rounds, survivors, the session's and the hook's start, the
+    watchdog's lines and `ended_by_watchdog`, copies and refused links with their flags, the
+    notes, the entries' count and latest times, `goose`'s own entry) and decides nothing. The
+    verifier's own entry cap is 200,100, so the hook's 200,000 plus its two files and the root
+    never trip it.
+  - Tripwires: a delivered file whose sha256 is one of the 42 upstream publishes (every asset of
+    the four GitHub releases v2026.1 to v2026.4 and the compiler inside each; Homebrew's five
+    `goose-lang` 2026.4 bottles, x86_64 and arm64 Linux among them, and the compiler inside each;
+    `scripts/upstream_builds.py`, hashes only; never TinyCC's objects, which this task's own
+    build also produces) is refused with a note, and so is a delivered ELF file holding either of
+    two lines of upstream's help text that the hardening patch removes with their options
+    (`goose help c covers writing the C yourself (goose -o out.c)` and `Writes the program's C,
+    for a build of your own or a C host`; neither is in any shipped document). Every published
+    compiler from v2026.2 on holds both; v2026.1's older help does not, so those four are refused
+    by hash alone. A note or a script that quotes the text is not refused. A missing or malformed
+    marker is now an evaluation error rather than a skipped search. The pinned commit
+    (2026-11-17) is tagged by no release, so no published compiler is the recorded one; one would
+    still answer most cases.
+  - The instruction's delivery bullet says what the copy drops (links to files of the agent's own,
+    so an interpreter must be the machine's own or copied in; pipes, sockets and devices), what it
+    keeps (copies of root-owned targets), the path-length bound and that a delivery over the
+    limits is not copied.
+- **Capped runs are not graded** (`PLATFORM_VERIFIER_BUILD_AFTER_LONG_RUN.md`; decision
+  `2026-11-19-capped-runs-DECISION.md`). Every v2 trial whose agent ran into the 9.6 h cap was
+  never graded (Goose 33-35 among them: the separate verifier image failed to build right after
+  the timeout), while runs that ended by themselves were. Until the platform fixes it, the task
+  ends the session itself: `environment/precap-watchdog`, started as root by a second
+  `[[agent.setup_complete]]` entry, arms one detached sleeper (a pid file under `/run` makes a
+  second start a no-op) that after 33,900 s (34,560 less eleven minutes) sends SIGTERM to every
+  process of `dev`, repeating every 5 s for up to 60 s, then SIGKILL, logging arm, fire and done
+  lines with timestamps to the root-only `/var/log/precap-watchdog.log`. The hook copies the
+  log's tail into the record; `ended_by_watchdog` in `metrics.json` says whether a session was
+  ended, never in the score. The instruction says nothing of it: it states no time budget, and a
+  session the watchdog ends is one that would otherwise have hit the cap and been lost. The
+  sleeper shows in `ps` as a root process named `precap-watchdog`; `dev` can neither signal it
+  nor read its script or log.
+- **Run configs.** `scripts/oddish/agents.yaml` now has one attempt per trial and background
+  tasks off, as harbor-lh `agents-claude-code-1attempt.yaml`: the capped version-4 trials were
+  re-run from scratch, another 9.6 h each, because the build error hid behind the timeout.
+- **Not changed.** `sudo` stays in the agent image (no rule lets `dev` use it; taking it out is an
+  untested change to an image that has run four versions), the verifier's byte cap (4 GiB, above
+  the hook's), and the cases.
+- Checks: 40 task checks (new: the hook end to end on a tree of links, pipes, hard links, sparse
+  and deep trees, a read-only folder and an unreadable file, with the copy's tar round trip and
+  the record's times against the pre-hook ones; the watchdog arming once, firing and ending a
+  process tree and a detached process; the refusals of a published build behind a wrapper and of
+  the help text in an ELF file but not in a note). Preflight passes on bundle `c6ceb896f397`,
+  packaged twice with the same hash.
+
 ## Current implementation
 
 | Part | State |
@@ -452,6 +540,8 @@ the set-group-id honoured, ptrace reads blocked and LD_PRELOAD never run.
 | Step `01-rebuild-compiler` | Implemented: instruction, agent image with the execute-only compiler, separate verifier image, reference solution. |
 | Further steps | Not designed. Candidates: the next upstream commits from their changelog; `goose build` with an external C compiler. |
 | Hardening | `common/hardening/`: the patch, `apply.sh` (before each build), `build.sh` (the build: static link first, `smoke.sh` on the result, `build.txt`), staged by packaging into both images' build contexts and the solution; the build marker into the images' contexts only. |
+| Collection and the session's end | `environment/prepare-delivery` (the root collect hook), `reserve-delivery-room` (both setup hooks) and `precap-watchdog` (the pre-cap watchdog), installed root-only (0700) in `/usr/local/sbin` of the agent image. |
+| Upstream's builds | `steps/01-rebuild-compiler/tests/verifier/upstream_builds.json`, from `scripts/upstream_builds.py`: hashes only; the downloads stay in Git-ignored `experiment/upstream-builds`. |
 | Private inputs | `steps/01-rebuild-compiler/tests/private/cases.json` and `experiment/visible.json`, Git-ignored, from `scripts/make_cases.py`. Outputs are recorded when the images are built; `recording.json` beside them describes the recording and appears in `metrics.json`. |
 | Upstream source | Not in Git. Packaging stages the build sources less `stdlib/os.goose` and `stdlib/ffi.goose` (into both images and the solution) and the documentation and samples (into the agent image) from a checkout at the pinned commit. |
 | Oracle | The original compiler, built by `solve.sh` from the shipped sources with the images' hardening and `build.sh`; then a non-scoring sandbox probe (`probe.c`) writes `/logs/agent/probe.txt`. |
@@ -509,15 +599,38 @@ Solved by construction: the original passes every kept case. For an agent, unkno
 A run is one trial of 9.6 hours (one task row per experiment, no continuation tasks). The
 instruction states no time budget.
 
+**Run condition: the pre-cap watchdog.** A root watchdog started at `setup_complete` ends the
+agent's session 11 minutes before the platform's 9.6 h cap (SIGTERM to every process of `dev`,
+then SIGKILL), because on the platform today a turn that runs into the cap is never graded (the
+separate verifier image fails to build right after the timeout; harbor-lh
+`ops/swe-marathon-v2/PLATFORM_VERIFIER_BUILD_AFTER_LONG_RUN.md`) while a turn that ends by itself
+is. A session it ended shows as `ended_by_watchdog: true` in `metrics.json`. The agent is not
+told; the instruction states no budget either way. Model trials run with one attempt each
+(`scripts/oddish/agents.yaml`), so an errored trial is read before any re-run.
+
 ## Verification
 
-1. `/app/rebuild` arrives as the declared artifact.
-2. The verifier picks a random uid and gid for submitted code and checks the unprivileged run first
-   (no_new_privs from the status file or `prctl`, ids, groups, capabilities, limits, and a set-id
-   root copy of `id` that must report that uid); a failure is an evaluation error, before submitted
-   code runs. It then seals `/app/rebuild` (root-owned, read-only for anyone else, no set-id bits)
-   and searches it for the original's build marker: a submission that cannot be sealed or holds the
-   marker gets reward 0 with a note.
+1. **Collection.** When the agent's turn ends, the root collect hook freezes `dev`'s processes,
+   lists them and kills them, records every entry's own times before touching anything, and
+   records egress. It restores permissions only where needed (directories u+rwx, unreadable
+   files u+r, each noted), fixes links (a link to a root-owned system file or directory becomes
+   a copy, with the source's path, owner, times and inode recorded; a link to anything else
+   outside is removed and noted first in the mark), bounds `/app/rebuild` (200,000 entries,
+   4,000,000,000 bytes, 1,000-byte paths), packs it once as the copy will, and marks and records
+   it with the pre-hook times as the authoritative ones (see the development log). Harbor then
+   copies `/app/rebuild`, the declared artifact, into the verifier.
+2. **Before any submitted code runs**, the verifier reserves `.reward.tmp` and `metrics.json`,
+   raises an evaluation error with less than 512 MB free, checks the delivery against the hook's
+   mark (nothing arrived, or fewer entries or bytes than marked, is an evaluation error), copies
+   the hook's record into `metrics.json`, reads the list of upstream's published builds (missing
+   is an evaluation error), then picks a random uid and gid for submitted code and checks the
+   unprivileged run (no_new_privs from the status file or `prctl`, ids, groups, capabilities,
+   limits, and a set-id root copy of `id` that must report that uid); a failure is an evaluation
+   error. It then seals `/app/rebuild` (root-owned, read-only for anyone else, no set-id bits)
+   and searches it for the original's build marker (missing or malformed: an evaluation error),
+   for any of upstream's 42 published builds by sha256, and, in ELF files, for upstream's
+   unhardened help text: a submission that cannot be sealed or holds any of these gets reward 0
+   with a note.
 3. Before each case it kills every process of that uid, removes what it left in every
    world-writable directory and its System V IPC objects, and writes the case's files into a new
    `/tmp/goose-case`, owned by it, with new empty `HOME` and `TMPDIR` directories.
@@ -539,8 +652,11 @@ reward = cases_passed / cases_kept
 
 - Continuous, fixed denominator per image build (the private cases kept by the recording).
   No executable: reward 0.
-- An evaluation error (not root, privileges cannot be dropped or the drop does not hold, the
-  submission cannot be sealed, private inputs unreadable) leaves no reward file.
+- An evaluation error leaves no reward file. The causes: not root; privileges that cannot be
+  dropped, or a drop that does not hold; private inputs unreadable, or the marker or the list of
+  upstream's builds missing or malformed; less than 512 MB free at the start; nothing arrived, or
+  the copy was cut short; the verifier ending before the real end. A submission that cannot be
+  sealed gets reward 0 with a note.
 - One step; `multi_step_reward_strategy = "final"`.
 - Implementation: `tests/verify.py` and `tests/verifier/runcases.py`; `tests/verifier/recording.py`
   describes the recording (cases kept by kind, cases left out and why, how each was settled, run
@@ -556,8 +672,8 @@ Highest unresolved severity: 🟡 YELLOW / UNASSESSED (findings 1, 2, 3, 5, 10, 
 | 1 | Read, copy, trace or dump the compiler from outside its process, or preload a library into it | File mode and group of the program; its link | QA passes 04 (finding 2) and 04b (findings A, B: a dynamic binary honours `LD_PRELOAD` where an exec is not secure; gVisor unknown) | `/opt/goose/goose` is `root:goose`, mode 2711: execute-only and setgid, so the process is not dumpable; `build.sh` links it static and stripped, so no loader runs at all (dynamic and stripped where the static link fails; `recording.json` says which) | Gid dropped on a traced exec and the sandbox's handling of both, unmeasured; a dynamic fallback | `/logs/agent/probe.txt` of the first oracle trial | 🟡 YELLOW / UNASSESSED |
 | 2 | Read the compiler from inside its process: `goose run` compiles the program into the compiler with TinyCC; or have it write its C, or read its own process files as source | Hardened build (`common/hardening/`) | QA pass 04, finding 1 (a 20-line program printed the code through `ffi`, `os` and a user `extern`); four further ways in found by the audit; passes 04b (`embed_file("/proc/self/maps")`), 08 (`--emit-runtime`, `-o`, `goose build` print or leave C) and 20 (`goose run /proc/self/environ`) | No `os` or `ffi` module; `extern` only in the installed standard library; no `-D`, `--include`, `--stdlib`, `GOOSE_STDLIB` or `GOOSE_TCCLIB`; no sidecars; no unsound option; nothing writes C; `embed_file` only under the embedding file's directory, checked on the opened file; no shaders; no program, module, formatted or embedded file under `/proc`, `/sys` or `/dev`; a static PIE. `smoke.sh` proves each refusal at every build of both images and of the solution; the remaining standard-library externs read nothing outside their arguments (audited) | A memory-safety bug in the compiler, its runtime or TinyCC | The first build's smoke test, then pass 04's programs run as `dev` on Oddish | 🟡 YELLOW / UNASSESSED |
 | 3 | Run as root, or as a user who can read the program | `[agent] user` on Oddish | Not tested on this task | `user = "dev"` | Depends on each harness | Short trial that prints `id` (the probe prints it) | 🟡 YELLOW / UNASSESSED |
-| 4 | Deliver the original, or a wrapper that calls it | Separate verifier image; the agent image's `/app`; the build marker | QA passes 07 and 13 (a link at `/app/rebuild` to `/opt/goose`, followed by the root-run collector, scored about 1.0) | The final verifier image holds no copy of the compiler; `/app` is root's and sticky, so `dev` cannot replace `/app/rebuild`; the verifier refuses (reward 0, a note) any submission holding the original's random build marker (checked: ownership, the marker search, the staging) | A copy the agent cannot read anyway, transformed to hide the marker | First trial as `dev`: `/app/rebuild` cannot be renamed | 🟢 GREEN / LOW |
-| 5 | Fetch the public source | Agent network policy | Not probed on this task | `network_mode = "no-network"` for the agent; the source is not in the agent image | The repository is public; a harness with network access would defeat the task | Probe from a trial | 🟡 YELLOW / UNASSESSED |
+| 4 | Deliver the original, a published build of it, or a wrapper that calls it | Separate verifier image; the agent image's `/app`; the build marker; upstream's hashes and help text | QA passes 07 and 13 (a link at `/app/rebuild` to `/opt/goose`, followed by the root-run collector, scored about 1.0); the egress window (round 7) | The final verifier image holds no copy of the compiler; `/app` is root's and sticky, so `dev` cannot replace `/app/rebuild`; the verifier refuses (reward 0, a note) any submission holding the original's random build marker, any file with the sha256 of one of the 42 builds upstream publishes (four releases' archives and compilers, Homebrew's bottles), or any ELF file holding either of two lines of upstream's help text that the hardened build lacks (checked: ownership, the searches and their chunking, the hashing by size, a build behind a wrapper, a quoting note not refused, the images-only staging); a missing or malformed marker is an evaluation error | A copy the agent cannot read anyway, or a fetched build, transformed to hide the marker, the hash and the text; v2026.1's compilers carry an older help text and are refused by hash alone | First trial as `dev`: `/app/rebuild` cannot be renamed | 🟢 GREEN / LOW |
+| 5 | Fetch the public source, upstream's tests or a published build, including in the window after the turn when the platform reopens egress | Agent network policy; the collect hook; the refusals of row 4 | `PLATFORM_EGRESS_WINDOW.md` (canary: a process left behind reached pypi.org 0.2 s after the turn); decision 2026-11-19 (A, with conditions); not yet probed on this task | `network_mode = "no-network"` for the turn; the source is not in the agent image; the root collect hook freezes and kills every process of `dev` before anything is copied and records whether egress was open and what was running (`delivery_record`); published builds and the unhardened help text are refused | The window stays open until the platform keeps the agent-phase policy through collection; a transformed fetched build, or a build from fetched source, escapes the refusals; a harness with network access would defeat the task | Audit every trial (`delivery_record`: survivors, egress, ctimes after the turn; trajectory commands that detach a fetch) before its score is recorded | 🟡 YELLOW / UNASSESSED |
 | 6 | Lookup table over the visible cases or the shipped programs | Private cases | QA pass 06 (229 cases on shipped programs, one private test printed in a design note); by check since | No private case is built on a shipped program or a variant of one; a private program that a shipped file holds or that equals a visible program is left out; the generator and packaging refuse a private case whose input a shipped file or a visible case holds (checked) | Upstream tests that differ from a visible one by a few tokens (pass 06, note 4) | Keep | 🟢 GREEN / LOW |
 | 7 | Read expected output or errors out of the case files, across cases | Case generation, recording and the verifier | QA pass 06b, finding 3 (format inputs quoted the exact message of 96 graded cases) | No run or check input has a comment. Format inputs carry the program's own comments only where no other case is built on its family, less runner markers and any comment quoting an answer upstream publishes; the recorder drops any case whose comments quote any recorded answer. Nothing a run writes reaches the next: new workspace, `HOME` and `TMPDIR`, every writable directory swept, IPC removed (checked) | Short numeric output quoted in a program's own comment, harmless where no other case uses the program | Read `dropped` in `recording.json` | 🟢 GREEN / LOW |
 | 8 | Recall upstream's published answers (tests beside their expected files) | Case generation and recording | QA passes 19 (39.5% of cases were upstream tests unchanged) and 06b (at least 45 run answers and 314 error messages still upstream's) | Cases are renamed, moved or edited, run cases preferring an edit whose output differs, error tests renaming first the names their messages mention; `recording.json` counts exactly the run answers equal to upstream's file and the error cases whose messages are upstream's text verbatim | Message text stays upstream's where no renamed name is in it: exact wording is the owner's choice (pass 01, F1). Goose was published after the training data of current models; recall becomes a risk for models trained later | Read `recording` in the first baseline's `metrics.json`; re-check before models trained after 2026-08-30 | 🟢 GREEN / LOW |
@@ -566,6 +682,8 @@ Highest unresolved severity: 🟡 YELLOW / UNASSESSED (findings 1, 2, 3, 5, 10, 
 | 11 | Run as root in the verifier through a set-user-id or capable file in the submission, then read the recorded answers | Privilege drop and sealing | QA pass 10, F6, and the backoffice task's QA (a submitted file can arrive set-user-id root on Oddish's Docker backend) | The submission is sealed root-owned without set-id bits before anything runs; `setpriv --no-new-privs` keeps any file from adding privileges; a process started that way must show no_new_privs (in its status file or by `prctl`), the unprivileged ids, no groups and no capabilities (a missing `CapAmb` counts as 0), and a set-id root copy of `id` must report the sandbox uid, or nothing is graded (checked: sealing and the refusals) | A kernel or runtime that ignores no_new_privs; the run-time probe then refuses to grade | First baseline's verifier log | 🟢 GREEN / LOW |
 | 12 | Pass cases with no compiler: the command line's answers, constant answers, a whitespace detector for `format --check`, a formatter clone | Case mix and the recorder's selection | QA pass 05 (16 to 19% with no implementation, about 27% with a formatter clone, on the previous cases) | Rejected programs answer in JSON; edits that leave a check clean or a run silent are passed over; any one answer is capped at 1.2% of cases and `[]` at 5% of checks; the recorder drops cases until a table plus constants passes at most 4.5%; format is 103 of 1,500 cases and `--check` 18 workspaces with formatted and slipped files mixed; `recording.json` measures four baselines (checked: selection and baselines) | A formatter clone is legitimate work, worth about 5.5% | Read `baselines` in the first baseline's `metrics.json` | 🟡 YELLOW / UNASSESSED |
 | 13 | A crash of the original graded as an answer no implementation can give | Recording | QA pass 18, F2 | A recording run that ends by a signal or with an internal-error, JIT, sanitizer or C++ abort report is dropped; more than 2% fail the build (checked) | None found | Read `dropped_crashed` | 🟢 GREEN / LOW |
+| 14 | Make Harbor's copy drop an honest delivery (a running build, links that leave the directory, FIFOs, a sparse file, a full disk, a read-only folder) so that it scores a valid 0, make the copy fail at will, launder a file fetched after the turn through a link the hook copies in, or hide a post-turn write behind the hook's own changes to ctimes | The collect hook and the mark | BasedPL QA 07 F2-F3, Carve QA 04 F1-F2 and BasedPL's re-checks 07b and 07c, on the same hook; ported in round 7 | The hook freezes and kills `dev`'s processes first, records every entry's own times before touching anything (the manifest's authoritative mtime and ctime), gives back reserved room and inodes, restores permissions only where needed and notes each change, copies an outside link's target only when root owns it (every file under a directory included) and records the source's path, owner, mtime, ctime and inode, removes every other outside link (noted first in the mark) and all special files, bounds entries, bytes and path length at the instruction's figures, hashes once per inode, packs once within 300 s, and marks the delivery with every note; the verifier grades what arrived, reads the whole mark, copies every change into `metrics.json` with flags, and treats nothing arriving or a short copy as an evaluation error (checked, end to end) | A platform copy that fails after the hook's trial pack succeeded (an error, then a re-run); a fetched file written straight into `/app/rebuild` after the turn, which the ctime audit against the trial's finish can catch, since the recorded ctimes are the session's own; the hook has not yet run on a platform | Read `delivery_record` (copies, links, notes, `latest_ctime` and `hook_changed_entries` against the trial's finish) in every trial, the version-5 baselines first | 🟢 GREEN / LOW |
+| 15 | Outlast the pre-cap watchdog, so that the session runs into the platform's cap and goes ungraded, or stop it to gain time | Process ownership | Round 7 | The sleeper is root's and `dev` cannot signal it; its pid file and log are root-only (`/run`, `/var/log`, mode 0600); `kill -TERM` then `kill -KILL` as root reach every process of `dev` (checked: arms once, fires, ends a tree and a detached process) | A harness that ran the agent as root, which row 3 gates on the first trial; `sudo` is installed but no rule lets `dev` use it | Read `ended_by_watchdog` and `watchdog_log` in `delivery_record` | 🟢 GREEN / LOW |
 
 Licence: the upstream is Apache-2.0. Its `LICENSE` is shipped with the documentation in
 `/app/docs` and with the reference solution's build.
@@ -574,8 +692,11 @@ Licence: the upstream is Apache-2.0. Its `LICENSE` is shipped with the documenta
 
 | Check | Revision | Result |
 | --- | --- | --- |
-| `checks/` (38 tests) with `ci_checks` (27), Python 3.13, and `check_repository.py` | working tree, 2026-11-19, round 6 | pass |
-| Oddish preflight | bundles `ca4309ce85fc`, `19c1c91c58fc`; `f98273d8a455` (hardened build, new cases); `5cb265da1a10` (verifier round 2); `a296bbd1ed2d` (round 2 continued); `2c5b8eacb5a2` (round 3); `4b49722be3b5` (round 4); `99c40062a50a` (round 5); `2c741b13a097` (round 6) | pass |
+| `checks/` (40 tests) with `ci_checks` (27), Python 3.13, and `check_repository.py` | working tree, 2026-11-19, round 7 | pass |
+| Collect hook and watchdog | `checks/`, this Mac, 2026-11-19 | the hook's four scripts run end to end on a tree of links, pipes, hard links, sparse and deep trees, a read-only folder and an unreadable file, through the copy's tar round trip; the watchdog arms once, fires and ends a tree and a detached process; not yet run on a platform |
+| Upstream's published builds | `scripts/upstream_builds.py`, 2026-11-19 | 21 archives (16 GitHub release assets of v2026.1 to v2026.4, 5 Homebrew bottles of 2026.4), 42 distinct hashes; every compiler from v2026.2 on holds both refused help lines, v2026.1's four none; no shipped document holds either line |
+| Packaging | `scripts/package_step.py`, twice into separate directories | `c6ceb896f397`, 947 files, 40,413,619 bytes, the same hash both times |
+| Oddish preflight | bundles `ca4309ce85fc`, `19c1c91c58fc`; `f98273d8a455` (hardened build, new cases); `5cb265da1a10` (verifier round 2); `a296bbd1ed2d` (round 2 continued); `2c5b8eacb5a2` (round 3); `4b49722be3b5` (round 4); `99c40062a50a` (round 5); `2c741b13a097` (round 6, uploaded as version 4); `c6ceb896f397` (round 7) | pass |
 | Hardened build | bundle `2c741b13a097` | not built yet: `apply.sh` tested on a pristine copy of the seven patched files (applies once, refuses twice), `smoke.sh` tested against stand-ins that do and do not refuse; the static PIE and static links, the marker, the help text, the `/proc` refusals and the LangArena glue are untried |
 | Privilege drop | bundle `2c741b13a097` | not run as root yet: sealing, the refusal of a weak drop, the `prctl` and `CapAmb` fallbacks, the marker search, bounded hashing, mapped ids, size caps and the cleanup between cases (deep trees and 20,000 leftovers per run included) are checked; the drop itself first runs in the first baseline |
 | Recorder | bundle `2c741b13a097` | checked against a stand-in compiler (settling, the perturbed run, crashes, drops, renumbering, baselines); first run on the original at the first build |
@@ -592,6 +713,7 @@ cd tasks/swe-m2-software-engineer/goose-compiler-rebuild
 python scripts/make_cases.py <checkout> --count 1800 --visible 300 \
     --out-private steps/01-rebuild-compiler/tests/private/cases.json --out-visible experiment/visible.json
 GOOSE_CHECKOUT=<checkout> python scripts/package_step.py        # add --flat for a bundle without steps
+python scripts/upstream_builds.py                               # only when upstream publishes a new build: their hashes
 ```
 
 The case seed and the build marker come from `experiment/seeds.json`, which `scripts/seeds.py`
@@ -604,13 +726,20 @@ which runs `smoke.sh` on the result.
 
 ## Remaining work
 
-- Baselines of the current bundle under the task's experiment (one row): the first build of the
-  hardened compiler (static or dynamic: `link`), whose smoke test must pass in both images and in
-  the solution, and the first run of the privilege checks as root. Read `recording` in the
-  reference run's `metrics.json`: drops by reason (LangArena cases dropped for not completing
-  mean a glue error), crashes, how cases were settled, answers still upstream's, the four
-  baselines; and `limits`. Read `/logs/agent/probe.txt`. Then the platform's source audit. Model
-  trials wait for the owner.
+- Baselines of the current bundle under the task's experiment (one row), as version 5: the first
+  run of the collect hook and the setup hooks on a platform. Read `delivery_record` in both
+  oracle and both no-op runs' `metrics.json` (`delivered`, no survivors, `egress`,
+  `ended_by_watchdog` false, `hook_changed_entries`, the notes) and `reward.txt` (1.0 and 0.0).
+  The version-4 results to keep an eye on stand: `recording` (drops by reason, crashes,
+  settling, answers still upstream's, the four baselines), `limits`, `/logs/agent/probe.txt`.
+  Model trials wait for the owner.
+- Audit every trial before its score is recorded, per the egress decision: survivors and egress
+  in `delivery_record`, deliverable ctimes later than the agent's turn, and trajectory commands
+  that detach or loop a fetch.
+- Take the watchdog out, and the one-attempt setting back to two, once the platform grades a
+  turn that runs into the cap (the `cap-agent` and `cap-long` canaries are its proof tests).
+- `sudo` is still installed in the agent image with no rule for `dev`; take it out at the next
+  image change that gets a baseline anyway.
 - Probe findings 1, 2, 3, 5 and 10 from a trial; run pass 04's programs as `dev`; check that `dev`
   cannot rename `/app/rebuild`. Compare `/logs/agent/build.txt` (the oracle's build) with
   `recording.build` in `metrics.json`: the link, and the sha256 without the marker.
