@@ -295,10 +295,11 @@ def test_one_configuration_for_the_sealed_server_the_recordings_and_the_solution
     instruction = " ".join((STEP / "instruction.md").read_text().split())
     assert "serves the web client at" not in instruction and "inherit" not in instruction and "checksum" in instruction
     probe = ("import json, sys; sys.path.insert(0, sys.argv[1]); from verifier import replay as r; "
-             "print(json.dumps([r.WORKERS, r.REQUEST_SEC, r.START_SEC, r.THREAD_LIMIT, r.FILE_LIMIT, r.MEMORY_LIMIT, r.WORKSPACE_ID.pattern]))")
+             "print(json.dumps([r.WORKERS, r.REQUEST_SEC, r.START_SEC, r.THREAD_LIMIT, r.FILE_LIMIT, r.MEMORY_LIMIT, r.WORKSPACE_ID.pattern, "
+             "r.SERVER_MEMORY]))")
     done = subprocess.run([sys.executable, "-I", "-B", "-c", probe, str(STEP / "tests")], capture_output=True, text=True, timeout=60)
     assert done.returncode == 0, done.stderr[-2000:]
-    workers, request, start, threads, file_limit, memory, workspace = json.loads(done.stdout)
+    workers, request, start, threads, file_limit, memory, workspace, held = json.loads(done.stdout)
     source = (REFERENCE / "backend" / "src" / "stockwell" / "settings.py").read_text()
     assert "max_body_bytes: int = 6_000_000" in source and "6 MB" in instruction
     assert "max_upload_bytes: int = Field(64 * 1024 * 1024" in source and "64 MiB" in instruction
@@ -306,6 +307,7 @@ def test_one_configuration_for_the_sealed_server_the_recordings_and_the_solution
     assert "gives it 60 seconds" in instruction and threads == 4096 and "4,096 threads" in instruction
     assert (file_limit, memory) == (4 << 30, 6 << 30) and "files of at most 4 GB" in instruction and "6 GB of address space" in instruction
     assert workspace == "[A-Za-z0-9_]{1,40}" and "at most 40 characters" in instruction
+    assert held == 6 << 30 and "6 GB of memory in all, shared memory included" in instruction
 
 
 def test_python3_in_both_images_has_the_packages_the_instruction_names():
@@ -1014,7 +1016,7 @@ def test_a_virtual_environment_in_the_delivery_survives_the_copy_to_the_verifier
     except tarfile.FilterError:
         pass
     script = (TASK / "environment" / "prepare-delivery").read_text()
-    code = script.split("<<'EOF'\n", 1)[1].rsplit("\nEOF", 1)[0]
+    code = script.split("<<'EOF'\n", 1)[1].split("\nEOF\n", 1)[0]
     fixed = subprocess.run([sys.executable, "-I", "-", str(server)], input=code, capture_output=True, text=True, timeout=300)
     assert fixed.returncode == 0, fixed.stderr[-2000:]
     copy(tmp_path / "after")
@@ -1239,36 +1241,127 @@ print(json.dumps({"bounded": bounded, "taken": taken, "moved": time.monotonic() 
     assert any(path.name.startswith("data-") for path in (work / "set-aside").iterdir()), "the clean slate moved DATA_DIR aside"
 
 
-def test_memory_the_server_takes_stops_it_and_a_dead_grader_leaves_no_reward(tmp_path):
-    """QA 07d M3: without a cgroup, a server could lower its OOM priority between the guard's re-raises and take the
-    memory the grader needs. The guard now runs every 50 ms and stops the server for good once its processes hold more
-    than 6 GiB in all (anonymous and shared memory, read from /proc: the pages of a file several processes map can be
-    dropped and are not counted once per process); and if the grader dies anyway, no reward file exists, so the result
-    is an evaluation error, never a 0."""
+METER = r"""
+import json, os, sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+from verifier import replay
+root = Path(sys.argv[2])
+replay.PROC, replay.CGROUP_ROOT = str(root / "proc"), str(root / "cgroup")
+replay.SCRATCH = (str(root / "shm"),)
+GiB, MiB = 1 << 30, 1 << 20
+
+
+def put(path, text):
+    path = root / path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text)
+
+
+def v2(anon, shmem, file=900 * MiB, slab=50 * MiB):  # memory.current is everything charged, page cache included
+    put("cgroup/memory.current", str(anon + shmem + file + slab + 80 * MiB))
+    put("cgroup/memory.stat", f"anon {anon}\nfile {file + shmem}\nshmem {shmem}\nslab_reclaimable {slab}\nsock 0\n")
+
+
+def grader(anon):
+    put("proc/self/status", f"Name:\tpython3\nRssAnon:\t{anon >> 10} kB\n")
+
+
+out = {}
+put("proc/self/cgroup", "0::/\n")
+grader(400 * MiB)
+v2(anon=420 * MiB, shmem=0)  # before the server starts: the grader's own memory and a little else
+meter = replay.MemoryMeter(65534)
+out["kind"] = meter.kind
+# an honest server: 900 MiB of its own, four workers that share 300 MiB through /dev/shm (SQLite, multiprocessing) and a
+# 2 GiB database file they all map, which is page cache; the grader has grown by its upload cache. Each page counts once.
+grader(600 * MiB)
+v2(anon=(600 + 20 + 900) * MiB, shmem=300 * MiB, file=2 * GiB + 900 * MiB)
+out["honest"] = meter.server_bytes() >> 20
+# the attack: SysV segments and memfds that no process maps, parked until the container is nearly full
+v2(anon=(600 + 20 + 900) * MiB, shmem=(300 + 5600) * MiB)
+out["parked"] = meter.server_bytes() >> 20
+# cgroup v1 and a virtual machine's meminfo, where there is no v2 cgroup
+put("proc/self/cgroup", "5:memory:/docker/abc\n")
+put("cgroup/memory/docker/abc/memory.stat", f"rss {900 * MiB}\nshmem {7 * GiB}\ncache {8 * GiB}\ntotal_rss {900 * MiB}\ntotal_shmem {7 * GiB}\n")
+out["v1"] = [replay.MemoryMeter(65534).kind, replay.MemoryMeter(65534).pinned() >> 20]
+put("proc/self/cgroup", "")
+put("proc/meminfo", f"MemTotal:\t{8 * GiB >> 10} kB\nMemFree:\t{GiB >> 10} kB\nMemAvailable:\t{6 * GiB >> 10} kB\n")
+machine = replay.MemoryMeter(65534)
+put("proc/meminfo", f"MemTotal:\t{8 * GiB >> 10} kB\nMemFree:\t{GiB >> 10} kB\nMemAvailable:\t{GiB >> 10} kB\n")
+out["meminfo"] = [machine.kind, machine.server_bytes() >> 20]
+put("proc/meminfo", f"MemTotal:\t{64 * GiB >> 10} kB\nMemAvailable:\t{GiB >> 10} kB\n")  # a shared host's: not this machine's
+# only the server's processes: proportional set size, unattached SysV segments, unmapped files in memory-backed places
+# (the user here is this check's own, who can own a file)
+me = os.getuid()
+for pid, pss_anon, pss_shmem, maps in ((101, 500 * MiB, 150 * MiB, "7f00-7f80 rw-s 0 0:22 7 /shm/shared\n"),
+                                       (102, 500 * MiB, 150 * MiB, "7f00-7f80 rw-s 0 0:22 7 /shm/shared\n")):
+    put(f"proc/{pid}/status", f"Name:\tserver\nState:\tS (sleeping)\nUid:\t{me}\t{me}\t{me}\t{me}\nThreads:\t1\n")
+    put(f"proc/{pid}/smaps_rollup", f"Rss:\t{(pss_anon * 2) >> 10} kB\nPss:\t{(pss_anon + pss_shmem) >> 10} kB\n"
+                                     f"Pss_Anon:\t{pss_anon >> 10} kB\nPss_Shmem:\t{pss_shmem >> 10} kB\n")
+    put(f"proc/{pid}/maps", maps)
+put("proc/sysvipc/shm", "       key      shmid perms                  size  cpid  lpid nattch   uid   gid  cuid  cgid      atime      dtime      ctime                   rss                  swap\n"
+    f"         1          1   600            {GiB}   101   101      0 {me} {me} {me} {me} 0 0 0 {GiB} 0\n"
+    f"         2          2   600            {GiB}   101   101      1 {me} {me} {me} {me} 0 0 0 {GiB} 0\n"
+    f"         3          3   600            {GiB}     1     1      0     0     0     0     0 0 0 0 {GiB} 0\n")
+put("shm/parked", "x" * (3 * MiB))
+device = os.stat(root / "shm").st_dev  # the scratch place is a tmpfs on this machine
+put("proc/self/mountinfo", f"36 25 {os.major(device)}:{os.minor(device)} / {root / 'shm'} rw - tmpfs tmpfs rw\n")
+processes = replay.MemoryMeter(me)
+out["processes"] = [processes.kind, processes.server_bytes() >> 20, os.lstat(root / "shm" / "parked").st_blocks * 512 >> 20]
+print(json.dumps(out))
+"""
+
+
+def test_the_memory_guard_counts_every_page_the_server_holds_once(tmp_path):
+    """QA 07e M3: the guard summed the memory the server's processes map, so SysV segments, memfds and files in /dev/shm
+    that no process maps were invisible: a server could park the container's memory just under its limit and have the
+    grader OOM-killed in a millisecond. QA 07e S-a and the deciding judge: the count must not stop an honest server by
+    mistake, one that shares memory among workers or keeps SQLite or multiprocessing files in /dev/shm. The guard now
+    reads what the kernel charges: the container's memory cgroup (or a virtual machine's own meminfo), less reclaimable
+    page cache and slab, the grader's own memory and what was in use before the server started. Every page counts once,
+    whatever holds it; only where neither exists does it fall back to the server's processes (proportional set size),
+    its unattached SysV segments and its unmapped files in memory-backed places."""
+    done = subprocess.run([sys.executable, "-I", "-B", "-c", METER, str(STEP / "tests"), str(tmp_path)], capture_output=True,
+                          text=True, timeout=60)
+    assert done.returncode == 0, done.stderr[-3000:]
+    out = json.loads(done.stdout.strip().splitlines()[-1])
+    assert out["kind"] == "cgroup v2"
+    # its own 900 MiB and its 300 MiB of shared memory, once each; not the database file, not the grader's growth, not the
+    # 20 MiB that was in use before it started
+    assert out["honest"] == 900 + 300, out
+    assert out["parked"] == 900 + 300 + 5600 > 6 << 10, out  # over the 6 GiB the instruction allows, though no process maps it
+    assert out["v1"] == ["cgroup v1", 900 + (7 << 10)]
+    assert out["meminfo"] == ["meminfo", 5 << 10], out
+    # 2 x (500 + 150) MiB of proportional set size, the unattached 1 GiB segment of the server's user (not the attached
+    # one, whose pages are in the set size, nor root's), and the file parked in /dev/shm that no process maps
+    kind, held, parked = out["processes"]
+    assert kind == "processes" and held == 2 * 650 + 1024 + parked and parked >= 3, out
+
+
+def test_memory_the_server_holds_stops_it_and_a_dead_grader_leaves_no_reward(tmp_path):
+    """QA 07d M3, 07e M3: the guard reads the server's memory every 10 ms where one file reports it, and past 6 GiB
+    stops the server for good, removes what its user keeps in memory without a process (SysV objects, files in
+    memory-backed places; also at every stop) and fails the scenarios it had left, with a note. If the grader dies
+    anyway, no reward file exists, so the result is an evaluation error, never a 0."""
     marker = tmp_path / "run" / "w" / "data" / "fill"
-    setup = (f"import os\nreplay.GUARD_SEC = 0.05\n"
-             f"replay.server_memory = lambda uid, raise_priority=False: (8 << 30) if os.path.exists({str(marker)!r}) else 0\n")
+    setup = ("import os\n"
+             "class Meter:\n"
+             "    kind, source, fast, peak = 'cgroup v2', 'fake', True, 0\n"
+             f"    def server_bytes(self):\n        return (8 << 30) if os.path.exists({str(marker)!r}) else (1 << 30)\n"
+             "replay.make_meter = lambda candidate: Meter()\n")
     scenarios = [{"id": f"S{i:02d}", "theme": "t", "steps": [step("/items/1"), step("/items/2")]} for i in range(60)]
     scenarios.insert(5, {"id": "FILL", "theme": "fill", "steps": [step("/fill")]})
     run = drive(tmp_path / "run", "overlap", scenarios, setup=setup, RETRY_SHARE=1.0)
     reasons = [result["reason"] for result in run["results"]]
-    assert "the server was stopped when its processes held more than 6 GiB of memory" in reasons and run["metrics"]["retried"] == 0
-    assert any("6 GiB of memory" in note for note in run["metrics"]["notes"])
-    proc = tmp_path / "proc"
-    for pid, uid, fields in ((101, 65534, "VmRSS:\t3500000 kB\nRssAnon:\t102400 kB\nRssFile:\t3345000 kB\nRssShmem:\t51200 kB\n"),
-                             (102, 65534, "VmRSS:\t204800 kB\nRssAnon:\t204800 kB\nRssFile:\t0 kB\nRssShmem:\t0 kB\n"),
-                             (103, 65534, "VmRSS:\t10240 kB\n"),
-                             (104, 0, "VmRSS:\t5000000 kB\nRssAnon:\t5000000 kB\nRssShmem:\t0 kB\n")):
-        (proc / str(pid)).mkdir(parents=True)
-        (proc / str(pid) / "status").write_text(f"Name:\tx\nState:\tS (sleeping)\nUid:\t{uid}\t{uid}\t{uid}\t{uid}\n{fields}")
-        (proc / str(pid) / "oom_score_adj").write_text("0\n")
-    counted = subprocess.run([sys.executable, "-I", "-B", "-c", "import json, sys; sys.path.insert(0, sys.argv[1]); from verifier import replay; "
-                              "replay.PROC = sys.argv[2]; print(json.dumps(replay.server_memory(65534, True)))", str(STEP / "tests"), str(proc)],
-                             capture_output=True, text=True, timeout=60)
-    assert counted.returncode == 0, counted.stderr[-2000:]
-    # a mapped file's pages (pid 101's 3.3 GB) and another user's memory are left out; anonymous and shared memory count
-    assert json.loads(counted.stdout) == (102400 + 51200 + 204800 + 10240) << 10
-    assert [(proc / str(pid) / "oom_score_adj").read_text() for pid in (101, 102, 103, 104)] == ["1000", "1000", "1000", "0\n"]
+    assert "the server was stopped when it held more than 6 GiB of memory" in reasons and run["metrics"]["retried"] == 0
+    assert any("6 GiB of memory" in note for note in run["metrics"]["notes"]) and run["metrics"]["memory_measure"] == "cgroup v2 fake"
+    source = (STEP / "tests" / "verifier" / "replay.py").read_text()
+    stop = source[source.index("    def stop(self) -> None:\n        \"\"\"Stop the server for good"):source.index("    def clean_slate(self)")]
+    halt = source[source.index("    def halt(self, reason: str)"):source.index("    def _watch(self) -> None:\n        candidate, meter")]
+    assert "release_memory(self.uid)" in stop and "release_memory(candidate.uid)" in halt
+    release = source[source.index("def release_memory("):source.index("def cgroup_dirs(")]
+    assert 'DROP + ["ipcrm", "--all"]' in release and "memory_backed_dirs()" in release
     probe = r"""
 import json, sys
 from pathlib import Path
@@ -1310,8 +1403,8 @@ def test_only_a_disk_that_had_room_when_the_server_started_is_watched(tmp_path):
 
 def test_the_reward_is_published_before_the_step_limit_whatever_the_evaluation_is_doing(tmp_path):
     """QA 07d M1: whatever the evaluation is stuck on, verify.py stops waiting before the step's limit and publishes the
-    reward from what was decided, with a note; the scenarios not decided count as not matched. The collect hook marks
-    every delivery, and a delivery without the mark is an evaluation error, not a 0 (QA 07d S2)."""
+    reward from what was decided, with a note; the scenarios not decided count as not matched. QA 07e S-b: the
+    evaluation's own clean-up has not run then, so the ballast it set aside is given back before the reward is written."""
     probe = r"""
 import json, sys, time
 from pathlib import Path
@@ -1324,20 +1417,203 @@ progress.metrics = {"units_total": 4, "units_matched": 0, "reward": 0.0, "scenar
                     "by_theme": {"t": {"total": 3, "matched": 0}, "u": {"total": 1, "matched": 0}}}
 progress.results = [{"id": "A", "matched": True, "units": [True], "settled": [True], "failed_step": None, "reason": None},
                     {"id": "B", "matched": False, "units": [True, False], "settled": [True, False], "failed_step": 3, "reason": "x"}, None]
+progress.ballast = replay.Ballast(Path(sys.argv[2]) / "ballast", 1 << 20)
 began = time.monotonic()
 metrics = verify.run_bounded(lambda: time.sleep(60), progress, 0.5)
 print(json.dumps({"seconds": time.monotonic() - began, "reward": metrics["reward"], "notes": metrics["notes"],
-                  "unfinished": metrics["unfinished"], "marker": verify.DELIVERY_MARKER}))
+                  "unfinished": metrics["unfinished"], "ballast": (Path(sys.argv[2]) / "ballast").exists()}))
 """
-    done = subprocess.run([sys.executable, "-I", "-B", "-c", probe, str(STEP / "tests")], capture_output=True, text=True, timeout=60)
+    done = subprocess.run([sys.executable, "-I", "-B", "-c", probe, str(STEP / "tests"), str(tmp_path)], capture_output=True, text=True,
+                          timeout=60)
     assert done.returncode == 0, done.stderr[-2000:]
     out = json.loads(done.stdout.strip().splitlines()[-1])
     assert out["seconds"] < 5 and out["reward"] == 0.5 and out["unfinished"] == 1 and any("did not finish" in note for note in out["notes"])
+    assert out["ballast"] is False
+    assert "HARD_STOP_SEC = 5_640" in (STEP / "tests" / "verify.py").read_text()
+
+
+DELIVERY = r"""
+import json, os, subprocess, sys, tarfile
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+import verify
+from verifier.replay import EvaluationError
+hook, base = Path(sys.argv[2]).read_text(), Path(sys.argv[3])
+measure = hook.split("<<'EOF'\n")[2].split("\nEOF\n", 1)[0]  # the hook's second script, run as root after the link fixer
+
+
+def deliver(name, build, entries="100000", size="1000000000"):
+    app = base / name / "app"
+    server = app / "server"
+    server.mkdir(parents=True)
+    build(server)
+    done = subprocess.run([sys.executable, "-I", "-", str(server), entries, size], input=measure, capture_output=True, text=True, timeout=120)
+    assert done.returncode == 0, done.stderr
+    return app, server
+
+
+def copy(server, target, cut=None):  # what Harbor does: tar on the agent's machine, extract with the data filter
+    archive = target.parent / (target.name + ".tar")
+    subprocess.run(["tar", "-cf", str(archive), "-C", str(server), "."], check=True, capture_output=True, timeout=120,
+                   env=dict(os.environ, COPYFILE_DISABLE="1"))  # macOS's tar would add ._ files for extended attributes
+    if cut is not None:
+        data = archive.read_bytes()
+        archive.write_bytes(data[:cut])
+    target.mkdir()
+    try:
+        with tarfile.open(archive) as bundle:
+            bundle.extractall(target, filter="data")
+    except (tarfile.TarError, OSError):
+        pass  # the copy failed part way: what was extracted stays, as on the platform
+    return target
+
+
+def notes(server):
+    try:
+        return verify.delivery_notes(server)
+    except EvaluationError as exc:
+        return ["ERROR " + str(exc)]
+
+
+def server_tree(server):
+    (server / "app").mkdir()
+    (server / "app" / "main.py").write_text("print('hi')\n" * 50)
+    (server / "run").write_text("#!/bin/sh\nexec python3 app/main.py\n")
+    (server / "empty").mkdir()
+    (server / "inside").symlink_to("app/main.py")
+    (server / "outside").symlink_to("../../../../etc/hosts")
+    (server / "absolute").symlink_to("/etc/hosts")
+    os.mkfifo(server / "pipe")
+    os.link(server / "run", server / "run-again")
+
+
+out = {}
+app, server = deliver("good", server_tree)
+mark = (server / ".delivered").read_text().splitlines()
+out["mark"] = mark
+out["left"] = sorted(path.name for path in server.iterdir())
+out["complete"] = notes(copy(server, base / "good" / "copied"))
+size = os.path.getsize(base / "good" / "copied.tar")
+out["cut"] = notes(copy(server, base / "good" / "cut", cut=size // 3))
+out["nothing"] = notes(copy(server, base / "good" / "empty", cut=0))
+(server / ".delivered").unlink()
+out["unmarked"] = notes(copy(server, base / "good" / "unmarked"))
+app, server = deliver("big", server_tree, entries="3")
+out["refused"] = [(server / ".delivered").read_text().splitlines()[0], sorted(path.name for path in server.iterdir()),
+                  [path.name.split(".")[1] for path in app.iterdir() if path.name.startswith(".refused.")]]
+out["refused_notes"] = notes(copy(server, base / "big" / "copied"))
+def sparse(server):  # 4 GiB that take no room: the platform's tar would read them all
+    (server / "pad").touch()
+    os.truncate(server / "pad", 1 << 32)
+
+
+app, server = deliver("sparse", sparse)
+out["sparse"] = (server / ".delivered").read_text().splitlines()[:2]
+app, server = deliver("nop", lambda server: None)
+out["nop"] = [(server / ".delivered").read_text().splitlines(), notes(copy(server, base / "nop" / "copied"))]
+print(json.dumps(out))
+"""
+
+
+def test_a_delivery_the_agent_can_make_uncopyable_is_bounded_before_the_copy_and_scored_as_it_arrives(tmp_path):
+    """QA 07e M4: round 5 took a missing mark for a failed copy and made it an evaluation error, so a submission could turn
+    its 0 into an error and a re-run at will: a 1 TiB sparse file makes the platform's tar outlast its limit, a full disk
+    leaves it no room for the archive, a process the hook missed changes files while they are copied. Now the hook ends
+    the agent's processes with one `kill -9 -1` as their user, gives back room set aside when the session began, and
+    bounds what is copied: it removes what the copy would refuse, and moves a delivery over the instruction's limits, or
+    one the disk the agent filled has no room to copy, aside whole, leaving an empty one marked `refused` and why.
+    Its mark counts the entries and bytes. The verifier scores whatever arrived, with a note when the mark is missing,
+    says `refused` or counts more than arrived; only a copy of which nothing at all arrived is an evaluation error."""
+    done = subprocess.run([sys.executable, "-I", "-B", "-c", DELIVERY, str(STEP / "tests"), str(TASK / "environment" / "prepare-delivery"),
+                           str(tmp_path)], capture_output=True, text=True, timeout=300)
+    assert done.returncode == 0, done.stderr[-3000:]
+    out = json.loads(done.stdout.strip().splitlines()[-1])
+    # app, app/main.py, run, run-again, empty, inside: 6 entries; the links that leave and the pipe are removed
+    assert out["mark"][0] == f"delivered 6 {600 + 2 * len('#!/bin/sh' + chr(10) + 'exec python3 app/main.py' + chr(10))}", out["mark"]
+    assert sorted(out["mark"][1:]) == ["removed absolute: a link that leaves /app/server", "removed outside: a link that leaves /app/server",
+                                       "removed pipe: not a file, a directory or a link"]
+    assert out["left"] == [".delivered", "app", "empty", "inside", "run", "run-again"]
+    assert out["complete"] == [f"collect hook: {line}" for line in out["mark"][1:]]
+    # a copy cut short is never scored as complete: the mark counts more than arrived, the mark is missing, or nothing came
+    assert out["cut"] and (out["cut"][0].startswith(("the copy arrived incomplete", "the delivery arrived without", "ERROR Nothing"))
+                           or any(note.startswith("the copy arrived incomplete") for note in out["cut"])), out["cut"]
+    assert out["nothing"][0].startswith("ERROR Nothing arrived") and out["unmarked"][0].startswith("the delivery arrived without")
+    assert out["refused"] == ["refused", [".delivered"], ["refused"]]
+    assert out["refused_notes"][0].startswith("collect hook: it holds more than 3 entries")
+    assert out["sparse"][0] == "refused" and "1,000,000,000 bytes" in out["sparse"][1], out["sparse"]
+    assert out["nop"] == [["delivered 0 0"], []]
     hook = (TASK / "environment" / "prepare-delivery").read_text()
-    assert out["marker"] == ".delivered" and hook.index("(set -C; printf 'delivered\\n' > /app/server/.delivered)") < hook.index("exec setpriv")
-    assert hook.index('mv -f /app/server/.delivered "$aside/"') < hook.index("(set -C;"), "what the agent left there is moved aside, never followed"
-    verify_source = (STEP / "tests" / "verify.py").read_text()
-    assert "HARD_STOP_SEC = 5_640" in verify_source and "DELIVERY_MARKER).is_file()" in verify_source
+    assert hook.index("kill -9 -1") < hook.index("rm -f /var/lib/delivery/room") < hook.index('mv -f /app/server/.delivered "$aside/"')
+    assert hook.index('mv -f /app/server/.delivered "$aside/"') < hook.index("setpriv --reuid dev --regid dev --clear-groups --no-new-privs")
+    assert "LIMIT_ENTRIES=100000" in hook and "LIMIT_BYTES=1000000000" in hook and "BUDGET = 1_000_000_000" in hook
+    setup = (TASK / "environment" / "start-sealed-server").read_text()
+    assert "fallocate -l 64M /var/lib/delivery/room" in setup and "/var/lib/delivery/free-at-start" in setup
+    instruction = " ".join((STEP / "instruction.md").read_text().split())
+    assert "at most 100,000 files and directories and 1 GB" in instruction and "room left to copy it" in instruction
+
+
+def test_a_read_cut_at_its_end_is_a_timeout_and_a_disk_the_server_cannot_write_is_not_watched(tmp_path):
+    """QA 07e N-a: when the watcher's shutdown landed just after a read's end, the read returned the end of the stream, so
+    an answer with no length was taken as complete (5 of 300 dripping health checks passed). A read that returns nothing
+    at or after its end is now a timeout. QA 07e S-d: a disk only the grader writes (a host's bind mount for
+    /logs/verifier) cannot be the server's doing, so it is not watched."""
+    probe = r"""
+import io, json, sys, time
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+from verifier import replay
+
+
+class Answer(io.RawIOBase):  # a reply with no length; the watcher's shutdown lands just after the read's end
+    calls = 0
+
+    def readable(self):
+        return True
+
+    def readinto(self, buffer):
+        self.calls += 1
+        if self.calls == 1:
+            buffer[:25] = b"HTTP/1.0 200 OK" + bytes(10)
+            return 25
+        time.sleep(0.4)
+        return 0  # what a socket returns once it is shut down
+
+
+class Socket:
+    def gettimeout(self):
+        return 30.0
+
+    def settimeout(self, value):
+        pass
+
+
+stream = replay.Bounded(Answer(), 1 << 20, Socket(), time.monotonic() + 0.2)
+got, outcome = bytearray(), "end of stream"
+try:
+    while True:
+        buffer = bytearray(4096)
+        count = stream.readinto(buffer)
+        if not count:
+            break
+        got += buffer[:count]
+except TimeoutError:
+    outcome = "timeout"
+
+
+class Candidate:
+    work, sandbox, halted, uid = Path(sys.argv[2]), False, None, -1
+
+
+replay.SCRATCH = ()
+guard = replay.Guard(Candidate(), [Path(sys.argv[2]), Path("/dev")], replay.MemoryMeter(None))
+guard.stop()
+print(json.dumps({"outcome": outcome, "got": len(got), "unwritable": guard.unwritable, "watched": [str(path) for path in guard.paths]}))
+"""
+    done = subprocess.run([sys.executable, "-I", "-B", "-c", probe, str(STEP / "tests"), str(tmp_path)], capture_output=True, text=True, timeout=60)
+    assert done.returncode == 0, done.stderr[-3000:]
+    out = json.loads(done.stdout.strip().splitlines()[-1])
+    assert out["outcome"] == "timeout" and out["got"] == 25, out
+    assert out["unwritable"] == ["/dev"] and out["watched"] == [str(tmp_path)], out
 
 
 def test_set_id_bits_are_stripped_and_the_privilege_drop_sets_no_new_privs(tmp_path):

@@ -6,6 +6,7 @@ import contextlib
 import json
 import os
 import pwd
+import stat
 import subprocess
 import sys
 import threading
@@ -24,6 +25,8 @@ REWARD_FILES = ("reward.txt", "reward.json")
 PENDING = ".reward.pending"
 PLACEHOLDER = b"0.000000"  # a reward in [0, 1] written with six decimals always has this length
 DELIVERY_MARKER = ".delivered"  # written into /app/server by the collect hook (environment/prepare-delivery)
+MISSING_MARK = ("the delivery arrived without the collect hook's mark (the hook did not run, or the copy was cut short); "
+                "it was scored as it arrived")
 # The step allows 6,000 s, and Harbor's clock also covers uploading the tests and collecting the results. The replay ends
 # at 5,400 s and winds down within about two minutes; whatever the evaluation is doing at this point, the reward is
 # published from what it has decided, with a note (QA 07d M1, N6).
@@ -96,11 +99,75 @@ def run_bounded(call: Callable[[], dict[str, Any]], progress: Progress, seconds:
         raise outcome["error"]
     if "metrics" in outcome:
         return outcome["metrics"]
+    if progress.ballast is not None:  # the evaluation's own clean-up has not run: room for the results (QA 07e S-b)
+        progress.ballast.release()
     metrics = progress.summary("the evaluation did not finish before the step's time limit: the reward counts the scenarios it "
                                "had decided, and the others as not matched")
     if metrics is None:
         raise EvaluationError("The evaluation did not finish before the step's time limit")
     return metrics
+
+
+def arrived(server: Path) -> tuple[int, int]:
+    """Entries (files, directories and links; the mark left out) under `server`, and bytes in its files, counted as the
+    collect hook counts them."""
+    entries = size = 0
+    folders = [str(server)]
+    while folders:
+        folder = folders.pop()
+        try:
+            listing = os.scandir(folder)
+        except OSError:
+            continue
+        with listing:
+            for entry in listing:
+                if folder == str(server) and entry.name == DELIVERY_MARKER:
+                    continue
+                try:
+                    info = entry.stat(follow_symlinks=False)
+                except OSError:
+                    continue
+                entries += 1
+                if stat.S_ISDIR(info.st_mode):
+                    folders.append(entry.path)
+                elif stat.S_ISREG(info.st_mode):
+                    size += info.st_size
+    return entries, size
+
+
+def delivery_notes(server: Path) -> list[str]:
+    """What the collect hook's mark and the copy that arrived say about the delivery (QA 07d S2, 07e M4).
+
+    The hook marks every delivery before the copy, an empty one too, after bounding it so that nothing the agent leaves
+    can make the copy fail. A delivery that arrived is scored as it arrived, with a note when the mark is missing, says
+    it was refused, or names more than arrived.
+
+    Raises:
+        EvaluationError: Nothing arrived at all, so the copy never happened.
+    """
+    try:
+        empty = server.is_symlink() or not server.is_dir() or next(server.iterdir(), None) is None
+    except OSError:
+        empty = True
+    if empty:
+        raise EvaluationError("Nothing arrived: /app/server is missing or empty, though the collect hook marks every delivery")
+    mark = server / DELIVERY_MARKER
+    try:
+        lines = mark.read_text(errors="replace").splitlines() if mark.is_file() and not mark.is_symlink() else None
+    except OSError:
+        lines = None
+    if not lines:
+        return [MISSING_MARK]
+    head, notes = lines[0].split(), [f"collect hook: {line}" for line in lines[1:] if line.strip()][:20]
+    if head[:1] == ["refused"]:
+        return notes or ["collect hook: the delivery was not copied"]
+    if len(head) == 3 and head[0] == "delivered" and head[1].isdigit() and head[2].isdigit():
+        entries, size = arrived(server)
+        if (entries, size) != (int(head[1]), int(head[2])):
+            notes.append(f"the copy arrived incomplete: {entries:,} of {int(head[1]):,} entries and {size:,} of "
+                         f"{int(head[2]):,} bytes; it was scored as it arrived")
+        return notes
+    return notes + ["the collect hook's mark could not be read; the delivery was scored as it arrived"]
 
 
 def main() -> int:
@@ -124,15 +191,13 @@ def main() -> int:
             closed.chmod(0o700)
         reserve(output)
         server = Path("/app/server")
-        if not (server / DELIVERY_MARKER).is_file():
-            # the collect hook marks every delivery before it is copied out, an empty one too: without the mark, the copy
-            # failed, and an empty /app/server would be scored as a submission (QA 07d S2)
-            raise EvaluationError("The delivery did not arrive: /app/server has no mark from the collect hook")
+        delivery = delivery_notes(server)  # before the sandbox seals it; raises when nothing arrived
         scenarios = tests / "private" / "scenarios.json.gz"
         scenario_file = scenarios if scenarios.exists() else tests / "private" / "scenarios.json"
         progress = Progress()
         metrics = run_bounded(lambda: evaluate(server, scenario_file, Path("/work"), output, progress=progress), progress,
                               HARD_STOP_SEC - (time.monotonic() - started))
+        metrics["notes"] = delivery + metrics["notes"]
         publish(output, metrics)
         published, code = True, 0
         print(f"reward: {metrics['reward']:.6f} ({metrics['units_matched']}/{metrics['units_total']} units)", flush=True)

@@ -1,13 +1,25 @@
 #!/bin/sh
-for _ in 1 2 3 4 5; do pkill -KILL -u dev 2>/dev/null || break; sleep 1; done
+# Runs as root once the agent's session has ended, before /app/server is copied to the machine that runs it. The copy is
+# then bounded (the limits the instruction states), nothing of the agent's runs, and the mark says what was delivered.
+LIMIT_ENTRIES=100000
+LIMIT_BYTES=1000000000
+# End every process of the agent's user. `kill -9 -1` as that user reaches all of them in one system call, so a process
+# that forks cannot outrun it; repeat until none is left.
+for _ in $(seq 1 100); do
+  pgrep -u dev >/dev/null 2>&1 || break
+  setpriv --reuid dev --regid dev --clear-groups kill -9 -1 >/dev/null 2>&1
+  pkill -KILL -u dev >/dev/null 2>&1
+  sleep 0.1
+done
+# Give back the room set aside when the session started, so however full the disk was left, the mark can be written and
+# a delivery that cannot be copied can be replaced by an empty one.
+rm -f /var/lib/delivery/room
 if [ ! -d /app/server ] || [ -L /app/server ]; then exit 0; fi
-# Mark the delivery, an empty one too: an /app/server that arrives without this mark is a copy that failed, not a
-# delivery. Whatever was left under the name is moved aside first, never followed.
+# Whatever was left under the mark's name is moved aside, never followed.
 if [ -e /app/server/.delivered ] || [ -L /app/server/.delivered ]; then
   aside=$(mktemp -d /app/.aside.XXXXXX) && mv -f /app/server/.delivered "$aside/" || exit 0
 fi
-(set -C; printf 'delivered\n' > /app/server/.delivered) || exit 0
-exec setpriv --reuid dev --regid dev --clear-groups --no-new-privs /opt/py/bin/python -I - /app/server <<'EOF'
+setpriv --reuid dev --regid dev --clear-groups --no-new-privs /opt/py/bin/python -I - /app/server <<'EOF'
 """Make /app/server safe to copy to the machine it will run on, as the user who built it.
 
 The copy keeps relative links that stay inside the directory and refuses everything else. A link
@@ -22,7 +34,7 @@ import stat
 import sys
 
 ROOT = os.path.realpath(sys.argv[1])
-BUDGET = 2 << 30
+BUDGET = 1_000_000_000  # what /app/server may hold in all
 spent = 0
 
 
@@ -66,7 +78,7 @@ def fix_link(path, name):
     size = size_of(resolved, BUDGET - spent)
     if spent + size > BUDGET:
         os.unlink(path)
-        return f"removed {name} -> {target}: copying it would pass {BUDGET >> 30} GiB"
+        return f"removed {name} -> {target}: copying it would pass 1 GB"
     os.unlink(path)
     spent += size
     if os.path.isdir(resolved):
@@ -111,4 +123,97 @@ def one_pass():
 for _ in range(10):
     if not one_pass():
         break
+EOF
+
+# Measure, bound and mark, as root.
+exec /opt/py/bin/python -I - /app/server "$LIMIT_ENTRIES" "$LIMIT_BYTES" <<'EOF'
+"""Measure /app/server, bound it and mark it, as root, once nothing of the agent's runs.
+
+Anything the copy would refuse is removed: a device, a pipe, a socket, a link with an absolute target or one that leaves
+the directory. A delivery over the limits, or one the disk has no room left to copy after the session used up the room
+it had when it began, is moved aside whole and replaced by an empty directory. The mark's first line is `delivered`
+with the number of entries (files, directories and links) and of bytes in its files, or `refused`; each line after it
+is a change made or the reason for the refusal.
+"""
+import os
+import stat
+import sys
+import tempfile
+
+ROOT = os.path.realpath(sys.argv[1])
+LIMIT_ENTRIES, LIMIT_BYTES = int(sys.argv[2]), int(sys.argv[3])
+MARK = os.path.join(ROOT, ".delivered")
+FREE_AT_START = "/var/lib/delivery/free-at-start"
+notes = []
+
+
+def leaves(path, target):
+    if os.path.isabs(target):
+        return True
+    joined = os.path.normpath(os.path.join(os.path.dirname(os.path.relpath(path, ROOT)), target))
+    return joined == ".." or joined.startswith(".." + os.sep)
+
+
+entries = size = 0
+over = False
+stack = [ROOT]
+while stack and not over:
+    folder = stack.pop()
+    try:
+        listing = os.scandir(folder)
+    except OSError:
+        continue
+    with listing:
+        for entry in listing:
+            name = os.path.relpath(entry.path, ROOT)
+            try:
+                info = entry.stat(follow_symlinks=False)
+                if stat.S_ISLNK(info.st_mode) and leaves(entry.path, os.readlink(entry.path)):
+                    os.unlink(entry.path)
+                    notes.append(f"removed {name}: a link that leaves /app/server")
+                    continue
+                if not (stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode) or stat.S_ISLNK(info.st_mode)):
+                    os.unlink(entry.path)
+                    notes.append(f"removed {name}: not a file, a directory or a link")
+                    continue
+            except OSError:
+                continue
+            entries += 1
+            if stat.S_ISDIR(info.st_mode):
+                stack.append(entry.path)
+            elif stat.S_ISREG(info.st_mode):
+                size += info.st_size
+            if entries > LIMIT_ENTRIES or size > LIMIT_BYTES:
+                over = True
+                break
+
+reason = None
+if over:
+    reason = (f"it holds more than {LIMIT_ENTRIES:,} entries or {LIMIT_BYTES:,} bytes, the most /app/server may hold (the "
+              f"count stopped at {entries:,} {'entry' if entries == 1 else 'entries'} and {size:,} bytes): it was not copied")
+else:
+    need = size + entries * 1024 + (16 << 20)
+    disk = os.statvfs("/tmp")
+    free = disk.f_bavail * disk.f_frsize
+    try:
+        with open(FREE_AT_START) as text:
+            at_start = int(text.read().split()[0])
+    except (OSError, ValueError, IndexError):
+        at_start = None
+    if free < need and at_start is not None and at_start >= need:
+        reason = (f"the disk had {free:,} bytes free when the session ended, {at_start:,} when it began, and copying "
+                  f"/app/server needs {need:,}: it was not copied")
+
+lines = [f"delivered {entries} {size}"]
+if reason is not None:
+    aside = tempfile.mkdtemp(prefix=".refused.", dir=os.path.dirname(ROOT))
+    os.rename(ROOT, os.path.join(aside, "server"))
+    os.mkdir(ROOT)
+    os.chmod(ROOT, 0o777)
+    lines = ["refused", reason]
+descriptor = os.open(MARK, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644)
+with os.fdopen(descriptor, "w") as mark:
+    mark.write("\n".join(lines + notes) + "\n")
+for line in lines[1:] + notes:
+    print(line, flush=True)
 EOF
