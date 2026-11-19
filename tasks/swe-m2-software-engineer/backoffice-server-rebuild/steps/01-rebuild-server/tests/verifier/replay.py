@@ -79,7 +79,9 @@ SANDBOX = OOM_FIRST + LIMITS + DROP
 SCRATCH = ("/tmp", "/var/tmp", "/dev/shm", "/dev/mqueue", "/run/lock", "/var/lock", "/run/shm")
 START_SEC = 60
 REQUEST_SEC = 30  # wall clock for one request: a big upload or a 200-page PDF needs more than a JSON call
-DEADLINE_SEC = 3000  # the whole replay; the step allows 3,600 s for everything
+# the whole replay; the step allows 6,000 s for everything. The reference replays the corpus in about 520 s on the author's
+# machine: a server three times slower than it (the pace the instruction asks for), on a machine three times slower, finishes
+DEADLINE_SEC = 5400
 HEALTH_SEC = 30  # how long a live server may leave its health check unanswered before it is restarted
 STOP_SEC = 30  # how long a server stopped with SIGTERM may take to exit before it is killed
 START_FAILURES = 3  # starts in a row that never answer before the server is given up

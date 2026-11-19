@@ -36,7 +36,7 @@ workdir = "/app"
 [verifier]
 environment_mode = "separate"
 network_mode = "no-network"
-timeout_sec = 3600
+timeout_sec = 6000
 user = "root"
 
 [[verifier.collect]]
@@ -59,4 +59,4 @@ name = "01-rebuild-server"
 timeout_sec = 34560
 
 [steps.verifier]
-timeout_sec = 3600
+timeout_sec = 6000
