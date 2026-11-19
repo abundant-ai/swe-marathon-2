@@ -19,6 +19,9 @@ TARGET_USER="${PRECAP_USER:-dev}"
 SELECT="${PRECAP_SELECT:--u $TARGET_USER}"
 TERM_ROUNDS="${PRECAP_TERM_ROUNDS:-12}"
 TERM_INTERVAL="${PRECAP_TERM_INTERVAL:-5}"
+# Once the collect hook has started it writes this mark; the loop then stops, so it never reaches
+# the hook's own worker that runs as the agent's user.
+COLLECTING="${PRECAP_COLLECTING:-/usr/local/lib/pagebuild/state/collecting}"
 
 stamp() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 log() { printf '%s %s\n' "$(stamp)" "$*" >> "$LOG"; }
@@ -33,11 +36,12 @@ case "$1" in
     log "fired after ${END_SECONDS}s: ending the session (${SELECT})"
     round=0
     while [ "$round" -lt "$TERM_ROUNDS" ] && alive; do
+      if [ -e "$COLLECTING" ]; then log "stopped: the session is being collected"; break; fi
       pkill -TERM $SELECT >/dev/null 2>&1
       round=$((round + 1))
       sleep "$TERM_INTERVAL"
     done
-    if alive; then
+    if alive && [ ! -e "$COLLECTING" ]; then
       pkill -KILL $SELECT >/dev/null 2>&1
       sleep 1
       log "killed: KILL after $round TERM rounds"

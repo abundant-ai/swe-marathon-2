@@ -12,6 +12,18 @@ LIMIT_BYTES=2000000000
 STATE=/usr/local/lib/pagebuild/state
 mkdir -p "$STATE" && chmod 0700 "$STATE"
 started=$(date +%s.%N)
+# The pre-cap watchdog, if it is still ending the session, must not reach the hook's own worker
+# below (which runs as the agent's user): mark the session as being collected, which its loop stops
+# on, then stop it; the measuring stage stops it again at the end as a backstop.
+: > "$STATE/collecting"
+if [ -r /run/precap-watchdog.pid ]; then
+  precap=$(cat /run/precap-watchdog.pid 2>/dev/null)
+  if [ -n "$precap" ]; then
+    kill -TERM "$precap" >/dev/null 2>&1
+    for _ in $(seq 1 40); do kill -0 "$precap" >/dev/null 2>&1 || break; sleep 0.05; done
+    kill -KILL "$precap" >/dev/null 2>&1
+  fi
+fi
 # Freeze the agent's processes first, so that nothing of theirs runs while they are listed, then
 # end them all. `kill -9 -1` as that user reaches all of them in one system call, so a process that
 # forks cannot outrun it; repeat until none is left.
@@ -115,8 +127,15 @@ done
 # hook's own start where the watcher never fired.
 set -- $(/usr/bin/python3 -I - "$STATE/restored" "$started" <<'EOF'
 import json, sys
+# The turn's end, as early as the sandbox can place it: the watcher's first observation of egress
+# open, less the most a poll round takes (at or after the last round that saw egress closed). Never
+# the kill time, which a fetch can beat. Else the hook's own start, which precedes its kill phase.
 try:
-    print(float(json.load(open(sys.argv[1]))["restored_at"]), "watcher")
+    record = json.load(open(sys.argv[1]))
+    bound = record.get("turn_end_bound")
+    if bound is None:
+        bound = float(record["first_open_at"]) - float(record.get("poll_seconds", 0.35))
+    print(float(bound), "watcher")
 except Exception:
     print(sys.argv[2], "start")
 EOF
@@ -149,7 +168,7 @@ ENTRIES = int(sys.argv[2])
 BUDGET = int(sys.argv[3])
 TURN_END = float(sys.argv[4])
 TURN_FROM = sys.argv[5] if len(sys.argv) > 5 else "start"   # "watcher": the turn's end was seen; else the hook's start
-SKEW = 0.5   # forward only: a change later than the turn's end by more than this is after the turn (QA 07b F-b)
+SKEW = 0.5   # in the honest direction only: the cutoff is this much before the turn's end bound, never after it (QA 07c F1)
 spent = copied = 0
 
 
@@ -209,7 +228,7 @@ def fix_link(path, name):
         os.unlink(path)
         return {"note": f"removed {name} -> {target}: it points at a device, a pipe or a socket"}
     sources, size, count = sources_of(resolved, BUDGET - spent, ENTRIES - copied)
-    late = [item for item in sources if item["source_ctime"] > TURN_END + SKEW]
+    late = [item for item in sources if max(item["source_ctime"], item["source_mtime"]) >= TURN_END - SKEW]
     record = {"path": name, "target": target, "source": resolved, "source_owner": sources[0]["source_owner"],
               "source_mtime": sources[0]["source_mtime"], "source_ctime": sources[0]["source_ctime"],
               "source_inode": sources[0]["source_inode"], "files": count, "bytes": size, "late_files": len(late),
@@ -299,7 +318,7 @@ ROUNDS = int(sys.argv[6]) if sys.argv[6].isdigit() else None
 LEFT = int(sys.argv[7].strip()) if sys.argv[7].strip().isdigit() else None
 STARTED, ENDED, TURN_END = (float(value) for value in sys.argv[8:11])
 TURN_FROM = sys.argv[11] if len(sys.argv) > 11 else "start"   # "watcher": the turn's end was seen; else the hook's start
-SKEW = 0.5   # forward only, as in the link fixer
+SKEW = 0.5   # in the honest direction only, as in the link fixer
 MARK = os.path.join(ROOT, ".delivered")
 RECORD = os.path.join(ROOT, ".delivery.json")
 HASH_BUDGET = 2_000_000_000   # bytes hashed for the record, at most
@@ -451,13 +470,18 @@ try:
         os.kill(int(handle.read().strip()), signal.SIGTERM)
 except (OSError, ValueError):
     pass
-# Entries changed after the turn's end: a copied tree counts by its source's latest change time
-# (its own ctime is the hook's), everything else by its ctime, a forward skew only (QA 07b F-c).
+# Entries changed at or after the turn's end bound, less the skew: a copied tree by its source's
+# latest change time (the copy's own times are the hook's), a refused source by its late files, and
+# every other regular file by the later of its change and modification times. Links are the fixer's
+# own rewrites and directories change when a child does, so neither counts (QA 07c F1, F4).
 copied_paths = [copy["path"] for copy in copies]
+cutoff = TURN_END - SKEW
 late_entries = (sum(1 for item in catalogue
-                    if not any(item["path"] == path or item["path"].startswith(path + "/") for path in copied_paths)
-                    and item["ctime"] > TURN_END + SKEW)
-                + sum(1 for copy in copies if (copy.get("latest_ctime") or 0) > TURN_END + SKEW))
+                    if item["type"] == "file"
+                    and not any(item["path"] == path or item["path"].startswith(path + "/") for path in copied_paths)
+                    and max(item["ctime"], item.get("mtime", 0)) >= cutoff)
+                + sum(1 for copy in copies if (copy.get("latest_ctime") or 0) >= cutoff)
+                + sum(1 for item in refused if item.get("late_files")))
 record = dict(egress or {"egress": None, "egress_open": None}, hook_started_at=STARTED, kill_ended_at=ENDED,
               turn_ended_at=TURN_END, turn_end_from=turn_end_from, watchdog=watchdog, restored=restored,
               agent_process_count=(processes or {}).get("agent_process_count"), agent_processes=(processes or {}).get("agent_processes", []),

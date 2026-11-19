@@ -1078,8 +1078,8 @@ def test_hosts_draw_once_and_the_attacker_splice_is_rejected():
 
 
 def test_a_source_changed_after_the_turn_is_refused_only_when_the_turn_end_was_seen(tmp_path):
-    """QA 07b F-b/F-c: the link fixer's cutoff is the turn's end with a forward skew only (no margin
-    reaching back into the turn). A source changed after the turn is refused when the watcher saw
+    """QA 07b F-b/F-c, 07c F1: the link fixer's cutoff is the turn's end bound less a 0.5 s skew in
+    the honest direction only. A source changed after the turn is refused when the watcher saw
     the turn end, copied and flagged when the reference is only the hook's own start, and an honest
     source finished before the turn's end is copied unflagged; late entries count a copy by its
     source's change time."""
@@ -1114,7 +1114,74 @@ def test_a_source_changed_after_the_turn_is_refused_only_when_the_turn_end_was_s
     record = json.loads((honest / ".delivery.json").read_text())
     assert len(record["copies"]) == 1 and "flagged" not in record["copies"][0] and record["late_entries"] == 0
     hook = HOOK.read_text()
-    assert hook.count("> TURN_END + SKEW") == 3 and "TURN_END - " not in hook, "no margin reaching back into the turn"
+    assert hook.count("TURN_END - SKEW") == 2 and "TURN_END + SKEW" not in hook, \
+        "the cutoff is the turn's end bound less the skew: in the honest direction only, never after the bound (QA 07c)"
+
+
+def test_a_fetch_that_beats_the_kill_is_refused_and_counted(tmp_path):
+    """QA 07c F1: the turn's end is the watcher's first observation of egress open less a poll —
+    never the kill, which a fetch can beat. A source written at or after that bound (less the skew)
+    is refused and counted in `late_entries`; so is a file written in place then; the hook's reader
+    takes the bound from the watcher's record and falls back to the hook's own start."""
+    bound = time.time() - 1.0                                              # the turn ended; egress seen open after it
+    fetched = tmp_path / "fetched"
+    fetched.mkdir()
+    (fetched / "carve-real").write_bytes(b"\x7fELF fetched after the turn, before the kill")
+    top = tmp_path / "rebuild"
+    top.mkdir()
+    (top / "carve").write_text("#!/bin/sh\nexit 0\n")                      # written now, in place: after the bound
+    (top / "blob").symlink_to(fetched / "carve-real")
+    run_hook(top, turn_end=bound, turn_from="watcher")
+    record = json.loads((top / ".delivery.json").read_text())
+    assert not (top / "blob").exists() and len(record["refused_copies"]) == 1 and record["copies"] == []
+    assert record["refused_copies"][0]["late_files"] == 1 and "changed after the turn ended" in record["refused_copies"][0]["reason"]
+    assert record["late_entries"] >= 2, record["late_entries"]             # the refused source and the file written in place
+    flags = verifier_call(textwrap.dedent(f"""
+        import json, verify
+        from pathlib import Path
+        print(json.dumps(verify.delivery_record(Path({str(top)!r}))["flags"]))
+    """))
+    assert any("were refused" in flag for flag in flags) and any("changed after the turn ended" in flag for flag in flags), flags
+    _, _, reader, _, _ = hook_programs()
+    state = tmp_path / "state"
+    state.mkdir()
+    (state / "restored").write_text(json.dumps({"first_open_at": 1000.0, "poll_seconds": 0.35, "last_closed_at": 999.7,
+                                                "restored_at": 1000.9}))
+    seen = subprocess.run([sys.executable, "-I", "-", str(state / "restored"), "500.0"], input=reader, text=True,
+                          capture_output=True, timeout=30)
+    unseen = subprocess.run([sys.executable, "-I", "-", str(state / "missing"), "500.0"], input=reader, text=True,
+                            capture_output=True, timeout=30)
+    assert seen.stdout.split() == ["999.65", "watcher"] and unseen.stdout.split() == ["500.0", "start"], (seen.stdout, unseen.stdout)
+    watch = WATCH.read_text()
+    body = watch[watch.index("def main"):]
+    assert body.index('write("restored", record)') < body.index("end_agent_processes()"), "the reference is written before any kill"
+    assert all(key in watch for key in ("first_open_at", "last_closed_at", "turn_end_bound", "poll_seconds"))
+
+
+def test_the_precap_watchdog_stops_once_the_session_is_being_collected(tmp_path):
+    """QA 07c F2: the collect hook marks the session as being collected and stops the watchdog
+    before its own link fixer runs as the agent's user; the watchdog's TERM loop stops on the mark
+    instead of ending the fixer."""
+    log, pidfile, mark = tmp_path / "log", tmp_path / "pid", tmp_path / "collecting"
+    mark.write_text("")
+    marker = "precapmk" + os.urandom(6).hex()
+    worker = subprocess.Popen(["sh", "-c", "while :; do sleep 1; done", marker])
+    env = dict(os.environ, PRECAP_LOG=str(log), PRECAP_PIDFILE=str(pidfile), PRECAP_END_SECONDS="1",
+               PRECAP_SELECT=f"-f {marker}", PRECAP_TERM_INTERVAL="1", PRECAP_TERM_ROUNDS="3", PRECAP_COLLECTING=str(mark))
+    try:
+        assert subprocess.run([str(PRECAP)], env=env, capture_output=True, timeout=30).returncode == 0
+        time.sleep(3.5)
+        assert worker.poll() is None, "the worker lives: the loop stopped on the mark"
+        lines = log.read_text().splitlines()
+        assert any(" fired" in line for line in lines) and any("stopped: the session is being collected" in line for line in lines), lines
+        assert not any("killed" in line for line in lines), lines
+    finally:
+        subprocess.run(["pkill", "-f", marker], capture_output=True)
+        worker.wait(timeout=5)
+    hook = HOOK.read_text()
+    assert hook.index(': > "$STATE/collecting"') < hook.index("kill -STOP -1"), "the mark precedes the hook's kill stage and its fixer"
+    assert "/run/precap-watchdog.pid" in hook
+    assert 'COLLECTING="${PRECAP_COLLECTING:-/usr/local/lib/pagebuild/state/collecting}"' in PRECAP.read_text()
 
 
 def test_the_agent_cannot_replace_the_artifact_directory():

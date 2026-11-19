@@ -471,6 +471,9 @@ def delivery_record(top: Path) -> dict:
         if flagged:
             flags.append(f"{len(flagged)} copies hold files changed after the hook's start, copied because the turn's end "
                          "was not seen: audit them")
+        refused_late = [item for item in (record.get("refused_copies") or []) if isinstance(item, dict) and item.get("late_files")]
+        if refused_late:
+            flags.append(f"{len(refused_late)} outside sources changed at or after the turn's end were refused: audit them")
         if not (record.get("restored") or {}).get("restored_at"):
             flags.append("the egress watcher did not see the turn end; the turn-end time is the hook's start")
         summary["flags"] = flags

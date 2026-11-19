@@ -139,6 +139,29 @@ def single_paragraph(html: str) -> bool:
     return bool(re.fullmatch(r"<p>(.*)</p>", text, re.S)) and "\n" not in text
 
 
+TIGHT_ITEM = re.compile(r"<(li|dd)(?: [^>]*)?>(?!\s*<p>)\S")   # an item whose lead text follows its tag: a tight item
+
+
+def unwrap_top_paragraphs(html: str) -> str:
+    """The body's top-level `<p>…</p>` blocks (column 0) as bare text, nested ones kept: what a tight
+    list item does to the paragraphs inside it (QA 07c's rule R5)."""
+    out, lines, i = [], html.split("\n"), 0
+    while i < len(lines):
+        line = lines[i]
+        if line.startswith("<p>"):
+            j = i
+            while not lines[j].endswith("</p>") and j + 1 < len(lines):
+                j += 1
+            block = "\n".join(lines[i:j + 1])
+            if block.startswith("<p>") and block.endswith("</p>") and "\n<" not in block[3:-4]:
+                out.append(block[3:-4])
+                i = j + 1
+                continue
+        out.append(line)
+        i += 1
+    return "\n".join(out)
+
+
 def splice_with(host_html: str, part_htmls: list[str], rules: frozenset[str]) -> str | None:
     """The host's rendering with placeholder paragraphs, with each part's own rendering put into
     its placeholder's slot: a paragraph line takes the part's HTML at the line's indentation; with
@@ -160,6 +183,14 @@ def splice_with(host_html: str, part_htmls: list[str], rules: frozenset[str]) ->
         stripped = line.strip()
         with_attributes = re.fullmatch(r"<p((?: [a-zA-Z-]+=\"[^\"]*\")+)>" + place + r"</p>", stripped)
         wrapped = re.fullmatch(r"<([a-zA-Z]+)><p>" + place + r"</p></\1>", stripped)
+        if "R5" in rules and stripped.startswith(place) and at > 0 and not single_paragraph(html) and html.startswith("<"):
+            # R5: a placeholder absorbed as a lazy line of a *tight* item (its lead text follows the
+            # tag directly) takes the body with its top-level paragraphs unwrapped, as a tight list
+            # item renders them (QA 07c F3); the placement itself follows the rules below.
+            enclosing = next((k for k in range(at - 1, -1, -1)
+                              if re.search(r"<(li|dd)(?: [^>]*)?>", lines[k]) and not re.search(r"</(li|dd)>\s*$", lines[k])), None)
+            if enclosing is not None and TIGHT_ITEM.search(lines[enclosing]):
+                html = unwrap_top_paragraphs(html)
         if stripped == f"<p>{place}</p>":
             lines[at] = indent(html, pad)
         elif "R1" in rules and with_attributes:
@@ -187,7 +218,8 @@ def splice_with(host_html: str, part_htmls: list[str], rules: frozenset[str]) ->
     return out if out.endswith("\n") else out + "\n"
 
 
-RULE_SETS = (frozenset(), frozenset({"R1"}), frozenset({"R1", "R2"}), frozenset({"R1", "R2", "R3"}))
+RULE_SETS = (frozenset(), frozenset({"R1"}), frozenset({"R1", "R2"}), frozenset({"R1", "R2", "R3"}),
+             frozenset({"R1", "R2", "R3", "R5"}))
 
 
 def splice(host_html: str, part_htmls: list[str]) -> str | None:

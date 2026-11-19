@@ -4,11 +4,18 @@
 The sandbox has public egress while the agent's harness installs itself, none during the agent's
 turn, and public egress again from the end of the turn until the delivery is collected. A process
 the agent leaves behind could fetch a published build of the original in that last window. This
-watcher polls a few public hosts (resolved while egress is still open, then by address only); it
-arms once they have been unreachable for ARM_ROUNDS rounds in a row (the turn has begun), and
-when one of them answers again it ends every process of the agent's user at once and writes when
-that happened to STATE/restored. That time is the turn's end as far as the sandbox can tell, and
-the collect hook reads it to judge which files were made before the turn ended.
+watcher polls a few public hosts (resolved while egress is still open, then by address only), all
+at once every ROUND_SECONDS; it arms once they have been unreachable for ARM_ROUNDS rounds in a row
+(the turn has begun), and when one of them answers again it writes STATE/restored and then ends
+every process of the agent's user at once.
+
+The record is the collect hook's reference for when the turn ended, so it is written before
+anything is killed, and it places the end as early as the sandbox can: `first_open_at` is the
+start of the first round that found a host reachable, `last_closed_at` the start of the last round
+that found none, and `turn_end_bound` is `first_open_at` less the most a round can take, which is
+at or after `last_closed_at`. The kill comes later than all of these, and a fetch can land before
+the kill, so the kill time is never the reference. `restored_at` (the moment the kill began) is
+kept for the record.
 
 Started by the session's set-up hook in a session of its own; it needs no network to arm, and if
 egress never returns it runs until the sandbox stops. The hosts are ones no agent harness opens
@@ -21,14 +28,16 @@ import os
 import socket
 import subprocess
 import sys
+import threading
 import time
 
 STATE = "/usr/local/lib/pagebuild/state"
 HOSTS = ("files.pythonhosted.org", "proxy.golang.org", "static.crates.io")
 PORT = 443
-ARM_ROUNDS = 150        # rounds with no host reachable before the watcher arms (about half a minute)
-ROUND_SECONDS = 0.2
-CONNECT_SECONDS = 0.5
+ROUND_SECONDS = 0.05       # between the end of one round and the start of the next
+CONNECT_SECONDS = 0.3      # the most one round's connections take, all tried at once
+POLL_SECONDS = ROUND_SECONDS + CONNECT_SECONDS   # the most time between the starts of two rounds
+ARM_ROUNDS = 600           # rounds with no host reachable before the watcher arms (about half a minute)
 USER = "dev"
 
 
@@ -48,12 +57,24 @@ def resolve():
     return found
 
 
-def reachable(address):
-    try:
-        with socket.create_connection((address, PORT), timeout=CONNECT_SECONDS):
-            return True
-    except OSError:
-        return False
+def first_answering(targets):
+    """The first (host) whose address accepts a connection, all of them tried at once within
+    CONNECT_SECONDS; None when none does."""
+    answered = []
+
+    def probe(host, address):
+        try:
+            with socket.create_connection((address, PORT), timeout=CONNECT_SECONDS):
+                answered.append(host)
+        except OSError:
+            pass
+
+    workers = [threading.Thread(target=probe, args=target, daemon=True) for target in targets]
+    for worker in workers:
+        worker.start()
+    for worker in workers:
+        worker.join(CONNECT_SECONDS + 0.1)
+    return answered[0] if answered else None
 
 
 def end_agent_processes():
@@ -72,27 +93,32 @@ def end_agent_processes():
 def main():
     addresses = resolve()
     targets = [(host, address) for host, found in addresses.items() if isinstance(found, list) for address in found]
-    write("watchdog.json", {"started_at": time.time(), "pid": os.getpid(), "hosts": addresses, "armed": False,
-                            "arm_rounds": ARM_ROUNDS, "round_seconds": ROUND_SECONDS})
+    status = {"started_at": time.time(), "pid": os.getpid(), "hosts": addresses, "armed": False, "arm_rounds": ARM_ROUNDS,
+              "round_seconds": ROUND_SECONDS, "connect_seconds": CONNECT_SECONDS, "poll_seconds": POLL_SECONDS}
+    write("watchdog.json", status)
     if not targets:
-        write("watchdog.json", {"started_at": time.time(), "pid": os.getpid(), "hosts": addresses, "armed": False,
-                                "error": "no host resolved: not watching"})
+        write("watchdog.json", dict(status, error="no host resolved: not watching"))
         return 0
     closed_rounds = 0
     armed = False
+    last_closed_at = None
     while True:
-        answering = next((host for host, address in targets if reachable(address)), None)
+        round_started = time.time()
+        answering = first_answering(targets)
         if answering is None:
             closed_rounds += 1
+            last_closed_at = round_started
             if not armed and closed_rounds >= ARM_ROUNDS:
                 armed = True
-                write("watchdog.json", {"started_at": time.time(), "pid": os.getpid(), "hosts": addresses, "armed": True,
-                                        "armed_at": time.time(), "arm_rounds": ARM_ROUNDS, "round_seconds": ROUND_SECONDS})
+                write("watchdog.json", dict(status, armed=True, armed_at=time.time()))
         elif armed:
-            restored_at = time.time()
+            # The turn's end, as early as it can be placed, written before anything is killed so
+            # that nothing in the kill can lose the reference.
+            record = {"first_open_at": round_started, "last_closed_at": last_closed_at, "poll_seconds": POLL_SECONDS,
+                      "turn_end_bound": round_started - POLL_SECONDS, "host": answering, "restored_at": time.time()}
+            write("restored", record)
             rounds, left = end_agent_processes()
-            write("restored", {"restored_at": restored_at, "host": answering, "kill_rounds": rounds, "agent_processes_left": left,
-                               "ended_at": time.time()})
+            write("restored", dict(record, kill_rounds=rounds, agent_processes_left=left, ended_at=time.time()))
             return 0
         else:
             closed_rounds = 0
