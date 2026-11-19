@@ -344,10 +344,10 @@ index 5ab9db7..378f693 100644
                  // a shared library (§7.10), which the string alone does not
                  // tell from a declaration's symbol: the parse reads past it
 diff --git a/src/typecheck_builtins.h b/src/typecheck_builtins.h
-index 556a063..618a774 100644
+index 556a063..32f9e1c 100644
 --- a/src/typecheck_builtins.h
 +++ b/src/typecheck_builtins.h
-@@ -1036,6 +1036,36 @@ inline StrLit *TypeCheck::ConstStrLit(Node *n) {
+@@ -1036,6 +1036,37 @@ inline StrLit *TypeCheck::ConstStrLit(Node *n) {
      }
  }
  
@@ -366,7 +366,8 @@ index 556a063..618a774 100644
 +    auto dir = slash == string::npos ? string(".") : from.substr(0, slash + 1);
 +    auto rdir = realpath(dir.c_str(), nullptr);
 +    auto rfile = realpath(cat("/proc/self/fd/", fileno(f)).c_str(), nullptr);
-+    outside = !rdir || !rfile || strncmp(rfile, rdir, strlen(rdir)) != 0 || rfile[strlen(rdir)] != '/';
++    outside = !rdir || !rfile || strncmp(rfile, rdir, strlen(rdir)) != 0 || rfile[strlen(rdir)] != '/' ||
++              SystemFile(f, path);
 +    free(rdir);
 +    free(rfile);
 +    if (outside) {
@@ -384,7 +385,7 @@ index 556a063..618a774 100644
  // The bytes of the file an embed_file call names, read here once per
  // distinct file, resolved relative to the file with the call as a shader
  // file is. The argument is a string literal, or a let or const global
-@@ -1054,7 +1084,10 @@ inline const string *TypeCheck::EmbedFile(Call *c, vector<Node *> &args) {
+@@ -1054,7 +1085,10 @@ inline const string *TypeCheck::EmbedFile(Call *c, vector<Node *> &args) {
      auto it = ast.shaders.find(key);
      if (it == ast.shaders.end()) {
          string bytes;
@@ -396,7 +397,7 @@ index 556a063..618a774 100644
          it = ast.shaders.emplace(key, std::move(bytes)).first;
      }
      return &it->second;
-@@ -1067,6 +1100,9 @@ inline const string *TypeCheck::EmbedFile(Call *c, vector<Node *> &args) {
+@@ -1067,6 +1101,9 @@ inline const string *TypeCheck::EmbedFile(Call *c, vector<Node *> &args) {
  // errors are errors of the call, and one at a line of a """ source is
  // reported at that line of the program.
  inline const string *TypeCheck::EmbedShader(Call *c, vector<Node *> &args) {
@@ -406,3 +407,40 @@ index 556a063..618a774 100644
      auto &callfile = ast.sources[c->line.fileidx].first;
      vector<StrLit *> lits;
      vector<bool> named;
+diff --git a/src/utils.h b/src/utils.h
+index 7f8395c..4f3707f 100644
+--- a/src/utils.h
++++ b/src/utils.h
+@@ -199,12 +199,32 @@ inline uintptr_t StackPointer() {
+ 
+ inline bool StackLow() { return StackPointer() < stackfloor; }
+ 
++// Hardened build: whether an open file lies under /proc, /sys or /dev, by the
++// real path of the file actually opened (its /proc/self/fd entry, else the
++// path given), so that no program, module, formatted file or embedded file
++// is the compiler's own process files or a device, through any link.
++inline bool SystemFile(FILE *f, const string &path) {
++    auto real = realpath(cat("/proc/self/fd/", fileno(f)).c_str(), nullptr);
++    if (!real) real = realpath(path.c_str(), nullptr);
++    if (!real) return false;
++    string_view r(real);
++    bool system = false;
++    for (string_view top : { "/proc", "/sys", "/dev" })
++        system = system || r == top || (r.size() > top.size() && r.substr(0, top.size()) == top && r[top.size()] == '/');
++    free(real);
++    return system;
++}
++
+ // Reads a whole file; the returned string's c_str() gives the lexer its 0 terminator.
+ // It reads to the end rather than the length a seek reports: a directory
+ // opens on POSIX systems, with no such length, and fails to read (EISDIR).
+ inline bool LoadFile(const string &path, string &dest) {
+     auto f = fopen(path.c_str(), "rb");
+     if (!f) return false;
++    if (SystemFile(f, path)) {  // Hardened build: see SystemFile.
++        fclose(f);
++        return false;
++    }
+     dest.clear();
+     for (size_t got = 0;;) {
+         dest.resize(std::max<size_t>(got * 2, 1 << 16));

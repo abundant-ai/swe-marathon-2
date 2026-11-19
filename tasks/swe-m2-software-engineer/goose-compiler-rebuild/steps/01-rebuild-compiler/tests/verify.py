@@ -14,6 +14,7 @@ import signal
 import stat
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -24,9 +25,14 @@ from verifier import recorder, runcases  # noqa: E402
 
 SUBMISSION = Path("/app/rebuild")
 MARKER = Path(__file__).resolve().parent / "private" / "marker"   # the original's build marker
-SCAN_BYTES = 4 << 30  # bytes of the submission searched for the marker, at most
+MARKER_RE = re.compile(rb"GOOSE-BUILD-MARKER-[0-9a-f]{32}")
+MARKER_LEN = len("GOOSE-BUILD-MARKER-") + 32
 REWARD_FILES = ("reward.txt", "reward.json")
-TOTAL_SEC = 3300  # the step verifier has 3,600 s; 1,500 runs at the per-run limit take at most 3,000 s
+TOTAL_SEC = 3300  # the step verifier has 3,600 s; everything up to the reward file fits in this
+MARGIN_SEC = 120  # no case starts when less than this is left of TOTAL_SEC
+MAX_ENTRIES = 200_000  # files, directories and links in a submission, at most; more is not run
+MAX_BYTES = 4 << 30    # bytes of a submission's regular files (each inode once), at most; more is not run
+MAX_PROGRAM = 512 << 20  # bytes of /app/rebuild/goose hashed for metrics.json, at most
 # Where the unprivileged user can leave files: these, and every other world-writable directory
 # that writable_dirs() finds when the evaluation starts.
 LEFTOVER_DIRS = ["/tmp", "/var/tmp", "/dev/shm", "/dev/mqueue"]
@@ -99,6 +105,33 @@ def probe(prefix: list[str], argv: list[str], fallback: list[str] | None = None)
     raise EvaluationError(f"Could not drop privileges: {(fallback or argv)[0]} exited {done.returncode}")
 
 
+def pick_id(maps: tuple[str, ...] = ("/proc/self/uid_map", "/proc/self/gid_map")) -> int:
+    """An id for submitted code's user and group: inside every id map of this user namespace (a
+    rootless or remapped container maps only 65,536 ids), drawn at random from 20000-60000 so that
+    no other container is likely to share it, and no user or group of the image's; 65534 where none
+    fits."""
+    ranges = []
+    for path in maps:
+        try:
+            rows = [tuple(map(int, line.split()[:3])) for line in Path(path).read_text().splitlines() if line.strip()]
+        except (OSError, ValueError):
+            rows = [(0, 0, 1 << 32)]  # no map: every id
+        ranges.append(rows)
+    taken = set()
+    for table in ("/etc/passwd", "/etc/group"):
+        try:
+            taken |= {int(line.split(":")[2]) for line in Path(table).read_text().splitlines() if line.count(":") >= 2
+                      and line.split(":")[2].isdigit()}
+        except OSError:
+            pass
+    for _ in range(500):
+        candidate = 20000 + secrets.randbelow(40000)
+        if candidate not in taken and all(any(start <= candidate < start + length for start, _, length in rows)
+                                          for rows in ranges):
+            return candidate
+    return 65534
+
+
 def sandbox() -> tuple[list[str], tuple[int, int], dict]:
     """The command prefix that runs submitted code as an unprivileged user of this evaluation's own
     (a random uid and gid no other container shares, so that its process limit counts only its
@@ -108,10 +141,17 @@ def sandbox() -> tuple[list[str], tuple[int, int], dict]:
     Raises:
         EvaluationError: Privileges cannot be dropped or the drop does not hold.
     """
-    uid = (1 << 20) + secrets.randbelow(1 << 29)
+    uid = pick_id()
     owner = (uid, uid)
     if shutil.which("setpriv") is None:
         raise EvaluationError("setpriv is missing; submitted code was not run")
+    scratch = Path(tempfile.mkdtemp())
+    try:  # the workspaces will be chowned to the id: a filesystem that refuses it grades nothing
+        os.chown(scratch, uid, uid)
+    except OSError as exc:
+        raise EvaluationError(f"Files cannot be given to uid {uid}: {type(exc).__name__}") from exc
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
     prefix = ["setpriv", "--reuid", str(uid), "--regid", str(uid), "--clear-groups", "--no-new-privs"]
     status = probe(prefix, [sys.executable, "-I", "-c", NNP_PROBE], fallback=["cat", "/proc/self/status"])
     problems, found = sandbox_problems(status, probe(prefix, ["cat", "/proc/self/limits"]), owner)
@@ -144,9 +184,21 @@ def seal(top: Path, owner: tuple[int, int] = (0, 0)) -> None:
     """
     if not top.is_dir() or top.is_symlink():
         return
-    entries = [top]
+    entries, size, seen = [top], 0, set()
     for root, directories, files in os.walk(top):
         entries += [Path(root) / name for name in directories + files]
+        if len(entries) > MAX_ENTRIES:
+            raise EvaluationError(f"The submission holds more than {MAX_ENTRIES} entries")
+        for name in files:
+            try:
+                info = os.lstat(os.path.join(root, name))
+            except OSError:
+                continue
+            if stat.S_ISREG(info.st_mode) and (info.st_dev, info.st_ino) not in seen:
+                seen.add((info.st_dev, info.st_ino))
+                size += info.st_size
+        if size > MAX_BYTES:
+            raise EvaluationError(f"The submission's files hold more than {MAX_BYTES} bytes")
     for path in entries:
         try:
             info = os.lstat(path)
@@ -177,11 +229,13 @@ def kill_user(uid: int) -> None:
             try:
                 if os.stat(f"/proc/{pid}").st_uid != uid:
                     continue
-                state = Path(f"/proc/{pid}/stat").read_bytes().rsplit(b")", 1)[1].split()[0]
-                if state in (b"Z", b"X"):
-                    continue
+                # Whatever the leader's state: one that exited with threads left reads Z, and a
+                # signal to it reaches them; to a dead one it is harmless.
+                tasks = [entry.name for entry in os.scandir(f"/proc/{pid}/task")]
+                alive = any(Path(f"/proc/{pid}/task/{task}/stat").read_bytes().rsplit(b")", 1)[1].split()[0]
+                            not in (b"Z", b"X") for task in tasks)
                 os.kill(int(pid), signal.SIGKILL)
-                found = True
+                found = found or alive
             except (FileNotFoundError, ProcessLookupError):
                 continue
             except (OSError, IndexError, ValueError):
@@ -214,6 +268,9 @@ def writable_dirs(root: str = "/") -> list[str]:
     for top, directories, _ in os.walk(root):
         if top == root:
             directories[:] = [d for d in directories if d not in ("proc", "sys", "dev")]
+        if os.path.realpath(top) == str(SUBMISSION):  # sealed: nothing in it is writable
+            directories[:] = []
+            continue
         try:
             if os.lstat(top).st_mode & stat.S_IWOTH:
                 found.append(top)
@@ -231,13 +288,17 @@ def remove_ipc(uid: int, root: Path = Path("/proc/sysvipc")) -> None:
         except (OSError, ValueError):
             continue
         columns = header.split()
+        ids = []
         for row in rows:
             values = dict(zip(columns, row.split()))
             if str(uid) in (values.get("uid"), values.get("cuid")) and values.get(columns[1], "").isdigit():
-                try:
-                    subprocess.run(["ipcrm", flag, values[columns[1]]], capture_output=True, check=False, timeout=10)
-                except (OSError, subprocess.SubprocessError):
-                    continue
+                ids.append(values[columns[1]])
+        for at in range(0, len(ids), 2000):  # one ipcrm for many objects
+            try:
+                subprocess.run(["ipcrm", *(arg for i in ids[at:at + 2000] for arg in (flag, i))], capture_output=True,
+                               check=False, timeout=60)
+            except (OSError, subprocess.SubprocessError):
+                continue
 
 
 def reset(uid: int) -> None:
@@ -250,57 +311,71 @@ def reset(uid: int) -> None:
 
 def remove_leftovers(uid: int) -> None:
     """Remove what the user left at the top of the directories it can write to, never following a
-    link: every run starts with nothing of an earlier run's there."""
+    link: every run starts with nothing of an earlier run's there. One find for each directory,
+    which hands every entry it owns to as few rm -rf runs as their names need, however many."""
     for top in LEFTOVER_DIRS:
-        try:
-            entries = list(os.scandir(top))
-        except OSError:
+        if not os.path.isdir(top) or os.path.islink(top):
             continue
-        for entry in entries:
-            try:
-                if entry.stat(follow_symlinks=False).st_uid == uid:
-                    runcases.remove_path(Path(entry.path))
-            except Exception:  # noqa: BLE001 - a leftover that cannot go fails the next case, not grading
-                continue
+        try:
+            subprocess.run(["find", top, "-xdev", "-mindepth", "1", "-maxdepth", "1", "-user", str(uid),
+                            "-exec", "rm", "-rf", "--", "{}", "+"], capture_output=True, check=False, timeout=300)
+        except (OSError, subprocess.SubprocessError):
+            continue
 
 
 def holds_marker(top: Path, marker: bytes) -> str | None:
-    """The first regular file under `top` (links not followed) that holds `marker`, searching at
-    most SCAN_BYTES bytes in all."""
-    left = SCAN_BYTES
+    """The first regular file under `top` (links not followed, each inode once, `goose` first)
+    that holds `marker`, read in chunks that overlap by the marker's length; None where none does.
+    seal() has bounded the bytes to read (MAX_BYTES)."""
+    paths, seen = [top / "goose"], set()
     for root, directories, files in os.walk(top):
-        for name in sorted(files):
-            path = Path(root, name)
-            try:
-                if not stat.S_ISREG(os.lstat(path).st_mode):
-                    continue
-                with open(path, "rb") as handle:
-                    tail = b""
-                    while left > 0:
-                        chunk = handle.read(min(1 << 20, left))
-                        if not chunk:
-                            break
-                        left -= len(chunk)
-                        if marker in tail + chunk:
-                            return str(path.relative_to(top))
-                        tail = chunk[-len(marker):]
-            except OSError:
+        directories.sort()
+        paths += [Path(root, name) for name in sorted(files)]
+    for path in paths:
+        try:
+            info = os.lstat(path)
+            if not stat.S_ISREG(info.st_mode) or (info.st_dev, info.st_ino) in seen:
                 continue
+            seen.add((info.st_dev, info.st_ino))
+            with open(path, "rb") as handle:
+                tail = b""
+                while chunk := handle.read(1 << 20):
+                    if marker in tail + chunk:
+                        return str(path.relative_to(top))
+                    tail = chunk[-len(marker):]
+        except OSError:
+            continue
     return None
 
 
 def identity(path: Path) -> dict:
-    """A program's sha256, and its sha256 with any build marker zeroed (build.sh's build.txt)."""
+    """A program's size, sha256, and sha256 with any build marker zeroed (as build.sh's build.txt
+    gives them), read in 1 MB chunks; only for a regular file, not a link, of at most MAX_PROGRAM
+    bytes, and never raising."""
     try:
-        data = path.read_bytes()
-    except OSError:
-        return {}
-    zeroed = re.sub(rb"GOOSE-BUILD-MARKER-[0-9a-f]{32}", b"GOOSE-BUILD-MARKER-" + b"0" * 32, data)
-    return {"sha256": hashlib.sha256(data).hexdigest(), "sha256_without_marker": hashlib.sha256(zeroed).hexdigest()}
+        info = os.lstat(path)
+        if not stat.S_ISREG(info.st_mode):
+            return {"error": "not a regular file"}
+        if info.st_size > MAX_PROGRAM:
+            return {"size": info.st_size, "error": "too large to hash"}
+        whole, zeroed, pending = hashlib.sha256(), hashlib.sha256(), b""
+        with open(path, "rb") as handle:
+            while chunk := handle.read(1 << 20):
+                whole.update(chunk)
+                pending = MARKER_RE.sub(b"GOOSE-BUILD-MARKER-" + b"0" * 32, pending + chunk)
+                zeroed.update(pending[:-(MARKER_LEN - 1)])  # a marker cut by the chunk's end stays pending
+                pending = pending[-(MARKER_LEN - 1):]
+        zeroed.update(pending)
+        return {"size": info.st_size, "sha256": whole.hexdigest(), "sha256_without_marker": zeroed.hexdigest()}
+    except Exception as exc:  # noqa: BLE001 - metadata, never a reason to lose the reward
+        return {"error": type(exc).__name__}
 
 
-def grade(program: Path, private: Path, prefix: list[str], owner: tuple[int, int] | None, budget: float = TOTAL_SEC) -> dict:
-    """Run every private case through `prefix` (as `owner`) and count exact matches.
+def grade(program: Path, private: Path, prefix: list[str], owner: tuple[int, int] | None,
+          deadline: float | None = None) -> dict:
+    """Run every private case through `prefix` (as `owner`) and count exact matches, starting no
+    case, and no reset, within MARGIN_SEC of `deadline` (time.monotonic(); by default TOTAL_SEC
+    from now): the cases left count as failed. The cleanup after the last case is the caller's.
 
     A case that cannot be set up or started, runs too long or prints too much counts as failed:
     what the submission does never makes the evaluation an error.
@@ -330,14 +405,17 @@ def grade(program: Path, private: Path, prefix: list[str], owner: tuple[int, int
     if not program.is_file() or not os.access(program, os.X_OK):
         metrics["notes"].append("/app/rebuild/goose is missing or not executable")
         cases = []
-    started = time.monotonic()
+    deadline = time.monotonic() + TOTAL_SEC if deadline is None else deadline
     for case in cases:
-        if time.monotonic() - started > budget:
-            metrics["stopped"] = f"after {budget} seconds of runs; the remaining cases count as failed"
+        if time.monotonic() > deadline - MARGIN_SEC:
+            metrics["stopped"] = "out of time; the remaining cases count as failed"
             break
         try:  # whatever the submission did to this machine is its own case's failure, never an error
             if owner is not None:
                 reset(owner[0])
+                if time.monotonic() > deadline - MARGIN_SEC:
+                    metrics["stopped"] = "out of time after a cleanup; the remaining cases count as failed"
+                    break
             got = runcases.run_case([str(program)], case, prefix=prefix, owner=owner)
         except Exception as exc:  # noqa: BLE001
             got = {"exit": None, "stdout": None, "error": f"run: {type(exc).__name__}", "seconds": 0.0}
@@ -361,12 +439,6 @@ def grade(program: Path, private: Path, prefix: list[str], owner: tuple[int, int
             tally["passed"] += 1
         else:
             failed.append(case["id"])
-    try:
-        if owner is not None:
-            reset(owner[0])
-        runcases.clear_workspace()
-    except Exception:  # noqa: BLE001
-        pass
     seconds.sort()
     metrics["seconds_p99"] = seconds[int(0.99 * (len(seconds) - 1))] if seconds else 0.0
     metrics["runs_over_half_a_second"] = sum(value > 0.5 for value in seconds)
@@ -386,6 +458,7 @@ def main() -> int:
         Zero for a completed evaluation, including a failed submission; one for
         an evaluation error, which leaves no reward file.
     """
+    deadline = time.monotonic() + TOTAL_SEC
     tests = Path(__file__).resolve().parent
     output = Path("/logs/verifier")
     output.mkdir(parents=True, exist_ok=True)
@@ -413,6 +486,13 @@ def main() -> int:
         except EvaluationError as exc:  # a submission that cannot be made safe to run is not run
             refused = f"{exc}: not graded"
         LEFTOVER_DIRS.extend(top for top in writable_dirs() if top not in LEFTOVER_DIRS)
+        program = identity(SUBMISSION / "goose")
+        try:
+            original = json.loads((tests / "private" / "recording.json").read_text())["build"]["sha256_without_marker"]
+        except (OSError, ValueError, KeyError, TypeError):
+            original = None
+        if not refused and original and program.get("sha256_without_marker") == original:
+            refused = "/app/rebuild/goose is the original compiler, whatever its marker: not graded"
         marker = MARKER.read_text(encoding="utf-8").strip() if MARKER.is_file() else ""
         found = holds_marker(SUBMISSION, f"GOOSE-BUILD-MARKER-{marker}".encode()) if marker and not refused else None
         if found:  # the original compiler itself, delivered: nothing of it is the agent's work
@@ -420,16 +500,15 @@ def main() -> int:
         if refused:
             metrics = {"cases_total": None, "cases_passed": 0, "reward": 0.0, "notes": [refused]}
         else:
-            metrics = grade(SUBMISSION / "goose", tests / "private", prefix, owner)
-        metrics["limits"] = limits
-        metrics["submission"] = identity(SUBMISSION / "goose")
-        metrics["host"] = recorder.host()
+            metrics = grade(SUBMISSION / "goose", tests / "private", prefix, owner, deadline)
+        # The reward first: nothing after it, the submission's doing or not, can cost it.
         (output / "reward.txt").write_text(f"{metrics['reward']:.6f}")
         code = 0
         print(f"reward: {metrics['reward']:.6f} ({metrics['cases_passed']}/{metrics['cases_total']} cases)", flush=True)
         try:
+            metrics.update(limits=limits, submission=program, host=recorder.host())
             (output / "metrics.json").write_text(json.dumps(dict(metrics, status="completed"), indent=1, sort_keys=True) + "\n")
-        except OSError:
+        except Exception:  # noqa: BLE001 - metadata only
             pass
     except Exception as exc:  # noqa: BLE001 - every unexpected failure invalidates the evaluation
         message = str(exc) if isinstance(exc, EvaluationError) else f"Verifier error: {type(exc).__name__}"

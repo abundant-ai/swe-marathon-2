@@ -132,6 +132,19 @@ embed_case ../data.txt
 expect 1 "is outside the directory of the file that embeds it" "$goose" run embed/sub/main.goose
 embed_case maps.txt
 expect 1 "is outside the directory of the file that embeds it" "$goose" check embed/main.goose
+# Nothing under /proc, /sys or /dev is a program, a module or a file to format, by name or link:
+# the compiler's own environment and memory map never become source text in a message.
+secret=smoke-environ-7d1e9c
+ln -s /proc/self/environ envmod.goose
+ln -s /proc/self/maps maps.goose
+printf 'import envmod;\n\nfn main() {}\n' > uses_env.goose
+for command in "run /proc/self/environ" "check envmod.goose" "check uses_env.goose" "run maps.goose" \
+               "format --check /proc/self/environ" "check /dev/null"; do
+    status=0
+    out="$(env GOOSE_SMOKE_SECRET=$secret timeout 120 "$goose" $command 2>&1)" || status=$?
+    [ "$status" -ne 0 ] || fail "goose $command succeeded"
+    case "$out" in *"$secret"*|*"[stack]"*) fail "goose $command printed the compiler's process files: $out" ;; esac
+done
 printf 'fn main() {\n    let s = embed_shader("frag", "void main() {}");\n}\n' > shader.goose
 expect 1 "embed_shader is not available in this build of goose" "$goose" check shader.goose
 

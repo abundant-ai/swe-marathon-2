@@ -208,12 +208,15 @@ def run_case(program: list[str], case: dict, prefix: list[str] | None = None, ow
         return {"exit": None, "stdout": None, "error": "could not start", "seconds": 0.0, "cpu": 0.0}
     deadline = started + CASE_SEC
     try:
-        out, problem = read_output(proc, (case["stdin"] or "").encode("utf-8"), deadline, owner[0] if owner else None)
-        if problem is None:
-            try:
-                proc.wait(timeout=max(0.0, deadline - time.monotonic()))
-            except subprocess.TimeoutExpired:
+        uid = owner[0] if owner else None
+        out, problem = read_output(proc, (case["stdin"] or "").encode("utf-8"), deadline, uid)
+        while problem is None and proc.poll() is None:  # output closed: the limits hold to the end
+            if time.monotonic() > deadline:
                 problem = "timeout"
+            elif memory_in_use(proc.pid, uid) > MEMORY_LIMIT:
+                problem = "memory limit"
+            else:
+                time.sleep(0.02)
     finally:
         if proc.returncode is None:
             stop(proc)

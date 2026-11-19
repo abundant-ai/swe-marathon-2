@@ -507,6 +507,7 @@ def test_nothing_a_submission_writes_reaches_a_later_case(tmp_path):
         root = Path({str(ipc)!r})
         verify.remove_ipc = (lambda real: lambda uid: real(uid, root))(verify.remove_ipc)
         metrics = verify.grade(Path({str(program)!r}), Path({str(private)!r}), [], (os.getuid(), os.getgid()))
+        verify.reset(os.getuid())  # main() does this after the reward is written
         print(json.dumps([metrics, removed]))
     """))
     assert metrics["cases_passed"] == 3, metrics
@@ -705,6 +706,108 @@ def test_the_original_is_refused_by_its_marker_and_only_the_images_carry_one(tmp
     assert verify.index("holds_marker(SUBMISSION") < verify.index("metrics = grade(")
 
 
+def test_hashing_a_submission_is_bounded_and_never_raises(tmp_path):
+    """identity() reads only a regular file, not a link, of at most MAX_PROGRAM bytes, in chunks;
+    its marker-free hash equals build.sh's whole-file one, a marker cut by a chunk's end included."""
+    fifo = tmp_path / "fifo"
+    os.mkfifo(fifo)
+    (tmp_path / "linked").symlink_to(fifo)
+    data = b"x" * ((1 << 20) - 20) + b"GOOSE-BUILD-MARKER-" + b"a" * 32 + b"y" * 5000 + b"GOOSE-BUILD-MARKER-" + b"b" * 32
+    (tmp_path / "goose").write_bytes(data)
+    zeroed = re.sub(rb"GOOSE-BUILD-MARKER-[0-9a-f]{32}", b"GOOSE-BUILD-MARKER-" + b"0" * 32, data)
+    out = verifier_call(textwrap.dedent(f"""
+        import json, verify
+        from pathlib import Path
+        top = Path({str(tmp_path)!r})
+        verify.MAX_PROGRAM = 1 << 22
+        big = top / "big"
+        with open(big, "wb") as handle:
+            handle.truncate((1 << 22) + 1)
+        print(json.dumps([verify.identity(top / "linked"), verify.identity(top / "fifo"), verify.identity(top / "goose"),
+                          verify.identity(big), verify.identity(top / "missing")]))
+    """))
+    linked, fifo_result, good, big, missing = out
+    assert linked == {"error": "not a regular file"} and fifo_result == {"error": "not a regular file"}
+    assert good["sha256"] == hashlib.sha256(data).hexdigest()
+    assert good["sha256_without_marker"] == hashlib.sha256(zeroed).hexdigest()
+    assert big["error"] == "too large to hash" and missing == {"error": "FileNotFoundError"}
+
+
+def test_cleanup_cost_does_not_grow_with_what_a_run_leaves(tmp_path):
+    """A run that leaves 20,000 directories in a swept directory: each sweep is one find, and grading
+    stops at its deadline, so the whole evaluation stays within it plus a small constant."""
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    program = tmp_path / "goose"
+    program.write_text(f'#!/bin/sh\ncd "{shared}" && seq 1 20000 | sed "s/^/$$-/" | xargs mkdir\necho ok\n')
+    program.chmod(0o755)
+    private = tmp_path / "private"
+    private.mkdir()
+    cases, expected = plain_cases([[f"c{i}"] for i in range(50)])
+    (private / "cases.json").write_text(json.dumps({"cases": cases}))
+    (private / "expected.json").write_text(json.dumps(expected))
+    elapsed, metrics, calls = verifier_call(textwrap.dedent(f"""
+        import json, os, time
+        from pathlib import Path
+        import verify
+        verify.runcases.WORKSPACE = Path({str(tmp_path / 'goose-case')!r})
+        verify.runcases.HOME = Path({str(tmp_path / 'goose-home')!r})
+        verify.runcases.TEMP = Path({str(tmp_path / 'goose-tmp')!r})
+        verify.runcases.CASE_SEC = 10
+        verify.LEFTOVER_DIRS[:] = [{str(shared)!r}]
+        verify.kill_user = lambda uid: None
+        verify.MARGIN_SEC = 0.5
+        calls, real_run = [], verify.subprocess.run
+        verify.subprocess.run = lambda argv, **kw: (calls.append(argv[0]), real_run(argv, **kw))[1]
+        started = time.monotonic()
+        metrics = verify.grade(Path({str(program)!r}), Path({str(private)!r}), [], (os.getuid(), os.getgid()),
+                               time.monotonic() + 8)
+        print(json.dumps([time.monotonic() - started, metrics, calls]))
+    """))
+    assert metrics["stopped"] and metrics["cases_run"] < 50, metrics
+    assert elapsed < 8 + 10, elapsed
+    assert calls.count("find") <= metrics["cases_run"] + 1, "one find per sweep"
+    assert calls.count("rm") <= 3 * (metrics["cases_run"] + 1), "rm for the run's own three directories, never per leftover"
+
+
+def test_the_sandbox_id_is_one_the_namespace_maps(tmp_path):
+    for name, text in (("wide", "0 0 4294967295\n"), ("rootless", "0 100000 65536\n"), ("tight", "0 1000 1\n")):
+        (tmp_path / name).write_text(text)
+    ids = verifier_call(textwrap.dedent(f"""
+        import json, verify
+        top = {str(tmp_path)!r}
+        print(json.dumps([[verify.pick_id((f"{{top}}/{{name}}", f"{{top}}/{{name}}")) for _ in range(30)]
+                          for name in ("wide", "rootless", "tight")]))
+    """))
+    wide, rootless, tight = ids
+    assert all(20000 <= i < 60000 and i != 10001 for i in wide + rootless) and len(set(wide)) > 1
+    assert tight == [65534] * 30
+
+
+def test_an_oversized_submission_is_not_run(tmp_path):
+    many, big = tmp_path / "many", tmp_path / "big"
+    many.mkdir()
+    big.mkdir()
+    for index in range(30):
+        (many / f"f{index}").write_text("x")
+    with open(big / "goose", "wb") as handle:
+        handle.truncate(5000)
+    out = verifier_call(textwrap.dedent(f"""
+        import json, os, verify
+        from pathlib import Path
+        verify.MAX_ENTRIES, verify.MAX_BYTES = 20, 4096
+        results = []
+        for top in ({str(many)!r}, {str(big)!r}):
+            try:
+                verify.seal(Path(top), (os.getuid(), os.getgid()))
+                results.append("sealed")
+            except verify.EvaluationError as exc:
+                results.append(str(exc))
+        print(json.dumps(results))
+    """))
+    assert "more than 20 entries" in out[0] and "more than 4096 bytes" in out[1]
+
+
 def test_the_agent_cannot_replace_the_artifact_directory():
     """/app is root's and sticky, /app/rebuild root's and writable by all: the agent cannot swap the
     artifact for a link to the original, which the root-run collector would follow."""
@@ -817,7 +920,8 @@ def test_the_hardening_patch_applies_and_its_refusals_are_the_ones_the_build_pro
     added = "\n".join(line[1:] for line in patch.splitlines() if line.startswith("+") and not line.startswith("+++"))
     removed = "\n".join(line[1:] for line in patch.splitlines() if line.startswith("-") and not line.startswith("---"))
     smoke = (HARDENING / "smoke.sh").read_text()
-    patched = ["src/gfx.h", "src/jit.h", "src/main.cpp", "src/packages.h", "src/parser.h", "src/typecheck_builtins.h"]
+    patched = ["src/gfx.h", "src/jit.h", "src/main.cpp", "src/packages.h", "src/parser.h", "src/typecheck_builtins.h",
+               "src/utils.h"]
     assert sorted(re.findall(r"^diff --git a/(\S+)", patch, re.M)) == patched
     for gone in ('getenv("GOOSE_TCCLIB")', 'getenv("GOOSE_STDLIB")', 'arg == "-D"', 'arg == "--include"', 'arg == "--stdlib"',
                  'arg == "--unsafe-no-rf-check"', 'cands.push_back("stdlib/")', 'arg == "-o"', 'arg == "--standalone"',
@@ -829,6 +933,7 @@ def test_the_hardening_patch_applies_and_its_refusals_are_the_ones_the_build_pro
                  "  --emit-runtime out.c  Write the runtime's C.", "  --unsafe-no-rf-check  Leave out the checks after calls"):
         assert gone in removed, gone
     assert "goose help $topic still offers a removed option" in smoke
+    assert "if (SystemFile(f, path)) {" in added and '"run /proc/self/environ"' in smoke and "envmod.goose" in smoke
     for message in ("extern fn is only allowed in the standard library", "sidecar files are not supported",
                     "goose build is not available", "is outside the directory of the file that embeds it",
                     "embed_shader is not available in this build of goose"):

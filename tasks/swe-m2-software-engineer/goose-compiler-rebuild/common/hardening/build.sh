@@ -2,7 +2,9 @@
 # Builds goose from a source tree that apply.sh has hardened, the same way for both images and the
 # reference solution, and checks the result with smoke.sh against the installed standard library.
 #
-# The link is static and stripped where that works. A static binary has no dynamic loader, so
+# The link is a static PIE, stripped, where that works: no dynamic loader, and the binary's own
+# addresses still differ from run to run. Failing that it is static, failing that dynamic, each from
+# the same objects and checked by smoke.sh. A static binary has no dynamic loader, so
 # LD_PRELOAD and LD_AUDIT cannot put code into the compiler's process, whatever a sandbox does with
 # its set-group-id exec. The JIT needs no dlsym for it: the compiler hands TinyCC every host symbol
 # itself (src/jit_runtime.c, under -nostdlib), and the standard library's extern fns bind to those or
@@ -13,7 +15,7 @@
 # build directories, mapped), so builds from one toolchain differ only in their marker. A file named
 # marker beside this script (the images' builds have one, the solution's none) becomes the build's
 # marker (src/main.cpp), which the verifier refuses to find in a submission; without it the marker
-# is all zeros. The build writes <build>/link (static or dynamic) and <build>/build.txt: the link,
+# is all zeros. The build writes <build>/link (static-pie, static or dynamic) and <build>/build.txt: the link,
 # the binary's sha256, and its sha256 with the marker zeroed, which builds of one toolchain share.
 # usage: build.sh <hardened source tree> <build dir> <parallel jobs>
 set -eu
@@ -38,10 +40,13 @@ make_goose() {
 }
 
 rm -rf "$build"
-if make_goose "-static -s"; then
+if make_goose "-static-pie -s"; then
+    link=static-pie
+elif echo "goose: no static PIE link (or it failed smoke.sh); linking the same objects static" >&2 \
+        && make_goose "-static -s"; then
     link=static
 else
-    echo "goose: the static link did not build or did not pass smoke.sh; linking the same objects dynamically" >&2
+    echo "goose: no static link either; linking the same objects dynamically" >&2
     make_goose "-s"
     link=dynamic
 fi
