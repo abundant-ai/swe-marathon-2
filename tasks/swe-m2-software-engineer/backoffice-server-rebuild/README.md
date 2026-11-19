@@ -13,6 +13,36 @@ One step is implemented. See [Remaining work](#remaining-work).
 
 ## Development log
 
+### 2026-11-19 (round 4 fix: the oracle on Oddish, version 5)
+
+- Bundle `d38fb62325c8` ran on Oddish as version 4: the oracle scored 0.0 twice (0 of 4,002) and
+  the no-op 0.0. The cause was the solution, not the verifier: `oracle.py` built its list of places
+  to look for `stockwell.env` eagerly, and the second, `here.parents[2]` (the task's `environment`
+  folder), raised `IndexError` from `/solution`, which has a single parent. `/app/server/run` was
+  never written, so the verifier noted "`/app/server/run` is missing or not executable".
+- `oracle.py` now reads only `data/` beside itself (the bytecode package and `stockwell.env`, both
+  packed by `scripts/package_step.py`) and fails with a message naming what is missing; checks
+  that install the source pass the task's settings explicitly; `oracle.py TARGET` installs
+  elsewhere than `/app/server`. Audit of what the solution reads: `oracle.py` only `data/`;
+  `solve.sh` only `curl`, `python3` and `oracle.py`; the installed `run` only its own folder,
+  `/opt/py` and `sed`.
+- The bundle check now copies each packaged `solution/` (with and without the steps wrapper)
+  into a folder with nothing of the task around it, runs `oracle.py` there, checks what it
+  installed, starts the installed server as the verifier would and gets a workspace from it, and
+  pins that `oracle.py` never looks above its own folder.
+- The regrade now uses only the packaged bundle: its `solution/` copied into a folder with nothing
+  of the task around it and installed by its own `oracle.py` (the one local change: `run` calls
+  this Mac's Python 3.12 instead of `/opt/py/bin/python`), its gzipped corpus and its media. It
+  scores 1.0 on every unit: 4,002 of 4,002 (2,262 of 2,262 scenarios), 9 planned restarts, no
+  other restart, no second try, no answer of 500 or above, 52 scenarios alone, in 454.2 s; the
+  slowest request took 3.8 s.
+- `checks/`: 32 tests pass (the bundle check now installs and starts each packaged solution from
+  an isolated copy); with `ci_checks` (27), 59 pass under Python 3.13, and
+  `ci_checks/check_repository.py` passes.
+- Bundle `87db5085aa97` (1,160 files, 247.2 MB) built twice with the same hash; flat
+  `956c53c456fa`. `scripts/scan_uploads.py` finds nothing among the 495 agent-image files; Oddish
+  preflight passes. It becomes version 5 for the baselines.
+
 ### 2026-11-19 (round 4: the final QA wave on round 3)
 
 - Started from round 3 as pushed (`2fcf14b`). QA 07c (the round 3 re-check, FAIL), 11, 12, 13 and
@@ -679,6 +709,10 @@ not yet exercised in a container; 10 keeps a residual the owner decides).
 
 | Check | Revision | Result |
 | --- | --- | --- |
+| Oddish baselines | round 4: bundle `d38fb62325c8`, version 4 | reference 0.0 twice (0 of 4,002): `oracle.py` raised `IndexError` looking for its settings above `/solution`, so no `run` was installed; no-op 0.0. Fixed in `87db5085aa97` (version 5) |
+| Reference through the verifier, local, no sandbox | round 4 fix: everything from bundle `87db5085aa97`, its solution installed from an isolated copy (only the interpreter path swapped for this Mac), its corpus and its media | 1.0 on every unit: 4,002 of 4,002 (2,262 of 2,262 scenarios), 9 planned restarts, no other restart, no second try, no answer of 500 or above; 454.2 s of replay against the 5,400 s deadline |
+| `checks/` (32 tests) with `ci_checks` (27) | round 4 fix | 59 pass under Python 3.13; `ci_checks/check_repository.py` passes |
+| Bundle | round 4 fix: `87db5085aa97`, 1,160 files, 247.2 MB; flat `956c53c456fa` | built twice with the same hash; Oddish preflight passes; no hidden upload among 495 agent-image files |
 | Reference through the verifier, local, no sandbox | round 4: the round 3 corpus; the solution from the bundle's bytecode with `environment/stockwell.env`, the sealed server's settings | 1.0 on every unit: 4,002 of 4,002 (2,262 of 2,262 scenarios), 9 planned restarts, no other restart, no second try; 472.5 s of replay against the 5,400 s deadline; 52 scenarios run alone; the corpus held in 98 MB |
 | `checks/` (32 tests) with `ci_checks` (27) | round 4 | 59 pass under Python 3.13; `ci_checks/check_repository.py` passes |
 | Bundle | round 4: `d38fb62325c8`, 1,160 files, 247.2 MB; flat `fb9bb0a0f2f4` | built twice with the same hash; Oddish preflight passes |
@@ -729,7 +763,7 @@ python3 scripts/scan_uploads.py experiment/dist/bundles/<hash>/<task slug>   # h
 
 ## Remaining work
 
-- Upload bundle `d38fb62325c8` (247.2 MB) as a new version on its own first: Oddish preflight
+- Upload bundle `87db5085aa97` (247.2 MB) as version 5 on its own first: Oddish preflight
   checks no size, and Oddish once refused a 138 MB task (QA 20). Then run its baselines with
   `--no-archil` (reference twice, no-op twice). Pass criteria for the reference: 4,002 of 4,002,
   `planned_restarts` 9, `restarts` 0, `retried` 0, `unfinished` 0, no answer of 500 or above in
