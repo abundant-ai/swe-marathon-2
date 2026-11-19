@@ -18,8 +18,10 @@ if [ ! -d /app/rebuild ] || [ -L /app/rebuild ]; then exit 0; fi
 if [ -e /app/rebuild/.delivered ] || [ -L /app/rebuild/.delivered ]; then
   aside=$(mktemp -d /app/.aside.XXXXXX) && mv -f /app/rebuild/.delivered "$aside/" || exit 0
 fi
-# Links, as the agent's user (it copies nothing that user could not read), within two minutes.
-timeout 120 setpriv --reuid dev --regid dev --clear-groups --no-new-privs /usr/bin/python3 -I - /app/rebuild "$LIMIT_ENTRIES" "$LIMIT_BYTES" <<'EOF'
+# Links, as the agent's user (it copies nothing that user could not read), within two minutes; what
+# it changes goes to the mark with the rest.
+notes=$(mktemp /tmp/.delivery-notes.XXXXXX 2>/dev/null) || notes=/dev/null
+timeout 120 setpriv --reuid dev --regid dev --clear-groups --no-new-privs /usr/bin/python3 -I - /app/rebuild "$LIMIT_ENTRIES" "$LIMIT_BYTES" > "$notes" 2>&1 <<'EOF'
 """Make /app/rebuild safe to copy to the machine it will run on, as the user who built it.
 
 The copy keeps relative links that stay inside the directory and refuses everything else. A link
@@ -130,7 +132,7 @@ for _ in range(10):
         break
 EOF
 # Measure, bound and mark, as root.
-exec /usr/bin/python3 -I - /app/rebuild "$LIMIT_ENTRIES" "$LIMIT_BYTES" <<'EOF'
+exec /usr/bin/python3 -I - /app/rebuild "$LIMIT_ENTRIES" "$LIMIT_BYTES" "$notes" <<'EOF'
 """Measure /app/rebuild, bound it and mark it, as root, once nothing of the agent's runs.
 
 The tree is walked by directory descriptor, so no depth hides anything. Anything the copy would
@@ -138,7 +140,8 @@ refuse is removed: a device, a pipe, a socket, a link with an absolute target or
 outside the directory. A delivery over the limits is moved aside whole and replaced by an empty
 directory. The mark's first line is `delivered` with the number of entries (files, directories and
 links) and of bytes in its files (each file once, however many names it has), or `refused`; each
-line after it is a change made or the reason for the refusal.
+line after it is a change made (the link fixing's first, from the file named fourth on the
+command line) or the reason for the refusal.
 """
 import os
 import stat
@@ -149,6 +152,14 @@ LIMIT_ENTRIES, LIMIT_BYTES = int(sys.argv[2]), int(sys.argv[3])
 MARK = os.path.join(ROOT, ".delivered")
 notes, links, files = [], [], set()
 entries = size = 0
+EARLIER = sys.argv[4] if len(sys.argv) > 4 else None
+if EARLIER and EARLIER != "/dev/null":
+    try:
+        with open(EARLIER, errors="backslashreplace") as handle:
+            notes.extend(line for line in handle.read(1 << 16).splitlines()[:50] if line.strip())
+        os.unlink(EARLIER)
+    except OSError:
+        pass
 
 
 class Refuse(Exception):

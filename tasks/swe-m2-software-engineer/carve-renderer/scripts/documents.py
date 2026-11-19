@@ -730,11 +730,53 @@ def resolution_construct(w: Writer) -> str:
     return w.finish(parts)
 
 
+def divergence_construct(w: Writer) -> str:
+    """A short passage around one place where Carve parses differently from Djot
+    (docs/divergence-from-djot.md, sections 1 to 21), in the context it meets in real pages."""
+    rng = w.rng
+    noun, other = w.pick(NOUNS), w.pick(NOUNS)
+    title = " ".join(word.capitalize() for word in w.phrase()[:rng.randint(2, 4)])
+    tab = "\t"
+    sections = [
+        lambda: f"# {title}\n\nSee </#{title.replace(' ', '-')}> and </#{title.lower().replace(' ', '-')}>, or [{title}][] and [{title.lower()}][].",   # 1
+        lambda: "\n\n".join("# " + w.pick([f"{noun}; {other}: notes", f"C++ & {noun.capitalize()}", f"Don't {w.pick(VERBS)} the {noun}",
+                                             f"Step {w.number(1, 9)} --> done...", f"Über {noun}", f"{w.number(2020, 2026)} {noun}",
+                                             f"{noun.capitalize()} (beta) / {other}", f"\"{noun.capitalize()}\" -- {other}"]) +
+                              "\n\n" + w.sentence() for _ in range(rng.randint(1, 2))),                                                     # 1b
+        lambda: f"{{{w.pick(['a=b', 'data-x=1', 'lang=en'])} .{w.pick(ADJECTIVES)}{w.pick(['', ' #' + noun])}}}\n# {title}\n\n{w.sentence()}",  # 1c
+        lambda: f"{w.sentence()}\n\n-\n\n{w.sentence()}\n\n- \n\n- {w.sentence()}",                                                  # 2
+        lambda: f"+ {w.sentence()}\n\n- {w.sentence()}\n+\n> {w.sentence()}\n- {w.sentence()}",                                       # 3
+        lambda: f"Use /{noun}/ and _{other}_ and ~{noun}~, not ^{other}^ or ,{noun}, -- but {{^{w.number(2, 9)}^}} and H{{,2,}}O work; "
+                f"{noun}_{other}_x, a/b/c, x = 5 and key=value stay as written.",                                                       # 4
+        lambda: "\n".join(f"({label}) {w.sentence()}" for label in w.pick([["1", "2", "3"], ["a", "b"], ["i", "ii"]])),                 # 5
+        lambda: f"{w.sentence()} %% {w.pick(['check with', 'ask'])} {w.pick(FIRST_NAMES)}\n{w.sentence()} {{% hidden note %}} {w.sentence()}\n\n%%%\n{w.sentence()}\n%%%",  # 6
+        lambda: f"{w.sentence()}\n" + w.pick([f"# {title}", f"> {w.sentence()}", f"```\n{noun}\n```", f"| {noun} | {other} |",
+                                               f"::: note\n{w.sentence()}\n:::", f"- {w.sentence()}", f"1. {w.sentence()}"]) + f"\n\n{w.sentence()}",  # 7
+        lambda: f"React with :+1: or :{noun}: but not :_{other}: -- the time 10:30: and a:b:c stay {w.pick(ADJECTIVES)}.",               # 8
+        lambda: f":: {noun}\n:: {other}\n: {w.sentence()}\n: {w.sentence()}\n\n: {noun}\n\n  {w.sentence()}",                      # 9
+        lambda: f"{w.sentence()} `\\alpha`{{=latex}} and `<b>{noun}</b>`{{=html}} and `{other}`{{=typst}}.\n\n```=latex\n\\section{{{noun}}}\n```",  # 10
+        lambda: f"1. {w.sentence()}\n\n   > {w.sentence()}\n\n1. {w.sentence()}\n\n  > {w.sentence()}\n\n- {w.sentence()}\n {w.sentence()}",  # 11
+        lambda: f'He said "{noun}" and \'{other}\' -- it\'s {{"{noun}"}} or a {{"{other} c --- fine... right?',                         # 12
+        lambda: w.pick([f"::: {noun}\n::: {other}\n{w.sentence()}\n:::\n{w.sentence()}", f":::: {noun}\n:::\n{w.sentence()}\n::::",
+                        f":::note\n{w.sentence()}\n:::", f"::: {noun}\n:::: {other}\n{w.sentence()}\n::::\n:::"]),               # 13
+        lambda: f"# {title}\n{w.sentence()}\n\n## {w.pick(NOUNS).capitalize()}\n{w.sentence()}",                                      # 14
+        lambda: f">{tab}{w.sentence()}\n\n-{tab}{w.sentence()}\n\n#{tab}{title}",                                                       # 15
+        lambda: f"[{noun}]{{12=v}} and [{other}]{{.123 #9x}} and [{noun}]{{data-{w.number(1, 9)}=x}}.",                                   # 16
+        lambda: f"-{{.{w.pick(ADJECTIVES)}}} {w.sentence()}\n-{{#{noun}}} {w.sentence()}\n- {w.sentence()}",                             # 17
+        lambda: f"{w.sentence()}\n{{.{w.pick(ADJECTIVES)}}}\n# {title}\n\n{w.sentence()}\n{{#{noun}}}\n> {w.sentence()}",           # 18
+        lambda: f"- {w.sentence()}\n\n  - {w.sentence()}\n- {w.sentence()}\n\n- {w.sentence()}\n  - {w.sentence()}\n\n  > {w.sentence()}",  # 19
+        lambda: f"::: {w.pick(ADMONITIONS)}\n{w.sentence()}\n:::\n\n::: {w.pick(ADMONITIONS)} \"{title}\"\n{w.sentence()}\n:::\n\n::: {noun}\n{w.sentence()}\n:::",  # 20
+        lambda: f"See[^{noun} {other}] and[^{noun}  {other}] and[^ {noun} {other} ] and[^{noun}{tab}{other}] and[^{noun}\n{other}].\n\n[^{noun} {other}]: {w.sentence()}",  # 21
+    ]
+    return w.finish([rng.choice(sections)() for _ in range(rng.randint(1, 2))])
+
+
 CONSTRUCTS = {"inline": inline_construct, "block": block_construct, "attributes": attribute_construct,
-              "layout": layout_construct, "resolution": resolution_construct}
+              "layout": layout_construct, "resolution": resolution_construct, "divergence": divergence_construct}
 
 
 def construct(rng: random.Random) -> tuple[str, str]:
-    """One short source built around one area of the language: (the area, the source)."""
+    """One short source built around one area of the language, or around a place where Carve
+    parses differently from Djot: (the area, the source)."""
     area = rng.choice(sorted(CONSTRUCTS))
     return area, CONSTRUCTS[area](Writer(rng))

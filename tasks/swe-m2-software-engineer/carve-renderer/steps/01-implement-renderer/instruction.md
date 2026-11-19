@@ -54,9 +54,10 @@ Your implementation in `/app/rebuild`, with an executable `/app/rebuild/carve`. 
 - Input is read as UTF-8 and normalized as the specification says (PART 0): a leading byte order
   mark is dropped, ill-formed UTF-8 and NUL become U+FFFD, and `\r\n` and `\r` end a line as
   `\n` does.
-- Errors: a FILE that cannot be read (missing, a directory), more than one FILE, or any other
-  argument that starts with `-` makes `carve` exit with status 2 and write nothing to standard
-  output. Nothing of ours reads standard error, so what you write there is up to you.
+- Errors: a FILE that cannot be read (missing, a directory), more than one FILE, or an unknown
+  option (an argument that starts with `-` and is none of the above; `--` is one too) makes
+  `carve` exit with status 2 and write nothing to standard output. Nothing of ours reads
+  standard error, so what you write there is up to you.
 - Everything it needs at run time is inside `/app/rebuild`, apart from the tools listed above.
 - Out of scope: include directives (`{{ path }}`; our pages have none), the other `carve`
   commands (`fmt`, `lint`, `flatten`, `region`, `merge`, `trace`, `migrate`), every output

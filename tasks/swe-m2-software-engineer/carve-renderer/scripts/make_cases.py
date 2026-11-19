@@ -15,8 +15,8 @@ Kinds (KIND_COUNTS):
   notes, announcements, journals.
 - construct: a short source built around one area of the language (documents.construct):
   inline markup, everyday blocks, attributes, layout (nesting by column, `+`, lazy lines,
-  quotes) or resolution (headings and what refers to them, footnotes, abbreviations, numbered
-  captions).
+  quotes), resolution (headings and what refers to them, footnotes, abbreviations, numbered
+  captions), or one of the 21 places where Carve parses differently from Djot, in context.
 - snippet: one document of upstream's conformance corpus (tests/corpus at the pinned spec
   commit, the edge cases its normative clauses pin), renamed under the private seed.
 - composite: two to four corpus documents joined into one, renamed.
@@ -67,7 +67,7 @@ import rewrite  # noqa: E402
 TASK_ROOT = Path(__file__).resolve().parent.parent
 OUT = TASK_ROOT / "steps" / "01-implement-renderer" / "tests" / "private" / "cases.json"
 REPORT = TASK_ROOT / "experiment" / "cases-report.json"
-KIND_COUNTS = {"document": 520, "construct": 520, "snippet": 600, "composite": 160, "mutant": 240}
+KIND_COUNTS = {"document": 520, "construct": 600, "snippet": 600, "composite": 160, "mutant": 240}
 OVERDRAW = {"document": 1.15, "construct": 1.3, "snippet": 1.5, "composite": 1.5, "mutant": 2.4}
 MAX_SOURCE = 1500           # characters of a corpus document, at most
 ANSWER_SHARE = 0.012        # cases with any one answer, at most, at generation (the recorder caps at 1.5%)
