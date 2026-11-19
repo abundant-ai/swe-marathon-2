@@ -12,10 +12,15 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import shutil
+import signal
 import subprocess
 import sys
+import threading
+import time
 import tomllib
+import uuid
 from pathlib import Path
 
 TASK = Path(__file__).resolve().parent.parent
@@ -257,7 +262,8 @@ def test_bundles_hold_runtime_files_only(tmp_path):
             # the task's own files in the image read as ordinary system housekeeping: nothing in them says how, when or
             # whether the work is packed, judged or ended, and nothing of how the task was made
             housekeeping = re.compile(r"oracle|verif|grad|hidden|parity|scenario|benchmark|harbor|oddish|reward|platform|watchdog|precap|deliver|"
-                                      r"submission|collect|audit|\bqa\b|budget|deadline|attempt|\bcap\b|capped|owner|\bround\b|2026-|modal|archil", re.I)
+                                      r"submission|collect|audit|\bqa\b|budget|deadline|attempt|\bcap\b|capped|owner|\bround\b|2026-|modal|archil|"
+                                      r"trial|harness|\bscor", re.I)
             for name in ("Dockerfile", "entrypoint.sh", "fsmaint-sweep", "fsmaint-timer", "start-sealed-server", "sealed-supervisor", "stockwell.env",
                          ".dockerignore"):
                 found = housekeeping.search((bundle / "environment" / name).read_text())
@@ -1000,7 +1006,11 @@ def test_a_virtual_environment_in_the_delivery_survives_the_copy_to_the_verifier
 
     server = tmp_path / "app" / "server"
     server.mkdir(parents=True)
-    subprocess.run([sys.executable, "-m", "venv", "--without-pip", str(server / ".venv")], check=True, capture_output=True, timeout=300)
+    # The venv is made from the interpreter's real path. Started through a link (~/.local/bin/python3.13, say), Python
+    # records the link's folder as the venv's home, and a copy of the interpreter then looks for its standard library
+    # beside the link: the check failed on how this machine starts Python, not on the hook (QA 07h F6).
+    base = os.path.realpath(getattr(sys, "_base_executable", None) or sys.executable)
+    subprocess.run([base, "-m", "venv", "--without-pip", str(server / ".venv")], check=True, capture_output=True, timeout=300)
     absolute = [path for path in (server / ".venv" / "bin").iterdir() if path.is_symlink() and os.path.isabs(os.readlink(path))]
     assert absolute, "a venv made here links its interpreter by an absolute path"
     (server / "data").mkdir()
@@ -1651,48 +1661,155 @@ TIMER_LINES = ("2026-11-19T12:00:00Z armed pid 77: ending the processes selected
                "2026-11-19T21:25:05Z done: 0 process(es) of the selection left")
 
 
+HOOK_SHELL = "/bin/dash" if os.access("/bin/dash", os.X_OK) else shutil.which("sh")  # the image's /bin/sh is dash: the hooks run under it
+QUIET = {"stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
+SLEEPS = "import time; time.sleep(300)"
+WITH_A_CHILD = ("import subprocess, sys, time\n"
+                "subprocess.Popen([sys.executable, '-I', '-c', 'import time; time.sleep(300)', sys.argv[1]])\n"
+                "time.sleep(300)\n")
+IGNORES_TERM = ("import signal, sys, time\n"
+                "def note(*_):\n"
+                "    open(sys.argv[1], 'a').write('term\\n')\n"
+                "signal.signal(signal.SIGTERM, note)\n"
+                "open(sys.argv[1], 'a').close()\n"
+                "end = time.monotonic() + 300\n"
+                "while time.monotonic() < end:\n"
+                "    time.sleep(0.05)\n")
+
+
+def timer_under_test(folder: Path, **settings: object) -> tuple[Path, str, dict[str, str]]:
+    """A copy of the timer whose first line names the shell the image runs it under (dash, where this machine has it),
+    so that the detached copy runs under it too; a marker that selects only this check's stand-in processes; and an
+    environment that keeps the timer's files in `folder`. `sleep 5`, the pause between two SIGTERMs, is shortened so
+    that twelve of them take seconds."""
+    source = (TASK / "environment" / "fsmaint-timer").read_text()
+    assert source.startswith("#!/bin/sh\n")
+    (folder / "bin").mkdir(parents=True)
+    script = folder / "fsmaint-timer"
+    script.write_text(f"#!{HOOK_SHELL}\n" + source[len("#!/bin/sh\n"):])
+    script.chmod(0o755)
+    (folder / "bin" / "sleep").write_text('#!/bin/sh\n[ "$1" = 5 ] && exec /bin/sleep 0.3\nexec /bin/sleep "$@"\n')
+    (folder / "bin" / "sleep").chmod(0o755)
+    marker = f"fsmaint{uuid.uuid4().hex[:16]}"
+    env = dict(os.environ, PATH=f"{folder / 'bin'}:{os.environ['PATH']}", FSMAINT_TIMER_PIDFILE=str(folder / "timer.pid"),
+               FSMAINT_TIMER_LOG=str(folder / "timer.log"), FSMAINT_TIMER_SELECT=f"-f {marker}", FSMAINT_TIMER_PYTHON=sys.executable)
+    env.update({f"FSMAINT_TIMER_{key}": str(value) for key, value in settings.items()})
+    return script, marker, env
+
+
+def until(predicate, seconds: float, step: float = 0.02):
+    """The first true value of `predicate` within `seconds`, else its last value."""
+    end = time.monotonic() + seconds
+    while time.monotonic() < end:
+        value = predicate()
+        if value:
+            return value
+        time.sleep(step)
+    return predicate()
+
+
+def children_of(pid: int) -> list[tuple[int, str]]:
+    """A process's children with their command lines, as the process list shows them."""
+    found = subprocess.run(["pgrep", "-P", str(pid)], capture_output=True, text=True).stdout.split()
+    return [(int(child), subprocess.run(["ps", "-o", "args=", "-p", child], capture_output=True, text=True).stdout.strip()) for child in found]
+
+
+def running(pid: int) -> bool:
+    return subprocess.run(["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True).stdout.strip()[:1] not in ("", "Z")
+
+
+def armed_pid(folder: Path) -> int:
+    return int(until(lambda: (folder / "timer.pid").exists() and (folder / "timer.pid").read_text().strip(), 10))
+
+
+def timer_log(folder: Path) -> str:
+    return (folder / "timer.log").read_text() if (folder / "timer.log").exists() else ""
+
+
+def disarm(folder: Path, pid: int | None = None, waiters: list[int] | tuple[int, ...] = ()) -> None:
+    """End what a failed assertion may have left of a timer that a check armed in `folder`: the process the pid file names
+    or `pid`, if its command line is this folder's script, with its children; and of `waiters`, the children it was seen
+    to wait in, those that still are an interpreter reading its program from its input."""
+    text = (folder / "timer.pid").read_text().strip() if (folder / "timer.pid").exists() else ""
+    doomed: list[int] = []
+    for candidate in {int(text)} | {pid} if text.isdigit() else {pid}:
+        if candidate and str(folder / "fsmaint-timer") in subprocess.run(["ps", "-o", "args=", "-p", str(candidate)], capture_output=True, text=True).stdout:
+            doomed += [candidate] + [child for child, _ in children_of(candidate)]
+    for child in waiters:
+        if subprocess.run(["ps", "-o", "args=", "-p", str(child)], capture_output=True, text=True).stdout.strip().endswith(" -I -"):
+            doomed.append(child)
+    for gone in doomed:
+        try:
+            os.kill(gone, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+
+
+def end_stand_ins(*procs: subprocess.Popen, marker: str | None = None) -> None:
+    if marker:  # whatever else carries this check's own marker: a stand-in's child
+        subprocess.run(["pkill", "-KILL", "-f", marker], capture_output=True)
+    for proc in procs:
+        if proc.poll() is None:
+            proc.kill()
+        proc.wait()
+
+
 def test_the_maintenance_timer_arms_once_fires_and_ends_the_users_processes(tmp_path):
     """A root timer started at setup_complete ends the agent's session eleven minutes before the agent's own time limit
-    (34,560 s less 660 s), so that the turn ends by itself. It arms one sleeper however often it is started, wakes every
-    STEP_SECONDS at most (so the process list shows a short sleep, never the time left), fires after END_SECONDS, ends
-    every selected process (a tree, and a process in a session of its own), logs each step and removes its pid file. The
-    sweep stops it before anything of its own runs as the agent's user, copies the log's last lines into the manifest,
-    and verify.py reports ended_by_timer in metrics.json, never in the score. Everything the agent can see of it (names
-    in /usr/local/sbin, /var/lib, /var/log, /run and the process list) reads as ordinary system housekeeping."""
-    import shutil
-    import time
-    import uuid
-    marker = f"fsmaint-sleep-{uuid.uuid4().hex[:12]}"
-    sleeper = tmp_path / marker
-    shutil.copy(shutil.which("sleep"), sleeper)
-    sleeper.chmod(0o755)
-    env = dict(os.environ, FSMAINT_TIMER_END_SECONDS="2", FSMAINT_TIMER_STEP_SECONDS="1", FSMAINT_TIMER_PIDFILE=str(tmp_path / "timer.pid"),
-               FSMAINT_TIMER_LOG=str(tmp_path / "timer.log"), FSMAINT_TIMER_SELECT=f"-f {marker}")
-    tree = subprocess.Popen(["sh", "-c", f"{sleeper} 300 & {sleeper} 300"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    alone = subprocess.Popen([str(sleeper), "300"], start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    (34,560 s less 660 s), so that the turn ends by itself. Run here under the shell the image runs it under, it arms one
+    detached copy however often it is started; that copy waits in one child that shows no time in the process list
+    (never a long `sleep`), fires after END_SECONDS, ends every selected process (a parent with its child, a process in
+    a session of its own, and one that ignores SIGTERM, by SIGKILL after twelve of them), leaves every other process
+    alone, logs each step and removes its pid file. The stand-in processes are interpreters, seen alive just before the
+    fire: on this Mac a copy of /bin/sleep is killed as it starts, so the earlier form of this check, which used such
+    copies, passed whatever the timer did. The sweep stops the timer before anything of its own runs as the agent's user,
+    copies the log's last lines into the manifest, and verify.py reports ended_by_timer in metrics.json, never in the
+    score. Everything the agent can see of it (names in /usr/local/sbin, /var/lib, /var/log, /run and the process list)
+    reads as ordinary system housekeeping."""
+    script, marker, env = timer_under_test(tmp_path, END_SECONDS=3, STEP_SECONDS=1)
+    parent = subprocess.Popen([sys.executable, "-I", "-c", WITH_A_CHILD, marker], **QUIET)
+    alone = subprocess.Popen([sys.executable, "-I", "-c", SLEEPS, marker], start_new_session=True, **QUIET)
+    stubborn = subprocess.Popen([sys.executable, "-I", "-c", IGNORES_TERM, str(tmp_path / "terms.txt"), marker], **QUIET)
+    bystander = subprocess.Popen([sys.executable, "-I", "-c", SLEEPS], **QUIET)
+
+    def marked() -> list[str]:
+        return subprocess.run(["pgrep", "-f", marker], capture_output=True, text=True).stdout.split()
+
     try:
-        first = subprocess.run(["sh", str(TASK / "environment" / "fsmaint-timer")], env=env, capture_output=True, text=True, timeout=30)
-        assert first.returncode == 0 and "armed for 2 s" in first.stdout, first
-        deadline = time.monotonic() + 10
-        while time.monotonic() < deadline and not (tmp_path / "timer.pid").read_text().strip():
-            time.sleep(0.05)
-        armed_pid = (tmp_path / "timer.pid").read_text().strip()
-        second = subprocess.run(["sh", str(TASK / "environment" / "fsmaint-timer")], env=env, capture_output=True, text=True, timeout=30)
+        assert until((tmp_path / "terms.txt").exists, 20), "the stand-in that ignores SIGTERM has its handler"
+        assert until(lambda: len(marked()) == 4, 20), "the parent, its child, the detached one and the one that ignores SIGTERM"
+        first = subprocess.run([HOOK_SHELL, str(script)], env=env, capture_output=True, text=True, timeout=30)
+        assert first.returncode == 0 and "armed for 3 s" in first.stdout, first
+        pid = armed_pid(tmp_path)
+        armed = time.monotonic()
+        second = subprocess.run([HOOK_SHELL, str(script)], env=env, capture_output=True, text=True, timeout=30)
         assert second.returncode == 0 and second.stdout == "", "a second start arms nothing"
-        deadline = time.monotonic() + 40
-        while time.monotonic() < deadline and "done:" not in (tmp_path / "timer.log").read_text():
-            time.sleep(0.2)
-        log = (tmp_path / "timer.log").read_text()
-        assert log.count(" armed pid ") == 1 and f"armed pid {armed_pid}" in log and "already armed" in log, log
-        assert " fired after 2 s" in log and "done: 0 process(es)" in log, log
-        assert tree.wait(timeout=10) != 0 and alone.wait(timeout=10) != 0, "the tree and the process in its own session are ended"
-        left = subprocess.run(["pgrep", "-f", marker], capture_output=True, text=True)
-        assert left.stdout.strip() == "", left.stdout
-        assert not (tmp_path / "timer.pid").exists(), "the pid file goes with the sleeper"
+        seen, alive, fired = set(), [], None
+        while time.monotonic() - armed < 30:
+            now = [args for _, args in children_of(pid)], [proc.poll() is None for proc in (parent, alone, stubborn, bystander)]
+            if " fired after " in timer_log(tmp_path):  # read after the look, so that no look is from after the fire
+                fired = time.monotonic() - armed
+                break
+            seen.update(now[0])
+            alive = now[1]
+            time.sleep(0.05)
+        # the end is fixed on a clock of whole seconds, so the fire can come up to a second early, never late
+        assert fired is not None and 1.8 <= fired <= 6, fired
+        assert alive == [True] * 4, "every stand-in was alive at the last look before the fire"
+        assert any(args.endswith(" -I -") for args in seen), seen
+        assert not any(re.search(r"(^|/)sleep( |$)", args) for args in seen), f"no sleep in the process list while it waits: {seen}"
+        assert until(lambda: "done:" in timer_log(tmp_path), 40), timer_log(tmp_path)
+        log = timer_log(tmp_path)
+        assert parent.wait(timeout=10) == -signal.SIGTERM and alone.wait(timeout=10) == -signal.SIGTERM, "ended by SIGTERM"
+        terms = len((tmp_path / "terms.txt").read_text().split())
+        assert stubborn.wait(timeout=10) == -signal.SIGKILL and 10 <= terms <= 12, f"SIGKILL after twelve SIGTERMs: {terms}"
+        assert bystander.poll() is None, "a process outside the selection is left alone"
+        assert marked() == [], "the parent's child went too"
+        assert log.count(" armed pid ") == 1 and f"armed pid {pid}" in log and "already armed" in log, log
+        assert " fired after 3 s" in log and "SIGKILL to what is left" in log and "done: 0 process(es)" in log and "going on" not in log, log
+        assert not (tmp_path / "timer.pid").exists(), "the pid file goes with the timer"
     finally:
-        for proc in (tree, alone):
-            if proc.poll() is None:
-                proc.kill()
+        end_stand_ins(parent, alone, stubborn, bystander, marker=marker)
     script = (TASK / "environment" / "fsmaint-timer").read_text()
     assert "END_SECONDS=${FSMAINT_TIMER_END_SECONDS:-33900}" in script, "the agent's 34,560 s less eleven minutes"
     assert "STEP_SECONDS=${FSMAINT_TIMER_STEP_SECONDS:-300}" in script and 'sleep "$END_SECONDS"' not in script, "a short sleep at a time"
@@ -1715,9 +1832,475 @@ def test_the_maintenance_timer_arms_once_fires_and_ends_the_users_processes(tmp_
     # the names the agent sees (commands, installed paths, state, log and pid files) say nothing of judging, ending or packing
     setup = (TASK / "environment" / "start-sealed-server").read_text()
     visible = " ".join([config["agent"]["setup_complete"][1]["command"], config["verifier"]["collect"][0]["command"]]
-                       + re.findall(r"^COPY \S+ (\S+)", docker, flags=re.M) + re.findall(r"^(?:LOG|PIDFILE|STATE)=.*$", script + hook, flags=re.M)
-                       + re.findall(r"/var/lib/\S+", setup))
+                       + re.findall(r"^COPY \S+ (\S+)", docker, flags=re.M)
+                       + re.findall(r"^(?:LOG|PIDFILE|STATE|UPTIME|PROC|PYTHON)=\S+", script + hook, flags=re.M) + re.findall(r"/var/lib/\S+", setup))
     assert not re.search(r"deliver|watchdog|precap|grad|submission|collect|verif|\bcap\b|deadline|judge|session", visible, flags=re.I), visible
+
+
+VIRTUAL_SLEEP = r"""#!/bin/sh
+# No time passes for real: the stand-in clock moves on by the seconds asked for. While it is inside the stretch that
+# "$FAKE/sleep-fails" names (FROM TO), a sleep fails at once, as one that cannot be started does, and one second passes.
+read -r elapsed < "$FAKE/elapsed"
+whole=${1%%.*}
+failed=
+if [ -r "$FAKE/sleep-fails" ]; then
+    read -r from to < "$FAKE/sleep-fails"
+    if [ "$elapsed" -ge "$from" ] && [ "$elapsed" -lt "$to" ]; then whole=1; failed=1; fi
+fi
+[ -n "$failed" ] || echo "$1" >> "$FAKE/sleeps"
+elapsed=$((elapsed + ${whole:-0}))
+echo "$elapsed" > "$FAKE/elapsed.new" && mv "$FAKE/elapsed.new" "$FAKE/elapsed"
+if [ -r "$FAKE/steps" ] && [ ! -e "$FAKE/stepped" ]; then   # AT BY: from AT on, the wall clock is BY seconds on (or back)
+    read -r at by < "$FAKE/steps"
+    [ "$elapsed" -ge "$at" ] && echo "$by" > "$FAKE/stepped"
+fi
+if [ -e "$FAKE/uptime" ]; then                              # the kernel's uptime, where this run has one
+    at=
+    [ -r "$FAKE/uptime-breaks" ] && read -r at < "$FAKE/uptime-breaks"
+    if [ -n "$at" ] && [ "$elapsed" -ge "$at" ]; then
+        echo garbage > "$FAKE/uptime"
+    else
+        echo "$((1000 + elapsed)).00 0.00" > "$FAKE/uptime.new" && mv "$FAKE/uptime.new" "$FAKE/uptime"
+    fi
+fi
+[ -z "$failed" ]
+"""
+VIRTUAL_DATE = r"""#!/bin/sh
+# The wall clock of the stand-in world: a base, the seconds slept, and the step if one was made.
+read -r elapsed < "$FAKE/elapsed"
+by=0
+[ -r "$FAKE/stepped" ] && read -r by < "$FAKE/stepped"
+case "$*" in
+    *%s*) echo $((1900000000 + elapsed + by)) ;;
+    *) echo 2031-03-03T00:00:00Z ;;
+esac
+"""
+
+
+def virtual_wait(folder: Path, uptime: bool = True, **files: str) -> dict:
+    """The timer's detached copy (`run`) in the foreground under the image's shell, with the times the script itself
+    sets (33,900 s in sleeps of 300 s), its waiting child unable to run, and a stand-in world where `sleep` returns at
+    once and moves the clock on: what it slept, when it fired on that clock, and what it logged."""
+    script, _, env = timer_under_test(folder, PYTHON="/nonexistent/python3")
+    fake = folder / "fake"
+    fake.mkdir()
+    (fake / "elapsed").write_text("0\n")
+    if uptime:
+        (fake / "uptime").write_text("1000.00 0.00\n")
+    for name, text in files.items():
+        (fake / name.replace("_", "-")).write_text(text + "\n")
+    for name, text in (("sleep", VIRTUAL_SLEEP), ("date", VIRTUAL_DATE), ("pgrep", "#!/bin/sh\nexit 1\n"), ("pkill", "#!/bin/sh\nexit 0\n")):
+        (folder / "bin" / name).write_text(text)
+        (folder / "bin" / name).chmod(0o755)
+    env.update(FAKE=str(fake), FSMAINT_TIMER_UPTIME=str(fake / "uptime"))
+    done = subprocess.run([HOOK_SHELL, str(script), "run"], env=env, capture_output=True, text=True, timeout=300)
+    sleeps = [int(line) for line in (fake / "sleeps").read_text().split()] if (fake / "sleeps").exists() else []
+    return {"status": done.returncode, "stderr": done.stderr, "sleeps": sleeps, "fired": int((fake / "elapsed").read_text()),
+            "log": [line.split(" ", 1)[1] for line in timer_log(folder).splitlines()]}
+
+
+def test_the_timer_waits_on_when_its_child_a_sleep_or_the_clock_fails(tmp_path):
+    """QA 07h F1: the wait must not be able to end without firing, or move its end, on a fault. The script itself, with
+    its own times, under the image's shell, with its waiting child unable to run, so that the wait is the shell's own
+    sleeps of at most 300 s: the end is fixed once on the kernel's uptime, the sleeps that complete are counted too, and
+    every fault is logged the first time for its kind and then at each doubling. Round 9's loop read the wall clock at
+    every step: set back 600 s it fired at 34,500 s, past the agent's limit less the minute the ending takes."""
+    plain = virtual_wait(tmp_path / "plain")
+    assert plain["status"] == 0 and plain["stderr"] == "", plain
+    assert plain["sleeps"] == [300] * 113 and plain["fired"] == 33900, (len(plain["sleeps"]), plain["fired"])
+    faults = [line for line in plain["log"] if "going on" in line]
+    assert faults == [f"the wait's child ended with status 127 (time {times}); going on" for times in (1, 2, 4, 8, 16, 32, 64)], faults
+    assert plain["log"][0].startswith("armed pid ") and plain["log"][-2].startswith("fired after 33900 s: SIGTERM")
+    assert plain["log"][-1] == "done: 0 process(es) of the selection left", plain["log"]
+    # the wall clock set back, or on, with the kernel's uptime to count on: not seen at all
+    for step in ("10000 -600", "10000 3600"):
+        stepped = virtual_wait(tmp_path / f"uptime{step.split()[1]}", steps=step)
+        assert stepped["status"] == 0 and stepped["fired"] == 33900 and stepped["sleeps"] == [300] * 113, (step, stepped["fired"])
+    # no uptime to read: the wall clock is all there is. Set back, it says the end is 600 s further off; the sleeps
+    # counted hold the end where it was. Set on, it fires early, never late.
+    back = virtual_wait(tmp_path / "wall-back", uptime=False, steps="10000 -600")
+    assert back["status"] == 0 and back["fired"] == 33900 and back["sleeps"] == [300] * 113, back["fired"]
+    on = virtual_wait(tmp_path / "wall-on", uptime=False, steps="10000 3600")
+    assert on["status"] == 0 and 30000 <= on["fired"] <= 33900, on["fired"]
+    # the uptime stops being readable part of the way: said in the log, and the sleeps counted carry the wait to its end
+    broken = virtual_wait(tmp_path / "broken", uptime_breaks="10000")
+    assert broken["status"] == 0 and broken["fired"] == 33900 and broken["sleeps"] == [300] * 113, broken["fired"]
+    assert "the clock could not be read (time 1); going on" in broken["log"], broken["log"]
+    # ten minutes in which no sleep can be started: each try is logged at its doublings and made again, the time that
+    # passed is taken from the clock, and the last sleep is the remainder
+    stalled = virtual_wait(tmp_path / "stalled", uptime=False, sleep_fails="10000 10600")
+    assert stalled["status"] == 0 and stalled["stderr"] == "" and stalled["fired"] == 33900, (stalled["status"], stalled["fired"])
+    assert stalled["sleeps"][-1] == 200 and set(stalled["sleeps"][:-1]) == {300} and sum(stalled["sleeps"]) == 33900 - 400, stalled["sleeps"][-3:]
+    naps = [line for line in stalled["log"] if line.startswith("a sleep of 300 s could not be started or was cut short")]
+    assert naps == [f"a sleep of 300 s could not be started or was cut short (time {times}); going on" for times in (1, 2, 4, 8, 16, 32, 64, 128, 256)], naps
+    script = (TASK / "environment" / "fsmaint-timer").read_text()
+    assert "set -e" not in script and "$(( $(" not in script, "no command's output goes straight into arithmetic"
+    assert script.count("command eval") >= 5 and 'try "$PYTHON" -I - <<' in script and "time.monotonic()" in script
+
+
+def test_a_refused_fork_cannot_keep_the_timer_from_ending_the_processes(tmp_path):
+    """QA 07h F1, for real: a shell that is refused a new process ends on the spot (`Cannot fork`, status 2), and round 9's
+    wait started two processes every 300 s, round 8's a dozen as it fired. Here the timer's own shell has a process limit
+    of 1 from its first line to its last, so every command it tries to start is refused. It must still wait (by the
+    kernel's uptime, which it reads itself; a stand-in file that this check moves on), fire, and end the user's
+    processes with its own kill, picked out of the kernel's process folders by their effective user (a stand-in folder,
+    with a made-up user no process has): two by SIGTERM, one that ignores SIGTERM by SIGKILL, and none of another user's,
+    of one that only began as that user, of a zombie's entry or of root's. Skipped where this machine does not refuse
+    the fork (root is exempt from the limit)."""
+    bash = shutil.which("bash")
+    probe = bash and subprocess.run([bash, "-c", f'ulimit -u 1 2>/dev/null; exec {HOOK_SHELL} -c "/bin/sleep 0; echo started"'],
+                                    capture_output=True, text=True, timeout=30)
+    if not probe or probe.returncode != 2 or "Cannot fork" not in probe.stderr:
+        try:
+            import pytest
+        except ImportError:
+            return
+        pytest.skip("this machine does not refuse a new process to a shell whose process limit is 1")
+    script, _, env = timer_under_test(tmp_path, END_SECONDS=20, STEP_SECONDS=5)
+    uid = 4242424  # no process has it: were pkill started after all, it would find nothing
+    folders = tmp_path / "proc"
+    folders.mkdir()
+    env.update(FSMAINT_TIMER_SELECT=f"-u {uid}", FSMAINT_TIMER_UPTIME=str(tmp_path / "uptime"), FSMAINT_TIMER_PROC=str(folders))
+    users = [subprocess.Popen([sys.executable, "-I", "-c", SLEEPS], **QUIET) for _ in range(2)]
+    stubborn = subprocess.Popen([sys.executable, "-I", "-c", IGNORES_TERM, str(tmp_path / "terms.txt")], **QUIET)
+    # real user, effective user, state: pkill -u goes by the effective user, and so must the shell
+    others = {"another user's": (uid + 1, uid + 1, "S (sleeping)"), "one that only began as the user": (uid, uid + 1, "S (sleeping)"),
+              "a zombie's entry": (uid, uid, "Z (zombie)"), "root's": (0, 0, "S (sleeping)")}
+    spared = {label: subprocess.Popen([sys.executable, "-I", "-c", SLEEPS], **QUIET) for label in others}
+
+    def folder_for(proc: subprocess.Popen, real: int, effective: int, state: str = "S (sleeping)") -> None:
+        (folders / str(proc.pid)).mkdir()
+        (folders / str(proc.pid) / "status").write_text(f"Name:\tpython3\nUmask:\t0022\nState:\t{state}\nTgid:\t{proc.pid}\nNgid:\t0\nPid:\t{proc.pid}\n"
+                                                         f"PPid:\t1\nTracerPid:\t0\nUid:\t{real}\t{effective}\t{effective}\t{effective}\n"
+                                                         f"Gid:\t{real}\t{effective}\t{effective}\t{effective}\n")
+
+    folder_for(users[0], uid, uid)
+    folder_for(users[1], uid + 2, uid)  # the user's now, whoever began it
+    folder_for(stubborn, uid, uid)
+    for label, (real, effective, state) in others.items():
+        folder_for(spared[label], real, effective, state)
+    (folders / "self").mkdir()  # not a number: never read
+    (tmp_path / "uptime").write_text("1000.00 0.00\n")
+    seconds, stop = [1000], threading.Event()
+
+    def kernel() -> None:  # time passes, and a process that is gone has no folder
+        while not stop.is_set():
+            seconds[0] += 5
+            (tmp_path / "uptime.new").write_text(f"{seconds[0]}.00 0.00\n")
+            os.replace(tmp_path / "uptime.new", tmp_path / "uptime")
+            for proc in users + [stubborn]:
+                if proc.poll() is not None:
+                    shutil.rmtree(folders / str(proc.pid), ignore_errors=True)
+            time.sleep(0.02)
+
+    try:
+        assert until((tmp_path / "terms.txt").exists, 20)
+        threading.Thread(target=kernel, daemon=True).start()
+        done = subprocess.run([bash, "-c", 'ulimit -u 1; exec "$@"', "_", HOOK_SHELL, str(script), "run"], env=env, capture_output=True, text=True, timeout=120)
+        assert done.returncode == 0 and done.stderr == "", f"round 9's shell ended here with status 2: {done.returncode} {done.stderr!r}"
+        assert [proc.wait(timeout=10) for proc in users] == [-signal.SIGTERM] * 2, "the user's processes, by the shell's own kill"
+        terms = len((tmp_path / "terms.txt").read_text().split())
+        assert stubborn.wait(timeout=10) == -signal.SIGKILL and 10 <= terms <= 12, terms
+        assert all(proc.poll() is None for proc in spared.values()), {label: proc.poll() for label, proc in spared.items()}
+        raw = timer_log(tmp_path).splitlines()
+        assert raw and all(line.startswith("- ") for line in raw), "no time on any line: date could not be started either"
+        log = [line[2:] for line in raw]
+        assert log[0].startswith("armed pid ") and f"fired after 20 s: SIGTERM to the processes selected by '-u {uid}'" in log, log
+        for fault in ("the wait's child ended with status 2 (time 1); going on", "a sleep of 5 s could not be started or was cut short (time 1); going on",
+                      "pkill -TERM could not be run (status 2) (time 1); going on"):
+            assert fault in log, (fault, log)
+        assert "SIGKILL to what is left" in log and log[-1] == "done: 0 process(es) of the selection left", log
+    finally:
+        stop.set()
+        end_stand_ins(*users, stubborn, *spared.values())
+
+
+def stop_block(pid_file: Path, first_on_path: Path | None = None) -> tuple[subprocess.CompletedProcess, float]:
+    """The sweep's lines that stop the timer, under the image's shell, with the pid file in a folder of this check; they
+    print what the stop found. Returns the finished process and the seconds it took."""
+    hook = (TASK / "environment" / "fsmaint-sweep").read_text()
+    block = hook[hook.index("# Stop the maintenance timer"):hook.index("# End every process of the user")]
+    assert block.count("/run/fsmaint-timer.pid") == 3 and block.rstrip().endswith("rm -f /run/fsmaint-timer.pid"), block
+    env = dict(os.environ, PATH=f"{first_on_path}:{os.environ['PATH']}") if first_on_path else None
+    started = time.monotonic()
+    done = subprocess.run([HOOK_SHELL, "-c", block.replace("/run/fsmaint-timer.pid", shlex.quote(str(pid_file))) + 'printf "%s\\n" "$stopped"\n'],
+                          capture_output=True, text=True, timeout=60, env=env)
+    return done, time.monotonic() - started
+
+
+def test_the_sweep_stops_only_its_own_timer_and_says_what_it_found(tmp_path):
+    """QA 07h F2 and F3: the sweep's stop of the timer was never run by a check (round 9 compared the positions of two
+    strings), and it signalled whatever pid the file named. Run here under the image's shell: a waiting timer is stopped
+    with the child it waits in, and nothing it selects is signalled; a timer that is firing sends nothing more; a pid
+    that is another process is not signalled; a timer that died and was not reaped is not waited for; a missing, empty
+    or mangled pid file stops nothing. The pid file is removed each time, and the stop says what it found, which the
+    manifest carries on (`sweep: ...` in timer_log), so that a timer that died early shows there."""
+    script, marker, env = timer_under_test(tmp_path / "waiting", END_SECONDS=600)
+    folder = tmp_path / "waiting"
+    target = subprocess.Popen([sys.executable, "-I", "-c", SLEEPS, marker], **QUIET)
+    bystander = subprocess.Popen([sys.executable, "-I", "-c", SLEEPS], **QUIET)
+    pid, waiting = None, []
+    try:
+        subprocess.run([HOOK_SHELL, str(script)], env=env, capture_output=True, text=True, timeout=30)
+        pid = armed_pid(folder)
+        waiting = until(lambda: [child for child, args in children_of(pid) if args.endswith(" -I -")], 10)
+        assert len(waiting) == 1, children_of(pid)
+        done, _ = stop_block(folder / "timer.pid")
+        assert (done.returncode, done.stdout, done.stderr) == (0, f"the timer (pid {pid}) was running and was stopped\n", ""), done
+        assert until(lambda: not running(pid) and not running(waiting[0]), 5), "the timer and the child it waited in are gone"
+        assert target.poll() is None and not (folder / "timer.pid").exists(), "nothing it selects was signalled; the pid file is removed"
+        assert " fired after " not in timer_log(folder)
+        # a pid on record that is another process: left alone
+        (folder / "timer.pid").write_text(f"{bystander.pid}\n")
+        done, _ = stop_block(folder / "timer.pid")
+        assert (done.returncode, done.stdout, done.stderr) == (0, f"the timer on record (pid {bystander.pid}) was not running\n", ""), done
+        time.sleep(0.3)
+        assert bystander.poll() is None and not (folder / "timer.pid").exists()
+        # a pid the process list shows as a dead timer nobody reaped, the way Linux prints one: not signalled either
+        (folder / "zombie").mkdir()
+        (folder / "zombie" / "ps").write_text('#!/bin/sh\necho "Z    $(id -u) [fsmaint-timer] <defunct>"\n')
+        (folder / "zombie" / "ps").chmod(0o755)
+        (folder / "timer.pid").write_text(f"{bystander.pid}\n")
+        done, _ = stop_block(folder / "timer.pid", first_on_path=folder / "zombie")
+        assert (done.returncode, done.stdout, done.stderr) == (0, f"the timer on record (pid {bystander.pid}) was not running\n", ""), done
+        time.sleep(0.3)
+        assert bystander.poll() is None, "a zombie is not signalled or waited for"
+        # nothing on record, or nothing that is a pid
+        for content in (None, "", " \n", "abc\n", "-1\n", "99999999\n"):
+            if content is None:
+                (folder / "timer.pid").unlink(missing_ok=True)
+            else:
+                (folder / "timer.pid").write_text(content)
+            done, _ = stop_block(folder / "timer.pid")
+            expected = "the timer on record (pid 99999999) was not running\n" if content == "99999999\n" else "no timer was on record\n"
+            assert (done.returncode, done.stdout, done.stderr) == (0, expected, ""), (content, done)
+            assert not (folder / "timer.pid").exists() and bystander.poll() is None and target.poll() is None
+    finally:
+        disarm(folder, pid, waiting)
+        end_stand_ins(target, bystander, marker=marker)
+
+    # a timer that has fired and is sending SIGTERM to a process that ignores it: after the stop, not one more
+    script, marker, env = timer_under_test(tmp_path / "firing", END_SECONDS=1, STEP_SECONDS=1)
+    folder = tmp_path / "firing"
+    stubborn = subprocess.Popen([sys.executable, "-I", "-c", IGNORES_TERM, str(folder / "terms.txt"), marker], **QUIET)
+
+    def terms() -> int:
+        return len((folder / "terms.txt").read_text().split())
+
+    pid = None
+    try:
+        assert until((folder / "terms.txt").exists, 20)
+        subprocess.run([HOOK_SHELL, str(script)], env=env, capture_output=True, text=True, timeout=30)
+        pid = armed_pid(folder)
+        assert until(lambda: terms() >= 2, 30), timer_log(folder)
+        done, _ = stop_block(folder / "timer.pid")
+        assert (done.returncode, done.stdout) == (0, f"the timer (pid {pid}) was running and was stopped\n"), done
+        time.sleep(0.4)
+        before = terms()
+        time.sleep(1.5)  # five more of its pauses, had it lived
+        assert terms() == before <= 11 and stubborn.poll() is None and not running(pid), (before, terms())
+        assert " fired after 1 s" in timer_log(folder) and "done:" not in timer_log(folder)
+    finally:
+        disarm(folder, pid)
+        end_stand_ins(stubborn, marker=marker)
+
+    # a timer that died and that nobody reaped (the container's first process does not): a zombie is not the timer
+    script, marker, env = timer_under_test(tmp_path / "dead", END_SECONDS=600)
+    folder = tmp_path / "dead"
+    unreaped = subprocess.Popen([HOOK_SHELL, str(script), "run"], env=env, **QUIET)
+    left = []
+    try:
+        assert armed_pid(folder) == unreaped.pid
+        left = until(lambda: [child for child, args in children_of(unreaped.pid) if args.endswith(" -I -")], 10)
+        unreaped.kill()
+        assert until(lambda: not running(unreaped.pid), 5)
+        done, seconds = stop_block(folder / "timer.pid")
+        assert (done.returncode, done.stdout, done.stderr) == (0, f"the timer on record (pid {unreaped.pid}) was not running\n", ""), done
+        assert seconds < 0.9, f"no second spent waiting for a process that is already dead: {seconds:.2f}"
+    finally:
+        end_stand_ins(unreaped)
+        for child in left:  # the child this check's own timer was waiting in
+            if running(child):
+                os.kill(child, signal.SIGKILL)
+
+
+VERIFY_MAIN = r"""
+import json, os, pwd, sys
+from pathlib import Path
+tests, base, server = Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3])
+sys.path.insert(0, str(tests))
+import verify
+from verifier import replay
+mapping = {"/logs/verifier": base / "logs", "/app/server": server, "/work": base / "work"}
+calls = {}
+
+def evaluate(source, scenario_path, work, output, progress=None, **more):
+    calls["evaluate"] = [str(source), scenario_path.name, (source / "run").is_file(), str(work), str(output)]
+    return {"reward": 1.0, "units_matched": 4002, "units_total": 4002, "notes": ["a note of the replay's"], "results": [{"id": "s1"}]}
+
+verify.Path = lambda value: Path(mapping.get(str(value), value))
+verify.evaluate = evaluate
+verify.end_user_processes = lambda uid, *rest, **more: calls.setdefault("ended", uid)  # nothing is signalled here
+verify.__file__ = str(base / "tests" / "verify.py")
+os.geteuid = lambda: 0
+code = verify.main()
+logs = base / "logs"
+out = {"code": code, "files": sorted(path.name for path in logs.iterdir()), "evaluate": calls.get("evaluate"),
+       "ended_nobody": calls.get("ended") == pwd.getpwnam(replay.RUN_AS).pw_uid, "metrics": json.loads((logs / "metrics.json").read_text())}
+if (logs / "reward.txt").exists():
+    out["reward"] = (logs / "reward.txt").read_text()
+print(json.dumps(out))
+"""
+
+
+def sweep_under_the_shell(base: Path, timer_folder: Path) -> tuple[subprocess.CompletedProcess, Path, list[int]]:
+    """The whole sweep under the image's shell on a tree that holds what the copy refuses, with only its absolute paths
+    pointed into `base` (the lines changed are returned) and three stand-ins first on PATH: `pgrep -u dev` finds no
+    process, so the lines that end the user's processes are never reached; `setpriv` runs the command as this user and
+    never a `kill`; `pkill` does nothing."""
+    source = (TASK / "environment" / "fsmaint-sweep").read_text()
+    server = base / "app" / "server"
+    for folder in (base / "state" / "inodes", base / "tmp", base / "bin", server / "app", server / "empty", base / "outside"):
+        folder.mkdir(parents=True)
+    (base / "state" / "room").write_text("x" * 1024)
+    (base / "state" / "inodes" / "1").write_text("")
+    (base / "state" / "free-at-start").write_text("2500000 4096 1300000\n")
+    (server / "app" / "main.py").write_text("print('hi')\n" * 50)
+    (server / "run").write_text("#!/bin/sh\nexec python3 app/main.py\n")
+    (server / "run").chmod(0o755)
+    os.link(server / "run", server / "run-again")
+    (server / "inside").symlink_to(server / "app" / "main.py")        # absolute, inside: made relative
+    (base / "outside" / "interpreter").write_text("x" * 1000)
+    (server / "venv-python").symlink_to(base / "outside" / "interpreter")  # absolute, outside: a copy
+    (server / "gone").symlink_to(base / "outside" / "nothing")        # dangling: removed
+    os.mkfifo(server / "pipe")                                        # removed
+    (server / ".fsmaint-manifest").write_text("complete 0 0\ntimer: 2031-03-03T00:00:00Z fired after 1 s\n")  # the agent's own: moved aside
+    stand_ins = {"pgrep": f'#!/bin/sh\ncase " $* " in *" -u dev "*) exit 1 ;; esac\nexec {shlex.quote(shutil.which("pgrep"))} "$@"\n', "pkill": "#!/bin/sh\nexit 0\n",
+                 "setpriv": '#!/bin/sh\nwhile [ $# -gt 0 ]; do case "$1" in --reuid|--regid) shift 2 ;; --*) shift ;; *) break ;; esac; done\n'
+                            '[ "$1" = kill ] && exit 0\nexec "$@"\n'}
+    if not shutil.which("timeout"):
+        stand_ins["timeout"] = '#!/bin/sh\nshift\nexec "$@"\n'
+    for name, text in stand_ins.items():
+        (base / "bin" / name).write_text(text)
+        (base / "bin" / name).chmod(0o755)
+    text = source
+    quoted = {name: shlex.quote(str(path)) for name, path in (("pid", timer_folder / "timer.pid"), ("log", timer_folder / "timer.log"), ("state", base / "state"),
+                                                              ("server", server), ("app", base / "app"), ("tmp", base / "tmp"), ("python", sys.executable))}
+    for old, new, count in (
+            ("/run/fsmaint-timer.pid", quoted["pid"], 3),
+            ("/var/log/fsmaint-timer.log", quoted["log"], 1),
+            ("STATE=/var/lib/fsmaint\n", f"STATE={quoted['state']}\n", 1),
+            ("if [ ! -d /app/server ] || [ -L /app/server ]; then exit 0; fi", f"if [ ! -d {quoted['server']} ] || [ -L {quoted['server']} ]; then exit 0; fi", 1),
+            ("if [ -e /app/server/.fsmaint-manifest ] || [ -L /app/server/.fsmaint-manifest ]; then",
+             f"if [ -e {quoted['server']}/.fsmaint-manifest ] || [ -L {quoted['server']}/.fsmaint-manifest ]; then", 1),
+            ('aside=$(mktemp -d /app/.aside.XXXXXX) && mv -f /app/server/.fsmaint-manifest "$aside/" || exit 0',
+             f'aside=$(mktemp -d {quoted["app"]}/.aside.XXXXXX) && mv -f {quoted["server"]}/.fsmaint-manifest "$aside/" || exit 0', 1),
+            ('/opt/py/bin/python -I - /app/server "$LIMIT_ENTRIES" "$LIMIT_BYTES" <<', f'{quoted["python"]} -I - {quoted["server"]} "$LIMIT_ENTRIES" "$LIMIT_BYTES" <<', 1),
+            ('exec /opt/py/bin/python -I - /app/server "$LIMIT_ENTRIES" "$LIMIT_BYTES" "$LIMIT_PATH" "$STATE" /tmp "$PACK_SECONDS" <<',
+             f'exec {quoted["python"]} -I - {quoted["server"]} "$LIMIT_ENTRIES" "$LIMIT_BYTES" "$LIMIT_PATH" "$STATE" {quoted["tmp"]} "$PACK_SECONDS" <<', 1)):
+        assert text.count(old) == count, (old, text.count(old))
+        text = text.replace(old, new)
+    assert len(text.splitlines()) == len(source.splitlines())
+    changed = [number for number, (old, new) in enumerate(zip(source.splitlines(), text.splitlines()), 1) if old != new]
+    (base / "fsmaint-sweep").write_text(text)
+    done = subprocess.run([HOOK_SHELL, str(base / "fsmaint-sweep")], env=dict(os.environ, PATH=f"{base / 'bin'}:{os.environ['PATH']}"),
+                          capture_output=True, text=True, timeout=300)
+    return done, server, changed
+
+
+def copied(server: Path, target: Path) -> Path:
+    """What the copy does: a tar of the directory where it was built, extracted elsewhere with the `data` filter."""
+    import tarfile
+    target.parent.mkdir(parents=True, exist_ok=True)
+    archive = target.parent / (target.name + ".tar.gz")
+    subprocess.run(["tar", "-czf", str(archive), "-C", str(server), "."], check=True, capture_output=True, timeout=120,
+                   env=dict(os.environ, COPYFILE_DISABLE="1"))  # macOS's tar would add ._ files for extended attributes
+    target.mkdir()
+    with tarfile.open(archive) as bundle:
+        bundle.extractall(target, filter="data")
+    return target
+
+
+def verify_main(base: Path, server: Path) -> dict:
+    """verify.py's main() on a copy that arrived, with /logs/verifier, /app/server and /work in `base`, the root test
+    answered yes, and the replay and the ending of the server's processes replaced: nothing runs and nothing is
+    signalled."""
+    for folder in (base / "logs", base / "work", base / "tests" / "private"):
+        folder.mkdir(parents=True, exist_ok=True)
+    for leftover in (base / "logs").iterdir():
+        leftover.unlink()
+    (base / "tests" / "private" / "scenarios.json.gz").write_bytes(b"")  # the name the image ships; the stand-in replay reads nothing
+    done = subprocess.run([sys.executable, "-I", "-B", "-c", VERIFY_MAIN, str(STEP / "tests"), str(base), str(server)], capture_output=True, text=True, timeout=120)
+    assert done.stdout.strip(), done.stderr[-3000:]
+    return json.loads(done.stdout.strip().splitlines()[-1])
+
+
+def test_the_sweep_runs_whole_under_the_image_shell_and_verify_main_reads_what_it_wrote(tmp_path):
+    """QA 07h F2: no check ran the sweep's shell (the checks cut its two Python scripts out) or verify.py's main(), the
+    parts round 9 changed and the place a renamed name would break on the platform alone. Here the timer is armed for
+    real, the whole sweep runs under the image's shell, the directory is copied the way the copy is made, and main()
+    reads it: the manifest's first line, the timer's lines and the sweep's own line about the stop arrive in
+    metrics.json, a copy that lost a file is an evaluation error with no reward, and a session the timer ended reads
+    ended_by_timer true. What stays unrun here: the hooks as root in the image, with the real setpriv, pkill and paths."""
+    script, marker, env = timer_under_test(tmp_path / "waiting", END_SECONDS=600)
+    target = subprocess.Popen([sys.executable, "-I", "-c", SLEEPS, marker], **QUIET)
+    pid, waiting = None, []
+    try:
+        subprocess.run([HOOK_SHELL, str(script)], env=env, capture_output=True, text=True, timeout=30)
+        pid = armed_pid(tmp_path / "waiting")
+        waiting = until(lambda: [child for child, args in children_of(pid) if args.endswith(" -I -")], 10)
+        assert waiting, children_of(pid)
+        done, server, changed = sweep_under_the_shell(tmp_path / "one", tmp_path / "waiting")
+        assert done.returncode == 0 and done.stderr == "", (done.returncode, done.stderr)
+        assert len(changed) == 9, f"the lines pointed into this check's folder: {changed}"
+        assert not running(pid) and target.poll() is None and not (tmp_path / "waiting" / "timer.pid").exists()
+        state = tmp_path / "one" / "state"
+        assert sorted(path.name for path in state.iterdir()) == ["free-at-start", "timer.txt"], "the room and the spare inodes are given back"
+        assert os.listdir(tmp_path / "one" / "tmp") == [], "the trial pack is removed"
+        aside = [path for path in (tmp_path / "one" / "app").iterdir() if path.name.startswith(".aside.")]
+        assert len(aside) == 1 and "fired after 1 s" in (aside[0] / ".fsmaint-manifest").read_text(), "the agent's own file is moved aside"
+        manifest = (server / ".fsmaint-manifest").read_text().splitlines()
+        # app, app/main.py, empty, inside, run, run-again, venv-python: 7 entries; main.py 600, run 35 (once), the copy 1,000
+        assert manifest[0] == "complete 7 1635" and len(manifest) == 3, manifest
+        assert manifest[1].startswith("timer: ") and manifest[1].endswith(f" armed pid {pid}: ending the processes selected by '-f {marker}' in 600 s")
+        assert manifest[2] == f"timer: sweep: the timer (pid {pid}) was running and was stopped"
+        assert os.readlink(server / "inside") == "app/main.py" and (server / "venv-python").read_text() == "x" * 1000
+        assert not (server / "venv-python").is_symlink() and not os.path.lexists(server / "gone") and not os.path.lexists(server / "pipe")
+        for line in ("inside -> app/main.py", "venv-python: a copy of", "removed gone ->", "removed pipe: not a file, a directory or a link"):
+            assert line in done.stdout, (line, done.stdout)
+        whole = verify_main(tmp_path / "one", copied(server, tmp_path / "one" / "arrived" / "server"))
+        assert whole["code"] == 0 and whole["reward"] == "1.000000" and whole["ended_nobody"], whole
+        assert whole["files"] == ["metrics.json", "reward.txt", "scenario_results.json"], whole["files"]
+        assert whole["evaluate"][1:3] == ["scenarios.json.gz", True] and whole["evaluate"][0].endswith("/arrived/server"), whole["evaluate"]
+        metrics = whole["metrics"]
+        assert metrics["status"] == "completed" and metrics["notes"] == ["a note of the replay's"] and metrics["ended_by_timer"] is False, metrics
+        assert metrics["timer_log"] == [manifest[1][len("timer: "):], f"sweep: the timer (pid {pid}) was running and was stopped"], metrics["timer_log"]
+        cut = copied(server, tmp_path / "one" / "cut" / "server")
+        (cut / "app" / "main.py").unlink()
+        short = verify_main(tmp_path / "one", cut)
+        assert short["code"] == 1 and "reward" not in short and short["metrics"]["status"] == "evaluation_error", short
+        assert short["metrics"]["error"] == "The copy arrived incomplete: 6 of 7 entries and 1,035 of 1,635 bytes", short["metrics"]
+    finally:
+        disarm(tmp_path / "waiting", pid, waiting)
+        end_stand_ins(target, marker=marker)
+
+    # a session the timer ended: it has fired and gone by the time the sweep runs, and the manifest carries its lines
+    script, marker, env = timer_under_test(tmp_path / "fired", END_SECONDS=1, STEP_SECONDS=1)
+    target = subprocess.Popen([sys.executable, "-I", "-c", SLEEPS, marker], **QUIET)
+    try:
+        assert until(lambda: subprocess.run(["pgrep", "-f", marker], capture_output=True).stdout.strip(), 20)
+        subprocess.run([HOOK_SHELL, str(script)], env=env, capture_output=True, text=True, timeout=30)
+        assert until(lambda: "done:" in timer_log(tmp_path / "fired"), 40), timer_log(tmp_path / "fired")
+        assert target.wait(timeout=10) == -signal.SIGTERM
+        done, server, _ = sweep_under_the_shell(tmp_path / "two", tmp_path / "fired")
+        assert done.returncode == 0 and done.stderr == "", (done.returncode, done.stderr)
+        ended = verify_main(tmp_path / "two", copied(server, tmp_path / "two" / "arrived" / "server"))
+        log = ended["metrics"]["timer_log"]
+        assert ended["code"] == 0 and ended["reward"] == "1.000000" and ended["metrics"]["ended_by_timer"] is True, ended
+        assert len(log) == 4 and " armed pid " in log[0] and " fired after 1 s: SIGTERM" in log[1] and log[2].endswith("done: 0 process(es) of the selection left"), log
+        assert log[3] == "sweep: no timer was on record", log
+    finally:
+        end_stand_ins(target, marker=marker)
 
 
 def test_a_read_cut_at_its_end_is_a_timeout_and_a_disk_the_server_cannot_write_is_not_watched(tmp_path):

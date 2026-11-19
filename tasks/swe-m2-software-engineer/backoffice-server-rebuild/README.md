@@ -13,6 +13,124 @@ One step is implemented. See [Remaining work](#remaining-work).
 
 ## Development log
 
+### 2026-11-20 (round 10: QA 07h on round 9; a wait that cannot end without the firing; version 9)
+
+- QA 07h, the narrow re-check of round 9 (`e132ce5`, bundle `e129cb7c2b1b`), passed with no
+  must-fix. It looked for the defect that zeroed Carve's reference (a rename that passes every local
+  check and breaks on the platform alone) and found none: the compiled code differs from version 8's
+  only in names, `replay.py` not at all, every writer and reader of a renamed path, word and key
+  agree, and `verify.main()` ran end to end. It left six minor findings. F1 is fixed before the
+  upload, since the same weakness in the Goose task (QA 07g G1) was rated a reward risk: a session
+  that reaches the cap is never ended, and the platform then cannot grade it. Round 10 is one commit
+  on `e132ce5`. In the bundle only `environment/fsmaint-timer` and `environment/fsmaint-sweep`
+  change, so the verifier and the solution are round 9's byte for byte. The instruction, the
+  scenarios, the limits and the scoring are unchanged.
+- F1, the wait. Round 9's loop, written to keep a long `sleep` out of the process list, read the
+  wall clock at every step and started two processes every 300 s. Set back 600 s, the clock made it
+  fire at 34,500 s, so the ending could finish past the cap. And dash, the image's `/bin/sh`, ends a
+  script on the spot when a fork is refused (`Cannot fork`, status 2), with nothing in the log.
+  Measured here under dash before any change: the refused fork is fatal and `x=$(...) || x=` does
+  not save it; the same command inside `command eval` comes back as status 2 and the script goes on
+  (3,000 in a row); arithmetic on a non-number is fatal as well. The fix takes the design tested for
+  Goose (07g: one child for the whole wait) and goes further:
+  - One child waits the whole time on the monotonic clock and starts nothing. Its time is in its
+    environment, so the process list shows `python3 -I -` and no time. It answers 10 only when it
+    has waited it all, so an interpreter that ran nothing is never taken for a finished wait.
+  - Where the child cannot run or ends early, the shell waits on in sleeps of at most 300 s and
+    tries the child again at each. The end is fixed once on `/proc/uptime`, which the shell reads
+    with its own `read` (the wall clock only where there is none), and the sleeps that complete are
+    counted as well: the time left is the smaller of the two, so no clock set back moves the end.
+  - Every command of the detached copy goes through `command eval`. A start that fails is logged
+    the first time for its kind and at each doubling of that kind's count, and tried again. There
+    is no `set -e`, no command's output goes straight into arithmetic, and every operand is checked
+    first.
+  - The firing: `pgrep` answering anything but "none" counts as some left. Where `pkill` cannot be
+    started, the shell picks the processes whose effective user is the selection's out of `/proc`
+    and signals them with its own `kill`. SIGKILL goes every half second for 10 s as before and then
+    every 5 s for up to 500 s more, which ends 90 s before the cap.
+
+  With every fork refused from its first line to its last (a process limit of 1 for its own shell),
+  the timer exits 0 where round 9's exits 2: it waits by the uptime, fires, ends two processes by
+  SIGTERM and one that ignores SIGTERM by SIGKILL after twelve, and leaves another user's process, a
+  zombie's entry and root's alone. The end is fixed on a clock of whole seconds, so the firing can
+  come up to a second early, never late.
+- F3, the stop that signalled whatever pid the file named: the sweep signals the pid only if `ps`
+  shows it running, as this user, with the timer's name on its command line. It also ends the child
+  the timer waited in (which would otherwise sleep on for hours), removes the pid file, and writes
+  what it found as the last `timer:` line of the manifest. That line is F1's third option: a timer
+  that died early now shows in `timer_log`.
+- F2, the changed parts were the parts no check ran, and our own case of Goose's G5. One check is
+  rewritten and four are new, all under dash:
+  - The timer check used copies of `/bin/sleep` as the processes to end. On this Mac a copied system
+    binary is killed as it starts (status 137), so the check passed whatever the timer did. Its
+    stand-ins are interpreters now, seen alive just before the fire, one of them ignoring SIGTERM.
+  - The wait on a stand-in clock with the script's own times: 113 sleeps of 300 s and the firing at
+    33,900 s; the wall clock set back or on; the uptime unreadable part of the way; ten minutes in
+    which no sleep can be started.
+  - Every fork refused, for real.
+  - The sweep's stop: a waiting timer, a firing one, another process's pid, a dead timer nobody
+    reaped as Linux prints one, and a missing, empty or mangled pid file.
+  - The whole sweep under dash, its absolute paths pointed into a folder and three stand-ins on
+    `PATH`, then the copy as it is made, then `verify.main()` with the replay and the ending of the
+    server's processes replaced.
+
+  Each was then run against 20 deliberately broken copies of the scripts: round 9's timer; no
+  signal; no SIGKILL; one unguarded sleep; sleeps not counted; the wall clock only; faults not
+  logged; no signalling without `pkill`; the scan by the real user, or counting zombies; a sweep
+  that signals any pid, ignores the command line, takes a dead timer for a running one, leaves the
+  child, does not stop the timer, leaves the pid file or drops its line; a `verify.py` whose
+  `main()` uses a name it no longer has, or that reads another first word or prefix than the sweep
+  writes. Every one is caught by the check that names it, and two unchanged copies pass, one of them
+  in a folder whose name has a space and parentheses (the first run of this found the two sweep
+  checks putting paths into shell text unquoted; they quote them now).
+- F6: the venv check made its venv from `sys.executable`. Started through a link
+  (`~/.local/bin/python3.13`), Python records the link's folder as the venv's home, and the copied
+  interpreter cannot find its standard library. The venv is made from the interpreter's real path
+  now, and the check passes however Python is started (five ways tried).
+- F4 and F5 are notes for the next author: the run condition under Verification, hackability row 15
+  and Remaining work.
+- A second read of the whole diff, after the first build, found nothing to change in the timer.
+  Under dash its wait has no way out but the firing: there is no `set -e`; the operands of every
+  arithmetic expansion are checked first, so none can end the script; every command and command
+  substitution runs inside `command eval`, where a refused fork is a status; the child's
+  here-document is written into its pipe by the shell itself (no fork), and a pipe that cannot be
+  made fails the call it belongs to, not the script; the loop leaves only by `break` into the
+  firing. One residual stays, under hackability row 15: two faults at the same moment can make the
+  firing late. If the waiting child is ended early (the agent cannot signal it; root or the
+  kernel's out-of-memory killer could) and the uptime cannot be read when the next child starts,
+  the shell counts only its own sleeps, so the time the first child had waited is not taken off.
+- The word scan of the packaged bundle (grade, score, verif, harness, oddish, modal, harbor, cap,
+  budget, attempt, audit, QA, round N, trial) found one word left in a file the task puts into the
+  agent image: the sweep's function that packs the tree once in `/tmp` was `trial_pack` (since
+  round 7). It is `pack_here` now: the compiled script is the same apart from that name (identical
+  instruction streams, name tables of the same size), and no other name in the hook is
+  `pack_here`. The bundle check's list for the task's own files in the image now also rejects
+  `trial`, `harness` and `scor`; it fails on the first build's sweep and passes on this one. What
+  the scan still finds is what round 9 left: the verifier's own terms in its own image, Harbor's
+  `[verifier]` keys, the kernel's `oom_score_adj`, `noqa`, "underscores", the client's budgets and
+  trial balance, and the instruction's "copies we make for training and trials", which is the
+  business's own wording (the instruction is unchanged).
+- `checks/`: 45 tests. With `ci_checks` (27), 72 pass under Python 3.13 (run again after the
+  rename and the longer word list), and `ci_checks/check_repository.py` passes. The seven checks
+  that touch the hooks also pass without pytest and with Python started through a link, the way
+  QA 07h ran them.
+- The regrade uses only bundle `43cf2c2534a4`: its `solution/` installed from an isolated copy by
+  its own `oracle.py` (only the interpreter path swapped for this Mac), its corpus and its media,
+  with Python's bytecode writing off. It scores 1.0 on every unit: 4,002 of 4,002 (2,262 of 2,262
+  scenarios), 9 planned restarts, no other restart, no second try, no answer of 500 or above, no
+  note, 52 scenarios alone, in 552.1 s; the slowest request took 4.4 s, the evaluation peaked at
+  625 MiB resident (the seven hook checks ran beside it for under a minute), and `DATA_DIR` held
+  1.42 GB at the end. The first build of this round, `3d0f83058ddb`, which differs from it only
+  in that function's name in the sweep, scored the same in 567.7 s (556 MiB). The timer and the
+  sweep are not exercised by the regrade: this Mac is not the agent's container and `evaluate()`
+  is called directly; the checks drive both scripts.
+- Bundle `43cf2c2534a4` (1,161 files, 247.3 MB) built twice with the same hash; flat
+  `d533cc11049f`, also twice. Against round 9's `e129cb7c2b1b` it differs in the two hooks and
+  nothing else; against this round's first build, `3d0f83058ddb` (flat `dc452cfabb43`, never
+  uploaded), in the sweep's one function name. `scripts/scan_uploads.py` finds nothing among the
+  496 agent-image files; Oddish preflight passes; neither hook holds a word of the list above. It
+  replaces `e129cb7c2b1b`, which was never uploaded, as the candidate for version 9.
+
 ### 2026-11-19 (round 9: the Oddish source audit of version 8; housekeeping names; version 9)
 
 - The owner made the Oddish pre-trial source audit a hard gate: a version's audit must pass before
@@ -755,7 +873,7 @@ One step is implemented. See [Remaining work](#remaining-work).
 | Part | State |
 | --- | --- |
 | Step `01-rebuild-server` | Implemented: instruction, agent image with the sealed server, separate verifier image, reference solution. |
-| Further steps | Not designed. Candidates: a follow-up change request on the rebuilt server; importing a year of legacy data. |
+| Further steps | Not designed. Candidates: a follow-up change request on the rebuilt server; importing a year of legacy data. The maintenance timer is built for one step: a second one needs it armed per step first (Remaining work, QA 07h F5). |
 | Private inputs | `steps/01-rebuild-server/tests/private/scenarios.json` and the private files they upload (`experiment/media/private`, made with `--big`), Git-ignored, produced by `scripts/record_scenarios.py --count 2160 --runs 44 --term 6 --kill 3 --screens 8` from the private seeds in `experiment/seeds.json` (never committed; rotated in round 3). |
 | Oracle | The reference server, shipped as Python 3.12 bytecode in the solution's data, installed as the delivered server and run on the packages in `/opt/py`. |
 | Ratings (`harbor check`) | Not run. |
@@ -867,20 +985,40 @@ agent's session 11 minutes before the platform's 9.6 h cap (SIGTERM to every pro
 then SIGKILL), because on the platform today a turn that runs into the cap is never graded (the
 separate verifier image fails to build right after the timeout; harbor-lh
 `ops/swe-marathon-v2/PLATFORM_VERIFIER_BUILD_AFTER_LONG_RUN.md`) while a turn that ends by itself
-is. It wakes every 300 s, so the process list the agent can read shows a root `sleep 300` under a
-housekeeping name, never the time left. A session it ended shows as `ended_by_timer: true` in
-`metrics.json`, with the log's last lines in `timer_log`; neither touches the reward. The agent is
-not told; the instruction states no budget either way, and nothing the agent can see of the hooks
-(the names in `/usr/local/sbin`, `/var/lib`, `/var/log` and `/run`, the process list) says what
-they are for. The sealed server and its supervisor run as other users and are untouched; the
-sweep stops the timer before anything of its own runs as `dev`.
+is. Since round 10 the wait cannot end without the firing (QA 07h F1). One child waits the whole
+time on the monotonic clock and starts nothing, its time in its environment, so the process list
+the agent can read shows a root `python3 -I -` under a housekeeping name and never the time left.
+Where that child cannot run or ends early, the shell waits on in sleeps of at most 300 s: the end
+is fixed once on the kernel's uptime, which the shell reads without starting anything (the wall
+clock only where there is none), and the sleeps that complete are counted too, so a clock set back
+cannot move the end later. Every command the detached copy starts goes through a guard
+(`command eval`) that makes a refused fork a status instead of the shell's own end; it is logged
+the first time for its kind and at each doubling, and tried again. Where `pgrep` and `pkill`
+cannot be started, the shell picks the user's processes out of `/proc` by their effective user and
+signals them with its own `kill`. SIGTERM goes every 5 s for a minute, then SIGKILL until none is
+left, for at most 570 s after the firing, which is 90 s before the cap. A session it ended shows
+as `ended_by_timer: true` in `metrics.json`, with the log's last lines and the sweep's own line
+about the stop in `timer_log`; neither touches the reward. The agent is not told; the instruction
+states no budget either way, and nothing the agent can see of the hooks (the names in
+`/usr/local/sbin`, `/var/lib`, `/var/log` and `/run`, the process list) says what they are for.
+The sealed server and its supervisor run as other users and are untouched; the sweep stops the
+timer before anything of its own runs as `dev`. **This holds for one step only** (QA 07h F5): the
+collect hook runs at every step's collection and stops the timer for good, and `END_SECONDS`
+counts from the trial's set-up, not from a step's start. See [Remaining work](#remaining-work)
+before a second step is added.
 
 1. Delivery: before `/app/server` leaves the agent's machine, a `[[verifier.collect]]` hook runs
    `environment/fsmaint-sweep` (root, mode 0700; `prepare-delivery` until round 9), so that
    nothing the agent leaves can make the copy fail (QA 07e M4, 07f M4). It stops the maintenance
    timer, so that the timer's SIGTERM rounds cannot reach the hook's own stage that runs as `dev`
-   (round 9); ends every process of `dev` with `kill -9 -1` as `dev`, one system call that a
-   forking process cannot outrun, until none is left; gives back 64 MiB and 64 spare inodes set
+   (round 9): only the process its pid file names, and only if `ps` shows that process running,
+   as this user, with the timer's name on its command line (a zombie is not signalled or waited
+   for), together with the child it waited in; it removes the pid file and records what it found
+   as the last `timer:` line of the manifest (`sweep: the timer (pid N) was running and was
+   stopped`, `... was not running` or `no timer was on record`), so that a timer that died early
+   shows in `timer_log` (round 10, QA 07h F3 and F1). Then it ends every process of `dev` with
+   `kill -9 -1` as `dev`, one system call that a forking process cannot outrun, until none is
+   left; gives back 64 MiB and 64 spare inodes set
    aside in `/var/lib/fsmaint` when the session began (`start-sealed-server`, which also records
    the free blocks and inodes then; the room cannot live outside the agent's container under
    Harbor, where both hooks run inside it, so it is root-only system state under a housekeeping
@@ -1071,12 +1209,16 @@ not yet exercised in a container; 10 keeps a residual the owner decides).
 | 12 | The server the agent studies answers differently from the grader, so doing exactly what the instruction asks loses units | The sealed server's configuration against the recorders' and the solution's | QA 12 F1 (2026-11-19): the sealed server served the web client, so `DELETE /nowhere` answered 405 `allowed: []` there and 404 `unknown_path` in the corpus; a perfect clone lost 6 units. Fixed in round 4 | One settings file, `environment/stockwell.env`, for the sealed server, the live recorder and the solution, with no client directory (the legacy recorder builds the same app in-process); a check ties every file to it and the instruction's numbers to the code; the regrade of the solution with that file is 1.0 on every unit | The Mac recording and the Ubuntu images run different Python, SQLite and zlib builds; reading the code found no dependence (QA 11, 12) | The Linux baselines: 4,002 of 4,002 for the solution | 🟢 GREEN / LOW |
 | 13 | A server that fails under concurrent load earns its units back on second tries played one at a time | Verifier's second tries | QA 20 (2026-11-19): second tries were uncapped and alone, and a sequential pass fits the deadline, so a server that crashes whenever requests overlap recovered most of its units. Fixed in round 4 | A second try only for a scenario in flight when the server stopped, never for a wrong answer or a request a live server left unanswered, and only while the units they decide stay within 2% of all units; the check pins the share and that a dropped request gets none | A server that crashes under load keeps 2% of the units at most | None | 🟢 GREEN / LOW |
 | 14 | A deliberately hostile submission makes the evaluation end in an error instead of 0, with no reward: about 99,000 crafted links outlast the delivery hook's 600 s (QA 07g F1); the link fixer uses up the spare inodes, so a refusal dies after `/app/server` is moved aside (07g F2); a link that resolves inside only through another link, hidden from the fixer, makes Harbor's extraction refuse the copy (07g F3); where neither a memory cgroup nor a VM's own meminfo can be read, a memfd that no process maps is not counted (07f) | Delivery hooks; Harbor's artifact copy; the verifier's memory guard | QA 07e, 07f and 07g (2026-11-19); 07g F3 run through Harbor's own extraction code, F1 timed on macOS | None of these gives reward, reads answers or touches honest work: an honest delivery holds no crafted link chains, no tens of thousands of links and does not exhaust inodes. Accepted on 2026-11-19 under a run policy: one attempt per trial; every errored trial is read; it scores 0 when its own files show the submission caused it, and is otherwise re-run as an infrastructure fault | A hostile run costs one trial and a read | The container red team repeats 07f's deep sparse file and full inodes and 07g's link chains | 🟡 YELLOW / LOW |
-| 15 | Outlast the maintenance timer (`fsmaint-timer`, the pre-cap watchdog), so that the session runs into the platform's cap and goes ungraded, or stop it to gain time, or learn from it when the session ends | Process ownership; what the agent can see of the hooks | Round 8; the design of BasedPL's round 5; probe `cap-watchdog-6eb19fc0` showed a run the watchdog ended is graded. Round 9: the Oddish audits of version 8 and of the Goose task found that the helper names (`precap-watchdog`, `prepare-delivery`, `/var/lib/delivery`) and the watchdog's header comment told the solver that a cap is enforced and that its work is packed for grading | The sleeper is root's and `dev` cannot signal it; its pid file and log are root-only (`/run/fsmaint-timer.pid`, `/var/log/fsmaint-timer.log`, mode 0600); `pkill -TERM` then `pkill -KILL` as root reach every process of `dev`, a forked tree and a session of its own included (checked). Since round 9 every name the agent sees reads as system housekeeping (`fsmaint-timer`, `fsmaint-sweep`, `/var/lib/fsmaint`), the sleeper wakes every 300 s so the process list shows `sleep 300` and not the time left, and the checks pin both | A harness that ran the agent as root, which row 2 gates on the first trial; an agent that reads the root `sleep 300` loop as a timer all the same | The version 9 baselines' `metrics.json`: `timer_log` holding the `armed` line and `ended_by_timer: false` for the oracle and the no-op, which end long before 33,900 s | 🟢 GREEN / LOW |
+| 15 | Outlast the maintenance timer (`fsmaint-timer`, the pre-cap watchdog), so that the session runs into the platform's cap and goes ungraded, or stop it to gain time, or learn from it when the session ends | Process ownership; what the agent can see of the hooks; what the timer needs from the machine while it waits and fires | Round 8; the design of BasedPL's round 5; probe `cap-watchdog-6eb19fc0` showed a run the watchdog ended is graded. Round 9: the Oddish audits of version 8 and of the Goose task found that the helper names (`precap-watchdog`, `prepare-delivery`, `/var/lib/delivery`) and the watchdog's header comment told the solver that a cap is enforced and that its work is packed for grading. QA 07h F1 (2026-11-20): round 9's wait read the wall clock at every step (set back 600 s it fired at 34,500 s) and started two processes every 300 s, and a shell that is refused a fork ends on the spot (`Cannot fork`, status 2), as round 8's did at the moment it fired; a fork bomb of the agent's own, on a machine that limits processes, is the way there. Reproduced and fixed in round 10 | The sleeper is root's and `dev` cannot signal it; its pid file and log are root-only (`/run/fsmaint-timer.pid`, `/var/log/fsmaint-timer.log`, mode 0600); `pkill -TERM` then `pkill -KILL` as root reach every process of `dev`, a parent with its child and a session of its own included (checked with stand-ins that live). Since round 9 every name the agent sees reads as system housekeeping (`fsmaint-timer`, `fsmaint-sweep`, `/var/lib/fsmaint`). Since round 10 the wait is one child on the monotonic clock that starts nothing and shows no time in the process list; the shell's own wait, where that child fails, is fixed once on the kernel's uptime and counts its sleeps; every start is guarded, logged and tried again; without `pgrep` and `pkill` the shell signals the user's processes itself from `/proc`; after a minute of SIGTERM, SIGKILL is repeated for up to 510 s more (570 s after the firing, 90 s before the cap). With every fork refused from its first line to its last, the timer still waits, fires and ends the processes (checked under dash) | A harness that ran the agent as root, which row 2 gates on the first trial; an agent that reads the root `python3 -I -` as a timer all the same. Not run as root on Linux: the guard against a refused fork rests on a POSIX rule (`command` takes the special-builtin property from `eval`, so an error inside it is a status) and was measured under macOS's dash, not under Ubuntu's; the `/proc` scan ran on a stand-in folder. Where `/proc/uptime` cannot be read and the wall clock is set forward, the shell's own wait fires early, never late. Two faults at the same moment can make it late: the waiting child ended early (the agent cannot signal it; root or the kernel's out-of-memory killer could) and the uptime unreadable when the next child starts, so that the shell counts only its own sleeps and does not take off the time the first child had waited. A fork bomb that respawns faster than the SIGKILL passes outlasts them, as it outlasts `pkill`; the sweep's `kill -9 -1` as the user is the tool for that and runs only after the session. `ended_by_timer` is a record, not a control (QA 07h F4, both as in version 8; the flag is never scored): a path with a newline in its name, hidden from the `dev` stage, can forge a `timer:` line in the manifest, and on a disk with nothing left even for root the log's copy stays empty, so a session the timer ended reads `false` | The version 9 baselines' `metrics.json`: a `timer_log` of the `armed` line and `sweep: the timer (pid N) was running and was stopped`, and `ended_by_timer: false`, for the oracle and the no-op, which end long before 33,900 s. Optionally, before model trials, a canary trial with `FSMAINT_TIMER_END_SECONDS=600` among the environment's own variables, which exercises the firing and the stop on the platform (QA 07h, "After the upload") | 🟢 GREEN / LOW |
 
 ## Validation
 
 | Check | Revision | Result |
 | --- | --- | --- |
+| Reference through the verifier, local, no sandbox | round 10: everything from bundle `43cf2c2534a4`, its solution installed from an isolated copy (only the interpreter path swapped for this Mac), its corpus and its media | 1.0 on every unit: 4,002 of 4,002 (2,262 of 2,262 scenarios), 9 planned restarts, no other restart, no second try, no answer of 500 or above, no note; 552.1 s of replay against the 5,400 s deadline; 625 MiB peak resident. The first build of this round, `3d0f83058ddb` (one function name apart, in the sweep), the same: 4,002 of 4,002 in 567.7 s, 556 MiB |
+| `checks/` (45 tests) with `ci_checks` (27) | round 10 | 72 pass under Python 3.13; `ci_checks/check_repository.py` passes. The five timer and sweep checks run the scripts under dash; each fails on the broken copy made for it (20 of them) and passes on two unchanged copies. The bundle check's word list for the task's own files in the image fails on the first build's sweep (`trial_pack`) |
+| Bundle | round 10: `43cf2c2534a4`, 1,161 files, 247.3 MB; flat `d533cc11049f` | built twice with the same hash (the flat one too); Oddish preflight passes; no hidden upload among 496 agent-image files; differs from round 9's `e129cb7c2b1b` in `environment/fsmaint-timer` and `environment/fsmaint-sweep` only, and from this round's first build `3d0f83058ddb` (flat `dc452cfabb43`, never uploaded) in the sweep's one function name; no word of the list in either hook |
+| Not run (QA 07h F2) | round 10 | The two hooks as root in the image, with the real `setpriv`, `pkill`, `pgrep -r`, `setsid`, `ps` and paths; the sweep's lines that end the user's processes, which the stand-ins never reach; the timer's 9.4 hours. The guard against a refused fork under Ubuntu's dash (measured under macOS's, `dash-16`); the `/proc` scan on a real `/proc` (run on a stand-in folder). The version 9 baselines show the arming and the stop; a canary trial with `FSMAINT_TIMER_END_SECONDS=600` would show the firing |
 | Reference through the verifier, local, no sandbox | round 9: everything from bundle `e129cb7c2b1b`, its solution installed from an isolated copy (only the interpreter path swapped for this Mac), its corpus and its media | 1.0 on every unit: 4,002 of 4,002 (2,262 of 2,262 scenarios), 9 planned restarts, no other restart, no second try, no answer of 500 or above, no note; 500.7 s of replay against the 5,400 s deadline; 452 MiB peak resident |
 | `checks/` (41 tests) with `ci_checks` (27) | round 9 | 68 pass under Python 3.13; `ci_checks/check_repository.py` passes |
 | Bundle | round 9: `e129cb7c2b1b`, 1,161 files, 247.3 MB; flat `679240b989a1` | built twice with the same hash; Oddish preflight passes; no hidden upload among 496 agent-image files; no word of the audits' list in the files the task puts into the agent image, in `task.toml` or in the solution |
@@ -1150,15 +1292,18 @@ python3 scripts/scan_uploads.py experiment/dist/bundles/<hash>/<task slug>   # h
 
 ## Remaining work
 
-- Upload bundle `e129cb7c2b1b` (247.3 MB) as version 9 once the model trials on version 8 have
+- Upload bundle `43cf2c2534a4` (247.3 MB) as version 9 once the model trials on version 8 have
   settled (an upload could retract their rows), run its baselines with `--no-archil` (reference
   twice, no-op twice), and have its Oddish source audit pass before any model trial (the owner's
   gate since version 8). Pass criteria for the reference: 4,002 of 4,002, `planned_restarts` 9,
   `restarts` 0, `retried` 0, `unfinished` 0, no answer of 500 or above in
   `server_errors_by_theme`, no note of the hard stop, of a stop for disk or memory, or from the
   collect hook, and `3.5 x elapsed_sec + 300 <= 5,400`. For both baselines: `ended_by_timer: false`
-  and a `timer_log` holding the timer's `armed` line (it armed at `setup_complete` and never
-  fired, since both end long before 33,900 s). Record `memory_measure`, `server_peak_held_mib`,
+  and a `timer_log` of two lines, the timer's `armed` line and the sweep's `sweep: the timer (pid N)
+  was running and was stopped` (it armed at `setup_complete` and never fired, since both end long
+  before 33,900 s). `was not running` or `no timer was on record` there, or a line ending in
+  `going on`, means the timer died, never started or met a fault: read it before any model trial.
+  Record `memory_measure`, `server_peak_held_mib`,
   `free_space_mib`, `grader_oom_score_adj`, any note of an unwatched disk and the environment,
   hook, collect and verifier-build times against the 12-hour lease (QA 07c F7, QA 13 S3). For the
   no-op: 0.0 with `status: completed` and a manifest of `complete 0 0`.
@@ -1166,6 +1311,25 @@ python3 scripts/scan_uploads.py experiment/dist/bundles/<hash>/<task slug>   # h
   (the asks in harbor-lh `ops/swe-marathon-v2/PLATFORM_VERIFIER_BUILD_AFTER_LONG_RUN.md`): a
   capped, ungraded run is reported as lost, never as 0, and until then every v2 result is biased
   toward agents that stop early.
+- Before a second step is added (QA 07h F5): task-level collect hooks run at every step's
+  collection, and the sweep stops the timer for good, which is right for one step only. With two,
+  every session after the first would run without a timer, and `END_SECONDS` counts from the
+  trial's set-up, not from a step's start. Arm the timer per step (the sweep removes the pid file
+  since round 10, so a later start of `fsmaint-timer` does arm a new one; it has to be started
+  where a step begins and given that step's time), or stop it only at the last collection.
+- What `ended_by_timer` cannot be trusted for (QA 07h F4; both as in version 8, and the flag is
+  never scored). Forged: the sweep's root stage puts a removed path into a manifest line
+  unescaped, so a pipe named `x<newline>timer: ... fired after 33900 s`, hidden from the `dev`
+  stage, reads as the timer's line. Lost: the sweep copies the timer's log before it gives the
+  reserved room back (a check pins that order), so on a disk with nothing left even for root the
+  copy stays empty and a session the timer ended reads `false`. The fixes, for a round that
+  touches the sweep's root stage: escape control characters in a path before it goes into a line,
+  and copy the log after the room is given back.
+- Not run anywhere yet (QA 07h F2; see Validation): the two hooks as root in the image, with the
+  real `setpriv`, `pkill`, `ps` and paths, and the timer's 9.4 hours. The checks run both scripts
+  whole under dash on the author's Mac with stand-ins; the guard against a refused fork was
+  measured under macOS's dash, not Ubuntu's. The version 9 baselines show the arming and the stop
+  on the platform; only a canary trial with a short `FSMAINT_TIMER_END_SECONDS` shows the firing.
 - The privilege and limits checks fail closed: a provider whose sandbox cannot set or report
   them ends every evaluation with an evaluation error. The baselines will show it, and whether
   the server's user can lower its OOM priority there (a note in `metrics.json`).

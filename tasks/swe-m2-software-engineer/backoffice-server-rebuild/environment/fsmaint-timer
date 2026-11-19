@@ -1,46 +1,190 @@
 #!/bin/sh
 # Maintenance timer, run as root from a set-up hook. Started without arguments it arms one detached copy of itself
 # (`run`) and returns at once; a second start finds the first copy's pid file and arms nothing. The detached copy waits
-# END_SECONDS, waking every STEP_SECONDS at most, then ends every process selected by SELECT: SIGTERM, repeated every
-# 5 s for up to 60 s, then SIGKILL. It logs its arm, fire and done lines with timestamps to a root-only file and removes
-# its pid file when it is done. The FSMAINT_TIMER_* variables override the times, the selection and the paths.
+# END_SECONDS, then ends every process selected by SELECT: SIGTERM every 5 s for up to 60 s, then SIGKILL every half
+# second for 10 s and every 5 s for up to 500 s more, until none is left. It logs its arm, fire and done lines with
+# timestamps to a root-only file and removes its pid file when it is done. The FSMAINT_TIMER_* variables override the
+# times, the selection and the paths.
+#
+# Nothing that goes wrong on the way keeps the processes from being ended. The wait is one child that counts on the
+# monotonic clock and starts nothing. Where that child cannot run or ends early, the wait goes on here in sleeps of at
+# most STEP_SECONDS: the end is fixed once against the kernel's uptime (the wall clock where that cannot be read), and
+# the sleeps that complete are counted as well, so a clock that is set back cannot move the end later. A command that
+# cannot be started does not end this script: it is noted in the log and tried again, and where pgrep and pkill cannot
+# be started this shell finds the processes and signals them itself.
 END_SECONDS=${FSMAINT_TIMER_END_SECONDS:-33900}
 STEP_SECONDS=${FSMAINT_TIMER_STEP_SECONDS:-300}
 SELECT=${FSMAINT_TIMER_SELECT:--u dev}          # pgrep/pkill selection of the processes to end
 LOG=${FSMAINT_TIMER_LOG:-/var/log/fsmaint-timer.log}
 PIDFILE=${FSMAINT_TIMER_PIDFILE:-/run/fsmaint-timer.pid}
+UPTIME=${FSMAINT_TIMER_UPTIME:-/proc/uptime}    # seconds since the kernel started: a clock that only runs forward
+PROC=${FSMAINT_TIMER_PROC:-/proc}               # the kernel's folder for each process
+PYTHON=${FSMAINT_TIMER_PYTHON:-/usr/bin/python3}
+case $END_SECONDS in ''|*[!0-9]*|0?*) END_SECONDS=33900 ;; esac
+case $STEP_SECONDS in ''|*[!0-9]*|0*) STEP_SECONDS=300 ;; esac
 umask 077
-mkdir -p "$(dirname "$LOG")" "$(dirname "$PIDFILE")" 2>/dev/null
-log() { echo "$(date -u +%FT%TZ) $*" >> "$LOG"; }
-# pgrep's state filter (procps) leaves zombies out; where pgrep lacks it, every match counts.
-if pgrep -r R,S,D,T -u 0 >/dev/null 2>&1; then alive() { pgrep $SELECT -r R,S,D,T >/dev/null 2>&1; }
-else alive() { pgrep $SELECT >/dev/null 2>&1; }; fi
+# Run a command so that this script goes on whatever becomes of it. A command that cannot be started at all, for want
+# of a new process, is otherwise an error the shell itself ends on; this way it is a status, 2.
+try() { command eval '"$@"' 2>/dev/null; }
+case $LOG in */*) try mkdir -p "${LOG%/*}" ;; esac
+case $PIDFILE in */*) try mkdir -p "${PIDFILE%/*}" ;; esac
+log() {
+    stamp=
+    command eval 'stamp=$(date -u +%FT%TZ)' 2>/dev/null
+    echo "${stamp:--} $*" >> "$LOG"
+}
+# Note in the log something that went wrong, and go on: the first time for its kind ($1) and then at every doubling of
+# that kind's count, so that a fault that lasts cannot fill the disk.
+children=0 naps=0 clocks=0 signals=0
+fault() {
+    case $1 in
+        child) children=$((children + 1)); times=$children ;;
+        nap) naps=$((naps + 1)); times=$naps ;;
+        clock) clocks=$((clocks + 1)); times=$clocks ;;
+        *) signals=$((signals + 1)); times=$signals ;;
+    esac
+    [ $((times & (times - 1))) -eq 0 ] && log "$2 (time $times); going on"
+    return 0
+}
+# Whole seconds on the clock chosen when the wait began, into `now`: the kernel's uptime, which this shell reads without
+# starting anything, or the wall clock. Answers 1, with `now` empty, when it cannot be read.
+clock() {
+    now=
+    case $timebase in
+        uptime) [ -r "$UPTIME" ] && read -r now rest 2>/dev/null < "$UPTIME"; now=${now%%.*} ;;
+        wall) command eval 'now=$(date +%s)' 2>/dev/null ;;
+    esac
+    case $now in ''|*[!0-9]*|0?*) now=; return 1 ;; esac
+}
+# Let about $1 whole seconds pass without starting anything, by watching the kernel's uptime. Where that is not the
+# clock in use there is nothing to watch, and it answers 1 at once.
+idle() {
+    [ "$timebase" = uptime ] && clock || return 1
+    stop=$((now + $1 + 1))
+    while clock && [ "$now" -lt "$stop" ]; do :; done
+}
+# Let about $1 seconds pass: a sleep where one can be started, else by watching the clock.
+pause() { try sleep "$1" || idle "${1%%.*}"; }
+# The selected processes as this shell finds them by itself, for when pgrep and pkill cannot be started: the numbered
+# folders of $PROC whose status gives the selection's user as the effective one, zombies left out. Sets `found` to their
+# pids; answers 0 if there are any, 1 if there are none, and 2 if it cannot tell (the selection is not one user, or no
+# status there names a user).
+scan() {
+    found=
+    seen=
+    [ -n "$uid" ] || return 2
+    for entry in "$PROC"/[0-9]*; do
+        state=
+        while read -r key first second rest; do
+            case $key in
+                State:) state=$first ;;
+                Uid:)
+                    seen=1
+                    [ "$second" = "$uid" ] && [ "$state" != Z ] && found="$found ${entry##*/}"
+                    break ;;
+            esac
+        done 2>/dev/null < "$entry/status"
+    done
+    [ -n "$seen" ] || return 2
+    [ -n "$found" ]
+}
+# Whether any selected process is left. pgrep answers 0 or 1 when it has run; when it cannot be run, what this shell
+# finds by itself decides, and what cannot be told counts as some left.
+alive() {
+    try pgrep $SELECT $STATES >/dev/null
+    case $? in 0) return 0 ;; 1) return 1 ;; esac
+    scan
+    [ $? -ne 1 ]
+}
+# Send a signal to every selected process. pkill answers 0 or 1 when it has run; anything else is noted, and the signal
+# then goes from this shell's own kill to what it finds by itself.
+send() {
+    try pkill "-$1" $SELECT >/dev/null
+    status=$?
+    [ "$status" -le 1 ] && return 0
+    fault signal "pkill -$1 could not be run (status $status)"
+    scan && kill "-$1" $found 2>/dev/null
+}
 if [ "${1:-}" = "run" ]; then
     echo $$ > "$PIDFILE"
     log "armed pid $$: ending the processes selected by '$SELECT' in $END_SECONDS s"
-    end=$(( $(date +%s) + END_SECONDS ))
+    # The selection's user as a number, when the selection is one user (`-u NAME`): what this shell needs to pick that
+    # user's processes out by itself.
+    uid=
+    case $SELECT in
+        "-u "*)
+            uid=${SELECT#-u }
+            case $uid in *[!0-9]*) command eval 'uid=$(id -u "$uid")' 2>/dev/null || uid= ;; esac ;;
+    esac
+    case $uid in ''|0|*[!0-9]*) uid= ;; esac
+    # pgrep's state filter (procps) leaves zombies out; where pgrep lacks it, every match counts.
+    if try pgrep -r R,S,D,T -u 0 >/dev/null; then STATES="-r R,S,D,T"; else STATES=; fi
+    # The end is fixed once: on the kernel's uptime where that can be read, else on the wall clock.
+    timebase=uptime
+    clock || { timebase=wall; clock; } || timebase=
+    end=
+    if [ -n "$now" ]; then end=$((now + END_SECONDS)); else fault clock "no clock could be read: the sleeps are counted alone"; fi
+    slept=0
     while :; do
-        left=$(( end - $(date +%s) ))
+        left=$((END_SECONDS - slept))
+        if [ -n "$end" ]; then
+            if clock; then
+                [ $((end - now)) -lt "$left" ] && left=$((end - now))
+            else
+                fault clock "the clock could not be read"
+            fi
+        fi
         [ "$left" -gt 0 ] || break
-        [ "$left" -gt "$STEP_SECONDS" ] && left=$STEP_SECONDS
-        sleep "$left"
+        # All that is left, in one child: it counts on the monotonic clock, starts nothing, and takes its times from its
+        # environment. It answers 10 once it has waited them out.
+        FSMAINT_TIMER_LEFT=$left
+        FSMAINT_TIMER_STEP=$STEP_SECONDS
+        export FSMAINT_TIMER_LEFT FSMAINT_TIMER_STEP
+        try "$PYTHON" -I - <<'EOF'
+import os, sys, time
+end = time.monotonic() + float(os.environ["FSMAINT_TIMER_LEFT"])
+step = float(os.environ["FSMAINT_TIMER_STEP"])
+while True:
+    left = end - time.monotonic()
+    if left <= 0:
+        sys.exit(10)
+    time.sleep(min(step, left))
+EOF
+        status=$?
+        [ "$status" -eq 10 ] && break
+        fault child "the wait's child ended with status $status"
+        # Until it can be started again: one sleep of at most STEP_SECONDS, counted when it completes.
+        nap=$left
+        [ "$nap" -gt "$STEP_SECONDS" ] && nap=$STEP_SECONDS
+        if try sleep "$nap"; then
+            slept=$((slept + nap))
+        else
+            fault nap "a sleep of $nap s could not be started or was cut short"
+            idle 1
+        fi
     done
     log "fired after $END_SECONDS s: SIGTERM to the processes selected by '$SELECT'"
     for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
         alive || break
-        pkill -TERM $SELECT >/dev/null 2>&1
-        sleep 5
+        send TERM
+        pause 5
     done
     if alive; then
         log "SIGKILL to what is left"
-        for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
-            alive || break
-            pkill -KILL $SELECT >/dev/null 2>&1
-            sleep 0.5
+        turns=0
+        while [ "$turns" -lt 120 ] && alive; do
+            send KILL
+            turns=$((turns + 1))
+            if [ "$turns" -le 20 ]; then pause 0.5; else pause 5; fi
         done
     fi
-    log "done: $(pgrep $SELECT 2>/dev/null | wc -l | tr -d ' ') process(es) of the selection left"
-    rm -f "$PIDFILE"
+    count=
+    if ! command eval 'count=$(pgrep $SELECT 2>/dev/null | wc -l | tr -d " ")' 2>/dev/null; then
+        scan
+        [ $? -le 1 ] && { set -- $found; count=$#; }
+    fi
+    log "done: ${count:-an unknown number of} process(es) of the selection left"
+    try rm -f "$PIDFILE"
     exit 0
 fi
 # The hook's entry: arm one sleeper, detached, and return at once.
