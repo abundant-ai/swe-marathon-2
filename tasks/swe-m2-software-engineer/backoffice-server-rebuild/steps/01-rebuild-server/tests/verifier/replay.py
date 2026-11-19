@@ -104,10 +104,13 @@ JSON_LIMIT = 4_000_000  # a longer JSON answer is not parsed; the longest record
 HEAVY_PDF = 1 << 20  # an uploaded PDF this large is read in full while the write lock is held
 HEAVY_FILE = 16 << 20  # so is any upload this large while it is stored
 LOG_KEEP = 1 << 20  # bytes of the server's output kept from its start and from its end
-GUARD_SEC = 0.05  # how often the server's OOM priority and its memory are checked; the disk every DISK_EVERY of these
-DISK_EVERY = 20
+GUARD_SEC = 0.01  # how often the guard wakes: the server's memory is read every tick where one file reports it
+OOM_EVERY = 5  # ticks between walks of /proc that raise the server's OOM priority (50 ms)
+DISK_EVERY = 100  # ticks between checks of the free space (1 s)
 DISK_RESERVE = 512 << 20  # free bytes below which the server is stopped for good
-SERVER_MEMORY = 6 << 30  # bytes the server's processes may hold in all (server_memory) before it is stopped for good
+SERVER_MEMORY = 6 << 30  # memory the server may hold in all (MemoryMeter) before it is stopped for good
+CGROUP_ROOT = "/sys/fs/cgroup"
+MEMINFO_MACHINE = 16 << 30  # /proc/meminfo is taken for this machine's own only when it reports at most this much
 BALLAST = 256 << 20  # set aside before the server starts and given back for the results
 MEDIA_CACHE = 192 << 20  # bytes of uploads kept in memory between uses
 WORKSPACE_ID = re.compile(r"[A-Za-z0-9_]{1,40}")
@@ -118,7 +121,7 @@ NO_ANSWER = "no answer from the server"
 CRASHED = "the server stopped while the scenario was played"
 DOWN = "server not running"
 DISK = "the server was stopped when the disk ran low"
-MEMORY = "the server was stopped when its processes held more than 6 GiB of memory"
+MEMORY = "the server was stopped when it held more than 6 GiB of memory"
 
 
 class EvaluationError(Exception):
@@ -219,6 +222,9 @@ class Bounded(io.RawIOBase):
             finally:  # the connection's own timeout again, for whatever is sent on it next
                 with contextlib.suppress(OSError):
                     self.sock.settimeout(self.timeout)
+            if count == 0 and time.monotonic() >= self.end:
+                # the watcher's shutdown at the end reads as the end of the stream: an answer cut there is not complete
+                raise TimeoutError("the answer did not end in time")  # (QA 07e N-a)
         self.left -= count
         return count
 
@@ -366,27 +372,15 @@ def end_user_processes(uid: int, seconds: float = 20, group: Cgroup | None = Non
     return not user_processes(uid)
 
 
-def server_memory(uid: int, raise_priority: bool = False) -> int:
-    """Bytes of memory the processes of `uid` hold that the kernel cannot drop under pressure: resident anonymous and
-    shared-memory pages (RssAnon and RssShmem of each, from /proc; VmRSS where the kernel reports neither). Pages of a
-    file a server maps, its SQLite database say, can be dropped and are left out, so several processes mapping one file
-    are not counted many times. With `raise_priority`, also put each process back at the front of the OOM killer's
-    line, which needs no capability. One walk of /proc does both, so the guard can afford to run every 50 ms."""
-    total = 0
+def raise_oom_priority(uid: int) -> None:
+    """Put every process of `uid` back at the front of the OOM killer's line; raising the value needs no capability."""
     with contextlib.suppress(OSError):
         with os.scandir(PROC) as entries:
             for entry in entries:
                 if not entry.name.isdigit():
                     continue
-                with contextlib.suppress(OSError, ValueError, IndexError):
-                    fields = proc_fields(entry.name)
-                    if fields.get("Uid", "").split()[:1] != [str(uid)]:
-                        continue
-                    if "RssAnon" in fields:
-                        total += (int(fields["RssAnon"].split()[0]) + int(fields.get("RssShmem", "0 kB").split()[0])) << 10
-                    else:
-                        total += int(fields.get("VmRSS", "0 kB").split()[0]) << 10
-                    if not raise_priority:
+                with contextlib.suppress(OSError, ValueError):
+                    if proc_fields(entry.name).get("Uid", "").split()[:1] != [str(uid)]:
                         continue
                     path = f"{PROC}/{entry.name}/oom_score_adj"
                     with open(path) as current:
@@ -394,7 +388,6 @@ def server_memory(uid: int, raise_priority: bool = False) -> int:
                             continue
                     with open(path, "w") as adjust:
                         adjust.write("1000")
-    return total
 
 
 def reap_orphans() -> None:
@@ -572,6 +565,7 @@ class Ballast:
         self.path: Path | None = None
         with contextlib.suppress(OSError):
             descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            self.path = path  # released even if only part of it could be set aside
             try:
                 try:
                     os.posix_fallocate(descriptor, 0, size)
@@ -582,7 +576,6 @@ class Ballast:
                 os.fsync(descriptor)
             finally:
                 os.close(descriptor)
-            self.path = path
 
     def release(self) -> None:
         if self.path is not None:
@@ -601,6 +594,212 @@ def free_bytes(path: Path | str) -> int | None:
     if info.f_blocks == 0:
         return None
     return info.f_bavail * info.f_frsize
+
+
+
+# ------------------------------------------------------------------ the server's memory
+
+def read_fields(path: str) -> dict[str, int]:
+    """The `name value` lines of a /proc or cgroup file, as bytes (a value followed by `kB` counts kibibytes)."""
+    found: dict[str, int] = {}
+    with open(path, encoding="latin-1") as text:
+        for line in text:
+            parts = line.replace(":", " ").split()
+            if len(parts) >= 2 and parts[1].isdigit():
+                found[parts[0]] = int(parts[1]) << 10 if parts[2:3] == ["kB"] else int(parts[1])
+    return found
+
+
+def own_anon() -> int:
+    """The evaluation's own anonymous memory (RssAnon of this process), in bytes; 0 where it is not reported."""
+    try:
+        return read_fields(f"{PROC}/self/status").get("RssAnon", 0)
+    except OSError:
+        return 0
+
+
+def memory_backed_dirs() -> list[str]:
+    """The places where any user can create files that live in memory: /dev/shm, POSIX message queues, and each scratch
+    directory that is a tmpfs on this machine (from /proc/self/mountinfo); each named once, by its real path."""
+    devices: set[int] = set()
+    with contextlib.suppress(OSError, ValueError):
+        with open(f"{PROC}/self/mountinfo", encoding="latin-1") as mounts:
+            for line in mounts:
+                fields = line.split()
+                if "-" in fields and fields[fields.index("-") + 1] in ("tmpfs", "ramfs", "mqueue"):
+                    major, minor = fields[2].split(":")
+                    devices.add(os.makedev(int(major), int(minor)))
+    found: list[str] = []
+    for path in SCRATCH:
+        with contextlib.suppress(OSError):
+            real = os.path.realpath(path)
+            if real not in found and (os.stat(real).st_dev in devices or real in ("/dev/shm", "/dev/mqueue")):
+                found.append(real)
+    return found
+
+
+def release_memory(uid: int, seconds: float = 10) -> None:
+    """Free what the server's user can keep in memory without a process: its SysV shared memory segments, message queues
+    and semaphores (removed as that user, since root lacks CAP_SYS_ADMIN on Docker's defaults) and its files in
+    memory-backed directories (QA 07e M3). Done at every stop and every halt, so memory parked there never outlives the
+    server. Never raises."""
+    with contextlib.suppress(OSError, subprocess.SubprocessError):
+        subprocess.run(DROP + ["ipcrm", "--all"], check=False, capture_output=True, timeout=seconds)
+    with contextlib.suppress(Exception):
+        remove_user_files(uid, roots=tuple(memory_backed_dirs()), until=time.monotonic() + seconds)
+
+
+def cgroup_dirs() -> list[tuple[str, str]]:
+    """(kind, directory) of each place the memory cgroup of this process may be read, from /proc/self/cgroup: its path
+    under the cgroup mount, then the mount's root (where a cgroup namespace makes the path `/`)."""
+    found: list[tuple[str, str]] = []
+    with contextlib.suppress(OSError):
+        with open(f"{PROC}/self/cgroup", encoding="latin-1") as listing:
+            for line in listing:
+                parts = line.rstrip("\n").split(":", 2)
+                if len(parts) != 3:
+                    continue
+                if parts[0] == "0" and parts[1] == "":
+                    kind, mount = "cgroup v2", CGROUP_ROOT
+                elif "memory" in parts[1].split(","):
+                    kind, mount = "cgroup v1", f"{CGROUP_ROOT}/memory"
+                else:
+                    continue
+                for directory in (mount + parts[2].rstrip("/"), mount):
+                    if (kind, directory) not in found:
+                        found.append((kind, directory))
+    return found
+
+
+def processes_memory(uid: int) -> int:
+    """Memory of `uid` from its processes alone, each page counted once: the proportional set size of their anonymous
+    and shared memory (a page several processes map is split among them; a fork's shared pages count once), plus SysV
+    segments of the user that no process attaches and its files in memory-backed directories that none of its processes
+    map. A memfd that no process maps is not seen here."""
+    total, mapped = 0, set()
+    for pid in user_processes(uid):
+        try:
+            rollup = read_fields(f"{PROC}/{pid}/smaps_rollup")
+        except OSError:
+            rollup = {}
+        if "Pss_Anon" in rollup:
+            total += rollup["Pss_Anon"] + rollup.get("Pss_Shmem", 0)
+        elif "Pss" in rollup:
+            total += rollup["Pss"]
+        else:
+            with contextlib.suppress(OSError):
+                status = read_fields(f"{PROC}/{pid}/status")
+                total += status["RssAnon"] + status.get("RssShmem", 0) if "RssAnon" in status else status.get("VmRSS", 0)
+        with contextlib.suppress(OSError, ValueError):
+            with open(f"{PROC}/{pid}/maps", encoding="latin-1") as maps:
+                for line in maps:
+                    parts = line.split(None, 5)
+                    if len(parts) >= 5 and parts[4] != "0":
+                        major, minor = parts[3].split(":")
+                        mapped.add((os.makedev(int(major, 16), int(minor, 16)), int(parts[4])))
+    with contextlib.suppress(OSError, ValueError, KeyError):
+        with open(f"{PROC}/sysvipc/shm", encoding="latin-1") as segments:
+            names = segments.readline().split()
+            for line in segments:
+                row = dict(zip(names, line.split()))
+                if str(uid) in (row["uid"], row["cuid"]) and row["nattch"] == "0":
+                    total += int(row.get("rss", "0")) + int(row.get("swap", "0"))
+    for root in memory_backed_dirs():
+        seen = 0
+        for folder, folders, files in os.walk(root):
+            for name in files:
+                seen += 1
+                with contextlib.suppress(OSError):
+                    info = os.lstat(os.path.join(folder, name))
+                    if info.st_uid == uid and (info.st_dev, info.st_ino) not in mapped:
+                        total += info.st_blocks * 512
+            if seen > 20_000:
+                break
+    return total
+
+
+class MemoryMeter:
+    """How much memory the server holds that the kernel cannot reclaim, each page counted once (QA 07d M3, 07e M3, S-a).
+
+    The best source the machine has is chosen once, before the server starts:
+    - "server cgroup": the server's own group (`Cgroup`), where the machine lets the evaluation make one; the kernel
+      caps it at the same size and charges it for every page the server holds, so it is read as it is.
+    - "cgroup v2" or "cgroup v1": the memory cgroup this evaluation runs in. The kernel charges it for every page,
+      whatever holds it: a process, a SysV segment no one attaches, a memfd, a file in /dev/shm, socket buffers. v2:
+      memory.current less reclaimable page cache and slab; v1: rss and shmem.
+    - "meminfo": MemTotal less MemAvailable, only on a machine of at most MEMINFO_MACHINE, where it is this machine's own
+      (a virtual machine's or a gVisor sandbox's) and not a shared host's.
+      In both, the evaluation's own anonymous memory and whatever was in use before the server started are taken off,
+      so a page an honest server shares among workers, or keeps in /dev/shm for SQLite or multiprocessing, counts once,
+      at its real size.
+    - "processes": where neither can be read, `processes_memory`.
+    """
+
+    def __init__(self, uid: int | None, group: Path | None = None) -> None:
+        self.uid, self.kind, self.source, self.base, self.peak = uid, "none", "", 0, 0
+        if uid is None:
+            return
+        if group is not None and self._usable("cgroup v2", str(group)):
+            self.kind = "server cgroup"
+            return
+        for kind, directory in cgroup_dirs():
+            if self._usable(kind, directory):
+                break
+        if self.kind == "none":
+            with contextlib.suppress(OSError):
+                info = read_fields(f"{PROC}/meminfo")
+                if "MemAvailable" in info and 0 < info.get("MemTotal", 0) <= MEMINFO_MACHINE:
+                    self._usable("meminfo", f"{PROC}/meminfo")
+        if self.kind == "none" and os.path.isdir(f"{PROC}/self"):
+            self.kind = "processes"
+        if self.kind in ("cgroup v2", "cgroup v1", "meminfo"):
+            self.base = self.pinned() - own_anon()
+
+    @property
+    def fast(self) -> bool:
+        """Whether one small file gives the reading, so it can be taken every tick."""
+        return self.kind in ("server cgroup", "cgroup v2", "cgroup v1", "meminfo")
+
+    def _usable(self, kind: str, source: str) -> bool:
+        self.kind, self.source = kind, source
+        try:
+            self.pinned()
+            return True
+        except (OSError, ValueError, KeyError):
+            self.kind, self.source = "none", ""
+            return False
+
+    def pinned(self) -> int:
+        """Memory in use that the kernel cannot reclaim, as the source counts it, in bytes."""
+        if self.kind in ("cgroup v2", "server cgroup"):
+            with open(self.source + "/memory.current", encoding="latin-1") as current:
+                used = int(current.read())
+            stat = read_fields(self.source + "/memory.stat")
+            return max(0, used - (stat["file"] - stat.get("shmem", 0)) - stat.get("slab_reclaimable", 0))
+        if self.kind == "cgroup v1":
+            stat = read_fields(self.source + "/memory.stat")
+            return (stat["total_rss"] if "total_rss" in stat else stat["rss"]) + stat.get("total_shmem", stat.get("shmem", 0))
+        if self.kind == "meminfo":
+            info = read_fields(self.source)
+            return max(0, info["MemTotal"] - info["MemAvailable"])
+        if self.kind == "processes" and self.uid is not None:
+            return processes_memory(self.uid)
+        return 0
+
+    def server_bytes(self) -> int:
+        """The server's share now; raises OSError, ValueError or KeyError when the source cannot be read this time."""
+        shared = self.kind in ("cgroup v2", "cgroup v1", "meminfo")  # sources that also count the evaluation's memory
+        found = max(0, self.pinned() - own_anon() - self.base) if shared else self.pinned()
+        self.peak = max(self.peak, found)
+        return found
+
+
+def make_meter(candidate: Candidate) -> MemoryMeter:
+    """The meter for a sandboxed server (its user's memory, or its own cgroup where there is one); none without the
+    sandbox, in development checks."""
+    if not candidate.sandbox:
+        return MemoryMeter(None)
+    return MemoryMeter(candidate.uid, candidate.group.path if candidate.group is not None else None)
 
 
 # ------------------------------------------------------------------ the server
@@ -656,6 +855,7 @@ class Candidate:
                 self.proc.wait(timeout=10)
         if self.sandbox:
             reap_orphans()
+            release_memory(self.uid)  # SysV objects and memory-backed files outlive the processes (QA 07e M3)
         self.proc = None
 
     def clean_slate(self) -> None:
@@ -677,10 +877,8 @@ class Candidate:
             budget = min(SWEEP_SEC, max(1.0, self.clock.left() - RETRY_MARGIN_SEC))
             if os.path.lexists(self.data):
                 remove_tree(self.data, budget)
-            if self.sandbox:
+            if self.sandbox:  # stop() has already freed its SysV objects and memory-backed files
                 remove_user_files(self.uid, until=time.monotonic() + budget, aside=aside, skip=(str(self.work), str(self.source)))
-                with contextlib.suppress(OSError, subprocess.SubprocessError):  # run as the user, who owns its objects
-                    subprocess.run(DROP + ["ipcrm", "--all"], check=False, capture_output=True, timeout=60)
             if not self.clock.expired() and not self.halted and self.start():
                 self.failed_starts = 0
             else:
@@ -770,16 +968,26 @@ class Candidate:
 
 
 class Guard:
-    """While the server may run, every GUARD_SEC (50 ms): put its processes back at the front of the OOM killer's line,
-    and stop it for good when they hold more than SERVER_MEMORY in all, so memory it takes cannot end the evaluation
-    (QA 07c F1, 07d M3); every DISK_EVERY ticks, stop it for good when a disk the evaluation needs has run low while it
-    ran (QA 07c F3). Only a filesystem that reports its size and had room when the server started is watched (QA 07d
-    S1): a server cannot be blamed for a disk the machine gave it full. `start_free` has what each path had."""
+    """While the server may run: every GUARD_SEC (10 ms) where one file reports it, else every 50 ms, stop the server for
+    good when it holds more than SERVER_MEMORY, measured by `meter`, so memory it takes cannot end the evaluation (QA 07c
+    F1, 07d M3, 07e M3); every 50 ms put its processes back at the front of the OOM killer's line; every second stop it
+    for good when a disk it can write has run low (QA 07c F3). A disk is watched only if it reports its size, had room
+    when the server started (QA 07d S1) and is one the server can write to (QA 07e S-d): a server cannot be blamed for a
+    disk the machine gave it full or one only the grader writes. `start_free` has what each path had."""
 
-    def __init__(self, candidate: Candidate, paths: list[Path]) -> None:
-        self.candidate = candidate
+    def __init__(self, candidate: Candidate, paths: list[Path], meter: MemoryMeter) -> None:
+        self.candidate, self.meter = candidate, meter
+        writable = set()
+        for path in [candidate.work, *SCRATCH]:
+            with contextlib.suppress(OSError):
+                writable.add(os.stat(path).st_dev)
         self.start_free = {str(path): free_bytes(path) for path in paths}
-        self.paths = [path for path in paths if (self.start_free[str(path)] or 0) >= DISK_RESERVE]
+        self.unwritable = []
+        for path in paths:
+            with contextlib.suppress(OSError):
+                if os.stat(path).st_dev not in writable:
+                    self.unwritable.append(str(path))
+        self.paths = [path for path in paths if (self.start_free[str(path)] or 0) >= DISK_RESERVE and str(path) not in self.unwritable]
         self.done = threading.Event()
         self.thread = threading.Thread(target=self._watch, daemon=True)
         self.thread.start()
@@ -789,16 +997,25 @@ class Guard:
         if not candidate.halted:
             candidate.halted = reason
             candidate.kill_all()
+            if candidate.sandbox:
+                release_memory(candidate.uid)
 
     def _watch(self) -> None:
-        candidate, tick = self.candidate, 0
+        candidate, meter, tick = self.candidate, self.meter, 0
         while not self.done.wait(GUARD_SEC):
             tick += 1
             if candidate.halted:
                 continue
-            if server_memory(candidate.uid, candidate.sandbox) > SERVER_MEMORY:
-                self.halt(MEMORY)
-                continue
+            if candidate.sandbox and tick % OOM_EVERY == 0:
+                raise_oom_priority(candidate.uid)
+            if meter.kind != "none" and (meter.fast or tick % OOM_EVERY == 0):
+                try:
+                    held = meter.server_bytes()
+                except (OSError, ValueError, KeyError):
+                    held = 0  # a reading that fails is skipped, never taken for a full machine
+                if held > SERVER_MEMORY:
+                    self.halt(MEMORY)
+                    continue
             if tick % DISK_EVERY == 0 and any((free := free_bytes(path)) is not None and free < DISK_RESERVE for path in self.paths):
                 self.halt(DISK)  # a path whose size cannot be read this time is not taken for full
 
@@ -1457,7 +1674,7 @@ def check_sandbox() -> list[str]:
     if not limits_applied(done.stdout):
         raise EvaluationError("Could not limit the server's threads, file size and memory; submitted code was not run")
     if "OomLowered:\t1" in done.stdout:
-        return ["the server's user can lower its own OOM priority on this machine; the evaluation raises it again every second"]
+        return ["the server's user can lower its own OOM priority on this machine; the evaluation raises it again every 50 ms"]
     return []
 
 
@@ -1483,6 +1700,7 @@ class Progress:
 
     def __init__(self) -> None:
         self.started = time.monotonic()
+        self.ballast: Ballast | None = None  # given back by a caller that stops waiting (QA 07e S-b)
         self.metrics: dict[str, Any] | None = None
         self.themes: list[list[str]] = []
         self.ids: list[str] = []
@@ -1576,19 +1794,26 @@ def evaluate(source: Path, scenario_path: Path, work: Path, output: Path, sandbo
             os.chmod(work, 0o755)
             if sandbox:
                 seal_submission(source)
-                ballast = Ballast(work / "ballast")
+                ballast = progress.ballast = Ballast(work / "ballast")
             for path in (work, output):  # the evaluation needs room here: a machine that has none is not the server's fault
                 free = free_bytes(path)
                 if free is not None and free < DISK_RESERVE:
                     raise EvaluationError(f"The machine has less than {DISK_RESERVE >> 20} MiB free on {path} before the server starts")
             log = LogCapture()
             candidate = Candidate(source, work, log, sandbox, clock)
-            guard = Guard(candidate, [work, output, Path("/tmp")])
+            meter = make_meter(candidate)  # its baseline is what is in use before the server starts
+            guard = Guard(candidate, [work, output, Path("/tmp")], meter)
             for path, free in guard.start_free.items():
-                if free is None:
+                if path in guard.unwritable:
+                    metrics["notes"].append(f"{path} is on a filesystem the server cannot write, so its free space is not watched")
+                elif free is None:
                     metrics["notes"].append(f"{path} reports no size, so its free space is not watched")
                 elif free < DISK_RESERVE:
                     metrics["notes"].append(f"{path} had {free >> 20} MiB free before the server started, so it is not watched")
+            metrics["memory_measure"] = f"{meter.kind} {meter.source}".strip()
+            if sandbox and meter.kind == "processes":
+                metrics["notes"].append("this machine reports no memory cgroup and no meminfo of its own: the server's memory is "
+                                        "read from its processes, where a memfd no process maps is not seen")
             if candidate.start():
                 results = play_all(candidate, corpus, media, clock, metrics, stats, progress.results)
             else:
@@ -1616,5 +1841,6 @@ def evaluate(source: Path, scenario_path: Path, work: Path, output: Path, sandbo
             metrics["notes"].append(f"{candidate.halted}; {stopped} scenarios were not played to the end")
     if guard is not None:
         metrics["free_space_mib"] = guard.free_now()  # each watched path when the server started, and at the end
+        metrics["server_peak_held_mib"] = guard.meter.peak >> 20
     metrics.update(stats.report())
     return tally(metrics, themes, results, progress.started)
