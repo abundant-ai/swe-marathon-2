@@ -728,7 +728,8 @@ class MemoryMeter:
       whatever holds it: a process, a SysV segment no one attaches, a memfd, a file in /dev/shm, socket buffers. v2:
       memory.current less reclaimable page cache and slab; v1: rss and shmem.
     - "meminfo": MemTotal less MemAvailable, only on a machine of at most MEMINFO_MACHINE, where it is this machine's own
-      (a virtual machine's or a gVisor sandbox's) and not a shared host's.
+      (a virtual machine's) and not a shared host's, and only where the kernel reports RssAnon (not gVisor, whose
+      MemAvailable is its MemFree).
       In both, the evaluation's own anonymous memory and whatever was in use before the server started are taken off,
       so a page an honest server shares among workers, or keeps in /dev/shm for SQLite or multiprocessing, counts once,
       at its real size.
@@ -748,7 +749,10 @@ class MemoryMeter:
         if self.kind == "none":
             with contextlib.suppress(OSError):
                 info = read_fields(f"{PROC}/meminfo")
-                if "MemAvailable" in info and 0 < info.get("MemTotal", 0) <= MEMINFO_MACHINE:
+                own = read_fields(f"{PROC}/self/status")
+                # gVisor reports MemFree as MemAvailable and no RssAnon: page cache would count, and the grader's own
+                # memory could not be taken off (QA 07f S2)
+                if "MemAvailable" in info and 0 < info.get("MemTotal", 0) <= MEMINFO_MACHINE and "RssAnon" in own:
                     self._usable("meminfo", f"{PROC}/meminfo")
         if self.kind == "none" and os.path.isdir(f"{PROC}/self"):
             self.kind = "processes"
