@@ -17,15 +17,15 @@ network_mode = "no-network"
 user = "dev"
 
 [[agent.setup_begin]]
-command = "/usr/local/sbin/reserve-delivery-room"
+command = "/usr/local/sbin/fs-reserve"
 timeout_sec = 120
 
 [[agent.setup_complete]]
-command = "/usr/local/sbin/reserve-delivery-room"
+command = "/usr/local/sbin/fs-reserve"
 timeout_sec = 120
 
 [[agent.setup_complete]]
-command = "/usr/local/sbin/precap-watchdog"
+command = "/usr/local/sbin/proc-reaper"
 user = "root"
 timeout_sec = 60
 
@@ -45,7 +45,7 @@ timeout_sec = 3600
 user = "root"
 
 [[verifier.collect]]
-command = "/usr/local/sbin/prepare-delivery"
+command = "/usr/local/sbin/app-manifest"
 user = "root"
 timeout_sec = 900
 

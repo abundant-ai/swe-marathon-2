@@ -1,6 +1,6 @@
 #!/bin/sh
-# Builds goose from a source tree that apply.sh has hardened, the same way for both images and the
-# reference solution, and checks the result with smoke.sh against the installed standard library.
+# Builds goose from a source tree that apply.sh has hardened, the same way wherever it is built, and
+# checks the result with smoke.sh against the installed standard library.
 #
 # The link is a static PIE, stripped, where that works: no dynamic loader, and the binary's own
 # addresses still differ from run to run. Failing that it is static, failing that dynamic, each from
@@ -13,10 +13,10 @@
 #
 # Every path that would enter the binary is fixed (the TinyCC fallback directory; the source and
 # build directories, mapped), so builds from one toolchain differ only in their marker. A file named
-# marker beside this script (the images' builds have one, the solution's none) becomes the build's
-# marker (src/main.cpp), which the verifier refuses to find in a submission; without it the marker
-# is all zeros. The build writes <build>/link (static-pie, static or dynamic) and <build>/build.txt: the link,
-# the binary's sha256, and its sha256 with the marker zeroed, which builds of one toolchain share.
+# marker beside this script, where there is one, becomes the build's marker (src/main.cpp), which
+# names that build; without it the marker is all zeros. The build writes <build>/link (static-pie,
+# static or dynamic) and <build>/build.txt: the link, the binary's sha256, and its sha256 with the
+# marker zeroed, which builds of one toolchain share.
 # usage: build.sh <hardened source tree> <build dir> <parallel jobs>
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)

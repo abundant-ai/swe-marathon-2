@@ -1,4 +1,4 @@
-"""Harbor entry point: run the private cases against the submitted program and publish the result."""
+"""Run the private cases against the submitted program and publish the result."""
 
 from __future__ import annotations
 
@@ -25,29 +25,29 @@ from verifier import recorder, runcases  # noqa: E402
 
 SUBMISSION = Path("/app/rebuild")
 MARKER = Path(__file__).resolve().parent / "private" / "marker"   # the original's build marker
-# Every build of Goose that upstream publishes (scripts/upstream_builds.py: the release archives, the
-# compilers inside them and Homebrew's bottles), and two lines of upstream's own help text that the
-# hardened build lacks (the patch takes them out with the options they describe): a delivered file
-# that is either is a fetched original, whatever its version.
+# Every build of Goose that upstream publishes (verifier/upstream_builds.json: the release archives,
+# the compilers inside them and Homebrew's bottles), and two lines of upstream's own help text that
+# the hardened build lacks (the patch takes them out with the options they describe): a file that is
+# either is a fetched original, whatever its version.
 UPSTREAM_BUILDS = Path(__file__).resolve().parent / "verifier" / "upstream_builds.json"
 UNHARDENED_USAGE = (b"goose help c covers writing the C yourself (goose -o out.c)",
                     b"Writes the program's C, for a build of your own or a C host")
-# What the collect hook (environment/prepare-delivery) leaves in the delivery: its mark, whose first
-# line is "delivered <entries> <bytes>" or "refused", and its record (egress, the agent's processes
-# when the session ended, every entry), which goes to metrics.json and decides nothing.
-DELIVERY_MARK = ".delivered"
-DELIVERY_RECORD = ".delivery.json"
+# What app-manifest (environment/app-manifest) leaves in /app/rebuild before it is copied here: its
+# mark, whose first line is "manifest <entries> <bytes>" or "refused", and its record (egress, the
+# processes found, every entry), which goes to metrics.json and changes no reward.
+MANIFEST_MARK = ".manifest"
+MANIFEST_RECORD = ".manifest.json"
 RECORD_LIMIT = 64 << 20  # bytes of the record read, at most
 MARK_LIMIT = 1 << 20     # bytes of the mark read, at most (a planted multi-GB mark is no reason to run out of memory)
-MISSING_MARK = ("the delivery arrived without the collect hook's mark (the hook did not run, or the copy was cut short); "
+MISSING_MARK = ("/app/rebuild arrived without app-manifest's mark (it did not run, or the copy was cut short); "
                 "it was scored as it arrived")
 MARKER_RE = re.compile(rb"GOOSE-BUILD-MARKER-[0-9a-f]{32}")
 MARKER_LEN = len("GOOSE-BUILD-MARKER-") + 32
 REWARD_FILES = ("reward.txt", "reward.json")
 TOTAL_SEC = 3300  # the step verifier has 3,600 s; everything up to the reward file fits in this
 MARGIN_SEC = 120  # no case starts when less than this is left of TOTAL_SEC
-# Files, directories and links in a submission, at most; more is not run: the collect hook's 200,000
-# (the instruction's figure), its own mark and record, the root, and some slack.
+# Files, directories and links in a submission, at most; more is not run: app-manifest's 200,000,
+# its own mark and record, the root, and some slack.
 MAX_ENTRIES = 200_100
 MAX_BYTES = 4 << 30    # bytes of a submission's regular files (each inode once), at most; more is not run
 MAX_PROGRAM = 512 << 20  # bytes of /app/rebuild/goose hashed for metrics.json, at most
@@ -369,7 +369,7 @@ def remove_leftovers(uid: int) -> None:
 
 def holds_original(top: Path, needles: dict[bytes, str], builds: dict[str, set[int]] | None = None,
                    binary_needles: dict[bytes, str] | None = None) -> str | None:
-    """Why the delivery under `top` holds the original, or None: the first regular file (links not
+    """Why the tree under `top` holds the original, or None: the first regular file (links not
     followed, each inode once, `goose` first) that contains one of `needles` (read in chunks that
     overlap by the longest needle's length), or, for an ELF file, one of `binary_needles` (text a
     note or a script may quote without being the original), or whose sha256 is one of `builds`
@@ -425,9 +425,9 @@ def upstream_builds(path: Path = UPSTREAM_BUILDS) -> dict[str, set[int]]:
 
 
 def arrived(top: Path) -> tuple[int, int]:
-    """Entries (files, directories and links; the collect hook's mark and record left out) under
-    `top`, and bytes in its files (each file once, however many names it has), counted as the
-    collect hook counts them."""
+    """Entries (files, directories and links; app-manifest's mark and record left out) under `top`,
+    and bytes in its files (each file once, however many names it has), counted as app-manifest
+    counts them."""
     entries = size = 0
     files: set[tuple[int, int]] = set()
     folders = [str(top)]
@@ -439,7 +439,7 @@ def arrived(top: Path) -> tuple[int, int]:
             continue
         with listing:
             for entry in listing:
-                if folder == str(top) and entry.name in (DELIVERY_MARK, DELIVERY_RECORD):
+                if folder == str(top) and entry.name in (MANIFEST_MARK, MANIFEST_RECORD):
                     continue
                 try:
                     info = entry.stat(follow_symlinks=False)
@@ -454,26 +454,25 @@ def arrived(top: Path) -> tuple[int, int]:
     return entries, size
 
 
-def delivery_notes(top: Path) -> list[str]:
-    """What the collect hook's mark and the copy that arrived say about the delivery.
+def manifest_notes(top: Path) -> list[str]:
+    """What app-manifest's mark and the copy that arrived say about /app/rebuild.
 
-    The hook marks every delivery before the copy, an empty one too, after bounding it and packing
-    it once the way the copy packs it, so that nothing the agent leaves can make the copy fail. A
-    delivery that arrived is graded as it arrived, with a note when the mark is missing or says it
-    was refused.
+    app-manifest marks the tree before the copy, an empty one too, after bounding it and packing it
+    once the way the copy packs it, so that nothing left in it can make the copy fail. A tree that
+    arrived is graded as it arrived, with a note when the mark is missing or says it was refused.
 
     Raises:
         EvaluationError: Nothing arrived at all, so the copy never happened; or fewer entries or
-            bytes arrived than the mark counts, so the copy was cut short, which only the platform
-            can do. More than marked (hard links split, or files the transport added) is a note.
+            bytes arrived than the mark counts, so the copy was cut short. More than marked (hard
+            links split, or files the transport added) is a note.
     """
     try:
         empty = top.is_symlink() or not top.is_dir() or next(top.iterdir(), None) is None
     except OSError:
         empty = True
     if empty:
-        raise EvaluationError("Nothing arrived: /app/rebuild is missing or empty, though the collect hook marks every delivery")
-    mark = top / DELIVERY_MARK
+        raise EvaluationError("Nothing arrived: /app/rebuild is missing or empty, though app-manifest marks every tree")
+    mark = top / MANIFEST_MARK
     try:
         with open(mark, "r", errors="replace") as handle:  # bounded: the mark is read before sealing
             text = handle.read(MARK_LIMIT + 1) if mark.is_file() and not mark.is_symlink() else ""
@@ -482,35 +481,35 @@ def delivery_notes(top: Path) -> list[str]:
     lines = text[:MARK_LIMIT].splitlines()
     if not lines:
         return [MISSING_MARK]
-    head, notes = lines[0].split(), [f"collect hook: {line}" for line in lines[1:] if line.strip()]  # every note, no cap
+    head, notes = lines[0].split(), [f"app-manifest: {line}" for line in lines[1:] if line.strip()]  # every note, none dropped
     if len(text) > MARK_LIMIT:
-        notes.append(f"the collect hook's mark is longer than {MARK_LIMIT:,} bytes; its first {MARK_LIMIT:,} were read")
+        notes.append(f"app-manifest's mark is longer than {MARK_LIMIT:,} bytes; its first {MARK_LIMIT:,} were read")
     if head[:1] == ["refused"]:
-        return notes or ["collect hook: the delivery was not copied"]
-    if len(head) == 3 and head[0] == "delivered" and all(value.isascii() and value.isdigit() for value in head[1:]):
+        return notes or ["app-manifest: /app/rebuild was not copied"]
+    if len(head) == 3 and head[0] == "manifest" and all(value.isascii() and value.isdigit() for value in head[1:]):
         entries, size = arrived(top)
         marked = (int(head[1]), int(head[2]))
         if entries < marked[0] or size < marked[1]:
             raise EvaluationError(f"The copy arrived incomplete: {entries:,} of {marked[0]:,} entries and {size:,} of "
                                   f"{marked[1]:,} bytes")
         if (entries, size) != marked:
-            notes.append(f"more arrived than the collect hook marked: {entries:,} entries and {size:,} bytes against "
+            notes.append(f"more arrived than app-manifest marked: {entries:,} entries and {size:,} bytes against "
                          f"{marked[0]:,} and {marked[1]:,} (hard links split, or files the transport added)")
         return notes
-    return notes + ["the collect hook's mark could not be read; the delivery was graded as it arrived"]
+    return notes + ["app-manifest's mark could not be read; /app/rebuild was graded as it arrived"]
 
 
-def delivery_record(top: Path) -> dict:
-    """The collect hook's record, cut to what metrics.json holds: whether public egress was open
-    when the session ended, the agent's processes then, how many rounds of killing they took and
-    how many were left, when the session and the hook started, whether the pre-cap watchdog ended
-    the session (never a reason to change the reward), every link the hook copied (with
-    its source's path, owner, times and inode, and whether that source lies outside /app/rebuild or
-    changed since the session started) or refused, every note, and a summary of the entries
-    (count, latest change and modification times, `goose`'s own entry). Never raising, and never
-    part of the reward. Each entry's `mtime` and `ctime` are the ones the hook recorded before any
-    of its own steps, so `latest_ctime` is the latest change the agent's session made."""
-    path = top / DELIVERY_RECORD
+def manifest_record(top: Path) -> dict:
+    """app-manifest's record, cut to what metrics.json holds: whether public egress was open when
+    it ran, the processes it found, how many rounds of killing they took and how many were left,
+    when the user started and when app-manifest started, whether proc-reaper fired, which is
+    never a reason to change the reward, how the link fixer ended, every link app-manifest copied
+    (with its source's path, owner, times and inode, and whether that source lies outside
+    /app/rebuild or changed since the user started) or refused, every note, and a summary of the
+    entries (count, latest change and modification times, `goose`'s own entry). Never raising,
+    and never part of the reward. Each entry's `mtime` and `ctime` are the ones app-manifest
+    recorded before any of its own steps, so `latest_ctime` is the latest change the user made."""
+    path = top / MANIFEST_RECORD
     try:
         info = os.lstat(path)
         if not stat.S_ISREG(info.st_mode) or info.st_size > RECORD_LIMIT:
@@ -520,18 +519,19 @@ def delivery_record(top: Path) -> dict:
         times = lambda key: max((item[key] for item in listed if isinstance(item.get(key), (int, float))), default=None)  # noqa: E731
         copies = [item for item in record.get("copies", []) if isinstance(item, dict)]
         return {"checked_at": record.get("checked_at"), "egress": record.get("egress"), "egress_open": record.get("egress_open"),
-                "agent_process_count": record.get("agent_process_count"),
-                "agent_processes": (record.get("agent_processes") or [])[:50],
-                "kill_rounds": record.get("kill_rounds"), "agent_processes_left": record.get("agent_processes_left"),
-                "turn_started": record.get("turn_started"), "hook_started": record.get("hook_started"),
-                "ended_by_watchdog": bool(record.get("ended_by_watchdog")),  # the pre-cap watchdog ended the session
-                "watchdog_log": [str(line) for line in record.get("watchdog_log", [])][-20:],
-                "delivered": record.get("delivered"), "listing_complete": record.get("listing_complete"),
+                "process_count": record.get("process_count"),
+                "processes": (record.get("processes") or [])[:50],
+                "kill_rounds": record.get("kill_rounds"), "processes_left": record.get("processes_left"),
+                "started": record.get("started"), "manifest_started": record.get("manifest_started"),
+                "ended_by_reaper": bool(record.get("ended_by_reaper")),  # proc-reaper ended the user's processes
+                "reaper_log": [str(line) for line in record.get("reaper_log", [])][-20:],
+                "fixer_status": record.get("fixer_status"), "fixer_timed_out": bool(record.get("fixer_timed_out")),
+                "manifest": record.get("manifest"), "listing_complete": record.get("listing_complete"),
                 "hashing_complete": record.get("hashing_complete"), "prescan_complete": record.get("prescan_complete"),
-                "hook_changed_entries": record.get("hook_changed_entries"),
+                "changed_entries": record.get("changed_entries"),
                 "copies": copies,
-                "copies_outside_delivery": sum(1 for item in copies if item.get("outside_delivery")),
-                "copies_changed_since_session_started": sum(1 for item in copies if item.get("changed_since_session_started")),
+                "copies_outside_tree": sum(1 for item in copies if item.get("outside_tree")),
+                "copies_changed_since_start": sum(1 for item in copies if item.get("changed_since_start")),
                 "links": [item for item in record.get("links", []) if isinstance(item, dict)],
                 "notes": [str(note) for note in record.get("notes", [])],
                 "entries": len(listed), "latest_ctime": times("ctime"), "latest_mtime": times("mtime"),
@@ -569,8 +569,8 @@ def free_space() -> dict:
 
 
 def low_on_disk() -> bool:
-    """Whether /tmp or /logs/verifier has less than RESERVE_BYTES free (what Harbor needs to fetch
-    the results, and the results themselves); a filesystem that reports no size never is."""
+    """Whether /tmp or /logs/verifier has less than RESERVE_BYTES free (room for the results, and
+    for reading them back); a filesystem that reports no size never is."""
     return any(0 <= free < RESERVE_BYTES for free in free_space().values())
 
 
@@ -725,8 +725,8 @@ def main() -> int:
         except (OSError, AttributeError):
             pass
         # What arrived, before the sandbox seals it: an error when nothing did or the copy was cut
-        # short; the hook's record goes to metrics.json.
-        delivery, record = delivery_notes(SUBMISSION), delivery_record(SUBMISSION)
+        # short; app-manifest's record goes to metrics.json.
+        manifest, record = manifest_notes(SUBMISSION), manifest_record(SUBMISSION)
         builds = upstream_builds()
         prefix, owner, limits = sandbox()
         refused = None
@@ -735,8 +735,8 @@ def main() -> int:
         except EvaluationError as exc:  # a submission that cannot be made safe to run is not run
             refused = f"{exc}: not graded"
         LEFTOVER_DIRS[:] = sorted(set(LEFTOVER_DIRS) | set(writable_dirs()))
-        # The marker-free hash is no reason to refuse: the reference solution builds the same
-        # compiler from source, with an all-zero marker, and may match it byte for byte.
+        # The marker-free hash is no reason to refuse: any build of the same sources with an
+        # all-zero marker may match it byte for byte.
         program = identity(SUBMISSION / "goose")
         marker = MARKER.read_text(encoding="utf-8").strip() if MARKER.is_file() else ""
         if not re.fullmatch(r"[0-9a-f]{32}", marker) or marker == "0" * 32:
@@ -744,14 +744,14 @@ def main() -> int:
         needles = {f"GOOSE-BUILD-MARKER-{marker}".encode(): "the original compiler's build marker"}
         binary_needles = {text: "upstream's own help text, which the hardened build lacks" for text in UNHARDENED_USAGE}  # in an ELF file only
         found = holds_original(SUBMISSION, needles, builds, binary_needles) if not refused else None
-        if found:  # the original compiler, delivered or fetched: nothing of it is the agent's work
+        if found:  # the original compiler, left in place or fetched: nothing of it is the submitter's work
             refused = f"{found}: not graded"
         if refused:
             metrics = {"cases_total": None, "cases_passed": 0, "reward": 0.0, "notes": [refused]}
         else:
             metrics = grade(SUBMISSION / "goose", tests / "private", prefix, owner, deadline)
             final_cleanup(owner[0], min(deadline, time.monotonic() + CLEANUP_SEC))
-        metrics["notes"] = delivery + metrics.get("notes", [])
+        metrics["notes"] = manifest + metrics.get("notes", [])
         # The reward first, in its reserved place, then renamed (no new space): nothing after it
         # can cost it.
         write_in_place(output / ".reward.tmp", f"{metrics['reward']:.6f}".encode())
@@ -761,7 +761,7 @@ def main() -> int:
         try:
             metrics.update(limits=limits, submission=program, host=recorder.host(), free_at_start=start_space,
                            free_at_end=free_space(), evaluation_seconds=round(time.monotonic() - began, 1),
-                           delivery_record=record)
+                           manifest=record)
             write_in_place(output / "metrics.json",
                            (json.dumps(dict(metrics, status="completed"), indent=1, sort_keys=True) + "\n").encode())
         except Exception:  # noqa: BLE001 - metadata only
@@ -777,7 +777,7 @@ def main() -> int:
             except OSError:
                 pass
     finally:
-        if owner is not None:  # nothing running or left behind while Harbor packs the results
+        if owner is not None:  # nothing running or left behind while the results are read
             final_cleanup(owner[0], time.monotonic() + CLEANUP_SEC)
         try:
             subprocess.run(["chmod", "-R", "a+rX", str(output)], check=False)

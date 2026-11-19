@@ -1,0 +1,12 @@
+#!/bin/sh
+# Runs as root. Sets aside room on the filesystem that holds /tmp, a 64 MB file and 64 inodes under a root-only state
+# directory, for app-manifest to give back when it needs room of its own however full the disk has been left; and records
+# what was free, and the time, when it last ran. Running it again changes nothing already set aside.
+mkdir -p /var/lib/app-manifest/inodes && chmod 0700 /var/lib/app-manifest
+if [ ! -e /var/lib/app-manifest/reserve ]; then
+    fallocate -l 64M /var/lib/app-manifest/reserve 2>/dev/null || head -c 67108864 /dev/zero > /var/lib/app-manifest/reserve 2>/dev/null
+fi
+for spare in $(seq 1 64); do [ -e "/var/lib/app-manifest/inodes/$spare" ] || : > "/var/lib/app-manifest/inodes/$spare"; done
+stat -f -c '%a %S %d' /tmp > /var/lib/app-manifest/free-at-start 2>/dev/null
+date +%s > /var/lib/app-manifest/started 2>/dev/null
+exit 0

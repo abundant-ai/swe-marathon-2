@@ -2,18 +2,18 @@
 
 - The cases kept, by kind; the ones left out, by reason: a run took more than the recorder's
   margin, did not finish the same way twice or crashed, or the recorder's selection dropped them
-  (runcases.select); and how each case was settled (runcases.settle).
+  (recorder.select); and how each case was settled (recorder.settle).
 - How long the kept cases' runs took.
 - How far the answers are upstream's: run cases printing byte for byte what upstream publishes as
   the expected output of the test they were built from (each carries that file's sha256 as
   "upstream"), and error-test cases whose every diagnostic message is upstream's text verbatim
   (each carries the sha256 of every message its test's comments name, "upstream_messages").
-- What submissions that implement nothing pass (`baselines`): printing nothing and exiting 1, or
+- What programs that implement nothing pass (`baselines`): printing nothing and exiting 1, or
   exiting 0; a dispatcher with the command line's answers and one constant answer per kind of
-  case (runcases.free_cases); and that dispatcher with a perfect formatter.
+  case (recorder.free_cases); and that dispatcher with a perfect formatter.
 
 - The recording compiler (`--build`, build.sh's build.txt: its link, its sha256, and its sha256
-  without the build marker, which the reference solution's build logs too), the build host, the
+  without the build marker, which every build of the same sources logs), the build host, the
   recording's wall time and the sha256 of the kept ids, so that two builds can be compared.
 
 usage: python3 recording.py <all cases.json> <kept cases.json> <expected.json> <report.json> <out.json> [--build <build.txt>]

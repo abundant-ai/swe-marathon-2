@@ -1,8 +1,8 @@
-/* A record of how a trial's sandbox treats the released compiler's set-group-id exec, for the
-   task's authors. It is not part of the solution and nothing in it changes the solution's result:
-   solve.sh builds it with gcc once the solution is installed, runs it as the agent's user and
-   copies what it prints to /logs/agent/probe.txt. It reads no byte of the compiler; it records
-   only whether each way of reading one would have worked.
+/* A record of how this machine treats the installed compiler's set-group-id exec. It is not part
+   of the solution and nothing in it changes the solution's result: solve.sh builds it with gcc
+   once the solution is installed, runs it as the unprivileged user and copies what it prints to
+   /logs/agent/probe.txt. It reads no byte of the compiler; it records only whether each way of
+   reading one would have worked.
 
    For a plain exec of /opt/goose/goose and for one after PTRACE_TRACEME it records the
    compiler's real and effective ids, AT_SECURE, whether an LD_PRELOAD library's constructor runs

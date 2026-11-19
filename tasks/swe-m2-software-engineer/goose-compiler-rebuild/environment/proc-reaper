@@ -1,14 +1,12 @@
 #!/bin/sh
-# Pre-cap watchdog, started detached by the setup_complete hook as root. END_SECONDS after it starts (the agent's
-# timeout less eleven minutes), it ends every process of the agent's user with SIGTERM, then SIGKILL, so the agent's
-# turn ends by itself before the platform's cap. Reason: a turn that runs into the cap is not graded on the platform today
-# (the separate verifier image fails to build right after; harbor-lh ops/swe-marathon-v2/PLATFORM_VERIFIER_BUILD_AFTER_LONG_RUN.md),
-# while a turn that ends by itself is. Idempotent: a second start finds the first sleeper's pid file and arms nothing.
-# Logs arm, fire and done lines to a root-only file, which the collect hook copies into the delivery's record.
-END_SECONDS=${PRECAP_END_SECONDS:-33900}
-SELECT=${PRECAP_SELECT:--u dev}          # pgrep/pkill selection of the agent's processes
-LOG=${PRECAP_LOG:-/var/log/precap-watchdog.log}
-PIDFILE=${PRECAP_PIDFILE:-/run/precap-watchdog.pid}
+# Ends every process of one user a set time after it is started: SIGTERM, repeated for up to a minute, then SIGKILL. The
+# first start arms one detached sleeper and returns at once; a second start finds the sleeper's pid file and arms nothing.
+# Each step (armed, fired, done) is logged with its time to a root-only file.
+# usage: proc-reaper        arms the sleeper        proc-reaper run        the sleeper itself
+AFTER_SECONDS=${REAPER_AFTER_SECONDS:-33900}
+SELECT=${REAPER_SELECT:--u dev}          # pgrep/pkill selection of the processes to end
+LOG=${REAPER_LOG:-/var/log/proc-reaper.log}
+PIDFILE=${REAPER_PIDFILE:-/run/proc-reaper.pid}
 umask 077
 mkdir -p "$(dirname "$LOG")" "$(dirname "$PIDFILE")" 2>/dev/null
 log() { echo "$(date -u +%FT%TZ) $*" >> "$LOG"; }
@@ -17,9 +15,14 @@ if pgrep -r R,S,D,T -u 0 >/dev/null 2>&1; then alive() { pgrep $SELECT -r R,S,D,
 else alive() { pgrep $SELECT >/dev/null 2>&1; }; fi
 if [ "${1:-}" = "run" ]; then
     echo $$ > "$PIDFILE"
-    log "armed pid $$: ending the processes selected by '$SELECT' in $END_SECONDS s"
-    sleep "$END_SECONDS"
-    log "fired after $END_SECONDS s: SIGTERM to the processes selected by '$SELECT'"
+    log "armed pid $$: ending the processes selected by '$SELECT' in $AFTER_SECONDS s"
+    end=$(( $(date +%s) + AFTER_SECONDS ))
+    while :; do   # in short sleeps, so that the time left shows nowhere
+        left=$(( end - $(date +%s) ))
+        [ "$left" -gt 0 ] || break
+        if [ "$left" -gt 60 ]; then sleep 60; else sleep "$left"; fi
+    done
+    log "fired after $AFTER_SECONDS s: SIGTERM to the processes selected by '$SELECT'"
     for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
         alive || break
         pkill -TERM $SELECT >/dev/null 2>&1
@@ -37,7 +40,7 @@ if [ "${1:-}" = "run" ]; then
     rm -f "$PIDFILE"
     exit 0
 fi
-# The hook's entry: arm one sleeper, detached, and return at once.
+# The arming entry: one sleeper, detached, and return at once.
 if [ -f "$PIDFILE" ]; then
     old=$(cat "$PIDFILE" 2>/dev/null)
     if [ -z "$old" ] || kill -0 "$old" 2>/dev/null; then
@@ -55,5 +58,5 @@ if command -v setsid >/dev/null 2>&1; then
 else
     nohup "$0" run >/dev/null 2>&1 </dev/null &
 fi
-echo "pre-cap watchdog armed for $END_SECONDS s"
+echo "proc-reaper armed for $AFTER_SECONDS s"
 exit 0

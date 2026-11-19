@@ -1,20 +1,20 @@
 #!/bin/sh
-# Runs as root once the agent's session has ended, before /app/rebuild is copied to the machine it will run on. Its first
-# act stops every process of the agent's user; it then lists them, ends them, records every entry's own times before
-# anything of its own touches the delivery, and records whether the public internet answers from here. That record goes
-# with the delivery and decides nothing. What it lets through is what the copy can take: within the limits the
-# instruction states, with nothing of the agent's running, and packed here first the way the copy packs it. The mark says
-# what was delivered; the record lists every entry with the times it had when the session ended, and every link the hook
-# changed, with where a copied file came from.
+# Runs as root once the user dev has finished with /app/rebuild, before the directory is copied to the machine it will run
+# on. Its first act stops every process of that user; it then lists them, ends them, records every entry's own times
+# before anything of its own touches the tree, and records whether the public internet answers from here. What it lets
+# through is what the copy can take: within the limits, with nothing of the user's running, normalized links, and packed
+# here first the way the copy packs it. The mark (.manifest) says what the copy takes and lists every change made; the
+# record (.manifest.json) lists every entry with the times it had when the user finished, every link changed, and where a
+# copied file came from.
 LIMIT_ENTRIES=200000
 LIMIT_BYTES=4000000000
 LIMIT_PATH=1000
 PACK_SECONDS=300
-STATE=/var/lib/delivery
-HOOK_STARTED=$(date +%s)
+STATE=/var/lib/app-manifest
+STARTED=$(date +%s)
 mkdir -p "$STATE" && chmod 0700 "$STATE"
-# Freeze every process of the agent's user before anything else. `kill -STOP -1` as that user reaches all of them in one
-# system call, so a process that forks cannot outrun it; repeat until none is left running.
+# Freeze every process of the user before anything else. `kill -STOP -1` as that user reaches all of them in one system
+# call, so a process that forks cannot outrun it; repeat until none is left running.
 for _ in $(seq 1 100); do
   pgrep -u dev -r R,S,D >/dev/null 2>&1 || break
   setpriv --reuid dev --regid dev --clear-groups kill -STOP -1 >/dev/null 2>&1
@@ -32,18 +32,23 @@ for _ in $(seq 1 100); do
   sleep 0.1
 done
 left=$({ pgrep -u dev -r R,S,D,T; pgrep -U dev -r R,S,D,T; } 2>/dev/null | sort -u | wc -l)
-# The pre-cap watchdog's last lines: whether it ended the session goes into the record, never into the score.
-tail -n 20 /var/log/precap-watchdog.log > "$STATE/watchdog.txt" 2>/dev/null || :
-# Every entry's own times, before anything of the hook's touches the delivery: a chmod changes a ctime, and the ctime is
-# the one time the agent cannot set, so the manifest's authoritative times come from here. Then, as root, directories get
-# their owner's rwx back (a read-only folder would stop the link fixer and the copy) and a file its owner cannot read gets
-# u+r; each change is noted, and a change that fails refuses the delivery.
+# proc-reaper, if its sleeper is still waiting, is stopped now: it would end every process of dev, and the link fixer
+# below runs as dev. Its log so far goes into the record either way.
+if reaper=$(cat /run/proc-reaper.pid 2>/dev/null) && [ -n "$reaper" ]; then
+  pkill -P "$reaper" >/dev/null 2>&1
+  kill "$reaper" >/dev/null 2>&1
+fi
+tail -n 20 /var/log/proc-reaper.log > "$STATE/reaper.txt" 2>/dev/null || :
+# Every entry's own times, before anything else here touches the tree: a chmod changes a ctime, and the ctime is the one
+# time the user cannot set, so the record's authoritative times come from here. Then, as root, directories get their
+# owner's rwx back (a read-only folder would stop the link fixer and the copy) and a file its owner cannot read gets u+r;
+# each change is noted, and a change that fails refuses the tree.
 if [ -d /app/rebuild ] && [ ! -L /app/rebuild ]; then
 timeout 300 /usr/bin/python3 -I - /app/rebuild "$LIMIT_ENTRIES" "$LIMIT_PATH" "$STATE" <<'EOF'
-"""Record every entry of /app/rebuild as it stands when the session has ended (STATE/before.jsonl: path, type, size,
-mode, owner, mtime, ctime, inode), walking by directory descriptor and never following a link, before any step of the
-hook changes anything. Then make every directory u+rwx and every regular file its owner cannot read u+r, noting each
-change (STATE/prescan.json: whether the listing is complete, the notes, and the paths whose change failed)."""
+"""Record every entry of /app/rebuild as it stands now (STATE/before.jsonl: path, type, size, mode, owner, mtime, ctime,
+inode), walking by directory descriptor and never following a link, before any later step changes anything. Then make
+every directory u+rwx and every regular file its owner cannot read u+r, noting each change (STATE/prescan.json: whether
+the listing is complete, the notes, and the paths whose change failed)."""
 import json
 import os
 import stat
@@ -91,7 +96,7 @@ def restore(fd, name, path, info):
         return
     try:
         os.chmod(name, wanted, dir_fd=fd)  # an entry lstat just showed to be a directory or a regular file
-        notes.append(f"{path}: {'made writable for its owner (a directory the hook has to work in)' if stat.S_ISDIR(info.st_mode) else 'made readable by its owner'}")
+        notes.append(f"{path}: {'made writable for its owner (a directory to work in)' if stat.S_ISDIR(info.st_mode) else 'made readable by its owner'}")
     except OSError as exc:
         failed.append(f"{path}: {exc.__class__.__name__}")
 
@@ -106,10 +111,10 @@ for visit in (record, restore):
             os.close(top)
     except Stop as stop:
         complete = False
-        notes.append(f"the listing before the hook stopped at {stop}")
+        notes.append(f"the first listing stopped at {stop}")
     except (OSError, RecursionError, ValueError) as exc:
         complete = False
-        notes.append(f"the listing before the hook stopped ({exc.__class__.__name__}: {exc})")
+        notes.append(f"the first listing stopped ({exc.__class__.__name__}: {exc})")
 with open(os.path.join(STATE, "before.jsonl"), "w") as out:
     for item in found:
         out.write(json.dumps(item, ensure_ascii=False) + "\n")
@@ -118,10 +123,10 @@ with open(os.path.join(STATE, "prescan.json"), "w") as out:
 EOF
 fi
 # Egress, after the kill (killing changes nothing about it, and the kill waits for nothing); three seconds for each host.
-timeout 30 /usr/bin/python3 -I - "$STATE/session.json" "$STATE/processes.txt" <<'EOF'
+timeout 30 /usr/bin/python3 -I - "$STATE/status.json" "$STATE/processes.txt" <<'EOF'
 """Record whether the public internet answers from this machine (a TCP connection to port 443 of two public hosts,
-three seconds each) and which processes of the agent's user `dev` were alive when the hook froze them (the `ps` listing
-taken then: pid, parent, uid, seconds since start, command line)."""
+three seconds each) and which processes of the user `dev` were alive when they were frozen (the `ps` listing taken
+then: pid, parent, uid, seconds since start, command line)."""
 import json
 import pwd
 import socket
@@ -164,23 +169,27 @@ except (OSError, ValueError):
     pass
 record = {"checked_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "egress": egress,
           "egress_open": any(state == "open" for state in egress.values()),
-          "agent_process_count": len(processes), "agent_processes": processes[:500]}
+          "process_count": len(processes), "processes": processes[:500]}
 with open(sys.argv[1], "w") as handle:
     json.dump(record, handle)
 EOF
-# Give back the room and the spare inodes set aside when the session started, so however full the disk was left, the
-# record, the mark, a refusal and the copy's archive can be written.
-rm -f /var/lib/delivery/room
-rm -rf /var/lib/delivery/inodes
+# Give back the room and the spare inodes that fs-reserve set aside, so that however full the disk was left, the record,
+# the mark, a refusal and the copy's archive can be written.
+rm -f /var/lib/app-manifest/reserve
+rm -rf /var/lib/app-manifest/inodes
 if [ ! -d /app/rebuild ] || [ -L /app/rebuild ]; then exit 0; fi
-# Whatever was left under the mark's or the record's name is moved aside, never followed.
-for name in .delivered .delivery.json; do
+# Whatever was left under the mark's or the record's name is moved aside, never followed; what cannot be moved is removed.
+for name in .manifest .manifest.json; do
   if [ -e "/app/rebuild/$name" ] || [ -L "/app/rebuild/$name" ]; then
-    aside=$(mktemp -d /app/.aside.XXXXXX) && mv -f "/app/rebuild/$name" "$aside/" || exit 0
+    aside=$(mktemp -d /app/.aside.XXXXXX) && mv -f "/app/rebuild/$name" "$aside/" && continue
+    case $name in
+      .manifest) rm -rf -- /app/rebuild/.manifest ;;
+      .manifest.json) rm -rf -- /app/rebuild/.manifest.json ;;
+    esac
   fi
 done
-# Links, as the agent's user (it copies nothing that user could not read), within the limits and two minutes. Each change
-# is one JSON line on standard output, kept root-owned for the record.
+# Links, as the user (it copies nothing that user could not read), within the limits and two minutes. Each change is one
+# JSON line on standard output, kept root-owned for the record.
 timeout 120 setpriv --reuid dev --regid dev --clear-groups --no-new-privs /usr/bin/python3 -I - /app/rebuild "$LIMIT_ENTRIES" "$LIMIT_BYTES" > "$STATE/fixer.jsonl" <<'EOF'
 """Make /app/rebuild safe to copy to the machine it will run on, as the user who built it.
 
@@ -189,10 +198,9 @@ inside it that points elsewhere inside it becomes relative. A link to a file or 
 it becomes a copy of what it points to only when that is part of the machine's installation: owned
 by root, every file under a directory included (a virtual environment's link to the system Python,
 say). The copy takes the bytes and the mode, not the source's times. A link to anything else outside
-(the user's own files anywhere, which could have been written after the session ended), to nothing,
-or to a device, and a pipe, a socket or a device node, are removed. Each change is printed as one
-JSON line: what was done and why, and for a copy or a refusal the source's path, owner, modification
-and change times and inode, as found before copying.
+(the user's own files anywhere), to nothing, or to a device, and a pipe, a socket or a device node,
+are removed. Each change is printed as one JSON line: what was done and why, and for a copy or a
+refusal the source's path, owner, modification and change times and inode, as found before copying.
 """
 import json
 import os
@@ -202,7 +210,7 @@ import sys
 
 ROOT = os.path.realpath(sys.argv[1])
 ENTRIES = int(sys.argv[2]) if len(sys.argv) > 2 else 100_000  # what /app/rebuild may hold in all
-BUDGET = int(sys.argv[3]) if len(sys.argv) > 3 else 1_000_000_000
+BYTE_LIMIT = int(sys.argv[3]) if len(sys.argv) > 3 else 1_000_000_000
 spent = copied = 0
 
 
@@ -265,15 +273,15 @@ def fix_link(path, name):
         os.unlink(path)
         return {"kind": "removed", "note": f"removed {name} -> {target}: it points at a device, a pipe or a socket"}
     found = facts(resolved)
-    size, count, system = measure(resolved, BUDGET - spent, ENTRIES - copied, found)
+    size, count, system = measure(resolved, BYTE_LIMIT - spent, ENTRIES - copied, found)
     if not system:
         os.unlink(path)
         return dict(found, kind="refused", note=f"removed {name} -> {target}: it leads outside /app/rebuild to something that is "
                                                "not part of the machine's installation (not owned by root) and is not copied; an "
                                                "interpreter must be the machine's own, or copied into /app/rebuild")
-    if spent + size > BUDGET or copied + count > ENTRIES:
+    if spent + size > BYTE_LIMIT or copied + count > ENTRIES:
         os.unlink(path)
-        return dict(found, kind="refused", note=f"removed {name} -> {target}: copying it would pass {ENTRIES:,} entries or {BUDGET:,} bytes")
+        return dict(found, kind="refused", note=f"removed {name} -> {target}: copying it would pass {ENTRIES:,} entries or {BYTE_LIMIT:,} bytes")
     os.unlink(path)
     spent += size
     copied += count
@@ -285,7 +293,7 @@ def fix_link(path, name):
 
 
 def copy_file(source, target):
-    """The file's bytes and mode, nothing else: the copy's times are the hook's, and the source's
+    """The file's bytes and mode, nothing else: the copy's times are this run's, and the source's
     are in the record (copy2 would carry over a modification time anyone can set, and fails on
     flags it may not set)."""
     shutil.copyfile(source, target)
@@ -328,28 +336,29 @@ for _ in range(10):
     if not one_pass():
         break
 EOF
+fixer_status=$?
 # Measure, bound, pack once, list and mark, as root.
-exec /usr/bin/python3 -I - /app/rebuild "$LIMIT_ENTRIES" "$LIMIT_BYTES" "$LIMIT_PATH" "$STATE" /tmp "$PACK_SECONDS" "$rounds" "$left" "$HOOK_STARTED" <<'EOF'
-"""Measure /app/rebuild, bound it, pack it once, list it and mark it, as root, once nothing of the agent's runs.
+exec /usr/bin/python3 -I - /app/rebuild "$LIMIT_ENTRIES" "$LIMIT_BYTES" "$LIMIT_PATH" "$STATE" /tmp "$PACK_SECONDS" "$rounds" "$left" "$STARTED" "$fixer_status" <<'EOF'
+"""Measure /app/rebuild, bound it, pack it once, list it and mark it, as root, once nothing of the user's runs.
 
 The tree is walked by directory descriptor, so no depth hides anything, and any step that cannot be completed refuses
-the delivery. Anything the copy would refuse is removed: a device, a pipe, a socket, a link with an absolute target or
-one that leaves the directory, lexically (as the copy's extraction judges it) or through other links. A delivery over
-the limits, one whose permissions could not be restored for its owner, or one that the copy's own pack (tar -czf into
-/tmp) cannot make within PACK_SECONDS, is moved aside whole and replaced by an empty directory; a pack that fails only
-for want of room or inodes the machine never had is left to the copy. Files are hashed once per inode, within
-HASH_SECONDS in all; past that, the remaining files are listed without a hash and the record says so. Each entry's
-mtime and ctime are the ones recorded before the hook touched anything (STATE/before.jsonl, matched by path and
-type); where the hook's own steps changed them, the entry says so and carries the later values apart. The mark's first line is `delivered` with the
-number of entries (files, directories and links) and of bytes in its files (each file once, however many names it
-has), or `refused`; every line after it is a change made or the reason for the refusal, none left out. The record
-(.delivery.json) holds what was found before the agent's processes were ended (STATE/session.json), how many rounds of
-killing it took and how many processes were left, when the session started (STATE/turn-started, from the setup hook)
-and when this hook started, the pre-cap watchdog's last log lines and whether it fired (STATE/watchdog.txt,
-`ended_by_watchdog`), every change the link fixer made (STATE/fixer.jsonl: the copies first, each with its
-source's path, owner, times and inode, and whether the source changed since the session started), and every entry: its
-path, type, size, modification and change times, and a file's sha256 or a link's target. Neither file is counted among
-the entries.
+the tree. Anything the copy would refuse is removed: a device, a pipe, a socket, a link with an absolute target or one
+that leaves the directory, lexically (as the copy's extraction judges it) or through other links. A tree over the limits,
+one whose permissions could not be restored for its owner, or one that the copy's own pack (tar -czf into /tmp) cannot
+make within PACK_SECONDS, is moved aside whole and replaced by an empty directory; a pack that fails only for want of room
+or inodes the machine never had is left to the copy. Files are hashed once per inode, within HASH_SECONDS in all; past
+that, the remaining files are listed without a hash and the record says so. Each entry's mtime and ctime are the ones
+recorded before anything here touched the tree (STATE/before.jsonl, matched by path and type); where a later step changed
+them, the entry says so and carries the later values apart. The mark's first line is `manifest` with the number of
+entries (files, directories and links) and of bytes in its files (each file once, however many names it has), or
+`refused`; every line after it is a change made or the reason for the refusal, none left out. The record (.manifest.json)
+holds what was found before the user's processes were ended (STATE/status.json), how many rounds of killing it took and
+how many processes were left, when the user started (STATE/started, from fs-reserve) and when this script started,
+proc-reaper's last log lines and whether it fired (STATE/reaper.txt, `ended_by_reaper`), how the link fixer ended
+(`fixer_status`, and `fixer_timed_out` where its two minutes ran out), every change the link fixer made (STATE/fixer.jsonl:
+the copies first, each with its source's path, owner, times and inode, and whether the source changed since the user
+started), and every entry: its path, type, size, modification and change times, and a file's sha256 or a link's target.
+Neither file is counted among the entries.
 """
 import hashlib
 import json
@@ -363,11 +372,12 @@ import time
 ROOT = os.path.realpath(sys.argv[1])
 LIMIT_ENTRIES, LIMIT_BYTES, LIMIT_PATH = int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4])
 STATE, ARCHIVES, PACK_SECONDS = sys.argv[5], sys.argv[6], float(sys.argv[7])
-ROUNDS, LEFT, HOOK_STARTED = (int(value) if value.strip().isdigit() else -1 for value in (sys.argv[8:11] + ["", "", ""])[:3])
-MARK = os.path.join(ROOT, ".delivered")
-RECORD = os.path.join(ROOT, ".delivery.json")
+ROUNDS, LEFT, STARTED, FIXER_STATUS = (int(value) if value.strip().isdigit() else -1 for value in (sys.argv[8:12] + ["", "", "", ""])[:4])
+MARK = os.path.join(ROOT, ".manifest")
+RECORD = os.path.join(ROOT, ".manifest.json")
 SPARE_INODES = 16
 HASH_SECONDS = 240
+FIXER_SECONDS = 120
 notes, links, files = [], [], set()
 listing = {}
 digests = {}
@@ -445,11 +455,11 @@ def inside(path):
     return path == ROOT or path.startswith(ROOT + os.sep)
 
 
-def trial_pack():
+def try_pack():
     """None when the copy's own pack of ROOT succeeds within PACK_SECONDS; else why not."""
     probe = None
     try:
-        descriptor, probe = tempfile.mkstemp(prefix=".delivery-pack.", suffix=".tar.gz", dir=ARCHIVES)
+        descriptor, probe = tempfile.mkstemp(prefix=".manifest-pack.", suffix=".tar.gz", dir=ARCHIVES)
         os.close(descriptor)
         done = subprocess.run(["tar", "-czf", probe, "-C", ROOT, "."], capture_output=True, timeout=PACK_SECONDS)
         if done.returncode != 0:
@@ -484,7 +494,7 @@ def state_lines(name):
         return []
 
 
-prescan = state_json("prescan.json", {"complete": False, "notes": ["the listing before the hook is missing"], "chmod_failed": []})
+prescan = state_json("prescan.json", {"complete": False, "notes": ["the first listing is missing"], "chmod_failed": []})
 before = {}
 for line in state_lines("before.jsonl"):
     try:
@@ -518,7 +528,7 @@ except (OSError, RecursionError, ValueError) as exc:
     reason = f"it could not be measured ({exc.__class__.__name__}: {exc})"
 
 if reason is None:
-    failed = trial_pack()
+    failed = try_pack()
     if failed is not None:
         disk = os.statvfs(ARCHIVES)
         need = size + entries * 1024 + (16 << 20)
@@ -530,13 +540,14 @@ if reason is None:
         except (OSError, ValueError):
             had_room = False
         if short and not had_room:
-            notes.append(f"{failed}, for want of room the machine did not have when the session began")
+            notes.append(f"{failed}, for want of room the machine did not have when the user started")
         else:
             reason = failed
 
 # The link fixer's changes: the copies first, each flagged when its source lies outside /app/rebuild (every copy does)
-# or changed since the session started; then the refusals and the rest.
-turn_started = next((int(line.split()[0]) for line in state_lines("turn-started") if line.split() and line.split()[0].isdigit()), None)
+# or changed since the user started; then the refusals and the rest. A fixer stopped by its time limit is noted: what
+# it had not reached is removed below as a link that leads outside, and a copy it was making may be incomplete.
+started = next((int(line.split()[0]) for line in state_lines("started") if line.split() and line.split()[0].isdigit()), None)
 changes = []
 for line in state_lines("fixer.jsonl"):
     try:
@@ -545,40 +556,45 @@ for line in state_lines("fixer.jsonl"):
         changes.append({"kind": "failed", "note": f"an unreadable line from the link fixer: {line[:200]}"})
         continue
     if "source" in change:
-        change["outside_delivery"] = not inside(os.path.realpath(change["source"]))
+        change["outside_tree"] = not inside(os.path.realpath(change["source"]))
         latest = max(change.get("source_latest_ctime", 0), change.get("source_latest_mtime", 0), change.get("source_ctime", 0),
                      change.get("source_mtime", 0))
-        change["changed_since_session_started"] = None if turn_started is None else latest >= turn_started
+        change["changed_since_start"] = None if started is None else latest >= started
     changes.append(change)
 changes.sort(key=lambda change: {"refused": 0, "copied": 1}.get(change.get("kind"), 2))  # dropped links first: a silent 0 otherwise
 fixer_notes = [str(change.get("note", "")) for change in changes if change.get("note")]
-# The entries' times as they were when the session ended; the hook's own changes (chmod, the fixer) are flagged.
-hook_changed = 0
+if FIXER_STATUS == 124:
+    notes.append(f"the link fixer was stopped after {FIXER_SECONDS} s; copies may be incomplete")
+elif FIXER_STATUS != 0:
+    notes.append(f"the link fixer ended with status {FIXER_STATUS}")
+# The entries' times as they were when the user finished; later changes (chmod, the fixer) are flagged.
+changed_entries = 0
 for path, item in listing.items():
     earlier = before.get(path)
     if earlier is None or earlier.get("type") != item["type"]:
-        item["times"] = "after the hook"  # made or replaced by the hook's own steps (a copy, a link made relative)
+        item["times"] = "after the first listing"  # made or replaced by a later step (a copy, a link made relative)
         continue
     if (earlier["mtime"], earlier["ctime"]) != (item["mtime"], item["ctime"]):
-        item["ctime_after_hook"], item["mtime_after_hook"] = item["ctime"], item["mtime"]
-        item["hook_changed_ctime"] = True
-        hook_changed += 1
+        item["ctime_now"], item["mtime_now"] = item["ctime"], item["mtime"]
+        item["changed_after_listing"] = True
+        changed_entries += 1
     item["mtime"], item["ctime"] = earlier["mtime"], earlier["ctime"]
 
-lines = [f"delivered {entries} {size}"]
+lines = [f"manifest {entries} {size}"]
 if reason is not None:
     os.rename(ROOT, os.path.join(os.path.dirname(ROOT), f".refused.{os.urandom(6).hex()}"))
     os.mkdir(ROOT)
     os.chmod(ROOT, 0o777)
     lines = ["refused", f"{reason}: it was not copied"]
-session = state_json("session.json", {"error": "the session record is missing"})
+status = state_json("status.json", {"error": "the status record is missing"})
 if not hashing_complete:
     notes.append(f"files were hashed for {HASH_SECONDS} s; the rest are listed without a hash")
-watchdog = state_lines("watchdog.txt")[-20:]
-record = dict(session, kill_rounds=ROUNDS, agent_processes_left=LEFT, hook_started=HOOK_STARTED, turn_started=turn_started,
-              watchdog_log=watchdog, ended_by_watchdog=any(" fired after " in line for line in watchdog),
-              delivered=lines[0], listing_complete=complete, hashing_complete=hashing_complete,
-              prescan_complete=bool(prescan.get("complete")), hook_changed_entries=hook_changed,
+reaper = state_lines("reaper.txt")[-20:]
+record = dict(status, kill_rounds=ROUNDS, processes_left=LEFT, manifest_started=STARTED, started=started,
+              reaper_log=reaper, ended_by_reaper=any(" fired after " in line for line in reaper),
+              fixer_status=FIXER_STATUS, fixer_timed_out=FIXER_STATUS == 124,
+              manifest=lines[0], listing_complete=complete, hashing_complete=hashing_complete,
+              prescan_complete=bool(prescan.get("complete")), changed_entries=changed_entries,
               copies=[change for change in changes if change.get("kind") == "copied"],
               links=[change for change in changes if change.get("kind") != "copied"],
               notes=fixer_notes + notes + [str(note) for note in prescan.get("notes", [])],

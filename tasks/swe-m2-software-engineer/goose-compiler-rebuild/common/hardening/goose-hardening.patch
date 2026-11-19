@@ -35,9 +35,9 @@ index 272190b..8293196 100644
  #include "lsp_workspace.h"
  #include "lsp_features.h"
 +
-+// Hardened build: a marker no implementation of the task's own contains,
-+// which build.sh writes into goose_marker.h and the verifier looks for in a
-+// submission. A build without that header carries an all-zero marker.
++// Hardened build: a marker that names this build of the compiler, which
++// build.sh writes into goose_marker.h, so that one build can be told from
++// another. A build without that header carries an all-zero marker.
 +#if __has_include("goose_marker.h")
 +#include "goose_marker.h"
 +#else

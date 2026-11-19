@@ -1,5 +1,4 @@
-"""Record what the original compiler prints for each case, when an image is built; never shipped to
-the agent. The agent's image gets the plain runner (runcases.py) and the recorded examples only.
+"""Record what the original compiler prints for each case, when an image is built.
 
 usage: python3 recorder.py record <program> <cases.json> <outputs.json> [--keep <cases-out.json>]
                                    [--report <report.json>] [--renumber <prefix>]
@@ -204,8 +203,8 @@ def fragments(stdout: str) -> set[str]:
 
 def select(cases: list[dict], outputs: dict, cli: set[str]) -> tuple[list[dict], dict[str, list[str]]]:
     """The recorded cases less, in this order and each time by id: those with a comment quoting any
-    run or check case's answer (a program could collect them; a format answer is its input, and
-    the command line's are its help); `format -` cases whose input is already
+    run or check case's answer (a format answer is its input, and the command line's are its help);
+    `format -` cases whose input is already
     formatted; beyond PAIR_SHARE of the cases, those with an answer that many others share (the
     command line aside); beyond CHECK_EMPTY_SHARE of the check cases, those answering []; and
     while more than FLOOR_SHARE of them can be answered without a compiler (free_cases), one of
@@ -343,7 +342,7 @@ def record(program: str, cases: list[dict]) -> tuple[list[dict], dict, dict]:
 
 
 def main() -> None:
-    """Record what a program prints for every case and keep the cases worth grading."""
+    """Record what a program prints for every case and keep the cases whose answers take a compiler."""
     if len(sys.argv) < 5 or sys.argv[1] != "record":
         raise SystemExit(__doc__)
     program, cases_path, expected_path = sys.argv[2:5]
