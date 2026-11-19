@@ -84,13 +84,21 @@ def load_records(checkout: Path) -> dict[str, tuple[str, list[dict]]]:
     return found
 
 
+def excluded(text: str, allowed: tuple[str, ...] = ()) -> bool:
+    """Whether BPL `text` uses anything EXCLUDED (other than `allowed`): a system function by its
+    exact name (`•json` is not `•js`; names ignore case), anything else as written."""
+    systems = {token.text.lower() for token in bpl_text.tokenize(text) if token.kind == "system"}
+    return any((marker.lower() in systems) if marker.startswith("•") else (marker in text)
+               for marker in EXCLUDED if marker not in allowed)
+
+
 def usable(record: dict, setup: str) -> bool:
     """Whether a reference record can become a case: untimed, short, with nothing EXCLUDED in it or
     in its file's setup, and with an expectation (a value, an error or output)."""
     text = record.get("code", "") + "\n" + setup + "\n" + record.get("prefs", "")
     if record.get("timed") or not record.get("code") or len(record["code"]) > MAX_CODE:
         return False
-    if any(marker in text for marker in EXCLUDED):
+    if excluded(text):
         return False
     return any(key in record for key in ("expected", "expected_error", "output"))
 
@@ -402,8 +410,7 @@ def generate(checkout: Path, seed: int, scale: float = 1.0) -> list[dict]:
         cases.append(dict(stdin_case(*pair, rng), suite=suite(pair)))
     library = {path.rsplit("/", 1)[1]: git_text(checkout, path) for path in git_files(checkout, "lib") if path.endswith(".bpl")}
     lib_records = [record for record in files.get("lib.bpl", ("", []))[1] + files.get("lib_mathish.bpl", ("", []))[1]
-                   if record.get("code") and not record.get("timed") and not any(
-                       marker in record["code"] for marker in EXCLUDED if marker != "•load")]
+                   if record.get("code") and not record.get("timed") and not excluded(record["code"], ("•load",))]
     rng.shuffle(lib_records)
     for record in lib_records[:counts["module"]]:
         cases.append(dict(module_case(record, library, rng), suite="own"))
