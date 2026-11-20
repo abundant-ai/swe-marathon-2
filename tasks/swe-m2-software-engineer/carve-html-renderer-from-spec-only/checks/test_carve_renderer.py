@@ -17,6 +17,7 @@ import io
 import json
 import os
 import re
+import resource
 import shutil
 import subprocess
 import sys
@@ -711,16 +712,17 @@ def test_the_sweeps_own_files_do_not_count_against_the_trees_limits(tmp_path):
     assert out == "sealed"
 
 
-def run_measuring(top: Path) -> list[str]:
+def run_measuring(top: Path, env: dict[str, str] | None = None) -> list[str]:
     """The hook's last block (measuring and marking, as root) alone on `top`, with no notes and no
     state, as the hook runs it after the link fixing; the mark's lines."""
-    measuring = hook_programs()[4]
+    measuring = hook_programs()["measuring"]
     state, notes = top.parent / ".state", top.parent / ".notes"
     state.mkdir(exist_ok=True)
     notes.write_text("")
     now = f"{time.time()}"
     done = subprocess.run([sys.executable, "-I", "-", str(top), "200000", "2000000000", str(notes), str(state), "1", "0",
-                           now, now, now, "start"], input=measuring, text=True, capture_output=True, timeout=300)
+                           now, now, now, "start"], input=measuring, text=True, capture_output=True, timeout=300,
+                          env=dict(os.environ, **(env or {})))
     assert done.returncode == 0, done.stdout + done.stderr
     return (top / ".fsmaint").read_text().splitlines()
 
@@ -809,35 +811,54 @@ def test_no_reward_exists_until_the_real_end_and_the_reward_comes_first(tmp_path
 
 # ---------------------------------------------------------------- delivery
 
-def hook_programs() -> list[str]:
-    return re.findall(r"<<'EOF'\n(.*?)\nEOF", HOOK.read_text(), re.S)
+HOOK_ROLES = {"List the processes": "processes", "Record whether": "egress", "Put a mark": "mark",
+              "Make /app/rebuild safe": "fixing", "Measure /app/rebuild": "measuring"}
+
+
+def hook_programs() -> dict[str, str]:
+    """The sweep hook's Python blocks by what each does, read from the start of its docstring (the
+    end-bound reader has none: "bound")."""
+    found = {}
+    for program in re.findall(r"<<'EOF'\n(.*?)\nEOF", HOOK.read_text(), re.S):
+        head = program.lstrip('"')
+        found[next((role for start, role in HOOK_ROLES.items() if head.startswith(start)), "bound")] = program
+    return found
 
 
 def run_hook(top: Path, entries: int = 200000, size: int = 2000000000, turn_end: float | None = None,
-             env: dict[str, str] | None = None, turn_from: str = "start") -> list[str]:
-    """The sweep hook's five Python blocks on `top`, as the hook runs them: the process listing and
-    the egress probe (into a state dir), the turn-end reader, the link fixing (as the agent's user)
-    and the measuring (as root, handed the notes and the state). `turn_end` defaults far in the
+             env: dict[str, str] | None = None, turn_from: str = "start", started: float | None = None,
+             measure: bool = True, preexec=None) -> list[str]:
+    """The sweep hook's Python blocks on `top`, in the hook's order: the process listing and the
+    egress probe (into a state dir), the refused mark, the link fixing (as the agent's user) and the
+    measuring (as root, handed the notes and the state; `env`, `preexec` and `started`, the sweep's
+    start, apply to it alone; `measure` false stops before it). `turn_end` defaults far in the
     future, so an honest source read now is never taken for one written after the turn; the mark's
     lines."""
-    processes, egress, _turnread, fixing, measuring = hook_programs()
+    programs = hook_programs()
     state = top.parent / f".{top.name}-state"
     state.mkdir(exist_ok=True)
-    assert subprocess.run([sys.executable, "-I", "-", str(state / "procs.json")], input=processes, text=True,
+    assert subprocess.run([sys.executable, "-I", "-", str(state / "procs.json")], input=programs["processes"], text=True,
                           capture_output=True, timeout=60).returncode == 0
-    egress = egress.replace('("github.com", 443), ("pypi.org", 443), ("proxy.golang.org", 443), ("registry.npmjs.org", 443)',
-                            '("127.0.0.1", 9),')
+    egress = programs["egress"].replace(
+        '("github.com", 443), ("pypi.org", 443), ("proxy.golang.org", 443), ("registry.npmjs.org", 443)', '("127.0.0.1", 9),')
     assert subprocess.run([sys.executable, "-I", "-", str(state / "netprobe.json")], input=egress, text=True,
                           capture_output=True, timeout=60).returncode == 0
+    if "mark" in programs:
+        done = subprocess.run([sys.executable, "-I", "-", str(top), str(state)], input=programs["mark"], text=True,
+                              capture_output=True, timeout=60)
+        assert done.returncode == 0, done.stdout + done.stderr
     end = f"{time.time() + 10 ** 9 if turn_end is None else turn_end}"
     notes = top.parent / f".{top.name}-notes"
     with open(notes, "w") as handle:
-        done = subprocess.run([sys.executable, "-I", "-", str(top), str(entries), str(size), end, turn_from], input=fixing,
-                              text=True, stdout=handle, stderr=subprocess.STDOUT, timeout=300)
-    assert done.returncode == 0, notes.read_text()
+        done = subprocess.run([sys.executable, "-I", "-", str(top), str(entries), str(size), end, turn_from],
+                              input=programs["fixing"], text=True, stdout=handle, stderr=subprocess.STDOUT, timeout=300)
+    assert done.returncode == 0, notes.read_text()[-3000:]
+    if not measure:
+        return (top / ".fsmaint").read_text().splitlines() if (top / ".fsmaint").is_file() else []
+    began = end if started is None else f"{started}"
     done = subprocess.run([sys.executable, "-I", "-", str(top), str(entries), str(size), str(notes), str(state), "1", "0",
-                           end, end, end, turn_from], input=measuring, text=True, capture_output=True, timeout=300,
-                          env=dict(os.environ, **(env or {})))
+                           began, end, end, turn_from], input=programs["measuring"], text=True, capture_output=True,
+                          timeout=300, env=dict(os.environ, **(env or {})), preexec_fn=preexec)
     assert done.returncode == 0, done.stdout + done.stderr
     assert not notes.exists(), "the notes file is consumed"
     return (top / ".fsmaint").read_text().splitlines()
@@ -951,6 +972,218 @@ def test_the_delivery_mark_decides_between_an_error_a_zero_and_grading(tmp_path)
     for phase in ("setup_begin", "setup_complete"):
         assert f'[[agent.{phase}]]\ncommand = "/usr/local/lib/fsmaint/fsmaint-reserve' in toml, phase
     assert 'command = "/usr/local/lib/fsmaint/fsmaint-reserve --netcheck"' in toml, "setup-complete starts the watcher"
+
+
+def manifest_of(top: Path) -> object:
+    """verify.manifest() on `top`, in a process of its own: [notes, refused], or "error: ..." for
+    an evaluation error."""
+    return verifier_call(textwrap.dedent(f"""
+        import json, verify
+        from pathlib import Path
+        try:
+            print(json.dumps(list(verify.manifest(Path({str(top)!r})))))
+        except verify.EvaluationError as exc:
+            print(json.dumps("error: " + str(exc)))
+    """))
+
+
+def test_a_mark_of_any_size_is_read_from_its_start_and_the_sweep_keeps_it_short(tmp_path):
+    """QA 22 F1: the verifier reads the mark's first 64 KiB whatever its size, so a 2 MB mark that
+    starts `listed` is graded and one that starts `refused` scores 0 (round 8 took both for no
+    mark: an evaluation error). And the sweep writes at most 200 changes and 32 KiB of them into the
+    mark, then how many more the record holds: 5,000 pipes with 240-byte names left a 1.4 MB mark."""
+    for name, head, files in (("listed", "listed 1 4\n", {"carve": "abcd"}),
+                              ("refused", "refused\nit holds more than 200,000 files and directories: it was not copied\n", {})):
+        top = tmp_path / name / "rebuild"
+        top.mkdir(parents=True)
+        for path, text in files.items():
+            (top / path).write_text(text)
+        (top / ".fsmaint").write_text(head + "removed x: not a file, a directory or a link\n" * 50_000)
+    listed, refused = manifest_of(tmp_path / "listed" / "rebuild"), manifest_of(tmp_path / "refused" / "rebuild")
+    assert isinstance(listed, list) and listed[1] is False, str(listed)[:300]
+    assert isinstance(refused, list) and refused[1] is True, str(refused)[:300]
+    top = tmp_path / "pipes" / "rebuild"
+    top.mkdir(parents=True)
+    (top / "carve").write_text("#!/bin/sh\n")
+    for index in range(5000):
+        os.mkfifo(top / f"{index:05d}{'p' * 235}")
+    lines = run_hook(top)
+    assert lines[0] == "listed 1 10" and (top / ".fsmaint").stat().st_size < 40_000, (lines[:3], (top / ".fsmaint").stat())
+    assert 100 <= len(lines) <= 202 and re.fullmatch(r"and [\d,]+ more changes: see \.fsmaint\.json", lines[-1]), lines[-1]
+    record = json.loads((top / ".fsmaint.json").read_text())
+    assert sum("not a file, a directory or a link" in line for line in record["notes"]) == 5000
+    assert manifest_of(top)[1] is False
+
+
+def test_a_path_too_long_to_copy_is_moved_out_and_the_rest_copies(tmp_path):
+    """QA 22 F2: an entry whose path in the tree is longer than the bound (2,048 bytes; 600 here,
+    since macOS's own 1,024-byte limit would stop this machine's copy first) is moved out with
+    everything below it and one note, so every path listed can be measured and copied; round 8
+    listed it, and the copy or the verifier's count failed on it."""
+    top = tmp_path / "rebuild"
+    top.mkdir()
+    (top / "carve").write_text("#!/bin/sh\n")
+    folder = os.open(top, os.O_RDONLY)
+    for _ in range(5):   # five levels of 240 bytes, each made from its parent: 1,204 bytes deep
+        os.mkdir("d" * 240, dir_fd=folder)
+        child = os.open("d" * 240, os.O_RDONLY, dir_fd=folder)
+        os.close(folder)
+        folder = child
+    os.close(os.open("leaf", os.O_WRONLY | os.O_CREAT, 0o644, dir_fd=folder))
+    os.close(folder)
+    lines = run_hook(top, env={"FSMAINT_PATH_BYTES": "600"})
+    record = json.loads((top / ".fsmaint.json").read_text())
+    assert lines[0] == "listed 3 10" and max(len(item["path"]) for item in record["entries"]) <= 600, (lines, record["entries"])
+    assert record["moved_out_long"] == 1 and any("longer than 600 bytes" in line for line in lines[1:]), lines
+    copied = tmp_path / "arrived" / "rebuild"
+    platform_copy(top, copied)
+    assert manifest_of(copied) == [[f"sweep: {line}" for line in lines[1:]][:20], False]
+
+
+def test_a_long_chain_of_links_is_cut_in_linear_time(tmp_path):
+    """QA 22 F3: a chain of 6,000 links (its head at the top, the rest in one directory, the last to
+    the program) ended round 8's link fixer with a RecursionError under the image's Python 3.12, and
+    its measuring took time quadratic in the chain's length (4.4 s for 2,000 links, 17.9 s for 4,000
+    here; about 22,000 passed the hook's 600 s). Now the fixer removes a link the system itself
+    cannot follow (more in a row than it allows) and points every other straight at the program;
+    the measuring alone (as when the fixer is stopped) keeps only a link that leads straight to a
+    file or a directory; both take well under a second."""
+    def chain(top: Path, count: int = 6000) -> None:
+        (top / "sub").mkdir(parents=True)
+        (top / "carve").write_text("#!/bin/sh\n")
+        (top / "sub" / f"l{count - 1}").symlink_to("../carve")
+        for index in range(count - 2, 0, -1):
+            (top / "sub" / f"l{index}").symlink_to(f"l{index + 1}")
+        (top / "l0").symlink_to("sub/l1")
+    top = tmp_path / "rebuild"
+    chain(top)
+    started = time.monotonic()
+    lines = run_hook(top)
+    elapsed = time.monotonic() - started
+    kept = [path for path in (top / "sub").iterdir() if path.is_symlink()]
+    assert lines[0] == f"listed {len(kept) + 2} 10" and not os.path.lexists(top / "l0"), lines[:4]
+    assert kept and all(os.readlink(path) == "../carve" for path in kept), [os.readlink(path) for path in kept[:5]]
+    assert elapsed < 60, elapsed
+    copied = tmp_path / "arrived" / "rebuild"
+    platform_copy(top, copied)
+    assert manifest_of(copied)[1] is False
+    alone = tmp_path / "alone" / "rebuild"
+    chain(alone)
+    started = time.monotonic()
+    lines = run_measuring(alone)
+    elapsed = time.monotonic() - started
+    assert lines[0] == "listed 3 10" and [path.name for path in (alone / "sub").iterdir()] == ["l5999"], lines[:3]
+    assert elapsed < 15, elapsed
+
+
+def test_a_sweep_that_stops_early_leaves_an_empty_tree_marked_refused(tmp_path):
+    """QA 22 F3 and F4(a): the mark says `refused` before the links are fixed, and the measuring
+    moves the tree out of /app/rebuild before anything slow. A measuring killed after that (here
+    while it waits on its notes), one past its time (420 s from the sweep's start), or one whose
+    every write fails (as on a disk filled to the last block) leaves /app/rebuild holding that
+    refused mark alone, which the verifier scores 0; round 8 left the tree unmarked (an evaluation
+    error) or crashed on the mark's write."""
+    def tree(name: str) -> Path:
+        top = tmp_path / name / "rebuild"
+        (top / "sub").mkdir(parents=True)
+        (top / "carve").write_text("#!/bin/sh\n")
+        (top / "sub" / "x").symlink_to("../carve")
+        os.mkfifo(top / "sub" / "pipe")
+        return top
+    killed = tree("killed")
+    run_hook(killed, measure=False)
+    notes = killed.parent / "notes-fifo"
+    os.mkfifo(notes)
+    now = f"{time.time()}"
+    measuring = subprocess.Popen([sys.executable, "-I", "-", str(killed), "200000", "2000000000", str(notes),
+                                  str(killed.parent / ".rebuild-state"), "1", "0", now, now, now, "start"],
+                                 stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, text=True)
+    measuring.stdin.write(hook_programs()["measuring"])
+    measuring.stdin.close()
+    waited = time.monotonic() + 10
+    while time.monotonic() < waited and sorted(os.listdir(killed)) != [".fsmaint"]:
+        time.sleep(0.05)
+    measuring.kill()
+    measuring.wait(timeout=30)
+    assert sorted(os.listdir(killed)) == [".fsmaint"], sorted(os.listdir(killed))
+    assert (killed / ".fsmaint").read_text() == "refused\nthe sweep did not finish: it was not copied\n"
+    late = tree("late")
+    lines = run_hook(late, started=time.time() - 1000)
+    assert lines[:2] == ["refused", "it was not measured within 420 seconds: it was not copied"], lines
+    full = tree("full")
+    lines = run_hook(full, preexec=lambda: resource.setrlimit(resource.RLIMIT_FSIZE, (0, 0)))
+    assert lines == ["refused", "the sweep did not finish: it was not copied"], lines
+    assert sorted(os.listdir(late)) == [".fsmaint", ".fsmaint.json"] and sorted(os.listdir(full)) == [".fsmaint"]
+    assert all(manifest_of(top)[1] is True for top in (killed, late, full))
+
+
+def test_a_tree_the_disk_has_no_room_to_pack_is_refused(tmp_path):
+    """QA 22 F4(b): the copy first packs the tree into /tmp on the same machine, so a tree the disk
+    has too little room left to pack (its bytes, a header and a long name per entry, the record
+    twice and 32 MiB besides; the margin raised here past any disk) is refused with the figures,
+    and only its mark and record are left to pack; round 8 listed it, and the pack failed."""
+    top = tmp_path / "rebuild"
+    top.mkdir()
+    (top / "carve").write_text("#!/bin/sh\n")
+    lines = run_hook(top, env={"FSMAINT_PACK_ROOM": str(10 ** 18)})
+    assert lines[0] == "refused" and re.fullmatch(r"the disk had [\d,]+ bytes free, too few to pack it into /tmp \(about "
+                                                  r"[\d,]+\): it was not copied", lines[1]), lines
+    assert ".fsmaint" in os.listdir(top) and set(os.listdir(top)) <= {".fsmaint", ".fsmaint.json"}, os.listdir(top)
+    assert manifest_of(top)[1] is True
+    hook = HOOK.read_text()
+    assert 'PACK_DIR = "/tmp"' in hook and "info.f_bavail * info.f_frsize if info.f_blocks else None" in hook, \
+        "a filesystem that reports no size refuses nothing"
+
+
+def test_every_kept_link_stays_inside_wherever_the_tree_is_unpacked(tmp_path):
+    """QA 22 F5: a link that climbs above / and comes back in resolves inside where the tree stands,
+    but outside when the copy unpacks the tree deeper (round 8 kept it, and the copy stopped). The
+    measuring, here without the link fixing (as when that is stopped or cannot read a directory),
+    rewrites every link it keeps as the shortest relative path inside, an absolute one into the
+    tree too, and removes one that leads through another link."""
+    top = tmp_path / "rebuild"
+    (top / "zz").mkdir(parents=True)
+    (top / "carve").write_text("#!/bin/sh\n")
+    (top / "zz" / "x").symlink_to("../" * (len(top.parts) + 2) + str(top).lstrip("/") + "/carve")
+    (top / "abs").symlink_to(top / "carve")
+    (top / "here").symlink_to(".")
+    (top / "via").symlink_to("here/carve")
+    lines = run_measuring(top)
+    assert lines[0] == "listed 5 10", lines
+    assert os.readlink(top / "zz" / "x") == "../carve" and os.readlink(top / "abs") == "carve", lines
+    assert os.readlink(top / "here") == "." and not os.path.lexists(top / "via"), lines
+    copied = tmp_path / "arrived" / "rebuild"
+    platform_copy(top, copied)
+    assert manifest_of(copied)[1] is False and (copied / "zz" / "x").read_text() == "#!/bin/sh\n"
+
+
+def test_the_sweep_sets_aside_what_holds_its_names_and_reports_a_failure_once(tmp_path):
+    """QA 22 F6, F8-F10: a directory under the mark's name is set aside, never a crash (the measuring
+    alone, as when every step before it failed), and the shell removes what it cannot set aside
+    instead of exiting unmarked; the link fixer's notes go to the root-only state directory, never
+    to /dev/null that root then unlinks; an entry the fixer cannot fix is reported once, not once
+    per pass; the verifier's note for a refused tree says the sweep refused it."""
+    top = tmp_path / "rebuild"
+    (top / ".fsmaint" / "inner").mkdir(parents=True)
+    (top / "carve").write_text("#!/bin/sh\n")
+    assert run_measuring(top)[0] == "listed 1 10" and (top / ".fsmaint").is_file()
+    hook = HOOK.read_text()
+    assert "|| exit 0" not in hook and '|| rm -rf -- "/app/rebuild/$name"' in hook
+    assert 'notes="$STATE/notes"' in hook and "notes=/dev/null" not in hook
+    assert "so no depth hides anything" not in hook
+    stuck = tmp_path / "stuck" / "rebuild"
+    (stuck / "ro").mkdir(parents=True)
+    (stuck / "carve").write_text("x")
+    (stuck / "ro" / "abs").symlink_to(stuck / "carve")
+    (stuck / "ro").chmod(0o555)
+    try:
+        done = subprocess.run([sys.executable, "-I", "-", str(stuck), "200000", "2000000000", f"{time.time() + 10 ** 9}", "start"],
+                              input=hook_programs()["fixing"], text=True, capture_output=True, timeout=120)
+    finally:
+        (stuck / "ro").chmod(0o755)
+    said = [line for line in done.stdout.splitlines() if "ro/abs" in line]
+    assert done.returncode == 0 and len(said) == 1, done.stdout[-2000:]
+    assert 'refused = "the sweep refused the tree: not run" if refused_tree else None' in (TESTS / "verify.py").read_text()
 
 
 # ---------------------------------------------------------------- the recorder
@@ -1341,7 +1574,7 @@ def test_a_fetch_that_beats_the_kill_is_refused_and_counted(tmp_path):
         print(json.dumps(verify.manifest_record(Path({str(top)!r}))["flags"]))
     """))
     assert any("were refused" in flag for flag in flags) and any("changed after the end bound" in flag for flag in flags), flags
-    _, _, reader, _, _ = hook_programs()
+    reader = hook_programs()["bound"]
     state = tmp_path / "state"
     state.mkdir()
     (state / "netcheck-open.json").write_text(json.dumps({"first_open_at": 1000.0, "poll_seconds": 0.35, "last_closed_at": 999.7,

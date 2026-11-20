@@ -1,10 +1,15 @@
 #!/bin/sh
 # Runs as root once the user's work has ended, before /app/rebuild is copied elsewhere. It stops and
 # ends every process of the user `dev`, recording what was alive; probes whether a few public hosts
-# answer; makes /app/rebuild copyable (links) and measures it; and writes a mark and a record into
-# it. The mark's first line says how many entries and bytes were listed, or that the tree was
-# refused; the record (.fsmaint.json) lists every entry, every link turned into a copy with where
-# the copy came from and when that source last changed, and the end bound the net check observed.
+# answer; puts a mark into /app/rebuild that says the tree is refused; makes the tree copyable
+# (links); then moves the tree out of /app/rebuild, measures and bounds it there, and moves it back
+# under a mark that lists it only when it is within the limits and the disk has room to pack it.
+# From the move out until that last step /app/rebuild holds the refused mark and nothing unmeasured,
+# so a sweep that stops in between leaves an empty tree marked refused (one that stops before the
+# move leaves the tree in place, marked refused). The mark's first line says how many entries and
+# bytes were listed, or that the tree was refused; the record (.fsmaint.json) lists every entry,
+# every link turned into a copy with where the copy came from and when that source last changed,
+# and the end bound the net check observed.
 LIMIT_ENTRIES=200000
 LIMIT_BYTES=2000000000
 STATE=/var/lib/fsmaint
@@ -109,19 +114,50 @@ with open(sys.argv[1], "w") as handle:
     json.dump({"checked_at": time.time(), "hosts": results, "any_open": any(state == "open" for state in results.values())}, handle)
 EOF
 # Give back the room and the spare inodes fsmaint-reserve set aside, so however full the disk was
-# left, the record, the mark and a refusal can be written.
+# left, the marks, the record and a refusal can be written.
 rm -f "$STATE/room"
 rm -rf "$STATE/inodes"
-# Whatever was left under the mark's or the record's name is moved aside, never followed. Should
-# /app/rebuild be missing, a link or anything but a directory, the measuring below moves it aside,
-# puts an empty directory in its place and marks that refused.
+# Whatever was left under the mark's or the record's name is moved aside, or removed where it
+# cannot be moved, never followed.
 if [ -d /app/rebuild ] && [ ! -L /app/rebuild ]; then
   for name in .fsmaint .fsmaint.json; do
     if [ -e "/app/rebuild/$name" ] || [ -L "/app/rebuild/$name" ]; then
-      aside=$(mktemp -d /app/.aside.XXXXXX) && mv -f "/app/rebuild/$name" "$aside/" || exit 0
+      aside=$(mktemp -d /app/.aside.XXXXXX) && mv -f "/app/rebuild/$name" "$aside/" || rm -rf -- "/app/rebuild/$name"
     fi
   done
 fi
+# Before anything of the tree changes, the mark says it is refused; the measuring replaces that mark
+# only once the tree is measured and back in place.
+/usr/bin/python3 -I - /app/rebuild "$STATE" <<'EOF'
+"""Put a mark into /app/rebuild that says the tree is refused, before anything of the tree changes;
+the measuring replaces it. A /app/rebuild that is missing, a link or anything but a directory is
+moved aside whole (a link itself, never what it points to) and an empty directory takes its place;
+the reason goes into the mark and into the state directory named second."""
+import os
+import stat
+import sys
+
+TOP, STATE = sys.argv[1], sys.argv[2]
+reason = None
+try:
+    given = os.lstat(TOP)
+    if stat.S_ISLNK(given.st_mode):
+        reason = "/app/rebuild was a link"
+    elif not stat.S_ISDIR(given.st_mode):
+        reason = "/app/rebuild was not a directory"
+except FileNotFoundError:
+    reason = "/app/rebuild was missing"
+if reason is not None:
+    if os.path.lexists(TOP):
+        os.rename(TOP, os.path.join(os.path.dirname(TOP), f".refused.{os.urandom(6).hex()}"))
+    os.mkdir(TOP)
+    os.chmod(TOP, 0o777)
+    with open(os.path.join(STATE, "replaced"), "w") as handle:
+        handle.write(reason)
+descriptor = os.open(os.path.join(TOP, ".fsmaint"), os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644)
+with os.fdopen(descriptor, "w") as mark:
+    mark.write(f"refused\n{reason or 'the sweep did not finish'}: it was not copied\n")
+EOF
 # The end bound for the link fixing below: from the net check's record where it has one, else this
 # sweep's own start.
 set -- $(/usr/bin/python3 -I - "$STATE/netcheck-open.json" "$started" <<'EOF'
@@ -142,27 +178,32 @@ EOF
 end_bound=${1:-$started}
 end_from=${2:-start}
 # Links, as `dev` (it copies nothing that user could not read), within two minutes; what it changes,
-# and where each copy came from, goes to the record.
-notes=$(mktemp /tmp/.fsmaint-notes.XXXXXX 2>/dev/null) || notes=/dev/null
+# and where each copy came from, goes to the record through a notes file in the state directory.
+notes="$STATE/notes"
+rm -f "$notes"
 timeout 120 setpriv --reuid dev --regid dev --clear-groups --no-new-privs /usr/bin/python3 -I - /app/rebuild "$LIMIT_ENTRIES" "$LIMIT_BYTES" "$end_bound" "$end_from" > "$notes" 2>&1 <<'EOF'
 """Make /app/rebuild safe to copy, as the user who wrote it.
 
 The copy keeps relative links that stay inside the directory and refuses everything else. A link
-inside it that points elsewhere inside it becomes relative. A link to a file or directory outside
-it (a virtual environment's interpreter, say) becomes a copy of what it points to, if that is a
-file or a directory (devices, pipes and sockets in it are left out) and nothing in it changed at or
-after the end bound given as the fourth argument, less a skew (a file's change time, which the
-user cannot set, and its modification time are both read): a copy records the source's path, uid,
-times and inode, so the record shows where every file that was not written in place came from.
-Where the fifth argument says the bound came from the net check, a late source is refused; where
-it says the bound is only this sweep's start, the source is copied and flagged. A link to nothing,
-a link to a device, a pipe, a socket or a device node is removed. Each change is printed as one
-JSON line.
+inside it that points elsewhere inside it becomes the relative path to what it resolves to. A link
+to a file or directory outside it (a virtual environment's interpreter, say) becomes a copy of what
+it points to, if that is a file or a directory (devices, pipes and sockets in it are left out), the
+disk has room for it twice over and 64 MiB besides, and nothing in it changed at or after the end
+bound given as the fourth argument, less a skew (a file's change time, which the user cannot set,
+and its modification time are both read): a copy records the source's path, uid, times and inode,
+so the record shows where every file that was not written in place came from. Where the fifth
+argument says the bound came from the net check, a late source is refused; where it says the bound
+is only this sweep's start, the source is copied and flagged. A link the system itself cannot follow
+(to nothing, or through a loop or more links in a row than it allows), a link to a device, a pipe
+or a socket, and a device node, pipe or socket are removed; a copy that fails is removed with
+whatever of it was written. Each change is printed as one JSON line, and an entry that cannot be
+fixed is reported once.
 """
 import json
 import os
 import shutil
 import stat
+import subprocess
 import sys
 
 if os.path.islink(sys.argv[1]) or not os.path.isdir(sys.argv[1]):
@@ -173,7 +214,9 @@ LIMIT_BYTES = int(sys.argv[3])
 END_BOUND = float(sys.argv[4])
 END_FROM = sys.argv[5] if len(sys.argv) > 5 else "start"   # "netcheck": the bound was observed; else this sweep's start
 SKEW = 0.5   # the cutoff is this much before the end bound, never after it
+ROOM = 64 << 20   # bytes the disk keeps free beyond a copy and its size again
 spent = copied = 0
+reported = set()
 
 
 def say(**fields):
@@ -182,6 +225,12 @@ def say(**fields):
 
 def inside(path):
     return path == ROOT or path.startswith(ROOT + os.sep)
+
+
+def free_bytes(path):
+    """The bytes free on the filesystem holding `path`; None where it reports no size."""
+    info = os.statvfs(path)
+    return info.f_bavail * info.f_frsize if info.f_blocks else None
 
 
 def sources_of(path, limit, most):
@@ -214,23 +263,26 @@ def sources_of(path, limit, most):
 
 
 def fix_link(path, name):
+    """What fixing the link at `path` prints, and whether it changed anything on disk."""
     global spent, copied
     target = os.readlink(path)
-    resolved = os.path.realpath(path)
-    if not os.path.exists(resolved):
+    try:
+        os.stat(path)   # the system's own resolution, with its own limit on links in a row
+    except OSError as exc:
         os.unlink(path)
-        return {"note": f"removed {name} -> {target}: it points at nothing"}
+        return {"note": f"removed {name} -> {target}: it points at nothing ({exc.__class__.__name__})"}, True
+    resolved = os.path.realpath(path)
     if inside(resolved):
         wanted = os.path.relpath(resolved, os.path.dirname(path))
         if wanted == target:
-            return None
+            return None, False
         os.unlink(path)
         os.symlink(wanted, path)
-        return {"note": f"{name} -> {wanted} (was {target})"}
+        return {"note": f"{name} -> {wanted} (was {target})"}, True
     mode = os.stat(resolved).st_mode
     if not (stat.S_ISREG(mode) or stat.S_ISDIR(mode)):
         os.unlink(path)
-        return {"note": f"removed {name} -> {target}: it points at a device, a pipe or a socket"}
+        return {"note": f"removed {name} -> {target}: it points at a device, a pipe or a socket"}, True
     sources, size, count = sources_of(resolved, LIMIT_BYTES - spent, ENTRIES - copied)
     late = [item for item in sources if max(item["source_ctime"], item["source_mtime"]) >= END_BOUND - SKEW]
     record = {"path": name, "target": target, "source": resolved, "source_uid": sources[0]["source_uid"],
@@ -239,20 +291,28 @@ def fix_link(path, name):
               "latest_ctime": max(item["source_ctime"] for item in sources), "outside": True}
     if late and END_FROM == "netcheck":
         os.unlink(path)
-        return {"refused": dict(record, reason=f"{len(late)} of its files changed after the end bound")}
+        return {"refused": dict(record, reason=f"{len(late)} of its files changed after the end bound")}, True
     if late:  # no end bound was observed, so the reference is this sweep's own start: copy, and flag it
         record["flagged"] = f"{len(late)} of its files changed after this sweep started; no end bound was observed, so it is copied and flagged"
     if spent + size > LIMIT_BYTES or copied + count > ENTRIES:
         os.unlink(path)
-        return {"refused": dict(record, reason=f"copying it would pass {ENTRIES:,} entries or {LIMIT_BYTES:,} bytes")}
+        return {"refused": dict(record, reason=f"copying it would pass {ENTRIES:,} entries or {LIMIT_BYTES:,} bytes")}, True
+    free = free_bytes(os.path.dirname(path))
+    if free is not None and free < 2 * size + ROOM:
+        os.unlink(path)
+        return {"refused": dict(record, reason=f"the disk had {free:,} bytes free, too few to copy {size:,} bytes")}, True
     os.unlink(path)
     spent += size
     copied += count
-    if os.path.isdir(resolved):
-        shutil.copytree(resolved, path, symlinks=True, ignore=special_files)
-    else:
-        shutil.copy2(resolved, path)
-    return {"copy": record}
+    try:
+        if os.path.isdir(resolved):
+            shutil.copytree(resolved, path, symlinks=True, ignore=special_files)
+        else:
+            shutil.copy2(resolved, path)
+    except Exception as exc:
+        subprocess.run(["rm", "-rf", "--", path], capture_output=True, timeout=60, check=False)
+        return {"note": f"removed {name} -> {target}: copying it failed ({exc.__class__.__name__})"}, True
+    return {"copy": record}, True
 
 
 def special_files(folder, names):
@@ -265,6 +325,7 @@ def special_files(folder, names):
 
 
 def one_pass():
+    """Fix every entry once; whether anything on disk changed."""
     changed = False
     for folder, folders, files in os.walk(ROOT):
         for entry in folders + files:
@@ -273,17 +334,18 @@ def one_pass():
             try:
                 mode = os.lstat(path).st_mode
                 if stat.S_ISLNK(mode):
-                    said = fix_link(path, name)
+                    said, did = fix_link(path, name)
                 elif stat.S_ISREG(mode) or stat.S_ISDIR(mode):
-                    said = None
+                    said, did = None, False
                 else:
                     os.unlink(path)
-                    said = {"note": f"removed {name}: not a file, a directory or a link"}
-            except (OSError, shutil.Error) as exc:
-                said = {"note": f"could not fix {name}: {exc}"}
+                    said, did = {"note": f"removed {name}: not a file, a directory or a link"}, True
+            except Exception as exc:
+                said, did = (None if name in reported else {"note": f"could not fix {name}: {exc}"}), False
+                reported.add(name)
             if said:
                 say(**said)
-                changed = True
+            changed = changed or did
     return changed
 
 
@@ -293,46 +355,45 @@ for _ in range(10):
 EOF
 # Measure, bound, list and mark, as root.
 exec /usr/bin/python3 -I - /app/rebuild "$LIMIT_ENTRIES" "$LIMIT_BYTES" "$notes" "$STATE" "$passes" "$left" "$started" "$ended" "$end_bound" "$end_from" <<'EOF'
-"""Measure /app/rebuild, bound it, list it and mark it, as root, once no process of `dev` runs.
+"""Measure /app/rebuild out of place, bound it, list it and mark it, as root, once no process of
+`dev` runs.
 
-The tree is walked by directory descriptor, so no depth hides anything. Anything the copy would
-refuse is removed: a device, a pipe, a socket, a link with an absolute target or one that resolves
-outside the directory. A tree over the limits, or a path that is not a directory, is moved aside
-whole and replaced by an empty directory. The mark's first line is `listed` with the number of entries (files, directories and
-links) and of bytes in its files (each file once, however many names it has), or `refused`; every
-line after it is a change made (the link fixing's first, read as JSON lines from the file named
-fourth on the command line) or the reason for the refusal. The record (.fsmaint.json) holds this
-sweep's start and the end of its kill stage, the end bound and where it came from, what the net
-check recorded, the processes found frozen, how many passes of ending it took and how many
-processes were left, whether the public hosts answered afterwards, every copy a link became and
-every link refused, with where it came from and when that changed, every note, and every entry:
-its path, type, size, modification and change times, and a file's sha256 (within a byte limit).
+/app/rebuild already holds a mark that says the tree is refused. First every other entry moves into
+a new directory beside it, so that from then on /app/rebuild holds that mark and nothing unmeasured:
+should the measuring stop before its end, an empty tree marked refused is what is copied. The moved
+tree is walked by directory descriptor, never following a link. Whatever a copy would refuse or
+could not carry is taken out: a device, a pipe or a socket is removed; an entry whose path in the
+tree is longer than 2,048 bytes is moved out with everything below it; a link is removed unless,
+read from where it stands in /app/rebuild, it leads through directories of the tree only (outside
+the tree, by name alone) to a file or a directory of the tree, and then it is rewritten as the
+shortest relative path to that, which resolves the same wherever the tree is unpacked. A tree over
+the limits, one not measured within 420 seconds of the sweep's start, or one the disk has too
+little room left to pack into /tmp, is refused and stays moved out. Otherwise it moves back, and
+one rename puts its own mark in place of the refused one. The mark's first line is `listed` with
+the number of entries (files, directories and links) and of bytes in its files (each file once,
+however many names it has), or `refused` with the reason on the next line; then up to 200 of the
+changes made, 32 KiB at most (the link fixing's first, read as JSON lines from the file named fourth
+on the command line, which is then removed), and how many more there are. A tree that cannot be
+moved out or back, or whose mark cannot be written, is refused too. The record (.fsmaint.json; for a
+refused tree, without the entries or left out where the disk has too little room) holds the
+changes (up to 4,000,000 bytes of them), this sweep's start and the end of its kill stage, the end
+bound and where it came from, what the net check recorded, the processes found frozen, how many
+passes of ending it took and how many processes were left, whether the public hosts answered
+afterwards, every copy a link became and every link refused, with where it came from and when that
+changed, and every entry: its path, type, size, modification and change times (an entry at the top
+as they were before it moved), and a file's sha256 (within a byte limit).
 """
 import hashlib
 import json
 import os
 import signal
 import stat
+import subprocess
 import sys
+import time
 
-# A directory is what gets measured. Were the path missing, a link or anything else, it is moved
-# aside whole (a link itself, never what it points to), an empty directory takes its place, and
-# that is marked refused, so the mark and the record are always written.
-REPLACED = None
-try:
-    given = os.lstat(sys.argv[1])
-    if stat.S_ISLNK(given.st_mode):
-        REPLACED = "/app/rebuild was a link"
-    elif not stat.S_ISDIR(given.st_mode):
-        REPLACED = "/app/rebuild was not a directory"
-except FileNotFoundError:
-    REPLACED = "/app/rebuild was missing"
-if REPLACED is not None:
-    if os.path.lexists(sys.argv[1]):
-        os.rename(sys.argv[1], os.path.join(os.path.dirname(sys.argv[1]), f".refused.{os.urandom(6).hex()}"))
-    os.mkdir(sys.argv[1])
-    os.chmod(sys.argv[1], 0o777)
-ROOT = os.path.realpath(sys.argv[1])
+TOP = os.path.abspath(sys.argv[1])
+PARENT = os.path.dirname(TOP)
 LIMIT_ENTRIES, LIMIT_BYTES = int(sys.argv[2]), int(sys.argv[3])
 NOTES, STATE = sys.argv[4], sys.argv[5]
 PASSES = int(sys.argv[6]) if sys.argv[6].isdigit() else None
@@ -340,12 +401,82 @@ LEFT = int(sys.argv[7].strip()) if sys.argv[7].strip().isdigit() else None
 STARTED, ENDED, END_BOUND = (float(value) for value in sys.argv[8:11])
 END_FROM = sys.argv[11] if len(sys.argv) > 11 else "start"   # "netcheck": the bound was observed; else this sweep's start
 SKEW = 0.5   # as in the link fixer
-MARK = os.path.join(ROOT, ".fsmaint")
-RECORD = os.path.join(ROOT, ".fsmaint.json")
+OWN = (".fsmaint", ".fsmaint.json")
+MARK, RECORD = (os.path.join(TOP, name) for name in OWN)
+TREE_PARTS = [part for part in TOP.split("/") if part]   # where a link is read from
 HASH_LIMIT = 2_000_000_000   # bytes hashed for the record, at most
 NOTE_BYTES = 4_000_000       # bytes of notes kept, at most
-notes, copies, refused, links, files, catalogue = [], [], [], [], set(), []
-entries = size = hashed = 0
+MARK_NOTES, MARK_BYTES = 200, 32_768   # notes in the mark, at most, and their bytes
+PATH_BYTES = int(os.environ.get("FSMAINT_PATH_BYTES", 2048))   # bytes of a path in the tree, at most
+SECONDS = 420   # the measuring ends this long after the sweep's start; the sweep itself has 600
+FINISH_BY = STARTED + SECONDS
+PACK_DIR = "/tmp"   # where the tree is packed before it is copied
+PACK_ROOM = int(os.environ.get("FSMAINT_PACK_ROOM", 32 << 20))   # bytes left free once it is packed, at least
+notes, copies, refused, links, catalogue = [], [], [], [], []
+files, kinds, top_times = {}, {}, {}   # each file's sha256 by inode; each entry's type by path; top entries' times
+entries = size = hashed = note_bytes = notes_left_out = moved_out = 0
+long_fd = None
+
+
+class Refuse(Exception):
+    pass
+
+
+def note(text):
+    """Keep a change made, while NOTE_BYTES last; count the rest."""
+    global note_bytes, notes_left_out
+    if note_bytes + len(text) + 1 > NOTE_BYTES:
+        notes_left_out += 1
+        return
+    note_bytes += len(text) + 1
+    notes.append(text)
+
+
+def write_new(path, data):
+    """Create `path`, never over an existing name or through a link, holding the bytes `data`;
+    where that fails, nothing is left at `path`."""
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644)
+    try:
+        view = memoryview(data)
+        while view:
+            view = view[os.write(descriptor, view):]
+    except BaseException:
+        os.close(descriptor)
+        os.unlink(path)
+        raise
+    os.close(descriptor)
+
+
+def remove(path):
+    """Remove whatever is at `path`, a directory with everything below it, never following a link."""
+    if os.path.isdir(path) and not os.path.islink(path):
+        subprocess.run(["rm", "-rf", "--", path], capture_output=True, timeout=300, check=False)
+    elif os.path.lexists(path):
+        os.unlink(path)
+    if os.path.lexists(path):
+        raise OSError(f"{path} could not be removed")
+
+
+def set_aside(path):
+    """Move `path` into a new directory beside the tree, or remove it where it cannot move."""
+    try:
+        folder = os.path.join(PARENT, f".aside.{os.urandom(6).hex()}")
+        os.mkdir(folder, 0o700)
+        os.rename(path, os.path.join(folder, os.path.basename(path)))
+    except OSError:
+        remove(path)
+
+
+def placed():
+    """Whether the mark is a file that says the tree is refused (the one put in before the links
+    were fixed)."""
+    try:
+        if not stat.S_ISREG(os.lstat(MARK).st_mode):
+            return False
+        with open(MARK, "rb") as handle:
+            return handle.read(8) == b"refused\n"
+    except OSError:
+        return False
 
 
 def read_json(name):
@@ -356,31 +487,111 @@ def read_json(name):
         return None
 
 
+# What stands at /app/rebuild: a directory is measured. One that was missing, a link or anything
+# else was replaced by an empty directory before the links were fixed (the reason is in the state
+# directory); where it was not, it is here: moved aside whole (a link itself, never what it points
+# to), with an empty directory in its place.
+REPLACED = None
 try:
-    with open(NOTES, errors="backslashreplace") as handle:
-        for line in handle.read(NOTE_BYTES).splitlines():
-            if not line.strip():
-                continue
-            try:
-                said = json.loads(line)
-            except ValueError:
-                notes.append(line)
-                continue
-            if "copy" in said:
-                copies.append(said["copy"])
-                notes.append(f"{said['copy']['path']}: a copy of {said['copy']['source']} (was a link to {said['copy']['target']})")
-            elif "refused" in said:
-                refused.append(said["refused"])
-                notes.append(f"removed {said['refused']['path']} -> {said['refused']['target']}: {said['refused']['reason']}")
-            else:
-                notes.append(said.get("note", line))
-    os.unlink(NOTES)
+    with open(os.path.join(STATE, "replaced")) as handle:
+        REPLACED = handle.read(200).strip() or None
 except OSError:
     pass
+if REPLACED is None:
+    try:
+        given = os.lstat(TOP)
+        if stat.S_ISLNK(given.st_mode):
+            REPLACED = "/app/rebuild was a link"
+        elif not stat.S_ISDIR(given.st_mode):
+            REPLACED = "/app/rebuild was not a directory"
+    except FileNotFoundError:
+        REPLACED = "/app/rebuild was missing"
+    if REPLACED is not None:
+        if os.path.lexists(TOP):
+            os.rename(TOP, os.path.join(PARENT, f".refused.{os.urandom(6).hex()}"))
+        os.mkdir(TOP)
+        os.chmod(TOP, 0o777)
+# The refused mark is in place before anything moves; what else stands under the mark's or the
+# record's name is set aside.
+try:
+    if not placed():
+        if os.path.lexists(MARK):
+            set_aside(MARK)
+        write_new(MARK, f"refused\n{REPLACED or 'the sweep did not finish'}: it was not copied\n".encode())
+    if os.path.lexists(RECORD):
+        set_aside(RECORD)
+except OSError as exc:
+    print(f"the refused mark could not be put in place ({exc.__class__.__name__})", flush=True)
 
 
-class Refuse(Exception):
-    pass
+def move_all(source, destination):
+    """Move every entry of the directory `source` but the mark and the record into `destination`
+    (a rename each), reading the listing again until none is left, since one read while its names
+    leave may skip some; the names of those that could not be moved."""
+    stuck = set()
+    for _ in range(5):
+        moved = False
+        with os.scandir(source) as listing:
+            for entry in listing:
+                if entry.name in OWN or entry.name in stuck:
+                    continue
+                try:
+                    if destination == STAGED and len(top_times) <= LIMIT_ENTRIES:
+                        info = entry.stat(follow_symlinks=False)
+                        top_times[entry.name] = (info.st_mtime, info.st_ctime)
+                    if os.path.lexists(os.path.join(destination, entry.name)):
+                        raise FileExistsError(entry.name)
+                    os.rename(entry.path, os.path.join(destination, entry.name))
+                    moved = True
+                except OSError:
+                    stuck.add(entry.name)
+        if not moved:
+            break
+    return stuck
+
+
+# Every other entry moves out (a rename each: /app/rebuild itself stays where it is). An entry that
+# cannot be moved is removed, and the tree is refused; where no directory can be made beside the
+# tree, every entry is removed so.
+unmoved = None
+STAGED = os.path.join(PARENT, f".staged.{os.urandom(6).hex()}")
+try:
+    os.mkdir(STAGED, 0o700)
+    stuck = move_all(TOP, STAGED)
+except OSError:
+    stuck = {name for name in os.listdir(TOP) if name not in OWN}
+for name in stuck:
+    unmoved = "it could not be moved out to be measured"
+    try:
+        remove(os.path.join(TOP, name))
+    except OSError:
+        pass
+try:
+    with open(NOTES, errors="backslashreplace") as handle:
+        text = handle.read(NOTE_BYTES)
+    os.unlink(NOTES)
+except OSError:
+    text = ""
+for line in text.splitlines():
+    if not line.strip():
+        continue
+    try:
+        said = json.loads(line)
+        if "copy" in said:
+            note(f"{said['copy']['path']}: a copy of {said['copy']['source']} (was a link to {said['copy']['target']})")
+            copies.append(said["copy"])
+        elif "refused" in said:
+            note(f"removed {said['refused']['path']} -> {said['refused']['target']}: {said['refused']['reason']}")
+            refused.append(said["refused"])
+        else:
+            note(str(said["note"]))
+    except (ValueError, TypeError, KeyError):
+        note(line)
+
+
+def in_time():
+    if time.time() > FINISH_BY:
+        raise Refuse(f"it was not measured within {SECONDS} seconds")
 
 
 def digest(name, fd, length):
@@ -394,79 +605,139 @@ def digest(name, fd, length):
     try:
         while chunk := os.read(handle, 1 << 20):
             whole.update(chunk)
+            in_time()
     finally:
         os.close(handle)
     return whole.hexdigest()
 
 
-def walk(fd, rel):
-    """Count, and remove what the copy would refuse, below the directory open as `fd` (`rel` inside ROOT)."""
+def move_out(name, fd, path):
+    """Move the entry `name` of the directory open as `fd` (at `path` in the tree), with everything
+    below it, into a directory beside the tree."""
+    global long_fd, moved_out
+    if long_fd is None:
+        folder = os.path.join(PARENT, f".long.{os.urandom(6).hex()}")
+        os.mkdir(folder, 0o700)
+        long_fd = os.open(folder, os.O_RDONLY | os.O_DIRECTORY)
+    os.rename(name, str(moved_out), src_dir_fd=fd, dst_dir_fd=long_fd)
+    moved_out += 1
+    note(f"moved out {path[:240]}...: its path in /app/rebuild is longer than {PATH_BYTES:,} bytes")
+
+
+def walk(top):
+    """Count, and take out what a copy would refuse, below the directory open as `top`."""
     global entries, size
-    with os.scandir(fd) as listing:
-        names = []
-        for entry in listing:
-            names.append(entry.name)
-            if entries + len(names) > LIMIT_ENTRIES:
-                raise Refuse(f"it holds more than {LIMIT_ENTRIES:,} files and directories, the most /app/rebuild may hold")
-    for name in names:
-        path = f"{rel}/{name}" if rel else name
-        info = os.stat(name, dir_fd=fd, follow_symlinks=False)
-        if stat.S_ISLNK(info.st_mode):
-            links.append(path)
-        elif not (stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode)):
-            os.unlink(name, dir_fd=fd)
-            notes.append(f"removed {path}: not a file, a directory or a link")
+    pending = [""]
+    while pending:
+        rel = pending.pop()
+        fd = os.open(rel, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=top) if rel else top
+        try:
+            names = []
+            with os.scandir(fd) as listing:
+                for entry in listing:
+                    names.append(entry.name)
+                    if entries + len(names) > LIMIT_ENTRIES:
+                        raise Refuse(f"it holds more than {LIMIT_ENTRIES:,} files and directories, the most /app/rebuild may hold")
+            for name in names:
+                in_time()
+                path = f"{rel}/{name}" if rel else name
+                info = os.stat(name, dir_fd=fd, follow_symlinks=False)
+                if not (stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode) or stat.S_ISLNK(info.st_mode)):
+                    os.unlink(name, dir_fd=fd)
+                    note(f"removed {path}: not a file, a directory or a link")
+                    continue
+                if len(os.fsencode(path)) > PATH_BYTES:
+                    move_out(name, fd, path)
+                    continue
+                entries += 1
+                kind = "link" if stat.S_ISLNK(info.st_mode) else "directory" if stat.S_ISDIR(info.st_mode) else "file"
+                mtime, ctime = top_times.get(name, (info.st_mtime, info.st_ctime)) if not rel else (info.st_mtime, info.st_ctime)
+                item = {"path": path, "type": kind, "size": info.st_size, "mtime": round(mtime, 3), "ctime": round(ctime, 3)}
+                catalogue.append(item)
+                kinds[path] = kind
+                if kind == "link":
+                    links.append(path)
+                elif kind == "directory":
+                    pending.append(path)
+                elif (info.st_dev, info.st_ino) in files:   # another name of a file already counted
+                    item["sha256"] = files[(info.st_dev, info.st_ino)]
+                else:
+                    size += info.st_size
+                    if size > LIMIT_BYTES:
+                        raise Refuse(f"it holds more than {LIMIT_BYTES:,} bytes, the most /app/rebuild may hold")
+                    files[(info.st_dev, info.st_ino)] = item["sha256"] = digest(name, fd, info.st_size)
+        finally:
+            if fd != top:
+                os.close(fd)
+
+
+def destination(path, target):
+    """The path in the tree ("" for its top) of what the link at `path` names, read from where it
+    stands in /app/rebuild: through directories of the tree only (outside the tree, by name alone)
+    to a file or a directory of the tree; None where it leads anywhere else."""
+    parts = [part for part in target.split("/") if part not in ("", ".")]
+    current = [] if target.startswith("/") else TREE_PARTS + path.split("/")[:-1]
+    depth = len(TREE_PARTS)
+    for index, part in enumerate(parts):
+        if part == "..":
+            if current:
+                current.pop()
             continue
-        entries += 1
-        kind = "link" if stat.S_ISLNK(info.st_mode) else "directory" if stat.S_ISDIR(info.st_mode) else "file"
-        item = {"path": path, "type": kind, "size": info.st_size, "mtime": round(info.st_mtime, 3), "ctime": round(info.st_ctime, 3)}
-        catalogue.append(item)
-        if stat.S_ISREG(info.st_mode) and (info.st_dev, info.st_ino) not in files:
-            files.add((info.st_dev, info.st_ino))
-            size += info.st_size
-            if size > LIMIT_BYTES:
-                raise Refuse(f"it holds more than {LIMIT_BYTES:,} bytes, the most /app/rebuild may hold")
-            item["sha256"] = digest(name, fd, info.st_size)
-        if stat.S_ISDIR(info.st_mode):
-            child = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+        current.append(part)
+        if len(current) > depth and current[:depth] == TREE_PARTS:
+            kind = kinds.get("/".join(current[depth:]))
+            if kind != "directory" and not (kind == "file" and index == len(parts) - 1):
+                return None
+    if not target or current[:depth] != TREE_PARTS:
+        return None
+    return "/".join(current[depth:])
+
+
+def fix_links(top):
+    """Remove every link that does not lead to a file or a directory of the tree, and rewrite every
+    other as the shortest relative path to what it leads to."""
+    global entries
+    removed = set()
+    for path in links:
+        in_time()
+        target = os.readlink(path, dir_fd=top)
+        found = destination(path, target)
+        if found is not None:
+            wanted = os.path.relpath(f"/{found}", f"/{path.rpartition('/')[0]}")
+            if wanted == target:
+                continue
+            os.unlink(path, dir_fd=top)
             try:
-                walk(child, path)
-            finally:
-                os.close(child)
+                os.symlink(wanted, path, dir_fd=top)
+                note(f"{path} -> {wanted} (was {target})")
+                continue
+            except OSError as exc:
+                why = f"it could not be rewritten ({exc.__class__.__name__})"
+        else:
+            os.unlink(path, dir_fd=top)
+            why = "it does not lead to a file or a directory inside /app/rebuild"
+        entries -= 1
+        removed.add(path)
+        note(f"removed {path} -> {target}: {why}")
+    if removed:
+        catalogue[:] = [item for item in catalogue if item["path"] not in removed]
 
 
-def inside(path):
-    return path == ROOT or path.startswith(ROOT + os.sep)
-
-
-reason = REPLACED
-sys.setrecursionlimit(100_000)
+reason = REPLACED or unmoved
+top = None
 try:
     if reason is None:
-        top = os.open(ROOT, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-        try:
-            walk(top, "")
-        finally:
-            os.close(top)
-    for path in links:
-        target = os.readlink(os.path.join(ROOT, path))
-        if os.path.isabs(target) or not inside(os.path.realpath(os.path.join(ROOT, path))):
-            os.unlink(os.path.join(ROOT, path))
-            entries -= 1
-            notes.append(f"removed {path}: a link that leads outside /app/rebuild")
-            catalogue[:] = [item for item in catalogue if item["path"] != path]
+        top = os.open(STAGED, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        walk(top)
+        fix_links(top)
 except Refuse as refusal:
     reason = str(refusal)
-except (OSError, RecursionError, ValueError) as exc:
+except Exception as exc:
     reason = f"it could not be measured ({exc.__class__.__name__}: {exc})"
-
-lines = [f"listed {entries} {size}"]
-if reason is not None:
-    if REPLACED is None:
-        os.rename(ROOT, os.path.join(os.path.dirname(ROOT), f".refused.{os.urandom(6).hex()}"))
-        os.mkdir(ROOT)
-        os.chmod(ROOT, 0o777)
-    lines = ["refused", f"{reason}: it was not copied"]
+finally:
+    for descriptor in (top, long_fd):
+        if descriptor is not None:
+            os.close(descriptor)
 netcheck, netcheck_open, processes, probe = (read_json(name) for name in ("netcheck.json", "netcheck-open.json", "procs.json", "netprobe.json"))
 
 
@@ -503,22 +774,100 @@ late_entries = (sum(1 for item in catalogue
                     and max(item["ctime"], item.get("mtime", 0)) >= cutoff)
                 + sum(1 for copy in copies if (copy.get("latest_ctime") or 0) >= cutoff)
                 + sum(1 for item in refused if item.get("late_files")))
-record = dict(probe or {"hosts": None, "any_open": None}, sweep_started_at=STARTED, kill_ended_at=ENDED,
-              end_bound=END_BOUND, end_from=END_FROM, netcheck=netcheck, netcheck_open=netcheck_open,
-              process_count=(processes or {}).get("process_count"), processes=(processes or {}).get("processes", []),
-              kill_passes=PASSES, processes_left=LEFT, listed=lines[0], listing_complete=reason is None and hashed <= HASH_LIMIT,
-              copies=copies, refused_copies=refused, late_entries=late_entries,
-              timer_log=timer_log, ended_by_timer=ended_by_timer,
-              notes=notes, entries=catalogue[:LIMIT_ENTRIES])
-try:
-    descriptor = os.open(RECORD, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644)
-    with os.fdopen(descriptor, "w") as handle:
-        json.dump(record, handle, separators=(",", ":"))
-except OSError as exc:
-    notes.append(f"the record could not be written ({exc.__class__.__name__})")
-descriptor = os.open(MARK, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644)
-with os.fdopen(descriptor, "w", errors="backslashreplace") as mark:
-    mark.write("\n".join(lines + notes) + "\n")
+
+
+def free_bytes(path):
+    """The bytes free on the filesystem holding `path`; None where it reports no size or none at all."""
+    try:
+        info = os.statvfs(path)
+    except OSError:
+        return None
+    return info.f_bavail * info.f_frsize if info.f_blocks else None
+
+
+def mark_text(lines):
+    """The mark: its first lines, then the first changes made, within MARK_NOTES and MARK_BYTES, and
+    how many more the record holds."""
+    shown, used = [], 0
+    for line in notes[:MARK_NOTES]:
+        if used + len(line) + 1 > MARK_BYTES:
+            break
+        shown.append(line)
+        used += len(line) + 1
+    more = len(notes) - len(shown) + notes_left_out
+    tail = [f"and {more:,} more changes: see .fsmaint.json"] if more else []
+    return ("\n".join(lines + shown + tail) + "\n").encode(errors="backslashreplace")
+
+
+def record_of(lines, whole=True):
+    """The record as JSON bytes; without the entries and with only the mark's changes where `whole`
+    is false."""
+    return json.dumps(dict(
+        probe or {"hosts": None, "any_open": None}, sweep_started_at=STARTED, kill_ended_at=ENDED,
+        end_bound=END_BOUND, end_from=END_FROM, netcheck=netcheck, netcheck_open=netcheck_open,
+        process_count=(processes or {}).get("process_count"), processes=(processes or {}).get("processes", []),
+        kill_passes=PASSES, processes_left=LEFT, listed=lines[0], listing_complete=lines[0] != "refused" and hashed <= HASH_LIMIT,
+        copies=copies, refused_copies=refused, late_entries=late_entries, timer_log=timer_log, ended_by_timer=ended_by_timer,
+        moved_out_long=moved_out, notes=notes if whole else notes[:MARK_NOTES], notes_left_out=notes_left_out,
+        free_bytes=free, pack_needs=need, entries=catalogue[:LIMIT_ENTRIES] if whole else [],
+        entries_left_out=0 if whole else len(catalogue)), separators=(",", ":")).encode(errors="backslashreplace")
+
+
+lines = [f"listed {entries} {size}"] if reason is None else ["refused", f"{reason}: it was not copied"]
+free, need = free_bytes(PACK_DIR), None
+record = record_of(lines)
+if reason is None:
+    # A tar of the tree, its record and its mark goes into /tmp on this disk before the tree is
+    # copied: room for the bytes, a header and a long name per entry, the record twice (once on disk,
+    # once in the tar) and PACK_ROOM besides.
+    need = size + 4096 * (entries + 2) + 2 * len(record) + 2 * MARK_BYTES + PACK_ROOM
+    record = record_of(lines)
+    if free is not None and free < need:
+        reason = f"the disk had {free:,} bytes free, too few to pack it into {PACK_DIR} (about {need:,})"
+        lines = ["refused", f"{reason}: it was not copied"]
+        record = record_of(lines)
+NEXT = os.path.join(PARENT, f".mark.{os.urandom(6).hex()}")
+ready = False
+if reason is None:
+    try:
+        write_new(NEXT, mark_text(lines))
+        ready = True
+    except OSError as exc:
+        reason = f"its mark could not be written ({exc.__class__.__name__})"
+if reason is None:
+    try:   # back into /app/rebuild, under the refused mark until the last step
+        if move_all(STAGED, TOP) or any(name in OWN for name in os.listdir(STAGED)):
+            raise OSError("an entry stayed out")
+        os.rmdir(STAGED)
+    except OSError as exc:
+        reason = f"it could not be moved back ({exc.__class__.__name__})"
+if reason is not None:
+    lines = ["refused", f"{reason}: it was not copied"]
+    record = record_of(lines)
+    if ready:
+        os.unlink(NEXT)
+    try:
+        write_new(NEXT, mark_text(lines))
+        ready = True
+    except OSError as exc:
+        ready = False   # the refused mark put in before stays, and says as much
+        print(f"the mark could not be written ({exc.__class__.__name__})", flush=True)
+    # The record of a refused tree is all a tar of it holds: the whole record where the disk has
+    # room for it, else one without the entries, else none.
+    if free is not None and free < 2 * len(record) + PACK_ROOM:
+        record = record_of(lines, whole=False)
+        if free < 2 * len(record) + PACK_ROOM:
+            record = None
+if record is not None:
+    try:
+        write_new(RECORD, record)
+    except OSError as exc:
+        print(f"the record could not be written ({exc.__class__.__name__})", flush=True)
+if ready:
+    try:
+        os.replace(NEXT, MARK)
+    except OSError as exc:
+        print(f"the mark could not be put in place ({exc.__class__.__name__})", flush=True)
 for line in lines[1:] + notes[:50]:
     print(line.encode(errors="backslashreplace").decode(), flush=True)
 EOF

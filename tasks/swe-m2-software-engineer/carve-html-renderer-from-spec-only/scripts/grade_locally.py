@@ -29,34 +29,46 @@ TASK_ROOT = Path(__file__).resolve().parent.parent
 STEP = "steps/01-implement-renderer"
 
 
-def hook_programs(bundle: Path) -> list[str]:
-    """The five Python blocks of the bundle's sweep (environment/fsmaint-sweep): the process
-    listing, the egress probe, the end-bound reader, the link fixing and the measuring."""
+ROLES = {"List the processes": "processes", "Record whether": "egress", "Put a mark": "mark",
+         "Make /app/rebuild safe": "fixing", "Measure /app/rebuild": "measuring"}
+
+
+def hook_programs(bundle: Path) -> dict[str, str]:
+    """The Python blocks of the bundle's sweep (environment/fsmaint-sweep) by what each does, read
+    from the start of its docstring: the process listing, the egress probe, the refused mark, the
+    link fixing and the measuring (the end-bound reader has none: "bound")."""
     text = (bundle / "environment" / "fsmaint-sweep").read_text()
-    return re.findall(r"<<'EOF'\n(.*?)\nEOF", text, re.S)
+    found = {}
+    for program in re.findall(r"<<'EOF'\n(.*?)\nEOF", text, re.S):
+        head = program.lstrip('"')
+        found[next((role for start, role in ROLES.items() if head.startswith(start)), "bound")] = program
+    return found
 
 
 def mark(bundle: Path, top: Path) -> str:
-    """Run the sweep's blocks on `top`, as this user: the process and egress records into a state dir,
-    the link fixing and the measuring (which reads the state and the notes). A far-future end bound,
-    so an honest source read now is never taken for one written after the end; the mark's first
-    line."""
-    processes, egress, _bound, fixing, measuring = hook_programs(bundle)
+    """Run the sweep's blocks on `top` in the sweep's order, as this user: the process and egress
+    records into a state dir, the refused mark, the link fixing and the measuring (which reads the
+    state and the notes). A far-future end bound, so an honest source read now is never taken for
+    one written after the end; the mark's first line."""
+    programs = hook_programs(bundle)
     state = top.parent / ".state"
     state.mkdir(exist_ok=True)
-    subprocess.run([sys.executable, "-I", "-", str(state / "procs.json")], input=processes, text=True,
+    subprocess.run([sys.executable, "-I", "-", str(state / "procs.json")], input=programs["processes"], text=True,
                    check=True, capture_output=True, timeout=120)
-    egress = egress.replace('("github.com", 443), ("pypi.org", 443), ("proxy.golang.org", 443), ("registry.npmjs.org", 443)',
-                            '("127.0.0.1", 9),')
+    egress = programs["egress"].replace(
+        '("github.com", 443), ("pypi.org", 443), ("proxy.golang.org", 443), ("registry.npmjs.org", 443)', '("127.0.0.1", 9),')
     subprocess.run([sys.executable, "-I", "-", str(state / "netprobe.json")], input=egress, text=True,
                    check=True, capture_output=True, timeout=120)
+    if "mark" in programs:
+        subprocess.run([sys.executable, "-I", "-", str(top), str(state)], input=programs["mark"], text=True,
+                       check=True, capture_output=True, timeout=120)
     end = f"{time.time() + 10 ** 9}"
     notes = top.parent / ".fsmaint-notes"
     with open(notes, "w") as handle:
-        subprocess.run([sys.executable, "-I", "-", str(top), "200000", "2000000000", end, "start"], input=fixing, text=True,
-                       check=True, stdout=handle, stderr=subprocess.STDOUT, timeout=300)
+        subprocess.run([sys.executable, "-I", "-", str(top), "200000", "2000000000", end, "start"], input=programs["fixing"],
+                       text=True, check=True, stdout=handle, stderr=subprocess.STDOUT, timeout=300)
     subprocess.run([sys.executable, "-I", "-", str(top), "200000", "2000000000", str(notes), str(state), "1", "0",
-                    end, end, end, "start"], input=measuring, text=True, check=True, capture_output=True, timeout=300)
+                    end, end, end, "start"], input=programs["measuring"], text=True, check=True, capture_output=True, timeout=600)
     return (top / ".fsmaint").read_text().splitlines()[0]
 
 

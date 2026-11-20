@@ -28,6 +28,80 @@ archive or binary.
 
 ## Development log
 
+### 2026-11-20 — round 9 (v5): whatever the tree holds, the sweep leaves a refused tree or a counted one (QA 22)
+
+- **What happened.** The re-check of round 8 (`qa/carve/22-recheck-round8.md` in harbor-lh, FAIL)
+  confirmed round 8's fix (ten shapes at `/app/rebuild`, all refused and scored 0) and found five
+  older ways a tree could still end in an evaluation error instead of a scored result, all present
+  since v2: F1 a mark over 1 MiB (one note per removed pipe or link) read as no mark; F2 a path
+  longer than `PATH_MAX` listed by the sweep, which the copy or the verifier's count then fails on;
+  F3 a chain of links that made the measuring quadratic (about 22,000 links passed the hook's
+  600 s, leaving no mark) and ended the link fixer with a `RecursionError` under the image's
+  Python 3.12; F4 a full disk breaking the mark's write, or the platform's own
+  `tar -czf /tmp/...` in the sandbox; F5 a relative link that climbs above `/` and back in, kept by
+  the sweep and rejected by the host's `data` filter. The platform's pre-trial audit blocks v4 on
+  exactly this class, so v5 (not uploaded yet) carries this round.
+- **Fix: the sweep fails closed.** Right after it gives the reserve back, before the link fixing,
+  the sweep puts a mark into `/app/rebuild` that says `refused` ("the sweep did not finish"). The
+  measuring stage then first moves every entry out into `/app/.staged.<hex>` (a rename each;
+  `/app/rebuild` itself is never renamed: Linux's overlayfs without `redirect_dir` refuses, with
+  `EXDEV`, to rename a directory the image holds, and round 8 renamed it to refuse an over-limit
+  tree; whether Modal's root does too was not tested), measures the tree
+  there, and moves it back only when it is complete, within the limits, and the disk has room to
+  pack it; one rename then puts the counted mark in place of the refused one. A measuring that
+  dies, runs past 420 s from the sweep's start, or cannot write leaves the refused mark over an
+  empty tree (0). Everything before the staging is bounded (the kill loops, `timeout` 20, 15 and
+  120 s), so the hook's 600 s cannot run out first.
+  - F1: the mark holds at most 200 changes and 32 KiB of them, then "and N more changes: see
+    .fsmaint.json"; the record keeps up to 4 MB. The verifier reads the mark's first 64 KiB
+    whatever its size.
+  - F2: an entry whose path in the tree is longer than 2,048 bytes is moved out with everything
+    below it, with a note. No honest tree comes near it, so the instruction is unchanged. The walk
+    is iterative, by descriptor.
+  - F3: the link fixer asks the system first (`os.stat`, with Linux's own 40-link limit) and only
+    then calls `realpath`, so a chain it cannot follow is removed in linear time; it catches every
+    exception per entry, reports a failure once, and runs another pass only when the disk changed
+    (F10). The measuring reads every link from where it stands in `/app/rebuild`, through
+    directories of the tree only, to a file or a directory of the tree (one dictionary lookup per
+    component, no resolution) and removes it otherwise; the catalogue is filtered once.
+  - F4: the fixer copies an outside source only while the disk keeps room for it twice over plus
+    64 MiB, and removes a copy that fails part-way. The measuring compares the free space of
+    `/tmp` (`statvfs`; a filesystem that reports no size refuses nothing) with the tree's bytes,
+    4 KiB per entry, twice the record and 32 MiB, and refuses the tree when it is short; a refused
+    tree's record is slimmed (or left out) so the refused tree itself still packs.
+  - F5: every kept link is rewritten as the shortest relative path inside the tree (an absolute one
+    into the tree too, which round 8 removed), so any unpacking resolves it as the sandbox does.
+  - F6: the shell removes what it cannot set aside (`|| rm -rf`, no `|| exit 0`), and the measuring
+    sets aside anything under the mark's or the record's name instead of crashing. F8: the fixer's
+    notes go to `/var/lib/fsmaint/notes`, never `/dev/null`. F9: the verifier's note is "the sweep
+    refused the tree: not run". F7: `manifest()`'s and the sweep's docstrings say what now holds.
+  - The top entries' times are read before they move (a rename changes a file's ctime), so
+    `late_entries` reads honest trees as before.
+- **Checks** (52 now): seven new, each failing against round 8's `fsmaint-sweep` and `verify.py`
+  (a scratch copy of the task with c8f99e3's two files): a 2 MB mark that starts `listed` or
+  `refused` (round 8: "without the sweep's mark"), and 5,000 pipes with 240-byte names (a 33 KB
+  mark; round 8: 1.4 MB); a 1,204-byte-deep path with the bound at 600 bytes (round 8: `listed 7`);
+  a 6,000-link chain (round 8 keeps its head under Python 3.13 and ends the fixer with a
+  `RecursionError` under 3.12; its measuring alone took 41.4 s here, round 9's 0.21 s); a measuring
+  killed after the staging, one past its time and one whose every write fails (round 8: the tree
+  unmarked, no time limit, a crash on the mark); a tree the disk has no room to pack (round 8:
+  `listed`); a link climbing above `/` and back, an absolute one into the tree and one through
+  another link (round 8: kept, removed, kept); a directory under the mark's name, the fixer's
+  notes, a failure reported once (round 8: a crash, `/dev/null`, ten notes). The sixteen sweep
+  checks also pass under Python 3.12.
+- **Probes** (Python 3.12, macOS): 50,000 files in 500 directories swept in 2.2 s and copied
+  through harbor 0.20's own `pack_dir_to_file` and `extract_dir_from_file`; 100,000 entries at the
+  top in 13.5 s; 200,001 refused in 13.2 s with only the mark and the record left; 40,000 links to
+  `/etc/hosts`, measuring alone, 3.4 s; 20,000 copies leave a 12.9 KB mark; the climbing link
+  passes harbor's `data` filter as `../carve`.
+- **Left.** Nothing ran on Linux, in Docker or on Modal; `statvfs` in the platform's sandbox is
+  unmeasured (the verifier's own 512 MB check passed there). Staging is a rename per top-level
+  entry, so a top level of millions of entries takes minutes, and only once it ends is a death
+  fail-closed; before the staging (bounded stages, about three minutes at most) a killed hook
+  still leaves the tree in place, marked refused from the reserve's release on. A tree the disk
+  cannot pack is refused, and the instruction does not say so: a tree within the stated limits
+  meets it only if the session itself filled the 20 GB disk.
+
 ### 2026-11-20 — round 8 (v5): the v4 audit: a tree that is not a directory scores 0, never an evaluation error
 
 - **What happened.** v4 (round 7) went up at 13:29 UTC: oracle 1.0 ×2, no-op 0.0 ×2. The platform's
@@ -54,6 +128,10 @@ archive or binary.
 - **Every evaluation error left** is the copy or the machine failing, never the tree: a missing or
   unmarked arrival (the sweep always marks), a copy cut short, the privilege checks, the seal over
   limits the sweep enforces first, unreadable private cases, a verifier with network or without root.
+  *Corrected in round 9: not yet true here. QA 22 found five ways the tree could still end in an
+  evaluation error (a mark over 1 MiB, a path over `PATH_MAX`, a link chain past the hook's 600 s, a
+  full disk, a link the host's copy rejects), and the refusal of an over-limit tree renamed
+  `/app/rebuild` itself, which Linux's overlayfs can refuse; round 9 closes them.*
 
 ### 2026-11-20 — round 7 (v4): one solver called the completion sentence "the evaluation"
 
@@ -582,16 +660,24 @@ outlast it; the instruction says nothing about it (it states no time budget).
    else the hook's own start, which precedes its kill phase), fixes links — recording each copied
    source's path, uid, times and inode; an outside source whose ctime or mtime is at or after that
    bound less a 0.5 s skew (in the honest direction only, QA 07c F1) is refused when the net check
-   observed the end, and copied and flagged when the only reference is the sweep's own start — and
-   writes `/app/rebuild/.fsmaint` (`listed ENTRIES BYTES` with its notes, or `refused`) and the record
-   `/app/rebuild/.fsmaint.json` (every entry with its times and sha256, the copies, the refusals,
-   the late entries, the net-probe and process records).
+   observed the end, and copied and flagged when the only reference is the sweep's own start. It
+   fails closed (round 9): before the link fixing it puts a mark that says `refused` into
+   `/app/rebuild`; its measuring then moves every entry out beside it, takes out what a copy cannot
+   carry (devices, pipes and sockets; an entry whose path is longer than 2,048 bytes, with all below
+   it; a link that does not lead, through directories of the tree, to a file or a directory of the
+   tree), rewrites every kept link as the shortest relative path inside, and moves the tree back
+   only when it is within the limits, measured within 420 s of the sweep's start, and `/tmp` has
+   room to pack it; one rename then replaces the refused mark with `/app/rebuild/.fsmaint`
+   (`listed ENTRIES BYTES` with up to 200 notes). A tree refused, or a sweep stopped early, leaves
+   the refused mark over an empty tree. The record `/app/rebuild/.fsmaint.json` holds every entry
+   with its times and sha256, the copies, the refusals, the late entries, the net-probe and process
+   records.
 2. `/app/rebuild` arrives as the declared artifact in a fresh verifier container. The verifier
    reserves `.reward.tmp` and `metrics.json` before anything runs (no `reward.txt` exists until
    the real end, so an evaluation cut short is an error, never a 0), and requires 512 MB free in
-   `/tmp` and `/logs/verifier`. It reads the delivery: nothing at all, no mark, an unreadable mark,
-   or fewer entries or bytes than the mark counts is an evaluation error (the copy failed); a
-   refused delivery scores 0 with a note.
+   `/tmp` and `/logs/verifier`. It reads the delivery (the mark's first 64 KiB, whatever its size):
+   nothing at all, no mark, an unreadable mark, or fewer entries or bytes than the mark counts is an
+   evaluation error (the copy or the machine failed); a refused delivery scores 0 with a note.
 3. It picks a uid inside the user namespace's map for submitted code and checks the unprivileged
    run first (no_new_privs from the status file or `prctl`, ids, groups, capabilities, limits, and a
    set-id root copy of `id` that must report that uid); a failure is an evaluation error. It seals
@@ -663,9 +749,9 @@ platform's egress window, shared by every task whose original is public.
 | 4 | Recall upstream's published answers | Rewrites and hosting | Every corpus-based case renamed and hosted in a host that draws its text once; kept only when the answer changed, the corpus lookup misses, no splice of host and parts (plain, QA 12b's rules R1-R3, or 07c's tight-list rule R5) gives it, and it differs from every splice in more than whitespace and words (1,516/432/222/100/114 variants rejected) | Private-seed renaming; new documents and constructs (1,304 of 1,770); mutants kept only when structurally changed | Structure of public edge cases is kept; models trained after mid-2026 may know the language | Pre-run QA recall probe; read `settled` | 🟡 YELLOW |
 | 5 | Pass cases with no renderer: constant answers, a command-line table, a corpus lookup, a corpus-plus-template splice | Case mix and selection | Recording: command-line table and constants 1.81%, largest answer 0.62%, the builder's corpus lookup 0.0%; the reviewers' own scripts (QA 12b, 07c) on this pool: renderer-free **0.11%** (2 cases), hybrid with a perfect host renderer **2.99%** (53, one hosted) — the same under R1-R3 and under R1-R3+R5, down from 7.6% / 14.6% before round 3b and 5.16% under R5 before round 4 | Answer cap 1.5%, corpus-lookup (builder's guesses and the attacker's splices, by digest) and dispatcher floors 5% enforced at build; `recording.json` measures them | The hybrid's 52 non-hosted hits are generated sources holding a corpus-shaped span; they need a real renderer for the rest; a further generic rule could still move the hybrid figure, which is a rule set's, so it is re-measured after every pool change | Read `baselines` in the first baseline's `metrics.json`; re-run the 12b/07c scripts after any pool change | 🟢 GREEN / LOW |
 | 6 | Port a Djot engine | Case mix | Measured: djot.js 1.87% exact, 3.54% layout forgiven | Mix weighted to Carve's divergences (97.3% touch one) | None | Keep | 🟢 GREEN / LOW |
-| 7 | Deliver a link to something else, or replace `/app/rebuild` | Agent image modes; collect hook | Checked in the Dockerfile; links rewritten or copied by the hook | `/app` root's and sticky, `/app/rebuild` root's and writable; the hook leaves only relative links inside the delivery | None found | First trial as `dev` | 🟢 GREEN / LOW |
-| 8 | Make the copy fail so grading errors (deep paths, sparse or huge files, inode exhaustion, link mazes past the hook's two minutes, a full disk before the mark) | Platform copy | Reasoned from Harbor 0.25's `tar -czf` and `extractall(filter="data")`; the backoffice QA 07f-07g found these | The hook walks by descriptor, refuses over 2 GB or 200,000 entries and marks what it lets through; a missing or short arrival is an evaluation error, never a reward | [HOSTILE-ERROR]: a hostile submission can turn its own 0 into an evaluation error; run policy: one attempt per trial, read every errored trial, score 0 when its files show the submission caused it | Read errored trials | 🟡 YELLOW |
-| 9 | An honest delivery refused or cut short (a venv's absolute links, cargo's hard links, links to files outside) | Collect hook; platform copy | Check `test_the_collect_hook_lets_honest_deliveries_through_the_copy` (tar plus `data` filter on such a tree) | Links fixed as the agent's user; copies counted against the limits | Modal's GNU tar on the real platform unmeasured; a delivery over the stated limits is refused | First baselines and trials: read the marks in `metrics.json` notes | 🟡 YELLOW / UNASSESSED |
+| 7 | Deliver a link to something else, or replace `/app/rebuild` | Agent image modes; collect hook | Checked in the Dockerfile; links rewritten or copied by the hook; a link, a file or nothing at `/app/rebuild` ends refused (round 8 check) | `/app` root's and sticky, `/app/rebuild` root's and writable; the hook keeps only links that lead through directories of the tree to a file or a directory of it, each rewritten as the shortest relative path inside (round 9) | None found | First trial as `dev` | 🟢 GREEN / LOW |
+| 8 | Make the copy fail so grading errors (deep paths, sparse or huge files, inode exhaustion, link chains or mazes past the hook's 600 s, a full disk before the mark, a mark too large to read, a link the host's copy rejects) | Collect hook; platform copy | QA 22 (F1-F5) probes and round 9's seven checks, each failing against round 8; harbor 0.20's own pack and extract (`tar_transfer`) run on swept trees; the sixteen sweep checks under Python 3.12 | Fail closed: a refused mark before the link fixing, the tree moved out to be measured and moved back only complete, within the limits, measured within 420 s and with room in `/tmp` to pack it; paths over 2,048 bytes moved out; links relative and inside; the system's own link limit before `realpath`; linear walks; the mark at most 32 KiB of notes, read from its first 64 KiB; a missing or short arrival is then the copy or the machine failing | A hook killed in its bounded first minutes (before the staging), or while it stages a top level of millions of entries, leaves the tree in place under the refused mark; `statvfs` and overlay renames on Modal untested; run policy kept: one attempt per trial, read every errored trial | Read errored trials; the first platform runs of the hook | 🟡 YELLOW / UNASSESSED |
+| 9 | An honest delivery refused or cut short (a venv's absolute links, cargo's hard links, links to files outside) | Collect hook; platform copy | Check `test_the_collect_hook_lets_honest_deliveries_through_the_copy` (tar plus `data` filter on such a tree); a 50,000-file tree through harbor's own pack and extract (round 9 probe) | Links fixed as the agent's user; copies counted against the limits and made only while the disk keeps room for them twice over plus 64 MiB; top-level times read before the tree moves | Modal's GNU tar on the real platform unmeasured; a delivery over the stated limits is refused; an entry deeper than 2,048 bytes is moved out; a tree the disk has no room to pack is refused, unstated (only a session that filled the 20 GB disk itself meets it) | First baselines and trials: read the marks in `metrics.json` notes | 🟡 YELLOW / UNASSESSED |
 | 10 | Answers that depend on the machine | Recording | Local: 1,944 of 1,944 steady, none perturbed; the Linux build must reproduce the macOS answer the model agreed with | Two runs and a perturbed one; `differs` dropped; static-pie musl build; the kept-ids sha256 asserted at build | The Linux build has not run yet (no Linux here) | Read `dropped_differs` and `dropped_unsteady` in the first recording | 🟡 YELLOW / UNASSESSED |
 | 11 | Tamper with the result files, or force an evaluation error from inside a run | Separate verifier; reward placeholder | Goose QA 07e passed on the same code; delivery check added here | Reward reserved and renamed only at the end; bounded reads; one deadline; every per-case exception a failed case | The delivery check is new code | Narrow re-check in the QA round | 🟡 YELLOW / UNASSESSED |
 | 12 | Run as root in the verifier through a set-id or capable file | Privilege drop and sealing | Goose QA pass 10 F6; checks here | Sealed root-owned without set-id bits; `setpriv --no-new-privs`; the drop is checked or nothing is graded | A kernel that ignores no_new_privs (the probe then refuses to grade) | First baseline's verifier log | 🟢 GREEN / LOW |

@@ -28,6 +28,7 @@ PROGRAM = REBUILD / "carve"
 MARK = ".fsmaint"  # written into /app/rebuild by the sweep (environment/fsmaint-sweep) once the work has ended
 RECORD = ".fsmaint.json"  # the sweep's record: the hosts probed, the processes found, every entry; never scored
 RECORD_LIMIT = 64 << 20  # bytes of the record read, at most
+MARK_PREFIX = 1 << 16  # bytes of the mark read from its start, whatever its size: its first line decides
 # Public hosts the original can be fetched from; nothing runs if one of them can be reached.
 NETWORK_HOSTS = (("github.com", 443), ("pypi.org", 443), ("proxy.golang.org", 443), ("registry.npmjs.org", 443))
 # Every build of the original that upstream publishes ready to run, and text they all hold that a
@@ -404,15 +405,21 @@ def arrived(top: Path) -> tuple[int, int]:
 
 
 def manifest(top: Path) -> tuple[list[str], bool]:
-    """What the sweep's mark and the copy that arrived say about the tree: notes, and
-    whether it was refused (over the stated limits, or not a directory at all: reward 0). The hook
-    marks every tree before it is copied, an empty one too, and puts an empty directory marked
-    refused in place of a /app/rebuild that was missing, a link or not a directory; so an arrival
-    with no tree, no mark, or fewer entries or bytes than the mark counts, is the copy failing,
-    not the tree.
+    """What the sweep's mark and the copy that arrived say about the tree: notes, and whether it
+    was refused (over the stated limits, not a directory at all, or not measured to the end:
+    reward 0). The mark is read from its start, MARK_PREFIX bytes at most, whatever its size.
+
+    The sweep puts a mark that says `refused` into /app/rebuild before it changes anything of the
+    tree, moves the tree out to measure it, takes out what a copy cannot carry (devices, pipes,
+    sockets, paths over 2,048 bytes, links that do not lead to a file or a directory inside it;
+    every link kept is a relative path that stays inside), and puts back, under a mark that counts
+    it, only a tree within the limits that the disk has room to pack; a sweep that stops early
+    leaves the refused mark over an empty tree. So an arrival with no tree, no mark, or fewer
+    entries or bytes than the mark counts is the copy or the machine failing, not the tree.
 
     Raises:
-        EvaluationError: Nothing arrived at all, or the copy arrived cut short.
+        EvaluationError: Nothing arrived at all, the copy arrived cut short, or there is no mark
+            the sweep wrote.
     """
     try:
         empty = top.is_symlink() or not top.is_dir() or next(top.iterdir(), None) is None
@@ -421,9 +428,11 @@ def manifest(top: Path) -> tuple[list[str], bool]:
     if empty:
         raise EvaluationError("Nothing arrived: /app/rebuild is missing or empty, though the sweep marks every tree")
     mark = top / MARK
+    lines = None
     try:
-        lines = mark.read_text(errors="replace").splitlines()[:40] if mark.is_file() and not mark.is_symlink() \
-            and mark.stat().st_size < (1 << 20) else None
+        if mark.is_file() and not mark.is_symlink():
+            with open(mark, "rb") as handle:
+                lines = handle.read(MARK_PREFIX).decode("utf-8", "replace").splitlines()[:40]
     except OSError:
         lines = None
     if not lines:
@@ -824,7 +833,7 @@ def main() -> int:
         except (OSError, AttributeError):
             pass
         # What arrived, read before anything of it runs: nothing, or less than the sweep
-        # counted, is the copy failing (an error); a tree the sweep refused scores 0.
+        # counted, is the copy or the machine failing (an error); a tree the sweep refused scores 0.
         notes, refused_tree = manifest(REBUILD)
         record = manifest_record(REBUILD)
         notes = notes + [f"sweep: {flag}" for flag in record.get("flags", [])]
@@ -833,7 +842,7 @@ def main() -> int:
         if reachable is not None:  # the verifier must have no network; a provider that left it open runs nothing
             raise EvaluationError(f"The verifier can reach {reachable}; it must run with no network")
         prefix, ids, limits = sandbox()
-        refused = "the tree was over the stated limits: not run" if refused_tree else None
+        refused = "the sweep refused the tree: not run" if refused_tree else None
         if refused is None:
             try:
                 seal(REBUILD)
