@@ -201,7 +201,7 @@ def cmd_status(args):
         nxt = min((u for u in units if states[u["uid"]] == "todo"), key=lambda u: u["order"])
         print(f"next: {nxt['uid']} {nxt['file']}:{current_line(nxt)} {nxt['qualname']}")
     if todo == 0 and not bad and fail == 0 and blocked == 0 and unchecked == 0:
-        print("Every unit is restored and passed when last checked. `restore check --all` re-runs all of them.")
+        print("Every unit is restored and its docstring examples passed when last checked. `restore check --all` re-runs all of them.")
     elif todo == 0 and not bad:
         print("No unit left to restore; run `restore check --failed --unchecked` and fix what fails.")
 

@@ -1,4 +1,4 @@
-"""Share of replayed calls whose result equals the reference result."""
+"""Bar of a complete restoration: share of replayed calls whose result equals the reference result."""
 
 from __future__ import annotations
 

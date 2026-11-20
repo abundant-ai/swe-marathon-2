@@ -15,7 +15,7 @@ def verify(context: VerificationContext) -> VerificationResult:
 
     Returns:
         One result per registry entry and the reward. A failed or skipped
-        mandatory check gives reward 0.
+        `candidate_tree` or `measurement_integrity` gives reward 0.
 
     Raises:
         EvaluationError: Infrastructure failure. Completed results stay in

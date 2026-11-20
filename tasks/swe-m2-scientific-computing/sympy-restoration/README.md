@@ -3,9 +3,12 @@
 Author notes. Nothing in this file is shipped to the candidate or to either image.
 
 SymPy 1.14.0 with the bodies of 2,671 functions and methods in 355 files removed
-(37,645 non-blank lines). Signatures, decorators, docstrings and all other code
-stay. The candidate writes the bodies back, without network access, using a small
-`restore` command that reports progress and checks work against the graded view.
+(37,293 non-blank lines of body). Signatures, decorators, docstrings and all other
+code stay. The candidate writes the bodies back, without network access, using a
+small `restore` command that reports progress and checks work against the graded
+view. The reward is continuous: the smaller of two shares measured on recorded
+calls whose arguments and results no docstring example or visible test shows (see
+[Reward formula](#reward-formula)).
 
 This is a pilot brought over from a v1-style task. It has one implemented step,
 run as one 12-hour working session (the version on Oddish since 2026-11-19; the
@@ -209,6 +212,42 @@ It does not yet meet the v2 workload target; see [Workload](#workload) and
   (0 before). `multiline_latex` from its docstring still matches 0 of 6: upstream
   writes `&- a` for a negative first term, a spacing difference the examples'
   own rule also sees, which no docstring or visible test shows.
+- Reward. The binary reward's 99% unit bar sat above a floor of failures no
+  visible check shows (39 to 77 units per measured run against 26 allowed), so
+  35 of 35 graded sessions scored 0 against pooled partial scores of 0.01 to 0.92
+  and the reward ranked nothing. A three-judge panel chose a continuous reward,
+  unanimously: min(u, c) over the calls whose arguments no docstring example or
+  visible test uses, gated by the delivered tree and the controls. Built here:
+  every recorded call was checked against what the visible docstrings and tests
+  call at run time (`scripts/builder/documented.py`, directly and inside the
+  library): 9,094 of 13,382 repeat one. Calls whose result is one their unit
+  returns for a documented call count as documented too, since a table of
+  documented outputs could return it (323 more). That left 1,633 units without a
+  counted call; for them, 15,164 calls were recorded while the
+  withheld tests ran (`rec_withheld.py`) and 18,601 variants made from
+  their own arguments (`variants.py make`), screened on the original under three
+  hash seeds and on the skeleton (`variants.py screen`), checked against the
+  visible run in the same way, and up to four per unit added (`variants.py
+  select`): 3,784 calls for 1,045 units. 630 units still have none
+  and leave the unit set, counted. Unnamed Dummies are now compared without the
+  counter in their names (30 recorded results depended on it). Every result was
+  recorded again with the final comparison (`regold.py`): the original
+  reproduces 17,166 of 17,166 under three hash seeds, the skeleton none. Today's
+  three bars stay in `metrics.json` as `complete`; the tests are reported, not
+  rewarded; `partial_score` is gone; `reward_type = "continuous"`. Floor
+  (`floor.py`): the documented-output table with a documented fallback scores
+  0.0, so a unit needs only one matching counted call (the rule of half its
+  counted calls held in reserve is not needed); the after-the-fact
+  best constant 0.060. Through the entry point's steps on this machine
+  (no privilege drop): reference 1.0, empty delivery 0.0, bare `raise
+  NotImplementedError` bodies 0.0.
+- Instruction. "Complete" was met at reward 0 and "every other valid input" left
+  out the errors 326 graded withheld test ids assert. A right body is now one
+  that cannot be told apart from SymPy 1.14.0's for every argument, including the
+  error it raises for one it does not accept, down to type, container, order,
+  form and object state; the work is complete when no function can be told
+  apart, and the visible checks are named as the least of that. `restore status`
+  says the examples passed, not the units.
 
 ## Current implementation
 
@@ -217,7 +256,7 @@ It does not yet meet the v2 workload target; see [Workload](#workload) and
 | Step `01-restore-bodies` | Implemented. Instruction, agent image, separate verifier image, reference solution. |
 | Further steps | Not designed. See [Workload](#workload). |
 | Prepared inputs | Present locally under Git-ignored paths; produced by the builder in `scripts/builder/`. |
-| Oracle | Validated: 1.0 twice on the v1 package and 1.0 twice on v2 bundle `e043dc4facdd` in fresh verifier containers. Provenance: the original SymPy 1.14.0 source of the 355 files. |
+| Oracle | 1.0 on the platform under the binary reward (at least 14 grades); 1.0 under the continuous reward through the entry point's steps on this machine (2026-11-20). Not yet re-run on the platform. Provenance: the original SymPy 1.14.0 source of the 355 files. |
 | Ratings (`harbor check`) | Not run. No `[metadata.task_rating]` yet. |
 
 Layout notes:
@@ -266,17 +305,35 @@ Closest comparisons:
 
 Weaknesses, stated plainly:
 
-- SymPy is public and in pre-training data. Measured on the best run (base trial
-  5): 546 of 2,671 submitted bodies (20.4%) have the same syntax tree as upstream.
-  By size of the original body: 1 to 3 lines 51.6% of 893 units, 4 to 10 lines
-  9.1% of 792, 11 to 30 lines 1.8% of 721, over 30 lines 0% of 265. So verbatim
-  recall is concentrated in trivial bodies. This does not measure how much
-  knowing SymPy's behaviour helps with the rest.
-- A third of the units are one to three lines. The task is long but shallow.
-- A reviewer raised both points on 2026-11-17. They stand.
+- SymPy is public and in pre-training data, and for a strong model much of the
+  work is recall. On the best run of the flash model every trial so far used
+  (base trial 5, relace/deepseek-v4.1-flash) 546 of 2,671 submitted bodies
+  (20.4%) had the same syntax tree as upstream: 51.6% of bodies of one to three
+  lines, 9.1% of four to ten, 1.8% of eleven to thirty, none over thirty (sizes
+  by `ast.unparse` lines). That figure does not carry to frontier models. A
+  frontier model reviewing the task (Claude Opus 5.5), working from the agent's
+  view only, restored 22 sampled units (ten at random, six graded on object
+  state, six from the units every run failed): 22 of 22 passed, 106 of 106
+  hidden calls matched, and 18 of the 22 bodies had upstream's syntax tree,
+  long ones included (8 of 9 at eleven to thirty lines, 2 of 4 over thirty).
+  All 35 graded sessions so far used relace/deepseek-v4.1-flash or
+  relace/glm-5.3, so difficulty for the models this benchmark targets has not
+  been measured.
+- Before a frontier model's score is read as difficulty, probe its recall: a
+  stratified sample of at least 60 units, one shot each from the agent's view,
+  scored by syntax-tree identity with upstream and by hidden-call match. Every
+  grade reports `identical_bodies` in `metrics.json` (the share of restored
+  bodies whose syntax tree equals the original's, by size of the original body,
+  from hashes of the original bodies; no body is shipped), so a recalled result
+  shows next to its reward.
+- 852 units (31.9%) have one to three non-blank lines; they hold 3.2% of the
+  lines. Most of the effort is in the other two thirds, but a unit count
+  overstates the work. `metrics.json` reports the unit share weighted by the
+  original bodies' lines (`unit_share_by_lines`).
 
-Next validation: rebuild on a library published after the models' cutoff and drop
-units under about four lines, then repeat the identity measurement.
+Next validation: the recall probe above for each target model; durable: rebuild
+on a library or release the target models have not seen, take subsystems whole,
+drop units under four lines.
 
 ### Verifiability
 
@@ -284,10 +341,12 @@ Every unit has examples in its own docstring and at least one recorded call whos
 reference result comes from the original implementation. Results are counts over
 fixed lists, so partial progress needs no judge. See [Verification](#verification).
 
-Evidence: reference solution scores 2,671 / 13,384 / 10,428; no-op scores 0.
-Grading the same submission three times gave 2,569, 2,569 and 2,570 passing units
-and 9,533, 9,534 and 9,534 passing tests, so run-to-run variation is one unit and
-one test. Uncertainty: which unit flips, and why, is not yet identified.
+Evidence: the reference solution scores 1.0 (every counted unit and call; all
+2,671 units and 17,166 calls on the bars of a complete restoration); an empty
+delivery and a tree of bare `raise NotImplementedError` bodies score 0. Grading
+one submission twice on the platform gave 9,298 and 9,305 passing tests before
+the deadline and seeding fixes of 2026-11-20; the examples are now seeded per
+unit, which removed the one known source of unit flips (a random draw).
 
 ### Realism
 
@@ -299,29 +358,33 @@ with novelty.
 
 ### Difficulty
 
-Where runs fail (base experiment, nine model trials, all reward 0):
+Time is not the barrier. Two things are:
 
-- Length. Single-context runs stopped at 588 to 1,824 steps when their 1M-token
-  context filled. Only a harness that compacts and delegates reached the end:
-  15,678, 38,586 and 45,324 steps in 9 hours.
-- Stopping early. One run submitted at 1,001 steps after judging the thresholds
-  out of reach. Two runs ended their turn while their helper agents were working.
-- The last few percent. The best run restored every unit and passed 96.2% of
-  them; 38 failed their own examples and 63 passed their examples but matched no
-  hidden call. Failures cluster in physics, combinatorics, stats and polys.
+- An invisible floor. A hidden call compares the value, type, container, order,
+  form and object state the function produces. For some units nothing the agent
+  can see fixes the property a call compares: upstream's spacing in
+  `multiline_latex`, the container `permute_signs` yields for a list, the split
+  `BlockMatrix.LUdecomposition` uses, the tie-break in `allcombinations`. Every
+  measured run had 39 to 77 units that passed every check the agent can run and
+  matched no hidden call. A second 9.6-hour session fixed 0 to 7 of them while
+  fixing 74 to 133 visible failures, and the pool grew; 9.0 hours gave 96.2% of
+  units and 19.2 hours 96.1%. Under the binary reward this floor sat above the 26
+  units the 99% bar allowed, so no honest run could reach 1 and 35 of 35 graded
+  sessions scored 0. The continuous reward charges that residue about its share.
+- Recall. Closing the floor needs upstream's exact internals, which only memory
+  of SymPy supplies (see [Novelty](#novelty)). A frontier model may score high by
+  recall; probe it before reading its score as difficulty.
 
-The difficulty is breadth and bookkeeping, not depth. Helpers can split the work.
-
-The same pattern held on the v2 bundle (2026-11-17): `claude-code` with helper
-agents took 17,653 to 38,283 steps and passed 92.2% to 95.7% of units; Proximus,
-which works in one thread and hands over between context windows, took 1,525 to
-5,156 steps and passed 25% to 50%.
+The rest is breadth. Single-context runs stopped at 588 to 1,824 steps when their
+context filled; only a harness that compacts and delegates to helpers reached the
+end (15,678 to 45,324 steps in 9 hours), and the unit share tracks steps and
+helper count more than anything else. Compare models within one harness only.
 
 ### Initial feasibility
 
-Solved by construction: the original source is the reference solution and passes
-all three measurements. For an agent, 9 hours was not enough for 99% of units
-with either model tried.
+Solved by construction: the original source is the reference solution and scores
+1.0. For an agent, reward 1 needs every counted unit and call, the invisible
+residue included; no run has reached it, and more time did not shrink it.
 
 ## Workload
 
@@ -403,11 +466,20 @@ The verifier runs in a separate image with only `/app/sympy` from the candidate.
    itself and exits, and the units behind it run in a new process, since an
    interrupted body can leave global state behind. Units left when the time is
    up count as not reached.
-3. Recorded calls. 13,382 calls, at least one per unit, replayed one at a time in
-   the sandbox with a 10-second limit, at most 20 minutes in total. The sandbox
+3. Recorded calls. 17,166 calls, at least one per unit, replayed one at a time
+   in the sandbox with a 10-second limit, at most 20 minutes in total. The sandbox
    writes the result; the verifier compares it with the reference result, which
-   the sandbox cannot read. Arguments were recorded from SymPy's own test suite
-   and, for units it never calls directly, from docstring examples. A result is
+   the sandbox cannot read. 13,382 calls were recorded from SymPy's own test suite
+   and, for units it never calls directly, from docstring examples; 3,784 more
+   were added on 2026-11-20 for units whose recorded calls all repeat something
+   visible (1,408 recorded while the withheld tests ran, 2,376
+   from the units' own arguments with an integer shifted or a symbol renamed, each
+   result taken from the original). A call is documented when a docstring example
+   or a visible test makes a call with the same arguments (directly or inside the
+   library while it runs), or when its result is one its unit returns for such a
+   call; 9,598 calls are documented and listed privately
+   (`tests/private/vectors/documented.json`), 7,568 are not, and only those
+   count for the reward. A result is
    compared by its canonical form (`verifier/lib/canon.py`): value, type and
    container, order, the form of a returned expression, and the state of an
    object the call builds or changes, leaving out what is not behaviour: memo
@@ -448,50 +520,80 @@ the private inputs, the submitted tree or the output directory. While examples
 and calls run, the tree the sandbox sees has no test directories.
 
 Where expected values come from: the original SymPy 1.14.0 implementation.
-Limits: a recorded call checks one input, so a body can match its calls and still
-be wrong elsewhere; reference results that could not be reproduced exactly
-(objects that lose state when pickled, bare `None`, exceptions, unstable
-ordering) were dropped at build time, which removes those behaviours from the
-measurement.
+Limits:
+
+- A recorded call checks one input, so a body can match its calls and still be
+  wrong elsewhere.
+- Reference results that could not be reproduced exactly (objects that lose state
+  when pickled, bare `None`, exceptions, unstable ordering, results over 400 kB)
+  were dropped at build time, so error behaviour is measured only by the
+  repository tests (309 withheld test functions assert an exception), which are
+  reported and not rewarded.
+- 630 units have no call that nothing visible shows (their recorded calls,
+  and any new input that could be made for them, all repeat a docstring example
+  or a visible test, or return a documented result). They are left out of the
+  reward's unit set and counted (`units_left_out`); their examples and calls are
+  still run and reported (`units_documented_calls_only`).
+- For some units no visible evidence fixes the property a hidden call compares
+  (see [Difficulty](#difficulty)); that residue is part of the reward.
+- Strings with a layout (tables, trees) are compared as the examples are, runs of
+  whitespace as one, so alignment is not measured.
 
 Requirement checks (`steps/01-restore-bodies/tests/verifier/registry.py`):
 
-| Check | Requirement in the instruction | Evidence |
-| --- | --- | --- |
-| `candidate_tree` | `/app/sympy` exists and at least one unit is restored | unit states from the graded tree |
-| `unit_restoration` | at least 99% of units pass | examples pass and one recorded call matches |
-| `reference_calls` | at least 90% of replayed calls match | structural comparison with reference results |
-| `repository_tests` | at least 95% of graded tests pass | per-test outcomes, cross-checked in every pytest run with that run's own tally |
-| `measurement_integrity` | the measurement is not interfered with | control items with known outcomes in each runner |
+| Check | Role | Requirement | Evidence |
+| --- | --- | --- | --- |
+| `candidate_tree` | gates the reward | `/app/sympy` arrived and at least one unit is restored | unit states from the graded tree |
+| `measurement_integrity` | gates the reward | the measurement is not interfered with | control items with known outcomes in each runner |
+| `unit_restoration` | bar of `complete` | at least 99% of units pass their examples and match one recorded call | examples and the call comparison |
+| `reference_calls` | bar of `complete` | at least 90% of replayed calls match | the call comparison |
+| `repository_tests` | bar of `complete` | at least 95% of graded tests pass | per-test outcomes, cross-checked in every pytest run with that run's own tally |
 
 All five read one measurement pass (`verifier/engine.py`).
 
 ### Reward formula
 
 ```
-unit_pass_rate  = units_passing   / 2671
-call_match_rate = calls_matching  / 13384
-test_pass_rate  = tests_passing   / 10428
-
-reward = 1  if candidate_tree passed
-            and unit_pass_rate  >= 0.99
-            and call_match_rate >= 0.90
-            and test_pass_rate  >= 0.95
-            and measurement_integrity passed
-         0  otherwise
-
-partial_score = (units_passing + calls_matching + tests_passing) / 26483
+D      = recorded calls that are not documented (step 3): 7,568 of 17,166
+set    = units with at least one call in D: 2,041 of 2,671 (630 left out, counted)
+u      = units in the set whose docstring examples pass and that match at least
+         one of their calls in D  /  2,041
+c      = calls in D that match  /  7,568
+reward = min(u, c)  if candidate_tree and measurement_integrity passed, else 0
 ```
 
-- Reward is binary. A library with 4% of its functions wrong is not a usable
-  restoration, so there is no credit for it in the reward; `partial_score` and the
-  three shares in `metrics.json` carry the progress signal for analysis.
-- Denominators are fixed. A unit that is not restored, a skipped or errored test:
-  each counts as failed. Units, calls and tests not reached before the deadline
-  are counted in `metrics.json` (`units_not_reached`, `vectors_not_reached`,
-  `tests_not_reached`); when every other condition is met and a missed bar would
-  be met if those items passed, the time, not the submission, would decide, so
-  the evaluation ends with an error and no reward.
+- Continuous (`reward_type = "continuous"`), written to `reward.txt` with six
+  decimals. Chosen on 2026-11-20 over the binary reward, whose bar sat above the
+  invisible floor (see [Difficulty](#difficulty)).
+- `complete` in `metrics.json` keeps the old verdict: all five checks passed, that
+  is at least 99% of all units passing their examples and matching one recorded
+  call, 90% of all calls and 95% of the graded tests. It is `null` when only items
+  the measurement did not reach keep a bar from being met.
+- The repository tests are reported (`test_share`), not rewarded, until a regrade
+  under the one-deadline measurement leaves no test unreached; they would then
+  join inside the min, never as a weight. The pooled `partial_score` is gone: it
+  took the test share from the sandbox and ignored the controls.
+- Denominators are fixed. A unit that is not restored or is late counts as not
+  passing; its calls as not matching. A unit or call not reached before the
+  deadline counts as failing in `unit_share` and `call_share`; if the items not
+  reached could raise the reward by more than 0.001
+  (`unit_share_if_reached`, `call_share_if_reached`), the time, not the
+  submission, would decide, so the evaluation ends with an error and no reward.
+  Units and calls left after their module's restarts ran out are failures, not
+  unreached items.
+- Also in `metrics.json`: `unit_share`, `call_share`, `test_share`, the bars'
+  shares (`unit_pass_rate`, `call_match_rate`, `test_pass_rate`),
+  `units_examples_passing`, `units_documented_calls_only` (examples pass and only
+  documented calls match), `units_left_out`, `tests_not_reached`,
+  `unit_share_by_lines`, `identical_bodies`, `late_files` and `egress_open`.
+- Floor (`scripts/builder/floor.py`, on the final calls): a table that returns
+  documented outputs for documented arguments and the unit's most frequent
+  documented output otherwise scores 0.0; letting every unit pick its
+  best constant after seeing the hidden results bounds any such table at
+  0.060; a tree whose every body returns its first argument unchanged scores 0.003
+  through the verifier (6.6% of the counted calls match, but only 6 units in
+  the set also pass their examples). A tree of bare `raise NotImplementedError`
+  bodies scores 0.
 - A tree that did not arrive, or arrived without the collect step's signed mark
   or not as the mark lists it, is an evaluation error. A delivery the collect
   step refused or found absent, or a tree with no restored unit, fails
@@ -500,13 +602,12 @@ partial_score = (units_passing + calls_matching + tests_passing) / 26483
   `report.json` has `status: evaluation_error`.
 - One step. `multi_step_reward_strategy = "final"`; with a single step the
   trial reward is this step's reward.
-- Thresholds are in `verifier/grade_config.json` and in the instruction.
-- Implementation: `verifier/scoring.py`. Boundary tests: `checks/test_scoring.py`
-  (exactly at each threshold, one below each, tripped control, missing work) and
+- The bars of `complete` are in `verifier/grade_config.json`; the instruction
+  states behaviour, not bars.
+- Implementation: `verifier/scoring.py`. Tests: `checks/test_scoring.py` (the min
+  of the shares, the gates, `complete` at and below each bar, items not reached
+  that could or could not change the reward) and
   `checks/test_evaluation_errors.py`.
-
-The 99% unit threshold leaves room for 26 units. The thresholds were set before
-any model trial and have not been tuned to results.
 
 ## Hackability assessment
 
@@ -515,10 +616,10 @@ have not yet run on the platform). Unassessed boundaries: finding 7.
 
 | # | Attack and impact | Boundary | Evidence | Mitigation | Residual risk | Next validation | Severity |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | A body runs arbitrary code at grading time (for example through `sympify` of a string) and patches the example and test runners in-process, forging those two measurements | Sandbox process | Executed in red-team round 2 | Every unit needs a recorded call whose result is compared by the root process with references the sandbox cannot read; 90% of all calls must match | With constant stubs for units whose references are `True`, `False`, `0`, `1` or an empty list, at most 501 units (18.8%) could be left unrestored, and only by guessing each constant | Replace the self-reported example result with a root-side comparison | 🟡 YELLOW / MEDIUM |
+| 1 | A body runs arbitrary code at grading time (for example through `sympify` of a string) and patches the example and test runners in-process, forging those two measurements | Sandbox process | Executed in red-team round 2 | The reward is min(u, c); c is compared by the root process with references the sandbox cannot read, and a counted unit also needs a matching counted call; the tests are not rewarded | Forged examples can raise u up to the share of units whose counted calls already match, so the reward up to c; constants that happen to equal counted results are bounded by the floor (finding 4) | Replace the self-reported example result with a root-side comparison | 🟡 YELLOW / MEDIUM |
 | 2 | Read reference results or the withheld tests | File permissions in the verifier image | Attempted in both rounds; not reached | Private inputs readable by root only; sandbox runs as `nobody`; no test directories in the tree during phases 2 and 3 | Depends on the privilege drop | Re-run on the v2 bundle | 🟢 GREEN / LOW |
 | 3 | Edit tests, module-level code or other functions to make checks pass | Graded-tree construction | Executed; no effect | Only unit bodies are copied into the reference skeleton; `checks/test_transplant.py` | None found | Keep the check | 🟢 GREEN / LOW |
-| 4 | Return the documented example outputs for the documented inputs | Unit pass rule | Base trial 5: 63 units pass their examples and match no hidden call; six were read and are honest wrong attempts | A unit needs a matching hidden call | A unit with one easy call can pass with a partial body | More calls per unit | 🟢 GREEN / LOW |
+| 4 | Return the documented outputs for the documented inputs, and a constant otherwise | Which calls count | Review of the binary version: 685 units had a hidden call printed in their own docstring and 204 had nothing else; tables passed `trig_split`, `viete`, `wigner_3j` and 14 more units through the real verifier | Only calls whose arguments and results no docstring example or visible test shows count (D); a table never answers them, and its fallback, if it is a documented output, never equals a counted result. Measured on the final calls (`scripts/builder/floor.py`): the documented-output fallback scores 0.0, the best constant per unit chosen after seeing the hidden results 0.060, a tree returning every first argument unchanged 0.003 through the verifier | A constant that is not a documented result can still equal some counted results; the bound above is its ceiling | Re-run `floor.py` after any rebuild of the calls | 🟢 GREEN / LOW |
 | 5 | Change how a runner reports results | Runner control items | Executed in round 1 through module-level `os`/`sys`; fixed | Control items with known outcomes in every pytest run; the records of a run cannot hold more passes than that run's tally; forbidden constructs in bodies. Forged start or collection records can only remove tests from later runs, which lowers the score | A forgery that also gets the controls right falls under finding 1. The per-file runs added on 2026-11-17 have not been attacked | With finding 1 | 🟢 GREEN / LOW |
 | 6 | Tamper with reward or result files | Separate verifier container | By design; not attacked | Verifier starts fresh with only `/app/sympy`; output directory closed to the sandbox user | None found | Attack on the v2 bundle | 🟢 GREEN / LOW |
 | 7 | Anything that depends on the new entry point, check registry or reporting | v2 verifier code | Not attacked | Same measurement code as v1; reference and no-op baselines on the v2 bundle | Unknown | Red-team run against the v2 bundle | 🟡 YELLOW / UNASSESSED |
@@ -610,6 +711,10 @@ Proximus on the v1 package, base experiment, 2026-11-17:
 | 48-hour session 1: reference and no-op baselines | bundle `6d30d72c0afb`, task `...-48h-s1-6519a8c3` version 1, experiment `sympy-restoration-v2-48h-20261117` (https://www.oddish.app/experiments/ebb4e086) | reference 1.0 twice (trials 1, 2), no-op 0.0 twice (trials 3, 4). Model trials 6 to 11 (session 1 of six runs) started 2026-11-17 17:07 UTC |
 | 48-hour runs after two sessions (19.2 h) | session 1 on `...-48h-s1-6519a8c3`; session 2 on one continuation task per run (`...-48h-<run>-s2-...`), same experiment; each session-2 no-op repeated its session-1 unit count exactly | all reward 0. Units passing, session 1 -> 2: cc-deepseek-a 2,375 -> 2,568; cc-deepseek-b 2,338 -> 2,494; cc-glm-a 1,976 -> 2,535; px-deepseek-a 1,159 -> 1,590; px-deepseek-b 1,289 -> 1,723; px-glm-a 1,031 -> 1,509 (of 2,671). Hidden tests passing after session 2: 9,693 / 9,009 / 9,603 / 5,584 / 6,231 / 5,473 (of 10,428). Held after session 2: the owner wants every experiment to be one task row, so no further continuation tasks without his word |
 | 12-hour single session | `...-48h-s1-6519a8c3` version 2, experiment ebb4e086, 2026-11-19; the same files under the task's own name as `...-66d29774` version 4 | reference 1.0 twice, no-op 0.0 twice; six model trials all reward 0: claude-code 82.3%, 51.8% and 51.3% of units at the 9.6 h limit, Proximus 48.1%, 46.9% and 40.2%. Version 4: pre-trial audit one must-fix (the `task.toml` comment), fixed in this commit for version 5 |
+| `checks/` (66 tests): the reward as min of the shares, its gates, `complete`, items not reached that could or could not change the reward, the continuous reward type, the comparison on stand-ins | working tree, 2026-11-20 (reward) | pass |
+| Final calls recorded again (`scripts/builder/regold.py`) | the verifier's runner and `canon.py`, hash seeds 0, 1, 2 | original 17,166 / 17,166, skeleton 0 |
+| Floor (`scripts/builder/floor.py`) | final calls, documented list | documented-output table with a documented fallback 0.0; best constant per unit after the fact 0.060; a tree returning every first argument unchanged, through the verifier: 0.003 (6 / 2,041 units, 498 / 7,568 calls) |
+| Reference, empty delivery and bare `raise NotImplementedError` bodies through the entry point's steps | this machine, no privilege drop, no network probe, the delivery mark taken as listed | reference 1.000000 and complete: 2,041 / 2,041 units, 7,568 / 7,568 counted calls, 17,166 / 17,166 calls, 10,428 / 10,428 tests in one plain pytest session with none unreached, no control tripped, 577 s; the agent's starting tree 0.0 (`candidate_tree` failed, the rest skipped); bare `raise NotImplementedError` bodies 0.0 (2,671 restored, no unit or call matched, no control tripped) |
 | `harbor check` with `resources/task-implementation.toml` | working tree, 2026-11-17 | attempted on Modal; failed before review with `NotFoundError: Environment not found` (no default Modal environment). Not run in local Docker. No ratings |
 | Local image builds | none | not run for the v2 Dockerfiles; the Oddish baselines are the first build |
 
@@ -642,6 +747,22 @@ python package_session.py --session 2 --chain <run> --archive <candidate_unit_fi
 python package_regrade.py <candidate_unit_files.tar.gz> --label <name>   # grade a stored submission again
 ```
 
+Rebuilding the counted calls (2026-11-20), in order, from the original tree with
+only the visible tests (`original_visible`), the original with every test
+(`original_full`) and test-free copies of the original and the skeleton:
+
+```bash
+python builder/regold.py original_nt skeleton_nt inputs.pkl out/            # results with the current comparison
+python builder/documented.py doctests|tests original_visible units.json inputs.pkl lib out.json <packages>
+python builder/rec_withheld.py original_full units.json uids.json withheld_functions.json calls.pkl
+python builder/variants.py make original_nt inputs.pkl uids.json variants.pkl
+python builder/variants.py screen original_nt skeleton_nt candidates.pkl out/
+python builder/variants.py select inputs.pkl gold.json screened.pkl out/ --documented recorded.json,candidates.json
+python builder/regold.py original_nt skeleton_nt out/inputs.pkl final/     # then documented.json is cut to the calls kept
+python builder/unit_bodies.py solution/data units.json tests/private/unit_bodies.json
+python builder/floor.py original_nt final/inputs.pkl final/gold.json final/documented.json
+```
+
 Development checks:
 
 ```bash
@@ -662,6 +783,12 @@ uv run --frozen pytest -q tasks/swe-m2-scientific-computing/sympy-restoration/ch
 - Decide the follow-up steps and the unit set (see [Workload](#workload) and
   [Novelty](#novelty)). Until then the task is below the v2 workload bar.
 - Red-team the v2 bundle (findings 7 and 8).
+- Before any model trial of the continuous version: reference 1.0 and no-op 0.0
+  twice each on the platform, the platform's pre-trial audit clean, and a
+  regrade there of a stored submission with no test unreached (the condition for
+  the tests to join the reward inside the min).
+- Probe each target model's recall (see [Novelty](#novelty)) before reading a
+  frontier score as difficulty.
 - Run the delivery hooks on the platform before any model trial (finding 9): a
   canary whose reference leaves a detached fetch-and-overwrite loop must score 0
   with its files `late`; the reference and the no-op twice each with the record

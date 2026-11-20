@@ -19,8 +19,8 @@ form, except that floating-point leaves are compared with a tolerance by `same()
 What is compared is behaviour, not bookkeeping: a symbol is the name plus the assumptions
 SymPy's own equality uses, a domain matrix is its shape, domain and entries whatever its
 storage, and an object's state leaves out values it fills lazily from the rest of its state
-(memo slots), a process-wide creation counter, and lists kept in parallel with another
-attribute. `same()` compares strings with runs of whitespace treated as one space, as the
+(memo slots), a process-wide creation counter (also the number in an unnamed Dummy's name),
+and lists kept in parallel with another attribute. `same()` compares strings with runs of whitespace treated as one space, as the
 docstring examples are compared.
 """
 from __future__ import annotations
@@ -28,6 +28,7 @@ from __future__ import annotations
 import itertools
 import json
 import math
+import re
 
 MAX_NODES = 40000
 MAX_DEPTH = 80
@@ -38,6 +39,7 @@ MEMO_SLOTS = frozenset({
     "_mult_tab", "_test_factor", "_maximal_order", "_discriminant", "_nilradicals_mod_p",
     "_gb", "_gbe", "_is_confluent", "_var_dict",
 })
+AUTO_DUMMY = re.compile(r"Dummy_\d+")
 # per class: a creation counter, and lists kept in parallel with another attribute
 STATE_SKIP = {
     "sympy.physics.vector.frame.ReferenceFrame": frozenset({"index"}),
@@ -256,7 +258,9 @@ def _basic(o, depth, budget, sympy):
         return _f(float(o)) if abs(o) < 1e300 else ["F", str(o)]
     name = type(o).__name__
     if isinstance(o, Dummy):
-        return ["X", "Dummy", [["S", o.name]]]
+        # an unnamed Dummy is named from a process-wide counter: the number is not behaviour
+        name = "Dummy_" if AUTO_DUMMY.fullmatch(o.name or "") else o.name
+        return ["X", "Dummy", [["S", name]]]
     if isinstance(o, (Symbol, Wild)):
         # the assumptions SymPy's equality and hash use, not the keywords the symbol was made with
         try:

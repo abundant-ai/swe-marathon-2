@@ -55,8 +55,8 @@ def run_doctests(cand_root, names_by_module, rdoctest_path, *, watch, deadline, 
     "timeout" when it stopped) and the module starts again without that unit, at most
     `restart_limit` times; a runner that checks itself and exits after a unit that ran out of
     time is simply started again behind it. A module whose import does not finish fails as a
-    whole, as one whose import raises does. Units left when the module's restarts or
-    `deadline` (a time.monotonic() value) run out are not reached.
+    whole, as one whose import raises does, and so do the units left after its restarts run
+    out. Units left when `deadline` (a time.monotonic() value) passes are not reached.
 
     Returns:
         ({dotted: record}, [modules whose runner failed its self-check], number of units not
@@ -132,7 +132,11 @@ def run_doctests(cand_root, names_by_module, rdoctest_path, *, watch, deadline, 
             pending = [n for n in pending if n != culprit]
             crashes += 1
             if crashes > restart_limit:
-                note = "runner restarted too often"
+                # the module's own bodies keep ending its runner: what is left fails, as the rest
+                # of a module that cannot be imported does
+                for n in pending:
+                    out[n] = {"name": n, "status": "crash", "exc": "runner restarted too often"}
+                pending = []
                 break
         missing = 0
         for n in names:

@@ -142,6 +142,8 @@ def test_the_measurement_runs_through_a_used_up_budget(tmp_path, verifier_call, 
     (private / "units.json").write_text(json.dumps(units))
     (private / "sealed_tests.json").write_text(json.dumps({"tests": []}))
     (private / "vectors" / "gold.json").write_text(json.dumps({"V1": ["I", "1"], "V2": ["I", "1"]}))
+    (private / "vectors" / "documented.json").write_text(json.dumps({"calls": []}))
+    (private / "unit_bodies.json").write_text(json.dumps({"U0001": [1, None], "U0002": [1, None]}))
     import pickle
 
     meta = {u["uid"]: {"file": u["file"], "qualname": u["qualname"], "name": u["qualname"], "occ": 0, "nocc": 1} for u in units}
@@ -164,10 +166,14 @@ ctx = VerificationContext(Path({str(work)!r}), Path({str(skeleton)!r}), Path({st
                           Path({str(tmp_path / 'scratch')!r}), scoring, limits)
 m = engine.measure(ctx)
 print(json.dumps({{"counts": dict(m.counts), "not_reached": m.details["units_not_reached"],
-                   "vectors_not_reached": m.details["vectors_not_reached"], "restored": m.details["unit_states"]}}))
+                   "vectors_not_reached": m.details["vectors_not_reached"], "restored": m.details["unit_states"],
+                   "shares": [m.details[k] for k in ("unit_share", "call_share", "unit_share_if_reached",
+                                                     "call_share_if_reached")]}}))
 """, timeout=300)
     assert data["restored"] == {"restored": 2} and data["counts"]["units_passing"] == 0
     assert data["not_reached"] == 2 and data["vectors_not_reached"] == 2
+    # nothing was measured, so the reward as measured is 0 and the items not reached could raise it
+    assert data["shares"] == [0.0, 0.0, 1.0, 1.0]
 
 
 def test_the_agents_check_fails_only_the_unit_that_ends_its_runner(tmp_path, task_root):

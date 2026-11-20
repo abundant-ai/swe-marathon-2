@@ -1,7 +1,10 @@
 """Requirement checks in execution order.
 
 All five read one measurement pass. `candidate_tree` is the prerequisite: with
-no artifact or no restored unit the other four are skipped and score zero.
+no artifact or no restored unit the other four are skipped and the reward is 0.
+`candidate_tree` and `measurement_integrity` gate the reward; the three bars
+(`unit_restoration`, `reference_calls`, `repository_tests`) decide whether the
+restoration is complete, reported as `complete`.
 """
 
 from verifier.checks import test_candidate_tree as tree

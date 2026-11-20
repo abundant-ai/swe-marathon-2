@@ -17,6 +17,8 @@ PREPARED = (
     "steps/01-restore-bodies/tests/private/sealed_tests.json",
     "steps/01-restore-bodies/tests/private/vectors/inputs.pkl",
     "steps/01-restore-bodies/tests/private/vectors/gold.json",
+    "steps/01-restore-bodies/tests/private/vectors/documented.json",
+    "steps/01-restore-bodies/tests/private/unit_bodies.json",
     "steps/01-restore-bodies/solution/data/sympy/core/example.py",
 )
 

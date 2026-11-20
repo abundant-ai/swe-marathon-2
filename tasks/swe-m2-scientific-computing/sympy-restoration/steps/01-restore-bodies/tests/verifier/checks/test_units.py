@@ -1,4 +1,4 @@
-"""Share of units whose docstring examples pass and whose behaviour matches a recorded call."""
+"""Bar of a complete restoration: share of units whose examples pass and that match a recorded call."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from verifier.contracts import CandidateFailure, CheckResult, VerificationContex
 
 
 def test_unit_restoration(context: VerificationContext) -> CheckResult:
-    """Require the published share of passing units.
+    """Require the published share of passing units for a complete restoration.
 
     A unit passes when every example in its own docstring passes and at least
     one of its replayed calls matches the reference result.

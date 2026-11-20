@@ -8,7 +8,7 @@ description = "Write back the bodies of 2,671 functions removed from SymPy 1.14.
 authors = [{ name = "Neel Harsola", email = "work.neelharsola@gmail.com" }]
 
 [metadata]
-reward_type = "binary"
+reward_type = "continuous"
 open_internet_justification = "The environment build and agent setup have public egress, to install system packages, Python packages and the agent's own tooling. The work runs with network_mode = no-network as the unprivileged user dev, and a root collect step stops every process of dev and records every file's times before the work is copied. The verifier runs with no network."
 
 [agent]
@@ -60,6 +60,5 @@ name = "01-restore-bodies"
 [steps.agent]
 timeout_sec = 34560
 
-# Without this, the step verifier defaults to 600 seconds instead of the root limit.
 [steps.verifier]
 timeout_sec = 6600

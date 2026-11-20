@@ -2,6 +2,8 @@
  "unit_bar": 0.99,
  "vector_bar": 0.9,
  "test_bar": 0.95,
+ "unit_deciding_share": 0,
+ "reward_tolerance": 0.001,
  "workers": 4,
  "measure_budget_sec": 6000,
  "address_space_bytes": 4294967296,

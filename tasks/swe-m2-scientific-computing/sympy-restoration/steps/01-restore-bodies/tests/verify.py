@@ -50,7 +50,8 @@ def main() -> int:
         )
         result = verify(context)
         write_report(output, context, result, None)
-        print(f"reward: {int(result.metrics['reward'])} partial_score: {result.metrics['partial_score']}", flush=True)
+        print(f"reward: {result.metrics['reward']:.6f} unit_share: {result.metrics['unit_share']} "
+              f"call_share: {result.metrics['call_share']} complete: {result.metrics['complete']}", flush=True)
         code = 0
     except Exception as exc:  # noqa: BLE001 - every unexpected failure invalidates the evaluation
         message = str(exc) if isinstance(exc, EvaluationError) else f"Verifier error: {type(exc).__name__}"

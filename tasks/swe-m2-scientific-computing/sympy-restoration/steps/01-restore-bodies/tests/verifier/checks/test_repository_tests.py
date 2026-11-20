@@ -1,4 +1,4 @@
-"""Share of the graded SymPy test cases that pass."""
+"""Bar of a complete restoration: share of the graded SymPy test cases that pass."""
 
 from __future__ import annotations
 
@@ -9,8 +9,10 @@ from verifier.contracts import CandidateFailure, CheckResult, VerificationContex
 def test_repository_tests(context: VerificationContext) -> CheckResult:
     """Require the published share of passing repository tests.
 
-    Tests not reached within the time budget, skipped or errored count as
-    failed; the denominator is the full graded list.
+    Tests not reached before the measurement's deadline, skipped or errored
+    count as failed here; the denominator is the full graded list. Tests not
+    reached leave `complete` open rather than false when they alone could meet
+    the bar.
 
     Args:
         context: Evaluation context.

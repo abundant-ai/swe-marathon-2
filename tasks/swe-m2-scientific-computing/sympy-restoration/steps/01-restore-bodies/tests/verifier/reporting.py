@@ -38,9 +38,8 @@ def write_report(output: Path, context: VerificationContext | None, result: Veri
         metrics.pop("reward", None)
     else:
         metrics.update(result.metrics)
-        metrics["reward"] = int(result.metrics["reward"])
-        metrics["vector_pass_rate"] = result.metrics["call_match_rate"]
+        metrics["reward"] = float(result.metrics["reward"])
         metrics["checks"] = {check.requirement: check.status for check in result.checks}
     (output / "metrics.json").write_text(json.dumps(metrics, indent=1, sort_keys=True) + "\n", encoding="utf-8")
     if result is not None:
-        (output / "reward.txt").write_text("1" if result.metrics["reward"] >= 1.0 else "0", encoding="utf-8")
+        (output / "reward.txt").write_text(f"{float(result.metrics['reward']):.6f}", encoding="utf-8")

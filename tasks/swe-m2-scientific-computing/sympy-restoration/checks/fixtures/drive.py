@@ -23,14 +23,22 @@ from verifier.contracts import (  # noqa: E402
 )
 from verifier.reporting import write_report  # noqa: E402
 
-TOTALS = {"units_total": 100, "vectors_total": 400, "tests_total": 200}
+# 100 units, 80 of which have calls no docstring example or visible test repeats (160 such calls)
+TOTALS = {"units_total": 100, "vectors_total": 400, "tests_total": 200, "units_set": 80, "deciding_total": 160}
 
 
-def measurement(units: int, calls: int, tests: int, *, artifact: bool = True, restored: int = 100, trips: tuple[str, ...] = (),
-                unreached: dict | None = None) -> Measurement:
-    """Build a measurement with fixed denominators and the given numerators."""
-    counts = dict(TOTALS, units_restored=restored, units_passing=units, vectors_passing=calls, tests_passing=tests)
-    details = dict(counts, tamper=list(trips), notes=[], unit_bar=0.99, vector_bar=0.9, test_bar=0.95, **(unreached or {}))
+def measurement(units: int, calls: int, tests: int, set_units: int = 80, deciding: int = 160, *, artifact: bool = True,
+                restored: int = 100, trips: tuple[str, ...] = (), unreached: dict | None = None) -> Measurement:
+    """Build a measurement with fixed denominators and the given numerators.
+
+    `units`, `calls` and `tests` are the numerators of the three bars of a complete restoration;
+    `set_units` and `deciding` those of the reward's unit and call shares.
+    """
+    counts = dict(TOTALS, units_restored=restored, units_passing=units, vectors_passing=calls, tests_passing=tests,
+                  units_set_passing=set_units, deciding_passing=deciding)
+    details = dict(counts, tamper=list(trips), notes=[], unit_bar=0.99, vector_bar=0.9, test_bar=0.95,
+                   unit_share_if_reached=set_units / 80, call_share_if_reached=deciding / 160, reward_tolerance=0.001)
+    details.update(unreached or {})
     return Measurement(artifact, counts, trips, details)
 
 
@@ -294,13 +302,15 @@ def scenario(name: str) -> dict:
             scoring_config, limits = load_config()
             return {"scoring": asdict(scoring_config), "limits": limits}
         cases = {
-            "pass": measurement(99, 360, 190),
-            "units_below": measurement(98, 400, 200),
-            "calls_below": measurement(100, 359, 200),
+            "reference": measurement(100, 400, 200),
+            "pass": measurement(99, 360, 190, 79, 150),
+            "partial": measurement(50, 200, 20, 48, 80),
+            "units_below": measurement(98, 400, 200, 78, 160),
+            "calls_below": measurement(100, 359, 200, 80, 140),
             "tests_below": measurement(100, 400, 189),
             "tripped": measurement(100, 400, 200, trips=("test-runner self-check",)),
-            "nothing_delivered": measurement(0, 0, 0, artifact=False, restored=0),
-            "nothing_restored": measurement(0, 0, 0, restored=0),
+            "nothing_delivered": measurement(0, 0, 0, 0, 0, artifact=False, restored=0),
+            "nothing_restored": measurement(0, 0, 0, 0, 0, restored=0),
         }
         if name in cases:
             ctx = context(output, cases[name])
@@ -329,19 +339,30 @@ def scenario(name: str) -> dict:
                         "report": json.loads((output / "report.json").read_text()),
                         "metrics_json": json.loads((output / "metrics.json").read_text())}
             return {"raised": False}
-        if name in ("tests_unreached", "tests_unreached_units_below", "calls_unreached", "tests_unreached_short"):
+        if name in ("units_unreached", "calls_unreached", "unreached_not_the_minimum", "unreached_within_tolerance",
+                    "tests_unreached", "tests_unreached_units_below", "tests_unreached_short", "unreached_tripped"):
             cases = {
+                # 60 of 80 units pass; 8 more were not reached and could pass: the reward could move
+                "units_unreached": measurement(100, 400, 200, 60, 160, unreached={"unit_share_if_reached": 68 / 80}),
+                "calls_unreached": measurement(100, 400, 200, 80, 120, unreached={"call_share_if_reached": 130 / 160}),
+                # the calls are the smaller share and every call was reached: the units cannot move it
+                "unreached_not_the_minimum": measurement(100, 400, 200, 60, 80, unreached={"unit_share_if_reached": 68 / 80}),
+                "unreached_within_tolerance": measurement(100, 400, 200, 60, 160,
+                                                          unreached={"unit_share_if_reached": 60.05 / 80}),
+                # tests are reported, not rewarded: tests not reached only leave `complete` open
                 "tests_unreached": measurement(100, 400, 189, unreached={"tests_not_reached": 5}),
-                "tests_unreached_units_below": measurement(98, 400, 189, unreached={"tests_not_reached": 5}),
-                "calls_unreached": measurement(100, 355, 200, unreached={"vectors_not_reached": 9}),
+                "tests_unreached_units_below": measurement(98, 400, 189, 78, 160, unreached={"tests_not_reached": 5}),
                 "tests_unreached_short": measurement(100, 400, 180, unreached={"tests_not_reached": 5}),
+                "unreached_tripped": measurement(100, 400, 200, 60, 160, trips=("test-runner self-check",),
+                                                 unreached={"unit_share_if_reached": 68 / 80}),
             }
             ctx = context(output, cases[name])
             try:
                 result = runner.verify(ctx)
             except EvaluationError as exc:
                 return {"error": str(exc)}
-            return {"reward": result.metrics["reward"], "status": {c.requirement: c.status for c in result.checks}}
+            return {"reward": result.metrics["reward"], "complete": result.metrics["complete"],
+                    "status": {c.requirement: c.status for c in result.checks}}
         if name == "candidate_failure_text":
             ctx = context(output, measurement(98, 400, 200))
             result = runner.verify(ctx)

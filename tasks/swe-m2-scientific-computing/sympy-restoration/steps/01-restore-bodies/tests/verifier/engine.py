@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import collections
 import json
+import math
 import os
 import pickle
 import re
@@ -152,8 +153,9 @@ def run_vectors(payload, restored_uids, prefix, *, scratch, pub, cand_nt, cfg, c
     job resumes at the next unit. After a call that ran out of time the runner
     exits by itself and is started again behind it, since an interrupted body
     can leave global state behind. A job whose module import never finishes
-    loses all its calls at once. A job ends after `vector_job_restart_limit`
-    starts that ended or stopped, or at `deadline`.
+    loses all its calls at once, and so does the rest of a job after
+    `vector_job_restart_limit` starts that ended or stopped. Calls left when
+    `deadline` passes are not reached.
 
     Args:
         payload: Per module, its units and their recorded calls.
@@ -247,6 +249,8 @@ def run_vectors(payload, restored_uids, prefix, *, scratch, pub, cand_nt, cfg, c
                 pending = rest[1:]
             crashes += 1
             if crashes >= restart_limit:
+                # the job's own bodies keep ending it: the calls left do not match
+                unfinished.update(v[0] for v in pending)
                 break
         for vid in unfinished | dup:
             got[vid] = None
@@ -598,6 +602,26 @@ def run_sealed_tests(sealed_ids, prefix, notes, *, scratch, pub, cand, art, cfg,
                         flags["tally_exceeded"], flags["runs"], passes, session["first_test_sec"])
 
 
+SIZE_CLASSES = (("1-3", 1, 3), ("4-10", 4, 10), ("11-30", 11, 30), ("over 30", 31, 10**9))
+
+
+def identical_bodies(cand: str, units, states: Mapping[str, str], original_bodies: Mapping[str, list]) -> dict:
+    """Share of restored bodies whose syntax tree equals the original's, by size of the original body.
+
+    Reported only: it says how much of a result is recall of the original source. The original
+    is known here only by a hash of each body's syntax tree.
+    """
+    restored = [u for u in units if states.get(u["uid"]) == "restored"]
+    facts = restorelib.body_facts(cand, restored)
+    out = {}
+    for label, low, high in SIZE_CLASSES + (("all", 1, 10**9),):
+        rows = [u["uid"] for u in restored if low <= int((original_bodies.get(u["uid"]) or [0])[0] or 0) <= high]
+        same_tree = sum(1 for uid in rows if uid in facts and facts[uid][1] is not None
+                        and facts[uid][1] == (original_bodies.get(uid) or [0, None])[1])
+        out[label] = {"identical": same_tree, "restored": len(rows), "share": round(same_tree / len(rows), 4) if rows else 0.0}
+    return out
+
+
 def measure(context: VerificationContext) -> Measurement:
     """Build the graded tree and run the three measurements once.
 
@@ -639,15 +663,30 @@ def measure(context: VerificationContext) -> Measurement:
             payload = pickle.load(f)
         with open(os.path.join(private, "vectors", "gold.json"), encoding="utf-8") as f:
             gold = json.load(f)
-    except (OSError, ValueError, KeyError, pickle.UnpicklingError) as e:
+        # recorded calls whose arguments a docstring example or a visible test also uses
+        with open(os.path.join(private, "vectors", "documented.json"), encoding="utf-8") as f:
+            documented = set(json.load(f)["calls"])
+        with open(os.path.join(private, "unit_bodies.json"), encoding="utf-8") as f:
+            original_bodies = json.load(f)
+    except (OSError, ValueError, KeyError, TypeError, pickle.UnpicklingError) as e:
         raise EvaluationError(f"Private verifier inputs are unreadable: {type(e).__name__}") from e
     if not os.path.isdir(skel):
         raise EvaluationError("Reference skeleton is missing from the verifier image")
     U, T, V = len(units), len(sealed_ids), len(gold)
+    uid_of = {v[0]: v[1] for p in payload.values() for v in p["vectors"]}
+    deciding = sorted(vid for vid in gold if vid not in documented)
+    unit_set = {uid_of[vid] for vid in deciding if vid in uid_of}
     metrics: dict[str, Any] = {
         "units_total": U, "units_restored": 0, "units_passing": 0,
         "vectors_total": V, "vectors_passing": 0,
         "tests_total": T, "tests_passing": 0,
+        # the reward's measure: units with a call no docstring example or visible test repeats,
+        # and those calls
+        "units_set": len(unit_set), "units_set_passing": 0, "units_left_out": U - len(unit_set),
+        "deciding_total": len(deciding), "deciding_passing": 0, "documented_total": V - len(deciding),
+        "unit_share": 0.0, "call_share": 0.0, "unit_share_if_reached": 0.0, "call_share_if_reached": 0.0,
+        "unit_deciding_share": float(cfg.get("unit_deciding_share", 0.0)),
+        "reward_tolerance": float(cfg.get("reward_tolerance", 0.001)),
         "tamper": [], "notes": [],
         "unit_bar": context.scoring.unit_bar, "vector_bar": context.scoring.call_bar,
         "test_bar": context.scoring.test_bar,
@@ -657,7 +696,8 @@ def measure(context: VerificationContext) -> Measurement:
         metrics["grade_seconds"] = round(time.monotonic() - t_start, 1)
         counts = {k: int(metrics[k]) for k in (
             "units_total", "units_restored", "units_passing",
-            "vectors_total", "vectors_passing", "tests_total", "tests_passing")}
+            "vectors_total", "vectors_passing", "tests_total", "tests_passing",
+            "units_set", "units_set_passing", "deciding_total", "deciding_passing")}
         return Measurement(artifact_present, counts, tuple(metrics["tamper"]), metrics)
 
     # submitted code must not reach the network from here
@@ -755,7 +795,6 @@ def measure(context: VerificationContext) -> Measurement:
 
     # 3. recorded calls, replayed in the sandbox and compared here with the reference results
     t0 = time.monotonic()
-    uid_of = {v[0]: v[1] for p in payload.values() for v in p["vectors"]}
     vres = run_vectors(payload, restored, prefix, scratch=scratch, pub=pub, cand_nt=cand_nt, cfg=cfg, cpus=cpus,
                        deadline=min(deadline, t0 + float(cfg.get("vector_budget_sec", 1200))))
     reap(prefix)
@@ -769,21 +808,66 @@ def measure(context: VerificationContext) -> Measurement:
     metrics["vectors_not_reached"] = sum(1 for vid in gold if uid_of.get(vid) in restored and vid not in vres)
     metrics["vector_seconds"] = round(time.monotonic() - t0, 1)
     log(f"reference comparison: {v_pass}/{V} recorded calls match in {metrics['vector_seconds']}s")
-    per_unit = collections.defaultdict(lambda: [0, 0])
+    per_unit = collections.defaultdict(lambda: {"all": [0, 0], "deciding": [0, 0, 0], "documented": [0, 0]})
     for vid, ok in vrows.items():
-        per_unit[uid_of.get(vid, "?")][0 if ok else 1] += 1
-    # a unit passes when its examples pass and at least one of its recorded calls matches
-    # the reference: the examples alone are reported by the sandbox
-    n_pass = 0
+        uid = uid_of.get(vid, "?")
+        per_unit[uid]["all"][0 if ok else 1] += 1
+        if vid in documented:
+            per_unit[uid]["documented"][0 if ok else 1] += 1
+        else:
+            per_unit[uid]["deciding"][0 if ok else 1] += 1
+            if uid in restored and vid not in vres:
+                per_unit[uid]["deciding"][2] += 1   # the call phase's time ran out before this call
+    share_needed = metrics["unit_deciding_share"]
+    examples_not_reached = {u["dotted"] for u in units if (results.get(u["dotted"]) or {}).get("not_reached")}
+    dotted_of = {u["uid"]: u["dotted"] for u in units}
+    n_pass = set_pass = set_pass_high = doc_only = 0
+    lines_set = lines_pass = 0
     for row in unit_rows:
-        a, b = per_unit.get(row["uid"], (0, 0))
+        cell = per_unit.get(row["uid"]) or {"all": [0, 0], "deciding": [0, 0, 0], "documented": [0, 0]}
+        a, b = cell["all"]
+        dm, dn, dr = cell["deciding"]
         row["calls_matching"], row["calls_total"] = a, a + b
+        row["deciding_matching"], row["deciding_total"] = dm, dm + dn
+        row["documented_matching"] = cell["documented"][0]
+        # the bars of a complete restoration: examples pass and at least one recorded call matches
         row["pass"] = bool(row["examples_pass"] and a >= 1)
         n_pass += row["pass"]
+        if dm + dn == 0:
+            row["in_set"] = False
+            continue
+        # the reward's unit rule: examples pass and enough calls that nothing visible repeats match
+        need = max(1, math.ceil(share_needed * (dm + dn) - 1e-9))
+        row["in_set"] = True
+        row["unit_pass"] = bool(row["examples_pass"] and dm >= need)
+        set_pass += row["unit_pass"]
+        examples_high = row["examples_pass"] or dotted_of[row["uid"]] in examples_not_reached
+        set_pass_high += bool(row["state"] == "restored" and examples_high and dm + dr >= need)
+        weight = int((original_bodies.get(row["uid"]) or [1])[0] or 1)
+        lines_set += weight
+        lines_pass += weight if row["unit_pass"] else 0
+        if row["examples_pass"] and not row["unit_pass"] and row["documented_matching"]:
+            doc_only += 1
+    for row in unit_rows:
+        if not row.get("in_set") and row["examples_pass"] and row["documented_matching"]:
+            doc_only += 1
     metrics["units_passing"] = n_pass
+    metrics["units_set_passing"] = set_pass
+    d_pass = sum(1 for vid in deciding if vrows.get(vid))
+    d_unreached = sum(1 for vid in deciding if uid_of.get(vid) in restored and vid not in vres)
+    metrics["deciding_passing"] = d_pass
+    metrics["deciding_not_reached"] = d_unreached
+    metrics["unit_share"] = round(set_pass / len(unit_set), 6) if unit_set else 0.0
+    metrics["call_share"] = round(d_pass / len(deciding), 6) if deciding else 0.0
+    metrics["unit_share_if_reached"] = round(set_pass_high / len(unit_set), 6) if unit_set else 0.0
+    metrics["call_share_if_reached"] = round((d_pass + d_unreached) / len(deciding), 6) if deciding else 0.0
+    metrics["unit_share_by_lines"] = round(lines_pass / lines_set, 6) if lines_set else 0.0
+    # units that pass their examples and match only calls a docstring example or a visible test repeats
+    metrics["units_documented_calls_only"] = doc_only
     # units whose examples are reported as passing while most of their calls do not match
     metrics["units_examples_without_calls"] = sum(
         1 for row in unit_rows if row["examples_pass"] and 2 * row["calls_matching"] < row["calls_total"])
+    metrics["identical_bodies"] = identical_bodies(cand, units, states, original_bodies)
     with open(os.path.join(art, "unit_results.json"), "w", encoding="utf-8") as f:
         json.dump(unit_rows, f)
 

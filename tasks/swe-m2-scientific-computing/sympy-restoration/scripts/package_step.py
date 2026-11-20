@@ -24,6 +24,8 @@ REQUIRED_PREPARED = (
     f"{STEP}/tests/private/sealed_tests.json",
     f"{STEP}/tests/private/vectors/inputs.pkl",
     f"{STEP}/tests/private/vectors/gold.json",
+    f"{STEP}/tests/private/vectors/documented.json",
+    f"{STEP}/tests/private/unit_bodies.json",
 )
 REQUIRED_REFERENCE_DIR = f"{STEP}/solution/data/sympy"
 # One source, staged into each image's own build context.
