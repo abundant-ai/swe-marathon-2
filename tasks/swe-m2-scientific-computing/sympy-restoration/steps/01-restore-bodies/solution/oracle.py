@@ -12,7 +12,7 @@ SETTLE_SECONDS = 2.0
 
 @dataclass(frozen=True)
 class OracleContext:
-    """Paths the oracle may use; it never sees private answers or rewards."""
+    """The original source files and the workspace they are copied into."""
 
     reference: Path
     workspace: Path
@@ -22,9 +22,9 @@ def oracle(context: OracleContext) -> None:
     """Produce the working submission in the application workspace.
 
     Copies each original source file that holds a restorable unit over its
-    skeleton counterpart. The verifier takes only the unit bodies from them.
-    It then waits a moment, so that no file is still being written when the
-    work ends.
+    damaged counterpart; outside the unit bodies the two are the same. It then
+    waits a moment, so that every file is completely written before the work
+    ends.
 
     Args:
         context: The reference files and the workspace to write into.

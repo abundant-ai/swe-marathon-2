@@ -248,6 +248,14 @@ It does not yet meet the v2 workload target; see [Workload](#workload) and
   form and object state; the work is complete when no function can be told
   apart, and the visible checks are named as the least of that. `restore status`
   says the examples passed, not the units.
+- Regrade. 16 stored submissions graded again with this verifier on this
+  machine (examples and calls; the tests are not rewarded): rewards from 0.003 to
+  0.897 (claude-code with helpers over a whole session 0.71 to 0.90, two
+  claude-code runs that ended their turn within 41 minutes 0.024 and 0.003,
+  Proximus 0.32 to 0.42, mini-swe-agent 0.09 to 0.22), in the order of their old
+  unit counts,
+  against 0 for every one under the binary reward. See [Trial
+  evidence](#trial-evidence).
 
 ## Current implementation
 
@@ -378,7 +386,12 @@ Time is not the barrier. Two things are:
 The rest is breadth. Single-context runs stopped at 588 to 1,824 steps when their
 context filled; only a harness that compacts and delegates to helpers reached the
 end (15,678 to 45,324 steps in 9 hours), and the unit share tracks steps and
-helper count more than anything else. Compare models within one harness only.
+helper count more than anything else. On the continuous reward the stored
+submissions read 0.003 to 0.897: 0.71 to 0.90 for claude-code with helpers over a
+whole session, 0.32 to 0.42 for Proximus in one thread, 0.09 to 0.22 for
+mini-swe-agent, near 0 for two runs that ended their turn within 41 minutes (see
+[Trial evidence](#trial-evidence)). For a parallel harness with a flash model that is the
+easy end beside the sibling rebuild tasks; compare models within one harness only.
 
 ### Initial feasibility
 
@@ -689,6 +702,31 @@ Proximus on the v1 package, base experiment, 2026-11-17:
 - Proximus reports no cost. Its runs used 0.66 to 2.19 billion input tokens,
   over 99% of them cached.
 
+Regraded on the continuous reward (2026-11-20, this machine, the entry point's
+steps without the privilege drop; examples and calls, the tests not run since they
+are not rewarded). The twelve-hour trials' own files were not downloaded, so these
+are the stored submissions of the earlier sessions of the same task; every one
+scored 0 under the binary reward.
+
+| Submission | Agent / model | Units passing, binary era (of 2,671) | Reward then | u | c | Reward now | Units whose examples pass | Bodies identical to upstream |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| v2 trial 16 | claude-code / DeepSeek v4.1 Flash | 2,557 | 0 | 0.933 | 0.897 | **0.897** | 2,623 | 21.9% |
+| v2 trial 17 | claude-code / DeepSeek v4.1 Flash | 2,481 | 0 | 0.909 | 0.887 | **0.887** | 2,541 | 20.3% |
+| v2 trial 18 | claude-code / GLM 5.3 | 2,462 | 0 | 0.897 | 0.866 | **0.866** | 2,532 | 18.2% |
+| 48 h run a, session 1 | claude-code / DeepSeek v4.1 Flash | 2,375 | 0 | 0.873 | 0.860 | **0.860** | 2,431 | 21.4% |
+| 48 h run b, session 1 | claude-code / DeepSeek v4.1 Flash | 2,338 | 0 | 0.846 | 0.843 | **0.843** | 2,384 | 21.8% |
+| 48 h run, session 1 | claude-code / GLM 5.3 | 1,976 | 0 | 0.718 | 0.714 | **0.714** | 2,027 | 18.0% |
+| 48 h run b, session 1 | Proximus / DeepSeek v4.1 Flash | 1,289 | 0 | 0.434 | 0.418 | **0.418** | 1,352 | 12.7% |
+| 48 h run a, session 1 | Proximus / DeepSeek v4.1 Flash | 1,159 | 0 | 0.382 | 0.396 | **0.382** | 1,226 | 15.3% |
+| single-step trial 6 | Proximus / DeepSeek v4.1 Flash | 1,077 | 0 | 0.364 | 0.361 | **0.361** | 1,116 | 17.3% |
+| 48 h run, session 1 | Proximus / GLM 5.3 | 1,031 | 0 | 0.345 | 0.322 | **0.322** | 1,054 | 15.0% |
+| base trial 14 | mini-swe-agent / DeepSeek v4.1 Flash | 716 | 0 | 0.225 | 0.216 | **0.216** | 745 | 11.8% |
+| base trial 15 | mini-swe-agent / GLM 5.3 | 346 | 0 | 0.115 | 0.114 | **0.114** | 359 | 9.7% |
+| base trial 9 | mini-swe-agent / DeepSeek v4.1 Flash | 334 | 0 | 0.109 | 0.153 | **0.109** | 349 | 7.4% |
+| base trial 10 | mini-swe-agent / GLM 5.3 | 274 | 0 | 0.094 | 0.092 | **0.092** | 281 | 9.3% |
+| base trial 8 | claude-code / GLM 5.3 | 63 | 0 | 0.024 | 0.050 | **0.024** | 63 | 62.4% |
+| base trial 13 | claude-code / GLM 5.3 | 15 | 0 | 0.003 | 0.004 | **0.003** | 15 | 14.3% |
+
 ## Validation
 
 | Check | Revision | Result |
@@ -715,6 +753,8 @@ Proximus on the v1 package, base experiment, 2026-11-17:
 | Final calls recorded again (`scripts/builder/regold.py`) | the verifier's runner and `canon.py`, hash seeds 0, 1, 2 | original 17,166 / 17,166, skeleton 0 |
 | Floor (`scripts/builder/floor.py`) | final calls, documented list | documented-output table with a documented fallback 0.0; best constant per unit after the fact 0.060; a tree returning every first argument unchanged, through the verifier: 0.003 (6 / 2,041 units, 498 / 7,568 calls) |
 | Reference, empty delivery and bare `raise NotImplementedError` bodies through the entry point's steps | this machine, no privilege drop, no network probe, the delivery mark taken as listed | reference 1.000000 and complete: 2,041 / 2,041 units, 7,568 / 7,568 counted calls, 17,166 / 17,166 calls, 10,428 / 10,428 tests in one plain pytest session with none unreached, no control tripped, 577 s; the agent's starting tree 0.0 (`candidate_tree` failed, the rest skipped); bare `raise NotImplementedError` bodies 0.0 (2,671 restored, no unit or call matched, no control tripped) |
+| Regrade of the stored submissions on the continuous reward | this machine, the entry point's steps, examples and calls | 16 submissions, rewards 0.003 to 0.897 (see [Trial evidence](#trial-evidence)) |
+| `oddish preflight` | flat 12-hour bundle `d00941d22a69` (`ops/sympy-restoration/dist-12h/`) | pass |
 | `harbor check` with `resources/task-implementation.toml` | working tree, 2026-11-17 | attempted on Modal; failed before review with `NotFoundError: Environment not found` (no default Modal environment). Not run in local Docker. No ratings |
 | Local image builds | none | not run for the v2 Dockerfiles; the Oddish baselines are the first build |
 
