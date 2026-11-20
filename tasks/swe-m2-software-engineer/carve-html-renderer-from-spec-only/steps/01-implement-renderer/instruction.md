@@ -102,7 +102,7 @@ under 2 GB and 200,000 files and directories.
 
 ## Completion
 
-The work is complete when your `carve` cannot be told apart from carve-rs 0.1.14's by what it
-prints on standard output and how it exits, for any page we render and any of the command lines
-above. Every page it renders exactly is one we can move over, so keep `/app/rebuild/carve`
+The work is complete when, for every page we render and each of the command lines above, your
+`carve` writes to standard output exactly what carve-rs 0.1.14's wrote and exits with the same
+status. Every page it renders exactly is one we can move over, so keep `/app/rebuild/carve`
 runnable at all times.
