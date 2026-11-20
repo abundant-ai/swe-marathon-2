@@ -532,9 +532,11 @@ def main(argv):
     probe_closed = isinstance(probe, dict) and probe.get("any_open") is False
 
     def netcheck_end():
-        """(end bound, where it came from, why there is none), from the net check's record."""
+        """(end bound, where it came from, why there is none, what the work did to the probe: "blind" when
+        it could not see the network, "answered" when it saw no answer while the hosts answered), from the
+        net check's record."""
         if not isinstance(netcheck, dict) or work_started is None:
-            return None, None, "the setup step left no record of the start of the work or of the net check"
+            return None, None, "the setup step left no record of the start of the work or of the net check", None
         least = int(netcheck.get("min_closed_polls") or 3)
         stretches = []   # (closed polls, last closed poll, end bound or None while it goes on)
         for opening in netcheck.get("openings") or []:
@@ -551,18 +553,21 @@ def main(argv):
         if not (isinstance(settle, dict) and settle.get("fresh") is True):
             last_poll = netcheck.get("last_poll") or [None, None]
             if probe_closed and (len(last_poll) < 2 or last_poll[1] != "open"):
-                return started, "collect", None
-            return None, None, "the net check had stopped before the work ended, and the public hosts were not seen closed after it"
+                return started, "collect", None, None
+            return None, None, "the net check had stopped before the work ended, and the public hosts were not seen closed after it", None
         if not stretches:
-            return None, None, f"the net check never saw {least} polls in a row without an answer"
+            blind = int(netcheck.get("local_polls") or 0) >= int(netcheck.get("local_limit") or 3)
+            return None, None, f"the net check never saw {least} polls in a row without an answer", "blind" if blind else None
         _polls, _last, bound = max(stretches, key=lambda s: (s[0], s[1]))
         if bound is not None and bound < started:
-            return bound, "netcheck", None
+            return bound, "netcheck", None, None
         # still going on when the work had ended, or reaching into this step: only this step's own probe
         # can tell that the hosts were closed all along
         if probe_closed:
-            return started, "collect", None
-        return None, None, "the net check's stretch without an answer reached into this step while public hosts answered"
+            return started, "collect", None, None
+        answered = isinstance(probe, dict) and probe.get("any_open") is True
+        return None, None, "the net check's stretch without an answer reached into this step while public hosts answered", \
+            "answered" if answered else None
 
     def session_end():
         """(end bound, why there is none), from the sessions the net check watched."""
@@ -596,10 +601,19 @@ def main(argv):
         return all(item.get("times") is None and all(isinstance(t, (int, float)) and t < cutoff for t in (item["mtime"], item["ctime"]))
                    for item in catalogue)
 
+    nc_bound, nc_from, nc_note, nc_cause = netcheck_end()
+    ss_bound, ss_note = session_end()
+    known = sorted((bound, origin) for bound, origin in ((nc_bound, nc_from), (ss_bound, "session")) if bound is not None)
+    if refused is None and not known and not unchanged() and nc_cause is not None:
+        # no end can be told, because of what the work did to the net check's probe: it held the probe
+        # blind, or kept it from seeing hosts that answered; nothing in the tree can be told from a file
+        # written after the work, and the work is the cause, so the tree is refused rather than lost
+        refused = {"blind": "the net check could not see the network during the work, and no exec session bounds it",
+                   "answered": "the net check saw no answer while public hosts answered, and no exec session bounds the work"}[nc_cause]
+        head, catalogue = "refused", []
+        notes.insert(0, f"{refused}: it was not copied")
+
     def build():
-        nc_bound, nc_from, nc_note = netcheck_end()
-        ss_bound, ss_note = session_end()
-        known = sorted((bound, origin) for bound, origin in ((nc_bound, nc_from), (ss_bound, "session")) if bound is not None)
         if known:
             (end_bound, end_from), end_note = known[0], None
         elif unchanged():

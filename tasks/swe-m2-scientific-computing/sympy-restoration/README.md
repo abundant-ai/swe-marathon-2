@@ -8,9 +8,9 @@ code stay. The candidate writes the bodies back, without network access, using a
 small `restore` command that reports progress and checks work against the graded
 view. The reward is continuous: the smaller of two shares measured on recorded
 calls that nothing visible answers (no docstring example or visible test makes
-them, even with its symbols renamed, and their result is neither a documented
-result of their unit nor one of their own arguments; see
-[Reward formula](#reward-formula)).
+them, even with its symbols renamed, and their result is neither a result their
+unit's examples and tests show, nor a documented result of their unit, nor one
+of their own arguments; see [Reward formula](#reward-formula)).
 
 This is a pilot brought over from a v1-style task. It has one implemented step,
 run as one 12-hour working session (the version on Oddish since 2026-11-19; the
@@ -329,7 +329,9 @@ It does not yet meet the v2 workload target; see [Workload](#workload) and
   calls were added for 990 of them (1,567 recorded while the withheld tests ran,
   1,788 variants), and every result was recorded again: the original reproduces
   16,737 of 16,737 under three hash seeds, the skeleton none. 6,854 calls count,
-  1,955 units are in the set and 716 are left out. Floor, through the verifier
+  1,955 units are in the set and 716 are left out (the 707 left without a given
+  call, and 9 more whose counted calls went when the final results were
+  recorded again). Floor, through the verifier
   and behind a table: every fixture a submission could build 0.015 or less
   (bare raise 0.0, first argument 0.0, boolean flip 0.0 through the verifier and 0.013 behind a table),
   so a unit still needs one matching counted call; the after-the-fact best
@@ -401,7 +403,12 @@ It does not yet meet the v2 workload target; see [Workload](#workload) and
   end is known and no listed entry changed since the work started, the start is
   the end (`end_from` `unchanged`): the starting tree is graded, 0. A record
   with no end at all grades a tree that restores no unit (0, whatever was
-  written when) and stays an evaluation error for any other.
+  written when) and stays an evaluation error for any other, unless the work
+  itself hid the end: a probe held blind from the start of the turn, or one that
+  saw no answer while the hosts answered the collect step, with no exec session
+  to bound the work, makes the collect step refuse the tree (0), so that an
+  agent under a harness of one exec per command cannot turn its trial into an
+  evaluation error that way.
 - Hostile errors. Every way the work could turn its own failing trial into an
   evaluation error is now a scored 0 or harmless: nothing usable under the
   tree's name (removed, a link, a file, a link to another directory) is a
@@ -623,6 +630,10 @@ Time is not the barrier. Two things are:
   of SymPy supplies (see [Novelty](#novelty)). A frontier model may score high by
   recall; probe it before reading its score as difficulty.
 
+Partial credit follows the call graph: a unit counts only once the units it
+calls work, so work in `restore next` order scores about its share (the first 20%
+of units, 0.157) and scattered work far less (a random 20%, 0.044).
+
 The rest is breadth. Single-context runs stopped at 588 to 1,824 steps when their
 context filled; only a harness that compacts and delegates to helpers reached the
 end (15,678 to 45,324 steps in 9 hours), and the unit share tracks steps and
@@ -720,8 +731,10 @@ The verifier runs in a separate image with only `/app/sympy` from the candidate.
    claude-code, mini-swe-agent and the oracle run) and no session was alive
    when the collect step began; a harness that runs one exec per command gives
    no such end, and the first one stands. Without either, the start of the work
-   is the end when nothing in the tree changed since then (the no-op);
-   otherwise there is no end. The mark is signed with a key in the agent image
+   is the end when nothing in the tree changed since then (the no-op); when the
+   work itself hid the end from the probe (it could not see the network at all,
+   or saw no answer while the hosts answered the collect step) the tree is
+   refused, a scored 0; otherwise there is no end. The mark is signed with a key in the agent image
    that only root can read and that the verifier image holds too. Before
    grading, the verifier checks that its own network is closed (a TLS handshake
    to three public hosts; open is an evaluation error), then reads the mark: no
@@ -782,12 +795,17 @@ The verifier runs in a separate image with only `/app/sympy` from the candidate.
    calls unless the docstring describes a plain integer; a candidate that breaks
    a prime contract its docstring states is dropped), each result taken from the
    original. A call is
-   documented when a docstring example or a visible test makes a call with the
-   same arguments, directly or inside the library while it runs, or with the
-   same arguments up to a renaming of symbols that keeps their assumptions; when
-   its result is one of its own arguments unchanged (a body that returns that
-   argument answers it); or when its result is one that another documented call
-   of its unit returns (applied until nothing changes). 9,883 calls are
+   documented when a docstring example or a visible test (slow ones, ones marked
+   to be skipped and examples marked `+SKIP` included: the agent can read them)
+   makes a call with the same arguments, directly or inside the library while it
+   runs, or with the same arguments up to a renaming of symbols that keeps their
+   assumptions; when its result is one an example or a visible test shows, that
+   is, one its unit returned to a call an example or a test made directly; when
+   its result is one of its own arguments unchanged, or an element of its
+   `*args` or a value of its `**kwargs` (a body that returns that argument
+   answers it); or when its result is one that another documented call of its
+   unit returns (applied until nothing changes). These relations compare with
+   the type of a value left out, since a printed result does not show it. 9,883 calls are
    documented and listed privately (`tests/private/vectors/documented.json`),
    6,854 are not, and only those count for the reward. A result is
    compared by its canonical form (`verifier/lib/canon.py`), which keeps the
@@ -872,6 +890,14 @@ Limits:
   still run and reported (`units_left_out_passing`).
 - For some units no visible evidence fixes the property a hidden call compares
   (see [Difficulty](#difficulty)); that residue is part of the reward.
+- A unit counts only once the units it calls work, so partial credit follows the
+  call graph rather than the number of bodies written: in the re-check, the
+  first 20% of units in `restore next` order (17.75% of the units in the set)
+  scored 0.157, a random 20% scored 0.044.
+- Three added calls carry an integer outside the range of their unit's recorded
+  calls (`isolate` twice, `_invert_modular` once) and one a pair of indices that
+  together fall outside the function's domain (`flip_index`); each is a valid
+  input or follows the documented formula.
 - Strings are compared exactly, layout included, while the docstring examples
   are checked with whitespace normalised; only the LaTeX of two units ignores
   whitespace. A memo slot filled with a wrong value where upstream leaves it

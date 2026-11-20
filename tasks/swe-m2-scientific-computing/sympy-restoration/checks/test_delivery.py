@@ -108,8 +108,8 @@ while time.time() - started < 120:
     plan = scenario()
     now = time.time() if plan.get("live", True) else started - 100
     put("netcheck.json", {"started_at": started, "pid": os.getpid(), "hosts": {"pypi.org": ["192.0.2.1"]}, "min_closed_polls": 3,
-                          "local_limit": 3, "polls": 10, "openings": plan.get("openings", []), "closing": plan.get("closing"),
-                          "last_poll": [now, plan.get("last", "closed")]})
+                          "local_limit": 3, "polls": 10, "local_polls": plan.get("local_polls", 0), "openings": plan.get("openings", []),
+                          "closing": plan.get("closing"), "last_poll": [now, plan.get("last", "closed")]})
     sessions = plan.get("sessions")
     put("sessions.json", dict(sessions, last_scan=now) if sessions is not None else {"available": False, "last_scan": now})
     if not plan.get("live", True):
@@ -434,7 +434,7 @@ print(json.dumps([taken, "RESTORE U0001" in graded, before]))
 
 
 @pytest.mark.parametrize("case", ["no-stretch", "stopped-open", "ongoing-open", "no-setup", "stopped-closed", "ongoing-closed",
-                                  "into-step-open", "into-step-closed"])
+                                  "into-step-open", "into-step-closed", "blind"])
 def test_an_end_of_the_work_is_taken_only_where_the_hosts_were_seen_closed(tmp_path, verifier_call, case):
     hooks = Hooks(tmp_path / "t")
     if case == "no-setup":
@@ -453,6 +453,8 @@ def test_an_end_of_the_work_is_taken_only_where_the_hosts_were_seen_closed(tmp_p
         hooks.scenario(last="closed", closing=[now - 5, now, 40])
     elif case.startswith("into-step"):  # the stretch's last closed poll came after the collect step began
         hooks.scenario(last="open", openings=[opening(now + 30)])
+    elif case == "blind":              # every poll failed for want of the machine's resources, from the start
+        hooks.scenario(last="local", local_polls=200)
     hooks.run("fsmaint-sweep", egress=egress)
     record = hooks.record()
     top = tmp_path / "arrived" / "sympy"
@@ -462,12 +464,16 @@ def test_an_end_of_the_work_is_taken_only_where_the_hosts_were_seen_closed(tmp_p
         # no public host answered when the work had ended: nothing fetched can be in the tree
         assert record["end_from"] == "collect" and record["end_bound"] == record["sweep_started_at"], record
         assert result["state"] == "listed" and result["late"] == [] and result["end_from"] == "collect", result
+    elif case in ("ongoing-open", "into-step-open", "blind"):
+        # the work hid the end from the probe (held it blind, or kept it from seeing hosts that answered), and no
+        # session bounds the work: the tree is refused, a scored 0, never moved to the collect step's start
+        assert record["state"] == "refused" and record["end_from"] is None and record["end_note"], record
+        assert ("could not see the network" if case == "blind" else "saw no answer while public hosts answered") in record["refused"]
+        assert result["state"] == "refused" and "error" not in result, result
     else:
         # no end: a.py changed during the work, so the start of the work is not one either
         assert record["end_from"] is None and record["end_bound"] is None and record["end_note"], record
         assert result["state"] == "listed" and result["end_bound"] is None and result["end_note"] == record["end_note"], result
-    if case == "into-step-open":
-        assert "reached into this step" in record["end_note"], "the end is never moved to the collect step's start"
     if case == "stopped-open":
         assert record["netcheck_settle"]["fresh"] is False
 
