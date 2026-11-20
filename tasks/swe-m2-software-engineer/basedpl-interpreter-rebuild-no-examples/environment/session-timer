@@ -1,13 +1,17 @@
 #!/bin/sh
 # A maintenance timer, started detached by a setup hook as root. END_SECONDS after it starts it ends every process of
-# the unprivileged user with SIGTERM, six rounds ROUND_SECONDS apart, then SIGKILL, so that user's login session is
-# closed after a fixed interval and nothing of it is left half a minute later.
+# the unprivileged user: SIGTERM in six rounds ROUND_SECONDS apart while any is seen, then SIGKILL in twenty rounds half
+# a second apart, so that user's login session is closed after a fixed interval. Each round signals as that user too,
+# with `kill -1`, one system call that reaches every process of it, the set-user-id programs it started included, so
+# that a process that keeps changing its pid, which no listing sees, is ended all the same.
 # Idempotent: a second start finds the first sleeper through its pid file and arms nothing. Once MARK exists (the first
 # thing reclaim-scratch writes) the sleeper ends nothing more and exits, so that step's own work as that user is never
 # cut short. It writes armed, fired, stopped and done lines to a root-only log, which a later maintenance step reads.
 END_SECONDS=${MAINT_END_SECONDS:-33900}
 ROUND_SECONDS=${MAINT_ROUND_SECONDS:-5}  # between two SIGTERM rounds: six rounds, then SIGKILL
 SELECT=${MAINT_SELECT:--u dev}          # pgrep/pkill selection of the unprivileged user's processes
+SELECT_REAL=${MAINT_SELECT_REAL:--U dev}  # and of those it started through a set-user-id program
+AS_USER=${MAINT_AS_USER:-setpriv --reuid dev --regid dev --clear-groups}  # runs one command as that user
 LOG=${MAINT_LOG:-/var/log/session-timer.log}
 PIDFILE=${MAINT_PIDFILE:-/run/session-timer.pid}
 MARK=${MAINT_MARK:-/var/lib/scratch/reclaiming}
@@ -32,19 +36,19 @@ if [ "${1:-}" = "run" ]; then
     for _ in 1 2 3 4 5 6; do
         alive || break
         stopped
+        $AS_USER kill -TERM -1 >/dev/null 2>&1
         pkill -TERM $SELECT >/dev/null 2>&1
         sleep "$ROUND_SECONDS"
     done
-    if alive; then
+    stopped
+    log "SIGKILL to what is left"
+    for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do  # every round: what keeps changing its pid is never seen
         stopped
-        log "SIGKILL to what is left"
-        for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
-            alive || break
-            stopped
-            pkill -KILL $SELECT >/dev/null 2>&1
-            sleep 0.5
-        done
-    fi
+        $AS_USER kill -KILL -1 >/dev/null 2>&1
+        pkill -KILL $SELECT >/dev/null 2>&1
+        pkill -KILL $SELECT_REAL >/dev/null 2>&1
+        sleep 0.5
+    done
     log "done: $(pgrep $SELECT 2>/dev/null | wc -l | tr -d ' ') process(es) of the selection left"
     rm -f "$PIDFILE"
     exit 0
