@@ -1,0 +1,9 @@
+{
+  "FileVersion": 3,
+  "EngineAssociation": "5.8",
+  "Category": "Games",
+  "Description": "Basin Signal, an original two-player Unreal Engine game.",
+  "Modules": [
+    { "Name": "BattleRoyale", "Type": "Runtime", "LoadingPhase": "Default" }
+  ]
+}
