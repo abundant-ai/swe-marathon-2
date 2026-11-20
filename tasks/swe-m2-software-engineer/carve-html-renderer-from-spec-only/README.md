@@ -93,19 +93,19 @@ archive or binary.
   platform's reviewers (the agent never sees `task.toml`): when the session ends, that the limit is
   a backstop, and why. Nothing else assumed 34,560: the sweep's timer-stop path (2 s for TERM, then
   KILL), `verify.py`, the marks and the instruction (which states no time) carry no session time.
-- **Checks** (57 now). Five new, each failing on 96dbbe5 (its sweep, reserve, `verify.py` and
-  `task.toml` in a scratch copy of the task): the progress file first, the mark right after the
+- **Checks** (57 now). Five new, each failing on 96dbbe5 (its sweep, reserve, timer, `verify.py`
+  and `task.toml` in a scratch copy of the task): the progress file first, the mark right after the
   freeze and before the ending, the reserve making the file and `task.toml` declaring it (96dbbe5:
   none of it); the freeze and kill phases on stand-in commands, zombies only (96dbbe5: 100 passes,
   12.5 s, a zombie counted as left) and a `/proc` that never answers (96dbbe5: still running at 75 s,
-  each listing blocking); an arrival
-  after a sweep that began and did not finish, with a pipe, a climbing link, an absolute link, and a
-  pipe first, through tar and the `data` filter, refused each time, while `done` with nothing
-  arrived stays an error (96dbbe5: errors); the time limit on the staging and a linear late count
-  with 15,000 copies over 20,000 files (96dbbe5: the staging ran to the end; quadratic); a mark of
-  1,000 pipes with 4-byte UTF-8 names under 32 KiB in bytes (96dbbe5: 57,452 bytes). Two edited: the
-  timer's 30 s of TERM, both agent limits at 33,960 s and the notes beside them; the round-9
-  time-limit case (480 s, the staging included).
+  each listing blocking); an arrival after a sweep that began and did not finish, with a pipe, a
+  climbing link, an absolute link, and a pipe first, through tar and the `data` filter, refused each
+  time, while `done` with nothing arrived stays an error (96dbbe5: errors); the time limit on the
+  staging and a linear late count with 15,000 copies over 20,000 files (96dbbe5: the staging ran to
+  the end, and its measuring of that tree took 15.1 s against 2.3 s now); a mark of 1,000 pipes with
+  4-byte UTF-8 names under 32 KiB in bytes (96dbbe5: 57,452 bytes). Two edited: the timer's 30 s of
+  TERM, both agent limits at 33,960 s and the notes beside them (96dbbe5: 12 TERM passes, 34,560 s);
+  the round-9 time-limit case (480 s, the staging included). The 57 pass under Python 3.13 and 3.12.
 - **Left.** Nothing ran on Linux, in Docker or on Modal. The second artifact's delivery is harbor
   0.20's code path for every declared artifact, read here, not observed on the platform; if it does
   not arrive, the verifier falls back to round 9's rules. A hook that dies before its first write
@@ -870,10 +870,11 @@ Licences: the specification, documentation and carve-rs are MIT. The spec's `LIC
 
 | Check | Revision | Result |
 | --- | --- | --- |
-| `checks/` (57 tests) under Python 3.13 and under 3.12 (a scratch venv from the offline cache), and `check_repository.py` | working tree, 2026-11-20, round 10 | 57 passed under each; the five new checks and the two edited ones (timer, time limit) each fail on 96dbbe5's sweep, reserve, timer, `verify.py` and `task.toml` in a scratch copy of the task (7 failed): no progress file; 100 kill passes in 12.5 s with a zombie counted as left (and, with a `/proc` that never answers, still running at 75 s); "without the sweep's mark" for an arrival cut off by a pipe; a staging that ran to the end; a 57,452-byte mark; the timer at 33,900 s; the 420 s message |
+| `checks/` (57 tests) under Python 3.13 and under 3.12 (a scratch venv from the offline cache), and `check_repository.py` | working tree, 2026-11-20, round 10 | 57 passed under each; the five new checks and the two edited ones (timer, time limit) each fail on 96dbbe5's sweep, reserve, timer, `verify.py` and `task.toml` in a scratch copy of the task (7 failed): no progress file; 100 kill passes in 12.5 s with a zombie counted as left (and, with a `/proc` that never answers, still running at 75 s); "without the sweep's mark" for an arrival cut off by a pipe; a staging that ran to the end; a 57,452-byte mark; the timer's 12 TERM passes (60 s) and the 34,560 s limits; the 420 s message |
 | `checks/` (52 tests) with `ci_checks`, Python 3.13, and `check_repository.py` | working tree, 2026-11-20, round 9 | pass (52 passed; repository checks passed); the seven new checks each fail against round 8's `fsmaint-sweep` and `verify.py` (c8f99e3, in a scratch copy of the task): "without the sweep's mark" on a 2 MB mark, `listed 7` with a 1,204-byte path, the chain's head kept (a `RecursionError` in the fixer under Python 3.12), the tree left unmarked when the measuring is killed, `listed` with no room to pack, the climbing link kept and the absolute one removed, a crash on a directory under the mark's name |
 | The sweep's checks under Python 3.12 (the image's version; a scratch venv from the offline cache) | working tree, round 9 | the 17 checks that run the sweep or name its text pass; round 8's chain check fails there with the fixer's `RecursionError` |
 | Round 9 probes, Python 3.12 (a scratch script, not kept) | working tree, round 9 | 50,000 files in 500 directories: swept in 2.2 s, then copied by harbor 0.20's own `pack_dir_to_file` and `extract_dir_from_file` and graded; 100,000 entries at the top: 13.5 s; 200,001: refused in 13.2 s, only the mark and the record left; 40,000 links to `/etc/hosts`, measuring alone: 3.4 s; 20,000 copies: a 12.9 KB mark ending "and 13,499 more changes"; a link climbing above `/` and back: rewritten `../carve`, through harbor's `data` filter. Round 8's measuring alone on a 6,000-link chain: 41.4 s (round 9: 0.21 s) |
+| Packaging, local grading and preflight, round 10 | `scripts/package_step.py` (twice, the same hash), `scripts/grade_locally.py` (the verifier reading each delivery's own progress file) | `e2dd875fc3254084feb4f74c63ef9221aa0e06364a22b81d16ad3940a28be99d`, 143 files, 17,843,618 bytes; `diff -r` against round 9's `6b9731444d48`: `environment/fsmaint-reserve`, `environment/fsmaint-sweep`, `environment/fsmaint-timer`, `tests/verify.py` and `task.toml` (the Dockerfile, the instruction, the spec and the docs unchanged); reference 1.0 (1,770 of 1,770, `listed 2 12981886`, sweep `done`), empty tree 0.0, silent program 0.0; preflight pass. A cut with the judges' first timer option (A), `306b07f2394e`, graded the same and was superseded |
 | Packaging, local grading and preflight, round 9 | `scripts/package_step.py` (twice, the same hash), `scripts/grade_locally.py` | `6b9731444d4869f2a816906596b449cd0b56e8200dde87de373de570f673d551`, 143 files, 17,834,790 bytes; `diff -r` against round 8's `a8bb7e136198`: `environment/fsmaint-sweep` and `tests/verify.py` only; reference 1.0 (1,770 of 1,770, `listed 2 12981886`), empty tree 0.0, silent program 0.0; preflight pass. Earlier cuts of this round graded the same and were superseded: `3dfdf013572c` (before the inode floor), `5242621f77fc` (before the last `manifest()` docstring fix) |
 | Tripwires on the reference | `install.py --blank` on the pinned Linux build | blanked sha256 `f1a359cba59853ecf5087b2f7a6bac17fc208df99d09a63dc567268e1ec5fad0` (same 16,216,144 bytes), in no list, none of the 14 strings left; the unchanged Linux build (`05d0898d…`) and the macOS build are refused |
 | Corpus agreement, spec model against carve-rs (macOS release) | spec `51c5631`, carve-rs 0.1.14 | 4,626 of 4,631 equal; model equals the corpus HTML on all; 6 of the candidates drawn for cases disagreed and were dropped |
@@ -888,7 +889,7 @@ Licences: the specification, documentation and carve-rs are MIT. The spec's `LIC
 | Local grading from the bundle (`scripts/grade_locally.py`, no sandbox) | bundle `c871cb7a1765` | reference (the build blanked as `solve.sh` does, re-signed, as `/app/rebuild/carve`, marked by the bundle's sweep, passing the tripwires) 1.0 (1,770/1,770, 20 s); an empty tree 0.0; a program that prints nothing 0.0; no late entries, no refused or flagged copies, `ended_by_timer` false. Fingerprint: the blanked reference matches 47 of 49 probes — the two misses are the `-h`/`--help` probes whose output carries blanked help strings; production records probes from the unblanked oracle, and the fingerprint is diagnostic, never scored |
 | Oddish baselines | v1 (round 4, `…-d3bd3d08` v1): oracle 1.0 ×2, nop 0.0 ×2; v2 (round 5): oracle 0.0 ×2 (the string-ids defect above); v3 (round 6): oracle 1.0 ×2, nop 0.0 ×2, pre-trial audit clean | round 7 not yet uploaded |
 | v4 (round 7) | oracle 1.0 ×2, nop 0.0 ×2 | pre-trial audit: 1 must-fix (a tree that is not a directory was an evaluation error; round 8) |
-| v5 (rounds 8 and 9) | not uploaded | carries bundle `6b9731444d48`; round 8's `a8bb7e136198` was never uploaded |
+| v5 (rounds 8 to 10) | not uploaded | carries bundle `e2dd875fc325`; rounds 8 and 9's `a8bb7e136198` and `6b9731444d48` were never uploaded; it needs fresh baselines (the agent image's hooks and `task.toml` changed; the Dockerfile did not) |
 | Model trials | v3: claude-code with deepseek-v4.1-flash 0.881 and 0.915, glm-5.3 0.010, all three stopped by the time limit | verdict reject (evaluation awareness in one trial; round 7) |
 
 ## Build and deliver
