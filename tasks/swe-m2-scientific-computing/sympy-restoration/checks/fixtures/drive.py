@@ -26,10 +26,12 @@ from verifier.reporting import write_report  # noqa: E402
 TOTALS = {"units_total": 100, "vectors_total": 400, "tests_total": 200}
 
 
-def measurement(units: int, calls: int, tests: int, *, artifact: bool = True, restored: int = 100, trips: tuple[str, ...] = ()) -> Measurement:
+def measurement(units: int, calls: int, tests: int, *, artifact: bool = True, restored: int = 100, trips: tuple[str, ...] = (),
+                unreached: dict | None = None) -> Measurement:
     """Build a measurement with fixed denominators and the given numerators."""
     counts = dict(TOTALS, units_restored=restored, units_passing=units, vectors_passing=calls, tests_passing=tests)
-    return Measurement(artifact, counts, trips, dict(counts, tamper=list(trips), notes=[]))
+    details = dict(counts, tamper=list(trips), notes=[], unit_bar=0.99, vector_bar=0.9, test_bar=0.95, **(unreached or {}))
+    return Measurement(artifact, counts, trips, details)
 
 
 def context(output: Path, measured: Measurement | None) -> VerificationContext:
@@ -136,9 +138,11 @@ def sealed_run(script: dict, work: Path, pass_limit: int) -> dict:
     for name in ("scratch", "pub", "cand", "art"):
         (work / name).mkdir()
     notes: list[str] = []
+    import time
+
     result = engine.run_sealed_tests(
         SEALED, [], notes, scratch=str(work / "scratch"), pub=str(work / "pub"), cand=str(work / "cand"),
-        art=str(work / "art"), cfg={"pytest_budget_sec": 600, "pytest_pass_limit": pass_limit}, cpus=2)
+        art=str(work / "art"), cfg={"pytest_pass_limit": pass_limit}, cpus=2, deadline=time.monotonic() + 600)
     return {"outcome": {t: result.outcome.get(t) for t in SEALED}, "selfcheck_ok": result.selfcheck_ok,
             "timed_out": result.timed_out, "runner_passed": result.runner_passed, "tally_exceeded": result.tally_exceeded,
             "runs": result.runs, "passes": result.passes, "first_test_sec": result.first_test_sec,
@@ -182,11 +186,21 @@ def watch_scenario(work: Path) -> dict:
     ):
         records = work / f"{name}.jsonl"
         records.write_text("")
-        began = time.time()
-        state, first = engine.watch([sys.executable, "-I", "-c", code, str(records), record], cwd=str(work), env=None,
-                                    log_path=str(work / f"{name}.log"), res_path=str(records),
-                                    deadline=time.time() + budget, collect_sec=collect_sec, stall_sec=1)
-        states[name] = {"state": state, "test_started": first is not None, "seconds": round(time.time() - began, 1)}
+        began = time.monotonic()
+        state, first, code = engine.watch([sys.executable, "-I", "-c", code, str(records), record], cwd=str(work), env=None,
+                                          log_path=str(work / f"{name}.log"), res_path=str(records),
+                                          deadline=time.monotonic() + budget, collect_sec=collect_sec, stall_sec=1)
+        states[name] = {"state": state, "test_started": first is not None, "seconds": round(time.monotonic() - began, 1),
+                        "code": code}
+    # records an earlier run left in the file do not count as this run's work
+    records = work / "left.jsonl"
+    records.write_text(start + "\n")
+    began = time.monotonic()
+    state, first, code = engine.watch([sys.executable, "-I", "-c", "import time; time.sleep(60)"], cwd=str(work), env=None,
+                                      log_path=str(work / "left.log"), res_path=str(records), deadline=time.monotonic() + 60,
+                                      collect_sec=2, stall_sec=30)
+    states["earlier_records"] = {"state": state, "test_started": first is not None, "seconds": round(time.monotonic() - began, 1),
+                                 "code": code}
     return states
 
 
@@ -198,14 +212,24 @@ with open(op + ".starts", "a") as f:
     f.write(mod + chr(10))
 if mod == "mod_dead":
     sys.exit(1)
+if mod == "mod_import_hang":
+    time.sleep(120)
 out = open(op, "a")
+out.write(json.dumps({"loaded": True}) + chr(10))
+out.flush()
 for vid, uid, blob in data["vectors"]:
     if vid.endswith("_crash"):
         out.write('{"v": "half a line')
         out.flush()
         os._exit(1)
+    if vid.endswith("_die"):
+        os._exit(1)
     if vid.endswith("_hang"):
         time.sleep(120)
+    if vid.endswith("_slow"):
+        out.write(json.dumps({"v": vid, "c": ["EXC", "Timeout", []], "ms": 1000}) + chr(10))
+        out.flush()
+        os._exit(3)
     out.write(json.dumps({"v": vid, "c": ["ok", vid], "ms": 1}) + chr(10))
     out.flush()
 """
@@ -227,12 +251,17 @@ def vector_scenario(work: Path) -> dict:
         "mod_crash": {"units": {"U2": {}, "U3": {}}, "vectors": [("c1", "U2", b""), ("c2_crash", "U2", b""), ("c3", "U3", b""), ("c4", "U3", b"")]},
         "mod_hang": module("U4", "h1", "h2_hang", "h3"),
         "mod_dead": module("U5", "d1", "d2", "d3"),
+        "mod_barren": {"units": {"U6": {}, "U7": {}}, "vectors": [("b1_die", "U6", b""), ("b2_die", "U6", b""), ("b3", "U7", b""), ("b4", "U7", b"")]},
+        "mod_slow": module("U8", "w1_slow", "w2", "w3_slow", "w4"),
         "mod_not_restored": module("U9", "s1"),
+        "mod_import_hang": {"units": {"U10": {}, "U11": {}}, "vectors": [("i1", "U10", b""), ("i2", "U11", b"")]},
     }
+    import time
+
     results = engine.run_vectors(
-        payload, {"U1", "U2", "U3", "U4", "U5"}, [], scratch=str(work / "scratch"), pub=str(work / "pub"),
-        cand_nt=str(work / "cand"), cpus=4,
-        cfg={"vector_timeout_sec": 1, "vector_stall_margin_sec": 1, "vector_load_sec": 10, "vector_budget_sec": 90})
+        payload, {"U1", "U2", "U3", "U4", "U5", "U6", "U7", "U8", "U10", "U11"}, [], scratch=str(work / "scratch"), pub=str(work / "pub"),
+        cand_nt=str(work / "cand"), cpus=4, deadline=time.monotonic() + 90,
+        cfg={"vector_timeout_sec": 1, "vector_stall_margin_sec": 1, "vector_load_sec": 10})
     starts: dict[str, int] = {}
     for path in (work / "scratch" / "vec").glob("*.starts"):
         for line in path.read_text().split():
@@ -300,6 +329,19 @@ def scenario(name: str) -> dict:
                         "report": json.loads((output / "report.json").read_text()),
                         "metrics_json": json.loads((output / "metrics.json").read_text())}
             return {"raised": False}
+        if name in ("tests_unreached", "tests_unreached_units_below", "calls_unreached", "tests_unreached_short"):
+            cases = {
+                "tests_unreached": measurement(100, 400, 189, unreached={"tests_not_reached": 5}),
+                "tests_unreached_units_below": measurement(98, 400, 189, unreached={"tests_not_reached": 5}),
+                "calls_unreached": measurement(100, 355, 200, unreached={"vectors_not_reached": 9}),
+                "tests_unreached_short": measurement(100, 400, 180, unreached={"tests_not_reached": 5}),
+            }
+            ctx = context(output, cases[name])
+            try:
+                result = runner.verify(ctx)
+            except EvaluationError as exc:
+                return {"error": str(exc)}
+            return {"reward": result.metrics["reward"], "status": {c.requirement: c.status for c in result.checks}}
         if name == "candidate_failure_text":
             ctx = context(output, measurement(98, 400, 200))
             result = runner.verify(ctx)

@@ -58,3 +58,28 @@ def test_missing_work_fails_the_prerequisite_and_skips_the_rest(scenario, case):
 def test_failure_text_states_the_measured_share(scenario):
     text = scenario("candidate_failure_text")["explanation"]["unit_restoration"]
     assert "98 of 100" in text and "0.99" in text
+
+
+def test_a_verdict_that_items_not_reached_would_decide_is_an_evaluation_error(scenario):
+    # every other condition met: the tests not reached would decide, so no reward is published
+    assert "repository_tests" in scenario("tests_unreached")["error"]
+    assert "reference_calls" in scenario("calls_unreached")["error"]
+    # another bar is missed anyway, or the items not reached could not close the gap: a completed 0
+    for case in ("tests_unreached_units_below", "tests_unreached_short"):
+        data = scenario(case)
+        assert data["reward"] == 0.0 and "error" not in data, (case, data)
+
+
+def test_one_deadline_covers_the_measurement_inside_the_verifier_limit(task_root):
+    import json
+    import re
+
+    config = json.loads((task_root / "steps/01-restore-bodies/tests/verifier/grade_config.json").read_text())
+    toml = (task_root / "task.toml").read_text()
+    limit = int(re.search(r"^\[verifier\]\n(?:.*\n)*?timeout_sec = (\d+)$", toml, re.M).group(1))
+    assert "pytest_budget_sec" not in config, "the test phase has the time the earlier phases leave"
+    assert config["doctest_budget_sec"] + config["vector_budget_sec"] < config["measure_budget_sec"] <= limit - 600
+    engine = (task_root / "steps/01-restore-bodies/tests/verifier/engine.py").read_text()
+    assert "time.time()" not in engine and "time.time()" not in (task_root / "steps/01-restore-bodies/tests/verifier/lib/gradelib.py").read_text()
+    body = engine[engine.index("def measure("):]
+    assert "deadline=deadline)" in body and 'deadline = t_start + float(cfg.get("measure_budget_sec", 6000))' in body

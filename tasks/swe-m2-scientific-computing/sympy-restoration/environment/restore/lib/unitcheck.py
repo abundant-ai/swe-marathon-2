@@ -4,17 +4,22 @@ usage: unitcheck.py <tree_root> <module> <names.json> [timeout_sec]
 
 Prints one JSON object per unit. The examples run the way SymPy's own doctest runner
 runs them: empty globals, plain-text printing,
-ELLIPSIS | NORMALIZE_WHITESPACE | IGNORE_EXCEPTION_DETAIL.
+ELLIPSIS | NORMALIZE_WHITESPACE | IGNORE_EXCEPTION_DETAIL. Every unit's random
+generators are seeded from its name, so a unit gives the same result each time. After a
+unit that runs out of time it exits with status 3; the units behind it are run again in
+a fresh process.
 """
 from __future__ import annotations
 
 import io
 import json
 import os
+import random
 import re
 import signal
 import sys
 import time
+import zlib
 
 cand_root, module_name, names_path = sys.argv[1:4]
 timeout = float(sys.argv[4]) if len(sys.argv) > 4 else 20.0
@@ -71,7 +76,21 @@ signal.signal(signal.SIGALRM, _alarm)
 FLAGS = pdoctest.ELLIPSIS | pdoctest.NORMALIZE_WHITESPACE | pdoctest.IGNORE_EXCEPTION_DETAIL
 
 
+def reseed(name):
+    """The same random numbers for a unit on every run: Python's and both of SymPy's generators."""
+    value = zlib.crc32(name.encode("utf-8"))
+    random.seed(value)
+    try:
+        from sympy.core import random as sympy_random
+
+        sympy_random.rng.seed(value)
+        sympy_random._assumptions_rng.seed(value)
+    except BaseException:  # noqa: BLE001
+        pass
+
+
 def run_one(test):
+    reseed(test.name)
     runner = SymPyDocTestRunner(verbose=False, optionflags=FLAGS)
     runner._checker = SymPyOutputChecker()
     test.globs = {}
@@ -128,3 +147,9 @@ for name in names:
     rec = run_one(t)
     rec["name"] = name
     emit(rec)
+    if rec["status"] == "timeout":
+        # an interrupted body can leave global state behind: the units after it get a new process
+        _real_stdout.flush()
+        os._exit(3)
+_real_stdout.flush()
+os._exit(0)

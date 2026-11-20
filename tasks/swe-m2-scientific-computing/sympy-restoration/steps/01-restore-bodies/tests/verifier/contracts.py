@@ -1,4 +1,4 @@
-"""Author-side records; submitted code never imports this module."""
+"""Verifier-side records; submitted code never imports this module."""
 
 from __future__ import annotations
 

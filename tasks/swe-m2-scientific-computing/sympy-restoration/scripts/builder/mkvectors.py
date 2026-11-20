@@ -113,7 +113,8 @@ def replay(tree, vecs_by_module, hashseed, tag):
         try:
             for line in open(op):
                 r = json.loads(line)
-                out[r["v"]] = r["c"]
+                if "v" in r:   # the first line only says the module was imported
+                    out[r["v"]] = r["c"]
         except OSError:
             pass
         return out

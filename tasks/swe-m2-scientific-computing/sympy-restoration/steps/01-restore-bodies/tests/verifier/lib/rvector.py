@@ -5,8 +5,11 @@ usage: rvector.py <cand_root> <module> <vectors.pkl> <out.jsonl> [timeout_sec]
 <vectors.pkl> holds {"units": {uid: {...}}, "vectors": [(vid, uid, blob), ...]} where blob is
 the pickled argument mapping of one call.  For every vector the function is called
 directly with those arguments and one line  {"v": vid, "c": <canonical result>}  is
-appended to <out.jsonl>.  A call that returns None is represented by the state of its
-arguments after the call.  No expected result is available to this process.
+appended to <out.jsonl>, after a line {"loaded": true} once the module is imported.  A call
+that returns None is represented by the state of its
+arguments after the call.  No expected result is available to this process.  After a call
+that runs out of time the runner exits with status 3, so that the calls behind it run in
+a fresh process.
 """
 from __future__ import annotations
 
@@ -56,6 +59,8 @@ except BaseException as e:  # noqa: BLE001
     for vid, uid, blob in data["vectors"]:
         emit(vid, ["EXC", "ImportFailure"])
     sys.exit(0)
+out_f.write(json.dumps({"loaded": True}) + "\n")
+out_f.flush()
 
 
 def def_lines(u):
@@ -159,13 +164,15 @@ funcs = {}
 
 def reseed(vid):
     """Give a call the same random numbers on every run, so that grading one tree twice
-    gives one result.  Recorded results do not depend on the random state."""
+    gives one result: Python's generator and both of SymPy's (the one its assumption
+    system shuffles with included).  Recorded results do not depend on the random state."""
     value = zlib.crc32(str(vid).encode("utf-8"))
     random.seed(value)
     try:
         from sympy.core import random as sympy_random
 
         sympy_random.rng.seed(value)
+        sympy_random._assumptions_rng.seed(value)
     except BaseException:  # noqa: BLE001
         pass
 
@@ -187,6 +194,7 @@ def call(fn, args):
 
 
 for vid, uid, blob in data["vectors"]:
+    timed_out = False
     u = data["units"][uid]
     if uid not in funcs:
         try:
@@ -219,6 +227,7 @@ for vid, uid, blob in data["vectors"]:
         signal.setitimer(signal.ITIMER_REAL, 0)
     except _Timeout:
         c = ["EXC", "Timeout", []]
+        timed_out = True
     except _Unusable:
         c = ["EXC", "Unusable", []]
     except Uncanonical:
@@ -229,3 +238,9 @@ for vid, uid, blob in data["vectors"]:
     finally:
         signal.setitimer(signal.ITIMER_REAL, 0)
     emit(vid, c, int((time.time() - t0) * 1000))
+    if timed_out:
+        # an interrupted body can leave global state behind (a working precision, say)
+        out_f.close()
+        os._exit(3)
+out_f.close()
+os._exit(0)

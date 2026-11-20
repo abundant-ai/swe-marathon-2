@@ -41,28 +41,34 @@ import restorelib  # noqa: E402
 UNITCHECK = os.path.join(BASE, "lib", "unitcheck.py")
 
 
+RESTARTS = 8
+
+
 def run_examples(names_by_module, workers, timeout=20.0):
-    """Run docstring examples, one process per module. Returns {dotted: record}."""
+    """Run docstring examples, one process per module. Returns {dotted: record}.
+
+    A unit that ends its process, or keeps it busy past its time, fails alone: the
+    units behind it run again in a new process, at most RESTARTS times per module.
+    """
     import tempfile
     from concurrent.futures import ThreadPoolExecutor
 
     scratch = tempfile.mkdtemp(prefix="restore-check-")
     env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1", PYTHONHASHSEED="0")
 
-    def one(item):
-        k, (mod, names) = item
-        npath = os.path.join(scratch, f"n{k}.json")
+    def run(k, mod, names, start):
+        npath = os.path.join(scratch, f"n{k}.{start}.json")
         with open(npath, "w", encoding="utf-8") as f:
             json.dump(names, f)
-        out, err = "", ""
+        out, err, code = "", "", None
         try:
             p = subprocess.run([sys.executable, "-P", "-s", "-B", UNITCHECK, CAND, mod, npath, str(timeout)],
                                capture_output=True, text=True, env=env, cwd=CAND,
                                timeout=min(timeout * (len(names) + 2) + 60, 900))
-            out, err = p.stdout, p.stderr[-300:]
+            out, err, code = p.stdout, p.stderr[-300:], p.returncode
         except subprocess.TimeoutExpired as e:
             out = e.stdout.decode("utf-8", "replace") if isinstance(e.stdout, bytes) else (e.stdout or "")
-            err = "the module's examples did not finish in time"
+            err = "the unit did not finish in time"
         got, merr = {}, None
         for line in out.splitlines():
             try:
@@ -73,13 +79,33 @@ def run_examples(names_by_module, workers, timeout=20.0):
                 got.setdefault(rec["name"], rec)
             elif isinstance(rec, dict) and "module_error" in rec:
                 merr = rec
-        res = {}
-        for n in names:
+        return got, merr, err, code
+
+    def one(item):
+        k, (mod, names) = item
+        res, pending, crashes, starts = {}, list(names), 0, 0
+        while pending:
+            got, merr, err, code = run(k, mod, pending, starts)
+            starts += 1
             if merr is not None:
-                res[n] = {"status": "error", "exc": "module import failed: " + merr["module_error"],
-                          "blocked_by": merr.get("blocked_by") or [], "out": merr.get("tb", "")}
-            else:
-                res[n] = got.get(n) or {"status": "crash", "exc": err or "runner stopped before this unit"}
+                for n in pending:
+                    res[n] = {"status": "error", "exc": "module import failed: " + merr["module_error"],
+                              "blocked_by": merr.get("blocked_by") or [], "out": merr.get("tb", "")}
+                break
+            res.update({n: rec for n, rec in got.items() if n in pending})
+            rest = [n for n in pending if n not in got]
+            if not rest:
+                break
+            if code == 3 and len(rest) < len(pending):
+                pending = rest   # the runner started afresh after a unit that ran out of time
+                continue
+            # the process ended, or stopped, at the first unit without a result
+            res[rest[0]] = {"status": "crash", "exc": err or "the runner ended during this unit"}
+            pending, crashes = rest[1:], crashes + 1
+            if crashes > RESTARTS:
+                for n in pending:
+                    res[n] = {"status": "crash", "exc": "runner stopped before this unit"}
+                break
         return res
 
     results = {}
@@ -398,7 +424,7 @@ def cmd_pytest(args):
             if (full == root or full.startswith(root + os.sep)) and os.path.exists(full):
                 a = os.path.relpath(full, root) + a[len(head):]
         mapped.append(a)
-    env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
+    env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1", PYTHONHASHSEED="0")
     return subprocess.call(base + mapped, cwd=CAND, env=env)
 
 

@@ -59,14 +59,25 @@ def log(*parts: object) -> None:
     print("[grade]", *parts, flush=True)
 
 
-def sandbox_prefix(run_group: str) -> list[str]:
-    """Return the command prefix that drops to the unprivileged user.
+def _runs(prefix: list[str]) -> bool:
+    try:
+        return subprocess.run(prefix + ["true"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30).returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+def sandbox_prefix(run_group: str, address_space: int = 0, notes: list | None = None) -> list[str]:
+    """Return the command prefix that limits memory and drops to the unprivileged user.
 
     Args:
         run_group: Group the sandbox user runs with.
+        address_space: Bytes of address space each sandboxed process may use;
+            0 sets no limit.
+        notes: Diagnostic notes for metrics.json, appended to in place.
 
     Returns:
-        The `setpriv` prefix every sandboxed command starts with.
+        The `prlimit` and `setpriv` prefix every sandboxed command starts with;
+        without `prlimit` when the limit cannot be set here (noted).
 
     Raises:
         EvaluationError: The verifier is not root or cannot drop privileges, so
@@ -74,17 +85,16 @@ def sandbox_prefix(run_group: str) -> list[str]:
     """
     if os.geteuid() != 0:
         raise EvaluationError("Verifier must start as root to isolate submitted code")
-    prefix = ["setpriv", "--reuid", RUN_AS, "--regid", run_group, "--clear-groups"]
-    usable = shutil.which("setpriv") is not None
-    if usable:
-        try:
-            usable = subprocess.run(prefix + ["true"], stdout=subprocess.DEVNULL,
-                                    stderr=subprocess.DEVNULL, timeout=30).returncode == 0
-        except (OSError, subprocess.TimeoutExpired):
-            usable = False
-    if not usable:
+    drop = ["setpriv", "--reuid", RUN_AS, "--regid", run_group, "--clear-groups"]
+    if shutil.which("setpriv") is None or not _runs(drop):
         raise EvaluationError("Could not drop privileges; submitted code was not run")
-    return prefix
+    if address_space > 0:
+        limited = ["prlimit", f"--as={int(address_space)}", "--core=0", "--"] + drop
+        if shutil.which("prlimit") is not None and _runs(limited):
+            return limited
+        if notes is not None:
+            notes.append("the address-space limit could not be set; submitted code ran without it")
+    return drop
 
 
 def reap(prefix: list[str]) -> None:
@@ -130,16 +140,20 @@ def read_vector_records(path: str, want: set) -> tuple[dict, set]:
     return got, dup
 
 
-def run_vectors(payload, restored_uids, prefix, *, scratch, pub, cand_nt, cfg, cpus):
+def run_vectors(payload, restored_uids, prefix, *, scratch, pub, cand_nt, cfg, cpus, deadline):
     """Replay recorded calls in the sandbox, one process per module.
 
     The runner works through a module's calls in order and writes each result
     as it goes. A call can end the process (a crash in the interpreter) or keep
-    it busy past its own time limit. The calls queued behind it say nothing
-    about the submission, so the job is started again without that call, which
-    counts as not matching. A job is given up when two starts in a row produce
-    nothing, after `vector_job_restart_limit` restarts, or when the phase's
-    time budget ends.
+    it busy past its own time limit; the calls queued behind it say nothing
+    about the submission. So the job is started again behind that call, which
+    counts as not matching; when the start was barren (the very first call
+    ended it), the rest of that call's unit counts as not matching too and the
+    job resumes at the next unit. After a call that ran out of time the runner
+    exits by itself and is started again behind it, since an interrupted body
+    can leave global state behind. A job whose module import never finishes
+    loses all its calls at once. A job ends after `vector_job_restart_limit`
+    starts that ended or stopped, or at `deadline`.
 
     Args:
         payload: Per module, its units and their recorded calls.
@@ -150,10 +164,14 @@ def run_vectors(payload, restored_uids, prefix, *, scratch, pub, cand_nt, cfg, c
         cand_nt: Tree without test directories that the calls run in.
         cfg: Limits from grade_config.json.
         cpus: Number of modules replayed at the same time.
+        deadline: time.monotonic() value at which the phase ends.
 
     Returns:
         The canonical result per call id; None for a call that did not finish
         or was reported twice. Calls that were not reached are absent.
+
+    Raises:
+        EvaluationError: The runner could not be started.
     """
     vdir = os.path.join(scratch, "vec")
     os.makedirs(vdir, exist_ok=True)
@@ -170,9 +188,8 @@ def run_vectors(payload, restored_uids, prefix, *, scratch, pub, cand_nt, cfg, c
     per_vec = float(cfg.get("vector_timeout_sec", 10))
     load_sec = float(cfg.get("vector_load_sec", 120))
     stall_sec = per_vec + float(cfg.get("vector_stall_margin_sec", 30))
-    restart_limit = max(0, int(cfg.get("vector_job_restart_limit", 8)))
+    restart_limit = max(0, int(cfg.get("vector_job_restart_limit", 16)))
     rv = os.path.join(pub, "rvector.py")
-    deadline = time.time() + float(cfg.get("vector_budget_sec", 1200))
 
     def one(job):
         k, mod, units, vecs, op = job
@@ -181,12 +198,13 @@ def run_vectors(payload, restored_uids, prefix, *, scratch, pub, cand_nt, cfg, c
         got: dict = {}
         dup: set = set()
         pending = vecs
-        barren = 0
-        for attempt in range(restart_limit + 1):
-            left = deadline - time.time()
-            if not pending or left <= 5:
+        crashes = starts = 0
+        while pending:
+            left = deadline - time.monotonic()
+            if left <= 5:
                 break
-            ip = os.path.join(vdir, f"i{k}.{attempt}.pkl")
+            starts += 1
+            ip = os.path.join(vdir, f"i{k}.{starts}.pkl")
             with open(ip, "wb") as f:
                 pickle.dump({"units": {uid: units[uid] for _, uid, _ in pending}, "vectors": pending}, f, protocol=4)
             os.chmod(ip, 0o644)
@@ -203,21 +221,33 @@ def run_vectors(payload, restored_uids, prefix, *, scratch, pub, cand_nt, cfg, c
             cmd = prefix + [sys.executable, "-P", "-s", "-B", rv, cand_nt, mod, ip, op, str(per_vec)]
             before = len(got)
             try:
-                watch(cmd, cwd=cand_nt, env=SANDBOX_ENV, log_path=os.devnull, res_path=op,
-                      deadline=time.time() + max(5.0, min(per_vec * len(pending) + 60, left)),
-                      collect_sec=load_sec, stall_sec=stall_sec, marker=None)
-            except OSError:
-                break
+                state, first, code = watch(cmd, cwd=cand_nt, env=SANDBOX_ENV, log_path=os.devnull, res_path=op,
+                                           deadline=deadline, collect_sec=load_sec, stall_sec=stall_sec, marker=None)
+            except OSError as exc:
+                raise EvaluationError("The call runner could not be started in the verifier image") from exc
             got, dup = read_vector_records(op, want)
             rest = [v for v in pending if v[0] not in got]
-            if not rest:
+            if not rest or state == "budget":
                 break
-            barren = barren + 1 if len(got) == before else 0
-            if barren >= 2 or time.time() >= deadline - 5:
+            if first is None:
+                # not even the module's import finished: none of the job's calls can be replayed
+                unfinished.update(v[0] for v in rest)
                 break
+            if state == "done" and code == 3 and len(got) > before:
+                pending = rest   # the runner started afresh after a call that ran out of time
+                continue
             # the process ended, or stopped, at the first call without a result
-            unfinished.add(rest[0][0])
-            pending = rest[1:]
+            culprit = rest[0]
+            unfinished.add(culprit[0])
+            if len(got) == before:
+                # not even the first call returned: the rest of its unit is not tried again
+                unfinished.update(v[0] for v in rest if v[1] == culprit[1])
+                pending = [v for v in rest if v[1] != culprit[1]]
+            else:
+                pending = rest[1:]
+            crashes += 1
+            if crashes >= restart_limit:
+                break
         for vid in unfinished | dup:
             got[vid] = None
         return got
@@ -317,7 +347,8 @@ def watch(cmd, *, cwd, env, log_path, res_path, deadline, collect_sec, stall_sec
 
     Until its work starts, the process is starting up (pytest is collecting, a
     replay job is importing) and gets `collect_sec` in total. After that,
-    `stall_sec` may pass between records.
+    `stall_sec` may pass between records. Only what this process appends to
+    `res_path` counts: records an earlier run left there do not.
 
     Args:
         cmd: Command to start.
@@ -325,21 +356,25 @@ def watch(cmd, *, cwd, env, log_path, res_path, deadline, collect_sec, stall_sec
         env: Its environment.
         log_path: File that receives its output.
         res_path: File its plugin appends records to; growth means progress.
-        deadline: Wall-clock time at which the phase's budget ends.
+        deadline: time.monotonic() value at which the phase's budget ends.
         collect_sec: Seconds allowed before the work starts.
         stall_sec: Seconds allowed between records once it has started.
         marker: Bytes of a record that shows the work has started (for pytest,
             a test start); None lets any record count.
 
     Returns:
-        "done", "stalled" or "budget", and the seconds until the work started.
+        "done", "stalled" or "budget"; the seconds until the work started; and
+        the process's exit status when it ended by itself, else None.
 
     Raises:
         OSError: The process could not be started.
     """
-    began = last = time.time()
+    began = last = time.monotonic()
     first = None
-    offset = 0
+    try:
+        offset = os.path.getsize(res_path)
+    except OSError:
+        offset = 0
     tail = b""
     with open(log_path, "w", encoding="utf-8") as lf:
         # its own process group, so that ending it also ends the workers it started
@@ -351,7 +386,7 @@ def watch(cmd, *, cwd, env, log_path, res_path, deadline, collect_sec, stall_sec
                     ended = True
                 except subprocess.TimeoutExpired:
                     ended = False
-                now = time.time()
+                now = time.monotonic()
                 try:
                     with open(res_path, "rb") as rf:
                         rf.seek(offset)
@@ -365,11 +400,11 @@ def watch(cmd, *, cwd, env, log_path, res_path, deadline, collect_sec, stall_sec
                         first = round(now - began, 1)
                     tail = chunk[-len(marker):] if marker else b""
                 if ended:
-                    return "done", first
+                    return "done", first, proc.returncode
                 if now >= deadline:
-                    return "budget", first
+                    return "budget", first, None
                 if (first is None and now - began > collect_sec) or (first is not None and now - last > stall_sec):
-                    return "stalled", first
+                    return "stalled", first, None
         finally:
             try:
                 os.killpg(proc.pid, signal.SIGKILL)
@@ -388,7 +423,7 @@ def sealed_run(ids, prefix, *, tag, workers, deadline, pub, scratch, cand, cfg):
         prefix: Command prefix that drops to the sandbox user.
         tag: Name that keeps this run's files apart from other runs'.
         workers: Number of xdist workers; 0 runs one plain pytest process.
-        deadline: Wall-clock time at which the phase's budget ends.
+        deadline: time.monotonic() value at which the phase's budget ends.
         pub: Directory readable by the sandbox user that holds the plugin.
         scratch: Private working directory of the verifier.
         cand: Tree the tests run in.
@@ -424,8 +459,8 @@ def sealed_run(ids, prefix, *, tag, workers, deadline, pub, scratch, cand, cfg):
                SEALED_LIST=list_path, SEALED_RESULTS=res_path)
     collect_sec = cfg.get("pytest_collect_sec", 600) if workers else cfg.get("pytest_file_collect_sec", 120)
     try:
-        state, first = watch(cmd, cwd=cand, env=env, log_path=log_path, res_path=res_path, deadline=deadline,
-                             collect_sec=float(collect_sec), stall_sec=float(cfg.get("pytest_stall_sec", 180)))
+        state, first, _code = watch(cmd, cwd=cand, env=env, log_path=log_path, res_path=res_path, deadline=deadline,
+                                    collect_sec=float(collect_sec), stall_sec=float(cfg.get("pytest_stall_sec", 180)))
     except OSError as exc:
         raise EvaluationError("The test runner could not be started in the verifier image") from exc
     with open(log_path, encoding="utf-8", errors="replace") as f:
@@ -435,7 +470,7 @@ def sealed_run(ids, prefix, *, tag, workers, deadline, pub, scratch, cand, cfg):
             "uncollectable": uncollectable, "first_test_sec": first}
 
 
-def run_sealed_tests(sealed_ids, prefix, notes, *, scratch, pub, cand, art, cfg, cpus) -> SealedResult:
+def run_sealed_tests(sealed_ids, prefix, notes, *, scratch, pub, cand, art, cfg, cpus, deadline) -> SealedResult:
     """Run the sealed upstream tests in the sandbox, with a two-test self-check.
 
     The first pass is one pytest session over every test. A session can end, or
@@ -448,7 +483,9 @@ def run_sealed_tests(sealed_ids, prefix, notes, *, scratch, pub, cand, art, cfg,
     never once pytest has reported it as uncollectable. A test that was running
     when its run ended gets one more run; left unfinished a second time, or
     named by a session as the test that brought it down, it counts as failed.
-    Everything happens inside one time budget.
+    Everything happens before `deadline`, the end of the whole measurement, so
+    this phase has whatever time the earlier phases left. A test still without
+    an outcome then is not reached.
 
     Args:
         sealed_ids: Ids of the sealed tests.
@@ -460,6 +497,7 @@ def run_sealed_tests(sealed_ids, prefix, notes, *, scratch, pub, cand, art, cfg,
         art: Directory for diagnostic artifacts.
         cfg: Limits from grade_config.json.
         cpus: Number of pytest workers, and of test files run at the same time.
+        deadline: time.monotonic() value at which the measurement ends.
 
     Returns:
         The outcomes and the integrity signals of the phase.
@@ -474,7 +512,6 @@ def run_sealed_tests(sealed_ids, prefix, notes, *, scratch, pub, cand, art, cfg,
     os.chmod(os.path.join(tw_dir, "test_tripwire.py"), 0o644)
     log_path = os.path.join(art, "pytest_sealed.log")
     open(log_path, "w").close()
-    deadline = time.time() + float(cfg.get("pytest_budget_sec", 2400))
     pass_limit = max(1, int(cfg.get("pytest_pass_limit", 5)))
     sealed = set(sealed_ids)
     outcome: dict[str, str] = {}
@@ -529,7 +566,7 @@ def run_sealed_tests(sealed_ids, prefix, notes, *, scratch, pub, cand, art, cfg,
     absorb(session_ids, session, f"session over {len(session_ids)} tests")
     passes, resumed = 1, 0
     pending = retryable(session_ids)
-    while pending and not flags["budget"] and passes < pass_limit and time.time() < deadline - 1:
+    while pending and not flags["budget"] and passes < pass_limit and time.monotonic() < deadline - 1:
         passes += 1
         by_file: dict[str, list[str]] = collections.defaultdict(list)
         for nid in pending:
@@ -537,7 +574,7 @@ def run_sealed_tests(sealed_ids, prefix, notes, *, scratch, pub, cand, art, cfg,
 
         def one(job, number=passes):
             k, (path, ids) = job
-            if time.time() >= deadline - 1:
+            if time.monotonic() >= deadline - 1:
                 with lock:
                     flags["budget"] = True
                 return path, 0
@@ -550,9 +587,9 @@ def run_sealed_tests(sealed_ids, prefix, notes, *, scratch, pub, cand, art, cfg,
         reap(prefix)
         resumed += sum(progressed.values())
         pending = retryable(pending, progressed)
-    timed_out = flags["budget"] or (bool(pending) and time.time() >= deadline - 1)
+    timed_out = flags["budget"] or (bool(pending) and time.monotonic() >= deadline - 1)
     if timed_out:
-        notes.append("sealed test run hit its time budget; unfinished tests count as failed")
+        notes.append("the measurement's time ran out during the sealed tests; the tests without an outcome were not reached")
     if session["state"] == "stalled":
         notes.append("the test session stopped reporting and was ended")
     if resumed:
@@ -579,8 +616,11 @@ def measure(context: VerificationContext) -> Measurement:
             step's signed record, privileges cannot be dropped, or a runner
             cannot be started. No reward is valid then.
     """
-    t_start = time.time()
+    t_start = time.monotonic()
     cfg = dict(context.limits)
+    # one deadline for the whole measurement; each phase also has its own limit, and the test
+    # phase has whatever time the others leave
+    deadline = t_start + float(cfg.get("measure_budget_sec", 6000))
     work_tree, skel = str(context.work_tree), str(context.skeleton)
     out, scratch, private = str(context.output), str(context.scratch), str(context.private)
     cand = os.path.join(scratch, "cand")          # candidate tree with the upstream tests
@@ -614,7 +654,7 @@ def measure(context: VerificationContext) -> Measurement:
     }
 
     def finish(artifact_present: bool) -> Measurement:
-        metrics["grade_seconds"] = round(time.time() - t_start, 1)
+        metrics["grade_seconds"] = round(time.monotonic() - t_start, 1)
         counts = {k: int(metrics[k]) for k in (
             "units_total", "units_restored", "units_passing",
             "vectors_total", "vectors_passing", "tests_total", "tests_passing")}
@@ -677,11 +717,11 @@ def measure(context: VerificationContext) -> Measurement:
     shutil.copyfile(LIB / "plugins" / "sealed_plugin.py", os.path.join(pub, "plugins", "sealed_plugin.py"))
     subprocess.run(["chmod", "-R", "a+rX,go-w", pub], check=False)
     os.chmod(scratch, 0o755)
-    prefix = sandbox_prefix(str(cfg.get("run_group", "nogroup")))
+    prefix = sandbox_prefix(str(cfg.get("run_group", "nogroup")), int(cfg.get("address_space_bytes", 0)), metrics["notes"])
     restored = {u["uid"] for u in units if states[u["uid"]] == "restored"}
 
     # 2. docstring examples of every restored unit
-    t0 = time.time()
+    t0 = time.monotonic()
     dt_scratch = os.path.join(scratch, "dt")
     os.makedirs(dt_scratch, exist_ok=True)
     os.chmod(dt_scratch, 0o755)
@@ -689,10 +729,15 @@ def measure(context: VerificationContext) -> Measurement:
     for u in units:
         if u["uid"] in restored:
             run[u["module"]].append(u["dotted"])
-    results, tamper, dt_not_reached = gradelib.run_doctests(
-        cand_nt, run, os.path.join(pub, "rdoctest.py"), workers=cpus,
-        timeout=float(cfg.get("unit_timeout_sec", 20)), prefix_cmd=prefix, scratch=dt_scratch,
-        env=SANDBOX_ENV, budget_sec=float(cfg.get("doctest_budget_sec", 1800)))
+    try:
+        results, tamper, dt_not_reached = gradelib.run_doctests(
+            cand_nt, run, os.path.join(pub, "rdoctest.py"), watch=watch, workers=cpus,
+            deadline=min(deadline, t0 + float(cfg.get("doctest_budget_sec", 1800))),
+            timeout=float(cfg.get("unit_timeout_sec", 20)), prefix_cmd=prefix, scratch=dt_scratch, env=SANDBOX_ENV,
+            load_sec=float(cfg.get("doctest_load_sec", 120)), stall_margin_sec=float(cfg.get("doctest_stall_margin_sec", 30)),
+            restart_limit=int(cfg.get("doctest_module_restart_limit", 8)))
+    except gradelib.RunnerUnavailable as exc:
+        raise EvaluationError("The docstring runner could not be started in the verifier image") from exc
     reap(prefix)
     unit_rows, n_examples = [], 0
     for u in units:
@@ -704,14 +749,15 @@ def measure(context: VerificationContext) -> Measurement:
                           "result": (r or {}).get("status"), "examples_pass": ok})
     metrics["units_examples_passing"] = n_examples
     metrics["tamper"] = sorted(set(tamper))
-    metrics["doctest_seconds"] = round(time.time() - t0, 1)
+    metrics["doctest_seconds"] = round(time.monotonic() - t0, 1)
     metrics["units_not_reached"] = dt_not_reached
     log(f"unit examples: {n_examples}/{U} pass in {metrics['doctest_seconds']}s; self-check failures={tamper[:3]}")
 
     # 3. recorded calls, replayed in the sandbox and compared here with the reference results
-    t0 = time.time()
+    t0 = time.monotonic()
     uid_of = {v[0]: v[1] for p in payload.values() for v in p["vectors"]}
-    vres = run_vectors(payload, restored, prefix, scratch=scratch, pub=pub, cand_nt=cand_nt, cfg=cfg, cpus=cpus)
+    vres = run_vectors(payload, restored, prefix, scratch=scratch, pub=pub, cand_nt=cand_nt, cfg=cfg, cpus=cpus,
+                       deadline=min(deadline, t0 + float(cfg.get("vector_budget_sec", 1200))))
     reap(prefix)
     v_pass, vrows = 0, {}
     for vid, g in gold.items():
@@ -721,7 +767,7 @@ def measure(context: VerificationContext) -> Measurement:
         vrows[vid] = ok
     metrics["vectors_passing"] = v_pass
     metrics["vectors_not_reached"] = sum(1 for vid in gold if uid_of.get(vid) in restored and vid not in vres)
-    metrics["vector_seconds"] = round(time.time() - t0, 1)
+    metrics["vector_seconds"] = round(time.monotonic() - t0, 1)
     log(f"reference comparison: {v_pass}/{V} recorded calls match in {metrics['vector_seconds']}s")
     per_unit = collections.defaultdict(lambda: [0, 0])
     for vid, ok in vrows.items():
@@ -741,11 +787,12 @@ def measure(context: VerificationContext) -> Measurement:
     with open(os.path.join(art, "unit_results.json"), "w", encoding="utf-8") as f:
         json.dump(unit_rows, f)
 
-    # 4. sealed upstream tests, on the tree that has them
-    t0 = time.time()
+    # 4. sealed upstream tests, on the tree that has them, with the time the measurement has left
+    t0 = time.monotonic()
     subprocess.run(["chmod", "-R", "a+rX,go-w", cand], check=False)
     sealed_result = run_sealed_tests(
-        sealed_ids, prefix, metrics["notes"], scratch=scratch, pub=pub, cand=cand, art=art, cfg=cfg, cpus=cpus)
+        sealed_ids, prefix, metrics["notes"], scratch=scratch, pub=pub, cand=cand, art=art, cfg=cfg, cpus=cpus,
+        deadline=deadline)
     outcome, tw_ok, timed_out = sealed_result.outcome, sealed_result.selfcheck_ok, sealed_result.timed_out
     metrics["pytest_runs"] = sealed_result.runs
     metrics["pytest_passes"] = sealed_result.passes
@@ -760,7 +807,7 @@ def measure(context: VerificationContext) -> Measurement:
         t_pass = 0
     metrics["tests_reported"] = sum(1 for t in sealed_ids if t in outcome)
     metrics["tests_not_reached"] = T - metrics["tests_reported"]
-    metrics["pytest_seconds"] = round(time.time() - t0, 1)
+    metrics["pytest_seconds"] = round(time.monotonic() - t0, 1)
     metrics["pytest_timed_out"] = timed_out
     log(f"sealed tests: {t_pass}/{T} pass in {metrics['pytest_seconds']}s; self-check ok={tw_ok}")
     with open(os.path.join(art, "sealed_test_failures.json"), "w", encoding="utf-8") as f:

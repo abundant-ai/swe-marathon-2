@@ -2,19 +2,24 @@
 
 usage: rdoctest.py <cand_root> <module> <names.json> <out_path> <nonce> [timeout_sec]
 
-Appends one line per unit to <out_path>:  <nonce> <json>
-The examples run the way SymPy's own doctest runner runs them: empty globals,
+Appends one line per unit to <out_path>:  <nonce> <json>, after one line that says the module
+was imported. The examples run the way SymPy's own doctest runner runs them: empty globals,
 plain-text printing, ELLIPSIS | NORMALIZE_WHITESPACE | IGNORE_EXCEPTION_DETAIL.
+Every unit's random generators are seeded from its name, so one tree gives the same
+result each time. After a unit that runs out of time the runner checks itself and
+exits with status 3, so that the units behind it run in a fresh process.
 """
 from __future__ import annotations
 
 import io
 import json
 import os
+import random
 import re
 import signal
 import sys
 import time
+import zlib
 
 cand_root, module_name, names_path, out_path, nonce = sys.argv[1:6]
 timeout = float(sys.argv[6]) if len(sys.argv) > 6 else 20.0
@@ -50,12 +55,14 @@ try:
     from sympy.printing.pretty.pretty import pprint_use_unicode
 
     module = importlib.import_module(module_name)
+    tests = {t.name: t for t in SymPyDocTestFinder().find(module) if t.examples}
 except BaseException as e:  # noqa: BLE001
     import traceback
 
     tb = traceback.format_exc()
     emit({"module_error": f"{type(e).__name__}: {e}"[:600], "blocked_by": sorted(set(RESTORE_RE.findall(tb))), "tb": tb[-1500:]})
     sys.exit(0)
+emit({"loaded": True})
 
 
 class _Timeout(KeyboardInterrupt):
@@ -71,7 +78,21 @@ signal.signal(signal.SIGALRM, _alarm)
 FLAGS = pdoctest.ELLIPSIS | pdoctest.NORMALIZE_WHITESPACE | pdoctest.IGNORE_EXCEPTION_DETAIL
 
 
+def reseed(name):
+    """The same random numbers for a unit on every run: Python's and both of SymPy's generators."""
+    value = zlib.crc32(name.encode("utf-8"))
+    random.seed(value)
+    try:
+        from sympy.core import random as sympy_random
+
+        sympy_random.rng.seed(value)
+        sympy_random._assumptions_rng.seed(value)
+    except BaseException:  # noqa: BLE001
+        pass
+
+
 def run_one(test):
+    reseed(test.name)
     runner = SymPyDocTestRunner(verbose=False, optionflags=FLAGS)
     runner._checker = SymPyOutputChecker()
     test.globs = {}
@@ -116,7 +137,7 @@ def run_one(test):
     return rec
 
 
-tests = {t.name: t for t in SymPyDocTestFinder().find(module) if t.examples}
+timed_out = False
 for name in names:
     t = tests.get(name)
     if t is None:
@@ -125,6 +146,10 @@ for name in names:
     rec = run_one(t)
     rec["name"] = name
     emit(rec)
+    if rec["status"] == "timeout":
+        # an interrupted body can leave global state behind: the units after it get a new process
+        timed_out = True
+        break
 
 # tripwires: the runner must still be able to tell right from wrong
 parser = pdoctest.DocTestParser()
@@ -132,3 +157,5 @@ bad = parser.get_doctest(">>> 1 + 1\n3\n", {}, "tripwire_bad", None, 0)
 good = parser.get_doctest(">>> 1 + 1\n2\n", {}, "tripwire_good", None, 0)
 rb, rg = run_one(bad), run_one(good)
 emit({"tripwire": bool(rb["status"] == "fail" and rg["status"] == "pass")})
+out_f.close()
+os._exit(3 if timed_out else 0)

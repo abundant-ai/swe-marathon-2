@@ -3,7 +3,7 @@
 FILE_A, FILE_B = "pkg/tests/test_a.py", "pkg/tests/test_b.py"
 A = [f"{FILE_A}::test_{i}" for i in range(1, 7)]
 B = [f"{FILE_B}::test_1", f"{FILE_B}::test_2"]
-BUDGET_NOTE = "sealed test run hit its time budget; unfinished tests count as failed"
+BUDGET_NOTE = "the measurement's time ran out during the sealed tests; the tests without an outcome were not reached"
 
 
 def ids_by_tag(data):
@@ -118,6 +118,10 @@ def test_watcher_tells_an_ended_run_from_a_stalled_one_and_from_the_budget(scena
     stop = data["starts_then_stops"]
     assert stop["state"] == "stalled" and stop["test_started"] is True and stop["seconds"] < 10
     assert data["budget"]["state"] == "budget"
+    # records an earlier run left in the file are not this run's progress
+    left = data["earlier_records"]
+    assert left["state"] == "stalled" and left["test_started"] is False and left["seconds"] < 10
+    assert data["ends"]["code"] == 0 and data["budget"]["code"] is None
     assert all(run["seconds"] < 20 for run in data.values())
 
 

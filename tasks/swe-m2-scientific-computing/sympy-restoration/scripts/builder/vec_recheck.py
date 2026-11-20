@@ -36,7 +36,10 @@ def replay(seed):
         out = {}
         try:
             for line in open(op):
-                r = json.loads(line); out[r["v"]] = r["c"]; slow[r["v"]] = max(slow.get(r["v"], 0), r.get("ms", 0))
+                r = json.loads(line)
+                if "v" not in r:   # the line that says the module was imported
+                    continue
+                out[r["v"]] = r["c"]; slow[r["v"]] = max(slow.get(r["v"], 0), r.get("ms", 0))
         except OSError:
             pass
         return out

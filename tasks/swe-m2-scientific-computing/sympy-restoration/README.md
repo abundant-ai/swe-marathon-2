@@ -162,6 +162,31 @@ It does not yet meet the v2 workload target; see [Workload](#workload) and
   seconds after writing. 50 checks pass: the setup and collect hooks run whole
   under dash with stand-ins for root and Linux tools; a write after the end is
   refused and an honest delivery is taken; every way a mark can fail is an error.
+- Verifier robustness. The docstring phase crashed the verifier (an evaluation
+  error) when its budget ran out: a job returned six values where eight were
+  read. It also drew random inputs unseeded, and one process that ended or hung
+  inside a builtin failed every unit of its module. Each module's runner now
+  runs under the process watcher, a death or a stall fails only the unit that was
+  running, a used-up budget leaves a row for every unit, results count only from
+  runs that reached their own self-check, and every unit's generators are seeded
+  from its name (the agent's `restore check` does the same and restarts behind a
+  failing unit). Both runners now say when their module is imported, so an
+  import that never finishes fails its module in one start instead of one unit
+  per restart, and a run that reported every unit but died before its self-check
+  counts nothing without blaming a unit. The call replay no longer gives a job up
+  after two barren starts: a barren start costs only its unit, and a timeout
+  restarts the runner.
+  Fixed wall-clock budgets let host load fail the tests: three graded runs lost
+  47 to 192 tests to the 40-minute test budget while a third of the verifier's
+  time sat unused. The measurement now has one deadline (6,000 s); the test phase
+  takes what the earlier phases leave; deadlines use the monotonic clock; a
+  restarted job's old records no longer count as its progress; when a verdict
+  would turn on items not reached the evaluation is an error, not a 0. Submitted
+  code runs under a 4 GiB address-space limit where one can be set. 61 checks
+  pass. On real SymPy (Python 3.12, outside the sandbox) the rewritten runners and
+  drivers pass 62 of 62 units and match 287 of 287 calls of two modules of the
+  original tree, and give the same statuses twice on a stored submission whose
+  examples draw random inputs.
 
 ## Current implementation
 
@@ -338,18 +363,38 @@ The verifier runs in a separate image with only `/app/sympy` from the candidate.
    Nothing else from the submission is used. A body containing constructs for
    reaching the process, the file system, the interpreter or a test framework is
    rejected (`common/restorelib.py`).
+   The whole measurement has one deadline, 6,000 s from its start
+   (`measure_budget_sec`), inside the verifier's 6,600 s. The docstring and call
+   phases also have their own caps; the test phase has what they leave. Every
+   deadline is on the monotonic clock. Submitted code runs with a 4 GiB
+   address-space limit where `prlimit` can set one (a note says when it cannot).
 2. Docstring examples. Each restored unit's own examples, run the way SymPy's
-   doctest runner runs them, 20 seconds per unit, 30 minutes in total.
+   doctest runner runs them, 20 seconds per unit, at most 30 minutes in total.
+   Python's and both of SymPy's random generators are seeded from the unit's name
+   before its examples run, so a unit's draw is the same in every grading (and in
+   `restore check`). One process runs the units of one module, watched: 2 minutes
+   to import, then at most 50 seconds without a record. A unit's result counts
+   only when its process reached its own closing self-check. When a process ends,
+   or stops, without it, the unit it was running fails (`crash`, or `timeout` when
+   it stopped) and the rest of the module runs again in a new process, at most
+   eight times per module; after a unit that ran out of time the runner checks
+   itself and exits, and the units behind it run in a new process, since an
+   interrupted body can leave global state behind. Units left when the time is
+   up count as not reached.
 3. Recorded calls. 13,384 calls, at least one per unit, replayed one at a time in
-   the sandbox with a 10-second limit, 20 minutes in total. The sandbox writes
-   the result; the verifier compares it with the reference result, which the
-   sandbox cannot read. Arguments were recorded from SymPy's own test suite and,
-   for units it never calls directly, from docstring examples. One process
+   the sandbox with a 10-second limit, at most 20 minutes in total. The sandbox
+   writes the result; the verifier compares it with the reference result, which
+   the sandbox cannot read. Arguments were recorded from SymPy's own test suite
+   and, for units it never calls directly, from docstring examples. One process
    replays the calls of one module. If it ends by itself or stays silent for 40
    seconds, the call it was on does not match and the calls behind it are
-   replayed in a new process, at most eight times per module. The random
-   generators are seeded from the call id before every call, so one tree gives
-   the same result each time it is graded.
+   replayed in a new process; if not even the first call of that start returned,
+   the rest of that call's unit does not match either and the job resumes at the
+   next unit. After a call that ran out of time the runner exits and the calls
+   behind it run in a new process. A job ends after 16 starts that ended or
+   stopped. The random generators (Python's and both of SymPy's) are seeded from
+   the call id before every call, so one tree gives the same result each time it
+   is graded.
 4. Repository tests. 10,428 upstream test cases that pass on the original and
    fail or cannot be collected on the skeleton, each under 8 seconds on the
    original. 7,896 are in the candidate's tree, 2,532 are withheld. 60 seconds
@@ -364,8 +409,9 @@ The verifier runs in a separate image with only `/app/sympy` from the candidate.
    only while it keeps settling tests, never once pytest has reported it as
    uncollectable, and at most four times. A test that was running when its run
    ended gets one more run; left unfinished twice, or named by a session as the
-   test that ended it, it counts as failed. All of this stays inside the 40
-   minutes.
+   test that ended it, it counts as failed. All of this stays inside the time the
+   measurement has left; a test without an outcome then is not reached, and is
+   reported as such.
 
 Submitted code runs only as user `nobody`, which cannot read the verifier code,
 the private inputs, the submitted tree or the output directory. While examples
@@ -410,8 +456,12 @@ partial_score = (units_passing + calls_matching + tests_passing) / 26483
 - Reward is binary. A library with 4% of its functions wrong is not a usable
   restoration, so there is no credit for it in the reward; `partial_score` and the
   three shares in `metrics.json` carry the progress signal for analysis.
-- Denominators are fixed. A unit that is not restored, a call or test that is not
-  reached within its budget, a skipped or errored test: each counts as failed.
+- Denominators are fixed. A unit that is not restored, a skipped or errored test:
+  each counts as failed. Units, calls and tests not reached before the deadline
+  are counted in `metrics.json` (`units_not_reached`, `vectors_not_reached`,
+  `tests_not_reached`); when every other condition is met and a missed bar would
+  be met if those items passed, the time, not the submission, would decide, so
+  the evaluation ends with an error and no reward.
 - A tree that did not arrive, or arrived without the collect step's signed mark
   or not as the mark lists it, is an evaluation error. A delivery the collect
   step refused or found absent, or a tree with no restored unit, fails
@@ -514,6 +564,8 @@ Proximus on the v1 package, base experiment, 2026-11-17:
 | --- | --- | --- |
 | `checks/` (35 tests) | working tree, 2026-11-17 and 2026-11-19 | pass |
 | `checks/` (50 tests): delivery hooks under dash with stand-ins, a late write refused, an honest delivery taken, every failing mark an evaluation error, the net check's arming and handshake probe | working tree, 2026-11-20 (delivery) | pass; the hooks have not run on the platform |
+| `checks/` (61 tests): the real docstring runner and driver on a stand-in package (a death, a silent block and a timeout each cost one unit; a seeded draw passes twice; an import that never finishes fails its module in one start; a run that dies after its last unit counts nothing; a used-up budget gives a row per unit; `measure()` completes through it; `restore check` fails only the culprit), call replay (a barren start costs only its unit; a timeout restarts behind it; a hung import ends the job in one start), one deadline under the verifier limit, an unreached verdict is an evaluation error, the address-space limit and its fallback | working tree, 2026-11-20 (verifier robustness) | pass |
+| Rewritten runners and drivers on real SymPy (Python 3.12, no sandbox) | original tree: `combinatorics.permutations` and `combinatorics.group_numbers`; a stored submission: `group_numbers` twice, `ntheory.generate`, `ntheory.residue_ntheory`, `polys.euclidtools` | original: 62 / 62 units, 287 / 287 calls; submission: identical statuses in both runs, 48 pass and 22 fail with no lost unit |
 | `oddish preflight` | bundles `e043dc4facdd` and `8180b51500b1` | pass |
 | Reference and no-op baselines on Oddish | bundle `e043dc4facdd` (v1 instruction text, v2 verifier), task version 1, experiment `sympy-restoration-v2-20261117` | reference 1.0 twice (2,671 / 13,384 / 10,428, five checks passed, grading 652 s and 691 s); no-op 0.0 twice (`candidate_tree` failed, four checks skipped, report `completed`) |
 | Reference and no-op baselines on Oddish | bundle `8180b51500b1` (rewritten instruction and tool text), task version 2, experiment `sympy-restoration-v2-final-20261117` (https://www.oddish.app/experiments/0b7a142f) | reference 1.0 twice (trials 9, 10: 2,671 / 13,384 / 10,428, five checks passed, grading 658 s and 649 s); no-op 0.0 twice (trials 11, 12). A first attempt at 04:47 UTC targeted the version-1 experiment and created no trials |
@@ -584,6 +636,5 @@ uv run --frozen pytest -q tasks/swe-m2-scientific-computing/sympy-restoration/ch
   present; claude-code and Proximus must start and work as `dev`; the flat
   single-step bundle must run the hooks. If the net check's probe does not see
   the opening there, certify copies taken while egress was closed instead.
-- Decide whether to raise the 40-minute test budget (base trial 6, trial 16).
 - Proximus on Oddish cannot run a task that declares steps; either it learns to
   run a one-step task or every v2 task needs a single-step variant.
