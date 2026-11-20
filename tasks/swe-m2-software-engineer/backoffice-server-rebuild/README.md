@@ -13,6 +13,84 @@ One step is implemented. See [Remaining work](#remaining-work).
 
 ## Development log
 
+### 2026-11-20 (round 11: the Oddish source audit of version 9; the corpus without its recording record; version 10)
+
+- Version 9 (bundle `43cf2c2534a4`) passed its baselines on Oddish (reference 1.0 twice, no-op 0.0
+  twice), and its pre-trial source audit raised one must-fix: `tests/private/scenarios.json.gz`
+  opened with a record of the recordings that produced it. Its top level was
+  `{"recorded_with": {...}, "scenarios": [...]}`, and `recorded_with` held the counts, the themes
+  the filter left out, the legacy commit, the media manifest's digest, the private seed the hidden
+  scenarios are drawn from and the live recorder's settings: notes for the task's authors inside
+  the delivered package, although only the verifier image receives the file. Nothing read it: the
+  verifier and `scripts/scan_uploads.py` step over every key but `scenarios`. Round 11 is one
+  commit on `a48d2de`.
+- The writer. `scripts/record_scenarios.py` writes the corpus as `{"scenarios": [...]}` and the
+  record, with the corpus's SHA-256, to `experiment/recording.json`, which is Git-ignored with the
+  rest of `experiment/` and never packaged (for another `--out` the record goes beside it as
+  `NAME.recording.json`, and a record path inside `steps/` or `environment/` is refused).
+  `scripts/package_step.py` refuses a corpus whose top level holds anything besides `scenarios`,
+  so an older recording cannot bring the record back.
+- No re-record. The corpus on disk was split byte for byte: the 432-byte `"recorded_with":{...},`
+  segment was cut out (97,917,277 bytes, SHA-256 `94fa5f9f...`, became 97,916,845 bytes,
+  `3cd1a9c8...`); each of the 2,262 scenarios was checked to be exactly what the changed recorder
+  writes for it, so the file is the one a fresh recording from the same seeds gives; and the old
+  file was rebuilt exactly from the two new files before either replaced it. Between the shipped
+  files of the two bundles: the decompressed new corpus is the old one without that segment, the
+  two `scenarios` arrays are the same 97,916,830 bytes (SHA-256 `9f5ebb02...`), and the verifier's
+  own reader yields the same 2,262 scenarios in the same order from both. Neither private seed
+  appears anywhere in the new bundle; the old one held the scenarios seed in that record and
+  nowhere else.
+- A sweep of the whole new bundle, before the audit sees it: all 1,161 files, the text files read
+  whole, the corpus decompressed and walked record by record (its keys at every level, its words by
+  where they occur), the 384 bytecode files unmarshalled for their strings and docstrings, the other
+  binaries' printable runs, and the metadata of the 511 media files (PDF information, EXIF,
+  container tags), against the platform's word list (grade, score, verif, harness, oddish, modal,
+  harbor, cap, budget, attempt, audit, QA, round N, trial, author, seed, recorded) and a list of
+  authoring words (recorders, seeds, commits, probes, reviews, dates, local paths, tool and
+  infrastructure names). Two more files held such items, fixed:
+  - `solution/solve.sh` first checked that the sealed server answered and gave a workspace, as the
+    agent's user (round 4, from QA 20): a probe for the authors, the kind the audit raised in
+    BasedPL's solution. The solution now only runs `oracle.py`. A sealed server that does not come
+    up still fails the setup hook, which stops the trial; one that dies later in a reference run is
+    no longer caught by the reference's own row.
+  - `tests/verifier/replay.py`: the deadline's comment gave the reference's time to replay the
+    corpus "on a laptop", and two docstrings explained the `{ws}` placeholder and the bodies built
+    around media files by what the recorder did. All three now describe the data alone; the code is
+    unchanged (the same syntax tree once docstrings are set aside).
+
+  Kept after reading each in context: the verifier's own terms (`[verifier]` keys, attempts, the
+  retry budget, `noqa`, the privilege probe it runs before the server starts, the scratch places
+  it sweeps), the application's own words in its bytecode, its client and its recorded answers
+  (budgets, the trial balance, `payment_recorded`, an audit log, delivery attempts, demo seeding,
+  idempotent replays, EAN parity, a date in a docstring's example), `task.toml`'s authors (the v2
+  schema requires them), the instruction's "copies we make for training and trials", the
+  `uv export` header of the two requirements files, and the metadata real files carry (PDF
+  producers, camera makes, FFmpeg's encoder tags). No shipped file holds a local path or a
+  person's name besides `task.toml`'s authors, and none names the platform or its providers (the
+  verifier names Docker's defaults and gVisor as kinds of machine it copes with). The scenario
+  records hold `id`, `theme`, `steps`, `units` and, describing the scenario, `kind` (media),
+  `start`, `days` and `restart` (months of trading): kept, since the scenarios stay byte for byte.
+- Checks: a new one, `test_the_packager_ships_no_corpus_that_carries_how_it_was_recorded`, plants
+  three extra top-level keys and has each refused; the recording check pins the corpus's one key
+  and the record beside it (the seed, the legacy commit, the themes left out, the live settings and
+  the corpus's digest); the bundle check pins the packaged corpus's one key, no record or seeds file
+  anywhere in the bundle, and a `solve.sh` that only runs `oracle.py`; the upload scan's fixture no
+  longer carries a `recorded_with`. Round 10's packager, given a corpus with `recorded_with`, packs
+  it. `checks/` has 46 tests; with `ci_checks` (27), 73 pass under Python 3.13, and
+  `ci_checks/check_repository.py` passes.
+- The regrade uses only bundle `7a92d0bd02fe`: its `solution/` installed from an isolated copy by
+  its own `oracle.py` (only the interpreter path swapped for this Mac), its corpus and its media,
+  with Python's bytecode writing off. It scores 1.0 on every unit: 4,002 of 4,002 (2,262 of 2,262
+  scenarios), 9 planned restarts, no other restart, no second try, no answer of 500 or above, no
+  note, 52 scenarios alone, in 530.6 s; the slowest request took 4.7 s, the evaluation peaked at
+  573 MiB resident, and `DATA_DIR` held 1.42 GB at the end. The regrade calls `oracle.py` itself,
+  so `solve.sh` is checked by the bundle check, not here.
+- Bundle `7a92d0bd02fe` (1,161 files, 247.3 MB) built twice with the same hash; flat
+  `c857be171e8c`, also twice. Against round 10's `43cf2c2534a4` it differs in
+  `tests/private/scenarios.json.gz`, `solution/solve.sh` and `tests/verifier/replay.py` and
+  nothing else. `scripts/scan_uploads.py` finds nothing among the 496 agent-image files (2,262
+  scenarios, 89,524 requests); Oddish preflight passes. It is the candidate for version 10.
+
 ### 2026-11-20 (round 10: QA 07h on round 9; a wait that cannot end without the firing; version 9)
 
 - QA 07h, the narrow re-check of round 9 (`e132ce5`, bundle `e129cb7c2b1b`), passed with no
@@ -874,7 +952,7 @@ One step is implemented. See [Remaining work](#remaining-work).
 | --- | --- |
 | Step `01-rebuild-server` | Implemented: instruction, agent image with the sealed server, separate verifier image, reference solution. |
 | Further steps | Not designed. Candidates: a follow-up change request on the rebuilt server; importing a year of legacy data. The maintenance timer is built for one step: a second one needs it armed per step first (Remaining work, QA 07h F5). |
-| Private inputs | `steps/01-rebuild-server/tests/private/scenarios.json` and the private files they upload (`experiment/media/private`, made with `--big`), Git-ignored, produced by `scripts/record_scenarios.py --count 2160 --runs 44 --term 6 --kill 3 --screens 8` from the private seeds in `experiment/seeds.json` (never committed; rotated in round 3). |
+| Private inputs | `steps/01-rebuild-server/tests/private/scenarios.json` and the private files they upload (`experiment/media/private`, made with `--big`), Git-ignored, produced by `scripts/record_scenarios.py --count 2160 --runs 44 --term 6 --kill 3 --screens 8` from the private seeds in `experiment/seeds.json` (never committed; rotated in round 3). The corpus holds `scenarios` alone; how it was recorded (the seed, the legacy commit, the themes left out, the media set's digest, the live recorder's settings) is in `experiment/recording.json` with the corpus's SHA-256, never committed or packaged (round 11). |
 | Oracle | The reference server, shipped as Python 3.12 bytecode in the solution's data, installed as the delivered server and run on the packages in `/opt/py`. |
 | Ratings (`harbor check`) | Not run. |
 
@@ -1198,7 +1276,7 @@ not yet exercised in a container; 10 keeps a residual the owner decides).
 | 1 | Read the sealed server's code and copy it | File permissions in the agent image; what the bundle and its layers hold | Inspected by adversarial QA 04 and 08 (2026-11-19): as the agent's user, the bytecode, the database and `/proc/<pid>/{mem,environ}` of the sealed server are not readable. Not executed in a container | Server files are owned by user `stockwell`, mode 0700, and the agent runs as `dev`. Round 3 (QA 08): the bundle carries the reference as Python 3.12 bytecode only, for the sealed server and the solution, so no layer of either image holds its source (the build fails on a `.py`); every start of the sealed server first checks as `dev` that `/opt/stockwell` cannot be read or entered and fails the setup hook, which stops the trial, if it can. `/opt/py` holds only public third-party packages | A way to become root or `stockwell` inside the container; bytecode can be decompiled by anyone who has the bundle | Probe as `dev`: read `/opt/stockwell`, `/proc/<pid>/mem`, ptrace | 🟡 YELLOW / UNASSESSED |
 | 2 | Agent harness starts as root and hands the model a root shell | Harness and `[agent] user` on Oddish | Not tested on Oddish | `user = "dev"` in `task.toml` | Depends on each harness honouring it | Short model trial that prints `id` | 🟡 YELLOW / UNASSESSED |
 | 3 | Deliver a proxy to the sealed server | Separate verifier image | By design | The verifier image has no reference server and no network | None found | Keep | 🟢 GREEN / LOW |
-| 4 | Replay a table of recorded answers, including answers collected for inputs the agent already holds | Private scenarios; what the agent image holds | QA 06 (2026-11-19): the 19 Stockwell test fixtures shipped in `/app/samples` were uploaded byte for byte by the hidden `files` scenarios; fixed in round 1, and `scripts/scan_uploads.py` checks every bundle. QA 05 (2026-11-19): a crawl of a fresh workspace, a day counter and cheap rules cover 2.2 to 3.5% of round 2's units, through screens the month never changed (67 of 343) and legacy scenarios whose every write is refused (53); left out in round 3 | Scenarios come from a private seed, rotated in round 3 and kept out of the repository: 89,524 requests in 2,262 scenarios (4,002 units), 44 of them months of trading from four start dates whose supplier invoices are made for each purchase order. No screen that answers as a fresh workspace on the same day and no legacy scenario that changes nothing is kept, and every count and kit scenario does its work. The private media share no file and no name with the samples, and the bundle check fails on any hidden upload, cut-short upload or file answer the agent image holds | A table cannot cover them; the generators' shape could be guessed only in outline | Measure a lookup-table submission on the round 3 corpus | 🟢 GREEN / LOW |
+| 4 | Replay a table of recorded answers, including answers collected for inputs the agent already holds | Private scenarios; what the agent image holds | QA 06 (2026-11-19): the 19 Stockwell test fixtures shipped in `/app/samples` were uploaded byte for byte by the hidden `files` scenarios; fixed in round 1, and `scripts/scan_uploads.py` checks every bundle. QA 05 (2026-11-19): a crawl of a fresh workspace, a day counter and cheap rules cover 2.2 to 3.5% of round 2's units, through screens the month never changed (67 of 343) and legacy scenarios whose every write is refused (53); left out in round 3 | Scenarios come from a private seed, rotated in round 3 and kept out of the repository and, since round 11, out of the bundle (the corpus carried it in a `recorded_with` record until then): 89,524 requests in 2,262 scenarios (4,002 units), 44 of them months of trading from four start dates whose supplier invoices are made for each purchase order. No screen that answers as a fresh workspace on the same day and no legacy scenario that changes nothing is kept, and every count and kit scenario does its work. The private media share no file and no name with the samples, and the bundle check fails on any hidden upload, cut-short upload or file answer the agent image holds | A table cannot cover them; the generators' shape could be guessed only in outline | Measure a lookup-table submission on the round 3 corpus | 🟢 GREEN / LOW |
 | 5 | Submitted server attacks the verifier process or its files, or exhausts processes, memory or disk so that the evaluation publishes no reward | Verifier sandbox | QA 10: a set-user-id binary could run as root; fixed. QA 07 F2: a full process table or disk lost the reward; fixed in round 3. QA 07c F1 and F3 (round 3 re-check): a chunked answer with size `-1` made http.client read the whole stream (300 MiB grew the verifier by 848 MiB); the server could lower its own OOM priority without CAP_SYS_RESOURCE; on providers that pack `/logs/verifier` before reading the reward, a full disk, a 4 GiB `server.log` or appends to it during the pack lost the reward. F1(a), F2 and F3 fixed in round 4, the `-1` case a check. QA 07d M3: the priority raised once a second is a race a server can win on purpose where no cgroup can be made (Docker's defaults, Archil), and the grader, the largest process at 0, then dies with no reward; narrowed in round 5. QA 07e M3: round 5's guard summed only memory the server's processes map, so SysV segments, memfds and `/dev/shm` files no process maps were invisible: a server could park the container's memory under its limit and have the grader killed within a millisecond (round 5's "1.5 GB within 50 ms" was wrong); S-a: the per-process sum could also count shared pages and a fork's pages more than once. Fixed in round 6, with checks that fail against round 5 | Runs as `nobody` through `setpriv --no-new-privs` under `prlimit` (4,096 threads, 4 GiB files, 6 GiB address space per process) and a cgroup where one can be made. The server's memory is read every 10 ms from what the kernel charges (the container's memory cgroup, or a virtual machine's own meminfo, never gVisor's, whose MemAvailable is MemFree; QA 07f S2), less the grader's own and what was in use before it started, so every page counts once whatever holds it; above 6 GiB, as the instruction states with shared memory included, the server is stopped for good. Every stop and halt removes its user's SysV objects and memory-backed files. Every 50 ms its processes are put back at OOM priority 1000; the grader asks for a low priority (it stays at 0 without CAP_SYS_RESOURCE) and keeps the corpus as compact text and uploads in a bounded cache. Every byte of an answer counts against the limit and chunk sizes are strict. The server's output goes to a pipe the grader drains (first and last MiB kept), so it holds no file of the grader's. A 256 MiB ballast is given back for the results, and a guard stops the server for good under 512 MiB free on a disk it can write that had room when it started. The cleanup never forks, never raises and finds what hides (9); the reward goes over a placeholder and is never taken back once published, and a grader that dies leaves no reward file, so the result is an evaluation error, never a 0 | Not exercised in a container. Where the cgroup or meminfo can be read, the race needs the rest of the machine (about 1.4 GB on 8 GiB) filled within one 10 ms tick after the server lowers its priority. Where neither can be read, the per-process fallback does not see a memfd no process maps. Either way a grader killed for memory leaves an evaluation error, not a 0. A disk burst within the guard's one-second disk check can still fill the disk, which costs the diagnostics but not the reward or its retrieval (the ballast) | QA 07e's red-team item 1 (park 7.5 GiB in SysV segments, lower the priority after the guard's raise, allocate 20 MB) and S-a's 3.5 GiB server that spawns a child per request; 07d's item 3 and 07c's OOM floor, `-1` chunk with 3 GB, full disk and big output on each provider | 🟡 YELLOW / MEDIUM |
 | 6 | Tamper with reward files | Separate verifier container | By design | Verifier starts fresh with only `/app/server`; the server cannot become root (5) and cannot reach `/logs/verifier` | None found | Keep | 🟢 GREEN / LOW |
 | 7 | Replace `/app/server` with a link to `/opt/stockwell/app`, so that Harbor's collector, running as root, copies the sealed bytecode into the trial artifacts and the verifier. Leaks the private reference; no reward (the copy has no `run`) | Ownership of `/app` in the agent image; Harbor's collector; the delivery hook | QA 04 (2026-11-19), traced in Harbor 0.20: `tar -czf ... -C /app/server .` as root follows the top-level link, and GNU tar stores links below it as links. Not executed | `/app` is root's with the sticky bit and `/app/server` root's and writable by everyone: the agent creates and changes anything inside it but cannot remove, rename or replace it. The delivery hook (11) copies what links point to only as `dev`, who cannot read `/opt/stockwell`, so such a link is removed as dangling | A provider whose collector follows links below the top; not executed in a container | In the next container run, as `dev`: `rm -rf /app/server` and `mv /app/server x` fail, and a link to `/opt/stockwell` is removed by the hook | 🟡 YELLOW / MEDIUM |
@@ -1215,6 +1293,12 @@ not yet exercised in a container; 10 keeps a residual the owner decides).
 
 | Check | Revision | Result |
 | --- | --- | --- |
+| Reference through the verifier, local, no sandbox | round 11: everything from bundle `7a92d0bd02fe`, its solution installed from an isolated copy (only the interpreter path swapped for this Mac), its corpus and its media | 1.0 on every unit: 4,002 of 4,002 (2,262 of 2,262 scenarios), 9 planned restarts, no other restart, no second try, no answer of 500 or above, no note; 530.6 s of replay against the 5,400 s deadline; 573 MiB peak resident |
+| The shipped corpus | round 11: `scenarios.json.gz` of `7a92d0bd02fe` against that of `43cf2c2534a4` | the new one decompressed is the old one without its 432-byte `"recorded_with":{...},` segment; the `scenarios` arrays are the same 97,916,830 bytes (SHA-256 `9f5ebb02...`); the verifier's reader yields the same 2,262 scenarios in the same order from both; neither private seed anywhere in the new bundle; gzip header without a name or a time |
+| Pre-audit sweep | round 11: every file of `7a92d0bd02fe` (text, the corpus record by record, bytecode strings, binary strings, media metadata) | fixed: the corpus's record, the probe in `solve.sh`, the laptop timing and two recorder mentions in `replay.py`; what remains is listed in the development log |
+| `checks/` (46 tests) with `ci_checks` (27) | round 11 | 73 pass under Python 3.13; `ci_checks/check_repository.py` passes. The new packager check has a corpus with `recorded_with`, `source` or `zz` beside its scenarios refused (round 10's packager packs it); the bundle check pins the packaged corpus's one key, no record or seeds file and a `solve.sh` that only runs `oracle.py` |
+| Bundle | round 11: `7a92d0bd02fe`, 1,161 files, 247.3 MB; flat `c857be171e8c` | built twice with the same hash (the flat one too); Oddish preflight passes; no hidden upload among 496 agent-image files; differs from round 10's `43cf2c2534a4` in the corpus, `solve.sh` and `replay.py` only |
+| Oddish baselines and source audit | round 10: bundle `43cf2c2534a4`, version 9, `--no-archil` | reference 1.0 twice, no-op 0.0 twice (reported by the coordinator); source audit: one must-fix, the corpus's `recorded_with` record (round 11) |
 | Reference through the verifier, local, no sandbox | round 10: everything from bundle `43cf2c2534a4`, its solution installed from an isolated copy (only the interpreter path swapped for this Mac), its corpus and its media | 1.0 on every unit: 4,002 of 4,002 (2,262 of 2,262 scenarios), 9 planned restarts, no other restart, no second try, no answer of 500 or above, no note; 552.1 s of replay against the 5,400 s deadline; 625 MiB peak resident. The first build of this round, `3d0f83058ddb` (one function name apart, in the sweep), the same: 4,002 of 4,002 in 567.7 s, 556 MiB |
 | `checks/` (45 tests) with `ci_checks` (27) | round 10 | 72 pass under Python 3.13; `ci_checks/check_repository.py` passes. The five timer and sweep checks run the scripts under dash; each fails on the broken copy made for it (20 of them) and passes on two unchanged copies. The bundle check's word list for the task's own files in the image fails on the first build's sweep (`trial_pack`) |
 | Bundle | round 10: `43cf2c2534a4`, 1,161 files, 247.3 MB; flat `d533cc11049f` | built twice with the same hash (the flat one too); Oddish preflight passes; no hidden upload among 496 agent-image files; differs from round 9's `e129cb7c2b1b` in `environment/fsmaint-timer` and `environment/fsmaint-sweep` only, and from this round's first build `3d0f83058ddb` (flat `dc452cfabb43`, never uploaded) in the sweep's one function name; no word of the list in either hook |
@@ -1284,7 +1368,7 @@ rm -rf experiment/media/visible experiment/media/private                        
 python3 scripts/make_media.py --out experiment/media/visible --seed 20261121           # the samples
 python3 scripts/trading_media.py --examples experiment/media/visible --seed 20261121    # supplier invoices and delivery files among them
 python3 scripts/make_media.py --out experiment/media/private --seed "$(python3 scripts/seeds.py media)" --big   # full-size large files
-python3 scripts/record_scenarios.py --count 2160 --runs 44 --term 6 --kill 3 --screens 8   # seeds from experiment/seeds.json
+python3 scripts/record_scenarios.py --count 2160 --runs 44 --term 6 --kill 3 --screens 8   # seeds from experiment/seeds.json; the record of the recording goes to experiment/recording.json
 uv run --no-project --python 3.13 python scripts/package_step.py         # compiles the reference with Python 3.12; experiment/dist/bundles/<hash>/<task slug>/
 uv run --no-project --python 3.13 python scripts/package_step.py --flat  # same content without the steps wrapper
 python3 scripts/scan_uploads.py experiment/dist/bundles/<hash>/<task slug>   # hidden uploads or file answers the agent image also holds
@@ -1292,10 +1376,11 @@ python3 scripts/scan_uploads.py experiment/dist/bundles/<hash>/<task slug>   # h
 
 ## Remaining work
 
-- Upload bundle `43cf2c2534a4` (247.3 MB) as version 9 once the model trials on version 8 have
-  settled (an upload could retract their rows), run its baselines with `--no-archil` (reference
-  twice, no-op twice), and have its Oddish source audit pass before any model trial (the owner's
-  gate since version 8). Pass criteria for the reference: 4,002 of 4,002, `planned_restarts` 9,
+- Upload bundle `7a92d0bd02fe` (247.3 MB) as version 10 (version 9, bundle `43cf2c2534a4`, passed
+  its baselines and failed its source audit on the corpus's `recorded_with` record, fixed in round
+  11), run its baselines with `--no-archil` (reference twice, no-op twice), and have its Oddish
+  source audit pass before any model trial (the owner's gate since version 8). Pass criteria for
+  the reference: 4,002 of 4,002, `planned_restarts` 9,
   `restarts` 0, `retried` 0, `unfinished` 0, no answer of 500 or above in
   `server_errors_by_theme`, no note of the hard stop, of a stop for disk or memory, or from the
   collect hook, and `3.5 x elapsed_sec + 300 <= 5,400`. For both baselines: `ended_by_timer: false`

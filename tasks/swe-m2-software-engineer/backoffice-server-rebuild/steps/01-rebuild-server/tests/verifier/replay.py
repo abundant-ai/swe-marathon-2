@@ -88,8 +88,8 @@ SCRATCH = ("/tmp", "/var/tmp", "/dev/shm", "/dev/mqueue", "/run/lock", "/var/loc
 PROC = "/proc"
 START_SEC = 60
 REQUEST_SEC = 30  # wall clock for one request: a big upload or a 200-page PDF needs more than a JSON call
-# the whole replay; the step allows 6,000 s for everything. The reference replays the corpus in about 520 s on a laptop
-# with four cores: a server three times slower than it (the pace the instruction asks for), on a machine three times slower, finishes
+# the whole replay; the step allows 6,000 s for everything. The reference answers the whole corpus in about 520 s on four
+# cores: a server three times slower than it (the pace the instruction asks for), on a machine three times slower, finishes
 DEADLINE_SEC = 5400
 HEALTH_SEC = 30  # how long a live server may leave its health check unanswered before it is restarted
 STOP_SEC = 30  # how long a server stopped with SIGTERM may take to exit before it is killed
@@ -1071,8 +1071,9 @@ def json_bytes(value: Any) -> bytes:
 def inserted_body(step: dict[str, Any], data: bytes) -> bytes:
     """A JSON body with a file's content in one of its fields, as base64 or as UTF-8 text.
 
-    Lets a body of megabytes (a photo sent as base64, a large CSV import) be recorded as a reference to
-    a file in the media folder instead of inside the scenarios; recorder and replay build the same bytes.
+    Lets a body of megabytes (a photo sent as base64, a large CSV import) be kept as a reference to a
+    file in the media folder instead of inside the scenarios; the body built here is, byte for byte, the
+    one the scenario's answers were given for.
     """
     insert = step["body_insert"]
     body = dict(step["body"])
@@ -1217,12 +1218,12 @@ class Media:
 
 
 def expand(value: Any, workspace: str) -> Any:
-    """The recorded answer with this workspace's id put back where the recorder wrote {ws}.
+    """The recorded answer with this workspace's id put back where the scenarios hold {ws}.
 
-    The recorder wrote {ws} for the reference's own workspace id wherever it appeared in the answer
-    (a random `ws_` and 16 hex digits, so never by chance), and braces cannot occur in an id the
-    instruction allows. Putting the candidate's id back in the same places is the exact inverse; the
-    candidate's answer itself is never rewritten.
+    {ws} stands for the reference's own workspace id wherever it appeared in the answer (a random
+    `ws_` and 16 hex digits, so never by chance), and braces cannot occur in an id the instruction
+    allows. Putting the candidate's id back in the same places is the exact inverse; the candidate's
+    answer itself is never rewritten.
     """
     if isinstance(value, str):
         return value.replace("{ws}", workspace) if "{ws}" in value else value

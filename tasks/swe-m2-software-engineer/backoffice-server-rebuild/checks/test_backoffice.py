@@ -29,6 +29,7 @@ MEDIA = TASK / "experiment" / "media" / "private"  # the uploads the media scena
 
 sys.path.insert(0, str(TASK / "scripts"))
 
+import package_step  # noqa: E402
 from reference import checkout, python  # noqa: E402
 
 REFERENCE = checkout()
@@ -97,6 +98,13 @@ def test_recording_is_deterministic_and_never_hits_a_server_error(tmp_path):
     kept = first.read_bytes()
     assert record(tmp_path, 11).read_bytes() == kept
     data = json.loads(kept)
+    # the corpus ships to the verifier image, so it holds the scenarios alone; how they were recorded, the seed included,
+    # goes to the record beside it (experiment/recording.json for the task's own corpus)
+    assert list(data) == ["scenarios"] and kept.startswith(b'{"scenarios":[')
+    recording = json.loads(first.with_suffix(".recording.json").read_text())
+    assert recording["corpus_sha256"] == hashlib.sha256(kept).hexdigest()
+    assert recording["recorded_with"]["legacy"]["seed"] == 11 and {"left_out", "legacy_commit"} <= set(recording["recorded_with"]["legacy"])
+    assert {"runs", "term", "kill", "screens"} <= set(recording["recorded_with"]["live"])
     statuses = {step["status"] for scenario in data["scenarios"] for step in scenario["steps"]}
     assert all(status < 500 for status in statuses) and {200, 201, 403, 409, 422} <= statuses
     themes = {s["theme"] for s in data["scenarios"]}
@@ -209,6 +217,14 @@ def test_bundles_hold_runtime_files_only(tmp_path):
                              prefix + "tests/private/scenarios.json.gz", prefix + "solution/oracle.py", prefix + "solution/data/stockwell/api_routes.pyc",
                              prefix + "solution/data/stockwell.env"):
                 assert (bundle / required).is_file(), required
+            # the corpus ships to the verifier image with its scenarios alone: how they were recorded (the seed, the legacy
+            # commit, the counts left out, the media set's digest) stays in experiment/recording.json, which is never packaged
+            assert package_step.corpus_keys(gzip.decompress((bundle / f"{prefix}tests/private/scenarios.json.gz").read_bytes()).decode()) \
+                == ["scenarios"]
+            assert not [path for path in bundle.rglob("*") if path.name in ("recording.json", "seeds.json") or path.name.endswith(".recording.json")]
+            # the solution only installs the server: it probes nothing of the machine it runs on
+            solve = (bundle / f"{prefix}solution" / "solve.sh").read_text()
+            assert "oracle.py" in solve and not re.search(r"curl|wget|8080|/api/", solve), solve
             # the solution as the platform runs it: from its own folder with nothing of the task around it (the round 4
             # oracle looked beside the task's tree, crashed on Oddish and scored 0): it installs a server that starts
             alone = tmp_path / f"alone-{kind}"
@@ -350,6 +366,26 @@ def test_verifier_reads_the_gzipped_scenarios_the_image_ships(tmp_path):
     assert done.returncode == 0, done.stderr[-2000:]
     result = json.loads(done.stdout.strip().splitlines()[-1])
     assert result["scenarios_total"] == 1 and result["reward"] == 0.0 and result["notes"]
+
+
+def test_the_packager_ships_no_corpus_that_carries_how_it_was_recorded(tmp_path):
+    """Round 11: the shipped corpus opened with `recorded_with` (the counts, the themes left out, the legacy commit, the
+    media manifest's digest, the seed and the live settings), which the verifier never reads. The recorder writes that
+    record apart now, and the packager refuses a corpus whose top level holds anything besides its scenarios."""
+    scenarios = [{"id": "S1", "theme": "t", "steps": []}, {"id": "S2", "theme": "t", "steps": []}]
+    clean = json.dumps({"scenarios": scenarios}, sort_keys=True, separators=(",", ":")) + "\n"
+    assert package_step.corpus_keys(clean) == ["scenarios"] and package_step.corpus_keys(' { "scenarios" : [ ] } ') == ["scenarios"]
+    for number, extra in enumerate(({"recorded_with": {"seed": 1}}, {"source": "x"}, {"zz": [{}]})):
+        name = next(iter(extra))
+        planted = tmp_path / f"corpus-{number}.json"
+        planted.write_text(json.dumps(dict(extra, scenarios=scenarios), sort_keys=True, separators=(",", ":")) + "\n")
+        assert package_step.corpus_keys(planted.read_text()) == sorted([name, "scenarios"])
+        try:
+            package_step.compressed_scenarios(planted)
+        except ValueError as refused:
+            assert name in str(refused)
+        else:
+            raise AssertionError(f"a corpus with {name!r} beside its scenarios was packaged")
 
 
 def test_instruction_and_config_hold_no_session_or_grading_text():
@@ -528,7 +564,7 @@ def test_the_upload_scan_finds_hidden_inputs_the_image_also_receives(tmp_path):
         return {"method": "POST", "path": "/files", "query": {}, "headers": {"content-type": "application/json"}, "body": {"name": "f"},
                 "body_insert": {"field": "content", "file": name, "as": "base64"}, "status": 201, "json": {}}
 
-    corpus = {"recorded_with": {"seed": 1}, "scenarios": [
+    corpus = {"scenarios": [
         {"id": "S1", "theme": "files", "steps": [upload(other), upload(sample)]},
         {"id": "S2", "theme": "files", "steps": [upload(sample[:150]), upload(sample[:10]), raw("photo/q.jpg"), clean]},
         {"id": "S3", "theme": "media", "steps": [raw("photo/p.jpg"), answer, raw("photo/missing.jpg")]},

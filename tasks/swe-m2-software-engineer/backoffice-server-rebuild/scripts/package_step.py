@@ -85,17 +85,65 @@ def compiled(reference: Path) -> dict[str, Path]:
     return out
 
 
-def compressed_scenarios() -> Path:
-    """The scenarios gzipped (a tenth of the size) in chunks, mtime 0 for a stable hash, cached by source content."""
+def corpus_keys(text: str) -> list[str]:
+    """The top-level keys of a corpus document, in order. The scenarios are stepped over one at a time: the whole list
+    decoded at once would take many times the memory.
+
+    Raises:
+        ValueError: The document is not a JSON object.
+    """
+    decoder = json.JSONDecoder()
+
+    def skip(index: int) -> int:
+        return json.decoder.WHITESPACE.match(text, index).end()
+
+    keys, index = [], skip(0)
+    if text[index:index + 1] != "{":
+        raise ValueError("the corpus is not a JSON object")
+    index = skip(index + 1)
+    while text[index:index + 1] != "}":
+        key, index = decoder.raw_decode(text, index)
+        keys.append(key)
+        index = skip(index)
+        if text[index:index + 1] != ":":
+            raise ValueError(f"expected ':' at offset {index}")
+        index = skip(index + 1)
+        if key == "scenarios" and text[index:index + 1] == "[":
+            index = skip(index + 1)
+            while text[index:index + 1] != "]":
+                _, index = decoder.raw_decode(text, index)
+                index = skip(index)
+                if text[index:index + 1] == ",":
+                    index = skip(index + 1)
+            index += 1
+        else:
+            _, index = decoder.raw_decode(text, index)
+        index = skip(index)
+        if text[index:index + 1] == ",":
+            index = skip(index + 1)
+    return keys
+
+
+def compressed_scenarios(source_path: Path = SCENARIOS) -> Path:
+    """The scenarios gzipped (a tenth of the size) in chunks, mtime 0 for a stable hash, cached by source content.
+
+    Raises:
+        ValueError: The corpus holds anything besides its scenarios. It ships to the verifier image, so how it was
+            recorded stays in experiment/recording.json (scripts/record_scenarios.py), which is never packaged.
+    """
+    keys = corpus_keys(source_path.read_bytes().decode("utf-8"))
+    if keys != ["scenarios"]:
+        raise ValueError(f"{source_path} holds {keys}: only `scenarios` ships; record it again with scripts/record_scenarios.py, which "
+                         "keeps how it was recorded in experiment/recording.json")
     digest = hashlib.sha256()
-    with open(SCENARIOS, "rb") as source:
+    with open(source_path, "rb") as source:
         for chunk in iter(lambda: source.read(1 << 20), b""):
             digest.update(chunk)
     target = CACHE / f"scenarios-{digest.hexdigest()[:16]}.json.gz"
     if not target.is_file():
         CACHE.mkdir(parents=True, exist_ok=True)
         partial = target.with_suffix(".part")
-        with open(SCENARIOS, "rb") as source, open(partial, "wb") as raw, \
+        with open(source_path, "rb") as source, open(partial, "wb") as raw, \
                 gzip.GzipFile(filename="", mode="wb", fileobj=raw, compresslevel=9, mtime=0) as packed:
             for chunk in iter(lambda: source.read(1 << 20), b""):
                 packed.write(chunk)

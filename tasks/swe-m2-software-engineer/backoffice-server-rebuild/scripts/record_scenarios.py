@@ -1,6 +1,7 @@
 """Record the private scenarios, every answer the pinned reference server's.
 
 usage: record_scenarios.py --count 2160 --runs 44 [--term 6] [--kill 3] [--screens 8] [--seed N] [--out FILE] [--media DIR]
+                           [--record FILE]
 
 Two recorders, one file:
 
@@ -13,6 +14,11 @@ The legacy streams are filtered (QA 05 S2): a scenario whose every write is refu
 company and the role table answer it), and in the counts and kits themes only scenarios that post a count or build a
 kit are kept. The live recorder makes as many counts and kits, start to finish, as the filter took out.
 
+The corpus holds the scenarios and nothing else, since it ships to the verifier image. How it was recorded (the seed,
+the legacy commit, the counts left out, the media set's digest and the live recorder's settings) goes to the record file
+with the corpus's SHA-256: experiment/recording.json for the task's own corpus, never committed or packaged; for any
+other --out, a `.recording.json` beside it. A record file inside the folders the bundle is made from is refused.
+
 Without --seed the seed comes from experiment/seeds.json (scripts/seeds.py), which is never committed. The live
 recorder needs a Python with PyMuPDF, Pillow and numpy (MEDIA_PYTHON, default python3), ffmpeg and node.
 """
@@ -20,6 +26,7 @@ recorder needs a Python with PyMuPDF, Pillow and numpy (MEDIA_PYTHON, default py
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import subprocess
@@ -31,6 +38,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from reference import TASK_ROOT, checkout, python, repository  # noqa: E402
 from seeds import seed as private_seed  # noqa: E402
+
+CORPUS = TASK_ROOT / "steps" / "01-rebuild-server" / "tests" / "private" / "scenarios.json"
+RECORDING = TASK_ROOT / "experiment" / "recording.json"  # Git-ignored with the rest of experiment/, and never packaged
+PACKAGED = (TASK_ROOT / "steps", TASK_ROOT / "environment")  # where scripts/package_step.py takes the bundle's files from
 
 
 def media_python() -> str:
@@ -68,10 +79,15 @@ def main() -> int:
     parser.add_argument("--kill", type=int, default=0)
     parser.add_argument("--screens", type=int, default=0)
     parser.add_argument("--seed", type=int)
-    parser.add_argument("--out", type=Path, default=TASK_ROOT / "steps" / "01-rebuild-server" / "tests" / "private" / "scenarios.json")
+    parser.add_argument("--out", type=Path, default=CORPUS)
     parser.add_argument("--media", type=Path, default=TASK_ROOT / "experiment" / "media" / "private",
                         help="the private files the scenarios upload (scripts/make_media.py); never the set shipped as samples")
+    parser.add_argument("--record", type=Path, help="how the scenarios were recorded, the seed included (default: experiment/recording.json "
+                                                    "for the task's own corpus; for another --out, beside it as NAME.recording.json)")
     args = parser.parse_args()
+    record_file = args.record or (RECORDING if args.out.resolve() == CORPUS.resolve() else args.out.with_suffix(".recording.json"))
+    if any(record_file.resolve().is_relative_to(folder.resolve()) for folder in PACKAGED):
+        raise SystemExit(f"{record_file} would be packaged with the task, and it holds the seed: write it elsewhere (--record)")
     seed = args.seed if args.seed is not None else private_seed("scenarios")
     reference = checkout()
     with tempfile.TemporaryDirectory(prefix="stockwell-record-") as folder:
@@ -85,14 +101,14 @@ def main() -> int:
         done = subprocess.run(command, cwd=reference / "backend", env=dict(os.environ, STOCKWELL_GIT=str(repository())))
         if done.returncode != 0:
             return done.returncode
-        scenarios = json.loads(legacy.read_text())
-        kept = [scenario for scenario in scenarios["scenarios"] if reaches_its_work(scenario)]
+        streams = json.loads(legacy.read_text())
+        scenarios = [scenario for scenario in streams["scenarios"] if reaches_its_work(scenario)]
         dropped: dict[str, int] = {}
-        for scenario in scenarios["scenarios"]:
+        for scenario in streams["scenarios"]:
             if not reaches_its_work(scenario):
                 dropped[scenario["theme"]] = dropped.get(scenario["theme"], 0) + 1
-        scenarios["scenarios"] = kept
-        scenarios["recorded_with"]["left_out"] = dict(sorted(dropped.items()))
+        record = {"legacy": dict(streams["recorded_with"], left_out=dict(sorted(dropped.items())))}
+        del streams
         print(json.dumps({"legacy left out": dict(sorted(dropped.items()))}), file=sys.stderr)
         top_up = {theme: dropped.get(theme, 0) for theme in ("counts", "kits")}
         if args.runs or any(top_up.values()):
@@ -104,16 +120,20 @@ def main() -> int:
             if done.returncode != 0:
                 return done.returncode
             months = json.loads(live.read_text())
-            scenarios = {"scenarios": scenarios["scenarios"] + months["scenarios"],
-                         "recorded_with": {"legacy": scenarios["recorded_with"], "live": months["recorded_with"]}}
-        ids = [scenario["id"] for scenario in scenarios["scenarios"]]
+            scenarios += months["scenarios"]
+            record["live"] = months["recorded_with"]
+        ids = [scenario["id"] for scenario in scenarios]
         if len(ids) != len(set(ids)):
             raise SystemExit("two scenarios share an id")
+    corpus = json.dumps({"scenarios": scenarios}, sort_keys=True, separators=(",", ":")) + "\n"
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text(json.dumps(scenarios, sort_keys=True, separators=(",", ":")) + "\n")
-    units = sum(len(s.get("units") or [None]) for s in scenarios["scenarios"])
-    print(json.dumps({"scenarios": len(scenarios["scenarios"]), "units": units, "requests": sum(len(s["steps"]) for s in scenarios["scenarios"]),
-                      "out": str(args.out)}))
+    args.out.write_text(corpus)
+    record_file.parent.mkdir(parents=True, exist_ok=True)
+    record_file.write_text(json.dumps({"corpus_sha256": hashlib.sha256(corpus.encode()).hexdigest(), "recorded_with": record}, indent=1,
+                                      sort_keys=True) + "\n")
+    units = sum(len(s.get("units") or [None]) for s in scenarios)
+    print(json.dumps({"scenarios": len(scenarios), "units": units, "requests": sum(len(s["steps"]) for s in scenarios), "out": str(args.out),
+                      "record": str(record_file)}))
     return 0
 
 
