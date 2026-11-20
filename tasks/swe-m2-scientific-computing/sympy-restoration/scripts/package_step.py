@@ -33,6 +33,9 @@ PRIVATE_LIST_KEYS = {
     f"{STEP}/tests/private/sealed_tests.json": {"tests"},
     f"{STEP}/tests/private/vectors/documented.json": {"calls"},
 }
+# The unit list both images get: these keys for every unit, and nothing else.
+UNITS_FILE = "environment/data/units.json"
+UNIT_KEYS = {"uid", "file", "module", "qualname", "dotted", "occ", "nocc", "order"}
 # One source, staged into each image's own build context.
 STAGED_COPIES = (
     ("common/restorelib.py", "environment/restore/lib/restorelib.py"),
@@ -69,6 +72,15 @@ def selected_files(task_root: Path) -> dict[str, Path]:
         if not isinstance(data, dict) or set(data) != keys:
             found = sorted(data) if isinstance(data, dict) else type(data).__name__
             raise ValueError(f"{relative} must hold only {sorted(keys)}, not {found}")
+        for key in keys:
+            if not isinstance(data[key], list) or not all(isinstance(item, str) for item in data[key]):
+                raise ValueError(f"{relative}: {key} must be a list of strings")
+    try:
+        units = json.loads((task_root / UNITS_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise ValueError(f"{UNITS_FILE} is not readable JSON") from exc
+    if not isinstance(units, list) or any(not isinstance(unit, dict) or set(unit) != UNIT_KEYS for unit in units):
+        raise ValueError(f"{UNITS_FILE} must be a list of units with exactly the keys {sorted(UNIT_KEYS)}")
     inputs = {name: task_root / name for name in ROOT_FILES}
     for directory in INPUT_DIRS:
         for path in (task_root / directory).rglob("*"):

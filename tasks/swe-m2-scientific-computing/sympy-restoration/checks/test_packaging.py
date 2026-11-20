@@ -23,7 +23,7 @@ PREPARED = (
 )
 
 
-LISTS = {PREPARED[4]: '{"tests": []}\n', PREPARED[7]: '{"calls": []}\n'}
+LISTS = {PREPARED[4]: '{"tests": []}\n', PREPARED[7]: '{"calls": []}\n', PREPARED[1]: "[]\n"}
 
 
 def staged_task(task_root, tmp_path, *, omit: str | None = None):
@@ -80,7 +80,9 @@ def test_packaging_refuses_unprepared_inputs(task_root, tmp_path, omit):
 
 
 @pytest.mark.parametrize("relative, text", [(PREPARED[4], '{"tests": [], "n_visible": 7896}'), (PREPARED[7], '{"calls": [], "note": "x"}'),
-                                            (PREPARED[4], "placeholder")])
+                                            (PREPARED[4], "placeholder"), (PREPARED[4], '{"tests": [{"id": "a", "held_out": true}]}'),
+                                            (PREPARED[1], '[{"uid": "U0001", "file": "f.py", "module": "m", "qualname": "f", "dotted": "m.f", '
+                                                          '"occ": 0, "nocc": 1, "order": 0, "calls": 3}]')])
 def test_packaging_refuses_a_private_list_that_holds_more_than_its_list(task_root, tmp_path, relative, text):
     target = staged_task(task_root, tmp_path)
     (target / relative).write_text(text)

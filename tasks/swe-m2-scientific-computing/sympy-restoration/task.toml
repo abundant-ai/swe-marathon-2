@@ -9,7 +9,7 @@ authors = [{ name = "Neel Harsola", email = "work.neelharsola@gmail.com" }]
 
 [metadata]
 reward_type = "continuous"
-open_internet_justification = "The environment build and agent setup have public egress, to install system packages, Python packages and the agent's own tooling. The work runs with network_mode = no-network as the unprivileged user dev, and a root collect step stops every process of dev and records every file's times before the work is copied. The verifier runs with no network."
+open_internet_justification = "The image build and the agent's set-up have public egress, to install system packages, Python packages and the agent's tooling. The work itself runs without network access."
 
 [agent]
 timeout_sec = 34560

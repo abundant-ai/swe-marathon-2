@@ -15,7 +15,8 @@ key the agent's user cannot read.
   could not be listed, or one over the collect step's limits): a completed evaluation of an empty
   delivery, which scores 0.
 - `listed`: graded, except that a file changed at or after the end of the work (its change or
-  modification time at or after the recorded end bound, less a small allowance) is not taken. A
+  modification time at or after the recorded end bound, less a small allowance) is not taken. The
+  end is never later than the start of the work plus the time the work is given (`limit`). A
   record without an end of the work is returned with `end_bound` None: the measurement then grades
   a tree with no restored unit as 0, and raises an evaluation error for any other, since none of
   its files could be told from one written after the work.
@@ -42,8 +43,9 @@ RECORD = ".fsmaint.json"
 MARK_LIMIT = 1 << 20      # bytes of the mark read, at most
 RECORD_LIMIT = 64 << 20   # bytes of the record read, at most
 SKEW_SEC = 0.25           # a change this close before the end bound counts as after it
+WORK_LIMIT_SEC = 34560    # the time the work is given: no end of it is later than its start plus this
 PUBLIC_HOSTS = ("pypi.org", "files.pythonhosted.org", "github.com")
-END_SOURCES = ("netcheck", "collect", "session", "unchanged")
+END_SOURCES = ("netcheck", "collect", "session", "limit", "unchanged")
 
 
 @dataclass
@@ -200,6 +202,9 @@ def read_delivery(top: Path, key_path: Path) -> Delivery:
         raise EvaluationError(f"The collect step's record names an unknown end of the work: {delivery.end_from!r}")
     if delivery.end_from == "collect" and (record.get("net_probe") or {}).get("any_open") is not False:
         raise EvaluationError("The collect step took its own start as the end of the work although public hosts were not seen closed")
+    started = record.get("work_started")
+    if isinstance(started, (int, float)) and not isinstance(started, bool) and delivery.end_bound > started + WORK_LIMIT_SEC:
+        delivery.end_bound, delivery.end_from = started + WORK_LIMIT_SEC, "limit"
     cutoff = delivery.end_bound - SKEW_SEC
     for path, item in listed.items():
         times = [t for t in (item.get("ctime"), item.get("mtime")) if isinstance(t, (int, float))]

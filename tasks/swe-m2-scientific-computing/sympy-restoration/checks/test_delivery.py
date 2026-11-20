@@ -23,6 +23,7 @@ import hashlib
 import hmac
 import importlib.machinery
 import importlib.util
+import io
 import json
 import os
 import re
@@ -60,6 +61,10 @@ def egress():
 def connect(address, timeout=None, *args, **kwargs):
     state = egress()
     if state == "open":
+        return socket.socket()
+    if state == "slow":
+        import time
+        time.sleep(1.5)
         return socket.socket()
     if state == "local":
         raise OSError(errno.EADDRNOTAVAIL, "Cannot assign requested address")
@@ -191,7 +196,7 @@ class Hooks:
         os.replace(self.state / "scenario.json.tmp", self.state / "scenario.json")
 
     def network(self, state: str) -> None:
-        """What every connection attempt gets from now on: "open", "closed" or "local"."""
+        """What every connection attempt gets from now on: "open", "closed", "local" or "slow" (answers after 1.5 s)."""
         (self.root / "egress.tmp").write_text(state + "\n")
         os.replace(self.root / "egress.tmp", self.egress)
 
@@ -1037,3 +1042,193 @@ def test_the_agent_works_as_dev_and_the_hooks_are_out_of_its_reach(task_root):
         text = (ENV_DIR / name).read_text().lower()
         for word in ("agent", "deliver", "grad", "verif", "submission", "egress", "reward", "score"):
             assert word not in text, (name, word)
+
+
+def test_a_turn_ended_at_the_time_limit_is_bounded_by_it_whatever_the_probe_saw(tmp_path, verifier_call):
+    """The turn runs to the time limit, the harness never ends its exec, and a process of the work keeps
+    the probe's handshakes timing out after the limit (the net check reads them as closed), so the net
+    check's end comes just before this step; a file fetched after the limit is late all the same, as
+    the end is never later than the start of the work plus the time it is given. The real net check runs."""
+    hooks = Hooks(tmp_path / "t", real_netcheck=True, WORK_LIMIT_SECONDS=2)
+    hooks.setup()
+    started = hooks.work_started()
+    hooks.network("closed")                       # the turn, and after it a probe that reads closed
+    (hooks.tree / "honest.py").write_text("def g():\n    return 1\n")
+    time.sleep(max(0.0, started + 2.4 - time.time()))
+    (hooks.tree / "fetched.py").write_text("# written after the time limit\n")
+    time.sleep(0.5)
+    hooks.run("fsmaint-sweep", egress="open")     # the freeze ends the load: the next poll is open
+    record = hooks.record()
+    assert record["end_from"] == "limit" and record["end_bound"] == started + 2, record
+    assert record["end_bounds"]["netcheck"][1] == "netcheck" and record["end_bounds"]["netcheck"][0] > started + 2.4, record["end_bounds"]
+    arrived = tmp_path / "arrived" / "sympy"
+    platform_copy(hooks.tree, arrived)
+    result = read_delivery(verifier_call, arrived, hooks.lib / "key")
+    assert result["state"] == "listed" and result["late"] == ["fetched.py"] and result["end_from"] == "limit", result
+
+
+def test_a_session_alive_after_the_limit_with_no_other_end_ends_the_work_at_the_limit(tmp_path, verifier_call):
+    """The exec session was still alive when this step began, after the limit, and the net check's
+    stretch reached into this step while the hosts answered it: the work ran until the limit, so that
+    is its end, and the tree is graded rather than refused."""
+    hooks = Hooks(tmp_path / "t", WORK_LIMIT_SECONDS=1)
+    hooks.setup()
+    started = hooks.work_started()
+    (hooks.tree / "honest.py").write_text("def g():\n    return 1\n")
+    time.sleep(max(0.0, started + 1.4 - time.time()))
+    (hooks.tree / "fetched.py").write_text("# written after the time limit\n")
+    now = time.time()
+    sessions = {"available": True, "seen": 1, "alive": [9], "sessions": [{"pid": 9, "first_seen": started + 0.01, "last_seen": now + 60}]}
+    hooks.scenario(last="closed", closing=[now - 5, now + 30, 40], sessions=sessions)
+    hooks.run("fsmaint-sweep", egress="open")
+    record = hooks.record()
+    assert record["state"] == "listed" and record["end_from"] == "limit" and record["end_bound"] == started + 1, record
+    assert record["session_alive_at_start"] is True and record["end_bounds"]["netcheck"][0] is None
+    arrived = tmp_path / "arrived" / "sympy"
+    platform_copy(hooks.tree, arrived)
+    assert read_delivery(verifier_call, arrived, hooks.lib / "key")["late"] == ["fetched.py"]
+
+
+def test_the_work_limit_is_the_time_limit_the_task_gives(task_root):
+    import tomllib
+
+    config = tomllib.loads((task_root / "task.toml").read_text())
+    limits = {config["agent"]["timeout_sec"]} | {step["agent"]["timeout_sec"] for step in config["steps"]}
+    sweep = (ENV_DIR / "fsmaint-sweep").read_text()
+    delivery_text = (task_root / "steps" / "01-restore-bodies" / "tests" / "verifier" / "delivery.py").read_text()
+    in_sweep = int(re.search(r"^WORK_LIMIT_SECONDS=(\d+)$", sweep, re.M)[1])
+    in_verifier = int(re.search(r"^WORK_LIMIT_SEC = (\d+)", delivery_text, re.M)[1])
+    assert limits == {in_sweep} == {in_verifier} == {34560}, (limits, in_sweep, in_verifier)
+
+
+def test_the_room_is_given_back_and_the_tree_set_aside_before_anything_is_written(tmp_path, verifier_call):
+    """Right after the freeze: the room first, then the tree aside, then the listing; a listing that
+    cannot be written (a disk the work filled) leaves the session end to the net check's own record."""
+    sweep = (ENV_DIR / "fsmaint-sweep").read_text()
+    order = ["kill -STOP -1", 'rm -f "$STATE/room"', 'rm -rf "$STATE/inodes"', 'cat > "$STATE/measure.py"',
+             'measure.py" stage', '"$STATE/procs.json"', "kill -9 -1"]
+    positions = [sweep.index(step) for step in order]
+    assert positions == sorted(positions), order
+    assert sweep.index('cat > "$STATE/measure.py"') < sweep.index("timeout 30 /usr/bin/python3")
+    assert ': > "$STATE' not in sweep[:sweep.index('rm -f "$STATE/room"')], "nothing is written before the room is given back"
+    hooks = Hooks(tmp_path / "t")
+    hooks.setup()
+    started = hooks.work_started()
+    (hooks.tree / "honest.py").write_text("def g():\n    return 1\n")
+    time.sleep(0.6)
+    session_end = time.time()
+    time.sleep(0.6)
+    (hooks.tree / "fetched.py").write_text("# written after the turn\n")
+    time.sleep(0.3)
+    (hooks.state / "procs.json").mkdir()          # the listing cannot be written
+    sessions = {"available": True, "seen": 1, "alive": [],
+                "sessions": [{"pid": 42, "first_seen": started + 0.05, "last_seen": session_end}]}
+    hooks.scenario(last="open", openings=[opening(time.time())], sessions=sessions)
+    hooks.run("fsmaint-sweep", egress="open")
+    record = hooks.record()
+    assert record["process_count"] is None and record["end_from"] == "session" and record["end_bound"] == session_end, record
+    arrived = tmp_path / "arrived" / "sympy"
+    platform_copy(hooks.tree, arrived)
+    assert read_delivery(verifier_call, arrived, hooks.lib / "key")["late"] == ["fetched.py"]
+
+
+@pytest.mark.parametrize("case", ["zombies", "never-ends"])
+def test_the_kill_counts_live_processes_only_and_has_a_time_budget(tmp_path, case):
+    hooks = Hooks(tmp_path / "t", KILL_SECONDS=1)
+    # zombies only: procps finds them without a state filter and none in a live state; or a process
+    # that no signal ends: found in every state, every time
+    body = ('for word in "$@"; do [ "$word" = "-r" ] && exit 1; done\nexit 0\n' if case == "zombies" else "exit 0\n")
+    (hooks.bin / "pgrep").write_text("#!/bin/sh\n" + body)
+    hooks.setup()
+    (hooks.tree / "a.py").write_text("x = 1\n")
+    hooks.scenario(last="open", openings=[opening(time.time())])
+    began = time.time()
+    hooks.run("fsmaint-sweep", egress="open")
+    record = hooks.record()
+    if case == "zombies":
+        assert record["kill_passes"] == 0, record["kill_passes"]
+    else:
+        assert 1 <= record["kill_passes"] <= 20 and time.time() - began < 60, record["kill_passes"]
+    assert record["state"] == "listed"
+
+
+@pytest.mark.parametrize("case", ["slow", "quick"])
+def test_an_answer_the_net_check_could_not_have_seen_is_no_refusal(tmp_path, verifier_call, case):
+    """The stretch reached into this step and this step's probe got an answer: a refusal (the work hid
+    the end) only when the answer came at the net check's own addresses within its polls' time; an
+    answer that came only after longer waits leaves the end unknown instead (an evaluation error for a
+    tree that restores a unit)."""
+    hooks = Hooks(tmp_path / "t")
+    hooks.setup()
+    (hooks.tree / "a.py").write_text("x = 1\n")
+    now = time.time()
+    hooks.scenario(last="closed", closing=[now - 5, now + 30, 40])
+    hooks.run("fsmaint-sweep", egress="slow" if case == "slow" else "open")
+    record = hooks.record()
+    assert record["net_probe"]["any_open"] is True
+    if case == "slow":
+        assert record["net_probe"]["answered_as_net_check"] is False and record["state"] == "listed" and record["end_from"] is None, record
+    else:
+        assert record["net_probe"]["answered_as_net_check"] is True and record["state"] == "refused", record
+
+
+def test_the_probe_is_given_its_hosts_on_standard_input(tmp_path):
+    """`ps` shows the probe's command line to every user: it names no host."""
+    netcheck = load_netcheck(tmp_path / "state")
+    seen = {}
+
+    class FakeProbe:
+        def __init__(self, command, stdin, stdout, stderr, text):
+            seen["command"], seen["input"] = command, []
+            self.stdin = types.SimpleNamespace(write=seen["input"].append, close=lambda: seen.setdefault("closed", True))
+            self.stdout = iter(["uid 65534\n", "1000.5 closed -\n"])
+
+        def kill(self):
+            pass
+
+        def wait(self, timeout=None):
+            return 0
+
+    netcheck.subprocess = types.SimpleNamespace(Popen=FakeProbe, PIPE=-1, DEVNULL=-3, SubprocessError=Exception)
+    targets = [("pypi.org", "192.0.2.1"), ("github.com", "192.0.2.2")]
+    status = {}
+    polls = netcheck.polls(targets, status)
+    assert next(polls) == (1000.5, "closed", None)
+    assert seen["command"][-1] == "--probe" and len(seen["command"]) == 4 and seen.get("closed") is True
+    assert not any(host in " ".join(seen["command"]) for host in netcheck.HOSTS + ("192.0.2.1",))
+    assert json.loads("".join(seen["input"])) == [list(target) for target in targets] and status["probe_uid"] == 65534
+    # the probe reads them there
+    got = {}
+    netcheck.probe_lines = lambda found, out: got.setdefault("targets", found)
+    netcheck.os = types.SimpleNamespace(geteuid=lambda: 1000)
+    netcheck.sys = types.SimpleNamespace(stdin=io.StringIO(json.dumps(targets) + "\n"), stdout=io.StringIO(), argv=["x", "--probe"])
+    assert netcheck.probe_main() == 0 and got["targets"] == targets
+
+
+def test_local_polls_while_a_session_is_alive_end_nothing_until_the_network_is_seen_or_the_session_ends(tmp_path):
+    netcheck = load_netcheck(tmp_path / "state")
+    ended = []
+
+    def polls(states):
+        return [(float(k), "closed" if s == "c" else "open" if s == "o" else "local", "pypi.org" if s == "o" else None if s == "c" else "EMFILE")
+                for k, s in enumerate(states, 1)]
+
+    # a machine short of ports during the turn: the stretch is ended and recorded, dev is not ended
+    openings = netcheck.watch(iter(polls("occclllccc")), {}, ending=lambda: ended.append(1) or (1, 0), session_alive=lambda: True)
+    assert [(o["end_bound"], o["kind"]) for o in openings] == [(4.0, "local")] and ended == [], openings
+    assert openings[0]["ending"].startswith("deferred")
+    # ... until the network is seen again
+    openings = netcheck.watch(iter(polls("occclllcco")), {}, ending=lambda: ended.append(2) or (1, 0), session_alive=lambda: True)
+    assert ended == [2] and openings[0]["kill_passes"] == 1
+    # ... or no session is alive any more
+    alive = iter([True, True, False, False])
+    netcheck.watch(iter(polls("occcllllc")), {}, ending=lambda: ended.append(3) or (1, 0), session_alive=lambda: next(alive, False))
+    assert ended == [2, 3]
+    # with no session alive, local polls end dev at once, as before
+    netcheck.watch(iter(polls("occclll")), {}, ending=lambda: ended.append(4) or (1, 0))
+    assert ended == [2, 3, 4]
+    now = time.time()
+    assert netcheck.live_session({"available": True, "alive": [5], "last_scan": now})
+    assert not netcheck.live_session({"available": True, "alive": [], "last_scan": now})
+    assert not netcheck.live_session({"available": True, "alive": [5], "last_scan": now - 10})
+    assert not netcheck.live_session({"available": False})

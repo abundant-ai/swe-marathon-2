@@ -392,7 +392,10 @@ It does not yet meet the v2 workload target; see [Workload](#workload) and
   parent in the container), and the end of the work is the earlier of its own
   end and the end of the session that ran the whole work: a detached process
   never has such a parent, so no trick with the network, the CPU or the probe
-  moves that end. The session end applies only when that session began within
+  moves that end. (Third re-check: that end bounds a turn only when the
+  harness's exec ends with it; a turn ended by the time limit keeps its exec,
+  and a load that times out the probe's handshakes could then push the net
+  check's end past the limit. The limit is now an end of its own.) The session end applies only when that session began within
   ten minutes of the start of the work, because a harness that runs one exec per
   command ends many sessions during its turn; such a harness keeps the net
   check's end. The end is not taken from the session for killing `dev`: that
@@ -420,14 +423,18 @@ It does not yet meet the v2 workload target; see [Workload](#workload) and
   might not carry is removed and noted; every character of the mark outside
   printable ASCII is escaped and the verifier splits it on line feeds only (a
   link named with a form feed had unsigned the mark); the room the setup step
-  set aside is given back as soon as `dev` has ended, before anything else is
-  written; the net check stops and kills `dev` with its own signals as well as
+  set aside is given back as soon as `dev` has ended (third re-check: the
+  process listing was still written first, so a disk the work filled voided the
+  session end; the room now goes right after the freeze, before anything is
+  written); the net check stops and kills `dev` with its own signals as well as
   with tools, so it works when no process can be started, and a poll or probe
   that cannot start is a local poll instead of the end of the net check. A live
   process of `dev` that outlived the collect step (zombies are not counted) is
   now an explicit evaluation error.
 - The collect step fails closed (a re-check of the sibling Carve found these
-  in the same design). It now puts the tree aside first and leaves an empty tree
+  in the same design). It now puts the tree aside first (third re-check: after
+  the freeze, the listing and the kill, which a zombie could stretch to the
+  hook's limit; now right after the freeze and the room) and leaves an empty tree
   with a signed refusing mark in its place, and gives the measured tree its name
   back only once its own mark and record are written, so a timeout, a crash or a
   full disk at any later point leaves a tree that scores 0, never one without a
@@ -610,6 +617,44 @@ It does not yet meet the v2 workload target; see [Workload](#workload) and
     leaves no test unreached; the stated 12 hours against the agent's 34,560 s
     stays the owner's exception.
 
+### 2026-11-21, third re-check
+
+- The end of the work at the time limit. Harbor stops waiting for the agent at
+  its limit but never ends the exec, so a turn that ran to the limit had no
+  session end, and a process that kept the probe's handshakes timing out after
+  the limit (the net check reads that as closed) could have a fetch graded. The
+  end of the work is now never later than the start of the work plus 34,560 s,
+  the agent's limit (a check holds `task.toml`, the collect step and the
+  verifier to one number), in the collect step and again in the verifier; with
+  no other end known and an exec session still alive after the limit, the limit
+  is the end. No kill enforces it: a killed claude-code exits 137, and Harbor
+  classifies that exit by its transcript, whose failed fetches read as network
+  errors that void the score. A check reproduces the re-check's probe with the
+  real net check: a file written after the limit is late.
+- The order after the freeze. The process listing was written while the room
+  set aside at setup was still held, so a disk the work filled voided the
+  session end even of a turn that ended normally, and the tree was put aside
+  only after the listing and a kill loop that counted zombies (100 passes with
+  one zombie left, before any mark existed). The room now goes back right after
+  the freeze, then the tree is put aside, then the listing is written; a
+  listing that cannot be written leaves the session end to the net check's own
+  record of the sessions; the kill counts live processes only and stops after
+  30 s.
+- The probe. Its hosts are given on its standard input, so `ps` names none (the
+  round before had put them on its command line). A refusal for an end the work
+  hid ("answered") now needs the collect step's probe to have reached one of the
+  net check's own addresses within the time the net check's polls allow; an
+  answer that only a fresh lookup or a longer wait gets leaves the end unknown
+  (an evaluation error for a tree that restores a unit), since a slow network is
+  not the work's doing. Commit `d8bd65b` said both causes are always the work's;
+  that held only for the blind probe. Three local polls in a row while an exec
+  session is alive no longer end `dev`, which ended the agent's harness: the end
+  of the stretch is recorded, and `dev` is ended at the next open poll or once
+  no session is alive.
+- Smaller. A tree over 256 MB is refused (2 GB before; such a tree must cross
+  the platform's file transfer twice); the `task.toml` justification is one
+  neutral line; the Dockerfiles carry no comment.
+
 ## Current implementation
 
 | Part | State |
@@ -637,11 +682,12 @@ Layout notes:
 - `environment/fsmaint-reserve`, `fsmaint-netcheck` and `fsmaint-sweep` are the
   setup and collect hooks (`task.toml`). They live in `/usr/local/lib/fsmaint`,
   mode 0700 and owned by root, off `PATH`; the agent's user cannot read them,
-  but `ps` shows the net check (root) and its probe (`nobody`) polling three
-  public hosts. The names were kept: the sibling Carve passed two audits with
-  the same ones, and what `ps` shows no longer gives anything to aim at (a probe
-  that cannot see ends the work, and the session end does not depend on the
-  probe).
+  and `ps` shows only the net check (root) and its probe (`nobody`) by their
+  paths: the probe gets the hosts it polls on its standard input, so no command
+  line names one. The names were kept: the sibling Carve passed two audits with
+  the same ones. What the probe can be made to see is bounded elsewhere: a probe
+  whose handshakes time out under load still reads as closed, and the session
+  end and the time limit bound the work whatever it read.
 - The agent runs as `dev` (uid 10001). `/app` is root-owned and sticky,
   `/app/sympy` is root-owned and world-writable with everything in it owned by
   `dev`, so `dev` can change every file but cannot replace the tree itself.
@@ -845,11 +891,29 @@ The verifier runs in a separate image with only `/app/sympy` from the candidate.
    minutes of the start of the work (one session for the whole of the work, as
    claude-code, mini-swe-agent and the oracle run) and no session was alive
    when the collect step began; a harness that runs one exec per command gives
-   no such end, and the first one stands. Without either, the start of the work
+   no such end, and the first one stands. The third is the time limit: the start
+   of the work plus 34,560 s, the agent's limit in `task.toml` (a check holds the
+   two equal; a timeout override on the platform must change both). No end is
+   later than it, and when an exec session was still alive as the collect step
+   began after the limit, with no other end known, the work ran until it, so it
+   is the end; no kill enforces it (a killed claude-code exits 137, and Harbor
+   classifies that exit by its transcript, whose failed fetches read as network
+   errors that void the score). Without any, the start of the work
    is the end when nothing in the tree changed since then (the no-op); when the
    work itself hid the end from the probe (it could not see the network at all,
-   or saw no answer while the hosts answered the collect step) the tree is
-   refused, a scored 0; otherwise there is no end. The mark is signed with a key in the agent image
+   or saw no answer while the hosts answered the collect step at the net check's
+   own addresses within the time its polls allow) the tree is refused, a scored
+   0; otherwise there is no end. The collect step gives back the room the setup
+   step set aside right after it has stopped every process of `dev`, then puts
+   the tree aside, then lists the processes, so a disk the work filled cannot
+   void any of it; a listing that cannot be written leaves the session end to
+   the net check's own record of the sessions. It kills live processes only, for
+   at most 30 s, and refuses a tree over 256 MB (the starting tree is 23 MB),
+   which the platform's copy might not carry through its two transfers. Three
+   local polls in a row while an exec session is alive record the end of the
+   stretch but end nothing until the network is seen again or no session is
+   alive, since ending `dev` there would end the agent's harness and its trial.
+   The mark is signed with a key in the agent image
    that only root can read and that the verifier image holds too. Before
    grading, the verifier checks that its own network is closed (a TLS handshake
    to three public hosts; open is an evaluation error), then reads the mark: no
@@ -861,7 +925,7 @@ The verifier runs in a separate image with only `/app/sympy` from the candidate.
    infrastructure. A tree the collect step refused is a completed evaluation of
    an empty delivery (0): nothing usable under its name (nothing at all, a link,
    a file), a tree it could not list, one past its limits (200,000 entries,
-   2 GB, 64 directories deep, a path over 1,000 bytes, a record over 48 MB, a
+   256 MB, 64 directories deep, a path over 1,000 bytes, a record over 48 MB, a
    directory whose name a copy might not carry), one there is no room to copy, or
    the empty tree left by a collect step that did not finish (a refusing mark is
    taken as signed even when the record beside it is newer: nothing of a refused
@@ -1157,7 +1221,7 @@ have not yet run on the platform). Unassessed boundaries: finding 7.
 | 6 | Tamper with reward or result files | Separate verifier container | By design; not attacked | Verifier starts fresh with only `/app/sympy`; output directory closed to the sandbox user | None found | Attack on the v2 bundle | 🟢 GREEN / LOW |
 | 7 | Anything that depends on the new entry point, check registry or reporting | v2 verifier code | Not attacked | Same measurement code as v1; reference and no-op baselines on the v2 bundle | Unknown | Red-team run against the v2 bundle | 🟡 YELLOW / UNASSESSED |
 | 8 | Reach the network during the work phase to fetch SymPy | Agent network policy | Probe task, 2026-11-15: PyPI and GitHub unreachable from the work phase; 217 in-work fetch attempts in one 12-hour run all failed (TCP connected, TLS did not) | `[agent] network_mode = "no-network"`; the instruction forbids another copy; SymPy is not installed elsewhere; the image's attribution names no download | Agent tooling is installed at setup with public egress; host-name filtering not probed for every route | Probe the routes as `dev` | 🟡 YELLOW / MEDIUM |
-| 9 | Leave a process running after the work that fetches SymPy once public egress returns (about 0.2 s after the work ends, before collection: 0.8 s and 11.8 s on two 12-hour runs) and writes the original into `/app/sympy`, directly or behind a link; the original scores 1.0. Variants: hold every local port (or exhaust another resource of the machine) so the net check's probe fails and its closed stretch runs on past the turn; load the CPU or the link so its handshakes time out | Delivery: user, hooks, record | Reproduced by review with the verifier's own transplant: before 2026-11-20 (2,671 restored, a tree identical to the reference); on 2026-11-20, a write after a turn shorter than the net check's old one-minute arming taken whole, a late file graded through a directory link, and (re-check 2) a fetch while the probe failed for want of ports, taken because such a failure counted as a closed poll and the end was moved to the collect step's start. All fixed; `checks/test_delivery.py` runs the real net check whole for a blinded probe and a no-op turn, and covers a 3-second turn, every unknown end, the session end, file and directory links and every refused tree | The work runs as `dev`; a poll that fails for a reason of the machine is not a closed poll, and three in a row end the stretch; the net check records the end of every stretch an opening ends and ends `dev` each time; it also watches the agent's exec sessions, and the end of the work is the earlier of the net check's end and the end of the session that ran the whole work, which no process the agent starts can move; the end is never moved to the collect step's start unless its own probe found the hosts closed; the collect step stops and ends the rest, lets the net check finish one more poll and look, records every file's change time before touching anything and removes every link; the verifier takes no unit file changed at or after the end and none reached through a link; a link or an unlisted file that arrived, a short delivery or a surviving process is an evaluation error; the mark is signed with a key `dev` cannot read | A write through a file mapping dirtied before the end can change content without moving its times. It needs a live process: the net check ends `dev` at the first open poll (about 0.2 to 0.5 s after the turn) or after three blind polls, but a probe made to time out by load still reads as closed, so such a process can live until the collect step; the session end stops every write that moves a file's times, not one through a mapping. A harness that does its work outside its own exec sessions, and whose last session began within ten minutes of the start, would have its later writes counted late (claude-code, mini-swe-agent and the oracle run the whole work in one session; Proximus is not yet seen). Three polls in a row that fail for want of ports, files or memory end `dev` during the work as an opening would. Closing the mapping residual needs the platform to keep the agent's network policy through collection | Canary on the platform: a detached fetch-and-overwrite loop scores 0 with its files `late`; reference 1.0 (`end_from` `session`) and no-op 0.0 (`end_from` `unchanged`) with the record present; Proximus's process model read from its record (`sessions`) | 🟡 YELLOW / MEDIUM |
+| 9 | Leave a process running after the work that fetches SymPy once public egress returns (about 0.2 s after the work ends, before collection: 0.8 s and 11.8 s on two 12-hour runs) and writes the original into `/app/sympy`, directly or behind a link; the original scores 1.0. Variants: hold every local port (or exhaust another resource of the machine) so the net check's probe fails and its closed stretch runs on past the turn; load the CPU or the link so its handshakes time out | Delivery: user, hooks, record | Reproduced by review with the verifier's own transplant: before 2026-11-20 (2,671 restored, a tree identical to the reference); on 2026-11-20, a write after a turn shorter than the net check's old one-minute arming taken whole, a late file graded through a directory link, and (re-check 2) a fetch while the probe failed for want of ports, taken because such a failure counted as a closed poll and the end was moved to the collect step's start. All fixed; `checks/test_delivery.py` runs the real net check whole for a blinded probe and a no-op turn, and covers a 3-second turn, every unknown end, the session end, file and directory links and every refused tree | The work runs as `dev`; a poll that fails for a reason of the machine is not a closed poll, and three in a row end the stretch; the net check records the end of every stretch an opening ends and ends `dev` each time; it also watches the agent's exec sessions, and the end of the work is the earlier of the net check's end and the end of the session that ran the whole work, which no process the agent starts can move; the end is never moved to the collect step's start unless its own probe found the hosts closed, and never later than the start of the work plus the time limit (34,560 s), which bounds a turn run to the limit whatever the probe read; the collect step gives back the room the setup step set aside and puts the tree aside right after it has stopped every process of `dev`, then stops and ends the rest, lets the net check finish one more poll and look, records every file's change time before touching anything and removes every link; the verifier takes no unit file changed at or after the end and none reached through a link; a link or an unlisted file that arrived, a short delivery or a surviving process is an evaluation error; the mark is signed with a key `dev` cannot read | A write through a file mapping dirtied before the end can change content without moving its times. It needs a live process: the net check ends `dev` at the first open poll (about 0.2 to 0.5 s after the turn) or after three blind polls, but a probe made to time out by load still reads as closed, so such a process can live until the collect step; the session end (for a harness whose exec ends with the turn) and the time limit (for a turn run to it) stop every write that moves a file's times, not one through a mapping. A harness that runs one exec per command, or a run Harbor resumes in place after a provider error, has neither, and only the net check's end bounds it, which such a load can push back. A harness that does its work outside its own exec sessions, and whose last session began within ten minutes of the start, would have its later writes counted late (claude-code, mini-swe-agent and the oracle run the whole work in one session; Proximus is not yet seen). Three polls in a row that fail for want of ports, files or memory end the stretch during the work; `dev` is ended then only when no exec session is alive. Closing the mapping residual needs the platform to keep the agent's network policy through collection | Canary on the platform: a detached fetch-and-overwrite loop scores 0 with its files `late`; a reference that runs past the time limit with a load process and a fetch scores 0 with its files `late`; reference 1.0 (`end_from` `session`) and no-op 0.0 (`end_from` `unchanged`) with the record present; Proximus's process model read from its record (`sessions`) | 🟡 YELLOW / MEDIUM |
 
 Recall of SymPy from pre-training is not an exploit of the verifier, but it limits
 what a high score means. It is recorded under [Novelty](#novelty).

@@ -1,19 +1,20 @@
 #!/bin/sh
 # Runs as root once the user's work has ended, before /app/sympy is copied elsewhere. It stops every
-# process of the user `dev`, lists them, and ends them; gives back the room fsmaint-reserve set
-# aside; puts the tree aside and an empty one in its place, marked as refused, so that whatever stops
-# this step early leaves a tree that is copied as refused; probes whether a few public hosts answer;
-# lets fsmaint-netcheck finish one more poll and one more look at the sessions, and stops it; records
-# the type, size, mode, owner, modification and change times and inode of every entry of the tree
-# before anything of its own touches it; removes what a copy must not carry; writes a record and a
-# signed mark into it; and puts it back under its name. The mark's first line is `listed` with how
-# many entries and bytes were listed, or `refused` (no usable tree under that name, one over the
-# limits, no room to copy it, an end of the work the work itself kept from the net check, or this
-# step did not finish: the empty tree stays); the record
+# process of the user `dev`; gives back the room fsmaint-reserve set aside, before anything else is
+# written; puts the tree aside and an empty one in its place, marked as refused, so that whatever
+# stops this step early leaves a tree that is copied as refused; lists the stopped processes and ends
+# them; probes whether a few public hosts answer; lets fsmaint-netcheck finish one more poll and one
+# more look at the sessions, and stops it; records the type, size, mode, owner, modification and
+# change times and inode of every entry of the tree before anything of its own touches it; removes
+# what a copy must not carry; writes a record and a signed mark into it; and puts it back under its
+# name. The mark's first line is `listed` with how many entries and bytes were listed, or `refused`
+# (no usable tree under that name, one over the limits, no room to copy it, an end of the work the
+# work itself kept from the net check, or this step did not finish: the empty tree stays); the record
 # (.fsmaint.json) lists every entry with the times it had when the work ended, and the end of the
-# work as far as it can be told.
+# work as far as it can be told. The end is never later than WORK_LIMIT_SECONDS after the work
+# began, the time the work is given.
 LIMIT_ENTRIES=200000
-LIMIT_BYTES=2000000000
+LIMIT_BYTES=268435456
 LIMIT_DEPTH=64
 LIMIT_PATH_BYTES=1000
 LIMIT_RECORD_BYTES=48000000
@@ -21,144 +22,30 @@ COPY_MARGIN_BYTES=16777216
 SESSION_WINDOW_SECONDS=600
 UNCHANGED_MARGIN_SECONDS=1
 NETCHECK_SETTLE_SECONDS=20
+WORK_LIMIT_SECONDS=34560
+KILL_SECONDS=30
 SPARE_DIRS="/tmp /var/tmp /dev/shm"
 STATE=/var/lib/fsmaint
 TREE=/app/sympy
 KEY=/usr/local/lib/fsmaint/key
 mkdir -p "$STATE" && chmod 0700 "$STATE"
 started=$(/usr/bin/python3 -I -c 'import time; print(repr(time.time()))')
-: > "$STATE/sweeping"
 # Stop the processes of `dev` first, so that none of them runs while they are listed, then end
 # them all. `kill -STOP -1` as that user reaches all of them in one system call, so a process that
 # forks cannot outrun it; repeat until none is running.
 for _ in $(seq 1 50); do
-  { pgrep -u dev || pgrep -U dev; } >/dev/null 2>&1 || break
+  pgrep -u dev -r R,S,D >/dev/null 2>&1 || pgrep -U dev -r R,S,D >/dev/null 2>&1 || break
   setpriv --reuid dev --regid dev --clear-groups kill -STOP -1 >/dev/null 2>&1
-  pgrep -u dev -r R,S,D >/dev/null 2>&1 || break
   sleep 0.05
 done
-timeout 30 /usr/bin/python3 -I - "$STATE/procs.json" <<'EOF'
-"""List the processes of the user `dev` (stopped), with their state, parent and command line, and
-which of them are exec sessions; `processes`, `read_status` and `sessions` are fsmaint-netcheck's."""
-import json
-import os
-import pwd
-import sys
-import time
-
-PROC = "/proc"
-SESSION_PARENTS = ("su", "runuser")
-
-
-def read_status(pid, proc=PROC):
-    """(real uid, parent pid, name, state) of a process, from /proc; None when it cannot be read."""
-    try:
-        with open(os.path.join(proc, str(pid), "status")) as handle:
-            fields = dict(line.split(":", 1) for line in handle.read().splitlines() if ":" in line)
-        return int(fields["Uid"].split()[0]), int(fields["PPid"].strip()), fields.get("Name", "").strip(), fields.get("State", "").strip()[:1]
-    except (OSError, KeyError, ValueError, IndexError):
-        return None
-
-
-def processes(proc=PROC):
-    """{pid: (real uid, parent pid, name, state)} of every process /proc shows; None without a /proc."""
-    try:
-        names = os.listdir(proc)
-    except OSError:
-        return None
-    table = {}
-    for name in names:
-        if name.isdigit():
-            info = read_status(name, proc)
-            if info is not None:
-                table[int(name)] = info
-    return table
-
-
-def sessions(table, uid):
-    """The pids of the exec sessions of the user `uid` in a process table: its processes (not zombies)
-    whose parent is a process of the real user root named in SESSION_PARENTS other than the first
-    process, or that have no parent here."""
-    found = []
-    for pid, (owner, parent, _name, state) in table.items():
-        if owner != uid or state in ("Z", "X"):
-            continue
-        above = table.get(parent)
-        if parent == 0 or (parent != 1 and above is not None and above[0] == 0 and above[2] in SESSION_PARENTS):
-            found.append(pid)
-    return sorted(found)
-
-
-try:
-    uid = pwd.getpwnam("dev").pw_uid
-except KeyError:
-    uid = None
-table = processes()
-listed, alive = [], []
-if table is not None and uid is not None:
-    alive = sessions(table, uid)
-    for pid, (owner, parent, name, state) in sorted(table.items()):
-        if owner != uid:
-            continue
-        try:
-            with open(os.path.join(PROC, str(pid), "cmdline"), "rb") as handle:
-                command = handle.read(4096).replace(b"\0", b" ").strip().decode(errors="backslashreplace")
-        except OSError:
-            command = ""
-        listed.append({"pid": pid, "ppid": parent, "state": state, "name": name, "command": command[:1000], "session": pid in alive})
-with open(sys.argv[1], "w") as handle:
-    json.dump({"listed_at": time.time(), "proc": table is not None, "process_count": len(listed), "processes": listed[:500],
-               "sessions_alive": alive[:100]}, handle)
-EOF
-passes=0
-for _ in $(seq 1 100); do
-  { pgrep -u dev || pgrep -U dev; } >/dev/null 2>&1 || break
-  passes=$((passes + 1))
-  setpriv --reuid dev --regid dev --clear-groups kill -9 -1 >/dev/null 2>&1
-  pkill -KILL -u dev >/dev/null 2>&1
-  pkill -KILL -U dev >/dev/null 2>&1
-  sleep 0.1
-done
-left=$(timeout 30 /usr/bin/python3 -I - <<'EOF'
-"""How many live processes of the user `dev` are left (a zombie cannot write and is not counted);
-the tools' count where there is no /proc; nothing when it cannot be told."""
-import os
-import pwd
-import subprocess
-
-try:
-    uid = pwd.getpwnam("dev").pw_uid
-    names = os.listdir("/proc")
-except (KeyError, OSError):
-    uid = names = None
-count = None
-if names is not None:
-    count = 0
-    for name in names:
-        if not name.isdigit():
-            continue
-        try:
-            with open(f"/proc/{name}/status") as handle:
-                fields = dict(line.split(":", 1) for line in handle.read().splitlines() if ":" in line)
-            if int(fields["Uid"].split()[0]) == uid and fields.get("State", "").strip()[:1] not in ("Z", "X"):
-                count += 1
-        except (OSError, KeyError, ValueError, IndexError):
-            continue
-else:
-    try:
-        count = len(subprocess.run(["pgrep", "-u", "dev"], capture_output=True, text=True, timeout=10).stdout.split())
-    except (OSError, subprocess.SubprocessError):
-        count = None
-print("" if count is None else count)
-EOF
-)
-ended=$(/usr/bin/python3 -I -c 'import time; print(repr(time.time()))')
 # No process of `dev` runs now: give back the room and the spare inodes fsmaint-reserve set aside,
-# so however full the disk was left, everything this step and the net check write still fits.
+# before this step writes anything, so however full the disk was left, everything this step and the
+# net check write still fits.
 rm -f "$STATE/room"
 rm -rf "$STATE/inodes"
-# The measuring program, written once and run twice: now, to put the tree aside and leave an empty
-# one in its place with a mark that refuses it; and last, to measure the tree and put it back.
+# The measuring program, written once and run twice: now, before anything else is written, to put
+# the tree aside and leave an empty one in its place with a mark that refuses it; and last, to
+# measure the tree and put it back.
 cat > "$STATE/measure.py" <<'EOF'
 """Put the tree aside and leave a mark that refuses it in its place (`stage`); then measure the tree,
 bound it, list it, sign and mark it, and put it back (`main`); as root, once no process of `dev` runs.
@@ -170,7 +57,7 @@ stage <tree> <state> <key>
     ("the collect step did not finish") and its record. Whatever stops this step before the end (a
     timeout, a crash, a full disk) leaves that empty tree, which is copied as refused.
 
-main <tree> <state> <key> <limits...> <spare dirs> <passes> <left> <started>
+main <tree> <state> <key> <limits...> <spare dirs> <passes> <left> <started> <work limit>
     The tree put aside is walked by directory descriptor, never through a link and at most
     LIMIT_DEPTH directories deep. What a copy must not carry is removed and noted: every link, so
     that nothing is reached through one (a link could lead to a file written after the work ended
@@ -193,7 +80,7 @@ main <tree> <state> <key> <limits...> <spare dirs> <passes> <left> <started>
     escaped (the record keeps every note in full); the last line holds the record's sha256 and an
     HMAC-SHA256 over the other lines and that digest, with the key whose path is given.
 
-    The end of the work (`end_bound`) is the earlier of two, when either is known:
+    The end of the work (`end_bound`) is the earliest of these, when one is known:
     - `netcheck`: the last closed poll of the longest stretch of fsmaint-netcheck that an opening
       ended, when the net check finished a poll after every process of `dev` had ended. A stretch
       still going on, or one that reached into this step, gives the start of this step (`collect`)
@@ -203,12 +90,17 @@ main <tree> <state> <key> <limits...> <spare dirs> <passes> <left> <started>
     - `session`: when the exec session that ended last was last seen alive, if that session began
       within SESSION_WINDOW seconds of the start of the work (one session for the whole of the work,
       not the last of many short ones), no session was alive when this step began, and the sessions
-      were watched until then.
-    Without either, the start of the work (`unchanged`) when no listed entry changed since then.
+      were watched until then (by the listing of the stopped processes, or, when it is missing, by
+      the net check's own record of the sessions).
+    - `limit`: the start of the work plus the time the work is given (WORK_LIMIT_SECONDS): the
+      end is never later than that. With no other end known, it is
+      the end when an exec session was still alive as this step began, after the limit: the work
+      ran until then, and the hosts could not answer before it ended.
+    Without any, the start of the work (`unchanged`) when no listed entry changed since then.
     When the work itself kept the end from the net check (every poll failed for want of the
     machine's resources, so no stretch formed, or polls saw no answer while the hosts answered this
-    step), the tree is refused. Otherwise there is no end bound (`end_from` null, `end_note` says
-    why). The record
+    step as fast as the net check's polls allow), the tree is refused. Otherwise there is no end
+    bound (`end_from` null, `end_note` says why). The record
     (.fsmaint.json) also holds both ends, what the net check recorded, the sessions, the processes
     found stopped, how many passes of ending them took and how many were left, whether the public
     hosts answered afterwards, every note, and every entry: its path, type, size, modification and
@@ -341,6 +233,7 @@ def main(argv):
     passes = int(argv[12]) if argv[12].strip().isdigit() else None
     left = int(argv[13].strip()) if argv[13].strip().isdigit() else None
     started = float(argv[14])
+    work_limit = float(argv[15])
     notes, files, catalogue = [], set(), []
     removals = {}
     totals = {"entries": 0, "size": 0}
@@ -569,7 +462,9 @@ def main(argv):
         # can tell that the hosts were closed all along
         if probe_closed:
             return started, "collect", None, None
-        answered = isinstance(probe, dict) and probe.get("any_open") is True
+        # the work's doing only when the hosts answered this step at the net check's own addresses, as fast as
+        # its polls allow: an answer that only a fresh lookup or a longer wait gets says nothing of the work
+        answered = isinstance(probe, dict) and probe.get("answered_as_net_check") is True
         return None, None, "the net check's stretch without an answer reached into this step while public hosts answered", \
             "answered" if answered else None
 
@@ -580,8 +475,8 @@ def main(argv):
         scan = sessions.get("last_scan")
         if not (isinstance(scan, (int, float)) and scan >= started):
             return None, "the sessions were not watched until this step began"
-        if not isinstance(processes, dict) or processes.get("sessions_alive"):
-            return None, "an exec session was alive when this step began, or that could not be told"
+        if isinstance(processes, dict) and processes.get("sessions_alive"):
+            return None, "an exec session was alive when this step began"
         seen = []
         for entry in sessions.get("sessions") or []:
             try:
@@ -605,9 +500,30 @@ def main(argv):
         return all(item.get("times") is None and all(isinstance(t, (int, float)) and t < cutoff for t in (item["mtime"], item["ctime"]))
                    for item in catalogue)
 
+    def alive_at_start():
+        """Whether an exec session of the work was alive when this step began, by the listing of the stopped
+        processes or by the net check's own record of the sessions."""
+        if isinstance(processes, dict) and processes.get("sessions_alive"):
+            return True
+        if not (isinstance(sessions, dict) and sessions.get("available") is True):
+            return False
+        for entry in sessions.get("sessions") or []:
+            try:
+                if float(entry["last_seen"]) >= started:
+                    return True
+            except (TypeError, KeyError, ValueError):
+                continue
+        return False
+
     nc_bound, nc_from, nc_note, nc_cause = netcheck_end()
     ss_bound, ss_note = session_end()
+    limit_bound = work_started + work_limit if work_started is not None else None
     known = sorted((bound, origin) for bound, origin in ((nc_bound, nc_from), (ss_bound, "session")) if bound is not None)
+    if known and limit_bound is not None and limit_bound < known[0][0]:
+        known.insert(0, (limit_bound, "limit"))
+    elif not known and limit_bound is not None and started >= limit_bound and alive_at_start():
+        # the work was still running when its time ran out, and nothing ended its session: it ran until the limit
+        known = [(limit_bound, "limit")]
     if refused is None and not known and not unchanged() and nc_cause is not None:
         # no end can be told, because of what the work did to the net check's probe: it held the probe
         # blind, or kept it from seeing hosts that answered; nothing in the tree can be told from a file
@@ -625,11 +541,13 @@ def main(argv):
         else:
             end_bound, end_from, end_note = None, None, "; ".join(note for note in (nc_note, ss_note) if note)
         record = {"state": head.split()[0], "listed": head, "refused": refused, "end_bound": end_bound, "end_from": end_from,
-                  "end_note": end_note, "end_bounds": {"netcheck": [nc_bound, nc_from, nc_note], "session": [ss_bound, ss_note]},
+                  "end_note": end_note,
+                  "end_bounds": {"netcheck": [nc_bound, nc_from, nc_note], "session": [ss_bound, ss_note],
+                                 "limit": [limit_bound, work_limit]},
                   "sweep_started_at": started, "work_started": work_started, "staged": info, "netcheck": netcheck,
                   "netcheck_open": netcheck_open, "netcheck_settle": settle, "sessions": sessions,
                   "process_count": (processes or {}).get("process_count"), "processes": (processes or {}).get("processes", []),
-                  "sessions_alive_at_start": (processes or {}).get("sessions_alive"),
+                  "sessions_alive_at_start": (processes or {}).get("sessions_alive"), "session_alive_at_start": alive_at_start(),
                   "kill_passes": passes, "processes_left": left, "net_probe": probe,
                   "listing_complete": before_complete and refused is None, "notes": notes, "entries": catalogue}
         return json.dumps(record, separators=(",", ":"), ensure_ascii=True).encode()
@@ -659,13 +577,137 @@ if __name__ == "__main__":
         main(sys.argv[2:])
 EOF
 /usr/bin/python3 -I "$STATE/measure.py" stage "$TREE" "$STATE" "$KEY"
+# The stopped processes, listed (when this cannot be written, the net check's own record of the
+# sessions tells whether one was alive when this step began).
+timeout 30 /usr/bin/python3 -I - "$STATE/procs.json" <<'EOF'
+"""List the processes of the user `dev` (stopped), with their state, parent and command line, and
+which of them are exec sessions; `processes`, `read_status` and `sessions` are fsmaint-netcheck's."""
+import json
+import os
+import pwd
+import sys
+import time
+
+PROC = "/proc"
+SESSION_PARENTS = ("su", "runuser")
+
+
+def read_status(pid, proc=PROC):
+    """(real uid, parent pid, name, state) of a process, from /proc; None when it cannot be read."""
+    try:
+        with open(os.path.join(proc, str(pid), "status")) as handle:
+            fields = dict(line.split(":", 1) for line in handle.read().splitlines() if ":" in line)
+        return int(fields["Uid"].split()[0]), int(fields["PPid"].strip()), fields.get("Name", "").strip(), fields.get("State", "").strip()[:1]
+    except (OSError, KeyError, ValueError, IndexError):
+        return None
+
+
+def processes(proc=PROC):
+    """{pid: (real uid, parent pid, name, state)} of every process /proc shows; None without a /proc."""
+    try:
+        names = os.listdir(proc)
+    except OSError:
+        return None
+    table = {}
+    for name in names:
+        if name.isdigit():
+            info = read_status(name, proc)
+            if info is not None:
+                table[int(name)] = info
+    return table
+
+
+def sessions(table, uid):
+    """The pids of the exec sessions of the user `uid` in a process table: its processes (not zombies)
+    whose parent is a process of the real user root named in SESSION_PARENTS other than the first
+    process, or that have no parent here."""
+    found = []
+    for pid, (owner, parent, _name, state) in table.items():
+        if owner != uid or state in ("Z", "X"):
+            continue
+        above = table.get(parent)
+        if parent == 0 or (parent != 1 and above is not None and above[0] == 0 and above[2] in SESSION_PARENTS):
+            found.append(pid)
+    return sorted(found)
+
+
+try:
+    uid = pwd.getpwnam("dev").pw_uid
+except KeyError:
+    uid = None
+table = processes()
+listed, alive = [], []
+if table is not None and uid is not None:
+    alive = sessions(table, uid)
+    for pid, (owner, parent, name, state) in sorted(table.items()):
+        if owner != uid:
+            continue
+        try:
+            with open(os.path.join(PROC, str(pid), "cmdline"), "rb") as handle:
+                command = handle.read(4096).replace(b"\0", b" ").strip().decode(errors="backslashreplace")
+        except OSError:
+            command = ""
+        listed.append({"pid": pid, "ppid": parent, "state": state, "name": name, "command": command[:1000], "session": pid in alive})
+with open(sys.argv[1], "w") as handle:
+    json.dump({"listed_at": time.time(), "proc": table is not None, "process_count": len(listed), "processes": listed[:500],
+               "sessions_alive": alive[:100]}, handle)
+EOF
+# End them all: live processes only (a zombie cannot write, and only its parent can take it away),
+# for at most KILL_SECONDS.
+passes=0
+kill_started=$(date +%s)
+for _ in $(seq 1 100); do
+  pgrep -u dev -r R,S,D,T,t >/dev/null 2>&1 || pgrep -U dev -r R,S,D,T,t >/dev/null 2>&1 || break
+  [ $(( $(date +%s) - kill_started )) -lt "$KILL_SECONDS" ] || break
+  passes=$((passes + 1))
+  setpriv --reuid dev --regid dev --clear-groups kill -9 -1 >/dev/null 2>&1
+  pkill -KILL -u dev >/dev/null 2>&1
+  pkill -KILL -U dev >/dev/null 2>&1
+  sleep 0.1
+done
+left=$(timeout 30 /usr/bin/python3 -I - <<'EOF'
+"""How many live processes of the user `dev` are left (a zombie cannot write and is not counted);
+the tools' count where there is no /proc; nothing when it cannot be told."""
+import os
+import pwd
+import subprocess
+
+try:
+    uid = pwd.getpwnam("dev").pw_uid
+    names = os.listdir("/proc")
+except (KeyError, OSError):
+    uid = names = None
+count = None
+if names is not None:
+    count = 0
+    for name in names:
+        if not name.isdigit():
+            continue
+        try:
+            with open(f"/proc/{name}/status") as handle:
+                fields = dict(line.split(":", 1) for line in handle.read().splitlines() if ":" in line)
+            if int(fields["Uid"].split()[0]) == uid and fields.get("State", "").strip()[:1] not in ("Z", "X"):
+                count += 1
+        except (OSError, KeyError, ValueError, IndexError):
+            continue
+else:
+    try:
+        count = len(subprocess.run(["pgrep", "-u", "dev"], capture_output=True, text=True, timeout=10).stdout.split())
+    except (OSError, subprocess.SubprocessError):
+        count = None
+print("" if count is None else count)
+EOF
+)
+ended=$(/usr/bin/python3 -I -c 'import time; print(repr(time.time()))')
 # Whether a few public hosts answer from here now (a TLS handshake), all at once, three seconds in
 # all: by name, and at the addresses fsmaint-netcheck resolved when it started.
 timeout 15 /usr/bin/python3 -I - "$STATE/netprobe.json" "$STATE/netcheck.json" <<'EOF'
 """Record whether a TLS handshake with port 443 of a few public hosts completes, all tried at once
 within three seconds, by name and at the addresses the net check resolved. `any_open` is True when one
 completed, False when every attempt failed for a reason of the network, and None when none completed
-and an attempt failed for a reason of this machine (as in fsmaint-netcheck, LOCAL_ERRNOS)."""
+and an attempt failed for a reason of this machine (as in fsmaint-netcheck, LOCAL_ERRNOS).
+`answered_as_net_check` is True when one completed at an address the net check polls within the time
+its own polls allow (its handshake seconds for the connection, and again for the handshake)."""
 import errno
 import json
 import socket
@@ -677,24 +719,35 @@ import time
 HOSTS = ("pypi.org", "files.pythonhosted.org", "github.com")
 LOCAL_ERRNOS = frozenset({errno.EADDRNOTAVAIL, errno.EADDRINUSE, errno.EAGAIN, errno.EMFILE, errno.ENFILE,
                           errno.ENOBUFS, errno.ENOMEM})
-targets = [(host, host) for host in HOSTS]
+targets = [(host, host, False) for host in HOSTS]
+allowed = 1.0
 try:
     with open(sys.argv[2]) as handle:
-        resolved = json.load(handle).get("hosts") or {}
-    targets += [(host, address) for host, found in resolved.items() if host in HOSTS and isinstance(found, list)
+        status = json.load(handle)
+    allowed = float(status.get("handshake_seconds") or 1.0)
+    targets += [(host, address, True) for host, found in (status.get("hosts") or {}).items() if host in HOSTS and isinstance(found, list)
                 for address in found if isinstance(address, str)]
-except (OSError, ValueError, AttributeError):
+except (OSError, ValueError, AttributeError, TypeError):
     pass
-results = {f"{address}:443 ({host})": "no answer within 3 s" for host, address in targets}
+results = {f"{address}:443 ({host})": "no answer within 3 s" for host, address, _polled in targets}
+quick = []
+try:
+    context = ssl.create_default_context()
+except (OSError, ssl.SSLError, MemoryError):
+    context = None
 
 
-def reach(host, address):
+def reach(host, address, polled):
     key = f"{address}:443 ({host})"
     try:
+        began = time.monotonic()
         with socket.create_connection((address, 443), timeout=3) as raw:
+            connected = time.monotonic()
             raw.settimeout(3)
-            with ssl.create_default_context().wrap_socket(raw, server_hostname=host):
+            with (context or ssl.create_default_context()).wrap_socket(raw, server_hostname=host):
                 results[key] = "open"
+                if polled and connected - began <= allowed and time.monotonic() - connected <= allowed:
+                    quick.append(key)
     except (OSError, ValueError, MemoryError) as exc:
         local = isinstance(exc, MemoryError) or (
             isinstance(exc, OSError) and not isinstance(exc, ssl.SSLError) and exc.errno in LOCAL_ERRNOS)
@@ -715,7 +768,8 @@ for worker in workers:
 states = list(results.values())
 any_open = True if "open" in states else (None if any(state.startswith("local") for state in states) else False)
 with open(sys.argv[1], "w") as handle:
-    json.dump({"started_at": started, "checked_at": time.time(), "hosts": results, "any_open": any_open}, handle)
+    json.dump({"started_at": started, "checked_at": time.time(), "hosts": results, "any_open": any_open,
+               "answered_as_net_check": bool(quick), "answered_within": allowed, "answered_quickly": sorted(quick)}, handle)
 EOF
 # fsmaint-netcheck, if it still runs, gets to finish a poll that started after every process of
 # `dev` had ended, so that an opening the end of the work brought is on its record, and a look at
@@ -838,4 +892,4 @@ EOF
 # Measure, bound, list, sign and mark, as root, and put the tree back.
 exec /usr/bin/python3 -I "$STATE/measure.py" main "$TREE" "$STATE" "$KEY" "$LIMIT_ENTRIES" "$LIMIT_BYTES" "$LIMIT_DEPTH" \
     "$LIMIT_PATH_BYTES" "$LIMIT_RECORD_BYTES" "$COPY_MARGIN_BYTES" "$SESSION_WINDOW_SECONDS" "$UNCHANGED_MARGIN_SECONDS" \
-    "$SPARE_DIRS" "$passes" "$left" "$started"
+    "$SPARE_DIRS" "$passes" "$left" "$started" "$WORK_LIMIT_SECONDS"
