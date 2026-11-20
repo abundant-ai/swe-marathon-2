@@ -187,6 +187,28 @@ It does not yet meet the v2 workload target; see [Workload](#workload) and
   drivers pass 62 of 62 units and match 287 of 287 calls of two modules of the
   original tree, and give the same statuses twice on a stored submission whose
   examples draw random inputs.
+- Comparison. The recorded-call comparison failed bodies that behave exactly as
+  the original on state that is not behaviour. Five units matched none of their
+  calls with a body that returns the same object and leaves a lazily filled cache
+  empty (`PrimeIdeal.as_submodule`, `round_two`, `restrict_codomain`,
+  `homomorphism`, `FreeModule.identity_hom`); a correct `Truss.remove_node`
+  failed on a private list in which upstream drops the wrong entry; strings were
+  compared exactly while examples are checked with whitespace normalised; and a
+  symbol made with `commutative=True` spelled out differed from the same symbol
+  without it, though SymPy calls them equal. The canonical form now leaves out
+  memo slots (fifteen named attributes), `ReferenceFrame.index` (a process-wide
+  counter) and Truss's two parallel coordinate lists; symbols carry the
+  assumptions SymPy's equality uses; dense and sparse domain matrices compare by
+  shape, domain and entries; strings compare with runs of whitespace as one, as
+  the examples do. Every reference result was recorded again with the new form
+  (`scripts/builder/regold.py`): the original reproduces 13,382 calls under three
+  hash seeds and the skeleton none; two calls whose results outgrew the
+  runner's 400 kB line under the new form were dropped (their units keep other
+  calls). Re-checked with bodies that behave as the original: the five units
+  match 3/3, 8/8, 8/8, 8/8 and 3/3 calls (0 before), `remove_node` by index 1/1
+  (0 before). `multiline_latex` from its docstring still matches 0 of 6: upstream
+  writes `&- a` for a negative first term, a spacing difference the examples'
+  own rule also sees, which no docstring or visible test shows.
 
 ## Current implementation
 
@@ -381,11 +403,19 @@ The verifier runs in a separate image with only `/app/sympy` from the candidate.
    itself and exits, and the units behind it run in a new process, since an
    interrupted body can leave global state behind. Units left when the time is
    up count as not reached.
-3. Recorded calls. 13,384 calls, at least one per unit, replayed one at a time in
+3. Recorded calls. 13,382 calls, at least one per unit, replayed one at a time in
    the sandbox with a 10-second limit, at most 20 minutes in total. The sandbox
    writes the result; the verifier compares it with the reference result, which
    the sandbox cannot read. Arguments were recorded from SymPy's own test suite
-   and, for units it never calls directly, from docstring examples. One process
+   and, for units it never calls directly, from docstring examples. A result is
+   compared by its canonical form (`verifier/lib/canon.py`): value, type and
+   container, order, the form of a returned expression, and the state of an
+   object the call builds or changes, leaving out what is not behaviour: memo
+   slots an object fills lazily from its other state, a process-wide creation
+   counter, lists kept in parallel with another attribute, the keywords a symbol
+   was made with beyond the assumptions SymPy's equality uses, and the storage of
+   a domain matrix. Strings compare with runs of whitespace as one, as the
+   examples are checked; floats with a relative tolerance of 1e-9. One process
    replays the calls of one module. If it ends by itself or stays silent for 40
    seconds, the call it was on does not match and the calls behind it are
    replayed in a new process; if not even the first call of that start returned,
@@ -566,6 +596,8 @@ Proximus on the v1 package, base experiment, 2026-11-17:
 | `checks/` (50 tests): delivery hooks under dash with stand-ins, a late write refused, an honest delivery taken, every failing mark an evaluation error, the net check's arming and handshake probe | working tree, 2026-11-20 (delivery) | pass; the hooks have not run on the platform |
 | `checks/` (61 tests): the real docstring runner and driver on a stand-in package (a death, a silent block and a timeout each cost one unit; a seeded draw passes twice; an import that never finishes fails its module in one start; a run that dies after its last unit counts nothing; a used-up budget gives a row per unit; `measure()` completes through it; `restore check` fails only the culprit), call replay (a barren start costs only its unit; a timeout restarts behind it; a hung import ends the job in one start), one deadline under the verifier limit, an unreached verdict is an evaluation error, the address-space limit and its fallback | working tree, 2026-11-20 (verifier robustness) | pass |
 | Rewritten runners and drivers on real SymPy (Python 3.12, no sandbox) | original tree: `combinatorics.permutations` and `combinatorics.group_numbers`; a stored submission: `group_numbers` twice, `ntheory.generate`, `ntheory.residue_ntheory`, `polys.euclidtools` | original: 62 / 62 units, 287 / 287 calls; submission: identical statuses in both runs, 48 pass and 22 fail with no lost unit |
+| Reference results recorded again with the new comparison (`scripts/builder/regold.py`) | the verifier's own runner and `canon.py`, original and skeleton trees without test directories, hash seeds 0, 1, 2 | original 13,382 / 13,382 under every seed (2 of 13,384 dropped: result over the 400 kB line); skeleton 0; slowest call 419 ms; 8,602 results unchanged in form |
+| Behaviour-equal bodies of the units the old comparison failed | one unit swapped at a time in the original tree, the verifier's `rdoctest.py` and `rvector.py`, new reference results | as_submodule and round_two without their pre-set flags 3/3 and 8/8; restrict_codomain testing equality first 8/8; homomorphism without the no-op steps 8/8 and identity_hom through it 3/3; Truss.remove_node by index 1/1; multiline_latex from its docstring 0/6 (`&- a`, see the development log). Examples pass in every case |
 | `oddish preflight` | bundles `e043dc4facdd` and `8180b51500b1` | pass |
 | Reference and no-op baselines on Oddish | bundle `e043dc4facdd` (v1 instruction text, v2 verifier), task version 1, experiment `sympy-restoration-v2-20261117` | reference 1.0 twice (2,671 / 13,384 / 10,428, five checks passed, grading 652 s and 691 s); no-op 0.0 twice (`candidate_tree` failed, four checks skipped, report `completed`) |
 | Reference and no-op baselines on Oddish | bundle `8180b51500b1` (rewritten instruction and tool text), task version 2, experiment `sympy-restoration-v2-final-20261117` (https://www.oddish.app/experiments/0b7a142f) | reference 1.0 twice (trials 9, 10: 2,671 / 13,384 / 10,428, five checks passed, grading 658 s and 649 s); no-op 0.0 twice (trials 11, 12). A first attempt at 04:47 UTC targeted the version-1 experiment and created no trials |

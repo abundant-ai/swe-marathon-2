@@ -10,10 +10,18 @@ form, except that floating-point leaves are compared with a tolerance by `same()
   dict -> ["D", [[k, v] sorted..]]                 iterator -> ["G", [first items..]]
   SymPy expression -> ["X", class, [args..]]  (atoms carry their defining data)
   matrix -> ["M", rows, cols, [entries..]]    class -> ["K", "module.qualname"]
+  domain matrix storage (dense or sparse) -> ["DM", rows, cols, domain, [entries..]]
   other SymPy object -> ["O", class, [[attribute, value]..]], or ["R", class, repr] when its
   state cannot be expressed                     named function -> ["FN", name]
   exception raised by the call -> ["EXC", class name, [class chain..]]
   call that returned None -> ["NS", <arguments after the call>], or ["N"] if unchanged
+
+What is compared is behaviour, not bookkeeping: a symbol is the name plus the assumptions
+SymPy's own equality uses, a domain matrix is its shape, domain and entries whatever its
+storage, and an object's state leaves out values it fills lazily from the rest of its state
+(memo slots), a process-wide creation counter, and lists kept in parallel with another
+attribute. `same()` compares strings with runs of whitespace treated as one space, as the
+docstring examples are compared.
 """
 from __future__ import annotations
 
@@ -24,6 +32,17 @@ import math
 MAX_NODES = 40000
 MAX_DEPTH = 80
 MAX_ITER = 200
+# attributes that hold a value computed lazily from the object's other state
+MEMO_SLOTS = frozenset({
+    "_img", "_ker", "_starts_with_unity", "_is_sq_maxrank_HNF", "_QQ_matrix", "_QQ_col",
+    "_mult_tab", "_test_factor", "_maximal_order", "_discriminant", "_nilradicals_mod_p",
+    "_gb", "_gbe", "_is_confluent", "_var_dict",
+})
+# per class: a creation counter, and lists kept in parallel with another attribute
+STATE_SKIP = {
+    "sympy.physics.vector.frame.ReferenceFrame": frozenset({"index"}),
+    "sympy.physics.continuum_mechanics.truss.Truss": frozenset({"_node_position_x", "_node_position_y"}),
+}
 
 
 class Uncanonical(Exception):
@@ -93,6 +112,8 @@ def _c(o, depth, budget):
             return ["M", int(o.rows), int(o.cols), [_c(o[i, j], depth + 1, budget) for i in range(o.rows) for j in range(o.cols)]]
         raise Uncanonical(f"mpmath type {t.__name__}")
 
+    if mod.startswith("sympy.polys.matrices.") and t.__name__ in ("DDM", "SDM"):
+        return _domain_matrix(o, t, depth, budget)
     if isinstance(o, tuple):
         tag = "T" if t is tuple else "T:" + t.__name__
         return [tag, [_c(x, depth + 1, budget) for x in o]]
@@ -156,14 +177,19 @@ def _c(o, depth, budget):
 _ACTIVE = set()
 
 
+def _skipped(n, skip):
+    return n.startswith("__") or "cache" in n or n == "_hash" or n in MEMO_SLOTS or n in skip
+
+
 def _state(o, t, depth, budget):
     names = []
     for klass in t.__mro__:
         slots = klass.__dict__.get("__slots__", ())
         names += [slots] if isinstance(slots, str) else list(slots)
+    skip = STATE_SKIP.get(f"{t.__module__}.{t.__qualname__}", frozenset())
     state = []
     for n in sorted(set(names)):
-        if n in ("__dict__", "__weakref__") or n.startswith("__") or "cache" in n or n == "_hash":
+        if n in ("__dict__", "__weakref__") or _skipped(n, skip):
             continue
         try:
             state.append([["S", n], _c(object.__getattribute__(o, n), depth + 1, budget)])
@@ -172,10 +198,33 @@ def _state(o, t, depth, budget):
     d = getattr(o, "__dict__", None)
     if isinstance(d, dict):
         for n in sorted(k for k in d if isinstance(k, str)):
-            if n.startswith("__") or "cache" in n or n == "_hash":
+            if _skipped(n, skip):
                 continue
             state.append([["S", n], _c(d[n], depth + 1, budget)])
     return state
+
+
+def _domain_matrix(o, t, depth, budget):
+    """Dense (a list of rows) and sparse (a dict of row dicts) storage alike: shape, domain and
+    every entry, read from the storage itself (no method of the object is called)."""
+    d = vars(o)
+    shape = d.get("shape")
+    if not (isinstance(shape, tuple) and len(shape) == 2 and all(type(k) is int and k >= 0 for k in shape)):
+        raise Uncanonical("domain matrix without a shape")
+    rows, cols = shape
+    if rows * cols > MAX_NODES:
+        raise Uncanonical("too large")
+    domain = d.get("domain")
+    zero = getattr(domain, "zero", 0)
+    if t.__name__ == "DDM":
+        grid = list.__iter__(o)
+        entries = [row[j] for row in grid for j in range(cols)]
+    else:
+        entries = []
+        for i in range(rows):
+            row = dict.get(o, i) or {}
+            entries.extend(row.get(j, zero) for j in range(cols))
+    return ["DM", rows, cols, _c(domain, depth + 1, budget), [_c(x, depth + 1, budget) for x in entries]]
 
 
 def _f(x):
@@ -209,8 +258,9 @@ def _basic(o, depth, budget, sympy):
     if isinstance(o, Dummy):
         return ["X", "Dummy", [["S", o.name]]]
     if isinstance(o, (Symbol, Wild)):
+        # the assumptions SymPy's equality and hash use, not the keywords the symbol was made with
         try:
-            ass = sorted((str(k), bool(v)) for k, v in (getattr(o, "_assumptions_orig", None) or {}).items())
+            ass = sorted((str(k), bool(v)) for k, v in (object.__getattribute__(o, "_assumptions0") or ()))
         except Exception:  # noqa: BLE001
             ass = []
         return ["X", name, [["S", o.name], ["S", json.dumps(ass)]]]
@@ -232,9 +282,12 @@ def _basic(o, depth, budget, sympy):
 
 
 def same(a, b, rel=1e-9, abs_=1e-12):
-    """Compare two canonical forms; float leaves within tolerance."""
+    """Compare two canonical forms; float leaves within tolerance, strings with runs of
+    whitespace treated as one space."""
     if type(a) is not type(b):
         return False
+    if isinstance(a, str):
+        return a == b or " ".join(a.split()) == " ".join(b.split())
     if isinstance(a, list):
         if a and b and a[0] == "EXC" and b[0] == "EXC":
             # same exception class, or one is a subclass of the other
