@@ -153,9 +153,12 @@ def manifest_record(server: Path) -> dict[str, Any]:
     missing or says the tree was refused. Only the manifest's first MANIFEST_READ bytes are read, which hold all the
     hook writes.
 
+    More than the manifest counts can arrive where the copy could not keep a file's hard links and made copies of it;
+    that tree is scored as it arrived, with a note.
+
     Raises:
-        EvaluationError: Nothing arrived at all, so the copy never happened; or the manifest counts more than arrived,
-            so the copy was cut short, which nothing the agent does can bring about.
+        EvaluationError: Nothing arrived at all, so the copy never happened; or fewer entries or bytes arrived than the
+            manifest counts, so the copy was cut short, which nothing the agent does can bring about.
     """
     try:
         empty = server.is_symlink() or not server.is_dir() or next(server.iterdir(), None) is None
@@ -184,9 +187,14 @@ def manifest_record(server: Path) -> dict[str, Any]:
         return record
     if len(head) == 3 and head[0] == "complete" and all(value.isascii() and value.isdigit() for value in head[1:]):
         entries, size = arrived(server)
-        if (entries, size) != (int(head[1]), int(head[2])):
-            raise EvaluationError(f"The copy arrived incomplete: {entries:,} of {int(head[1]):,} entries and {size:,} of "
-                                  f"{int(head[2]):,} bytes")
+        counted = int(head[1]), int(head[2])
+        if entries < counted[0] or size < counted[1]:
+            raise EvaluationError(f"The copy arrived incomplete: {entries:,} of {counted[0]:,} entries and {size:,} of "
+                                  f"{counted[1]:,} bytes")
+        if (entries, size) != counted:
+            record["notes"] = notes + [f"more arrived than the collect hook's manifest counts ({entries:,} entries and {size:,} bytes, "
+                                       f"against {counted[0]:,} and {counted[1]:,}): hard links the copy could not keep arrive as "
+                                       "copies; /app/server was scored as it arrived"]
         return record
     record["notes"] = notes + ["the collect hook's manifest could not be read; /app/server was scored as it arrived"]
     return record

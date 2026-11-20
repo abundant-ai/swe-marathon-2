@@ -6,7 +6,8 @@ We run our wholesale business on Stockwell, a back-office product. The vendor is
 have left is the web client and a sealed copy of the server that we can run but not read or
 change. I need a server of our own that behaves exactly like the sealed one, so that the client
 keeps working and so do the integrations that use the API: the branches' tills, the bank feed and
-our accounting export, which compare every value they receive, and its type, exactly.
+our accounting export, which rely on every value they receive, and its type, staying exactly as it
+is today.
 
 ## Context
 
@@ -47,8 +48,8 @@ A server in `/app/server` with an executable file `/app/server/run` that starts 
   `python3` and its packages, Node.js and Go. A link that points outside the directory is
   replaced there by a copy of what it points to; everything else the server needs must be inside
   `/app/server`. With those copies it may hold at most 100,000 files and directories and 1 GB,
-  with no path inside it longer than 1,000 bytes, and the disk needs that much room left to copy
-  it; otherwise it is not copied. It runs as an unprivileged user that can read that directory
+  with no path inside it longer than 1,000 bytes and no file with more than 1,000 hard links, and
+  the disk needs that much room left to copy it; otherwise it is not copied. It runs as an unprivileged user that can read that directory
   and write only to the directory named in `DATA_DIR`, with at most 4,096 threads, files of at
   most 4 GB, 6 GB of address space per process and 6 GB of memory in all, shared memory
   included.
@@ -59,9 +60,9 @@ A server in `/app/server` with an executable file `/app/server/run` that starts 
 - For every API request the sealed server accepts or refuses, your server gives the same status
   code and the same JSON body, including the calls the web client makes when it opens
   (`GET /api/version`, then `GET /api/ws/{id}/auth/me`). The order of keys inside a JSON object
-  does not matter; everything else does, because the integrations compare answers exactly: the
-  order of lists, the text of messages, the difference between `1`, `1.0` and `true`, and what a
-  workspace holds after a sequence of requests.
+  does not matter; everything else does, because the integrations depend on every detail of an
+  answer: the order of lists, the text of messages, the difference between `1`, `1.0` and `true`,
+  and what a workspace holds after a sequence of requests.
 - Some answers will differ whatever you do, because they carry the real time or a random token:
   password sign-in, sessions and API keys, which we do not use, and the request log and
   `/metrics`, which are for operators. Those need not match.

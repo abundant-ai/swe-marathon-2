@@ -42,6 +42,11 @@ done
 mkdir -p "$STATE" 2>/dev/null
 tail -n 20 /var/log/fsmaint-timer.log > "$STATE/timer.txt" 2>/dev/null || :
 echo "sweep: $stopped" >> "$STATE/timer.txt" 2>/dev/null || :
+# The process limit a su session of the user had when the session began (`ulimit -Hu`, read at set-up).
+limit=
+[ -r "$STATE/user-limit" ] && read -r limit rest 2>/dev/null < "$STATE/user-limit"
+case $limit in ''|*[!0-9a-z]*) limit= ;; esac
+[ -n "$limit" ] && echo "sweep: a su session of the user had a process limit of $limit" >> "$STATE/timer.txt" 2>/dev/null
 # Give back the room and the spare inodes set aside when the session started, so however full the disk was left, the
 # mark, a refusal and the copy's archive can be written.
 rm -f "$STATE/room"
@@ -190,12 +195,13 @@ exec /opt/py/bin/python -I - /app/server "$LIMIT_ENTRIES" "$LIMIT_BYTES" "$LIMIT
 """Measure /app/server, bound it, pack it once and write its manifest, as root, once nothing of the user's runs.
 
 The tree is walked by directory descriptor, so no depth hides anything, and any step that cannot be completed refuses
-the tree, as does a walk and a check of its links not done within MEASURE_SECONDS; every name listed counts against
-the limit on entries, a pipe or a socket too. Anything the copy would refuse is removed: a device, a pipe, a socket, a
-link with an absolute target, or one the kernel cannot follow (at most 40 links on the way) to a file or directory
-inside, one the walk saw or, failing that, one realpath finds there. A link kept is the relative path straight to
-what it reaches, so that the copy resolves it the same way wherever it unpacks the tree; one that is not is written
-again so, or removed where the disk has no room left for that. A tree over the limits, or one that the copy's own pack
+the tree, as does a walk and a check of its links not done within MEASURE_SECONDS, or a file with more than
+LIMIT_NAMES hard links; every name listed counts against the limit on entries, a pipe or a socket too. Anything the
+copy would refuse is removed: a device, a pipe, a socket, a link with an absolute target, or one the kernel cannot
+follow (at most 40 links on the way) to a file or directory inside, one the walk saw or, failing that, one realpath
+finds there. A link kept is the relative path straight to what it reaches, so that the copy resolves it the same way
+wherever it unpacks the tree; one that is not is written again so, or removed where the disk has no room left for
+that. A tree over the limits, or one that the copy's own pack
 (tar -czf into /tmp) cannot make within PACK_SECONDS, is moved aside whole and replaced by an empty directory (where
 the directory cannot be renamed, what it holds is moved aside instead); a pack that fails only for want of room or
 inodes the machine never had is left to the copy. The manifest's first line is `complete` with the number of entries
@@ -219,7 +225,8 @@ KEEP_BYTES, KEEP_INODES = 64 << 20, 64  # room a link written again may not take
 NOTES, NOTE_CHARS = 40, 200  # the manifest's lines of changes, and the characters of each
 MEASURE_SECONDS = 240  # for the walk and the links; the pack has PACK_SECONDS of its own
 STOP = time.monotonic() + MEASURE_SECONDS
-notes, links, files = [], [], set()
+LIMIT_NAMES = 1000  # names (hard links) one file may have: a copy whose file system allows fewer makes copies of it
+notes, links, files, names_of = [], [], set(), {}
 path_of, inode_of = {}, {}  # each file and directory the walk saw: its path inside ROOT by (device, inode), and back
 entries = size = listed = 0
 
@@ -259,6 +266,10 @@ def walk(fd, rel):
         if not stat.S_ISLNK(info.st_mode):
             inode_of[path] = (info.st_dev, info.st_ino)
             path_of.setdefault((info.st_dev, info.st_ino), path)
+        if stat.S_ISREG(info.st_mode):
+            names_of[(info.st_dev, info.st_ino)] = names_of.get((info.st_dev, info.st_ino), 0) + 1
+            if names_of[(info.st_dev, info.st_ino)] > LIMIT_NAMES:
+                raise Refuse(f"it holds a file with more than {LIMIT_NAMES:,} hard links, the most /app/server may hold")
         if stat.S_ISREG(info.st_mode) and (info.st_dev, info.st_ino) not in files:
             files.add((info.st_dev, info.st_ino))
             size += info.st_size
