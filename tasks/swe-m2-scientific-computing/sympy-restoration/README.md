@@ -413,7 +413,9 @@ It does not yet meet the v2 workload target; see [Workload](#workload) and
   agent under a harness of one exec per command cannot turn its trial into an
   evaluation error that way.
 - Hostile errors. Every way the work could turn its own failing trial into an
-  evaluation error is now a scored 0 or harmless: nothing usable under the
+  evaluation error is now a scored 0 or harmless (third re-check: every way
+  through the collect step; bodies that used up a phase's time still left items
+  unreached, an evaluation error, until the next round): nothing usable under the
   tree's name (removed, a link, a file, a link to another directory) is a
   signed refusal with an empty tree in its place, as is a tree that cannot be
   listed (the collect step's `failed` state is gone); a tree deeper than 64
@@ -654,6 +656,56 @@ It does not yet meet the v2 workload target; see [Workload](#workload) and
 - Smaller. A tree over 256 MB is refused (2 GB before; such a tree must cross
   the platform's file transfer twice); the `task.toml` justification is one
   neutral line; the Dockerfiles carry no comment.
+- Low-precision Floats. Below 53 bits the tolerance had been a relative half and
+  an absolute floor of up to 1, so `nroots` at two digits, `Expr.round` one place
+  early and `racah` without its sign factor matched their counted calls, and at
+  53 bits a value wrong from its eleventh digit matched. A SymPy Float (of the
+  same precision) and an mpmath number are now alike within a few units in their
+  last place, a relative 2^(2 - precision), a Python float within 2^-50, and zero
+  only zero. The reference graded again matched 16,737 of 16,737 calls, and once
+  more in the timing run, so no tolerance was needed; the checks hold one unit in
+  the last place alike and 1%, a sign flip and a value inside the old floor apart
+  at 13, 17, 20, 27 and 40 bits.
+- The runners' records. A body could import `__main__` (the runners kept their
+  nonce, output and payload there) or `posix`, write a result line of its own,
+  and forge a docstring pass by wrapping the runner's `emit`; and `same()`
+  raised on five shapes such a line can carry, which `engine.py` did not catch,
+  an evaluation error the work caused. A list of forbidden imports alone would
+  not close it, since SymPy itself hands out its modules' imports as attributes
+  and evaluates strings. So each start of a runner now gets its own key on its
+  standard input, the runner keeps that key, its output and its work inside a
+  function, never on `__main__`, and the verifier reads only lines that carry the
+  HMAC of their text with that key: a line a body writes, to the runner's file
+  or to any open descriptor, is not read. `__main__`, `posix`, `nt` and every
+  module whose name starts with an underscore are forbidden in a body as well
+  (every original body still passes the rules). `same()` is total (an identity
+  that is not a name binds nothing, a memo dict whose items are not pairs is no
+  match), and the engine counts a result it cannot compare as not matching. A
+  body that takes over its interpreter through SymPy's own string evaluation
+  could still reach the key on the runner's stack; what that buys is what
+  finding 1 of the hackability table already bounds: forged examples, with the
+  reward never above the call share, which is compared outside with results the
+  sandbox never sees.
+- Time the submission's bodies used. Bodies that never end or are very slow
+  used up the 40-minute example and call phases (each time-out cost its whole
+  limit and a fresh runner, and was not counted as a restart), and the items
+  left raised "The reward depends on items the measurement did not reach": an
+  all-looping tree and a tree with 5% of its units looping were evaluation
+  errors. The re-checks suggested per-item budgets from the original's times;
+  those alone cannot bound a tree whose every body runs just under its budget,
+  and set tight they would fail honest code on a slower machine. What decides
+  now is who used the time. Before any submitted code runs, the verifier times a
+  fixed piece of pure-Python work (0.16 s on the machine the reference results
+  were recorded on) to know how much slower its machine is, and the original's
+  own seconds for every module and unit (`tests/private/timing.json`, 299 s of
+  examples and 318 s of calls on one worker, most of it the runners' imports)
+  say what the original would need for the restored units. When a phase runs
+  out of time with items left and the original would need at most half of the
+  phase's worker-seconds, the items left fail; only a machine so slow that the
+  original itself would need more keeps them not reached, an evaluation error.
+  On the platform's four workers that leaves room for a machine sixteen times
+  slower. A unit whose calls ran out of time, or stopped the runner, twice is not
+  run again, and the phases now count their starts, time-outs and stops.
 
 ## Current implementation
 
@@ -952,7 +1004,12 @@ The verifier runs in a separate image with only `/app/sympy` from the candidate.
    Python's and both of SymPy's random generators are seeded from the unit's name
    before its examples run, so a unit's draw is the same in every grading (and in
    `restore check`). One process runs the units of one module, watched: 2 minutes
-   to import, then at most 50 seconds without a record. A unit's result counts
+   to import, then at most 50 seconds without a record. Each start of a runner
+   is given its own key on its standard input, and a line counts only when it
+   carries the HMAC of its text with that key; the runners keep the key, their
+   output and their work inside a function, never on `__main__`, so a body that
+   reaches the process (an import of `__main__` or `posix`, or a write to every
+   open file) writes nothing the verifier reads. A unit's result counts
    only when its process reached its own closing self-check. When a process ends,
    or stops, without it, the unit it was running fails (`crash`, or `timeout` when
    it stopped) and the rest of the module runs again in a new process, at most
@@ -1012,14 +1069,16 @@ The verifier runs in a separate image with only `/app/sympy` from the candidate.
    with the arguments is exact; Truss's coordinate lists in what
    `Truss.remove_node` leaves, where upstream keeps them inconsistently; the
    LaTeX of `multiline_latex` and `vlatex`, compared without the whitespace LaTeX
-   ignores (a blank line, which is a paragraph break, is kept); a Python float or
-   an mpmath number within a relative 2^-30 (about 1e-9), and a SymPy Float of
-   the same precision (compared exactly) within 2^(23 - precision), the
-   tolerance scaled to the precision as the re-check proposed, because the
-   reference results were recorded on one machine and are compared on another,
-   where a float that passes through the C math library can differ in its last
-   bits (on one machine the original repeats every float exactly, so this one
-   is not shown; 173 counted results hold a float, 158 of them a SymPy Float);
+   ignores (a blank line, which is a paragraph break, is kept); a SymPy Float of
+   the same precision (compared exactly), or an mpmath number at its precision,
+   within a few units in its last place (a relative 2^(2 - precision)), and a
+   Python float within a relative 2^-50, zero only against zero, with no
+   absolute tolerance: the reference results were recorded on one machine and
+   are compared on another (the third re-check replayed every call with another
+   allocator and with every transcendental result of `math` and `cmath` one unit
+   off, and no recorded result moved, so this is a margin for the image's own
+   Python and C arithmetic, not a need; 173 counted results hold a float, 158 of
+   them a SymPy Float, 16 below 53 bits);
    the order of a dict's items,
    which Python's equality ignores and SymPy prints sorted, so that no example
    or test can show it (401 counted results hold a dict of two or more items);
@@ -1030,8 +1089,10 @@ The verifier runs in a separate image with only `/app/sympy` from the candidate.
    replayed in a new process; if not even the first call of that start returned,
    the rest of that call's unit does not match either and the job resumes at the
    next unit. After a call that ran out of time the runner exits and the calls
-   behind it run in a new process. A job ends after 16 starts that ended or
-   stopped. The random generators (Python's and both of SymPy's) are seeded from
+   behind it run in a new process; a unit whose calls ran out of time, or stopped
+   the runner, twice does not match on the rest of its calls, which are not run.
+   A job ends after 16 starts that ended or stopped. The random generators
+   (Python's and both of SymPy's) are seeded from
    the call id before every call, so one tree gives the same result each time it
    is graded.
 4. Repository tests. 10,428 upstream test cases that pass on the original and
@@ -1138,13 +1199,20 @@ reward = min(u, c)  if candidate_tree and measurement_integrity passed, else 0
   join inside the min, never as a weight. The pooled `partial_score` is gone: it
   took the test share from the sandbox and ignored the controls.
 - Denominators are fixed. A unit that is not restored or is late counts as not
-  passing; its calls as not matching. A unit or call not reached before the
-  deadline counts as failing in `unit_share` and `call_share`; if the items not
-  reached could raise the reward by more than 0.001
-  (`unit_share_if_reached`, `call_share_if_reached`), the time, not the
-  submission, would decide, so the evaluation ends with an error and no reward.
-  Units and calls left after their module's restarts ran out are failures, not
-  unreached items.
+  passing; its calls as not matching. When a phase's time runs out with units or
+  calls left, the verifier asks who used it: before any submitted code runs it
+  times a fixed piece of pure-Python work and compares it with the same work on
+  the machine the reference results were recorded on (`host_factor`), and the
+  original's own seconds for every module and unit (`tests/private/timing.json`)
+  scaled by that factor say what the original would need for the restored units.
+  If that is at most half of the phase's worker-seconds, the submission's own
+  bodies (slow, never ending or crashing) used the time, and what is left fails
+  (`units_not_reached_failed`, `vectors_not_reached_failed`, with a note). Only
+  when the original would need more, so that the machine decided, do the items
+  stay not reached, and if they could raise the reward by more than 0.001
+  (`unit_share_if_reached`, `call_share_if_reached`) the evaluation ends with an
+  error and no reward. Units and calls left after their module's restarts ran
+  out are failures, not unreached items.
 - Also in `metrics.json`: `unit_share`, `call_share`, `test_share`, the bars'
   shares (`unit_pass_rate`, `call_match_rate`, `test_pass_rate`),
   `units_examples_passing`, `units_documented_calls_only` (units in the set
@@ -1217,7 +1285,7 @@ have not yet run on the platform). Unassessed boundaries: finding 7.
 | 2 | Read reference results or the withheld tests | File permissions in the verifier image | Attempted in both rounds; not reached | Private inputs readable by root only; sandbox runs as `nobody`; no test directories in the tree during phases 2 and 3 | Depends on the privilege drop | Re-run on the v2 bundle | 🟢 GREEN / LOW |
 | 3 | Edit tests, module-level code or other functions to make checks pass | Graded-tree construction | Executed; no effect | Only unit bodies are copied into the reference skeleton; `checks/test_transplant.py` | None found | Keep the check | 🟢 GREEN / LOW |
 | 4 | Return the documented outputs for the documented inputs, and something cheap otherwise: a constant, the first argument, the other boolean, a default of the type the visible results have, an output the examples print, delegation to another function, or a documented result renamed | Which calls count | Review of the binary version: tables passed `trig_split`, `viete`, `wigner_3j` and 14 more units through the real verifier. First re-check of 2026-11-20: behind a table, a first-argument fallback and a renaming table reached 0.07 to 0.12. Second re-check: results the docstrings print still counted (the panel's own fixture 0.029, every buildable strategy together 0.041) | Only calls nothing visible answers count (D): no docstring example or visible test (slow, skip-marked and `+SKIP` ones included) makes them, even with its symbols renamed, and their result is neither one an example or a visible test shows, nor a documented result of their unit, nor one of their own arguments or an element of their `*args` or `**kwargs`, all compared with the type left out; variants rename with one map over all arguments and shift no integer with a stated domain. Measured on the final calls (see the floor under [Reward formula](#reward-formula)): every buildable strategy at most 0.0245 behind a table; through the verifier 0.0 for each fixture tree | A type default or a delegate can still equal some counted results: 0.0245 for the best combination; with the hidden results in hand, 0.0269 (best per call) and 0.0301 (best constant per unit), which no submission can build | Re-run `fixtures.py`, `floor.py` and the reviewers' scripts after any rebuild of the calls | 🟢 GREEN / LOW |
-| 5 | Change how a runner reports results | Runner control items | Executed in round 1 through module-level `os`/`sys`; fixed | Control items with known outcomes in every pytest run; the records of a run cannot hold more passes than that run's tally; forbidden constructs in bodies. Forged start or collection records can only remove tests from later runs, which lowers the score | A forgery that also gets the controls right falls under finding 1. The per-file runs added on 2026-11-17 have not been attacked | With finding 1 | 🟢 GREEN / LOW |
+| 5 | Change how a runner reports results | Runner control items | Executed in round 1 through module-level `os`/`sys`; fixed. Third re-check: a body that imported `__main__` or `posix` wrote a result line of its own into the call runner's output, and wrapped the docstring runner's `emit` to forge a pass; `same()` raised on five shapes such a line can carry | The example and call runners sign every line with a key each start gets on its standard input and keep it, their output and their payload inside a function, so no line a body writes is read; `__main__`, `posix`, `nt` and every module whose name starts with an underscore are forbidden in a body; `same()` is total and a line that cannot be compared fails its call; control items with known outcomes in every pytest run; the records of a run cannot hold more passes than that run's tally; forbidden constructs in bodies. Forged start or collection records can only remove tests from later runs, which lowers the score | A forgery that also gets the controls right falls under finding 1. The per-file runs added on 2026-11-17 have not been attacked | With finding 1 | 🟢 GREEN / LOW |
 | 6 | Tamper with reward or result files | Separate verifier container | By design; not attacked | Verifier starts fresh with only `/app/sympy`; output directory closed to the sandbox user | None found | Attack on the v2 bundle | 🟢 GREEN / LOW |
 | 7 | Anything that depends on the new entry point, check registry or reporting | v2 verifier code | Not attacked | Same measurement code as v1; reference and no-op baselines on the v2 bundle | Unknown | Red-team run against the v2 bundle | 🟡 YELLOW / UNASSESSED |
 | 8 | Reach the network during the work phase to fetch SymPy | Agent network policy | Probe task, 2026-11-15: PyPI and GitHub unreachable from the work phase; 217 in-work fetch attempts in one 12-hour run all failed (TCP connected, TLS did not) | `[agent] network_mode = "no-network"`; the instruction forbids another copy; SymPy is not installed elsewhere; the image's attribution names no download | Agent tooling is installed at setup with public egress; host-name filtering not probed for every route | Probe the routes as `dev` | 🟡 YELLOW / MEDIUM |
@@ -1451,9 +1519,9 @@ uv run --frozen pytest -q tasks/swe-m2-scientific-computing/sympy-restoration/ch
   the tests to join the reward inside the min).
 - Probe each target model's recall (see [Novelty](#novelty)) before reading a
   frontier score as difficulty.
-- Show or drop the float tolerance: grade the reference once on the platform
-  with a verifier whose float comparison is exact; if its 173 counted float
-  results all match there, the tolerance can shrink to the last bit.
+- Read the reference's first platform grade for its 17 counted results that
+  hold a Python float: the image's Python 3.12.3, its float `**` and C complex
+  arithmetic are the only unknowns the few-unit bound is there for.
 - Run the delivery hooks on the platform before any model trial (finding 9): a
   canary whose reference leaves a detached fetch-and-overwrite loop must score 0
   with its files `late`; the reference twice with the record present and

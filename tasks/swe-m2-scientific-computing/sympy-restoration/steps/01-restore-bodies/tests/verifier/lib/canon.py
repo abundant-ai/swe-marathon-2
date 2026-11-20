@@ -41,8 +41,9 @@ comparison of two such forms. The form keeps the type and the container of every
   LaTeX ignores (a blank line, a paragraph break, is kept);
 - Truss's coordinate lists kept in parallel with its nodes count, except in the result of
   `Truss.remove_node`, whose upstream body keeps them inconsistently;
-- a Python float, and an mpmath number, compare within a relative tolerance of 2**-30 (about
-  1e-9); a SymPy Float has the same precision and compares within 2**(23 - precision);
+- a SymPy Float has the same precision and compares within a few units in its last place, a
+  relative 2**(FLOAT_ULPS - precision), as does an mpmath number at its precision; a Python float
+  within a relative 2**-PY_FLOAT_BITS; zero only to zero, with no absolute tolerance;
 - a dict's and a set's items compare in no order (a dict's equality ignores it, and SymPy prints
   both sorted), an OrderedDict's in its own.
 
@@ -61,8 +62,8 @@ from typing import NamedTuple
 MAX_NODES = 40000
 MAX_DEPTH = 80
 MAX_ITER = 200
-FLOAT_BITS = 30     # relative tolerance 2**-FLOAT_BITS for a float or an mpmath number
-FLOAT_SLACK = 23    # a SymPy Float of precision p: relative tolerance 2**(FLOAT_SLACK - p)
+FLOAT_ULPS = 2      # a SymPy Float or an mpmath number of precision p: relative tolerance 2**(FLOAT_ULPS - p)
+PY_FLOAT_BITS = 50  # a Python float: relative tolerance 2**-PY_FLOAT_BITS, a few units in its last place
 # attributes that hold a value computed lazily from the object's other state
 MEMO_SLOTS = frozenset({
     "_img", "_ker", "_starts_with_unity", "_is_sq_maxrank_HNF", "_QQ_matrix", "_QQ_col",
@@ -467,10 +468,10 @@ def latex_form(text: str) -> str:
 
 
 class _Context:
-    __slots__ = ("rel", "abs_", "profile", "forward", "backward", "counted")
+    __slots__ = ("profile", "forward", "backward", "counted")
 
-    def __init__(self, rel, abs_, profile):
-        self.rel, self.abs_, self.profile = rel, abs_, profile
+    def __init__(self, profile):
+        self.profile = profile
         self.forward, self.backward = {}, {}
         self.counted = {}   # counter value on one side -> on the other, for the objects the call made
 
@@ -480,11 +481,20 @@ class _Context:
         return all(_number(a[1]) < _number(b[1]) for a, b in zip(pairs, pairs[1:]))
 
     def bind(self, x, y):
-        """One renaming for the whole comparison: x and y stand for each other, and nothing else."""
+        """One renaming for the whole comparison: x and y stand for each other, and nothing else. Only
+        names and counters can be bound: anything else (a list a result line may carry) binds nothing."""
+        if not (_bindable(x) and _bindable(y)):
+            return False
         if self.forward.get(x, y) != y or self.backward.get(y, x) != x:
             return False
         self.forward[x], self.backward[y] = y, x
         return True
+
+
+def _bindable(x):
+    if isinstance(x, tuple):
+        return all(_bindable(item) for item in x)
+    return isinstance(x, (str, int)) and not isinstance(x, bool)
 
 
 def _number(text):
@@ -494,10 +504,10 @@ def _number(text):
         return float("nan")
 
 
-def _binary_close(a, b, rel_bits, abs_bits):
+def _binary_close(a, b, rel_bits):
     """Two exact binary floats [sign, mantissa, exponent] (mantissa and exponent as decimal text):
-    |a - b| <= max(2**-rel_bits * max(|a|, |b|), 2**-abs_bits). A special value (zero, infinity, not a
-    number: mantissa 0) compares exactly, but for zero against a value within the absolute floor."""
+    |a - b| <= 2**-rel_bits * max(|a|, |b|). A special value (zero, infinity, not a number: mantissa 0)
+    is alike only to itself, so zero only to zero."""
     try:
         sa, ma, ea = int(a[0]), int(a[1]), int(a[2])
         sb, mb, eb = int(b[0]), int(b[1]), int(b[2])
@@ -505,25 +515,24 @@ def _binary_close(a, b, rel_bits, abs_bits):
         return a == b
     if (sa, ma, ea) == (sb, mb, eb):
         return True
-    special_a, special_b = ma == 0 and ea != 0, mb == 0 and eb != 0   # infinities and not-a-number
-    if special_a or special_b:
+    if ma == 0 or mb == 0:
         return False
-    low = min(ea, eb) if ma and mb else (eb if not ma else ea)
+    low = min(ea, eb)
     if max(ea, eb) - low > 100_000:
         return False
-    x = (-ma if sa else ma) << ((ea - low) if ma else 0)
-    y = (-mb if sb else mb) << ((eb - low) if mb else 0)
-    diff = abs(x - y)                 # |a - b| * 2**-low
-    if diff << rel_bits <= max(abs(x), abs(y)):
-        return True
-    shift = abs_bits + low            # |a - b| <= 2**-abs_bits  <=>  diff * 2**(abs_bits + low) <= 1
-    return diff << shift <= 1 if shift >= 0 else diff <= (1 << -shift)
+    x = (-ma if sa else ma) << (ea - low)
+    y = (-mb if sb else mb) << (eb - low)
+    return abs(x - y) << rel_bits <= max(abs(x), abs(y))   # |a - b| * 2**-low, scaled
 
 
-def same(a, b, rel=1e-9, abs_=1e-12, profile=None):
-    """Compare two canonical forms (see the module docstring); `profile` is the unit's (profile_of)."""
-    ctx = _Context(rel, abs_, profile or STRICT)
-    return _same(a, b, ctx) and ctx.in_order()
+def same(a, b, profile=None):
+    """Compare two canonical forms (see the module docstring); `profile` is the unit's (profile_of).
+    Total: two forms that cannot be compared (a malformed line of a runner, say) are not alike."""
+    ctx = _Context(profile or STRICT)
+    try:
+        return bool(_same(a, b, ctx) and ctx.in_order())
+    except (TypeError, ValueError, KeyError, IndexError, AttributeError, RecursionError, OverflowError, MemoryError):
+        return False
 
 
 def same_loose(a, b, profile=None):
@@ -559,6 +568,8 @@ def _same_state(a, b, ctx, cls):
             continue
         if x[0] == "D" and y[0] == "D" and len(x) == 2 and len(y) == 2:
             # a dict of lazily filled values: the entries both sides hold
+            if not all(isinstance(item, list) and len(item) == 2 for side in (x[1], y[1]) for item in side):
+                return False
             xs, ys = {_key(k): v for k, v in x[1]}, {_key(k): v for k, v in y[1]}
             for k in sorted(set(xs) & set(ys)):
                 if not _same(xs[k], ys[k], ctx):
@@ -596,16 +607,12 @@ def _same(a, b, ctx):
             return math.isnan(x) and math.isnan(y)
         if math.isinf(x) or math.isinf(y):
             return x == y
-        return abs(x - y) <= max(ctx.abs_, ctx.rel * max(abs(x), abs(y)))
-    if head == "SF" and len(a) == 5:
-        # the same precision, and a value within that precision less FLOAT_SLACK bits
-        if a[1] != b[1] or not isinstance(a[1], int):
+        return x == y or abs(x - y) <= 2.0 ** -PY_FLOAT_BITS * max(abs(x), abs(y))
+    if head in ("SF", "MF") and len(a) == 5:
+        # the same precision, and a value within a few units in the last place of that precision
+        if a[1] != b[1] or not isinstance(a[1], int) or isinstance(a[1], bool):
             return False
-        return _binary_close(a[2:], b[2:], max(a[1] - FLOAT_SLACK, 1), a[1] - FLOAT_SLACK + 10)
-    if head == "MF" and len(a) == 5:
-        if a[1] != b[1]:
-            return False
-        return _binary_close(a[2:], b[2:], FLOAT_BITS, FLOAT_BITS + 10)
+        return _binary_close(a[2:], b[2:], max(a[1] - FLOAT_ULPS, 1))
     if head == "X" and len(a) == 3 and a[1] == "Dummy~" and b[1] == "Dummy~":
         try:
             (_, name_a), (_, ass_a), (_, id_a) = a[2]

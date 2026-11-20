@@ -213,8 +213,9 @@ def watch_scenario(work: Path) -> dict:
 
 
 STUB_RUNNER = """
-import json, os, pickle, sys, time
+import hashlib, hmac, json, os, pickle, sys, time
 cand, mod, ip, op = sys.argv[1:5]
+key = sys.stdin.buffer.readline().strip()
 data = pickle.load(open(ip, "rb"))
 with open(op + ".starts", "a") as f:
     f.write(mod + chr(10))
@@ -223,7 +224,10 @@ if mod == "mod_dead":
 if mod == "mod_import_hang":
     time.sleep(120)
 out = open(op, "a")
-out.write(json.dumps({"loaded": True}) + chr(10))
+def line(record):
+    text = json.dumps(record)
+    return hmac.new(key, text.encode(), hashlib.sha256).hexdigest() + " " + text + chr(10)
+out.write(line({"loaded": True}))
 out.flush()
 for vid, uid, blob in data["vectors"]:
     if vid.endswith("_crash"):
@@ -234,11 +238,18 @@ for vid, uid, blob in data["vectors"]:
         os._exit(1)
     if vid.endswith("_hang"):
         time.sleep(120)
+    if vid.endswith("_forged"):
+        # a body that reached the process writes a line of its own for the next call, unsigned
+        out.write(json.dumps({"v": vid.replace("_forged", "_victim"), "c": ["forged"], "ms": 1}) + chr(10))
+        out.write("0" * 64 + " " + json.dumps({"v": vid.replace("_forged", "_victim"), "c": ["forged"], "ms": 1}) + chr(10))
+        out.flush()
     if vid.endswith("_slow"):
-        out.write(json.dumps({"v": vid, "c": ["EXC", "Timeout", []], "ms": 1000}) + chr(10))
+        out.write(line({"v": vid, "c": ["EXC", "Timeout", []], "ms": 1000}))
         out.flush()
         os._exit(3)
-    out.write(json.dumps({"v": vid, "c": ["ok", vid], "ms": 1}) + chr(10))
+    if vid.endswith("_victim"):
+        os._exit(1)
+    out.write(line({"v": vid, "c": ["ok", vid], "ms": 1}))
     out.flush()
 """
 
@@ -263,11 +274,12 @@ def vector_scenario(work: Path) -> dict:
         "mod_slow": module("U8", "w1_slow", "w2", "w3_slow", "w4"),
         "mod_not_restored": module("U9", "s1"),
         "mod_import_hang": {"units": {"U10": {}, "U11": {}}, "vectors": [("i1", "U10", b""), ("i2", "U11", b"")]},
+        "mod_forged": {"units": {"U12": {}, "U13": {}}, "vectors": [("f1_forged", "U12", b""), ("f2_victim", "U13", b""), ("f3", "U13", b"")]},
     }
     import time
 
     results = engine.run_vectors(
-        payload, {"U1", "U2", "U3", "U4", "U5", "U6", "U7", "U8", "U10", "U11"}, [], scratch=str(work / "scratch"), pub=str(work / "pub"),
+        payload, {"U1", "U2", "U3", "U4", "U5", "U6", "U7", "U8", "U10", "U11", "U12", "U13"}, [], scratch=str(work / "scratch"), pub=str(work / "pub"),
         cand_nt=str(work / "cand"), cpus=4, deadline=time.monotonic() + 90,
         cfg={"vector_timeout_sec": 1, "vector_stall_margin_sec": 1, "vector_load_sec": 10})
     starts: dict[str, int] = {}

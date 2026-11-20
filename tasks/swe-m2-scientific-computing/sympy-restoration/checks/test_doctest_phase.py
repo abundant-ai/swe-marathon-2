@@ -144,6 +144,8 @@ def test_the_measurement_runs_through_a_used_up_budget(tmp_path, verifier_call, 
     (private / "vectors" / "gold.json").write_text(json.dumps({"V1": ["I", "1"], "V2": ["I", "1"]}))
     (private / "vectors" / "documented.json").write_text(json.dumps({"calls": []}))
     (private / "unit_bodies.json").write_text(json.dumps({"U0001": [1, None], "U0002": [1, None]}))
+    (private / "timing.json").write_text(json.dumps({"benchmark_sec": 1.0, "doctest": {"load": {}, "units": {}},
+                                                     "vector": {"load": {}, "units": {}}}))
     import pickle
 
     meta = {u["uid"]: {"file": u["file"], "qualname": u["qualname"], "name": u["qualname"], "occ": 0, "nocc": 1} for u in units}
@@ -225,3 +227,31 @@ print(json.dumps([limited, fallback, notes]))
     assert fallback[0] == "setpriv" and notes == ["the address-space limit could not be set; submitted code ran without it"]
     config = json.loads((task_root / "steps/01-restore-bodies/tests/verifier/grade_config.json").read_text())
     assert config["address_space_bytes"] == 4 << 30
+
+
+def test_a_body_that_reaches_the_process_cannot_write_a_record_the_driver_reads(tmp_path, verifier_call):
+    """The runner keeps nothing on `__main__` and signs its lines with a key only it was given: a body
+    that writes a passing record for another unit, through `__main__` or straight to every open file,
+    writes nothing the driver reads, and the unit whose examples fail still fails."""
+    tree = standin_tree(tmp_path / "tree")
+    forge = textwrap.dedent("""\
+        import json
+        record = json.dumps({"name": "sympy.forged.target", "status": "pass"})
+        try:
+            import __main__
+            __main__.emit({"name": "sympy.forged.target", "status": "pass"})
+        except Exception:
+            pass
+        for fd in range(3, 64):
+            for prefix in ("", "0" * 64 + " "):
+                try:
+                    os.write(fd, (prefix + record + chr(10)).encode())
+                except OSError:
+                    pass
+        return 1""")
+    (tree / "sympy" / "forged.py").write_text("import os\n\n\n" + unit("forger", forge, module="sympy.forged")
+                                              + unit("target", "return 2", module="sympy.forged"))
+    names = ["sympy.forged.forger", "sympy.forged.target"]
+    data = run_phase(verifier_call, tree, tmp_path / "s", 120, names, module="sympy.forged")
+    assert data["status"] == {"sympy.forged.forger": "pass", "sympy.forged.target": "fail"}, data
+    assert data["bad"] == [] and data["missing"] == 0

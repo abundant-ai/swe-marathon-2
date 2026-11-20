@@ -22,7 +22,10 @@ DENY_MODULES = {
     "pdb", "faulthandler", "resource", "mmap", "select", "asyncio", "concurrent",
     "urllib", "http", "ftplib", "smtplib", "zipfile", "tarfile", "zipimport", "imp",
     "hypothesis", "xdist", "coverage", "trace", "tracemalloc", "sysconfig", "platform",
+    "__main__", "posix", "nt", "pwd", "grp", "fcntl", "termios", "pty", "tty", "selectors", "ssl",
 }
+# and every module whose top-level name starts with an underscore (the C cores of the modules above,
+# such as _io, _thread or _posixsubprocess), but __future__
 DENY_MODULE_PREFIXES = (
     "sympy.testing", "sympy.conftest", "sympy.utilities.pytest", "sympy.utilities.runtests",
     "sympy.utilities.benchmarking", "sympy.utilities.randtest", "sympy.utilities.tmpfiles",
@@ -35,8 +38,13 @@ DENY_NAMES = {
 DENY_GLOBAL_MODULES = {
     "os", "sys", "subprocess", "importlib", "inspect", "builtins", "ctypes", "gc", "shutil",
     "socket", "pathlib", "pickle", "marshal", "signal", "threading", "multiprocessing",
-    "tempfile", "atexit", "pdb", "io", "doctest", "pytest", "unittest", "traceback",
+    "tempfile", "atexit", "pdb", "io", "doctest", "pytest", "unittest", "traceback", "posix",
 }
+
+
+def _denied_module(name: str) -> bool:
+    root = name.split(".")[0]
+    return root in DENY_MODULES or (root.startswith("_") and root != "__future__") or name.startswith(DENY_MODULE_PREFIXES)
 DENY_IMPORTED_NAMES = {"testing", "pytest", "runtests", "conftest", "benchmarking", "randtest", "tmpfiles"}
 DENY_ATTRS = {
     "__globals__", "__builtins__", "__code__", "__closure__", "__subclasses__",
@@ -77,13 +85,11 @@ def scan_body(nodes, fn=None) -> str | None:
         for n in ast.walk(top):
             if isinstance(n, ast.Import):
                 for a in n.names:
-                    root = a.name.split(".")[0]
-                    if root in DENY_MODULES or a.name.startswith(DENY_MODULE_PREFIXES):
+                    if _denied_module(a.name):
                         return f"import of '{a.name}'"
             elif isinstance(n, ast.ImportFrom):
                 mod = n.module or ""
-                root = mod.split(".")[0]
-                if n.level == 0 and (root in DENY_MODULES or mod.startswith(DENY_MODULE_PREFIXES)):
+                if n.level == 0 and _denied_module(mod):
                     return f"import from '{mod}'"
                 if n.level and mod.split(".")[0] in ("testing", "conftest"):
                     return f"relative import from '{mod}'"
@@ -111,6 +117,7 @@ def rules_text() -> str:
         "",
         "Imports (also `from X import ...`):",
         "  " + ", ".join(sorted(DENY_MODULES)),
+        "  and every module whose name starts with an underscore (but __future__)",
         "The same modules when they are already globals of the unit's module:",
         "  " + ", ".join(sorted(DENY_GLOBAL_MODULES)),
         "Imports of SymPy's testing code:",

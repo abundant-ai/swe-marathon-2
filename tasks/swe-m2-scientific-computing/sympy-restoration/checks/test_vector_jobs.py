@@ -41,4 +41,15 @@ def test_a_call_that_runs_out_of_time_is_followed_by_a_fresh_process(scenario):
     # the runner reports the timeout and exits; the calls behind it run in a new process and the
     # slow call itself keeps its (non-matching) result
     assert results["w1_slow"] == ["EXC", "Timeout", []] and results["w3_slow"] == ["EXC", "Timeout", []]
-    assert results["w2"] == ok("w2") and results["w4"] == ok("w4") and starts["mod_slow"] == 3
+    assert results["w2"] == ok("w2") and starts["mod_slow"] == 2
+    # after its second call past the time, the unit's calls left do not match and are not run
+    assert results["w4"] is None
+
+
+def test_a_line_the_runner_did_not_sign_is_not_read(scenario):
+    """A body that reached the process wrote a result for the call behind it (unsigned, or with a tag
+    made without the key) and that call then ended the runner: the forged line is not read, so the
+    call does not match, and the rest of the job runs as usual."""
+    data = scenario("vector_jobs")
+    results = data["results"]
+    assert results["f1_forged"] == ok("f1_forged") and results["f2_victim"] is None and results["f3"] == ok("f3"), results

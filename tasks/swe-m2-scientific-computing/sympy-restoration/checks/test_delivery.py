@@ -303,6 +303,8 @@ units = [{{"uid": "U0001", "file": "sympy/m.py", "module": "sympy.m", "qualname"
 (private / "vectors" / "gold.json").write_text(json.dumps({{"V1": ["I", "1"]}}))
 (private / "vectors" / "documented.json").write_text(json.dumps({{"calls": []}}))
 (private / "unit_bodies.json").write_text(json.dumps({{"U0001": [1, None]}}))
+(private / "timing.json").write_text(json.dumps({{"benchmark_sec": 1.0, "doctest": {{"load": {{}}, "units": {{}}}},
+                                                  "vector": {{"load": {{}}, "units": {{}}}}}}))
 meta = {{"U0001": {{"file": "sympy/m.py", "qualname": "f", "name": "f", "occ": 0, "nocc": 1}}}}
 (private / "vectors" / "inputs.pkl").write_bytes(pickle.dumps({{"sympy.m": {{"units": meta, "vectors": [("V1", "U0001", pickle.dumps({{}}))]}}}}))
 shutil.copyfile({str(key)!r}, private / "fsmaint.key")

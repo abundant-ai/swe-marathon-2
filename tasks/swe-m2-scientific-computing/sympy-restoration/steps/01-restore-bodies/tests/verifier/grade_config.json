@@ -22,5 +22,7 @@
  "pytest_collect_sec": 600,
  "pytest_file_collect_sec": 120,
  "pytest_stall_sec": 180,
- "run_group": "nogroup"
+ "run_group": "nogroup",
+ "attribution_factor": 2,
+ "vector_unit_overrun_limit": 2
 }

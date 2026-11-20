@@ -62,7 +62,7 @@ STANDIN = {
 }
 
 PROBE = r"""
-import collections, fractions, json, sys
+import collections, fractions, json, math, sys
 sys.path[:0] = [sys.argv[1], sys.argv[2]]
 from canon import canon, dummies, profile_of, same, same_loose
 from sympy.core.basic import Basic
@@ -123,10 +123,31 @@ zeros_stored = SDM({0: {0: 1, 1: 0}, 1: {1: 3}}, (2, 2), "ZZ")
 I1, I2, I3, I4 = Integer(1), Integer(2), Integer(3), Integer(4)
 cells = [I1, I2, I3, I4]
 true, false = BooleanTrue(), BooleanFalse()
-# 1.25 at 66 bits (20 digits) and at 53 bits; a 53-bit value one unit in the 40th bit away
+# 1.25 at 66 bits (20 digits) and at 53 bits; a 53-bit value one unit in its last place away, and
+# one wrong from its 11th digit
 f66, f53 = Float((0, 5, -2, 3), 66), Float((0, 5, -2, 3), 53)
-f53_close = Float((0, (5 << 40) + 1, -42, 43), 53)
-f53_far = Float((0, (5 << 20) + 1, -22, 23), 53)
+f53_close = Float((0, (5 << 50) + 1, -52, 53), 53)
+f53_far = Float((0, (5 << 34) + 1, -36, 37), 53)
+
+
+def low(value, prec):
+    # a Float of `prec` bits nearest `value`
+    sign, value = (1, -value) if value < 0 else (0, value)
+    exp = 0
+    while value >= 2 ** prec:
+        value, exp = value / 2, exp + 1
+    while value < 2 ** (prec - 1):
+        value, exp = value * 2, exp - 1
+    man = int(round(value))
+    while man and man % 2 == 0:
+        man, exp = man // 2, exp + 1
+    return Float((sign, man, exp, man.bit_length()), prec)
+
+
+def ulp_away(value, prec):
+    f = low(value, prec)
+    sign, man, exp, _ = f._mpf_
+    return Float((sign, man + 1, exp, (man + 1).bit_length()), prec)
 
 # Dummies that came with the call's arguments keep their names; those the call made compare up to
 # one consistent renaming
@@ -148,7 +169,9 @@ out = {
     "dummy_assumptions": same(canon(Dummy(positive=True)), canon(Dummy())),
     "symbol_keywords": same(canon(Symbol("x", commutative=True)), canon(Symbol("x"))),
     "symbol_assumptions": same(canon(Symbol("x", real=True)), canon(Symbol("x"))),
-    "float_in_a_child": same(canon((0.1, 0.2)), canon((0.1 + 1e-12, 0.2))),
+    "float_in_a_child": same(canon((0.1, 0.2)), canon((math.nextafter(0.1, 1.0), 0.2))),
+    "float_off_by_1e_12": same(canon((0.1, 0.2)), canon((0.1 + 1e-12, 0.2))),
+    "zero_vs_tiny_float": same(canon(0.0), canon(1e-300)),
     # a memo slot counts where both sides hold a value; an empty one is never wrong
     "memo_left_empty": same(canon(Homomorphism([1, 2], img="filled", ker="filled")), canon(Homomorphism([1, 2]))),
     "memo_wrong": same(canon(Homomorphism([1, 2], img="right")), canon(Homomorphism([1, 2], img="wrong"))),
@@ -200,6 +223,13 @@ out = {
     "float_precision": same(canon(f66), canon(f53)),
     "float_close_at_its_precision": same(canon(f53), canon(f53_close)),
     "float_far_at_its_precision": same(canon(f53), canon(f53_far)),
+    # below 53 bits: one unit in the last place is alike; 1 %, a sign flip, or a value inside the
+    # absolute floor an earlier version kept (2**-(p - 13)) are told apart
+    **{f"low_{p}_one_ulp": same(canon(low(0.3, p)), canon(ulp_away(0.3, p))) for p in (13, 17, 20, 27, 40)},
+    **{f"low_{p}_one_percent": same(canon(low(0.3, p)), canon(low(0.303, p))) for p in (13, 17, 20, 27, 40)},
+    **{f"low_{p}_sign": same(canon(low(0.01, p)), canon(low(-0.01, p))) for p in (13, 17, 20, 27, 40)},
+    **{f"low_{p}_inside_old_floor": same(canon(low(2.0 ** -(p - 12), p)), canon(low(-(2.0 ** -(p - 12)), p))) for p in (13, 17, 20, 27, 40)},
+    "low_zero_vs_small": same(canon(Float((0, 0, 0, 0), 17)), canon(low(0.01, 17))),
     # ... diop_solve returning a set subclass, as_coefficients_dict a dict, multiset a Counter
     "set_vs_frozenset": same(canon({1, 2}), canon(frozenset({1, 2}))),
     "set_vs_set_subclass": same(canon({1, 2}), canon(DiophantineSolutionSet({1, 2}))),
@@ -224,7 +254,7 @@ print(json.dumps(out))
 KEPT = ("given_dummies_alike", "made_dummies_renamed", "made_dummies_in_a_set", "named_made_dummy", "symbol_keywords",
         "float_in_a_child", "memo_left_empty", "memo_dict_more_keys", "counter", "counter_made_renumbered", "parallel_list_remove_node",
         "storage_alike", "latex_spacing", "latex_lines", "Integer_alike", "matrix_alike", "float_close_at_its_precision", "dict_order",
-        "loose_int_Integer", "loose_matrices", "loose_floats")
+        "loose_int_Integer", "loose_matrices", "loose_floats") + tuple(f"low_{p}_one_ulp" for p in (13, 17, 20, 27, 40))
 TOLD_APART = ("given_dummies_trade_places", "given_namesakes_trade_places", "made_dummies_merged", "made_dummy_for_given", "named_made_dummy_renamed",
               "dummy_assumptions", "symbol_assumptions", "memo_wrong", "memo_dict_wrong_value", "memo_real_state", "counter_made_swapped", "counter_given_copy", "parallel_list",
               "positions_differ_remove_node", "storage_everywhere", "zeros_stored", "zeros_stored_dense", "entries_differ",
@@ -233,7 +263,21 @@ TOLD_APART = ("given_dummies_trade_places", "given_namesakes_trade_places", "mad
               "PythonMPQ_vs_Fraction", "float_vs_Float", "dense_vs_sparse_matrix", "mutable_vs_immutable_matrix", "float_precision",
               "float_far_at_its_precision", "set_vs_frozenset", "set_vs_set_subclass", "defaultdict_vs_dict", "defaultdict_factory",
               "dict_vs_Counter", "dict_vs_OrderedDict", "OrderedDict_order", "list_vs_range", "list_vs_dict_keys", "generator_vs_iterator",
-              "loose_values_still_differ")
+              "loose_values_still_differ", "float_off_by_1e_12", "zero_vs_tiny_float", "low_zero_vs_small") + tuple(
+    f"low_{p}_{case}" for p in (13, 17, 20, 27, 40) for case in ("one_percent", "sign", "inside_old_floor"))
+
+
+def signed_records(path, key):
+    """The records of a runner's output whose tag is the HMAC-SHA256 of their JSON with `key`."""
+    import hashlib
+    import hmac
+
+    out = []
+    for line in path.read_text().splitlines():
+        tag, _, text = line.partition(" ")
+        if hmac.compare_digest(tag, hmac.new(key.encode(), text.encode(), hashlib.sha256).hexdigest()):
+            out.append(json.loads(text))
+    return out
 
 
 def standin(tmp_path):
@@ -308,12 +352,46 @@ def test_a_call_that_changes_an_argument_is_compared_with_its_result(tmp_path, t
     made = subprocess.run([sys.executable, "-I", "-B", "-c", PAYLOAD, str(tree), str(tmp_path / "in.pkl")], capture_output=True,
                           text=True, timeout=60)
     assert made.returncode == 0, made.stderr[-2000:]
+    key = "k" * 32
     done = subprocess.run([sys.executable, "-I", "-B", str(lib / "rvector.py"), str(tree), "sympy.demo", str(tmp_path / "in.pkl"),
-                           str(tmp_path / "out.jsonl"), "5"], capture_output=True, text=True, timeout=120, cwd=tree)
+                           str(tmp_path / "out.jsonl"), "5"], input=key + "\n", capture_output=True, text=True, timeout=120, cwd=tree)
     assert done.returncode == 0, done.stderr[-2000:]
-    got = {rec["v"]: rec["c"] for rec in map(json.loads, (tmp_path / "out.jsonl").read_text().splitlines()) if "v" in rec}
+    got = {rec["v"]: rec["c"] for rec in signed_records(tmp_path / "out.jsonl", key) if "v" in rec}
     assert got["V1"] == ["RS", ["I", "2"], ["D", [[["S", "a"], ["L", [["I", "5"], ["I", "1"]]]]]]], got["V1"]
     # a body that leaves the argument alone returns the same value, and is told apart by the state
     assert got["V2"] == got["V3"] == ["I", "2"] and got["V2"] != got["V1"]
     # a memo slot filled is no change: values kept only as a cache do not count
     assert got["V4"] == ["I", "1"], got["V4"]
+
+
+def test_a_result_line_that_cannot_be_compared_is_no_match_and_no_error(task_root):
+    """A body that reached the runner's output could write a line of any shape: the comparison says
+    not alike, it never raises (the call fails, not the evaluation)."""
+    lib = task_root / "steps" / "01-restore-bodies" / "tests" / "verifier" / "lib"
+    code = f"""
+import json, sys
+sys.path.insert(0, {str(lib)!r})
+from canon import same
+made = ["X", "Dummy~", [["S", "t"], ["S", "[]"], ["S", "a"]]]
+cases = {{
+    "made_dummy_identity_list": (made, ["X", "Dummy~", [["S", "t"], ["S", "[]"], ["S", [1, 2]]]]),
+    "made_dummy_identity_dict": (["X", "Dummy~", [["S", "t"], ["S", "[]"], ["S", {{"a": 1}}]]], made),
+    "made_counter_list": (["#", "made", "7"], ["#", "made", [7]]),
+    "memo_dict_not_pairs": (["O", "C", [[["S", "~m"], ["D", [[["I", "1"], ["I", "2"]]]]]]],
+                            ["O", "C", [[["S", "~m"], ["D", [1, 2]]]]]),
+    "deep": (["L", [["L", [["L", [1]]]]]], ["L", [["L", [["L", [{{}}]]]]]]),
+    "float_text": (["F", "x"], ["F", "1.0"]),
+    "sf_precision_not_int": (["SF", "53", "0", "5", "-2"], ["SF", "53", "0", "5", "-2"]),
+}}
+out = {{}}
+for name, (a, b) in cases.items():
+    try:
+        out[name] = [same(a, b), same(b, a)]
+    except Exception as exc:
+        out[name] = repr(exc)
+print(json.dumps(out))
+"""
+    done = subprocess.run([sys.executable, "-I", "-B", "-c", code], capture_output=True, text=True, timeout=120)
+    assert done.returncode == 0, done.stderr[-2000:]
+    got = json.loads(done.stdout)
+    assert got == {name: [False, False] for name in got}, got

@@ -27,6 +27,7 @@ import math
 import os
 import pickle
 import re
+import secrets
 import shutil
 import signal
 import subprocess
@@ -59,6 +60,43 @@ SANDBOX_ENV = {
 def log(*parts: object) -> None:
     """Print one progress line to the verifier log."""
     print("[grade]", *parts, flush=True)
+
+
+def host_benchmark(rounds: int = 3) -> float:
+    """Seconds this machine takes for a fixed piece of pure-Python work, the fastest of `rounds` runs.
+    It runs here, before any submitted code: nothing the submission does can slow it."""
+    best = float("inf")
+    for _ in range(rounds):
+        began = time.perf_counter()
+        table: dict = {}
+        total = 0
+        for i in range(2_000_000):
+            key = (i * 7919) % 10007
+            table[key] = table.get(key, 0) + i
+            total += len(str(i))
+        sorted(table.items())
+        best = min(best, time.perf_counter() - began)
+    return best
+
+
+def time_needed(timing: Mapping, modules: Mapping, factor: float, default_load: float = 2.0, default_item: float = 0.5) -> float:
+    """Worker-seconds the original would need on this machine for one phase over the given units.
+
+    Args:
+        timing: The original's own times on the machine its results were recorded on: per module
+            the seconds its runner took to import it (`load`), per unit the seconds of its items
+            (`units`: its examples, or all its calls).
+        modules: The units the phase runs, per module.
+        factor: How much slower this machine is (host_benchmark against the recorded benchmark).
+        default_load: Seconds for a module the timing does not hold.
+        default_item: Seconds for a unit the timing does not hold.
+    """
+    load, per = timing.get("load", {}), timing.get("units", {})
+    total = 0.0
+    for module, keys in modules.items():
+        total += float(load.get(module, default_load))
+        total += sum(float(per.get(key, default_item)) for key in keys)
+    return factor * total
 
 
 def _runs(prefix: list[str]) -> bool:
@@ -110,12 +148,13 @@ def reap(prefix: list[str]) -> None:
         time.sleep(0.2)
 
 
-def read_vector_records(path: str, want: set) -> tuple[dict, set]:
+def read_vector_records(path: str, want: set, keys: list) -> tuple[dict, set]:
     """Read the results a replay job has written so far.
 
     Args:
-        path: File the sandboxed runner appends one JSON line per call to.
+        path: File the sandboxed runner appends one signed JSON line per call to.
         want: Ids of the calls of this job.
+        keys: The keys the job's starts were given; a line signed with none of them is not read.
 
     Returns:
         The canonical result per call id, and the ids reported more than once.
@@ -128,8 +167,11 @@ def read_vector_records(path: str, want: set) -> tuple[dict, set]:
                 for line in f:
                     if len(line) > 2_100_000:
                         continue
+                    text = next((t for t in (gradelib.signed_text(line, key) for key in keys) if t is not None), None)
+                    if text is None:
+                        continue
                     try:
-                        rec = json.loads(line)
+                        rec = json.loads(text)
                     except (ValueError, RecursionError, MemoryError):
                         continue
                     vid = rec.get("v") if isinstance(rec, dict) else None
@@ -143,7 +185,7 @@ def read_vector_records(path: str, want: set) -> tuple[dict, set]:
     return got, dup
 
 
-def run_vectors(payload, restored_uids, prefix, *, scratch, pub, cand_nt, cfg, cpus, deadline):
+def run_vectors(payload, restored_uids, prefix, *, scratch, pub, cand_nt, cfg, cpus, deadline, stats=None):
     """Replay recorded calls in the sandbox, one process per module.
 
     The runner works through a module's calls in order and writes each result
@@ -154,8 +196,10 @@ def run_vectors(payload, restored_uids, prefix, *, scratch, pub, cand_nt, cfg, c
     ended it), the rest of that call's unit counts as not matching too and the
     job resumes at the next unit. After a call that ran out of time the runner
     exits by itself and is started again behind it, since an interrupted body
-    can leave global state behind. A job whose module import never finishes
-    loses all its calls at once, and so does the rest of a job after
+    can leave global state behind. A unit whose calls ran out of time, or
+    stopped the runner, `vector_unit_overrun_limit` times does not match on the
+    rest of its calls, which are not run. A job whose module import never
+    finishes loses all its calls at once, and so does the rest of a job after
     `vector_job_restart_limit` starts that ended or stopped. Calls left when
     `deadline` passes are not reached.
 
@@ -169,6 +213,8 @@ def run_vectors(payload, restored_uids, prefix, *, scratch, pub, cand_nt, cfg, c
         cfg: Limits from grade_config.json.
         cpus: Number of modules replayed at the same time.
         deadline: time.monotonic() value at which the phase ends.
+        stats: A dict that gets the phase's counts: starts, calls that ran out
+            of time, ends and stops of a runner, units whose rest was not run.
 
     Returns:
         The canonical result per call id; None for a call that did not finish
@@ -193,7 +239,14 @@ def run_vectors(payload, restored_uids, prefix, *, scratch, pub, cand_nt, cfg, c
     load_sec = float(cfg.get("vector_load_sec", 120))
     stall_sec = per_vec + float(cfg.get("vector_stall_margin_sec", 30))
     restart_limit = max(0, int(cfg.get("vector_job_restart_limit", 16)))
+    overrun_limit = max(1, int(cfg.get("vector_unit_overrun_limit", 2)))
     rv = os.path.join(pub, "rvector.py")
+    lock = threading.Lock()
+    counts = {"starts": 0, "timeouts": 0, "ended_or_stopped": 0, "units_cut": 0}
+
+    def count(name, n=1):
+        with lock:
+            counts[name] += n
 
     def one(job):
         k, mod, units, vecs, op = job
@@ -203,11 +256,26 @@ def run_vectors(payload, restored_uids, prefix, *, scratch, pub, cand_nt, cfg, c
         dup: set = set()
         pending = vecs
         crashes = starts = 0
+        keys: list = []
+        overruns: collections.Counter = collections.Counter()   # per unit: calls past their time, stops of the runner
+
+        def overran(uid, rest):
+            """Count one overrun of `uid`; at the limit its calls left do not match and are not run."""
+            overruns[uid] += 1
+            if overruns[uid] < overrun_limit:
+                return rest
+            cut = [v for v in rest if v[1] == uid]
+            if cut:
+                unfinished.update(v[0] for v in cut)
+                count("units_cut")
+            return [v for v in rest if v[1] != uid]
+
         while pending:
             left = deadline - time.monotonic()
             if left <= 5:
                 break
             starts += 1
+            count("starts")
             ip = os.path.join(vdir, f"i{k}.{starts}.pkl")
             with open(ip, "wb") as f:
                 pickle.dump({"units": {uid: units[uid] for _, uid, _ in pending}, "vectors": pending}, f, protocol=4)
@@ -224,12 +292,14 @@ def run_vectors(payload, restored_uids, prefix, *, scratch, pub, cand_nt, cfg, c
                 pass
             cmd = prefix + [sys.executable, "-P", "-s", "-B", rv, cand_nt, mod, ip, op, str(per_vec)]
             before = len(got)
+            keys.append(secrets.token_hex(16))
             try:
                 state, first, code = watch(cmd, cwd=cand_nt, env=SANDBOX_ENV, log_path=os.devnull, res_path=op,
-                                           deadline=deadline, collect_sec=load_sec, stall_sec=stall_sec, marker=None)
+                                           deadline=deadline, collect_sec=load_sec, stall_sec=stall_sec, marker=None,
+                                           stdin_data=(keys[-1] + "\n").encode("ascii"))
             except OSError as exc:
-                raise EvaluationError("The call runner could not be started in the verifier image") from exc
-            got, dup = read_vector_records(op, want)
+                raise EvaluationError("The call runner could not be started") from exc
+            got, dup = read_vector_records(op, want, keys)
             rest = [v for v in pending if v[0] not in got]
             if not rest or state == "budget":
                 break
@@ -238,17 +308,23 @@ def run_vectors(payload, restored_uids, prefix, *, scratch, pub, cand_nt, cfg, c
                 unfinished.update(v[0] for v in rest)
                 break
             if state == "done" and code == 3 and len(got) > before:
-                pending = rest   # the runner started afresh after a call that ran out of time
+                # the runner started afresh after a call that ran out of time
+                for v in pending:
+                    if got.get(v[0]) == ["EXC", "Timeout", []]:
+                        count("timeouts")
+                        rest = overran(v[1], rest)
+                pending = rest
                 continue
             # the process ended, or stopped, at the first call without a result
             culprit = rest[0]
             unfinished.add(culprit[0])
+            count("ended_or_stopped")
             if len(got) == before:
                 # not even the first call returned: the rest of its unit is not tried again
                 unfinished.update(v[0] for v in rest if v[1] == culprit[1])
                 pending = [v for v in rest if v[1] != culprit[1]]
             else:
-                pending = rest[1:]
+                pending = overran(culprit[1], rest[1:]) if state == "stalled" else rest[1:]
             crashes += 1
             if crashes >= restart_limit:
                 # the job's own bodies keep ending it: the calls left do not match
@@ -262,6 +338,8 @@ def run_vectors(payload, restored_uids, prefix, *, scratch, pub, cand_nt, cfg, c
     with ThreadPoolExecutor(cpus) as ex:
         for got in ex.map(one, jobs):
             results.update(got)
+    if stats is not None:
+        stats.update(counts)
     return results
 
 
@@ -348,7 +426,7 @@ def read_records(res_path: str, want: set[str]) -> tuple[dict[str, str], set[str
 START_RECORD = b'"when": "start"'
 
 
-def watch(cmd, *, cwd, env, log_path, res_path, deadline, collect_sec, stall_sec, marker=START_RECORD):
+def watch(cmd, *, cwd, env, log_path, res_path, deadline, collect_sec, stall_sec, marker=START_RECORD, stdin_data=None):
     """Run one sandboxed process until it ends, stops reporting or its time ends.
 
     Until its work starts, the process is starting up (pytest is collecting, a
@@ -367,6 +445,8 @@ def watch(cmd, *, cwd, env, log_path, res_path, deadline, collect_sec, stall_sec
         stall_sec: Seconds allowed between records once it has started.
         marker: Bytes of a record that shows the work has started (for pytest,
             a test start); None lets any record count.
+        stdin_data: Bytes written to the process's standard input, which is then
+            closed (a runner's key); without them its input is empty.
 
     Returns:
         "done", "stalled" or "budget"; the seconds until the work started; and
@@ -384,7 +464,14 @@ def watch(cmd, *, cwd, env, log_path, res_path, deadline, collect_sec, stall_sec
     tail = b""
     with open(log_path, "w", encoding="utf-8") as lf:
         # its own process group, so that ending it also ends the workers it started
-        proc = subprocess.Popen(cmd, cwd=cwd, env=env, stdout=lf, stderr=subprocess.STDOUT, start_new_session=True)
+        proc = subprocess.Popen(cmd, cwd=cwd, env=env, stdin=subprocess.PIPE if stdin_data is not None else subprocess.DEVNULL,
+                                stdout=lf, stderr=subprocess.STDOUT, start_new_session=True)
+        if stdin_data is not None:
+            try:
+                proc.stdin.write(stdin_data)
+                proc.stdin.close()
+            except OSError:
+                pass
         try:
             while True:
                 try:
@@ -680,6 +767,10 @@ def measure(context: VerificationContext) -> Measurement:
             documented = set(json.load(f)["calls"])
         with open(os.path.join(private, "unit_bodies.json"), encoding="utf-8") as f:
             original_bodies = json.load(f)
+        # the original's own times, per module and unit, and the benchmark of the machine they were taken on
+        with open(os.path.join(private, "timing.json"), encoding="utf-8") as f:
+            timing = json.load(f)
+        timing["doctest"], timing["vector"], float(timing["benchmark_sec"])
     except (OSError, ValueError, KeyError, TypeError, pickle.UnpicklingError) as e:
         raise EvaluationError(f"Private verifier inputs are unreadable: {type(e).__name__}") from e
     if not os.path.isdir(skel):
@@ -788,6 +879,19 @@ def measure(context: VerificationContext) -> Measurement:
     prefix = sandbox_prefix(str(cfg.get("run_group", "nogroup")), int(cfg.get("address_space_bytes", 0)), metrics["notes"])
     restored = {u["uid"] for u in units if states[u["uid"]] == "restored"}
 
+    # how much slower than the machine the original's own times were taken on this one is, measured here
+    # before any submitted code runs; it decides, with those times, whether a phase that ran out of time
+    # did so because of the submission (its items then fail) or of the machine (an evaluation error)
+    host = max(1.0, host_benchmark() / float(timing["benchmark_sec"]))
+    attribution = float(cfg.get("attribution_factor", 2.0))
+    metrics["host_factor"] = round(host, 3)
+
+    def attributable(phase: str, modules: Mapping, began: float, phase_end: float) -> tuple[bool, float, float]:
+        """Whether the original would need at most 1/attribution of the phase's worker-seconds here."""
+        needed = time_needed(timing[phase], modules, host)
+        available = cpus * max(0.0, phase_end - began)
+        return attribution * needed <= available, needed, available
+
     # 2. docstring examples of every restored unit
     t0 = time.monotonic()
     dt_scratch = os.path.join(scratch, "dt")
@@ -797,16 +901,33 @@ def measure(context: VerificationContext) -> Measurement:
     for u in units:
         if u["uid"] in restored:
             run[u["module"]].append(u["dotted"])
+    dt_end = min(deadline, t0 + float(cfg.get("doctest_budget_sec", 1800)))
+    dt_stats: dict = {}
     try:
         results, tamper, dt_not_reached = gradelib.run_doctests(
-            cand_nt, run, os.path.join(pub, "rdoctest.py"), watch=watch, workers=cpus,
-            deadline=min(deadline, t0 + float(cfg.get("doctest_budget_sec", 1800))),
+            cand_nt, run, os.path.join(pub, "rdoctest.py"), watch=watch, workers=cpus, deadline=dt_end,
             timeout=float(cfg.get("unit_timeout_sec", 20)), prefix_cmd=prefix, scratch=dt_scratch, env=SANDBOX_ENV,
             load_sec=float(cfg.get("doctest_load_sec", 120)), stall_margin_sec=float(cfg.get("doctest_stall_margin_sec", 30)),
-            restart_limit=int(cfg.get("doctest_module_restart_limit", 8)))
+            restart_limit=int(cfg.get("doctest_module_restart_limit", 8)), stats=dt_stats)
     except gradelib.RunnerUnavailable as exc:
-        raise EvaluationError("The docstring runner could not be started in the verifier image") from exc
+        raise EvaluationError("The docstring runner could not be started") from exc
     reap(prefix)
+    metrics["doctest_runs"] = dt_stats
+    if dt_not_reached:
+        decided, needed, available = attributable("doctest", run, t0, dt_end)
+        metrics["doctest_seconds_needed"], metrics["doctest_worker_seconds"] = round(needed, 1), round(available, 1)
+        if decided:
+            # the original needs a small share of this phase here: what used it up was the submission's own
+            # bodies (slow, never ending, crashing), so the units it left count as failed, not as unknown
+            for name, record in list(results.items()):
+                if record.get("not_reached"):
+                    results[name] = {"name": name, "status": "timeout",
+                                     "exc": "not reached: the phase's time went on the submission's own bodies"}
+            metrics["notes"].append(
+                f"{dt_not_reached} units' examples were not reached in {available:.0f} worker-seconds, of which the original "
+                f"needs about {needed:.0f} here: they count as failed")
+            metrics["units_not_reached_failed"] = dt_not_reached
+            dt_not_reached = 0
     unit_rows, n_examples = [], 0
     for u in units:
         s = states[u["uid"]]
@@ -823,17 +944,40 @@ def measure(context: VerificationContext) -> Measurement:
 
     # 3. recorded calls, replayed in the sandbox and compared here with the reference results
     t0 = time.monotonic()
+    v_end = min(deadline, t0 + float(cfg.get("vector_budget_sec", 1200)))
+    v_stats: dict = {}
     vres = run_vectors(payload, restored, prefix, scratch=scratch, pub=pub, cand_nt=cand_nt, cfg=cfg, cpus=cpus,
-                       deadline=min(deadline, t0 + float(cfg.get("vector_budget_sec", 1200))))
+                       deadline=v_end, stats=v_stats)
     reap(prefix)
-    v_pass, vrows = 0, {}
-    # each result compared by its unit's profile: exact, but for the relaxations that unit needs
+    metrics["vector_runs"] = v_stats
+    v_unreached = [vid for vid in gold if uid_of.get(vid) in restored and vid not in vres]
+    if v_unreached:
+        replayed = collections.defaultdict(list)
+        for mod, p in payload.items():
+            replayed[mod] = sorted({uid for _, uid, _ in p["vectors"] if uid in restored})
+        decided, needed, available = attributable("vector", {m: k for m, k in replayed.items() if k}, t0, v_end)
+        metrics["vector_seconds_needed"], metrics["vector_worker_seconds"] = round(needed, 1), round(available, 1)
+        if decided:
+            for vid in v_unreached:
+                vres[vid] = None
+            metrics["notes"].append(
+                f"{len(v_unreached)} recorded calls were not reached in {available:.0f} worker-seconds, of which the original "
+                f"needs about {needed:.0f} here: they count as not matching")
+            metrics["vectors_not_reached_failed"] = len(v_unreached)
+    v_pass, vrows, unreadable = 0, {}, 0
+    # each result compared by its unit's profile: exact, but for the relaxations that unit needs; a
+    # result line the runner wrote that cannot be compared fails its call, never the evaluation
     key_of = {u["uid"]: f"{u['file']}::{u['qualname']}" for u in units}
     for vid, g in gold.items():
         c = vres.get(vid)
-        ok = c is not None and same(c, g, profile=profile_of(key_of.get(uid_of.get(vid), "")))
+        try:
+            ok = c is not None and same(c, g, profile=profile_of(key_of.get(uid_of.get(vid), "")))
+        except Exception:  # noqa: BLE001 - same() is total; this guards the call itself
+            ok, unreadable = False, unreadable + 1
         v_pass += ok
         vrows[vid] = ok
+    if unreadable:
+        metrics["notes"].append(f"{unreadable} call results could not be compared and count as not matching")
     metrics["vectors_passing"] = v_pass
     metrics["vectors_not_reached"] = sum(1 for vid in gold if uid_of.get(vid) in restored and vid not in vres)
     metrics["vector_seconds"] = round(time.monotonic() - t0, 1)

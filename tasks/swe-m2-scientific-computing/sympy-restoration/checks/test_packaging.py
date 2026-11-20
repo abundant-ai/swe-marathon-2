@@ -20,6 +20,7 @@ PREPARED = (
     "steps/01-restore-bodies/tests/private/vectors/documented.json",
     "steps/01-restore-bodies/tests/private/unit_bodies.json",
     "steps/01-restore-bodies/solution/data/sympy/core/example.py",
+    "steps/01-restore-bodies/tests/private/timing.json",
 )
 
 
