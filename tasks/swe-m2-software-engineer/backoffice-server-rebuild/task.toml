@@ -1,0 +1,67 @@
+schema_version = "1.4"
+multi_step_reward_strategy = "final"
+artifacts = ["/app/server"]
+
+[task]
+name = "abundant/swe-m2_software-engineering_backoffice-server-rebuild"
+description = "Write a replacement server for a running back-office application whose own server is sealed, using only its web client, sample files and its live behaviour."
+authors = [{ name = "Neel Harsola", email = "work.neelharsola@gmail.com" }]
+
+[metadata]
+reward_type = "continuous"
+open_internet_justification = "Only the environment build and agent setup have public egress, to install system packages and the agent's own tooling. The agent works without network access; the sealed server it studies runs inside its own container."
+
+[agent]
+timeout_sec = 34560
+network_mode = "no-network"
+user = "dev"
+
+[[agent.setup_begin]]
+command = "/usr/local/sbin/start-sealed-server"
+timeout_sec = 120
+
+[[agent.setup_complete]]
+command = "/usr/local/sbin/start-sealed-server"
+timeout_sec = 120
+
+[[agent.setup_complete]]
+command = "/usr/local/sbin/precap-watchdog"
+user = "root"
+timeout_sec = 60
+
+[environment]
+network_mode = "public"
+build_timeout_sec = 1800
+cpus = 4
+memory_mb = 8192
+storage_mb = 20480
+gpus = 0
+workdir = "/app"
+
+[verifier]
+environment_mode = "separate"
+network_mode = "no-network"
+timeout_sec = 6000
+user = "root"
+
+[[verifier.collect]]
+command = "/usr/local/sbin/prepare-delivery"
+user = "root"
+timeout_sec = 600
+
+[verifier.environment]
+network_mode = "no-network"
+build_timeout_sec = 1800
+cpus = 4
+memory_mb = 8192
+storage_mb = 20480
+gpus = 0
+
+[[steps]]
+name = "01-rebuild-server"
+
+[steps.agent]
+timeout_sec = 34560
+
+[steps.verifier]
+timeout_sec = 6000
