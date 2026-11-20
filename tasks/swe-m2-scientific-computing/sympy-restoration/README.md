@@ -7,7 +7,9 @@ SymPy 1.14.0 with the bodies of 2,671 functions and methods in 355 files removed
 code stay. The candidate writes the bodies back, without network access, using a
 small `restore` command that reports progress and checks work against the graded
 view. The reward is continuous: the smaller of two shares measured on recorded
-calls whose arguments and results no docstring example or visible test shows (see
+calls that nothing visible answers (no docstring example or visible test makes
+them, even with its symbols renamed, and their result is neither a documented
+result of their unit nor one of their own arguments; see
 [Reward formula](#reward-formula)).
 
 This is a pilot brought over from a v1-style task. It has one implemented step,
@@ -303,6 +305,35 @@ It does not yet meet the v2 workload target; see [Workload](#workload) and
   `disambiguate` call has no assumption to drop and still matches), the bodies
   phase 3 made pass still pass, and `multiline_latex` written from its docstring
   now matches 6 of 6 (0 before).
+- Re-check, floor and calls. Bodies that restore nothing reached 0.07 to 0.12
+  behind a table of documented outputs, against the decision's 0.05: a fallback
+  returning the first argument matched 538 counted calls, a table renaming a
+  documented call's symbols answered 322 (316 of them variants added in the round
+  above), and flipping a predicate's only documented boolean matched more. Two
+  kinds of call are now documented too: calls a docstring example or visible test
+  makes up to a renaming of symbols that keeps their assumptions, and calls whose
+  result is one of their own arguments unchanged (1,037 of the recorded calls);
+  and a result that any documented call of the unit returns is documented, the
+  rule applied until nothing changes.
+  Variants rename every symbol of a call by one map over all its arguments (a
+  rename on one side had graded only fallback paths), shift no integer whose
+  docstring states a domain (prime, odd, positive, a polynomial routine's level),
+  drop a shifted integer outside the range of the unit's recorded calls unless
+  the docstring describes a plain integer, and drop a candidate that breaks a
+  stated prime contract (the added calls of `_primitive_root_prime_iter` and
+  `_primitive_root_prime_power2_iter` had passed composite or even moduli). The
+  documented-call check no longer stops comparing a hot unit after 20,000 calls:
+  a call is pickled only when its arguments' kinds and sizes could match a
+  recorded one, so 1 unit is capped where 97 were (its calls stay documented).
+  Rebuilt from the 13,382 recorded calls: 1,697 units had no counted call, 3,355
+  calls were added for 990 of them (1,567 recorded while the withheld tests ran,
+  1,788 variants), and every result was recorded again: the original reproduces
+  16,737 of 16,737 under three hash seeds, the skeleton none. 6,854 calls count,
+  1,955 units are in the set and 716 are left out. Floor, through the verifier
+  and behind a table: every fixture a submission could build 0.015 or less
+  (bare raise 0.0, first argument 0.0, boolean flip 0.0 through the verifier and 0.013 behind a table),
+  so a unit still needs one matching counted call; the after-the-fact best
+  constant, which uses the hidden results, bounds at 0.059.
 
 ## Current implementation
 
@@ -397,7 +428,7 @@ reference result comes from the original implementation. Results are counts over
 fixed lists, so partial progress needs no judge. See [Verification](#verification).
 
 Evidence: the reference solution scores 1.0 (every counted unit and call; all
-2,671 units and 17,166 calls on the bars of a complete restoration); an empty
+2,671 units and 16,737 calls on the bars of a complete restoration); an empty
 delivery and a tree of bare `raise NotImplementedError` bodies score 0. Grading
 one submission twice on the platform gave 9,298 and 9,305 passing tests before
 the deadline and seeding fixes of 2026-11-20; the examples are now seeded per
@@ -537,20 +568,26 @@ The verifier runs in a separate image with only `/app/sympy` from the candidate.
    itself and exits, and the units behind it run in a new process, since an
    interrupted body can leave global state behind. Units left when the time is
    up count as not reached.
-3. Recorded calls. 17,166 calls, at least one per unit, replayed one at a time
+3. Recorded calls. 16,737 calls, at least one per unit, replayed one at a time
    in the sandbox with a 10-second limit, at most 20 minutes in total. The sandbox
    writes the result; the verifier compares it with the reference result, which
    the sandbox cannot read. 13,382 calls were recorded from SymPy's own test suite
-   and, for units it never calls directly, from docstring examples; 3,784 more
-   were added on 2026-11-20 for units whose recorded calls all repeat something
-   visible (1,408 recorded while the withheld tests ran, 2,376
-   from the units' own arguments with an integer shifted or a symbol renamed, each
-   result taken from the original). A call is documented when a docstring example
-   or a visible test makes a call with the same arguments (directly or inside the
-   library while it runs), or when its result is one its unit returns for such a
-   call; 9,598 calls are documented and listed privately
-   (`tests/private/vectors/documented.json`), 7,568 are not, and only those
-   count for the reward. A result is
+   and, for units it never calls directly, from docstring examples; 3,355 more
+   were added for 990 of the 1,697 units whose recorded calls are all
+   documented: 1,567 recorded while the withheld tests ran and 1,788 made from
+   the unit's own arguments, with every symbol renamed by one map over all of
+   them or one integer shifted (never an integer whose docstring states a domain,
+   such as prime, odd or positive, nor a polynomial routine's level, and never to
+   a value outside the range of the unit's recorded calls unless the docstring
+   describes a plain integer), each result taken from the original. A call is
+   documented when a docstring example or a visible test makes a call with the
+   same arguments, directly or inside the library while it runs, or with the
+   same arguments up to a renaming of symbols that keeps their assumptions; when
+   its result is one of its own arguments unchanged (a body that returns that
+   argument answers it); or when its result is one that another documented call
+   of its unit returns (applied until nothing changes). 9,883 calls are
+   documented and listed privately (`tests/private/vectors/documented.json`),
+   6,854 are not, and only those count for the reward. A result is
    compared by its canonical form (`verifier/lib/canon.py`): value, type and
    container, order, the form of a returned expression, and the state of an
    object the call builds or changes. What is not behaviour is left out, and
@@ -611,10 +648,12 @@ Limits:
   were dropped at build time, so error behaviour is measured only by the
   repository tests (309 withheld test functions assert an exception), which are
   reported and not rewarded.
-- 630 units have no call that nothing visible shows (their recorded calls,
-  and any new input that could be made for them, all repeat a docstring example
-  or a visible test, or return a documented result). They are left out of the
-  reward's unit set and counted (`units_left_out`); their examples and calls are
+- 716 units have no call that nothing visible answers (319 for which no candidate survived the screens, 148 whose every candidate a visible run makes, 248 whose every candidate returns an argument or a documented result, and the one unit whose run-time comparison stayed capped). They
+  are left out of the reward's unit set and counted (`units_left_out`). They
+  are smaller than the units in the set (median 5 non-blank lines
+  against 9) and hold 177 of the 229 units whose recorded
+  results are all booleans, so predicates are hardly rewarded; the set covers
+  80.3% of the body lines. Their examples and calls are
   still run and reported (`units_documented_calls_only`).
 - For some units no visible evidence fixes the property a hidden call compares
   (see [Difficulty](#difficulty)); that residue is part of the reward.
@@ -638,11 +677,11 @@ All five read one measurement pass (`verifier/engine.py`).
 ### Reward formula
 
 ```
-D      = recorded calls that are not documented (step 3): 7,568 of 17,166
-set    = units with at least one call in D: 2,041 of 2,671 (630 left out, counted)
+D      = recorded calls that are not documented (step 3): 6,854 of 16,737
+set    = units with at least one call in D: 1,955 of 2,671 (716 left out, counted)
 u      = units in the set whose docstring examples pass and that match at least
-         one of their calls in D  /  2,041
-c      = calls in D that match  /  7,568
+         one of their calls in D  /  1,955
+c      = calls in D that match  /  6,854
 reward = min(u, c)  if candidate_tree and measurement_integrity passed, else 0
 ```
 
@@ -670,14 +709,28 @@ reward = min(u, c)  if candidate_tree and measurement_integrity passed, else 0
   `units_examples_passing`, `units_documented_calls_only` (examples pass and only
   documented calls match), `units_left_out`, `tests_not_reached`,
   `unit_share_by_lines`, `identical_bodies`, `late_files` and `egress_open`.
-- Floor (`scripts/builder/floor.py`, on the final calls): a table that returns
-  documented outputs for documented arguments and the unit's most frequent
-  documented output otherwise scores 0.0; letting every unit pick its
-  best constant after seeing the hidden results bounds any such table at
-  0.060; a tree whose every body returns its first argument unchanged scores 0.003
-  through the verifier (6.6% of the counted calls match, but only 6 units in
-  the set also pass their examples). A tree of bare `raise NotImplementedError`
-  bodies scores 0.
+- Floor, on the final calls: bodies that restore nothing, graded as trees
+  through the verifier's own steps (`scripts/builder/fixtures.py`), and behind a
+  table of documented outputs, which makes every example pass and answers no
+  counted call (the same counted-call matches with every unit's examples counted
+  as passing; `scripts/builder/floor.py` computes the same bounds statically).
+  Unit rule "one counted call" (in force) and "half the counted calls":
+
+| Fixture (bodies that restore nothing) | Through the verifier | Behind a table, one call | Behind a table, half the calls |
+| --- | --- | --- | --- |
+| Bare `raise NotImplementedError` | 0.0 | 0.0 | 0.0 |
+| The first argument unchanged | 0.0 (23 units pass their examples, no counted call matches) | 0.0 | 0.0 |
+| The other boolean where a unit's documented results are one boolean, else the first argument | 0.0 (20 units pass their examples, 88 counted calls match) | 0.0128 | 0.0128 |
+| The unit's most frequent documented output (static) | | 0.0 | 0.0 |
+| One common constant for every unit, the best of 27 (static) | | 0.0150 | 0.0133 |
+| A table that also answers a documented call with its symbols renamed (static) | | 0.0019 | 0.0019 |
+| Renaming table, boolean flip and first argument together (static) | | 0.0147 | 0.0147 |
+| Best constant per unit, chosen after seeing the hidden results (static; a bound, not buildable) | | 0.0585 | 0.0583 |
+
+  Every fixture that a submission could build stays at or below 0.015. The
+  one bound above 0.05 lets every unit choose its constant after seeing the
+  hidden results, which no submission can, and the half rule would not lower
+  it (the call share binds); so a unit still needs one matching counted call.
 - A tree that did not arrive, or arrived without the collect step's signed mark,
   not as the mark lists it, or without a known end of the work, is an
   evaluation error. A delivery the collect
@@ -704,7 +757,7 @@ have not yet run on the platform). Unassessed boundaries: finding 7.
 | 1 | A body runs arbitrary code at grading time (for example through `sympify` of a string) and patches the example and test runners in-process, forging those two measurements | Sandbox process | Executed in red-team round 2 | The reward is min(u, c); c is compared by the root process with references the sandbox cannot read, and a counted unit also needs a matching counted call; the tests are not rewarded | Forged examples can raise u up to the share of units whose counted calls already match, so the reward up to c; constants that happen to equal counted results are bounded by the floor (finding 4) | Replace the self-reported example result with a root-side comparison | 🟡 YELLOW / MEDIUM |
 | 2 | Read reference results or the withheld tests | File permissions in the verifier image | Attempted in both rounds; not reached | Private inputs readable by root only; sandbox runs as `nobody`; no test directories in the tree during phases 2 and 3 | Depends on the privilege drop | Re-run on the v2 bundle | 🟢 GREEN / LOW |
 | 3 | Edit tests, module-level code or other functions to make checks pass | Graded-tree construction | Executed; no effect | Only unit bodies are copied into the reference skeleton; `checks/test_transplant.py` | None found | Keep the check | 🟢 GREEN / LOW |
-| 4 | Return the documented outputs for the documented inputs, and a constant otherwise | Which calls count | Review of the binary version: 685 units had a hidden call printed in their own docstring and 204 had nothing else; tables passed `trig_split`, `viete`, `wigner_3j` and 14 more units through the real verifier | Only calls whose arguments and results no docstring example or visible test shows count (D); a table never answers them, and its fallback, if it is a documented output, never equals a counted result. Measured on the final calls (`scripts/builder/floor.py`): the documented-output fallback scores 0.0, the best constant per unit chosen after seeing the hidden results 0.060, a tree returning every first argument unchanged 0.003 through the verifier | A constant that is not a documented result can still equal some counted results; the bound above is its ceiling | Re-run `floor.py` after any rebuild of the calls | 🟢 GREEN / LOW |
+| 4 | Return the documented outputs for the documented inputs, and something cheap otherwise: a constant, the first argument, the other boolean, or a documented result renamed | Which calls count | Review of the binary version: tables passed `trig_split`, `viete`, `wigner_3j` and 14 more units through the real verifier. Re-check of 2026-11-20: behind a table, a first-argument fallback and a renaming table reached 0.07 to 0.12, most of it on the variants added that day | Only calls nothing visible answers count (D): no docstring example or visible test makes them, even with its symbols renamed, and their result is neither a documented result of their unit nor one of their own arguments; variants rename with one map over all arguments and shift no integer with a stated domain. Measured on the final calls, through the verifier and behind a table (see the floor under [Reward formula](#reward-formula)): every buildable fixture 0.015 or less | A constant can still equal some counted results by chance; chosen per unit after seeing the hidden results it would reach 0.059, which no submission can | Re-run `fixtures.py` and `floor.py` after any rebuild of the calls | 🟢 GREEN / LOW |
 | 5 | Change how a runner reports results | Runner control items | Executed in round 1 through module-level `os`/`sys`; fixed | Control items with known outcomes in every pytest run; the records of a run cannot hold more passes than that run's tally; forbidden constructs in bodies. Forged start or collection records can only remove tests from later runs, which lowers the score | A forgery that also gets the controls right falls under finding 1. The per-file runs added on 2026-11-17 have not been attacked | With finding 1 | 🟢 GREEN / LOW |
 | 6 | Tamper with reward or result files | Separate verifier container | By design; not attacked | Verifier starts fresh with only `/app/sympy`; output directory closed to the sandbox user | None found | Attack on the v2 bundle | 🟢 GREEN / LOW |
 | 7 | Anything that depends on the new entry point, check registry or reporting | v2 verifier code | Not attacked | Same measurement code as v1; reference and no-op baselines on the v2 bundle | Unknown | Red-team run against the v2 bundle | 🟡 YELLOW / UNASSESSED |
@@ -830,6 +883,8 @@ scored 0 under the binary reward.
 | `checks/` (73 tests): a 3-second turn has its end and a later write is refused; every unknown end is an evaluation error; file and directory links deliver nothing; the comparison tells apart given Dummies trading places, merged renamings, wrong memo values, frames made in another order or copied for a given one, storage where it is the contract, stored zeros and every non-LaTeX whitespace | working tree, 2026-11-20 (re-check fixes) | pass |
 | All calls recorded again with the narrowed comparison (`regold.py`) | the verifier's runner and `canon.py`, hash seeds 0, 1, 2 | original 17,166 / 17,166, skeleton 0; 1,424 results changed form |
 | Comparison probes: one unit's body edited in a copy of the original, its examples and every recorded call run through the verifier's `rdoctest.py`, `rvector.py` and `canon.py` | working tree, 2026-11-20 | wrong bodies, counted calls matched: one-line `pprint_nodes` 0/3 (examples pass), swapped `bivariate_type` 0/8 (examples pass), one-line `MatrixBase.table` 0/4, side-by-side `stringPict.below` 0/4, `fcode` without its columns 0/8, dense `DDM.to_sdm` 0/1 and `DomainMatrix.to_sparse` 0/1, a wrong pre-set flag in `round_two` 0/1 (and in `as_submodule` 0/3 documented calls), `add_node` without its parallel lists 0/4, `disambiguate` dropping assumptions 1/4 (that call has none); right bodies: `as_submodule` and `round_two` without their pre-set flags, `restrict_codomain` testing equality first, `homomorphism` without no-op steps (and `identity_hom` through it), `remove_node` by index and an extra frame made first all match in full, `multiline_latex` from its docstring 6/6 |
+| Counted calls rebuilt (`documented.py`, `echoes.py`, `rec_withheld.py`, `variants.py`, `regold.py`, `finalize_documented.py`) | working tree, 2026-11-20 (re-check) | 16,737 calls, 9,883 documented (9,270 by arguments, 334 of them only up to a renaming; 323 returning an argument; 282 returning a documented result; 8 of the one capped unit), 6,854 counted; 1,955 units in the set, 716 left out; original 16,737 / 16,737 under hash seeds 0, 1, 2, skeleton 0 |
+| Floor fixtures through the verifier and behind a table (`fixtures.py`, `floor.py`), with the reviewers' own fixture scripts | working tree, 2026-11-20 (re-check) | see the floor under [Reward formula](#reward-formula); reviewers' scripts: first argument 0.0015, flip 0.0136, flip with first argument 0.0150, renaming tables 0.0007 to 0.0026, renaming with first argument 0.0028 |
 | `harbor check` with `resources/task-implementation.toml` | working tree, 2026-11-17 | attempted on Modal; failed before review with `NotFoundError: Environment not found` (no default Modal environment). Not run in local Docker. No ratings |
 | Local image builds | none | not run for the v2 Dockerfiles; the Oddish baselines are the first build |
 
@@ -862,20 +917,32 @@ python package_session.py --session 2 --chain <run> --archive <candidate_unit_fi
 python package_regrade.py <candidate_unit_files.tar.gz> --label <name>   # grade a stored submission again
 ```
 
-Rebuilding the counted calls (2026-11-20), in order, from the original tree with
-only the visible tests (`original_visible`), the original with every test
-(`original_full`) and test-free copies of the original and the skeleton:
+Rebuilding the counted calls (2026-11-20, as rebuilt after the re-check), in
+order, from the original tree with only the visible tests (`original_visible`),
+the original with every test (`original_full`) and test-free copies of the
+original and the skeleton. `recorded.pkl` holds the calls recorded from SymPy's
+own tests and docstrings, without the calls added earlier:
 
 ```bash
-python builder/regold.py original_nt skeleton_nt inputs.pkl out/            # results with the current comparison
-python builder/documented.py doctests|tests original_visible units.json inputs.pkl lib out.json <packages>
+python builder/regold.py original_nt skeleton_nt recorded.pkl out/            # every result with the current comparison
+python builder/documented.py doctests|tests original_visible units.json recorded.pkl lib recorded.json <packages>
+python builder/echoes.py original_nt echoes.json --calls recorded.pkl out/gold.json   # results that are an argument
+# units left without a counted call get candidates: calls recorded while the withheld tests run
+# (one candidate per argument list not recorded yet) and variants of their own arguments
 python builder/rec_withheld.py original_full units.json uids.json withheld_functions.json calls.pkl
-python builder/variants.py make original_nt inputs.pkl uids.json variants.pkl
-python builder/variants.py screen original_nt skeleton_nt candidates.pkl out/
-python builder/variants.py select inputs.pkl gold.json screened.pkl out/ --documented recorded.json,candidates.json
-python builder/regold.py original_nt skeleton_nt out/inputs.pkl final/     # then documented.json is cut to the calls kept
+python builder/variants.py make original_nt recorded.pkl uids.json variants.pkl
+python builder/variants.py contract original_nt candidates.pkl kept.pkl       # stated prime contracts
+python builder/variants.py screen original_nt skeleton_nt kept.pkl screened/
+python builder/echoes.py original_nt echoes-c.json --screened screened/screened.pkl
+python builder/documented.py doctests|tests original_visible units.json screened-payload.pkl lib cand.json <packages>
+python builder/variants.py select recorded.pkl out/gold.json screened/screened.pkl sel/ \
+    --documented recorded.json,cand.json --echoes echoes.json,echoes-c.json
+python builder/regold.py original_nt skeleton_nt sel/inputs.pkl final/
+python builder/echoes.py original_nt final-echoes.json --calls final/inputs.pkl final/gold.json
+python builder/finalize_documented.py final/inputs.pkl final/gold.json final/documented.json recorded.json --echoes final-echoes.json
 python builder/unit_bodies.py solution/data units.json tests/private/unit_bodies.json
 python builder/floor.py original_nt final/inputs.pkl final/gold.json final/documented.json
+python builder/fixtures.py raise|identity|flip original_root fixture/ [final/inputs.pkl final/gold.json final/documented.json]
 ```
 
 Development checks:
