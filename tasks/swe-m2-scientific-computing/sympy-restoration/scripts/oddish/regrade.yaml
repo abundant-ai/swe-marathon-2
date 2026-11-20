@@ -1,0 +1,9 @@
+# Grade a stored submission again. Package it with scripts/package_regrade.py, then:
+#   oddish upload <bundle>
+#   oddish run --task <task id> -c scripts/oddish/regrade.yaml -E <experiment> --no-archil --json
+# The oracle agent installs the submitted files; the reward is that of the submission.
+# Two trials, so that the two grades can be compared with each other.
+agents:
+  - name: oracle
+    n_trials: 2
+max_trial_attempts: 2
