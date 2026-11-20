@@ -8,7 +8,8 @@
 # before anything of its own touches it; removes what a copy must not carry; writes a record and a
 # signed mark into it; and puts it back under its name. The mark's first line is `listed` with how
 # many entries and bytes were listed, or `refused` (no usable tree under that name, one over the
-# limits, no room to copy it, or this step did not finish: the empty tree stays); the record
+# limits, no room to copy it, an end of the work the work itself kept from the net check, or this
+# step did not finish: the empty tree stays); the record
 # (.fsmaint.json) lists every entry with the times it had when the work ended, and the end of the
 # work as far as it can be told.
 LIMIT_ENTRIES=200000
@@ -203,8 +204,11 @@ main <tree> <state> <key> <limits...> <spare dirs> <passes> <left> <started>
       within SESSION_WINDOW seconds of the start of the work (one session for the whole of the work,
       not the last of many short ones), no session was alive when this step began, and the sessions
       were watched until then.
-    Without either, the start of the work (`unchanged`) when no listed entry changed since then;
-    otherwise there is no end bound (`end_from` null, `end_note` says why). The record
+    Without either, the start of the work (`unchanged`) when no listed entry changed since then.
+    When the work itself kept the end from the net check (every poll failed for want of the
+    machine's resources, so no stretch formed, or polls saw no answer while the hosts answered this
+    step), the tree is refused. Otherwise there is no end bound (`end_from` null, `end_note` says
+    why). The record
     (.fsmaint.json) also holds both ends, what the net check recorded, the sessions, the processes
     found stopped, how many passes of ending them took and how many were left, whether the public
     hosts answered afterwards, every note, and every entry: its path, type, size, modification and

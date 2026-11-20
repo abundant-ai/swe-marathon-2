@@ -29,7 +29,8 @@ inside the library while one runs count alike. The output maps each documented c
 it was seen first.
 
 The results the examples and the tests show are kept too: for every call an example or a visible
-test makes directly into a unit (not a generator), the canonical form of what it returned, once per
+test makes directly into a unit (not a generator, and not a result that is or holds an iterator,
+which putting in canonical form would consume), the canonical form of what it returned, once per
 form with the type of a value left out (`shown`, per unit, at most SHOWN_FORMS forms, from at most
 SHOWN_CALLS returns per unit and process). A counted call that returns one of them answers to a
 table of the outputs the agent can read, so finalize_documented.py documents it.
@@ -53,7 +54,22 @@ MAX_BLOB = 30_000      # recorded arguments are never larger than this
 SHOWN_CALLS = 5_000    # direct returns of one unit put in canonical form, per process
 SHOWN_FORMS = 200      # distinct shown results kept per unit
 SHOWN_BYTES = 20_000   # a shown result whose form is longer than this is not kept
-CO_GENERATOR = 0x20 | 0x200 | 0x100   # generator, async generator and coroutine code
+CO_GENERATOR = 0x20 | 0x80 | 0x200 | 0x100   # generator, coroutine and async generator code
+
+
+def holds_iterator(value, depth=0):
+    """Whether `value` is, or a container of it holds, an iterator: putting one in canonical form would
+    consume it, and the example or test that called the unit would then see it empty. Nothing is
+    consumed here."""
+    if hasattr(value, "__next__"):
+        return True
+    if depth >= 6:
+        return False
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return any(holds_iterator(x, depth + 1) for x in list(value)[:500])
+    if isinstance(value, dict):
+        return any(holds_iterator(x, depth + 1) for x in list(value.keys())[:500] + list(value.values())[:500])
+    return False
 
 
 def unit_code_map(tree, units):
@@ -291,6 +307,8 @@ class Matcher:
             return None
         self.busy = True
         try:
+            if holds_iterator(value):
+                return None   # a generator or iterator returned: kept as it is for the caller, not shown here
             self.shown_calls[uid] = self.shown_calls.get(uid, 0) + 1
             form = self.canon.canon(value)
             text = json.dumps(form, sort_keys=True)

@@ -19,7 +19,8 @@ such a table answers no counted call, so on those calls only its fallback can ma
   all                  renaming table, flip and first argument together
 
 A documented output is the result of a call a docstring example or a visible test makes (the
-documented.py output given as --shown; without it, every documented call's result).
+documented.py output given as --shown: its documented calls' results and the results its examples
+and tests showed; without it, every documented call's result).
 
 usage: floor.py <original_tree> <inputs.pkl> <gold.json> <documented.json> [--shown <documented.py output>]
                 [--share 0,0.5] [--out <json>]
@@ -110,7 +111,9 @@ def main():
     payload = pickle.load(open(inputs, "rb"))
     gold = json.load(open(gold_path, encoding="utf-8"))
     documented = set(json.load(open(documented_path, encoding="utf-8"))["calls"])
-    visible = set(json.load(open(shown_path, encoding="utf-8"))["documented"]) & documented if shown_path else documented
+    shown_data = json.load(open(shown_path, encoding="utf-8")) if shown_path else {}
+    visible = set(shown_data["documented"]) & documented if shown_path else documented
+    printed = shown_data.get("shown") or {}
     common = [True, False, 0, 1, -1, 2, [], (), {}, set(), "", None, S.Zero, S.One, S.NegativeOne, S.Half, S.Infinity,
               S.NegativeInfinity, S.ComplexInfinity, S.NaN, S.EmptySet, S.true, S.false, Tuple(), sympy.Symbol("x"),
               sympy.Matrix([]), sympy.Integer(0)]
@@ -153,7 +156,7 @@ def main():
     per_constant = [{} for _ in common_forms]
     for uid in set_units:
         cell, prof = per_unit[uid], profile[uid]
-        shown = [gold[v] for v in cell["documented"] if v in visible]
+        shown = [gold[v] for v in cell["documented"] if v in visible] + list(printed.get(uid, []))
         for k, form in enumerate(common_forms):
             per_constant[k][uid] = {v for v in cell["deciding"] if same(form, gold[v], profile=prof)}
         counts = [sum(1 for v in cell["deciding"] if same(form, gold[v], profile=prof)) for form in common_forms + shown]
