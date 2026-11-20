@@ -1,28 +1,45 @@
 #!/usr/bin/python3 -I
-"""Poll a few public hosts with a TLS handshake until stopped, keep a record of every poll, and end
-every process of the user `dev` whenever a host answers again after a stretch in which none did.
+"""Poll a few public hosts with a TLS handshake until stopped, watch the exec sessions of the user
+`dev`, keep a record of both, and end every process of `dev` whenever the hosts can be seen again
+after a stretch in which none answered.
 
-The hosts are resolved once at start (while names resolve). A probe process running as `nobody`
-then tries them by address, all at once, every INTERVAL_SECONDS: a poll is open when a TLS
-handshake with one of them completes and its certificate is valid for that name. A connection that
-is accepted and then dropped during the handshake, refused or not answered is closed.
+Polls. The hosts are resolved once at start (while names resolve). A probe process, this file run
+with --probe as `nobody`, then tries them by address, all at once, every INTERVAL_SECONDS. A poll is
+`open` when a TLS handshake with one of them completes and its certificate is valid for that name;
+`local` when none completes and an attempt failed for a reason of this machine, not of the network
+(no local port or address to spare, no file, buffer or memory, a thread that would not start, a
+probe that could not run: LOCAL_ERRNOS), so the poll saw nothing of the network; otherwise `closed`
+(refused, reset, dropped during the handshake, not answered in time).
 
-After every poll STATE/netcheck.json holds the status: `last_poll` (its start and state), `closing`
-(the stretch of closed polls in progress: its first and last poll's start and how many polls) and
-`openings`, one per stretch of at least MIN_CLOSED closed polls that an open poll ended:
-`last_closed_at` and `end_bound` (the start of the stretch's last poll, a moment at which no host
-answered yet), `first_open_at` (the open poll's start), `closed_since` and `closed_polls`. Counting
-starts with the first poll, so a stretch of any length is on record, however short the work. At
-every opening the record is also written to STATE/netcheck-open.json before anything is ended, so
-nothing in the ending can lose it; then every process of `dev` is ended, and how many passes that
-took and how many processes were left are added. Polling goes on after an opening, so a stretch
-before the work cannot end the watch; the collect step stops it. A status that cannot be written
-is skipped, never a reason to stop.
+Stretches. Closed polls in a row make a stretch, counted from the first poll; a local poll neither
+extends nor ends one. A stretch of at least MIN_CLOSED closed polls ends at an open poll, or at
+LOCAL_LIMIT local polls in a row (the network can no longer be seen, which counts as an opening).
+STATE/netcheck.json holds the status after every poll: `last_poll` (its start and state), `closing`
+(the stretch in progress: its first and last closed poll's start and how many) and `openings`, one
+per stretch that ended so: `last_closed_at` and `end_bound` (the start of its last closed poll, a
+moment at which no host answered yet), `first_open_at` (the start of the poll that ended it),
+`closed_since`, `closed_polls`, `kind` ("open" or "local") and the host or the reason. At every
+opening the record is also written to STATE/netcheck-open.json before anything is ended; then every
+process of `dev` is stopped and ended, and how many passes that took and how many were left are
+added. Polling goes on after an opening, so a stretch before the work cannot end the watch; the
+collect step stops it.
+
+Sessions. A thread looks at /proc every SESSION_SECONDS for the exec sessions of `dev`: a process of
+`dev` whose parent is a process of the real user root named su or runuser (not the first process),
+or that has no parent here (parent 0, started from outside this process namespace). A process that
+the processes of `dev` start, in the background or detached, has a parent of `dev`, then the first
+process or another that takes in orphans, never such a parent, so it is never a session.
+STATE/sessions.json holds when each session was first and last seen alive (the start of the look),
+the last look and whether /proc could be read.
+
+A status that cannot be written is skipped, never a reason to stop.
 """
 
+import errno
 import json
 import os
 import pwd
+import signal
 import socket
 import ssl
 import subprocess
@@ -31,15 +48,22 @@ import threading
 import time
 
 STATE = "/var/lib/fsmaint"
+PROC = "/proc"
+PYTHON = "/usr/bin/python3"
 HOSTS = ("pypi.org", "files.pythonhosted.org", "github.com")
 PORT = 443
 INTERVAL_SECONDS = 0.1     # between the end of one poll and the next
 HANDSHAKE_SECONDS = 1.0    # connection and handshake, per host
 MIN_CLOSED = 3             # closed polls in a row that make a stretch whose end is recorded
+LOCAL_LIMIT = 3            # local polls in a row that end a stretch, as an open poll does
 KEEP_OPENINGS = 32         # openings kept in the status, the longest stretch always among them
+SESSION_SECONDS = 0.1      # between two looks for the sessions of USER
+KEEP_SESSIONS = 64         # sessions kept in the record, the last seen always among them
+SESSION_PARENTS = ("su", "runuser")
 USER = "dev"
 PROBE_USER = "nobody"
-PROBE_RESTARTS = 20
+LOCAL_ERRNOS = frozenset({errno.EADDRNOTAVAIL, errno.EADDRINUSE, errno.EAGAIN, errno.EMFILE, errno.ENFILE,
+                          errno.ENOBUFS, errno.ENOMEM})
 
 
 def write(name, record):
@@ -51,7 +75,7 @@ def write(name, record):
             json.dump(record, handle)
         os.replace(path + ".tmp", path)
         return True
-    except (OSError, ValueError):
+    except (OSError, ValueError, TypeError, MemoryError):
         return False
 
 
@@ -65,10 +89,20 @@ def resolve(hosts=HOSTS):
     return found
 
 
+def local_reason(exc):
+    """The name of the failure when `exc` is a failure of this machine rather than of the network, else None."""
+    if isinstance(exc, MemoryError):
+        return "MemoryError"
+    if isinstance(exc, OSError) and not isinstance(exc, ssl.SSLError) and exc.errno in LOCAL_ERRNOS:
+        return errno.errorcode.get(exc.errno, str(exc.errno))
+    return None
+
+
 def first_answering(targets, context, seconds=HANDSHAKE_SECONDS):
-    """The first host with which a TLS handshake completes, all tried at once within `seconds`;
-    None when none does."""
-    answered = []
+    """One poll: ("open", host) when a TLS handshake with one of the hosts completes, all tried at once
+    within `seconds`; ("local", why) when none does and an attempt failed for a reason of this machine;
+    ("closed", None) otherwise."""
+    answered, local = [], []
 
     def probe(host, address):
         try:
@@ -76,87 +110,213 @@ def first_answering(targets, context, seconds=HANDSHAKE_SECONDS):
                 raw.settimeout(seconds)
                 with context.wrap_socket(raw, server_hostname=host):
                     answered.append(host)
-        except (OSError, ssl.SSLError, ValueError):
-            pass
+        except (OSError, ValueError, MemoryError) as exc:
+            why = local_reason(exc)
+            if why:
+                local.append(why)
 
-    workers = [threading.Thread(target=probe, args=target, daemon=True) for target in targets]
-    for worker in workers:
-        worker.start()
+    workers = []
+    for target in targets:
+        try:
+            worker = threading.Thread(target=probe, args=target, daemon=True)
+            worker.start()
+        except (RuntimeError, MemoryError, OSError):
+            local.append("thread")
+            continue
+        workers.append(worker)
     for worker in workers:
         worker.join(2 * seconds + 0.2)
-    return answered[0] if answered else None
+    if answered:
+        return "open", answered[0]
+    if local:
+        return "local", local[0]
+    return "closed", None
 
 
 def probe_lines(targets, out, context=None, interval=INTERVAL_SECONDS):
-    """Poll for ever, writing one line per poll: '<start> open <host>' or '<start> closed -'."""
+    """Poll for ever, writing one line per poll: '<start> open <host>', '<start> closed -' or '<start> local <why>'."""
     context = context or ssl.create_default_context()
     while True:
         started = time.time()
-        host = first_answering(targets, context)
-        out.write(f"{started!r} {'open' if host else 'closed'} {host or '-'}\n")
+        try:
+            state, detail = first_answering(targets, context)
+        except (RuntimeError, MemoryError, OSError) as exc:
+            state, detail = "local", exc.__class__.__name__
+        out.write(f"{started!r} {state} {detail or '-'}\n")
         out.flush()
         time.sleep(interval)
 
 
-def start_probe(targets):
-    """A child process that polls as PROBE_USER and reports through a pipe; (pid, reader)."""
-    read_end, write_end = os.pipe()
-    pid = os.fork()
-    if pid == 0:
-        try:
-            os.close(read_end)
-            out = os.fdopen(write_end, "w")
-            try:
-                entry = pwd.getpwnam(PROBE_USER)
-                if os.geteuid() == 0:
-                    os.setgroups([])
-                    os.setgid(entry.pw_gid)
-                    os.setuid(entry.pw_uid)
-            except (OSError, KeyError):
-                pass  # it polls as the user it started as; the first line says which
-            out.write(f"uid {os.geteuid()}\n")
-            out.flush()
-            probe_lines(targets, out)
-        finally:
-            os._exit(0)
-    os.close(write_end)
-    return pid, os.fdopen(read_end)
+def probe_main(argv):
+    """--probe <targets as JSON>: become PROBE_USER when started as root, then poll on standard output."""
+    try:
+        if os.geteuid() == 0:
+            entry = pwd.getpwnam(PROBE_USER)
+            os.setgroups([])
+            os.setgid(entry.pw_gid)
+            os.setuid(entry.pw_uid)
+    except (OSError, KeyError):
+        pass  # it polls as the user it started as; the first line says which
+    sys.stdout.write(f"uid {os.geteuid()}\n")
+    sys.stdout.flush()
+    probe_lines([tuple(target) for target in json.loads(argv[0])], sys.stdout)
+    return 0
 
 
-def polls(targets, status):
-    """(start, open host or None) per poll, from probe children restarted when one ends."""
-    for restart in range(PROBE_RESTARTS + 1):
+def polls(targets, status, interval=INTERVAL_SECONDS):
+    """(start, state, detail) per poll, from probe processes started again whenever one ends. A probe
+    that cannot be started, or that ended, is a local poll: it saw nothing of the network."""
+    restarts = 0
+    command = [PYTHON, "-I", os.path.abspath(sys.argv[0]), "--probe", json.dumps(targets)]
+    while True:
         try:
-            pid, reader = start_probe(targets)
-        except (OSError, KeyError) as exc:
-            write("netcheck.json", dict(status, error=f"probe not started ({exc.__class__.__name__})"))
-            return
-        status["probe_restarts"] = restart
-        for line in reader:
-            fields = line.split()
-            if len(fields) == 2 and fields[0] == "uid":
-                status["probe_uid"] = int(fields[1])
-            elif len(fields) == 3:
-                yield float(fields[0]), (fields[2] if fields[1] == "open" else None)
-        reader.close()
+            probe = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+        except (OSError, ValueError, MemoryError) as exc:
+            status["probe_start_failures"] = status.get("probe_start_failures", 0) + 1
+            yield time.time(), "local", f"probe-{exc.__class__.__name__}"
+            time.sleep(interval)
+            continue
+        status["probe_restarts"] = restarts
+        restarts += 1
         try:
-            os.waitpid(pid, 0)
-        except OSError:
+            for line in probe.stdout:
+                fields = line.split()
+                if len(fields) == 2 and fields[0] == "uid":
+                    status["probe_uid"] = int(fields[1])
+                elif len(fields) == 3 and fields[1] in ("open", "closed", "local"):
+                    yield float(fields[0]), fields[1], (None if fields[2] == "-" else fields[2])
+        except (OSError, ValueError):
             pass
-    write("netcheck.json", dict(status, error="the probe kept ending"))
+        try:
+            probe.kill()
+            probe.wait(5)
+        except (OSError, subprocess.SubprocessError):
+            pass
+        yield time.time(), "local", "probe-ended"
+        time.sleep(interval)
 
 
-def end_processes(user=USER):
+def read_status(pid, proc=PROC):
+    """(real uid, parent pid, name, state) of a process, from /proc; None when it cannot be read."""
+    try:
+        with open(os.path.join(proc, str(pid), "status")) as handle:
+            fields = dict(line.split(":", 1) for line in handle.read().splitlines() if ":" in line)
+        return int(fields["Uid"].split()[0]), int(fields["PPid"].strip()), fields.get("Name", "").strip(), fields.get("State", "").strip()[:1]
+    except (OSError, KeyError, ValueError, IndexError):
+        return None
+
+
+def processes(proc=PROC):
+    """{pid: (real uid, parent pid, name, state)} of every process /proc shows; None without a /proc."""
+    try:
+        names = os.listdir(proc)
+    except OSError:
+        return None
+    table = {}
+    for name in names:
+        if name.isdigit():
+            info = read_status(name, proc)
+            if info is not None:
+                table[int(name)] = info
+    return table
+
+
+def sessions(table, uid):
+    """The pids of the exec sessions of the user `uid` in a process table: its processes (not zombies)
+    whose parent is a process of the real user root named in SESSION_PARENTS other than the first
+    process, or that have no parent here."""
+    found = []
+    for pid, (owner, parent, _name, state) in table.items():
+        if owner != uid or state in ("Z", "X"):
+            continue
+        above = table.get(parent)
+        if parent == 0 or (parent != 1 and above is not None and above[0] == 0 and above[2] in SESSION_PARENTS):
+            found.append(pid)
+    return sorted(found)
+
+
+def watch_sessions(uid, record, stop, proc=PROC, interval=SESSION_SECONDS, name="sessions.json"):
+    """Look for the sessions of `uid` every `interval` until `stop` is set, keeping each one's first and
+    last sighting in `record`, written to STATE/`name` after every look."""
+    current = {}   # pid -> its entry, for the sessions alive at the previous look
+    entries = []   # the sessions kept, in the order first seen
+    record.update(available=None, scans=0, last_scan=None, alive=[], seen=0, sessions=[])
+    while not stop.is_set():
+        started = time.time()
+        table = processes(proc)
+        if table is None:
+            record.update(available=False, last_scan=started, scans=record["scans"] + 1)
+        else:
+            alive, now = sessions(table, uid), {}
+            for pid in alive:
+                entry = current.get(pid)
+                if entry is None:
+                    entry = {"pid": pid, "first_seen": started, "last_seen": started}
+                    entries.append(entry)
+                    record["seen"] += 1
+                entry["last_seen"] = started
+                now[pid] = entry
+            current = now
+            if len(entries) > KEEP_SESSIONS:
+                # every session alive now, and the ones that ended last
+                live = {id(entry) for entry in current.values()}
+                ended = sorted((e for e in entries if id(e) not in live), key=lambda e: e["last_seen"])
+                room = max(0, KEEP_SESSIONS - len(live))
+                keep = {id(e) for e in ended[len(ended) - room:]} if room else set()
+                entries = [e for e in entries if id(e) in live or id(e) in keep]
+            record.update(available=True, last_scan=started, scans=record["scans"] + 1, alive=alive, sessions=entries)
+        write(name, record)
+        stop.wait(interval)
+
+
+def end_processes(user=USER, proc=PROC):
+    """Stop every process of `user`, then kill them all; (passes, live processes left, or None when that
+    cannot be told). Signals are sent from here as well, so this works when no process can be started."""
+    try:
+        uid = pwd.getpwnam(user).pw_uid
+    except KeyError:
+        return 0, None
+
+    def quietly(command):
+        try:
+            return subprocess.run(command, stdin=subprocess.DEVNULL, capture_output=True, timeout=10).returncode
+        except (OSError, ValueError, subprocess.SubprocessError):
+            return None
+
+    def mine(states):
+        table = processes(proc)
+        if table is None:
+            return None
+        return [pid for pid, (owner, _parent, _name, state) in table.items() if owner == uid and state not in states]
+
+    as_user = ["setpriv", "--reuid", user, "--regid", user, "--clear-groups", "kill"]
+    for _ in range(50):
+        running = mine(("Z", "X", "T", "t"))
+        if not running:
+            break
+        quietly(as_user + ["-STOP", "-1"])
+        for pid in running:
+            try:
+                os.kill(pid, signal.SIGSTOP)
+            except OSError:
+                pass
+        time.sleep(0.02)
     passes = 0
     for _ in range(100):
-        if subprocess.run(["pgrep", "-u", user], capture_output=True).returncode != 0:
-            break
+        left = mine(("Z", "X"))
+        if left == [] or (left is None and quietly(["pgrep", "-u", user]) == 1):
+            return passes, 0
         passes += 1
-        subprocess.run(["setpriv", "--reuid", user, "--regid", user, "--clear-groups", "kill", "-9", "-1"], capture_output=True)
-        subprocess.run(["pkill", "-KILL", "-u", user], capture_output=True)
+        quietly(as_user + ["-9", "-1"])
+        for pid in left or ():
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except OSError:
+                pass
+        quietly(["pkill", "-KILL", "-u", user])
         time.sleep(0.1)
-    left = subprocess.run(["pgrep", "-u", user], capture_output=True, text=True).stdout.split()
-    return passes, len(left)
+    left = mine(("Z", "X"))
+    return passes, (len(left) if left is not None else None)
 
 
 def kept(openings):
@@ -169,44 +329,67 @@ def kept(openings):
 
 
 def watch(stream, status, ending=end_processes):
-    """Fold every poll into the status; at each opening after MIN_CLOSED closed polls, record, then end.
+    """Fold every poll into the status; at each opening after MIN_CLOSED closed polls (an open poll, or
+    LOCAL_LIMIT local polls in a row), record, then end.
 
     Returns the openings when the stream ends (it does not while the probe runs)."""
     closing = None   # [first start, last start, polls] of the closed stretch in progress
     openings = []
-    count = 0
-    status.update(min_closed_polls=MIN_CLOSED, polls=0, last_poll=None, closing=None, openings=[])
-    for started, host in stream:
+    count = local_count = local_run = 0
+    status.update(min_closed_polls=MIN_CLOSED, local_limit=LOCAL_LIMIT, polls=0, local_polls=0, last_poll=None,
+                  closing=None, openings=[])
+    for started, state, detail in stream:
         count += 1
-        if host is None:
+        if state == "closed":
             closing = [closing[0], started, closing[2] + 1] if closing else [started, started, 1]
+            local_run = 0
+        elif state == "local":
+            local_count += 1
+            local_run += 1
         else:
-            if closing and closing[2] >= MIN_CLOSED:
-                # written before anything is ended, so that nothing in the ending can lose the record
-                record = {"first_open_at": started, "last_closed_at": closing[1], "end_bound": closing[1],
-                          "closed_since": closing[0], "closed_polls": closing[2], "host": host, "opened_at": time.time()}
-                openings = kept(openings + [record])
-                status.update(polls=count, last_poll=[started, "open"], closing=None, openings=openings)
-                write("netcheck-open.json", record)
-                write("netcheck.json", status)
-                passes, left = ending()
-                record.update(kill_passes=passes, processes_left=left, ended_at=time.time())
-                write("netcheck-open.json", record)
+            local_run = 0
+        if closing and closing[2] >= MIN_CLOSED and (state == "open" or (state == "local" and local_run >= LOCAL_LIMIT)):
+            # written before anything is ended, so that nothing in the ending can lose the record
+            record = {"first_open_at": started, "last_closed_at": closing[1], "end_bound": closing[1],
+                      "closed_since": closing[0], "closed_polls": closing[2], "kind": state,
+                      "host": detail if state == "open" else None, "local": detail if state == "local" else None,
+                      "opened_at": time.time()}
+            openings = kept(openings + [record])
             closing = None
-        status.update(polls=count, last_poll=[started, "closed" if host is None else "open"], closing=closing, openings=openings)
+            status.update(polls=count, local_polls=local_count, last_poll=[started, state], closing=None, openings=openings)
+            write("netcheck-open.json", record)
+            write("netcheck.json", status)
+            try:
+                passes, left = ending()
+            except Exception as exc:  # noqa: BLE001 - the record stays; the collect step ends what is left
+                passes, left = None, f"not ended ({exc.__class__.__name__})"
+            record.update(kill_passes=passes, processes_left=left, ended_at=time.time())
+            write("netcheck-open.json", record)
+        elif state == "open":
+            closing = None
+        status.update(polls=count, local_polls=local_count, last_poll=[started, state], closing=closing, openings=openings)
         write("netcheck.json", status)
     return openings
 
 
 def main():
+    if len(sys.argv) > 2 and sys.argv[1] == "--probe":
+        return probe_main(sys.argv[2:])
     addresses = resolve()
     targets = [(host, address) for host, found in addresses.items() if isinstance(found, list) for address in found]
     status = {"started_at": time.time(), "pid": os.getpid(), "hosts": addresses, "interval_seconds": INTERVAL_SECONDS,
               "handshake_seconds": HANDSHAKE_SECONDS, "probe_user": PROBE_USER}
     write("netcheck.json", status)
+    stop, record = threading.Event(), {}
+    try:
+        uid = pwd.getpwnam(USER).pw_uid
+        threading.Thread(target=watch_sessions, args=(uid, record, stop), daemon=True).start()
+    except (KeyError, RuntimeError, MemoryError, OSError) as exc:
+        write("sessions.json", {"available": False, "error": exc.__class__.__name__, "last_scan": time.time()})
     if not targets:
         write("netcheck.json", dict(status, error="no host resolved: not checking"))
-        return 0
+        while True:   # the sessions are still watched; the collect step stops this
+            time.sleep(60)
     watch(polls(targets, status), status)
     return 0
 

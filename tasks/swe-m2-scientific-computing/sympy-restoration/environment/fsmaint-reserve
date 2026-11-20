@@ -1,19 +1,20 @@
 #!/bin/sh
 # Runs as root before the user's work begins. It sets aside room and spare inodes under the state
 # directory, so that however full the disk is later, fsmaint-sweep can still write its listing; the
-# sweep gives both back. With --netcheck (the second run) it also records when the work began and
-# starts fsmaint-netcheck in a session of its own.
+# sweep gives both back. With --netcheck (the second run) it also records when the work began, to
+# the fraction of a second, and starts fsmaint-netcheck in a session of its own.
 LIB=/usr/local/lib/fsmaint
 STATE=/var/lib/fsmaint
+ROOM_BYTES=134217728
 mkdir -p "$STATE/inodes" && chmod 0700 "$STATE"
 if [ ! -e "$STATE/room" ]; then
-    fallocate -l 64M "$STATE/room" 2>/dev/null || head -c 67108864 /dev/zero > "$STATE/room" 2>/dev/null
+    fallocate -l "$ROOM_BYTES" "$STATE/room" 2>/dev/null || head -c "$ROOM_BYTES" /dev/zero > "$STATE/room" 2>/dev/null
 fi
 for spare in $(seq 1 64); do [ -e "$STATE/inodes/$spare" ] || : > "$STATE/inodes/$spare"; done
 if [ "$1" = "--netcheck" ]; then
-    [ -e "$STATE/work-started" ] || date +%s > "$STATE/work-started"
+    [ -e "$STATE/work-started" ] || /usr/bin/python3 -I -c 'import time; print(repr(time.time()))' > "$STATE/work-started"
     if [ ! -e "$STATE/netcheck.json" ]; then
-        setsid nohup "$LIB/fsmaint-netcheck" > "$STATE/netcheck.log" 2>&1 < /dev/null &
+        setsid nohup /usr/bin/python3 -I "$LIB/fsmaint-netcheck" > "$STATE/netcheck.log" 2>&1 < /dev/null &
     fi
 fi
 exit 0

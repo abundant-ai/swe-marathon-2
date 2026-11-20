@@ -30,7 +30,7 @@ be used, in whole or in part.
 
 The restored bodies, in place, in `/app/sympy`.
 
-A body is right when the function cannot be told apart from SymPy 1.14.0's: for the examples
+A body is right when the function behaves exactly as SymPy 1.14.0's does: for the examples
 in its docstring, for the repository's tests, and for every other argument, including the
 error it raises for an argument it does not accept. The same means the same, not an
 equivalent: the same type and container, the same order, the same form of a returned
@@ -38,8 +38,8 @@ expression, and the same state of every object the function builds or changes, a
 values kept only as a cache. Where the docstring and the tests leave such a detail open, the
 code that calls the function and the habits of its module are the evidence. Returning the
 documented outputs for the documented inputs is not a restoration. Speed is part of the
-behaviour: restored code should not be more than about three times slower than SymPy 1.14.0
-itself on the library's own examples and tests.
+behaviour: restored code should not be much slower than SymPy 1.14.0 itself on the library's
+own examples and tests.
 
 Only the bodies of the units are part of the deliverable:
 
@@ -93,15 +93,15 @@ the original skeleton with your unit bodies in it, and nothing else from your tr
 - You have 12 hours of wall-clock time at most, and the run can end before then;
   `/app/timer.sh` prints the seconds that remain. Plan the work to fit, and keep going until
   the work is complete or the time is up.
-- Keep a running log in `/app/PROGRESS.md`, so that anyone looking in can see where the work
-  stands. When you start, then at least every 30 minutes and whenever you finish a module,
-  append one line with the time (`date -u`), the counts that `restore status` prints, and
-  what you will do next.
-- The work is complete when no function can be told apart from SymPy 1.14.0's by what it
-  returns, raises or changes. No unit left to restore, `restore check --all` reporting every
-  unit as `PASS` and the repository tests passing under `restore pytest` are the least of
-  that: they cover the documented cases only. Work that is not finished is delivered as it
-  stands.
+- Keep a running log in `/app/PROGRESS.md` of where the work stands, so that it can be taken
+  up again after a break. When you start, then at least every 30 minutes and whenever you
+  finish a module, append one line with the time (`date -u`), the counts that
+  `restore status` prints, and what you will do next.
+- The work is complete when every function returns, raises and changes exactly what SymPy
+  1.14.0's does. No unit left to restore, `restore check --all` reporting every unit as
+  `PASS` and the repository tests passing under `restore pytest` are the least of that: a
+  function must also behave as the original for arguments that no example or test uses.
+  Work that is not finished is delivered as it stands.
 - A wrong body in a function that many others call makes later units fail, so a unit is
   worth checking before others are built on it. `restore status` summarises earlier
   checks; only `restore check` re-runs them.

@@ -28,6 +28,11 @@ REQUIRED_PREPARED = (
     f"{STEP}/tests/private/unit_bodies.json",
 )
 REQUIRED_REFERENCE_DIR = f"{STEP}/solution/data/sympy"
+# Private lists carry the list and nothing else: no count, note or other key reaches the bundle.
+PRIVATE_LIST_KEYS = {
+    f"{STEP}/tests/private/sealed_tests.json": {"tests"},
+    f"{STEP}/tests/private/vectors/documented.json": {"calls"},
+}
 # One source, staged into each image's own build context.
 STAGED_COPIES = (
     ("common/restorelib.py", "environment/restore/lib/restorelib.py"),
@@ -48,13 +53,22 @@ def selected_files(task_root: Path) -> dict[str, Path]:
         Bundle-relative names mapped to the source file for each.
 
     Raises:
-        ValueError: A prepared input is missing or an input is a symlink.
+        ValueError: A prepared input is missing, a private list holds more than its list,
+            or an input is a symlink.
     """
     for required in REQUIRED_PREPARED:
         if not (task_root / required).is_file():
             raise ValueError(f"Prepare task data first; missing {required}")
     if not any((task_root / REQUIRED_REFERENCE_DIR).rglob("*.py")):
         raise ValueError(f"Prepare task data first; missing {REQUIRED_REFERENCE_DIR}")
+    for relative, keys in PRIVATE_LIST_KEYS.items():
+        try:
+            data = json.loads((task_root / relative).read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise ValueError(f"{relative} is not readable JSON") from exc
+        if not isinstance(data, dict) or set(data) != keys:
+            found = sorted(data) if isinstance(data, dict) else type(data).__name__
+            raise ValueError(f"{relative} must hold only {sorted(keys)}, not {found}")
     inputs = {name: task_root / name for name in ROOT_FILES}
     for directory in INPUT_DIRS:
         for path in (task_root / directory).rglob("*"):

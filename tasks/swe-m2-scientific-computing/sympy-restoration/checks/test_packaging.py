@@ -23,6 +23,9 @@ PREPARED = (
 )
 
 
+LISTS = {PREPARED[4]: '{"tests": []}\n', PREPARED[7]: '{"calls": []}\n'}
+
+
 def staged_task(task_root, tmp_path, *, omit: str | None = None):
     """Copy tracked sources into a scratch task and add placeholder prepared inputs."""
     target = tmp_path / "family" / "task"
@@ -32,7 +35,7 @@ def staged_task(task_root, tmp_path, *, omit: str | None = None):
         if relative != omit:
             path = target / relative
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text("placeholder\n")
+            path.write_text(LISTS.get(relative, "placeholder\n"))
     return target
 
 
@@ -73,6 +76,17 @@ def test_packaging_refuses_unprepared_inputs(task_root, tmp_path, omit):
                           capture_output=True, text=True, timeout=120, cwd=target / "scripts")
     assert done.returncode != 0
     assert "Prepare task data first" in done.stderr
+    assert not (tmp_path / "out" / "bundles").exists()
+
+
+@pytest.mark.parametrize("relative, text", [(PREPARED[4], '{"tests": [], "n_visible": 7896}'), (PREPARED[7], '{"calls": [], "note": "x"}'),
+                                            (PREPARED[4], "placeholder")])
+def test_packaging_refuses_a_private_list_that_holds_more_than_its_list(task_root, tmp_path, relative, text):
+    target = staged_task(task_root, tmp_path)
+    (target / relative).write_text(text)
+    done = subprocess.run([sys.executable, "-B", str(target / "scripts" / "package_step.py"), "--output", str(tmp_path / "out")],
+                          capture_output=True, text=True, timeout=120, cwd=target / "scripts")
+    assert done.returncode != 0 and relative in done.stderr, done.stderr[-500:]
     assert not (tmp_path / "out" / "bundles").exists()
 
 

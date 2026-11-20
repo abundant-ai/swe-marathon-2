@@ -1,22 +1,24 @@
 """What arrived of the submitted tree, read before anything of it is graded.
 
 The collect step of the agent's environment marks every delivery before it is copied here: a
-mark (`.fsmaint`) whose first line is `listed <entries> <bytes>`, `refused` or `failed`, and a
-record (`.fsmaint.json`) of every entry with the times it had when the work ended. The mark's
-last line signs the other lines and the record's sha256 with a key the agent's user cannot read.
+mark (`.fsmaint`) whose first line is `listed <entries> <bytes>` or `refused`, and a record
+(`.fsmaint.json`) of every entry with the times it had when the work ended. The mark's lines are
+printable ASCII, one per line; its last line signs the other lines and the record's sha256 with a
+key the agent's user cannot read.
 
 - No tree, no mark, an unreadable, oversized or unsigned mark, a listed file that did not arrive
-  as it was listed, or a link or a file that arrived without being listed: the copy failed, which
-  is an evaluation error, never the submission's score.
-- `failed` (the tree was gone, something else stood under its name, or it could not be listed,
-  none of which the agent's user can bring about): an evaluation error.
-- `refused` (the tree was over the collect step's limits): a completed evaluation of an empty
-  delivery.
-- `listed` without an end of the work (the collect step could not tell when the work ended, or
-  took its own start while public hosts answered): an evaluation error, since no file could be
-  told apart from one written after the work.
+  as it was listed, a link or a file that arrived without being listed, or a record that says a
+  process of the agent's user outlived the collect step: the copy failed or cannot be trusted,
+  which is an evaluation error, never the submission's score. The collect step always leaves a
+  marked tree, whatever the work left under its name, so these come from the infrastructure.
+- `refused` (nothing usable under the tree's name: nothing at all, a link, a file, a tree that
+  could not be listed, or one over the collect step's limits): a completed evaluation of an empty
+  delivery, which scores 0.
 - `listed`: graded, except that a file changed at or after the end of the work (its change or
-  modification time at or after the recorded end bound, less a small allowance) is not taken.
+  modification time at or after the recorded end bound, less a small allowance) is not taken. A
+  record without an end of the work is returned with `end_bound` None: the measurement then grades
+  a tree with no restored unit as 0, and raises an evaluation error for any other, since none of
+  its files could be told from one written after the work.
 """
 
 from __future__ import annotations
@@ -41,6 +43,7 @@ MARK_LIMIT = 1 << 20      # bytes of the mark read, at most
 RECORD_LIMIT = 64 << 20   # bytes of the record read, at most
 SKEW_SEC = 0.25           # a change this close before the end bound counts as after it
 PUBLIC_HOSTS = ("pypi.org", "files.pythonhosted.org", "github.com")
+END_SOURCES = ("netcheck", "collect", "session", "unchanged")
 
 
 @dataclass
@@ -51,6 +54,7 @@ class Delivery:
     entries: dict[str, dict[str, Any]] = field(default_factory=dict)
     end_bound: float | None = None
     end_from: str | None = None
+    end_note: str | None = None
     late: set[str] = field(default_factory=set)
     notes: list[str] = field(default_factory=list)
     summary: dict[str, Any] = field(default_factory=dict)
@@ -92,12 +96,14 @@ def read_delivery(top: Path, key_path: Path) -> Delivery:
         key_path: The signing key, readable by the verifier only.
 
     Returns:
-        The delivery's state, its listed entries, the end bound and the files changed after it.
+        The delivery's state, its listed entries, the end bound (None when the record holds no end
+        of the work) and the files changed after it.
 
     Raises:
         EvaluationError: Nothing arrived, the mark or the record is missing, unreadable or not
             signed with the key, a listed file is absent or differs from its listing, a link or
-            an unlisted file arrived, or the record holds no end of the work.
+            an unlisted file arrived, a process of the agent's user outlived the collect step, or
+            the record's end of the work is malformed or contradicts its entries.
     """
     if top.is_symlink() or not top.is_dir():
         raise EvaluationError("Nothing arrived: the tree is missing, though the collect step marks every delivery")
@@ -110,8 +116,10 @@ def read_delivery(top: Path, key_path: Path) -> Delivery:
         if why == "missing":
             raise EvaluationError("The tree arrived without the collect step's mark")
         raise EvaluationError(f"The collect step's mark cannot be read: {why}")
-    lines = raw.decode("utf-8", "backslashreplace").splitlines()
-    signed = lines[-1].split() if lines else []
+    lines = raw.decode("utf-8", "backslashreplace").split("\n")
+    if lines and lines[-1] == "":
+        lines.pop()
+    signed = lines[-1].split(" ") if lines else []
     if len(lines) < 2 or len(signed) != 3 or signed[0] != "sig":
         raise EvaluationError("The collect step's mark cannot be read")
     body, record_sha, signature = lines[:-1], signed[1], signed[2]
@@ -127,16 +135,19 @@ def read_delivery(top: Path, key_path: Path) -> Delivery:
         record = json.loads(payload)
     except ValueError as exc:
         raise EvaluationError("The collect step's record cannot be read") from exc
-    head = body[0].split()
+    if not isinstance(record, dict):
+        raise EvaluationError("The collect step's record cannot be read")
+    head = body[0].split(" ")
     delivery = Delivery(state=head[0] if head else "", notes=[f"collect step: {line}" for line in body[1:]][:50])
     delivery.summary = summarise(record)
-    if delivery.state == "failed":
-        # what only the infrastructure can bring about: the tree gone or replaced, or unlistable
-        raise EvaluationError(f"The collect step could not take the tree: {'; '.join(body[1:3]) or 'no reason given'}")
-    if delivery.state == "refused":
+    if delivery.state == "refused" and len(head) == 1:
+        # nothing usable stood under the tree's name, or the tree was over the limits: an empty delivery
         return delivery
     if not (len(head) == 3 and head[0] == "listed" and all(v.isascii() and v.isdigit() for v in head[1:])):
         raise EvaluationError("The collect step's mark cannot be read")
+    left = record.get("processes_left")
+    if isinstance(left, int) and not isinstance(left, bool) and left > 0:
+        raise EvaluationError(f"{left} processes of the agent's user outlived the collect step, so the copy may differ from its listing")
     listed = {item["path"]: item for item in record.get("entries", []) if isinstance(item, dict) and isinstance(item.get("path"), str)}
     if len(listed) != int(head[1]):
         raise EvaluationError("The collect step's record does not list what its mark counts")
@@ -166,33 +177,44 @@ def read_delivery(top: Path, key_path: Path) -> Delivery:
     if short:
         raise EvaluationError(f"The copy arrived incomplete or changed: {len(short)} listed files differ, first {short[0]!r}")
     delivery.entries = listed
-    note = record.get("end_note") or "no end bound on record"
+    bound, origin = record.get("end_bound"), record.get("end_from")
+    if bound is None and origin is None:
+        # no end of the work: measure() grades a tree with no restored unit and refuses any other
+        delivery.end_note = str(record.get("end_note") or "no end of the work on record")
+        return delivery
     try:
-        delivery.end_bound, delivery.end_from = float(record["end_bound"]), str(record.get("end_from"))
-    except (KeyError, TypeError, ValueError) as exc:
-        raise EvaluationError(f"The collect step could not tell when the work ended: {note}") from exc
-    if delivery.end_from not in ("netcheck", "collect"):
-        raise EvaluationError(f"The collect step could not tell when the work ended: {note}")
-    if delivery.end_from == "collect" and (record.get("egress") or {}).get("any_open") is not False:
-        raise EvaluationError("The collect step took its own start as the end of the work although public hosts answered")
+        delivery.end_bound, delivery.end_from = float(bound), str(origin)
+    except (TypeError, ValueError) as exc:
+        raise EvaluationError("The collect step's record holds a malformed end of the work") from exc
+    if delivery.end_from not in END_SOURCES:
+        raise EvaluationError(f"The collect step's record names an unknown end of the work: {delivery.end_from!r}")
+    if delivery.end_from == "collect" and (record.get("net_probe") or {}).get("any_open") is not False:
+        raise EvaluationError("The collect step took its own start as the end of the work although public hosts were not seen closed")
     cutoff = delivery.end_bound - SKEW_SEC
     for path, item in listed.items():
         times = [t for t in (item.get("ctime"), item.get("mtime")) if isinstance(t, (int, float))]
         if item.get("type") == "file" and (not times or max(times) >= cutoff):
             delivery.late.add(path)
+    if delivery.end_from == "unchanged" and delivery.late:
+        raise EvaluationError("The collect step's record says nothing changed during the work, yet lists files changed since it began")
     return delivery
 
 
 def summarise(record: dict) -> dict:
     """What metrics.json keeps of the record: never raising, never part of the score."""
     try:
-        egress = record.get("egress") or {}
+        probe = record.get("net_probe") or {}
         opened = record.get("netcheck_open") or {}
         netcheck = record.get("netcheck") or {}
-        return {"listed": record.get("listed"), "end_bound": record.get("end_bound"), "end_from": record.get("end_from"),
-                "end_note": record.get("end_note"), "egress_open": egress.get("any_open"), "egress_hosts": egress.get("hosts"),
+        sessions = record.get("sessions") or {}
+        return {"listed": record.get("listed"), "refused": record.get("refused"), "end_bound": record.get("end_bound"),
+                "end_from": record.get("end_from"), "end_note": record.get("end_note"), "end_bounds": record.get("end_bounds"),
+                "egress_open": probe.get("any_open"), "egress_hosts": probe.get("hosts"),
                 "netcheck_openings": len(netcheck.get("openings") or []), "netcheck_last_poll": netcheck.get("last_poll"),
-                "netcheck_settle": record.get("netcheck_settle"), "netcheck_open": opened or None,
+                "netcheck_local_polls": netcheck.get("local_polls"), "netcheck_settle": record.get("netcheck_settle"),
+                "netcheck_open": opened or None, "sessions_available": sessions.get("available"),
+                "sessions_seen": sessions.get("seen"), "sessions": (sessions.get("sessions") or [])[-5:],
+                "sessions_alive_at_start": record.get("sessions_alive_at_start"),
                 "process_count": record.get("process_count"), "processes": (record.get("processes") or [])[:50],
                 "kill_passes": record.get("kill_passes"), "processes_left": record.get("processes_left"),
                 "listing_complete": record.get("listing_complete"), "work_started": record.get("work_started"),

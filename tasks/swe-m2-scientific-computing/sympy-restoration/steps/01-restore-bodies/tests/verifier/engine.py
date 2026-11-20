@@ -640,17 +640,17 @@ def measure(context: VerificationContext) -> Measurement:
 
     Returns:
         Fixed denominators, passing numerators, self-check trips and the full
-        diagnostic record. A delivery the collect step refused (over its limits),
-        or a tree with no restored unit, is a completed measurement with zero
-        numerators.
+        diagnostic record. A delivery the collect step refused (no usable tree
+        under its name, or one over its limits), or a tree with no restored
+        unit, is a completed measurement with zero numerators.
 
     Raises:
         EvaluationError: Private inputs are unreadable or describe no unit or
             counted call, the verifier can reach the network, nothing arrived,
             the copy does not match the collect step's signed record, the
-            collect step failed or could not tell when the work ended,
-            privileges cannot be dropped, or a runner cannot be started. No
-            reward is valid then.
+            collect step could not tell when the work ended and a unit is
+            restored, privileges cannot be dropped, or a runner cannot be
+            started. No reward is valid then.
     """
     t_start = time.monotonic()
     cfg = dict(context.limits)
@@ -700,9 +700,11 @@ def measure(context: VerificationContext) -> Measurement:
         "deciding_total": len(deciding), "deciding_passing": 0, "documented_total": V - len(deciding),
         "unit_share": 0.0, "call_share": 0.0, "unit_share_if_reached": 0.0, "call_share_if_reached": 0.0,
         "units_examples_passing": 0, "units_documented_calls_only": 0, "units_left_out_passing": 0,
-        "unit_share_by_lines": 0.0, "units_not_reached": 0, "tests_not_reached": 0, "identical_bodies": {},
+        # no test has run until the test phase says otherwise
+        "unit_share_by_lines": 0.0, "units_not_reached": 0, "tests_not_reached": T, "identical_bodies": {},
         "unit_deciding_share": float(cfg.get("unit_deciding_share", 0.0)),
         "reward_tolerance": float(cfg.get("reward_tolerance", 0.001)),
+        "late_files": [], "late_entries": 0, "egress_open": None, "end_from": None, "end_note": None,
         "tamper": [], "notes": [],
         "unit_bar": context.scoring.unit_bar, "vector_bar": context.scoring.call_bar,
         "test_bar": context.scoring.test_bar,
@@ -729,8 +731,10 @@ def measure(context: VerificationContext) -> Measurement:
     late = {f"sympy/{path}" for path in delivered.late}
     metrics["late_files"] = sorted(late & set(byfile))[:500]
     metrics["late_entries"] = len(late)
+    metrics["end_from"], metrics["end_note"] = delivered.end_from, delivered.end_note
     if delivered.state != "listed":
-        metrics["notes"].append(f"the collect step found the tree {delivered.state}; nothing was delivered")
+        reason = delivered.summary.get("refused") or delivered.state
+        metrics["notes"].append(f"the collect step refused the tree ({reason}); nothing was delivered")
         return finish(False)
 
     # 1. candidate tree = reference skeleton + restored bodies (nothing else is taken over); a unit
@@ -739,6 +743,14 @@ def measure(context: VerificationContext) -> Measurement:
         shutil.rmtree(cand)
     shutil.copytree(skel, cand, symlinks=False)
     states, _notes = restorelib.build_candidate(skel, work_tree, cand, byfile, None)
+    if delivered.end_bound is None:
+        # no end of the work is known: a tree that restores nothing scores 0 whenever it was written;
+        # any other could hold files written after the work, which nothing here can tell apart
+        restored_count = sum(1 for state in states.values() if state == "restored")
+        if restored_count:
+            raise EvaluationError(f"The collect step could not tell when the work ended ({delivered.end_note}), "
+                                  f"and {restored_count} units are restored")
+        metrics["notes"].append(f"no end of the work is known ({delivered.end_note}); no unit is restored")
     withhold(skel, cand, byfile, metrics["late_files"], states)
     st_count = collections.Counter(s.split(":")[0] for s in states.values())
     metrics["unit_states"] = dict(st_count)
