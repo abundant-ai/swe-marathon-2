@@ -16,13 +16,92 @@ waves 1 and 2 (20 passes) have been answered in rounds 1 and 2, and Carve's find
 collect hook and the round-2 re-checks in round 3, the round-3 re-check in round 4, and the
 platform's ungraded capped runs in round 5; the task was then renamed
 `basedpl-interpreter-rebuild-no-examples`, scrubbed for the pre-trial audit in round 6, the
-scrub's re-check answered in round 7, and round 7's re-check in round 8. Bundle `43b39e11805c` is
-the first to upload under the new name. It replaces round 7's `b206089bd38b` and round 6's
-`ffcf88e892e2`, neither of which was uploaded, and the earlier bundles `4164eb806274`,
-`7462d71fe5a7`, `f0da94435d6b`, `cfc9d42f3e68`, `80d7f600cab8` and `1a08cdb471d0`. See
-[Remaining work](#remaining-work) and [Validation gaps](#validation-gaps).
+scrub's re-check answered in round 7, and round 7's re-check in round 8. Round 8's bundle
+`43b39e11805c` went up as v1 under the new name; its pre-trial audit's one must-fix (an
+author-only probe in the solution) is answered in round 9, with a sweep of every shipped file and
+data file. Bundle `bf77bf7f91d0` (round 9) replaces it; round 9's first bundle `5eef6fadb546`,
+round 7's `b206089bd38b` and round 6's `ffcf88e892e2` were never uploaded, and the earlier bundles
+are `4164eb806274`, `7462d71fe5a7`, `f0da94435d6b`, `cfc9d42f3e68`, `80d7f600cab8` and
+`1a08cdb471d0`. See [Remaining work](#remaining-work) and [Validation gaps](#validation-gaps).
 
 ## Development log
+
+### 2026-11-20 (round 9: the pre-trial audit's must-fix, an author-only probe in the solution)
+
+- The platform's pre-trial audit of v1 under the new name (round 8's bundle `43b39e11805c`)
+  returned one must-fix and nothing else: `steps/01-rebuild-interpreter/solution/probe.c:1`, "The
+  delivered package keeps an author-only probe that records this sandbox's behaviour for the
+  task's authors." The reference scored 1.0 twice and the no-op 0.0 twice. This round answers it in
+  one commit, with a sweep of every shipped file for the same kind of text, and of every data file
+  for records of how the task was made (asked for after the same audit flagged a provenance record
+  in the back-office task's hidden data). `task.toml`, the instruction, the three installed
+  scripts, the verifier's sources and `upstream_builds.json`, the binary and the documentation are
+  byte-identical to round 8's.
+- **The solution only installs.** `solve.sh` installs the original with the zero marker, and
+  upstream's licence, in `/app/rebuild` exactly as before, and does nothing else. With the probe
+  (`probe.c`, built with gcc and run as `dev`, its output copied to `/logs/agent/probe.txt`) go
+  three more records of the run that were written for us, not for the solution: the read checks as
+  `dev` (`/logs/agent/reads.txt`), the smoke test of the installed copy (`/logs/agent/smoke.txt`,
+  whose comment spoke of "this sandbox"), and the copy of the build's facts
+  (`/logs/agent/build.txt`; `mark.py` still prints them). The solution no longer takes `smoke.sh`;
+  both images still run it at every build.
+  - `probe.c` is deleted, not moved: nothing in the task that never ships would run it. Its source
+    stays in the history (`85e93d1`). What it measured (a set-group-id exec of `/opt/bpl/bpl` as
+    `dev`, plain and traced: the ids, `AT_SECURE`, whether an `LD_PRELOAD` constructor runs,
+    whether `PTRACE_PEEKDATA` and `/proc/<pid>/mem` reads succeed, and the kernel) went into
+    `/logs/agent/probe.txt` of every reference trial so far, under both names, since `solve.sh`
+    ran it from the task's first commit. Those records are not read yet (hackability row 1).
+- **What the sweep found in the files of ours.** Two comments of `smoke.sh` named the reference
+  solution among the places it runs, and the same sentence cited `apply.sh`; `mark.py`'s
+  docstring cited `scripts/build_original.py`. Neither script ships. The comments are reworded and
+  the citations dropped; both tools' code is unchanged. No other file of ours outside the verifier
+  has a hit for the audit's words, `author`, the run's logs, a sandbox of its own or a file that
+  does not ship. `authoritative` in `reclaim-scratch`, `authors` as `task.toml`'s key and the
+  instruction's "sandboxed build" (the requester's own) are not hits. The verifier's sources stay
+  byte-identical, and three of their comments say how the task was made: `verify.py` names
+  `scripts/upstream_builds.py` and gVisor's status file, and `recorder.py` names
+  `make_cases.LEADS`. Every audit so far has passed them, and changing `recorder.py` would change
+  what records the answers.
+- **What the sweep found in the data.** No `.gz` or other archive ships besides the three
+  identical `bpl.xz`. They hold the hardened build (`60d2aed1…`), with no local path, user or
+  project name; the only paths are the public Rust toolchain's own `/rustc/<commit>/library/…`
+  ones, and the zero marker is there once. The documentation and `LICENSE` are upstream's, with
+  nothing of ours added. `upstream_builds.json` holds hashes, sizes and which of upstream's files
+  each one is, with no header. The two `marker` files (identical) are the images' build marker,
+  which the verifier needs. Two files carried records of how the task was made, and now ship only
+  what is read there:
+  - The private cases. Each case carried the generator's notes: `source` (upstream's reference
+    file and line, or the program template's name), `suite` and `family`, and in its `record`
+    entry, `want` and `scaffold_lines`. The verifier image reads none of them. `package_step.py`
+    now ships each case with `id`, `kind`, `form`, `argv`, `files` and `stdin`, and of `record` the
+    recorder's `variants` and `unset`, written as before. The notes stay in the private file
+    (Git-ignored, never committed), which the leak check still reads whole.
+  - `build.txt`, which recorded upstream's commit, the toolchain, the target and the size. It now
+    ships with the `link` and `sha256` lines `mark.py` reads; the rest stays in
+    `experiment/build/build.txt`. `mark.py` no longer writes empty commit, toolchain and target
+    lines beside the binary it installs, so `recording.build` in `metrics.json` now holds the link
+    mode and the two hashes.
+- **Proof that the cases did not change.** The shipped file holds the same 1,777 cases in the same
+  order, and every key kept is byte-identical. Removed: `source` from 1,777 cases, `suite` from
+  1,383, `family` from 260, `want` from 1,324 records and `scaffold_lines` from 248. A local
+  recording of the shipped file with upstream's macOS release binary (`experiment/local-recording-9`)
+  keeps the same 1,673 cases with byte-identical answers. It has the same `kept_ids_sha256`
+  (`bb030348…`, which is also the platform's) and the same `expected_sha256` as
+  `local-recording-8`, and its kept cases equal round 8's apart from the three notes.
+- **How the agent's user is confirmed now** (hackability row 3): from `delivery_record` in each
+  model trial's `metrics.json`. `bpl.owner` should be `dev`'s uid 10001, not 0, and
+  `user_processes` should list the agent's own processes under uid 10001 when the session ended.
+  The old name's three graded v2 model trials can answer it already.
+- Checks: `test_the_reference_solution_installs_the_original_and_its_licence_and_nothing_else`
+  covers the solution's commands, what packaging gives it, and that no shipped file of ours outside
+  the verifier names an author, the run's logs, a sandbox of its own or a file that does not ship.
+  `test_the_bundle_holds_only_what_is_read_of_the_private_cases_and_the_build_facts` covers what the
+  shipped cases and `build.txt` keep, and that every key the verifier's sources read of a case and
+  of its plan is one they keep. The mark check also asserts the three lines `mark.py` writes, and
+  the word-scan check counts nine files. Each new assertion fails on round 8's files (the solution,
+  the packaging, `mark.py`, the tools' comments); the second check also fails on a copy of the
+  verifier that reads `source`. 52 task checks and the 27 repository checks pass; see
+  [Validation](#validation).
 
 ### 2026-11-19 (round 8: the freeze before the timer's end, from the re-check 07f)
 
@@ -481,9 +560,9 @@ the first to upload under the new name. It replaces round 7's `b206089bd38b` and
 | Step `01-rebuild-interpreter` | Implemented: instruction, agent image with the execute-only interpreter and the documentation, separate verifier image, reference solution. |
 | Further steps | Not designed. Candidates: the next upstream releases (0.1.96 onwards change semantics in patch releases); the worker's deadlines and interrupts. |
 | Hardening | `common/hardening/`: the patch, `apply.sh`, the pinned `Cargo.lock`, `mark.py` (install and mark) and `smoke.sh` (proof at every install). |
-| The original | `experiment/build/bpl` and `build.txt` from `scripts/build_original.py`, not in Git; packaging compresses it into both images and the solution. |
-| Private inputs | `steps/01-rebuild-interpreter/tests/private/cases.json`, Git-ignored, from `scripts/make_cases.py` and `experiment/seeds.json`. Answers are recorded when the verifier image is built; `recording.json` beside them describes the recording and appears in `metrics.json`. |
-| Oracle | The original, installed with the zero marker by `solve.sh`; then a non-scoring probe (`probe.c`) writes `/logs/agent/probe.txt`. |
+| The original | `experiment/build/bpl` and `build.txt` from `scripts/build_original.py`, not in Git; packaging compresses it into both images and the solution, with a `build.txt` of the two lines `mark.py` reads (`link`, `sha256`). |
+| Private inputs | `steps/01-rebuild-interpreter/tests/private/cases.json`, Git-ignored, from `scripts/make_cases.py` and `experiment/seeds.json`. The bundle holds each case without the generator's notes (`source`, `suite`, `family`, `want`, `scaffold_lines`), which stay in this file. Answers are recorded when the verifier image is built; `recording.json` beside them describes the recording and appears in `metrics.json`. |
+| Oracle | The original, installed with the zero marker by `solve.sh`, with upstream's licence; nothing else runs. |
 | Ratings (`harbor check`) | Not run. |
 
 ## Design dimensions
@@ -707,9 +786,9 @@ Highest unresolved severity: 🟡 YELLOW / UNASSESSED (findings 1, 2, 3, 5, 10, 
 
 | # | Attack and impact | Boundary | Evidence | Mitigation | Residual risk | Next validation | Severity |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | Read, copy, trace or dump the interpreter from outside its process, or preload a library into it | File mode and group; the link | Goose QA passes 04 and 04b (the same layout) | `/opt/bpl/bpl` is `root:bpl` 2711: execute-only and set-group-id, so not dumpable; static, so no loader honours `LD_PRELOAD` or `LD_AUDIT` | Not a PIE: the binary's own code and data sit at fixed addresses (stack, heap and mappings still move); the sandbox's handling of a traced set-group-id exec is unmeasured | `/logs/agent/probe.txt` of the first oracle trial | 🟡 YELLOW / UNASSESSED |
-| 2 | Read the interpreter from inside its process: a program reads `/proc/self/mem` or `maps`, runs a program, compiles code, or reads files outside its directory | Hardened build | Audit of every file, process and unsafe site in `src/`, `cli/`, `jit/`, `image/` (host.rs, files.rs, data.rs, the CLI, the worker, the editor) | Reads only under the start directory, checked on the opened file, never `/proc`, `/sys`, `/dev`; no writes; no `curl`; no JIT; no test-kit requests; no history file. `smoke.sh` proves each at every install | A memory-safety bug in the interpreter or its dependencies (rustymath has unsafe SIMD code) | The first build's smoke test, then probes from a trial as `dev` | 🟡 YELLOW / UNASSESSED |
-| 3 | Run as root, or as a user who can read the program | `[agent] user` | Not tested on this task | `user = "dev"` | Depends on each harness | Short trial that prints `id` (the probe prints it) | 🟡 YELLOW / UNASSESSED |
+| 1 | Read, copy, trace or dump the interpreter from outside its process, or preload a library into it | File mode and group; the link | Goose QA passes 04 and 04b (the same layout) | `/opt/bpl/bpl` is `root:bpl` 2711: execute-only and set-group-id, so not dumpable; static, so no loader honours `LD_PRELOAD` or `LD_AUDIT` | Not a PIE: the binary's own code and data sit at fixed addresses (stack, heap and mappings still move); the sandbox's handling of a traced set-group-id exec is unmeasured | `/logs/agent/probe.txt` of the reference trials that ran the probe (every version so far, under both names; round 9 removed it from the solution), not read yet | 🟡 YELLOW / UNASSESSED |
+| 2 | Read the interpreter from inside its process: a program reads `/proc/self/mem` or `maps`, runs a program, compiles code, or reads files outside its directory | Hardened build | Audit of every file, process and unsafe site in `src/`, `cli/`, `jit/`, `image/` (host.rs, files.rs, data.rs, the CLI, the worker, the editor) | Reads only under the start directory, checked on the opened file, never `/proc`, `/sys`, `/dev`; no writes; no `curl`; no JIT; no test-kit requests; no history file. `smoke.sh` proves each at every install | A memory-safety bug in the interpreter or its dependencies (rustymath has unsafe SIMD code) | The smoke test at every image build (as root, and as `dev` in the agent image; a failure stops the build); then the first trajectories as `dev` | 🟡 YELLOW / UNASSESSED |
+| 3 | Run as root, or as a user who can read the program | `[agent] user` | Not read yet on this task | `user = "dev"` (uid 10001) | Depends on each harness | `delivery_record` in each model trial's `metrics.json`: `bpl.owner` is 10001, not 0, and `user_processes` lists the agent's processes under uid 10001 at the session's end; the old name's three graded v2 model trials can answer it now | 🟡 YELLOW / UNASSESSED |
 | 4 | Deliver the original, a published build of it, or a wrapper that calls it | Verifier image; `/app` ownership; the marker; upstream's hashes | Goose QA passes 07 and 13; QA 04, 08, 20 | The verifier image holds no copy; `/app` is root's and sticky, so `dev` cannot replace `/app/rebuild`; a submission holding the images' marker, upstream's unhardened usage text, or a file with the sha256 of any of the 12 builds upstream publishes for 0.1.95 is refused (checked: the search, its chunking, the hashing by size, the images-only staging); a missing or malformed marker is an evaluation error | A copy transformed to hide both the marker and the hash | First trial as `dev`: `/app/rebuild` cannot be renamed | 🟢 GREEN / LOW |
 | 5 | Fetch the public source, upstream's tests or a published build, including in the window after the turn when the platform reopens connectivity | Agent network; the collect hook; the refusals of row 4 | QA 04 and 08 (platform finding `PLATFORM_EGRESS_WINDOW.md`); decision 2026-11-19 (A, with conditions) | `network_mode = "no-network"` for the turn; the root collect hook kills every process of `dev` before anything is copied and records whether connectivity was open and what was running (`delivery_record`); published builds and the unhardened usage text are refused; no upstream source, test, notebook result or design note in the image | The window stays open until the platform keeps the agent-phase policy through collection; a transformed fetched build escapes the refusals; a harness with network access would defeat the task | Audit every trial (`delivery_record`: survivors, connectivity, ctimes after the turn) before its score is recorded | 🟡 YELLOW / UNASSESSED |
 | 6 | Look up answers from what is shipped | Case generation | Checked on a stand-in upstream and on the real files at packaging; QA 06 and 12b | No example runs ship; no case holds a documented program or a near-copy, in any rewrite the recorder may settle on (whole blocks, statements and runs of 2-6 statements; 311 core records left out); `make_cases.leaks` runs again at packaging | The documentation's examples teach behaviour by design: about three quarters of its runnable one-liners state their displayed value in a comment, so replaying them is the agent's first corpus; three worker requests are near-copies of documented one-liners with the same value, one reply each in sessions of about ten | Keep | 🟢 GREEN / LOW |
@@ -723,7 +802,7 @@ Highest unresolved severity: 🟡 YELLOW / UNASSESSED (findings 1, 2, 3, 5, 10, 
 | 14 | Answers that depend on the machine or on the maths library's last bits: thread counts, hash order, the memory limit, CPU features, approximation bits | Recording | Local recording: no case unsteady or perturbed; 16 last-bit answers dropped (QA 18 confirmed 12) | Three runs pinned to four worker threads and a perturbed one (one CPU, one worker thread); memory-limit text dropped from either stream; last-bit answers dropped; rustymath chooses SIMD paths at compile time (`x86-64-v3`); `expected_sha256` lets two builds be compared | A host without AVX2 cannot run the original (the smoke test then fails the build, and an oracle row below 1.0 with `host.avx2` false is infrastructure); the x86-64 build's bits are first seen at its own recording | Two oracle trials must each score 1.0 with the same `kept_ids_sha256` and `expected_sha256` before any model trial | 🟡 YELLOW / UNASSESSED |
 | 15 | A busy host fails a graded run spuriously | Disk and file limits | QA 10: a `sleep 10` submission was stopped for a file limit by the whole-filesystem figures | The limits count only the run's own files (its uid's under the writable directories, and deleted files it holds open), and only when the free figures fall past a limit; a case stopped by a limit runs once more; host shortages after a sweep are evaluation errors | None found | Read `disk_limits`, `file_limits` and `limit_retries` in the first trials' `metrics.json` | 🟢 GREEN / LOW |
 | 16 | Make Harbor's copy drop an honest delivery (a running build, links that leave the directory, FIFOs, a sparse file, a full disk, a read-only folder) so that it scores a valid 0, make the copy fail at will, launder a file fetched after the turn through a link the hook copies in, or hide a post-turn write behind the hook's own changes to ctimes | The collect hook and the mark | QA 07 F2-F3 (ported from the back-office task, rounds 6-7); Carve QA 04 F1-F2; re-checks 07b and 07c | The hook freezes and kills `dev`'s processes first, records every entry's own times before touching anything (the manifest's authoritative mtime and ctime), gives back reserved room and inodes, restores permissions only where needed and notes each change, copies an outside link's target only when root owns it (every file under a directory included) and records the source's path, owner, mtime, ctime and inode, removes every other outside link (noted first in the mark) and all special files, bounds entries, bytes and path length, hashes once per inode, packs once within 100 s, and marks the delivery with every note; the verifier grades what arrived, reads the whole mark, copies every change into `metrics.json` with flags, and treats nothing arriving or a short copy as an evaluation error | A platform copy that fails after the hook's own pack succeeded (an error, then a re-run); a fetched file written straight into `/app/rebuild` after the turn, which the ctime audit against the trial's finish now can catch, since the recorded ctimes are the session's own | Read `delivery_record` (copies, links, notes, `latest_ctime` and `hook_changed_entries` against the trial's finish) in every trial | 🟢 GREEN / LOW |
-| 17 | Read the build's own file through the hardened read path from a start directory whose rule lets it through (`/`, `/opt`, `/opt/bpl`) | File mode; the path rule | QA 04 F4, QA 12 F2 | The 2711 mode refuses the read for `dev`; the agent image's final stage proves it as `dev` (with the whole smoke test on the set-group-id build) and `solve.sh` records it in the trial | A kernel that let a non-dumpable set-group-id process read its own executable | `/logs/agent/reads.txt` of the first oracle trial | 🟢 GREEN / LOW |
+| 17 | Read the build's own file through the hardened read path from a start directory whose rule lets it through (`/`, `/opt`, `/opt/bpl`) | File mode; the path rule | QA 04 F4, QA 12 F2 | The 2711 mode refuses the read for `dev`; the agent image's final stage proves it as `dev` at every build (with the whole smoke test on the set-group-id build; a failure stops the build) | A kernel that let a non-dumpable set-group-id process read its own executable | Every image build; `/logs/agent/reads.txt` of the reference trials before round 9 (the same reads at run time), not read yet | 🟢 GREEN / LOW |
 | 18 | Outlast the session timer, so that the session runs into the platform's cap and goes ungraded, or stop it to gain time | Process ownership | Round 5; re-check 07e | The sleeper is root's and `dev` cannot signal it; its pid file, log and the hook's mark are root-only (`/run`, `/var/log`, `/var/lib/scratch`); `kill -TERM` then `kill -KILL` as root reach every process of `dev` | A harness that ran the agent as root, which hackability row 3 gates on the first trial | Read `ended_by_timer` and `timer_log` in `delivery_record`: `armed pid N` first, then `stopped pid N` when the hook found the sleeper still running, or `fired after 33900 s` when it ended the session | 🟢 GREEN / LOW |
 | 19 | The session timer's own rounds end the collect hook's link fixer, which runs as `dev`: links not yet fixed are then removed and honest work scores 0, with notes that read like the agent's fault | The collect hook and the timer | Re-check 07e F1 (reproduced with the unmodified timer); 07f G1 (the order) | The hook writes a root-only mark first, freezes `dev`'s processes, then ends the sleeper (SIGSTOP, its children, SIGKILL), all before its own work as `dev` (the link fixer); the timer stops on the mark before it fires and before every round; a fixer that does not end with status 0 is noted in the mark (checked: the hook's real fixer under a timer in its rounds, ended without the hook's first lines, finishing 20,000 links with them) | The real `setpriv`, procps and `/proc` have not run yet (Validation gaps) | `timer_log` and `notes` in the first trials' `delivery_record` | 🟢 GREEN / LOW |
 
@@ -734,26 +813,33 @@ Licence: the upstream is Apache-2.0. Its `LICENSE` is shipped with the documenta
 
 | Check | Revision | Result |
 | --- | --- | --- |
-| `checks/` (50 tests) with `ci_checks` (27), Python 3.13, and `check_repository.py` | round 8 | pass |
+| `checks/` (52 tests) with `ci_checks` (27), Python 3.13, and `check_repository.py` | round 9 | pass |
+| Round 9's new assertions against copies of the task with round 8's files | round 9 | each fails: round 8's solution (the probe and its logs), its packaging (no reduced cases or `build.txt`, `smoke.sh` in the solution), its `mark.py` (six lines written), its tools' comments (`apply.sh`, `scripts/build_original.py`); and a copy of the verifier that reads `source` |
 | The order check against a copy with round 7's order (the timer's end before the freeze) | round 8 | the new order check fails (its freeze found "timer ended") and so does the delivery check's order list; the F1 check passes |
 | Local build of the hardened original | `scripts/build_original.py`, 2026-11-19 | builds (one warning); static, not PIE; marker once; no local path |
 | `apply.sh` | a fresh export of v0.1.95 | applies once, refuses a second time; result identical to the patched tree that was built |
-| `smoke.sh` | upstream's v0.1.95 macOS release binary | fails at the first hardening check, as it must; never yet run on the hardened Linux binary (no Linux here) |
+| `smoke.sh` | upstream's v0.1.95 macOS release binary; the hardened Linux binary in the image builds | fails at the first hardening check on upstream's build, as it must; passes in every image build of the versions uploaded so far, as root and as `dev` (a failure stops the build, and every one of those versions was built and graded) |
 | Upstream's published builds | `scripts/upstream_builds.py`, 2026-11-19 | 21 executables in 3 release assets and 9 wheels, 12 distinct hashes; upstream's Linux build holds the unhardened usage text twice, the hardened build and the docs never |
 | Local recording (the private cases, upstream's macOS release binary) | cases `91236578`, `experiment/local-recording-8` | 1,673 of 1,777 kept (83 display settings that change nothing, 17 last bits, 4 quoted); none unsteady, crashed, machine-dependent or perturbed; the strongest no-interpreter dispatcher 4.1% (command line 19, constants 17, error lookup 13, last literal 19), largest answer 0.6%, nothing with exit 1 0.6%; `∂` 6.1%; 40 of 41 piped cases end with exit 1 after a failing line |
-| Local grading from the packaged bundle (`43b39e11805c`; the dispatcher's 0.0269 was measured on round 5's `1a08cdb471d0`, whose grading code is the same), through the collect hook's pre-scan and measuring scripts and a tar round trip with the `data` filter | stand-in reference behind a wrapper; no-op; the dispatcher as a program, with every strategy the recorder measures | 1.0 (1,673/1,673, 35.3 s); 0.0; 0.0269 (45/1,673: cli 19, error 13, expr 7, script 6) |
-| A whole trial replayed from the packaged bundle (`43b39e11805c`) with a copy of round 7's replay (itself QA 07e's), adapted to round 8's order (kept with its three reports and a `NOTE.txt` of what was adapted in the Git-ignored `experiment/replay-r8/`): both hooks' shell under `/bin/dash` (paths rewritten, stand-ins for `setpriv`, `pgrep`, `fallocate`, GNU `stat` and `timeout`), the real timer against stand-in processes, tar and the `data` filter, then `verify.main()` with root and Linux stood in; the hook's order is read from its calls | reference; reference with planted `.manifest` names, links and a pipe; no-op with a sleeper still waiting | 1.0 (1,673/1,673), no notes, `ended_by_timer` true; 1.0 with both moved-aside notes; 0.0: both freezes sent with the mark written and the sleeper running, then the hook ended the sleeper and its `sleep` (`stopped pid N` in `timer_log`) |
-| Packaging | `scripts/package_step.py`, twice into separate directories | `43b39e11805c`, 249 files, 33,152,594 bytes, the same hash both times; bundle directory `swe-m2_software-engineering_basedpl-interpreter-rebuild-no-examples` |
-| Oddish preflight | bundle `43b39e11805c`, no-Archil CLI, locally | pass |
-| Oddish baselines, QA, `harbor check` | none | not run |
+| Local recording of the cases as round 9 ships them (without the generator's notes), the same binary | `cases.json` of bundle `bf77bf7f91d0`, `experiment/local-recording-9` | 1,673 of 1,777 kept with the same drops; `expected.json` byte-identical to `local-recording-8`'s; the same `kept_ids_sha256` (`bb030348…`) and `expected_sha256` (`ac7c2618…`); the same kinds, drops, settling, `kept_as_upstream_code` and baselines; the kept cases equal `local-recording-8`'s apart from `source`, `suite` and `family` |
+| The shipped cases against the private file | bundle `bf77bf7f91d0` | the same 1,777 cases in the same order; every key kept byte-identical; removed `source` (1,777), `suite` (1,383), `family` (260), `want` (1,324 records), `scaffold_lines` (248) |
+| The packaged `solve.sh` with only `/app/rebuild` rewritten to a scratch directory; `mark.py` from the agent image's context with the marker | bundle `bf77bf7f91d0` | the solution installs `bpl` (the build's own bytes, sha256 `60d2aed1…`, mode 0755) and `LICENSE`, nothing else, no standard error; the images' install writes the marker once and leaves no zero marker; `build.txt` beside either holds `link`, `sha256` and `sha256_without_marker` |
+| Local grading from the packaged bundle (`bf77bf7f91d0`, with `local-recording-9`; the dispatcher's 0.0269 was measured on round 5's `1a08cdb471d0`, whose grading code is the same), through the collect hook's pre-scan and measuring scripts and a tar round trip with the `data` filter | stand-in reference behind a wrapper; no-op; the dispatcher as a program, with every strategy the recorder measures | 1.0 (1,673/1,673, 34.4 s); 0.0; 0.0269 (45/1,673: cli 19, error 13, expr 7, script 6) |
+| A whole trial replayed from the packaged bundle (`bf77bf7f91d0`, against `local-recording-9`) with round 8's replay, unchanged since nothing it reads changed in round 9 (round 8's is a copy of round 7's, itself QA 07e's, adapted to round 8's order; kept in the Git-ignored `experiment/replay-r8/`, round 9's reports and a `NOTE.txt` in `results-r9/`): both hooks' shell under `/bin/dash` (paths rewritten, stand-ins for `setpriv`, `pgrep`, `fallocate`, GNU `stat` and `timeout`), the real timer against stand-in processes, tar and the `data` filter, then `verify.main()` with root and Linux stood in; the hook's order is read from its calls | reference; reference with planted `.manifest` names, links and a pipe; no-op with a sleeper still waiting | 1.0 (1,673/1,673), no notes, `ended_by_timer` true; 1.0 with both moved-aside notes; 0.0: both freezes sent with the mark written and the sleeper running, then the hook ended the sleeper and its `sleep` (`stopped pid N` in `timer_log`) |
+| Packaging | `scripts/package_step.py`, twice into separate directories | `bf77bf7f91d0`, 247 files, 33,021,442 bytes, the same hash both times; bundle directory `swe-m2_software-engineering_basedpl-interpreter-rebuild-no-examples`; against round 8's `43b39e11805c`: `solve.sh`, `mark.py` (three copies), `smoke.sh` (two), `build.txt` (three) and `cases.json` changed, the solution's `probe.c` and `smoke.sh` gone, every other file byte-identical |
+| Oddish preflight | bundle `bf77bf7f91d0`, no-Archil CLI, locally | pass |
+| Oddish baselines and the pre-trial audit | old name: v1, and v2 (round 5's `1a08cdb471d0`); new name: v1 (round 8's `43b39e11805c`) | old name: the reference 1.0 twice per version (1,673/1,673) and the no-op 0.0 twice, with the same `kept_ids_sha256` (`bb030348…`) and `expected_sha256` (`18af6936…`) in both versions, so the Linux recording reproduces; v2's three model trials were graded. New name v1: the reference 1.0 twice, the no-op 0.0 twice, and the audit's one must-fix (the probe), answered in round 9. Bundle `bf77bf7f91d0`: not run |
+| `harbor check` | none | not run |
 
 ### Validation gaps
 
-Nothing here has run on Linux or as root yet. The checks and the replay run on macOS as an
-ordinary user, so these are read, not run (re-check 07e, F2, F3 and F7):
+The checks and the replay run on macOS as an ordinary user, so locally these are read, not run
+(re-check 07e, F2, F3 and F7). The platform's baselines of every version uploaded so far ran them
+on Linux and as root, and were graded (see [Validation](#validation)); their logs have not been
+read item by item:
 
-- **The hardened Linux binary.** Its first run is the image build's smoke test, as root and as
-  `dev`.
+- **The hardened Linux binary.** Its smoke test, as root and as `dev`, passes at every image build
+  so far (a failure stops the build).
 - **The hooks' shell under the real tools.** Every shell line of `provision-scratch` and
   `reclaim-scratch` runs in a check (under this machine's `sh`) and in the replay (under dash),
   but with stand-ins for `setpriv`, `kill -STOP -1` and `kill -9 -1` as `dev`, procps `pgrep -r`
@@ -792,6 +878,10 @@ ordinary user, so these are read, not run (re-check 07e, F2, F3 and F7):
   `metrics.json`, as the note `the link fixer ended with status N: …` (in `notes`, after
   `maintenance step: `, and in `delivery_record.notes`). A fixer that ended with 0 leaves no
   trace there, so the oracle's empty `notes` also means status 0.
+- From round 9, `recording.cases_recorded` and `cases_kept` stay 1,777 and the image's kept count,
+  `recording.build` holds only `link`, `sha256` and `sha256_without_marker`, and the reference's
+  `solve.sh` prints only `mark.py`'s three lines and writes nothing under `/logs/agent` (no
+  `probe.txt`, `reads.txt`, `smoke.txt` or `build.txt`).
 
 ## Build and deliver
 
@@ -807,21 +897,23 @@ The case seed and the build marker come from `experiment/seeds.json`, which `scr
 makes once at random and which is never committed: anyone with the generator, upstream's
 checkout and the seed could regenerate the hidden cases. The build needs Rust 1.100.0 with the
 `x86_64-unknown-linux-musl` target, zig and `cargo-zigbuild`; packaging refuses a binary whose
-sha256 is not build.txt's.
+sha256 is not build.txt's. Packaging ships the private cases without the generator's notes, and
+`build.txt` with only its `link` and `sha256` lines; the full files stay where they are made.
 
 ## Remaining work
 
-- Baselines of bundle `43b39e11805c` under the task's one experiment, on the owner's word, after
-  the old name's three model trials settle (about 00:20 UTC); round 8 answers the re-check of
-  round 7. The
-  two oracle trials on different workers are a hard gate: each must score exactly 1.0, with the
-  same `kept_ids_sha256` and `expected_sha256`. A failed id goes on a deny-list and the cases are
-  recorded again. Then the no-op, which must score exactly 0. These are the first run of the
-  hardened binary on Linux: its smoke test as root and as `dev` in the agent image, in the
-  verifier image and in the solution. They are also the first Linux recording. Read `recording`
-  in the reference run's `metrics.json`: drops by reason, settling, `kept_as_upstream_code`, the
-  baselines, the build. Read `/logs/agent/probe.txt`, `reads.txt` and `smoke.txt`, and
-  `delivery_record` as listed under Validation gaps.
+- Bundle `bf77bf7f91d0` (round 9) goes up as a new version of the new name, under the task's one
+  experiment, on the owner's word. Its baselines and pre-trial audit come before any model trial.
+  The two oracle trials on different workers are a hard gate: each must score exactly 1.0, with
+  the same `kept_ids_sha256` and `expected_sha256` (`bb030348…` and `18af6936…` so far; the
+  answers are recorded again because both images' build contexts changed). A failed id goes on a
+  deny-list and the cases are recorded again. Then the no-op, which must score exactly 0. Read
+  `recording` in the reference run's `metrics.json` (drops by reason, settling,
+  `kept_as_upstream_code`, the baselines, the build) and `delivery_record` as listed under
+  Validation gaps.
+- Read the probe's records from the reference trials that ran it (`/logs/agent/probe.txt` and
+  `reads.txt`, every version before round 9), for hackability rows 1 and 17, and the old name's
+  v2 model trials' `delivery_record` for row 3.
 - Audit every trial before its score is recorded, per the egress-window decision: survivors and connectivity
   in `delivery_record`, and deliverable ctimes later than the agent's turn.
 - A static PIE: build with a linker that produces `-static-pie` for musl (rust-lld with Rust's

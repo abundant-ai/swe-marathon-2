@@ -8,8 +8,8 @@ appended, for harnesses that accept only tasks without declared steps.
 Needs, all made beforehand and none committed:
 - experiment/build/bpl and build.txt: the hardened original (scripts/build_original.py). It goes,
   compressed, into both images' build contexts (with the private build marker, which mark.py
-  writes into it there) and into the reference solution (with the all-zero marker), each beside
-  mark.py and smoke.sh from common/hardening.
+  writes into it there), beside mark.py and smoke.sh from common/hardening, and into the reference
+  solution (with the all-zero marker), beside mark.py alone: the solution only installs it.
 - steps/01-rebuild-interpreter/tests/private/cases.json: the private cases (scripts/make_cases.py).
 - experiment/seeds.json: the private seeds (scripts/seeds.py), for the marker.
 - an upstream checkout holding the pinned commit (BASEDPL_CHECKOUT, default
@@ -18,6 +18,12 @@ Needs, all made beforehand and none committed:
 
 Packaging stops if a private case holds a program the shipped documentation holds, or a
 near-copy of one (make_cases.leaks), or if the build's sha256 is not the one build.txt records.
+
+Of the private cases and of build.txt, the bundle holds only what is read there (CASE_KEYS and
+PLAN_KEYS, by the verifier image; BUILD_KEYS, by mark.py). The generator's notes on each case
+(where it came from: `source`, `suite`, `family`; how it was put together: `want`,
+`scaffold_lines`) and the build's provenance (upstream's commit, the toolchain, the target, the
+size) stay in the files above, which are never shipped as they are.
 """
 
 from __future__ import annotations
@@ -42,7 +48,30 @@ HIDDEN = TASK_ROOT / STEP / "tests" / "private" / "cases.json"
 BUILD = TASK_ROOT / "experiment" / "build"
 EXCLUDED = {"__pycache__", ".pytest_cache", ".DS_Store", "experiment"}
 HARDENING = TASK_ROOT / "common" / "hardening"
-SHIPPED_TOOLS = ("mark.py", "smoke.sh")  # what of common/hardening the images and the solution use
+SHIPPED_TOOLS = ("mark.py", "smoke.sh")  # what of common/hardening both images use; the solution takes mark.py
+CASE_KEYS = ("argv", "files", "form", "id", "kind", "stdin")  # what the verifier image reads of a private case
+PLAN_KEYS = ("unset", "variants")  # and of its "record" entry: the recorder's settling plan
+BUILD_KEYS = ("link", "sha256")  # what mark.py reads of build.txt: the link mode it reports and the sha256 it checks
+
+
+def shipped_cases(cases: list[dict]) -> bytes:
+    """The private cases as the bundle holds them: each case's CASE_KEYS and, of its "record" entry,
+    PLAN_KEYS, written as make_cases.py writes the private file."""
+    shipped = []
+    for case in cases:
+        kept = {key: case[key] for key in CASE_KEYS if key in case}
+        if "record" in case:
+            kept["record"] = {key: case["record"][key] for key in PLAN_KEYS if key in case["record"]}
+        shipped.append(kept)
+    return json.dumps({"cases": shipped}, ensure_ascii=False, sort_keys=True).encode("utf-8")
+
+
+def shipped_build(build: bytes) -> bytes:
+    """build.txt as the bundle holds it: its BUILD_KEYS lines, in their order."""
+    lines = [line for line in build.decode("utf-8").splitlines() if line.split(" ", 1)[0] in BUILD_KEYS]
+    if sorted(line.split(" ", 1)[0] for line in lines) != sorted(BUILD_KEYS):
+        raise ValueError(f"experiment/build/build.txt does not hold each of {', '.join(BUILD_KEYS)} once")
+    return ("\n".join(lines) + "\n").encode("utf-8")
 
 
 def original() -> tuple[bytes, bytes]:
@@ -84,9 +113,11 @@ def collect() -> dict[str, bytes]:
     if found:
         raise ValueError(f"{len(found)} private cases hold a program the documentation shows: "
                          f"{', '.join(cases[int(index)]['id'] for index in found[:20])}")
+    content[f"{STEP}/tests/private/cases.json"] = shipped_cases(cases)
     for name, text in pages.items():
         content[f"environment/docs/{name}"] = text.encode("utf-8")
     packed, build = original()
+    build = shipped_build(build)
     tools = {name: (HARDENING / name).read_bytes() for name in SHIPPED_TOOLS}
     marker = str(seeds.value("marker")).encode() + b"\n"
     for place in ("environment", f"{STEP}/tests"):
@@ -95,11 +126,10 @@ def collect() -> dict[str, bytes]:
         content[f"{place}/original/marker"] = marker
         for name, data in tools.items():
             content[f"{place}/original/{name}"] = data
-    # The reference solution gets the build with its zero marker: no marker file.
+    # The reference solution gets the build with its zero marker (no marker file), its installer and the licence.
     content[f"{STEP}/solution/bpl.xz"] = packed
     content[f"{STEP}/solution/build.txt"] = build
-    for name, data in tools.items():
-        content[f"{STEP}/solution/{name}"] = data
+    content[f"{STEP}/solution/mark.py"] = tools["mark.py"]
     content[f"{STEP}/solution/LICENSE"] = bpl_text.git_bytes(checkout, "LICENSE")
     return dict(sorted(content.items()))
 

@@ -2,7 +2,7 @@
 
 usage: python3 mark.py <bpl.xz> <build.txt> <marker file, or - for none> <installed path>
 
-The compressed binary is the one build of the hardened original (scripts/build_original.py), made
+The compressed binary is the one build of the hardened original, made
 with the all-zero marker `BPL-BUILD-MARKER-000…0`. Before anything is installed, its sha256 must be
 the one build.txt records, so every image and the reference solution hold that build and nothing
 else. With a marker file (both images' builds; never the solution's), the 32 hex digits it holds
@@ -54,8 +54,7 @@ def main() -> None:
     target.chmod(0o755)
     (target.parent / "build.txt").write_text(
         f"link {recorded.get('link', 'unknown')}\nsha256 {hashlib.sha256(installed).hexdigest()}\n"
-        f"sha256_without_marker {recorded['sha256']}\ncommit {recorded.get('commit', '')}\n"
-        f"toolchain {recorded.get('toolchain', '')}\ntarget {recorded.get('target', '')}\n")
+        f"sha256_without_marker {recorded['sha256']}\n")
     print((target.parent / "build.txt").read_text(), end="")
 
 

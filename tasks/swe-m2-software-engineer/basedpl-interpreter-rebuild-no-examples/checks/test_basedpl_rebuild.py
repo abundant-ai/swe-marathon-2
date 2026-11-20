@@ -622,6 +622,7 @@ def test_mark_writes_the_marker_only_into_the_recorded_build(tmp_path):
     assert marked.count(b"BPL-BUILD-MARKER-f" + b"1" * 31) == 1 and zero not in marked
     facts = (tmp_path / "image" / "build.txt").read_text()
     assert f"sha256_without_marker {hashlib.sha256(binary).hexdigest()}" in facts
+    assert [line.split(" ", 1)[0] for line in facts.splitlines()] == ["link", "sha256", "sha256_without_marker"], facts
     assert mark(tmp_path / "bpl.xz", tmp_path / "build.txt", "-", tmp_path / "solution" / "bpl").returncode == 0
     assert (tmp_path / "solution" / "bpl").read_bytes() == binary
     (tmp_path / "build.txt").write_text("sha256 " + "0" * 64 + "\n")
@@ -2219,7 +2220,7 @@ def test_images_and_solution_install_one_build_and_ship_no_private_cases():
     assert "COPY --from=program /record/kept.json /tests/private/cases.json" in final_verifier
     assert "COPY --from=program /record/marker /tests/private/marker" in final_verifier
     assert "cargo build" not in agent + verifier + solve and "git clone" not in agent + verifier
-    assert 'mark.py" "$here/bpl.xz" "$here/build.txt" - /app/rebuild/bpl' in solve and "smoke.sh" in solve
+    assert 'mark.py" "$here/bpl.xz" "$here/build.txt" - /app/rebuild/bpl' in solve
     build = (SCRIPTS / "build_original.py").read_text()
     for fact in ('UPSTREAM_COMMIT = "af3609a9348471494d2bed952cbbf2a5ecdbd53e"', 'TOOLCHAIN = "1.100.0"',
                  'TARGET = "x86_64-unknown-linux-musl"', "target-cpu=x86-64-v3", '"--locked"', "apply.sh"):
@@ -2317,15 +2318,77 @@ def test_nothing_the_agent_sees_names_a_reference_answer_or_a_budget():
 def test_no_shipped_file_of_ours_outside_the_verifier_uses_a_word_the_audit_scan_flags():
     """QA 07f G3. The pre-trial audit's word scan stops on these words. They appear in no file of ours that ships
     outside the verifier image's own sources (whose vocabulary is their job) and task.toml (whose `[verifier]` tables
-    are the schema's): the agent image's files and installed scripts, the hardening tools both images and the solution
-    take, the instruction and the solution."""
+    are the schema's): the agent image's files and installed scripts, the hardening tools both images take (the solution
+    takes mark.py), the instruction and the solution."""
     flagged = re.compile(r"grade|score|verif|harness|oddish|modal|harbor|\bcap\b|budget|attempt|audit|QA|round [0-9]|trial", re.I)
     assert 'SHIPPED_TOOLS = ("mark.py", "smoke.sh")' in (SCRIPTS / "package_step.py").read_text(), "what of common/hardening ships"
-    assert sorted(path.name for path in (STEP / "solution").iterdir() if path.name != "__pycache__") == ["probe.c", "solve.sh"]
+    assert sorted(path.name for path in (STEP / "solution").iterdir() if path.name != "__pycache__") == ["solve.sh"]
     shipped = [*sorted((TASK / "environment").iterdir()), HARDENING / "mark.py", HARDENING / "smoke.sh", STEP / "instruction.md",
                *sorted((STEP / "solution").iterdir())]
     found = {path.relative_to(TASK).as_posix(): flagged.findall(path.read_text()) for path in shipped if path.is_file()}
-    assert len(found) == 10 and not any(found.values()), {name: words for name, words in found.items() if words}
+    assert len(found) == 9 and not any(found.values()), {name: words for name, words in found.items() if words}
+
+
+def test_the_reference_solution_installs_the_original_and_its_licence_and_nothing_else():
+    """The pre-trial audit's one must-fix on round 8's bundle: the solution kept an author-only probe (probe.c, built
+    with gcc and run as the agent's user, its output copied into the run's logs). The solution's one job is the
+    install: the original with the zero marker, and upstream's licence, in /app/rebuild. It runs nothing else, writes
+    nowhere else, and is packaged with only what the install needs. No shipped file of ours outside the verifier names
+    an author, the run's logs, a sandbox of its own, or a file that does not ship."""
+    solve = (STEP / "solution" / "solve.sh").read_text()
+    commands = [line for line in solve.splitlines() if line.strip() and not line.startswith("#")]
+    assert commands == ["set -euo pipefail", 'here="$(cd "$(dirname "$0")" && pwd)"', "mkdir -p /app/rebuild",
+                        'python3 "$here/mark.py" "$here/bpl.xz" "$here/build.txt" - /app/rebuild/bpl',
+                        "rm -f /app/rebuild/build.txt", 'install -m 0644 "$here/LICENSE" /app/rebuild/LICENSE'], commands
+    packaged = sorted(re.findall(r'content\[f"\{STEP\}/solution/([^"]+)"\]', (SCRIPTS / "package_step.py").read_text()))
+    assert packaged == ["LICENSE", "bpl.xz", "build.txt", "mark.py"], packaged
+    ours = [*sorted((TASK / "environment").iterdir()), HARDENING / "mark.py", HARDENING / "smoke.sh", STEP / "instruction.md",
+            STEP / "solution" / "solve.sh"]
+    unwanted = re.compile(r"\bauthors?\b|/logs/|this sandbox|not part of the solution|\bprobe\.c\b|scripts/|apply\.sh|"
+                          r"make_cases|build_original|experiment/", re.I)
+    found = {path.relative_to(TASK).as_posix(): unwanted.findall(path.read_text()) for path in ours if path.is_file()}
+    assert len(found) == 9 and not any(found.values()), {name: words for name, words in found.items() if words}
+
+
+def test_the_bundle_holds_only_what_is_read_of_the_private_cases_and_the_build_facts():
+    """A sibling task's pre-trial audit flagged a provenance record in its hidden data. Here the private cases ship
+    with only the keys the verifier image reads: the generator's notes on where each case came from and how it was put
+    together stay in the private file. build.txt ships with only the lines mark.py reads: upstream's commit, the
+    toolchain, the target and the size stay in experiment/build/build.txt. The leak check still reads the whole file."""
+    found = scripts_call(textwrap.dedent('''
+        import json, package_step
+        cases = [{"id": "P00001", "kind": "worker", "source": "core.bpl:12", "suite": "own", "argv": ["--worker"], "files": {},
+                  "stdin": "{}", "record": {"variants": [{"stdin": "[]"}], "want": "same", "scaffold_lines": [0]}},
+                 {"id": "P00002", "kind": "program", "source": "ledger", "family": "ledger", "argv": ["main.bpl"],
+                  "files": {"main.bpl": "x"}, "stdin": None},
+                 {"id": "P00003", "kind": "display", "source": "display", "form": "built", "argv": ["show.bpl"],
+                  "files": {"show.bpl": "1"}, "stdin": None, "record": {"variants": [], "want": "same", "unset": ["show.bpl", "", ""]}}]
+        build = b"commit af36\\ntoolchain 1.100.0\\ntarget x86_64-unknown-linux-musl\\nlink static\\nsize 3\\nsha256 ff\\n"
+        try:
+            package_step.shipped_build(b"commit af36\\nsha256 ff\\n")
+            missing = None
+        except ValueError as exc:
+            missing = str(exc)
+        print(json.dumps({"cases": package_step.shipped_cases(cases).decode(), "build": package_step.shipped_build(build).decode(),
+                          "missing": missing, "keys": [package_step.CASE_KEYS, package_step.PLAN_KEYS]}, ensure_ascii=False))
+    '''))
+    shipped = json.loads(found["cases"])["cases"]
+    assert shipped == [{"argv": ["--worker"], "files": {}, "id": "P00001", "kind": "worker", "record": {"variants": [{"stdin": "[]"}]},
+                        "stdin": "{}"},
+                       {"argv": ["main.bpl"], "files": {"main.bpl": "x"}, "id": "P00002", "kind": "program", "stdin": None},
+                       {"argv": ["show.bpl"], "files": {"show.bpl": "1"}, "form": "built", "id": "P00003", "kind": "display",
+                        "record": {"unset": ["show.bpl", "", ""], "variants": []}, "stdin": None}], shipped
+    assert found["cases"] == json.dumps({"cases": shipped}, ensure_ascii=False, sort_keys=True), "written as make_cases.py writes it"
+    assert found["build"] == "link static\nsha256 ff\n" and "link" in found["missing"]
+    # Every key the verifier image reads of a case, and of its "record" entry, is one the bundle keeps.
+    case_keys, plan_keys = map(set, found["keys"])
+    sources = "\n".join(path.read_text() for path in [STEP / "tests" / "verify.py", *sorted((STEP / "tests" / "verifier").glob("*.py"))])
+    read = set(re.findall(r'\bcase(?:\.get\(|\[)"(\w+)"', sources))
+    assert {"id", "kind", "argv", "files", "stdin", "form", "record"} <= read <= case_keys | {"record"}, read
+    assert set(re.findall(r'\bplan(?:\.get\(|\[)"(\w+)"', sources)) == plan_keys
+    package = (SCRIPTS / "package_step.py").read_text()
+    assert 'content[f"{STEP}/tests/private/cases.json"] = shipped_cases(cases)' in package and "build = shipped_build(build)" in package
+    assert package.index("make_cases.leaks(cases, skeletons, texts)") < package.index("= shipped_cases(cases)")
 
 
 def test_only_the_documentation_and_the_binary_reach_the_agent():
