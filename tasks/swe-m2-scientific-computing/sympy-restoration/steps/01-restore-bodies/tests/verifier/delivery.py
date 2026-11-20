@@ -126,7 +126,22 @@ def read_delivery(top: Path, key_path: Path) -> Delivery:
     expected = hmac.new(key, ("\n".join(body) + "\n" + record_sha).encode(errors="backslashreplace"), hashlib.sha256).hexdigest()
     if not hmac.compare_digest(expected, signature):
         raise EvaluationError("The collect step's mark is not signed with the delivery key")
+    head = body[0].split(" ")
+    delivery = Delivery(state=head[0] if head else "", notes=[f"collect step: {line}" for line in body[1:]][:50])
     payload, why = _read_bounded(top / RECORD, RECORD_LIMIT)
+    if delivery.state == "refused" and len(head) == 1:
+        # nothing usable stood under the tree's name, the tree was over the limits, or the collect step did
+        # not finish: an empty delivery. Nothing of it is graded, so a record newer than the mark (a collect
+        # step stopped between writing the two) changes nothing.
+        record = None
+        if payload is not None and hashlib.sha256(payload).hexdigest() == record_sha:
+            try:
+                record = json.loads(payload)
+            except ValueError:
+                record = None
+        delivery.summary = summarise(record) if isinstance(record, dict) else {
+            "listed": "refused", "refused": body[1] if len(body) > 1 else None, "record": "not the one the mark signs"}
+        return delivery
     if payload is None:
         raise EvaluationError(f"The collect step's record cannot be read: {why}")
     if hashlib.sha256(payload).hexdigest() != record_sha:
@@ -137,12 +152,7 @@ def read_delivery(top: Path, key_path: Path) -> Delivery:
         raise EvaluationError("The collect step's record cannot be read") from exc
     if not isinstance(record, dict):
         raise EvaluationError("The collect step's record cannot be read")
-    head = body[0].split(" ")
-    delivery = Delivery(state=head[0] if head else "", notes=[f"collect step: {line}" for line in body[1:]][:50])
     delivery.summary = summarise(record)
-    if delivery.state == "refused" and len(head) == 1:
-        # nothing usable stood under the tree's name, or the tree was over the limits: an empty delivery
-        return delivery
     if not (len(head) == 3 and head[0] == "listed" and all(v.isascii() and v.isdigit() for v in head[1:])):
         raise EvaluationError("The collect step's mark cannot be read")
     left = record.get("processes_left")

@@ -155,7 +155,11 @@ class Hooks:
         for path in self.bin.iterdir():
             path.chmod(0o755)
         (self.lib / "key").write_text(KEY + "\n")
-        rewrites = [("/usr/bin/python3", str(self.bin / "python3")), ("/usr/local/lib/fsmaint/key", str(self.lib / "key")),
+        self.spare = [root / "tmp", root / "vartmp", root / "shm"]
+        for folder in self.spare:
+            folder.mkdir()
+        rewrites = [('SPARE_DIRS="/tmp /var/tmp /dev/shm"', f'SPARE_DIRS="{" ".join(str(f) for f in self.spare)}"'),
+                    ("/usr/bin/python3", str(self.bin / "python3")), ("/usr/local/lib/fsmaint/key", str(self.lib / "key")),
                     ("/usr/local/lib/fsmaint", str(self.lib)), ("/var/lib/fsmaint", str(self.state)), ("/app/sympy", str(self.tree))]
         if real_netcheck:
             text = (ENV_DIR / "fsmaint-netcheck").read_text()
@@ -205,11 +209,11 @@ class Hooks:
     def work_started(self) -> float:
         return float((self.state / "work-started").read_text())
 
-    def run(self, name: str, *args: str, egress: str | None = None) -> subprocess.CompletedProcess:
+    def run(self, name: str, *args: str, egress: str | None = None, check: bool = True) -> subprocess.CompletedProcess:
         if egress is not None:
             self.network(egress)
         done = subprocess.run([DASH, str(self.root / name), *args], env=self.env, capture_output=True, text=True, timeout=300)
-        assert done.returncode == 0, done
+        assert done.returncode == 0 or not check, done
         return done
 
     def record(self) -> dict:
@@ -664,6 +668,70 @@ def test_odd_names_are_escaped_in_the_mark_and_cannot_unsign_it(tmp_path, verifi
     platform_copy(hooks.tree, arrived)
     result = read_delivery(verifier_call, arrived, hooks.lib / "key")
     assert result["state"] == "listed" and result["entries"] == 1 and len(result["notes"]) == 6, result
+
+
+def test_a_collect_step_that_stops_early_leaves_an_empty_tree_marked_refused(tmp_path, verifier_call):
+    """The tree is put aside and an empty one marked as refused stands in its place before anything
+    slow; a collect step that dies after that (here its last stage cannot read its limits) leaves it."""
+    hooks = Hooks(tmp_path / "t", LIMIT_ENTRIES="none")
+    hooks.setup()
+    (hooks.tree / "m.py").write_text("def f():\n    return 1\n")
+    hooks.scenario(last="open", openings=[opening(time.time())])
+    done = hooks.run("fsmaint-sweep", egress="open", check=False)
+    assert done.returncode != 0, "the last stage failed"
+    assert sorted(path.name for path in hooks.tree.iterdir()) == [".fsmaint", ".fsmaint.json"], "the empty tree stands"
+    mark = (hooks.tree / ".fsmaint").read_text()
+    assert mark.startswith("refused\nthe collect step did not finish") and signed(mark, (hooks.tree / ".fsmaint.json").read_bytes())
+    measured = [path for path in hooks.app.iterdir() if path.name.startswith(".measuring.")]
+    assert len(measured) == 1 and (measured[0] / "m.py").exists(), "the tree waits aside, untouched"
+    arrived = tmp_path / "arrived" / "sympy"
+    platform_copy(hooks.tree, arrived)
+    graded = grade(verifier_call, arrived, hooks.lib / "key")
+    assert graded["status"] == "completed" and graded["reward"] == "0.000000", graded
+    # stopped between writing the record and the mark: the refusing mark still counts
+    (arrived / ".fsmaint.json").write_text('{"state": "listed"}')
+    result = read_delivery(verifier_call, arrived, hooks.lib / "key")
+    assert result["state"] == "refused" and "error" not in result, result
+
+
+def test_a_tree_there_is_no_room_to_copy_is_refused_and_scores_0(tmp_path, verifier_call):
+    """The platform packs the tree in /tmp inside the sandbox; when the room there is short of the
+    tree, the copy would fail and nothing would arrive. Such a tree is refused instead."""
+    hooks = Hooks(tmp_path / "t", COPY_MARGIN_BYTES=10 ** 18)
+    hooks.setup()
+    (hooks.tree / "m.py").write_text("def f():\n    return 1\n")
+    hooks.scenario(last="open", openings=[opening(time.time())])
+    hooks.run("fsmaint-sweep", egress="open")
+    mark = (hooks.tree / ".fsmaint").read_text()
+    assert mark.startswith("refused\nthere is no room to copy it") and signed(mark, (hooks.tree / ".fsmaint.json").read_bytes()), mark
+    arrived = tmp_path / "arrived" / "sympy"
+    platform_copy(hooks.tree, arrived)
+    assert grade(verifier_call, arrived, hooks.lib / "key")["reward"] == "0.000000"
+
+
+def test_the_mark_stays_small_however_many_notes_there_are(tmp_path, verifier_call):
+    """Every removal is noted in the record; the mark carries at most 60 notes of at most 240
+    characters, so it never nears the verifier's read limit."""
+    hooks = Hooks(tmp_path / "t")
+    hooks.setup()
+    (hooks.tree / "keep.py").write_text("x = 1\n")
+    long = "\u00e9" * 120
+    for index in range(25):
+        (hooks.tree / f"l{index:02d}{long}").symlink_to("keep.py")
+        os.mkfifo(hooks.tree / f"p{index:02d}{long}")
+        (hooks.tree / f"o{index:02d}\x1c{long}").write_text("y = 1\n")
+    hooks.scenario(last="open", openings=[opening(time.time())])
+    hooks.run("fsmaint-sweep", egress="open")
+    mark = (hooks.tree / ".fsmaint").read_text()
+    lines = mark.split("\n")[:-1]
+    assert lines[0] == "listed 1 6" and len(lines) == 1 + 60 + 1 + 1 and lines[-2] == "3 more notes are in the record", lines[-3:]
+    assert all(len(line) <= 240 for line in lines[1:-1]) and len(mark) < 20_000 and signed(mark, (hooks.tree / ".fsmaint.json").read_bytes())
+    record = hooks.record()
+    assert len(record["notes"]) == 63 and all(long in note for note in record["notes"][:20]), "the record keeps them whole"
+    arrived = tmp_path / "arrived" / "sympy"
+    platform_copy(hooks.tree, arrived)
+    result = read_delivery(verifier_call, arrived, hooks.lib / "key")
+    assert result["state"] == "listed" and result["entries"] == 1, result
 
 
 def test_links_never_carry_a_late_file_into_the_grade(tmp_path, verifier_call):
