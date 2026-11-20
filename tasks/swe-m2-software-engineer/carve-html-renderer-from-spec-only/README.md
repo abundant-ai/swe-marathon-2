@@ -28,6 +28,51 @@ archive or binary.
 
 ## Development log
 
+### 2026-11-21 — round 11 (v5): the limit's note in neutral words; the timer bounded; `/logs/artifacts` aside; hard links bounded (QA 24)
+
+- **What happened.** The re-check of round 10 (`qa/carve/24-recheck-round10.md` in harbor-lh, FAIL)
+  confirmed QA 23's N1-N9 closed and found one must-fix and three should-fixes.
+- **M1 (must-fix).** The note beside both agent limits named trials, the platform's own cap and
+  the verifier image, which the platform's audit of a sibling task made a must-fix ("discloses the
+  evaluation platform and its verifier"). Both blocks are now exactly: "Sessions end at 33,900 s: a
+  timer started at set-up closes the session user's processes then (all are gone by about 33,930
+  s). This value is a backstop 60 s later." The word check now scans `task.toml`'s comments with
+  the hooks' list and more (platform, trial, verifier, image, cap, result, test, agent and others).
+  Every other shipped file outside the upstream spec and docs was grepped for platform, trial,
+  Oddish, Modal, harbor, QA, audit, cap, verifier image and grading: nothing but the verifier's own
+  account of what it does, and neutral mentions of the base image.
+- **S1.** The timer's TERM and KILL are now `kill -1` as `dev` (one system call, which no fork
+  outruns and no listing slows; KILL also `pkill -U` for set-id processes), the TERM passes stop
+  when their 30 s are up by the clock, every listing counts live processes only and has 3 s, and
+  KILL repeats for at most 10 s. With stand-in listings of 2 s, scaled down (1 s passes), the first
+  KILL came 6.5 s after firing; round 10's came 33.1 s after. In production the first KILL lands by
+  about 33,930 s with fast listings and by about 33,938 s with every listing timing out.
+- **S2.** harbor creates `/logs/artifacts` world-writable at the sandbox's start, packs it first
+  after the collect hooks, and unpacks it into the verifier's container first, with nothing to
+  catch a failure (harbor 0.20, `artifact_handler.py:389-433`, `trial.py:1120-1128`). The sweep now
+  renames it whole into the root-only state directory right after the processes are ended, where it
+  stays and is not copied, puts an empty directory with its owner and mode in its place (where the
+  rename is refused, it removes the entries), and records how many entries it held
+  (`logs_artifacts`, flagged by the verifier).
+- **S3.** A tree in which a file has more than 1,000 names is refused (a noted 0): a far side that
+  caps names per file (ext4: 65,000) writes a full copy for each name past it. The instruction
+  says so beside the other limits: "with no file that has more than 1,000 hard links" (back
+  office's wording).
+- **Notes.** N-b: the sweep's header says what holds when the moving out is cut off, and that the
+  link fixing changes the tree before the move. N-c: `remove()` never outlasts the 480 s limit. N-d:
+  the verifier flags an unknown count of live processes and a freezing or ending that ran out of
+  time. N-a: the freeze's 15 s and the ending's 60 s are checked before each pass (at worst about
+  45 s and 130 s), as QA 24 measured.
+- **Checks** (60 now). Three new, each failing on f2d3ca8: the timer's KILL within 10 s of firing
+  with slow listings (f2d3ca8: 33.1 s, TERM by `pkill -u dev` scans); `/logs/artifacts` moved aside
+  whole with its mode kept and flagged (f2d3ca8: no such step); a file with 1,001 names refused and
+  one with 1,000 listed (f2d3ca8: `listed 1002 4106`). Two edited, failing on f2d3ca8 too: the
+  timer's literals and the exact two-line note; the word check on `task.toml`'s comments
+  ("platform"). The round-10 count of caught `SubprocessError` now counts within the measuring
+  program. All 60 pass under Python 3.13 and 3.12. A new check caught a shadowed name in the walk
+  (`names`), fixed before the commit.
+- **Left.** Nothing ran on Linux, in Docker or on Modal. `/logs/agent` stays the platform's to bound.
+
 ### 2026-11-20 — round 10 (v5): the sweep says where it got to, beside the tree; the agent's limit 60 s after the timer
 
 - **What happened.** The re-check of round 9 (`qa/carve/23-recheck-round9.md` in harbor-lh, FAIL)
@@ -579,7 +624,7 @@ runtimes, the pool was regenerated at 1,944 cases under a new 128-bit seed, and 
 | Step `01-implement-renderer` | Implemented: instruction, agent image with the specification and the documentation, collect hook, separate verifier image recording at build, reference solution. |
 | Further steps | Not designed. Candidates: the next spec release (0.1.x changes behaviour in patch releases), or a second target (canonical Carve with `fmt`, or Markdown) on the same renderer. |
 | The original | carve-rs 0.1.14's static Linux release archive, fetched by `scripts/setup_tools.py` into `experiment/original/` (not in Git) and packaged as released into the verifier's build context and the solution. |
-| Hooks | `environment/fsmaint-reserve` (setup begin and complete; `--netcheck` starts the egress watcher), `environment/fsmaint-netcheck` (the in-sandbox egress watchdog), `environment/fsmaint-timer` (setup complete, as root: ends the session 33,900 s after arming, all gone by about 33,930 s, 60 s before the agent's 33,960 s limit, so the deliverable is graded) and `environment/fsmaint-sweep` (the one root collect hook; it writes where it got to into `/var/lib/fsmaint/out/sweep.json`, a second artifact that `fsmaint-reserve` makes at set-up), all root-only (`/usr/local/lib/fsmaint`, 0700) in the agent image. |
+| Hooks | `environment/fsmaint-reserve` (setup begin and complete; `--netcheck` starts the egress watcher), `environment/fsmaint-netcheck` (the in-sandbox egress watchdog), `environment/fsmaint-timer` (setup complete, as root: ends the session 33,900 s after arming with `kill -1` as `dev`, TERM for about 30 s by the clock then KILL, all gone by about 33,930 s, 60 s before the agent's 33,960 s limit, so the deliverable is graded) and `environment/fsmaint-sweep` (the one root collect hook; it writes where it got to into `/var/lib/fsmaint/out/sweep.json`, a second artifact that `fsmaint-reserve` makes at set-up), all root-only (`/usr/local/lib/fsmaint`, 0700) in the agent image. |
 | Published builds | `steps/01-implement-renderer/tests/verifier/upstream_builds.json` from `scripts/upstream_builds.py`: 2,156 sha256, 14 strings (three needed) and foreign-runtime markers for seven runtimes (two needed), for the refusal of fetched builds and runtimes. |
 | Private inputs | `steps/01-implement-renderer/tests/private/cases.json` and `probes.json`, Git-ignored, from `scripts/make_cases.py` and `experiment/seeds.json`. Answers and probe answers are recorded when the verifier image is built; `recording.json` beside them describes the recording and appears in `metrics.json`. |
 | Oracle | The original itself, installed from its release archive by `solve.sh` (as the agent's user), with the 14 tripwire strings blanked in place. |
@@ -736,8 +781,8 @@ v2 trial whose agent ran into the 9.6 h cap today: the separate verifier image f
 after the timeout (platform-side, harbor-lh `ops/swe-marathon-v2/PLATFORM_VERIFIER_BUILD_AFTER_LONG_RUN.md`),
 while runs that ended by themselves were graded. Until the platform fixes it, a root pre-cap
 watchdog (`environment/fsmaint-timer`, armed at set-up complete) ends the agent's session 33,900 s
-after arming, with TERM every 5 s for 6 passes (about 30 s), then KILL, so all is gone by about
-33,930 s, and logs arm/fire/done to root-only `/var/log/fsmaint-timer.log`. Since round 10 the
+after arming, with TERM every 5 s for 6 passes (about 30 s by the clock), then KILL for at most
+10 s, each `kill -1` as `dev` (round 11), so all is gone by about 33,930 s, and logs arm/fire/done to root-only `/var/log/fsmaint-timer.log`. Since round 10 the
 agent's limit in `task.toml` is 33,960 s, a backstop 60 s after the timer (it was 34,560 s, 660 s
 after), and a note beside each limit says so for the platform's reviewers. The collect hook records
 the log's last lines and `ended_by_timer` in `.fsmaint.json`; the verifier copies that into
@@ -753,7 +798,9 @@ outlast it; the instruction says nothing about it (it states no time budget).
    agent's processes (live ones only, at most 15 s), gives back the reserve, sets aside anything
    under the mark's or the record's name and puts a mark that says `refused` into `/app/rebuild`;
    then it records the agent's processes, ends them (at most 60 s, every listing and signal under
-   10 s, the outcome in the record) and probes whether egress is open, reads when the turn ended (the watcher `fsmaint-netcheck`'s first observation of
+   10 s, the outcome in the record), moves aside whatever the session left in `/logs/artifacts`
+   (round 11: renamed whole into the root-only state directory, an empty one in its place) and
+   probes whether egress is open, reads when the turn ended (the watcher `fsmaint-netcheck`'s first observation of
    egress open less a poll, written before its kill — never the kill time, which a fetch can beat;
    else the hook's own start, which precedes its kill phase), fixes links — recording each copied
    source's path, uid, times and inode; an outside source whose ctime or mtime is at or after that
@@ -763,8 +810,8 @@ outlast it; the instruction says nothing about it (it states no time budget).
    (devices, pipes and sockets; an entry whose path is longer than 2,048 bytes, with all below it;
    a link that does not lead, through directories of the tree, to a file or a directory of the
    tree), rewrites every kept link as the shortest relative path inside, and moves the tree back
-   only when it is within the limits, all of it done within 480 s of the sweep's start, and `/tmp`
-   has room to pack it; one rename then replaces the refused mark with `/app/rebuild/.fsmaint`
+   only when it is within the limits (with no file of more than 1,000 hard links, round 11), all of
+   it done within 480 s of the sweep's start, and `/tmp` has room to pack it; one rename then replaces the refused mark with `/app/rebuild/.fsmaint`
    (`listed ENTRIES BYTES` with up to 200 notes, 32 KiB). A refused tree leaves the refused mark
    over an empty tree (or, where the time ran out during the moving out, over what was not moved,
    and the sweep says `stopped`). The record `/app/rebuild/.fsmaint.json` holds every entry with its
@@ -854,14 +901,14 @@ platform's egress window, shared by every task whose original is public.
 | 6 | Port a Djot engine | Case mix | Measured: djot.js 1.87% exact, 3.54% layout forgiven | Mix weighted to Carve's divergences (97.3% touch one) | None | Keep | 🟢 GREEN / LOW |
 | 7 | Deliver a link to something else, or replace `/app/rebuild` | Agent image modes; collect hook | Checked in the Dockerfile; links rewritten or copied by the hook; a link, a file or nothing at `/app/rebuild` ends refused (round 8 check) | `/app` root's and sticky, `/app/rebuild` root's and writable; the hook keeps only links that lead through directories of the tree to a file or a directory of it, each rewritten as the shortest relative path inside (round 9) | None found | First trial as `dev` | 🟢 GREEN / LOW |
 | 8 | Make the copy fail so grading errors (deep paths, sparse or huge files, inode exhaustion, link chains or mazes past the hook's 600 s, a full disk before the mark, a mark too large to read, a link the host's copy rejects, zombies that stretch the hook, a tree left in place and uncleaned when the hook dies) | Collect hook; platform copy; the sweep's progress file | QA 22 (F1-F5) and QA 23 (N1-N6) probes; round 9's seven and round 10's five checks, each failing on the code before; harbor 0.20's own pack and extract (`tar_transfer`) run on swept trees; the whole suite under Python 3.12 | Fail closed twice over: the sweep says it began before anything else and that it is done only once its mark is in place, and the verifier refuses whatever arrives from a sweep that did not finish; the refused mark comes right after the freeze; live processes only, every listing and signal under 10 s, each phase timed; the tree moved out to be measured and moved back only complete, within the limits, within 480 s and with room in `/tmp` to pack it; paths over 2,048 bytes moved out; links relative and inside; linear walks; the mark at most 32 KiB in bytes, read from its first 64 KiB | After a sweep that finished, a missing or short arrival is the copy or the machine failing, an error; the progress file's delivery is harbor's code path, not observed on Modal (without it, round 9's rules); run policy kept: one attempt per trial, read every errored trial | Read errored trials and `sweep_state` in `metrics.json`; the first platform runs of the hook | 🟡 YELLOW / UNASSESSED |
-| 9 | An honest delivery refused or cut short (a venv's absolute links, cargo's hard links, links to files outside) | Collect hook; platform copy | Check `test_the_collect_hook_lets_honest_deliveries_through_the_copy` (tar plus `data` filter on such a tree); a 50,000-file tree through harbor's own pack and extract (round 9 probe) | Links fixed as the agent's user; copies counted against the limits and made only while the disk keeps room for them twice over plus 64 MiB; top-level times read before the tree moves | Modal's GNU tar on the real platform unmeasured; a delivery over the stated limits is refused; an entry deeper than 2,048 bytes is moved out; a tree the disk has no room to pack is refused, unstated (only a session that filled the 20 GB disk itself meets it) | First baselines and trials: read the marks in `metrics.json` notes | 🟡 YELLOW / UNASSESSED |
+| 9 | An honest delivery refused or cut short (a venv's absolute links, cargo's hard links, links to files outside) | Collect hook; platform copy | Check `test_the_collect_hook_lets_honest_deliveries_through_the_copy` (tar plus `data` filter on such a tree); a 50,000-file tree through harbor's own pack and extract (round 9 probe) | Links fixed as the agent's user; copies counted against the limits and made only while the disk keeps room for them twice over plus 64 MiB; top-level times read before the tree moves | Modal's GNU tar on the real platform unmeasured; a delivery over the stated limits (2 GB, 200,000 entries, a file with more than 1,000 hard links) is refused; an entry deeper than 2,048 bytes is moved out; a tree the disk has no room to pack is refused, unstated (only a session that filled the 20 GB disk itself meets it) | First baselines and trials: read the marks in `metrics.json` notes | 🟡 YELLOW / UNASSESSED |
 | 10 | Answers that depend on the machine | Recording | Local: 1,944 of 1,944 steady, none perturbed; the Linux build must reproduce the macOS answer the model agreed with | Two runs and a perturbed one; `differs` dropped; static-pie musl build; the kept-ids sha256 asserted at build | The Linux build has not run yet (no Linux here) | Read `dropped_differs` and `dropped_unsteady` in the first recording | 🟡 YELLOW / UNASSESSED |
 | 11 | Tamper with the result files, or force an evaluation error from inside a run | Separate verifier; reward placeholder | Goose QA 07e passed on the same code; delivery check added here | Reward reserved and renamed only at the end; bounded reads; one deadline; every per-case exception a failed case | The delivery check is new code | Narrow re-check in the QA round | 🟡 YELLOW / UNASSESSED |
 | 12 | Run as root in the verifier through a set-id or capable file | Privilege drop and sealing | Goose QA pass 10 F6; checks here | Sealed root-owned without set-id bits; `setpriv --no-new-privs`; the drop is checked or nothing is graded | A kernel that ignores no_new_privs (the probe then refuses to grade) | First baseline's verifier log | 🟢 GREEN / LOW |
 | 13 | Infer an evaluation from the files and text | Instruction and image | Checked: no grading, hidden, budget or session wording; no examples shipped | Requester's voice; the hook is root-only and names no judging | An agent can still guess that pages exist to test it | Read the first trajectories | 🟡 YELLOW / UNASSESSED |
 | 14 | A case where carve-rs and the specification disagree | Selection | 30 candidates dropped by the model check; 6 corpus documents known to differ | Only cases the model renders identically are kept | None | Keep | 🟢 GREEN / LOW |
 | 15 | Behaviour outside the stated scope graded | Case generation | No source holds an include; options only `--safe`, `--html`, and unknown ones; CLI cases one per stated behaviour | Out-of-scope list in the instruction | None found | QA lens 12 | 🟢 GREEN / LOW |
-| 16 | Stop, delay or outlast the timer (`fsmaint-timer`), so the session runs into the platform's cap and is never graded (a 0 the audit cannot see), or exploit its kill | Agent user; root-only hooks | Checked: the timer runs as root from the set-up hook, its log and pid file are root's (0600, `/run`), `dev` cannot signal a root process; check `test_the_timer_arms_once_fires_at_end_seconds_and_ends_the_tree` | It can be killed only as root; the kill is TERM (6 passes, 5 s apart) then KILL of `dev`'s processes only, from 33,900 s (gone by about 33,930 s); since round 10 the agent's limit is 33,960 s, a backstop 60 s later (after BasedPL's v2 verdict on a 660 s margin; the judges' option B), with a note beside it in `task.toml`; its loop stops on the sweep's `sweeping` mark and the sweep stops it before its own worker runs, so it never reaches the link fixer (QA 07c F2); `ended_by_timer` is recorded for the audit, never scored | A platform that itself kills root processes or arms the hook late (then the 33,960 s limit ends the session, the platform's own cap, which 4 of 4 heavy-image trials did not survive on 2026-11-19); a run that ends 60 s early loses nothing the limit would not have taken | First capped trial: read `ended_by_timer` and the log tail in `metrics.json` | 🟢 GREEN / LOW |
+| 16 | Stop, delay or outlast the timer (`fsmaint-timer`), so the session runs into the platform's cap and is never graded (a 0 the audit cannot see), or exploit its kill | Agent user; root-only hooks | Checked: the timer runs as root from the set-up hook, its log and pid file are root's (0600, `/run`), `dev` cannot signal a root process; check `test_the_timer_arms_once_fires_at_end_seconds_and_ends_the_tree` | It can be killed only as root; the kill is TERM (6 passes, 5 s apart, stopped at 30 s by the clock) then KILL (repeated for at most 10 s), each `kill -1` as `dev` (one system call, no listing; round 11), of `dev`'s processes only, from 33,900 s (gone by about 33,930 s, about 33,938 s at worst when every listing times out); since round 10 the agent's limit is 33,960 s, a backstop 60 s later (after BasedPL's v2 verdict on a 660 s margin; the judges' option B), with a note beside it in `task.toml`; its loop stops on the sweep's `sweeping` mark and the sweep stops it before its own worker runs, so it never reaches the link fixer (QA 07c F2); `ended_by_timer` is recorded for the audit, never scored | A platform that itself kills root processes or arms the hook late (then the 33,960 s limit ends the session, the platform's own cap, which 4 of 4 heavy-image trials did not survive on 2026-11-19); a run that ends 60 s early loses nothing the limit would not have taken | First capped trial: read `ended_by_timer` and the log tail in `metrics.json` | 🟢 GREEN / LOW |
 
 Licences: the specification, documentation and carve-rs are MIT. The spec's `LICENSE` ships in
 `/app/spec` and `/app/docs`, carve-rs's with the reference solution.

@@ -1,23 +1,44 @@
 #!/bin/sh
 # Runs as root from the set-up hook. Started without arguments it starts a detached copy of itself
 # (`run`) and returns. The detached copy sleeps END_SECONDS (33,900 s), then sends TERM to every
-# process of the user `dev` every TERM_INTERVAL seconds for up to TERM_PASSES passes (6 of 5 s, about
-# 30 s in all), then KILL to any left, and logs each step with a timestamp to a root-only log. It is
-# armed once (a pid file under /run), and it stops without ending anything once fsmaint-sweep has
-# begun (the `sweeping` mark in the state directory). The FSMAINT_TIMER_* variables override the
-# paths, the times and the processes selected.
+# process of the user `dev` every TERM_INTERVAL seconds, TERM_PASSES times at most and for no longer
+# than those passes take by the clock (6 of 5 s, about 30 s in all), then KILL to any left, again
+# and again for at most KILL_SECONDS (10 s), and logs each step with a timestamp to a root-only
+# log. Every signal is `kill -1` as that user, which reaches all of its processes in one system call
+# (no fork outruns it, no process listing slows it); KILL is also sent with pkill -U, to set-id
+# processes whose real user it is. A listing counts only live processes (a zombie is not one) and
+# may take PROBE seconds (3 s); one that does not answer counts as finding one. It is armed once (a
+# pid file under /run), and it stops without ending anything once fsmaint-sweep has begun (the
+# `sweeping` mark in the state directory). The FSMAINT_TIMER_* variables override the paths, the
+# times and the processes selected (FSMAINT_TIMER_SELECT: pgrep's and pkill's own arguments, which
+# then also send the signals).
 LOG="${FSMAINT_TIMER_LOG:-/var/log/fsmaint-timer.log}"
 PIDFILE="${FSMAINT_TIMER_PIDFILE:-/run/fsmaint-timer.pid}"
 END_SECONDS="${FSMAINT_TIMER_END_SECONDS:-33900}"
 TARGET_USER="${FSMAINT_TIMER_USER:-dev}"
 SELECT="${FSMAINT_TIMER_SELECT:--u $TARGET_USER}"
+LIVE="${FSMAINT_TIMER_LIVE--r R,S,D,T,t}"
 TERM_PASSES="${FSMAINT_TIMER_TERM_PASSES:-6}"
 TERM_INTERVAL="${FSMAINT_TIMER_TERM_INTERVAL:-5}"
+KILL_SECONDS="${FSMAINT_TIMER_KILL_SECONDS:-10}"
+PROBE="${FSMAINT_TIMER_PROBE_SECONDS:-3}"
 SWEEPING="${FSMAINT_TIMER_SWEEPING:-/var/lib/fsmaint/sweeping}"
 
 stamp() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 log() { printf '%s %s\n' "$(stamp)" "$*" >> "$LOG"; }
-alive() { pgrep $SELECT >/dev/null 2>&1; }
+alive() {   # whether a selected process is alive; a listing that does not answer in time counts as one
+  timeout "$PROBE" pgrep $SELECT $LIVE >/dev/null 2>&1
+  [ $? -ne 1 ]
+}
+signal() {   # $1 (TERM or KILL) to the selected processes, each step within PROBE seconds
+  if [ -n "${FSMAINT_TIMER_SELECT:-}" ]; then
+    timeout "$PROBE" pkill -"$1" $SELECT >/dev/null 2>&1
+    return 0
+  fi
+  timeout "$PROBE" setpriv --reuid "$TARGET_USER" --regid "$TARGET_USER" --clear-groups kill -"$1" -1 >/dev/null 2>&1
+  if [ "$1" = KILL ]; then timeout "$PROBE" pkill -KILL -U "$TARGET_USER" >/dev/null 2>&1; fi
+  return 0
+}
 
 case "$1" in
   run)
@@ -26,19 +47,29 @@ case "$1" in
     log "armed pid=$$ end_seconds=$END_SECONDS target=${SELECT}"
     sleep "$END_SECONDS"
     log "fired after ${END_SECONDS}s: ending the processes (${SELECT})"
+    fired=$(date +%s)
     pass=0
-    while [ "$pass" -lt "$TERM_PASSES" ] && alive; do
+    gone=false
+    while [ "$pass" -lt "$TERM_PASSES" ] && [ $(( $(date +%s) - fired )) -lt $(( TERM_PASSES * TERM_INTERVAL )) ]; do
       if [ -e "$SWEEPING" ]; then log "stopped: a sweep has begun"; break; fi
-      pkill -TERM $SELECT >/dev/null 2>&1
+      signal TERM
       pass=$((pass + 1))
       sleep "$TERM_INTERVAL"
+      if ! alive; then gone=true; break; fi
     done
-    if alive && [ ! -e "$SWEEPING" ]; then
-      pkill -KILL $SELECT >/dev/null 2>&1
-      sleep 1
-      log "killed: KILL after $pass TERM passes"
+    if [ "$gone" = false ] && [ ! -e "$SWEEPING" ]; then
+      kills=0
+      began=$(date +%s)
+      while :; do
+        signal KILL
+        kills=$((kills + 1))
+        sleep 0.5
+        alive || break
+        [ $(( $(date +%s) - began )) -lt "$KILL_SECONDS" ] || break
+      done
+      log "killed: KILL $kills times after $pass TERM passes"
     fi
-    left=$(pgrep $SELECT 2>/dev/null | wc -l | tr -d ' ')
+    left=$(timeout "$PROBE" pgrep $SELECT $LIVE 2>/dev/null | wc -l | tr -d ' ')
     log "done term_passes=$pass processes_left=$left"
     rm -f "$PIDFILE"
     ;;

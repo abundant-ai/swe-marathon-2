@@ -513,7 +513,8 @@ def manifest_record(top: Path) -> dict:
         latest = sorted((item for item in entries if isinstance(item, dict)), key=lambda item: -float(item.get("ctime") or 0))
         summary = {key: record.get(key) for key in ("hosts", "any_open", "process_count", "kill_passes",
                                                     "processes_left", "listed", "listing_complete", "end_bound",
-                                                    "end_from", "sweep_started_at", "late_entries")}
+                                                    "end_from", "sweep_started_at", "late_entries", "ending",
+                                                    "logs_artifacts")}
         summary |= {"processes": (record.get("processes") or [])[:50], "entries_listed": len(entries),
                     "copies": record.get("copies", []), "refused_copies": record.get("refused_copies", []),
                     "netcheck": record.get("netcheck"), "netcheck_open": record.get("netcheck_open"),
@@ -540,6 +541,14 @@ def manifest_record(top: Path) -> dict:
             flags.append(f"{len(refused_late)} outside sources changed at or after the end bound were refused: review them")
         if not (record.get("netcheck_open") or {}).get("first_open_at"):
             flags.append("no net check observed the end; the end bound is the sweep's start")
+        ending = record.get("ending") if isinstance(record.get("ending"), dict) else {}
+        if "processes_left" in record and record.get("processes_left") is None:
+            flags.append("how many processes were left alive is unknown: a process listing did not answer")
+        if ending.get("freeze_ran_out") is True or ending.get("kill_ran_out") is True:
+            flags.append("the freezing or the ending of the processes ran out of time: review the processes")
+        left_behind = record.get("logs_artifacts") if isinstance(record.get("logs_artifacts"), dict) else {}
+        if left_behind.get("entries"):
+            flags.append(f"{left_behind.get('entries')} entries in /logs/artifacts were set aside before the copy")
         summary["flags"] = flags
         return summary
     except Exception as exc:

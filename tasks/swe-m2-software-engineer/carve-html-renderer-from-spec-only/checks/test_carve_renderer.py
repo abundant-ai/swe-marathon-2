@@ -812,7 +812,7 @@ def test_no_reward_exists_until_the_real_end_and_the_reward_comes_first(tmp_path
 # ---------------------------------------------------------------- delivery
 
 HOOK_ROLES = {"List the processes": "processes", "Record whether": "egress", "Put a mark": "mark",
-              "Make /app/rebuild safe": "fixing", "Measure /app/rebuild": "measuring"}
+              "Make /app/rebuild safe": "fixing", "Measure /app/rebuild": "measuring", "Move aside what": "artifacts"}
 
 
 def hook_programs() -> dict[str, str]:
@@ -1395,7 +1395,8 @@ def test_one_time_limit_covers_the_moving_out_and_the_late_count_is_linear(tmp_p
     elapsed = time.monotonic() - began
     assert lines[0] == "listed 20000 20000" and elapsed < 12, (lines[:2], elapsed)
     hook = HOOK.read_text()
-    assert hook.count("except (OSError, subprocess.SubprocessError)") == 2, "QA 23 N3: a removal that times out is caught"
+    assert hook_programs()["measuring"].count("except (OSError, subprocess.SubprocessError)") == 2, \
+        "QA 23 N3: a removal that times out is caught, at both of its callers"
 
 
 def test_the_marks_notes_are_bounded_in_bytes_as_written(tmp_path):
@@ -1606,18 +1607,20 @@ def test_the_installer_refuses_any_build_but_the_pinned_one(tmp_path):
 def test_the_timer_arms_once_fires_at_end_seconds_and_ends_the_tree(tmp_path):
     """The root pre-cap watchdog: armed once by the set-up hook and detached; END_SECONDS later (2 s
     here, 33,900 s in production) it ends the agent user's whole process tree, a setsid'd child
-    included, TERM every 5 s for 6 passes (about 30 s, round 10) then KILL, so that all is gone by
-    about 33,930 s, logging arm, fire and done with timestamps to a root-only log. Since round 10
-    (the judges' option B of 2026-11-20) every agent limit in task.toml is 33,960 s, a backstop 60 s
-    after the timer, and a note beside each says so for the platform's reviewers. The sweep hook
-    records the log's tail; the verifier carries `ended_by_timer` into metrics and never into the
-    reward."""
+    included, TERM every 5 s for 6 passes (about 30 s by the clock, round 10-11) then KILL, so that
+    all is gone by about 33,930 s, logging arm, fire and done with timestamps to a root-only log.
+    Since round 10 (the judges' option B of 2026-11-20) every agent limit in task.toml is 33,960 s, a
+    backstop 60 s after the timer, with the two-line note of round 11 (QA 24 M1) beside each. The
+    sweep hook records the log's tail; the verifier carries `ended_by_timer` into metrics and never
+    into the reward."""
     text = PRECAP.read_text()
     assert text.startswith("#!/bin/sh") and os.access(PRECAP, os.X_OK)
     for literal in ('END_SECONDS="${FSMAINT_TIMER_END_SECONDS:-33900}"', 'LOG="${FSMAINT_TIMER_LOG:-/var/log/fsmaint-timer.log}"',
                     'PIDFILE="${FSMAINT_TIMER_PIDFILE:-/run/fsmaint-timer.pid}"', 'TARGET_USER="${FSMAINT_TIMER_USER:-dev}"',
                     'SELECT="${FSMAINT_TIMER_SELECT:--u $TARGET_USER}"', 'TERM_PASSES="${FSMAINT_TIMER_TERM_PASSES:-6}"',
-                    'TERM_INTERVAL="${FSMAINT_TIMER_TERM_INTERVAL:-5}"', "pkill -TERM $SELECT", "pkill -KILL $SELECT",
+                    'TERM_INTERVAL="${FSMAINT_TIMER_TERM_INTERVAL:-5}"', 'KILL_SECONDS="${FSMAINT_TIMER_KILL_SECONDS:-10}"',
+                    'PROBE="${FSMAINT_TIMER_PROBE_SECONDS:-3}"', 'LIVE="${FSMAINT_TIMER_LIVE--r R,S,D,T,t}"',
+                    'kill -"$1" -1', 'pkill -KILL -U "$TARGET_USER"', 'pkill -"$1" $SELECT',
                     'setsid nohup "$0" run', 'chmod 0600 "$LOG"'):
         assert literal in text, literal
     defaults = {name: int(value) for name, value in re.findall(r'^(END_SECONDS|TERM_PASSES|TERM_INTERVAL)="\$\{FSMAINT_TIMER_\w+:-(\d+)\}"',
@@ -1628,10 +1631,9 @@ def test_the_timer_arms_once_fires_at_end_seconds_and_ends_the_tree(tmp_path):
     assert defaults["END_SECONDS"] == 33900 and gone <= 33_931, defaults
     assert [(table, int(limit)) for table, _, limit in limits] == [("agent", 33960), ("steps.agent", 33960)], limits
     assert all(int(limit) - defaults["END_SECONDS"] == 60 and int(limit) > gone for _, _, limit in limits), "a backstop 60 s later"
-    for table, note, _ in limits:   # beside each limit, for the platform's reviewers: when the session ends, the backstop, why
-        said = " ".join(note.replace("#", " ").split())
-        assert "The session ends at 33,900 s, when a root timer" in said and "this limit is a backstop 60 s later" in said, said
-        assert "reached the platform's own cap with this kind of separately built verifier image ended without a result" in said
+    for table, note, _ in limits:   # beside each limit, exactly these two lines (QA 24 M1)
+        assert note == ("# Sessions end at 33,900 s: a timer started at set-up closes the session user's processes then\n"
+                        "# (all are gone by about 33,930 s). This value is a backstop 60 s later.\n"), (table, note)
     assert '[[agent.setup_complete]]\ncommand = "/usr/local/lib/fsmaint/fsmaint-timer"' in toml
     assert "fsmaint" not in (STEP / "instruction.md").read_text().lower() and "timer" not in (STEP / "instruction.md").read_text().lower()
     # Live: a tree of two loops, one in a session of its own, matched through a marker in their arguments.
@@ -1641,7 +1643,8 @@ def test_the_timer_arms_once_fires_at_end_seconds_and_ends_the_tree(tmp_path):
     parent = subprocess.Popen(["sh", "-c", loop, marker])
     child = subprocess.Popen(["sh", "-c", loop, marker], start_new_session=True)
     env = dict(os.environ, FSMAINT_TIMER_LOG=str(log), FSMAINT_TIMER_PIDFILE=str(pidfile), FSMAINT_TIMER_END_SECONDS="2",
-               FSMAINT_TIMER_SELECT=f"-f {marker}", FSMAINT_TIMER_TERM_INTERVAL="1", FSMAINT_TIMER_TERM_PASSES="5")
+               FSMAINT_TIMER_SELECT=f"-f {marker}", FSMAINT_TIMER_TERM_INTERVAL="1", FSMAINT_TIMER_TERM_PASSES="5",
+               FSMAINT_TIMER_LIVE="")   # this machine's pgrep may not list by state
     alive = lambda: subprocess.run(["pgrep", "-f", marker], capture_output=True).returncode == 0  # noqa: E731
     try:
         started = time.time()
@@ -1838,7 +1841,8 @@ def test_the_timer_stops_once_a_sweep_has_begun(tmp_path):
     marker = "precapmk" + os.urandom(6).hex()
     worker = subprocess.Popen(["sh", "-c", "while :; do sleep 1; done", marker])
     env = dict(os.environ, FSMAINT_TIMER_LOG=str(log), FSMAINT_TIMER_PIDFILE=str(pidfile), FSMAINT_TIMER_END_SECONDS="1",
-               FSMAINT_TIMER_SELECT=f"-f {marker}", FSMAINT_TIMER_TERM_INTERVAL="1", FSMAINT_TIMER_TERM_PASSES="3", FSMAINT_TIMER_SWEEPING=str(mark))
+               FSMAINT_TIMER_SELECT=f"-f {marker}", FSMAINT_TIMER_TERM_INTERVAL="1", FSMAINT_TIMER_TERM_PASSES="3", FSMAINT_TIMER_SWEEPING=str(mark),
+               FSMAINT_TIMER_LIVE="")
     try:
         assert subprocess.run([str(PRECAP)], env=env, capture_output=True, timeout=30).returncode == 0
         time.sleep(3.5)
@@ -1891,6 +1895,11 @@ def test_nothing_the_agent_sees_names_grading_or_a_budget():
             for word in ("verifier", "private", "recorded", "case"):
                 assert word not in lowered, (name, word)
     comments = [line for line in seen["task.toml"].splitlines() if line.lstrip().startswith("#")]
+    said = " ".join(comments).lower()
+    for word in ("platform", "trial", "verifier", "image", "grade", "graded", "score", "reward", "evaluat", "harbor", "oddish",
+                 "modal", "audit", "qa ", "artifact", "result", "test", "benchmark", "agent", "hidden", "oracle", "budget", "deadline"):
+        assert word not in said, ("task.toml comment", word)
+    assert not re.search(r"\bcaps?\b", said), "task.toml comment names a cap"
     beside = re.findall(r"((?:#[^\n]*\n)+)timeout_sec = 33960\n", seen["task.toml"])
     assert len(beside) == 2 and len(comments) == sum(block.count("\n") for block in beside), comments   # only the notes beside the limits
     instruction = seen["instruction.md"]
@@ -1981,3 +1990,103 @@ def test_a_fetched_build_of_the_original_or_a_runtime_is_refused(tmp_path):
     main = verify[verify.index("def main() -> int:"):]
     assert main.index("seal(REBUILD)") < main.index("fetched_build(REBUILD") < main.index("metrics = run_cases(PROGRAM")
     assert "network_open()" in verify, "the verifier self-checks its own network before grading"
+
+
+# ---------------------------------------------------------------- round 11 (QA 24)
+
+def test_the_timers_kill_lands_on_time_however_slow_the_process_listings_are(tmp_path):
+    """QA 24 S1: round 10's timer listed with zombie-matching, untimed `pgrep` and signalled with one
+    untimed `pkill` per pass, so with listings that each take 2 s its KILL came about 32 s after it
+    fired here (in production 33,930 s plus 14 listings, past the 33,960 s backstop once a listing
+    takes about 2 s). Now TERM and KILL are `kill -1` as the session user (one system call, no
+    listing), the TERM passes stop when their 30 s are up by the clock, every listing and pkill has
+    PROBE seconds, and KILL repeats for at most KILL_SECONDS. Here, scaled down (TERM passes of 1 s,
+    PROBE 1 s), with stand-in commands that signal nothing and take 2 s to list."""
+    stand_in = tmp_path / "bin"
+    stand_in.mkdir()
+    said = tmp_path / "said.log"
+    for name, body in (("setpriv", f'printf "%s\\n" "setpriv $*" >> "{said}"\nexit 0\n'),
+                       ("pkill", f'printf "%s\\n" "pkill $*" >> "{said}"\nexec sleep 2\n'),
+                       ("pgrep", "exec sleep 2\n"), ("kill", "exit 0\n")):
+        (stand_in / name).write_text("#!/bin/sh\n" + body)
+        (stand_in / name).chmod(0o755)
+    log = tmp_path / "timer.log"
+    env = dict(os.environ, PATH=f"{stand_in}:{os.environ['PATH']}", FSMAINT_TIMER_LOG=str(log),
+               FSMAINT_TIMER_PIDFILE=str(tmp_path / "timer.pid"), FSMAINT_TIMER_END_SECONDS="1",
+               FSMAINT_TIMER_TERM_INTERVAL="1", FSMAINT_TIMER_TERM_PASSES="6", FSMAINT_TIMER_KILL_SECONDS="3",
+               FSMAINT_TIMER_PROBE_SECONDS="1", FSMAINT_TIMER_SWEEPING=str(tmp_path / "no-sweep"))
+    started = time.monotonic()
+    timer = subprocess.Popen([str(PRECAP), "run"], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    killed_at = None
+    try:
+        while time.monotonic() - started < 45 and killed_at is None:
+            if said.exists() and "KILL" in said.read_text():
+                killed_at = time.monotonic() - started - 1.0   # from the firing, END_SECONDS after the start
+            time.sleep(0.05)
+        timer.wait(timeout=30)
+    finally:
+        if timer.poll() is None:
+            timer.kill()
+    calls = said.read_text().splitlines() if said.exists() else []
+    assert killed_at is not None and killed_at <= 10, (killed_at, calls[:8])
+    assert any(call.endswith("kill -TERM -1") for call in calls) and any(call.endswith("kill -KILL -1") for call in calls), calls
+    assert not any(call.startswith("pkill -TERM") for call in calls), "TERM is one system call, not a scan"
+    lines = log.read_text().splitlines()
+    assert any(" fired after 1s" in line for line in lines) and any(re.search(r" done term_passes=\d+ ", line) for line in lines), lines
+
+
+def test_what_the_session_left_in_logs_artifacts_is_moved_aside_whole(tmp_path):
+    """QA 24 S2: /logs/artifacts is writable by the session without bound, and the copy packs it, and
+    unpacks it into the verifier's container, before anything else; an upload that fails there ends
+    the run in an error. Now the sweep, once the processes are ended, renames it whole into the
+    root-only state directory (it is not copied from there) and leaves an empty directory with the
+    same owner and mode; the record says how many entries it held, and the verifier flags them."""
+    target = tmp_path / "logs" / "artifacts"
+    target.mkdir(parents=True)
+    target.chmod(0o777)
+    for index in range(3000):
+        (target / f"a{index:04d}").write_text("x")
+    os.mkfifo(target / "pipe")
+    (target / "away").symlink_to("/etc/hosts")
+    state = tmp_path / "state"
+    state.mkdir()
+    done = subprocess.run([sys.executable, "-I", "-", str(target), str(state)], input=hook_programs()["artifacts"], text=True,
+                          capture_output=True, timeout=120)
+    assert done.returncode == 0, done.stderr
+    report = json.loads((state / "logs-artifacts.json").read_text())
+    assert report["entries"] == 3002 and report["moved_to"] and Path(report["moved_to"]).parent == state, report
+    assert target.is_dir() and os.listdir(target) == [] and target.stat().st_mode & 0o777 == 0o777
+    assert len(os.listdir(report["moved_to"])) == 3002
+    hook = HOOK.read_text()
+    assert hook.index('> "$STATE/kill.json"') < hook.index('"""Move aside what the session left in /logs/artifacts') \
+        < hook.index('"""Record whether a TCP connection'), "after the ending, before anything is copied"
+    assert "logs_artifacts=logs_artifacts" in hook
+    flags = verifier_call(textwrap.dedent(f"""
+        import json, verify
+        from pathlib import Path
+        top = Path({str(tmp_path / 'rebuild')!r})
+        top.mkdir()
+        (top / ".fsmaint.json").write_text(json.dumps({{"logs_artifacts": json.loads({json.dumps(report)!r}), "processes_left": 0}}))
+        print(json.dumps(verify.manifest_record(top)["flags"]))
+    """))
+    assert any("3002 entries in /logs/artifacts were set aside" in flag for flag in flags), flags
+
+
+def test_a_file_with_more_than_a_thousand_hard_links_is_refused(tmp_path):
+    """QA 24 S3: the copy's far side may cap the names of a file (ext4: 65,000) and then writes a full
+    copy for each name past it, so one large file under some 199,000 names could fill its disk. A
+    tree in which a file has more than 1,000 names (cargo makes 2) is now refused, a noted 0, and the
+    instruction states the limit beside the others."""
+    for count, expected in ((1001, "refused"), (1000, "listed")):
+        top = tmp_path / f"links-{count}" / "rebuild"
+        top.mkdir(parents=True)
+        (top / "carve").write_text("#!/bin/sh\n")
+        (top / "big").write_bytes(b"y" * 4096)
+        for index in range(count - 1):
+            os.link(top / "big", top / f"n{index:04d}")
+        lines = run_measuring(top)
+        assert lines[0].split()[0] == expected, (count, lines[:3])
+        if expected == "refused":
+            assert lines[1] == "a file in it has more than 1,000 hard links, the most a file in /app/rebuild may have: it was not copied"
+            assert manifest_of(top)[1] is True
+    assert "with no file that has more than 1,000 hard links" in (STEP / "instruction.md").read_text()

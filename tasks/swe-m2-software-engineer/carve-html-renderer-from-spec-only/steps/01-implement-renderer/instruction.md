@@ -53,7 +53,7 @@ fail on pages nobody touched. Write that renderer.
 
 Your implementation in `/app/rebuild`, with an executable `/app/rebuild/carve`. We install
 `/app/rebuild` on the build machines as one directory, so keep it
-under 2 GB and 200,000 files and directories.
+under 2 GB and 200,000 files and directories, with no file that has more than 1,000 hard links.
 
 - `carve [--safe] [--html] [FILE]` renders the Carve document FILE, or standard input when FILE
   is missing or `-`, to HTML on standard output and exits 0. The options may come before or

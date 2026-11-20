@@ -6,8 +6,10 @@
 # copyable (links); moves the tree out of /app/rebuild, measures and bounds it there, and moves it
 # back under a mark that lists it only when it is within the limits and the disk has room to pack
 # it. Only once that mark is in place does the file beside the tree say the sweep finished. From the
-# move out until then /app/rebuild holds the refused mark and nothing unmeasured; before the move
-# out it holds the tree as the session left it, under the refused mark. The mark's first line says
+# move out until then /app/rebuild holds the refused mark and nothing unmeasured, unless the moving
+# out is cut off by its time limit (what was not moved then stays, and the sweep says it stopped);
+# before the move out it holds the tree under the refused mark, as the session left it but for what
+# the link fixing changes, and what was in /logs/artifacts is moved aside. The mark's first line says
 # how many entries and bytes were listed, or that the tree was refused; the record (.fsmaint.json)
 # lists every entry, every link turned into a copy with where the copy came from and when that
 # source last changed, the end bound the net check observed, and how the ending of the processes went.
@@ -165,6 +167,56 @@ left=$(count_alive)
 ended=$(date +%s.%N)
 printf '{"freeze_passes": %s, "freeze_ran_out": %s, "kill_passes": %s, "kill_ran_out": %s, "processes_left": "%s"}\n' \
   "$froze" "$freeze_out" "$passes" "$kill_out" "$left" > "$STATE/kill.json"
+# What the session left in /logs/artifacts, which is copied beside the tree and which nothing here
+# reads, is moved aside whole, now that no process of `dev` can add to it.
+timeout 60 /usr/bin/python3 -I - /logs/artifacts "$STATE" <<'EOF'
+"""Move aside what the session left in /logs/artifacts: the directory is renamed whole into the
+state directory named second, where it stays, and an empty one with its owner and mode takes its
+place; where that rename is refused, every entry in it is removed instead. How many entries it held
+(counted up to 1,000,000) and what became of them go to logs-artifacts.json in the state directory."""
+import json
+import os
+import stat
+import subprocess
+import sys
+
+TARGET, STATE = sys.argv[1], sys.argv[2]
+report = {"path": TARGET, "entries": 0, "moved_to": None, "emptied": None}
+try:
+    info = os.lstat(TARGET)
+except OSError:
+    info = None
+if info is not None and stat.S_ISDIR(info.st_mode):
+    try:
+        with os.scandir(TARGET) as listing:
+            for _ in listing:
+                report["entries"] += 1
+                if report["entries"] >= 1_000_000:
+                    break
+    except OSError:
+        pass
+if report["entries"]:
+    aside = os.path.join(STATE, f"logs-artifacts.{os.urandom(6).hex()}")
+    try:
+        os.rename(TARGET, aside)
+        report["moved_to"] = aside
+    except OSError:
+        try:
+            done = subprocess.run(["find", TARGET, "-xdev", "-mindepth", "1", "-maxdepth", "1", "-exec", "rm", "-rf", "--", "{}",
+                                   "+"], capture_output=True, timeout=50, check=False)
+            report["emptied"] = done.returncode == 0 and not os.listdir(TARGET)
+        except (OSError, subprocess.SubprocessError) as exc:
+            report["emptied"] = f"it could not be emptied ({exc.__class__.__name__})"
+    if report["moved_to"]:
+        try:
+            os.mkdir(TARGET)
+            os.chown(TARGET, info.st_uid, info.st_gid)
+            os.chmod(TARGET, stat.S_IMODE(info.st_mode))
+        except OSError as exc:
+            report["emptied"] = f"no directory was put in its place ({exc.__class__.__name__})"
+with open(os.path.join(STATE, "logs-artifacts.json"), "w") as handle:
+    json.dump(report, handle)
+EOF
 # fsmaint-netcheck, if it is still running, has nothing left to do.
 if [ -r "$STATE/netcheck.json" ]; then
   pid=$(/usr/bin/python3 -I -c 'import json,sys; print(json.load(open(sys.argv[1])).get("pid", ""))' "$STATE/netcheck.json" 2>/dev/null)
@@ -413,9 +465,10 @@ unless, read from where it stands in /app/rebuild, it leads through directories 
 (outside the tree, by name alone) to a file or a directory of the tree, and then it is rewritten as
 the shortest relative path to that, which resolves the same wherever the tree is unpacked. All of
 this, the moving out and back included, stops 480 seconds after the sweep's start. A tree over the
-limits, one not measured in that time, or one the disk has too little room left to pack into /tmp,
-is refused and stays moved out. Otherwise it moves back, and one rename puts its own mark in place
-of the refused one. The mark's first line is `listed` with the number of entries (files,
+limits, one with a file of more than 1,000 hard links in it, one not measured in that time, or one
+the disk has too little room left to pack into /tmp, is refused and stays moved out. Otherwise it
+moves back, and one rename puts its own mark in place of the refused one. The mark's first line is
+`listed` with the number of entries (files,
 directories and links) and of bytes in its files (each file once, however many names it has), or
 `refused` with the reason on the next line; then up to 200 of the changes made, 32 KiB of them at
 most (the link fixing's first, read as JSON lines from the file named fourth on the command line,
@@ -469,6 +522,8 @@ PACK_ROOM = int(os.environ.get("FSMAINT_PACK_ROOM", 32 << 20))   # bytes left fr
 PACK_INODES = int(os.environ.get("FSMAINT_PACK_INODES", 16))   # inodes free for the packing, at least
 notes, copies, refused, links, catalogue = [], [], [], [], []
 files, kinds, top_times = {}, {}, {}   # each file's sha256 by inode; each entry's type by path; top entries' times
+links_of = {}       # the names of each file in the tree, by inode
+NAMES_LIMIT = 1000  # names (hard links) of one file in the tree, at most
 entries = size = hashed = note_bytes = notes_left_out = moved_out = 0
 long_fd = None
 
@@ -503,9 +558,10 @@ def write_new(path, data):
 
 
 def remove(path):
-    """Remove whatever is at `path`, a directory with everything below it, never following a link."""
+    """Remove whatever is at `path`, a directory with everything below it, never following a link,
+    within the time FINISH_BY leaves (one second at least)."""
     if os.path.isdir(path) and not os.path.islink(path):
-        subprocess.run(["rm", "-rf", "--", path], capture_output=True, timeout=300, check=False)
+        subprocess.run(["rm", "-rf", "--", path], capture_output=True, timeout=max(1.0, FINISH_BY - time.time()), check=False)
     elif os.path.lexists(path):
         os.unlink(path)
     if os.path.lexists(path):
@@ -754,10 +810,14 @@ def walk(top):
                     pending.append((path, copied_here))
                 elif (info.st_dev, info.st_ino) in files:   # another name of a file already counted
                     item["sha256"] = files[(info.st_dev, info.st_ino)]
+                    links_of[(info.st_dev, info.st_ino)] += 1
+                    if links_of[(info.st_dev, info.st_ino)] > NAMES_LIMIT:
+                        raise Refuse(f"a file in it has more than {NAMES_LIMIT:,} hard links, the most a file in /app/rebuild may have")
                 else:
                     size += info.st_size
                     if size > LIMIT_BYTES:
                         raise Refuse(f"it holds more than {LIMIT_BYTES:,} bytes, the most /app/rebuild may hold")
+                    links_of[(info.st_dev, info.st_ino)] = 1
                     files[(info.st_dev, info.st_ino)] = item["sha256"] = digest(name, fd, info.st_size)
         finally:
             if fd != top:
@@ -834,8 +894,9 @@ finally:
     for descriptor in (top, long_fd):
         if descriptor is not None:
             os.close(descriptor)
-netcheck, netcheck_open, processes, probe, ending = (read_json(name) for name in ("netcheck.json", "netcheck-open.json", "procs.json",
-                                                                                   "netprobe.json", "kill.json"))
+netcheck, netcheck_open, processes, probe, ending, logs_artifacts = (
+    read_json(name) for name in ("netcheck.json", "netcheck-open.json", "procs.json", "netprobe.json", "kill.json",
+                                 "logs-artifacts.json"))
 
 
 def log_tail(path, limit=20):
@@ -905,7 +966,7 @@ def record_of(lines, whole=True):
         probe or {"hosts": None, "any_open": None}, sweep_started_at=STARTED, kill_ended_at=ENDED,
         end_bound=END_BOUND, end_from=END_FROM, netcheck=netcheck, netcheck_open=netcheck_open,
         process_count=(processes or {}).get("process_count"), processes=(processes or {}).get("processes", []),
-        kill_passes=PASSES, processes_left=LEFT, ending=ending, listed=lines[0],
+        kill_passes=PASSES, processes_left=LEFT, ending=ending, logs_artifacts=logs_artifacts, listed=lines[0],
         listing_complete=lines[0] != "refused" and hashed <= HASH_LIMIT,
         copies=copies, refused_copies=refused, late_entries=late_entries, timer_log=timer_log, ended_by_timer=ended_by_timer,
         moved_out_long=moved_out, notes=notes if whole else notes[:MARK_NOTES], notes_left_out=notes_left_out,

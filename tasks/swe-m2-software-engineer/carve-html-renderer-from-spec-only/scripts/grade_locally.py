@@ -30,7 +30,7 @@ STEP = "steps/01-implement-renderer"
 
 
 ROLES = {"List the processes": "processes", "Record whether": "egress", "Put a mark": "mark",
-         "Make /app/rebuild safe": "fixing", "Measure /app/rebuild": "measuring"}
+         "Make /app/rebuild safe": "fixing", "Measure /app/rebuild": "measuring", "Move aside what": "artifacts"}
 
 
 def hook_programs(bundle: Path) -> dict[str, str]:
