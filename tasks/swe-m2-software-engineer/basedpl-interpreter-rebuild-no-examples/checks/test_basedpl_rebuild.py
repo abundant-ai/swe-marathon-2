@@ -2821,10 +2821,11 @@ def test_nothing_the_agent_sees_names_a_reference_answer_or_a_budget():
     for place in (runcases.WORKSPACE, runcases.HOME, runcases.TEMP):
         assert str(place) not in seen["instruction.md"], place
     assert not re.search(r"\btests?\b", seen["instruction.md"].lower()), "no suite is implied"
-    # task.toml's only comments: the note for the platform's reviewers above each agent limit (the agent never reads it)
-    commented = [line for line in seen["task.toml"].splitlines() if "#" in line]
-    assert len(commented) == 6 and all(line.startswith("# ") for line in commented), commented
-    assert seen["task.toml"].count("\n".join(commented[:3]) + "\ntimeout_sec = 33960\n") == 2 and commented[:3] == commented[3:]
+    # task.toml's only comments: the same two neutral lines above each agent limit (the agent never reads it)
+    note = ["# Sessions end at 33,900 s: a timer started at set-up closes the session user's processes then",
+            "# (all are gone by about 33,930 s). This value is a backstop 60 s later."]
+    assert [line for line in seen["task.toml"].splitlines() if "#" in line] == note * 2
+    assert seen["task.toml"].count("\n".join(note) + "\ntimeout_sec = 33960\n") == 2, "each just above an agent limit"
     assert sorted(path.name for path in (TASK / "environment").iterdir()) == [".dockerignore", "Dockerfile", "provision-scratch",
                                                                           "reclaim-scratch", "session-timer"]
     instruction = seen["instruction.md"]
@@ -2863,6 +2864,11 @@ def test_no_shipped_file_of_ours_outside_the_verifier_uses_a_word_the_audit_scan
                *sorted((STEP / "solution").iterdir())]
     found = {path.relative_to(TASK).as_posix(): flagged.findall(path.read_text()) for path in shipped if path.is_file()}
     assert len(found) == 9 and not any(found.values()), {name: words for name, words in found.items() if words}
+    # task.toml's comments too (its tables name the verifier, as the schema does): the pre-trial audit flagged one that
+    # spoke of the platform, its trials and the verifier image
+    comments = [line for line in (TASK / "task.toml").read_text().splitlines() if line.lstrip().startswith("#")]
+    words = re.compile(flagged.pattern + r"|platform|result|evaluat|image|\bgrad|review", re.I)
+    assert comments and not [line for line in comments if words.search(line)], comments
 
 
 def test_the_reference_solution_installs_the_original_and_its_licence_and_nothing_else():
