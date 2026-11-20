@@ -2607,7 +2607,41 @@ def test_a_walk_that_outlasts_its_time_refuses_the_tree(tmp_path):
     assert manifest_lines(server)[:2] == ["refused", "it could not be measured within 240 seconds: it was not copied"], manifest_lines(server)
     assert os.listdir(server) == [".fsmaint-manifest"]
     stage = hook_scripts()[1]
-    assert "MEASURE_SECONDS = 240" in stage and "realpath(full" not in stage and "os.path.realpath(os.path.join" not in stage
+    # realpath, which takes a link one component at a time, runs only for a link the kernel follows to something the
+    # walk did not see
+    assert "MEASURE_SECONDS = 240" in stage and stage.count("os.path.realpath(") == 2 and "os.path.realpath(os.path.join" not in stage
+
+
+def test_links_inside_survive_where_a_file_is_numbered_differently_by_path(tmp_path):
+    """The root stage tells a link that leads inside by the device and inode the kernel reaches through it, among those
+    its walk saw. On a file system that numbered a file differently by path, every link would look outside and an
+    honest virtual environment would lose its own links; realpath decides there, so they stay (a guard of round 12's
+    stage, not a path of round 11's)."""
+    renumber = ("import os\n_stat = os.stat\n"
+                "def _renumbered(path, *args, dir_fd=None, follow_symlinks=True):\n"
+                "    info = _stat(path, *args, dir_fd=dir_fd, follow_symlinks=follow_symlinks)\n"
+                "    if not follow_symlinks or dir_fd is not None:\n"
+                "        return info\n"
+                "    values = list(info)\n"
+                "    values[1] += 1 << 40\n"
+                "    return os.stat_result(values)\n"
+                "os.stat = _renumbered\n")
+
+    def build(server: Path) -> None:
+        (server / "venv" / "bin").mkdir(parents=True)
+        (server / "venv" / "bin" / "python3.12").write_text("#!/bin/sh\n")
+        (server / "venv" / "bin" / "python3").symlink_to("python3.12")
+        (server / "venv" / "bin" / "python").symlink_to("python3")  # through a link: written straight
+        (server / "venv" / "lib").mkdir()
+        (server / "venv" / "lib64").symlink_to("lib")
+        (server / "away").symlink_to(os.path.relpath("/etc/hosts", server))
+        (server / "run").write_text("#!/bin/sh\n")
+
+    done, server = measured(tmp_path, build, prelude=renumber)
+    assert done.returncode == 0, done.stderr[-2000:]
+    links = {path.relative_to(server).as_posix(): os.readlink(path) for path in server.rglob("*") if path.is_symlink()}
+    assert links == {"venv/bin/python3": "python3.12", "venv/bin/python": "python3.12", "venv/lib64": "lib"}, links
+    assert sorted(manifest_lines(server)[1:]) == ["removed away: a link that leads outside /app/server", "venv/bin/python -> python3.12 (was python3)"]
 
 
 def test_the_manifest_holds_a_bounded_number_of_one_line_changes(tmp_path):

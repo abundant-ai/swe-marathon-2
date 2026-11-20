@@ -191,17 +191,17 @@ exec /opt/py/bin/python -I - /app/server "$LIMIT_ENTRIES" "$LIMIT_BYTES" "$LIMIT
 
 The tree is walked by directory descriptor, so no depth hides anything, and any step that cannot be completed refuses
 the tree, as does a walk and a check of its links not done within MEASURE_SECONDS; every name listed counts against
-the limit on entries, a pipe or a socket too. Anything the copy would refuse is removed: a device, a pipe, a socket, a link with an absolute target
-or one the kernel cannot follow (at most 40 links on the way) to a file or directory the walk saw inside. A link kept
-is the relative path straight to what it reaches, so that the copy resolves it the same way wherever it unpacks the
-tree; one that is not is written again so, or removed where the disk has no room left for that. A tree over the
-limits, or one that the copy's own pack (tar -czf into /tmp) cannot make within PACK_SECONDS, is moved aside whole and
-replaced by an empty directory (where the directory cannot be renamed, what it holds is moved aside instead); a pack
-that fails only for want of room or inodes the machine never had is left to the copy. The manifest's first line is
-`complete` with the number of entries (files, directories and links) and of bytes in its files (each file once,
-however many names it has), or `refused`; each line after it is a change made or the reason for the refusal, at most
-NOTES of them, each one line, and the last lines of the maintenance timer's log follow, then the line that says what
-its stop found, each prefixed `timer: `.
+the limit on entries, a pipe or a socket too. Anything the copy would refuse is removed: a device, a pipe, a socket, a
+link with an absolute target, or one the kernel cannot follow (at most 40 links on the way) to a file or directory
+inside, one the walk saw or, failing that, one realpath finds there. A link kept is the relative path straight to
+what it reaches, so that the copy resolves it the same way wherever it unpacks the tree; one that is not is written
+again so, or removed where the disk has no room left for that. A tree over the limits, or one that the copy's own pack
+(tar -czf into /tmp) cannot make within PACK_SECONDS, is moved aside whole and replaced by an empty directory (where
+the directory cannot be renamed, what it holds is moved aside instead); a pack that fails only for want of room or
+inodes the machine never had is left to the copy. The manifest's first line is `complete` with the number of entries
+(files, directories and links) and of bytes in its files (each file once, however many names it has), or `refused`;
+each line after it is a change made or the reason for the refusal, at most NOTES of them, each one line, and the last
+lines of the maintenance timer's log follow, then the line that says what its stop found, each prefixed `timer: `.
 """
 import os
 import stat
@@ -277,40 +277,52 @@ def room_left():
     return disk.f_bavail * disk.f_frsize >= KEEP_BYTES and (disk.f_files == 0 or disk.f_favail >= KEEP_INODES)
 
 
+def inside(path):
+    return path == ROOT or path.startswith(ROOT + os.sep)
+
+
 def check_link(path):
     """Keep the link at `path` (inside ROOT) only as the relative path straight to the file or directory it reaches
-    inside: the kernel follows it (at most 40 links on the way), and what it reaches must be one the walk saw."""
+    inside: the kernel follows it (at most 40 links on the way) to a file or directory the walk saw, or, where what it
+    reaches is not one of those, realpath finds it inside all the same."""
     global entries
     in_time()
     full = os.path.join(ROOT, path)
     target = os.readlink(full)
-    why = "a link that leads outside /app/server"
+    why, wanted = "a link that leads outside /app/server", None
     if not os.path.isabs(target):
         try:
             info = os.stat(full)
-            reached = (info.st_dev, info.st_ino)
         except OSError:
-            reached, why = None, "a link that leads to nothing"
-        if reached in path_of:
-            here = os.path.dirname(full)
-            plain = os.path.normpath(os.path.join(os.path.dirname(path), target))
-            if inode_of.get(plain) == reached and target == os.path.relpath(os.path.join(ROOT, plain), here):
-                return
-            wanted = os.path.relpath(os.path.join(ROOT, path_of[reached]), here)
-            os.unlink(full)
-            if room_left():
-                try:
-                    os.symlink(wanted, full)
-                    notes.append(f"{path} -> {wanted} (was {target})")
+            info, why = None, "a link that leads to nothing"
+        if info is not None:
+            reached, here = (info.st_dev, info.st_ino), os.path.dirname(full)
+            if reached in path_of:
+                plain = os.path.normpath(os.path.join(os.path.dirname(path), target))
+                if inode_of.get(plain) == reached and target == os.path.relpath(os.path.join(ROOT, plain), here):
                     return
-                except OSError:
-                    pass
-            entries -= 1
-            notes.append(f"removed {path}: a link that could not be written straight to what it points at")
-            return
+                wanted = os.path.relpath(os.path.join(ROOT, path_of[reached]), here)
+            else:
+                resolved = os.path.realpath(full)  # outside, unless this file system numbers a file differently by path
+                if inside(resolved):
+                    wanted = os.path.relpath(resolved, here)
+                    if wanted == target:
+                        return
+    if wanted is None:
+        os.unlink(full)
+        entries -= 1
+        notes.append(f"removed {path}: {why}")
+        return
     os.unlink(full)
+    if room_left():
+        try:
+            os.symlink(wanted, full)
+            notes.append(f"{path} -> {wanted} (was {target})")
+            return
+        except OSError:
+            pass
     entries -= 1
-    notes.append(f"removed {path}: {why}")
+    notes.append(f"removed {path}: a link that could not be written straight to what it points at")
 
 
 def one_line(text):
