@@ -23,8 +23,9 @@ One step is implemented. See [Remaining work](#remaining-work).
   evaluation will run a battery of requests against both servers" and, having seen the harness's
   own command line in `ps` (platform-side), called the task "from a benchmark"; in trial 100 it
   wrote "the most likely evaluation focus". The recommendations: drop the package names from the
-  instruction, and find the evaluation cues the solver can see. Round 12 is one commit of code and
-  checks (`2ce3d7f`) and this README.
+  instruction, and find the evaluation cues the solver can see. Round 12 is two commits of code and
+  checks on `375b570` (`2ce3d7f`, then `3f0aaf0` for the `realpath` fallback below) and this
+  README.
 - The instruction. The completion sentence is the one drafted on 2026-11-20 (harbor-lh
   `ops/swe-marathon-v2/decisions/2026-11-20-completion-sentence-evaluation-awareness.md`): "The
   work is complete when your server answers every API request exactly as the sealed one does,
@@ -121,9 +122,9 @@ One step is implemented. See [Remaining work](#remaining-work).
     about 20,000 links), and 1,000 links of 490-component targets 1.01 s at depth 0 (QA 07g
     measured 6 ms a link at depth 400). This round's stage, which calls `realpath` only for a link
     that reaches something outside the walk's files, took 0.12-0.18 s for the chains and 0.08 s for
-    the targets (each run twice; the first run's figures were within 10%). The walk and the links also have 240 s now, after which the tree is refused, so a
-    tree of long targets that do reach outside ends as a noted 0
-    (`test_a_walk_that_outlasts_its_time_refuses_the_tree`). (b) Pipes
+    the targets (each run twice; the first run's figures were within 10%). The walk and the links
+    also have 240 s now, after which the tree is refused, so a tree of long targets that do reach
+    outside ends as a noted 0 (`test_a_walk_that_outlasts_its_time_refuses_the_tree`). (b) Pipes
     and sockets were left out of the entry count, so tens of millions of them in directories the
     fixer cannot read could hold the walk; every name listed now counts against the 100,000
     (`test_every_name_listed_counts_against_the_entry_limit`). (c) `pgrep -u dev` counts zombies,
@@ -144,16 +145,39 @@ One step is implemented. See [Remaining work](#remaining-work).
     meminfo can be read, a memfd no process maps is not counted (07f, unchanged). The timer's
     two-fault residual of re-check 07i F1 is unchanged (not reachable by the agent), and its tested
     fix was not part of this round. After round 12, "Nothing arrived" and "The copy arrived
-    incomplete" are the copy failing; no path the tree controls is known to reach them.
-- Checks: ten new ones, one per path above; the timer checks pin the new numbers (six SIGTERMs,
-  30 SIGKILL turns, both limits 33,960, 60 s after the firing); the instruction check pins the two
-  sentences and rejects the cue words and the framework names; the `task.toml` checks allow one
-  comment, the reviewers' note, exactly above each agent limit, and keep the old word list for
-  everything else; the delivery check's outside link now resolves to a file outside on this Mac
-  too. The whole-sweep helper points every path of the shell part into the check's folder, which
-  the new shell checks need. `checks/` has 56 tests; with `ci_checks` (27), 83 pass under Python
-  3.13, and `ci_checks/check_repository.py` passes. The hook's two scripts compile under Python
-  3.12.13 and both hooks pass `dash -n`.
+    incomplete" are the copy failing; apart from the hard links above, no path the tree controls
+    is known to reach them.
+- Checks: ten new ones, one per path above, each failing on `375b570`, and the guard for numbers
+  that differ by path; the timer checks pin the new numbers (six SIGTERMs, 30 SIGKILL turns, both
+  limits 33,960, 60 s after the firing); the instruction check pins the two sentences and rejects
+  the cue words and the framework names; the `task.toml` checks allow one comment, the reviewers'
+  note, exactly above each agent limit, and keep the old word list for everything else; the
+  delivery check's outside link now resolves to a file outside on this Mac too. The whole-sweep
+  helper points every path of the shell part into the check's folder, which the new shell checks
+  need. `checks/` has 57 tests; with `ci_checks` (27), 84 pass under Python 3.13, and
+  `ci_checks/check_repository.py` passes. The hook's two scripts compile under Python 3.12.13 and
+  both hooks pass `dash -n`.
+- The regrade uses only bundle `7bcb797ee1be`: its `solution/` installed from an isolated copy by
+  its own `oracle.py` (only the interpreter path swapped for this Mac), its corpus and its media,
+  its replay under Python 3.12 with bytecode writing off. It scores 1.0 on every unit: 4,002 of
+  4,002 (2,262 of 2,262 scenarios), 9 planned restarts, no other restart, no second try, no answer
+  of 500 or above, no note, 52 scenarios alone, in 458.7 s; the slowest request took 3.5 s. An
+  empty server from the same bundle scores 0.0 (0 of 4,002, "/app/server/run is missing or not
+  executable"). The README keeps no stored model submissions to regrade. Grading is unchanged:
+  `replay.py`, the corpus, the media and the solution are round 11's byte for byte, and `verify.py`
+  differs only in how much of the manifest it reads. This round's first build, `e16eb2141c6f`
+  (before the `realpath` fallback; the same solution, corpus and replay), scored the same in
+  478.9 s.
+- Bundle `7bcb797ee1be` (1,161 files, 247.3 MB) built twice with the same hash and the same files
+  (`diff -r` of the two builds is empty); flat `ddff792eafb5`, likewise. Against version 10's
+  `7a92d0bd02fe` it differs in `environment/fsmaint-sweep`, `environment/fsmaint-timer`,
+  `steps/01-rebuild-server/instruction.md`, `steps/01-rebuild-server/tests/verify.py` and
+  `task.toml`, and nothing else; against `e16eb2141c6f` (never uploaded) in `fsmaint-sweep` alone.
+  `scripts/scan_uploads.py` finds nothing among the 496 agent-image files (2,262 scenarios, 89,524
+  requests); Oddish preflight passes. It is the candidate for version 11, after an independent
+  re-check of this round.
+
+### 2026-11-20 (round 11: the Oddish source audit of version 9; the corpus without its recording record; version 10)
 
 - Version 9 (bundle `43cf2c2534a4`) passed its baselines on Oddish (reference 1.0 twice, no-op 0.0
   twice), and its pre-trial source audit raised one must-fix: `tests/private/scenarios.json.gz`
@@ -1464,6 +1488,13 @@ unassessed; 5, 7, 8, 9 and 11 mitigated but not yet exercised in a container; 10
 
 | Check | Revision | Result |
 | --- | --- | --- |
+| Reference through the verifier, local, no sandbox | round 12: everything from bundle `7bcb797ee1be`, its solution installed from an isolated copy (only the interpreter path swapped for this Mac), its corpus and its media | 1.0 on every unit: 4,002 of 4,002 (2,262 of 2,262 scenarios), 9 planned restarts, no other restart, no second try, no answer of 500 or above, no note; 458.7 s of replay against the 5,400 s deadline. The first build, `e16eb2141c6f`, the same in 478.9 s |
+| Empty server through the verifier, local | round 12: bundle `7bcb797ee1be`'s corpus and media | 0.0, 0 of 4,002, "/app/server/run is missing or not executable" |
+| Agent-caused evaluation errors | round 12 against round 11 (`375b570`), the Carve task's QA 22/23 and QA 07g | round 11: a link that climbs above `/` and back in made the copy stop (`LinkOutsideDestinationError`) and the verifier raise "The copy arrived incomplete: 2 of 3 entries and 10 of 10 bytes"; chains of 1,000, 2,000 and 4,000 links took its stage 1.62, 5.86 and 22.64 s, 1,000 long targets 1.01 s. Round 12: the copy takes the tree; 0.12-0.18 s and 0.08 s. The ten path checks fail on `375b570` and pass here |
+| Evaluation cues | round 12: the instruction, the client (source, built files, README, `package.json`, `openapi.json`), the sealed server's OpenAPI document, the sealed bytecode's strings, the samples' strings and PDF text | the instruction holds none of the listed words and no framework name; everything else found is the application's own (revaluation, `overflow: hidden`, a blind count's hidden quantity, a route's score, `verify_password`) |
+| `checks/` (57 tests) with `ci_checks` (27) | round 12 | 84 pass under Python 3.13; `ci_checks/check_repository.py` passes; the hook's scripts compile under Python 3.12.13 and both hooks pass `dash -n` |
+| Bundle | round 12: `7bcb797ee1be`, 1,161 files, 247.3 MB; flat `ddff792eafb5` | built twice with the same hash and `diff -r`-identical files (the flat one too); Oddish preflight passes; no hidden upload among 496 agent-image files; differs from round 11's `7a92d0bd02fe` in the two hooks, the instruction, `tests/verify.py` and `task.toml` only |
+| Oddish verdict | round 11: bundle `7a92d0bd02fe`, version 10 | reject: evaluation awareness in trials 99 and 100 (the completion sentence; the harness's command line in `ps`), and `info_leakage` (the instruction's framework list, used in all three trials); baselines correct, the three model trials good failures (0.209, 0.171, 0.072) |
 | Reference through the verifier, local, no sandbox | round 11: everything from bundle `7a92d0bd02fe`, its solution installed from an isolated copy (only the interpreter path swapped for this Mac), its corpus and its media | 1.0 on every unit: 4,002 of 4,002 (2,262 of 2,262 scenarios), 9 planned restarts, no other restart, no second try, no answer of 500 or above, no note; 530.6 s of replay against the 5,400 s deadline; 573 MiB peak resident |
 | The shipped corpus | round 11: `scenarios.json.gz` of `7a92d0bd02fe` against that of `43cf2c2534a4` | the new one decompressed is the old one without its 432-byte `"recorded_with":{...},` segment; the `scenarios` arrays are the same 97,916,830 bytes (SHA-256 `9f5ebb02...`); the verifier's reader yields the same 2,262 scenarios in the same order from both; neither private seed anywhere in the new bundle; gzip header without a name or a time |
 | Pre-audit sweep | round 11: every file of `7a92d0bd02fe` (text, the corpus record by record, bytecode strings, binary strings, media metadata) | fixed: the corpus's record, the probe in `solve.sh`, the laptop timing and two recorder mentions in `replay.py`; what remains is listed in the development log |
@@ -1547,7 +1578,7 @@ python3 scripts/scan_uploads.py experiment/dist/bundles/<hash>/<task slug>   # h
 
 ## Remaining work
 
-- Upload bundle `e16eb2141c6f` (247.3 MB) as version 11 (version 10, bundle `7a92d0bd02fe`, passed
+- Upload bundle `7bcb797ee1be` (247.3 MB) as version 11 (version 10, bundle `7a92d0bd02fe`, passed
   its baselines and its source audit; its verdict rejected it on evaluation awareness and the
   instruction's framework list, round 12), after an independent re-check of round 12, run its
   baselines with `--no-archil` (reference twice, no-op twice), and have its Oddish source audit
