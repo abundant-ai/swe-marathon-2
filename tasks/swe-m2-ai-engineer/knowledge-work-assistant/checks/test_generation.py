@@ -21,7 +21,7 @@ from verifier.config import GenerationConfig, load_generation_config
 from verifier.contracts import EvaluationError, HeldOutCase, VerificationContext
 
 
-@pytest.mark.parametrize("name", ["ORANGE_EVAL_GENERATION_CONCURRENCY", "ORANGE_EVAL_GENERATION_TIMEOUT_SEC"])
+@pytest.mark.parametrize("name", ["ORANGE_EVAL_GENERATION_CONCURRENCY", "ORANGE_EVAL_GENERATION_TIMEOUT_SEC", "ORANGE_EVAL_MAX_RETRIEVAL_CALLS"])
 @pytest.mark.parametrize("value", [None, "0", "-1", "1.5", "nan"])
 def test_generation_rejects_invalid_limits(name: str, value: str | None) -> None:
     """Require valid explicit limits instead of silently applying defaults.
@@ -73,6 +73,7 @@ def test_ten_questions_generate_concurrently(context: VerificationContext, monke
             active += 1
             peak = max(peak, active)
             deadlines.append(kwargs["timeout"])
+            assert kwargs["max_retrieval_calls"] == 50
             paths.add(question_path)
         try:
             if row["question_id"] < 10:
@@ -85,7 +86,7 @@ def test_ten_questions_generate_concurrently(context: VerificationContext, monke
                 active -= 1
         return CommandResult(0, "", "")
 
-    monkeypatch.setattr(context.app, "cli", cli)
+    monkeypatch.setattr(context.app, "bounded_cli", cli)
     answers = generate_answers(context)
     assert peak == 10
     assert deadlines == [1800] * 23
@@ -101,7 +102,7 @@ def test_timeout_and_invalid_outputs_are_question_local(context: VerificationCon
         context: Temporary application whose launcher is replaced by a controlled
             slow, malformed, wrong-ID, or successful process for each question.
     """
-    context.generation = GenerationConfig(concurrency=2, timeout_sec=1)
+    context.generation = GenerationConfig(concurrency=2, timeout_sec=1, max_retrieval_calls=50)
     context.cases = tuple(HeldOutCase(str(i), f"Question {i}", "Answer") for i in range(5))
     launcher = context.app.root / "orange"
     launcher.write_text(f"#!{sys.executable}\n" + '''import json, pathlib, sys, time
@@ -146,4 +147,4 @@ def test_generation_limits_are_in_report(context: VerificationContext) -> None:
     context.generation = replace(context.generation, concurrency=3, timeout_sec=7)
     write_report(context.output_dir, context, None, "controlled")
     report = json.loads((context.output_dir / "report.json").read_text())
-    assert report["generation_config"] == {"concurrency": 3, "timeout_sec": 7}
+    assert report["generation_config"] == {"concurrency": 3, "timeout_sec": 7, "max_retrieval_calls": 50}

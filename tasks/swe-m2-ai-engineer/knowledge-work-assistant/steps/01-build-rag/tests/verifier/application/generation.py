@@ -32,8 +32,8 @@ def generate_question(app: ApplicationClient, config: GenerationConfig,
     output = app.inputs / f"evaluation-answer-{index}.json"
     output.unlink(missing_ok=True)
     try:
-        app.cli("answer", "--questions", str(questions), "--output", str(output),
-                timeout=config.timeout_sec)
+        app.bounded_cli("answer", "--questions", str(questions), "--output", str(output),
+                        timeout=config.timeout_sec, max_retrieval_calls=config.max_retrieval_calls)
         answers = validate_accuracy_answers(app.read_json(output), {index: question})
         if answers.unassigned_records:
             return AccuracyAnswers({}, {index: "Unexpected answer record ID"}, answers.unassigned_records)

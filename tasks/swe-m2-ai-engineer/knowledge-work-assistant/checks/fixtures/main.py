@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import hashlib
+import os
 import chromadb
 from chromadb.config import Settings
 from pathlib import Path
@@ -32,7 +33,15 @@ class GeneratedAnswer(BaseModel):
     citations: list[Passage] = Field(description="Source passages supporting the answer.")
 
 
-STATE = Path(__file__).parent / "state/chroma"
+def client() -> chromadb.api.ClientAPI:
+    """Connect fixture commands to their isolated HTTP database.
+
+    Returns:
+        The real client using test-supplied connection settings.
+    """
+    return chromadb.HttpClient(host=os.environ["ORANGE_CHROMA_HOST"],
+                               port=int(os.environ["ORANGE_CHROMA_PORT"]),
+                               settings=Settings(anonymized_telemetry=False))
 
 
 async def ingest(event: IngestEvent) -> None:
@@ -41,11 +50,11 @@ async def ingest(event: IngestEvent) -> None:
     Args:
         event: Input corpus and replacement flag.
     """
-    client = chromadb.PersistentClient(path=str(STATE), settings=Settings(anonymized_telemetry=False))
+    database = client()
     if event.refresh:
-        for collection in client.list_collections():
-            client.delete_collection(collection.name)
-    collection = client.get_or_create_collection("documents", embedding_function=None)
+        for collection in database.list_collections():
+            database.delete_collection(collection.name)
+    collection = database.get_or_create_collection("documents", embedding_function=None)
     existing = set(collection.get()["ids"])
     for row in json.loads(Path(event.corpus_path).read_text()):
         if row["doc_id"] not in existing:
@@ -68,10 +77,7 @@ async def retrieve(query: str, retrieval_method: RetrievalMethod) -> RetrievedIt
     Raises:
         FileNotFoundError: Ingestion has not created an index.
     """
-    if not STATE.exists():
-        raise FileNotFoundError("Ingest first")
-    client = chromadb.PersistentClient(path=str(STATE), settings=Settings(anonymized_telemetry=False))
-    data = client.get_collection("documents", embedding_function=None).get(include=["documents", "metadatas"])
+    data = client().get_collection("documents", embedding_function=None).get(include=["documents", "metadatas"])
     rows = [{"doc_id": identity, "content": body, "title": metadata["title"]}
             for identity, body, metadata in zip(data["ids"], data["documents"], data["metadatas"], strict=True)]
     selected = [row for row in rows if row["title"] in query]

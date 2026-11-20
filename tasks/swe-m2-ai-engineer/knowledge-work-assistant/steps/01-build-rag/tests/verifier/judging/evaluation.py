@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from typing import Any, Mapping
 
 from verifier.contracts import SourceDocument, VerificationContext
@@ -59,6 +59,8 @@ async def grade_question(index: int, context: VerificationContext, answers: Accu
         citation_result = {"score": 0, "reason": "Missing or empty answer"}
         citation_status = "skipped_missing_answer"
     else:
+        # Factual grading uses the private rubric; source context goes only to citation grading.
+        case = replace(case, documents=())
         answer_judgment = await context.judge.grade_async(case, answer)
         answer_result = asdict(answer_judgment)
         if answer_judgment.verdict == "incorrect":
@@ -67,6 +69,9 @@ async def grade_question(index: int, context: VerificationContext, answers: Accu
         elif answer_judgment.score / 100 < context.scoring.citation_min_answer_score:
             citation_result = {"score": 0, "reason": "Answer score below citation eligibility threshold"}
             citation_status = "skipped_below_answer_threshold"
+        elif case.evidence_mode == "unanswerable" and not citations and answer_judgment.verdict == "correct":
+            citation_result = {"score": 0, "reason": "Correct abstention without factual citations; citation component is not applicable"}
+            citation_status = "not_applicable_abstention"
         elif not citations_are_exact(citations, documents):
             citation_result = {"score": 0, "reason": "Missing citations or invalid source quotation"}
             citation_status = "skipped_invalid_citations"
@@ -76,8 +81,13 @@ async def grade_question(index: int, context: VerificationContext, answers: Accu
             citation_status = "judged"
     question_accuracy = (context.scoring.answer_weight * answer_result["score"] +
                          context.scoring.citation_weight * citation_result["score"]) / 100
+    exempt_answer = answer_result["score"] / 100 if citation_status == "not_applicable_abstention" else 0.0
+    question_accuracy += context.scoring.citation_weight * exempt_answer
     return {"question_id": case.question_id, "answer": answer,
-                      "answer_evidence_doc_ids": [document["doc_id"] for document in case.documents],
+                      "question_type": case.question_type, "evidence_mode": case.evidence_mode,
+                      "citation_exempt_answer": exempt_answer,
+                      "answer_evidence_doc_ids": [],
+                      "answer_rubric_item_count": len(case.rubric),
                       "answer_judgment": answer_result, "citation_judgment": citation_result,
                       "answer_band": answer_result["score"] / 100,
                       "citation_band": citation_result["score"] / 100,

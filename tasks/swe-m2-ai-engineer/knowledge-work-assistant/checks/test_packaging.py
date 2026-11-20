@@ -11,24 +11,27 @@ import tomllib
 from pathlib import Path
 
 import pytest
+import yaml
 from harbor.models.task.task import Task
 from harbor.models.task.verifier_mode import resolve_step_verifier_mode, resolve_verifier_environment_definition
 from harbor.models.trial.config import AgentConfig, EnvironmentConfig, VerifierConfig
 from harbor.trial.network_policy import resolve_trial_network_plan
 
-from verifier.judging.client import HerbJudge
+from verifier.judging.client import KnowledgeJudge
 from package_step import package_step
 from verifier.inputs import load_inputs
+from verifier.dataset import QUESTION_COUNT
 from verifier.registry import CHECKS
 
 from task_paths import TASK_ROOT
 
 
-def test_complete_bundle_round_trip(tmp_path: Path) -> None:
+def test_complete_bundle_round_trip(tmp_path: Path, chroma_endpoint: dict[str, str]) -> None:
     """Load extracted runtime code with separately supplied author test fixtures.
 
     Args:
         tmp_path: Temporary archive/extraction destination.
+        chroma_endpoint: Local service used by the extracted verifier process.
     """
     if not (TASK_ROOT / "steps/01-build-rag/tests/private").exists():
         pytest.skip("Prepare HERB inputs before testing the complete bundle")
@@ -52,15 +55,34 @@ def test_complete_bundle_round_trip(tmp_path: Path) -> None:
     assert task.config.metadata["reward_type"] == "continuous"
     assert task.has_steps
     assert [step.name for step in task.config.steps] == ["01-build-rag"]
+    solution = root / "steps/01-build-rag/solution"
+    assert (solution / "solve.sh").stat().st_mode & 0o111
+    assert (solution / "oracle.py").is_file()
+    assert (solution / "app/main.py").is_file()
+    assert not (root / "environment/solution").exists()
     definition = resolve_verifier_environment_definition(task.config, task.paths, task.config.steps[0])
     assert definition is not None and definition.bundled_tests
     assert definition.directory == root / "steps/01-build-rag/tests"
+    compose_source = (root / "environment/docker-compose.yaml").read_bytes()
+    assert (definition.directory / "docker-compose.yaml").read_bytes() == compose_source
+    services = yaml.safe_load(compose_source)["services"]
+    assert "volumes" not in services["main"]
+    assert "ports" not in services["chroma"]
+    assert "deploy" not in services["chroma"]
+    assert services["chroma"]["volumes"] == ["/var/lib/orange-chroma"]
+    assert services["chroma"]["environment"]["CHROMA_MAX_READ_RECORDS"] == "100"
+    assert services["chroma"]["read_only"] is True
+    service_root = root / "environment/chroma-service"
+    for source in service_root.rglob("*"):
+        if source.is_file():
+            assert (definition.directory / "chroma-service" / source.relative_to(service_root)).read_bytes() == source.read_bytes()
     for source in (root / "environment").rglob("*"):
-        if source.is_file() and source.name not in {"Dockerfile", ".dockerignore"}:
+        if source.is_file() and source.name not in {"Dockerfile", ".dockerignore", "docker-compose.yaml"} and "chroma-service" not in source.parts:
             staged = definition.directory / "gpu-runtime" / source.relative_to(root / "environment")
             assert staged.read_bytes() == source.read_bytes()
-    _, cases, manifest = load_inputs(root / "steps/01-build-rag/tests/private")
-    assert len(cases) == 238
+    _, cases, manifest = load_inputs(root / "steps/01-build-rag/tests/private", allow_ci_fixtures=True)
+    assert len(cases) == QUESTION_COUNT
+    assert all(case.rubric for case in cases)
     assert manifest["sample_records"] == 1570
     assert len(json.loads((root / "environment/data/corpus.json").read_text())) == 1570
     assert "HERB" not in (root / "environment/resources/README.md").read_text()
@@ -87,7 +109,7 @@ task_paths.TASK_ROOT = root
 from test_verifier import context
 from verifier.runner import verify
 assert entry["verify"] is verify
-result = verify(context.__wrapped__(workspace))
+result = verify(context.__wrapped__(workspace, {}))
 assert result.passed, result
 assert result.metrics["reward"] == 1.0
 print(json.dumps({"checks": len(result.checks), "reward": result.metrics["reward"]}))
@@ -118,6 +140,7 @@ def test_package_selection_excludes_local_experiments_and_development_files(tmp_
         "task.toml", "environment/data/corpus.json",
         "environment/resources/README.md",
         "steps/01-build-rag/tests/private/cases.json",
+        "steps/01-build-rag/tests/private/rubrics.json",
         "steps/01-build-rag/tests/private/corpus.json",
     }
     development = {
@@ -142,6 +165,7 @@ def test_application_and_judge_credentials_do_not_collide_with_harnesses() -> No
     assert "ORANGE_JUDGE_API_KEY" not in agent_environment
     assert "OPENAI_API_KEY" not in agent_environment
     assert agent_environment["ORANGE_OPENAI_API_KEY"] == "${OPENAI_API_KEY}"
+    assert config["solution"]["env"] == {"ORANGE_OPENAI_API_KEY": "${OPENAI_API_KEY}"}
     assert config["verifier"]["env"]["ORANGE_JUDGE_API_KEY"] == "${OPENAI_API_KEY}"
     assert config["verifier"]["env"]["ORANGE_OPENAI_API_KEY"] == "${OPENAI_API_KEY}"
     resources = json.loads((TASK_ROOT / "environment/resources/resources.json").read_text())
@@ -153,11 +177,11 @@ def test_step_timeouts_match_declared_execution_budgets() -> None:
 
     Inspect parsed steps as well as the root configuration: the deployed Harbor
     runner prefers a step's verifier timeout, whose default is only 600 seconds.
-    Explicit step settings must preserve the requested eight/twenty-four-hour budgets.
+    Explicit step settings must preserve the requested four/twenty-eight-hour budgets.
     """
     task = Task(TASK_ROOT)
-    assert task.config.agent.timeout_sec == 8 * 60 * 60
-    assert task.config.verifier.timeout_sec == 24 * 60 * 60
+    assert task.config.agent.timeout_sec == 4 * 60 * 60
+    assert task.config.verifier.timeout_sec == 28 * 60 * 60
     for step in task.config.steps:
         assert "timeout_sec" in step.agent.model_fields_set
         assert "timeout_sec" in step.verifier.model_fields_set
@@ -174,7 +198,7 @@ def test_judge_never_falls_back_to_a_harness_credential(monkeypatch: pytest.Monk
     monkeypatch.delenv("ORANGE_JUDGE_API_KEY", raising=False)
     monkeypatch.setenv("OPENAI_API_KEY", "synthetic-harness-key")
     with pytest.raises(KeyError, match="ORANGE_JUDGE_API_KEY"):
-        HerbJudge()
+        KnowledgeJudge()
 
 
 def test_fresh_verifier_has_restricted_network_and_local_gpu() -> None:
@@ -227,17 +251,20 @@ def test_candidate_resources_omit_dataset_identity() -> None:
     for path in (environment / "resources/README.md", environment / "resources/corpus/manifest.json",
                  environment / "data/corpus.json", TASK_ROOT / "steps/01-build-rag/instruction.md"):
         text = path.read_text().lower()
-        assert "herb" not in text
+        assert "enterpriserag-bench" not in text
+        assert "69916e31c68aa5963c00248fd7f0bc12d04fd235" not in text
         assert "salesforceairesearch" not in text
         assert "db3bf9b3f911745726c579c9dbf9f7f6b2c05b36" not in text
 
 
 def test_sample_covers_the_described_domain() -> None:
     """Retain every source type while allowing incomplete threads in the sample."""
+    from prepare_data import SOURCE_KEYS
+
     sample = json.loads((TASK_ROOT / "environment/data/corpus.json").read_text())
-    corpus = json.loads((TASK_ROOT / "steps/01-build-rag/tests/private/corpus.json").read_text())
-    assert {row["source_type"] for row in sample} == {row["source_type"] for row in corpus}
-    assert len(sample) < .05 * len(corpus)
+    manifest = json.loads((TASK_ROOT / "steps/01-build-rag/tests/private/manifest.json").read_text())
+    assert {row["source_type"] for row in sample} == {*SOURCE_KEYS, "directory"}
+    assert len(sample) < .05 * manifest["corpus_records"]
     instruction = (TASK_ROOT / "steps/01-build-rag/instruction.md").read_text()
     assert "90%" not in instruction
     assert "software company" in instruction
@@ -245,15 +272,20 @@ def test_sample_covers_the_described_domain() -> None:
     assert "ORANGE_EVAL_ACCURACY_TARGET" not in config["verifier"]["env"]
 
 
-def test_chroma_reference_matches_installed_and_locked_version() -> None:
-    """Check offline API documentation, package pins, and image inclusion together."""
-    import inspect
+def test_chroma_reference_matches_installed_and_locked_version(chroma_endpoint: dict[str, str]) -> None:
+    """Run the shipped examples against the pinned service and check image inclusion.
+
+    Args:
+        chroma_endpoint: Isolated HTTP service exported through the same connection
+            variables used in the development container. Examples write only here.
+    """
+    import re
     from importlib.metadata import version
-    import chromadb
-    from chromadb.api.models.Collection import Collection
+    from typing import Any
 
     installed = version("chromadb")
-    for directory in (TASK_ROOT, TASK_ROOT / "environment", TASK_ROOT / "steps/01-build-rag/tests"):
+    for directory in (TASK_ROOT, TASK_ROOT / "environment", TASK_ROOT / "environment/application",
+                      TASK_ROOT / "common/chroma-service", TASK_ROOT / "steps/01-build-rag/tests"):
         project = tomllib.loads((directory / "pyproject.toml").read_text())
         assert f"chromadb=={installed}" in project["project"]["dependencies"]
         lock = tomllib.loads((directory / "uv.lock").read_text())
@@ -261,14 +293,24 @@ def test_chroma_reference_matches_installed_and_locked_version() -> None:
     resources = TASK_ROOT / "environment/resources"
     reference = (resources / "chroma-api.md").read_text()
     assert reference.startswith(f"# Chroma {installed} Python API reference")
-    for method in (chromadb.PersistentClient, Collection.add, Collection.get, Collection.query, Collection.upsert, Collection.delete):
-        assert inspect.getdoc(method) in reference
-    assert "Apache License" in reference
+    examples = re.findall(r"```python\n(.*?)\n```", reference, re.DOTALL)
+    assert examples
+    namespace: dict[str, Any] = {}
+    for example in examples:
+        exec(compile(example, str(resources / "chroma-api.md"), "exec"), namespace)
+    assert namespace["records"]["ids"] == ["doc-1"]
+    assert namespace["records"]["documents"] == ["The release is Friday."]
+    assert namespace["neighbors"]["ids"] == [["doc-1"]]
+    assert set(namespace["all_ids"]) == {"doc-1", "doc-2"}
     assert "COPY resources/ /opt/resources/" in (TASK_ROOT / "environment/Dockerfile").read_text()
 
 
 def test_judge_environment_is_locked_and_bundled() -> None:
-    """Keep the judge SDK isolated from SGLang and present in the image inputs."""
+    """Keep application and judge SDKs isolated from SGLang's older OpenAI pin.
+
+    Check the shipped locks and both image recipes so the oracle's PydanticAI
+    tool runtime is also available to candidates and restored submissions.
+    """
     from package_step import selected_files
 
     files = {str(path.relative_to(TASK_ROOT)) for path in selected_files(TASK_ROOT)}
@@ -282,6 +324,16 @@ def test_judge_environment_is_locked_and_bundled() -> None:
     assert app_packages["openai"] == "2.6.1"
     assert "pydantic-ai-slim" not in app_packages
     assert "sglang" not in judge_packages
+    application_lock = tomllib.loads((TASK_ROOT / "environment/application/uv.lock").read_text())
+    application_packages = {row["name"]: row["version"] for row in application_lock["package"]}
+    assert application_packages["pydantic-ai-slim"] == judge_packages["pydantic-ai-slim"]
+    assert application_packages["openai"] == judge_packages["openai"]
+    assert application_packages["chromadb"] == judge_packages["chromadb"]
+    assert "sglang" not in application_packages
+    assert {"environment/application/pyproject.toml", "environment/application/uv.lock"} <= files
+    for recipe in (TASK_ROOT / "environment/Dockerfile", TASK_ROOT / "steps/01-build-rag/tests/Dockerfile"):
+        assert "UV_PROJECT_ENVIRONMENT=/opt/application uv sync --project /opt/application-project --frozen" in recipe.read_text()
+        assert 'ENV PATH="/app:/opt/application/bin:/opt/runtime/bin:${PATH}"' in recipe.read_text()
     dockerfile = (TASK_ROOT / "steps/01-build-rag/tests/Dockerfile").read_text()
     assert "COPY pyproject.toml uv.lock /opt/verifier-project/" in dockerfile
     assert "/opt/verifier" not in (TASK_ROOT / "environment/Dockerfile").read_text()

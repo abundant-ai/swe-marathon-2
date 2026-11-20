@@ -8,8 +8,9 @@ from pathlib import Path
 
 import pytest
 
-from prepare_data import HERB_REVISION, METADATA_FILES, collect_records
+from prepare_data import HERB_REVISION, METADATA_FILES, collect_records, select_holdout_cases
 from verifier.contracts import EvaluationError
+from verifier.dataset import QUESTION_COUNT
 from verifier.inputs import load_inputs
 
 
@@ -72,7 +73,9 @@ def test_bad_reference_citations_fail_preparation(source_data: Path, defect: str
         collect_records(source_data)
 
 
-@pytest.mark.parametrize("defect", [None, "missing", "duplicate", "empty", "old_format"])
+@pytest.mark.parametrize("defect", [None, "ci_fixture", "missing", "duplicate", "empty", "old_format", "excluded", "count",
+                                     "rubric_missing", "rubric_duplicate", "rubric_empty", "rubric_invalid",
+                                     "rubric_question_changed", "rubric_reference_changed", "rubric_hash"])
 def test_private_loader_requires_resolvable_evidence(tmp_path: Path, defect: str | None) -> None:
     """Resolve authenticated corpus records and reject unusable case evidence.
 
@@ -83,22 +86,64 @@ def test_private_loader_requires_resolvable_evidence(tmp_path: Path, defect: str
     document = {"doc_id": "d", "source_type": "documents", "title": "Owner",
                 "content": "Mira owns the project. Deadline Friday."}
     rows = [{"question_id": str(index), "question": "Who?", "reference": "Mira",
-             "evidence_doc_ids": ["d"]} for index in range(238)]
+             "evidence_doc_ids": ["d"]} for index in range(QUESTION_COUNT)]
+    rubrics = [{key: row[key] for key in ("question_id", "question", "reference")} |
+               {"rubric": ['must identify "Mira" as owner.'], "required_indices": [0],
+                "guard_indices": [], "reviewed_reference": "Mira"} for row in rows]
+    if defect == "rubric_missing":
+        rubrics.pop()
+    elif defect == "rubric_duplicate":
+        rubrics[-1] = rubrics[0]
+    elif defect == "rubric_empty":
+        rubrics[0]["rubric"] = []
+    elif defect == "rubric_invalid":
+        rubrics[0]["rubric"] = ["should name Mira"]
+    elif defect == "rubric_question_changed":
+        rubrics[0]["question"] = "Another question"
+    elif defect == "rubric_reference_changed":
+        rubrics[0]["reference"] = "Another answer"
     if defect == "old_format":
         rows[0].pop("evidence_doc_ids")
-    elif defect is not None:
+    elif defect in {"missing", "duplicate", "empty"}:
         rows[0]["evidence_doc_ids"] = {"missing": ["unknown"], "duplicate": ["d", "d"], "empty": []}[defect]
-    manifest = {"herb_revision": HERB_REVISION}
+    manifest = {"herb_revision": HERB_REVISION, "content_questions": QUESTION_COUNT}
+    if defect == "ci_fixture":
+        manifest["ci_fixture_only"] = True
+    if defect == "excluded":
+        manifest["excluded_question_ids"] = [rows[0]["question_id"]]
+    elif defect == "count":
+        manifest["content_questions"] += 1
     for filename, value, key in (("corpus.json", [document], "corpus_sha256"),
-                                  ("cases.json", rows, "cases_sha256")):
+                                  ("cases.json", rows, "cases_sha256"),
+                                  ("rubrics.json", rubrics, "rubrics_sha256")):
         payload = json.dumps(value).encode()
         (tmp_path / filename).write_bytes(payload)
         manifest[key] = hashlib.sha256(payload).hexdigest()
     (tmp_path / "manifest.json").write_text(json.dumps(manifest))
+    if defect == "rubric_hash":
+        (tmp_path / "rubrics.json").write_text("[]")
     if defect is not None:
         with pytest.raises(EvaluationError):
             load_inputs(tmp_path)
+        if defect == "ci_fixture":
+            assert len(load_inputs(tmp_path, allow_ci_fixtures=True)[1]) == QUESTION_COUNT
     else:
         _, cases, _ = load_inputs(tmp_path)
-        assert len(cases) == 238
+        assert len(cases) == QUESTION_COUNT
         assert all(case.documents == (document,) for case in cases)
+        assert all(case.rubric == tuple(rubrics[0]["rubric"]) for case in cases)
+
+
+def test_holdout_exclusions_preserve_retained_records(source_data: Path) -> None:
+    """Exclude approved IDs without rewriting retained questions or source links.
+
+    Args:
+        source_data: Two valid source products used to exercise selection.
+    """
+    _, cases, _ = collect_records(source_data)
+    retained = select_holdout_cases(cases, [cases[0]["question_id"]])
+    assert retained == cases[1:]
+    assert retained[0] is cases[1]
+    assert len(cases) == 2
+    with pytest.raises(ValueError, match="absent"):
+        select_holdout_cases(cases, ["missing:content:0"])

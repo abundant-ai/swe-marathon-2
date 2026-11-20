@@ -11,19 +11,20 @@ from verifier.contracts import EvaluationError
 
 @dataclass(frozen=True)
 class GenerationConfig:
-    """Trusted limits for concurrent single-question CLI processes."""
+    """Trusted concurrency, deadline, and retrieval-call limits per question."""
 
     concurrency: int
     timeout_sec: int
+    max_retrieval_calls: int
 
     def __post_init__(self) -> None:
         """Reject missing capacity or invalid deadlines before starting work.
 
         Raises:
-            EvaluationError: Either setting is not a positive integer.
+            EvaluationError: Any setting is not a positive integer.
         """
-        if any(type(value) is not int or value < 1 for value in (self.concurrency, self.timeout_sec)):
-            raise EvaluationError("Generation concurrency and timeout must be positive integers")
+        if any(type(value) is not int or value < 1 for value in (self.concurrency, self.timeout_sec, self.max_retrieval_calls)):
+            raise EvaluationError("Generation concurrency, timeout, and retrieval limit must be positive integers")
 
 
 def load_generation_config(environment: Mapping[str, str]) -> GenerationConfig:
@@ -42,9 +43,52 @@ def load_generation_config(environment: Mapping[str, str]) -> GenerationConfig:
         return GenerationConfig(
             concurrency=int(environment["ORANGE_EVAL_GENERATION_CONCURRENCY"]),
             timeout_sec=int(environment["ORANGE_EVAL_GENERATION_TIMEOUT_SEC"]),
+            max_retrieval_calls=int(environment["ORANGE_EVAL_MAX_RETRIEVAL_CALLS"]),
         )
     except (KeyError, ValueError) as exc:
         raise EvaluationError("Missing or invalid generation configuration") from exc
+
+
+@dataclass(frozen=True)
+class AnswerScoringConfig:
+    """Weights for separately normalized required and conditional decisions."""
+
+    required_weight: float
+    conditional_weight: float
+
+    def __post_init__(self) -> None:
+        """Reject invalid or unnormalized answer weights before judging.
+
+        Raises:
+            EvaluationError: Either weight is nonfinite, outside [0, 1], or
+                the pair does not sum to one.
+        """
+        values = (self.required_weight, self.conditional_weight)
+        if not all(math.isfinite(value) and 0 <= value <= 1 for value in values):
+            raise EvaluationError("Answer criterion weights must be finite and in [0, 1]")
+        if not math.isclose(sum(values), 1.0, rel_tol=0, abs_tol=1e-12):
+            raise EvaluationError("Answer criterion weights must sum to 1")
+
+
+def load_answer_scoring_config(environment: Mapping[str, str]) -> AnswerScoringConfig:
+    """Read required answer weights at verifier or calibration startup.
+
+    Args:
+        environment: Trusted deployment settings, never candidate values.
+
+    Returns:
+        Validated policy passed explicitly to the pure answer scorer.
+
+    Raises:
+        EvaluationError: A weight is missing, nonnumeric, or invalid.
+    """
+    try:
+        return AnswerScoringConfig(
+            required_weight=float(environment["ORANGE_EVAL_REQUIRED_WEIGHT"]),
+            conditional_weight=float(environment["ORANGE_EVAL_CONDITIONAL_WEIGHT"]),
+        )
+    except (KeyError, ValueError) as exc:
+        raise EvaluationError("Missing or nonnumeric answer criterion weight") from exc
 
 
 @dataclass(frozen=True)
@@ -57,6 +101,7 @@ class ScoringConfig:
     citation_weight: float
     citation_min_answer_score: float
     question_concurrency: int
+    answer_criteria: AnswerScoringConfig
 
     def __post_init__(self) -> None:
         """Reject invalid weights or citation thresholds before evaluation.
@@ -107,4 +152,26 @@ def load_scoring_config(environment: Mapping[str, str]) -> ScoringConfig:
         concurrency = int(environment["ORANGE_EVAL_QUESTION_CONCURRENCY"])
     except (KeyError, ValueError) as exc:
         raise EvaluationError("Missing or invalid ORANGE_EVAL_QUESTION_CONCURRENCY") from exc
-    return ScoringConfig(**values, question_concurrency=concurrency)
+    return ScoringConfig(**values, question_concurrency=concurrency,
+                         answer_criteria=load_answer_scoring_config(environment))
+
+
+def load_ingestion_timeout(environment: Mapping[str, str]) -> int:
+    """Read the full-corpus CLI ingestion budget from trusted configuration.
+
+    Args:
+        environment: Verifier settings supplied by the runner, not the application.
+
+    Returns:
+        Positive wall-clock timeout in seconds.
+
+    Raises:
+        EvaluationError: The explicit budget is missing, nonnumeric, or nonpositive.
+    """
+    try:
+        value = int(environment["ORANGE_EVAL_INGEST_TIMEOUT_SEC"])
+        if value < 1:
+            raise ValueError("Timeout must be positive")
+        return value
+    except (KeyError, ValueError) as exc:
+        raise EvaluationError("Missing or invalid ingestion timeout") from exc

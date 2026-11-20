@@ -65,7 +65,11 @@ The default `dev` group supplies pytest. Oddish CLI and Titans are optional and
 are not installed by CI.
 
 The job checks out SalesforceAIResearch/HERB at
-`db3bf9b3f911745726c579c9dbf9f7f6b2c05b36` and runs the task's preparation script.
+`db3bf9b3f911745726c579c9dbf9f7f6b2c05b36` and runs `prepare_ci_inputs.py`.
+It uses the production corpus preparation code with deterministic structural
+rubric fixtures. These fixtures require no private files or model credentials;
+their manifest marks them as CI-only, and normal evaluation rejects them.
+CI checks packaging and parser behavior, not the quality of private rubrics.
 This supplies the public sample and private evaluation inputs needed by the
 packaging tests. Missing prerequisites must fail instead of turning those tests
 into an accepted skip.

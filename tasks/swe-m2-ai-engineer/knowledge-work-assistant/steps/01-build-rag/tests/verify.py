@@ -11,10 +11,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from verifier.application.client import ApplicationClient
-from verifier.config import load_generation_config, load_scoring_config
+from verifier.config import load_ingestion_timeout, load_generation_config, load_scoring_config
 from verifier.contracts import EvaluationError, VerificationContext
 from verifier.inputs import load_inputs
-from verifier.judging.client import HerbJudge
+from verifier.judging.client import KnowledgeJudge
 from verifier.reporting import write_report
 from verifier.runner import verify
 
@@ -54,7 +54,7 @@ def main() -> int:
             "HF_HUB_DISABLE_TELEMETRY": "1",
         }
         app = ApplicationClient(app_root, uid=10001, environment=environment)
-        context = VerificationContext(app, corpus, cases, HerbJudge(), output, scoring, generation)
+        context = VerificationContext(app, corpus, cases, KnowledgeJudge(answer_scoring=scoring.answer_criteria), output, scoring, generation, load_ingestion_timeout(os.environ))
         result = verify(context)
         write_report(output, context, result, None)
         return 0

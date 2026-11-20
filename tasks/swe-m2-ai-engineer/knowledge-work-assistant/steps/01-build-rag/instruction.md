@@ -2,11 +2,11 @@
 
 ## Goal
 
-Build a knowledge work assistant called `orange` in `/app`, using agentic RAG to answer questions about corporate documents, conversations, and project history. Optimize it for accurate, complete answers grounded in the company records, with citations that support its claims.
+You have **4 hours** to build a knowledge work assistant called `orange` in `/app`, using agentic RAG to answer questions about corporate documents, conversations, and project history. Optimize it for factual correctness as hard as possible. Ground factual claims in the company records and include citations that support them. When the records do not establish an answer, explain what remains uncertain without guessing.
 
 ## Context
 
-You will be working with a software company's Slack conversations, meeting records, documents, pull requests, links, and employee and customer directory records. A sample is provided. You can generate questions and reference answers to test the system end to end as you build. See the CLI section for the input and output formats.
+You will be working with a software company's messages, meeting transcripts, technical documents, support tickets, issue trackers, and customer records. A sample is provided. You can generate questions and reference answers to test the system end to end as you build. See the CLI section for the input and output formats.
 
 ## Functional contract
 
@@ -55,7 +55,9 @@ async def generate(query: str) -> GeneratedAnswer:
 
 Use model instances for the structured inputs and outputs. Note that the interface (input and output types) for ingest, retrieve and generate cannot change throughout the life of the project.
 
-`generate()` must orchestrate an iterative search agent, with `retrieve()` exposed as a tool the agent calls. The agent should make its best effort to answer each question within 30 minutes, including search and answer generation.
+`generate()` must orchestrate an iterative search agent, with `retrieve()` exposed as a tool the agent calls. Each question may use at most **50 calls to** `retrieve()`, across all retrieval methods, retries, and parallel searches combined.
+
+Feel free to commit an answer once you have enough evidence or reach the limit.
 
 ## CLI
 
@@ -73,9 +75,9 @@ orange answer [--questions FILE ...] [--output ANSWERS.json]
 
 ### Behaviour
 
-`orange ingest --path` reads a JSON array of corpus records (`doc_id`, `source_type`, `title`, `content`), calls `ingest`, and writes the index to `/app/state`.
+`orange ingest --path` reads a JSON array of corpus records (`doc_id`, `source_type`, `title`, `content`), calls `ingest`, and populates the supplied Chroma service. Keep any additional application indexes and state under `/app/state`.
 
-Use local Chroma 1.5.9 at `/app/state/chroma`. Its matching offline API documentation is available at `/opt/resources/chroma-api.md`. Keep a `documents` collection whose IDs are the original `doc_id` values, whose document texts are the original `content` values, and whose embeddings are the document vectors. You can create additional collections for chunks; each chunk must carry its source `doc_id` in metadata.
+Use the supplied Chroma 1.5.9 service through its HTTP client. Its matching offline API documentation is available at `/opt/resources/chroma-api.md`. Each database read request can return at most **100 records**, including all results in a batched query; paginate larger reads. Keep a `documents` collection whose IDs are the original `doc_id` values, whose document texts are the original `content` values, and whose embeddings are the document vectors. You can create additional collections for chunks; each chunk must carry its source `doc_id` in metadata.
 
 Without `--refresh`, skip records whose document IDs are already in the index. With `--refresh`, rebuild the index from the supplied corpus, removing documents absent from it. Quotes must be exact passages from a document's title or content.
 
