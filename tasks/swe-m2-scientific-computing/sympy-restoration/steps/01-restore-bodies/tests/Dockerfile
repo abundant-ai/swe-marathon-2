@@ -1,5 +1,4 @@
-# Verifier image, built apart from the agent image. The build context is this
-# directory, with runtime/pyproject.toml and private/ in place.
+# Verifier image, built apart from the agent image.
 FROM ubuntu:24.04
 COPY --from=ghcr.io/astral-sh/uv:0.13.7 /uv /usr/local/bin/uv
 ENV DEBIAN_FRONTEND=noninteractive PYTHONDONTWRITEBYTECODE=1 LC_ALL=C.UTF-8 LANG=C.UTF-8
@@ -8,7 +7,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 COPY runtime/pyproject.toml /opt/runtime-project/pyproject.toml
 RUN uv pip install --system --break-system-packages --no-cache -r /opt/runtime-project/pyproject.toml
-# The verifier image must contain /tests/test.sh at build time.
 COPY test.sh verify.py /tests/
 COPY verifier/ /tests/verifier/
 COPY private/ /tests/private/

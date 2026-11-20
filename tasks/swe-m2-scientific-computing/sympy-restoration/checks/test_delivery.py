@@ -301,17 +301,18 @@ def test_a_turn_of_a_few_seconds_has_an_end_and_a_write_after_it_is_refused(tmp_
     # its units are not taken over: the file keeps the skeleton
     states = verifier_call("""
 import json, os, tempfile, restorelib
+from verifier import engine
 root = tempfile.mkdtemp()
 for name, text in (("skel", 'def f():\\n    raise NotImplementedError("RESTORE U0001")\\n'), ("work", "def f():\\n    return 2\\n")):
     os.makedirs(os.path.join(root, name, "sympy"))
     open(os.path.join(root, name, "sympy", "m.py"), "w").write(text)
 os.makedirs(os.path.join(root, "cand"))
 byfile = {"sympy/m.py": {"f": "U0001"}}
-late, _ = restorelib.build_candidate(os.path.join(root, "skel"), os.path.join(root, "work"), os.path.join(root, "cand"), byfile,
-                                     withheld={"sympy/m.py": "late"})
-graded = open(os.path.join(root, "cand", "sympy", "m.py")).read()
 taken, _ = restorelib.build_candidate(os.path.join(root, "skel"), os.path.join(root, "work"), os.path.join(root, "cand"), byfile)
-print(json.dumps([late, "RESTORE U0001" in graded, taken]))
+before = dict(taken)
+engine.withhold(os.path.join(root, "skel"), os.path.join(root, "cand"), byfile, ["sympy/m.py"], taken)
+graded = open(os.path.join(root, "cand", "sympy", "m.py")).read()
+print(json.dumps([taken, "RESTORE U0001" in graded, before]))
 """)
     assert states == [{"U0001": "late"}, True, {"U0001": "restored"}]
 
@@ -392,7 +393,7 @@ def test_links_never_carry_a_late_file_into_the_grade(tmp_path, verifier_call):
 
 
 @pytest.mark.parametrize("case", ["nothing", "unmarked", "unsigned", "forged", "record_changed", "file_changed", "file_missing",
-                                  "refused", "absent", "listed"])
+                                  "oversized", "refused", "absent", "listed"])
 def test_the_mark_decides_between_an_error_a_zero_and_grading(tmp_path, verifier_call, case):
     hooks = Hooks(tmp_path / "t")
     hooks.setup()
@@ -420,6 +421,8 @@ def test_the_mark_decides_between_an_error_a_zero_and_grading(tmp_path, verifier
         (top / "a.py").write_text("x = 2\n")
     elif case == "file_missing":
         (top / "a.py").unlink()
+    elif case == "oversized":     # a mark past the read limit is named as such, not as missing
+        mark.write_text("listed 1 1\n" + "x" * (1 << 20) + "\n" + lines[-1] + "\n")
     elif case in ("refused", "absent"):
         other = Hooks(tmp_path / case)
         other.setup()
@@ -437,11 +440,12 @@ def test_the_mark_decides_between_an_error_a_zero_and_grading(tmp_path, verifier
     result = read_delivery(verifier_call, top, hooks.lib / "key")
     errors = {"nothing": "Nothing arrived", "unmarked": "without the collect step's mark", "unsigned": "not signed",
               "forged": "not signed", "record_changed": "differs from the one its mark signs",
-              "file_changed": "arrived incomplete or changed", "file_missing": "arrived incomplete or changed"}
+              "file_changed": "arrived incomplete or changed", "file_missing": "arrived incomplete or changed",
+              "absent": "could not take the tree: the tree was missing", "oversized": "mark cannot be read: larger than"}
     if case in errors:
         assert errors[case] in result.get("error", ""), result
     else:
-        assert result["state"] == ("listed" if case == "listed" else case) and "error" not in result, result
+        assert result["state"] == case and "error" not in result, result
 
 
 def load_netcheck(state: Path):
@@ -539,7 +543,8 @@ def test_the_agent_works_as_dev_and_the_hooks_are_out_of_its_reach(task_root):
     assert "time.sleep(SETTLE_SECONDS)" in oracle
     engine = (task_root / "steps" / "01-restore-bodies" / "tests" / "verifier" / "engine.py").read_text()
     body = engine[engine.index("def measure("):]
-    order = ["delivery.network_open()", "delivery.read_delivery(", "restorelib.build_candidate(skel, work_tree, cand, byfile, None, withheld=withheld)"]
+    order = ["delivery.network_open()", "delivery.read_delivery(", "restorelib.build_candidate(skel, work_tree, cand, byfile, None)",
+             "withhold(skel, cand, byfile, metrics[\"late_files\"], states)"]
     assert [body.index(step) for step in order] == sorted(body.index(step) for step in order), "the record is read before anything is graded"
     instruction = (task_root / "steps" / "01-restore-bodies" / "instruction.md").read_text()
     assert "Another copy of\nSymPy's source, from an installed package, a download, a mirror or any other place, is not to\nbe used" in instruction

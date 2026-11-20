@@ -1,14 +1,17 @@
 """What arrived of the submitted tree, read before anything of it is graded.
 
 The collect step of the agent's environment marks every delivery before it is copied here: a
-mark (`.fsmaint`) whose first line is `listed <entries> <bytes>`, `refused` or `absent`, and a
+mark (`.fsmaint`) whose first line is `listed <entries> <bytes>`, `refused` or `failed`, and a
 record (`.fsmaint.json`) of every entry with the times it had when the work ended. The mark's
 last line signs the other lines and the record's sha256 with a key the agent's user cannot read.
 
-- No tree, no mark, an unreadable or unsigned mark, a listed file that did not arrive as it was
-  listed, or a link or a file that arrived without being listed: the copy failed, which is an
-  evaluation error, never the submission's score.
-- `refused` or `absent`: a completed evaluation of an empty delivery.
+- No tree, no mark, an unreadable, oversized or unsigned mark, a listed file that did not arrive
+  as it was listed, or a link or a file that arrived without being listed: the copy failed, which
+  is an evaluation error, never the submission's score.
+- `failed` (the tree was gone, something else stood under its name, or it could not be listed,
+  none of which the agent's user can bring about): an evaluation error.
+- `refused` (the tree was over the collect step's limits): a completed evaluation of an empty
+  delivery.
 - `listed` without an end of the work (the collect step could not tell when the work ended, or
   took its own start while public hosts answered): an evaluation error, since no file could be
   told apart from one written after the work.
@@ -53,15 +56,21 @@ class Delivery:
     summary: dict[str, Any] = field(default_factory=dict)
 
 
-def _read_bounded(path: Path, limit: int) -> bytes | None:
+def _read_bounded(path: Path, limit: int) -> tuple[bytes | None, str]:
+    """(the file's bytes, or None and why not: "missing", "not a regular file" or "too large")."""
     try:
         info = os.lstat(path)
-        if not stat.S_ISREG(info.st_mode) or info.st_size > limit:
-            return None
-        with open(path, "rb") as handle:
-            return handle.read(limit + 1)
     except OSError:
-        return None
+        return None, "missing"
+    if not stat.S_ISREG(info.st_mode):
+        return None, "not a regular file"
+    if info.st_size > limit:
+        return None, f"larger than {limit:,} bytes"
+    try:
+        with open(path, "rb") as handle:
+            return handle.read(limit + 1), ""
+    except OSError:
+        return None, "unreadable"
 
 
 def _sha256(path: Path) -> str | None:
@@ -96,9 +105,11 @@ def read_delivery(top: Path, key_path: Path) -> Delivery:
         key = key_path.read_bytes().strip()
     except OSError as exc:
         raise EvaluationError("The delivery key is unreadable in the verifier image") from exc
-    raw = _read_bounded(top / MARK, MARK_LIMIT)
+    raw, why = _read_bounded(top / MARK, MARK_LIMIT)
     if raw is None:
-        raise EvaluationError("The tree arrived without the collect step's mark")
+        if why == "missing":
+            raise EvaluationError("The tree arrived without the collect step's mark")
+        raise EvaluationError(f"The collect step's mark cannot be read: {why}")
     lines = raw.decode("utf-8", "backslashreplace").splitlines()
     signed = lines[-1].split() if lines else []
     if len(lines) < 2 or len(signed) != 3 or signed[0] != "sig":
@@ -107,9 +118,11 @@ def read_delivery(top: Path, key_path: Path) -> Delivery:
     expected = hmac.new(key, ("\n".join(body) + "\n" + record_sha).encode(errors="backslashreplace"), hashlib.sha256).hexdigest()
     if not hmac.compare_digest(expected, signature):
         raise EvaluationError("The collect step's mark is not signed with the delivery key")
-    payload = _read_bounded(top / RECORD, RECORD_LIMIT)
-    if payload is None or hashlib.sha256(payload).hexdigest() != record_sha:
-        raise EvaluationError("The collect step's record is missing or differs from the one its mark signs")
+    payload, why = _read_bounded(top / RECORD, RECORD_LIMIT)
+    if payload is None:
+        raise EvaluationError(f"The collect step's record cannot be read: {why}")
+    if hashlib.sha256(payload).hexdigest() != record_sha:
+        raise EvaluationError("The collect step's record differs from the one its mark signs")
     try:
         record = json.loads(payload)
     except ValueError as exc:
@@ -117,7 +130,10 @@ def read_delivery(top: Path, key_path: Path) -> Delivery:
     head = body[0].split()
     delivery = Delivery(state=head[0] if head else "", notes=[f"collect step: {line}" for line in body[1:]][:50])
     delivery.summary = summarise(record)
-    if delivery.state in ("refused", "absent"):
+    if delivery.state == "failed":
+        # what only the infrastructure can bring about: the tree gone or replaced, or unlistable
+        raise EvaluationError(f"The collect step could not take the tree: {'; '.join(body[1:3]) or 'no reason given'}")
+    if delivery.state == "refused":
         return delivery
     if not (len(head) == 3 and head[0] == "listed" and all(v.isascii() and v.isdigit() for v in head[1:])):
         raise EvaluationError("The collect step's mark cannot be read")

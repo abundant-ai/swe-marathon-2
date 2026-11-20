@@ -5,8 +5,9 @@
 # owner, modification and change times and inode of every entry under /app/sympy before anything
 # of its own touches the tree; removes what a copy must not carry (every link among it); and writes
 # a record and a signed mark into the tree. The mark's first line says how many entries and bytes
-# were listed, or that the tree was refused or absent; the record (.fsmaint.json) lists every entry
-# with the times it had when the work ended, and the end of the work as far as it can be told.
+# were listed, that the tree was refused (over the limits) or that the step failed (the tree gone,
+# replaced or unlistable); the record (.fsmaint.json) lists every entry with the times it had when
+# the work ended, and the end of the work as far as it can be told.
 LIMIT_ENTRIES=200000
 LIMIT_BYTES=2000000000
 NETCHECK_SETTLE_SECONDS=20
@@ -225,11 +226,13 @@ The tree is walked by directory descriptor, so no depth hides anything. What a c
 is removed: a device, a pipe, a socket, and every link, so that nothing in the delivery is reached
 through one (a link inside the tree could lead to a file written after the work ended under a name
 that is not its own). A tree over the limits is moved aside whole and replaced by an empty
-directory; so is anything that is not a directory under the tree's name, and a missing tree is
-made empty. Whatever was left under the mark's or the record's name is moved aside, never
-followed. The mark's first line is `listed` with the number of entries (files and directories) and
-of bytes in its files (each file once, however many names it has), `refused` or `absent`; every
-line after it but the last is a change made or the reason for a refusal; the last line holds the
+directory. The agent's user cannot remove or replace the tree itself, so a tree that is missing,
+anything else under its name, or a tree that cannot be listed makes the step `failed`: the tree
+is emptied as well. Whatever was left under
+the mark's or the record's name is moved aside, never followed. The mark's first line is `listed`
+with the number of entries (files and directories) and of bytes in its files (each file once,
+however many names it has), `refused` or `failed`; every line after it but the last is a change
+made or the reason for a refusal or a failure; the last line holds the
 record's sha256 and an HMAC-SHA256 over the other lines and that digest, with the key given fifth
 on the command line.
 
@@ -240,7 +243,7 @@ this sweep's start; when that stretch was still going on and this sweep's own pr
 public hosts closed, nothing fetched can be in the tree and the end is this sweep's start
 ("collect"); when the net check could not finish such a poll, this sweep's start only if its own
 probe found the hosts closed and the net check had not last seen them open. Otherwise there is no
-end bound (`end_from` null, `end_note` says why), and the delivery cannot be graded. The record
+end bound (`end_from` null, `end_note` says why). The record
 (.fsmaint.json) also holds what the net check recorded, the processes found frozen, how many passes
 of ending them took and how many were left, whether the public hosts answered afterwards, every
 note, and every entry: its path, type, size, modification and change times as recorded before this
@@ -369,10 +372,13 @@ def walk(fd, rel):
 head, reason = None, None
 if os.path.islink(ROOT) or (os.path.lexists(ROOT) and not os.path.isdir(ROOT)):
     aside(ROOT)
-    notes.append("moved what was under the tree's name aside: not a directory")
+    notes.insert(0, "moved what was under the tree's name aside: not a directory")
+    head = "failed"
 if not os.path.lexists(ROOT):
     os.mkdir(ROOT, 0o755)
-    head = "absent"
+    if head is None:
+        notes.insert(0, "the tree was missing")
+    head = "failed"
 for path in (MARK, RECORD):
     if os.path.lexists(path):
         aside(path)
@@ -387,14 +393,16 @@ if head is None:
             os.close(top)
         head = f"listed {entries} {size}"
     except Refuse as refusal:
-        reason = str(refusal)
-    except (OSError, RecursionError, ValueError) as exc:
-        reason = f"it could not be measured ({exc.__class__.__name__}: {one_line(exc)})"
+        reason, head = str(refusal), "refused"
+    except (RecursionError, ValueError) as exc:
+        reason, head = f"it could not be measured ({exc.__class__.__name__}: {one_line(exc)})", "refused"
+    except OSError as exc:
+        reason, head = f"it could not be listed ({exc.__class__.__name__}: {one_line(exc)})", "failed"
     if reason is not None:
         aside(ROOT)
         os.mkdir(ROOT, 0o755)
-        head, catalogue = "refused", []
-        notes.append(f"{reason}: it was not copied")
+        catalogue = []
+        notes.insert(0, f"{reason}: it was not copied")
 for why, count in removals.items():
     if count > NOTED:
         notes.append(f"removed {count - NOTED} more entries: {why}")

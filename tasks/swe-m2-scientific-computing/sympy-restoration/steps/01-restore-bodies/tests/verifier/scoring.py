@@ -38,13 +38,16 @@ def aggregate_results(checks: Sequence[CheckResult], measurement: Measurement | 
     """Compute the reward and the diagnostic shares.
 
     The reward is min(unit_share, call_share) when `candidate_tree` and
-    `measurement_integrity` passed, otherwise 0. unit_share is the share of
-    units with at least one call that no docstring example or visible test
-    repeats whose examples pass and whose such calls match; call_share is the
-    share of those calls that match. The repository tests are reported, not
-    rewarded. `complete` is True when all five checks passed (the three bars of
-    a complete restoration), None when only items the measurement did not reach
-    keep a bar from being met.
+    `measurement_integrity` passed, otherwise 0. The counted calls are those
+    that are not documented (no docstring example or visible test makes them,
+    and their result is neither a documented result of their unit nor one of
+    their own arguments); unit_share is the share of the units with a counted
+    call whose examples pass and at least `unit_deciding_share` of whose counted
+    calls (at least one) match; call_share is the share of counted calls that
+    match. The repository tests are reported, not rewarded. `complete` keeps the
+    three bars of the binary reward, not the instruction's sense of complete:
+    True when all five checks passed, None when only items the measurement did
+    not reach keep a bar from being met.
 
     Args:
         checks: One result per registered check, in registry order.

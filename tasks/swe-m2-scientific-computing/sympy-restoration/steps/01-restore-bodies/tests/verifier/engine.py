@@ -41,6 +41,7 @@ from typing import Any, Mapping
 
 LIB = Path(__file__).resolve().parent / "lib"
 sys.path.insert(0, str(LIB))
+import bodies  # noqa: E402
 import gradelib  # noqa: E402
 import restorelib  # noqa: E402
 from canon import profile_of, same  # noqa: E402
@@ -129,13 +130,14 @@ def read_vector_records(path: str, want: set) -> tuple[dict, set]:
                         continue
                     try:
                         rec = json.loads(line)
-                    except ValueError:
+                    except (ValueError, RecursionError, MemoryError):
                         continue
                     vid = rec.get("v") if isinstance(rec, dict) else None
                     if vid in want:
                         if vid in got:
                             dup.add(vid)
-                        got[vid] = rec.get("c")
+                        c = rec.get("c")
+                        got[vid] = c if isinstance(c, list) else None
     except OSError:
         pass
     return got, dup
@@ -325,7 +327,7 @@ def read_records(res_path: str, want: set[str]) -> tuple[dict[str, str], set[str
             for line in f:
                 try:
                     rec = json.loads(line)
-                except ValueError:
+                except (ValueError, RecursionError, MemoryError):
                     continue
                 if not isinstance(rec, dict) or not isinstance(rec.get("id"), str):
                     continue
@@ -612,7 +614,7 @@ def identical_bodies(cand: str, units, states: Mapping[str, str], original_bodie
     is known here only by a hash of each body's syntax tree.
     """
     restored = [u for u in units if states.get(u["uid"]) == "restored"]
-    facts = restorelib.body_facts(cand, restored)
+    facts = bodies.body_facts(cand, restored)
     out = {}
     for label, low, high in SIZE_CLASSES + (("all", 1, 10**9),):
         rows = [u["uid"] for u in restored if low <= int((original_bodies.get(u["uid"]) or [0])[0] or 0) <= high]
@@ -620,6 +622,14 @@ def identical_bodies(cand: str, units, states: Mapping[str, str], original_bodie
                         and facts[uid][1] == (original_bodies.get(uid) or [0, None])[1])
         out[label] = {"identical": same_tree, "restored": len(rows), "share": round(same_tree / len(rows), 4) if rows else 0.0}
     return out
+
+
+def withhold(skel: str, cand: str, byfile: Mapping[str, Mapping[str, str]], files, states: dict) -> None:
+    """Put the skeleton back in the candidate for each of `files` and mark its units `late`."""
+    for rel in files:
+        shutil.copyfile(os.path.join(skel, rel), os.path.join(cand, rel))
+        for uid in byfile.get(rel, {}).values():
+            states[uid] = "late"
 
 
 def measure(context: VerificationContext) -> Measurement:
@@ -630,15 +640,17 @@ def measure(context: VerificationContext) -> Measurement:
 
     Returns:
         Fixed denominators, passing numerators, self-check trips and the full
-        diagnostic record. A delivery the collect step marked as empty, refused
-        or absent, or a tree with no restored unit, is a completed measurement
-        with zero numerators.
+        diagnostic record. A delivery the collect step refused (over its limits),
+        or a tree with no restored unit, is a completed measurement with zero
+        numerators.
 
     Raises:
-        EvaluationError: Private inputs are unreadable, the verifier can reach
-            the network, nothing arrived or the copy does not match the collect
-            step's signed record, privileges cannot be dropped, or a runner
-            cannot be started. No reward is valid then.
+        EvaluationError: Private inputs are unreadable or describe no unit or
+            counted call, the verifier can reach the network, nothing arrived,
+            the copy does not match the collect step's signed record, the
+            collect step failed or could not tell when the work ended,
+            privileges cannot be dropped, or a runner cannot be started. No
+            reward is valid then.
     """
     t_start = time.monotonic()
     cfg = dict(context.limits)
@@ -676,6 +688,8 @@ def measure(context: VerificationContext) -> Measurement:
     uid_of = {v[0]: v[1] for p in payload.values() for v in p["vectors"]}
     deciding = sorted(vid for vid in gold if vid not in documented)
     unit_set = {uid_of[vid] for vid in deciding if vid in uid_of}
+    if not deciding or not unit_set or not U:
+        raise EvaluationError("Private verifier inputs hold no unit or no counted call")
     metrics: dict[str, Any] = {
         "units_total": U, "units_restored": 0, "units_passing": 0,
         "vectors_total": V, "vectors_passing": 0,
@@ -685,6 +699,8 @@ def measure(context: VerificationContext) -> Measurement:
         "units_set": len(unit_set), "units_set_passing": 0, "units_left_out": U - len(unit_set),
         "deciding_total": len(deciding), "deciding_passing": 0, "documented_total": V - len(deciding),
         "unit_share": 0.0, "call_share": 0.0, "unit_share_if_reached": 0.0, "call_share_if_reached": 0.0,
+        "units_examples_passing": 0, "units_documented_calls_only": 0, "units_left_out_passing": 0,
+        "unit_share_by_lines": 0.0, "units_not_reached": 0, "tests_not_reached": 0, "identical_bodies": {},
         "unit_deciding_share": float(cfg.get("unit_deciding_share", 0.0)),
         "reward_tolerance": float(cfg.get("reward_tolerance", 0.001)),
         "tamper": [], "notes": [],
@@ -722,8 +738,8 @@ def measure(context: VerificationContext) -> Measurement:
     if os.path.exists(cand):
         shutil.rmtree(cand)
     shutil.copytree(skel, cand, symlinks=False)
-    withheld = {rel: "late" for rel in metrics["late_files"]}
-    states, _notes = restorelib.build_candidate(skel, work_tree, cand, byfile, None, withheld=withheld)
+    states, _notes = restorelib.build_candidate(skel, work_tree, cand, byfile, None)
+    withhold(skel, cand, byfile, metrics["late_files"], states)
     st_count = collections.Counter(s.split(":")[0] for s in states.values())
     metrics["unit_states"] = dict(st_count)
     metrics["units_restored"] = st_count.get("restored", 0)
@@ -850,9 +866,7 @@ def measure(context: VerificationContext) -> Measurement:
         lines_pass += weight if row["unit_pass"] else 0
         if row["examples_pass"] and not row["unit_pass"] and row["documented_matching"]:
             doc_only += 1
-    for row in unit_rows:
-        if not row.get("in_set") and row["examples_pass"] and row["documented_matching"]:
-            doc_only += 1
+    left_out_passing = sum(1 for row in unit_rows if not row.get("in_set") and row["examples_pass"] and row["documented_matching"])
     metrics["units_passing"] = n_pass
     metrics["units_set_passing"] = set_pass
     d_pass = sum(1 for vid in deciding if vrows.get(vid))
@@ -864,8 +878,10 @@ def measure(context: VerificationContext) -> Measurement:
     metrics["unit_share_if_reached"] = round(set_pass_high / len(unit_set), 6) if unit_set else 0.0
     metrics["call_share_if_reached"] = round((d_pass + d_unreached) / len(deciding), 6) if deciding else 0.0
     metrics["unit_share_by_lines"] = round(lines_pass / lines_set, 6) if lines_set else 0.0
-    # units that pass their examples and match only calls a docstring example or a visible test repeats
+    # units in the set that pass their examples and match a documented call but no counted one (what a
+    # table of documented outputs would show), and units outside the set that pass and match one
     metrics["units_documented_calls_only"] = doc_only
+    metrics["units_left_out_passing"] = left_out_passing
     # units whose examples are reported as passing while most of their calls do not match
     metrics["units_examples_without_calls"] = sum(
         1 for row in unit_rows if row["examples_pass"] and 2 * row["calls_matching"] < row["calls_total"])

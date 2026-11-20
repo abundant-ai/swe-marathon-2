@@ -12,14 +12,15 @@ import os
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(HERE, "..", "..", "common"))
-import restorelib  # noqa: E402
+sys.path[:0] = [os.path.join(HERE, "..", "..", "common"),
+                os.path.join(HERE, "..", "..", "steps", "01-restore-bodies", "tests", "verifier", "lib")]
+import bodies  # noqa: E402
 
 
 def main():
     root, units_path, out = sys.argv[1:4]
     units = json.load(open(units_path, encoding="utf-8"))
-    facts = restorelib.body_facts(root, units)
+    facts = bodies.body_facts(root, units)
     missing = [u["uid"] for u in units if u["uid"] not in facts]
     if missing:
         raise SystemExit(f"no body found for {len(missing)} units, first {missing[:5]}")

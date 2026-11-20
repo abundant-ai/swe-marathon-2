@@ -308,44 +308,6 @@ def transplant_file(skel_src: str, work_src: str | None, uids_by_qualname: dict)
     return cand, states
 
 
-def body_facts(root: str, units) -> dict:
-    """{uid: [non-blank lines, sha256 of the syntax tree]} of each unit's body after its docstring.
-
-    `units` are records of units.json; files are read under `root`. A unit whose file cannot be
-    read or parsed, whose function is not found exactly as often as recorded, or whose body is
-    empty is left out; the hash is None for a tree too deep to dump.
-    """
-    import hashlib  # noqa: PLC0415
-
-    out: dict = {}
-    by_file: dict = {}
-    for u in units:
-        by_file.setdefault(u["file"], []).append(u)
-    for rel, file_units in by_file.items():
-        try:
-            with open(os.path.join(root, rel), encoding="utf-8") as f:
-                src = f.read()
-            funcs = index_functions(ast.parse(src))
-        except (OSError, UnicodeDecodeError, SyntaxError, ValueError, RecursionError, MemoryError):
-            continue
-        lines = src.splitlines()
-        for u in file_units:
-            nodes = funcs.get(u["qualname"]) or []
-            if len(nodes) != u.get("nocc", 1):
-                continue
-            _doc, rest = _doc_and_rest(nodes[u.get("occ", 0)])
-            if not rest:
-                continue
-            count = sum(1 for i in range(rest[0].lineno - 1, min(rest[-1].end_lineno, len(lines))) if lines[i].strip())
-            try:
-                dump = ast.dump(ast.Module(body=rest, type_ignores=[]), include_attributes=False)
-                digest = hashlib.sha256(dump.encode("utf-8")).hexdigest()
-            except (RecursionError, MemoryError, ValueError):
-                digest = None
-            out[u["uid"]] = [count, digest]
-    return out
-
-
 def load_units(path: str):
     units = json.load(open(path, encoding="utf-8"))
     byfile: dict = {}
@@ -357,29 +319,17 @@ def load_units(path: str):
     return units, byfile
 
 
-def build_candidate(skel_root: str, work_root: str, cand_root: str, byfile: dict, cache: dict | None = None,
-                    withheld: dict | None = None):
+def build_candidate(skel_root: str, work_root: str, cand_root: str, byfile: dict, cache: dict | None = None):
     """Refresh candidate files for all unit-bearing files. Returns {uid: state}.
 
     work_root/<file> is read, unless it or a directory on its way is a link (then it counts as
     missing); skel_root/<file> is the original skeleton; the result is written to
     cand_root/<file>.  `cache` (mutable dict) memoises per-file results on (mtime_ns, size).
-    A file named in `withheld` is not read: it keeps the skeleton, and its units get the state
-    given there.
     """
     states = {}
     notes = []
-    withheld = withheld or {}
     real_root = os.path.realpath(work_root)
     for rel, qmap in byfile.items():
-        if rel in withheld:
-            skel_src = open(os.path.join(skel_root, rel), encoding="utf-8").read()
-            cp = os.path.join(cand_root, rel)
-            os.makedirs(os.path.dirname(cp), exist_ok=True)
-            with open(cp, "w", encoding="utf-8") as f:
-                f.write(skel_src)
-            states.update({uid: withheld[rel] for uid in qmap.values()})
-            continue
         wp = os.path.join(work_root, rel)
         try:
             st = os.stat(wp)

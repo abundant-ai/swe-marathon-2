@@ -334,6 +334,32 @@ It does not yet meet the v2 workload target; see [Workload](#workload) and
   (bare raise 0.0, first argument 0.0, boolean flip 0.0 through the verifier and 0.013 behind a table),
   so a unit still needs one matching counted call; the after-the-fact best
   constant, which uses the hidden results, bounds at 0.059.
+- Re-check, the rest. A collect step that found the tree missing, something
+  else under its name, or could not list it (none of which `dev` can bring
+  about) now marks the delivery failed, an evaluation error, where it was graded
+  as an empty delivery; an oversized mark or record is named as such; removed
+  entries are noted one by one only up to 20 per reason. Every `metrics.json` key
+  the decision lists is present on every path; an empty unit or call set is an
+  evaluation error; a results line nested past the parser's depth is skipped
+  instead of ending the evaluation. `units_documented_calls_only` counts only
+  units in the set, `units_left_out_passing` the left-out ones. The docstring
+  and call phases may each take 40 minutes of the one 6,000 s deadline (30 and
+  20 before), so a slow host shortens the unreported tests rather than the
+  reward. The key the collect step signs with is replaced before every uploaded
+  version (`delivery_key.py --rotate`). The transplant code the agent's tool
+  shares holds only the transplant: the body hashes behind `identical_bodies`
+  and the withholding of late files moved into the verifier. The solution's
+  `ATTRIBUTION.txt` now equals the image's (licence, citation and changes), both
+  Dockerfiles lost their build-context notes, and the sealed test list holds the
+  list only. Not built: comparing example output in the root process (the
+  sandbox reads the expected output in the docstring, so a patched runner could
+  report it; the reward stays bounded by c, which it cannot forge), a neutral
+  name for the net check (its name tells the agent nothing it could use), and a
+  bound taken from the end of the harness process (the platform keeping the
+  agent's network policy through collection is the fix for the remaining race).
+  The 16 stored submissions graded again on the rebuilt calls: reward 0.004 to 0.896, in
+  the same order as before; the reference 1.0 and complete with 10,428 of 10,428
+  tests, the agent's starting tree 0.0.
 
 ## Current implementation
 
@@ -373,7 +399,7 @@ Layout notes:
 ### Novelty
 
 What it adds: one coherent body of work that is too large for one context window
-(2,671 units, 37,645 lines) with a grade per unit, so partial progress is
+(2,671 units, 37,293 non-blank lines of body) with a grade per unit, so partial progress is
 measured exactly.
 
 Closest comparisons:
@@ -456,7 +482,11 @@ Time is not the barrier. Two things are:
   fixing 74 to 133 visible failures, and the pool grew; 9.0 hours gave 96.2% of
   units and 19.2 hours 96.1%. Under the binary reward this floor sat above the 26
   units the 99% bar allowed, so no honest run could reach 1 and 35 of 35 graded
-  sessions scored 0. The continuous reward charges that residue about its share.
+  sessions scored 0. On the counted calls the residue is larger than the unit
+  count suggests, since counted calls are exactly what nothing visible shows: the
+  six full-session claude-code runs have 72 to 101 units in the set whose
+  examples pass and that match no counted call (3.7% to 5.2% of the
+  1,955), 59% of them matching a documented call.
 - Recall. Closing the floor needs upstream's exact internals, which only memory
   of SymPy supplies (see [Novelty](#novelty)). A frontier model may score high by
   recall; probe it before reading its score as difficulty.
@@ -465,9 +495,9 @@ The rest is breadth. Single-context runs stopped at 588 to 1,824 steps when thei
 context filled; only a harness that compacts and delegates to helpers reached the
 end (15,678 to 45,324 steps in 9 hours), and the unit share tracks steps and
 helper count more than anything else. On the continuous reward the stored
-submissions read 0.003 to 0.897: 0.71 to 0.90 for claude-code with helpers over a
-whole session, 0.32 to 0.42 for Proximus in one thread, 0.09 to 0.22 for
-mini-swe-agent, near 0 for two runs that ended their turn within 41 minutes (see
+submissions read 0.004 to 0.896: 0.71 to 0.90 for claude-code with helpers over a
+whole session, 0.36 to 0.42 for Proximus in one thread, 0.10 to 0.23 for
+mini-swe-agent, 0.021, 0.004 for two runs that ended their turn within 41 minutes (see
 [Trial evidence](#trial-evidence)). For a parallel harness with a flash model that is the
 easy end beside the sibling rebuild tasks; compare models within one harness only.
 
@@ -535,12 +565,14 @@ The verifier runs in a separate image with only `/app/sympy` from the candidate.
    signed with a key in the agent image that only root can read and that the
    verifier image holds too. Before grading, the verifier checks that its own
    network is closed (a TLS handshake to three public hosts; open is an
-   evaluation error), then reads the mark: no tree, no mark, an unreadable or
-   unsigned mark, a record that differs from the signed one, a listed file that
-   did not arrive as listed, a link or an unlisted file that arrived, or a
-   record without an end of the work is an evaluation error (no reward file); a
-   tree the collect step refused (over 200,000 entries or 2 GB) or found absent
-   is a completed evaluation of an empty delivery. A unit file whose change or
+   evaluation error), then reads the mark: no tree, no mark, an unreadable,
+   oversized or unsigned mark, a record that differs from the signed one, a
+   listed file that did not arrive as listed, a link or an unlisted file that
+   arrived, a record without an end of the work, or a collect step that failed
+   (the tree missing, something else under its name, or a tree it could not
+   list, none of which `dev` can bring about) is an evaluation error (no reward
+   file); a tree the collect step refused (over 200,000 entries or 2 GB) is a
+   completed evaluation of an empty delivery. A unit file whose change or
    modification time is at or after the end, less 0.25 s, is not taken over:
    its units are `late` and count as not restored. The transplant never reads
    a unit file through a link. `late_files`, `egress_open`, `end_from`,
@@ -552,11 +584,12 @@ The verifier runs in a separate image with only `/app/sympy` from the candidate.
    rejected (`common/restorelib.py`).
    The whole measurement has one deadline, 6,000 s from its start
    (`measure_budget_sec`), inside the verifier's 6,600 s. The docstring and call
-   phases also have their own caps; the test phase has what they leave. Every
+   phases also have their own caps (40 minutes each, so a slow host has room
+   for the two rewarded phases); the test phase has what they leave. Every
    deadline is on the monotonic clock. Submitted code runs with a 4 GiB
    address-space limit where `prlimit` can set one (a note says when it cannot).
 2. Docstring examples. Each restored unit's own examples, run the way SymPy's
-   doctest runner runs them, 20 seconds per unit, at most 30 minutes in total.
+   doctest runner runs them, 20 seconds per unit, at most 40 minutes in total.
    Python's and both of SymPy's random generators are seeded from the unit's name
    before its examples run, so a unit's draw is the same in every grading (and in
    `restore check`). One process runs the units of one module, watched: 2 minutes
@@ -569,7 +602,7 @@ The verifier runs in a separate image with only `/app/sympy` from the candidate.
    interrupted body can leave global state behind. Units left when the time is
    up count as not reached.
 3. Recorded calls. 16,737 calls, at least one per unit, replayed one at a time
-   in the sandbox with a 10-second limit, at most 20 minutes in total. The sandbox
+   in the sandbox with a 10-second limit, at most 40 minutes in total. The sandbox
    writes the result; the verifier compares it with the reference result, which
    the sandbox cannot read. 13,382 calls were recorded from SymPy's own test suite
    and, for units it never calls directly, from docstring examples; 3,355 more
@@ -577,9 +610,11 @@ The verifier runs in a separate image with only `/app/sympy` from the candidate.
    documented: 1,567 recorded while the withheld tests ran and 1,788 made from
    the unit's own arguments, with every symbol renamed by one map over all of
    them or one integer shifted (never an integer whose docstring states a domain,
-   such as prime, odd or positive, nor a polynomial routine's level, and never to
-   a value outside the range of the unit's recorded calls unless the docstring
-   describes a plain integer), each result taken from the original. A call is
+   such as prime, odd or positive, nor a polynomial routine's level, and an
+   integer argument never to a value outside the range of the unit's recorded
+   calls unless the docstring describes a plain integer; a candidate that breaks
+   a prime contract its docstring states is dropped), each result taken from the
+   original. A call is
    documented when a docstring example or a visible test makes a call with the
    same arguments, directly or inside the library while it runs, or with the
    same arguments up to a renaming of symbols that keeps their assumptions; when
@@ -654,7 +689,7 @@ Limits:
   against 9) and hold 177 of the 229 units whose recorded
   results are all booleans, so predicates are hardly rewarded; the set covers
   80.3% of the body lines. Their examples and calls are
-  still run and reported (`units_documented_calls_only`).
+  still run and reported (`units_left_out_passing`).
 - For some units no visible evidence fixes the property a hidden call compares
   (see [Difficulty](#difficulty)); that residue is part of the reward.
 - Strings are compared exactly, layout included, while the docstring examples
@@ -688,7 +723,8 @@ reward = min(u, c)  if candidate_tree and measurement_integrity passed, else 0
 - Continuous (`reward_type = "continuous"`), written to `reward.txt` with six
   decimals. Chosen on 2026-11-20 over the binary reward, whose bar sat above the
   invisible floor (see [Difficulty](#difficulty)).
-- `complete` in `metrics.json` keeps the old verdict: all five checks passed, that
+- `complete` in `metrics.json` keeps the old verdict of the binary reward, not the
+  instruction's sense of complete (no function can be told apart): all five checks passed, that
   is at least 99% of all units passing their examples and matching one recorded
   call, 90% of all calls and 95% of the graded tests. It is `null` when only items
   the measurement did not reach keep a bar from being met.
@@ -706,9 +742,13 @@ reward = min(u, c)  if candidate_tree and measurement_integrity passed, else 0
   unreached items.
 - Also in `metrics.json`: `unit_share`, `call_share`, `test_share`, the bars'
   shares (`unit_pass_rate`, `call_match_rate`, `test_pass_rate`),
-  `units_examples_passing`, `units_documented_calls_only` (examples pass and only
-  documented calls match), `units_left_out`, `tests_not_reached`,
-  `unit_share_by_lines`, `identical_bodies`, `late_files` and `egress_open`.
+  `units_examples_passing`, `units_documented_calls_only` (units in the set
+  whose examples pass and that match a documented call but no counted one: what
+  a table of documented outputs would show), `units_left_out`,
+  `units_left_out_passing` (left-out units whose examples pass and that match a
+  documented call), `tests_not_reached`, `unit_share_by_lines`,
+  `identical_bodies`, `late_files`, `egress_open`, `end_from` and `end_note`;
+  every key is present on every path, at 0 when the measurement stopped early.
 - Floor, on the final calls: bodies that restore nothing, graded as trees
   through the verifier's own steps (`scripts/builder/fixtures.py`), and behind a
   table of documented outputs, which makes every example pass and answers no
@@ -732,10 +772,10 @@ reward = min(u, c)  if candidate_tree and measurement_integrity passed, else 0
   hidden results, which no submission can, and the half rule would not lower
   it (the call share binds); so a unit still needs one matching counted call.
 - A tree that did not arrive, or arrived without the collect step's signed mark,
-  not as the mark lists it, or without a known end of the work, is an
-  evaluation error. A delivery the collect
-  step refused or found absent, or a tree with no restored unit, fails
-  `candidate_tree`; the other checks are skipped and the reward is 0.
+  not as the mark lists it, without a known end of the work, or from a collect
+  step that failed, is an evaluation error. A delivery the collect step refused
+  (over its limits), or a tree with no restored unit, fails `candidate_tree`; the
+  other checks are skipped and the reward is 0.
 - An evaluation error leaves no reward file. `verify.py` exits 1 and
   `report.json` has `status: evaluation_error`.
 - One step. `multi_step_reward_strategy = "final"`; with a single step the
@@ -754,7 +794,7 @@ have not yet run on the platform). Unassessed boundaries: finding 7.
 
 | # | Attack and impact | Boundary | Evidence | Mitigation | Residual risk | Next validation | Severity |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | A body runs arbitrary code at grading time (for example through `sympify` of a string) and patches the example and test runners in-process, forging those two measurements | Sandbox process | Executed in red-team round 2 | The reward is min(u, c); c is compared by the root process with references the sandbox cannot read, and a counted unit also needs a matching counted call; the tests are not rewarded | Forged examples can raise u up to the share of units whose counted calls already match, so the reward up to c; constants that happen to equal counted results are bounded by the floor (finding 4) | Replace the self-reported example result with a root-side comparison | 🟡 YELLOW / MEDIUM |
+| 1 | A body runs arbitrary code at grading time (for example through `sympify` of a string) and patches the example and test runners in-process, forging those two measurements | Sandbox process | Executed in red-team round 2 | The reward is min(u, c); c is compared by the root process with references the sandbox cannot read, and a counted unit also needs a matching counted call; the tests are not rewarded | Forged examples can raise u up to the share of units whose counted calls already match, so the reward is at most c, which cannot be forged; what bodies that restore nothing match on the counted calls is the floor (finding 4). Comparing example output in the root process would not close this: the expected output is in the docstring the sandbox reads, so a patched runner can report it, and that was not built | Red-team the runners with forged output | 🟡 YELLOW / MEDIUM |
 | 2 | Read reference results or the withheld tests | File permissions in the verifier image | Attempted in both rounds; not reached | Private inputs readable by root only; sandbox runs as `nobody`; no test directories in the tree during phases 2 and 3 | Depends on the privilege drop | Re-run on the v2 bundle | 🟢 GREEN / LOW |
 | 3 | Edit tests, module-level code or other functions to make checks pass | Graded-tree construction | Executed; no effect | Only unit bodies are copied into the reference skeleton; `checks/test_transplant.py` | None found | Keep the check | 🟢 GREEN / LOW |
 | 4 | Return the documented outputs for the documented inputs, and something cheap otherwise: a constant, the first argument, the other boolean, or a documented result renamed | Which calls count | Review of the binary version: tables passed `trig_split`, `viete`, `wigner_3j` and 14 more units through the real verifier. Re-check of 2026-11-20: behind a table, a first-argument fallback and a renaming table reached 0.07 to 0.12, most of it on the variants added that day | Only calls nothing visible answers count (D): no docstring example or visible test makes them, even with its symbols renamed, and their result is neither a documented result of their unit nor one of their own arguments; variants rename with one map over all arguments and shift no integer with a stated domain. Measured on the final calls, through the verifier and behind a table (see the floor under [Reward formula](#reward-formula)): every buildable fixture 0.015 or less | A constant can still equal some counted results by chance; chosen per unit after seeing the hidden results it would reach 0.059, which no submission can | Re-run `fixtures.py` and `floor.py` after any rebuild of the calls | 🟢 GREEN / LOW |
@@ -827,30 +867,31 @@ Proximus on the v1 package, base experiment, 2026-11-17:
 - Proximus reports no cost. Its runs used 0.66 to 2.19 billion input tokens,
   over 99% of them cached.
 
-Regraded on the continuous reward (2026-11-20, this machine, the entry point's
-steps without the privilege drop; examples and calls, the tests not run since they
-are not rewarded). The twelve-hour trials' own files were not downloaded, so these
+Regraded on the continuous reward after the re-check (2026-11-20: the rebuilt
+counted calls and the narrowed comparison; this machine, the entry point's steps
+without the privilege drop; examples and calls, the tests not run since they are
+not rewarded). "Reward before the re-check" is the regrade of the round before. The twelve-hour trials' own files were not downloaded, so these
 are the stored submissions of the earlier sessions of the same task; every one
 scored 0 under the binary reward.
 
-| Submission | Agent / model | Units passing, binary era (of 2,671) | Reward then | u | c | Reward now | Units whose examples pass | Bodies identical to upstream |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| v2 trial 16 | claude-code / DeepSeek v4.1 Flash | 2,557 | 0 | 0.933 | 0.897 | **0.897** | 2,623 | 21.9% |
-| v2 trial 17 | claude-code / DeepSeek v4.1 Flash | 2,481 | 0 | 0.909 | 0.887 | **0.887** | 2,541 | 20.3% |
-| v2 trial 18 | claude-code / GLM 5.3 | 2,462 | 0 | 0.897 | 0.866 | **0.866** | 2,532 | 18.2% |
-| 48 h run a, session 1 | claude-code / DeepSeek v4.1 Flash | 2,375 | 0 | 0.873 | 0.860 | **0.860** | 2,431 | 21.4% |
-| 48 h run b, session 1 | claude-code / DeepSeek v4.1 Flash | 2,338 | 0 | 0.846 | 0.843 | **0.843** | 2,384 | 21.8% |
-| 48 h run, session 1 | claude-code / GLM 5.3 | 1,976 | 0 | 0.718 | 0.714 | **0.714** | 2,027 | 18.0% |
-| 48 h run b, session 1 | Proximus / DeepSeek v4.1 Flash | 1,289 | 0 | 0.434 | 0.418 | **0.418** | 1,352 | 12.7% |
-| 48 h run a, session 1 | Proximus / DeepSeek v4.1 Flash | 1,159 | 0 | 0.382 | 0.396 | **0.382** | 1,226 | 15.3% |
-| single-step trial 6 | Proximus / DeepSeek v4.1 Flash | 1,077 | 0 | 0.364 | 0.361 | **0.361** | 1,116 | 17.3% |
-| 48 h run, session 1 | Proximus / GLM 5.3 | 1,031 | 0 | 0.345 | 0.322 | **0.322** | 1,054 | 15.0% |
-| base trial 14 | mini-swe-agent / DeepSeek v4.1 Flash | 716 | 0 | 0.225 | 0.216 | **0.216** | 745 | 11.8% |
-| base trial 15 | mini-swe-agent / GLM 5.3 | 346 | 0 | 0.115 | 0.114 | **0.114** | 359 | 9.7% |
-| base trial 9 | mini-swe-agent / DeepSeek v4.1 Flash | 334 | 0 | 0.109 | 0.153 | **0.109** | 349 | 7.4% |
-| base trial 10 | mini-swe-agent / GLM 5.3 | 274 | 0 | 0.094 | 0.092 | **0.092** | 281 | 9.3% |
-| base trial 8 | claude-code / GLM 5.3 | 63 | 0 | 0.024 | 0.050 | **0.024** | 63 | 62.4% |
-| base trial 13 | claude-code / GLM 5.3 | 15 | 0 | 0.003 | 0.004 | **0.003** | 15 | 14.3% |
+| Submission | Agent / model | Units passing, binary era (of 2,671) | Reward, binary | Reward before the re-check | u | c | Reward now | Units whose examples pass | Bodies identical to upstream |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| v2 trial 16 | claude-code / DeepSeek v4.1 Flash | 2,557 | 0 | 0.897 | 0.931 | 0.896 | **0.896** | 2,623 | 21.9% |
+| v2 trial 17 | claude-code / DeepSeek v4.1 Flash | 2,481 | 0 | 0.887 | 0.906 | 0.882 | **0.882** | 2,541 | 20.3% |
+| v2 trial 18 | claude-code / GLM 5.3 | 2,462 | 0 | 0.866 | 0.893 | 0.862 | **0.862** | 2,531 | 18.2% |
+| 48 h run a, session 1 | claude-code / DeepSeek v4.1 Flash | 2,375 | 0 | 0.860 | 0.863 | 0.849 | **0.849** | 2,432 | 21.4% |
+| 48 h run b, session 1 | claude-code / DeepSeek v4.1 Flash | 2,338 | 0 | 0.843 | 0.845 | 0.843 | **0.843** | 2,384 | 21.8% |
+| 48 h run, session 1 | claude-code / GLM 5.3 | 1,976 | 0 | 0.714 | 0.722 | 0.713 | **0.713** | 2,027 | 18.0% |
+| 48 h run b, session 1 | Proximus / DeepSeek v4.1 Flash | 1,289 | 0 | 0.418 | 0.445 | 0.425 | **0.425** | 1,352 | 12.7% |
+| 48 h run a, session 1 | Proximus / DeepSeek v4.1 Flash | 1,159 | 0 | 0.382 | 0.390 | 0.395 | **0.390** | 1,226 | 15.3% |
+| single-step trial 6 | Proximus / DeepSeek v4.1 Flash | 1,077 | 0 | 0.361 | 0.375 | 0.369 | **0.369** | 1,116 | 17.3% |
+| 48 h run, session 1 | Proximus / GLM 5.3 | 1,031 | 0 | 0.322 | 0.373 | 0.355 | **0.355** | 1,054 | 15.0% |
+| base trial 14 | mini-swe-agent / DeepSeek v4.1 Flash | 716 | 0 | 0.216 | 0.246 | 0.234 | **0.234** | 745 | 11.8% |
+| base trial 15 | mini-swe-agent / GLM 5.3 | 346 | 0 | 0.114 | 0.127 | 0.126 | **0.126** | 359 | 9.7% |
+| base trial 9 | mini-swe-agent / DeepSeek v4.1 Flash | 334 | 0 | 0.109 | 0.109 | 0.154 | **0.109** | 350 | 7.4% |
+| base trial 10 | mini-swe-agent / GLM 5.3 | 274 | 0 | 0.092 | 0.107 | 0.100 | **0.100** | 281 | 9.3% |
+| base trial 8 | claude-code / GLM 5.3 | 63 | 0 | 0.024 | 0.021 | 0.037 | **0.021** | 63 | 62.4% |
+| base trial 13 | claude-code / GLM 5.3 | 15 | 0 | 0.003 | 0.004 | 0.005 | **0.004** | 15 | 14.3% |
 
 ## Validation
 
@@ -885,6 +926,8 @@ scored 0 under the binary reward.
 | Comparison probes: one unit's body edited in a copy of the original, its examples and every recorded call run through the verifier's `rdoctest.py`, `rvector.py` and `canon.py` | working tree, 2026-11-20 | wrong bodies, counted calls matched: one-line `pprint_nodes` 0/3 (examples pass), swapped `bivariate_type` 0/8 (examples pass), one-line `MatrixBase.table` 0/4, side-by-side `stringPict.below` 0/4, `fcode` without its columns 0/8, dense `DDM.to_sdm` 0/1 and `DomainMatrix.to_sparse` 0/1, a wrong pre-set flag in `round_two` 0/1 (and in `as_submodule` 0/3 documented calls), `add_node` without its parallel lists 0/4, `disambiguate` dropping assumptions 1/4 (that call has none); right bodies: `as_submodule` and `round_two` without their pre-set flags, `restrict_codomain` testing equality first, `homomorphism` without no-op steps (and `identity_hom` through it), `remove_node` by index and an extra frame made first all match in full, `multiline_latex` from its docstring 6/6 |
 | Counted calls rebuilt (`documented.py`, `echoes.py`, `rec_withheld.py`, `variants.py`, `regold.py`, `finalize_documented.py`) | working tree, 2026-11-20 (re-check) | 16,737 calls, 9,883 documented (9,270 by arguments, 334 of them only up to a renaming; 323 returning an argument; 282 returning a documented result; 8 of the one capped unit), 6,854 counted; 1,955 units in the set, 716 left out; original 16,737 / 16,737 under hash seeds 0, 1, 2, skeleton 0 |
 | Floor fixtures through the verifier and behind a table (`fixtures.py`, `floor.py`), with the reviewers' own fixture scripts | working tree, 2026-11-20 (re-check) | see the floor under [Reward formula](#reward-formula); reviewers' scripts: first argument 0.0015, flip 0.0136, flip with first argument 0.0150, renaming tables 0.0007 to 0.0026, renaming with first argument 0.0028 |
+| Reference and the agent's starting tree through the entry point's steps, after the re-check | this machine, no privilege drop, no network probe, the delivery read stubbed | reference 1.000000 and complete: 1,955 / 1,955 units, 6,854 / 6,854 counted calls, 16,737 / 16,737 calls, 10,428 / 10,428 tests in one plain pytest session, none unreached, no control tripped, 672 s; starting tree 0.0 (`candidate_tree` failed, every metric present) |
+| Regrade of the stored submissions after the re-check | this machine, the entry point's steps, examples and calls | 16 submissions, reward 0.004 to 0.896 (see [Trial evidence](#trial-evidence)) |
 | `harbor check` with `resources/task-implementation.toml` | working tree, 2026-11-17 | attempted on Modal; failed before review with `NotFoundError: Environment not found` (no default Modal environment). Not run in local Docker. No ratings |
 | Local image builds | none | not run for the v2 Dockerfiles; the Oddish baselines are the first build |
 
@@ -944,6 +987,9 @@ python builder/unit_bodies.py solution/data units.json tests/private/unit_bodies
 python builder/floor.py original_nt final/inputs.pkl final/gold.json final/documented.json
 python builder/fixtures.py raise|identity|flip original_root fixture/ [final/inputs.pkl final/gold.json final/documented.json]
 ```
+
+Before each uploaded version, `python builder/delivery_key.py <task_dir> --rotate`
+replaces the key the collect step signs with.
 
 Development checks:
 
