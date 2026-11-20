@@ -126,7 +126,7 @@ def read_vector_records(path: str, want: set) -> tuple[dict, set]:
         if os.path.getsize(path) <= 200_000_000:
             with open(path, encoding="utf-8", errors="replace") as f:
                 for line in f:
-                    if len(line) > 500_000:
+                    if len(line) > 2_100_000:
                         continue
                     try:
                         rec = json.loads(line)

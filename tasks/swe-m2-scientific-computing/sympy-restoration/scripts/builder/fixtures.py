@@ -7,8 +7,9 @@ usage: fixtures.py <rule> <original_root> <out_root> [<inputs.pkl> <gold.json> <
 Every unit body after its docstring becomes one statement:
   raise      `raise NotImplementedError` (no unit marker, so every unit counts as restored)
   identity   `return <first parameter>`, the unit's first argument unchanged
-  flip       for a unit whose documented results are all one boolean, the other boolean; otherwise
-             as `identity` (the last three arguments say which results are documented)
+  flip       for a unit whose documented results are all one boolean, the other boolean of the same
+             kind (a Python bool, or SymPy's true and false); otherwise as `identity` (the last
+             three arguments say which results are documented)
 """
 from __future__ import annotations
 
@@ -23,7 +24,7 @@ UNITS = os.path.join(HERE, "..", "..", "environment", "data", "units.json")
 
 
 def flipped(inputs, gold_path, documented_path):
-    """{uid: the boolean a unit's documented results never are}, for units with only one."""
+    """{uid: (kind, the boolean a unit's documented results never are)}, for units with only one."""
     payload = pickle.load(open(inputs, "rb"))
     gold = json.load(open(gold_path, encoding="utf-8"))
     documented = set(json.load(open(documented_path, encoding="utf-8"))["calls"])
@@ -34,9 +35,10 @@ def flipped(inputs, gold_path, documented_path):
                 shown.setdefault(uid, []).append(gold[vid])
     out = {}
     for uid, results in shown.items():
-        values = {r[1] for r in results if isinstance(r, list) and len(r) == 2 and r[0] == "B"}
-        if len(values) == 1 and all(isinstance(r, list) and r[:1] == ["B"] for r in results):
-            out[uid] = not next(iter(values))
+        kinds = {(r[0], r[1]) for r in results if isinstance(r, list) and len(r) == 2 and r[0] in ("B", "SB")}
+        if len(kinds) == 1 and all(isinstance(r, list) and len(r) == 2 and r[0] in ("B", "SB") for r in results):
+            kind, value = next(iter(kinds))
+            out[uid] = (kind, not value)
     return out
 
 
@@ -74,7 +76,9 @@ def main():
             if rule == "raise":
                 statement = "raise NotImplementedError"
             elif u["uid"] in flips:
-                statement = f"return {flips[u['uid']]!r}"
+                kind, value = flips[u["uid"]]
+                statement = f"return {value!r}" if kind == "B" else \
+                    f"from sympy.logic.boolalg import {str(value).lower()} as _flipped\n{indent}return _flipped"
                 counts["flipped"] += 1
             else:
                 statement = f"return {params[0] if params else 'None'}"

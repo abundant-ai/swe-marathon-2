@@ -4,22 +4,35 @@ Build time only, on the ORIGINAL tree whose test directories hold the visible te
 (the working copy with the original bodies put back).
 
 usage:
-  documented.py doctests <tree> <units.json> <inputs.pkl> <lib_dir> <out.json> [<package> ...]
+  documented.py doctests <tree> <units.json> <inputs.pkl> <lib_dir> <out.json> [<package> ...] [--with-skipped]
   documented.py tests <tree> <units.json> <inputs.pkl> <lib_dir> <out.json> <package> [<package> ...]
+                [--marks <expression>] [--pytest <arguments>] [--timeout <seconds>]
   documented.py merge <out.json> <part.json> [<part.json> ...]
+
+`--with-skipped` runs only the docstrings that hold an example marked `+SKIP`, with every example
+run; `--marks "slow or tooslow"` runs the slow visible tests, and `--pytest "-p no:skipping" --marks
+skip` the visible tests marked to be skipped, which the agent can read all the same.
 
 While the examples of every docstring of the named packages run (`doctests`), or while the
 visible tests under them run (`tests`, one pytest process per package, one at a time), every
 call into a unit is compared with that unit's recorded calls: a recorded call whose pickled
 arguments are byte-identical to the call's, whose arguments have the same canonical form (the
-comparison's own `canon`, after a pickle round trip as the recorded calls had; the identity of a
-Dummy or frame the arguments made themselves does not count), or the same form up to a renaming
+comparison's own `canon`, after a pickle round trip as the recorded calls had, with the type of a
+value left out (`canon.erase`: a table keyed by arguments finds an int and an Integer alike, as they
+are equal and hash alike); the identity of a Dummy or frame the arguments made themselves does not
+count), or the same form up to a renaming
 of symbols that keeps their assumptions (a table that renames its documented entries answers
 such a call), is marked documented. A call whose arguments cannot match any recorded call of its
 unit by a cheap signature (type and size of each argument) is not pickled at all, so even the
 hottest unit is compared in full. Calls made directly by an example or a test and calls made
 inside the library while one runs count alike. The output maps each documented call id to where
 it was seen first.
+
+The results the examples and the tests show are kept too: for every call an example or a visible
+test makes directly into a unit (not a generator), the canonical form of what it returned, once per
+form with the type of a value left out (`shown`, per unit, at most SHOWN_FORMS forms, from at most
+SHOWN_CALLS returns per unit and process). A counted call that returns one of them answers to a
+table of the outputs the agent can read, so finalize_documented.py documents it.
 """
 from __future__ import annotations
 
@@ -37,6 +50,10 @@ import time
 
 CAP_PICKLES = 500_000  # calls into one unit that pass the signature and are pickled and compared, per process
 MAX_BLOB = 30_000      # recorded arguments are never larger than this
+SHOWN_CALLS = 5_000    # direct returns of one unit put in canonical form, per process
+SHOWN_FORMS = 200      # distinct shown results kept per unit
+SHOWN_BYTES = 20_000   # a shown result whose form is longer than this is not kept
+CO_GENERATOR = 0x20 | 0x200 | 0x100   # generator, async generator and coroutine code
 
 
 def unit_code_map(tree, units):
@@ -156,6 +173,9 @@ class Matcher:
         self.capped = set()
         self.context = None
         self.busy = False
+        self.returning = set()    # unit code objects whose returns are watched
+        self.shown = {}           # uid -> {key with the type left out: canonical form} of results shown
+        self.shown_calls = {}     # uid -> direct returns put in canonical form
         sys.path.insert(0, lib_dir)
         import canon  # noqa: PLC0415
 
@@ -173,7 +193,7 @@ class Matcher:
     def key(self, args):
         """(canonical key, renamed key) of an argument mapping, or None without a canonical form."""
         try:
-            form = plain(self.canon.canon(args))
+            form = plain(self.canon.erase(self.canon.canon(args)))
         except Exception:  # noqa: BLE001 - arguments without a canonical form are matched by bytes only
             return None
         return self.canon._key(form), json.dumps(renamed(form), sort_keys=True, separators=(",", ":"))
@@ -206,6 +226,9 @@ class Matcher:
         if u is None or code.co_name != u["name"]:
             return mon.DISABLE
         uid = u["uid"]
+        if id(code) not in self.returning and not code.co_flags & CO_GENERATOR:
+            self.returning.add(id(code))
+            mon.set_local_events(4, code, mon.events.PY_RETURN)
         if self.left.get(uid, 0) <= 0:
             return mon.DISABLE
         if self.busy or self.context is None:
@@ -254,15 +277,42 @@ class Matcher:
             self.busy = False
         return None
 
+    def on_return(self, code, offset, value):
+        """Keep what a unit returned to an example or a visible test that called it directly."""
+        u = self.codemap.get((code.co_filename, code.co_firstlineno))
+        if u is None or code.co_name != u["name"] or self.busy or self.context is None:
+            return None
+        uid = u["uid"]
+        if self.shown_calls.get(uid, 0) >= SHOWN_CALLS or len(self.shown.get(uid, ())) >= SHOWN_FORMS:
+            return None
+        caller = sys._getframe(1).f_back
+        fn = caller.f_code.co_filename if caller is not None else ""
+        if not (fn.startswith("<doctest") or ("/tests/" in fn and os.path.basename(fn).startswith("test_"))):
+            return None
+        self.busy = True
+        try:
+            self.shown_calls[uid] = self.shown_calls.get(uid, 0) + 1
+            form = self.canon.canon(value)
+            text = json.dumps(form, sort_keys=True)
+            if len(text) <= SHOWN_BYTES:
+                self.shown.setdefault(uid, {}).setdefault(self.canon._key(self.canon.erase(form)), form)
+        except BaseException:  # noqa: BLE001 - a result without a canonical form shows nothing comparable
+            pass
+        finally:
+            self.busy = False
+        return None
+
     def install(self):
         mon = sys.monitoring
         mon.use_tool_id(4, "documented")
         mon.register_callback(4, mon.events.PY_START, self.on_start)
+        mon.register_callback(4, mon.events.PY_RETURN, self.on_return)
         mon.set_events(4, mon.events.PY_START)
 
     def write(self, path, extra):
+        shown = {uid: list(forms.values()) for uid, forms in sorted(self.shown.items())}
         with open(path, "w", encoding="utf-8") as f:
-            json.dump({"documented": self.found, "capped_units": sorted(self.capped), **extra}, f)
+            json.dump({"documented": self.found, "capped_units": sorted(self.capped), "shown": shown, **extra}, f)
 
 
 def revive(args):
@@ -292,7 +342,7 @@ class _Timeout(KeyboardInterrupt):
     pass
 
 
-def run_doctests(matcher, modules, timeout=20.0):
+def run_doctests(matcher, modules, timeout=20.0, with_skipped=False):
     import doctest as pdoctest  # noqa: PLC0415
 
     from sympy.core.cache import clear_cache  # noqa: PLC0415
@@ -311,6 +361,12 @@ def run_doctests(matcher, modules, timeout=20.0):
         except BaseException:  # noqa: BLE001
             failed_imports += 1
             continue
+        if with_skipped:
+            # only the docstrings with an example marked +SKIP, and every example of them run
+            tests = [t for t in tests if any(e.options.get(pdoctest.SKIP) for e in t.examples)]
+            for t in tests:
+                for e in t.examples:
+                    e.options.pop(pdoctest.SKIP, None)
         for test in tests:
             runner = SymPyDocTestRunner(verbose=False, optionflags=flags)
             runner._checker = SymPyOutputChecker()
@@ -356,7 +412,7 @@ def main():
     mode = sys.argv[1]
     if mode == "merge":
         out, parts = sys.argv[2], sys.argv[3:]
-        merged, capped, notes = {}, set(), []
+        merged, capped, notes, shown = {}, set(), [], {}
         for part in parts:
             try:
                 data = json.load(open(part, encoding="utf-8"))
@@ -366,12 +422,29 @@ def main():
             for vid, where in data["documented"].items():
                 merged.setdefault(vid, where)
             capped.update(data.get("capped_units", []))
-        json.dump({"documented": dict(sorted(merged.items())), "capped_units": sorted(capped), "notes": notes},
+            for uid, forms in (data.get("shown") or {}).items():
+                kept = shown.setdefault(uid, {})
+                for form in forms:
+                    kept.setdefault(json.dumps(form, sort_keys=True), form)
+        shown = {uid: list(forms.values()) for uid, forms in sorted(shown.items())}
+        json.dump({"documented": dict(sorted(merged.items())), "capped_units": sorted(capped), "shown": shown, "notes": notes},
                   open(out, "w", encoding="utf-8"), indent=0)
-        print(f"documented calls: {len(merged)} | units with capped comparison: {len(capped)} | {notes}")
+        print(f"documented calls: {len(merged)} | units with capped comparison: {len(capped)} | "
+              f"units with shown results: {len(shown)}, forms: {sum(len(f) for f in shown.values())} | {notes}")
         return
-    tree, units_path, inputs_path, lib_dir, out = (os.path.abspath(p) for p in sys.argv[2:7])
-    packages = sys.argv[7:] or ["sympy"]
+    argv = list(sys.argv)
+    options = {"--marks": "not slow and not tooslow", "--pytest": "", "--timeout": "180", "--with-skipped": None}
+    for flag in list(options):
+        if flag in argv:
+            i = argv.index(flag)
+            if flag == "--with-skipped":
+                options[flag] = True
+                del argv[i]
+            else:
+                options[flag] = argv[i + 1]
+                del argv[i:i + 2]
+    tree, units_path, inputs_path, lib_dir, out = (os.path.abspath(p) for p in argv[2:7])
+    packages = argv[7:] or ["sympy"]
     if mode == "doctests":
         os.chdir(tree)
         sys.path[:0] = [tree]
@@ -379,7 +452,7 @@ def main():
         matcher.install()
         mods = [m for p in packages for m in modules_of(tree, p)]
         started = time.time()
-        stats = run_doctests(matcher, mods)
+        stats = run_doctests(matcher, mods, with_skipped=bool(options["--with-skipped"]))
         matcher.write(out, dict(stats, modules=len(mods), seconds=round(time.time() - started, 1)))
         print(json.dumps({"documented": len(matcher.found), **stats}))
         return
@@ -394,7 +467,7 @@ def main():
                    PYTHONPATH=plugin_dir, DOC_BUILDER=os.path.dirname(os.path.abspath(__file__)), DOC_TREE=tree,
                    DOC_UNITS=units_path, DOC_INPUTS=inputs_path, DOC_LIB=lib_dir, DOC_OUT=part)
         cmd = [sys.executable, "-B", "-m", "pytest", "-p", "documented_plugin", "-p", "no:cacheprovider", "-q",
-               "-o", "addopts=", "-m", "not slow and not tooslow", "--timeout", "180",
+               "-o", "addopts=", "-m", options["--marks"], "--timeout", options["--timeout"], *options["--pytest"].split(),
                "--no-header", "-rN", package.replace(".", "/")]
         started = time.time()
         with open(part + ".log", "w") as log:

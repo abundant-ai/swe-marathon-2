@@ -419,6 +419,57 @@ It does not yet meet the v2 workload target; see [Workload](#workload) and
   that cannot start is a local poll instead of the end of the net check. A live
   process of `dev` that outlived the collect step (zombies are not counted) is
   now an explicit evaluation error.
+- The collect step fails closed (a re-check of the sibling Carve found these
+  in the same design). It now puts the tree aside first and leaves an empty tree
+  with a signed refusing mark in its place, and gives the measured tree its name
+  back only once its own mark and record are written, so a timeout, a crash or a
+  full disk at any later point leaves a tree that scores 0, never one without a
+  mark; a refusing mark counts even when the record beside it is newer. The mark
+  holds at most 60 notes of at most 240 characters (thousands of removed pipes or
+  links had no bound on the mark's size, and a mark over the verifier's 1 MiB
+  read limit was an evaluation error); the record keeps every note. Reading only
+  a prefix of the mark, as the Carve re-check suggested, would not do here: the
+  signature is the mark's last line. A tree there is no room to pack in `/tmp`
+  (where the platform packs it inside the sandbox; a disk the work filled made
+  the pack fail and an empty directory arrive) is refused after what `dev` left
+  in `/tmp`, `/var/tmp` and `/dev/shm` is removed. Not applicable here: link
+  chains (no link is resolved, each is removed in one step) and links that climb
+  above `/` (no link is kept); the collect step has no early exit.
+- The comparison. The canonical form gave a Python value and its SymPy
+  counterpart, and the flavours of a container, one form, although the
+  instruction asks for "the same type and container": a body returning a Python
+  `int` where upstream returns an `Integer` (`nP`), a `bool` for SymPy's `true`
+  (`Interval.right_open`), a dense `Matrix` for a `SparseMatrix` (`banded`), a
+  mutable matrix for an immutable one (`Vector.to_matrix`), dense storage for
+  sparse (`DomainMatrix.nullspace`, outside the 24 units whose storage counted)
+  or a 15-digit Float where 20 digits were asked (`gauss_laguerre`) matched
+  every counted call, and the best stored submission had 175 such calls. The
+  form now keeps every type (step 3 of [Verification](#verification) lists
+  them), a call that returns a value and changes an argument is compared on
+  both (`ddm_irref` working on a copy matched before), and the LaTeX profile
+  keeps a blank line as a paragraph break. Every recorded result was recorded
+  again (`regold.py`, hash seeds 0, 1 and 2): the original reproduces 16,737 of
+  16,737, 16,593 of them byte for byte and the other 144 up to the Dummies and
+  frame counters the call made, the skeleton none, and no call was dropped.
+  With the changed arguments beside the result, 27 results of mechanics units
+  outgrew the runner's 400 kB line (one unit, `Joint._create_aligned_interframe`,
+  would have lost every call), so the line limit is now 2 MB. What a table could
+  answer is still judged with the type left out (`canon.erase`,
+  `canon.same_loose`): a printed result does not show it, and a table keyed by
+  arguments finds an int and an Integer alike, as they are equal and hash
+  alike. Echoes now also count an element of a call's `*args` or a value of its
+  `**kwargs`, found from each unit's own signature. The reviewer's wrong bodies,
+  run through the verifier's own runners on real SymPy, counted calls matched,
+  original then wrong body: `nP` returning an int 7/7 then 1/7,
+  `right_open` returning a bool 4/4 then 0/4, `banded` returning a dense matrix
+  8/8 then 0/8 (both forms), `to_matrix` returning a mutable one 8/8 then 0/8,
+  `DomainMatrix.nullspace` returning dense storage 4/4 then 1/4,
+  `gauss_laguerre` at the default precision 6/6 then 0/6, `ddm_irref` on a copy
+  2/2 then 0/2, `Beam.apply_support` without the slope condition 6/6 then 4/6
+  (the two fixed supports fail), `multiline_latex` with blank lines 6/6 then
+  0/6; the round-1 controls are unchanged (`pprint_nodes` 0/3, `bivariate_type`
+  0/4, `MatrixBase.table` 0/4, `Permutation.rmul` 6/8, `Point.pos_from` 1/8).
+  The stand-in checks hold each pair as different (`checks/test_comparison.py`).
 - Wording. The collect step's text no longer says "delivery", "the agent's
   user" or "egress": the record key `egress` is now `net_probe`, renamed in the
   hook and the verifier together. The sealed test list's writer
@@ -645,13 +696,21 @@ The verifier runs in a separate image with only `/app/sympy` from the candidate.
    background or detached, has a parent of `dev`, then the first process, never
    such a parent, so it is never a session. When the work ends, the collect step
    (`environment/fsmaint-sweep`, root) stops, lists and ends every process of
-   `dev`, gives back the room the setup step set aside, probes the hosts
-   itself, lets the net check finish one poll and one look that started after
-   that and stops it, records every entry under `/app/sympy` (type, size,
+   `dev`, gives back the room the setup step set aside, and puts the tree aside
+   with an empty tree in its place holding a signed mark that refuses it ("the
+   collect step did not finish"), so that a timeout, a crash or a full disk from
+   then on leaves a tree copied as refused (0), never one without a mark. It then
+   probes the hosts itself, lets the net check finish one poll and one look that
+   started after that and stops it, records every entry of the tree (type, size,
    modification and change times, sha256) before touching anything, removes
-   every link, anything that is neither a file nor a directory and any file
-   whose name a copy might not carry as it is, and writes a record and a mark
-   into the tree. The end of the work is the earlier of two. One is the last
+   every link (one step each: no link is resolved), anything that is neither a
+   file nor a directory and any file whose name a copy might not carry as it is,
+   checks that there is room for the platform to pack the tree in `/tmp`
+   (removing first what `dev` left in `/tmp`, `/var/tmp` and `/dev/shm` when it
+   is short), writes a record and a mark into the tree, and only then gives it
+   back its name (the two names exchanged in one step where Linux allows it). The
+   mark holds at most 60 notes of at most 240 characters; the record keeps them
+   all. The end of the work is the earlier of two. One is the last
    closed poll of the longest stretch an opening ended; a stretch still going
    on, or one whose last closed poll came after the collect step began, gives
    the collect step's start only when the collect step's own probe found the
@@ -673,9 +732,12 @@ The verifier runs in a separate image with only `/app/sympy` from the candidate.
    since the collect step always leaves a marked tree and these come from the
    infrastructure. A tree the collect step refused is a completed evaluation of
    an empty delivery (0): nothing usable under its name (nothing at all, a link,
-   a file), a tree it could not list, or one past its limits (200,000 entries,
+   a file), a tree it could not list, one past its limits (200,000 entries,
    2 GB, 64 directories deep, a path over 1,000 bytes, a record over 48 MB, a
-   directory whose name a copy might not carry). A record without an end of the
+   directory whose name a copy might not carry), one there is no room to copy, or
+   the empty tree left by a collect step that did not finish (a refusing mark is
+   taken as signed even when the record beside it is newer: nothing of a refused
+   tree is graded). A record without an end of the
    work grades a tree that restores no unit (0) and is an evaluation error for
    any other. A unit file whose change or modification time is at or after the
    end, less 0.25 s, is not taken over: its units are `late` and count as not
@@ -728,25 +790,38 @@ The verifier runs in a separate image with only `/app/sympy` from the candidate.
    of its unit returns (applied until nothing changes). 9,883 calls are
    documented and listed privately (`tests/private/vectors/documented.json`),
    6,854 are not, and only those count for the reward. A result is
-   compared by its canonical form (`verifier/lib/canon.py`): value, type and
-   container, order, the form of a returned expression, and the state of an
-   object the call builds or changes. What is not behaviour is left out, and
-   nothing more: a memo slot an object fills lazily from its other state counts
-   where both sides hold a value (for a dict of them, on the keys both hold); a
-   symbol, Dummies included, is its name and the assumptions SymPy's equality
-   uses; Dummies the call makes are numbered from a process-wide counter, so they
-   compare up to one consistent renaming, while a Dummy that came with the
-   arguments keeps its name and index; likewise a frame's creation counter
-   (`ReferenceFrame.index`, which orders a vector's printed components) is exact
-   for a frame that came with the arguments and compares up to an
-   order-preserving renaming for frames the call makes; dense or sparse storage
-   of a domain matrix counts for the 24 converters and constructors whose result
-   is that storage, and a zero stored in sparse storage always counts; Truss's
-   coordinate lists kept beside its nodes count, except in what
-   `Truss.remove_node` leaves, where upstream keeps them inconsistently. Strings
-   compare exactly, except the LaTeX of `multiline_latex` and `vlatex`, compared
-   without the whitespace LaTeX ignores; floats with a relative tolerance of
-   1e-9. One process
+   compared by its canonical form (`verifier/lib/canon.py`), which keeps the
+   value and the type and container of every part of it, the order, the form of
+   a returned expression and the state of every object the call builds or
+   changes: a Python `int` and a SymPy `Integer` are different results, as are a
+   `bool` and SymPy's `true`, a `tuple` and a `Tuple`, a `Fraction`, a
+   `PythonMPQ` and a `Rational`, a Python `float` and a SymPy `Float`, two
+   Floats of different precision, the matrix classes (mutable or immutable,
+   dense or sparse), a domain matrix's dense or sparse storage, a `set`, a
+   `frozenset` and a set subclass, a `dict`, a `defaultdict` (with its factory),
+   an `OrderedDict` (with its order) and a `Counter`, a list, a range and a dict
+   view, and each kind of iterator. A call that returns a value and changes an
+   argument is compared on both (188 recorded results); a memo slot it fills is
+   no change. What the comparison leaves out is all of this, each for the
+   reason given: a memo slot an object fills lazily counts where both sides hold
+   a value (for a dict of them, on the keys both hold), as the instruction
+   exempts values kept only as a cache (197 counted results hold one); Dummies
+   the call makes compare up to one consistent renaming, and a frame's creation
+   counter (`ReferenceFrame.index`, which orders a vector's printed components)
+   for frames the call makes up to an order-preserving one, because both are
+   numbered from a process-wide counter: the original's own results differ
+   between runs exactly there and nowhere else (144 of 16,737 differ in text over
+   three runs, every one only in those names), while a Dummy or frame that came
+   with the arguments is exact; Truss's coordinate lists in what
+   `Truss.remove_node` leaves, where upstream keeps them inconsistently; the
+   LaTeX of `multiline_latex` and `vlatex`, compared without the whitespace LaTeX
+   ignores (a blank line, which is a paragraph break, is kept); a Python float or
+   an mpmath number within a relative 2^-30 (about 1e-9), and a SymPy Float of
+   the same precision within 2^(23 - precision); the order of a dict's items,
+   which Python's equality ignores and SymPy prints sorted, so that no example
+   or test can show it (401 counted results hold a dict of two or more items);
+   and a SymPy matrix's internal domain, which SymPy picks for its own
+   arithmetic (the class, shape and entries are compared). One process
    replays the calls of one module. If it ends by itself or stays silent for 40
    seconds, the call it was on does not match and the calls behind it are
    replayed in a new process; if not even the first call of that start returned,
@@ -784,7 +859,7 @@ Limits:
 - A recorded call checks one input, so a body can match its calls and still be
   wrong elsewhere.
 - Reference results that could not be reproduced exactly (objects that lose state
-  when pickled, bare `None`, exceptions, unstable ordering, results over 400 kB)
+  when pickled, bare `None`, exceptions, unstable ordering, results over 2 MB)
   were dropped at build time, so error behaviour is measured only by the
   repository tests (309 withheld test functions assert an exception), which are
   reported and not rewarded.
@@ -800,7 +875,8 @@ Limits:
 - Strings are compared exactly, layout included, while the docstring examples
   are checked with whitespace normalised; only the LaTeX of two units ignores
   whitespace. A memo slot filled with a wrong value where upstream leaves it
-  empty is not seen by the call that fills it.
+  empty is not seen by the call that fills it. A dict's order and a matrix's
+  internal domain are not compared (see step 3).
 
 Requirement checks (`steps/01-restore-bodies/tests/verifier/registry.py`):
 
@@ -1037,6 +1113,9 @@ scored 0 under the binary reward.
 | Reference and the agent's starting tree through the entry point's steps, after the re-check | this machine, no privilege drop, no network probe, the delivery read stubbed | reference 1.000000 and complete: 1,955 / 1,955 units, 6,854 / 6,854 counted calls, 16,737 / 16,737 calls, 10,428 / 10,428 tests in one plain pytest session, none unreached, no control tripped, 672 s; starting tree 0.0 (`candidate_tree` failed, every metric present) |
 | Regrade of the stored submissions after the re-check | this machine, the entry point's steps, examples and calls | 16 submissions, reward 0.004 to 0.896 (see [Trial evidence](#trial-evidence)) |
 | `checks/` (99 tests): the real net check run whole for a blinded probe and a no-op turn; local, closed and open polls; the session rule on a stand-in `/proc`; the earlier end; no clamp; every refused tree scored 0; odd names; a surviving process; no end with and without a restored unit; the packager's private lists | working tree, 2026-11-20 (second re-check, the end of the work) | pass |
+| All calls recorded again with the typed comparison (`regold.py`) | the verifier's runner and `canon.py`, hash seeds 0, 1, 2, 2 MB result line | original 16,737 / 16,737 (16,593 byte for byte, 144 differing only in Dummies and frame counters the call made), skeleton 0, none dropped; 188 results record changed arguments |
+| Wrong-type, wrong-state and LaTeX probes on real SymPy (one unit's body changed in a copy of the original, its module replayed through the verifier's `rvector.py`, counted calls) | working tree, 2026-11-20 (second re-check) | `nP` 7/7 to 1/7, `right_open` 4/4 to 0/4, `banded` 8/8 to 0/8 (twice), `to_matrix` 8/8 to 0/8, `nullspace` 4/4 to 1/4, `gauss_laguerre` 6/6 to 0/6, `ddm_irref` 2/2 to 0/2, `apply_support` 6/6 to 4/6, `multiline_latex` 6/6 to 0/6; controls unchanged |
+| `checks/` (103 tests) | working tree, 2026-11-20 (second re-check, the comparison) | pass |
 | `harbor check` with `resources/task-implementation.toml` | working tree, 2026-11-17 | attempted on Modal; failed before review with `NotFoundError: Environment not found` (no default Modal environment). Not run in local Docker. No ratings |
 | Local image builds | none | not run for the v2 Dockerfiles; the Oddish baselines are the first build |
 

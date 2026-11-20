@@ -1,5 +1,6 @@
-"""The calls the reward counts: none returns a result its unit returns for a documented call, and
-the documented list names only recorded calls. Runs on the prepared private inputs when present."""
+"""The calls the reward counts: none returns a result its unit returns for a documented call (with
+the type of a value left out, as a printed result does not show it), and the documented list names
+only recorded calls. Runs on the prepared private inputs when present."""
 
 from __future__ import annotations
 
@@ -17,7 +18,7 @@ def test_no_counted_call_returns_a_documented_result_of_its_unit(task_root):
     if not all(path.is_file() for path in paths):
         pytest.skip("prepared private inputs are not present")
     sys.path.insert(0, str(task_root / "steps" / "01-restore-bodies" / "tests" / "verifier" / "lib"))
-    from canon import same
+    from canon import same_loose
 
     with open(paths[0], "rb") as f:
         payload = pickle.load(f)  # noqa: S301 - the task's own build output
@@ -36,5 +37,5 @@ def test_no_counted_call_returns_a_documented_result_of_its_unit(task_root):
             if vid in documented:
                 continue
             counted += 1
-            assert not any(same(gold[vid], result) for result in shown), (uid, vid)
+            assert not any(same_loose(gold[vid], result) for result in shown), (uid, vid)
     assert counted > 0

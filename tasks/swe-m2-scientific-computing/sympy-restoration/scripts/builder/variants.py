@@ -454,7 +454,7 @@ def select():
     drop = set(json.load(open(_arg("--drop", ""), encoding="utf-8"))) if _arg("--drop", "") else set()
     units = {u["uid"]: u for u in json.load(open(UNITS, encoding="utf-8"))}
     sys.path.insert(0, os.path.join(HERE, "..", "..", "steps", "01-restore-bodies", "tests", "verifier", "lib"))
-    from canon import profile_of, same  # noqa: PLC0415
+    from canon import profile_of, same_loose  # noqa: PLC0415
 
     profile = {uid: profile_of(f"{u['file']}::{u['qualname']}") for uid, u in units.items()}
     if drop:
@@ -474,7 +474,7 @@ def select():
                 shown[uid].append(gold[vid])
 
     def result_shown(uid, result):
-        return any(same(result, r, profile=profile[uid]) for r in shown[uid])
+        return any(same_loose(result, r, profile=profile[uid]) for r in shown[uid])
 
     by_rule = collections.Counter()
     for p in payload.values():

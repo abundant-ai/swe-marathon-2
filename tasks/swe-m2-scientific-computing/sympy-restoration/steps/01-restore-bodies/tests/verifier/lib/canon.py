@@ -1,22 +1,31 @@
 """Structural canonical form of a Python / SymPy value, as JSON-able nested lists, and the
-comparison of two such forms.
+comparison of two such forms. The form keeps the type and the container of every value.
 
-  None -> ["N"]           bool -> ["B", v]         integer -> ["I", "<decimal>"]
-  rational -> ["Q", p, q] float -> ["F", "<repr>"] complex -> ["C", re, im]
-  str -> ["S", s]         bytes -> ["Y", hex]
-  tuple -> ["T", [..]]    list -> ["L", [..]]      set -> ["E", [sorted..]]
-  dict -> ["D", [[k, v] sorted..]]                 iterator -> ["G", [first items..]]
+  None -> ["N"]                       bool -> ["B", v]             SymPy true/false -> ["SB", v]
+  int -> ["I", "<decimal>"]           SymPy Integer (Zero, One, ...) -> ["SI", "<decimal>"]
+  SymPy Rational -> ["SQ", p, q]      another rational (Fraction, PythonMPQ, ...) -> ["Q", p, q, "<class>"]
+  float -> ["F", "<repr>"]            SymPy Float -> ["SF", precision, sign, mantissa, exponent]
+  mpmath mpf -> ["MF", precision, sign, mantissa, exponent]
+  complex -> ["C", re, im]            mpmath mpc -> ["MC", re, im]
+  str -> ["S", s]                     bytes -> ["Y", hex]
+  tuple -> ["T", [..]]                SymPy Tuple -> ["ST", [..]]   list -> ["L", [..]]
+  set -> ["E", [sorted..]]            dict -> ["D", [[k, v] sorted..]]
+  defaultdict -> ["D:defaultdict", factory, [[k, v] sorted..]]   OrderedDict -> ["D:OrderedDict", [[k, v] in order..]]
+  a subclass of int, str, bytes, tuple, list, set (frozenset too) or dict (Counter too), a dict view,
+  a range, a deque -> its tag with ":<class>"   iterator -> ["G:<class>", [first items..]]
   SymPy expression -> ["X", class, [args..]]  (atoms carry their defining data)
   symbol -> ["X", class, [name, assumptions]]
   Dummy that came with the call's arguments -> ["X", "Dummy", [name, assumptions, index]]
   Dummy the call made -> ["X", "Dummy~", [name ("" when unnamed), assumptions, identity]]
-  matrix -> ["M", rows, cols, [entries..]]    class -> ["K", "module.qualname"]
+  matrix -> ["M", class, rows, cols, [entries..]]    class -> ["K", "module.qualname"]
   domain matrix storage -> ["DM", rows, cols, domain, [entries..], "dense" | "sparse" | "sparse with zeros"]
   other SymPy object -> ["O", class, [[attribute, value]..]] (an attribute filled lazily is "~name";
-  a value that cannot be expressed is ["?"]; a creation counter is ["#", "given" | "made", value]),
+  a value that cannot be expressed is ["?"]; a creation counter is ["#", "given" | "made", value]; a
+  class made by a factory adds its own plain attributes as "@class"),
   or ["R", class, repr] when its state cannot be expressed      named function -> ["FN", name]
   exception raised by the call -> ["EXC", class name, [class chain..]]
   call that returned None -> ["NS", <arguments after the call>], or ["N"] if unchanged
+  call that returned a value and changed an argument -> ["RS", <result>, <arguments after the call>]
 
 `same()` compares behaviour, not bookkeeping, and nothing looser than that:
 - a symbol is its name plus the assumptions SymPy's own equality uses; so is a Dummy;
@@ -29,12 +38,17 @@ comparison of two such forms.
   components) is exact for an object that came with the arguments, so a copy cannot stand in
   for it, and compares up to one order-preserving renaming for the objects the call made;
 - strings compare exactly, except the LaTeX of LATEX_UNITS, compared without the whitespace
-  LaTeX ignores;
-- domain-matrix storage, dense or sparse, counts for STORAGE_UNITS, whose result is that storage,
-  and zeros stored in sparse storage always count;
+  LaTeX ignores (a blank line, a paragraph break, is kept);
 - Truss's coordinate lists kept in parallel with its nodes count, except in the result of
   `Truss.remove_node`, whose upstream body keeps them inconsistently;
-- floats compare within a relative tolerance of 1e-9.
+- a Python float, and an mpmath number, compare within a relative tolerance of 2**-30 (about
+  1e-9); a SymPy Float has the same precision and compares within 2**(23 - precision);
+- a dict's and a set's items compare in no order (a dict's equality ignores it, and SymPy prints
+  both sorted), an OrderedDict's in its own.
+
+`erase()` maps a form to the one an earlier version of this file gave, in which a Python value and
+its SymPy counterpart, and the flavours of a container, were alike. The build uses it for what a
+table could answer, which must not depend on a type a printed result does not show.
 """
 from __future__ import annotations
 
@@ -47,6 +61,8 @@ from typing import NamedTuple
 MAX_NODES = 40000
 MAX_DEPTH = 80
 MAX_ITER = 200
+FLOAT_BITS = 30     # relative tolerance 2**-FLOAT_BITS for a float or an mpmath number
+FLOAT_SLACK = 23    # a SymPy Float of precision p: relative tolerance 2**(FLOAT_SLACK - p)
 # attributes that hold a value computed lazily from the object's other state
 MEMO_SLOTS = frozenset({
     "_img", "_ker", "_starts_with_unity", "_is_sq_maxrank_HNF", "_QQ_matrix", "_QQ_col",
@@ -64,30 +80,12 @@ PARALLEL_LISTS = {
 PARALLEL_LIST_UNITS = frozenset({"sympy/physics/continuum_mechanics/truss.py::Truss.remove_node"})
 # units ("file::qualname") whose result is LaTeX, in which whitespace carries no meaning
 LATEX_UNITS = frozenset({"sympy/printing/latex.py::multiline_latex", "sympy/physics/vector/printing.py::vlatex"})
-# units whose result is a domain matrix in a given storage: the storage is the contract
-STORAGE_UNITS = frozenset({
-    "sympy/matrices/repmatrix.py::RepMatrix.to_DM",
-    "sympy/polys/matrices/ddm.py::DDM.from_list_flat", "sympy/polys/matrices/ddm.py::DDM.from_flat_nz",
-    "sympy/polys/matrices/ddm.py::DDM.from_dod", "sympy/polys/matrices/ddm.py::DDM.from_dok",
-    "sympy/polys/matrices/ddm.py::DDM.to_sdm", "sympy/polys/matrices/ddm.py::DDM.diag",
-    "sympy/polys/matrices/domainmatrix.py::DM", "sympy/polys/matrices/domainmatrix.py::DomainMatrix.from_list_sympy",
-    "sympy/polys/matrices/domainmatrix.py::DomainMatrix.from_dict_sympy",
-    "sympy/polys/matrices/domainmatrix.py::DomainMatrix.from_Matrix",
-    "sympy/polys/matrices/domainmatrix.py::DomainMatrix.to_sparse", "sympy/polys/matrices/domainmatrix.py::DomainMatrix.to_dense",
-    "sympy/polys/matrices/domainmatrix.py::DomainMatrix.to_ddm", "sympy/polys/matrices/domainmatrix.py::DomainMatrix.to_sdm",
-    "sympy/polys/matrices/domainmatrix.py::DomainMatrix.from_list_flat",
-    "sympy/polys/matrices/domainmatrix.py::DomainMatrix.diag", "sympy/polys/matrices/domainmatrix.py::DomainMatrix.ones",
-    "sympy/polys/matrices/sdm.py::SDM.from_list", "sympy/polys/matrices/sdm.py::SDM.from_ddm",
-    "sympy/polys/matrices/sdm.py::SDM.from_list_flat", "sympy/polys/matrices/sdm.py::SDM.from_dod",
-    "sympy/polys/matrices/sdm.py::SDM.from_dok", "sympy/polys/matrices/sdm.py::SDM.to_ddm",
-})
 
 
 class Profile(NamedTuple):
     """What of a unit's result is compared beyond the default."""
 
     latex: bool = False            # whitespace LaTeX ignores is ignored
-    storage: bool = False          # dense versus sparse storage counts
     parallel_lists: bool = True    # Truss's parallel coordinate lists count
 
 
@@ -96,8 +94,7 @@ STRICT = Profile()
 
 def profile_of(unit_key: str) -> Profile:
     """The comparison profile of a unit, by "file::qualname"."""
-    return Profile(latex=unit_key in LATEX_UNITS, storage=unit_key in STORAGE_UNITS,
-                   parallel_lists=unit_key not in PARALLEL_LIST_UNITS)
+    return Profile(latex=unit_key in LATEX_UNITS, parallel_lists=unit_key not in PARALLEL_LIST_UNITS)
 
 
 class Uncanonical(Exception):
@@ -146,6 +143,17 @@ def _key(node):
     return _RENAMABLE.sub(lambda m: (m.group(1) or m.group(2)) + '"', text)
 
 
+def _tag(base, t, plain):
+    """`base` for the plain type, `base:<class>` for anything derived from it."""
+    return base if t is plain else f"{base}:{t.__qualname__}"
+
+
+def _binary(mpf):
+    """[sign, mantissa, exponent] of an mpmath binary float tuple (sign, man, exp, bc)."""
+    sign, man, exp = mpf[0], mpf[1], mpf[2]
+    return [int(sign), str(int(man)), str(int(exp))]
+
+
 def _c(o, depth, budget):
     budget[0] -= 1
     if budget[0] < 0 or depth > MAX_DEPTH:
@@ -156,77 +164,82 @@ def _c(o, depth, budget):
     if t is bool:
         return ["B", bool(o)]
     if isinstance(o, int):
-        return ["I", str(int(o))]
+        return [_tag("I", t, int), str(int(o))]
     if isinstance(o, float):
-        return _f(o)
+        return _f(o) if t is float else [f"F:{t.__qualname__}", _f(o)[1]]
     if isinstance(o, complex):
-        return ["C", _f(o.real), _f(o.imag)]
+        return [_tag("C", t, complex), _f(o.real), _f(o.imag)]
     if isinstance(o, str):
-        return ["S", str(o)]
+        return [_tag("S", t, str), str(o)]
     if t in (bytes, bytearray):
-        return ["Y", bytes(o).hex()]
+        return [_tag("Y", t, bytes), bytes(o).hex()]
     if isinstance(o, type):
         return ["K", f"{o.__module__}.{o.__qualname__}"]
 
     import fractions
 
     if isinstance(o, fractions.Fraction):
-        return ["Q", str(o.numerator), str(o.denominator)]
+        return ["Q", str(o.numerator), str(o.denominator), f"{t.__module__}.{t.__qualname__}"]
 
     import sympy
     from sympy.core.basic import Basic
     from sympy.matrices.matrixbase import MatrixBase
 
-    # every matrix kind (mutable, immutable, sparse) by shape and entries
+    # every matrix kind (mutable, immutable, dense, sparse) by its class, shape and entries
     if isinstance(o, MatrixBase):
         r, c = int(o.rows), int(o.cols)
-        return ["M", r, c, [_c(o[i, j], depth + 1, budget) for i in range(r) for j in range(c)]]
+        return ["M", t.__name__, r, c, [_c(o[i, j], depth + 1, budget) for i in range(r) for j in range(c)]]
     if isinstance(o, Basic):
         return _basic(o, depth, budget, sympy)
 
     mod = t.__module__ or ""
     # numeric helper types used by the polynomial domains
     if mod.startswith(("sympy.external.pythonmpq", "sympy.polys.domains")) and hasattr(o, "numerator") and hasattr(o, "denominator") and not hasattr(o, "ex"):
-        return ["Q", str(int(o.numerator)), str(int(o.denominator))]
+        return ["Q", str(int(o.numerator)), str(int(o.denominator)), f"{mod}.{t.__qualname__}"]
     if mod.startswith("mpmath"):
         import mpmath
 
+        prec = _mp_prec(o)
         if isinstance(o, mpmath.mpf):
-            return _f(float(o)) if abs(o) < 1e300 else ["F", mpmath.nstr(o, 15)]
+            return ["MF", prec] + _binary(o._mpf_)
         if isinstance(o, mpmath.mpc):
-            return ["C", _f(float(o.real)), _f(float(o.imag))]
+            re_part, im_part = o._mpc_
+            return ["MC", ["MF", prec] + _binary(re_part), ["MF", prec] + _binary(im_part)]
         if isinstance(o, mpmath.matrix):
-            return ["M", int(o.rows), int(o.cols), [_c(o[i, j], depth + 1, budget) for i in range(o.rows) for j in range(o.cols)]]
+            return ["M", f"mpmath.{t.__name__}", int(o.rows), int(o.cols),
+                    [_c(o[i, j], depth + 1, budget) for i in range(o.rows) for j in range(o.cols)]]
         raise Uncanonical(f"mpmath type {t.__name__}")
 
     if mod.startswith("sympy.polys.matrices.") and t.__name__ in ("DDM", "SDM"):
         return _domain_matrix(o, t, depth, budget)
     if isinstance(o, tuple):
-        tag = "T" if t is tuple else "T:" + t.__name__
-        return [tag, [_c(x, depth + 1, budget) for x in o]]
+        return [_tag("T", t, tuple), [_c(x, depth + 1, budget) for x in o]]
     if isinstance(o, list):
-        tag = "L" if t is list else "L:" + t.__name__
-        return [tag, [_c(x, depth + 1, budget) for x in o]]
+        return [_tag("L", t, list), [_c(x, depth + 1, budget) for x in o]]
     if isinstance(o, (set, frozenset)):
         items = [_c(x, depth + 1, budget) for x in o]
-        return ["E", sorted(items, key=_key)]
+        return [_tag("E", t, set), sorted(items, key=_key)]
     if isinstance(o, dict):
-        # dict and the standard dict flavours (defaultdict, OrderedDict, Counter) alike
-        tag = "D" if (t is dict or mod == "collections") else "D:" + t.__name__
+        import collections
+
         items = [[_c(k, depth + 1, budget), _c(v, depth + 1, budget)] for k, v in o.items()]
-        return [tag, sorted(items, key=_key)]
+        if isinstance(o, collections.OrderedDict):
+            return ["D:" + t.__qualname__, items]
+        if isinstance(o, collections.defaultdict):
+            return ["D:" + t.__qualname__, _factory(o.default_factory), sorted(items, key=_key)]
+        return [_tag("D", t, dict), sorted(items, key=_key)]
     if isinstance(o, range):
-        return ["L", [["I", str(x)] for x in itertools.islice(o, MAX_ITER)]]
+        return ["L:range", [["I", str(x)] for x in itertools.islice(o, MAX_ITER)]]
 
     import collections
     import collections.abc as cabc
 
     if isinstance(o, collections.deque):
-        return ["L:deque", [_c(x, depth + 1, budget) for x in o]]
+        return ["L:" + t.__qualname__, [_c(x, depth + 1, budget) for x in o]]
     if isinstance(o, (cabc.KeysView, cabc.ValuesView, cabc.ItemsView)):
-        return ["L", [_c(x, depth + 1, budget) for x in o]]
+        return ["L:" + t.__qualname__, [_c(x, depth + 1, budget) for x in o]]
     if hasattr(o, "__next__") and hasattr(o, "__iter__"):
-        return ["G", [_c(x, depth + 1, budget) for x in itertools.islice(o, MAX_ITER)]]
+        return ["G:" + t.__qualname__, [_c(x, depth + 1, budget) for x in itertools.islice(o, MAX_ITER)]]
 
     import types
 
@@ -259,6 +272,31 @@ def _c(o, depth, budget):
         if isinstance(r, str) and " at 0x" not in r and 0 < len(r) <= 20000:
             return ["R", cls, r]
     raise Uncanonical(f"unsupported type {mod}.{t.__qualname__}")
+
+
+def _mp_prec(o):
+    """The precision of an mpmath number: its own context's, else the working one."""
+    context = getattr(o, "context", None)
+    prec = getattr(context, "prec", None)
+    if not isinstance(prec, int):
+        import mpmath
+
+        prec = mpmath.mp.prec
+    return int(prec)
+
+
+def _factory(factory):
+    """The default factory of a defaultdict: a class, a named function, or what kind of thing it is."""
+    import types
+
+    if factory is None:
+        return ["N"]
+    if isinstance(factory, type):
+        return ["K", f"{factory.__module__}.{factory.__qualname__}"]
+    name = getattr(factory, "__qualname__", None)
+    if isinstance(factory, (types.FunctionType, types.BuiltinFunctionType)) and name and "<lambda>" not in name and "<locals>" not in name:
+        return ["FN", f"{getattr(factory, '__module__', '')}.{name}"]
+    return ["FN?", type(factory).__qualname__]
 
 
 def _skipped(n, skip):
@@ -310,6 +348,12 @@ def _state(o, t, depth, budget):
             if _skipped(n, skip):
                 continue
             state.append(_entry(n, d[n], depth, budget, counter))
+    if "<locals>" in t.__qualname__:
+        # a class a factory made (a finite field's elements, say): its own plain attributes tell it apart
+        own = sorted((k, v) for k, v in vars(t).items() if isinstance(k, str) and not k.startswith("_")
+                     and type(v) in (int, bool, str))
+        if own:
+            state.append([["S", "@class"], ["L", [[["S", k], _c(v, depth + 1, budget)] for k, v in own]]])
     return state
 
 
@@ -367,17 +411,17 @@ def _basic(o, depth, budget, sympy):
     from sympy.logic.boolalg import BooleanFalse, BooleanTrue
 
     if isinstance(o, BooleanTrue):
-        return ["B", True]
+        return ["SB", True]
     if isinstance(o, BooleanFalse):
-        return ["B", False]
+        return ["SB", False]
     if isinstance(o, Tuple):
-        return ["T", [_c(a, depth + 1, budget) for a in o.args]]
+        return ["ST", [_c(a, depth + 1, budget) for a in o.args]]
     if isinstance(o, Integer):
-        return ["I", str(int(o.p))]
+        return ["SI", str(int(o.p))]
     if isinstance(o, Rational):
-        return ["Q", str(int(o.p)), str(int(o.q))]
+        return ["SQ", str(int(o.p)), str(int(o.q))]
     if isinstance(o, Float):
-        return _f(float(o)) if abs(o) < 1e300 else ["F", str(o)]
+        return ["SF", int(o._prec)] + _binary(o._mpf_)
     name = type(o).__name__
     if isinstance(o, Dummy):
         ident = ("dummy", o.name, getattr(o, "dummy_index", None))
@@ -408,14 +452,16 @@ def _basic(o, depth, budget, sympy):
     return ["X", name, [_c(a, depth + 1, budget) for a in args]]
 
 
+_LATEX_PAR = re.compile(r"\n[ \t]*\n\s*")
 _LATEX_SPACE = re.compile(r"\s+")
 _LATEX_KEEP = re.compile(r"(\\[A-Za-z]+) (?=[A-Za-z])|(\\) ")
 
 
 def latex_form(text: str) -> str:
-    """LaTeX without the whitespace it ignores: a space is kept only where it ends a control word
-    before a letter, or follows a lone backslash."""
-    text = _LATEX_SPACE.sub(" ", text.strip())
+    """LaTeX without the whitespace it ignores: a blank line (a paragraph break) becomes \\par, and a
+    space is kept only where it ends a control word before a letter, or follows a lone backslash."""
+    text = _LATEX_PAR.sub(" \\\\par ", text.strip())
+    text = _LATEX_SPACE.sub(" ", text)
     text = _LATEX_KEEP.sub(lambda m: (m.group(1) or m.group(2)) + "\0", text)
     return text.replace(" ", "").replace("\0", " ")
 
@@ -448,10 +494,41 @@ def _number(text):
         return float("nan")
 
 
+def _binary_close(a, b, rel_bits, abs_bits):
+    """Two exact binary floats [sign, mantissa, exponent] (mantissa and exponent as decimal text):
+    |a - b| <= max(2**-rel_bits * max(|a|, |b|), 2**-abs_bits). A special value (zero, infinity, not a
+    number: mantissa 0) compares exactly, but for zero against a value within the absolute floor."""
+    try:
+        sa, ma, ea = int(a[0]), int(a[1]), int(a[2])
+        sb, mb, eb = int(b[0]), int(b[1]), int(b[2])
+    except (TypeError, ValueError, IndexError):
+        return a == b
+    if (sa, ma, ea) == (sb, mb, eb):
+        return True
+    special_a, special_b = ma == 0 and ea != 0, mb == 0 and eb != 0   # infinities and not-a-number
+    if special_a or special_b:
+        return False
+    low = min(ea, eb) if ma and mb else (eb if not ma else ea)
+    if max(ea, eb) - low > 100_000:
+        return False
+    x = (-ma if sa else ma) << ((ea - low) if ma else 0)
+    y = (-mb if sb else mb) << ((eb - low) if mb else 0)
+    diff = abs(x - y)                 # |a - b| * 2**-low
+    if diff << rel_bits <= max(abs(x), abs(y)):
+        return True
+    shift = abs_bits + low            # |a - b| <= 2**-abs_bits  <=>  diff * 2**(abs_bits + low) <= 1
+    return diff << shift <= 1 if shift >= 0 else diff <= (1 << -shift)
+
+
 def same(a, b, rel=1e-9, abs_=1e-12, profile=None):
     """Compare two canonical forms (see the module docstring); `profile` is the unit's (profile_of)."""
     ctx = _Context(rel, abs_, profile or STRICT)
     return _same(a, b, ctx) and ctx.in_order()
+
+
+def same_loose(a, b, profile=None):
+    """Compare two forms with the type of a value and the flavour of a container left out (erase())."""
+    return same(erase(a), erase(b), profile=profile)
 
 
 def _filled(node):
@@ -520,6 +597,15 @@ def _same(a, b, ctx):
         if math.isinf(x) or math.isinf(y):
             return x == y
         return abs(x - y) <= max(ctx.abs_, ctx.rel * max(abs(x), abs(y)))
+    if head == "SF" and len(a) == 5:
+        # the same precision, and a value within that precision less FLOAT_SLACK bits
+        if a[1] != b[1] or not isinstance(a[1], int):
+            return False
+        return _binary_close(a[2:], b[2:], max(a[1] - FLOAT_SLACK, 1), a[1] - FLOAT_SLACK + 10)
+    if head == "MF" and len(a) == 5:
+        if a[1] != b[1]:
+            return False
+        return _binary_close(a[2:], b[2:], FLOAT_BITS, FLOAT_BITS + 10)
     if head == "X" and len(a) == 3 and a[1] == "Dummy~" and b[1] == "Dummy~":
         try:
             (_, name_a), (_, ass_a), (_, id_a) = a[2]
@@ -536,12 +622,73 @@ def _same(a, b, ctx):
             return False
         ctx.counted[a[2]] = b[2]
         return True
-    if head == "DM" and len(a) == 6:
-        if not all(_same(x, y, ctx) for x, y in zip(a[1:5], b[1:5])):
-            return False
-        if "sparse with zeros" in (a[5], b[5]) or ctx.profile.storage:
-            return a[5] == b[5]
-        return True
     if head == "O" and len(a) == 3:
         return a[1] == b[1] and _same_state(a[2], b[2], ctx, a[1])
     return all(_same(x, y, ctx) for x, y in zip(a, b))
+
+
+def _to_float_node(node):
+    """["F", repr] for an exact binary float node's value (its old form)."""
+    try:
+        sign, man, exp = int(node[-3]), int(node[-2]), int(node[-1])
+    except (TypeError, ValueError, IndexError):
+        return ["F", "nan"]
+    if man == 0:
+        return ["F", {0: "0.0", -456: "inf", -789: "-inf"}.get(exp, "nan") if exp else ("-0.0" if sign else "0.0")]
+    try:
+        value = math.ldexp(-man if sign else man, exp)
+    except OverflowError:
+        return ["F", "-inf" if sign else "inf"]
+    return _f(value)
+
+
+def erase(node):
+    """The form an earlier version of this file gave: no Python and SymPy kind apart (an int and an
+    Integer, a bool and true, a tuple and a Tuple, any two rationals, any two floats), no matrix
+    class, no flavour of a set, a dict (an OrderedDict's order, a defaultdict's factory), a view, a
+    range, a deque or an iterator, and no domain-matrix storage but stored zeros."""
+    if not isinstance(node, list) or not node or not isinstance(node[0], str):
+        return [erase(x) for x in node] if isinstance(node, list) else node
+    head = node[0]
+    if head == "SI" or head.startswith("I:"):
+        return ["I", node[1]]
+    if head == "SB":
+        return ["B", node[1]]
+    if head in ("ST",):
+        return ["T", [erase(x) for x in node[1]]]
+    if head == "SQ":
+        return ["Q", node[1], node[2]]
+    if head == "Q" and len(node) == 4:
+        return ["Q", node[1], node[2]]
+    if head in ("SF", "MF"):
+        return _to_float_node(node)
+    if head.startswith("F:"):
+        return ["F", node[1]]
+    if head == "MC":
+        return ["C", _to_float_node(node[1]), _to_float_node(node[2])]
+    if head.startswith("C:"):
+        return ["C", node[1], node[2]]
+    if head.startswith("S:"):
+        return ["S", node[1]]
+    if head.startswith("Y:"):
+        return ["Y", node[1]]
+    if head == "M" and len(node) == 5:
+        return ["M", node[2], node[3], [erase(x) for x in node[4]]]
+    if head == "E" or head.startswith("E:"):
+        return ["E", sorted((erase(x) for x in node[1]), key=_key)]
+    if head == "D:defaultdict" and len(node) == 3:
+        return ["D", sorted(([erase(k), erase(v)] for k, v in node[2]), key=_key)]
+    if head == "D" or head in ("D:OrderedDict", "D:Counter"):
+        return ["D", sorted(([erase(k), erase(v)] for k, v in node[1]), key=_key)]
+    if head in ("L:range", "L:dict_keys", "L:dict_values", "L:dict_items", "L:odict_keys", "L:odict_values", "L:odict_items"):
+        return ["L", [erase(x) for x in node[1]]]
+    if head == "L:deque":
+        return ["L:deque", [erase(x) for x in node[1]]]
+    if head.startswith("G:"):
+        return ["G", [erase(x) for x in node[1]]]
+    if head == "DM" and len(node) == 6:
+        return ["DM", node[1], node[2], erase(node[3]), [erase(x) for x in node[4]],
+                node[5] if node[5] == "sparse with zeros" else "-"]
+    if head == "O" and len(node) == 3:
+        return ["O", node[1], [[k, erase(v)] for k, v in node[2] if not (isinstance(k, list) and k[1:] == ["@class"])]]
+    return [head] + [erase(x) for x in node[1:]]

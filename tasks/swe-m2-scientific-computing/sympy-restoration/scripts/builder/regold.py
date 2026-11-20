@@ -133,8 +133,14 @@ def main():
         pickle.dump(kept, f, protocol=4)
     units_before = {uid for _, uid in calls.values()}
     units_after = {uid for p in kept.values() for _, uid, _ in p["vectors"]}
+    # results that are the same text in every run, not only alike under the comparison (a Dummy the
+    # call made is numbered from a counter each process seeds at random)
+    identical = sum(1 for vid in gold if all(json.dumps(r[vid][0]) == json.dumps(runs[0][vid][0]) for r in runs[1:]))
     report = {
         "calls_before": len(calls), "calls_kept": len(gold), "dropped": dict(why), "dropped_calls": dropped,
+        "identical_text_in_every_run": identical,
+        "results_with_changed_arguments": {"RS": sum(1 for g in gold.values() if g[:1] == ["RS"]),
+                                           "NS": sum(1 for g in gold.values() if g[:1] == ["NS"])},
         "units_before": len(units_before), "units_after": len(units_after),
         "units_lost": sorted(units_before - units_after), "skeleton_matches": skeleton_matches,
         "slowest_ms": max((max(r[v][1] for r in runs) for v in gold), default=0), "seeds": seeds,

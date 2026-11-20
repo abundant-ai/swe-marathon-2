@@ -164,9 +164,10 @@ def main():
         matches["documented_constant"][uid] = {v for v in cell["deciding"] if fallback is not None and same(fallback, gold[v], profile=prof)}
         identity = {v for v in cell["deciding"] if (f := first_argument(v)) is not None and same(f, gold[v], profile=prof)}
         matches["first_argument"][uid] = identity
-        values = {r[1] for r in shown if isinstance(r, list) and len(r) == 2 and r[0] == "B"}
-        boolean = bool(shown) and len(values) == 1 and all(isinstance(r, list) and r[:1] == ["B"] for r in shown)
-        flip = {v for v in cell["deciding"] if boolean and gold[v] == ["B", not next(iter(values))]}
+        # the other boolean, of the same kind (a Python bool or SymPy's true and false) as the shown ones
+        kinds = {(r[0], r[1]) for r in shown if isinstance(r, list) and len(r) == 2 and r[0] in ("B", "SB")}
+        boolean = bool(shown) and len(kinds) == 1 and all(isinstance(r, list) and len(r) == 2 and r[0] in ("B", "SB") for r in shown)
+        flip = {v for v in cell["deciding"] if boolean and gold[v] == [next(iter(kinds))[0], not next(iter(kinds))[1]]}
         matches["flip"][uid] = flip
         matches["flip_first"][uid] = flip if boolean else identity
         renamed = set()
