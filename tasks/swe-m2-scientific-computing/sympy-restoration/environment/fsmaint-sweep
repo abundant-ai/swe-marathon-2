@@ -181,7 +181,7 @@ main <tree> <state> <key> <limits...> <spare dirs> <passes> <left> <started>
     whole is refused: nothing under its name, a link or anything else that is not a directory, a
     tree that cannot be listed, one over the limits (entries, bytes, depth, the length of a path,
     the size of its record), one holding a directory whose name a copy might not carry, or one there
-    is no room to copy (the platform packs it in the first of the spare directories: when the free
+    is no room to copy (the copy is packed in the first of the spare directories: when the free
     space there is short of the tree, what `dev` left in the spare directories is removed first). A
     refused tree stays aside and the empty tree's mark is replaced by the refusal. An accepted tree
     is marked in its own directory and only then takes the tree's name: in one step where the system
@@ -505,7 +505,7 @@ def main(argv):
         except (OSError, RecursionError, ValueError, MemoryError) as exc:
             refused = f"it could not be listed ({exc.__class__.__name__}: {exc})"
         if refused is None:
-            # the platform packs the tree in the first spare directory: there must be room for it
+            # the copy of the tree is packed in the first spare directory: there must be room for it
             need = int(totals["size"] * 1.02) + 1024 * totals["entries"] + copy_margin
             room = free_bytes(spare[0]) if spare else None
             if room is not None and room < need:
