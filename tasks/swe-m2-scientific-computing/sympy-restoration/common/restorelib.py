@@ -319,15 +319,27 @@ def load_units(path: str):
     return units, byfile
 
 
-def build_candidate(skel_root: str, work_root: str, cand_root: str, byfile: dict, cache: dict | None = None):
+def build_candidate(skel_root: str, work_root: str, cand_root: str, byfile: dict, cache: dict | None = None,
+                    withheld: dict | None = None):
     """Refresh candidate files for all unit-bearing files. Returns {uid: state}.
 
     work_root/<file> is read; skel_root/<file> is the original skeleton; the result is written to
     cand_root/<file>.  `cache` (mutable dict) memoises per-file results on (mtime_ns, size).
+    A file named in `withheld` is not read: it keeps the skeleton, and its units get the state
+    given there.
     """
     states = {}
     notes = []
+    withheld = withheld or {}
     for rel, qmap in byfile.items():
+        if rel in withheld:
+            skel_src = open(os.path.join(skel_root, rel), encoding="utf-8").read()
+            cp = os.path.join(cand_root, rel)
+            os.makedirs(os.path.dirname(cp), exist_ok=True)
+            with open(cp, "w", encoding="utf-8") as f:
+                f.write(skel_src)
+            states.update({uid: withheld[rel] for uid in qmap.values()})
+            continue
         wp = os.path.join(work_root, rel)
         try:
             st = os.stat(wp)

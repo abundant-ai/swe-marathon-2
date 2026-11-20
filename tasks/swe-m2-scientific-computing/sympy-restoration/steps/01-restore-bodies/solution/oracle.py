@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import shutil
+import time
 from dataclasses import dataclass
 from pathlib import Path
+
+SETTLE_SECONDS = 2.0
 
 
 @dataclass(frozen=True)
@@ -20,6 +23,8 @@ def oracle(context: OracleContext) -> None:
 
     Copies each original source file that holds a restorable unit over its
     skeleton counterpart. The verifier takes only the unit bodies from them.
+    It then waits a moment, so that no file is still being written when the
+    work ends.
 
     Args:
         context: The reference files and the workspace to write into.
@@ -36,6 +41,7 @@ def oracle(context: OracleContext) -> None:
             raise RuntimeError(f"Workspace file is missing: {target}")
         shutil.copyfile(source, target)
     print(f"restored {len(files)} files")
+    time.sleep(SETTLE_SECONDS)
 
 
 if __name__ == "__main__":

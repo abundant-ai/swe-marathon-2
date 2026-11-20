@@ -1,9 +1,11 @@
 """Measure a submitted SymPy tree. Decides nothing: checks and scoring read the result.
 
 Inputs
-  context.work_tree/sympy   the submitted tree (the declared artifact)
+  context.work_tree/sympy   the submitted tree (the declared artifact), with the collect step's
+                            signed mark and record of every entry (verifier/delivery.py)
   context.skeleton          reference skeleton with the full upstream test suite
-  context.private           unit list, sealed test list, recorded calls, reference results
+  context.private           unit list, sealed test list, recorded calls, reference results,
+                            the key the collect step signs with
 Outputs
   context.output/artifacts  per-unit results, failing test ids, the graded unit files
 
@@ -42,6 +44,7 @@ import gradelib  # noqa: E402
 import restorelib  # noqa: E402
 from canon import same  # noqa: E402
 
+from verifier import delivery  # noqa: E402
 from verifier.contracts import EvaluationError, Measurement, VerificationContext  # noqa: E402
 
 RUN_AS = "nobody"
@@ -566,12 +569,15 @@ def measure(context: VerificationContext) -> Measurement:
 
     Returns:
         Fixed denominators, passing numerators, self-check trips and the full
-        diagnostic record. A missing artifact or a tree with no restored unit
-        is a completed measurement with zero numerators.
+        diagnostic record. A delivery the collect step marked as empty, refused
+        or absent, or a tree with no restored unit, is a completed measurement
+        with zero numerators.
 
     Raises:
-        EvaluationError: Private inputs are unreadable, privileges cannot be
-            dropped, or a runner cannot be started. No reward is valid then.
+        EvaluationError: Private inputs are unreadable, the verifier can reach
+            the network, nothing arrived or the copy does not match the collect
+            step's signed record, privileges cannot be dropped, or a runner
+            cannot be started. No reward is valid then.
     """
     t_start = time.time()
     cfg = dict(context.limits)
@@ -614,16 +620,30 @@ def measure(context: VerificationContext) -> Measurement:
             "vectors_total", "vectors_passing", "tests_total", "tests_passing")}
         return Measurement(artifact_present, counts, tuple(metrics["tamper"]), metrics)
 
+    # submitted code must not reach the network from here
+    reachable = delivery.network_open()
+    if reachable is not None:
+        raise EvaluationError(f"The verifier can reach {reachable}; it must run with no network")
+    # what arrived, checked against the collect step's signed record before anything is graded
     tree = os.path.join(work_tree, "sympy")
-    if not os.path.isdir(tree) or os.path.islink(tree):
-        metrics["notes"].append("artifact /app/sympy is missing")
+    delivered = delivery.read_delivery(Path(tree), Path(private) / "fsmaint.key")
+    metrics["delivery"] = delivered.summary
+    metrics["egress_open"] = delivered.summary.get("egress_open")
+    metrics["notes"].extend(delivered.notes)
+    late = {f"sympy/{path}" for path in delivered.late}
+    metrics["late_files"] = sorted(late & set(byfile))[:500]
+    metrics["late_entries"] = len(late)
+    if delivered.state != "listed":
+        metrics["notes"].append(f"the collect step found the tree {delivered.state}; nothing was delivered")
         return finish(False)
 
-    # 1. candidate tree = reference skeleton + restored bodies (nothing else is taken over)
+    # 1. candidate tree = reference skeleton + restored bodies (nothing else is taken over); a unit
+    #    file changed after the end of the work is not taken over either
     if os.path.exists(cand):
         shutil.rmtree(cand)
     shutil.copytree(skel, cand, symlinks=False)
-    states, _notes = restorelib.build_candidate(skel, work_tree, cand, byfile, None)
+    withheld = {rel: "late" for rel in metrics["late_files"]}
+    states, _notes = restorelib.build_candidate(skel, work_tree, cand, byfile, None, withheld=withheld)
     st_count = collections.Counter(s.split(":")[0] for s in states.values())
     metrics["unit_states"] = dict(st_count)
     metrics["units_restored"] = st_count.get("restored", 0)

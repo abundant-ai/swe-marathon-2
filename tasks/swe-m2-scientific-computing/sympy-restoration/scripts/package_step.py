@@ -19,6 +19,7 @@ EXCLUDED_PARTS = {".venv", "__pycache__", ".pytest_cache", ".DS_Store", "experim
 REQUIRED_PREPARED = (
     "environment/data/workspace.tar.gz",
     "environment/data/units.json",
+    "environment/data/fsmaint.key",
     f"{STEP}/tests/private/skeleton.tar.gz",
     f"{STEP}/tests/private/sealed_tests.json",
     f"{STEP}/tests/private/vectors/inputs.pkl",
@@ -31,6 +32,7 @@ STAGED_COPIES = (
     ("common/restorelib.py", f"{STEP}/tests/verifier/lib/restorelib.py"),
     ("environment/pyproject.toml", f"{STEP}/tests/runtime/pyproject.toml"),
     ("environment/data/units.json", f"{STEP}/tests/private/units.json"),
+    ("environment/data/fsmaint.key", f"{STEP}/tests/private/fsmaint.key"),
 )
 
 

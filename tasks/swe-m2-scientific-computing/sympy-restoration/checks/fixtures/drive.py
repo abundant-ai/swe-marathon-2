@@ -270,7 +270,7 @@ def scenario(name: str) -> dict:
             "calls_below": measurement(100, 359, 200),
             "tests_below": measurement(100, 400, 189),
             "tripped": measurement(100, 400, 200, trips=("test-runner self-check",)),
-            "no_artifact": measurement(0, 0, 0, artifact=False, restored=0),
+            "nothing_delivered": measurement(0, 0, 0, artifact=False, restored=0),
             "nothing_restored": measurement(0, 0, 0, restored=0),
         }
         if name in cases:

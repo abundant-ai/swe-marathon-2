@@ -12,6 +12,7 @@ import pytest
 PREPARED = (
     "environment/data/workspace.tar.gz",
     "environment/data/units.json",
+    "environment/data/fsmaint.key",
     "steps/01-restore-bodies/tests/private/skeleton.tar.gz",
     "steps/01-restore-bodies/tests/private/sealed_tests.json",
     "steps/01-restore-bodies/tests/private/vectors/inputs.pkl",
@@ -57,9 +58,13 @@ def test_bundle_holds_runtime_files_only(task_root, tmp_path):
         assert (step / required).is_file(), required
     assert (step / "tests/verifier/lib/restorelib.py").read_bytes() == (task_root / "common/restorelib.py").read_bytes()
     assert (step / "tests/runtime/pyproject.toml").read_bytes() == (task_root / "environment/pyproject.toml").read_bytes()
+    # the collect step's key reaches both images, and its hooks ship executable
+    assert (step / "tests/private/fsmaint.key").read_bytes() == (bundle / "environment/data/fsmaint.key").read_bytes()
+    for hook in ("fsmaint-reserve", "fsmaint-netcheck", "fsmaint-sweep"):
+        assert (bundle / "environment" / hook).stat().st_mode & 0o111, hook
 
 
-@pytest.mark.parametrize("omit", [PREPARED[0], PREPARED[2], PREPARED[5], PREPARED[6]])
+@pytest.mark.parametrize("omit", [PREPARED[0], PREPARED[2], PREPARED[3], PREPARED[6], PREPARED[7]])
 def test_packaging_refuses_unprepared_inputs(task_root, tmp_path, omit):
     target = staged_task(task_root, tmp_path, omit=omit)
     done = subprocess.run([sys.executable, "-B", str(target / "scripts" / "package_step.py"), "--output", str(tmp_path / "out")],
@@ -88,6 +93,15 @@ def test_single_step_bundle_has_no_step_tables(task_root, tmp_path):
     step = task_root / "steps" / "01-restore-bodies"
     assert (bundle / "instruction.md").read_bytes() == (step / "instruction.md").read_bytes()
     assert (bundle / "tests/verify.py").read_bytes() == (step / "tests/verify.py").read_bytes()
+    # the agent's user and the hooks survive the flattening; --keep-name keeps the task's own name
+    for table in ('user = "dev"', "[[agent.setup_begin]]", "[[agent.setup_complete]]", "[[verifier.collect]]"):
+        assert table in config, table
+    kept = subprocess.run([sys.executable, "-B", str(target / "scripts" / "package_single_step.py"), "--keep-name", "--output", str(tmp_path / "kept")],
+                          capture_output=True, text=True, timeout=120, cwd=target / "scripts")
+    assert kept.returncode == 0, kept.stderr[-2000:]
+    flat = Path(json.loads(kept.stdout)["task_path"])
+    assert flat.name == "swe-m2_scientific-computing_sympy-restoration"
+    assert 'name = "abundant/swe-m2_scientific-computing_sympy-restoration"\n' in (flat / "task.toml").read_text()
 
 
 def test_regrade_bundle_swaps_the_reference_for_a_stored_submission(task_root, tmp_path):

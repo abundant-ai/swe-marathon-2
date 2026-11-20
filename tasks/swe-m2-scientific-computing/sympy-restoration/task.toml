@@ -9,11 +9,22 @@ authors = [{ name = "Neel Harsola", email = "work.neelharsola@gmail.com" }]
 
 [metadata]
 reward_type = "binary"
-open_internet_justification = "Only the environment build and agent setup have public egress, to install system packages, Python packages and the agent's own tooling. The work phase and the verifier run with network_mode = no-network."
+open_internet_justification = "The environment build and agent setup have public egress, to install system packages, Python packages and the agent's own tooling. The work runs with network_mode = no-network as the unprivileged user dev, and a root collect step stops every process of dev and records every file's times before the work is copied. The verifier runs with no network."
 
 [agent]
 timeout_sec = 34560
 network_mode = "no-network"
+user = "dev"
+
+[[agent.setup_begin]]
+command = "/usr/local/lib/fsmaint/fsmaint-reserve"
+user = "root"
+timeout_sec = 120
+
+[[agent.setup_complete]]
+command = "/usr/local/lib/fsmaint/fsmaint-reserve --netcheck"
+user = "root"
+timeout_sec = 120
 
 [environment]
 network_mode = "public"
@@ -29,6 +40,11 @@ environment_mode = "separate"
 network_mode = "no-network"
 timeout_sec = 6600
 user = "root"
+
+[[verifier.collect]]
+command = "/usr/local/lib/fsmaint/fsmaint-sweep"
+user = "root"
+timeout_sec = 600
 
 [verifier.environment]
 network_mode = "no-network"

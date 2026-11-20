@@ -1,0 +1,369 @@
+#!/bin/sh
+# Runs as root once the user's work has ended, before /app/sympy is copied elsewhere. It stops and
+# ends every process of the user `dev`, recording what was alive; records the type, size, mode,
+# owner, modification and change times and inode of every entry under /app/sympy before anything
+# of its own touches the tree; probes whether a few public hosts answer; makes the tree copyable;
+# and writes a record and a signed mark into it. The mark's first line says how many entries and
+# bytes were listed, or that the tree was refused or absent; the record (.fsmaint.json) lists every
+# entry with the times it had when the work ended, and the end bound the net check observed.
+LIMIT_ENTRIES=200000
+LIMIT_BYTES=2000000000
+STATE=/var/lib/fsmaint
+TREE=/app/sympy
+KEY=/usr/local/lib/fsmaint/key
+mkdir -p "$STATE" && chmod 0700 "$STATE"
+started=$(/usr/bin/python3 -I -c 'import time; print(repr(time.time()))')
+: > "$STATE/sweeping"
+# Freeze the processes of `dev` first, so that none of them runs while they are listed, then end
+# them all. `kill -9 -1` as that user reaches all of them in one system call, so a process that
+# forks cannot outrun it; repeat until none is left.
+for _ in $(seq 1 50); do
+  { pgrep -u dev || pgrep -U dev; } >/dev/null 2>&1 || break
+  setpriv --reuid dev --regid dev --clear-groups kill -STOP -1 >/dev/null 2>&1
+  pgrep -u dev -r R,S,D >/dev/null 2>&1 || break
+  sleep 0.05
+done
+timeout 20 /usr/bin/python3 -I - "$STATE/procs.json" <<'EOF'
+"""List the processes of the user `dev` (frozen), with their state and command lines."""
+import json
+import os
+import pwd
+import sys
+import time
+
+try:
+    uid = str(pwd.getpwnam("dev").pw_uid)
+except KeyError:
+    uid = None
+processes = []
+try:
+    pids = sorted((name for name in os.listdir("/proc") if name.isdigit()), key=int)
+except OSError:
+    pids = []
+for pid in pids:
+    try:
+        with open(f"/proc/{pid}/status") as handle:
+            status = dict(line.split(":", 1) for line in handle.read().splitlines() if ":" in line)
+        if uid is None or uid not in status.get("Uid", "").split():
+            continue
+        with open(f"/proc/{pid}/cmdline", "rb") as handle:
+            command = handle.read(4096).replace(b"\0", b" ").strip().decode(errors="backslashreplace")
+        processes.append({"pid": int(pid), "ppid": int(status.get("PPid", "0").strip() or 0), "state": status.get("State", "").strip()[:1],
+                          "name": status.get("Name", "").strip(), "command": command[:1000]})
+    except (OSError, ValueError):
+        continue
+with open(sys.argv[1], "w") as handle:
+    json.dump({"listed_at": time.time(), "process_count": len(processes), "processes": processes[:500]}, handle)
+EOF
+passes=0
+for _ in $(seq 1 100); do
+  { pgrep -u dev || pgrep -U dev; } >/dev/null 2>&1 || break
+  passes=$((passes + 1))
+  setpriv --reuid dev --regid dev --clear-groups kill -9 -1 >/dev/null 2>&1
+  pkill -KILL -u dev >/dev/null 2>&1
+  pkill -KILL -U dev >/dev/null 2>&1
+  sleep 0.1
+done
+left=$({ pgrep -u dev; pgrep -U dev; } 2>/dev/null | sort -u | wc -l)
+# fsmaint-netcheck, if it is still running, has nothing left to do.
+if [ -r "$STATE/netcheck.json" ]; then
+  pid=$(/usr/bin/python3 -I -c 'import json,sys; print(json.load(open(sys.argv[1])).get("pid", ""))' "$STATE/netcheck.json" 2>/dev/null)
+  [ -n "$pid" ] && kill -TERM "$pid" >/dev/null 2>&1
+fi
+# Every entry's own times, before anything of this sweep touches the tree: the change time is the
+# one time a user cannot set.
+timeout 300 /usr/bin/python3 -I - "$TREE" "$LIMIT_ENTRIES" "$STATE/before.jsonl" <<'EOF'
+"""Record every entry of the tree as it stands when the work has ended (path, type, size, mode,
+owner, modification and change times, inode), walking by directory descriptor and never following
+a link. The last line says whether the listing is complete."""
+import json
+import os
+import stat
+import sys
+
+ROOT, LIMIT, OUT = sys.argv[1], int(sys.argv[2]), sys.argv[3]
+count = 0
+complete = True
+
+
+class Stop(Exception):
+    pass
+
+
+def walk(fd, rel, out):
+    global count
+    with os.scandir(fd) as listing:
+        names = [entry.name for entry in listing]
+    for name in names:
+        count += 1
+        if count > LIMIT:
+            raise Stop(f"more than {LIMIT} entries")
+        path = f"{rel}/{name}" if rel else name
+        info = os.stat(name, dir_fd=fd, follow_symlinks=False)
+        kind = "directory" if stat.S_ISDIR(info.st_mode) else "file" if stat.S_ISREG(info.st_mode) else "link" if stat.S_ISLNK(info.st_mode) else "other"
+        out.write(json.dumps({"path": path, "type": kind, "size": info.st_size, "mode": stat.S_IMODE(info.st_mode), "owner": info.st_uid,
+                              "mtime": info.st_mtime, "ctime": info.st_ctime, "inode": [info.st_dev, info.st_ino]}) + "\n")
+        if kind == "directory":
+            child = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+            try:
+                walk(child, path, out)
+            finally:
+                os.close(child)
+
+
+sys.setrecursionlimit(100_000)
+with open(OUT, "w") as out:
+    try:
+        top = os.open(ROOT, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            walk(top, "", out)
+        finally:
+            os.close(top)
+    except Stop as stop:
+        complete = False
+        out.write(json.dumps({"incomplete": str(stop)}) + "\n")
+    except (OSError, RecursionError, ValueError) as exc:
+        complete = False
+        out.write(json.dumps({"incomplete": f"{exc.__class__.__name__}: {exc}"}) + "\n")
+    out.write(json.dumps({"complete": complete}) + "\n")
+EOF
+# Whether a few public hosts answer from here now (a TLS handshake), all at once, three seconds in all.
+timeout 15 /usr/bin/python3 -I - "$STATE/netprobe.json" <<'EOF'
+"""Record whether a TLS handshake with port 443 of a few public hosts completes, all tried at once
+within three seconds."""
+import json
+import socket
+import ssl
+import sys
+import threading
+import time
+
+HOSTS = ("pypi.org", "files.pythonhosted.org", "github.com")
+results = {f"{host}:443": "no answer within 3 s" for host in HOSTS}
+
+
+def reach(host):
+    try:
+        with socket.create_connection((host, 443), timeout=3) as raw:
+            raw.settimeout(3)
+            with ssl.create_default_context().wrap_socket(raw, server_hostname=host):
+                results[f"{host}:443"] = "open"
+    except (OSError, ssl.SSLError, ValueError) as exc:
+        results[f"{host}:443"] = f"closed ({exc.__class__.__name__})"
+
+
+workers = [threading.Thread(target=reach, args=(host,), daemon=True) for host in HOSTS]
+for worker in workers:
+    worker.start()
+for worker in workers:
+    worker.join(3.5)
+with open(sys.argv[1], "w") as handle:
+    json.dump({"checked_at": time.time(), "hosts": results, "any_open": any(state == "open" for state in results.values())}, handle)
+EOF
+# Give back the room and the spare inodes fsmaint-reserve set aside, so however full the disk was
+# left, the record and the mark can be written.
+rm -f "$STATE/room"
+rm -rf "$STATE/inodes"
+# Measure, bound, list, sign and mark, as root.
+exec /usr/bin/python3 -I - "$TREE" "$LIMIT_ENTRIES" "$LIMIT_BYTES" "$STATE" "$KEY" "$passes" "$left" "$started" <<'EOF'
+"""Measure the tree, bound it, list it, sign and mark it, as root, once no process of `dev` runs.
+
+The tree is walked by directory descriptor, so no depth hides anything. What the copy would
+refuse is removed: a device, a pipe, a socket, a link with an absolute target or one that leads
+outside the tree. A tree over the limits is moved aside whole and replaced by an empty directory;
+so is anything that is not a directory under the tree's name, and a missing tree is made empty.
+Whatever was left under the mark's or the record's name is moved aside, never followed. The
+mark's first line is `listed` with the number of entries (files, directories and links) and of
+bytes in its files (each file once, however many names it has), `refused` or `absent`; every
+line after it but the last is a change made or the reason for a refusal; the last line holds the
+record's sha256 and an HMAC-SHA256 over the other lines and that digest, with the key given
+fifth on the command line. The record (.fsmaint.json) holds the end bound (the net check's, else
+this sweep's start) and where it came from, what the net check recorded, the processes found
+frozen, how many passes of ending them took and how many were left, whether the public hosts
+answered afterwards, every note, and every entry: its path, type, size, modification and change
+times as recorded before this sweep touched anything, and a file's sha256 or a link's target.
+"""
+import hashlib
+import hmac
+import json
+import os
+import stat
+import sys
+
+ROOT = sys.argv[1]
+LIMIT_ENTRIES, LIMIT_BYTES = int(sys.argv[2]), int(sys.argv[3])
+STATE, KEY = sys.argv[4], sys.argv[5]
+PASSES = int(sys.argv[6]) if sys.argv[6].strip().isdigit() else None
+LEFT = int(sys.argv[7].strip()) if sys.argv[7].strip().isdigit() else None
+STARTED = float(sys.argv[8])
+MARK = os.path.join(ROOT, ".fsmaint")
+RECORD = os.path.join(ROOT, ".fsmaint.json")
+PARENT = os.path.dirname(ROOT)
+notes, links, files, catalogue = [], [], set(), []
+entries = size = 0
+
+
+def read_json(name):
+    try:
+        with open(os.path.join(STATE, name)) as handle:
+            return json.load(handle)
+    except (OSError, ValueError):
+        return None
+
+
+def one_line(text):
+    return str(text).replace("\r", "\\r").replace("\n", "\\n")
+
+
+def aside(path):
+    folder = os.path.join(PARENT, f".aside.{os.urandom(6).hex()}")
+    os.mkdir(folder, 0o700)
+    os.rename(path, os.path.join(folder, os.path.basename(path)))
+
+
+before = {}
+before_complete = False
+try:
+    with open(os.path.join(STATE, "before.jsonl")) as handle:
+        for line in handle:
+            item = json.loads(line)
+            if "path" in item:
+                before[item["path"]] = item
+            elif "complete" in item:
+                before_complete = bool(item["complete"])
+            elif "incomplete" in item:
+                notes.append(f"the listing before the sweep stopped: {one_line(item['incomplete'])}")
+except (OSError, ValueError):
+    notes.append("the listing before the sweep is missing")
+
+
+class Refuse(Exception):
+    pass
+
+
+def inside(path):
+    return path == ROOT or path.startswith(ROOT + os.sep)
+
+
+def digest(name, fd):
+    whole = hashlib.sha256()
+    handle = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=fd)
+    try:
+        while chunk := os.read(handle, 1 << 20):
+            whole.update(chunk)
+    finally:
+        os.close(handle)
+    return whole.hexdigest()
+
+
+def walk(fd, rel):
+    """List, and remove what the copy would refuse, below the directory open as `fd` (`rel` inside ROOT)."""
+    global entries, size
+    with os.scandir(fd) as found:
+        names = []
+        for entry in found:
+            names.append(entry.name)
+            if entries + len(names) > LIMIT_ENTRIES:
+                raise Refuse(f"it holds more than {LIMIT_ENTRIES:,} files and directories")
+    for name in sorted(names):
+        path = f"{rel}/{name}" if rel else name
+        info = os.stat(name, dir_fd=fd, follow_symlinks=False)
+        if stat.S_ISLNK(info.st_mode):
+            target = os.readlink(name, dir_fd=fd)
+            here = os.path.join(ROOT, path)
+            lexical = os.path.normpath(os.path.join(os.path.dirname(here), target))
+            if os.path.isabs(target) or not inside(lexical) or not inside(os.path.realpath(here)):
+                os.unlink(name, dir_fd=fd)
+                notes.append(f"removed {one_line(path)}: a link that leads outside the tree")
+                continue
+        elif not (stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode)):
+            os.unlink(name, dir_fd=fd)
+            notes.append(f"removed {one_line(path)}: not a file, a directory or a link")
+            continue
+        entries += 1
+        kind = "link" if stat.S_ISLNK(info.st_mode) else "directory" if stat.S_ISDIR(info.st_mode) else "file"
+        earlier = before.get(path)
+        times = (earlier["mtime"], earlier["ctime"]) if earlier and earlier.get("type") == kind else (info.st_mtime, info.st_ctime)
+        item = {"path": path, "type": kind, "size": info.st_size, "mtime": times[0], "ctime": times[1]}
+        if earlier is None or earlier.get("type") != kind:
+            item["times"] = "found after the listing"
+        if kind == "link":
+            item["target"] = os.readlink(name, dir_fd=fd)
+        elif kind == "file":
+            if (info.st_dev, info.st_ino) not in files:
+                files.add((info.st_dev, info.st_ino))
+                size += info.st_size
+                if size > LIMIT_BYTES:
+                    raise Refuse(f"it holds more than {LIMIT_BYTES:,} bytes")
+            item["sha256"] = digest(name, fd)
+        catalogue.append(item)
+        if kind == "directory":
+            child = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+            try:
+                walk(child, path)
+            finally:
+                os.close(child)
+
+
+head, reason = None, None
+if os.path.islink(ROOT) or (os.path.lexists(ROOT) and not os.path.isdir(ROOT)):
+    aside(ROOT)
+    notes.append("moved what was under the tree's name aside: not a directory")
+if not os.path.lexists(ROOT):
+    os.mkdir(ROOT, 0o755)
+    head = "absent"
+for path in (MARK, RECORD):
+    if os.path.lexists(path):
+        aside(path)
+        notes.append(f"moved {os.path.basename(path)} out of the tree: this sweep writes a file of that name there")
+if head is None:
+    sys.setrecursionlimit(100_000)
+    try:
+        top = os.open(ROOT, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            walk(top, "")
+        finally:
+            os.close(top)
+        head = f"listed {entries} {size}"
+    except Refuse as refusal:
+        reason = str(refusal)
+    except (OSError, RecursionError, ValueError) as exc:
+        reason = f"it could not be measured ({exc.__class__.__name__}: {one_line(exc)})"
+    if reason is not None:
+        aside(ROOT)
+        os.mkdir(ROOT, 0o755)
+        head, catalogue = "refused", []
+        notes.append(f"{reason}: it was not copied")
+netcheck, netcheck_open, processes, probe = (read_json(name) for name in ("netcheck.json", "netcheck-open.json", "procs.json", "netprobe.json"))
+try:
+    end_bound, end_from = float(netcheck_open["end_bound"]), "netcheck"
+except (TypeError, KeyError, ValueError):
+    end_bound, end_from = STARTED, "collect"
+try:
+    with open(os.path.join(STATE, "work-started")) as handle:
+        work_started = int(handle.read().split()[0])
+except (OSError, ValueError, IndexError):
+    work_started = None
+record = {"state": head.split()[0], "listed": head, "end_bound": end_bound, "end_from": end_from, "sweep_started_at": STARTED,
+          "work_started": work_started, "netcheck": netcheck, "netcheck_open": netcheck_open,
+          "process_count": (processes or {}).get("process_count"), "processes": (processes or {}).get("processes", []),
+          "kill_passes": PASSES, "processes_left": LEFT, "egress": probe, "listing_complete": before_complete and reason is None,
+          "notes": notes, "entries": catalogue}
+payload = json.dumps(record, separators=(",", ":"), ensure_ascii=True).encode()
+descriptor = os.open(RECORD, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644)
+with os.fdopen(descriptor, "wb") as handle:
+    handle.write(payload)
+lines = [head] + [one_line(note) for note in notes]
+record_sha = hashlib.sha256(payload).hexdigest()
+try:
+    with open(KEY, "rb") as handle:
+        key = handle.read().strip()
+    signature = hmac.new(key, ("\n".join(lines) + "\n" + record_sha).encode(errors="backslashreplace"), hashlib.sha256).hexdigest()
+except OSError:
+    signature = "unsigned"
+descriptor = os.open(MARK, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644)
+with os.fdopen(descriptor, "w", errors="backslashreplace") as mark:
+    mark.write("\n".join(lines + [f"sig {record_sha} {signature}"]) + "\n")
+for line in lines[1:51]:
+    print(line, flush=True)
+EOF

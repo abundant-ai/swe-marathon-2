@@ -18,8 +18,13 @@ raise NotImplementedError("RESTORE U0421")
 docstrings and every other function are intact. Some of the upstream tests are not in this
 checkout; the tests that are here are unmodified.
 
-There is no network access. SymPy is not installed anywhere else in the image; `mpmath`,
-its only dependency, is. Licence and provenance are in `/app/ATTRIBUTION.txt`.
+There is no network access. The only other copies of this tree in the image are the
+`restore` tool's own, under `/opt/restore`, and they are as damaged as this one; `mpmath`,
+SymPy's only dependency, is installed. Licence and provenance are in `/app/ATTRIBUTION.txt`.
+
+Write the bodies yourself, from what is in this copy and what you know. Another copy of
+SymPy's source, from an installed package, a download, a mirror or any other place, is not to
+be used, in whole or in part.
 
 ## What to deliver
 

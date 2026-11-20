@@ -46,7 +46,7 @@ def test_partial_score_pools_fixed_denominators(scenario):
     assert data["metrics_json"]["reward"] == 0
 
 
-@pytest.mark.parametrize("case", ["no_artifact", "nothing_restored"])
+@pytest.mark.parametrize("case", ["nothing_delivered", "nothing_restored"])
 def test_missing_work_fails_the_prerequisite_and_skips_the_rest(scenario, case):
     data = scenario(case)
     assert data["reward_txt"] == "0" and data["metrics"]["partial_score"] == 0.0

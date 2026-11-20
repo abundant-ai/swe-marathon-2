@@ -4,7 +4,9 @@ Some harnesses on Oddish accept only tasks that declare no `[[steps]]`. This
 writes step 1's instruction, verifier and solution at the task root, drops the
 step tables from task.toml and gives the task its own name, so it is uploaded as
 a separate task and never becomes a new version of the multi-step one.
-Content is otherwise identical to the bundle from package_step.py.
+Content is otherwise identical to the bundle from package_step.py. With
+--keep-name the task keeps its own name: that is the bundle uploaded as the
+task itself, for harnesses that run single-step tasks only.
 """
 
 from __future__ import annotations
@@ -23,14 +25,16 @@ from task_paths import EXPERIMENT_ROOT, STEP, TASK_ROOT
 NAME_SUFFIX = "-single"
 
 
-def flat_task_toml(text: str) -> str:
+def flat_task_toml(text: str, suffix: str = NAME_SUFFIX) -> str:
     """Return task.toml without step tables and with the single-step task name.
 
     Args:
         text: The multi-step task configuration.
+        suffix: Appended to the task name; empty keeps the name.
 
     Returns:
-        A configuration for a task with one implicit step and a distinct name.
+        A configuration for a task with one implicit step and, unless the suffix
+        is empty, a distinct name.
 
     Raises:
         ValueError: The step tables or the task name are not where expected.
@@ -39,18 +43,19 @@ def flat_task_toml(text: str) -> str:
     if not marker:
         raise ValueError("task.toml declares no [[steps]] table")
     head = re.sub(r"^multi_step_reward_strategy\s*=.*\n", "", head, flags=re.M)
-    renamed, count = re.subn(r'^(name = "abundant/[^"]+)"', rf'\1{NAME_SUFFIX}"', head, count=1, flags=re.M)
+    renamed, count = re.subn(r'^(name = "abundant/[^"]+)"', rf'\1{suffix}"', head, count=1, flags=re.M)
     if count != 1:
         raise ValueError("task.toml has no [task].name to rename")
     return renamed.rstrip("\n") + "\n"
 
 
-def package_single_step(task_root: Path, destination: Path) -> dict[str, Any]:
+def package_single_step(task_root: Path, destination: Path, keep_name: bool = False) -> dict[str, Any]:
     """Stage the single-step bundle, named after its own task slug.
 
     Args:
         task_root: Authoring source directory with prepared inputs in place.
         destination: Local output directory; private verifier inputs are included.
+        keep_name: Keep the task's own name instead of the single-step one.
 
     Returns:
         The staged task path, its content hash and its file count.
@@ -60,7 +65,7 @@ def package_single_step(task_root: Path, destination: Path) -> dict[str, Any]:
     """
     prefix = f"{STEP}/"
     inputs = selected_files(task_root)
-    config = flat_task_toml((task_root / "task.toml").read_text(encoding="utf-8"))
+    config = flat_task_toml((task_root / "task.toml").read_text(encoding="utf-8"), "" if keep_name else NAME_SUFFIX)
     slug = re.search(r'^name = "abundant/([^"]+)"', config, flags=re.M).group(1)
     names = {(name[len(prefix):] if name.startswith(prefix) else name): path for name, path in inputs.items()}
     if len(names) != len(inputs):
@@ -91,8 +96,9 @@ def main() -> None:
     """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, default=EXPERIMENT_ROOT / "dist")
+    parser.add_argument("--keep-name", action="store_true", help="keep the task's own name")
     args = parser.parse_args()
-    print(json.dumps(package_single_step(TASK_ROOT, args.output.resolve()), indent=2))
+    print(json.dumps(package_single_step(TASK_ROOT, args.output.resolve(), args.keep_name), indent=2))
 
 
 if __name__ == "__main__":

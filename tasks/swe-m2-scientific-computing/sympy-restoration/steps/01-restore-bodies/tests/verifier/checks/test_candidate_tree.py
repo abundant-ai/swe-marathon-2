@@ -16,13 +16,15 @@ def test_candidate_tree(context: VerificationContext) -> CheckResult:
         A passed result with the number of restored units.
 
     Raises:
-        CandidateFailure: `/app/sympy` is missing, or every unit still carries
-            its placeholder or was rejected.
-        EvaluationError: The measurement could not be completed.
+        CandidateFailure: The collect step found no tree to deliver (refused or
+            absent), or every unit still carries its placeholder, was rejected
+            or was changed after the end of the work.
+        EvaluationError: The measurement could not be completed, among others
+            because nothing arrived or the copy does not match its record.
     """
     m = measurement(context)
     if not m.artifact_present:
-        raise CandidateFailure("The artifact /app/sympy is missing or is not a directory")
+        raise CandidateFailure("No tree was delivered: the collect step found it refused or absent")
     restored = m.counts["units_restored"]
     if restored == 0:
         raise CandidateFailure("No unit body was restored")

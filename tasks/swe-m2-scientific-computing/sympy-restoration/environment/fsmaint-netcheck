@@ -1,0 +1,193 @@
+#!/usr/bin/python3 -I
+"""Poll a few public hosts with a TLS handshake and record when one first answers again after a
+stretch in which none did; then end every process of the user `dev`.
+
+The hosts are resolved once at start (while names resolve). A probe process running as `nobody`
+then tries them by address, all at once, every INTERVAL_SECONDS: a poll is open when a TLS
+handshake with one of them completes and its certificate is valid for that name. A connection
+that is accepted and then dropped during the handshake, refused or not answered is closed. The
+checker arms once no host has answered for ARM_POLLS polls in a row. On the first poll after that
+in which one answers it writes STATE/netcheck-open.json, with `first_open_at` (that poll's
+start), `last_closed_at` and `end_bound` (both the start of the last poll in which none answered,
+a moment at which no host answered yet), before anything is ended, so nothing in the ending can
+lose the record; `opened_at` is the time the ending began. Then it ends every process of `dev`
+and adds how many passes that took and how many processes were left. Its status is in
+STATE/netcheck.json. It needs no network to arm, and if no host ever answers again it runs until
+it is stopped. The FSMAINT_NETCHECK_* variables override the state directory, the hosts, the
+timing and the users.
+"""
+
+import json
+import os
+import pwd
+import socket
+import ssl
+import subprocess
+import sys
+import threading
+import time
+
+ENV = os.environ.get
+STATE = ENV("FSMAINT_NETCHECK_STATE", "/var/lib/fsmaint")
+HOSTS = tuple(h for h in ENV("FSMAINT_NETCHECK_HOSTS", "pypi.org,files.pythonhosted.org,github.com").split(",") if h)
+PORT = int(ENV("FSMAINT_NETCHECK_PORT", "443"))
+INTERVAL_SECONDS = float(ENV("FSMAINT_NETCHECK_INTERVAL", "0.1"))    # between the end of one poll and the next
+HANDSHAKE_SECONDS = float(ENV("FSMAINT_NETCHECK_HANDSHAKE", "1.0"))  # connection and handshake, per host
+ARM_POLLS = int(ENV("FSMAINT_NETCHECK_ARM_POLLS", "600"))             # polls with no host answering before it arms
+USER = ENV("FSMAINT_NETCHECK_USER", "dev")
+PROBE_USER = ENV("FSMAINT_NETCHECK_PROBE_USER", "nobody")
+PROBE_RESTARTS = 20
+
+
+def write(name, record):
+    os.makedirs(STATE, mode=0o700, exist_ok=True)
+    path = os.path.join(STATE, name)
+    with open(path + ".tmp", "w") as handle:
+        json.dump(record, handle)
+    os.replace(path + ".tmp", path)
+
+
+def resolve(hosts=HOSTS):
+    found = {}
+    for host in hosts:
+        try:
+            found[host] = sorted({info[4][0] for info in socket.getaddrinfo(host, PORT, socket.AF_INET, socket.SOCK_STREAM)})[:2]
+        except OSError as exc:
+            found[host] = f"unresolved ({exc.__class__.__name__})"
+    return found
+
+
+def first_answering(targets, context, seconds=HANDSHAKE_SECONDS):
+    """The first host with which a TLS handshake completes, all tried at once within `seconds`;
+    None when none does."""
+    answered = []
+
+    def probe(host, address):
+        try:
+            with socket.create_connection((address, PORT), timeout=seconds) as raw:
+                raw.settimeout(seconds)
+                with context.wrap_socket(raw, server_hostname=host):
+                    answered.append(host)
+        except (OSError, ssl.SSLError, ValueError):
+            pass
+
+    workers = [threading.Thread(target=probe, args=target, daemon=True) for target in targets]
+    for worker in workers:
+        worker.start()
+    for worker in workers:
+        worker.join(2 * seconds + 0.2)
+    return answered[0] if answered else None
+
+
+def probe_lines(targets, out, context=None, interval=INTERVAL_SECONDS):
+    """Poll for ever, writing one line per poll: '<start> open <host>' or '<start> closed -'."""
+    context = context or ssl.create_default_context()
+    while True:
+        started = time.time()
+        host = first_answering(targets, context)
+        out.write(f"{started!r} {'open' if host else 'closed'} {host or '-'}\n")
+        out.flush()
+        time.sleep(interval)
+
+
+def start_probe(targets):
+    """A child process that polls as PROBE_USER and reports through a pipe; (pid, reader)."""
+    read_end, write_end = os.pipe()
+    pid = os.fork()
+    if pid == 0:
+        try:
+            os.close(read_end)
+            out = os.fdopen(write_end, "w")
+            try:
+                entry = pwd.getpwnam(PROBE_USER)
+                if os.geteuid() == 0:
+                    os.setgroups([])
+                    os.setgid(entry.pw_gid)
+                    os.setuid(entry.pw_uid)
+            except (OSError, KeyError):
+                pass  # it polls as the user it started as; the first line says which
+            out.write(f"uid {os.geteuid()}\n")
+            out.flush()
+            probe_lines(targets, out)
+        finally:
+            os._exit(0)
+    os.close(write_end)
+    return pid, os.fdopen(read_end)
+
+
+def polls(targets, status):
+    """(start, open host or None) per poll, from probe children restarted when one ends."""
+    for restart in range(PROBE_RESTARTS + 1):
+        try:
+            pid, reader = start_probe(targets)
+        except (OSError, KeyError) as exc:
+            write("netcheck.json", dict(status, error=f"probe not started ({exc.__class__.__name__})"))
+            return
+        status["probe_restarts"] = restart
+        for line in reader:
+            fields = line.split()
+            if len(fields) == 2 and fields[0] == "uid":
+                status["probe_uid"] = int(fields[1])
+            elif len(fields) == 3:
+                yield float(fields[0]), (fields[2] if fields[1] == "open" else None)
+        reader.close()
+        try:
+            os.waitpid(pid, 0)
+        except OSError:
+            pass
+    write("netcheck.json", dict(status, error="the probe kept ending"))
+
+
+def end_processes(user=USER):
+    passes = 0
+    for _ in range(100):
+        if subprocess.run(["pgrep", "-u", user], capture_output=True).returncode != 0:
+            break
+        passes += 1
+        subprocess.run(["setpriv", "--reuid", user, "--regid", user, "--clear-groups", "kill", "-9", "-1"], capture_output=True)
+        subprocess.run(["pkill", "-KILL", "-u", user], capture_output=True)
+        time.sleep(0.1)
+    left = subprocess.run(["pgrep", "-u", user], capture_output=True, text=True).stdout.split()
+    return passes, len(left)
+
+
+def watch(stream, status, ending=end_processes):
+    """Arm after ARM_POLLS closed polls in a row; on the first open poll after that, record, then end."""
+    closed_polls = 0
+    armed = False
+    last_closed_at = None
+    for started, host in stream:
+        if host is None:
+            closed_polls += 1
+            last_closed_at = started
+            if not armed and closed_polls >= ARM_POLLS:
+                armed = True
+                write("netcheck.json", dict(status, armed=True, armed_at=time.time()))
+        elif armed:
+            # Written before anything is ended, so that nothing in the ending can lose the record.
+            record = {"first_open_at": started, "last_closed_at": last_closed_at, "end_bound": last_closed_at,
+                      "host": host, "opened_at": time.time()}
+            write("netcheck-open.json", record)
+            passes, left = ending()
+            write("netcheck-open.json", dict(record, kill_passes=passes, processes_left=left, ended_at=time.time()))
+            return record
+        else:
+            closed_polls = 0
+    return None
+
+
+def main():
+    addresses = resolve()
+    targets = [(host, address) for host, found in addresses.items() if isinstance(found, list) for address in found]
+    status = {"started_at": time.time(), "pid": os.getpid(), "hosts": addresses, "armed": False, "arm_polls": ARM_POLLS,
+              "interval_seconds": INTERVAL_SECONDS, "handshake_seconds": HANDSHAKE_SECONDS, "probe_user": PROBE_USER}
+    write("netcheck.json", status)
+    if not targets:
+        write("netcheck.json", dict(status, error="no host resolved: not checking"))
+        return 0
+    watch(polls(targets, status), status)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

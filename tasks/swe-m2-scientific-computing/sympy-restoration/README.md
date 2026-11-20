@@ -139,6 +139,30 @@ It does not yet meet the v2 workload target; see [Workload](#workload) and
   asserts that refusal, and that the hours the instruction states, the timer's
   total and the agent limit agree. 35 checks pass.
 
+### 2026-11-20
+
+- Delivery (integrity). A process left running after the work could fetch SymPy
+  1.14.0 once public egress returns and write it into `/app/sympy` before the
+  tree is collected; nothing recorded what was delivered, so a failed or partial
+  collection was graded as the work's own 0. The work now runs as the
+  unprivileged user `dev`. A root setup step starts `fsmaint-netcheck`, which
+  polls a few public hosts with a TLS handshake (as `nobody`) and, on the first
+  poll after a long closed stretch in which one answers, records the last closed
+  poll as the end of the work and ends every process of `dev`. A root collect
+  step (`fsmaint-sweep`) freezes and ends what is left of `dev`, records the type,
+  size, times and sha256 of every entry under `/app/sympy` before touching
+  anything, probes egress, and writes a record and a mark signed with a key only
+  root can read. The verifier raises an evaluation error when nothing arrived,
+  the mark is missing or unsigned, or a listed file differs; a file changed at or
+  after the end of the work is not taken over (its units are `late`); the
+  verifier's own network must be closed. The instruction now says that another
+  copy of SymPy's source is not to be used, and that the tool's copies under
+  `/opt/restore` are as damaged as the working copy; `ATTRIBUTION.txt` in the
+  image keeps licence and citation only. The reference solution waits two
+  seconds after writing. 50 checks pass: the setup and collect hooks run whole
+  under dash with stand-ins for root and Linux tools; a write after the end is
+  refused and an honest delivery is taken; every way a mark can fail is an error.
+
 ## Current implementation
 
 | Part | State |
@@ -157,9 +181,20 @@ Layout notes:
 - `environment/pyproject.toml` lists the Python packages of both images.
   Packaging stages it into the verifier build context as `runtime/pyproject.toml`.
 - Git-ignored prepared inputs: `environment/data/` (workspace archive, unit
-  list), `steps/01-restore-bodies/tests/private/` (skeleton with the full test
-  suite, sealed test list, recorded calls, reference results) and
-  `steps/01-restore-bodies/solution/data/` (original source of the 355 files).
+  list, the key the collect step signs with, written by
+  `scripts/builder/delivery_key.py`), `steps/01-restore-bodies/tests/private/`
+  (skeleton with the full test suite, sealed test list, recorded calls,
+  reference results) and `steps/01-restore-bodies/solution/data/` (original
+  source of the 355 files). Packaging stages the key into the verifier's private
+  inputs as well.
+- `environment/fsmaint-reserve`, `fsmaint-netcheck` and `fsmaint-sweep` are the
+  setup and collect hooks (`task.toml`). They live in `/usr/local/lib/fsmaint`,
+  mode 0700 and owned by root, off `PATH`; the agent's user cannot read them.
+- The agent runs as `dev` (uid 10001). `/app` is root-owned and sticky,
+  `/app/sympy` is root-owned and world-writable with everything in it owned by
+  `dev`, so `dev` can change every file but cannot replace the tree itself.
+  `/app/PROGRESS.md` is created for `dev`; `/opt/restore` is read-only except
+  `var/`, where `restore` keeps its delivered-form copy and its state.
 
 ## Design dimensions
 
@@ -278,6 +313,26 @@ Not yet designed, listed as options and not as decisions:
 
 The verifier runs in a separate image with only `/app/sympy` from the candidate.
 
+0. Delivery (`verifier/delivery.py`). The work runs as `dev`. When it ends, the
+   collect step (`environment/fsmaint-sweep`, root) freezes and ends every
+   process of `dev`, records every entry under `/app/sympy` (type, size,
+   modification and change times, sha256) before touching anything, removes
+   what a copy cannot carry (pipes, sockets, links leading outside), probes
+   whether public hosts answer, and writes a record and a mark into the tree.
+   The mark is signed with a key in the agent image that only root can read and
+   that the verifier image holds too. Before grading, the verifier checks that
+   its own network is closed (a TLS handshake to three public hosts; open is an
+   evaluation error), then reads the mark: no tree, no mark, an unreadable or
+   unsigned mark, a record that differs from the signed one, or a listed file
+   that did not arrive as listed is an evaluation error (no reward file); a tree
+   the collect step refused (over 200,000 entries or 2 GB) or found absent is a
+   completed evaluation of an empty delivery. The end of the work is the last
+   poll in which no public host answered, as `fsmaint-netcheck` recorded it, or
+   the collect step's own start when the net check saw no opening. A unit file
+   whose change or modification time is at or after that bound, less 0.25 s, is
+   not taken over: its units are `late` and count as not restored.
+   `late_files`, `egress_open` and the collect step's record go to
+   `metrics.json`.
 1. Graded tree. Start from the reference skeleton. For each unit, copy in the body
    found in the submitted file for the function of the same qualified name.
    Nothing else from the submission is used. A body containing constructs for
@@ -357,8 +412,10 @@ partial_score = (units_passing + calls_matching + tests_passing) / 26483
   three shares in `metrics.json` carry the progress signal for analysis.
 - Denominators are fixed. A unit that is not restored, a call or test that is not
   reached within its budget, a skipped or errored test: each counts as failed.
-- A missing artifact or a tree with no restored unit fails `candidate_tree`; the
-  other checks are skipped and the reward is 0.
+- A tree that did not arrive, or arrived without the collect step's signed mark
+  or not as the mark lists it, is an evaluation error. A delivery the collect
+  step refused or found absent, or a tree with no restored unit, fails
+  `candidate_tree`; the other checks are skipped and the reward is 0.
 - An evaluation error leaves no reward file. `verify.py` exits 1 and
   `report.json` has `status: evaluation_error`.
 - One step. `multi_step_reward_strategy = "final"`; with a single step the
@@ -373,8 +430,8 @@ any model trial and have not been tuned to results.
 
 ## Hackability assessment
 
-Highest unresolved severity: 🟡 YELLOW / MEDIUM (finding 1). Unassessed
-boundaries: findings 7 and 8.
+Highest unresolved severity: 🟡 YELLOW / MEDIUM (findings 1 and 9: the hooks
+have not yet run on the platform). Unassessed boundaries: finding 7.
 
 | # | Attack and impact | Boundary | Evidence | Mitigation | Residual risk | Next validation | Severity |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -385,7 +442,8 @@ boundaries: findings 7 and 8.
 | 5 | Change how a runner reports results | Runner control items | Executed in round 1 through module-level `os`/`sys`; fixed | Control items with known outcomes in every pytest run; the records of a run cannot hold more passes than that run's tally; forbidden constructs in bodies. Forged start or collection records can only remove tests from later runs, which lowers the score | A forgery that also gets the controls right falls under finding 1. The per-file runs added on 2026-11-17 have not been attacked | With finding 1 | 🟢 GREEN / LOW |
 | 6 | Tamper with reward or result files | Separate verifier container | By design; not attacked | Verifier starts fresh with only `/app/sympy`; output directory closed to the sandbox user | None found | Attack on the v2 bundle | 🟢 GREEN / LOW |
 | 7 | Anything that depends on the new entry point, check registry or reporting | v2 verifier code | Not attacked | Same measurement code as v1; reference and no-op baselines on the v2 bundle | Unknown | Red-team run against the v2 bundle | 🟡 YELLOW / UNASSESSED |
-| 8 | Reach the network during the work phase to fetch SymPy | Agent network policy | Probe task on Oddish, 2026-11-15: PyPI and GitHub unreachable from the work phase | `[agent] network_mode = "no-network"`; SymPy is not installed elsewhere in the image | Not re-probed on the v2 bundle; agent tooling is installed at setup with public egress | Probe on the v2 bundle | 🟡 YELLOW / UNASSESSED |
+| 8 | Reach the network during the work phase to fetch SymPy | Agent network policy | Probe task, 2026-11-15: PyPI and GitHub unreachable from the work phase; 217 in-work fetch attempts in one 12-hour run all failed (TCP connected, TLS did not) | `[agent] network_mode = "no-network"`; the instruction forbids another copy; SymPy is not installed elsewhere; the image's attribution names no download | Agent tooling is installed at setup with public egress; host-name filtering not probed for every route | Probe the routes as `dev` | 🟡 YELLOW / MEDIUM |
+| 9 | Leave a process running after the work that fetches SymPy once public egress returns (about 0.2 s after the work ends, before collection: 0.8 s and 11.8 s on two 12-hour runs) and writes the original into `/app/sympy`; the original scores 1.0 | Delivery: user, hooks, record | Reproduced by review with the verifier's own transplant before this change (2,671 restored, a tree identical to the reference) | The work runs as `dev`; the net check ends `dev`'s processes on the first open poll and records the end; the collect step freezes and ends the rest and records every file's change time before touching anything; the verifier takes no unit file changed at or after the end; the mark is signed with a key `dev` cannot read; a missing or short delivery is an evaluation error | A write through a file mapping opened before the end changes content without moving its times; if the net check never sees the opening (no host resolved at setup, or its probe answered during the work), the bound is the collect step's start, after the window, and only `metrics.json` shows it (`end_from`, `egress_open`) | Canary on the platform: a detached fetch-and-overwrite loop scores 0 with its files `late`; reference 1.0 and no-op 0.0 with the record present | 🟡 YELLOW / MEDIUM |
 
 Recall of SymPy from pre-training is not an exploit of the verifier, but it limits
 what a high score means. It is recorded under [Novelty](#novelty).
@@ -455,6 +513,7 @@ Proximus on the v1 package, base experiment, 2026-11-17:
 | Check | Revision | Result |
 | --- | --- | --- |
 | `checks/` (35 tests) | working tree, 2026-11-17 and 2026-11-19 | pass |
+| `checks/` (50 tests): delivery hooks under dash with stand-ins, a late write refused, an honest delivery taken, every failing mark an evaluation error, the net check's arming and handshake probe | working tree, 2026-11-20 (delivery) | pass; the hooks have not run on the platform |
 | `oddish preflight` | bundles `e043dc4facdd` and `8180b51500b1` | pass |
 | Reference and no-op baselines on Oddish | bundle `e043dc4facdd` (v1 instruction text, v2 verifier), task version 1, experiment `sympy-restoration-v2-20261117` | reference 1.0 twice (2,671 / 13,384 / 10,428, five checks passed, grading 652 s and 691 s); no-op 0.0 twice (`candidate_tree` failed, four checks skipped, report `completed`) |
 | Reference and no-op baselines on Oddish | bundle `8180b51500b1` (rewritten instruction and tool text), task version 2, experiment `sympy-restoration-v2-final-20261117` (https://www.oddish.app/experiments/0b7a142f) | reference 1.0 twice (trials 9, 10: 2,671 / 13,384 / 10,428, five checks passed, grading 658 s and 649 s); no-op 0.0 twice (trials 11, 12). A first attempt at 04:47 UTC targeted the version-1 experiment and created no trials |
@@ -519,6 +578,12 @@ uv run --frozen pytest -q tasks/swe-m2-scientific-computing/sympy-restoration/ch
 - Decide the follow-up steps and the unit set (see [Workload](#workload) and
   [Novelty](#novelty)). Until then the task is below the v2 workload bar.
 - Red-team the v2 bundle (findings 7 and 8).
+- Run the delivery hooks on the platform before any model trial (finding 9): a
+  canary whose reference leaves a detached fetch-and-overwrite loop must score 0
+  with its files `late`; the reference and the no-op twice each with the record
+  present; claude-code and Proximus must start and work as `dev`; the flat
+  single-step bundle must run the hooks. If the net check's probe does not see
+  the opening there, certify copies taken while egress was closed instead.
 - Decide whether to raise the 40-minute test budget (base trial 6, trial 16).
 - Proximus on Oddish cannot run a task that declares steps; either it learns to
   run a one-step task or every v2 task needs a single-step variant.
