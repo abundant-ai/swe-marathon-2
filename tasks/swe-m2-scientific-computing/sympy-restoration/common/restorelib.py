@@ -361,7 +361,8 @@ def build_candidate(skel_root: str, work_root: str, cand_root: str, byfile: dict
                     withheld: dict | None = None):
     """Refresh candidate files for all unit-bearing files. Returns {uid: state}.
 
-    work_root/<file> is read; skel_root/<file> is the original skeleton; the result is written to
+    work_root/<file> is read, unless it or a directory on its way is a link (then it counts as
+    missing); skel_root/<file> is the original skeleton; the result is written to
     cand_root/<file>.  `cache` (mutable dict) memoises per-file results on (mtime_ns, size).
     A file named in `withheld` is not read: it keeps the skeleton, and its units get the state
     given there.
@@ -369,6 +370,7 @@ def build_candidate(skel_root: str, work_root: str, cand_root: str, byfile: dict
     states = {}
     notes = []
     withheld = withheld or {}
+    real_root = os.path.realpath(work_root)
     for rel, qmap in byfile.items():
         if rel in withheld:
             skel_src = open(os.path.join(skel_root, rel), encoding="utf-8").read()
@@ -393,7 +395,8 @@ def build_candidate(skel_root: str, work_root: str, cand_root: str, byfile: dict
                 continue
         skel_src = open(os.path.join(skel_root, rel), encoding="utf-8").read()
         work_src = None
-        if st is not None and not os.path.islink(wp) and os.path.isfile(wp) and st.st_size <= MAX_SOURCE_BYTES:
+        direct = os.path.realpath(wp) == os.path.join(real_root, os.path.normpath(rel))
+        if st is not None and direct and not os.path.islink(wp) and os.path.isfile(wp) and st.st_size <= MAX_SOURCE_BYTES:
             try:
                 work_src = open(wp, encoding="utf-8-sig").read()
             except (OSError, UnicodeDecodeError):

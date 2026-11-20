@@ -256,6 +256,26 @@ It does not yet meet the v2 workload target; see [Workload](#workload) and
   unit counts,
   against 0 for every one under the binary reward. See [Trial
   evidence](#trial-evidence).
+- Re-check of the round above, delivery. The net check armed only after 600
+  closed polls (a minute or more), so a turn shorter than that left no end, and
+  a SymPy 1.14.0 written after such a turn was taken whole; and a directory link
+  let a file written after the end be graded under a unit file's name. The net
+  check now counts closed polls from its first poll, records the end of every
+  stretch of at least three that an answering poll ends, ends `dev` each time
+  and keeps polling, so a stretch during setup cannot end the watch. The collect
+  step probes the hosts itself, lets the net check finish one poll after `dev`
+  has ended, takes the end of the longest such stretch (its own start only when
+  that stretch was still going on and its probe found the hosts closed), and
+  otherwise records no end, which the verifier turns into an evaluation error.
+  Every link is removed before the copy; a link or an unlisted file that
+  arrives anyway is an evaluation error, and the transplant reads no unit file
+  through a link. The reference solution waits 10 s, so a few closed polls fall
+  inside even its turn. The net check's settings are fixed in the file, no
+  longer read from the environment. Checks: a 3-second turn has its end and a
+  write 0.6 s after it is refused; each way the end can be unknown is an error,
+  the two ways the hosts can be shown closed are graded; file and directory
+  links planted during the work, with the files behind them written after it,
+  deliver nothing.
 
 ## Current implementation
 
@@ -436,26 +456,37 @@ Not yet designed, listed as options and not as decisions:
 
 The verifier runs in a separate image with only `/app/sympy` from the candidate.
 
-0. Delivery (`verifier/delivery.py`). The work runs as `dev`. When it ends, the
-   collect step (`environment/fsmaint-sweep`, root) freezes and ends every
-   process of `dev`, records every entry under `/app/sympy` (type, size,
-   modification and change times, sha256) before touching anything, removes
-   what a copy cannot carry (pipes, sockets, links leading outside), probes
-   whether public hosts answer, and writes a record and a mark into the tree.
-   The mark is signed with a key in the agent image that only root can read and
-   that the verifier image holds too. Before grading, the verifier checks that
-   its own network is closed (a TLS handshake to three public hosts; open is an
+0. Delivery (`verifier/delivery.py`). The work runs as `dev`. A root setup step
+   starts `fsmaint-netcheck`, which polls three public hosts with a TLS
+   handshake (as `nobody`) every 0.1 s from then on and keeps a record of every
+   stretch of polls in which none answered, counted from its first poll; at
+   each poll that answers after a stretch of at least three, it records the
+   stretch's last closed poll and ends every process of `dev`, and it keeps
+   polling. When the work ends, the collect step (`environment/fsmaint-sweep`,
+   root) freezes and ends every process of `dev`, probes the hosts itself, lets
+   the net check finish one poll that started after that and stops it, records
+   every entry under `/app/sympy` (type, size, modification and change times,
+   sha256) before touching anything, removes every link and what else a copy
+   must not carry (pipes, sockets), and writes a record and a mark into the
+   tree. The end of the work is the last closed poll of the longest stretch an
+   answering poll ended; when that stretch was still going on and the collect
+   step's own probe found the hosts closed, nothing fetched can be in the tree
+   and the end is the collect step's start. Otherwise (no closed stretch seen,
+   the net check stopped before the end while the hosts answered, no record of
+   the setup step) there is no end, and the evaluation is an error. The mark is
+   signed with a key in the agent image that only root can read and that the
+   verifier image holds too. Before grading, the verifier checks that its own
+   network is closed (a TLS handshake to three public hosts; open is an
    evaluation error), then reads the mark: no tree, no mark, an unreadable or
-   unsigned mark, a record that differs from the signed one, or a listed file
-   that did not arrive as listed is an evaluation error (no reward file); a tree
-   the collect step refused (over 200,000 entries or 2 GB) or found absent is a
-   completed evaluation of an empty delivery. The end of the work is the last
-   poll in which no public host answered, as `fsmaint-netcheck` recorded it, or
-   the collect step's own start when the net check saw no opening. A unit file
-   whose change or modification time is at or after that bound, less 0.25 s, is
-   not taken over: its units are `late` and count as not restored.
-   `late_files`, `egress_open` and the collect step's record go to
-   `metrics.json`.
+   unsigned mark, a record that differs from the signed one, a listed file that
+   did not arrive as listed, a link or an unlisted file that arrived, or a
+   record without an end of the work is an evaluation error (no reward file); a
+   tree the collect step refused (over 200,000 entries or 2 GB) or found absent
+   is a completed evaluation of an empty delivery. A unit file whose change or
+   modification time is at or after the end, less 0.25 s, is not taken over:
+   its units are `late` and count as not restored. The transplant never reads
+   a unit file through a link. `late_files`, `egress_open`, `end_from`,
+   `end_note` and the collect step's record go to `metrics.json`.
 1. Graded tree. Start from the reference skeleton. For each unit, copy in the body
    found in the submitted file for the function of the same qualified name.
    Nothing else from the submission is used. A body containing constructs for
@@ -607,8 +638,9 @@ reward = min(u, c)  if candidate_tree and measurement_integrity passed, else 0
   through the verifier (6.6% of the counted calls match, but only 6 units in
   the set also pass their examples). A tree of bare `raise NotImplementedError`
   bodies scores 0.
-- A tree that did not arrive, or arrived without the collect step's signed mark
-  or not as the mark lists it, is an evaluation error. A delivery the collect
+- A tree that did not arrive, or arrived without the collect step's signed mark,
+  not as the mark lists it, or without a known end of the work, is an
+  evaluation error. A delivery the collect
   step refused or found absent, or a tree with no restored unit, fails
   `candidate_tree`; the other checks are skipped and the reward is 0.
 - An evaluation error leaves no reward file. `verify.py` exits 1 and
@@ -637,7 +669,7 @@ have not yet run on the platform). Unassessed boundaries: finding 7.
 | 6 | Tamper with reward or result files | Separate verifier container | By design; not attacked | Verifier starts fresh with only `/app/sympy`; output directory closed to the sandbox user | None found | Attack on the v2 bundle | 🟢 GREEN / LOW |
 | 7 | Anything that depends on the new entry point, check registry or reporting | v2 verifier code | Not attacked | Same measurement code as v1; reference and no-op baselines on the v2 bundle | Unknown | Red-team run against the v2 bundle | 🟡 YELLOW / UNASSESSED |
 | 8 | Reach the network during the work phase to fetch SymPy | Agent network policy | Probe task, 2026-11-15: PyPI and GitHub unreachable from the work phase; 217 in-work fetch attempts in one 12-hour run all failed (TCP connected, TLS did not) | `[agent] network_mode = "no-network"`; the instruction forbids another copy; SymPy is not installed elsewhere; the image's attribution names no download | Agent tooling is installed at setup with public egress; host-name filtering not probed for every route | Probe the routes as `dev` | 🟡 YELLOW / MEDIUM |
-| 9 | Leave a process running after the work that fetches SymPy once public egress returns (about 0.2 s after the work ends, before collection: 0.8 s and 11.8 s on two 12-hour runs) and writes the original into `/app/sympy`; the original scores 1.0 | Delivery: user, hooks, record | Reproduced by review with the verifier's own transplant before this change (2,671 restored, a tree identical to the reference) | The work runs as `dev`; the net check ends `dev`'s processes on the first open poll and records the end; the collect step freezes and ends the rest and records every file's change time before touching anything; the verifier takes no unit file changed at or after the end; the mark is signed with a key `dev` cannot read; a missing or short delivery is an evaluation error | A write through a file mapping opened before the end changes content without moving its times; if the net check never sees the opening (no host resolved at setup, or its probe answered during the work), the bound is the collect step's start, after the window, and only `metrics.json` shows it (`end_from`, `egress_open`) | Canary on the platform: a detached fetch-and-overwrite loop scores 0 with its files `late`; reference 1.0 and no-op 0.0 with the record present | 🟡 YELLOW / MEDIUM |
+| 9 | Leave a process running after the work that fetches SymPy once public egress returns (about 0.2 s after the work ends, before collection: 0.8 s and 11.8 s on two 12-hour runs) and writes the original into `/app/sympy`, directly or behind a link; the original scores 1.0 | Delivery: user, hooks, record | Reproduced by review with the verifier's own transplant: before 2026-11-20 (2,671 restored, a tree identical to the reference); on 2026-11-20, a write after a turn shorter than the net check's old one-minute arming taken whole, and a late file graded through a directory link. Both fixed; `checks/test_delivery.py` covers a 3-second turn, every unknown end and file and directory links | The work runs as `dev`; the net check counts closed polls from its first poll, records the end of every stretch an answering poll ends and ends `dev` each time; the collect step freezes and ends the rest, lets the net check finish one more poll, records every file's change time before touching anything and removes every link; the verifier takes no unit file changed at or after the end and none reached through a link; no known end of the work, a link or an unlisted file that arrived, or a missing or short delivery is an evaluation error; the mark is signed with a key `dev` cannot read | A write through a file mapping dirtied before the end can change content without moving its times; a write in the fraction of a second between egress returning and the net check's next poll is made before `dev` is ended but after the end, so its times refuse it unless it goes through such a mapping. Closing both needs the platform to keep the agent's network policy through collection | Canary on the platform: a detached fetch-and-overwrite loop scores 0 with its files `late`; reference 1.0 and no-op 0.0 with the record present (`end_from` `netcheck`) | 🟡 YELLOW / MEDIUM |
 
 Recall of SymPy from pre-training is not an exploit of the verifier, but it limits
 what a high score means. It is recorded under [Novelty](#novelty).

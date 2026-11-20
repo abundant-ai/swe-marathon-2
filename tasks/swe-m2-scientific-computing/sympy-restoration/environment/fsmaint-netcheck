@@ -1,20 +1,23 @@
 #!/usr/bin/python3 -I
-"""Poll a few public hosts with a TLS handshake and record when one first answers again after a
-stretch in which none did; then end every process of the user `dev`.
+"""Poll a few public hosts with a TLS handshake until stopped, keep a record of every poll, and end
+every process of the user `dev` whenever a host answers again after a stretch in which none did.
 
 The hosts are resolved once at start (while names resolve). A probe process running as `nobody`
 then tries them by address, all at once, every INTERVAL_SECONDS: a poll is open when a TLS
-handshake with one of them completes and its certificate is valid for that name. A connection
-that is accepted and then dropped during the handshake, refused or not answered is closed. The
-checker arms once no host has answered for ARM_POLLS polls in a row. On the first poll after that
-in which one answers it writes STATE/netcheck-open.json, with `first_open_at` (that poll's
-start), `last_closed_at` and `end_bound` (both the start of the last poll in which none answered,
-a moment at which no host answered yet), before anything is ended, so nothing in the ending can
-lose the record; `opened_at` is the time the ending began. Then it ends every process of `dev`
-and adds how many passes that took and how many processes were left. Its status is in
-STATE/netcheck.json. It needs no network to arm, and if no host ever answers again it runs until
-it is stopped. The FSMAINT_NETCHECK_* variables override the state directory, the hosts, the
-timing and the users.
+handshake with one of them completes and its certificate is valid for that name. A connection that
+is accepted and then dropped during the handshake, refused or not answered is closed.
+
+After every poll STATE/netcheck.json holds the status: `last_poll` (its start and state), `closing`
+(the stretch of closed polls in progress: its first and last poll's start and how many polls) and
+`openings`, one per stretch of at least MIN_CLOSED closed polls that an open poll ended:
+`last_closed_at` and `end_bound` (the start of the stretch's last poll, a moment at which no host
+answered yet), `first_open_at` (the open poll's start), `closed_since` and `closed_polls`. Counting
+starts with the first poll, so a stretch of any length is on record, however short the work. At
+every opening the record is also written to STATE/netcheck-open.json before anything is ended, so
+nothing in the ending can lose it; then every process of `dev` is ended, and how many passes that
+took and how many processes were left are added. Polling goes on after an opening, so a stretch
+before the work cannot end the watch; the collect step stops it. A status that cannot be written
+is skipped, never a reason to stop.
 """
 
 import json
@@ -27,24 +30,29 @@ import sys
 import threading
 import time
 
-ENV = os.environ.get
-STATE = ENV("FSMAINT_NETCHECK_STATE", "/var/lib/fsmaint")
-HOSTS = tuple(h for h in ENV("FSMAINT_NETCHECK_HOSTS", "pypi.org,files.pythonhosted.org,github.com").split(",") if h)
-PORT = int(ENV("FSMAINT_NETCHECK_PORT", "443"))
-INTERVAL_SECONDS = float(ENV("FSMAINT_NETCHECK_INTERVAL", "0.1"))    # between the end of one poll and the next
-HANDSHAKE_SECONDS = float(ENV("FSMAINT_NETCHECK_HANDSHAKE", "1.0"))  # connection and handshake, per host
-ARM_POLLS = int(ENV("FSMAINT_NETCHECK_ARM_POLLS", "600"))             # polls with no host answering before it arms
-USER = ENV("FSMAINT_NETCHECK_USER", "dev")
-PROBE_USER = ENV("FSMAINT_NETCHECK_PROBE_USER", "nobody")
+STATE = "/var/lib/fsmaint"
+HOSTS = ("pypi.org", "files.pythonhosted.org", "github.com")
+PORT = 443
+INTERVAL_SECONDS = 0.1     # between the end of one poll and the next
+HANDSHAKE_SECONDS = 1.0    # connection and handshake, per host
+MIN_CLOSED = 3             # closed polls in a row that make a stretch whose end is recorded
+KEEP_OPENINGS = 32         # openings kept in the status, the longest stretch always among them
+USER = "dev"
+PROBE_USER = "nobody"
 PROBE_RESTARTS = 20
 
 
 def write(name, record):
-    os.makedirs(STATE, mode=0o700, exist_ok=True)
-    path = os.path.join(STATE, name)
-    with open(path + ".tmp", "w") as handle:
-        json.dump(record, handle)
-    os.replace(path + ".tmp", path)
+    """Replace STATE/name with `record`; False when it could not be written."""
+    try:
+        os.makedirs(STATE, mode=0o700, exist_ok=True)
+        path = os.path.join(STATE, name)
+        with open(path + ".tmp", "w") as handle:
+            json.dump(record, handle)
+        os.replace(path + ".tmp", path)
+        return True
+    except (OSError, ValueError):
+        return False
 
 
 def resolve(hosts=HOSTS):
@@ -151,36 +159,50 @@ def end_processes(user=USER):
     return passes, len(left)
 
 
+def kept(openings):
+    """The last KEEP_OPENINGS openings, with the one that ended the longest stretch always kept."""
+    if len(openings) <= KEEP_OPENINGS:
+        return openings
+    longest = max(openings, key=lambda o: (o["closed_polls"], o["last_closed_at"]))
+    recent = openings[-(KEEP_OPENINGS - 1):]
+    return ([longest] if longest not in recent else []) + recent
+
+
 def watch(stream, status, ending=end_processes):
-    """Arm after ARM_POLLS closed polls in a row; on the first open poll after that, record, then end."""
-    closed_polls = 0
-    armed = False
-    last_closed_at = None
+    """Fold every poll into the status; at each opening after MIN_CLOSED closed polls, record, then end.
+
+    Returns the openings when the stream ends (it does not while the probe runs)."""
+    closing = None   # [first start, last start, polls] of the closed stretch in progress
+    openings = []
+    count = 0
+    status.update(min_closed_polls=MIN_CLOSED, polls=0, last_poll=None, closing=None, openings=[])
     for started, host in stream:
+        count += 1
         if host is None:
-            closed_polls += 1
-            last_closed_at = started
-            if not armed and closed_polls >= ARM_POLLS:
-                armed = True
-                write("netcheck.json", dict(status, armed=True, armed_at=time.time()))
-        elif armed:
-            # Written before anything is ended, so that nothing in the ending can lose the record.
-            record = {"first_open_at": started, "last_closed_at": last_closed_at, "end_bound": last_closed_at,
-                      "host": host, "opened_at": time.time()}
-            write("netcheck-open.json", record)
-            passes, left = ending()
-            write("netcheck-open.json", dict(record, kill_passes=passes, processes_left=left, ended_at=time.time()))
-            return record
+            closing = [closing[0], started, closing[2] + 1] if closing else [started, started, 1]
         else:
-            closed_polls = 0
-    return None
+            if closing and closing[2] >= MIN_CLOSED:
+                # written before anything is ended, so that nothing in the ending can lose the record
+                record = {"first_open_at": started, "last_closed_at": closing[1], "end_bound": closing[1],
+                          "closed_since": closing[0], "closed_polls": closing[2], "host": host, "opened_at": time.time()}
+                openings = kept(openings + [record])
+                status.update(polls=count, last_poll=[started, "open"], closing=None, openings=openings)
+                write("netcheck-open.json", record)
+                write("netcheck.json", status)
+                passes, left = ending()
+                record.update(kill_passes=passes, processes_left=left, ended_at=time.time())
+                write("netcheck-open.json", record)
+            closing = None
+        status.update(polls=count, last_poll=[started, "closed" if host is None else "open"], closing=closing, openings=openings)
+        write("netcheck.json", status)
+    return openings
 
 
 def main():
     addresses = resolve()
     targets = [(host, address) for host, found in addresses.items() if isinstance(found, list) for address in found]
-    status = {"started_at": time.time(), "pid": os.getpid(), "hosts": addresses, "armed": False, "arm_polls": ARM_POLLS,
-              "interval_seconds": INTERVAL_SECONDS, "handshake_seconds": HANDSHAKE_SECONDS, "probe_user": PROBE_USER}
+    status = {"started_at": time.time(), "pid": os.getpid(), "hosts": addresses, "interval_seconds": INTERVAL_SECONDS,
+              "handshake_seconds": HANDSHAKE_SECONDS, "probe_user": PROBE_USER}
     write("netcheck.json", status)
     if not targets:
         write("netcheck.json", dict(status, error="no host resolved: not checking"))

@@ -1,13 +1,15 @@
 #!/bin/sh
 # Runs as root once the user's work has ended, before /app/sympy is copied elsewhere. It stops and
-# ends every process of the user `dev`, recording what was alive; records the type, size, mode,
+# ends every process of the user `dev`, recording what was alive; probes whether a few public hosts
+# answer; lets fsmaint-netcheck finish one more poll and stops it; records the type, size, mode,
 # owner, modification and change times and inode of every entry under /app/sympy before anything
-# of its own touches the tree; probes whether a few public hosts answer; makes the tree copyable;
-# and writes a record and a signed mark into it. The mark's first line says how many entries and
-# bytes were listed, or that the tree was refused or absent; the record (.fsmaint.json) lists every
-# entry with the times it had when the work ended, and the end bound the net check observed.
+# of its own touches the tree; removes what a copy must not carry (every link among it); and writes
+# a record and a signed mark into the tree. The mark's first line says how many entries and bytes
+# were listed, or that the tree was refused or absent; the record (.fsmaint.json) lists every entry
+# with the times it had when the work ended, and the end of the work as far as it can be told.
 LIMIT_ENTRIES=200000
 LIMIT_BYTES=2000000000
+NETCHECK_SETTLE_SECONDS=20
 STATE=/var/lib/fsmaint
 TREE=/app/sympy
 KEY=/usr/local/lib/fsmaint/key
@@ -65,11 +67,95 @@ for _ in $(seq 1 100); do
   sleep 0.1
 done
 left=$({ pgrep -u dev; pgrep -U dev; } 2>/dev/null | sort -u | wc -l)
-# fsmaint-netcheck, if it is still running, has nothing left to do.
-if [ -r "$STATE/netcheck.json" ]; then
-  pid=$(/usr/bin/python3 -I -c 'import json,sys; print(json.load(open(sys.argv[1])).get("pid", ""))' "$STATE/netcheck.json" 2>/dev/null)
-  [ -n "$pid" ] && kill -TERM "$pid" >/dev/null 2>&1
-fi
+ended=$(/usr/bin/python3 -I -c 'import time; print(repr(time.time()))')
+# Whether a few public hosts answer from here now (a TLS handshake), all at once, three seconds in
+# all: by name, and at the addresses fsmaint-netcheck resolved when it started.
+timeout 15 /usr/bin/python3 -I - "$STATE/netprobe.json" "$STATE/netcheck.json" <<'EOF'
+"""Record whether a TLS handshake with port 443 of a few public hosts completes, all tried at once
+within three seconds, by name and at the addresses the net check resolved."""
+import json
+import socket
+import ssl
+import sys
+import threading
+import time
+
+HOSTS = ("pypi.org", "files.pythonhosted.org", "github.com")
+targets = [(host, host) for host in HOSTS]
+try:
+    with open(sys.argv[2]) as handle:
+        resolved = json.load(handle).get("hosts") or {}
+    targets += [(host, address) for host, found in resolved.items() if host in HOSTS and isinstance(found, list)
+                for address in found if isinstance(address, str)]
+except (OSError, ValueError, AttributeError):
+    pass
+results = {f"{address}:443 ({host})": "no answer within 3 s" for host, address in targets}
+
+
+def reach(host, address):
+    key = f"{address}:443 ({host})"
+    try:
+        with socket.create_connection((address, 443), timeout=3) as raw:
+            raw.settimeout(3)
+            with ssl.create_default_context().wrap_socket(raw, server_hostname=host):
+                results[key] = "open"
+    except (OSError, ssl.SSLError, ValueError) as exc:
+        results[key] = f"closed ({exc.__class__.__name__})"
+
+
+started = time.time()
+workers = [threading.Thread(target=reach, args=target, daemon=True) for target in targets]
+for worker in workers:
+    worker.start()
+for worker in workers:
+    worker.join(3.5)
+with open(sys.argv[1], "w") as handle:
+    json.dump({"started_at": started, "checked_at": time.time(), "hosts": results,
+               "any_open": any(state == "open" for state in results.values())}, handle)
+EOF
+# fsmaint-netcheck, if it still runs, gets to finish a poll that started after every process of
+# `dev` had ended, so that an opening the end of the work brought is on its record; then it stops.
+timeout $((NETCHECK_SETTLE_SECONDS + 10)) /usr/bin/python3 -I - "$STATE" "$ended" "$NETCHECK_SETTLE_SECONDS" <<'EOF'
+"""Wait until the net check's last poll started at or after the given time, at most the given
+seconds; stop it; record whether it got there (netcheck-settle.json)."""
+import json
+import os
+import signal
+import sys
+import time
+
+STATE, ENDED, WAIT = sys.argv[1], float(sys.argv[2]), float(sys.argv[3])
+
+
+def status():
+    try:
+        with open(os.path.join(STATE, "netcheck.json")) as handle:
+            return json.load(handle)
+    except (OSError, ValueError):
+        return None
+
+
+began = time.time()
+fresh, seen = False, None
+while True:
+    seen = status()
+    poll = (seen or {}).get("last_poll") if isinstance(seen, dict) else None
+    if isinstance(poll, list) and poll and isinstance(poll[0], (int, float)) and poll[0] >= ENDED:
+        fresh = True
+        break
+    if seen is None or (isinstance(seen, dict) and seen.get("error")) or time.time() - began >= WAIT:
+        break
+    time.sleep(0.05)
+pid = (seen or {}).get("pid") if isinstance(seen, dict) else None
+if isinstance(pid, int) and pid > 1:
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except OSError:
+        pass
+with open(os.path.join(STATE, "netcheck-settle.json"), "w") as handle:
+    json.dump({"fresh": fresh, "after": ENDED, "waited": round(time.time() - began, 2),
+               "last_poll": (seen or {}).get("last_poll") if isinstance(seen, dict) else None}, handle)
+EOF
 # Every entry's own times, before anything of this sweep touches the tree: the change time is the
 # one time a user cannot set.
 timeout 300 /usr/bin/python3 -I - "$TREE" "$LIMIT_ENTRIES" "$STATE/before.jsonl" <<'EOF'
@@ -127,39 +213,6 @@ with open(OUT, "w") as out:
         out.write(json.dumps({"incomplete": f"{exc.__class__.__name__}: {exc}"}) + "\n")
     out.write(json.dumps({"complete": complete}) + "\n")
 EOF
-# Whether a few public hosts answer from here now (a TLS handshake), all at once, three seconds in all.
-timeout 15 /usr/bin/python3 -I - "$STATE/netprobe.json" <<'EOF'
-"""Record whether a TLS handshake with port 443 of a few public hosts completes, all tried at once
-within three seconds."""
-import json
-import socket
-import ssl
-import sys
-import threading
-import time
-
-HOSTS = ("pypi.org", "files.pythonhosted.org", "github.com")
-results = {f"{host}:443": "no answer within 3 s" for host in HOSTS}
-
-
-def reach(host):
-    try:
-        with socket.create_connection((host, 443), timeout=3) as raw:
-            raw.settimeout(3)
-            with ssl.create_default_context().wrap_socket(raw, server_hostname=host):
-                results[f"{host}:443"] = "open"
-    except (OSError, ssl.SSLError, ValueError) as exc:
-        results[f"{host}:443"] = f"closed ({exc.__class__.__name__})"
-
-
-workers = [threading.Thread(target=reach, args=(host,), daemon=True) for host in HOSTS]
-for worker in workers:
-    worker.start()
-for worker in workers:
-    worker.join(3.5)
-with open(sys.argv[1], "w") as handle:
-    json.dump({"checked_at": time.time(), "hosts": results, "any_open": any(state == "open" for state in results.values())}, handle)
-EOF
 # Give back the room and the spare inodes fsmaint-reserve set aside, so however full the disk was
 # left, the record and the mark can be written.
 rm -f "$STATE/room"
@@ -168,20 +221,30 @@ rm -rf "$STATE/inodes"
 exec /usr/bin/python3 -I - "$TREE" "$LIMIT_ENTRIES" "$LIMIT_BYTES" "$STATE" "$KEY" "$passes" "$left" "$started" <<'EOF'
 """Measure the tree, bound it, list it, sign and mark it, as root, once no process of `dev` runs.
 
-The tree is walked by directory descriptor, so no depth hides anything. What the copy would
-refuse is removed: a device, a pipe, a socket, a link with an absolute target or one that leads
-outside the tree. A tree over the limits is moved aside whole and replaced by an empty directory;
-so is anything that is not a directory under the tree's name, and a missing tree is made empty.
-Whatever was left under the mark's or the record's name is moved aside, never followed. The
-mark's first line is `listed` with the number of entries (files, directories and links) and of
-bytes in its files (each file once, however many names it has), `refused` or `absent`; every
+The tree is walked by directory descriptor, so no depth hides anything. What a copy must not carry
+is removed: a device, a pipe, a socket, and every link, so that nothing in the delivery is reached
+through one (a link inside the tree could lead to a file written after the work ended under a name
+that is not its own). A tree over the limits is moved aside whole and replaced by an empty
+directory; so is anything that is not a directory under the tree's name, and a missing tree is
+made empty. Whatever was left under the mark's or the record's name is moved aside, never
+followed. The mark's first line is `listed` with the number of entries (files and directories) and
+of bytes in its files (each file once, however many names it has), `refused` or `absent`; every
 line after it but the last is a change made or the reason for a refusal; the last line holds the
-record's sha256 and an HMAC-SHA256 over the other lines and that digest, with the key given
-fifth on the command line. The record (.fsmaint.json) holds the end bound (the net check's, else
-this sweep's start) and where it came from, what the net check recorded, the processes found
-frozen, how many passes of ending them took and how many were left, whether the public hosts
-answered afterwards, every note, and every entry: its path, type, size, modification and change
-times as recorded before this sweep touched anything, and a file's sha256 or a link's target.
+record's sha256 and an HMAC-SHA256 over the other lines and that digest, with the key given fifth
+on the command line.
+
+The end of the work (`end_bound`) comes from fsmaint-netcheck's record: when its last poll, made
+after every process of `dev` had ended, answered, the end is the last closed poll of the longest
+stretch without an answer that an open poll ended (`end_from` "netcheck"), and never later than
+this sweep's start; when that stretch was still going on and this sweep's own probe found the
+public hosts closed, nothing fetched can be in the tree and the end is this sweep's start
+("collect"); when the net check could not finish such a poll, this sweep's start only if its own
+probe found the hosts closed and the net check had not last seen them open. Otherwise there is no
+end bound (`end_from` null, `end_note` says why), and the delivery cannot be graded. The record
+(.fsmaint.json) also holds what the net check recorded, the processes found frozen, how many passes
+of ending them took and how many were left, whether the public hosts answered afterwards, every
+note, and every entry: its path, type, size, modification and change times as recorded before this
+sweep touched anything, and a file's sha256.
 """
 import hashlib
 import hmac
@@ -199,8 +262,16 @@ STARTED = float(sys.argv[8])
 MARK = os.path.join(ROOT, ".fsmaint")
 RECORD = os.path.join(ROOT, ".fsmaint.json")
 PARENT = os.path.dirname(ROOT)
-notes, links, files, catalogue = [], [], set(), []
+NOTED = 20   # removals noted one by one for each reason; the rest are counted
+notes, files, catalogue = [], set(), []
+removals = {}
 entries = size = 0
+
+
+def removed(path, why):
+    removals[why] = removals.get(why, 0) + 1
+    if removals[why] <= NOTED:
+        notes.append(f"removed {one_line(path)}: {why}")
 
 
 def read_json(name):
@@ -241,10 +312,6 @@ class Refuse(Exception):
     pass
 
 
-def inside(path):
-    return path == ROOT or path.startswith(ROOT + os.sep)
-
-
 def digest(name, fd):
     whole = hashlib.sha256()
     handle = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=fd)
@@ -257,7 +324,7 @@ def digest(name, fd):
 
 
 def walk(fd, rel):
-    """List, and remove what the copy would refuse, below the directory open as `fd` (`rel` inside ROOT)."""
+    """List, and remove what a copy must not carry, below the directory open as `fd` (`rel` inside ROOT)."""
     global entries, size
     with os.scandir(fd) as found:
         names = []
@@ -269,27 +336,21 @@ def walk(fd, rel):
         path = f"{rel}/{name}" if rel else name
         info = os.stat(name, dir_fd=fd, follow_symlinks=False)
         if stat.S_ISLNK(info.st_mode):
-            target = os.readlink(name, dir_fd=fd)
-            here = os.path.join(ROOT, path)
-            lexical = os.path.normpath(os.path.join(os.path.dirname(here), target))
-            if os.path.isabs(target) or not inside(lexical) or not inside(os.path.realpath(here)):
-                os.unlink(name, dir_fd=fd)
-                notes.append(f"removed {one_line(path)}: a link that leads outside the tree")
-                continue
-        elif not (stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode)):
             os.unlink(name, dir_fd=fd)
-            notes.append(f"removed {one_line(path)}: not a file, a directory or a link")
+            removed(path, "a link: nothing is delivered through one")
+            continue
+        if not (stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode)):
+            os.unlink(name, dir_fd=fd)
+            removed(path, "not a file or a directory")
             continue
         entries += 1
-        kind = "link" if stat.S_ISLNK(info.st_mode) else "directory" if stat.S_ISDIR(info.st_mode) else "file"
+        kind = "directory" if stat.S_ISDIR(info.st_mode) else "file"
         earlier = before.get(path)
         times = (earlier["mtime"], earlier["ctime"]) if earlier and earlier.get("type") == kind else (info.st_mtime, info.st_ctime)
         item = {"path": path, "type": kind, "size": info.st_size, "mtime": times[0], "ctime": times[1]}
         if earlier is None or earlier.get("type") != kind:
             item["times"] = "found after the listing"
-        if kind == "link":
-            item["target"] = os.readlink(name, dir_fd=fd)
-        elif kind == "file":
+        if kind == "file":
             if (info.st_dev, info.st_ino) not in files:
                 files.add((info.st_dev, info.st_ino))
                 size += info.st_size
@@ -334,18 +395,56 @@ if head is None:
         os.mkdir(ROOT, 0o755)
         head, catalogue = "refused", []
         notes.append(f"{reason}: it was not copied")
-netcheck, netcheck_open, processes, probe = (read_json(name) for name in ("netcheck.json", "netcheck-open.json", "procs.json", "netprobe.json"))
-try:
-    end_bound, end_from = float(netcheck_open["end_bound"]), "netcheck"
-except (TypeError, KeyError, ValueError):
-    end_bound, end_from = STARTED, "collect"
+for why, count in removals.items():
+    if count > NOTED:
+        notes.append(f"removed {count - NOTED} more entries: {why}")
+netcheck, netcheck_open, settle, processes, probe = (
+    read_json(name) for name in ("netcheck.json", "netcheck-open.json", "netcheck-settle.json", "procs.json", "netprobe.json"))
 try:
     with open(os.path.join(STATE, "work-started")) as handle:
         work_started = int(handle.read().split()[0])
 except (OSError, ValueError, IndexError):
     work_started = None
-record = {"state": head.split()[0], "listed": head, "end_bound": end_bound, "end_from": end_from, "sweep_started_at": STARTED,
-          "work_started": work_started, "netcheck": netcheck, "netcheck_open": netcheck_open,
+
+
+def end_of_work():
+    """(end bound, where it came from, why there is none)."""
+    if not isinstance(netcheck, dict) or work_started is None:
+        return None, None, "the setup step left no record of the start of the work or of the net check"
+    probe_closed = isinstance(probe, dict) and probe.get("any_open") is False
+    fresh = isinstance(settle, dict) and settle.get("fresh") is True
+    least = int(netcheck.get("min_closed_polls") or 3)
+    stretches = []   # (closed polls, last closed poll, end bound or None while it goes on)
+    for opening in netcheck.get("openings") or []:
+        try:
+            stretches.append((int(opening["closed_polls"]), float(opening["last_closed_at"]), float(opening["end_bound"])))
+        except (TypeError, KeyError, ValueError):
+            continue
+    closing = netcheck.get("closing")
+    try:
+        if closing and int(closing[2]) >= least:
+            stretches.append((int(closing[2]), float(closing[1]), None))
+    except (TypeError, IndexError, ValueError):
+        pass
+    if fresh:
+        if not stretches:
+            return None, None, f"the net check never saw {least} polls in a row without an answer"
+        _polls, _last, bound = max(stretches, key=lambda s: (s[0], s[1]))
+        if bound is not None:
+            return min(bound, STARTED), "netcheck", None
+        if probe_closed:
+            return STARTED, "collect", None
+        return None, None, "public hosts answered after the work, while the net check still saw them closed"
+    last_poll = netcheck.get("last_poll") or [None, None]
+    if probe_closed and (len(last_poll) < 2 or last_poll[1] != "open"):
+        return STARTED, "collect", None
+    return None, None, "the net check had stopped before the work ended, and public hosts answered"
+
+
+end_bound, end_from, end_note = end_of_work()
+record = {"state": head.split()[0], "listed": head, "end_bound": end_bound, "end_from": end_from, "end_note": end_note,
+          "sweep_started_at": STARTED, "work_started": work_started, "netcheck": netcheck, "netcheck_open": netcheck_open,
+          "netcheck_settle": settle,
           "process_count": (processes or {}).get("process_count"), "processes": (processes or {}).get("processes", []),
           "kill_passes": PASSES, "processes_left": LEFT, "egress": probe, "listing_complete": before_complete and reason is None,
           "notes": notes, "entries": catalogue}

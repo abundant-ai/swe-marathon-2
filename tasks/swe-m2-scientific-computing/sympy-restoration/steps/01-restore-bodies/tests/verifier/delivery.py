@@ -5,9 +5,13 @@ mark (`.fsmaint`) whose first line is `listed <entries> <bytes>`, `refused` or `
 record (`.fsmaint.json`) of every entry with the times it had when the work ended. The mark's
 last line signs the other lines and the record's sha256 with a key the agent's user cannot read.
 
-- No tree, no mark, an unreadable or unsigned mark, or a listed file that did not arrive as it
-  was listed: the copy failed, which is an evaluation error, never the submission's score.
+- No tree, no mark, an unreadable or unsigned mark, a listed file that did not arrive as it was
+  listed, or a link or a file that arrived without being listed: the copy failed, which is an
+  evaluation error, never the submission's score.
 - `refused` or `absent`: a completed evaluation of an empty delivery.
+- `listed` without an end of the work (the collect step could not tell when the work ended, or
+  took its own start while public hosts answered): an evaluation error, since no file could be
+  told apart from one written after the work.
 - `listed`: graded, except that a file changed at or after the end of the work (its change or
   modification time at or after the recorded end bound, less a small allowance) is not taken.
 """
@@ -83,7 +87,8 @@ def read_delivery(top: Path, key_path: Path) -> Delivery:
 
     Raises:
         EvaluationError: Nothing arrived, the mark or the record is missing, unreadable or not
-            signed with the key, or a listed file is absent or differs from its listing.
+            signed with the key, a listed file is absent or differs from its listing, a link or
+            an unlisted file arrived, or the record holds no end of the work.
     """
     if top.is_symlink() or not top.is_dir():
         raise EvaluationError("Nothing arrived: the tree is missing, though the collect step marks every delivery")
@@ -119,6 +124,17 @@ def read_delivery(top: Path, key_path: Path) -> Delivery:
     listed = {item["path"]: item for item in record.get("entries", []) if isinstance(item, dict) and isinstance(item.get("path"), str)}
     if len(listed) != int(head[1]):
         raise EvaluationError("The collect step's record does not list what its mark counts")
+    if any(item.get("type") not in ("file", "directory") for item in listed.values()):
+        raise EvaluationError("The collect step's record lists an entry that is neither a file nor a directory")
+    # nothing may be reached through a link, and nothing may arrive that the collect step did not list
+    for folder, dirs, names in os.walk(top, followlinks=False):
+        for name in dirs + names:
+            path = os.path.join(folder, name)
+            rel = os.path.relpath(path, top).replace(os.sep, "/")
+            if os.path.islink(path):
+                raise EvaluationError(f"A link arrived, though the collect step removes every link: {rel!r}")
+            if name in names and rel not in listed and rel not in (MARK, RECORD):
+                raise EvaluationError(f"A file arrived that the collect step did not list: {rel!r}")
     short = []
     for path, item in listed.items():
         if item.get("type") != "file":
@@ -134,10 +150,15 @@ def read_delivery(top: Path, key_path: Path) -> Delivery:
     if short:
         raise EvaluationError(f"The copy arrived incomplete or changed: {len(short)} listed files differ, first {short[0]!r}")
     delivery.entries = listed
+    note = record.get("end_note") or "no end bound on record"
     try:
         delivery.end_bound, delivery.end_from = float(record["end_bound"]), str(record.get("end_from"))
     except (KeyError, TypeError, ValueError) as exc:
-        raise EvaluationError("The collect step's record has no end bound") from exc
+        raise EvaluationError(f"The collect step could not tell when the work ended: {note}") from exc
+    if delivery.end_from not in ("netcheck", "collect"):
+        raise EvaluationError(f"The collect step could not tell when the work ended: {note}")
+    if delivery.end_from == "collect" and (record.get("egress") or {}).get("any_open") is not False:
+        raise EvaluationError("The collect step took its own start as the end of the work although public hosts answered")
     cutoff = delivery.end_bound - SKEW_SEC
     for path, item in listed.items():
         times = [t for t in (item.get("ctime"), item.get("mtime")) if isinstance(t, (int, float))]
@@ -151,9 +172,11 @@ def summarise(record: dict) -> dict:
     try:
         egress = record.get("egress") or {}
         opened = record.get("netcheck_open") or {}
+        netcheck = record.get("netcheck") or {}
         return {"listed": record.get("listed"), "end_bound": record.get("end_bound"), "end_from": record.get("end_from"),
-                "egress_open": egress.get("any_open"), "egress_hosts": egress.get("hosts"),
-                "netcheck_armed": bool((record.get("netcheck") or {}).get("armed")), "netcheck_open": opened or None,
+                "end_note": record.get("end_note"), "egress_open": egress.get("any_open"), "egress_hosts": egress.get("hosts"),
+                "netcheck_openings": len(netcheck.get("openings") or []), "netcheck_last_poll": netcheck.get("last_poll"),
+                "netcheck_settle": record.get("netcheck_settle"), "netcheck_open": opened or None,
                 "process_count": record.get("process_count"), "processes": (record.get("processes") or [])[:50],
                 "kill_passes": record.get("kill_passes"), "processes_left": record.get("processes_left"),
                 "listing_complete": record.get("listing_complete"), "work_started": record.get("work_started"),

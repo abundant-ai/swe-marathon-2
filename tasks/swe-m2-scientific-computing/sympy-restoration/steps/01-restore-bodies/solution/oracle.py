@@ -7,7 +7,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-SETTLE_SECONDS = 2.0
+SETTLE_SECONDS = 10.0
 
 
 @dataclass(frozen=True)
