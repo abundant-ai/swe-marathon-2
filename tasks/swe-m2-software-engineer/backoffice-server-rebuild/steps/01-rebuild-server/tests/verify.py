@@ -25,6 +25,7 @@ REWARD_FILES = ("reward.txt", "reward.json")
 PENDING = ".reward.pending"
 PLACEHOLDER = b"0.000000"  # a reward in [0, 1] written with six decimals always has this length
 MANIFEST = ".fsmaint-manifest"  # written into /app/server by the collect hook (environment/fsmaint-sweep)
+MANIFEST_READ = 1 << 16  # the hook writes at most about 50 KB: a first line, 40 one-line changes and the timer's lines
 MISSING_MANIFEST = ("/app/server arrived without the collect hook's manifest (the hook did not run, or the copy was cut short); "
                     "it was scored as it arrived")
 # The step allows 6,000 s, and that clock also covers copying the tests in and the results out. The replay ends at
@@ -146,9 +147,11 @@ def manifest_record(server: Path) -> dict[str, Any]:
     whether the maintenance timer ended the agent's session (`ended_by_timer`, with the log's last lines in
     `timer_log`), which is recorded and never a reason to change the reward.
 
-    The hook writes the manifest before the copy, for an empty directory too, after bounding the tree and packing it
-    once the way the copy packs it, so that nothing the agent leaves can make the copy fail. A tree that arrived is
-    scored as it arrived, with a note when the manifest is missing or says the tree was refused.
+    The hook writes the manifest before the copy, for an empty directory too and for anything else it finds at
+    /app/server, after bounding the tree and packing it once the way the copy packs it, so that nothing the agent
+    leaves can make the copy fail. A tree that arrived is scored as it arrived, with a note when the manifest is
+    missing or says the tree was refused. Only the manifest's first MANIFEST_READ bytes are read, which hold all the
+    hook writes.
 
     Raises:
         EvaluationError: Nothing arrived at all, so the copy never happened; or the manifest counts more than arrived,
@@ -162,7 +165,11 @@ def manifest_record(server: Path) -> dict[str, Any]:
         raise EvaluationError("Nothing arrived: /app/server is missing or empty, though the collect hook writes a manifest for every tree")
     manifest = server / MANIFEST
     try:
-        lines = manifest.read_text(errors="replace").splitlines() if manifest.is_file() and not manifest.is_symlink() else None
+        if manifest.is_file() and not manifest.is_symlink():
+            with open(manifest, "rb") as handle:
+                lines = handle.read(MANIFEST_READ).decode(errors="replace").splitlines()
+        else:
+            lines = None
     except OSError:
         lines = None
     if not lines:

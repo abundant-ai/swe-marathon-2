@@ -30,9 +30,8 @@ our accounting export, which compare every value they receive, and its type, exa
   proxy sets; we do not use the server's own passwords, sessions or API keys. The demo company
   comes with one user for each role.
 - Money is always a whole number of cents. Dates are written `YYYY-MM-DD`.
-- There is no network access. `python3` is Python 3.12 with the packages the vendor's server ran
-  on (FastAPI, Starlette, Pydantic, SQLAlchemy, Uvicorn, httpx and their dependencies; see
-  `python3 -m pip list`). Node.js and Go are installed with their standard libraries.
+- There is no network access. `python3` is Python 3.12 with the packages listed by
+  `python3 -m pip list`. Node.js and Go are installed with their standard libraries.
 - Moving our own company's records across is a separate job; for this one, the demo company is
   all you need.
 
@@ -54,9 +53,9 @@ A server in `/app/server` with an executable file `/app/server/run` that starts 
   most 4 GB, 6 GB of address space per process and 6 GB of memory in all, shared memory
   included.
 - One server holds thousands of workspaces in that `DATA_DIR`: each branch's books, and the
-  copies we make for training and trials. Everything a workspace holds must survive the server
-  being stopped and started again with the same `DATA_DIR`, even when it is killed without
-  warning: a change it has answered is kept.
+  copies we make to train staff and to try things out. Everything a workspace holds must survive
+  the server being stopped and started again with the same `DATA_DIR`, even when it is killed
+  without warning: a change it has answered is kept.
 - For every API request the sealed server accepts or refuses, your server gives the same status
   code and the same JSON body, including the calls the web client makes when it opens
   (`GET /api/version`, then `GET /api/ws/{id}/auth/me`). The order of keys inside a JSON object
@@ -83,5 +82,5 @@ A server in `/app/server` with an executable file `/app/server/run` that starts 
 
 ## Completion
 
-The work is complete when your server cannot be told apart from the sealed one through the API,
+The work is complete when your server answers every API request exactly as the sealed one does,
 apart from the exceptions above. Keep `/app/server/run` working at all times.

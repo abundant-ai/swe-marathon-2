@@ -1,10 +1,10 @@
 #!/bin/sh
 # Maintenance timer, run as root from a set-up hook. Started without arguments it arms one detached copy of itself
 # (`run`) and returns at once; a second start finds the first copy's pid file and arms nothing. The detached copy waits
-# END_SECONDS, then ends every process selected by SELECT: SIGTERM every 5 s for up to 60 s, then SIGKILL every half
-# second for 10 s and every 5 s for up to 500 s more, until none is left. It logs its arm, fire and done lines with
-# timestamps to a root-only file and removes its pid file when it is done. The FSMAINT_TIMER_* variables override the
-# times, the selection and the paths.
+# END_SECONDS, then ends every process selected by SELECT: SIGTERM every 5 s for up to 30 s, then SIGKILL every half
+# second for up to 15 s more, until none is left. It logs its arm, fire and done lines with timestamps to a root-only
+# file and removes its pid file when it is done. The FSMAINT_TIMER_* variables override the times, the selection and
+# the paths.
 #
 # Nothing that goes wrong on the way keeps the processes from being ended. The wait is one child that counts on the
 # monotonic clock and starts nothing. Where that child cannot run or ends early, the wait goes on here in sleeps of at
@@ -164,7 +164,7 @@ EOF
         fi
     done
     log "fired after $END_SECONDS s: SIGTERM to the processes selected by '$SELECT'"
-    for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
+    for _ in 1 2 3 4 5 6; do
         alive || break
         send TERM
         pause 5
@@ -172,10 +172,10 @@ EOF
     if alive; then
         log "SIGKILL to what is left"
         turns=0
-        while [ "$turns" -lt 120 ] && alive; do
+        while [ "$turns" -lt 30 ] && alive; do
             send KILL
             turns=$((turns + 1))
-            if [ "$turns" -le 20 ]; then pause 0.5; else pause 5; fi
+            pause 0.5
         done
     fi
     count=

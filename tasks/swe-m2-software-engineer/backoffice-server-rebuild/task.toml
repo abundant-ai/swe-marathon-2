@@ -12,7 +12,11 @@ reward_type = "continuous"
 open_internet_justification = "Only the environment build and agent setup have public egress, to install system packages and the agent's own tooling. The agent works without network access; the sealed server it studies runs inside its own container."
 
 [agent]
-timeout_sec = 34560
+# The session ends at 33,900 s, when a root timer started at set-up (fsmaint-timer) ends the
+# session user's processes (all are gone by about 33,930 s). This limit is a backstop 60 s later.
+# The reason: trials that reached the platform's own cap with this kind of separately built
+# verifier image were not graded.
+timeout_sec = 33960
 network_mode = "no-network"
 user = "dev"
 
@@ -61,7 +65,11 @@ gpus = 0
 name = "01-rebuild-server"
 
 [steps.agent]
-timeout_sec = 34560
+# The session ends at 33,900 s, when a root timer started at set-up (fsmaint-timer) ends the
+# session user's processes (all are gone by about 33,930 s). This limit is a backstop 60 s later.
+# The reason: trials that reached the platform's own cap with this kind of separately built
+# verifier image were not graded.
+timeout_sec = 33960
 
 [steps.verifier]
 timeout_sec = 6000
