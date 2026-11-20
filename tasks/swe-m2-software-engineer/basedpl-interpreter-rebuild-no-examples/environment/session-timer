@@ -1,4 +1,5 @@
 #!/bin/sh
+# Ends the session user's processes at 33,900 s after set-up; the agent limit in task.toml (33,960 s) is a backstop.
 # A maintenance timer, started detached by a setup hook as root. END_SECONDS after it starts it ends every process of
 # the unprivileged user: SIGTERM in six rounds ROUND_SECONDS apart while any is seen, then SIGKILL in twenty rounds half
 # a second apart, so that user's login session is closed after a fixed interval. Each round signals as that user too,

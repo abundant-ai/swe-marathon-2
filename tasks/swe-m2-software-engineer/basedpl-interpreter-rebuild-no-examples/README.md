@@ -43,6 +43,13 @@ round 6's `ffcf88e892e2` were never uploaded, and the earlier bundles are `4164e
   review) and fails on the old note. 67 task checks and 27 repository checks pass. Bundle
   `f93f6c391545`, built twice with the same hash, differs from `a9dad36c7bf0` in `task.toml` only;
   preflight passes.
+- Oddish did not make it a version: its content hash (`oddish/task_content_hash.py`) reads
+  `task.toml` by its runtime fields alone, so `f93f6c391545` hashed as `a9dad36c7bf0`
+  (`e6d06775…`). `environment/session-timer` now opens with the same note in a line of its own
+  ("Ends the session user's processes at 33,900 s after set-up; the agent limit in task.toml
+  (33,960 s) is a backstop."). Bundle `d365dc33100d` (twice, the same hash) differs from
+  `a9dad36c7bf0` in `task.toml` and `environment/session-timer`, hashes as `e8d69ae8…`, and passes
+  preflight; 67 task checks and 27 repository checks pass.
 
 ### 2026-11-20 (round 11: re-check 08 of v3)
 
@@ -1042,8 +1049,8 @@ Licence: the upstream is Apache-2.0. Its `LICENSE` is shipped with the documenta
 | The packaged `solve.sh` with only `/app/rebuild` rewritten to a scratch directory; `mark.py` from the agent image's context with the marker | bundle `bf77bf7f91d0` (the same files in `af0c9f7b084e`) | the solution installs `bpl` (the build's own bytes, sha256 `60d2aed1…`, mode 0755) and `LICENSE`, nothing else, no standard error; the images' install writes the marker once and leaves no zero marker; `build.txt` beside either holds `link`, `sha256` and `sha256_without_marker` |
 | Local grading from the packaged bundle (`af0c9f7b084e`, with `local-recording-9`; also `bf77bf7f91d0`, 34.4 s; the dispatcher's 0.0269 was measured on round 5's `1a08cdb471d0`, whose grading code is the same), through the collect hook's pre-scan and measuring scripts and a tar round trip with the `data` filter | stand-in reference behind a wrapper; no-op; the dispatcher as a program, with every strategy the recorder measures | 1.0 (1,673/1,673, 31.1 s); 0.0; 0.0269 (45/1,673: cli 19, error 13, expr 7, script 6) |
 | A whole trial replayed from the packaged bundle with round 8's replay (round 8's is a copy of round 7's, itself QA 07e's, adapted to round 8's order; kept in the Git-ignored `experiment/replay-r8/`, the reports and a `NOTE.txt` in `results-r9/` and `results-r10/`; round 11's copy, `experiment/replay-r11/`, follows the freeze's `R,S` and the SIGKILL rounds that always run, with its reports in `results/`): both hooks' shell under `/bin/dash` (paths rewritten, stand-ins for `setpriv`, `pgrep`, `fallocate`, GNU `stat` and `timeout`), the real timer against stand-in processes, tar and the `data` filter, then `verify.main()` with root and Linux stood in; the hook's order is read from its calls | round 11's `a9dad36c7bf0` (with `replay-r11`; round 10's `ec8d6ecf327d` with `replay-r8`, the same results) against `local-recording-9`, with an executable copy of upstream's macOS release binary as the stand-in (as before, `bf77bf7f91d0`): reference; reference with planted `.manifest` names, links and a pipe; no-op with a sleeper still waiting | 1.0 (1,673/1,673, 28.3 s), no notes, `ended_by_timer` true, the dummy that ignores SIGTERM ended by SIGKILL after six rounds; 1.0 with both moved-aside notes; 0.0, `delivered 0 0`: both freezes sent with the mark written and the sleeper running, then the hook ended the sleeper and its `sleep` (`stopped pid N` in `timer_log`). The same results on `bf77bf7f91d0` in round 9 |
-| Packaging | `scripts/package_step.py`, twice into separate directories | `f93f6c391545` (round 11's second commit), 247 files, 33,033,941 bytes, the same hash both times, against `a9dad36c7bf0` only `task.toml` changed; `a9dad36c7bf0`, 247 files, 33,034,283 bytes, the same hash both times; bundle directory `swe-m2_software-engineering_basedpl-interpreter-rebuild-no-examples`; against round 10's `ec8d6ecf327d` only `environment/session-timer` and `environment/reclaim-scratch` changed; against v2's `af0c9f7b084e`, those two, `task.toml` and the instruction, every other file byte-identical (the verifier image's context among them) |
-| Oddish preflight | bundles `bf77bf7f91d0`, `af0c9f7b084e`, `ec8d6ecf327d`, `a9dad36c7bf0` and `f93f6c391545`, no-Archil CLI, locally | pass |
+| Packaging | `scripts/package_step.py`, twice into separate directories | `d365dc33100d` (round 11's third commit), 247 files, 33,034,058 bytes, the same hash both times, against `a9dad36c7bf0` `task.toml` and `environment/session-timer` changed, Oddish content hash `e8d69ae8…` (`a9dad36c7bf0` and `f93f6c391545`: `e6d06775…`); `f93f6c391545`, 247 files, 33,033,941 bytes, against `a9dad36c7bf0` only `task.toml` changed; `a9dad36c7bf0`, 247 files, 33,034,283 bytes, the same hash both times; bundle directory `swe-m2_software-engineering_basedpl-interpreter-rebuild-no-examples`; against round 10's `ec8d6ecf327d` only `environment/session-timer` and `environment/reclaim-scratch` changed; against v2's `af0c9f7b084e`, those two, `task.toml` and the instruction, every other file byte-identical (the verifier image's context among them) |
+| Oddish preflight | bundles `bf77bf7f91d0`, `af0c9f7b084e`, `ec8d6ecf327d`, `a9dad36c7bf0`, `f93f6c391545` and `d365dc33100d`, no-Archil CLI, locally | pass |
 | Oddish baselines and the pre-trial audit | old name: v1, and v2 (round 5's `1a08cdb471d0`); new name: v1 (round 8's `43b39e11805c`) and v2 (round 9's `af0c9f7b084e`) | old name: the reference 1.0 twice per version (1,673/1,673) and the no-op 0.0 twice, with the same `kept_ids_sha256` (`bb030348…`) and `expected_sha256` (`18af6936…`) in both versions, so the Linux recording reproduces; v2's three model trials were graded. New name v1: the reference 1.0 twice, the no-op 0.0 twice, and the audit's one must-fix (the probe), answered in round 9. New name v2: the reference 1.0 twice, the no-op 0.0 twice, an empty source audit, three model trials graded (0.366, 0.372, 0.149), and the verdict's one must-fix (the timer), answered in round 10. Bundles `ec8d6ecf327d` and `a9dad36c7bf0`: not run |
 | `harbor check` | none | not run |
 
@@ -1132,8 +1139,8 @@ sha256 is not build.txt's. Packaging ships the private cases without the generat
 ## Remaining work
 
 - A narrow re-check of round 11 (the last script's link rule and alarm, the byte caps, the timer's
-  rounds), then bundle `f93f6c391545` (v3's `a9dad36c7bf0` with the neutral `task.toml` note) goes
-  up as the next version of the new name, under the task's one experiment, on the owner's
+  rounds), then bundle `d365dc33100d` (v3's `a9dad36c7bf0` with the neutral note in `task.toml` and
+  `session-timer`) goes up as the next version of the new name, under the task's one experiment, on the owner's
   word. Its baselines and pre-trial audit come before any model trial. The two oracle trials on
   different workers are a hard gate: each must score exactly 1.0, with the same `kept_ids_sha256`
   and `expected_sha256` (`bb030348…` and `18af6936…` so far; the verifier image's context is
