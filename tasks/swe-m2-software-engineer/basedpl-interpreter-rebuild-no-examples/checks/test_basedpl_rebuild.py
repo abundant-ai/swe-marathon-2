@@ -2331,6 +2331,22 @@ def test_nothing_the_agent_sees_names_a_reference_answer_or_a_budget():
         assert excluded in instruction.split("Out of scope:", 1)[1], excluded
 
 
+def test_the_instruction_states_the_requirement_and_never_a_comparison_of_the_work():
+    """A sibling task's verdict: a solver that read its completion sentence ("cannot be told apart from ...") called its
+    own run an evaluation, which the platform counts as info leakage at must-fix tier. Here the sentence states the
+    requirement in the requester's terms, and nothing of ours in the agent's image or instruction uses that phrase
+    class. Upstream's manual, which ships as it is, speaks only of evaluation order, APL's grade and Python benchmarks."""
+    instruction = " ".join((STEP / "instruction.md").read_text().split())
+    assert ("The work is complete when, for every script, input and command line we run, your program writes to standard "
+            "output exactly what the sandboxed build writes and exits with the same status.") in instruction
+    phrases = re.compile(r"told apart|tell (?:them |it )?apart|indistinguishab|\bgrad(?:ed|ing|er)\b|evaluat|test corpus|"
+                         r"hidden test|held.out|benchmark|rubric|\bjudged?\b", re.I)
+    ours = [STEP / "instruction.md", TASK / "environment" / "Dockerfile", HARDENING / "mark.py",
+            *(TASK / "environment" / name for name in ("provision-scratch", "reclaim-scratch", "session-timer"))]
+    found = {path.name: phrases.findall(path.read_text()) for path in ours}
+    assert not any(found.values()), {name: words for name, words in found.items() if words}
+
+
 def test_no_shipped_file_of_ours_outside_the_verifier_uses_a_word_the_audit_scan_flags():
     """QA 07f G3. The pre-trial audit's word scan stops on these words. They appear in no file of ours that ships
     outside the verifier image's own sources (whose vocabulary is their job) and task.toml (whose `[verifier]` tables

@@ -106,7 +106,7 @@ Your implementation in `/app/rebuild`, with an executable `/app/rebuild/bpl`.
   `bpl` still running then. A run uses at most 4 GB of memory and holds at most 1 GB and 100,000
   files and directories of its own on disk. The sandboxed build finishes each of our programs in a
   small fraction of that time.
-- We will maintain this code for years: keep it modular, with reading source, evaluation, the
+- We will maintain this code for years: keep it modular, with reading source, executing it, the
   primitives and operators, numbers, display, and the command line and worker in separate parts.
 - Out of scope: what our scripts never rely on. Golden files cannot hold anything that changes
   from run to run, so random numbers (`¿`, `•rand`, `•distribution`, the random `•uuid` versions)
@@ -123,5 +123,6 @@ Your implementation in `/app/rebuild`, with an executable `/app/rebuild/bpl`.
 
 ## Completion
 
-The work is complete when your program cannot be told apart from the sandboxed build by what it
-prints on standard output and how it exits. Keep `/app/rebuild/bpl` runnable at all times.
+The work is complete when, for every script, input and command line we run, your program writes to
+standard output exactly what the sandboxed build writes and exits with the same status. Keep
+`/app/rebuild/bpl` runnable at all times.
