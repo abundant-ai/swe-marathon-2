@@ -137,6 +137,7 @@ results = {{}}
 builds = verify.upstream_builds()
 for name in ("reference", "empty", "silent"):
     top = work / "deliveries" / name / "rebuild"
+    verify.SWEEP_STATE = top.parent / ".state" / "out" / "sweep.json"   # where this sweep got to
     notes, refused = verify.manifest(top)
     record = verify.manifest_record(top)
     fetched = verify.fetched_build(top, builds)
@@ -151,7 +152,7 @@ for name in ("reference", "empty", "silent"):
                      "notes": notes + metrics["notes"], "seconds": round(time.monotonic() - started, 1),
                      "by_kind": metrics["by_kind"], "timeouts": metrics["timeouts"], "failed_sample": metrics["failed_sample"][:10],
                      "fingerprint": metrics.get("fingerprint"), "diagnostics": metrics.get("diagnostics"),
-                     "sweep_flags": record.get("flags")}}
+                     "sweep_flags": record.get("flags"), "sweep_stage": (verify.sweep_state() or {{}}).get("stage")}}
 print(json.dumps(results))
 """
     done = subprocess.run([sys.executable, "-B", "-c", driver], capture_output=True, text=True, timeout=7200)
@@ -166,7 +167,7 @@ print(json.dumps(results))
                "results": results}
     (work / "summary.json").write_text(json.dumps(summary, indent=1) + "\n")
     print(json.dumps({name: {k: v for k, v in result.items() if k in ("reward", "passed", "total", "mark", "notes", "seconds",
-                                                                        "fingerprint", "sweep_flags")}
+                                                                        "fingerprint", "sweep_flags", "sweep_stage")}
                       for name, result in results.items()} | {"recording": summary["recording"]}, indent=1))
 
 

@@ -1,20 +1,54 @@
 #!/bin/sh
-# Runs as root once the user's work has ended, before /app/rebuild is copied elsewhere. It stops and
-# ends every process of the user `dev`, recording what was alive; probes whether a few public hosts
-# answer; puts a mark into /app/rebuild that says the tree is refused; makes the tree copyable
-# (links); then moves the tree out of /app/rebuild, measures and bounds it there, and moves it back
-# under a mark that lists it only when it is within the limits and the disk has room to pack it.
-# From the move out until that last step /app/rebuild holds the refused mark and nothing unmeasured,
-# so a sweep that stops in between leaves an empty tree marked refused (one that stops before the
-# move leaves the tree in place, marked refused). The mark's first line says how many entries and
-# bytes were listed, or that the tree was refused; the record (.fsmaint.json) lists every entry,
-# every link turned into a copy with where the copy came from and when that source last changed,
-# and the end bound the net check observed.
+# Runs as root once the user's work has ended, before /app/rebuild is copied elsewhere. First it
+# writes, into a file of its own that is copied beside the tree, that the sweep has begun. Then it
+# stops every process of the user `dev`, puts a mark into /app/rebuild that says the tree is refused,
+# records and ends those processes; probes whether a few public hosts answer; makes the tree
+# copyable (links); moves the tree out of /app/rebuild, measures and bounds it there, and moves it
+# back under a mark that lists it only when it is within the limits and the disk has room to pack
+# it. Only once that mark is in place does the file beside the tree say the sweep finished. From the
+# move out until then /app/rebuild holds the refused mark and nothing unmeasured; before the move
+# out it holds the tree as the session left it, under the refused mark. The mark's first line says
+# how many entries and bytes were listed, or that the tree was refused; the record (.fsmaint.json)
+# lists every entry, every link turned into a copy with where the copy came from and when that
+# source last changed, the end bound the net check observed, and how the ending of the processes went.
 LIMIT_ENTRIES=200000
 LIMIT_BYTES=2000000000
 STATE=/var/lib/fsmaint
+OUT="$STATE/out"   # copied beside the tree: where the sweep got to (sweep.json)
+PROBE="${FSMAINT_SWEEP_PROBE_SECONDS:-10}"     # each process listing or signal, at most
+FREEZE="${FSMAINT_SWEEP_FREEZE_SECONDS:-15}"   # the freezing of the processes, at most
+ENDING="${FSMAINT_SWEEP_KILL_SECONDS:-60}"     # their ending, at most
 mkdir -p "$STATE" && chmod 0700 "$STATE"
 started=$(date +%s.%N)
+# Where the sweep has got to, written in place into the 4,096 bytes fsmaint-reserve set aside for
+# it, so that it needs no new room however full the disk is; first of all, that it has begun.
+progress() {
+  [ -d "$OUT" ] || mkdir -m 0700 "$OUT"
+  printf '%-4095s\n' "$1" | dd of="$OUT/sweep.json" bs=4096 count=1 conv=notrunc 2>/dev/null
+}
+progress "{\"stage\": \"started\", \"started_at\": \"$started\"}"
+# The processes of `dev` are found by their state: running, sleeping, waiting on a device, stopped
+# or traced count as alive; a zombie, which holds and does nothing, does not. Each listing and each
+# signal may take PROBE seconds, and a listing that does not answer in time counts as finding one.
+alive() {   # whether a process of `dev` is in one of the states given as $1
+  for who in -u -U; do
+    timeout "$PROBE" pgrep "$who" dev -r "$1" >/dev/null 2>&1
+    [ $? -eq 1 ] || return 0
+  done
+  return 1
+}
+count_alive() {   # how many processes of `dev` are alive, or "unknown" where a listing did not answer
+  found=""
+  for who in -u -U; do
+    pids=$(timeout "$PROBE" pgrep "$who" dev -r R,S,D,T,t 2>/dev/null)
+    [ $? -le 1 ] || { echo unknown; return; }
+    found="$found $pids"
+  done
+  printf '%s\n' $found | sort -u | grep -c .
+}
+as_dev() {   # a command run as `dev`, within PROBE seconds
+  timeout "$PROBE" setpriv --reuid dev --regid dev --clear-groups "$@" >/dev/null 2>&1
+}
 # fsmaint-timer, if it is still ending processes, must not reach the worker below that runs as
 # `dev`: write the mark its loop stops on, then stop it; the last stage stops it again.
 : > "$STATE/sweeping"
@@ -26,95 +60,21 @@ if [ -r /run/fsmaint-timer.pid ]; then
     kill -KILL "$timer" >/dev/null 2>&1
   fi
 fi
-# Freeze the processes of `dev` first, so that none of them runs while they are listed, then end
-# them all. `kill -9 -1` as that user reaches all of them in one system call, so a process that
-# forks cannot outrun it; repeat until none is left.
-for _ in $(seq 1 50); do
-  { pgrep -u dev || pgrep -U dev; } >/dev/null 2>&1 || break
-  setpriv --reuid dev --regid dev --clear-groups kill -STOP -1 >/dev/null 2>&1
-  pgrep -u dev -r R,S,D >/dev/null 2>&1 || break
+# Freeze the processes of `dev` first, so that none of them runs while the tree is marked and they
+# are listed, then end them all. `kill -9 -1` as that user reaches all of them in one system call,
+# so a process that forks cannot outrun it. Either phase stops once its time is up.
+froze=0
+freeze_out=false
+phase=$(date +%s)
+while alive R,S,D; do
+  if [ $(( $(date +%s) - phase )) -ge "$FREEZE" ]; then freeze_out=true; break; fi
+  froze=$((froze + 1))
+  as_dev kill -STOP -1
   sleep 0.05
 done
-timeout 20 /usr/bin/python3 -I - "$STATE/procs.json" <<'EOF'
-"""List the processes of the user `dev` (frozen), with their state and command lines."""
-import json
-import os
-import pwd
-import sys
-import time
-
-try:
-    uid = str(pwd.getpwnam("dev").pw_uid)
-except KeyError:
-    uid = None
-processes = []
-try:
-    pids = sorted((name for name in os.listdir("/proc") if name.isdigit()), key=int)
-except OSError:
-    pids = []
-for pid in pids:
-    try:
-        with open(f"/proc/{pid}/status") as handle:
-            status = dict(line.split(":", 1) for line in handle.read().splitlines() if ":" in line)
-        if uid is None or uid not in status.get("Uid", "").split():
-            continue
-        with open(f"/proc/{pid}/cmdline", "rb") as handle:
-            command = handle.read(4096).replace(b"\0", b" ").strip().decode(errors="backslashreplace")
-        processes.append({"pid": int(pid), "ppid": int(status.get("PPid", "0").strip() or 0), "state": status.get("State", "").strip()[:1],
-                          "name": status.get("Name", "").strip(), "command": command[:1000]})
-    except (OSError, ValueError):
-        continue
-with open(sys.argv[1], "w") as handle:
-    json.dump({"listed_at": time.time(), "process_count": len(processes), "processes": processes[:500]}, handle)
-EOF
-passes=0
-for _ in $(seq 1 100); do
-  { pgrep -u dev || pgrep -U dev; } >/dev/null 2>&1 || break
-  passes=$((passes + 1))
-  setpriv --reuid dev --regid dev --clear-groups kill -9 -1 >/dev/null 2>&1
-  pkill -KILL -u dev >/dev/null 2>&1
-  pkill -KILL -U dev >/dev/null 2>&1
-  sleep 0.1
-done
-left=$({ pgrep -u dev; pgrep -U dev; } 2>/dev/null | sort -u | wc -l)
-ended=$(date +%s.%N)
-# fsmaint-netcheck, if it is still running, has nothing left to do.
-if [ -r "$STATE/netcheck.json" ]; then
-  pid=$(/usr/bin/python3 -I -c 'import json,sys; print(json.load(open(sys.argv[1])).get("pid", ""))' "$STATE/netcheck.json" 2>/dev/null)
-  [ -n "$pid" ] && kill -TERM "$pid" >/dev/null 2>&1
-fi
-# Whether a few public hosts answer from here now, all at once, three seconds in all.
-timeout 15 /usr/bin/python3 -I - "$STATE/netprobe.json" <<'EOF'
-"""Record whether a TCP connection to port 443 of a few public hosts answers, all tried at once
-within three seconds."""
-import json
-import socket
-import sys
-import threading
-import time
-
-HOSTS = (("github.com", 443), ("pypi.org", 443), ("proxy.golang.org", 443), ("registry.npmjs.org", 443))
-results = {f"{host}:{port}": "no answer within 3 s" for host, port in HOSTS}
-
-
-def reach(host, port):
-    try:
-        with socket.create_connection((host, port), timeout=3):
-            results[f"{host}:{port}"] = "open"
-    except OSError as exc:
-        results[f"{host}:{port}"] = f"closed ({exc.__class__.__name__})"
-
-
-workers = [threading.Thread(target=reach, args=entry, daemon=True) for entry in HOSTS]
-for worker in workers:
-    worker.start()
-for worker in workers:
-    worker.join(3.5)
-with open(sys.argv[1], "w") as handle:
-    json.dump({"checked_at": time.time(), "hosts": results, "any_open": any(state == "open" for state in results.values())}, handle)
-EOF
-# Give back the room and the spare inodes fsmaint-reserve set aside, so however full the disk was
-# left, the marks, the record and a refusal can be written.
+# Give back the room and the spare inodes fsmaint-reserve set aside (after the freeze, so that the
+# processes of `dev` cannot take them), so however full the disk was left, the marks, the record and
+# a refusal can be written.
 rm -f "$STATE/room"
 rm -rf "$STATE/inodes"
 # Whatever was left under the mark's or the record's name is moved aside, or removed where it
@@ -157,6 +117,88 @@ if reason is not None:
 descriptor = os.open(os.path.join(TOP, ".fsmaint"), os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644)
 with os.fdopen(descriptor, "w") as mark:
     mark.write(f"refused\n{reason or 'the sweep did not finish'}: it was not copied\n")
+EOF
+timeout 20 /usr/bin/python3 -I - "$STATE/procs.json" <<'EOF'
+"""List the processes of the user `dev` (frozen), with their state and command lines."""
+import json
+import os
+import pwd
+import sys
+import time
+
+try:
+    uid = str(pwd.getpwnam("dev").pw_uid)
+except KeyError:
+    uid = None
+processes = []
+try:
+    pids = sorted((name for name in os.listdir("/proc") if name.isdigit()), key=int)
+except OSError:
+    pids = []
+for pid in pids:
+    try:
+        with open(f"/proc/{pid}/status") as handle:
+            status = dict(line.split(":", 1) for line in handle.read().splitlines() if ":" in line)
+        if uid is None or uid not in status.get("Uid", "").split():
+            continue
+        with open(f"/proc/{pid}/cmdline", "rb") as handle:
+            command = handle.read(4096).replace(b"\0", b" ").strip().decode(errors="backslashreplace")
+        processes.append({"pid": int(pid), "ppid": int(status.get("PPid", "0").strip() or 0), "state": status.get("State", "").strip()[:1],
+                          "name": status.get("Name", "").strip(), "command": command[:1000]})
+    except (OSError, ValueError):
+        continue
+with open(sys.argv[1], "w") as handle:
+    json.dump({"listed_at": time.time(), "process_count": len(processes), "processes": processes[:500]}, handle)
+EOF
+passes=0
+kill_out=false
+phase=$(date +%s)
+while alive R,S,D,T,t; do
+  if [ $(( $(date +%s) - phase )) -ge "$ENDING" ]; then kill_out=true; break; fi
+  passes=$((passes + 1))
+  as_dev kill -9 -1
+  timeout "$PROBE" pkill -KILL -u dev >/dev/null 2>&1
+  timeout "$PROBE" pkill -KILL -U dev >/dev/null 2>&1
+  sleep 0.1
+done
+left=$(count_alive)
+ended=$(date +%s.%N)
+printf '{"freeze_passes": %s, "freeze_ran_out": %s, "kill_passes": %s, "kill_ran_out": %s, "processes_left": "%s"}\n' \
+  "$froze" "$freeze_out" "$passes" "$kill_out" "$left" > "$STATE/kill.json"
+# fsmaint-netcheck, if it is still running, has nothing left to do.
+if [ -r "$STATE/netcheck.json" ]; then
+  pid=$(/usr/bin/python3 -I -c 'import json,sys; print(json.load(open(sys.argv[1])).get("pid", ""))' "$STATE/netcheck.json" 2>/dev/null)
+  [ -n "$pid" ] && kill -TERM "$pid" >/dev/null 2>&1
+fi
+# Whether a few public hosts answer from here now, all at once, three seconds in all.
+timeout 15 /usr/bin/python3 -I - "$STATE/netprobe.json" <<'EOF'
+"""Record whether a TCP connection to port 443 of a few public hosts answers, all tried at once
+within three seconds."""
+import json
+import socket
+import sys
+import threading
+import time
+
+HOSTS = (("github.com", 443), ("pypi.org", 443), ("proxy.golang.org", 443), ("registry.npmjs.org", 443))
+results = {f"{host}:{port}": "no answer within 3 s" for host, port in HOSTS}
+
+
+def reach(host, port):
+    try:
+        with socket.create_connection((host, port), timeout=3):
+            results[f"{host}:{port}"] = "open"
+    except OSError as exc:
+        results[f"{host}:{port}"] = f"closed ({exc.__class__.__name__})"
+
+
+workers = [threading.Thread(target=reach, args=entry, daemon=True) for entry in HOSTS]
+for worker in workers:
+    worker.start()
+for worker in workers:
+    worker.join(3.5)
+with open(sys.argv[1], "w") as handle:
+    json.dump({"checked_at": time.time(), "hosts": results, "any_open": any(state == "open" for state in results.values())}, handle)
 EOF
 # The end bound for the link fixing below: from the net check's record where it has one, else this
 # sweep's own start.
@@ -359,33 +401,39 @@ for _ in range(10):
 EOF
 # Measure, bound, list and mark, as root.
 exec /usr/bin/python3 -I - /app/rebuild "$LIMIT_ENTRIES" "$LIMIT_BYTES" "$notes" "$STATE" "$passes" "$left" "$started" "$ended" "$end_bound" "$end_from" <<'EOF'
-"""Measure /app/rebuild out of place, bound it, list it and mark it, as root, once no process of
-`dev` runs.
+"""Measure /app/rebuild out of place, bound it, list it and mark it, as root, once the processes of
+`dev` are ended.
 
 /app/rebuild already holds a mark that says the tree is refused. First every other entry moves into
-a new directory beside it, so that from then on /app/rebuild holds that mark and nothing unmeasured:
-should the measuring stop before its end, an empty tree marked refused is what is copied. The moved
-tree is walked by directory descriptor, never following a link. Whatever a copy would refuse or
-could not carry is taken out: a device, a pipe or a socket is removed; an entry whose path in the
-tree is longer than 2,048 bytes is moved out with everything below it; a link is removed unless,
-read from where it stands in /app/rebuild, it leads through directories of the tree only (outside
-the tree, by name alone) to a file or a directory of the tree, and then it is rewritten as the
-shortest relative path to that, which resolves the same wherever the tree is unpacked. A tree over
-the limits, one not measured within 420 seconds of the sweep's start, or one the disk has too
-little room left to pack into /tmp, is refused and stays moved out. Otherwise it moves back, and
-one rename puts its own mark in place of the refused one. The mark's first line is `listed` with
-the number of entries (files, directories and links) and of bytes in its files (each file once,
-however many names it has), or `refused` with the reason on the next line; then up to 200 of the
-changes made, 32 KiB at most (the link fixing's first, read as JSON lines from the file named fourth
-on the command line, which is then removed), and how many more there are. A tree that cannot be
-moved out or back, or whose mark cannot be written, is refused too. The record (.fsmaint.json; for a
-refused tree, without the entries or left out where the disk has too little room) holds the
-changes (up to 4,000,000 bytes of them), this sweep's start and the end of its kill stage, the end
-bound and where it came from, what the net check recorded, the processes found frozen, how many
-passes of ending it took and how many processes were left, whether the public hosts answered
-afterwards, every copy a link became and every link refused, with where it came from and when that
-changed, and every entry: its path, type, size, modification and change times (an entry at the top
-as they were before it moved), and a file's sha256 (within a byte limit).
+a new directory beside it, so that from then on /app/rebuild holds that mark and nothing unmeasured.
+The moved tree is walked by directory descriptor, never following a link. Whatever a copy would
+refuse or could not carry is taken out: a device, a pipe or a socket is removed; an entry whose path
+in the tree is longer than 2,048 bytes is moved out with everything below it; a link is removed
+unless, read from where it stands in /app/rebuild, it leads through directories of the tree only
+(outside the tree, by name alone) to a file or a directory of the tree, and then it is rewritten as
+the shortest relative path to that, which resolves the same wherever the tree is unpacked. All of
+this, the moving out and back included, stops 480 seconds after the sweep's start. A tree over the
+limits, one not measured in that time, or one the disk has too little room left to pack into /tmp,
+is refused and stays moved out. Otherwise it moves back, and one rename puts its own mark in place
+of the refused one. The mark's first line is `listed` with the number of entries (files,
+directories and links) and of bytes in its files (each file once, however many names it has), or
+`refused` with the reason on the next line; then up to 200 of the changes made, 32 KiB of them at
+most (the link fixing's first, read as JSON lines from the file named fourth on the command line,
+which is then removed), and how many more there are. A tree that cannot be moved out or back, or
+whose mark cannot be written, is refused too. The record (.fsmaint.json; for a refused tree, without
+the entries or left out where the disk has too little room) holds the changes (up to 4,000,000 bytes
+of them), this sweep's start and the end of its kill stage, how the freezing and the ending went
+(kill.json in the state directory named fifth), the end bound and where it came from, what the net
+check recorded, the processes found frozen, how many passes of ending it took and how many processes
+were left alive, whether the public hosts answered afterwards, every copy a link became and every
+link refused, with where it came from and when that changed, and every entry: its path, type, size,
+modification and change times (an entry at the top as they were before it moved), and a file's
+sha256 (within a byte limit). Last, the file beside the tree (out/sweep.json in the state directory)
+says where the sweep got to: `done` once /app/rebuild holds its mark, the record and a measured tree
+or none, `stopped` otherwise (entries left in /app/rebuild unmeasured because the moving out did not
+end or an entry could be neither moved nor removed, or its own mark not put in place); written in
+place, before 570 seconds have passed since the sweep's start, or not at all (it then still says the
+sweep began).
 """
 import hashlib
 import json
@@ -412,8 +460,10 @@ HASH_LIMIT = 2_000_000_000   # bytes hashed for the record, at most
 NOTE_BYTES = 4_000_000       # bytes of notes kept, at most
 MARK_NOTES, MARK_BYTES = 200, 32_768   # notes in the mark, at most, and their bytes
 PATH_BYTES = int(os.environ.get("FSMAINT_PATH_BYTES", 2048))   # bytes of a path in the tree, at most
-SECONDS = 420   # the measuring ends this long after the sweep's start; the sweep itself has 600
+SECONDS = 480   # everything here but its last writes ends this long after the sweep's start
 FINISH_BY = STARTED + SECONDS
+LAST_BY = STARTED + 570   # the mark's last rename and the word that the sweep finished, only before this
+OUT = os.path.join(STATE, "out")   # copied beside the tree: where the sweep got to (sweep.json)
 PACK_DIR = "/tmp"   # where the tree is packed before it is copied
 PACK_ROOM = int(os.environ.get("FSMAINT_PACK_ROOM", 32 << 20))   # bytes left free once it is packed, at least
 PACK_INODES = int(os.environ.get("FSMAINT_PACK_INODES", 16))   # inodes free for the packing, at least
@@ -472,6 +522,29 @@ def set_aside(path):
         remove(path)
 
 
+def in_time():
+    if time.time() > FINISH_BY:
+        raise Refuse(f"it was not measured within {SECONDS} seconds")
+
+
+def progress(fields):
+    """Write where the sweep got to into OUT/sweep.json: in place, as 4,096 bytes, into the file made
+    for it at set-up (no new room needed), else into a new one."""
+    data = json.dumps(fields).encode()[:4095].ljust(4095) + b"\n"
+    path = os.path.join(OUT, "sweep.json")
+    try:
+        descriptor = os.open(path, os.O_WRONLY | os.O_NOFOLLOW)
+    except FileNotFoundError:
+        os.makedirs(OUT, mode=0o700, exist_ok=True)
+        write_new(path, data)
+        return
+    try:
+        os.pwrite(descriptor, data, 0)
+        os.ftruncate(descriptor, len(data))
+    finally:
+        os.close(descriptor)
+
+
 def placed():
     """Whether the mark is a file that says the tree is refused (the one put in before the links
     were fixed)."""
@@ -525,14 +598,15 @@ try:
         write_new(MARK, f"refused\n{REPLACED or 'the sweep did not finish'}: it was not copied\n".encode())
     if os.path.lexists(RECORD):
         set_aside(RECORD)
-except OSError as exc:
+except (OSError, subprocess.SubprocessError) as exc:
     print(f"the refused mark could not be put in place ({exc.__class__.__name__})", flush=True)
 
 
 def move_all(source, destination):
     """Move every entry of the directory `source` but the mark and the record into `destination`
     (a rename each), reading the listing again until none is left, since one read while its names
-    leave may skip some; the names of those that could not be moved."""
+    leave may skip some, and stopping at FINISH_BY; the names of those that could not be moved, and
+    whether the time ran out first."""
     stuck = set()
     for _ in range(5):
         moved = False
@@ -540,6 +614,8 @@ def move_all(source, destination):
             for entry in listing:
                 if entry.name in OWN or entry.name in stuck:
                     continue
+                if time.time() > FINISH_BY:
+                    return stuck, True
                 try:
                     if destination == STAGED and len(top_times) <= LIMIT_ENTRIES:
                         info = entry.stat(follow_symlinks=False)
@@ -552,25 +628,36 @@ def move_all(source, destination):
                     stuck.add(entry.name)
         if not moved:
             break
-    return stuck
+    return stuck, False
 
 
 # Every other entry moves out (a rename each: /app/rebuild itself stays where it is). An entry that
 # cannot be moved is removed, and the tree is refused; where no directory can be made beside the
-# tree, every entry is removed so.
+# tree, every entry is removed so. Whatever the time limit or a failed removal leaves in /app/rebuild
+# is unmeasured, and the sweep then says it stopped rather than finished.
 unmoved = None
+clean = True   # whether /app/rebuild holds nothing unmeasured but the marks and the record
 STAGED = os.path.join(PARENT, f".staged.{os.urandom(6).hex()}")
 try:
     os.mkdir(STAGED, 0o700)
-    stuck = move_all(TOP, STAGED)
+    stuck, cut = move_all(TOP, STAGED)
 except OSError:
-    stuck = {name for name in os.listdir(TOP) if name not in OWN}
+    try:
+        stuck, cut = {name for name in os.listdir(TOP) if name not in OWN}, False
+    except OSError:
+        stuck, cut = set(), False
+        clean = False
+if cut:
+    unmoved, clean = f"it was not moved out within {SECONDS} seconds", False
 for name in stuck:
-    unmoved = "it could not be moved out to be measured"
+    unmoved = unmoved or "it could not be moved out to be measured"
+    if not clean or time.time() > FINISH_BY:
+        clean = False
+        continue
     try:
         remove(os.path.join(TOP, name))
-    except OSError:
-        pass
+    except (OSError, subprocess.SubprocessError):
+        clean = False
 try:
     with open(NOTES, errors="backslashreplace") as handle:
         text = handle.read(NOTE_BYTES)
@@ -592,11 +679,6 @@ for line in text.splitlines():
             note(str(said["note"]))
     except (ValueError, TypeError, KeyError):
         note(line)
-
-
-def in_time():
-    if time.time() > FINISH_BY:
-        raise Refuse(f"it was not measured within {SECONDS} seconds")
 
 
 def digest(name, fd, length):
@@ -630,11 +712,14 @@ def move_out(name, fd, path):
 
 
 def walk(top):
-    """Count, and take out what a copy would refuse, below the directory open as `top`."""
-    global entries, size
-    pending = [""]
+    """Count, and take out what a copy would refuse, below the directory open as `top`; count too
+    the files changed at or after the end bound, less the skew, by the later of their change and
+    modification times, leaving out what lies in a copy a link became (its times are this sweep's;
+    the copy's source counts instead)."""
+    global entries, size, late_files
+    pending = [("", False)]
     while pending:
-        rel = pending.pop()
+        rel, in_copy = pending.pop()
         fd = os.open(rel, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=top) if rel else top
         try:
             names = []
@@ -660,10 +745,13 @@ def walk(top):
                 item = {"path": path, "type": kind, "size": info.st_size, "mtime": round(mtime, 3), "ctime": round(ctime, 3)}
                 catalogue.append(item)
                 kinds[path] = kind
+                copied_here = in_copy or path in copied_paths
+                if kind == "file" and not copied_here and max(item["mtime"], item["ctime"]) >= cutoff:
+                    late_files += 1
                 if kind == "link":
                     links.append(path)
                 elif kind == "directory":
-                    pending.append(path)
+                    pending.append((path, copied_here))
                 elif (info.st_dev, info.st_ino) in files:   # another name of a file already counted
                     item["sha256"] = files[(info.st_dev, info.st_ino)]
                 else:
@@ -728,6 +816,9 @@ def fix_links(top):
         catalogue[:] = [item for item in catalogue if item["path"] not in removed]
 
 
+copied_paths = {copy["path"] for copy in copies if isinstance(copy, dict) and isinstance(copy.get("path"), str)}
+cutoff = END_BOUND - SKEW
+late_files = 0
 reason = REPLACED or unmoved
 top = None
 try:
@@ -743,7 +834,8 @@ finally:
     for descriptor in (top, long_fd):
         if descriptor is not None:
             os.close(descriptor)
-netcheck, netcheck_open, processes, probe = (read_json(name) for name in ("netcheck.json", "netcheck-open.json", "procs.json", "netprobe.json"))
+netcheck, netcheck_open, processes, probe, ending = (read_json(name) for name in ("netcheck.json", "netcheck-open.json", "procs.json",
+                                                                                   "netprobe.json", "kill.json"))
 
 
 def log_tail(path, limit=20):
@@ -767,17 +859,11 @@ try:
         os.kill(int(handle.read().strip()), signal.SIGTERM)
 except (OSError, ValueError):
     pass
-# Entries changed at or after the end bound, less the skew: a copied tree by its source's latest
-# change time (the copy's own times are this sweep's), a refused source by its late files, and every
-# other regular file by the later of its change and modification times. Links are the fixer's own
-# rewrites and directories change when a child does, so neither counts.
-copied_paths = [copy["path"] for copy in copies]
-cutoff = END_BOUND - SKEW
-late_entries = (sum(1 for item in catalogue
-                    if item["type"] == "file"
-                    and not any(item["path"] == path or item["path"].startswith(path + "/") for path in copied_paths)
-                    and max(item["ctime"], item.get("mtime", 0)) >= cutoff)
-                + sum(1 for copy in copies if (copy.get("latest_ctime") or 0) >= cutoff)
+# Entries changed at or after the end bound, less the skew: the files the walk counted (outside the
+# copies), a copied tree by its source's latest change time (the copy's own times are this sweep's),
+# and a refused source by its late files. Links are the fixer's own rewrites and directories change
+# when a child does, so neither counts.
+late_entries = (late_files + sum(1 for copy in copies if (copy.get("latest_ctime") or 0) >= cutoff)
                 + sum(1 for item in refused if item.get("late_files")))
 
 
@@ -798,14 +884,15 @@ def room_for(length):
 
 
 def mark_text(lines):
-    """The mark: its first lines, then the first changes made, within MARK_NOTES and MARK_BYTES, and
-    how many more the record holds."""
+    """The mark: its first lines, then the first changes made, within MARK_NOTES and MARK_BYTES (as
+    written, in bytes), and how many more the record holds."""
     shown, used = [], 0
     for line in notes[:MARK_NOTES]:
-        if used + len(line) + 1 > MARK_BYTES:
+        length = len(line.encode(errors="backslashreplace")) + 1
+        if used + length > MARK_BYTES:
             break
         shown.append(line)
-        used += len(line) + 1
+        used += length
     more = len(notes) - len(shown) + notes_left_out
     tail = [f"and {more:,} more changes: see .fsmaint.json"] if more else []
     return ("\n".join(lines + shown + tail) + "\n").encode(errors="backslashreplace")
@@ -818,7 +905,8 @@ def record_of(lines, whole=True):
         probe or {"hosts": None, "any_open": None}, sweep_started_at=STARTED, kill_ended_at=ENDED,
         end_bound=END_BOUND, end_from=END_FROM, netcheck=netcheck, netcheck_open=netcheck_open,
         process_count=(processes or {}).get("process_count"), processes=(processes or {}).get("processes", []),
-        kill_passes=PASSES, processes_left=LEFT, listed=lines[0], listing_complete=lines[0] != "refused" and hashed <= HASH_LIMIT,
+        kill_passes=PASSES, processes_left=LEFT, ending=ending, listed=lines[0],
+        listing_complete=lines[0] != "refused" and hashed <= HASH_LIMIT,
         copies=copies, refused_copies=refused, late_entries=late_entries, timer_log=timer_log, ended_by_timer=ended_by_timer,
         moved_out_long=moved_out, notes=notes if whole else notes[:MARK_NOTES], notes_left_out=notes_left_out,
         free_bytes=free, free_inodes=inodes, pack_needs=need, entries=catalogue[:LIMIT_ENTRIES] if whole else [],
@@ -849,11 +937,14 @@ if reason is None:
         reason = f"its mark could not be written ({exc.__class__.__name__})"
 if reason is None:
     try:   # back into /app/rebuild, under the refused mark until the last step
-        if move_all(STAGED, TOP) or any(name in OWN for name in os.listdir(STAGED)):
+        stuck, cut = move_all(STAGED, TOP)
+        if cut:
+            raise OSError(f"not within {SECONDS} seconds")
+        if stuck or any(name in OWN for name in os.listdir(STAGED)):
             raise OSError("an entry stayed out")
         os.rmdir(STAGED)
     except OSError as exc:
-        reason = f"it could not be moved back ({exc.__class__.__name__})"
+        reason = f"it could not be moved back ({exc})"
 if reason is not None:
     lines = ["refused", f"{reason}: it was not copied"]
     record = record_of(lines)
@@ -876,11 +967,21 @@ if record is not None:
         write_new(RECORD, record)
     except OSError as exc:
         print(f"the record could not be written ({exc.__class__.__name__})", flush=True)
-if ready:
+# The last rename and the word that the sweep finished come only before LAST_BY: anything later
+# could meet the tree being packed.
+placed_mark = False
+if ready and time.time() <= LAST_BY:
     try:
         os.replace(NEXT, MARK)
+        placed_mark = True
     except OSError as exc:
         print(f"the mark could not be put in place ({exc.__class__.__name__})", flush=True)
+if time.time() <= LAST_BY:
+    try:
+        progress({"stage": "done" if clean and (placed_mark or lines[0] == "refused") else "stopped",
+                  "mark": lines[0], "processes_left": LEFT, "ending": ending, "finished_at": time.time()})
+    except (OSError, ValueError) as exc:
+        print(f"where the sweep got to could not be written ({exc.__class__.__name__})", flush=True)
 for line in lines[1:] + notes[:50]:
     print(line.encode(errors="backslashreplace").decode(), flush=True)
 EOF

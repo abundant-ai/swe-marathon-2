@@ -1,16 +1,17 @@
 #!/bin/sh
 # Runs as root from the set-up hook. Started without arguments it starts a detached copy of itself
-# (`run`) and returns. The detached copy sleeps END_SECONDS, then sends TERM to every process of the
-# user `dev` every TERM_INTERVAL seconds for up to TERM_PASSES passes, then KILL to any left, and
-# logs each step with a timestamp to a root-only log. It is armed once (a pid file under /run), and
-# it stops without ending anything once fsmaint-sweep has begun (the `sweeping` mark in the state
-# directory). The FSMAINT_TIMER_* variables override the paths, the times and the processes selected.
+# (`run`) and returns. The detached copy sleeps END_SECONDS (34,440 s), then sends TERM to every
+# process of the user `dev` every TERM_INTERVAL seconds for up to TERM_PASSES passes (6 of 5 s, about
+# 30 s in all), then KILL to any left, and logs each step with a timestamp to a root-only log. It is
+# armed once (a pid file under /run), and it stops without ending anything once fsmaint-sweep has
+# begun (the `sweeping` mark in the state directory). The FSMAINT_TIMER_* variables override the
+# paths, the times and the processes selected.
 LOG="${FSMAINT_TIMER_LOG:-/var/log/fsmaint-timer.log}"
 PIDFILE="${FSMAINT_TIMER_PIDFILE:-/run/fsmaint-timer.pid}"
-END_SECONDS="${FSMAINT_TIMER_END_SECONDS:-33900}"
+END_SECONDS="${FSMAINT_TIMER_END_SECONDS:-34440}"
 TARGET_USER="${FSMAINT_TIMER_USER:-dev}"
 SELECT="${FSMAINT_TIMER_SELECT:--u $TARGET_USER}"
-TERM_PASSES="${FSMAINT_TIMER_TERM_PASSES:-12}"
+TERM_PASSES="${FSMAINT_TIMER_TERM_PASSES:-6}"
 TERM_INTERVAL="${FSMAINT_TIMER_TERM_INTERVAL:-5}"
 SWEEPING="${FSMAINT_TIMER_SWEEPING:-/var/lib/fsmaint/sweeping}"
 

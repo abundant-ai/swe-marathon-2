@@ -1,11 +1,15 @@
 #!/bin/sh
 # Runs as root before the user's work begins. It sets aside room and spare inodes under the state
 # directory, so that however full the disk is later, fsmaint-sweep can still write its listing; the
-# sweep gives both back. With --netcheck (the second run) it also starts fsmaint-netcheck in a
-# session of its own.
+# sweep gives both back. It also makes the 4,096-byte file in which the sweep later writes, in place,
+# where it got to (out/sweep.json, copied beside the tree). With --netcheck (the second run) it also
+# starts fsmaint-netcheck in a session of its own.
 LIB=/usr/local/lib/fsmaint
 STATE=/var/lib/fsmaint
-mkdir -p "$STATE/inodes" && chmod 0700 "$STATE"
+mkdir -p "$STATE/inodes" "$STATE/out" && chmod 0700 "$STATE" "$STATE/out"
+if [ ! -e "$STATE/out/sweep.json" ]; then
+    printf '%-4095s\n' '{"stage": "setup"}' > "$STATE/out/sweep.json" && chmod 0600 "$STATE/out/sweep.json"
+fi
 if [ ! -e "$STATE/room" ]; then
     fallocate -l 64M "$STATE/room" 2>/dev/null || head -c 67108864 /dev/zero > "$STATE/room" 2>/dev/null
 fi

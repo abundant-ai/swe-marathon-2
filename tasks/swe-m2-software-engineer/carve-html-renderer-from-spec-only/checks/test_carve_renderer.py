@@ -712,13 +712,13 @@ def test_the_sweeps_own_files_do_not_count_against_the_trees_limits(tmp_path):
     assert out == "sealed"
 
 
-def run_measuring(top: Path, env: dict[str, str] | None = None) -> list[str]:
-    """The hook's last block (measuring and marking, as root) alone on `top`, with no notes and no
-    state, as the hook runs it after the link fixing; the mark's lines."""
+def run_measuring(top: Path, env: dict[str, str] | None = None, notes_text: str = "") -> list[str]:
+    """The hook's last block (measuring and marking, as root) alone on `top`, with the link fixing's
+    notes `notes_text` and no state, as the hook runs it after the link fixing; the mark's lines."""
     measuring = hook_programs()["measuring"]
     state, notes = top.parent / ".state", top.parent / ".notes"
     state.mkdir(exist_ok=True)
-    notes.write_text("")
+    notes.write_text(notes_text)
     now = f"{time.time()}"
     done = subprocess.run([sys.executable, "-I", "-", str(top), "200000", "2000000000", str(notes), str(state), "1", "0",
                            now, now, now, "start"], input=measuring, text=True, capture_output=True, timeout=300,
@@ -1079,10 +1079,11 @@ def test_a_long_chain_of_links_is_cut_in_linear_time(tmp_path):
 def test_a_sweep_that_stops_early_leaves_an_empty_tree_marked_refused(tmp_path):
     """QA 22 F3 and F4(a): the mark says `refused` before the links are fixed, and the measuring
     moves the tree out of /app/rebuild before anything slow. A measuring killed after that (here
-    while it waits on its notes), one past its time (420 s from the sweep's start), or one whose
-    every write fails (as on a disk filled to the last block) leaves /app/rebuild holding that
-    refused mark alone, which the verifier scores 0; round 8 left the tree unmarked (an evaluation
-    error) or crashed on the mark's write."""
+    while it waits on its notes), or one whose every write fails (as on a disk filled to the last
+    block), leaves /app/rebuild holding that refused mark alone; one past its time (480 s from the
+    sweep's start, round 10: the moving out included) leaves the tree where it was under a refused
+    mark. The verifier scores each 0; round 8 left the tree unmarked (an evaluation error) or
+    crashed on the mark's write."""
     def tree(name: str) -> Path:
         top = tmp_path / name / "rebuild"
         (top / "sub").mkdir(parents=True)
@@ -1108,12 +1109,12 @@ def test_a_sweep_that_stops_early_leaves_an_empty_tree_marked_refused(tmp_path):
     assert sorted(os.listdir(killed)) == [".fsmaint"], sorted(os.listdir(killed))
     assert (killed / ".fsmaint").read_text() == "refused\nthe sweep did not finish: it was not copied\n"
     late = tree("late")
-    lines = run_hook(late, started=time.time() - 1000)
-    assert lines[:2] == ["refused", "it was not measured within 420 seconds: it was not copied"], lines
+    lines = run_hook(late, started=time.time() - 500)
+    assert lines[:2] == ["refused", "it was not moved out within 480 seconds: it was not copied"], lines
     full = tree("full")
     lines = run_hook(full, preexec=lambda: resource.setrlimit(resource.RLIMIT_FSIZE, (0, 0)))
     assert lines == ["refused", "the sweep did not finish: it was not copied"], lines
-    assert sorted(os.listdir(late)) == [".fsmaint", ".fsmaint.json"] and sorted(os.listdir(full)) == [".fsmaint"]
+    assert sorted(os.listdir(late)) == [".fsmaint", ".fsmaint.json", "carve", "sub"] and sorted(os.listdir(full)) == [".fsmaint"]
     assert all(manifest_of(top)[1] is True for top in (killed, late, full))
 
 
@@ -1188,6 +1189,227 @@ def test_the_sweep_sets_aside_what_holds_its_names_and_reports_a_failure_once(tm
     said = [line for line in done.stdout.splitlines() if "ro/abs" in line]
     assert done.returncode == 0 and len(said) == 1, done.stdout[-2000:]
     assert 'refused = "the sweep refused the tree: not run" if refused_tree else None' in (TESTS / "verify.py").read_text()
+
+
+# ---------------------------------------------------------------- round 10: where the sweep got to
+
+def hook_shell(name: str) -> str:
+    """A part of the sweep hook's shell, by name: "progress" (the function that writes where the
+    sweep got to), "processes" (the functions that find, count and signal the processes of `dev`),
+    "freeze" and "kill" (the two phases). The hook of round 9 and before had no functions, and its
+    phases were loops of 50 and 100 passes; those are returned for them, so the checks below can
+    show how that hook behaved."""
+    hook = HOOK.read_text()
+    patterns = {"progress": r"progress\(\) \{[^\n]*\n.*?\n\}\n", "processes": r"alive\(\) \{[^\n]*\n.*?\nas_dev\(\) \{[^\n]*\n.*?\n\}\n",
+                "freeze": r"froze=0\n.*?\ndone\n", "kill": r"passes=0\n.*?> \"\$STATE/kill\.json\"\n"}
+    found = re.search(patterns[name], hook, re.S)
+    if found:
+        return found.group(0)
+    old = {"progress": r"(?!)", "processes": r"(?!)", "freeze": r"for _ in \$\(seq 1 50\); do\n.*?\ndone\n",
+           "kill": r"passes=0\n.*?\nleft=\$\(.*?\n"}
+    found = re.search(old[name], hook, re.S)
+    return found.group(0) if found else ""
+
+
+def stand_in_commands(folder: Path, pgrep: str) -> dict[str, str]:
+    """A PATH whose pgrep is `pgrep` (a shell body) and whose pkill, setpriv and kill do nothing:
+    the phases run here signal no process at all."""
+    folder.mkdir(parents=True, exist_ok=True)
+    for name, body in (("pgrep", pgrep), ("pkill", "exit 0\n"), ("setpriv", "exit 0\n"), ("kill", "exit 0\n")):
+        (folder / name).write_text("#!/bin/sh\n" + body)
+        (folder / name).chmod(0o755)
+    return dict(os.environ, PATH=f"{folder}:{os.environ['PATH']}")
+
+
+def test_the_sweep_says_it_began_first_and_marks_the_tree_before_ending_processes(tmp_path):
+    """QA 23 N1 (W1) and the coordinator's points 1 and 3: before anything else the sweep writes, in
+    place into the 4,096 bytes fsmaint-reserve made for it (no new room needed), that it has begun;
+    that file is copied beside the tree as an artifact of its own. Right after the freeze it gives
+    back the reserve, sets aside what holds the mark's or the record's name, and puts the refused
+    mark in; only then does it list and end the processes. Round 9 marked the tree after the kill
+    loop and had no such file."""
+    hook = HOOK.read_text()
+    begun = hook.find('progress "{\\"stage\\": \\"started\\"')
+    marks = hook.find('"""Put a mark into /app/rebuild')
+    assert begun != -1 and marks != -1, "the sweep says it began, and marks the tree"
+    assert begun < hook.index(': > "$STATE/sweeping"') < hook.index("as_dev kill -STOP -1") < hook.index('rm -f "$STATE/room"') \
+        < hook.index("for name in .fsmaint .fsmaint.json") < marks < hook.index('"""List the processes of the user') \
+        < hook.index("as_dev kill -9 -1"), "began, then freeze, reserve back, set aside, mark, list, end"
+    assert 'printf \'%-4095s\\n\' \'{"stage": "setup"}\'' in SETUP.read_text() and '"$STATE/out"' in SETUP.read_text()
+    assert 'artifacts = ["/app/rebuild", "/var/lib/fsmaint/out"]' in (TASK / "task.toml").read_text()
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / "sweep.json").write_text('{"stage": "setup"}'.ljust(4095) + "\n")
+    inode = (out / "sweep.json").stat().st_ino
+    done = subprocess.run(["sh", "-c", f'OUT="{out}"\n' + hook_shell("progress") + 'progress \'{"stage": "started"}\'\n'],
+                          capture_output=True, text=True, timeout=30)
+    data = (out / "sweep.json").read_bytes()
+    assert done.returncode == 0 and len(data) == 4096 and json.loads(data) == {"stage": "started"}, (done.stderr, data[:80])
+    assert (out / "sweep.json").stat().st_ino == inode, "written in place"
+
+
+def test_the_kill_phase_counts_only_live_processes_and_ends_in_time(tmp_path):
+    """QA 23 N1: zombies (which `pgrep` without `-r` matches) kept round 9's loops running all their
+    passes, three /proc scans each, and counted as processes left. Now both phases test and count
+    only processes that are alive (running, sleeping, waiting, stopped or traced), each listing and
+    signal has PROBE seconds, each phase a set time, and kill.json records whether it ran out. Here
+    with stand-in commands that signal nothing: a population of zombies only, then a /proc too slow
+    to answer at all."""
+    def phases(name: str, pgrep: str) -> tuple[subprocess.CompletedProcess, float, Path]:
+        state = tmp_path / name
+        state.mkdir()
+        script = (f'STATE="{state}"\nPROBE=1\nFREEZE=2\nENDING=3\n' + hook_shell("processes") + hook_shell("freeze")
+                  + hook_shell("kill") + 'echo "passes=$passes left=$left"\n')
+        began = time.monotonic()
+        try:
+            done = subprocess.run(["sh", "-c", script], capture_output=True, text=True, timeout=60,
+                                  env=stand_in_commands(tmp_path / f"{name}-bin", pgrep))
+        except subprocess.TimeoutExpired:
+            done = subprocess.CompletedProcess(script, -1, "", "the phases ran past 60 s")
+        return done, time.monotonic() - began, state
+    zombies = 'case " $* " in *" -r "*) exit 1;; esac\necho 4242\n'
+    done, elapsed, state = phases("zombies", zombies)
+    assert done.stdout.split() == ["passes=0", "left=0"] and elapsed < 5, (done.stdout, done.stderr, elapsed)
+    ending = json.loads((state / "kill.json").read_text())
+    assert ending == {"freeze_passes": 0, "freeze_ran_out": False, "kill_passes": 0, "kill_ran_out": False,
+                      "processes_left": "0"}, ending
+    if shutil.which("timeout") is None:
+        return
+    done, elapsed, state = phases("silent", "exec sleep 30\n")
+    ending = json.loads((state / "kill.json").read_text()) if (state / "kill.json").exists() else None
+    assert elapsed < 30 and ending and ending["freeze_ran_out"] is True and ending["kill_ran_out"] is True, (done, elapsed)
+    assert ending["processes_left"] == "unknown", ending
+
+
+def platform_copy_partial(top: Path, dest: Path) -> str | None:
+    """The platform's copy as harbor makes it: a tar of the tree (links and pipes kept), unpacked
+    with the `data` filter; a member the filter refuses stops the unpacking, and what was unpacked
+    before it is what goes on (harbor records the artifact as failed and uploads that part). The
+    error's name, or None."""
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    archive = dest.parent / f"{dest.parent.name}.tar.gz"
+    with tarfile.open(archive, mode="w:gz") as tar:
+        tar.add(top, arcname=".")
+    dest.mkdir(parents=True)
+    try:
+        with tarfile.open(archive, mode="r:*") as tar:
+            tar.extractall(dest, filter="data")
+    except (tarfile.TarError, OSError) as exc:
+        return type(exc).__name__
+    return None
+
+
+def manifest_given(top: Path, state: Path | None) -> object:
+    """verify.manifest() on `top` with the sweep's state read from `state`, in a process of its own:
+    [notes, refused], or "error: ..."."""
+    return verifier_call(textwrap.dedent(f"""
+        import json, verify
+        from pathlib import Path
+        verify.SWEEP_STATE = Path({str(state or top.parent / 'no-state.json')!r})
+        try:
+            print(json.dumps(list(verify.manifest(Path({str(top)!r})))))
+        except verify.EvaluationError as exc:
+            print(json.dumps("error: " + str(exc)))
+    """))
+
+
+def test_whatever_arrives_after_a_sweep_that_did_not_finish_scores_zero(tmp_path):
+    """QA 23 N1 (W2): a hook that dies after the refused mark but before the tree is moved out
+    leaves the tree in place, as the session left it; its copy stops on the first pipe, absolute
+    link or link that climbs out (here named to come ahead of the mark), so the mark may not arrive
+    or nothing may. Round 9's verifier called that the copy failing (an error). The sweep's own file,
+    copied beside the tree, says it began and not that it finished, so the verifier refuses whatever
+    arrived, with a note. After a sweep that said it was done, a missing arrival stays an error (the
+    copy or the machine), unless processes of the session were still alive; with no word from the
+    sweep at all it stays an error too."""
+    out = tmp_path / "out"
+    out.mkdir()
+    state = out / "sweep.json"
+    state.write_text('{"stage": "setup"}'.ljust(4095) + "\n")
+    progress = hook_shell("progress")
+    if progress:
+        subprocess.run(["sh", "-c", f'OUT="{out}"\n' + progress + 'progress \'{"stage": "started"}\'\n'], check=True, timeout=30)
+    else:   # a hook without the file: write what it would say, for the verifier's sake
+        state.write_text('{"stage": "started"}'.ljust(4095) + "\n")
+    programs = hook_programs()
+    arrivals = {}
+    for name, bad in (("pipe", "!a/p"), ("climbs", "!b/x"), ("absolute", "!d/x"), ("first", "!p")):
+        top = tmp_path / name / "rebuild"
+        top.mkdir(parents=True)
+        (top / "carve").write_text("#!/bin/sh\n")
+        (top / bad).parent.mkdir(exist_ok=True)
+        if name in ("pipe", "first"):
+            os.mkfifo(top / bad)
+        elif name == "climbs":
+            (top / bad).symlink_to("../" * (len(top.parts) + 2) + str(top).lstrip("/") + "/carve")
+        else:
+            (top / bad).symlink_to("/etc/hosts")
+        if "mark" in programs:   # the sweep began, marked the tree refused, and died there
+            subprocess.run([sys.executable, "-I", "-", str(top), str(tmp_path / f"{name}-state")], input=programs["mark"],
+                           text=True, capture_output=True, timeout=60)
+        else:
+            (top / ".fsmaint").write_text("refused\nthe sweep did not finish: it was not copied\n")
+        arrived = tmp_path / name / "arrived" / "rebuild"
+        stopped_on = platform_copy_partial(top, arrived)
+        arrivals[name] = (stopped_on, sorted(os.listdir(arrived)), manifest_given(arrived, state))
+    for name, (stopped_on, listed, verdict) in arrivals.items():
+        assert stopped_on is not None, (name, "the copy should stop on the entry the sweep never took out")
+        assert isinstance(verdict, list) and verdict[1] is True and "did not finish" in verdict[0][0], (name, listed, verdict)
+    assert arrivals["first"][1] == [], "the first member stopped the copy: nothing arrived"
+    nothing = tmp_path / "nothing" / "rebuild"
+    nothing.mkdir(parents=True)
+    for stage, left, expected in (("done", 0, "error: Nothing arrived"), ("done", 2, True), (None, None, "error: Nothing arrived")):
+        given = None
+        if stage is not None:
+            given = tmp_path / f"state-{stage}-{left}.json"
+            given.write_text(json.dumps({"stage": stage, "processes_left": left}).ljust(4095) + "\n")
+        verdict = manifest_given(nothing, given)
+        assert (verdict[1] is True) if expected is True else str(verdict).startswith(expected), (stage, left, verdict)
+
+
+def test_one_time_limit_covers_the_moving_out_and_the_late_count_is_linear(tmp_path):
+    """QA 23 N2 and N5: the moving out had no time limit (a top level of millions of entries took
+    minutes), and the count of late entries compared every file with every copy (about 800 s for
+    100,000 copies). Now one limit, 480 s from the sweep's start, covers everything from the moving
+    out to the moving back: past it, what was not moved out stays where it was, and the file beside
+    the tree says the sweep stopped, so whatever arrives is refused. The late count marks copied
+    subtrees once, on the way down."""
+    top = tmp_path / "late" / "rebuild"
+    (top / "sub").mkdir(parents=True)
+    (top / "carve").write_text("#!/bin/sh\n")
+    os.mkfifo(top / "sub" / "pipe")
+    lines = run_hook(top, started=time.time() - 500)
+    state = top.parent / ".rebuild-state" / "out" / "sweep.json"
+    assert lines[:2] == ["refused", "it was not moved out within 480 seconds: it was not copied"], lines
+    assert {"carve", "sub"} <= set(os.listdir(top)), os.listdir(top)
+    assert json.loads(state.read_text())["stage"] == "stopped", state.read_text()[:120]
+    assert manifest_given(top, state)[1] is True
+    many = tmp_path / "many" / "rebuild"
+    many.mkdir(parents=True)
+    for index in range(20_000):
+        (many / f"f{index:05d}").write_text("x")
+    notes = "".join(json.dumps({"copy": {"path": f"c{index:05d}", "source": "/elsewhere", "target": "/elsewhere",
+                                         "latest_ctime": 0}}) + "\n" for index in range(15_000))
+    began = time.monotonic()
+    lines = run_measuring(many, notes_text=notes)
+    elapsed = time.monotonic() - began
+    assert lines[0] == "listed 20000 20000" and elapsed < 12, (lines[:2], elapsed)
+    hook = HOOK.read_text()
+    assert hook.count("except (OSError, subprocess.SubprocessError)") == 2, "QA 23 N3: a removal that times out is caught"
+
+
+def test_the_marks_notes_are_bounded_in_bytes_as_written(tmp_path):
+    """QA 23 N6: the mark's 32 KiB were counted in characters, so 1,000 pipes with 4-byte UTF-8 names
+    gave a 56,852-byte mark. Now they are counted in bytes as written."""
+    top = tmp_path / "rebuild"
+    top.mkdir()
+    (top / "carve").write_text("#!/bin/sh\n")
+    for index in range(1000):
+        os.mkfifo(top / (f"{index:03d}" + "\U0001F600" * 60))
+    lines = run_hook(top)
+    size = (top / ".fsmaint").stat().st_size
+    assert lines[0] == "listed 1 10" and size <= 32_768 + 200, (size, len(lines))
+    assert re.fullmatch(r"and [\d,]+ more changes: see \.fsmaint\.json", lines[-1]), lines[-1]
 
 
 # ---------------------------------------------------------------- the recorder
@@ -1383,20 +1605,30 @@ def test_the_installer_refuses_any_build_but_the_pinned_one(tmp_path):
 
 def test_the_timer_arms_once_fires_at_end_seconds_and_ends_the_tree(tmp_path):
     """The root pre-cap watchdog: armed once by the set-up hook and detached; END_SECONDS later (2 s
-    here, 33,900 s in production: the 34,560 s cap less eleven minutes) it ends the agent user's whole
-    process tree, a setsid'd child included, TERM then KILL, logging arm, fire and done with
-    timestamps to a root-only log. The sweep hook records the log's tail; the verifier carries
+    here; 34,440 s in production since round 10, the 34,560 s cap less two minutes, the judges'
+    option A of 2026-11-20) it ends the agent user's whole process tree, a setsid'd child included,
+    TERM every 5 s for 6 passes (about 30 s) then KILL, so that all is gone about 90 s before the cap,
+    logging arm, fire and done with timestamps to a root-only log. task.toml says so beside the
+    limit, for the platform's reviewers. The sweep hook records the log's tail; the verifier carries
     `ended_by_timer` into metrics and never into the reward."""
     text = PRECAP.read_text()
     assert text.startswith("#!/bin/sh") and os.access(PRECAP, os.X_OK)
-    for literal in ('END_SECONDS="${FSMAINT_TIMER_END_SECONDS:-33900}"', 'LOG="${FSMAINT_TIMER_LOG:-/var/log/fsmaint-timer.log}"',
+    for literal in ('END_SECONDS="${FSMAINT_TIMER_END_SECONDS:-34440}"', 'LOG="${FSMAINT_TIMER_LOG:-/var/log/fsmaint-timer.log}"',
                     'PIDFILE="${FSMAINT_TIMER_PIDFILE:-/run/fsmaint-timer.pid}"', 'TARGET_USER="${FSMAINT_TIMER_USER:-dev}"',
-                    'SELECT="${FSMAINT_TIMER_SELECT:--u $TARGET_USER}"', 'TERM_PASSES="${FSMAINT_TIMER_TERM_PASSES:-12}"',
+                    'SELECT="${FSMAINT_TIMER_SELECT:--u $TARGET_USER}"', 'TERM_PASSES="${FSMAINT_TIMER_TERM_PASSES:-6}"',
                     'TERM_INTERVAL="${FSMAINT_TIMER_TERM_INTERVAL:-5}"', "pkill -TERM $SELECT", "pkill -KILL $SELECT",
                     'setsid nohup "$0" run', 'chmod 0600 "$LOG"'):
         assert literal in text, literal
-    assert 34560 - 33900 == 11 * 60, "eleven minutes before the agent cap"
+    defaults = {name: int(value) for name, value in re.findall(r'^(END_SECONDS|TERM_PASSES|TERM_INTERVAL)="\$\{FSMAINT_TIMER_\w+:-(\d+)\}"',
+                                                               text, re.M)}
     toml = (TASK / "task.toml").read_text()
+    cap = int(re.search(r"\[agent\]\n(?:#[^\n]*\n)*timeout_sec = (\d+)", toml).group(1))
+    gone = defaults["END_SECONDS"] + defaults["TERM_PASSES"] * defaults["TERM_INTERVAL"] + 1   # the KILL, then a second
+    assert cap == 34560 and cap - defaults["END_SECONDS"] == 120 and gone <= 34_471 and cap - gone >= 60, (defaults, cap)
+    note = re.search(r"\[agent\]\n((?:#[^\n]*\n)+)timeout_sec = 34560", toml)
+    said = " ".join(note.group(1).replace("#", " ").split()) if note else ""
+    assert "about two minutes before this limit" in said and "34,440 s" in said, "the reason beside the limit"
+    assert "Otherwise the agent's working time is this limit." in said, said
     assert '[[agent.setup_complete]]\ncommand = "/usr/local/lib/fsmaint/fsmaint-timer"' in toml
     assert "fsmaint" not in (STEP / "instruction.md").read_text().lower() and "timer" not in (STEP / "instruction.md").read_text().lower()
     # Live: a tree of two loops, one in a session of its own, matched through a marker in their arguments.
@@ -1450,8 +1682,8 @@ def test_the_timer_arms_once_fires_at_end_seconds_and_ends_the_tree(tmp_path):
     top.mkdir()
     (top / "carve").write_text("#!/bin/sh\nexit 0\n")
     fired_log = tmp_path / "fired.log"
-    fired_log.write_text("2026-11-19T00:00:00Z armed pid=7 end_seconds=33900 target=-u dev\n"
-                         "2026-11-19T09:25:00Z fired after 33900s: ending the session (-u dev)\n"
+    fired_log.write_text("2026-11-19T00:00:00Z armed pid=7 end_seconds=34440 target=-u dev\n"
+                         "2026-11-19T09:34:00Z fired after 34440s: ending the session (-u dev)\n"
                          "2026-11-19T09:25:01Z done term_passes=1 processes_left=0\n")
     run_hook(top, env={"FSMAINT_TIMER_LOG": str(fired_log), "FSMAINT_TIMER_PIDFILE": str(tmp_path / "no-such-pid")})
     record = json.loads((top / ".fsmaint.json").read_text())
@@ -1627,7 +1859,8 @@ def test_the_agent_cannot_replace_the_artifact_directory():
     assert "chmod 0700 /usr/local/lib/fsmaint /usr/local/lib/fsmaint/*" in docker
     assert "/usr/local/sbin" not in docker, "the hooks live in a root-only directory, not on PATH"
     toml = (TASK / "task.toml").read_text()
-    assert 'user = "dev"' in toml and 'artifacts = ["/app/rebuild"]' in toml and 'environment_mode = "separate"' in toml
+    assert 'user = "dev"' in toml and 'artifacts = ["/app/rebuild", "/var/lib/fsmaint/out"]' in toml
+    assert 'environment_mode = "separate"' in toml
     assert toml.count('network_mode = "no-network"') == 3
 
 
@@ -1639,7 +1872,8 @@ def test_every_run_fits_inside_the_step_verifier_time():
     assert 2200 * (per_run + 0.25) <= total - margin and total < step_verifier, \
         "a renderer that takes the whole stated time on every page still has every page run"
     assert f"Each run finishes within {per_run} seconds" in (STEP / "instruction.md").read_text()
-    assert int(re.search(r"\[agent\]\ntimeout_sec = (\d+)", (TASK / "task.toml").read_text()).group(1)) + step_verifier <= 41000
+    assert int(re.search(r"\[agent\]\n(?:#[^\n]*\n)*timeout_sec = (\d+)", (TASK / "task.toml").read_text()).group(1)) \
+        + step_verifier <= 41000
 
 
 def test_nothing_the_agent_sees_names_grading_or_a_budget():
@@ -1653,7 +1887,8 @@ def test_nothing_the_agent_sees_names_grading_or_a_budget():
         if name != "task.toml":
             for word in ("verifier", "private", "recorded", "case"):
                 assert word not in lowered, (name, word)
-    assert "#" not in seen["task.toml"]
+    comments = [line for line in seen["task.toml"].splitlines() if line.lstrip().startswith("#")]
+    assert len(comments) == 4 and "fsmaint-timer" in comments[0], comments   # only the note beside the agent's limit
     instruction = seen["instruction.md"]
     assert "/app/rebuild/carve" in instruction and "Out of scope:" in instruction
     for excluded in ("{{ path }}", "`fmt`", "`lint`", "`migrate`", "Markdown", "the AST as JSON", "importers", "static mode",

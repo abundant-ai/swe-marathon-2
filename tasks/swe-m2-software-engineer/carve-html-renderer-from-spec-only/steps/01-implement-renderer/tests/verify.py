@@ -29,6 +29,11 @@ MARK = ".fsmaint"  # written into /app/rebuild by the sweep (environment/fsmaint
 RECORD = ".fsmaint.json"  # the sweep's record: the hosts probed, the processes found, every entry; never scored
 RECORD_LIMIT = 64 << 20  # bytes of the record read, at most
 MARK_PREFIX = 1 << 16  # bytes of the mark read from its start, whatever its size: its first line decides
+# Where the sweep got to, copied beside the tree as an artifact of its own from a directory only
+# root could write in the agent's container: "started" from its first step, "done" once its mark,
+# record and tree are in place, "stopped" when it ended itself with entries left unmeasured.
+SWEEP_STATE = Path("/var/lib/fsmaint/out/sweep.json")
+SWEEP_STATE_LIMIT = 8192  # bytes of it read, at most
 # Public hosts the original can be fetched from; nothing runs if one of them can be reached.
 NETWORK_HOSTS = (("github.com", 443), ("pypi.org", 443), ("proxy.golang.org", 443), ("registry.npmjs.org", 443))
 # Every build of the original that upstream publishes ready to run, and text they all hold that a
@@ -404,19 +409,60 @@ def arrived(top: Path) -> tuple[int, int]:
     return entries, size
 
 
-def manifest(top: Path) -> tuple[list[str], bool]:
-    """What the sweep's mark and the copy that arrived say about the tree: notes, and whether it
-    was refused (over the stated limits, not a directory at all, or not measured to the end:
-    reward 0). The mark is read from its start, MARK_PREFIX bytes at most, whatever its size.
+def sweep_state(path: Path | None = None) -> dict | None:
+    """Where the sweep got to (SWEEP_STATE): a JSON object, or None where none arrived or it cannot
+    be read. Read in a bounded way; never raising."""
+    path = SWEEP_STATE if path is None else path
+    try:
+        if not path.is_file() or path.is_symlink():
+            return None
+        with open(path, "rb") as handle:
+            state = json.loads(handle.read(SWEEP_STATE_LIMIT).decode("utf-8"))
+        return state if isinstance(state, dict) else None
+    except (OSError, ValueError):
+        return None
 
-    The sweep puts a mark that says `refused` into /app/rebuild before it changes anything of the
-    tree, moves the tree out to measure it, takes out what a copy cannot carry (devices, pipes,
-    sockets, paths over 2,048 bytes, links that do not lead to a file or a directory inside it;
-    every link kept is a relative path that stays inside), and puts back, under a mark that counts
-    it, only a tree within the limits that the disk has room to pack. What runs before the move
-    out is bounded in time, and a sweep that stops after it leaves the refused mark over an empty
-    tree. So an arrival with no tree, no mark, or fewer entries or bytes than the mark counts is
-    the copy or the machine failing, not the tree.
+
+def manifest(top: Path) -> tuple[list[str], bool]:
+    """What the sweep's mark, the copy that arrived and where the sweep got to say about the tree:
+    notes, and whether it was refused (reward 0). The mark is read from its start, MARK_PREFIX bytes
+    at most, whatever its size.
+
+    The sweep writes that it has begun (SWEEP_STATE) before anything else, puts a mark that says
+    `refused` into /app/rebuild once the session's processes are frozen, moves the tree out to
+    measure it, takes out what a copy cannot carry (devices, pipes, sockets, paths over 2,048 bytes,
+    links that do not lead to a file or a directory inside it; every link kept is a relative path
+    that stays inside), puts back, under a mark that counts it, only a tree within the limits that
+    the disk has room to pack, and only then writes that it is done. So:
+    - a sweep that began and did not say it was done, or said it stopped, left a tree it had not
+      measured, whose copy may stop on what the sweep would have taken out: whatever arrived is
+      refused, with a note;
+    - after a sweep that was done, a missing or short arrival is the copy or the machine failing,
+      an error, unless processes of the session were still alive when it finished (then refused);
+    - with no word from the sweep at all (it never ran, or its file was not copied), the mark alone
+      decides, and a missing or short arrival is an error.
+
+    Raises:
+        EvaluationError: Nothing arrived at all, the copy arrived cut short or cannot be measured,
+            or there is no mark the sweep wrote, and the sweep had finished or said nothing.
+    """
+    state = sweep_state()
+    stage = state.get("stage") if state else None
+    if stage in ("started", "stopped"):
+        return [f"sweep: the sweep {'began' if stage == 'started' else 'stopped'} and did not finish: "
+                "what arrived was not measured"], True
+    try:
+        return mark_says(top)
+    except EvaluationError as exc:
+        if stage == "done" and state.get("processes_left") != 0:
+            return [f"sweep: {exc}, and processes of the session were alive when the sweep finished "
+                    f"({state.get('processes_left')})"], True
+        raise
+
+
+def mark_says(top: Path) -> tuple[list[str], bool]:
+    """What the sweep's mark and the copy that arrived say about the tree (manifest() without where
+    the sweep got to).
 
     Raises:
         EvaluationError: Nothing arrived at all, the copy arrived cut short or cannot be measured,
@@ -813,7 +859,7 @@ def main() -> int:
     try:
         if os.geteuid() != 0:
             raise EvaluationError("Verifier must start as root to isolate the program")
-        for closed in (tests, output, Path("/logs/artifacts")):  # /logs/artifacts: never read, never written
+        for closed in (tests, output, Path("/logs/artifacts"), SWEEP_STATE.parent):  # /logs/artifacts: never read, never written
             if closed.is_dir() and not closed.is_symlink():
                 closed.chmod(0o700)
         # The results' space, taken before any the program runs: written in place at the end,
@@ -872,7 +918,7 @@ def main() -> int:
         print(f"reward: {metrics['reward']:.6f} ({metrics['cases_passed']}/{metrics['cases_total']} cases)", flush=True)
         try:
             metrics.update(limits=limits, program=program, host=recorder.host(), free_at_start=start_space,
-                           free_at_end=free_space(), manifest_record=record)
+                           free_at_end=free_space(), manifest_record=record, sweep_state=sweep_state())
             write_in_place(output / "metrics.json",
                            (json.dumps(dict(metrics, status="completed"), indent=1, sort_keys=True) + "\n").encode())
         except Exception:
