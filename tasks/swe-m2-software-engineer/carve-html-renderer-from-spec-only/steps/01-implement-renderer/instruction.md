@@ -39,12 +39,12 @@ fail on pages nobody touched. Write that renderer.
   is right.
 - The audit admits the specification and these documentation pages as references and nothing else
   from outside: no third-party program and no output of one. So carve-rs (its builds and its
-  source), the other Carve engines, upstream's conformance corpus, example gallery and pack, and
-  its executable model were not reviewed and are not here, although the documentation mentions
-  them; they may not be brought in. Many of our pages hold customer and incident details, so
-  neither they nor the HTML rendered from them leaves the production build, and we never ran
-  carve-rs ourselves. carve-rs 0.1.14 implements this specification, so read it closely; what its
-  command line does beyond the specification is described below.
+  source), the other Carve engines and the rest of upstream's repositories were not reviewed and
+  are not here, although the documentation mentions them; they may not be brought in. Many of our
+  pages hold customer and incident details, so neither they nor the HTML rendered from them leaves
+  the production build, and we never ran carve-rs ourselves. carve-rs 0.1.14 implements this
+  specification, so read it closely; what its command line does beyond the specification is
+  described below.
 - There is no network access. Python 3.12, Go and Rust (`rustc` and `cargo`, standard library
   only) are installed, here and where your renderer will run; use whichever you prefer, since we
   maintain all three. No Carve library or tool is available.
@@ -103,6 +103,6 @@ under 2 GB and 200,000 files and directories.
 ## Completion
 
 The work is complete when, for every page we render and each of the command lines above, your
-`carve` writes to standard output exactly what carve-rs 0.1.14's wrote and exits with the same
-status. Every page it renders exactly is one we can move over, so keep `/app/rebuild/carve`
+`carve` writes to standard output exactly what carve-rs 0.1.14's `carve` wrote and exits with the
+same status. Every page it renders exactly is one we can move over, so keep `/app/rebuild/carve`
 runnable at all times.

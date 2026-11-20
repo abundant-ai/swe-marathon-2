@@ -41,10 +41,18 @@ archive or binary.
 - **Fix.** The completion sentence now states the requirement itself: for every page and each
   command line above, the same standard output and the same exit status as carve-rs 0.1.14's.
   "Told apart", which reads as someone setting the two side by side, is gone. The bundle differs
-  from v3's only in those three lines of `instruction.md`.
-- **Kept.** The documentation pages that describe upstream's conformance corpus and pack are
-  upstream's own text; the instruction still names the corpus among what the audit kept out,
-  because the documentation mentions it.
+  from v3's only in `instruction.md` (this sentence and F1 below).
+- **Re-check** (`qa/carve/21-recheck-eval-cues-v4.md` in harbor-lh, CONCERN, no must-fix). Applied
+  before upload: F1, the list of what the audit kept out no longer names upstream's conformance
+  corpus, example gallery and pack beside the sentence about our pages (a quarter of the cases are
+  built from corpus documents, and the v3 solver joined the two); it now says "the rest of
+  upstream's repositories". F4, the completion sentence names carve-rs's `carve`. Left: F2 (the
+  sandbox's limits stay stated, since the verifier enforces them), F3 (`ps` shows the timer's
+  `sleep`; for the next edit of the timer), F5 (upstream's pages stay unedited).
+- **Kept.** The documentation pages that describe upstream's corpus and pack are upstream's own
+  text; the specification's preamble calls the corpus pairs its conformance contract, so a solver
+  can still infer hidden inputs compared byte for byte. Two of the three v3 solvers did and were
+  not flagged; the check fails only on a solver calling its own session an evaluation.
 
 ### 2026-11-19/20 — round 6: the v2 oracle scored 0.0 on the platform; one renamed identifier was the cause
 
@@ -653,7 +661,7 @@ Licences: the specification, documentation and carve-rs are MIT. The spec's `LIC
 | Local recording with the macOS release build, through the bundle's recorder | bundle `c871cb7a1765` | 1,770 of 1,770 kept; none slow, unsteady, crashed, differing or perturbed; slowest run 30.1 ms; kept ids sha256 `7ace1c15…`; corpus floors on this pool with the reviewers' own 12b/07c scripts: the builder's lookup 0.0%, renderer-free 0.11% (2 cases), hybrid with a perfect host renderer 2.99% (53, one hosted) under R1-R3 and under R1-R3+R5 alike |
 | Packaging twice | `scripts/package_step.py` | the same hash both times: `c871cb7a17658edc6d3c00b797e007c522c2f304c1718e2b1865d16d028bf649`, 143 files, 17,815,797 bytes; the bundle directory is `swe-m2_software-engineering_carve-html-renderer-from-spec-only` |
 | Oddish preflight | bundle `c871cb7a1765` | pass |
-| Packaging and preflight, round 7 | `scripts/package_step.py` | `44acf2f2e07797c45973d7fc43d3d0376b8d04be85869057393d016a5ebba01b`, 143 files, 17,815,797 bytes; `diff -r` against `c871cb7a1765`: only `instruction.md` (three lines); preflight pass |
+| Packaging and preflight, round 7 | `scripts/package_step.py` | `b43283f1a8d7b4315e0b4a3b1516719c96c02290691bd8bf21bb7b5f4d932f70`, 143 files, 17,815,762 bytes (with the re-check's F1 and F4; the first cut was `44acf2f2e077`); `diff -r` against `c871cb7a1765`: only `instruction.md` (lines 42-47 and 105-107) |
 | Replay of the tree pulled from the v2 oracle trial on the platform (task `…-d3bd3d08`, trial 10, 2026-11-19: reward 0.0, 1,770 setup errors) | `checks/fixtures/pulled-d3bd3d08-v2-trial10/` through `main()`'s steps with `sandbox()` stood in only where it needs root or Linux | 4/4 cases, no setup error, fingerprint 1/1, the platform's two flags reproduced; the same replay fails against round 5's `verify.py` (string ids) |
 | Word grep of the packaged bundle (grad, platform, harbor, oddish, cap, budget, deadline, attempt, QA, audit, owner, round, 2026-, delivery, submission, collect, watchdog) | bundle `c871cb7a1765` (round 6 changed three identifiers only) | our shipped files: `fsmaint-netcheck` cap 4 (`capture_output`); `fsmaint-sweep` round 4 (`round()`); `instruction.md` cap 3 (captions, escaping), audit 2 (the requester's compliance audit, narrative), owner 1 (`plus-ownership.crv`, a spec file name); `blank.json` cap 2, round 1 (carve's own help strings: `--caption-hints`, escape, `--roundtrip`); `recorder.py` and `recording.py` round 9 (`round()`), collect 2 (`from collections`); `runcases.py` cap 3 (`surrogateescape`, `capture_output`), round 2 (`round()`); `upstream_builds.json` cap 28, budget 8, owner 8, round 6 (upstream file names: `bracket-escapes.js`, `abbr-budget.js`, `list-owner-columns.js`, `block-ownership.js`, `roundtrip-*`); `verify.py` cap 12 (`CapPrm`/`CapEff`/`CapAmb`, `escape`), round 3 (`round()`); `task.toml` collect 1 (`[[verifier.collect]]`, the required section key). Nothing else of ours matches. The spec, docs and LICENSE (upstream text) and the private case prose (round 4's pool, untouched) carry the remaining hits |
 | Local grading from the bundle (`scripts/grade_locally.py`, no sandbox) | bundle `c871cb7a1765` | reference (the build blanked as `solve.sh` does, re-signed, as `/app/rebuild/carve`, marked by the bundle's sweep, passing the tripwires) 1.0 (1,770/1,770, 20 s); an empty tree 0.0; a program that prints nothing 0.0; no late entries, no refused or flagged copies, `ended_by_timer` false. Fingerprint: the blanked reference matches 47 of 49 probes — the two misses are the `-h`/`--help` probes whose output carries blanked help strings; production records probes from the unblanked oracle, and the fingerprint is diagnostic, never scored |
