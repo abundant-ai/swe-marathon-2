@@ -1,11 +1,12 @@
 #!/bin/sh
 # A maintenance timer, started detached by a setup hook as root. END_SECONDS after it starts it ends every process of
-# the unprivileged user with SIGTERM, then SIGKILL, so that user's login session is closed after a fixed interval.
+# the unprivileged user with SIGTERM, six rounds ROUND_SECONDS apart, then SIGKILL, so that user's login session is
+# closed after a fixed interval and nothing of it is left half a minute later.
 # Idempotent: a second start finds the first sleeper through its pid file and arms nothing. Once MARK exists (the first
 # thing reclaim-scratch writes) the sleeper ends nothing more and exits, so that step's own work as that user is never
 # cut short. It writes armed, fired, stopped and done lines to a root-only log, which a later maintenance step reads.
 END_SECONDS=${MAINT_END_SECONDS:-33900}
-ROUND_SECONDS=${MAINT_ROUND_SECONDS:-5}  # between two SIGTERM rounds
+ROUND_SECONDS=${MAINT_ROUND_SECONDS:-5}  # between two SIGTERM rounds: six rounds, then SIGKILL
 SELECT=${MAINT_SELECT:--u dev}          # pgrep/pkill selection of the unprivileged user's processes
 LOG=${MAINT_LOG:-/var/log/session-timer.log}
 PIDFILE=${MAINT_PIDFILE:-/run/session-timer.pid}
@@ -28,7 +29,7 @@ if [ "${1:-}" = "run" ]; then
     sleep "$END_SECONDS"
     stopped
     log "fired after $END_SECONDS s: SIGTERM to the processes selected by '$SELECT'"
-    for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
+    for _ in 1 2 3 4 5 6; do
         alive || break
         stopped
         pkill -TERM $SELECT >/dev/null 2>&1

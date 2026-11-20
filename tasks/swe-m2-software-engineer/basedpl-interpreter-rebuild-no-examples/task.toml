@@ -12,7 +12,10 @@ reward_type = "continuous"
 open_internet_justification = "Only the image builds have public egress, to install system packages from Ubuntu's archive. The agent works without network access."
 
 [agent]
-timeout_sec = 34560
+# The session ends at 33,900 s, when a root timer (environment/session-timer) ends the session user's processes;
+# this limit is a backstop 60 s later. The reason: trials that reached the platform's own cap with this kind of
+# verifier image (a separate one, built after the session) got no verifier result, so the session ends before it.
+timeout_sec = 33960
 network_mode = "no-network"
 user = "dev"
 
@@ -61,7 +64,10 @@ gpus = 0
 name = "01-rebuild-interpreter"
 
 [steps.agent]
-timeout_sec = 34560
+# The session ends at 33,900 s, when a root timer (environment/session-timer) ends the session user's processes;
+# this limit is a backstop 60 s later. The reason: trials that reached the platform's own cap with this kind of
+# verifier image (a separate one, built after the session) got no verifier result, so the session ends before it.
+timeout_sec = 33960
 
 [steps.verifier]
 timeout_sec = 4500

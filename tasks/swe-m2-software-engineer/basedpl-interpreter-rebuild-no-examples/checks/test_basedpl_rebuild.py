@@ -1372,14 +1372,16 @@ def prologue_env(top: Path) -> dict:
 
 
 def test_the_session_timer_arms_once_fires_and_ends_the_users_processes(tmp_path):
-    """With no reclaim-scratch running, the root timer started at setup_complete ends the user's session shortly before
-    the platform's cap, since a turn that runs into the cap is not graded today while one that ends by itself is. It
-    arms one sleeper however often it is started, fires after END_SECONDS, sends SIGTERM to every selected process (a
-    parent and its child, a process in a session of its own, and one started after it fired: the case QA 07e F1
-    reproduced, which is what the timer is for when no hook is running), then SIGKILL to the one that ignores SIGTERM,
-    and logs each step. Each stand-in must be alive before the timer is armed and end by exactly that signal."""
+    """With no reclaim-scratch running, the root timer started at setup_complete ends the user's session at 33,900 s,
+    since a turn that runs into the platform's cap is not graded today while one that ends by itself is; the agent's
+    limit in task.toml (33,960 s) is a backstop 60 s later (the v2 verdict's must-fix, the judges' option B). It arms
+    one sleeper however often it is started, fires after END_SECONDS, sends SIGTERM to every selected process (a parent
+    and its child, a process in a session of its own, and one started after it fired: the case QA 07e F1 reproduced,
+    which is what the timer is for when no hook is running) in six rounds, then SIGKILL to the one that ignores SIGTERM,
+    and logs each step. Each stand-in must be alive before the timer is armed and end by exactly that signal; the one
+    that ignores SIGTERM ends six rounds after the fire (rounds of 0.5 s here, of 5 s as shipped: about 30 s)."""
     top = tmp_path / "timer"
-    script, env, marker = timer_setup(top, MAINT_END_SECONDS="2", MAINT_ROUND_SECONDS="0.3")
+    script, env, marker = timer_setup(top, MAINT_END_SECONDS="2", MAINT_ROUND_SECONDS="0.5")
     log, pidfile = top / "timer.log", top / "timer.pid"
     processes, sleepers = [], []
     try:
@@ -1396,9 +1398,13 @@ def test_the_session_timer_arms_once_fires_and_ends_the_users_processes(tmp_path
         second, _ = arm(script, env)
         assert second.returncode == 0 and second.stdout == "" and second.stderr == "", "a second start arms nothing"
         assert logged(log, " fired after 2 s", 15), log.read_text()
+        fired = time.monotonic()
         late = subprocess.Popen([sys.executable, "-c", READY, marker], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                 start_new_session=True)  # started in the rounds, as the hook's link fixer could be
         processes.append(late)
+        assert stubborn.wait(timeout=30) == -signal.SIGKILL
+        window = time.monotonic() - fired
+        assert 2.9 <= window <= 5.0, f"SIGKILL comes after six rounds of 0.5 s, not twelve: {window:.2f} s after the fire"
         assert logged(log, "done:", 40), log.read_text()
         text = log.read_text()
         assert text.count(" armed pid ") == 1 and f" armed pid {sleeper}: " in text and f"already armed (pid {sleeper})" in text, text
@@ -1411,10 +1417,16 @@ def test_the_session_timer_arms_once_fires_and_ends_the_users_processes(tmp_path
     finally:
         end_all(processes, sleepers, tmp_path)
     script = (TASK / "environment" / "session-timer").read_text()
-    assert "END_SECONDS=${MAINT_END_SECONDS:-33900}" in script, "the agent's 34,560 s less eleven minutes"
-    assert "ROUND_SECONDS=${MAINT_ROUND_SECONDS:-5}" in script and 'sleep "$ROUND_SECONDS"' in script, "twelve rounds, a minute"
-    agent = int(re.search(r"\[agent\]\s*timeout_sec = (\d+)", (TASK / "task.toml").read_text()).group(1))
-    assert agent - 33900 == 660
+    assert "END_SECONDS=${MAINT_END_SECONDS:-33900}" in script, "the session ends at 33,900 s"
+    assert "ROUND_SECONDS=${MAINT_ROUND_SECONDS:-5}" in script and 'sleep "$ROUND_SECONDS"' in script
+    assert script.count("    for _ in 1 2 3 4 5 6; do\n        alive || break\n") == 1, "six SIGTERM rounds, 30 s, then SIGKILL"
+    assert "for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do" in script and "sleep 0.5" in script, \
+        "SIGKILL every 0.5 s, for 10 s at most"
+    import tomllib
+    config = tomllib.loads((TASK / "task.toml").read_text())
+    limits = [config["agent"]["timeout_sec"], *(step["agent"]["timeout_sec"] for step in config["steps"])]
+    assert limits == [33960, 33960], "every agent limit is a backstop 60 s after the session's end"
+    assert 33900 + 6 * 5 + 20 * 0.5 < 33960, "the last SIGKILL round comes before the backstop"
     instruction = (STEP / "instruction.md").read_text().lower()
     assert "watchdog" not in instruction and "cap" not in instruction and "timer" not in instruction
 
@@ -1461,8 +1473,8 @@ def test_the_session_timer_says_armed_only_for_a_sleeper_it_sees(tmp_path):
 
 
 def test_reclaim_scratch_ends_the_session_timer_before_its_own_work_as_the_user(tmp_path):
-    """QA 07e F1. A timer that has fired sends SIGTERM to every process of the user every few seconds for up to a
-    minute, and the hook's link fixer runs as that user: a round that landed on it left links unfixed, the root step
+    """QA 07e F1. A timer that has fired sends SIGTERM to every process of the user every few seconds for half a
+    minute, then SIGKILL, and the hook's link fixer runs as that user: a round that landed on it left links unfixed, the root step
     then removed them, and the notes read like the agent's fault. The hook's first lines, run here as shipped with only
     their paths rewritten, write the mark and end the sleeper and its sleep. With a timer in its rounds, the hook's own
     fixer is ended part way when those lines have not run (the control) and fixes every link when they have. A timer
@@ -1963,7 +1975,8 @@ def test_every_run_fits_inside_the_step_verifier_time():
     import make_cases
     cases = sum(make_cases.KIND_COUNTS.values())
     assert cases * (per_run + 0.1) + margin + 120 <= total and total + 300 <= min(step_verifier, verifier)
-    agent = int(re.search(r"\[steps\.agent\]\s*timeout_sec = (\d+)", toml).group(1))
+    import tomllib
+    agent = tomllib.loads(toml)["steps"][0]["agent"]["timeout_sec"]
     assert agent + step_verifier <= 11 * 3600, "the attempt stays inside the platform's 12 hours"
     assert f"Each run finishes within {per_run} seconds" in (STEP / "instruction.md").read_text()
 
@@ -2304,7 +2317,10 @@ def test_nothing_the_agent_sees_names_a_reference_answer_or_a_budget():
     for place in (runcases.WORKSPACE, runcases.HOME, runcases.TEMP):
         assert str(place) not in seen["instruction.md"], place
     assert not re.search(r"\btests?\b", seen["instruction.md"].lower()), "no suite is implied"
-    assert "#" not in seen["task.toml"]
+    # task.toml's only comments: the note for the platform's reviewers above each agent limit (the agent never reads it)
+    commented = [line for line in seen["task.toml"].splitlines() if "#" in line]
+    assert len(commented) == 6 and all(line.startswith("# ") for line in commented), commented
+    assert seen["task.toml"].count("\n".join(commented[:3]) + "\ntimeout_sec = 33960\n") == 2 and commented[:3] == commented[3:]
     assert sorted(path.name for path in (TASK / "environment").iterdir()) == [".dockerignore", "Dockerfile", "provision-scratch",
                                                                           "reclaim-scratch", "session-timer"]
     instruction = seen["instruction.md"]

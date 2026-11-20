@@ -650,8 +650,8 @@ any order, and nothing short of a real interpreter scores above the floor.
 **Estimates.**
 - QA 14, a strong human engineer: about 25-30 days for half the reward, 35-50 for 80%, 60-80
   for 95%.
-- QA 15, an agent such as claude-code with DeepSeek Flash: about 11-16 h for half, so one 9.6 h
-  session earns 0.15-0.45.
+- QA 15, an agent such as claude-code with DeepSeek Flash: about 11-16 h for half, so one session
+  (9.6 h then, 9.42 h now) earns 0.15-0.45.
 - QA 17 and 19, one session: a frontier model 0.35-0.60, DeepSeek Flash 0.20-0.40, GLM 5.3
   0.12-0.30.
 
@@ -717,15 +717,22 @@ Records with `∂` are drawn at 48%, which puts differentiation at about 6% of t
 
 ## Workload
 
-A run is one trial of 9.6 hours (one task row per experiment, no continuation tasks). The
-instruction states no time budget.
+A run is one trial (one task row per experiment, no continuation tasks): the session ends at
+33,900 s (9.42 h), and the agent's limit in `task.toml` is 33,960 s. The instruction states no
+time budget.
 
 **Run condition: the session timer.** A root timer (`session-timer`) started at `setup_complete`
-ends the agent's session 11 minutes before the platform's 9.6 h cap (SIGTERM to every process of
-`dev`, then SIGKILL), because on the platform today a turn that runs into the cap is never graded
-(the separate verifier image fails to build right after the timeout; harbor-lh
+ends the agent's session at 33,900 s: SIGTERM to every process of `dev` in six rounds 5 s apart,
+then SIGKILL (repeated every 0.5 s, for 10 s at most), so nothing of `dev` is left at about
+33,930 s. The agent's `timeout_sec` (33,960 s, at the top level and in the step) is a backstop 60 s
+later, with a comment beside each for the platform's reviewers. The timer exists because on the
+platform a turn that runs into the cap is never graded (the separate verifier image fails to
+build right after the timeout; harbor-lh
 `ops/swe-marathon-v2/PLATFORM_VERIFIER_BUILD_AFTER_LONG_RUN.md`) while a turn that ends by itself
-is. A session it ended shows as `ended_by_timer: true` in `metrics.json`. The collect hook first
+is. Until round 10 the limit was 34,560 s and the timer stopped the agent 660 s before it, which
+v2 under the new name was rejected for; the judges kept the stop point and moved the stated limit
+(option B of harbor-lh `ops/swe-marathon-v2/decisions/2026-11-20-precap-timer-vs-deadline-DECISION.md`).
+A session it ended shows as `ended_by_timer: true` in `metrics.json`. The collect hook first
 writes the mark the timer stops on, then freezes `dev`'s processes and ends the timer, so none of
 its rounds can reach the hook's own work as `dev`. The agent is not told; the instruction states
 no budget either way. The installed scripts and their state are
