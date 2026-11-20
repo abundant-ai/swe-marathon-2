@@ -2391,6 +2391,17 @@ def test_the_bundle_holds_only_what_is_read_of_the_private_cases_and_the_build_f
     assert package.index("make_cases.leaks(cases, skeletons, texts)") < package.index("= shipped_cases(cases)")
 
 
+def test_the_verifier_names_neither_the_platform_nor_how_the_task_was_made():
+    """The verifier's sources speak of grading, which is their job, but not of the platform they run on or of the
+    scripts the task was made with: three comments named scripts/upstream_builds.py, gVisor and make_cases.LEADS."""
+    tests = STEP / "tests"
+    sources = [tests / "verify.py", tests / "test.sh", tests / "Dockerfile", *sorted((tests / "verifier").glob("*.py"))]
+    named = re.compile(r"scripts/|make_cases|build_original|apply\.sh|gvisor|experiment/|oddish|\bmodal\b|harbor|daytona|"
+                       r"\bauthors?\b|\bQA\b|round [0-9]|re-check", re.I)
+    found = {path.relative_to(TASK).as_posix(): named.findall(path.read_text()) for path in sources}
+    assert len(found) == 7 and not any(found.values()), {name: words for name, words in found.items() if words}
+
+
 def test_only_the_documentation_and_the_binary_reach_the_agent():
     package = (SCRIPTS / "package_step.py").read_text()
     assert 'content[f"environment/docs/{name}"] = text.encode("utf-8")' in package

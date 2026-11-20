@@ -194,8 +194,8 @@ def statements(text: str) -> list[str]:
 
 LITERAL_RE = re.compile(r'^(?:"[^"\\]*"|ι\d+|[¯\d. ]+)$')
 INTEGERS = r"¯?\d+(?: ¯?\d+)*"
-# The generator's own lead forms (make_cases.LEADS), as a dispatcher with no interpreter could still
-# evaluate them: the number N, and how the original shows the value.
+# The lead forms, the values some cases print before an error, as a dispatcher with no interpreter
+# could still evaluate them: the number N, and how the original shows the value.
 LEAD_FORMS = (
     (re.compile(r"^\+/ι(\d+)$"), lambda m: str(int(m[1]) * (int(m[1]) - 1) // 2)),
     (re.compile(r"^(\d+)×ι(\d+)$"), lambda m: " ".join(str(int(m[1]) * i) for i in range(int(m[2])))),

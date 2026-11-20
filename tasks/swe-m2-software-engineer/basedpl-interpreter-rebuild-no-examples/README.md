@@ -19,12 +19,31 @@ platform's ungraded capped runs in round 5; the task was then renamed
 scrub's re-check answered in round 7, and round 7's re-check in round 8. Round 8's bundle
 `43b39e11805c` went up as v1 under the new name; its pre-trial audit's one must-fix (an
 author-only probe in the solution) is answered in round 9, with a sweep of every shipped file and
-data file. Bundle `bf77bf7f91d0` (round 9) replaces it; round 9's first bundle `5eef6fadb546`,
-round 7's `b206089bd38b` and round 6's `ffcf88e892e2` were never uploaded, and the earlier bundles
-are `4164eb806274`, `7462d71fe5a7`, `f0da94435d6b`, `cfc9d42f3e68`, `80d7f600cab8` and
-`1a08cdb471d0`. See [Remaining work](#remaining-work) and [Validation gaps](#validation-gaps).
+data file. Bundle `af0c9f7b084e` (round 9's second commit) replaces it; round 9's `5eef6fadb546`
+and `bf77bf7f91d0`, round 7's `b206089bd38b` and round 6's `ffcf88e892e2` were never uploaded, and
+the earlier bundles are `4164eb806274`, `7462d71fe5a7`, `f0da94435d6b`, `cfc9d42f3e68`,
+`80d7f600cab8` and `1a08cdb471d0`. See [Remaining work](#remaining-work) and [Validation gaps](#validation-gaps).
 
 ## Development log
+
+### 2026-11-20 (round 9, second commit: three comments of the verifier)
+
+- Round 9 left the verifier's sources byte-identical, with three comments that named how the task
+  was made or the platform: `verify.py` cited `scripts/upstream_builds.py` and gVisor's status
+  file, and `recorder.py` cited `make_cases.LEADS`. Every audit so far had passed them, but the
+  platform's audit has flagged shipped comments that name the platform or the build process
+  before, and gVisor is the platform's sandbox, so all three are reworded now: upstream's
+  published builds without the script, kernels whose status file may not list `NoNewPrivs`
+  without naming one, and the lead forms as the values some cases print before an error.
+- Comments only. For both files, Python's tokenize stream with the COMMENT and NL tokens left out
+  is identical before and after: 6,817 tokens in `verify.py`, 5,502 in `recorder.py`. The line
+  count is unchanged too. The recorder records the same answers; the verifier image is recorded
+  again at its next build anyway, since both images' build contexts changed in round 9.
+- Check: `test_the_verifier_names_neither_the_platform_nor_how_the_task_was_made` scans the seven
+  files of the verifier's sources for the platform's names, the scripts and records the task was
+  made with, authors and review words; it fails on round 9's first commit. 53 task checks and the
+  27 repository checks pass. Bundle `af0c9f7b084e` differs from `bf77bf7f91d0` in those two files
+  only.
 
 ### 2026-11-20 (round 9: the pre-trial audit's must-fix, an author-only probe in the solution)
 
@@ -813,7 +832,8 @@ Licence: the upstream is Apache-2.0. Its `LICENSE` is shipped with the documenta
 
 | Check | Revision | Result |
 | --- | --- | --- |
-| `checks/` (52 tests) with `ci_checks` (27), Python 3.13, and `check_repository.py` | round 9 | pass |
+| `checks/` (53 tests) with `ci_checks` (27), Python 3.13, and `check_repository.py` | round 9, second commit | pass |
+| The verifier's three reworded comments | `verify.py` and `recorder.py`, round 9's first commit against its second | tokenize streams without COMMENT and NL tokens identical (6,817 and 5,502 tokens), same line counts; the new check fails on the first commit's comments |
 | Round 9's new assertions against copies of the task with round 8's files | round 9 | each fails: round 8's solution (the probe and its logs), its packaging (no reduced cases or `build.txt`, `smoke.sh` in the solution), its `mark.py` (six lines written), its tools' comments (`apply.sh`, `scripts/build_original.py`); and a copy of the verifier that reads `source` |
 | The order check against a copy with round 7's order (the timer's end before the freeze) | round 8 | the new order check fails (its freeze found "timer ended") and so does the delivery check's order list; the F1 check passes |
 | Local build of the hardened original | `scripts/build_original.py`, 2026-11-19 | builds (one warning); static, not PIE; marker once; no local path |
@@ -821,14 +841,14 @@ Licence: the upstream is Apache-2.0. Its `LICENSE` is shipped with the documenta
 | `smoke.sh` | upstream's v0.1.95 macOS release binary; the hardened Linux binary in the image builds | fails at the first hardening check on upstream's build, as it must; passes in every image build of the versions uploaded so far, as root and as `dev` (a failure stops the build, and every one of those versions was built and graded) |
 | Upstream's published builds | `scripts/upstream_builds.py`, 2026-11-19 | 21 executables in 3 release assets and 9 wheels, 12 distinct hashes; upstream's Linux build holds the unhardened usage text twice, the hardened build and the docs never |
 | Local recording (the private cases, upstream's macOS release binary) | cases `91236578`, `experiment/local-recording-8` | 1,673 of 1,777 kept (83 display settings that change nothing, 17 last bits, 4 quoted); none unsteady, crashed, machine-dependent or perturbed; the strongest no-interpreter dispatcher 4.1% (command line 19, constants 17, error lookup 13, last literal 19), largest answer 0.6%, nothing with exit 1 0.6%; `∂` 6.1%; 40 of 41 piped cases end with exit 1 after a failing line |
-| Local recording of the cases as round 9 ships them (without the generator's notes), the same binary | `cases.json` of bundle `bf77bf7f91d0`, `experiment/local-recording-9` | 1,673 of 1,777 kept with the same drops; `expected.json` byte-identical to `local-recording-8`'s; the same `kept_ids_sha256` (`bb030348…`) and `expected_sha256` (`ac7c2618…`); the same kinds, drops, settling, `kept_as_upstream_code` and baselines; the kept cases equal `local-recording-8`'s apart from `source`, `suite` and `family` |
-| The shipped cases against the private file | bundle `bf77bf7f91d0` | the same 1,777 cases in the same order; every key kept byte-identical; removed `source` (1,777), `suite` (1,383), `family` (260), `want` (1,324 records), `scaffold_lines` (248) |
-| The packaged `solve.sh` with only `/app/rebuild` rewritten to a scratch directory; `mark.py` from the agent image's context with the marker | bundle `bf77bf7f91d0` | the solution installs `bpl` (the build's own bytes, sha256 `60d2aed1…`, mode 0755) and `LICENSE`, nothing else, no standard error; the images' install writes the marker once and leaves no zero marker; `build.txt` beside either holds `link`, `sha256` and `sha256_without_marker` |
-| Local grading from the packaged bundle (`bf77bf7f91d0`, with `local-recording-9`; the dispatcher's 0.0269 was measured on round 5's `1a08cdb471d0`, whose grading code is the same), through the collect hook's pre-scan and measuring scripts and a tar round trip with the `data` filter | stand-in reference behind a wrapper; no-op; the dispatcher as a program, with every strategy the recorder measures | 1.0 (1,673/1,673, 34.4 s); 0.0; 0.0269 (45/1,673: cli 19, error 13, expr 7, script 6) |
-| A whole trial replayed from the packaged bundle (`bf77bf7f91d0`, against `local-recording-9`) with round 8's replay, unchanged since nothing it reads changed in round 9 (round 8's is a copy of round 7's, itself QA 07e's, adapted to round 8's order; kept in the Git-ignored `experiment/replay-r8/`, round 9's reports and a `NOTE.txt` in `results-r9/`): both hooks' shell under `/bin/dash` (paths rewritten, stand-ins for `setpriv`, `pgrep`, `fallocate`, GNU `stat` and `timeout`), the real timer against stand-in processes, tar and the `data` filter, then `verify.main()` with root and Linux stood in; the hook's order is read from its calls | reference; reference with planted `.manifest` names, links and a pipe; no-op with a sleeper still waiting | 1.0 (1,673/1,673), no notes, `ended_by_timer` true; 1.0 with both moved-aside notes; 0.0: both freezes sent with the mark written and the sleeper running, then the hook ended the sleeper and its `sleep` (`stopped pid N` in `timer_log`) |
-| Packaging | `scripts/package_step.py`, twice into separate directories | `bf77bf7f91d0`, 247 files, 33,021,442 bytes, the same hash both times; bundle directory `swe-m2_software-engineering_basedpl-interpreter-rebuild-no-examples`; against round 8's `43b39e11805c`: `solve.sh`, `mark.py` (three copies), `smoke.sh` (two), `build.txt` (three) and `cases.json` changed, the solution's `probe.c` and `smoke.sh` gone, every other file byte-identical |
-| Oddish preflight | bundle `bf77bf7f91d0`, no-Archil CLI, locally | pass |
-| Oddish baselines and the pre-trial audit | old name: v1, and v2 (round 5's `1a08cdb471d0`); new name: v1 (round 8's `43b39e11805c`) | old name: the reference 1.0 twice per version (1,673/1,673) and the no-op 0.0 twice, with the same `kept_ids_sha256` (`bb030348…`) and `expected_sha256` (`18af6936…`) in both versions, so the Linux recording reproduces; v2's three model trials were graded. New name v1: the reference 1.0 twice, the no-op 0.0 twice, and the audit's one must-fix (the probe), answered in round 9. Bundle `bf77bf7f91d0`: not run |
+| Local recording of the cases as round 9 ships them (without the generator's notes), the same binary | `cases.json` of bundle `bf77bf7f91d0` (the same file in `af0c9f7b084e`), `experiment/local-recording-9` | 1,673 of 1,777 kept with the same drops; `expected.json` byte-identical to `local-recording-8`'s; the same `kept_ids_sha256` (`bb030348…`) and `expected_sha256` (`ac7c2618…`); the same kinds, drops, settling, `kept_as_upstream_code` and baselines; the kept cases equal `local-recording-8`'s apart from `source`, `suite` and `family` |
+| The shipped cases against the private file | bundle `bf77bf7f91d0` (the same file in `af0c9f7b084e`) | the same 1,777 cases in the same order; every key kept byte-identical; removed `source` (1,777), `suite` (1,383), `family` (260), `want` (1,324 records), `scaffold_lines` (248) |
+| The packaged `solve.sh` with only `/app/rebuild` rewritten to a scratch directory; `mark.py` from the agent image's context with the marker | bundle `bf77bf7f91d0` (the same files in `af0c9f7b084e`) | the solution installs `bpl` (the build's own bytes, sha256 `60d2aed1…`, mode 0755) and `LICENSE`, nothing else, no standard error; the images' install writes the marker once and leaves no zero marker; `build.txt` beside either holds `link`, `sha256` and `sha256_without_marker` |
+| Local grading from the packaged bundle (`af0c9f7b084e`, with `local-recording-9`; also `bf77bf7f91d0`, 34.4 s; the dispatcher's 0.0269 was measured on round 5's `1a08cdb471d0`, whose grading code is the same), through the collect hook's pre-scan and measuring scripts and a tar round trip with the `data` filter | stand-in reference behind a wrapper; no-op; the dispatcher as a program, with every strategy the recorder measures | 1.0 (1,673/1,673, 31.1 s); 0.0; 0.0269 (45/1,673: cli 19, error 13, expr 7, script 6) |
+| A whole trial replayed from the packaged bundle (`bf77bf7f91d0`, whose verifier differs from `af0c9f7b084e`'s in three comments only; against `local-recording-9`) with round 8's replay, unchanged since nothing it reads changed in round 9 (round 8's is a copy of round 7's, itself QA 07e's, adapted to round 8's order; kept in the Git-ignored `experiment/replay-r8/`, round 9's reports and a `NOTE.txt` in `results-r9/`): both hooks' shell under `/bin/dash` (paths rewritten, stand-ins for `setpriv`, `pgrep`, `fallocate`, GNU `stat` and `timeout`), the real timer against stand-in processes, tar and the `data` filter, then `verify.main()` with root and Linux stood in; the hook's order is read from its calls | reference; reference with planted `.manifest` names, links and a pipe; no-op with a sleeper still waiting | 1.0 (1,673/1,673), no notes, `ended_by_timer` true; 1.0 with both moved-aside notes; 0.0: both freezes sent with the mark written and the sleeper running, then the hook ended the sleeper and its `sleep` (`stopped pid N` in `timer_log`) |
+| Packaging | `scripts/package_step.py`, twice into separate directories | `af0c9f7b084e`, 247 files, 33,021,401 bytes, the same hash both times; bundle directory `swe-m2_software-engineering_basedpl-interpreter-rebuild-no-examples`; against round 8's `43b39e11805c`: `solve.sh`, `mark.py` (three copies), `smoke.sh` (two), `build.txt` (three), `cases.json`, and the comments of `verify.py` and `recorder.py` changed, the solution's `probe.c` and `smoke.sh` gone, every other file byte-identical |
+| Oddish preflight | bundles `bf77bf7f91d0` and `af0c9f7b084e`, no-Archil CLI, locally | pass |
+| Oddish baselines and the pre-trial audit | old name: v1, and v2 (round 5's `1a08cdb471d0`); new name: v1 (round 8's `43b39e11805c`) | old name: the reference 1.0 twice per version (1,673/1,673) and the no-op 0.0 twice, with the same `kept_ids_sha256` (`bb030348…`) and `expected_sha256` (`18af6936…`) in both versions, so the Linux recording reproduces; v2's three model trials were graded. New name v1: the reference 1.0 twice, the no-op 0.0 twice, and the audit's one must-fix (the probe), answered in round 9. Bundle `af0c9f7b084e`: not run |
 | `harbor check` | none | not run |
 
 ### Validation gaps
@@ -902,7 +922,7 @@ sha256 is not build.txt's. Packaging ships the private cases without the generat
 
 ## Remaining work
 
-- Bundle `bf77bf7f91d0` (round 9) goes up as a new version of the new name, under the task's one
+- Bundle `af0c9f7b084e` (round 9) goes up as a new version of the new name, under the task's one
   experiment, on the owner's word. Its baselines and pre-trial audit come before any model trial.
   The two oracle trials on different workers are a hard gate: each must score exactly 1.0, with
   the same `kept_ids_sha256` and `expected_sha256` (`bb030348…` and `18af6936…` so far; the

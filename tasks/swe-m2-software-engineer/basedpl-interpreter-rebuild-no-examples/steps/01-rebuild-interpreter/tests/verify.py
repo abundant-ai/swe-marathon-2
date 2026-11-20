@@ -25,8 +25,8 @@ from verifier import recorder, runcases  # noqa: E402
 
 SUBMISSION = Path("/app/rebuild")
 MARKER = Path(__file__).resolve().parent / "private" / "marker"   # the original's build marker
-# Every build of BasedPL 0.1.95 upstream publishes (scripts/upstream_builds.py), and upstream's own
-# usage text, which the hardened build lacks: a delivered file that is either is a fetched original.
+# Every build of BasedPL 0.1.95 upstream publishes, and upstream's own usage text, which the
+# hardened build lacks: a delivered file that is either is a fetched original.
 UPSTREAM_BUILDS = Path(__file__).resolve().parent / "verifier" / "upstream_builds.json"
 UNHARDENED_USAGE = b"--kernel -f CONNECTION_FILE"
 # What the collect hook (environment/reclaim-scratch) leaves in the delivery: its mark, whose first
@@ -59,7 +59,7 @@ LIMIT_NAMES = {"Max stack size": resource.RLIMIT_STACK, "Max processes": resourc
                "Max core file size": resource.RLIMIT_CORE}
 STRICT_LIMITS = ("Max processes", "Max file size", "Max core file size")
 # Run as submitted code is: /proc/self/status, then no_new_privs as prctl(PR_GET_NO_NEW_PRIVS)
-# reports it, for kernels (gVisor's among them) whose status file may not list NoNewPrivs.
+# reports it, for kernels whose status file may not list NoNewPrivs.
 NNP_PROBE = (
     "import ctypes, sys\n"
     "sys.stdout.write(open('/proc/self/status').read())\n"
