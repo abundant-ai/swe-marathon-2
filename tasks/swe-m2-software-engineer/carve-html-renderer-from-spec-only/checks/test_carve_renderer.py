@@ -1605,15 +1605,16 @@ def test_the_installer_refuses_any_build_but_the_pinned_one(tmp_path):
 
 def test_the_timer_arms_once_fires_at_end_seconds_and_ends_the_tree(tmp_path):
     """The root pre-cap watchdog: armed once by the set-up hook and detached; END_SECONDS later (2 s
-    here; 34,440 s in production since round 10, the 34,560 s cap less two minutes, the judges'
-    option A of 2026-11-20) it ends the agent user's whole process tree, a setsid'd child included,
-    TERM every 5 s for 6 passes (about 30 s) then KILL, so that all is gone about 90 s before the cap,
-    logging arm, fire and done with timestamps to a root-only log. task.toml says so beside the
-    limit, for the platform's reviewers. The sweep hook records the log's tail; the verifier carries
-    `ended_by_timer` into metrics and never into the reward."""
+    here, 33,900 s in production) it ends the agent user's whole process tree, a setsid'd child
+    included, TERM every 5 s for 6 passes (about 30 s, round 10) then KILL, so that all is gone by
+    about 33,930 s, logging arm, fire and done with timestamps to a root-only log. Since round 10
+    (the judges' option B of 2026-11-20) every agent limit in task.toml is 33,960 s, a backstop 60 s
+    after the timer, and a note beside each says so for the platform's reviewers. The sweep hook
+    records the log's tail; the verifier carries `ended_by_timer` into metrics and never into the
+    reward."""
     text = PRECAP.read_text()
     assert text.startswith("#!/bin/sh") and os.access(PRECAP, os.X_OK)
-    for literal in ('END_SECONDS="${FSMAINT_TIMER_END_SECONDS:-34440}"', 'LOG="${FSMAINT_TIMER_LOG:-/var/log/fsmaint-timer.log}"',
+    for literal in ('END_SECONDS="${FSMAINT_TIMER_END_SECONDS:-33900}"', 'LOG="${FSMAINT_TIMER_LOG:-/var/log/fsmaint-timer.log}"',
                     'PIDFILE="${FSMAINT_TIMER_PIDFILE:-/run/fsmaint-timer.pid}"', 'TARGET_USER="${FSMAINT_TIMER_USER:-dev}"',
                     'SELECT="${FSMAINT_TIMER_SELECT:--u $TARGET_USER}"', 'TERM_PASSES="${FSMAINT_TIMER_TERM_PASSES:-6}"',
                     'TERM_INTERVAL="${FSMAINT_TIMER_TERM_INTERVAL:-5}"', "pkill -TERM $SELECT", "pkill -KILL $SELECT",
@@ -1622,13 +1623,15 @@ def test_the_timer_arms_once_fires_at_end_seconds_and_ends_the_tree(tmp_path):
     defaults = {name: int(value) for name, value in re.findall(r'^(END_SECONDS|TERM_PASSES|TERM_INTERVAL)="\$\{FSMAINT_TIMER_\w+:-(\d+)\}"',
                                                                text, re.M)}
     toml = (TASK / "task.toml").read_text()
-    cap = int(re.search(r"\[agent\]\n(?:#[^\n]*\n)*timeout_sec = (\d+)", toml).group(1))
+    limits = re.findall(r"\[(agent|steps\.agent)\]\n((?:#[^\n]*\n)*)timeout_sec = (\d+)", toml)
     gone = defaults["END_SECONDS"] + defaults["TERM_PASSES"] * defaults["TERM_INTERVAL"] + 1   # the KILL, then a second
-    assert cap == 34560 and cap - defaults["END_SECONDS"] == 120 and gone <= 34_471 and cap - gone >= 60, (defaults, cap)
-    note = re.search(r"\[agent\]\n((?:#[^\n]*\n)+)timeout_sec = 34560", toml)
-    said = " ".join(note.group(1).replace("#", " ").split()) if note else ""
-    assert "about two minutes before this limit" in said and "34,440 s" in said, "the reason beside the limit"
-    assert "Otherwise the agent's working time is this limit." in said, said
+    assert defaults["END_SECONDS"] == 33900 and gone <= 33_931, defaults
+    assert [(table, int(limit)) for table, _, limit in limits] == [("agent", 33960), ("steps.agent", 33960)], limits
+    assert all(int(limit) - defaults["END_SECONDS"] == 60 and int(limit) > gone for _, _, limit in limits), "a backstop 60 s later"
+    for table, note, _ in limits:   # beside each limit, for the platform's reviewers: when the session ends, the backstop, why
+        said = " ".join(note.replace("#", " ").split())
+        assert "The session ends at 33,900 s, when a root timer" in said and "this limit is a backstop 60 s later" in said, said
+        assert "reached the platform's own cap with this kind of separately built verifier image ended without a result" in said
     assert '[[agent.setup_complete]]\ncommand = "/usr/local/lib/fsmaint/fsmaint-timer"' in toml
     assert "fsmaint" not in (STEP / "instruction.md").read_text().lower() and "timer" not in (STEP / "instruction.md").read_text().lower()
     # Live: a tree of two loops, one in a session of its own, matched through a marker in their arguments.
@@ -1682,8 +1685,8 @@ def test_the_timer_arms_once_fires_at_end_seconds_and_ends_the_tree(tmp_path):
     top.mkdir()
     (top / "carve").write_text("#!/bin/sh\nexit 0\n")
     fired_log = tmp_path / "fired.log"
-    fired_log.write_text("2026-11-19T00:00:00Z armed pid=7 end_seconds=34440 target=-u dev\n"
-                         "2026-11-19T09:34:00Z fired after 34440s: ending the session (-u dev)\n"
+    fired_log.write_text("2026-11-19T00:00:00Z armed pid=7 end_seconds=33900 target=-u dev\n"
+                         "2026-11-19T09:25:00Z fired after 33900s: ending the session (-u dev)\n"
                          "2026-11-19T09:25:01Z done term_passes=1 processes_left=0\n")
     run_hook(top, env={"FSMAINT_TIMER_LOG": str(fired_log), "FSMAINT_TIMER_PIDFILE": str(tmp_path / "no-such-pid")})
     record = json.loads((top / ".fsmaint.json").read_text())
@@ -1888,7 +1891,8 @@ def test_nothing_the_agent_sees_names_grading_or_a_budget():
             for word in ("verifier", "private", "recorded", "case"):
                 assert word not in lowered, (name, word)
     comments = [line for line in seen["task.toml"].splitlines() if line.lstrip().startswith("#")]
-    assert len(comments) == 4 and "fsmaint-timer" in comments[0], comments   # only the note beside the agent's limit
+    beside = re.findall(r"((?:#[^\n]*\n)+)timeout_sec = 33960\n", seen["task.toml"])
+    assert len(beside) == 2 and len(comments) == sum(block.count("\n") for block in beside), comments   # only the notes beside the limits
     instruction = seen["instruction.md"]
     assert "/app/rebuild/carve" in instruction and "Out of scope:" in instruction
     for excluded in ("{{ path }}", "`fmt`", "`lint`", "`migrate`", "Markdown", "the AST as JSON", "importers", "static mode",

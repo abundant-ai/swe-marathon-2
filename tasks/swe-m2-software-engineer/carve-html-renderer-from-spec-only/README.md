@@ -28,7 +28,7 @@ archive or binary.
 
 ## Development log
 
-### 2026-11-20 — round 10 (v5): the sweep says where it got to, beside the tree; a timer two minutes before the cap
+### 2026-11-20 — round 10 (v5): the sweep says where it got to, beside the tree; the agent's limit 60 s after the timer
 
 - **What happened.** The re-check of round 9 (`qa/carve/23-recheck-round9.md` in harbor-lh, FAIL)
   confirmed F1-F10 apart from F7 and found one must-fix of the same class (N1). Zombies (`pgrep -u
@@ -83,13 +83,16 @@ archive or binary.
   the instruction is unchanged (its "200,000 files and directories" counts links too in the
   enforcement, and the 2,048-byte and pack-room rules are unstated; neither can refuse a tree an
   honest session would write). N9: upstream's spec text is untouched.
-- **The pre-cap timer moves to 120 s before the cap** (judges' option A of 2026-11-20,
-  `decisions/2026-11-20-precap-timer-vs-deadline-DECISION.md`, after BasedPL's v2 verdict rejected a
-  timer 660 s before the limit). `fsmaint-timer`'s `END_SECONDS` goes from 33,900 to 34,440; TERM
-  every 5 s for 6 passes (about 30 s), then KILL, so every `dev` process is gone by about 34,470 s.
-  `timeout_sec = 34560` stays, with a plain comment beside it in `task.toml` for the platform's
-  reviewers (the agent never sees `task.toml`). The sweep's timer-stop path (2 s for TERM, then
-  KILL) and the timer's loop assumed no margin.
+- **The agent's limit moves to 60 s after the pre-cap timer** (the judges' option B of 2026-11-20,
+  unanimous in their second vote, after BasedPL's v2 verdict rejected a timer 660 s before the limit
+  in `task.toml`; `decisions/2026-11-20-precap-timer-vs-deadline-DECISION.md` in harbor-lh; option A,
+  the timer at 34,440 s, was applied first and replaced). `fsmaint-timer` still fires at 33,900 s;
+  its TERM rounds are cut to 6 passes 5 s apart (about 30 s), then KILL, so every `dev` process is
+  gone by about 33,930 s. Every agent `timeout_sec` in `task.toml` (`[agent]` and the step's) goes
+  from 34,560 to 33,960, a backstop 60 s after the timer, with a plain note beside each for the
+  platform's reviewers (the agent never sees `task.toml`): when the session ends, that the limit is
+  a backstop, and why. Nothing else assumed 34,560: the sweep's timer-stop path (2 s for TERM, then
+  KILL), `verify.py`, the marks and the instruction (which states no time) carry no session time.
 - **Checks** (57 now). Five new, each failing on 96dbbe5 (its sweep, reserve, `verify.py` and
   `task.toml` in a scratch copy of the task): the progress file first, the mark right after the
   freeze and before the ending, the reserve making the file and `task.toml` declaring it (96dbbe5:
@@ -101,8 +104,8 @@ archive or binary.
   arrived stays an error (96dbbe5: errors); the time limit on the staging and a linear late count
   with 15,000 copies over 20,000 files (96dbbe5: the staging ran to the end; quadratic); a mark of
   1,000 pipes with 4-byte UTF-8 names under 32 KiB in bytes (96dbbe5: 57,452 bytes). Two edited: the
-  timer at 34,440 s with its 30 s of TERM and the `task.toml` note; the round-9 time-limit case
-  (480 s, the staging included).
+  timer's 30 s of TERM, both agent limits at 33,960 s and the notes beside them; the round-9
+  time-limit case (480 s, the staging included).
 - **Left.** Nothing ran on Linux, in Docker or on Modal. The second artifact's delivery is harbor
   0.20's code path for every declared artifact, read here, not observed on the platform; if it does
   not arrive, the verifier falls back to round 9's rules. A hook that dies before its first write
@@ -576,7 +579,7 @@ runtimes, the pool was regenerated at 1,944 cases under a new 128-bit seed, and 
 | Step `01-implement-renderer` | Implemented: instruction, agent image with the specification and the documentation, collect hook, separate verifier image recording at build, reference solution. |
 | Further steps | Not designed. Candidates: the next spec release (0.1.x changes behaviour in patch releases), or a second target (canonical Carve with `fmt`, or Markdown) on the same renderer. |
 | The original | carve-rs 0.1.14's static Linux release archive, fetched by `scripts/setup_tools.py` into `experiment/original/` (not in Git) and packaged as released into the verifier's build context and the solution. |
-| Hooks | `environment/fsmaint-reserve` (setup begin and complete; `--netcheck` starts the egress watcher), `environment/fsmaint-netcheck` (the in-sandbox egress watchdog), `environment/fsmaint-timer` (setup complete, as root: ends the session 34,440 s after arming, two minutes before the 34,560 s cap, so the deliverable is graded) and `environment/fsmaint-sweep` (the one root collect hook; it writes where it got to into `/var/lib/fsmaint/out/sweep.json`, a second artifact that `fsmaint-reserve` makes at set-up), all root-only (`/usr/local/lib/fsmaint`, 0700) in the agent image. |
+| Hooks | `environment/fsmaint-reserve` (setup begin and complete; `--netcheck` starts the egress watcher), `environment/fsmaint-netcheck` (the in-sandbox egress watchdog), `environment/fsmaint-timer` (setup complete, as root: ends the session 33,900 s after arming, all gone by about 33,930 s, 60 s before the agent's 33,960 s limit, so the deliverable is graded) and `environment/fsmaint-sweep` (the one root collect hook; it writes where it got to into `/var/lib/fsmaint/out/sweep.json`, a second artifact that `fsmaint-reserve` makes at set-up), all root-only (`/usr/local/lib/fsmaint`, 0700) in the agent image. |
 | Published builds | `steps/01-implement-renderer/tests/verifier/upstream_builds.json` from `scripts/upstream_builds.py`: 2,156 sha256, 14 strings (three needed) and foreign-runtime markers for seven runtimes (two needed), for the refusal of fetched builds and runtimes. |
 | Private inputs | `steps/01-implement-renderer/tests/private/cases.json` and `probes.json`, Git-ignored, from `scripts/make_cases.py` and `experiment/seeds.json`. Answers and probe answers are recorded when the verifier image is built; `recording.json` beside them describes the recording and appears in `metrics.json`. |
 | Oracle | The original itself, installed from its release archive by `solve.sh` (as the agent's user), with the 14 tripwire strings blanked in place. |
@@ -723,7 +726,7 @@ asking the models under test about Carve without the files (no per-model exposur
 
 ## Workload
 
-A run is one trial of 9.6 hours (one task row per experiment, no continuation tasks). The
+A run is one trial of 33,960 s, about 9.4 hours, of which the session uses up to 33,900 s (one task row per experiment, no continuation tasks). The
 instruction states no time budget.
 
 ## Verification
@@ -732,11 +735,11 @@ instruction states no time budget.
 v2 trial whose agent ran into the 9.6 h cap today: the separate verifier image failed to build right
 after the timeout (platform-side, harbor-lh `ops/swe-marathon-v2/PLATFORM_VERIFIER_BUILD_AFTER_LONG_RUN.md`),
 while runs that ended by themselves were graded. Until the platform fixes it, a root pre-cap
-watchdog (`environment/fsmaint-timer`, armed at set-up complete) ends the agent's session 34,440 s
-after arming — two minutes before the 34,560 s cap (round 10; it was eleven minutes) — with TERM
-every 5 s for 6 passes (about 30 s), then KILL, so all is gone by about 34,470 s, and logs
-arm/fire/done to root-only `/var/log/fsmaint-timer.log`. `task.toml` says so in a comment beside the
-limit, for the platform's reviewers. The collect hook records
+watchdog (`environment/fsmaint-timer`, armed at set-up complete) ends the agent's session 33,900 s
+after arming, with TERM every 5 s for 6 passes (about 30 s), then KILL, so all is gone by about
+33,930 s, and logs arm/fire/done to root-only `/var/log/fsmaint-timer.log`. Since round 10 the
+agent's limit in `task.toml` is 33,960 s, a backstop 60 s after the timer (it was 34,560 s, 660 s
+after), and a note beside each limit says so for the platform's reviewers. The collect hook records
 the log's last lines and `ended_by_timer` in `.fsmaint.json`; the verifier copies that into
 `metrics.json` (and a note), never into the score. The hook writes `/var/lib/fsmaint/sweeping` and stops the
 watchdog before its own kill stage, and the watchdog's loop stops on that mark, so the loop never
@@ -858,7 +861,7 @@ platform's egress window, shared by every task whose original is public.
 | 13 | Infer an evaluation from the files and text | Instruction and image | Checked: no grading, hidden, budget or session wording; no examples shipped | Requester's voice; the hook is root-only and names no judging | An agent can still guess that pages exist to test it | Read the first trajectories | 🟡 YELLOW / UNASSESSED |
 | 14 | A case where carve-rs and the specification disagree | Selection | 30 candidates dropped by the model check; 6 corpus documents known to differ | Only cases the model renders identically are kept | None | Keep | 🟢 GREEN / LOW |
 | 15 | Behaviour outside the stated scope graded | Case generation | No source holds an include; options only `--safe`, `--html`, and unknown ones; CLI cases one per stated behaviour | Out-of-scope list in the instruction | None found | QA lens 12 | 🟢 GREEN / LOW |
-| 16 | Stop, delay or outlast the timer (`fsmaint-timer`), so the session runs into the platform's cap and is never graded (a 0 the audit cannot see), or exploit its kill | Agent user; root-only hooks | Checked: the timer runs as root from the set-up hook, its log and pid file are root's (0600, `/run`), `dev` cannot signal a root process; check `test_the_timer_arms_once_fires_at_end_seconds_and_ends_the_tree` | It can be killed only as root; the kill is TERM (6 passes, 5 s apart) then KILL of `dev`'s processes only, from two minutes before the cap (34,440 s; gone by about 34,470 s; round 10, after BasedPL's v2 verdict on an eleven-minute margin); its loop stops on the sweep's `sweeping` mark and the sweep stops it before its own worker runs, so it never reaches the link fixer (QA 07c F2); `ended_by_timer` is recorded for the audit, never scored; `task.toml` explains the timer beside the limit | A platform that itself kills root processes or arms the hook late; a run that ends two minutes early loses nothing the cap would not have taken; whether the verifier image still builds when the session ends about 90 s before the cap is unproven (the 18 graded timer-ended trials so far ended 660 s before it) | First capped trial: read `ended_by_timer` and the log tail in `metrics.json` | 🟢 GREEN / LOW |
+| 16 | Stop, delay or outlast the timer (`fsmaint-timer`), so the session runs into the platform's cap and is never graded (a 0 the audit cannot see), or exploit its kill | Agent user; root-only hooks | Checked: the timer runs as root from the set-up hook, its log and pid file are root's (0600, `/run`), `dev` cannot signal a root process; check `test_the_timer_arms_once_fires_at_end_seconds_and_ends_the_tree` | It can be killed only as root; the kill is TERM (6 passes, 5 s apart) then KILL of `dev`'s processes only, from 33,900 s (gone by about 33,930 s); since round 10 the agent's limit is 33,960 s, a backstop 60 s later (after BasedPL's v2 verdict on a 660 s margin; the judges' option B), with a note beside it in `task.toml`; its loop stops on the sweep's `sweeping` mark and the sweep stops it before its own worker runs, so it never reaches the link fixer (QA 07c F2); `ended_by_timer` is recorded for the audit, never scored | A platform that itself kills root processes or arms the hook late (then the 33,960 s limit ends the session, the platform's own cap, which 4 of 4 heavy-image trials did not survive on 2026-11-19); a run that ends 60 s early loses nothing the limit would not have taken | First capped trial: read `ended_by_timer` and the log tail in `metrics.json` | 🟢 GREEN / LOW |
 
 Licences: the specification, documentation and carve-rs are MIT. The spec's `LICENSE` ships in
 `/app/spec` and `/app/docs`, carve-rs's with the reference solution.
