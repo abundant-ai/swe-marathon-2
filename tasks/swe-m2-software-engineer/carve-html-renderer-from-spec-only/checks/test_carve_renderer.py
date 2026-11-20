@@ -685,7 +685,80 @@ def test_an_oversized_submission_is_not_run(tmp_path):
     hook = HOOK.read_text()
     assert "LIMIT_ENTRIES=200000" in hook and "LIMIT_BYTES=2000000000" in hook
     verify = (TESTS / "verify.py").read_text()
-    assert "MAX_ENTRIES = 200_003" in verify and "MAX_BYTES = 2 << 30" in verify
+    assert "MAX_ENTRIES = 200_000" in verify and "MAX_BYTES = 2 << 30" in verify
+
+
+def test_the_sweeps_own_files_do_not_count_against_the_trees_limits(tmp_path):
+    """A tree right at the limits stays runnable however large the sweep's record is: the mark and
+    the record are the sweep's, so the seal does not count them (a long-path tree's record can pass
+    the margin between the sweep's 2,000,000,000 bytes and the verifier's 2 GiB)."""
+    top = tmp_path / "rebuild"
+    top.mkdir()
+    for index in range(5):
+        (top / f"f{index}").write_text("x" * 100)
+    (top / ".fsmaint").write_text("listed 5 500\n")
+    (top / ".fsmaint.json").write_text("{" + '"pad": "' + "y" * 5000 + '"}')
+    out = verifier_call(textwrap.dedent(f"""
+        import json, os, verify
+        from pathlib import Path
+        verify.MAX_ENTRIES, verify.MAX_BYTES = 5, 500
+        try:
+            verify.seal(Path({str(top)!r}), (os.getuid(), os.getgid()))
+            print(json.dumps("sealed"))
+        except verify.EvaluationError as exc:
+            print(json.dumps(str(exc)))
+    """))
+    assert out == "sealed"
+
+
+def run_measuring(top: Path) -> list[str]:
+    """The hook's last block (measuring and marking, as root) alone on `top`, with no notes and no
+    state, as the hook runs it after the link fixing; the mark's lines."""
+    measuring = hook_programs()[4]
+    state, notes = top.parent / ".state", top.parent / ".notes"
+    state.mkdir(exist_ok=True)
+    notes.write_text("")
+    now = f"{time.time()}"
+    done = subprocess.run([sys.executable, "-I", "-", str(top), "200000", "2000000000", str(notes), str(state), "1", "0",
+                           now, now, now, "start"], input=measuring, text=True, capture_output=True, timeout=300)
+    assert done.returncode == 0, done.stdout + done.stderr
+    return (top / ".fsmaint").read_text().splitlines()
+
+
+def test_a_missing_or_replaced_tree_is_refused_never_an_error(tmp_path):
+    """Whatever stands at /app/rebuild when the work ends, the sweep leaves a directory with a mark:
+    a link (to a directory elsewhere, whose contents stay where they are), a regular file, or
+    nothing at all becomes an empty directory marked refused, which the verifier scores 0."""
+    cases = {}
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (elsewhere / "carve").write_text("#!/bin/sh\n")
+    link = tmp_path / "link" / "rebuild"
+    link.parent.mkdir()
+    link.symlink_to(elsewhere)
+    cases["link"] = link
+    plain = tmp_path / "file" / "rebuild"
+    plain.parent.mkdir()
+    plain.write_text("not a directory")
+    cases["file"] = plain
+    missing = tmp_path / "missing" / "rebuild"
+    missing.parent.mkdir()
+    cases["missing"] = missing
+    reasons = {"link": "/app/rebuild was a link", "file": "/app/rebuild was not a directory",
+               "missing": "/app/rebuild was missing"}
+    for name, top in cases.items():
+        lines = run_measuring(top)
+        assert lines[0] == "refused" and lines[1] == f"{reasons[name]}: it was not copied", (name, lines)
+        assert top.is_dir() and not top.is_symlink(), name
+        assert sorted(os.listdir(top)) == [".fsmaint", ".fsmaint.json"], name
+    assert (elsewhere / "carve").read_text() == "#!/bin/sh\n", "a link's target is never touched"
+    assert any(entry.startswith(".refused.") for entry in os.listdir(link.parent)), "the link itself is moved aside"
+    out = verifier_call(textwrap.dedent(f"""
+        import json, verify
+        from pathlib import Path
+        print(json.dumps({{name: list(verify.manifest(Path(top))) for name, top in {json.dumps({k: str(v) for k, v in cases.items()})}.items()}}))
+    """))
+    assert all(out[name][1] is True for name in cases), out
 
 
 def test_no_reward_exists_until_the_real_end_and_the_reward_comes_first(tmp_path):

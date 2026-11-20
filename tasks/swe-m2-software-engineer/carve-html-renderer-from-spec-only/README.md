@@ -28,6 +28,33 @@ archive or binary.
 
 ## Development log
 
+### 2026-11-20 — round 8 (v5): the v4 audit: a tree that is not a directory scores 0, never an evaluation error
+
+- **What happened.** v4 (round 7) went up at 13:29 UTC: oracle 1.0 ×2, no-op 0.0 ×2. The platform's
+  pre-trial audit returned one must-fix (`verify.py:409-414`, verifier, incompleteness): the verifier
+  raises an evaluation error when `/app/rebuild` arrives missing, as a link or without the sweep's
+  mark, so "a solver who removes or replaces that directory gets no reward instead of a scored zero";
+  its recommendation was that the collect step record an absent or non-directory tree and score it 0.
+  v2 and v3's audits, on the same code, had found nothing.
+- **What was true.** The session cannot remove or replace `/app/rebuild` here (root's, inside the
+  sticky `/app`), and the sweep already moved aside anything left under the mark's or the record's
+  name. But the sweep's shell stage exited without a mark when `/app/rebuild` was missing, a link or
+  not a directory, and its measuring stage followed a link (`realpath`), so a link would have been
+  measured and marked at its target. Separately, the seal counted the sweep's own mark and record
+  against the tree's limits, so a tree at the 2,000,000,000-byte limit with long paths (a record of
+  hundreds of MB) could pass the sweep and then fail the seal as an evaluation error.
+- **Fix.** The measuring stage checks the path itself (`lstat`): a link, a file or nothing is moved
+  aside whole (a link itself, never its target), an empty directory takes its place, and the mark
+  says `refused` with the reason (`/app/rebuild was a link | was not a directory | was missing`), so
+  the verifier scores 0. The shell stage no longer exits early; the link fixing skips what is not a
+  directory. The seal does not count the mark and the record; `MAX_ENTRIES` is the instruction's
+  200,000. Two checks (45 now), each failing against round 7's code: the three replaced trees end
+  refused and `manifest()` scores them 0 (round 7 marked the link's target `listed 1 10`); a tree at
+  the limits with a large record seals (round 7: "more than 5 entries").
+- **Every evaluation error left** is the copy or the machine failing, never the tree: a missing or
+  unmarked arrival (the sweep always marks), a copy cut short, the privilege checks, the seal over
+  limits the sweep enforces first, unreadable private cases, a verifier with network or without root.
+
 ### 2026-11-20 — round 7 (v4): one solver called the completion sentence "the evaluation"
 
 - **What happened.** Round 6 went up as v3: oracle 1.0 ×2, no-op 0.0 ×2, the pre-trial audit clean,
@@ -568,7 +595,7 @@ outlast it; the instruction says nothing about it (it states no time budget).
 3. It picks a uid inside the user namespace's map for submitted code and checks the unprivileged
    run first (no_new_privs from the status file or `prctl`, ids, groups, capabilities, limits, and a
    set-id root copy of `id` that must report that uid); a failure is an evaluation error. It seals
-   `/app/rebuild` (root-owned, read-only, no set-id bits, at most 200,003 entries and 2 GiB): a
+   `/app/rebuild` (root-owned, read-only, no set-id bits, at most 200,000 entries, the sweep's mark and record not counted, and 2 GiB): a
    submission that cannot be sealed gets reward 0 with a note. Then every delivered file is hashed
    and searched once: a file whose sha256 is one of 2,156 published builds, a file holding three of
    carve-rs's own strings, or a program embedding two markers of a foreign language runtime (which
@@ -654,18 +681,20 @@ Licences: the specification, documentation and carve-rs are MIT. The spec's `LIC
 
 | Check | Revision | Result |
 | --- | --- | --- |
-| `checks/` (43 tests) with `ci_checks`, Python 3.13, and `check_repository.py` | working tree, 2026-11-20 | pass (43 passed; repository checks passed) |
+| `checks/` (45 tests) with `ci_checks`, Python 3.13, and `check_repository.py` | working tree, 2026-11-20, round 8 | pass (45 passed; repository checks passed); the two new checks fail against round 7's sweep and seal |
 | Tripwires on the reference | `install.py --blank` on the pinned Linux build | blanked sha256 `f1a359cba59853ecf5087b2f7a6bac17fc208df99d09a63dc567268e1ec5fad0` (same 16,216,144 bytes), in no list, none of the 14 strings left; the unchanged Linux build (`05d0898d…`) and the macOS build are refused |
 | Corpus agreement, spec model against carve-rs (macOS release) | spec `51c5631`, carve-rs 0.1.14 | 4,626 of 4,631 equal; model equals the corpus HTML on all; 6 of the candidates drawn for cases disagreed and were dropped |
 | Case generation | cases sha1 `5db42245` (1,770) | 34 dropped as model disagreements, 720 with no variant kept (11 with none at all; 1,516 variants rejected as a splice, 432 as whitespace-only, 222 as lookup-reachable), 5 shown in the docs, spec or pack, 1 with its answer printed; corpus left out: 315 shown, 28 pack, 27 answer printed, 24 includes, 17 open readings, 1 long |
 | Local recording with the macOS release build, through the bundle's recorder | bundle `c871cb7a1765` | 1,770 of 1,770 kept; none slow, unsteady, crashed, differing or perturbed; slowest run 30.1 ms; kept ids sha256 `7ace1c15…`; corpus floors on this pool with the reviewers' own 12b/07c scripts: the builder's lookup 0.0%, renderer-free 0.11% (2 cases), hybrid with a perfect host renderer 2.99% (53, one hosted) under R1-R3 and under R1-R3+R5 alike |
 | Packaging twice | `scripts/package_step.py` | the same hash both times: `c871cb7a17658edc6d3c00b797e007c522c2f304c1718e2b1865d16d028bf649`, 143 files, 17,815,797 bytes; the bundle directory is `swe-m2_software-engineering_carve-html-renderer-from-spec-only` |
 | Oddish preflight | bundle `c871cb7a1765` | pass |
+| Packaging, local grading and preflight, round 8 | `scripts/package_step.py`, `scripts/grade_locally.py` | `a8bb7e13619865f6f5fe531661361df5bdd286ea896c97761ad97f96c27a77ef`, 143 files, 17,817,488 bytes; `diff -r` against round 7's `b43283f1a8d7`: `environment/fsmaint-sweep` and `tests/verify.py` only; reference 1.0 (1,770 of 1,770), empty tree 0.0, silent program 0.0; preflight pass |
 | Packaging and preflight, round 7 | `scripts/package_step.py` | `b43283f1a8d7b4315e0b4a3b1516719c96c02290691bd8bf21bb7b5f4d932f70`, 143 files, 17,815,762 bytes (with the re-check's F1 and F4; the first cut was `44acf2f2e077`); `diff -r` against `c871cb7a1765`: only `instruction.md` (lines 42-47 and 105-107) |
 | Replay of the tree pulled from the v2 oracle trial on the platform (task `…-d3bd3d08`, trial 10, 2026-11-19: reward 0.0, 1,770 setup errors) | `checks/fixtures/pulled-d3bd3d08-v2-trial10/` through `main()`'s steps with `sandbox()` stood in only where it needs root or Linux | 4/4 cases, no setup error, fingerprint 1/1, the platform's two flags reproduced; the same replay fails against round 5's `verify.py` (string ids) |
 | Word grep of the packaged bundle (grad, platform, harbor, oddish, cap, budget, deadline, attempt, QA, audit, owner, round, 2026-, delivery, submission, collect, watchdog) | bundle `c871cb7a1765` (round 6 changed three identifiers only) | our shipped files: `fsmaint-netcheck` cap 4 (`capture_output`); `fsmaint-sweep` round 4 (`round()`); `instruction.md` cap 3 (captions, escaping), audit 2 (the requester's compliance audit, narrative), owner 1 (`plus-ownership.crv`, a spec file name); `blank.json` cap 2, round 1 (carve's own help strings: `--caption-hints`, escape, `--roundtrip`); `recorder.py` and `recording.py` round 9 (`round()`), collect 2 (`from collections`); `runcases.py` cap 3 (`surrogateescape`, `capture_output`), round 2 (`round()`); `upstream_builds.json` cap 28, budget 8, owner 8, round 6 (upstream file names: `bracket-escapes.js`, `abbr-budget.js`, `list-owner-columns.js`, `block-ownership.js`, `roundtrip-*`); `verify.py` cap 12 (`CapPrm`/`CapEff`/`CapAmb`, `escape`), round 3 (`round()`); `task.toml` collect 1 (`[[verifier.collect]]`, the required section key). Nothing else of ours matches. The spec, docs and LICENSE (upstream text) and the private case prose (round 4's pool, untouched) carry the remaining hits |
 | Local grading from the bundle (`scripts/grade_locally.py`, no sandbox) | bundle `c871cb7a1765` | reference (the build blanked as `solve.sh` does, re-signed, as `/app/rebuild/carve`, marked by the bundle's sweep, passing the tripwires) 1.0 (1,770/1,770, 20 s); an empty tree 0.0; a program that prints nothing 0.0; no late entries, no refused or flagged copies, `ended_by_timer` false. Fingerprint: the blanked reference matches 47 of 49 probes — the two misses are the `-h`/`--help` probes whose output carries blanked help strings; production records probes from the unblanked oracle, and the fingerprint is diagnostic, never scored |
 | Oddish baselines | v1 (round 4, `…-d3bd3d08` v1): oracle 1.0 ×2, nop 0.0 ×2; v2 (round 5): oracle 0.0 ×2 (the string-ids defect above); v3 (round 6): oracle 1.0 ×2, nop 0.0 ×2, pre-trial audit clean | round 7 not yet uploaded |
+| v4 (round 7) | oracle 1.0 ×2, nop 0.0 ×2 | pre-trial audit: 1 must-fix (a tree that is not a directory was an evaluation error; round 8) |
 | Model trials | v3: claude-code with deepseek-v4.1-flash 0.881 and 0.915, glm-5.3 0.010, all three stopped by the time limit | verdict reject (evaluation awareness in one trial; round 7) |
 
 ## Build and deliver

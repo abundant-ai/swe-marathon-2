@@ -37,7 +37,7 @@ UPSTREAM_BUILDS = Path(__file__).resolve().parent / "verifier" / "upstream_build
 REWARD_FILES = ("reward.txt", "reward.json")
 TOTAL_SEC = 5400  # the step verifier has 6,000 s; everything up to the reward file fits in this, even every run at 2 s
 MARGIN_SEC = 120  # no case starts when less than this is left of TOTAL_SEC
-MAX_ENTRIES = 200_003  # entries in the tree, at most (the instruction's 200,000, its top, the mark and the record); more is not run
+MAX_ENTRIES = 200_000  # entries in the tree, at most (the instruction's 200,000; its top, the mark and the record not counted); more is not run
 MAX_BYTES = 2 << 30    # bytes of the tree's regular files (each inode once), at most; more is not run
 MAX_PROGRAM = 512 << 20  # bytes of /app/rebuild/carve hashed for metrics.json, at most
 RESERVE_BYTES = 512 << 20  # bytes kept free in /tmp and /logs/verifier: no case starts with less
@@ -190,7 +190,9 @@ def seal(top: Path, ids: tuple[int, int] = (0, 0)) -> None:
     """Make the tree `ids`'s and read-only for anyone else, before any of it runs: no
     set-user-id, set-group-id or sticky bit, executables 0755, other files 0644, directories 0755.
     Links are left as they are and never followed; devices, pipes and sockets are removed. Entries
-    are counted as they are read, and the walk stops at MAX_ENTRIES.
+    are counted as they are read, the sweep's mark and record aside, and the walk stops at
+    MAX_ENTRIES. The sweep refuses a tree over its limits before the copy, counting the same way,
+    so a tree over them here is one the copy changed.
 
     Raises:
         EvaluationError: The tree holds more than MAX_ENTRIES entries or MAX_BYTES bytes of
@@ -198,7 +200,8 @@ def seal(top: Path, ids: tuple[int, int] = (0, 0)) -> None:
     """
     if not top.is_dir() or top.is_symlink():
         return
-    entries, size, seen, todo = [top], 0, set(), [top]
+    own = {str(top / MARK), str(top / RECORD)}
+    entries, size, seen, todo, counted = [top], 0, set(), [top], 0
     while todo:
         try:
             listing = os.scandir(todo.pop())
@@ -207,7 +210,10 @@ def seal(top: Path, ids: tuple[int, int] = (0, 0)) -> None:
         with listing:
             for entry in listing:
                 entries.append(Path(entry.path))
-                if len(entries) > MAX_ENTRIES:
+                if entry.path in own:
+                    continue
+                counted += 1
+                if counted > MAX_ENTRIES:
                     raise EvaluationError(f"The tree holds more than {MAX_ENTRIES} entries")
                 try:
                     info = entry.stat(follow_symlinks=False)
@@ -399,9 +405,11 @@ def arrived(top: Path) -> tuple[int, int]:
 
 def manifest(top: Path) -> tuple[list[str], bool]:
     """What the sweep's mark and the copy that arrived say about the tree: notes, and
-    whether it was refused (over the stated limits: reward 0). The hook marks every tree
-    before it is copied, an empty one too, so an arrival with no mark, or with fewer entries or
-    bytes than the mark counts, is the copy failing, not the tree.
+    whether it was refused (over the stated limits, or not a directory at all: reward 0). The hook
+    marks every tree before it is copied, an empty one too, and puts an empty directory marked
+    refused in place of a /app/rebuild that was missing, a link or not a directory; so an arrival
+    with no tree, no mark, or fewer entries or bytes than the mark counts, is the copy failing,
+    not the tree.
 
     Raises:
         EvaluationError: Nothing arrived at all, or the copy arrived cut short.

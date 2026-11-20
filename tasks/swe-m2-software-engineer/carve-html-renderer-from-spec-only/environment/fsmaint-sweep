@@ -112,13 +112,16 @@ EOF
 # left, the record, the mark and a refusal can be written.
 rm -f "$STATE/room"
 rm -rf "$STATE/inodes"
-if [ ! -d /app/rebuild ] || [ -L /app/rebuild ]; then exit 0; fi
-# Whatever was left under the mark's or the record's name is moved aside, never followed.
-for name in .fsmaint .fsmaint.json; do
-  if [ -e "/app/rebuild/$name" ] || [ -L "/app/rebuild/$name" ]; then
-    aside=$(mktemp -d /app/.aside.XXXXXX) && mv -f "/app/rebuild/$name" "$aside/" || exit 0
-  fi
-done
+# Whatever was left under the mark's or the record's name is moved aside, never followed. Should
+# /app/rebuild be missing, a link or anything but a directory, the measuring below moves it aside,
+# puts an empty directory in its place and marks that refused.
+if [ -d /app/rebuild ] && [ ! -L /app/rebuild ]; then
+  for name in .fsmaint .fsmaint.json; do
+    if [ -e "/app/rebuild/$name" ] || [ -L "/app/rebuild/$name" ]; then
+      aside=$(mktemp -d /app/.aside.XXXXXX) && mv -f "/app/rebuild/$name" "$aside/" || exit 0
+    fi
+  done
+fi
 # The end bound for the link fixing below: from the net check's record where it has one, else this
 # sweep's own start.
 set -- $(/usr/bin/python3 -I - "$STATE/netcheck-open.json" "$started" <<'EOF'
@@ -162,6 +165,8 @@ import shutil
 import stat
 import sys
 
+if os.path.islink(sys.argv[1]) or not os.path.isdir(sys.argv[1]):
+    sys.exit(0)   # nothing to fix: the measuring refuses what is not a directory
 ROOT = os.path.realpath(sys.argv[1])
 ENTRIES = int(sys.argv[2])
 LIMIT_BYTES = int(sys.argv[3])
@@ -292,8 +297,8 @@ exec /usr/bin/python3 -I - /app/rebuild "$LIMIT_ENTRIES" "$LIMIT_BYTES" "$notes"
 
 The tree is walked by directory descriptor, so no depth hides anything. Anything the copy would
 refuse is removed: a device, a pipe, a socket, a link with an absolute target or one that resolves
-outside the directory. A tree over the limits is moved aside whole and replaced by an empty
-directory. The mark's first line is `listed` with the number of entries (files, directories and
+outside the directory. A tree over the limits, or a path that is not a directory, is moved aside
+whole and replaced by an empty directory. The mark's first line is `listed` with the number of entries (files, directories and
 links) and of bytes in its files (each file once, however many names it has), or `refused`; every
 line after it is a change made (the link fixing's first, read as JSON lines from the file named
 fourth on the command line) or the reason for the refusal. The record (.fsmaint.json) holds this
@@ -310,6 +315,23 @@ import signal
 import stat
 import sys
 
+# A directory is what gets measured. Were the path missing, a link or anything else, it is moved
+# aside whole (a link itself, never what it points to), an empty directory takes its place, and
+# that is marked refused, so the mark and the record are always written.
+REPLACED = None
+try:
+    given = os.lstat(sys.argv[1])
+    if stat.S_ISLNK(given.st_mode):
+        REPLACED = "/app/rebuild was a link"
+    elif not stat.S_ISDIR(given.st_mode):
+        REPLACED = "/app/rebuild was not a directory"
+except FileNotFoundError:
+    REPLACED = "/app/rebuild was missing"
+if REPLACED is not None:
+    if os.path.lexists(sys.argv[1]):
+        os.rename(sys.argv[1], os.path.join(os.path.dirname(sys.argv[1]), f".refused.{os.urandom(6).hex()}"))
+    os.mkdir(sys.argv[1])
+    os.chmod(sys.argv[1], 0o777)
 ROOT = os.path.realpath(sys.argv[1])
 LIMIT_ENTRIES, LIMIT_BYTES = int(sys.argv[2]), int(sys.argv[3])
 NOTES, STATE = sys.argv[4], sys.argv[5]
@@ -417,14 +439,15 @@ def inside(path):
     return path == ROOT or path.startswith(ROOT + os.sep)
 
 
-reason = None
+reason = REPLACED
 sys.setrecursionlimit(100_000)
 try:
-    top = os.open(ROOT, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-    try:
-        walk(top, "")
-    finally:
-        os.close(top)
+    if reason is None:
+        top = os.open(ROOT, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            walk(top, "")
+        finally:
+            os.close(top)
     for path in links:
         target = os.readlink(os.path.join(ROOT, path))
         if os.path.isabs(target) or not inside(os.path.realpath(os.path.join(ROOT, path))):
@@ -439,9 +462,10 @@ except (OSError, RecursionError, ValueError) as exc:
 
 lines = [f"listed {entries} {size}"]
 if reason is not None:
-    os.rename(ROOT, os.path.join(os.path.dirname(ROOT), f".refused.{os.urandom(6).hex()}"))
-    os.mkdir(ROOT)
-    os.chmod(ROOT, 0o777)
+    if REPLACED is None:
+        os.rename(ROOT, os.path.join(os.path.dirname(ROOT), f".refused.{os.urandom(6).hex()}"))
+        os.mkdir(ROOT)
+        os.chmod(ROOT, 0o777)
     lines = ["refused", f"{reason}: it was not copied"]
 netcheck, netcheck_open, processes, probe = (read_json(name) for name in ("netcheck.json", "netcheck-open.json", "procs.json", "netprobe.json"))
 
