@@ -43,7 +43,7 @@ LIB = Path(__file__).resolve().parent / "lib"
 sys.path.insert(0, str(LIB))
 import gradelib  # noqa: E402
 import restorelib  # noqa: E402
-from canon import same  # noqa: E402
+from canon import profile_of, same  # noqa: E402
 
 from verifier import delivery  # noqa: E402
 from verifier.contracts import EvaluationError, Measurement, VerificationContext  # noqa: E402
@@ -799,9 +799,11 @@ def measure(context: VerificationContext) -> Measurement:
                        deadline=min(deadline, t0 + float(cfg.get("vector_budget_sec", 1200))))
     reap(prefix)
     v_pass, vrows = 0, {}
+    # each result compared by its unit's profile: exact, but for the relaxations that unit needs
+    key_of = {u["uid"]: f"{u['file']}::{u['qualname']}" for u in units}
     for vid, g in gold.items():
         c = vres.get(vid)
-        ok = c is not None and same(c, g)
+        ok = c is not None and same(c, g, profile=profile_of(key_of.get(uid_of.get(vid), "")))
         v_pass += ok
         vrows[vid] = ok
     metrics["vectors_passing"] = v_pass

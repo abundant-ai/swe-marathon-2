@@ -7,9 +7,10 @@ the pickled argument mapping of one call.  For every vector the function is call
 directly with those arguments and one line  {"v": vid, "c": <canonical result>}  is
 appended to <out.jsonl>, after a line {"loaded": true} once the module is imported.  A call
 that returns None is represented by the state of its
-arguments after the call.  No expected result is available to this process.  After a call
-that runs out of time the runner exits with status 3, so that the calls behind it run in
-a fresh process.
+arguments after the call.  The Dummies that came with the arguments keep their names in the
+result's form; the ones the call made are marked as such (canon.py).  No expected result is
+available to this process.  After a call that runs out of time the runner exits with status
+3, so that the calls behind it run in a fresh process.
 """
 from __future__ import annotations
 
@@ -38,7 +39,7 @@ sys.path.insert(0, cand_root)
 sys.path.append(HERE)
 os.chdir(cand_root)
 
-from canon import Uncanonical, canon  # noqa: E402
+from canon import Uncanonical, canon, dummies  # noqa: E402
 
 MAX_LINE = 400_000
 
@@ -212,6 +213,8 @@ for vid, uid, blob in data["vectors"]:
         clear_cache()
         try:
             args = revive(pickle.loads(blob))
+            # the Dummies the call is given, read from a copy so that nothing touches the arguments
+            fixed = dummies(revive(pickle.loads(blob)))
         except _Timeout:
             raise
         except BaseException:  # noqa: BLE001
@@ -219,11 +222,11 @@ for vid, uid, blob in data["vectors"]:
         res = call(fn, args)
         if res is None:
             # nothing returned: what the call did to its arguments is the result
-            after = canon(args)
-            before = canon(revive(pickle.loads(blob)))
+            after = canon(args, fixed)
+            before = canon(revive(pickle.loads(blob)), fixed)
             c = ["N"] if after == before else ["NS", after]
         else:
-            c = canon(res)
+            c = canon(res, fixed)
         signal.setitimer(signal.ITIMER_REAL, 0)
     except _Timeout:
         c = ["EXC", "Timeout", []]

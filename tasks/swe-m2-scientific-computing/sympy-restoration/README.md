@@ -276,6 +276,33 @@ It does not yet meet the v2 workload target; see [Workload](#workload) and
   the two ways the hosts can be shown closed are graded; file and directory
   links planted during the work, with the files behind them written after it,
   deliver nothing.
+- Re-check, comparison. Two rules of the round above accepted wrong answers:
+  strings compared with runs of whitespace as one (a `pprint_nodes` that prints
+  the tree on one line matched its three counted calls), and every unnamed
+  Dummy compared as one token (a `bivariate_type` with its two coefficients
+  swapped matched all eight). Strings now compare exactly, except the LaTeX of
+  `multiline_latex` and `vlatex`, compared without the whitespace LaTeX
+  ignores; a Dummy that came with the call's arguments keeps its name and
+  index, Dummies the call makes compare up to one consistent renaming, and a
+  Dummy carries its assumptions as a symbol does. The other relaxations of that
+  round were probed with a wrong answer each and narrowed where one got through:
+  a memo slot counts where both sides hold a value (a wrong pre-set flag in
+  `PrimeIdeal.as_submodule` or `round_two` matched before); Truss's parallel
+  lists count except in what `remove_node` leaves (an `add_node` that stopped
+  keeping them matched 4/4); storage counts for the 24 converters and
+  constructors whose result is that storage (dense results of `DDM.to_sdm` and
+  `DomainMatrix.to_sparse` matched), and a zero stored in sparse storage always
+  counts; a frame's creation counter, which orders a vector's printed
+  components, is exact for a frame that came with the arguments and
+  order-preserving for frames the call makes (a state-identical copy of a given
+  frame matched before). Symbol keywords stay compared as SymPy's own equality
+  compares them, so dropping an assumption is told apart. Every reference result
+  was recorded again: the original reproduces 17,166 of 17,166 under three hash
+  seeds, the skeleton none; 1,424 results changed form. Probes through the
+  verifier's own runners: the wrong bodies match none of their counted calls (one
+  `disambiguate` call has no assumption to drop and still matches), the bodies
+  phase 3 made pass still pass, and `multiline_latex` written from its docstring
+  now matches 6 of 6 (0 before).
 
 ## Current implementation
 
@@ -390,9 +417,9 @@ Time is not the barrier. Two things are:
 
 - An invisible floor. A hidden call compares the value, type, container, order,
   form and object state the function produces. For some units nothing the agent
-  can see fixes the property a call compares: upstream's spacing in
-  `multiline_latex`, the container `permute_signs` yields for a list, the split
-  `BlockMatrix.LUdecomposition` uses, the tie-break in `allcombinations`. Every
+  can see fixes the property a call compares: the container `permute_signs`
+  yields for a list, the split `BlockMatrix.LUdecomposition` uses, the
+  tie-break in `allcombinations`. Every
   measured run had 39 to 77 units that passed every check the agent can run and
   matched no hidden call. A second 9.6-hour session fixed 0 to 7 of them while
   fixing 74 to 133 visible failures, and the pool grew; 9.0 hours gave 96.2% of
@@ -526,12 +553,23 @@ The verifier runs in a separate image with only `/app/sympy` from the candidate.
    count for the reward. A result is
    compared by its canonical form (`verifier/lib/canon.py`): value, type and
    container, order, the form of a returned expression, and the state of an
-   object the call builds or changes, leaving out what is not behaviour: memo
-   slots an object fills lazily from its other state, a process-wide creation
-   counter, lists kept in parallel with another attribute, the keywords a symbol
-   was made with beyond the assumptions SymPy's equality uses, and the storage of
-   a domain matrix. Strings compare with runs of whitespace as one, as the
-   examples are checked; floats with a relative tolerance of 1e-9. One process
+   object the call builds or changes. What is not behaviour is left out, and
+   nothing more: a memo slot an object fills lazily from its other state counts
+   where both sides hold a value (for a dict of them, on the keys both hold); a
+   symbol, Dummies included, is its name and the assumptions SymPy's equality
+   uses; Dummies the call makes are numbered from a process-wide counter, so they
+   compare up to one consistent renaming, while a Dummy that came with the
+   arguments keeps its name and index; likewise a frame's creation counter
+   (`ReferenceFrame.index`, which orders a vector's printed components) is exact
+   for a frame that came with the arguments and compares up to an
+   order-preserving renaming for frames the call makes; dense or sparse storage
+   of a domain matrix counts for the 24 converters and constructors whose result
+   is that storage, and a zero stored in sparse storage always counts; Truss's
+   coordinate lists kept beside its nodes count, except in what
+   `Truss.remove_node` leaves, where upstream keeps them inconsistently. Strings
+   compare exactly, except the LaTeX of `multiline_latex` and `vlatex`, compared
+   without the whitespace LaTeX ignores; floats with a relative tolerance of
+   1e-9. One process
    replays the calls of one module. If it ends by itself or stays silent for 40
    seconds, the call it was on does not match and the calls behind it are
    replayed in a new process; if not even the first call of that start returned,
@@ -580,8 +618,10 @@ Limits:
   still run and reported (`units_documented_calls_only`).
 - For some units no visible evidence fixes the property a hidden call compares
   (see [Difficulty](#difficulty)); that residue is part of the reward.
-- Strings with a layout (tables, trees) are compared as the examples are, runs of
-  whitespace as one, so alignment is not measured.
+- Strings are compared exactly, layout included, while the docstring examples
+  are checked with whitespace normalised; only the LaTeX of two units ignores
+  whitespace. A memo slot filled with a wrong value where upstream leaves it
+  empty is not seen by the call that fills it.
 
 Requirement checks (`steps/01-restore-bodies/tests/verifier/registry.py`):
 
@@ -787,6 +827,9 @@ scored 0 under the binary reward.
 | Reference, empty delivery and bare `raise NotImplementedError` bodies through the entry point's steps | this machine, no privilege drop, no network probe, the delivery mark taken as listed | reference 1.000000 and complete: 2,041 / 2,041 units, 7,568 / 7,568 counted calls, 17,166 / 17,166 calls, 10,428 / 10,428 tests in one plain pytest session with none unreached, no control tripped, 577 s; the agent's starting tree 0.0 (`candidate_tree` failed, the rest skipped); bare `raise NotImplementedError` bodies 0.0 (2,671 restored, no unit or call matched, no control tripped) |
 | Regrade of the stored submissions on the continuous reward | this machine, the entry point's steps, examples and calls | 16 submissions, rewards 0.003 to 0.897 (see [Trial evidence](#trial-evidence)) |
 | `oddish preflight` | flat 12-hour bundle `d00941d22a69` (`ops/sympy-restoration/dist-12h/`) | pass |
+| `checks/` (73 tests): a 3-second turn has its end and a later write is refused; every unknown end is an evaluation error; file and directory links deliver nothing; the comparison tells apart given Dummies trading places, merged renamings, wrong memo values, frames made in another order or copied for a given one, storage where it is the contract, stored zeros and every non-LaTeX whitespace | working tree, 2026-11-20 (re-check fixes) | pass |
+| All calls recorded again with the narrowed comparison (`regold.py`) | the verifier's runner and `canon.py`, hash seeds 0, 1, 2 | original 17,166 / 17,166, skeleton 0; 1,424 results changed form |
+| Comparison probes: one unit's body edited in a copy of the original, its examples and every recorded call run through the verifier's `rdoctest.py`, `rvector.py` and `canon.py` | working tree, 2026-11-20 | wrong bodies, counted calls matched: one-line `pprint_nodes` 0/3 (examples pass), swapped `bivariate_type` 0/8 (examples pass), one-line `MatrixBase.table` 0/4, side-by-side `stringPict.below` 0/4, `fcode` without its columns 0/8, dense `DDM.to_sdm` 0/1 and `DomainMatrix.to_sparse` 0/1, a wrong pre-set flag in `round_two` 0/1 (and in `as_submodule` 0/3 documented calls), `add_node` without its parallel lists 0/4, `disambiguate` dropping assumptions 1/4 (that call has none); right bodies: `as_submodule` and `round_two` without their pre-set flags, `restrict_codomain` testing equality first, `homomorphism` without no-op steps (and `identity_hom` through it), `remove_node` by index and an extra frame made first all match in full, `multiline_latex` from its docstring 6/6 |
 | `harbor check` with `resources/task-implementation.toml` | working tree, 2026-11-17 | attempted on Modal; failed before review with `NotFoundError: Environment not found` (no default Modal environment). Not run in local Docker. No ratings |
 | Local image builds | none | not run for the v2 Dockerfiles; the Oddish baselines are the first build |
 

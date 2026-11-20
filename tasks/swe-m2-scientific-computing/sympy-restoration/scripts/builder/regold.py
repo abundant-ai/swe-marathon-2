@@ -79,11 +79,13 @@ def main():
     ap.add_argument("--max-ms", type=float, default=5000.0)
     args = ap.parse_args()
     sys.path.insert(0, LIB)
-    from canon import same  # noqa: PLC0415
+    from canon import profile_of, same  # noqa: PLC0415
 
     with open(args.inputs, "rb") as f:
         payload = pickle.load(f)
     calls = {vid: (mod, uid) for mod, p in payload.items() for vid, uid, _ in p["vectors"]}
+    profile = {vid: profile_of(f"{payload[mod]['units'][uid]['file']}::{payload[mod]['units'][uid]['qualname']}")
+               for vid, (mod, uid) in calls.items()}
     seeds = [int(s) for s in args.seeds.split(",")]
     started = time.time()
     runs = []
@@ -106,7 +108,7 @@ def main():
                 reason = "exc:" + str(c0[1])
             elif c0 == ["N"]:
                 reason = "returns-none-no-effect"
-            elif not all(same(r[vid][0], c0) for r in runs[1:]):
+            elif not all(same(r[vid][0], c0, profile=profile[vid]) for r in runs[1:]):
                 reason = "unstable"
             elif max(r[vid][1] for r in runs) > args.max_ms:
                 reason = "slow"
@@ -122,7 +124,7 @@ def main():
             kept[mod] = {"units": {uid: p["units"][uid] for _, uid, _ in vecs}, "vectors": vecs}
     t0 = time.time()
     sk = replay(os.path.abspath(args.skeleton), kept, seeds[0], args.workers, args.timeout)
-    skeleton_matches = sorted(vid for vid, g in gold.items() if vid in sk and same(sk[vid][0], g))
+    skeleton_matches = sorted(vid for vid, g in gold.items() if vid in sk and same(sk[vid][0], g, profile=profile[vid]))
     print(f"skeleton: {len(sk)} results, {len(skeleton_matches)} match, in {time.time() - t0:.0f}s", flush=True)
     os.makedirs(args.out, exist_ok=True)
     with open(os.path.join(args.out, "gold.json"), "w", encoding="utf-8") as f:
