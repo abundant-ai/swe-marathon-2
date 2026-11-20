@@ -188,9 +188,10 @@ The copy keeps relative links that stay inside the directory and refuses everyth
 inside it that points elsewhere inside it becomes the relative path to what it resolves to. A link
 to a file or directory outside it (a virtual environment's interpreter, say) becomes a copy of what
 it points to, if that is a file or a directory (devices, pipes and sockets in it are left out), the
-disk has room for it twice over and 64 MiB besides, and nothing in it changed at or after the end
-bound given as the fourth argument, less a skew (a file's change time, which the user cannot set,
-and its modification time are both read): a copy records the source's path, uid, times and inode,
+disk has room for it twice over and 64 MiB besides, and 64 inodes beyond those it takes, and
+nothing in it changed at or after the end bound given as the fourth argument, less a skew (a
+file's change time, which the user cannot set, and its modification time are both read): a copy
+records the source's path, uid, times and inode,
 so the record shows where every file that was not written in place came from. Where the fifth
 argument says the bound came from the net check, a late source is refused; where it says the bound
 is only this sweep's start, the source is copied and flagged. A link the system itself cannot follow
@@ -215,6 +216,7 @@ END_BOUND = float(sys.argv[4])
 END_FROM = sys.argv[5] if len(sys.argv) > 5 else "start"   # "netcheck": the bound was observed; else this sweep's start
 SKEW = 0.5   # the cutoff is this much before the end bound, never after it
 ROOM = 64 << 20   # bytes the disk keeps free beyond a copy and its size again
+SPARE = 64        # inodes the disk keeps free beyond those a copy takes
 spent = copied = 0
 reported = set()
 
@@ -227,10 +229,11 @@ def inside(path):
     return path == ROOT or path.startswith(ROOT + os.sep)
 
 
-def free_bytes(path):
-    """The bytes free on the filesystem holding `path`; None where it reports no size."""
+def free_room(path):
+    """The bytes and the inodes free on the filesystem holding `path`; None for a figure it does not
+    report."""
     info = os.statvfs(path)
-    return info.f_bavail * info.f_frsize if info.f_blocks else None
+    return (info.f_bavail * info.f_frsize if info.f_blocks else None), (info.f_favail if info.f_files else None)
 
 
 def sources_of(path, limit, most):
@@ -297,10 +300,11 @@ def fix_link(path, name):
     if spent + size > LIMIT_BYTES or copied + count > ENTRIES:
         os.unlink(path)
         return {"refused": dict(record, reason=f"copying it would pass {ENTRIES:,} entries or {LIMIT_BYTES:,} bytes")}, True
-    free = free_bytes(os.path.dirname(path))
-    if free is not None and free < 2 * size + ROOM:
+    free, inodes = free_room(os.path.dirname(path))
+    if (free is not None and free < 2 * size + ROOM) or (inodes is not None and inodes < count + SPARE):
         os.unlink(path)
-        return {"refused": dict(record, reason=f"the disk had {free:,} bytes free, too few to copy {size:,} bytes")}, True
+        return {"refused": dict(record, reason=f"the disk had too little room left to copy {size:,} bytes in {count:,} "
+                                               f"entries ({free} bytes and {inodes} inodes free)")}, True
     os.unlink(path)
     spent += size
     copied += count
@@ -412,6 +416,7 @@ SECONDS = 420   # the measuring ends this long after the sweep's start; the swee
 FINISH_BY = STARTED + SECONDS
 PACK_DIR = "/tmp"   # where the tree is packed before it is copied
 PACK_ROOM = int(os.environ.get("FSMAINT_PACK_ROOM", 32 << 20))   # bytes left free once it is packed, at least
+PACK_INODES = int(os.environ.get("FSMAINT_PACK_INODES", 16))   # inodes free for the packing, at least
 notes, copies, refused, links, catalogue = [], [], [], [], []
 files, kinds, top_times = {}, {}, {}   # each file's sha256 by inode; each entry's type by path; top entries' times
 entries = size = hashed = note_bytes = notes_left_out = moved_out = 0
@@ -776,13 +781,20 @@ late_entries = (sum(1 for item in catalogue
                 + sum(1 for item in refused if item.get("late_files")))
 
 
-def free_bytes(path):
-    """The bytes free on the filesystem holding `path`; None where it reports no size or none at all."""
+def free_room(path):
+    """The bytes and the inodes free on the filesystem holding `path`; None for a figure it does not
+    report."""
     try:
         info = os.statvfs(path)
     except OSError:
-        return None
-    return info.f_bavail * info.f_frsize if info.f_blocks else None
+        return None, None
+    return (info.f_bavail * info.f_frsize if info.f_blocks else None), (info.f_favail if info.f_files else None)
+
+
+def room_for(length):
+    """Whether the disk holding /tmp has room to pack `length` bytes and PACK_ROOM besides, and
+    PACK_INODES inodes, as far as it reports them."""
+    return (free is None or free >= length + PACK_ROOM) and (inodes is None or inodes >= PACK_INODES)
 
 
 def mark_text(lines):
@@ -809,21 +821,22 @@ def record_of(lines, whole=True):
         kill_passes=PASSES, processes_left=LEFT, listed=lines[0], listing_complete=lines[0] != "refused" and hashed <= HASH_LIMIT,
         copies=copies, refused_copies=refused, late_entries=late_entries, timer_log=timer_log, ended_by_timer=ended_by_timer,
         moved_out_long=moved_out, notes=notes if whole else notes[:MARK_NOTES], notes_left_out=notes_left_out,
-        free_bytes=free, pack_needs=need, entries=catalogue[:LIMIT_ENTRIES] if whole else [],
+        free_bytes=free, free_inodes=inodes, pack_needs=need, entries=catalogue[:LIMIT_ENTRIES] if whole else [],
         entries_left_out=0 if whole else len(catalogue)), separators=(",", ":")).encode(errors="backslashreplace")
 
 
 lines = [f"listed {entries} {size}"] if reason is None else ["refused", f"{reason}: it was not copied"]
-free, need = free_bytes(PACK_DIR), None
+(free, inodes), need = free_room(PACK_DIR), None
 record = record_of(lines)
 if reason is None:
     # A tar of the tree, its record and its mark goes into /tmp on this disk before the tree is
     # copied: room for the bytes, a header and a long name per entry, the record twice (once on disk,
-    # once in the tar) and PACK_ROOM besides.
-    need = size + 4096 * (entries + 2) + 2 * len(record) + 2 * MARK_BYTES + PACK_ROOM
+    # once in the tar) and the mark, then PACK_ROOM and PACK_INODES besides.
+    need = size + 4096 * (entries + 2) + 2 * len(record) + 2 * MARK_BYTES
     record = record_of(lines)
-    if free is not None and free < need:
-        reason = f"the disk had {free:,} bytes free, too few to pack it into {PACK_DIR} (about {need:,})"
+    if not room_for(need):
+        reason = (f"the disk had {free} bytes and {inodes} inodes free, too few to pack it into {PACK_DIR} (about "
+                  f"{need + PACK_ROOM:,} bytes and {PACK_INODES} inodes)")
         lines = ["refused", f"{reason}: it was not copied"]
         record = record_of(lines)
 NEXT = os.path.join(PARENT, f".mark.{os.urandom(6).hex()}")
@@ -853,10 +866,10 @@ if reason is not None:
         ready = False   # the refused mark put in before stays, and says as much
         print(f"the mark could not be written ({exc.__class__.__name__})", flush=True)
     # The record of a refused tree is all a tar of it holds: the whole record where the disk has
-    # room for it, else one without the entries, else none.
-    if free is not None and free < 2 * len(record) + PACK_ROOM:
+    # room to pack it, else one without the entries, else none.
+    if not room_for(2 * len(record)):
         record = record_of(lines, whole=False)
-        if free < 2 * len(record) + PACK_ROOM:
+        if not room_for(2 * len(record)):
             record = None
 if record is not None:
     try:

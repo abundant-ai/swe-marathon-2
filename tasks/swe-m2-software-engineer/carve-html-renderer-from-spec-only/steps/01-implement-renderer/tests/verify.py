@@ -413,13 +413,14 @@ def manifest(top: Path) -> tuple[list[str], bool]:
     tree, moves the tree out to measure it, takes out what a copy cannot carry (devices, pipes,
     sockets, paths over 2,048 bytes, links that do not lead to a file or a directory inside it;
     every link kept is a relative path that stays inside), and puts back, under a mark that counts
-    it, only a tree within the limits that the disk has room to pack; a sweep that stops early
-    leaves the refused mark over an empty tree. So an arrival with no tree, no mark, or fewer
-    entries or bytes than the mark counts is the copy or the machine failing, not the tree.
+    it, only a tree within the limits that the disk has room to pack. What runs before the move
+    out is bounded in time, and a sweep that stops after it leaves the refused mark over an empty
+    tree. So an arrival with no tree, no mark, or fewer entries or bytes than the mark counts is
+    the copy or the machine failing, not the tree.
 
     Raises:
-        EvaluationError: Nothing arrived at all, the copy arrived cut short, or there is no mark
-            the sweep wrote.
+        EvaluationError: Nothing arrived at all, the copy arrived cut short or cannot be measured,
+            or there is no mark the sweep wrote.
     """
     try:
         empty = top.is_symlink() or not top.is_dir() or next(top.iterdir(), None) is None

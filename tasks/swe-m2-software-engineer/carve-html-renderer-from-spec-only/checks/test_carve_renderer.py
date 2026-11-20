@@ -1120,19 +1120,23 @@ def test_a_sweep_that_stops_early_leaves_an_empty_tree_marked_refused(tmp_path):
 def test_a_tree_the_disk_has_no_room_to_pack_is_refused(tmp_path):
     """QA 22 F4(b): the copy first packs the tree into /tmp on the same machine, so a tree the disk
     has too little room left to pack (its bytes, a header and a long name per entry, the record
-    twice and 32 MiB besides; the margin raised here past any disk) is refused with the figures,
-    and only its mark and record are left to pack; round 8 listed it, and the pack failed."""
-    top = tmp_path / "rebuild"
-    top.mkdir()
-    (top / "carve").write_text("#!/bin/sh\n")
-    lines = run_hook(top, env={"FSMAINT_PACK_ROOM": str(10 ** 18)})
-    assert lines[0] == "refused" and re.fullmatch(r"the disk had [\d,]+ bytes free, too few to pack it into /tmp \(about "
-                                                  r"[\d,]+\): it was not copied", lines[1]), lines
-    assert ".fsmaint" in os.listdir(top) and set(os.listdir(top)) <= {".fsmaint", ".fsmaint.json"}, os.listdir(top)
-    assert manifest_of(top)[1] is True
+    twice and the mark, then 32 MiB and 16 inodes besides; each margin raised here past any disk in
+    turn) is refused with the figures, and only its mark and record are left to pack; round 8 listed
+    it, and the pack failed."""
+    for name, env in (("bytes", {"FSMAINT_PACK_ROOM": str(10 ** 18)}), ("inodes", {"FSMAINT_PACK_INODES": str(10 ** 15)})):
+        top = tmp_path / name / "rebuild"
+        top.mkdir(parents=True)
+        (top / "carve").write_text("#!/bin/sh\n")
+        lines = run_hook(top, env=env)
+        assert lines[0] == "refused" and re.fullmatch(r"the disk had \d+ bytes and \d+ inodes free, too few to pack it into "
+                                                      r"/tmp \(about [\d,]+ bytes and \d+ inodes\): it was not copied",
+                                                      lines[1]), (name, lines)
+        assert ".fsmaint" in os.listdir(top) and set(os.listdir(top)) <= {".fsmaint", ".fsmaint.json"}, os.listdir(top)
+        assert manifest_of(top)[1] is True
     hook = HOOK.read_text()
-    assert 'PACK_DIR = "/tmp"' in hook and "info.f_bavail * info.f_frsize if info.f_blocks else None" in hook, \
-        "a filesystem that reports no size refuses nothing"
+    assert 'PACK_DIR = "/tmp"' in hook and \
+        "(info.f_bavail * info.f_frsize if info.f_blocks else None), (info.f_favail if info.f_files else None)" in hook, \
+        "a filesystem that reports no size, or no inode table, refuses nothing for it"
 
 
 def test_every_kept_link_stays_inside_wherever_the_tree_is_unpacked(tmp_path):
