@@ -7,6 +7,7 @@ usage:
   documented.py doctests <tree> <units.json> <inputs.pkl> <lib_dir> <out.json> [<package> ...] [--with-skipped]
   documented.py tests <tree> <units.json> <inputs.pkl> <lib_dir> <out.json> <package> [<package> ...]
                 [--marks <expression>] [--pytest <arguments>] [--timeout <seconds>]
+                (a <package> holding a "/" is a test file or a test id, run as it is)
   documented.py merge <out.json> <part.json> [<part.json> ...]
 
 `--with-skipped` runs only the docstrings that hold an example marked `+SKIP`, with every example
@@ -49,7 +50,7 @@ import subprocess
 import sys
 import time
 
-CAP_PICKLES = 500_000  # calls into one unit that pass the signature and are pickled and compared, per process
+CAP_PICKLES = 500_000  # distinct argument pickles of one unit compared, per process (a call repeated is not counted again)
 MAX_BLOB = 30_000      # recorded arguments are never larger than this
 SHOWN_CALLS = 5_000    # direct returns of one unit put in canonical form, per process
 SHOWN_FORMS = 200      # distinct shown results kept per unit
@@ -267,7 +268,6 @@ class Matcher:
                 blob = pickle.dumps(values, protocol=4)
             except BaseException:  # noqa: BLE001
                 return None
-            self.pickled[uid] = self.pickled.get(uid, 0) + 1
             if len(blob) > MAX_BLOB:
                 return None
             digest = hashlib.sha1(blob).digest()
@@ -275,6 +275,7 @@ class Matcher:
             if digest in seen:
                 return None   # the same arguments again: already compared
             seen.add(digest)
+            self.pickled[uid] = self.pickled.get(uid, 0) + 1
             hit = self.by_sha[uid].get(digest)
             if hit is not None:
                 self.mark([hit], uid, direct)
@@ -480,13 +481,13 @@ def main():
         f.write(PLUGIN)
     parts = []
     for package in packages:
-        part = f"{out}.{package}.json"
+        part = f"{out}.{package.replace('/', '_').replace('::', '__')}.json"
         env = dict(os.environ, PYTHONHASHSEED="0", PYTHONDONTWRITEBYTECODE="1",
                    PYTHONPATH=plugin_dir, DOC_BUILDER=os.path.dirname(os.path.abspath(__file__)), DOC_TREE=tree,
                    DOC_UNITS=units_path, DOC_INPUTS=inputs_path, DOC_LIB=lib_dir, DOC_OUT=part)
         cmd = [sys.executable, "-B", "-m", "pytest", "-p", "documented_plugin", "-p", "no:cacheprovider", "-q",
                "-o", "addopts=", "-m", options["--marks"], "--timeout", options["--timeout"], *options["--pytest"].split(),
-               "--no-header", "-rN", package.replace(".", "/")]
+               "--no-header", "-rN", package if "/" in package else package.replace(".", "/")]
         started = time.time()
         with open(part + ".log", "w") as log:
             done = subprocess.run(cmd, cwd=tree, env=env, stdout=log, stderr=subprocess.STDOUT)

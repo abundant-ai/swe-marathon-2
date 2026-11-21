@@ -836,7 +836,7 @@ def test_the_mark_decides_between_an_error_a_zero_and_grading(tmp_path, verifier
     errors = {"nothing": "Nothing arrived", "unmarked": "without the collect step's mark", "unsigned": "not signed",
               "forged": "not signed", "record_changed": "differs from the one its mark signs",
               "file_changed": "arrived incomplete or changed", "file_missing": "arrived incomplete or changed",
-              "oversized": "mark cannot be read: larger than", "survivor": "2 processes of the agent's user outlived",
+              "oversized": "mark cannot be read: larger than", "survivor": "2 processes of the user dev outlived",
               "unchanged-but-late": "says nothing changed during the work"}
     if case in errors:
         assert errors[case] in result.get("error", ""), result

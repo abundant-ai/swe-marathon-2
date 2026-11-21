@@ -1,20 +1,20 @@
-"""What arrived of the submitted tree, read before anything of it is graded.
+"""What arrived of the submitted tree, read before anything of it is measured.
 
-The collect step of the agent's environment marks every delivery before it is copied here: a
+The collect step of the work's environment marks every delivery before it is copied here: a
 mark (`.fsmaint`) whose first line is `listed <entries> <bytes>` or `refused`, and a record
 (`.fsmaint.json`) of every entry with the times it had when the work ended. The mark's lines are
 printable ASCII, one per line; its last line signs the other lines and the record's sha256 with a
-key the agent's user cannot read.
+key the work's user, `dev`, cannot read.
 
 - No tree, no mark, an unreadable, oversized or unsigned mark, a listed file that did not arrive
   as it was listed, a link or a file that arrived without being listed, or a record that says a
-  process of the agent's user outlived the collect step: the copy failed or cannot be trusted,
+  process of the user `dev` outlived the collect step: the copy failed or cannot be trusted,
   which is an evaluation error, never the submission's score. The collect step always leaves a
   marked tree, whatever the work left under its name, so these come from the infrastructure.
 - `refused` (nothing usable under the tree's name: nothing at all, a link, a file, a tree that
   could not be listed, or one over the collect step's limits): a completed evaluation of an empty
   delivery, which scores 0.
-- `listed`: graded, except that a file changed at or after the end of the work (its change or
+- `listed`: measured, except that a file changed at or after the end of the work (its change or
   modification time at or after the recorded end bound, less a small allowance) is not taken. The
   end is never later than the start of the work plus the time the work is given (`limit`). A
   record without an end of the work is returned with `end_bound` None: the measurement then grades
@@ -104,7 +104,7 @@ def read_delivery(top: Path, key_path: Path) -> Delivery:
     Raises:
         EvaluationError: Nothing arrived, the mark or the record is missing, unreadable or not
             signed with the key, a listed file is absent or differs from its listing, a link or
-            an unlisted file arrived, a process of the agent's user outlived the collect step, or
+            an unlisted file arrived, a process of the user `dev` outlived the collect step, or
             the record's end of the work is malformed or contradicts its entries.
     """
     if top.is_symlink() or not top.is_dir():
@@ -112,7 +112,7 @@ def read_delivery(top: Path, key_path: Path) -> Delivery:
     try:
         key = key_path.read_bytes().strip()
     except OSError as exc:
-        raise EvaluationError("The delivery key is unreadable in the verifier image") from exc
+        raise EvaluationError("The delivery key is unreadable") from exc
     raw, why = _read_bounded(top / MARK, MARK_LIMIT)
     if raw is None:
         if why == "missing":
@@ -133,7 +133,7 @@ def read_delivery(top: Path, key_path: Path) -> Delivery:
     payload, why = _read_bounded(top / RECORD, RECORD_LIMIT)
     if delivery.state == "refused" and len(head) == 1:
         # nothing usable stood under the tree's name, the tree was over the limits, or the collect step did
-        # not finish: an empty delivery. Nothing of it is graded, so a record newer than the mark (a collect
+        # not finish: an empty delivery. Nothing of it is measured, so a record newer than the mark (a collect
         # step stopped between writing the two) changes nothing.
         record = None
         if payload is not None and hashlib.sha256(payload).hexdigest() == record_sha:
@@ -159,7 +159,7 @@ def read_delivery(top: Path, key_path: Path) -> Delivery:
         raise EvaluationError("The collect step's mark cannot be read")
     left = record.get("processes_left")
     if isinstance(left, int) and not isinstance(left, bool) and left > 0:
-        raise EvaluationError(f"{left} processes of the agent's user outlived the collect step, so the copy may differ from its listing")
+        raise EvaluationError(f"{left} processes of the user dev outlived the collect step, so the copy may differ from its listing")
     listed = {item["path"]: item for item in record.get("entries", []) if isinstance(item, dict) and isinstance(item.get("path"), str)}
     if len(listed) != int(head[1]):
         raise EvaluationError("The collect step's record does not list what its mark counts")

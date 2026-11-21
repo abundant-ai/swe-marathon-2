@@ -132,7 +132,7 @@ def revive(args):
 
 
 def reseed(vid):
-    """Give a call the same random numbers on every run, so that grading one tree twice
+    """Give a call the same random numbers on every run, so that measuring one tree twice
     gives one result: Python's generator and both of SymPy's (the one its assumption
     system shuffles with included).  Recorded results do not depend on the random state."""
     value = zlib.crc32(str(vid).encode("utf-8"))

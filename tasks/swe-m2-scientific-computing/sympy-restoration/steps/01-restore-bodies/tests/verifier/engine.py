@@ -7,7 +7,7 @@ Inputs
   context.private           unit list, sealed test list, recorded calls, reference results,
                             the key the collect step signs with
 Outputs
-  context.output/artifacts  per-unit results, failing test ids, the graded unit files
+  context.output/artifacts  per-unit results, failing test ids, the measured unit files
 
 Submitted code only ever runs as an unprivileged user. Three things are measured:
   1. docstring examples of every restored unit,
@@ -555,7 +555,7 @@ def sealed_run(ids, prefix, *, tag, workers, deadline, pub, scratch, cand, cfg):
         state, first, _code = watch(cmd, cwd=cand, env=env, log_path=log_path, res_path=res_path, deadline=deadline,
                                     collect_sec=float(collect_sec), stall_sec=float(cfg.get("pytest_stall_sec", 180)))
     except OSError as exc:
-        raise EvaluationError("The test runner could not be started in the verifier image") from exc
+        raise EvaluationError("The test runner could not be started") from exc
     with open(log_path, encoding="utf-8", errors="replace") as f:
         text = f.read()
     outcome, started, uncollectable = read_records(res_path, want)
@@ -720,7 +720,7 @@ def withhold(skel: str, cand: str, byfile: Mapping[str, Mapping[str, str]], file
 
 
 def measure(context: VerificationContext) -> Measurement:
-    """Build the graded tree and run the three measurements once.
+    """Build the measured tree and run the three measurements once.
 
     Args:
         context: Trusted paths, limits and thresholds for this evaluation.
@@ -774,7 +774,7 @@ def measure(context: VerificationContext) -> Measurement:
     except (OSError, ValueError, KeyError, TypeError, pickle.UnpicklingError) as e:
         raise EvaluationError(f"Private verifier inputs are unreadable: {type(e).__name__}") from e
     if not os.path.isdir(skel):
-        raise EvaluationError("Reference skeleton is missing from the verifier image")
+        raise EvaluationError("Reference skeleton is missing")
     U, T, V = len(units), len(sealed_ids), len(gold)
     uid_of = {v[0]: v[1] for p in payload.values() for v in p["vectors"]}
     deciding = sorted(vid for vid in gold if vid not in documented)
@@ -813,7 +813,7 @@ def measure(context: VerificationContext) -> Measurement:
     reachable = delivery.network_open()
     if reachable is not None:
         raise EvaluationError(f"The verifier can reach {reachable}; it must run with no network")
-    # what arrived, checked against the collect step's signed record before anything is graded
+    # what arrived, checked against the collect step's signed record before anything is measured
     tree = os.path.join(work_tree, "sympy")
     delivered = delivery.read_delivery(Path(tree), Path(private) / "fsmaint.key")
     metrics["delivery"] = delivered.summary
@@ -836,7 +836,7 @@ def measure(context: VerificationContext) -> Measurement:
     states, _notes = restorelib.build_candidate(skel, work_tree, cand, byfile, None)
     if delivered.end_bound is None:
         # no end of the work is known: a tree that restores nothing scores 0 whenever it was written;
-        # any other could hold files written after the work, which nothing here can tell apart
+        # any other could hold files written after the work, and nothing here says which
         restored_count = sum(1 for state in states.values() if state == "restored")
         if restored_count:
             raise EvaluationError(f"The collect step could not tell when the work ended ({delivered.end_note}), "

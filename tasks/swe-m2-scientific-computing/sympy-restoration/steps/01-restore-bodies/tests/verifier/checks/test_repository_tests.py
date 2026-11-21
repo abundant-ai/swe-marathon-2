@@ -1,4 +1,4 @@
-"""Bar of a complete restoration: share of the graded SymPy test cases that pass."""
+"""Bar of a complete restoration: share of the sealed SymPy test cases that pass."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ def test_repository_tests(context: VerificationContext) -> CheckResult:
     """Require the published share of passing repository tests.
 
     Tests not reached before the measurement's deadline, skipped or errored
-    count as failed here; the denominator is the full graded list. Tests not
+    count as failed here; the denominator is the full sealed list. Tests not
     reached leave `complete` open rather than false when they alone could meet
     the bar.
 
@@ -26,7 +26,7 @@ def test_repository_tests(context: VerificationContext) -> CheckResult:
     m = measurement(context)
     passing, total = m.counts["tests_passing"], m.counts["tests_total"]
     rate, bar = share(passing, total), context.scoring.test_bar
-    text = f"{passing} of {total} graded repository tests pass ({rate:.4f}); required {bar:.2f}"
+    text = f"{passing} of {total} sealed repository tests pass ({rate:.4f}); required {bar:.2f}"
     if rate < bar:
         raise CandidateFailure(text)
     return CheckResult("repository_tests", "passed", text, {"test_pass_rate": rate})

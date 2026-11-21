@@ -45,7 +45,7 @@ class ScoringConfig:
 
 @dataclass(frozen=True)
 class Measurement:
-    """One grading pass over the submission.
+    """One measurement of the submitted tree.
 
     `counts` holds the fixed denominators and the passing numerators. `details`
     is the full diagnostic record written to metrics.json. `self_check_trips`

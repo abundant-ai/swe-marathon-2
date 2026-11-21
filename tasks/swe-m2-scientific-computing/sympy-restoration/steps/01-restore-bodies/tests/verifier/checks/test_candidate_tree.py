@@ -30,6 +30,6 @@ def test_candidate_tree(context: VerificationContext) -> CheckResult:
         raise CandidateFailure("No unit body was restored")
     return CheckResult(
         "candidate_tree", "passed",
-        f"{restored} of {m.counts['units_total']} unit bodies were accepted into the graded tree",
+        f"{restored} of {m.counts['units_total']} unit bodies were accepted into the measured tree",
         {"units_restored": float(restored), "units_total": float(m.counts["units_total"])},
     )

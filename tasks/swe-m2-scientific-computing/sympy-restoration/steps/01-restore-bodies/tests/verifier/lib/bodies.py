@@ -1,4 +1,4 @@
-"""Facts about unit bodies the verifier reports, kept out of the transplant code the agent's tool shares."""
+"""Facts about unit bodies the measurement reports, kept out of the transplant code the restore tool shares."""
 from __future__ import annotations
 
 import ast

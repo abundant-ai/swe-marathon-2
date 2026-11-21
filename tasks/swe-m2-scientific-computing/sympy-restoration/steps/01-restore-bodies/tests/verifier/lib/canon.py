@@ -10,6 +10,8 @@ comparison of two such forms. The form keeps the type and the container of every
   str -> ["S", s]                     bytes -> ["Y", hex]
   tuple -> ["T", [..]]                SymPy Tuple -> ["ST", [..]]   list -> ["L", [..]]
   set -> ["E", [sorted..]]            dict -> ["D", [[k, v] sorted..]]
+  a sparse polynomial (a dict of its terms) -> ["D:PolyElement", [[k, v] sorted..], ["ring", [symbols..], domain, order]]
+  array.array -> ["A:<typecode>", "<every value, comma-separated>"]
   defaultdict -> ["D:defaultdict", factory, [[k, v] sorted..]]   OrderedDict -> ["D:OrderedDict", [[k, v] in order..]]
   a subclass of int, str, bytes, tuple, list, set (frozenset too) or dict (Counter too), a dict view,
   a range, a deque -> its tag with ":<class>"   iterator -> ["G:<class>", [first items..]]
@@ -41,6 +43,8 @@ comparison of two such forms. The form keeps the type and the container of every
   LaTeX ignores (a blank line, a paragraph break, is kept);
 - Truss's coordinate lists kept in parallel with its nodes count, except in the result of
   `Truss.remove_node`, whose upstream body keeps them inconsistently;
+- of the sieve's range units (RESULT_ONLY_UNITS) only what they return counts, not how far they grew
+  the module's sieve, which is a cache; `Sieve.extend` and `extend_to_no` count the growth;
 - a SymPy Float has the same precision and compares within a few units in its last place, a
   relative 2**(FLOAT_ULPS - precision), as does an mpmath number at its precision; a Python float
   within a relative 2**-PY_FLOAT_BITS; zero only to zero, with no absolute tolerance;
@@ -68,7 +72,7 @@ PY_FLOAT_BITS = 50  # a Python float: relative tolerance 2**-PY_FLOAT_BITS, a fe
 MEMO_SLOTS = frozenset({
     "_img", "_ker", "_starts_with_unity", "_is_sq_maxrank_HNF", "_QQ_matrix", "_QQ_col",
     "_mult_tab", "_test_factor", "_maximal_order", "_discriminant", "_nilradicals_mod_p",
-    "_gb", "_gbe", "_is_confluent", "_var_dict",
+    "_gb", "_gbe", "_is_confluent", "_var_dict", "_converter",
 })
 AUTO_DUMMY = re.compile(r"Dummy_\d+")
 # per class: the attribute that holds a process-wide creation counter
@@ -81,6 +85,9 @@ PARALLEL_LISTS = {
 PARALLEL_LIST_UNITS = frozenset({"sympy/physics/continuum_mechanics/truss.py::Truss.remove_node"})
 # units ("file::qualname") whose result is LaTeX, in which whitespace carries no meaning
 LATEX_UNITS = frozenset({"sympy/printing/latex.py::multiline_latex", "sympy/physics/vector/printing.py::vlatex"})
+# units whose argument is the module's sieve, which they may grow as a cache: only what they return counts
+RESULT_ONLY_UNITS = frozenset({"sympy/ntheory/generate.py::Sieve.primerange", "sympy/ntheory/generate.py::Sieve.totientrange",
+                               "sympy/ntheory/generate.py::Sieve.mobiusrange"})
 
 
 class Profile(NamedTuple):
@@ -88,6 +95,7 @@ class Profile(NamedTuple):
 
     latex: bool = False            # whitespace LaTeX ignores is ignored
     parallel_lists: bool = True    # Truss's parallel coordinate lists count
+    result_only: bool = False      # of a call that returned a value and changed an argument, only the value counts
 
 
 STRICT = Profile()
@@ -95,7 +103,8 @@ STRICT = Profile()
 
 def profile_of(unit_key: str) -> Profile:
     """The comparison profile of a unit, by "file::qualname"."""
-    return Profile(latex=unit_key in LATEX_UNITS, parallel_lists=unit_key not in PARALLEL_LIST_UNITS)
+    return Profile(latex=unit_key in LATEX_UNITS, parallel_lists=unit_key not in PARALLEL_LIST_UNITS,
+                   result_only=unit_key in RESULT_ONLY_UNITS)
 
 
 class Uncanonical(Exception):
@@ -228,7 +237,17 @@ def _c(o, depth, budget):
             return ["D:" + t.__qualname__, items]
         if isinstance(o, collections.defaultdict):
             return ["D:" + t.__qualname__, _factory(o.default_factory), sorted(items, key=_key)]
+        ring = vars(o).get("ring") if mod.startswith("sympy.polys") and hasattr(o, "__dict__") else None
+        if ring is not None and hasattr(ring, "symbols") and hasattr(ring, "domain"):
+            # a sparse polynomial is its terms in its ring: the ring's symbols, domain and order
+            return [_tag("D", t, dict), sorted(items, key=_key),
+                    ["ring", [_c(x, depth + 1, budget) for x in ring.symbols], str(ring.domain), str(getattr(ring, "order", ""))]]
         return [_tag("D", t, dict), sorted(items, key=_key)]
+    import array
+
+    if isinstance(o, array.array):
+        # every value, in one node (a sieve's lists run to thousands)
+        return ["A:" + o.typecode, ",".join(repr(x) for x in o)]
     if isinstance(o, range):
         return ["L:range", [["I", str(x)] for x in itertools.islice(o, MAX_ITER)]]
 
@@ -525,10 +544,16 @@ def _binary_close(a, b, rel_bits):
     return abs(x - y) << rel_bits <= max(abs(x), abs(y))   # |a - b| * 2**-low, scaled
 
 
+def _result_part(form):
+    return form[1] if isinstance(form, list) and len(form) == 3 and form[0] == "RS" else form
+
+
 def same(a, b, profile=None):
     """Compare two canonical forms (see the module docstring); `profile` is the unit's (profile_of).
     Total: two forms that cannot be compared (a malformed line of a runner, say) are not alike."""
     ctx = _Context(profile or STRICT)
+    if ctx.profile.result_only:
+        a, b = _result_part(a), _result_part(b)
     try:
         return bool(_same(a, b, ctx) and ctx.in_order())
     except (TypeError, ValueError, KeyError, IndexError, AttributeError, RecursionError, OverflowError, MemoryError):

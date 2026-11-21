@@ -587,8 +587,10 @@ It does not yet meet the v2 workload target; see [Workload](#workload) and
     at most 0.0245 for a strategy a submission can build, 0.0269 and 0.0301 for
     the two bounds that choose with the hidden results. All are under the
     decision's 0.05, each needs the table of documented outputs first, and
-    through the verifier every fixture tree scored 0.0.
-  - Predicates and small units. 827 units (31% of the units, 22.6% of the body
+    through the verifier every fixture tree scored 0.0. (Third re-check: an
+    accessor of the call's own arguments chosen by visible fit reaches 0.0401,
+    still under 0.05; see the floor under [Reward formula](#reward-formula).)
+  - Predicates and small units. 824 units (31% of the units, 22.4% of the body
     lines) are left out of the reward's unit set, 221 of the 229 whose recorded
     results are all booleans among them: a boolean that an example shows
     documents every boolean result of its unit. Counting them would pay a table
@@ -604,7 +606,9 @@ It does not yet meet the v2 workload target; see [Workload](#workload) and
     arithmetic), not stable in the original (144 of 16,737 results differ
     between runs, only in the names a call makes), or, for the floats, kept for
     a second machine's math library, which only the platform will show (173
-    counted results hold a float).
+    counted results hold a float). (Third re-check: below 53 bits that tolerance
+    was a half and an absolute floor of up to 1, and at 53 bits it let a value
+    wrong from its eleventh digit pass; it is now a few units in the last place.)
   - Visible runs with random inputs. A few visible tests draw random inputs, so
     the calls one run makes vary: 12 calls were seen in the round before and not
     in this one. Both runs' calls are documented; a call only a third run would
@@ -706,6 +710,38 @@ It does not yet meet the v2 workload target; see [Workload](#workload) and
   On the platform's four workers that leaves room for a machine sixteen times
   slower. A unit whose calls ran out of time, or stopped the runner, twice is not
   run again, and the phases now count their starts, time-outs and stops.
+- Caches and thin forms. `AlgebraicField._converter`, a converter the field
+  builds for itself, is a memo slot, so a body that converts one more time no
+  longer changes its argument (`dup_monic` matched 1 of 3 that way); the sieve's
+  range units count only what they return, not how far they grew the module's
+  sieve, a cache (`primerange` 6 of 8 and `totientrange` 2 of 5 with the right
+  primes), while `Sieve.extend` and `extend_to_no` count the growth; a sieve is
+  compared by every value of its lists, no longer by its printed head and tail,
+  and a sparse polynomial with its ring's symbols, domain and order. Every
+  result was recorded again (seeds 0 and 1): 16,737 of 16,737 kept, 16,593 byte
+  for byte and the rest only in the names a call makes, the skeleton none; 66
+  results changed form (33 with a ring, 21 with a sieve, 12 with a field), 31 of
+  them counted. Objects past 40,000 nodes are still compared by their printed
+  form (9 counted calls change an argument that large), now named with the
+  other relaxations.
+- The visible runs the re-check found short. The capture counted every call
+  into a unit toward its cap, repeats included, so nine hot units stopped being
+  compared and every call of theirs stayed documented; it now counts distinct
+  arguments, and the slow tests of the five packages concerned ran again: three
+  units are compared to the end now (`to_NNF`, `ExpBase.as_numer_denom`,
+  `dmp_neg`, whose 10 calls count again), five still pass 500,000 distinct
+  arguments (`ecm` `Point.add` and `double`, `dup_reverse`, `dup_shift`,
+  `dup_sign_variations`; their 33 calls stay documented) and `fastlog` stays
+  capped from the regular tests, with no counted call. The slow tests of
+  `sympy.stats`, whose session had ended in a pytest INTERNALERROR, ran again one
+  file at a time, and the eleven visible tests the 60-second limit had cut ran
+  again one at a time with 600 s: seven finished (two of them fail on the
+  original here), four ran out of 600 s again (`test_bicycle`,
+  `test_linear_new_order1_type2_de_lorentz_slow_check`, and the skip-marked
+  `test_issue_25820` and `test_I11`), and one call more is documented
+  (`MultivariateT`, from `test_JointPSpace_marginal_distribution`, as the re-check
+  found). Rebuilt: 10,524 of 16,737 calls documented, 6,213 counted, 1,847 units
+  in the set and 824 left out.
 
 ## Current implementation
 
@@ -1041,9 +1077,9 @@ The verifier runs in a separate image with only `/app/sympy` from the candidate.
    `*args` or a value of its `**kwargs` (a body that returns that argument
    answers it); or when its result is one that another documented call of its
    unit returns (applied until nothing changes). These relations compare with
-   the type of a value left out, since a printed result does not show it. 10,533 calls are
+   the type of a value left out, since a printed result does not show it. 10,524 calls are
    documented and listed privately (`tests/private/vectors/documented.json`),
-   6,204 are not, and only those count for the reward. A result is
+   6,213 are not, and only those count for the reward. A result is
    compared by its canonical form (`verifier/lib/canon.py`), which keeps the
    value and the type and container of every part of it, the order, the form of
    a returned expression and the state of every object the call builds or
@@ -1083,7 +1119,7 @@ The verifier runs in a separate image with only `/app/sympy` from the candidate.
    which Python's equality ignores and SymPy prints sorted, so that no example
    or test can show it (401 counted results hold a dict of two or more items);
    and a SymPy matrix's internal domain, which SymPy picks for its own
-   arithmetic (the class, shape and entries are compared). One process
+   arithmetic (the class, shape and entries are compared); the module's sieve as grown by `Sieve.primerange`, `totientrange` and `mobiusrange`, a cache they may fill as they like (only what they return counts; `Sieve.extend` and `extend_to_no`, whose growth is the behaviour, count the sieve whole); and, past 40,000 nodes, an object's state, which is then compared by its printed form (9 counted calls change an argument that large: `Joint._create_aligned_interframe` 5, `Point.v2pt_theory` 4), where a frame shows only its name. One process
    replays the calls of one module. If it ends by itself or stays silent for 40
    seconds, the call it was on does not match and the calls behind it are
    replayed in a new process; if not even the first call of that start returned,
@@ -1127,21 +1163,22 @@ Limits:
   were dropped at build time, so error behaviour is measured only by the
   repository tests (309 withheld test functions assert an exception), which are
   reported and not rewarded.
-- 827 units have no call that nothing visible answers: the 716 of the round
-  before (319 for which no candidate survived the screens, 148 whose every
-  candidate a visible run makes, 248 whose every candidate returns an argument or
-  a documented result, and one whose run-time comparison stayed capped), and 111
-  more from this round's rules (80 whose every counted call returns a result an
-  example or a visible test shows, 14 whose counted calls a slow, skip-marked or
-  `+SKIP` visible run repeats, 8 that the slow tests call more than 500,000 times,
-  so that their comparison stayed capped and all their calls stay documented, 4
-  whose counted calls return an element of their `*args` or a value of their
-  `**kwargs`, 5 for more than one of these). They are left out of the reward's
+- 824 units have no call that nothing visible answers: the 716 of the first
+  re-check's round (319 for which no candidate survived the screens, 148 whose
+  every candidate a visible run makes, 248 whose every candidate returns an
+  argument or a documented result, and one whose run-time comparison stayed
+  capped), and 108 more from the second re-check's rules (80 whose every counted
+  call returns a result an example or a visible test shows, 14 whose counted
+  calls a slow, skip-marked or `+SKIP` visible run repeats, 5 that the slow tests
+  call with more than 500,000 distinct arguments, so that their comparison
+  stayed capped and all their calls stay documented, 4 whose counted calls
+  return an element of their `*args` or a value of their `**kwargs`, 5 for more
+  than one of these). They are left out of the reward's
   unit set and counted (`units_left_out`). They are smaller than the units in
   the set (median 5 non-blank lines against 9) and hold 221 of the 229 units
   whose recorded results are all booleans, so predicates are not rewarded: any
   boolean an example shows documents every boolean result of its unit. The set
-  covers 77.4% of the body lines. Their examples and calls are still run and
+  covers 77.6% of the body lines. Their examples and calls are still run and
   reported (`units_left_out_passing`).
 - For some units no visible evidence fixes the property a hidden call compares
   (see [Difficulty](#difficulty)); that residue is part of the reward.
@@ -1178,11 +1215,11 @@ All five read one measurement pass (`verifier/engine.py`).
 ### Reward formula
 
 ```
-D      = recorded calls that are not documented (step 3): 6,204 of 16,737
-set    = units with at least one call in D: 1,844 of 2,671 (827 left out, counted)
+D      = recorded calls that are not documented (step 3): 6,213 of 16,737
+set    = units with at least one call in D: 1,847 of 2,671 (824 left out, counted)
 u      = units in the set whose docstring examples pass and that match at least
-         one of their calls in D  /  1,844
-c      = calls in D that match  /  6,204
+         one of their calls in D  /  1,847
+c      = calls in D that match  /  6,213
 reward = min(u, c)  if candidate_tree and measurement_integrity passed, else 0
 ```
 
@@ -1224,7 +1261,7 @@ reward = min(u, c)  if candidate_tree and measurement_integrity passed, else 0
   every key is present on every completed evaluation, at 0 when the measurement
   stopped early (`tests_not_reached` then counts every test, since none ran).
   An evaluation error writes `status` and `error` only, and no reward.
-- Floor, on the final calls (2026-11-20, second re-check): bodies that restore
+- Floor, on the final calls (2026-11-21, third re-check): bodies that restore
   nothing, graded as trees through the verifier's own steps
   (`scripts/builder/fixtures.py`), and behind a table of documented outputs,
   which makes every example pass and answers no counted call (the same
@@ -1232,31 +1269,38 @@ reward = min(u, c)  if candidate_tree and measurement_integrity passed, else 0
   strategies that need a table of their own are measured statically, with the
   verifier's own comparison, in the original tree (so delegation reaches
   complete code) and with every example counted as passing: upper bounds for
-  what such bodies could reach (`scripts/builder/floor.py`, and the two
-  reviewers' scripts of the re-check, rerun on these calls). Unit rule "one
-  counted call":
+  what such bodies could reach (`scripts/builder/floor.py`, and the reviewers'
+  scripts, rerun on these calls). The third re-check also wrote its strongest
+  strategies as bodies and graded them through the verifier's own runners, on
+  the calls of the round before (6,204 counted); those rows are its figures.
+  Unit rule "one counted call":
 
 | Strategy (bodies that restore nothing) | Through the verifier | Behind a table |
 | --- | --- | --- |
 | Bare `raise NotImplementedError` | 0.0 | 0.0 |
-| The first argument unchanged; `sympify` of it | 0.0 (23 units pass their examples, no counted call matches) | 0.0; 0.0 |
+| The first argument unchanged; `sympify` of it | 0.0 (23 units pass their examples, 0 counted calls match) | 0.0; 0.0 |
 | The other boolean (of the same kind) where a unit's documented results are one boolean, else the first argument | 0.0 (22 units pass their examples, 21 counted calls match) | 0.0034 |
-| The unit's most frequent documented or shown output; any output its examples or tests show | | 0.0; 0.0006 |
+| The unit's most frequent documented or shown output; any output its examples or tests show | | 0.0; 0.0 |
 | One common constant for every unit, the best of 27 | | 0.0066 |
 | A default of the type the unit's visible results have (an empty container, a zero, an empty string, an empty matrix of the shown class) | | 0.0103 |
-| Delegation: the method further up the class hierarchy; a same-named function elsewhere | | 0.0047; 0.0053 |
+| Delegation: the method further up the class hierarchy; a same-named function elsewhere | | 0.0052; 0.0053 |
 | A table keyed by the arguments of any unit's visible direct calls; one that also answers a documented call with its symbols renamed | | 0.0013; 0.0021 |
-| All of the above in one body per unit: per-call tables first, then one fallback per unit in a fixed order (the best of six orders) | | 0.0245 |
+| All of the above in one body per unit: per-call tables first, then one fallback per unit in a fixed order (the best of six orders) | 0.0135; 0.0166 with its per-call tables (third re-check) | 0.0249 |
+| An accessor of the call's own arguments (`x.args`, `x[0]`, `len(x)`, `list(x)`, `-x`, `str(x)` and eleven more, per argument), chosen per unit by how many of its visible calls it reproduces, then the combination above | 0.0374; 0.0401 with the per-call tables, 0.0171 of it in 38 units whose body matches every recorded call (`Point2D.x`, `Interval.start`); as a tree with its examples run and no table, 0.0174 (third re-check) | |
 | The integrity reviewer's rules together (first argument, its `sympify`, any renamed documented call, the other boolean), with every call cut at 3 s counted as a match | | 0.0064 (0.0124) |
-| The best strategy for each call, chosen with the hidden results (a bound, not buildable) | | 0.0269 |
-| The best constant per unit, chosen with the hidden results (a bound, not buildable) | | 0.0301 |
+| The best strategy for each call, chosen with the hidden results (a bound, not buildable) | | 0.0274 |
+| The best constant per unit, chosen with the hidden results (a bound, not buildable) | | 0.0296 |
 
-  Every strategy a submission could build stays at or below 0.0245, and both
-  bounds that use the hidden results stay under the decision's 0.05; so a unit
-  still needs one matching counted call. The round before stated 0.015 for
-  every buildable fixture; the re-check measured 0.029 for the panel's own
-  fixture and 0.041 for the combination, because a result the docstrings print
-  still counted: such results are documented now (see step 3).
+  Every strategy measured stays under the decision's 0.05: the strongest a
+  submission could build is the third re-check's accessor synthesis, 0.0401
+  behind a table of documented outputs, and the bounds that use the hidden
+  results stay at 0.0296; so a unit still needs one matching
+  counted call. The rounds before stated 0.015 and then 0.0245 for every
+  buildable strategy: the first missed results the docstrings print, the second
+  the accessors, which reproduce a visible call's result from its arguments and
+  so also some counted ones; the 38 units whose original body is such an
+  accessor (or coincides with one on every recorded call) are not a floor but
+  the restoration itself.
 - A tree that did not arrive, or arrived without the collect step's signed mark,
   not as the mark lists it, or after a live process of `dev` outlived the
   collect step, is an evaluation error; so is a tree with a restored unit and no
@@ -1284,7 +1328,7 @@ have not yet run on the platform). Unassessed boundaries: finding 7.
 | 1 | A body runs arbitrary code at grading time (for example through `sympify` of a string) and patches the example and test runners in-process, forging those two measurements | Sandbox process | Executed in red-team round 2 | The reward is min(u, c); c is compared by the root process with references the sandbox cannot read, and a counted unit also needs a matching counted call; the tests are not rewarded | Forged examples can raise u up to the share of units whose counted calls already match, so the reward is at most c, which cannot be forged; what bodies that restore nothing match on the counted calls is the floor (finding 4). Comparing example output in the root process would not close this: the expected output is in the docstring the sandbox reads, so a patched runner can report it, and that was not built | Red-team the runners with forged output | 🟡 YELLOW / MEDIUM |
 | 2 | Read reference results or the withheld tests | File permissions in the verifier image | Attempted in both rounds; not reached | Private inputs readable by root only; sandbox runs as `nobody`; no test directories in the tree during phases 2 and 3 | Depends on the privilege drop | Re-run on the v2 bundle | 🟢 GREEN / LOW |
 | 3 | Edit tests, module-level code or other functions to make checks pass | Graded-tree construction | Executed; no effect | Only unit bodies are copied into the reference skeleton; `checks/test_transplant.py` | None found | Keep the check | 🟢 GREEN / LOW |
-| 4 | Return the documented outputs for the documented inputs, and something cheap otherwise: a constant, the first argument, the other boolean, a default of the type the visible results have, an output the examples print, delegation to another function, or a documented result renamed | Which calls count | Review of the binary version: tables passed `trig_split`, `viete`, `wigner_3j` and 14 more units through the real verifier. First re-check of 2026-11-20: behind a table, a first-argument fallback and a renaming table reached 0.07 to 0.12. Second re-check: results the docstrings print still counted (the panel's own fixture 0.029, every buildable strategy together 0.041) | Only calls nothing visible answers count (D): no docstring example or visible test (slow, skip-marked and `+SKIP` ones included) makes them, even with its symbols renamed, and their result is neither one an example or a visible test shows, nor a documented result of their unit, nor one of their own arguments or an element of their `*args` or `**kwargs`, all compared with the type left out; variants rename with one map over all arguments and shift no integer with a stated domain. Measured on the final calls (see the floor under [Reward formula](#reward-formula)): every buildable strategy at most 0.0245 behind a table; through the verifier 0.0 for each fixture tree | A type default or a delegate can still equal some counted results: 0.0245 for the best combination; with the hidden results in hand, 0.0269 (best per call) and 0.0301 (best constant per unit), which no submission can build | Re-run `fixtures.py`, `floor.py` and the reviewers' scripts after any rebuild of the calls | 🟢 GREEN / LOW |
+| 4 | Return the documented outputs for the documented inputs, and something cheap otherwise: a constant, the first argument, the other boolean, a default of the type the visible results have, an output the examples print, delegation to another function, or a documented result renamed | Which calls count | Review of the binary version: tables passed `trig_split`, `viete`, `wigner_3j` and 14 more units through the real verifier. First re-check of 2026-11-20: behind a table, a first-argument fallback and a renaming table reached 0.07 to 0.12. Second re-check: results the docstrings print still counted (the panel's own fixture 0.029, every buildable strategy together 0.041). Third re-check: an accessor of the call's own arguments chosen by visible fit, then the cheap fallbacks, 0.0401 behind a table through the verifier's own runners | Only calls nothing visible answers count (D): no docstring example or visible test (slow, skip-marked and `+SKIP` ones included) makes them, even with its symbols renamed, and their result is neither one an example or a visible test shows, nor a documented result of their unit, nor one of their own arguments or an element of their `*args` or `**kwargs`, all compared with the type left out; variants rename with one map over all arguments and shift no integer with a stated domain. Measured (see the floor under [Reward formula](#reward-formula)): the strongest buildable strategy 0.0401 behind a table (the third re-check's accessor synthesis, 0.0171 of it in units whose original body is such an accessor), the cheap fallbacks together 0.0249 statically and 0.0166 through the verifier; through the verifier 0.0 for each fixture tree | An accessor, a type default or a delegate can still equal some counted results, up to 0.0401; with the hidden results in hand, 0.0274 (best per call) and 0.0296 (best constant per unit), which no submission can build; all under the decision's 0.05 | Re-run `fixtures.py`, `floor.py` and the reviewers' scripts after any rebuild of the calls | 🟢 GREEN / LOW |
 | 5 | Change how a runner reports results | Runner control items | Executed in round 1 through module-level `os`/`sys`; fixed. Third re-check: a body that imported `__main__` or `posix` wrote a result line of its own into the call runner's output, and wrapped the docstring runner's `emit` to forge a pass; `same()` raised on five shapes such a line can carry | The example and call runners sign every line with a key each start gets on its standard input and keep it, their output and their payload inside a function, so no line a body writes is read; `__main__`, `posix`, `nt` and every module whose name starts with an underscore are forbidden in a body; `same()` is total and a line that cannot be compared fails its call; control items with known outcomes in every pytest run; the records of a run cannot hold more passes than that run's tally; forbidden constructs in bodies. Forged start or collection records can only remove tests from later runs, which lowers the score | A forgery that also gets the controls right falls under finding 1. The per-file runs added on 2026-11-17 have not been attacked | With finding 1 | 🟢 GREEN / LOW |
 | 6 | Tamper with reward or result files | Separate verifier container | By design; not attacked | Verifier starts fresh with only `/app/sympy`; output directory closed to the sandbox user | None found | Attack on the v2 bundle | 🟢 GREEN / LOW |
 | 7 | Anything that depends on the new entry point, check registry or reporting | v2 verifier code | Not attacked | Same measurement code as v1; reference and no-op baselines on the v2 bundle | Unknown | Red-team run against the v2 bundle | 🟡 YELLOW / UNASSESSED |
@@ -1430,6 +1474,11 @@ same task; every one scored 0 under the binary reward.
 | `checks/` (104 tests) and the repository check | working tree, 2026-11-20 (second re-check, before the package) | pass |
 | `oddish preflight` | flat 12-hour bundle `2b0d8ccb0c6e` (`ops/sympy-restoration/dist-12h/`, key rotated) | pass (1 task) |
 | Word sweep of the whole bundle (the word list of the round-2 audit on every text file, the hidden data by structure, an opcode walk of the pickle, `strings` over the data and the decompressed archives, the archives against the SymPy 1.14.0 wheel, the key) | bundle `2b0d8ccb0c6e` | clean: the agent's files use "deliver" only as the task's word (delivered form, what to deliver, the deliverable, unfinished work delivered as it stands); 0 non-ASCII bytes; data and archive strings are SymPy names only; archive changes are placeholders, deleted withheld tests and `pytest.ini`; the key's copies are equal, rotated, and nowhere else; no bytecode |
+| The reference graded twice with the few-unit Float comparison and the signed runners (examples and calls) | working tree, 2026-11-21 (third re-check) | 16,737 / 16,737 calls and 2,671 / 2,671 examples both times; 6,204 / 6,204 counted calls |
+| All calls recorded again with the converter memo slot and the sieve and ring forms (`regold.py`, seeds 0 and 1) | the verifier's runner and `canon.py` | 16,737 / 16,737 kept, 16,593 byte for byte and the rest only in the names a call makes, skeleton 0; 66 results changed form (33 ring, 21 sieve, 12 field), 31 of them counted |
+| Visible reruns: the slow tests of the five packages whose units the cap stopped (cap on distinct arguments), the slow tests of `sympy.stats` one file at a time, the eleven tests the 60-second limit cut with 600 s each | `documented.py` on the original with the visible tests | 3 units compared to the end (10 calls count again), 5 still past 500,000 distinct arguments; 1 call more documented (`MultivariateT`); 7 of the 11 cut tests finished, 4 ran out of 600 s again |
+| Counted calls rebuilt (`finalize_documented.py` over both rounds' visible runs, this round's reruns and new echoes) | working tree, 2026-11-21 (third re-check) | 16,737 calls, 10,524 documented (9,410 by arguments, 674 shown, 341 echoes, 41 capped, 58 documented results), 6,213 counted; 1,847 units in the set, 824 left out |
+| Floor on these calls (`fixtures.py`, `floor.py`, the reviewers' scripts) | working tree, 2026-11-21 (third re-check) | through the verifier: raise, first argument and flip 0.0; behind a table: flip 0.0034, the combination 0.0249 statically; integrity rules 0.0064 (0.0124); hidden-result bounds 0.0274 and 0.0296; the re-check's accessor synthesis 0.0401 (on the calls before) |
 | `harbor check` with `resources/task-implementation.toml` | working tree, 2026-11-17 | attempted on Modal; failed before review with `NotFoundError: Environment not found` (no default Modal environment). Not run in local Docker. No ratings |
 | Local image builds | none | not run for the v2 Dockerfiles; the Oddish baselines are the first build |
 

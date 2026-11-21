@@ -15,7 +15,7 @@ def load_config(path: Path = CONFIG_PATH) -> tuple[ScoringConfig, dict[str, Any]
     """Read thresholds and limits from the verifier's own configuration file.
 
     Args:
-        path: JSON file shipped inside the verifier image.
+        path: JSON file shipped with this code.
 
     Returns:
         The three published thresholds, and the timing and worker limits.

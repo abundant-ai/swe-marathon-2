@@ -101,7 +101,7 @@ the original skeleton with your unit bodies in it, and nothing else from your tr
   1.14.0's does. No unit left to restore, `restore check --all` reporting every unit as
   `PASS` and the repository tests passing under `restore pytest` are the least of that: a
   function must also behave as the original for arguments that no example or test uses.
-  Work that is not finished is delivered as it stands.
+  Work that is not finished is delivered as it stands when your session ends.
 - A wrong body in a function that many others call makes later units fail, so a unit is
   worth checking before others are built on it. `restore status` summarises earlier
   checks; only `restore check` re-runs them.

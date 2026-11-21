@@ -19,6 +19,7 @@ import collections
 import json
 import os
 import pickle
+import secrets
 import subprocess
 import sys
 import tempfile
@@ -28,6 +29,8 @@ from concurrent.futures import ThreadPoolExecutor
 HERE = os.path.dirname(os.path.abspath(__file__))
 LIB = os.path.join(HERE, "..", "..", "steps", "01-restore-bodies", "tests", "verifier", "lib")
 RVECTOR = os.path.join(LIB, "rvector.py")
+sys.path.insert(0, LIB)
+import gradelib  # noqa: E402
 
 
 def replay(tree, payload, seed, workers, timeout):
@@ -41,17 +44,22 @@ def replay(tree, payload, seed, workers, timeout):
         with open(ip, "wb") as f:
             pickle.dump(p, f, protocol=4)
         env = dict(os.environ, PYTHONHASHSEED=str(seed), PYTHONDONTWRITEBYTECODE="1")
+        key = secrets.token_hex(16)
         try:
             subprocess.run([sys.executable, "-P", "-s", "-B", RVECTOR, tree, mod, ip, op, str(timeout)], env=env, cwd=tree,
-                           timeout=timeout * len(p["vectors"]) + 300, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                           input=(key + "\n").encode("ascii"), timeout=timeout * len(p["vectors"]) + 300,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except subprocess.TimeoutExpired:
             pass
         out = {}
         try:
             with open(op, encoding="utf-8") as f:
                 for line in f:
+                    text = gradelib.signed_text(line, key)   # the runner signs every line with the key it was given
+                    if text is None:
+                        continue
                     try:
-                        rec = json.loads(line)
+                        rec = json.loads(text)
                     except ValueError:
                         continue
                     if "v" in rec:
