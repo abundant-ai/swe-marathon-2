@@ -10,7 +10,7 @@ cases. It is graded on how closely its programs reproduce recorded runs of the r
 
 ## Task
 
-- **Given:** the 272 installed programs (execute-only), `/app/docs` (the v2606 guides, the
+- **Given:** the 272 installed programs, which it can run but not read, `/app/docs` (the v2606 guides, the
   documentation site, release notes and repository docs), `/app/tutorials`, a C++/Python
   toolchain and MPI. There is no network. The agent has 12 hours, and `/app/timer.sh` shows the
   time left.
@@ -34,7 +34,7 @@ several checks: exit code, files, stdout, stderr and each output file.
 - **Comparison:** text must match exactly. A number may differ by one unit in its last printed
   digit, or by 10× OpenFOAM's own spread where that varies. Binary numbers may differ by a
   relative 1e-12. Banners, dates, hosts, process ids, paths, run times and memory use are
-  normalised away, as are the C++ function names and source lines in error messages.
+  ignored, as are the C++ function names and source lines in error messages.
 - **Size:** 9,414 recorded runs and 103,880 checks at dataset revision `738fa60`.
 
 Not tested: run-time compiled code (`#codeStream`, `coded…`), the cfMesh, OpenQBMM and VTK
@@ -79,7 +79,7 @@ Highest unresolved severity: 🟡 YELLOW / UNASSESSED.
 | `common/reference/build.sh` | Builds the reference OpenFOAM |
 | `steps/01-rebuild-openfoam/` | Instruction, reference solution, verifier and its image |
 | `scripts/harvest/` | Records test runs and builds and publishes the dataset |
-| `scripts/generate/` | Cases for features the tutorials do not reach |
+| `scripts/generate/` | Cases for behaviour the tutorials do not reach ([README](scripts/generate/README.md)) |
 | `scripts/coverage/`, `scripts/docs/` | Coverage feature list; builds `/app/docs` |
 | `checks/` | Verifier regression tests |
 
