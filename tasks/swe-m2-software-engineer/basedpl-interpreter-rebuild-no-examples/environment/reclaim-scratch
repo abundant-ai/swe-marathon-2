@@ -37,9 +37,10 @@ ps -eo pid=,ppid=,uid=,etimes=,args= > "$STATE/processes.txt" 2>/dev/null || :
 # undumpable. The script is written once, to the state directory, for both runs.
 cat > "$STATE/writers.py" <<'EOF'
 """What the user's frozen processes hold open for writing, or map shared and writable, printed as JSON for the last
-script. For each process with the user's id among its ids: the regular files open for writing in each of its tasks'
-descriptor tables (the access mode from fdinfo; one that shows none counts as writable) and the files it maps shared
-and writable (`rw-s` in maps, with an inode), each with the path the process sees, its device and its inode. An entry
+script. For each process with the user's id among its ids, through each of its threads: the regular files open for
+writing in the thread's descriptor table (the access mode from fdinfo; one that shows none counts as writable) and the
+files its memory map holds shared and writable (`rw-s` in the thread's maps, with an inode), each with the path the
+process sees, its device and its inode. An entry
 is kept when either could be the tree's: a path under it, or the tree's device. A process that cannot be read is
 listed with its ids and command, and the exit status is then 3. Bounded in time, in entries and in bytes."""
 import json
@@ -102,28 +103,38 @@ def flags_of(path):
 
 
 def scan(pid, base):
-    with open(os.path.join(base, "maps"), "rb") as text:
-        maps = text.read()
-    for line in maps.splitlines():
-        parts = line.split(maxsplit=5)
-        if len(parts) == 6 and parts[1][1:2] == b"w" and parts[1][3:4] == b"s" and parts[4] != b"0":
-            major, minor = (int(value, 16) for value in parts[3].split(b":"))
-            keep({"pid": pid, "how": "mapped", "path": os.fsdecode(parts[5]).replace("\\012", "\n"), "dev": os.makedev(major, minor),
-                  "ino": int(parts[4])})
+    """Every thread's memory map and descriptor table: the process's own maps is its first thread's, empty once that
+    thread has exited while others live, and a thread may have a table of its own. A thread that cannot be read
+    raises PermissionError, as a process does; one that is gone is passed over."""
     seen = set()
     for task in sorted(os.listdir(os.path.join(base, "task"))):
-        fds = os.path.join(base, "task", task, "fd")
-        for fd in sorted(os.listdir(fds)):
-            place = os.path.join(fds, fd)
+        place = os.path.join(base, "task", task)
+        try:
+            with open(os.path.join(place, "maps"), "rb") as text:
+                maps = text.read()
+            fds = sorted(os.listdir(os.path.join(place, "fd")))
+        except (FileNotFoundError, ProcessLookupError):
+            continue
+        for line in maps.splitlines():
+            parts = line.split(maxsplit=5)
+            if len(parts) == 6 and parts[1][1:2] == b"w" and parts[1][3:4] == b"s" and parts[4] != b"0":
+                major, minor = (int(value, 16) for value in parts[3].split(b":"))
+                entry = {"pid": pid, "how": "mapped", "path": os.fsdecode(parts[5]).replace("\\012", "\n"), "dev": os.makedev(major, minor),
+                         "ino": int(parts[4])}
+                if ("mapped", entry["dev"], entry["ino"], entry["path"]) not in seen:  # the threads share one map
+                    seen.add(("mapped", entry["dev"], entry["ino"], entry["path"]))
+                    keep(entry)
+        for fd in fds:
+            link = os.path.join(place, "fd", fd)
             try:
-                info = os.stat(place)
-                flags = flags_of(os.path.join(base, "task", task, "fdinfo", fd))
-                path = os.readlink(place)
-            except FileNotFoundError:
+                info = os.stat(link)
+                flags = flags_of(os.path.join(place, "fdinfo", fd))
+                path = os.readlink(link)
+            except (FileNotFoundError, ProcessLookupError):
                 continue
             writable = flags is None or (flags & 0o3 != 0 and not flags & 0o10000000)  # O_ACCMODE, O_PATH
-            if stat.S_ISREG(info.st_mode) and writable and (info.st_dev, info.st_ino) not in seen:
-                seen.add((info.st_dev, info.st_ino))
+            if stat.S_ISREG(info.st_mode) and writable and ("open", info.st_dev, info.st_ino) not in seen:
+                seen.add(("open", info.st_dev, info.st_ino))
                 keep({"pid": pid, "how": "open", "path": path, "dev": info.st_dev, "ino": info.st_ino})
 
 

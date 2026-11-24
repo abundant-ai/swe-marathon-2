@@ -1715,26 +1715,33 @@ def test_a_capped_turn_that_delivered_nothing_or_lost_its_listing(tmp_path):
 
 def fake_proc(top: Path, processes: dict) -> Path:
     """A stand-in for /proc. `processes` maps a pid to its `uids` and `gids` (real, effective, saved, filesystem), its
-    `command` (cmdline's bytes), its `maps` lines, and its `tasks`: for each task, a descriptor table mapping each
-    descriptor to (the file it holds, its open flags in octal), written as fd/N (a link to the file) and fdinfo/N. A
-    process `unreadable` gives its maps mode 0, so that reading them fails as /proc refuses another user's."""
+    `command` (cmdline's bytes), its `maps` lines, and its `tasks`: for each thread, a descriptor table mapping each
+    descriptor to (the file it holds, its open flags in octal), written as fd/N (a link to the file) and fdinfo/N, and
+    the process's memory map as its own maps, as every live thread shows it. With `leader_exited`, the first thread
+    has exited while others live: the process's maps and that thread's are empty. A process `unreadable` gives every
+    maps of its mode 0, so that reading them fails as /proc refuses another user's; `unreadable_tasks`, those threads'."""
     proc = top / "proc"
     (proc / "self").mkdir(parents=True)  # a name that is not a process
     for pid, spec in processes.items():
         base = proc / str(pid)
         uids, gids = ("\t".join(map(str, spec[key])) for key in ("uids", "gids"))
+        maps, exited = "".join(line + "\n" for line in spec.get("maps", [])), spec.get("leader_exited", False)
         (base / "task").mkdir(parents=True)
         (base / "status").write_text(f"Name:\tworker\nState:\tT (stopped)\nUid:\t{uids}\nGid:\t{gids}\n")
         (base / "cmdline").write_bytes(spec.get("command", b"worker\0--busy\0"))
-        (base / "maps").write_text("".join(line + "\n" for line in spec.get("maps", [])))
+        (base / "maps").write_text("" if exited else maps)
         for tid, table in spec.get("tasks", {pid: {}}).items():
             for part in ("fd", "fdinfo"):
                 (base / "task" / str(tid) / part).mkdir(parents=True)
+            (base / "task" / str(tid) / "maps").write_text("" if exited and tid == pid else maps)
             for fd, (target, flags) in table.items():
                 os.symlink(target, base / "task" / str(tid) / "fd" / str(fd))
                 (base / "task" / str(tid) / "fdinfo" / str(fd)).write_text(f"pos:\t0\nflags:\t{flags}\nmnt_id:\t25\n")
+        for tid in spec.get("unreadable_tasks", []):
+            (base / "task" / str(tid) / "maps").chmod(0)
         if spec.get("unreadable"):
-            (base / "maps").chmod(0)
+            for name in [base / "maps", *sorted((base / "task").glob("*/maps"))]:
+                name.chmod(0)
     return proc
 
 
@@ -1867,6 +1874,33 @@ def test_what_was_held_counts_only_after_a_capped_turn_and_a_hidden_process_refu
         "lost": ["refused", start + "what its processes held open for writing could not be listed: it was not copied"],
         "cut short": ["refused", start + "what its processes held open for writing could not be listed (it was not done within 20 s): "
                       "it was not copied"]}, marks
+
+
+def test_a_thread_whose_leader_has_exited_is_read_and_an_unreadable_thread_counts(tmp_path):
+    """R1a of the re-check of R1 (harbor-lh `ops/swe-marathon-v2/qa/basedpl/08-recheck-v3.md`). Once a process's first
+    thread has exited (`pthread_exit`) while others live, /proc/PID/maps, the first thread's, is empty, and the others,
+    sharing the memory map, show it at task/TID/maps. The listing reads every thread's maps, so a shared writable
+    mapping that only such threads hold is listed and, after a capped turn, its file taken out; and a thread whose maps
+    cannot be read leaves its process unread, as a process does (refused when its ids are all the user's)."""
+    me, group = os.getuid(), os.getgid()
+
+    def tree_with(processes):
+        def build(rebuild):
+            (rebuild / "bpl").write_text("#!/bin/sh\n")
+            (rebuild / "kept.txt").write_text("kept\n")
+            frozen(rebuild, processes, capped=True)
+        return build
+
+    exited = lambda tree: {5000: {"uids": [me] * 4, "gids": [group] * 4, "leader_exited": True,
+                                  "maps": [maps_line(tree / "bpl", "rw-s")], "tasks": {5000: {}, 5001: {}}}}
+    rebuild = collected(tmp_path / "exited", tree_with(exited))
+    assert (rebuild / ".manifest").read_text().splitlines() == [
+        "delivered 1 5", "removed bpl: a process of the session still had it mapped shared and writable after the end of the work"]
+    thread = lambda tree: {5100: {"uids": [me] * 4, "gids": [group] * 4, "tasks": {5100: {}, 5101: {}}, "unreadable_tasks": [5101]}}
+    refused = collected(tmp_path / "thread", tree_with(thread))
+    assert (refused / ".manifest").read_text().splitlines() == [
+        "refused", "the session ran to its limit, and its process 5100 (worker --busy) could not be read for what it held open for "
+        "writing: it was not copied"]
 
 
 def listing_order(folder: Path, names: list[str]) -> list[str]:
