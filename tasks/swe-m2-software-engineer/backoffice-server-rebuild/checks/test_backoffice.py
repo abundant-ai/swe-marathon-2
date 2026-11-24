@@ -2425,8 +2425,10 @@ def test_a_capped_session_keeps_nothing_written_or_fetched_after_its_end(tmp_pat
     session reaches its 34,560 s the platform stops waiting for it but leaves the agent's commands running, with the
     network back once the session is over (harbor-lh ops/swe-marathon-v2/PLATFORM_EGRESS_WINDOW.md), until the collect
     hook ends them. The work's end is its start, recorded at set-up, plus 34,560 s: an entry of /app/server other than a
-    directory that changed after the end and before the hook had ended the user's processes is removed with its other
-    names and a note, and a link out to something that changed after the end is not copied in.
+    directory that changed after the end and before the hook had ended the user's processes was changed once the work
+    was over: what was made then (a new file, a new link) is removed with its other names and a note, and a link out to
+    something made after the end is not copied in; a file changed in place is kept and recorded (round 15's amendment,
+    option A: Stockwell's code is private, so the network has nothing of it to fetch).
 
     Here the recorded start puts the end just after the tree was built. A detached process then fetches a file over
     HTTP from a server on this machine and writes it into the tree and outside it, appends to a file of the tree and
@@ -2477,19 +2479,22 @@ def test_a_capped_session_keeps_nothing_written_or_fetched_after_its_end(tmp_pat
     capped = tmp_path / "capped"
     done, server = run(capped, limit + 0.15)
     lines = manifest_lines(server)
-    # app, empty, run, run-again and venv-python (a copy of a file unchanged since before the end) are left: main.py,
-    # late.txt, late-link and fetched.bin go for changing after the end, `inside` with main.py, and fetched-link because
-    # what it points to changed after the end
-    assert lines[0] == "complete 5 1035", lines
-    assert sorted(os.listdir(server)) == [".fsmaint-manifest", "app", "empty", "run", "run-again", "venv-python"], sorted(os.listdir(server))
-    for name in ("app/main.py", "late.txt", "late-link", "fetched.bin"):
-        assert f"removed {name}: it changed after the work's end" in lines, (name, lines)
-    assert "removed inside: a link that leads to nothing" in lines and lines[-1] == "sweep: 4 entries that changed after the work's end were removed", lines
+    # app, app/main.py (changed in place after the end: kept and recorded), empty, inside, run, run-again and
+    # venv-python (a copy of a file unchanged since before the end) are left: late.txt, late-link and fetched.bin go for
+    # being made after the end, and fetched-link because what it points to was made after the end
+    main = (server / "app" / "main.py").stat().st_size
+    assert lines[0] == f"complete 7 {35 + 1000 + main}" and main > 600, (lines, main)
+    assert sorted(os.listdir(server)) == [".fsmaint-manifest", "app", "empty", "inside", "run", "run-again", "venv-python"], sorted(os.listdir(server))
+    for name in ("late.txt", "late-link", "fetched.bin"):
+        assert f"removed {name}: it was made after the work's end" in lines, (name, lines)
+    kept = [line for line in lines if line.startswith("kept app/main.py: changed in place after the work's end (changed +")]
+    assert len(kept) == 1 and ", made -" in kept[0], lines
+    assert lines[-2:] == ["sweep: 1 files changed in place after the work's end were kept", "sweep: 3 entries made after the work's end were removed"], lines
     link = capped / "outside" / "fetched" / "answer.bin"
-    assert f"removed fetched-link -> {link}: what it points to changed after the work's end" in done.stdout.splitlines(), done.stdout
+    assert f"removed fetched-link -> {link}: what it points to was made after the work's end" in done.stdout.splitlines(), done.stdout
     whole = verify_main(capped, copied(server, capped / "arrived" / "server"))
-    assert whole["code"] == 0 and whole["metrics"]["sweep_log"] == [lines[-1]], whole["metrics"]
-    assert "collect hook: removed late.txt: it changed after the work's end" in whole["metrics"]["notes"], whole["metrics"]["notes"]
+    assert whole["code"] == 0 and whole["metrics"]["sweep_log"] == lines[-2:], whole["metrics"]
+    assert "collect hook: removed late.txt: it was made after the work's end" in whole["metrics"]["notes"], whole["metrics"]["notes"]
 
     # a session that ended before its limit: its end is still to come, so nothing goes for it
     done, server = run(tmp_path / "early", 0)
@@ -2540,33 +2545,41 @@ def test_an_honest_capped_tree_with_hard_links_loses_no_name(tmp_path):
     assert not (server / "a" / "python-again").is_symlink() and not (server / "venv-python").is_symlink()
 
 
-def stand_in_process(proc: Path, pid: int, user: str, maps: list[tuple[str, Path | str]], fds: list[tuple[str, Path]]) -> None:
-    """A process as /proc shows it: its ids, its mappings (permissions and path) and its open files (fdinfo flags, in
-    octal, and path)."""
+def stand_in_process(proc: Path, pid: int, user: str, maps: list[tuple[str, Path | str]], fds: list[tuple[str, Path]],
+                     threads: dict[int, list[tuple[str, Path]]] | None = None) -> None:
+    """A process as /proc shows it: its ids, its mappings (permissions and path), its open files (fdinfo flags, in octal,
+    and path), and under task/ its threads: the first with the process's own files, others (`threads`) with open files
+    of their own, as a thread made without sharing its parent's file table has."""
+    def task(folder: Path, files: list[tuple[str, Path]]) -> None:
+        (folder / "fd").mkdir(parents=True)
+        (folder / "fdinfo").mkdir()
+        (folder / "maps").write_text("".join(f"7f{index:010x}000-7f{index:010x}fff {perms} 00000000 08:01 {1000 + index}"
+                                             f"                     {target}\n" for index, (perms, target) in enumerate(maps)))
+        for number, (flags, target) in enumerate(files, start=3):
+            (folder / "fd" / str(number)).symlink_to(target)
+            (folder / "fdinfo" / str(number)).write_text(f"pos:\t0\nflags:\t{flags}\nmnt_id:\t21\n")
+
     folder = proc / str(pid)
-    (folder / "fd").mkdir(parents=True)
-    (folder / "fdinfo").mkdir()
+    task(folder, fds)
     (folder / "status").write_text(f"Name:\tworker\nState:\tT (stopped)\nUid:\t{user}\t{user}\t{user}\t{user}\n")
-    (folder / "maps").write_text("".join(f"7f{index:010x}000-7f{index:010x}fff {perms} 00000000 08:01 {1000 + index}"
-                                         f"                     {target}\n" for index, (perms, target) in enumerate(maps)))
-    for number, (flags, target) in enumerate(fds, start=3):
-        (folder / "fd" / str(number)).symlink_to(target)
-        (folder / "fdinfo" / str(number)).write_text(f"pos:\t0\nflags:\t{flags}\nmnt_id:\t21\n")
+    task(folder / "task" / str(pid), fds)
+    for tid, files in (threads or {}).items():
+        task(folder / "task" / str(tid), files)
 
 
-def test_a_file_a_process_could_still_write_after_the_end_is_left_out(tmp_path):
-    """BasedPL's re-check R1 (round 15): with no timer, a capped turn's processes run on, with the network back,
-    until the collect hook. A file one of them maps shared and writable, or holds open for writing, from before the
-    end can be written after it without its change time moving (a write through a mapping of a file kept in memory
-    never moves it), which the rule on late writes would miss. The hook now stops the user's processes, lists those
-    files as root from /proc before it ends them, and once the end has passed takes each as written after the end:
-    every name of it in /app/server is removed with a note, and a link to one outside is not copied in. A process of
+def test_files_a_stopped_process_could_still_write_after_the_end_are_recorded(tmp_path):
+    """BasedPL's re-check R1 (round 15): with no timer, a capped turn's processes run on until the collect hook, and a
+    file one of them maps shared and writable, or holds open for writing, from before the end can be written after it
+    without its change time moving (a write through a mapping of a file kept in memory never moves it). The hook stops
+    the user's processes and, as the user, lists those files from /proc before it ends them, reading every thread
+    (R1a: a thread may hold files of its own, which /proc/PID/fd does not show). By the round's amendment (option A)
+    the list is a record: once the end has passed, each name of such a file gets a note and stays, `sweep_log` counts
+    them, and a list that cannot be made, or a process that cannot be read, is a line there, not a refusal. A process of
     another user, a private or a read-only mapping and a file open for reading count for nothing, and before the end
-    nothing is taken; once the end has passed, a tree whose list could not be made is refused. A stand-in /proc
-    describes the processes here (macOS has none)."""
+    nothing is listed. A stand-in /proc describes the processes here (macOS has none)."""
     def build(base: Path, server: Path, started_ago: float, proc_is_a_file: bool = False, undumpable: bool = False) -> None:
         sweep_tree(base, server)
-        for name in ("mapped.bin", "written.log", "read.txt", "private.bin", "shared-read.bin", "theirs.bin"):
+        for name in ("mapped.bin", "written.log", "read.txt", "private.bin", "shared-read.bin", "theirs.bin", "thread.log"):
             (server / name).write_text(f"{name}\n")
         (server / "deep").mkdir()
         os.link(server / "mapped.bin", server / "deep" / "mapped-again.bin")
@@ -2579,7 +2592,8 @@ def test_a_file_a_process_could_still_write_after_the_end_is_left_out(tmp_path):
             stand_in_process(base / "proc", 101, "4242", [("rw-s", server / "mapped.bin"), ("rw-p", server / "private.bin"),
                                                           ("r--s", server / "shared-read.bin"), ("rw-s", base / "outside" / "held.bin"),
                                                           ("r-xp", "/usr/lib/libc.so.6"), ("rw-p", "[heap]")],
-                             [("0100001", server / "written.log"), ("0100000", server / "read.txt")])
+                             [("0100001", server / "written.log"), ("0100000", server / "read.txt")],
+                             threads={105: [("0100002", server / "thread.log")]})
             stand_in_process(base / "proc", 202, "5555", [("rw-s", server / "theirs.bin")], [("0100002", server / "theirs.bin")])
             if undumpable:  # a process of the user that made itself undumpable: its maps cannot be read
                 stand_in_process(base / "proc", 303, "4242", [("rw-s", server / "read.txt")], [])
@@ -2591,35 +2605,104 @@ def test_a_file_a_process_could_still_write_after_the_end_is_left_out(tmp_path):
         os.utime(started, (moment, moment))
         time.sleep(0.2)
 
+    everything = [".fsmaint-manifest", "app", "deep", "empty", "held-link", "inside", "mapped.bin", "private.bin", "read.txt", "run", "run-again",
+                  "shared-read.bin", "theirs.bin", "thread.log", "venv-python", "written.log"]
     capped = tmp_path / "capped"
     done, server, _ = sweep_under_the_shell(capped, build=lambda base, server: build(base, server, 34560 + 0.15))
     assert done.returncode == 0 and done.stderr == "", (done.returncode, done.stderr)
     lines = manifest_lines(server)
     why = "a process of the user could still write it after the work's end (open for writing or mapped writable)"
-    assert sorted(line for line in lines if line.endswith(why)) == [f"removed {name}: {why}" for name in ("deep/mapped-again.bin", "mapped.bin", "written.log")], lines
-    assert lines[-2:] == ["sweep: 3 files were open for writing or mapped writable when the user's processes were stopped after the work's end",
-                          "sweep: 3 entries that changed after the work's end were removed"], lines
-    assert f"removed held-link -> {capped / 'outside' / 'held.bin'}: what it points to changed after the work's end" in done.stdout.splitlines(), done.stdout
-    kept = sorted(os.listdir(server))
-    assert {"read.txt", "private.bin", "shared-read.bin", "theirs.bin", "deep"} <= set(kept), kept
-    assert not {"mapped.bin", "written.log", "held-link"} & set(kept) and os.listdir(server / "deep") == [], kept
-    # app, app/main.py, empty, inside, run, run-again, venv-python, deep and the four files kept
-    assert lines[0] == "complete 12 1683", lines
+    assert sorted(line for line in lines if line.endswith(why)) == [f"held {name}: {why}" for name in ("deep/mapped-again.bin", "mapped.bin",
+                                                                                                       "thread.log", "written.log")], lines
+    assert lines[-1] == "sweep: 4 files were open for writing or mapped writable when the user's processes were stopped after the work's end", lines
+    assert sorted(os.listdir(server)) == everything and os.listdir(server / "deep") == ["mapped-again.bin"], sorted(os.listdir(server))
+    assert (server / "held-link").read_text() == "an answer\n" and not (server / "held-link").is_symlink(), "a held file outside is copied in"
+    # sweep_tree's seven entries and the eight files and the folder added, the held file outside copied in
+    assert lines[0] == "complete 17 1727", lines
     whole = verify_main(capped, copied(server, capped / "arrived" / "server"))
-    assert whole["code"] == 0 and whole["metrics"]["sweep_log"] == lines[-2:], whole["metrics"]
-    # before the end nothing is taken, whatever is held
+    assert whole["code"] == 0 and whole["metrics"]["sweep_log"] == lines[-1:], whole["metrics"]
+    # before the end nothing is listed, whatever is held
     done, server, _ = sweep_under_the_shell(tmp_path / "early", build=lambda base, server: build(base, server, 0))
     assert done.returncode == 0 and done.stderr == "", (done.returncode, done.stderr)
-    assert (tmp_path / "early" / "state" / "held").read_text() == "before-end\n"
-    assert {"mapped.bin", "written.log", "held-link"} <= set(os.listdir(server)) and not (server / "held-link").is_symlink()
+    assert (tmp_path / "early" / "state" / "held").read_text() == "before-end\n" and sorted(os.listdir(server)) == everything
     assert not [line for line in manifest_lines(server) + done.stdout.splitlines() if "after the work's end" in line], manifest_lines(server)
-    # once the end has passed, no list, no tree: /proc unreadable, or a process of the user whose maps cannot be read
-    for name, kind in (("unlisted", {"proc_is_a_file": True}), ("undumpable", {"undumpable": True})):
+    # once the end has passed, a list that cannot be made, or a process that cannot be read, is said and refuses nothing
+    for name, kind, said in (("unlisted", {"proc_is_a_file": True},
+                              "sweep: the files that processes of the user held for writing after the work's end could not be listed"),
+                             ("undumpable", {"undumpable": True},
+                              "sweep: 1 processes of the user could not be read for the files they held after the work's end")):
         done, server, _ = sweep_under_the_shell(tmp_path / name, build=lambda base, server: build(base, server, 34560 + 0.15, **kind))
         assert done.returncode == 0 and done.stderr == "", (name, done.returncode, done.stderr)
-        assert manifest_lines(server)[:2] == ["refused", "the files that processes of the user could still write after the work's end could not "
-                                              "be listed: it was not copied"], (name, manifest_lines(server))
-        assert not (tmp_path / name / "state" / "held").exists(), name
+        lines = manifest_lines(server)
+        assert lines[0].startswith("complete ") and said in lines and sorted(os.listdir(server)) == everything, (name, lines)
+
+
+def capped_tree(base: Path, server: Path, after_the_end) -> None:
+    """sweep_tree, then the work's start recorded so that its end fell 0.15 s ago, then `after_the_end(base, server)`."""
+    sweep_tree(base, server)
+    (server / "app" / "util.py").write_text("HELPER = 1\n")
+    time.sleep(0.3)
+    started = base / "state" / "work-started"
+    started.write_text("set-up\n")
+    moment = time.time() - 34560 - 0.15
+    os.utime(started, (moment, moment))
+    time.sleep(0.2)
+    after_the_end(base, server)
+
+
+def test_a_core_file_changed_in_place_after_the_end_arrives_and_is_graded(tmp_path):
+    """Round 15's amendment (09:40 UTC, option A for back office): harbor does not end the agent at its limit, and
+    claude-code works on until the collect hook stops it, 5-14 s later. Stockwell's code is private, so the network has
+    nothing of it to fetch, and a file changed in place in that time is kept, so that the work it holds is graded, with a
+    note that gives its path and times. Here a capped turn writes the server's main module again in place (the same
+    file, truncated) and makes its start script executable once more after the end: both arrive, the verifier grades the
+    tree, and the manifest and `sweep_log` record the changes."""
+    edited = "print('written again once the work was over')\n" * 20
+
+    def after_the_end(base: Path, server: Path) -> None:
+        with open(server / "app" / "main.py", "w") as main:
+            main.write(edited)
+        (server / "run").chmod(0o755)
+
+    done, server, _ = sweep_under_the_shell(tmp_path / "capped", build=lambda base, server: capped_tree(base, server, after_the_end))
+    assert done.returncode == 0 and done.stderr == "", (done.returncode, done.stderr)
+    lines = manifest_lines(server)
+    assert (server / "app" / "main.py").read_text() == edited and os.access(server / "run", os.X_OK)
+    # app, app/main.py, app/util.py, empty, inside, run, run-again, venv-python
+    assert lines[0] == f"complete 8 {len(edited) + 11 + 35 + 1000}", lines
+    kept = sorted(line.split(":")[0] for line in lines if line.startswith("kept ") and ": changed in place after the work's end (changed +" in line)
+    assert kept == ["kept app/main.py", "kept run", "kept run-again"], lines
+    assert not [line for line in lines if line.startswith("removed ")] and lines[-1] == "sweep: 3 files changed in place after the work's end were kept", lines
+    whole = verify_main(tmp_path / "capped", copied(server, tmp_path / "capped" / "arrived" / "server"))
+    assert whole["code"] == 0 and whole["reward"] == "1.000000" and whole["metrics"]["status"] == "completed", whole
+    assert (Path(whole["evaluate"][0]) / "app" / "main.py").read_text() == edited, "the edited module is what was graded"
+    assert whole["metrics"]["sweep_log"] == lines[-1:] and any(note.startswith("collect hook: kept app/main.py: changed in place")
+                                                               for note in whole["metrics"]["notes"]), whole["metrics"]
+
+
+def test_a_file_made_after_the_end_is_still_refused(tmp_path):
+    """Round 15's amendment (option A): what is made after the end is still refused, with a note: a new module, a new
+    link, and a file written whole and renamed into place over an old one (the old file's content goes with it: nothing
+    keeps it). claude-code writes every file that way (a temporary file in the same folder, then a rename), so where the
+    file system keeps a birth time, as here, its edits after the end are refused too; where it keeps none, a file
+    changed after the end cannot be told from one made then, and is kept and recorded so. A file changed in place beside
+    them is kept."""
+    def after_the_end(base: Path, server: Path) -> None:
+        (server / "app" / "answer.py").write_text("ANSWER = 42\n")
+        (server / "app" / "answer-link").symlink_to("answer.py")
+        (server / "app" / ".tmp.4242.0123456789ab").write_text("HELPER = 2\n")
+        os.replace(server / "app" / ".tmp.4242.0123456789ab", server / "app" / "util.py")
+        with open(server / "app" / "main.py", "a") as main:
+            main.write("# changed in place once the work was over\n")
+
+    done, server, _ = sweep_under_the_shell(tmp_path / "capped", build=lambda base, server: capped_tree(base, server, after_the_end))
+    assert done.returncode == 0 and done.stderr == "", (done.returncode, done.stderr)
+    lines = manifest_lines(server)
+    removed = sorted(line for line in lines if line.startswith("removed "))
+    assert removed == [f"removed app/{name}: it was made after the work's end" for name in ("answer-link", "answer.py", "util.py")], lines
+    assert sorted(os.listdir(server / "app")) == ["main.py"], sorted(os.listdir(server / "app"))
+    assert lines[-2:] == ["sweep: 1 files changed in place after the work's end were kept", "sweep: 3 entries made after the work's end were removed"], lines
+    assert any(line.startswith("kept app/main.py: changed in place after the work's end (changed +") for line in lines), lines
 
 
 def test_a_late_file_cannot_keep_its_content_through_another_name(tmp_path):
@@ -2642,11 +2725,11 @@ def test_a_late_file_cannot_keep_its_content_through_another_name(tmp_path):
     done, server, _ = sweep_under_the_shell(tmp_path / "one", build=build)
     assert done.returncode == 0 and done.stderr == "", (done.returncode, done.stderr)
     lines = manifest_lines(server)
-    late = sorted(line for line in lines if line.endswith("answer.txt: it changed after the work's end"))
-    assert late == [f"removed {folder}/answer.txt: it changed after the work's end" for folder in "abc"], lines
+    late = sorted(line for line in lines if line.endswith("answer.txt: it was made after the work's end"))
+    assert late == [f"removed {folder}/answer.txt: it was made after the work's end" for folder in "abc"], lines
     assert not [folder for folder in "abc" if os.path.lexists(server / folder / "answer.txt")], lines
     # app, app/main.py, empty, inside, run, run-again, venv-python, and the folders a, b and c, which are kept
-    assert lines[0] == "complete 10 1635" and lines[-1] == "sweep: 3 entries that changed after the work's end were removed", lines
+    assert lines[0] == "complete 10 1635" and lines[-1] == "sweep: 3 entries made after the work's end were removed", lines
 
 
 def test_what_the_user_left_in_the_artifacts_folder_is_set_aside_before_the_copy(tmp_path):
