@@ -28,6 +28,44 @@ archive or binary.
 
 ## Development log
 
+### 2026-11-24 — round 12 (v5): no timer; the end of a capped turn; a flat bundle under the same name
+
+- **Why.** BasedPL v4's verdict rejected again: its timer at 33,900 s was "shorter than the
+  configured agent limit of 33,960 seconds". The judges decided unanimously (round 3,
+  `decisions/2026-11-24-timer-round3-flat-bundles-DECISION.md` in harbor-lh) to drop any task-side
+  stop before the agent's limit and to upload BasedPL, Carve and back office as flat single-step
+  bundles under their own task names, the layout whose capped runs were graded (SymPy, 3 of 3).
+- **The timer is gone.** `environment/fsmaint-timer`, its `setup_complete` entry, the Dockerfile's
+  COPY of it, the sweep's timer-stop path and its record fields, the verifier's `ended_by_timer`
+  and every current-state mention here; both agent `timeout_sec` are 34,560 again, with no comment.
+  The entries of rounds 10 and 11 above stay as history.
+- **The end of a turn that reaches the limit.** Nothing ends its processes at the limit (a killed
+  claude-code run would be classed by its transcript, and its score dropped); they run on until the
+  collect hook freezes them. `fsmaint-reserve --netcheck` now records when the work began (just
+  before it does), and the sweep's end of the work is the earlier of the net check's end and, for a
+  turn that reached it, that start plus 34,560 s (`end_from` `limit`; SymPy's integrity-N1 fix).
+  Wherever the end was observed or is the limit, a source fetched after it is refused (as before
+  for `netcheck`) and a file changed in place after it is now moved out of the tree and counts for
+  nothing (it was counted and flagged before); with only the sweep's start, both stay as they were
+  (copied and flagged, counted and flagged). The freeze and the ending at the hook's start are
+  unchanged. The verifier flags a `limit` end and late entries left out or refused.
+- **The flat bundle.** `package_step.py --flat --keep-name` keeps the task's name, so the upload is
+  the next version of the same task; the repository keeps its steps layout, and `grade_locally.py`
+  reads either. The flat bundle against the steps bundle, file by file: the step's 22 files
+  (`instruction.md`, `solution/`, `tests/`) move from `steps/01-implement-renderer/` to the top,
+  byte for byte, with the same modes; `task.toml` loses `multi_step_reward_strategy = "final"` and
+  the `[[steps]]` table, whose `[steps.agent]` (34,560 s) and `[steps.verifier]` (6,000 s) equal the
+  task-level `[agent]` and `[verifier]` limits. Nothing else differs: the instruction, the
+  environment and its hooks, the verifier, the artifacts and the reward (one step, `final`) are
+  the same.
+- **Checks** (60 now). Three timer checks gone; three new, each failing on 509f195: no timer and one
+  work limit (509f195: the timer is there); a capped turn whose process writes in place and fetches
+  after the limit, with only the program written before it kept (509f195: the end read as `start`,
+  so both counted); `--keep-name` (509f195: no such option). All 60 pass under Python 3.13 and 3.12.
+- **Left.** Nothing ran on Linux, in Docker or on Modal; the D cap probe of the decision runs
+  separately. Watch the first capped trial: a reward about 15 minutes after the cap, no
+  `step_results` in its `result.json`, and `end_from` `limit` with its late files refused or left out.
+
 ### 2026-11-21 — round 11 (v5): the limit's note in neutral words; the timer bounded; `/logs/artifacts` aside; hard links bounded (QA 24)
 
 - **What happened.** The re-check of round 10 (`qa/carve/24-recheck-round10.md` in harbor-lh, FAIL)
@@ -913,11 +951,13 @@ Licences: the specification, documentation and carve-rs are MIT. The spec's `LIC
 
 | Check | Revision | Result |
 | --- | --- | --- |
+| `checks/` (60 tests) under Python 3.13 and under 3.12, and `check_repository.py` | working tree, 2026-11-24, round 12 | 60 passed under each; the three new checks fail on 509f195 (3 failed): the timer still there; the capped turn's end read as `start`, not `limit`; no `--keep-name` |
 | `checks/` (60 tests) under Python 3.13 and under 3.12 (a scratch venv from the offline cache), and `check_repository.py` | working tree, 2026-11-21, round 11 | 60 passed under each; the three new checks and the two edited ones each fail on f2d3ca8's sweep, timer, reserve, `verify.py`, `task.toml` and instruction in a scratch copy of the task (5 failed): the timer's KILL 33.1 s after firing with 2 s listings (round 11: 6.5 s), no `/logs/artifacts` step, `listed 1002 4106` for a file with 1,001 names, "platform" in `task.toml`'s comment, the timer's missing bounds |
 | `checks/` (57 tests) under Python 3.13 and under 3.12 (a scratch venv from the offline cache), and `check_repository.py` | working tree, 2026-11-20, round 10 | 57 passed under each; the five new checks and the two edited ones (timer, time limit) each fail on 96dbbe5's sweep, reserve, timer, `verify.py` and `task.toml` in a scratch copy of the task (7 failed): no progress file; 100 kill passes in 12.5 s with a zombie counted as left (and, with a `/proc` that never answers, still running at 75 s); "without the sweep's mark" for an arrival cut off by a pipe; a staging that ran to the end; a 57,452-byte mark; the timer's 12 TERM passes (60 s) and the 34,560 s limits; the 420 s message |
 | `checks/` (52 tests) with `ci_checks`, Python 3.13, and `check_repository.py` | working tree, 2026-11-20, round 9 | pass (52 passed; repository checks passed); the seven new checks each fail against round 8's `fsmaint-sweep` and `verify.py` (c8f99e3, in a scratch copy of the task): "without the sweep's mark" on a 2 MB mark, `listed 7` with a 1,204-byte path, the chain's head kept (a `RecursionError` in the fixer under Python 3.12), the tree left unmarked when the measuring is killed, `listed` with no room to pack, the climbing link kept and the absolute one removed, a crash on a directory under the mark's name |
 | The sweep's checks under Python 3.12 (the image's version; a scratch venv from the offline cache) | working tree, round 9 | the 17 checks that run the sweep or name its text pass; round 8's chain check fails there with the fixer's `RecursionError` |
 | Round 9 probes, Python 3.12 (a scratch script, not kept) | working tree, round 9 | 50,000 files in 500 directories: swept in 2.2 s, then copied by harbor 0.20's own `pack_dir_to_file` and `extract_dir_from_file` and graded; 100,000 entries at the top: 13.5 s; 200,001: refused in 13.2 s, only the mark and the record left; 40,000 links to `/etc/hosts`, measuring alone: 3.4 s; 20,000 copies: a 12.9 KB mark ending "and 13,499 more changes"; a link climbing above `/` and back: rewritten `../carve`, through harbor's `data` filter. Round 8's measuring alone on a 6,000-link chain: 41.4 s (round 9: 0.21 s) |
+| Packaging, local grading, preflight and content hash, round 12 | `scripts/package_step.py --flat --keep-name` (twice, the same hash) and without `--flat`, `scripts/grade_locally.py` on the flat bundle, `oddish preflight` on it, oddish's `compute_task_content_hash` | flat `a2ae909d3379ed84ad5283f8dacb43f2f577d4feb279703ae08dfc517028672b`, 142 files, 17,844,720 bytes; steps `322f113c08cce09f79a41ede65a6f5644707e9e27307b38d55870033f64253ae`, 142 files; flat against steps: 22 files moved to the top byte for byte, `task.toml` without `multi_step_reward_strategy` and `[[steps]]` (limits equal), nothing else. Flat: reference 1.0 (1,770 of 1,770, `listed 2 12981886`, sweep `done`), empty tree 0.0, silent program 0.0; preflight pass. Content hash: flat `2ea52fa39e698d959a5396d7ff9404b0d8757df947a447064cd75ea598d558cc`, v4's (`b43283f1a8d7`) `03751d1beac8223fa1170d0c5e93c0af36d670218196938e129300afce197490`: different |
 | Packaging, local grading and preflight, round 11 | `scripts/package_step.py` (twice, the same hash), `scripts/grade_locally.py` | `7c96178388bf90dce86c155f229ea37b057b964f73309bcdb001ed1ccd011325`, 143 files, 17,848,857 bytes; `diff -r` against round 10's `e2dd875fc325`: `environment/fsmaint-sweep`, `environment/fsmaint-timer`, `instruction.md`, `tests/verify.py` and `task.toml` (the Dockerfile unchanged); reference 1.0 (1,770 of 1,770, `listed 2 12981886`, sweep `done`), empty tree 0.0, silent program 0.0; preflight pass |
 | Packaging, local grading and preflight, round 10 | `scripts/package_step.py` (twice, the same hash), `scripts/grade_locally.py` (the verifier reading each delivery's own progress file) | `e2dd875fc3254084feb4f74c63ef9221aa0e06364a22b81d16ad3940a28be99d`, 143 files, 17,843,618 bytes; `diff -r` against round 9's `6b9731444d48`: `environment/fsmaint-reserve`, `environment/fsmaint-sweep`, `environment/fsmaint-timer`, `tests/verify.py` and `task.toml` (the Dockerfile, the instruction, the spec and the docs unchanged); reference 1.0 (1,770 of 1,770, `listed 2 12981886`, sweep `done`), empty tree 0.0, silent program 0.0; preflight pass. A cut with the judges' first timer option (A), `306b07f2394e`, graded the same and was superseded |
 | Packaging, local grading and preflight, round 9 | `scripts/package_step.py` (twice, the same hash), `scripts/grade_locally.py` | `6b9731444d4869f2a816906596b449cd0b56e8200dde87de373de570f673d551`, 143 files, 17,834,790 bytes; `diff -r` against round 8's `a8bb7e136198`: `environment/fsmaint-sweep` and `tests/verify.py` only; reference 1.0 (1,770 of 1,770, `listed 2 12981886`), empty tree 0.0, silent program 0.0; preflight pass. Earlier cuts of this round graded the same and were superseded: `3dfdf013572c` (before the inode floor), `5242621f77fc` (before the last `manifest()` docstring fix) |
@@ -934,7 +974,7 @@ Licences: the specification, documentation and carve-rs are MIT. The spec's `LIC
 | Local grading from the bundle (`scripts/grade_locally.py`, no sandbox) | bundle `c871cb7a1765` | reference (the build blanked as `solve.sh` does, re-signed, as `/app/rebuild/carve`, marked by the bundle's sweep, passing the tripwires) 1.0 (1,770/1,770, 20 s); an empty tree 0.0; a program that prints nothing 0.0; no late entries, no refused or flagged copies, `ended_by_timer` false. Fingerprint: the blanked reference matches 47 of 49 probes — the two misses are the `-h`/`--help` probes whose output carries blanked help strings; production records probes from the unblanked oracle, and the fingerprint is diagnostic, never scored |
 | Oddish baselines | v1 (round 4, `…-d3bd3d08` v1): oracle 1.0 ×2, nop 0.0 ×2; v2 (round 5): oracle 0.0 ×2 (the string-ids defect above); v3 (round 6): oracle 1.0 ×2, nop 0.0 ×2, pre-trial audit clean | round 7 not yet uploaded |
 | v4 (round 7) | oracle 1.0 ×2, nop 0.0 ×2 | pre-trial audit: 1 must-fix (a tree that is not a directory was an evaluation error; round 8) |
-| v5 (rounds 8 to 11) | not uploaded | carries bundle `7c96178388bf`; rounds 8 to 10's `a8bb7e136198`, `6b9731444d48` and `e2dd875fc325` were never uploaded; it needs fresh baselines (the agent image's hooks and `task.toml` changed; the Dockerfile did not) |
+| v5 (rounds 8 to 12) | not uploaded | goes up as the flat bundle `a2ae909d3379` under the same task name (`--flat --keep-name`); rounds 8 to 11's steps bundles were never uploaded; it needs fresh baselines (the agent image lost the timer, the hooks and `task.toml` changed) |
 | Model trials | v3: claude-code with deepseek-v4.1-flash 0.881 and 0.915, glm-5.3 0.010, all three stopped by the time limit | verdict reject (evaluation awareness in one trial; round 7) |
 
 ## Build and deliver
@@ -945,6 +985,7 @@ python scripts/setup_tools.py              # the release builds (sha256-checked)
 python scripts/upstream_builds.py          # published builds (GitHub, PyPI, Go proxy) -> tests/verifier/upstream_builds.json
 python scripts/make_cases.py               # private cases from experiment/seeds.json, checked against the model
 python scripts/package_step.py             # experiment/dist/bundles/<hash>/...; add --flat for a bundle without steps
+python scripts/package_step.py --flat --keep-name   # experiment/dist/flat/<hash>/...: the upload, flat, under the task's own name
 python scripts/grade_locally.py <bundle>   # the reference and two no-ops through the bundle's own verifier
 ```
 
