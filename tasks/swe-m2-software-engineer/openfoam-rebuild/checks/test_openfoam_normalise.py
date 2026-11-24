@@ -14,7 +14,7 @@ def test_banner_date_pid_and_clock_lines_are_removed():
 
 
 def test_run_times_in_any_spelling_are_replaced():
-    # "seconds" was added after repeat oracle runs differed on "Mapping completed in N seconds"
+    # run times are written both as "in N s" and "in N seconds"
     a = N.normalise("Mapping completed in 0.01 seconds\nMesh refined in = 0.14 s.")
     b = N.normalise("Mapping completed in 3.70 seconds\nMesh refined in = 12.5 s.")
     assert a == b == ["Mapping completed in <time> s", "Mesh refined in <time> s."]

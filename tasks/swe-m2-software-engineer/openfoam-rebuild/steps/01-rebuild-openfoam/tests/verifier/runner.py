@@ -15,7 +15,7 @@ ALMOST = 0.95
 
 def verify(context: VerificationContext) -> VerificationResult:
     """Reward: the share of all checks that pass. A failed build passes none. Also reported:
-    resolved (every check passes) and almost (at least 95% pass), as in ProgramBench."""
+    resolved (every check passes) and almost (at least 95% pass)."""
     results: dict[str, CheckResult] = {}
     for name, function, requires in CHECKS:
         unmet = [r for r in requires if results[r].status != "passed"]

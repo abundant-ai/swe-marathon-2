@@ -68,7 +68,7 @@ RUN groupadd --system openfoam && useradd --uid 10001 --create-home dev \
     && mkdir -p /app/rebuild && chown -R dev:dev /app
 # The published v2606 documentation (scripts/docs/build_docs.sh), read-only.
 COPY docs/ /app/docs/
-# Countdown of the agent's 12 hours, as in SWE-Marathon v1: `bash /app/timer.sh`.
+# Time left of the agent's 12 hours: `bash /app/timer.sh`.
 COPY timer.sh /app/timer.sh
 # OpenFOAM's environment in every shell (openfoam-env.sh hides the script's arguments, which
 # etc/bashrc would otherwise read as settings files). PMIX_MCA_psec=none: otherwise mpirun

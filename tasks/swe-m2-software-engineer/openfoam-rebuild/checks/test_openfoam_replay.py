@@ -94,7 +94,7 @@ def test_log_files_are_ignored(dataset):
 
 
 def test_timeout_fails_every_check(dataset, monkeypatch):
-    monkeypatch.setattr(runs, "MIN_SECONDS", 1)   # instead of waiting out the real 10 s minimum
+    monkeypatch.setattr(runs, "MIN_SECONDS", 1)   # keeps the test short
     assert failing(replay(dataset, "sleep 5\n" + GOOD, timeout=1.0)) == set(CHECKS)
 
 
