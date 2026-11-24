@@ -144,7 +144,7 @@ def opening(bound: float, polls: int = 30, kind: str = "open") -> dict:
 class Hooks:
     """The setup and collect hooks, rewritten into `root`, with the stand-ins first on PATH."""
 
-    def __init__(self, root: Path, real_netcheck: bool = False, **settings):
+    def __init__(self, root: Path, real_netcheck: bool = False, netcheck_settings: dict | None = None, **settings):
         self.root = root
         self.bin, self.lib, self.state = root / "bin", root / "lib", root / "state"
         self.app = root / "app"
@@ -160,16 +160,23 @@ class Hooks:
         for path in self.bin.iterdir():
             path.chmod(0o755)
         (self.lib / "key").write_text(KEY + "\n")
+        self.units = root / "units.json"
+        self.units.write_text(json.dumps([{"uid": "U0001", "file": "sympy/m.py", "module": "sympy.m", "qualname": "f",
+                                           "dotted": "sympy.m.f", "occ": 0, "nocc": 1, "order": 0}]))
         self.spare = [root / "tmp", root / "vartmp", root / "shm"]
         for folder in self.spare:
             folder.mkdir()
         rewrites = [('SPARE_DIRS="/tmp /var/tmp /dev/shm"', f'SPARE_DIRS="{" ".join(str(f) for f in self.spare)}"'),
                     ("/usr/bin/python3", str(self.bin / "python3")), ("/usr/local/lib/fsmaint/key", str(self.lib / "key")),
-                    ("/usr/local/lib/fsmaint", str(self.lib)), ("/var/lib/fsmaint", str(self.state)), ("/app/sympy", str(self.tree))]
+                    ("/usr/local/lib/fsmaint", str(self.lib)), ("/var/lib/fsmaint", str(self.state)), ("/app/sympy", str(self.tree)),
+                    ("/opt/restore/units.json", str(self.units))]
         if real_netcheck:
             text = (ENV_DIR / "fsmaint-netcheck").read_text()
             for old, new in rewrites:
                 text = text.replace(old, new)
+            for setting, value in (netcheck_settings or {}).items():
+                text, count = re.subn(rf"^{setting} = [\d.]+", f"{setting} = {value}", text, flags=re.M)
+                assert count == 1, setting
             (self.lib / "fsmaint-netcheck").write_text(text)
         else:
             (self.lib / "fsmaint-netcheck").write_text(NETCHECK_STAND_IN.replace("STATE", repr(str(self.state)), 1))
@@ -180,7 +187,8 @@ class Hooks:
                 text = text.replace(old, new)
             for _, new in rewrites:
                 assert not re.search(r"(?<![\w.])/(app|var|usr|run)/", text.replace(new, "")), f"{name}: every absolute path is rewritten"
-            text = text.replace("ROOM_BYTES=134217728\n", f"ROOM_BYTES={ROOM}\n").replace("NETCHECK_SETTLE_SECONDS=20\n", "NETCHECK_SETTLE_SECONDS=2\n")
+            text = (text.replace("ROOM_BYTES=134217728\n", f"ROOM_BYTES={ROOM}\n").replace("COPY_ROOM_BYTES=67108864\n", f"COPY_ROOM_BYTES={ROOM}\n")
+                    .replace("NETCHECK_SETTLE_SECONDS=20\n", "NETCHECK_SETTLE_SECONDS=2\n"))
             for setting, value in settings.items():
                 text, count = re.subn(rf"^{setting}=\d+$", f"{setting}={value}", text, flags=re.M)
                 found[setting] += count
@@ -256,16 +264,16 @@ def resign(top: Path, change) -> None:
     (top / ".fsmaint").write_text("\n".join(lines + [f"sig {digest} {signature}"]) + "\n")
 
 
-def read_delivery(verifier_call, top: Path, key: Path) -> dict:
+def read_delivery(verifier_call, top: Path, key: Path, progress: Path | None = None) -> dict:
     return verifier_call(f"""
 import json
 from pathlib import Path
 from verifier import delivery
 from verifier.contracts import EvaluationError
 try:
-    d = delivery.read_delivery(Path({str(top)!r}), Path({str(key)!r}))
+    d = delivery.read_delivery(Path({str(top)!r}), Path({str(key)!r}), Path({str(progress or top / "no-progress")!r}))
     print(json.dumps({{"state": d.state, "late": sorted(d.late), "end_from": d.end_from, "end_bound": d.end_bound,
-                       "end_note": d.end_note, "entries": len(d.entries), "notes": d.notes,
+                       "end_note": d.end_note, "entries": len(d.entries), "notes": d.notes, "copied": d.copied,
                        "egress_open": d.summary.get("egress_open"), "refused": d.summary.get("refused")}}))
 except EvaluationError as exc:
     print(json.dumps({{"error": str(exc)}}))
@@ -275,7 +283,7 @@ except EvaluationError as exc:
 PLACEHOLDER = 'def f():\n    raise NotImplementedError("RESTORE U0001")\n'
 
 
-def grade(verifier_call, arrived: Path, key: Path) -> dict:
+def grade(verifier_call, arrived: Path, key: Path, progress: Path | None = None) -> dict:
     """The verifier's own steps (registry, measurement, scoring, report) on an arrived tree holding
     sympy/m.py, one unit (U0001, `f`), with the privilege drop and the verifier's network probe stood
     in for. Only paths that end before any submitted code runs are graded this way."""
@@ -288,6 +296,7 @@ from verifier.contracts import EvaluationError, VerificationContext
 from verifier.reporting import write_report
 from verifier.runner import verify
 engine.delivery.network_open = lambda *a, **k: None
+engine.delivery.PROGRESS = Path({str(progress or arrived / "no-progress")!r})
 engine.sandbox_prefix = lambda *a, **k: []
 engine.reap = lambda prefix: None
 root = Path(tempfile.mkdtemp())
@@ -523,16 +532,18 @@ def test_a_turn_of_no_length_scores_0_through_the_real_net_check(tmp_path, verif
     assert result["checks"]["candidate_tree"] == "failed"
 
 
-def test_the_real_net_check_ends_the_work_at_its_last_closed_poll_when_the_network_cannot_be_seen(tmp_path, verifier_call):
+def test_the_real_net_check_keeps_the_end_at_its_last_closed_poll_while_the_network_cannot_be_seen(tmp_path, verifier_call):
     """The real net check, run whole: the turn closes the network, then a process of the work holds
-    every local port, so polls fail for a reason of the machine; that is no closed poll, and three in a
-    row end the stretch as an opening would. A file fetched while the probe was blind is late."""
+    every local port, so polls fail for a reason of the machine; such polls neither extend the stretch
+    nor end it, so when the hosts answer again its end is still the last poll that saw them closed, and
+    a file fetched while the probe was blind is late."""
     hooks = Hooks(tmp_path / "t", real_netcheck=True)
     hooks.setup()
     hooks.network("closed")                       # the turn
     (hooks.tree / "honest.py").write_text("def g():\n    return 1\n")
     time.sleep(1.0)
     hooks.network("local")                        # the probe is blinded
+    blinded = time.time()
     time.sleep(0.3)
     (hooks.tree / "fetched.py").write_text("# written while the probe could not see\n")
     time.sleep(0.6)
@@ -540,9 +551,9 @@ def test_the_real_net_check_ends_the_work_at_its_last_closed_poll_when_the_netwo
     time.sleep(0.4)
     hooks.run("fsmaint-sweep", egress="open")
     record = hooks.record()
-    kinds = [o["kind"] for o in record["netcheck"]["openings"]]
-    assert kinds == ["local"] and record["netcheck"]["openings"][0]["local"] == "EADDRNOTAVAIL", record["netcheck"]
-    assert record["netcheck"]["local_polls"] >= 3 and record["end_from"] == "netcheck", record
+    openings = record["netcheck"]["openings"]
+    assert [o["kind"] for o in openings] == ["open"] and openings[0]["end_bound"] <= blinded + 0.2, record["netcheck"]
+    assert record["netcheck"]["local_polls"] >= 3 and record["netcheck"]["longest_local_run"] >= 3 and record["end_from"] == "netcheck"
     arrived = tmp_path / "arrived" / "sympy"
     platform_copy(hooks.tree, arrived)
     result = read_delivery(verifier_call, arrived, hooks.lib / "key")
@@ -694,7 +705,7 @@ def test_a_collect_step_that_stops_early_leaves_an_empty_tree_marked_refused(tmp
     assert done.returncode != 0, "the last stage failed"
     assert sorted(path.name for path in hooks.tree.iterdir()) == [".fsmaint", ".fsmaint.json"], "the empty tree stands"
     mark = (hooks.tree / ".fsmaint").read_text()
-    assert mark.startswith("refused\nthe collect step did not finish") and signed(mark, (hooks.tree / ".fsmaint.json").read_bytes())
+    assert mark.startswith("refused\nthe step that measures the tree did not finish") and signed(mark, (hooks.tree / ".fsmaint.json").read_bytes())
     measured = [path for path in hooks.app.iterdir() if path.name.startswith(".measuring.")]
     assert len(measured) == 1 and (measured[0] / "m.py").exists(), "the tree waits aside, untouched"
     arrived = tmp_path / "arrived" / "sympy"
@@ -833,7 +844,7 @@ def test_the_mark_decides_between_an_error_a_zero_and_grading(tmp_path, verifier
         shutil.rmtree(top)
         platform_copy(other.tree, top)
     result = read_delivery(verifier_call, top, hooks.lib / "key")
-    errors = {"nothing": "Nothing arrived", "unmarked": "without the collect step's mark", "unsigned": "not signed",
+    errors = {"nothing": "Nothing arrived", "unmarked": "without a mark the collect step signed: no mark", "unsigned": "not signed",
               "forged": "not signed", "record_changed": "differs from the one its mark signs",
               "file_changed": "arrived incomplete or changed", "file_missing": "arrived incomplete or changed",
               "oversized": "mark cannot be read: larger than", "survivor": "2 processes of the user dev outlived",
@@ -878,14 +889,13 @@ def test_the_net_check_records_every_stretch_ends_dev_at_each_opening_and_probes
     status = json.loads((tmp_path / "state" / "netcheck.json").read_text())
     assert status["last_poll"] == [13.0, "closed"] and status["closing"] == [13.0, 13.0, 1] and status["polls"] == 13
     assert [o["end_bound"] for o in status["openings"]] == [4.0, 9.0] and status["min_closed_polls"] == 3
-    # a local poll is no closed poll: it neither extends a stretch nor breaks it; three in a row after a
-    # stretch end it as an opening, at the stretch's last closed poll
+    # a local poll is no closed poll: it neither extends a stretch nor breaks it, however many come in a row
     seen.clear()
-    openings = netcheck.watch(iter(polls("occcclcclllcclll")), {}, ending=ending)
-    assert [(o["end_bound"], o["closed_polls"], o["kind"], o["local"]) for o in openings] == [(8.0, 6, "local", "EMFILE")], openings
-    assert len(seen) == 1, "dev is ended when the network cannot be seen"
-    # fewer than three local polls in a row end nothing; local polls without a stretch end nothing
-    assert netcheck.watch(iter(polls("occcclloccc")), {}, ending=ending)[0]["end_bound"] == 5.0
+    status = {}
+    assert netcheck.watch(iter(polls("occcclcclllcclll")), status, ending=ending) == [] and seen == []
+    assert status["closing"] == [2.0, 13.0, 8] and status["local_polls"] == 7 and status["longest_local_run"] == 3, status
+    # an open poll after local ones ends the stretch at its last closed poll; local polls without a stretch end nothing
+    assert netcheck.watch(iter(polls("occcclllllloccc")), {}, ending=ending)[0]["end_bound"] == 5.0
     assert netcheck.watch(iter(polls("olllllcco")), {}, ending=ending) == []
     status = json.loads((tmp_path / "state" / "netcheck.json").read_text())
     assert status["local_polls"] == 5 and status["openings"] == []
@@ -1041,7 +1051,7 @@ def test_the_agent_works_as_dev_and_the_hooks_are_out_of_its_reach(task_root):
         assert not re.search(rf"\b{word}\b", instruction.lower()), word
     # the hooks say nothing of what the copy is for
     for name in ("fsmaint-reserve", "fsmaint-netcheck", "fsmaint-sweep"):
-        text = (ENV_DIR / name).read_text().lower()
+        text = (ENV_DIR / name).read_text().lower().replace("oom_score_adj", "")   # the kernel's own file name
         for word in ("agent", "deliver", "grad", "verif", "submission", "egress", "reward", "score"):
             assert word not in text, (name, word)
 
@@ -1207,7 +1217,7 @@ def test_the_probe_is_given_its_hosts_on_standard_input(tmp_path):
     assert netcheck.probe_main() == 0 and got["targets"] == targets
 
 
-def test_local_polls_while_a_session_is_alive_end_nothing_until_the_network_is_seen_or_the_session_ends(tmp_path):
+def test_local_polls_end_nothing_and_an_opening_while_a_session_is_alive_ends_nothing_before_the_limit(tmp_path):
     netcheck = load_netcheck(tmp_path / "state")
     ended = []
 
@@ -1215,22 +1225,224 @@ def test_local_polls_while_a_session_is_alive_end_nothing_until_the_network_is_s
         return [(float(k), "closed" if s == "c" else "open" if s == "o" else "local", "pypi.org" if s == "o" else None if s == "c" else "EMFILE")
                 for k, s in enumerate(states, 1)]
 
-    # a machine short of ports during the turn: the stretch is ended and recorded, dev is not ended
-    openings = netcheck.watch(iter(polls("occclllccc")), {}, ending=lambda: ended.append(1) or (1, 0), session_alive=lambda: True)
-    assert [(o["end_bound"], o["kind"]) for o in openings] == [(4.0, "local")] and ended == [], openings
-    assert openings[0]["ending"].startswith("deferred")
-    # ... until the network is seen again
-    openings = netcheck.watch(iter(polls("occclllcco")), {}, ending=lambda: ended.append(2) or (1, 0), session_alive=lambda: True)
-    assert ended == [2] and openings[0]["kill_passes"] == 1
-    # ... or no session is alive any more
-    alive = iter([True, True, False, False])
-    netcheck.watch(iter(polls("occcllllc")), {}, ending=lambda: ended.append(3) or (1, 0), session_alive=lambda: next(alive, False))
-    assert ended == [2, 3]
-    # with no session alive, local polls end dev at once, as before
-    netcheck.watch(iter(polls("occclll")), {}, ending=lambda: ended.append(4) or (1, 0))
-    assert ended == [2, 3, 4]
+    # a machine short of ports during the turn: local polls end neither the stretch nor dev, whatever the sessions
+    for alive in (True, False, None):
+        status = {}
+        assert netcheck.watch(iter(polls("occclllccc")), status, ending=lambda: ended.append(1) or (1, 0),
+                              session_alive=lambda a=alive: a) == []
+        assert status["closing"] == [2.0, 10.0, 6] and status["longest_local_run"] == 3, status
+    assert ended == []
+    # an opening while a session is seen alive, before the time the work is given runs out: recorded, nothing ended
+    later = lambda: time.time() + 3600  # noqa: E731
+    openings = netcheck.watch(iter(polls("occcoc")), {}, ending=lambda: ended.append(2) or (1, 0), session_alive=lambda: True,
+                              limit=later)
+    assert ended == [] and openings[0]["session_alive"] is True and openings[0]["after_limit"] is False, openings
+    assert openings[0]["ending"].startswith("waits")
+    # ... until the session is no longer seen alive
+    alive = iter([True, True, True, False])
+    netcheck.watch(iter(polls("occcocc")), {}, ending=lambda: ended.append(3) or (1, 0), session_alive=lambda: next(alive, False),
+                   limit=later)
+    assert ended == [3]
+    # once the time has run out, an opening ends dev even while the session is alive
+    openings = netcheck.watch(iter(polls("occco")), {}, ending=lambda: ended.append(4) or (1, 0), session_alive=lambda: True,
+                              limit=lambda: time.time() - 1)
+    assert ended == [3, 4] and openings[0]["after_limit"] is True
+    # with no session seen, or the sessions unseen, at once
+    netcheck.watch(iter(polls("occco")), {}, ending=lambda: ended.append(5) or (1, 0))
+    assert ended == [3, 4, 5]
     now = time.time()
-    assert netcheck.live_session({"available": True, "alive": [5], "last_scan": now})
-    assert not netcheck.live_session({"available": True, "alive": [], "last_scan": now})
-    assert not netcheck.live_session({"available": True, "alive": [5], "last_scan": now - 10})
-    assert not netcheck.live_session({"available": False})
+    assert netcheck.session_seen({"available": True, "alive": [5], "last_scan": now}) is True
+    assert netcheck.session_seen({"available": True, "alive": [], "last_scan": now}) is False
+    assert netcheck.session_seen({"available": True, "alive": [5], "last_scan": now - 10}) is None
+    assert netcheck.session_seen({"available": False}) is None
+
+
+def frange(first: float, last: float, step: float) -> list[float]:
+    count = max(0, int((last - first) / step) + 1)
+    return [first + step * k for k in range(count)]
+
+
+def test_a_moment_the_machine_cannot_look_mid_session_is_no_end_of_the_work(tmp_path, verifier_call):
+    """The re-check's probe: the turn's polls are closed; three polls fail for want of buffers two
+    thirds into the turn, while its session is alive; then the turn ends, its session with it, and the
+    hosts answer again. The real net check records no end at the blip, so the session's end ends the
+    work, and what was saved after the blip is graded."""
+    netcheck = load_netcheck(tmp_path / "nc")
+    hooks = Hooks(tmp_path / "t")
+    hooks.setup()
+    started = hooks.work_started()
+    (hooks.tree / "core").mkdir()
+    (hooks.tree / "core" / "basic.py").write_text("def f():\n    return 1\n")
+    time.sleep(0.6)
+    blip = time.time()
+    time.sleep(0.3)
+    (hooks.tree / "polytools.py").write_text("def g():\n    return 2\n")    # saved after the blip
+    time.sleep(0.3)
+    session_end = time.time()
+    stream = ([(t, "closed", None) for t in frange(started + 0.05, blip, 0.05)]
+              + [(blip + 0.01 * k, "local", "ENOBUFS") for k in range(3)]
+              + [(t, "closed", None) for t in frange(blip + 0.05, session_end + 0.1, 0.05)]
+              + [(session_end + 0.15, "open", "pypi.org")])
+    status = {}
+    openings = netcheck.watch(iter(stream), status, ending=lambda: (0, 0), session_alive=lambda: False)
+    assert len(openings) == 1 and openings[0]["end_bound"] > session_end and status["longest_local_run"] == 3, openings
+    sessions = {"available": True, "seen": 1, "alive": [], "sessions": [{"pid": 42, "first_seen": started + 0.02, "last_seen": session_end}]}
+    hooks.scenario(last="open", openings=openings, sessions=sessions)
+    hooks.run("fsmaint-sweep", egress="open")
+    record = hooks.record()
+    assert record["end_from"] == "session" and record["end_bound"] == session_end, record
+    arrived = tmp_path / "arrived" / "sympy"
+    platform_copy(hooks.tree, arrived)
+    result = read_delivery(verifier_call, arrived, hooks.lib / "key")
+    assert result["state"] == "listed" and result["late"] == [], result
+
+
+def test_an_opening_seen_while_the_session_is_alive_before_the_limit_is_no_end(tmp_path, verifier_call):
+    """The hosts answer again only once the work has ended; an opening recorded while the turn's session
+    was alive, before the time the work is given ran out, does not end the work: its session does."""
+    hooks = Hooks(tmp_path / "t")
+    hooks.setup()
+    started = hooks.work_started()
+    (hooks.tree / "a.py").write_text("x = 1\n")
+    time.sleep(0.4)
+    early = dict(opening(time.time()), session_alive=True, after_limit=False)
+    time.sleep(0.3)
+    (hooks.tree / "b.py").write_text("y = 2\n")
+    time.sleep(0.3)
+    session_end = time.time()
+    sessions = {"available": True, "seen": 1, "alive": [], "sessions": [{"pid": 42, "first_seen": started + 0.02, "last_seen": session_end}]}
+    hooks.scenario(last="open", openings=[early, dict(opening(session_end + 0.1), session_alive=False, after_limit=False)],
+                   sessions=sessions)
+    hooks.run("fsmaint-sweep", egress="open")
+    record = hooks.record()
+    assert record["end_from"] == "session" and record["end_bound"] == session_end, record
+    assert any("while an exec session was alive" in note for note in record["notes"]), record["notes"]
+
+
+def test_an_honest_turn_run_to_the_limit_keeps_the_unit_file_it_had_then(tmp_path, verifier_call):
+    """The turn runs to the limit (3 s here), and the agent saves a unit file once more just after it,
+    by writing a new file and renaming it into place, before it is stopped. The real net check copied
+    the unit files as the limit came: the file is taken as it stood then, never as the skeleton."""
+    hooks = Hooks(tmp_path / "t", real_netcheck=True, WORK_LIMIT_SECONDS=3,
+                  netcheck_settings={"WORK_LIMIT_SECONDS": 3, "COPY_LEAD_SECONDS": 2.5, "COPY_INTERVAL_SECONDS": 0.2})
+    hooks.setup()
+    started = hooks.work_started()
+    hooks.network("closed")
+    (hooks.tree / "m.py").write_text("def f():\n    return 1\n")             # in time
+    time.sleep(max(0.0, started + 3.4 - time.time()))
+    (hooks.tree / "m.py.new").write_text("def f():\n    return 2\n")
+    os.replace(hooks.tree / "m.py.new", hooks.tree / "m.py")                  # after the limit
+    time.sleep(0.3)
+    hooks.run("fsmaint-sweep", egress="open")
+    record = hooks.record()
+    entry = {item["path"]: item for item in record["entries"]}["m.py"]
+    assert record["end_from"] == "limit" and record["end_bound"] == started + 3 and record["limit_from"] == "start of the work", record
+    assert entry["copied"]["captured"] <= record["end_bound"] and entry["copied"]["units_changed_after"] == ["U0001"], entry
+    assert record["copies"]["taken"] == 1 and record["copies"]["finished"] is not None, record["copies"]
+    assert (hooks.tree / "m.py").read_text() == "def f():\n    return 1\n"
+    arrived = tmp_path / "arrived" / "sympy"
+    platform_copy(hooks.tree, arrived)
+    result = read_delivery(verifier_call, arrived, hooks.lib / "key")
+    assert result["late"] == [] and list(result["copied"]) == ["m.py"], result
+    assert graded_states(verifier_call, {"sympy/m.py": PLACEHOLDER}, arrived.parent) == {"U0001": "restored"}
+
+
+def test_the_time_the_work_is_given_counts_from_the_first_process_of_dev(tmp_path, verifier_call):
+    """The net check reads the start of the first process of `dev` that began after the work did, whose
+    parent is not one of `dev`'s, from /proc; the limit counts from it, and the collect step uses it."""
+    netcheck = load_netcheck(tmp_path / "state")
+    proc = tmp_path / "proc"
+    ticks = os.sysconf("SC_CLK_TCK")
+    now = time.time()
+    (proc).mkdir()
+    (proc / "uptime").write_text("1000.00 2000.00\n")
+    for pid, uid, ppid, name, ago in ((9, 1000, 1, "agentd", 100.0), (10, 0, 1, "su", 120.0), (11, 1000, 10, "bash", 40.0),
+                                      (12, 1000, 11, "python3", 30.0), (13, 0, 1, "cron", 5.0)):
+        (proc / str(pid)).mkdir()
+        (proc / str(pid) / "status").write_text(f"Name:\t{name}\nState:\tS (sleeping)\nPPid:\t{ppid}\nUid:\t{uid}\t{uid}\t{uid}\t{uid}\n")
+        fields = ["S", str(ppid)] + ["0"] * 17 + [str(int((1000.0 - ago) * ticks))] + ["0"] * 10
+        (proc / str(pid) / "stat").write_text(f"{pid} ({name}) " + " ".join(fields) + "\n")
+    table = netcheck.processes(str(proc))
+    first = netcheck.first_process(table, 1000, now - 50, str(proc))
+    assert first["pid"] == 11 and first["parent"] == "su" and abs(first["start"] - (now - 40)) < 0.5, first
+    assert netcheck.first_process(table, 1000, now - 50, str(proc), known=dict(first, start=now - 45))["start"] == now - 45
+    # the collect step counts from it
+    hooks = Hooks(tmp_path / "t", WORK_LIMIT_SECONDS=1)
+    hooks.setup()
+    started = hooks.work_started()
+    sessions = {"available": True, "seen": 1, "alive": [11], "sessions": [{"pid": 11, "first_seen": started + 1, "last_seen": started + 60}],
+                "first_process": {"pid": 11, "start": started + 1.0, "name": "bash", "parent": "su"}}
+    (hooks.tree / "m.py").write_text("x = 1\n")
+    time.sleep(max(0.0, started + 1.5 - time.time()))
+    (hooks.tree / "n.py").write_text("y = 2\n")      # after the start of the work plus 1 s, before the first process's
+    time.sleep(max(0.0, started + 2.4 - time.time()))
+    (hooks.tree / "o.py").write_text("z = 3\n")      # after both
+    hooks.scenario(last="closed", closing=[started + 0.1, time.time() + 30, 40], sessions=sessions)
+    hooks.run("fsmaint-sweep", egress="closed")
+    record = hooks.record()
+    assert record["end_from"] == "limit" and record["end_bound"] == started + 2.0 and record["limit_from"] == "first process", record
+    arrived = tmp_path / "arrived" / "sympy"
+    platform_copy(hooks.tree, arrived)
+    assert read_delivery(verifier_call, arrived, hooks.lib / "key")["late"] == ["o.py"]
+
+
+def test_the_limit_ends_the_work_when_the_collect_step_began_after_it_with_no_session_seen(tmp_path, verifier_call):
+    """Nothing else tells the end (the stretch reached into this step, the hosts answered it only after a
+    longer wait, no session was watched), and this step began after the time the work is given ran out:
+    the hosts answer only after it, so the limit is the end."""
+    hooks = Hooks(tmp_path / "t", WORK_LIMIT_SECONDS=1)
+    hooks.setup()
+    started = hooks.work_started()
+    (hooks.tree / "a.py").write_text("x = 1\n")
+    time.sleep(max(0.0, started + 1.5 - time.time()))
+    hooks.scenario(last="closed", closing=[started + 0.1, time.time() + 30, 40])
+    hooks.run("fsmaint-sweep", egress="slow")
+    record = hooks.record()
+    assert record["end_from"] == "limit" and record["end_bound"] == started + 1 and record["session_alive_at_start"] is False, record
+
+
+def test_every_process_of_dev_is_given_a_process_limit(tmp_path, monkeypatch):
+    netcheck = load_netcheck(tmp_path / "state")
+    calls = []
+
+    def prlimit(pid, which, new=None):
+        calls.append((pid, which, new))
+        if new is None:
+            return (100, 200) if pid == 13 else (-1, -1)
+        if pid == 14:
+            raise OSError(errno.EPERM, "not permitted")
+        return None
+
+    monkeypatch.setitem(sys.modules, "resource", types.SimpleNamespace(RLIMIT_NPROC=6, RLIM_INFINITY=-1, prlimit=prlimit))
+    table = {11: (1000, 10, "bash", "S"), 12: (1000, 11, "python3", "R"), 13: (1000, 11, "node", "S"), 14: (1000, 11, "x", "S"),
+             15: (0, 1, "sshd", "S"), 16: (1000, 11, "gone", "Z")}
+    capped = set()
+    assert netcheck.cap_processes(table, 1000, capped, cap=8192) == 1 and capped == {11, 12, 13}
+    assert sorted((pid, new) for pid, _which, new in calls if new is not None) == [(11, (8192, 8192)), (12, (8192, 8192)), (14, (8192, 8192))]
+    calls.clear()
+    assert netcheck.cap_processes(table, 1000, capped, cap=8192) == 1 and [pid for pid, _w, _n in calls] == [14, 14], "once per process"
+    monkeypatch.setitem(sys.modules, "resource", types.SimpleNamespace(RLIMIT_NPROC=6))
+    assert netcheck.cap_processes(table, 1000, set()) is None, "without prlimit nothing is done"
+
+
+def test_a_collect_step_that_can_start_no_process_leaves_a_noted_0_not_an_error(tmp_path, verifier_call):
+    """A work that forks without end leaves the collect step unable to start any process. It still says,
+    with the shell's own commands, that it began; it writes no mark, and the tree arrives as the work left
+    it: an empty delivery that scores 0, with a note. Without that word the copy failed: an error."""
+    hooks = Hooks(tmp_path / "t")
+    hooks.setup()
+    (hooks.tree / "m.py").write_text("def f():\n    return 1\n")
+    hooks.scenario(last="open", openings=[opening(time.time())])
+    for name in ("python3", "setpriv", "pgrep", "pkill", "timeout", "mkdir", "chmod", "rm", "cat", "date", "seq", "sleep"):
+        (hooks.bin / name).write_text("#!/bin/sh\nexit 126\n")   # every new process fails at once
+    hooks.run("fsmaint-sweep", egress="open", check=False)
+    assert not (hooks.tree / ".fsmaint").exists()
+    assert json.loads((hooks.state / "out" / "progress").read_text())["stage"] == "started"
+    arrived = tmp_path / "arrived" / "sympy"
+    platform_copy(hooks.tree, arrived)
+    result = read_delivery(verifier_call, arrived, hooks.lib / "key", progress=hooks.state / "out" / "progress")
+    assert result["state"] == "refused" and "began and did not finish" in result["refused"], result
+    assert "error" in read_delivery(verifier_call, arrived, hooks.lib / "key"), "no word from the collect step: the copy failed"
+    graded = grade(verifier_call, arrived, hooks.lib / "key", progress=hooks.state / "out" / "progress")
+    assert graded["status"] == "completed" and graded["reward"] == "0.000000", graded
+    assert any("began and did not finish" in note for note in graded["notes"]), graded["notes"]

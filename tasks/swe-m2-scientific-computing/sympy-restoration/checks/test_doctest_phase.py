@@ -159,7 +159,7 @@ from verifier import delivery, engine
 from verifier.config import load_config
 from verifier.contracts import VerificationContext
 engine.delivery.network_open = lambda *a, **k: None
-engine.delivery.read_delivery = lambda top, key: delivery.Delivery("listed", end_bound=float("inf"), end_from="netcheck")
+engine.delivery.read_delivery = lambda top, key, *rest: delivery.Delivery("listed", end_bound=float("inf"), end_from="netcheck")
 engine.sandbox_prefix = lambda *a, **k: []
 engine.reap = lambda prefix: None
 scoring, limits = load_config()

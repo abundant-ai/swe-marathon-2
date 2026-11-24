@@ -59,7 +59,7 @@ from verifier.contracts import EvaluationError, VerificationContext
 from verifier.reporting import write_report
 from verifier.runner import verify
 engine.delivery.network_open = lambda *a, **k: None
-engine.delivery.read_delivery = lambda top, key: delivery.Delivery("listed", end_bound=float("inf"), end_from="netcheck")
+engine.delivery.read_delivery = lambda top, key, *rest: delivery.Delivery("listed", end_bound=float("inf"), end_from="netcheck")
 engine.sandbox_prefix = lambda *a, **k: []
 engine.reap = lambda prefix: None
 engine.run_sealed_tests = lambda sealed_ids, prefix, notes, **kw: engine.SealedResult({{}}, True, False, None, False, 0, 0, None)

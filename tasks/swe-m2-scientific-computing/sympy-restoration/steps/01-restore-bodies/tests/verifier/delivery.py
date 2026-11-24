@@ -10,13 +10,19 @@ key the work's user, `dev`, cannot read.
   as it was listed, a link or a file that arrived without being listed, or a record that says a
   process of the user `dev` outlived the collect step: the copy failed or cannot be trusted,
   which is an evaluation error, never the submission's score. The collect step always leaves a
-  marked tree, whatever the work left under its name, so these come from the infrastructure.
+  marked tree, whatever the work left under its name, so these come from the infrastructure;
+  except when the collect step says (in its progress file, which the setup step made and only root
+  can write, copied beside the tree) that it began and did not finish, and there is no mark it
+  signed: the work kept it from running (it started no process, as a work that forks without end
+  makes it), and what arrived is an empty delivery that scores 0, with a note.
 - `refused` (nothing usable under the tree's name: nothing at all, a link, a file, a tree that
   could not be listed, or one over the collect step's limits): a completed evaluation of an empty
   delivery, which scores 0.
 - `listed`: measured, except that a file changed at or after the end of the work (its change or
-  modification time at or after the recorded end bound, less a small allowance) is not taken. The
-  end is never later than the start of the work plus the time the work is given (`limit`). A
+  modification time at or after the recorded end bound, less a small allowance) is not taken. A
+  unit file the collect step replaced by the last copy taken of it before the end (`copied`) is
+  taken as that copy, which it lists. The end is never later than the start of the first process
+  of the work (else the start of the work) plus the time the work is given (`limit`). A
   record without an end of the work is returned with `end_bound` None: the measurement then grades
   a tree with no restored unit as 0, and raises an evaluation error for any other, since none of
   its files could be told from one written after the work.
@@ -40,6 +46,8 @@ from verifier.contracts import EvaluationError
 
 MARK = ".fsmaint"
 RECORD = ".fsmaint.json"
+PROGRESS = Path("/var/lib/fsmaint/out/progress")   # where the collect step got to, copied beside the tree
+PROGRESS_LIMIT = 4096
 MARK_LIMIT = 1 << 20      # bytes of the mark read, at most
 RECORD_LIMIT = 64 << 20   # bytes of the record read, at most
 SKEW_SEC = 0.25           # a change this close before the end bound counts as after it
@@ -58,6 +66,7 @@ class Delivery:
     end_from: str | None = None
     end_note: str | None = None
     late: set[str] = field(default_factory=set)
+    copied: dict[str, dict[str, Any]] = field(default_factory=dict)
     notes: list[str] = field(default_factory=list)
     summary: dict[str, Any] = field(default_factory=dict)
 
@@ -90,12 +99,25 @@ def _sha256(path: Path) -> str | None:
         return None
 
 
-def read_delivery(top: Path, key_path: Path) -> Delivery:
+def progress_stage(path: Path) -> str | None:
+    """The stage the collect step last wrote into its progress file, or None without a readable one."""
+    raw, _why = _read_bounded(path, PROGRESS_LIMIT)
+    if raw is None:
+        return None
+    try:
+        stage = json.loads(raw.decode("utf-8", "replace").strip() or "null").get("stage")
+    except (ValueError, AttributeError):
+        return None
+    return stage if isinstance(stage, str) and len(stage) <= 40 else None
+
+
+def read_delivery(top: Path, key_path: Path, progress: Path = PROGRESS) -> Delivery:
     """Check the mark and the record against the tree that arrived.
 
     Args:
         top: The arrived tree (`/app/sympy`).
         key_path: The signing key, readable by the verifier only.
+        progress: The collect step's progress file, copied beside the tree.
 
     Returns:
         The delivery's state, its listed entries, the end bound (None when the record holds no end
@@ -113,21 +135,30 @@ def read_delivery(top: Path, key_path: Path) -> Delivery:
         key = key_path.read_bytes().strip()
     except OSError as exc:
         raise EvaluationError("The delivery key is unreadable") from exc
+
+    def unmarked(why: str) -> Delivery:
+        """No mark the collect step signed: an empty delivery when the collect step says it began and did
+        not finish (the work kept it from running), else the copy failed (an evaluation error)."""
+        stage = progress_stage(progress)
+        if stage is not None and stage not in ("done", "not begun"):
+            note = (f"collect step: it began and did not finish (it got to `{stage}`), and the tree arrived without a "
+                    f"mark it signed ({why}): what arrived was not measured")
+            return Delivery(state="refused", notes=[note], summary={"listed": "refused", "refused": note, "progress": stage})
+        raise EvaluationError(f"The tree arrived without a mark the collect step signed: {why}")
+
     raw, why = _read_bounded(top / MARK, MARK_LIMIT)
     if raw is None:
-        if why == "missing":
-            raise EvaluationError("The tree arrived without the collect step's mark")
-        raise EvaluationError(f"The collect step's mark cannot be read: {why}")
+        return unmarked("no mark" if why == "missing" else f"the mark cannot be read: {why}")
     lines = raw.decode("utf-8", "backslashreplace").split("\n")
     if lines and lines[-1] == "":
         lines.pop()
     signed = lines[-1].split(" ") if lines else []
     if len(lines) < 2 or len(signed) != 3 or signed[0] != "sig":
-        raise EvaluationError("The collect step's mark cannot be read")
+        return unmarked("the mark cannot be read")
     body, record_sha, signature = lines[:-1], signed[1], signed[2]
     expected = hmac.new(key, ("\n".join(body) + "\n" + record_sha).encode(errors="backslashreplace"), hashlib.sha256).hexdigest()
     if not hmac.compare_digest(expected, signature):
-        raise EvaluationError("The collect step's mark is not signed with the delivery key")
+        return unmarked("the mark is not signed with the delivery key")
     head = body[0].split(" ")
     delivery = Delivery(state=head[0] if head else "", notes=[f"collect step: {line}" for line in body[1:]][:50])
     payload, why = _read_bounded(top / RECORD, RECORD_LIMIT)
@@ -202,17 +233,45 @@ def read_delivery(top: Path, key_path: Path) -> Delivery:
         raise EvaluationError(f"The collect step's record names an unknown end of the work: {delivery.end_from!r}")
     if delivery.end_from == "collect" and (record.get("net_probe") or {}).get("any_open") is not False:
         raise EvaluationError("The collect step took its own start as the end of the work although public hosts were not seen closed")
-    started = record.get("work_started")
-    if isinstance(started, (int, float)) and not isinstance(started, bool) and delivery.end_bound > started + WORK_LIMIT_SEC:
-        delivery.end_bound, delivery.end_from = started + WORK_LIMIT_SEC, "limit"
+    limit = work_limit(record)
+    if limit is not None and delivery.end_bound > limit:
+        delivery.end_bound, delivery.end_from = limit, "limit"
     cutoff = delivery.end_bound - SKEW_SEC
     for path, item in listed.items():
         times = [t for t in (item.get("ctime"), item.get("mtime")) if isinstance(t, (int, float))]
         if item.get("type") == "file" and (not times or max(times) >= cutoff):
             delivery.late.add(path)
+        copied = item.get("copied")
+        if isinstance(copied, dict) and path not in delivery.late:
+            captured = copied.get("captured")
+            if isinstance(captured, (int, float)) and not isinstance(captured, bool) and captured <= delivery.end_bound:
+                delivery.copied[path] = copied
+            else:
+                delivery.late.add(path)   # a copy that did not hold its content by the end is not taken either
+    if delivery.copied:
+        changed = sorted({str(uid) for c in delivery.copied.values() for uid in (c.get("units_changed_after") or [])})
+        delivery.notes.append(
+            f"{len(delivery.copied)} unit files changed after the end of the work were taken as the last copy the collect step "
+            f"held of them before it ({', '.join(sorted(delivery.copied)[:5])}); units whose bodies changed after it: "
+            f"{len(changed)}{' (' + ', '.join(changed[:10]) + ')' if changed else ''}")
     if delivery.end_from == "unchanged" and delivery.late:
         raise EvaluationError("The collect step's record says nothing changed during the work, yet lists files changed since it began")
     return delivery
+
+
+def work_limit(record: dict) -> float | None:
+    """The time the work is given ran out: the start of the first process of the work the collect step
+    counted from (at or after the start of the work, before the collect step), else the start of the
+    work, plus WORK_LIMIT_SEC; None without a start of the work."""
+    started = record.get("work_started")
+    if not isinstance(started, (int, float)) or isinstance(started, bool):
+        return None
+    bound = record.get("limit_bound")
+    sweep = record.get("sweep_started_at")
+    if isinstance(bound, (int, float)) and not isinstance(bound, bool) and isinstance(sweep, (int, float)) \
+            and started - 1 <= bound - WORK_LIMIT_SEC <= sweep:
+        return float(bound)
+    return started + WORK_LIMIT_SEC
 
 
 def summarise(record: dict) -> dict:
@@ -233,6 +292,8 @@ def summarise(record: dict) -> dict:
                 "process_count": record.get("process_count"), "processes": (record.get("processes") or [])[:50],
                 "kill_passes": record.get("kill_passes"), "processes_left": record.get("processes_left"),
                 "listing_complete": record.get("listing_complete"), "work_started": record.get("work_started"),
+                "limit_bound": record.get("limit_bound"), "limit_from": record.get("limit_from"), "copies": record.get("copies"),
+                "first_process": sessions.get("first_process"), "user_processes_max": sessions.get("user_processes_max"),
                 "sweep_started_at": record.get("sweep_started_at"), "notes": [str(n) for n in record.get("notes", [])][:50]}
     except Exception as exc:  # noqa: BLE001 - a record, never a reason to lose the evaluation
         return {"error": type(exc).__name__}

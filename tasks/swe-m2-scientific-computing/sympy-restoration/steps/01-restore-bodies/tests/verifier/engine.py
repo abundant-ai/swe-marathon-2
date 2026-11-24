@@ -815,13 +815,17 @@ def measure(context: VerificationContext) -> Measurement:
         raise EvaluationError(f"The verifier can reach {reachable}; it must run with no network")
     # what arrived, checked against the collect step's signed record before anything is measured
     tree = os.path.join(work_tree, "sympy")
-    delivered = delivery.read_delivery(Path(tree), Path(private) / "fsmaint.key")
+    delivered = delivery.read_delivery(Path(tree), Path(private) / "fsmaint.key", delivery.PROGRESS)
     metrics["delivery"] = delivered.summary
     metrics["egress_open"] = delivered.summary.get("egress_open")
     metrics["notes"].extend(delivered.notes)
     late = {f"sympy/{path}" for path in delivered.late}
     metrics["late_files"] = sorted(late & set(byfile))[:500]
     metrics["late_entries"] = len(late)
+    # unit files changed after the end of the work that the collect step replaced by its last copy before it
+    metrics["copied_files"] = sorted(f"sympy/{path}" for path in delivered.copied)[:500]
+    metrics["units_changed_after_the_end"] = sorted({str(uid) for c in delivered.copied.values()
+                                                     for uid in (c.get("units_changed_after") or [])})[:2671]
     metrics["end_from"], metrics["end_note"] = delivered.end_from, delivered.end_note
     if delivered.state != "listed":
         reason = delivered.summary.get("refused") or delivered.state

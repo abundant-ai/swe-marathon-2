@@ -1,6 +1,6 @@
 schema_version = "1.4"
 multi_step_reward_strategy = "final"
-artifacts = ["/app/sympy"]
+artifacts = ["/app/sympy", "/var/lib/fsmaint/out"]
 
 [task]
 name = "abundant/swe-m2_scientific-computing_sympy-restoration"
