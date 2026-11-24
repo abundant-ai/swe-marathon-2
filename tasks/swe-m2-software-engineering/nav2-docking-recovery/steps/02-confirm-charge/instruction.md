@@ -1,0 +1,7 @@
+# Verify that the dock is charging
+
+The contact switch can close before the charger delivers current. A battery message can also arrive late or be delivered more than once. Keep the reverse approach working and add independent charge confirmation.
+
+When the configuration has a `charge` object, use its `minimum_current_a`, `max_age_ticks`, `consecutive_samples` and `wait_ticks`. Battery reports arrive in the `battery` observation field as null or `{"tick":integer,"current_a":number}`. A positive value means current into the battery. Tick is the sample time in the same clock as the contact switch observation. Keep the earlier contact-only behavior for configs without `charge`.
+
+From first switch contact, wait at zero velocity. Confirm `docked` only after the configured number of qualifying fresh battery samples in sequence while contact is present. Use samples taken at or after the first current contact and no more than `max_age_ticks` old. Their timestamps must strictly increase. Ignore retransmissions, older samples and samples stamped in the future. A new fresh sample below the minimum current or losing the contact switch breaks the confirmation sequence. A missing battery report does not itself break the sequence. Keep monitoring while the attempt is within its allowance. If verification has not succeeded within `wait_ticks` of first contact or by the mission deadline, return `failed` and stop. There is no forward retreat in this checkpoint.

@@ -1,0 +1,3 @@
+<library path="lift_device">
+  <class name="lift_device/PairDevice" type="lift_device::PairDevice" base_class_type="hardware_interface::SystemInterface"/>
+</library>

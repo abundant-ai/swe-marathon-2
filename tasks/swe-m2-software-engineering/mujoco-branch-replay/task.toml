@@ -1,0 +1,56 @@
+schema_version = "1.4"
+multi_step_reward_strategy = "final"
+artifacts = ["/app/simbranch"]
+
+[task]
+name = "abundant/swe-m2_software-engineering_mujoco-branch-replay"
+description = "Capture, restore, and branch deterministic contact-rich MuJoCo rollouts."
+authors = [{ name = "QingyuanWuNothing", email = "qingyuanwu4work@gmail.com" }]
+
+[metadata]
+reward_type = "continuous"
+
+[agent]
+timeout_sec = 5400
+user = "candidate"
+network_mode = "no-network"
+
+[environment]
+network_mode = "no-network"
+build_timeout_sec = 600
+cpus = 2
+memory_mb = 2048
+storage_mb = 4096
+workdir = "/app"
+
+[verifier]
+environment_mode = "separate"
+network_mode = "no-network"
+timeout_sec = 600
+user = "root"
+
+[verifier.environment]
+network_mode = "no-network"
+build_timeout_sec = 600
+cpus = 2
+memory_mb = 2048
+storage_mb = 4096
+workdir = "/app"
+
+[[steps]]
+name = "01-trace-run"
+
+[[steps]]
+name = "02-restore-run"
+
+[[steps]]
+name = "03-branch-study"
+
+[[steps]]
+name = "04-rebase-checkpoint"
+
+[[steps]]
+name = "05-rechart-contact-fork"
+
+[[steps]]
+name = "06-transfer-rigid-payload"

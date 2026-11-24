@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>fenced_drive</name>
+  <version>0.1.0</version>
+  <description>Generation-fenced native ros2_control device transport.</description>
+  <maintainer email="qingyuanwu4work@gmail.com">Qingyuan Wu</maintainer>
+  <license>Apache-2.0</license>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <depend>hardware_interface</depend>
+  <depend>pluginlib</depend>
+  <depend>rclcpp</depend>
+  <depend>rclcpp_lifecycle</depend>
+  <exec_depend>controller_manager_msgs</exec_depend>
+  <exec_depend>control_msgs</exec_depend>
+  <exec_depend>rclpy</exec_depend>
+  <export><build_type>ament_cmake</build_type></export>
+</package>

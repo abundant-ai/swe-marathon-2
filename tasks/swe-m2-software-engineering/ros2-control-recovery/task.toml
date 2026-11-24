@@ -1,0 +1,62 @@
+schema_version = "1.4"
+multi_step_reward_strategy = "final"
+artifacts = ["/app/control_recovery"]
+
+[task]
+name = "abundant/swe-m2_software-engineering_ros2-control-recovery"
+description = "Recover dependent robot controller chains and maintain measured joint tracking through a drive handover."
+authors = [{ name = "QingyuanWuNothing", email = "qingyuanwu4work@gmail.com" }]
+
+[metadata]
+reward_type = "continuous"
+
+[agent]
+timeout_sec = 5400
+user = "candidate"
+network_mode = "no-network"
+
+[environment]
+network_mode = "no-network"
+build_timeout_sec = 600
+cpus = 2
+memory_mb = 2048
+storage_mb = 4096
+workdir = "/app"
+
+[verifier]
+environment_mode = "separate"
+network_mode = "no-network"
+timeout_sec = 600
+user = "root"
+
+[verifier.environment]
+network_mode = "no-network"
+build_timeout_sec = 600
+cpus = 2
+memory_mb = 2048
+storage_mb = 4096
+workdir = "/app"
+
+[[steps]]
+name = "01-reconcile-interfaces"
+
+[[steps]]
+name = "02-plan-fallback"
+
+[[steps]]
+name = "03-recover-controller-chain"
+
+[[steps]]
+name = "04-schedule-handover"
+
+[[steps]]
+name = "05-run-protected-servo"
+
+[[steps]]
+name = "06-recover-native-controller-manager"
+
+[[steps]]
+name = "07-restore-native-manager"
+
+[[steps]]
+name = "08-transfer-loaded-chain"
