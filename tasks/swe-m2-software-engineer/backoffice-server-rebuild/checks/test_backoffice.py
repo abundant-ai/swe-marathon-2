@@ -2420,15 +2420,16 @@ while True:  # it fetches and writes until it is ended; whole files arrive by a 
 """
 
 
-def test_a_capped_session_keeps_nothing_written_or_fetched_after_its_end(tmp_path):
+def test_a_capped_session_keeps_and_records_what_it_writes_and_fetches_after_its_end(tmp_path):
     """Round 15, the judges' third decision on the timer (2026-11-24): no task-side timer ends the session. When a
     session reaches its 34,560 s the platform stops waiting for it but leaves the agent's commands running, with the
     network back once the session is over (harbor-lh ops/swe-marathon-v2/PLATFORM_EGRESS_WINDOW.md), until the collect
-    hook ends them. The work's end is its start, recorded at set-up, plus 34,560 s: an entry of /app/server other than a
-    directory that changed after the end and before the hook had ended the user's processes was changed once the work
-    was over: what was made then (a new file, a new link) is removed with its other names and a note, and a link out to
-    something made after the end is not copied in; a file changed in place is kept and recorded (round 15's amendment,
-    option A: Stockwell's code is private, so the network has nothing of it to fetch).
+    hook ends them. The work's end is its start, recorded at set-up, plus 34,560 s, and a file or a link of /app/server
+    that changed after the end and before the hook had ended the user's processes was changed or made once the work was
+    over. By the decision's amendment for back office (option A, as settled after re-check M2: claude-code saves every
+    edit as a new file, so refusing new files would remove its last edits; Stockwell's code is private, so the network
+    has nothing of it to fetch, and the per-trial egress audit is the backstop), each is kept, with a note of its path
+    and times and a count in `sweep_log`; a link out to something written after the end is copied in like any other.
 
     Here the recorded start puts the end just after the tree was built. A detached process then fetches a file over
     HTTP from a server on this machine and writes it into the tree and outside it, appends to a file of the tree and
@@ -2479,22 +2480,20 @@ def test_a_capped_session_keeps_nothing_written_or_fetched_after_its_end(tmp_pat
     capped = tmp_path / "capped"
     done, server = run(capped, limit + 0.15)
     lines = manifest_lines(server)
-    # app, app/main.py (changed in place after the end: kept and recorded), empty, inside, run, run-again and
-    # venv-python (a copy of a file unchanged since before the end) are left: late.txt, late-link and fetched.bin go for
-    # being made after the end, and fetched-link because what it points to was made after the end
-    main = (server / "app" / "main.py").stat().st_size
-    assert lines[0] == f"complete 7 {35 + 1000 + main}" and main > 600, (lines, main)
-    assert sorted(os.listdir(server)) == [".fsmaint-manifest", "app", "empty", "inside", "run", "run-again", "venv-python"], sorted(os.listdir(server))
-    for name in ("late.txt", "late-link", "fetched.bin"):
-        assert f"removed {name}: it was made after the work's end" in lines, (name, lines)
-    kept = [line for line in lines if line.startswith("kept app/main.py: changed in place after the work's end (changed +")]
-    assert len(kept) == 1 and ", made -" in kept[0], lines
-    assert lines[-2:] == ["sweep: 1 files changed in place after the work's end were kept", "sweep: 3 entries made after the work's end were removed"], lines
-    link = capped / "outside" / "fetched" / "answer.bin"
-    assert f"removed fetched-link -> {link}: what it points to was made after the work's end" in done.stdout.splitlines(), done.stdout
+    # sweep_tree's seven entries, late.txt, late-link, fetched.bin and fetched-link (a copy of the file fetched outside)
+    sizes = sum((server / name).stat().st_size for name in ("app/main.py", "late.txt", "fetched.bin", "fetched-link"))
+    assert lines[0] == f"complete 11 {35 + 1000 + sizes}", lines
+    assert sorted(os.listdir(server)) == [".fsmaint-manifest", "app", "empty", "fetched-link", "fetched.bin", "inside", "late-link", "late.txt",
+                                          "run", "run-again", "venv-python"], sorted(os.listdir(server))
+    assert (server / "fetched-link").read_bytes() == (server / "fetched.bin").read_bytes() == b"fetched once the work was over\n" * 100
+    kept = {line.split(":")[0]: line for line in lines if line.startswith("kept ")}
+    assert sorted(kept) == ["kept app/main.py", "kept fetched.bin", "kept late-link", "kept late.txt"], lines
+    assert kept["kept late-link"].startswith("kept late-link: a link changed or made after the work's end (changed +"), kept
+    assert all(", made " in line and "changed or made after the work's end" in line for line in kept.values()), kept
+    assert not [line for line in lines if line.startswith("removed ")] and lines[-1] == "sweep: 4 files and links changed or made after the work's end were kept", lines
     whole = verify_main(capped, copied(server, capped / "arrived" / "server"))
-    assert whole["code"] == 0 and whole["metrics"]["sweep_log"] == lines[-2:], whole["metrics"]
-    assert "collect hook: removed late.txt: it was made after the work's end" in whole["metrics"]["notes"], whole["metrics"]["notes"]
+    assert whole["code"] == 0 and whole["metrics"]["sweep_log"] == lines[-1:], whole["metrics"]
+    assert any(note.startswith("collect hook: kept late.txt: a file changed or made after the work's end (") for note in whole["metrics"]["notes"]), whole["metrics"]["notes"]
 
     # a session that ended before its limit: its end is still to come, so nothing goes for it
     done, server = run(tmp_path / "early", 0)
@@ -2650,18 +2649,20 @@ def capped_tree(base: Path, server: Path, after_the_end) -> None:
     after_the_end(base, server)
 
 
-def test_a_core_file_changed_in_place_after_the_end_arrives_and_is_graded(tmp_path):
-    """Round 15's amendment (09:40 UTC, option A for back office): harbor does not end the agent at its limit, and
-    claude-code works on until the collect hook stops it, 5-14 s later. Stockwell's code is private, so the network has
-    nothing of it to fetch, and a file changed in place in that time is kept, so that the work it holds is graded, with a
-    note that gives its path and times. Here a capped turn writes the server's main module again in place (the same
-    file, truncated) and makes its start script executable once more after the end: both arrive, the verifier grades the
-    tree, and the manifest and `sweep_log` record the changes."""
+def test_a_core_module_replaced_after_the_end_by_write_and_rename_arrives_and_is_graded(tmp_path):
+    """Round 15's amendment (option A for back office, as settled after re-check M2): harbor does not end the agent at
+    its limit, and claude-code works on until the collect hook stops it, 5-14 s later. claude-code saves every edit by
+    writing the whole file under a temporary name in the same folder (`.tmp.PID.HEX`) and renaming it into place, so an
+    edit after the end is a new file; refusing new files brought M2 back wherever birth times are kept. Here a capped
+    turn replaces the server's main module that way after the end and makes its start script executable once more:
+    both arrive, the verifier grades the tree with the new module, and the manifest and `sweep_log` record the changes
+    with their times."""
     edited = "print('written again once the work was over')\n" * 20
 
     def after_the_end(base: Path, server: Path) -> None:
-        with open(server / "app" / "main.py", "w") as main:
-            main.write(edited)
+        staged = server / "app" / ".tmp.4242.0123456789ab"
+        staged.write_text(edited)
+        os.replace(staged, server / "app" / "main.py")
         (server / "run").chmod(0o755)
 
     done, server, _ = sweep_under_the_shell(tmp_path / "capped", build=lambda base, server: capped_tree(base, server, after_the_end))
@@ -2670,23 +2671,22 @@ def test_a_core_file_changed_in_place_after_the_end_arrives_and_is_graded(tmp_pa
     assert (server / "app" / "main.py").read_text() == edited and os.access(server / "run", os.X_OK)
     # app, app/main.py, app/util.py, empty, inside, run, run-again, venv-python
     assert lines[0] == f"complete 8 {len(edited) + 11 + 35 + 1000}", lines
-    kept = sorted(line.split(":")[0] for line in lines if line.startswith("kept ") and ": changed in place after the work's end (changed +" in line)
+    kept = sorted(line.split(":")[0] for line in lines if line.startswith("kept ") and ": a file changed or made after the work's end (changed +" in line)
     assert kept == ["kept app/main.py", "kept run", "kept run-again"], lines
-    assert not [line for line in lines if line.startswith("removed ")] and lines[-1] == "sweep: 3 files changed in place after the work's end were kept", lines
+    assert not [line for line in lines if line.startswith("removed ")], lines
+    assert lines[-1] == "sweep: 3 files and links changed or made after the work's end were kept", lines
     whole = verify_main(tmp_path / "capped", copied(server, tmp_path / "capped" / "arrived" / "server"))
     assert whole["code"] == 0 and whole["reward"] == "1.000000" and whole["metrics"]["status"] == "completed", whole
-    assert (Path(whole["evaluate"][0]) / "app" / "main.py").read_text() == edited, "the edited module is what was graded"
-    assert whole["metrics"]["sweep_log"] == lines[-1:] and any(note.startswith("collect hook: kept app/main.py: changed in place")
+    assert (Path(whole["evaluate"][0]) / "app" / "main.py").read_text() == edited, "the replaced module is what was graded"
+    assert whole["metrics"]["sweep_log"] == lines[-1:] and any(note.startswith("collect hook: kept app/main.py: a file changed or made after")
                                                                for note in whole["metrics"]["notes"]), whole["metrics"]
 
 
-def test_a_file_made_after_the_end_is_still_refused(tmp_path):
-    """Round 15's amendment (option A): what is made after the end is still refused, with a note: a new module, a new
-    link, and a file written whole and renamed into place over an old one (the old file's content goes with it: nothing
-    keeps it). claude-code writes every file that way (a temporary file in the same folder, then a rename), so where the
-    file system keeps a birth time, as here, its edits after the end are refused too; where it keeps none, a file
-    changed after the end cannot be told from one made then, and is kept and recorded so. A file changed in place beside
-    them is kept."""
+def test_a_brand_new_file_made_after_the_end_is_kept_and_noted(tmp_path):
+    """Round 15's amendment (option A for back office, as settled): nothing is refused for being late. A brand-new module,
+    a new link to it and a module replaced by a file renamed into place, all made after the end, arrive, each with a note
+    of its path and times (its birth after the end, where the file system keeps birth times), beside a file changed in
+    place, which is noted too. Only the copy's own rules remove anything, as before."""
     def after_the_end(base: Path, server: Path) -> None:
         (server / "app" / "answer.py").write_text("ANSWER = 42\n")
         (server / "app" / "answer-link").symlink_to("answer.py")
@@ -2698,16 +2698,22 @@ def test_a_file_made_after_the_end_is_still_refused(tmp_path):
     done, server, _ = sweep_under_the_shell(tmp_path / "capped", build=lambda base, server: capped_tree(base, server, after_the_end))
     assert done.returncode == 0 and done.stderr == "", (done.returncode, done.stderr)
     lines = manifest_lines(server)
-    removed = sorted(line for line in lines if line.startswith("removed "))
-    assert removed == [f"removed app/{name}: it was made after the work's end" for name in ("answer-link", "answer.py", "util.py")], lines
-    assert sorted(os.listdir(server / "app")) == ["main.py"], sorted(os.listdir(server / "app"))
-    assert lines[-2:] == ["sweep: 1 files changed in place after the work's end were kept", "sweep: 3 entries made after the work's end were removed"], lines
-    assert any(line.startswith("kept app/main.py: changed in place after the work's end (changed +") for line in lines), lines
+    assert sorted(os.listdir(server / "app")) == ["answer-link", "answer.py", "main.py", "util.py"], sorted(os.listdir(server / "app"))
+    assert (server / "app" / "answer.py").read_text() == "ANSWER = 42\n" and os.readlink(server / "app" / "answer-link") == "answer.py"
+    assert (server / "app" / "util.py").read_text() == "HELPER = 2\n"
+    kept = {line.split(":")[0]: line for line in lines if line.startswith("kept ")}
+    assert sorted(kept) == ["kept app/answer-link", "kept app/answer.py", "kept app/main.py", "kept app/util.py"], lines
+    for name in ("answer.py", "util.py"):  # born after the end: the note says so
+        made = float(kept[f"kept app/{name}"].rsplit("made ", 1)[1].split(" s")[0])
+        assert made > 0, kept[f"kept app/{name}"]
+    assert float(kept["kept app/main.py"].rsplit("made ", 1)[1].split(" s")[0]) < 0, kept["kept app/main.py"]
+    assert not [line for line in lines if line.startswith("removed ")], lines
+    assert lines[-1] == "sweep: 4 files and links changed or made after the work's end were kept", lines
 
 
-def test_a_late_file_cannot_keep_its_content_through_another_name(tmp_path):
-    """Round 15: removing a late file's name changes its change time, so a second name of the same file, reached later
-    in the walk, would look as if the sweep had made it and be kept. Every name of a file removed as late goes."""
+def test_every_name_of_a_file_made_after_the_end_is_kept_and_recorded(tmp_path):
+    """Round 15: a file made after the end with three names in three folders. Since the amendment nothing is removed for
+    being late, and the record holds each name: all three arrive, each with a note."""
     def build(base: Path, server: Path) -> None:
         sweep_tree(base, server)
         time.sleep(0.3)
@@ -2725,11 +2731,12 @@ def test_a_late_file_cannot_keep_its_content_through_another_name(tmp_path):
     done, server, _ = sweep_under_the_shell(tmp_path / "one", build=build)
     assert done.returncode == 0 and done.stderr == "", (done.returncode, done.stderr)
     lines = manifest_lines(server)
-    late = sorted(line for line in lines if line.endswith("answer.txt: it was made after the work's end"))
-    assert late == [f"removed {folder}/answer.txt: it was made after the work's end" for folder in "abc"], lines
-    assert not [folder for folder in "abc" if os.path.lexists(server / folder / "answer.txt")], lines
-    # app, app/main.py, empty, inside, run, run-again, venv-python, and the folders a, b and c, which are kept
-    assert lines[0] == "complete 10 1635" and lines[-1] == "sweep: 3 entries made after the work's end were removed", lines
+    late = sorted(line.split(":")[0] for line in lines if line.startswith("kept ") and "a file changed or made after the work's end (" in line)
+    assert late == [f"kept {folder}/answer.txt" for folder in "abc"], lines
+    assert all((server / folder / "answer.txt").read_text() == "written once the work was over\n" for folder in "abc"), lines
+    # app, app/main.py, empty, inside, run, run-again, venv-python, the folders a, b and c and the three names
+    assert lines[0] == f"complete 13 {1635 + len('written once the work was over' + chr(10))}", lines
+    assert lines[-1] == "sweep: 3 files and links changed or made after the work's end were kept", lines
 
 
 def test_what_the_user_left_in_the_artifacts_folder_is_set_aside_before_the_copy(tmp_path):
