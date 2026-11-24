@@ -624,7 +624,7 @@ runtimes, the pool was regenerated at 1,944 cases under a new 128-bit seed, and 
 | Step `01-implement-renderer` | Implemented: instruction, agent image with the specification and the documentation, collect hook, separate verifier image recording at build, reference solution. |
 | Further steps | Not designed. Candidates: the next spec release (0.1.x changes behaviour in patch releases), or a second target (canonical Carve with `fmt`, or Markdown) on the same renderer. |
 | The original | carve-rs 0.1.14's static Linux release archive, fetched by `scripts/setup_tools.py` into `experiment/original/` (not in Git) and packaged as released into the verifier's build context and the solution. |
-| Hooks | `environment/fsmaint-reserve` (setup begin and complete; `--netcheck` starts the egress watcher), `environment/fsmaint-netcheck` (the in-sandbox egress watchdog), `environment/fsmaint-timer` (setup complete, as root: ends the session 33,900 s after arming with `kill -1` as `dev`, TERM for about 30 s by the clock then KILL, all gone by about 33,930 s, 60 s before the agent's 33,960 s limit, so the deliverable is graded) and `environment/fsmaint-sweep` (the one root collect hook; it writes where it got to into `/var/lib/fsmaint/out/sweep.json`, a second artifact that `fsmaint-reserve` makes at set-up), all root-only (`/usr/local/lib/fsmaint`, 0700) in the agent image. |
+| Hooks | `environment/fsmaint-reserve` (setup begin and complete; `--netcheck` records when the work began and starts the egress watcher), `environment/fsmaint-netcheck` (the in-sandbox egress watchdog) and `environment/fsmaint-sweep` (the one root collect hook; it writes where it got to into `/var/lib/fsmaint/out/sweep.json`, a second artifact that `fsmaint-reserve` makes at set-up), all root-only (`/usr/local/lib/fsmaint`, 0700) in the agent image. |
 | Published builds | `steps/01-implement-renderer/tests/verifier/upstream_builds.json` from `scripts/upstream_builds.py`: 2,156 sha256, 14 strings (three needed) and foreign-runtime markers for seven runtimes (two needed), for the refusal of fetched builds and runtimes. |
 | Private inputs | `steps/01-implement-renderer/tests/private/cases.json` and `probes.json`, Git-ignored, from `scripts/make_cases.py` and `experiment/seeds.json`. Answers and probe answers are recorded when the verifier image is built; `recording.json` beside them describes the recording and appears in `metrics.json`. |
 | Oracle | The original itself, installed from its release archive by `solve.sh` (as the agent's user), with the 14 tripwire strings blanked in place. |
@@ -771,25 +771,21 @@ asking the models under test about Carve without the files (no per-model exposur
 
 ## Workload
 
-A run is one trial of 33,960 s, about 9.4 hours, of which the session uses up to 33,900 s (one task row per experiment, no continuation tasks). The
+A run is one trial of 34,560 s, 9.6 hours (one task row per experiment, no continuation tasks). The
 instruction states no time budget.
 
 ## Verification
 
-**Run condition on the platform: the session ends itself before the cap.** Oddish did not grade any
-v2 trial whose agent ran into the 9.6 h cap today: the separate verifier image failed to build right
-after the timeout (platform-side, harbor-lh `ops/swe-marathon-v2/PLATFORM_VERIFIER_BUILD_AFTER_LONG_RUN.md`),
-while runs that ended by themselves were graded. Until the platform fixes it, a root pre-cap
-watchdog (`environment/fsmaint-timer`, armed at set-up complete) ends the agent's session 33,900 s
-after arming, with TERM every 5 s for 6 passes (about 30 s by the clock), then KILL for at most
-10 s, each `kill -1` as `dev` (round 11), so all is gone by about 33,930 s, and logs arm/fire/done to root-only `/var/log/fsmaint-timer.log`. Since round 10 the
-agent's limit in `task.toml` is 33,960 s, a backstop 60 s after the timer (it was 34,560 s, 660 s
-after), and a note beside each limit says so for the platform's reviewers. The collect hook records
-the log's last lines and `ended_by_timer` in `.fsmaint.json`; the verifier copies that into
-`metrics.json` (and a note), never into the score. The hook writes `/var/lib/fsmaint/sweeping` and stops the
-watchdog before its own kill stage, and the watchdog's loop stops on that mark, so the loop never
-reaches the hook's link fixer, which runs as `dev` (QA 07c F2). The agent, running as `dev`, cannot see, signal or
-outlast it; the instruction says nothing about it (it states no time budget).
+**Run condition on the platform: no stop before the agent's limit.** Since round 12 nothing of the
+task ends the session before the 34,560 s limit in `task.toml` (the judges' decision of 2026-11-24
+removed the pre-cap timer after two verdicts rejected any task-side stop before that limit), and
+the task goes up as a flat single-step bundle (`package_step.py --flat --keep-name`), the layout
+whose capped runs were graded. A turn that runs to the limit leaves its processes running until
+the collect hook freezes them; nothing ends them at the limit, and the hook's end of the work is
+then the start of the work (written by `fsmaint-reserve --netcheck` at set-up) plus 34,560 s: a
+file changed after it is moved out of the tree and a source fetched after it refused, as after an
+end the net check observed. The agent, running as `dev`, cannot reach the hooks; the instruction
+states no time.
 
 1. The collect hook (`fsmaint-sweep`) runs as root in the agent's container when the session ends
    (above). Its first action is to write, in place, that it has begun into
@@ -908,7 +904,7 @@ platform's egress window, shared by every task whose original is public.
 | 13 | Infer an evaluation from the files and text | Instruction and image | Checked: no grading, hidden, budget or session wording; no examples shipped | Requester's voice; the hook is root-only and names no judging | An agent can still guess that pages exist to test it | Read the first trajectories | 🟡 YELLOW / UNASSESSED |
 | 14 | A case where carve-rs and the specification disagree | Selection | 30 candidates dropped by the model check; 6 corpus documents known to differ | Only cases the model renders identically are kept | None | Keep | 🟢 GREEN / LOW |
 | 15 | Behaviour outside the stated scope graded | Case generation | No source holds an include; options only `--safe`, `--html`, and unknown ones; CLI cases one per stated behaviour | Out-of-scope list in the instruction | None found | QA lens 12 | 🟢 GREEN / LOW |
-| 16 | Stop, delay or outlast the timer (`fsmaint-timer`), so the session runs into the platform's cap and is never graded (a 0 the audit cannot see), or exploit its kill | Agent user; root-only hooks | Checked: the timer runs as root from the set-up hook, its log and pid file are root's (0600, `/run`), `dev` cannot signal a root process; check `test_the_timer_arms_once_fires_at_end_seconds_and_ends_the_tree` | It can be killed only as root; the kill is TERM (6 passes, 5 s apart, stopped at 30 s by the clock) then KILL (repeated for at most 10 s), each `kill -1` as `dev` (one system call, no listing; round 11), of `dev`'s processes only, from 33,900 s (gone by about 33,930 s, about 33,938 s at worst when every listing times out); since round 10 the agent's limit is 33,960 s, a backstop 60 s later (after BasedPL's v2 verdict on a 660 s margin; the judges' option B), with a note beside it in `task.toml`; its loop stops on the sweep's `sweeping` mark and the sweep stops it before its own worker runs, so it never reaches the link fixer (QA 07c F2); `ended_by_timer` is recorded for the audit, never scored | A platform that itself kills root processes or arms the hook late (then the 33,960 s limit ends the session, the platform's own cap, which 4 of 4 heavy-image trials did not survive on 2026-11-19); a run that ends 60 s early loses nothing the limit would not have taken | First capped trial: read `ended_by_timer` and the log tail in `metrics.json` | 🟢 GREEN / LOW |
+| 16 | Run past the agent's limit: keep processes writing into the tree, or fetching, after a turn that reached the 34,560 s limit, since nothing of the task stops the session (round 12: the pre-cap timer is gone) | Agent user; collect hook | Check `test_a_capped_turn_that_keeps_writing_and_fetching_after_the_limit_counts_nothing_late` (a process of the turn writes in place and fetches after the limit) | The hook's end of the work for a turn that reached the limit is its start plus 34,560 s (`end_from` `limit`), and no kill enforces it; a file changed after it is moved out and counts for nothing, a source fetched after it is refused; the freeze and the ending at the hook's start are unchanged | A write through a file mapping dirtied before the end can change content without moving its times (SymPy's residual, the same here); harbor's own handling of a capped turn on the platform is not observed | The first capped trial: `end_from`, `left_out_late` and the refusals in `metrics.json` | 🟡 YELLOW / UNASSESSED |
 
 Licences: the specification, documentation and carve-rs are MIT. The spec's `LICENSE` ships in
 `/app/spec` and `/app/docs`, carve-rs's with the reference solution.

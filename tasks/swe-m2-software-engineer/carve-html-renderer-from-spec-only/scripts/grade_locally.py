@@ -79,11 +79,12 @@ def main() -> None:
     parser.add_argument("--out", type=Path)
     args = parser.parse_args()
     bundle = args.bundle.resolve()
+    step = bundle / STEP if (bundle / STEP).is_dir() else bundle   # a flat bundle has the step's files at its top
     work = (args.out or Path(tempfile.mkdtemp(prefix="carve-grade-"))).resolve()
     tests = work / "tests"
     if tests.exists():
         shutil.rmtree(tests)
-    shutil.copytree(bundle / STEP / "tests", tests)
+    shutil.copytree(step / "tests", tests)
     record = work / "record"
     record.mkdir(parents=True, exist_ok=True)
     original = args.original.resolve()
@@ -108,13 +109,13 @@ def main() -> None:
     reference.mkdir(parents=True, exist_ok=True)
     # As solve.sh installs it: the original with the bundle's blank.json strings overwritten in place.
     binary = original.read_bytes()
-    for text in json.loads((bundle / STEP / "solution" / "blank.json").read_text())["strings"]:
+    for text in json.loads((step / "solution" / "blank.json").read_text())["strings"]:
         binary = binary.replace(text.encode(), b"x" * len(text.encode()))
     (reference / "carve").write_bytes(binary)
     (reference / "carve").chmod(0o755)
     if sys.platform == "darwin":  # a changed Mach-O needs a new ad-hoc signature to run
         subprocess.run(["codesign", "-s", "-", "-f", str(reference / "carve")], check=True, capture_output=True, timeout=120)
-    shutil.copy(bundle / STEP / "solution" / "LICENSE", reference / "LICENSE")
+    shutil.copy(step / "solution" / "LICENSE", reference / "LICENSE")
     empty = work / "deliveries" / "empty" / "rebuild"
     empty.mkdir(parents=True, exist_ok=True)
     silent = work / "deliveries" / "silent" / "rebuild"

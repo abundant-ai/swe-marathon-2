@@ -518,18 +518,15 @@ def manifest_record(top: Path) -> dict:
         summary |= {"processes": (record.get("processes") or [])[:50], "entries_listed": len(entries),
                     "copies": record.get("copies", []), "refused_copies": record.get("refused_copies", []),
                     "netcheck": record.get("netcheck"), "netcheck_open": record.get("netcheck_open"),
-                    "timer_log": (record.get("timer_log") or [])[-20:],
-                    "ended_by_timer": bool(record.get("ended_by_timer")),
                     "latest_changes": [{key: item.get(key) for key in ("path", "type", "size", "ctime", "sha256")} for item in latest[:20]]}
         flags = []
-        if record.get("ended_by_timer"):
-            flags.append("the timer ended the processes before the sweep")
         if record.get("any_open"):
             flags.append("a public host answered after the end")
         if record.get("processes_left"):
             flags.append(f"{record.get('processes_left')} processes survived the kill")
         if record.get("late_entries"):
-            flags.append(f"{record.get('late_entries')} listed entries changed after the end bound")
+            flags.append(f"{record.get('late_entries')} entries changed after the end bound"
+                         + (" (left out or refused)" if record.get("end_from") in ("netcheck", "limit") else " (listed)"))
         if record.get("copies"):
             flags.append(f"{len(record['copies'])} files were copied in from links out of /app/rebuild")
         flagged = [copy for copy in (record.get("copies") or []) if isinstance(copy, dict) and copy.get("flagged")]
@@ -539,7 +536,9 @@ def manifest_record(top: Path) -> dict:
         refused_late = [item for item in (record.get("refused_copies") or []) if isinstance(item, dict) and item.get("late_files")]
         if refused_late:
             flags.append(f"{len(refused_late)} outside sources changed at or after the end bound were refused: review them")
-        if not (record.get("netcheck_open") or {}).get("first_open_at"):
+        if record.get("end_from") == "limit":
+            flags.append("the work ran to its time limit; the end bound is its start plus that limit")
+        elif not (record.get("netcheck_open") or {}).get("first_open_at"):
             flags.append("no net check observed the end; the end bound is the sweep's start")
         ending = record.get("ending") if isinstance(record.get("ending"), dict) else {}
         if "processes_left" in record and record.get("processes_left") is None:
@@ -916,9 +915,6 @@ def main() -> int:
             metrics["fingerprint"] = fingerprint(PROGRAM, tests / "private", prefix, ids, cutoff_at)
             final_cleanup(ids[0], min(cutoff_at, time.monotonic() + CLEANUP_SEC))
         metrics["notes"] = notes + metrics["notes"]
-        # Whether the timer ended the processes (the sweep's record): for review
-        # and the run log only, never a term of the reward.
-        metrics["ended_by_timer"] = bool(record.get("ended_by_timer"))
         # The reward first, in its reserved place, then renamed (no new space): nothing after it
         # can cost it.
         write_in_place(output / ".reward.tmp", f"{metrics['reward']:.6f}".encode())

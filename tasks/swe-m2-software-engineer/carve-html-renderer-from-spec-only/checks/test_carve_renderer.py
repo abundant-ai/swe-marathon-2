@@ -35,7 +35,6 @@ RECORDER = TESTS / "verifier" / "recorder.py"
 HOOK = TASK / "environment" / "fsmaint-sweep"
 SETUP = TASK / "environment" / "fsmaint-reserve"
 WATCH = TASK / "environment" / "fsmaint-netcheck"
-PRECAP = TASK / "environment" / "fsmaint-timer"
 
 
 def scripts_call(code: str) -> object:
@@ -479,7 +478,7 @@ def test_the_tree_pulled_from_the_v2_oracle_trial_replays_through_the_whole_run(
     notes, refused, record, ids, fetched, metrics = report
     assert notes == [] and refused is False and fetched is None and ids == [os.getuid(), os.getuid()], report[:5]
     assert record["listed"] == "listed 2 16217230" and record["entries_listed"] == 2 and record["listing_complete"] is True
-    assert record["any_open"] is True and record["end_from"] == "start" and record["ended_by_timer"] is False
+    assert record["any_open"] is True and record["end_from"] == "start"
     assert record["process_count"] == 0 and record["kill_passes"] == 0 and record["late_entries"] == 0, record
     assert record["flags"] == ["a public host answered after the end",
                                "no net check observed the end; the end bound is the sweep's start"], record["flags"]
@@ -919,7 +918,6 @@ def test_the_collect_hook_lets_honest_deliveries_through_the_copy(tmp_path):
     assert record["listed"] == lines[0] and record["listing_complete"] is True and record["kill_passes"] == 1
     assert record["hosts"] == {"127.0.0.1:9": record["hosts"]["127.0.0.1:9"]} and record["any_open"] is False
     assert record["late_entries"] == 0, "nothing was written after the (far-future) turn end"
-    assert record["ended_by_timer"] is False and record["timer_log"] is None, "no pre-cap watchdog ran here"
     listed = {item["path"]: item for item in record["entries"]}
     assert len(listed) == int(counted) and listed["carve"]["type"] == "link"
     assert listed["src/target/release/deps/carve-0123abcd"]["sha256"] == hashlib.sha256(b"\x7fELF binary").hexdigest()
@@ -1232,7 +1230,7 @@ def test_the_sweep_says_it_began_first_and_marks_the_tree_before_ending_processe
     begun = hook.find('progress "{\\"stage\\": \\"started\\"')
     marks = hook.find('"""Put a mark into /app/rebuild')
     assert begun != -1 and marks != -1, "the sweep says it began, and marks the tree"
-    assert begun < hook.index(': > "$STATE/sweeping"') < hook.index("as_dev kill -STOP -1") < hook.index('rm -f "$STATE/room"') \
+    assert begun < hook.index("as_dev kill -STOP -1") < hook.index('rm -f "$STATE/room"') \
         < hook.index("for name in .fsmaint .fsmaint.json") < marks < hook.index('"""List the processes of the user') \
         < hook.index("as_dev kill -9 -1"), "began, then freeze, reserve back, set aside, mark, list, end"
     assert 'printf \'%-4095s\\n\' \'{"stage": "setup"}\'' in SETUP.read_text() and '"$STATE/out"' in SETUP.read_text()
@@ -1564,7 +1562,7 @@ def test_the_verifier_records_in_a_builder_stage_and_keeps_only_the_answers():
     assert "--expect-kept-ids" in verifier and "--probes-out /record/probes_expected.json" in verifier
     assert "APT_SNAPSHOT" in verifier and "snapshot.ubuntu.com" in verifier, "the archive can be pinned to a snapshot"
     assert re.findall(r"^COPY .*$", agent, re.M) == ["COPY spec/ /app/spec/", "COPY docs/ /app/docs/",
-                                                    "COPY fsmaint-reserve fsmaint-netcheck fsmaint-sweep fsmaint-timer /usr/local/lib/fsmaint/"]
+                                                    "COPY fsmaint-reserve fsmaint-netcheck fsmaint-sweep /usr/local/lib/fsmaint/"]
     assert "APT_SNAPSHOT" in agent, "the agent image can be pinned to a snapshot too"
     assert "carve" not in agent.replace("/app/rebuild", "").lower(), "no build of any Carve engine in the agent's image"
     assert 'install.py" "$here/carve.tar.gz" "$here/build.txt" /app/rebuild/carve' in solve
@@ -1602,104 +1600,6 @@ def test_the_installer_refuses_any_build_but_the_pinned_one(tmp_path):
     assert '/app/rebuild/carve --blank "$here/blank.json"' in solve and "--blank" not in verifier, "only the solution blanks"
     package = (SCRIPTS / "package_step.py").read_text()
     assert 'content[f"{STEP}/solution/blank.json"]' in package and '["strings"]' in package
-
-
-def test_the_timer_arms_once_fires_at_end_seconds_and_ends_the_tree(tmp_path):
-    """The root pre-cap watchdog: armed once by the set-up hook and detached; END_SECONDS later (2 s
-    here, 33,900 s in production) it ends the agent user's whole process tree, a setsid'd child
-    included, TERM every 5 s for 6 passes (about 30 s by the clock, round 10-11) then KILL, so that
-    all is gone by about 33,930 s, logging arm, fire and done with timestamps to a root-only log.
-    Since round 10 (the judges' option B of 2026-11-20) every agent limit in task.toml is 33,960 s, a
-    backstop 60 s after the timer, with the two-line note of round 11 (QA 24 M1) beside each. The
-    sweep hook records the log's tail; the verifier carries `ended_by_timer` into metrics and never
-    into the reward."""
-    text = PRECAP.read_text()
-    assert text.startswith("#!/bin/sh") and os.access(PRECAP, os.X_OK)
-    for literal in ('END_SECONDS="${FSMAINT_TIMER_END_SECONDS:-33900}"', 'LOG="${FSMAINT_TIMER_LOG:-/var/log/fsmaint-timer.log}"',
-                    'PIDFILE="${FSMAINT_TIMER_PIDFILE:-/run/fsmaint-timer.pid}"', 'TARGET_USER="${FSMAINT_TIMER_USER:-dev}"',
-                    'SELECT="${FSMAINT_TIMER_SELECT:--u $TARGET_USER}"', 'TERM_PASSES="${FSMAINT_TIMER_TERM_PASSES:-6}"',
-                    'TERM_INTERVAL="${FSMAINT_TIMER_TERM_INTERVAL:-5}"', 'KILL_SECONDS="${FSMAINT_TIMER_KILL_SECONDS:-10}"',
-                    'PROBE="${FSMAINT_TIMER_PROBE_SECONDS:-3}"', 'LIVE="${FSMAINT_TIMER_LIVE--r R,S,D,T,t}"',
-                    'kill -"$1" -1', 'pkill -KILL -U "$TARGET_USER"', 'pkill -"$1" $SELECT',
-                    'setsid nohup "$0" run', 'chmod 0600 "$LOG"'):
-        assert literal in text, literal
-    defaults = {name: int(value) for name, value in re.findall(r'^(END_SECONDS|TERM_PASSES|TERM_INTERVAL)="\$\{FSMAINT_TIMER_\w+:-(\d+)\}"',
-                                                               text, re.M)}
-    toml = (TASK / "task.toml").read_text()
-    limits = re.findall(r"\[(agent|steps\.agent)\]\n((?:#[^\n]*\n)*)timeout_sec = (\d+)", toml)
-    gone = defaults["END_SECONDS"] + defaults["TERM_PASSES"] * defaults["TERM_INTERVAL"] + 1   # the KILL, then a second
-    assert defaults["END_SECONDS"] == 33900 and gone <= 33_931, defaults
-    assert [(table, int(limit)) for table, _, limit in limits] == [("agent", 33960), ("steps.agent", 33960)], limits
-    assert all(int(limit) - defaults["END_SECONDS"] == 60 and int(limit) > gone for _, _, limit in limits), "a backstop 60 s later"
-    for table, note, _ in limits:   # beside each limit, exactly these two lines (QA 24 M1)
-        assert note == ("# Sessions end at 33,900 s: a timer started at set-up closes the session user's processes then\n"
-                        "# (all are gone by about 33,930 s). This value is a backstop 60 s later.\n"), (table, note)
-    assert '[[agent.setup_complete]]\ncommand = "/usr/local/lib/fsmaint/fsmaint-timer"' in toml
-    assert "fsmaint" not in (STEP / "instruction.md").read_text().lower() and "timer" not in (STEP / "instruction.md").read_text().lower()
-    # Live: a tree of two loops, one in a session of its own, matched through a marker in their arguments.
-    log, pidfile = tmp_path / "watchdog.log", tmp_path / "watchdog.pid"
-    marker = "precapmk" + os.urandom(6).hex()
-    loop = "while :; do sleep 1; done"
-    parent = subprocess.Popen(["sh", "-c", loop, marker])
-    child = subprocess.Popen(["sh", "-c", loop, marker], start_new_session=True)
-    env = dict(os.environ, FSMAINT_TIMER_LOG=str(log), FSMAINT_TIMER_PIDFILE=str(pidfile), FSMAINT_TIMER_END_SECONDS="2",
-               FSMAINT_TIMER_SELECT=f"-f {marker}", FSMAINT_TIMER_TERM_INTERVAL="1", FSMAINT_TIMER_TERM_PASSES="5",
-               FSMAINT_TIMER_LIVE="")   # this machine's pgrep may not list by state
-    alive = lambda: subprocess.run(["pgrep", "-f", marker], capture_output=True).returncode == 0  # noqa: E731
-    try:
-        started = time.time()
-        first = subprocess.run([str(PRECAP)], env=env, capture_output=True, text=True, timeout=30)
-        armed_in = time.time() - started
-        second = subprocess.run([str(PRECAP)], env=env, capture_output=True, text=True, timeout=30)
-        assert first.returncode == 0 and second.returncode == 0 and armed_in < 5, (first, second, armed_in)
-        pid = int(pidfile.read_text().strip())
-        assert alive(), "the tree lives until the watchdog fires"
-        deadline = time.time() + 20
-        while alive() and time.time() < deadline:
-            time.sleep(0.2)
-        ended_in = time.time() - started
-        assert not alive(), "the tree, the setsid'd child included, is ended"
-        assert 2 <= ended_in <= 12, ended_in
-        time.sleep(1.5)
-        lines = log.read_text().splitlines()
-    finally:
-        subprocess.run(["pkill", "-f", marker], capture_output=True)
-        for process in (parent, child):
-            try:
-                process.wait(timeout=2)
-            except Exception:  # noqa: BLE001 - the loops are dead or being killed
-                pass
-    assert all(re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ", line.split(" ", 1)[0]) for line in lines), lines
-    armed = [line for line in lines if re.search(r"Z armed pid=\d+ end_seconds=2 ", line)]
-    assert len(armed) == 1 and f"pid={pid} " in armed[0], lines
-    assert sum("already armed" in line for line in lines) == 1, "the second arming found the first and did nothing"
-    fired = [line for line in lines if " fired after 2s" in line]
-    assert len(fired) == 1 and lines.index(fired[0]) > lines.index(armed[0]), lines
-    assert any(re.search(r" done term_passes=\d+ processes_left=0$", line) for line in lines), lines
-    assert not pidfile.exists() and log.stat().st_mode & 0o777 == 0o600
-    # The sweep hook records the log's tail; the verifier carries the field, never into the reward.
-    hook = HOOK.read_text()
-    assert 'os.environ.get("FSMAINT_TIMER_LOG", "/var/log/fsmaint-timer.log")' in hook and "ended_by_timer=" in hook
-    verify = (TESTS / "verify.py").read_text()
-    assert 'metrics["ended_by_timer"] = bool(record.get("ended_by_timer"))' in verify
-    start = verify.index("def run_cases(")
-    assert "ended_by_timer" not in verify[start:verify.index("\ndef ", start + 1)], "nothing of the timer reaches the run"
-    top = tmp_path / "rebuild"
-    top.mkdir()
-    (top / "carve").write_text("#!/bin/sh\nexit 0\n")
-    fired_log = tmp_path / "fired.log"
-    fired_log.write_text("2026-11-19T00:00:00Z armed pid=7 end_seconds=33900 target=-u dev\n"
-                         "2026-11-19T09:25:00Z fired after 33900s: ending the session (-u dev)\n"
-                         "2026-11-19T09:25:01Z done term_passes=1 processes_left=0\n")
-    run_hook(top, env={"FSMAINT_TIMER_LOG": str(fired_log), "FSMAINT_TIMER_PIDFILE": str(tmp_path / "no-such-pid")})
-    record = json.loads((top / ".fsmaint.json").read_text())
-    assert record["ended_by_timer"] is True and record["timer_log"][-2].endswith("(-u dev)"), record["timer_log"]
-    summary = verifier_call(textwrap.dedent(f"""
-        import json, verify
-        from pathlib import Path
-        print(json.dumps(verify.manifest_record(Path({str(top)!r}))))
-    """))
-    assert summary["ended_by_timer"] is True and "the timer ended the processes" in " ".join(summary["flags"])
 
 
 def test_hosts_draw_once_and_the_attacker_splice_is_rejected():
@@ -1832,33 +1732,6 @@ def test_a_fetch_that_beats_the_kill_is_refused_and_counted(tmp_path):
     assert all(key in watch for key in ("first_open_at", "last_closed_at", "end_bound", "poll_seconds"))
 
 
-def test_the_timer_stops_once_a_sweep_has_begun(tmp_path):
-    """QA 07c F2: the sweep hook marks the session as being swept and stops the watchdog
-    before its own link fixer runs as the agent's user; the watchdog's TERM loop stops on the mark
-    instead of ending the fixer."""
-    log, pidfile, mark = tmp_path / "log", tmp_path / "pid", tmp_path / "sweeping"
-    mark.write_text("")
-    marker = "precapmk" + os.urandom(6).hex()
-    worker = subprocess.Popen(["sh", "-c", "while :; do sleep 1; done", marker])
-    env = dict(os.environ, FSMAINT_TIMER_LOG=str(log), FSMAINT_TIMER_PIDFILE=str(pidfile), FSMAINT_TIMER_END_SECONDS="1",
-               FSMAINT_TIMER_SELECT=f"-f {marker}", FSMAINT_TIMER_TERM_INTERVAL="1", FSMAINT_TIMER_TERM_PASSES="3", FSMAINT_TIMER_SWEEPING=str(mark),
-               FSMAINT_TIMER_LIVE="")
-    try:
-        assert subprocess.run([str(PRECAP)], env=env, capture_output=True, timeout=30).returncode == 0
-        time.sleep(3.5)
-        assert worker.poll() is None, "the worker lives: the loop stopped on the mark"
-        lines = log.read_text().splitlines()
-        assert any(" fired" in line for line in lines) and any("stopped: a sweep has begun" in line for line in lines), lines
-        assert not any("killed" in line for line in lines), lines
-    finally:
-        subprocess.run(["pkill", "-f", marker], capture_output=True)
-        worker.wait(timeout=5)
-    hook = HOOK.read_text()
-    assert hook.index(': > "$STATE/sweeping"') < hook.index("kill -STOP -1"), "the mark precedes the hook's kill stage and its fixer"
-    assert "/run/fsmaint-timer.pid" in hook
-    assert 'SWEEPING="${FSMAINT_TIMER_SWEEPING:-/var/lib/fsmaint/sweeping}"' in PRECAP.read_text()
-
-
 def test_the_agent_cannot_replace_the_artifact_directory():
     docker = (TASK / "environment" / "Dockerfile").read_text()
     assert "chown -R root:root /app" in docker and "chmod 1777 /app " in docker and "chmod 0777 /app/rebuild" in docker
@@ -1900,14 +1773,13 @@ def test_nothing_the_agent_sees_names_grading_or_a_budget():
                  "modal", "audit", "qa ", "artifact", "result", "test", "benchmark", "agent", "hidden", "oracle", "budget", "deadline"):
         assert word not in said, ("task.toml comment", word)
     assert not re.search(r"\bcaps?\b", said), "task.toml comment names a cap"
-    beside = re.findall(r"((?:#[^\n]*\n)+)timeout_sec = 33960\n", seen["task.toml"])
-    assert len(beside) == 2 and len(comments) == sum(block.count("\n") for block in beside), comments   # only the notes beside the limits
+    assert comments == [], comments   # task.toml carries no comment (round 12)
     instruction = seen["instruction.md"]
     assert "/app/rebuild/carve" in instruction and "Out of scope:" in instruction
     for excluded in ("{{ path }}", "`fmt`", "`lint`", "`migrate`", "Markdown", "the AST as JSON", "importers", "static mode",
                      "`--help`", "`--version`"):
         assert excluded in instruction.split("Out of scope:", 1)[1], excluded
-    for carrier in (HOOK, SETUP, WATCH, PRECAP):
+    for carrier in (HOOK, SETUP, WATCH):
         lowered = carrier.read_text().lower()
         for word in ("grade", "score", "reward", "verifier", "hidden", "oracle", "the test", "deliver", "collect", "watchdog",
                      "platform", "harbor", "pre-cap", "qa ", "audit", "attempt", "budget", "deadline", "submission", "agent"):
@@ -1994,47 +1866,6 @@ def test_a_fetched_build_of_the_original_or_a_runtime_is_refused(tmp_path):
 
 # ---------------------------------------------------------------- round 11 (QA 24)
 
-def test_the_timers_kill_lands_on_time_however_slow_the_process_listings_are(tmp_path):
-    """QA 24 S1: round 10's timer listed with zombie-matching, untimed `pgrep` and signalled with one
-    untimed `pkill` per pass, so with listings that each take 2 s its KILL came about 32 s after it
-    fired here (in production 33,930 s plus 14 listings, past the 33,960 s backstop once a listing
-    takes about 2 s). Now TERM and KILL are `kill -1` as the session user (one system call, no
-    listing), the TERM passes stop when their 30 s are up by the clock, every listing and pkill has
-    PROBE seconds, and KILL repeats for at most KILL_SECONDS. Here, scaled down (TERM passes of 1 s,
-    PROBE 1 s), with stand-in commands that signal nothing and take 2 s to list."""
-    stand_in = tmp_path / "bin"
-    stand_in.mkdir()
-    said = tmp_path / "said.log"
-    for name, body in (("setpriv", f'printf "%s\\n" "setpriv $*" >> "{said}"\nexit 0\n'),
-                       ("pkill", f'printf "%s\\n" "pkill $*" >> "{said}"\nexec sleep 2\n'),
-                       ("pgrep", "exec sleep 2\n"), ("kill", "exit 0\n")):
-        (stand_in / name).write_text("#!/bin/sh\n" + body)
-        (stand_in / name).chmod(0o755)
-    log = tmp_path / "timer.log"
-    env = dict(os.environ, PATH=f"{stand_in}:{os.environ['PATH']}", FSMAINT_TIMER_LOG=str(log),
-               FSMAINT_TIMER_PIDFILE=str(tmp_path / "timer.pid"), FSMAINT_TIMER_END_SECONDS="1",
-               FSMAINT_TIMER_TERM_INTERVAL="1", FSMAINT_TIMER_TERM_PASSES="6", FSMAINT_TIMER_KILL_SECONDS="3",
-               FSMAINT_TIMER_PROBE_SECONDS="1", FSMAINT_TIMER_SWEEPING=str(tmp_path / "no-sweep"))
-    started = time.monotonic()
-    timer = subprocess.Popen([str(PRECAP), "run"], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    killed_at = None
-    try:
-        while time.monotonic() - started < 45 and killed_at is None:
-            if said.exists() and "KILL" in said.read_text():
-                killed_at = time.monotonic() - started - 1.0   # from the firing, END_SECONDS after the start
-            time.sleep(0.05)
-        timer.wait(timeout=30)
-    finally:
-        if timer.poll() is None:
-            timer.kill()
-    calls = said.read_text().splitlines() if said.exists() else []
-    assert killed_at is not None and killed_at <= 10, (killed_at, calls[:8])
-    assert any(call.endswith("kill -TERM -1") for call in calls) and any(call.endswith("kill -KILL -1") for call in calls), calls
-    assert not any(call.startswith("pkill -TERM") for call in calls), "TERM is one system call, not a scan"
-    lines = log.read_text().splitlines()
-    assert any(" fired after 1s" in line for line in lines) and any(re.search(r" done term_passes=\d+ ", line) for line in lines), lines
-
-
 def test_what_the_session_left_in_logs_artifacts_is_moved_aside_whole(tmp_path):
     """QA 24 S2: /logs/artifacts is writable by the session without bound, and the copy packs it, and
     unpacks it into the verifier's container, before anything else; an upload that fails there ends
@@ -2090,3 +1921,82 @@ def test_a_file_with_more_than_a_thousand_hard_links_is_refused(tmp_path):
             assert lines[1] == "a file in it has more than 1,000 hard links, the most a file in /app/rebuild may have: it was not copied"
             assert manifest_of(top)[1] is True
     assert "with no file that has more than 1,000 hard links" in (STEP / "instruction.md").read_text()
+
+
+# ---------------------------------------------------------------- round 12: no timer; the work's limit; flat bundles
+
+def test_no_timer_ends_the_session_and_the_work_limit_is_one_number():
+    """Round 12 (the judges' decision of 2026-11-24): nothing of the task stops the session before
+    the agent's limit. fsmaint-timer, its set-up entry and every mention of it are gone; both agent
+    limits are 34,560 s again with no comment; the sweep's WORK_LIMIT_SECONDS is the same number, and
+    fsmaint-reserve records when the work began, just before it does."""
+    assert not (TASK / "environment" / "fsmaint-timer").exists()
+    toml = (TASK / "task.toml").read_text()
+    assert "fsmaint-timer" not in toml and "#" not in toml
+    assert re.findall(r"\[(agent|steps\.agent)\]\ntimeout_sec = (\d+)", toml) == [("agent", "34560"), ("steps.agent", "34560")]
+    for carrier in (TASK / "environment" / "Dockerfile", HOOK, SETUP, WATCH, TESTS / "verify.py"):
+        assert "timer" not in carrier.read_text().lower(), carrier.name
+    assert int(re.search(r"^WORK_LIMIT_SECONDS=(\d+)", HOOK.read_text(), re.M).group(1)) == 34560
+    setup = SETUP.read_text()
+    assert 'date +%s.%N > "$STATE/work-started"' in setup and '[[agent.setup_complete]]\ncommand = "/usr/local/lib/fsmaint/fsmaint-reserve --netcheck"' in toml
+
+
+def test_a_capped_turn_that_keeps_writing_and_fetching_after_the_limit_counts_nothing_late(tmp_path):
+    """Round 12: with no timer, a turn that runs to the agent's limit leaves its processes running
+    until the sweep stops them (nothing ends them at the limit). The end of such a work is its start
+    (written at set-up) plus 34,560 s: a file written in place after it is moved out and counts for
+    nothing, and a source fetched after it is refused, as after an end the net check observed.
+    Here the limit falls 1.5 s after an honest write, and a process of the turn writes and fetches
+    once it has passed."""
+    top = tmp_path / "rebuild"
+    top.mkdir()
+    program = "#!/bin/sh\necho early\n"
+    (top / "carve").write_text(program)
+    (top / "notes.txt").write_text("early\n")
+    state = top.parent / f".{top.name}-state"   # run_hook's own state directory
+    state.mkdir()
+    limit_at = time.time() + 1.5
+    (state / "work-started").write_text(f"{limit_at - 34560}\n")
+    fetched = tmp_path / "fetched"
+    turn = subprocess.Popen(["sh", "-c", f'sleep 2.5; echo late > "{top}/notes.txt"; mkdir -p "{fetched}"; '
+                                         f'printf "%s" "fetched after the limit" > "{fetched}/carve-real"; '
+                                         f'ln -s "{fetched}/carve-real" "{top}/blob"'])
+    assert turn.wait(timeout=30) == 0
+    done = subprocess.run([sys.executable, "-I", "-", str(state / "netcheck-open.json"), f"{time.time()}", str(state / "work-started"),
+                           "34560"], input=hook_programs()["bound"], text=True, capture_output=True, timeout=30)
+    end, origin = done.stdout.split()
+    assert origin == "limit" and abs(float(end) - limit_at) < 0.01, done.stdout + done.stderr
+    lines = run_hook(top, turn_end=float(end), turn_from=origin)
+    record = json.loads((top / ".fsmaint.json").read_text())
+    assert lines[0] == f"listed 1 {len(program)}" and (top / "carve").read_text() == program, lines[:4]
+    assert not (top / "notes.txt").exists() and not (top / "blob").exists(), sorted(os.listdir(top))
+    assert record["end_from"] == "limit" and record["left_out_late"] == 1 and len(record["refused_copies"]) == 1, record["end_from"]
+    assert any(line == "moved out notes.txt: it changed after the end of the work" for line in lines), lines
+    flags = verifier_call(textwrap.dedent(f"""
+        import json, verify
+        from pathlib import Path
+        print(json.dumps(verify.manifest_record(Path({str(top)!r}))["flags"]))
+    """))
+    assert "the work ran to its time limit; the end bound is its start plus that limit" in flags, flags
+    assert any("changed after the end bound (left out or refused)" in flag for flag in flags), flags
+
+
+def test_the_flat_bundle_can_keep_the_tasks_name():
+    """Round 12: the flat bundle goes up as the next version of the same task, so `--flat
+    --keep-name` keeps the name; the layout and task.toml change as with `--flat` alone, and nothing
+    else."""
+    out = scripts_call(textwrap.dedent('''
+        import json, package_step
+        content = {"task.toml": b'schema_version = "1.4"\\nmulti_step_reward_strategy = "final"\\n[task]\\nname = "abundant/swe-m2_x_y"\\n'
+                                b'\\n[[steps]]\\nname = "01-implement-renderer"\\n',
+                   "steps/01-implement-renderer/instruction.md": b"do it", "environment/Dockerfile": b"FROM x"}
+        print(json.dumps([{k: v.decode() for k, v in package_step.flatten(content, keep_name=True).items()},
+                          {k: v.decode() for k, v in package_step.flatten(content).items()}]))
+    '''))
+    kept, renamed = out
+    assert sorted(kept) == ["environment/Dockerfile", "instruction.md", "task.toml"] and kept["instruction.md"] == "do it"
+    assert 'name = "abundant/swe-m2_x_y"\n' in kept["task.toml"] and "-single" not in kept["task.toml"]
+    assert "[[steps]]" not in kept["task.toml"] and "multi_step_reward_strategy" not in kept["task.toml"]
+    assert kept["task.toml"] == renamed["task.toml"].replace("swe-m2_x_y-single", "swe-m2_x_y")
+    package = (SCRIPTS / "package_step.py").read_text()
+    assert 'parser.add_argument("--keep-name"' in package and 'parser.error("--keep-name goes with --flat")' in package

@@ -12,9 +12,12 @@
 # the link fixing changes, and what was in /logs/artifacts is moved aside. The mark's first line says
 # how many entries and bytes were listed, or that the tree was refused; the record (.fsmaint.json)
 # lists every entry, every link turned into a copy with where the copy came from and when that
-# source last changed, the end bound the net check observed, and how the ending of the processes went.
+# source last changed, the end of the work (the net check's observation, or the work's start plus
+# the time it is given for a turn that ran to it, whichever came first; nothing is ended at that
+# limit, and what changed after the end does not count), and how the ending of the processes went.
 LIMIT_ENTRIES=200000
 LIMIT_BYTES=2000000000
+WORK_LIMIT_SECONDS=34560   # the time the work is given, as in task.toml
 STATE=/var/lib/fsmaint
 OUT="$STATE/out"   # copied beside the tree: where the sweep got to (sweep.json)
 PROBE="${FSMAINT_SWEEP_PROBE_SECONDS:-10}"     # each process listing or signal, at most
@@ -51,17 +54,6 @@ count_alive() {   # how many processes of `dev` are alive, or "unknown" where a 
 as_dev() {   # a command run as `dev`, within PROBE seconds
   timeout "$PROBE" setpriv --reuid dev --regid dev --clear-groups "$@" >/dev/null 2>&1
 }
-# fsmaint-timer, if it is still ending processes, must not reach the worker below that runs as
-# `dev`: write the mark its loop stops on, then stop it; the last stage stops it again.
-: > "$STATE/sweeping"
-if [ -r /run/fsmaint-timer.pid ]; then
-  timer=$(cat /run/fsmaint-timer.pid 2>/dev/null)
-  if [ -n "$timer" ]; then
-    kill -TERM "$timer" >/dev/null 2>&1
-    for _ in $(seq 1 40); do kill -0 "$timer" >/dev/null 2>&1 || break; sleep 0.05; done
-    kill -KILL "$timer" >/dev/null 2>&1
-  fi
-fi
 # Freeze the processes of `dev` first, so that none of them runs while the tree is marked and they
 # are listed, then end them all. `kill -9 -1` as that user reaches all of them in one system call,
 # so a process that forks cannot outrun it. Either phase stops once its time is up.
@@ -252,21 +244,38 @@ for worker in workers:
 with open(sys.argv[1], "w") as handle:
     json.dump({"checked_at": time.time(), "hosts": results, "any_open": any(state == "open" for state in results.values())}, handle)
 EOF
-# The end bound for the link fixing below: from the net check's record where it has one, else this
-# sweep's own start.
-set -- $(/usr/bin/python3 -I - "$STATE/netcheck-open.json" "$started" <<'EOF'
+# The end of the work, the bound for the link fixing and the measuring below: the earlier of the net
+# check's record and, for a turn that ran to its limit, the start of the work plus that limit; else
+# this sweep's own start.
+set -- $(/usr/bin/python3 -I - "$STATE/netcheck-open.json" "$started" "$STATE/work-started" "$WORK_LIMIT_SECONDS" <<'EOF'
 import json, sys
-# The end bound: the net check's first observation of a host answering, less the most a poll takes
-# (at or after the last poll in which none answered); it is never the time the ending began, which
-# a later write could precede. Else the start of this sweep, which precedes its own kill stage.
+# The end bound, the earliest known of:
+# - `netcheck`: the net check's first observation of a host answering, less the most a poll takes
+#   (at or after the last poll in which none answered); never the time the ending began, which a
+#   later write could precede;
+# - `limit`: the start of the work (written at set-up) plus the time the work is given, when this
+#   sweep began after it: the turn ran to its limit, and whatever its processes did after it, until
+#   they were stopped here, is after the end; nothing ends them at the limit itself.
+# Else `start`: the start of this sweep, which precedes its own kill stage.
+started = float(sys.argv[2])
+known = []
 try:
     record = json.load(open(sys.argv[1]))
     bound = record.get("end_bound")
     if bound is None:
         bound = float(record["first_open_at"]) - float(record.get("poll_seconds", 0.35))
-    print(float(bound), "netcheck")
+    known.append((float(bound), "netcheck"))
 except Exception:
-    print(sys.argv[2], "start")
+    pass
+try:
+    with open(sys.argv[3]) as handle:
+        limit = float(handle.read().split()[0]) + float(sys.argv[4])
+    if limit < started:
+        known.append((limit, "limit"))
+except Exception:
+    pass
+bound, origin = min(known) if known else (started, "start")
+print(bound, origin)
 EOF
 )
 end_bound=${1:-$started}
@@ -287,8 +296,9 @@ nothing in it changed at or after the end bound given as the fourth argument, le
 file's change time, which the user cannot set, and its modification time are both read): a copy
 records the source's path, uid, times and inode,
 so the record shows where every file that was not written in place came from. Where the fifth
-argument says the bound came from the net check, a late source is refused; where it says the bound
-is only this sweep's start, the source is copied and flagged. A link the system itself cannot follow
+argument says the bound came from the net check or is the limit of the work (its start plus the
+time it is given, for a turn that ran to it), a late source is refused; where it says the bound is
+only this sweep's start, the source is copied and flagged. A link the system itself cannot follow
 (to nothing, or through a loop or more links in a row than it allows), a link to a device, a pipe
 or a socket, and a device node, pipe or socket are removed; a copy that fails is removed with
 whatever of it was written. Each change is printed as one JSON line, and an entry that cannot be
@@ -307,7 +317,7 @@ ROOT = os.path.realpath(sys.argv[1])
 ENTRIES = int(sys.argv[2])
 LIMIT_BYTES = int(sys.argv[3])
 END_BOUND = float(sys.argv[4])
-END_FROM = sys.argv[5] if len(sys.argv) > 5 else "start"   # "netcheck": the bound was observed; else this sweep's start
+END_FROM = sys.argv[5] if len(sys.argv) > 5 else "start"   # "netcheck": observed; "limit": the work's limit; else this sweep's start
 SKEW = 0.5   # the cutoff is this much before the end bound, never after it
 ROOM = 64 << 20   # bytes the disk keeps free beyond a copy and its size again
 SPARE = 64        # inodes the disk keeps free beyond those a copy takes
@@ -386,7 +396,7 @@ def fix_link(path, name):
               "source_mtime": sources[0]["source_mtime"], "source_ctime": sources[0]["source_ctime"],
               "source_inode": sources[0]["source_inode"], "files": count, "bytes": size, "late_files": len(late),
               "latest_ctime": max(item["source_ctime"] for item in sources), "outside": True}
-    if late and END_FROM == "netcheck":
+    if late and END_FROM in ("netcheck", "limit"):
         os.unlink(path)
         return {"refused": dict(record, reason=f"{len(late)} of its files changed after the end bound")}, True
     if late:  # no end bound was observed, so the reference is this sweep's own start: copy, and flag it
@@ -463,8 +473,12 @@ refuse or could not carry is taken out: a device, a pipe or a socket is removed;
 in the tree is longer than 2,048 bytes is moved out with everything below it; a link is removed
 unless, read from where it stands in /app/rebuild, it leads through directories of the tree only
 (outside the tree, by name alone) to a file or a directory of the tree, and then it is rewritten as
-the shortest relative path to that, which resolves the same wherever the tree is unpacked. All of
-this, the moving out and back included, stops 480 seconds after the sweep's start. A tree over the
+the shortest relative path to that, which resolves the same wherever the tree is unpacked. A file
+changed at or after the end of the work (the end bound, named tenth, less half a second), where
+that end was observed (`netcheck`) or is the work's start plus the time it is given (`limit`), is
+moved out too, and counts for nothing; where the end is only this sweep's start, it counts and the
+record flags it. All of this, the moving out and back included, stops 480 seconds after the sweep's
+start. A tree over the
 limits, one with a file of more than 1,000 hard links in it, one not measured in that time, or one
 the disk has too little room left to pack into /tmp, is refused and stays moved out. Otherwise it
 moves back, and one rename puts its own mark in place of the refused one. The mark's first line is
@@ -491,7 +505,6 @@ sweep began).
 import hashlib
 import json
 import os
-import signal
 import stat
 import subprocess
 import sys
@@ -524,8 +537,8 @@ notes, copies, refused, links, catalogue = [], [], [], [], []
 files, kinds, top_times = {}, {}, {}   # each file's sha256 by inode; each entry's type by path; top entries' times
 links_of = {}       # the names of each file in the tree, by inode
 NAMES_LIMIT = 1000  # names (hard links) of one file in the tree, at most
-entries = size = hashed = note_bytes = notes_left_out = moved_out = 0
-long_fd = None
+entries = size = hashed = note_bytes = notes_left_out = moved_out = left_out_late = 0
+aside_fd = None
 
 
 class Refuse(Exception):
@@ -754,25 +767,26 @@ def digest(name, fd, length):
     return whole.hexdigest()
 
 
-def move_out(name, fd, path):
+def move_out(name, fd, path, why):
     """Move the entry `name` of the directory open as `fd` (at `path` in the tree), with everything
-    below it, into a directory beside the tree."""
-    global long_fd, moved_out
-    if long_fd is None:
-        folder = os.path.join(PARENT, f".long.{os.urandom(6).hex()}")
+    below it, into a directory beside the tree, noting `why`."""
+    global aside_fd
+    if aside_fd is None:
+        folder = os.path.join(PARENT, f".left.{os.urandom(6).hex()}")
         os.mkdir(folder, 0o700)
-        long_fd = os.open(folder, os.O_RDONLY | os.O_DIRECTORY)
-    os.rename(name, str(moved_out), src_dir_fd=fd, dst_dir_fd=long_fd)
-    moved_out += 1
-    note(f"moved out {path[:240]}...: its path in /app/rebuild is longer than {PATH_BYTES:,} bytes")
+        aside_fd = os.open(folder, os.O_RDONLY | os.O_DIRECTORY)
+    os.rename(name, str(moved_out + left_out_late), src_dir_fd=fd, dst_dir_fd=aside_fd)
+    note(f"moved out {path if len(path) <= 240 else path[:240] + '...'}: {why}")
 
 
 def walk(top):
     """Count, and take out what a copy would refuse, below the directory open as `top`; count too
     the files changed at or after the end bound, less the skew, by the later of their change and
     modification times, leaving out what lies in a copy a link became (its times are this sweep's;
-    the copy's source counts instead)."""
-    global entries, size, late_files
+    the copy's source counts instead). Where the end bound was observed or is the work's limit, such
+    a file is moved out with a note and does not count; where it is only this sweep's start, it
+    counts, and the record flags it."""
+    global entries, size, late_files, moved_out, left_out_late
     pending = [("", False)]
     while pending:
         rel, in_copy = pending.pop()
@@ -793,17 +807,22 @@ def walk(top):
                     note(f"removed {path}: not a file, a directory or a link")
                     continue
                 if len(os.fsencode(path)) > PATH_BYTES:
-                    move_out(name, fd, path)
+                    move_out(name, fd, path, f"its path in /app/rebuild is longer than {PATH_BYTES:,} bytes")
+                    moved_out += 1
                     continue
-                entries += 1
                 kind = "link" if stat.S_ISLNK(info.st_mode) else "directory" if stat.S_ISDIR(info.st_mode) else "file"
                 mtime, ctime = top_times.get(name, (info.st_mtime, info.st_ctime)) if not rel else (info.st_mtime, info.st_ctime)
                 item = {"path": path, "type": kind, "size": info.st_size, "mtime": round(mtime, 3), "ctime": round(ctime, 3)}
-                catalogue.append(item)
-                kinds[path] = kind
                 copied_here = in_copy or path in copied_paths
                 if kind == "file" and not copied_here and max(item["mtime"], item["ctime"]) >= cutoff:
                     late_files += 1
+                    if END_FROM in ("netcheck", "limit"):
+                        move_out(name, fd, path, "it changed after the end of the work")
+                        left_out_late += 1
+                        continue
+                entries += 1
+                catalogue.append(item)
+                kinds[path] = kind
                 if kind == "link":
                     links.append(path)
                 elif kind == "directory":
@@ -877,6 +896,11 @@ def fix_links(top):
 
 
 copied_paths = {copy["path"] for copy in copies if isinstance(copy, dict) and isinstance(copy.get("path"), str)}
+try:
+    with open(os.path.join(STATE, "work-started")) as handle:
+        work_started = float(handle.read().split()[0])
+except (OSError, ValueError, IndexError):
+    work_started = None
 cutoff = END_BOUND - SKEW
 late_files = 0
 reason = REPLACED or unmoved
@@ -891,7 +915,7 @@ except Refuse as refusal:
 except Exception as exc:
     reason = f"it could not be measured ({exc.__class__.__name__}: {exc})"
 finally:
-    for descriptor in (top, long_fd):
+    for descriptor in (top, aside_fd):
         if descriptor is not None:
             os.close(descriptor)
 netcheck, netcheck_open, processes, probe, ending, logs_artifacts = (
@@ -899,27 +923,6 @@ netcheck, netcheck_open, processes, probe, ending, logs_artifacts = (
                                  "logs-artifacts.json"))
 
 
-def log_tail(path, limit=20):
-    """The last `limit` lines of a root-only log, read from its tail only; None where it is unreadable."""
-    try:
-        with open(path, "rb") as handle:
-            handle.seek(0, os.SEEK_END)
-            handle.seek(max(0, handle.tell() - 65536))
-            return handle.read().decode("utf-8", "replace").splitlines()[-limit:]
-    except OSError:
-        return None
-
-
-# fsmaint-timer's log says whether it fired; a copy of it still sleeping is stopped here.
-TIMER_LOG = os.environ.get("FSMAINT_TIMER_LOG", "/var/log/fsmaint-timer.log")
-TIMER_PIDFILE = os.environ.get("FSMAINT_TIMER_PIDFILE", "/run/fsmaint-timer.pid")
-timer_log = log_tail(TIMER_LOG)
-ended_by_timer = bool(timer_log) and any(" fired" in line for line in timer_log)
-try:
-    with open(TIMER_PIDFILE) as handle:
-        os.kill(int(handle.read().strip()), signal.SIGTERM)
-except (OSError, ValueError):
-    pass
 # Entries changed at or after the end bound, less the skew: the files the walk counted (outside the
 # copies), a copied tree by its source's latest change time (the copy's own times are this sweep's),
 # and a refused source by its late files. Links are the fixer's own rewrites and directories change
@@ -968,8 +971,9 @@ def record_of(lines, whole=True):
         process_count=(processes or {}).get("process_count"), processes=(processes or {}).get("processes", []),
         kill_passes=PASSES, processes_left=LEFT, ending=ending, logs_artifacts=logs_artifacts, listed=lines[0],
         listing_complete=lines[0] != "refused" and hashed <= HASH_LIMIT,
-        copies=copies, refused_copies=refused, late_entries=late_entries, timer_log=timer_log, ended_by_timer=ended_by_timer,
-        moved_out_long=moved_out, notes=notes if whole else notes[:MARK_NOTES], notes_left_out=notes_left_out,
+        copies=copies, refused_copies=refused, late_entries=late_entries,
+        moved_out_long=moved_out, left_out_late=left_out_late, work_started=work_started,
+        notes=notes if whole else notes[:MARK_NOTES], notes_left_out=notes_left_out,
         free_bytes=free, free_inodes=inodes, pack_needs=need, entries=catalogue[:LIMIT_ENTRIES] if whole else [],
         entries_left_out=0 if whole else len(catalogue)), separators=(",", ":")).encode(errors="backslashreplace")
 
