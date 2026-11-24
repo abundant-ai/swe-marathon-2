@@ -2,6 +2,40 @@
 # Runs as root at session setup, before and after the unprivileged user's tools install themselves. It sets aside disk
 # room and spare inodes that a later maintenance step reclaims once the session has ended, so that however full the disk
 # is left, that step can still do its work, and it records how much was free, and the time, when the session began.
+# Each run also leaves one process of root's behind, detached, in place of the one an earlier run left, so that the
+# last run's remains. Once the session's limit has passed, LIMIT_SECONDS plus 2 s after the time that run recorded (it
+# runs just before the session starts), that process stops the user's processes with SIGSTOP and ends none: it repeats
+# `kill -STOP -1` as the user until no process of the user is running (15 s at most), records when, in how many
+# rounds and how many processes in /var/lib/scratch/stopped, and exits. Once the maintenance step that collects the
+# session has begun (/var/lib/scratch/collect-began, the first thing that step writes), it stops nothing and exits.
+LIMIT_SECONDS=34560
+if [ "${1:-}" = "hold" ]; then
+    echo $$ > /var/lib/scratch/holder.pid
+    while :; do
+        [ -e /var/lib/scratch/collect-began ] && exit 0
+        read -r began _ < /var/lib/scratch/turn-started || exit 0  # the last run's time: every run writes it
+        case "$began" in ''|*[!0-9]*) exit 0 ;; esac
+        due=$((began + LIMIT_SECONDS + 3))  # that time is in whole seconds, rounded down: due is 2 s past the limit, or more
+        now=$(date +%s)
+        [ "$now" -ge "$due" ] && break
+        rest=$((due - now))
+        [ "$rest" -le 30 ] || rest=30
+        sleep "$rest"
+    done
+    first=$(date +%s)
+    rounds=0
+    while { pgrep -u dev -r R,S,D || pgrep -U dev -r R,S,D; } >/dev/null 2>&1; do
+        [ -e /var/lib/scratch/collect-began ] && exit 0
+        setpriv --reuid dev --regid dev --clear-groups kill -STOP -1 >/dev/null 2>&1
+        rounds=$((rounds + 1))
+        [ "$(date +%s)" -lt $((first + 15)) ] || break
+        sleep 0.05
+    done
+    seen=$({ pgrep -u dev; pgrep -U dev; } 2>/dev/null | sort -u | wc -l)
+    running=$({ pgrep -u dev -r R,S,D; pgrep -U dev -r R,S,D; } 2>/dev/null | sort -u | wc -l)
+    echo "$first $(date +%s) $rounds $seen $running" > /var/lib/scratch/stopped
+    exit 0
+fi
 mkdir -p /var/lib/scratch/inodes && chmod 0700 /var/lib/scratch
 if [ ! -e /var/lib/scratch/room ]; then
     fallocate -l 64M /var/lib/scratch/room 2>/dev/null || head -c 67108864 /dev/zero > /var/lib/scratch/room 2>/dev/null
@@ -9,4 +43,18 @@ fi
 for spare in $(seq 1 64); do [ -e "/var/lib/scratch/inodes/$spare" ] || : > "/var/lib/scratch/inodes/$spare"; done
 stat -f -c '%a %S %d' /tmp > /var/lib/scratch/free-at-start 2>/dev/null
 date +%s > /var/lib/scratch/turn-started 2>/dev/null
+# The process an earlier run left is ended (it and its sleep: it leads its own process group), then this run's started.
+holder=$(cat /var/lib/scratch/holder.pid 2>/dev/null)
+case "$holder" in
+    ''|*[!0-9]*) ;;
+    *) if ps -ww -o args= -p "$holder" 2>/dev/null | grep -q -F -- 'provision-scratch hold'; then
+           kill -KILL -- "-$holder" 2>/dev/null || kill -KILL "$holder" 2>/dev/null
+       fi ;;
+esac
+if command -v setsid >/dev/null 2>&1; then
+    setsid nohup /bin/sh "$0" hold >/dev/null 2>&1 </dev/null &
+else
+    nohup /bin/sh "$0" hold >/dev/null 2>&1 </dev/null &
+fi
+echo $! > /var/lib/scratch/holder.pid  # at once, for a run that follows at once; it writes its own too, the same pid
 exit 0

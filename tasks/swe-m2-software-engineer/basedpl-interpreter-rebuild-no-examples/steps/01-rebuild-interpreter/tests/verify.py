@@ -501,7 +501,8 @@ def delivery_record(top: Path) -> dict:
     when the session ended, the agent's processes then, how many rounds of killing they took and
     how many were left, when the session and the step started, the end of the work and how many
     entries the hook took out for changing after it (never a reason to change the reward here: what
-    changed late did not arrive), every link the hook copied (with
+    changed late did not arrive), when the session's processes were stopped after its limit, if they
+    were, every link the hook copied (with
     its source's path, owner, times and inode, and whether that source lies outside /app/rebuild or
     changed since the session started) or refused, every note, and a summary of the entries
     (count, latest change and modification times, `bpl`'s own entry). Never raising, and never part
@@ -522,6 +523,7 @@ def delivery_record(top: Path) -> dict:
                 "kill_rounds": record.get("kill_rounds"), "user_processes_left": record.get("user_processes_left"),
                 "turn_started": record.get("turn_started"), "hook_started": record.get("hook_started"),
                 "work_end": record.get("work_end"), "late_entries": record.get("late_entries"),
+                "stopped_after_limit": record.get("stopped_after_limit"),
                 "delivered": record.get("delivered"), "listing_complete": record.get("listing_complete"),
                 "hashing_complete": record.get("hashing_complete"), "prescan_complete": record.get("prescan_complete"),
                 "hook_changed_entries": record.get("hook_changed_entries"),

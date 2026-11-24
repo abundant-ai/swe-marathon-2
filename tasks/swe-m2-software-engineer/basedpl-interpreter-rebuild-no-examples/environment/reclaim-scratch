@@ -1,6 +1,7 @@
 #!/bin/sh
 # Runs as root once the unprivileged user's session has ended, before /app/rebuild is copied to the machines it will
-# run on. It first stops every process of that user; it then lists those processes, ends them, records every entry's
+# run on. It first ends the process the set-up hook left (which stops that user's processes once the session's limit
+# has passed), then stops every process of that user; it then lists those processes, ends them, records every entry's
 # own times before anything of its own touches the tree, and records whether this host has outbound connectivity, for
 # the maintenance log. A session that ran to its limit leaves its processes running until here: what changed after
 # the session's end (its start plus its limit) is taken out, by the times recorded before this step touched anything,
@@ -18,7 +19,18 @@ LOOP_SECONDS=15  # the freeze and the kill below each stop this long after they 
 STATE=/var/lib/scratch
 HOOK_STARTED=$(date +%s)
 mkdir -p "$STATE" && chmod 0700 "$STATE"
-# Freeze every process of the unprivileged user first, before any other step. `kill -STOP -1` as that user reaches all
+# The process the set-up hook left, which stops that user's processes once the session's limit has passed, stops
+# nothing from here on: this step's mark first (it looks for it before every round), then the process itself, and its
+# sleep, are ended (it leads its own process group), before this step runs anything as that user.
+: > "$STATE/collect-began"
+holder=$(cat "$STATE/holder.pid" 2>/dev/null)
+case "$holder" in
+  ''|*[!0-9]*) ;;
+  *) if ps -ww -o args= -p "$holder" 2>/dev/null | grep -q -F -- 'provision-scratch hold'; then
+       kill -KILL -- "-$holder" 2>/dev/null || kill -KILL "$holder" 2>/dev/null
+     fi ;;
+esac
+# Freeze every process of the unprivileged user next, before any other step. `kill -STOP -1` as that user reaches all
 # of them in one system call, so a process that forks cannot outrun it; repeat until none is left running (R or S: a
 # task in D, such as a parent waiting on its vfork child, runs nothing of its own until it leaves D, and the kill below
 # ends it), for LOOP_SECONDS at most.
@@ -830,6 +842,16 @@ def writers_listing():
 writers_held, writers_unread, writers_problem = writers_listing()
 
 
+def stopped_after_limit():
+    """When the process the set-up hook left stopped the user's processes, the session's limit having passed
+    (STATE/stopped: its first and last second, its rounds of `kill -STOP -1`, how many processes of the user there were
+    and how many still ran), or None when it stopped nothing."""
+    words = (state_lines("stopped")[:1] or [""])[0].split()
+    if len(words) != 5 or not all(word.isdigit() for word in words):
+        return None
+    return dict(zip(("at", "until", "rounds", "processes", "still_running"), map(int, words)))
+
+
 def remove(path):
     """Take out whatever stands at `path` of the tree now; whether anything stood there."""
     place = os.path.join(ROOT, path)
@@ -1008,6 +1030,7 @@ def record_of(head):
     free_bytes, free_inodes = disk_figures()
     record = dict(session, kill_rounds=ROUNDS, user_processes_left=LEFT, hook_started=HOOK_STARTED, turn_started=turn_started,
                   work_end=WORK_END, late_entries=late_entries, held_for_writing=held_entries,
+                  stopped_after_limit=stopped_after_limit(),
                   writers={"listed": writers_problem is None, "why_not": writers_problem, "held": len(writers_held),
                            "not_read": [{key: item.get(key) for key in ("pid", "command", "uids", "gids")} for item in writers_unread[:20]],
                            "not_read_count": len(writers_unread)},

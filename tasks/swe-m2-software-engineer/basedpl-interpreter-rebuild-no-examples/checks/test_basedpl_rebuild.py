@@ -1167,7 +1167,7 @@ def test_the_delivery_is_bounded_recorded_and_marked_before_the_copy_and_graded_
     assert all(state.startswith("closed") for state in closed[1]["connectivity"].values())
     assert slow[0] == 0 and set(slow[1]["connectivity"].values()) == {"no answer within 3 s"} and slow[2] <= 9, slow
     hook = (TASK / "environment" / "reclaim-scratch").read_text()
-    order = ["--clear-groups kill -STOP -1 >",
+    order = [': > "$STATE/collect-began"', 'kill -KILL -- "-$holder"', "--clear-groups kill -STOP -1 >",
              "ps -eo pid=,ppid=,uid=,etimes=,args= > \"$STATE/processes.txt\"", 'cat > "$STATE/writers.py" <<',
              'timeout 30 /usr/bin/python3 -I - /proc /app/rebuild "$(id -u dev 2>/dev/null)"', '> "$STATE/writers.json" 2>/dev/null\n',
              'if [ $? -eq 3 ]; then', "timeout 30 setpriv --reuid dev --regid dev --clear-groups --no-new-privs /usr/bin/python3 -I - /proc",
@@ -1272,8 +1272,9 @@ def prologue_env(top: Path) -> dict:
 
 def test_reclaim_scratch_freezes_the_users_processes_before_anything_else(tmp_path):
     """QA 07f G1. Public connectivity is back shortly after the turn, so the user's processes are frozen at once: after
-    its settings and its state directory, the hook's first act is `kill -STOP -1` as the user, repeated while any of
-    them runs. Run as shipped, with the freeze's tools stood in; the text keeps that order, with nothing run between."""
+    its settings and its state directory, the hook's first act as the user is `kill -STOP -1`, repeated while any of
+    them runs. Before it come only its mark and the end of the process the set-up hook left (round 12, third commit),
+    neither of which runs anything as the user. Run as shipped, with the freeze's tools stood in."""
     top = tmp_path / "order"
     top.mkdir()
     (top / "prologue").write_text(hook_prologue(top))
@@ -1286,7 +1287,9 @@ def test_reclaim_scratch_freezes_the_users_processes_before_anything_else(tmp_pa
     steps = [start, freeze, "--clear-groups kill -STOP -1 >", "ps -eo pid=", "timeout 120 setpriv"]
     assert [hook.index(step) for step in steps] == sorted(hook.index(step) for step in steps), "the freeze, then the rest"
     between = hook[hook.index(start) + len(start):hook.index(freeze)]
-    assert all(line.startswith("#") for line in between.splitlines()), "nothing runs between the state directory and the freeze"
+    code = [line.strip() for line in between.splitlines() if not line.lstrip().startswith("#")]
+    assert code[0] == ': > "$STATE/collect-began"' and 'kill -KILL -- "-$holder"' in between, code
+    assert "setpriv" not in between and "python3" not in between and "pgrep" not in between, "nothing as the user before the freeze"
 
 
 def test_nothing_ends_the_session_before_the_agents_limit():
@@ -1309,13 +1312,197 @@ def test_nothing_ends_the_session_before_the_agents_limit():
     assert not any(found.values()), {name: words for name, words in found.items() if words}
 
 
+# ---------------------------------------------------------------- the stop after the limit (round 12, third commit)
+
+def holder_alive(pid: int | None, wait: float = 0) -> bool:
+    """Whether `pid` is the process the set-up hook leaves (`provision-scratch hold`), still there after `wait` s."""
+    until = time.monotonic() + wait
+    while True:
+        args = subprocess.run(["ps", "-ww", "-o", "args=", "-p", str(pid)], capture_output=True, text=True).stdout if pid else ""
+        if "provision-scratch hold" not in args or time.monotonic() >= until:
+            return "provision-scratch hold" in args
+        time.sleep(0.05)
+
+
+def holder_started(state: Path, earlier: int | None = None, wait: float = 5) -> int:
+    """The pid of the process a run of provision-scratch left, once it has written it (another than `earlier`) and runs."""
+    until = time.monotonic() + wait
+    while time.monotonic() < until:
+        text = (state / "holder.pid").read_text().strip() if (state / "holder.pid").exists() else ""
+        if text.isdigit() and int(text) != earlier and holder_alive(int(text)):
+            return int(text)
+        time.sleep(0.05)
+    raise AssertionError("no process was left by the set-up hook")
+
+
+def end_holder(state: Path) -> None:
+    """Ends the process the set-up hook left, and its sleep, after a check that failed half-way."""
+    text = (state / "holder.pid").read_text().strip() if (state / "holder.pid").exists() else ""
+    if text.isdigit() and holder_alive(int(text)):
+        for target in (-int(text), int(text)):
+            try:
+                os.kill(target, signal.SIGKILL)
+            except OSError:
+                pass
+
+
+STAMP = "$(perl -MTime::HiRes=time -e 'printf \"%.3f\", time')"
+
+
+def setup_hook(top: Path, limit: int, stand_ins: dict[str, str]) -> tuple[Path, dict]:
+    """provision-scratch as shipped, its state directory moved into `top` and its limit `limit` s, and the environment
+    it runs in: `stand_ins` (name: shell body) first on PATH, with `setsid` (macOS has none), `fallocate` (an empty
+    room) and GNU `stat -f -c` stood in."""
+    state, tools = top / "state", top / "bin"
+    tools.mkdir(parents=True)
+    text = (TASK / "environment" / "provision-scratch").read_text()
+    (top / "provision-scratch").write_text(text.replace("LIMIT_SECONDS=34560\n", f"LIMIT_SECONDS={limit}\n").replace("/var/lib/scratch", str(state)))
+    bodies = {"setsid": f'exec "{sys.executable}" -c "import os, sys; os.setsid(); os.execvp(sys.argv[1], sys.argv[1:])" "$@"\n',
+              "fallocate": ': > "$3"\n', "stat": 'echo "2500000 4096 1300000"\n', **stand_ins}
+    for name, body in bodies.items():
+        (tools / name).write_text("#!/bin/sh\n" + body)
+        (tools / name).chmod(0o755)
+    return top / "provision-scratch", dict(os.environ, PATH=f"{tools}:{os.environ['PATH']}")
+
+
+def stamped(trace: Path) -> list[tuple[float, str]]:
+    return [(float(line.split(" ", 1)[0]), line.split(" ", 1)[1]) for line in trace.read_text().splitlines()] if trace.exists() else []
+
+
+def test_the_stop_after_the_limit_comes_no_sooner_than_the_last_set_up_runs_time_plus_the_limit_and_2_s(tmp_path):
+    """Decision 2026-11-24, 09:40 UTC amendment (option B). Harbor does not end the agent at the cap: its processes run
+    on until the collect hook, 5-14 s later, and what they change then is taken out. So the set-up hook leaves a root
+    process that, LIMIT_SECONDS + 2 s after the last set-up run's time (that run comes just before the agent starts),
+    stops the user's processes with SIGSTOP, repeating `kill -STOP -1` as the user until none runs, and records it;
+    never sooner. Two set-up runs 1.5 s apart, with a limit of 3 s: the first run's process is replaced by the
+    second's, and the stop comes no sooner than 3 + 2 s after the second run began, then promptly; `kill -STOP -1` as
+    the user is what it sends (stood in: a trace), and its record holds the time, the rounds and the counts."""
+    trace, top = tmp_path / "trace", tmp_path / "t"
+    script, env = setup_hook(top, 3, {
+        "pgrep": f'echo "{STAMP} pgrep $*" >> "{trace}"\ncase "$*" in *"-r R,S,D"*) grep -q " setpriv " "{trace}" && exit 1; exit 0 ;; esac\necho 4242\n',
+        "setpriv": f'echo "{STAMP} setpriv $*" >> "{trace}"\n'})
+    state = top / "state"
+    try:
+        done = subprocess.run(["sh", str(script)], env=env, capture_output=True, text=True, timeout=60)
+        assert done.returncode == 0 and done.stdout == "" and done.stderr == "", done
+        first = holder_started(state)
+        time.sleep(1.5)
+        last_run = time.time()
+        done = subprocess.run(["sh", str(script)], env=env, capture_output=True, text=True, timeout=60)
+        assert done.returncode == 0 and done.stdout == "" and done.stderr == "", done
+        second = holder_started(state, first)
+        assert not holder_alive(first, wait=1), "the last run's process is the one left"
+        until = time.monotonic() + 15
+        while time.monotonic() < until and not (state / "stopped").exists():
+            time.sleep(0.1)
+        stops = [(at, call) for at, call in stamped(trace) if call.startswith("setpriv")]
+        assert stops and all(call == "setpriv --reuid dev --regid dev --clear-groups kill -STOP -1" for _, call in stops), stamped(trace)
+        assert last_run + 3 + 2 <= stops[0][0] < last_run + 3 + 2 + 3, (stops[0][0] - last_run, "never before the anchor + limit + 2 s")
+        assert min(at for at, _ in stamped(trace)) >= last_run + 3 + 2, "nothing at all before then"
+        at, until_, rounds, seen, running = (int(word) for word in (state / "stopped").read_text().split())
+        assert (rounds, seen, running) == (1, 1, 0) and at <= until_ and at >= int(last_run) + 3 + 2
+        assert not holder_alive(second, wait=2), "it exits once it has stopped them"
+    finally:
+        end_holder(state)
+
+
+# Shell processes the stop must leave stopped, each with WORD in its command line ($0). A forker whose subshells are
+# forked 20 ms apart, and two that wake each other with SIGCONT whenever they run, each reading the other's pid once.
+FORKER = 'i=0; while [ "$i" -lt 20 ]; do (while :; do sleep 0.01; done) & i=$((i + 1)); sleep 0.02; done; while :; do sleep 0.01; done'
+BUSY = "while :; do sleep 0.01; done"
+CONTINUER = 'while [ ! -s "$1" ]; do sleep 0.01; done; peer=$(cat "$1"); while :; do kill -CONT "$peer" 2>/dev/null; sleep 0.005; done'
+
+
+def test_the_stop_after_the_limit_reaches_forked_setsid_and_continuing_processes(tmp_path):
+    """Option B's stop repeats `kill -STOP -1` as the user until no process of the user runs (R, S, D), so that what is
+    forked meanwhile, a process in a session of its own, and two that send each other SIGCONT are all left stopped; it
+    never ends any. The user's processes are stood in by this machine's own, picked by a random word in their command
+    lines: the stand-in for `kill -STOP -1` stops those one after another (`pkill -STOP -f`), and the stand-in for
+    `pgrep -r R,S,D` finds those not stopped. The process is run directly, its limit 0 and the session long begun."""
+    word = f"qa{uuid.uuid4().hex[:10]}"
+    pattern = f"[{word[0]}]{word[1:]}"  # matches the processes, never the grep or pkill that looks for them
+    listing = f'ps -axo pid=,stat=,command= | grep -- "{pattern}"'
+    top, procs = tmp_path / "t", []
+    script, env = setup_hook(top, 0, {
+        "pgrep": f'case "$*" in *"-r R,S,D"*) {listing} | awk \'$2 !~ /^[TZ]/ {{print $1; found = 1}} END {{exit !found}}\' ;; '
+                 f'*) {listing} | awk \'$2 !~ /^Z/ {{print $1}}\' ;; esac\n',
+        "setpriv": f'case "$*" in *"kill -STOP -1") pkill -STOP -f -- "{pattern}" ;; esac\nexit 0\n'})
+    state = top / "state"
+    state.mkdir(parents=True)
+    (state / "turn-started").write_text(f"{int(time.time()) - 60}\n")
+    peers = [tmp_path / "a.pid", tmp_path / "b.pid"]
+    try:
+        procs.append(subprocess.Popen(["sh", "-c", FORKER, word], start_new_session=True))
+        procs.append(subprocess.Popen([str(top / "bin" / "setsid"), "sh", "-c", BUSY, word]))  # a session of its own
+        procs += [subprocess.Popen(["sh", "-c", CONTINUER, word, str(peer)], start_new_session=True) for peer in (peers[1], peers[0])]
+        peers[0].write_text(str(procs[2].pid))
+        peers[1].write_text(str(procs[3].pid))
+        time.sleep(1.0)  # the forker's subshells are all there
+        ran = subprocess.run(["sh", str(script), "hold"], env=env, capture_output=True, text=True, timeout=60)
+        assert ran.returncode == 0, ran
+        states = subprocess.run(["sh", "-c", f'{listing} | awk \'{{print $2}}\''], capture_output=True, text=True).stdout.split()
+        assert len(states) >= 24 and all(state_.startswith(("T", "Z")) for state_ in states), states
+        at, until_, rounds, seen, running = (int(value) for value in (state / "stopped").read_text().split())
+        assert rounds >= 1 and running == 0 and seen == sum(1 for state_ in states if not state_.startswith("Z")), (rounds, seen, running)
+        assert all(proc.poll() is None for proc in procs), "stopped, never ended"
+    finally:
+        subprocess.run(["pkill", "-KILL", "-f", "--", pattern], capture_output=True)
+        for proc in procs:
+            proc.wait(timeout=10)
+
+
+def test_the_stop_after_the_limit_ends_once_the_collect_hook_has_begun(tmp_path):
+    """Option B: once the collect hook has begun, the process the set-up hook left stops nothing and exits; the hook
+    writes its mark first, then ends that process and its sleep, before it runs anything as the user. The process alone
+    sees the mark too: due at once, or due a second later, with the mark there by then, it stops nothing, records
+    nothing and exits."""
+    trace = tmp_path / "trace"
+    stand_ins = {"pgrep": f'echo "pgrep $*" >> "{trace}"\nexit 0\n', "setpriv": f'echo "setpriv $*" >> "{trace}"\n'}
+    top = tmp_path / "hooked"
+    script, env = setup_hook(top, 3600, stand_ins)
+    state = top / "state"
+    try:
+        done = subprocess.run(["sh", str(script)], env=env, capture_output=True, text=True, timeout=60)
+        assert done.returncode == 0, done
+        holder = holder_started(state)
+        assert holder_alive(holder, wait=1), "it waits for the limit"
+        hook = (TASK / "environment" / "reclaim-scratch").read_text()
+        start = hook[:hook.index("# Freeze every process of the unprivileged user next")].replace("/var/lib/scratch", str(state))
+        (top / "start").write_text(start)
+        ran = subprocess.run(["sh", str(top / "start")], env=env, capture_output=True, text=True, timeout=30)
+        assert ran.returncode == 0 and ran.stderr == "", ran
+        assert (state / "collect-began").exists() and not holder_alive(holder, wait=2), "the hook ends it"
+        assert not trace.exists() and not (state / "stopped").exists(), "nothing was stopped"
+    finally:
+        end_holder(state)
+    for name, due_in in (("due", -60), ("soon", 1)):
+        top = tmp_path / name
+        script, env = setup_hook(top, 0, stand_ins)
+        state = top / "state"
+        state.mkdir(parents=True)
+        (state / "turn-started").write_text(f"{int(time.time()) + due_in - 3}\n")
+        if name == "due":
+            (state / "collect-began").write_text("")
+        holder = subprocess.Popen(["sh", str(script), "hold"], env=env)
+        try:
+            if name == "soon":
+                time.sleep(0.5)
+                (state / "collect-began").write_text("")
+            assert holder.wait(timeout=10) == 0
+        finally:
+            if holder.poll() is None:
+                holder.kill()
+        assert not trace.exists() and not (state / "stopped").exists(), name
+
+
 def test_both_hooks_run_whole_with_the_root_and_linux_tools_stood_in(tmp_path):
     """QA 07e F3: every shell line of provision-scratch and reclaim-scratch, as shipped, under `sh`, with only their
     absolute paths rewritten into a directory of the test's and, first on PATH, stand-ins for what needs root or Linux
     (after the reviewer's replay): setpriv drops its options and never runs a kill; pgrep and pkill find none of the
     user's processes; `ps -eo` prints a fixed listing; fallocate fails, so the fallback writes the room; GNU `stat -f
-    -c` and `timeout` are stood in; python3 is this Python with outbound connections refused. The session left both
-    of the hook's own names, links for the fixer and a pipe."""
+    -c` and `timeout` are stood in, and `setsid` (macOS has none); python3 is this Python with outbound connections
+    refused. The session left both of the hook's own names, links for the fixer and a pipe. Each set-up run leaves the
+    process that stops the user's processes after the limit in place of the earlier one; the hook ends the last."""
     top = tmp_path / "t"
     shims, rebuild, state = top / "bin", top / "app" / "rebuild", top / "state"
     for folder in (shims, rebuild, top / "tmp"):
@@ -1331,7 +1518,9 @@ def test_both_hooks_run_whole_with_the_root_and_linux_tools_stood_in(tmp_path):
                    'exec "$@"\n',
         "pgrep": "exit 1\n",
         "pkill": "exit 1\n",
-        "ps": 'printf "    1     0     0 100 /sbin/init\\n  777     1 10001  65 sleep 99\\n"\n',
+        "ps": 'case "$*" in "-ww -o args= -p "*) exec /bin/ps "$@" ;; esac\n'
+              'printf "    1     0     0 100 /sbin/init\\n  777     1 10001  65 sleep 99\\n"\n',
+        "setsid": f'exec "{sys.executable}" -c "import os, sys; os.setsid(); os.execvp(sys.argv[1], sys.argv[1:])" "$@"\n',
         "fallocate": "exit 1\n",
         "stat": 'echo "2500000 4096 1300000"\n',
         "timeout": 'shift\nexec "$@"\n',
@@ -1351,9 +1540,12 @@ def test_both_hooks_run_whole_with_the_root_and_linux_tools_stood_in(tmp_path):
             text = text.replace(new, "")
         assert not any(place in text for place in ("/app/", "/var/", "/run/", "/usr/")), f"{name}: every absolute path is rewritten"
     hook_env = dict(os.environ, PATH=f"{shims}:{os.environ['PATH']}", LC_ALL="C")
+    holders = []
     for _ in ("setup_begin", "setup_complete"):  # as task.toml runs it
         done = subprocess.run(["sh", str(top / "provision-scratch")], env=hook_env, capture_output=True, text=True, timeout=120)
         assert done.returncode == 0 and done.stdout == "" and done.stderr == "", done
+        holders.append(holder_started(state, holders[-1] if holders else None))
+    assert not holder_alive(holders[0]) and holder_alive(holders[1]), "the second run's process replaces the first's"
     assert (state / "room").stat().st_size == 64 << 20 and len(list((state / "inodes").iterdir())) == 64
     assert state.stat().st_mode & 0o777 == 0o700 and (state / "free-at-start").read_text() == "2500000 4096 1300000\n"
     turn_started = int((state / "turn-started").read_text())
@@ -1369,6 +1561,7 @@ def test_both_hooks_run_whole_with_the_root_and_linux_tools_stood_in(tmp_path):
     (rebuild / ".manifest").symlink_to("/etc/hosts")            # the hook's own two names, left by the session
     (rebuild / ".manifest.json").write_text('{"delivered": "delivered 999 999"}\n')
     ran = subprocess.run(["sh", str(top / "reclaim-scratch")], env=hook_env, cwd=top / "app", capture_output=True, text=True, timeout=300)
+    assert not holder_alive(holders[1], wait=2), "the hook ends the process the set-up hook left"
     assert ran.returncode == 0 and ran.stderr == "", ran
     mark = [line.replace(str(top), "") for line in (rebuild / ".manifest").read_text().splitlines()]
     assert mark[0].startswith("delivered 5 ") and mark[1:] == [
@@ -1382,8 +1575,9 @@ def test_both_hooks_run_whole_with_the_root_and_linux_tools_stood_in(tmp_path):
     assert (rebuild / "tools" / "sh").is_file() and not (rebuild / "tools" / "sh").is_symlink() and os.readlink(rebuild / "abs") == "LICENSE"
     aside = sorted(path for path in (top / "app").iterdir() if path.name.startswith(".aside."))
     assert sorted(item.name for folder in aside for item in folder.iterdir()) == [".manifest", ".manifest.json"], "moved, never followed"
-    assert sorted(path.name for path in state.iterdir()) == ["aside.txt", "before.jsonl", "fixer.jsonl", "free-at-start", "prescan.json",
-                                                             "processes.txt", "session.json", "turn-started", "writers.json", "writers.py"], \
+    assert sorted(path.name for path in state.iterdir()) == ["aside.txt", "before.jsonl", "collect-began", "fixer.jsonl", "free-at-start",
+                                                             "holder.pid", "prescan.json", "processes.txt", "session.json", "turn-started",
+                                                             "writers.json", "writers.py"], \
         "the room and the spare inodes are given back"
     record = json.loads((rebuild / ".manifest.json").read_text())
     assert record["delivered"] == mark[0] and record["fixer_status"] == 0 and record["listing_complete"] is True, record["delivered"]
