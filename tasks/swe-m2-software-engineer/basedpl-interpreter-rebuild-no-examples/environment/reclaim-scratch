@@ -26,7 +26,7 @@ mkdir -p "$STATE" && chmod 0700 "$STATE"
 holder=$(cat "$STATE/holder.pid" 2>/dev/null)
 case "$holder" in
   ''|*[!0-9]*) ;;
-  *) if ps -ww -o args= -p "$holder" 2>/dev/null | grep -q -F -- 'provision-scratch hold'; then
+  *) if ps -ww -o args= -p "$holder" 2>/dev/null | grep -q -F -- ' -I - hold'; then
        kill -KILL -- "-$holder" 2>/dev/null || kill -KILL "$holder" 2>/dev/null
      fi ;;
 esac
@@ -842,14 +842,19 @@ def writers_listing():
 writers_held, writers_unread, writers_problem = writers_listing()
 
 
+STOP_KEYS = ("first_process", "first_process_started", "due", "network_watched", "network_back", "at", "until", "rounds",
+             "processes", "still_running")
+
+
 def stopped_after_limit():
-    """When the process the set-up hook left stopped the user's processes, the session's limit having passed
-    (STATE/stopped: its first and last second, its rounds of `kill -STOP -1`, how many processes of the user there were
-    and how many still ran), or None when it stopped nothing."""
-    words = (state_lines("stopped")[:1] or [""])[0].split()
-    if len(words) != 5 or not all(word.isdigit() for word in words):
+    """When and how the process the set-up hook left stopped the user's processes, the session's limit having passed
+    (STATE/stopped: the session's first process and its start, when the stop was due, whether the network's return
+    was watched and when it came, the stop's first and last moment, its rounds of `kill -STOP -1`, how many processes
+    of the user there were and how many still ran), or None when it stopped nothing."""
+    found = state_json("stopped", None)
+    if not isinstance(found, dict):
         return None
-    return dict(zip(("at", "until", "rounds", "processes", "still_running"), map(int, words)))
+    return {key: found[key] for key in STOP_KEYS if isinstance(found.get(key), (int, float, bool))}
 
 
 def remove(path):
