@@ -162,19 +162,19 @@ def test_regrade_bundle_swaps_the_reference_for_a_stored_submission(task_root, t
     assert not (tmp_path / "out2").exists()
 
 
-def test_session_packaging_is_retired_and_the_stated_hours_match_the_timer(task_root, tmp_path):
-    """The 48-hour chain of sessions gave way to one 12-hour session; its packager refuses this task."""
+def test_session_packaging_is_retired_and_no_time_figure_is_stated(task_root, tmp_path):
+    """The 48-hour chain of sessions gave way to one session; its packager refuses this task, and neither the
+    instruction nor the image states how long the run may take."""
     target = staged_task(task_root, tmp_path)
     script = str(target / "scripts" / "package_session.py")
     refused = subprocess.run([sys.executable, "-B", script, "--session", "1", "--output", str(tmp_path / "out")],
                              capture_output=True, text=True, timeout=120, cwd=target / "scripts")
-    assert refused.returncode != 0 and "USED_BEFORE_SEC" in refused.stderr, refused.stderr[-500:]
+    assert refused.returncode != 0 and "retired" in refused.stderr, refused.stderr[-500:]
     assert not (tmp_path / "out").exists()
-    # the hours the instruction states, the timer's total and the agent limit agree
+    # the instruction says only that the run can end at any time, and keeps the progress log
     instruction = (task_root / "steps/01-restore-bodies/instruction.md").read_text()
-    hours = int(re.search(r"You have (\d+) hours of wall-clock time at most", instruction).group(1))
-    timer = (task_root / "environment/timer.sh").read_text()
-    total_sec = int(re.search(r"^TOTAL_SEC=(\d+)$", timer, flags=re.M).group(1))
-    agent_sec = int(re.search(r"^\[agent\]\ntimeout_sec = (\d+)$", (task_root / "task.toml").read_text(), flags=re.M).group(1))
-    assert hours * 3600 == total_sec == 43200
-    assert agent_sec <= total_sec and "USED_BEFORE_SEC" not in timer
+    assert "The run can end at any time, so keep the work runnable and the log below current." in instruction
+    assert "/app/PROGRESS.md" in instruction
+    assert not re.search(r"\b\d+\s*hours?\b|wall-clock|timer|seconds that remain|time is up", instruction, flags=re.I)
+    assert not (task_root / "environment/timer.sh").exists()
+    assert "timer" not in (task_root / "environment/Dockerfile").read_text()

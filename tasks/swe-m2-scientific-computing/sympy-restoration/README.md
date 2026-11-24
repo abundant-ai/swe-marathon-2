@@ -13,8 +13,9 @@ unit's examples and tests show, nor a documented result of their unit, nor one
 of their own arguments; see [Reward formula](#reward-formula)).
 
 This is a pilot brought over from a v1-style task. It has one implemented step,
-run as one 12-hour working session (the version on Oddish since 2026-11-19; the
-48-hour chain of sessions it replaced is described under [Workload](#workload)).
+run as one working session inside Oddish's 12-hour attempt (the agent's limit is
+34,560 s; since 2026-11-24 the instruction states no time figure; the 48-hour
+chain of sessions it replaced is described under [Workload](#workload)).
 It does not yet meet the v2 workload target; see [Workload](#workload) and
 [Remaining work](#remaining-work).
 
@@ -124,7 +125,8 @@ It does not yet meet the v2 workload target; see [Workload](#workload) and
   decision. The instruction states 12 hours at most and that the run can end
   before then, and asks for a `/app/PROGRESS.md` log every 30 minutes;
   `/app/timer.sh` counts 12 hours from the container's first process and keeps
-  no state file. Ran first as version 2 of the `-48h-s1` task row: six model
+  no state file (both gone since 2026-11-24: the instruction states no time
+  figure and the image has no timer; see that day's entry). Ran first as version 2 of the `-48h-s1` task row: six model
   trials (Proximus and claude-code, DeepSeek v4.1 Flash and GLM 5.3), all
   reward 0, best 82.3% of units, and no early stops once claude-code ran with
   `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`. Then uploaded as version 4 of the
@@ -142,7 +144,9 @@ It does not yet meet the v2 workload target; see [Workload](#workload) and
 - `scripts/package_session.py` stays for the record but cannot stage this task
   any more (the 12-hour timer has no `USED_BEFORE_SEC` line). Its check now
   asserts that refusal, and that the hours the instruction states, the timer's
-  total and the agent limit agree. 35 checks pass.
+  total and the agent limit agree. 35 checks pass. (Since 2026-11-24 the image
+  has no timer: the packager refuses for that reason, and the check asserts
+  that no time figure is stated.)
 
 ### 2026-11-20
 
@@ -395,7 +399,8 @@ It does not yet meet the v2 workload target; see [Workload](#workload) and
   moves that end. (Third re-check: that end bounds a turn only when the
   harness's exec ends with it; a turn ended by the time limit keeps its exec,
   and a load that times out the probe's handshakes could then push the net
-  check's end past the limit. The limit is now an end of its own.) The session end applies only when that session began within
+  check's end past the limit. The limit is now an end of its own.) The session
+  end applies only when that session began within
   ten minutes of the start of the work, because a harness that runs one exec per
   command ends many sessions during its turn; such a harness keeps the net
   check's end. The end is not taken from the session for killing `dev`: that
@@ -511,7 +516,11 @@ It does not yet meet the v2 workload target; see [Workload](#workload) and
   the same symbol as a documented call but change a different beam. Floor on
   these calls (the table under [Reward formula](#reward-formula)): every
   buildable strategy at most 0.0245 behind a table and 0.0 through the
-  verifier; the bounds that use the hidden results 0.0269 and 0.0301.
+  verifier; the bounds that use the hidden results 0.0269 and 0.0301. (Third
+  re-check, through the verifier's own runners: the combination 0.0166, since
+  delegates reach placeholders in a real tree, and an accessor synthesis
+  0.0401, 0.0171 of it in units whose body is such an accessor; both under
+  0.05.)
 - Wording. The collect step's text no longer says "delivery", "the agent's
   user" or "egress": the record key `egress` is now `net_probe`, renamed in the
   hook and the verifier together. The sealed test list's writer
@@ -621,7 +630,7 @@ It does not yet meet the v2 workload target; see [Workload](#workload) and
     Proximus (see [Remaining work](#remaining-work)).
   - The tests share stays out of the reward until a regrade on the platform
     leaves no test unreached; the stated 12 hours against the agent's 34,560 s
-    stays the owner's exception.
+    stays the owner's exception (decided on 2026-11-24: the hours are dropped).
 
 ### 2026-11-21, third re-check
 
@@ -641,7 +650,8 @@ It does not yet meet the v2 workload target; see [Workload](#workload) and
   set aside at setup was still held, so a disk the work filled voided the
   session end even of a turn that ended normally, and the tree was put aside
   only after the listing and a kill loop that counted zombies (100 passes with
-  one zombie left, before any mark existed). The room now goes back right after
+  one zombie left, before any mark existed; commit `9d2ee5a` had said the tree
+  went aside first). The room now goes back right after
   the freeze, then the tree is put aside, then the listing is written; a
   listing that cannot be written leaves the session end to the net check's own
   record of the sessions; the kill counts live processes only and stops after
@@ -742,6 +752,61 @@ It does not yet meet the v2 workload target; see [Workload](#workload) and
   (`MultivariateT`, from `test_JointPSpace_marginal_distribution`, as the re-check
   found). Rebuilt: 10,524 of 16,737 calls documented, 6,213 counted, 1,847 units
   in the set and 824 left out.
+- Baselines on the final verifier, on this machine through the entry point's
+  own steps (no privilege drop, no network probe of its own, one worker): the
+  reference 1.0 and complete (1,847 of 1,847 units in the set, 6,213 of 6,213
+  counted calls, 16,737 of 16,737 calls, 10,428 of 10,428 tests, none
+  unreached, no control tripped, 1,043 s); the agent's starting tree 0.0; a turn
+  of no length through the shipped hooks, the real net check (8 polls) and the
+  real mark, copied as the platform copies it: `end_from` `unchanged`, 0.0. Stood
+  in for, as before: root and the Linux tools, the network, `/proc`, the user
+  `dev`, and in the verifier the privilege drop and its own network probe.
+
+### 2026-11-24
+
+- The time line, on the owner's decision. The instruction no longer states a
+  time: "You have 12 hours of wall-clock time at most, and the run can end
+  before then", with the timer that printed the seconds left of 43,200, gave
+  way to one line, that the run can end at any time, so the work should stay
+  runnable and the `/app/PROGRESS.md` log current; the log and its cadence are
+  unchanged. `/app/timer.sh` is gone from the image as well, since a timer
+  counting down from 12 hours states the same figure (the platform's audit
+  makes a must-fix of a stated time that differs from the agent's limit, here
+  34,560 s), and no sibling task carries one. The retired session packager
+  now refuses because the image has no timer, and its check asserts that
+  refusal, that the instruction states no hours, no wall-clock and no timer,
+  and that the log requirement stays.
+- The three hostile trees of the brief, through the verifier's own `measure()` and
+  scoring (a local driver runs the entry point's steps), one worker and
+  the phases cut to 900 s of examples and 1,200 s of calls, about a tenth of the
+  platform's 9,600 worker-seconds per phase, so that each tree takes about 35
+  minutes; the rule that decides is the same at any budget. Each completed with
+  a reward, none an evaluation error, and every item a phase did not reach was
+  counted as failed, since the original needs about 299 s and 318 s of those
+  phases here:
+  - every body `while True: pass`: 0.0000 (0 of 1,847 units in the set, 0 of
+    6,213 counted calls; examples 37 time-outs in 44 starts, 2,628 units'
+    examples not reached and failed; calls 108 time-outs in 110 starts, 45
+    units cut after two, 16,411 calls not reached and not matching).
+  - 5% of the units (134) never end, the rest original: 0.0254 (47 of 1,847
+    units in the set, 180 of 6,213 counted calls; examples 32 time-outs in 57
+    starts, 2,538 units' examples not reached and failed; calls 104 time-outs
+    in 129 starts, 39 units cut after two, 15,746 calls not reached and not
+    matching).
+  - 50% of the units (1,336) first wait 0.05 s on the clock, then run the
+    original body: 0.0341 (71 of 1,847 units in the set, 212 of 6,213 counted
+    calls; examples 16 time-outs in 57 starts, 2,338 units' examples not
+    reached and failed; calls 48 time-outs in 78 starts, 17 units cut after
+    two, 15,732 calls not reached and not matching).
+  The 5% tree scores low here because its 134 looping units' time-outs, about
+  28 s per unit in the examples phase and 11.5 s per call, use up the cut phases
+  before the original's own work is done; on the platform's budget the same
+  time-outs take about 3,800 s of examples and 3,100 s of calls of 9,600 each, so
+  the phases would finish and only the looping units and the units that call
+  them would fail. The slow tree is slow everywhere: a call into one unit runs
+  many others, each waiting 0.05 s when it is one of the 1,336, so its calls
+  and examples run past their limits or crawl, and it scores like a tree whose
+  bodies mostly fail.
 
 ## Current implementation
 
@@ -902,7 +967,9 @@ residue included; no run has reached it, and more time did not shrink it.
 ## Workload
 
 v2 asks for at least five days of agent execution. This task does not meet that.
-Since 2026-11-19 a trial is one 12-hour session. With the earlier 9-hour limit the
+Since 2026-11-19 a trial is one working session inside Oddish's 12-hour attempt (the
+agent's limit 34,560 s); since 2026-11-24 the instruction states no time figure and
+says only that the run can end at any time. With the earlier 9-hour limit the
 best run used all of it at about 4,300 steps per hour and reached 96.2% of units;
 one 12-hour session reached 82.3% at best; two 48-hour sessions (19.2 hours)
 reached 2,568 of 2,671 units at best (experiment `sympy-restoration-v2-48h-20261117`).
@@ -1479,6 +1546,8 @@ same task; every one scored 0 under the binary reward.
 | Visible reruns: the slow tests of the five packages whose units the cap stopped (cap on distinct arguments), the slow tests of `sympy.stats` one file at a time, the eleven tests the 60-second limit cut with 600 s each | `documented.py` on the original with the visible tests | 3 units compared to the end (10 calls count again), 5 still past 500,000 distinct arguments; 1 call more documented (`MultivariateT`); 7 of the 11 cut tests finished, 4 ran out of 600 s again |
 | Counted calls rebuilt (`finalize_documented.py` over both rounds' visible runs, this round's reruns and new echoes) | working tree, 2026-11-21 (third re-check) | 16,737 calls, 10,524 documented (9,410 by arguments, 674 shown, 341 echoes, 41 capped, 58 documented results), 6,213 counted; 1,847 units in the set, 824 left out |
 | Floor on these calls (`fixtures.py`, `floor.py`, the reviewers' scripts) | working tree, 2026-11-21 (third re-check) | through the verifier: raise, first argument and flip 0.0; behind a table: flip 0.0034, the combination 0.0249 statically; integrity rules 0.0064 (0.0124); hidden-result bounds 0.0274 and 0.0296; the re-check's accessor synthesis 0.0401 (on the calls before) |
+| Reference, the agent's starting tree and a turn of no length, after the third re-check | this machine, the entry point's steps, one worker; the no-op through the shipped hooks, the real net check, a platform-style copy and the real mark, with root, the Linux tools, the network, `/proc` and the user `dev` stood in for | reference 1.000000 and complete: 1,847 / 1,847 units, 6,213 / 6,213 counted calls, 16,737 / 16,737 calls, 10,428 / 10,428 tests, none unreached, no control tripped, 1,043 s; starting tree 0.0; no-op 0.0 with `end_from` `unchanged` (8 polls, 1,716 entries listed) |
+| Hostile trees (all bodies loop; 5% loop; 50% slow) through the verifier's `measure()` and scoring | this machine, the entry point's steps, one worker, phases cut to 900 s and 1,200 s | loop-all 0.0000, completed, 2,628 units and 16,411 calls not reached counted as failed; loop-5 0.0254, completed, 2,538 units and 15,746 calls not reached counted as failed; slow-50 0.0341, completed, 2,338 units and 15,732 calls not reached counted as failed; none an evaluation error |
 | `harbor check` with `resources/task-implementation.toml` | working tree, 2026-11-17 | attempted on Modal; failed before review with `NotFoundError: Environment not found` (no default Modal environment). Not run in local Docker. No ratings |
 | Local image builds | none | not run for the v2 Dockerfiles; the Oddish baselines are the first build |
 
@@ -1506,7 +1575,7 @@ Other bundles, all from the same sources:
 
 ```bash
 python package_single_step.py                 # same content without the steps wrapper (Proximus)
-python package_session.py --session 1         # 48-hour chain, retired 2026-11-19: refused on the 12-hour timer
+python package_session.py --session 1         # 48-hour chain, retired 2026-11-19: refused, the image has no timer
 python package_session.py --session 2 --chain <run> --archive <candidate_unit_files.tar.gz>
 python package_regrade.py <candidate_unit_files.tar.gz> --label <name>   # grade a stored submission again
 ```
@@ -1573,7 +1642,9 @@ uv run --frozen pytest -q tasks/swe-m2-scientific-computing/sympy-restoration/ch
   arithmetic are the only unknowns the few-unit bound is there for.
 - Run the delivery hooks on the platform before any model trial (finding 9): a
   canary whose reference leaves a detached fetch-and-overwrite loop must score 0
-  with its files `late`; the reference twice with the record present and
+  with its files `late`; a time-limit canary, a reference that keeps working
+  past the limit with a load process and a fetch, must score 0 with its files
+  `late` and `end_from` `limit` or earlier; the reference twice with the record present and
   `end_from` `session` (one session seen, began within seconds of the start),
   the no-op twice with `end_from` `unchanged`; claude-code and Proximus must
   start and work as `dev`; the flat single-step bundle must run the hooks. If

@@ -29,6 +29,5 @@ RUN tar xzf /tmp/workspace.tar.gz -C /app && rm /tmp/workspace.tar.gz \
     && chmod 0700 /usr/local/lib/fsmaint /usr/local/lib/fsmaint/fsmaint-reserve /usr/local/lib/fsmaint/fsmaint-netcheck \
         /usr/local/lib/fsmaint/fsmaint-sweep \
     && chmod 0600 /usr/local/lib/fsmaint/key
-COPY timer.sh /app/timer.sh
 COPY ATTRIBUTION.txt LICENSE /app/
-RUN chmod 0755 /app/timer.sh && chmod 0644 /app/ATTRIBUTION.txt /app/LICENSE
+RUN chmod 0644 /app/ATTRIBUTION.txt /app/LICENSE

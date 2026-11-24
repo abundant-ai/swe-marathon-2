@@ -90,9 +90,8 @@ the original skeleton with your unit bodies in it, and nothing else from your tr
 
 ## Time and completion
 
-- You have 12 hours of wall-clock time at most, and the run can end before then;
-  `/app/timer.sh` prints the seconds that remain. Plan the work to fit, and keep going until
-  the work is complete or the time is up.
+- The run can end at any time, so keep the work runnable and the log below current. Keep
+  going until the work is complete.
 - Keep a running log in `/app/PROGRESS.md` of where the work stands, so that it can be taken
   up again after a break. When you start, then at least every 30 minutes and whenever you
   finish a module, append one line with the time (`date -u`), the counts that

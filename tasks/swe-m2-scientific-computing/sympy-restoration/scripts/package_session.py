@@ -5,6 +5,8 @@ is run as consecutive sessions, each one attempt. Session 1 is the task as it
 is. A later session is the same task with two differences: `/app/sympy` starts
 from the unit files the previous session delivered (the verifier saves them as
 `candidate_unit_files.tar.gz`), and the timer counts the time already used.
+Retired: the task now runs as one session, and its image has no timer, so this
+packager refuses it.
 The instruction, the verifier, the hidden inputs and the reference solution are
 unchanged, so every session is graded like the task itself.
 
@@ -97,6 +99,8 @@ def package_session(task_root: Path, session: int, chain: str | None, archive: P
         raise ValueError("A step file would overwrite a root file in the single-step layout")
     config = flat_task_toml(content["task.toml"].decode("utf-8"))
     session_sec = int(re.search(r"^\[agent\]\ntimeout_sec = (\d+)$", config, flags=re.M).group(1))
+    if TIMER not in content:
+        raise ValueError("The chain of sessions is retired: the image has no timer to carry the time already used")
     timer = content[TIMER].decode("utf-8")
     total_sec = int(re.search(r"^TOTAL_SEC=(\d+)$", timer, flags=re.M).group(1))
     used_sec = (session - 1) * session_sec
