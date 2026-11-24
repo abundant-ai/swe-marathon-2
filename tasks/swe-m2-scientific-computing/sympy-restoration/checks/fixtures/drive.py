@@ -213,49 +213,44 @@ def watch_scenario(work: Path) -> dict:
 
 
 STUB_RUNNER = """
-import hashlib, hmac, json, os, pickle, sys, time
-cand, mod, ip, op = sys.argv[1:5]
-key = sys.stdin.buffer.readline().strip()
-data = pickle.load(open(ip, "rb"))
-with open(op + ".starts", "a") as f:
+import json, os, pickle, sys, time
+cand, mod = sys.argv[1:3]
+data = pickle.loads(sys.stdin.buffer.read())
+out = os.fdopen(os.dup(1), "wb", buffering=0)
+with open(os.path.join(cand, "starts.txt"), "a") as f:
     f.write(mod + chr(10))
+def send(record):
+    out.write(json.dumps(record).encode() + chr(10).encode())
 if mod == "mod_dead":
     sys.exit(1)
 if mod == "mod_import_hang":
     time.sleep(120)
-out = open(op, "a")
-def line(record):
-    text = json.dumps(record)
-    return hmac.new(key, text.encode(), hashlib.sha256).hexdigest() + " " + text + chr(10)
-out.write(line({"loaded": True}))
-out.flush()
+send({"loaded": True})
 for vid, uid, blob in data["vectors"]:
+    send({"start": vid})
     if vid.endswith("_crash"):
-        out.write('{"v": "half a line')
-        out.flush()
+        out.write(b'{"v": "half a line')
         os._exit(1)
     if vid.endswith("_die"):
         os._exit(1)
-    if vid.endswith("_hang"):
+    if vid.endswith("_hang") or vid.endswith("_slow"):
         time.sleep(120)
     if vid.endswith("_forged"):
-        # a body that reached the process writes a line of its own for the next call, unsigned
-        out.write(json.dumps({"v": vid.replace("_forged", "_victim"), "c": ["forged"], "ms": 1}) + chr(10))
-        out.write("0" * 64 + " " + json.dumps({"v": vid.replace("_forged", "_victim"), "c": ["forged"], "ms": 1}) + chr(10))
-        out.flush()
-    if vid.endswith("_slow"):
-        out.write(line({"v": vid, "c": ["EXC", "Timeout", []], "ms": 1000}))
-        out.flush()
-        os._exit(3)
-    if vid.endswith("_victim"):
-        os._exit(1)
-    out.write(line({"v": vid, "c": ["ok", vid], "ms": 1}))
-    out.flush()
+        # a body that reached the process writes a result of its own for the next call
+        send({"v": vid.replace("_forged", "_victim"), "c": ["forged"], "ms": 1})
+    if vid.endswith("_flood"):
+        out.write(b"x" * (5 << 20))
+    if vid.endswith("_listid"):
+        send({"v": [vid], "c": ["ok", vid], "ms": 1})
+        continue
+    send({"v": vid, "c": ["ok", vid], "ms": 1})
+send({"done": True})
 """
 
 
 def vector_scenario(work: Path) -> dict:
-    """Run the call-replay phase with a stub runner whose jobs finish, crash, hang or never report."""
+    """Run the call-replay phase with a stub runner whose jobs finish, crash, hang, never report or
+    write out of order or out of form."""
     from verifier import engine
 
     for name in ("scratch", "pub", "cand"):
@@ -265,28 +260,33 @@ def vector_scenario(work: Path) -> dict:
     def module(unit: str, *ids: str) -> dict:
         return {"units": {unit: {}}, "vectors": [(vid, unit, b"") for vid in ids]}
 
+    def units(*pairs) -> dict:
+        return {"units": {unit: {} for unit, _vid in pairs}, "vectors": [(vid, unit, b"") for unit, vid in pairs]}
+
     payload = {
         "mod_ok": module("U1", "ok1", "ok2"),
-        "mod_crash": {"units": {"U2": {}, "U3": {}}, "vectors": [("c1", "U2", b""), ("c2_crash", "U2", b""), ("c3", "U3", b""), ("c4", "U3", b"")]},
-        "mod_hang": module("U4", "h1", "h2_hang", "h3"),
+        "mod_crash": units(("U2", "c1"), ("U2", "c2_crash"), ("U3", "c3"), ("U3", "c4")),
+        "mod_hang": units(("U4", "h1"), ("U4", "h2_hang"), ("U4", "h3"), ("U14", "h4")),
         "mod_dead": module("U5", "d1", "d2", "d3"),
-        "mod_barren": {"units": {"U6": {}, "U7": {}}, "vectors": [("b1_die", "U6", b""), ("b2_die", "U6", b""), ("b3", "U7", b""), ("b4", "U7", b"")]},
-        "mod_slow": module("U8", "w1_slow", "w2", "w3_slow", "w4"),
+        "mod_barren": units(("U6", "b1_die"), ("U6", "b2_die"), ("U7", "b3"), ("U7", "b4")),
+        "mod_slow": units(("U8", "w1_slow"), ("U8", "w2"), ("U15", "w3"), ("U15", "w4")),
         "mod_not_restored": module("U9", "s1"),
-        "mod_import_hang": {"units": {"U10": {}, "U11": {}}, "vectors": [("i1", "U10", b""), ("i2", "U11", b"")]},
-        "mod_forged": {"units": {"U12": {}, "U13": {}}, "vectors": [("f1_forged", "U12", b""), ("f2_victim", "U13", b""), ("f3", "U13", b"")]},
+        "mod_import_hang": units(("U10", "i1"), ("U11", "i2")),
+        "mod_forged": units(("U12", "f1_forged"), ("U13", "f2_victim"), ("U13", "f3")),
+        "mod_flood": units(("U16", "x1_flood"), ("U16", "x2"), ("U17", "x3")),
+        "mod_listid": units(("U18", "l1_listid"), ("U19", "l2")),
     }
     import time
 
+    stats: dict = {}
     results = engine.run_vectors(
-        payload, {"U1", "U2", "U3", "U4", "U5", "U6", "U7", "U8", "U10", "U11", "U12", "U13"}, [], scratch=str(work / "scratch"), pub=str(work / "pub"),
-        cand_nt=str(work / "cand"), cpus=4, deadline=time.monotonic() + 90,
-        cfg={"vector_timeout_sec": 1, "vector_stall_margin_sec": 1, "vector_load_sec": 10})
+        payload, {f"U{k}" for k in range(1, 20)} - {"U9"}, [], pub=str(work / "pub"), cand_nt=str(work / "cand"), cpus=4,
+        deadline=time.monotonic() + 90, bound=lambda uid: 1.0, load_bound=lambda mod: 5.0, tmp_root=str(work / "scratch"),
+        stats=stats)
     starts: dict[str, int] = {}
-    for path in (work / "scratch" / "vec").glob("*.starts"):
-        for line in path.read_text().split():
-            starts[line] = starts.get(line, 0) + 1
-    return {"results": results, "starts": starts}
+    for line in (work / "cand" / "starts.txt").read_text().split():
+        starts[line] = starts.get(line, 0) + 1
+    return {"results": results, "starts": starts, "stats": stats}
 
 
 def scenario(name: str) -> dict:

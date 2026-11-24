@@ -267,17 +267,9 @@ TOLD_APART = ("given_dummies_trade_places", "given_namesakes_trade_places", "mad
     f"low_{p}_{case}" for p in (13, 17, 20, 27, 40) for case in ("one_percent", "sign", "inside_old_floor"))
 
 
-def signed_records(path, key):
-    """The records of a runner's output whose tag is the HMAC-SHA256 of their JSON with `key`."""
-    import hashlib
-    import hmac
-
-    out = []
-    for line in path.read_text().splitlines():
-        tag, _, text = line.partition(" ")
-        if hmac.compare_digest(tag, hmac.new(key.encode(), text.encode(), hashlib.sha256).hexdigest()):
-            out.append(json.loads(text))
-    return out
+def runner_records(text):
+    """The JSON objects a runner wrote, one per line, on its standard output."""
+    return [json.loads(line) for line in text.splitlines() if line.strip()]
 
 
 def standin(tmp_path):
@@ -352,11 +344,12 @@ def test_a_call_that_changes_an_argument_is_compared_with_its_result(tmp_path, t
     made = subprocess.run([sys.executable, "-I", "-B", "-c", PAYLOAD, str(tree), str(tmp_path / "in.pkl")], capture_output=True,
                           text=True, timeout=60)
     assert made.returncode == 0, made.stderr[-2000:]
-    key = "k" * 32
-    done = subprocess.run([sys.executable, "-I", "-B", str(lib / "rvector.py"), str(tree), "sympy.demo", str(tmp_path / "in.pkl"),
-                           str(tmp_path / "out.jsonl"), "5"], input=key + "\n", capture_output=True, text=True, timeout=120, cwd=tree)
+    done = subprocess.run([sys.executable, "-I", "-B", str(lib / "rvector.py"), str(tree), "sympy.demo"],
+                          input=(tmp_path / "in.pkl").read_bytes(), capture_output=True, timeout=120, cwd=tree)
     assert done.returncode == 0, done.stderr[-2000:]
-    got = {rec["v"]: rec["c"] for rec in signed_records(tmp_path / "out.jsonl", key) if "v" in rec}
+    records = runner_records(done.stdout.decode())
+    assert records[0]["loaded"] is True and records[-1] == {"done": True}
+    got = {rec["v"]: rec["c"] for rec in records if "v" in rec}
     assert got["V1"] == ["RS", ["I", "2"], ["D", [[["S", "a"], ["L", [["I", "5"], ["I", "1"]]]]]]], got["V1"]
     # a body that leaves the argument alone returns the same value, and is told apart by the state
     assert got["V2"] == got["V3"] == ["I", "2"] and got["V2"] != got["V1"]
@@ -395,3 +388,39 @@ print(json.dumps(out))
     assert done.returncode == 0, done.stderr[-2000:]
     got = json.loads(done.stdout)
     assert got == {name: [False, False] for name in got}, got
+
+
+def test_the_sieve_a_range_unit_leaves_is_a_cache_and_floats_below_4_bits_compare_exactly(task_root):
+    """A sieve range unit's result counts in full; the sieve it leaves may have grown more or less, but
+    where both hold values they must be the same. A Float below 4 bits compares exactly; at 4 bits and
+    more within 2 to 4 units in its last place."""
+    lib = task_root / "steps" / "01-restore-bodies" / "tests" / "verifier" / "lib"
+    code = f"""
+import json, sys
+sys.path.insert(0, {str(lib)!r})
+from canon import profile_of, same
+profile = profile_of("sympy/ntheory/generate.py::Sieve.primerange")
+def call(primes, sieve):
+    state = ["D", [[["S", "self"], ["O", "sympy.ntheory.generate.Sieve", [[["S", "_list"], ["A:L", sieve]]]]]]]
+    return ["RS", ["L", [["I", p] for p in primes]], state]
+reference = call(["7", "11"], "2,3,5,7,11,13")
+out = {{
+    "grown_less": same(call(["7", "11"], "2,3,5,7,11"), reference, profile),
+    "grown_more": same(call(["7", "11"], "2,3,5,7,11,13,17,19"), reference, profile),
+    "left_wrong": same(call(["7", "11"], "2,3,5,8,11"), reference, profile),
+    "result_wrong": same(call(["7", "13"], "2,3,5,7,11,13"), reference, profile),
+    "unchanged_sieve": same(["L", [["I", "7"], ["I", "11"]]], reference, profile),
+    "strict_elsewhere": same(call(["7", "11"], "2,3,5,7,11"), reference),
+    "p3_one_unit": same(["SF", 3, 0, "5", "0"], ["SF", 3, 0, "6", "0"]),
+    "p3_same": same(["SF", 3, 0, "5", "0"], ["SF", 3, 0, "5", "0"]),
+    "p4_one_unit": same(["SF", 4, 0, "9", "0"], ["SF", 4, 0, "8", "0"]),
+    "p53_five_units": same(["SF", 53, 0, str(2**52 + 5), "-52"], ["SF", 53, 0, str(2**52), "-52"]),
+}}
+print(json.dumps(out))
+"""
+    done = subprocess.run([sys.executable, "-I", "-B", "-c", code], capture_output=True, text=True, timeout=120)
+    assert done.returncode == 0, done.stderr[-2000:]
+    got = json.loads(done.stdout)
+    assert got == {"grown_less": True, "grown_more": True, "left_wrong": False, "result_wrong": False, "unchanged_sieve": True,
+                   "strict_elsewhere": False, "p3_one_unit": False, "p3_same": True, "p4_one_unit": True,
+                   "p53_five_units": False}, got

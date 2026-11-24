@@ -106,18 +106,21 @@ def _runs(prefix: list[str]) -> bool:
         return False
 
 
-def sandbox_prefix(run_group: str, address_space: int = 0, notes: list | None = None) -> list[str]:
-    """Return the command prefix that limits memory and drops to the unprivileged user.
+def sandbox_prefix(run_group: str, address_space: int = 0, notes: list | None = None, file_size: int = 0,
+                   processes: int = 0) -> list[str]:
+    """Return the command prefix that limits the sandbox's resources and drops to the unprivileged user.
 
     Args:
         run_group: Group the sandbox user runs with.
-        address_space: Bytes of address space each sandboxed process may use;
-            0 sets no limit.
+        address_space: Bytes of address space each sandboxed process may use; 0 sets no limit.
         notes: Diagnostic notes for metrics.json, appended to in place.
+        file_size: Bytes a sandboxed process may make one file, at most (a write past it, or a file
+            extended past it, fails); 0 sets no limit.
+        processes: Processes and threads the sandbox user may have at once; 0 sets no limit.
 
     Returns:
         The `prlimit` and `setpriv` prefix every sandboxed command starts with;
-        without `prlimit` when the limit cannot be set here (noted).
+        without `prlimit` when the limits cannot be set here (noted).
 
     Raises:
         EvaluationError: The verifier is not root or cannot drop privileges, so
@@ -128,13 +131,75 @@ def sandbox_prefix(run_group: str, address_space: int = 0, notes: list | None = 
     drop = ["setpriv", "--reuid", RUN_AS, "--regid", run_group, "--clear-groups"]
     if shutil.which("setpriv") is None or not _runs(drop):
         raise EvaluationError("Could not drop privileges; submitted code was not run")
-    if address_space > 0:
-        limited = ["prlimit", f"--as={int(address_space)}", "--core=0", "--"] + drop
+    limits = [f"--as={int(address_space)}"] if address_space > 0 else []
+    limits += [f"--fsize={int(file_size)}"] if file_size > 0 else []
+    limits += [f"--nproc={int(processes)}"] if processes > 0 else []
+    if limits:
+        limited = ["prlimit"] + limits + ["--core=0", "--"] + drop
         if shutil.which("prlimit") is not None and _runs(limited):
             return limited
         if notes is not None:
-            notes.append("the address-space limit could not be set; submitted code ran without it")
+            notes.append("the sandbox's resource limits could not be set; submitted code ran without them")
     return drop
+
+
+def sandbox_owner() -> tuple[int, int] | None:
+    """The sandbox user's uid and gid, when this process can hand it a folder (it runs as root)."""
+    if os.geteuid() != 0:
+        return None
+    try:
+        import pwd
+
+        entry = pwd.getpwnam(RUN_AS)
+        return entry.pw_uid, entry.pw_gid
+    except (KeyError, ImportError):
+        return None
+
+
+LEFTOVER_DIRS = ("/tmp", "/var/tmp", "/dev/shm")
+
+
+def clear_leftovers(extra: tuple[str, ...] = ()) -> int:
+    """Remove what the sandbox user left at the top of the folders it can write to; how many entries went.
+    Run as root only, between runner starts and phases, and whenever a write of the verifier fails."""
+    owner = sandbox_owner()
+    if owner is None:
+        return 0
+    gone = 0
+    for folder in LEFTOVER_DIRS + tuple(extra):
+        try:
+            entries = list(os.scandir(folder))
+        except OSError:
+            continue
+        for entry in entries:
+            try:
+                if entry.stat(follow_symlinks=False).st_uid != owner[0]:
+                    continue
+                if entry.is_dir(follow_symlinks=False):
+                    shutil.rmtree(entry.path, ignore_errors=True)
+                else:
+                    os.unlink(entry.path)
+                gone += 1
+            except OSError:
+                continue
+    return gone
+
+
+def guarded_write(path: str, data: str | bytes, notes: list | None = None) -> bool:
+    """Write a file of the verifier's own; on a failure (a disk the sandbox filled) clear what the sandbox
+    left and try once more. False, noted, when it still fails: never raised."""
+    for attempt in range(2):
+        try:
+            with open(path, "wb" if isinstance(data, bytes) else "w", **({} if isinstance(data, bytes) else {"encoding": "utf-8"})) as f:
+                f.write(data)
+            return True
+        except OSError as exc:
+            if attempt == 0:
+                clear_leftovers()
+                continue
+            if notes is not None:
+                notes.append(f"could not write {os.path.basename(path)}: {exc.__class__.__name__}")
+    return False
 
 
 def reap(prefix: list[str]) -> None:
@@ -148,190 +213,114 @@ def reap(prefix: list[str]) -> None:
         time.sleep(0.2)
 
 
-def read_vector_records(path: str, want: set, keys: list) -> tuple[dict, set]:
-    """Read the results a replay job has written so far.
+def run_vectors(payload, restored_uids, prefix, *, pub, cand_nt, cpus, deadline, bound, load_bound, env=None, tmp_root=None,
+                tmp_owner=None, cleanup=None, stats=None):
+    """Replay recorded calls in the sandbox, one module at a time per runner process.
 
-    Args:
-        path: File the sandboxed runner appends one signed JSON line per call to.
-        want: Ids of the calls of this job.
-        keys: The keys the job's starts were given; a line signed with none of them is not read.
-
-    Returns:
-        The canonical result per call id, and the ids reported more than once.
-    """
-    got: dict = {}
-    dup: set = set()
-    try:
-        if os.path.getsize(path) <= 200_000_000:
-            with open(path, encoding="utf-8", errors="replace") as f:
-                for line in f:
-                    if len(line) > 2_100_000:
-                        continue
-                    text = next((t for t in (gradelib.signed_text(line, key) for key in keys) if t is not None), None)
-                    if text is None:
-                        continue
-                    try:
-                        rec = json.loads(text)
-                    except (ValueError, RecursionError, MemoryError):
-                        continue
-                    vid = rec.get("v") if isinstance(rec, dict) else None
-                    if vid in want:
-                        if vid in got:
-                            dup.add(vid)
-                        c = rec.get("c")
-                        got[vid] = c if isinstance(c, list) else None
-    except OSError:
-        pass
-    return got, dup
-
-
-def run_vectors(payload, restored_uids, prefix, *, scratch, pub, cand_nt, cfg, cpus, deadline, stats=None):
-    """Replay recorded calls in the sandbox, one process per module.
-
-    The runner works through a module's calls in order and writes each result
-    as it goes. A call can end the process (a crash in the interpreter) or keep
-    it busy past its own time limit; the calls queued behind it say nothing
-    about the submission. So the job is started again behind that call, which
-    counts as not matching; when the start was barren (the very first call
-    ended it), the rest of that call's unit counts as not matching too and the
-    job resumes at the next unit. After a call that ran out of time the runner
-    exits by itself and is started again behind it, since an interrupted body
-    can leave global state behind. A unit whose calls ran out of time, or
-    stopped the runner, `vector_unit_overrun_limit` times does not match on the
-    rest of its calls, which are not run. A job whose module import never
-    finishes loses all its calls at once, and so does the rest of a job after
-    `vector_job_restart_limit` starts that ended or stopped. Calls left when
-    `deadline` passes are not reached.
+    The runner gets its module's calls on standard input and answers over standard output (gradelib.Child):
+    it must import the module within `load_bound(module)` seconds, then report each call's start and
+    result, in order, each within `bound(unit)` seconds (plus a small grace) of the one before. A call
+    that takes longer does not match (its result is a Timeout), and neither does one during which the
+    runner ends or writes anything other than that call's result; the rest of that call's unit is not
+    run (it does not match either), and the module's other calls run in a new runner, since an
+    interrupted body can leave global state behind. A module whose import fails or does not finish loses
+    all its calls at once. Calls left when `deadline` passes are not reached.
 
     Args:
         payload: Per module, its units and their recorded calls.
         restored_uids: Units the submission restored.
-        prefix: Command prefix that drops to the sandbox user.
-        scratch: Private working directory of the verifier.
+        prefix: Command prefix that limits and drops to the sandbox user.
         pub: Directory readable by the sandbox user that holds the runner.
         cand_nt: Tree without test directories that the calls run in.
-        cfg: Limits from grade_config.json.
         cpus: Number of modules replayed at the same time.
         deadline: time.monotonic() value at which the phase ends.
-        stats: A dict that gets the phase's counts: starts, calls that ran out
-            of time, ends and stops of a runner, units whose rest was not run.
+        bound: Seconds a call of a unit may take, by unit.
+        load_bound: Seconds the import of a module may take, by module.
+        env: The runner's environment, without its private TMPDIR.
+        tmp_root, tmp_owner, cleanup: Where each start gets its private folder, its owner, and what to
+            call when that folder cannot be made.
+        stats: A dict that gets the phase's counts: starts, calls that ran out of time, starts that
+            ended or broke the order, units whose rest was not run.
 
     Returns:
-        The canonical result per call id; None for a call that did not finish
-        or was reported twice. Calls that were not reached are absent.
+        The canonical result per call id; None for a call that did not finish, was not run or whose
+        result was malformed. Calls that were not reached are absent.
 
     Raises:
         EvaluationError: The runner could not be started.
     """
-    vdir = os.path.join(scratch, "vec")
-    os.makedirs(vdir, exist_ok=True)
-    os.chmod(vdir, 0o755)
-    jobs = []
-    for k, (mod, p) in enumerate(sorted(payload.items())):
-        vecs = [v for v in p["vectors"] if v[1] in restored_uids]
-        if not vecs:
-            continue
-        op = os.path.join(vdir, f"o{k}.jsonl")
-        open(op, "w").close()
-        os.chmod(op, 0o666)
-        jobs.append((k, mod, p["units"], vecs, op))
-    per_vec = float(cfg.get("vector_timeout_sec", 10))
-    load_sec = float(cfg.get("vector_load_sec", 120))
-    stall_sec = per_vec + float(cfg.get("vector_stall_margin_sec", 30))
-    restart_limit = max(0, int(cfg.get("vector_job_restart_limit", 16)))
-    overrun_limit = max(1, int(cfg.get("vector_unit_overrun_limit", 2)))
     rv = os.path.join(pub, "rvector.py")
     lock = threading.Lock()
-    counts = {"starts": 0, "timeouts": 0, "ended_or_stopped": 0, "units_cut": 0}
+    counts = {"starts": 0, "timeouts": 0, "ended_or_stopped": 0, "malformed": 0, "units_cut": 0}
+    jobs = []
+    for mod, p in sorted(payload.items()):
+        vecs = [tuple(v) for v in p["vectors"] if v[1] in restored_uids]
+        if vecs:
+            jobs.append((mod, p["units"], vecs))
 
     def count(name, n=1):
         with lock:
             counts[name] += n
 
     def one(job):
-        k, mod, units, vecs, op = job
-        want = {v[0] for v in vecs}
-        unfinished: set = set()
+        mod, units, vecs = job
         got: dict = {}
-        dup: set = set()
-        pending = vecs
-        crashes = starts = 0
-        keys: list = []
-        overruns: collections.Counter = collections.Counter()   # per unit: calls past their time, stops of the runner
-
-        def overran(uid, rest):
-            """Count one overrun of `uid`; at the limit its calls left do not match and are not run."""
-            overruns[uid] += 1
-            if overruns[uid] < overrun_limit:
-                return rest
-            cut = [v for v in rest if v[1] == uid]
-            if cut:
-                unfinished.update(v[0] for v in cut)
-                count("units_cut")
-            return [v for v in rest if v[1] != uid]
-
+        pending = list(vecs)
         while pending:
-            left = deadline - time.monotonic()
-            if left <= 5:
+            if deadline - time.monotonic() <= 5:
                 break
-            starts += 1
             count("starts")
-            ip = os.path.join(vdir, f"i{k}.{starts}.pkl")
-            with open(ip, "wb") as f:
-                pickle.dump({"units": {uid: units[uid] for _, uid, _ in pending}, "vectors": pending}, f, protocol=4)
-            os.chmod(ip, 0o644)
+            tmp = gradelib.PrivateTmp(tmp_root, tmp_owner, cleanup)
+            job_data = gradelib.job_bytes({uid: units[uid] for _, uid, _ in pending}, pending)
             try:
-                # a process that was ended in the middle of a line must not spoil the next line
-                with open(op, "rb+") as f:
-                    f.seek(0, os.SEEK_END)
-                    if f.tell():
-                        f.seek(-1, os.SEEK_END)
-                        if f.read(1) != b"\n":
-                            f.write(b"\n")
-            except OSError:
-                pass
-            cmd = prefix + [sys.executable, "-P", "-s", "-B", rv, cand_nt, mod, ip, op, str(per_vec)]
-            before = len(got)
-            keys.append(secrets.token_hex(16))
-            try:
-                state, first, code = watch(cmd, cwd=cand_nt, env=SANDBOX_ENV, log_path=os.devnull, res_path=op,
-                                           deadline=deadline, collect_sec=load_sec, stall_sec=stall_sec, marker=None,
-                                           stdin_data=(keys[-1] + "\n").encode("ascii"))
+                child = gradelib.Child(prefix + [sys.executable, "-P", "-s", "-B", rv, cand_nt, mod], cwd=cand_nt,
+                                       env=tmp.env(env), job=job_data)
             except OSError as exc:
+                tmp.close()
                 raise EvaluationError("The call runner could not be started") from exc
-            got, dup = read_vector_records(op, want, keys)
-            rest = [v for v in pending if v[0] not in got]
-            if not rest or state == "budget":
-                break
-            if first is None:
-                # not even the module's import finished: none of the job's calls can be replayed
-                unfinished.update(v[0] for v in rest)
-                break
-            if state == "done" and code == 3 and len(got) > before:
-                # the runner started afresh after a call that ran out of time
-                for v in pending:
-                    if got.get(v[0]) == ["EXC", "Timeout", []]:
+            try:
+                kind, found = child.message(min(deadline, time.monotonic() + load_bound(mod)))
+                if kind == "message" and isinstance(found.get("module_error"), str):
+                    for vid, _uid, _blob in pending:
+                        got[vid] = ["EXC", "ImportFailure"]
+                    pending = []
+                    break
+                if not (kind == "message" and found.get("loaded") is True):
+                    if time.monotonic() >= deadline:
+                        break   # the phase's time ran out: the calls left are not reached
+                    for vid, _uid, _blob in pending:
+                        got[vid] = None   # not even the module's import finished
+                    pending = []
+                    break
+                while pending:
+                    vid, uid, _blob = pending[0]
+                    until = min(deadline, time.monotonic() + bound(uid) + gradelib.GRACE_SEC)
+                    kind, found = child.message(until)
+                    started = kind == "message" and found.get("start") == vid
+                    if started:
+                        kind, found = child.message(until)
+                    if started and kind == "message" and found.get("v") == vid and isinstance(found.get("c"), list):
+                        got[vid] = found["c"]
+                        pending.pop(0)
+                        continue
+                    if kind == "timeout" and time.monotonic() >= deadline:
+                        return got   # the phase's time ran out during this call: it and the rest are not reached
+                    if kind == "timeout":
                         count("timeouts")
-                        rest = overran(v[1], rest)
-                pending = rest
-                continue
-            # the process ended, or stopped, at the first call without a result
-            culprit = rest[0]
-            unfinished.add(culprit[0])
-            count("ended_or_stopped")
-            if len(got) == before:
-                # not even the first call returned: the rest of its unit is not tried again
-                unfinished.update(v[0] for v in rest if v[1] == culprit[1])
-                pending = [v for v in rest if v[1] != culprit[1]]
-            else:
-                pending = overran(culprit[1], rest[1:]) if state == "stalled" else rest[1:]
-            crashes += 1
-            if crashes >= restart_limit:
-                # the job's own bodies keep ending it: the calls left do not match
-                unfinished.update(v[0] for v in pending)
-                break
-        for vid in unfinished | dup:
-            got[vid] = None
+                        got[vid] = ["EXC", "Timeout", []]
+                    else:
+                        count("malformed" if kind == "message" else "ended_or_stopped")
+                        got[vid] = None
+                    rest = [v for v in pending[1:] if v[1] == uid]
+                    for other, _uid, _blob in rest:
+                        got[other] = None   # the rest of the unit is not run
+                    if rest:
+                        count("units_cut")
+                    pending = [v for v in pending[1:] if v[1] != uid]
+                    break   # the module's other calls run in a new runner
+            finally:
+                child.stop()
+                tmp.close()
         return got
 
     results = {}
@@ -344,6 +333,8 @@ def run_vectors(payload, restored_uids, prefix, *, scratch, pub, cand_nt, cfg, c
 
 
 CRASH_ITEM = re.compile(r"AssertionError: \('([^']+)', <WorkerController ")
+LOG_TAIL_LIMIT = 8 << 20    # bytes of a test run's output read back, its last ones
+LOG_KEEP_LIMIT = 64 << 10   # characters of it kept in the phase's log
 SELFCHECK_FILE = "tripwire_checks/test_tripwire.py"
 SELFCHECK_PASS = SELFCHECK_FILE + "::test_must_pass"
 SELFCHECK_FAIL = SELFCHECK_FILE + "::test_must_fail"
@@ -386,8 +377,12 @@ def runner_tally(text: str) -> int | None:
     return None
 
 
+RECORDS_LIMIT = 64 << 20   # bytes of a test run's records read, at most
+RECORD_LINE_LIMIT = 1 << 16
+
+
 def read_records(res_path: str, want: set[str]) -> tuple[dict[str, str], set[str], set[str]]:
-    """Read what one pytest run recorded through the runner plugin.
+    """Read what one pytest run recorded through the runner plugin, within limits; never raising.
 
     Args:
         res_path: File the plugin appended one JSON record per event to.
@@ -401,11 +396,20 @@ def read_records(res_path: str, want: set[str]) -> tuple[dict[str, str], set[str
     started: set[str] = set()
     uncollectable: set[str] = set()
     try:
-        with open(res_path, encoding="utf-8", errors="replace") as f:
-            for line in f:
+        if os.path.getsize(res_path) > RECORDS_LIMIT:
+            return outcome, started, uncollectable
+        with open(res_path, "rb") as f:
+            while True:
+                line = f.readline(RECORD_LINE_LIMIT)
+                if not line:
+                    break
+                if not line.endswith(b"\n") and len(line) >= RECORD_LINE_LIMIT:
+                    while (rest := f.readline(RECORD_LINE_LIMIT)) and not rest.endswith(b"\n"):
+                        pass
+                    continue
                 try:
                     rec = json.loads(line)
-                except (ValueError, RecursionError, MemoryError):
+                except (ValueError, RecursionError, MemoryError, UnicodeDecodeError):
                     continue
                 if not isinstance(rec, dict) or not isinstance(rec.get("id"), str):
                     continue
@@ -418,12 +422,14 @@ def read_records(res_path: str, want: set[str]) -> tuple[dict[str, str], set[str
                     started.add(nid)
                 elif oc in ("passed", "failed"):
                     outcome[nid] = "failed" if oc == "failed" or outcome.get(nid) == "failed" else "passed"
-    except OSError:
+    except (OSError, MemoryError):
         pass
     return outcome, started, uncollectable
 
 
 START_RECORD = b'"when": "start"'
+WATCH_READ_LIMIT = 1 << 20      # bytes of a run's new records looked at per poll, at most
+WATCH_SIZE_LIMIT = 256 << 20    # a run whose records grow past this is ended
 
 
 def watch(cmd, *, cwd, env, log_path, res_path, deadline, collect_sec, stall_sec, marker=START_RECORD, stdin_data=None):
@@ -481,17 +487,25 @@ def watch(cmd, *, cwd, env, log_path, res_path, deadline, collect_sec, stall_sec
                     ended = False
                 now = time.monotonic()
                 try:
-                    with open(res_path, "rb") as rf:
-                        rf.seek(offset)
-                        chunk = rf.read()
+                    size = os.path.getsize(res_path)
                 except OSError:
-                    chunk = b""
-                if chunk:
-                    offset += len(chunk)
+                    size = offset
+                if size > offset:
                     last = now
-                    if first is None and (marker is None or marker in tail + chunk):
-                        first = round(now - began, 1)
-                    tail = chunk[-len(marker):] if marker else b""
+                    if first is None:
+                        # the marker is looked for in what was added, a bounded piece of it at a time
+                        try:
+                            with open(res_path, "rb") as rf:
+                                rf.seek(offset)
+                                chunk = rf.read(min(size - offset, WATCH_READ_LIMIT))
+                        except OSError:
+                            chunk = b""
+                        if marker is None or marker in tail + chunk:
+                            first = round(now - began, 1)
+                        tail = chunk[-len(marker):] if marker else b""
+                    offset = size
+                    if size > WATCH_SIZE_LIMIT:
+                        return "stalled", first, None
                 if ended:
                     return "done", first, proc.returncode
                 if now >= deadline:
@@ -534,10 +548,10 @@ def sealed_run(ids, prefix, *, tag, workers, deadline, pub, scratch, cand, cfg):
     list_path = os.path.join(pub, f"sealed_ids.{tag}.json")
     res_path = os.path.join(scratch, f"pytest_results.{tag}.jsonl")
     log_path = os.path.join(scratch, f"pytest.{tag}.log")
-    with open(list_path, "w", encoding="utf-8") as f:
-        json.dump(sorted(want), f)
+    if not (guarded_write(list_path, json.dumps(sorted(want))) and guarded_write(res_path, "")):
+        # no room for the run's own files: it does not run, and its tests stay without an outcome
+        return {"state": "failed", "text": "", "outcome": {}, "started": set(), "uncollectable": set(), "first_test_sec": None}
     os.chmod(list_path, 0o644)
-    open(res_path, "w").close()
     os.chmod(res_path, 0o666)
     # the self-check file is collected first so that a run cut short still reports it
     files = [SELFCHECK_FILE] + sorted({t.split("::")[0] for t in ids})
@@ -555,9 +569,16 @@ def sealed_run(ids, prefix, *, tag, workers, deadline, pub, scratch, cand, cfg):
         state, first, _code = watch(cmd, cwd=cand, env=env, log_path=log_path, res_path=res_path, deadline=deadline,
                                     collect_sec=float(collect_sec), stall_sec=float(cfg.get("pytest_stall_sec", 180)))
     except OSError as exc:
+        if not os.path.exists(log_path):
+            # its log could not be made (a full disk): the run did not happen
+            return {"state": "failed", "text": "", "outcome": {}, "started": set(), "uncollectable": set(), "first_test_sec": None}
         raise EvaluationError("The test runner could not be started") from exc
-    with open(log_path, encoding="utf-8", errors="replace") as f:
-        text = f.read()
+    try:
+        with open(log_path, "rb") as f:
+            f.seek(max(0, os.path.getsize(log_path) - LOG_TAIL_LIMIT))
+            text = f.read(LOG_TAIL_LIMIT).decode("utf-8", "replace")
+    except OSError:
+        text = ""
     outcome, started, uncollectable = read_records(res_path, want)
     return {"state": state, "text": text, "outcome": outcome, "started": started,
             "uncollectable": uncollectable, "first_test_sec": first}
@@ -600,11 +621,14 @@ def run_sealed_tests(sealed_ids, prefix, notes, *, scratch, pub, cand, art, cfg,
     """
     tw_dir = os.path.join(cand, "tripwire_checks")
     os.makedirs(tw_dir, exist_ok=True)
-    shutil.copyfile(LIB / "test_selfcheck.py", os.path.join(tw_dir, "test_tripwire.py"))
+    guarded_write(os.path.join(tw_dir, "test_tripwire.py"), (LIB / "test_selfcheck.py").read_text(encoding="utf-8"), notes)
     os.chmod(tw_dir, 0o755)
-    os.chmod(os.path.join(tw_dir, "test_tripwire.py"), 0o644)
+    try:
+        os.chmod(os.path.join(tw_dir, "test_tripwire.py"), 0o644)
+    except OSError:
+        pass
     log_path = os.path.join(art, "pytest_sealed.log")
-    open(log_path, "w").close()
+    guarded_write(log_path, "")
     pass_limit = max(1, int(cfg.get("pytest_pass_limit", 5)))
     sealed = set(sealed_ids)
     outcome: dict[str, str] = {}
@@ -618,8 +642,11 @@ def run_sealed_tests(sealed_ids, prefix, notes, *, scratch, pub, cand, art, cfg,
         """Fold one run into the totals and return how many of `ids` it settled."""
         with lock:
             flags["runs"] += 1
-            with open(log_path, "a", encoding="utf-8") as lf:
-                lf.write(f"\n==== {header}: {run['state']} ====\n{run['text']}")
+            try:
+                with open(log_path, "a", encoding="utf-8") as lf:
+                    lf.write(f"\n==== {header}: {run['state']} ====\n{run['text'][-LOG_KEEP_LIMIT:]}")
+            except OSError:
+                pass
             got = run["outcome"]
             # a self-check that reports the wrong outcome means the runner was interfered with;
             # one that did not report at all (the run was cut short) is not counted against it
@@ -880,8 +907,14 @@ def measure(context: VerificationContext) -> Measurement:
     shutil.copyfile(LIB / "plugins" / "sealed_plugin.py", os.path.join(pub, "plugins", "sealed_plugin.py"))
     subprocess.run(["chmod", "-R", "a+rX,go-w", pub], check=False)
     os.chmod(scratch, 0o755)
-    prefix = sandbox_prefix(str(cfg.get("run_group", "nogroup")), int(cfg.get("address_space_bytes", 0)), metrics["notes"])
+    prefix = sandbox_prefix(str(cfg.get("run_group", "nogroup")), int(cfg.get("address_space_bytes", 0)), metrics["notes"],
+                            file_size=int(cfg.get("file_size_bytes", 0)), processes=int(cfg.get("sandbox_processes", 0)))
     restored = {u["uid"] for u in units if states[u["uid"]] == "restored"}
+    # every start of a runner gets a folder of its own for temporary files, removed after it
+    tmp_root = os.path.join(scratch, "tmp")
+    os.makedirs(tmp_root, exist_ok=True)
+    os.chmod(tmp_root, 0o711)
+    owner = sandbox_owner()
 
     # how much slower than the machine the original's own times were taken on this one is, measured here
     # before any submitted code runs; it decides, with those times, whether a phase that ran out of time
@@ -896,11 +929,26 @@ def measure(context: VerificationContext) -> Measurement:
         available = cpus * max(0.0, phase_end - began)
         return attribution * needed <= available, needed, available
 
+    def bounds(phase: str, floor: float) -> tuple[Any, Any]:
+        """The time one item (a unit's examples, or one call of a unit) and one module's import may take
+        here: the original's own time for it on this machine times a factor, never less than a floor."""
+        per, load = timing[phase].get("units", {}), timing[phase].get("load", {})
+        factor, load_factor = float(cfg.get("item_time_factor", 10)), float(cfg.get("load_time_factor", 5))
+        load_floor = float(cfg.get("load_floor_sec", 10))
+
+        def item(key: str) -> float:
+            return max(floor, host * factor * float(per.get(key, 0.0)))
+
+        def module(name: str) -> float:
+            return max(load_floor, host * load_factor * float(load.get(name, 2.0)))
+
+        return item, module
+
+    dt_bound, dt_load = bounds("doctest", float(cfg.get("doctest_floor_sec", 2)))
+    v_bound, v_load = bounds("vector", float(cfg.get("vector_floor_sec", 1.5)))
+
     # 2. docstring examples of every restored unit
     t0 = time.monotonic()
-    dt_scratch = os.path.join(scratch, "dt")
-    os.makedirs(dt_scratch, exist_ok=True)
-    os.chmod(dt_scratch, 0o755)
     run = collections.defaultdict(list)
     for u in units:
         if u["uid"] in restored:
@@ -908,30 +956,30 @@ def measure(context: VerificationContext) -> Measurement:
     dt_end = min(deadline, t0 + float(cfg.get("doctest_budget_sec", 1800)))
     dt_stats: dict = {}
     try:
-        results, tamper, dt_not_reached = gradelib.run_doctests(
-            cand_nt, run, os.path.join(pub, "rdoctest.py"), watch=watch, workers=cpus, deadline=dt_end,
-            timeout=float(cfg.get("unit_timeout_sec", 20)), prefix_cmd=prefix, scratch=dt_scratch, env=SANDBOX_ENV,
-            load_sec=float(cfg.get("doctest_load_sec", 120)), stall_margin_sec=float(cfg.get("doctest_stall_margin_sec", 30)),
-            restart_limit=int(cfg.get("doctest_module_restart_limit", 8)), stats=dt_stats)
+        results, tamper, examples_not_reached = gradelib.run_doctests(
+            cand_nt, run, os.path.join(pub, "rdoctest.py"), deadline=dt_end, bound=dt_bound, load_bound=dt_load, workers=cpus,
+            prefix_cmd=prefix, env=SANDBOX_ENV, tmp_root=tmp_root, tmp_owner=owner, cleanup=clear_leftovers, stats=dt_stats)
     except gradelib.RunnerUnavailable as exc:
         raise EvaluationError("The docstring runner could not be started") from exc
     reap(prefix)
+    clear_leftovers((tmp_root,))
     metrics["doctest_runs"] = dt_stats
+    dt_not_reached = len(examples_not_reached)
     if dt_not_reached:
         decided, needed, available = attributable("doctest", run, t0, dt_end)
         metrics["doctest_seconds_needed"], metrics["doctest_worker_seconds"] = round(needed, 1), round(available, 1)
         if decided:
             # the original needs a small share of this phase here: what used it up was the submission's own
             # bodies (slow, never ending, crashing), so the units it left count as failed, not as unknown
-            for name, record in list(results.items()):
-                if record.get("not_reached"):
-                    results[name] = {"name": name, "status": "timeout",
-                                     "exc": "not reached: the phase's time went on the submission's own bodies"}
+            for name in examples_not_reached:
+                results[name] = {"name": name, "status": "timeout",
+                                 "exc": "not reached: the phase's time went on the submission's own bodies"}
             metrics["notes"].append(
                 f"{dt_not_reached} units' examples were not reached in {available:.0f} worker-seconds, of which the original "
                 f"needs about {needed:.0f} here: they count as failed")
             metrics["units_not_reached_failed"] = dt_not_reached
             dt_not_reached = 0
+            examples_not_reached = set()
     unit_rows, n_examples = [], 0
     for u in units:
         s = states[u["uid"]]
@@ -950,9 +998,11 @@ def measure(context: VerificationContext) -> Measurement:
     t0 = time.monotonic()
     v_end = min(deadline, t0 + float(cfg.get("vector_budget_sec", 1200)))
     v_stats: dict = {}
-    vres = run_vectors(payload, restored, prefix, scratch=scratch, pub=pub, cand_nt=cand_nt, cfg=cfg, cpus=cpus,
-                       deadline=v_end, stats=v_stats)
+    vres = run_vectors(payload, restored, prefix, pub=pub, cand_nt=cand_nt, cpus=cpus, deadline=v_end, bound=v_bound,
+                       load_bound=v_load, env=SANDBOX_ENV, tmp_root=tmp_root, tmp_owner=owner, cleanup=clear_leftovers,
+                       stats=v_stats)
     reap(prefix)
+    clear_leftovers((tmp_root,))
     metrics["vector_runs"] = v_stats
     v_unreached = [vid for vid in gold if uid_of.get(vid) in restored and vid not in vres]
     if v_unreached:
@@ -997,7 +1047,6 @@ def measure(context: VerificationContext) -> Measurement:
             if uid in restored and vid not in vres:
                 per_unit[uid]["deciding"][2] += 1   # the call phase's time ran out before this call
     share_needed = metrics["unit_deciding_share"]
-    examples_not_reached = {u["dotted"] for u in units if (results.get(u["dotted"]) or {}).get("not_reached")}
     dotted_of = {u["uid"]: u["dotted"] for u in units}
     n_pass = set_pass = set_pass_high = doc_only = 0
     lines_set = lines_pass = 0
@@ -1046,8 +1095,7 @@ def measure(context: VerificationContext) -> Measurement:
     metrics["units_examples_without_calls"] = sum(
         1 for row in unit_rows if row["examples_pass"] and 2 * row["calls_matching"] < row["calls_total"])
     metrics["identical_bodies"] = identical_bodies(cand, units, states, original_bodies)
-    with open(os.path.join(art, "unit_results.json"), "w", encoding="utf-8") as f:
-        json.dump(unit_rows, f)
+    guarded_write(os.path.join(art, "unit_results.json"), json.dumps(unit_rows), metrics["notes"])
 
     # 4. sealed upstream tests, on the tree that has them, with the time the measurement has left
     t0 = time.monotonic()
@@ -1072,7 +1120,7 @@ def measure(context: VerificationContext) -> Measurement:
     metrics["pytest_seconds"] = round(time.monotonic() - t0, 1)
     metrics["pytest_timed_out"] = timed_out
     log(f"sealed tests: {t_pass}/{T} pass in {metrics['pytest_seconds']}s; self-check ok={tw_ok}")
-    with open(os.path.join(art, "sealed_test_failures.json"), "w", encoding="utf-8") as f:
-        json.dump(sorted(t for t in sealed_ids if outcome.get(t) != "passed")[:20000], f)
+    guarded_write(os.path.join(art, "sealed_test_failures.json"),
+                  json.dumps(sorted(t for t in sealed_ids if outcome.get(t) != "passed")[:20000]), metrics["notes"])
     metrics["tests_passing"] = t_pass
     return finish(True)

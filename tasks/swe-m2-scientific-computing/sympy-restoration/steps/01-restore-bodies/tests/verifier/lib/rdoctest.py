@@ -1,41 +1,31 @@
 """Run the docstring examples of selected functions of ONE module of a candidate tree.
 
-usage: rdoctest.py <cand_root> <module> <names.json> <out_path> [timeout_sec]
+usage: rdoctest.py <cand_root> <module>
 
-The key that signs this run's lines arrives as one line on standard input, which is then closed.
-Appends one line per unit to <out_path>:  <tag> <json>, where <tag> is the HMAC-SHA256 of <json>
-with that key, after one line that says the module was imported (with the seconds that took). The
-examples run the way SymPy's own doctest runner runs them: empty globals, plain-text printing,
-ELLIPSIS | NORMALIZE_WHITESPACE | IGNORE_EXCEPTION_DETAIL. Every unit's random generators are
-seeded from its name, so one tree gives the same result each time. After a unit that runs out of
-time the runner checks itself and exits with status 3, so that the units behind it run in a fresh
-process. Nothing of the run is a global of this module: the key, the output and the names live in
-main()'s frame only.
+The units arrive on standard input as one JSON object, {"names": [...]}, read whole before anything of
+the tree is imported. The answers go to standard output, one JSON object per line: {"loaded": true,
+"load_sec": s} once the module is imported (or {"module_error": why}), then for every unit {"start":
+name} before its examples and its record after them ({"name", "status", "failed", "tried", "sec", and
+"exc", "out", "blocked_by" when it did not pass}, with "trip": whether the runner could still tell a
+right example from a wrong one right after it), and {"done": true} at the end. What the examples
+print goes elsewhere. The examples run the way SymPy's own doctest runner runs them: empty globals,
+plain-text printing, ELLIPSIS | NORMALIZE_WHITESPACE | IGNORE_EXCEPTION_DETAIL. Every unit's random
+generators are seeded from its name, so one tree gives the same result each time. This process holds
+no key and is trusted with nothing: the process that started it reads each line within its own
+limits, expects the lines in this order, and ends it when a unit takes longer than it allows.
 """
 from __future__ import annotations
 
-import hashlib
-import hmac
 import io
 import json
 import os
 import random
 import re
-import signal
 import sys
 import time
 import zlib
 
 RESTORE_RE = re.compile(r"NotImplementedError: RESTORE (U\d{4})")
-
-
-class _Timeout(KeyboardInterrupt):
-    """Raised by the alarm; the doctest runner re-raises KeyboardInterrupt, so a looping
-    example ends the whole unit instead of being counted as one failed example."""
-
-
-def _alarm(signum, frame):
-    raise _Timeout()
 
 
 def reseed(name):
@@ -53,24 +43,18 @@ def reseed(name):
 
 def main():
     began = time.time()
-    cand_root, module_name, names_path, out_path = sys.argv[1:5]
-    timeout = float(sys.argv[5]) if len(sys.argv) > 5 else 20.0
-    signer = hmac.new(sys.stdin.buffer.readline().strip(), digestmod=hashlib.sha256)
-    try:
-        sys.stdin.close()
-        os.close(0)
-    except OSError:
-        pass
-    out_f = open(out_path, "a", encoding="utf-8")
-    with open(names_path, encoding="utf-8") as handle:
-        names = json.load(handle)
+    cand_root, module_name = sys.argv[1:3]
+    names = json.loads(sys.stdin.buffer.read())["names"]
+    # the answers go to a descriptor of their own; whatever else writes to the standard streams is lost
+    channel = os.fdopen(os.dup(1), "wb", buffering=0)
+    quiet = os.open(os.devnull, os.O_RDWR)
+    for descriptor in (0, 1, 2):
+        os.dup2(quiet, descriptor)
+    sys.stdin, sys.stdout, sys.stderr = open(os.devnull), open(os.devnull, "w"), open(os.devnull, "w")
+    dumps = json.dumps
 
-    def emit(rec):
-        text = json.dumps(rec)
-        tag = signer.copy()
-        tag.update(text.encode("utf-8"))
-        out_f.write(tag.hexdigest() + " " + text + "\n")
-        out_f.flush()
+    def send(record):
+        channel.write(dumps(record).encode("ascii") + b"\n")
 
     cand_root = os.path.realpath(cand_root)
     sys.path[:] = [p for p in sys.path if p not in ("", os.getcwd())]
@@ -95,14 +79,12 @@ def main():
         module = importlib.import_module(module_name)
         tests = {t.name: t for t in SymPyDocTestFinder().find(module) if t.examples}
     except BaseException as e:  # noqa: BLE001
-        import traceback
-
-        tb = traceback.format_exc()
-        emit({"module_error": f"{type(e).__name__}: {e}"[:600], "blocked_by": sorted(set(RESTORE_RE.findall(tb))), "tb": tb[-1500:]})
-        sys.exit(0)
-    emit({"loaded": True, "load_sec": round(time.time() - began, 3)})
-    signal.signal(signal.SIGALRM, _alarm)
+        send({"module_error": f"{type(e).__name__}: {e}"[:600]})
+        channel.close()
+        os._exit(0)
+    send({"loaded": True, "load_sec": round(time.time() - began, 3)})
     flags = pdoctest.ELLIPSIS | pdoctest.NORMALIZE_WHITESPACE | pdoctest.IGNORE_EXCEPTION_DETAIL
+    parser = pdoctest.DocTestParser()
 
     def run_one(test):
         reseed(test.name)
@@ -117,23 +99,15 @@ def main():
         rec = {}
         status = "pass"
         try:
-            signal.setitimer(signal.ITIMER_REAL, timeout)
             sys.stdout = buf
             f, t = runner.run(test, out=buf.write, clear_globs=True)
-            signal.setitimer(signal.ITIMER_REAL, 0)
             rec["failed"], rec["tried"] = f, t
             if f or not t:
                 status = "fail"
-        except _Timeout:
-            status = "timeout"
-        except KeyboardInterrupt:
-            status = "error"
-            rec["exc"] = "KeyboardInterrupt"
         except BaseException as e:  # noqa: BLE001
             status = "error"
             rec["exc"] = f"{type(e).__name__}: {e}"[:300]
         finally:
-            signal.setitimer(signal.ITIMER_REAL, 0)
             sys.stdout = old_stdout
             sys.displayhook = old_hook
             interactive_printing.NO_GLOBAL = False
@@ -145,32 +119,32 @@ def main():
         if status != "pass":
             blocked = sorted(set(RESTORE_RE.findall(out)))
             if blocked:
-                rec["blocked_by"] = blocked
+                rec["blocked_by"] = blocked[:50]
             rec["out"] = out[:2500]
         return rec
 
-    timed_out = False
-    for name in names:
-        t = tests.get(name)
-        if t is None:
-            emit({"name": name, "status": "notfound"})
-            continue
-        rec = run_one(t)
-        rec["name"] = name
-        emit(rec)
-        if rec["status"] == "timeout":
-            # an interrupted body can leave global state behind: the units after it get a new process
-            timed_out = True
-            break
+    def tripwire():
+        """Whether the runner still fails a wrong example and passes a right one."""
+        bad = parser.get_doctest(">>> 1 + 1\n3\n", {}, "tripwire_bad", None, 0)
+        good = parser.get_doctest(">>> 1 + 1\n2\n", {}, "tripwire_good", None, 0)
+        try:
+            return run_one(bad)["status"] == "fail" and run_one(good)["status"] == "pass"
+        except BaseException:  # noqa: BLE001
+            return False
 
-    # tripwires: the runner must still be able to tell right from wrong
-    parser = pdoctest.DocTestParser()
-    bad = parser.get_doctest(">>> 1 + 1\n3\n", {}, "tripwire_bad", None, 0)
-    good = parser.get_doctest(">>> 1 + 1\n2\n", {}, "tripwire_good", None, 0)
-    rb, rg = run_one(bad), run_one(good)
-    emit({"tripwire": bool(rb["status"] == "fail" and rg["status"] == "pass")})
-    out_f.close()
-    os._exit(3 if timed_out else 0)
+    for name in names:
+        send({"start": name})
+        test = tests.get(name)
+        if test is None:
+            send({"name": name, "status": "notfound", "trip": True})
+            continue
+        rec = run_one(test)
+        rec["name"] = name
+        rec["trip"] = tripwire()
+        send(rec)
+    send({"done": True})
+    channel.close()
+    os._exit(0)
 
 
 if __name__ == "__main__":

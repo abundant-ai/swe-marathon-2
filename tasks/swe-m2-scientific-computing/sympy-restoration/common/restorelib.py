@@ -23,36 +23,56 @@ DENY_MODULES = {
     "urllib", "http", "ftplib", "smtplib", "zipfile", "tarfile", "zipimport", "imp",
     "hypothesis", "xdist", "coverage", "trace", "tracemalloc", "sysconfig", "platform",
     "__main__", "posix", "nt", "pwd", "grp", "fcntl", "termios", "pty", "tty", "selectors", "ssl",
+    # the same reach by another name, files by another door, and the means to rewrite or watch the interpreter
+    "posixpath", "ntpath", "genericpath", "codecs", "fileinput", "logging", "gzip", "bz2", "lzma", "shelve", "dbm",
+    "sqlite3", "webbrowser", "pydoc", "zipapp", "tkinter", "readline", "rlcompleter", "cProfile", "profile", "pstats",
+    "timeit", "copyreg", "json", "hashlib", "hmac", "secrets",
 }
 # and every module whose top-level name starts with an underscore (the C cores of the modules above,
 # such as _io, _thread or _posixsubprocess), but __future__
 DENY_MODULE_PREFIXES = (
     "sympy.testing", "sympy.conftest", "sympy.utilities.pytest", "sympy.utilities.runtests",
     "sympy.utilities.benchmarking", "sympy.utilities.randtest", "sympy.utilities.tmpfiles",
+    # SymPy's own ways to reach modules by name, to write files, to compile and to open viewers
+    "sympy.external.importtools", "sympy.printing.preview", "sympy.printing.gtk", "sympy.utilities.autowrap",
+    "sympy.utilities._compilation", "sympy.utilities.codegen", "sympy.plotting", "sympy.interactive",
 )
 DENY_NAMES = {
     "eval", "exec", "compile", "open", "__import__", "globals", "locals", "vars",
     "breakpoint", "input", "exit", "quit", "__builtins__", "__loader__", "__spec__",
+    "preview", "autowrap", "ufuncify", "binary_function", "print_gtk", "attrgetter", "methodcaller",
 }
 # module names that are also rejected when a body uses them as globals of its module
 DENY_GLOBAL_MODULES = {
     "os", "sys", "subprocess", "importlib", "inspect", "builtins", "ctypes", "gc", "shutil",
     "socket", "pathlib", "pickle", "marshal", "signal", "threading", "multiprocessing",
     "tempfile", "atexit", "pdb", "io", "doctest", "pytest", "unittest", "traceback", "posix",
+    "posixpath", "ntpath", "genericpath", "codecs", "logging", "json", "hashlib", "hmac",
 }
 
 
 def _denied_module(name: str) -> bool:
     root = name.split(".")[0]
     return root in DENY_MODULES or (root.startswith("_") and root != "__future__") or name.startswith(DENY_MODULE_PREFIXES)
-DENY_IMPORTED_NAMES = {"testing", "pytest", "runtests", "conftest", "benchmarking", "randtest", "tmpfiles"}
+DENY_IMPORTED_NAMES = {"testing", "pytest", "runtests", "conftest", "benchmarking", "randtest", "tmpfiles",
+                       "preview", "autowrap", "ufuncify", "binary_function", "print_gtk", "attrgetter", "methodcaller",
+                       "importtools", "plotting", "interactive"}
 DENY_ATTRS = {
     "__globals__", "__builtins__", "__code__", "__closure__", "__subclasses__",
     "__loader__", "__spec__", "__getattribute__", "f_back", "f_globals", "f_locals",
     "f_builtins", "f_code", "tb_frame", "tb_next", "gi_frame", "cr_frame", "ag_frame",
     "_getframe", "settrace", "setprofile", "__stdout__", "__stderr__", "stdout", "stderr",
     "displayhook", "excepthook", "meta_path", "path_hooks",
+    # a module's own handle on the process, the interpreter or the files: no original body needs one
+    "os", "_os", "sys", "modules", "__traceback__", "tb_lineno", "f_trace", "testing", "runtests", "importtools",
+    "_compilation", "autowrap", "plotting", "interactive", "gtk", "pytest", "conftest", "preview", "attrgetter",
+    "methodcaller", "open", "write", "writelines", "popen", "fork", "kill", "unlink", "rmtree", "mkdir",
+    "makedirs", "rename", "chmod", "chdir", "putenv", "environ", "_exit", "abort",
 }
+# functions that reach an attribute or a module by a name given as a string: a literal name on the
+# lists above is rejected there too
+NAME_CALLS = {"getattr", "setattr", "delattr", "hasattr", "attrgetter", "methodcaller"}
+MODULE_CALLS = {"import_module", "__import__"}
 MAX_SOURCE_BYTES = 4_000_000
 
 
@@ -103,10 +123,15 @@ def scan_body(nodes, fn=None) -> str | None:
                     return f"use of module '{n.id}'"
             elif isinstance(n, ast.Attribute) and n.attr in DENY_ATTRS:
                 return f"attribute '.{n.attr}'"
-            elif (isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
-                  and n.func.id in ("getattr", "setattr", "delattr", "hasattr") and len(n.args) >= 2
-                  and isinstance(n.args[1], ast.Constant) and n.args[1].value in DENY_ATTRS):
-                return f"attribute '.{n.args[1].value}'"
+            elif isinstance(n, ast.Call):
+                called = n.func.id if isinstance(n.func, ast.Name) else n.func.attr if isinstance(n.func, ast.Attribute) else None
+                literals = [a.value for a in n.args if isinstance(a, ast.Constant) and isinstance(a.value, str)]
+                if called in NAME_CALLS:
+                    for name in literals:
+                        if any(part in DENY_ATTRS for part in name.split(".")):
+                            return f"attribute '.{name}'"
+                elif called in MODULE_CALLS and literals and _denied_module(literals[0]):
+                    return f"import of '{literals[0]}'"
     return None
 
 
@@ -124,8 +149,11 @@ def rules_text() -> str:
         "  " + ", ".join(DENY_MODULE_PREFIXES) + "  (and the names " + ", ".join(sorted(DENY_IMPORTED_NAMES)) + ")",
         "Builtins, unless the body binds the name itself:",
         "  " + ", ".join(sorted(DENY_NAMES)),
-        "Attributes (also through getattr/setattr/hasattr with a literal name):",
+        "Attributes (also when getattr, setattr, delattr, hasattr, attrgetter or methodcaller is given the name",
+        "as a literal):",
         "  " + ", ".join(sorted(DENY_ATTRS)),
+        "Modules named as a literal to import_module or __import__, as for imports.",
+        "These are lists of names: a body that reaches the same things another way is not thereby allowed.",
     ])
 
 

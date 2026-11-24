@@ -1,187 +1,283 @@
-"""Verifier-side driver for the docstring examples (one sandboxed process per module)."""
+"""Verifier-side drivers of the sandboxed runners: one process per module, spoken to over pipes."""
 from __future__ import annotations
 
-import hashlib
-import hmac
 import json
 import os
-import secrets
+import pickle
+import re
+import select
+import shutil
+import signal
+import subprocess
 import sys
+import tempfile
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+
+LINE_LIMIT = 4 << 20       # bytes of one line a runner writes, at most
+TOTAL_LIMIT = 256 << 20    # bytes one start of a runner writes, at most
+GRACE_SEC = 0.5            # a runner's own work around an item, beyond the item's bound
+STATUSES = ("pass", "fail", "error", "timeout", "notfound")
+UNIT_ID = re.compile(r"U\d{4}")
 
 
 class RunnerUnavailable(Exception):
     """The runner could not be started at all."""
 
 
-def signed_text(line, key):
-    """The JSON text of a runner's line when its tag is the HMAC-SHA256 of that text with `key`
-    (the run's key, which only the runner was given); None for any other line."""
-    tag, _, text = line.rstrip("\n").partition(" ")
-    if len(tag) != 64 or not text:
-        return None
-    try:
-        expected = hmac.new(key.encode("ascii"), text.encode("utf-8", "surrogatepass"), hashlib.sha256).hexdigest()
-    except (UnicodeError, ValueError):
-        return None
-    return text if hmac.compare_digest(tag, expected) else None
+class Child:
+    """A sandboxed runner the verifier speaks to over pipes. Its job is written to its standard input,
+    which is then closed; it answers with one JSON object per line on its standard output, read here in
+    pieces of at most 64 KiB, never more than LINE_LIMIT bytes for one line or TOTAL_LIMIT in all.
+    Nothing it writes is trusted: whatever is not the next expected message ends it."""
 
+    def __init__(self, cmd, *, cwd, env, job: bytes, line_limit: int = LINE_LIMIT, total_limit: int = TOTAL_LIMIT):
+        self.proc = subprocess.Popen(cmd, cwd=cwd, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                     stderr=subprocess.DEVNULL, start_new_session=True)
+        self.line_limit, self.total_limit = line_limit, total_limit
+        self.buffer = bytearray()
+        self.total = 0
+        self.fd = self.proc.stdout.fileno()
+        os.set_blocking(self.fd, False)
+        # fed from a thread of its own: a runner reads its job whole before anything else, and one that
+        # never does is ended when its first answer does not come in time
+        threading.Thread(target=self._feed, args=(job,), daemon=True).start()
 
-def read_runner_records(path, key, limit=200_000_000):
-    """The records of one run: units by name, the self-check, a module error, and whether a unit
-    was reported twice. Lines not signed with the run's key, malformed lines and records of the
-    wrong shape are skipped."""
-    got, trip, merr, dup = {}, None, None, False
-    try:
-        if os.path.getsize(path) > limit:
-            return got, trip, merr, dup
-        with open(path, encoding="utf-8", errors="replace") as f:
-            for line in f:
-                if len(line) > 500_000:
-                    continue
-                text = signed_text(line, key)
-                if text is None:
-                    continue
+    def _feed(self, job: bytes) -> None:
+        try:
+            self.proc.stdin.write(job)
+            self.proc.stdin.close()
+        except (OSError, ValueError):
+            pass
+
+    def message(self, deadline: float) -> tuple[str, dict | None]:
+        """The runner's next line: ("message", object), or ("timeout", None) when none came by `deadline`
+        (a time.monotonic() value), ("ended", None) when it closed its output, ("bad", None) for a line
+        too long, not JSON or not an object, or past the total limit."""
+        while True:
+            newline = self.buffer.find(b"\n")
+            if newline >= 0:
+                line = bytes(self.buffer[:newline])
+                del self.buffer[:newline + 1]
+                if len(line) > self.line_limit:
+                    return "bad", None
                 try:
-                    rec = json.loads(text)
-                except (ValueError, RecursionError):
-                    continue
-                if not isinstance(rec, dict):
-                    continue
-                if isinstance(rec.get("name"), str) and isinstance(rec.get("status"), str):
-                    if rec["name"] in got:
-                        dup = True
-                    got.setdefault(rec["name"], rec)
-                elif "tripwire" in rec:
-                    trip = rec["tripwire"] is True if trip is None else (trip and rec["tripwire"] is True)
-                elif "module_error" in rec:
-                    merr = rec
-    except OSError:
-        pass
-    return got, trip, merr, dup
+                    found = json.loads(line)
+                except (ValueError, RecursionError, MemoryError, UnicodeDecodeError):
+                    return "bad", None
+                return ("message", found) if isinstance(found, dict) else ("bad", None)
+            if len(self.buffer) > self.line_limit:
+                return "bad", None
+            left = deadline - time.monotonic()
+            if left <= 0:
+                return "timeout", None
+            try:
+                ready, _, _ = select.select([self.fd], [], [], min(left, 1.0))
+            except (OSError, ValueError):
+                return "ended", None
+            if not ready:
+                continue
+            try:
+                chunk = os.read(self.fd, 1 << 16)
+            except BlockingIOError:
+                continue
+            except OSError:
+                return "ended", None
+            if not chunk:
+                return "ended", None
+            self.total += len(chunk)
+            if self.total > self.total_limit:
+                return "bad", None
+            self.buffer += chunk
+
+    def stop(self) -> None:
+        """End the runner and everything it started in its session."""
+        try:
+            os.killpg(self.proc.pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError, OSError):
+            pass
+        try:
+            self.proc.kill()
+        except OSError:
+            pass
+        try:
+            self.proc.wait(10)
+        except subprocess.TimeoutExpired:
+            pass
+        try:
+            self.proc.stdout.close()
+        except OSError:
+            pass
 
 
-def run_doctests(cand_root, names_by_module, rdoctest_path, *, watch, deadline, workers=4, timeout=20.0,
-                 prefix_cmd=None, scratch="/tmp", env=None, load_sec=120.0, stall_margin_sec=30.0, restart_limit=8,
-                 stats=None):
-    """Run the docstring examples of the restored units, one module per sandboxed process.
+class PrivateTmp:
+    """A fresh folder for one start of a runner, owned by the sandbox user, removed afterwards; the
+    runner gets it as TMPDIR and HOME. When no folder can be made (a full disk), none is given."""
 
-    Each run is watched: it gets `load_sec` to import the module (the runner says when it has),
-    then may stay silent for at most one unit's `timeout` plus `stall_margin_sec`. A unit's
-    record counts only when its run reached its own closing self-check. When a run ends, or
-    stops, without it, the first unit of that run without a record fails ("crash", or
-    "timeout" when it stopped) and the module starts again without that unit, at most
-    `restart_limit` times; a runner that checks itself and exits after a unit that ran out of
-    time is simply started again behind it. A module whose import does not finish fails as a
-    whole, as one whose import raises does, and so do the units left after its restarts run
-    out. Units left when `deadline` (a time.monotonic() value) passes are not reached. `stats`, a
-    dict, gets the phase's counts: starts, units that ran out of time, runs that ended or stopped.
+    def __init__(self, root: str | None, owner: tuple[int, int] | None, cleanup=None):
+        self.path = None
+        if root is None:
+            return
+        for attempt in range(2):
+            try:
+                self.path = tempfile.mkdtemp(dir=root)
+                if owner is not None:
+                    os.chown(self.path, *owner)
+                os.chmod(self.path, 0o700)
+                return
+            except OSError:
+                self.path = None
+                if attempt == 0 and cleanup is not None:
+                    cleanup()
+
+    def env(self, base: dict | None) -> dict:
+        env = dict(base or {})
+        folder = self.path or "/nonexistent"
+        env.update(TMPDIR=folder, TMP=folder, TEMP=folder, HOME=folder)
+        return env
+
+    def close(self) -> None:
+        if self.path:
+            shutil.rmtree(self.path, ignore_errors=True)
+
+
+def example_record(name: str, found: dict) -> tuple[dict, bool] | None:
+    """A unit's record rebuilt from a runner's message, with the self-check that followed it; None
+    when the message is not one, for this unit, of the runner's own form. Nothing else is taken."""
+    if found.get("name") != name or found.get("status") not in STATUSES or not isinstance(found.get("trip"), bool):
+        return None
+    record = {"name": name, "status": found["status"]}
+    for key in ("failed", "tried"):
+        value = found.get(key)
+        if value is None:
+            continue
+        if not isinstance(value, int) or isinstance(value, bool) or not 0 <= value < 10**7:
+            return None
+        record[key] = value
+    seconds = found.get("sec")
+    if isinstance(seconds, (int, float)) and not isinstance(seconds, bool) and 0 <= seconds < 10**7:
+        record["sec"] = float(seconds)
+    for key, limit in (("exc", 300), ("out", 2500)):
+        if isinstance(found.get(key), str):
+            record[key] = found[key][:limit]
+    blocked = found.get("blocked_by")
+    if isinstance(blocked, list):
+        record["blocked_by"] = [b for b in blocked[:50] if isinstance(b, str) and UNIT_ID.fullmatch(b)]
+    return record, found["trip"]
+
+
+def run_doctests(cand_root, names_by_module, rdoctest_path, *, deadline, bound, load_bound, workers=4, prefix_cmd=None,
+                 env=None, tmp_root=None, tmp_owner=None, cleanup=None, stats=None):
+    """Run the docstring examples of the restored units, one module at a time per sandboxed process.
+
+    The runner gets its module's units on standard input and answers over standard output (Child): it
+    must import the module within `load_bound(module)` seconds, then report each unit's start and record,
+    in order, each within `bound(name)` seconds (plus GRACE_SEC) of the one before. A unit that takes
+    longer, or during which the runner ends or writes anything else, fails ("timeout" or "crash"), and
+    the module's other units run in a new runner. A module whose import fails or does not finish fails
+    as a whole. A record whose self-check failed (the runner could no longer tell a right example from a
+    wrong one) fails every unit of its module, and the module is named. Units left when `deadline` (a
+    time.monotonic() value) passes are not reached. `stats`, a dict, gets the phase's counts.
 
     Returns:
-        ({dotted: record}, [modules whose runner failed its self-check], number of units not
-        reached). Every unit of `names_by_module` has a record.
+        ({dotted: record}, [modules whose runner failed its self-check], {dotted names not reached}).
 
     Raises:
         RunnerUnavailable: The runner could not be started.
     """
     cand_root = os.path.abspath(cand_root)
-    results, bad = {}, []
+    results, bad, unreached = {}, [], set()
     lock = threading.Lock()
-    counts = {"starts": 0, "timeouts": 0, "ended_or_stopped": 0}
+    counts = {"starts": 0, "timeouts": 0, "ended_or_stopped": 0, "malformed": 0}
 
     def count(name):
         with lock:
             counts[name] += 1
 
     def one(item):
-        k, (mod, names) = item
-        out = {}
-        pending, crashes, starts = list(names), 0, 0
-        note = "time budget for docstring examples used up"
+        mod, names = item
+        out: dict = {}
+        pending = list(names)
         while pending:
-            left = deadline - time.monotonic()
-            if left <= 5:
+            if deadline - time.monotonic() <= 5:
                 break
-            key = secrets.token_hex(16)
-            npath = os.path.join(scratch, f"n{k}.{starts}.json")
-            opath = os.path.join(scratch, f"o{k}.{starts}.jsonl")
-            starts += 1
             count("starts")
-            with open(npath, "w", encoding="utf-8") as f:
-                json.dump(pending, f)
-            open(opath, "w").close()
-            os.chmod(opath, 0o666)
-            os.chmod(npath, 0o644)
-            cmd = list(prefix_cmd or []) + [sys.executable, "-P", "-s", "-B", rdoctest_path, cand_root, mod, npath, opath, str(timeout)]
+            tmp = PrivateTmp(tmp_root, tmp_owner, cleanup)
+            job = json.dumps({"names": pending}).encode()
+            cmd = list(prefix_cmd or []) + [sys.executable, "-P", "-s", "-B", rdoctest_path, cand_root, mod]
             try:
-                state, first, code = watch(cmd, cwd=cand_root, env=env, log_path=os.devnull, res_path=opath,
-                                           deadline=deadline, collect_sec=load_sec, stall_sec=timeout + stall_margin_sec,
-                                           marker=None, stdin_data=(key + "\n").encode("ascii"))
+                child = Child(cmd, cwd=cand_root, env=tmp.env(env), job=job, line_limit=1 << 20, total_limit=64 << 20)
             except OSError as exc:
+                tmp.close()
                 raise RunnerUnavailable(f"could not start the docstring runner: {exc}") from exc
-            got, trip, merr, dup = read_runner_records(opath, key)
-            if trip is False or dup:
-                # the runner could no longer tell a right example from a wrong one, or a unit was
-                # reported more than once: nothing of this module counts
-                return mod, {n: {"name": n, "status": "error", "exc": "runner self-check failed"} for n in names}, True, 0
-            if merr is not None or (first is None and state != "budget"):
-                # the module could not be imported, or its import never finished
-                why = ("module import failed: " + str(merr.get("module_error"))[:600] if merr is not None
-                       else "module import did not finish")
-                for n in pending:
-                    out[n] = {"name": n, "status": "error", "exc": why}
-                pending = []
-                break
-            if state == "budget" and trip is not True:
-                break
-            progressed = any(n in got for n in pending)
-            if trip is True:
-                out.update({n: rec for n, rec in got.items() if n in pending})
-                pending = [n for n in pending if n not in got]
-                if not pending or state == "budget":
+            try:
+                kind, found = child.message(min(deadline, time.monotonic() + load_bound(mod)))
+                if kind == "message" and isinstance(found.get("module_error"), str):
+                    why = "module import failed: " + found["module_error"][:600]
+                    for n in pending:
+                        out[n] = {"name": n, "status": "error", "exc": why}
+                    pending = []
                     break
-                if code == 3 and progressed:
-                    count("timeouts")
-                    continue   # a unit ran out of time; the rest run in a fresh process
-            culprit = next((n for n in pending if n not in got), None)
-            if culprit is None:
-                # every unit reported, yet the run ended before its closing self-check: nothing of
-                # it counts, and running it again would end the same way
-                for n in pending:
-                    out[n] = {"name": n, "status": "crash", "exc": "runner ended before its closing self-check"}
-                pending = []
-                break
-            # ended or stopped without its self-check (or checked itself with units left over):
-            # the first unit without a record fails, and the rest of the module runs again
-            count("ended_or_stopped")
-            out[culprit] = {"name": culprit, "status": "timeout" if state == "stalled" else "crash",
-                            "exc": "runner stopped during this unit" if state == "stalled" else "runner ended during this unit"}
-            pending = [n for n in pending if n != culprit]
-            crashes += 1
-            if crashes > restart_limit:
-                # the module's own bodies keep ending its runner: what is left fails, as the rest
-                # of a module that cannot be imported does
-                for n in pending:
-                    out[n] = {"name": n, "status": "crash", "exc": "runner restarted too often"}
-                pending = []
-                break
-        missing = 0
-        for n in names:
-            if n not in out:
-                out[n] = {"name": n, "status": "crash", "exc": note, "not_reached": True}
-                missing += 1
-        return mod, out, False, missing
+                if not (kind == "message" and found.get("loaded") is True):
+                    if time.monotonic() >= deadline:
+                        break   # the phase's time ran out: the units left are not reached
+                    for n in pending:
+                        out[n] = {"name": n, "status": "error", "exc": "module import did not finish"}
+                    pending = []
+                    break
+                while pending:
+                    name = pending[0]
+                    until = min(deadline, time.monotonic() + bound(name) + GRACE_SEC)
+                    kind, found = child.message(until)
+                    started = kind == "message" and found.get("start") == name
+                    if started:
+                        kind, found = child.message(until)
+                    rebuilt = example_record(name, found) if started and kind == "message" else None
+                    if rebuilt is not None:
+                        record, trip = rebuilt
+                        if not trip:
+                            # the runner could no longer tell a right example from a wrong one: nothing of
+                            # this module counts
+                            with lock:
+                                bad.append(mod)
+                            return mod, {n: {"name": n, "status": "error", "exc": "runner self-check failed"} for n in names}
+                        out[name] = record
+                        pending.pop(0)
+                        continue
+                    if kind == "timeout" and time.monotonic() >= deadline:
+                        return mod, out   # the phase's time ran out during this unit: it and the rest are not reached
+                    if kind == "timeout":
+                        count("timeouts")
+                        out[name] = {"name": name, "status": "timeout", "exc": "the unit's examples took longer than allowed"}
+                    elif kind == "message":
+                        count("malformed")
+                        out[name] = {"name": name, "status": "error", "exc": "the runner wrote something other than this unit's record"}
+                    else:
+                        count("ended_or_stopped")
+                        out[name] = {"name": name, "status": "crash",
+                                     "exc": "the runner wrote too much" if kind == "bad" else "the runner ended during this unit"}
+                    pending.pop(0)
+                    break   # the module's other units run in a new runner
+            finally:
+                child.stop()
+                tmp.close()
+        return mod, out
 
-    items = list(enumerate(sorted(names_by_module.items())))
-    not_reached = 0
+    items = sorted(names_by_module.items())
     with ThreadPoolExecutor(max(1, workers)) as ex:
-        for mod, out, tampered, missing in ex.map(one, items):
-            if tampered:
-                bad.append(mod)
+        for mod, out in ex.map(one, items):
             results.update(out)
-            not_reached += missing
+    for mod, names in items:
+        for n in names:
+            if n not in results:
+                unreached.add(n)
+                results[n] = {"name": n, "status": "crash", "exc": "time budget for docstring examples used up"}
     if stats is not None:
         stats.update(counts)
-    return results, bad, not_reached
+    return results, bad, unreached
+
+
+def job_bytes(units: dict, vectors: list) -> bytes:
+    """A call runner's job: the units its calls belong to and the calls, as one pickle."""
+    return pickle.dumps({"units": units, "vectors": vectors}, protocol=4)

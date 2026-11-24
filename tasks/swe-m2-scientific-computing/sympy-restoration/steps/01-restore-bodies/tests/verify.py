@@ -17,6 +17,27 @@ from verifier.reporting import REWARD_FILES, write_report  # noqa: E402
 from verifier.runner import verify  # noqa: E402
 
 SANDBOX_USER = "nobody"
+ROOM_BYTES = 64 << 20   # set aside on the result's file system before anything runs, given back to write the result
+
+
+def set_aside(path: Path) -> None:
+    """Hold ROOM_BYTES at `path`, so that however full the sandbox leaves the disk, the result still fits."""
+    try:
+        with open(path, "wb") as handle:
+            try:
+                os.posix_fallocate(handle.fileno(), 0, ROOM_BYTES)
+            except (AttributeError, OSError):
+                for _ in range(ROOM_BYTES >> 20):
+                    handle.write(bytes(1 << 20))
+    except OSError:
+        pass
+
+
+def give_back(path: Path) -> None:
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        pass
 
 
 def main() -> int:
@@ -32,6 +53,8 @@ def main() -> int:
     (output / "artifacts").mkdir(exist_ok=True)
     for name in REWARD_FILES + ("metrics.json", "report.json"):
         (output / name).unlink(missing_ok=True)
+    room = output / ".room"
+    set_aside(room)
     context: VerificationContext | None = None
     code = 1
     try:
@@ -49,6 +72,7 @@ def main() -> int:
             output=output, scratch=Path("/work"), scoring=scoring, limits=limits,
         )
         result = verify(context)
+        give_back(room)
         write_report(output, context, result, None)
         print(f"reward: {result.metrics['reward']:.6f} unit_share: {result.metrics['unit_share']} "
               f"call_share: {result.metrics['call_share']} complete: {result.metrics['complete']}", flush=True)
@@ -56,12 +80,14 @@ def main() -> int:
     except Exception as exc:  # noqa: BLE001 - every unexpected failure invalidates the evaluation
         message = str(exc) if isinstance(exc, EvaluationError) else f"Verifier error: {type(exc).__name__}"
         print(f"evaluation error: {message}", flush=True)
+        give_back(room)
         try:
             write_report(output, context, None, message)
         except OSError:
             for name in REWARD_FILES:
                 (output / name).unlink(missing_ok=True)
     finally:
+        give_back(room)
         # nothing of the submission may still be running; results become readable again
         if shutil.which("pkill"):
             subprocess.run(["pkill", "-9", "-u", SANDBOX_USER], check=False)

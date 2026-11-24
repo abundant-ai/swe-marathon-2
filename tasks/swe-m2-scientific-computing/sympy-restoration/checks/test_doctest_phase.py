@@ -1,9 +1,9 @@
 """The docstring-example phase: one unit's death, block or timeout costs that unit only, draws are
 seeded, and a used-up budget is a row for every unit, never a crash of the verifier.
 
-The real runner (`rdoctest.py`), the real driver (`gradelib.run_doctests`) and the real process
-watcher run here against a stand-in `sympy` package: the few names the runner imports, and one
-module whose functions are the units.
+The real runner (`rdoctest.py`) and the real driver (`gradelib.run_doctests`, which speaks to it over
+pipes) run here against a stand-in `sympy` package: the few names the runner imports, and one module
+whose functions are the units.
 """
 
 from __future__ import annotations
@@ -75,11 +75,12 @@ import json, time
 from pathlib import Path
 import gradelib
 from verifier import engine
+stats = {{}}
 results, bad, missing = gradelib.run_doctests({str(tree)!r}, {{{module!r}: {names!r}}}, str(engine.LIB / "rdoctest.py"),
-                                              watch=engine.watch, deadline=time.monotonic() + {deadline_sec}, workers=1, timeout=1.0,
-                                              scratch={str(scratch)!r}, load_sec={load_sec}, stall_margin_sec=2, restart_limit=8)
-starts = len(list(Path({str(scratch)!r}).glob("n0.*.json")))
-print(json.dumps({{"status": {{n: r["status"] for n, r in results.items()}}, "bad": bad, "missing": missing, "starts": starts}}))
+                                              deadline=time.monotonic() + {deadline_sec}, bound=lambda name: 1.0,
+                                              load_bound=lambda name: {load_sec}, workers=1, tmp_root={str(scratch)!r}, stats=stats)
+print(json.dumps({{"status": {{n: r["status"] for n, r in results.items()}}, "bad": bad, "missing": len(missing),
+                   "starts": stats.get("starts", 0), "records": results}}))
 """, timeout=300)
 
 
@@ -105,9 +106,9 @@ def test_an_import_that_never_finishes_fails_its_module_in_one_start(tmp_path, v
     assert set(data["status"].values()) == {"error"} and data["starts"] == 1 and data["missing"] == 0, data
 
 
-def test_a_run_that_dies_after_its_last_unit_and_before_its_self_check_counts_nothing(tmp_path, verifier_call):
-    """Every unit was reported, then the process ended before the closing self-check: no record of
-    that run counts, nothing is blamed on a unit that was not running, and the driver does not fail."""
+def test_a_run_that_dies_in_the_self_check_after_a_unit_costs_that_unit_only(tmp_path, verifier_call):
+    """A unit's body breaks the runner so that the self-check after it ends the process: that unit's
+    record never arrives and it fails; the unit before it, checked and recorded, keeps its record."""
     tree = standin_tree(tmp_path / "tree")
     sabotage = ("from sympy.testing import runtests\n"
                 "runtests.SymPyDocTestRunner.run = lambda *args, **kwargs: os._exit(1)\nreturn 1")
@@ -115,7 +116,7 @@ def test_a_run_that_dies_after_its_last_unit_and_before_its_self_check_counts_no
                                             + unit("last", sabotage, module="sympy.late"))
     names = ["sympy.late.first", "sympy.late.last"]
     data = run_phase(verifier_call, tree, tmp_path / "s", 120, names, module="sympy.late")
-    assert data["status"] == {"sympy.late.first": "crash", "sympy.late.last": "crash"}, data
+    assert data["status"] == {"sympy.late.first": "pass", "sympy.late.last": "crash"}, data
     assert data["bad"] == [] and data["missing"] == 0 and data["starts"] == 1
 
 
@@ -220,19 +221,22 @@ limited = engine.sandbox_prefix("nogroup", 4294967296, [])
 notes = []
 engine._runs = lambda prefix: prefix[0] == "setpriv"
 fallback = engine.sandbox_prefix("nogroup", 4294967296, notes)
-print(json.dumps([limited, fallback, notes]))
+engine._runs = lambda prefix: True
+full = engine.sandbox_prefix("nogroup", 4294967296, [], file_size=268435456, processes=1024)
+print(json.dumps([limited, fallback, notes, full]))
 """)
-    limited, fallback, notes = data
+    limited, fallback, notes, full = data
     assert limited[:4] == ["prlimit", "--as=4294967296", "--core=0", "--"] and limited[4] == "setpriv"
-    assert fallback[0] == "setpriv" and notes == ["the address-space limit could not be set; submitted code ran without it"]
+    assert fallback[0] == "setpriv" and notes == ["the sandbox's resource limits could not be set; submitted code ran without them"]
+    assert full[:6] == ["prlimit", "--as=4294967296", "--fsize=268435456", "--nproc=1024", "--core=0", "--"], full
     config = json.loads((task_root / "steps/01-restore-bodies/tests/verifier/grade_config.json").read_text())
-    assert config["address_space_bytes"] == 4 << 30
+    assert config["address_space_bytes"] == 4 << 30 and config["file_size_bytes"] == 256 << 20 and config["sandbox_processes"] == 1024
 
 
 def test_a_body_that_reaches_the_process_cannot_write_a_record_the_driver_reads(tmp_path, verifier_call):
-    """The runner keeps nothing on `__main__` and signs its lines with a key only it was given: a body
-    that writes a passing record for another unit, through `__main__` or straight to every open file,
-    writes nothing the driver reads, and the unit whose examples fail still fails."""
+    """The runner holds no key and the driver takes nothing out of order: a body that writes a passing
+    record for another unit, through `__main__` or straight to every open file, breaks only its own
+    unit's record (that unit fails), and the unit whose examples fail still fails."""
     tree = standin_tree(tmp_path / "tree")
     forge = textwrap.dedent("""\
         import json
@@ -253,5 +257,30 @@ def test_a_body_that_reaches_the_process_cannot_write_a_record_the_driver_reads(
                                               + unit("target", "return 2", module="sympy.forged"))
     names = ["sympy.forged.forger", "sympy.forged.target"]
     data = run_phase(verifier_call, tree, tmp_path / "s", 120, names, module="sympy.forged")
-    assert data["status"] == {"sympy.forged.forger": "pass", "sympy.forged.target": "fail"}, data
+    assert data["status"] == {"sympy.forged.forger": "error", "sympy.forged.target": "fail"}, data
     assert data["bad"] == [] and data["missing"] == 0
+
+
+def test_a_runner_record_out_of_form_fails_its_unit_and_never_raises(tmp_path, verifier_call):
+    """Bodies that rebind the runner's serialiser: one makes every record carry extra fields (a claim
+    that the unit was not reached, among them) and a status of its own; one sends a list as the unit's
+    name. The driver rebuilds each record from the runner's own fields only, fails what is out of form,
+    and the evaluation goes on."""
+    tree = standin_tree(tmp_path / "tree")
+    extra = textwrap.dedent("""\
+        import json
+        real = json.dumps
+        json.dumps = lambda record, *a, **k: real(dict(record, not_reached=True, status="pass") if "name" in record else record)
+        return 1""")
+    listed = textwrap.dedent("""\
+        import json
+        real = json.dumps
+        json.dumps = lambda record, *a, **k: real(dict(record, name=[record["name"]]) if "name" in record else record)
+        return 1""")
+    (tree / "sympy" / "rebind.py").write_text(unit("extra", extra, module="sympy.rebind") + unit("wrong", "return 2", module="sympy.rebind")
+                                              + unit("listed", listed, module="sympy.rebind") + unit("after", "return 1", module="sympy.rebind"))
+    names = ["sympy.rebind." + n for n in ("extra", "wrong", "listed", "after")]
+    data = run_phase(verifier_call, tree, tmp_path / "s", 120, names, module="sympy.rebind")
+    assert data["status"] == {"sympy.rebind.extra": "pass", "sympy.rebind.wrong": "fail", "sympy.rebind.listed": "pass",
+                              "sympy.rebind.after": "pass"}, data
+    assert not any("not_reached" in record for record in data["records"].values()), data["records"]

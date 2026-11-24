@@ -16,12 +16,11 @@ from pathlib import Path
 from test_comparison import STANDIN as CANON_STANDIN
 from test_doctest_phase import STANDIN, unit
 
-LIMITS = {"unit_timeout_sec": 1, "doctest_stall_margin_sec": 2, "doctest_load_sec": 20, "doctest_budget_sec": 10,
-          "vector_timeout_sec": 1, "vector_stall_margin_sec": 2, "vector_load_sec": 20, "vector_budget_sec": 10,
+LIMITS = {"doctest_floor_sec": 1, "vector_floor_sec": 1, "load_floor_sec": 20, "doctest_budget_sec": 10, "vector_budget_sec": 10,
           "measure_budget_sec": 60, "workers": 1}
 
 
-def stand_in_grade(verifier_call, tmp_path: Path, bodies: dict, *, limits: dict, per_unit: float = 0.01) -> dict:
+def stand_in_grade(verifier_call, tmp_path: Path, bodies: dict, *, limits: dict, per_unit: float = 0.01, patch: str = "") -> dict:
     """Grade a tree whose units are `bodies` ({name: body}), three recorded calls each returning 1."""
     names = list(bodies)
     uids = {name: f"U{index + 1:04d}" for index, name in enumerate(names)}
@@ -63,6 +62,7 @@ engine.delivery.read_delivery = lambda top, key, *rest: delivery.Delivery("liste
 engine.sandbox_prefix = lambda *a, **k: []
 engine.reap = lambda prefix: None
 engine.run_sealed_tests = lambda sealed_ids, prefix, notes, **kw: engine.SealedResult({{}}, True, False, None, False, 0, 0, None)
+{patch}
 scoring, limits = load_config()
 limits = dict(limits, **{limits!r})
 work = Path({str(tmp_path / 'work' / 'sympy_parent')!r})
@@ -89,8 +89,8 @@ def test_a_tree_whose_every_body_never_ends_completes_with_its_items_failed(tmp_
     assert data["units_not_reached"] == 0 and data["vectors_not_reached"] == 0, data
     assert (data["examples_failed_unreached"] or 0) + (data["calls_failed_unreached"] or 0) > 0, data
     assert any("count as failed" in note or "count as not matching" in note for note in data["notes"]), data["notes"]
-    # a unit whose calls ran out of time twice is not run again
-    assert data["vector_runs"]["units_cut"] >= 1 and data["vector_runs"]["timeouts"] >= 2, data["vector_runs"]
+    # a unit whose call ran out of time is not run again
+    assert data["vector_runs"]["units_cut"] >= 1 and data["vector_runs"]["timeouts"] >= 1, data["vector_runs"]
 
 
 def test_one_never_ending_body_that_others_call_still_leaves_a_score(tmp_path, verifier_call):
@@ -99,8 +99,8 @@ def test_one_never_ending_body_that_others_call_still_leaves_a_score(tmp_path, v
     data = stand_in_grade(verifier_call, tmp_path, bodies, limits=dict(LIMITS, vector_budget_sec=20))
     assert data["status"] == "completed" and data["units_not_reached"] == 0 and data["vectors_not_reached"] == 0, data
     assert data["units_set_passing"] == 4 and data["deciding_passing"] == 12 and data["reward"] == round(4 / 7, 6), data
-    # each of the three never-ending units ran out of time twice and its third call was not run
-    assert data["vector_runs"]["timeouts"] == 6 and data["vector_runs"]["units_cut"] == 3, data["vector_runs"]
+    # each of the three never-ending units ran out of time once and its other two calls were not run
+    assert data["vector_runs"]["timeouts"] == 3 and data["vector_runs"]["units_cut"] == 3, data["vector_runs"]
 
 
 def test_a_machine_too_slow_for_the_original_still_ends_in_an_evaluation_error(tmp_path, verifier_call):
@@ -109,3 +109,27 @@ def test_a_machine_too_slow_for_the_original_still_ends_in_an_evaluation_error(t
     bodies = {f"fine{index}": "return 1" for index in range(3)}
     data = stand_in_grade(verifier_call, tmp_path, bodies, limits=dict(LIMITS, measure_budget_sec=0), per_unit=100.0)
     assert data["status"] == "evaluation_error" and "did not reach" in data["error"], data
+
+
+def test_a_disk_the_bodies_fill_costs_no_evaluation(tmp_path, verifier_call):
+    """The sandbox filled the disk: no runner's private folder can be made, and the verifier's own files
+    cannot be written. The runners run without a folder, the files are noted as not written, and the
+    measurement completes with its score."""
+    bodies = {"good": "return 1", "other": "return 1"}
+    patch = """
+import builtins, errno
+def full(*args, **kwargs):
+    raise OSError(errno.ENOSPC, "No space left on device")
+engine.gradelib.tempfile.mkdtemp = full
+real_open = builtins.open
+def guarded_open(path, mode="r", *args, **kwargs):
+    if "w" in mode and str(path).endswith(("unit_results.json", "sealed_test_failures.json")):
+        full()
+    return real_open(path, mode, *args, **kwargs)
+engine.open = guarded_open
+cleared = []
+engine.clear_leftovers = lambda extra=(): cleared.append(1) or 0
+"""
+    data = stand_in_grade(verifier_call, tmp_path, bodies, limits=LIMITS, patch=patch)
+    assert data["status"] == "completed" and data["reward"] == 1.0, data
+    assert any("could not write unit_results.json" in note for note in data["notes"]), data["notes"]

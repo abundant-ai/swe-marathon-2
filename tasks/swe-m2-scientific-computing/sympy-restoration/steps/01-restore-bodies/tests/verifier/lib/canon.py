@@ -43,11 +43,13 @@ comparison of two such forms. The form keeps the type and the container of every
   LaTeX ignores (a blank line, a paragraph break, is kept);
 - Truss's coordinate lists kept in parallel with its nodes count, except in the result of
   `Truss.remove_node`, whose upstream body keeps them inconsistently;
-- of the sieve's range units (RESULT_ONLY_UNITS) only what they return counts, not how far they grew
-  the module's sieve, which is a cache; `Sieve.extend` and `extend_to_no` count the growth;
-- a SymPy Float has the same precision and compares within a few units in its last place, a
-  relative 2**(FLOAT_ULPS - precision), as does an mpmath number at its precision; a Python float
-  within a relative 2**-PY_FLOAT_BITS; zero only to zero, with no absolute tolerance;
+- of the sieve's range units (RESULT_ONLY_UNITS) what they return counts in full, and the sieve they
+  leave as a cache: each of its lists alike to the other's on their common part, so how far it grew is
+  free and what it holds is not (`Sieve.extend` and `extend_to_no` count the growth too);
+- a SymPy Float has the same precision and compares within a relative 2**(FLOAT_ULPS - precision) of
+  the larger value, 2 to 4 units in its last place by where the value lies in its binade, and exactly
+  below 4 bits; so does an mpmath number at its precision; a Python float within a relative
+  2**-PY_FLOAT_BITS; zero only to zero, with no absolute tolerance;
 - a dict's and a set's items compare in no order (a dict's equality ignores it, and SymPy prints
   both sorted), an OrderedDict's in its own.
 
@@ -85,7 +87,8 @@ PARALLEL_LISTS = {
 PARALLEL_LIST_UNITS = frozenset({"sympy/physics/continuum_mechanics/truss.py::Truss.remove_node"})
 # units ("file::qualname") whose result is LaTeX, in which whitespace carries no meaning
 LATEX_UNITS = frozenset({"sympy/printing/latex.py::multiline_latex", "sympy/physics/vector/printing.py::vlatex"})
-# units whose argument is the module's sieve, which they may grow as a cache: only what they return counts
+# units whose argument is the module's sieve, which they may grow as a cache: what they return counts,
+# and the sieve they leave only where both hold values
 RESULT_ONLY_UNITS = frozenset({"sympy/ntheory/generate.py::Sieve.primerange", "sympy/ntheory/generate.py::Sieve.totientrange",
                                "sympy/ntheory/generate.py::Sieve.mobiusrange"})
 
@@ -95,7 +98,7 @@ class Profile(NamedTuple):
 
     latex: bool = False            # whitespace LaTeX ignores is ignored
     parallel_lists: bool = True    # Truss's parallel coordinate lists count
-    result_only: bool = False      # of a call that returned a value and changed an argument, only the value counts
+    result_only: bool = False      # of a call that returned a value and changed an argument, the argument is a cache
 
 
 STRICT = Profile()
@@ -548,13 +551,35 @@ def _result_part(form):
     return form[1] if isinstance(form, list) and len(form) == 3 and form[0] == "RS" else form
 
 
+def _state_part(form):
+    return form[2] if isinstance(form, list) and len(form) == 3 and form[0] == "RS" else None
+
+
+def _cache_alike(a, b, depth=0):
+    """Two forms of a cache's state alike: each list of values (an array) the same as the other's on their
+    common part, every other part the same."""
+    if depth > MAX_DEPTH:
+        return False
+    if isinstance(a, list) and isinstance(b, list):
+        if (len(a) == 2 == len(b) and isinstance(a[0], str) and a[0].startswith("A:") and a[0] == b[0]
+                and isinstance(a[1], str) and isinstance(b[1], str)):
+            x, y = (v.split(",") if v else [] for v in (a[1], b[1]))
+            common = min(len(x), len(y))
+            return x[:common] == y[:common]
+        return len(a) == len(b) and all(_cache_alike(x, y, depth + 1) for x, y in zip(a, b))
+    return a == b
+
+
 def same(a, b, profile=None):
     """Compare two canonical forms (see the module docstring); `profile` is the unit's (profile_of).
     Total: two forms that cannot be compared (a malformed line of a runner, say) are not alike."""
     ctx = _Context(profile or STRICT)
-    if ctx.profile.result_only:
-        a, b = _result_part(a), _result_part(b)
     try:
+        if ctx.profile.result_only:
+            state_a, state_b = _state_part(a), _state_part(b)
+            if state_a is not None and state_b is not None and not _cache_alike(state_a, state_b):
+                return False
+            a, b = _result_part(a), _result_part(b)
         return bool(_same(a, b, ctx) and ctx.in_order())
     except (TypeError, ValueError, KeyError, IndexError, AttributeError, RecursionError, OverflowError, MemoryError):
         return False
@@ -637,7 +662,9 @@ def _same(a, b, ctx):
         # the same precision, and a value within a few units in the last place of that precision
         if a[1] != b[1] or not isinstance(a[1], int) or isinstance(a[1], bool):
             return False
-        return _binary_close(a[2:], b[2:], max(a[1] - FLOAT_ULPS, 1))
+        if a[1] < 4:
+            return a[2:] == b[2:]
+        return _binary_close(a[2:], b[2:], a[1] - FLOAT_ULPS)
     if head == "X" and len(a) == 3 and a[1] == "Dummy~" and b[1] == "Dummy~":
         try:
             (_, name_a), (_, ass_a), (_, id_a) = a[2]
