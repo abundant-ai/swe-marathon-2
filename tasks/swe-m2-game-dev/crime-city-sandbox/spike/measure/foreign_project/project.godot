@@ -1,0 +1,28 @@
+; A small project that is not the spike game: own autoloads, GodotPhysics3D, a different
+; node layout, an AnimationTree-free hand-posed skeleton. Used to show the probe makes no
+; assumption beyond the automation contract.
+config_version=5
+
+[application]
+
+config/name="Foreign"
+run/main_scene="res://world.tscn"
+config/features=PackedStringArray("4.7")
+
+[autoload]
+
+Telemetry="*res://telemetry.gd"
+DevConsole="*res://console.gd"
+
+[input]
+
+move_forward={
+"deadzone": 0.5,
+"events": []
+}
+
+[physics]
+
+3d/physics_engine="GodotPhysics3D"
+common/physics_ticks_per_second=60
+common/physics_jitter_fix=0.0

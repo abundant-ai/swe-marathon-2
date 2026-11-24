@@ -1,0 +1,27 @@
+# Family H. The world must be built from the plan: ray probes on lane centrelines, sidewalks,
+# parcel roofs and POIs; the same seed must give the same starting population.
+template: world.plan_compliance
+family: H
+weight: 1.0
+setup:
+  - world.reset: {seed: $seed, density: 1.0}
+script:
+  - observe: {rate_hz: 10, state: true}
+  - plan_probe: {step_m: 10}
+  - same_start: {density: 1.0}
+assert:
+  - id: roads
+    w: 0.3
+    expr: "(lambda got, exp: measure('road_frac', round(sum(1 for g, e in zip(got, exp) if g and g[1] == 'road' and abs(g[0] - e[0]) <= 0.1) / len(exp), 4)) >= 0.98)(S['queries']['centrelines'], S['plan_expect']['centrelines'])"
+  - id: buildings
+    w: 0.3
+    expr: "(lambda got, exp: measure('roof_errors', [[e[1], g] for g, e in zip(got, exp) if not (g and g[1] == 'building' and abs(g[0] - e[0]) <= 0.5 and e[3][0] <= g[0] - e[4] <= e[3][1])]) == [])(S['queries']['parcels'], S['plan_expect']['parcels'])"
+  - id: sidewalks
+    w: 0.15
+    expr: "(lambda got, exp: measure('sidewalk_frac', round(sum(1 for g, e in zip(got, exp) if g and g[1] == 'sidewalk' and abs(g[0] - e[0]) <= 0.05) / len(exp), 4)) >= 0.98)(S['queries']['sidewalks'], S['plan_expect']['sidewalks'])"
+  - id: pois
+    w: 0.1
+    expr: "(lambda got, exp: all(g is not None and abs(g[0] - e[0]) <= 0.3 for g, e in zip(got, exp)))(S['queries']['pois'], S['plan_expect']['pois'])"
+  - id: same_start
+    w: 0.15
+    expr: "(lambda s: s['n'] >= 100 and s['same_seed_diffs'] == 0 and not s['other_seed_same'])(measure('same_start', S['same_start']))"

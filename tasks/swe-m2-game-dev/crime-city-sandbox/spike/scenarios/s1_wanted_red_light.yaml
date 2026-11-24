@@ -1,0 +1,60 @@
+# Family E. Run a red light in front of (or out of sight of) a police officer; a unit must come
+# from a station at least 100 m away and out of view, and drive to the player continuously.
+template: wanted.red_light
+family: E
+tags: [physics-sensitive]
+weight: 1.0
+params:
+  J: {pick: intersection, where: {signalised: true, min_approaches: 4}}
+  k: {pick: approach_index, of: $J}
+  witnessed: {bernoulli: 0.75}
+  lead: {choice: [lead_a, lead_b, lead_c]}
+setup:
+  - world.reset: {seed: $seed, density: 0.5}
+  - player.spawn: {lead: $lead, at: {intersection: $J, approach: $k, before_m: 70, lane_index: 1}}
+  - traffic.clear_zone: {at: {intersection: $J, approach: $k, before_m: 35}, radius_m: 45}
+  - vehicle.spawn: {model: sedan, at: player, driver: player}
+  - {when: $witnessed, npc.spawn: {archetype: police_officer, at: {corner_of: $J, approach: $k}, behaviour: idle, face: $J}}
+watches:
+  - {kind: stop_line, junction: $J, approach_index: $k, mark: ran_red}
+script:
+  - observe: {rate_hz: 10, in_view: true, state: true, hud: true, camera: true}
+  - wait_until: {signal: [$J, $k], becomes: red, max_s: 90, mark: red_on}
+  - bot.drive_through: {junction: $J, approach_index: $k, lane_index: 1, speed_kmh: 40, beyond_m: 80, max_s: 40}
+  - wait_s: 60
+assert:
+  - id: ran_red
+    kind: precondition
+    expr: "(lambda cs: measure('crossing', cs[0] if cs else None) is not None and cs[0]['state'] == 'red')(crossings(lambda e: e['id'] == player_vehicle_id(), approach_id(P.J, P.k), M['setup_end']))"
+  - id: witness
+    kind: precondition
+    when: witnessed
+    expr: "any(measure(k, v).get('clear') for k, v in S.get('queries', {}).items() if k.startswith('los_'))"
+  - id: wanted
+    w: 0.15
+    expr: "eventually(lambda i: wanted(i) >= 1, 5, M['ran_red']) if P.witnessed else always(lambda i: wanted(i) == 0, M['ran_red'])"
+  - id: no_escalation
+    w: 0.05
+    when: witnessed
+    expr: "measure('max_level', max(wanted(i) for i, f in T.window(M['ran_red']))) == 1"
+  - id: hud
+    w: 0.05
+    expr: "(lambda i: measure('hud_badges', hud_wanted(i)) == measure('state_level', wanted(i)))(frame_at(M['ran_red'] + 600))"
+  - id: arrival
+    w: 0.35
+    when: witnessed
+    expr: "eventually(lambda i: player(i) is not None and any(e['f'] == 'police' and e['k'] == 'vehicle' and dist(e, player(i)) < 25 for e in T.frames[i]['census']), 60, M['ran_red'])"
+  - id: origin
+    w: 0.25
+    when: witnessed
+    expr: "(lambda units: measure('units', [[u[1]['id'], round(dist(u[1], player(u[0])), 1), u[1].get('iv')] for u in units]) is not None and len(units) > 0 and all(dist(u[1], player(u[0])) >= 100 and not u[1].get('iv') for u in units))([v for v in first_seen().values() if v[1]['f'] == 'police' and v[1]['k'] == 'vehicle' and T.frames[v[0]]['t'] > M['setup_end']])"
+  - id: kinematics
+    w: 0.15
+    when: witnessed
+    expr: "all(measure('vmax_%d' % u, round(max_speed_between_frames(u), 2)) <= 23.5 for u in set(v[1]['id'] for v in first_seen().values() if v[1]['f'] == 'police' and v[1]['k'] == 'vehicle'))"
+  - id: honest
+    kind: consistency
+    expr: "all(any(ev['n'] == 'crime' and ev['d'].get('witnessed') for j in range(max(0, i - 3), i + 1) for ev in T.frames[j].get('events', [])) for i in range(1, len(T.frames)) if wanted(i) > wanted(i - 1))"
+  - id: npc_lanes
+    w: 0.0
+    expr: "(lambda lo: measure('q95_offset_m', round(q([x[0] for x in lo], 0.95), 4)) is not None)(lane_offsets(lambda e: e['k'] == 'vehicle' and e['f'] == 'civilian', M['setup_end'] + 300))"

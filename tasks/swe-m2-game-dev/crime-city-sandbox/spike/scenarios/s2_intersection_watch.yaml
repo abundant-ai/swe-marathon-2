@@ -1,0 +1,34 @@
+# Family C. Watch one signalised junction for 150 s of normal traffic.
+template: traffic.intersection_watch
+family: C
+weight: 1.0
+params:
+  J: {pick: intersection, where: {signalised: true}}
+setup:
+  - world.reset: {seed: $seed, density: 1.0}
+  - player.spawn: {lead: lead_a, at: {corner_of: $J, approach: 0}}
+script:
+  - observe: {rate_hz: 10, in_view: true, state: true, camera: true}
+  - wait_s: 150
+assert:
+  - id: density
+    w: 0.15
+    expr: "in_band(measure('median_moving', median([sum(1 for e in f['census'] if e['k'] == 'vehicle' and e['f'] == 'civilian' and math.hypot(e['p'][0] - G.nodes[P.J][0], e['p'][2] - G.nodes[P.J][1]) < 150 and math.hypot(e['v'][0], e['v'][2]) > 0.5) for i, f in T.window(M['setup_end'] + 600)])), 4, 40)"
+  - id: phases
+    w: 0.15
+    expr: "always(lambda i: sum(1 for a in G.junctions[P.J]['approaches'] if signal_state(i, a['id']) in ('green', 'amber')) <= 1, M['setup_end']) and all(9.8 <= d <= 10.2 for a in G.junctions[P.J]['approaches'] for d in measure('green_' + a['id'], state_runs(a['id'], 'green', M['setup_end'])))"
+  - id: obey
+    w: 0.25
+    expr: "(lambda es: measure('entries', {'on_red': [[c['id'], c['t'], c['ap']] for c in es if c['state'] == 'red' and c['state_before'] == 'red'], 'on_green': sum(1 for c in es if c['state'] == 'green'), 'total': len(es)}) is not None and sum(1 for c in es if c['state'] == 'red' and c['state_before'] == 'red') == 0 and sum(1 for c in es if c['state'] == 'green') >= 3)(junction_entries(P.J, lambda e: e['k'] == 'vehicle' and e['f'] == 'civilian', M['setup_end']))"
+  - id: lanes
+    w: 0.15
+    expr: "(lambda lo: measure('q95_offset_m', round(q([x[0] for x in lo], 0.95), 3)) <= 1.0 and measure('aligned_frac', round(sum(1 for x in lo if x[1]) / len(lo), 4)) >= 0.98 and measure('samples', len(lo)) > 100)(lane_offsets(lambda e: e['k'] == 'vehicle' and e['f'] == 'civilian', M['setup_end'] + 300))"
+  - id: pedestrians
+    w: 0.15
+    expr: "measure('on_walkable', walkable_frac(lambda e: e['k'] == 'npc' and e['f'] == 'civilian', M['setup_end'])) >= 0.95"
+  - id: no_crashes
+    w: 0.10
+    expr: "(lambda r: measure('impacts', r[0]) is not None and measure('per_vehicle_min', round(r[0] / max(r[1], 1e-6), 4)) <= 0.1)(impacts(lambda e: e['k'] == 'vehicle' and e['f'] == 'civilian', M['setup_end'] + 60))"
+  - id: no_pop_in
+    w: 0.05
+    expr: "all(dist(v[1], player(v[0])) >= 80 or not v[1].get('iv') for v in first_seen().values() if T.frames[v[0]]['t'] > M['setup_end'] + 1 and v[1]['k'] in ('npc', 'vehicle'))"

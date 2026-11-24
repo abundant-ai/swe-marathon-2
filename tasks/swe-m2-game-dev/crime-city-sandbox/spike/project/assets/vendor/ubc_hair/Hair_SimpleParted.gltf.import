@@ -1,0 +1,19 @@
+[remap]
+
+importer="scene"
+importer_version=1
+type="PackedScene"
+
+[deps]
+
+source_file="res://assets/vendor/ubc_hair/Hair_SimpleParted.gltf"
+
+[params]
+
+_subresources={
+"nodes": {
+"PATH:Armature/Skeleton3D": {
+"retarget/bone_map": Resource("res://assets/vendor/humanoid_bone_map.tres")
+}
+}
+}

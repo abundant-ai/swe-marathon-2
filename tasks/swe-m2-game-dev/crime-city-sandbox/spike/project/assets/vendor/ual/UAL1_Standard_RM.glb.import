@@ -1,0 +1,19 @@
+[remap]
+
+importer="animation_library"
+importer_version=1
+type="AnimationLibrary"
+
+[deps]
+
+source_file="res://assets/vendor/ual/UAL1_Standard_RM.glb"
+
+[params]
+
+_subresources={
+"nodes": {
+"PATH:Armature/Skeleton3D": {
+"retarget/bone_map": Resource("res://assets/vendor/humanoid_bone_map.tres")
+}
+}
+}
