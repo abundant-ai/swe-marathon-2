@@ -1,0 +1,3 @@
+[harbor]
+source = "https://github.com/harbor-framework/harbor.git"
+ref = "feea734de84bf2479b329dc6315a6d98d1596f4f"

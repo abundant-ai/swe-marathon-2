@@ -1,0 +1,20 @@
+#!/bin/sh
+set -eu
+
+root=$(git rev-parse --show-toplevel)
+cd "$root"
+
+export PATH="$HOME/.local/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+
+staged=$(git diff --cached --name-only)
+
+uv run --frozen ruff format .
+uv run --frozen ruff check --fix .
+
+if [ -n "$staged" ]; then
+  printf '%s\n' "$staged" | while IFS= read -r path; do
+    if [ -e "$path" ]; then
+      git add -- "$path"
+    fi
+  done
+fi

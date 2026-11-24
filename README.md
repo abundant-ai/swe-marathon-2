@@ -17,6 +17,11 @@ Task sources live in `tasks/<family>/<task>/`. Start with the task's `README.md`
 and its `steps/<step>/instruction.md`. Authoring skills are in
 [resources/skills/](resources/skills/).
 
+Harbor’s native user simulation lets the developer ask the product
+owner questions during a Harbor trial. Each task supplies a private Markdown
+prompt with the user's profile, hidden information and responding rules.
+The [Enterprise Knowledge Work Assistant](tasks/enterprise/knowledge-work-assistant/README.md) uses this setup to build Orange in one task on upstream Harbor.
+
 ## Local setup and checks
 
 Use Python 3.13 and uv 0.13.7.
@@ -27,16 +32,17 @@ cd swe-marathon-2
 uv sync --frozen
 ```
 
-This creates `.venv` with the locked development dependencies. Run project
-commands from the repository root with `uv run --frozen ...`.
+This creates `.venv` with the locked development dependencies, including Ruff.
+Run project commands from the repository root with `uv run --frozen ...`.
 
-To check repository structure and documentation links:
+Commits run `ruff format .` and `ruff check --fix .`. Link the hook once after
+cloning:
 
 ```bash
-uv run --no-project python ci_checks/check_repository.py
+ln -sfn ../../.githooks/pre-commit .git/hooks/pre-commit
 ```
 
-See [CI guidance](resources/CI.md) for the full checks and test commands.
+See [commit checks](resources/CI.md).
 
 ### Optional tools
 
@@ -92,4 +98,12 @@ without tokenizing text. To run the preparation checks and audit the full output
 uv run --frozen --group titans-data --with-editable /path/to/titans python \
   tasks/swe-m2-ai-research/titans-training/scripts/check_preparation.py \
   --data-dir tasks/swe-m2-ai-research/titans-training/experiment/data
+```
+
+For a local export of an experiment's persisted JSONL metrics:
+
+```bash
+uv run --frozen --no-sync --with matplotlib==3.10.7 python \
+  tasks/swe-m2-ai-research/titans-training/scripts/plot_training.py \
+  /path/to/metrics.jsonl --output /path/to/learning-curves.png
 ```

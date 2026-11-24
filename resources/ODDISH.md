@@ -1,11 +1,11 @@
 # Oddish execution
 
 Use Oddish for package preflight, uploads, baseline and model trials, QA,
-analysis, and artifact collection. It is separate from the automatic CI jobs
-and requires access to the private Oddish repository and execution service.
+analysis, and artifact collection. It requires access to the private Oddish
+repository and execution service.
 
 Install the optional CLI through the [shared setup guide](../README.md#optional-tools).
-It runs in an isolated uv tool environment and is not part of default setup or CI.
+It runs in an isolated uv tool environment and is not part of default setup.
 
 Use the installed revision's help and bundled skill for current commands:
 
@@ -25,7 +25,7 @@ upstream references describe the customer workflow and service:
 - [API routes](https://github.com/abundant-ai/oddish/tree/main/backend/api/routers)
 
 Prepare and package the task using its authoring scripts. For the existing
-knowledge-work assistant, follow the [packaging instructions](../tasks/swe-m2-ai-engineer/knowledge-work-assistant/README.md#build-and-deliver).
+knowledge-work assistant, follow the [packaging instructions](../tasks/enterprise/knowledge-work-assistant/README.md#build-and-deliver).
 Use the generated task directory for preflight and upload. It contains prepared
 inputs that are intentionally absent from a clean source checkout.
 

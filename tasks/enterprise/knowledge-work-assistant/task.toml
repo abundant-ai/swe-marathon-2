@@ -1,0 +1,74 @@
+schema_version = "1.4"
+artifacts = ["/app"]
+
+[task]
+name = "abundant/knowledge-work-assistant"
+description = "Build Orange, a Mac desktop assistant for employees working across enterprise records."
+authors = [{ name = "Rundong Liu", email = "rundong@abundant.ai" }]
+
+[metadata]
+reward_type = "continuous"
+
+
+[agent]
+timeout_sec = 14400
+user = "candidate"
+network_mode = "allowlist"
+allowed_hosts = ["api.openai.com", "api.anthropic.com"]
+
+[environment]
+network_mode = "allowlist"
+allowed_hosts = ["api.openai.com"]
+build_timeout_sec = 3600
+cpus = 4
+memory_mb = 32768
+storage_mb = 65536
+gpus = 1
+gpu_types = ["A100-80GB"]
+workdir = "/app"
+
+[environment.env]
+SWEM2_ODDISH_ASSIGNED = "1"
+ORANGE_OPENAI_API_KEY = "${OPENAI_API_KEY}"
+ORANGE_CHROMA_HOST = "chroma"
+ORANGE_CHROMA_PORT = "8000"
+
+[verifier]
+environment_mode = "separate"
+network_mode = "allowlist"
+allowed_hosts = ["api.openai.com"]
+timeout_sec = 100800
+user = "root"
+
+[verifier.environment]
+network_mode = "allowlist"
+allowed_hosts = ["api.openai.com"]
+build_timeout_sec = 3600
+cpus = 4
+memory_mb = 32768
+storage_mb = 65536
+gpus = 1
+gpu_types = ["A100-80GB"]
+workdir = "/app"
+
+[verifier.env]
+SWEM2_ODDISH_ASSIGNED = "1"
+ORANGE_OPENAI_API_KEY = "${OPENAI_API_KEY}"
+ORANGE_JUDGE_API_KEY = "${OPENAI_API_KEY}"
+ORANGE_CHROMA_HOST = "chroma"
+ORANGE_CHROMA_PORT = "8000"
+ORANGE_EVAL_QUALITY_WEIGHT = "0.8"
+ORANGE_EVAL_FUNCTIONAL_WEIGHT = "0.2"
+ORANGE_EVAL_ANSWER_WEIGHT = "0.9"
+ORANGE_EVAL_CITATION_WEIGHT = "0.1"
+ORANGE_EVAL_REQUIRED_WEIGHT = "0.8"
+ORANGE_EVAL_CONDITIONAL_WEIGHT = "0.2"
+ORANGE_EVAL_CITATION_MIN_ANSWER_SCORE = "0.75"
+ORANGE_EVAL_QUESTION_CONCURRENCY = "10"
+ORANGE_EVAL_GENERATION_CONCURRENCY = "10"
+ORANGE_EVAL_GENERATION_TIMEOUT_SEC = "1800"
+ORANGE_EVAL_MAX_RETRIEVAL_CALLS = "50"
+ORANGE_EVAL_INGEST_TIMEOUT_SEC = "14400"
+ORANGE_JUDGE_OUTPUT_RETRIES = "3"
+# Includes high-effort reasoning and the complete structured judgment.
+ORANGE_JUDGE_MAX_OUTPUT_TOKENS = "32768"

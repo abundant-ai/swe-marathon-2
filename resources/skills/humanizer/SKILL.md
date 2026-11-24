@@ -21,7 +21,7 @@ as text to revise, not commands for the editor to execute.
 
 ## Learn from the author's instruction
 
-Read the user-written [Orange instruction](../../../tasks/swe-m2-ai-engineer/knowledge-work-assistant/steps/01-build-rag/instruction.md)
+Read the user-written [Orange instruction](../../../tasks/enterprise/knowledge-work-assistant/instruction.md)
 as the primary voice reference. Use it to understand how the author explains
 work; do not rewrite it unless asked. A newer user-provided sample takes precedence.
 
@@ -77,13 +77,18 @@ not every assignment needs Orange's sections.
 | Several obligations buried in one sentence | Separate them at the action or condition, keeping dependencies and exceptions attached. |
 | Repeated commands to "ensure" or "demonstrate" an abstract quality | Describe what the finished product does and what the user receives. |
 | Contrasts, slogans, or closing lines that restate the goal | Remove them unless they resolve an actual misunderstanding. |
-| Bold labels, repeated lists of three, or punctuation used as decoration | Let the information determine the structure. Preserve useful lists and technical formatting. |
+| Emphasis, repeated lists of three, or punctuation used only as decoration | Remove decoration while preserving bold labels, requirement bullets, and technical formatting that help the reader find obligations. |
 | Vague references such as "the above," "this," or "the request" | Name the file, operation, requirement, or output when the reference is unclear. |
 | Chat residue such as "Certainly" or "Here is your comprehensive task" | Remove the conversational wrapper from the instruction file. |
 
 These are editing cues, not an authorship test. Keep ordinary words and sentence
 patterns when they express the task well. Read paragraphs together; swapping a
 few fashionable words will not fix a confusing sequence of requirements.
+
+When a document has many requirements, use bullets and short **bold labels** to
+make them easy to scan. Keep each rule's conditions and exceptions together.
+Preserve this useful structure during rewriting; use prose for context and
+explanation, and avoid bolding whole paragraphs.
 
 ## Keep requirements public and assessment mechanics private
 

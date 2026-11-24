@@ -26,11 +26,29 @@ and absolute output paths beside the requirements they clarify. Leave methods
 and implementation choices open unless the request requires them. Surface
 ambiguities that would change success instead of inventing a constraint.
 
-The [knowledge-work assistant instruction](../../../tasks/swe-m2-ai-engineer/knowledge-work-assistant/steps/01-build-rag/instruction.md)
+The [knowledge-work assistant instruction](../../../tasks/enterprise/knowledge-work-assistant/instruction.md)
 is an example of a direct request organized by purpose, inputs, public behavior,
 and development records. Its headings, RAG workflow, models, database, CLI, and
 paths belong to that task. Choose the structure and requirements the new task
 needs.
+
+## Make requirements easy to scan
+
+When an instruction contains many requirements, use focused bullet points and
+short **bold labels** so the reader can find each obligation quickly.
+
+- Group related requirements under descriptive headings. Give each bullet one
+  action, constraint, or closely related set of conditions.
+- Bold a short label or a consequential limit; keep the explanation in ordinary
+  text. Avoid bolding whole paragraphs.
+- Keep exceptions and dependencies beside the rule they qualify. Use numbered
+  lists for ordered procedures and tables for comparable items or parameters.
+- Use prose for context and reasoning. Split paragraphs that bury several
+  independent obligations instead of making the reader extract a checklist.
+
+Treat useful bold labels and requirement lists as functional formatting during
+the Humanizer pass. Preserve them when they improve navigation. Formatting changes
+must retain exact names, values, interfaces, and required-versus-optional meaning.
 
 ## Describe the deliverable
 
@@ -65,3 +83,6 @@ types, formats, and meaning with the request. Check that every requirement is
 visible and that examples have not become accidental constraints. Save only the
 final prose. Editing an instruction does not itself authorize changing its
 verifier or running trials.
+
+For a dense instruction, also scan just its headings and bold labels: can the
+reader locate the required behavior, limits, exceptions, and deliverables?

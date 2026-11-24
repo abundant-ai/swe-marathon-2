@@ -44,6 +44,60 @@ to the function; a short helper needs less explanation than a storage adapter.
 Document behavior a caller needs to rely on, and keep it consistent with the
 implementation. Avoid comments that merely restate individual lines of code.
 
+## Explain the execution flow in the function itself
+
+For every function you create or change, write enough documentation for the user
+to follow it without reconstructing its callers and state from the implementation.
+Use plain language and the same concrete names as the code. A one-line summary
+such as "run the workflow" or "handle the response" is insufficient when the
+function coordinates several operations.
+
+For orchestration, asynchronous work, loops, and functions that mutate state,
+explain the applicable parts of the flow in the docstring before the argument
+sections.
+
+- Say whether one call performs a single operation or runs the entire workflow.
+- Identify where the initial input comes from and what happens only on the first
+  iteration. Explain what supplies the input for subsequent iterations.
+- Follow the main path in execution order. Name what is sent, what is received,
+  where the result is stored, and which operation uses it next.
+- Explain what an awaited call waits for and what happens when it completes.
+- Describe state carried between iterations or calls, including when it resets.
+- State the conditions that return, stop the loop, or raise an error. Explain
+  consequential meanings of empty strings, null values, and missing results.
+- Include a short concrete example when values changing over time are central
+  to understanding the function.
+
+Use variable names that show purpose and direction, such as
+`outgoing_user_message`, `developer_message`, and `send_command`. Add brief
+comments at transitions that are easy to miss, such as initializing the first
+message before a loop or replacing it with a generated reply at the loop's end.
+For a validator, identify exactly what it checks and where its input comes from.
+A reader should be able to distinguish validating an outgoing command from
+checking an incoming question.
+
+For example, the conversation function's docstring can explain its behavior this
+way, using illustrative messages.
+
+> Run the whole conversation, starting with the project brief.
+>
+> The first outgoing message is the text from instruction.md. After sending it,
+> wait for the developer to finish its turn and return a reply. Store that reply
+> in developer_message so message() can generate the user's answer. That answer
+> becomes the outgoing message on the next loop iteration.
+>
+> For example, send "Build Orange", receive "Who owns an unassigned handoff?",
+> then send "Release Coordination". The project brief is assigned before the
+> loop, so it is sent only once in this conversation.
+>
+> An empty developer reply ends the conversation. An empty answer from message()
+> also ends the conversation. Every exchange uses the same developer session.
+
+Apply this level of clarity across languages. Match the detail to the actual
+function. A small calculation may need only its purpose, input meanings, and a
+concrete result. Describe the behavior the code implements and keep the example
+consistent with it.
+
 ## Example: weak and useful docstrings
 
 This docstring repeats the signature without explaining what the values mean or

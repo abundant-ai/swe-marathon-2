@@ -119,12 +119,9 @@ image merely because both images need one shared file. Keep the README, task-roo
 `checks/` and `scripts/`, and `experiment/` out of both image inputs. Do not assume runtime overlays will
 populate a dedicated verifier image.
 
-Use the task's packaging script before preflight, upload, or execution. The
-[knowledge-work assistant packager](../../../tasks/swe-m2-ai-engineer/knowledge-work-assistant/scripts/package_step.py)
-is an example for that task. Write generated bundles under `experiment/dist/`,
-edit only maintained source files, and validate an extracted bundle from an
-isolated process. Exclude `experiment/` from input selection to prevent a bundle
-from including its own output.
+Tasks with a packaging script write generated bundles under `experiment/dist/`.
+Exclude `experiment/` from the bundle inputs. A self-contained task directory
+can go directly to Oddish. Validate a copy outside the authoring checkout.
 Every component must resolve its dependencies inside its container without
 access to the host checkout.
 

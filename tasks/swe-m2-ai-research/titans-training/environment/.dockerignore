@@ -1,4 +1,0 @@
-# The image fetches public source and does not consume local author files.
-**
-!Dockerfile
-!.dockerignore

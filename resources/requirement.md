@@ -93,13 +93,14 @@ discuss a contract or design a verifier is permission to do that design work.
 It does not call for scaffolding, downloading a corpus, or launching a GPU run.
 Existing authorization in the conversation still counts; do not ask for it again.
 
-Keep each task under `tasks/<family>/<task>/`, including its README, maintained
+Oddish uploads the submitted folder recursively. Keep regression tests and trial reports outside that folder.
+For tasks that use a packager, keep each task under `tasks/<family>/<task>/`, including its README, maintained
 checks, preparation and packaging scripts, and development dependencies. Put
 shared resources in task-root `common/`; each image includes only the files it
 needs. Store scratch work, experiment results, and generated bundles in the task's
 Git-ignored `experiment/` directory. Exclude development tools, the task README,
 and experiments from runtime packages and candidate images. Do not create
-`tasks/swe-m2-ai-engineer/`-level utilities. Add a shared abstraction only when the
+`tasks/enterprise/`-level utilities. Add a shared abstraction only when the
 user requests one and there is a concrete use for it. Create future steps when
 requested, without placeholder implementations or unused directories.
 
@@ -166,18 +167,19 @@ candidate's own development experiments can remain part of the assignment.
 This repository has no version directory under `tasks/`. Each declared step uses
 the [Harbor layout and contracts](skills/multi-turn-task-structure/SKILL.md), including
 `tests/test.sh` and `tests/verify.py`. Optional `verifier/` modules live inside that
-step's `tests/` directory. Use the task's packaging script before preflight.
+step's `tests/` directory. Run preflight on the exact directory intended for upload.
 
 Keep packaged task folders limited to runtime artifacts: task configuration,
 environment build inputs, step instructions, and verifier or solution files needed
 by the runner. Exclude authoring scripts, local checks, and author dependency files.
 Generate Oddish upload code when needed and keep it outside the task artifact.
 
-Use `abundant/swe-m2_<domain>_<task>` for `[task].name` in `task.toml`. For example:
+A raw Oddish task uses `abundant/<directory-name>` so CLI preflight accepts the
+upload. For generated releases use `abundant/swe-m2_<domain>_<task>` for `[task].name` in `task.toml`. For example:
 
 ```toml
 [task]
-name = "abundant/swe-m2_ai-engineering_knowledge-work-assistant"
+name = "abundant/swe-m2_enterprise_knowledge-work-assistant"
 ```
 
 Keep only the slash after the organization; join later components with underscores
@@ -242,7 +244,7 @@ Define components, weights, normalization, denominators, thresholds, mandatory
 conditions, missing or skipped cases, and aggregation across turns. Explain why
 the result measures the requested outcome. Link each term to its implementation
 and boundary tests. Use the current formula from the
-[knowledge-assistant notes](../tasks/swe-m2-ai-engineer/knowledge-work-assistant/README.md#reward-formula)
+[knowledge-assistant notes](../tasks/enterprise/knowledge-work-assistant/README.md#evaluation)
 as an example of task-specific documentation, not as universal weights.
 
 Keep denominators fixed when candidate checks fail or skip. Evaluation errors
@@ -343,7 +345,7 @@ the chosen model. Inspect the installed command's options before running it:
 
 ```bash
 uv run --frozen harbor check --help
-uv run --frozen harbor check -r resources/task-implementation.toml tasks/swe-m2-ai-engineer/knowledge-work-assistant
+uv run --frozen harbor check -r resources/task-implementation.toml tasks/enterprise/knowledge-work-assistant
 ```
 
 Read the task README alongside the result. A file review may not see
@@ -351,6 +353,6 @@ those notes, PR discussion, or remote trial evidence. Report unavailable evidenc
 as a gap. The rubric can guide proposals before an oracle is available; a file
 review pass does not establish release readiness.
 
-[Automatic CI](CI.md) runs source checks and author tests.
+Commits run `ruff format` and `ruff check --fix`. See [CI.md](CI.md).
 [Oddish](ODDISH.md) handles package preflight, remote trials, QA, and artifacts.
-Report their results separately and tie evidence to the evaluated revision.
+Report results for the evaluated revision.

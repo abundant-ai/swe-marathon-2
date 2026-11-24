@@ -122,14 +122,13 @@ to reconcile those ratings with the evidence and record scores in `task.toml`
 metadata. Keep rationale and gaps in the task README. This is the next agent
 action after Harbor review; the Harbor CLI does not update metadata itself.
 
-Also run the [repository checks](README.md#local-setup-and-checks) and applicable
-local task tests. Exercise the packaged environment and verifier with controlled
-submissions, including no-op behavior, targeted defects, and legitimate alternatives.
-Validate an oracle when one is available and record its provenance. Add maintained
-tests to automatic CI when introducing another runnable task, using deterministic
-fixtures or pinned public inputs. Follow the [CI guide](resources/CI.md); do not
-hide skipped tests, missing reports, collection errors, or failed assertions.
-Record commands, results, and the revision reviewed in the development log.
+Also run applicable local task tests. Exercise the packaged environment and
+verifier with controlled submissions, including no-op behavior, targeted defects,
+and legitimate alternatives. Validate an oracle when one is available and record
+its provenance. Add maintained tests when introducing another runnable task,
+using deterministic fixtures or pinned public inputs. Commits run Ruff through
+the [commit hook](resources/CI.md). Record commands, results, and the revision
+reviewed in the development log.
 
 ## 5. Test the task with Oddish
 
@@ -184,8 +183,7 @@ Open a focused PR using the [PR template](.github/pull_request_template.md). Lin
 the task README, explain the design and reward formula, and provide validation
 results for the proposed revision. Include novelty comparisons, execution
 artifacts, applicable judge calibration, and the highest unresolved hackability
-severity. Both [automatic CI workflows](resources/CI.md) run on every push and PR,
-including documentation changes. Report local and hosted checks separately.
+severity. Commits run Ruff. Report the local checks you ran.
 
 Then consider how to create more tasks that exercise the same underlying
 capability. Document which parts of the workflow and verifier can be reused,
