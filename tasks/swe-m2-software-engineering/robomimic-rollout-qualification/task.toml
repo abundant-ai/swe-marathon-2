@@ -1,0 +1,48 @@
+schema_version = "1.4"
+multi_step_reward_strategy = "final"
+artifacts = ["/app/rollout_qualification"]
+
+[task]
+name = "abundant/swe-m2_software-engineering_robomimic-rollout-qualification"
+description = "Reproduce paired robomimic demonstrations and qualify a frozen policy under MuJoCo actuator and observation delays."
+authors = [{ name = "QingyuanWuNothing", email = "qingyuanwu4work@gmail.com" }]
+
+[metadata]
+reward_type = "continuous"
+
+[agent]
+timeout_sec = 5400
+user = "candidate"
+network_mode = "no-network"
+
+[environment]
+network_mode = "allowlist"
+allowed_hosts = ["pypi.org", "files.pythonhosted.org"]
+build_timeout_sec = 600
+cpus = 2
+memory_mb = 2048
+storage_mb = 4096
+workdir = "/app"
+
+[verifier]
+environment_mode = "separate"
+network_mode = "no-network"
+timeout_sec = 600
+user = "root"
+
+[verifier.environment]
+network_mode = "no-network"
+build_timeout_sec = 600
+cpus = 2
+memory_mb = 2048
+storage_mb = 4096
+workdir = "/app"
+
+[[steps]]
+name = "01-audit-paired-demos"
+
+[[steps]]
+name = "02-reproduce-actuation"
+
+[[steps]]
+name = "03-qualify-frozen-policy"

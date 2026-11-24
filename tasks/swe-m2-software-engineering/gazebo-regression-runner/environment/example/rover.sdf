@@ -1,0 +1,16 @@
+<sdf version="1.9">
+  <world name="portable_lab">
+    <physics name="controller" type="ode"><max_step_size>0.02</max_step_size></physics>
+    <frame name="staging"><pose>0.2 -0.1 0.24 0 0 0.21</pose></frame>
+    <model name="rover"><pose relative_to="staging">0 0 0 0 0 0</pose>
+      <link name="base">
+        <collision name="body"><geometry><box><size>0.36 0.26 0.20</size></box></geometry></collision>
+        <sensor name="rear_imu" type="imu"><pose>-0.03 0.02 0.03 0 0 -0.31</pose><topic>/robot/imu</topic><update_rate>25</update_rate></sensor>
+        <sensor name="range" type="gpu_lidar"><pose>0.21 0 0.01 0 0 0</pose><topic>/robot/range</topic><update_rate>10</update_rate></sensor>
+      </link>
+    </model>
+    <model name="loading_box"><static>true</static><pose>1.37 0.13 0.24 0 0 0.21</pose>
+      <link name="body"><collision name="surface"><geometry><box><size>0.22 0.7 0.32</size></box></geometry></collision></link>
+    </model>
+  </world>
+</sdf>

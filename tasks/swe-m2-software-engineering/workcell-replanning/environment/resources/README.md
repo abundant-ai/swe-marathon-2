@@ -1,0 +1,1 @@
+The examples exercise a simplified planar workcell with a sliding base and a two-link arm. Coordinates are in metres and radians. The source geometry is authored for this task. The scene operations follow common workcell workflows such as those documented in MoveIt's Planning Scene ROS API.

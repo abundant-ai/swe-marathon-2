@@ -1,0 +1,59 @@
+schema_version = "1.4"
+multi_step_reward_strategy = "final"
+artifacts = ["/app/bag_conformance"]
+
+[task]
+name = "abundant/swe-m2_software-engineering_multibag-replay-conformance"
+description = "Verify ROS 2 bag replay, subscriber delivery, transform results, and causal reconstruction of independently clocked recordings."
+authors = [{ name = "QingyuanWuNothing", email = "qingyuanwu4work@gmail.com" }]
+
+[metadata]
+reward_type = "continuous"
+
+[agent]
+timeout_sec = 5400
+user = "candidate"
+network_mode = "no-network"
+
+[environment]
+network_mode = "allowlist"
+allowed_hosts = ["archive.ubuntu.com", "security.ubuntu.com", "repo.ros2.org", "raw.githubusercontent.com", "pypi.org", "files.pythonhosted.org"]
+build_timeout_sec = 600
+cpus = 2
+memory_mb = 2048
+storage_mb = 4096
+workdir = "/app"
+
+[verifier]
+environment_mode = "separate"
+network_mode = "no-network"
+timeout_sec = 600
+user = "root"
+
+[verifier.environment]
+network_mode = "allowlist"
+allowed_hosts = ["archive.ubuntu.com", "security.ubuntu.com", "repo.ros2.org", "raw.githubusercontent.com", "pypi.org", "files.pythonhosted.org"]
+build_timeout_sec = 600
+cpus = 2
+memory_mb = 2048
+storage_mb = 4096
+workdir = "/app"
+
+[[steps]]
+name = "01-index-recordings"
+
+[[steps]]
+name = "02-replay-subscribers"
+
+[[steps]]
+name = "03-qualify-transforms"
+
+[[steps]]
+name = "04-reconstruct-incident"
+
+[[steps]]
+name = "05-serve-recording-snapshots"
+
+
+[[steps]]
+name = "06-serve-live-dds-replay"

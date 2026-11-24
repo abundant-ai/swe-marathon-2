@@ -1,0 +1,186 @@
+{
+  "map": "practice-transfer",
+  "slot_ns": 250000000,
+  "max_time_ns": 28000000000,
+  "carrier_observe_ns": 5000000000,
+  "lift_observe_ns": 9500000000,
+  "couriers": {
+    "kit-courier": {
+      "profile": {
+        "radius_m": 0.33,
+        "linear_velocity_mps": 0.8,
+        "linear_acceleration_mps2": 0.73,
+        "angular_velocity_radps": 0.9,
+        "angular_acceleration_radps2": 0.8
+      },
+      "home": [
+        1,
+        -3,
+        0
+      ],
+      "stage": [
+        2.74,
+        -3,
+        0
+      ],
+      "goal": [
+        6,
+        -3,
+        0
+      ],
+      "deadline_ns": 16100000000
+    },
+    "parts-courier": {
+      "profile": {
+        "radius_m": 0.32,
+        "linear_velocity_mps": 0.82,
+        "linear_acceleration_mps2": 0.75,
+        "angular_velocity_radps": 0.9,
+        "angular_acceleration_radps2": 0.8
+      },
+      "home": [
+        4,
+        -6,
+        1.5707963267948966
+      ],
+      "stage": [
+        4,
+        -4.24,
+        1.5707963267948966
+      ],
+      "goal": [
+        4,
+        -1,
+        1.5707963267948966
+      ],
+      "deadline_ns": 20100000000
+    }
+  },
+  "carrier": {
+    "id": "materials-handler",
+    "profile": {
+      "radius_m": 0.36,
+      "linear_velocity_mps": 0.86,
+      "linear_acceleration_mps2": 0.7,
+      "angular_velocity_radps": 0.9,
+      "angular_acceleration_radps2": 0.8
+    },
+    "home": [
+      0.7,
+      0.3,
+      -0.7853981633974483
+    ],
+    "stage": [
+      1.9,
+      -0.9,
+      -0.7853981633974483
+    ],
+    "goal": [
+      6.4,
+      -5.4,
+      -0.7853981633974483
+    ],
+    "options": {
+      "ahead": {
+        "plan": 11,
+        "departure_ns": 5750000000
+      },
+      "retimed": {
+        "plan": 13,
+        "departure_ns": 7250000000
+      }
+    }
+  },
+  "cabins": {
+    "express": {
+      "doors": {
+        "kit-courier": [
+          6.53,
+          -3,
+          0
+        ],
+        "parts-courier": [
+          4,
+          -0.46,
+          1.5707963267948966
+        ]
+      },
+      "ride_ns": 1200000000
+    },
+    "reserve": {
+      "doors": {
+        "kit-courier": [
+          7.18,
+          -3,
+          0
+        ],
+        "parts-courier": [
+          4,
+          0.13,
+          1.5707963267948966
+        ]
+      },
+      "ride_ns": 1220000000
+    }
+  },
+  "lift_options": {
+    "express-running": {
+      "version": 21,
+      "slots": {
+        "express": {
+          "kit-courier": {
+            "session_id": "express/21/kit-courier",
+            "board_ns": 12400000000,
+            "floor": 1
+          },
+          "parts-courier": {
+            "session_id": "express/21/parts-courier",
+            "board_ns": 17600000000,
+            "floor": 1
+          }
+        },
+        "reserve": {
+          "kit-courier": {
+            "session_id": "reserve/21/kit-courier",
+            "board_ns": 18000000000,
+            "floor": 1
+          },
+          "parts-courier": {
+            "session_id": "reserve/21/parts-courier",
+            "board_ns": 22000000000,
+            "floor": 1
+          }
+        }
+      }
+    },
+    "reserve-dispatched": {
+      "version": 29,
+      "slots": {
+        "express": {
+          "kit-courier": {
+            "session_id": "express/29/kit-courier",
+            "board_ns": 18000000000,
+            "floor": 1
+          },
+          "parts-courier": {
+            "session_id": "express/29/parts-courier",
+            "board_ns": 22000000000,
+            "floor": 1
+          }
+        },
+        "reserve": {
+          "kit-courier": {
+            "session_id": "reserve/29/kit-courier",
+            "board_ns": 13600000000,
+            "floor": 1
+          },
+          "parts-courier": {
+            "session_id": "reserve/29/parts-courier",
+            "board_ns": 18700000000,
+            "floor": 1
+          }
+        }
+      }
+    }
+  }
+}

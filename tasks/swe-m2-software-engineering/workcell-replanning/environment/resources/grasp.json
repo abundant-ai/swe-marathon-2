@@ -1,0 +1,5 @@
+{
+  "robot": {"lengths_m":[1.0,0.8],"radii_m":[0.045,0.05],"joint_limits":[[-1.5,1.5],[-2.0,2.0],[-1.7,1.7]],"max_speeds":[0.8,1.2,1.4]},
+  "initial_scene": {"revision":0,"objects":{"handle":{"a":[1.92,0.05],"b":[2.15,0.05],"radius_m":0.075}},"attached":null},
+  "events": [{"event_id":"grasp-1","base_revision":0,"revision":1,"op":"attach","id":"handle","q":[0.0,0.0,0.0]}]
+}

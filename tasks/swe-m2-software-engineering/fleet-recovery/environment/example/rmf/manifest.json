@@ -1,0 +1,68 @@
+{
+  "map": "office-floor",
+  "carrier_profile": {
+    "radius": 0.37,
+    "linear_speed": 0.65,
+    "linear_accel": 0.54,
+    "angular_speed": 0.65,
+    "angular_accel": 0.47
+  },
+  "courier_profile": {
+    "radius": 0.32,
+    "linear_speed": 0.84,
+    "linear_accel": 0.6,
+    "angular_speed": 0.7,
+    "angular_accel": 0.5
+  },
+  "start_node": "loading",
+  "goal_node": "delivery",
+  "nodes": {
+    "loading": [
+      0.0,
+      -2.65
+    ],
+    "bay": [
+      0.0,
+      -1.2
+    ],
+    "delivery": [
+      0.0,
+      1.68
+    ]
+  },
+  "crossing": {
+    "axis": 0,
+    "sign": 1,
+    "clear_progress_m": 0.78
+  },
+  "carrier_lane_tolerance_m": 0.11,
+  "telemetry_max_age_ns": 760000000,
+  "settle_tolerance_m": 0.046,
+  "probe": {
+    "start_ns": 8500000000,
+    "poses": [
+      [
+        0,
+        -2.65,
+        1.5707963267948966
+      ],
+      [
+        0,
+        1.68,
+        1.5707963267948966
+      ]
+    ]
+  },
+  "edges": [
+    {
+      "from": "loading",
+      "to": "bay",
+      "requires_clearance": false
+    },
+    {
+      "from": "bay",
+      "to": "delivery",
+      "requires_clearance": true
+    }
+  ]
+}

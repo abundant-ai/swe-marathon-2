@@ -1,0 +1,57 @@
+schema_version = "1.4"
+multi_step_reward_strategy = "final"
+artifacts = ["/app/visqual"]
+
+[task]
+name = "abundant/swe-m2_software-engineering_visual-inertial-qualification"
+description = "Calibrate and qualify stereo and inertial recordings."
+authors = [{ name = "QingyuanWuNothing", email = "qingyuanwu4work@gmail.com" }]
+
+[metadata]
+reward_type = "continuous"
+
+[agent]
+timeout_sec = 5400
+user = "candidate"
+network_mode = "no-network"
+
+[environment]
+network_mode = "allowlist"
+allowed_hosts = ["pypi.org", "files.pythonhosted.org"]
+build_timeout_sec = 900
+cpus = 2
+memory_mb = 2048
+storage_mb = 4096
+workdir = "/app"
+
+[verifier]
+environment_mode = "separate"
+network_mode = "no-network"
+timeout_sec = 600
+user = "root"
+
+[verifier.environment]
+network_mode = "allowlist"
+allowed_hosts = ["pypi.org", "files.pythonhosted.org"]
+build_timeout_sec = 900
+cpus = 2
+memory_mb = 2048
+storage_mb = 4096
+workdir = "/app"
+
+
+[[steps]]
+name = "01-stereo-geometry"
+
+[[steps]]
+name = "02-calibrate-timing-mount"
+
+[[steps]]
+name = "03-qualify-segments"
+
+
+[[steps]]
+name = "04-calibrate-row-timing"
+
+[[steps]]
+name = "05-calibrate-inertial-motion"

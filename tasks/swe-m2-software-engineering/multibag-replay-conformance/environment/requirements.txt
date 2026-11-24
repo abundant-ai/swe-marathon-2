@@ -1,0 +1,6 @@
+lz4==4.4.5
+numpy==2.5.5
+rosbags==0.11.0
+ruamel-yaml==0.19.1
+typing-extensions==4.16.0
+zstandard==0.25.0

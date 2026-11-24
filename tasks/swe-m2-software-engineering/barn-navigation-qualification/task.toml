@@ -1,0 +1,48 @@
+schema_version = "1.4"
+multi_step_reward_strategy = "mean"
+artifacts = ["/app/barn_qualification"]
+
+[task]
+name = "abundant/swe-m2_software-engineering_barn-navigation-qualification"
+description = "Qualify constrained navigation on held-out occupancy maps with observed differential-drive motion and changing corridor availability."
+authors = [{ name = "Qingyuan Wu", email = "qingyuanwu4work@gmail.com" }]
+
+[metadata]
+reward_type = "continuous"
+
+[agent]
+timeout_sec = 3600
+user = "candidate"
+network_mode = "no-network"
+
+[environment]
+network_mode = "allowlist"
+allowed_hosts = ["deb.debian.org", "raw.githubusercontent.com", "nodejs.org", "registry.npmjs.org", "pypi.org", "files.pythonhosted.org"]
+build_timeout_sec = 600
+cpus = 2
+memory_mb = 1536
+storage_mb = 4096
+workdir = "/app"
+
+[verifier]
+environment_mode = "separate"
+network_mode = "no-network"
+timeout_sec = 300
+user = "root"
+
+[verifier.environment]
+network_mode = "no-network"
+build_timeout_sec = 600
+cpus = 2
+memory_mb = 1024
+storage_mb = 4096
+workdir = "/app"
+
+[[steps]]
+name = "01-plan-clear-routes"
+
+[[steps]]
+name = "02-run-constrained-navigation"
+
+[[steps]]
+name = "03-qualify-dynamic-runs"

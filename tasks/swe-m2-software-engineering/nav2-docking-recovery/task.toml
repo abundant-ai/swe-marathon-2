@@ -1,0 +1,61 @@
+schema_version = "1.4"
+multi_step_reward_strategy = "final"
+artifacts = ["/app/dock_recovery"]
+
+[task]
+name = "abundant/swe-m2_software-engineering_nav2-docking-recovery"
+description = "Build a vision-guided rear docking controller that confirms charging and recovers from guarded retries and process restart."
+authors = [{ name = "Qingyuan Wu", email = "qingyuanwu4work@gmail.com" }]
+
+[metadata]
+reward_type = "continuous"
+
+[agent]
+timeout_sec = 3600
+user = "candidate"
+network_mode = "no-network"
+
+[environment]
+network_mode = "allowlist"
+allowed_hosts = ["deb.debian.org", "archive.ubuntu.com", "security.ubuntu.com", "repo.ros2.org", "raw.githubusercontent.com", "nodejs.org", "registry.npmjs.org", "pypi.org", "files.pythonhosted.org"]
+build_timeout_sec = 600
+cpus = 2
+memory_mb = 2048
+storage_mb = 4096
+workdir = "/app"
+
+[verifier]
+environment_mode = "separate"
+network_mode = "no-network"
+timeout_sec = 300
+user = "root"
+
+[verifier.environment]
+network_mode = "allowlist"
+allowed_hosts = ["archive.ubuntu.com", "security.ubuntu.com", "repo.ros2.org", "raw.githubusercontent.com"]
+build_timeout_sec = 600
+cpus = 2
+memory_mb = 1024
+storage_mb = 4096
+workdir = "/app"
+
+[[steps]]
+name = "01-reverse-approach"
+
+[[steps]]
+name = "02-confirm-charge"
+
+[[steps]]
+name = "03-recover-docking"
+
+[[steps]]
+name = "04-restart-supervisor"
+
+[[steps]]
+name = "05-stage-and-reacquire"
+
+[[steps]]
+name = "06-compile-curvature-routes"
+
+[[steps]]
+name = "07-confirm-native-seating"

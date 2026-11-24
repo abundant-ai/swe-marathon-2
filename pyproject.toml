@@ -19,4 +19,24 @@ titans = ["abundant-titans"]
 titans-data = ["pyarrow==23.0.1"]
 
 [tool.pytest.ini_options]
-testpaths = ["ci_checks", "tasks/swe-m2-ai-engineer/knowledge-work-assistant/checks"]
+testpaths = [
+    "ci_checks",
+    "tasks/swe-m2-ai-engineer/knowledge-work-assistant/checks",
+    "tasks/swe-m2-software-engineering/fixed-lag-fusion/checks",
+    "tasks/swe-m2-software-engineering/contact-wrench-calibration/checks",
+    "tasks/swe-m2-software-engineering/visual-inertial-qualification/checks",
+    "tasks/swe-m2-software-engineering/px4-estimator-recovery/checks",
+    "tasks/swe-m2-software-engineering/barn-navigation-qualification/checks",
+    "tasks/swe-m2-software-engineering/multibag-replay-conformance/checks",
+    "tasks/swe-m2-software-engineering/robomimic-rollout-qualification/checks",
+    "tasks/swe-m2-software-engineering/dual-arm-handoff/checks",
+    "tasks/swe-m2-software-engineering/gazebo-regression-runner/checks",
+    "tasks/swe-m2-software-engineering/fleet-recovery/checks",
+    "tasks/swe-m2-software-engineering/lerobot-dataset-repair/checks",
+    "tasks/swe-m2-software-engineering/versioned-mapping/checks",
+    "tasks/swe-m2-software-engineering/mujoco-branch-replay/checks",
+    "tasks/swe-m2-software-engineering/nav2-docking-recovery/checks",
+    "tasks/swe-m2-software-engineering/policy-sim-bridge/checks",
+    "tasks/swe-m2-software-engineering/ros2-control-recovery/checks",
+    "tasks/swe-m2-software-engineering/workcell-replanning/checks",
+]

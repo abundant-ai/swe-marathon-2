@@ -1,0 +1,1 @@
+{"steps":58,"robot":"rover","mass_kg":1.45,"damping":0.44,"seed":293,"reset_steps":[37],"commands":[{"step":0,"force_n":4.7,"torque_nm":0},{"step":46,"force_n":1.1,"torque_nm":0.08}],"relocations":[{"step":12,"model":"loading_box","pose":[0.90,0.06,0.24,0.21],"jitter_m":0.018}],"qos":{"/robot/imu":"best_effort","/robot/range":"reliable"}}
