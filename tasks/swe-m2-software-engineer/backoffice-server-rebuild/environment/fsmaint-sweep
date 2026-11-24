@@ -7,11 +7,105 @@ LIMIT_BYTES=1000000000
 LIMIT_PATH=1000
 PACK_SECONDS=100
 STATE=/var/lib/fsmaint
+# The work's end: its start, recorded at set-up, plus the 34,560 s a session may last (nothing where no start was).
+end=$(/opt/py/bin/python -I -c 'import os, sys; print(os.stat(sys.argv[1]).st_mtime + 34560)' "$STATE/work-started" 2>/dev/null)
+# Stop every process of the user where it is, so that what they hold can be read before they are ended: `kill -STOP -1`
+# as that user reaches all of them in one system call; repeat while any still runs, where pgrep can tell its state.
+live=
+pgrep -r R,S,D,T,t -u 0 >/dev/null 2>&1 && live="-r R,S,D,T,t"
+rounds=3
+[ -n "$live" ] && rounds=50
+for _ in $(seq 1 $rounds); do
+  setpriv --reuid dev --regid dev --clear-groups kill -STOP -1 >/dev/null 2>&1
+  sleep 0.05
+  [ -n "$live" ] && ! pgrep -r R,S,D -u dev >/dev/null 2>&1 && break
+done
+# Once the work's end has passed, a file that a stopped process maps shared and writable, or holds open for writing,
+# may have been written after the end without its change time moving (a write through a mapping of a file kept in
+# memory never moves it). Those files are listed here while the processes still hold them, as the user, who alone may
+# read its processes' maps and open files without the capability to trace them.
+held=$(timeout 60 setpriv --reuid dev --regid dev --clear-groups --no-new-privs /opt/py/bin/python -I - /proc "$(id -u dev 2>/dev/null)" "$end" 2>/dev/null <<'HELD'
+"""List the regular files that a stopped process of the user maps shared and writable, or holds open for writing.
+
+Arguments: the /proc to read, the user's id and the work's end. Only once the end has passed: before it, whatever they
+wrote was written in time. A process of the user whose maps or open files cannot be read (one made undumpable) fails the
+list as a whole. Printed whole at the end, or not at all: a first line, `after-end N`, `before-end` or `no-start`, then
+`DEVICE INODE` for each of the N files.
+"""
+import os
+import stat
+import sys
+import time
+
+PROC, USER = sys.argv[1], sys.argv[2]
+END = float(sys.argv[3]) if sys.argv[3:] and sys.argv[3] else None
+LIMIT = 100_000  # files listed at most: past it, the list fails as a whole
+held = set()
+
+
+def keep(path):
+    try:
+        info = os.stat(path)
+    except PermissionError:
+        sys.exit(f"{path} could not be read")
+    except (OSError, ValueError):
+        return
+    if stat.S_ISREG(info.st_mode):
+        held.add((info.st_dev, info.st_ino))
+        if len(held) > LIMIT:
+            sys.exit(f"more than {LIMIT:,} files are held")
+
+
+end = END
+if end is None:
+    head = "no-start"
+elif time.time() <= end:
+    head = "before-end"
+else:
+    if not USER.isdigit():
+        sys.exit("the user's id is not known")
+    for pid in os.listdir(PROC):
+        if not pid.isdigit():
+            continue
+        base = os.path.join(PROC, pid)
+        try:
+            with open(os.path.join(base, "status"), errors="replace") as text:
+                ids = next(line.split()[1:] for line in text if line.startswith("Uid:"))
+        except (OSError, StopIteration):
+            continue
+        if USER not in ids:
+            continue
+        try:
+            with open(os.path.join(base, "maps"), "rb") as text:
+                for line in text:
+                    fields = line.split(None, 5)  # address, permissions, offset, device, inode, path
+                    if len(fields) == 6 and fields[1][1:2] == b"w" and fields[1][3:4] == b"s":
+                        name = fields[5].rstrip(b"\n")
+                        if name.startswith(b"/") and not name.endswith(b" (deleted)"):
+                            keep(os.fsdecode(name.replace(b"\\012", b"\n")))
+            numbers = os.listdir(os.path.join(base, "fd"))
+        except PermissionError:
+            sys.exit(f"process {pid} could not be read")
+        except OSError:  # it is gone
+            numbers = []
+        for number in numbers:
+            try:
+                with open(os.path.join(base, "fdinfo", number)) as text:
+                    flags = next(int(line.split()[1], 8) for line in text if line.startswith("flags:"))
+            except PermissionError:
+                sys.exit(f"process {pid} could not be read")
+            except (OSError, StopIteration, ValueError, IndexError):
+                continue
+            if flags & 3:  # open for writing: O_WRONLY or O_RDWR
+                keep(os.path.join(base, "fd", number))
+    head = f"after-end {len(held)}"
+print("\n".join([head] + [f"{device} {inode}" for device, inode in sorted(held)]))
+HELD
+)
+listed=$?
 # End every process of the user. `kill -9 -1` as that user reaches all of them in one system call, so a process that
 # forks cannot outrun it; repeat until none is left. A process that has ended and that nobody has reaped is not counted
 # where pgrep can tell its state, so that such entries cannot keep the loop going.
-live=
-pgrep -r R,S,D,T,t -u 0 >/dev/null 2>&1 && live="-r R,S,D,T,t"
 for _ in $(seq 1 100); do
   pgrep $live -u dev >/dev/null 2>&1 || break
   setpriv --reuid dev --regid dev --clear-groups kill -9 -1 >/dev/null 2>&1
@@ -30,6 +124,18 @@ case $limit in ''|*[!0-9a-z]*) limit= ;; esac
 # mark, a refusal and the copy's archive can be written.
 rm -f "$STATE/room"
 rm -rf "$STATE/inodes"
+# What the stopped processes held, for the walk below (STATE/held) and for the fixing as DEVICE:INODE keys (`many` past a
+# thousand files: every file outside is then taken as written after the end). No list is written where none was made.
+rm -f "$STATE/held"
+[ "$listed" = 0 ] || held=
+[ -n "$held" ] && printf '%s\n' "$held" > "$STATE/held" 2>/dev/null
+keys=
+case $held in
+  "after-end "*)
+    count=${held#after-end }
+    count=${count%%[!0-9]*}
+    if [ "${count:-0}" -gt 1000 ]; then keys=many; else keys=$(printf '%s\n' "$held" | sed '1d' | tr ' \n' ': '); fi ;;
+esac
 # What the user left in /logs/artifacts, which is taken along with /app/server and whose size nothing bounds, is moved
 # aside by one rename, never followed or copied, and an empty directory takes its place; where that directory cannot be
 # renamed (a mount point, another file system), what it holds is removed.
@@ -56,15 +162,13 @@ if [ -e /app/server/.fsmaint-manifest ] || [ -L /app/server/.fsmaint-manifest ];
   aside=$(mktemp -d /app/.aside.XXXXXX) && mv -f /app/server/.fsmaint-manifest "$aside/" || rm -rf -- /app/server/.fsmaint-manifest
 fi
 # Nothing of the user's runs any more, and every step above that could change /app/server is done: what changes there
-# after this moment (the fence) is the sweep's own doing. The work's end is its start, recorded at set-up, plus the
-# 34,560 s a session may last: for a session that reached that limit, what changed between the end and the fence was
-# written once the work was over.
+# after this moment (the fence) is the sweep's own doing. For a session that reached its limit, what changed between the
+# work's end and the fence was written once the work was over.
 date > "$STATE/fence" 2>/dev/null
-end=$(/opt/py/bin/python -I -c 'import os, sys; print(os.stat(sys.argv[1]).st_mtime + 34560)' "$STATE/work-started" 2>/dev/null)
 fence=$(/opt/py/bin/python -I -c 'import os, sys; print(os.stat(sys.argv[1]).st_mtime)' "$STATE/fence" 2>/dev/null)
 # Links, as the user (it copies nothing the user could not read, and nothing changed after the work's end), within the
 # limits and two minutes.
-timeout 120 setpriv --reuid dev --regid dev --clear-groups --no-new-privs /opt/py/bin/python -I - /app/server "$LIMIT_ENTRIES" "$LIMIT_BYTES" "$end" "$fence" <<'EOF'
+timeout 120 setpriv --reuid dev --regid dev --clear-groups --no-new-privs /opt/py/bin/python -I - /app/server "$LIMIT_ENTRIES" "$LIMIT_BYTES" "$end" "$fence" "$keys" <<'EOF'
 """Make /app/server safe to copy to the machine it will run on, as the user who built it.
 
 The copy keeps relative links that stay inside the directory and refuses everything else. A link
@@ -75,7 +179,9 @@ after the work's end (the fourth argument), and the disk has room for it beside 
 for the manifest; a link to nothing or to a device, and a pipe, a socket or a device node, are
 removed. A link that itself changed after the work's end and before the fence (the fifth argument,
 when nothing of the user's ran any more) is left as it is, for the measuring that follows to remove.
-Each change is printed.
+A file that a process of the user mapped writable, or held open for writing, once the end had passed
+(the sixth argument, DEVICE:INODE keys, or `many`, which takes every file so) counts as changed after
+the end. Each change is printed.
 """
 import os
 import shutil
@@ -87,6 +193,9 @@ ENTRIES = int(sys.argv[2]) if len(sys.argv) > 2 else 100_000  # what /app/server
 BYTES = int(sys.argv[3]) if len(sys.argv) > 3 else 1_000_000_000
 END = float(sys.argv[4]) if len(sys.argv) > 4 and sys.argv[4] else None  # the work's end, as a change time
 FENCE = float(sys.argv[5]) if len(sys.argv) > 5 and sys.argv[5] else float("inf")  # when nothing of the user's ran
+HELD = sys.argv[6] if len(sys.argv) > 6 else ""  # files a process could still write after the end
+MANY = HELD == "many"
+HELD_KEYS = set() if MANY else {tuple(int(part) for part in key.split(":")) for key in HELD.split()}
 KEEP_BYTES, KEEP_INODES = 64 << 20, 64  # left free by every copy: what was set aside for the manifest and a refusal
 spent = copied = 0
 
@@ -103,12 +212,19 @@ def inside(path):
     return path == ROOT or path.startswith(ROOT + os.sep)
 
 
+def changed(info):
+    """When a file or a link last changed: never, for a file a process could still write after the end."""
+    if MANY and stat.S_ISREG(info.st_mode) or (info.st_dev, info.st_ino) in HELD_KEYS:
+        return float("inf")
+    return info.st_ctime
+
+
 def size_of(path, limit, most):
-    """Bytes and entries a copy of `path` would add, and the latest change time of a file or a link among them; the
-    count stops once either passes its limit."""
+    """Bytes and entries a copy of `path` would add, and the latest change of a file or a link among them; the count
+    stops once either passes its limit."""
     info = os.stat(path)
     if not stat.S_ISDIR(info.st_mode):
-        return info.st_size, 1, info.st_ctime
+        return info.st_size, 1, changed(info)
     total, count, latest = 0, 1, 0.0
     for folder, folders, files in os.walk(path):
         count += len(folders)
@@ -116,7 +232,7 @@ def size_of(path, limit, most):
             try:
                 entry = os.lstat(os.path.join(folder, name))
                 if stat.S_ISLNK(entry.st_mode):
-                    latest = max(latest, entry.st_ctime)
+                    latest = max(latest, changed(entry))
             except OSError:
                 pass
         for name in files:
@@ -124,7 +240,7 @@ def size_of(path, limit, most):
             try:
                 entry = os.lstat(os.path.join(folder, name))
                 total += entry.st_size
-                latest = max(latest, entry.st_ctime)
+                latest = max(latest, changed(entry))
             except OSError:
                 pass
             if total > limit or count > most:
@@ -228,7 +344,9 @@ each line after it is a change made or the reason for the refusal, at most NOTES
 sweep's own lines follow, each starting `sweep: `. For a session that reached its limit, an entry other than a directory
 that changed after the work's end (its start, recorded at set-up, plus SESSION_SECONDS) and before the moment nothing
 of the user's ran any more (the fence) is removed, with every other name of the same file, and a note: it was written
-once the work was over.
+once the work was over. So is a file that a process of the user mapped writable, or held open for writing, when the
+processes were stopped after the end (STATE/held), which may have been written then without its change time moving;
+once the end has passed, a tree whose list of those files is missing is refused.
 """
 import os
 import stat
@@ -265,7 +383,26 @@ STARTED, FENCE = stamp("work-started"), stamp("fence")
 END = STARTED + SESSION_SECONDS if STARTED is not None else None
 if FENCE is None:  # never written: whatever changed after the end is taken as late
     FENCE = float("inf")
-late_inodes = set()  # files removed as late: their other names go too, since removing one changes the change time
+late_inodes = {}  # files removed as late, and why: their other names go too, since removing one changes the change time
+
+
+def held_files():
+    """The files a stopped process could still write after the end, by (device, inode), from STATE/held; None where
+    the list is missing or not whole."""
+    try:
+        with open(os.path.join(STATE, "held")) as text:
+            head = text.readline().split()
+            keys = {(int(device), int(inode)) for device, inode in (line.split() for line in text if line.strip())}
+    except (OSError, ValueError):
+        return None
+    if head in (["before-end"], ["no-start"]) and not keys:
+        return set()
+    if len(head) == 2 and head[0] == "after-end" and head[1].isdigit() and int(head[1]) == len(keys):
+        return keys
+    return None
+
+
+HELD = held_files()
 
 
 class Refuse(Exception):
@@ -294,10 +431,16 @@ def walk(fd, rel):
             raise Refuse(f"it holds a path longer than {LIMIT_PATH:,} bytes, the longest /app/server may hold")
         info = os.stat(name, dir_fd=fd, follow_symlinks=False)
         key = (info.st_dev, info.st_ino)
-        if END is not None and not stat.S_ISDIR(info.st_mode) and (key in late_inodes or END < info.st_ctime < FENCE):
-            late_inodes.add(key)
+        why = late_inodes.get(key)
+        if why is None and END is not None and not stat.S_ISDIR(info.st_mode):
+            if END < info.st_ctime < FENCE:
+                why = "it changed after the work's end"
+            elif key in (HELD or ()):
+                why = "a process of the user could still write it after the work's end (open for writing or mapped writable)"
+        if why is not None:
+            late_inodes[key] = why
             os.unlink(name, dir_fd=fd)
-            notes.append(f"removed {path}: it changed after the work's end")
+            notes.append(f"removed {path}: {why}")
             late += 1
             continue
         if stat.S_ISLNK(info.st_mode):
@@ -436,6 +579,8 @@ def pack_here():
 reason = None
 sys.setrecursionlimit(max(10_000, LIMIT_PATH * 2))
 try:
+    if HELD is None and END is not None and END < FENCE:
+        raise Refuse("the files that processes of the user could still write after the work's end could not be listed")
     top = os.open(ROOT, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
         info = os.fstat(top)
@@ -474,6 +619,9 @@ try:
         log = [one_line(line.rstrip()) for line in text if line.strip()][-20:]
 except OSError:
     pass
+if HELD:
+    log.append(f"sweep: {len(HELD):,} files were open for writing or mapped writable when the user's processes were stopped "
+               "after the work's end")
 if late:
     log.append(f"sweep: {late:,} entries that changed after the work's end were removed")
 lines = [f"complete {entries} {size}"]

@@ -63,6 +63,26 @@ One step is implemented. See [Remaining work](#remaining-work).
   upper bound taken out, every change after the end judged (Carve's shape), it loses three
   (`complete 11 658`): `venv-python` and `inside`, which the fixer had just written, and
   `a/python-again`, whose change time the replacement of its other name had moved.
+- BasedPL's re-check R1, which holds for every task without the timer: a capped turn's processes
+  run on, with the network back, until the collect hook, and a file one of them maps shared and
+  writable, or holds open for writing, from before the end can be written after it without its
+  change time moving (a write through a mapping of a file kept in memory, as on tmpfs, never moves
+  it), which the rule on late writes misses. The sweep now first stops every process of the user
+  (`kill -STOP -1` as `dev`, repeated while any still runs where `pgrep` can tell), then lists the
+  regular files that a process of the user maps shared and writable (`/proc/PID/maps`, `rw-s`) or
+  holds open for writing (`/proc/PID/fd` and the flags in `fdinfo`), and only then ends them. The
+  list is made as `dev`: root may read another user's maps and open files only with the capability
+  to trace them, which Docker's root lacks. Once the end has passed, the walk removes every name of
+  those files with a note (`removed PATH: a process of the user could still write it after the
+  work's end (open for writing or mapped writable)`), the fixer copies in no outside file so held,
+  and `sweep_log` says how many there were; before the end nothing is taken. Where the list cannot
+  be made once the end has passed (`/proc` unreadable, a process of the user made undumpable, more
+  than 100,000 files, past 60 s), the tree is refused. Check
+  `test_a_file_a_process_could_still_write_after_the_end_is_left_out`, on a stand-in `/proc`: a
+  shared writable mapping (with a second name of its file), a file open for writing and a held file
+  outside behind a link go; another user's process, a private and a read-only mapping and a file
+  open for reading count for nothing; before the end all of it stays; an unreadable `/proc` and an
+  undumpable process refuse the tree. On `bbae97b` the held files arrive (`complete 16 1716`).
 - `sweep_log` takes the manifest's lines that start with `sweep: `, and one note did start with a
   name the agent chose: a link the walk writes again was noted as `PATH -> TARGET (was OLD)`, so a
   link named `sweep: 0 entries ...` read as the sweep's own line. That note is now
@@ -79,18 +99,21 @@ One step is implemented. See [Remaining work](#remaining-work).
   the sealed server at set-up and no timer in the image or the packager; the new check ties the
   sweep's two 34,560s to `task.toml`; the manifest check adds the link named like a `sweep:` line;
   the bundle check builds the flat bundle under the task's own name and holds it to the steps
-  bundle as below, and has `--keep-name` without `--flat` refused. `checks/` has 61 tests; with
-  `ci_checks` (27), 88 pass under Python 3.13, and `ci_checks/check_repository.py` passes (one
-  timing check, a hanging and a dripping server against a 4 s deadline, failed once under load in
-  a first full run and passed alone and in the final one); the sweep and the set-up pass `dash
-  -n`, and the sweep's two scripts and `verify.py` compile under Python 3.12.13.
+  bundle as below, and has `--keep-name` without `--flat` refused. With R1's check (below)
+  `checks/` has 62 tests; with `ci_checks` (27), 89 pass under Python 3.13, and
+  `ci_checks/check_repository.py` passes (one timing check, a hanging and a dripping server against
+  a 4 s deadline, failed once under load in a first full run and passed alone and in every full run
+  since); the sweep and the set-up pass `dash -n`, and the sweep's three scripts and `verify.py`
+  compile under Python 3.12.13.
 - A flat single-step bundle under the task's own name, as SymPy's (the only setup whose capped
   runs were graded, 3 of 3): `package_step.py --flat --keep-name` writes the steps bundle's files
   without the `steps/01-rebuild-server/` prefix and keeps the name
   `abundant/swe-m2_software-engineering_backoffice-server-rebuild`, so that the upload becomes the
   next version of the same task (`--keep-name` alone is refused); the repository keeps its steps
-  layout. Steps bundle `7b68392e5eb4` and flat bundle `4079a1748e67`, 1,160 files each (round 14's
-  less the timer), 247.3 MB, each built twice with the same hash and `diff -r`-identical files.
+  layout. Steps bundle `8725378e9033` and flat bundle `9c6f8371270f` (`bbae97b`, before R1, built
+  `7b68392e5eb4` and `4079a1748e67`, which differ from them in the sweep alone), 1,160 files each
+  (round 14's less the timer), 247.3 MB, each built twice with the same hash and `diff -r`-identical
+  files.
   The flat bundle against the steps bundle: the same 1,160 names once the prefix is dropped, and the
   same bytes and executable bits in every file but `task.toml`, which lacks
   `multi_step_reward_strategy = "final"` (with one step its reward is the trial's either way) and
@@ -98,17 +121,18 @@ One step is implemented. See [Remaining work](#remaining-work).
   34,560 s and 6,000 s, the values of the top-level `[agent]` and `[verifier]` tables the flat
   task runs with. The instruction, the image, the set-up and collect hooks, the verifier and its
   image, the artifacts (`/app/server`) and the reward are the same.
-- Proof. The local grade of the flat bundle `4079a1748e67` (the regrade reading the bundle's root;
+- Proof. The local grade of the flat bundle `9c6f8371270f` (the regrade reading the bundle's root;
   its solution installed from an isolated copy by its own `oracle.py`, only the interpreter path
   swapped for this Mac): the reference 1.0, 4,002 of 4,002 (2,262 of 2,262 scenarios), 9 planned
-  restarts, no other restart, no second try, nothing unfinished, no note, 514.4 s of replay; an
-  empty server 0.0, 0 of 4,002 ("/app/server/run is missing or not executable"). The first flat
-  build, `77c04a446699` (the sweep's comment and the link note's wording apart), scored the same:
-  4,002 of 4,002 in 519.5 s, and 0.0. `oddish preflight` on the flat bundle passes. Oddish's
+  restarts, no other restart, no second try, nothing unfinished, no note, 509.3 s of replay; an
+  empty server 0.0, 0 of 4,002 ("/app/server/run is missing or not executable"). `bbae97b`'s flat
+  bundle `4079a1748e67` scored the same (4,002 of 4,002 in 514.4 s, and 0.0), and so did the first
+  build, `77c04a446699` (519.5 s). `oddish preflight` on the flat bundle passes. Oddish's
   `compute_task_content_hash` (`sha256-harbor-publishable-v1`) of the flat bundle is
-  `2160b86bc5b9...`, against `2c5d937b30d5...` for version 10's `7a92d0bd02fe` (the steps bundle's
-  is `3ba756342d7e...`). `scripts/scan_uploads.py` on the flat bundle: no leak and nothing missing
-  among 495 agent-image files (round 14's 496 less the timer).
+  `7f631001774d...`, against `2c5d937b30d5...` for version 10's `7a92d0bd02fe` (the steps
+  bundle's is `53c4468a49e9...`; `4079a1748e67`'s was `2160b86bc5b9...`).
+  `scripts/scan_uploads.py` on the flat bundle: no leak and nothing missing among 495 agent-image
+  files (round 14's 496 less the timer).
 
 ### 2026-11-24 (round 14: the cap's record under bash, a neutral `task.toml` comment, `/logs/artifacts` set aside; version 11)
 
@@ -1469,8 +1493,11 @@ between the end and the moment it had ended the agent's processes and done every
 could touch the tree (the fence, `/var/lib/fsmaint/fence`), with every other name of the same file
 and a note each, adds `sweep: N entries that changed after the work's end were removed` to the
 manifest, and copies in no outside file or directory a link points to in which a file or link
-changed after the end. A turn that ends by itself ends before the end, so nothing is removed for
-it. The agent is not told; the instruction states no budget either way, and nothing the agent can
+changed after the end. Before it ends the agent's processes, the hook stops them and, as `dev`,
+lists the files they map shared and writable or hold open for writing, which can be written after
+the end without their change time moving; once the end has passed those count as changed after
+it, and a tree whose list cannot be made is refused (BasedPL's re-check R1). A turn that ends by
+itself ends before the end, so nothing is removed for it. The agent is not told; the instruction states no budget either way, and nothing the agent can
 see of the hooks (the names in `/usr/local/sbin` and `/var/lib`) says what they are for. The
 sealed server and its supervisor run as other users and are untouched. **This holds for one step
 only**: the start is recorded at the trial's set-up, not at a step's start. See
@@ -1479,7 +1506,10 @@ only**: the start is recorded at the trial's set-up, not at a step's start. See
 1. Delivery: before `/app/server` leaves the agent's machine, a `[[verifier.collect]]` hook runs
    `environment/fsmaint-sweep` (root, mode 0700; `prepare-delivery` until round 9), so that
    nothing the agent leaves can make the copy fail (QA 07e M4, 07f M4). (From round 9 to round 14
-   it first stopped the maintenance timer.) It ends every process of `dev` with
+   it first stopped the maintenance timer.) Since round 15 it first stops every process of `dev`
+   (`kill -STOP -1` as `dev`, while any still runs) and, as `dev`, lists from `/proc` the regular
+   files they map shared and writable or hold open for writing, within 60 s and 100,000 files (see
+   the run condition above). It then ends every process of `dev` with
    `kill -9 -1` as `dev`, one system call that a forking process cannot outrun, until none is
    left (since round 12 an ended process nobody has reaped does not count, where procps's `pgrep`
    can tell its state: under Docker this image's first process, `sleep infinity`, reaps nothing,
@@ -1507,8 +1537,9 @@ only**: the start is recorded at the trial's set-up, not at a step's start. See
    F3); as `dev` it copies nothing `dev` could not read. Last, as root, it walks the delivery by
    directory descriptor, so no depth hides anything, counts every name it lists against the
    100,000 entries (pipes and sockets too since round 12), removes (since round 15) every entry
-   other than a directory that changed between the work's end and the fence, with every other name
-   of the same file, removes what the copy would refuse (a
+   other than a directory that changed between the work's end and the fence, and every file listed
+   as held once the end had passed, each with every other name of the same file, removes what the
+   copy would refuse (a
    device, a pipe, a socket, a link with an absolute target, or one the kernel cannot follow, at
    most 40 links on the way, to a file or directory inside: one the walk saw or, failing that, one
    `realpath` finds there), keeps a link only as the
@@ -1534,8 +1565,8 @@ only**: the start is recorded at the trial's set-up, not at a step's start. See
    (`sweep:` lines, kept apart from the hook's notes and reported whole as `sweep_log` in
    `metrics.json`: the process limit, what became of `/logs/artifacts`, how many entries changed
    after the work's end; until round 15 the timer's log as `timer:` lines and `timer_log`). The
-   hook's longest run is now about 470 s: the kill loop in seconds, the fixer's 120 s, the walk's
-   240 s, the pack's 100 s. `verify.py` scores what arrived, with a note when the manifest is missing or says
+   hook's longest run is now about 535 s: the stop and the kill loop in seconds, the list of held
+   files' 60 s, the fixer's 120 s, the walk's 240 s, the pack's 100 s. `verify.py` scores what arrived, with a note when the manifest is missing or says
    `refused`, and reads at most its first 64 KiB (round 12); fewer entries or bytes arriving than
    the manifest counts (a copy the platform cut short) and an `/app/server` of which nothing
    arrived are evaluation errors, while more (hard links a copy could not keep, which arrive as
@@ -1713,18 +1744,19 @@ unassessed; 5, 7, 8, 9 and 11 mitigated but not yet exercised in a container; 10
 | 12 | The server the agent studies answers differently from the grader, so doing exactly what the instruction asks loses units | The sealed server's configuration against the recorders' and the solution's | QA 12 F1 (2026-11-19): the sealed server served the web client, so `DELETE /nowhere` answered 405 `allowed: []` there and 404 `unknown_path` in the corpus; a perfect clone lost 6 units. Fixed in round 4 | One settings file, `environment/stockwell.env`, for the sealed server, the live recorder and the solution, with no client directory (the legacy recorder builds the same app in-process); a check ties every file to it and the instruction's numbers to the code; the regrade of the solution with that file is 1.0 on every unit | The Mac recording and the Ubuntu images run different Python, SQLite and zlib builds; reading the code found no dependence (QA 11, 12) | The Linux baselines: 4,002 of 4,002 for the solution | 🟢 GREEN / LOW |
 | 13 | A server that fails under concurrent load earns its units back on second tries played one at a time | Verifier's second tries | QA 20 (2026-11-19): second tries were uncapped and alone, and a sequential pass fits the deadline, so a server that crashes whenever requests overlap recovered most of its units. Fixed in round 4 | A second try only for a scenario in flight when the server stopped, never for a wrong answer or a request a live server left unanswered, and only while the units they decide stay within 2% of all units; the check pins the share and that a dropped request gets none | A server that crashes under load keeps 2% of the units at most | None | 🟢 GREEN / LOW |
 | 14 | A deliberately hostile submission makes the evaluation end in an error instead of 0, with no reward. Closed in round 12, each with a check that fails on round 11 (`375b570`): about 99,000 crafted links outlast the delivery hook's 600 s (QA 07g F1), and chains do the same (QA 22 F3 of the Carve task: 4,000 links took round 11's stage 22.6 s here, four times as long at each doubling); the link fixer uses up the spare inodes, so a refusal dies after `/app/server` is moved aside (07g F2); a link that resolves inside only through another link, or climbs above `/` and back in, hidden from the fixer, makes Harbor's extraction refuse the copy (07g F3, QA 22 F5: round 11 kept it, `LinkOutsideDestinationError`, "The copy arrived incomplete: 2 of 3 entries"); pipes left out of the entry count let tens of millions of them hold the hook; zombies kept the kill loop at 100 passes where the first process reaps nothing; the sweep exited without a manifest for a non-directory at `/app/server` and where the manifest's name could not be moved aside (QA 22 F6); the manifest's changes were unbounded and the verifier read it whole (QA 22 F1); a refusal's rename of `/app/server` was not guarded against EXDEV. Closed in round 13 (re-check 08), each with a check that fails on `cd98856`: a file with more names than a copy's file system allows links (65,000 on ext4) arrived as copies, whose extra bytes failed the count check and, for a large file, could fill the host's disk (now a file with more than 1,000 hard links refuses the tree, a stated limit, and more arriving than counted is scored with a note); a fork bomb left running past the session could keep the hook, and the copy, from starting (now a `su` session of `dev`, harbor's way of starting the agent's commands, is capped at 16,384 processes and threads, and the cap the platform gives is recorded in `sweep_log`). Left: where neither a memory cgroup nor a VM's own meminfo can be read, a memfd that no process maps is not counted (07f); where `/app/server` cannot be renamed, a refused tree with millions of entries at its top is moved aside one entry at a time; the process cap holds only where the kernel enforces RLIMIT_NPROC and the sandbox's own process limit is higher than the cap (both unmeasured; the baselines' `sweep_log` shows the cap a session got) | Delivery hooks; Harbor's artifact copy; the verifier's memory guard | QA 07e, 07f and 07g (2026-11-19); 07g F3 run through Harbor's own extraction code, F1 timed on macOS; round 12 against the catalogue of QA 22 and 23 of the Carve task, which shares this hook's family, each case run on `375b570` and on round 12 | None of these gives reward, reads answers or touches honest work: an honest delivery holds no crafted link chains, no tens of thousands of links and does not exhaust inodes. Round 12 makes each closed path a scored 0 with a note, or a tree copied as the agent left it, links straightened. Accepted on 2026-11-19 under a run policy for what is left: one attempt per trial; every errored trial is read; it scores 0 when its own files show the submission caused it, and is otherwise re-run as an infrastructure fault | A hostile run costs one trial and a read | The container red team repeats 07f's deep sparse file and full inodes, 07g's link chains and a file with 70,000 hard links | 🟡 YELLOW / LOW |
-| 15 | Outlast the session: go on working, writing or fetching after the agent's limit, while the platform leaves a capped turn's commands running, with the network back, until the collect hook (rounds 8 to 14: outlast or stop the maintenance timer that ended the session before the limit) | The platform's handling of a turn that reaches its limit; the collect hook; file change times | Round 15: the platform's verdicts on BasedPL's versions 2 and 4 rejected a task-side stop before the limit, and the judges dropped the timer (harbor-lh `ops/swe-marathon-v2/decisions/2026-11-24-timer-round3-flat-bundles-DECISION.md`: harbor stops waiting at the limit but never ends the agent's commands, and the network comes back once the turn is over, `PLATFORM_EGRESS_WINDOW.md`). `test_a_capped_session_keeps_nothing_written_or_fetched_after_its_end` and `test_a_late_file_cannot_keep_its_content_through_another_name` fail on round 14 (`1a6b87b`), which keeps everything; `test_an_honest_capped_tree_with_hard_links_loses_no_name` (Carve's re-check: a sweep that moves a name before judging makes another name of the same file read as late) loses nothing here and three names without the fence's upper bound | The work's end is the start the set-up records plus 34,560 s. The collect hook ends the agent's processes, writes its fence once nothing else can touch the tree, removes every entry of `/app/server` other than a directory whose change time falls between the end and the fence, with every other name of the same file and a note each, and copies in no outside file or directory a link points to in which a file or link changed after the end; nothing it changes after the fence is judged, so none of its own moves makes an honest name read as late. The change time is the kernel's: the agent can neither set it nor keep a write from moving it | The end comes from the set-up's last moment, a little before harbor starts the agent's clock, so a capped session's writes in its last moments are removed too; a late file's earlier content goes with it; a directory moved in after the end keeps the files in it written before the end; writes through a shared memory map within one dirty-page window may not move a change time; a session that ends by itself has no end yet, so what its detached processes write before the collect hook counts (Stockwell's code is private, so the network has nothing of it to fetch); a pause of the trial queue stops the agent's clock but not the wall clock, so on a backend that can pause a sandbox (not Modal) the end comes early by the pause; a file hard-linked into the tree from the agent's own file under the manifest's name, or from `/logs/artifacts` where that cannot be renamed, reads as late in a capped session | The first capped model trials: a reward about 15 minutes after the cap, no `step_results` in `result.json`, and the sweep's note and `sweep:` line for every entry removed | 🟢 GREEN / LOW |
+| 15 | Outlast the session: go on working, writing or fetching after the agent's limit, while the platform leaves a capped turn's commands running, with the network back, until the collect hook (rounds 8 to 14: outlast or stop the maintenance timer that ended the session before the limit) | The platform's handling of a turn that reaches its limit; the collect hook; file change times | Round 15: the platform's verdicts on BasedPL's versions 2 and 4 rejected a task-side stop before the limit, and the judges dropped the timer (harbor-lh `ops/swe-marathon-v2/decisions/2026-11-24-timer-round3-flat-bundles-DECISION.md`: harbor stops waiting at the limit but never ends the agent's commands, and the network comes back once the turn is over, `PLATFORM_EGRESS_WINDOW.md`). `test_a_capped_session_keeps_nothing_written_or_fetched_after_its_end` and `test_a_late_file_cannot_keep_its_content_through_another_name` fail on round 14 (`1a6b87b`), which keeps everything; `test_an_honest_capped_tree_with_hard_links_loses_no_name` (Carve's re-check: a sweep that moves a name before judging makes another name of the same file read as late) loses nothing here and three names without the fence's upper bound; `test_a_file_a_process_could_still_write_after_the_end_is_left_out` (R1, a stand-in `/proc`) fails on `bbae97b`, where the held files arrive | The work's end is the start the set-up records plus 34,560 s. The collect hook ends the agent's processes, writes its fence once nothing else can touch the tree, removes every entry of `/app/server` other than a directory whose change time falls between the end and the fence, with every other name of the same file and a note each, and copies in no outside file or directory a link points to in which a file or link changed after the end; nothing it changes after the fence is judged, so none of its own moves makes an honest name read as late. Before it ends the processes it stops them and, as the user, lists the files they map shared and writable or hold open for writing, which can be written without their change time moving; once the end has passed those count as changed after it, and a tree whose list cannot be made is refused (BasedPL's re-check R1). The change time is the kernel's: the agent can neither set it nor keep a write from moving it | The end comes from the set-up's last moment, a little before harbor starts the agent's clock, so a capped session's writes in its last moments are removed too; a late file's earlier content goes with it; a directory moved in after the end keeps the files in it written before the end; writes through a shared memory map within one dirty-page window may not move a change time; a session that ends by itself has no end yet, so what its detached processes write before the collect hook counts (Stockwell's code is private, so the network has nothing of it to fetch); a pause of the trial queue stops the agent's clock but not the wall clock, so on a backend that can pause a sandbox (not Modal) the end comes early by the pause; a file hard-linked into the tree from the agent's own file under the manifest's name, or from `/logs/artifacts` where that cannot be renamed, reads as late in a capped session; a mapping written after the end and unmapped, or made read-only, before the collect hook leaves no trace, and a process of the user made undumpable refuses the tree once the end has passed | The first capped model trials: a reward about 15 minutes after the cap, no `step_results` in `result.json`, and the sweep's note and `sweep:` line for every entry removed | 🟢 GREEN / LOW |
 
 ## Validation
 
 | Check | Revision | Result |
 | --- | --- | --- |
+| Files a stopped process could still write (BasedPL's re-check R1) | round 15 against `bbae97b`, on a stand-in `/proc` | `bbae97b` keeps the held files (`complete 16 1716`); now, once the end has passed, `mapped.bin` with its second name and `written.log` are removed with a note each, the held file outside is not copied in, `sweep_log` reads `sweep: 3 files were open for writing or mapped writable ...`; before the end everything stays; an unreadable `/proc` and an undumpable process refuse the tree |
 | Late writes of a capped session | round 15 against round 14 (`1a6b87b`) | round 14 keeps everything a detached process writes and fetches after the end (`complete 11 10479`: the fetched file, the appended source, the new link and a copy of the file fetched outside); round 15: `complete 5 1035`, `app/main.py`, `late.txt`, `late-link` and `fetched.bin` removed with a note each and `sweep: 4 entries that changed after the work's end were removed`, the link to the file fetched outside not copied, the writer ended by the sweep's own loop before the fence; a session that ended before its limit keeps everything. Without the set of late files two of a late file's three names survive (`complete 12 1666`) |
 | An honest capped tree with hard links (Carve's re-check) | round 15; round 14 (`1a6b87b`); round 15's sweep without the fence's upper bound | round 15: no name lost, no note about the work's end (`complete 14 2658`); round 14 the same (no rule on late writes); without the upper bound, every change after the end judged (Carve's shape): `complete 11 658`, three names lost |
-| Flat bundle against the steps bundle | round 15: flat `4079a1748e67`, steps `7b68392e5eb4` | the same 1,160 names once `steps/01-rebuild-server/` is dropped, the same bytes and executable bits in all but `task.toml`, which lacks `multi_step_reward_strategy = "final"` and the `[[steps]]` table (limits 34,560 s and 6,000 s, the top-level values); the same task name |
-| Reference and empty server through the verifier, local, no sandbox | round 15: everything from the flat bundle `4079a1748e67` (the regrade reading the bundle's root), its solution installed from an isolated copy (only the interpreter path swapped for this Mac) | reference 1.0 on every unit: 4,002 of 4,002 (2,262 of 2,262 scenarios), 9 planned restarts, no other restart, no second try, nothing unfinished, no note; 514.4 s of replay against the 5,400 s deadline. Empty server 0.0, 0 of 4,002, "/app/server/run is missing or not executable". The first flat build `77c04a446699` (the sweep's comment and one note's wording apart) the same: 4,002 of 4,002 in 519.5 s, and 0.0 |
-| `checks/` (61 tests) with `ci_checks` (27) | round 15 | 88 pass under Python 3.13; `ci_checks/check_repository.py` passes; the sweep's two scripts and `verify.py` compile under Python 3.12.13; the sweep and the set-up pass `dash -n`. One timing check (a hanging and a dripping server against a 4 s deadline) failed once under load in the first full run and passed alone and in the final one |
-| Bundle | round 15: flat `4079a1748e67` (the upload), steps `7b68392e5eb4`, 1,160 files and 247.3 MB each | each built twice with the same hash and `diff -r`-identical files; Oddish preflight on the flat bundle passes; `compute_task_content_hash` of the flat bundle `2160b86bc5b9...` against version 10's (`7a92d0bd02fe`) `2c5d937b30d5...`; no hidden upload among 495 agent-image files |
+| Flat bundle against the steps bundle | round 15: flat `9c6f8371270f`, steps `8725378e9033` (and `bbae97b`'s `4079a1748e67` and `7b68392e5eb4`, the same way) | the same 1,160 names once `steps/01-rebuild-server/` is dropped, the same bytes and executable bits in all but `task.toml`, which lacks `multi_step_reward_strategy = "final"` and the `[[steps]]` table (limits 34,560 s and 6,000 s, the top-level values); the same task name |
+| Reference and empty server through the verifier, local, no sandbox | round 15: everything from the flat bundle `9c6f8371270f` (the regrade reading the bundle's root), its solution installed from an isolated copy (only the interpreter path swapped for this Mac) | reference 1.0 on every unit: 4,002 of 4,002 (2,262 of 2,262 scenarios), 9 planned restarts, no other restart, no second try, nothing unfinished, no note; 509.3 s of replay against the 5,400 s deadline. Empty server 0.0, 0 of 4,002, "/app/server/run is missing or not executable". `bbae97b`'s `4079a1748e67` the same (514.4 s, and 0.0), and the first build `77c04a446699` (519.5 s) |
+| `checks/` (62 tests) with `ci_checks` (27) | round 15 | 89 pass under Python 3.13; `ci_checks/check_repository.py` passes; the sweep's three scripts and `verify.py` compile under Python 3.12.13; the sweep and the set-up pass `dash -n`. One timing check (a hanging and a dripping server against a 4 s deadline) failed once under load in the first full run and passed alone and in every full run since |
+| Bundle | round 15: flat `9c6f8371270f` (the upload), steps `8725378e9033`, 1,160 files and 247.3 MB each | each built twice with the same hash and `diff -r`-identical files; Oddish preflight on the flat bundle passes; `compute_task_content_hash` of the flat bundle `7f631001774d...` against version 10's (`7a92d0bd02fe`) `2c5d937b30d5...`; no hidden upload among 495 agent-image files. `bbae97b`'s `4079a1748e67` (content hash `2160b86bc5b9...`) differs in the sweep alone |
 | Reference through the verifier, local, no sandbox | round 13: everything from bundle `500c1a290b4e`, its solution installed from an isolated copy (only the interpreter path swapped for this Mac), its corpus and its media | 1.0 on every unit: 4,002 of 4,002 (2,262 of 2,262 scenarios), 9 planned restarts, no other restart, no second try, no answer of 500 or above, no note; 493.4 s of replay against the 5,400 s deadline. An empty server from the same bundle: 0.0, 0 of 4,002 |
 | Re-check 08's findings | round 13 against round 12 (`cd98856`) | M1: the build removes `/opt/py/requirements.txt` after the install, and no other file the agent image receives states the sealed server's stack. S1: a file with more than 1,000 hard links refuses the tree, stated in the instruction; more arriving than counted is a note (round 12: "The copy arrived incomplete: 2 of 2 entries and 20 of 10 bytes"). S2: a su session of `dev` capped at 16,384 (the Dockerfile's PAM edit run on two stand-in files with GNU sed; the image's own su file and the platform's enforcement not verified; the baselines' `timer_log` records the cap). S3: no "compare" in the instruction. The five checks fail on `cd98856` |
 | `checks/` (61 tests) with `ci_checks` (27) | round 13 | 88 pass under Python 3.13; `ci_checks/check_repository.py` passes; the hook's scripts and `verify.py` compile under Python 3.12.13; the sweep and the set-up pass `dash -n` |
@@ -1821,7 +1853,7 @@ python3 scripts/scan_uploads.py experiment/dist/bundles/<hash>/<task slug>   # h
 
 ## Remaining work
 
-- Upload the flat bundle `4079a1748e67` (247.3 MB, `package_step.py --flat --keep-name`) under
+- Upload the flat bundle `9c6f8371270f` (247.3 MB, `package_step.py --flat --keep-name`) under
   the task's own name as version 11 (version 10, bundle `7a92d0bd02fe`, passed its baselines and
   its source audit; its verdict rejected it on evaluation awareness and the instruction's
   framework list, rounds 12-15; round 15 replaces the never-uploaded `f1293aa9de6f`), after an
@@ -1863,6 +1895,11 @@ python3 scripts/scan_uploads.py experiment/dist/bundles/<hash>/<task slug>   # h
   which Oddish's quota pause uses) stops the agent's clock but not the wall clock, so on a backend
   that can pause a sandbox (not Modal, which the `--no-archil` runs use) the end would come before
   the platform's by the pause's length.
+- What the list of held files leaves (R1): a process that maps a file writable before the end,
+  writes it after the end and unmaps it, or makes the mapping read-only with `mprotect`, before the
+  collect hook leaves no trace, and on a file kept in memory the change time never moves; only a
+  copy taken at the end would close that. A process of the user made undumpable, which the list
+  cannot read, refuses the tree once the end has passed, honest or not (this task needs none).
 - What rounds 12 and 13 left of the agent-caused evaluation errors (hackability row 14): a refused
   tree with millions of top-level entries where `/app/server` cannot be renamed (create
   `/app/server` at set-up as a directory of the upper layer, so that it renames whole), the memfd

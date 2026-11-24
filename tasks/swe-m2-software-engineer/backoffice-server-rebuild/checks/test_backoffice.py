@@ -1830,18 +1830,20 @@ def sweep_tree(base: Path, server: Path) -> None:
 def sweep_under_the_shell(base: Path, build=sweep_tree, stand_ins: dict[str, str] | None = None) -> tuple[subprocess.CompletedProcess, Path, list[int]]:
     """The whole sweep under the image's shell on the tree `build` makes (by default one that holds what the copy
     refuses), with only its absolute paths pointed into `base` (the lines changed are returned: those of the shell
-    before the first script, and the two lines that start the scripts) and stand-ins first on PATH, which `stand_ins`
-    adds to or replaces: `pgrep -u dev` finds no process, so the lines that end the user's processes are never
-    reached; `setpriv` runs the command as this user and never a `kill`; `pkill` does nothing."""
+    before the first script, and the two lines that start the scripts), /proc pointed at `base`/proc (empty unless
+    `build` makes processes there) and stand-ins first on PATH, which `stand_ins` adds to or replaces: `pgrep -u dev`
+    finds no process, so the lines that end the user's processes are never reached; `setpriv` runs the command as this
+    user and never a `kill`; `pkill` does nothing; `id` gives the user's id as 4242."""
     source = (TASK / "environment" / "fsmaint-sweep").read_text()
     server = base / "app" / "server"
-    for folder in (base / "state" / "inodes", base / "tmp", base / "bin", server):
+    for folder in (base / "state" / "inodes", base / "tmp", base / "bin", base / "proc", server):
         folder.mkdir(parents=True)
     (base / "state" / "room").write_text("x" * 1024)
     (base / "state" / "inodes" / "1").write_text("")
     (base / "state" / "free-at-start").write_text("2500000 4096 1300000\n")
     build(base, server)
     tools = {"pgrep": f'#!/bin/sh\ncase " $* " in *" -u dev "*) exit 1 ;; esac\nexec {shlex.quote(shutil.which("pgrep"))} "$@"\n', "pkill": "#!/bin/sh\nexit 0\n",
+             "id": "#!/bin/sh\necho 4242\n",
              "setpriv": '#!/bin/sh\nwhile [ $# -gt 0 ]; do case "$1" in --reuid|--regid) shift 2 ;; --*) shift ;; *) break ;; esac; done\n'
                         '[ "$1" = kill ] && exit 0\nexec "$@"\n'}
     if not shutil.which("timeout"):
@@ -1852,9 +1854,10 @@ def sweep_under_the_shell(base: Path, build=sweep_tree, stand_ins: dict[str, str
         (base / "bin" / name).chmod(0o755)
     quoted = {name: shlex.quote(str(path)) for name, path in (("state", base / "state"),
                                                               ("server", server), ("app", base / "app"), ("tmp", base / "tmp"), ("python", sys.executable),
-                                                              ("artifacts", base / "agent-logs" / "artifacts"))}
+                                                              ("artifacts", base / "agent-logs" / "artifacts"), ("proc", base / "proc"))}
     shell, rest = source.split("<<'EOF'\n", 1)
-    for old, new, count in (("STATE=/var/lib/fsmaint\n", f"STATE={quoted['state']}\n", 1), ("/opt/py/bin/python -I - /app/server ", f"{quoted['python']} -I - /app/server ", 1)):
+    for old, new, count in (("STATE=/var/lib/fsmaint\n", f"STATE={quoted['state']}\n", 1), ("/opt/py/bin/python -I - /app/server ", f"{quoted['python']} -I - /app/server ", 1),
+                            ("/opt/py/bin/python -I - /proc ", f"{quoted['python']} -I - {quoted['proc']} ", 1)):
         assert shell.count(old) == count, (old, shell.count(old))
         shell = shell.replace(old, new)
     shell = shell.replace("/app/server", quoted["server"]).replace("/app/.aside.", f"{quoted['app']}/.aside.")
@@ -1913,7 +1916,8 @@ def test_the_sweep_runs_whole_under_the_image_shell_and_verify_main_reads_what_i
     assert changed[-1:] == second_script and all(number <= first_script for number in changed[:-1]), \
         f"only the shell's lines and the line that starts the second script are pointed into this check's folder: {changed}"
     state = tmp_path / "one" / "state"
-    assert sorted(path.name for path in state.iterdir()) == ["fence", "free-at-start", "log"], "the room and the spare inodes are given back"
+    assert sorted(path.name for path in state.iterdir()) == ["fence", "free-at-start", "held", "log"], "the room and the spare inodes are given back"
+    assert (state / "held").read_text() == "no-start\n", "no start recorded: nothing to list"
     assert os.listdir(tmp_path / "one" / "tmp") == [], "the trial pack is removed"
     aside = [path for path in (tmp_path / "one" / "app").iterdir() if path.name.startswith(".aside.")]
     assert len(aside) == 1 and "a line of the agent's own" in (aside[0] / ".fsmaint-manifest").read_text(), "the agent's own file is moved aside"
@@ -2426,9 +2430,9 @@ def test_a_capped_session_keeps_nothing_written_or_fetched_after_its_end(tmp_pat
 
     Here the recorded start puts the end just after the tree was built. A detached process then fetches a file over
     HTTP from a server on this machine and writes it into the tree and outside it, appends to a file of the tree and
-    adds a link, over and over, and is still doing so when the sweep starts; the sweep's own loop ends it (stand-ins
-    for pgrep and setpriv that see and end this one process), which must come before the fence, or its last writes
-    would count. A session that ended before its limit has no end yet and keeps what it wrote (a second run, its start
+    adds a link, over and over, and is still doing so when the sweep starts; the sweep stops it and its own loop ends
+    it (stand-ins for pgrep and setpriv that see, stop and end this one process), which must come before the fence, or
+    its last writes would count. A session that ended before its limit has no end yet and keeps what it wrote (a second run, its start
     recorded just now). The sweep's 34,560 s is the agent's time limit in task.toml."""
     limit = tomllib.loads((TASK / "task.toml").read_text())["agent"]["timeout_sec"]
     sweep = (TASK / "environment" / "fsmaint-sweep").read_text()
@@ -2455,7 +2459,8 @@ def test_a_capped_session_keeps_nothing_written_or_fetched_after_its_end(tmp_pat
                  'case $state in ""|Z*) exit 1 ;; esac\nexit 0\n')
         stand_ins = {"pgrep": f'#!/bin/sh\ncase " $* " in *" -u dev "*) {alive} ;; esac\nexec {shlex.quote(shutil.which("pgrep"))} "$@"\n',
                      "setpriv": '#!/bin/sh\nwhile [ $# -gt 0 ]; do case "$1" in --reuid|--regid) shift 2 ;; --*) shift ;; *) break ;; esac; done\n'
-                                f'if [ "$1" = kill ]; then kill -9 "$(cat {shlex.quote(str(pid_file))})" 2>/dev/null; : > {shlex.quote(str(base / "ended"))}; exit 0; fi\n'
+                                f'if [ "$1" = kill ]; then kill "$2" "$(cat {shlex.quote(str(pid_file))})" 2>/dev/null; '
+                                f'[ "$2" = -9 ] && : > {shlex.quote(str(base / "ended"))}; exit 0; fi\n'
                                 'exec "$@"\n'}
         try:
             done, server, _ = sweep_under_the_shell(base, build=build, stand_ins=stand_ins)
@@ -2533,6 +2538,88 @@ def test_an_honest_capped_tree_with_hard_links_loses_no_name(tmp_path):
     assert os.stat(server / "data.json").st_ino == os.stat(server / "a" / "b" / "c" / "data.json").st_ino
     assert (server / "a" / "python-again").read_text() == (server / "venv-python").read_text() == "x" * 1000
     assert not (server / "a" / "python-again").is_symlink() and not (server / "venv-python").is_symlink()
+
+
+def stand_in_process(proc: Path, pid: int, user: str, maps: list[tuple[str, Path | str]], fds: list[tuple[str, Path]]) -> None:
+    """A process as /proc shows it: its ids, its mappings (permissions and path) and its open files (fdinfo flags, in
+    octal, and path)."""
+    folder = proc / str(pid)
+    (folder / "fd").mkdir(parents=True)
+    (folder / "fdinfo").mkdir()
+    (folder / "status").write_text(f"Name:\tworker\nState:\tT (stopped)\nUid:\t{user}\t{user}\t{user}\t{user}\n")
+    (folder / "maps").write_text("".join(f"7f{index:010x}000-7f{index:010x}fff {perms} 00000000 08:01 {1000 + index}"
+                                         f"                     {target}\n" for index, (perms, target) in enumerate(maps)))
+    for number, (flags, target) in enumerate(fds, start=3):
+        (folder / "fd" / str(number)).symlink_to(target)
+        (folder / "fdinfo" / str(number)).write_text(f"pos:\t0\nflags:\t{flags}\nmnt_id:\t21\n")
+
+
+def test_a_file_a_process_could_still_write_after_the_end_is_left_out(tmp_path):
+    """BasedPL's re-check R1 (round 15): with no timer, a capped turn's processes run on, with the network back,
+    until the collect hook. A file one of them maps shared and writable, or holds open for writing, from before the
+    end can be written after it without its change time moving (a write through a mapping of a file kept in memory
+    never moves it), which the rule on late writes would miss. The hook now stops the user's processes, lists those
+    files as root from /proc before it ends them, and once the end has passed takes each as written after the end:
+    every name of it in /app/server is removed with a note, and a link to one outside is not copied in. A process of
+    another user, a private or a read-only mapping and a file open for reading count for nothing, and before the end
+    nothing is taken; once the end has passed, a tree whose list could not be made is refused. A stand-in /proc
+    describes the processes here (macOS has none)."""
+    def build(base: Path, server: Path, started_ago: float, proc_is_a_file: bool = False, undumpable: bool = False) -> None:
+        sweep_tree(base, server)
+        for name in ("mapped.bin", "written.log", "read.txt", "private.bin", "shared-read.bin", "theirs.bin"):
+            (server / name).write_text(f"{name}\n")
+        (server / "deep").mkdir()
+        os.link(server / "mapped.bin", server / "deep" / "mapped-again.bin")
+        (base / "outside" / "held.bin").write_text("an answer\n")
+        (server / "held-link").symlink_to(base / "outside" / "held.bin")
+        if proc_is_a_file:
+            (base / "proc").rmdir()
+            (base / "proc").write_text("")
+        else:
+            stand_in_process(base / "proc", 101, "4242", [("rw-s", server / "mapped.bin"), ("rw-p", server / "private.bin"),
+                                                          ("r--s", server / "shared-read.bin"), ("rw-s", base / "outside" / "held.bin"),
+                                                          ("r-xp", "/usr/lib/libc.so.6"), ("rw-p", "[heap]")],
+                             [("0100001", server / "written.log"), ("0100000", server / "read.txt")])
+            stand_in_process(base / "proc", 202, "5555", [("rw-s", server / "theirs.bin")], [("0100002", server / "theirs.bin")])
+            if undumpable:  # a process of the user that made itself undumpable: its maps cannot be read
+                stand_in_process(base / "proc", 303, "4242", [("rw-s", server / "read.txt")], [])
+                (base / "proc" / "303" / "maps").chmod(0)
+        time.sleep(0.3)
+        started = base / "state" / "work-started"
+        started.write_text("set-up\n")
+        moment = time.time() - started_ago
+        os.utime(started, (moment, moment))
+        time.sleep(0.2)
+
+    capped = tmp_path / "capped"
+    done, server, _ = sweep_under_the_shell(capped, build=lambda base, server: build(base, server, 34560 + 0.15))
+    assert done.returncode == 0 and done.stderr == "", (done.returncode, done.stderr)
+    lines = manifest_lines(server)
+    why = "a process of the user could still write it after the work's end (open for writing or mapped writable)"
+    assert sorted(line for line in lines if line.endswith(why)) == [f"removed {name}: {why}" for name in ("deep/mapped-again.bin", "mapped.bin", "written.log")], lines
+    assert lines[-2:] == ["sweep: 3 files were open for writing or mapped writable when the user's processes were stopped after the work's end",
+                          "sweep: 3 entries that changed after the work's end were removed"], lines
+    assert f"removed held-link -> {capped / 'outside' / 'held.bin'}: what it points to changed after the work's end" in done.stdout.splitlines(), done.stdout
+    kept = sorted(os.listdir(server))
+    assert {"read.txt", "private.bin", "shared-read.bin", "theirs.bin", "deep"} <= set(kept), kept
+    assert not {"mapped.bin", "written.log", "held-link"} & set(kept) and os.listdir(server / "deep") == [], kept
+    # app, app/main.py, empty, inside, run, run-again, venv-python, deep and the four files kept
+    assert lines[0] == "complete 12 1683", lines
+    whole = verify_main(capped, copied(server, capped / "arrived" / "server"))
+    assert whole["code"] == 0 and whole["metrics"]["sweep_log"] == lines[-2:], whole["metrics"]
+    # before the end nothing is taken, whatever is held
+    done, server, _ = sweep_under_the_shell(tmp_path / "early", build=lambda base, server: build(base, server, 0))
+    assert done.returncode == 0 and done.stderr == "", (done.returncode, done.stderr)
+    assert (tmp_path / "early" / "state" / "held").read_text() == "before-end\n"
+    assert {"mapped.bin", "written.log", "held-link"} <= set(os.listdir(server)) and not (server / "held-link").is_symlink()
+    assert not [line for line in manifest_lines(server) + done.stdout.splitlines() if "after the work's end" in line], manifest_lines(server)
+    # once the end has passed, no list, no tree: /proc unreadable, or a process of the user whose maps cannot be read
+    for name, kind in (("unlisted", {"proc_is_a_file": True}), ("undumpable", {"undumpable": True})):
+        done, server, _ = sweep_under_the_shell(tmp_path / name, build=lambda base, server: build(base, server, 34560 + 0.15, **kind))
+        assert done.returncode == 0 and done.stderr == "", (name, done.returncode, done.stderr)
+        assert manifest_lines(server)[:2] == ["refused", "the files that processes of the user could still write after the work's end could not "
+                                              "be listed: it was not copied"], (name, manifest_lines(server))
+        assert not (tmp_path / name / "state" / "held").exists(), name
 
 
 def test_a_late_file_cannot_keep_its_content_through_another_name(tmp_path):
