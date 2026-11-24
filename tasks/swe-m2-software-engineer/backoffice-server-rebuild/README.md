@@ -13,6 +13,48 @@ One step is implemented. See [Remaining work](#remaining-work).
 
 ## Development log
 
+### 2026-11-24 (round 14: the cap's record under bash, a neutral `task.toml` comment, `/logs/artifacts` set aside; version 11)
+
+- Re-check v11b of round 13 returned CONCERN, no must-fix, one should-fix: the set-up recorded the
+  cap with `su dev -s /bin/sh -c 'ulimit -Hu'`, and the image's `/bin/sh` is dash, whose `ulimit`
+  has no `-u` ("Illegal option -u", status 2), so nothing was written and the baselines could never
+  have shown the cap. It now runs `-s /bin/bash`, the shell harbor itself names for the agent's
+  commands. Measured here: under dash the old line exits 2 and writes nothing; the new one writes
+  the limit (6000 on this Mac). The check now runs the set-up's own line through a stand-in `su`
+  that uses the shell it names (dash for `/bin/sh`), with a timer armed, and follows the value into
+  `timer_log`, third after the timer's `armed` line and the sweep's line about its stop, as the
+  baseline criterion under Remaining work reads.
+- BasedPL's version 3 audit called the same comment in its `task.toml` "an author comment that
+  discloses the evaluation platform and its verifier" (must-fix). Both comments here now read
+  exactly: "# Sessions end at 33,900 s: a timer started at set-up closes the session user's
+  processes then" / "# (all are gone by about 33,930 s). This value is a backstop 60 s later." A
+  sweep of the other shipped files for author commentary on the platform, trials, the verifier's
+  image or grading found none: `verify.py` and `replay.py` name their own results, reward and
+  evaluation, which the verifier may. The `task.toml` checks now reject such words in any comment
+  (platform, trial, verifier, image, grading, results, the providers' names).
+- Carve's re-check found that the agent can fill `/logs/artifacts` without bound, and it holds here
+  too (harbor 0.20, read: on Modal `ensure_dirs` makes the directory with `chmod 777`, the
+  collection prepends it before `/app/server`, and `upload_artifacts` puts it into the verifier's
+  machine with nothing to catch a failure, an evaluation error; the collect hook runs before the
+  download). The sweep now moves what the directory holds aside by one rename (never following or
+  copying anything) into its root-only state and leaves an empty directory, 0777 as harbor made it;
+  where the rename cannot be made (a mount point, another file system) it removes what the
+  directory holds. A line in `timer_log` says which; an empty directory is left alone and adds no
+  line, so the baselines keep their three.
+- Checks: three, each failing on `f491d53`: the cap's check extended as above, the instruction and
+  configuration check (the comment's words), and
+  `test_what_the_user_left_in_the_artifacts_folder_is_set_aside_before_the_copy` (moved aside, and
+  removed where `mktemp` fails); the bundle check applies the comment's word list too.
+  `checks/` has 62 tests; with `ci_checks` (27), 89 pass under Python 3.13, and
+  `ci_checks/check_repository.py` passes; the sweep and the set-up pass `dash -n`.
+- Bundle `f1293aa9de6f` (1,161 files, 247.3 MB) built twice with the same hash and `diff -r`-identical
+  files; flat `522cd22b6e65`, likewise. Against round 13's `500c1a290b4e` it differs in
+  `environment/fsmaint-sweep`, `environment/start-sealed-server` and `task.toml`, and nothing else:
+  the verifier, the solution and the corpus are unchanged, so the reference and empty-server
+  regrades of round 13 stand. `scripts/scan_uploads.py` finds nothing among the 496 agent-image
+  files; Oddish preflight passes. It replaces `500c1a290b4e`, never uploaded, as the candidate for
+  version 11.
+
 ### 2026-11-20 (round 13: re-check 08 of version 11's candidate; the stack's pins out of the agent image, the agent's processes capped, hard links bounded; version 11)
 
 - Re-check 08 (harbor-lh `ops/swe-marathon-v2/qa/backoffice/08-recheck-v11.md`) of round 12
@@ -1314,8 +1356,9 @@ agent's session at 33,900 s (SIGTERM to every process of `dev`, then SIGKILL), b
 platform today a turn that runs into the cap is never graded (the separate verifier image fails to
 build right after the timeout; harbor-lh `ops/swe-marathon-v2/PLATFORM_VERIFIER_BUILD_AFTER_LONG_RUN.md`)
 while a turn that ends by itself is. Since round 12 the agent's own limit, `timeout_sec = 33960` in
-both places in `task.toml`, is a backstop 60 s after the firing, with a comment there for the
-platform's reviewers that says so and why; until round 11 it was 34,560 s, 660 s after the firing,
+both places in `task.toml`, is a backstop 60 s after the firing, with a comment there that says so
+(since round 14 only what happens, not why: the reason named the platform, its trials and the
+verifier's image, which BasedPL's version 3 audit flagged); until round 11 it was 34,560 s, 660 s after the firing,
 which the platform's verdict on BasedPL's version 2 rejected as a premature stop (the judges'
 option B, harbor-lh `ops/swe-marathon-v2/decisions/2026-11-20-precap-timer-vs-deadline-DECISION.md`:
 the firing point behind every graded timer-ended trial stays, only the stated limit moves). Since round 10 the wait cannot end without the firing (QA 07h F1). One child waits the whole
@@ -1677,9 +1720,9 @@ python3 scripts/scan_uploads.py experiment/dist/bundles/<hash>/<task slug>   # h
 
 ## Remaining work
 
-- Upload bundle `500c1a290b4e` (247.3 MB) as version 11 (version 10, bundle `7a92d0bd02fe`, passed
+- Upload bundle `f1293aa9de6f` (247.3 MB) as version 11 (version 10, bundle `7a92d0bd02fe`, passed
   its baselines and its source audit; its verdict rejected it on evaluation awareness and the
-  instruction's framework list, rounds 12 and 13), after an independent re-check of round 13, run its
+  instruction's framework list, rounds 12-14), after the re-checks of rounds 13 and 14, run its
   baselines with `--no-archil` (reference twice, no-op twice), and have its Oddish source audit
   pass before any model trial (the owner's gate since version 8). In the model trials, check that
   no agent phase runs past about 33,930 s and that the platform grades every one the timer ends

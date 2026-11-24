@@ -51,6 +51,16 @@ case $limit in ''|*[!0-9a-z]*) limit= ;; esac
 # mark, a refusal and the copy's archive can be written.
 rm -f "$STATE/room"
 rm -rf "$STATE/inodes"
+# What the user left in /logs/artifacts, which is taken along with /app/server and whose size nothing bounds, is moved
+# aside by one rename, never followed or copied, and an empty directory takes its place; where that directory cannot be
+# renamed (a mount point, another file system), what it holds is removed.
+if [ -d /logs/artifacts ] && [ ! -L /logs/artifacts ] && [ -n "$(ls -A /logs/artifacts 2>/dev/null)" ]; then
+  kept=$(mktemp -d "$STATE/artifacts.XXXXXX") \
+    && /opt/py/bin/python -I -c 'import os, sys; os.rename(sys.argv[1], sys.argv[2])' /logs/artifacts "$kept/artifacts" 2>/dev/null \
+    && mkdir -m 0777 /logs/artifacts && how="moved aside" \
+    || { find /logs/artifacts -mindepth 1 -maxdepth 1 -exec rm -rf -- {} + 2>/dev/null; how="removed"; }
+  echo "sweep: what the user left in /logs/artifacts was $how" >> "$STATE/timer.txt" 2>/dev/null
+fi
 # Anything at /app/server that is not a directory is moved aside, never followed, and an empty directory takes its
 # place with a manifest that refuses it.
 if [ ! -d /app/server ] || [ -L /app/server ]; then

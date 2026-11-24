@@ -289,9 +289,10 @@ def test_bundles_hold_runtime_files_only(tmp_path):
                          ".dockerignore"):
                 found = housekeeping.search((bundle / "environment" / name).read_text())
                 assert found is None, f"{name}: {found.group(0)!r}"
-            # the reviewers' note above each agent time limit is the one comment, and it is not shipped to the agent
+            # the note above each agent time limit is the one comment; it names nothing of the platform or of grading
             rest = without_timer_notes(config, 1 if flag else 2)
             assert not re.search(r"watchdog|precap|deliver|submission|grad|audit|\bcap\b|budget|deadline|attempt|#", rest), "task.toml"
+            assert not [line for line in config.splitlines() if line.lstrip().startswith("#") and PLATFORM_WORDS.search(line)], "task.toml"
     finally:
         if created:
             private.unlink()
@@ -396,12 +397,15 @@ def test_the_packager_ships_no_corpus_that_carries_how_it_was_recorded(tmp_path)
             raise AssertionError(f"a corpus with {name!r} beside its scenarios was packaged")
 
 
-# The one comment task.toml holds, above each agent time limit, for the platform's reviewers (the agent never reads it).
-TIMER_NOTE = ("# The session ends at 33,900 s, when a root timer started at set-up (fsmaint-timer) ends the\n"
-              "# session user's processes (all are gone by about 33,930 s). This limit is a backstop 60 s later.\n"
-              "# The reason: trials that reached the platform's own cap with this kind of separately built\n"
-              "# verifier image were not graded.\n"
+# The one comment task.toml holds, above each agent time limit (the agent never reads it). Its first form also gave the
+# reason, naming the platform, its trials and the verifier image, which BasedPL's version 3 audit called an author
+# comment that discloses the evaluation platform: it now says what happens and nothing of why.
+TIMER_NOTE = ("# Sessions end at 33,900 s: a timer started at set-up closes the session user's processes then\n"
+              "# (all are gone by about 33,930 s). This value is a backstop 60 s later.\n"
               "timeout_sec = 33960\n")
+# What no comment in task.toml may name: the platform, its trials or providers, the verifier's image, grading
+PLATFORM_WORDS = re.compile(r"platform|\btrials?\b|verif|\bimage\b|grad|\bresults?\b|harbor|oddish|\bmodal\b|archil|reviewer|\bcap\b|budget|deadline|"
+                            r"attempt|audit|watchdog|precap", re.I)
 
 
 def without_timer_notes(config: str, count: int) -> str:
@@ -430,7 +434,10 @@ def test_instruction_and_config_hold_no_session_or_grading_text():
     assert "The work is complete when your server answers every API request exactly as the sealed one does, apart from the exceptions above." in text
     assert "`python3` is Python 3.12 with the packages listed by `python3 -m pip list`. Node.js and Go are installed with their standard libraries." in text
     rest = without_timer_notes(config, 2)
-    assert "#" not in rest, "no comment besides the reviewers' note"
+    assert "#" not in rest, "no comment besides the note above each agent limit"
+    # the note itself says what happens and nothing of the platform, its trials, the verifier's image or grading
+    comments = [line for line in config.splitlines() if line.lstrip().startswith("#")]
+    assert len(comments) == 4 and not [line for line in comments if PLATFORM_WORDS.search(line)], comments
     for name in ("Dockerfile", "start-sealed-server"):
         lines = (TASK / "environment" / name).read_text().splitlines()
         assert not any(line.startswith("#") for line in lines[1 if name != "Dockerfile" else 0:]), name
@@ -2291,13 +2298,15 @@ def sweep_under_the_shell(base: Path, timer_folder: Path, build=sweep_tree, stan
         (base / "bin" / name).write_text(text)
         (base / "bin" / name).chmod(0o755)
     quoted = {name: shlex.quote(str(path)) for name, path in (("pid", timer_folder / "timer.pid"), ("log", timer_folder / "timer.log"), ("state", base / "state"),
-                                                              ("server", server), ("app", base / "app"), ("tmp", base / "tmp"), ("python", sys.executable))}
+                                                              ("server", server), ("app", base / "app"), ("tmp", base / "tmp"), ("python", sys.executable),
+                                                              ("artifacts", base / "agent-logs" / "artifacts"))}
     shell, rest = source.split("<<'EOF'\n", 1)
     for old, new, count in (("/run/fsmaint-timer.pid", quoted["pid"], 3), ("/var/log/fsmaint-timer.log", quoted["log"], 1),
                             ("STATE=/var/lib/fsmaint\n", f"STATE={quoted['state']}\n", 1), ("/opt/py/bin/python -I - /app/server ", f"{quoted['python']} -I - /app/server ", 1)):
         assert shell.count(old) == count, (old, shell.count(old))
         shell = shell.replace(old, new)
     shell = shell.replace("/app/server", quoted["server"]).replace("/app/.aside.", f"{quoted['app']}/.aside.")
+    shell = shell.replace("/logs/artifacts", quoted["artifacts"]).replace("/opt/py/bin/python -I -c", f"{quoted['python']} -I -c")
     start = 'exec /opt/py/bin/python -I - /app/server "$LIMIT_ENTRIES" "$LIMIT_BYTES" "$LIMIT_PATH" "$STATE" /tmp "$PACK_SECONDS" <<'
     assert rest.count(start) == 1, "the second script starts on one line"
     text = shell + "<<'EOF'\n" + rest.replace(start, f'exec {quoted["python"]} -I - {quoted["server"]} "$LIMIT_ENTRIES" "$LIMIT_BYTES" "$LIMIT_PATH" "$STATE" '
@@ -2810,19 +2819,84 @@ def test_the_users_processes_are_capped_in_the_session_harbor_starts(tmp_path):
             assert done.returncode == 0, done.stderr
             assert (tmp_path / name / "su").read_text() == expected, (name, (tmp_path / name / "su").read_text())
             assert (tmp_path / name / "limits.d" / "90-nproc.conf").read_text() == "dev soft nproc 16384\ndev hard nproc 16384\n"
+    # The set-up's own line, run as the image's /bin/sh (dash) runs it, with a stand-in su that runs its command under
+    # the shell it names as this user (the image's /bin/sh is dash, whose ulimit has no -u: v11b's re-check found the
+    # first form, `-s /bin/sh`, wrote nothing), then the whole sweep with a timer armed: the limit's line must reach
+    # timer_log third, after the timer's armed line and the sweep's line about its stop, as the README's criterion reads.
     setup = (TASK / "environment" / "start-sealed-server").read_text()
-    assert "timeout 10 su dev -s /bin/sh -c 'ulimit -Hu' > /var/lib/fsmaint/user-limit 2>/dev/null" in setup
+    line = next(text for text in setup.splitlines() if "/var/lib/fsmaint/user-limit" in text)
+    assert line.startswith("timeout 10 su dev -s /bin/bash -c 'ulimit -Hu' > /var/lib/fsmaint/user-limit"), line
+    tools = tmp_path / "setup-bin"
+    tools.mkdir()
+    (tools / "su").write_text(f'#!/bin/sh\nshift\n[ "$1" = -s ] && [ "$3" = -c ] || exit 1\nshell=$2\n[ "$shell" = /bin/sh ] && shell={shlex.quote(HOOK_SHELL)}\n'
+                              'exec "$shell" -c "$4"\n')
+    (tools / "su").chmod(0o755)
+    if not shutil.which("timeout"):
+        (tools / "timeout").write_text('#!/bin/sh\nshift\nexec "$@"\n')
+        (tools / "timeout").chmod(0o755)
 
     def build(base: Path, server: Path) -> None:
         sweep_tree(base, server)
-        (base / "state" / "user-limit").write_text("16384\n")
+        done = subprocess.run([HOOK_SHELL, "-c", line.replace("/var/lib/fsmaint/user-limit", shlex.quote(str(base / "state" / "user-limit")))],
+                              capture_output=True, text=True, timeout=30, env=dict(os.environ, PATH=f"{tools}:{os.environ['PATH']}"))
+        assert done.returncode == 0, done.stderr
 
-    done, server, _ = sweep_under_the_shell(tmp_path / "sweep", tmp_path / "no-timer", build=build)
-    assert done.returncode == 0 and done.stderr == "", (done.returncode, done.stderr)
-    assert manifest_lines(server)[-2:] == ["timer: sweep: no timer was on record", "timer: sweep: a su session of the user had a process limit of 16384"]
-    whole = verify_main(tmp_path / "sweep", copied(server, tmp_path / "sweep" / "arrived" / "server"))
-    assert whole["metrics"]["timer_log"][-1] == "sweep: a su session of the user had a process limit of 16384", whole["metrics"]
-    assert whole["metrics"]["ended_by_timer"] is False
+    script, marker, env = timer_under_test(tmp_path / "waiting", END_SECONDS=600)
+    pid, waiting = None, []
+    try:
+        subprocess.run([HOOK_SHELL, str(script)], env=env, capture_output=True, text=True, timeout=30)
+        pid = armed_pid(tmp_path / "waiting")
+        waiting = until(lambda: [child for child, args in children_of(pid) if args.endswith(" -I -")], 10)
+        done, server, _ = sweep_under_the_shell(tmp_path / "sweep", tmp_path / "waiting", build=build)
+        assert done.returncode == 0 and done.stderr == "", (done.returncode, done.stderr)
+        recorded = (tmp_path / "sweep" / "state" / "user-limit").read_text().strip()
+        assert re.fullmatch(r"\d+|unlimited", recorded), f"a su session's hard process limit, as bash prints it: {recorded!r}"
+        whole = verify_main(tmp_path / "sweep", copied(server, tmp_path / "sweep" / "arrived" / "server"))
+        log = whole["metrics"]["timer_log"]
+        assert len(log) == 3 and log[0].endswith(f" armed pid {pid}: ending the processes selected by '-f {marker}' in 600 s"), log
+        assert log[1:] == [f"sweep: the timer (pid {pid}) was running and was stopped", f"sweep: a su session of the user had a process limit of {recorded}"], log
+        assert whole["metrics"]["ended_by_timer"] is False
+    finally:
+        disarm(tmp_path / "waiting", pid, waiting)
+
+
+def test_what_the_user_left_in_the_artifacts_folder_is_set_aside_before_the_copy(tmp_path):
+    """Carve's re-check, which holds here too: harbor 0.20 makes /logs/artifacts in the agent's machine world-writable
+    (`mkdir -p ... && chmod 777`), collects it first, before /app/server, and uploads it into the verifier's machine with
+    nothing that catches a failure, so an agent that filled it could make the trial an evaluation error. The sweep moves
+    what it holds aside by one rename (never following or copying anything) and leaves an empty directory, 0777 as
+    harbor made it; where the rename cannot be made (a mount point, another file system) it removes what the directory
+    holds. A line in timer_log says which."""
+    def build(base: Path, server: Path) -> None:
+        sweep_tree(base, server)
+        artifacts = base / "agent-logs" / "artifacts"  # base / "logs" is the verifier's own folder in verify_main
+        (artifacts / "deep" / "er").mkdir(parents=True)
+        (artifacts / "big.bin").write_bytes(b"x" * 100_000)
+        (artifacts / "deep" / "er" / "f").write_text("y")
+        os.mkfifo(artifacts / "pipe")
+        (artifacts / "away").symlink_to("/etc/hosts")
+
+    for name, stand_ins, how in (("moved", None, "moved aside"), ("removed", {"mktemp": "#!/bin/sh\nexit 1\n"}, "removed")):
+        base = tmp_path / name
+        done, server, _ = sweep_under_the_shell(base, base / "no-timer", build=build, stand_ins=stand_ins)
+        assert done.returncode == 0 and done.stderr == "", (name, done.returncode, done.stderr)
+        artifacts = base / "agent-logs" / "artifacts"
+        assert artifacts.is_dir() and not artifacts.is_symlink() and os.listdir(artifacts) == [], (name, sorted(os.listdir(artifacts)))
+        kept = [path for path in (base / "state").iterdir() if path.name.startswith("artifacts.")]
+        if how == "moved aside":
+            assert artifacts.stat().st_mode & 0o777 == 0o777 and len(kept) == 1, (oct(artifacts.stat().st_mode), kept)
+            assert sorted(os.listdir(kept[0] / "artifacts")) == ["away", "big.bin", "deep", "pipe"], "moved whole, nothing followed"
+        else:
+            assert kept == []
+        lines = manifest_lines(server)
+        assert lines[0] == "complete 7 1635", (name, lines)
+        assert lines[-1].startswith("timer: sweep: what the user left in ") and lines[-1].endswith(f"/agent-logs/artifacts was {how}"), (name, lines)
+        whole = verify_main(base, copied(server, base / "arrived" / "server"))
+        assert whole["code"] == 0 and whole["metrics"]["timer_log"][-1].endswith(f"/agent-logs/artifacts was {how}"), (name, whole["metrics"])
+    # nothing is done, and nothing said, where the folder is empty: the baselines' timer_log keeps its three lines
+    done, server, _ = sweep_under_the_shell(tmp_path / "empty", tmp_path / "empty" / "no-timer",
+                                            build=lambda base, server: (sweep_tree(base, server), (base / "agent-logs" / "artifacts").mkdir(parents=True)))
+    assert done.returncode == 0 and not any("artifacts" in line for line in manifest_lines(server)), manifest_lines(server)
 
 
 def test_a_read_cut_at_its_end_is_a_timeout_and_a_disk_the_server_cannot_write_is_not_watched(tmp_path):
