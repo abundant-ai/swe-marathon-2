@@ -359,7 +359,9 @@ It does not yet meet the v2 workload target; see [Workload](#workload) and
   Dockerfiles lost their build-context notes, and the sealed test list holds the
   list only. Not built: comparing example output in the root process (the
   sandbox reads the expected output in the docstring, so a patched runner could
-  report it; the reward stays bounded by c, which it cannot forge), a neutral
+  report it; the reward stays bounded by c, which it cannot forge (fourth
+  re-check: a body can forge what its own unit's calls report, see 2026-11-24),
+  a neutral
   name for the net check (its name tells the agent nothing it could use), and a
   bound taken from the end of the harness process (the platform keeping the
   agent's network policy through collection is the fix for the remaining race).
@@ -699,7 +701,10 @@ It does not yet meet the v2 workload target; see [Workload](#workload) and
   could still reach the key on the runner's stack; what that buys is what
   finding 1 of the hackability table already bounds: forged examples, with the
   reward never above the call share, which is compared outside with results the
-  sandbox never sees.
+  sandbox never sees. (Fourth re-check: no string evaluation was needed, since a
+  body could rebind `json.dumps` or walk to the runner's frame from an
+  exception, and a forged call could hide the state it left in its arguments;
+  the runners now hold no key at all, see 2026-11-24.)
 - Time the submission's bodies used. Bodies that never end or are very slow
   used up the 40-minute example and call phases (each time-out cost its whole
   limit and a fresh runner, and was not counted as a restart), and the items
@@ -718,8 +723,10 @@ It does not yet meet the v2 workload target; see [Workload](#workload) and
   phase's worker-seconds, the items left fail; only a machine so slow that the
   original itself would need more keeps them not reached, an evaluation error.
   On the platform's four workers that leaves room for a machine sixteen times
-  slower. A unit whose calls ran out of time, or stopped the runner, twice is not
-  run again, and the phases now count their starts, time-outs and stops.
+  slower (fifteen for the calls). A unit whose calls ran out of time, or stopped
+  the runner, twice is not run again, and the phases now count their starts,
+  time-outs and stops. (Fourth re-check: units merely queued behind the
+  time-outs failed too; replaced on 2026-11-24 by a bound for every item.)
 - Caches and thin forms. `AlgebraicField._converter`, a converter the field
   builds for itself, is a memo slot, so a body that converts one more time no
   longer changes its argument (`dup_monic` matched 1 of 3 that way); the sieve's
@@ -803,7 +810,9 @@ It does not yet meet the v2 workload target; see [Workload](#workload) and
   before the original's own work is done; on the platform's budget the same
   time-outs take about 3,800 s of examples and 3,100 s of calls of 9,600 each, so
   the phases would finish and only the looping units and the units that call
-  them would fail. The slow tree is slow everywhere: a call into one unit runs
+  them would fail. (Fourth re-check: wrong; 955 units' examples and 4,622 calls
+  start a looping body, so the phases did not finish and 666 units in the set
+  that touch none failed for want of time; see 2026-11-24.) The slow tree is slow everywhere: a call into one unit runs
   many others, each waiting 0.05 s when it is one of the 1,336, so its calls
   and examples run past their limits or crawl, and it scores like a tree whose
   bodies mostly fail.
@@ -825,7 +834,113 @@ It does not yet meet the v2 workload target; see [Workload](#workload) and
 - Regrade of the 16 stored submissions on the final verifier (examples and
   calls, one worker): every reward within 0.0023 of the round before's (10 down,
   6 up; v2 trial 16 0.856, the weakest 0.003), the order unchanged, no unit or
-  call unreached or failed for lack of time, no late file, no control tripped.
+  call unreached or failed for lack of time, no late file, no control tripped
+  (the stored submissions are the verifier's own copies of the unit files, with
+  no times from their runs, so a regrade cannot show what the end of a run cost).
+
+### 2026-11-24, fourth re-check
+
+- Late saves at the limit (integrity N1, auditor R2). The limit was counted from
+  the setup hook, which runs before Harbor starts the agent's clock, and Harbor
+  does not end the agent at its limit: claude-code works on until it is stopped
+  and saves by writing a new file and renaming it, so one save in that second or
+  two returned the whole unit file, with every body written in it hours before,
+  to the skeleton (up to 154 units for `polys/polytools.py`, and everything that
+  calls them). The limit now counts from the start of the first process of `dev`
+  that began after the work did and whose parent is not one of `dev`'s, read
+  from `/proc`, as the sibling task counts its own; that process starts after
+  Harbor's clock. The net check copies every unit file that changed, each second
+  from 300 s before the limit until it, into a folder only root can read (a file
+  only when it has not changed since that look began and stays the same file with
+  the same times while it is read), keeping the last two copies of each with the
+  time at which the file held that content; room for them is set aside at setup.
+  The collect step puts the last copy that held a file's content by the end in
+  place of a unit file changed after it, and records the copy, what it replaced
+  and the units whose bodies differ between the two; the verifier takes the file
+  as that copy. A capped turn now loses at most the edits of its last second,
+  never a file. Where no copy exists (the net check did not run), a late file is
+  not taken, as before. No freeze and no kill: nothing stops the agent before its
+  limit.
+- A blip mid-turn (auditor R1, integrity N2). Three polls that failed for want
+  of ports, buffers or memory ended the stretch, and when that came after the
+  middle of a turn the collect step took the blip as the end of the work and
+  withheld every unit file saved after it. Local polls now end nothing, however
+  many come in a row (they are counted); an opening seen while an exec session
+  is alive, within the time the work is given, is no end of the work (the hosts
+  answer again only once it has ended) and ends no process; `dev` is ended at an
+  opening only once a fresh look finds no session alive, or the time has run out,
+  and never while the sessions cannot be seen. The re-check's probe is a check:
+  three local polls two thirds into a turn, the session's end ends the work, and
+  what was saved after the blip is graded.
+- Items queued behind time-outs (reward M1). When a phase ran out of time every
+  unit still queued failed, so the 5% tree scored 0.24 at the platform's budgets
+  against 0.61 with every item run. Every item now has its own time: a unit's
+  examples ten times the original's own time for them on this machine, at least
+  2 s; a call ten times the original's time for its unit's calls, at least 1.5 s;
+  a module's import five times its own, at least 10 s. An item past its time
+  fails, the rest of its unit is not run, and the module goes on in a new runner
+  (an interrupted body can leave global state behind). The phases stay only as a
+  guard (examples 2,700 s, calls 2,400 s), sized so that a tree whose every body
+  runs out of its time still finishes both on the platform's four workers
+  (about 2,250 s and 1,930 s at this machine's speed); the rule for a guard that
+  runs out stays. The reviewer's two passes (a short time first, the old limits
+  for what ran out) were not built: with ten times the original's own time and
+  floors above what almost every original item takes (99% of units' examples
+  take under 0.16 s here, 99% of units' calls together under 0.64 s), an honest
+  body is not near its time, and a second pass would spend the phase on bodies
+  that never end. With the new runners the reference passes 2,671 of 2,671
+  units' examples and 16,737 of 16,737 calls, none out of time.
+- Disk fill (reward M2). `sympy.preview(outputTexFile=...)` wrote files the
+  sandbox user kept, and the runners' next write raised. The sandbox now runs
+  with a 256 MiB limit on the size of a file and 1,024 processes; each start of
+  a runner gets a private folder for its temporary files, removed after it, and
+  what the sandbox user left in the folders it can write to is removed between
+  phases; the runners no longer write files at all (they answer over pipes);
+  every file the verifier writes is guarded (cleared and tried once more, else
+  noted); 64 MiB set aside on the result's file system is given back just before
+  the result is written. `preview` and SymPy's other file writers and module
+  loaders (`autowrap`, `codegen`, `plotting`, `importtools`) are denied in a body.
+- Forged records (verifier N1, N3). A body could rebind `json.dumps`, which the
+  runners called to write their signed lines, and so have them sign a list as a
+  call's id or an example record that said it was not reached, and scoring
+  raised; a walk to the runner's frame reached its signer. The runners now hold
+  no key: the verifier is their parent and reads each one's lines over a pipe,
+  in pieces, at most 4 MiB a line (1 MiB for examples) and 256 MiB a start (64
+  MiB), only in their order (the import, then each item's start and its result),
+  rebuilds every record from the runner's own fields (a status of its own set,
+  counts as integers, text cut to length) and never raises on one; whether a
+  unit was reached is the verifier's own count, never a record's. The re-check
+  suggested a separate parent that signs; with the verifier itself as the parent
+  there is nothing left to sign and no key to guard. A body can still lie about
+  the item it runs in (hackability finding 1, now worded as it holds); a line for
+  any other item breaks the order and fails its own.
+- Unbounded reads (verifier N2). The runners' output is read in bounded pieces
+  (above); the test phase's watcher looks at a run's new records a megabyte at a
+  time and ends a run whose records pass 256 MiB; the tests' records and logs are
+  read within limits; the file-size limit stops a sparse output in the sandbox.
+- A collect step that cannot start a process (integrity N2, its error part). A
+  tree that arrived without the collect step's mark was an evaluation error, and
+  a work that forks without end leaves the collect step unable to start any
+  process. It now first says that it has begun, with the shell's own commands
+  only, in a file the setup step made whole for it and that is copied beside the
+  tree (`/var/lib/fsmaint/out`, a new artifact); with no signed mark and that word
+  the delivery is an empty one, scored 0 with a note; with neither, the copy
+  failed, still an evaluation error. And the net check gives every process of
+  `dev` a limit of 8,192 processes of its user, so that such a process leaves
+  room for the steps after the work.
+- Should-fixes, all taken: the limit is the end whenever the collect step began
+  after it, live session or not (integrity N3); the README's claims the
+  re-checks named are corrected in place (integrity N4, verifier N3; hackability
+  rows 1, 5 and 9); the body rules deny the route class (`posixpath`, `ntpath`,
+  `genericpath`, `codecs`, `fileinput`, `logging`, `json`, `hashlib`, `hmac` and
+  others; the attributes `os`, `_os`, `sys`, `modules`, `__traceback__`, `open`,
+  `write` and others; literal names given to `getattr`, `attrgetter`,
+  `methodcaller` and `import_module`), and every original body still passes
+  (verifier N4); the sieve's range units compare the sieve they leave as a cache,
+  alike where both hold values, so a sieve grown wrong no longer passes
+  (verifier N5); a Float is said to compare within 2 to 4 units in its last place,
+  and compares exactly below 4 bits (verifier N6); the hooks no longer say
+  "collect step" (auditor R3).
   The submissions' own bodies ran past their limits up to 15 times in the
   examples and 24 in the calls, and up to 7 units per submission stopped being
   run after two; every phase finished. Table under
@@ -1028,69 +1143,95 @@ The verifier runs in a separate image with only `/app/sympy` from the candidate.
 
 0. Delivery (`verifier/delivery.py`). The work runs as `dev`. A root setup step
    records when the work started, to the fraction of a second, and starts
-   `fsmaint-netcheck`, which does two things until the collect step stops it.
-   It polls three public hosts with a TLS handshake (as `nobody`, in a probe
-   process of its own) every 0.1 s: a poll is open when a handshake completes,
-   local when none does and an attempt failed for a reason of the machine
-   rather than of the network (no free local port or address, no file, buffer
-   or memory, a thread or probe that would not start), and closed otherwise.
-   Closed polls in a row make a stretch; a local poll neither extends nor
-   breaks one; a stretch of at least three ends at an open poll, or at three
-   local polls in a row (the network can no longer be seen), and then its last
-   closed poll is recorded and every process of `dev` is stopped and ended. And
-   it looks at `/proc` every 0.1 s for the exec sessions of `dev`: a process of
-   `dev` whose parent is a process named `su` or `runuser` of the real user
-   root (not the first process), or that has no parent in the container. Harbor
-   runs every command of the agent as `su dev -s /bin/bash -c ...` on Modal and
-   as `docker exec -u dev` under Docker; a process the agent starts, in the
-   background or detached, has a parent of `dev`, then the first process, never
-   such a parent, so it is never a session. When the work ends, the collect step
-   (`environment/fsmaint-sweep`, root) stops, lists and ends every process of
-   `dev`, gives back the room the setup step set aside, and puts the tree aside
-   with an empty tree in its place holding a signed mark that refuses it ("the
-   collect step did not finish"), so that a timeout, a crash or a full disk from
-   then on leaves a tree copied as refused (0), never one without a mark. It then
-   probes the hosts itself, lets the net check finish one poll and one look that
-   started after that and stops it, records every entry of the tree (type, size,
-   modification and change times, sha256) before touching anything, removes
-   every link (one step each: no link is resolved), anything that is neither a
-   file nor a directory and any file whose name a copy might not carry as it is,
-   checks that there is room for the platform to pack the tree in `/tmp`
-   (removing first what `dev` left in `/tmp`, `/var/tmp` and `/dev/shm` when it
-   is short), writes a record and a mark into the tree, and only then gives it
-   back its name (the two names exchanged in one step where Linux allows it). The
-   mark holds at most 60 notes of at most 240 characters; the record keeps them
-   all. The end of the work is the earlier of two. One is the last
-   closed poll of the longest stretch an opening ended; a stretch still going
-   on, or one whose last closed poll came after the collect step began, gives
-   the collect step's start only when the collect step's own probe found the
-   hosts closed, and nothing otherwise. The other is the last time the exec
-   session that ended last was seen alive, when that session began within ten
-   minutes of the start of the work (one session for the whole of the work, as
-   claude-code, mini-swe-agent and the oracle run) and no session was alive
-   when the collect step began; a harness that runs one exec per command gives
-   no such end, and the first one stands. The third is the time limit: the start
-   of the work plus 34,560 s, the agent's limit in `task.toml` (a check holds the
-   two equal; a timeout override on the platform must change both). No end is
-   later than it, and when an exec session was still alive as the collect step
-   began after the limit, with no other end known, the work ran until it, so it
-   is the end; no kill enforces it (a killed claude-code exits 137, and Harbor
-   classifies that exit by its transcript, whose failed fetches read as network
-   errors that void the score). Without any, the start of the work
-   is the end when nothing in the tree changed since then (the no-op); when the
-   work itself hid the end from the probe (it could not see the network at all,
-   or saw no answer while the hosts answered the collect step at the net check's
-   own addresses within the time its polls allow) the tree is refused, a scored
-   0; otherwise there is no end. The collect step gives back the room the setup
-   step set aside right after it has stopped every process of `dev`, then puts
-   the tree aside, then lists the processes, so a disk the work filled cannot
-   void any of it; a listing that cannot be written leaves the session end to
-   the net check's own record of the sessions. It kills live processes only, for
-   at most 30 s, and refuses a tree over 256 MB (the starting tree is 23 MB),
-   which the platform's copy might not carry through its two transfers. Three
-   local polls in a row while an exec session is alive record the end of the
-   stretch but end nothing until the network is seen again or no session is
-   alive, since ending `dev` there would end the agent's harness and its trial.
+   `fsmaint-netcheck`, which keeps watch until the collect step stops it. It
+   polls three public hosts with a TLS handshake (as `nobody`, in a probe
+   process of its own that gets the addresses on its standard input) every
+   0.1 s: a poll is open when a handshake completes, local when none does and
+   an attempt failed for a reason of the machine rather than of the network (no
+   free local port or address, no file, buffer or memory, a thread or probe that
+   would not start), and closed otherwise. Closed polls in a row make a stretch;
+   local polls neither extend nor end one, however many come in a row (they are
+   counted, and the longest run of them kept). A stretch of at least three ends
+   at an open poll: its last closed poll is recorded, with whether an exec
+   session was seen alive then and whether the time the work is given had run
+   out; every process of `dev` is then stopped and ended once a fresh look finds
+   no session alive, or once that time has run out, and not before, so nothing
+   ends the agent while its session runs within its limit. It looks at `/proc`
+   every 0.1 s for the exec sessions of `dev`: a process of `dev` whose parent is
+   a process named `su` or `runuser` of the real user root (not the first
+   process), or that has no parent in the container. Harbor runs every command
+   of the agent as `su dev -s /bin/bash -c ...` on Modal and as `docker exec -u
+   dev` under Docker; a process the agent starts, in the background or detached,
+   has a parent of `dev`, then the first process, never such a parent, so it is
+   never a session. The same look finds the first process of `dev` that began
+   after the work did and whose parent is not one of `dev`'s (its start read
+   from `/proc` in clock ticks since boot): the time the work is given, 34,560 s
+   (the agent's limit in `task.toml`; a check holds the two equal), counts from
+   its start, which comes after Harbor has started the agent's own clock, so no
+   save made before Harbor's limit is counted late. It gives every process of
+   `dev` a limit of 8,192 processes of that user, so that a process that forks
+   without end leaves room for the steps after the work. And from 300 s before
+   that time runs out until it does, every second, it copies each unit file that
+   changed since its last copy into a folder only root can read (room for this
+   was set aside at setup and is given back before the first copy), when the
+   file has not changed since that look began and stays the same file with the
+   same times while it is read; it keeps the last two copies of each, with the
+   time at which the file held that content, and makes its last look once the
+   time has run out, of what had not changed by then. When the work ends, the
+   collect step (`environment/fsmaint-sweep`, root) first says that it has
+   begun, with the shell's own commands only, in a file the setup step made
+   whole for it (`/var/lib/fsmaint/out/progress`, copied beside the tree), so
+   that this is said even when no process can be started. Then it stops every
+   process of `dev`, gives back the room the setup step set aside, and puts the
+   tree aside with an empty tree in its place holding a signed mark that refuses
+   it ("the step that measures the tree did not finish"), so that a timeout, a
+   crash or a full disk from then on leaves a tree copied as refused (0), never
+   one without a mark; then it lists the stopped processes and ends them (live
+   ones only, for at most 30 s). It probes the hosts itself, lets the net check
+   finish one poll and one look that started after that and stops it, records
+   every entry of the tree (type, size, modification and change times, sha256)
+   before touching anything, removes every link (one step each: no link is
+   resolved), anything that is neither a file nor a directory and any file whose
+   name a copy might not carry as it is, checks that there is room for the
+   platform to pack the tree in `/tmp` (removing first what `dev` left in `/tmp`,
+   `/var/tmp` and `/dev/shm` when it is short), puts the copies in place of the
+   unit files changed after the end (below), writes a record and a mark into the
+   tree, gives it back its name (the two names exchanged in one step where Linux
+   allows it), and says that it has finished. The mark holds at most 60 notes of
+   at most 240 characters; the record keeps them all. The end of the work is the
+   earliest of three. One is the last closed poll of the longest stretch an
+   opening ended, except an opening seen while an exec session was alive before
+   the time the work is given ran out: the hosts answer again only once the work
+   has ended, so such an opening says nothing of its end. A stretch still going
+   on, or one whose last closed poll came after the collect step began, gives the
+   collect step's start only when the collect step's own probe found the hosts
+   closed, and nothing otherwise. The second is the last time the exec session
+   that ended last was seen alive, when that session began within ten minutes of
+   the start of the work (one session for the whole of the work, as claude-code,
+   mini-swe-agent and the oracle run) and no session was alive when the collect
+   step began; a harness that runs one exec per command gives no such end. The
+   third is the time limit: the first process's start (else the start of the
+   work) plus 34,560 s. No end is later than it, and when the collect step began
+   after it with no other end known, it is the end, whatever the sessions show
+   (nothing fetched can come before it); no kill enforces it (a killed
+   claude-code exits 137, and Harbor classifies that exit by its transcript,
+   whose failed fetches read as network errors that void the score). Without
+   any, the start of the work is the end when nothing in the tree changed since
+   then (the no-op); when the work itself hid the end from the probe (it could
+   not see the network at all, or saw no answer while the hosts answered the
+   collect step at the net check's own addresses within the time its polls
+   allow) the tree is refused, a scored 0; otherwise there is no end. A unit
+   file whose change or modification time is at or after the end, less 0.25 s,
+   is replaced by the last copy the net check took of it that held its content
+   by the end, and its entry in the record says so (the copy's size, digest and
+   times, when the file held that content, what was replaced, and the units
+   whose bodies differ between the two). Only a turn run to its limit needs
+   this: Harbor does not end the agent at its limit, claude-code goes on until
+   it is stopped and saves by writing a new file and renaming it, so without the
+   copy one save in that second or two returned the whole file, with every body
+   written in it before, to the skeleton. The collect step refuses a tree over
+   256 MB (the starting tree is 23 MB), which the platform's copy might not carry
+   through its two transfers.
    The mark is signed with a key in the agent image
    that only root can read and that the verifier image holds too. Before
    grading, the verifier checks that its own network is closed (a TLS handshake
@@ -1100,7 +1241,11 @@ The verifier runs in a separate image with only `/app/sympy` from the candidate.
    link or an unlisted file that arrived, or a record that says a live process
    of `dev` outlived the collect step is an evaluation error (no reward file),
    since the collect step always leaves a marked tree and these come from the
-   infrastructure. A tree the collect step refused is a completed evaluation of
+   infrastructure; except when no mark the key signs arrived and the collect
+   step's progress file says it began and did not finish: the work kept it from
+   running (a process that forks without end leaves it unable to start any), so
+   what arrived is an empty delivery, scored 0 with a note. A tree the collect
+   step refused is a completed evaluation of
    an empty delivery (0): nothing usable under its name (nothing at all, a link,
    a file), a tree it could not list, one past its limits (200,000 entries,
    256 MB, 64 directories deep, a path over 1,000 bytes, a record over 48 MB, a
@@ -1109,43 +1254,64 @@ The verifier runs in a separate image with only `/app/sympy` from the candidate.
    taken as signed even when the record beside it is newer: nothing of a refused
    tree is graded). A record without an end of the
    work grades a tree that restores no unit (0) and is an evaluation error for
-   any other. A unit file whose change or modification time is at or after the
-   end, less 0.25 s, is not taken over: its units are `late` and count as not
-   restored. The transplant never reads a unit file through a link.
-   `late_files`, `egress_open`, `end_from`, `end_note` and the collect step's
-   record go to `metrics.json`.
+   any other. A unit file the collect step replaced by its last copy is taken as
+   that copy (`copied_files`, and the units whose bodies changed after it in
+   `units_changed_after_the_end`); any other file whose change or modification
+   time is at or after the end, less 0.25 s, is not taken over: its units are
+   `late` and count as not restored. The transplant never reads a unit file
+   through a link. `late_files`, `egress_open`, `end_from`, `end_note` and the
+   collect step's record go to `metrics.json`.
 1. Graded tree. Start from the reference skeleton. For each unit, copy in the body
    found in the submitted file for the function of the same qualified name.
    Nothing else from the submission is used. A body containing constructs for
    reaching the process, the file system, the interpreter or a test framework is
-   rejected (`common/restorelib.py`).
+   rejected (`common/restorelib.py`); the rules are lists of names, which the
+   agent can read in full (`restore rules`), and a body that reaches the same
+   things by another way is not thereby allowed (see the hackability table).
    The whole measurement has one deadline, 6,000 s from its start
    (`measure_budget_sec`), inside the verifier's 6,600 s. The docstring and call
-   phases also have their own caps (40 minutes each, so a slow host has room
-   for the two rewarded phases); the test phase has what they leave. Every
-   deadline is on the monotonic clock. Submitted code runs with a 4 GiB
-   address-space limit where `prlimit` can set one (a note says when it cannot).
+   phases also have their own caps (45 and 40 minutes), now only a guard: each
+   item has a bound of its own (below), and the caps are sized so that a tree
+   whose every body runs out of its bound still finishes both phases on the
+   platform's four workers (about 37 and 32 minutes at this machine's speed);
+   the test phase has what they leave. Every deadline is on the monotonic clock.
+   Submitted code runs with a 4 GiB address-space limit, a 256 MiB limit on the
+   size of a file and 1,024 processes, where `prlimit` can set them (a note says
+   when it cannot); each start of a runner gets a private folder for its
+   temporary files, removed after it, and what the sandbox user left in the
+   folders it can write to is removed between phases. Every file the verifier
+   writes is guarded: when a write fails (a disk the sandbox filled), what the
+   sandbox left is removed and the write tried once more, else it is noted and
+   the measurement goes on; 64 MiB set aside on the result's file system before
+   anything runs is given back just before the result is written.
 2. Docstring examples. Each restored unit's own examples, run the way SymPy's
-   doctest runner runs them, 20 seconds per unit, at most 40 minutes in total.
-   Python's and both of SymPy's random generators are seeded from the unit's name
-   before its examples run, so a unit's draw is the same in every grading (and in
-   `restore check`). One process runs the units of one module, watched: 2 minutes
-   to import, then at most 50 seconds without a record. Each start of a runner
-   is given its own key on its standard input, and a line counts only when it
-   carries the HMAC of its text with that key; the runners keep the key, their
-   output and their work inside a function, never on `__main__`, so a body that
-   reaches the process (an import of `__main__` or `posix`, or a write to every
-   open file) writes nothing the verifier reads. A unit's result counts
-   only when its process reached its own closing self-check. When a process ends,
-   or stops, without it, the unit it was running fails (`crash`, or `timeout` when
-   it stopped) and the rest of the module runs again in a new process, at most
-   eight times per module; after a unit that ran out of time the runner checks
-   itself and exits, and the units behind it run in a new process, since an
-   interrupted body can leave global state behind. Units left when the time is
-   up count as not reached.
+   doctest runner runs them. Python's and both of SymPy's random generators are
+   seeded from the unit's name before its examples run, so a unit's draw is the
+   same in every grading (and in `restore check`). One process runs the units of
+   one module: it gets them on its standard input and answers on a descriptor of
+   its own, one JSON line at a time (its standard streams go nowhere), and holds
+   no key. The verifier reads those lines in pieces, at most 1 MiB a line and
+   64 MiB in all, and takes them only in their order (the module imported, then
+   each unit's start and its record), rebuilding each record from the runner's
+   own fields; anything else ends the process. A unit's examples get ten times
+   the original's own time for them on this machine (measured before any
+   submitted code runs), never less than 2 s; a module's import five times its
+   own, never less than 10 s. A unit that takes longer, or during which the
+   process ends or writes anything else, fails (`timeout`, `crash` or `error`),
+   and the module's other units run in a new process, since an interrupted body
+   can leave global state behind. After each unit the runner checks that it
+   still fails a wrong example and passes a right one; a failed check fails the
+   whole module and trips a control. Units left when the phase's time is up are
+   not reached (see Reward formula for how they count).
 3. Recorded calls. 16,737 calls, at least one per unit, replayed one at a time
-   in the sandbox with a 10-second limit, at most 40 minutes in total. The sandbox
-   writes the result; the verifier compares it with the reference result, which
+   in the sandbox, the same way: one process per module gets its calls on its
+   standard input and answers one line per call, at most 4 MiB a line and
+   256 MiB in all, taken only in order. Each call gets ten times the original's
+   own time for its unit's calls on this machine, never less than 1.5 s; a call
+   past it does not match (its result is a Timeout), nor one during which the
+   process ends or writes out of order, and the rest of that call's unit is not
+   run (it does not match either); the module's other calls go on in a new
+   process. The verifier compares each result with the reference result, which
    the sandbox cannot read. 13,382 calls were recorded from SymPy's own test suite
    and, for units it never calls directly, from docstring examples; 3,355 more
    were added for 990 of the 1,697 units whose recorded calls are all
@@ -1197,7 +1363,8 @@ The verifier runs in a separate image with only `/app/sympy` from the candidate.
    LaTeX of `multiline_latex` and `vlatex`, compared without the whitespace LaTeX
    ignores (a blank line, which is a paragraph break, is kept); a SymPy Float of
    the same precision (compared exactly), or an mpmath number at its precision,
-   within a few units in its last place (a relative 2^(2 - precision)), and a
+   within a relative 2^(2 - precision) of the larger value, 2 to 4 units in its
+   last place by where it lies in its binade, and exactly below 4 bits; and a
    Python float within a relative 2^-50, zero only against zero, with no
    absolute tolerance: the reference results were recorded on one machine and
    are compared on another (the third re-check replayed every call with another
@@ -1326,8 +1493,13 @@ reward = min(u, c)  if candidate_tree and measurement_integrity passed, else 0
   join inside the min, never as a weight. The pooled `partial_score` is gone: it
   took the test share from the sandbox and ignored the controls.
 - Denominators are fixed. A unit that is not restored or is late counts as not
-  passing; its calls as not matching. When a phase's time runs out with units or
-  calls left, the verifier asks who used it: before any submitted code runs it
+  passing; its calls as not matching. Every item has its own time (a unit's
+  examples ten times the original's own time for them on this machine, at least
+  2 s; a call ten times the original's time for its unit's calls, at least 1.5 s):
+  an item past it fails, the rest of its unit is not run, and the others go on,
+  so a body that never ends costs its own unit and the units that call it, and
+  the phases finish even when every body runs out of its time. Only if a phase's
+  own guard runs out with units or calls left does the verifier ask who used it: before any submitted code runs it
   times a fixed piece of pure-Python work and compares it with the same work on
   the machine the reference results were recorded on (`host_factor`), and the
   original's own seconds for every module and unit (`tests/private/timing.json`)
@@ -1415,15 +1587,15 @@ have not yet run on the platform). Unassessed boundaries: finding 7.
 
 | # | Attack and impact | Boundary | Evidence | Mitigation | Residual risk | Next validation | Severity |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | A body runs arbitrary code at grading time (for example through `sympify` of a string) and patches the example and test runners in-process, forging those two measurements | Sandbox process | Executed in red-team round 2 | The reward is min(u, c); c is compared by the root process with references the sandbox cannot read, and a counted unit also needs a matching counted call; the tests are not rewarded | Forged examples can raise u up to the share of units whose counted calls already match, so the reward is at most c, which cannot be forged; what bodies that restore nothing match on the counted calls is the floor (finding 4). Comparing example output in the root process would not close this: the expected output is in the docstring the sandbox reads, so a patched runner can report it, and that was not built | Red-team the runners with forged output | 🟡 YELLOW / MEDIUM |
+| 1 | A body runs arbitrary code at grading time (through `sympify` of a string, a rebound `json.dumps`, a frame reached from an exception, or a computed attribute name) and lies about its own items: patches the example runner so its unit's examples report a pass, or reports a call's result without the state it left in its arguments | Sandbox process | Executed in red-team round 2; fourth re-check: a rebound `json.dumps` and a walk to the runner's frame forged a docstring pass and a call without its argument state, and two shapes of record made scoring raise | The runners hold no key and are trusted with nothing: each answers over a pipe, the verifier reads its lines within limits and only in their order, rebuilds every record from the runner's own fields and never raises on one; a body's lie reaches only the item it runs in (a line for another item breaks the order and fails its own). The reward is min(u, c); c compares what a call reports with references the sandbox never sees | A lie can raise u up to the share of units whose counted calls already match, and c only by calls whose result is right and whose argument state is wrong (the lie hides that state); with no way to see the references, a lie cannot make a wrong result match. Comparing example output in the root process would not close this: the expected output is in the docstring the sandbox reads, so a patched runner can report it | Red-team the runners with forged output | 🟡 YELLOW / MEDIUM |
 | 2 | Read reference results or the withheld tests | File permissions in the verifier image | Attempted in both rounds; not reached | Private inputs readable by root only; sandbox runs as `nobody`; no test directories in the tree during phases 2 and 3 | Depends on the privilege drop | Re-run on the v2 bundle | 🟢 GREEN / LOW |
 | 3 | Edit tests, module-level code or other functions to make checks pass | Graded-tree construction | Executed; no effect | Only unit bodies are copied into the reference skeleton; `checks/test_transplant.py` | None found | Keep the check | 🟢 GREEN / LOW |
 | 4 | Return the documented outputs for the documented inputs, and something cheap otherwise: a constant, the first argument, the other boolean, a default of the type the visible results have, an output the examples print, delegation to another function, or a documented result renamed | Which calls count | Review of the binary version: tables passed `trig_split`, `viete`, `wigner_3j` and 14 more units through the real verifier. First re-check of 2026-11-20: behind a table, a first-argument fallback and a renaming table reached 0.07 to 0.12. Second re-check: results the docstrings print still counted (the panel's own fixture 0.029, every buildable strategy together 0.041). Third re-check: an accessor of the call's own arguments chosen by visible fit, then the cheap fallbacks, 0.0401 behind a table through the verifier's own runners | Only calls nothing visible answers count (D): no docstring example or visible test (slow, skip-marked and `+SKIP` ones included) makes them, even with its symbols renamed, and their result is neither one an example or a visible test shows, nor a documented result of their unit, nor one of their own arguments or an element of their `*args` or `**kwargs`, all compared with the type left out; variants rename with one map over all arguments and shift no integer with a stated domain. Measured (see the floor under [Reward formula](#reward-formula)): the strongest buildable strategy 0.0401 behind a table (the third re-check's accessor synthesis, 0.0171 of it in units whose original body is such an accessor), the cheap fallbacks together 0.0249 statically and 0.0166 through the verifier; through the verifier 0.0 for each fixture tree | An accessor, a type default or a delegate can still equal some counted results, up to 0.0401; with the hidden results in hand, 0.0274 (best per call) and 0.0296 (best constant per unit), which no submission can build; all under the decision's 0.05 | Re-run `fixtures.py`, `floor.py` and the reviewers' scripts after any rebuild of the calls | 🟢 GREEN / LOW |
-| 5 | Change how a runner reports results | Runner control items | Executed in round 1 through module-level `os`/`sys`; fixed. Third re-check: a body that imported `__main__` or `posix` wrote a result line of its own into the call runner's output, and wrapped the docstring runner's `emit` to forge a pass; `same()` raised on five shapes such a line can carry | The example and call runners sign every line with a key each start gets on its standard input and keep it, their output and their payload inside a function, so no line a body writes is read; `__main__`, `posix`, `nt` and every module whose name starts with an underscore are forbidden in a body; `same()` is total and a line that cannot be compared fails its call; control items with known outcomes in every pytest run; the records of a run cannot hold more passes than that run's tally; forbidden constructs in bodies. Forged start or collection records can only remove tests from later runs, which lowers the score | A forgery that also gets the controls right falls under finding 1. The per-file runs added on 2026-11-17 have not been attacked | With finding 1 | 🟢 GREEN / LOW |
+| 5 | Change how a runner reports results | Runner control items | Executed in round 1 through module-level `os`/`sys`; fixed. Third re-check: a body that imported `__main__` or `posix` wrote a result line of its own and forged a pass. Fourth re-check: the same through `posixpath.os`, `random._os`, `sympy.external.import_module('posix')`, `attrgetter` frame walks and a rebound `json.dumps`; a sparse 2^50-byte output read whole ended in a MemoryError | No key exists where a body runs: the verifier is the runners' parent and reads their pipes in pieces, at most a line limit and a total, in order; the runners serialise with a function bound before the tree is imported, and their standard streams go nowhere; the body rules deny the route class (the modules and attributes that reach the process or the files, literal names given to `getattr`, `attrgetter`, `methodcaller` and `import_module`); a self-check after every unit's examples; control items with known outcomes in every pytest run; the records of a run cannot hold more passes than that run's tally; the sandbox's files are bounded in size | The rules are a list of names: a computed name still reaches the process, and what that buys is finding 1 | With finding 1 | 🟢 GREEN / LOW |
 | 6 | Tamper with reward or result files | Separate verifier container | By design; not attacked | Verifier starts fresh with only `/app/sympy`; output directory closed to the sandbox user | None found | Attack on the v2 bundle | 🟢 GREEN / LOW |
 | 7 | Anything that depends on the new entry point, check registry or reporting | v2 verifier code | Not attacked | Same measurement code as v1; reference and no-op baselines on the v2 bundle | Unknown | Red-team run against the v2 bundle | 🟡 YELLOW / UNASSESSED |
 | 8 | Reach the network during the work phase to fetch SymPy | Agent network policy | Probe task, 2026-11-15: PyPI and GitHub unreachable from the work phase; 217 in-work fetch attempts in one 12-hour run all failed (TCP connected, TLS did not) | `[agent] network_mode = "no-network"`; the instruction forbids another copy; SymPy is not installed elsewhere; the image's attribution names no download | Agent tooling is installed at setup with public egress; host-name filtering not probed for every route | Probe the routes as `dev` | 🟡 YELLOW / MEDIUM |
-| 9 | Leave a process running after the work that fetches SymPy once public egress returns (about 0.2 s after the work ends, before collection: 0.8 s and 11.8 s on two 12-hour runs) and writes the original into `/app/sympy`, directly or behind a link; the original scores 1.0. Variants: hold every local port (or exhaust another resource of the machine) so the net check's probe fails and its closed stretch runs on past the turn; load the CPU or the link so its handshakes time out | Delivery: user, hooks, record | Reproduced by review with the verifier's own transplant: before 2026-11-20 (2,671 restored, a tree identical to the reference); on 2026-11-20, a write after a turn shorter than the net check's old one-minute arming taken whole, a late file graded through a directory link, and (re-check 2) a fetch while the probe failed for want of ports, taken because such a failure counted as a closed poll and the end was moved to the collect step's start. All fixed; `checks/test_delivery.py` runs the real net check whole for a blinded probe and a no-op turn, and covers a 3-second turn, every unknown end, the session end, file and directory links and every refused tree | The work runs as `dev`; a poll that fails for a reason of the machine is not a closed poll, and three in a row end the stretch; the net check records the end of every stretch an opening ends and ends `dev` each time; it also watches the agent's exec sessions, and the end of the work is the earlier of the net check's end and the end of the session that ran the whole work, which no process the agent starts can move; the end is never moved to the collect step's start unless its own probe found the hosts closed, and never later than the start of the work plus the time limit (34,560 s), which bounds a turn run to the limit whatever the probe read; the collect step gives back the room the setup step set aside and puts the tree aside right after it has stopped every process of `dev`, then stops and ends the rest, lets the net check finish one more poll and look, records every file's change time before touching anything and removes every link; the verifier takes no unit file changed at or after the end and none reached through a link; a link or an unlisted file that arrived, a short delivery or a surviving process is an evaluation error; the mark is signed with a key `dev` cannot read | A write through a file mapping dirtied before the end can change content without moving its times. It needs a live process: the net check ends `dev` at the first open poll (about 0.2 to 0.5 s after the turn) or after three blind polls, but a probe made to time out by load still reads as closed, so such a process can live until the collect step; the session end (for a harness whose exec ends with the turn) and the time limit (for a turn run to it) stop every write that moves a file's times, not one through a mapping. A harness that runs one exec per command, or a run Harbor resumes in place after a provider error, has neither, and only the net check's end bounds it, which such a load can push back. A harness that does its work outside its own exec sessions, and whose last session began within ten minutes of the start, would have its later writes counted late (claude-code, mini-swe-agent and the oracle run the whole work in one session; Proximus is not yet seen). Three polls in a row that fail for want of ports, files or memory end the stretch during the work; `dev` is ended then only when no exec session is alive. Closing the mapping residual needs the platform to keep the agent's network policy through collection | Canary on the platform: a detached fetch-and-overwrite loop scores 0 with its files `late`; a reference that runs past the time limit with a load process and a fetch scores 0 with its files `late`; reference 1.0 (`end_from` `session`) and no-op 0.0 (`end_from` `unchanged`) with the record present; Proximus's process model read from its record (`sessions`) | 🟡 YELLOW / MEDIUM |
+| 9 | Leave a process running after the work that fetches SymPy once public egress returns (about 0.2 s after the work ends, before collection: 0.8 s and 11.8 s on two 12-hour runs) and writes the original into `/app/sympy`, directly or behind a link; the original scores 1.0. Variants: hold every local port (or exhaust another resource of the machine) so the net check's probe fails and its closed stretch runs on past the turn; load the CPU or the link so its handshakes time out | Delivery: user, hooks, record | Reproduced by review with the verifier's own transplant: before 2026-11-20 (2,671 restored, a tree identical to the reference); on 2026-11-20, a write after a turn shorter than the net check's old one-minute arming taken whole, a late file graded through a directory link, and (re-check 2) a fetch while the probe failed for want of ports, taken because such a failure counted as a closed poll and the end was moved to the collect step's start. All fixed; `checks/test_delivery.py` runs the real net check whole for a blinded probe and a no-op turn, and covers a 3-second turn, every unknown end, the session end, file and directory links and every refused tree | The work runs as `dev`; a poll that fails for a reason of the machine is not a closed poll and ends nothing; the net check records the end of every stretch an opening ends, but an opening seen while an exec session is alive, within the time the work is given, is no end, and `dev` is ended only once no session is alive or that time has run out; it also watches the agent's exec sessions, and the end of the work is the earliest of the net check's end, the end of the session that ran the whole work, which no process the agent starts can move, and the first process's start plus the time limit (34,560 s), which bounds a turn run to the limit whatever the probe read; a unit file saved after that limit is taken as the last copy the net check made of it before the limit, so a capped turn loses at most the last second's edits, never a file; the end is never moved to the collect step's start unless its own probe found the hosts closed; the collect step gives back the room the setup step set aside and puts the tree aside right after it has stopped every process of `dev`, then stops and ends the rest, lets the net check finish one more poll and look, records every file's change time before touching anything and removes every link; the verifier takes no other unit file changed at or after the end and none reached through a link; a link or an unlisted file that arrived, a short delivery or a surviving process is an evaluation error; a collect step that began and did not finish leaves a noted 0; the mark is signed with a key `dev` cannot read | A write through a file mapping dirtied before the end can change content without moving its times. It needs a live process: the net check ends `dev` once the turn's session is over and the hosts answer, but a probe made to time out by load still reads as closed, so such a process can live until the collect step; the session end (for a harness whose exec ends with the turn) and the time limit (for a turn run to it) stop every write that moves a file's times, not one through a mapping. A harness that runs one exec per command, or a run Harbor resumes in place after a provider error, has neither, and only the net check's end bounds it, which such a load can push back. A harness that does its work outside its own exec sessions, and whose last session began within ten minutes of the start, would have its later writes counted late (claude-code, mini-swe-agent and the oracle run the whole work in one session; Proximus is not yet seen). A capped turn's last second of edits, between the last copy and the limit, is lost. Closing the mapping residual needs the platform to keep the agent's network policy through collection | Canaries on the platform: a detached fetch-and-overwrite loop scores 0 with its files `late`; a reference that keeps working past the time limit with a load process and a fetch scores 0 with its fetched files `late`; an honest reference that saves a unit file by rename just after the limit keeps that file as copied; reference 1.0 (`end_from` `session`) and no-op 0.0 (`end_from` `unchanged`) with the record present; the first process's start against Harbor's own; Proximus's process model read from its record (`sessions`) | 🟡 YELLOW / MEDIUM |
 
 Recall of SymPy from pre-training is not an exploit of the verifier, but it limits
 what a high score means. It is recorded under [Novelty](#novelty).

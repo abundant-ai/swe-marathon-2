@@ -408,7 +408,7 @@ def test_a_turn_of_a_few_seconds_has_an_end_and_a_write_after_it_is_refused(tmp_
         stream.append((t, "open", "pypi.org"))
         t += 0.15
     ended = []
-    openings = netcheck.watch(iter(stream), {}, ending=lambda: ended.append(1) or (1, 0))
+    openings = netcheck.watch(iter(stream), {}, ending=lambda: ended.append(1) or (1, 0), session_alive=lambda: False)
     assert len(openings) == 1 and openings[0]["end_bound"] == last_closed and openings[0]["closed_polls"] == 27
     assert ended == [1], "the processes of dev are ended at the opening"
     status = json.loads((tmp_path / "nc" / "netcheck.json").read_text())
@@ -881,7 +881,7 @@ def test_the_net_check_records_every_stretch_ends_dev_at_each_opening_and_probes
     # setup has the network, a blip of three closed polls during setup, the work with none, the
     # network back, a single closed poll after it (too short to count)
     stream = polls("occcoccccococ")
-    openings = netcheck.watch(iter(stream), {}, ending=ending)
+    openings = netcheck.watch(iter(stream), {}, ending=ending, session_alive=lambda: False)
     assert [(o["end_bound"], o["closed_polls"], o["first_open_at"], o["kind"]) for o in openings] == [(4.0, 3, 5.0, "open"), (9.0, 4, 10.0, "open")]
     assert [s["end_bound"] for s in seen] == [4.0, 9.0], "each end is recorded before anything is ended"
     final = json.loads((tmp_path / "state" / "netcheck-open.json").read_text())
@@ -905,7 +905,7 @@ def test_the_net_check_records_every_stretch_ends_dev_at_each_opening_and_probes
     assert len(netcheck.kept(many)) == netcheck.KEEP_OPENINGS and many[5] in netcheck.kept(many)
     # a status that cannot be written is skipped, never a reason to stop; nor is an ending that fails
     netcheck.STATE = str(tmp_path / "state" / "netcheck.json" / "not-a-directory")
-    assert len(netcheck.watch(iter(stream), {}, ending=lambda: 1 / 0)) == 2
+    assert len(netcheck.watch(iter(stream), {}, ending=lambda: 1 / 0, session_alive=lambda: False)) == 2
 
 
 def test_the_probe_tells_a_closed_network_from_a_machine_that_cannot_look(tmp_path):
@@ -1247,9 +1247,12 @@ def test_local_polls_end_nothing_and_an_opening_while_a_session_is_alive_ends_no
     openings = netcheck.watch(iter(polls("occco")), {}, ending=lambda: ended.append(4) or (1, 0), session_alive=lambda: True,
                               limit=lambda: time.time() - 1)
     assert ended == [3, 4] and openings[0]["after_limit"] is True
-    # with no session seen, or the sessions unseen, at once
-    netcheck.watch(iter(polls("occco")), {}, ending=lambda: ended.append(5) or (1, 0))
+    # a fresh look that finds no session: at once; sessions that cannot be seen: it waits
+    netcheck.watch(iter(polls("occco")), {}, ending=lambda: ended.append(5) or (1, 0), session_alive=lambda: False)
     assert ended == [3, 4, 5]
+    openings = netcheck.watch(iter(polls("occcoc")), {}, ending=lambda: ended.append(6) or (1, 0), session_alive=lambda: None,
+                              limit=later)
+    assert ended == [3, 4, 5] and openings[0]["session_alive"] is None and openings[0]["ending"].startswith("waits")
     now = time.time()
     assert netcheck.session_seen({"available": True, "alive": [5], "last_scan": now}) is True
     assert netcheck.session_seen({"available": True, "alive": [], "last_scan": now}) is False

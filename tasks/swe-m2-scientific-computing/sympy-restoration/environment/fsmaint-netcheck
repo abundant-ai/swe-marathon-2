@@ -23,9 +23,10 @@ answered yet), `first_open_at` (the start of the poll that ended it), `closed_si
 the host, whether an exec session of `dev` was seen alive then (`session_alive`: true, false, or
 null when the sessions could not be seen) and whether the time the work is given had run out
 (`after_limit`). At every opening the record is also written to STATE/netcheck-open.json before
-anything is ended. When no session was seen alive, or the time had run out, every process of `dev`
-is then stopped and ended, and how many passes that took and how many were left are added; an opening
-while a session is alive and time is left ends nothing until the session ends or the time runs out.
+anything is ended. When a fresh look at the processes found no session alive, or the time had run
+out, every process of `dev` is then stopped and ended, and how many passes that took and how many were
+left are added; an opening while a session is alive, or while the sessions cannot be seen, and time is
+left ends nothing until a fresh look finds no session or the time runs out.
 Polling goes on after an opening; the step that measures the tree stops it.
 
 Processes. A thread looks at /proc every SESSION_SECONDS. The exec sessions of `dev`: a process of
@@ -471,9 +472,9 @@ def live_session(record, fresh=2.0):
 
 def watch(stream, status, ending=end_processes, session_alive=lambda: None, limit=lambda: None):
     """Fold every poll into the status; at each opening after MIN_CLOSED closed polls, record, then end the
-    processes of the user unless `session_alive()` is True and the time `limit()` (seconds since the
-    epoch, or None) has not come; that ending waits until a session is no longer seen alive or the time
-    has come. Local polls end nothing.
+    processes of the user when `session_alive()` is False (a fresh look found no session) or the time
+    `limit()` (seconds since the epoch, or None) has come; otherwise that ending waits until one of the
+    two holds. Local polls end nothing.
 
     Returns the openings when the stream ends (it does not while the probe runs)."""
     closing = None   # [first start, last start, polls] of the closed stretch in progress
@@ -517,15 +518,16 @@ def watch(stream, status, ending=end_processes, session_alive=lambda: None, limi
                               closing=None, openings=openings)
                 write("netcheck-open.json", record)
                 write("netcheck.json", status)
-                if alive is True and not record["after_limit"]:
-                    record["ending"] = "waits: an exec session is alive and the time the work is given has not run out"
+                if alive is not False and not record["after_limit"]:
+                    record["ending"] = ("waits: an exec session is alive, or the sessions cannot be seen, and the time the "
+                                        "work is given has not run out")
                     write("netcheck-open.json", record)
                     deferred = record
                 else:
                     end_now(record)
                     deferred = None
             closing = None
-        if deferred is not None and (session_alive() is not True or time_up()):
+        if deferred is not None and (session_alive() is False or time_up()):
             end_now(deferred)
             deferred = None
         status.update(polls=count, local_polls=local_count, longest_local_run=longest_local, last_poll=[started, state],
