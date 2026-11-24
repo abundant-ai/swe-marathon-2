@@ -807,6 +807,29 @@ It does not yet meet the v2 workload target; see [Workload](#workload) and
   many others, each waiting 0.05 s when it is one of the 1,336, so its calls
   and examples run past their limits or crawl, and it scores like a tree whose
   bodies mostly fail.
+- Package. The signing key was replaced again (`delivery_key.py --rotate`) and
+  the flat bundle rebuilt (`package_single_step.py --keep-name`, content
+  `966f2b531f52`, 415 files: one fewer source file, the timer, and none of the
+  bytecode the round before's had gained during its audit) in
+  `ops/sympy-restoration/dist-12h/`, the previous one set aside. The platform's
+  content hash of the new bundle, `27ceda8716e8…`, differs from version 4's
+  (`4ce37762a342…`). `oddish preflight` passed (1 task). The bundle equals the
+  worktree file for file and commit `4ef634c` for every tracked source. A word
+  sweep of the whole bundle again found nothing the agent can read that speaks
+  of grading, the platform, trials or the verifier's image: the only hits are
+  the task's own "deliver", the standard library's `platform` in the list of
+  forbidden imports, SymPy's own module and class names (`benchmarking`,
+  `GradedLexOrder`) and the instruction's "image" for the machine the work runs
+  on; 0 non-ASCII bytes; the key's two copies are equal and new, and held by no
+  other file.
+- Regrade of the 16 stored submissions on the final verifier (examples and
+  calls, one worker): every reward within 0.0023 of the round before's (10 down,
+  6 up; v2 trial 16 0.856, the weakest 0.003), the order unchanged, no unit or
+  call unreached or failed for lack of time, no late file, no control tripped.
+  The submissions' own bodies ran past their limits up to 15 times in the
+  examples and 24 in the calls, and up to 7 units per submission stopped being
+  run after two; every phase finished. Table under
+  [Trial evidence](#trial-evidence), with `RESULTS_12H.md` updated.
 
 ## Current implementation
 
@@ -1465,33 +1488,33 @@ Proximus on the v1 package, base experiment, 2026-11-17:
 - Proximus reports no cost. Its runs used 0.66 to 2.19 billion input tokens,
   over 99% of them cached.
 
-Regraded on the continuous reward after the second re-check (2026-11-20: the
-typed comparison, changed arguments beside the result, the shown results
-documented; this machine, the entry point's steps without the privilege drop;
-examples and calls, the tests not run since they are not rewarded). The two
-columns before u are the regrades of the first continuous build and of the round
-after the first re-check. The twelve-hour trials' own files were not
+Regraded on the continuous reward after the third re-check (2026-11-24: Floats
+to a few units in their last place, signed runner records, the submission's own
+time scored, caches and rings in the forms; this machine, the entry point's steps
+without the privilege drop; examples and calls, the tests not run since they are
+not rewarded). The two columns before u are the regrades after the first and the
+second re-check. The twelve-hour trials' own files were not
 downloaded, so these are the stored submissions of the earlier sessions of the
 same task; every one scored 0 under the binary reward.
 
-| Submission | Agent / model | Units passing, binary era (of 2,671) | Reward, binary | Reward, first continuous build | Reward after the first re-check | u | c | Reward now | Units whose examples pass | Bodies identical to upstream |
+| Submission | Agent / model | Units passing, binary era (of 2,671) | Reward, binary | Reward after the first re-check | Reward after the second re-check | u | c | Reward now | Units whose examples pass | Bodies identical to upstream |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| v2 trial 16 | claude-code / DeepSeek v4.1 Flash | 2,557 | 0 | 0.897 | 0.896 | 0.900 | 0.857 | **0.857** | 2,623 | 21.9% |
-| v2 trial 17 | claude-code / DeepSeek v4.1 Flash | 2,481 | 0 | 0.887 | 0.882 | 0.879 | 0.847 | **0.847** | 2,541 | 20.3% |
-| v2 trial 18 | claude-code / GLM 5.3 | 2,462 | 0 | 0.866 | 0.862 | 0.868 | 0.829 | **0.829** | 2,532 | 18.2% |
-| 48 h run b, session 1 | claude-code / DeepSeek v4.1 Flash | 2,338 | 0 | 0.843 | 0.843 | 0.820 | 0.811 | **0.811** | 2,384 | 21.8% |
-| 48 h run a, session 1 | claude-code / DeepSeek v4.1 Flash | 2,375 | 0 | 0.860 | 0.849 | 0.830 | 0.810 | **0.810** | 2,432 | 21.4% |
-| 48 h run, session 1 | claude-code / GLM 5.3 | 1,976 | 0 | 0.714 | 0.713 | 0.700 | 0.685 | **0.685** | 2,027 | 18.0% |
-| 48 h run b, session 1 | Proximus / DeepSeek v4.1 Flash | 1,289 | 0 | 0.418 | 0.425 | 0.419 | 0.398 | **0.398** | 1,351 | 12.7% |
-| 48 h run a, session 1 | Proximus / DeepSeek v4.1 Flash | 1,159 | 0 | 0.382 | 0.390 | 0.363 | 0.365 | **0.363** | 1,226 | 15.3% |
-| single-step trial 6 | Proximus / DeepSeek v4.1 Flash | 1,077 | 0 | 0.361 | 0.369 | 0.356 | 0.347 | **0.347** | 1,116 | 17.3% |
-| 48 h run, session 1 | Proximus / GLM 5.3 | 1,031 | 0 | 0.322 | 0.355 | 0.351 | 0.329 | **0.329** | 1,054 | 15.0% |
-| base trial 14 | mini-swe-agent / DeepSeek v4.1 Flash | 716 | 0 | 0.216 | 0.234 | 0.230 | 0.217 | **0.217** | 745 | 11.8% |
-| base trial 15 | mini-swe-agent / GLM 5.3 | 346 | 0 | 0.114 | 0.126 | 0.120 | 0.115 | **0.115** | 359 | 9.7% |
-| base trial 9 | mini-swe-agent / DeepSeek v4.1 Flash | 334 | 0 | 0.109 | 0.109 | 0.100 | 0.138 | **0.100** | 350 | 7.4% |
-| base trial 10 | mini-swe-agent / GLM 5.3 | 274 | 0 | 0.092 | 0.100 | 0.102 | 0.093 | **0.093** | 281 | 9.3% |
-| base trial 8 | claude-code / GLM 5.3 | 63 | 0 | 0.024 | 0.021 | 0.020 | 0.036 | **0.020** | 63 | 62.4% |
-| base trial 13 | claude-code / GLM 5.3 | 15 | 0 | 0.003 | 0.004 | 0.003 | 0.004 | **0.003** | 15 | 14.3% |
+| v2 trial 16 | claude-code / DeepSeek v4.1 Flash | 2,557 | 0 | 0.896 | 0.857 | 0.899 | 0.856 | **0.856** | 2,623 | 21.9% |
+| v2 trial 17 | claude-code / DeepSeek v4.1 Flash | 2,481 | 0 | 0.882 | 0.847 | 0.878 | 0.846 | **0.846** | 2,541 | 20.3% |
+| v2 trial 18 | claude-code / GLM 5.3 | 2,462 | 0 | 0.862 | 0.829 | 0.867 | 0.829 | **0.829** | 2,531 | 18.2% |
+| 48 h run b, session 1 | claude-code / DeepSeek v4.1 Flash | 2,338 | 0 | 0.843 | 0.811 | 0.820 | 0.811 | **0.811** | 2,384 | 21.8% |
+| 48 h run a, session 1 | claude-code / DeepSeek v4.1 Flash | 2,375 | 0 | 0.849 | 0.810 | 0.829 | 0.809 | **0.809** | 2,431 | 21.4% |
+| 48 h run, session 1 | claude-code / GLM 5.3 | 1,976 | 0 | 0.713 | 0.685 | 0.700 | 0.686 | **0.686** | 2,027 | 18.0% |
+| 48 h run b, session 1 | Proximus / DeepSeek v4.1 Flash | 1,289 | 0 | 0.425 | 0.398 | 0.420 | 0.399 | **0.399** | 1,352 | 12.7% |
+| 48 h run a, session 1 | Proximus / DeepSeek v4.1 Flash | 1,159 | 0 | 0.390 | 0.363 | 0.363 | 0.365 | **0.363** | 1,226 | 15.3% |
+| single-step trial 6 | Proximus / DeepSeek v4.1 Flash | 1,077 | 0 | 0.369 | 0.347 | 0.356 | 0.347 | **0.347** | 1,116 | 17.3% |
+| 48 h run, session 1 | Proximus / GLM 5.3 | 1,031 | 0 | 0.355 | 0.329 | 0.352 | 0.331 | **0.331** | 1,054 | 15.0% |
+| base trial 14 | mini-swe-agent / DeepSeek v4.1 Flash | 716 | 0 | 0.234 | 0.217 | 0.230 | 0.216 | **0.216** | 745 | 11.8% |
+| base trial 15 | mini-swe-agent / GLM 5.3 | 346 | 0 | 0.126 | 0.115 | 0.121 | 0.117 | **0.117** | 359 | 9.7% |
+| base trial 9 | mini-swe-agent / DeepSeek v4.1 Flash | 334 | 0 | 0.109 | 0.100 | 0.100 | 0.140 | **0.100** | 350 | 7.4% |
+| base trial 10 | mini-swe-agent / GLM 5.3 | 274 | 0 | 0.100 | 0.093 | 0.103 | 0.094 | **0.094** | 281 | 9.3% |
+| base trial 8 | claude-code / GLM 5.3 | 63 | 0 | 0.021 | 0.020 | 0.019 | 0.036 | **0.019** | 63 | 62.4% |
+| base trial 13 | claude-code / GLM 5.3 | 15 | 0 | 0.004 | 0.003 | 0.003 | 0.004 | **0.003** | 15 | 14.3% |
 
 ## Validation
 
@@ -1548,6 +1571,10 @@ same task; every one scored 0 under the binary reward.
 | Floor on these calls (`fixtures.py`, `floor.py`, the reviewers' scripts) | working tree, 2026-11-21 (third re-check) | through the verifier: raise, first argument and flip 0.0; behind a table: flip 0.0034, the combination 0.0249 statically; integrity rules 0.0064 (0.0124); hidden-result bounds 0.0274 and 0.0296; the re-check's accessor synthesis 0.0401 (on the calls before) |
 | Reference, the agent's starting tree and a turn of no length, after the third re-check | this machine, the entry point's steps, one worker; the no-op through the shipped hooks, the real net check, a platform-style copy and the real mark, with root, the Linux tools, the network, `/proc` and the user `dev` stood in for | reference 1.000000 and complete: 1,847 / 1,847 units, 6,213 / 6,213 counted calls, 16,737 / 16,737 calls, 10,428 / 10,428 tests, none unreached, no control tripped, 1,043 s; starting tree 0.0; no-op 0.0 with `end_from` `unchanged` (8 polls, 1,716 entries listed) |
 | Hostile trees (all bodies loop; 5% loop; 50% slow) through the verifier's `measure()` and scoring | this machine, the entry point's steps, one worker, phases cut to 900 s and 1,200 s | loop-all 0.0000, completed, 2,628 units and 16,411 calls not reached counted as failed; loop-5 0.0254, completed, 2,538 units and 15,746 calls not reached counted as failed; slow-50 0.0341, completed, 2,338 units and 15,732 calls not reached counted as failed; none an evaluation error |
+| `checks/` (122 tests) and the repository check | commit `4ef634c` (2026-11-24, before the package) | pass |
+| `oddish preflight` | flat bundle `966f2b531f52` (`ops/sympy-restoration/dist-12h/`, key rotated; platform content hash `27ceda8716e8…`, version 4's `4ce37762a342…`) | pass (1 task) |
+| Word sweep of the whole bundle, its data, archives and key (the same scripts as the round before) | bundle `966f2b531f52` | clean: the agent's files use "deliver" only as the task's word; `platform` only as the forbidden standard-library module; SymPy's own names in the data and archives; 0 non-ASCII bytes; the key's copies equal, new and held by no other file; no bytecode |
+| Regrade of the stored submissions after the third re-check | this machine, the entry point's steps, examples and calls, one replay worker, 2026-11-24 | 16 submissions, reward 0.003 to 0.856, each within 0.0023 of the round before, the order unchanged; none with a unit or call unreached or failed for lack of time, a late file or a control tripped (see [Trial evidence](#trial-evidence)) |
 | `harbor check` with `resources/task-implementation.toml` | working tree, 2026-11-17 | attempted on Modal; failed before review with `NotFoundError: Environment not found` (no default Modal environment). Not run in local Docker. No ratings |
 | Local image builds | none | not run for the v2 Dockerfiles; the Oddish baselines are the first build |
 
