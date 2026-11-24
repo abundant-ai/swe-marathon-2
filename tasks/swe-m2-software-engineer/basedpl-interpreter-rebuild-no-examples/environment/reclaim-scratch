@@ -3,7 +3,8 @@
 # run on. It first stops every process of that user; it then lists those processes, ends them, records every entry's
 # own times before anything of its own touches the tree, and records whether this host has outbound connectivity, for
 # the maintenance log. A session that ran to its limit leaves its processes running until here: what changed after
-# the session's end (its start plus its limit) is taken out, by the times recorded before this step touched anything.
+# the session's end (its start plus its limit) is taken out, by the times recorded before this step touched anything,
+# and so is every file those processes, frozen, still hold open for writing or map shared and writable.
 # What it lets through is what the copy can take: within the limits the instruction states, with nothing of that
 # user's processes running, and packed here first the way the copy packs it, with room left for this step's record;
 # and the last script refuses, rather than outlasts, a tree it cannot measure and pack in time.
@@ -29,6 +30,142 @@ for _ in $(seq 1 100); do
 done
 # The frozen processes, one command, then the kill: repeated until none is left, for LOOP_SECONDS at most.
 ps -eo pid=,ppid=,uid=,etimes=,args= > "$STATE/processes.txt" 2>/dev/null || :
+# What the frozen processes hold open for writing, or map shared and writable, before they are ended. A session that ran
+# to its limit kept them running past its end, and a write through such a mapping can leave a file's change time as it
+# was, so the last script takes those files out. Root may not read another user's process; when it could not read one,
+# the listing runs again as the user, who can read each of its own but one that ran a set-id program or made itself
+# undumpable. The script is written once, to the state directory, for both runs.
+cat > "$STATE/writers.py" <<'EOF'
+"""What the user's frozen processes hold open for writing, or map shared and writable, printed as JSON for the last
+script. For each process with the user's id among its ids: the regular files open for writing in each of its tasks'
+descriptor tables (the access mode from fdinfo; one that shows none counts as writable) and the files it maps shared
+and writable (`rw-s` in maps, with an inode), each with the path the process sees, its device and its inode. An entry
+is kept when either could be the tree's: a path under it, or the tree's device. A process that cannot be read is
+listed with its ids and command, and the exit status is then 3. Bounded in time, in entries and in bytes."""
+import json
+import os
+import signal
+import stat
+import sys
+
+PROC, TREE = sys.argv[1], sys.argv[2]
+UID, GID = (int(value) if value.isdigit() else None for value in (sys.argv[3:5] + ["", ""])[:2])
+SECONDS, MOST_HELD, MOST_UNREAD, MOST_BYTES, LONGEST = 20, 10000, 1000, 8 << 20, 1100
+out = {"complete": False, "processes": 0, "held": [], "unread": [], "outside": 0}
+printed = 0
+tree_dev = None
+
+
+class Stop(Exception):
+    pass
+
+
+def out_of_time(signum, frame):
+    raise Stop(f"it was not done within {SECONDS} s")
+
+
+def ids(base):
+    with open(os.path.join(base, "status"), errors="replace") as text:
+        fields = dict(line.split(":", 1) for line in text.read().splitlines() if ":" in line)
+    return [int(value) for value in fields["Uid"].split()], [int(value) for value in fields["Gid"].split()]
+
+
+def command(base):
+    try:
+        with open(os.path.join(base, "cmdline"), "rb") as text:
+            return text.read(400).replace(b"\0", b" ").decode(errors="backslashreplace").strip()[:200]
+    except OSError:
+        return ""
+
+
+def keep(entry):
+    global printed
+    path = entry["path"]
+    if not any(name == TREE or name.startswith(TREE + "/") for name in (path, path[:-10] if path.endswith(" (deleted)") else path)):
+        if entry["dev"] != tree_dev:
+            out["outside"] += 1
+            return
+    if len(os.fsencode(path)) > LONGEST:
+        entry["path"] = None  # longer than any path of the tree: its inode alone can match
+    printed += len(json.dumps(entry))
+    if len(out["held"]) >= MOST_HELD or printed > MOST_BYTES:
+        raise Stop(f"more than {MOST_HELD:,} files, or {MOST_BYTES >> 20} MiB of them, were held open for writing")
+    out["held"].append(entry)
+
+
+def flags_of(path):
+    with open(path, errors="replace") as text:
+        for line in text.read(4096).splitlines():
+            if line.startswith("flags:"):
+                return int(line.split()[1], 8)
+    return None
+
+
+def scan(pid, base):
+    with open(os.path.join(base, "maps"), "rb") as text:
+        maps = text.read()
+    for line in maps.splitlines():
+        parts = line.split(maxsplit=5)
+        if len(parts) == 6 and parts[1][1:2] == b"w" and parts[1][3:4] == b"s" and parts[4] != b"0":
+            major, minor = (int(value, 16) for value in parts[3].split(b":"))
+            keep({"pid": pid, "how": "mapped", "path": os.fsdecode(parts[5]).replace("\\012", "\n"), "dev": os.makedev(major, minor),
+                  "ino": int(parts[4])})
+    seen = set()
+    for task in sorted(os.listdir(os.path.join(base, "task"))):
+        fds = os.path.join(base, "task", task, "fd")
+        for fd in sorted(os.listdir(fds)):
+            place = os.path.join(fds, fd)
+            try:
+                info = os.stat(place)
+                flags = flags_of(os.path.join(base, "task", task, "fdinfo", fd))
+                path = os.readlink(place)
+            except FileNotFoundError:
+                continue
+            writable = flags is None or (flags & 0o3 != 0 and not flags & 0o10000000)  # O_ACCMODE, O_PATH
+            if stat.S_ISREG(info.st_mode) and writable and (info.st_dev, info.st_ino) not in seen:
+                seen.add((info.st_dev, info.st_ino))
+                keep({"pid": pid, "how": "open", "path": path, "dev": info.st_dev, "ino": info.st_ino})
+
+
+signal.signal(signal.SIGALRM, out_of_time)
+signal.alarm(SECONDS)
+try:
+    if UID is None or GID is None:
+        raise Stop("the user has no id here")
+    tree_dev = os.stat(TREE).st_dev
+    for name in sorted(os.listdir(PROC)):
+        if not name.isdigit() or int(name) == os.getpid():
+            continue
+        base = os.path.join(PROC, name)
+        try:
+            uids, gids = ids(base)
+        except (OSError, KeyError, ValueError):
+            continue  # ended, or not a process
+        if UID not in uids:
+            continue
+        out["processes"] += 1
+        try:
+            scan(int(name), base)
+        except PermissionError:
+            if len(out["unread"]) >= MOST_UNREAD:
+                raise Stop(f"more than {MOST_UNREAD:,} processes could not be read")
+            out["unread"].append({"pid": int(name), "uids": uids, "gids": gids, "command": command(base)})
+        except FileNotFoundError:
+            continue  # a process with no tasks left
+    out["complete"] = True
+except Stop as stop:
+    out["why"] = str(stop)
+except (OSError, ValueError, RecursionError) as exc:
+    out["why"] = f"{exc.__class__.__name__}: {exc}"[:300]
+finally:
+    signal.alarm(0)
+print(json.dumps(out))
+sys.exit(3 if out["complete"] and out["unread"] else 0)
+EOF
+timeout 30 /usr/bin/python3 -I - /proc /app/rebuild "$(id -u dev 2>/dev/null)" "$(id -g dev 2>/dev/null)" < "$STATE/writers.py" > "$STATE/writers.json" 2>/dev/null
+if [ $? -eq 3 ]; then
+  timeout 30 setpriv --reuid dev --regid dev --clear-groups --no-new-privs /usr/bin/python3 -I - /proc /app/rebuild "$(id -u dev 2>/dev/null)" "$(id -g dev 2>/dev/null)" < "$STATE/writers.py" > "$STATE/writers-user.json" 2>/dev/null || :
+fi
 rounds=0
 killing=$(date +%s)
 for _ in $(seq 1 100); do
@@ -423,8 +560,11 @@ its start and end past a few hundred bytes, then only their count; the mark's no
 ran to its limit (SESSION_SECONDS after its start, STATE/turn-started from the setup hook) leaves its processes
 running until this hook, with the network open again: every file and link whose change time, as recorded before the
 hook touched anything (STATE/before.jsonl), is later than that end is taken out, noted and counted (`work_end`,
-`late_entries`), and nothing is killed for it; where that listing is missing or incomplete for such a session, the
-delivery is refused. Files are hashed once per inode, within
+`late_entries`), and nothing is killed for it. So is every name of each file that its processes, frozen, still held
+open for writing or mapped shared and writable (STATE/writers.json; `held_for_writing`, counted in `late_entries` too),
+since a write through such a mapping can leave the change time as it was. Where either listing is missing or
+incomplete for such a session, or one of its processes could be read neither as root nor as its user though it ran
+no set-id program, the delivery is refused. Files are hashed once per inode, within
 HASH_SECONDS in all; past that, the remaining files are listed without a hash and the record says so. Each entry's
 mtime and ctime are the ones recorded before the hook touched anything (STATE/before.jsonl, matched by path and
 type); where the hook's own steps changed them, the entry says so and carries the later values apart. The mark's first line is `delivered` with the
@@ -654,31 +794,92 @@ for line in state_lines("before.jsonl"):
         continue
 turn_started = next((int(line.split()[0]) for line in state_lines("turn-started") if line.split() and line.split()[0].isdigit()), None)
 WORK_END = None if turn_started is None else turn_started + SESSION_SECONDS + 1  # (date +%s rounds the start down)
-late_entries = 0
+late_entries = held_entries = 0
+
+
+def writers_listing():
+    """What the session's processes held open for writing, or mapped shared and writable, when they were frozen
+    (STATE/writers.json, read as root, and STATE/writers-user.json, read as the user, for the processes root could not
+    read): the entries, the processes read neither way, and why the listing cannot be relied on (None when it can)."""
+    first = state_json("writers.json", None)
+    if not isinstance(first, dict) or first.get("complete") is not True:
+        why = first.get("why") if isinstance(first, dict) else None
+        return [], [], "what its processes held open for writing could not be listed" + (f" ({cut(str(why), 300)})" if why else "")
+    entries, unread = list(first.get("held") or []), [item for item in first.get("unread") or [] if isinstance(item, dict)]
+    if unread:
+        second = state_json("writers-user.json", None)
+        if not isinstance(second, dict) or second.get("complete") is not True:
+            return entries, unread, "what its processes held open for writing could not be listed as their user"
+        entries += list(second.get("held") or [])
+        missed = {item.get("pid") for item in unread}
+        unread = [item for item in second.get("unread") or [] if isinstance(item, dict) and item.get("pid") in missed]
+    return [entry for entry in entries if isinstance(entry, dict)], unread, None
+
+
+writers_held, writers_unread, writers_problem = writers_listing()
+
+
+def remove(path):
+    """Take out whatever stands at `path` of the tree now; whether anything stood there."""
+    place = os.path.join(ROOT, path)
+    if os.path.isdir(place) and not os.path.islink(place):
+        shutil.rmtree(place)
+    elif os.path.lexists(place):
+        os.unlink(place)
+    else:
+        return False
+    return True
 
 
 def take_out_late():
     """For a session that ran to its limit (this step began after WORK_END), take out every file and link whose change
     time, as recorded before this step touched anything, is later than WORK_END, whatever stands at its path now (a
-    copy the link fixer made of such a link included); none of it counts. Returns how many were taken out."""
+    copy the link fixer made of such a link included); then every name of each file that a process of the session
+    still held open for writing, or mapped shared and writable, when it was frozen, since a write through such a
+    mapping can leave the change time as it was. None of it counts. The delivery is refused when the listing before
+    the hook, or that of what the processes held, is missing or incomplete, or when a process could be read neither as
+    root nor as its user although it ran no set-id program (its ids all the user's). Returns how many entries were
+    taken out for a change time and how many for being held."""
     if WORK_END is None or STARTED < WORK_END:  # this step began before the end: nothing can be later (both in whole seconds)
-        return 0
+        return 0, 0
     if not prescan.get("complete") or len(before) != prescan.get("entries"):  # (an empty tree lists nothing, completely)
         raise Refuse("the session ran to its limit, and the listing of what it changed before then is missing")
-    count = 0
+    if writers_problem:
+        raise Refuse(f"the session ran to its limit, and {writers_problem}")
+    for item in writers_unread:
+        if len(set(item.get("uids") or [None])) == 1 and len(set(item.get("gids") or [None])) == 1:
+            raise Refuse(f"the session ran to its limit, and its process {item.get('pid')} ({cut(str(item.get('command', '')), 200)}) "
+                         "could not be read for what it held open for writing")
+    late = 0
     for path, item in before.items():
         if item.get("type") not in ("file", "link") or not isinstance(item.get("ctime"), (int, float)) or item["ctime"] <= WORK_END:
             continue
-        place = os.path.join(ROOT, path)
-        if os.path.isdir(place) and not os.path.islink(place):
-            shutil.rmtree(place)
-        elif os.path.lexists(place):
-            os.unlink(place)
-        else:
-            continue
-        count += 1
-        add_note(f"removed {path}: changed after the end of the work, {SESSION_SECONDS} s after the session began")
-    return count
+        if remove(path):
+            late += 1
+            add_note(f"removed {path}: changed after the end of the work, {SESSION_SECONDS} s after the session began")
+    names = {}  # each file of the tree as listed before the hook, by device and inode: its names
+    for path, item in before.items():
+        inode = item.get("inode")
+        if item.get("type") == "file" and isinstance(inode, list) and len(inode) == 2:
+            names.setdefault((inode[0], inode[1]), []).append(path)
+    held = {}  # the files of the tree that were held, by device and inode: how
+    for entry in writers_held:
+        keys = [(entry.get("dev"), entry.get("ino"))]
+        path = entry.get("path")
+        if isinstance(path, str) and not path.endswith(" (deleted)"):  # a file gone from its name: by its inode alone, never
+            item = before.get(path[len(ROOT) + 1:]) if inside(path) and path != ROOT else None  # by what stands there now
+            if item and item.get("type") == "file" and isinstance(item.get("inode"), list) and len(item["inode"]) == 2:
+                keys.append((item["inode"][0], item["inode"][1]))
+        for key in keys:
+            if key in names:
+                held.setdefault(key, "mapped shared and writable" if entry.get("how") == "mapped" else "open for writing")
+    taken = 0
+    for key, how in sorted(held.items()):
+        for path in sorted(names[key]):
+            if remove(path):
+                taken += 1
+                add_note(f"removed {path}: a process of the session still had it {how} after the end of the work")
+    return late, taken
 
 
 reason = None
@@ -688,7 +889,8 @@ signal.signal(signal.SIGALRM, out_of_time)
 try:
     signal.setitimer(signal.ITIMER_REAL, max(0.001, STARTED + MEASURE_UNTIL - time.time()))  # (0 would disarm it)
     try:
-        late_entries = take_out_late()
+        late_entries, held_entries = take_out_late()
+        late_entries += held_entries
         top = os.open(ROOT, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
         try:
             walk(top, "")
@@ -794,7 +996,11 @@ def record_of(head):
     others = [change for change in changes if change.get("kind") != "copied"]
     free_bytes, free_inodes = disk_figures()
     record = dict(session, kill_rounds=ROUNDS, user_processes_left=LEFT, hook_started=HOOK_STARTED, turn_started=turn_started,
-                  work_end=WORK_END, late_entries=late_entries, fixer_status=FIXER_STATUS,
+                  work_end=WORK_END, late_entries=late_entries, held_for_writing=held_entries,
+                  writers={"listed": writers_problem is None, "why_not": writers_problem, "held": len(writers_held),
+                           "not_read": [{key: item.get(key) for key in ("pid", "command", "uids", "gids")} for item in writers_unread[:20]],
+                           "not_read_count": len(writers_unread)},
+                  fixer_status=FIXER_STATUS,
                   delivered=head, listing_complete=complete, hashing_complete=hashing_complete,
                   prescan_complete=bool(prescan.get("complete")), hook_changed_entries=hook_changed,
                   disk_free_bytes=free_bytes, disk_free_inodes=free_inodes)

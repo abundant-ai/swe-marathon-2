@@ -830,10 +830,11 @@ from pathlib import Path
 sys.path.insert(0, sys.argv[1])
 import verify
 hook, base = Path(sys.argv[2]).read_text(), Path(sys.argv[3])
-prescan = hook.split("<<'EOF'\n")[1].split("\nEOF\n", 1)[0]  # every entry's times before the hook, then the permissions, as root
-session = hook.split("<<'EOF'\n")[2].split("\nEOF\n", 1)[0]  # connectivity and the agent's processes, as root
-fixer = hook.split("<<'EOF'\n")[3].split("\nEOF\n", 1)[0]  # the link fixer, run as the agent's user
-measure = hook.split("<<'EOF'\n")[4].split("\nEOF\n", 1)[0]  # the last script, run as root after it
+# [1] is what the frozen processes hold open for writing, before the kill
+prescan = hook.split("<<'EOF'\n")[2].split("\nEOF\n", 1)[0]  # every entry's times before the hook, then the permissions, as root
+session = hook.split("<<'EOF'\n")[3].split("\nEOF\n", 1)[0]  # connectivity and the agent's processes, as root
+fixer = hook.split("<<'EOF'\n")[4].split("\nEOF\n", 1)[0]  # the link fixer, run as the agent's user
+measure = hook.split("<<'EOF'\n")[5].split("\nEOF\n", 1)[0]  # the last script, run as root after it
 FULL = ("import os\n_statvfs = os.statvfs\nclass Full:\n    f_bavail = f_favail = 0\n    f_frsize, f_blocks, f_files = 4096, 1000000, 1000000\n"
         "os.statvfs = lambda path: Full()\n")  # a disk with no room and no inode left
 CLOSED = ("import socket\ndef refuse(address, timeout=None):\n    raise ConnectionRefusedError(111, 'refused')\n"
@@ -1167,7 +1168,10 @@ def test_the_delivery_is_bounded_recorded_and_marked_before_the_copy_and_graded_
     assert slow[0] == 0 and set(slow[1]["connectivity"].values()) == {"no answer within 3 s"} and slow[2] <= 9, slow
     hook = (TASK / "environment" / "reclaim-scratch").read_text()
     order = ["--clear-groups kill -STOP -1 >",
-             "ps -eo pid=,ppid=,uid=,etimes=,args= > \"$STATE/processes.txt\"", "kill -9 -1",
+             "ps -eo pid=,ppid=,uid=,etimes=,args= > \"$STATE/processes.txt\"", 'cat > "$STATE/writers.py" <<',
+             'timeout 30 /usr/bin/python3 -I - /proc /app/rebuild "$(id -u dev 2>/dev/null)"', '> "$STATE/writers.json" 2>/dev/null\n',
+             'if [ $? -eq 3 ]; then', "timeout 30 setpriv --reuid dev --regid dev --clear-groups --no-new-privs /usr/bin/python3 -I - /proc",
+             '> "$STATE/writers-user.json"', "kill -9 -1",
              'timeout 300 /usr/bin/python3 -I - /app/rebuild "$LIMIT_ENTRIES" "$LIMIT_PATH" "$STATE"',
              "/usr/bin/python3 -I - \"$STATE/session.json\" \"$STATE/processes.txt\"", "rm -f /var/lib/scratch/room",
              "rm -rf /var/lib/scratch/inodes", 'mv -f "/app/rebuild/$name" "$aside/"', 'echo "$name" >> "$STATE/aside.txt"',
@@ -1379,7 +1383,7 @@ def test_both_hooks_run_whole_with_the_root_and_linux_tools_stood_in(tmp_path):
     aside = sorted(path for path in (top / "app").iterdir() if path.name.startswith(".aside."))
     assert sorted(item.name for folder in aside for item in folder.iterdir()) == [".manifest", ".manifest.json"], "moved, never followed"
     assert sorted(path.name for path in state.iterdir()) == ["aside.txt", "before.jsonl", "fixer.jsonl", "free-at-start", "prescan.json",
-                                                             "processes.txt", "session.json", "turn-started"], \
+                                                             "processes.txt", "session.json", "turn-started", "writers.json", "writers.py"], \
         "the room and the spare inodes are given back"
     record = json.loads((rebuild / ".manifest.json").read_text())
     assert record["delivered"] == mark[0] and record["fixer_status"] == 0 and record["listing_complete"] is True, record["delivered"]
@@ -1392,17 +1396,22 @@ def test_both_hooks_run_whole_with_the_root_and_linux_tools_stood_in(tmp_path):
 # ---------------------------------------------------------------- what a tree can do to the copy
 
 def hook_scripts() -> dict[str, str]:
-    """The four Python scripts of environment/reclaim-scratch as shipped: the times before anything, connectivity, the
-    link fixer and the last script."""
+    """The Python scripts of environment/reclaim-scratch as shipped: what the frozen processes hold open for writing
+    (from round 12's R1; a hook from before it has no such script), the times before anything, connectivity, the link
+    fixer and the last script."""
     text = (TASK / "environment" / "reclaim-scratch").read_text()
     parts = [part.split("\nEOF\n", 1)[0] for part in text.split("<<'EOF'\n")[1:]]
-    assert len(parts) == 4, len(parts)
-    return dict(zip(("prescan", "session", "fixer", "measure"), parts))
+    assert len(parts) in (4, 5), len(parts)
+    return dict(zip(("writers", "prescan", "session", "fixer", "measure")[5 - len(parts):], parts))
 
 
 def run_script(script: str, *args, prelude: str = "", env: dict | None = None, timeout: float = 300) -> subprocess.CompletedProcess:
     return subprocess.run([sys.executable, "-I", "-", *map(str, args)], input=prelude + script, capture_output=True, text=True,
                           timeout=timeout, env=env)
+
+
+# What the hook's first listing prints when no process of the user holds anything open for writing.
+NOTHING_HELD = {"complete": True, "processes": 0, "held": [], "unread": [], "outside": 0}
 
 
 def collected(top: Path, build, *, started_ago: float = 0, prelude: str = "", tar: str | None = None,
@@ -1420,6 +1429,7 @@ def collected(top: Path, build, *, started_ago: float = 0, prelude: str = "", ta
     for folder in (rebuild, state, archives):
         folder.mkdir(parents=True)
     (state / "turn-started").write_text(f"{int(time.time() - started_ago) - 100}\n")  # 100 s before the step: well inside the limit
+    (state / "writers.json").write_text(json.dumps(NOTHING_HELD))  # `build` may list what its processes hold
     (state / "free-at-start").write_text(start)
     for name, text in (state_files or {}).items():
         (state / name).write_text(text)
@@ -1522,8 +1532,8 @@ def test_a_tree_the_last_script_cannot_finish_in_time_is_refused_not_left_to_the
     assert measure.count("in_time()") == 3, "defined once, then called for every entry the walk lists and for every link"
     import tomllib
     limit = tomllib.loads((TASK / "task.toml").read_text())["verifier"]["collect"][0]["timeout_sec"]
-    earlier = [int(value) for value in re.findall(r"^timeout (\d+) ", hook, re.M)]
-    assert earlier == [300, 30, 120] and sum(earlier) + 60 < limit == 600 and 510 + 60 <= limit, (earlier, limit)
+    earlier = [int(value) for value in re.findall(r"^\s*timeout (\d+) ", hook, re.M)]  # R1's two listings, then the rest
+    assert earlier == [30, 30, 300, 30, 120] and sum(earlier) + 60 < limit == 600 and 510 + 60 <= limit, (earlier, limit)
 
 
 def test_the_link_fixer_copies_only_with_room_to_spare(tmp_path):
@@ -1678,8 +1688,8 @@ def test_a_capped_turn_counts_nothing_written_after_its_end(tmp_path):
     stopped, notes = arrival(rebuild, tmp_path / "capped" / "copied")
     assert stopped is None and notes == [f"maintenance step: {line}" for line in mark[1:]], (stopped, notes)
     measure = hook_scripts()["measure"]
-    assert "SESSION_SECONDS = 34560" in measure and "late_entries = take_out_late()" in measure
-    assert measure.index("late_entries = take_out_late()") < measure.index('walk(top, "")'), "taken out before the walk counts"
+    assert "SESSION_SECONDS = 34560" in measure and "late_entries, held_entries = take_out_late()" in measure
+    assert measure.index("late_entries, held_entries = take_out_late()") < measure.index('walk(top, "")'), "taken out before the walk counts"
 
 
 def test_a_capped_turn_that_delivered_nothing_or_lost_its_listing(tmp_path):
@@ -1701,6 +1711,162 @@ def test_a_capped_turn_that_delivered_nothing_or_lost_its_listing(tmp_path):
     refused = collected(tmp_path / "lost", kept, prelude=lost)
     mark = (refused / ".manifest").read_text().splitlines()
     assert mark == ["refused", "the session ran to its limit, and the listing of what it changed before then is missing: it was not copied"], mark
+
+
+def fake_proc(top: Path, processes: dict) -> Path:
+    """A stand-in for /proc. `processes` maps a pid to its `uids` and `gids` (real, effective, saved, filesystem), its
+    `command` (cmdline's bytes), its `maps` lines, and its `tasks`: for each task, a descriptor table mapping each
+    descriptor to (the file it holds, its open flags in octal), written as fd/N (a link to the file) and fdinfo/N. A
+    process `unreadable` gives its maps mode 0, so that reading them fails as /proc refuses another user's."""
+    proc = top / "proc"
+    (proc / "self").mkdir(parents=True)  # a name that is not a process
+    for pid, spec in processes.items():
+        base = proc / str(pid)
+        uids, gids = ("\t".join(map(str, spec[key])) for key in ("uids", "gids"))
+        (base / "task").mkdir(parents=True)
+        (base / "status").write_text(f"Name:\tworker\nState:\tT (stopped)\nUid:\t{uids}\nGid:\t{gids}\n")
+        (base / "cmdline").write_bytes(spec.get("command", b"worker\0--busy\0"))
+        (base / "maps").write_text("".join(line + "\n" for line in spec.get("maps", [])))
+        for tid, table in spec.get("tasks", {pid: {}}).items():
+            for part in ("fd", "fdinfo"):
+                (base / "task" / str(tid) / part).mkdir(parents=True)
+            for fd, (target, flags) in table.items():
+                os.symlink(target, base / "task" / str(tid) / "fd" / str(fd))
+                (base / "task" / str(tid) / "fdinfo" / str(fd)).write_text(f"pos:\t0\nflags:\t{flags}\nmnt_id:\t25\n")
+        if spec.get("unreadable"):
+            (base / "maps").chmod(0)
+    return proc
+
+
+def maps_line(path: Path, perms: str, dev: int | None = None, ino: int | None = None, shown: str | None = None) -> str:
+    """One line of maps for `path`, with its own device and inode unless others are given, and the path shown."""
+    info = os.stat(path)
+    dev, ino = info.st_dev if dev is None else dev, info.st_ino if ino is None else ino
+    return f"7f0000000000-7f0000001000 {perms} 00000000 {os.major(dev):02x}:{os.minor(dev):02x} {ino} {shown or path}"
+
+
+def frozen(rebuild: Path, processes, *, capped: bool, user_run: bool = True) -> dict:
+    """In a `build` for collected(): end the session's work now that its tree is written (`capped`: its end passes; else
+    the session is still within its limit), then list what `processes(tree)` hold open for writing with the hook's
+    script, against a stand-in /proc, as the hook does: as root, and again as the user when a process could not be
+    read (`user_run`). Returns the first listing."""
+    tree, state = Path(os.path.realpath(rebuild)), rebuild.parent.parent / "state"
+    if capped:
+        end = int(time.time()) + 1
+        (state / "turn-started").write_text(f"{end - 34561}\n")
+        while time.time() < end + 0.2:
+            time.sleep(0.05)
+    proc = fake_proc(rebuild.parent.parent, processes(tree))
+    script = hook_scripts()["writers"]
+    first = run_script(script, proc, tree, os.getuid(), os.getgid())
+    assert first.returncode in (0, 3) and first.stderr == "", first
+    (state / "writers.json").write_text(first.stdout)
+    if first.returncode == 3 and user_run:
+        again = run_script(script, proc, tree, os.getuid(), os.getgid())
+        (state / "writers-user.json").write_text(again.stdout)
+    return json.loads(first.stdout)
+
+
+def test_a_capped_turn_takes_out_what_its_frozen_processes_held_open_for_writing(tmp_path):
+    """R1 of the re-check of round 12 (harbor-lh `ops/swe-marathon-v2/qa/basedpl/08-recheck-v3.md`). With no timer, a
+    capped turn's processes run on until the hook freezes them, with the network back, and a write through a shared
+    writable mapping set up before the end can leave the change time as it was (tmpfs sets it on a page's first write
+    fault only). So the hook lists, before the kill, what each process of the user holds open for writing (every task's
+    descriptor table, with fdinfo's flags) or maps shared and writable (maps), and in a session that ran to its limit
+    every name of each such file of the tree is taken out, noted and counted; nothing else is. Against a stand-in /proc:
+    shared writable mappings matched by path (one with a hard link in the tree) and by device and inode (shown under a
+    name outside the tree), a file open for appending, one open read-write through a name outside the tree, one in a
+    thread's own table; and what must stay: a read-only descriptor, shared read-only and private writable mappings, a
+    pipe, a root process's file. A process that ran a set-id program and cannot be read is recorded, not refused."""
+    outside, seen = tmp_path / "elsewhere", {}
+    outside.mkdir()
+
+    def build(rebuild):
+        files = {"bpl": "#!/bin/sh\necho mine\n", "notes.txt": "notes\n", "keep.txt": "keep\n", "mapped.bin": "M" * 64,
+                 "shared.dat": "S" * 32, "deep/view.bin": "V" * 8, "log.txt": "log\n", "other.txt": "other\n",
+                 "data/out.bin": "O" * 16, "src/main.py": "print(1)\n"}
+        for name, text in files.items():
+            (rebuild / name).parent.mkdir(parents=True, exist_ok=True)
+            (rebuild / name).write_text(text)
+        os.link(rebuild / "mapped.bin", rebuild / "data" / "alias.bin")  # a second name of a mapped file
+        for name in ("data/out.bin", "deep/view.bin"):  # held through a name outside the tree
+            os.link(rebuild / name, outside / Path(name).name)
+        os.mkfifo(outside / "pipe")
+        me, group = os.getuid(), os.getgid()
+        seen["first"] = frozen(rebuild, lambda tree: {
+            4242: {"uids": [me] * 4, "gids": [group] * 4,
+                   "maps": [maps_line(tree / "mapped.bin", "rw-s"), maps_line(tree / "shared.dat", "rw-s", dev=os.makedev(0, 0), ino=7),
+                            maps_line(tree / "deep" / "view.bin", "rw-s", shown=str(outside / "view.bin")),
+                            maps_line(tree / "notes.txt", "r--s"), maps_line(tree / "keep.txt", "rw-p"),
+                            maps_line(tree / "bpl", "rw-s", dev=os.makedev(0, 0), ino=8, shown=f"{tree / 'bpl'} (deleted)"),  # gone: not bpl
+                            "7f0000002000-7f0000003000 rw-s 00000000 00:01 1029 /dev/zero (deleted)"],
+                   "tasks": {4242: {3: (str(tree / "log.txt"), "0102001"), 4: (str(tree / "bpl"), "0100000"),
+                                    5: (str(outside / "out.bin"), "02"), 6: (str(outside / "pipe"), "01")},
+                             4243: {7: (str(tree / "src" / "main.py"), "0100001")}}},
+            1: {"uids": [0] * 4, "gids": [0] * 4, "tasks": {1: {3: (str(tree / "other.txt"), "02")}}},
+            4300: {"uids": [me] * 4, "gids": [group, 99, 99, 99], "unreadable": True, "command": b"/opt/bpl/bpl\0-e\0x\0"}},
+            capped=True)
+
+    rebuild = collected(tmp_path / "capped", build)
+    mark = (rebuild / ".manifest").read_text().splitlines()
+    held = {"data/alias.bin": "mapped shared and writable", "data/out.bin": "open for writing", "deep/view.bin": "mapped shared and writable",
+            "log.txt": "open for writing", "mapped.bin": "mapped shared and writable", "shared.dat": "mapped shared and writable",
+            "src/main.py": "open for writing"}
+    assert sorted(mark[1:]) == sorted(f"removed {name}: a process of the session still had it {how} after the end of the work"
+                                      for name, how in held.items()), mark
+    assert sorted(str(path.relative_to(rebuild)) for path in rebuild.rglob("*") if path.is_file()) == [
+        ".manifest", ".manifest.json", "bpl", "keep.txt", "notes.txt", "other.txt"]
+    record = json.loads((rebuild / ".manifest.json").read_text())
+    assert (record["late_entries"], record["held_for_writing"]) == (7, 7), "counted with the late entries, and apart"
+    writers = record["writers"]
+    assert writers["listed"] is True and writers["not_read_count"] == 1 and writers["not_read"][0]["pid"] == 4300
+    assert writers["not_read"][0]["command"] == "/opt/bpl/bpl -e x" and writers["held"] == 2 * 7, writers  # both runs' entries
+    first = seen["first"]
+    assert first["complete"] is True and first["processes"] == 2 and first["outside"] == 1, first
+    assert sorted(entry["how"] for entry in first["held"]) == ["mapped"] * 4 + ["open"] * 3, first["held"]  # the gone bpl's too
+    assert {entry["pid"] for entry in first["held"]} == {4242}, "a thread's own table is its process's"
+    stopped, notes = arrival(rebuild, tmp_path / "capped" / "copied")
+    assert stopped is None and notes == [f"maintenance step: {line}" for line in mark[1:]], (stopped, notes)
+
+
+def test_what_was_held_counts_only_after_a_capped_turn_and_a_hidden_process_refuses_one(tmp_path):
+    """Round 12, R1. The listing changes nothing for a session that ended within its limit: what its processes held
+    open is delivered as it stands, since nothing of it can be later than an end that has not come. A session that
+    ran to its limit and whose processes held nothing of the tree loses nothing. One with a process that could be read
+    neither as root nor as its user though every id of it is the user's (it made itself undumpable, so no listing
+    shows what it maps) is refused, as is one whose listing is missing or incomplete."""
+    me, group = os.getuid(), os.getgid()
+
+    def tree_with(processes, capped, **kwargs):
+        def build(rebuild):
+            (rebuild / "bpl").write_text("#!/bin/sh\n")
+            (rebuild / "log.txt").write_text("log\n")
+            frozen(rebuild, processes, capped=capped, **kwargs)
+        return build
+
+    appending = lambda tree: {4242: {"uids": [me] * 4, "gids": [group] * 4, "tasks": {4242: {3: (str(tree / "log.txt"), "0102001")}}}}
+    reading = lambda tree: {4242: {"uids": [me] * 4, "gids": [group] * 4, "tasks": {4242: {3: (str(tree / "log.txt"), "0100000")}}}}
+    hidden = lambda tree: {4400: {"uids": [me] * 4, "gids": [group] * 4, "unreadable": True, "command": b"python3\0-c\0hold()\0"}}
+    in_time = collected(tmp_path / "in-time", tree_with(appending, capped=False))
+    record = json.loads((in_time / ".manifest.json").read_text())
+    assert (in_time / ".manifest").read_text() == "delivered 2 14\n" and record["held_for_writing"] == 0 and record["writers"]["held"] == 1
+    nothing = collected(tmp_path / "nothing", tree_with(reading, capped=True))
+    assert (nothing / ".manifest").read_text() == "delivered 2 14\n", "a read-only descriptor takes nothing out"
+    refused = {}
+    refused["hidden"] = collected(tmp_path / "hidden", tree_with(hidden, capped=True))
+    refused["no user run"] = collected(tmp_path / "no-user-run", tree_with(hidden, capped=True, user_run=False))
+    lost = 'import os, sys\nos.remove(os.path.join(sys.argv[5], "writers.json"))\n'
+    refused["lost"] = collected(tmp_path / "lost", tree_with(reading, capped=True), prelude=lost)
+    cut_short = 'import json, os, sys\nopen(os.path.join(sys.argv[5], "writers.json"), "w").write(json.dumps({"complete": False, "why": "it was not done within 20 s"}))\n'
+    refused["cut short"] = collected(tmp_path / "cut-short", tree_with(appending, capped=True), prelude=cut_short)
+    marks = {name: (tree / ".manifest").read_text().splitlines() for name, tree in refused.items()}
+    start = "the session ran to its limit, and "
+    assert marks == {
+        "hidden": ["refused", start + "its process 4400 (python3 -c hold()) could not be read for what it held open for writing: it was not copied"],
+        "no user run": ["refused", start + "what its processes held open for writing could not be listed as their user: it was not copied"],
+        "lost": ["refused", start + "what its processes held open for writing could not be listed: it was not copied"],
+        "cut short": ["refused", start + "what its processes held open for writing could not be listed (it was not done within 20 s): "
+                      "it was not copied"]}, marks
 
 
 def listing_order(folder: Path, names: list[str]) -> list[str]:
@@ -1845,7 +2011,7 @@ def test_the_freeze_and_the_kill_end_in_time_and_a_task_in_d_holds_neither(tmp_p
         for name, body in stand_ins.items():
             (tools / name).write_text("#!/bin/sh\n" + body)
             (tools / name).chmod(0o755)
-        text = hook[:hook.index("left=$(")]
+        text = hook[:hook.index("left=$(")].replace("/usr/bin/python3", sys.executable)  # (R1's listing, before the kill)
         if mode == "running":
             text = text.replace("LOOP_SECONDS=15", "LOOP_SECONDS=2")  # whole seconds, as date gives them
         text = text.replace("/var/lib/scratch", str(top / "state"))
@@ -1934,7 +2100,7 @@ sys.path.insert(0, sys.argv[1])
 import verify
 rc = verify.runcases
 hook, base, set_id_answer, delivered = Path(sys.argv[2]).read_text(), Path(sys.argv[3]), sys.argv[4], sys.argv[5] == "program"
-prescan, measure = (hook.split("<<'EOF'\n")[n].split("\nEOF\n", 1)[0] for n in (1, 4))
+prescan, measure = (hook.split("<<'EOF'\n")[n].split("\nEOF\n", 1)[0] for n in (2, 5))
 agent, state, archives = base / "agent" / "app" / "rebuild", base / "agent" / "state", base / "agent" / "tmp"
 for folder in (agent, state, archives, base / "tmp", base / "tmpdir", base / "tests" / "private", base / "v" / "app" / "rebuild",
                base / "logs" / "artifacts"):
