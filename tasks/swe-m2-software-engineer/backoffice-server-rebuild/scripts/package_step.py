@@ -1,9 +1,11 @@
 """Build a self-contained Harbor bundle from sources, the pinned reference application and recorded scenarios.
 
-usage: package_step.py [--flat] [--output DIR]
+usage: package_step.py [--flat [--keep-name]] [--output DIR]
 
 --flat writes the same files without the steps wrapper, under the task name with
-`-single` appended, for harnesses that accept only tasks without declared steps.
+`-single` appended, for harnesses that accept only tasks without declared steps;
+with --keep-name it keeps the task's own name, so that the flat bundle uploads as
+the next version of the same task.
 
 The reference server ships as bytecode only (compiled here with Python 3.12, the
 images' version), both as the sealed server and as the solution's data, so no
@@ -36,7 +38,7 @@ CACHE = TASK_ROOT / "experiment" / "dist" / ".cache"
 EXCLUDED = {"__pycache__", ".pytest_cache", ".DS_Store", "experiment"}
 CLIENT_FILES = ("index.html", "package.json", "package-lock.json", "tsconfig.json", "tsconfig.app.json", "tsconfig.node.json", "vite.config.ts",
                 "eslint.config.js", ".prettierrc.json", "openapi.json", "README.md")
-EXECUTABLE = (".sh", "start-sealed-server", "sealed-supervisor", "fsmaint-sweep", "fsmaint-timer")
+EXECUTABLE = (".sh", "start-sealed-server", "sealed-supervisor", "fsmaint-sweep")
 # py_compile with hash-based, unchecked headers: no source mtime in the file, so the bytes depend on the source alone.
 # optimize=0 keeps docstrings and asserts, which the server's behaviour depends on (its OpenAPI text, for one).
 COMPILE = """
@@ -192,7 +194,7 @@ def collect() -> dict[str, Source]:
     return dict(sorted(content.items()))
 
 
-def flatten(content: dict[str, Source]) -> dict[str, Source]:
+def flatten(content: dict[str, Source], keep_name: bool = False) -> dict[str, Source]:
     prefix = f"{STEP}/"
     flat = {(name[len(prefix):] if name.startswith(prefix) else name): data for name, data in content.items()}
     config = read(content["task.toml"]).decode()
@@ -200,9 +202,10 @@ def flatten(content: dict[str, Source]) -> dict[str, Source]:
     if not marker:
         raise ValueError("task.toml declares no [[steps]] table")
     head = re.sub(r"^multi_step_reward_strategy\s*=.*\n", "", head, flags=re.M)
-    head, count = re.subn(r'^(name = "abundant/[^"]+)"', r'\1-single"', head, count=1, flags=re.M)
-    if count != 1:
-        raise ValueError("task.toml has no [task].name to rename")
+    if not keep_name:
+        head, count = re.subn(r'^(name = "abundant/[^"]+)"', r'\1-single"', head, count=1, flags=re.M)
+        if count != 1:
+            raise ValueError("task.toml has no [task].name to rename")
     flat["task.toml"] = (head.rstrip("\n") + "\n").encode()
     return flat
 
@@ -221,11 +224,14 @@ def sha256(data: Source) -> str:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--flat", action="store_true")
+    parser.add_argument("--keep-name", action="store_true", help="with --flat: keep the task's own name")
     parser.add_argument("--output", type=Path, default=TASK_ROOT / "experiment" / "dist")
     args = parser.parse_args()
+    if args.keep_name and not args.flat:
+        parser.error("--keep-name goes with --flat")
     content = collect()
     if args.flat:
-        content = flatten(content)
+        content = flatten(content, keep_name=args.keep_name)
     slug = re.search(r'^name = "abundant/([^"]+)"', read(content["task.toml"]).decode(), flags=re.M).group(1)
     hashes = {name: sha256(data) for name, data in content.items()}
     digest = hashlib.sha256(json.dumps(hashes, sort_keys=True).encode()).hexdigest()

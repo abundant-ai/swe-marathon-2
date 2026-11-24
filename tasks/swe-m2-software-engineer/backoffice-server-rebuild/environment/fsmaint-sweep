@@ -7,25 +7,6 @@ LIMIT_BYTES=1000000000
 LIMIT_PATH=1000
 PACK_SECONDS=100
 STATE=/var/lib/fsmaint
-# Stop the maintenance timer, so that it ends nothing below that runs as the user: the process its pid file names, and
-# the children it had, only if that process is this user's timer and still runs (a zombie does not). What was found goes
-# into the manifest.
-timer=
-[ -r /run/fsmaint-timer.pid ] && read -r timer rest 2>/dev/null < /run/fsmaint-timer.pid
-case $timer in ''|*[!0-9]*) timer= ;; esac
-if [ -z "$timer" ]; then
-  stopped="no timer was on record"
-elif ps -o stat= -o uid= -o args= -p "$timer" 2>/dev/null | grep -q "^ *[^Z ][^ ]*  *$(id -u) .*fsmaint-timer"; then
-  children=$(pgrep -P "$timer" 2>/dev/null)
-  kill -TERM "$timer" >/dev/null 2>&1
-  for _ in $(seq 1 20); do kill -0 "$timer" >/dev/null 2>&1 || break; sleep 0.05; done
-  kill -KILL "$timer" >/dev/null 2>&1
-  [ -n "$children" ] && kill $children >/dev/null 2>&1
-  stopped="the timer (pid $timer) was running and was stopped"
-else
-  stopped="the timer on record (pid $timer) was not running"
-fi
-rm -f /run/fsmaint-timer.pid
 # End every process of the user. `kill -9 -1` as that user reaches all of them in one system call, so a process that
 # forks cannot outrun it; repeat until none is left. A process that has ended and that nobody has reaped is not counted
 # where pgrep can tell its state, so that such entries cannot keep the loop going.
@@ -37,16 +18,14 @@ for _ in $(seq 1 100); do
   pkill -KILL -u dev >/dev/null 2>&1
   sleep 0.1
 done
-# The maintenance timer's last lines go into the manifest: they say whether it ended the user's processes. The line
-# after them says what the stop above found.
+# The sweep's own lines, each starting `sweep: `, close the manifest. The first: the process limit a su session of the
+# user had when the session began (`ulimit -Hu`, read at set-up).
 mkdir -p "$STATE" 2>/dev/null
-tail -n 20 /var/log/fsmaint-timer.log > "$STATE/timer.txt" 2>/dev/null || :
-echo "sweep: $stopped" >> "$STATE/timer.txt" 2>/dev/null || :
-# The process limit a su session of the user had when the session began (`ulimit -Hu`, read at set-up).
+: > "$STATE/log" 2>/dev/null
 limit=
 [ -r "$STATE/user-limit" ] && read -r limit rest 2>/dev/null < "$STATE/user-limit"
 case $limit in ''|*[!0-9a-z]*) limit= ;; esac
-[ -n "$limit" ] && echo "sweep: a su session of the user had a process limit of $limit" >> "$STATE/timer.txt" 2>/dev/null
+[ -n "$limit" ] && echo "sweep: a su session of the user had a process limit of $limit" >> "$STATE/log" 2>/dev/null
 # Give back the room and the spare inodes set aside when the session started, so however full the disk was left, the
 # mark, a refusal and the copy's archive can be written.
 rm -f "$STATE/room"
@@ -59,7 +38,7 @@ if [ -d /logs/artifacts ] && [ ! -L /logs/artifacts ] && [ -n "$(ls -A /logs/art
     && /opt/py/bin/python -I -c 'import os, sys; os.rename(sys.argv[1], sys.argv[2])' /logs/artifacts "$kept/artifacts" 2>/dev/null \
     && mkdir -m 0777 /logs/artifacts && how="moved aside" \
     || { find /logs/artifacts -mindepth 1 -maxdepth 1 -exec rm -rf -- {} + 2>/dev/null; how="removed"; }
-  echo "sweep: what the user left in /logs/artifacts was $how" >> "$STATE/timer.txt" 2>/dev/null
+  echo "sweep: what the user left in /logs/artifacts was $how" >> "$STATE/log" 2>/dev/null
 fi
 # Anything at /app/server that is not a directory is moved aside, never followed, and an empty directory takes its
 # place with a manifest that refuses it.
@@ -68,7 +47,7 @@ if [ ! -d /app/server ] || [ -L /app/server ]; then
     aside=$(mktemp -d /app/.aside.XXXXXX) && mv -f /app/server "$aside/" || rm -f /app/server
   fi
   mkdir /app/server && chmod 0777 /app/server || exit 1
-  { echo refused; echo "/app/server was not a directory: it was not copied"; sed 's/^/timer: /' "$STATE/timer.txt"; } \
+  { echo refused; echo "/app/server was not a directory: it was not copied"; cat "$STATE/log"; } \
     > /app/server/.fsmaint-manifest 2>/dev/null
   exit 0
 fi
@@ -76,16 +55,27 @@ fi
 if [ -e /app/server/.fsmaint-manifest ] || [ -L /app/server/.fsmaint-manifest ]; then
   aside=$(mktemp -d /app/.aside.XXXXXX) && mv -f /app/server/.fsmaint-manifest "$aside/" || rm -rf -- /app/server/.fsmaint-manifest
 fi
-# Links, as the user (it copies nothing the user could not read), within the limits and two minutes.
-timeout 120 setpriv --reuid dev --regid dev --clear-groups --no-new-privs /opt/py/bin/python -I - /app/server "$LIMIT_ENTRIES" "$LIMIT_BYTES" <<'EOF'
+# Nothing of the user's runs any more, and every step above that could change /app/server is done: what changes there
+# after this moment (the fence) is the sweep's own doing. The work's end is its start, recorded at set-up, plus the
+# 34,560 s a session may last: for a session that reached that limit, what changed between the end and the fence was
+# written once the work was over.
+date > "$STATE/fence" 2>/dev/null
+end=$(/opt/py/bin/python -I -c 'import os, sys; print(os.stat(sys.argv[1]).st_mtime + 34560)' "$STATE/work-started" 2>/dev/null)
+fence=$(/opt/py/bin/python -I -c 'import os, sys; print(os.stat(sys.argv[1]).st_mtime)' "$STATE/fence" 2>/dev/null)
+# Links, as the user (it copies nothing the user could not read, and nothing changed after the work's end), within the
+# limits and two minutes.
+timeout 120 setpriv --reuid dev --regid dev --clear-groups --no-new-privs /opt/py/bin/python -I - /app/server "$LIMIT_ENTRIES" "$LIMIT_BYTES" "$end" "$fence" <<'EOF'
 """Make /app/server safe to copy to the machine it will run on, as the user who built it.
 
 The copy keeps relative links that stay inside the directory and refuses everything else. A link
 inside it that points elsewhere inside it becomes relative; a link to a file or directory outside
 it (a virtual environment's interpreter, say) becomes a copy of what it points to, if that is a
-file or a directory (devices, pipes and sockets in it are left out) and the disk has room for it
-beside the room kept free for the manifest; a link to nothing or to a device, and a pipe, a socket
-or a device node, are removed. Each change is printed.
+file or a directory (devices, pipes and sockets in it are left out), no file or link in it changed
+after the work's end (the fourth argument), and the disk has room for it beside the room kept free
+for the manifest; a link to nothing or to a device, and a pipe, a socket or a device node, are
+removed. A link that itself changed after the work's end and before the fence (the fifth argument,
+when nothing of the user's ran any more) is left as it is, for the measuring that follows to remove.
+Each change is printed.
 """
 import os
 import shutil
@@ -95,6 +85,8 @@ import sys
 ROOT = os.path.realpath(sys.argv[1])
 ENTRIES = int(sys.argv[2]) if len(sys.argv) > 2 else 100_000  # what /app/server may hold in all
 BYTES = int(sys.argv[3]) if len(sys.argv) > 3 else 1_000_000_000
+END = float(sys.argv[4]) if len(sys.argv) > 4 and sys.argv[4] else None  # the work's end, as a change time
+FENCE = float(sys.argv[5]) if len(sys.argv) > 5 and sys.argv[5] else float("inf")  # when nothing of the user's ran
 KEEP_BYTES, KEEP_INODES = 64 << 20, 64  # left free by every copy: what was set aside for the manifest and a refusal
 spent = copied = 0
 
@@ -112,25 +104,38 @@ def inside(path):
 
 
 def size_of(path, limit, most):
-    """Bytes and entries a copy of `path` would add; the count stops once either passes its limit."""
-    if not os.path.isdir(path):
-        return os.path.getsize(path), 1
-    total, count = 0, 1
+    """Bytes and entries a copy of `path` would add, and the latest change time of a file or a link among them; the
+    count stops once either passes its limit."""
+    info = os.stat(path)
+    if not stat.S_ISDIR(info.st_mode):
+        return info.st_size, 1, info.st_ctime
+    total, count, latest = 0, 1, 0.0
     for folder, folders, files in os.walk(path):
         count += len(folders)
+        for name in folders:  # links to directories are listed here
+            try:
+                entry = os.lstat(os.path.join(folder, name))
+                if stat.S_ISLNK(entry.st_mode):
+                    latest = max(latest, entry.st_ctime)
+            except OSError:
+                pass
         for name in files:
             count += 1
             try:
-                total += os.lstat(os.path.join(folder, name)).st_size
+                entry = os.lstat(os.path.join(folder, name))
+                total += entry.st_size
+                latest = max(latest, entry.st_ctime)
             except OSError:
                 pass
             if total > limit or count > most:
-                return total, count
-    return total, count
+                return total, count, latest
+    return total, count, latest
 
 
 def fix_link(path, name):
     global spent, copied
+    if END is not None and END < os.lstat(path).st_ctime < FENCE:
+        return None
     target = os.readlink(path)
     resolved = os.path.realpath(path)
     if not os.path.exists(resolved):
@@ -147,10 +152,13 @@ def fix_link(path, name):
     if not (stat.S_ISREG(mode) or stat.S_ISDIR(mode)):
         os.unlink(path)
         return f"removed {name} -> {target}: it points at a device, a pipe or a socket"
-    size, count = size_of(resolved, BYTES - spent, ENTRIES - copied)
+    size, count, latest = size_of(resolved, BYTES - spent, ENTRIES - copied)
     if spent + size > BYTES or copied + count > ENTRIES:
         os.unlink(path)
         return f"removed {name} -> {target}: copying it would pass {ENTRIES:,} entries or {BYTES:,} bytes"
+    if END is not None and latest > END:
+        os.unlink(path)
+        return f"removed {name} -> {target}: what it points to changed after the work's end"
     if not room_for(size, count):
         os.unlink(path)
         return f"removed {name} -> {target}: the disk has no room to copy it"
@@ -216,8 +224,11 @@ that. A tree over the limits, or one that the copy's own pack
 the directory cannot be renamed, what it holds is moved aside instead); a pack that fails only for want of room or
 inodes the machine never had is left to the copy. The manifest's first line is `complete` with the number of entries
 (files, directories and links) and of bytes in its files (each file once, however many names it has), or `refused`;
-each line after it is a change made or the reason for the refusal, at most NOTES of them, each one line, and the last
-lines of the maintenance timer's log follow, then the line that says what its stop found, each prefixed `timer: `.
+each line after it is a change made or the reason for the refusal, at most NOTES of them, each one line, and the
+sweep's own lines follow, each starting `sweep: `. For a session that reached its limit, an entry other than a directory
+that changed after the work's end (its start, recorded at set-up, plus SESSION_SECONDS) and before the moment nothing
+of the user's ran any more (the fence) is removed, with every other name of the same file, and a note: it was written
+once the work was over.
 """
 import os
 import stat
@@ -236,9 +247,25 @@ NOTES, NOTE_CHARS = 40, 200  # the manifest's lines of changes, and the characte
 MEASURE_SECONDS = 240  # for the walk and the links; the pack has PACK_SECONDS of its own
 STOP = time.monotonic() + MEASURE_SECONDS
 LIMIT_NAMES = 1000  # names (hard links) one file may have: a copy whose file system allows fewer makes copies of it
+SESSION_SECONDS = 34560  # the longest a session lasts
 notes, links, files, names_of = [], [], set(), {}
 path_of, inode_of = {}, {}  # each file and directory the walk saw: its path inside ROOT by (device, inode), and back
-entries = size = listed = 0
+entries = size = listed = late = 0
+
+
+def stamp(name):
+    """When STATE/name was last written, on the clock that gives files their change times; None if it was not."""
+    try:
+        return os.stat(os.path.join(STATE, name)).st_mtime
+    except OSError:
+        return None
+
+
+STARTED, FENCE = stamp("work-started"), stamp("fence")
+END = STARTED + SESSION_SECONDS if STARTED is not None else None
+if FENCE is None:  # never written: whatever changed after the end is taken as late
+    FENCE = float("inf")
+late_inodes = set()  # files removed as late: their other names go too, since removing one changes the change time
 
 
 class Refuse(Exception):
@@ -252,7 +279,7 @@ def in_time():
 
 def walk(fd, rel):
     """Count, and remove what the copy would refuse, below the directory open as `fd` (`rel` inside ROOT)."""
-    global entries, size, listed
+    global entries, size, listed, late
     in_time()
     with os.scandir(fd) as listing:
         names = []
@@ -266,6 +293,13 @@ def walk(fd, rel):
         if len(os.fsencode(path)) > LIMIT_PATH:
             raise Refuse(f"it holds a path longer than {LIMIT_PATH:,} bytes, the longest /app/server may hold")
         info = os.stat(name, dir_fd=fd, follow_symlinks=False)
+        key = (info.st_dev, info.st_ino)
+        if END is not None and not stat.S_ISDIR(info.st_mode) and (key in late_inodes or END < info.st_ctime < FENCE):
+            late_inodes.add(key)
+            os.unlink(name, dir_fd=fd)
+            notes.append(f"removed {path}: it changed after the work's end")
+            late += 1
+            continue
         if stat.S_ISLNK(info.st_mode):
             links.append(path)
         elif not (stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode)):
@@ -338,7 +372,7 @@ def check_link(path):
     if room_left():
         try:
             os.symlink(wanted, full)
-            notes.append(f"{path} -> {wanted} (was {target})")
+            notes.append(f"link {path} -> {wanted} (was {target})")  # no note starts with a name the user chose
             return
         except OSError:
             pass
@@ -434,12 +468,14 @@ if reason is None:
         else:
             reason = failed
 
-timer = []
+log = []
 try:
-    with open(os.path.join(STATE, "timer.txt"), errors="backslashreplace") as text:
-        timer = [f"timer: {one_line(line.rstrip())}" for line in text if line.strip()][-20:]
+    with open(os.path.join(STATE, "log"), errors="backslashreplace") as text:
+        log = [one_line(line.rstrip()) for line in text if line.strip()][-20:]
 except OSError:
     pass
+if late:
+    log.append(f"sweep: {late:,} entries that changed after the work's end were removed")
 lines = [f"complete {entries} {size}"]
 if reason is not None:
     set_aside()
@@ -447,7 +483,7 @@ if reason is not None:
 changes = [one_line(note) for note in notes[:NOTES]] + ([f"and {len(notes) - NOTES:,} more changes"] if len(notes) > NOTES else [])
 descriptor = os.open(MANIFEST, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644)
 with os.fdopen(descriptor, "w", errors="backslashreplace") as manifest:
-    manifest.write("\n".join(lines + changes + timer) + "\n")
-for line in lines[1:] + changes + timer:
+    manifest.write("\n".join(lines + changes + log) + "\n")
+for line in lines[1:] + changes + log:
     print(line.encode(errors="backslashreplace").decode(), flush=True)
 EOF

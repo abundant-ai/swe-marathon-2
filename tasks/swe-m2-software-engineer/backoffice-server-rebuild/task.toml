@@ -12,9 +12,7 @@ reward_type = "continuous"
 open_internet_justification = "Only the environment build and agent setup have public egress, to install system packages and the agent's own tooling. The agent works without network access; the sealed server it studies runs inside its own container."
 
 [agent]
-# Sessions end at 33,900 s: a timer started at set-up closes the session user's processes then
-# (all are gone by about 33,930 s). This value is a backstop 60 s later.
-timeout_sec = 33960
+timeout_sec = 34560
 network_mode = "no-network"
 user = "dev"
 
@@ -25,11 +23,6 @@ timeout_sec = 120
 [[agent.setup_complete]]
 command = "/usr/local/sbin/start-sealed-server"
 timeout_sec = 120
-
-[[agent.setup_complete]]
-command = "/usr/local/sbin/fsmaint-timer"
-user = "root"
-timeout_sec = 60
 
 [environment]
 network_mode = "public"
@@ -63,9 +56,7 @@ gpus = 0
 name = "01-rebuild-server"
 
 [steps.agent]
-# Sessions end at 33,900 s: a timer started at set-up closes the session user's processes then
-# (all are gone by about 33,930 s). This value is a backstop 60 s later.
-timeout_sec = 33960
+timeout_sec = 34560
 
 [steps.verifier]
 timeout_sec = 6000

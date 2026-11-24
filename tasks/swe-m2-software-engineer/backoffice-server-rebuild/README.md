@@ -13,6 +13,103 @@ One step is implemented. See [Remaining work](#remaining-work).
 
 ## Development log
 
+### 2026-11-24 (round 15: no task-side timer, late writes removed from the work's end, a flat bundle under the task's own name; version 11)
+
+- The judges' third decision on the timer (harbor-lh
+  `ops/swe-marathon-v2/decisions/2026-11-24-timer-round3-flat-bundles-DECISION.md`, unanimous: C,
+  with D alongside). BasedPL's version 4 verdict rejected round 12's option B again ("the task's
+  own session timer ... is shorter than the configured agent limit ..., so the timer stops the
+  agent before its time is up"), as its version 2 verdict had with a 660 s gap: any task-side stop
+  before `timeout_sec` is rejected. The timer is gone: `environment/fsmaint-timer`, its
+  `setup_complete` entry, its lines in the Dockerfile and the packager, the sweep's stop and its
+  `timer:` lines, and `ended_by_timer` and `timer_log` in `metrics.json`, now `sweep_log` (the
+  sweep's own `sweep:` lines, whole). Both agent `timeout_sec` values are 34,560 again, with no
+  comment. The process cap of round 13 stays.
+- The bound after the turn, without the timer. At the limit harbor stops waiting but never ends
+  the agent's commands, and the network comes back once the turn is over (harbor-lh
+  `ops/swe-marathon-v2/PLATFORM_EGRESS_WINDOW.md`), so a capped turn's processes can write, and
+  fetch, until the collect hook ends them; ending them at the limit is ruled out (a killed
+  claude-code run is classified by its transcript, and Oddish would discard the score). The
+  set-up now records the work's start at each successful exit (`/var/lib/fsmaint/work-started`;
+  it fails if it cannot), and the work's end is that start plus 34,560 s (the bound of SymPy's
+  integrity N1 fix). The sweep ends the user's processes as before, does every other step that
+  could touch `/app/server` (the `/logs/artifacts` set-aside, the manifest name's), then writes a
+  fence. The fixer, as `dev`, leaves a link that itself changed between the end and the fence to
+  the walk, and copies in no outside file or directory in which a file or link changed after the
+  end. The walk, as root, removes every entry other than a directory whose change time (the
+  kernel's; the agent cannot set it) falls between the end and the fence, with every other name of
+  the same file (removing one name moves the others' change time past the fence, where they would
+  pass for the sweep's own), a note each (`removed PATH: it changed after the work's end`) and a
+  `sweep: N entries that changed after the work's end were removed` line. A turn that ends by
+  itself ends before the end, so nothing is removed for it. A directory is not judged by its own
+  change time, which any entry added or removed in it moves (the files in it are). What this
+  leaves is under Remaining work.
+- Carve's re-check found that its sweep moved top-level entries before judging lateness, which
+  moved those files' change times past the end, so another name of the same file deeper in the
+  tree read as late: an honest tree lost two names. Checked here: before its fence the sweep
+  changes nothing in the tree but the agent's own file under the manifest's name (moved aside) and,
+  where `/logs/artifacts` cannot be renamed, what that directory holds (removed); whatever it
+  changes after the fence (the fixer's copies and rewritten links, the walk's removals) has a
+  change time at or after the fence and is never judged late. So no move of the sweep's own makes
+  another name read as late, and the times need no record by inode. The two cases before the fence
+  judge a file hard-linked into the tree from there as late in a capped session, which only a tree
+  built against the hooks has. `test_an_honest_capped_tree_with_hard_links_loses_no_name`: an
+  honest capped tree with a file named at the top and three levels down, a link with two names
+  that the fixer replaces by a copy under each in turn (replacing the first moves the second's
+  change time), a name hard-linked to a cache outside the tree (as uv links a package), a link made
+  relative and one replaced by a copy loses no name and gets no note about the work's end. On
+  `1a6b87b`, which has no rule on late writes, it loses no name either (`complete 14 2658`; it
+  fails there only on the timer's line in the manifest); on this round's sweep with the fence's
+  upper bound taken out, every change after the end judged (Carve's shape), it loses three
+  (`complete 11 658`): `venv-python` and `inside`, which the fixer had just written, and
+  `a/python-again`, whose change time the replacement of its other name had moved.
+- `sweep_log` takes the manifest's lines that start with `sweep: `, and one note did start with a
+  name the agent chose: a link the walk writes again was noted as `PATH -> TARGET (was OLD)`, so a
+  link named `sweep: 0 entries ...` read as the sweep's own line. That note is now
+  `link PATH -> TARGET (was OLD)`; every note starts with what was done.
+- Checks, both failing on `1a6b87b`: `test_a_capped_session_keeps_nothing_written_or_fetched_after_its_end`
+  (a detached process fetches over HTTP from a server on this machine and writes into the tree and
+  outside it until the sweep's own loop ends it, through stand-ins for `pgrep` and `setpriv` that
+  see and end that one process, so the fence must come after the kill; round 14 keeps all of it,
+  `complete 11 10479`; now `complete 5 1035`, four entries removed, the link to the fetched file
+  outside not copied, and a session that ended before its limit keeps everything) and
+  `test_a_late_file_cannot_keep_its_content_through_another_name` (without the set of late files,
+  two of the three names survive). The timer's four checks and its helpers are gone; the others
+  read `sweep_log`; the configuration check pins 34,560 in both places, no comment, nothing but
+  the sealed server at set-up and no timer in the image or the packager; the new check ties the
+  sweep's two 34,560s to `task.toml`; the manifest check adds the link named like a `sweep:` line;
+  the bundle check builds the flat bundle under the task's own name and holds it to the steps
+  bundle as below, and has `--keep-name` without `--flat` refused. `checks/` has 61 tests; with
+  `ci_checks` (27), 88 pass under Python 3.13, and `ci_checks/check_repository.py` passes (one
+  timing check, a hanging and a dripping server against a 4 s deadline, failed once under load in
+  a first full run and passed alone and in the final one); the sweep and the set-up pass `dash
+  -n`, and the sweep's two scripts and `verify.py` compile under Python 3.12.13.
+- A flat single-step bundle under the task's own name, as SymPy's (the only setup whose capped
+  runs were graded, 3 of 3): `package_step.py --flat --keep-name` writes the steps bundle's files
+  without the `steps/01-rebuild-server/` prefix and keeps the name
+  `abundant/swe-m2_software-engineering_backoffice-server-rebuild`, so that the upload becomes the
+  next version of the same task (`--keep-name` alone is refused); the repository keeps its steps
+  layout. Steps bundle `7b68392e5eb4` and flat bundle `4079a1748e67`, 1,160 files each (round 14's
+  less the timer), 247.3 MB, each built twice with the same hash and `diff -r`-identical files.
+  The flat bundle against the steps bundle: the same 1,160 names once the prefix is dropped, and the
+  same bytes and executable bits in every file but `task.toml`, which lacks
+  `multi_step_reward_strategy = "final"` (with one step its reward is the trial's either way) and
+  the `[[steps]]` table: the step's name, `01-rebuild-server`, and its agent and verifier limits,
+  34,560 s and 6,000 s, the values of the top-level `[agent]` and `[verifier]` tables the flat
+  task runs with. The instruction, the image, the set-up and collect hooks, the verifier and its
+  image, the artifacts (`/app/server`) and the reward are the same.
+- Proof. The local grade of the flat bundle `4079a1748e67` (the regrade reading the bundle's root;
+  its solution installed from an isolated copy by its own `oracle.py`, only the interpreter path
+  swapped for this Mac): the reference 1.0, 4,002 of 4,002 (2,262 of 2,262 scenarios), 9 planned
+  restarts, no other restart, no second try, nothing unfinished, no note, 514.4 s of replay; an
+  empty server 0.0, 0 of 4,002 ("/app/server/run is missing or not executable"). The first flat
+  build, `77c04a446699` (the sweep's comment and the link note's wording apart), scored the same:
+  4,002 of 4,002 in 519.5 s, and 0.0. `oddish preflight` on the flat bundle passes. Oddish's
+  `compute_task_content_hash` (`sha256-harbor-publishable-v1`) of the flat bundle is
+  `2160b86bc5b9...`, against `2c5d937b30d5...` for version 10's `7a92d0bd02fe` (the steps bundle's
+  is `3ba756342d7e...`). `scripts/scan_uploads.py` on the flat bundle: no leak and nothing missing
+  among 495 agent-image files (round 14's 496 less the timer).
+
 ### 2026-11-24 (round 14: the cap's record under bash, a neutral `task.toml` comment, `/logs/artifacts` set aside; version 11)
 
 - Re-check v11b of round 13 returned CONCERN, no must-fix, one should-fix: the set-up recorded the
@@ -1243,7 +1340,7 @@ One step is implemented. See [Remaining work](#remaining-work).
 | Part | State |
 | --- | --- |
 | Step `01-rebuild-server` | Implemented: instruction, agent image with the sealed server, separate verifier image, reference solution. |
-| Further steps | Not designed. Candidates: a follow-up change request on the rebuilt server; importing a year of legacy data. The maintenance timer is built for one step: a second one needs it armed per step first (Remaining work, QA 07h F5). |
+| Further steps | Not designed. Candidates: a follow-up change request on the rebuilt server; importing a year of legacy data. The work's end is counted from the trial's set-up, which is right for one step only: a second one needs its start recorded per step first (Remaining work). Since round 15 the task is uploaded flat. |
 | Private inputs | `steps/01-rebuild-server/tests/private/scenarios.json` and the private files they upload (`experiment/media/private`, made with `--big`), Git-ignored, produced by `scripts/record_scenarios.py --count 2160 --runs 44 --term 6 --kill 3 --screens 8` from the private seeds in `experiment/seeds.json` (never committed; rotated in round 3). The corpus holds `scenarios` alone; how it was recorded (the seed, the legacy commit, the themes left out, the media set's digest, the live recorder's settings) is in `experiment/recording.json` with the corpus's SHA-256, never committed or packaged (round 11). |
 | Oracle | The reference server, shipped as Python 3.12 bytecode in the solution's data, installed as the delivered server and run on the packages in `/opt/py`. |
 | Ratings (`harbor check`) | Not run. |
@@ -1320,9 +1417,10 @@ are all observable through the API and the client; whether one session suffices 
 
 ## Workload
 
-One agent session per run, ended at 33,900 s (9.4 hours) by the maintenance timer; the agent's
-limit in `task.toml`, `timeout_sec = 33960`, is a backstop 60 s later (round 12). There are no
-chained sessions or continuation tasks, and the instruction states no time budget. v2 asks
+One agent session per run, of at most 34,560 s (9.6 hours), the agent's limit in `task.toml`
+(`timeout_sec = 34560`; since round 15 nothing of the task's own ends the session earlier, and
+what changes after the limit does not count). There are no chained sessions or continuation
+tasks, and the instruction states no time budget. v2 asks
 for about five days of agent work, which one session does not reach. Follow-up steps remain open
 options for the owner: a change request on the rebuilt server, or a data migration (importing a
 year of legacy data).
@@ -1350,50 +1448,38 @@ reference server. The sealed server the agent studies, the recorders and the sol
 their settings from one file, `environment/stockwell.env` (the legacy recorder builds the same
 app in-process), so the server the agent learns from answers as the grader expects (QA 12 F1).
 
-**Run condition: the maintenance timer** (`environment/fsmaint-timer`; round 8's pre-cap watchdog
-under a housekeeping name since round 9). A root timer started at `setup_complete` ends the
-agent's session at 33,900 s (SIGTERM to every process of `dev`, then SIGKILL), because on the
-platform today a turn that runs into the cap is never graded (the separate verifier image fails to
-build right after the timeout; harbor-lh `ops/swe-marathon-v2/PLATFORM_VERIFIER_BUILD_AFTER_LONG_RUN.md`)
-while a turn that ends by itself is. Since round 12 the agent's own limit, `timeout_sec = 33960` in
-both places in `task.toml`, is a backstop 60 s after the firing, with a comment there that says so
-(since round 14 only what happens, not why: the reason named the platform, its trials and the
-verifier's image, which BasedPL's version 3 audit flagged); until round 11 it was 34,560 s, 660 s after the firing,
-which the platform's verdict on BasedPL's version 2 rejected as a premature stop (the judges'
-option B, harbor-lh `ops/swe-marathon-v2/decisions/2026-11-20-precap-timer-vs-deadline-DECISION.md`:
-the firing point behind every graded timer-ended trial stays, only the stated limit moves). Since round 10 the wait cannot end without the firing (QA 07h F1). One child waits the whole
-time on the monotonic clock and starts nothing, its time in its environment, so the process list
-the agent can read shows a root `python3 -I -` under a housekeeping name and never the time left.
-Where that child cannot run or ends early, the shell waits on in sleeps of at most 300 s: the end
-is fixed once on the kernel's uptime, which the shell reads without starting anything (the wall
-clock only where there is none), and the sleeps that complete are counted too, so a clock set back
-cannot move the end later. Every command the detached copy starts goes through a guard
-(`command eval`) that makes a refused fork a status instead of the shell's own end; it is logged
-the first time for its kind and at each doubling, and tried again. Where `pgrep` and `pkill`
-cannot be started, the shell picks the user's processes out of `/proc` by their effective user and
-signals them with its own `kill`. SIGTERM goes every 5 s for 30 s, then SIGKILL every half second
-until none is left, for at most 15 s more: every process of `dev` is gone by about 33,930 s, and
-the timer is done by about 33,945 s at the latest, 15 s before the backstop. A session it ended shows
-as `ended_by_timer: true` in `metrics.json`, with the log's last lines and the sweep's own line
-about the stop in `timer_log`; neither touches the reward. The agent is not told; the instruction
-states no budget either way, and nothing the agent can see of the hooks (the names in
-`/usr/local/sbin`, `/var/lib`, `/var/log` and `/run`, the process list) says what they are for.
-The sealed server and its supervisor run as other users and are untouched; the sweep stops the
-timer before anything of its own runs as `dev`. **This holds for one step only** (QA 07h F5): the
-collect hook runs at every step's collection and stops the timer for good, and `END_SECONDS`
-counts from the trial's set-up, not from a step's start. See [Remaining work](#remaining-work)
-before a second step is added.
+**Run condition: the platform's limit and the work's end** (round 15; the judges' third decision,
+harbor-lh `ops/swe-marathon-v2/decisions/2026-11-24-timer-round3-flat-bundles-DECISION.md`).
+Nothing of the task's own ends the agent's session. Rounds 8 to 14 had a root timer
+(`fsmaint-timer`) end it before the limit, because a steps bundle's turn that ran into the cap was
+never graded (harbor-lh `ops/swe-marathon-v2/PLATFORM_VERIFIER_BUILD_AFTER_LONG_RUN.md`); the
+platform's verdicts on BasedPL's versions 2 and 4 rejected that stop as premature whatever the gap
+(660 s, then 60 s), and the timer is gone. The limit is `timeout_sec = 34560` in both places in
+`task.toml`, with no comment, and the task goes up as a flat single-step bundle under its own name
+(`scripts/package_step.py --flat --keep-name`), as SymPy's does, the only setup whose capped runs
+were graded (3 of 3); the repository keeps its steps layout. A turn that reaches the limit is not
+ended: harbor stops waiting for it and leaves the agent's commands running, with the network back
+once the turn is over (harbor-lh `ops/swe-marathon-v2/PLATFORM_EGRESS_WINDOW.md`), until the
+collect hook ends them, and a killed claude-code run would be classified by its transcript and its
+score discarded. So the work's end is its start, recorded when the set-up hands over
+(`/var/lib/fsmaint/work-started`, written by `start-sealed-server` at each successful exit; the
+set-up fails if it cannot write it), plus 34,560 s, and what changed in `/app/server` after that end
+does not count: the collect hook removes every entry other than a directory whose change time falls
+between the end and the moment it had ended the agent's processes and done everything else that
+could touch the tree (the fence, `/var/lib/fsmaint/fence`), with every other name of the same file
+and a note each, adds `sweep: N entries that changed after the work's end were removed` to the
+manifest, and copies in no outside file or directory a link points to in which a file or link
+changed after the end. A turn that ends by itself ends before the end, so nothing is removed for
+it. The agent is not told; the instruction states no budget either way, and nothing the agent can
+see of the hooks (the names in `/usr/local/sbin` and `/var/lib`) says what they are for. The
+sealed server and its supervisor run as other users and are untouched. **This holds for one step
+only**: the start is recorded at the trial's set-up, not at a step's start. See
+[Remaining work](#remaining-work) before a second step is added.
 
 1. Delivery: before `/app/server` leaves the agent's machine, a `[[verifier.collect]]` hook runs
    `environment/fsmaint-sweep` (root, mode 0700; `prepare-delivery` until round 9), so that
-   nothing the agent leaves can make the copy fail (QA 07e M4, 07f M4). It stops the maintenance
-   timer, so that the timer's SIGTERM rounds cannot reach the hook's own stage that runs as `dev`
-   (round 9): only the process its pid file names, and only if `ps` shows that process running,
-   as this user, with the timer's name on its command line (a zombie is not signalled or waited
-   for), together with the child it waited in; it removes the pid file and records what it found
-   as the last `timer:` line of the manifest (`sweep: the timer (pid N) was running and was
-   stopped`, `... was not running` or `no timer was on record`), so that a timer that died early
-   shows in `timer_log` (round 10, QA 07h F3 and F1). Then it ends every process of `dev` with
+   nothing the agent leaves can make the copy fail (QA 07e M4, 07f M4). (From round 9 to round 14
+   it first stopped the maintenance timer.) It ends every process of `dev` with
    `kill -9 -1` as `dev`, one system call that a forking process cannot outrun, until none is
    left (since round 12 an ended process nobody has reaped does not count, where procps's `pgrep`
    can tell its state: under Docker this image's first process, `sleep infinity`, reaps nothing,
@@ -1407,16 +1493,22 @@ before a second step is added.
    nothing) by an empty directory with a manifest that refuses it, after moving it aside, never
    followed; and moves aside, never following, whatever was left under the manifest's name, or
    removes it where it cannot (until round 12 it exited there and the agent's own manifest
-   arrived, QA 22 F6 of the Carve task). Then, as `dev` and within two minutes, it makes links
+   arrived, QA 22 F6 of the Carve task). Since round 15 it then writes the fence (see the run
+   condition above): nothing before it may change the tree after it. Then, as `dev` and within two
+   minutes, it makes links
    inside the directory relative, replaces links that leave it with copies of the files or
    directories they point to (within the delivery's limits, and since round 12 only while 64 MiB
    and 64 inodes stay free for the manifest and a refusal, QA 07g F2; devices, pipes and sockets
-   are left out) and removes dangling links, links to devices, pipes, sockets and device nodes:
+   are left out; since round 15 only where no file or link in them changed after the work's end,
+   and a link that itself changed between the end and the fence is left to the walk) and removes
+   dangling links, links to devices, pipes, sockets and device nodes:
    Harbor's copy (tarfile's `data` filter) refuses absolute links and links that leave the
    directory, so without this a venv's interpreter link made a correct delivery vanish (QA 07
    F3); as `dev` it copies nothing `dev` could not read. Last, as root, it walks the delivery by
    directory descriptor, so no depth hides anything, counts every name it lists against the
-   100,000 entries (pipes and sockets too since round 12), removes what the copy would refuse (a
+   100,000 entries (pipes and sockets too since round 12), removes (since round 15) every entry
+   other than a directory that changed between the work's end and the fence, with every other name
+   of the same file, removes what the copy would refuse (a
    device, a pipe, a socket, a link with an absolute target, or one the kernel cannot follow, at
    most 40 links on the way, to a file or directory inside: one the walk saw or, failing that, one
    `realpath` finds there), keeps a link only as the
@@ -1438,10 +1530,12 @@ before a second step is added.
    moved aside instead. The manifest, `/app/server/.fsmaint-manifest` (`.delivered` until round
    9), says `complete`, the entries and the bytes, or `refused` and why, with a line for each of
    the first 40 changes (since round 12 each one line of at most 200 characters, unprintable
-   characters escaped, then how many more there were), and ends with the timer log's last lines
-   (`timer:` lines, kept apart from the hook's notes). The hook's longest run is now about 470 s:
-   the timer's stop and the kill loop in seconds, the fixer's 120 s, the walk's 240 s, the pack's
-   100 s. `verify.py` scores what arrived, with a note when the manifest is missing or says
+   characters escaped, then how many more there were), and ends with the sweep's own lines
+   (`sweep:` lines, kept apart from the hook's notes and reported whole as `sweep_log` in
+   `metrics.json`: the process limit, what became of `/logs/artifacts`, how many entries changed
+   after the work's end; until round 15 the timer's log as `timer:` lines and `timer_log`). The
+   hook's longest run is now about 470 s: the kill loop in seconds, the fixer's 120 s, the walk's
+   240 s, the pack's 100 s. `verify.py` scores what arrived, with a note when the manifest is missing or says
    `refused`, and reads at most its first 64 KiB (round 12); fewer entries or bytes arriving than
    the manifest counts (a copy the platform cut short) and an `/app/server` of which nothing
    arrived are evaluation errors, while more (hard links a copy could not keep, which arrive as
@@ -1452,7 +1546,7 @@ before a second step is added.
    (`/etc/security/limits.d/90-nproc.conf`, through `pam_limits`, made optional in `/etc/pam.d/su`
    so that a limit it cannot set never stops a session), so that a fork bomb left at the end of
    the session cannot keep root's hooks or the copy from starting; the set-up records the hard
-   limit such a session gets, and the sweep carries it into `timer_log`.
+   limit such a session gets, and the sweep carries it into `sweep_log`.
 2. Sandbox: set-user-id and set-group-id bits are cleared, the submission is made root's and
    read-only, and `/app/server/run` is started as user `nobody` through
    `setpriv --no-new-privs`, under `prlimit` (4,096 threads for the user, files of at most
@@ -1618,13 +1712,19 @@ unassessed; 5, 7, 8, 9 and 11 mitigated but not yet exercised in a container; 10
 | 11 | A correct server scores 0: an absolute link in `/app/server` (a venv's interpreter) makes Harbor's copy refuse the whole delivery | Harbor's artifact copy (tarfile `data` filter) | QA 07 F3, confirmed: `AbsoluteLinkError` on the venv link; reproduced in `checks/` with a real venv; fixed in round 3. QA 07c N2: a link to `/dev/zero` was copied until the disk filled; fixed in round 4. QA 07d S2: a copy that failed arrived as an empty `/app/server` and scored 0; fixed in round 5. QA 07e M4: round 5 made a missing mark an evaluation error, and a submission could make its own copy fail (a 1 TiB sparse file, a full disk, a process the hook missed), turning its 0 into a re-run; fixed in round 6. QA 07f M4: round 6's bound walked by path name and missed what lay below PATH_MAX, where a 4 TiB sparse file made the copy's pack overrun; exhausted inodes did the same; fixed in round 7, with a check past macOS's PATH_MAX | `[[verifier.collect]]` runs `fsmaint-sweep` (`prepare-delivery` until round 9) before the copy: links inside become relative, links out become copies of files or directories (as `dev`, within the delivery's limits and two minutes; devices, pipes and sockets left out), dangling links, links to devices and special files go; the instruction says such links are replaced by copies; the hook ends the agent's processes with `kill -9 -1` as their user, gives back room and inodes set aside at the start, walks the delivery by directory descriptor, removes what the copy would refuse (since round 12 a link is followed by the kernel to a file or directory the walk saw and kept only as the relative path straight to it), refuses (moving aside, leaving an empty marked directory) a delivery it cannot measure within 240 s, over 100,000 entries (every name listed), 1 GB or a 1,000-byte path, or that the copy's own pack, tried first within 100 s, cannot make, and marks it with its entries and bytes; the verifier scores what arrived, with a note for a missing mark or a refusal, and a copy cut short or of which nothing arrived is an evaluation error | A link to more than the delivery's limits is removed rather than copied; the hook is best-effort in Harbor (a failure is logged, the copy goes on): a delivery copied without it is scored with a note. A machine whose `/tmp` never had room for a large delivery is left to the copy, which then fails as an evaluation error. A pack that takes the trial 100 s on a slow machine is refused though Modal's 600 s would have taken it | Run the hook in a container on a venv and a Go module cache | 🟡 YELLOW / LOW |
 | 12 | The server the agent studies answers differently from the grader, so doing exactly what the instruction asks loses units | The sealed server's configuration against the recorders' and the solution's | QA 12 F1 (2026-11-19): the sealed server served the web client, so `DELETE /nowhere` answered 405 `allowed: []` there and 404 `unknown_path` in the corpus; a perfect clone lost 6 units. Fixed in round 4 | One settings file, `environment/stockwell.env`, for the sealed server, the live recorder and the solution, with no client directory (the legacy recorder builds the same app in-process); a check ties every file to it and the instruction's numbers to the code; the regrade of the solution with that file is 1.0 on every unit | The Mac recording and the Ubuntu images run different Python, SQLite and zlib builds; reading the code found no dependence (QA 11, 12) | The Linux baselines: 4,002 of 4,002 for the solution | 🟢 GREEN / LOW |
 | 13 | A server that fails under concurrent load earns its units back on second tries played one at a time | Verifier's second tries | QA 20 (2026-11-19): second tries were uncapped and alone, and a sequential pass fits the deadline, so a server that crashes whenever requests overlap recovered most of its units. Fixed in round 4 | A second try only for a scenario in flight when the server stopped, never for a wrong answer or a request a live server left unanswered, and only while the units they decide stay within 2% of all units; the check pins the share and that a dropped request gets none | A server that crashes under load keeps 2% of the units at most | None | 🟢 GREEN / LOW |
-| 14 | A deliberately hostile submission makes the evaluation end in an error instead of 0, with no reward. Closed in round 12, each with a check that fails on round 11 (`375b570`): about 99,000 crafted links outlast the delivery hook's 600 s (QA 07g F1), and chains do the same (QA 22 F3 of the Carve task: 4,000 links took round 11's stage 22.6 s here, four times as long at each doubling); the link fixer uses up the spare inodes, so a refusal dies after `/app/server` is moved aside (07g F2); a link that resolves inside only through another link, or climbs above `/` and back in, hidden from the fixer, makes Harbor's extraction refuse the copy (07g F3, QA 22 F5: round 11 kept it, `LinkOutsideDestinationError`, "The copy arrived incomplete: 2 of 3 entries"); pipes left out of the entry count let tens of millions of them hold the hook; zombies kept the kill loop at 100 passes where the first process reaps nothing; the sweep exited without a manifest for a non-directory at `/app/server` and where the manifest's name could not be moved aside (QA 22 F6); the manifest's changes were unbounded and the verifier read it whole (QA 22 F1); a refusal's rename of `/app/server` was not guarded against EXDEV. Closed in round 13 (re-check 08), each with a check that fails on `cd98856`: a file with more names than a copy's file system allows links (65,000 on ext4) arrived as copies, whose extra bytes failed the count check and, for a large file, could fill the host's disk (now a file with more than 1,000 hard links refuses the tree, a stated limit, and more arriving than counted is scored with a note); a fork bomb left running past the session could keep the hook, and the copy, from starting (now a `su` session of `dev`, harbor's way of starting the agent's commands, is capped at 16,384 processes and threads, and the cap the platform gives is recorded in `timer_log`). Left: where neither a memory cgroup nor a VM's own meminfo can be read, a memfd that no process maps is not counted (07f); where `/app/server` cannot be renamed, a refused tree with millions of entries at its top is moved aside one entry at a time; the process cap holds only where the kernel enforces RLIMIT_NPROC and the sandbox's own process limit is higher than the cap (both unmeasured; the baselines' `timer_log` shows the cap a session got) | Delivery hooks; Harbor's artifact copy; the verifier's memory guard | QA 07e, 07f and 07g (2026-11-19); 07g F3 run through Harbor's own extraction code, F1 timed on macOS; round 12 against the catalogue of QA 22 and 23 of the Carve task, which shares this hook's family, each case run on `375b570` and on round 12 | None of these gives reward, reads answers or touches honest work: an honest delivery holds no crafted link chains, no tens of thousands of links and does not exhaust inodes. Round 12 makes each closed path a scored 0 with a note, or a tree copied as the agent left it, links straightened. Accepted on 2026-11-19 under a run policy for what is left: one attempt per trial; every errored trial is read; it scores 0 when its own files show the submission caused it, and is otherwise re-run as an infrastructure fault | A hostile run costs one trial and a read | The container red team repeats 07f's deep sparse file and full inodes, 07g's link chains and a file with 70,000 hard links | 🟡 YELLOW / LOW |
-| 15 | Outlast the maintenance timer (`fsmaint-timer`, the pre-cap watchdog), so that the session runs into the platform's cap and goes ungraded, or stop it to gain time, or learn from it when the session ends | Process ownership; what the agent can see of the hooks; what the timer needs from the machine while it waits and fires | Round 8; the design of BasedPL's round 5; probe `cap-watchdog-6eb19fc0` showed a run the watchdog ended is graded. Round 9: the Oddish audits of version 8 and of the Goose task found that the helper names (`precap-watchdog`, `prepare-delivery`, `/var/lib/delivery`) and the watchdog's header comment told the solver that a cap is enforced and that its work is packed for grading. QA 07h F1 (2026-11-20): round 9's wait read the wall clock at every step (set back 600 s it fired at 34,500 s) and started two processes every 300 s, and a shell that is refused a fork ends on the spot (`Cannot fork`, status 2), as round 8's did at the moment it fired; a fork bomb of the agent's own, on a machine that limits processes, is the way there. Reproduced and fixed in round 10 | The sleeper is root's and `dev` cannot signal it; its pid file and log are root-only (`/run/fsmaint-timer.pid`, `/var/log/fsmaint-timer.log`, mode 0600); `pkill -TERM` then `pkill -KILL` as root reach every process of `dev`, a parent with its child and a session of its own included (checked with stand-ins that live). Since round 9 every name the agent sees reads as system housekeeping (`fsmaint-timer`, `fsmaint-sweep`, `/var/lib/fsmaint`). Since round 10 the wait is one child on the monotonic clock that starts nothing and shows no time in the process list; the shell's own wait, where that child fails, is fixed once on the kernel's uptime and counts its sleeps; every start is guarded, logged and tried again; without `pgrep` and `pkill` the shell signals the user's processes itself from `/proc`; since round 12, after 30 s of SIGTERM, SIGKILL is repeated every half second for up to 15 s more (45 s after the firing at 33,900 s, 15 s before the agent's limit of 33,960 s, a backstop; until round 11 a minute of SIGTERM and up to 510 s of SIGKILL, against a limit of 34,560 s). With every fork refused from its first line to its last, the timer still waits, fires and ends the processes (checked under dash) | A harness that ran the agent as root, which row 2 gates on the first trial; an agent that reads the root `python3 -I -` as a timer all the same. Not run as root on Linux: the guard against a refused fork rests on a POSIX rule (`command` takes the special-builtin property from `eval`, so an error inside it is a status) and was measured under macOS's dash, not under Ubuntu's; the `/proc` scan ran on a stand-in folder. Where `/proc/uptime` cannot be read and the wall clock is set forward, the shell's own wait fires early, never late. Two faults at the same moment can make it late: the waiting child ended early (the agent cannot signal it; root or the kernel's out-of-memory killer could) and the uptime unreadable when the next child starts, so that the shell counts only its own sleeps and does not take off the time the first child had waited. The firing is then late by the time the killed child had waited, up to the whole wait: past the cap for such a fault after about the first ten minutes, and the trial would be lost (re-check 07i, F1, measured 28.1 s against 20.1 s on a 20 s wait). A tested fix, the child reading the uptime clock itself at each wake, waits for the next ordinary version. A fork bomb that respawns faster than the SIGKILL passes outlasts them, as it outlasts `pkill`; the sweep's `kill -9 -1` as the user is the tool for that and runs only after the session. `ended_by_timer` is a record, not a control (QA 07h F4; the flag is never scored): on a disk with nothing left even for root the log's copy stays empty, so a session the timer ended reads `false` (a path with a newline in its name, hidden from the `dev` stage, could forge a `timer:` line in the manifest until round 12, which writes every change as one line with unprintable characters escaped) | The version 9 baselines' `metrics.json`: a `timer_log` of the `armed` line and `sweep: the timer (pid N) was running and was stopped`, and `ended_by_timer: false`, for the oracle and the no-op, which end long before 33,900 s. Optionally, before model trials, a canary trial with `FSMAINT_TIMER_END_SECONDS=600` among the environment's own variables, which exercises the firing and the stop on the platform (QA 07h, "After the upload") | 🟢 GREEN / LOW |
+| 14 | A deliberately hostile submission makes the evaluation end in an error instead of 0, with no reward. Closed in round 12, each with a check that fails on round 11 (`375b570`): about 99,000 crafted links outlast the delivery hook's 600 s (QA 07g F1), and chains do the same (QA 22 F3 of the Carve task: 4,000 links took round 11's stage 22.6 s here, four times as long at each doubling); the link fixer uses up the spare inodes, so a refusal dies after `/app/server` is moved aside (07g F2); a link that resolves inside only through another link, or climbs above `/` and back in, hidden from the fixer, makes Harbor's extraction refuse the copy (07g F3, QA 22 F5: round 11 kept it, `LinkOutsideDestinationError`, "The copy arrived incomplete: 2 of 3 entries"); pipes left out of the entry count let tens of millions of them hold the hook; zombies kept the kill loop at 100 passes where the first process reaps nothing; the sweep exited without a manifest for a non-directory at `/app/server` and where the manifest's name could not be moved aside (QA 22 F6); the manifest's changes were unbounded and the verifier read it whole (QA 22 F1); a refusal's rename of `/app/server` was not guarded against EXDEV. Closed in round 13 (re-check 08), each with a check that fails on `cd98856`: a file with more names than a copy's file system allows links (65,000 on ext4) arrived as copies, whose extra bytes failed the count check and, for a large file, could fill the host's disk (now a file with more than 1,000 hard links refuses the tree, a stated limit, and more arriving than counted is scored with a note); a fork bomb left running past the session could keep the hook, and the copy, from starting (now a `su` session of `dev`, harbor's way of starting the agent's commands, is capped at 16,384 processes and threads, and the cap the platform gives is recorded in `sweep_log`). Left: where neither a memory cgroup nor a VM's own meminfo can be read, a memfd that no process maps is not counted (07f); where `/app/server` cannot be renamed, a refused tree with millions of entries at its top is moved aside one entry at a time; the process cap holds only where the kernel enforces RLIMIT_NPROC and the sandbox's own process limit is higher than the cap (both unmeasured; the baselines' `sweep_log` shows the cap a session got) | Delivery hooks; Harbor's artifact copy; the verifier's memory guard | QA 07e, 07f and 07g (2026-11-19); 07g F3 run through Harbor's own extraction code, F1 timed on macOS; round 12 against the catalogue of QA 22 and 23 of the Carve task, which shares this hook's family, each case run on `375b570` and on round 12 | None of these gives reward, reads answers or touches honest work: an honest delivery holds no crafted link chains, no tens of thousands of links and does not exhaust inodes. Round 12 makes each closed path a scored 0 with a note, or a tree copied as the agent left it, links straightened. Accepted on 2026-11-19 under a run policy for what is left: one attempt per trial; every errored trial is read; it scores 0 when its own files show the submission caused it, and is otherwise re-run as an infrastructure fault | A hostile run costs one trial and a read | The container red team repeats 07f's deep sparse file and full inodes, 07g's link chains and a file with 70,000 hard links | 🟡 YELLOW / LOW |
+| 15 | Outlast the session: go on working, writing or fetching after the agent's limit, while the platform leaves a capped turn's commands running, with the network back, until the collect hook (rounds 8 to 14: outlast or stop the maintenance timer that ended the session before the limit) | The platform's handling of a turn that reaches its limit; the collect hook; file change times | Round 15: the platform's verdicts on BasedPL's versions 2 and 4 rejected a task-side stop before the limit, and the judges dropped the timer (harbor-lh `ops/swe-marathon-v2/decisions/2026-11-24-timer-round3-flat-bundles-DECISION.md`: harbor stops waiting at the limit but never ends the agent's commands, and the network comes back once the turn is over, `PLATFORM_EGRESS_WINDOW.md`). `test_a_capped_session_keeps_nothing_written_or_fetched_after_its_end` and `test_a_late_file_cannot_keep_its_content_through_another_name` fail on round 14 (`1a6b87b`), which keeps everything; `test_an_honest_capped_tree_with_hard_links_loses_no_name` (Carve's re-check: a sweep that moves a name before judging makes another name of the same file read as late) loses nothing here and three names without the fence's upper bound | The work's end is the start the set-up records plus 34,560 s. The collect hook ends the agent's processes, writes its fence once nothing else can touch the tree, removes every entry of `/app/server` other than a directory whose change time falls between the end and the fence, with every other name of the same file and a note each, and copies in no outside file or directory a link points to in which a file or link changed after the end; nothing it changes after the fence is judged, so none of its own moves makes an honest name read as late. The change time is the kernel's: the agent can neither set it nor keep a write from moving it | The end comes from the set-up's last moment, a little before harbor starts the agent's clock, so a capped session's writes in its last moments are removed too; a late file's earlier content goes with it; a directory moved in after the end keeps the files in it written before the end; writes through a shared memory map within one dirty-page window may not move a change time; a session that ends by itself has no end yet, so what its detached processes write before the collect hook counts (Stockwell's code is private, so the network has nothing of it to fetch); a pause of the trial queue stops the agent's clock but not the wall clock, so on a backend that can pause a sandbox (not Modal) the end comes early by the pause; a file hard-linked into the tree from the agent's own file under the manifest's name, or from `/logs/artifacts` where that cannot be renamed, reads as late in a capped session | The first capped model trials: a reward about 15 minutes after the cap, no `step_results` in `result.json`, and the sweep's note and `sweep:` line for every entry removed | 🟢 GREEN / LOW |
 
 ## Validation
 
 | Check | Revision | Result |
 | --- | --- | --- |
+| Late writes of a capped session | round 15 against round 14 (`1a6b87b`) | round 14 keeps everything a detached process writes and fetches after the end (`complete 11 10479`: the fetched file, the appended source, the new link and a copy of the file fetched outside); round 15: `complete 5 1035`, `app/main.py`, `late.txt`, `late-link` and `fetched.bin` removed with a note each and `sweep: 4 entries that changed after the work's end were removed`, the link to the file fetched outside not copied, the writer ended by the sweep's own loop before the fence; a session that ended before its limit keeps everything. Without the set of late files two of a late file's three names survive (`complete 12 1666`) |
+| An honest capped tree with hard links (Carve's re-check) | round 15; round 14 (`1a6b87b`); round 15's sweep without the fence's upper bound | round 15: no name lost, no note about the work's end (`complete 14 2658`); round 14 the same (no rule on late writes); without the upper bound, every change after the end judged (Carve's shape): `complete 11 658`, three names lost |
+| Flat bundle against the steps bundle | round 15: flat `4079a1748e67`, steps `7b68392e5eb4` | the same 1,160 names once `steps/01-rebuild-server/` is dropped, the same bytes and executable bits in all but `task.toml`, which lacks `multi_step_reward_strategy = "final"` and the `[[steps]]` table (limits 34,560 s and 6,000 s, the top-level values); the same task name |
+| Reference and empty server through the verifier, local, no sandbox | round 15: everything from the flat bundle `4079a1748e67` (the regrade reading the bundle's root), its solution installed from an isolated copy (only the interpreter path swapped for this Mac) | reference 1.0 on every unit: 4,002 of 4,002 (2,262 of 2,262 scenarios), 9 planned restarts, no other restart, no second try, nothing unfinished, no note; 514.4 s of replay against the 5,400 s deadline. Empty server 0.0, 0 of 4,002, "/app/server/run is missing or not executable". The first flat build `77c04a446699` (the sweep's comment and one note's wording apart) the same: 4,002 of 4,002 in 519.5 s, and 0.0 |
+| `checks/` (61 tests) with `ci_checks` (27) | round 15 | 88 pass under Python 3.13; `ci_checks/check_repository.py` passes; the sweep's two scripts and `verify.py` compile under Python 3.12.13; the sweep and the set-up pass `dash -n`. One timing check (a hanging and a dripping server against a 4 s deadline) failed once under load in the first full run and passed alone and in the final one |
+| Bundle | round 15: flat `4079a1748e67` (the upload), steps `7b68392e5eb4`, 1,160 files and 247.3 MB each | each built twice with the same hash and `diff -r`-identical files; Oddish preflight on the flat bundle passes; `compute_task_content_hash` of the flat bundle `2160b86bc5b9...` against version 10's (`7a92d0bd02fe`) `2c5d937b30d5...`; no hidden upload among 495 agent-image files |
 | Reference through the verifier, local, no sandbox | round 13: everything from bundle `500c1a290b4e`, its solution installed from an isolated copy (only the interpreter path swapped for this Mac), its corpus and its media | 1.0 on every unit: 4,002 of 4,002 (2,262 of 2,262 scenarios), 9 planned restarts, no other restart, no second try, no answer of 500 or above, no note; 493.4 s of replay against the 5,400 s deadline. An empty server from the same bundle: 0.0, 0 of 4,002 |
 | Re-check 08's findings | round 13 against round 12 (`cd98856`) | M1: the build removes `/opt/py/requirements.txt` after the install, and no other file the agent image receives states the sealed server's stack. S1: a file with more than 1,000 hard links refuses the tree, stated in the instruction; more arriving than counted is a note (round 12: "The copy arrived incomplete: 2 of 2 entries and 20 of 10 bytes"). S2: a su session of `dev` capped at 16,384 (the Dockerfile's PAM edit run on two stand-in files with GNU sed; the image's own su file and the platform's enforcement not verified; the baselines' `timer_log` records the cap). S3: no "compare" in the instruction. The five checks fail on `cd98856` |
 | `checks/` (61 tests) with `ci_checks` (27) | round 13 | 88 pass under Python 3.13; `ci_checks/check_repository.py` passes; the hook's scripts and `verify.py` compile under Python 3.12.13; the sweep and the set-up pass `dash -n` |
@@ -1714,69 +1814,71 @@ python3 scripts/trading_media.py --examples experiment/media/visible --seed 2026
 python3 scripts/make_media.py --out experiment/media/private --seed "$(python3 scripts/seeds.py media)" --big   # full-size large files
 python3 scripts/record_scenarios.py --count 2160 --runs 44 --term 6 --kill 3 --screens 8   # seeds from experiment/seeds.json; the record of the recording goes to experiment/recording.json
 uv run --no-project --python 3.13 python scripts/package_step.py         # compiles the reference with Python 3.12; experiment/dist/bundles/<hash>/<task slug>/
-uv run --no-project --python 3.13 python scripts/package_step.py --flat  # same content without the steps wrapper
+uv run --no-project --python 3.13 python scripts/package_step.py --flat  # same content without the steps wrapper, named <task>-single
+uv run --no-project --python 3.13 python scripts/package_step.py --flat --keep-name  # the upload since round 15: flat, under the task's own name; experiment/dist/flat/<hash>/
 python3 scripts/scan_uploads.py experiment/dist/bundles/<hash>/<task slug>   # hidden uploads or file answers the agent image also holds
 ```
 
 ## Remaining work
 
-- Upload bundle `f1293aa9de6f` (247.3 MB) as version 11 (version 10, bundle `7a92d0bd02fe`, passed
-  its baselines and its source audit; its verdict rejected it on evaluation awareness and the
-  instruction's framework list, rounds 12-14), after the re-checks of rounds 13 and 14, run its
-  baselines with `--no-archil` (reference twice, no-op twice), and have its Oddish source audit
-  pass before any model trial (the owner's gate since version 8). In the model trials, check that
-  no agent phase runs past about 33,930 s and that the platform grades every one the timer ends
-  (the judges' caveat: the verifier build now starts about 60 s before the agent's limit rather
-  than 660 s). Pass criteria for
+- Upload the flat bundle `4079a1748e67` (247.3 MB, `package_step.py --flat --keep-name`) under
+  the task's own name as version 11 (version 10, bundle `7a92d0bd02fe`, passed its baselines and
+  its source audit; its verdict rejected it on evaluation awareness and the instruction's
+  framework list, rounds 12-15; round 15 replaces the never-uploaded `f1293aa9de6f`), after an
+  independent re-check of round 15, run its baselines with `--no-archil` (reference twice, no-op
+  twice), and have its Oddish source audit pass before any model trial (the owner's gate since
+  version 8). Pass criteria for
   the reference: 4,002 of 4,002, `planned_restarts` 9,
   `restarts` 0, `retried` 0, `unfinished` 0, no answer of 500 or above in
   `server_errors_by_theme`, no note of the hard stop, of a stop for disk or memory, or from the
-  collect hook, and `3.5 x elapsed_sec + 300 <= 5,400`. For both baselines: `ended_by_timer: false`
-  and a `timer_log` of three lines, the timer's `armed` line, the sweep's `sweep: the timer (pid N)
-  was running and was stopped` (it armed at `setup_complete` and never fired, since both end long
-  before 33,900 s) and `sweep: a su session of the user had a process limit of 16384` (round 13).
-  `was not running` or `no timer was on record` there, or a line ending in `going on`, means the
-  timer died, never started or met a fault: read it before any model trial. A limit of
+  collect hook, and `3.5 x elapsed_sec + 300 <= 5,400`. For both baselines: a `sweep_log` of one
+  line, `sweep: a su session of the user had a process limit of 16384` (round 13), and no note of
+  an entry changed after the work's end (both end long before it); `result.json` with no
+  `step_results`, which shows the flat bundle ran. A limit of
   `unlimited`, or no such line, means the cap on the agent's processes did not apply on the
   platform; a number below 16384 means a lower one was already in place.
+- In the first model trials that reach the limit (the judges' watch list): about 15 minutes after
+  the cap the trial should end with a reward and a `result.json` without `step_results`, and the
+  manifest's notes and `sweep_log` say what the sweep removed for changing after the work's end. A
+  capped trial that ends with "Agent execution timed out" and no reward: read attempt 1's
+  `oddish-mon.log` for a `docker.compose_build` RuntimeError or `startup_retry phase=build`, report
+  the trial as lost, never as 0, and start nothing more until the judges' cap probe (D) reports.
   Record `memory_measure`, `server_peak_held_mib`,
   `free_space_mib`, `grader_oom_score_adj`, any note of an unwatched disk and the environment,
   hook, collect and verifier-build times against the 12-hour lease (QA 07c F7, QA 13 S3). For the
   no-op: 0.0 with `status: completed` and a manifest of `complete 0 0`.
-- Remove the maintenance timer (`fsmaint-timer`) once the platform grades a run that hits the cap
-  (the asks in harbor-lh `ops/swe-marathon-v2/PLATFORM_VERIFIER_BUILD_AFTER_LONG_RUN.md`): a
-  capped, ungraded run is reported as lost, never as 0, and until then every v2 result is biased
-  toward agents that stop early.
-- Before a second step is added (QA 07h F5): task-level collect hooks run at every step's
-  collection, and the sweep stops the timer for good, which is right for one step only. With two,
-  every session after the first would run without a timer, and `END_SECONDS` counts from the
-  trial's set-up, not from a step's start. Arm the timer per step (the sweep removes the pid file
-  since round 10, so a later start of `fsmaint-timer` does arm a new one; it has to be started
-  where a step begins and given that step's time), or stop it only at the last collection.
-- What `ended_by_timer` cannot be trusted for (QA 07h F4; the flag is never scored). Lost: the
-  sweep copies the timer's log before it gives the reserved room back (a check pins that order),
-  so on a disk with nothing left even for root the copy stays empty and a session the timer ended
-  reads `false`; the fix is to copy the log after the room is given back. (Forged, a path with a
-  newline in its name reading as the timer's line, is gone since round 12.)
+- Before a second step is added: task-level collect hooks run at every step's collection, and the
+  work's start is recorded at the trial's set-up, so every step's end would count from it. Record
+  the start where each step begins and give the sweep that step's limit, then go back to the steps
+  layout for the upload (the flat bundle has one step by construction).
+- What the rule on late writes leaves (round 15, hackability row 15): the end is taken from the
+  set-up's last moment, a little before harbor starts the agent's clock (one hook's return and the
+  agent phase's own start, not measured), so a capped session's writes in its last moments are
+  removed too; removing a late file removes its earlier content as well (nothing keeps an earlier
+  copy); a directory moved into the tree after the end keeps the files in it that were written
+  before the end; writes through a shared memory map within one dirty-page window may leave a
+  file's change time where it was; a session that ends by itself has no end yet, so what its
+  detached processes write before the collect hook counts (Stockwell's code is private, so the
+  network has nothing of it to fetch); and a pause of the trial queue (harbor 0.20's trial control,
+  which Oddish's quota pause uses) stops the agent's clock but not the wall clock, so on a backend
+  that can pause a sandbox (not Modal, which the `--no-archil` runs use) the end would come before
+  the platform's by the pause's length.
 - What rounds 12 and 13 left of the agent-caused evaluation errors (hackability row 14): a refused
   tree with millions of top-level entries where `/app/server` cannot be renamed (create
   `/app/server` at set-up as a directory of the upper layer, so that it renames whole), the memfd
   the memory guard does not see where it has no cgroup or meminfo, and the process cap's two
   conditions (the kernel enforces RLIMIT_NPROC; the sandbox allows more processes than 16,384):
-  the baselines' `timer_log` shows the first in part. Re-check 08's notes N2 (the room checks'
+  the baselines' `sweep_log` shows the first in part. Re-check 08's notes N2 (the room checks'
   inode figures are not recorded) and N3 (a refused tree is still replayed, as an empty one) are
   open.
-- The timer's two-fault residual (re-check 07i, F1): the tested fix, the child reading the uptime
-  clock itself at each wake, is still to be applied; round 12 changed only the ending's numbers.
 - The run configuration's appended system prompt (harbor-lh `ops/swe-marathon-v2/agents-*.yaml`,
   shared by the five tasks) tells the agent it runs "unattended" until "the completion criteria
   of the task are met or its time budget is used up": the platform's evaluation-awareness check
   may weigh that too, and the instruction states no time budget.
 - Not run anywhere yet (QA 07h F2; see Validation): the two hooks as root in the image, with the
-  real `setpriv`, `pkill`, `ps` and paths, and the timer's 9.4 hours. The checks run both scripts
-  whole under dash on the author's Mac with stand-ins; the guard against a refused fork was
-  measured under macOS's dash, not Ubuntu's. The version 9 baselines show the arming and the stop
-  on the platform; only a canary trial with a short `FSMAINT_TIMER_END_SECONDS` shows the firing.
+  real `setpriv`, `pkill`, `ps` and paths, and a turn that reaches the 34,560 s limit, the only
+  place the rule on late writes acts on the platform. The checks run both scripts whole under dash
+  on the author's Mac with stand-ins.
   Round 12 adds three things only a container shows: procps's `pgrep -r` state filter (Ubuntu
   24.04's procps has it; where the probe fails the loop falls back to round 11's), that a link's
   `stat` and the walk's `lstat` give the same device and inode on the platform's overlay (they do

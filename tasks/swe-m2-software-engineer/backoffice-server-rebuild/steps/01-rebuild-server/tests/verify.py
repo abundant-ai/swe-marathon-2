@@ -25,7 +25,7 @@ REWARD_FILES = ("reward.txt", "reward.json")
 PENDING = ".reward.pending"
 PLACEHOLDER = b"0.000000"  # a reward in [0, 1] written with six decimals always has this length
 MANIFEST = ".fsmaint-manifest"  # written into /app/server by the collect hook (environment/fsmaint-sweep)
-MANIFEST_READ = 1 << 16  # the hook writes at most about 50 KB: a first line, 40 one-line changes and the timer's lines
+MANIFEST_READ = 1 << 16  # the hook writes at most about 50 KB: a first line, 40 one-line changes and its own lines
 MISSING_MANIFEST = ("/app/server arrived without the collect hook's manifest (the hook did not run, or the copy was cut short); "
                     "it was scored as it arrived")
 # The step allows 6,000 s, and that clock also covers copying the tests in and the results out. The replay ends at
@@ -144,8 +144,8 @@ def manifest_notes(server: Path) -> list[str]:
 
 def manifest_record(server: Path) -> dict[str, Any]:
     """What the collect hook's manifest and the copy that arrived say about /app/server: `notes` for metrics.json, and
-    whether the maintenance timer ended the agent's session (`ended_by_timer`, with the log's last lines in
-    `timer_log`), which is recorded and never a reason to change the reward.
+    the hook's own lines (`sweep_log`, each starting `sweep: `), which are recorded and never a reason to change the
+    reward.
 
     The hook writes the manifest before the copy, for an empty directory too and for anything else it finds at
     /app/server, after bounding the tree and packing it once the way the copy packs it, so that nothing the agent
@@ -176,11 +176,11 @@ def manifest_record(server: Path) -> dict[str, Any]:
     except OSError:
         lines = None
     if not lines:
-        return {"notes": [MISSING_MANIFEST], "ended_by_timer": False, "timer_log": []}
+        return {"notes": [MISSING_MANIFEST], "sweep_log": []}
     rest = [line for line in lines[1:] if line.strip()]
-    timer_log = [line[len("timer: "):] for line in rest if line.startswith("timer: ")][-20:]
-    notes = [f"collect hook: {line}" for line in rest if not line.startswith("timer: ")][:20]
-    record = {"notes": notes, "ended_by_timer": any(" fired after " in line for line in timer_log), "timer_log": timer_log}
+    sweep_log = [line for line in rest if line.startswith("sweep: ")][-20:]
+    notes = [f"collect hook: {line}" for line in rest if not line.startswith("sweep: ")][:20]
+    record = {"notes": notes, "sweep_log": sweep_log}
     head = lines[0].split()
     if head[:1] == ["refused"]:
         record["notes"] = notes or ["collect hook: /app/server was not copied"]
@@ -228,8 +228,7 @@ def main() -> int:
         metrics = run_bounded(lambda: evaluate(server, scenario_file, Path("/work"), output, progress=progress), progress,
                               HARD_STOP_SEC - (time.monotonic() - started))
         metrics["notes"] = record["notes"] + metrics["notes"]
-        # whether the maintenance timer ended the agent's session: recorded, never scored
-        metrics["ended_by_timer"], metrics["timer_log"] = record["ended_by_timer"], record["timer_log"]
+        metrics["sweep_log"] = record["sweep_log"]  # the collect hook's own lines: recorded, never scored
         publish(output, metrics)
         published, code = True, 0
         print(f"reward: {metrics['reward']:.6f} ({metrics['units_matched']}/{metrics['units_total']} units)", flush=True)
