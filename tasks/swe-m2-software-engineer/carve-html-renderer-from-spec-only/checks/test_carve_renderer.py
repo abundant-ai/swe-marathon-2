@@ -1253,10 +1253,10 @@ def test_the_kill_phase_counts_only_live_processes_and_ends_in_time(tmp_path):
     signal has PROBE seconds, each phase a set time, and kill.json records whether it ran out. Here
     with stand-in commands that signal nothing: a population of zombies only, then a /proc too slow
     to answer at all."""
-    def phases(name: str, pgrep: str) -> tuple[subprocess.CompletedProcess, float, Path]:
+    def phases(name: str, pgrep: str, probe: int) -> tuple[subprocess.CompletedProcess, float, Path]:
         state = tmp_path / name
         state.mkdir()
-        script = (f'STATE="{state}"\nPROBE=1\nFREEZE=2\nENDING=3\n' + hook_shell("processes") + hook_shell("freeze")
+        script = (f'STATE="{state}"\nPROBE={probe}\nFREEZE=2\nENDING=3\n' + hook_shell("processes") + hook_shell("freeze")
                   + hook_shell("kill") + 'echo "passes=$passes left=$left"\n')
         began = time.monotonic()
         try:
@@ -1266,14 +1266,14 @@ def test_the_kill_phase_counts_only_live_processes_and_ends_in_time(tmp_path):
             done = subprocess.CompletedProcess(script, -1, "", "the phases ran past 60 s")
         return done, time.monotonic() - began, state
     zombies = 'case " $* " in *" -r "*) exit 1;; esac\necho 4242\n'
-    done, elapsed, state = phases("zombies", zombies)
+    done, elapsed, state = phases("zombies", zombies, 5)   # an instant stand-in: room for a loaded machine
     assert done.stdout.split() == ["passes=0", "left=0"] and elapsed < 5, (done.stdout, done.stderr, elapsed)
     ending = json.loads((state / "kill.json").read_text())
     assert ending == {"freeze_passes": 0, "freeze_ran_out": False, "kill_passes": 0, "kill_ran_out": False,
                       "processes_left": "0"}, ending
     if shutil.which("timeout") is None:
         return
-    done, elapsed, state = phases("silent", "exec sleep 30\n")
+    done, elapsed, state = phases("silent", "exec sleep 30\n", 1)
     ending = json.loads((state / "kill.json").read_text()) if (state / "kill.json").exists() else None
     assert elapsed < 30 and ending and ending["freeze_ran_out"] is True and ending["kill_ran_out"] is True, (done, elapsed)
     assert ending["processes_left"] == "unknown", ending
@@ -2000,3 +2000,29 @@ def test_the_flat_bundle_can_keep_the_tasks_name():
     assert kept["task.toml"] == renamed["task.toml"].replace("swe-m2_x_y-single", "swe-m2_x_y")
     package = (SCRIPTS / "package_step.py").read_text()
     assert 'parser.add_argument("--keep-name"' in package and 'parser.error("--keep-name goes with --flat")' in package
+
+
+def test_hard_links_across_the_top_level_and_deeper_keep_every_name_and_no_late_note(tmp_path):
+    """QA 24 follow-up R12-1: the sweep's own renames (the move out of the top level) move the change
+    time of the inode they rename, so a deeper name of a top-level file (cargo's hard links) read as
+    written after the end, and round 12 then left it out with a false note. Each inode's times are
+    now taken before anything of the sweep moves a name of it, and every name is judged by them: an
+    honest tree written wholly before the end keeps every name and has no late note."""
+    top = tmp_path / "rebuild"
+    (top / "lib").mkdir(parents=True)
+    (top / "dir").mkdir()
+    (top / "carve").write_text("#!/bin/sh\necho made before the end\n")
+    os.link(top / "carve", top / "lib" / "carve-real")          # a top-level file and a deeper name of it
+    (top / "dir" / "inner").write_text("inner\n")
+    os.link(top / "dir" / "inner", top / "inner-top")             # a deeper file and a top-level name of it
+    (top / "a").write_text("one file, two names at the top\n")
+    os.link(top / "a", top / "b")
+    time.sleep(1.2)
+    bound = time.time() - 0.1                                     # the end: after every write, past the 0.5 s skew
+    lines = run_hook(top, turn_end=bound, turn_from="netcheck")
+    record = json.loads((top / ".fsmaint.json").read_text())
+    names = sorted(str(path.relative_to(top)) for path in top.rglob("*") if path.name not in (".fsmaint", ".fsmaint.json"))
+    assert names == ["a", "b", "carve", "dir", "dir/inner", "inner-top", "lib", "lib/carve-real"], names
+    size = sum(len(text) for text in ("#!/bin/sh\necho made before the end\n", "inner\n", "one file, two names at the top\n"))
+    assert lines[0] == f"listed 8 {size}" and not any("after the end" in line for line in lines), lines
+    assert record["left_out_late"] == 0 and record["late_entries"] == 0 and record["end_from"] == "netcheck", record["late_entries"]

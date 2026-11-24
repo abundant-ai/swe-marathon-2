@@ -494,7 +494,7 @@ of them), this sweep's start and the end of its kill stage, how the freezing and
 check recorded, the processes found frozen, how many passes of ending it took and how many processes
 were left alive, whether the public hosts answered afterwards, every copy a link became and every
 link refused, with where it came from and when that changed, and every entry: its path, type, size,
-modification and change times (an entry at the top as they were before it moved), and a file's
+modification and change times (as its inode had them before this sweep moved any name of it), and a file's
 sha256 (within a byte limit). Last, the file beside the tree (out/sweep.json in the state directory)
 says where the sweep got to: `done` once /app/rebuild holds its mark, the record and a measured tree
 or none, `stopped` otherwise (entries left in /app/rebuild unmeasured because the moving out did not
@@ -534,7 +534,10 @@ PACK_DIR = "/tmp"   # where the tree is packed before it is copied
 PACK_ROOM = int(os.environ.get("FSMAINT_PACK_ROOM", 32 << 20))   # bytes left free once it is packed, at least
 PACK_INODES = int(os.environ.get("FSMAINT_PACK_INODES", 16))   # inodes free for the packing, at least
 notes, copies, refused, links, catalogue = [], [], [], [], []
-files, kinds, top_times = {}, {}, {}   # each file's sha256 by inode; each entry's type by path; top entries' times
+files, kinds = {}, {}   # each file's sha256 by inode; each entry's type by path
+# Each inode's modification and change times as first seen, before anything of this sweep moved a
+# name of it: a rename moves the change time of the inode, and so of every other name it has.
+inode_times = {}
 links_of = {}       # the names of each file in the tree, by inode
 NAMES_LIMIT = 1000  # names (hard links) of one file in the tree, at most
 entries = size = hashed = note_bytes = notes_left_out = moved_out = left_out_late = 0
@@ -686,9 +689,9 @@ def move_all(source, destination):
                 if time.time() > FINISH_BY:
                     return stuck, True
                 try:
-                    if destination == STAGED and len(top_times) <= LIMIT_ENTRIES:
+                    if destination == STAGED and len(inode_times) <= LIMIT_ENTRIES:
                         info = entry.stat(follow_symlinks=False)
-                        top_times[entry.name] = (info.st_mtime, info.st_ctime)
+                        inode_times.setdefault((info.st_dev, info.st_ino), (info.st_mtime, info.st_ctime))
                     if os.path.lexists(os.path.join(destination, entry.name)):
                         raise FileExistsError(entry.name)
                     os.rename(entry.path, os.path.join(destination, entry.name))
@@ -806,12 +809,12 @@ def walk(top):
                     os.unlink(name, dir_fd=fd)
                     note(f"removed {path}: not a file, a directory or a link")
                     continue
+                mtime, ctime = inode_times.setdefault((info.st_dev, info.st_ino), (info.st_mtime, info.st_ctime))
                 if len(os.fsencode(path)) > PATH_BYTES:
                     move_out(name, fd, path, f"its path in /app/rebuild is longer than {PATH_BYTES:,} bytes")
                     moved_out += 1
                     continue
                 kind = "link" if stat.S_ISLNK(info.st_mode) else "directory" if stat.S_ISDIR(info.st_mode) else "file"
-                mtime, ctime = top_times.get(name, (info.st_mtime, info.st_ctime)) if not rel else (info.st_mtime, info.st_ctime)
                 item = {"path": path, "type": kind, "size": info.st_size, "mtime": round(mtime, 3), "ctime": round(ctime, 3)}
                 copied_here = in_copy or path in copied_paths
                 if kind == "file" and not copied_here and max(item["mtime"], item["ctime"]) >= cutoff:
