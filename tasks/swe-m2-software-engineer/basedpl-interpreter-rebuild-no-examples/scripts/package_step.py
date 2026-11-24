@@ -1,9 +1,12 @@
 """Build a self-contained Harbor bundle from sources, the one build of the original and the cases.
 
-usage: package_step.py [--flat] [--output DIR]
+usage: package_step.py [--flat [--keep-name]] [--output DIR]
 
 --flat writes the same files without the steps wrapper, under the task name with `-single`
-appended, for harnesses that accept only tasks without declared steps.
+appended, for harnesses that accept only tasks without declared steps; with --keep-name, under
+the task's own name, so that the upload is the next version of the same task. The one step's
+files move to the top and task.toml loses its [[steps]] tables (whose limits equal the top-level
+ones) and its multi-step reward strategy (one step: its reward is the trial's).
 
 Needs, all made beforehand and none committed:
 - experiment/build/bpl and build.txt: the hardened original (scripts/build_original.py). It goes,
@@ -134,17 +137,25 @@ def collect() -> dict[str, bytes]:
     return dict(sorted(content.items()))
 
 
-def flatten(content: dict[str, bytes]) -> dict[str, bytes]:
-    """The bundle without the steps wrapper, under the task name with `-single` appended."""
+def flatten(content: dict[str, bytes], keep_name: bool = False) -> dict[str, bytes]:
+    """The bundle without the steps wrapper, under the task name with `-single` appended, or under
+    the task's own name with `keep_name`."""
     prefix = f"{STEP}/"
     flat = {(name[len(prefix):] if name.startswith(prefix) else name): data for name, data in content.items()}
     head, marker, _ = content["task.toml"].decode().partition("\n[[steps]]")
     if not marker:
         raise ValueError("task.toml declares no [[steps]] table")
+    import tomllib  # noqa: PLC0415
+    config = tomllib.loads(content["task.toml"].decode())
+    for step in config["steps"]:
+        for part in ("agent", "verifier"):
+            if step.get(part, {}).get("timeout_sec", config[part]["timeout_sec"]) != config[part]["timeout_sec"]:
+                raise ValueError(f"step {step['name']}'s {part} limit differs from the top-level one: a flat bundle would change it")
     head = re.sub(r"^multi_step_reward_strategy\s*=.*\n", "", head, flags=re.M)
-    head, count = re.subn(r'^(name = "abundant/[^"]+)"', r'\1-single"', head, count=1, flags=re.M)
-    if count != 1:
-        raise ValueError("task.toml has no [task].name to rename")
+    if not keep_name:
+        head, count = re.subn(r'^(name = "abundant/[^"]+)"', r'\1-single"', head, count=1, flags=re.M)
+        if count != 1:
+            raise ValueError("task.toml has no [task].name to rename")
     flat["task.toml"] = (head.rstrip("\n") + "\n").encode()
     return flat
 
@@ -152,11 +163,14 @@ def flatten(content: dict[str, bytes]) -> dict[str, bytes]:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--flat", action="store_true")
+    parser.add_argument("--keep-name", action="store_true", help="with --flat: keep the task's own name")
     parser.add_argument("--output", type=Path, default=TASK_ROOT / "experiment" / "dist")
     args = parser.parse_args()
+    if args.keep_name and not args.flat:
+        parser.error("--keep-name goes with --flat")
     content = collect()
     if args.flat:
-        content = flatten(content)
+        content = flatten(content, keep_name=args.keep_name)
     slug = re.search(r'^name = "abundant/([^"]+)"', content["task.toml"].decode(), flags=re.M).group(1)
     hashes = {name: hashlib.sha256(data).hexdigest() for name, data in content.items()}
     digest = hashlib.sha256(json.dumps(hashes, sort_keys=True).encode()).hexdigest()

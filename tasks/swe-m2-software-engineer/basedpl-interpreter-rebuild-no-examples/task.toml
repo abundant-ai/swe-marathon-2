@@ -12,9 +12,7 @@ reward_type = "continuous"
 open_internet_justification = "Only the image builds have public egress, to install system packages from Ubuntu's archive. The agent works without network access."
 
 [agent]
-# Sessions end at 33,900 s: a timer started at set-up closes the session user's processes then
-# (all are gone by about 33,930 s). This value is a backstop 60 s later.
-timeout_sec = 33960
+timeout_sec = 34560
 network_mode = "no-network"
 user = "dev"
 
@@ -25,11 +23,6 @@ timeout_sec = 120
 [[agent.setup_complete]]
 command = "/usr/local/sbin/provision-scratch"
 timeout_sec = 120
-
-[[agent.setup_complete]]
-command = "/usr/local/sbin/session-timer"
-user = "root"
-timeout_sec = 60
 
 [environment]
 network_mode = "public"
@@ -63,9 +56,7 @@ gpus = 0
 name = "01-rebuild-interpreter"
 
 [steps.agent]
-# Sessions end at 33,900 s: a timer started at set-up closes the session user's processes then
-# (all are gone by about 33,930 s). This value is a backstop 60 s later.
-timeout_sec = 33960
+timeout_sec = 34560
 
 [steps.verifier]
 timeout_sec = 4500

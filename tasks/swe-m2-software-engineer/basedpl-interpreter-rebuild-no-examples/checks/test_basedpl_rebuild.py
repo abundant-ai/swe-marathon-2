@@ -852,13 +852,9 @@ def deliver(name, build, entries="100000", size="1000000000", path="1000", secon
         (state / "free-at-start").write_text(start)
     (state / "session.json").write_text(json.dumps({"connectivity": {"pypi.org:443": "closed"}, "connectivity_open": False,
                                                     "user_process_count": 1, "user_processes": [{"pid": 7, "command": "sleep 99"}]}))
-    (state / "turn-started").write_text("1700000000\n")
+    (state / "turn-started").write_text(f"{int(STARTED) - 100}\n")  # well inside the session's limit
     if aside:  # the names the shell moved out of the directory before the fixer ran
         (state / "aside.txt").write_text("".join(f"{moved}\n" for moved in aside))
-    if name == "good":  # the session timer fired in this session
-        (state / "timer.txt").write_text("2026-11-19T12:00:00Z armed pid 77: ending the processes selected by '-u dev' in 33900 s\n"
-                                            "2026-11-19T21:25:00Z fired after 33900 s: SIGTERM to the processes selected by '-u dev'\n"
-                                            "2026-11-19T21:25:05Z done: 0 process(es) of the selection left\n")
     if name == "good":  # what the link fixer printed: a copy of a system file, and a refused link to the user's own files
         (state / "fixer.jsonl").write_text(json.dumps({
             "kind": "copied", "path": "venv/bin/python3", "source": "/usr/bin/python3.12", "source_owner": 0,
@@ -866,8 +862,8 @@ def deliver(name, build, entries="100000", size="1000000000", path="1000", secon
             "source_latest_ctime": 1690000000.0, "source_latest_mtime": 1690000000.0,
             "note": "venv/bin/python3: a copy of /usr/bin/python3.12 (was a link to /usr/bin/python3.12)"}) + "\n" + json.dumps({
             "kind": "refused", "path": "vendor", "source": "/home/dev/cache", "source_owner": 10001,
-            "source_mtime": 1700000500.0, "source_ctime": 1700000600.0, "source_inode": [66, 99],
-            "source_latest_ctime": 1700000600.0, "source_latest_mtime": 1700000500.0,
+            "source_mtime": int(STARTED) - 60.0, "source_ctime": int(STARTED) - 50.0, "source_inode": [66, 99],
+            "source_latest_ctime": int(STARTED) - 50.0, "source_latest_mtime": int(STARTED) - 60.0,
             "note": "removed vendor -> /home/dev/cache: it leads outside /app/rebuild to something that is not part of the machine's "
                     "installation (not owned by root), which is not copied"}) + "\n")
     build(rebuild)
@@ -976,7 +972,7 @@ out["record"] = [record["connectivity_open"], record["kill_rounds"], record["use
                  next(item for item in record["entries"] if item["path"] == "bpl")]
 out["copies"] = [record["turn_started"], record["hook_started"], record["copies"], record["links"], record["notes"]]
 out["started"] = int(STARTED)
-out["watchdog"] = [record["ended_by_timer"], len(record["timer_log"]), verify.delivery_record(rebuild)["ended_by_timer"]]
+out["end"] = [record["work_end"], record["late_entries"], verify.delivery_record(rebuild)["late_entries"]]
 earlier = EARLIER["good"]
 out["times"] = [all(item["ctime"] == earlier[item["path"]][1] and item["mtime"] == earlier[item["path"]][0]
                     for item in record["entries"] if item["path"] in earlier),
@@ -1018,7 +1014,7 @@ app, rebuild = deliver("never-room", tree, tar=failing, prelude=FULL)
 out["never_room"] = mark(rebuild)
 app, rebuild = deliver("nop", lambda rebuild: None)
 out["nop"] = [mark(rebuild), notes(copy(rebuild, base / "nop" / "copied")), verify.delivery_record(base / "nop" / "copied")["entries"]]
-out["watchdog"].append(verify.delivery_record(base / "nop" / "copied")["ended_by_timer"])
+out["end"].append(verify.delivery_record(base / "nop" / "copied")["late_entries"])
 app, rebuild = deliver("cut-short", tree, fixer_status="143", aside=(".manifest", ".manifest.json"))  # the fixer was ended by a signal
 record = json.loads((rebuild / ".manifest.json").read_text())
 out["cut_short"] = [mark(rebuild), record["fixer_status"], notes(copy(rebuild, base / "cut-short" / "copied"))]
@@ -1096,12 +1092,12 @@ def test_the_delivery_is_bounded_recorded_and_marked_before_the_copy_and_graded_
                                         "removed ro/a -> lnk/../../..: a link through another link, or to nothing"], "through links, or leaving"
     assert sorted(out["mark"][8:]) == ["ro: made writable for its owner (a directory the hook has to work in)", "secret: made readable by its owner"]
     turn_started, hook_started, copies, links, notes = out["copies"]
-    assert (turn_started, hook_started) == (1700000000, out["started"]) and len(notes) == 9
+    assert (turn_started, hook_started) == (out["started"] - 100, out["started"]) and len(notes) == 9
     untouched, changed, made, prescan_complete, changed_count, ro_mode, secret_mode = out["times"]
     assert untouched, "every entry's mtime and ctime are the ones from before the hook ran"
     assert changed == ["ro", "secret"] and changed_count == 2, "the hook's own chmods are flagged, with the later ctime kept apart"
     assert made == [] and prescan_complete is True and (ro_mode, secret_mode) == ("0o755", "0o400")
-    assert out["watchdog"] == [True, 3, True, False], "a session the watchdog ended is visible in the record and in metrics"
+    assert out["end"] == [out["started"] - 100 + 34561, 0, 0, 0], "the end of the work, and nothing changed after it"
     assert len(copies) == 1 and copies[0]["source"] == "/usr/bin/python3.12" and copies[0]["source_owner"] == 0
     assert copies[0]["source_inode"] == [66, 1234] and copies[0]["outside_delivery"] is True
     assert copies[0]["changed_since_session_started"] is False, "a system file from the image build"
@@ -1118,7 +1114,7 @@ def test_the_delivery_is_bounded_recorded_and_marked_before_the_copy_and_graded_
     assert summary["user_processes"] == [{"pid": 7, "command": "sleep 99"}] and summary["latest_ctime"] >= bpl["ctime"]
     assert summary["copies"] == copies and summary["links"] == links and summary["notes"] == notes, "the whole record reaches metrics.json"
     assert summary["copies_outside_delivery"] == 1 and summary["copies_changed_since_session_started"] == 0
-    assert (summary["turn_started"], summary["hook_started"]) == (1700000000, out["started"])
+    assert (summary["turn_started"], summary["hook_started"]) == (out["started"] - 100, out["started"])
     assert out["long_mark"] == 60, "the verifier reads the whole mark, however many notes"
     verify_text = (STEP / "tests" / "verify.py").read_text()
     assert "handle.read(MARK_LIMIT + 1)" in verify_text and "MARK_LIMIT = 1 << 20" in verify_text, "bounded all the same"
@@ -1157,7 +1153,7 @@ def test_the_delivery_is_bounded_recorded_and_marked_before_the_copy_and_graded_
                              for name in (".manifest", ".manifest.json")], "a file the session left under the hook's own names is noted"
     assert cut_notes == [f"maintenance step: {line}" for line in cut_mark[1:]], "and both reach the trial's notes"
     assert out["old_arguments"] == [["delivered 0 0"], -1]
-    assert "never a reason to change the reward" in (STEP / "tests" / "verify.py").read_text(), "the watchdog flag is never scored"
+    assert "never a reason to change the reward" in (STEP / "tests" / "verify.py").read_text(), "the late count is never scored"
     code, kinds, copied, lib_left, one_left, sh_copied, inner = out["fixer"]
     assert code == 0 and kinds == {"lib": "refused", "one": "refused", "sh": "copied", "inner": "relinked"}, out["fixer"]
     assert copied["source"] == "/bin/sh" and copied["source_owner"] == 0 and len(copied["source_inode"]) == 2
@@ -1170,19 +1166,17 @@ def test_the_delivery_is_bounded_recorded_and_marked_before_the_copy_and_graded_
     assert all(state.startswith("closed") for state in closed[1]["connectivity"].values())
     assert slow[0] == 0 and set(slow[1]["connectivity"].values()) == {"no answer within 3 s"} and slow[2] <= 9, slow
     hook = (TASK / "environment" / "reclaim-scratch").read_text()
-    order = ['echo "$HOOK_STARTED" > "$STATE/reclaiming"', "--clear-groups kill -STOP -1 >", "\nstop_timer\n",
+    order = ["--clear-groups kill -STOP -1 >",
              "ps -eo pid=,ppid=,uid=,etimes=,args= > \"$STATE/processes.txt\"", "kill -9 -1",
-             'tail -n 20 /var/log/session-timer.log > "$STATE/timer.txt"',
              'timeout 300 /usr/bin/python3 -I - /app/rebuild "$LIMIT_ENTRIES" "$LIMIT_PATH" "$STATE"',
              "/usr/bin/python3 -I - \"$STATE/session.json\" \"$STATE/processes.txt\"", "rm -f /var/lib/scratch/room",
              "rm -rf /var/lib/scratch/inodes", 'mv -f "/app/rebuild/$name" "$aside/"', 'echo "$name" >> "$STATE/aside.txt"',
              "timeout 120 setpriv --reuid dev --regid dev --clear-groups --no-new-privs /usr/bin/python3 -I -",
              '> "$STATE/fixer.jsonl"', "\nEOF\nfixer_status=$?\n",
              '\n/usr/bin/python3 -I - /app/rebuild "$LIMIT_ENTRIES" "$LIMIT_BYTES" "$LIMIT_PATH" "$STATE" /tmp "$PACK_SECONDS" "$rounds" '
-             '"$left" "$HOOK_STARTED" "$fixer_status" <<',
-             '\nEOF\nstatus=$?\nstop_timer\nexit "$status"\n']
+             '"$left" "$HOOK_STARTED" "$fixer_status" <<']
     assert [hook.index(step) for step in order] == sorted(hook.index(step) for step in order)
-    assert "exec /usr/bin/python3" not in hook and hook.endswith(order[-1]), "the script goes on past its last step, to end the timer again"
+    assert hook.endswith('print(line.encode(errors="backslashreplace").decode(), flush=True)\nEOF\n'), "the last script ends the hook"
     for setting in ("LIMIT_ENTRIES=100000", "LIMIT_BYTES=1000000000", "LIMIT_PATH=1000", "PACK_SECONDS=100", "STATE=/var/lib/scratch"):
         assert setting in hook, setting
     assert "rm -rf \"$" not in hook and "rm -f \"$" not in hook, "nothing is removed through a variable"
@@ -1195,12 +1189,10 @@ def test_the_delivery_is_bounded_recorded_and_marked_before_the_copy_and_graded_
     config = tomllib.loads((TASK / "task.toml").read_text())
     assert config["verifier"]["collect"] == [{"command": "/usr/local/sbin/reclaim-scratch", "user": "root", "timeout_sec": 600}]
     assert config["agent"]["setup_begin"] == [{"command": "/usr/local/sbin/provision-scratch", "timeout_sec": 120}]
-    assert config["agent"]["setup_complete"] == [{"command": "/usr/local/sbin/provision-scratch", "timeout_sec": 120},
-                                                 {"command": "/usr/local/sbin/session-timer", "user": "root", "timeout_sec": 60}]
+    assert config["agent"]["setup_complete"] == [{"command": "/usr/local/sbin/provision-scratch", "timeout_sec": 120}]
     docker = (TASK / "environment" / "Dockerfile").read_text()
-    assert "COPY provision-scratch reclaim-scratch session-timer /usr/local/sbin/" in docker
-    assert "chmod 0700 /usr/local/sbin/provision-scratch /usr/local/sbin/reclaim-scratch /usr/local/sbin/session-timer" in docker
-    assert 'tail -n 20 /var/log/session-timer.log > "$STATE/timer.txt"' in hook_text
+    assert "COPY provision-scratch reclaim-scratch /usr/local/sbin/" in docker
+    assert "chmod 0700 /usr/local/sbin/provision-scratch /usr/local/sbin/reclaim-scratch \\\n" in docker
     verify = (STEP / "tests" / "verify.py").read_text()
     main = verify[verify.index("def main() -> int:"):]
     assert main.index("delivery_notes(SUBMISSION)") < main.index("sandbox()") < main.index("seal(SUBMISSION)")
@@ -1248,443 +1240,69 @@ def test_a_host_short_of_disk_mid_evaluation_is_an_error_and_a_run_that_ended_in
         "a child that holds the pipe open past the deadline is a timeout"
 
 
-# ---------------------------------------------------------------- the session timer and the hook's stop
-
-# Stand-ins for the user's processes: real Python processes of this user that carry a random marker on their command
-# lines, which is the timer's selection here (`-f <marker>`), so nothing else is ever signalled. A copy of /bin/sleep
-# is killed at exec on macOS, so a check built on one passes whatever the timer does (QA 07e F2).
-READY = "import time\nprint('ready', flush=True)\ntime.sleep(300)\n"
-STUBBORN = "import signal, time\nsignal.signal(signal.SIGTERM, signal.SIG_IGN)\nprint('ready', flush=True)\ntime.sleep(300)\n"
-PARENT = ("import subprocess, sys, time\n"
-          "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(300)', sys.argv[1]])\n"
-          "print(child.pid, flush=True)\ntime.sleep(300)\n")
-# Forks, lets its parent exit at once, again and again: never one pid for long, always one process group. Ignores SIGTERM.
-HOPPER = ("import os, signal, sys, time\nsignal.signal(signal.SIGTERM, signal.SIG_IGN)\nprint('ready', flush=True)\n"
-          "until = time.monotonic() + 60\nwhile time.monotonic() < until:\n    time.sleep(0.002)\n"
-          "    if os.fork():\n        os._exit(0)\n")
-
-
-def timer_setup(top: Path, **settings: str) -> tuple[Path, dict, str]:
-    """A copy of environment/session-timer in a directory of its own, the environment that points it there, and the
-    marker its selection matches. What it sends as the user (`kill -1`) goes to a stand-in that only records it, in
-    top/as-user.log: sent as this machine's own user, it would reach every process of the test's."""
-    assert " " not in str(top)
-    top.mkdir(parents=True)
-    script = top / "session-timer"
-    shutil.copy(TASK / "environment" / "session-timer", script)
-    script.chmod(0o700)  # as the Dockerfile sets it
-    marker = f"st-{uuid.uuid4().hex[:12]}"
-    as_user = top / "as-user"
-    as_user.write_text(f'#!/bin/sh\necho "$*" >> "{top}/as-user.log"\n')
-    as_user.chmod(0o755)
-    env = dict(os.environ, MAINT_PIDFILE=str(top / "timer.pid"), MAINT_LOG=str(top / "timer.log"),
-               MAINT_MARK=str(top / "state" / "reclaiming"), MAINT_SELECT=f"-f {marker}", MAINT_SELECT_REAL=f"-f {marker}",
-               MAINT_AS_USER=str(as_user))
-    env.update(settings)
-    return script, env, marker
-
-
-def stand_in(marker: str, code: str = READY, **options) -> subprocess.Popen:
-    """A process the timer's selection matches, up (its first line printed) before it is returned."""
-    proc = subprocess.Popen([sys.executable, "-c", code, marker], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, **options)
-    proc.first_line = proc.stdout.readline().strip()
-    assert proc.first_line and proc.poll() is None, "the stand-in is up"
-    return proc
-
-
-def arm(script: Path, env: dict) -> tuple[subprocess.CompletedProcess, int | None]:
-    """Start the timer as the setup hook does and return what it printed and the sleeper's pid. The start is in a
-    session of its own, so that the sleeper's process group is the timer's alone and the test can end it."""
-    done = subprocess.run(["sh", str(script)], env=env, capture_output=True, text=True, timeout=30, start_new_session=True)
-    found = re.search(r"\(pid (\d+)", done.stdout)
-    return done, int(found.group(1)) if found else None
-
-
-def gone(pid: int, seconds: float = 0.0) -> bool:
-    """Within `seconds`: no such process, or one that has exited and waits to be reaped."""
-    until = time.monotonic() + seconds
-    while True:
-        state = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True).stdout.strip()
-        if not state or state.startswith("Z"):
-            return True
-        if time.monotonic() >= until:
-            return False
-        time.sleep(0.05)
-
-
-def logged(path: Path, text: str, seconds: float) -> bool:
-    until = time.monotonic() + seconds
-    while time.monotonic() < until:
-        if path.exists() and text in path.read_text():
-            return True
-        time.sleep(0.05)
-    return False
-
-
-def end_all(processes: list, sleepers: list, root: Path) -> None:
-    """End a test's own stand-ins, and its timers by their process groups (never this process's own): the sleepers
-    it knows, and any other copy of the timer still running from under `root` (a test that failed before it learnt
-    the pid)."""
-    for proc in processes:
-        if proc.poll() is None:
-            proc.kill()
-        proc.wait(timeout=10)
-        if proc.stdout is not None:
-            proc.stdout.close()
-    listing = subprocess.run(["ps", "-ww", "-eo", "pid=,args="], capture_output=True, text=True).stdout.splitlines()
-    strays = [int(line.split()[0]) for line in listing if f" {root}/" in line and line.rstrip().endswith("/session-timer run")]
-    for pid in [*sleepers, *strays]:
-        try:
-            group = os.getpgid(pid)
-            if group not in (os.getpgrp(), os.getpid()):
-                os.killpg(group, signal.SIGKILL)
-        except (OSError, TypeError):  # gone already, or never started
-            continue
-
-
-def child_of(pid: int) -> int:
-    """A sleeper's one child: its sleep, once the armed line's own `date` is gone."""
-    children, until = [], time.monotonic() + 5
-    while len(children) != 1 and time.monotonic() < until:
-        time.sleep(0.1)
-        children = [int(child) for child in subprocess.run(["pgrep", "-P", str(pid)], capture_output=True, text=True).stdout.split()]
-    assert len(children) == 1 and not gone(children[0]), children
-    return children[0]
-
+# ---------------------------------------------------------------- the hook's freeze, and no session timer
 
 def hook_prologue(top: Path) -> str:
     """The first lines of environment/reclaim-scratch as shipped, everything before its listing of the user's processes
-    (the settings, the mark, the freeze, the timer's end, in the hook's own order), with only the three absolute paths
-    rewritten into `top`. Run it with prologue_env(top)."""
+    (the settings and the freeze), with only the state directory rewritten into `top`. Run it with prologue_env(top)."""
     hook = (TASK / "environment" / "reclaim-scratch").read_text()
     text = hook[:hook.index("ps -eo pid=")]
-    assert "\nstop_timer\n" in text and "kill -STOP -1" in text and text.count("setpriv") == 1, "the mark, the freeze, the timer's end"
+    assert "kill -STOP -1" in text and text.count("setpriv") == 1, "the freeze"
     assert "python3" not in text and "kill -9" not in text and "pkill -KILL -u" not in text, "nothing of the later steps"
-    for old, new in (("/var/lib/scratch", top / "state"), ("/run/session-timer.pid", top / "timer.pid"),
-                     ("/var/log/session-timer.log", top / "timer.log")):
-        assert old in text, old
-        text = text.replace(old, str(new))
-    return text
+    assert "/var/lib/scratch" in text
+    return text.replace("/var/lib/scratch", str(top / "state"))
 
 
 def prologue_env(top: Path) -> dict:
     """The environment hook_prologue(top) runs in: stand-ins first on PATH for the freeze's two Linux tools, so that
     nothing is ever stopped here. `pgrep` answers that a process of the user runs until one freeze has been sent, and
-    none after; `setpriv` runs nothing and adds to `top/trace` whether the mark had been written and whether the
-    sleeper named by the pid file was still running when the freeze was sent."""
+    none after; `setpriv` runs nothing and adds its arguments to `top/trace`."""
     tools, trace = top / "freeze-tools", top / "trace"
     tools.mkdir(parents=True, exist_ok=True)
     (tools / "pgrep").write_text(f'#!/bin/sh\necho "pgrep $*" >> "{trace}"\ngrep -q "^setpriv " "{trace}" && exit 1\nexit 0\n')
-    (tools / "setpriv").write_text(
-        f'#!/bin/sh\nif [ -e "{top}/state/reclaiming" ]; then mark=written; else mark=missing; fi\n'
-        f'pid=$(cat "{top}/timer.pid" 2>/dev/null)\ntimer=ended\n'
-        'case "$pid" in ""|*[!0-9]*) ;; *) kill -0 "$pid" 2>/dev/null && timer=running ;; esac\n'
-        f'echo "setpriv $* (mark $mark, timer $timer)" >> "{trace}"\n')
+    (tools / "setpriv").write_text(f'#!/bin/sh\necho "setpriv $*" >> "{trace}"\n')
     for tool in ("pgrep", "setpriv"):
         (tools / tool).chmod(0o755)
     return dict(os.environ, PATH=f"{tools}:{os.environ['PATH']}")
 
 
-def test_the_session_timer_arms_once_fires_and_ends_the_users_processes(tmp_path):
-    """With no reclaim-scratch running, the root timer started at setup_complete ends the user's session at 33,900 s,
-    since a turn that runs into the platform's cap is not graded today while one that ends by itself is; the agent's
-    limit in task.toml (33,960 s) is a backstop 60 s later (the v2 verdict's must-fix, the judges' option B). It arms
-    one sleeper however often it is started, fires after END_SECONDS, sends SIGTERM to every selected process (a parent
-    and its child, a process in a session of its own, and one started after it fired: the case QA 07e F1 reproduced,
-    which is what the timer is for when no hook is running) in six rounds, then SIGKILL to the one that ignores SIGTERM,
-    and logs each step. Each stand-in must be alive before the timer is armed and end by exactly that signal; the one
-    that ignores SIGTERM ends six rounds after the fire (rounds of 0.5 s here, of 5 s as shipped: about 30 s)."""
-    top = tmp_path / "timer"
-    script, env, marker = timer_setup(top, MAINT_END_SECONDS="2", MAINT_ROUND_SECONDS="0.5")
-    log, pidfile = top / "timer.log", top / "timer.pid"
-    processes, sleepers = [], []
-    try:
-        tree, alone = stand_in(marker, PARENT), stand_in(marker, start_new_session=True)
-        stubborn = stand_in(marker, STUBBORN, start_new_session=True)
-        processes += [tree, alone, stubborn]
-        child = int(tree.first_line)
-        assert all(proc.poll() is None for proc in processes) and not gone(child), "alive before the timer is armed"
-        assert len(subprocess.run(["pgrep", "-f", marker], capture_output=True, text=True).stdout.split()) == 4, "the selection"
-        first, sleeper = arm(script, env)
-        sleepers.append(sleeper)
-        assert first.returncode == 0 and first.stdout == f"maintenance timer armed for 2 s (pid {sleeper})\n" and first.stderr == "", first
-        assert pidfile.read_text().strip() == str(sleeper), "the pid it names is the pid file's"
-        second, _ = arm(script, env)
-        assert second.returncode == 0 and second.stdout == "" and second.stderr == "", "a second start arms nothing"
-        assert logged(log, " fired after 2 s", 15), log.read_text()
-        fired = time.monotonic()
-        late = subprocess.Popen([sys.executable, "-c", READY, marker], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                start_new_session=True)  # started in the rounds, as the hook's link fixer could be
-        processes.append(late)
-        assert stubborn.wait(timeout=30) == -signal.SIGKILL
-        window = time.monotonic() - fired
-        assert 2.9 <= window <= 5.0, f"SIGKILL comes after six rounds of 0.5 s, not twelve: {window:.2f} s after the fire"
-        assert logged(log, "done:", 40), log.read_text()
-        text = log.read_text()
-        assert text.count(" armed pid ") == 1 and f" armed pid {sleeper}: " in text and f"already armed (pid {sleeper})" in text, text
-        assert "SIGKILL to what is left" in text and "done: 0 process(es)" in text and "stopped" not in text, text
-        ends = [proc.wait(timeout=10) for proc in (tree, alone, late, stubborn)]
-        assert ends == [-signal.SIGTERM, -signal.SIGTERM, -signal.SIGTERM, -signal.SIGKILL], ends
-        assert gone(child, 5), "the child of the tree is ended too"
-        assert subprocess.run(["pgrep", "-f", marker], capture_output=True, text=True).stdout.strip() == ""
-        assert not pidfile.exists() and gone(sleeper, 5), "the pid file goes with the sleeper"
-    finally:
-        end_all(processes, sleepers, tmp_path)
-    script = (TASK / "environment" / "session-timer").read_text()
-    assert "END_SECONDS=${MAINT_END_SECONDS:-33900}" in script, "the session ends at 33,900 s"
-    assert "ROUND_SECONDS=${MAINT_ROUND_SECONDS:-5}" in script and 'sleep "$ROUND_SECONDS"' in script
-    assert script.count("    for _ in 1 2 3 4 5 6; do\n        alive || break\n") == 1, "six SIGTERM rounds, 30 s, then SIGKILL"
-    assert "for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do" in script and "sleep 0.5" in script, \
-        "SIGKILL every 0.5 s, for 10 s at most"
-    import tomllib
-    config = tomllib.loads((TASK / "task.toml").read_text())
-    limits = [config["agent"]["timeout_sec"], *(step["agent"]["timeout_sec"] for step in config["steps"])]
-    assert limits == [33960, 33960], "every agent limit is a backstop 60 s after the session's end"
-    assert 33900 + 6 * 5 + 20 * 0.5 < 33960, "the last SIGKILL round comes before the backstop"
-    instruction = (STEP / "instruction.md").read_text().lower()
-    assert "watchdog" not in instruction and "cap" not in instruction and "timer" not in instruction
-
-
-def test_the_session_timer_says_armed_only_for_a_sleeper_it_sees(tmp_path):
-    """QA 07e F4. A start with no running sleeper arms one whatever the pid file holds (nothing, the pid of a process
-    that is gone, the pid of a live process that is no sleeper) and prints "armed" only once the sleeper is seen
-    running, with its pid. Where the pid file cannot be written the sleeper runs all the same and the line says so.
-    Where no sleeper can start, the line says "not armed", on standard error. The start exits 0 in every case: a setup
-    hook that fails ends the trial."""
-    spent = subprocess.Popen(["true"])
-    spent.wait()
-    processes, sleepers = [], []
-    try:
-        for name, content in (("empty", ""), ("spent", f"{spent.pid}\n"), ("other", f"{os.getpid()}\n")):
-            script, env, _ = timer_setup(tmp_path / name, MAINT_END_SECONDS="300")
-            (tmp_path / name / "timer.pid").write_text(content)
-            done, sleeper = arm(script, env)
-            sleepers.append(sleeper)
-            assert done.returncode == 0 and done.stdout == f"maintenance timer armed for 300 s (pid {sleeper})\n", (name, done)
-            assert (tmp_path / name / "timer.pid").read_text().strip() == str(sleeper) and not gone(sleeper), name
-            assert logged(tmp_path / name / "timer.log", f" armed pid {sleeper}: ", 5), name
-        script, env, _ = timer_setup(tmp_path / "unwritable", MAINT_END_SECONDS="300")
-        (tmp_path / "unwritable" / "blocked").write_text("")  # the pid file's directory is a file
-        env["MAINT_PIDFILE"] = str(tmp_path / "unwritable" / "blocked" / "timer.pid")
-        done, sleeper = arm(script, env)
-        sleepers.append(sleeper)
-        assert done.returncode == 0 and done.stdout == f"maintenance timer armed for 300 s (pid {sleeper}, no pid file)\n", done
-        text = (tmp_path / "unwritable" / "timer.log").read_text()
-        assert not gone(sleeper) and f" armed pid {sleeper}: " in text and f"pid {sleeper} runs without a pid file" in text, text
-        script, env, _ = timer_setup(tmp_path / "broken", MAINT_END_SECONDS="300")
-        script.chmod(0o600)  # the detached copy cannot be executed
-        done, sleeper = arm(script, env)
-        sleepers.append(sleeper)
-        assert done.returncode == 0 and done.stdout == "" and sleeper is None, done
-        assert done.stderr == "maintenance timer not armed: no sleeper was seen running within 2 s\n", done
-        text = (tmp_path / "broken" / "timer.log").read_text()
-        assert "not armed: no sleeper was seen running within 2 s" in text and " armed pid " not in text, text
-    finally:
-        end_all(processes, sleepers, tmp_path)
-    script = (TASK / "environment" / "session-timer").read_text()
-    assert "set -C" not in script and script.rstrip().endswith("fi\nexit 0"), "no reservation that can leave it unarmed; every path exits 0"
-    assert script.index("armed && break") < script.index('echo "maintenance timer armed'), "it looks before it says so"
-
-
-def test_the_session_timer_signals_every_process_of_the_user_at_once_in_every_round(tmp_path):
-    """QA 08 S2. pgrep and pkill list pids, then signal each one in turn, so a process that forks and lets its parent
-    exit, again and again, is never the same pid long enough to be seen or signalled (it outlived the timer through
-    55,782 pid changes in QA 08's probe); and `-u` matches only the effective uid, which a set-user-id program
-    changes. Each round now also signals as the user with `kill -1`, one system call that reaches every process of it
-    (a set-user-id program it started, too, by its real uid), the SIGKILL rounds always run, since their selection
-    cannot see such a process, and `pkill -U` is added. The call as the user is stood in here by one that signals the
-    stand-in's process group, which a process that changes its pid keeps: one system call, as `kill -1` is."""
-    top = tmp_path / "hopper"
-    sleepers, group = [], None
-    try:
-        script, env, marker = timer_setup(top, MAINT_END_SECONDS="1", MAINT_ROUND_SECONDS="0.2")
-        hopper = subprocess.Popen([sys.executable, "-c", HOPPER, marker], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                                  text=True, start_new_session=True)
-        assert hopper.stdout.readline().strip() == "ready"
-        group = hopper.pid
-        hopper.stdout.close()
-        hopper.wait(timeout=10)  # gone from its first pid at once
-        os.killpg(group, 0)      # and alive in its group
-        (top / "as-user").write_text(f'#!/bin/sh\necho "$*" >> "{top}/as-user.log"\n'
-                                     f'case "$*" in "kill -"*" -1") kill "$2" -- -{group} ;; esac\n')
-        done, sleeper = arm(script, env)
-        sleepers.append(sleeper)
-        assert sleeper and logged(top / "timer.log", "done:", 40), (top / "timer.log").read_text()
-        try:
-            os.killpg(group, 0)
-            survived = True
-        except ProcessLookupError:
-            survived = False
-        calls = (top / "as-user.log").read_text().splitlines()
-        assert not survived and calls.count("kill -KILL -1") == 20, (survived, calls[:6])
-        assert "SIGKILL to what is left" in (top / "timer.log").read_text()
-    finally:
-        if group is not None:
-            try:
-                os.killpg(group, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-        end_all([], sleepers, tmp_path)
-    timer = (TASK / "environment" / "session-timer").read_text()
-    assert "AS_USER=${MAINT_AS_USER:-setpriv --reuid dev --regid dev --clear-groups}" in timer
-    assert "SELECT_REAL=${MAINT_SELECT_REAL:--U dev}" in timer and "        pkill -KILL $SELECT_REAL >/dev/null 2>&1\n" in timer
-    assert "        $AS_USER kill -TERM -1 >/dev/null 2>&1\n" in timer and "        $AS_USER kill -KILL -1 >/dev/null 2>&1\n" in timer
-
-
-def test_reclaim_scratch_ends_the_session_timer_before_its_own_work_as_the_user(tmp_path):
-    """QA 07e F1. A timer that has fired sends SIGTERM to every process of the user every few seconds for half a
-    minute, then SIGKILL, and the hook's link fixer runs as that user: a round that landed on it left links unfixed, the root step
-    then removed them, and the notes read like the agent's fault. The hook's first lines, run here as shipped with only
-    their paths rewritten, write the mark and end the sleeper and its sleep. With a timer in its rounds, the hook's own
-    fixer is ended part way when those lines have not run (the control) and fixes every link when they have. A timer
-    that is not ended (no pid file, say) ends nothing once the mark exists, and one that wakes up with the mark in
-    place never fires."""
-    processes, sleepers = [], []
-    try:
-        # A sleeper still waiting, the usual case: ended with its sleep, and the log says which pid.
-        top = tmp_path / "waiting"
-        script, env, marker = timer_setup(top, MAINT_END_SECONDS="300")
-        idle = stand_in(marker)
-        processes.append(idle)
-        done, sleeper = arm(script, env)
-        sleepers.append(sleeper)
-        assert sleeper and logged(top / "timer.log", f" armed pid {sleeper}: ", 5)
-        its_sleep = child_of(sleeper)
-        (top / "prologue").write_text(hook_prologue(top))
-        ran = subprocess.run(["sh", str(top / "prologue")], env=prologue_env(top), capture_output=True, text=True, timeout=30)
-        assert ran.returncode == 0 and ran.stdout == "" and ran.stderr == "", ran
-        assert gone(sleeper, 5) and gone(its_sleep, 5), "the sleeper and its sleep are both ended"
-        assert (top / "state" / "reclaiming").read_text().strip().isdigit() and not (top / "timer.pid").exists()
-        assert (top / "state").stat().st_mode & 0o777 == 0o700, "the mark is in a directory only root reads"
-        text = (top / "timer.log").read_text()
-        assert f"stopped pid {sleeper}: reclaim-scratch has begun" in text and " fired after " not in text, text
-        assert idle.poll() is None, "ending the timer ends nothing of the user's"
-        again = subprocess.run(["sh", str(top / "prologue")], env=prologue_env(top), capture_output=True, text=True, timeout=30)
-        assert again.returncode == 0 and (top / "timer.log").read_text() == text, "with no sleeper left, a second stop does nothing"
-
-        # A timer in its rounds (07e's reproduction) while the hook's own link fixer works as the user, on a tree whose
-        # path carries the marker, so the timer's selection matches the fixer's command line. First without the hook's
-        # first lines: a round ends the fixer part way. Then with them: the same fixer finishes every link.
-        fixer = (TASK / "environment" / "reclaim-scratch").read_text().split("<<'EOF'\n")[3].split("\nEOF\n", 1)[0]
-        links = 20000
-        for name in ("rounds-without-the-stop", "rounds"):
-            top = tmp_path / name
-            script, env, marker = timer_setup(top, MAINT_END_SECONDS="1", MAINT_ROUND_SECONDS="0.2")
-            tree = top / marker / "rebuild"
-            (tree / "links").mkdir(parents=True)
-            (tree / "real.txt").write_text("x")
-            for number in range(links):
-                os.symlink(tree / "real.txt", tree / "links" / f"l{number}")  # inside, absolute: the fixer makes each relative
-            stubborn = stand_in(marker, STUBBORN, start_new_session=True)  # keeps the rounds going
-            processes.append(stubborn)
-            done, sleeper = arm(script, env)
-            sleepers.append(sleeper)
-            assert sleeper and logged(top / "timer.log", " fired after 1 s", 15)
-            if name == "rounds":
-                (top / "prologue").write_text(hook_prologue(top))
-                ran = subprocess.run(["sh", str(top / "prologue")], env=prologue_env(top), capture_output=True, text=True, timeout=30)
-                assert ran.returncode == 0, ran
-            worked = subprocess.run([sys.executable, "-I", "-", str(tree), "100000", "1000000000"], input=fixer, capture_output=True,
-                                    text=True, timeout=120)  # as the hook starts it, less the drop to the user
-            fixed = sum(1 for number in range(links) if os.path.lexists(tree / "links" / f"l{number}")
-                        and not os.path.isabs(os.readlink(tree / "links" / f"l{number}")))
-            if name == "rounds-without-the-stop":
-                assert worked.returncode in (-signal.SIGTERM, -signal.SIGKILL) and fixed < links, \
-                    f"the control: a round ends the fixer part way ({worked.returncode}, {fixed} of {links} links fixed)"
-                end_all([], [sleeper], top)  # its SIGKILL rounds would run on into the next cases
-                continue
-            printed = worked.stdout.splitlines()  # changes by name within 10,000 lines and 2 MiB, then how many more
-            more = re.fullmatch(r"and ([\d,]+) more changes of the link fixer", json.loads(printed[-1])["note"])
-            assert worked.returncode == 0 and fixed == links and more, (worked.returncode, fixed, worked.stderr[-500:], printed[-1][:200])
-            assert len(printed) - 1 + int(more.group(1).replace(",", "")) == links and len(worked.stdout.encode()) <= (2 << 20) + 200
-            assert stubborn.poll() is None, "nothing of the user's is ended once the hook has begun"
-            text = (top / "timer.log").read_text()
-            # The freeze comes between the mark and the stop, so a timer in its rounds can see the mark first and exit
-            # with its own line; or the hook's stop finds it first. Either way it is gone before the fixer starts.
-            assert gone(sleeper) and (f"stopped pid {sleeper}: reclaim-scratch has begun" in text
-                                      or "stopped: reclaim-scratch has begun, nothing more is ended" in text), text
-            assert "SIGKILL" not in text and "done:" not in text and not (top / "timer.pid").exists(), text
-
-        # The mark alone, with the sleeper left running: its own rounds stop on it.
-        top = tmp_path / "mark-only"
-        script, env, marker = timer_setup(top, MAINT_END_SECONDS="1", MAINT_ROUND_SECONDS="1")
-        stubborn = stand_in(marker, STUBBORN, start_new_session=True)
-        processes.append(stubborn)
-        done, sleeper = arm(script, env)
-        sleepers.append(sleeper)
-        assert sleeper and logged(top / "timer.log", " fired after 1 s", 15)
-        (top / "state").mkdir()
-        (top / "state" / "reclaiming").write_text("")
-        time.sleep(0.6)  # a round already in flight is over; every later one finds the mark
-        worker = stand_in(marker, start_new_session=True)
-        processes.append(worker)
-        assert logged(top / "timer.log", "stopped: reclaim-scratch has begun, nothing more is ended", 10), (top / "timer.log").read_text()
-        time.sleep(1.5)
-        assert worker.poll() is None and stubborn.poll() is None, "the timer's rounds end nothing once the mark exists"
-        text = (top / "timer.log").read_text()
-        assert gone(sleeper, 5) and not (top / "timer.pid").exists() and "SIGKILL" not in text and "done:" not in text, text
-
-        # The mark in place when the sleeper wakes up: it never fires.
-        top = tmp_path / "before-the-fire"
-        script, env, marker = timer_setup(top, MAINT_END_SECONDS="1")
-        (top / "state").mkdir()
-        (top / "state" / "reclaiming").write_text("")
-        idle = stand_in(marker)
-        processes.append(idle)
-        done, sleeper = arm(script, env)
-        sleepers.append(sleeper)
-        assert sleeper and logged(top / "timer.log", "stopped: reclaim-scratch has begun", 10)
-        text = (top / "timer.log").read_text()
-        assert " fired after " not in text and idle.poll() is None and gone(sleeper, 5), text
-    finally:
-        end_all(processes, sleepers, tmp_path)
-    hook = (TASK / "environment" / "reclaim-scratch").read_text()
-    timer = (TASK / "environment" / "session-timer").read_text()
-    assert "MARK=${MAINT_MARK:-/var/lib/scratch/reclaiming}" in timer and 'echo "$HOOK_STARTED" > "$STATE/reclaiming"' in hook
-    assert "STATE=/var/lib/scratch\n" in hook, "the mark the hook writes is the one the timer looks for"
-    assert "PIDFILE=${MAINT_PIDFILE:-/run/session-timer.pid}" in timer and "timer=$(cat /run/session-timer.pid 2>/dev/null)" in hook
-    stop = hook[hook.index("stop_timer() {"):hook.index("\n}\n", hook.index("stop_timer() {"))]
-    steps = ["grep -q 'session-timer run' || return 0", 'kill -STOP "$timer"', 'pkill -KILL -P "$timer"', 'kill -KILL "$timer"',
-             "rm -f /run/session-timer.pid"]
-    assert [stop.index(step) for step in steps] == sorted(stop.index(step) for step in steps), "only a sleeper; stopped, its children, then itself"
-    assert hook.index('"$STATE/reclaiming"') < hook.index("\nstop_timer\n") < hook.index("timeout 120 setpriv"), \
-        "before the hook's own work as the user"
-    assert timer.count("stopped\n") == 4, "before the fire, before each SIGTERM round, before SIGKILL and before each of its rounds"
-    assert timer.index("    stopped\n    log \"fired after") > 0 and timer.index("        stopped\n        $AS_USER kill -TERM -1") > 0
-    assert timer.index("    stopped\n    log \"SIGKILL") > 0 and timer.index("        stopped\n        $AS_USER kill -KILL -1") > 0
-
-
-def test_reclaim_scratch_writes_the_mark_then_freezes_the_user_then_ends_the_timer(tmp_path):
-    """QA 07f G1. Public connectivity is back shortly after the turn, so the user's processes are frozen right after the
-    mark, before the timer's end (several process starts and a scan of /proc). The mark alone already keeps the timer
-    from ending anything, so freezing first costs nothing. Run as shipped, with the freeze's tools stood in: when the
-    freeze is sent, the mark is written and the waiting sleeper still runs; the sleeper and its sleep are ended after
-    it. The text keeps that order too, with nothing run between the mark and the freeze, and the hook's own work as
-    the user starts only after the timer's end."""
+def test_reclaim_scratch_freezes_the_users_processes_before_anything_else(tmp_path):
+    """QA 07f G1. Public connectivity is back shortly after the turn, so the user's processes are frozen at once: after
+    its settings and its state directory, the hook's first act is `kill -STOP -1` as the user, repeated while any of
+    them runs. Run as shipped, with the freeze's tools stood in; the text keeps that order, with nothing run between."""
     top = tmp_path / "order"
-    script, env, _ = timer_setup(top, MAINT_END_SECONDS="300")
-    sleepers = []
-    try:
-        done, sleeper = arm(script, env)
-        sleepers.append(sleeper)
-        assert sleeper and logged(top / "timer.log", f" armed pid {sleeper}: ", 5)
-        its_sleep = child_of(sleeper)
-        (top / "prologue").write_text(hook_prologue(top))
-        ran = subprocess.run(["sh", str(top / "prologue")], env=prologue_env(top), capture_output=True, text=True, timeout=30)
-        assert ran.returncode == 0 and ran.stdout == "" and ran.stderr == "", ran
-        trace = (top / "trace").read_text().splitlines()
-        assert trace == ["pgrep -u dev -r R,S", "setpriv --reuid dev --regid dev --clear-groups kill -STOP -1 (mark written, timer running)",
-                         "pgrep -u dev -r R,S"], trace
-        assert gone(sleeper, 5) and gone(its_sleep, 5) and not (top / "timer.pid").exists(), "the timer is ended after the freeze"
-        assert f"stopped pid {sleeper}: reclaim-scratch has begun" in (top / "timer.log").read_text()
-    finally:
-        end_all([], sleepers, tmp_path)
+    top.mkdir()
+    (top / "prologue").write_text(hook_prologue(top))
+    ran = subprocess.run(["sh", str(top / "prologue")], env=prologue_env(top), capture_output=True, text=True, timeout=30)
+    assert ran.returncode == 0 and ran.stdout == "" and ran.stderr == "", ran
+    trace = (top / "trace").read_text().splitlines()
+    assert trace == ["pgrep -u dev -r R,S", "setpriv --reuid dev --regid dev --clear-groups kill -STOP -1", "pgrep -u dev -r R,S"], trace
     hook = (TASK / "environment" / "reclaim-scratch").read_text()
-    mark, freeze = 'echo "$HOOK_STARTED" > "$STATE/reclaiming"\n', "for _ in $(seq 1 100); do\n  pgrep -u dev -r R,S >"
-    steps = [mark, freeze, "--clear-groups kill -STOP -1 >", "\nstop_timer\n", "ps -eo pid=", "timeout 120 setpriv"]
-    assert [hook.index(step) for step in steps] == sorted(hook.index(step) for step in steps), "the mark, the freeze, the timer's end"
-    between = hook[hook.index(mark) + len(mark):hook.index(freeze)]
-    assert all(line.startswith("#") for line in between.splitlines()), "nothing runs between the mark and the freeze"
+    start, freeze = 'mkdir -p "$STATE" && chmod 0700 "$STATE"\n', "for _ in $(seq 1 100); do\n  pgrep -u dev -r R,S >"
+    steps = [start, freeze, "--clear-groups kill -STOP -1 >", "ps -eo pid=", "timeout 120 setpriv"]
+    assert [hook.index(step) for step in steps] == sorted(hook.index(step) for step in steps), "the freeze, then the rest"
+    between = hook[hook.index(start) + len(start):hook.index(freeze)]
+    assert all(line.startswith("#") for line in between.splitlines()), "nothing runs between the state directory and the freeze"
+
+
+def test_nothing_ends_the_session_before_the_agents_limit():
+    """Round 12 (harbor-lh ops/swe-marathon-v2/decisions/2026-11-24-timer-round3-flat-bundles-DECISION.md). The verdict
+    rejects any stop the task makes before the agent's limit: v2's timer at 660 s before it, v4's at 60 s. The session
+    timer is gone: its script, its setup hook, the image's lines for it and every mention in what ships; every agent
+    limit is 34,560 s again, with no comment. A session that runs to its limit is bounded after the fact instead
+    (test_a_capped_turn_counts_nothing_written_after_its_end)."""
+    import tomllib
+    assert not (TASK / "environment" / "session-timer").exists()
+    toml = (TASK / "task.toml").read_text()
+    config = tomllib.loads(toml)
+    assert [config["agent"]["timeout_sec"], *(step["agent"]["timeout_sec"] for step in config["steps"])] == [34560, 34560]
+    assert "#" not in toml and config["agent"]["setup_complete"] == [{"command": "/usr/local/sbin/provision-scratch", "timeout_sec": 120}]
+    ours = [TASK / "task.toml", *sorted(path for path in (TASK / "environment").iterdir() if path.is_file()), HARDENING / "mark.py",
+            HARDENING / "smoke.sh", STEP / "instruction.md", STEP / "solution" / "solve.sh", STEP / "tests" / "test.sh",
+            STEP / "tests" / "Dockerfile", STEP / "tests" / "verify.py", *sorted((STEP / "tests" / "verifier").glob("*.py"))]
+    named = re.compile(r"session.timer|maintenance timer|\btimer\b|ended_by_timer|timer_log|33,?9[06]0|reclaiming", re.I)
+    found = {path.relative_to(TASK).as_posix(): named.findall(path.read_text()) for path in ours}
+    assert not any(found.values()), {name: words for name, words in found.items() if words}
 
 
 def test_both_hooks_run_whole_with_the_root_and_linux_tools_stood_in(tmp_path):
@@ -1692,15 +1310,12 @@ def test_both_hooks_run_whole_with_the_root_and_linux_tools_stood_in(tmp_path):
     absolute paths rewritten into a directory of the test's and, first on PATH, stand-ins for what needs root or Linux
     (after the reviewer's replay): setpriv drops its options and never runs a kill; pgrep and pkill find none of the
     user's processes; `ps -eo` prints a fixed listing; fallocate fails, so the fallback writes the room; GNU `stat -f
-    -c` and `timeout` are stood in; python3 is this Python with outbound connections refused. The session timer is the
-    real one, still waiting when the hook starts, and the session left both of the hook's own names, links for the
-    fixer and a pipe."""
+    -c` and `timeout` are stood in; python3 is this Python with outbound connections refused. The session left both
+    of the hook's own names, links for the fixer and a pipe."""
     top = tmp_path / "t"
-    script, env, _ = timer_setup(top, MAINT_END_SECONDS="300")
     shims, rebuild, state = top / "bin", top / "app" / "rebuild", top / "state"
     for folder in (shims, rebuild, top / "tmp"):
         folder.mkdir(parents=True)
-    real = {name: shutil.which(name) for name in ("pgrep", "pkill", "ps")}
     (shims / "run_stdin.py").write_text(
         "import socket, sys\n\n\ndef refuse(address, timeout=None, *args, **kwargs):\n    raise ConnectionRefusedError(111, 'refused')\n\n\n"
         "socket.create_connection = refuse\nassert sys.argv[1:3] == ['-I', '-'], sys.argv\nsys.argv = ['-'] + sys.argv[3:]\n"
@@ -1710,10 +1325,9 @@ def test_both_hooks_run_whole_with_the_root_and_linux_tools_stood_in(tmp_path):
         "setpriv": 'for word in "$@"; do case "$word" in kill) exit 0 ;; esac; done\n'
                    'while [ $# -gt 0 ]; do case "$1" in --reuid|--regid) shift 2 ;; --clear-groups|--no-new-privs) shift ;; *) break ;; esac; done\n'
                    'exec "$@"\n',
-        "pgrep": f'[ "$1" = "-P" ] && exec {real["pgrep"]} "$@"\nexit 1\n',
-        "pkill": f'[ "$1" = "-KILL" ] && [ "$2" = "-P" ] && exec {real["pkill"]} "$@"\nexit 1\n',
-        "ps": f'case "$*" in "-ww -o args= -p "*) exec {real["ps"]} "$@" ;; esac\n'
-              'printf "    1     0     0 100 /sbin/init\\n  777     1 10001  65 sleep 99\\n"\n',
+        "pgrep": "exit 1\n",
+        "pkill": "exit 1\n",
+        "ps": 'printf "    1     0     0 100 /sbin/init\\n  777     1 10001  65 sleep 99\\n"\n',
         "fallocate": "exit 1\n",
         "stat": 'echo "2500000 4096 1300000"\n',
         "timeout": 'shift\nexec "$@"\n',
@@ -1722,8 +1336,7 @@ def test_both_hooks_run_whole_with_the_root_and_linux_tools_stood_in(tmp_path):
         (shims / name).write_text("#!/bin/sh\n" + body)
         (shims / name).chmod(0o755)
     rewrites = [("/usr/bin/python3", f"{shims}/python3"), ("/app/.aside.XXXXXX", f"{top}/app/.aside.XXXXXX"), ("/app/rebuild", str(rebuild)),
-                ("/var/lib/scratch", str(state)), ("/var/log/session-timer.log", str(top / "timer.log")),
-                ("/run/session-timer.pid", str(top / "timer.pid")), ('"$STATE" /tmp "$PACK_SECONDS"', f'"$STATE" {top}/tmp "$PACK_SECONDS"')]
+                ("/var/lib/scratch", str(state)), ('"$STATE" /tmp "$PACK_SECONDS"', f'"$STATE" {top}/tmp "$PACK_SECONDS"')]
     for name in ("provision-scratch", "reclaim-scratch"):
         text = (TASK / "environment" / name).read_text()
         for old, new in rewrites:
@@ -1734,56 +1347,46 @@ def test_both_hooks_run_whole_with_the_root_and_linux_tools_stood_in(tmp_path):
             text = text.replace(new, "")
         assert not any(place in text for place in ("/app/", "/var/", "/run/", "/usr/")), f"{name}: every absolute path is rewritten"
     hook_env = dict(os.environ, PATH=f"{shims}:{os.environ['PATH']}", LC_ALL="C")
-    sleepers = []
-    try:
-        for _ in ("setup_begin", "setup_complete"):  # as task.toml runs it
-            done = subprocess.run(["sh", str(top / "provision-scratch")], env=hook_env, capture_output=True, text=True, timeout=120)
-            assert done.returncode == 0 and done.stdout == "" and done.stderr == "", done
-        assert (state / "room").stat().st_size == 64 << 20 and len(list((state / "inodes").iterdir())) == 64
-        assert state.stat().st_mode & 0o777 == 0o700 and (state / "free-at-start").read_text() == "2500000 4096 1300000\n"
-        turn_started = int((state / "turn-started").read_text())
-        rebuild.chmod(0o777)
-        (rebuild / "bpl").write_text("#!/bin/sh\necho hi\n")
-        (rebuild / "bpl").chmod(0o755)
-        (rebuild / "LICENSE").write_text("Apache License\n")
-        (rebuild / "tools").mkdir()
-        (rebuild / "tools" / "sh").symlink_to("/bin/sh")            # the machine's own: copied
-        (rebuild / "abs").symlink_to(rebuild / "LICENSE")           # inside, absolute: made relative
-        (rebuild / "gone").symlink_to("nowhere")                    # points at nothing: removed
-        os.mkfifo(rebuild / "pipe")                                 # removed
-        (rebuild / ".manifest").symlink_to("/etc/hosts")            # the hook's own two names, left by the session
-        (rebuild / ".manifest.json").write_text('{"delivered": "delivered 999 999"}\n')
-        done, sleeper = arm(script, env)
-        sleepers.append(sleeper)
-        assert sleeper and logged(top / "timer.log", f" armed pid {sleeper}: ", 5)
-        its_sleep = child_of(sleeper)
-        ran = subprocess.run(["sh", str(top / "reclaim-scratch")], env=hook_env, cwd=top / "app", capture_output=True, text=True, timeout=300)
-        assert ran.returncode == 0 and ran.stderr == "", ran
-        mark = [line.replace(str(top), "") for line in (rebuild / ".manifest").read_text().splitlines()]
-        assert mark[0].startswith("delivered 5 ") and mark[1:] == [
-            "tools/sh: a copy of /bin/sh (was a link to /bin/sh)", "removed pipe: not a file, a directory or a link",
-            "removed gone -> nowhere: it points at nothing", "abs -> LICENSE (was /app/rebuild/LICENSE)",
-            "moved .manifest out of /app/rebuild: this step writes a file of that name there",
-            "moved .manifest.json out of /app/rebuild: this step writes a file of that name there"], mark
-        assert ran.stdout.replace(str(top), "").splitlines() == mark[1:], "what the hook prints is the mark's notes"
-        assert not (rebuild / ".manifest").is_symlink() and (rebuild / ".manifest").stat().st_mode & 0o777 == 0o644
-        assert sorted(path.name for path in rebuild.iterdir()) == [".manifest", ".manifest.json", "LICENSE", "abs", "bpl", "tools"]
-        assert (rebuild / "tools" / "sh").is_file() and not (rebuild / "tools" / "sh").is_symlink() and os.readlink(rebuild / "abs") == "LICENSE"
-        aside = sorted(path for path in (top / "app").iterdir() if path.name.startswith(".aside."))
-        assert sorted(item.name for folder in aside for item in folder.iterdir()) == [".manifest", ".manifest.json"], "moved, never followed"
-        assert sorted(path.name for path in state.iterdir()) == ["aside.txt", "before.jsonl", "fixer.jsonl", "free-at-start", "prescan.json",
-                                                                 "processes.txt", "reclaiming", "session.json", "timer.txt", "turn-started"], \
-            "the room and the spare inodes are given back"
-        record = json.loads((rebuild / ".manifest.json").read_text())
-        assert record["delivered"] == mark[0] and record["fixer_status"] == 0 and record["listing_complete"] is True, record["delivered"]
-        assert [record["kill_rounds"], record["user_processes_left"], record["user_process_count"]] == [0, 0, 1]
-        assert record["user_processes"][0]["command"] == "sleep 99" and record["connectivity_open"] is False
-        assert set(record["connectivity"]) == {"pypi.org:443", "github.com:443"} and record["turn_started"] == turn_started
-        assert record["hook_started"] >= turn_started and record["ended_by_timer"] is False
-        assert [line.split(" ", 1)[1].split(":")[0] for line in record["timer_log"]] == [f"armed pid {sleeper}", f"stopped pid {sleeper}"]
-        assert gone(sleeper, 5) and gone(its_sleep, 5) and not (top / "timer.pid").exists(), "the hook ended the waiting sleeper and its sleep"
-    finally:
-        end_all([], sleepers, tmp_path)
+    for _ in ("setup_begin", "setup_complete"):  # as task.toml runs it
+        done = subprocess.run(["sh", str(top / "provision-scratch")], env=hook_env, capture_output=True, text=True, timeout=120)
+        assert done.returncode == 0 and done.stdout == "" and done.stderr == "", done
+    assert (state / "room").stat().st_size == 64 << 20 and len(list((state / "inodes").iterdir())) == 64
+    assert state.stat().st_mode & 0o777 == 0o700 and (state / "free-at-start").read_text() == "2500000 4096 1300000\n"
+    turn_started = int((state / "turn-started").read_text())
+    rebuild.chmod(0o777)
+    (rebuild / "bpl").write_text("#!/bin/sh\necho hi\n")
+    (rebuild / "bpl").chmod(0o755)
+    (rebuild / "LICENSE").write_text("Apache License\n")
+    (rebuild / "tools").mkdir()
+    (rebuild / "tools" / "sh").symlink_to("/bin/sh")            # the machine's own: copied
+    (rebuild / "abs").symlink_to(rebuild / "LICENSE")           # inside, absolute: made relative
+    (rebuild / "gone").symlink_to("nowhere")                    # points at nothing: removed
+    os.mkfifo(rebuild / "pipe")                                 # removed
+    (rebuild / ".manifest").symlink_to("/etc/hosts")            # the hook's own two names, left by the session
+    (rebuild / ".manifest.json").write_text('{"delivered": "delivered 999 999"}\n')
+    ran = subprocess.run(["sh", str(top / "reclaim-scratch")], env=hook_env, cwd=top / "app", capture_output=True, text=True, timeout=300)
+    assert ran.returncode == 0 and ran.stderr == "", ran
+    mark = [line.replace(str(top), "") for line in (rebuild / ".manifest").read_text().splitlines()]
+    assert mark[0].startswith("delivered 5 ") and mark[1:] == [
+        "tools/sh: a copy of /bin/sh (was a link to /bin/sh)", "removed pipe: not a file, a directory or a link",
+        "removed gone -> nowhere: it points at nothing", "abs -> LICENSE (was /app/rebuild/LICENSE)",
+        "moved .manifest out of /app/rebuild: this step writes a file of that name there",
+        "moved .manifest.json out of /app/rebuild: this step writes a file of that name there"], mark
+    assert ran.stdout.replace(str(top), "").splitlines() == mark[1:], "what the hook prints is the mark's notes"
+    assert not (rebuild / ".manifest").is_symlink() and (rebuild / ".manifest").stat().st_mode & 0o777 == 0o644
+    assert sorted(path.name for path in rebuild.iterdir()) == [".manifest", ".manifest.json", "LICENSE", "abs", "bpl", "tools"]
+    assert (rebuild / "tools" / "sh").is_file() and not (rebuild / "tools" / "sh").is_symlink() and os.readlink(rebuild / "abs") == "LICENSE"
+    aside = sorted(path for path in (top / "app").iterdir() if path.name.startswith(".aside."))
+    assert sorted(item.name for folder in aside for item in folder.iterdir()) == [".manifest", ".manifest.json"], "moved, never followed"
+    assert sorted(path.name for path in state.iterdir()) == ["aside.txt", "before.jsonl", "fixer.jsonl", "free-at-start", "prescan.json",
+                                                             "processes.txt", "session.json", "turn-started"], \
+        "the room and the spare inodes are given back"
+    record = json.loads((rebuild / ".manifest.json").read_text())
+    assert record["delivered"] == mark[0] and record["fixer_status"] == 0 and record["listing_complete"] is True, record["delivered"]
+    assert [record["kill_rounds"], record["user_processes_left"], record["user_process_count"]] == [0, 0, 1]
+    assert record["user_processes"][0]["command"] == "sleep 99" and record["connectivity_open"] is False
+    assert set(record["connectivity"]) == {"pypi.org:443", "github.com:443"} and record["turn_started"] == turn_started
+    assert record["hook_started"] >= turn_started and (record["work_end"], record["late_entries"]) == (turn_started + 34561, 0)
 
 
 # ---------------------------------------------------------------- what a tree can do to the copy
@@ -1806,7 +1409,8 @@ def collected(top: Path, build, *, started_ago: float = 0, prelude: str = "", ta
               start: str = "2500000 4096 1300000\n", state_files: dict | None = None, timeout: float = 300,
               times: dict | None = None) -> Path:
     """`build`'s tree in top/app/rebuild after the hook's scripts as they run there: the times before anything, then the
-    last script, as if the step began `started_ago` seconds before it (its run's seconds go into `times["last"]`),
+    last script, as if the step began `started_ago` seconds before it and the session 100 s before that (`build` may
+    write another turn-started), its run's seconds going into `times["last"]`,
     with `prelude` run before it and `tar` (a shell
     body) first on its PATH. The link fixer does not run: one cut short, or ended at once by a chain of links, leaves
     the links it had not reached to the last script (`state_files` can give what it printed). By default the machine
@@ -1815,7 +1419,7 @@ def collected(top: Path, build, *, started_ago: float = 0, prelude: str = "", ta
     rebuild, state, archives = top / "app" / "rebuild", top / "state", top / "tmp"
     for folder in (rebuild, state, archives):
         folder.mkdir(parents=True)
-    (state / "turn-started").write_text("1700000000\n")
+    (state / "turn-started").write_text(f"{int(time.time() - started_ago) - 100}\n")  # 100 s before the step: well inside the limit
     (state / "free-at-start").write_text(start)
     for name, text in (state_files or {}).items():
         (state / name).write_text(text)
@@ -2015,6 +1619,90 @@ def test_a_tree_the_disk_cannot_pack_beside_the_record_is_refused_and_its_record
     assert (rebuild / ".manifest").read_text().splitlines() == [f"delivered 41 {18 + 40 * 100}"]
 
 
+# A process of a session that ran to its limit, still running when the hook comes: it "fetches" a build once the network
+# is back, swaps it in for the program, links to it, and keeps appending to a log until the hook's freeze and kill.
+LATE_WRITER = textwrap.dedent("""
+    import os, sys, time
+    from pathlib import Path
+    tree = Path(sys.argv[1])
+    (tree / "fetched").mkdir()
+    (tree / "fetched" / "upstream.tar").write_bytes(b"fetched after the end")
+    (tree / "bpl").write_text("#!/bin/sh\\necho fetched\\n")
+    os.symlink("fetched/upstream.tar", tree / "latest")
+    print("fetched", flush=True)
+    while True:
+        with open(tree / "progress.log", "a") as log:
+            log.write("still working\\n")
+        time.sleep(0.05)
+""")
+
+
+def test_a_capped_turn_counts_nothing_written_after_its_end(tmp_path):
+    """Round 12 (decision 2026-11-24, item 2). With no timer, a session that runs to the agent's limit (34,560 s) keeps
+    its processes running until this hook freezes them, and the network is open again by then: a process can keep
+    writing into /app/rebuild, and fetch. The end of the work is the session's start (turn-started, written at set-up)
+    plus 34,560 s, and nothing is killed to enforce it: every file and link whose change time, as recorded before the
+    hook touched anything, is later than that end is taken out, noted and counted (`late_entries`, `work_end`). Here a
+    session's work is written, its end passes, and a process of it fetches, swaps the program, links and keeps
+    writing, until it is killed as the hook's freeze and kill would."""
+    when = {}
+
+    def build(rebuild):
+        (rebuild / "bpl").write_text("#!/bin/sh\necho mine\n")
+        (rebuild / "src").mkdir()
+        (rebuild / "src" / "main.py").write_text("print(1)\n")
+        (rebuild / "notes.txt").write_text("in time\n")
+        (rebuild / "progress.log").write_text("step 0\n")
+        when["end"] = int(time.time()) + 1  # the end of the work falls between the work and what follows it
+        (rebuild.parent.parent / "state" / "turn-started").write_text(f"{when['end'] - 34560 - 1}\n")
+        while time.time() < when["end"] + 0.2:
+            time.sleep(0.05)
+        writer = subprocess.Popen([sys.executable, "-c", LATE_WRITER, str(rebuild)], stdout=subprocess.PIPE, text=True)
+        try:
+            assert writer.stdout.readline().strip() == "fetched"
+            time.sleep(0.3)  # still writing
+        finally:
+            writer.kill()
+            writer.wait(timeout=10)
+            writer.stdout.close()
+
+    rebuild = collected(tmp_path / "capped", build)
+    mark = (rebuild / ".manifest").read_text().splitlines()
+    late = sorted(line.split(":")[0].removeprefix("removed ") for line in mark[1:])
+    assert mark[0] == f"delivered 4 {len('print(1)\n') + len('in time\n')}" and late == ["bpl", "fetched/upstream.tar", "latest", "progress.log"], mark
+    assert all(line.endswith(": changed after the end of the work, 34560 s after the session began") for line in mark[1:]), mark
+    assert sorted(str(path.relative_to(rebuild)) for path in rebuild.rglob("*")) == [".manifest", ".manifest.json", "fetched", "notes.txt",
+                                                                                   "src", "src/main.py"]
+    record = json.loads((rebuild / ".manifest.json").read_text())
+    assert (record["work_end"], record["late_entries"]) == (when["end"], 4), (record["work_end"], record["late_entries"])
+    stopped, notes = arrival(rebuild, tmp_path / "capped" / "copied")
+    assert stopped is None and notes == [f"maintenance step: {line}" for line in mark[1:]], (stopped, notes)
+    measure = hook_scripts()["measure"]
+    assert "SESSION_SECONDS = 34560" in measure and "late_entries = take_out_late()" in measure
+    assert measure.index("late_entries = take_out_late()") < measure.index('walk(top, "")'), "taken out before the walk counts"
+
+
+def test_a_capped_turn_that_delivered_nothing_or_lost_its_listing(tmp_path):
+    """Round 12. A session that ran to its limit with nothing in /app/rebuild is delivered as empty, never refused (its
+    complete listing holds no entry); one whose listing from before the hook is missing or short is refused, since
+    what changed after the end could not be told apart from the rest."""
+    def ran_out(rebuild):
+        (rebuild.parent.parent / "state" / "turn-started").write_text(f"{int(time.time()) - 34561 - 30}\n")
+
+    empty = collected(tmp_path / "empty", ran_out)
+    record = json.loads((empty / ".manifest.json").read_text())
+    assert (empty / ".manifest").read_text() == "delivered 0 0\n" and record["late_entries"] == 0 and record["work_end"] < time.time()
+
+    def kept(rebuild):
+        ran_out(rebuild)
+        (rebuild / "bpl").write_text("#!/bin/sh\n")
+
+    lost = 'import os, sys\nos.remove(os.path.join(sys.argv[5], "before.jsonl"))\n'
+    refused = collected(tmp_path / "lost", kept, prelude=lost)
+    mark = (refused / ".manifest").read_text().splitlines()
+    assert mark == ["refused", "the session ran to its limit, and the listing of what it changed before then is missing: it was not copied"], mark
+
+
 def listing_order(folder: Path, names: list[str]) -> list[str]:
     """`names` in the order this filesystem lists them in `folder` (placeholders made and removed here): the order the
     walk meets them in, which a test cannot set."""
@@ -2141,8 +1829,10 @@ def test_the_freeze_and_the_kill_end_in_time_and_a_task_in_d_holds_neither(tmp_p
     with no limit in time, and `dev` can hold a task in D (a parent waiting on a vfork child that the freeze itself
     stopped): every pass scans /proc, so the stretch before the set-aside of the hook's own names could grow. A task
     in D runs nothing of its own until it leaves D, and the kill ends it, so the freeze now asks for R and S only; and
-    the freeze and the kill each stop after LOOP_SECONDS (15 s, 2 s here), with a note. Run as shipped up to the
-    count of what is left, with stand-ins for pgrep, setpriv, pkill and ps."""
+    the freeze and the kill each stop after LOOP_SECONDS (15 s; 2 s here for a process that never stops), with a note.
+    Run as shipped up to the count of what is left, with stand-ins for pgrep, setpriv, pkill and ps. (Round 12: the
+    task in D runs with the shipped 15 s and a bound of 8 s, since stalls of this machine under other jobs' load wrote
+    the note at 2 s, or took the run past the old bound of 3 s, in four runs of twelve.)"""
     hook = (TASK / "environment" / "reclaim-scratch").read_text()
     for mode in ("d", "running"):
         top = tmp_path / mode
@@ -2155,10 +1845,10 @@ def test_the_freeze_and_the_kill_end_in_time_and_a_task_in_d_holds_neither(tmp_p
         for name, body in stand_ins.items():
             (tools / name).write_text("#!/bin/sh\n" + body)
             (tools / name).chmod(0o755)
-        text = hook[:hook.index("left=$(")].replace("LOOP_SECONDS=15", "LOOP_SECONDS=2")  # whole seconds, as date gives them
-        for old, new in (("/var/lib/scratch", top / "state"), ("/run/session-timer.pid", top / "timer.pid"),
-                         ("/var/log/session-timer.log", top / "timer.log")):
-            text = text.replace(old, str(new))
+        text = hook[:hook.index("left=$(")]
+        if mode == "running":
+            text = text.replace("LOOP_SECONDS=15", "LOOP_SECONDS=2")  # whole seconds, as date gives them
+        text = text.replace("/var/lib/scratch", str(top / "state"))
         (top / "hook").write_text(text)
         began = time.monotonic()
         ran = subprocess.run(["sh", str(top / "hook")], env=dict(os.environ, PATH=f"{tools}:{os.environ['PATH']}"), capture_output=True,
@@ -2168,7 +1858,7 @@ def test_the_freeze_and_the_kill_end_in_time_and_a_task_in_d_holds_neither(tmp_p
         assert ran.returncode == 0, ran
         if mode == "d":  # the task in D is not running: no freeze is sent, and the kill ends it
             assert calls[0] == "pgrep -u dev -r R,S" and not any("kill -STOP" in call for call in calls), calls[:4]
-            assert sum("kill -9 -1" in call for call in calls) == 1 and loops == [] and spent < 3, (calls, spent)
+            assert sum("kill -9 -1" in call for call in calls) == 1 and loops == [] and spent < 8, (calls, loops, spent)
         else:  # a process that never stops: each loop gives up after its second, and says so
             assert loops == ["the freeze stopped after 2 s with a process of dev still running",
                              "the kill stopped after 2 s with a process of dev left"] and spent < 7, (loops, spent)
@@ -2255,9 +1945,7 @@ if delivered:
     (agent / "LICENSE").write_text("Apache License\n")
 (state / "session.json").write_text(json.dumps({"checked_at": "2026-11-20T01:00:00Z", "connectivity": {"pypi.org:443": "closed (OSError)"},
                                                 "connectivity_open": False, "user_process_count": 0, "user_processes": []}))
-(state / "turn-started").write_text("1700000000\n")
-(state / "timer.txt").write_text("2026-11-20T00:00:00Z armed pid 77: ending the processes selected by '-u dev' in 33900 s\n"
-                                 "2026-11-20T01:00:00Z stopped pid 77: reclaim-scratch has begun\n")
+(state / "turn-started").write_text(f"{int(__import__('time').time()) - 100}\n")  # well inside the session's limit
 for script, arguments in ((prescan, ["100000", "1000", str(state)]),
                           (measure, ["100000", "1000000000", "1000", str(state), str(archives), "100", "0", "0",
                                      str(int(__import__("time").time())), "0"])):
@@ -2442,8 +2130,7 @@ def test_the_whole_evaluation_runs_with_only_root_and_linux_stood_in(tmp_path):
     record = metrics["delivery_record"]
     size = len('#!/bin/sh\necho "$2"\n') + len("Apache License\n")
     assert record["delivered"] == f"delivered 2 {size}", record
-    assert record["entries"] == 2 and record["connectivity_open"] is False and record["ended_by_timer"] is False
-    assert [line.split(" ", 1)[1][:15] for line in record["timer_log"]] == ["armed pid 77: e", "stopped pid 77:"], record["timer_log"]
+    assert record["entries"] == 2 and record["connectivity_open"] is False and record["late_entries"] == 0
     assert metrics["submission"]["size"] == record["bpl"]["size"] and record["listing_complete"] is True
 
     nothing = whole_run(tmp_path / "nothing", "own", "nothing")
@@ -2821,13 +2508,9 @@ def test_nothing_the_agent_sees_names_a_reference_answer_or_a_budget():
     for place in (runcases.WORKSPACE, runcases.HOME, runcases.TEMP):
         assert str(place) not in seen["instruction.md"], place
     assert not re.search(r"\btests?\b", seen["instruction.md"].lower()), "no suite is implied"
-    # task.toml's only comments: the same two neutral lines above each agent limit (the agent never reads it)
-    note = ["# Sessions end at 33,900 s: a timer started at set-up closes the session user's processes then",
-            "# (all are gone by about 33,930 s). This value is a backstop 60 s later."]
-    assert [line for line in seen["task.toml"].splitlines() if "#" in line] == note * 2
-    assert seen["task.toml"].count("\n".join(note) + "\ntimeout_sec = 33960\n") == 2, "each just above an agent limit"
+    assert "#" not in seen["task.toml"]
     assert sorted(path.name for path in (TASK / "environment").iterdir()) == [".dockerignore", "Dockerfile", "provision-scratch",
-                                                                          "reclaim-scratch", "session-timer"]
+                                                                          "reclaim-scratch"]
     instruction = seen["instruction.md"]
     assert "no example" not in instruction.lower() and "Out of scope:" in instruction
     flat = " ".join(instruction.split())
@@ -2847,7 +2530,7 @@ def test_the_instruction_states_the_requirement_and_never_a_comparison_of_the_wo
     phrases = re.compile(r"told apart|tell (?:them |it )?apart|indistinguishab|\bgrad(?:ed|ing|er)\b|evaluat|test corpus|"
                          r"hidden test|held.out|benchmark|rubric|\bjudged?\b", re.I)
     ours = [STEP / "instruction.md", TASK / "environment" / "Dockerfile", HARDENING / "mark.py",
-            *(TASK / "environment" / name for name in ("provision-scratch", "reclaim-scratch", "session-timer"))]
+            *(TASK / "environment" / name for name in ("provision-scratch", "reclaim-scratch"))]
     found = {path.name: phrases.findall(path.read_text()) for path in ours}
     assert not any(found.values()), {name: words for name, words in found.items() if words}
 
@@ -2863,12 +2546,10 @@ def test_no_shipped_file_of_ours_outside_the_verifier_uses_a_word_the_audit_scan
     shipped = [*sorted((TASK / "environment").iterdir()), HARDENING / "mark.py", HARDENING / "smoke.sh", STEP / "instruction.md",
                *sorted((STEP / "solution").iterdir())]
     found = {path.relative_to(TASK).as_posix(): flagged.findall(path.read_text()) for path in shipped if path.is_file()}
-    assert len(found) == 9 and not any(found.values()), {name: words for name, words in found.items() if words}
-    # task.toml's comments too (its tables name the verifier, as the schema does): the pre-trial audit flagged one that
-    # spoke of the platform, its trials and the verifier image
-    comments = [line for line in (TASK / "task.toml").read_text().splitlines() if line.lstrip().startswith("#")]
-    words = re.compile(flagged.pattern + r"|platform|result|evaluat|image|\bgrad|review", re.I)
-    assert comments and not [line for line in comments if words.search(line)], comments
+    assert len(found) == 8 and not any(found.values()), {name: words for name, words in found.items() if words}
+    # task.toml holds no comment at all: the pre-trial audit flagged one that spoke of the platform, its trials and the
+    # verifier image (its tables name the verifier, as the schema does)
+    assert not [line for line in (TASK / "task.toml").read_text().splitlines() if line.lstrip().startswith("#")]
 
 
 def test_the_reference_solution_installs_the_original_and_its_licence_and_nothing_else():
@@ -2889,7 +2570,7 @@ def test_the_reference_solution_installs_the_original_and_its_licence_and_nothin
     unwanted = re.compile(r"\bauthors?\b|/logs/|this sandbox|not part of the solution|\bprobe\.c\b|scripts/|apply\.sh|"
                           r"make_cases|build_original|experiment/", re.I)
     found = {path.relative_to(TASK).as_posix(): unwanted.findall(path.read_text()) for path in ours if path.is_file()}
-    assert len(found) == 9 and not any(found.values()), {name: words for name, words in found.items() if words}
+    assert len(found) == 8 and not any(found.values()), {name: words for name, words in found.items() if words}
 
 
 def test_the_bundle_holds_only_what_is_read_of_the_private_cases_and_the_build_facts():
@@ -2952,7 +2633,7 @@ def test_only_the_documentation_and_the_binary_reach_the_agent():
     assert re.findall(r"^COPY .*$", agent, re.M) == ["COPY original/ /original/", "COPY --from=program /opt/bpl/bpl /opt/bpl/bpl",
                                                     "COPY --from=program /original/smoke.sh /tmp/bpl-smoke.sh",
                                                     "COPY docs/ /app/docs/",
-                                                    "COPY provision-scratch reclaim-scratch session-timer /usr/local/sbin/"]
+                                                    "COPY provision-scratch reclaim-scratch /usr/local/sbin/"]
     final = agent.split("\nFROM ", 1)[1]
     assert "sudo" not in agent, "no set-user-id helper the agent's user cannot use anyway"
     assert final.index("chmod 2711 /opt/bpl/bpl") < final.index(
@@ -2974,7 +2655,7 @@ def test_the_agent_image_holds_no_record_of_the_originals_source_or_build(tmp_pa
     final = (TASK / "environment" / "Dockerfile").read_text().split("\nFROM ", 1)[1]
     assert re.findall(r"^COPY --from=program (\S+) ", final, re.M) == ["/opt/bpl/bpl", "/original/smoke.sh"]
     assert "rm -f /tmp/bpl-smoke.sh" in final and "/original/" not in final.replace("COPY --from=program /original/smoke.sh", "")
-    assert re.findall(r"^COPY (?!--from)(.+)$", final, re.M) == ["docs/ /app/docs/", "provision-scratch reclaim-scratch session-timer /usr/local/sbin/"]
+    assert re.findall(r"^COPY (?!--from)(.+)$", final, re.M) == ["docs/ /app/docs/", "provision-scratch reclaim-scratch /usr/local/sbin/"]
     root = upstream(tmp_path)
     decoys = {"requirements.txt": "basedpl==0.1.95\n", "Cargo.toml": '[package]\nname = "basedpl"\n', "Cargo.lock": "version = 3\n",
               "src/main.rs": "fn main() {}\n", "nbs/settings.ini": "[DEFAULT]\nrequirements = rustymath\n", "nbs/_quarto.yml": "project: {}\n",
@@ -2987,3 +2668,33 @@ def test_the_agent_image_holds_no_record_of_the_originals_source_or_build(tmp_pa
     assert pages == ["LICENSE", "glyphs/plus.md", "guide.md", "llms.txt", "system/demo.md"], pages
     package = (SCRIPTS / "package_step.py").read_text()
     assert 'content[f"environment/docs/{name}"] = text.encode("utf-8")' in package and "for name, text in pages.items():" in package
+
+
+def test_the_flat_bundle_is_the_same_task_under_the_same_name():
+    """Round 12 (decision 2026-11-24, item 3). The upload is a flat single-step bundle, as SymPy's is (its capped runs
+    were graded), under the task's own name, so that it is the next version of the same task: `--flat --keep-name`.
+    The one step's files move to the top; task.toml loses its [[steps]] tables, whose limits equal the top-level
+    ones (packaging refuses otherwise), and its multi-step reward strategy (one step: its reward is the trial's).
+    Everything else is the same bytes."""
+    found = scripts_call(textwrap.dedent(f'''
+        import json, tomllib, package_step
+        from pathlib import Path
+        toml = Path({str(TASK / "task.toml")!r}).read_bytes()
+        content = {{"task.toml": toml, "environment/Dockerfile": b"FROM x\\n", "steps/01-rebuild-interpreter/instruction.md": b"# I\\n",
+                   "steps/01-rebuild-interpreter/tests/test.sh": b"#!/bin/sh\\n", "steps/01-rebuild-interpreter/solution/solve.sh": b"x\\n"}}
+        flat = package_step.flatten(content, keep_name=True)
+        renamed = package_step.flatten(content)
+        print(json.dumps({{"names": sorted(flat), "same": [flat[name] == content.get(name, content.get("steps/01-rebuild-interpreter/" + name))
+                                                            for name in sorted(flat) if name != "task.toml"],
+                          "toml": flat["task.toml"].decode(), "renamed": tomllib.loads(renamed["task.toml"].decode())["task"]["name"]}}))
+    '''))
+    import tomllib
+    assert found["names"] == ["environment/Dockerfile", "instruction.md", "solution/solve.sh", "task.toml", "tests/test.sh"], found["names"]
+    assert all(found["same"]), "every file but task.toml is the same bytes"
+    steps, flat = tomllib.loads((TASK / "task.toml").read_text()), tomllib.loads(found["toml"])
+    assert flat["task"] == steps["task"] and found["renamed"] == steps["task"]["name"] + "-single"
+    assert "steps" not in flat and "multi_step_reward_strategy" not in flat and steps["multi_step_reward_strategy"] == "final"
+    for key in ("schema_version", "artifacts", "metadata", "agent", "environment", "verifier"):
+        assert flat[key] == steps[key], key
+    assert len(steps["steps"]) == 1 and steps["steps"][0]["agent"] == {"timeout_sec": steps["agent"]["timeout_sec"]}
+    assert steps["steps"][0]["verifier"] == {"timeout_sec": steps["verifier"]["timeout_sec"]}
