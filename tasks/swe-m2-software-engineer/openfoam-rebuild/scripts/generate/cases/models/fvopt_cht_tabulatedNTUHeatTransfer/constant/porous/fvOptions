@@ -1,0 +1,38 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  v2606                                 |
+|   \\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      fvOptions;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+porousToair
+{
+    type            tabulatedNTUHeatTransfer;
+
+    interpolationMethod cellVolumeWeight;
+    nbrRegion       air;
+    master          true;
+
+    nbrModel        airToporous;
+    fields          (h);
+    semiImplicit    no;
+
+    geometryMode    calculated;
+    inletPatch      inlet;
+    inletPatchNbr   inlet;
+    inletBlockageRatio 0.2;
+    inletBlockageRatioNbr 0.3;
+    coreBlockageRatio 0.4;
+    file            "<constant>/ntuTable";
+}
+
+// ************************************************************************* //

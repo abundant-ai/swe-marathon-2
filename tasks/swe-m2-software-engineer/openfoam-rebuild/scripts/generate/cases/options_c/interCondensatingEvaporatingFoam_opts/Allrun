@@ -1,0 +1,23 @@
+#!/bin/bash
+# from: multiphase/interCondensatingEvaporatingFoam/condensatingVessel (12x10, endTime 1e-3); exercises: interCondensatingEvaporatingFoam -dry-run, -noFunctionObjects run, -postProcess (-func on -latestTime), -parallel restart; errors: unknown phaseChangeTwoPhaseModel (valid-type list), missing coeffE, missing phaseChangeProperties, missing T field
+cd "${0%/*}" || exit 1
+cp -r 0.orig 0
+blockMesh
+interCondensatingEvaporatingFoam -dry-run
+cp constant/phaseChangeProperties constant/phaseChangeProperties.orig
+cp variants/phaseChangeProperties.badModel constant/phaseChangeProperties
+interCondensatingEvaporatingFoam -dry-run || true
+cp variants/phaseChangeProperties.noCoeffE constant/phaseChangeProperties
+interCondensatingEvaporatingFoam -dry-run || true
+rm constant/phaseChangeProperties
+interCondensatingEvaporatingFoam -dry-run || true
+cp constant/phaseChangeProperties.orig constant/phaseChangeProperties
+mv 0/T 0/T.off
+interCondensatingEvaporatingFoam -dry-run || true
+mv 0/T.off 0/T
+interCondensatingEvaporatingFoam -noFunctionObjects
+interCondensatingEvaporatingFoam -postProcess -latestTime -func "mag(U)"
+foamDictionary -entry endTime -set 0.0015 system/controlDict
+foamDictionary -entry startFrom -set latestTime system/controlDict
+decomposePar -latestTime
+mpirun -np 2 interCondensatingEvaporatingFoam -parallel

@@ -1,0 +1,64 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       volVectorField;
+    object      U;
+}
+
+dimensions      [0 1 -1 0 0 0 0];
+
+internalField   uniform (0 0 0);
+
+boundaryField
+{
+    in00
+    {
+        type            pressureDirectedInletVelocity;
+        inletDirection  uniform (1 0.2 0);
+        value           uniform (0 0 0);
+    }
+    in10
+    {
+        type            pressureDirectedInletOutletVelocity;
+        inletDirection  uniform (1 0 -0.2);
+        value           uniform (0 0 0);
+    }
+    in20
+    {
+        type            pressureNormalInletOutletVelocity;
+        value           uniform (0 0 0);
+    }
+    in01
+    {
+        type            pressureInletUniformVelocity;
+        value           uniform (0 0 0);
+    }
+    in11
+    {
+        type            rotatingPressureInletOutletVelocity;
+        omega           (5 0 0);
+        value           uniform (0 0 0);
+    }
+    in21
+    {
+        type            pressurePIDControlInletVelocity;
+        upstream        upstreamZone;
+        downstream      downstreamZone;
+        deltaP          0.5;
+        P               0.5;
+        I               2;
+        D               0;
+        value           uniform (0.5 0 0);
+    }
+    "out.*"
+    {
+        type            inletOutlet;
+        inletValue      uniform (0 0 0);
+        value           uniform (0 0 0);
+    }
+    "(bottom|top|front|back)"
+    {
+        type            noSlip;
+    }
+}

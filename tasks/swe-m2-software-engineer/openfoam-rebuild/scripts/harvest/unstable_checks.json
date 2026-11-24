@@ -1,0 +1,133 @@
+{
+ "about": "Checks whose expected output varies between identical OpenFOAM runs (CPU times in optimisation/CPUcost, directory-order names, uninitialised values, collision-record order in parallel particle runs, solver profiling times, last digits after parallel reductions), found by the repeat oracle checks; dropped by dataset_card.py.",
+ "tests": {
+  "records/discreteMethods/molecularDynamics/mdFoam/nanoNozzle/007-mdFoam.json": {
+   "file processor3/5e-15/lagrangian/moleculeCloud/a": {
+    "passed": false,
+    "mismatch": "processor3/5e-15/lagrangian/moleculeCloud/a/-#1: 1 of 19662 numbers differ; first at [np.int64(80), np.int64(0)]: expected np.float64(911013877273000.0), got np.float64(911013877275000.0) (allowed 1e+"
+   }
+  },
+  "records/multiphase/overInterDyMFoam/rigidBodyHull/025-decomposePar.json": {
+   "file background/processor4/constant/polyMesh/cellLevel": {
+    "passed": false,
+    "mismatch": "background/processor4/constant/polyMesh/cellLevel/-#1: 26320 of 158128 numbers differ; first at [np.int64(118585)]: expected np.float64(-1.0), got np.float64(612.0) (allowed 4.91e-07)"
+   },
+   "file background/processor4/constant/polyMesh/pointLevel": {
+    "passed": false,
+    "mismatch": "background/processor4/constant/polyMesh/pointLevel/-#1: 21460 of 178716 numbers differ; first at [np.int64(126075)]: expected np.float64(144136.0), got np.float64(-1.0) (allowed 4.92e-07)"
+   }
+  },
+  "records/combustion/rhoReactingFoam/groundAbsorption/011-redistributePar.json": {
+   "stdout": {
+    "passed": false,
+    "mismatch": "stdout line 77: expected 'N2', got 'nut'"
+   }
+  },
+  "records/_generated/r3_optimisation/turbulent_adjoint/006-adjointOptimisationFoam.json": {
+   "file optimisation/CPUcost": {
+    "passed": false,
+    "mismatch": "optimisation/CPUcost:line 3: expected '              3               1            0.27               1               1            0.55               3               3', got '              3           "
+   }
+  },
+  "records/discreteMethods/dsmcFoam/freeSpaceStream/004-redistributePar.json": {
+   "stdout": {
+    "passed": false,
+    "mismatch": "stdout line 87: expected 'rhoM', got 'q'"
+   }
+  },
+  "records/_generated/r3_optimisation/volBSplines_boxes/002-adjointOptimisationFoam.json": {
+   "file optimisation/CPUcost": {
+    "passed": false,
+    "mismatch": "optimisation/CPUcost:line 4: expected '              4               1            0.06               1               1            0.23               4               4', got '              4           "
+   }
+  },
+  "records/_generated/r3_optimisation/volBSplines_boxes/003-adjointOptimisationFoam.json": {
+   "file optimisation/CPUcost": {
+    "passed": false,
+    "mismatch": "optimisation/CPUcost:line 5: expected '              5               1            0.05               1               1            0.28               5               5', got '              5           "
+   }
+  },
+  "records/_generated/r3_optimisation/fork_objectives/006-adjointOptimisationFoam.json": {
+   "file optimisation/CPUcost": {
+    "passed": false,
+    "mismatch": "optimisation/CPUcost:line 4: expected '              4               1            0.04               1               1            0.18               4               4', got '              4           "
+   }
+  },
+  "records/incompressible/adjointOptimisationFoam/topologyOptimisation/monoFluidAero/laminar/3DBox/losses/005-setsToZones.json": {
+   "stdout": {
+    "passed": false,
+    "mismatch": "stdout line 22: expected 'Found    : 8(outlet2 outlet2Zone inletZone fixedWalls inlet outlet1Zone allIO outlet1)', got 'Found    : 8(inletZone outlet2Zone outlet2 fixedWalls inlet outlet1Zone allIO ou"
+   }
+  },
+  "records/incompressible/adjointOptimisationFoam/topologyOptimisation/monoFluidAero/laminar/3DBox/losses-mass-uniformity-SQP/005-setsToZones.json": {
+   "stdout": {
+    "passed": false,
+    "mismatch": "stdout line 22: expected 'Found    : 8(outlet2 outlet2Zone inletZone fixedWalls inlet outlet1Zone allIO outlet1)', got 'Found    : 8(inletZone outlet2Zone outlet2 fixedWalls inlet outlet1Zone allIO ou"
+   }
+  },
+  "records/_generated/r3_optimisation/fork_objectives/004-adjointOptimisationFoam.json": {
+   "file optimisation/CPUcost": {
+    "passed": false,
+    "mismatch": "CPU times: varies between runs"
+   }
+  },
+  "records/_generated/r3_optimisation/fork_objectives/005-adjointOptimisationFoam.json": {
+   "file optimisation/CPUcost": {
+    "passed": false,
+    "mismatch": "CPU times: varies between runs"
+   }
+  },
+  "records/_generated/r3_optimisation/bezier_laplacian/006-adjointOptimisationFoam.json": {
+   "file optimisation/CPUcost": {
+    "passed": false,
+    "mismatch": "CPU times: varies between runs"
+   }
+  },
+  "records/_generated/r3_optimisation/turbulent_adjoint/005-adjointOptimisationFoam.json": {
+   "file optimisation/CPUcost": {
+    "passed": false,
+    "mismatch": "CPU times: varies between runs"
+   }
+  },
+  "records/_generated/r3_optimisation/unconstrained_methods/002-adjointOptimisationFoam.json": {
+   "file optimisation/CPUcost": {
+    "passed": false,
+    "mismatch": "CPU times: varies between runs"
+   }
+  },
+  "records/lagrangian/icoUncoupledKinematicParcelFoam/hopper/005-icoUncoupledKinematicParcelFoam.json": {
+   "file hopperInitialState/processor0/0.00025/lagrangian/kinematicCloud/collisionRecordsPairData": {
+    "passed": false,
+    "mismatch": "hopperInitialState/processor0/0.00025/lagrangian/kinematicCloud/collisionRecordsPairData/-#1[35]: 6 of 9 numbers differ; first at [np.int64(1), np.int64(0)]: expected np.float64(1.68598e-24), got np.f"
+   },
+   "file hopperInitialState/processor0/0.00025/lagrangian/kinematicCloud/collisionRecordsPairOrigIdOfOther": {
+    "passed": false,
+    "mismatch": "hopperInitialState/processor0/0.00025/lagrangian/kinematicCloud/collisionRecordsPairOrigIdOfOther/-#1[35]: 2 of 3 numbers differ; first at [np.int64(1)]: expected np.float64(16.0), got np.float64(88.0"
+   }
+  },
+  "records/_generated/r3_fo_utils_sampling/parProfilingSolver/003-icoFoam.json": {
+   "stdout": {
+    "passed": false,
+    "mismatch": "stdout line 98: expected '    total     : avg = 0, min = 0 (proc 0), max = 0 (proc 0)', got '    total     : avg = 0.005, min = 0 (proc 1), max = 0.01 (proc 0)'"
+   }
+  },
+  "records/multiphase/overInterDyMFoam/rigidBodyHull/030-redistributePar.json": {
+   "file background/8.92992e-05/Uf": {
+    "passed": false,
+    "mismatch": "background/8.92992e-05/Uf/internalField#3: 1732 of 7145268 numbers differ; first at [np.int64(244168), np.int64(0)]: expected np.float64(-5.286798318898725e-06), got np.float64(-5.286795116362855e-06)"
+   }
+  },
+  "records/combustion/rhoReactingFoam/groundAbsorption/016-redistributePar.json": {
+   "file 0.00892992/phi": {
+    "passed": false,
+    "mismatch": "0.00892992/phi/internalField#3: 32 of 637200 numbers differ; first at [np.int64(315176)]: expected np.float64(-2.36236e-14), got np.float64(-2.48906e-14) (allowed 1e-19)"
+   }
+  },
+  "records/incompressible/simpleFoam/turbulentFlatPlate/004-simpleFoam.json": {
+   "stderr": {
+    "passed": false,
+    "mismatch": "stderr line 1: expected '[0]', got '--------------------------------------------------------------------------'"
+   }
+  }
+ }
+}

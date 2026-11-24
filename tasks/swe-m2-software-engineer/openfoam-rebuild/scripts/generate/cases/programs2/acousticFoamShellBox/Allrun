@@ -1,0 +1,11 @@
+#!/bin/bash
+# from: compressible/acousticFoam/obliqueAirJet/main; exercises: acousticFoam pressure-pulse propagation with acousticWaveTransmissive outlet and vibrationShell (KirchhoffShell finite-area) window, missing c0 error
+cd "${0%/*}" || exit 1
+blockMesh
+makeFaMesh
+setFields
+acousticFoam
+cp constant/transportProperties transportProperties.good
+foamDictionary constant/transportProperties -entry c0 -remove
+acousticFoam || true
+mv transportProperties.good constant/transportProperties

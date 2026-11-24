@@ -1,0 +1,8 @@
+#!/bin/bash
+# from: lagrangian/uncoupledKinematicParcelDyMFoam/rotor2DAMI (frozen uniform flow in a box); exercises: injection models cellZoneInjection, fieldActivatedInjection, inflationInjection (selfSeed, separate inflationCloud run), kinematicLookupTableInjection, patchFlowRateInjection; size distributions binned, exponential, massRosinRammler, multiNormal
+cd "${0%/*}" || exit
+cp -r 0.orig 0
+blockMesh
+topoSet
+uncoupledKinematicParcelFoam
+uncoupledKinematicParcelFoam -cloud inflationCloud

@@ -1,0 +1,6 @@
+#!/bin/bash
+# from: incompressible/icoFoam/cavity/cavity; exercises: binField with uniformBin (cartesian, bounded/cumulative with cellZones and decomposePatchValues, cylindrical coordinate system) and singleDirectionUniformBin with cellZones/cumulative
+cd "${0%/*}" || exit 1
+blockMesh > log.blockMesh 2>&1
+topoSet > log.topoSet 2>&1
+icoFoam > log.icoFoam 2>&1

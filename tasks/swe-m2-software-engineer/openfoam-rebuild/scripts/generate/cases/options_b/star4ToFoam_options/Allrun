@@ -1,0 +1,13 @@
+#!/bin/bash
+# from: scratch (2-block box exported with foamToStarMesh, cells 5-8 marked solid in box.cel); exercises: star4ToFoam default mm scaling, -scale, -ascii, -solids (keep solid cells), -case, names from constant/cellTable+boundaryRegion, missing/bad prefix, bad -scale and missing-argument errors
+cd "${0%/*}" || exit 1
+for d in scaled ascii solids named; do mkdir -p $d/system && cp system/controlDict $d/system/; done
+mkdir -p named/constant && cp tables/cellTable tables/boundaryRegion named/constant/
+star4ToFoam prostar/box
+star4ToFoam -case scaled -scale 2 prostar/box
+star4ToFoam -case ascii -ascii -scale 1 prostar/box
+star4ToFoam -case solids -solids -ascii -scale 1 prostar/box
+star4ToFoam -case named -solids -ascii prostar/box
+star4ToFoam prostar/noSuchFile || true
+star4ToFoam -scale abc prostar/box || true
+star4ToFoam || true

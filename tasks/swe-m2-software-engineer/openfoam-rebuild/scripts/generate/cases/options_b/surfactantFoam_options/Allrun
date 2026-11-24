@@ -1,0 +1,21 @@
+#!/bin/bash
+# from: finiteArea/surfactantFoam/planeTransport (12x4 + 4x4 mesh, endTime 0.6); exercises: surfactantFoam options -noFunctionObjects, -parallel (decomposePar with area mesh, and makeFaMesh -parallel after decomposePar -no-finite-area), -decomposeParDict; errors: missing faMesh, missing Cs, missing Ds entry, -parallel without processor dirs, missing -decomposeParDict file
+cp -r 0.orig 0
+blockMesh
+surfactantFoam || true
+makeFaMesh
+mv 0/finite-area/Cs 0/finite-area/Cs.off
+surfactantFoam || true
+mv 0/finite-area/Cs.off 0/finite-area/Cs
+surfactantFoam -noFunctionObjects
+surfactantFoam
+mpirun --oversubscribe -np 2 surfactantFoam -parallel || true
+decomposePar
+mpirun --oversubscribe -np 2 surfactantFoam -parallel
+mpirun --oversubscribe -np 2 surfactantFoam -parallel -decomposeParDict system/noSuchDecomposeParDict || true
+decomposePar -force -no-finite-area -decomposeParDict system/decomposeParDict.3
+mpirun --oversubscribe -np 3 makeFaMesh -parallel -decomposeParDict system/decomposeParDict.3
+mpirun --oversubscribe -np 3 surfactantFoam -parallel -decomposeParDict system/decomposeParDict.3
+cp -r variants/noDs/. .
+surfactantFoam || true
+cp -r variants/orig/. .

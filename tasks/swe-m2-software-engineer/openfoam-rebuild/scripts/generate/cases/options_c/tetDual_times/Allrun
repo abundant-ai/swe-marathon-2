@@ -1,0 +1,16 @@
+#!/bin/bash
+# from: scratch (meshio/tetDualMap 2x2x2 box, icoFoam 4 steps); exercises: foamToTetDualMesh time selection -time (nearest value), -noZero, -constant, -latestTime, -overwrite into the time vs constant; errors: missing tetDualMesh region, missing pointDualAddressing
+cd "${0%/*}" || exit 1
+blockMesh
+foamToTetDualMesh || true
+blockMesh -region tetDualMesh
+foamToTetDualMesh || true
+cp addressing/pointDualAddressing constant/tetDualMesh/polyMesh/
+icoFoam
+foamToTetDualMesh -time 0.01
+foamToTetDualMesh -time 0.012
+foamToTetDualMesh -noZero
+foamToTetDualMesh -constant
+foamToTetDualMesh -time 99
+foamToTetDualMesh -overwrite -time 0.01
+foamToTetDualMesh -overwrite -latestTime

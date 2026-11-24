@@ -1,0 +1,4 @@
+#!/bin/bash
+# from: combustion/XiEngineFoam/kivaTest (blockMesh box, 10 CA-deg); exercises: moveEngineMesh with fvMotionSolver engineMesh (component z, uniform diffusivity, pointMotionUz)
+blockMesh
+moveEngineMesh

@@ -1,0 +1,8 @@
+#!/bin/bash
+# from: finiteArea/surfactantFoam/planeTransport (shrunk 8x4); exercises: checkFaMesh on the default area region and on a second area region (-area-region), -write-vtk, -allAreas
+blockMesh
+makeFaMesh
+makeFaMesh -area-region floor
+checkFaMesh
+checkFaMesh -area-region floor -write-vtk
+checkFaMesh -allAreas

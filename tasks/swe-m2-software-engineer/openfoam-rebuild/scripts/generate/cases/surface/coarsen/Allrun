@@ -1,0 +1,8 @@
+#!/bin/bash
+# from: scratch (simpleShapes/sphere); exercises: surfaceCoarsen bunnylod reduction factor, -scale
+cd "${0%/*}" || exit 1
+mkdir -p out
+surfaceCoarsen constant/triSurface/sphere.stl 0.5 out/sphere_half.stl
+surfaceCoarsen constant/triSurface/sphere.stl 0.9 out/sphere_tenth.stl
+surfaceCoarsen -scale 10 constant/triSurface/sphere.stl 0.25 out/sphere_scaled.stl
+surfaceCoarsen constant/triSurface/sphere.stl 1.5 out/sphere_bad.stl || true

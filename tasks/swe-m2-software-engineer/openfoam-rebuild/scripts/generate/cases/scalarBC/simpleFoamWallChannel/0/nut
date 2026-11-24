@@ -1,0 +1,59 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       volScalarField;
+    object      nut;
+}
+
+dimensions      [0 2 -1 0 0 0 0];
+internalField   uniform 0;
+boundaryField
+{
+    "(inlet_lo|inlet_hi)"
+    {
+        type            calculated;
+        value           uniform 0;
+    }
+    outlet
+    {
+        type            extrapolatedCalculated;
+        value           uniform 0;
+    }
+    bottom1
+    {
+        type            nutURoughWallFunction;
+        roughnessHeight 2e-4;
+        roughnessConstant 0.5;
+        roughnessFactor 1;
+        value           uniform 0;
+    }
+    bottom2
+    {
+        type            nutTabulatedWallFunction;
+        uPlusTable      uPlusSpalding;
+        value           uniform 0;
+    }
+    bottom3
+    {
+        type            atmNutWallFunction;
+        z0              uniform 0.001;
+        value           uniform 0;
+    }
+    bottom4
+    {
+        type            atmNutUWallFunction;
+        z0              uniform 0.002;
+        boundNut        true;
+        value           uniform 0;
+    }
+    "top.*"
+    {
+        type            nutkWallFunction;
+        value           uniform 0;
+    }
+    frontAndBack
+    {
+        type            empty;
+    }
+}

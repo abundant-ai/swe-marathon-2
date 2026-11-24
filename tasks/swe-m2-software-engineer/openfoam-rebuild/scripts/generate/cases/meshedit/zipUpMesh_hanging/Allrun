@@ -1,0 +1,4 @@
+#!/bin/bash
+# from: scratch (hand-written 3-cell polyMesh, point (1,1,z) hangs on the left cell's front/back faces); exercises: zipUpMesh on hanging vertices (v2606 aborts in polyMeshZipUpCells - error case)
+checkMesh
+zipUpMesh || true

@@ -1,0 +1,7 @@
+#!/bin/bash
+# from: lagrangian/coalChemistryFoam/simplifiedSiwek; exercises: simpleCoalParcelFoam (steady SIMPLE, steady coal cloud reactingCloud1 with massFlowRate manualInjection, P1 cloud radiation, fixedTemperatureConstraint ignition)
+cd "${0%/*}" || exit
+cp -r 0.orig 0
+blockMesh
+topoSet
+simpleCoalParcelFoam

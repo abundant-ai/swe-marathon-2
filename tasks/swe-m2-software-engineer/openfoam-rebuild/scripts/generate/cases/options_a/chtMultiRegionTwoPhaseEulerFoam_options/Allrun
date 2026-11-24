@@ -1,0 +1,28 @@
+#!/bin/bash
+# from: heatTransfer/chtMultiRegionTwoPhaseEulerFoam/solidQuenching2D (14x17 mesh, endTime 2e-4); exercises: chtMultiRegionTwoPhaseEulerFoam options -noFunctionObjects (htc FOs), -postProcess -region water (-func/-latestTime/-time), -parallel (decomposePar -allRegions); errors: -dry-run (simplified mesh has no region cellZones), nonexistent/bad -time, -region noSuchRegion, -case noSuchDir, missing constant/regionProperties, unknown phaseSystem type, missing phases entry, unknown solid thermo type
+cd "${0%/*}" || exit 1
+blockMesh
+topoSet
+splitMeshRegions -cellZonesOnly -overwrite
+setFields -region water
+chtMultiRegionTwoPhaseEulerFoam -dry-run || true
+chtMultiRegionTwoPhaseEulerFoam -noFunctionObjects
+chtMultiRegionTwoPhaseEulerFoam
+chtMultiRegionTwoPhaseEulerFoam -postProcess -region water -func 'mag(U.liquid)' -latestTime
+chtMultiRegionTwoPhaseEulerFoam -postProcess -region water -funcs '(mag(U.gas) grad(p_rgh))' -time 1e-04
+chtMultiRegionTwoPhaseEulerFoam -postProcess -region solid -func 'grad(T)' -latestTime
+chtMultiRegionTwoPhaseEulerFoam -postProcess -region water -func 'mag(U.liquid)' -time 99 || true
+chtMultiRegionTwoPhaseEulerFoam -postProcess -region water -func 'mag(U.liquid)' -time abc || true
+chtMultiRegionTwoPhaseEulerFoam -postProcess -region noSuchRegion -func 'mag(U.liquid)' -latestTime || true
+chtMultiRegionTwoPhaseEulerFoam -case noSuchDir || true
+decomposePar -allRegions
+mpirun --oversubscribe -np 2 chtMultiRegionTwoPhaseEulerFoam -parallel
+rm -rf 0.0* [1-9]*
+mv constant/regionProperties regionProperties.off
+chtMultiRegionTwoPhaseEulerFoam || true
+mv regionProperties.off constant/regionProperties
+for v in unknownPhaseSystem missingPhases unknownSolidThermo; do
+    cp -r variants/$v/. .
+    chtMultiRegionTwoPhaseEulerFoam || true
+    cp -r variants/orig/. .
+done

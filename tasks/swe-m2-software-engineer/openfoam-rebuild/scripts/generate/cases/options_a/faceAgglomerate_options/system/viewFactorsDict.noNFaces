@@ -1,0 +1,37 @@
+FoamFile { version 2.0; format ascii; class dictionary; object viewFactorsDict; }
+writeViewFactorMatrix true;
+viewFactorModel viewFactor2LI;
+raySearchEngine voxel;
+agglomerate true;
+nRayPerFace 20;
+writeViewFactors true;
+writeFacesAgglomeration false;
+floor
+{
+    nFacesInCoarsestLevel 4;
+    featureAngle          10;
+}
+ceiling
+{
+    featureAngle          10;
+}
+xMin
+{
+    nFacesInCoarsestLevel 4;
+    featureAngle          10;
+}
+xMax
+{
+    nFacesInCoarsestLevel 4;
+    featureAngle          10;
+}
+yMin
+{
+    nFacesInCoarsestLevel 4;
+    featureAngle          10;
+}
+yMax
+{
+    nFacesInCoarsestLevel 4;
+    featureAngle          10;
+}

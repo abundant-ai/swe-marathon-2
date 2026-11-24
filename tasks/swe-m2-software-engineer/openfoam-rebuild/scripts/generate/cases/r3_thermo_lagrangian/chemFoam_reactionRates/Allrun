@@ -1,0 +1,5 @@
+#!/bin/bash
+# from: combustion/chemFoam/h2; exercises: chemkin reaction rates SRI fall-off, chemically activated (HIGH, Troe + Lindemann), Landau-Teller (LT/RLT), Janev (JAN), powerSeries (FIT1), nonEquilibriumReversible (REV); chemkinToFoam + chemFoam
+cd "${0%/*}" || exit
+chemkinToFoam chemkin/chem.inp chemkin/therm.dat chemkin/transportProperties constant/reactions constant/thermo.foam
+chemFoam

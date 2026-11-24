@@ -1,0 +1,6 @@
+#!/bin/bash
+# from: scratch (annotated etc/caseDicts/annotated/surfaceHookUpDict; hand-written plates with 0.004/0.005 gaps and non-matching edge subdivision); exercises: surfaceHookUp moving/retriangulating boundary edges onto other surfaces, tolerance below gap (no-op), -maxIters, -dict with three surfaces
+cd "${0%/*}" || exit 1
+surfaceHookUp 0.001
+surfaceHookUp -maxIters 1 0.01
+surfaceHookUp -dict system/surfaceHookUpDict.three 0.01

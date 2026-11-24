@@ -1,0 +1,21 @@
+#!/bin/bash
+# from: scratch (apps/magneticFoam permanent-magnet faceZones); exercises: magneticFoam output switches singly (-noB, -noH, -HdotGradH), -noFunctionObjects, -parallel (2 ranks); errors: magnet faceZone not in mesh, missing magnets entry, missing psi field (-dry-run/-dry-run-write left out: abort in simplified-mesh zone setup)
+cd "${0%/*}" || exit 1
+blockMesh
+topoSet
+magneticFoam -noB
+mv 1 run_noB
+magneticFoam -noH
+mv 1 run_noH
+magneticFoam -HdotGradH -noFunctionObjects
+cp constant/transportProperties constant/transportProperties.orig
+cp variants/transportProperties.badZone constant/transportProperties
+magneticFoam || true
+cp variants/transportProperties.noMagnets constant/transportProperties
+magneticFoam || true
+cp constant/transportProperties.orig constant/transportProperties
+mv 0/psi 0/psi.off
+magneticFoam || true
+mv 0/psi.off 0/psi
+decomposePar
+mpirun -np 2 magneticFoam -parallel

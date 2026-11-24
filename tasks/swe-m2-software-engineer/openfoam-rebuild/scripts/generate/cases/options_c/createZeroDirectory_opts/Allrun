@@ -1,0 +1,22 @@
+#!/bin/bash
+# from: preProcessing/createZeroDirectory/cavity; exercises: createZeroDirectory with default templates and with -templateDir (trimmed copy of etc/caseDicts/createZeroDirectoryTemplates, noSlip p changed to fixedFluxPressure), -parallel on a 2-rank decomposition; errors: nonexistent -templateDir, missing caseProperties, unknown boundary type, patch not in mesh, missing initialConditions
+cd "${0%/*}" || exit 1
+blockMesh
+createZeroDirectory
+mv 0 0.default
+createZeroDirectory -templateDir templates
+mv 0 0.templateDir
+createZeroDirectory -templateDir noSuchDir || true
+cp system/caseProperties system/caseProperties.orig
+rm system/caseProperties
+createZeroDirectory || true
+cp variants/caseProperties.badType system/caseProperties
+createZeroDirectory || true
+cp variants/caseProperties.badPatch system/caseProperties
+createZeroDirectory || true
+cp variants/caseProperties.noIC system/caseProperties
+createZeroDirectory || true
+cp system/caseProperties.orig system/caseProperties
+rm -rf 0
+decomposePar
+mpirun -np 2 createZeroDirectory -parallel

@@ -1,0 +1,23 @@
+#!/bin/bash
+# from: discreteMethods/dsmcFoam/freeSpacePeriodic (5x4x4, nEquivalentParticles 1e13, 6 steps); exercises: dsmcFoam -noFunctionObjects, -postProcess (-func on -latestTime), -parallel restart; errors: unknown BinaryCollisionModel (valid-type list), species in typeIdList without moleculeProperties, missing nEquivalentParticles, missing rhoN field (-dry-run left out: SIGFPE in simplified mesh)
+cd "${0%/*}" || exit 1
+cp -r 0.orig 0
+blockMesh
+dsmcInitialise
+dsmcFoam -noFunctionObjects
+dsmcFoam -postProcess -latestTime -func "mag(momentum)"
+cp constant/dsmcProperties constant/dsmcProperties.orig
+cp variants/dsmcProperties.badCollision constant/dsmcProperties
+dsmcFoam || true
+cp variants/dsmcProperties.missingSpecies constant/dsmcProperties
+dsmcFoam || true
+cp variants/dsmcProperties.noNEq constant/dsmcProperties
+dsmcFoam || true
+cp constant/dsmcProperties.orig constant/dsmcProperties
+mv 0/rhoN 0/rhoN.off
+dsmcFoam || true
+mv 0/rhoN.off 0/rhoN
+foamDictionary -entry endTime -set 8e-6 system/controlDict
+foamDictionary -entry startFrom -set latestTime system/controlDict
+decomposePar -latestTime
+mpirun -np 2 dsmcFoam -parallel

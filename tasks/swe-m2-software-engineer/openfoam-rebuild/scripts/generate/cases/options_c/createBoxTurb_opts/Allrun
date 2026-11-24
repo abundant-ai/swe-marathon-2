@@ -1,0 +1,18 @@
+#!/bin/bash
+# from: incompressible/pimpleFoam/LES/decayIsoTurb (N 6^3, nModes 50); exercises: createBoxTurb -createBlockMesh (writes the box mesh and exits), serial velocity-field generation, -parallel generation on a 2-rank decomposition; errors: no mesh yet, missing createBoxTurbDict, missing Ek table, missing nModes
+cd "${0%/*}" || exit 1
+cp -r 0.orig 0
+createBoxTurb || true
+createBoxTurb -createBlockMesh
+checkMesh
+cp constant/createBoxTurbDict constant/createBoxTurbDict.orig
+rm constant/createBoxTurbDict
+createBoxTurb || true
+cp variants/createBoxTurbDict.noEk constant/createBoxTurbDict
+createBoxTurb || true
+cp variants/createBoxTurbDict.noModes constant/createBoxTurbDict
+createBoxTurb || true
+cp constant/createBoxTurbDict.orig constant/createBoxTurbDict
+createBoxTurb
+decomposePar
+mpirun -np 2 createBoxTurb -parallel

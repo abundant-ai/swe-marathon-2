@@ -1,0 +1,25 @@
+#!/bin/bash
+# from: lagrangian/reactingHeterogenousParcelFoam/rectangularDuct (18x4x2 mesh, 10 steps); exercises: reactingHeterogenousParcelFoam options -dry-run, -dry-run-write, -noFunctionObjects, -postProcess -func/-latestTime/-time, -parallel (simple and hierarchical via -decomposeParDict), errors: -parallel without mpirun/decomposition, missing -decomposeParDict file, unknown heterogeneousReactingModel, missing cloud properties
+cd "${0%/*}" || exit
+blockMesh
+reactingHeterogenousParcelFoam -dry-run
+reactingHeterogenousParcelFoam -dry-run-write
+rm -rf 0.01
+reactingHeterogenousParcelFoam -parallel || true
+mpirun --oversubscribe -np 2 reactingHeterogenousParcelFoam -parallel || true
+reactingHeterogenousParcelFoam -noFunctionObjects
+reactingHeterogenousParcelFoam
+reactingHeterogenousParcelFoam -postProcess -func 'mag(U)' -latestTime
+reactingHeterogenousParcelFoam -postProcess -func 'grad(T)' -time 0.05
+decomposePar -time 0
+mpirun --oversubscribe -np 2 reactingHeterogenousParcelFoam -parallel
+decomposePar -force -time 0 -decomposeParDict system/decomposeParDict.hier
+mpirun --oversubscribe -np 2 reactingHeterogenousParcelFoam -parallel -decomposeParDict system/decomposeParDict.hier
+mpirun --oversubscribe -np 2 reactingHeterogenousParcelFoam -parallel -decomposeParDict system/noSuchDict || true
+cp constant/reactingCloud1Properties variants/reactingCloud1Properties.orig
+cp variants/reactingCloud1Properties.badModel constant/reactingCloud1Properties
+reactingHeterogenousParcelFoam || true
+mv constant/reactingCloud1Properties constant/reactingCloud1Properties.off
+reactingHeterogenousParcelFoam || true
+cp variants/reactingCloud1Properties.orig constant/reactingCloud1Properties
+rm constant/reactingCloud1Properties.off

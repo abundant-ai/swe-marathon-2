@@ -1,0 +1,16 @@
+#!/bin/bash
+# from: finiteArea/sphereSurfactantFoam/sphereTransport (endTime 1); exercises: sphereSurfactantFoam options -noFunctionObjects, -parallel (decomposePar of the area mesh), -decomposeParDict; errors: missing faMesh, missing Cs, -parallel without processor dirs, missing -decomposeParDict file
+cp -r 0.orig 0
+sphereSurfactantFoam || true
+makeFaMesh
+mv 0/finite-area/Cs 0/finite-area/Cs.off
+sphereSurfactantFoam || true
+mv 0/finite-area/Cs.off 0/finite-area/Cs
+sphereSurfactantFoam -noFunctionObjects
+sphereSurfactantFoam
+mpirun --oversubscribe -np 2 sphereSurfactantFoam -parallel || true
+decomposePar
+mpirun --oversubscribe -np 2 sphereSurfactantFoam -parallel
+mpirun --oversubscribe -np 2 sphereSurfactantFoam -parallel -decomposeParDict system/noSuchDecomposeParDict || true
+decomposePar -force -decomposeParDict system/decomposeParDict.3
+mpirun --oversubscribe -np 3 sphereSurfactantFoam -parallel -decomposeParDict system/decomposeParDict.3

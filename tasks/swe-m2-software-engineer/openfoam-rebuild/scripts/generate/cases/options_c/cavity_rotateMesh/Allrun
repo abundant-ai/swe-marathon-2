@@ -1,0 +1,21 @@
+#!/bin/bash
+# from: incompressible/icoFoam/cavity/cavity (6x6, 4 steps) + a second blockMesh region "solid"; exercises: rotateMesh -noZero, -constant, -time ranges, -region, -regions, -allRegions (regionProperties); errors: nonexistent region, -allRegions without regionProperties, zero/parallel-to-self vectors, malformed vector, missing argument
+cd "${0%/*}" || exit 1
+blockMesh
+blockMesh -region solid
+icoFoam
+rotateMesh -noZero "(1 0 0)" "(0 1 0)"
+rotateMesh -constant -time 0.01 "(0 1 0)" "(-1 1 0)"
+rotateMesh -time 0:0.01 "(1 0 0)" "(1 0 1)"
+rotateMesh -region solid "(1 0 0)" "(0 1 0)"
+rotateMesh -region noSuchRegion "(1 0 0)" "(0 1 0)" || true
+rotateMesh -allRegions "(1 0 0)" "(0 1 0)" || true
+cp constant/regionProperties.multi constant/regionProperties
+rotateMesh -allRegions -latestTime "(0 1 0)" "(1 0 0)"
+rotateMesh -regions "(solid)" -time 0 "(0 0 1)" "(0 1 1)"
+rotateMesh "(1 0 0)" "(1 0 0)"
+checkMesh -latestTime
+rotateMesh "(1 0 0)" "(-1 0 0)" || true
+rotateMesh "(1 0)" "(0 1 0)" || true
+rotateMesh "(1 0 0)" || true
+rotateMesh "(0 0 0)" "(1 0 0)" || true

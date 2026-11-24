@@ -1,0 +1,6 @@
+#!/bin/bash
+# from: scratch; exercises: magneticFoam permanent magnets as faceZones (magnets list in transportProperties), H/B output, -HdotGradH/-noB/-noH options
+blockMesh
+topoSet
+magneticFoam
+magneticFoam -HdotGradH -noB -noH

@@ -1,0 +1,106 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  v2606                                 |
+|   \\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      controlDict;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+application     icoReactingMultiphaseInterFoam;
+
+startFrom       startTime;
+
+startTime       0;
+
+stopAt          endTime;
+
+endTime         0.004;
+
+deltaT          1e-3;
+
+writeControl    timeStep;
+
+writeInterval   2;
+
+purgeWrite      0;
+
+writeFormat     ascii;
+
+writePrecision  6;
+
+compression     off;
+
+timeFormat      general;
+
+timePrecision   6;
+
+runTimeModifiable yes;
+
+adjustTimeStep  no;
+
+maxDeltaT       1e-1;
+
+maxCo           3;
+maxAlphaCo      2;
+maxAlphaDdt     1;
+
+functions
+{
+    mass
+    {
+        type            volFieldValue;
+        libs            (fieldFunctionObjects);
+
+        writeControl    timeStep;
+        writeInterval   10;
+        writeFields     false;
+        log             true;
+
+        operation       volIntegrate;
+
+        fields
+        (
+            dmdt.liquidToGas
+        );
+    }
+    htcFixed
+    {
+        type            multiphaseInterHtcModel;
+        libs            (fieldFunctionObjects);
+        field           T;
+        writeControl    writeTime;
+        htcModel        fixedReferenceTemperature;
+        patches         (bottom);
+        TRef            373;
+    }
+    htcLocal
+    {
+        type            multiphaseInterHtcModel;
+        libs            (fieldFunctionObjects);
+        field           T;
+        result          htcLocal;
+        writeControl    writeTime;
+        htcModel        localReferenceTemperature;
+        patches         (bottom left);
+    }
+    wallHeatFlux
+    {
+        type            wallHeatFlux;
+        libs            (fieldFunctionObjects);
+
+        patches         (bottom);
+        writeControl    writeTime;
+        writeInterval   1;
+    }
+}
+
+
+// ************************************************************************* //

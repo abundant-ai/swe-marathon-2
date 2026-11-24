@@ -1,0 +1,5 @@
+#!/bin/bash
+# from: scratch (annotated etc/caseDicts/annotated/surfacePatchDict; hand-written cubes/plate); exercises: surfacePatch autoPatch by featureAngle on whole surface and on a single region, cut by searchableRotatedBox, -dict with cut by a triSurfaceMesh sphere + searchableBox
+cd "${0%/*}" || exit 1
+surfacePatch
+surfacePatch -dict system/surfacePatchDict.sphere

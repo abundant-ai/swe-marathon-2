@@ -1,0 +1,4 @@
+P               1e5;
+fuel            CH4___ANHARMONIC;
+n               1;
+m               4;

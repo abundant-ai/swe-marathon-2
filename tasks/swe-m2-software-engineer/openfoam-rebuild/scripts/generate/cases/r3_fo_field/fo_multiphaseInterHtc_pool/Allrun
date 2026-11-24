@@ -1,0 +1,7 @@
+#!/bin/bash
+# from: multiphase/icoReactingMultiphaseInterFoam/poolEvaporation (4x8x1 mesh, coded h replaced by constant, 4 steps); exercises: multiphaseInterHtcModel function object with fixedReferenceTemperature and localReferenceTemperature htc models
+cd "${0%/*}" || exit 1
+blockMesh > log.blockMesh 2>&1
+rm -rf 0 && cp -r 0.orig 0
+setFields > log.setFields 2>&1
+icoReactingMultiphaseInterFoam > log.icoReactingMultiphaseInterFoam 2>&1

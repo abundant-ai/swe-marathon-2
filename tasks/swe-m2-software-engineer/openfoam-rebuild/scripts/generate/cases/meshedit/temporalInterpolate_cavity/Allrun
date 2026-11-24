@@ -1,0 +1,7 @@
+#!/bin/bash
+# from: incompressible/icoFoam/cavity/cavity (6x6, 6 steps written every 2); exercises: temporalInterpolate spline interpolation, linear default division with -fields, -divisions with -time range over all fields
+blockMesh
+icoFoam
+temporalInterpolate -time '0.01:0.02' -divisions 2 -interpolationType spline -fields '(p)'
+temporalInterpolate -time '0:0.01' -fields '(U)'
+temporalInterpolate -time '0.02:0.03' -divisions 4

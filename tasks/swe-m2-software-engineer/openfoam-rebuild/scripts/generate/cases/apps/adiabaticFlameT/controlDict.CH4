@@ -1,0 +1,5 @@
+P               1e5;
+T0              293;
+fuel            CH4___ANHARMONIC;
+n               1;
+m               4;

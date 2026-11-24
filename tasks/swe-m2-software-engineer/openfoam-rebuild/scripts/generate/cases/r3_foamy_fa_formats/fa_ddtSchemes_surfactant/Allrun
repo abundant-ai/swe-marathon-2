@@ -1,0 +1,14 @@
+#!/bin/bash
+# from: finiteArea/surfactantFoam/planeTransport (12x4 + 4x4 mesh, endTime 0.6); exercises: finite-area ddtSchemes Euler, backward, steadyState in fam::ddt (surfactantFoam Cs transport); error: boundedBackward (dimension check fails in v2606)
+cd "${0%/*}" || exit 1
+cp -r 0.orig 0
+blockMesh
+makeFaMesh
+for s in Euler backward steadyState
+do
+    foamDictionary -entry ddtSchemes/default -set "$s" system/finite-area/faSchemes
+    surfactantFoam
+    mkdir -p run_$s && mv 0.2 0.4 0.6 run_$s/
+done
+foamDictionary -entry ddtSchemes/default -set boundedBackward system/finite-area/faSchemes
+surfactantFoam || true

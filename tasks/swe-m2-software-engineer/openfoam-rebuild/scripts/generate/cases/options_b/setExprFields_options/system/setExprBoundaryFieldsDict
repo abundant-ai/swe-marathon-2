@@ -1,0 +1,46 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  v2606                                 |
+|   \\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      setExprBoundaryFieldsDict;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+readFields      ( U );
+
+updateBCs
+{
+    field   p;
+
+    expressions
+    (
+        {
+            patch       movingWall;
+            target      value;
+            expression  #{ 0.5*pos().x() #};
+        }
+    );
+}
+
+wallVelocity
+{
+    field   U;
+
+    expressions
+    (
+        {
+            patch       movingWall;
+            target      value;
+            variables   ( "u0=2" );
+            expression  #{ vector(u0*pos().x()/0.1, 0, 0) #};
+        }
+    );
+}

@@ -1,0 +1,9 @@
+#!/bin/bash
+# from: heatTransfer/buoyantPimpleFoam/hotRoom (10x5x10 mesh); exercises: thermoFoam energy-only solve on frozen flow from buoyantPimpleFoam, restart from latestTime, scalarSemiImplicitSource fvOption on h
+blockMesh
+setFields
+buoyantPimpleFoam
+foamDictionary -entry endTime -set 40 system/controlDict
+foamDictionary -entry startFrom -set latestTime system/controlDict
+cp system/fvOptions.thermo system/fvOptions
+thermoFoam

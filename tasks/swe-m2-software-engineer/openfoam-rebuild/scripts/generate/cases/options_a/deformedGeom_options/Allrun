@@ -1,0 +1,16 @@
+#!/bin/bash
+# from: incompressible/icoFoam/cavity/cavity (10x10, 3 steps); exercises: deformedGeom factor argument over all times, -case, -parallel (all times decomposed); time directory without U (No U); errors: missing/non-numeric/negative-looking factor, -case noSuchDir
+cp -r 0.orig 0
+blockMesh
+icoFoam
+decomposePar -time '0:'
+mkdir -p copy
+cp -r 0 0.01 constant system copy/
+rm copy/0.01/U
+deformedGeom 0.01
+deformedGeom -case copy 0.5
+mpirun --oversubscribe -np 2 deformedGeom 0.02 -parallel
+deformedGeom || true
+deformedGeom abc || true
+deformedGeom -0.5 || true
+deformedGeom -case noSuchDir 0.01 || true

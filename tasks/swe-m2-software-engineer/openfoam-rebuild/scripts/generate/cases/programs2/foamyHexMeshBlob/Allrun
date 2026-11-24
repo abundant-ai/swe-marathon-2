@@ -1,0 +1,9 @@
+#!/bin/bash
+# from: mesh/foamyHexMesh/blob; exercises: foamyHexMesh 3D conformal Voronoi mesh of the blob surface (autoDensity initial points, refinement box, 5 iterations), collapseEdges -collapseFaces / -collapseFaceSet, checkMesh, missing surface error
+cd "${0%/*}" || exit 1
+mkdir -p noSurface && cp -r system noSurface/
+foamyHexMesh
+collapseEdges -latestTime -collapseFaces
+collapseEdges -latestTime -collapseFaceSet indirectPatchFaces
+checkMesh -latestTime
+foamyHexMesh -case noSurface || true

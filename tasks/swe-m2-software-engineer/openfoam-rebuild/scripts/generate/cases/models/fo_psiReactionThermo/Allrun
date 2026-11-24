@@ -1,0 +1,5 @@
+#!/bin/bash
+# from: combustion/reactingFoam/laminar/counterFlowFlame2D; exercises: functionObjects psiReactionThermoMoleFractions, psiSpecieReactionRates (reactingFoam, hePsiThermo, premixed hot interior)
+cd "${0%/*}" || exit 1
+blockMesh
+reactingFoam

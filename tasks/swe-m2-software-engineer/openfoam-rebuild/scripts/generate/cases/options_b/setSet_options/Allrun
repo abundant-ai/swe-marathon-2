@@ -1,0 +1,27 @@
+#!/bin/bash
+# from: incompressible/icoFoam/cavity/cavity (5x5, extra time dirs, second 3x2 region); exercises: setSet -batch (cell/face/point/zone sets, add/subset/invert/list/help), stdin command mode, -noVTK, -noSync, -loop, -time, -latestTime, -constant, -noZero, -region, -parallel, and errors (bad source/args/action/set type in batch, missing batch file, nonexistent region/time)
+cd "${0%/*}" || exit 1
+blockMesh
+cp -r 0 0.5 && cp -r 0 1
+setSet -batch system/setSet.batch
+setSet -batch system/setSet.batch -noVTK -latestTime
+setSet -batch system/setSet.batch -noSync -noVTK -time 0.5
+setSet -batch system/setSet.region -loop -noVTK
+setSet -batch system/setSet.region -loop -noVTK -noZero -time 0:0.5
+setSet -batch system/setSet.region -constant -noVTK -time none
+echo "cellSet stdinSet new boxToCell (0.04 0.04 0) (0.1 0.1 0.01)" | setSet -noVTK
+blockMesh -region other
+setSet -region other -batch system/setSet.region
+echo "cellSet bad new noSuchSource (0 0 0)" | setSet -noVTK || true
+echo "cellSet lower new boxToCell (0 0 0)" | setSet -noVTK || true
+echo "faceSet missing add faceToFace noSuchSet" | setSet -noVTK || true
+echo "noSuchSetType s new boxToCell (0 0 0) (1 1 1)" | setSet -noVTK || true
+echo "cellSet lower frobnicate" | setSet -noVTK || true
+printf 'pointSet lidPoints clear\npointSet lidPoints remove\nlist\nquit\n' | setSet -noVTK
+printf 'time 0.5\ncellSet late new boxToCell (0 0 0) (0.03 0.03 0.01)\ntime 99\n' | setSet -noVTK || true
+decomposePar -time 0
+mpirun --oversubscribe -np 2 setSet -parallel -batch system/setSet.region -noVTK -time 0
+setSet -batch system/noSuchFile || true
+setSet -region noSuchRegion -batch system/setSet.region || true
+setSet -batch system/setSet.region -time 7 -noVTK || true
+setSet -batch || true

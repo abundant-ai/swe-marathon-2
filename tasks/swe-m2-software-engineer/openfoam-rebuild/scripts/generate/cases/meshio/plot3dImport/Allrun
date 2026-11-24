@@ -1,0 +1,17 @@
+#!/bin/bash
+# from: scratch; exercises: plot3dToFoam formatted PLOT3D reader: -singleBlock, multi-block with point merging, iblank data, left-handed block, -2D extrusion, -scale
+cd "${0%/*}" || exit 1
+plot3dToFoam -singleBlock -noBlank single.p3d
+checkMesh
+mv constant/polyMesh mesh_single
+plot3dToFoam -noBlank -scale 0.1 multi.p3d
+checkMesh
+mv constant/polyMesh mesh_multi
+plot3dToFoam -singleBlock blanked.p3d
+checkMesh
+mv constant/polyMesh mesh_blanked
+plot3dToFoam -singleBlock -noBlank leftHanded.p3d
+checkMesh
+mv constant/polyMesh mesh_leftHanded
+plot3dToFoam -singleBlock -noBlank -2D 0.2 -scale 2 plane.p3d
+checkMesh

@@ -1,0 +1,29 @@
+#!/bin/bash
+# from: incompressible/adjointOptimisationFoam/shapeOptimisation/sbend/turbulent/kOmegaSST/opt and sbend/turbulent/SA/opt/nutSqr (blockMesh converging-diverging channel, 2 cycles, steepestDescent); exercises: adjointkOmegaSST with kaqRWallFunction, waWallFunction, adjointOutletKa, adjointOutletWa (PtLosses); adjointkOmegaSST with powerDissipation objective in a cellZone and adjointFarFieldTMVar1/TMVar2 inlet conditions; nutSqr objective with adjointSpalartAllmaras; error: nutSqr with adjointkOmegaSST (incompatible dimensions in ka equation)
+cd "${0%/*}" || exit 1
+blockMesh
+topoSet
+
+rm -rf 0 && cp -r 0.orig 0
+cp -r variants/losses/. .
+adjointOptimisationFoam
+rm -f optimisation/CPUcost
+mkdir -p runs/losses && mv [1-9]* optimisation runs/losses/
+
+rm -rf 0 && cp -r 0.orig 0
+cp -r variants/powerDissipation/. .
+adjointOptimisationFoam
+rm -f optimisation/CPUcost
+mkdir -p runs/powerDissipation && mv [1-9]* optimisation runs/powerDissipation/
+
+rm -rf 0 && cp -r 0.orig 0
+cp -r variants/nutSqr_kOmegaSST/. .
+adjointOptimisationFoam || true
+rm -f optimisation/CPUcost
+mkdir -p runs/nutSqr_kOmegaSST && mv [1-9]* optimisation runs/nutSqr_kOmegaSST/
+
+rm -rf 0 && cp -r 0.orig 0
+cp -r variants/nutSqr_SA/. .
+adjointOptimisationFoam
+rm -f optimisation/CPUcost
+mkdir -p runs/nutSqr_SA && mv [1-9]* optimisation runs/nutSqr_SA/

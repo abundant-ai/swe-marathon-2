@@ -1,0 +1,14 @@
+FoamFile { version 2.0; format ascii; class dictionary; object curleNoPatches; }
+functions
+{
+    curleNone
+    {
+        type            Curle;
+        libs            (fieldFunctionObjects);
+        patches         (noSuchPatch);
+        c0              343;
+        input           point;
+        output          point;
+        observerPositions ((0.05 0.5 0.005));
+    }
+}

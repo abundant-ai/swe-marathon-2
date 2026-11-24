@@ -1,0 +1,16 @@
+#!/bin/bash
+# from: scratch (stl surfaces from surface/clean and surface/splitNonManifolds, plus two interpenetrating cubes); exercises: surfaceCheck on closed/dirty/open/non-manifold/self-intersecting surfaces with -checkSelfIntersection, -splitNonManifold, -outputThreshold, -writeSets vtk, -blockMesh, -verbose; errors: nonexistent file, unknown extension, unknown -writeSets format, missing argument
+cd "${0%/*}" || exit 1
+surfaceCheck -blockMesh constant/triSurface/cube6.stl
+surfaceCheck -verbose constant/triSurface/cubeDirty.stl
+surfaceCheck -outputThreshold 2 constant/triSurface/baffle3D.stl
+surfaceCheck -splitNonManifold constant/triSurface/cross.stl
+surfaceCheck -splitNonManifold -outputThreshold 0 constant/triSurface/cubes2.stl
+surfaceCheck -checkSelfIntersection -writeSets vtk constant/triSurface/overlap.stl
+surfaceCheck -checkSelfIntersection constant/triSurface/cube6.stl
+surfaceCheck constant/triSurface/noSuch.stl || true
+cp constant/triSurface/cube6.stl constant/triSurface/cube6.xyz
+surfaceCheck constant/triSurface/cube6.xyz || true
+surfaceCheck -writeSets noSuchFormat constant/triSurface/overlap.stl || true
+surfaceCheck || true
+find . -name '*.obj' -o -name '*.vtk' -o -name '*.vtp' | xargs sed -i -E 's/written [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}/written DATE/'

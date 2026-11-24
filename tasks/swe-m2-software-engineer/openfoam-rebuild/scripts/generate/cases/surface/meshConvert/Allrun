@@ -1,0 +1,35 @@
+#!/bin/bash
+# from: scratch (block.obj from mesh/snappyHexMesh/rotated_block, box.obj from insidePoints); exercises: surfaceMeshConvert format conversion (stl/stlb/obj/vtk/vtp/off/smesh/nas/gts/tri/ac/x3d/abaqus/starcd/flma), -tri, -clean, -read-scale, -write-scale, -read-format, -write-format, -from/-to coordinateSystems, unknown-format error
+cd "${0%/*}" || exit 1
+mkdir -p out
+surfaceMeshConvert constant/triSurface/cube6.stl out/cube6.obj
+surfaceMeshConvert constant/triSurface/cube6.stl out/cube6.vtk
+surfaceMeshConvert constant/triSurface/cube6.stl out/cube6.vtp
+surfaceMeshConvert constant/triSurface/cube6.stl out/cube6.off
+surfaceMeshConvert constant/triSurface/cube6.stl out/cube6.smesh
+surfaceMeshConvert constant/triSurface/cube6.stl out/cube6.nas
+surfaceMeshConvert constant/triSurface/cube6.stl out/cube6.stlb
+surfaceMeshConvert constant/triSurface/cube6.stl out/cube6.tri
+surfaceMeshConvert constant/triSurface/cube6.stl out/cube6.ac
+surfaceMeshConvert constant/triSurface/cube6.stl out/cube6.x3d
+surfaceMeshConvert constant/triSurface/cube6.stl out/cube6.abaqus
+surfaceMeshConvert constant/triSurface/cube6.stl out/cube6.starcd
+surfaceMeshConvert constant/triSurface/cube6.stl out/cube6.flma
+surfaceMeshConvert out/cube6.stlb out/cube6_fromBinary.stl
+surfaceMeshConvert out/cube6.nas out/cube6_fromNas.stl
+surfaceMeshConvert constant/triSurface/block.obj out/block_quads.vtk
+surfaceMeshConvert constant/triSurface/block.obj out/block_quads.stl
+surfaceMeshConvert -tri constant/triSurface/block.obj out/block_tri.obj
+surfaceMeshConvert -tri constant/triSurface/block.obj out/block_tri.gts
+surfaceMeshConvert -clean -verbose constant/triSurface/box.obj out/box_clean.obj
+surfaceMeshConvert -read-scale 0.5 -write-scale 10 constant/triSurface/cube6.stl out/cube6_scaled.stl
+surfaceMeshConvert -write-format obj constant/triSurface/block.obj out/block_fmt.txt
+surfaceMeshConvert -read-format obj out/block_fmt.txt out/block_fromFmt.off
+surfaceMeshConvert -from shifted constant/triSurface/cube6.stl out/cube6_fromShifted.stl
+surfaceMeshConvert -to rotZ90 constant/triSurface/cube6.stl out/cube6_toRotZ90.stl
+surfaceMeshConvert -read-scale 2 -from rotZ90 -write-scale 0.1 constant/triSurface/cube6.stl out/cube6_scaledFrom.stl
+surfaceMeshConvert -from rotZ90 -to shifted constant/triSurface/cube6.stl out/cube6_fromTo.stl || true
+surfaceMeshConvert constant/triSurface/cube6.stl out/cube6.ftr || true
+surfaceMeshConvert -from noSuchSystem constant/triSurface/cube6.stl out/cube6_bad.stl || true
+# mask the time stamps some writers embed in their headers
+sed -i -E 's/written [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}/written DATE/' out/*

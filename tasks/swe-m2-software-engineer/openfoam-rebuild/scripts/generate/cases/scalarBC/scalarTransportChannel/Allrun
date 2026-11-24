@@ -1,0 +1,6 @@
+#!/bin/bash
+# from: basic/scalarTransportFoam/pitzDaily; exercises: scalar BCs exprFixedValue fixedProfile fixedMeanOutletInlet uniformInletOutlet exprMixed uniformFixedGradient partialSlip directionMixed fixedInternalValue mappedFixedInternalValue mappedFixedPushedInternalValue
+cd "${0%/*}" || exit 1
+blockMesh
+setFields
+scalarTransportFoam

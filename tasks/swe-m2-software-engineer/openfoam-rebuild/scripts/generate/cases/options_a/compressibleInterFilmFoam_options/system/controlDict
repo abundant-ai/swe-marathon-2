@@ -1,0 +1,28 @@
+FoamFile { version 2.0; format ascii; class dictionary; object controlDict; }
+application     compressibleInterFilmFoam;
+startFrom       startTime;
+startTime       0;
+stopAt          endTime;
+endTime         0.1;
+deltaT          0.001;
+writeControl    adjustable;
+writeInterval   0.05;
+writeFormat     ascii;
+writePrecision  8;
+timeFormat      general;
+timePrecision   6;
+runTimeModifiable no;
+adjustTimeStep  yes;
+maxCo           0.5;
+maxAlphaCo      0.5;
+maxDeltaT       1;
+
+functions
+{
+    minMax
+    {
+        type    fieldMinMax;
+        libs    (fieldFunctionObjects);
+        fields  (p_rgh U T);
+    }
+}

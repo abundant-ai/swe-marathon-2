@@ -1,0 +1,32 @@
+#!/bin/bash
+# from: incompressible/icoFoam/cavity/cavity (6x6, 4 steps); exercises: time-selection and format options of foamToFireMesh (-time/-latestTime/-constant/-noZero/-ascii/-scale), singleCellMesh (-noZero/-constant/-time ranges, -parallel), foamFormatConvert (-time/-latestTime/-noZero/-constant/-noConstant/-enableFunctionEntries, ascii->binary->ascii, -parallel); errors: nonexistent time/region, bad time range
+cd "${0%/*}" || exit 1
+blockMesh
+icoFoam
+foamToFireMesh -ascii -time 0.01
+mkdir -p fire/t001 fire/latest fire/constant
+mv meshExport.* fire/t001/
+foamToFireMesh -ascii -latestTime -scale 0.5
+mv meshExport.* fire/latest/
+foamToFireMesh -ascii -constant -noZero
+mv meshExport.* fire/constant/
+foamToFireMesh -time 5 || true
+foamToFireMesh -time abc || true
+singleCellMesh -noZero
+singleCellMesh -constant -time 0
+singleCellMesh -time 0.01:0.02
+singleCellMesh -time 7 || true
+foamFormatConvert -time 0.01
+foamDictionary -entry writeFormat -set binary system/controlDict
+foamFormatConvert -time 0.01
+foamFormatConvert -latestTime -noConstant
+foamFormatConvert -noZero
+foamFormatConvert -constant -time none
+foamFormatConvert -enableFunctionEntries -time 0
+foamDictionary -entry writeFormat -set ascii system/controlDict
+foamFormatConvert
+foamFormatConvert -region noSuchRegion || true
+foamFormatConvert -time 99 || true
+decomposePar -time 0.02
+mpirun -np 2 foamFormatConvert -parallel -latestTime
+mpirun -np 2 singleCellMesh -parallel -latestTime

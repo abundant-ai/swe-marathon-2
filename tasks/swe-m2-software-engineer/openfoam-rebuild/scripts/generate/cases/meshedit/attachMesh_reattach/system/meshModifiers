@@ -1,0 +1,22 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       polyTopoChanger;
+    location    "constant/polyMesh";
+    object      meshModifiers;
+}
+
+1
+(
+    reattach
+    {
+        type            attachDetach;
+        faceZoneName    membraneFaces;
+        masterPatchName cutMaster;
+        slavePatchName  cutSlave;
+        triggerTimes    1(0);
+        manualTrigger   false;
+        active          true;
+    }
+)

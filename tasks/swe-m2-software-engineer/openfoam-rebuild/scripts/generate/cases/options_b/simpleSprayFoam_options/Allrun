@@ -1,0 +1,21 @@
+#!/bin/bash
+# from: lagrangian/sprayFoam/aachenBomb (steady 8x8x20 spray box); exercises: simpleSprayFoam options -noFunctionObjects, -postProcess -func/-latestTime/-time, -parallel (simple and hierarchical via -decomposeParDict), errors: -parallel without mpirun/decomposition, unknown function, missing cloud properties
+cd "${0%/*}" || exit
+cp -r 0.orig 0
+blockMesh
+simpleSprayFoam -parallel || true
+mpirun --oversubscribe -np 2 simpleSprayFoam -parallel || true
+simpleSprayFoam -noFunctionObjects
+simpleSprayFoam
+simpleSprayFoam -postProcess -func 'mag(U)' -latestTime
+simpleSprayFoam -postProcess -func 'components(U)' -time 5
+simpleSprayFoam -postProcess -func noSuchFunction -latestTime || true
+simpleSprayFoam -postProcess -time 99 || true
+decomposePar
+mpirun --oversubscribe -np 2 simpleSprayFoam -parallel
+decomposePar -force -decomposeParDict system/decomposeParDict.hier
+mpirun --oversubscribe -np 2 simpleSprayFoam -parallel -decomposeParDict system/decomposeParDict.hier
+mpirun --oversubscribe -np 2 simpleSprayFoam -parallel -decomposeParDict system/noSuchDict || true
+mv constant/sprayCloud1Properties constant/sprayCloud1Properties.off
+simpleSprayFoam || true
+mv constant/sprayCloud1Properties.off constant/sprayCloud1Properties

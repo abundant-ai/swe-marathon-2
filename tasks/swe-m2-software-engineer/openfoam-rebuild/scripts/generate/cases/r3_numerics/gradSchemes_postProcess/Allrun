@@ -1,0 +1,28 @@
+#!/bin/bash
+# from: basic/scalarTransportFoam/pitzDaily (16x8 skewed graded 2D channel); exercises: gradient schemes evaluated by postProcess -func grad(T)/grad(U) on a transported field: fourth, pointCellsLeastSquares, edgeCellsLeastSquares, iterativeGauss linear 3, faceLimited Gauss linear 1, faceMDLimited Gauss linear 0.5, faceLimited leastSquares 0.8, cellLimited<cubic> 1.5 Gauss linear 1, cellLimited<Venkatakrishnan> Gauss linear 1, cellMDLimited fourth 1, Gauss skewCorrected linear, Gauss pointLinear
+blockMesh
+scalarTransportFoam
+cp -r variants/fourth/. .
+postProcess -funcs '(grad(T) grad(U))' -latestTime
+cp -r variants/pointCellsLeastSquares/. .
+postProcess -funcs '(grad(T) grad(U))' -latestTime
+cp -r variants/edgeCellsLeastSquares/. .
+postProcess -funcs '(grad(T) grad(U))' -latestTime
+cp -r variants/iterativeGauss/. .
+postProcess -funcs '(grad(T) grad(U))' -latestTime
+cp -r variants/faceLimited/. .
+postProcess -funcs '(grad(T) grad(U))' -latestTime
+cp -r variants/faceMDLimited/. .
+postProcess -funcs '(grad(T) grad(U))' -latestTime
+cp -r variants/faceLimitedLeastSquares/. .
+postProcess -funcs '(grad(T) grad(U))' -latestTime
+cp -r variants/cellLimitedCubic/. .
+postProcess -funcs '(grad(T) grad(U))' -latestTime
+cp -r variants/cellLimitedVenkatakrishnan/. .
+postProcess -funcs '(grad(T) grad(U))' -latestTime
+cp -r variants/cellMDLimitedFourth/. .
+postProcess -funcs '(grad(T) grad(U))' -latestTime
+cp -r variants/GaussSkewCorrected/. .
+postProcess -funcs '(grad(T) grad(U))' -latestTime
+cp -r variants/GaussPointLinear/. .
+postProcess -funcs '(grad(T) grad(U))' -latestTime

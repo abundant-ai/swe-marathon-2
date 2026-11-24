@@ -1,0 +1,16 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      selectCellsDict;
+}
+
+// Select cells cut by and inside a closed box surface
+useSurface      true;
+surface         "constant/triSurface/box.stl";
+outsidePoints   ((0.05 0.05 0.05));
+selectCut       true;
+selectInside    true;
+selectOutside   false;
+nearDistance    -1;

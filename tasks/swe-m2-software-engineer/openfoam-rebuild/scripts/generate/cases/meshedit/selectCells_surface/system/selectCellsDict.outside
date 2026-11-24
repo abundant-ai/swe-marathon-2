@@ -1,0 +1,16 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      selectCellsDict;
+}
+
+// Select cut and outside cells of a tetrahedron, dropping cells closer than nearDistance
+useSurface      true;
+surface         "constant/triSurface/tet.stl";
+outsidePoints   ((0.95 0.95 0.95));
+selectCut       true;
+selectInside    false;
+selectOutside   true;
+nearDistance    0.1;

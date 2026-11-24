@@ -1,0 +1,13 @@
+#!/bin/bash
+# from: scratch (annotated etc/caseDicts/annotated/surfaceSubsetDict; simpleShapes/sphere, hand-written cube6.stl); exercises: surfaceSubset selection by zone box, face/localPoint/edge labels, inside/outside another surface, plane (pointAndNormal, embeddedPoints), addFaceNeighbours, invertSelection
+cd "${0%/*}" || exit 1
+mkdir -p out
+surfaceSubset system/surfaceSubsetDict.zone constant/triSurface/sphere.stl out/sphere_zone.stl
+surfaceSubset system/surfaceSubsetDict.zoneNbr constant/triSurface/sphere.stl out/sphere_zoneNbrInv.stl
+surfaceSubset system/surfaceSubsetDict.labels constant/triSurface/sphere.stl out/sphere_labels.stl
+surfaceSubset system/surfaceSubsetDict.labelsNbr constant/triSurface/sphere.stl out/sphere_labelsNbr.stl
+surfaceSubset system/surfaceSubsetDict.surface constant/triSurface/sphere.stl out/sphere_insideCube.stl
+surfaceSubset system/surfaceSubsetDict.surfaceOut constant/triSurface/sphere.stl out/sphere_outsideCube.obj
+surfaceSubset system/surfaceSubsetDict.plane constant/triSurface/cube6.stl out/cube6_planeX1.stl
+surfaceSubset system/surfaceSubsetDict.planeEmbedded constant/triSurface/cube6.stl out/cube6_notZ1.stl
+sed -i -E 's/written [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}/written DATE/' out/*

@@ -1,0 +1,6 @@
+#!/bin/bash
+# from: incompressible/icoFoam/cavity/cavity (5x4 mesh, front/back planes warped); exercises: flattenMesh projecting empty front/back points onto flat planes
+blockMesh
+checkMesh
+flattenMesh
+checkMesh

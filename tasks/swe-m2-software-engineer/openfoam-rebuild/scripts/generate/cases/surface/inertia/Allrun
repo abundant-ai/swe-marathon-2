@@ -1,0 +1,11 @@
+#!/bin/bash
+# from: scratch (simpleShapes/sphere; brick.stl hand-written 1x2x3 box rotated 30deg); exercises: surfaceInertia (writes axes.obj) solid/shell inertia, -density, -referencePoint, -shellProperties
+cd "${0%/*}" || exit 1
+surfaceInertia constant/triSurface/cube6.stl
+surfaceInertia -density 7800 constant/triSurface/cube6.stl
+surfaceInertia -shellProperties -density 2 constant/triSurface/cube6.stl
+surfaceInertia -referencePoint '(0 0 0)' constant/triSurface/cube6.stl
+surfaceInertia constant/triSurface/sphere.stl
+surfaceInertia -shellProperties -referencePoint '(1 1 1)' constant/triSurface/sphere.stl
+surfaceInertia -density 1000 constant/triSurface/brick.stl
+surfaceInertia -shellProperties constant/triSurface/brick.stl

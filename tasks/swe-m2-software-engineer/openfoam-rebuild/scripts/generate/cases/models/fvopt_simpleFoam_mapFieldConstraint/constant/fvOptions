@@ -1,0 +1,47 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  v2606                                 |
+|   \\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      fvOptions;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+mapU
+{
+    type            vectorMapFieldConstraint;
+    selectionMode   cellZone;
+    cellZone        mapZone;
+    field           U;
+    srcMesh         "source";
+    mapMethod       cellVolumeWeight;
+}
+
+mapK
+{
+    type            scalarMapFieldConstraint;
+    selectionMode   cellZone;
+    cellZone        mapZone;
+    field           k;
+    srcMesh         "source";
+    mapMethod       cellVolumeWeight;
+}
+
+mapR
+{
+    type            symmTensorMapFieldConstraint;
+    selectionMode   cellZone;
+    cellZone        mapZone;
+    field           R;
+    srcMesh         "source";
+    mapMethod       cellVolumeWeight;
+}
+
+// ************************************************************************* //

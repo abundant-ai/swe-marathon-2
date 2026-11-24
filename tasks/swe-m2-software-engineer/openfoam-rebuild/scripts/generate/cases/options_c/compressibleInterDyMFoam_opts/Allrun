@@ -1,0 +1,24 @@
+#!/bin/bash
+# from: multiphase/compressibleInterDyMFoam/laminar/sloshingTank2D (m4 blockMesh pre-expanded with 8x7 cells, endTime 0.02); exercises: compressibleInterDyMFoam -noFunctionObjects run with SDA solid-body motion, -postProcess (-func on -latestTime), -parallel restart; errors: unknown solidBodyMotionFunction and dynamicFvMesh types (valid-type lists), missing T field, missing thermophysicalProperties.water
+cd "${0%/*}" || exit 1
+blockMesh
+cp -r 0.orig 0
+setFields
+cp constant/dynamicMeshDict constant/dynamicMeshDict.orig
+cp variants/dynamicMeshDict.badMotion constant/dynamicMeshDict
+compressibleInterDyMFoam || true
+cp variants/dynamicMeshDict.badMesh constant/dynamicMeshDict
+compressibleInterDyMFoam || true
+cp constant/dynamicMeshDict.orig constant/dynamicMeshDict
+mv 0/T 0/T.off
+compressibleInterDyMFoam || true
+mv 0/T.off 0/T
+mv constant/thermophysicalProperties.water constant/thermophysicalProperties.water.off
+compressibleInterDyMFoam || true
+mv constant/thermophysicalProperties.water.off constant/thermophysicalProperties.water
+compressibleInterDyMFoam -noFunctionObjects
+compressibleInterDyMFoam -postProcess -latestTime -func "mag(U)"
+foamDictionary -entry endTime -set 0.03 system/controlDict
+foamDictionary -entry startFrom -set latestTime system/controlDict
+decomposePar -latestTime
+mpirun -np 2 compressibleInterDyMFoam -parallel

@@ -1,0 +1,11 @@
+#!/bin/bash
+# from: scratch (motion setup as incompressible/lumpedPointMotion files/Allrun.moveMesh); exercises: moveMesh displacementLaplacian with oscillatingDisplacement lid, -endTime/-deltaT overrides, unknown motion solver error
+cd "${0%/*}" || exit 1
+blockMesh
+moveMesh
+mkdir -p run1 && mv 0.2 0.4 run1/
+moveMesh -endTime 0.15 -deltaT 0.05
+cp constant/dynamicMeshDict constant/dynamicMeshDict.good
+cp constant/dynamicMeshDict.bad constant/dynamicMeshDict
+moveMesh || true
+cp constant/dynamicMeshDict.good constant/dynamicMeshDict

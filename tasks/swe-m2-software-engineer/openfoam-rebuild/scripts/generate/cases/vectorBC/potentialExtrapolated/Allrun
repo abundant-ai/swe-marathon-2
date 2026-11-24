@@ -1,0 +1,6 @@
+#!/bin/bash
+# from: scratch; exercises: U BC extrapolatedCalculated (non-solved U in potentialFoam); error case: sliced from dictionary
+blockMesh
+potentialFoam -writePhi -writep
+foamDictionary -entry boundaryField/top/type -set sliced 0/U
+potentialFoam || true

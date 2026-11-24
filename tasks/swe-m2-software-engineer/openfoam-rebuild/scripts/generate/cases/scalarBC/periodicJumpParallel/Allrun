@@ -1,0 +1,8 @@
+#!/bin/bash
+# from: scratch (periodic channel); exercises: scalar BCs fixedJump (pressure-jump-driven cyclic) and processorCyclic (decomposePar splitting the cyclic pair, parallel continuation)
+cd "${0%/*}" || exit 1
+blockMesh
+pimpleFoam
+foamDictionary -entry endTime -set 0.2 system/controlDict
+decomposePar -latestTime
+mpirun -np 2 pimpleFoam -parallel

@@ -1,0 +1,113 @@
+fDensity
+{
+    type            ddt;
+    libs            (fieldFunctionObjects);
+    field           U;
+    result          fD;
+}
+
+forcesLocal
+{
+    type            forces;
+    libs            (forces);
+    writeControl    timeStep;
+    patches         (movingWall fixedWalls);
+    p               p;
+    U               U;
+    rho             rhoInf;
+    rhoInf          1.2;
+    porosity        yes;
+    writeFields     yes;
+    coordinateSystem
+    {
+        type        cartesian;
+        origin      (0.05 0.05 0.005);
+        rotation
+        {
+            type    axes;
+            e1      (1 1 0);
+            e3      (0 0 1);
+        }
+    }
+}
+
+forcesDirect
+{
+    type            forces;
+    libs            (forces);
+    writeControl    timeStep;
+    patches         (movingWall);
+    directForceDensity yes;
+    fD              fD;
+    CofR            (0 0 0);
+}
+
+coeffs
+{
+    type            forceCoeffs;
+    libs            (forces);
+    writeControl    timeStep;
+    patches         (movingWall);
+    rho             rhoInf;
+    rhoInf          1;
+    CofR            (0.05 0.05 0.005);
+    dragDir         (1 0 0);
+    liftDir         (0 1 0);
+    pitchAxis       (0 0 1);
+    magUInf         1;
+    lRef            0.1;
+    Aref            0.001;
+    pRef            0.5;
+    writeFields     yes;
+    coefficients    (Cd Cs Cl CmRoll CmPitch CmYaw Cd(f) Cd(r) Cs(f) Cs(r) Cl(f) Cl(r));
+}
+
+propeller
+{
+    type            propellerInfo;
+    libs            (forces);
+    writeControl    writeTime;
+    patches         (fixedWalls);
+    URef            0.5;
+    rho             rhoInf;
+    rhoInf          1;
+    writePropellerPerformance yes;
+    radius          0.04;
+    rotationMode    specified;
+    origin          (0.05 0.05 0.005);
+    axis            (0 0 1);
+    rpm             600;
+    writeWakeFields yes;
+    sampleDisk
+    {
+        r1          0.01;
+        r2          0.045;
+        nTheta      8;
+        nRadial     3;
+        interpolationScheme cell;
+        surfaceWriter raw;
+        errorOnPointNotFound false;
+    }
+}
+
+blades
+{
+    type            bladeForces;
+    libs            (forces);
+    writeControl    timeStep;
+    writeFields     true;
+    patches         (fixedWalls);
+    outputName      walls;
+    lefthand        false;
+    rho             rhoInf;
+    rhoInf          1;
+    origin          (0.05 0.05 0.005);
+    axis            (0 0 1);
+    radius          0.07;
+    nRadial         4;
+    n               10;
+    Uref            1;
+    pRef            0;
+    nearCellValue   false;
+    geometricVelocity true;
+}

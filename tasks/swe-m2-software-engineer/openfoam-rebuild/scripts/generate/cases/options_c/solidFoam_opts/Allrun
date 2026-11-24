@@ -1,0 +1,23 @@
+#!/bin/bash
+# from: heatTransfer/solidFoam/movingCone (cells /5, endTime 1e-4, adjustable write); exercises: solidFoam on a moving mesh with -noFunctionObjects, -postProcess (-func on -latestTime), -parallel restart; errors: unknown transport in thermoType (valid-combination list), missing Cp, unknown radiationModel, missing T field (-dry-run/-dry-run-write left out: abort, nullptr dereference)
+cd "${0%/*}" || exit 1
+blockMesh
+cp constant/thermophysicalProperties constant/thermophysicalProperties.orig
+cp variants/thermophysicalProperties.badTransport constant/thermophysicalProperties
+solidFoam || true
+cp variants/thermophysicalProperties.noCp constant/thermophysicalProperties
+solidFoam || true
+cp constant/thermophysicalProperties.orig constant/thermophysicalProperties
+cp constant/radiationProperties constant/radiationProperties.orig
+cp variants/radiationProperties.badModel constant/radiationProperties
+solidFoam || true
+cp constant/radiationProperties.orig constant/radiationProperties
+mv 0/T 0/T.off
+solidFoam || true
+mv 0/T.off 0/T
+solidFoam -noFunctionObjects
+solidFoam -postProcess -latestTime -func "grad(T)"
+foamDictionary -entry endTime -set 0.00015 system/controlDict
+foamDictionary -entry startFrom -set latestTime system/controlDict
+decomposePar -latestTime
+mpirun -np 2 solidFoam -parallel

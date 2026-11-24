@@ -1,0 +1,12 @@
+FoamFile { version 2.0; format ascii; class dictionary; object pdfDict; }
+nIntervals 20;
+nSamples   2000;
+writeData  yes;
+type       noSuchDistribution;
+RosinRammlerDistribution
+{
+    minValue 1e-6;
+    maxValue 1e-4;
+    lambda   5e-5;
+    n        3;
+}

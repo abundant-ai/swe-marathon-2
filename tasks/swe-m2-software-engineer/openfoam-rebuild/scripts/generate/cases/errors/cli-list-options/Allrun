@@ -1,0 +1,24 @@
+#!/bin/bash
+# from: incompressible/icoFoam/cavity/cavity; exercises: solver -list* options (BCs, turbulence models, fvOptions, functionObjects, switches)
+icoFoam -listScalarBCs || true
+icoFoam -listVectorBCs || true
+simpleFoam -listTurbulenceModels || true
+simpleFoam -listFvOptions || true
+simpleFoam -listScalarBCs || true
+pimpleFoam -listTurbulenceModels || true
+pimpleFoam -listFvOptions || true
+pimpleFoam -listScalarBCs || true
+interFoam -listTurbulenceModels || true
+interFoam -listFvOptions || true
+interFoam -listScalarBCs || true
+rhoSimpleFoam -listTurbulenceModels || true
+rhoSimpleFoam -listFvOptions || true
+rhoSimpleFoam -listScalarBCs || true
+buoyantSimpleFoam -listTurbulenceModels || true
+buoyantSimpleFoam -listFvOptions || true
+buoyantSimpleFoam -listScalarBCs || true
+interFoam -listVectorBCs || true
+rhoSimpleFoam -listFunctionObjects || true
+icoFoam -listSwitches || true
+icoFoam -listSwitches -listUnsetSwitches || true
+icoFoam -listRegisteredSwitches || true

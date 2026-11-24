@@ -1,0 +1,120 @@
+solid finPY
+ facet normal 0 0 1
+  outer loop
+   vertex 0 0 0
+   vertex 1 0 0
+   vertex 1 1 0
+  endloop
+ endfacet
+ facet normal 0 0 1
+  outer loop
+   vertex 0 0 0
+   vertex 1 1 0
+   vertex 0 1 0
+  endloop
+ endfacet
+ facet normal 0 0 1
+  outer loop
+   vertex 1 0 0
+   vertex 2 0 0
+   vertex 2 1 0
+  endloop
+ endfacet
+ facet normal 0 0 1
+  outer loop
+   vertex 1 0 0
+   vertex 2 1 0
+   vertex 1 1 0
+  endloop
+ endfacet
+endsolid finPY
+solid finPZ
+ facet normal 0 -1 0
+  outer loop
+   vertex 0 0 0
+   vertex 1 0 0
+   vertex 1 0 1
+  endloop
+ endfacet
+ facet normal 0 -1 0
+  outer loop
+   vertex 0 0 0
+   vertex 1 0 1
+   vertex 0 0 1
+  endloop
+ endfacet
+ facet normal 0 -1 0
+  outer loop
+   vertex 1 0 0
+   vertex 2 0 0
+   vertex 2 0 1
+  endloop
+ endfacet
+ facet normal 0 -1 0
+  outer loop
+   vertex 1 0 0
+   vertex 2 0 1
+   vertex 1 0 1
+  endloop
+ endfacet
+endsolid finPZ
+solid finNY
+ facet normal 0 0 -1
+  outer loop
+   vertex 0 0 0
+   vertex 1 0 0
+   vertex 1 -1 0
+  endloop
+ endfacet
+ facet normal 0 0 -1
+  outer loop
+   vertex 0 0 0
+   vertex 1 -1 0
+   vertex 0 -1 0
+  endloop
+ endfacet
+ facet normal 0 0 -1
+  outer loop
+   vertex 1 0 0
+   vertex 2 0 0
+   vertex 2 -1 0
+  endloop
+ endfacet
+ facet normal 0 0 -1
+  outer loop
+   vertex 1 0 0
+   vertex 2 -1 0
+   vertex 1 -1 0
+  endloop
+ endfacet
+endsolid finNY
+solid finNZ
+ facet normal 0 1 0
+  outer loop
+   vertex 0 0 0
+   vertex 1 0 0
+   vertex 1 0 -1
+  endloop
+ endfacet
+ facet normal 0 1 0
+  outer loop
+   vertex 0 0 0
+   vertex 1 0 -1
+   vertex 0 0 -1
+  endloop
+ endfacet
+ facet normal 0 1 0
+  outer loop
+   vertex 1 0 0
+   vertex 2 0 0
+   vertex 2 0 -1
+  endloop
+ endfacet
+ facet normal 0 1 0
+  outer loop
+   vertex 1 0 0
+   vertex 2 0 -1
+   vertex 1 0 -1
+  endloop
+ endfacet
+endsolid finNZ

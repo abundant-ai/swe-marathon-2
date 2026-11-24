@@ -1,0 +1,21 @@
+#!/bin/bash
+# from: incompressible/adjointShapeOptimizationFoam/pitzDaily (~400 cells, 10 iterations); exercises: adjointShapeOptimizationFoam options -dry-run, -dry-run-write, -noFunctionObjects, -postProcess (-func -latestTime -time -fields), -parallel; errors: missing lambda, missing adjoint field Ua, nonexistent time, -case noSuchDir
+cd "${0%/*}" || exit 1
+blockMesh
+adjointShapeOptimizationFoam -dry-run
+adjointShapeOptimizationFoam -dry-run-write
+rm -rf 1
+adjointShapeOptimizationFoam -noFunctionObjects
+adjointShapeOptimizationFoam
+adjointShapeOptimizationFoam -postProcess -func 'mag(Ua)' -latestTime
+adjointShapeOptimizationFoam -postProcess -fields '(pa)' -func 'grad(pa)' -time 5
+decomposePar
+mpirun --oversubscribe -np 2 adjointShapeOptimizationFoam -parallel
+adjointShapeOptimizationFoam -postProcess -func 'mag(Ua)' -time 99 || true
+adjointShapeOptimizationFoam -case noSuchDir || true
+cp -r variants/missingLambda/. .
+adjointShapeOptimizationFoam || true
+cp -r variants/orig/. .
+mv 0/Ua 0/Ua.off
+adjointShapeOptimizationFoam || true
+mv 0/Ua.off 0/Ua

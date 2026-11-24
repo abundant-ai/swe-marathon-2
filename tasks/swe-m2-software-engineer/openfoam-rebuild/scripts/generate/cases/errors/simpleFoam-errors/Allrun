@@ -1,0 +1,63 @@
+#!/bin/bash
+# from: incompressible/simpleFoam/pitzDaily; exercises: simpleFoam errors - unknown/missing turbulence model, simulationType, transport model, missing turbulence fields, missing/incomplete schemes, bad switch value, unknown GAMG smoother
+blockMesh
+mv 0/k 0/k.off
+simpleFoam || true
+mv 0/k.off 0/k
+mv 0/nut 0/nut.off
+simpleFoam || true
+mv 0/nut.off 0/nut
+mv constant/turbulenceProperties constant/turbulenceProperties.off
+simpleFoam || true
+mv constant/turbulenceProperties.off constant/turbulenceProperties
+cp -r variants/unknownRASModel/. .
+simpleFoam || true
+cp -r variants/orig/. .
+cp -r variants/unknownSimulationType/. .
+simpleFoam || true
+cp -r variants/orig/. .
+cp -r variants/missingRASDict/. .
+simpleFoam || true
+cp -r variants/orig/. .
+cp -r variants/missingRASModelKey/. .
+simpleFoam || true
+cp -r variants/orig/. .
+cp -r variants/LESModelInRAS/. .
+simpleFoam || true
+cp -r variants/orig/. .
+cp -r variants/LESwithoutDelta/. .
+simpleFoam || true
+cp -r variants/orig/. .
+cp -r variants/kOmegaWithoutOmegaBC/. .
+simpleFoam || true
+cp -r variants/orig/. .
+cp -r variants/unknownTransportModel/. .
+simpleFoam || true
+cp -r variants/orig/. .
+cp -r variants/missingTransportModel/. .
+simpleFoam || true
+cp -r variants/orig/. .
+cp -r variants/CrossPowerLawMissingCoeffs/. .
+simpleFoam || true
+cp -r variants/orig/. .
+cp -r variants/missingKScheme/. .
+simpleFoam || true
+cp -r variants/orig/. .
+cp -r variants/undefinedSchemeVariable/. .
+simpleFoam || true
+cp -r variants/orig/. .
+cp -r variants/linearUpwindNoGrad/. .
+simpleFoam || true
+cp -r variants/orig/. .
+cp -r variants/limitedLinearNoCoeff/. .
+simpleFoam || true
+cp -r variants/orig/. .
+cp -r variants/unknownGAMGSmoother/. .
+simpleFoam || true
+cp -r variants/orig/. .
+cp -r variants/missingSolverRegex/. .
+simpleFoam || true
+cp -r variants/orig/. .
+cp -r variants/badConsistentSwitch/. .
+simpleFoam || true
+cp -r variants/orig/. .

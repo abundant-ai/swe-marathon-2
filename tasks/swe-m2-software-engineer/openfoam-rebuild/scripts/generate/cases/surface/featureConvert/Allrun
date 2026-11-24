@@ -1,0 +1,16 @@
+#!/bin/bash
+# from: scratch (fridgeA.eMesh, curve2.vtk from resources/geometry); exercises: surfaceFeatureConvert edgeMesh conversion eMesh/obj/vtk, starcd, -scale, -read-format, -write-format, unknown-format error
+cd "${0%/*}" || exit 1
+mkdir -p out
+surfaceFeatureConvert constant/triSurface/fridgeA.eMesh out/fridgeA.obj
+surfaceFeatureConvert constant/triSurface/fridgeA.eMesh out/fridgeA.vtk
+surfaceFeatureConvert -scale 0.5 constant/triSurface/fridgeA.eMesh out/fridgeA_half.eMesh
+surfaceFeatureConvert constant/triSurface/curve2.vtk out/curve2.eMesh
+surfaceFeatureConvert constant/triSurface/curve2.vtk out/curve2.obj
+surfaceFeatureConvert -read-format vtk -write-format obj constant/triSurface/curve2.vtk out/curve2_fmt.dat
+surfaceFeatureConvert out/fridgeA.obj out/fridgeA_roundTrip.eMesh
+surfaceFeatureConvert constant/triSurface/fridgeA.eMesh out/fridgeA.starcd
+surfaceFeatureConvert out/fridgeA.vtk out/fridgeA_fromVtk.eMesh
+surfaceFeatureConvert constant/triSurface/fridgeA.eMesh out/fridgeA.unknownext || true
+# mask the time stamps some writers embed in their headers
+sed -i -E 's/written [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}/written DATE/' out/*

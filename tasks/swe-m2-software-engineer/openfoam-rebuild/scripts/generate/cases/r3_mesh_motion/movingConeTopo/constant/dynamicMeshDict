@@ -1,0 +1,13 @@
+FoamFile { version 2.0; format ascii; class dictionary; object dynamicMeshDict; }
+dynamicFvMeshLibs (topoChangerFvMesh);
+dynamicFvMesh   movingConeTopoFvMesh;
+movingConeTopoFvMeshCoeffs
+{
+    motionVelAmplitude (1 0 0);
+    motionVelPeriod    0.0004;
+    leftEdge           -0.007;
+    leftObstacleEdge   -0.0035;
+    rightObstacleEdge  -0.0007;
+    left  { minThickness 4e-05; maxThickness 0.00012; }
+    right { minThickness 4e-05; maxThickness 0.00012; }
+}

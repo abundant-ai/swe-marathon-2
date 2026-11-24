@@ -1,0 +1,9 @@
+#!/bin/bash
+# from: scratch; exercises: tetgenToFoam .node/.ele/.face reader with boundary markers -> patches, element attributes warning, -noFaceFile
+cd "${0%/*}" || exit 1
+tetgenToFoam twoTets
+checkMesh
+mv constant/polyMesh mesh_withFaces
+tetgenToFoam -noFaceFile twoTets
+checkMesh
+tetgenToFoam missing || true

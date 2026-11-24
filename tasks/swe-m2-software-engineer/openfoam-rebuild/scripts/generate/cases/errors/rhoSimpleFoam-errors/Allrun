@@ -1,0 +1,39 @@
+#!/bin/bash
+# from: compressible/rhoSimpleFoam/squareBend; exercises: rhoSimpleFoam errors - missing thermophysicalProperties/T, unknown thermo type, invalid thermo combination (lists valid combinations), missing mixture coefficients, unknown T BC, missing energy scheme/solver
+blockMesh
+mv constant/thermophysicalProperties constant/thermophysicalProperties.off
+rhoSimpleFoam || true
+mv constant/thermophysicalProperties.off constant/thermophysicalProperties
+mv 0/T 0/T.off
+rhoSimpleFoam || true
+mv 0/T.off 0/T
+cp -r variants/unknownThermoType/. .
+rhoSimpleFoam || true
+cp -r variants/orig/. .
+cp -r variants/invalidCombination/. .
+rhoSimpleFoam || true
+cp -r variants/orig/. .
+cp -r variants/incompatibleTransport/. .
+rhoSimpleFoam || true
+cp -r variants/orig/. .
+cp -r variants/missingThermoTypeEntry/. .
+rhoSimpleFoam || true
+cp -r variants/orig/. .
+cp -r variants/missingCp/. .
+rhoSimpleFoam || true
+cp -r variants/orig/. .
+cp -r variants/missingMolWeight/. .
+rhoSimpleFoam || true
+cp -r variants/orig/. .
+cp -r variants/missingSutherlandTs/. .
+rhoSimpleFoam || true
+cp -r variants/orig/. .
+cp -r variants/unknownTBC/. .
+rhoSimpleFoam || true
+cp -r variants/orig/. .
+cp -r variants/missingEnergyScheme/. .
+rhoSimpleFoam || true
+cp -r variants/orig/. .
+cp -r variants/missingEnergySolver/. .
+rhoSimpleFoam || true
+cp -r variants/orig/. .

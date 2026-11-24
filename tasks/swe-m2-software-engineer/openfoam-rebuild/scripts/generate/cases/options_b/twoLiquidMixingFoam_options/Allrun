@@ -1,0 +1,24 @@
+#!/bin/bash
+# from: multiphase/twoLiquidMixingFoam/lockExchange (40x8 mesh, endTime 2); exercises: twoLiquidMixingFoam options -dry-run, -dry-run-write, -noFunctionObjects, -postProcess -func/-latestTime/-time, -parallel, -decomposeParDict; errors: missing alpha.sludge, -parallel without processor dirs, missing -decomposeParDict file, missing Dab entry
+cp -r 0.orig 0
+blockMesh
+mv 0/alpha.sludge 0/alpha.sludge.off
+twoLiquidMixingFoam || true
+mv 0/alpha.sludge.off 0/alpha.sludge
+setFields
+twoLiquidMixingFoam -dry-run
+twoLiquidMixingFoam -noFunctionObjects
+twoLiquidMixingFoam
+twoLiquidMixingFoam -postProcess -func 'mag(U)' -latestTime
+twoLiquidMixingFoam -postProcess -func vorticity -time 1
+twoLiquidMixingFoam -postProcess -func noSuchFunctionObject -latestTime || true
+mpirun --oversubscribe -np 2 twoLiquidMixingFoam -parallel || true
+decomposePar
+mpirun --oversubscribe -np 2 twoLiquidMixingFoam -parallel
+mpirun --oversubscribe -np 2 twoLiquidMixingFoam -parallel -decomposeParDict system/noSuchDecomposeParDict || true
+decomposePar -force -decomposeParDict system/decomposeParDict.3
+mpirun --oversubscribe -np 3 twoLiquidMixingFoam -parallel -decomposeParDict system/decomposeParDict.3
+cp -r variants/noDab/. .
+twoLiquidMixingFoam || true
+cp -r variants/orig/. .
+twoLiquidMixingFoam -dry-run-write

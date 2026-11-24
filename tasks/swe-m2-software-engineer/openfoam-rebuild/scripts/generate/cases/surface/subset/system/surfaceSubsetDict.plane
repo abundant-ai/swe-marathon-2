@@ -1,0 +1,44 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  v2606                                 |
+|   \\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      surfaceSubsetDict;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+faces       ();
+localPoints ();
+edges       ();
+
+// Empty (inverted) box: no selection by zone
+zone
+(
+    (1 1 1)
+    (-1 -1 -1)
+);
+
+// Select triangles lying on the plane x = 1
+plane
+{
+    planeType       pointAndNormal;
+    pointAndNormalDict
+    {
+        point   (1 0 0);
+        normal  (1 0 0);
+    }
+    distance 0.001;
+    cosAngle 0.99;
+}
+
+addFaceNeighbours no;
+invertSelection   false;
+
+// ************************************************************************* //

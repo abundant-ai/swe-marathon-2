@@ -1,0 +1,12 @@
+FoamFile { version 2.0; format ascii; class dictionary; object setFieldsDict; }
+defaultFieldValues ( volScalarFieldValue alpha.water 0 volVectorFieldValue U (0 0 0) );
+regions
+(
+    // liquid core attached to the inlet
+    boxToCell { box (0 0.3e-2 -1) (0.25e-2 0.7e-2 1); fieldValues ( volScalarFieldValue alpha.water 1 volVectorFieldValue U (1 0 0) ); }
+    // separated droplets of different sizes
+    boxToCell { box (0.4e-2 0.4e-2 -1) (0.5e-2 0.5e-2 1); fieldValues ( volScalarFieldValue alpha.water 1 volVectorFieldValue U (0.8 0.1 0) ); }
+    boxToCell { box (0.6e-2 0.2e-2 -1) (0.8e-2 0.4e-2 1); fieldValues ( volScalarFieldValue alpha.water 0.9 volVectorFieldValue U (0.6 -0.1 0) ); }
+    boxToCell { box (0.65e-2 0.7e-2 -1) (0.95e-2 0.85e-2 1); fieldValues ( volScalarFieldValue alpha.water 1 volVectorFieldValue U (0.5 0.2 0) ); }
+    boxToCell { box (0.85e-2 0.05e-2 -1) (0.9e-2 0.1e-2 1); fieldValues ( volScalarFieldValue alpha.water 0.7 volVectorFieldValue U (0.4 0 0) ); }
+);

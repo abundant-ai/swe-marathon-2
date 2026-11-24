@@ -1,0 +1,33 @@
+#!/bin/bash
+# from: incompressible/pimpleFoam/LES/periodicPlaneChannel (2x6x2 per block; UMean/UPrime2Mean/pPrime2Mean synthesized with setExprFields at times 1 2 3); exercises: postChannel all-times default, -time, -latestTime, -noZero, -constant, symmetric/asymmetric and other-direction postChannelDict variants, and errors (missing dict/field, bad component, unknown seed patch, missing component entry, time beyond the last one)
+cd "${0%/*}" || exit 1
+blockMesh
+mkdir -p 0 1 2 3
+setExprFields -time 0:3
+postChannel
+mv graphs graphs.all
+postChannel -time 2
+mv graphs graphs.time2
+postChannel -latestTime
+postChannel -noZero -time 1:2
+postChannel -constant -time 0
+mv graphs graphs.selected
+cp constant/postChannelDict.asym constant/postChannelDict
+postChannel -latestTime
+mv graphs graphs.asym
+cp constant/postChannelDict.zDir constant/postChannelDict
+postChannel -latestTime
+mv graphs graphs.zDir
+cp constant/postChannelDict.badComponent constant/postChannelDict
+postChannel -latestTime || true
+cp constant/postChannelDict.badPatch constant/postChannelDict
+postChannel -latestTime || true
+cp constant/postChannelDict.noComponent constant/postChannelDict
+postChannel -latestTime || true
+rm constant/postChannelDict
+postChannel -latestTime || true
+cp constant/postChannelDict.orig constant/postChannelDict
+mv 3/pPrime2Mean 3/pPrime2Mean.off
+postChannel -latestTime || true
+mv 3/pPrime2Mean.off 3/pPrime2Mean
+postChannel -time 99 || true

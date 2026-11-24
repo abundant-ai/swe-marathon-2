@@ -1,0 +1,6 @@
+#!/bin/bash
+# from: incompressible/icoFoam/cavity/cavity; exercises: function objects limitFields, nearWallFields, zeroGradient, columnAverage, surfaceDistance, wallBoundedStreamLine, readFields, fieldCoordinateSystemTransform
+cd "${0%/*}" || exit 1
+blockMesh > log.blockMesh 2>&1
+icoFoam > log.icoFoam 2>&1
+postProcess -dict system/readFieldsDict -latestTime > log.postProcess 2>&1

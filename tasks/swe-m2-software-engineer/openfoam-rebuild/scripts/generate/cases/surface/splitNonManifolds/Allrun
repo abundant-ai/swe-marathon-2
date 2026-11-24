@@ -1,0 +1,10 @@
+#!/bin/bash
+# from: scratch (hand-written cross.stl: four fins on one 2-segment edge, cubes2.stl: two cubes sharing one edge, tee.stl: three fins); exercises: surfaceSplitNonManifolds borderEdge/borderPoint detection, splitting isolated borderEdges, local walk, manifold no-op, -debug dumps
+cd "${0%/*}" || exit 1
+mkdir -p out
+surfaceSplitNonManifolds constant/triSurface/cross.stl out/cross_split.stl
+surfaceSplitNonManifolds constant/triSurface/cubes2.stl out/cubes2_split.stl
+surfaceSplitNonManifolds constant/triSurface/tee.stl out/tee_split.stl
+surfaceSplitNonManifolds constant/triSurface/cube6.stl out/cube6_split.stl
+surfaceSplitNonManifolds -debug constant/triSurface/cubes2.stl out/cubes2_split_debug.obj
+sed -i -E 's/written [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}/written DATE/' out/* *.obj

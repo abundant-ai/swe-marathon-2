@@ -1,0 +1,128 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  v2606                                 |
+|   \\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      kinematicCloudProperties;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+solution
+{
+    active          true;
+    coupled         false;
+    transient       yes;
+    cellValueSourceCorrection off;
+    maxCo           0.3;
+    sourceTerms     { schemes {} }
+    interpolationSchemes
+    {
+        rho             cell;
+        U               cellPoint;
+        thermo:mu       cell;
+        E               cell;
+        HdotGradH       cell;
+        DUcDt           cell;
+        curlUcDt        cell;
+    }
+    integrationSchemes
+    {
+        U               Euler;
+    }
+}
+
+constantProperties
+{
+    rho0            900;
+}
+
+subModels
+{
+    particleForces
+    {
+        nonSphereDrag
+        {
+            phi         0.7;
+        }
+        gravity;
+        pressureGradient
+        {
+            U           U;
+        }
+        virtualMass
+        {
+            Cvm         0.5;
+        }
+        SaffmanMeiLiftForce
+        {
+            U           U;
+        }
+        TomiyamaLift
+        {
+            U           U;
+            sigma       0.07;
+        }
+        nonInertialFrame
+        {
+            linearAcceleration  linearAcceleration;
+            angularVelocity     angularVelocity;
+        }
+        Coulomb
+        {
+            q           table ((1e-5 1e-14) (3e-4 5e-13));
+            E           E;
+        }
+        paramagnetic
+        {
+            HdotGradH   HdotGradH;
+            magneticSusceptibility 1e-3;
+        }
+    }
+
+    injectionModels
+    {
+        inlet
+        {
+            type            patchInjection;
+            SOI             0;
+            parcelBasisType fixed;
+            nParticle       1;
+            massTotal       0;
+            patch           inlet;
+            U0              (0.3 0 0);
+            parcelsPerSecond 1000;
+            duration        0.1;
+            flowRateProfile constant 1;
+            sizeDistribution
+            {
+                type        RosinRammler;
+                RosinRammlerDistribution
+                {
+                    lambda      1e-4;
+                    n           2.5;
+                    minValue    2e-5;
+                    maxValue    3e-4;
+                }
+            }
+        }
+    }
+
+    dispersionModel none;
+    patchInteractionModel rebound;
+    reboundCoeffs
+    {
+        UFactor     0.7;
+    }
+    surfaceFilmModel none;
+    stochasticCollisionModel none;
+}
+
+cloudFunctions
+{}

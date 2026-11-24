@@ -1,0 +1,137 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  v2606                                 |
+|   \\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      controlDict;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+application     icoFoam;
+
+startFrom       startTime;
+
+startTime       0;
+
+stopAt          endTime;
+
+endTime         0.02;
+
+deltaT          0.005;
+
+writeControl    timeStep;
+
+writeInterval   2;
+
+purgeWrite      0;
+
+writeFormat     ascii;
+
+writePrecision  6;
+
+writeCompression off;
+
+timeFormat      general;
+
+timePrecision   6;
+
+runTimeModifiable true;
+
+
+functions
+{
+    binCartesian
+    {
+        type            binField;
+        libs            (fieldFunctionObjects);
+        binModel        uniformBin;
+        fields          (p U);
+        patches         (movingWall fixedWalls);
+        coordinateSystem
+        {
+            type        cartesian;
+            origin      (0 0 0);
+            rotation    { type none; }
+        }
+        binData
+        {
+            nBin        (3 2 1);
+            cumulative  false;
+        }
+        writeControl    writeTime;
+    }
+    binBounded
+    {
+        type            binField;
+        libs            (fieldFunctionObjects);
+        binModel        uniformBin;
+        fields          (p U);
+        patches         (movingWall);
+        cellZones       (upper);
+        decomposePatchValues true;
+        CofR            (0.05 0.05 0);
+        binData
+        {
+            nBin        (2 4 1);
+            cumulative  true;
+            minMax
+            {
+                e1      (-0.04 0.04);
+                e2      (-0.06 0.06);
+            }
+        }
+        writeControl    writeTime;
+    }
+    binCylindrical
+    {
+        type            binField;
+        libs            (fieldFunctionObjects);
+        binModel        uniformBin;
+        fields          (p U);
+        patches         ("(moving|fixed).*");
+        coordinateSystem
+        {
+            type        cylindrical;
+            origin      (0.05 0.05 0);
+            rotation
+            {
+                type    cylindrical;
+                axis    (0 0 1);
+            }
+        }
+        binData
+        {
+            nBin        (2 4 1);
+        }
+        writeControl    writeTime;
+    }
+    binLine
+    {
+        type            binField;
+        libs            (fieldFunctionObjects);
+        binModel        singleDirectionUniformBin;
+        fields          (p U);
+        patches         (fixedWalls);
+        CofR            (0 0 0);
+        cellZones       (upper);
+        decomposePatchValues true;
+        binData
+        {
+            nBin        4;
+            direction   (1 1 0);
+            cumulative  true;
+            min         0.01;
+            max         0.12;
+        }
+        writeControl    writeTime;
+    }
+}
+
+// ************************************************************************* //

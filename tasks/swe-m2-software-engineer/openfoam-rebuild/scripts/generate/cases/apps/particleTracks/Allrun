@@ -1,0 +1,8 @@
+#!/bin/bash
+# from: lagrangian/uncoupledKinematicParcelDyMFoam/rotor2DAMI + reactingParcelFoam/filter particleTrackProperties; exercises: particleTracks (track assembly from cloud positions over time dirs, vtk and csv writers, -fields/-stride/-format options)
+cd "${0%/*}" || exit
+cp -r 0.orig 0
+blockMesh
+uncoupledKinematicParcelFoam
+particleTracks
+particleTracks -format csv -fields '(d)' -stride 2

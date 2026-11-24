@@ -1,0 +1,40 @@
+#!/bin/bash
+# from: compressible/rhoPorousSimpleFoam/angledDuct (explicit+implicit, cellWidth 20, 6 iterations); exercises: rhoPorousSimpleFoam -noFunctionObjects, -postProcess (-latestTime fluxSummary, -func/-time, -funcs/-noZero), implicit porosity (nUCorrectors), -parallel with default and alternative -decomposeParDict, absent fvOptions/porosityProperties; errors: -dry-run/-dry-run-write on a cellZone mesh (simplified column mesh zone lookup fails), -parallel before decomposePar, nonexistent -decomposeParDict, missing porosity cellZone entry, unknown porosity type, unknown cellZone, unknown fvOption type, unknown -func
+blockMesh
+cp -r 0.orig 0
+rhoPorousSimpleFoam -dry-run || true
+rhoPorousSimpleFoam -dry-run-write || true
+rhoPorousSimpleFoam -noFunctionObjects
+rhoPorousSimpleFoam -postProcess -latestTime
+rhoPorousSimpleFoam -postProcess -func "mag(U)" -time 3:6
+rhoPorousSimpleFoam -postProcess -funcs '("grad(p)" "div(phi)")' -noZero
+rhoPorousSimpleFoam -postProcess -func noSuchFunctionObject -latestTime || true
+mpirun --oversubscribe -np 2 rhoPorousSimpleFoam -parallel || true
+decomposePar
+mpirun --oversubscribe -np 2 rhoPorousSimpleFoam -parallel
+decomposePar -force -decomposeParDict system/decomposeParDict.alt
+mpirun --oversubscribe -np 2 rhoPorousSimpleFoam -parallel -decomposeParDict system/decomposeParDict.alt
+mpirun --oversubscribe -np 2 rhoPorousSimpleFoam -parallel -decomposeParDict system/noSuchDecomposeParDict || true
+cp system/fvSolution system/fvSolution.explicit
+cp system/fvSolution.implicit system/fvSolution
+rhoPorousSimpleFoam
+cp system/fvSolution.explicit system/fvSolution
+cp constant/porosityProperties constant/porosityProperties.orig
+foamDictionary -entry porosity1/cellZone -remove constant/porosityProperties
+rhoPorousSimpleFoam -noFunctionObjects || true
+cp constant/porosityProperties.orig constant/porosityProperties
+foamDictionary -entry porosity1/type -set noSuchPorosityModel constant/porosityProperties
+rhoPorousSimpleFoam -noFunctionObjects || true
+cp constant/porosityProperties.orig constant/porosityProperties
+foamDictionary -entry porosity1/cellZone -set noSuchZone constant/porosityProperties
+rhoPorousSimpleFoam -noFunctionObjects || true
+cp constant/porosityProperties.orig constant/porosityProperties
+cp constant/fvOptions constant/fvOptions.orig
+foamDictionary -entry source1/type -set noSuchFvOption constant/fvOptions
+rhoPorousSimpleFoam -noFunctionObjects || true
+mv constant/fvOptions.orig constant/fvOptions
+mv constant/porosityProperties constant/porosityProperties.off
+mv constant/fvOptions constant/fvOptions.off
+rhoPorousSimpleFoam -noFunctionObjects
+mv constant/porosityProperties.off constant/porosityProperties
+mv constant/fvOptions.off constant/fvOptions

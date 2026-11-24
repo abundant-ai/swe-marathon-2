@@ -1,0 +1,55 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      topoSetDict;
+}
+
+actions
+(
+    {
+        name    core;
+        type    cellSet;
+        action  new;
+        source  boxToCell;
+        box     (0.2 0.2 0.2) (0.8 0.6 0.8);
+    }
+    {
+        name    shellFaces;
+        type    faceSet;
+        action  new;
+        source  cellToFace;
+        set     core;
+        option  all;
+    }
+    {
+        name    shellFaces;
+        type    faceSet;
+        action  subtract;
+        source  cellToFace;
+        set     core;
+        option  both;
+    }
+    {
+        name    shell;
+        type    faceZoneSet;
+        action  new;
+        source  setToFaceZone;
+        faceSet shellFaces;
+    }
+    {
+        name    plateFaces;
+        type    faceSet;
+        action  new;
+        source  boxToFace;
+        box     (0.39 -1 -1) (0.41 0.5 2);
+    }
+    {
+        name    plate;
+        type    faceZoneSet;
+        action  new;
+        source  setToFaceZone;
+        faceSet plateFaces;
+    }
+);

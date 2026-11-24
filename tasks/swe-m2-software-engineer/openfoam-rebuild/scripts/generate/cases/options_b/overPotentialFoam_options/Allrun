@@ -1,0 +1,37 @@
+#!/bin/bash
+# from: basic/overPotentialFoam/cylinder (coarsened); exercises: overPotentialFoam options -writephi -writep -writePhi -pName -initialiseUBCs -withFunctionObjects -noFunctionObjects -dry-run -parallel -decomposeParDict, plus errors (unknown region, -pName without argument, -writep with no solver for -pName field, -parallel without processor dirs; potentialFlow dict absent (defaults))
+extrudeMesh -case cylinderMesh
+createPatch -case cylinderMesh -overwrite
+blockMesh
+mergeMeshes . cylinderMesh -overwrite
+topoSet
+cp -r 0.orig 0
+setFields
+cp -r 0 0.init
+overPotentialFoam -dry-run
+rm -r 0 && cp -r 0.init 0
+overPotentialFoam
+rm -r 0 && cp -r 0.init 0
+overPotentialFoam -writephi -writep -writePhi
+rm -r 0 && cp -r 0.init 0
+overPotentialFoam -initialiseUBCs -withFunctionObjects
+rm -r 0 && cp -r 0.init 0
+overPotentialFoam -pName p -noFunctionObjects
+overPotentialFoam -region nonexistent || true
+overPotentialFoam -pName || true
+rm -r 0 && cp -r 0.init 0
+overPotentialFoam -pName pAlt -writep
+rm -r 0 && cp -r 0.init 0
+overPotentialFoam -pName pOther -writep || true
+overPotentialFoam -parallel || true
+rm -r 0 && cp -r 0.init 0
+mv system/fvSolution system/fvSolution.orig
+sed 's/^potentialFlow/potentialFlowX/' system/fvSolution.orig > system/fvSolution
+overPotentialFoam
+mv system/fvSolution.orig system/fvSolution
+rm -r 0 && cp -r 0.init 0
+decomposePar
+mpirun --oversubscribe -np 2 overPotentialFoam -parallel -writep
+reconstructPar -withZero
+decomposePar -force -decomposeParDict system/decomposeParDict.hier
+mpirun --oversubscribe -np 2 overPotentialFoam -parallel -decomposeParDict system/decomposeParDict.hier

@@ -1,0 +1,9 @@
+#!/bin/bash
+# from: mesh/foamyQuadMesh/square; exercises: foamyQuadMesh 2D conformal Voronoi mesh of a unit square with refinement box (unrandomised initial grid, 10 iterations), extrude2DMesh wedge, missing feature-edge mesh error
+cd "${0%/*}" || exit 1
+mkdir -p noFeatures/constant && cp -r system noFeatures/ && cp -r constant/triSurface noFeatures/constant/
+surfaceFeatureExtract
+foamyQuadMesh -overwrite
+extrude2DMesh -overwrite polyMesh2D
+checkMesh -constant -noZero
+foamyQuadMesh -case noFeatures || true

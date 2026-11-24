@@ -1,0 +1,5 @@
+#!/bin/bash
+# from: scratch (5x5x5 box blockMesh); exercises: snappyRefineMesh selecting cut/inside cells of an STL box and refining them (with 1:1 level buffering) down to minEdgeLen
+blockMesh
+snappyRefineMesh
+checkMesh -latestTime

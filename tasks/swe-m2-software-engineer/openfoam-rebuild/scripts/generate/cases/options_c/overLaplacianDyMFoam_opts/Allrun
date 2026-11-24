@@ -1,0 +1,26 @@
+#!/bin/bash
+# from: basic/overLaplacianDyMFoam/heatTransfer (Allrun.pre steps, writeInterval 5); exercises: overLaplacianDyMFoam serial run, -noFunctionObjects restart, -parallel with -decomposeParDict alternative (1x2 split); errors: unknown dynamicFvMesh type (valid-type list), missing zoneID field, missing transportProperties
+cd "${0%/*}" || exit 1
+cp -r 0.orig 0
+blockMesh
+topoSet
+subsetMesh box -patch hole -overwrite
+topoSet -dict system/topoSetDict
+setFields
+cp constant/dynamicMeshDict constant/dynamicMeshDict.orig
+cp variants/dynamicMeshDict.badMesh constant/dynamicMeshDict
+overLaplacianDyMFoam || true
+cp constant/dynamicMeshDict.orig constant/dynamicMeshDict
+mv 0/zoneID 0/zoneID.off
+overLaplacianDyMFoam || true
+mv 0/zoneID.off 0/zoneID
+mv constant/transportProperties constant/transportProperties.off
+overLaplacianDyMFoam || true
+mv constant/transportProperties.off constant/transportProperties
+overLaplacianDyMFoam
+foamDictionary -entry endTime -set 1.5 system/controlDict
+foamDictionary -entry startFrom -set latestTime system/controlDict
+overLaplacianDyMFoam -noFunctionObjects
+foamDictionary -entry endTime -set 2 system/controlDict
+decomposePar -latestTime -decomposeParDict system/decomposeParDict.2
+mpirun -np 2 overLaplacianDyMFoam -parallel -decomposeParDict system/decomposeParDict.2

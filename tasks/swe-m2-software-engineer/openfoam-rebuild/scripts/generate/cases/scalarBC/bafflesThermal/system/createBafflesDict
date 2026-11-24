@@ -1,0 +1,52 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      createBafflesDict;
+}
+
+internalFacesOnly true;
+
+baffles
+{
+    baffle1D
+    {
+        type        searchableSurface;
+        surface     searchablePlate;
+        origin      (0.321 0 -1);
+        span        (0 0.25 2);
+        patchPairs
+        {
+            type            wall;
+            patchFields
+            {
+                #include "<case>/0/include/wallBafflePatches"
+                #include "<case>/0/include/1DBaffle/1DTemperatureMasterBafflePatches"
+            }
+        }
+    }
+    baffleCoupled
+    {
+        type        searchableSurface;
+        surface     searchablePlate;
+        origin      (0.641 0.2 -1);
+        span        (0 0.3 2);
+        patchPairs
+        {
+            type            mappedWall;
+            sampleMode      nearestPatchFace;
+            patchFields
+            {
+                #include "<case>/0/include/wallBafflePatches"
+                T
+                {
+                    type            compressible::turbulentTemperatureCoupledBaffleMixed;
+                    Tnbr            T;
+                    kappaMethod     fluidThermo;
+                    value           uniform 300;
+                }
+            }
+        }
+    }
+}

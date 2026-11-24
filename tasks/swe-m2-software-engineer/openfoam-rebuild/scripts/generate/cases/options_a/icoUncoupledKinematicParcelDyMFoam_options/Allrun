@@ -1,0 +1,23 @@
+#!/bin/bash
+# from: lagrangian/icoUncoupledKinematicParcelDyMFoam/mixerVesselAMI2D (m4 mesh pre-expanded at 768 cells, 10 steps); exercises: icoUncoupledKinematicParcelDyMFoam options -noFunctionObjects, -cloud alternative cloud, -postProcess (-func -latestTime -time); errors: -dry-run (not an option for this solver), -parallel with AMI split across processors, unknown cloud name, unknown dynamicFvMesh, missing positions file, nonexistent time, -case noSuchDir
+cd "${0%/*}" || exit 1
+cp -r 0.orig 0
+blockMesh
+icoUncoupledKinematicParcelDyMFoam -dry-run || true
+icoUncoupledKinematicParcelDyMFoam -noFunctionObjects
+icoUncoupledKinematicParcelDyMFoam -cloud altCloud
+rm -rf 0.0001 0.0002 postProcessing
+icoUncoupledKinematicParcelDyMFoam
+icoUncoupledKinematicParcelDyMFoam -postProcess -func 'mag(U)' -latestTime
+icoUncoupledKinematicParcelDyMFoam -postProcess -func 'components(U)' -time 0.0001
+decomposePar
+mpirun --oversubscribe -np 2 icoUncoupledKinematicParcelDyMFoam -parallel -noFunctionObjects || true
+icoUncoupledKinematicParcelDyMFoam -cloud noSuchCloud || true
+icoUncoupledKinematicParcelDyMFoam -postProcess -func 'mag(U)' -time 99 || true
+icoUncoupledKinematicParcelDyMFoam -case noSuchDir || true
+cp -r variants/unknownDynamicFvMesh/. .
+icoUncoupledKinematicParcelDyMFoam || true
+cp -r variants/orig/. .
+mv constant/kinematicCloudPositions constant/kinematicCloudPositions.off
+icoUncoupledKinematicParcelDyMFoam || true
+mv constant/kinematicCloudPositions.off constant/kinematicCloudPositions

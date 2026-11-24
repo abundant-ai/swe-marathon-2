@@ -1,0 +1,6 @@
+#!/bin/bash
+# from: scratch (3x3x3 box blockMesh); exercises: zipUpMesh on a closed hex mesh and on a mesh whose boundary edges were split by modifyMesh (nothing to zip, 0 faces changed)
+blockMesh
+zipUpMesh
+modifyMesh -overwrite
+zipUpMesh

@@ -1,0 +1,20 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  v2606                                 |
+|   \\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+// objective entries, included into system/optimisationDict objectiveNames
+moment
+{
+    weight          1;
+    type            moment;
+    patches         (middleWall);
+    direction       (0 0 1);
+    rotationCenter  (0.2 0.025 -0.05);
+    Aref            0.01;
+    lRef            0.1;
+    rhoInf          1;
+    UInf            1;
+}

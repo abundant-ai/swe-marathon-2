@@ -1,0 +1,19 @@
+#!/bin/bash
+# from: combustion/coldEngineFoam/freePiston (10x26 wedge, 10 fixed steps); exercises: coldEngineFoam options -noFunctionObjects, -postProcess (-func -latestTime -time -fields), -parallel; errors: -dry-run (not an option for this solver), unknown engineType, missing pistonPositionTime, nonexistent time, -case noSuchDir
+cd "${0%/*}" || exit 1
+blockMesh
+coldEngineFoam -dry-run || true
+coldEngineFoam -noFunctionObjects
+coldEngineFoam
+coldEngineFoam -postProcess -func 'mag(U)' -latestTime
+coldEngineFoam -postProcess -fields '(T)' -func 'grad(T)' -time 5e-05
+decomposePar
+mpirun --oversubscribe -np 2 coldEngineFoam -parallel
+coldEngineFoam -postProcess -func 'mag(U)' -time 99 || true
+coldEngineFoam -case noSuchDir || true
+cp -r variants/unknownEngineType/. .
+coldEngineFoam || true
+cp -r variants/orig/. .
+cp -r variants/missingPistonTable/. .
+coldEngineFoam || true
+cp -r variants/orig/. .

@@ -1,0 +1,22 @@
+#!/bin/bash
+# from: incompressible/nonNewtonianIcoFoam/offsetCylinder (4x4 blocks, 10 steps); exercises: nonNewtonianIcoFoam options -dry-run, -dry-run-write, -noFunctionObjects, -postProcess (-func -latestTime -time -noZero -fields), -parallel; errors: unknown viscosityModel, missing CrossPowerLawCoeffs nuInf, nonexistent time, -case noSuchDir
+cd "${0%/*}" || exit 1
+blockMesh
+nonNewtonianIcoFoam -dry-run
+nonNewtonianIcoFoam -dry-run-write
+rm -rf 0.0025
+nonNewtonianIcoFoam -noFunctionObjects
+nonNewtonianIcoFoam
+nonNewtonianIcoFoam -postProcess -func 'mag(U)' -latestTime
+nonNewtonianIcoFoam -postProcess -func 'vorticity' -noZero
+nonNewtonianIcoFoam -postProcess -fields '(p)' -func 'grad(p)' -time 0.0125
+decomposePar
+mpirun --oversubscribe -np 2 nonNewtonianIcoFoam -parallel
+nonNewtonianIcoFoam -postProcess -func 'mag(U)' -time 99 || true
+nonNewtonianIcoFoam -case noSuchDir || true
+cp -r variants/unknownTransportModel/. .
+nonNewtonianIcoFoam || true
+cp -r variants/orig/. .
+cp -r variants/missingCoeff/. .
+nonNewtonianIcoFoam || true
+cp -r variants/orig/. .

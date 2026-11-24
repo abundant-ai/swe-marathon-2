@@ -1,0 +1,17 @@
+#!/bin/bash
+# from: lagrangian/uncoupledKinematicParcelDyMFoam/rotor2DAMI (10 steps); exercises: uncoupledKinematicParcelDyMFoam options -cloudName (accepted, cloud stays kinematicCloud), -noFunctionObjects, -postProcess -func/-latestTime/-time, -parallel (simple and hierarchical via -decomposeParDict), errors: -cloud (unknown option), -parallel without mpirun/decomposition
+cd "${0%/*}" || exit
+cp -r 0.orig 0
+blockMesh
+uncoupledKinematicParcelDyMFoam -parallel || true
+mpirun --oversubscribe -np 2 uncoupledKinematicParcelDyMFoam -parallel || true
+uncoupledKinematicParcelDyMFoam -cloud beads || true
+uncoupledKinematicParcelDyMFoam -cloudName beads -noFunctionObjects
+uncoupledKinematicParcelDyMFoam -cloudName noSuchCloud
+uncoupledKinematicParcelDyMFoam
+uncoupledKinematicParcelDyMFoam -postProcess -func 'mag(U)' -latestTime
+uncoupledKinematicParcelDyMFoam -postProcess -func 'div(phi)' -time 0.005
+decomposePar
+mpirun --oversubscribe -np 2 uncoupledKinematicParcelDyMFoam -parallel
+decomposePar -force -decomposeParDict system/decomposeParDict.hier
+mpirun --oversubscribe -np 2 uncoupledKinematicParcelDyMFoam -parallel -cloudName beads -decomposeParDict system/decomposeParDict.hier

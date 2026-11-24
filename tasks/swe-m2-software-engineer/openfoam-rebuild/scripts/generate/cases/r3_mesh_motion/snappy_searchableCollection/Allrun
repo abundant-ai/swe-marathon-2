@@ -1,0 +1,5 @@
+#!/bin/bash
+# from: mesh/snappyHexMesh/flange (dictionary layout; scratch 6x6x6 box and two-region STL block); exercises: snappyHexMesh geometry types subTriSurfaceMesh (distance refinement region), searchableSurfaceCollection of transformed/scaled searchableCones, searchableSurfaceWithGaps around a searchableDisk (faceZone), searchablePlate faceZone, triSurfaceMesh region-level refinement
+blockMesh
+snappyHexMesh -overwrite
+checkMesh

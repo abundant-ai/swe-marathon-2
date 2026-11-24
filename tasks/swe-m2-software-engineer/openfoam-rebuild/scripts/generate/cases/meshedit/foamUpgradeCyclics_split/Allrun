@@ -1,0 +1,6 @@
+#!/bin/bash
+# from: incompressible/icoFoam/cavity/cavity (5x4, side walls as one old-style cyclic patch); exercises: foamUpgradeCyclics splitting a single cyclic into _half0/_half1 in polyMesh/boundary and fields, -dry-run, -time with -enableFunctionEntries
+foamUpgradeCyclics -dry-run
+foamUpgradeCyclics -time 0
+foamUpgradeCyclics -time 0.1 -enableFunctionEntries
+checkMesh

@@ -1,0 +1,20 @@
+#!/bin/bash
+# from: lagrangian/uncoupledKinematicParcelDyMFoam/rotor2DAMI + reactingParcelFoam/filter particleTrackProperties; exercises: particleTracks time selection (-time range, -latestTime, -noZero, -constant), -dict alternative properties (raw writer, maxPositions, sampleFrequency), -format raw/csv, -fields, -stride, -verbose; errors: nonexistent cloud, missing cloud entry, nonexistent -dict, unknown -format, nonexistent region
+cd "${0%/*}" || exit
+cp -r 0.orig 0
+blockMesh
+uncoupledKinematicParcelFoam
+particleTracks -time 0.004:0.008
+mv postProcessing/lagrangian/kinematicCloud/particleTracks tracks_range
+particleTracks -latestTime -format csv
+mv postProcessing/lagrangian/kinematicCloud/particleTracks tracks_latest
+particleTracks -noZero -constant -format raw -fields '(U)' -verbose
+mv postProcessing/lagrangian/kinematicCloud/particleTracks tracks_noZero
+particleTracks -dict constant/particleTrackProperties.alt
+mv postProcessing/lagrangian/kinematicCloud/particleTracks tracks_altDict
+particleTracks -stride 3 -format csv -fields '(d)'
+particleTracks -dict constant/particleTrackProperties.badCloud || true
+particleTracks -dict constant/particleTrackProperties.noCloud || true
+particleTracks -dict constant/noSuchDict || true
+particleTracks -format noSuchFormat || true
+particleTracks -region noSuchRegion || true

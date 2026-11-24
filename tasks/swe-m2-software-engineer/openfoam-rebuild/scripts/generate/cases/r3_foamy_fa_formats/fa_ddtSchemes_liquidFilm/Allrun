@@ -1,0 +1,15 @@
+#!/bin/bash
+# from: finiteArea/liquidFilmFoam/cylinder (coarsened, 100 steps); exercises: finite-area ddtSchemes Euler, backward in fam::ddt(h) and fam::ddt(h,Us) (liquidFilmFoam); error: boundedBackward is scalar-only (unknown ddt type for Us)
+cd "${0%/*}" || exit 1
+blockMesh
+makeFaMesh
+setFields
+for s in Euler backward
+do
+    foamDictionary -entry ddtSchemes/"ddt(h,Us)" -set $s system/finite-area/faSchemes
+    foamDictionary -entry ddtSchemes/"ddt(h)" -set $s system/finite-area/faSchemes
+    liquidFilmFoam
+    mkdir -p run_$s && mv 0.01 0.02 run_$s/
+done
+foamDictionary -entry ddtSchemes/"ddt(h,Us)" -set boundedBackward system/finite-area/faSchemes
+liquidFilmFoam || true

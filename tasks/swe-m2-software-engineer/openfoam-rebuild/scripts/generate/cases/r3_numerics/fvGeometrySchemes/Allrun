@@ -1,0 +1,13 @@
+#!/bin/bash
+# from: basic/scalarTransportFoam/pitzDaily (16x8 skewed graded 2D channel); exercises: fvSchemes geometry (fvGeometryScheme) selection on a skewed graded mesh: averageNeighbour, highAspectRatio, stabilised, solidBody, parallel(stabilised)
+blockMesh
+cp -r variants/averageNeighbour/. .
+scalarTransportFoam
+cp -r variants/highAspectRatio/. .
+scalarTransportFoam
+cp -r variants/stabilised/. .
+scalarTransportFoam
+cp -r variants/solidBody/. .
+scalarTransportFoam
+cp -r variants/parallel/. .
+scalarTransportFoam

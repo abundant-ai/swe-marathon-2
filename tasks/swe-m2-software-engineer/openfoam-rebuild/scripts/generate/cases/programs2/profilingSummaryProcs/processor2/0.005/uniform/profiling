@@ -1,0 +1,79 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    location    "0.005/uniform";
+    object      profiling;
+}
+
+profiling
+{
+    trigger0
+    {
+        id              0;
+        description     "application::main";
+        calls           1;
+        totalTime       0.25;
+        childTime       0.2;
+        active          true;
+    }
+
+    trigger1
+    {
+        id              1;
+        parentId        0;
+        description     "functionObjects.start()";
+        calls           1;
+        totalTime       0.00025;
+        childTime       0;
+        active          false;
+    }
+
+    trigger2
+    {
+        id              2;
+        parentId        0;
+        description     "time.run() cprocessor2";
+        calls           4;
+        totalTime       0.2;
+        childTime       0.15;
+        active          true;
+    }
+
+    trigger3
+    {
+        id              3;
+        parentId        2;
+        description     "fvMatrix::solve.U";
+        calls           4;
+        totalTime       0.0625;
+        childTime       0.05;
+        active          false;
+    }
+
+    trigger5
+    {
+        id              5;
+        parentId        2;
+        description     "fvMatrix::solve.p";
+        calls           8;
+        totalTime       0.0875;
+        childTime       0.075;
+        active          false;
+    }
+
+    trigger6
+    {
+        id              6;
+        parentId        5;
+        description     "lduMatrix::solver.p";
+        calls           8;
+        totalTime       0.075;
+        childTime       0;
+        active          false;
+    }
+
+}
+
+host            "node2";

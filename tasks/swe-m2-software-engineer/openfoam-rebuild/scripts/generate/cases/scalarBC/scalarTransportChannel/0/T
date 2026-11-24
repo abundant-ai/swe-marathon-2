@@ -1,0 +1,97 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       volScalarField;
+    object      T;
+}
+
+dimensions      [0 0 0 1 0 0 0];
+internalField   uniform 0;
+boundaryField
+{
+    inlet_lo
+    {
+        type            exprFixedValue;
+        value           uniform 0;
+        valueExpr       #{ 1 + 0.5*sin(60*pos().y())*(1 - exp(-20*time())) #};
+    }
+    inlet_hi
+    {
+        type            fixedProfile;
+        profile         table ((0.05 0.2) (0.1 1.6));
+        direction       (0 1 0);
+        origin          0;
+    }
+    outlet_lo
+    {
+        type            fixedMeanOutletInlet;
+        meanValue       table ((0 0) (0.1 0.4));
+        value           uniform 0;
+    }
+    outlet_hi
+    {
+        type            uniformInletOutlet;
+        uniformInletValue table ((0 0) (0.1 0.8));
+        value           uniform 0;
+    }
+    bottom1
+    {
+        type            exprMixed;
+        value           uniform 0;
+        variables       ( "Tw = 2" );
+        valueExpr       "Tw*(1 + pos().x())";
+        gradientExpr    "0";
+        fractionExpr    "pos().x() > 0.1 ? 1 : 0.25";
+    }
+    bottom2
+    {
+        type            uniformFixedGradient;
+        uniformGradient table ((0 0) (0.1 -20));
+        value           uniform 0;
+    }
+    bottom3
+    {
+        type            fixedValue;
+        value           uniform 1;
+    }
+    top1
+    {
+        type            partialSlip;
+        valueFraction   uniform 0.4;
+        value           uniform 0;
+    }
+    top2
+    {
+        type            directionMixed;
+        refValue        uniform 1.5;
+        refGradient     uniform 0;
+        valueFraction   uniform (0.7 0 0 0 0 0);
+        value           uniform 0;
+    }
+    top3
+    {
+        type            fixedInternalValue;
+        value           uniform 0;
+    }
+    bottom4
+    {
+        type            mappedFixedInternalValue;
+        interpolationScheme cell;
+        setAverage      false;
+        average         0;
+        value           uniform 0;
+    }
+    top4
+    {
+        type            mappedFixedPushedInternalValue;
+        interpolationScheme cell;
+        setAverage      true;
+        average         0.6;
+        value           uniform 0;
+    }
+    frontAndBack
+    {
+        type            empty;
+    }
+}

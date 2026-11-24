@@ -1,0 +1,24 @@
+#!/bin/bash
+# from: lagrangian/sprayFoam/aachenBomb (8x8x20 mesh, 50 us); exercises: spray breakup models TAB, ETAB, PilchErdman, ReitzKHRT, SHF; atomization models LISA, blobsSheetAtomization; stochastic collision models ORourke, trajectory (one sprayFoam run each)
+cd "${0%/*}" || exit
+cp -r base/0.orig base/0
+blockMesh -case base
+cp -r base TAB_LISA_ORourke
+foamDictionary -entry subModels/breakupModel -set TAB TAB_LISA_ORourke/constant/sprayCloudProperties
+foamDictionary -entry subModels/atomizationModel -set LISA TAB_LISA_ORourke/constant/sprayCloudProperties
+foamDictionary -entry subModels/stochasticCollisionModel -set ORourke TAB_LISA_ORourke/constant/sprayCloudProperties
+sprayFoam -case TAB_LISA_ORourke
+cp -r base ETAB_blobsSheet_trajectory
+foamDictionary -entry subModels/breakupModel -set ETAB ETAB_blobsSheet_trajectory/constant/sprayCloudProperties
+foamDictionary -entry subModels/atomizationModel -set blobsSheetAtomization ETAB_blobsSheet_trajectory/constant/sprayCloudProperties
+foamDictionary -entry subModels/stochasticCollisionModel -set trajectory ETAB_blobsSheet_trajectory/constant/sprayCloudProperties
+sprayFoam -case ETAB_blobsSheet_trajectory
+cp -r base PilchErdman
+foamDictionary -entry subModels/breakupModel -set PilchErdman PilchErdman/constant/sprayCloudProperties
+sprayFoam -case PilchErdman
+cp -r base ReitzKHRT
+foamDictionary -entry subModels/breakupModel -set ReitzKHRT ReitzKHRT/constant/sprayCloudProperties
+sprayFoam -case ReitzKHRT
+cp -r base SHF
+foamDictionary -entry subModels/breakupModel -set SHF SHF/constant/sprayCloudProperties
+sprayFoam -case SHF

@@ -1,0 +1,22 @@
+#!/bin/bash
+# from: incompressible/icoFoam/cavity/cavity (6x6); exercises: splitMesh+attachMesh without -overwrite (attach writes into constant, mesh fails checks) and without meshModifiers (strips the empty cut patches), removeFaces without -overwrite (new time) and with missing faceSet, autoPatch without -overwrite plus missing/non-numeric/out-of-range featureAngle
+cd "${0%/*}" || exit 1
+blockMesh
+attachMesh
+blockMesh
+topoSet
+splitMesh -overwrite cutFaces cutMaster cutSlave
+cp system/meshModifiers constant/polyMesh/meshModifiers
+attachMesh
+checkMesh -latestTime
+rm -rf constant/polyMesh/meshModifiers 0/polyMesh 1
+blockMesh
+removeFaces noSuchSet || true
+topoSet -dict system/topoSetDict.remove
+removeFaces oneFace
+removeFaces -overwrite blockFaces
+autoPatch || true
+autoPatch abc || true
+autoPatch 45
+autoPatch -overwrite 200
+checkMesh -latestTime

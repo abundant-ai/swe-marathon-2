@@ -1,0 +1,5 @@
+#!/bin/bash
+# from: scratch (settings after incompressible/pimpleFoam/LES/decayIsoTurb); exercises: resolutionIndex function object with PopeIndex (with/without numerical k), CelikNuIndex, CelikEtaIndex; exprField providing delta/nu inputs
+cd "${0%/*}" || exit 1
+blockMesh > log.blockMesh 2>&1
+pimpleFoam > log.pimpleFoam 2>&1

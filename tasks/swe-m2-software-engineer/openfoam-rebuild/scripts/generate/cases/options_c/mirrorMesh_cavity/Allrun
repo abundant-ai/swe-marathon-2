@@ -1,0 +1,16 @@
+#!/bin/bash
+# from: incompressible/pimpleFoam/laminar/cylinder2D (mirrorMesh step) on icoFoam/cavity (6x6); exercises: mirrorMesh default dict without -overwrite (new time), -dict with embeddedPoints and planeEquation plane types, -overwrite; errors: missing mirrorMeshDict, nonexistent -dict file, missing normal; plane through the mesh interior (no faces merged, overlapping cells)
+cd "${0%/*}" || exit 1
+blockMesh
+mv system/mirrorMeshDict system/mirrorMeshDict.orig
+mirrorMesh || true
+mv system/mirrorMeshDict.orig system/mirrorMeshDict
+mirrorMesh -dict system/noSuchDict || true
+mirrorMesh -dict system/mirrorMeshDict.noNormal || true
+mirrorMesh
+checkMesh -latestTime
+mirrorMesh -dict system/mirrorMeshDict.top -overwrite
+checkMesh
+mirrorMesh -dict system/mirrorMeshDict.eqn -overwrite
+mirrorMesh -dict system/mirrorMeshDict.interior -overwrite
+checkMesh

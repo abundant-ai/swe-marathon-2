@@ -1,0 +1,17 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  v2606                                 |
+|   \\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+// objective entries, included into system/optimisationDict objectiveNames
+partition
+{
+    weight          1;
+    type            flowRatePartition;
+    inletPatches    (inlet);
+    outletPatches   (outlet1 outlet2);
+    targetFractions (0.4 0.6);
+    normalise       true;
+}

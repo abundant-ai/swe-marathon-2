@@ -1,0 +1,19 @@
+#!/bin/bash
+# from: incompressible/SRFPimpleFoam/rotor2D (m4 mesh pre-expanded at 720 cells, 10 steps); exercises: SRFPimpleFoam options -noFunctionObjects, -postProcess (-func -latestTime -time -fields), -parallel; errors: unknown SRFModel, missing rpmCoeffs rpm, nonexistent time, -case noSuchDir
+cd "${0%/*}" || exit 1
+cp -r 0.orig 0
+blockMesh
+SRFPimpleFoam -noFunctionObjects
+SRFPimpleFoam
+SRFPimpleFoam -postProcess -func 'mag(Urel)' -latestTime
+SRFPimpleFoam -postProcess -fields '(p)' -func 'grad(p)' -time 0.001
+decomposePar
+mpirun --oversubscribe -np 2 SRFPimpleFoam -parallel
+SRFPimpleFoam -postProcess -func 'mag(Urel)' -time 99 || true
+SRFPimpleFoam -case noSuchDir || true
+cp -r variants/unknownSRFModel/. .
+SRFPimpleFoam || true
+cp -r variants/orig/. .
+cp -r variants/missingRpm/. .
+SRFPimpleFoam || true
+cp -r variants/orig/. .

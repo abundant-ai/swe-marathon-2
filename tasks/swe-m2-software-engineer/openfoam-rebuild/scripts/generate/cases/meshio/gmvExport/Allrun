@@ -1,0 +1,16 @@
+#!/bin/bash
+# from: incompressible/icoFoam/cavity (two-block variant, 3 steps); exercises: foamToGMV ascii output with vector field as velocity, ieeei4r8 header with startTime filter, invalid format/cells errors
+cd "${0%/*}" || exit 1
+blockMesh
+icoFoam
+foamToGMV || true
+cp dicts/conversionProperties.ascii constant/conversionProperties
+foamToGMV
+mkdir -p gmvAscii && mv plotGMV.* gmvAscii/
+cp dicts/conversionProperties.ieeei4r8 constant/conversionProperties
+foamToGMV
+mkdir -p gmvIeee && mv plotGMV.* gmvIeee/
+cp dicts/conversionProperties.badFormat constant/conversionProperties
+foamToGMV || true
+cp dicts/conversionProperties.badCells constant/conversionProperties
+foamToGMV || true

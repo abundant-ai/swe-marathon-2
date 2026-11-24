@@ -1,0 +1,8 @@
+#!/bin/bash
+# from: scratch (box222.obj from mesh/blockMesh/sphere7, simpleShapes/cone); exercises: surfacePointMerge merging duplicate/close points with distance (no-op, full merge, and over-large distance collapsing the whole cone), -scale
+cd "${0%/*}" || exit 1
+mkdir -p out
+surfacePointMerge constant/triSurface/box222.obj 1e-6 out/box222_merged.stl
+surfacePointMerge -scale 0.5 constant/triSurface/box222.obj 1e-6 out/box222_half.stl
+surfacePointMerge constant/triSurface/cone.stl 1e-6 out/cone_merged.stl
+surfacePointMerge constant/triSurface/cone.stl 0.06 out/cone_merged006.stl

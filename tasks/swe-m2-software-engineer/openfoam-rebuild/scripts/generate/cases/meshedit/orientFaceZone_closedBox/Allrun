@@ -1,0 +1,7 @@
+#!/bin/bash
+# from: scratch (5x5x5 box blockMesh); exercises: orientFaceZone making a closed faceZone (and an open plate zone) consistently oriented relative to a given outside point
+blockMesh
+topoSet
+orientFaceZone shell "(0.05 0.05 0.05)"
+orientFaceZone plate "(0.1 0.1 0.5)"
+orientFaceZone plate "(0.9 0.1 0.5)"

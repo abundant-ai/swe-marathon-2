@@ -1,0 +1,7 @@
+#!/bin/bash
+# from: heatTransfer/chtMultiRegionSimpleFoam/heatExchanger (coarse, no MRF/baffles); exercises: fvOptions variableHeatTransfer (inter-region, Nu correlation)
+cd "${0%/*}" || exit 1
+cp -r 0.orig 0
+blockMesh -region air
+blockMesh -region porous
+chtMultiRegionSimpleFoam

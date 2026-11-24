@@ -1,0 +1,10 @@
+#!/bin/bash
+# from: incompressible/icoFoam/cavity/cavity (6x6 source run 4 steps, 5x4 target); exercises: mapFieldsPar consistent mapping with -sourceTime, -mapMethod variants, -fields selection, -patchMapMethod (valid + help-listed-but-invalid name), -subtract (aborts on empty patches)
+blockMesh -case source
+icoFoam -case source
+blockMesh -case target
+mapFieldsPar -case target -consistent -sourceTime latestTime source
+mapFieldsPar -case target -consistent -sourceTime 0.02 -mapMethod mapNearest -fields '(U)' source
+mapFieldsPar -case target -consistent -sourceTime latestTime -mapMethod cellVolumeWeight -patchMapMethod faceAreaWeightAMI source
+mapFieldsPar -case target -consistent -sourceTime latestTime -patchMapMethod faceAreaWeight source || true
+mapFieldsPar -case target -consistent -sourceTime latestTime -subtract -fields '(p)' source || true

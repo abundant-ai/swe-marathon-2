@@ -1,0 +1,30 @@
+#!/bin/bash
+# from: combustion/chemFoam/gri + ic8h18_TDAC; exercises: TDAC mechanism reduction methods DRG, DRGEP (short pre-ignition run), EFA, PFA, DAC with automaticSIS, noChemistryReduction (reduction off), ISAT tabulation with MRU list + DRG (one chemFoam run each)
+cd "${0%/*}" || exit
+chemkinToFoam -case base base/chemkin/chem.inp base/chemkin/therm.dat base/chemkin/transportProperties base/constant/reactions base/constant/thermo
+cp -r base DRG
+chemFoam -case DRG
+cp -r base DRGEP
+foamDictionary -entry reduction/method -set DRGEP DRGEP/constant/chemistryProperties
+foamDictionary -entry T -set 1000 DRGEP/constant/initialConditions
+foamDictionary -entry deltaT -set 1e-7 DRGEP/system/controlDict
+foamDictionary -entry endTime -set 2e-6 DRGEP/system/controlDict
+foamDictionary -entry writeInterval -set 1e-6 DRGEP/system/controlDict
+chemFoam -case DRGEP
+cp -r base EFA
+foamDictionary -entry reduction/method -set EFA EFA/constant/chemistryProperties
+chemFoam -case EFA
+cp -r base PFA
+foamDictionary -entry reduction/method -set PFA PFA/constant/chemistryProperties
+chemFoam -case PFA
+cp -r base DAC_automaticSIS
+foamDictionary -entry reduction/method -set DAC DAC_automaticSIS/constant/chemistryProperties
+foamDictionary -entry reduction/automaticSIS -set on DAC_automaticSIS/constant/chemistryProperties
+chemFoam -case DAC_automaticSIS
+cp -r base noReduction
+foamDictionary -entry reduction/active -set off noReduction/constant/chemistryProperties
+foamDictionary -entry reduction/method -set none noReduction/constant/chemistryProperties
+chemFoam -case noReduction
+cp -r base DRG_ISAT
+foamDictionary -entry tabulation -set '{ method ISAT; active on; log off; tolerance 1e-3; scaleFactor { otherSpecies 1; Temperature 2500; Pressure 1e15; deltaT 1; } maxNLeafs 50; chPMaxLifeTime 20; maxGrowth 5; checkEntireTreeInterval 3; maxDepthFactor 2; minBalanceThreshold 5; MRURetrieve true; maxMRUSize 5; growPoints true; maxNumNewDim 5; }' DRG_ISAT/constant/chemistryProperties
+chemFoam -case DRG_ISAT

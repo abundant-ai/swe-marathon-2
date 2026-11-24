@@ -1,0 +1,41 @@
+#!/bin/bash
+# from: incompressible/adjointOptimisationFoam/shapeOptimisation/fork-uneven/flowRatePartition (6x1x6 cells per block, 2 cycles, steepestDescent); exercises: objectives flowRate, flowRatePartition (targetFractions), uniformityPatch (two patches), uniformityCellZone (two zones), powerDissipation, moment
+cd "${0%/*}" || exit 1
+blockMesh
+topoSet
+
+rm -rf 0 && cp -r 0.orig 0
+cp variants/flowRate/system/objective system/objective
+adjointOptimisationFoam
+rm -f optimisation/CPUcost
+mkdir -p runs/flowRate && mv [1-9]* optimisation runs/flowRate/
+
+rm -rf 0 && cp -r 0.orig 0
+cp variants/flowRatePartition/system/objective system/objective
+adjointOptimisationFoam
+rm -f optimisation/CPUcost
+mkdir -p runs/flowRatePartition && mv [1-9]* optimisation runs/flowRatePartition/
+
+rm -rf 0 && cp -r 0.orig 0
+cp variants/uniformityPatch/system/objective system/objective
+adjointOptimisationFoam
+rm -f optimisation/CPUcost
+mkdir -p runs/uniformityPatch && mv [1-9]* optimisation runs/uniformityPatch/
+
+rm -rf 0 && cp -r 0.orig 0
+cp variants/uniformityCellZone/system/objective system/objective
+adjointOptimisationFoam
+rm -f optimisation/CPUcost
+mkdir -p runs/uniformityCellZone && mv [1-9]* optimisation runs/uniformityCellZone/
+
+rm -rf 0 && cp -r 0.orig 0
+cp variants/powerDissipation/system/objective system/objective
+adjointOptimisationFoam
+rm -f optimisation/CPUcost
+mkdir -p runs/powerDissipation && mv [1-9]* optimisation runs/powerDissipation/
+
+rm -rf 0 && cp -r 0.orig 0
+cp variants/moment/system/objective system/objective
+adjointOptimisationFoam
+rm -f optimisation/CPUcost
+mkdir -p runs/moment && mv [1-9]* optimisation runs/moment/

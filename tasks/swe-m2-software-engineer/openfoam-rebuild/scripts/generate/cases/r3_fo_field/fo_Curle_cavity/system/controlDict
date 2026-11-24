@@ -1,0 +1,75 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  v2606                                 |
+|   \\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      controlDict;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+application     icoFoam;
+
+startFrom       startTime;
+
+startTime       0;
+
+stopAt          endTime;
+
+endTime         0.02;
+
+deltaT          0.005;
+
+writeControl    timeStep;
+
+writeInterval   2;
+
+purgeWrite      0;
+
+writeFormat     ascii;
+
+writePrecision  6;
+
+writeCompression off;
+
+timeFormat      general;
+
+timePrecision   6;
+
+runTimeModifiable true;
+
+
+functions
+{
+    curlePoints
+    {
+        type            Curle;
+        libs            (fieldFunctionObjects);
+        patches         (movingWall "fixed.*");
+        c0              343;
+        input           point;
+        output          point;
+        observerPositions ((0.05 0.5 0.005) (-0.3 0.05 0.005) (0.5 0.5 0));
+    }
+    curleSurface
+    {
+        type            Curle;
+        libs            (fieldFunctionObjects);
+        patches         (movingWall);
+        p               p;
+        c0              300;
+        input           surface;
+        output          surface;
+        surface         "<constant>/geometry/observers.obj";
+        surfaceType     raw;
+        writeControl    writeTime;
+    }
+}
+
+// ************************************************************************* //

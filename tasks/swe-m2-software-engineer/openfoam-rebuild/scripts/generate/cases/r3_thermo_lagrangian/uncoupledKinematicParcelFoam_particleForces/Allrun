@@ -1,0 +1,7 @@
+#!/bin/bash
+# from: lagrangian/uncoupledKinematicParcelDyMFoam/rotor2DAMI (frozen sheared flow in a box from setExprFields); exercises: particle forces nonSphereDrag, pressureGradient, virtualMass, SaffmanMeiLiftForce, TomiyamaLift, nonInertialFrame, Coulomb (E field via readFields), paramagnetic (HdotGradH via readFields); rebound patch interaction
+cd "${0%/*}" || exit
+cp -r 0.orig 0
+blockMesh
+setExprFields
+uncoupledKinematicParcelFoam

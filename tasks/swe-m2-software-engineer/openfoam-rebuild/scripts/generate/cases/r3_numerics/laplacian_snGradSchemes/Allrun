@@ -1,0 +1,15 @@
+#!/bin/bash
+# from: basic/scalarTransportFoam/pitzDaily (16x8 skewed graded 2D channel); exercises: laplacian/snGrad schemes for laplacian(DT,T) with 1 non-orthogonal corrector: uncorrected, faceCorrected, skewCorrected, linearFit, quadraticFit (CentredFitSnGrad), relaxedNonOrthoGauss (snGradCorr equation relaxation)
+blockMesh
+cp -r variants/uncorrected/. .
+scalarTransportFoam
+cp -r variants/faceCorrected/. .
+scalarTransportFoam
+cp -r variants/skewCorrected/. .
+scalarTransportFoam
+cp -r variants/linearFitSnGrad/. .
+scalarTransportFoam
+cp -r variants/quadraticFitSnGrad/. .
+scalarTransportFoam
+cp -r variants/relaxedNonOrthoGauss/. .
+scalarTransportFoam

@@ -1,0 +1,34 @@
+#!/bin/bash
+# from: incompressible/adjointOptimisationFoam/shapeOptimisation/sbend/laminar/opt/constrained/SQP (blockMesh converging-diverging channel, volumetricBSplines box with nonOverlappingCPs bounds, PtLosses + partialVolume constraint via null adjoint solver, 4 cycles); exercises: constrained update methods SQP, ISQP, MMA, nullSpace, constraintProjection
+cd "${0%/*}" || exit 1
+blockMesh
+
+rm -rf 0 && cp -r 0.orig 0
+cp variants/SQP/system/updateMethod system/updateMethod
+adjointOptimisationFoam
+rm -f optimisation/CPUcost
+mkdir -p runs/SQP && mv [1-9]* optimisation runs/SQP/
+
+rm -rf 0 && cp -r 0.orig 0
+cp variants/ISQP/system/updateMethod system/updateMethod
+adjointOptimisationFoam
+rm -f optimisation/CPUcost
+mkdir -p runs/ISQP && mv [1-9]* optimisation runs/ISQP/
+
+rm -rf 0 && cp -r 0.orig 0
+cp variants/MMA/system/updateMethod system/updateMethod
+adjointOptimisationFoam
+rm -f optimisation/CPUcost
+mkdir -p runs/MMA && mv [1-9]* optimisation runs/MMA/
+
+rm -rf 0 && cp -r 0.orig 0
+cp variants/nullSpace/system/updateMethod system/updateMethod
+adjointOptimisationFoam
+rm -f optimisation/CPUcost
+mkdir -p runs/nullSpace && mv [1-9]* optimisation runs/nullSpace/
+
+rm -rf 0 && cp -r 0.orig 0
+cp variants/constraintProjection/system/updateMethod system/updateMethod
+adjointOptimisationFoam
+rm -f optimisation/CPUcost
+mkdir -p runs/constraintProjection && mv [1-9]* optimisation runs/constraintProjection/

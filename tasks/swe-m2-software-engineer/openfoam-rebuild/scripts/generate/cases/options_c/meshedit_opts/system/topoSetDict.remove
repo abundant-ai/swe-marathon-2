@@ -1,0 +1,33 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      topoSetDict;
+}
+
+actions
+(
+    {
+        name    block2x2;
+        type    cellSet;
+        action  new;
+        source  boxToCell;
+        box     (0.02 0.02 -1) (0.05 0.05 1);
+    }
+    {
+        name    blockFaces;
+        type    faceSet;
+        action  new;
+        source  cellToFace;
+        set     block2x2;
+        option  both;
+    }
+    {
+        name    oneFace;
+        type    faceSet;
+        action  new;
+        source  boxToFace;
+        box     (0.065 0.07 -1) (0.07 0.08 1);
+    }
+);

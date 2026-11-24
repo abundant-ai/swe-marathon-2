@@ -1,0 +1,4 @@
+! PROSTAR input for a 2-table box: table 1 fluid, table 2 solid
+ctable 1 fluid ,,,,,,
+ctable 2 solid ,,,,,,
+! end

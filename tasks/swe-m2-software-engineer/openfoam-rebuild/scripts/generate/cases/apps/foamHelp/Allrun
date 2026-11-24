@@ -1,0 +1,12 @@
+#!/bin/bash
+# from: incompressible/icoFoam/cavity/cavity; exercises: foamHelp boundary (-field, -constraint), functionObject, solver, and error paths (missing field, -fixedValue)
+cd "${0%/*}" || exit 1
+blockMesh
+foamHelp boundary -field U
+foamHelp boundary -field p
+foamHelp boundary -constraint
+foamHelp boundary
+foamHelp functionObject
+foamHelp solver -read
+foamHelp boundary -field k || true
+foamHelp boundary -field p -fixedValue || true

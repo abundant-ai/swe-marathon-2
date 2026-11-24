@@ -1,0 +1,6 @@
+#!/bin/bash
+# from: incompressible/icoFoam/cavity/cavity + hand-written closed surfaces (STL box, OBJ octahedron); exercises: insideCells cellSet from closed surface, two surface formats
+cd "${0%/*}" || exit 1
+blockMesh
+insideCells constant/triSurface/box.stl insideBox
+insideCells constant/triSurface/octa.obj insideOcta

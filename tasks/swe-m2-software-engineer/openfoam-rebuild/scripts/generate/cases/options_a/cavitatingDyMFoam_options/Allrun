@@ -1,0 +1,21 @@
+#!/bin/bash
+# from: multiphase/cavitatingFoam/RAS/throttle (coarsened, solidBody oscillatingLinearMotion); exercises: cavitatingDyMFoam options -noFunctionObjects, -postProcess (-func/-funcs/-latestTime/-time/-noZero), -parallel; errors: unsupported -dry-run, nonexistent/bad -time, -case noSuchDir, unknown dynamicFvMesh/motion function/compressibility model, missing psil
+cd "${0%/*}" || exit 1
+blockMesh
+cavitatingDyMFoam -noFunctionObjects
+cavitatingDyMFoam
+cavitatingDyMFoam -postProcess -func 'mag(U)' -latestTime
+cavitatingDyMFoam -postProcess -funcs '(mag(U) components(U))' -time 2.5e-07
+cavitatingDyMFoam -postProcess -func 'magSqr(U)' -noZero
+cavitatingDyMFoam -postProcess -func 'mag(U)' -time 99 || true
+cavitatingDyMFoam -postProcess -func 'mag(U)' -time abc || true
+cavitatingDyMFoam -dry-run || true
+cavitatingDyMFoam -case noSuchDir || true
+decomposePar
+mpirun --oversubscribe -np 2 cavitatingDyMFoam -parallel
+rm -rf 0.* [1-9]*
+for v in unknownDynamicMesh unknownMotionFunction missingPsil unknownCompressibilityModel; do
+    cp -r variants/$v/. .
+    cavitatingDyMFoam || true
+    cp -r variants/orig/. .
+done

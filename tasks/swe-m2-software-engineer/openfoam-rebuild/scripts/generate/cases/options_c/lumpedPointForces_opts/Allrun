@@ -1,0 +1,12 @@
+#!/bin/bash
+# from: incompressible/lumpedPointMotion/building/steady (blockMesh box with a building hole instead of snappy); exercises: lumpedPointForces time selection (-time single/range, -noZero, -constant) with -vtk, constant time without p field; errors: nonexistent region, missing system/lumpedPointMovement
+cd "${0%/*}" || exit 1
+blockMesh
+simpleFoam
+lumpedPointForces -time 0
+lumpedPointForces -noZero -vtk
+lumpedPointForces -constant -time 1:2
+lumpedPointForces -region noSuchRegion || true
+mv system/lumpedPointMovement system/lumpedPointMovement.off
+lumpedPointForces -latestTime || true
+mv system/lumpedPointMovement.off system/lumpedPointMovement

@@ -1,0 +1,4 @@
+#!/bin/bash
+# from: multiphase/cavitatingFoam/RAS/throttle (coarsened, no refineMesh); exercises: cavitatingDyMFoam with dynamicMotionSolverFvMesh solidBody oscillatingLinearMotion, correctPhi/pcorr
+blockMesh
+cavitatingDyMFoam

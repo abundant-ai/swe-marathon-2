@@ -1,0 +1,36 @@
+#!/bin/bash
+# from: heatTransfer/overBuoyantPimpleDyMFoam/movingBox (6 fixed steps); exercises: overBuoyantPimpleDyMFoam options -dry-run -dry-run-write -noFunctionObjects -postProcess -func -latestTime -parallel -decomposeParDict, plus errors (-dry-run/-dry-run-write abort on the simplified mesh missing the moving cellZone, unknown -func, missing p_rgh field, unknown solidBodyMotionFunction, missing g, -parallel without processor dirs)
+blockMesh
+topoSet -dict system/topoSetDict
+subsetMesh box -patch hole -overwrite
+topoSet
+cp -r 0.orig 0
+setFields
+overBuoyantPimpleDyMFoam -dry-run || true
+rm -rf [1-9]* 0.[0-9]* postProcessing
+overBuoyantPimpleDyMFoam -dry-run-write || true
+rm -rf [1-9]* 0.[0-9]* postProcessing
+overBuoyantPimpleDyMFoam
+overBuoyantPimpleDyMFoam -postProcess -func 'mag(U)' -latestTime
+overBuoyantPimpleDyMFoam -postProcess -func noSuchFunction -latestTime || true
+rm -rf [1-9]* 0.[0-9]* postProcessing
+overBuoyantPimpleDyMFoam -noFunctionObjects
+rm -rf [1-9]* 0.[0-9]* postProcessing
+overBuoyantPimpleDyMFoam -parallel || true
+mv 0/p_rgh 0/p_rgh.off
+overBuoyantPimpleDyMFoam || true
+mv 0/p_rgh.off 0/p_rgh
+mv constant/g constant/g.off
+overBuoyantPimpleDyMFoam || true
+mv constant/g.off constant/g
+mv constant/dynamicMeshDict constant/dynamicMeshDict.orig
+sed 's/oscillatingLinearMotion;/noSuchMotion;/' constant/dynamicMeshDict.orig > constant/dynamicMeshDict
+overBuoyantPimpleDyMFoam || true
+mv constant/dynamicMeshDict.orig constant/dynamicMeshDict
+rm -rf [1-9]* 0.[0-9]* postProcessing
+decomposePar
+mpirun --oversubscribe -np 2 overBuoyantPimpleDyMFoam -parallel
+reconstructPar -latestTime
+rm -rf [1-9]* 0.[0-9]*
+decomposePar -force -decomposeParDict system/decomposeParDict.hier
+mpirun --oversubscribe -np 2 overBuoyantPimpleDyMFoam -parallel -decomposeParDict system/decomposeParDict.hier

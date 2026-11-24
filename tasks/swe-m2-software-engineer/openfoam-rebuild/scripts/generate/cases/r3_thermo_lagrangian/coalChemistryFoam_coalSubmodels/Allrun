@@ -1,0 +1,20 @@
+#!/bin/bash
+# from: lagrangian/coalChemistryFoam/simplifiedSiwek (12x10 mesh, 10 fixed steps); exercises: coal devolatilisation model singleKineticRateDevolatilisation, char surface reaction models COxidationDiffusionLimitedRate, COxidationHurtMitchell, COxidationIntrinsicRate, COxidationMurphyShaddix (no Bird correction) (one coalChemistryFoam run each)
+cd "${0%/*}" || exit
+cp -r base/0.orig base/0
+blockMesh -case base
+topoSet -case base
+cp -r base singleKineticRate_diffusionLimited
+foamDictionary -entry subModels/devolatilisationModel -set singleKineticRateDevolatilisation singleKineticRate_diffusionLimited/constant/coalCloud1Properties
+foamDictionary -entry subModels/surfaceReactionModel -set COxidationDiffusionLimitedRate singleKineticRate_diffusionLimited/constant/coalCloud1Properties
+coalChemistryFoam -case singleKineticRate_diffusionLimited
+cp -r base HurtMitchell
+foamDictionary -entry subModels/surfaceReactionModel -set COxidationHurtMitchell HurtMitchell/constant/coalCloud1Properties
+coalChemistryFoam -case HurtMitchell
+cp -r base intrinsicRate
+foamDictionary -entry subModels/surfaceReactionModel -set COxidationIntrinsicRate intrinsicRate/constant/coalCloud1Properties
+coalChemistryFoam -case intrinsicRate
+cp -r base MurphyShaddix
+foamDictionary -entry subModels/surfaceReactionModel -set COxidationMurphyShaddix MurphyShaddix/constant/coalCloud1Properties
+foamDictionary -entry subModels/RanzMarshallCoeffs/BirdCorrection -set off MurphyShaddix/constant/coalCloud1Properties
+coalChemistryFoam -case MurphyShaddix

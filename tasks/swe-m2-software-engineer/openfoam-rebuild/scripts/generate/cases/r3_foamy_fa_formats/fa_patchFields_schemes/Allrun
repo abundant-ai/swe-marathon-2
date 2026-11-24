@@ -1,0 +1,29 @@
+#!/bin/bash
+# from: finiteArea/surfactantFoam/planeTransport (endTime 0.6); exercises: faPatchFields uniformFixedValue, mixed, fixedGradient, zeroGradient, uniformMixed, uniformFixedGradient (scalar), slip (vector); faSchemes gradSchemes edgeLimited/faceLimited/leastSquares, div Gauss upwind/linearUpwind/leastSquares/blended, interpolation skewCorrected linear, lnGrad limited/uncorrected
+cd "${0%/*}" || exit 1
+D=system/finite-area/faSchemes
+blockMesh
+makeFaMesh
+mkdir -p 0/finite-area && cp 0.orig/finite-area/Us 0/finite-area/
+cp 0.orig/finite-area/Cs.A 0/finite-area/Cs
+foamDictionary -entry gradSchemes/default -set "edgeLimited Gauss linear 1" $D
+foamDictionary -entry divSchemes/"div(phis,Cs)" -set "Gauss upwind phis" $D
+foamDictionary -entry lnGradSchemes/default -set "limited corrected 0.5" $D
+surfactantFoam
+mkdir -p run_A1 && mv 0.2 0.4 0.6 run_A1/
+foamDictionary -entry gradSchemes/default -set "faceLimited leastSquares 0.5" $D
+foamDictionary -entry divSchemes/"div(phis,Cs)" -set "Gauss linearUpwind grad(Cs)" $D
+foamDictionary -entry interpolationSchemes/default -set "skewCorrected linear" $D
+surfactantFoam
+mkdir -p run_A2 && mv 0.2 0.4 0.6 run_A2/
+cp 0.orig/finite-area/Cs.B 0/finite-area/Cs
+foamDictionary -entry gradSchemes/default -set "leastSquares" $D
+foamDictionary -entry divSchemes/"div(phis,Cs)" -set "Gauss leastSquares" $D
+foamDictionary -entry interpolationSchemes/default -set linear $D
+foamDictionary -entry lnGradSchemes/default -set uncorrected $D
+foamDictionary -entry laplacianSchemes/"laplacian(Ds,Cs)" -set "Gauss linear uncorrected" $D
+surfactantFoam
+mkdir -p run_B1 && mv 0.2 0.4 0.6 run_B1/
+foamDictionary -entry divSchemes/"div(phis,Cs)" -set "Gauss blended 0.7" $D
+surfactantFoam
+mkdir -p run_B2 && mv 0.2 0.4 0.6 run_B2/

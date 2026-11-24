@@ -1,0 +1,23 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      postProcessDict;
+}
+
+functions
+{
+    zetaMinMax
+    {
+        type            fieldMinMax;
+        libs            (fieldFunctionObjects);
+        fields          (zeta p_gh);
+    }
+    magU
+    {
+        type            mag;
+        libs            (fieldFunctionObjects);
+        field           U;
+    }
+}

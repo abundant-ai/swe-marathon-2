@@ -1,0 +1,23 @@
+#!/bin/bash
+# from: electromagnetics/mhdFoam/hartmann (20x8 mesh, 10 steps); exercises: mhdFoam options -dry-run, -dry-run-write, -noFunctionObjects, -postProcess (-func -latestTime -time -noZero), -parallel; errors: missing sigma, unknown B patchField type, nonexistent time, -case noSuchDir
+cd "${0%/*}" || exit 1
+cp -r 0.orig 0
+blockMesh
+mhdFoam -dry-run
+mhdFoam -dry-run-write
+rm -rf 0.005
+mhdFoam -noFunctionObjects
+mhdFoam
+mhdFoam -postProcess -func 'mag(B)' -latestTime
+mhdFoam -postProcess -func sample -noZero
+mhdFoam -postProcess -func 'div(phiB)' -time 0.025
+decomposePar
+mpirun --oversubscribe -np 2 mhdFoam -parallel
+mhdFoam -postProcess -func 'mag(B)' -time 99 || true
+mhdFoam -case noSuchDir || true
+cp -r variants/missingSigma/. .
+mhdFoam || true
+cp -r variants/orig/. .
+cp -r variants/unknownBCB/. .
+mhdFoam || true
+cp -r variants/orig/. .

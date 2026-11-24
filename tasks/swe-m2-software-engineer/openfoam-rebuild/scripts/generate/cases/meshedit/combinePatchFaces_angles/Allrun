@@ -1,0 +1,7 @@
+#!/bin/bash
+# from: scratch (skewed single-block blockMesh, one default patch); exercises: combinePatchFaces merging same-cell patch faces, featureAngle, -concaveAngle, -meshQuality, -overwrite
+blockMesh
+combinePatchFaces 45
+combinePatchFaces -concaveAngle 10 120
+combinePatchFaces -meshQuality -overwrite 120
+checkMesh -latestTime

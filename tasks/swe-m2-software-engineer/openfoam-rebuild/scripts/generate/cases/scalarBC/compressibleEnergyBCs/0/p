@@ -1,0 +1,41 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       volScalarField;
+    object      p;
+}
+
+dimensions      [1 -1 -2 0 0 0 0];
+internalField   uniform 100000;
+boundaryField
+{
+    inlet
+    {
+        type            totalPressure;
+        p0              uniform 100010;
+        value           uniform 100010;
+    }
+    outlet
+    {
+        type            fixedValue;
+        value           uniform 100000;
+    }
+    "(bottom|top)"
+    {
+        type            zeroGradient;
+    }
+    "ami.*"
+    {
+        type            cyclicAMI;
+        value           uniform 100000;
+    }
+    "cyc.*"
+    {
+        type            cyclic;
+    }
+    frontAndBack
+    {
+        type            empty;
+    }
+}

@@ -1,0 +1,4 @@
+#!/bin/bash
+# from: scratch; exercises: U BCs fixedProfile scaledFixedValue exprFixedValue swirlFlowRateInletVelocity swirlInletVelocity matchedFlowRateOutletVelocity uniformInletOutlet fixedMeanOutletInlet partialSlip directionMixed exprMixed uniformFixedGradient
+blockMesh
+simpleFoam

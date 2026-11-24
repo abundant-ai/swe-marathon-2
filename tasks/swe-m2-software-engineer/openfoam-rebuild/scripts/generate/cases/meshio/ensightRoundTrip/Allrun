@@ -1,0 +1,18 @@
+#!/bin/bash
+# from: incompressible/icoFoam/cavity (two-block, two cellZone variant) + hand-written gmsh mixed mesh; exercises: foamToEnsight binary/ascii geometry then ensightToFoam import (parts->patches, cellZone parts->cellZones, point merging), -scale, -mergeTol, -keepHandedness
+cd "${0%/*}" || exit 1
+blockMesh
+foamToEnsight -no-fields -no-cellZones -name ensBinary
+foamToEnsight -no-fields -ascii -no-boundary -name ensZones
+mv constant/polyMesh constant/polyMesh.orig
+ensightToFoam ensBinary/data/constant/geometry
+checkMesh
+mv constant/polyMesh mesh_binary
+ensightToFoam -keepHandedness -mergeTol 1e-6 ensZones/data/constant/geometry
+checkMesh
+mv constant/polyMesh mesh_zones
+gmshToFoam gmshMixed.msh
+foamToEnsight -no-fields -ascii -no-cellZones -name ensMixed
+mv constant/polyMesh mesh_gmsh
+ensightToFoam -scale 0.01 ensMixed/data/constant/geometry
+checkMesh

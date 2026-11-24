@@ -1,0 +1,5 @@
+#!/bin/bash
+# from: incompressible/simpleFoam/pitzDaily; exercises: scalar BCs nutURoughWallFunction nutTabulatedWallFunction atmNutWallFunction atmNutUWallFunction kLowReWallFunction rotatingTotalPressure fixedFluxExtrapolatedPressure extrapolatedCalculated scaledFixedValue sorptionWallFunction (scalarTransport function object, libthermoTools)
+cd "${0%/*}" || exit 1
+blockMesh
+simpleFoam

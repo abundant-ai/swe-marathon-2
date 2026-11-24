@@ -1,0 +1,7 @@
+#!/bin/bash
+# from: scratch (box.obj from mesh/snappyHexMesh/insidePoints, simpleShapes/sphere); exercises: surfaceFind nearest face/vertex with default origin and -x/-y/-z
+cd "${0%/*}" || exit 1
+surfaceFind constant/triSurface/box.obj
+surfaceFind -x 2 -y 1 -z 1 constant/triSurface/box.obj
+surfaceFind -x 0.6 -y 0.3 -z 0.7 constant/triSurface/sphere.stl
+surfaceFind -z -5 constant/triSurface/sphere.stl

@@ -1,0 +1,31 @@
+#!/bin/bash
+# from: scratch (cube6.stl, block.obj from surface/meshConvert; hand-written odd.stl with unnamed/multi-word solids and upper-case keywords, broken.stl); exercises: surface format READERS by round trip: MeshedSurface readers (ac, gts, off, starcd, tri, vtk, nas/bdf, abaqus/abq, stlb, obj) via surfaceMeshConvert and triSurface readers (ac, gts, off, starcd, tri, vtk, nas, stlb, ftr) via surfaceConvert; ASCII STL edge cases; errors: write-only formats (vtp, smesh, x3d) as input, STL parse error
+cd "${0%/*}" || exit 1
+mkdir -p out back tri
+surfaceMeshConvert -tri constant/triSurface/block.obj out/blockTri.obj
+for ext in ac off starcd tri vtk nas abaqus stlb vtp smesh x3d
+do
+    surfaceMeshConvert constant/triSurface/block.obj out/block.$ext
+done
+surfaceMeshConvert out/blockTri.obj out/block.gts
+cp out/block.nas out/block.bdf
+cp out/block.abaqus out/block.abq
+for ext in ac gts off starcd tri vtk nas bdf abaqus abq stlb
+do
+    surfaceMeshConvert out/block.$ext back/block_$ext.obj
+done
+for ext in ac gts off tri vtk nas bdf stlb
+do
+    surfaceConvert out/block.$ext tri/block_$ext.obj
+done
+surfaceConvert -read-format starcd out/block.inp tri/block_starcd.obj
+surfaceConvert out/blockTri.obj out/block.ftr
+surfaceConvert out/block.ftr tri/block_ftr.obj
+surfaceConvert constant/triSurface/odd.stl tri/odd.obj
+surfaceMeshConvert constant/triSurface/odd.stl back/odd.vtk
+surfaceMeshConvert out/block.vtp back/block_vtp.obj || true
+surfaceMeshConvert out/block.smesh back/block_smesh.obj || true
+surfaceConvert out/block.x3d tri/block_x3d.obj || true
+surfaceConvert constant/triSurface/broken.stl tri/broken.obj || true
+surfaceMeshConvert constant/triSurface/broken.stl back/broken.obj || true
+sed -i -E 's/written [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}/written DATE/' out/* back/* tri/*

@@ -1,0 +1,48 @@
+#!/bin/bash
+# from: incompressible/icoFoam/cavity/cavity; exercises: foamDictionary queries and edits (-keywords, -entry, -value, -expand, -includes, -set, -add, -remove, -diff, -diff-etc) including missing keys, missing/malformed files and invalid option combinations
+foamDictionary system/controlDict -keywords
+foamDictionary system/fvSolution -keywords
+foamDictionary system/fvSolution -entry solvers -keywords
+foamDictionary system/fvSolution -entry solvers/p -keywords
+foamDictionary system/controlDict -entry endTime
+foamDictionary system/controlDict -entry endTime -value
+foamDictionary system/controlDict -entry noSuchKey || true
+foamDictionary system/controlDict -entry noSuchKey -value || true
+foamDictionary system/controlDict -entry noSuchDict/endTime || true
+foamDictionary system/fvSolution -entry solvers/p/solver -value
+foamDictionary system/fvSolution -entry solvers/pFinal
+foamDictionary system/fvSolution -entry PISO -value || true
+foamDictionary 0/U -entry boundaryField/movingWall/value -value
+foamDictionary 0/U -entry internalField
+foamDictionary 0/U -entry dimensions -value
+foamDictionary system/fvSolution -expand
+foamDictionary system/controlDict.includes -expand
+foamDictionary system/controlDict.includes -includes
+foamDictionary system/controlDict.includes -disableFunctionEntries -expand
+foamDictionary system/controlDict.includes -entry application -value
+foamDictionary system/controlDict -diff system/controlDict.other
+foamDictionary system/controlDict -diff system/noSuchFile || true
+foamDictionary system/fvSchemes -diff-etc templates/closedVolume/system/fvSchemes || true
+foamDictionary system/controlDict -diff-etc noSuchEtcFile || true
+foamDictionary system/noSuchFile || true
+foamDictionary system/noSuchFile -keywords || true
+foamDictionary system/controlDict.malformed -keywords || true
+foamDictionary system/controlDict.unbalanced -keywords || true
+foamDictionary constant/polyMesh/boundary -keywords || true
+foamDictionary constant/polyMesh/boundary -entry movingWall/nFaces -value || true
+foamDictionary system/controlDict -set 1 || true
+foamDictionary system/controlDict -remove || true
+foamDictionary system/controlDict -entry endTime -set 1
+foamDictionary system/controlDict -entry endTime -value
+foamDictionary system/controlDict -entry newKey -add 42
+foamDictionary system/controlDict -entry newKey -add 43
+foamDictionary system/controlDict -entry newDict/nested/deep -set yes || true
+foamDictionary system/controlDict -entry newDict -keywords || true
+foamDictionary system/controlDict -entry newKey -remove
+foamDictionary system/controlDict -entry newKey -remove || true
+foamDictionary system/controlDict -entry newKey -value || true
+foamDictionary 0/U -entry boundaryField/movingWall/value -set "uniform (2 0 0)"
+foamDictionary 0/U -entry boundaryField/movingWall
+foamDictionary system/fvSolution -entry solvers/p/tolerance -set 1e-08 -precision 3
+foamDictionary system/controlDict -entry endTime -set 1 -remove || true
+foamDictionary -entry endTime system/controlDict system/fvSchemes || true

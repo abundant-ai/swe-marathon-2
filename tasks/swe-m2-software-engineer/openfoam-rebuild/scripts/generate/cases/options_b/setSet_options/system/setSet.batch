@@ -1,0 +1,13 @@
+cellSet lower new boxToCell (0 0 0) (0.1 0.05 0.01)
+cellSet lower add boxToCell (0 0.06 0) (0.02 0.1 0.01)
+cellSet upper new cellToCell lower
+cellSet upper invert
+faceSet lowerFaces new cellToFace lower all
+faceSet lidFaces new patchToFace movingWall
+pointSet lidPoints new faceToPoint lidFaces all
+cellSet lower subset boxToCell (0 0 0) (0.06 0.1 0.01)
+list
+cellSet upper list
+cellZoneSet lowerZone new setToCellZone lower
+faceZoneSet lidZone new setsToFaceZone lidFaces lower
+help

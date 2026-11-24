@@ -1,0 +1,6 @@
+#!/bin/bash
+# from: compressible/rhoPimpleFoam/RAS/cavity (turned into a 2D duct); exercises: fvOptions heatExchangerSource (effectivenessTable and referenceTemperature models)
+cd "${0%/*}" || exit 1
+blockMesh
+topoSet
+rhoPimpleFoam

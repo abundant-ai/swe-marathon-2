@@ -1,0 +1,12 @@
+FoamFile { version 2.0; format ascii; class dictionary; object fvOptions; }
+heater
+{
+    type            noSuchFvOptionType;
+    selectionMode   points;
+    points          ((5 1 5));
+    volumeMode      absolute;
+    sources
+    {
+        h           (500 0);
+    }
+}

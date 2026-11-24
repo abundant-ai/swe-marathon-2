@@ -1,0 +1,5 @@
+#!/bin/bash
+# from: scratch (5x5x5 box, velocityLaplacian with inverseDistance diffusivity); exercises: moveDynamicMesh with pointMotionU BCs angularOscillatingVelocity and oscillatingVelocity
+blockMesh
+moveDynamicMesh
+checkMesh -latestTime

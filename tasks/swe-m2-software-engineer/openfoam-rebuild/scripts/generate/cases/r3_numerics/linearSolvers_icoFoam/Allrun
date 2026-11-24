@@ -1,0 +1,25 @@
+#!/bin/bash
+# from: incompressible/icoFoam/cavity/cavity (12x12, 10 steps); exercises: lduMatrix solvers/preconditioners/smoothers not yet used: PPCG, PPCR, FPCG, preconditioner none/diagonal/FDIC, smoothers DILUGaussSeidel, nonBlockingGaussSeidel, DILU, FDIC, DICGaussSeidel, GAMG (algebraicPair and dummy agglomeration, interpolateCorrection, directSolveCoarsest, scaleCorrection off, asymmetric), GAMG preconditioner dict, coupled LduMatrix solvers PBiCICG (DILU/diagonal/none), SmoothSolver (GaussSeidel), diagonal
+blockMesh
+cp -r variants/PPCG_DILUGaussSeidel/. .
+icoFoam
+cp -r variants/PPCR_nonBlockingGS/. .
+icoFoam
+cp -r variants/FPCG_PBiCGdiagonal/. .
+icoFoam
+cp -r variants/PCGnone_PBiCGStabnone/. .
+icoFoam
+cp -r variants/PCGdiagonal_smoothDILU/. .
+icoFoam
+cp -r variants/smoothFDIC_GAMGasym/. .
+icoFoam
+cp -r variants/GAMGalgebraicPair_coupledPBiCICG/. .
+icoFoam
+cp -r variants/GAMGdummy_coupledPBiCICGdiag/. .
+icoFoam
+cp -r variants/GAMGnoScale_coupledPBiCICGnone/. .
+icoFoam
+cp -r variants/PCGGAMG_coupledSmooth/. .
+icoFoam
+cp -r variants/PBiCGStabFDIC_coupledDiagonal/. .
+icoFoam

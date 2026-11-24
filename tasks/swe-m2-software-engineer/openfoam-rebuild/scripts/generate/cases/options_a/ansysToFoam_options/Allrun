@@ -1,0 +1,9 @@
+#!/bin/bash
+# from: basic/laplacianFoam/flange (hand-written 2-hex ANSYS file instead of flange.ans); exercises: ansysToFoam plain, -scale, -case; errors: missing file, missing argument, bad -scale value, truncated file
+ansysToFoam two.ans
+ansysToFoam -case scaled two.ans -scale 2.5
+ansysToFoam noSuchFile.ans || true
+ansysToFoam || true
+ansysToFoam two.ans -scale abc || true
+ansysToFoam -case scaled truncated.ans || true
+ansysToFoam two.ans -case noSuchDir || true

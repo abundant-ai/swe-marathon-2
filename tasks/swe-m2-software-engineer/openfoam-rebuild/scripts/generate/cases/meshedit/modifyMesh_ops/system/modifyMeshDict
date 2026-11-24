@@ -1,0 +1,36 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      modifyMeshDict;
+}
+
+// Boundary cutting: move a boundary point, split boundary edges, triangulate a boundary face
+pointsToMove
+(
+    ((1 1 1) (1.05 1.04 1.03))
+);
+
+edgesToSplit
+(
+    ((0.5 0 0) (0.45 0 0))
+    ((1 0.5 1) (1 0.5 1))
+);
+
+facesToTriangulate
+(
+    ((0.5 0.5 1) (0.52 0.48 1.05))
+);
+
+facesToSplit
+(
+);
+
+cellsToSplit
+(
+);
+
+edgesToCollapse
+(
+);

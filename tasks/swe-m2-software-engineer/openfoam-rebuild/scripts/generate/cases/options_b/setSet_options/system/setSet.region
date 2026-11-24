@@ -1,0 +1,2 @@
+cellSet half new boxToCell (0 0 0) (0.05 0.1 0.01)
+faceSet halfFaces new cellToFace half all

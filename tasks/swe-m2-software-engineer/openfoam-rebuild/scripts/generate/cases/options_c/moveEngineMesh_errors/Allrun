@@ -1,0 +1,16 @@
+#!/bin/bash
+# from: combustion/XiEngineFoam/kivaTest (blockMesh box, as apps/moveEngineMesh); exercises: moveEngineMesh error handling: missing engineGeometry, unknown engineMesh type (valid-type list), missing rpm entry, missing stroke (silently 0: static piston), then a valid layered run
+cd "${0%/*}" || exit 1
+blockMesh
+cp constant/engineGeometry constant/engineGeometry.orig
+rm constant/engineGeometry
+moveEngineMesh || true
+cp variants/engineGeometry.badMesh constant/engineGeometry
+moveEngineMesh || true
+cp variants/engineGeometry.noRpm constant/engineGeometry
+moveEngineMesh || true
+cp variants/engineGeometry.noStroke constant/engineGeometry
+moveEngineMesh
+mkdir -p noStroke && mv -- -175 -170 noStroke/
+cp constant/engineGeometry.orig constant/engineGeometry
+moveEngineMesh
