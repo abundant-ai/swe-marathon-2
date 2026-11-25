@@ -1,0 +1,109 @@
+{
+ "builds": [
+  {
+   "sha256": "8e5f92bf0747815d02f99dc21a804071095b1a26d8afc967d7c873eb70b8460f",
+   "size": 46956112,
+   "source": "GitHub release v0.1.95: bpl-linux-x86_64"
+  },
+  {
+   "sha256": "64140ee0809c39bb257e5a896b22be8f59cb6bd95e72b19c1a1b558c98455c9d",
+   "size": 35789184,
+   "source": "GitHub release v0.1.95: bpl-linux-arm64"
+  },
+  {
+   "sha256": "6a2dc7995b0518b2a198b63344eb3fce3a6c45848f2790d9c220a3f661d23449",
+   "size": 35594624,
+   "source": "GitHub release v0.1.95: bpl-macos-arm64"
+  },
+  {
+   "sha256": "4427c6c93c17c0cb89dfa823b7f0e519ae07ddd0fdc141995a11ce749a395a20",
+   "size": 31561248,
+   "source": "PyPI basedpl-0.1.95-cp311-cp311-macosx_15_0_arm64.whl: basedpl/_core.cpython-311-darwin.so"
+  },
+  {
+   "sha256": "6a2dc7995b0518b2a198b63344eb3fce3a6c45848f2790d9c220a3f661d23449",
+   "size": 35594624,
+   "source": "PyPI basedpl-0.1.95-cp311-cp311-macosx_15_0_arm64.whl: basedpl-0.1.95.data/scripts/bpl"
+  },
+  {
+   "sha256": "eac356868be6a3ffce063e0047006577f5c7751cb0af71d1a98e64c90fb90b99",
+   "size": 33299728,
+   "source": "PyPI basedpl-0.1.95-cp311-cp311-manylinux2014_aarch64.manylinux_2_17_aarch64.whl: basedpl/_core.cpython-311-aarch64-linux-gnu.so"
+  },
+  {
+   "sha256": "64140ee0809c39bb257e5a896b22be8f59cb6bd95e72b19c1a1b558c98455c9d",
+   "size": 35789184,
+   "source": "PyPI basedpl-0.1.95-cp311-cp311-manylinux2014_aarch64.manylinux_2_17_aarch64.whl: basedpl-0.1.95.data/scripts/bpl"
+  },
+  {
+   "sha256": "e584191e04acedfd628d8ad109d5a24d190bc1f03c668d8b0d712c634654a1ec",
+   "size": 44301912,
+   "source": "PyPI basedpl-0.1.95-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl: basedpl/_core.cpython-311-x86_64-linux-gnu.so"
+  },
+  {
+   "sha256": "8e5f92bf0747815d02f99dc21a804071095b1a26d8afc967d7c873eb70b8460f",
+   "size": 46956112,
+   "source": "PyPI basedpl-0.1.95-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl: basedpl-0.1.95.data/scripts/bpl"
+  },
+  {
+   "sha256": "e098556197ef7cbd7632668b11cf9d314cf020c1ea8f11366163f8b63f366dec",
+   "size": 31544432,
+   "source": "PyPI basedpl-0.1.95-cp312-cp312-macosx_15_0_arm64.whl: basedpl/_core.cpython-312-darwin.so"
+  },
+  {
+   "sha256": "6a2dc7995b0518b2a198b63344eb3fce3a6c45848f2790d9c220a3f661d23449",
+   "size": 35594624,
+   "source": "PyPI basedpl-0.1.95-cp312-cp312-macosx_15_0_arm64.whl: basedpl-0.1.95.data/scripts/bpl"
+  },
+  {
+   "sha256": "d7b03ce55e66576c7bc1ca2509e222f0635881cf3c8ffff5a4af7f44f347aeca",
+   "size": 33234192,
+   "source": "PyPI basedpl-0.1.95-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.whl: basedpl/_core.cpython-312-aarch64-linux-gnu.so"
+  },
+  {
+   "sha256": "64140ee0809c39bb257e5a896b22be8f59cb6bd95e72b19c1a1b558c98455c9d",
+   "size": 35789184,
+   "source": "PyPI basedpl-0.1.95-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.whl: basedpl-0.1.95.data/scripts/bpl"
+  },
+  {
+   "sha256": "c57e202e257ead73d4cb4ad59979d89d4f8e04b46c909599dadbc2d3619bce23",
+   "size": 44293304,
+   "source": "PyPI basedpl-0.1.95-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl: basedpl/_core.cpython-312-x86_64-linux-gnu.so"
+  },
+  {
+   "sha256": "8e5f92bf0747815d02f99dc21a804071095b1a26d8afc967d7c873eb70b8460f",
+   "size": 46956112,
+   "source": "PyPI basedpl-0.1.95-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl: basedpl-0.1.95.data/scripts/bpl"
+  },
+  {
+   "sha256": "c065fa9a60760f55e27a02ef2518b42bf22d630150e625239b372f1b76f239f8",
+   "size": 31544688,
+   "source": "PyPI basedpl-0.1.95-cp313-cp313-macosx_15_0_arm64.whl: basedpl/_core.cpython-313-darwin.so"
+  },
+  {
+   "sha256": "6a2dc7995b0518b2a198b63344eb3fce3a6c45848f2790d9c220a3f661d23449",
+   "size": 35594624,
+   "source": "PyPI basedpl-0.1.95-cp313-cp313-macosx_15_0_arm64.whl: basedpl-0.1.95.data/scripts/bpl"
+  },
+  {
+   "sha256": "93809fb3c3f5bbb0f04da5c96e7f1466ddc62ccbd775f7729238eeff15fc3241",
+   "size": 33234144,
+   "source": "PyPI basedpl-0.1.95-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.whl: basedpl/_core.cpython-313-aarch64-linux-gnu.so"
+  },
+  {
+   "sha256": "64140ee0809c39bb257e5a896b22be8f59cb6bd95e72b19c1a1b558c98455c9d",
+   "size": 35789184,
+   "source": "PyPI basedpl-0.1.95-cp313-cp313-manylinux2014_aarch64.manylinux_2_17_aarch64.whl: basedpl-0.1.95.data/scripts/bpl"
+  },
+  {
+   "sha256": "97250fd7900483e5171f5eaa4dc977247ba2a50823fae334206f932843ae7d7e",
+   "size": 44291624,
+   "source": "PyPI basedpl-0.1.95-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.whl: basedpl/_core.cpython-313-x86_64-linux-gnu.so"
+  },
+  {
+   "sha256": "8e5f92bf0747815d02f99dc21a804071095b1a26d8afc967d7c873eb70b8460f",
+   "size": 46956112,
+   "source": "PyPI basedpl-0.1.95-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.whl: basedpl-0.1.95.data/scripts/bpl"
+  }
+ ]
+}

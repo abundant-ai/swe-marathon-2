@@ -1,0 +1,192 @@
+#!/bin/sh
+# Runs as root at session setup, before and after the unprivileged user's tools install themselves. It sets aside disk
+# room and spare inodes that a later maintenance step reclaims once the session has ended, so that however full the disk
+# is left, that step can still do its work, and it records how much was free, and the time, when the session began.
+# Each run also leaves one process of root's behind, detached, in place of the one an earlier run left, so that the
+# last run's remains: /var/lib/scratch/holder.py, below, which stops the user's processes with SIGSTOP, and ends none,
+# once the session's limit has passed, counted from the start of the session's first process.
+mkdir -p /var/lib/scratch/inodes && chmod 0700 /var/lib/scratch
+if [ ! -e /var/lib/scratch/room ]; then
+    fallocate -l 64M /var/lib/scratch/room 2>/dev/null || head -c 67108864 /dev/zero > /var/lib/scratch/room 2>/dev/null
+fi
+for spare in $(seq 1 64); do [ -e "/var/lib/scratch/inodes/$spare" ] || : > "/var/lib/scratch/inodes/$spare"; done
+stat -f -c '%a %S %d' /tmp > /var/lib/scratch/free-at-start 2>/dev/null
+date +%s > /var/lib/scratch/turn-started 2>/dev/null
+cat > /var/lib/scratch/holder.py <<'EOF'
+"""Stops the user's processes with SIGSTOP, and ends none, once the session's limit has passed. The limit counts from
+the start of the session's first process: the first process of the user that begins after this one, its parent not the
+user's (what set-up left, and what that forks, does not count), its start read from /proc in seconds since boot. Once
+LIMIT_SECONDS plus MARGIN_SECONDS have passed since then, and, where the network's return can be seen (HOSTS resolved
+at the start, while names resolve, then tried by address), not before one of them answers again, it repeats `kill
+-STOP -1` as the user until no process of the user is running (states R, S, D; for STOP_SECONDS at most), records
+when, against what, in how many rounds and how many processes in STATE/stopped, and exits. With no such process it
+does nothing. Once the maintenance step that collects the session has begun (STATE/collect-began, the first thing
+that step writes), it stops nothing and exits; that step also ends it."""
+import json
+import os
+import pwd
+import socket
+import subprocess
+import threading
+import time
+
+STATE, PROC, USER = "/var/lib/scratch", "/proc", "dev"
+LIMIT_SECONDS, MARGIN_SECONDS, STOP_SECONDS = 34560, 2, 15
+HOSTS, PORT, CONNECT_SECONDS = ("pypi.org", "github.com"), 443, 0.3
+POLL_SECONDS, STEP_SECONDS = 0.5, 30  # between looks for the first process; the longest single sleep after it
+
+
+def begun():
+    return os.path.exists(os.path.join(STATE, "collect-began"))
+
+
+def uptime():
+    """Seconds since boot, or None."""
+    try:
+        with open(os.path.join(PROC, "uptime")) as text:
+            return float(text.read().split()[0])
+    except (OSError, ValueError, IndexError):
+        return None
+
+
+def user_ids(pid):
+    with open(os.path.join(PROC, str(pid), "status"), errors="replace") as text:
+        fields = dict(line.split(":", 1) for line in text.read().splitlines() if ":" in line)
+    return {int(value) for value in fields["Uid"].split()}
+
+
+def parent_and_start(pid):
+    """A process's parent and its start in seconds since boot (fields 4 and 22 of its stat)."""
+    with open(os.path.join(PROC, str(pid), "stat"), "rb") as text:
+        fields = text.read().rsplit(b")", 1)[1].split()
+    return int(fields[1]), int(fields[19]) / os.sysconf("SC_CLK_TCK")
+
+
+def first_process(uid, since):
+    """The pid and start of the earliest process of the user that began at `since` or later, its parent not the user's."""
+    found = None
+    for name in os.listdir(PROC):
+        if not name.isdigit():
+            continue
+        try:
+            if uid not in user_ids(name):
+                continue
+            parent, start = parent_and_start(name)
+            if start < since or (parent > 1 and uid in user_ids(parent)):
+                continue
+        except (OSError, KeyError, ValueError, IndexError):
+            continue
+        if found is None or start < found[1]:
+            found = (int(name), start)
+    return found
+
+
+def resolved():
+    """Up to two addresses of each host, resolved now; none where names do not resolve."""
+    addresses = []
+    for host in HOSTS:
+        try:
+            addresses += sorted({info[4][0] for info in socket.getaddrinfo(host, PORT, socket.AF_INET, socket.SOCK_STREAM)})[:2]
+        except OSError:
+            pass
+    return addresses
+
+
+def answers(addresses):
+    """Whether any of `addresses` accepts a connection within CONNECT_SECONDS, all tried at once."""
+    answered = []
+
+    def probe(address):
+        try:
+            with socket.create_connection((address, PORT), timeout=CONNECT_SECONDS):
+                answered.append(address)
+        except OSError:
+            pass
+
+    workers = [threading.Thread(target=probe, args=(address,), daemon=True) for address in addresses]
+    for worker in workers:
+        worker.start()
+    for worker in workers:
+        worker.join(CONNECT_SECONDS + 0.1)
+    return bool(answered)
+
+
+def wall(since_boot):
+    """The wall-clock time of a moment given in seconds since boot."""
+    now = uptime()
+    return round(time.time() - (now - since_boot), 3) if now is not None else None
+
+
+def users_processes(states=None):
+    pids = set()
+    for select in ("-u", "-U"):
+        done = subprocess.run(["pgrep", select, USER] + (["-r", states] if states else []), capture_output=True, text=True)
+        pids.update(done.stdout.split())
+    return pids
+
+
+def main():
+    with open(os.path.join(STATE, "holder.pid"), "w") as handle:
+        handle.write(f"{os.getpid()}\n")
+    try:
+        uid = pwd.getpwnam(USER).pw_uid
+    except KeyError:
+        return
+    since, addresses = uptime(), resolved()
+    found = None
+    while found is None:
+        if begun():
+            return
+        try:
+            found = first_process(uid, since) if since is not None else None
+        except OSError:
+            found = None
+        if found is None:
+            time.sleep(POLL_SECONDS)
+            since = uptime() if since is None else since
+    pid, start = found
+    due = start + LIMIT_SECONDS + MARGIN_SECONDS
+    while True:
+        if begun():
+            return
+        now = uptime()
+        if now is not None and now >= due:
+            break
+        time.sleep(min(STEP_SECONDS, due - now) if now is not None else STEP_SECONDS)
+    record = {"first_process": pid, "first_process_started": wall(start), "due": wall(due), "network_watched": bool(addresses)}
+    if addresses:  # the network comes back when the session's network policy ends
+        while not answers(addresses):
+            if begun():
+                return
+            time.sleep(0.05)
+        record["network_back"] = round(time.time(), 3)
+    record["at"], rounds = round(time.time(), 3), 0
+    while users_processes("R,S,D") and time.time() < record["at"] + STOP_SECONDS:
+        if begun():
+            return
+        subprocess.run(["setpriv", "--reuid", USER, "--regid", USER, "--clear-groups", "kill", "-STOP", "-1"], capture_output=True)
+        rounds += 1
+        time.sleep(0.05)
+    record.update(until=round(time.time(), 3), rounds=rounds, processes=len(users_processes()),
+                  still_running=len(users_processes("R,S,D")))
+    with open(os.path.join(STATE, "stopped"), "w") as handle:
+        json.dump(record, handle)
+
+
+main()
+EOF
+# The process an earlier run left is ended (it leads its own process group), then this run's started.
+holder=$(cat /var/lib/scratch/holder.pid 2>/dev/null)
+case "$holder" in
+    ''|*[!0-9]*) ;;
+    *) if ps -ww -o args= -p "$holder" 2>/dev/null | grep -q -F -- ' -I - hold'; then
+           kill -KILL -- "-$holder" 2>/dev/null || kill -KILL "$holder" 2>/dev/null
+       fi ;;
+esac
+if command -v setsid >/dev/null 2>&1; then
+    setsid nohup /usr/bin/python3 -I - hold < /var/lib/scratch/holder.py >/dev/null 2>&1 &
+else
+    nohup /usr/bin/python3 -I - hold < /var/lib/scratch/holder.py >/dev/null 2>&1 &
+fi
+echo $! > /var/lib/scratch/holder.pid  # at once, for a run that follows at once; it writes its own too, the same pid
+exit 0
