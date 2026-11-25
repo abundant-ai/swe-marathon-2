@@ -21,7 +21,9 @@ Needs, all made beforehand and none committed:
   the build was compiled from (`hardened_source`, in the solution's source/).
 
 Packaging stops if a private case holds a program the shipped documentation holds, or a
-near-copy of one (make_cases.leaks), or if the build's sha256 is not the one build.txt records.
+near-copy of one (make_cases.leaks), if a documented item in scope, or a read path of the
+file-read rule, has no case (scope_cases.missing), or if the build's sha256 is not the one build.txt
+records.
 
 Of the private cases and of build.txt, the bundle holds only what is read there (CASE_KEYS and
 PLAN_KEYS, by the verifier image; BUILD_KEYS, by mark.py). The generator's notes on each case
@@ -55,7 +57,7 @@ BUILD = TASK_ROOT / "experiment" / "build"
 EXCLUDED = {"__pycache__", ".pytest_cache", ".DS_Store", "experiment"}
 HARDENING = TASK_ROOT / "common" / "hardening"
 SHIPPED_TOOLS = ("mark.py", "smoke.sh")  # what of common/hardening both images use; the solution takes mark.py
-CASE_KEYS = ("argv", "files", "form", "id", "kind", "stdin")  # what the verifier image reads of a private case
+CASE_KEYS = ("argv", "files", "form", "id", "kind", "links", "outside", "stdin")  # what the verifier image reads of a private case
 PLAN_KEYS = ("unset", "variants")  # and of its "record" entry: the recorder's settling plan
 BUILD_KEYS = ("link", "sha256")  # what mark.py reads of build.txt: the link mode it reports and the sha256 it checks
 # Of upstream's files at the pinned commit, the ones the build of `bpl` reads, for the solution's source/: the
@@ -151,6 +153,10 @@ def collect() -> dict[str, bytes]:
     if found:
         raise ValueError(f"{len(found)} private cases hold a program the documentation shows: "
                          f"{', '.join(cases[int(index)]['id'] for index in found[:20])}")
+    import scope_cases  # noqa: PLC0415
+    absent = scope_cases.missing(cases, pages)
+    if absent:
+        raise ValueError(f"no private case uses {len(absent)} documented items in scope: {', '.join(absent[:20])}")
     content[f"{STEP}/tests/private/cases.json"] = shipped_cases(cases)
     for name, text in pages.items():
         content[f"environment/docs/{name}"] = text.encode("utf-8")

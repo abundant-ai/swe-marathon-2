@@ -361,6 +361,102 @@ def test_the_function_table_is_the_documentations_and_packaging_refuses_another(
     assert "bpl_text.function_table(bpl_text.documentation(checkout))" in (SCRIPTS / "function_table.py").read_text()
 
 
+COVERAGE_PAGES = {
+    "glyphs/plus.md": "# `+` — Conjugate / Add\n\nFunction. Keys: `+`. Hanzi: `正/加`\n",
+    "glyphs/reverse.md": "# `⌽` — Reverse / Rotate\n\nFunction. Keys: `Alt-%`. Hanzi: `转`\n",
+    "glyphs/tally.md": "# `≢` — Tally / Not match\n\nFunction. Keys: `Alt-8`. Hanzi: `数/异`\n",
+    "glyphs/times.md": "# `×` — Sign / Multiply\n\nFunction. Keys: `Alt--`. Hanzi: `号/乘`\n",
+    "glyphs/assign.md": "# `←` — Assign\n\nSyntax. Keys: `Alt-[`. Hanzi: `是`\n",
+    "glyphs/roll.md": "# `¿` — Roll / Deal\n\nFunction. Keys: `Alt-?`.\n",
+    "glyphs/quotes.md": "# `'` `\"` — Character and string literals\n\nSyntax.\n",
+    "glyphs/lamp.md": "# `⍝` — Comment\n\nComment.\n",
+    "system/path.md": "# `•path` — Paths\n\n`•path text` splits; `•path⁻` joins.\n",
+    "system/time.md": "# `•time` — Timing\n\nOut of scope.\n",
+    "system/constants.md": "# Constants and `$` names\n\n## `$t` and `$f`\n\n## `$a` — Alphabet\n",
+    "system/prefs.md": "# `•prefs` — Session settings\n\n| `box` | x | y |\n| `threads` | x | y |\n",
+}
+
+
+def test_every_documented_item_in_scope_and_every_read_path_has_a_case():
+    """Round 17, the v6 pre-trial audit's two must-fixes: in-scope functions and settings with no graded case, and a
+    file-read rule no case checked. scope_cases.documented_items lists what the manual puts in scope (each glyph page's
+    glyph, each system page's function and documented inverse, each `$` name and `•prefs` setting, `•prefs ⍬`, the two
+    `•host` names the instruction keeps, the worker's three requests, `]display`, `]dissect` and `⎕←`), less the
+    instruction's out-of-scope list (scope_cases.OUT_OF_SCOPE); scope_cases.read_items each read path (the program file,
+    `•nget`, `•load`) for each kind of path. scope_cases.missing names those no case uses: the cases the generator adds
+    leave none, packaging refuses a bundle with any, and where a local recording and upstream's checkout are at hand,
+    none of the recorded (graded) cases' items is missing either."""
+    found = scripts_call(textwrap.dedent(f"""
+        import json, scope_cases
+        pages = {COVERAGE_PAGES!r}
+        items = scope_cases.documented_items(pages)
+        cases = scope_cases.cases(7, pages)
+        def case(argv, files=None, links=None, stdin=None):
+            return {{"id": "x", "kind": "coverage", "argv": argv, "files": files or {{}}, "stdin": stdin, "links": links or {{}}}}
+        kinds = [scope_cases.read_kind(case(["a"], links={{"l": "../o/x", "m": "d/y", "n": "/etc/hosts"}}), path, base)
+                 for path, base in (("/proc/self/stat", ""), ("/sys", ""), ("/dev/null", ""), ("/etc/passwd", ""), ("../o/x", ""),
+                                    ("d/../../o", ""), ("l", ""), ("m", ""), ("n", ""), ("d/y", ""), ("y", ""), ("../y", "d"),
+                                    ("./y", "d"), ("-", ""))]
+        reads = sorted(scope_cases.reads(case(["../o/p.bpl"], {{"main.bpl": '•nget "/sys"\\n•load "d/m.bpl"'}})))
+        audited = ["system •nput", "system •path", "system •path⁻", "system •uuid", "system •normalize", "system •element",
+                   "system •xml", "system •xml⁻", "system •detach", "prefs ⍬", "prefs fns", "prefs dissect", "prefs hanzi_aliases",
+                   "glyph ⊘", "glyph ⍢", "glyph ⊽", "glyph ⍀", "system •ucs⁻", "system •edge", "system •special", 'host "version"',
+                   "prefs int", "prefs float", "prefs trees", "prefs width", "prefs batch", "system •literal⁻", "system •src"]
+        uncovered = [item for item in audited if not any(scope_cases.uses(c, item) for c in cases)]
+        unread = sorted(set(scope_cases.read_items()) - set().union(*(scope_cases.reads(c) for c in cases)))
+        forms = [form for form in scope_cases.missing(cases, {{}}) if form in ('"-" •nput', "•nget of a file")]
+        print(json.dumps([items, uncovered + unread + forms, sorted({{c["kind"] for c in cases}}), len(cases),
+                          scope_cases.MOST, kinds, reads, sorted(scope_cases.OUT_OF_SCOPE)]))
+    """))
+    items, missing, kinds, count, most, read_kinds, reads, out = found
+    assert items == sorted(["glyph +", "glyph ⌽", "glyph ≢", "glyph ×", "glyph ←", "glyph '", 'glyph "', "glyph ⍝", "system •path",
+                            "system •path⁻", "system •prefs", "constant $t", "constant $f", "constant $a", "prefs box", "prefs ⍬", 'host "args"',
+                            'host "version"', "worker code", "worker call", "worker bindings", "magic ]display",
+                            "magic ]dissect", "output ⎕←"]), items
+    assert "glyph ¿" not in items and "system •time" not in items and "prefs threads" not in items, "out of scope"
+    assert missing == [] and kinds == ["coverage", "sandbox"] and 60 <= count <= most, (missing, kinds, count)
+    assert read_kinds == ["/proc", "/sys", "/dev", "absolute", "climbs out", "climbs out", "link out", "link inside", "link out",
+                          "subdirectory", "here", "here", "subdirectory", None], read_kinds
+    assert reads == ["read program climbs out", "read •load subdirectory", "read •nget /sys"], reads
+    instruction = " ".join((STEP / "instruction.md").read_text().split())
+    scope = instruction[instruction.index("Out of scope:"):instruction.index("## Completion")]
+    for item in out:
+        name = item.split(" ", 1)[1].rstrip("⁻")
+        assert name.strip("•") in scope or name in ("•copy", "•rename", "•remove", "•mkdir", "•readdir", "•metadata"), item
+    package = (SCRIPTS / "package_step.py").read_text()
+    assert package.index("scope_cases.missing(cases, pages)") < package.index("= shipped_cases(cases)"), "packaging refuses a gap"
+    # The recorded cases themselves, where a local recording of the private cases and upstream's checkout are here
+    recordings = sorted((TASK / "experiment").glob("local-recording-*/kept.json"), key=lambda path: int(path.parent.name.split("-")[-1]))
+    checkout = TASK.parents[3] / ".cache-src" / "basedpl"
+    if recordings and (checkout / ".git").exists() and len(json.loads(recordings[-1].read_text())["cases"]) > 1700:
+        absent = scripts_call(textwrap.dedent(f"""
+            import json, bpl_text, scope_cases
+            from pathlib import Path
+            kept = json.loads(Path({str(recordings[-1])!r}).read_text(encoding="utf-8"))["cases"]
+            print(json.dumps(scope_cases.missing(kept, bpl_text.documentation(Path({str(checkout)!r})))))
+        """))
+        assert absent == [], (recordings[-1].parent.name, absent)
+
+
+def test_the_new_cases_come_after_every_other_case_and_change_none(tmp_path):
+    """Round 17 adds cases only. scope_cases.cases draws them from a generator of their own and make_cases numbers them
+    after every other case, so that the cases before them are those the generator gives without them, in the same
+    order, with the same ids and contents."""
+    root = upstream(tmp_path)
+    found = scripts_call(textwrap.dedent(f"""
+        import json, scope_cases, make_cases
+        from pathlib import Path
+        whole = make_cases.generate(Path({str(root)!r}), 5, 0.05)
+        scope_cases.cases = lambda seed, pages: []
+        alone = make_cases.generate(Path({str(root)!r}), 5, 0.05)
+        print(json.dumps([len(whole), len(alone), whole[:len(alone)] == alone, [c["id"] for c in whole[len(alone):]][:3],
+                          sorted({{c["kind"] for c in whole[len(alone):]}})]))
+    """))
+    whole, alone, same, first_ids, kinds = found
+    assert same and whole > alone and kinds == ["coverage", "sandbox"], found
+    assert first_ids == [f"P{alone + 1:05d}", f"P{alone + 2:05d}", f"P{alone + 3:05d}"], first_ids
+
+
 # ---------------------------------------------------------------- the verifier
 
 def run_verifier(tmp_path: Path, script: str, cases: list[dict], expected: dict, case_sec: float = 2,
@@ -407,6 +503,118 @@ def plain_cases(argvs: list[list[str]], kinds: list[str] | None = None) -> tuple
     for case, kind in zip(cases, kinds or []):
         case["kind"] = kind
     return cases, {case["id"]: {"exit": 0, "stdout": "ok\n"} for case in cases}
+
+
+READER = r"""#!/usr/bin/env python3
+# A stand-in for a build's file reads (round 17's sandbox checks): the program file holds lines "read PATH", and
+# each prints what PATH holds, or that it is refused. RULE: "rule" (the sandboxed build's: a file whose real path
+# lies under the working directory and outside /proc, /sys and /dev), "any" (every path) or "none" (no path).
+import os, sys
+rule = os.path.basename(os.path.dirname(os.path.abspath(__file__)))
+def allowed(path):
+    real, root = os.path.realpath(path), os.path.realpath(os.getcwd())
+    if rule == "any":
+        return True
+    if rule == "none":
+        return False
+    return real.startswith(root + os.sep) and not any(real == top or real.startswith(top + "/") for top in ("/proc", "/sys", "/dev"))
+def read(path):
+    if not allowed(path):
+        raise PermissionError("reads only files under its working directory")
+    with open(path, encoding="utf-8") as handle:
+        return handle.read()
+try:
+    program = read(sys.argv[1])
+except OSError as exc:
+    print(f"{sys.argv[1]}: {exc}", file=sys.stderr)
+    sys.exit(1)
+for line in program.splitlines():
+    if line.startswith("read "):
+        try:
+            print(repr(read(line[5:])[:40]))
+        except OSError as exc:
+            print(f"refused {line[5:]}: {type(exc).__name__}")
+"""
+
+
+def test_the_runner_lays_out_links_and_outside_files_the_same_way_for_every_run(tmp_path):
+    """Round 17 (the v6 pre-trial audit's second must-fix): a case may name links in its working directory and files
+    beside it, outside it (runcases.outside, which a run reaches as ../bpl-outside). runcases.prepare makes both before
+    every run, the same way whether the original's answers are recorded or a submission is graded: the links with
+    their targets as given, the outside files readable by every user (directories 0755, files 0644) and owned by whoever
+    prepares the run, never by the run's user; clear_workspace removes them with the workspace."""
+    found = verifier_call(textwrap.dedent(f"""
+        import json, os, stat
+        from pathlib import Path
+        from verifier import runcases
+        base = Path({str(tmp_path)!r})
+        runcases.WORKSPACE, runcases.HOME, runcases.TEMP = base / "run", base / "home", base / "tmp"
+        case = {{"id": "S1", "kind": "sandbox", "argv": ["main.bpl"], "files": {{"main.bpl": "1\\n", "data/a.txt": "in\\n"}},
+                "stdin": None, "links": {{"esc.txt": "../bpl-outside/s.txt", "in.txt": "data/a.txt", "abs.txt": "/etc/passwd"}},
+                "outside": {{"s.txt": "secret\\n", "deep/m.bpl": "x←1\\n"}}}}
+        seen = []
+        for _ in range(2):
+            runcases.prepare(case, None)
+            out = runcases.outside()
+            mode = lambda path: oct(stat.S_IMODE(path.stat().st_mode))
+            seen.append([out == base / "bpl-outside", os.readlink(base / "run" / "esc.txt"), (base / "run" / "esc.txt").read_text(),
+                         (base / "run" / "in.txt").read_text(), os.readlink(base / "run" / "abs.txt"), mode(out), mode(out / "s.txt"),
+                         mode(out / "deep"), (out / "deep" / "m.bpl").read_text()])
+        runcases.clear_workspace()
+        print(json.dumps([seen, (base / "bpl-outside").exists(), (base / "run").exists()]))
+    """))
+    seen, outside_left, workspace_left = found
+    assert seen[0] == seen[1] == [True, "../bpl-outside/s.txt", "secret\n", "in\n", "/etc/passwd", "0o755", "0o644", "0o755", "x←1\n"], seen
+    assert not outside_left and not workspace_left
+    runner = RUNNER.read_text()
+    prepare = runner[runner.index("def prepare("):runner.index("def disk_free(")]
+    assert prepare.index('case.get("outside")') > prepare.index("os.symlink(target, link)") and "if owner:" in prepare
+    assert prepare.index('case.get("outside")') < prepare.index("if owner:"), "made before the workspace is handed to the run's user"
+    assert "for top in (WORKSPACE, HOME, TEMP):" in prepare, "the outside files are never the run's user's"
+
+
+def test_a_reader_without_the_read_rule_or_one_that_refuses_every_read_loses_cases(tmp_path):
+    """Round 17: the sandbox cases are recorded and graded on the same layout, so a submission that reads every path
+    (an unsandboxed rebuild) loses the refused reads, and one that refuses every read loses the reads the rule allows.
+    Stand-ins for the three behaviours read programs of "read PATH" lines: their answers are recorded from the one
+    that keeps the rule (through runcases.run_case, as the recorder runs a case), then the real grade() scores all
+    three on the same cases: the rule passes every case, the others lose theirs."""
+    readers = {}
+    for rule in ("rule", "any", "none"):
+        folder = tmp_path / rule
+        folder.mkdir()
+        (folder / "reader.py").write_text(READER)
+        readers[rule] = folder / "reader.py"
+    common = {"links": {"esc.txt": "../bpl-outside/s.txt", "in.txt": "data/a.txt"}, "outside": {"s.txt": "secret 7\n", "p.txt": "read data/a.txt\n"}}
+    shapes = {"out-abs": "read /etc/hosts", "out-up": "read ../bpl-outside/s.txt", "out-link": "read esc.txt", "dev": "read /dev/null",
+              "here": "read top.txt", "sub": "read data/a.txt", "link-in": "read in.txt"}
+    cases = [dict(common, id=f"R{index}", kind="sandbox", argv=["main.bpl"], files={"main.bpl": line + "\n", "data/a.txt": "inside\n",
+                                                                                     "top.txt": "top\n"}, stdin=None)
+             for index, line in enumerate(shapes.values())]
+    cases.append(dict(common, id="R9", kind="sandbox", argv=["../bpl-outside/p.txt"], files={"data/a.txt": "inside\n"}, stdin=None))
+    found = verifier_call(textwrap.dedent(f"""
+        import json, sys
+        from pathlib import Path
+        from verifier import runcases
+        base = Path({str(tmp_path)!r}) / "work"
+        runcases.WORKSPACE, runcases.HOME, runcases.TEMP = base / "run", base / "home", base / "tmp"
+        cases = json.loads({json.dumps(cases)!r})
+        expected = {{}}
+        for case in cases:
+            got = runcases.run_case([sys.executable, {str(readers['rule'])!r}], case)
+            expected[case["id"]] = {{"stdout": got["stdout"].decode("utf-8", "surrogateescape"), "exit": got["exit"]}}
+        runcases.clear_workspace()
+        print(json.dumps(expected))
+    """))
+    assert found["R0"]["stdout"].startswith("refused /etc/hosts") and found["R6"]["stdout"] == "'inside\\n'\n", found
+    assert (found["R9"]["exit"], found["R9"]["stdout"]) == (1, ""), "a refused program prints nothing"
+    results = {}
+    for rule, reader in readers.items():
+        (tmp_path / f"grade-{rule}").mkdir()
+        results[rule] = run_verifier(tmp_path / f"grade-{rule}", f'exec "{sys.executable}" "{reader}" "$@"\n', cases, found)
+    passed = {rule: metrics["cases_passed"] for rule, metrics in results.items()}
+    # every read: the four refused reads and the refused program differ; no read: only the refused program matches
+    assert passed == {"rule": 8, "any": 3, "none": 1}, passed
 
 
 def test_many_slow_runs_do_not_stop_the_count(tmp_path):
@@ -3223,8 +3431,9 @@ def test_every_run_fits_inside_the_step_verifier_time():
     step_verifier = int(re.search(r"\[steps\.verifier\]\s*timeout_sec = (\d+)", toml).group(1))
     verifier = int(re.search(r"\[verifier\][^\[]*?timeout_sec = (\d+)", toml).group(1))
     sys.path.insert(0, str(SCRIPTS))
+    import scope_cases
     import make_cases
-    cases = sum(make_cases.KIND_COUNTS.values())
+    cases = sum(make_cases.KIND_COUNTS.values()) + scope_cases.MOST  # round 17's cases come after the others
     assert cases * (per_run + 0.1) + margin + 120 <= total and total + 300 <= min(step_verifier, verifier)
     import tomllib
     agent = tomllib.loads(toml)["steps"][0]["agent"]["timeout_sec"]
@@ -3466,7 +3675,8 @@ def test_the_recording_report_counts_upstream_answers_and_the_baselines(tmp_path
     # the different outputs of programs given to run: 6, 8, the message and y (the help case is the command line's
     # own, the two silent programs print nothing, and P2's 7 is derived); the dispatcher's three cases hold none of them
     assert baselines["distinct_outputs_kept"] == 4 and baselines["no_interpreter_dispatcher_distinct_outputs"] == 0, baselines
-    assert report["derived"] == {"cases": {"expr": 1}, "looked_at": 1, "derivations": 0, "passed_over": 0, "functions": 58}
+    assert report["derived"] == {"cases": {"expr": 1}, "looked_at": 1, "derivations": 0, "passed_over": 0, "functions": 58,
+                                 "ids_sha256": hashlib.sha256(json.dumps(["P2"]).encode()).hexdigest()}, report["derived"]
     missing = subprocess.run([sys.executable, "-B", str(STEP / "tests" / "verifier" / "recording.py"),
                               *(str(tmp_path / name) for name in ("cases.json", "kept.json", "expected.json", "timing.json", "out2.json"))],
                              capture_output=True, text=True, timeout=60, cwd=STEP / "tests" / "verifier")

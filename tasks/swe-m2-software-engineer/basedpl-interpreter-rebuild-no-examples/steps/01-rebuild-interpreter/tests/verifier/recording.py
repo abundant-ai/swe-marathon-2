@@ -16,7 +16,8 @@
   runcases.DISTINCT_OUTPUTS of, leaving out the cases derivations.py derived) that the kept cases
   hold, and that the dispatcher's cases hold.
 - The search for answers one documented function gives from a case's own literals or input
-  (`--derived`, derivations.py's output): the cases derived, by kind, and the search's figures.
+  (`--derived`, derivations.py's output): the cases derived, by kind, the sha256 of their ids, and
+  the search's figures.
 - A guard: the build stops (exit status 1) when the dispatcher's cases hold more than a third of
   runcases.DISTINCT_OUTPUTS, so that no set of cases brings a program with no interpreter in it
   near a reward unnoticed (`dispatcher_too_close`).
@@ -103,6 +104,7 @@ def describe(cases: list[dict], kept: list[dict], expected: dict, report: dict, 
                                                     if expected[case["id"]]["stdout"] == "").items())),
         "baselines": baselines(kept, expected, set(derivations["derived"])),
         "derived": {"cases": by_kind(derivations["derived"]),
+                    "ids_sha256": hashlib.sha256(json.dumps(sorted(derivations["derived"])).encode()).hexdigest(),
                     **{key: derivations[key] for key in ("looked_at", "derivations", "passed_over", "functions")}},
     }
 

@@ -110,15 +110,27 @@ def remove_path(path: Path) -> None:
         raise OSError(f"{path} could not be removed")
 
 
+def outside() -> Path:
+    """Where a case's files from outside its working directory go (its "outside"): the directory
+    beside the workspace, which a run reaches as ../bpl-outside."""
+    return WORKSPACE.parent / "bpl-outside"
+
+
 def clear_workspace() -> None:
-    """Remove whatever is at the workspace, HOME and TMPDIR paths."""
-    for path in (WORKSPACE, HOME, TEMP):
+    """Remove whatever is at the workspace, HOME, TMPDIR and outside paths."""
+    for path in (WORKSPACE, HOME, TEMP, outside()):
         remove_path(path)
 
 
 def prepare(case: dict, owner: tuple[int, int] | None) -> None:
-    """A new workspace holding the case's files and a new empty HOME and TMPDIR, all owned by
-    `owner` (user and group ids) where given."""
+    """A new workspace holding the case's files and links, a new empty HOME and TMPDIR, all owned
+    by `owner` (user and group ids) where given, and the case's outside files.
+
+    A case's "links" map a path in the workspace to the target of a symbolic link made there. Its
+    "outside" files go into a new directory beside the workspace (`outside`), owned by whoever
+    prepares the run and readable by every user (directories 0755, files 0644), so that only the
+    program's own rule keeps a run from reading them. Every case gets the same layout, whether
+    the original's answers are recorded or a submission is graded."""
     clear_workspace()
     for path in (WORKSPACE, HOME, TEMP):
         path.mkdir(parents=True)
@@ -126,6 +138,21 @@ def prepare(case: dict, owner: tuple[int, int] | None) -> None:
         target = WORKSPACE / name
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(text.encode(*ENCODING))
+    for name, target in (case.get("links") or {}).items():
+        link = WORKSPACE / name
+        link.parent.mkdir(parents=True, exist_ok=True)
+        os.symlink(target, link)
+    if case.get("outside"):
+        place = outside()
+        place.mkdir()
+        place.chmod(0o755)
+        for name, text in case["outside"].items():
+            target = place / name
+            for folder in reversed(target.relative_to(place).parents[:-1]):
+                (place / folder).mkdir(exist_ok=True)
+                (place / folder).chmod(0o755)
+            target.write_bytes(text.encode(*ENCODING))
+            target.chmod(0o644)
     if owner:
         for top in (WORKSPACE, HOME, TEMP):
             for root, directories, files in os.walk(top):
@@ -418,8 +445,9 @@ def answer_in_input(case: dict, stdout: str) -> bool:
 
     Used by counts. A program can print such an answer by echoing what it is given (a literal of the
     program, an argument, a line of standard input) without running anything, so it is no sign of a
-    run. The input is every file the case writes (library files included), its standard input and its
-    arguments; a line counts as copied when it occurs anywhere in them, as text.
+    run. The input is every file the case writes (library files and files outside its working
+    directory included), its standard input and its arguments; a line counts as copied when it
+    occurs anywhere in them, as text.
 
     Args:
         case: A private case: "argv", "files" and "stdin", as runs_a_program reads them.
@@ -430,7 +458,7 @@ def answer_in_input(case: dict, stdout: str) -> bool:
         False otherwise (an empty output is never one). Reads and changes nothing.
     """
     lines = [line for line in stdout.split("\n") if line]
-    given = "\n".join([*case["files"].values(), case.get("stdin") or "", *case["argv"]])
+    given = "\n".join([*case["files"].values(), *(case.get("outside") or {}).values(), case.get("stdin") or "", *case["argv"]])
     return bool(lines) and all(line in given for line in lines)
 
 

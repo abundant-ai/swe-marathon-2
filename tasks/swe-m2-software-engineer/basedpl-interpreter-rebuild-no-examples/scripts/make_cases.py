@@ -25,6 +25,9 @@ Sources, by kind (see KIND_COUNTS):
 - module: upstream's library modules (lib/) loaded by a main program, from the library records.
 - program: new programs (programs.py), written for this task, with seeded data.
 - cli: the command line's own answers, one case per behaviour.
+- coverage and sandbox (scope_cases.py, round 17): the documented items the kinds above leave
+  without a case, and the file-read rule on each read path, appended after every other case
+  (from P01778 on) from a generator of their own, so that no other case changes.
 
 Nothing the agent can see is used: no record or program whose text, or whose skeleton (names,
 numbers and text abstracted, bpl_text.skeleton), the shipped documentation holds. Records that
@@ -49,6 +52,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import bpl_text  # noqa: E402
+import scope_cases  # noqa: E402
 import programs  # noqa: E402
 import rewrite  # noqa: E402
 from bpl_text import compact, documentation, git_files, git_text, leak_index, reference_records, skeleton, tokenize  # noqa: E402
@@ -473,7 +477,8 @@ def generate(checkout: Path, seed: int, scale: float = 1.0) -> list[dict]:
     rng = random.Random(seed)
     counts = {kind: max(1, round(count * scale)) for kind, count in KIND_COUNTS.items()}
     files = load_records(checkout)
-    skeletons, texts = leak_index(documentation(checkout))
+    pages = documentation(checkout)
+    skeletons, texts = leak_index(pages)
     shown = lambda record: skeleton(record["code"]) in skeletons or compact(record["code"]) in texts  # noqa: E731
     pairs = lambda suites: [(record, files[name][0]) for name in suites if name in files for record in files[name][1]  # noqa: E731
                             if usable(record, files[name][0]) and not shown(record)]
@@ -547,7 +552,15 @@ def generate(checkout: Path, seed: int, scale: float = 1.0) -> list[dict]:
     rng.shuffle(cases)
     for index, item in enumerate(cases, 1):
         item["id"] = f"P{index:05d}"
-    return cases
+    # Round 17: the documented items the kinds above leave without a case, and the file-read rule,
+    # drawn from a generator of their own and numbered after every other case, so that none of
+    # those changes.
+    extra = scope_cases.cases(seed, pages)
+    leaked = set(leaks(extra, skeletons, texts))
+    extra = [item for index, item in enumerate(extra) if str(index) not in leaked]
+    for index, item in enumerate(extra, len(cases) + 1):
+        item["id"] = f"P{index:05d}"
+    return cases + extra
 
 
 def summary(cases: list[dict]) -> str:
