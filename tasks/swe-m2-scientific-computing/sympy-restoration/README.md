@@ -1064,6 +1064,73 @@ It does not yet meet the v2 workload target; see [Workload](#workload) and
   only in the instruction and the key's two copies, and the sweep's one new hit
   is the task's own "deliver" in the line about the log.
 
+### 2026-11-25, the units no graded item runs left whole
+
+- The decision (panel, three of three: leave them whole now; the withheld tests
+  in the reward later, once a platform run shows their phase completing;
+  `swe-marathon-v2/decisions/2026-11-25-sympy-527-ungraded-units-DECISION.md`).
+- The rule is the builder's, not a list: `scripts/builder/graded_coverage.py`
+  traces on the original tree which unit bodies the graded items run (the 6,213
+  counted calls, a returned iterator read as far as the comparison reads it,
+  and the examples of the 1,847 units in the set, with `sys.monitoring` on
+  every unit's body), and `scripts/builder/keep_whole.py` keeps a unit removed
+  only if one of them runs it: its own counted call, or a counted call or an
+  example of another unit. 527 units are run by none. Of those, 32 stay removed
+  by the one exception, also by rule: a graded unit's body is a near-copy of
+  theirs by the twin scan's own tests (`twin_scan.py`, with the bodies left
+  whole as the visible side; 34 pairs: 4 the same tree under the same name, 6
+  the same once every name is blinded, 1 text 85% alike under the same name, 24
+  text 85% alike in the same file), so a whole copy would give a graded body
+  away; for example `gauss_hermite` and `gauss_legendre` beside
+  `gauss_laguerre`, `dup_exquo` beside `dmp_exquo`, `is_proper_subset` beside
+  `is_superset`. Each is recorded in the builder's report. The other 495 have
+  their original bodies back.
+- The checkout now: 2,176 units (numbered again from U0001 in their old order)
+  in 324 files, 32,710 non-blank lines of body (37,293 before); 31 files are
+  whole again, all of `sympy.liealgebras` among them. 14,867 recorded calls: the
+  1,870 of the units left whole leave the call data, and none of them counted,
+  so the 6,213 counted calls and the 1,847 units in the set are unchanged, and
+  329 units stay out of the set (the 297 that only run inside other units'
+  graded items, and the 32 near-copies).
+- Every prepared input that names units was written again: the unit list, the
+  agent's tree and the verifier's skeleton (each of the 355 old unit-bearing
+  files rebuilt from the original with `units.blank_source`, after checking
+  that the same function gives back the old file from the old list), the body
+  facts, the per-unit times, the calls and the reference's files. The skeleton
+  with the reference over it is the original in every file.
+- Where the unit set lives, old against new: the instruction (2,671 bodies in
+  355 files, now 2,176 in 324) and `task.toml`'s description; the grader's unit
+  list, staged from `environment/data/units.json` (the same units in the same
+  order, every field kept but the id and the rank); the placeholders in both
+  trees (2,176, one per unit); the reference solution (324 files, each the
+  upstream file); the body facts and times. Edits outside unit bodies: a body
+  left whole is outside every unit now, so the transplant never takes it; an
+  edit to one (`Quaternion._eval_evalf`) in a submitted file is not taken, and
+  the file's 25 units are restored as before.
+- No body left whole gives a graded unit away: none is a near-copy of a graded
+  body (those stay removed), and a scan of their literals against the leaves of
+  the counted calls' arguments and results matched three strings, `generators`
+  in `PermutationGroup.centralizer` and `distributed` and `point_load` in
+  `Cable.remove_loads`, each the class's own vocabulary that its file shows
+  elsewhere 127, 23 and 14 times; no long number matched. Their docstrings, and
+  so their examples, were always in the checkout; only their code is new to it.
+- `checks/test_graded_units.py` traces again on the skeleton with the reference
+  over it and fails if a removed unit is run by no graded item (but for the
+  near-copy exception, recomputed); it also holds the stated counts, the unit
+  list, the placeholders, the body facts, the times and the reference's files
+  together. 135 checks pass.
+- Reference 1.000000 and complete (1,847 / 1,847 units, 6,213 / 6,213 counted
+  calls, 14,867 / 14,867 calls, 10,428 / 10,428 tests, none unreached, nothing
+  out of its time, no control tripped); the starting tree 0.0; a turn of no
+  length through the hooks 0.0 (`end_from` `unchanged`, 1,716 entries listed).
+- Package: key replaced, bundle `e4c15ab38d70` (384 files: 31 reference files
+  fewer), platform content hash `39e86fd83463…` (version 4's `4ce37762a342…`),
+  `oddish preflight` passed, the word sweep's hits the same as the round's
+  last bundle, the bundle equal to the worktree and to commit `ef1561c`; the
+  reference files are the upstream files and the archives differ from the
+  upstream wheel only by the 2,176 placeholders, the withheld tests and
+  `pytest.ini`; the call data's pickle holds only SymPy names.
+
 ## Current implementation
 
 | Part | State |
@@ -1888,6 +1955,11 @@ stored submissions of the earlier sessions of the same task; every one scored
 | `checks/` (133 tests) and the repository check | commit `408818d` (2026-11-25, the instruction's change, before the package) | pass |
 | `oddish preflight` | flat bundle `54a8b4898f6e` (`ops/sympy-restoration/dist-12h/`, key rotated; platform content hash `a311bc14c28e…`, version 4's `4ce37762a342…`; network plan as for `fb5eada8e82c`) | pass (1 task) |
 | Word sweep of the whole bundle; the bundle against the worktree and the commit; the key | bundle `54a8b4898f6e` | the hits of `fb5eada8e82c` and one more, the task's own "deliver" in the line about the log; 0 non-ASCII bytes; no bytecode; 415 files equal to the worktree, the 48 tracked ones to commit `408818d`; only the instruction and the key's two copies differ from `fb5eada8e82c`; the key's copies equal, new and held by no other file |
+| The units no graded item runs left whole (`graded_coverage.py`, `keep_whole.py`) | the prepared inputs, 2026-11-25 | 527 run by no graded item, 32 of them kept removed as near-copies of graded bodies, 495 left whole; 2,176 units in 324 files, 14,867 calls (6,213 counted, 1,847 units in the set); the skeleton with the reference over it is the original in all 355 old unit-bearing files; literal scan 3 hits, each the class's own visible vocabulary |
+| Reference, the agent's starting tree and a turn of no length, with the units left whole | this machine, the entry point's steps, one worker; the no-op through the shipped hooks and the real net check | reference 1.000000 and complete: 1,847 / 1,847 units, 6,213 / 6,213 counted calls, 14,867 / 14,867 calls, 10,428 / 10,428 tests, none unreached, nothing out of its time (324 starts in each phase), no control tripped, 1,427 s; starting tree 0.0; no-op 0.0 with `end_from` `unchanged` (1,716 entries listed) |
+| `checks/` (135 tests: the re-trace and the counts added) and the repository check | commit `e2d1d7e` (2026-11-25, before the package) | pass |
+| `oddish preflight` | flat bundle `e4c15ab38d70` (`ops/sympy-restoration/dist-12h/`, key rotated, 384 files; platform content hash `39e86fd83463…`, version 4's `4ce37762a342…`; network plan as before) | pass (1 task) |
+| Word sweep of the whole bundle; the archives and reference against the SymPy 1.14.0 wheel's record; the call data's pickle by opcode; the bundle against the worktree and the commit; the key | bundle `e4c15ab38d70` | the sweep's hits those of `54a8b4898f6e`; 0 non-ASCII bytes; no bytecode; the 324 reference files identical to upstream; the archives differ from upstream by 2,176 placeholders, the withheld tests and `pytest.ini`; the pickle holds SymPy names only; 384 files equal to the worktree, the 48 tracked ones to commit `ef1561c`; the key's copies equal, new and held by no other file |
 | `harbor check` with `resources/task-implementation.toml` | working tree, 2026-11-17 | attempted on Modal; failed before review with `NotFoundError: Environment not found` (no default Modal environment). Not run in local Docker. No ratings |
 | Local image builds | none | not run for the v2 Dockerfiles; the Oddish baselines are the first build |
 
