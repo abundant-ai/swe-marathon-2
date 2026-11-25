@@ -966,6 +966,16 @@ It does not yet meet the v2 workload target; see [Workload](#workload) and
   environment's build, with `[verifier] network_mode = "no-network"` kept for
   the verification itself and the open-internet justification extended to the
   second image's build (see [Verification](#verification)).
+- Package. The signing key was replaced again and the flat bundle rebuilt
+  (`package_single_step.py --keep-name`, content `fb5eada8e82c`, 415 files, no
+  bytecode) in `ops/sympy-restoration/dist-12h/`, the round's first build
+  (`87c717883415`) set aside. The platform's content hash of the new bundle,
+  `a27c3b88f2d0…`, differs from version 4's (`4ce37762a342…`), and Harbor
+  resolves its network plan as intended: the verifier's environment public,
+  the verification without network. `oddish preflight` passed (1 task). The
+  bundle equals the worktree file for file and commit `03cc17f` for every
+  tracked source; the word sweep of the whole bundle found the same hits as the
+  round before's, none new.
 
 ## Current implementation
 
@@ -1782,6 +1792,9 @@ stored submissions of the earlier sessions of the same task; every one scored
 | Reference, the agent's starting tree and a turn of no length, after the fourth re-check | this machine, the entry point's steps, one worker, runners over pipes with a time for every item; the no-op through the shipped hooks, the real net check, a platform-style copy and the real mark, with root, the Linux tools, the network, `/proc` and the user `dev` stood in for | reference 1.000000 and complete: 1,847 / 1,847 units, 6,213 / 6,213 counted calls, 16,737 / 16,737 calls, 10,428 / 10,428 tests, none unreached, no item out of its time (355 starts in each phase), no control tripped, 1,209 s; starting tree 0.0; no-op 0.0 with `end_from` `unchanged` (12 polls, no opening, 1,716 entries listed) |
 | Floor on these calls with the final runners (`fixtures.py`, `floor.py`, the reviewers' scripts) | working tree, 2026-11-24 (fourth re-check) | the same as the round before: through the verifier raise, first argument and flip 0.0; behind a table flip 0.0034, the combination 0.0249 statically; integrity rules 0.0064 (0.0124); hidden-result bounds 0.0274 and 0.0296; the re-checks' accessor synthesis 0.0401 behind a table (the fourth re-check's figure, on these calls); all under 0.05 |
 | Regrade of the stored submissions after the fourth re-check | this machine, the entry point's steps, examples and calls, one worker, 2026-11-25 | 16 submissions, reward 0.003 to 0.852, each the same or up to 0.0043 lower than the round before, the order unchanged; none with a unit or call unreached or failed for lack of time, a late file or a control tripped (see [Trial evidence](#trial-evidence)) |
+| `checks/` (133 tests) and the repository check | commit `03cc17f` (2026-11-25, before the package) | pass |
+| `oddish preflight` | flat bundle `fb5eada8e82c` (`ops/sympy-restoration/dist-12h/`, key rotated; platform content hash `a27c3b88f2d0…`, version 4's `4ce37762a342…`; Harbor's network plan for it: agent environment public, work no network, verifier environment public, verification no network) | pass (1 task) |
+| Word sweep of the whole bundle; the bundle against the worktree and the commit; the key | bundle `fb5eada8e82c` | the same hits as the round before's bundle, all of the classes found clean then (the task's "deliver", `platform` as a forbidden module, SymPy's own names, the root-only hooks' own words); 0 non-ASCII bytes; no bytecode; 415 files equal to the worktree, the 48 tracked ones to commit `03cc17f`; only the key's two copies, `fsmaint-sweep` and `task.toml` differ from the round's first build (`87c717883415`), and the prepared data and archives are byte for byte those of bundle `966f2b531f52` but for the key, so that bundle's data and archive scans stand; the key's copies equal, new and held by no other file |
 | `harbor check` with `resources/task-implementation.toml` | working tree, 2026-11-17 | attempted on Modal; failed before review with `NotFoundError: Environment not found` (no default Modal environment). Not run in local Docker. No ratings |
 | Local image builds | none | not run for the v2 Dockerfiles; the Oddish baselines are the first build |
 
