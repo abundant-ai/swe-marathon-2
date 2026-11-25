@@ -852,7 +852,7 @@ def measure(context: VerificationContext) -> Measurement:
     # unit files changed after the end of the work that the collect step replaced by its last copy before it
     metrics["copied_files"] = sorted(f"sympy/{path}" for path in delivered.copied)[:500]
     metrics["units_changed_after_the_end"] = sorted({str(uid) for c in delivered.copied.values()
-                                                     for uid in (c.get("units_changed_after") or [])})[:2671]
+                                                     for uid in (c.get("units_changed_after") or [])})[:5000]
     metrics["end_from"], metrics["end_note"] = delivered.end_from, delivered.end_note
     if delivered.state != "listed":
         reason = delivered.summary.get("refused") or delivered.state

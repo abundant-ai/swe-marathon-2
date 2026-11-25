@@ -2,8 +2,8 @@
 
 Author notes. Nothing in this file is shipped to the candidate or to either image.
 
-SymPy 1.14.0 with the bodies of 2,671 functions and methods in 355 files removed
-(37,293 non-blank lines of body). Signatures, decorators, docstrings and all other
+SymPy 1.14.0 with the bodies of 2,176 functions and methods in 324 files removed
+(32,710 non-blank lines of body). Signatures, decorators, docstrings and all other
 code stay. The candidate writes the bodies back, without network access, using a
 small `restore` command that reports progress and checks work against the graded
 view. The reward is continuous: the smaller of two shares measured on recorded
@@ -1070,7 +1070,7 @@ It does not yet meet the v2 workload target; see [Workload](#workload) and
 | Step `01-restore-bodies` | Implemented. Instruction, agent image, separate verifier image, reference solution. |
 | Further steps | Not designed. See [Workload](#workload). |
 | Prepared inputs | Present locally under Git-ignored paths; produced by the builder in `scripts/builder/`. |
-| Oracle | 1.0 on the platform under the binary reward (at least 14 grades); 1.0 under the continuous reward through the entry point's steps on this machine (2026-11-20, and after each re-check since, last 2026-11-24). Not yet re-run on the platform. Provenance: the original SymPy 1.14.0 source of the 355 files. |
+| Oracle | 1.0 on the platform under the binary reward (at least 14 grades); 1.0 under the continuous reward through the entry point's steps on this machine (2026-11-20, and after each re-check since, last 2026-11-24). Not yet re-run on the platform. Provenance: the original SymPy 1.14.0 source of the 324 files. |
 | Ratings (`harbor check`) | Not run. No `[metadata.task_rating]` yet. |
 
 Layout notes:
@@ -1085,7 +1085,7 @@ Layout notes:
   `scripts/builder/delivery_key.py`), `steps/01-restore-bodies/tests/private/`
   (skeleton with the full test suite, sealed test list, recorded calls,
   reference results) and `steps/01-restore-bodies/solution/data/` (original
-  source of the 355 files). Packaging stages the key into the verifier's private
+  source of the 324 files). Packaging stages the key into the verifier's private
   inputs as well.
 - `environment/fsmaint-reserve`, `fsmaint-netcheck` and `fsmaint-sweep` are the
   setup and collect hooks (`task.toml`). They live in `/usr/local/lib/fsmaint`,
@@ -1107,7 +1107,7 @@ Layout notes:
 ### Novelty
 
 What it adds: one coherent body of work that is too large for one context window
-(2,671 units, 37,293 non-blank lines of body) with a grade per unit, so partial progress is
+(2,176 units, 32,710 non-blank lines of body) with a grade per unit, so partial progress is
 measured exactly.
 
 Closest comparisons:
@@ -1127,7 +1127,7 @@ Weaknesses, stated plainly:
 
 - SymPy is public and in pre-training data, and for a strong model much of the
   work is recall. On the best run of the flash model every trial so far used
-  (base trial 5, relace/deepseek-v4.1-flash) 546 of 2,671 submitted bodies
+  (base trial 5, relace/deepseek-v4.1-flash) 546 of the 2,671 bodies it submitted (the unit set then)
   (20.4%) had the same syntax tree as upstream: 51.6% of bodies of one to three
   lines, 9.1% of four to ten, 1.8% of eleven to thirty, none over thirty (sizes
   by `ast.unparse` lines). That figure does not carry to frontier models. A
@@ -1172,7 +1172,7 @@ unit, which removed the one known source of unit flips (a random draw).
 
 Restoring lost implementation from signatures, documentation and tests is real
 but uncommon work (damaged checkouts, partial ports, code removed for licensing).
-The setting is contrived in one respect: nobody loses 2,671 bodies at once while
+The setting is contrived in one respect: nobody loses 2,176 bodies at once while
 keeping every docstring. Realism is the weakest of the five dimensions together
 with novelty.
 
@@ -1227,7 +1227,7 @@ agent's limit 34,560 s); since 2026-11-24 the instruction states no time figure 
 says only that the run can end at any time. With the earlier 9-hour limit the
 best run used all of it at about 4,300 steps per hour and reached 96.2% of units;
 one 12-hour session reached 82.3% at best; two 48-hour sessions (19.2 hours)
-reached 2,568 of 2,671 units at best (experiment `sympy-restoration-v2-48h-20261117`).
+reached 2,568 of the 2,671 units of the set then at best (experiment `sympy-restoration-v2-48h-20261117`).
 
 How the 48 hours ran (retired on 2026-11-19 in favour of the single 12-hour
 session; kept for the record). Oddish ends an attempt after 12 hours, grading included,
@@ -1427,7 +1427,7 @@ its handshake.
    still fails a wrong example and passes a right one; a failed check fails the
    whole module and trips a control. Units left when the phase's time is up are
    not reached (see Reward formula for how they count).
-3. Recorded calls. 16,737 calls, at least one per unit, replayed one at a time
+3. Recorded calls. 14,867 calls, at least one per unit, replayed one at a time
    in the sandbox, the same way: one process per module gets its calls on its
    standard input and answers one line per call, at most 4 MiB a line and
    256 MiB in all, taken only in order. Each call gets ten times the original's
@@ -1457,7 +1457,7 @@ its handshake.
    `*args` or a value of its `**kwargs` (a body that returns that argument
    answers it); or when its result is one that another documented call of its
    unit returns (applied until nothing changes). These relations compare with
-   the type of a value left out, since a printed result does not show it. 10,524 calls are
+   the type of a value left out, since a printed result does not show it. 8,654 calls are
    documented and listed privately (`tests/private/vectors/documented.json`),
    6,213 are not, and only those count for the reward. A result is
    compared by its canonical form (`verifier/lib/canon.py`), which keeps the
@@ -1480,7 +1480,7 @@ its handshake.
    counter (`ReferenceFrame.index`, which orders a vector's printed components)
    for frames the call makes up to an order-preserving one, because both are
    numbered from a process-wide counter: the original's own results differ
-   between runs exactly there and nowhere else (144 of 16,737 differ in text over
+   between runs exactly there and nowhere else (144 of the 16,737 recorded then differ in text over
    three runs, every one only in those names), while a Dummy or frame that came
    with the arguments is exact; Truss's coordinate lists in what
    `Truss.remove_node` leaves, where upstream keeps them inconsistently; the
@@ -1596,8 +1596,8 @@ All five read one measurement pass (`verifier/engine.py`).
 ### Reward formula
 
 ```
-D      = recorded calls that are not documented (step 3): 6,213 of 16,737
-set    = units with at least one call in D: 1,847 of 2,671 (824 left out, counted)
+D      = recorded calls that are not documented (step 3): 6,213 of 14,867
+set    = units with at least one call in D: 1,847 of 2,176 (329 left out, counted)
 u      = units in the set whose docstring examples pass and that match at least
          one of their calls in D  /  1,847
 c      = calls in D that match  /  6,213

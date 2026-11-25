@@ -3,7 +3,7 @@
 ## Goal
 
 `/app/sympy` is a checkout of SymPy 1.14.0, a pure-Python computer algebra library. The
-bodies of 2,671 functions and methods, spread over 355 files, are gone. I need them written
+bodies of 2,176 functions and methods, spread over 324 files, are gone. I need them written
 back, so that the library again behaves as its docstrings and its tests say it does.
 
 ## Context

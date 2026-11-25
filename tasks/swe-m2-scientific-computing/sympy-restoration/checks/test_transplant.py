@@ -21,8 +21,8 @@ def test_missing_file_keeps_the_skeleton(scenario):
 
 
 def test_routes_to_the_process_and_to_files_are_rejected_and_every_original_body_passes(task_root):
-    """The re-checks' routes, each a construct no original body uses, are rejected; all 2,671 original
-    bodies still pass the same rules."""
+    """The re-checks' routes, each a construct no original body uses, are rejected; every original body
+    of a unit still passes the same rules."""
     import ast
     import sys
 
@@ -66,4 +66,4 @@ def test_routes_to_the_process_and_to_files_are_rejected_and_every_original_body
             _doc, rest = restorelib._doc_and_rest(fn)
             if restorelib.scan_body(rest, fn) is not None:
                 rejected.append(uid)
-    assert len(units) == 2671 and rejected == [], rejected[:10]
+    assert units and rejected == [], rejected[:10]
