@@ -966,6 +966,28 @@ It does not yet meet the v2 workload target; see [Workload](#workload) and
   environment's build, with `[verifier] network_mode = "no-network"` kept for
   the verification itself and the open-internet justification extended to the
   second image's build (see [Verification](#verification)).
+- The new hostile cases. On the verifier's side, through its own `measure()`
+  and scoring with real SymPy (one worker, the tests not run), a tree of the
+  original bodies with one unit each writing through `sympy.preview(...,
+  outputTexFile=...)`, writing a sparse file through `open` and a seek,
+  rebinding `json.dumps`, forking in a loop through `os.fork`, returning a 64
+  MiB string, and printing 256 MiB before its original body: 0.9962 (u 0.9962,
+  c 0.9979), completed, nothing unreached, no control tripped. The body rules
+  refused the first four (`rejected: attribute '.preview'`, `use of builtin
+  'open'`, `import of 'json'`, `import of 'os'`); with the two that ran they
+  cost their own units and three callers (`JointsMethod.form_eoms` and
+  `System.form_eoms` of `Vector.diff`, `homomorphism` of `Module.subset`):
+  1,840 of 1,847 units in the set and 6,200 of 6,213 counted calls. The
+  flooding unit's examples and the oversized result's ran out of their time
+  (the flood's output went nowhere); the refused units' callers failed. A memory blow-up and a file written through a route the rules do
+  not list are left to the image's limits (4 GiB of address space, 256 MiB a
+  file, a private folder for temporary files), which this machine does not
+  have, so they were not run here. On the delivery's side the checks run the
+  hooks whole under stand-ins: a collect step that a fork bomb leaves unable to
+  start a process scores 0 with a note; a save by rename just after the limit
+  keeps the file, `copied`; three local polls two thirds into a turn end
+  nothing; a disk the bodies fill leaves the score; forged and oversized runner
+  lines cost their item and never raise.
 - Package. The signing key was replaced again and the flat bundle rebuilt
   (`package_single_step.py --keep-name`, content `fb5eada8e82c`, 415 files, no
   bytecode) in `ops/sympy-restoration/dist-12h/`, the round's first build
@@ -1792,6 +1814,7 @@ stored submissions of the earlier sessions of the same task; every one scored
 | Reference, the agent's starting tree and a turn of no length, after the fourth re-check | this machine, the entry point's steps, one worker, runners over pipes with a time for every item; the no-op through the shipped hooks, the real net check, a platform-style copy and the real mark, with root, the Linux tools, the network, `/proc` and the user `dev` stood in for | reference 1.000000 and complete: 1,847 / 1,847 units, 6,213 / 6,213 counted calls, 16,737 / 16,737 calls, 10,428 / 10,428 tests, none unreached, no item out of its time (355 starts in each phase), no control tripped, 1,209 s; starting tree 0.0; no-op 0.0 with `end_from` `unchanged` (12 polls, no opening, 1,716 entries listed) |
 | Floor on these calls with the final runners (`fixtures.py`, `floor.py`, the reviewers' scripts) | working tree, 2026-11-24 (fourth re-check) | the same as the round before: through the verifier raise, first argument and flip 0.0; behind a table flip 0.0034, the combination 0.0249 statically; integrity rules 0.0064 (0.0124); hidden-result bounds 0.0274 and 0.0296; the re-checks' accessor synthesis 0.0401 behind a table (the fourth re-check's figure, on these calls); all under 0.05 |
 | Regrade of the stored submissions after the fourth re-check | this machine, the entry point's steps, examples and calls, one worker, 2026-11-25 | 16 submissions, reward 0.003 to 0.852, each the same or up to 0.0043 lower than the round before, the order unchanged; none with a unit or call unreached or failed for lack of time, a late file or a control tripped (see [Trial evidence](#trial-evidence)) |
+| Hostile cases through the verifier's `measure()` and scoring (one unit each: `preview` to a file, `open` with a seek, `json.dumps` rebound, `os.fork` in a loop, a 64 MiB result, a 256 MiB print before the original body) | this machine, the entry point's steps, one worker, real SymPy, 2026-11-25 | 0.9962, completed: the first four refused by the body rules; 1,840 / 1,847 units in the set and 6,200 / 6,213 counted calls (the six units and three callers); nothing unreached, no control tripped, none an evaluation error |
 | `checks/` (133 tests) and the repository check | commit `03cc17f` (2026-11-25, before the package) | pass |
 | `oddish preflight` | flat bundle `fb5eada8e82c` (`ops/sympy-restoration/dist-12h/`, key rotated; platform content hash `a27c3b88f2d0…`, version 4's `4ce37762a342…`; Harbor's network plan for it: agent environment public, work no network, verifier environment public, verification no network) | pass (1 task) |
 | Word sweep of the whole bundle; the bundle against the worktree and the commit; the key | bundle `fb5eada8e82c` | the same hits as the round before's bundle, all of the classes found clean then (the task's "deliver", `platform` as a forbidden module, SymPy's own names, the root-only hooks' own words); 0 non-ASCII bytes; no bytecode; 415 files equal to the worktree, the 48 tracked ones to commit `03cc17f`; only the key's two copies, `fsmaint-sweep` and `task.toml` differ from the round's first build (`87c717883415`), and the prepared data and archives are byte for byte those of bundle `966f2b531f52` but for the key, so that bundle's data and archive scans stand; the key's copies equal, new and held by no other file |
