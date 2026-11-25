@@ -58,8 +58,51 @@ if defect == "rounding":
     path.write_text(path.read_text().replace("if 2 * remainder >= abs(denominator):", "if 2 * remainder > abs(denominator):"))
 if defect == "crash":
     (server / "run").write_text("#!/bin/sh\\nexit 3\\n")
+if defect == "bare creation":  # POST /api/workspaces answers the new id alone
+    app = server / "stockwell" / "app.py"
+    text = app.read_text()
+    assert text.count("response = JSONResponse(view, status_code=201)") == 1
+    app.write_text(text.replace("response = JSONResponse(view, status_code=201)", 'response = JSONResponse({"id": view["id"]}, status_code=201)'))
+if defect.startswith("without ") or defect == "health body":
+    app = server / "stockwell" / "app.py"
+    app.write_text(app.read_text() + WITHOUT.replace("GONE", repr(defect[8:] if defect != "health body" else "[]"))
+                   .replace("HEALTH", str(defect == "health body")))
 print(json.dumps(evaluate(server, scenarios, work / "w", work, sandbox=False, media_dir=Path(sys.argv[7]))))
 """
+# appended to the installed reference's app.py: the calls listed in GONE ([method, full-path pattern] pairs) answer 404 as
+# an unknown path does, and with HEALTH true the health check answers 200 with another body
+WITHOUT = '''
+
+_create_app = create_app
+
+
+def create_app(settings=None):
+    import json as _json
+    import re as _re
+
+    inner = _create_app(settings)
+    gone = [(method, _re.compile(pattern)) for method, pattern in _json.loads(GONE)]
+
+    async def without(scope, receive, send):
+        if scope["type"] == "http":
+            body = None
+            if any(scope["method"] == method and pattern.fullmatch(scope["path"]) for method, pattern in gone):
+                status, body = 404, b'{"error":{"code":"unknown_path","message":"no such path"}}'
+            elif HEALTH and scope["path"] == "/api/health":
+                status, body = 200, b'{"status":"up"}'
+            if body is not None:
+                message = {"more_body": True}
+                while message.get("more_body"):
+                    message = await receive()
+                await send({"type": "http.response.start", "status": status,
+                            "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(body)).encode())]})
+                await send({"type": "http.response.body", "body": body})
+                return
+        await inner(scope, receive, send)
+
+    return without
+'''
+GRADE = GRADE.replace("import oracle\n", "import oracle\nWITHOUT = " + repr(WITHOUT) + "\n")
 
 
 def media_copy(tmp_path: Path) -> Path:
@@ -73,22 +116,23 @@ def media_copy(tmp_path: Path) -> Path:
     return target
 
 
-def record(tmp_path: Path, seed: int, count: int = 54, runs: int = 2) -> Path:
-    """A small corpus: legacy streams and media scenarios, and `runs` months of trading (one restarted with SIGTERM, one
-    with SIGKILL) with three client screens after each."""
+def record(tmp_path: Path, seed: int, count: int = 54, runs: int = 2, routines: int = 2) -> Path:
+    """A small corpus: legacy streams and media scenarios, `runs` months of trading (one restarted with SIGTERM, one with
+    SIGKILL) with three client screens after each, and `routines` scenarios of each office routine."""
     out = tmp_path / f"scenarios-{seed}.json"
     done = subprocess.run([sys.executable, "-B", str(TASK / "scripts" / "record_scenarios.py"), "--count", str(count), "--runs", str(runs),
-                           "--term", "1", "--kill", "1", "--screens", "3", "--seed", str(seed), "--out", str(out), "--media", str(media_copy(tmp_path))],
+                           "--term", "1", "--kill", "1", "--screens", "3", "--routines", str(routines), "--seed", str(seed), "--out", str(out),
+                           "--media", str(media_copy(tmp_path))],
                           capture_output=True, text=True, timeout=1800)
     assert done.returncode == 0, done.stderr[-2000:]
     return out
 
 
-def grade(tmp_path: Path, scenarios: Path, defect: str) -> dict:
-    work = tmp_path / defect
+def grade(tmp_path: Path, scenarios: Path, defect: str, media: Path | None = None) -> dict:
+    work = tmp_path / (defect if re.fullmatch(r"\w+", defect) else "defect-" + hashlib.sha256(defect.encode()).hexdigest()[:12])
     work.mkdir()
     done = subprocess.run([sys.executable, "-I", "-B", "-c", GRADE, str(STEP), str(REFERENCE / "backend" / "src"), str(scenarios), str(work), defect,
-                           reference_python(), str(media_copy(tmp_path))], capture_output=True, text=True, timeout=1800)
+                           reference_python(), str(media or media_copy(tmp_path))], capture_output=True, text=True, timeout=1800)
     assert done.returncode == 0, done.stderr[-2000:]
     return json.loads(done.stdout.strip().splitlines()[-1])
 
@@ -109,7 +153,12 @@ def test_recording_is_deterministic_and_never_hits_a_server_error(tmp_path):
     assert all(status < 500 for status in statuses) and {200, 201, 403, 409, 422} <= statuses
     themes = {s["theme"] for s in data["scenarios"]}
     with_media = (MEDIA / "manifest.json").is_file()
-    assert len(themes) == 27 + with_media and "trading" in themes and ("media" in themes) == with_media
+    assert len(themes) == 27 + with_media + len(ROUTINE_THEMES) and "trading" in themes and ("media" in themes) == with_media
+    # two scenarios of each office routine, last, one unit each, numbered R00001 on
+    routines = [s for s in data["scenarios"] if s["theme"] in ROUTINE_THEMES]
+    assert [s["theme"] for s in routines] == [theme for theme in ROUTINE_THEMES for _ in range(2)] and data["scenarios"][-len(routines):] == routines
+    assert [s["id"] for s in routines] == [f"R{n:05d}" for n in range(1, len(routines) + 1)] and not any("units" in s for s in routines)
+    assert recording["recorded_with"]["live"]["routines"] == 2
     assert any("binary" in step["json"] for scenario in data["scenarios"] for step in scenario["steps"])
     # a month of trading: one unit per day from 2031-03-03 into April, the client's screens after it, two planned restarts
     months = [s for s in data["scenarios"] if s["theme"] == "trading"]
@@ -131,6 +180,151 @@ def test_verifier_scores_the_reference_one_and_defects_lower(tmp_path):
     for defect in ("crash", "missing"):
         result = grade(tmp_path, scenarios, defect)
         assert result["reward"] == 0.0 and result["scenarios_total"] == total and result["notes"]
+
+
+# the office routines (scripts/record_live.py ROUTINES), in recording order
+ROUTINE_THEMES = ("users", "workspace", "price-lists", "promotions", "suppliers", "saved-reports", "journal-reversals", "carriers",
+                  "standing-orders")
+# documented calls whose answers need not match, as the instruction says: password sign-in, sessions and API keys, the
+# calls that set or change a password, and the request log (`/metrics` is not in the API description)
+EXCEPTED = {("POST", "/api/ws/{ws}/auth/login"), ("POST", "/api/ws/{ws}/auth/logout"), ("POST", "/api/ws/{ws}/auth/password"),
+            ("PUT", "/api/ws/{ws}/users/{id}/password"), ("GET", "/api/ws/{ws}/auth/credentials"), ("POST", "/api/ws/{ws}/auth/api-keys"),
+            ("DELETE", "/api/ws/{ws}/auth/credentials/{id}"), ("GET", "/api/ws/{ws}/admin/requests")}
+# what the routines brought into the corpus (round 16), by the call a server could leave out: [method, full-path pattern]
+ADDED = {
+    "the workspace summary": [["GET", r"/api/ws/[^/]+"]], "readiness": [["GET", r"/api/ready"]],
+    "the API description": [["GET", r"/api/openapi\.json"]], "one user": [["GET", r"/api/ws/[^/]+/users/[^/]+"]],
+    "a user changed": [["PATCH", r"/api/ws/[^/]+/users/[^/]+"]], "a user brought back": [["POST", r"/api/ws/[^/]+/users/[^/]+/activate"]],
+    "the permission table": [["GET", r"/api/ws/[^/]+/auth/permissions"]], "the price lists": [["GET", r"/api/ws/[^/]+/price-lists"]],
+    "a new price list": [["POST", r"/api/ws/[^/]+/price-lists"]], "the promotions": [["GET", r"/api/ws/[^/]+/promotions"]],
+    "a new supplier": [["POST", r"/api/ws/[^/]+/suppliers"]], "a supplier unblocked": [["POST", r"/api/ws/[^/]+/suppliers/[^/]+/unblock"]],
+    "one saved report": [["GET", r"/api/ws/[^/]+/reports/saved/[^/]+"]],
+    "a journal entry reversed": [["POST", r"/api/ws/[^/]+/ledger/journal/[^/]+/reverse"]],
+    "a carrier brought back": [["POST", r"/api/ws/[^/]+/carriers/[^/]+/activate"]],
+    "a standing order resumed": [["POST", r"/api/ws/[^/]+/standing-orders/[^/]+/resume"]],
+}
+# the statuses each documented call is answered with in a corpus: [method, template, pattern, rank] in argv[3]; a step
+# goes to its most specific template (literal segments first, so /stock/counts is never taken for a parameter)
+ANSWERED = r"""
+import json, re, sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+from verifier.replay import iter_scenarios
+calls = [(method, path, re.compile(pattern), tuple(rank)) for method, path, pattern, rank in json.loads(sys.argv[3])]
+answered, steps, created = {}, {}, []
+for scenario in iter_scenarios(Path(sys.argv[2]).read_text()):
+    for number, step in enumerate(scenario["steps"], start=1):
+        full = step["path"] if step.get("scoped", True) is False else "/api/ws/WS" + step["path"]
+        found = [(rank, method, path) for method, path, pattern, rank in calls if method == step["method"] and pattern.fullmatch(full)]
+        if found:
+            _, method, path = max(found)
+            answered.setdefault(method + " " + path, set()).add(step["status"])
+        if len(sys.argv) > 4:
+            steps.setdefault(scenario["id"], []).append([step["method"], full])
+    if "created" in scenario:
+        created.append(scenario["id"])
+print(json.dumps({"answered": {key: sorted(value) for key, value in answered.items()}, "steps": steps, "created": created}))
+"""
+
+
+def documented_calls() -> list[list]:
+    """Every operation of the API description the client ships (the sealed server serves the same document), and the
+    description itself, which the instruction names: [method, template, pattern, rank]."""
+    paths = json.loads((REFERENCE / "frontend" / "openapi.json").read_text())["paths"]
+    calls = [[method.upper(), path, "/".join("[^/]+" if part.startswith("{") else re.escape(part) for part in path.split("/")),
+              [0 if part.startswith("{") else 1 for part in path.split("/")]]
+             for path, item in paths.items() for method in item if method in ("get", "post", "put", "patch", "delete")]
+    return calls + [["GET", "/api/openapi.json", r"/api/openapi\.json", [1, 1, 1]]]
+
+
+def answered(corpus: Path, with_steps: bool = False) -> dict:
+    done = subprocess.run([sys.executable, "-I", "-B", "-c", ANSWERED, str(STEP / "tests"), str(corpus), json.dumps(documented_calls()),
+                           *(["steps"] if with_steps else [])], capture_output=True, text=True, timeout=600)
+    assert done.returncode == 0, done.stderr[-2000:]
+    return json.loads(done.stdout)
+
+
+def test_every_documented_call_outside_the_exceptions_is_answered_in_the_corpus():
+    """The verdict on version 11 (should-fix, from the source audit): the corpus never called GET /api/ws/{ws}, GET and
+    POST /price-lists, GET /users/{id} or POST /users/{id}/activate, so a server answering 404 there lost nothing. Round
+    16's audit of all 242 documented operations found 21 never called, 8 of them excepted by the instruction, and four
+    more the corpus only ever saw refused (bringing a carrier back, reversing a journal entry, unblocking a supplier,
+    resuming a standing order); the health check's answer was never compared and the API description never fetched.
+    The office routines call each of them. Every documented call outside the exceptions is now answered with success
+    somewhere in the task's corpus, and the excepted ones, named in the instruction, nowhere."""
+    corpus = STEP / "tests" / "private" / "scenarios.json"
+    assert corpus.is_file(), "record the scenarios first: scripts/record_scenarios.py"
+    calls = documented_calls()
+    found = answered(corpus)
+    statuses = found["answered"]
+    assert len(calls) == 243 and EXCEPTED <= {(method, path) for method, path, _, _ in calls}
+    # POST /api/workspaces is the replay's own first call in every scenario (201 and a usable id, or nothing else
+    # counts), and the scenarios that hold `created` judge its answer too
+    assert "POST /api/workspaces" not in statuses and len(found["created"]) >= 12
+    missing = [f"{method} {path}" for method, path, _, _ in calls if (method, path) not in EXCEPTED | {("POST", "/api/workspaces")}
+               and not any(200 <= status < 300 for status in statuses.get(f"{method} {path}", []))]
+    assert missing == [], missing
+    assert not [f"{method} {path}" for method, path in EXCEPTED if f"{method} {path}" in statuses]
+    instruction = " ".join((STEP / "instruction.md").read_text().split())
+    assert ("password sign-in, sessions and API keys, which we do not use, and the request log and `/metrics`, which are for operators. Those "
+            "need not match, and neither do the calls that set or change a password, which we do not use either.") in instruction
+
+
+def test_routines_recorded_onto_a_corpus_are_what_a_full_recording_gives(tmp_path):
+    """Round 16 added the office routines to the task's corpus with --append instead of recording it all again, so that
+    no scenario it held could change: the result must be byte for byte the file a full recording with the same seed and
+    --routines gives, the record must follow it, a second append must be refused, and no media is touched."""
+    media = tmp_path / "media"
+    media.mkdir()
+    script = [sys.executable, "-B", str(TASK / "scripts" / "record_scenarios.py"), "--seed", "14"]
+    base, full = tmp_path / "base.json", tmp_path / "full.json"
+    for out, extra in ((base, []), (full, ["--routines", "2"])):
+        done = subprocess.run([*script, "--count", "8", "--media", str(media), "--out", str(out), *extra], capture_output=True, text=True, timeout=1800)
+        assert done.returncode == 0, done.stderr[-2000:]
+    held = base.read_bytes()
+    done = subprocess.run([*script, "--append", "--routines", "2", "--out", str(base)], capture_output=True, text=True, timeout=1800)
+    assert done.returncode == 0, done.stderr[-2000:]
+    grown = base.read_bytes()
+    assert grown == full.read_bytes() and grown.startswith(held[:-3]) and len(grown) > len(held)
+    record = json.loads(base.with_suffix(".recording.json").read_text())
+    assert record["corpus_sha256"] == hashlib.sha256(grown).hexdigest() and record["recorded_with"]["live"]["routines"] == 2
+    assert record["recorded_with"]["legacy"] == json.loads(full.with_suffix(".recording.json").read_text())["recorded_with"]["legacy"]
+    again = subprocess.run([*script, "--append", "--routines", "2", "--out", str(base)], capture_output=True, text=True, timeout=1800)
+    assert again.returncode != 0 and "holds routines already" in again.stderr and base.read_bytes() == grown
+    assert not any(media.iterdir())
+
+
+def test_a_server_without_a_call_the_routines_make_loses_their_units(tmp_path):
+    """The verdict's check, for each call the routines brought into the corpus: the reference without it (answering 404
+    as for an unknown path) loses exactly the scenarios that make it, each at its first such call, and nothing else; a
+    health check that answers 200 with another body loses the workspace scenarios, and so does a workspace created with
+    an answer that holds its id alone (the replay judges `created`, before the first step). The reference scores 1, a
+    missing server 0."""
+    corpus = tmp_path / "routines.json"
+    corpus.write_text('{"scenarios":[]}\n')
+    done = subprocess.run([sys.executable, "-B", str(TASK / "scripts" / "record_scenarios.py"), "--append", "--routines", "2", "--seed", "15",
+                           "--out", str(corpus)], capture_output=True, text=True, timeout=1800)
+    assert done.returncode == 0, done.stderr[-2000:]
+    found = answered(corpus, with_steps=True)
+    steps, created = found["steps"], found["created"]
+    themes = {scenario["id"]: scenario["theme"] for scenario in json.loads(corpus.read_text())["scenarios"]}
+    assert len(steps) == 2 * len(ROUTINE_THEMES) and sorted(set(themes.values())) == sorted(ROUTINE_THEMES)
+    assert created and {themes[sid] for sid in created} == {"workspace"}
+    media = tmp_path / "no-media"
+    media.mkdir()
+    assert grade(tmp_path, corpus, "none", media)["reward"] == 1.0
+    assert grade(tmp_path, corpus, "missing", media)["reward"] == 0.0
+    cases = {name: (f"without {json.dumps(calls)}", calls) for name, calls in ADDED.items()}
+    cases["the health check's answer"] = ("health body", [["GET", r"/api/health"]])
+    cases["the answer a workspace is created with"] = ("bare creation", None)
+    for name, (defect, calls) in cases.items():
+        hit = ({sid: 0 for sid in created} if calls is None else
+               {sid: next(n for n, (method, path) in enumerate(made, start=1) if any(method == m and re.fullmatch(p, path) for m, p in calls))
+                for sid, made in steps.items() if any(method == m and re.fullmatch(p, path) for method, path in made for m, p in calls)})
+        result = grade(tmp_path, corpus, defect, media)
+        failed = {r["id"]: r["failed_step"] for r in result["results"] if not r["matched"]}
+        assert hit and failed == hit, (name, failed, hit)
+        assert result["reward"] == round(1 - len(hit) / len(steps), 6), (name, result["reward"])
 
 
 def test_client_reaches_nearly_every_endpoint_of_the_reference():
@@ -475,7 +669,10 @@ def test_the_agent_image_keeps_no_file_that_states_the_sealed_servers_stack():
 def test_the_candidate_id_goes_where_the_recording_has_ws_and_types_must_match():
     """The candidate's answer is compared as it is: its workspace id is put into the recorded answer where the recorder
     wrote {ws}, so an id that is also a value elsewhere (QA 10 E9: id 1100 next to account code 1100) is no problem,
-    and `true` is not `1` and `100` is not `100.0` (E8)."""
+    and `true` is not `1` and `100` is not `100.0` (E8). Round 16: an answer whose own text holds {ws} (the API
+    description's paths, /api/ws/{ws}/...) was rewritten with the candidate's id, so no server, the reference included,
+    could match it; the recorder now keeps such an answer `literal` (and refuses one that also holds the workspace
+    id), and it is compared as it is."""
     probe = r"""
 import json, sys
 sys.path.insert(0, sys.argv[1])
@@ -492,13 +689,20 @@ checks = {
     "nested": same({"a": [{"b": 0}]}, {"a": [{"b": False}]}, "w"),
     "binary": same({"binary": {"content_type": "image/png", "bytes": 3, "sha256": "ab"}},
                    {"binary": {"content_type": "image/png", "bytes": 3, "sha256": "ab", "filename": "x.png"}}, "w"),
+    "literal": same({"paths": {"/api/ws/{ws}/users": {}}}, {"paths": {"/api/ws/{ws}/users": {}}}, "w_1", True),
+    "literal expanded": same({"paths": {"/api/ws/{ws}/users": {}}}, {"paths": {"/api/ws/{ws}/users": {}}}, "w_1"),
+    "literal taken for the id": same({"paths": {"/api/ws/w_1/users": {}}}, {"paths": {"/api/ws/{ws}/users": {}}}, "w_1", True),
 }
 print(json.dumps(checks))
 """
     done = subprocess.run([sys.executable, "-I", "-B", "-c", probe, str(STEP / "tests")], capture_output=True, text=True, timeout=60)
     assert done.returncode == 0, done.stderr[-2000:]
     assert json.loads(done.stdout) == {"expand": True, "e9": True, "other id": False, "e8 bool": False, "e8 float": False, "e8 int": True,
-                                       "nested": False, "binary": True}
+                                       "nested": False, "binary": True, "literal": True, "literal expanded": False,
+                                       "literal taken for the id": False}
+    recorder = (TASK / "scripts" / "record_live.py").read_text()
+    assert 'step["literal"], step["json"] = True, answer' in recorder and "answered both the text {{ws}} and the workspace id" in recorder
+    assert 'same(answer, step["json"], workspace, step.get("literal") is True)' in (STEP / "tests" / "verifier" / "replay.py").read_text()
 
 
 def test_replay_sends_files_and_sized_bodies_raw(tmp_path):

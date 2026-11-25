@@ -2,11 +2,12 @@
 
 A scenario is a list of requests made in one fresh workspace, with the status and
 the answer the reference server gave for each: a JSON body, or for a file its type,
-length and SHA-256. The reward is the share of units that match. A scenario is one
-unit, or, for a month of trading, one unit per trading day and per client screen
-opened after it; a unit matches when every one of its answers is the same. The
-total is fixed, so a server that does not start, dies, hangs or is too slow loses
-the units it did not answer and nothing else.
+length and SHA-256; it may also hold the answer the workspace was created with
+(`created`), which counts as its first. The reward is the share of units that
+match. A scenario is one unit, or, for a month of trading, one unit per trading
+day and per client screen opened after it; a unit matches when every one of its
+answers is the same. The total is fixed, so a server that does not start, dies,
+hangs or is too slow loses the units it did not answer and nothing else.
 
 - Time: a request has REQUEST_SEC of wall clock and the whole replay DEADLINE_SEC;
   a request still running past either has its connection shut down. Scenarios not
@@ -1223,7 +1224,8 @@ def expand(value: Any, workspace: str) -> Any:
     {ws} stands for the reference's own workspace id wherever it appeared in the answer (a random
     `ws_` and 16 hex digits, so never by chance), and braces cannot occur in an id the instruction
     allows. Putting the candidate's id back in the same places is the exact inverse; the candidate's
-    answer itself is never rewritten.
+    answer itself is never rewritten. An answer whose own text holds {ws} is kept `literal` and not
+    passed through here.
     """
     if isinstance(value, str):
         return value.replace("{ws}", workspace) if "{ws}" in value else value
@@ -1245,12 +1247,13 @@ def identical(answer: Any, expected: Any) -> bool:
     return answer == expected
 
 
-def same(answer: Any, expected: Any, workspace: str) -> bool:
-    """Whether an answer equals the recorded one; a recorded file's name is not compared."""
+def same(answer: Any, expected: Any, workspace: str, literal: bool = False) -> bool:
+    """Whether an answer equals the recorded one; a recorded file's name is not compared. A `literal` answer holds the
+    text {ws} of its own (the API description's paths, /api/ws/{ws}/...) and no workspace id, and is compared as it is."""
     if isinstance(expected, dict) and set(expected) == {"binary"}:
         expected = {"binary": {key: value for key, value in expected["binary"].items() if key != "filename"}}
     try:
-        return identical(answer, expand(expected, workspace))
+        return identical(answer, expected if literal else expand(expected, workspace))
     except RecursionError:  # nested deeper than any recorded answer
         return False
 
@@ -1428,6 +1431,14 @@ def attempt(candidate: Candidate, scenario: dict[str, Any], media: Media, clock:
             if candidate.generation != generation:  # the server was restarted under this scenario
                 raise NoAnswer("restarted")
             return result(0, "could not create a workspace")
+        if "created" in scenario and not same(created, scenario["created"], workspace):
+            # a scenario that holds `created` also judges the answer the workspace was created with, as its first answer
+            if candidate.generation != generation:
+                raise NoAnswer("restarted")
+            wrong[0] = True
+            difference = (0, "the new workspace was described differently")
+            if not multi:
+                return result(*difference)
         for index, step in enumerate(steps, start=1):
             unit = step.get("unit", 0)
             # most paths are the workspace's own; a step marked scoped: false names its full path (the client's /api/version)
@@ -1438,7 +1449,7 @@ def attempt(candidate: Candidate, scenario: dict[str, Any], media: Media, clock:
             if stats is not None:
                 stats.note(time.monotonic() - began, str(scenario["id"]), index, f"{step['method']} {step['path']}", status, themes[unit])
             reason = (f"status {status}, expected {step['status']}" if status != step["status"]
-                      else None if same(answer, step["json"], workspace) else "body differs")
+                      else None if same(answer, step["json"], workspace, step.get("literal") is True) else "body differs")
             if reason is not None:
                 if candidate.generation != generation:
                     raise NoAnswer("restarted")
