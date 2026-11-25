@@ -960,12 +960,13 @@ It does not yet meet the v2 workload target; see [Workload](#workload) and
   solution is readable source: `solution/` holds `oracle.py`, `solve.sh`, the
   license and attribution, and the original text of the 355 SymPy files that
   hold units (a prepared input, git-ignored in this repository and copied into
-  the bundle by the packager), with no bytecode, archive or other opaque file. The verifier image's build installs
-  system and Python packages while its environment was declared without network,
-  so `[verifier.environment] network_mode` is now `"public"`, for that
-  environment's build, with `[verifier] network_mode = "no-network"` kept for
-  the verification itself and the open-internet justification extended to the
-  second image's build (see [Verification](#verification)).
+  the bundle by the packager), with no bytecode, archive or other opaque file.
+  The verifier image's build installs system and Python packages while its
+  environment was declared without network, so `[verifier.environment]
+  network_mode` is now `"public"`, for that environment's build, with
+  `[verifier] network_mode = "no-network"` kept for the verification itself
+  and the open-internet justification extended to the second image's build
+  (see [Verification](#verification)).
 - The new hostile cases. On the verifier's side, through its own `measure()`
   and scoring with real SymPy (one worker, the tests not run), a tree of the
   original bodies with one unit each writing through `sympy.preview(...,
@@ -979,10 +980,11 @@ It does not yet meet the v2 workload target; see [Workload](#workload) and
   `System.form_eoms` of `Vector.diff`, `homomorphism` of `Module.subset`):
   1,840 of 1,847 units in the set and 6,200 of 6,213 counted calls. The
   flooding unit's examples and the oversized result's ran out of their time
-  (the flood's output went nowhere); the refused units' callers failed. A memory blow-up and a file written through a route the rules do
-  not list are left to the image's limits (4 GiB of address space, 256 MiB a
-  file, a private folder for temporary files), which this machine does not
-  have, so they were not run here. On the delivery's side the checks run the
+  (the flood's output went nowhere); the refused units' callers failed. A
+  memory blow-up and a file written through a route the rules do not list are
+  left to the sandbox's limits (4 GiB of address space, 256 MiB a file, a
+  private folder for temporary files), which need Linux, so they were not run
+  on this machine. On the delivery's side the checks run the
   hooks whole under stand-ins: a collect step that a fork bomb leaves unable to
   start a process scores 0 with a note; a save by rename just after the limit
   keeps the file, `copied`; three local polls two thirds into a turn end
