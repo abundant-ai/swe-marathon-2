@@ -1,0 +1,32 @@
+#!/usr/bin/env python3
+"""Expose the coating registration reference through the public command."""
+
+import argparse
+from pathlib import Path
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parent / "coating_app"))
+from coating_registration import register
+from coating_io import publish, read_json
+
+
+def main() -> int:
+    """Parse one CLI operation and return a shell exit code."""
+    parser = argparse.ArgumentParser()
+    commands = parser.add_subparsers(dest="command", required=True)
+    operation = commands.add_parser("register")
+    operation.add_argument("--job", type=Path, required=True)
+    operation.add_argument("--scans", type=Path, required=True)
+    operation.add_argument("--output", type=Path, required=True)
+    args = parser.parse_args()
+    try:
+        result = register(read_json(args.job), read_json(args.scans))
+        publish(args.output, result)
+    except (OSError, ValueError) as error:
+        print(error, file=sys.stderr)
+        return 2
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

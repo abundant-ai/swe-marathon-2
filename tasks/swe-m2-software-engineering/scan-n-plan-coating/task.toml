@@ -1,0 +1,52 @@
+schema_version = "1.4"
+multi_step_reward_strategy = "final"
+artifacts = ["/app/coating", "/app/coating_app"]
+
+[task]
+name = "abundant/swe-m2_software-engineering_scan-n-plan-coating"
+description = "Register a rotary coating cell, plan coordinated passes, and recover interrupted material deposition from measured receipts."
+authors = [{name = "QingyuanWuNothing", email = "qingyuanwu4work@gmail.com"}]
+
+[metadata]
+reward_type = "continuous"
+
+[agent]
+timeout_sec = 7200
+user = "candidate"
+network_mode = "no-network"
+
+[environment]
+network_mode = "allowlist"
+allowed_hosts = ["pypi.org", "files.pythonhosted.org"]
+build_timeout_sec = 900
+cpus = 2
+memory_mb = 3072
+storage_mb = 4096
+workdir = "/app"
+
+[verifier]
+environment_mode = "separate"
+network_mode = "no-network"
+timeout_sec = 2700
+user = "root"
+
+[verifier.environment]
+network_mode = "allowlist"
+allowed_hosts = ["pypi.org", "files.pythonhosted.org"]
+build_timeout_sec = 900
+cpus = 2
+memory_mb = 3072
+storage_mb = 4096
+workdir = "/app"
+
+[[steps]]
+name = "01-register-the-part"
+
+[[steps]]
+name = "02-plan-a-coating-pass"
+
+[[steps]]
+name = "03-coordinate-the-positioner"
+
+[[steps]]
+name = "04-resume-interrupted-coating"

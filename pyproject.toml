@@ -32,4 +32,5 @@ testpaths = [
     "tasks/swe-m2-software-engineering/nav2-docking-recovery/checks",
     "tasks/swe-m2-software-engineering/mujoco-branch-replay/checks",
     "tasks/swe-m2-software-engineering/versioned-mapping/checks",
+    "tasks/swe-m2-software-engineering/scan-n-plan-coating/checks",
 ]

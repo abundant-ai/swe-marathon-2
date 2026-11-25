@@ -1,0 +1,21 @@
+{
+  "job_id": "coordinate-curved-panel-pilot",
+  "capture_epoch": "mounted-pilot",
+  "status": "registered",
+  "base_from_part_home": {
+    "translation_m": [
+      0.862,
+      -0.007,
+      0.2537623264164044
+    ],
+    "quaternion_xyzw": [
+      0.0,
+      0.0,
+      0.1345903110073483,
+      0.9909013312045479
+    ]
+  },
+  "capture_ids": [
+    "pilot-survey"
+  ]
+}
