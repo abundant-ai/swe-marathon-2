@@ -123,9 +123,14 @@ def scan_body(nodes, fn=None) -> str | None:
                     return f"use of module '{n.id}'"
             elif isinstance(n, ast.Attribute) and n.attr in DENY_ATTRS:
                 return f"attribute '.{n.attr}'"
+            elif isinstance(n, ast.Subscript) and _namespace(n.value) and _denied_entry(n.slice):
+                return f"namespace entry '{n.slice.value}'"
             elif isinstance(n, ast.Call):
                 called = n.func.id if isinstance(n.func, ast.Name) else n.func.attr if isinstance(n.func, ast.Attribute) else None
                 literals = [a.value for a in n.args if isinstance(a, ast.Constant) and isinstance(a.value, str)]
+                if called in NAMESPACE_CALLS and isinstance(n.func, ast.Attribute) and _namespace(n.func.value) \
+                        and n.args and _denied_entry(n.args[0]):
+                    return f"namespace entry '{n.args[0].value}'"
                 if called in NAME_CALLS:
                     for name in literals:
                         if any(part in DENY_ATTRS for part in name.split(".")):
@@ -133,6 +138,23 @@ def scan_body(nodes, fn=None) -> str | None:
                 elif called in MODULE_CALLS and literals and _denied_module(literals[0]):
                     return f"import of '{literals[0]}'"
     return None
+
+
+NAMESPACE_CALLS = {"get", "pop", "setdefault", "__getitem__", "__setitem__"}
+
+
+def _namespace(node) -> bool:
+    """A module's or a class's namespace: `x.__dict__`."""
+    return isinstance(node, ast.Attribute) and node.attr == "__dict__"
+
+
+def _denied_entry(node) -> bool:
+    """A literal name taken from a namespace that names something on the lists: a module, a builtin, an
+    attribute (`x.__dict__['os']`, `x.__dict__.get('__builtins__')`)."""
+    if not (isinstance(node, ast.Constant) and isinstance(node.value, str)):
+        return False
+    name = node.value
+    return name in DENY_ATTRS or name in DENY_NAMES or name in DENY_MODULES or name in DENY_IMPORTED_NAMES
 
 
 def rules_text() -> str:
@@ -153,6 +175,7 @@ def rules_text() -> str:
         "as a literal):",
         "  " + ", ".join(sorted(DENY_ATTRS)),
         "Modules named as a literal to import_module or __import__, as for imports.",
+        "Any of the names above taken from a namespace by a literal (`x.__dict__['os']`, `x.__dict__.get(...)`).",
         "These are lists of names: a body that reaches the same things another way is not thereby allowed.",
     ])
 

@@ -284,3 +284,30 @@ def test_a_runner_record_out_of_form_fails_its_unit_and_never_raises(tmp_path, v
     assert data["status"] == {"sympy.rebind.extra": "pass", "sympy.rebind.wrong": "fail", "sympy.rebind.listed": "pass",
                               "sympy.rebind.after": "pass"}, data
     assert not any("not_reached" in record for record in data["records"].values()), data["records"]
+
+
+def test_a_body_that_breaks_the_json_module_does_not_reach_the_runners_own_encoder(tmp_path, verifier_call):
+    """The runner makes its encoder before any submitted code loads: a body that replaces json's default
+    encoder and its C parts leaves the records of the units after it in the same runner well formed, so
+    each keeps its own verdict."""
+    tree = standin_tree(tmp_path / "tree")
+    breaker = textwrap.dedent("""\
+        import json
+        import json.encoder
+
+        class Broken(json.JSONEncoder):
+            def encode(self, o):
+                return '["broken"]'
+
+        json._default_encoder = Broken()
+        json.encoder.c_make_encoder = None
+        json.encoder.c_encode_basestring_ascii = None
+        json.dumps = lambda *a, **k: '["broken"]'
+        return 1""")
+    (tree / "sympy" / "breaker.py").write_text(unit("breaker", breaker, module="sympy.breaker")
+                                               + unit("wrong", "return 2", module="sympy.breaker")
+                                               + unit("after", "return 1", module="sympy.breaker"))
+    names = ["sympy.breaker." + n for n in ("breaker", "wrong", "after")]
+    data = run_phase(verifier_call, tree, tmp_path / "s", 120, names, module="sympy.breaker")
+    assert data["status"] == {"sympy.breaker.breaker": "pass", "sympy.breaker.wrong": "fail", "sympy.breaker.after": "pass"}, data
+    assert data["bad"] == [] and data["missing"] == 0

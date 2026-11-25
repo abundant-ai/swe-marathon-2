@@ -10,7 +10,11 @@ variant builder's own steps (`variants.py contract`, `screen` and `select`, with
 placeholder's and that nothing visible answers are kept, recorded on the original.
 
 usage: twin_calls.py <original_tree> <units.json> <inputs.pkl> <gold.json> <documented.json> <pairs.json> <out.pkl>
+       twin_calls.py shown <selected_dir> <before_gold.json> <units.json> <documented.py output> [...]
 <pairs.json> maps each near-copy's unit id to its twins' unit ids. Writes [(cid, uid, blob, "twin")].
+The second form documents, among the calls `variants.py select` added (those not in <before_gold.json>), every
+one whose result a visible example or test shows for its unit (the documented.py outputs' `shown`, compared
+as finalize_documented.py compares them), and rewrites the selection's documented.json.
 """
 from __future__ import annotations
 
@@ -40,7 +44,40 @@ def parameters(tree, qualname, occ):
             [x.arg for x in a.kwonlyargs], a.kwarg.arg if a.kwarg else None)
 
 
+def shown_mode():
+    selected, before_path, units_path = sys.argv[2:5]
+    here = os.path.dirname(os.path.abspath(__file__))
+    sys.path.insert(0, os.path.join(here, "..", "..", "steps", "01-restore-bodies", "tests", "verifier", "lib"))
+    from canon import profile_of, same_loose  # noqa: PLC0415
+
+    units = {u["uid"]: u for u in json.load(open(units_path, encoding="utf-8"))}
+    gold = json.load(open(os.path.join(selected, "gold.json"), encoding="utf-8"))
+    before = set(json.load(open(before_path, encoding="utf-8")))
+    documented = set(json.load(open(os.path.join(selected, "documented.json"), encoding="utf-8"))["calls"])
+    payload = pickle.load(open(os.path.join(selected, "inputs.pkl"), "rb"))  # noqa: S301 - build output
+    owner = {vid: uid for p in payload.values() for vid, uid, _b in p["vectors"]}
+    shown = collections.defaultdict(list)
+    for path in sys.argv[5:]:
+        for uid, forms in (json.load(open(path, encoding="utf-8")).get("shown") or {}).items():
+            shown[uid].extend(forms)
+    added = sorted(v for v in gold if v not in before)
+    now_documented = []
+    for vid in added:
+        u = units[owner[vid]]
+        profile = profile_of(f"{u['file']}::{u['qualname']}")
+        if any(same_loose(gold[vid], form, profile=profile) for form in shown.get(owner[vid], ())):
+            now_documented.append(vid)
+    documented |= set(now_documented)
+    with open(os.path.join(selected, "documented.json"), "w", encoding="utf-8") as f:
+        json.dump({"calls": sorted(v for v in gold if v in documented)}, f)
+    counted = [v for v in added if v not in documented]
+    print(json.dumps({"added": len(added), "shown_now_documented": len(now_documented), "counted_added": len(counted),
+                      "units_with_counted_added": len({owner[v] for v in counted})}))
+
+
 def main():
+    if sys.argv[1] == "shown":
+        return shown_mode()
     tree_root, units_path, inputs, gold_path, documented_path, pairs_path, out = sys.argv[1:8]
     sys.path[:0] = [os.path.abspath(tree_root)]
     os.chdir(tree_root)

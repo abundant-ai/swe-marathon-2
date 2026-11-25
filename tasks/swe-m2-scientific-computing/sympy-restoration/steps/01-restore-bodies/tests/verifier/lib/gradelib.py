@@ -262,7 +262,7 @@ def run_doctests(cand_root, names_by_module, rdoctest_path, *, deadline, bound, 
                     else:
                         count("ended_or_stopped")
                         out[name] = {"name": name, "status": "crash",
-                                     "exc": "the runner wrote too much" if kind == "bad" else "the runner ended during this unit"}
+                                     "exc": "the runner wrote something that is not a record" if kind == "bad" else "the runner ended during this unit"}
                     pending.pop(0)
                     break   # the module's other units run in a new runner
             finally:

@@ -152,6 +152,24 @@ def call(fn, args):
     return fn(*pos, *varargs, **kwonly, **varkw)
 
 
+def private_encoder():
+    """A JSON encoder of this runner's own, made before any submitted code loads: the C encoder and
+    escaper are held here, so what a body later does to the json module does not reach this runner's
+    records (json.dumps where the C accelerator is missing)."""
+    import json.encoder as encoder_module
+
+    make, escape = encoder_module.c_make_encoder, encoder_module.c_encode_basestring_ascii
+    if make is None or escape is None:
+        return json.dumps
+
+    def default(o):
+        raise TypeError(f"not serializable: {type(o).__name__}")
+
+    encode = make(None, default, escape, None, ": ", ", ", False, False, True)
+    join = "".join
+    return lambda record: join(encode(record, 0))
+
+
 def main():
     began = time.time()
     cand_root, module_name = sys.argv[1:3]
@@ -162,13 +180,14 @@ def main():
     for descriptor in (0, 1, 2):
         os.dup2(quiet, descriptor)
     sys.stdin, sys.stdout, sys.stderr = open(os.devnull), open(os.devnull, "w"), open(os.devnull, "w")
-    dumps = json.dumps
+    dumps = private_encoder()
+    write = channel.write
 
     def send(record):
         text = dumps(record)
         if len(text) > MAX_LINE and "c" in record:
             text = dumps({"v": record["v"], "c": ["TOOBIG"], "ms": record.get("ms", 0)})
-        channel.write(text.encode("ascii") + b"\n")
+        write(text.encode("ascii") + b"\n")
 
     cand_root = os.path.realpath(cand_root)
     sys.path[:] = [p for p in sys.path if p not in ("", os.getcwd(), HERE)]

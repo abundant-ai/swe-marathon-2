@@ -267,7 +267,10 @@ def _option(flag):
 
 def main():
     task, original, coverage_path, out = (os.path.abspath(p) for p in sys.argv[1:5])
-    absorbed_path, pairs_only = _option("--absorbed"), _option("--pairs-only")
+    absorbed_path, pairs_only, whole_path = _option("--absorbed"), _option("--pairs-only"), _option("--whole")
+    # units left whole by decision, with their calls, counted or not: a near-copy that no call of its own
+    # could be found for, together with its graded twin (the twin's counted calls leave the reward)
+    forced = set(json.load(open(whole_path, encoding="utf-8"))) if whole_path else set()
     units = json.load(open(os.path.join(task, "environment", "data", "units.json"), encoding="utf-8"))
     traced = json.load(open(coverage_path, encoding="utf-8"))
     coverage, items = traced["units"], traced.get("items", {})
@@ -291,7 +294,7 @@ def main():
         records[u["uid"]] = rec
 
     # the rule, then the near-copy exception
-    candidates = sorted(uid for uid in by_uid if uid not in graded)
+    candidates = sorted(uid for uid in by_uid if uid not in graded or uid in forced)
     visible = [dict(records[uid], uid=uid) for uid in candidates]
     copies = {}
     for uid in sorted(graded):
@@ -306,7 +309,11 @@ def main():
             json.dump(twins, f, indent=1)
         print(json.dumps({"ungraded": len(candidates), "near_copies": len(twins)}))
         return
-    whole = [uid for uid in candidates if uid not in copies]
+    # a graded unit given away by a body left whole is itself a near-copy: say so, it must be left whole too
+    given_away = sorted(uid for uid in graded if uid not in forced
+                        and near_copies(records[uid], [dict(records[f], uid=f) for f in sorted(forced)]))
+    assert not given_away, f"bodies left whole give {len(given_away)} graded units away: leave them whole too"
+    whole = [uid for uid in candidates if uid not in copies or uid in forced]
     kept = sorted(uid for uid in by_uid if uid not in set(whole))
     new_uid = {old: f"U{i + 1:04d}" for i, old in enumerate(kept)}
     ranks = {old: r for r, old in enumerate(sorted(kept, key=lambda o: by_uid[o]["order"]))}
@@ -390,7 +397,9 @@ def main():
         if vecs:
             new_payload[mod] = {"units": {new_uid[o]: m for o, m in p["units"].items() if o in new_uid},
                                 "vectors": vecs}
-    assert not dropped & counted_before, "a counted call belongs to a unit left whole"
+    counted_dropped = sorted(dropped & counted_before)
+    owners = {vid: uid for p in payload.values() for vid, uid, _b in p["vectors"]}
+    assert all(owners[v] in forced for v in counted_dropped), "a counted call belongs to a unit left whole"
     new_gold = {v: g for v, g in gold.items() if v not in dropped}
     new_documented = dict(documented, calls=[v for v in documented["calls"] if v not in dropped])
     with open(os.path.join(out, PRIVATE, "vectors", "inputs.pkl"), "wb") as f:
@@ -430,7 +439,8 @@ def main():
         "left_whole": len(whole), "units_after": len(kept),
         "files_before": len(by_file), "files_after": len(files_kept),
         "calls_before": len(gold), "calls_after": len(new_gold), "calls_dropped": len(dropped),
-        "counted_calls": len(counted_before),
+        "counted_calls": len(counted_before), "counted_calls_dropped": len(counted_dropped),
+        "counted_calls_after": len(counted_before) - len(counted_dropped), "forced_whole": len(forced),
         "literal_hits": None,
         "whole_units": sorted(by_uid[o]["dotted"] for o in whole),
         "uid_map": new_uid,
