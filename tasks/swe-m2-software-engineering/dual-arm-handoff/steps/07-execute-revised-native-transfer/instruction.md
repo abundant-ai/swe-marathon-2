@@ -1,0 +1,15 @@
+# Recover a revoked native transfer from measured state
+
+A new fixture forecast can withdraw a move while the part is in the air. Authorize one primitive at a time. Brake from measured velocity after revocation, then replan from the stopped cell. The current holder remains responsible until the receiving gripper actually confirms custody. Preserve durable authority across a lost reply and keep the earlier commands available.
+
+```bash
+python3 -m dual_arm dispatch-native --spec PACKET.json --state STATE.json --output REPORT.json
+```
+
+A packet contains nonempty `mission`, positive integer `sequence`, nonnegative integer `revision`, the same `window` as `plan-native`, and `previous`. State initially does not exist and can retain several independent missions. Its first sequence is 1. Each accepted event has the next consecutive sequence, with nondecreasing revision and measured tick. The commissioned model, grasp geometry, destination, limits, deadline, authorized handoff regions and robot asset stay fixed. A newer revision can replace fixtures. A measurement can change between any valid consecutive packets.
+
+Return `mission`, `sequence`, `revision`, `status`, `command`, and `command_id`. `issued` includes the first safe primitive and a unique nonempty command ID. `ready` means the measured cell has reached a certified resting goal. `blocked` means automatic recovery cannot safely proceed. `rejected` indicates an incompatible receipt or sequence. The last three cases have null command and ID. Nominal command intervals start at the measured dispatch tick. Actual completion is supplied in a later packet.
+
+`previous` is null only if no command remains outstanding. Otherwise it names that command as `{"id":id,"outcome":"completed"}` or `{"id":id,"outcome":"withdrawn"}`. A completion must agree with the authorized end tick and pose. Allow 0.035 rad of measured position error per joint and at most 0.17 rad/s residual speed. The holder may change only for a completed `transfer` with a boolean `receiver_confirmed: true` and the expected new holder. A move or brake completion retains the original holder. A move may be withdrawn strictly inside its issued interval, at a strictly newer revision, while retaining the original holder. Issue a safe brake based on the measured joint rates even if the original plan would otherwise continue. If no safe stop fits the revised scene, return `blocked`. After confirmed braking, synthesize the next primitive under the current scene, including any alternative handoff needed for recovery.
+
+Persist accepted decisions before publishing a reply. A byte-equivalent JSON packet retry, independent of object key order, returns the original response. A changed packet at the same sequence, skipped sequence, wrong command ID, stale evidence, or unconfirmed holder change does not mutate state. Concurrent access must be equivalent to serial updates. A malformed request must leave the prior state and output intact. A lost reply still leaves the accepted decision durable for an exact retry. Separate authority, native motion planning and publication.

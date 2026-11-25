@@ -1,0 +1,67 @@
+schema_version = "1.4"
+multi_step_reward_strategy = "final"
+artifacts = ["/app/lagfusion"]
+
+[task]
+name = "abundant/swe-m2_software-engineering_fixed-lag-fusion"
+description = "Build a restartable fixed-lag factor graph for asynchronous wheel, inertial and radio-range observations, with frozen calibration and safe factor revisions."
+authors = [{ name = "QingyuanWuNothing", email = "qingyuanwu4work@gmail.com" }]
+
+[metadata]
+reward_type = "continuous"
+
+[agent]
+timeout_sec = 5400
+user = "candidate"
+network_mode = "no-network"
+
+[environment]
+network_mode = "allowlist"
+allowed_hosts = ["pypi.org", "files.pythonhosted.org"]
+build_timeout_sec = 900
+cpus = 2
+memory_mb = 2048
+storage_mb = 4096
+workdir = "/app"
+
+[verifier]
+environment_mode = "separate"
+network_mode = "no-network"
+timeout_sec = 600
+user = "root"
+
+[verifier.environment]
+network_mode = "allowlist"
+allowed_hosts = ["pypi.org", "files.pythonhosted.org"]
+build_timeout_sec = 900
+cpus = 2
+memory_mb = 2048
+storage_mb = 4096
+workdir = "/app"
+
+[[steps]]
+name = "01-smooth-window"
+
+[[steps]]
+name = "02-calibrate-sensors"
+
+[[steps]]
+name = "03-fuse-records"
+
+[[steps]]
+name = "04-revise-stream"
+
+[[steps]]
+name = "05-qualify-network"
+
+[[steps]]
+name = "06-track-integrity"
+
+[[steps]]
+name = "07-smooth-native-tracks"
+
+[[steps]]
+name = "08-reopen-fixed-lag"
+
+[[steps]]
+name = "09-recalibrate-camera-mounts"
