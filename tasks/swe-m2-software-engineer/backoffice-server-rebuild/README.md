@@ -13,6 +13,60 @@ One step is implemented. See [Remaining work](#remaining-work).
 
 ## Development log
 
+### 2026-11-25 (round 17: version 12's pre-trial audit; the solution's readable source, the second image's network; version 13)
+
+- Version 12 (flat bundle `d7c7caf87b15`) passed its baselines (reference 1.0 twice, no-op 0.0 twice). Its pre-trial
+  source audit returned two must-fix findings, so no model trial ran (harbor-lh
+  `ops/swe-marathon-v2/qa/backoffice/scratch-v12/v12-audit-mustfix.csv`).
+- Q-09, the solution's readable source. `solution/data/stockwell/` held the reference as 192 `.pyc` files and no
+  source. The solution's data is now the reference's 192 `.py` files: `scripts/package_step.py` copies them at build
+  time from the pinned checkout (`experiment/reference/d61d29c...`), after checking each against the pinned commit's own
+  Git blob in the private Stockwell repository (a changed, missing or extra file stops the build). The sealed copy in the
+  agent's image stays bytecode alone, compiled from those same checked files. abundant-ai/swe-marathon-2 is public, so
+  the source is never committed: `.gitignore` now ignores `steps/*/solution/data/` and `environment/sealed/`, where the
+  build makes them, and the repository tracks no file of the package. `oracle.py` already installed source (its check
+  allowed `app.py`); only its docstring changed.
+  - Proof on the final bundle: the 192 shipped files are the pinned commit's blobs (192 of 192), one for each sealed
+    module and none besides, and compiled as the sealed copy is (Python 3.12.13, unchecked-hash headers, the sealed
+    path `/opt/stockwell/app/stockwell/...`) each gives the sealed `.pyc` byte for byte (192 of 192).
+  - The source holds no authoring words. A scan for grading, corpus, scenario, benchmark, parity, candidate, reward,
+    trial, harness, agent and the like found the application's own vocabulary (the trial balance, revaluation, EAN
+    parity, a search's candidates, `user-agent`), and the integrity module's docstring about Stockwell's own test suite
+    ("run after every recorded scenario in the test suite"), which the bytecode already held and which cannot change
+    without changing the pinned original. No personal name, local path or note.
+- The second image's network. `tests/Dockerfile` installs system packages with apt-get and the server's packages with
+  pip, but `[verifier.environment]` declared `network_mode = "no-network"`. It is now `"public"`, for that image's build;
+  `[verifier] network_mode` stays `"no-network"`, so the final check runs without network, as the agent's session does.
+  `[metadata].open_internet_justification` now reads: "The environment build, the agent's tool setup and the build of
+  the second image have public egress, to install system and Python packages. The agent works without network access,
+  the sealed server it studies runs inside its own container, and the final check runs without network." No word the
+  earlier verdicts objected to (the `task.toml` word check passes).
+- Checks: two new and one changed, each failing on `1b420f8` (this round's checks file on a `git archive` copy):
+  - `test_the_solution_ships_the_pinned_source_and_the_repository_never_holds_it`: 192 files, each the pinned commit's
+    blob; a checkout with one file changed, or one missing, is refused; nothing of the package is tracked; the build's
+    folders are ignored and `environment/sealed-supervisor` is not;
+  - `test_only_the_builds_have_network`: the four network modes and the justification;
+  - the bundle check: the sealed copy is bytecode alone; the solution's data is source alone, one file for each sealed
+    module, each compiling to the sealed `.pyc` byte for byte; the solution installed from an isolated copy starts and
+    gives a workspace.
+
+  `checks/` has 70 tests; with `ci_checks` (27), the fast set passes: 92, and the artifacts check alone on a short path.
+  The four that record or replay were not run (the machine's swap was near full); their code has not changed since
+  `df3d36b`, where they passed.
+- Bundles: flat `ad345f082835` (the upload; Oddish content hash `09c6450b8a72...`, version 12's `a8694f4019ca...`),
+  built twice with the same hash and `diff -r`-identical files, and steps `903e505bbd31`, 1,160 files and 246.8 MB
+  each. Against version 12's `d7c7caf87b15` they differ in the solution's data (192 `.pyc` became 192 `.py`),
+  `solution/oracle.py`'s docstring and `task.toml`, and nothing else: the agent's image, the sealed bytecode, the
+  instruction, the verifier and the corpus are version 12's byte for byte. `scripts/scan_uploads.py` finds no leak and
+  nothing missing among 495 agent-image files; `oddish preflight` passes.
+- The oracle from source. Free and inactive memory was under 4 GB, so the full replay was not run. The final flat
+  bundle's solution, installed from an isolated copy by its own `oracle.py` (192 `.py`, no `.pyc`; only the interpreter
+  path swapped), scored 1.0 on a fixed subset of the corpus: 412 of 412 units in 332 scenarios (the 108 routines, every
+  tenth one-unit scenario, and months T00003 and T00005 with their SIGKILL and SIGTERM restarts), 2 planned restarts, no
+  other restart, no second try, no note, in 66 s. The program is the one that scored 4,110 of 4,110 in round 16's full
+  replay and 1.0 twice in version 12's baselines: that bytecode was compiled from these same files, and differed only in
+  the file path compiled into it.
+
 ### 2026-11-25 (round 16: the verdict on version 11; every documented call in the corpus, and where the sealed server is; version 12)
 
 - Version 11 (flat bundle `d09c99f4e5db`) passed its baselines (reference 1.0 twice, no-op 0.0 twice) and its source
@@ -1595,7 +1649,7 @@ One step is implemented. See [Remaining work](#remaining-work).
 | Step `01-rebuild-server` | Implemented: instruction, agent image with the sealed server, separate verifier image, reference solution. |
 | Further steps | Not designed. Candidates: a follow-up change request on the rebuilt server; importing a year of legacy data. The work's end is counted from the trial's set-up, which is right for one step only: a second one needs its start recorded per step first (Remaining work). Since round 15 the task is uploaded flat. |
 | Private inputs | `steps/01-rebuild-server/tests/private/scenarios.json` and the private files they upload (`experiment/media/private`, made with `--big`), Git-ignored, produced by `scripts/record_scenarios.py --count 2160 --runs 44 --term 6 --kill 3 --screens 8 --routines 12` from the private seeds in `experiment/seeds.json` (never committed; rotated in round 3); the routines (round 16) were added to the round 3 corpus with `--append --routines 12`, which gives the same file and leaves every earlier scenario byte for byte. The corpus holds `scenarios` alone; how it was recorded (the seed, the legacy commit, the themes left out, the media set's digest, the live recorder's settings) is in `experiment/recording.json` with the corpus's SHA-256, never committed or packaged (round 11). |
-| Oracle | The reference server, shipped as Python 3.12 bytecode in the solution's data, installed as the delivered server and run on the packages in `/opt/py`. |
+| Oracle | The reference server's readable source (round 17; bytecode until then) in the solution's data, copied at build time from the pinned checkout after a check against the pinned commit's Git blobs, never committed; installed as the delivered server and run on the packages in `/opt/py`. |
 | Ratings (`harbor check`) | Not run. |
 
 ## Design dimensions
@@ -1970,7 +2024,7 @@ part only the platform can close).
 
 | # | Attack and impact | Boundary | Evidence | Mitigation | Residual risk | Next validation | Severity |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | Read the sealed server's code and copy it | File permissions in the agent image; what the bundle and its layers hold | Inspected by adversarial QA 04 and 08 (2026-11-19): as the agent's user, the bytecode, the database and `/proc/<pid>/{mem,environ}` of the sealed server are not readable. Not executed in a container | Server files are owned by user `stockwell`, mode 0700, and the agent runs as `dev`. Round 3 (QA 08): the bundle carries the reference as Python 3.12 bytecode only, for the sealed server and the solution, so no layer of either image holds its source (the build fails on a `.py`); every start of the sealed server first checks as `dev` that `/opt/stockwell` cannot be read or entered and fails the setup hook, which stops the trial, if it can. `/opt/py` holds only public third-party packages | A way to become root or `stockwell` inside the container; bytecode can be decompiled by anyone who has the bundle | Probe as `dev`: read `/opt/stockwell`, `/proc/<pid>/mem`, ptrace | 🟡 YELLOW / UNASSESSED |
+| 1 | Read the sealed server's code and copy it | File permissions in the agent image; what the bundle and its layers hold | Inspected by adversarial QA 04 and 08 (2026-11-19): as the agent's user, the bytecode, the database and `/proc/<pid>/{mem,environ}` of the sealed server are not readable. Not executed in a container | Server files are owned by user `stockwell`, mode 0700, and the agent runs as `dev`. Round 3 (QA 08): the sealed server in the agent's image is Python 3.12 bytecode only, so no layer of either image holds its source (the build fails on a `.py`). Round 17 (Q-09 of version 12's audit): the solution's data is the readable source, which neither image holds (the solution reaches only the reference run's own container); every start of the sealed server first checks as `dev` that `/opt/stockwell` cannot be read or entered and fails the setup hook, which stops the trial, if it can. `/opt/py` holds only public third-party packages | A way to become root or `stockwell` inside the container; anyone who has the bundle can read the source (the solution's data since round 17) | Probe as `dev`: read `/opt/stockwell`, `/proc/<pid>/mem`, ptrace | 🟡 YELLOW / UNASSESSED |
 | 2 | Agent harness starts as root and hands the model a root shell | Harness and `[agent] user` on Oddish | Not tested on Oddish | `user = "dev"` in `task.toml` | Depends on each harness honouring it | Short model trial that prints `id` | 🟡 YELLOW / UNASSESSED |
 | 3 | Deliver a proxy to the sealed server | Separate verifier image | By design | The verifier image has no reference server and no network | None found | Keep | 🟢 GREEN / LOW |
 | 4 | Replay a table of recorded answers, including answers collected for inputs the agent already holds | Private scenarios; what the agent image holds | QA 06 (2026-11-19): the 19 Stockwell test fixtures shipped in `/app/samples` were uploaded byte for byte by the hidden `files` scenarios; fixed in round 1, and `scripts/scan_uploads.py` checks every bundle. QA 05 (2026-11-19): a crawl of a fresh workspace, a day counter and cheap rules cover 2.2 to 3.5% of round 2's units, through screens the month never changed (67 of 343) and legacy scenarios whose every write is refused (53); left out in round 3 | Scenarios come from a private seed, rotated in round 3 and kept out of the repository and, since round 11, out of the bundle (the corpus carried it in a `recorded_with` record until then): 90,744 requests in 2,370 scenarios (4,110 units; round 16 added 108 office routines), 44 of them months of trading from four start dates whose supplier invoices are made for each purchase order. No screen that answers as a fresh workspace on the same day and no legacy scenario that changes nothing is kept, and every count and kit scenario does its work. The private media share no file and no name with the samples, and the bundle check fails on any hidden upload, cut-short upload or file answer the agent image holds | A table cannot cover them; the generators' shape could be guessed only in outline | Measure a lookup-table submission on the round 3 corpus | 🟢 GREEN / LOW |
@@ -1992,6 +2046,12 @@ part only the platform can close).
 
 | Check | Revision | Result |
 | --- | --- | --- |
+| Version 12's audit, Q-09: the solution's readable source | round 17 against `1b420f8` | the solution's data is the 192 `.py` files of the pinned commit `d61d29c` (each its Git blob, 192 of 192); compiled as the sealed copy is, 192 of 192 give the sealed `.pyc` byte for byte; nothing of the package is tracked and the build's folders are ignored; the three new or changed checks fail on `1b420f8` |
+| Version 12's audit: the second image's network | round 17 | `[verifier.environment] network_mode = "public"` for that image's build; `[verifier]` and `[agent]` `no-network`; the justification names the second image's build |
+| Oracle from source through the verifier, local, no sandbox | round 17: flat bundle `ad345f082835`, its solution installed from an isolated copy (192 `.py`, no `.pyc`), a fixed subset of the corpus (memory under 4 GB) | 1.0: 412 of 412 units in 332 scenarios, 2 planned restarts (SIGKILL, SIGTERM), no other restart, no second try, no note; 66 s |
+| `checks/` (70 tests) with `ci_checks` (27) | round 17 | the fast set passes: 92, and the artifacts check alone on a short path; the four that record or replay were not run (swap near full), unchanged since `df3d36b` |
+| Bundle | round 17: flat `ad345f082835` (the upload), steps `903e505bbd31`, 1,160 files, 246.8 MB each | the flat one built twice with the same hash and `diff -r`-identical files; against `d7c7caf87b15` only the solution's data, `solution/oracle.py` and `task.toml` differ; Oddish preflight passes; `compute_task_content_hash` `09c6450b8a72...` against version 12's `a8694f4019ca...`; no hidden upload among 495 agent-image files |
+| Oddish baselines and source audit | round 16: flat bundle `d7c7caf87b15`, version 12 | reference 1.0 twice, no-op 0.0 twice (reported by the coordinator); the source audit's two must-fix findings, Q-09 (the solution's source) and the second image's network, round 17; no model trial run |
 | Every documented call outside the exceptions answered in the corpus | round 16 against `f38350e` (corpus `3cd1a9c8...`) | before: 21 of the 242 operations never called (8 excepted by the instruction, POST /api/workspaces the replay's own call, 12 more), 4 only ever refused, the health check's answer and the API description never compared; now 233 of 242 are called and each is answered 2xx at least once, the 8 excepted never, POST /api/workspaces's answer is judged in the 12 workspace scenarios (`created`) and the API description is fetched in 3 (`literal`) |
 | The verdict's mutant: the reference without an added call (404 as for an unknown path) | round 16: two of each routine (seed 15), and the task's whole corpus | two of each routine: for each of the 16 calls exactly the scenarios that make it fail, each at its first such call; a health answer with another body and a creation answer of the id alone lose the workspace scenarios; the reference 1.0, a missing server 0.0. The whole corpus, all 16 calls at once: 0.957 (3,935 of 4,110): exactly the 175 scenarios that make one of the calls are lost, each first at such a call, and nothing else (all 108 routine scenarios; 67 earlier ones that call the four calls the corpus only saw refused: ledger 44, purchasing 11, dispatch 9, standing 3); the first build, `7d47b8d1458e`, the same |
 | `--append` against a full recording | round 16 | a small corpus recorded without the routines and appended to is the full recording's file byte for byte, its record follows, a second append is refused and no media is touched; the task's append repeated onto a fresh copy of the old corpus gave the same `05dc16d9...`, whose start is the old file less its closing `]}` |
@@ -2103,17 +2163,20 @@ python3 scripts/record_scenarios.py --count 2160 --runs 44 --term 6 --kill 3 --s
 uv run --no-project --python 3.13 python scripts/package_step.py         # compiles the reference with Python 3.12; experiment/dist/bundles/<hash>/<task slug>/
 uv run --no-project --python 3.13 python scripts/package_step.py --flat  # same content without the steps wrapper, named <task>-single
 uv run --no-project --python 3.13 python scripts/package_step.py --flat --keep-name  # the upload since round 15: flat, under the task's own name; experiment/dist/flat/<hash>/
+# every packaging run checks the solution's source against the pinned commit's Git blobs, so it needs the private
+# Stockwell repository (STOCKWELL_REPO, or ../stockwell next to swe-marathon-2); the source is never committed here
 python3 scripts/scan_uploads.py experiment/dist/bundles/<hash>/<task slug>   # hidden uploads or file answers the agent image also holds
 ```
 
 ## Remaining work
 
-- Upload the flat bundle `d7c7caf87b15` (247.5 MB, `package_step.py --flat --keep-name`) under
-  the task's own name as version 12 (version 11, `d09c99f4e5db`, passed its baselines and its
-  source audit; its verdict rejected it on the documented calls the corpus never graded and on a
-  solver that read the platform's launcher in the process list, round 16; re-check 10 of round 16
-  passed, and its changes are in), run its baselines with `--no-archil` (reference twice, no-op twice), and
-  have its Oddish source audit pass before any model trial (the owner's gate since version 8).
+- Upload the flat bundle `ad345f082835` (246.8 MB, `package_step.py --flat --keep-name`) under
+  the task's own name as version 13, after an independent re-check of round 17 (version 12,
+  `d7c7caf87b15`, passed its baselines; its source audit's two must-fix findings, the solution's
+  readable source and the second image's network, are round 17), run its baselines with
+  `--no-archil` (reference twice, no-op twice), and have its Oddish source audit pass before any
+  model trial (the owner's gate since version 8). The reference now runs from source, which
+  round 17 replayed on a subset only (memory): its baselines are its first full replay.
   Pass criteria for the reference: 4,110 of 4,110, `planned_restarts` 9,
   `restarts` 0, `retried` 0, `unfinished` 0, no answer of 500 or above in
   `server_errors_by_theme`, no note of the hard stop, of a stop for disk or memory, or from the
