@@ -51,9 +51,9 @@ CLEANUP_SEC = 60  # the cleanup after the last case, at most
 RETRIED_LIMITS = ("memory limit", "disk limit", "file limit")  # a case stopped by one runs once more
 # The least runcases.distinct_outputs a reward needs (runcases.DISTINCT_OUTPUTS): of the passed cases, this many
 # different recorded outputs that only a run of the code given can produce. A program that prints only what options
-# such as --version and --help print, only nothing, a few fixed answers, echoes of what it is given or the build's
-# error messages from a table runs nothing it is given: it passes a few cases and scores 0. recording.json's
-# baselines give the count for every kept case and for the strongest program with no interpreter in it.
+# such as --version and --help print, only nothing, a few fixed answers, echoes of what it is given or guarded errors
+# answered from a table of the build's messages runs nothing it is given: it passes a few cases and scores 0.
+# recording.json's baselines give the count for every kept case and for the strongest program with no interpreter.
 DISTINCT_OUTPUTS = runcases.DISTINCT_OUTPUTS
 METRICS_SPACE = 1 << 18  # bytes metrics.json holds from the start, so that writing it needs no new space
 # Where the unprivileged user can leave files: these, and every other world-writable directory
@@ -609,10 +609,13 @@ def withheld(passed: int, distinct: int, least: int) -> str | None:
     """
     if not passed or distinct >= least:
         return None
-    return (f"reward 0: the {passed:,} cases passed hold {distinct} different outputs that only running the code "
-            f"given produces (code after -e, in a file of the case's own, or a program or the worker's requests "
-            f"on standard input; empty outputs, outputs copied from the case's own input, error messages a guard "
-            f"prints and the command line's own cases aside), fewer than the {least} a reward needs")
+    cases, hold = ("case", "holds") if passed == 1 else ("cases", "hold")
+    outputs = "output" if distinct == 1 else "outputs"
+    return (f"reward 0: the {passed:,} {cases} passed {hold} {distinct} different {outputs} that only running the "
+            f"code given produces (code after -e, in a file of the case's own, or a program or the worker's "
+            f"requests on standard input; empty outputs, outputs copied from the case's own input, what a guard "
+            f"prints in an error case and the command line's own cases aside), fewer than the {least} a reward "
+            f"needs")
 
 
 def grade(program: Path, private: Path, prefix: list[str], owner: tuple[int, int] | None,

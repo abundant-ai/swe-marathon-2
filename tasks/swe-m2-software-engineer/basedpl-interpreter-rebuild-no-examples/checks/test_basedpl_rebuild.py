@@ -892,7 +892,9 @@ def gate_cases(least: int) -> tuple[list[dict], dict, dict[str, list[str]]]:
     - "cli": the command line's own cases (options, wrong arguments, and one that runs a program from standard input);
     - "own": least + 10 programs given after -e, each printing an output of its own;
     - "echo": least + 5 programs given after -e that print a literal of their own code back;
-    - "message": least + 5 error cases whose guard prints the error's message, each another message;
+    - "message": least + 5 error cases whose guard prints what it caught, in each of the four forms the generator
+      writes (the error record, the message, the kind and message, the line, column and message), each another
+      message;
     - "empty": 8 programs in a file that print nothing and exit 1;
     - "common": 8 programs in a file that all print one common answer;
     - "blank", "worker", "stdin": a program whose output is empty, a worker session, a program on standard input.
@@ -921,8 +923,12 @@ def gate_cases(least: int) -> tuple[list[dict], dict, dict[str, list[str]]]:
         add("own", "expr", ["-e", f"v{i}+1"], f"w{i}\n")
     for i in range(least + 5):
         add("echo", "expr", ["-e", f'"e{i}"'], f'"e{i}"\n')
+    shown = (("$e", lambda i: f'["kind":"DOMAIN" "message":"m{i}" "source":"main.bpl" "line":1ₓ "column":9ₓ]'),
+             ("$e.message", lambda i: f'"m{i}"'), ('$e.kind,": ",$e.message', lambda i: f'"DOMAIN: m{i}"'),
+             ('(⍕$e.line),":",(⍕$e.column),": ",$e.message', lambda i: f'"1ₓ:9ₓ: m{i}"'))
     for i in range(least + 5):
-        add("message", "error", ["main.bpl"], f'"message {i}"\n', files={"main.bpl": f'{{∞::$e.message ◇ {i}÷"a"}}0\n'})
+        handler, answer = shown[i % 4]
+        add("message", "error", ["main.bpl"], answer(i) + "\n", files={"main.bpl": f'{{∞::{handler} ◇ {i}÷"a"}}0\n'})
     for i in range(8):
         add("empty", "error", ["main.bpl"], "", 1, files={"main.bpl": f"x{i}←1 2+1 2 3\n"})
     for i in range(8):
@@ -936,16 +942,17 @@ def gate_cases(least: int) -> tuple[list[dict], dict, dict[str, list[str]]]:
 def test_a_case_counts_toward_a_reward_only_when_only_a_run_of_its_code_gives_its_answer():
     """v5's verdict: two launchers that run nothing earned 6 and 1 of 1,673 cases with the command line's documented
     strings and with empty output; the re-check of round 13 then built, with no hidden data, programs that echo
-    literals and look the build's error messages up in a table. A reward needs DISTINCT_OUTPUTS different outputs
-    among the passed cases that give code of their own to run (after -e, a file of the case's own named first, a
-    program or worker requests on standard input), leaving out empty outputs, outputs whose every line occurs in the
-    case's own input, the messages a guard prints in an error case, and the command line's own cases. An output
-    counts once however many passed cases share it."""
+    literals and look the build's error messages up in a table, for every form a guard prints them in (its round-14
+    follow-up, M2). A reward needs DISTINCT_OUTPUTS different outputs among the passed cases that give code of their
+    own to run (after -e, a file of the case's own named first, a program or worker requests on standard input),
+    leaving out empty outputs, outputs whose every line occurs in the case's own input, every error case whose code
+    runs under a guard (whatever its handler prints: the generator's "guarded" mark, or a guard that catches every
+    error in main.bpl), and the command line's own cases. An output counts once however many passed cases share it."""
     found = verifier_call(textwrap.dedent('''
         import json
         from verifier import recorder, runcases
-        def case(ident, kind, argv, files=None, stdin=None):
-            return {"id": ident, "kind": kind, "argv": argv, "files": files or {}, "stdin": stdin}
+        def case(ident, kind, argv, files=None, stdin=None, form=None):
+            return {"id": ident, "kind": kind, "argv": argv, "files": files or {}, "stdin": stdin, **({"form": form} if form else {})}
         guard = lambda handler: {"main.bpl": "{∞::" + handler + ' ◇ 1÷"a"}0\\n'}
         shapes = [case("e", "expr", ["-e", "1+1"]), case("file", "script", ["main.bpl", "x"], {"main.bpl": "1+1"}),
                   case("dash", "stdin", ["-", "a"], stdin="1+1\\n"), case("bare", "stdin", [], stdin="1+1\\n"),
@@ -961,16 +968,21 @@ def test_a_case_counts_toward_a_reward_only_when_only_a_run_of_its_code_gives_it
                   case("message", "error", ["main.bpl"], guard("$e.message")),
                   case("kind-message", "error", ["main.bpl"], guard('$e.kind,": ",$e.message')),
                   case("other-handler", "error", ["main.bpl"], guard('"caught"')),
+                  case("record", "error", ["main.bpl"], guard("$e")),
+                  case("position", "error", ["main.bpl"], guard('(⍕$e.line),":",(⍕$e.column),": ",$e.message')),
+                  case("form-only", "error", ["main.bpl"], {"main.bpl": '{DOMAIN::⍕$e ◇ 1÷"a"}0\\n'}, form="guarded"),
                   case("message-elsewhere", "script", ["main.bpl"], guard("$e.message"))]
         answers = {"e": "2\\n", "file": "2\\n", "dash": "2\\n", "bare": "", "worker": "{}\\n", "version": "v\\n", "help": "h\\n",
                    "lone-e": "", "missing": "", "no-input": "", "empty-input": "", "worker-args": "", "cli-e": "c\\n",
                    "cli-file": "7\\n", "cli-stdin": "a\\n", "copied": '"abc"\\n', "copied-lines": "Hip\\nHop\\n",
                    "copied-library": "42\\n", "partly-copied": "Hip!\\n", "message": '"DOMAIN: no"\\n',
-                   "kind-message": '"DOMAIN: no"\\n', "other-handler": '"handled"\\n', "message-elsewhere": '"DOMAIN: no"\\n'}
+                   "kind-message": '"DOMAIN: no"\\n', "other-handler": '"handled"\\n', "message-elsewhere": '"DOMAIN: no"\\n',
+                   "record": '["kind":"DOMAIN" "message":"no" "source":"main.bpl" "line":1ₓ "column":8ₓ]\\n',
+                   "position": '"1ₓ:8ₓ: no"\\n', "form-only": '"DOMAIN no"\\n'}
         expected = {ident: {"stdout": text, "exit": 0} for ident, text in answers.items()}
         every = set(answers)
         counted = {c["id"]: runcases.counts(c, expected[c["id"]]) for c in shapes}
-        guarded = sorted(i for i, *_ in recorder.error_instances(shapes, expected))
+        guarded = [sorted(c["id"] for c in shapes if runcases.guarded_error(c)), sorted(i for i, *_ in recorder.error_instances(shapes, expected))]
         totals = [runcases.distinct_outputs(shapes, expected, every), runcases.distinct_outputs(shapes, expected, every - {"worker"}),
                   runcases.distinct_outputs(shapes, expected, {"version", "help", "cli-e", "cli-file", "cli-stdin", "bare", "copied",
                                                                "copied-lines", "copied-library", "message", "kind-message"}),
@@ -981,10 +993,11 @@ def test_a_case_counts_toward_a_reward_only_when_only_a_run_of_its_code_gives_it
     assert {ident for ident, value in runs.items() if not value} == {
         "version", "help", "lone-e", "missing", "no-input", "empty-input", "worker-args", "cli-e", "cli-file", "cli-stdin"}, runs
     assert {ident for ident, value in counted.items() if value} == {
-        "e", "file", "dash", "worker", "partly-copied", "other-handler", "message-elsewhere"}, counted
-    assert guarded == ["kind-message", "message"], "the guard rule is the one recorder.error_instances reads"
-    # "2" (three cases, once), "{}", "Hip!", the handled note and the message outside an error case
-    assert totals == [5, 4, 0, 0], totals
+        "e", "file", "dash", "worker", "partly-copied", "message-elsewhere"}, counted
+    assert guarded[0] == ["form-only", "kind-message", "message", "other-handler", "position", "record"], guarded
+    assert set(guarded[1]) <= set(guarded[0]), "every case the recorder's error lookup reads is left out too"
+    # "2" (three cases, once), "{}", "Hip!" and the message outside an error case
+    assert totals == [4, 3, 0, 0], totals
     # The rule, its note and the build's guard are worded as what a program must do, never as who checks it or why.
     verify, runner = (STEP / "tests" / "verify.py").read_text(), RUNNER.read_text()
     recording = (STEP / "tests" / "verifier" / "recording.py").read_text()
@@ -992,7 +1005,8 @@ def test_a_case_counts_toward_a_reward_only_when_only_a_run_of_its_code_gives_it
     gate = (between(verify, "# The least runcases.distinct_outputs", "METRICS_SPACE = ") + between(verify, "def withheld(", "def grade(")
             + between(runner, "# The least distinct_outputs a reward needs.", "\n\n\ndef limit(")
             + runner[runner.index("def runs_a_program("):] + between(recording, "def dispatcher_too_close(", "def main("))
-    assert "DISTINCT_OUTPUTS = 10" in gate and "DISTINCT_OUTPUTS = runcases.DISTINCT_OUTPUTS" in gate and "def counts(" in gate
+    assert "DISTINCT_OUTPUTS = 12" in gate and "DISTINCT_OUTPUTS = runcases.DISTINCT_OUTPUTS" in gate and "def counts(" in gate
+    assert "MESSAGE_HANDLERS" not in runner and "def guarded_error(" in gate, "no list of handlers to fall behind the generator's"
     assert runner.rstrip().endswith("if case[\"id\"] in passed and counts(case, expected[case[\"id\"]])})"), "the runner's last function"
     words = re.compile(r"platform|trial|evaluat|benchmark|stub|exploit|adversar|cheat|hack|oddish|harbor|modal|verdict|"
                        r"\bQA\b|launcher|grader", re.I)
@@ -1002,8 +1016,9 @@ def test_a_case_counts_toward_a_reward_only_when_only_a_run_of_its_code_gives_it
 def test_only_a_program_that_runs_what_it_is_given_earns_a_reward(tmp_path):
     """The real grade() on cases shaped as the kept ones, against the programs v5's two replays delivered (the
     command line's documented strings and exit 2 for everything else; exit 0 for everything), every constant answer
-    the cases share, an echo of literals, a table of the guarded cases' messages, and a table one counted output
-    short (which also answers the command line's own program, every echo, every message and every empty output):
+    the cases share, an echo of literals, a table of what the guarded cases print (re-check 10's err-table shape:
+    the record, the message, the kind and message, the line:column form), and a table one counted output short
+    (which also answers the command line's own program, every echo, every guarded case and every empty output):
     each passes cases and scores exactly 0, with the note in metrics.json. One more counted output (the program on
     standard input) and the same table earns its share."""
     least = least_distinct_outputs()
@@ -1029,13 +1044,16 @@ def test_only_a_program_that_runs_what_it_is_given_earns_a_reward(tmp_path):
             continue
         assert metrics["cases_passed"] > 0 and metrics["reward"] == 0.0, (name, metrics["cases_passed"], metrics["reward"])
         assert metrics["withheld"] and metrics["notes"][-1] == metrics["withheld"], (name, metrics["notes"])
-        assert metrics["withheld"].startswith(f"reward 0: the {metrics['cases_passed']} cases passed hold "
-                                              f"{metrics['distinct_outputs']} different outputs"), metrics["withheld"]
+        passed, distinct = metrics["cases_passed"], metrics["distinct_outputs"]
+        prefix = (f"reward 0: the {passed} {'case' if passed == 1 else 'cases'} passed {'holds' if passed == 1 else 'hold'} "
+                  f"{distinct} different {'output' if distinct == 1 else 'outputs'}")
+        assert metrics["withheld"].startswith(prefix), (prefix, metrics["withheld"])
     assert (results["docs"]["cases_passed"], results["docs"]["distinct_outputs"]) == (4, 0), "--version, --help and two exit 2s"
     assert (results["exit 0"]["cases_passed"], results["exit 0"]["distinct_outputs"]) == (1, 0)
     assert max(results[name]["distinct_outputs"] for name in results if name.startswith("constant")) == 1
     assert (results["echo"]["cases_passed"], results["echo"]["distinct_outputs"]) == (least + 5, 0), "echoes never count"
-    assert (results["messages"]["cases_passed"], results["messages"]["distinct_outputs"]) == (least + 5, 0), "nor guard messages"
+    assert (results["messages"]["cases_passed"], results["messages"]["distinct_outputs"]) == (least + 5, 0), \
+        "nor what a guard prints, in any of its four forms (re-check 10, M2: the record and the line:column form)"
     too_few, enough = results["too few"], results["enough"]
     # (least - 3) own outputs, the common answer once, the worker's reply: one short, whatever the others add
     assert too_few["distinct_outputs"] == least - 1 and too_few["cases_passed"] == len(few), too_few
@@ -1053,7 +1071,7 @@ def test_a_partial_interpreter_shaped_as_v4s_glm_run_keeps_its_share(tmp_path):
     graded locally: 11 of the command line's own cases, 6 programs that print nothing, 8 whose answer is copied
     from their input (6 different outputs) and 32 more, among them one output three times (30 different). The
     same pattern, answered by a table on cases of the same shapes and kinds, keeps its share: 30 counted outputs,
-    three times the least."""
+    two and a half times the least."""
     least = least_distinct_outputs()
     cases, expected, passing = [], {}, set()
 
@@ -1083,7 +1101,7 @@ def test_a_partial_interpreter_shaped_as_v4s_glm_run_keeps_its_share(tmp_path):
         add("expr", ["-e", f"q{k}"], f"s{k}\n", answered=False)
     metrics = run_verifier(tmp_path, answering(tmp_path, "glm", cases, expected, passing), cases, expected)
     assert (metrics["cases_total"], metrics["cases_passed"], metrics["distinct_outputs"]) == (200, 57, 30), metrics
-    assert metrics["distinct_outputs"] >= 3 * least and metrics["withheld"] is None and not metrics["notes"], metrics
+    assert metrics["distinct_outputs"] >= 2.5 * least and metrics["withheld"] is None and not metrics["notes"], metrics
     assert metrics["reward"] == round(57 / 200, 6), metrics["reward"]
 
 
@@ -1091,12 +1109,15 @@ def test_the_build_stops_when_the_cases_bring_a_program_with_no_interpreter_near
     """Re-check 10, N2: recording.py stops the verifier image's build (exit status 1, the reason on standard error)
     when the strongest program with no interpreter in it that the recorder knows answers kept cases holding more
     than a third of DISTINCT_OUTPUTS counted outputs, so that a new seed or template cannot bring such a program
-    near a reward unnoticed. Here its one constant per visible shape gives one counted output per shape: three shapes
-    pass the build, four stop it."""
+    near a reward unnoticed. Here its one constant per visible shape gives one counted output per shape: a third of
+    the least passes the build, one more stops it."""
     least = least_distinct_outputs()
-    assert least // 3 == 3, "four shapes are the first count past a third"
+    most = least // 3  # the most the build allows
     shapes = [(["-e", "aa"], ["-e", "ab"], {}, None), (["main.bpl"], ["main.bpl"], {"main.bpl": "aa"}, None),
-              (["-"], ["-"], {}, "aa"), (["main.bpl", "x"], ["main.bpl", "x"], {"main.bpl": "ac"}, None)]
+              (["-"], ["-"], {}, "aa"), (["main.bpl", "x"], ["main.bpl", "x"], {"main.bpl": "ac"}, None),
+              (["main.bpl", "x", "y"], ["main.bpl", "x", "y"], {"main.bpl": "ad"}, None),
+              (["-", "x"], ["-", "x"], {}, "ae"), (["main.bpl", "x", "y", "z"], ["main.bpl", "x", "y", "z"], {"main.bpl": "af"}, None)]
+    assert most + 1 <= len(shapes), "enough shapes to pass the bound by one"
 
     def recorded(count: int) -> subprocess.CompletedProcess:
         folder = tmp_path / f"shapes-{count}"
@@ -1117,11 +1138,12 @@ def test_the_build_stops_when_the_cases_bring_a_program_with_no_interpreter_near
                                *(str(folder / name) for name in ("cases.json", "kept.json", "expected.json", "timing.json", "out.json"))],
                               capture_output=True, text=True, timeout=60, cwd=STEP / "tests" / "verifier")
 
-    three, four = recorded(3), recorded(4)
-    assert three.returncode == 0, three.stderr[-2000:]
-    assert json.loads((tmp_path / "shapes-3" / "out.json").read_text())["baselines"]["no_interpreter_dispatcher_distinct_outputs"] == 3
-    assert four.returncode == 1 and (tmp_path / "shapes-4" / "out.json").is_file(), four.stderr[-2000:]
-    assert f"hold 4 different outputs that only a run of the code given produces, more than a third of the {least}" in four.stderr
+    allowed, stopped = recorded(most), recorded(most + 1)
+    assert allowed.returncode == 0, allowed.stderr[-2000:]
+    assert json.loads((tmp_path / f"shapes-{most}" / "out.json").read_text())["baselines"]["no_interpreter_dispatcher_distinct_outputs"] == most
+    assert stopped.returncode == 1 and (tmp_path / f"shapes-{most + 1}" / "out.json").is_file(), stopped.stderr[-2000:]
+    assert (f"hold {most + 1} different outputs that only a run of the code given produces, more than a third of the {least}"
+            in stopped.stderr), stopped.stderr[-2000:]
     docker = (STEP / "tests" / "Dockerfile").read_text()
     assert "&& python3 /record/recording.py " in docker, "the guard runs in the step that records, so its exit stops the build"
 
@@ -2933,7 +2955,7 @@ def test_the_whole_evaluation_runs_with_only_root_and_linux_stood_in(tmp_path):
     assert graded["left"] == ["metrics.json", "reward.txt"], "the reserved reward file is renamed, nothing else is left"
     assert [metrics[key] for key in ("cases_total", "cases_run", "cases_passed", "setup_errors", "timeouts")] == [48, 48, 48, 0, 0], metrics
     assert metrics["notes"] == [] and metrics["seconds_total"] > 0 and metrics["by_kind"]["expr"]["passed"] == 24, metrics
-    assert (metrics["distinct_outputs"], metrics["distinct_outputs_needed"], metrics["withheld"]) == (48, 10, None), metrics
+    assert (metrics["distinct_outputs"], metrics["distinct_outputs_needed"], metrics["withheld"]) == (48, 12, None), metrics
     assert graded["printed"] == ["reward: 1.000000 (48/48 cases)"], graded["printed"]
     uid = graded["owner"][0]
     assert graded["owner_types"] == ["int", "int"] and graded["owner"] == [uid, uid] and 20000 <= uid < 60000, graded["owner"]

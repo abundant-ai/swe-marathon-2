@@ -60,11 +60,11 @@ PAGE = os.sysconf("SC_PAGE_SIZE") if hasattr(os, "sysconf") else 4096
 # The least distinct_outputs a reward needs. verify.py withholds the reward of a program below it, and
 # recording.py fails the build when the strongest program with no interpreter in it that the recorder knows
 # (recorder.no_interpreter) reaches more than a third of it.
-DISTINCT_OUTPUTS = 10
-# A guard at the head of an error case's program and the handlers that print only the error's message, read as
-# recorder.error_instances reads them: such an answer is the build's message for the error the code meets.
+DISTINCT_OUTPUTS = 12
+# A guard that catches every error and prints what it caught, as an error case's program opens with it (the form
+# recorder.error_instances reads too); the generator also marks such a case with the form "guarded".
 GUARD = re.compile(r"\{∞::(.*?)(?: ◇ |\n)", re.S)
-MESSAGE_HANDLERS = ("$e.message", '$e.kind,": ",$e.message')
+GUARDED_FORM = "guarded"
 
 
 def limit() -> None:
@@ -434,23 +434,29 @@ def answer_in_input(case: dict, stdout: str) -> bool:
     return bool(lines) and all(line in given for line in lines)
 
 
-def prints_its_error_message(case: dict) -> bool:
-    """Whether a case is an error case whose program starts with a guard that prints only the
-    message (and the kind) of the error the code under it meets.
+def guarded_error(case: dict) -> bool:
+    """Whether a case is an error case whose code runs under a guard that prints what it caught,
+    whatever the guard prints of it: the error record, its message, its kind and message, its line
+    and column and message, or any other form.
 
-    Used by counts. Such an answer is one of the build's error messages: a table of them, recorded by
-    running the build, answers many such cases without running the code. Read as
-    recorder.error_instances reads it (GUARD, MESSAGE_HANDLERS).
+    Used by counts. Every such answer is built from the build's message for the error the code
+    meets, and the rest of it (the kind, the source, the line, a column a text search finds) a
+    program can fill in without running anything: a table of the build's messages, recorded by
+    running the build, answers many such cases. So no such case counts, whatever its handler: the
+    case is one the generator marked as guarded (GUARDED_FORM), or an error case whose program in
+    main.bpl holds a guard that catches every error (GUARD), so that a new handler cannot let one
+    through.
 
     Args:
-        case: A private case: "kind" and "files" ("main.bpl" holds an error case's program).
+        case: A private case: "form", "kind" and "files" ("main.bpl" holds an error case's program).
 
     Returns:
         True for such a case, False otherwise. Reads and changes nothing.
     """
+    if case.get("form") == GUARDED_FORM:
+        return True
     text = case["files"].get("main.bpl") if case.get("kind") == "error" else None
-    match = GUARD.search(text) if text else None
-    return bool(match) and match[1].strip() in MESSAGE_HANDLERS
+    return bool(text) and GUARD.search(text) is not None
 
 
 def counts(case: dict, answer: dict) -> bool:
@@ -458,7 +464,7 @@ def counts(case: dict, answer: dict) -> bool:
 
     Used by distinct_outputs. A case counts when it runs a program (runs_a_program), its recorded
     standard output is not empty and has a line that does not occur in the case's own input
-    (answer_in_input), and it is not an error message printed by a guard (prints_its_error_message).
+    (answer_in_input), and it is not an error case whose guard prints what it caught (guarded_error).
     What is left out is what a program with no interpreter in it answers: options, empty outputs,
     echoes and a table of the build's error messages.
 
@@ -471,7 +477,7 @@ def counts(case: dict, answer: dict) -> bool:
     """
     stdout = answer["stdout"]
     return (bool(stdout) and runs_a_program(case) and not answer_in_input(case, stdout)
-            and not prints_its_error_message(case))
+            and not guarded_error(case))
 
 
 def distinct_outputs(cases: list[dict], expected: dict[str, dict], passed: set[str]) -> int:
@@ -482,7 +488,8 @@ def distinct_outputs(cases: list[dict], expected: dict[str, dict], passed: set[s
     passes, and stops the build when the latter comes within a third of DISTINCT_OUTPUTS. Each
     recorded output counts once, however many passed cases share it: a program that prints one fixed
     answer counts 1 at most, and one that prints nothing, answers only options such as --version and
-    --help, echoes what it is given or prints the build's error messages from a table counts 0.
+    --help, echoes what it is given or answers guarded errors from a table of the build's error
+    messages counts 0.
 
     Args:
         cases: The private cases, each with "id", "argv", "files", "stdin" and "kind".
