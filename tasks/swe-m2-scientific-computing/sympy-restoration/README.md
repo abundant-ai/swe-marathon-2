@@ -1056,7 +1056,12 @@ It does not yet meet the v2 workload target; see [Workload](#workload) and
   the verification without network. `oddish preflight` passed (1 task). The
   bundle equals the worktree file for file and commit `03cc17f` for every
   tracked source; the word sweep of the whole bundle found the same hits as the
-  round before's, none new.
+  round before's, none new. After the instruction's change the key was replaced
+  once more and the bundle rebuilt from commit `408818d`: content
+  `54a8b4898f6e`, 415 files, platform content hash `a311bc14c28e…` (version 4's
+  `4ce37762a342…`), `oddish preflight` passed; it differs from `fb5eada8e82c`
+  only in the instruction and the key's two copies, and the sweep's one new hit
+  is the task's own "deliver" in the line about the log.
 
 ## Current implementation
 
@@ -1879,6 +1884,9 @@ stored submissions of the earlier sessions of the same task; every one scored
 | `oddish preflight` | flat bundle `fb5eada8e82c` (`ops/sympy-restoration/dist-12h/`, key rotated; platform content hash `a27c3b88f2d0…`, version 4's `4ce37762a342…`; Harbor's network plan for it: agent environment public, work no network, verifier environment public, verification no network) | pass (1 task) |
 | Word sweep of the whole bundle; the bundle against the worktree and the commit; the key | bundle `fb5eada8e82c` | the same hits as the round before's bundle, all of the classes found clean then (the task's "deliver", `platform` as a forbidden module, SymPy's own names, the root-only hooks' own words); 0 non-ASCII bytes; no bytecode; 415 files equal to the worktree, the 48 tracked ones to commit `03cc17f`; only the key's two copies, `fsmaint-sweep` and `task.toml` differ from the round's first build (`87c717883415`), and the prepared data and archives are byte for byte those of bundle `966f2b531f52` but for the key, so that bundle's data and archive scans stand; the key's copies equal, new and held by no other file |
 | Hostile trees at the platform's worker-seconds (one worker, examples 10,800 s, calls 9,600 s) | this machine, the entry point's steps, the tests not run | loop-5 0.5950, completed, 955 + 870 items out of time, 0 not reached; slow-50 0.7423, completed, 549 + 505 items out of time, 0 not reached; loop-all 0.0000, completed, 2671 + 2671 items out of time, 0 not reached; none an evaluation error |
+| `checks/` (133 tests) and the repository check | commit `408818d` (2026-11-25, the instruction's change, before the package) | pass |
+| `oddish preflight` | flat bundle `54a8b4898f6e` (`ops/sympy-restoration/dist-12h/`, key rotated; platform content hash `a311bc14c28e…`, version 4's `4ce37762a342…`; network plan as for `fb5eada8e82c`) | pass (1 task) |
+| Word sweep of the whole bundle; the bundle against the worktree and the commit; the key | bundle `54a8b4898f6e` | the hits of `fb5eada8e82c` and one more, the task's own "deliver" in the line about the log; 0 non-ASCII bytes; no bytecode; 415 files equal to the worktree, the 48 tracked ones to commit `408818d`; only the instruction and the key's two copies differ from `fb5eada8e82c`; the key's copies equal, new and held by no other file |
 | `harbor check` with `resources/task-implementation.toml` | working tree, 2026-11-17 | attempted on Modal; failed before review with `NotFoundError: Environment not found` (no default Modal environment). Not run in local Docker. No ratings |
 | Local image builds | none | not run for the v2 Dockerfiles; the Oddish baselines are the first build |
 
