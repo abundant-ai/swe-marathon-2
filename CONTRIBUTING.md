@@ -42,11 +42,33 @@ Identify what makes this task different and what evidence could establish succes
 A rough plausible solution approach is enough initially; an oracle or successful
 baseline can come later. Keep the ambition even when the solution is uncertain.
 
-Create the draft under `tasks/<family>/<task>/`, with instructions in
-`steps/<step>/instruction.md`. Describe inputs, outputs, interfaces, and constraints
-well enough to derive verification. Resolve consequential ambiguity before
-implementing the dependent checks. Keep scoring, private cases, and judge details
-in author notes; every enforced requirement must be disclosed to the candidate.
+### Static tasks
+
+Put a fixed brief under `tasks/static/<category>/<task>/`. For one step, put
+`instruction.md` at the task root. When you implement it, add `tests/` and,
+if you have a reference solution, `solution/` beside the brief. Set the agent
+and verifier settings at the top level of `task.toml`.
+
+If the task has two or more scripted steps, put each brief and its runtime
+files under `steps/<step>/`. List the implemented steps in execution order
+with `[[steps]]` in `task.toml`. The [fixed-lag fusion task](tasks/static/robotics/fixed-lag-fusion/)
+shows how later briefs build on earlier work.
+
+### User-sim tasks
+
+Put the task under `tasks/usersim/<task>/`. A conversation can span many
+messages within one Harbor step. Keep its opening brief in `instruction.md`
+and configure the user agent in `user_agent.yaml` at the task root. The
+[user-sim Orange task](tasks/usersim/knowledge-work-assistant/) shows how to
+reference a persona and opening prompt and how to start a run with `--user-agent`.
+Use `steps/<step>/` only when the runner must advance through multiple
+separately declared steps.
+
+### Task notes
+
+Describe the inputs, outputs, interfaces, and constraints for either format.
+Keep private cases and grading details in author notes. State each requirement
+the candidate must meet in the brief or the conversation.
 
 Start a task-root `README.md` with the design rationale and a `Development log`.
 Use `### YYYY-MM-DD` entries throughout development to record changes, reasons,
@@ -60,7 +82,7 @@ Once the initial instructions establish the work, make the task runnable. Follow
 the [shared setup guide](README.md#local-setup-and-checks) and the
 [multi-turn task structure skill](resources/skills/multi-turn-task-structure/SKILL.md)
 for layout, configuration, packaging, and verifier interfaces. Add runtime files
-as you implement each step, and declare only implemented steps in `task.toml`.
+as you implement the task.
 
 Prepare the inputs, dependencies, tools, and resources the agent needs. Check data
 licenses and external-service access. Keep shared task resources in task-root
@@ -71,11 +93,11 @@ development tools, private answers, verifier code, and oracle code from the
 candidate image. Keep credentials and generated artifacts out of Git.
 
 Task-root `checks/` and `scripts/` are optional development tooling that can be
-tracked and run locally or in CI. Never upload them in runtime bundles or include
+tracked and run locally. Never upload them in runtime bundles or include
 them in Docker build contexts, images, or runtime mounts. Agent and verifier
 Dockerfiles must not copy, add, or mount their contents. Run preparation outside
 the task images and stage only the required generated inputs. The runtime
-verifier under `steps/<step>/tests/` is separate from these development folders.
+verifier lives beside its brief in `tests/`.
 
 Map the instruction's requirements to observable evidence. Build programmatic
 checks, LLM judges, or a combination as appropriate, and define how the metrics
@@ -122,20 +144,16 @@ to reconcile those ratings with the evidence and record scores in `task.toml`
 metadata. Keep rationale and gaps in the task README. This is the next agent
 action after Harbor review; the Harbor CLI does not update metadata itself.
 
-Also run the [repository checks](README.md#local-setup-and-checks) and applicable
-local task tests. Exercise the packaged environment and verifier with controlled
-submissions, including no-op behavior, targeted defects, and legitimate alternatives.
-Validate an oracle when one is available and record its provenance. Add maintained
-tests to automatic CI when introducing another runnable task, using deterministic
-fixtures or pinned public inputs. Follow the [CI guide](resources/CI.md); do not
-hide skipped tests, missing reports, collection errors, or failed assertions.
+Use the task's local checks to exercise the packaged environment and verifier.
+Record the oracle’s provenance when you validate one. The repository’s
+[commit hook](resources/CI.md) runs Ruff.
 Record commands, results, and the revision reviewed in the development log.
 
 ## 5. Test the task with Oddish
 
 Use [Oddish](resources/ODDISH.md) for package preflight, trials, QA, and artifact
 collection. Prepare the generated task bundle, check that the service supports
-its multi-step and verifier configuration, and follow the installed CLI's skill
+its task layout and verifier configuration, and follow the installed CLI's skill
 and help for current commands. Complete required
 [LLM judge calibration and trace validation](resources/requirement.md#llm-judges)
 before execution.
@@ -184,8 +202,7 @@ Open a focused PR using the [PR template](.github/pull_request_template.md). Lin
 the task README, explain the design and reward formula, and provide validation
 results for the proposed revision. Include novelty comparisons, execution
 artifacts, applicable judge calibration, and the highest unresolved hackability
-severity. Both [automatic CI workflows](resources/CI.md) run on every push and PR,
-including documentation changes. Report local and hosted checks separately.
+severity. Report the task checks you ran.
 
 Then consider how to create more tasks that exercise the same underlying
 capability. Document which parts of the workflow and verifier can be reused,

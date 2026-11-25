@@ -3,6 +3,7 @@
 /HERB/
 /.venv/
 /.pytest_cache/
+/.ruff_cache/
 /ci-results/
 **/__pycache__/
 
@@ -13,6 +14,10 @@
 /tasks/**/environment/data/
 /tasks/**/environment/resources/corpus/
 /tasks/**/steps/**/tests/private/
+/tasks/usersim/*/tests/private/
+/tasks/static/*/*/tests/private/
+/tasks/usersim/*/tests/gpu-runtime/data/
+/tasks/usersim/*/tests/gpu-runtime/resources/corpus/
 /tasks/**/artifacts/
 /tasks/**/dist/
 /tasks/**/jobs/

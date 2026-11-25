@@ -26,7 +26,7 @@ and absolute output paths beside the requirements they clarify. Leave methods
 and implementation choices open unless the request requires them. Surface
 ambiguities that would change success instead of inventing a constraint.
 
-The [knowledge-work assistant instruction](../../../tasks/swe-m2-ai-engineer/knowledge-work-assistant/steps/01-build-rag/instruction.md)
+The [knowledge-work assistant instruction](../../../tasks/static/app_building/knowledge-work-assistant/instruction.md)
 is an example of a direct request organized by purpose, inputs, public behavior,
 and development records. Its headings, RAG workflow, models, database, CLI, and
 paths belong to that task. Choose the structure and requirements the new task

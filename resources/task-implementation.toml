@@ -279,7 +279,7 @@ Require verifier.environment_mode = separate, declared artifacts, explicit verif
 resources and network policy, and preinstalled dependencies or weights. PASS if every run,
 retry, and regrade starts fresh and transfers only declared artifacts, with boundary
 validation evidence. Follow resources/skills/multi-turn-task-structure/SKILL.md: author verifier
-code under steps/<step>/tests/, with verify.py behind test.sh and optional sibling
+code under tests/ beside the brief (root instruction.md for one step, steps/<step>/instruction.md for multiple steps), with verify.py behind test.sh and optional sibling
 verifier/ modules. A dedicated verifier Dockerfile must include its own tests and
 dependencies. Assess source files and generated bundles distinctly. The agent image must
 not contain verifier code or private tests. BUNDLE_MANIFEST.json is optional.
@@ -325,7 +325,7 @@ the report, while security_and_anti_cheat assesses the protection. Keep the repo
 name = "reward_design"
 description = "The reward has a justified mathematical definition"
 guidance = """
-PASS if tasks/<family>/<task>/README.md states the published reward formula, in the
+PASS if <task-root>/README.md states the published reward formula, in the
 shape of the knowledge-work assistant example cited by the v2 requirements, and the formula
 defines components, weights, normalization, denominators, mandatory conditions, thresholds,
 missing/skipped cases, and any turn aggregation. Code plus boundary tests must implement

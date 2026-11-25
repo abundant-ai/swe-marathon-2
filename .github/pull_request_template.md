@@ -6,8 +6,8 @@ task-root README. This repository is dedicated to SWE-Marathon v2.
 ## Task design
 
 For task changes, explain the professional workflow, intended workload, and
-differences from the closest benchmark tasks. Identify the implemented steps and
-any follow-up drafts. State which earlier requirements remain in force.
+differences from the closest benchmark tasks. Identify the task as static or user-sim and link its opening brief. For a
+multi-step task, list the implemented steps and any follow-up drafts. State which earlier requirements remain in force.
 
 ## Reward formula and justification
 
@@ -36,4 +36,3 @@ unaffected instead of filling in inapplicable results.
 - [ ] The task README explains difficulty, solution approach, reward, expected answers, and hackability, with evidence gaps stated.
 - [ ] Evaluations use fresh separate containers and only declared submission artifacts.
 - [ ] Applicable LLM judge calibration and traces are complete before Oddish execution, or explicitly pending during authoring.
-- [ ] Both automatic CI jobs execute and pass. Local and hosted results are identified separately.

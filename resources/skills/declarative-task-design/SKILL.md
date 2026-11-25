@@ -136,7 +136,7 @@ and judge manipulation. Fix known exploits and document remaining limitations.
 Configuration alone does not establish that these protections work.
 
 Create a `Hackability assessment` section in
-`tasks/<family>/<task>/README.md` if it is missing. Follow the
+`<task-root>/README.md` if it is missing. Follow the
 [assessment requirements](../../requirement.md#hackability-assessment): identify
 task-specific attacks, the affected requirements or boundaries, evidence, mitigations,
 residual risks, and the next validation needed. Distinguish source inspection from
@@ -145,7 +145,7 @@ executed attacks and link the evidence actually reviewed. Mark untested areas
 assessment. Keep the section author-only and update it as evidence changes.
 
 Follow [reward justification](../../requirement.md#reward-justification): put the
-published formula in `tasks/<family>/<task>/README.md` and the PR. Use the
+published formula in `<task-root>/README.md` and the PR. Use the
 linked knowledge-work assistant formula as an example of how to document the
 calculation; its weights and conditions apply only to that task. Map terms to
 evidence and code, and test boundary cases. Keep denominators fixed on candidate

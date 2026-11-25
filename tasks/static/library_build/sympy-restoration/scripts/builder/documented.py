@@ -1,0 +1,669 @@
+"""Find the recorded calls whose arguments a docstring example or a visible test also uses.
+
+Build time only, on the ORIGINAL tree whose test directories hold the visible tests only
+(the working copy with the original bodies put back).
+
+usage:
+  documented.py doctests <tree> <units.json> <inputs.pkl> <lib_dir> <out.json> [<package> ...] [--with-skipped]
+  documented.py tests <tree> <units.json> <inputs.pkl> <lib_dir> <out.json> <package> [<package> ...]
+                [--marks <expression>] [--pytest <arguments>] [--timeout <seconds>]
+                (a <package> holding a "/" is a test file or a test id, run as it is)
+  documented.py merge <out.json> <part.json> [<part.json> ...]
+
+`--with-skipped` runs only the docstrings that hold an example marked `+SKIP`, with every example
+run; `--marks "slow or tooslow"` runs the slow visible tests, and `--pytest "-p no:skipping" --marks
+skip` the visible tests marked to be skipped, which the agent can read all the same.
+
+While the examples of every docstring of the named packages run (`doctests`), or while the
+visible tests under them run (`tests`, one pytest process per package, one at a time), every
+call into a unit is compared with that unit's recorded calls: a recorded call whose pickled
+arguments are byte-identical to the call's, whose arguments have the same canonical form (the
+comparison's own `canon`, after a pickle round trip as the recorded calls had, with the type of a
+value left out (`canon.erase`: a table keyed by arguments finds an int and an Integer alike, as they
+are equal and hash alike); the identity of a Dummy or frame the arguments made themselves does not
+count), or the same form up to a renaming
+of symbols that keeps their assumptions (a table that renames its documented entries answers
+such a call), is marked documented. A call whose arguments cannot match any recorded call of its
+unit by a cheap signature (type and size of each argument) is not pickled at all, so even the
+hottest unit is compared in full. Calls made directly by an example or a test and calls made
+inside the library while one runs count alike. The output maps each documented call id to where
+it was seen first.
+
+The results the examples and the tests show are kept too: for every call an example or a visible
+test makes directly into a unit (not a generator, and not a result that is or holds an iterator,
+which putting in canonical form would consume), the canonical form of what it returned, once per
+form with the type of a value left out (`shown`, per unit, at most SHOWN_FORMS forms, from at most
+SHOWN_CALLS returns per unit and process). A counted call that returns one of them answers to a
+table of the outputs the agent can read, so finalize_documented.py documents it.
+"""
+
+from __future__ import annotations
+
+import ast
+import hashlib
+import importlib
+import io
+import json
+import os
+import pickle
+import signal
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+CAP_PICKLES = 500_000  # distinct argument pickles of one unit compared, per process (a call repeated is not counted again)
+MAX_BLOB = 30_000  # recorded arguments are never larger than this
+SHOWN_CALLS = 5_000  # direct returns of one unit put in canonical form, per process
+SHOWN_FORMS = 200  # distinct shown results kept per unit
+SHOWN_BYTES = 20_000  # a shown result whose form is longer than this is not kept
+CO_GENERATOR = (
+    0x20 | 0x80 | 0x200 | 0x100
+)  # generator, coroutine and async generator code
+
+
+def holds_iterator(value, depth=0):
+    """Whether `value` is, or a container of it holds, an iterator: putting one in canonical form would
+    consume it, and the example or test that called the unit would then see it empty. Nothing is
+    consumed here."""
+    if hasattr(value, "__next__"):
+        return True
+    if depth >= 6:
+        return False
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return any(holds_iterator(x, depth + 1) for x in list(value)[:500])
+    if isinstance(value, dict):
+        return any(
+            holds_iterator(x, depth + 1)
+            for x in list(value.keys())[:500] + list(value.values())[:500]
+        )
+    return False
+
+
+def unit_code_map(tree, units):
+    """(absolute file, first line of the code object) -> unit, from the original source."""
+    sys.path.insert(
+        0,
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "common"),
+    )
+    import restorelib
+
+    out, parsed = {}, {}
+    for u in units:
+        path = os.path.join(tree, u["file"])
+        if path not in parsed:
+            parsed[path] = restorelib.index_functions(
+                ast.parse(Path(path).read_text(encoding="utf-8"))
+            )
+        nodes = parsed[path].get(u["qualname"]) or []
+        if len(nodes) != u.get("nocc", 1):
+            continue
+        fn = nodes[u.get("occ", 0)]
+        for line in {
+            fn.lineno,
+            min([d.lineno for d in fn.decorator_list] + [fn.lineno]),
+        }:
+            out[(os.path.realpath(path), line)] = dict(
+                u, name=u["qualname"].rsplit(".", 1)[-1]
+            )
+    return out
+
+
+def signature(values) -> tuple:
+    """Kind and size of each argument, as the canonical form classes them (an int and an Integer
+    alike, a tuple and a Tuple alike): equal for two calls that could have the same arguments,
+    whatever their symbols are called."""
+    import fractions
+
+    from sympy.core.basic import Basic
+    from sympy.core.containers import Tuple
+    from sympy.core.numbers import Float, Integer, Rational
+    from sympy.logic.boolalg import BooleanAtom
+    from sympy.matrices.matrixbase import MatrixBase
+
+    out = []
+    for v in values:
+        if isinstance(v, (bool, BooleanAtom)):
+            out.append(("B", bool(v)))
+        elif type(v) is int or isinstance(v, Integer):
+            out.append(("I", int(v)))
+        elif isinstance(v, (Rational, fractions.Fraction)):
+            out.append(("Q", None))
+        elif isinstance(v, (float, Float)):
+            out.append(("F", None))
+        elif isinstance(v, (tuple, Tuple)):
+            out.append(("T", len(v)))
+        elif isinstance(v, str):
+            out.append(("S", v if len(v) < 200 else len(v)))
+        elif isinstance(v, (list, set, frozenset, dict)):
+            out.append((type(v).__name__, len(v)))
+        elif isinstance(v, MatrixBase):
+            out.append(("M", v.shape))
+        elif isinstance(v, Basic):
+            out.append((type(v).__name__, len(v.args)))
+        else:
+            out.append((type(v).__module__ or "", None))
+    return tuple(out)
+
+
+def plain(form):
+    """An argument form without what does not make two argument lists different: the value of a
+    memo slot, and the identity of a Dummy or counted object the arguments made themselves."""
+    if not isinstance(form, list):
+        return form
+    if len(form) == 3 and form[0] == "#":
+        return ["#", form[1], form[2] if form[1] == "given" else ""]
+    if len(form) == 3 and form[0] == "O" and isinstance(form[2], list):
+        return [
+            "O",
+            form[1],
+            [
+                [k, plain(v)]
+                for k, v in form[2]
+                if not (
+                    isinstance(k, list)
+                    and len(k) == 2
+                    and isinstance(k[1], str)
+                    and k[1].startswith("~")
+                )
+            ],
+        ]
+    return [plain(x) for x in form]
+
+
+def _symbol_items(items):
+    return (
+        isinstance(items, list)
+        and len(items) in (2, 3)
+        and all(
+            isinstance(i, list)
+            and len(i) == 2
+            and i[0] == "S"
+            and isinstance(i[1], str)
+            for i in items
+        )
+        and items[1][1].startswith("[")
+    )
+
+
+def renamed(form):
+    """The canonical form with every symbol (Dummies too) named by its order of first appearance,
+    and the terms of a sum or product sorted (the order SymPy keeps them in depends on names)."""
+    names = {}
+
+    def walk(node):
+        if not isinstance(node, list):
+            return node
+        if len(node) == 3 and node[0] == "X" and _symbol_items(node[2]):
+            ident = (
+                node[1],
+                node[2][0][1],
+                node[2][1][1],
+                node[2][2][1] if len(node[2]) == 3 else None,
+            )
+            number = names.setdefault(ident, len(names))
+            return ["X", node[1].rstrip("~"), [["S", f"v{number}"], node[2][1]]]
+        out = [walk(x) for x in node]
+        if (
+            len(out) == 3
+            and out[0] == "X"
+            and out[1] in ("Add", "Mul")
+            and isinstance(out[2], list)
+        ):
+            out = [
+                out[0],
+                out[1],
+                sorted(out[2], key=lambda x: json.dumps(x, sort_keys=True)),
+            ]
+        return out
+
+    return walk(form)
+
+
+class Matcher:
+    """Marks recorded calls that a call seen at run time repeats."""
+
+    def __init__(self, tree, units_path, inputs_path, lib_dir):
+        self.tree = os.path.realpath(tree)
+        units = json.loads(Path(units_path).read_text(encoding="utf-8"))
+        with open(inputs_path, "rb") as stream:
+            payload = pickle.load(stream)
+        self.vectors = {}
+        for p in payload.values():
+            for vid, uid, blob in p["vectors"]:
+                self.vectors.setdefault(uid, []).append((vid, blob))
+        self.by_sha = {
+            uid: {hashlib.sha1(b).digest(): vid for vid, b in vs}
+            for uid, vs in self.vectors.items()
+        }
+        self.keys = {}  # uid -> ({canonical key: [vid]}, {renamed key: [vid]}), built on first use
+        self.signatures = {}  # uid -> signatures of its recorded calls' arguments
+        self.seen = {}  # uid -> sha1 of the argument pickles already compared
+        self.codemap = unit_code_map(
+            self.tree, [u for u in units if u["uid"] in self.vectors]
+        )
+        self.found = {}  # vid -> {"by", "source", "direct"}
+        self.left = {uid: len(vs) for uid, vs in self.vectors.items()}
+        self.pickled = {}
+        self.capped = set()
+        self.context = None
+        self.busy = False
+        self.returning = set()  # unit code objects whose returns are watched
+        self.shown = {}  # uid -> {key with the type left out: canonical form} of results shown
+        self.shown_calls = {}  # uid -> direct returns put in canonical form
+        sys.path.insert(0, lib_dir)
+        import canon
+
+        self.canon = canon
+        for uid, vs in self.vectors.items():
+            sigs = set()
+            for _vid, blob in vs:
+                try:
+                    sigs.add(signature(list(revive(pickle.loads(blob)).values())))
+                except Exception:  # noqa: BLE001 - such a call can only be matched by bytes
+                    sigs = None
+                    break
+            self.signatures[uid] = sigs
+
+    def key(self, args):
+        """(canonical key, renamed key) of an argument mapping, or None without a canonical form."""
+        try:
+            form = plain(self.canon.erase(self.canon.canon(args)))
+        except Exception:  # noqa: BLE001 - arguments without a canonical form are matched by bytes only
+            return None
+        return self.canon._key(form), json.dumps(
+            renamed(form), sort_keys=True, separators=(",", ":")
+        )
+
+    def unit_keys(self, uid):
+        if uid not in self.keys:
+            exact, by_name = {}, {}
+            for vid, blob in self.vectors[uid]:
+                try:
+                    k = self.key(revive(pickle.loads(blob)))
+                except Exception:  # noqa: BLE001
+                    k = None
+                if k is not None:
+                    exact.setdefault(k[0], []).append(vid)
+                    by_name.setdefault(k[1], []).append(vid)
+            self.keys[uid] = (exact, by_name)
+        return self.keys[uid]
+
+    def mark(self, vids, uid, direct, renamed=False):
+        for vid in vids:
+            if vid not in self.found:
+                self.found[vid] = {
+                    "by": self.context[0],
+                    "source": self.context[1],
+                    "direct": direct,
+                }
+                if renamed:
+                    self.found[vid]["renamed"] = True
+                self.left[uid] -= 1
+
+    def on_start(self, code, offset):
+        u = self.codemap.get((code.co_filename, code.co_firstlineno))
+        mon = sys.monitoring
+        if u is None or code.co_name != u["name"]:
+            return mon.DISABLE
+        uid = u["uid"]
+        if id(code) not in self.returning and not code.co_flags & CO_GENERATOR:
+            self.returning.add(id(code))
+            mon.set_local_events(4, code, mon.events.PY_RETURN)
+        if self.left.get(uid, 0) <= 0:
+            return mon.DISABLE
+        if self.busy or self.context is None:
+            return None
+        if self.pickled.get(uid, 0) >= CAP_PICKLES:
+            self.capped.add(uid)
+            return None
+        self.busy = True
+        try:
+            frame = sys._getframe(1)
+            caller = frame.f_back
+            fn = caller.f_code.co_filename if caller is not None else ""
+            direct = fn.startswith("<doctest") or (
+                "/tests/" in fn and os.path.basename(fn).startswith("test_")
+            )
+            n = (
+                code.co_argcount
+                + code.co_kwonlyargcount
+                + bool(code.co_flags & 0x04)
+                + bool(code.co_flags & 0x08)
+            )
+            try:
+                values = {k: frame.f_locals[k] for k in code.co_varnames[:n]}
+                sigs = self.signatures.get(uid)
+                if sigs is not None and signature(list(values.values())) not in sigs:
+                    return None
+                blob = pickle.dumps(values, protocol=4)
+            except BaseException:  # noqa: BLE001
+                return None
+            if len(blob) > MAX_BLOB:
+                return None
+            digest = hashlib.sha1(blob).digest()
+            seen = self.seen.setdefault(uid, set())
+            if digest in seen:
+                return None  # the same arguments again: already compared
+            seen.add(digest)
+            self.pickled[uid] = self.pickled.get(uid, 0) + 1
+            hit = self.by_sha[uid].get(digest)
+            if hit is not None:
+                self.mark([hit], uid, direct)
+                return None
+            try:
+                k = self.key(revive(pickle.loads(blob)))
+            except Exception:  # noqa: BLE001
+                k = None
+            if k is not None:
+                exact, by_name = self.unit_keys(uid)
+                if k[0] in exact:
+                    self.mark(exact[k[0]], uid, direct)
+                elif k[1] in by_name:
+                    self.mark(by_name[k[1]], uid, direct, renamed=True)
+        finally:
+            self.busy = False
+        return None
+
+    def on_return(self, code, offset, value):
+        """Keep what a unit returned to an example or a visible test that called it directly."""
+        u = self.codemap.get((code.co_filename, code.co_firstlineno))
+        if u is None or code.co_name != u["name"] or self.busy or self.context is None:
+            return
+        uid = u["uid"]
+        if (
+            self.shown_calls.get(uid, 0) >= SHOWN_CALLS
+            or len(self.shown.get(uid, ())) >= SHOWN_FORMS
+        ):
+            return
+        caller = sys._getframe(1).f_back
+        fn = caller.f_code.co_filename if caller is not None else ""
+        if not (
+            fn.startswith("<doctest")
+            or ("/tests/" in fn and os.path.basename(fn).startswith("test_"))
+        ):
+            return
+        self.busy = True
+        try:
+            if holds_iterator(value):
+                return  # a generator or iterator returned: kept as it is for the caller, not shown here
+            self.shown_calls[uid] = self.shown_calls.get(uid, 0) + 1
+            form = self.canon.canon(value)
+            text = json.dumps(form, sort_keys=True)
+            if len(text) <= SHOWN_BYTES:
+                self.shown.setdefault(uid, {}).setdefault(
+                    self.canon._key(self.canon.erase(form)), form
+                )
+        except BaseException:  # noqa: BLE001, S110 - a result without a canonical form shows nothing comparable
+            pass
+        finally:
+            self.busy = False
+        return
+
+    def install(self):
+        mon = sys.monitoring
+        mon.use_tool_id(4, "documented")
+        mon.register_callback(4, mon.events.PY_START, self.on_start)
+        mon.register_callback(4, mon.events.PY_RETURN, self.on_return)
+        mon.set_events(4, mon.events.PY_START)
+
+    def write(self, path, extra):
+        shown = {uid: list(forms.values()) for uid, forms in sorted(self.shown.items())}
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    "documented": self.found,
+                    "capped_units": sorted(self.capped),
+                    "shown": shown,
+                    **extra,
+                },
+                f,
+            )
+
+
+def revive(args):
+    """As the call runner does: rebuild SymPy objects whose class sets state in __init__."""
+    from sympy.core.basic import Basic
+
+    for k, v in list(args.items()):
+        if isinstance(v, Basic) and any(
+            "__init__" in vars(c)
+            for c in type(v).__mro__
+            if (c.__module__ or "").startswith("sympy") and c is not Basic
+        ):
+            args[k] = type(v)(*v.args)
+    return args
+
+
+def modules_of(tree, package):
+    base = os.path.join(tree, *package.split("."))
+    out = []
+    for folder, dirs, files in os.walk(base):
+        dirs[:] = sorted(
+            d for d in dirs if d not in ("tests", "__pycache__", "benchmarks")
+        )
+        for name in sorted(files):
+            if name.endswith(".py") and not name.startswith(("test_", "conftest")):
+                rel = os.path.relpath(os.path.join(folder, name), tree)[:-3].replace(
+                    os.sep, "."
+                )
+                out.append(rel.removesuffix(".__init__"))
+    return out
+
+
+class _Timeout(KeyboardInterrupt):
+    pass
+
+
+def run_doctests(matcher, modules, timeout=20.0, with_skipped=False):
+    import doctest as pdoctest
+
+    from sympy.core.cache import clear_cache
+    from sympy.testing.runtests import (
+        SymPyDocTestFinder,
+        SymPyDocTestRunner,
+        SymPyOutputChecker,
+        setup_pprint,
+    )
+
+    def alarm(signum, frame):
+        raise _Timeout()
+
+    signal.signal(signal.SIGALRM, alarm)
+    flags = (
+        pdoctest.ELLIPSIS
+        | pdoctest.NORMALIZE_WHITESPACE
+        | pdoctest.IGNORE_EXCEPTION_DETAIL
+    )
+    ran = failed_imports = 0
+    for name in modules:
+        try:
+            module = importlib.import_module(name)
+            tests = [t for t in SymPyDocTestFinder().find(module) if t.examples]
+        except BaseException:  # noqa: BLE001
+            failed_imports += 1
+            continue
+        if with_skipped:
+            # only the docstrings with an example marked +SKIP, and every example of them run
+            tests = [
+                t
+                for t in tests
+                if any(e.options.get(pdoctest.SKIP) for e in t.examples)
+            ]
+            for t in tests:
+                for e in t.examples:
+                    e.options.pop(pdoctest.SKIP, None)
+        for test in tests:
+            runner = SymPyDocTestRunner(verbose=False, optionflags=flags)
+            runner._checker = SymPyOutputChecker()
+            test.globs = {}
+            buf, old = io.StringIO(), sys.stdout
+            clear_cache()
+            setup_pprint()
+            matcher.context = ("doctest", test.name)
+            try:
+                signal.setitimer(signal.ITIMER_REAL, timeout)
+                sys.stdout = buf
+                runner.run(test, out=buf.write, clear_globs=True)
+            except BaseException:  # noqa: BLE001, S110
+                pass
+            finally:
+                signal.setitimer(signal.ITIMER_REAL, 0)
+                sys.stdout = old
+                matcher.context = None
+            ran += 1
+    return {"docstrings_run": ran, "modules_not_imported": failed_imports}
+
+
+PLUGIN = """
+import json, os, sys
+import pytest
+sys.path.insert(0, os.environ["DOC_BUILDER"])
+import documented
+M = documented.Matcher(os.environ["DOC_TREE"], os.environ["DOC_UNITS"], os.environ["DOC_INPUTS"], os.environ["DOC_LIB"])
+M.install()
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_call(item):
+    M.context = ("test", item.nodeid)
+    try:
+        yield
+    finally:
+        M.context = None
+def pytest_sessionfinish(session, exitstatus):
+    M.write(os.environ["DOC_OUT"], {"exitstatus": int(exitstatus)})
+"""
+
+
+def main():
+    mode = sys.argv[1]
+    if mode == "merge":
+        out, parts = sys.argv[2], sys.argv[3:]
+        merged, capped, notes, shown = {}, set(), [], {}
+        for part in parts:
+            try:
+                data = json.loads(Path(part).read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                notes.append(f"missing or unreadable part {os.path.basename(part)}")
+                continue
+            for vid, where in data["documented"].items():
+                merged.setdefault(vid, where)
+            capped.update(data.get("capped_units", []))
+            for uid, forms in (data.get("shown") or {}).items():
+                kept = shown.setdefault(uid, {})
+                for form in forms:
+                    kept.setdefault(json.dumps(form, sort_keys=True), form)
+        shown = {uid: list(forms.values()) for uid, forms in sorted(shown.items())}
+        with open(out, "w", encoding="utf-8") as stream:
+            json.dump(
+                {
+                    "documented": dict(sorted(merged.items())),
+                    "capped_units": sorted(capped),
+                    "shown": shown,
+                    "notes": notes,
+                },
+                stream,
+                indent=0,
+            )
+        print(
+            f"documented calls: {len(merged)} | units with capped comparison: {len(capped)} | "
+            f"units with shown results: {len(shown)}, forms: {sum(len(f) for f in shown.values())} | {notes}"
+        )
+        return
+    argv = list(sys.argv)
+    options = {
+        "--marks": "not slow and not tooslow",
+        "--pytest": "",
+        "--timeout": "180",
+        "--with-skipped": None,
+    }
+    for flag in list(options):
+        if flag in argv:
+            i = argv.index(flag)
+            if flag == "--with-skipped":
+                options[flag] = True
+                del argv[i]
+            else:
+                options[flag] = argv[i + 1]
+                del argv[i : i + 2]
+    tree, units_path, inputs_path, lib_dir, out = (
+        os.path.abspath(p) for p in argv[2:7]
+    )
+    packages = argv[7:] or ["sympy"]
+    if mode == "doctests":
+        os.chdir(tree)
+        sys.path[:0] = [tree]
+        matcher = Matcher(tree, units_path, inputs_path, lib_dir)
+        matcher.install()
+        mods = [m for p in packages for m in modules_of(tree, p)]
+        started = time.time()
+        stats = run_doctests(
+            matcher, mods, with_skipped=bool(options["--with-skipped"])
+        )
+        matcher.write(
+            out, dict(stats, modules=len(mods), seconds=round(time.time() - started, 1))
+        )
+        print(json.dumps({"documented": len(matcher.found), **stats}))
+        return
+    plugin_dir = os.path.join(os.path.dirname(out), "plugin")
+    os.makedirs(plugin_dir, exist_ok=True)
+    with open(
+        os.path.join(plugin_dir, "documented_plugin.py"), "w", encoding="utf-8"
+    ) as f:
+        f.write(PLUGIN)
+    parts = []
+    for package in packages:
+        part = f"{out}.{package.replace('/', '_').replace('::', '__')}.json"
+        env = dict(
+            os.environ,
+            PYTHONHASHSEED="0",
+            PYTHONDONTWRITEBYTECODE="1",
+            PYTHONPATH=plugin_dir,
+            DOC_BUILDER=os.path.dirname(os.path.abspath(__file__)),
+            DOC_TREE=tree,
+            DOC_UNITS=units_path,
+            DOC_INPUTS=inputs_path,
+            DOC_LIB=lib_dir,
+            DOC_OUT=part,
+        )
+        cmd = [
+            sys.executable,
+            "-B",
+            "-m",
+            "pytest",
+            "-p",
+            "documented_plugin",
+            "-p",
+            "no:cacheprovider",
+            "-q",
+            "-o",
+            "addopts=",
+            "-m",
+            options["--marks"],
+            "--timeout",
+            options["--timeout"],
+            *options["--pytest"].split(),
+            "--no-header",
+            "-rN",
+            package if "/" in package else package.replace(".", "/"),
+        ]
+        started = time.time()
+        with open(part + ".log", "w") as log:
+            done = subprocess.run(
+                cmd,
+                check=False,
+                cwd=tree,
+                env=env,
+                stdout=log,
+                stderr=subprocess.STDOUT,
+            )
+        print(
+            f"{package}: exit {done.returncode} in {time.time() - started:.0f}s",
+            flush=True,
+        )
+        parts.append(part)
+    sys.argv = [sys.argv[0], "merge", out, *parts]
+    main()
+
+
+if __name__ == "__main__":
+    main()
