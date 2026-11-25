@@ -1679,8 +1679,7 @@ Closest comparisons:
 - SWE-Marathon v1 product clones (`slack-clone`, `stripe-clone`, `mastodon-clone`, `s3-clone`,
   `excel-clone`): build a product from a written specification of a well-known service.
   Here there is no written specification and no public product to remember.
-- Tasks in this repository: no overlap with `knowledge-work-assistant`,
-  `battle-royale` or `sympy-restoration`.
+- Tasks in this repository: no overlap with `knowledge-work-assistant` or `sympy-restoration`.
 - Deep SWE, Frontier SWE, Multi-Step SWE: not compared. Unverified.
 
 ### Verifiability
