@@ -1125,8 +1125,7 @@ Closest comparisons:
   Overlap is high. Differences: bodies are graded one by one, hidden replayed
   calls decide correctness, and a third of the tests are withheld.
 - Deep SWE, Frontier SWE, Multi-Step SWE: not compared. Unverified.
-- Tasks in this repository: no overlap with `knowledge-work-assistant`,
-  `titans-training` or `battle-royale`.
+- Tasks in this repository: no overlap with `knowledge-work-assistant` or `battle-royale`.
 
 Weaknesses, stated plainly:
 

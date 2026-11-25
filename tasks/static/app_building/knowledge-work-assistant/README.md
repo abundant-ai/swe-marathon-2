@@ -1053,11 +1053,9 @@ consistency check. No GPU image build, live judge call, hosted CI run, or Oddish
 trial was performed for this migration.
 
 The task's setup commands now link to the shared repository installation guide.
-Project execution commands use the frozen root lockfile. Oddish CLI and Titans
-remain optional; container dependency files are unchanged. Validation passed:
-25 CI and packaging tests, repository source checks, the offline lockfile check,
-and dry runs of both default and Titans-enabled sync. Optional tools were not
-installed or upgraded during this change.
+Project commands use the frozen root lockfile. The default sync dry run, the
+offline lockfile check, repository source checks, and 25 CI and packaging
+tests passed.
 
 The CI audit added checks for stale dependency locks, omitted or empty test
 suites, and incomplete test reports. Renamed the manual container probes to
