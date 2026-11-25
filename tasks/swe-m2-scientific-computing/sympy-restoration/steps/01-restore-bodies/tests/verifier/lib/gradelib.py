@@ -189,7 +189,8 @@ def run_doctests(cand_root, names_by_module, rdoctest_path, *, deadline, bound, 
     cand_root = os.path.abspath(cand_root)
     results, bad, unreached = {}, [], set()
     lock = threading.Lock()
-    counts = {"starts": 0, "timeouts": 0, "ended_or_stopped": 0, "malformed": 0}
+    counts = {"starts": 0, "timeouts": 0, "ended_or_stopped": 0, "malformed": 0, "over_half_bound": 0}
+    near = set()   # units whose examples took more than half their time, as this process measured it
 
     def count(name):
         with lock:
@@ -231,9 +232,14 @@ def run_doctests(cand_root, names_by_module, rdoctest_path, *, deadline, bound, 
                     until = min(deadline, time.monotonic() + bound(name) + GRACE_SEC)
                     kind, found = child.message(until)
                     started = kind == "message" and found.get("start") == name
+                    began = time.monotonic()
                     if started:
                         kind, found = child.message(until)
                     rebuilt = example_record(name, found) if started and kind == "message" else None
+                    if rebuilt is not None and time.monotonic() - began > bound(name) / 2:
+                        count("over_half_bound")
+                        with lock:
+                            near.add(name)
                     if rebuilt is not None:
                         record, trip = rebuilt
                         if not trip:
@@ -275,6 +281,7 @@ def run_doctests(cand_root, names_by_module, rdoctest_path, *, deadline, bound, 
                 results[n] = {"name": n, "status": "crash", "exc": "time budget for docstring examples used up"}
     if stats is not None:
         stats.update(counts)
+        stats["over_half_bound_units"] = sorted(near)[:100]
     return results, bad, unreached
 
 

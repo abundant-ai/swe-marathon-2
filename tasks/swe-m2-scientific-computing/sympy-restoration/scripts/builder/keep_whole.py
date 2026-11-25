@@ -30,11 +30,13 @@ import difflib
 import gzip
 import io
 import json
+import keyword
 import os
 import pickle
 import shutil
 import sys
 import tarfile
+import tokenize
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -81,17 +83,45 @@ class _Blind(ast.NodeTransformer):
         return node
 
 
+TOKEN_MIN = 40          # a graded body this many tokens long or more is compared token by token
+TOKEN_PLAIN = 0.80     # alike as tokens, names kept
+TOKEN_BLIND = 0.90     # alike as tokens, every name blinded
+TOKEN_CONTAINED = 0.90 # the graded body's tokens, names kept, found in order in the visible one
+SHINGLE = 4            # the prefilter: blinded runs of this many tokens
+SHINGLE_SHARE = 0.25   # shared by at least this share of the smaller body's runs
+
+
+def _tokens(text):
+    out = []
+    try:
+        for tok in tokenize.generate_tokens(io.StringIO(text).readline):
+            if tok.type in (tokenize.NEWLINE, tokenize.NL, tokenize.INDENT, tokenize.DEDENT, tokenize.COMMENT,
+                            tokenize.ENDMARKER):
+                continue
+            out.append((tok.type, tok.string))
+    except (tokenize.TokenError, IndentationError, SyntaxError):
+        pass
+    plain = [t for _, t in out]
+    blind = ["_" if kind == tokenize.NAME and not keyword.iskeyword(t) else t for kind, t in out]
+    return plain, blind
+
+
 def body_record(fn):
     _doc, rest = _doc_and_rest(fn)
     nn = sum(1 for s in rest for _ in ast.walk(s))
+    text = "\n".join(ast.unparse(s) for s in rest)
+    plain, blind_tokens = _tokens(text)
     return {
         "name": fn.name,
         "dump": "\n".join(ast.dump(s, include_attributes=False) for s in rest),
-        "text": "\n".join(ast.unparse(s) for s in rest),
+        "text": text,
         "n_stmts": sum(1 for s in rest for x in ast.walk(s) if isinstance(x, ast.stmt)),
         "nodes": nn,
         "blind": ("\n".join(ast.dump(_Blind().visit(copy.deepcopy(s)), include_attributes=False) for s in rest)
                   if nn >= 25 else None),
+        "plain_tokens": plain,
+        "blind_tokens": blind_tokens,
+        "shingles": {tuple(blind_tokens[i:i + SHINGLE]) for i in range(max(0, len(blind_tokens) - SHINGLE + 1))},
     }
 
 
@@ -99,7 +129,10 @@ def near_copies(unit, visible):
     """Every visible body that the twin scan's tests find a copy of a unit's body, with the test:
     the same syntax tree under the same name; the same tree under another name, for a body of three
     statements or twelve nodes; the same tree once every name is blinded, for twenty-five nodes; text
-    85% alike, for two statements, under the same name or in the same file."""
+    85% alike, for two statements, under the same name or in the same file; and, across names and
+    files, for a body of TOKEN_MIN tokens or more, its tokens TOKEN_PLAIN alike with names kept,
+    TOKEN_BLIND alike with every name blinded, or the unit's tokens TOKEN_CONTAINED found in order in
+    the visible body (after a prefilter on shared runs of tokens)."""
     found = []
     for r in visible:
         if r["dump"] == unit["dump"]:
@@ -112,11 +145,23 @@ def near_copies(unit, visible):
         if unit["blind"] is not None and r["blind"] == unit["blind"]:
             found.append(("same-after-renaming", r))
             continue
-        if unit["n_stmts"] >= 2 and (r["name"] == unit["name"] or r["file"] == unit["file"]):
-            if abs(len(r["text"]) - len(unit["text"])) > 0.3 * max(len(unit["text"]), 1):
+        if unit["n_stmts"] >= 2 and (r["name"] == unit["name"] or r["file"] == unit["file"]) \
+                and abs(len(r["text"]) - len(unit["text"])) <= 0.3 * max(len(unit["text"]), 1) \
+                and difflib.SequenceMatcher(None, unit["text"], r["text"], autojunk=False).ratio() >= 0.85:
+            found.append(("similar-same-name" if r["name"] == unit["name"] else "similar-sibling", r))
+            continue
+        # token by token, across names and files, for a body of TOKEN_MIN tokens or more
+        if len(unit["plain_tokens"]) >= TOKEN_MIN and unit["shingles"] and r["shingles"]:
+            shared = len(unit["shingles"] & r["shingles"]) / min(len(unit["shingles"]), len(r["shingles"]))
+            if shared < SHINGLE_SHARE:
                 continue
-            if difflib.SequenceMatcher(None, unit["text"], r["text"], autojunk=False).ratio() >= 0.85:
-                found.append(("similar-same-name" if r["name"] == unit["name"] else "similar-sibling", r))
+            plain = difflib.SequenceMatcher(None, unit["plain_tokens"], r["plain_tokens"], autojunk=False)
+            if plain.ratio() >= TOKEN_PLAIN:
+                found.append(("tokens-alike", r))
+            elif difflib.SequenceMatcher(None, unit["blind_tokens"], r["blind_tokens"], autojunk=False).ratio() >= TOKEN_BLIND:
+                found.append(("tokens-alike-blinded", r))
+            elif sum(b.size for b in plain.get_matching_blocks()) >= TOKEN_CONTAINED * len(unit["plain_tokens"]):
+                found.append(("tokens-contained", r))
     return found
 
 
@@ -216,12 +261,25 @@ def write_tar(path, members, data, replaced):
         gz.write(buf.getvalue())
 
 
+def _option(flag):
+    return os.path.abspath(sys.argv[sys.argv.index(flag) + 1]) if flag in sys.argv else None
+
+
 def main():
     task, original, coverage_path, out = (os.path.abspath(p) for p in sys.argv[1:5])
+    absorbed_path, pairs_only = _option("--absorbed"), _option("--pairs-only")
     units = json.load(open(os.path.join(task, "environment", "data", "units.json"), encoding="utf-8"))
-    coverage = json.load(open(coverage_path, encoding="utf-8"))["units"]
+    traced = json.load(open(coverage_path, encoding="utf-8"))
+    coverage, items = traced["units"], traced.get("items", {})
     assert set(coverage) == {u["uid"] for u in units}, "the trace is for another unit list"
-    graded = {uid for uid, f in coverage.items() if f["counted"] or f["run_by_calls"] or f["run_by_examples"]}
+    # graded: a counted call of its own, or another unit's graded item that fails without its body
+    # (absorbed.py); with no such probe given, any graded item that runs it
+    through_others = None
+    if absorbed_path:
+        probe = json.load(open(absorbed_path, encoding="utf-8"))
+        through_others = set(probe["graded"])
+    graded = {uid for uid, f in coverage.items() if f["counted"]
+              or ((f["run_by_calls"] or f["run_by_examples"]) and (through_others is None or uid in through_others))}
     by_uid = {u["uid"]: u for u in units}
     trees, records = {}, {}
     for rel in sorted({u["file"] for u in units}):
@@ -239,6 +297,15 @@ def main():
     for uid in sorted(graded):
         for rule, twin in near_copies(records[uid], visible):
             copies.setdefault(twin["uid"], []).append({"graded_unit": by_uid[uid]["dotted"], "test": rule})
+    if pairs_only:
+        # the near-copies and their twins, for twin_calls.py: nothing else is written
+        twins = {}
+        for near, found in copies.items():
+            twins[near] = sorted({next(u for u, x in by_uid.items() if x["dotted"] == c["graded_unit"]) for c in found})
+        with open(pairs_only, "w", encoding="utf-8") as f:
+            json.dump(twins, f, indent=1)
+        print(json.dumps({"ungraded": len(candidates), "near_copies": len(twins)}))
+        return
     whole = [uid for uid in candidates if uid not in copies]
     kept = sorted(uid for uid in by_uid if uid not in set(whole))
     new_uid = {old: f"U{i + 1:04d}" for i, old in enumerate(kept)}
@@ -332,6 +399,29 @@ def main():
         json.dump(new_gold, f)
     with open(os.path.join(out, PRIVATE, "vectors", "documented.json"), "w", encoding="utf-8") as f:
         json.dump(new_documented, f)
+
+    # for an auditor of the hidden data: what grades each removed unit; its own counted calls, else the
+    # graded items of other units that run it, and the one that fails without its body
+    counted_now = {v for v in new_gold if v not in set(new_documented["calls"])}
+    own = collections.defaultdict(list)
+    for p in new_payload.values():
+        for vid, uid, _blob in p["vectors"]:
+            if vid in counted_now:
+                own[uid].append(vid)
+    first = json.load(open(absorbed_path, encoding="utf-8"))["graded"] if absorbed_path else {}
+    coverage_map = {}
+    for old in kept:
+        entry = {"counted_calls": sorted(own.get(new_uid[old], []))}
+        if not entry["counted_calls"]:
+            ran = items.get(old, {"calls": [], "examples": []})
+            entry["run_inside_counted_calls"] = sorted(v for v in ran["calls"] if v in counted_now)
+            entry["run_inside_examples_of"] = sorted(new_uid[o] for o in ran["examples"] if o in new_uid)
+            failing = first.get(old)
+            if failing:
+                entry["fails_without_it"] = failing if failing[0] == "call" else ["examples", new_uid.get(failing[1])]
+        coverage_map[new_uid[old]] = entry
+    with open(os.path.join(out, PRIVATE, "unit_coverage.json"), "w", encoding="utf-8") as f:
+        json.dump(coverage_map, f)
 
     report = {
         "rule": "removed only if a graded item runs the body (own counted call, or another unit's graded item)",

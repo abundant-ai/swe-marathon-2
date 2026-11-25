@@ -251,7 +251,8 @@ def run_vectors(payload, restored_uids, prefix, *, pub, cand_nt, cpus, deadline,
     """
     rv = os.path.join(pub, "rvector.py")
     lock = threading.Lock()
-    counts = {"starts": 0, "timeouts": 0, "ended_or_stopped": 0, "malformed": 0, "units_cut": 0}
+    counts = {"starts": 0, "timeouts": 0, "ended_or_stopped": 0, "malformed": 0, "units_cut": 0, "over_half_bound": 0}
+    near = set()   # units with a call that took more than half its time, as this process measured it
     jobs = []
     for mod, p in sorted(payload.items()):
         vecs = [tuple(v) for v in p["vectors"] if v[1] in restored_uids]
@@ -297,10 +298,15 @@ def run_vectors(payload, restored_uids, prefix, *, pub, cand_nt, cpus, deadline,
                     until = min(deadline, time.monotonic() + bound(uid) + gradelib.GRACE_SEC)
                     kind, found = child.message(until)
                     started = kind == "message" and found.get("start") == vid
+                    began = time.monotonic()
                     if started:
                         kind, found = child.message(until)
                     if started and kind == "message" and found.get("v") == vid and isinstance(found.get("c"), list):
                         got[vid] = found["c"]
+                        if time.monotonic() - began > bound(uid) / 2:
+                            count("over_half_bound")
+                            with lock:
+                                near.add(uid)
                         pending.pop(0)
                         continue
                     if kind == "timeout" and time.monotonic() >= deadline:
@@ -329,6 +335,7 @@ def run_vectors(payload, restored_uids, prefix, *, pub, cand_nt, cpus, deadline,
             results.update(got)
     if stats is not None:
         stats.update(counts)
+        stats["over_half_bound_units"] = sorted(near)[:100]
     return results
 
 
@@ -813,7 +820,8 @@ def measure(context: VerificationContext) -> Measurement:
         "vectors_total": V, "vectors_passing": 0,
         "tests_total": T, "tests_passing": 0,
         # the reward's measure: units with a call no docstring example or visible test repeats,
-        # and those calls
+        # and those calls; a unit left out of the set is graded through the graded items of other
+        # units that fail without its body (the build's tests/private/unit_coverage.json names them)
         "units_set": len(unit_set), "units_set_passing": 0, "units_left_out": U - len(unit_set),
         "deciding_total": len(deciding), "deciding_passing": 0, "documented_total": V - len(deciding),
         "unit_share": 0.0, "call_share": 0.0, "unit_share_if_reached": 0.0, "call_share_if_reached": 0.0,

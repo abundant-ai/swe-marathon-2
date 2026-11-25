@@ -8,7 +8,9 @@ SymPy's doctest runner, each with `sys.monitoring` watching the start of every u
 Build time only; it reads the original tree and the call data and never prints a result.
 
 usage: graded_coverage.py <original_root> <units.json> <vectors_dir> <verifier_lib> <out.json> [--only VID,...]
-Writes {"units": {uid: {"counted": n, "run_by_calls": n, "run_by_examples": n}}, "summary": {...}}.
+Writes {"units": {uid: {"counted": n, "run_by_calls": n, "run_by_examples": n}}, "items": {uid: {"calls":
+[vid, ...], "examples": [uid, ...]}} (for every unit without a counted call of its own, the counted calls and
+the units in the set whose examples run it), "summary": {...}}.
 A counted call that raises or runs out of its time here (one process replays them all, so one call can
 leave state for the next) is replayed once more alone, in a process of its own with ten times the time,
 and what it runs there is what counts; `--only` is that replay.
@@ -105,7 +107,7 @@ def main():
         mon.set_local_events(TOOL, code, mon.events.PY_START)
     signal.signal(signal.SIGALRM, _late)
     quiet = open(os.devnull, "w")
-    by_calls, by_examples, runs, trouble = {}, {}, {}, []
+    by_calls, by_examples, runs, trouble, example_runs = {}, {}, {}, [], {}
     stats = {"calls": 0, "calls_raised": 0, "calls_out_of_time": 0, "examples": 0, "examples_missing": 0,
              "examples_out_of_time": 0}
     began = time.time()
@@ -214,6 +216,7 @@ def main():
                 pprint_use_unicode(uu)
                 stringpict._GLOBAL_WRAP_LINE = wl
             stats["examples"] += 1
+            example_runs[uid] = sorted(hit - {uid})
             for ran in hit - {uid}:
                 by_examples[ran] = by_examples.get(ran, 0) + 1
     mon.set_events(TOOL, 0)
@@ -223,12 +226,22 @@ def main():
 
     facts = {uid: {"counted": own.get(uid, 0), "run_by_calls": by_calls.get(uid, 0),
                    "run_by_examples": by_examples.get(uid, 0)} for uid in sorted(units)}
+    # for every unit without a counted call of its own: the graded items of other units that run it
+    items = {uid: {"calls": [], "examples": []} for uid in units if not own.get(uid)}
+    for vid, ran in runs.items():
+        for r in ran:
+            if r in items:
+                items[r]["calls"].append(vid)
+    for owner_uid, ran in example_runs.items():
+        for r in ran:
+            if r in items:
+                items[r]["examples"].append(owner_uid)
     graded = [uid for uid, f in facts.items() if f["counted"] or f["run_by_calls"] or f["run_by_examples"]]
     summary = dict(stats, retried=retried, seconds=round(time.time() - began, 1), units=len(units), in_set=len(in_set),
                    counted_calls=len(counted), unresolved=unresolved, graded=len(graded),
                    ungraded=len(units) - len(graded))
     with open(out_path, "w", encoding="utf-8") as f:
-        json.dump({"units": facts, "summary": summary}, f)
+        json.dump({"units": facts, "items": items, "summary": summary}, f)
     print(json.dumps({k: (v if not isinstance(v, list) else len(v)) for k, v in summary.items()}))
 
 

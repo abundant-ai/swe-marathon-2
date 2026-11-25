@@ -4,7 +4,6 @@ mpmath (this one, or uv's with the cached mpmath 1.3.0, offline)."""
 
 from __future__ import annotations
 
-import ast
 import json
 import re
 import shutil
@@ -96,10 +95,10 @@ def test_the_stated_counts_and_every_list_of_units_agree(task_root):
         assert seen == {u["uid"]: u["file"] for u in units}, name
 
 
-def test_every_removed_unit_is_run_by_a_graded_item(task_root, tmp_path):
+def test_every_removed_unit_has_a_graded_item_that_fails_without_its_body(task_root, tmp_path):
     """Traced on the original tree (the skeleton with the reference's files over it): each removed unit
-    has a counted call, or runs inside a counted call or an example of a unit in the set; the only
-    exception keep_whole.py allows is a body that a graded unit's body is a near-copy of."""
+    has a counted call of its own, or some counted call or example of another unit that runs it fails
+    when its body raises as its placeholder does (absorbed.py, the build's own probe). No exception."""
     paths = _prepared(task_root)
     python = _python_with_mpmath()
     if python is None:
@@ -112,26 +111,21 @@ def test_every_removed_unit_is_run_by_a_graded_item(task_root, tmp_path):
         target.write_bytes(path.read_bytes())
     left = [str(p.relative_to(tree)) for p in (tree / "sympy").rglob("*.py") if _placeholders(p.read_text(encoding="utf-8"))]
     assert left == [], "the reference does not give back every removed body"
-    builder = task_root / "scripts" / "builder"
-    out = tmp_path / "coverage.json"
-    done = subprocess.run(python + ["-I", "-B", str(builder / "graded_coverage.py"), str(tree), str(paths["units"]),
-                                    str(paths["vectors"]), str(task_root / STEP / "tests" / "verifier" / "lib"), str(out)],
-                          capture_output=True, text=True, timeout=3000, cwd=tmp_path)
-    assert done.returncode == 0, done.stdout[-2000:] + done.stderr[-3000:]
-    facts = json.loads(out.read_text())["units"]
+    builder, lib = task_root / "scripts" / "builder", task_root / STEP / "tests" / "verifier" / "lib"
+    coverage, probe = tmp_path / "coverage.json", tmp_path / "absorbed.json"
+    for script, out, extra in (("graded_coverage.py", coverage, []), ("absorbed.py", probe, [str(coverage)])):
+        args = [str(tree), str(paths["units"]), str(paths["vectors"]), str(lib)] + extra + [str(out)]
+        done = subprocess.run(python + ["-I", "-B", str(builder / script)] + args, capture_output=True, text=True,
+                              timeout=3000, cwd=tmp_path)
+        assert done.returncode == 0, (script, done.stdout[-2000:] + done.stderr[-3000:])
+    facts = json.loads(coverage.read_text())["units"]
+    through_others = set(json.loads(probe.read_text())["graded"])
     units = {u["uid"]: u for u in json.loads(paths["units"].read_text())}
     assert set(facts) == set(units)
-    ungraded = sorted(uid for uid, f in facts.items() if not (f["counted"] or f["run_by_calls"] or f["run_by_examples"]))
-    if ungraded:
-        sys.path.insert(0, str(builder))
-        import keep_whole
-
-        def record(uid):
-            u = units[uid]
-            fn = keep_whole.index_functions(ast.parse((tree / u["file"]).read_text(encoding="utf-8")))[u["qualname"]][u.get("occ", 0)]
-            return dict(keep_whole.body_record(fn), file=u["file"], uid=uid)
-
-        graded = [record(uid) for uid in sorted(set(units) - set(ungraded))]
-        for uid in ungraded:
-            mine = [record(uid)]
-            assert any(keep_whole.near_copies(g, mine) for g in graded), (uid, units[uid]["dotted"])
+    ungraded = sorted(uid for uid, f in facts.items() if not f["counted"] and uid not in through_others)
+    assert ungraded == [], [units[uid]["dotted"] for uid in ungraded][:10]
+    # the hidden data says what grades each unit, for an auditor
+    shipped = json.loads((task_root / STEP / "tests" / "private" / "unit_coverage.json").read_text())
+    assert set(shipped) == set(units)
+    for uid, entry in shipped.items():
+        assert entry["counted_calls"] or entry.get("fails_without_it"), uid
