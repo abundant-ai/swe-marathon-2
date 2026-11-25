@@ -1,0 +1,1069 @@
+#!/bin/sh
+# Runs as root once the user's work has ended, before /app/sympy is copied elsewhere. It first says,
+# in the file the setup step made whole for it (copied beside the tree), that it has begun, with
+# nothing but the shell's own commands, so that this is said even when no process can be started;
+# then it stops every process of the user `dev`; gives back the room fsmaint-reserve set aside, before
+# anything else is written; puts the tree aside and an empty one in its place, marked as refused, so
+# that whatever stops this step early leaves a tree that is copied as refused; lists the stopped
+# processes and ends them; probes whether a few public hosts answer; lets fsmaint-netcheck finish one
+# more poll and one more look at the sessions, and stops it; records the type, size, mode, owner,
+# modification and change times and inode of every entry of the tree before anything of its own
+# touches it; removes what a copy must not carry; puts in place of a unit file changed after the end
+# of the work the last copy fsmaint-netcheck took of it before that end; writes a record and a signed
+# mark into the tree; puts it back under its name, and says that it has finished. The mark's first
+# line is `listed` with how many entries and bytes were listed, or `refused` (no usable tree under
+# that name, one over the limits, no room to copy it, an end of the work the work itself kept from
+# the net check, or this step did not finish: the empty tree stays); the record (.fsmaint.json) lists
+# every entry with the times it had when the work ended, and the end of the work as far as it can be
+# told. The end is never later than WORK_LIMIT_SECONDS after the work began (counted from the first
+# process of `dev` fsmaint-netcheck saw begin, else from the start of the work), the time the work
+# is given.
+STATE=/var/lib/fsmaint
+[ -f "$STATE/out/progress" ] && printf '%-4095s\n' '{"stage": "started"}' 1<>"$STATE/out/progress"
+LIMIT_ENTRIES=200000
+LIMIT_BYTES=268435456
+LIMIT_DEPTH=64
+LIMIT_PATH_BYTES=1000
+LIMIT_RECORD_BYTES=48000000
+COPY_MARGIN_BYTES=16777216
+SESSION_WINDOW_SECONDS=600
+UNCHANGED_MARGIN_SECONDS=1
+NETCHECK_SETTLE_SECONDS=20
+WORK_LIMIT_SECONDS=34560
+KILL_SECONDS=30
+SPARE_DIRS="/tmp /var/tmp /dev/shm"
+TREE=/app/sympy
+UNITS=/opt/restore/units.json
+KEY=/usr/local/lib/fsmaint/key
+mkdir -p "$STATE" && chmod 0700 "$STATE"
+started=$(/usr/bin/python3 -I -c 'import time; print(repr(time.time()))')
+# Stop the processes of `dev` first, so that none of them runs while they are listed, then end
+# them all. `kill -STOP -1` as that user reaches all of them in one system call, so a process that
+# forks cannot outrun it; repeat until none is running.
+for _ in $(seq 1 50); do
+  pgrep -u dev -r R,S,D >/dev/null 2>&1 || pgrep -U dev -r R,S,D >/dev/null 2>&1 || break
+  setpriv --reuid dev --regid dev --clear-groups kill -STOP -1 >/dev/null 2>&1
+  sleep 0.05
+done
+# No process of `dev` runs now: give back the room and the spare inodes fsmaint-reserve set aside
+# (and the room for the copies, when fsmaint-netcheck has not used it), before this step writes
+# anything, so however full the disk was left, everything this step and the net check write still fits.
+rm -f "$STATE/room"
+rm -f "$STATE/copy-room"
+rm -rf "$STATE/inodes"
+# The measuring program, written once and run twice: now, before anything else is written, to put
+# the tree aside and leave an empty one in its place with a mark that refuses it; and last, to
+# measure the tree and put it back.
+cat > "$STATE/measure.py" <<'EOF'
+"""Put the tree aside and leave a mark that refuses it in its place (`stage`); then measure the tree,
+bound it, list it, sign and mark it, and put it back (`main`); as root, once no process of `dev` runs.
+
+stage <tree> <state> <key>
+    What stands under the tree's name is recorded in STATE/staged.json. A directory is renamed to
+    .measuring.<random> beside it, to be measured there; a link or anything else is moved aside,
+    never followed. An empty directory takes the tree's name, holding a signed mark that refuses it
+    ("the step that measures the tree did not finish") and its record. Whatever stops this step before
+    the end (a timeout, a crash, a full disk) leaves that empty tree, which is copied as refused.
+
+main <tree> <state> <key> <limits...> <spare dirs> <passes> <left> <started> <work limit> <units>
+    The tree put aside is walked by directory descriptor, never through a link and at most
+    LIMIT_DEPTH directories deep. What a copy must not carry is removed and noted: every link, so
+    that nothing is reached through one (a link could lead to a file written after the work ended
+    under a name that is not its own), anything that is neither a file nor a directory, and a file
+    whose name a copy might not carry as it is (not UTF-8, or with a character that is not
+    printable). Removing is one step per entry, whatever the entries are. Whatever was left under
+    the mark's or the record's name is moved aside, never followed. A tree that cannot be taken
+    whole is refused: nothing under its name, a link or anything else that is not a directory, a
+    tree that cannot be listed, one over the limits (entries, bytes, depth, the length of a path,
+    the size of its record), one holding a directory whose name a copy might not carry, or one there
+    is no room to copy (the copy is packed in the first of the spare directories: when the free
+    space there is short of the tree, what `dev` left in the spare directories is removed first). A
+    refused tree stays aside and the empty tree's mark is replaced by the refusal. An accepted tree
+    is marked in its own directory and only then takes the tree's name: in one step where the system
+    allows it (the two names exchanged), otherwise in two.
+
+    The mark's first line is `listed` with the number of entries (files and directories) and of
+    bytes in its files (each file once, however many names it has), or `refused`; then at most
+    MARK_NOTES notes of at most NOTE_CHARS characters, every character outside printable ASCII
+    escaped (the record keeps every note in full); the last line holds the record's sha256 and an
+    HMAC-SHA256 over the other lines and that digest, with the key whose path is given.
+
+    The end of the work (`end_bound`) is the earliest of these, when one is known:
+    - `netcheck`: the last closed poll of the longest stretch of fsmaint-netcheck that an opening
+      ended, when the net check finished a poll after every process of `dev` had ended; an opening
+      seen while an exec session was alive, before the time the work is given ran out, is no end of
+      the work (the hosts answer again only once it has ended). A stretch
+      still going on, or one that reached into this step, gives the start of this step (`collect`)
+      only if this step's own probe found the public hosts closed, and otherwise nothing. When the
+      net check could not finish such a poll: the start of this step, only if its own probe found
+      the hosts closed and the net check had not last seen them answer.
+    - `session`: when the exec session that ended last was last seen alive, if that session began
+      within SESSION_WINDOW seconds of the start of the work (one session for the whole of the work,
+      not the last of many short ones), no session was alive when this step began, and the sessions
+      were watched until then (by the listing of the stopped processes, or, when it is missing, by
+      the net check's own record of the sessions).
+    - `limit`: the start of the first process of `dev` that fsmaint-netcheck saw begin after the
+      work began (else the start of the work), plus the time the work is given (WORK_LIMIT_SECONDS):
+      the end is never later than that. With no other end known, it is the end when this step began
+      after it: the hosts cannot answer before the time the work is given has run out.
+    Without any, the start of the work (`unchanged`) when no listed entry changed since then.
+    When the work itself kept the end from the net check (every poll failed for want of the
+    machine's resources, so no stretch formed, or polls saw no answer while the hosts answered this
+    step as fast as the net check's polls allow), the tree is refused. Otherwise there is no end
+    bound (`end_from` null, `end_note` says why). A unit file (one the unit list names) changed at
+    or after the end, less SKEW_SECONDS, is replaced by the last copy fsmaint-netcheck took of it
+    that held its content at or before the end (STATE/copy.json); its entry then lists that copy's
+    size, digest and times, and under `copied` when the copy held that content, the times and digest
+    of what was replaced, and the units whose bodies differ between the two. The record
+    (.fsmaint.json) also holds both ends, what the net check recorded, the sessions, the processes
+    found stopped, how many passes of ending them took and how many were left, whether the public
+    hosts answered afterwards, every note, and every entry: its path, type, size, modification and
+    change times as recorded before this step touched anything, and a file's sha256.
+"""
+import hashlib
+import hmac
+import json
+import os
+import shutil
+import stat
+import sys
+
+MARK_NAME, RECORD_NAME = ".fsmaint", ".fsmaint.json"
+MARK_NOTES = 60      # notes written into the mark, at most; the record keeps them all
+NOTE_CHARS = 240     # characters of one note in the mark, at most
+NOTED = 20           # removals noted one by one for each reason; the rest are counted
+SKEW_SECONDS = 0.25  # a change this close before the end of the work counts as after it
+COPY_MAX_BYTES = 4_000_000
+
+
+def say(state, fields):
+    """Write where this step got to into the file the setup step made whole for it, in place."""
+    data = json.dumps(fields).encode()[:4095].ljust(4095) + b"\n"
+    try:
+        descriptor = os.open(os.path.join(state, "out", "progress"), os.O_WRONLY | os.O_NOFOLLOW)
+    except OSError:
+        return
+    try:
+        os.pwrite(descriptor, data, 0)
+    except OSError:
+        pass
+    finally:
+        os.close(descriptor)
+
+
+def bodies_of(text, keys):
+    """{key: the source of its function} for the qualified names `keys` ("name" or "name#occ/nocc")
+    in a unit file's text; None when it does not parse."""
+    import ast
+
+    try:
+        tree = ast.parse(text)
+    except (SyntaxError, ValueError, RecursionError, MemoryError):
+        return None
+    found = {}
+
+    def visit(node, prefix):
+        for child in node.body:
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                found.setdefault(prefix + child.name, []).append(child)
+            elif isinstance(child, ast.ClassDef):
+                visit(child, prefix + child.name + ".")
+
+    visit(tree, "")
+    out = {}
+    for key in keys:
+        name, _, where = key.partition("#")
+        occ = int(where.split("/")[0]) if where else 0
+        nodes = found.get(name) or []
+        out[key] = ast.get_source_segment(text, nodes[occ]) if occ < len(nodes) else None
+    return out
+
+
+def one_line(text):
+    """`text` with every character outside printable ASCII, and the backslash, escaped."""
+    return "".join(c if " " <= c <= "~" and c != "\\" else c.encode("unicode_escape").decode("ascii") for c in str(text))
+
+
+def mark_lines(head, notes):
+    """The mark's lines: the head, then the notes, bounded in number and length."""
+    shown = []
+    for note in notes[:MARK_NOTES]:
+        text = one_line(note)
+        shown.append(text if len(text) <= NOTE_CHARS else text[:NOTE_CHARS - 4] + " ...")
+    if len(notes) > MARK_NOTES:
+        shown.append(f"{len(notes) - MARK_NOTES} more notes are in the record")
+    return [head] + shown
+
+
+def signed_mark(key, lines, payload):
+    digest = hashlib.sha256(payload).hexdigest()
+    signature = hmac.new(key, ("\n".join(lines) + "\n" + digest).encode("ascii"), hashlib.sha256).hexdigest()
+    return ("\n".join(lines + [f"sig {digest} {signature}"]) + "\n").encode("ascii")
+
+
+def read_key(path):
+    with open(path, "rb") as handle:
+        return handle.read().strip()
+
+
+def aside(path, base):
+    """Move `path` (never followed) into a new folder in `base`, the folder that holds the tree; the folder."""
+    folder = os.path.join(base, f".aside.{os.urandom(6).hex()}")
+    os.mkdir(folder, 0o700)
+    os.rename(path, os.path.join(folder, os.path.basename(path)))
+    return folder
+
+
+def publish(folder, payload, mark):
+    """Put the record, then the mark, into `folder`, each made whole beside the folder and renamed in."""
+    parent = os.path.dirname(folder)
+    for name, data in ((RECORD_NAME, payload), (MARK_NAME, mark)):
+        made = os.path.join(parent, f".fsmaint-new.{os.urandom(6).hex()}")
+        descriptor = os.open(made, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644)
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(data)
+        target = os.path.join(folder, name)
+        if os.path.isdir(target) and not os.path.islink(target):
+            aside(target, parent)
+        os.replace(made, target)
+
+
+def stage(root, state, key_path):
+    """Put the tree aside, and an empty tree marked as refused in its place; what was done (staged.json)."""
+    parent = os.path.dirname(root)
+    if os.path.islink(root):
+        top = "link"
+    elif os.path.isdir(root):
+        top = "directory"
+    elif os.path.lexists(root):
+        top = "other"
+    else:
+        top = "absent"
+    staged, in_place = None, False
+    if top == "directory":
+        staged = os.path.join(parent, f".measuring.{os.urandom(6).hex()}")
+        try:
+            os.rename(root, staged)
+        except OSError:
+            staged, in_place = root, True
+    elif top != "absent":
+        aside(root, parent)
+    if in_place:
+        for name in (MARK_NAME, RECORD_NAME):
+            if os.path.lexists(os.path.join(root, name)):
+                aside(os.path.join(root, name), parent)
+    else:
+        os.mkdir(root, 0o755)
+    info = {"top": top, "staged": staged, "in_place": in_place}
+    record = {"state": "refused", "listed": "refused", "refused": "the step that measures the tree did not finish",
+              "placeholder": True, "staged": info, "entries": [], "notes": []}
+    payload = json.dumps(record, separators=(",", ":"), ensure_ascii=True).encode()
+    mark = signed_mark(read_key(key_path), ["refused", "the step that measures the tree did not finish: nothing was copied"],
+                       payload)
+    for name, data in ((RECORD_NAME, payload), (MARK_NAME, mark)):
+        descriptor = os.open(os.path.join(root, name), os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644)
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(data)
+    with open(os.path.join(state, "staged.json"), "w") as handle:
+        json.dump(info, handle)
+    say(state, {"stage": "staged", "top": top})
+    return info
+
+
+def swap(staged, root):
+    """Give the measured tree the tree's name: the two names exchanged in one step where the system
+    allows it (the refusing tree then stands where the measured one was), else in two renames."""
+    try:
+        import ctypes
+
+        libc = ctypes.CDLL(None, use_errno=True)
+        if libc.renameat2(-100, os.fsencode(staged), -100, os.fsencode(root), 2) == 0:   # AT_FDCWD, RENAME_EXCHANGE
+            return "exchanged"
+    except (OSError, AttributeError, TypeError):
+        pass
+    os.rename(root, os.path.join(os.path.dirname(root), f".placeholder.{os.urandom(6).hex()}"))
+    os.rename(staged, root)
+    return "renamed"
+
+
+def main(argv):
+    root, state, key_path = argv[0], argv[1], argv[2]
+    limit_entries, limit_bytes, limit_depth, limit_path, limit_record, copy_margin = (int(v) for v in argv[3:9])
+    session_window, unchanged_margin = float(argv[9]), float(argv[10])
+    spare = [path for path in argv[11].split() if path]
+    passes = int(argv[12]) if argv[12].strip().isdigit() else None
+    left = int(argv[13].strip()) if argv[13].strip().isdigit() else None
+    started = float(argv[14])
+    work_limit = float(argv[15])
+    units_path = argv[16] if len(argv) > 16 else None
+    notes, files, catalogue = [], set(), []
+    removals = {}
+    totals = {"entries": 0, "size": 0}
+
+    def read_json(name):
+        try:
+            with open(os.path.join(state, name)) as handle:
+                return json.load(handle)
+        except (OSError, ValueError):
+            return None
+
+    info = read_json("staged.json")
+    if not (isinstance(info, dict) and info.get("top") in ("directory", "link", "other", "absent")):
+        info = stage(root, state, key_path)
+    top, staged, in_place = info["top"], info.get("staged"), bool(info.get("in_place"))
+    if top == "directory" and not (staged and os.path.isdir(staged) and not os.path.islink(staged)):
+        top = "absent"
+
+    def removed(path, why):
+        removals[why] = removals.get(why, 0) + 1
+        if removals[why] <= NOTED:
+            notes.append(f"removed {path}: {why}")
+
+    before = {}
+    before_complete = False
+    try:
+        with open(os.path.join(state, "before.jsonl")) as handle:
+            for line in handle:
+                item = json.loads(line)
+                if "path" in item:
+                    before[item["path"]] = item
+                elif "complete" in item:
+                    before_complete = bool(item["complete"])
+                elif "incomplete" in item:
+                    notes.append(f"the listing before this step stopped: {item['incomplete']}")
+    except (OSError, ValueError):
+        notes.append("the listing before this step is missing")
+
+    class Refuse(Exception):
+        pass
+
+    def odd(name):
+        try:
+            name.encode("utf-8")
+        except UnicodeEncodeError:
+            return True
+        return not name.isprintable()
+
+    def digest(name, fd):
+        whole = hashlib.sha256()
+        handle = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=fd)
+        try:
+            while chunk := os.read(handle, 1 << 20):
+                whole.update(chunk)
+        finally:
+            os.close(handle)
+        return whole.hexdigest()
+
+    def walk(fd, rel, depth):
+        if depth > limit_depth:
+            raise Refuse(f"it is more than {limit_depth} directories deep")
+        with os.scandir(fd) as found:
+            names = []
+            for entry in found:
+                names.append(entry.name)
+                if totals["entries"] + len(names) > limit_entries:
+                    raise Refuse(f"it holds more than {limit_entries:,} files and directories")
+        for name in sorted(names):
+            if not rel and in_place and name in (MARK_NAME, RECORD_NAME):
+                continue   # the refusing mark and record this step left in place
+            path = f"{rel}/{name}" if rel else name
+            info = os.stat(name, dir_fd=fd, follow_symlinks=False)
+            if stat.S_ISLNK(info.st_mode):
+                os.unlink(name, dir_fd=fd)
+                removed(path, "a link: nothing is copied through one")
+                continue
+            if not (stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode)):
+                os.unlink(name, dir_fd=fd)
+                removed(path, "not a file or a directory")
+                continue
+            if odd(name):
+                if stat.S_ISDIR(info.st_mode):
+                    raise Refuse(f"it holds a directory whose name a copy might not carry: {path}")
+                os.unlink(name, dir_fd=fd)
+                removed(path, "a name a copy might not carry")
+                continue
+            if len(path.encode("utf-8")) > limit_path:
+                raise Refuse(f"a path in it is longer than {limit_path} bytes")
+            totals["entries"] += 1
+            kind = "directory" if stat.S_ISDIR(info.st_mode) else "file"
+            earlier = before.get(path)
+            times = (earlier["mtime"], earlier["ctime"]) if earlier and earlier.get("type") == kind else (info.st_mtime, info.st_ctime)
+            item = {"path": path, "type": kind, "size": info.st_size, "mtime": times[0], "ctime": times[1]}
+            if earlier is None or earlier.get("type") != kind:
+                item["times"] = "found after the listing"
+            if kind == "file":
+                if (info.st_dev, info.st_ino) not in files:
+                    files.add((info.st_dev, info.st_ino))
+                    totals["size"] += info.st_size
+                    if totals["size"] > limit_bytes:
+                        raise Refuse(f"it holds more than {limit_bytes:,} bytes")
+                item["sha256"] = digest(name, fd)
+            catalogue.append(item)
+            if kind == "directory":
+                child = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+                try:
+                    walk(child, path, depth + 1)
+                finally:
+                    os.close(child)
+
+    def free_bytes(path):
+        try:
+            found = os.statvfs(path)
+            return found.f_bavail * found.f_frsize
+        except OSError:
+            return None
+
+    def clear_spare():
+        """Remove what `dev` left at the top of the spare directories; how many entries went."""
+        try:
+            import pwd
+
+            uid = pwd.getpwnam("dev").pw_uid
+        except (KeyError, ImportError):
+            return 0
+        count = 0
+        for folder in spare:
+            try:
+                entries = list(os.scandir(folder))
+            except OSError:
+                continue
+            for entry in entries:
+                try:
+                    if entry.stat(follow_symlinks=False).st_uid != uid:
+                        continue
+                    if entry.is_dir(follow_symlinks=False):
+                        shutil.rmtree(entry.path)
+                    else:
+                        os.unlink(entry.path)
+                    count += 1
+                except OSError:
+                    continue
+        return count
+
+    head, refused = None, None
+    if top == "directory":
+        tree = staged
+        if not in_place:
+            for name in (MARK_NAME, RECORD_NAME):
+                if os.path.lexists(os.path.join(tree, name)):
+                    aside(os.path.join(tree, name), os.path.dirname(root))
+                    notes.append(f"moved {name} out of the tree: this step writes a file of that name there")
+        try:
+            descriptor = os.open(tree, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            try:
+                walk(descriptor, "", 1)
+            finally:
+                os.close(descriptor)
+            head = f"listed {totals['entries']} {totals['size']}"
+        except Refuse as refusal:
+            refused = str(refusal)
+        except (OSError, RecursionError, ValueError, MemoryError) as exc:
+            refused = f"it could not be listed ({exc.__class__.__name__}: {exc})"
+        if refused is None:
+            # the copy of the tree is packed in the first spare directory: there must be room for it
+            need = int(totals["size"] * 1.02) + 1024 * totals["entries"] + copy_margin
+            room = free_bytes(spare[0]) if spare else None
+            if room is not None and room < need:
+                gone = clear_spare()
+                if gone:
+                    notes.append(f"removed {gone} entries the user `dev` left in {' '.join(spare)}, to make room for the copy")
+                room = free_bytes(spare[0])
+                if room is not None and room < need:
+                    refused = f"there is no room to copy it ({room:,} bytes free where {need:,} are needed)"
+    elif top == "absent":
+        refused = "nothing stood under the tree's name"
+    else:
+        refused = "a link or something else that is not a directory stood under the tree's name, and was moved aside"
+    for why, count in removals.items():
+        if count > NOTED:
+            notes.append(f"removed {count - NOTED} more entries: {why}")
+    if refused is not None:
+        head, catalogue = "refused", []
+        notes.insert(0, f"{refused}: it was not copied")
+    netcheck, netcheck_open, settle, processes, probe, sessions = (
+        read_json(name) for name in ("netcheck.json", "netcheck-open.json", "netcheck-settle.json", "procs.json", "netprobe.json",
+                                     "sessions.json"))
+    try:
+        with open(os.path.join(state, "work-started")) as handle:
+            work_started = float(handle.read().split()[0])
+    except (OSError, ValueError, IndexError):
+        work_started = None
+    probe_closed = isinstance(probe, dict) and probe.get("any_open") is False
+
+    def netcheck_end():
+        """(end bound, where it came from, why there is none, what the work did to the probe: "blind" when
+        it could not see the network, "answered" when it saw no answer while the hosts answered), from the
+        net check's record."""
+        if not isinstance(netcheck, dict) or work_started is None:
+            return None, None, "the setup step left no record of the start of the work or of the net check", None
+        least = int(netcheck.get("min_closed_polls") or 3)
+        stretches = []   # (closed polls, last closed poll, end bound or None while it goes on)
+        during = 0
+        for opening in netcheck.get("openings") or []:
+            try:
+                if opening.get("session_alive") is True and opening.get("after_limit") is not True:
+                    # seen while an exec session was alive and the time the work is given had not run out: the
+                    # hosts answer again only once the work has ended, so this says nothing of its end
+                    during += 1
+                    continue
+                stretches.append((int(opening["closed_polls"]), float(opening["last_closed_at"]), float(opening["end_bound"])))
+            except (TypeError, KeyError, ValueError, AttributeError):
+                continue
+        if during:
+            notes.append(f"{during} openings the net check saw while an exec session was alive, before the time the work is "
+                         "given ran out, are no end of the work")
+        closing = netcheck.get("closing")
+        try:
+            if closing and int(closing[2]) >= least:
+                stretches.append((int(closing[2]), float(closing[1]), None))
+        except (TypeError, IndexError, ValueError):
+            pass
+        if not (isinstance(settle, dict) and settle.get("fresh") is True):
+            last_poll = netcheck.get("last_poll") or [None, None]
+            if probe_closed and (len(last_poll) < 2 or last_poll[1] != "open"):
+                return started, "collect", None, None
+            return None, None, "the net check had stopped before the work ended, and the public hosts were not seen closed after it", None
+        if not stretches:
+            blind = int(netcheck.get("local_polls") or 0) >= int(netcheck.get("local_limit") or 3)
+            return None, None, f"the net check never saw {least} polls in a row without an answer", "blind" if blind else None
+        _polls, _last, bound = max(stretches, key=lambda s: (s[0], s[1]))
+        if bound is not None and bound < started:
+            return bound, "netcheck", None, None
+        # still going on when the work had ended, or reaching into this step: only this step's own probe
+        # can tell that the hosts were closed all along
+        if probe_closed:
+            return started, "collect", None, None
+        # the work's doing only when the hosts answered this step at the net check's own addresses, as fast as
+        # its polls allow: an answer that only a fresh lookup or a longer wait gets says nothing of the work
+        answered = isinstance(probe, dict) and probe.get("answered_as_net_check") is True
+        return None, None, "the net check's stretch without an answer reached into this step while public hosts answered", \
+            "answered" if answered else None
+
+    def session_end():
+        """(end bound, why there is none), from the sessions the net check watched."""
+        if not (isinstance(sessions, dict) and sessions.get("available") is True):
+            return None, "the sessions of the work could not be watched"
+        scan = sessions.get("last_scan")
+        if not (isinstance(scan, (int, float)) and scan >= started):
+            return None, "the sessions were not watched until this step began"
+        if isinstance(processes, dict) and processes.get("sessions_alive"):
+            return None, "an exec session was alive when this step began"
+        seen = []
+        for entry in sessions.get("sessions") or []:
+            try:
+                seen.append((float(entry["last_seen"]), float(entry["first_seen"])))
+            except (TypeError, KeyError, ValueError):
+                continue
+        if not seen:
+            return None, "no exec session was seen during the work"
+        last_seen, first_seen = max(seen)
+        if last_seen >= started:
+            return None, "an exec session was alive when this step began"
+        if work_started is None or first_seen > work_started + session_window:
+            return None, "the exec session that ended last began later than the start of the work"
+        return last_seen, None
+
+    def unchanged():
+        """No listed entry changed since the start of the work (by the listing made before this step)."""
+        if not (head or "").startswith("listed") or work_started is None or not before_complete:
+            return False
+        cutoff = work_started - unchanged_margin
+        return all(item.get("times") is None and all(isinstance(t, (int, float)) and t < cutoff for t in (item["mtime"], item["ctime"]))
+                   for item in catalogue)
+
+    def alive_at_start():
+        """Whether an exec session of the work was alive when this step began, by the listing of the stopped
+        processes or by the net check's own record of the sessions."""
+        if isinstance(processes, dict) and processes.get("sessions_alive"):
+            return True
+        if not (isinstance(sessions, dict) and sessions.get("available") is True):
+            return False
+        for entry in sessions.get("sessions") or []:
+            try:
+                if float(entry["last_seen"]) >= started:
+                    return True
+            except (TypeError, KeyError, ValueError):
+                continue
+        return False
+
+    def first_start():
+        """The start of the first process of `dev` the net check saw begin after the work began, when it is
+        one (at or after the start of the work, before this step); else None."""
+        first = sessions.get("first_process") if isinstance(sessions, dict) else None
+        value = first.get("start") if isinstance(first, dict) else None
+        if isinstance(value, (int, float)) and not isinstance(value, bool) and work_started is not None \
+                and work_started - 1 <= value <= started:
+            return float(value)
+        return None
+
+    nc_bound, nc_from, nc_note, nc_cause = netcheck_end()
+    ss_bound, ss_note = session_end()
+    anchor = first_start()
+    limit_from = "first process" if anchor is not None else "start of the work"
+    if anchor is None:
+        anchor = work_started
+    limit_bound = anchor + work_limit if anchor is not None else None
+    known = sorted((bound, origin) for bound, origin in ((nc_bound, nc_from), (ss_bound, "session")) if bound is not None)
+    if known and limit_bound is not None and limit_bound < known[0][0]:
+        known.insert(0, (limit_bound, "limit"))
+    elif not known and limit_bound is not None and started >= limit_bound:
+        # this step began after the time the work is given ran out: the hosts answer again only after that,
+        # so nothing fetched can come before it, whatever the sessions show
+        known = [(limit_bound, "limit")]
+    if refused is None and not known and not unchanged() and nc_cause is not None:
+        # no end can be told, because of what the work did to the net check's probe: it held the probe
+        # blind, or kept it from seeing hosts that answered; nothing in the tree can be told from a file
+        # written after the work, and the work is the cause, so the tree is refused rather than lost
+        refused = {"blind": "the net check could not see the network during the work, and no exec session bounds it",
+                   "answered": "the net check saw no answer while public hosts answered, and no exec session bounds the work"}[nc_cause]
+        head, catalogue = "refused", []
+        notes.insert(0, f"{refused}: it was not copied")
+
+    def unit_keys():
+        """{path in the tree: {key: uid}} from the unit list ("qualname", or "qualname#occ/nocc"); {} without one."""
+        try:
+            with open(units_path) as handle:
+                units = json.load(handle)
+        except (OSError, ValueError, TypeError):
+            return {}
+        out = {}
+        for unit in units if isinstance(units, list) else []:
+            try:
+                if not unit["file"].startswith("sympy/"):
+                    continue
+                nocc = int(unit.get("nocc", 1))
+                key = unit["qualname"] if nocc == 1 else f'{unit["qualname"]}#{int(unit.get("occ", 0))}/{nocc}'
+                out.setdefault(unit["file"][len("sympy/"):], {})[key] = str(unit["uid"])
+            except (TypeError, KeyError, ValueError, AttributeError):
+                continue
+        return out
+
+    copies = read_json("copy.json")
+    taken = []
+
+    def take_copies(end_bound):
+        """Put in place of each unit file changed at or after `end_bound` less SKEW_SECONDS the last copy that
+        held its content at or before it (the room given back at the start of this step holds it)."""
+        versions_of = copies.get("copies") if isinstance(copies, dict) else None
+        if end_bound is None or not (head or "").startswith("listed") or not isinstance(versions_of, dict) or not staged:
+            return
+        keys = unit_keys()
+        for item in catalogue:
+            if item.get("type") != "file":
+                continue
+            times = [t for t in (item.get("mtime"), item.get("ctime")) if isinstance(t, (int, float))]
+            if times and max(times) < end_bound - SKEW_SECONDS:
+                continue
+            chosen = None
+            versions = versions_of.get("sympy/" + item["path"])
+            for version in versions if isinstance(versions, list) else []:
+                try:
+                    if (version["slot"] in ("a", "b") and float(version["captured"]) <= end_bound
+                            and max(float(version["mtime"]), float(version["ctime"])) < end_bound - SKEW_SECONDS):
+                        chosen = version
+                        break
+                except (TypeError, KeyError, ValueError):
+                    continue
+            if chosen is None:
+                continue
+            try:
+                with open(os.path.join(state, "copy", chosen["slot"], "sympy", item["path"]), "rb") as handle:
+                    data = handle.read(COPY_MAX_BYTES + 1)
+                if hashlib.sha256(data).hexdigest() != chosen["sha256"]:
+                    notes.append(f"the copy of {item['path']} differs from its record: not taken")
+                    continue
+                target = os.path.join(staged, item["path"])   # no link is left in the tree to lead elsewhere
+                with open(target, "rb") as handle:
+                    late = handle.read(COPY_MAX_BYTES + 1)
+                made = f"{target}.fsmaint-copy.{os.urandom(6).hex()}"
+                descriptor = os.open(made, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644)
+                with os.fdopen(descriptor, "wb") as handle:
+                    handle.write(data)
+                os.replace(made, target)
+            except OSError as exc:
+                notes.append(f"the copy of {item['path']} could not be put in place ({exc.__class__.__name__})")
+                continue
+            changed = None
+            file_keys = keys.get(item["path"])
+            if file_keys:
+                old = bodies_of(late.decode("utf-8", "replace"), list(file_keys))
+                new = bodies_of(data.decode("utf-8", "replace"), list(file_keys))
+                if old is not None and new is not None:
+                    changed = sorted(file_keys[key] for key in file_keys if old.get(key) != new.get(key))
+            item["copied"] = {"captured": chosen["captured"], "late_mtime": item["mtime"], "late_ctime": item["ctime"],
+                              "late_size": item["size"], "late_sha256": item.get("sha256"), "units_changed_after": changed}
+            totals["size"] += len(data) - int(item["size"])
+            item.update(size=len(data), sha256=chosen["sha256"], mtime=chosen["mtime"], ctime=chosen["ctime"])
+            taken.append(item["path"])
+        if taken:
+            notes.append(f"{len(taken)} unit files changed after the end of the work were taken as the last copy before it "
+                         f"held them: {', '.join(taken[:10])}")
+
+    if refused is None and (known or unchanged()):
+        take_copies(known[0][0] if known else work_started)
+        head = f"listed {totals['entries']} {totals['size']}"
+
+    def build():
+        if known:
+            (end_bound, end_from), end_note = known[0], None
+        elif unchanged():
+            end_bound, end_from, end_note = work_started, "unchanged", None
+        else:
+            end_bound, end_from, end_note = None, None, "; ".join(note for note in (nc_note, ss_note) if note)
+        record = {"state": head.split()[0], "listed": head, "refused": refused, "end_bound": end_bound, "end_from": end_from,
+                  "end_note": end_note,
+                  "end_bounds": {"netcheck": [nc_bound, nc_from, nc_note], "session": [ss_bound, ss_note],
+                                 "limit": [limit_bound, work_limit, limit_from]},
+                  "limit_bound": limit_bound, "limit_from": limit_from,
+                  "copies": {key: (copies or {}).get(key) for key in ("began", "finished", "passes", "limit", "files")}
+                  | {"failed": len((copies or {}).get("failed") or {}), "taken": len(taken)} if isinstance(copies, dict) else None,
+                  "sweep_started_at": started, "work_started": work_started, "staged": info, "netcheck": netcheck,
+                  "netcheck_open": netcheck_open, "netcheck_settle": settle, "sessions": sessions,
+                  "process_count": (processes or {}).get("process_count"), "processes": (processes or {}).get("processes", []),
+                  "sessions_alive_at_start": (processes or {}).get("sessions_alive"), "session_alive_at_start": alive_at_start(),
+                  "kill_passes": passes, "processes_left": left, "net_probe": probe,
+                  "listing_complete": before_complete and refused is None, "notes": notes, "entries": catalogue}
+        return json.dumps(record, separators=(",", ":"), ensure_ascii=True).encode()
+
+    payload = build()
+    if refused is None and len(payload) > limit_record:
+        refused = f"its record would be larger than {limit_record:,} bytes"
+        head, catalogue = "refused", []
+        notes.insert(0, f"{refused}: it was not copied")
+        payload = build()
+    lines = mark_lines(head, notes)
+    mark = signed_mark(read_key(key_path), lines, payload)
+    if refused is not None or in_place:
+        # the refusal replaces the empty tree's mark; a tree measured in place is marked where it is
+        publish(root, payload, mark)
+    else:
+        publish(staged, payload, mark)
+        swap(staged, root)
+    say(state, {"stage": "done", "listed": head})
+    for line in lines[1:51]:
+        print(line, flush=True)
+
+
+if __name__ == "__main__":
+    if sys.argv[1] == "stage":
+        stage(*sys.argv[2:5])
+    else:
+        main(sys.argv[2:])
+EOF
+/usr/bin/python3 -I "$STATE/measure.py" stage "$TREE" "$STATE" "$KEY"
+# The stopped processes, listed (when this cannot be written, the net check's own record of the
+# sessions tells whether one was alive when this step began).
+timeout 30 /usr/bin/python3 -I - "$STATE/procs.json" <<'EOF'
+"""List the processes of the user `dev` (stopped), with their state, parent and command line, and
+which of them are exec sessions; `processes`, `read_status` and `sessions` are fsmaint-netcheck's."""
+import json
+import os
+import pwd
+import sys
+import time
+
+PROC = "/proc"
+SESSION_PARENTS = ("su", "runuser")
+
+
+def read_status(pid, proc=PROC):
+    """(real uid, parent pid, name, state) of a process, from /proc; None when it cannot be read."""
+    try:
+        with open(os.path.join(proc, str(pid), "status")) as handle:
+            fields = dict(line.split(":", 1) for line in handle.read().splitlines() if ":" in line)
+        return int(fields["Uid"].split()[0]), int(fields["PPid"].strip()), fields.get("Name", "").strip(), fields.get("State", "").strip()[:1]
+    except (OSError, KeyError, ValueError, IndexError, MemoryError):
+        return None
+
+
+def processes(proc=PROC):
+    """{pid: (real uid, parent pid, name, state)} of every process /proc shows; None without a /proc."""
+    try:
+        names = os.listdir(proc)
+    except (OSError, MemoryError):
+        return None
+    table = {}
+    for name in names:
+        if name.isdigit():
+            info = read_status(name, proc)
+            if info is not None:
+                table[int(name)] = info
+    return table
+
+
+def sessions(table, uid):
+    """The pids of the exec sessions of the user `uid` in a process table: its processes (not zombies)
+    whose parent is a process of the real user root named in SESSION_PARENTS other than the first
+    process, or that have no parent here."""
+    found = []
+    for pid, (owner, parent, _name, state) in table.items():
+        if owner != uid or state in ("Z", "X"):
+            continue
+        above = table.get(parent)
+        if parent == 0 or (parent != 1 and above is not None and above[0] == 0 and above[2] in SESSION_PARENTS):
+            found.append(pid)
+    return sorted(found)
+
+
+try:
+    uid = pwd.getpwnam("dev").pw_uid
+except KeyError:
+    uid = None
+table = processes()
+listed, alive = [], []
+if table is not None and uid is not None:
+    alive = sessions(table, uid)
+    for pid, (owner, parent, name, state) in sorted(table.items()):
+        if owner != uid:
+            continue
+        try:
+            with open(os.path.join(PROC, str(pid), "cmdline"), "rb") as handle:
+                command = handle.read(4096).replace(b"\0", b" ").strip().decode(errors="backslashreplace")
+        except OSError:
+            command = ""
+        listed.append({"pid": pid, "ppid": parent, "state": state, "name": name, "command": command[:1000], "session": pid in alive})
+with open(sys.argv[1], "w") as handle:
+    json.dump({"listed_at": time.time(), "proc": table is not None, "process_count": len(listed), "processes": listed[:500],
+               "sessions_alive": alive[:100]}, handle)
+EOF
+# End them all: live processes only (a zombie cannot write, and only its parent can take it away),
+# for at most KILL_SECONDS.
+passes=0
+kill_started=$(date +%s)
+for _ in $(seq 1 100); do
+  pgrep -u dev -r R,S,D,T,t >/dev/null 2>&1 || pgrep -U dev -r R,S,D,T,t >/dev/null 2>&1 || break
+  [ $(( $(date +%s) - kill_started )) -lt "$KILL_SECONDS" ] || break
+  passes=$((passes + 1))
+  setpriv --reuid dev --regid dev --clear-groups kill -9 -1 >/dev/null 2>&1
+  pkill -KILL -u dev >/dev/null 2>&1
+  pkill -KILL -U dev >/dev/null 2>&1
+  sleep 0.1
+done
+left=$(timeout 30 /usr/bin/python3 -I - <<'EOF'
+"""How many live processes of the user `dev` are left (a zombie cannot write and is not counted);
+the tools' count where there is no /proc; nothing when it cannot be told."""
+import os
+import pwd
+import subprocess
+
+try:
+    uid = pwd.getpwnam("dev").pw_uid
+    names = os.listdir("/proc")
+except (KeyError, OSError):
+    uid = names = None
+count = None
+if names is not None:
+    count = 0
+    for name in names:
+        if not name.isdigit():
+            continue
+        try:
+            with open(f"/proc/{name}/status") as handle:
+                fields = dict(line.split(":", 1) for line in handle.read().splitlines() if ":" in line)
+            if int(fields["Uid"].split()[0]) == uid and fields.get("State", "").strip()[:1] not in ("Z", "X"):
+                count += 1
+        except (OSError, KeyError, ValueError, IndexError):
+            continue
+else:
+    try:
+        count = len(subprocess.run(["pgrep", "-u", "dev"], capture_output=True, text=True, timeout=10).stdout.split())
+    except (OSError, subprocess.SubprocessError):
+        count = None
+print("" if count is None else count)
+EOF
+)
+ended=$(/usr/bin/python3 -I -c 'import time; print(repr(time.time()))')
+# Whether a few public hosts answer from here now (a TLS handshake), all at once, three seconds in
+# all: by name, and at the addresses fsmaint-netcheck resolved when it started.
+timeout 15 /usr/bin/python3 -I - "$STATE/netprobe.json" "$STATE/netcheck.json" <<'EOF'
+"""Record whether a TLS handshake with port 443 of a few public hosts completes, all tried at once
+within three seconds, by name and at the addresses the net check resolved. `any_open` is True when one
+completed, False when every attempt failed for a reason of the network, and None when none completed
+and an attempt failed for a reason of this machine (as in fsmaint-netcheck, LOCAL_ERRNOS).
+`answered_as_net_check` is True when one completed at an address the net check polls within the time
+its own polls allow (its handshake seconds for the connection, and again for the handshake)."""
+import errno
+import json
+import socket
+import ssl
+import sys
+import threading
+import time
+
+HOSTS = ("pypi.org", "files.pythonhosted.org", "github.com")
+LOCAL_ERRNOS = frozenset({errno.EADDRNOTAVAIL, errno.EADDRINUSE, errno.EAGAIN, errno.EMFILE, errno.ENFILE,
+                          errno.ENOBUFS, errno.ENOMEM})
+targets = [(host, host, False) for host in HOSTS]
+allowed = 1.0
+try:
+    with open(sys.argv[2]) as handle:
+        status = json.load(handle)
+    allowed = float(status.get("handshake_seconds") or 1.0)
+    targets += [(host, address, True) for host, found in (status.get("hosts") or {}).items() if host in HOSTS and isinstance(found, list)
+                for address in found if isinstance(address, str)]
+except (OSError, ValueError, AttributeError, TypeError):
+    pass
+results = {f"{address}:443 ({host})": "no answer within 3 s" for host, address, _polled in targets}
+quick = []
+try:
+    context = ssl.create_default_context()
+except (OSError, ssl.SSLError, MemoryError):
+    context = None
+
+
+def reach(host, address, polled):
+    key = f"{address}:443 ({host})"
+    try:
+        began = time.monotonic()
+        with socket.create_connection((address, 443), timeout=3) as raw:
+            connected = time.monotonic()
+            raw.settimeout(3)
+            with (context or ssl.create_default_context()).wrap_socket(raw, server_hostname=host):
+                results[key] = "open"
+                if polled and connected - began <= allowed and time.monotonic() - connected <= allowed:
+                    quick.append(key)
+    except (OSError, ValueError, MemoryError) as exc:
+        local = isinstance(exc, MemoryError) or (
+            isinstance(exc, OSError) and not isinstance(exc, ssl.SSLError) and exc.errno in LOCAL_ERRNOS)
+        results[key] = f"{'local' if local else 'closed'} ({exc.__class__.__name__})"
+
+
+started = time.time()
+workers = []
+for target in targets:
+    try:
+        worker = threading.Thread(target=reach, args=target, daemon=True)
+        worker.start()
+        workers.append(worker)
+    except RuntimeError:
+        results[f"{target[1]}:443 ({target[0]})"] = "local (thread)"
+for worker in workers:
+    worker.join(3.5)
+states = list(results.values())
+any_open = True if "open" in states else (None if any(state.startswith("local") for state in states) else False)
+with open(sys.argv[1], "w") as handle:
+    json.dump({"started_at": started, "checked_at": time.time(), "hosts": results, "any_open": any_open,
+               "answered_as_net_check": bool(quick), "answered_within": allowed, "answered_quickly": sorted(quick)}, handle)
+EOF
+# fsmaint-netcheck, if it still runs, gets to finish a poll that started after every process of
+# `dev` had ended, so that an opening the end of the work brought is on its record, and a look at
+# the sessions that started after this step began; then it stops.
+timeout $((NETCHECK_SETTLE_SECONDS + 10)) /usr/bin/python3 -I - "$STATE" "$ended" "$started" "$NETCHECK_SETTLE_SECONDS" <<'EOF'
+"""Wait, at most the given seconds, until the net check's last poll started at or after the given
+time and its watch of the sessions looked at or after the start of this step; stop it; record whether
+it got there (netcheck-settle.json)."""
+import json
+import os
+import signal
+import sys
+import time
+
+STATE, ENDED, STARTED, WAIT = sys.argv[1], float(sys.argv[2]), float(sys.argv[3]), float(sys.argv[4])
+
+
+def load(name):
+    try:
+        with open(os.path.join(STATE, name)) as handle:
+            return json.load(handle)
+    except (OSError, ValueError):
+        return None
+
+
+began = time.time()
+fresh = sessions_fresh = False
+seen = record = None
+while True:
+    seen, record = load("netcheck.json"), load("sessions.json")
+    poll = seen.get("last_poll") if isinstance(seen, dict) else None
+    fresh = isinstance(poll, list) and bool(poll) and isinstance(poll[0], (int, float)) and poll[0] >= ENDED
+    scan = record.get("last_scan") if isinstance(record, dict) else None
+    sessions_fresh = isinstance(scan, (int, float)) and scan >= STARTED
+    polls_done = fresh or not isinstance(seen, dict) or bool(seen.get("error"))
+    sessions_done = sessions_fresh or not isinstance(record, dict) or bool(record.get("error"))
+    if (polls_done and sessions_done) or time.time() - began >= WAIT:
+        break
+    time.sleep(0.05)
+pid = seen.get("pid") if isinstance(seen, dict) else None
+if isinstance(pid, int) and pid > 1:
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except OSError:
+        pass
+with open(os.path.join(STATE, "netcheck-settle.json"), "w") as handle:
+    json.dump({"fresh": fresh, "sessions_fresh": sessions_fresh, "after": ENDED, "waited": round(time.time() - began, 2),
+               "last_poll": seen.get("last_poll") if isinstance(seen, dict) else None}, handle)
+EOF
+# Every entry's own times, before anything of this step touches the tree (it was put aside whole,
+# which changes none of them): the change time is the one time a user cannot set.
+timeout 300 /usr/bin/python3 -I - "$STATE" "$TREE" "$LIMIT_ENTRIES" "$LIMIT_DEPTH" "$STATE/before.jsonl" <<'EOF'
+"""Record every entry of the tree put aside (STATE/staged.json; the tree's own name when it was not)
+as it stands when the work has ended (path, type, size, mode, owner, modification and change times,
+inode), walking by directory descriptor, never following a link and never deeper than the given
+depth. The last line says whether the listing is complete."""
+import json
+import os
+import resource
+import stat
+import sys
+
+STATE, ROOT, LIMIT, DEPTH, OUT = sys.argv[1], sys.argv[2], int(sys.argv[3]), int(sys.argv[4]), sys.argv[5]
+count = 0
+complete = True
+try:
+    with open(os.path.join(STATE, "staged.json")) as handle:
+        ROOT = json.load(handle).get("staged") or ROOT
+except (OSError, ValueError, AttributeError):
+    pass
+try:
+    soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+    resource.setrlimit(resource.RLIMIT_NOFILE, (hard, hard))
+except (ValueError, OSError):
+    pass
+
+
+class Stop(Exception):
+    pass
+
+
+def walk(fd, rel, out, depth):
+    global count
+    if depth > DEPTH:
+        raise Stop(f"more than {DEPTH} directories deep")
+    with os.scandir(fd) as listing:
+        names = [entry.name for entry in listing]
+    for name in names:
+        count += 1
+        if count > LIMIT:
+            raise Stop(f"more than {LIMIT} entries")
+        path = f"{rel}/{name}" if rel else name
+        info = os.stat(name, dir_fd=fd, follow_symlinks=False)
+        kind = "directory" if stat.S_ISDIR(info.st_mode) else "file" if stat.S_ISREG(info.st_mode) else "link" if stat.S_ISLNK(info.st_mode) else "other"
+        out.write(json.dumps({"path": path, "type": kind, "size": info.st_size, "mode": stat.S_IMODE(info.st_mode), "owner": info.st_uid,
+                              "mtime": info.st_mtime, "ctime": info.st_ctime, "inode": [info.st_dev, info.st_ino]}) + "\n")
+        if kind == "directory":
+            child = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+            try:
+                walk(child, path, out, depth + 1)
+            finally:
+                os.close(child)
+
+
+with open(OUT, "w") as out:
+    try:
+        top = os.open(ROOT, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            walk(top, "", out, 1)
+        finally:
+            os.close(top)
+    except Stop as stop:
+        complete = False
+        out.write(json.dumps({"incomplete": str(stop)}) + "\n")
+    except (OSError, RecursionError, ValueError, MemoryError) as exc:
+        complete = False
+        out.write(json.dumps({"incomplete": f"{exc.__class__.__name__}: {exc}"}) + "\n")
+    out.write(json.dumps({"complete": complete}) + "\n")
+EOF
+# Measure, bound, list, sign and mark, as root, and put the tree back.
+exec /usr/bin/python3 -I "$STATE/measure.py" main "$TREE" "$STATE" "$KEY" "$LIMIT_ENTRIES" "$LIMIT_BYTES" "$LIMIT_DEPTH" \
+    "$LIMIT_PATH_BYTES" "$LIMIT_RECORD_BYTES" "$COPY_MARGIN_BYTES" "$SESSION_WINDOW_SECONDS" "$UNCHANGED_MARGIN_SECONDS" \
+    "$SPARE_DIRS" "$passes" "$left" "$started" "$WORK_LIMIT_SECONDS" "$UNITS"
