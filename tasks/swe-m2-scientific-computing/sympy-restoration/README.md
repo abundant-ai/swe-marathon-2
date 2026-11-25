@@ -1081,9 +1081,10 @@ It does not yet meet the v2 workload target; see [Workload](#workload) and
   whole as the visible side; 34 pairs: 4 the same tree under the same name, 6
   the same once every name is blinded, 1 text 85% alike under the same name, 24
   text 85% alike in the same file), so a whole copy would give a graded body
-  away; for example `gauss_hermite` and `gauss_legendre` beside
-  `gauss_laguerre`, `dup_exquo` beside `dmp_exquo`, `is_proper_subset` beside
-  `is_superset`. Each is recorded in the builder's report. The other 495 have
+  away: sibling functions written the same way, such as a quadrature beside
+  another or a predicate beside its converse. Each is recorded in the builder's
+  report, which stays with the prepared inputs (the repository is public, and
+  the names would tell which removed units nothing grades). The other 495 have
   their original bodies back.
 - The checkout now: 2,176 units (numbered again from U0001 in their old order)
   in 324 files, 32,710 non-blank lines of body (37,293 before); 31 files are
@@ -1109,10 +1110,9 @@ It does not yet meet the v2 workload target; see [Workload](#workload) and
   the file's 25 units are restored as before.
 - No body left whole gives a graded unit away: none is a near-copy of a graded
   body (those stay removed), and a scan of their literals against the leaves of
-  the counted calls' arguments and results matched three strings, `generators`
-  in `PermutationGroup.centralizer` and `distributed` and `point_load` in
-  `Cable.remove_loads`, each the class's own vocabulary that its file shows
-  elsewhere 127, 23 and 14 times; no long number matched. Their docstrings, and
+  the counted calls' arguments and results matched three strings in two
+  bodies, each a word of the class's own vocabulary that its file shows
+  elsewhere 14 to 127 times; no long number matched. Their docstrings, and
   so their examples, were always in the checkout; only their code is new to it.
 - `checks/test_graded_units.py` traces again on the skeleton with the reference
   over it and fails if a removed unit is run by no graded item (but for the
