@@ -11,9 +11,12 @@
 - What submissions that implement nothing pass (`baselines`): printing nothing and exiting 0, 1
   or 2; and the strongest dispatcher with no interpreter in it (recorder.no_interpreter: the
   command line's answers, an echo of a program's leading literals, one constant per visible shape
-  of case), by strategy. The largest share any one answer holds. The different outputs of programs
-  given to run (runcases.distinct_outputs, which a reward needs enough of) that the kept cases hold,
-  and that the dispatcher's cases hold.
+  of case), by strategy. The largest share any one answer holds. The different outputs that only a
+  run of the code given produces (runcases.distinct_outputs, which a reward needs
+  runcases.DISTINCT_OUTPUTS of) that the kept cases hold, and that the dispatcher's cases hold.
+- A guard: the build stops (exit status 1) when the dispatcher's cases hold more than a third of
+  runcases.DISTINCT_OUTPUTS, so that no set of cases brings a program with no interpreter in it
+  near a reward unnoticed (`dispatcher_too_close`).
 - The recording program (`--build`: its link, size and sha256, with the marker zeroed as the
   reference solution's copy has it), the build host, the recording's wall time, the sha256 of the
   kept ids and of the answers, so that two builds can be compared.
@@ -30,15 +33,16 @@ from collections import Counter
 from pathlib import Path
 
 from recorder import free_cases, free_union
-from runcases import distinct_outputs
+from runcases import DISTINCT_OUTPUTS, distinct_outputs
 
 UPSTREAM_KINDS = ("expr", "apl", "script", "error", "worker", "display", "stdin", "module")
 
 
 def baselines(kept: list[dict], expected: dict) -> dict:
     """The share of the kept cases each trivial submission passes, and the largest share of any
-    one answer; and the different outputs of programs given to run (runcases.distinct_outputs)
-    that passing every kept case reaches, and that passing the dispatcher's cases reaches."""
+    one answer; and the different outputs that only a run of the code given produces
+    (runcases.distinct_outputs) that passing every kept case reaches, and that passing the
+    dispatcher's cases reaches."""
     total = len(kept) or 1
     answers = [(expected[case["id"]]["stdout"], expected[case["id"]]["exit"]) for case in kept]
     free = free_cases(kept, expected)
@@ -97,6 +101,30 @@ def describe(cases: list[dict], kept: list[dict], expected: dict, report: dict) 
     }
 
 
+def dispatcher_too_close(described: dict, least: int = DISTINCT_OUTPUTS) -> str | None:
+    """Why the recorded cases leave a program with no interpreter in it too close to a reward, or
+    None where they do not.
+
+    Called by main() after describing the recording. The strongest such program the recorder knows
+    (recorder.no_interpreter, its error lookup trained on the cases' own answers included) must
+    reach no more than a third of the different outputs a reward needs (`least`), so that the
+    reward's threshold keeps a margin of three against it whatever cases a new seed or template
+    brings.
+
+    Args:
+        described: describe()'s result; its baselines hold no_interpreter_dispatcher_distinct_outputs.
+        least: The count a reward needs (runcases.DISTINCT_OUTPUTS).
+
+    Returns:
+        The reason the build stops, or None.
+    """
+    reached = described["baselines"]["no_interpreter_dispatcher_distinct_outputs"]
+    if 3 * reached <= least:
+        return None
+    return (f"the cases a program with no interpreter in it answers hold {reached} different outputs that only a "
+            f"run of the code given produces, more than a third of the {least} a reward needs")
+
+
 def main() -> None:
     args = sys.argv[1:]
     build = None
@@ -111,6 +139,9 @@ def main() -> None:
         described["build"] = build
     Path(args[4]).write_text(json.dumps(described, indent=1, sort_keys=True) + "\n")
     print(json.dumps(described, sort_keys=True))
+    reason = dispatcher_too_close(described)
+    if reason:
+        raise SystemExit(f"recording.py: {reason}")
 
 
 if __name__ == "__main__":

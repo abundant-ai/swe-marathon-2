@@ -16,12 +16,14 @@ filesystem never stop a run; the per-file size limit (RLIMIT_FSIZE) holds everyw
 A case is {"argv": [...], "files": {path: text}, "stdin": text or null}. A run passes when the
 program's exit code and the bytes of its standard output equal the expected ones; answers hold
 standard output as text, invalid UTF-8 as surrogate escapes. `distinct_outputs` counts the different
-outputs of the passed cases that give the program code to run (`runs_a_program`).
+outputs of the passed cases that only a run of the code given can produce (`counts`), of which a
+reward needs DISTINCT_OUTPUTS.
 """
 
 from __future__ import annotations
 
 import os
+import re
 import resource
 import selectors
 import signal
@@ -55,6 +57,14 @@ LIMITS = {
 ENV = {"PATH": "/usr/local/bin:/usr/bin:/bin", "LC_ALL": "C.UTF-8", "LANG": "C.UTF-8", "NO_COLOR": "1", "TERM": "dumb"}
 ENCODING = ("utf-8", "surrogateescape")
 PAGE = os.sysconf("SC_PAGE_SIZE") if hasattr(os, "sysconf") else 4096
+# The least distinct_outputs a reward needs. verify.py withholds the reward of a program below it, and
+# recording.py fails the build when the strongest program with no interpreter in it that the recorder knows
+# (recorder.no_interpreter) reaches more than a third of it.
+DISTINCT_OUTPUTS = 10
+# A guard at the head of an error case's program and the handlers that print only the error's message, read as
+# recorder.error_instances reads them: such an answer is the build's message for the error the code meets.
+GUARD = re.compile(r"\{∞::(.*?)(?: ◇ |\n)", re.S)
+MESSAGE_HANDLERS = ("$e.message", '$e.kind,": ",$e.message')
 
 
 def limit() -> None:
@@ -379,12 +389,12 @@ def matches(got: dict, want: dict) -> bool:
 def runs_a_program(case: dict) -> bool:
     """Whether a case gives the program code of its own to run.
 
-    Used by distinct_outputs, whose count the verifier's reward needs and the recording reports.
-    A case runs a program when it passes code after -e, names a file of its own first, or gives a
-    program or the worker's requests on standard input (after -, with no arguments, or after --worker
-    alone). Options alone (--version, --help, a removed mode, wrong arguments) never do, and neither
-    does any of the command line's own cases (kind "cli": one case per behaviour of the command line,
-    whose answers a table of the original's answers gives).
+    Used by counts, and so by distinct_outputs, whose count the verifier's reward needs and the
+    recording reports. A case runs a program when it passes code after -e, names a file of its own
+    first, or gives a program or the worker's requests on standard input (after -, with no
+    arguments, or after --worker alone). Options alone (--version, --help, a removed mode, wrong
+    arguments) never do, and neither does any of the command line's own cases (kind "cli": one case
+    per behaviour of the command line, whose answers a table of the original's answers gives).
 
     Args:
         case: A private case: "argv" (the arguments after the program, a list of text), "files" (path:
@@ -403,15 +413,76 @@ def runs_a_program(case: dict) -> bool:
     return (not argv or argv[0] == "-" or argv == ["--worker"]) and stdin != ""
 
 
-def distinct_outputs(cases: list[dict], expected: dict[str, dict], passed: set[str]) -> int:
-    """How many different outputs the passed cases that run a program were recorded with.
+def answer_in_input(case: dict, stdout: str) -> bool:
+    """Whether every line of a recorded output can be copied from the case's own input.
 
-    The verifier awards a reward only when this count reaches its least (DISTINCT_OUTPUTS in verify.py),
-    after the last case; the recording reports it for every kept case and for what a program with no
-    interpreter in it passes. A case counts when it runs a program (runs_a_program) and its recorded
-    standard output is not empty, and each recorded output counts once, however many passed cases share
-    it: a program that prints one fixed answer counts 1 at most, and one that prints nothing, or answers
-    only options such as --version and --help, counts 0.
+    Used by counts. A program can print such an answer by echoing what it is given (a literal of the
+    program, an argument, a line of standard input) without running anything, so it is no sign of a
+    run. The input is every file the case writes (library files included), its standard input and its
+    arguments; a line counts as copied when it occurs anywhere in them, as text.
+
+    Args:
+        case: A private case: "argv", "files" and "stdin", as runs_a_program reads them.
+        stdout: Its recorded standard output, as text.
+
+    Returns:
+        True when the output has at least one non-empty line and each of them occurs in the input,
+        False otherwise (an empty output is never one). Reads and changes nothing.
+    """
+    lines = [line for line in stdout.split("\n") if line]
+    given = "\n".join([*case["files"].values(), case.get("stdin") or "", *case["argv"]])
+    return bool(lines) and all(line in given for line in lines)
+
+
+def prints_its_error_message(case: dict) -> bool:
+    """Whether a case is an error case whose program starts with a guard that prints only the
+    message (and the kind) of the error the code under it meets.
+
+    Used by counts. Such an answer is one of the build's error messages: a table of them, recorded by
+    running the build, answers many such cases without running the code. Read as
+    recorder.error_instances reads it (GUARD, MESSAGE_HANDLERS).
+
+    Args:
+        case: A private case: "kind" and "files" ("main.bpl" holds an error case's program).
+
+    Returns:
+        True for such a case, False otherwise. Reads and changes nothing.
+    """
+    text = case["files"].get("main.bpl") if case.get("kind") == "error" else None
+    match = GUARD.search(text) if text else None
+    return bool(match) and match[1].strip() in MESSAGE_HANDLERS
+
+
+def counts(case: dict, answer: dict) -> bool:
+    """Whether a case's recorded answer is one that only a run of the code it gives can produce.
+
+    Used by distinct_outputs. A case counts when it runs a program (runs_a_program), its recorded
+    standard output is not empty and has a line that does not occur in the case's own input
+    (answer_in_input), and it is not an error message printed by a guard (prints_its_error_message).
+    What is left out is what a program with no interpreter in it answers: options, empty outputs,
+    echoes and a table of the build's error messages.
+
+    Args:
+        case: A private case.
+        answer: Its recorded answer, {"stdout": text, "exit": code}.
+
+    Returns:
+        True when the answer counts, False otherwise. Reads and changes nothing.
+    """
+    stdout = answer["stdout"]
+    return (bool(stdout) and runs_a_program(case) and not answer_in_input(case, stdout)
+            and not prints_its_error_message(case))
+
+
+def distinct_outputs(cases: list[dict], expected: dict[str, dict], passed: set[str]) -> int:
+    """How many different outputs the passed cases that count (counts) were recorded with.
+
+    The verifier awards a reward only when this count reaches DISTINCT_OUTPUTS, after the last case;
+    the recording reports it for every kept case and for what a program with no interpreter in it
+    passes, and stops the build when the latter comes within a third of DISTINCT_OUTPUTS. Each
+    recorded output counts once, however many passed cases share it: a program that prints one fixed
+    answer counts 1 at most, and one that prints nothing, answers only options such as --version and
+    --help, echoes what it is given or prints the build's error messages from a table counts 0.
 
     Args:
         cases: The private cases, each with "id", "argv", "files", "stdin" and "kind".
@@ -420,7 +491,7 @@ def distinct_outputs(cases: list[dict], expected: dict[str, dict], passed: set[s
         passed: The ids of the cases a program passed; ids of no case in `cases` are ignored.
 
     Returns:
-        The number of distinct non-empty recorded outputs among the passed cases that run a program.
+        The number of distinct recorded outputs among the passed cases that count.
     """
     return len({expected[case["id"]]["stdout"] for case in cases
-                if case["id"] in passed and expected[case["id"]]["stdout"] and runs_a_program(case)})
+                if case["id"] in passed and counts(case, expected[case["id"]])})
