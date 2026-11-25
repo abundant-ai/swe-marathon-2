@@ -356,7 +356,7 @@ NEW_CUSTOMERS = (("Quay Bistro", "NORD"), ("Oak & Rye", "SUD"), ("Fennel Deli", 
                  ("Tidewater Inn", "NORD"))
 NEW_SUPPLIERS = ("Fjord Fisheries", "Valle Verde Olive Co", "Northern Mills", "Kestrel Packaging", "Brightwater Springs", "Alpine Creamery",
                  "Sunfield Growers", "Harbour Paper Goods")
-SUPPLIER_TERMS = ("COD", "NET15", "NET30", "NET45", "EOM10")
+SUPPLIER_TERMS = ("COD", "NET15", "NET30", "NET45")  # a supplier's; EOM10 is a customer's, and refused for a supplier
 # queries staff save as reports; journal_lines and payments are closed to the sales and warehouse roles
 REPORT_QUERIES = (
     ("Customers by tier", "select tier, count(*), sum(credit_limit) as lim, avg(exposure) from customers group by tier order by lim desc, tier"),
@@ -590,16 +590,17 @@ def promotion_routine(run: Run, rng: random.Random, number: int) -> None:
 
 
 def supplier_routine(run: Run, rng: random.Random, number: int) -> None:
-    """A new supplier, from the first call to an order: finance adds them (a name in use, an unknown region, a lead time
-    too long, or someone without the right, refused), sets their prices and a buyer drafts an order; a dispute blocks
-    them and ordering stops, then they are unblocked (by someone without the right, or twice, refused) and the order goes."""
+    """A new supplier, from the first call to an order: finance adds them (a name in use, an unknown region, terms a
+    supplier cannot have, a lead time too long, or someone without the right, refused), sets their prices and a buyer
+    drafts an order; a dispute blocks them and ordering stops, then they are unblocked (by someone without the right, or
+    twice, refused) and the order goes."""
     name, region = rng.choice(NEW_SUPPLIERS), rng.choice(("NORD", "SUD", "ISLE", "EXPORT"))
     if rng.random() < 0.3:
         run.call(rng.choice(("sales", "warehouse", "viewer")), "POST", "/suppliers", {"name": name, "region": region})
     if rng.random() < 0.4:
         run.call("finance", "POST", "/suppliers", rng.choice(({"name": "Orchard Cooperative", "region": region}, {"name": name, "region": "MARS"},
                                                               {"name": name, "region": region, "lead_days": 200},
-                                                              {"name": name, "region": region, "terms": "NET90"})))
+                                                              {"name": name, "region": region, "terms": rng.choice(("NET90", "EOM10"))})))
     body: dict[str, Any] = {"name": name, "region": region}
     if rng.random() < 0.7:
         body.update(terms=rng.choice(SUPPLIER_TERMS), lead_days=rng.randint(1, 14))
