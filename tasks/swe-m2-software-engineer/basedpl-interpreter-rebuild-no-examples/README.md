@@ -33,9 +33,11 @@ from the session's first process), with bundle `ab1a4f4ee269`. That bundle went 
 verdict rejected it on two adversarial replays, launchers that earned 6 and 1 of the 1,673 cases
 while running nothing. Round 13 answered it with a rule: a reward needed 40 different outputs of
 programs given to run (bundle `e9ee043b5d71`, never uploaded). Re-check 10 failed that, since it
-zeroed v4's honest GLM run `-33`. Round 14 counts only the outputs a run of the code produces, so
-echoes and the build's error messages no longer count, and needs 10 of them (bundle
-`5be602ec5ec1`). Round 12's earlier bundles
+zeroed v4's honest GLM run `-33`. Round 14 counted only the outputs a run of the code produces, so
+that echoes and the build's error messages no longer counted, and needed 10 of them (bundle
+`5be602ec5ec1`). Its follow-up re-check found two guard forms whose messages still counted; round
+15 leaves out every guarded error case, whatever its handler prints, and needs 12 (bundle
+`62ae11cdffa6`). Round 12's earlier bundles
 `ad93859c8f45`, `7867414c5e86`, `c790a042f2be` and `da8966415695`,
 round 11's `f93f6c391545` (the same Oddish content as v3), round 10's
 `ec8d6ecf327d`, round 9's `5eef6fadb546` and `bf77bf7f91d0`, round 7's `b206089bd38b` and round
@@ -44,6 +46,81 @@ round 11's `f93f6c391545` (the same Oddish content as v3), round 10's
 [Remaining work](#remaining-work) and [Validation gaps](#validation-gaps).
 
 ## Development log
+
+### 2026-11-25 (round 15: re-check 10's round-14 follow-up, M2; no guarded error case counts, 12 needed)
+
+- **The re-check.** The follow-up of round 14 (harbor-lh `ops/swe-marathon-v2/qa/basedpl/10-recheck-v6.md`,
+  "Follow-up: round 14") found count B, the build guard, the reward line and the README corrections as
+  described, and every program the round named scoring as claimed, but failed it on M2.
+  - The kept error cases use four guard forms (in `main.bpl`, `{∞::HANDLER ◇ BODY}0`): `$e.message` 48,
+    `$e.kind,": ",$e.message` 35, `$e` (the error record) 41 and `(⍕$e.line),":",(⍕$e.column),": ",$e.message` 37.
+    Round 14 left out only the first two.
+  - The other two print the same message with fields a program fills in without running anything: the source
+    is always `main.bpl`, the line always 1, the column the failing glyph's place, which a text search finds.
+  - `err-table`, a table of the build's messages for every form with no interpreter and no hidden data, scored
+    0.022714 through the real path (38 cases, 14 counted outputs, no note). `combo`, which adds re-formatting
+    rules, scored 0.028691 (19).
+- **The fix (the re-check's B+).** `runcases.guarded_error` replaces `prints_its_error_message`: every error
+  case whose code runs under a guard is left out, whatever the guard prints. The set comes from the case data:
+  the generator's own mark (`form` "guarded", which packaging ships and the verifier already reads), or a guard
+  that catches every error in an error case's `main.bpl` (`GUARD`). No list of handlers is kept
+  (`MESSAGE_HANDLERS` is gone), so a new handler cannot let one through. On the kept cases the two give the same
+  161 cases, and they hold every case `recorder.error_instances` reads.
+- **The threshold: 12** (the re-check's nice-to-have, kept on measurement):
+  - every kept case together holds 1,348 counted outputs; the model deliveries graded so far 722, 288, 68 and 30
+    (v4's `-33`, the weakest);
+  - the strongest program with no interpreter built so far holds 5 (`combo`), the recorder's dispatcher 2, any
+    fixed answer 1 at most;
+  - 12 sits about 2.4 times above 5 and 2.5 times below 30, near their geometric middle (12.2); 10 would leave 2
+    times above 5 and 3 below 30. Re-check 10 estimates 7-8 for a cheap program built with heroic effort, still
+    below 12;
+  - re-check 10's 290-line honest evaluator holds 9 and scores 0 either way.
+- **What it costs below 12** (N1, re-measured): typically about 1% of the cases (a median of 12-21 passes with the
+  first 11 counted outputs, from the four model deliveries' own passes thinned at random); at most 310 cases
+  (18.5%), a program passing every case that does not count and the cases of the 11 most shared outputs that do.
+- **The build guard** now stops at 5 or more (more than a third of 12). The shipped `recording.py` on the local
+  recording exits 0 with 1,348 and 2 (kept ids `bb030348…`); `dispatcher_too_close` passes 0, 2 and 4 and stops 5
+  and 12.
+- **The note** names every guard form ("what a guard prints in an error case") and reads "the 1 case passed holds"
+  for one (the re-check's nit).
+- **Through the real path** (bundle `62ae11cdffa6`, `local-recording-9`, harbor-lh
+  `qa/basedpl/scratch-09/replay-r15/r15/`, 36 programs):
+
+  | Program | Cases passed | Round 14's count | Round 15's count | Reward |
+  | --- | --- | --- | --- | --- |
+  | the reference | 1,673 | 1,421 | 1,348 | 1.0 |
+  | v5 `-48` (DeepSeek, 9.6 h) | 847 | 722 | 722 | 0.506276 |
+  | v5 `-50` (GLM, 9.6 h) | 393 | 297 | 288 | 0.234907 |
+  | v5 `-49` (DeepSeek, 31 min) | 90 | 69 | 69 | 0.053796 |
+  | v4 `-33` (GLM, about 9.4 h) | 57 | 30 | 30 | 0.034071 |
+  | re-check 10's 290-line evaluator (legitimate, small) | 24 | 9 | 9 | 0 |
+  | re-check 10's `combo` (no interpreter, no hidden data) | 48 | 19 | 5 | 0 |
+  | re-check 10's `err-table` | 38 | 14 | 0 | 0 |
+  | the recorder's dispatcher, a table of its cases with their answers | 68 | 2 | 2 | 0 |
+  | re-check 10's `kitchen-sink-2` / `kitchen-sink` / literal machine | 42 / 38 / 15 | 0 | 0 | 0 |
+  | the last literal echoed | 23 | 0 | 0 | 0 |
+  | replay `-46` / `-47` as delivered | 4 / 1 | 0 | 0 | 0 |
+  | each of the 20 most common answers, printed always | 3-10 | 0 or 1 | 0 or 1 | 0 |
+  | the no-op | 0 | 0 | 0 | 0 |
+
+  Every program that runs nothing scores exactly 0, with the note. Each model delivery's reward is its share,
+  passed/1,673; against the platform, their non-`cli` passes by kind are the platform's (one `expr` case apart
+  in `-49` and `-50`, a run near the 2 s limit), and the command line's own cases never count, so the
+  platform's rewards (0.505678, 0.056186, 0.237298 and v4 `-33`'s 0.037059) stand under round 15.
+
+- **Checks.**
+  - The rule check covers the record, the line:column form, any other handler, and an error case marked guarded
+    whose guard the pattern would not match; every case `recorder.error_instances` reads is left out too.
+  - The `grade()` check's message table answers all four guard forms, shaped as the build prints them, and holds
+    0 counted outputs; round 14's `grade()` counts 7 of them.
+  - The `-33` pattern keeps two and a half times the least; the build guard's bound follows the least (4 shapes
+    pass, 5 stop).
+  - The rule, `grade()` and whole-run checks fail on `a637c09`; the `-33` and guard checks pass on both.
+  - 79 task checks and 27 repository checks pass, and `check_repository.py` passes.
+- **Bundle** `62ae11cdffa6` (built twice, the same hash; kept in `experiment/dist-check-39/`): 246 files,
+  33,062,963 bytes; against v5's `ab1a4f4ee269` only `tests/verify.py`, `tests/verifier/runcases.py` and
+  `tests/verifier/recording.py` differ (`recording.py` is round 14's). Oddish content hash `bcd2bfb9…`.
+  Preflight passes.
 
 ### 2026-11-25 (round 14: re-check 10; only outputs a run of the code produces count, 10 of them)
 
@@ -1187,8 +1264,8 @@ Standard output and exit status are compared byte for byte with what the origina
 the verifier image was built; every kept case printed the same four times (three runs with four
 worker threads, then perturbed) without crashing, its answer shows no last bits of the maths
 library, and, for a display case, its setting changes what it prints. Partial progress is the
-share of cases that match, once the cases matched show at least 10 different outputs that only a
-run of the code given produces (rounds 13 and 14); below that, a program has shown no sign of
+share of cases that match, once the cases matched show at least 12 different outputs that only a
+run of the code given produces (rounds 13 to 15); below that, a program has shown no sign of
 running what it is given, and scores 0.
 
 ### Realism
@@ -1249,11 +1326,11 @@ obscure: `+/` grouping, and solver residues at ten digits. QA 15 bounds it at 2.
 - any one answer is at most 1.5% of the cases;
 - printing nothing and exiting 1 passes 0.6%.
 
-Since rounds 13 and 14 none of these earns anything: a reward needs 10 different recorded outputs
+Since rounds 13 to 15 none of these earns anything: a reward needs 12 different recorded outputs
 that only a run of the code given produces (see [Reward formula](#reward-formula)). The
 dispatcher's cases hold 2 of them, any one answer 1, and echoes, a table of the build's error
-messages and printing nothing none; the build stops if a new set of cases lifts the dispatcher
-past 3.
+messages (in any guard's form) and printing nothing none; the build stops if a new set of cases
+lifts the dispatcher past 4.
 
 ### Initial feasibility
 
@@ -1377,9 +1454,9 @@ grading, a cap or a deadline from them.
 4. **Scoring.** A case passes when the exit status and the bytes of standard output equal the
    recorded ones. A case that cannot be set up or started, runs too long, prints too much or
    passes a limit fails; none of that is an evaluation error. The share of cases passed is the
-   reward only where the passed cases hold at least 10 different recorded outputs that only a run
+   reward only where the passed cases hold at least 12 different recorded outputs that only a run
    of the code given produces; otherwise the reward is 0, with a note in `metrics.json` and on the
-   `reward:` line (rounds 13 and 14; see [Reward formula](#reward-formula)).
+   `reward:` line (rounds 13 to 15; see [Reward formula](#reward-formula)).
 5. **Deadline.** One deadline, 4,200 s from the start, covers sealing, scans, cleanup and cases;
    the cases left count as failed. At the end the verifier cleans up, writes the reward into its
    reserved file, renames it onto `reward.txt`, then writes `metrics.json`.
@@ -1387,13 +1464,13 @@ grading, a cap or a deadline from them.
 ### Reward formula
 
 ```
-reward = cases_passed / cases_kept    where distinct_outputs >= 10
+reward = cases_passed / cases_kept    where distinct_outputs >= 12
 reward = 0                            otherwise
 ```
 
 - Continuous, fixed denominator per image build (the private cases kept by the recording).
   No executable: reward 0.
-- `distinct_outputs` (`runcases.distinct_outputs`; round 13, recounted in round 14) counts the
+- `distinct_outputs` (`runcases.distinct_outputs`; round 13, recounted in rounds 14 and 15) counts the
   different recorded outputs among the passed cases whose answer only a run of the code given
   produces (`runcases.counts`):
   - the case gives the program code to run: code after `-e`, a file of the case's own named first,
@@ -1402,30 +1479,39 @@ reward = 0                            otherwise
   - not every line of it occurs in the case's own input (its files, library files included, its
     standard input and its arguments: `runcases.answer_in_input`), since echoing what is given
     prints such an answer;
-  - it is not an error case whose guard prints only the error's message
-    (`runcases.prints_its_error_message`, read as `recorder.error_instances` reads it), since a
-    table of the build's messages answers those;
+  - it is not an error case whose code runs under a guard, whatever the guard prints of the error
+    (its record, its message, its kind and message, its line, column and message, or any other
+    form: `runcases.guarded_error`, from the generator's `guarded` mark or a guard that catches
+    every error in `main.bpl`), since a table of the build's messages answers those, with a
+    column a text search finds;
   - it is not one of the command line's own cases (kind `cli`, one per behaviour, which a table
     answers).
 
-  An output counts once however many passed cases share it. Below 10 (`runcases.DISTINCT_OUTPUTS`)
+  An output counts once however many passed cases share it. Below 12 (`runcases.DISTINCT_OUTPUTS`)
   the cases passed earn nothing, and the note says why in `metrics.json` (`notes`, `withheld`) and
   on the `reward:` line; `metrics.json` always holds `distinct_outputs` and
-  `distinct_outputs_needed`. No case is removed, changed or reweighted, and from 10 on the reward
+  `distinct_outputs_needed`. No case is removed, changed or reweighted, and from 12 on the reward
   is the share passed, as before.
-- 10 was chosen by measurement on the local recording (development log, rounds 13 and 14). Every
-  kept case together holds 1,421 such outputs. The model deliveries graded so far hold 722, 297
-  and 69 (v5) and 30 (v4's GLM run `-33`, the weakest). The strongest programs with no interpreter
-  in them hold 2 (the recorder's dispatcher, its hidden-data lookup included) and 1 at most (any
-  fixed answer); echoes and tables of the build's error messages hold none. That leaves about
-  three times on either side of 10.
+- 12 was chosen by measurement on the local recording (development log, rounds 13 to 15).
+  - Every kept case together holds 1,348 such outputs.
+  - The model deliveries graded so far hold 722, 288 and 68 (v5), and 30 (v4's GLM run `-33`, the
+    weakest).
+  - The strongest program with no interpreter in it built so far holds 5 (re-check 10's `combo`:
+    a table of the build's error messages for every guard form, echoes and re-formatting rules).
+    The recorder's dispatcher, its hidden-data lookup included, holds 2, and any fixed answer 1 at
+    most.
+  - 12 sits about 2.4 times above the one and 2.5 times below the other, near their geometric
+    middle. Re-check 10 estimates 7-8 for a cheap program built with heroic effort.
+  - Its 290-line honest evaluator holds 9 and scores 0: the price of the line.
 - The build stops (`recording.dispatcher_too_close`, exit status 1 in the image's recording step)
-  when the recorder's dispatcher reaches more than a third of 10, so a new seed or new templates
-  cannot bring such a program near a reward unnoticed; on the local recording it reaches 2.
-- What the rule costs an honest delivery below 10: typically about 1% of the cases (the passes
-  that come with the first 9 counted outputs, from the four model deliveries' own passes thinned
-  at random: a median of 10-17); at most 227 cases (13.6%), a program passing every case that
-  does not count and the cases of the 9 most shared outputs that do.
+  when the recorder's dispatcher reaches more than a third of 12 (5 or more), so a new seed or new
+  templates cannot bring such a program near a reward unnoticed; on the local recording it reaches
+  2.
+- What the rule costs an honest delivery below 12:
+  - typically about 1% of the cases: the passes that come with the first 11 counted outputs, from
+    the four model deliveries' own passes thinned at random, a median of 12-21;
+  - at most 310 cases (18.5%): a program passing every case that does not count, and the cases
+    of the 11 most shared outputs that do.
 - An evaluation error leaves no reward file. The causes:
   - not root, privileges that cannot be dropped, or a drop that does not hold;
   - private inputs unreadable, or the marker or the list of upstream's builds missing;
@@ -1455,14 +1541,14 @@ Highest unresolved severity: 🟡 YELLOW / UNASSESSED (findings 1, 2, 3, 5, 10, 
 | 9 | Tamper with the reward files, or suppress them by forcing an evaluation error | Separate verifier container | Goose QA passes 07, 07b, 10, 10b, round 6 (the same verifier) | No reward exists until the real end (`.reward.tmp` renamed onto `reward.txt`); bounded, link-refusing reads; one deadline; capped submissions; `rm -rf` sweeps; every per-case exception a failed case; host disk shortages are errors only after the sweep has taken back everything the uid held (checked) | Kernel keyrings survive between cases; they carry no answer | Keep | 🟢 GREEN / LOW |
 | 10 | Infer an evaluation from the files and text | Instruction and image | Checked: no grading, hidden, budget or session wording; no examples or runner shipped | Neutral requester text | An agent can still guess that more programs exist | Read the first trajectories | 🟡 YELLOW / UNASSESSED |
 | 11 | Run as root in the verifier through a set-id or capable file | Privilege drop and sealing | Goose QA pass 10 F6 | Sealed root-owned without set-id bits; `setpriv --no-new-privs`; the drop is checked by status or `prctl` and a set-id `id`, or nothing is graded (checked) | A kernel that ignores no_new_privs; the probe then refuses to grade | First baseline's verifier log | 🟢 GREEN / LOW |
-| 12 | Pass cases with no interpreter: the command line's answers, echoed literals, the generator's lead forms, the last strand of a program, an error-message lookup, constant answers per visible shape | Case mix and selection | QA 02, 05, 13, 17 measured 5.5-7.3% on the first cases; the round-2 re-check 2.8% by echoes and 5.7% with a lookup trained on hidden data; local recording now: 4.1% by the recorder's union of every strategy, 2.7% when the dispatcher is run as a program | Leads are one-line value records of the pool; uncaught errors mostly graded through the worker's reply with message and span; handlers always print the message; any one answer capped at 1.5%; `select` holds the strongest dispatcher (`recorder.no_interpreter`, every strategy above) to 5% and the recorder fails the build above it; since rounds 13 and 14 the cases such a program passes earn nothing: echoes and the error messages a guard prints do not count toward a reward, and what is left of the dispatcher's cases holds 2 of the 10 different outputs a reward needs (row 19); the build stops if a new set of cases lifts it past 3 | Display of simple literals is legitimate early work, which now earns only beside 10 outputs that need a run. The error lookup is no bound: re-check 10 reached its share without hidden data, from a table of 7,537 guarded probes recorded from the build, and a program built that way with echoes reached 29 outputs on round 13's count (none of them counts now) | Read `baselines.no_interpreter_dispatcher_by_strategy` and `baselines.no_interpreter_dispatcher_distinct_outputs` (3 at most) in the first baseline's `metrics.json` | 🟢 GREEN / LOW |
+| 12 | Pass cases with no interpreter: the command line's answers, echoed literals, the generator's lead forms, the last strand of a program, an error-message lookup, constant answers per visible shape | Case mix and selection | QA 02, 05, 13, 17 measured 5.5-7.3% on the first cases; the round-2 re-check 2.8% by echoes and 5.7% with a lookup trained on hidden data; local recording now: 4.1% by the recorder's union of every strategy, 2.7% when the dispatcher is run as a program | Leads are one-line value records of the pool; uncaught errors mostly graded through the worker's reply with message and span; handlers always print the message; any one answer capped at 1.5%; `select` holds the strongest dispatcher (`recorder.no_interpreter`, every strategy above) to 5% and the recorder fails the build above it; since rounds 13 to 15 the cases such a program passes earn nothing: echoes and every guarded error case (whatever its guard prints) do not count toward a reward, and what is left of the dispatcher's cases holds 2 of the 12 different outputs a reward needs (row 19); the build stops if a new set of cases lifts it past 4 | Display of simple literals is legitimate early work, which now earns only beside 12 outputs that need a run. The error lookup is no bound: re-check 10 reached its share without hidden data, from a table of 7,537 guarded probes recorded from the build; programs built that way reached 29 outputs on round 13's count and 14 on round 14's (the record and line:column forms), none of which counts now | Read `baselines.no_interpreter_dispatcher_by_strategy` and `baselines.no_interpreter_dispatcher_distinct_outputs` (4 at most) in the first baseline's `metrics.json` | 🟢 GREEN / LOW |
 | 13 | A crash of the original graded as an answer | Recording | Checked with a stand-in | Signals, exit statuses other than 0, 1 and 2, panics and allocation failures are dropped; more than 2% fail the build | None found | Read `dropped_crashed` | 🟢 GREEN / LOW |
 | 14 | Answers that depend on the machine or on the maths library's last bits: thread counts, hash order, the memory limit, CPU features, approximation bits | Recording | Local recording: no case unsteady or perturbed; 16 last-bit answers dropped (QA 18 confirmed 12) | Three runs pinned to four worker threads and a perturbed one (one CPU, one worker thread); memory-limit text dropped from either stream; last-bit answers dropped; rustymath chooses SIMD paths at compile time (`x86-64-v3`); `expected_sha256` lets two builds be compared | A host without AVX2 cannot run the original (the smoke test then fails the build, and an oracle row below 1.0 with `host.avx2` false is infrastructure); the x86-64 build's bits are first seen at its own recording | Two oracle trials must each score 1.0 with the same `kept_ids_sha256` and `expected_sha256` before any model trial | 🟡 YELLOW / UNASSESSED |
 | 15 | A busy host fails a graded run spuriously | Disk and file limits | QA 10: a `sleep 10` submission was stopped for a file limit by the whole-filesystem figures | The limits count only the run's own files (its uid's under the writable directories, and deleted files it holds open), and only when the free figures fall past a limit; a case stopped by a limit runs once more; host shortages after a sweep are evaluation errors | None found | Read `disk_limits`, `file_limits` and `limit_retries` in the first trials' `metrics.json` | 🟢 GREEN / LOW |
 | 16 | Make Harbor's copy drop an honest delivery (a running build, links that leave the directory, FIFOs, a sparse file, a full disk, a read-only folder) so that it scores a valid 0, make the copy fail at will (a link that climbs past `/` and back, a chain of links that holds the hook past its 600 s, a disk filled so that the hook's own record or the copy's pack has no room), launder a file fetched after the turn through a link the hook copies in, or hide a post-turn write behind the hook's own changes to ctimes | The collect hook and the mark | QA 07 F2-F3 (ported from the back-office task, rounds 6-7); Carve QA 04 F1-F2; re-checks 07b and 07c; round 10, with Carve QA 22 and 23 as the catalogue (two paths reproduced on 6a93903); re-check 08 (M1, M2, S1, S3, S4: round 11) | The hook freezes and kills `dev`'s processes first, records every entry's own times before touching anything (the manifest's authoritative mtime and ctime), gives back reserved room and inodes, restores permissions only where needed and notes each change, copies an outside link's target only when root owns it (every file under a directory included) and the disk keeps room to spare, and records the source's path, owner, mtime, ctime and inode, removes every other outside link (noted first in the mark) and all special files, lets the system resolve a link before the fixer follows it, reads every link of the last script by name against its own listing (no call follows a link; one through another link is removed) and keeps a link inside only as the direct relative path to what it reaches, bounds entries, bytes and path length, hashes once per inode, refuses a tree not measured within 420 s of its start (an alarm ends any call then), packs once within 100 s and by 510 s with room for its record and mark beside it, and marks the delivery; the fixer prints 2 MiB at most, each script's own notes take 64 KiB and the mark's 32 KiB, names cut to a few hundred bytes, the rest counted; a refused tree's record counts what it held and lists only the first notes; the verifier grades what arrived, reads 1 MiB of the mark, copies every change into `metrics.json` with flags, and treats nothing arriving or a short copy as an evaluation error, which after a completed hook only the copy itself can cause | A platform copy that fails after the hook's own pack succeeded (an error, then a re-run); the refusal renames `/app/rebuild`, which overlayfs without `redirect_dir` refuses (gVisor's overlay does not; QA 08 N1); a fetched file written straight into `/app/rebuild` after a turn that ended by itself and before the hook's freeze, which the ctime audit against the trial's finish can catch, since the recorded ctimes are the session's own (after a session that ran to its limit, the hook takes such a file out: row 18) | Read `delivery_record` (copies, links, notes, `latest_ctime` and `hook_changed_entries` against the trial's finish) in every trial | 🟢 GREEN / LOW |
 | 17 | Read the build's own file through the hardened read path from a start directory whose rule lets it through (`/`, `/opt`, `/opt/bpl`) | File mode; the path rule | QA 04 F4, QA 12 F2 | The 2711 mode refuses the read for `dev`; the agent image's final stage proves it as `dev` at every build (with the whole smoke test on the set-group-id build; a failure stops the build) | A kernel that let a non-dumpable set-group-id process read its own executable | Every image build; `/logs/agent/reads.txt` of the reference trials before round 9 (the same reads at run time), not read yet | 🟢 GREEN / LOW |
 | 18 | Work on past the limit: a turn that reaches the cap leaves the session's processes running (Harbor never ends the agent's exec), and until the collect hook they can write, fetch with the network open again, or swap files in `/app/rebuild` | The collect hook; change times | Round 12 (decision 2026-11-24, item 2); the capped-turn checks, which fail on `ff793d5`; the re-check of round 12, R1 (a write through a shared writable mapping set up before the end can leave the change time as it was), and the held-files checks, which fail on `7161493`; the stop-after-the-limit checks, which fail on `e0f3130`, and the first-process checks, which fail on `d8e0436` | About 2 s after the limit, a root process left by the last set-up run stops `dev`'s processes (SIGSTOP, never a kill: `kill -STOP -1` as `dev` until none runs; decision 2026-11-24, 09:40 UTC amendment), counted from the start of the session's first process (the first process of `dev` to begin after it, its parent not `dev`'s) and, where the network can be watched, not before the network comes back (OB-1), so late changes have a window of about 2 s instead of the 5-14 s until the hook; the end of the work is `turn-started` (root-only, written at `setup_complete`) plus 34,560 s; the hook's listing, taken after the freeze and the kill and before anything else touches the tree, holds every entry's change time, and every file and link changed after the end is taken out before the walk (whatever stands at its path by then, a copy the link fixer made included); so is every name of each file that a frozen process still held open for writing or mapped shared and writable, read from `/proc` before the kill (as root, then as `dev` for what root may not read); each is noted in the mark and counted (`late_entries`, `held_for_writing`, `work_end`); without a complete listing of either kind, or with a process of all-`dev` ids that neither could read (it made itself undumpable), such a tree is refused; `dev` cannot set a change time back; a fetched build is refused anyway (row 4) | The stop counts from a process harbor starts inside the agent's clock, so it cannot precede the limit by the set-up-to-clock gap; where the network cannot be watched (its names did not resolve at set-up), a trial paused during its turn would be stopped early by the pause's length. A mapping written after the end and dropped before the freeze (unmapped, made read-only, or its process gone) leaves nothing to list and, on tmpfs (gVisor's too, as read), possibly no new change time, so such a write can count: it stays a residual for the per-trial audit of `delivery_record` (a surviving process, `connectivity_open`) and the tripwires of row 4 (R1b of the re-check). A late deletion cannot be undone, and a late rename keeps the entry's old change time on a filesystem that does not update it on rename (gVisor's overlay is unmeasured); a process that ran a set-id program is not read (its own code cannot map the tree's files, and its writes through a descriptor move the change time); the end falls the few seconds between `setup_complete` and the start of the run's clock early, so work in those seconds is taken out too | Read `work_end`, `late_entries` and the mark's `removed …` notes in every trial that reached the limit, and in its collected record (`.manifest.json`) `held_for_writing` and `writers` (whether the listing was whole, and which processes were not read) | 🟢 GREEN / LOW |
-| 19 | A stub launcher: deliver a program that runs nothing it is given (it tries the original's paths and the private cases, then prints the command line's documented strings, nothing with a common exit status, a fixed answer, echoes of the program's literals, or a table of the build's error messages) and collect the few cases whose answers need no interpreter | The distinct-output rule (`runcases.DISTINCT_OUTPUTS`, `runcases.counts`, `runcases.distinct_outputs`, `verify.withheld`); the recording's guard (`recording.dispatcher_too_close`); the case mix | v5's verdict: replay `-46` (the documented `--version` and `--help` strings, exit 2 for the rest: 0.003586, 6 of 1,673 cases) and replay `-47` (exit 0: 0.000598, 1 case); round 13's rule and sweep; re-check 10 (round 13's threshold zeroed v4's honest `-33`; without hidden data, echoes and a table of 7,537 error probes recorded from the build reached 29 on that count); round 14's measurements and its sweep through the real path (`replay-r15`, 34 programs) | A reward needs 10 different recorded outputs that only a run of the code given produces: empty outputs, outputs whose every line occurs in the case's own input, error messages a guard prints and the command line's own cases never count, and each output counts once. Measured on the local recording: every kept case 1,421; the model deliveries graded so far 722, 297, 69 and 30 (v4's `-33`, the weakest); the recorder's dispatcher 2; each of the 20 most common answers 1 at most. Through the real path the reference scores 1.0, and both replays, the 20 constants, the last-literal echo, the dispatcher's table, re-check 10's `kitchen-sink`, `kitchen-sink-2` and literal machine (0 outputs each) and its 290-line evaluator (9) score exactly 0, while the four model deliveries keep their shares. The image does not build if a set of cases lifts the dispatcher past 3 | A program that really evaluates 10 programs given to it earns its share: that is a start on an interpreter, not a stub. An honest delivery below 10 loses what it passed: typically about 1% of the cases, at most 13.6% (every case that does not count, and the cases of the 9 most shared outputs that do). A cheap table of two-token programs recorded from the build could add a few outputs (re-check 10: about 4), still below 10 | Read `distinct_outputs` and `withheld` in every trial's `metrics.json` (a withheld reward also says why on its `reward:` line), and both distinct-output baselines in the first oracle trial's | 🟢 GREEN / LOW |
+| 19 | A stub launcher: deliver a program that runs nothing it is given (it tries the original's paths and the private cases, then prints the command line's documented strings, nothing with a common exit status, a fixed answer, echoes of the program's literals, re-formatted literals, or guarded errors answered from a table of the build's messages) and collect the few cases whose answers need no interpreter | The distinct-output rule (`runcases.DISTINCT_OUTPUTS`, `runcases.counts`, `runcases.guarded_error`, `runcases.distinct_outputs`, `verify.withheld`); the recording's guard (`recording.dispatcher_too_close`); the case mix | v5's verdict: replay `-46` (the documented `--version` and `--help` strings, exit 2 for the rest: 0.003586, 6 of 1,673 cases) and replay `-47` (exit 0: 0.000598, 1 case); round 13's rule and sweep; re-check 10 (round 13's threshold zeroed v4's honest `-33`; echoes and a table of 7,537 error probes recorded from the build reached 29 on that count) and its round-14 follow-up (M2: `err-table` 0.022714 and `combo` 0.028691 through the record and line:column guard forms); round 15's measurements and its sweep through the real path (`replay-r15/r15`, 36 programs) | A reward needs 12 different recorded outputs that only a run of the code given produces. Empty outputs, outputs whose every line occurs in the case's own input, every error case whose code runs under a guard (whatever it prints: the generator's `guarded` mark or a guard that catches every error in `main.bpl`) and the command line's own cases never count, and each output counts once. Measured on the local recording: every kept case 1,348; the model deliveries graded so far 722, 288, 68 and 30 (v4's `-33`, the weakest); re-check 10's `combo` 5, the recorder's dispatcher 2, each of the 20 most common answers 1 at most. Through the real path the reference scores 1.0; both replays, the 20 constants, the last-literal echo, the dispatcher's table, re-check 10's `kitchen-sink`, `kitchen-sink-2`, literal machine, `err-table` and `combo`, and its 290-line evaluator (9) score exactly 0; the four model deliveries keep their shares. The image does not build if a set of cases lifts the dispatcher past 4 | A program that really evaluates 12 programs given to it earns its share: that is a start on an interpreter, not a stub. An honest delivery below 12 loses what it passed: typically about 1% of the cases, at most 18.5% (every case that does not count, and the cases of the 11 most shared outputs that do). Re-check 10 estimates 7-8 for a cheap program built with heroic effort (a large table of two-token programs and a lucky format rule), still below 12 | Read `distinct_outputs` and `withheld` in every trial's `metrics.json` (a withheld reward also says why on its `reward:` line), and both distinct-output baselines in the first oracle trial's | 🟢 GREEN / LOW |
 
 Licence: the upstream is Apache-2.0. Its `LICENSE` is shipped with the documentation in
 `/app/docs` and with the reference solution.
@@ -1471,7 +1557,10 @@ Licence: the upstream is Apache-2.0. Its `LICENSE` is shipped with the documenta
 
 | Check | Revision | Result |
 | --- | --- | --- |
-| `checks/` (79 tests) with `ci_checks` (27), Python 3.13, and `check_repository.py` | round 14 | pass |
+| `checks/` (79 tests) with `ci_checks` (27), Python 3.13, and `check_repository.py` | round 15 | pass |
+| Round 15's gate checks against a copy of the task at `a637c09` (`git archive`, with round 15's checks file) | round 15 | the rule, `grade()` and whole-run checks fail (round 14 counts the record and line:column forms, keeps `MESSAGE_HANDLERS`, and writes "the 1 cases passed"); the `-33` and guard checks pass on both. Round 14's `grade()` counts 7 outputs of the four-form message table, round 15's 0 |
+| The real-path sweep of round 15 (harbor-lh `qa/basedpl/scratch-09/replay-r15/r15/`: both hooks under dash, tar and the data filter, then `verify.main()`; 36 programs) | round 15's flat `62ae11cdffa6` against `local-recording-9` | the reference 1.0 (1,673/1,673; 1,348 outputs; no note); the no-op 0.0; replays `-46` and `-47`, the 20 most common answers, the last-literal echo, the dispatcher's table (2 outputs), re-check 10's `kitchen-sink`, `kitchen-sink-2`, literal machine and `err-table` (0 outputs each), `combo` (48 passed, 5 outputs) and the 290-line evaluator (24 passed, 9 outputs) 0.0 each, with the note; v5 `-48` 0.506276 (847; 722), `-50` 0.234907 (393; 288), `-49` 0.053796 (90; 69) and v4 `-33` 0.034071 (57; 30), each passed/1,673 |
+| The shipped `recording.py`, run as the image's recording step runs it, on `local-recording-9`; `dispatcher_too_close` at the bound | round 15 | exit 0; `distinct_outputs_kept` 1,348, `no_interpreter_dispatcher_distinct_outputs` 2, `kept_ids_sha256` `bb030348…`; the guard passes 0, 2 and 4 and stops 5 and 12 |
 | Round 14's gate checks against a copy of the task at `764c51f` (`git archive`, with round 14's checks file) | round 14 | the four gate checks and the whole-run check fail (no `runcases.DISTINCT_OUTPUTS`, `counts` or guard; the whole run's echoes are scored); the slow-runs check passes on both. Round 13's `grade()` gives the cases shaped as v4 `-33`'s passes 0 (57 passed, 36 outputs, 40 needed), round 14's 57/200 |
 | The real-path sweep of round 14 (harbor-lh `qa/basedpl/scratch-09/replay-r15/r14/`: both hooks under dash, tar and the data filter, then `verify.main()`; 34 programs) | round 14's flat `5be602ec5ec1` against `local-recording-9` | the reference 1.0 (1,673/1,673; 1,421 outputs; no note); the no-op 0.0; replays `-46` and `-47` as delivered, the 20 most common answers, the last-literal echo, the dispatcher's table (2 outputs), re-check 10's `kitchen-sink` and `kitchen-sink-2` and literal machine (0 outputs each) and its 290-line evaluator (24 passed, 9 outputs) 0.0 each, with the note; v5 `-48` 0.506276 (847; 722), `-50` 0.234907 (393; 297), `-49` 0.053198 (89; 68) and v4 `-33` 0.034071 (57; 30), each its share |
 | The shipped `recording.py`, run as the image's recording step runs it, on `local-recording-9` | round 14 | exit 0; `distinct_outputs_kept` 1,421, `no_interpreter_dispatcher_distinct_outputs` 2, `kept_ids_sha256` `bb030348…` |
@@ -1500,9 +1589,9 @@ Licence: the upstream is Apache-2.0. Its `LICENSE` is shipped with the documenta
 | The packaged `solve.sh` with only `/app/rebuild` rewritten to a scratch directory; `mark.py` from the agent image's context with the marker | bundle `bf77bf7f91d0` (the same files in `af0c9f7b084e`) | the solution installs `bpl` (the build's own bytes, sha256 `60d2aed1…`, mode 0755) and `LICENSE`, nothing else, no standard error; the images' install writes the marker once and leaves no zero marker; `build.txt` beside either holds `link`, `sha256` and `sha256_without_marker` |
 | Local grading from the packaged bundle (`af0c9f7b084e`, with `local-recording-9`; also `bf77bf7f91d0`, 34.4 s; the dispatcher's 0.0269 was measured on round 5's `1a08cdb471d0`, whose grading code is the same), through the collect hook's pre-scan and measuring scripts and a tar round trip with the `data` filter | stand-in reference behind a wrapper; no-op; the dispatcher as a program, with every strategy the recorder measures | 1.0 (1,673/1,673, 31.1 s); 0.0; 0.0269 (45/1,673: cli 19, error 13, expr 7, script 6) |
 | A whole trial replayed from the packaged bundle with round 12's replays (`experiment/replay-r14/` for the fifth commit, whose set-up process gets no hosts to watch; `experiment/replay-r13/` for the fourth: the set-up runs leave the process that stops `dev` after the limit, the hook looks it up and ends it before its freeze; `experiment/replay-r12/` before it, a copy of round 11's, itself from QA 07e's through `replay-r8/`, which reads a flat or a steps bundle and has no timer; all Git-ignored, each with its reports and a `NOTE.txt`): both hooks' shell under `/bin/dash` (paths rewritten, stand-ins for `setpriv`, `pgrep`, `pkill`, `ps`, `fallocate`, GNU `stat` and `timeout`), tar and the `data` filter, then `verify.main()` with root and Linux stood in; the hook's order is read from its calls | round 12's flat `ab1a4f4ee269` (fifth commit), `da8966415695` (fourth), `c790a042f2be` (third), `7867414c5e86` (second) and `ad93859c8f45` against `local-recording-9`, with an executable copy of upstream's macOS release binary as the stand-in: reference; reference with planted `.manifest` names, links and a pipe (`ad93859c8f45` only); no-op | `ab1a4f4ee269`: 1.0 (1,673/1,673, 31.4 s); 0.0, `delivered 0 0`. `da8966415695`: 1.0 (1,673/1,673, 34.9 s); 0.0, `delivered 0 0`; nothing stopped (`stopped_after_limit` null), the process gone after the hook. `c790a042f2be`: 1.0 (1,673/1,673, 29.6 s); 0.0, `delivered 0 0`. `7867414c5e86`: 1.0 (1,673/1,673, 30.2 s); 0.0, `delivered 0 0`. `ad93859c8f45`: 1.0 (1,673/1,673, 30.4 s), no notes; 1.0 (33.1 s) with both moved-aside notes; 0.0, `delivered 0 0`; in each the freeze is the hook's first call, `work_end` is `turn_started` + 34,561 and `late_entries` 0. Round 11's `a9dad36c7bf0` (`replay-r11`), round 10's `ec8d6ecf327d` and round 9's `bf77bf7f91d0` (`replay-r8`) gave the same rewards |
-| Packaging | `scripts/package_step.py`, twice into separate directories, with and without `--flat --keep-name` | flat `5be602ec5ec1` (round 14, the next upload), 246 files, 33,062,387 bytes, the same hash both times, Oddish content hash `358c7c75…`, against `ab1a4f4ee269` only `tests/verify.py`, `tests/verifier/runcases.py` and `tests/verifier/recording.py` changed (kept in `experiment/dist-check-38/`); flat `e9ee043b5d71` (round 13), 246 files, 33,056,657 bytes, the same hash both times, Oddish content hash `1d84bf20…`, against `ab1a4f4ee269` only `tests/verify.py`, `tests/verifier/runcases.py` and `tests/verifier/recording.py` changed (kept in `experiment/dist-check-37/`); flat `ab1a4f4ee269` (round 12's fifth commit, the v5 upload), 246 files, 33,050,911 bytes, the same hash both times, Oddish content hash `7ae8f22f…`, against `da8966415695` only `environment/provision-scratch` and `environment/reclaim-scratch` changed; steps `fbf917dc9b5c` (both kept in `experiment/dist-check-35/`); flat `da8966415695` (round 12's fourth commit), 246 files, 33,045,960 bytes, the same hash both times, Oddish content hash `15165600…`, against `c790a042f2be` `environment/provision-scratch`, `environment/reclaim-scratch` and `tests/verify.py` changed; steps `08b3e5d2b951` (both kept in `experiment/dist-check-34/`); flat `c790a042f2be` (round 12's third commit), 246 files, 33,041,785 bytes, the same hash both times, Oddish content hash `e4ef1a57…`, against `7867414c5e86` only `environment/reclaim-scratch` changed; steps `b92a1e095560` (both kept in `experiment/dist-check-33/`); flat `7867414c5e86` (round 12's second commit), 246 files, 33,040,988 bytes, the same hash both times, Oddish content hash `c283dd01…`, against `ad93859c8f45` only `environment/reclaim-scratch` changed; steps `d62e1a33fc60`, 33,041,140 bytes (both kept in `experiment/dist-check-32/`); flat `ad93859c8f45` (round 12's first commit), 246 files, 33,029,830 bytes, the same hash both times, Oddish content hash `e17c434c…`; steps `8ea1e9bf08ec`, 246 files, 33,029,982 bytes, the same hash both times, content hash `ad5f525b…`; against v4's `d365dc33100d` (content hash `e8d69ae8…`), `environment/session-timer` removed and `environment/Dockerfile`, `environment/reclaim-scratch`, `task.toml` and `verify.py` changed. Earlier: `d365dc33100d`, 247 files, 33,034,058 bytes, the same hash both times; `f93f6c391545`, whose content hash is `a9dad36c7bf0`'s (`e6d06775…`); `a9dad36c7bf0`, 247 files, 33,034,283 bytes; bundle directory `swe-m2_software-engineering_basedpl-interpreter-rebuild-no-examples` |
-| Oddish preflight | bundles `bf77bf7f91d0`, `af0c9f7b084e`, `ec8d6ecf327d`, `a9dad36c7bf0`, `f93f6c391545`, `d365dc33100d` and the flat `ad93859c8f45`, `7867414c5e86`, `c790a042f2be`, `da8966415695`, `ab1a4f4ee269`, `e9ee043b5d71` and `5be602ec5ec1`, no-Archil CLI, locally | pass |
-| Oddish baselines and the pre-trial audit | old name: v1, and v2 (round 5's `1a08cdb471d0`); new name: v1 (round 8's `43b39e11805c`), v2 (round 9's `af0c9f7b084e`), v3 (round 11's `a9dad36c7bf0`) and v4 (`d365dc33100d`) | old name: the reference 1.0 twice per version (1,673/1,673) and the no-op 0.0 twice, with the same `kept_ids_sha256` (`bb030348…`) and `expected_sha256` (`18af6936…`) in both versions, so the Linux recording reproduces; v2's three model trials were graded. New name v1: the reference 1.0 twice, the no-op 0.0 twice, and the audit's one must-fix (the probe), answered in round 9. New name v2: the reference 1.0 twice, the no-op 0.0 twice, an empty source audit, three model trials graded (0.366, 0.372, 0.149), and the verdict's one must-fix (the timer), answered in round 10. New name v3: the reference 1.0 twice, the no-op 0.0 twice, and the audit's one must-fix (`task.toml`'s comment), answered in round 11's second commit. New name v4: three model trials graded (0.383, 0.402, 0.037) and the verdict's one must-fix (the timer again), answered in round 12. New name v5 (round 12's flat `ab1a4f4ee269`): the reference 1.0 twice, the no-op 0.0 twice, a clean pre-trial audit, three model trials graded (0.506, 0.056, 0.237), and the verdict's two must-fix adversarial findings (launchers that run nothing), answered in round 13. Bundles `ad93859c8f45`, `7867414c5e86`, `c790a042f2be`, `da8966415695`, `e9ee043b5d71` and `5be602ec5ec1`: not run |
+| Packaging | `scripts/package_step.py`, twice into separate directories, with and without `--flat --keep-name` | flat `62ae11cdffa6` (round 15, the next upload), 246 files, 33,062,963 bytes, the same hash both times, Oddish content hash `bcd2bfb9…`, against `ab1a4f4ee269` only `tests/verify.py`, `tests/verifier/runcases.py` and `tests/verifier/recording.py` changed (kept in `experiment/dist-check-39/`); flat `5be602ec5ec1` (round 14), 246 files, 33,062,387 bytes, the same hash both times, Oddish content hash `358c7c75…`, against `ab1a4f4ee269` only `tests/verify.py`, `tests/verifier/runcases.py` and `tests/verifier/recording.py` changed (kept in `experiment/dist-check-38/`); flat `e9ee043b5d71` (round 13), 246 files, 33,056,657 bytes, the same hash both times, Oddish content hash `1d84bf20…`, against `ab1a4f4ee269` only `tests/verify.py`, `tests/verifier/runcases.py` and `tests/verifier/recording.py` changed (kept in `experiment/dist-check-37/`); flat `ab1a4f4ee269` (round 12's fifth commit, the v5 upload), 246 files, 33,050,911 bytes, the same hash both times, Oddish content hash `7ae8f22f…`, against `da8966415695` only `environment/provision-scratch` and `environment/reclaim-scratch` changed; steps `fbf917dc9b5c` (both kept in `experiment/dist-check-35/`); flat `da8966415695` (round 12's fourth commit), 246 files, 33,045,960 bytes, the same hash both times, Oddish content hash `15165600…`, against `c790a042f2be` `environment/provision-scratch`, `environment/reclaim-scratch` and `tests/verify.py` changed; steps `08b3e5d2b951` (both kept in `experiment/dist-check-34/`); flat `c790a042f2be` (round 12's third commit), 246 files, 33,041,785 bytes, the same hash both times, Oddish content hash `e4ef1a57…`, against `7867414c5e86` only `environment/reclaim-scratch` changed; steps `b92a1e095560` (both kept in `experiment/dist-check-33/`); flat `7867414c5e86` (round 12's second commit), 246 files, 33,040,988 bytes, the same hash both times, Oddish content hash `c283dd01…`, against `ad93859c8f45` only `environment/reclaim-scratch` changed; steps `d62e1a33fc60`, 33,041,140 bytes (both kept in `experiment/dist-check-32/`); flat `ad93859c8f45` (round 12's first commit), 246 files, 33,029,830 bytes, the same hash both times, Oddish content hash `e17c434c…`; steps `8ea1e9bf08ec`, 246 files, 33,029,982 bytes, the same hash both times, content hash `ad5f525b…`; against v4's `d365dc33100d` (content hash `e8d69ae8…`), `environment/session-timer` removed and `environment/Dockerfile`, `environment/reclaim-scratch`, `task.toml` and `verify.py` changed. Earlier: `d365dc33100d`, 247 files, 33,034,058 bytes, the same hash both times; `f93f6c391545`, whose content hash is `a9dad36c7bf0`'s (`e6d06775…`); `a9dad36c7bf0`, 247 files, 33,034,283 bytes; bundle directory `swe-m2_software-engineering_basedpl-interpreter-rebuild-no-examples` |
+| Oddish preflight | bundles `bf77bf7f91d0`, `af0c9f7b084e`, `ec8d6ecf327d`, `a9dad36c7bf0`, `f93f6c391545`, `d365dc33100d` and the flat `ad93859c8f45`, `7867414c5e86`, `c790a042f2be`, `da8966415695`, `ab1a4f4ee269`, `e9ee043b5d71`, `5be602ec5ec1` and `62ae11cdffa6`, no-Archil CLI, locally | pass |
+| Oddish baselines and the pre-trial audit | old name: v1, and v2 (round 5's `1a08cdb471d0`); new name: v1 (round 8's `43b39e11805c`), v2 (round 9's `af0c9f7b084e`), v3 (round 11's `a9dad36c7bf0`) and v4 (`d365dc33100d`) | old name: the reference 1.0 twice per version (1,673/1,673) and the no-op 0.0 twice, with the same `kept_ids_sha256` (`bb030348…`) and `expected_sha256` (`18af6936…`) in both versions, so the Linux recording reproduces; v2's three model trials were graded. New name v1: the reference 1.0 twice, the no-op 0.0 twice, and the audit's one must-fix (the probe), answered in round 9. New name v2: the reference 1.0 twice, the no-op 0.0 twice, an empty source audit, three model trials graded (0.366, 0.372, 0.149), and the verdict's one must-fix (the timer), answered in round 10. New name v3: the reference 1.0 twice, the no-op 0.0 twice, and the audit's one must-fix (`task.toml`'s comment), answered in round 11's second commit. New name v4: three model trials graded (0.383, 0.402, 0.037) and the verdict's one must-fix (the timer again), answered in round 12. New name v5 (round 12's flat `ab1a4f4ee269`): the reference 1.0 twice, the no-op 0.0 twice, a clean pre-trial audit, three model trials graded (0.506, 0.056, 0.237), and the verdict's two must-fix adversarial findings (launchers that run nothing), answered in round 13. Bundles `ad93859c8f45`, `7867414c5e86`, `c790a042f2be`, `da8966415695`, `e9ee043b5d71`, `5be602ec5ec1` and `62ae11cdffa6`: not run |
 | `harbor check` | none | not run |
 
 ### Validation gaps
@@ -1562,10 +1651,10 @@ read item by item:
 
 - `cases_total` equals the image's kept count, `setup_errors` is 0 and `seconds_total` is above 0
   (the sibling task's failure was every case a setup error in 0.0 s).
-- From round 14: `distinct_outputs_needed` is 10; the oracle's `distinct_outputs` equals
-  `recording.baselines.distinct_outputs_kept` (1,421 locally), its `withheld` is null and its `notes`
+- From round 15: `distinct_outputs_needed` is 12; the oracle's `distinct_outputs` equals
+  `recording.baselines.distinct_outputs_kept` (1,348 locally), its `withheld` is null and its `notes`
   stay empty; the no-op's `distinct_outputs` is 0, with only the missing-program note and a
-  `reward:` line without one; `recording.baselines.no_interpreter_dispatcher_distinct_outputs` is 3
+  `reward:` line without one; `recording.baselines.no_interpreter_dispatcher_distinct_outputs` is 4
   at most (2 locally), or the image would not have built.
 - `delivery_record.delivered` is `delivered 2 <bytes>` for the oracle and `delivered 0 0` for
   the no-op; `notes` is empty for the oracle.
@@ -1605,8 +1694,8 @@ sha256 is not build.txt's. Packaging ships the private cases without the generat
 
 ## Remaining work
 
-- Round 14 (the count re-check 10 asked for, after round 13's rule zeroed v4's `-33`) has an
-  independent re-check before anything goes up. Then the flat bundle `5be602ec5ec1` goes up as the
+- Round 15 (every guarded error case left out, after round 14's follow-up re-check, M2) has an
+  independent re-check before anything goes up. Then the flat bundle `62ae11cdffa6` goes up as the
   next version of the same task (v6), under the task's one experiment, on the owner's word. Its baselines and pre-trial
   audit come before any model trial. The two oracle trials on different workers are a hard gate:
   each must score exactly 1.0, with the same `kept_ids_sha256` and `expected_sha256` (`bb030348…`
@@ -1616,7 +1705,7 @@ sha256 is not build.txt's. Packaging ships the private cases without the generat
   which must score exactly 0. Read `recording` in the reference run's `metrics.json` (drops by
   reason, settling, `kept_as_upstream_code`, the baselines with the two distinct-output counts,
   the build), `distinct_outputs`, `withheld`, and `delivery_record` as listed under Validation gaps.
-  In every model trial, read `distinct_outputs` beside the reward: a run below 10 scores 0 with the
+  In every model trial, read `distinct_outputs` beside the reward: a run below 12 scores 0 with the
   note on its `reward:` line.
 - Round 12's re-checks (CONCERN, no must-fix each) had their should-fixes answered in its second
   and third commits (R1b stays a documented residual) and the stop after the limit added in its
