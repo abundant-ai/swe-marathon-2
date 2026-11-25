@@ -51,8 +51,9 @@ CLEANUP_SEC = 60  # the cleanup after the last case, at most
 RETRIED_LIMITS = ("memory limit", "disk limit", "file limit")  # a case stopped by one runs once more
 # The least runcases.distinct_outputs a reward needs (runcases.DISTINCT_OUTPUTS): of the passed cases, this many
 # different recorded outputs that only a run of the code given can produce. A program that prints only what options
-# such as --version and --help print, only nothing, a few fixed answers, echoes of what it is given or guarded errors
-# answered from a table of the build's messages runs nothing it is given: it passes a few cases and scores 0.
+# such as --version and --help print, only nothing, a few fixed answers, echoes of what it is given, guarded errors
+# answered from a table of the build's messages or one documented function applied to a literal of the case or its
+# input (the cases private/derived.json lists) runs nothing it is given: it passes a few cases and scores 0.
 # recording.json's baselines give the count for every kept case and for the strongest program with no interpreter.
 DISTINCT_OUTPUTS = runcases.DISTINCT_OUTPUTS
 METRICS_SPACE = 1 << 18  # bytes metrics.json holds from the start, so that writing it needs no new space
@@ -613,9 +614,9 @@ def withheld(passed: int, distinct: int, least: int) -> str | None:
     outputs = "output" if distinct == 1 else "outputs"
     return (f"reward 0: the {passed:,} {cases} passed {hold} {distinct} different {outputs} that only running the "
             f"code given produces (code after -e, in a file of the case's own, or a program or the worker's "
-            f"requests on standard input; empty outputs, outputs copied from the case's own input, what a guard "
-            f"prints in an error case and the command line's own cases aside), fewer than the {least} a reward "
-            f"needs")
+            f"requests on standard input; empty outputs, outputs copied from the case's own input, one-line "
+            f"outputs one documented function gives from the case's own literals or input, what a guard prints in "
+            f"an error case and the command line's own cases aside), fewer than the {least} a reward needs")
 
 
 def grade(program: Path, private: Path, prefix: list[str], owner: tuple[int, int] | None,
@@ -626,26 +627,25 @@ def grade(program: Path, private: Path, prefix: list[str], owner: tuple[int, int
 
     The reward is the share of cases passed, given only where the passed cases hold at least
     DISTINCT_OUTPUTS different outputs that only a run of the code given produces
-    (runcases.distinct_outputs); otherwise it is 0, with a note (withheld), which metrics["withheld"]
-    also holds (None where the share is given).
+    (runcases.distinct_outputs, leaving out the cases derived.json lists); otherwise it is 0, with a
+    note (withheld), which metrics["withheld"] also holds (None where the share is given).
 
     A case that cannot be set up or started, runs too long or prints too much counts as failed:
     what the submission does never makes the evaluation an error. A case stopped by the memory,
     disk or file limit runs once more after a cleanup (RETRIED_LIMITS), and the second run counts.
 
     Raises:
-        EvaluationError: Private inputs are unreadable, or less than RESERVE_BYTES is free after a
-            cleanup has removed everything the user held (the host's shortage, not the submission's).
-
-    Raises:
-        EvaluationError: Private inputs are unreadable.
+        EvaluationError: Private inputs are unreadable or do not match (derived.json included), or
+            less than RESERVE_BYTES is free after a cleanup has removed everything the user held (the
+            host's shortage, not the submission's).
     """
     try:
         cases = json.loads((private / "cases.json").read_text(encoding="utf-8"))["cases"]
         expected = json.loads((private / "expected.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError, KeyError) as exc:
+        derived = frozenset(json.loads((private / "derived.json").read_text(encoding="utf-8"))["derived"])
+    except (OSError, ValueError, KeyError, TypeError) as exc:
         raise EvaluationError("Private cases are unreadable") from exc
-    if not cases or any(case["id"] not in expected for case in cases):
+    if not cases or any(case["id"] not in expected for case in cases) or not derived <= {case["id"] for case in cases}:
         raise EvaluationError("Private cases and recorded answers do not match")
     metrics = {"cases_total": len(cases), "cases_run": 0, "cases_passed": 0, "cases_failed": 0, "reward": 0.0,
                "timeouts": 0, "output_limits": 0, "memory_limits": 0, "disk_limits": 0, "file_limits": 0,
@@ -724,8 +724,9 @@ def grade(program: Path, private: Path, prefix: list[str], owner: tuple[int, int
     for tally in metrics["by_kind"].values():
         tally["failed"] = tally["total"] - tally["passed"]
     metrics["reward"] = round(metrics["cases_passed"] / metrics["cases_total"], 6)
-    metrics["distinct_outputs"] = runcases.distinct_outputs(kept, expected, passed)
+    metrics["distinct_outputs"] = runcases.distinct_outputs(kept, expected, passed, derived)
     metrics["distinct_outputs_needed"] = DISTINCT_OUTPUTS
+    metrics["derived_cases"] = len(derived)
     metrics["withheld"] = withheld(metrics["cases_passed"], metrics["distinct_outputs"], DISTINCT_OUTPUTS)
     if metrics["withheld"]:
         metrics["reward"] = 0.0

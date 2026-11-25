@@ -13,7 +13,10 @@
   command line's answers, an echo of a program's leading literals, one constant per visible shape
   of case), by strategy. The largest share any one answer holds. The different outputs that only a
   run of the code given produces (runcases.distinct_outputs, which a reward needs
-  runcases.DISTINCT_OUTPUTS of) that the kept cases hold, and that the dispatcher's cases hold.
+  runcases.DISTINCT_OUTPUTS of, leaving out the cases derivations.py derived) that the kept cases
+  hold, and that the dispatcher's cases hold.
+- The search for answers one documented function gives from a case's own literals or input
+  (`--derived`, derivations.py's output): the cases derived, by kind, and the search's figures.
 - A guard: the build stops (exit status 1) when the dispatcher's cases hold more than a third of
   runcases.DISTINCT_OUTPUTS, so that no set of cases brings a program with no interpreter in it
   near a reward unnoticed (`dispatcher_too_close`).
@@ -21,7 +24,8 @@
   reference solution's copy has it), the build host, the recording's wall time, the sha256 of the
   kept ids and of the answers, so that two builds can be compared.
 
-usage: python3 recording.py <all cases.json> <kept cases.json> <expected.json> <report.json> <out.json> [--build <build.txt>]
+usage: python3 recording.py <all cases.json> <kept cases.json> <expected.json> <report.json> <out.json>
+       --derived <derived.json> [--build <build.txt>]
 """
 
 from __future__ import annotations
@@ -38,11 +42,11 @@ from runcases import DISTINCT_OUTPUTS, distinct_outputs
 UPSTREAM_KINDS = ("expr", "apl", "script", "error", "worker", "display", "stdin", "module")
 
 
-def baselines(kept: list[dict], expected: dict) -> dict:
+def baselines(kept: list[dict], expected: dict, derived: set[str]) -> dict:
     """The share of the kept cases each trivial submission passes, and the largest share of any
     one answer; and the different outputs that only a run of the code given produces
-    (runcases.distinct_outputs) that passing every kept case reaches, and that passing the
-    dispatcher's cases reaches."""
+    (runcases.distinct_outputs, the `derived` cases left out) that passing every kept case reaches,
+    and that passing the dispatcher's cases reaches."""
     total = len(kept) or 1
     answers = [(expected[case["id"]]["stdout"], expected[case["id"]]["exit"]) for case in kept]
     free = free_cases(kept, expected)
@@ -55,14 +59,14 @@ def baselines(kept: list[dict], expected: dict) -> dict:
         "no_interpreter_dispatcher": round(len(dispatcher) / total, 4),
         "no_interpreter_dispatcher_by_strategy": {how: len(ids) for how, ids in sorted(free.items())},
         "largest_answer_share": round(common[0][1] / total, 4) if common else 0.0,
-        "distinct_outputs_kept": distinct_outputs(kept, expected, {case["id"] for case in kept}),
-        "no_interpreter_dispatcher_distinct_outputs": distinct_outputs(kept, expected, dispatcher),
+        "distinct_outputs_kept": distinct_outputs(kept, expected, {case["id"] for case in kept}, derived),
+        "no_interpreter_dispatcher_distinct_outputs": distinct_outputs(kept, expected, dispatcher, derived),
     }
 
 
-def describe(cases: list[dict], kept: list[dict], expected: dict, report: dict) -> dict:
-    """The recording's description, from the generated cases, the kept cases, their answers and
-    the recorder's report."""
+def describe(cases: list[dict], kept: list[dict], expected: dict, report: dict, derivations: dict) -> dict:
+    """The recording's description, from the generated cases, the kept cases, their answers, the
+    recorder's report and derivations.py's output."""
     kind = {case["id"]: case.get("kind", "?") for case in cases}
     seconds = sorted(max(report["seconds"][case["id"]]) for case in kept)
     by_kind = lambda ids: dict(sorted(Counter(kind[i] for i in ids).items()))  # noqa: E731
@@ -97,7 +101,9 @@ def describe(cases: list[dict], kept: list[dict], expected: dict, report: dict) 
         "kept_seconds_total": round(sum(seconds), 3),
         "empty_stdout_by_exit": dict(sorted(Counter(str(expected[case["id"]]["exit"]) for case in kept
                                                     if expected[case["id"]]["stdout"] == "").items())),
-        "baselines": baselines(kept, expected),
+        "baselines": baselines(kept, expected, set(derivations["derived"])),
+        "derived": {"cases": by_kind(derivations["derived"]),
+                    **{key: derivations[key] for key in ("looked_at", "derivations", "passed_over", "functions")}},
     }
 
 
@@ -132,9 +138,14 @@ def main() -> None:
         at = args.index("--build")
         build = dict(line.split(" ", 1) for line in Path(args[at + 1]).read_text(encoding="utf-8").splitlines() if " " in line)
         del args[at:at + 2]
+    if "--derived" not in args:
+        raise SystemExit("recording.py: --derived <derived.json> is required")
+    at = args.index("--derived")
+    derivations = json.loads(Path(args[at + 1]).read_text(encoding="utf-8"))
+    del args[at:at + 2]
     cases, kept = (json.loads(Path(path).read_text(encoding="utf-8"))["cases"] for path in args[0:2])
     expected, report = (json.loads(Path(path).read_text(encoding="utf-8")) for path in args[2:4])
-    described = describe(cases, kept, expected, report)
+    described = describe(cases, kept, expected, report, derivations)
     if build is not None:
         described["build"] = build
     Path(args[4]).write_text(json.dumps(described, indent=1, sort_keys=True) + "\n")

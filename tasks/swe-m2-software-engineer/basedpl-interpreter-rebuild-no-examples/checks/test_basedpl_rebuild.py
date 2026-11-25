@@ -343,13 +343,31 @@ def test_the_documentation_is_upstreams_pages_without_notebook_results(tmp_path)
     assert pages["glyphs/plus.md"].startswith("# `+`") and "•plot" not in "".join(pages.values())
 
 
+def test_the_function_table_is_the_documentations_and_packaging_refuses_another():
+    """Round 16 (re-check 11, M3): derivations.py applies the documentation's functions, not a list of ours.
+    tests/verifier/functions.json holds the glyph of every glyph page whose third line calls it a function
+    (bpl_text.function_table), as scripts/function_table.py writes it from the documentation that ships, and packaging
+    refuses a bundle whose table is not the shipped documentation's."""
+    pages = {"glyphs/reverse.md": "# `⌽` — Reverse\n\nFunction. Reverses.\n", "glyphs/each.md": "# `¨` — Each\n\nOperator. Maps.\n",
+             "glyphs/plus.md": "# `+` — Plus\n\nFunction. Adds.\n", "guide.md": "# `-`\n\nFunction. Not a glyph page.\n",
+             "system/demo.md": "# `•x`\n\nFunction. A system function.\n", "glyphs/short.md": "# `÷`\n"}
+    found = scripts_call(f"import json, bpl_text\nprint(json.dumps(bpl_text.function_table({pages!r})))")
+    assert found == ["+", "⌽"], found
+    table = json.loads((STEP / "tests" / "verifier" / "functions.json").read_text(encoding="utf-8"))["functions"]
+    assert len(table) == len(set(table)) == 60 and {"⌽", "≢", "⍎", "¿", "+", "×", "ι", "ρ", "⊆", "⍕"} <= set(table), table
+    package = (SCRIPTS / "package_step.py").read_text()
+    refusal = package[package.index("if table != bpl_text.function_table(pages):"):]
+    assert refusal.index("raise ValueError(") < refusal.index("import make_cases"), "the refusal comes before anything else"
+    assert "bpl_text.function_table(bpl_text.documentation(checkout))" in (SCRIPTS / "function_table.py").read_text()
+
+
 # ---------------------------------------------------------------- the verifier
 
 def run_verifier(tmp_path: Path, script: str, cases: list[dict], expected: dict, case_sec: float = 2,
-                 output_limit: int | None = None) -> dict:
+                 output_limit: int | None = None, derived: set[str] | None = None) -> dict:
     """grade() of the real verify.py, in a process of its own, with the workspace under tmp_path and
     no privilege drop (macOS and CI runners have no setpriv): what the submission can do to its
-    workspace and its output is the same."""
+    workspace and its output is the same. `derived` is what derived.json lists (none by default)."""
     program = tmp_path / "bpl"
     program.write_text("#!/bin/sh\n" + script)
     program.chmod(0o755)
@@ -357,6 +375,7 @@ def run_verifier(tmp_path: Path, script: str, cases: list[dict], expected: dict,
     private.mkdir(exist_ok=True)
     (private / "cases.json").write_text(json.dumps({"cases": cases}))
     (private / "expected.json").write_text(json.dumps(expected))
+    write_derived(private, derived or set())
     driver = textwrap.dedent(f"""
         import json, sys
         from pathlib import Path
@@ -374,6 +393,13 @@ def run_verifier(tmp_path: Path, script: str, cases: list[dict], expected: dict,
     done = subprocess.run([sys.executable, "-B", "-c", driver], capture_output=True, text=True, timeout=600)
     assert done.returncode == 0, done.stdout[-2000:] + done.stderr[-2000:]
     return json.loads(done.stdout.strip().splitlines()[-1])
+
+
+def write_derived(private: Path, derived: set[str]) -> None:
+    """private/derived.json as the verifier image's build writes it (derivations.py): the derived cases' ids, with the
+    search's figures."""
+    (private / "derived.json").write_text(json.dumps({"derived": sorted(derived), "looked_at": len(derived), "derivations": 0,
+                                                      "passed_over": 0, "functions": 58}))
 
 
 def plain_cases(argvs: list[list[str]], kinds: list[str] | None = None) -> tuple[list[dict], dict]:
@@ -523,6 +549,7 @@ def test_nothing_a_submission_writes_reaches_a_later_case(tmp_path):
     cases, expected = plain_cases([["a"], ["b"], ["c"]])
     (private / "cases.json").write_text(json.dumps({"cases": cases}))
     (private / "expected.json").write_text(json.dumps(expected))
+    write_derived(private, set())
     ipc = tmp_path / "sysvipc"
     ipc.mkdir()
     (ipc / "shm").write_text("key shmid perms size cpid lpid nattch uid gid cuid cgid\n"
@@ -673,6 +700,7 @@ def test_cleanup_cost_does_not_grow_with_what_a_run_leaves(tmp_path):
     cases, expected = plain_cases([[f"c{i}"] for i in range(50)])
     (private / "cases.json").write_text(json.dumps({"cases": cases}))
     (private / "expected.json").write_text(json.dumps(expected))
+    write_derived(private, set())
     elapsed, metrics, calls = verifier_call(textwrap.dedent(f"""
         import json, os, time
         from pathlib import Path
@@ -806,6 +834,7 @@ def test_a_case_stopped_by_a_resource_limit_runs_once_more(tmp_path):
              {"id": "C2", "kind": "expr", "argv": ["-e", "2"], "files": {}, "stdin": None}]
     (private / "cases.json").write_text(json.dumps({"cases": cases}))
     (private / "expected.json").write_text(json.dumps({"C1": {"exit": 0, "stdout": "1\n"}, "C2": {"exit": 0, "stdout": "2\n"}}))
+    write_derived(private, set())
     program = tmp_path / "bpl"
     program.write_text("#!/bin/sh\nexit 0\n")
     program.chmod(0o755)
@@ -897,6 +926,10 @@ def gate_cases(least: int) -> tuple[list[dict], dict, dict[str, list[str]]]:
       message;
     - "empty": 8 programs in a file that print nothing and exit 1;
     - "common": 8 programs in a file that all print one common answer;
+    - "derived": least + 5 programs whose answer one documented function gives from a literal of their own code or
+      their input, each another answer, in the shapes the guessers of re-check 11 answered (a function the code
+      applies to a literal, a reduction of an assigned strand, a function between two literals, a function of a
+      line of standard input);
     - "blank", "worker", "stdin": a program whose output is empty, a worker session, a program on standard input.
 
     Args:
@@ -933,6 +966,17 @@ def gate_cases(least: int) -> tuple[list[dict], dict, dict[str, list[str]]]:
         add("empty", "error", ["main.bpl"], "", 1, files={"main.bpl": f"x{i}←1 2+1 2 3\n"})
     for i in range(8):
         add("common", "script", ["main.bpl"], "common\n", files={"main.bpl": f"y{i}←1\n"})
+    for i in range(least + 5):
+        n = 100 + 3 * i
+        shape = i % 4
+        if shape == 0:
+            add("derived", "expr", ["-e", f"⌽{n} {n + 1} {n + 2}"], f"{n + 2} {n + 1} {n}\n")
+        elif shape == 1:
+            add("derived", "script", ["main.bpl"], f"{n + n + 1}\n", files={"main.bpl": f"z{i}←{n} {n + 1} ◇ +/z{i}\n"})
+        elif shape == 2:
+            add("derived", "expr", ["-e", f"{n}×{n + 1}"], f"{n * (n + 1)}\n")
+        else:
+            add("derived", "stdin", ["main.bpl"], f'"{str(n)[::-1]}w"\n', files={"main.bpl": "⌽•line 0\n"}, stdin=f"w{n}\n")
     add("blank", "expr", ["-e", "⍬⍴0"], "")
     add("worker", "worker", ["--worker"], '{"id":1,"result":2}\n', stdin='{"id":1,"code":"1+1"}\n')
     add("stdin", "stdin", ["-"], "6\n", stdin="⎕←2×3\n")
@@ -947,7 +991,9 @@ def test_a_case_counts_toward_a_reward_only_when_only_a_run_of_its_code_gives_it
     own to run (after -e, a file of the case's own named first, a program or worker requests on standard input),
     leaving out empty outputs, outputs whose every line occurs in the case's own input, every error case whose code
     runs under a guard (whatever its handler prints: the generator's "guarded" mark, or a guard that catches every
-    error in main.bpl), and the command line's own cases. An output counts once however many passed cases share it."""
+    error in main.bpl), the command line's own cases, and (re-check 11, M3) every case whose one-line answer one
+    documented function gives from the case's own literals or input, which derivations.py lists in derived.json when
+    the verifier image is built. An output counts once however many passed cases share it."""
     found = verifier_call(textwrap.dedent('''
         import json
         from verifier import recorder, runcases
@@ -971,22 +1017,26 @@ def test_a_case_counts_toward_a_reward_only_when_only_a_run_of_its_code_gives_it
                   case("record", "error", ["main.bpl"], guard("$e")),
                   case("position", "error", ["main.bpl"], guard('(⍕$e.line),":",(⍕$e.column),": ",$e.message')),
                   case("form-only", "error", ["main.bpl"], {"main.bpl": '{DOMAIN::⍕$e ◇ 1÷"a"}0\\n'}, form="guarded"),
-                  case("message-elsewhere", "script", ["main.bpl"], guard("$e.message"))]
+                  case("message-elsewhere", "script", ["main.bpl"], guard("$e.message")),
+                  case("guessed", "expr", ["-e", "⌽1 2 3"])]
         answers = {"e": "2\\n", "file": "2\\n", "dash": "2\\n", "bare": "", "worker": "{}\\n", "version": "v\\n", "help": "h\\n",
                    "lone-e": "", "missing": "", "no-input": "", "empty-input": "", "worker-args": "", "cli-e": "c\\n",
                    "cli-file": "7\\n", "cli-stdin": "a\\n", "copied": '"abc"\\n', "copied-lines": "Hip\\nHop\\n",
                    "copied-library": "42\\n", "partly-copied": "Hip!\\n", "message": '"DOMAIN: no"\\n',
                    "kind-message": '"DOMAIN: no"\\n', "other-handler": '"handled"\\n', "message-elsewhere": '"DOMAIN: no"\\n',
                    "record": '["kind":"DOMAIN" "message":"no" "source":"main.bpl" "line":1ₓ "column":8ₓ]\\n',
-                   "position": '"1ₓ:8ₓ: no"\\n', "form-only": '"DOMAIN no"\\n'}
+                   "position": '"1ₓ:8ₓ: no"\\n', "form-only": '"DOMAIN no"\\n', "guessed": "3 2 1\\n"}
         expected = {ident: {"stdout": text, "exit": 0} for ident, text in answers.items()}
         every = set(answers)
-        counted = {c["id"]: runcases.counts(c, expected[c["id"]]) for c in shapes}
+        derived = {"guessed"}
+        counted = {c["id"]: runcases.counts(c, expected[c["id"]], derived) for c in shapes}
         guarded = [sorted(c["id"] for c in shapes if runcases.guarded_error(c)), sorted(i for i, *_ in recorder.error_instances(shapes, expected))]
-        totals = [runcases.distinct_outputs(shapes, expected, every), runcases.distinct_outputs(shapes, expected, every - {"worker"}),
+        totals = [runcases.distinct_outputs(shapes, expected, every, derived),
+                  runcases.distinct_outputs(shapes, expected, every - {"worker"}, derived),
                   runcases.distinct_outputs(shapes, expected, {"version", "help", "cli-e", "cli-file", "cli-stdin", "bare", "copied",
-                                                               "copied-lines", "copied-library", "message", "kind-message"}),
-                  runcases.distinct_outputs(shapes, expected, set())]
+                                                               "copied-lines", "copied-library", "message", "kind-message",
+                                                               "guessed"}, derived),
+                  runcases.distinct_outputs(shapes, expected, set(), derived), runcases.distinct_outputs(shapes, expected, every, set())]
         print(json.dumps([{c["id"]: runcases.runs_a_program(c) for c in shapes}, counted, guarded, totals]))
     '''))
     runs, counted, guarded, totals = found
@@ -996,31 +1046,175 @@ def test_a_case_counts_toward_a_reward_only_when_only_a_run_of_its_code_gives_it
         "e", "file", "dash", "worker", "partly-copied", "message-elsewhere"}, counted
     assert guarded[0] == ["form-only", "kind-message", "message", "other-handler", "position", "record"], guarded
     assert set(guarded[1]) <= set(guarded[0]), "every case the recorder's error lookup reads is left out too"
-    # "2" (three cases, once), "{}", "Hip!" and the message outside an error case
-    assert totals == [4, 3, 0, 0], totals
+    # "2" (three cases, once), "{}", "Hip!" and the message outside an error case; the guessed case's "3 2 1" only
+    # where derived.json does not list it
+    assert totals == [4, 3, 0, 0, 5], totals
     # The rule, its note and the build's guard are worded as what a program must do, never as who checks it or why.
     verify, runner = (STEP / "tests" / "verify.py").read_text(), RUNNER.read_text()
     recording = (STEP / "tests" / "verifier" / "recording.py").read_text()
     between = lambda text, start, end: text[text.index(start):text.index(end, text.index(start))]  # noqa: E731
+    derivations = (STEP / "tests" / "verifier" / "derivations.py").read_text()
     gate = (between(verify, "# The least runcases.distinct_outputs", "METRICS_SPACE = ") + between(verify, "def withheld(", "def grade(")
             + between(runner, "# The least distinct_outputs a reward needs.", "\n\n\ndef limit(")
-            + runner[runner.index("def runs_a_program("):] + between(recording, "def dispatcher_too_close(", "def main("))
+            + runner[runner.index("def runs_a_program("):] + between(recording, "def dispatcher_too_close(", "def main(")
+            + derivations)
     assert "DISTINCT_OUTPUTS = 12" in gate and "DISTINCT_OUTPUTS = runcases.DISTINCT_OUTPUTS" in gate and "def counts(" in gate
     assert "MESSAGE_HANDLERS" not in runner and "def guarded_error(" in gate, "no list of handlers to fall behind the generator's"
-    assert runner.rstrip().endswith("if case[\"id\"] in passed and counts(case, expected[case[\"id\"]])})"), "the runner's last function"
+    assert runner.rstrip().endswith("if case[\"id\"] in passed and counts(case, expected[case[\"id\"]], derived)})"), \
+        "the runner's last function"
     words = re.compile(r"platform|trial|evaluat|benchmark|stub|exploit|adversar|cheat|hack|oddish|harbor|modal|verdict|"
                        r"\bQA\b|launcher|grader", re.I)
     assert not words.findall(gate), words.findall(gate)
+
+
+FAKE_WORKER = r"""
+import json, sys, time
+from pathlib import Path
+table = json.loads(Path(__file__).with_name("shown.json").read_text(encoding="utf-8"))
+for line in sys.stdin:
+    request = json.loads(line)
+    code = request["code"]
+    if code == "CRASH":
+        sys.exit(70)
+    if code == "STALL":
+        time.sleep(60)
+    if code == "BIG":
+        hold = bytearray(160 << 20)
+        hold[::4096] = b"x" * len(hold[::4096])
+        time.sleep(60)
+    if code == "LONG":
+        print(json.dumps({"id": request["id"], "result": {"value": "x" * 3_000_000, "output": [], "error": None}}), flush=True)
+        continue
+    shown = table.get(code)
+    result = ({"value": None, "output": [{"kind": "display", "data": {"text/plain": shown}}], "error": None} if shown is not None
+              else {"value": None, "output": [], "error": {"kind": "VALUE", "message": "no"}})
+    print(json.dumps({"id": request["id"], "result": result}, ensure_ascii=False), flush=True)
+"""
+
+
+def fake_worker(folder: Path, shown: dict[str, str]) -> Path:
+    """A program that answers `--worker` requests as the original's worker does, from a table of what each code shows
+    (any other code is an error); "CRASH" ends it, "STALL" and "BIG" (160 MB held) stall it, "LONG" replies 3 MB."""
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "shown.json").write_text(json.dumps(shown, ensure_ascii=False))
+    program = folder / "bpl"
+    program.write_text(f"#!{sys.executable}\n" + FAKE_WORKER)
+    program.chmod(0o755)
+    return program
+
+
+def test_a_derivation_is_one_documented_function_applied_once_to_what_the_case_shows():
+    """Re-check 11, M3: a program with no interpreter scored 55 of 1,673 cases, 12 counted outputs, by applying one
+    function to a literal the case shows. derivations.py lists, for each case that otherwise counts and whose answer is
+    one line, what one function of the documentation's table makes of the case's literals and input: each as it is,
+    each function monadically and as a reduction, each function between the two literals the code writes on either
+    side of it, and each function between a literal of the code and the input. Its literals are its own code's (not
+    a library file's, not a comment's); its input is each line of standard input that is data and each argument after
+    the program, as text and as the numbers it holds, and all of them together. The table is functions.json less ¿
+    (random) and ⍎ (it runs code)."""
+    found = verifier_call(textwrap.dedent(r"""
+        import json
+        from verifier import derivations
+        def case(kind, argv, files=None, stdin=None):
+            return {"id": "c", "kind": kind, "argv": argv, "files": files or {}, "stdin": stdin}
+        table = json.load(open(derivations.__file__.replace("derivations.py", "functions.json"), encoding="utf-8"))["functions"]
+        functions = [f for f in table if f not in derivations.NOT_APPLIED]
+        script = case("script", ["main.bpl", "seven"], {"main.bpl": 'x←4 5 6 ⍝ 99\n1 8≤8 1\n"ab"⍷x', "lib/a.bpl": "f←{ω} ⍝ 42 43"},
+                      stdin="3 4\nfive\n")
+        program = case("stdin", ["-"], stdin="⌽2 3\n")
+        expr = case("expr", ["-e", "+/1 2 3", "arg"])
+        print(json.dumps([len(table), sorted(derivations.NOT_APPLIED), derivations.case_literals(script),
+                          derivations.input_literals(script), derivations.case_literals(program), derivations.input_literals(program),
+                          derivations.case_literals(expr), derivations.input_literals(expr),
+                          sorted(derivations.derivations(script, functions)), len(functions)]))
+    """))
+    table, skipped, own, given, program_own, program_given, expr_own, expr_given, codes, functions = found
+    assert table == 60 and skipped == ["¿", "⍎"] and functions == 58
+    assert own == ["4 5 6", "1 8", "8 1", '"ab"'], "statements of its own files, comments and library files left out"
+    assert given == ['"3 4"', "3 4", '"five"', '"seven"', '"3 4" "five" "seven"'], "its numbers together are 3 4 again"
+    assert program_own == ["2 3"] and program_given == [], "a program on standard input is code, not input"
+    assert expr_own == ["1 2 3"] and expr_given == ['"arg"']
+    codes = set(codes)
+    for code in ("4 5 6", '"five"', "⌽4 5 6", '≢"seven"', "+/4 5 6", "×/3 4", "(1 8)≤8 1", "(8)≤8 1", "(4 5 6)+3 4",
+                 "(3 4)×4 5 6", '("five")≡"ab"'):
+        assert code in codes, code
+    assert not any(code.startswith(("⍎", "¿")) or "⍎" in code or "¿" in code for code in codes), "no random result, no code run"
+    assert "(4 5 6)≤8 1" not in codes, "a function between two literals only where the code writes it between them"
+    assert not any("99" in code or "42" in code for code in codes), "no comment, no library file"
+
+
+def test_the_original_shows_the_derivations_and_a_request_that_stops_its_worker_is_passed_over(tmp_path):
+    """derivations.show sends the codes to the original's worker, a thousand per worker, and keeps the one-line
+    displays it looks for. A worker that ends, answers nothing for REQUEST_SEC or holds more than RSS_LIMIT bytes is
+    ended: the request it had reached is passed over and counted, and a new worker goes on after it. A reply longer
+    than LINE_LIMIT is read and dropped. derived_cases then lists the cases a derivation of theirs answers."""
+    program = fake_worker(tmp_path / "fake", {"⌽1 2 3": "3 2 1", "+/4 5": "9", "a": "A", "b": "B", "c": "C", "d": "D", "(1 8)≤8 1": "1 0"})
+    found = verifier_call(textwrap.dedent(f"""
+        import json, tempfile, time
+        from verifier import derivations
+        derivations.REQUEST_SEC, derivations.RSS_LIMIT, derivations.CHUNK = 1.5, 80 << 20, 4
+        with tempfile.TemporaryDirectory() as work:
+            began = time.monotonic()
+            shown, passed = derivations.show({str(program)!r}, ["a", "CRASH", "b", "STALL", "c", "BIG", "LONG", "d", "nothing"], work)
+            seconds = time.monotonic() - began
+            wanted, _ = derivations.show({str(program)!r}, ["a", "b", "⌽1 2 3"], work, {{"B", "3 2 1"}})
+            cases = [{{"id": "R", "kind": "expr", "argv": ["-e", "⌽1 2 3"], "files": {{}}, "stdin": None}},
+                     {{"id": "S", "kind": "script", "argv": ["main.bpl"], "files": {{"main.bpl": "x←4 5 ◇ +/x"}}, "stdin": None}},
+                     {{"id": "T", "kind": "expr", "argv": ["-e", "1 8≤8 1"], "files": {{}}, "stdin": None}},
+                     {{"id": "U", "kind": "expr", "argv": ["-e", "6×7"], "files": {{}}, "stdin": None}},
+                     {{"id": "V", "kind": "expr", "argv": ["-e", "⌽1 2 3 ◇ 0"], "files": {{}}, "stdin": None}}]
+            expected = {{"R": {{"stdout": "3 2 1\\n", "exit": 0}}, "S": {{"stdout": "9\\n", "exit": 0}}, "T": {{"stdout": "1 0\\n", "exit": 0}},
+                        "U": {{"stdout": "42\\n", "exit": 0}}, "V": {{"stdout": "3 2 1\\n0\\n", "exit": 0}}}}
+            derived, figures = derivations.derived_cases({str(program)!r}, cases, expected, ["⌽", "+", "≤"], work)
+        print(json.dumps([shown, passed, seconds, wanted, derived, figures]))
+    """))
+    shown, passed, seconds, wanted, derived, figures = found
+    assert shown == {"a": "A", "b": "B", "c": "C", "d": "D"} and passed == 3, (shown, passed)
+    assert seconds < 30, "a stalled worker is ended after REQUEST_SEC, not after the run's end"
+    assert wanted == {"b": "B", "⌽1 2 3": "3 2 1"}, "only the displays looked for are kept"
+    assert derived == ["R", "S", "T"], "6×7 shows 42 through no derivation; a two-line answer is not looked at"
+    assert figures["looked_at"] == 4 and figures["passed_over"] == 0 and figures["derivations"] > 10, figures
+
+
+def test_the_build_stops_when_the_originals_worker_cannot_be_trusted(tmp_path):
+    """derivations.py writes derived.json, or stops the verifier image's build (exit status 1, the reason on standard
+    error): when the worker does not show CHECK's answer, and when it passes over more than SKIPPED_SHARE of the
+    requests. The cases it would list could not be trusted then, and a reward would count answers it should not."""
+    cases = [{"id": f"K{i}", "kind": "expr", "argv": ["-e", f"⌽{i} {i + 1}"], "files": {}, "stdin": None} for i in range(30)]
+    expected = {case["id"]: {"stdout": f"{int(case['id'][1:]) + 1} {case['id'][1:]}\n", "exit": 0} for case in cases}
+    for name, data in (("kept.json", {"cases": cases}), ("expected.json", expected)):
+        (tmp_path / name).write_text(json.dumps(data, ensure_ascii=False))
+    (tmp_path / "functions.json").write_text(json.dumps({"functions": ["⌽", "¿", "⍎"]}, ensure_ascii=False))
+    reversed_ = {f"⌽{i} {i + 1}": f"{i + 1} {i}" for i in range(30)}
+
+    def derive(program: Path, out: str) -> subprocess.CompletedProcess:
+        return subprocess.run([sys.executable, "-B", str(STEP / "tests" / "verifier" / "derivations.py"), str(program),
+                               *(str(tmp_path / name) for name in ("kept.json", "expected.json", "functions.json", out))],
+                              capture_output=True, text=True, timeout=300, cwd=STEP / "tests" / "verifier")
+
+    good = derive(fake_worker(tmp_path / "good", {"⌽1 2 3": "3 2 1", **reversed_}), "good.json")
+    assert good.returncode == 0, good.stderr[-2000:]
+    written = json.loads((tmp_path / "good.json").read_text())
+    assert written["derived"] == sorted(case["id"] for case in cases) and written["functions"] == 1 and written["passed_over"] == 0
+    wrong = derive(fake_worker(tmp_path / "wrong", {"⌽1 2 3": "1 2 3", **reversed_}), "wrong.json")
+    assert wrong.returncode == 1 and "not '3 2 1'" in wrong.stderr and not (tmp_path / "wrong.json").exists(), wrong.stderr
+    crashing = fake_worker(tmp_path / "crashing", {"⌽1 2 3": "3 2 1"})
+    crashing.write_text(crashing.read_text().replace('if code == "CRASH":', 'if code != "⌽1 2 3":'))
+    stopped = derive(crashing, "crashing.json")
+    assert stopped.returncode == 1 and "derivations were passed over" in stopped.stderr, stopped.stderr[-2000:]
+    assert not (tmp_path / "crashing.json").exists()
 
 
 def test_only_a_program_that_runs_what_it_is_given_earns_a_reward(tmp_path):
     """The real grade() on cases shaped as the kept ones, against the programs v5's two replays delivered (the
     command line's documented strings and exit 2 for everything else; exit 0 for everything), every constant answer
     the cases share, an echo of literals, a table of what the guarded cases print (re-check 10's err-table shape:
-    the record, the message, the kind and message, the line:column form), and a table one counted output short
-    (which also answers the command line's own program, every echo, every guarded case and every empty output):
-    each passes cases and scores exactly 0, with the note in metrics.json. One more counted output (the program on
-    standard input) and the same table earns its share."""
+    the record, the message, the kind and message, the line:column form), a guesser that answers every case whose
+    answer one documented function gives from the case's own literals or input (re-check 11's two guessers, M3), and
+    a table one counted output short (the combined program: it also answers the command line's own program, every
+    echo, every guarded case, every empty output and every guessed case): each passes cases and scores exactly 0,
+    with the note in metrics.json. One more counted output (the program on standard input) and the same table earns
+    its share."""
     least = least_distinct_outputs()
     cases, expected, families = gate_cases(least)
     total = len(cases)
@@ -1030,14 +1224,16 @@ def test_only_a_program_that_runs_what_it_is_given_earns_a_reward(tmp_path):
                      if sum(other == answer for other in expected.values()) > 1})
     assert len(shared) == 3, shared  # nothing and exit 1, the common answer, nothing and exit 2
     few = set(families["own"][:least - 3] + families["common"] + families["worker"] + families["echo"] + families["message"]
-              + families["empty"] + families["blank"] + [families["cli"][-1]])
+              + families["empty"] + families["blank"] + [families["cli"][-1]] + families["derived"])
     programs = {"docs": docs, "exit 0": "exit 0\n",
                 **{f"constant {stdout!r} {code}": f"printf '%s' '{stdout}'\nexit {code}\n" for stdout, code in shared},
                 "echo": 'case "$1" in -e) printf \'%s\\n\' "$2"; exit 0;; esac\nexit 3\n',
                 "messages": answering(tmp_path, "messages", cases, expected, set(families["message"])),
+                "guesser": answering(tmp_path, "guesser", cases, expected, set(families["derived"])),
                 "too few": answering(tmp_path, "too-few", cases, expected, few),
                 "enough": answering(tmp_path, "enough", cases, expected, few | set(families["stdin"]))}
-    results = {name: run_verifier(tmp_path, script, cases, expected) for name, script in programs.items()}
+    results = {name: run_verifier(tmp_path, script, cases, expected, derived=set(families["derived"]))
+               for name, script in programs.items()}
     for name, metrics in results.items():
         assert metrics["cases_total"] == total and metrics["distinct_outputs_needed"] == least, (name, metrics)
         if name == "enough":
@@ -1054,6 +1250,9 @@ def test_only_a_program_that_runs_what_it_is_given_earns_a_reward(tmp_path):
     assert (results["echo"]["cases_passed"], results["echo"]["distinct_outputs"]) == (least + 5, 0), "echoes never count"
     assert (results["messages"]["cases_passed"], results["messages"]["distinct_outputs"]) == (least + 5, 0), \
         "nor what a guard prints, in any of its four forms (re-check 10, M2: the record and the line:column form)"
+    assert (results["guesser"]["cases_passed"], results["guesser"]["distinct_outputs"]) == (least + 5, 0), \
+        "nor one function applied to a literal the case shows (re-check 11, M3)"
+    assert results["guesser"]["derived_cases"] == least + 5
     too_few, enough = results["too few"], results["enough"]
     # (least - 3) own outputs, the common answer once, the worker's reply: one short, whatever the others add
     assert too_few["distinct_outputs"] == least - 1 and too_few["cases_passed"] == len(few), too_few
@@ -1061,7 +1260,7 @@ def test_only_a_program_that_runs_what_it_is_given_earns_a_reward(tmp_path):
     assert enough["reward"] == round(enough["cases_passed"] / total, 6) > 0 and not enough["notes"] and enough["withheld"] is None
     verify = (STEP / "tests" / "verify.py").read_text()
     grade = verify[verify.index("def grade("):verify.index("def final_cleanup(")]
-    assert grade.index('metrics["reward"] = round(') < grade.index("runcases.distinct_outputs(kept, expected, passed)") \
+    assert grade.index('metrics["reward"] = round(') < grade.index("runcases.distinct_outputs(kept, expected, passed, derived)") \
         < grade.index('metrics["reward"] = 0.0'), "the share is computed, then withheld below the least"
 
 
@@ -1069,9 +1268,11 @@ def test_a_partial_interpreter_shaped_as_v4s_glm_run_keeps_its_share(tmp_path):
     """Re-check 10, M1: round 13's rule (40 outputs of programs, echoes and messages included) zeroed v4's GLM-5.3 run
     -33, an honest partial interpreter the platform graded 0.037059 and classed a good failure. Its passes, as
     graded locally: 11 of the command line's own cases, 6 programs that print nothing, 8 whose answer is copied
-    from their input (6 different outputs) and 32 more, among them one output three times (30 different). The
-    same pattern, answered by a table on cases of the same shapes and kinds, keeps its share: 30 counted outputs,
-    two and a half times the least."""
+    from their input (6 different outputs) and 32 more, among them one output three times (30 different). Of those
+    30, round 16's rule (re-check 11, M3) leaves out the 9 that one documented function gives from the case's own
+    literals or input (derived.json, as the build of the verifier image finds them on the recorded cases). The same
+    pattern, answered by a table on cases of the same shapes and kinds, keeps its share: 21 counted outputs, 1.75
+    times the least."""
     least = least_distinct_outputs()
     cases, expected, passing = [], {}, set()
 
@@ -1090,6 +1291,7 @@ def test_a_partial_interpreter_shaped_as_v4s_glm_run_keeps_its_share(tmp_path):
     for i, line in enumerate(["5", "7", "1", "Hip\nHop", "1", "2ₓ", "7", '"bar"']):
         add("expr", ["-e", f"c{i}←{' '.join(line.splitlines())} ◇ c{i}"], line + "\n")
     outputs = ["r0", "r0", "r0"] + [f"r{j}" for j in range(1, 30)]
+    derived = set()
     for j, (kind, output) in enumerate(zip(["stdin"] * 8 + ["apl"] * 7 + ["script"] * 4 + ["expr"] * 13, outputs)):
         if kind == "stdin":
             add(kind, ["-"], output + "\n", stdin=f"⎕←p{j}\n")
@@ -1097,11 +1299,13 @@ def test_a_partial_interpreter_shaped_as_v4s_glm_run_keeps_its_share(tmp_path):
             add(kind, ["main.bpl"], output + "\n", files={"main.bpl": f"p{j}\n"})
         else:
             add(kind, ["-e", f"p{j}"], output + "\n")
+            if kind == "expr" and len(derived) < 9:
+                derived.add(cases[-1]["id"])
     for k in range(200 - len(cases)):  # what the partial interpreter got wrong
         add("expr", ["-e", f"q{k}"], f"s{k}\n", answered=False)
-    metrics = run_verifier(tmp_path, answering(tmp_path, "glm", cases, expected, passing), cases, expected)
-    assert (metrics["cases_total"], metrics["cases_passed"], metrics["distinct_outputs"]) == (200, 57, 30), metrics
-    assert metrics["distinct_outputs"] >= 2.5 * least and metrics["withheld"] is None and not metrics["notes"], metrics
+    metrics = run_verifier(tmp_path, answering(tmp_path, "glm", cases, expected, passing), cases, expected, derived=derived)
+    assert (metrics["cases_total"], metrics["cases_passed"], metrics["distinct_outputs"]) == (200, 57, 21), metrics
+    assert metrics["distinct_outputs"] >= 1.75 * least and metrics["withheld"] is None and not metrics["notes"], metrics
     assert metrics["reward"] == round(57 / 200, 6), metrics["reward"]
 
 
@@ -1110,7 +1314,8 @@ def test_the_build_stops_when_the_cases_bring_a_program_with_no_interpreter_near
     when the strongest program with no interpreter in it that the recorder knows answers kept cases holding more
     than a third of DISTINCT_OUTPUTS counted outputs, so that a new seed or template cannot bring such a program
     near a reward unnoticed. Here its one constant per visible shape gives one counted output per shape: a third of
-    the least passes the build, one more stops it."""
+    the least passes the build, one more stops it. The count is the reward's: with one of those cases derived (its
+    answer one function gives from its literals, derived.json), the same cases pass the build again."""
     least = least_distinct_outputs()
     most = least // 3  # the most the build allows
     shapes = [(["-e", "aa"], ["-e", "ab"], {}, None), (["main.bpl"], ["main.bpl"], {"main.bpl": "aa"}, None),
@@ -1119,8 +1324,8 @@ def test_the_build_stops_when_the_cases_bring_a_program_with_no_interpreter_near
               (["-", "x"], ["-", "x"], {}, "ae"), (["main.bpl", "x", "y", "z"], ["main.bpl", "x", "y", "z"], {"main.bpl": "af"}, None)]
     assert most + 1 <= len(shapes), "enough shapes to pass the bound by one"
 
-    def recorded(count: int) -> subprocess.CompletedProcess:
-        folder = tmp_path / f"shapes-{count}"
+    def recorded(count: int, derived: tuple[str, ...] = ()) -> subprocess.CompletedProcess:
+        folder = tmp_path / f"shapes-{count}{'-derived' if derived else ''}"
         folder.mkdir()
         kept, expected = [], {}
         for n, (first, second, files, stdin) in enumerate(shapes[:count]):
@@ -1134,16 +1339,22 @@ def test_the_build_stops_when_the_cases_bring_a_program_with_no_interpreter_near
         for name, data in (("cases.json", {"cases": kept}), ("kept.json", {"cases": kept}), ("expected.json", expected),
                            ("timing.json", timing)):
             (folder / name).write_text(json.dumps(data))
+        write_derived(folder, set(derived))
         return subprocess.run([sys.executable, "-B", str(STEP / "tests" / "verifier" / "recording.py"),
-                               *(str(folder / name) for name in ("cases.json", "kept.json", "expected.json", "timing.json", "out.json"))],
+                               *(str(folder / name) for name in ("cases.json", "kept.json", "expected.json", "timing.json", "out.json")),
+                               "--derived", str(folder / "derived.json")],
                               capture_output=True, text=True, timeout=60, cwd=STEP / "tests" / "verifier")
 
-    allowed, stopped = recorded(most), recorded(most + 1)
+    allowed, stopped, again = recorded(most), recorded(most + 1), recorded(most + 1, ("P00", "P01"))
     assert allowed.returncode == 0, allowed.stderr[-2000:]
     assert json.loads((tmp_path / f"shapes-{most}" / "out.json").read_text())["baselines"]["no_interpreter_dispatcher_distinct_outputs"] == most
     assert stopped.returncode == 1 and (tmp_path / f"shapes-{most + 1}" / "out.json").is_file(), stopped.stderr[-2000:]
     assert (f"hold {most + 1} different outputs that only a run of the code given produces, more than a third of the {least}"
             in stopped.stderr), stopped.stderr[-2000:]
+    assert again.returncode == 0, again.stderr[-2000:]
+    report = json.loads((tmp_path / f"shapes-{most + 1}-derived" / "out.json").read_text())
+    assert report["baselines"]["no_interpreter_dispatcher_distinct_outputs"] == most and report["derived"]["cases"] == {"script": 2}
+    assert "--derived /record/derived.json" in (STEP / "tests" / "Dockerfile").read_text()
     docker = (STEP / "tests" / "Dockerfile").read_text()
     assert "&& python3 /record/recording.py " in docker, "the guard runs in the step that records, so its exit stops the build"
 
@@ -1543,6 +1754,7 @@ def test_a_host_short_of_disk_mid_evaluation_is_an_error_and_a_run_that_ended_in
     (private / "cases.json").write_text(json.dumps({"cases": [{"id": "C1", "kind": "expr", "argv": ["-e", "1"], "files": {},
                                                                "stdin": None}]}))
     (private / "expected.json").write_text(json.dumps({"C1": {"exit": 0, "stdout": "1\n"}}))
+    write_derived(private, set())
     program = tmp_path / "bpl"
     program.write_text("#!/bin/sh\necho 1\n")
     program.chmod(0o755)
@@ -2797,6 +3009,7 @@ cases = [{"id": f"C{i}", "kind": kind, "argv": ["-e", str(i)], "files": {"main.b
 (base / "tests" / "private" / "expected.json").write_text(json.dumps({case["id"]: {"exit": 0, "stdout": prefix + case["argv"][1] + "\n"}
                                                                      for case in cases}))
 (base / "tests" / "private" / "marker").write_text("0123456789abcdef0123456789abcdef\n")
+(base / "tests" / "private" / "derived.json").write_text(json.dumps({"derived": []}))
 
 RealPath = Path
 events = {"chown": 0, "lchown_in_seal": 0, "lchown_in_prepare": 0, "not_run": collections.Counter(), "probes": [], "through_the_drop": 0,
@@ -3234,9 +3447,11 @@ def test_the_recording_report_counts_upstream_answers_and_the_baselines(tmp_path
     for name, data in (("cases.json", {"cases": cases}), ("kept.json", {"cases": kept}), ("expected.json", expected), ("timing.json", timing)):
         (tmp_path / name).write_text(json.dumps(data))
     (tmp_path / "build.txt").write_text("link static\nsha256 ab\nsha256_without_marker cd\n")
+    write_derived(tmp_path, {"P2"})
     subprocess.run([sys.executable, "-B", str(STEP / "tests" / "verifier" / "recording.py"),
                     *(str(tmp_path / name) for name in ("cases.json", "kept.json", "expected.json", "timing.json", "out.json")),
-                    "--build", str(tmp_path / "build.txt")], check=True, capture_output=True, timeout=60, cwd=STEP / "tests" / "verifier")
+                    "--build", str(tmp_path / "build.txt"), "--derived", str(tmp_path / "derived.json")],
+                   check=True, capture_output=True, timeout=60, cwd=STEP / "tests" / "verifier")
     report = json.loads((tmp_path / "out.json").read_text())
     assert report["kept_as_upstream_code"] == {"apl": 1, "error": 1, "expr": 1}, "a built display is no upstream code"
     assert report["build"]["link"] == "static" and report["build"]["sha256_without_marker"] == "cd"
@@ -3248,9 +3463,14 @@ def test_the_recording_report_counts_upstream_answers_and_the_baselines(tmp_path
     assert baselines["no_interpreter_dispatcher_by_strategy"] == {"command-line table": 1, "constant for FILE": 2}
     assert report["expected_sha256"] == hashlib.sha256(json.dumps(expected, sort_keys=True).encode()).hexdigest()
     assert baselines["largest_answer_share"] == round(2 / 8, 4)
-    # the different outputs of programs given to run: 6, 7, 8, the message and y (the help case is the command
-    # line's own, and the two silent programs print nothing); the dispatcher's three cases hold none of them
-    assert baselines["distinct_outputs_kept"] == 5 and baselines["no_interpreter_dispatcher_distinct_outputs"] == 0, baselines
+    # the different outputs of programs given to run: 6, 8, the message and y (the help case is the command line's
+    # own, the two silent programs print nothing, and P2's 7 is derived); the dispatcher's three cases hold none of them
+    assert baselines["distinct_outputs_kept"] == 4 and baselines["no_interpreter_dispatcher_distinct_outputs"] == 0, baselines
+    assert report["derived"] == {"cases": {"expr": 1}, "looked_at": 1, "derivations": 0, "passed_over": 0, "functions": 58}
+    missing = subprocess.run([sys.executable, "-B", str(STEP / "tests" / "verifier" / "recording.py"),
+                              *(str(tmp_path / name) for name in ("cases.json", "kept.json", "expected.json", "timing.json", "out2.json"))],
+                             capture_output=True, text=True, timeout=60, cwd=STEP / "tests" / "verifier")
+    assert missing.returncode != 0 and "--derived" in missing.stderr and not (tmp_path / "out2.json").exists()
 
 
 # ---------------------------------------------------------------- hardening and images
@@ -3273,6 +3493,14 @@ def test_images_and_solution_install_one_build_and_ship_no_private_cases():
     assert "--build /opt/bpl/build.txt" in verifier and "cp /original/marker /record/marker" in verifier
     assert "COPY --from=program /record/kept.json /tests/private/cases.json" in final_verifier
     assert "COPY --from=program /record/marker /tests/private/marker" in final_verifier
+    # Round 16: the derived cases are found in the step that records, with the build that recorded, before the
+    # recording's description (whose guard counts as the reward does); the final image keeps only their ids
+    record = verifier.split(f"\n\nFROM {base}\n", 1)[0]
+    steps = ["&& python3 /record/recorder.py record ", "&& python3 /record/derivations.py /opt/bpl/bpl /record/kept.json "
+             "/record/expected.json /record/functions.json /record/derived.json \\\n", "&& python3 /record/recording.py "]
+    assert all(step in record for step in steps) and [record.index(step) for step in steps] == sorted(record.index(step) for step in steps)
+    assert "verifier/derivations.py verifier/functions.json /record/\n" in record and "--derived /record/derived.json" in record
+    assert "COPY --from=program /record/derived.json /tests/private/derived.json" in final_verifier
     assert "cargo build" not in agent + verifier + solve and "git clone" not in agent + verifier
     assert 'mark.py" "$here/bpl.xz" "$here/build.txt" - /app/rebuild/bpl' in solve
     build = (SCRIPTS / "build_original.py").read_text()
@@ -3504,11 +3732,13 @@ def test_the_verifier_names_neither_the_platform_nor_how_the_task_was_made():
     """The verifier's sources speak of grading, which is their job, but not of the platform they run on or of the
     scripts the task was made with: three comments named scripts/upstream_builds.py, gVisor and make_cases.LEADS."""
     tests = STEP / "tests"
-    sources = [tests / "verify.py", tests / "test.sh", tests / "Dockerfile", *sorted((tests / "verifier").glob("*.py"))]
+    sources = [tests / "verify.py", tests / "test.sh", tests / "Dockerfile", *sorted((tests / "verifier").glob("*.py")),
+               tests / "verifier" / "functions.json"]
     named = re.compile(r"scripts/|make_cases|build_original|apply\.sh|gvisor|experiment/|oddish|\bmodal\b|harbor|daytona|"
                        r"\bauthors?\b|\bQA\b|round [0-9]|re-check", re.I)
     found = {path.relative_to(TASK).as_posix(): named.findall(path.read_text()) for path in sources}
-    assert len(found) == 7 and not any(found.values()), {name: words for name, words in found.items() if words}
+    # round 16 added derivations.py and functions.json
+    assert len(found) == 9 and not any(found.values()), {name: words for name, words in found.items() if words}
 
 
 def test_only_the_documentation_and_the_binary_reach_the_agent():

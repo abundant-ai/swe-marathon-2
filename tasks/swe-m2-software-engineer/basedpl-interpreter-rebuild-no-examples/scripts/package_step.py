@@ -138,6 +138,10 @@ def collect() -> dict[str, bytes]:
                 content[relative.as_posix()] = path.read_bytes()
     checkout = Path(os.environ.get("BASEDPL_CHECKOUT", TASK_ROOT.parents[3] / ".cache-src" / "basedpl"))
     pages = bpl_text.documentation(checkout)
+    table = json.loads(content[f"{STEP}/tests/verifier/functions.json"].decode("utf-8"))["functions"]
+    if table != bpl_text.function_table(pages):
+        raise ValueError("tests/verifier/functions.json is not the shipped documentation's table of functions: "
+                         "run scripts/function_table.py")
     import make_cases  # noqa: PLC0415
     import seeds  # noqa: PLC0415
 

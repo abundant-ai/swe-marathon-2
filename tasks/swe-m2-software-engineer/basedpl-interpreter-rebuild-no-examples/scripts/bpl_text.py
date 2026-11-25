@@ -388,6 +388,31 @@ def documentation(checkout: Path) -> dict[str, str]:
     return dict(sorted(pages.items()))
 
 
+def function_table(pages: dict[str, str]) -> list[str]:
+    """The documented table of the language's primitive functions: the glyph of every glyph page
+    (glyphs/*.md) that the documentation calls a function (its third line begins "Function."), in
+    the order of the pages' paths.
+
+    Used to write the verifier's tests/verifier/functions.json (scripts/function_table.py), which
+    packaging checks against the pages it ships, so that the verifier's list of what one primitive
+    can do to a literal is the documentation's and no one's choice.
+
+    Args:
+        pages: The documentation, as documentation() returns it (path under /app/docs to text).
+
+    Returns:
+        The functions' glyphs, each a short string such as "⌽" or "≢".
+    """
+    found = []
+    for path, text in sorted(pages.items()):
+        lines = text.splitlines()
+        if path.startswith("glyphs/") and len(lines) > 2 and lines[2].startswith("Function."):
+            title = re.match(r"# `([^`]+)`", lines[0])
+            if title:
+                found.append(title[1])
+    return found
+
+
 def doc_programs(pages: dict[str, str]) -> list[str]:
     """Every piece of BPL the documentation shows: each fenced code block (bpl, text, bash or
     unlabelled), each line of one, and each inline code span of more than three characters, with

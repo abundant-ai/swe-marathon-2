@@ -459,28 +459,32 @@ def guarded_error(case: dict) -> bool:
     return bool(text) and GUARD.search(text) is not None
 
 
-def counts(case: dict, answer: dict) -> bool:
+def counts(case: dict, answer: dict, derived: frozenset[str] | set[str] = frozenset()) -> bool:
     """Whether a case's recorded answer is one that only a run of the code it gives can produce.
 
-    Used by distinct_outputs. A case counts when it runs a program (runs_a_program), its recorded
-    standard output is not empty and has a line that does not occur in the case's own input
-    (answer_in_input), and it is not an error case whose guard prints what it caught (guarded_error).
-    What is left out is what a program with no interpreter in it answers: options, empty outputs,
-    echoes and a table of the build's error messages.
+    Used by distinct_outputs, and by derivations.py to choose the cases it looks at (with no
+    `derived` yet). A case counts when it runs a program (runs_a_program), its recorded standard
+    output is not empty and has a line that does not occur in the case's own input
+    (answer_in_input), it is not an error case whose guard prints what it caught (guarded_error),
+    and its answer is not one that one documented function gives from the case's own literals or
+    input (`derived`, which derivations.py finds when the verifier image is built). What is left out
+    is what a program with no interpreter in it answers: options, empty outputs, echoes, a table of
+    the build's error messages, and one function applied to a literal it sees.
 
     Args:
         case: A private case.
         answer: Its recorded answer, {"stdout": text, "exit": code}.
+        derived: The ids of the cases derivations.py derived.
 
     Returns:
         True when the answer counts, False otherwise. Reads and changes nothing.
     """
     stdout = answer["stdout"]
     return (bool(stdout) and runs_a_program(case) and not answer_in_input(case, stdout)
-            and not guarded_error(case))
+            and not guarded_error(case) and case["id"] not in derived)
 
 
-def distinct_outputs(cases: list[dict], expected: dict[str, dict], passed: set[str]) -> int:
+def distinct_outputs(cases: list[dict], expected: dict[str, dict], passed: set[str], derived: frozenset[str] | set[str]) -> int:
     """How many different outputs the passed cases that count (counts) were recorded with.
 
     The verifier awards a reward only when this count reaches DISTINCT_OUTPUTS, after the last case;
@@ -488,17 +492,19 @@ def distinct_outputs(cases: list[dict], expected: dict[str, dict], passed: set[s
     passes, and stops the build when the latter comes within a third of DISTINCT_OUTPUTS. Each
     recorded output counts once, however many passed cases share it: a program that prints one fixed
     answer counts 1 at most, and one that prints nothing, answers only options such as --version and
-    --help, echoes what it is given or answers guarded errors from a table of the build's error
-    messages counts 0.
+    --help, echoes what it is given, answers guarded errors from a table of the build's error
+    messages or applies one function to a literal it sees counts 0.
 
     Args:
         cases: The private cases, each with "id", "argv", "files", "stdin" and "kind".
         expected: The recorded answers by case id, each {"stdout": text, "exit": code}; every case's id
             is a key.
         passed: The ids of the cases a program passed; ids of no case in `cases` are ignored.
+        derived: The ids of the cases whose answer one documented function gives from their own literals
+            or input (derivations.py's "derived", in private/derived.json), which never count.
 
     Returns:
         The number of distinct recorded outputs among the passed cases that count.
     """
     return len({expected[case["id"]]["stdout"] for case in cases
-                if case["id"] in passed and counts(case, expected[case["id"]])})
+                if case["id"] in passed and counts(case, expected[case["id"]], derived)})
