@@ -31,8 +31,9 @@ be used, in whole or in part.
 The restored bodies, in place, in `/app/sympy`.
 
 A body is right when the function behaves exactly as SymPy 1.14.0's does: for the examples
-in its docstring, for the repository's tests, and for every other argument, including the
-error it raises for an argument it does not accept. The same means the same, not an
+in its docstring, for the repository's tests, and for every other argument it accepts. Which
+error it raises for an argument it does not accept I need only where an example or a test
+shows it. The same means the same, not an
 equivalent: the same type and container, the same order, the same form of a returned
 expression, and the same state of every object the function builds or changes, apart from
 values kept only as a cache. Where the docstring and the tests leave such a detail open, the
@@ -95,12 +96,14 @@ the original skeleton with your unit bodies in it, and nothing else from your tr
 - Keep a running log in `/app/PROGRESS.md` of where the work stands, so that it can be taken
   up again after a break. When you start, then at least every 30 minutes and whenever you
   finish a module, append one line with the time (`date -u`), the counts that
-  `restore status` prints, and what you will do next.
-- The work is complete when every function returns, raises and changes exactly what SymPy
-  1.14.0's does. No unit left to restore, `restore check --all` reporting every unit as
-  `PASS` and the repository tests passing under `restore pytest` are the least of that: a
-  function must also behave as the original for arguments that no example or test uses.
-  Work that is not finished is delivered as it stands when your session ends.
+  `restore status` prints, and what you will do next. The log is not part of what you
+  deliver.
+- The work is complete when every function returns and changes exactly what SymPy 1.14.0's
+  does, and raises what its examples and tests show. No unit left to restore,
+  `restore check --all` reporting every unit as `PASS` and the repository tests passing
+  under `restore pytest` are the least of that: a function must also return and change what
+  the original does for arguments that no example or test uses. Work that is not finished is
+  delivered as it stands when your session ends.
 - A wrong body in a function that many others call makes later units fail, so a unit is
   worth checking before others are built on it. `restore status` summarises earlier
   checks; only `restore check` re-runs them.

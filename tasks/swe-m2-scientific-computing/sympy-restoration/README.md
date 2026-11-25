@@ -886,8 +886,8 @@ It does not yet meet the v2 workload target; see [Workload](#workload) and
   (an interrupted body can leave global state behind). The phases stay only as a
   guard (examples 2,700 s, calls 2,400 s), sized so that a tree whose every body
   runs out of its time still finishes both on the platform's four workers
-  (about 2,250 s and 1,930 s at this machine's speed); the rule for a guard that
-  runs out stays. The reviewer's two passes (a short time first, the old limits
+  (estimated at about 2,250 s and 1,930 s at this machine's speed; measured at
+  2,194 s and 2,205 s, below); the rule for a guard that runs out stays. The reviewer's two passes (a short time first, the old limits
   for what ran out) were not built: with ten times the original's own time and
   floors above what almost every original item takes (99% of units' examples
   take under 0.16 s here, 99% of units' calls together under 0.64 s), an honest
@@ -945,6 +945,33 @@ It does not yet meet the v2 workload target; see [Workload](#workload) and
   (verifier N5); a Float is said to compare within 2 to 4 units in its last place,
   and compares exactly below 4 bits (verifier N6); the hooks no longer say
   "collect step" (auditor R3).
+- The hostile trees again, now at the platform's worker-seconds: one worker
+  with four workers' phases (examples 4 x 2,700 s, calls 4 x 2,400 s), through
+  the verifier's own `measure()` and scoring, the tests not run. Each completed
+  with a reward, none an evaluation error:
+  - 5% of the units (134) never end, the rest original: 0.5950 (u 0.5950, c
+    0.6721; 1,099 of 1,847 units in the set, 4,176 of 6,213 counted calls; 955
+    units' examples and 870 calls ran out of their time, 779 units' other calls
+    were not run; the phases took 3,526 and 3,017 of 10,800 and 9,600
+    worker-seconds; every item reached).
+  - 50% of the units (1,336) first wait 0.05 s, then run the original body:
+    0.7423 (u 0.7423, c 0.8062; 1,371 of 1,847 units in the set, 5,009 of 6,213
+    counted calls; 549 units' examples and 505 calls ran out of their time, 442
+    units' other calls were not run; the phases took 2,975 and 4,866 of 10,800
+    and 9,600 worker-seconds; every item reached).
+  - every body never ends: 0.0000 (u 0.0000, c 0.0000; 0 of 1,847 units in the
+    set, 0 of 6,213 counted calls; 2,671 units' examples and 2,671 calls ran
+    out of their time, 2,430 units' other calls were not run; the phases took
+    8,776 and 8,820 of 10,800 and 9,600 worker-seconds; every item reached).
+  The re-check put the 5% tree at 0.6053 with every item run and at 0.2447
+  at these budgets before this round; the gap to 0.6053 is the rule that a
+  unit's other calls are not run once one has run out of its time, which
+  costs a unit with a call into a looping body its other counted calls. With
+  the phases cut to a tenth the round before, the slow tree scored 0.0341 and
+  the 5% tree 0.0254. A tree whose every body runs out of its time used 81%
+  and 92% of the guards here (host factor 1.03): on a machine slower than
+  this one by more than about a tenth, its calls would reach the guard, and
+  the calls left would be counted as failed, as they would fail anyway.
 - Regrade of the 16 stored submissions on this round's verifier (examples and
   calls, one worker): every reward the same or lower, by at most 0.0043 (9
   down, 7 the same; v2 trial 16 0.852, the weakest 0.003), the order unchanged,
@@ -990,6 +1017,36 @@ It does not yet meet the v2 workload target; see [Workload](#workload) and
   keeps the file, `copied`; three local polls two thirds into a turn end
   nothing; a disk the bodies fill leaves the score; forged and oversized runner
   lines cost their item and never raise.
+- What the instruction names, against what is graded (two more items of a
+  sibling task's pre-trial audit).
+  - Errors. No recorded call expects one: the builder drops every call whose
+    original raises (`regold.py`, `variants.py`). The instruction now asks for
+    the error raised for an argument a function does not accept only where an
+    example or a test shows it, and for every other argument it accepts. 53
+    units' examples show an error, 37 of them in the set, and the examples gate
+    the units in the set.
+  - The tests. The 10,428 tests run but are not rewarded until the platform
+    shows their phase complete (see [Remaining work](#remaining-work)); what
+    they test counts through the counted calls recorded while the withheld
+    tests ran.
+  - Units. 824 units have no counted call of their own, 43 files none, and the
+    package `sympy.liealgebras` none. Traced on the original tree, 244 of them
+    run inside the counted calls of other units, 289 inside the examples of
+    units in the set, 297 inside either, and 527 inside no graded item (31
+    files, 60 units, `sympy.liealgebras` among them); those are mostly small
+    public functions and predicates in 28 packages. Covering them needs counted
+    calls the builder could not make (each of their recorded calls is shown in
+    the checkout) or the tests in the reward, and stating them out of scope
+    would name them; this stays open for a decision.
+  - Restrictions. The progress log is not collected, so the instruction now
+    says that it is not part of what is delivered. Another copy of SymPy's
+    source is kept out by the work's lack of network and by what the image
+    holds, and one fetched after the work is not taken (the delivery's end of
+    the work), not by a graded item. The body rules, a unit's place and name,
+    edits outside bodies, the file form and speed are enforced where the tree
+    is read or measured: a rejected or missing unit fails, edits outside
+    bodies are not taken, a file that does not parse gives no bodies, an item
+    past its time fails.
 - Package. The signing key was replaced again and the flat bundle rebuilt
   (`package_single_step.py --keep-name`, content `fb5eada8e82c`, 415 files, no
   bytecode) in `ops/sympy-restoration/dist-12h/`, the round's first build
@@ -1817,9 +1874,11 @@ stored submissions of the earlier sessions of the same task; every one scored
 | Floor on these calls with the final runners (`fixtures.py`, `floor.py`, the reviewers' scripts) | working tree, 2026-11-24 (fourth re-check) | the same as the round before: through the verifier raise, first argument and flip 0.0; behind a table flip 0.0034, the combination 0.0249 statically; integrity rules 0.0064 (0.0124); hidden-result bounds 0.0274 and 0.0296; the re-checks' accessor synthesis 0.0401 behind a table (the fourth re-check's figure, on these calls); all under 0.05 |
 | Regrade of the stored submissions after the fourth re-check | this machine, the entry point's steps, examples and calls, one worker, 2026-11-25 | 16 submissions, reward 0.003 to 0.852, each the same or up to 0.0043 lower than the round before, the order unchanged; none with a unit or call unreached or failed for lack of time, a late file or a control tripped (see [Trial evidence](#trial-evidence)) |
 | Hostile cases through the verifier's `measure()` and scoring (one unit each: `preview` to a file, `open` with a seek, `json.dumps` rebound, `os.fork` in a loop, a 64 MiB result, a 256 MiB print before the original body) | this machine, the entry point's steps, one worker, real SymPy, 2026-11-25 | 0.9962, completed: the first four refused by the body rules; 1,840 / 1,847 units in the set and 6,200 / 6,213 counted calls (the six units and three callers); nothing unreached, no control tripped, none an evaluation error |
+| What the graded items run, traced on the original tree (`sys.monitoring` on the 2,671 unit bodies) | the 6,213 counted calls and the examples of the 1,847 units in the set, 2026-11-25 | no counted call expects an error; of the 824 units with no counted call of their own, 244 run inside counted calls of others, 289 inside the examples, 297 inside either, 527 inside neither (31 files, 60 units, `sympy.liealgebras` among them) |
 | `checks/` (133 tests) and the repository check | commit `03cc17f` (2026-11-25, before the package) | pass |
 | `oddish preflight` | flat bundle `fb5eada8e82c` (`ops/sympy-restoration/dist-12h/`, key rotated; platform content hash `a27c3b88f2d0…`, version 4's `4ce37762a342…`; Harbor's network plan for it: agent environment public, work no network, verifier environment public, verification no network) | pass (1 task) |
 | Word sweep of the whole bundle; the bundle against the worktree and the commit; the key | bundle `fb5eada8e82c` | the same hits as the round before's bundle, all of the classes found clean then (the task's "deliver", `platform` as a forbidden module, SymPy's own names, the root-only hooks' own words); 0 non-ASCII bytes; no bytecode; 415 files equal to the worktree, the 48 tracked ones to commit `03cc17f`; only the key's two copies, `fsmaint-sweep` and `task.toml` differ from the round's first build (`87c717883415`), and the prepared data and archives are byte for byte those of bundle `966f2b531f52` but for the key, so that bundle's data and archive scans stand; the key's copies equal, new and held by no other file |
+| Hostile trees at the platform's worker-seconds (one worker, examples 10,800 s, calls 9,600 s) | this machine, the entry point's steps, the tests not run | loop-5 0.5950, completed, 955 + 870 items out of time, 0 not reached; slow-50 0.7423, completed, 549 + 505 items out of time, 0 not reached; loop-all 0.0000, completed, 2671 + 2671 items out of time, 0 not reached; none an evaluation error |
 | `harbor check` with `resources/task-implementation.toml` | working tree, 2026-11-17 | attempted on Modal; failed before review with `NotFoundError: Environment not found` (no default Modal environment). Not run in local Docker. No ratings |
 | Local image builds | none | not run for the v2 Dockerfiles; the Oddish baselines are the first build |
 
@@ -1932,5 +1991,8 @@ uv run --frozen pytest -q tasks/swe-m2-scientific-computing/sympy-restoration/ch
   record: if its work runs outside its exec sessions and its last session began
   within ten minutes of the start, the session end would cut its later writes,
   and the session window has to change for it.
+- Decide the 527 units that no graded item runs (development log, 2026-11-24,
+  fourth re-check): counted calls for them from new argument variants, the
+  tests in the reward, or the units left whole in the checkout.
 - Proximus on Oddish cannot run a task that declares steps; either it learns to
   run a one-step task or every v2 task needs a single-step variant.
