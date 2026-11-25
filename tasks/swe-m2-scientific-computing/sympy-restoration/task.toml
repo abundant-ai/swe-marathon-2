@@ -4,7 +4,7 @@ artifacts = ["/app/sympy", "/var/lib/fsmaint/out"]
 
 [task]
 name = "abundant/swe-m2_scientific-computing_sympy-restoration"
-description = "Write back the bodies of 2,121 functions removed from SymPy 1.14.0, without network access, so that the library again behaves as its docstrings and tests say."
+description = "Write back the bodies of 2,114 functions removed from SymPy 1.14.0, without network access, so that the library again behaves as its docstrings and tests say."
 authors = [{ name = "Neel Harsola", email = "work.neelharsola@gmail.com" }]
 
 [metadata]

@@ -1,12 +1,15 @@
 """Leave whole every unit that no graded item runs, and write the prepared inputs again for the rest.
 
-The rule: a unit stays removed only if at least one graded item runs its body, traced on the original
-tree by `graded_coverage.py`: one of its own counted calls, or a counted call or an example of a unit
-in the set that runs it. Every other unit gets its original body back in the checkout and stops being
-a unit. One exception, also by rule: a unit that would be left whole stays removed when its original
-body is a near-copy of the body of a unit that stays removed and is graded, by the twin scan's own
-tests (`twin_scan.py`, with the bodies left whole as the visible side), since a whole copy would give
-that body away; each such unit is recorded.
+The rule: a unit stays removed only if a graded item fails without its body: one of its own counted
+calls, or (with `--absorbed`, the probe `absorbed.py` makes on the original tree from the trace of
+`graded_coverage.py`) a counted call or an example of a unit in the set that runs it and fails when
+its body raises as its placeholder does. Every other unit gets its original body back in the
+checkout and stops being a unit. One exception, also by rule: a unit that would be left whole stays
+removed when its original body is a near-copy of the body of a unit that stays removed and is graded
+(`near_copies`, with the bodies left whole as the visible side), since a whole copy would give that
+body away; each such unit is recorded, and the build gives it counted calls of its own
+(`twin_calls.py`, `variants.py`) or leaves it whole together with its twin (`--whole`), so that no
+near-copy stays removed ungraded. A body left whole by decision may give no graded unit away.
 
 The units that stay are numbered again from U0001 in their old order, and every prepared input that
 names units is written again for them: the unit list, the agent's tree and the verifier's skeleton
@@ -18,8 +21,10 @@ string or long number in a body left whole that is also a leaf of a counted call
 result.
 
 usage: keep_whole.py <task_root> <original_root> <coverage.json> <out_root>
+                     [--absorbed absorbed.json] [--whole units.json] [--pairs-only pairs.json]
 <original_root> holds the original sympy/ (the build's pristine tree); <out_root> receives the new
-prepared inputs at the task's own paths, and keep_whole_report.json.
+prepared inputs at the task's own paths, and keep_whole_report.json. `--whole` names units left whole
+by decision (with their calls); `--pairs-only` writes the near-copies and their twins and nothing else.
 """
 from __future__ import annotations
 
@@ -91,12 +96,20 @@ SHINGLE = 4            # the prefilter: blinded runs of this many tokens
 SHINGLE_SHARE = 0.25   # shared by at least this share of the smaller body's runs
 
 
-def _tokens(text):
+LINE_TOKENS = (tokenize.NEWLINE, tokenize.INDENT, tokenize.DEDENT)
+
+
+def _tokens(text, lines=False):
+    """The body's tokens, names kept and names blinded; with `lines`, the end of each statement and each
+    change of indentation count as a token too (as the integrity review counts them)."""
     out = []
     try:
         for tok in tokenize.generate_tokens(io.StringIO(text).readline):
-            if tok.type in (tokenize.NEWLINE, tokenize.NL, tokenize.INDENT, tokenize.DEDENT, tokenize.COMMENT,
-                            tokenize.ENDMARKER):
+            if tok.type in LINE_TOKENS:
+                if lines:
+                    out.append((tok.type, tokenize.tok_name[tok.type]))
+                continue
+            if tok.type in (tokenize.NL, tokenize.COMMENT, tokenize.ENDMARKER):
                 continue
             out.append((tok.type, tok.string))
     except (tokenize.TokenError, IndentationError, SyntaxError):
@@ -106,11 +119,16 @@ def _tokens(text):
     return plain, blind
 
 
+def _shingles(tokens):
+    return {tuple(tokens[i:i + SHINGLE]) for i in range(max(0, len(tokens) - SHINGLE + 1))}
+
+
 def body_record(fn):
     _doc, rest = _doc_and_rest(fn)
     nn = sum(1 for s in rest for _ in ast.walk(s))
     text = "\n".join(ast.unparse(s) for s in rest)
     plain, blind_tokens = _tokens(text)
+    plain_lines, blind_lines = _tokens(text, lines=True)
     return {
         "name": fn.name,
         "dump": "\n".join(ast.dump(s, include_attributes=False) for s in rest),
@@ -121,8 +139,32 @@ def body_record(fn):
                   if nn >= 25 else None),
         "plain_tokens": plain,
         "blind_tokens": blind_tokens,
-        "shingles": {tuple(blind_tokens[i:i + SHINGLE]) for i in range(max(0, len(blind_tokens) - SHINGLE + 1))},
+        "shingles": _shingles(blind_tokens),
+        "plain_lines": plain_lines,
+        "blind_lines": blind_lines,
+        "shingles_lines": _shingles(blind_lines),
     }
+
+
+TOKEN_FORMS = (("plain_tokens", "blind_tokens", "shingles", ""),
+               ("plain_lines", "blind_lines", "shingles_lines", "-with-lines"))
+
+
+def _token_test(unit, r, plain_key, blind_key, shingle_key):
+    """The token tests on one form of the tokens: None, or the test that finds the pair alike."""
+    if len(unit[plain_key]) < TOKEN_MIN or not unit[shingle_key] or not r[shingle_key]:
+        return None
+    shared = len(unit[shingle_key] & r[shingle_key]) / min(len(unit[shingle_key]), len(r[shingle_key]))
+    if shared < SHINGLE_SHARE:
+        return None
+    plain = difflib.SequenceMatcher(None, unit[plain_key], r[plain_key], autojunk=False)
+    if plain.ratio() >= TOKEN_PLAIN:
+        return "tokens-alike"
+    if difflib.SequenceMatcher(None, unit[blind_key], r[blind_key], autojunk=False).ratio() >= TOKEN_BLIND:
+        return "tokens-alike-blinded"
+    if sum(b.size for b in plain.get_matching_blocks()) >= TOKEN_CONTAINED * len(unit[plain_key]):
+        return "tokens-contained"
+    return None
 
 
 def near_copies(unit, visible):
@@ -132,7 +174,8 @@ def near_copies(unit, visible):
     85% alike, for two statements, under the same name or in the same file; and, across names and
     files, for a body of TOKEN_MIN tokens or more, its tokens TOKEN_PLAIN alike with names kept,
     TOKEN_BLIND alike with every name blinded, or the unit's tokens TOKEN_CONTAINED found in order in
-    the visible body (after a prefilter on shared runs of tokens)."""
+    the visible body (after a prefilter on shared runs of tokens), each on the tokens without and
+    with the line and indentation tokens."""
     found = []
     for r in visible:
         if r["dump"] == unit["dump"]:
@@ -151,17 +194,11 @@ def near_copies(unit, visible):
             found.append(("similar-same-name" if r["name"] == unit["name"] else "similar-sibling", r))
             continue
         # token by token, across names and files, for a body of TOKEN_MIN tokens or more
-        if len(unit["plain_tokens"]) >= TOKEN_MIN and unit["shingles"] and r["shingles"]:
-            shared = len(unit["shingles"] & r["shingles"]) / min(len(unit["shingles"]), len(r["shingles"]))
-            if shared < SHINGLE_SHARE:
-                continue
-            plain = difflib.SequenceMatcher(None, unit["plain_tokens"], r["plain_tokens"], autojunk=False)
-            if plain.ratio() >= TOKEN_PLAIN:
-                found.append(("tokens-alike", r))
-            elif difflib.SequenceMatcher(None, unit["blind_tokens"], r["blind_tokens"], autojunk=False).ratio() >= TOKEN_BLIND:
-                found.append(("tokens-alike-blinded", r))
-            elif sum(b.size for b in plain.get_matching_blocks()) >= TOKEN_CONTAINED * len(unit["plain_tokens"]):
-                found.append(("tokens-contained", r))
+        for plain_key, blind_key, shingle_key, form in TOKEN_FORMS:
+            test = _token_test(unit, r, plain_key, blind_key, shingle_key)
+            if test:
+                found.append((test + form, r))
+                break
     return found
 
 
@@ -297,7 +334,7 @@ def main():
     candidates = sorted(uid for uid in by_uid if uid not in graded or uid in forced)
     visible = [dict(records[uid], uid=uid) for uid in candidates]
     copies = {}
-    for uid in sorted(graded):
+    for uid in sorted(graded - forced):   # a twin left whole by decision gives nothing away
         for rule, twin in near_copies(records[uid], visible):
             copies.setdefault(twin["uid"], []).append({"graded_unit": by_uid[uid]["dotted"], "test": rule})
     if pairs_only:
@@ -433,9 +470,12 @@ def main():
         json.dump(coverage_map, f)
 
     report = {
-        "rule": "removed only if a graded item runs the body (own counted call, or another unit's graded item)",
+        "rule": ("removed only if a graded item fails without the body (own counted call, or another unit's graded "
+                 "item that fails when the body raises as its placeholder does)" if absorbed_path else
+                 "removed only if a graded item runs the body (own counted call, or another unit's graded item)"),
         "units_before": len(units), "graded": len(graded), "ungraded": len(candidates),
-        "near_copies_kept_removed": {by_uid[k]["dotted"]: v for k, v in sorted(copies.items())},
+        "near_copies_kept_removed": {by_uid[k]["dotted"]: v for k, v in sorted(copies.items()) if k not in forced},
+        "left_whole_by_decision": sorted(by_uid[k]["dotted"] for k in forced),
         "left_whole": len(whole), "units_after": len(kept),
         "files_before": len(by_file), "files_after": len(files_kept),
         "calls_before": len(gold), "calls_after": len(new_gold), "calls_dropped": len(dropped),
@@ -443,6 +483,8 @@ def main():
         "counted_calls_after": len(counted_before) - len(counted_dropped), "forced_whole": len(forced),
         "literal_hits": None,
         "whole_units": sorted(by_uid[o]["dotted"] for o in whole),
+        # where each body left whole is, for checks/test_graded_units.py: none may give a removed unit away
+        "whole_units_at": sorted([by_uid[o]["file"], by_uid[o]["qualname"], by_uid[o].get("occ", 0)] for o in whole),
         "uid_map": new_uid,
     }
     with open(os.path.join(out, "keep_whole_report.json"), "w", encoding="utf-8") as f:

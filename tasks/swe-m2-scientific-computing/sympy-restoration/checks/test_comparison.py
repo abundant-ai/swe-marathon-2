@@ -357,6 +357,53 @@ def test_a_call_that_changes_an_argument_is_compared_with_its_result(tmp_path, t
     assert got["V4"] == ["I", "1"], got["V4"]
 
 
+BREAKER = '''import json
+import json.encoder
+
+
+class Broken(json.JSONEncoder):
+    def encode(self, o):
+        return '["broken"]'
+
+
+def breaker(a):
+    json._default_encoder = Broken()
+    json.encoder.c_make_encoder = None
+    json.encoder.c_encode_basestring_ascii = None
+    json.dumps = lambda *args, **kwargs: '["broken"]'
+    return len(a)
+
+
+def after(a):
+    return len(a) + 1
+'''
+
+BREAKER_PAYLOAD = """import pickle, sys
+units = {name: {"file": "sympy/demo.py", "qualname": name, "name": name, "occ": 0, "nocc": 1} for name in ("breaker", "after")}
+vectors = [("V1", "breaker", pickle.dumps({"a": [5]})), ("V2", "after", pickle.dumps({"a": [5]})),
+           ("V3", "after", pickle.dumps({"a": [5, 6]}))]
+with open(sys.argv[2], "wb") as handle:
+    pickle.dump({"units": units, "vectors": vectors}, handle)
+"""
+
+
+def test_a_body_that_breaks_the_json_module_does_not_reach_the_call_runners_encoder(tmp_path, task_root):
+    """The call runner encodes and writes with its own encoder and channel, made before any submitted
+    code loads: the records of the calls after a body that replaces json's encoder stay well formed."""
+    tree = standin(tmp_path / "tree")
+    (tree / "sympy" / "demo.py").write_text(BREAKER)
+    lib = task_root / "steps" / "01-restore-bodies" / "tests" / "verifier" / "lib"
+    made = subprocess.run([sys.executable, "-I", "-B", "-c", BREAKER_PAYLOAD, str(tree), str(tmp_path / "in.pkl")],
+                          capture_output=True, text=True, timeout=60)
+    assert made.returncode == 0, made.stderr[-2000:]
+    done = subprocess.run([sys.executable, "-I", "-B", str(lib / "rvector.py"), str(tree), "sympy.demo"],
+                          input=(tmp_path / "in.pkl").read_bytes(), capture_output=True, timeout=120, cwd=tree)
+    assert done.returncode == 0, done.stderr[-2000:]
+    records = runner_records(done.stdout.decode())
+    assert records[0]["loaded"] is True and records[-1] == {"done": True}
+    assert {rec["v"]: rec["c"] for rec in records if "v" in rec} == {"V1": ["I", "1"], "V2": ["I", "2"], "V3": ["I", "3"]}
+
+
 def test_a_result_line_that_cannot_be_compared_is_no_match_and_no_error(task_root):
     """A body that reached the runner's output could write a line of any shape: the comparison says
     not alike, it never raises (the call fails, not the evaluation)."""

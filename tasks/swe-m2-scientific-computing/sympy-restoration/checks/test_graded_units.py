@@ -4,6 +4,7 @@ mpmath (this one, or uv's with the cached mpmath 1.3.0, offline)."""
 
 from __future__ import annotations
 
+import ast
 import json
 import re
 import shutil
@@ -95,14 +96,8 @@ def test_the_stated_counts_and_every_list_of_units_agree(task_root):
         assert seen == {u["uid"]: u["file"] for u in units}, name
 
 
-def test_every_removed_unit_has_a_graded_item_that_fails_without_its_body(task_root, tmp_path):
-    """Traced on the original tree (the skeleton with the reference's files over it): each removed unit
-    has a counted call of its own, or some counted call or example of another unit that runs it fails
-    when its body raises as its placeholder does (absorbed.py, the build's own probe). No exception."""
-    paths = _prepared(task_root)
-    python = _python_with_mpmath()
-    if python is None:
-        pytest.skip("no interpreter with mpmath to trace SymPy with")
+def _original(paths: dict, tmp_path: Path) -> Path:
+    """The original tree: the skeleton with the reference's files over it."""
     tree = tmp_path / "original"
     with tarfile.open(paths["skeleton"]) as tf:
         tf.extractall(tree, filter="data")
@@ -111,6 +106,65 @@ def test_every_removed_unit_has_a_graded_item_that_fails_without_its_body(task_r
         target.write_bytes(path.read_bytes())
     left = [str(p.relative_to(tree)) for p in (tree / "sympy").rglob("*.py") if _placeholders(p.read_text(encoding="utf-8"))]
     assert left == [], "the reference does not give back every removed body"
+    return tree
+
+
+def test_the_token_tests_count_the_line_tokens_too(task_root):
+    """A short recursive body and its sibling: under the token bar without the line tokens, alike with
+    them, as the integrity review counts tokens."""
+    sys.path.insert(0, str(task_root / "scripts" / "builder"))
+    try:
+        import keep_whole  # noqa: PLC0415
+    finally:
+        sys.path.pop(0)
+    visible = "def copy_rec(f, u):\n    if not u:\n        return list(f)\n    v = u - 1\n    return [copy_rec(c, v) for c in f]\n"
+    graded = ("def from_rec(f, u, K):\n    if not u:\n        return from_base(f, K)\n    v = u - 1\n"
+              "    return strip([from_rec(c, v, K) for c in f], u)\n")
+    v, g = (dict(keep_whole.body_record(ast.parse(src).body[0]), file=name) for src, name in ((visible, "a.py"), (graded, "b.py")))
+    assert len(g["plain_tokens"]) < keep_whole.TOKEN_MIN <= len(g["plain_lines"])
+    assert [rule for rule, _r in keep_whole.near_copies(g, [v])] == ["tokens-alike-with-lines"]
+
+
+def test_no_body_left_whole_gives_a_removed_unit_away(task_root, tmp_path):
+    """The builder's near-copy tests (`keep_whole.near_copies`: the same tree, the same tree once every
+    name is blinded, text alike, and the token tests on the tokens without and with the line tokens)
+    find no removed unit's body in a body that the build left whole. The bodies left whole are named in
+    the builder's report, kept beside the prepared inputs (`experiment/keep_whole_report.json`)."""
+    paths = _prepared(task_root)
+    report_path = task_root / "experiment" / "keep_whole_report.json"
+    if not report_path.is_file():
+        pytest.skip("the builder's report is not beside the prepared inputs")
+    report = json.loads(report_path.read_text())
+    units = json.loads(paths["units"].read_text())
+    assert report["units_after"] == len(units) and report["near_copies_kept_removed"] == {}
+    sys.path.insert(0, str(task_root / "scripts" / "builder"))
+    try:
+        import keep_whole  # noqa: PLC0415
+    finally:
+        sys.path.pop(0)
+    tree = _original(paths, tmp_path)
+    functions = {}
+
+    def record(file, qualname, occ):
+        if file not in functions:
+            functions[file] = keep_whole.index_functions(ast.parse((tree / file).read_text(encoding="utf-8")))
+        return dict(keep_whole.body_record(functions[file][qualname][occ]), file=file)
+
+    whole = [record(*at) for at in report["whole_units_at"]]
+    assert len(whole) == report["left_whole"]
+    given = [u["uid"] for u in units if keep_whole.near_copies(record(u["file"], u["qualname"], u.get("occ", 0)), whole)]
+    assert given == [], f"{len(given)} removed units have a near-copy left whole"
+
+
+def test_every_removed_unit_has_a_graded_item_that_fails_without_its_body(task_root, tmp_path):
+    """Traced on the original tree (the skeleton with the reference's files over it): each removed unit
+    has a counted call of its own, or some counted call or example of another unit that runs it fails
+    when its body raises as its placeholder does (absorbed.py, the build's own probe). No exception."""
+    paths = _prepared(task_root)
+    python = _python_with_mpmath()
+    if python is None:
+        pytest.skip("no interpreter with mpmath to trace SymPy with")
+    tree = _original(paths, tmp_path)
     builder, lib = task_root / "scripts" / "builder", task_root / STEP / "tests" / "verifier" / "lib"
     coverage, probe = tmp_path / "coverage.json", tmp_path / "absorbed.json"
     for script, out, extra in (("graded_coverage.py", coverage, []), ("absorbed.py", probe, [str(coverage)])):
