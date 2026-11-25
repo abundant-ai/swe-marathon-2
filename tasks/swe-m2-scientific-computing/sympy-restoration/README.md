@@ -1037,7 +1037,8 @@ It does not yet meet the v2 workload target; see [Workload](#workload) and
     public functions and predicates in 28 packages. Covering them needs counted
     calls the builder could not make (each of their recorded calls is shown in
     the checkout) or the tests in the reward, and stating them out of scope
-    would name them; this stays open for a decision.
+    would name them; this stays open for a decision (decided the same day:
+    left whole, see 2026-11-25).
   - Restrictions. The progress log is not collected, so the instruction now
     says that it is not part of what is delivered. Another copy of SymPy's
     source is kept out by the work's lack of network and by what the image
@@ -1947,6 +1948,16 @@ python builder/floor.py original_nt final/inputs.pkl final/gold.json final/docum
 python builder/fixtures.py raise|identity|flip original_root fixture/ [final/inputs.pkl final/gold.json final/documented.json]
 ```
 
+Since 2026-11-25 the unit list ends with one more step: the units no graded item
+runs are left whole (the rule and its one exception are in `keep_whole.py`), and
+the prepared inputs that name units are written again into `out/`, at the task's
+own paths, to be put in place:
+
+```bash
+python builder/graded_coverage.py original_root units.json private/vectors ../steps/01-restore-bodies/tests/verifier/lib coverage.json
+python builder/keep_whole.py <task_dir> original_root coverage.json out/
+```
+
 Before each uploaded version, `python builder/delivery_key.py <task_dir> --rotate`
 replaces the key the collect step signs with.
 
@@ -1999,8 +2010,8 @@ uv run --frozen pytest -q tasks/swe-m2-scientific-computing/sympy-restoration/ch
   record: if its work runs outside its exec sessions and its last session began
   within ten minutes of the start, the session end would cut its later writes,
   and the session window has to change for it.
-- Decide the 527 units that no graded item runs (development log, 2026-11-24,
-  fourth re-check): counted calls for them from new argument variants, the
-  tests in the reward, or the units left whole in the checkout.
+- Look again at the withheld tests in the reward (option B of the 2026-11-25
+  decision on the units no graded item ran) once a platform run shows their
+  phase completing reliably.
 - Proximus on Oddish cannot run a task that declares steps; either it learns to
   run a one-step task or every v2 task needs a single-step variant.
