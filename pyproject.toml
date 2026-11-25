@@ -27,4 +27,5 @@ testpaths = [
     "tasks/swe-m2-scientific-computing/sympy-restoration/checks",
     "tasks/swe-m2-software-engineer/backoffice-server-rebuild/checks",
     "tasks/swe-m2-software-engineer/goose-compiler-rebuild/checks",
+    "tasks/swe-m2-software-engineer/carve-html-renderer-from-spec-only/checks",
 ]
