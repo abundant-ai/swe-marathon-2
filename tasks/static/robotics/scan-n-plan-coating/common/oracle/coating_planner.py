@@ -1,15 +1,28 @@
-"""Geometry-based coating of smooth connected treatment ribbons."""
+"""Geometry-based coating of smooth treatment ribbons."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from itertools import combinations
 from math import ceil, cos, floor, isfinite, pi, tan
 from pathlib import Path
+from typing import Any, TypedDict
 from xml.etree import ElementTree as ET
 
 import numpy as np
 from scipy.interpolate import CubicSpline
 from scipy.optimize import least_squares
 from scipy.spatial.transform import Rotation
+
+
+_Pose = tuple[Rotation, np.ndarray]
+
+
+class _TrajectoryRow(TypedDict):
+    """One controller knot with authority-relative time and held flow."""
+
+    t_ns: int
+    q_rad: list[float]
+    qd_rad_s: list[float]
+    flow_ml_s: float
 
 
 def unit(vector):
@@ -137,8 +150,20 @@ class SerialArm:
         return fitted
 
 
-def slice_ribbon(triangles):
-    """Area-weighted principal cut, followed by exact triangle-plane segments."""
+def slice_ribbon(triangles: np.ndarray) -> tuple[CubicSpline, CubicSpline, float, bool]:
+    """Fit a guide before searching for an arm and positioner sweep.
+
+    Args:
+        triangles: Validated part-frame target triangles in metres, shaped (n, 3, 3).
+
+    Returns:
+        Position and normal splines parameterized by arc length in metres,
+        total length in metres, and whether the fit spans missing sections.
+
+    Raises:
+        ValueError: The observed sections cannot support a spline across the target.
+        np.linalg.LinAlgError: The principal-axis or spline fit fails.
+    """
     raw = np.cross(triangles[:, 1] - triangles[:, 0], triangles[:, 2] - triangles[:, 0])
     area = np.linalg.norm(raw, axis=1)
     normals = unit(raw)
@@ -149,9 +174,10 @@ def slice_ribbon(triangles):
     projection = (triangles - center) @ major
     span = projection.max() - projection.min()
     samples = np.linspace(projection.min() + 0.001 * span, projection.max() - 0.001 * span, 151)
+    observed = []
     centers = []
     outward = []
-    for value in samples:
+    for index, value in enumerate(samples):
         midpoints = []
         face_normals = []
         lengths = []
@@ -167,16 +193,21 @@ def slice_ribbon(triangles):
                 face_normals.append(normal)
                 lengths.append(length)
         if not lengths:
-            raise ValueError("No continuous centerline crosses the selected target")
+            continue
+        observed.append(index)
         centers.append(np.average(midpoints, weights=lengths, axis=0))
         outward.append(unit(np.average(face_normals, weights=lengths, axis=0)))
+    if len(observed) < 6 or observed[0] != 0 or observed[-1] != len(samples) - 1:
+        raise ValueError("Too few observed cross sections to guide the treatment ribbon")
     # Suppress facet quantization before requesting a differentiable joint path.
+    # Missing interior sections are dry travel along the fitted guide.
     along = np.linspace(-1, 1, len(samples))
     basis = np.polynomial.chebyshev.chebvander(along, 5)
-    points = basis @ np.linalg.lstsq(basis, centers, rcond=None)[0]
-    normals = unit(basis @ np.linalg.lstsq(basis, outward, rcond=None)[0])
+    fitted = basis[observed]
+    points = basis @ np.linalg.lstsq(fitted, centers, rcond=None)[0]
+    normals = unit(basis @ np.linalg.lstsq(fitted, outward, rcond=None)[0])
     distance = np.r_[0, np.cumsum(np.linalg.norm(np.diff(points, axis=0), axis=1))]
-    return CubicSpline(distance, points), CubicSpline(distance, normals), float(distance[-1])
+    return CubicSpline(distance, points), CubicSpline(distance, normals), float(distance[-1]), len(observed) < len(samples)
 
 
 def bounds_ok(q0, q1, v0, v1, seconds, lower, upper, velocity, acceleration):
@@ -301,9 +332,19 @@ class Geometry:
 class Workpiece:
     """Indexed public part and cell surfaces, placed by actual rotary angle."""
 
-    def __init__(self, job):
+    def __init__(self, job: dict[str, Any]) -> None:
+        """Read the mesh and collision scene used by the planner and dose meter.
+
+        Args:
+            job: Public mesh, face IDs, rotary calibration, and collision bodies.
+
+        Raises:
+            ValueError: A mesh, face selection, or collision body is invalid.
+        """
         vertices, faces = geometry(job["part_mesh"])
+        self.vertices = vertices
         self.triangles = vertices[faces]
+        self.faces = faces
         self.targets = index_list(job["target_faces"], len(faces), "target_faces")
         masks = index_list(job["masked_faces"], len(faces), "masked_faces")
         if set(self.targets) & set(masks):
@@ -416,6 +457,7 @@ class Ribbon:
     points: CubicSpline
     normals: CubicSpline
     length: float
+    has_gaps: bool
 
 
 @dataclass(frozen=True)
@@ -897,12 +939,192 @@ class CollisionGuard:
         return True
 
 
+def _minimum_bridge_ticks(
+    left: _TrajectoryRow, right: _TrajectoryRow, motion: Motion, tick_limit: int,
+) -> int | None:
+    """Find the shortest legal cubic between the supplied dry bridge endpoints.
+
+    Args:
+        left: Entry position and velocity of the cubic.
+        right: Exit position and velocity of the cubic.
+        motion: Public joint limits and controller cadence.
+        tick_limit: Maximum duration in controller periods.
+
+    Returns:
+        The duration in controller periods, or None if no duration fits.
+    """
+    start, end = np.asarray(left["q_rad"]), np.asarray(right["q_rad"])
+    initial_rate, end_rate = np.asarray(left["qd_rad_s"]), np.asarray(right["qd_rad_s"])
+    travel = np.abs(end - start)
+    if np.any((travel > 0) & (motion.velocity == 0)):
+        return None
+    seconds = np.divide(travel, motion.velocity, out=np.zeros_like(travel), where=motion.velocity > 0)
+    first = max(1, ceil(float(seconds.max()) / motion.period_s))
+    for ticks in range(first, tick_limit + 1):
+        if bounds_ok(start, end, initial_rate, end_rate, ticks * motion.period_s, *motion.bounds):
+            return ticks
+    return None
+
+
+def _dry_waypoint(
+    left: _TrajectoryRow, right: _TrajectoryRow, motion: Motion, guard: CollisionGuard, tick_limit: int,
+) -> tuple[_TrajectoryRow, _TrajectoryRow] | None:
+    """Search one zero-flow waypoint between fixed joint states.
+
+    The six-axis arm can move its wrist position before orienting the nozzle,
+    or orient first. Try both orders with different interpolants. Keep the
+    original endpoint velocities to preserve neighboring wet motion.
+
+    Args:
+        left: Dry entry knot at its retimed authority-relative time.
+        right: Exit knot including the velocity of the next interval.
+        motion: Public joint limits and controller cadence.
+        guard: Continuous collision checker for the current scene.
+        tick_limit: Total available controller periods for both cubics.
+
+    Returns:
+        The new stopped waypoint and retimed exit knot, or None if the
+        bounded search gives no collision-free connection.
+    """
+    start, end = np.asarray(left["q_rad"]), np.asarray(right["q_rad"])
+    end_rate = np.asarray(right["qd_rad_s"])
+    rest = np.zeros(7)
+    for leading, trailing in ((.8, .2), (.9, .1), (.75, .35), (.95, .05)):
+        for position, orientation in ((leading, trailing), (trailing, leading)):
+            fraction = np.array([position] * 3 + [orientation] * 3 + [.5])
+            point = start + fraction * (end - start)
+            if not guard.clear_at(point, motion.clearance):
+                continue
+            waypoint = {"t_ns": 0, "q_rad": point.tolist(), "qd_rad_s": rest.tolist(), "flow_ml_s": 0.}
+            approach = _minimum_bridge_ticks(left, waypoint, motion, tick_limit - 1)
+            if approach is None:
+                continue
+            departure = _minimum_bridge_ticks(waypoint, right, motion, tick_limit - approach)
+            if departure is None:
+                continue
+            middle = dict(waypoint, t_ns=left["t_ns"] + approach * motion.period_ns)
+            # A longer departure can clear the obstruction while matching the exit velocity.
+            for extra in (0, 8, 16):
+                end_ticks = approach + departure + extra
+                if end_ticks > tick_limit:
+                    break
+                exit_knot = dict(right, t_ns=left["t_ns"] + end_ticks * motion.period_ns)
+                if (bounds_ok(point, end, rest, end_rate, (departure + extra) * motion.period_s, *motion.bounds)
+                        and guard.accepts([left, middle, exit_knot])):
+                    return middle, exit_knot
+    return None
+
+
+def bypass_dry_intervals(
+    rows: list[_TrajectoryRow], motion: Motion, guard: CollisionGuard,
+) -> list[_TrajectoryRow] | None:
+    """Repair rejected dry intervals after an otherwise legal plan fails clearance.
+
+    Used by the ribbon and interrupted-suffix planners when a world obstacle
+    is present. Check each interval in the current scene and spend only the
+    available time on bypasses.
+
+    Args:
+        rows: Existing trajectory with ordered controller-aligned knots and
+            valid joint motion.
+        motion: Limits and available duration for this portion of the plan.
+        guard: Continuous collision checker for the current scene.
+
+    Returns:
+        A collision-checked trajectory with unchanged wet positions, velocities,
+        flow and interval lengths, or None if the bounded search fails.
+    """
+    if not guard.workpiece.world:
+        return None
+    result = [rows[0]]
+    latest_end = rows[0]["t_ns"] + motion.max_ticks * motion.period_ns
+    offset = 0
+    for original_right in rows[1:]:
+        left = result[-1]
+        right = dict(original_right, t_ns=original_right["t_ns"] + offset)
+        if not guard.accepts([left, right]):
+            if left["flow_ml_s"] > 0:
+                return None
+            remaining = rows[-1]["t_ns"] - original_right["t_ns"]
+            tick_limit = (latest_end - remaining - left["t_ns"]) // motion.period_ns
+            bypass = _dry_waypoint(left, right, motion, guard, tick_limit)
+            if bypass is None:
+                return None
+            waypoint, right = bypass
+            result.append(waypoint)
+            offset = right["t_ns"] - original_right["t_ns"]
+        result.append(right)
+    return result
+
+
 def _scaled_flow(rows, factor):
     return [dict(row, flow_ml_s=row["flow_ml_s"] * factor) for row in rows]
 
 
-def _choose_flow(rows, meter, registration, prior):
+def _gate_flow(
+    rows: list[_TrajectoryRow], meter: CoatingDose, home: _Pose, period_ns: int,
+) -> list[_TrajectoryRow]:
+    """Subdivide a collision-checked gapped pass before dose evaluation.
+
+    Args:
+        rows: Hermite knots whose times are multiples of the controller cadence.
+        meter: Workpiece and nozzle model for first opaque surface hits.
+        home: Base-from-part pose at zero rotary angle.
+        period_ns: Positive controller cadence in nanoseconds.
+
+    Returns:
+        Equivalent motion with zero held flow where an interval's sampled
+        nozzle hits leave the target. Existing dry knot records may be reused.
+    """
+    samples = max(1, ceil(period_ns / 5_000_000))
+    phases = np.r_[0.0, (np.arange(samples) + .5) / samples, 1.0]
+    gated = []
+    for left, right in zip(rows, rows[1:], strict=False):
+        if left["flow_ml_s"] == 0.0:
+            gated.append(left)
+            continue
+        span_ns = right["t_ns"] - left["t_ns"]
+        intervals = span_ns // period_ns
+        dt = span_ns * 1e-9
+        q0, q1 = np.asarray(left["q_rad"]), np.asarray(right["q_rad"])
+        v0, v1 = np.asarray(left["qd_rad_s"]), np.asarray(right["qd_rad_s"])
+        for index in range(intervals):
+            x = index / intervals
+            # Subdividing a Hermite segment at its exact position and rate
+            # preserves the polynomial already checked by the collision guard.
+            rate = (6 * x * (x - 1) * (q0 - q1) / dt
+                    + (3 * x**2 - 4 * x + 1) * v0 + (3 * x**2 - 2 * x) * v1)
+            wet = all(
+                meter._axis_point(meter.workpiece, home, hermite(left, right, (index + phase) / intervals)) is not None
+                for phase in phases
+            )
+            gated.append({
+                "t_ns": left["t_ns"] + index * period_ns, "q_rad": hermite(left, right, x).tolist(),
+                "qd_rad_s": rate.tolist(), "flow_ml_s": left["flow_ml_s"] if wet else 0.0,
+            })
+    return [*gated, rows[-1]]
+
+
+def _choose_flow(
+    rows: list[_TrajectoryRow], meter: CoatingDose,
+    registration: dict[str, Any], prior: MaterialState | None,
+) -> list[_TrajectoryRow] | None:
+    """Scale held flow after the motion and its spray target have been chosen.
+
+    Args:
+        rows: Nonempty candidate trajectory before flow scaling.
+        meter: Scene, target cells, and applicable recipe.
+        registration: Active part-home pose and its capture identity.
+        prior: Measured material before the candidate motion, if available.
+
+    Returns:
+        New knot records with qualified flow, or None if no tested scale meets
+        the sampled process window and material limits.
+    """
     base = meter.empty() if prior is None else prior
+    peak_flow = max(row["flow_ml_s"] for row in rows)
+    if peak_flow <= 0.0:
+        return None
     observed, usable = meter.trace(rows, registration, prior=base, verify_recipe=True)
     if not usable:
         return None
@@ -910,7 +1132,7 @@ def _choose_flow(rows, meter, registration, prior):
     lost = observed.off_target_ml - base.off_target_ml
     # Leave margin for the coarser planner grid's finite-cone boundary error.
     available = .91 * (meter.recipe["max_off_target_ml"] - base.off_target_ml)
-    ceiling = min(meter.recipe["max_flow_ml_s"] / max(row["flow_ml_s"] for row in rows),
+    ceiling = min(meter.recipe["max_flow_ml_s"] / peak_flow,
                   available / max(lost, 1e-15))
     if ceiling <= 0:
         return None
@@ -950,7 +1172,199 @@ def _dry_finish(motion, guard):
     return None
 
 
-def _plan(job, registration, coordinated, assets_root, start_velocity, prior):
+def _target_components(workpiece: Workpiece) -> list[list[int]]:
+    """Find connected treatment patches before choosing a sweep strategy.
+
+    Args:
+        workpiece: Validated mesh with indexed triangles and target face IDs.
+
+    Returns:
+        Sorted face-ID groups linked through whole edges. Vertex IDs at
+        identical part-frame coordinates share adjacency.
+    """
+    _, vertices_by_position = np.unique(workpiece.vertices, axis=0, return_inverse=True)
+    edges = {}
+    neighbors = {face: set() for face in workpiece.targets}
+    for face in workpiece.targets:
+        vertices = vertices_by_position[workpiece.faces[face]]
+        for left, right in zip(vertices, np.roll(vertices, -1), strict=True):
+            edge = (min(left, right), max(left, right))
+            linked = edges.setdefault(edge, [])
+            for other in linked:
+                neighbors[other].add(face)
+                neighbors[face].add(other)
+            linked.append(face)
+    remaining = set(workpiece.targets)
+    components = []
+    while remaining:
+        start = min(remaining)
+        remaining.remove(start)
+        component = []
+        pending = [start]
+        while pending:
+            face = pending.pop()
+            component.append(face)
+            unseen = neighbors[face] & remaining
+            remaining.difference_update(unseen)
+            pending.extend(unseen)
+        components.append(sorted(component))
+    return components
+
+
+def _shared_height(workpiece: Workpiece, components: list[list[int]], home: _Pose) -> bool:
+    """Check axial overlap before attempting one guide across masked gaps.
+
+    Args:
+        workpiece: Part triangles and calibrated rotary axis.
+        components: Nonempty target face groups returned by _target_components.
+        home: Base-from-part pose at zero rotary angle.
+
+    Returns:
+        Whether all component height intervals overlap along the axis.
+    """
+    axis = home[0].inv().apply(workpiece.axis_rotation.apply([0., 0., 1.]))
+    heights = [workpiece.triangles[faces] @ axis for faces in components]
+    return max(section.min() for section in heights) <= min(section.max() for section in heights) + 1e-9
+
+
+def _plan_ribbon(
+    ribbon: Ribbon, meter: CoatingDose, registration: dict[str, Any], motion: Motion,
+    guard: CollisionGuard, home: _Pose, coordinated: bool, prior: MaterialState | None,
+) -> list[_TrajectoryRow] | None:
+    """Search for a qualified pass with dry approach and departure.
+
+    Args:
+        ribbon: Part-frame guide for the current treatment region.
+        meter: Scene and recipe for that region's dose prediction.
+        registration: Active part-home pose and its capture identity.
+        motion: Joint bounds, initial state, final angle, cadence, and time remaining.
+        guard: Full-scene clearance checker with reused geometry state.
+        home: Base-from-part pose at zero rotary angle.
+        coordinated: Whether the positioner can turn during treatment.
+        prior: Measured material before the pass, if available.
+
+    Returns:
+        A collision-checked, dose-qualified trajectory ending at rest, or None
+        if the bounded search finds no qualifying pass.
+    """
+    workpiece, arm = meter.workpiece, meter.arm
+    settings = [(.5, .55, .21), (.68, .55, .21), (.39, .70, .14), (.62, .30, .14), (.50, .65, .35)]
+    for span in meter.spans(ribbon, prior):
+        for speed_fraction, standoff_fraction, edge_fraction in settings:
+            ranked = []
+            for direction in (-1, 1):
+                try:
+                    sweep = _fixed_sweep(
+                        ribbon, meter.recipe, motion, direction, speed_fraction, standoff_fraction, span, edge_fraction
+                    )
+                except ValueError:
+                    continue
+                for angles in _scheduled_angles(sweep, motion, arm, workpiece, home, coordinated):
+                    try:
+                        rows = _trajectory(sweep, angles, motion, arm, workpiece, home, motion.start[:6])
+                    except ValueError:
+                        continue
+                    ranked.append(rows)
+                    if len(ranked) >= 4:
+                        break
+            ranked.sort(key=lambda rows: rows[-1]["t_ns"])
+            for rows in ranked:
+                if not guard.accepts(rows):
+                    rows = bypass_dry_intervals(rows, motion, guard)
+                    if rows is None:
+                        continue
+                if ribbon.has_gaps:
+                    rows = _gate_flow(rows, meter, home, motion.period_ns)
+                chosen = _choose_flow(rows, meter, registration, prior)
+                if chosen is not None:
+                    return chosen
+    return None
+
+
+def _plan_components(
+    components: list[list[int]], job: dict[str, Any], meter: CoatingDose,
+    registration: dict[str, Any], motion: Motion, guard: CollisionGuard, home: _Pose,
+    coordinated: bool, assets_root: Path | None, prior: MaterialState | None,
+) -> list[_TrajectoryRow] | None:
+    """Join separately planned passes from each preceding dry, stopped state.
+
+    Args:
+        components: Target face groups selected for separate treatment.
+        job: Validated process job and robot model paths.
+        meter: Full-scene meter for cumulative target dose and overspray.
+        registration: Active part-home pose and its capture identity.
+        motion: Overall bounds and deadline.
+        guard: Full-scene clearance checker with reused geometry state.
+        home: Base-from-part pose at zero rotary angle.
+        coordinated: Whether the positioner can turn during treatment.
+        assets_root: Optional fallback directory for robot assets.
+        prior: Measured material before the job starts or resumes.
+
+    Returns:
+        One time-aligned trajectory qualifying across the full scene, or None
+        if a component cannot be reached in the remaining time and material budget.
+    """
+    part = meter.workpiece
+    rotation, translation = part.part_pose(motion.start[6], home)
+    start_tip = meter.arm.nozzle(motion.start[:6])[0]
+    ordered = sorted(components, key=lambda faces: np.linalg.norm(
+        rotation.apply(part.triangles[faces].mean(axis=(0, 1))) + translation - start_tip
+    ))
+    material = meter.empty() if prior is None else prior
+    rows = []
+    for faces in ordered:
+        available = meter.recipe["max_off_target_ml"] - material.off_target_ml
+        if available < 0:
+            return None
+        local_recipe = {**meter.recipe, "max_off_target_ml": available}
+        local = CoatingDose({**job, "target_faces": faces, "recipe": local_recipe}, assets_root=assets_root)
+        local_prior = MaterialState(material.part_dose_ml_m2, 0.0)
+        if local.qualifies(local_prior):
+            continue
+        if not np.any(local_prior.part_dose_ml_m2[local.target] > 0.0):
+            local_prior = None
+        offset = rows[-1]["t_ns"] if rows else 0
+        remaining = replace(
+            motion, max_ticks=motion.max_ticks - offset // motion.period_ns,
+            start=np.asarray(rows[-1]["q_rad"]) if rows else motion.start,
+            velocity_at_start=np.asarray(rows[-1]["qd_rad_s"]) if rows else motion.velocity_at_start,
+        )
+        try:
+            ribbon = Ribbon(*slice_ribbon(part.triangles[faces]))
+        except (ValueError, np.linalg.LinAlgError):
+            return None
+        segment = _plan_ribbon(ribbon, local, registration, remaining, guard, home, coordinated, local_prior)
+        if segment is None:
+            return None
+        material, usable = meter.trace(segment, registration, prior=material, verify_recipe=True)
+        if not usable:
+            return None
+        # Each segment ends dry and stopped, where the next certified approach begins.
+        start_row = 1 if rows else 0
+        rows.extend({**row, "t_ns": offset + row["t_ns"]} for row in segment[start_row:])
+    return rows if rows and meter.qualifies(material) else None
+
+
+def _plan(
+    job: dict[str, Any], registration: dict[str, Any], coordinated: bool,
+    assets_root: Path | None, start_velocity: list[float] | None, prior: MaterialState | None,
+) -> dict[str, Any]:
+    """Validate a planning request and build its ready or blocked wire report.
+
+    Args:
+        job: Public process job, including the measured initial joint positions.
+        registration: Register report for the same job and capture epoch.
+        coordinated: Whether the positioner can turn during treatment.
+        assets_root: Optional fallback directory for robot assets.
+        start_velocity: Measured initial seven-axis speeds in rad/s, if available.
+        prior: Previously measured material, if available.
+
+    Returns:
+        Job ID, scene revision, planning status, and trajectory knot records.
+
+    Raises:
+        ValueError: An input violates the public planning contract.
+    """
     if not isinstance(job, dict) or not isinstance(registration, dict):
         raise ValueError("Job and registration must be objects")
     identity = job["job_id"]
@@ -986,38 +1400,19 @@ def _plan(job, registration, coordinated, assets_root, start_velocity, prior):
         if rows is not None:
             return dict(report, status="ready", trajectory=rows)
         return report
+    components = _target_components(workpiece)
     try:
         ribbon = Ribbon(*slice_ribbon(workpiece.triangles[workpiece.targets]))
     except (ValueError, np.linalg.LinAlgError):
-        return report
-
-    settings = [(.5, .55, .21), (.68, .55, .21), (.39, .70, .14), (.62, .30, .14), (.50, .65, .35)]
-    for span in meter.spans(ribbon, prior):
-        for speed_fraction, standoff_fraction, edge_fraction in settings:
-            ranked = []
-            for direction in (-1, 1):
-                try:
-                    sweep = _fixed_sweep(
-                        ribbon, meter.recipe, motion, direction, speed_fraction, standoff_fraction, span, edge_fraction
-                    )
-                except ValueError:
-                    continue
-                for angles in _scheduled_angles(sweep, motion, arm, workpiece, home, coordinated):
-                    try:
-                        rows = _trajectory(sweep, angles, motion, arm, workpiece, home, motion.start[:6])
-                    except ValueError:
-                        continue
-                    ranked.append(rows)
-                    if len(ranked) >= 4:
-                        break
-            ranked.sort(key=lambda rows: rows[-1]["t_ns"])
-            for rows in ranked:
-                if not guard.accepts(rows):
-                    continue
-                chosen = _choose_flow(rows, meter, registration, prior)
-                if chosen is not None:
-                    report["status"], report["trajectory"] = "ready", chosen
-                    return report
+        ribbon = None
+    if ribbon is not None and (len(components) == 1 or (ribbon.has_gaps and _shared_height(workpiece, components, home))):
+        rows = _plan_ribbon(ribbon, meter, registration, motion, guard, home, coordinated, prior)
+        if rows is not None:
+            return dict(report, status="ready", trajectory=rows)
+    if len(components) > 1:
+        rows = _plan_components(components, job, meter, registration, motion, guard, home, coordinated, assets_root, prior)
+        if rows is not None:
+            return dict(report, status="ready", trajectory=rows)
     return report
 
 

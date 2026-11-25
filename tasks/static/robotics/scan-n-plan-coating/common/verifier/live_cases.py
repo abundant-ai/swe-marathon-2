@@ -9,7 +9,7 @@ from typing import Any, Literal, Protocol
 
 from applied_history import AppliedHistory, Motion, parse_receipt
 from coating_scene import CoatingScene, Pose, rigid_pose
-from live_controller import LiveController, ObservedMotion, brake_knots
+from live_controller import LiveController, ObservedMotion, PressureSag, PressureSample, brake_knots
 from native_arm import NativeArm
 from offline_plan import arm_lever_bound, joint_violations, rotating_radius
 from process_trace import ProcessTrace, TraceEvidence
@@ -36,6 +36,23 @@ class LiveScenario:
     world_collision: list[Document] | None = None
     expect_blocked: bool = False
     flow_gain: float = 1.0
+    stale_running: bool = False
+    registration_review_periods: int = 0
+    world_update_during_motion: bool = False
+    prime_delay_periods: int = 0
+    pressure_sag: PressureSag | None = None
+
+
+@dataclass(frozen=True)
+class InterruptionEvidence:
+    """Controller conditions at one physical fault boundary."""
+
+    motion_id: str
+    time_ns: int
+    readback_age_ns: int
+    spray_permitted: bool
+    scene_revision: int | None
+    emitted_ml: float
 
 
 @dataclass(frozen=True)
@@ -49,15 +66,23 @@ class LiveEvidence:
     issued_motions: int
     stop_commands: int
     first_flow_interruption_ns: int | None
+    interruption_readback_age_ns: int | None
+    interruption_spray_permitted: bool | None
+    interruption_scene_revision: int | None
+    interruptions: tuple[InterruptionEvidence, ...]
     minimum_sampled_clearance_m: float | None
     clearance_samples: int
     updates_after_remount: int
     delayed_receipt_hold_observed: bool
     stale_evidence_hold_observed: bool
+    registration_review_hold_packets: int
     restarted_and_retried: bool
     cold_progress_checked: bool
     physical_emitted_ml: float
     commanded_ml_during_motion: float
+    priming_suppressed_ml: float
+    pressure_suppressed_ml: float
+    pressure_samples: tuple[PressureSample, ...]
 
 
 class _SubmissionError(Exception):
@@ -90,14 +115,34 @@ class _Mission:
     def __init__(
         self, job: Mapping[str, Any], registration: Mapping[str, Any], runner: Runner,
         urdf: Path, srdf: Path, scenario: LiveScenario, max_process_step_ns: int, max_cell_edge_m: float,
+        *, followups: tuple[LiveScenario, ...] = (),
     ) -> None:
-        if not math.isfinite(scenario.interrupt_after_ml) or scenario.interrupt_after_ml <= 0:
-            raise ValueError("A live interruption requires a positive measured flow threshold")
+        self.schedule = (scenario, *followups)
+        previous = 0.0
+        for phase in self.schedule:
+            if not math.isfinite(phase.interrupt_after_ml) or phase.interrupt_after_ml <= previous:
+                raise ValueError("Live interruptions require increasing positive measured flow thresholds")
+            if phase.flow_gain != scenario.flow_gain:
+                raise ValueError("Follow-up interruptions must use the mission's pump calibration")
+            if phase.registration_review_periods < 0 or (phase.registration_review_periods and (
+                phase.expect_blocked or (phase.remount_registration or {}).get("status") != "registered"
+            )):
+                raise ValueError("A registration review requires a confirmed remount and a recovery mission")
+            if phase.world_update_during_motion and (
+                phase.world_collision is None or phase.remount_registration is not None or phase.stale_running
+            ):
+                raise ValueError("A moving world update requires world geometry and its own interruption")
+            previous = phase.interrupt_after_ml
+        if any(phase.expect_blocked for phase in self.schedule[:-1]):
+            raise ValueError("Only the last interruption can hold through the deadline")
+        if any(phase.prime_delay_periods or phase.pressure_sag is not None for phase in followups):
+            raise ValueError("Pump transients are configured once for the whole mission")
         self.job, self.runner, self.scenario = job, runner, scenario
         self.motion = job["motion"]
         self.deadline = self.motion["max_duration_ns"]
         self.max_step_ns = max_process_step_ns
-        self.plant = LiveController(job, flow_gain=scenario.flow_gain)
+        self.plant = LiveController(job, flow_gain=scenario.flow_gain, prime_delay_periods=scenario.prime_delay_periods,
+                                    pressure_sag=scenario.pressure_sag)
         model = job["robot_model"]
         self.arm = NativeArm(urdf, srdf, model["arm_joints"], model["tool_frame"])
         self.geometry = SceneClearance(self.arm)
@@ -106,6 +151,9 @@ class _Mission:
         home = rigid_pose(registration["base_from_part_home"])
         self.epoch = _Epoch(job["scene_revision"], scene, home, registration["status"] == "registered",
                             rotating_radius(scene, home))
+        self.world_records = list(job.get("world_collision", []))
+        self.moving_world = self._next_scene() if scenario.world_update_during_motion else None
+        self.world_interruptions: dict[str, tuple[int, _Epoch]] = {}
         self.process = ProcessTrace(scene, job["target_faces"], job["recipe"], max_cell_edge_m=max_cell_edge_m)
         self.sequence = 0
         self.applied = AppliedHistory()
@@ -115,12 +163,16 @@ class _Mission:
         self.latest: tuple[Document, Document] | None = None
         self.integrated: set[str] = set()
         self.stops = 0
-        self.interrupted_at = None
+        self.interrupted_at: int | None = None
+        self.interruptions: list[InterruptionEvidence] = []
+        self.previous_stop_receipt: Document | None = None
         self.clearance_count = 0
         self.minimum_clearance = None
         self.remount_motions = 0
+        self.remount_revision: int | None = None
         self.held_for_receipt = False
         self.held_for_freshness = False
+        self.registration_review_hold_packets = 0
         self.restarted = False
         self.cold_progress = False
 
@@ -154,9 +206,17 @@ class _Mission:
             return
         epoch = self.issued_epochs[identity]
         samples = tuple(measured.samples)
-        self._clearance(samples, epoch)
-        self.process.scene = epoch.scene
-        self.process.append(self.arm, samples, epoch.home, max_step_ns=self.max_step_ns)
+        spans = ((samples, epoch),)
+        revision = self.world_interruptions.get(identity)
+        if revision is not None:
+            event_ns, new_epoch = revision
+            boundary = (event_ns - measured.issued_ns) // self.plant.period_ns
+            assert 0 < boundary < len(samples) - 1 and samples[boundary].t_ns == event_ns
+            spans = ((samples[:boundary + 1], epoch), (samples[boundary:], new_epoch))
+        for knots, physical_epoch in spans:
+            self._clearance(knots, physical_epoch)
+            self.process.scene = physical_epoch.scene
+            self.process.append(self.arm, knots, physical_epoch.home, max_step_ns=self.max_step_ns)
         self.integrated.add(identity)
 
     def _settled(self) -> bool:
@@ -193,7 +253,7 @@ class _Mission:
         identity = command["command_id"]
         self.authority[identity] = Motion(identity, self.epoch.revision, self.plant.now_ns)
         self.issued_epochs[identity] = self.epoch
-        if self.scenario.remount_registration and self.epoch.revision != self.job["scene_revision"]:
+        if self.remount_revision is not None and self.epoch.revision >= self.remount_revision:
             self.remount_motions += 1
         self.plant.accept(identity, self.epoch.revision, knots)
 
@@ -203,7 +263,7 @@ class _Mission:
         if active is None or self.plant.mode != "running" or command.get("motion_id") != active.command_id:
             raise _SubmissionError("Stop does not identify the current moving command.")
         profile = brake_knots(self.plant.now_ns, self.plant.q, self.plant.qd, self.motion)
-        self._clearance(profile, self.issued_epochs[active.command_id], observed=False)
+        self._clearance(profile, self.epoch, observed=False)
         self.plant.stop(profile)
         self.stops += 1
 
@@ -244,7 +304,7 @@ class _Mission:
 
     def _call(
         self, *, receipts: tuple[Document, ...] = (), scene: Document | None = None,
-        measured_ns: int | None = None, restart: bool = False,
+        measured_ns: int | None = None, controller: Document | None = None, restart: bool = False,
     ) -> str:
         """Send one accepted observation, checking the submitted action on the plant."""
         for record in self.plant.finished:
@@ -252,14 +312,21 @@ class _Mission:
         records = [parse_receipt(item, self.authority, self.plant.period_ns, self.job["recipe"]["max_flow_ml_s"])
                    for item in receipts]
         self.applied = self.applied.extend(records)
+        reading = self.plant.observation(measured_ns=measured_ns) if controller is None else controller
         request = {"seq": self.sequence, "now_ns": self.plant.now_ns, "spray_permitted": self.plant.permitted,
-                   "controller": self.plant.observation(measured_ns=measured_ns),
+                   "controller": reading,
                    "scene": scene, "receipts": list(receipts)}
         reply = self.runner(deepcopy(request), restart=restart)
+        if reply is None:
+            raise _SubmissionError(f"No reply to controller packet {self.sequence}.")
         if (not isinstance(reply, dict) or type(reply.get("seq")) is not int or reply["seq"] != self.sequence
-                or reply.get("status") not in ("waiting", "ready", "blocked", "complete") or "command" not in reply):
-            raise _SubmissionError("Missing or invalid reply to a valid controller packet.")
-        status = reply["status"]
+                or "command" not in reply):
+            raise _SubmissionError(f"Invalid reply to controller packet {self.sequence}.")
+        status = reply.get("status")
+        if status == "rejected":
+            raise _SubmissionError(f"Rejected valid controller packet {self.sequence}.")
+        if status not in ("waiting", "ready", "blocked", "complete"):
+            raise _SubmissionError(f"Invalid reply status for controller packet {self.sequence}.")
         self._command(reply, request)
         if status == "complete" and not self._complete(request):
             raise _SubmissionError("Reported complete without a qualified measured result at rest.")
@@ -304,35 +371,57 @@ class _Mission:
         self._invalid(dict(original, seq="invalid", scene=None, receipts=[]), None)
         self._retry()
 
-    def _scene_update(self) -> Document | None:
-        """Apply the declared re-index at rest and retain the old epoch for its receipts."""
+    def _next_scene(self, *, under_review: bool = False) -> tuple[_Epoch, Document] | None:
+        """Prepare a physical scene and the report for its next revision."""
         replacement = self.scenario.remount_registration
         new_world = self.scenario.world_collision
         if replacement is None and new_world is None:
             return None
-        world_records = self.job.get("world_collision", []) if new_world is None else new_world
+        world_records = self.world_records if new_world is None else new_world
         scene = replace(self.epoch.scene,
                         world=CoatingScene.from_job({**self.job, "world_collision": world_records}).world)
         home = self.epoch.home if replacement is None else rigid_pose(replacement["base_from_part_home"])
         registered = self.epoch.registered if replacement is None else replacement["status"] == "registered"
-        self.epoch = _Epoch(self.epoch.revision + 1, scene, home, registered, rotating_radius(scene, home))
-        self.arm.set_q(self.plant.q[:6])
-        if self.geometry.at(scene.place(self.plant.q[6], home)) < self.motion["min_clearance_m"]:
-            raise _UnresolvedError("Authored scene update violates clearance at the stopped pose.")
-        return {"scene_revision": self.epoch.revision, "world_collision": world_records, "registration": replacement}
+        if under_review:
+            assert replacement is not None
+            registered = False
+            review_epoch = f"{replacement['capture_epoch']}-review"
+            replacement = {"job_id": self.job["job_id"], "capture_epoch": review_epoch,
+                           "status": "review", "base_from_part_home": None, "capture_ids": []}
+        epoch = _Epoch(self.epoch.revision + 1, scene, home, registered, rotating_radius(scene, home))
+        report = {"scene_revision": epoch.revision, "world_collision": world_records, "registration": replacement}
+        return epoch, report
 
-    def _ready_to_interrupt(self) -> bool:
+    def _scene_update(self, *, under_review: bool = False) -> Document | None:
+        """Apply a fixture or world revision while the controller is at rest."""
+        update = self._next_scene(under_review=under_review)
+        if update is None:
+            return None
+        epoch, report = update
+        self.arm.set_q(self.plant.q[:6])
+        if self.geometry.at(epoch.scene.place(self.plant.q[6], epoch.home)) < self.motion["min_clearance_m"]:
+            raise _UnresolvedError("Authored scene update violates clearance at the stopped pose.")
+        self.epoch = epoch
+        self.world_records = report["world_collision"]
+        if report["registration"] is not None and epoch.registered:
+            self.remount_revision = epoch.revision
+        return report
+
+    def _ready_to_interrupt(self, plant: LiveController) -> bool:
         """Choose a measured-flow boundary with a certifiable configured stop envelope."""
-        plant = self.plant
         record = plant.current
         if (plant.mode != "running" or record is None or len(record.samples) < 4
                 or record.samples[-1].flow_ml_s <= 0 or plant.emitted_ml < self.scenario.interrupt_after_ml):
+            return False
+        if not any(sample.flow_ml_s > 0 for sample in record.samples[:-1]):
             return False
         profile = brake_knots(plant.now_ns, plant.q, plant.qd, self.motion)
         if profile[-1].t_ns >= self.deadline:
             return False
         try:
             self._clearance(profile, self.issued_epochs[record.command_id], observed=False)
+            if self.moving_world is not None:
+                self._clearance(profile, self.moving_world[0], observed=False)
         except (_SubmissionError, _UnresolvedError):
             return False
         return True
@@ -342,29 +431,65 @@ class _Mission:
         return tuple(receipt for entry in self.plant.finished if entry.command_id not in self.integrated
                      for receipt in entry.receipts())
 
-    def _await_fault(self) -> None:
+    def _await_fault(self, *, restart: bool = False) -> None:
         """Follow an actual planned run until physical dose permits the injected fault."""
         plant = self.plant
         while plant.now_ns < self.deadline:
             first_motion = not self.authority
-            self._call(receipts=self._normal_receipts())
+            self._call(receipts=self._normal_receipts(), restart=restart)
+            restart = False
             if first_motion and self.authority:
                 self._retry()
             plant.advance()
-            if self._ready_to_interrupt():
-                self.interrupted_at = plant.now_ns
-                return
+            if not self._ready_to_interrupt(plant):
+                continue
+            if self.scenario.stale_running:
+                assert self.latest is not None
+                cached = self.latest[0]["controller"]
+                assert plant.current is not None
+                if cached["mode"] != "running" or cached["command_id"] != plant.current.command_id:
+                    continue
+                expires = cached["measured_ns"] + self.motion["state_max_age_ns"]
+                periods = max(0, (expires - plant.now_ns) // plant.period_ns + 1)
+                if periods:
+                    projected = deepcopy(plant)
+                    projected.advance(periods)
+                    if not self._ready_to_interrupt(projected):
+                        continue
+                    plant.advance(periods)
+            self.interrupted_at = plant.now_ns
+            return
         if plant.emitted_ml < self.scenario.interrupt_after_ml:
             raise _SubmissionError("No qualifying physical coating reached the fault threshold.")
         raise _UnresolvedError("No certifiably clear braking opportunity occurred after measured coating.")
 
     def _interrupt(self) -> None:
-        """Inhibit the actual valve and verify safe stop, reconciliation, and freshness."""
+        """Inject the configured running fault and verify stop and reconciliation."""
         plant = self.plant
-        plant.set_permit(False)
-        self._call()
+        active = plant.current
+        assert active is not None and self.interrupted_at == plant.now_ns
+        scene = None
+        controller = None
+        if self.moving_world is not None:
+            self.epoch, scene = self.moving_world
+            self.world_records = scene["world_collision"]
+            self.world_interruptions[active.command_id] = plant.now_ns, self.epoch
+            failure = "An active world revision did not stop the running motion."
+        elif self.scenario.stale_running:
+            assert self.latest is not None
+            controller = self.latest[0]["controller"]
+            failure = "A stale controller readback did not stop the running motion."
+        else:
+            plant.set_permit(False)
+            failure = "A live permission revocation did not issue a stop for the running motion."
+        readback_age = 0 if controller is None else plant.now_ns - controller["measured_ns"]
+        self.interruptions.append(InterruptionEvidence(
+            active.command_id, plant.now_ns, readback_age, plant.permitted,
+            None if scene is None else scene["scene_revision"], plant.emitted_ml,
+        ))
+        self._call(controller=controller, scene=scene)
         if plant.mode != "stopping":
-            raise _SubmissionError("A live permission revocation did not issue a stop for the running motion.")
+            raise _SubmissionError(failure)
         while plant.mode == "stopping":
             plant.advance()
             if plant.mode == "stopping":
@@ -372,8 +497,13 @@ class _Mission:
         stopped = plant.current
         assert stopped is not None
         first, missing, last = stopped.receipts(3)
-        scene = self._scene_update()
-        self._call(receipts=(last, first, last), scene=scene)
+        scene = None if self.moving_world is not None else self._scene_update(
+            under_review=bool(self.scenario.registration_review_periods)
+        )
+        receipts = (last, first, last)
+        if self.previous_stop_receipt is not None:
+            receipts = (*receipts, self.previous_stop_receipt)
+        self._call(receipts=receipts, scene=scene)
         self._transaction_probes(last)
         plant.advance()
         if not self.scenario.expect_blocked:
@@ -390,12 +520,38 @@ class _Mission:
         if plant.mode != "stopped":
             raise _SubmissionError("Motion was granted from a stale stop observation.")
         self.held_for_freshness = True
+        self.previous_stop_receipt = last
+
+    def _hold_for_registration(self) -> None:
+        """Require a hold with fresh stopped feedback, reconciled dose, and review pending."""
+        for period in range(self.scenario.registration_review_periods):
+            status = self._call(restart=period == 0)
+            assert self.latest is not None
+            if status != "waiting" or self.latest[1]["command"] is not None:
+                raise _SubmissionError("Did not hold while the remounted part registration was under review.")
+            self.registration_review_hold_packets += 1
+            self.plant.advance()
 
     def run(self) -> None:
         """Execute a complete faulted mission or independently proven deadline block."""
-        self._await_fault()
-        self._interrupt()
+        restart = False
         plant = self.plant
+        for index, phase in enumerate(self.schedule):
+            if index:
+                self.scenario = phase
+                self.moving_world = self._next_scene() if phase.world_update_during_motion else None
+                self.interrupted_at = None
+            self._await_fault(restart=restart)
+            self._interrupt()
+            restart = True
+            if phase.registration_review_periods:
+                self._hold_for_registration()
+                # Install the follow-up capture while the spray interlock is disabled.
+                plant.set_permit(False)
+                self._call(scene=self._scene_update())
+                plant.advance()
+                plant.set_permit(True)
+                restart = False
         if self.scenario.expect_blocked:
             # No material is delivered while waiting out the revoked mission.
             # At the deadline there is no feasible amount of future work.
@@ -403,10 +559,11 @@ class _Mission:
             if self._call(restart=True) != "blocked":
                 raise _SubmissionError("A stopped, reconciled and time-exhausted mission did not report blocked.")
             return
-        restart = True
         while plant.now_ns <= self.deadline:
             if self._call(receipts=self._normal_receipts(), restart=restart) == "complete":
-                if self.scenario.remount_registration is not None and not self.remount_motions:
+                if self.remount_revision is not None and not any(
+                    epoch.revision >= self.remount_revision for epoch in self.issued_epochs.values()
+                ):
                     raise _SubmissionError("The mission did not issue a fresh motion after remount.")
                 return
             restart = False
@@ -415,15 +572,22 @@ class _Mission:
 
     def evidence(self, status: Literal["passed", "failed", "unresolved"], findings: tuple[str, ...]) -> LiveEvidence:
         """Return independent observed measurements while preserving unresolved status."""
+        first = self.interruptions[0] if self.interruptions else None
         return LiveEvidence(status, findings, self.process.evidence(), self.plant.now_ns, len(self.authority),
-                            self.stops, self.interrupted_at, self.minimum_clearance, self.clearance_count,
-                            self.remount_motions, self.held_for_receipt, self.held_for_freshness, self.restarted,
-                            self.cold_progress, self.plant.emitted_ml, self.plant.requested_ml)
+                            self.stops, first.time_ns if first else None, first.readback_age_ns if first else None,
+                            first.spray_permitted if first else None, first.scene_revision if first else None,
+                            tuple(self.interruptions), self.minimum_clearance, self.clearance_count,
+                            self.remount_motions, self.held_for_receipt, self.held_for_freshness,
+                            self.registration_review_hold_packets, self.restarted,
+                            self.cold_progress, self.plant.emitted_ml, self.plant.requested_ml,
+                            self.plant.priming_suppressed_ml, self.plant.pressure_suppressed_ml,
+                            tuple(self.plant.pressure_samples))
 
 
 def audit_live(
     job: Mapping[str, Any], registration: Mapping[str, Any], runner: Runner, *, urdf: Path, srdf: Path,
     scenario: LiveScenario, max_process_step_ns: int = 5_000_000, max_cell_edge_m: float = 0.004,
+    followups: tuple[LiveScenario, ...] = (),
 ) -> LiveEvidence:
     """Measure a submitted supervisor through native motion, receipts, and restart.
 
@@ -433,9 +597,13 @@ def audit_live(
     as ground truth. The driver distinguishes an uncertifiable fixture
     from an observed submission failure.
     """
-    mission = _Mission(job, registration, runner, urdf, srdf, scenario, max_process_step_ns, max_cell_edge_m)
+    mission = _Mission(job, registration, runner, urdf, srdf, scenario, max_process_step_ns, max_cell_edge_m,
+                       followups=followups)
     try:
         mission.run()
+        sag = scenario.pressure_sag
+        if sag is not None and not math.isclose(mission.plant.pressure_suppressed_ml, sag.missing_ml, abs_tol=1e-9):
+            raise _UnresolvedError("The mission did not exercise the full authored pressure loss.")
     except _SubmissionError as issue:
         return mission.evidence("failed", (str(issue),))
     except _UnresolvedError as issue:

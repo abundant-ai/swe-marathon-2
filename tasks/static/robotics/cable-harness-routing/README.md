@@ -68,7 +68,7 @@ establish retained seating or compliance throughout execution.
 | Public behavior | Evidence and acceptance |
 | --- | --- |
 | Route matches recipe and stays seated | Reconstruct each occupied clip's material interval from native rod segment identities and intersect the ordered centerline with fixture gates. Require the correct side of entry, material order and keyed seat, then observe retention during the disclosed pull. |
-| Motion stays within limits | Integrate all applied commands at the plant step. Bound peak wrench, tool/joint speed, forbidden contact and minimum centerline bend radius by the published recipe. Earlier installed clips must remain seated. |
+| Motion stays within limits | Integrate all applied commands at the plant step. Bound peak wrench, tool/joint speed, forbidden contact and minimum centerline bend radius by the published recipe. Measure separation for nonexcluded arm link pairs independently of the dynamics contact mask. Earlier installed clips must remain seated. |
 | Handle unknown batches and partial views | Use independent parameterized runs that require different feed responses. Compare physical outcomes and probe use with the recipe limits. Check that the calibration report refers to real observations. Accept any estimates that support valid measured behavior. |
 | Resume or hold on revised board | Interrupt after an accepted command and before receipt, inject obsolete observations and apply the revised fixture state. Compare the controller replies with independent actuator receipts and physical effects. Require safe completion when the routed suffix is attainable and a safe hold when the revised constraints make it unattainable. |
 
@@ -329,3 +329,254 @@ controls, geometric screens and arm
 attempts are in `experiment/service-fixture-20261125.yU1Oqo/`. Full routing,
 regrasp, and keyed docking still need a qualified articulated trajectory in
 one fixture.
+
+#### Articulated routing, plug regrasp, and docking loads
+
+Moved the arm to the south edge of the tangent-socket board and added a
+4° wrist turn during the second clip approach. The arm routed the 600 mm
+tether through both clips, opened its jaws and withdrew without forbidden
+contact. The peak grasp load was 1.971 N. An independent audit of 957
+snapshots measured a minimum bend radius of 68.76 mm and at least 19.59 mm
+of arm self-clearance. Both clips remained seated after release. A
+byte-identical replay saved full native integration states at second clip
+closure, before release, and after the withdrawal.
+
+Continued from the exact second-clip closure state through pinch release
+and plug regrasp. A rear-tab grasp lifted one end and left 0.068 N of
+board support. Regrasping the shell 12 mm behind its center lifted the
+plug completely. The closest connector surface stayed at least 8.79 mm
+above the board with zero board support for 500 consecutive native ticks.
+Both clips retained their assigned material, with no forbidden contact or
+direct wrench on the plug. The model uses a force-limited grasp constraint
+after measuring opposing jaw contact. At least one pad unloaded during
+the hold. The native replay, checkpoints, and regrasp evidence are in
+`experiment/tangent-docking-20261125.fxDaFe/articulated-route/`.
+
+In the separate force-coupled plug rig, the original tangent socket keyed
+and held a 3 N pull after the plug drive was released. The plug moved
+6.54 µm under that load. The retainer-disabled control withdrew 15.99 mm.
+An independent audit confirmed both clip assignments throughout the run.
+The cable reached a 28.14 mm bend radius before insertion and 38.22 mm
+under the pull, below the 65 mm limit in both phases. Tilting the socket
+raised the loaded minimum radius to 82.65 mm. Cable curvature and second
+clip material still failed during the approach. The traces are in
+`experiment/tangent-docking-20261125.fxDaFe/retainer-controls/`.
+
+A rear-relieved socket kept the front key and interlock and shortened
+the approach. At the observed shell grip, rigid geometry puts one jaw
+stem 7.93 mm into the original roof at the seat. The shallower socket
+has a 1.22 mm minimum projected jaw gap across 53 poses over the last
+26 mm of a straight insertion. This screen covers the jaws and socket.
+
+With the shallower socket in the force-coupled rig, a 23 mm approach
+and 9 mm outward detour preserved both clip assignments in all 26,661
+observations. The calibrated retainer held the plug through the 3 N pull
+with 4.11 µm of travel and 1.75 mrad of angular error. The cable reached
+a 63.57 mm bend radius during alignment before socket contact. An earlier
+taper kept a 65.91 mm minimum radius, and the cable slid 1.44 mm beyond
+the second clip's allowed material endpoint before returning. A complete
+trajectory still needs to preserve both limits during the same insertion.
+These runs are in
+`experiment/tangent-docking-20261125.fxDaFe/retainer-controls/shallow-path-sweep/`.
+
+#### Staged yaw before key contact
+
+Completed the remaining 5.5% of the plug turn during the first 4 mm of
+insertion, before the key met the socket. With the same fixture and
+limits, the force-coupled rig kept a 66.15 mm minimum bend radius and
+both clips retained the correct material across 26,661 observations.
+The plug moved 4.11 µm during the 3 N pull after 180 ms of unpowered
+release. The matched unlatched control drew out 15.90 mm. A 180° roll
+control stopped 17.94 mm short with sustained rib-to-wall contact under
+a 2 N push. The deliberate roll also exceeded the bend limit, so this
+control tests the physical key stop separately from route qualification.
+The native traces, independent audits, and replay options are in
+`experiment/tangent-docking-20261125.fxDaFe/retainer-controls/staged-yaw/`.
+
+Replayed the articulated route and shell regrasp on that same shallower
+fixture from the initial board. The routing trace differs only in the
+reported position and angle relative to the relocated socket. Both clips
+remained seated, the arm never contacted the socket, and the shell grasp
+cleared the board by 8.79 mm. A compile-time site-frame check found that
+the grasp anchor used the plug body's rotation when reporting its pose.
+Compiling it with a mutable orientation made the measured site rotation
+agree with the runtime calibration. Both shell-grasp runs produced
+identical native tick records. Two rigid approach screens reached the
+seat on the same inverse-kinematics branch. In native motion, the
+deferred-turn path reached a 64.98 mm bend radius before socket contact.
+The shorter approach stayed above 69.95 mm and stopped 11.18 mm short
+of the seat when the tool housing contacted the roof. At that plug pose,
+the wrist had rotated 0.489 rad relative to its starting grasp. Substituting
+the starting grasp transform in the geometry calculation gave 11.91 mm
+of roof clearance. Both native trials kept the clip assignments and
+stopped before engaging the interlock. See
+`experiment/tangent-docking-20261125.fxDaFe/shallow-articulated-route/`.
+
+Bounding wrist rotation by insertion depth preserved both clips and
+maintained at least 0.871 mm of housing clearance during the axial
+stroke. The plug advanced 3.17 mm farther than the previous run. At
+8.01 mm from the seat, its base touched the roof after the shell rolled
+0.052 rad. The force and clearance checks stopped the motion. The arm
+used the measured simulator plug pose for this feasibility trial. The
+comparison is in
+`experiment/tangent-docking-20261125.fxDaFe/shallow-articulated-route/roof-avoidance/`.
+
+#### Rearward shell grasp
+
+A slower aligned entry kept both clips seated and avoided arm contact,
+then held 11.19 mm short of the seat when angular error exceeded its
+advance limit. Moving the shell grasp 12.03 mm rearward changed the
+clearance tradeoff. At the same insertion depth, wrist clearance rose
+from 6.71 mm to 38.15 mm. The rearward grasp stopped 17.91 mm short when
+the plug base hit the key shelf. Its 0.51 mm lateral error and 0.016 rad
+yaw error had reduced the calculated shelf gap to 0.10 mm before the
+fine alignment gate began. Both clips stayed seated and minimum cable
+bend radius was 70.52 mm. The observation uses the measured simulator
+plug pose and covers acquisition, lift, and partial insertion.
+The paired evidence is under `experiment/tangent-docking-20261125.fxDaFe/shallow-articulated-route/`
+in `aligned-entry/` and `rearward-shell-probe/`.
+
+Starting alignment at the inlet prevented the key-shelf contact. A
+longer hold while the measured yaw error was improving opened the same
+advance gate after 6.34 s. The plug crossed the previous contact point
+and reached 1.43 mm from the seat. Both clips stayed seated, the minimum
+bend radius was 71.02 mm, and the simulator registered no arm contact
+with the fixture. The active IK branch then reached its wrist-pitch limit of
+−2.500000 rad. Meeting the same IK tolerance on that branch required
+another 0.000088 rad of travel. The plug remained unseated. The measured
+trace and the bounded IK checks are in
+`experiment/tangent-docking-20261125.fxDaFe/shallow-articulated-route/rearward-shell-probe/early-gated-hold/`.
+
+An independent signed-distance check disqualified that terminal branch.
+The simulator's arm collision mask omits arm-to-arm pairs. The first
+nozzle overlap with the wrist-roll link appeared at 29.763 s during
+inlet alignment, before insertion. At the saved stop, the nozzle
+overlapped the wrist-roll link by 18.46 mm and the forearm by 5.70 mm.
+Neither pair is excluded by the robot collision configuration. The 957
+earlier routing snapshots kept at least 19.59 mm of arm self-clearance.
+The terminal trajectory requires a branch with verified self-clearance
+before it can qualify as a full-arm witness. The native and commissioned
+distance checks, collision masks, and bounded branch search are in
+`experiment/tangent-docking-20261125.fxDaFe/shallow-articulated-route/rearward-shell-probe/terminal-self-audit/`.
+
+#### Test grasp geometry under load
+
+The first static grasp screen omitted tool housing contact with the plug's
+grip spine. Native acquisition with a −66° tilt pressed the housing into
+the spine at 9.10 N and 12.60 N across two trials. Neither trial made
+opposing pad contact. A revised screen included these contact pairs and
+checked candidate grasps along the final 23 mm of insertion.
+
+Two new native grasps at +9° and +6° acquired both sides of the shell and
+lifted the plug more than 10 mm clear of the board. Both started from the
+same released two-clip route and preserved both clips. In continuation to
+the same socket, the +9° trial stopped 22.92 mm from the seat when the
+independent verifier detected arm self-overlap. The +6° trial stopped
+27.74 mm from the seat on housing contact with the key rib. The plug
+rotated 0.446 rad and 0.428 rad relative to the tool during the two carries.
+Neither trial reached the interlock or the pull. The acquisition checkpoints
+and paired insertion traces are in `experiment/docking-grasp-screen-20261125/`.
+
+#### Measure the loaded grasp at a standoff
+
+An author controller held the tool position and applied six small wrist
+rotations after each verified shell pickup. The measured local response
+reduced the angular error on a separate target from 5.84 to 0.24 mrad for
+the +6° grasp, and from 9.35 to 1.44 mrad for +9°. Both clip assignments
+stayed intact and the closest sampled arm self-clearance was 18.74 mm.
+The +6° native evidence reproduced byte for byte.
+
+The arm then carried the +6° grasp to a settled position 48.53 mm from the
+socket, with 14.38 mm of arm self-clearance and a 99.63 mm minimum cable
+bend radius. The pickup calibration's pose error rose to 22.49 mrad at
+that load. A new calibration reduced the error to 12.48 mrad with each
+wrist increment bounded to 55 mrad. A direct optical feedback sequence
+reached 6.10 mrad on its third pulse and drifted back to 13.34 mrad on
+the fourth. The 6 mrad seat tolerance and full docking remain open.
+
+In the simulated camera probe, each fixed view saw only two shell tags.
+The two registered views together estimated the carried pose within
+10.47 μm and 0.69 mrad against native truth. Reusing the pickup capture
+failed the capture-time check. The probe models geometric occlusion and
+finite image and depth resolution. The candidate protocol still needs
+to expose and qualify those observations across the full approach.
+
+A predictive trial reached 7.76 mrad through bounded rotations, then
+added a 2.5 mm tool translation to change cable loading during the next
+orientation correction. The accepted sequence reached 2.19 mrad at the
+standoff. Its five commands reproduced all 3,600 native ticks and the exact
+final checkpoint in an independent replay. The minimum cable bend radius
+was 85.68 mm and the minimum self-clearance was 14.05 mm. The forked
+simulation used complete author state to choose commands. This evidence
+qualifies a small angular maneuver before final inlet alignment.
+The matched control omitted the translation and kept the same two final
+angular commands. Its terminal error was 28.54 mrad, above the 6 mrad
+tolerance for this local target.
+
+On the approach to the socket, three bounded moves reduced lateral offset
+from 29.19 to 16.97 mm and angular error from about 474 to 306 mrad. At that
+point only 0.052 mm of distal clip material margin remained. Every further
+direct move tested crossed the 470 mm material mark while the shutter stayed
+closed. The same cable still crossed the aperture, so a closed switch and
+an occupied aperture alone would have missed the slip.
+
+Three 3.5 mm retreat commands in world X restored 6.77 mm of distal material
+margin. Four new approach moves then reached 133 mrad with 12.98 mm of
+lateral offset. All ten commands reproduced the saved native states byte
+for byte over 7,200 ticks. The minimum bend radius was 65.19 mm and minimum
+arm self-clearance was 7.10 mm. Omitting only the three retreat commands
+made the first ensuing approach command shift the distal clip beyond the
+470 mm mark at tick 113. A separate retreat selected by bend radius raised
+the settled radius to 77.44 mm, then reached 121 mrad on the next approach.
+The next improving commands reached the bend limit before key alignment.
+The connector stayed outside the inlet during these runs.
+The reproduction and measurements are in `experiment/loaded-grasp-probe-20261125/`.
+
+#### Transfer collision and inertia into MuJoCo
+
+A separate model-transfer probe compiled the two recorded arm poses with
+an explicit wrist-to-nozzle contact pair. The route pose stayed clear.
+At the terminal pose, MuJoCo reported one contact at 18.46 mm penetration
+and generated four solver constraint rows. The SRDF-excluded wrist pair
+remained inactive. Explicitly declaring that excluded pair made it active
+with the same exclusion elements in the model, so the exporter needs to
+validate which pairs it emits. The two static poses and matched exports
+are in `experiment/model-transfer-contact-20261125/`.
+
+A separate dynamic transfer probe exercised an eccentric tool on one
+actuated hinge. Under the same limited joint torques, removing the
+inertial-frame rotation changed effective inertia from 0.04256 to
+0.05918 kg·m² and produced 41.72 mm of tool-position error. The correct
+transfer matched the independent viscous hinge calculation. The source,
+matched models, and exact native replay are in
+`experiment/model-transfer-inertia-20261125/`.
+
+#### Compile a replacement tool for a MuJoCo workcell
+
+A standalone benchmark proposal uses URDF geometry and drives, an SRDF
+collision matrix, and a commissioning profile to produce a portable MJCF
+model and a source-to-native name map. The checkpoints cover frame queries,
+effort-limited dynamics, and contact behavior after installing a replacement
+tool. The verifier would load the artifact in MuJoCo and derive expected
+behavior from the source rather than compare XML layouts.
+[MoveIt Setup Assistant](https://moveit.picknik.ai/main/doc/examples/setup_assistant/setup_assistant_tutorial.html#step-2-generate-self-collision-matrix)
+· [MuJoCo 3.3.7 model reference](https://mujoco.readthedocs.io/en/3.3.7/XMLreference.html)
+
+The combined native witness imports a two-joint arm with an offset payload,
+rotated full inertia tensor, and signed drives. At one pose two source geom
+pairs overlap. Only the allowed pair generates a constraint in the correct
+native asset. Dropping the inertial rotation changes a mass matrix entry by
+0.003406 kg·m². Dropping the transmission sign changes joint effort by
+0.66 N·m. Deleting the allowed pair removes all solver rows, and adding the
+excluded pair doubles them from four to eight. The separate mutations each
+fail one check. The compiler interface is a proposal. Exact replay and
+held-out validation plans are in
+`../../../../experiment/robot-model-transfer-20261125/`.
+
+A gripper extension probes transmission through a passive follower jaw.
+The native reference keeps jaw and aperture error within 0.019 mm over a
+35 mm input stroke. Applying ±5 N to the follower produces ±4 N at the
+master. A control with two independently driven jaws matches unloaded
+aperture and transmits 0 N to the master. The loaded test distinguishes
+the mechanisms even when their unloaded geometry agrees. The model and
+replay are in `../../../../experiment/robot-model-transfer-20261125/mimic-gripper/`.

@@ -56,6 +56,32 @@ class ObservedMotion:
         return result
 
 
+@dataclass(frozen=True)
+class PressureSag:
+    """Reduced pump delivery that persists until a specified volume is missed."""
+
+    after_ml: float
+    missing_ml: float
+    delivery_fraction: float
+
+    def __post_init__(self) -> None:
+        if not (math.isfinite(self.after_ml) and self.after_ml > 0
+                and math.isfinite(self.missing_ml) and self.missing_ml > 0
+                and 0 < self.delivery_fraction < 1):
+            raise ValueError("Expected positive pressure sag volumes and a delivery fraction between zero and one")
+
+
+@dataclass(frozen=True)
+class PressureSample:
+    """One elapsed controller interval with reduced but positive measured flow."""
+
+    motion_id: str
+    start_ns: int
+    end_ns: int
+    steady_ml_s: float
+    measured_ml_s: float
+
+
 class LiveController:
     """Advance only accepted trajectories and independently inhibit their material flow.
 
@@ -66,10 +92,30 @@ class LiveController:
     than controller acknowledgments, to time material-triggered faults.
     """
 
-    def __init__(self, job: Mapping[str, Any], *, flow_gain: float = 1.0) -> None:
-        """Start the simulated plant at the known idle commissioning state."""
+    def __init__(
+        self, job: Mapping[str, Any], *, flow_gain: float = 1.0, prime_delay_periods: int = 0,
+        pressure_sag: PressureSag | None = None,
+    ) -> None:
+        """Start the simulated plant at the known idle commissioning state.
+
+        Priming holds delivery at zero before any material is emitted. A pressure
+        sag starts only after measured delivery reaches its positive trigger, so
+        each transient contributes to its own loss total.
+
+        Args:
+            job: Commissioned job with the control period and starting joint positions.
+            flow_gain: Steady measured fraction of requested flow, in (0, 1].
+            prime_delay_periods: Elapsed controller periods from the first permitted
+                positive flow request until the pump has primed. Zero disables priming.
+            pressure_sag: Optional reduced delivery triggered by cumulative emitted mL.
+
+        Raises:
+            ValueError: The flow gain is outside (0, 1] or the prime delay is invalid.
+        """
         if not math.isfinite(flow_gain) or not 0 < flow_gain <= 1:
             raise ValueError("Expected a positive measured pump gain at most one")
+        if type(prime_delay_periods) is not int or prime_delay_periods < 0:
+            raise ValueError("Expected a nonnegative number of pump priming periods")
         self.motion = job["motion"]
         self.period_ns = self.motion["control_period_ns"]
         self.q = tuple(float(item) for item in job["start_q_rad"])
@@ -82,6 +128,12 @@ class LiveController:
         self.emitted_ml = 0.0
         self.requested_ml = 0.0
         self.pump_gain = flow_gain
+        self.priming_suppressed_ml = 0.0
+        self._prime_delay_ns = prime_delay_periods * self.period_ns
+        self._prime_end_ns: int | None = None
+        self.pressure_samples: list[PressureSample] = []
+        self.pressure_suppressed_ml = 0.0
+        self._pressure_sag = pressure_sag
         self._path: tuple[Segment, ...] = ()
         self._path_index = 0
         self._requested_flow = 0.0
@@ -126,7 +178,18 @@ class LiveController:
         """Return the measured valve flow after independent plant inhibition."""
         if not self.permitted or self.mode != "running":
             return 0.0
-        return self._requested_flow * self.pump_gain
+        if self._prime_delay_ns and self._requested_flow > 0:
+            if self._prime_end_ns is None:
+                self._prime_end_ns = self.now_ns + self._prime_delay_ns
+            if self.now_ns < self._prime_end_ns:
+                return 0.0
+        steady = self._requested_flow * self.pump_gain
+        sag = self._pressure_sag
+        if sag is None or self.emitted_ml < sag.after_ml:
+            return steady
+        remaining = max(0.0, sag.missing_ml - self.pressure_suppressed_ml)
+        missing_flow = min(steady * (1 - sag.delivery_fraction), remaining / (self.period_ns * 1e-9))
+        return steady - missing_flow
 
     def advance(self, periods: int = 1) -> None:
         """Advance the mission and, while active, collect every controller sample."""
@@ -143,7 +206,17 @@ class LiveController:
             assert record is not None
             dt = self.period_ns * 1e-9
             self.requested_ml += dt * self._requested_flow
-            self.emitted_ml += dt * record.samples[-1].flow_ml_s
+            sample = record.samples[-1]
+            self.emitted_ml += dt * sample.flow_ml_s
+            steady = self._requested_flow * self.pump_gain
+            if self._prime_end_ns is not None and sample.t_ns < self._prime_end_ns and self.permitted:
+                self.priming_suppressed_ml += dt * steady
+            if self._pressure_sag is not None and self.permitted and 0 < sample.flow_ml_s < steady:
+                loss = dt * (steady - sample.flow_ml_s)
+                self.pressure_suppressed_ml = min(self._pressure_sag.missing_ml, self.pressure_suppressed_ml + loss)
+                self.pressure_samples.append(PressureSample(
+                    record.command_id, sample.t_ns, self.now_ns, steady, sample.flow_ml_s,
+                ))
             segment = self._path[self._path_index]
             if self.now_ns == segment.right.t_ns:
                 self.q, self.qd = segment.right.q_rad, segment.right.qd_rad_s

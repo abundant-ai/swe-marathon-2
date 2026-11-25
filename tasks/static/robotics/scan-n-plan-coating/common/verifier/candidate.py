@@ -42,7 +42,7 @@ def artifact_ready(app: Path) -> bool:
     """
     entry = app / "coating"
     modules = app / "coating_app"
-    if entry.is_symlink() or not entry.is_file() or not entry.stat().st_mode & 0o111:
+    if entry.is_symlink() or not entry.is_file():
         return False
     if modules.is_symlink() or (modules.exists() and not modules.is_dir()):
         return False
@@ -50,15 +50,19 @@ def artifact_ready(app: Path) -> bool:
 
 
 def make_immutable(app: Path) -> None:
-    """Protect the shared submission between checks when running as root.
+    """Restore launch permissions and protect the shared submission between checks.
 
     Args:
         app: Validated artifact directory. The verifier owns its container.
     """
+    entry = app / "coating"
+    # Some artifact transports restore individual files without execute bits.
+    if not entry.stat().st_mode & 0o111:
+        entry.chmod(0o755)
     if os.geteuid() != 0:
         return
     modules = list((app / "coating_app").rglob("*"))
-    for path in [app, app / "coating", app / "coating_app", *modules]:
+    for path in [app, entry, app / "coating_app", *modules]:
         if not path.exists():
             continue
         os.chown(path, 0, 0)

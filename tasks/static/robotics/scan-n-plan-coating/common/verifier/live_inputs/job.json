@@ -7161,8 +7161,8 @@
     "min_scan_inlier_fraction": 0.86
   },
   "robot_model": {
-    "urdf_path": "/home/qingyuan/.codex/worktrees/robotics-benchmark-next/swe-marathon-2/tasks/swe-m2-software-engineering/scan-n-plan-coating/environment/resources/cell/arm.urdf",
-    "srdf_path": "/home/qingyuan/.codex/worktrees/robotics-benchmark-next/swe-marathon-2/tasks/swe-m2-software-engineering/scan-n-plan-coating/environment/resources/cell/arm.srdf",
+    "urdf_path": "/app/examples/cell/arm.urdf",
+    "srdf_path": "/app/examples/cell/arm.srdf",
     "arm_joints": [
       "turret_yaw",
       "shoulder_pitch",

@@ -1,16 +1,41 @@
 """Exercise bounded JSON-lines transport and durable state on cold restart."""
 
 from pathlib import Path
+import subprocess
 
 import pytest
 
 VERIFIER = Path(__file__).resolve().parents[1] / "common/verifier"
 
 
+def test_coating_launches_after_file_transfer_drops_execute_bits(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """Launch a regular transferred entry and continue to reject symlinks."""
+    monkeypatch.syspath_prepend(str(VERIFIER))
+    from candidate import artifact_ready, make_immutable
+
+    app = tmp_path / "app"
+    app.mkdir()
+    entry = app / "coating"
+    entry.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    entry.chmod(0o644)
+
+    assert artifact_ready(app)
+    make_immutable(app)
+    assert entry.stat().st_mode & 0o777 == 0o755
+    subprocess.run([str(entry)], check=True, timeout=4.0)
+
+    untrusted = tmp_path / "linked-app"
+    untrusted.mkdir()
+    (untrusted / "coating").symlink_to(entry)
+    assert not artifact_ready(untrusted)
+
+
 def test_coating_live_runner_keeps_only_the_declared_state_on_restart(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ) -> None:
-    """Transport a request bigger than a pipe buffer and restart its process."""
+    """Use the supplied state directory for a large request and cold restart."""
     monkeypatch.syspath_prepend(str(VERIFIER))
     from live_candidate import supervisor
 
@@ -30,7 +55,6 @@ parser.add_argument("--job")
 parser.add_argument("--registration")
 parser.add_argument("--state", type=Path)
 args = parser.parse_args()
-args.state.mkdir(exist_ok=True)
 journal = args.state / "previous.json"
 last = json.loads(journal.read_text()) if journal.exists() else None
 for raw in sys.stdin:

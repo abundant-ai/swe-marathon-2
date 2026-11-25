@@ -47,3 +47,57 @@ package or failed infrastructure setup is not an agent result.
 Keep preflight results, Oddish QA verdicts, trial rewards, and artifact review
 separate in the author notes and PR. Tie them to the task revision or bundle hash.
 Record unresolved failures and missing evidence.
+
+## Screen tasks for a score below 0.5
+
+Proximus uses single-session Linux CPU tasks. When a task has a cumulative
+final verifier, package the fixed briefs and that verifier in one session.
+Run all three models on the same bundle.
+
+1. Propose or revise the task. Use previous checkpoint and trajectory evidence
+   to choose the capability to strengthen. Qualify the reference and no-op,
+   pass preflight, and record the hosted task version and bundle hash. Verify
+   that all three model routes support the same task execution format.
+2. Run one fresh `openai/gpt-6.2-sol` trial at `xhigh`. If it scores below
+   0.5, run up to two more trials on the same version, one at a time. Any
+   valid score of 0.5 or above sends the task back for revision.
+3. After three qualifying GPT scores, start one
+   `relace/deepseek-v4.1-flash` and one `relace/glm-5.3` trial in parallel
+   through Proximus.
+   Submit each model's next trial only after its previous score qualifies.
+   Stop scheduling trials for that version as soon as either model scores
+   0.5 or above. Otherwise collect three valid trial scores from each model.
+4. Commit and push the benchmark version once all nine trial scores are below 0.5.
+   Keep the task version, baseline results, and trial links with the review.
+
+Progress independent tasks in parallel. Within a version, pin every
+confirmation to the recorded task and version and reuse its qualified baseline
+results. For stored tasks, use `oddish run --task TASK_ID --version VERSION`
+with `--n-trials 1` in a new confirmation experiment. Verify that exactly one
+solver trial was created on the requested version and record its ID and
+experiment alongside the original reference and no-op. Match its native task
+checksum to those controls before counting it in the screening sequence. If
+a submission loses its response, check the requested experiment's existing
+trials before repeating the request.
+
+Use `oddish status TRIAL_ID --json` to track the named solver trial. Once
+it finishes, match its `result.json` task checksum to the qualified baseline
+and check `reward_valid`. Inspect the verifier report for any failure that
+could invalidate the reward. A new task version can also trigger automatic
+Oddish review jobs. Count only the named solver trials.
+
+A service failure can be retried on the same version. If a problem in the
+instructions, verifier, fixture, or environment changes the meaning of a score,
+fix it and start the screening sequence on the new version. Preserve earlier
+results for diagnosis and track the individual rewards, since the gate applies
+to each trial.
+
+For tasks that support native extensions, build and load a small library in
+both the agent and separate verifier images. If the agent ran its application
+and the hosted verifier fails before any domain check, compare their runtime
+dependencies before counting the score. A successful platform status can
+still contain a score caused by an incompatible verifier image.
+
+For physical command limits, qualify exact-boundary inputs and nearby
+violations. Roundoff in a sampled rate can otherwise prevent an admissible
+plan from reaching the native checks that measure task difficulty.

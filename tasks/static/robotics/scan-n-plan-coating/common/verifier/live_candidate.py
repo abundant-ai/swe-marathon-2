@@ -152,6 +152,10 @@ def supervisor(
 ) -> Iterator[LiveCandidate]:
     """Set up one mission in an isolated state directory and close it afterward."""
     with request_directory() as (root, response, account):
+        state = response / "state"
+        state.mkdir(mode=0o700)
+        if account is not None:
+            os.chown(state, account.pw_uid, account.pw_gid)
         for name, data in (("job", job), ("registration", registration)):
             path = root / f"{name}.json"
             path.write_text(json.dumps(data, allow_nan=False), encoding="utf-8")

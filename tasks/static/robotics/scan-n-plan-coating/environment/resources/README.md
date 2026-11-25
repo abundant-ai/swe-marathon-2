@@ -20,6 +20,13 @@ Run these commands from `/app` after building your application.
 The first scan set supports a mounted part pose. The second covers only the
 interior of a broad planar face and leaves the mounting translation unresolved.
 
+The agent and verifier images include `cc` and the C standard library headers.
+To compile a native helper at runtime, put build files in a writable temporary
+directory chosen through the process's `TMPDIR`. Verification makes the
+packaged application read-only. Ship compatible binaries under
+`/app/coating_app/` with the rest of the application, or rebuild temporary
+helpers when the process starts.
+
 Use the registered curved witness with the motion planner.
 
 ```sh

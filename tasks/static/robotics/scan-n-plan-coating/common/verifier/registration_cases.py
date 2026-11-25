@@ -143,6 +143,7 @@ def _build(
     views: tuple[tuple[float, float, float, float], ...],
     mount_origin: list[float], mount_angles: list[float],
     seed_shift: list[float], seed_rotation: list[float],
+    match_tolerance_m: float = .0028,
 ) -> RegistrationCase:
     mesh = _square_hub() if symmetry else _fairing(mirrored)
     axis = (Rotation.from_euler("xyz", [.184, -.226, .31] if not mirrored else [-.26, .16, -.42]),
@@ -170,7 +171,7 @@ def _build(
             "search_rotation_rad": .93 if symmetry else .64,
             "translation_tolerance_m": .016,
             "rotation_tolerance_rad": .064,
-            "scan_match_tolerance_m": .0028,
+            "scan_match_tolerance_m": match_tolerance_m,
             "min_scan_inlier_fraction": .86,
         },
     }
@@ -186,13 +187,13 @@ def registration_cases() -> tuple[RegistrationCase, ...]:
         "reconcile-oblique-clockwise-captures", seed=62161,
         views=((-1.25, -.08, .43, .23), (.52, 1.92, .51, -.31), (1.87, -2.43, .29, .51)),
         mount_origin=[.062, -.039, .134], mount_angles=[.088, -.138, .19],
-        seed_shift=[-.055, .048, -.027], seed_rotation=[.28, -.19, .11],
+        seed_shift=[-.055, .048, -.027], seed_rotation=[.28, -.19, .11], match_tolerance_m=.0022,
     )
     counterclockwise = _build(
         "reconcile-remounted-counterclockwise-part", seed=92851, mirrored=True,
         views=((1.71, .54, .26, -.44), (-.38, 2.83, .41, .20), (-1.44, -1.56, .35, -.28)),
         mount_origin=[-.037, .048, .146], mount_angles=[-.128, .128, -.24],
-        seed_shift=[.032, -.063, .039], seed_rotation=[-.272, .20, -.187],
+        seed_shift=[.032, -.063, .039], seed_rotation=[-.272, .20, -.187], match_tolerance_m=.0024,
     )
     hub = _build(
         "review-square-hub-with-equivalent-azimuths", seed=37859, symmetry=True,
