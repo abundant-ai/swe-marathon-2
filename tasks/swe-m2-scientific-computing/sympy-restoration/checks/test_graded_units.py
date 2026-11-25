@@ -73,9 +73,17 @@ def test_the_stated_counts_and_every_list_of_units_agree(task_root):
     solution = sorted(str(p.relative_to(paths["solution"])) for p in paths["solution"].rglob("*.py"))
     assert solution == files
     assert sorted(json.loads(paths["bodies"].read_text())) == uids
+    # the original's own times: the examples' keyed by dotted name (as the examples runner names its items),
+    # the calls' by unit id, each for exactly the units of the list; an import time for every unit's module
     timing = json.loads(paths["timing"].read_text())
+    examples, calls = timing["doctest"]["units"], timing["vector"]["units"]
+    assert set(examples) == {u["dotted"] for u in units}, "every unit's examples have the original's time"
+    assert set(calls) == set(uids), "every unit's calls have the original's time"
+    for times in (examples, calls):
+        assert all(isinstance(t, (int, float)) and t >= 0 for t in times.values()) and sum(times.values()) > 0
+    modules = {u["module"] for u in units}
     for phase in ("doctest", "vector"):
-        assert set(timing[phase]["units"]) <= set(uids), phase
+        assert set(timing[phase]["load"]) == modules, phase
     # the agent's tree and the verifier's skeleton hold one placeholder per unit, in the unit's file, and the
     # same unit-bearing files; no file outside the unit list holds one
     for name in ("workspace", "skeleton"):

@@ -21,12 +21,13 @@ progress: its first and last closed poll's start and how many) and `openings`, o
 ended: `last_closed_at` and `end_bound` (the start of its last closed poll, a moment at which no host
 answered yet), `first_open_at` (the start of the poll that ended it), `closed_since`, `closed_polls`,
 the host, whether an exec session of `dev` was seen alive then (`session_alive`: true, false, or
-null when the sessions could not be seen) and whether the time the work is given had run out
-(`after_limit`). At every opening the record is also written to STATE/netcheck-open.json before
-anything is ended. When a fresh look at the processes found no session alive, or the time had run
-out, every process of `dev` is then stopped and ended, and how many passes that took and how many were
-left are added; an opening while a session is alive, or while the sessions cannot be seen, and time is
-left ends nothing until a fresh look finds no session or the time runs out.
+null when the sessions could not be seen) and whether the time the work is given had run out, counted
+from the start of the work (`after_limit`). At every opening the record is also written to
+STATE/netcheck-open.json before anything is ended. When a fresh look at the processes found no session
+alive, or the time had run out counted from the first process (below), every process of `dev` is then
+stopped and ended, and how many passes that took and how many were left are added; an opening while a
+session is alive, or while the sessions cannot be seen, and that time is left ends nothing until a
+fresh look finds no session or that time runs out.
 Polling goes on after an opening; the step that measures the tree stops it.
 
 Processes. A thread looks at /proc every SESSION_SECONDS. The exec sessions of `dev`: a process of
@@ -35,8 +36,10 @@ or that has no parent here (parent 0, started from outside this process namespac
 the processes of `dev` start, in the background or detached, has a parent of `dev`, then the first
 process or another that takes in orphans, never such a parent, so it is never a session. The first
 process: the process of `dev` that began first after the work began, among those whose parent is not
-a process of `dev` (its start read from /proc, in seconds since boot): the time the work is given is
-counted from its start (else from the start of the work). Every process of `dev` gets a limit of
+a process of `dev` (its start read from /proc, in seconds since boot): for ending `dev`, the time the
+work is given is counted from its start (else from the start of the work), so that nothing ends the
+work before its own limit; the end of the work always counts from the start of the work, which comes
+before the clock of that limit. Every process of `dev` gets a limit of
 NPROC_CAP processes of its user (lowered, never raised), so that one that forks without end leaves
 room for everything else. STATE/sessions.json holds when each session was first and last seen alive
 (the start of the look), the first process, how many processes of `dev` were seen at most, the last
@@ -470,13 +473,16 @@ def live_session(record, fresh=2.0):
     return session_seen(record, fresh) is True
 
 
-def watch(stream, status, ending=end_processes, session_alive=lambda: None, limit=lambda: None):
-    """Fold every poll into the status; at each opening after MIN_CLOSED closed polls, record, then end the
-    processes of the user when `session_alive()` is False (a fresh look found no session) or the time
-    `limit()` (seconds since the epoch, or None) has come; otherwise that ending waits until one of the
-    two holds. Local polls end nothing.
+def watch(stream, status, ending=end_processes, session_alive=lambda: None, limit=lambda: None, stop_limit=None):
+    """Fold every poll into the status; at each opening after MIN_CLOSED closed polls, record it, with
+    whether the time `limit()` (the time the work is given ran out, counted from the start of the work;
+    seconds since the epoch, or None) had come (`after_limit`), then end the processes of the user when
+    `session_alive()` is False (a fresh look found no session) or the time `stop_limit()` (counted from the
+    first process of the user, never earlier than `limit()`; `limit` when not given) has come; otherwise
+    that ending waits until one of the two holds. Local polls end nothing.
 
     Returns the openings when the stream ends (it does not while the probe runs)."""
+    stop_limit = stop_limit or limit
     closing = None   # [first start, last start, polls] of the closed stretch in progress
     openings = []
     deferred = None  # the opening whose ending waits
@@ -494,6 +500,10 @@ def watch(stream, status, ending=end_processes, session_alive=lambda: None, limi
 
     def time_up():
         bound = limit()
+        return isinstance(bound, (int, float)) and time.time() >= bound
+
+    def stop_up():
+        bound = stop_limit()
         return isinstance(bound, (int, float)) and time.time() >= bound
 
     for started, state, detail in stream:
@@ -518,16 +528,16 @@ def watch(stream, status, ending=end_processes, session_alive=lambda: None, limi
                               closing=None, openings=openings)
                 write("netcheck-open.json", record)
                 write("netcheck.json", status)
-                if alive is not False and not record["after_limit"]:
+                if alive is not False and not stop_up():
                     record["ending"] = ("waits: an exec session is alive, or the sessions cannot be seen, and the time the "
-                                        "work is given has not run out")
+                                        "work is given, counted from the first process, has not run out")
                     write("netcheck-open.json", record)
                     deferred = record
                 else:
                     end_now(record)
                     deferred = None
             closing = None
-        if deferred is not None and (session_alive() is False or time_up()):
+        if deferred is not None and (session_alive() is False or stop_up()):
             end_now(deferred)
             deferred = None
         status.update(polls=count, local_polls=local_count, longest_local_run=longest_local, last_poll=[started, state],
@@ -669,9 +679,16 @@ def main():
     since = began if began is not None else status["started_at"]
 
     def limit_of():
+        # the end of the work: counted from the start of the work, which the setup hook took before the
+        # clock of the work's own limit began, so that no opening after that limit is taken for a blip
+        return since + WORK_LIMIT_SECONDS
+
+    def stop_of():
+        # ending `dev`: counted from its first process, which began after the clock of the work's own
+        # limit, so that nothing ends the work before that limit
         first = record.get("first_process")
         start = first["start"] if isinstance(first, dict) and isinstance(first.get("start"), (int, float)) else since
-        return start + WORK_LIMIT_SECONDS
+        return max(start, since) + WORK_LIMIT_SECONDS
 
     try:
         uid = pwd.getpwnam(USER).pw_uid
@@ -686,7 +703,7 @@ def main():
         write("netcheck.json", dict(status, error="no host resolved: not checking"))
         while True:   # the processes are still watched; the step that measures the tree stops this
             time.sleep(60)
-    watch(polls(targets, status), status, session_alive=lambda: session_seen(record), limit=limit_of)
+    watch(polls(targets, status), status, session_alive=lambda: session_seen(record), limit=limit_of, stop_limit=stop_of)
     return 0
 
 

@@ -1253,6 +1253,11 @@ def test_local_polls_end_nothing_and_an_opening_while_a_session_is_alive_ends_no
     openings = netcheck.watch(iter(polls("occcoc")), {}, ending=lambda: ended.append(6) or (1, 0), session_alive=lambda: None,
                               limit=later)
     assert ended == [3, 4, 5] and openings[0]["session_alive"] is None and openings[0]["ending"].startswith("waits")
+    # the time counted from the start of the work has run out, the time counted from the first process has
+    # not: the opening is an end of the work, and dev is not ended while its session is alive
+    openings = netcheck.watch(iter(polls("occcoc")), {}, ending=lambda: ended.append(7) or (1, 0), session_alive=lambda: True,
+                              limit=lambda: time.time() - 1, stop_limit=later)
+    assert ended == [3, 4, 5] and openings[0]["after_limit"] is True and openings[0]["ending"].startswith("waits"), openings
     now = time.time()
     assert netcheck.session_seen({"available": True, "alive": [5], "last_scan": now}) is True
     assert netcheck.session_seen({"available": True, "alive": [], "last_scan": now}) is False
@@ -1350,9 +1355,11 @@ def test_an_honest_turn_run_to_the_limit_keeps_the_unit_file_it_had_then(tmp_pat
     assert graded_states(verifier_call, {"sympy/m.py": PLACEHOLDER}, arrived.parent) == {"U0001": "restored"}
 
 
-def test_the_time_the_work_is_given_counts_from_the_first_process_of_dev(tmp_path, verifier_call):
+def test_the_end_of_the_work_counts_from_its_start_and_the_first_process_only_from_when_dev_may_be_ended(tmp_path, verifier_call):
     """The net check reads the start of the first process of `dev` that began after the work did, whose
-    parent is not one of `dev`'s, from /proc; the limit counts from it, and the collect step uses it."""
+    parent is not one of `dev`'s, from /proc; it decides only when `dev` may be ended. The end of the
+    work counts from the start of the work, which the setup step took before the agent's clock: a write
+    after the start of the work plus the limit is late, whenever the first process began."""
     netcheck = load_netcheck(tmp_path / "state")
     proc = tmp_path / "proc"
     ticks = os.sysconf("SC_CLK_TCK")
@@ -1369,7 +1376,7 @@ def test_the_time_the_work_is_given_counts_from_the_first_process_of_dev(tmp_pat
     first = netcheck.first_process(table, 1000, now - 50, str(proc))
     assert first["pid"] == 11 and first["parent"] == "su" and abs(first["start"] - (now - 40)) < 0.5, first
     assert netcheck.first_process(table, 1000, now - 50, str(proc), known=dict(first, start=now - 45))["start"] == now - 45
-    # the collect step counts from it
+    # the collect step counts from the start of the work
     hooks = Hooks(tmp_path / "t", WORK_LIMIT_SECONDS=1)
     hooks.setup()
     started = hooks.work_started()
@@ -1383,10 +1390,44 @@ def test_the_time_the_work_is_given_counts_from_the_first_process_of_dev(tmp_pat
     hooks.scenario(last="closed", closing=[started + 0.1, time.time() + 30, 40], sessions=sessions)
     hooks.run("fsmaint-sweep", egress="closed")
     record = hooks.record()
-    assert record["end_from"] == "limit" and record["end_bound"] == started + 2.0 and record["limit_from"] == "first process", record
+    assert record["end_from"] == "limit" and record["end_bound"] == started + 1.0 and record["limit_from"] == "start of the work", record
     arrived = tmp_path / "arrived" / "sympy"
     platform_copy(hooks.tree, arrived)
-    assert read_delivery(verifier_call, arrived, hooks.lib / "key")["late"] == ["o.py"]
+    assert read_delivery(verifier_call, arrived, hooks.lib / "key")["late"] == ["n.py", "o.py"]
+
+
+def test_a_fetch_saved_after_egress_returns_is_late_and_the_last_second_before_the_limit_is_kept(tmp_path, verifier_call):
+    """The re-check's probe of a capped turn: the agent's clock starts a moment after the setup step,
+    egress returns a moment after the agent's limit, and a fetched body is saved by rename just after.
+    The end of the work is the start of the work plus the limit (3 s here), before egress returns: the
+    fetched file is late, and is taken as the real net check's last copy of it by the end, which holds
+    the honest save made in the last second before the limit."""
+    hooks = Hooks(tmp_path / "t", real_netcheck=True, WORK_LIMIT_SECONDS=3,
+                  netcheck_settings={"WORK_LIMIT_SECONDS": 3, "COPY_LEAD_SECONDS": 2.5, "COPY_INTERVAL_SECONDS": 0.2})
+    hooks.setup()
+    started = hooks.work_started()
+    hooks.network("closed")
+    (hooks.tree / "m.py").write_text("def f():\n    return 1\n")
+    time.sleep(max(0.0, started + 2.3 - time.time()))
+    (hooks.tree / "m.py.new").write_text("def f():\n    return 2\n")
+    os.replace(hooks.tree / "m.py.new", hooks.tree / "m.py")                  # the last second before the limit
+    time.sleep(max(0.0, started + 3.5 - time.time()))
+    hooks.network("open")                                                     # egress returns after the agent's limit
+    time.sleep(0.3)
+    (hooks.tree / "m.py.new").write_text("def f():\n    return 'UPSTREAM'\n")
+    os.replace(hooks.tree / "m.py.new", hooks.tree / "m.py")                  # the fetched body
+    time.sleep(0.5)
+    hooks.run("fsmaint-sweep", egress="open")
+    record = hooks.record()
+    assert record["end_from"] == "limit" and record["end_bound"] == started + 3 and record["limit_from"] == "start of the work", record
+    entry = {item["path"]: item for item in record["entries"]}["m.py"]
+    assert entry["copied"]["captured"] <= record["end_bound"], entry
+    assert (hooks.tree / "m.py").read_text() == "def f():\n    return 2\n"
+    arrived = tmp_path / "arrived" / "sympy"
+    platform_copy(hooks.tree, arrived)
+    result = read_delivery(verifier_call, arrived, hooks.lib / "key")
+    assert result["late"] == [] and list(result["copied"]) == ["m.py"], result
+    assert graded_states(verifier_call, {"sympy/m.py": PLACEHOLDER}, arrived.parent) == {"U0001": "restored"}
 
 
 def test_the_limit_ends_the_work_when_the_collect_step_began_after_it_with_no_session_seen(tmp_path, verifier_call):

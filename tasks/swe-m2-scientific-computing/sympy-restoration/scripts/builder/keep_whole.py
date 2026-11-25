@@ -288,9 +288,19 @@ def main():
     facts = json.load(open(os.path.join(task, PRIVATE, "unit_bodies.json"), encoding="utf-8"))
     with open(os.path.join(out, PRIVATE, "unit_bodies.json"), "w", encoding="utf-8") as f:
         json.dump({new_uid[o]: facts[o] for o in kept}, f)
+    # the examples' times are keyed by the unit's dotted name (as the examples runner names its items), the
+    # calls' times by unit id; the import times by module, kept for the modules that still hold units
     timing = json.load(open(os.path.join(task, PRIVATE, "timing.json"), encoding="utf-8"))
+    kept_dotted = {by_uid[o]["dotted"] for o in kept}
+    kept_modules = {by_uid[o]["module"] for o in kept}
+    examples = timing["doctest"]["units"]
+    assert {u["dotted"] for u in units} <= set(examples), "the old times do not cover every unit's examples"
+    timing["doctest"]["units"] = {d: t for d, t in examples.items() if d in kept_dotted}
+    calls = timing["vector"]["units"]
+    timing["vector"]["units"] = {new_uid[o]: t for o, t in calls.items() if o in new_uid}
     for phase in ("doctest", "vector"):
-        timing[phase]["units"] = {new_uid[o]: t for o, t in timing[phase]["units"].items() if o in new_uid}
+        timing[phase]["load"] = {m: t for m, t in timing[phase]["load"].items() if m in kept_modules}
+    assert set(timing["doctest"]["units"]) == kept_dotted
     with open(os.path.join(out, PRIVATE, "timing.json"), "w", encoding="utf-8") as f:
         json.dump(timing, f)
     shutil.copyfile(os.path.join(task, PRIVATE, "sealed_tests.json"), os.path.join(out, PRIVATE, "sealed_tests.json"))

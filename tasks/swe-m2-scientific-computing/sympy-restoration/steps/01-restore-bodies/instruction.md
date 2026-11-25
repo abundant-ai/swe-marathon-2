@@ -32,15 +32,14 @@ The restored bodies, in place, in `/app/sympy`.
 
 A body is right when the function behaves exactly as SymPy 1.14.0's does: for the examples
 in its docstring, for the repository's tests, and for every other argument it accepts. Which
-error it raises for an argument it does not accept I need only where an example or a test
-shows it. The same means the same, not an
-equivalent: the same type and container, the same order, the same form of a returned
-expression, and the same state of every object the function builds or changes, apart from
-values kept only as a cache. Where the docstring and the tests leave such a detail open, the
-code that calls the function and the habits of its module are the evidence. Returning the
-documented outputs for the documented inputs is not a restoration. Speed is part of the
-behaviour: restored code should not be much slower than SymPy 1.14.0 itself on the library's
-own examples and tests.
+error it raises for an argument it does not accept I need only where an example in its
+docstring shows it. The same means the same, not an equivalent: the same type and container,
+the same order, the same form of a returned expression, and the same state of every object
+the function builds or changes, apart from values kept only as a cache. Where the docstring
+and the tests leave such a detail open, the code that calls the function and the habits of
+its module are the evidence. Returning the documented outputs for the documented inputs is
+not a restoration. Speed is part of the behaviour: restored code should not be much slower
+than SymPy 1.14.0 itself on the library's own examples and tests.
 
 Only the bodies of the units are part of the deliverable:
 
@@ -99,10 +98,10 @@ the original skeleton with your unit bodies in it, and nothing else from your tr
   `restore status` prints, and what you will do next. The log is not part of what you
   deliver.
 - The work is complete when every function returns and changes exactly what SymPy 1.14.0's
-  does, and raises what its examples and tests show. No unit left to restore,
-  `restore check --all` reporting every unit as `PASS` and the repository tests passing
-  under `restore pytest` are the least of that: a function must also return and change what
-  the original does for arguments that no example or test uses. Work that is not finished is
+  does, and raises what its examples show. No unit left to restore and `restore check --all`
+  reporting every unit as `PASS` are the least of that, and the repository tests under
+  `restore pytest` help to get there: a function must also return and change what the
+  original does for arguments that no example or test uses. Work that is not finished is
   delivered as it stands when your session ends.
 - A wrong body in a function that many others call makes later units fail, so a unit is
   worth checking before others are built on it. `restore status` summarises earlier

@@ -260,17 +260,12 @@ def read_delivery(top: Path, key_path: Path, progress: Path = PROGRESS) -> Deliv
 
 
 def work_limit(record: dict) -> float | None:
-    """The time the work is given ran out: the start of the first process of the work the collect step
-    counted from (at or after the start of the work, before the collect step), else the start of the
-    work, plus WORK_LIMIT_SEC; None without a start of the work."""
+    """The time the work is given ran out: the start of the work, which the setup step took before the
+    agent's own clock began, plus WORK_LIMIT_SEC; None without a start of the work. (The first process
+    of the work, which began after that clock, only decides when the net check may end it.)"""
     started = record.get("work_started")
     if not isinstance(started, (int, float)) or isinstance(started, bool):
         return None
-    bound = record.get("limit_bound")
-    sweep = record.get("sweep_started_at")
-    if isinstance(bound, (int, float)) and not isinstance(bound, bool) and isinstance(sweep, (int, float)) \
-            and started - 1 <= bound - WORK_LIMIT_SEC <= sweep:
-        return float(bound)
     return started + WORK_LIMIT_SEC
 
 
