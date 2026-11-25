@@ -7,5 +7,5 @@ agents:
       CLAUDE_CODE_AUTO_COMPACT_WINDOW: "300000"
     kwargs:
       # no apostrophes or quotes here: with a non-root agent user the harness passes this through a shell
-      append_system_prompt: "You are running unattended. Keep working until the completion criteria of the task are met or its time budget is used up. Do not stop to report progress, to summarise, or to wait for helper agents. Ending your turn ends the run."
-max_trial_attempts: 2
+      append_system_prompt: "No one will answer questions or check in. Keep going until everything requested is finished and verified, however long that takes. Do not pause to report progress, to summarise, or to wait for helper agents. Ending your turn ends your work."
+max_trial_attempts: 1

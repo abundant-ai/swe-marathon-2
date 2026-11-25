@@ -186,7 +186,8 @@ def test_verifier_scores_the_reference_one_and_defects_lower(tmp_path):
 ROUTINE_THEMES = ("users", "workspace", "price-lists", "promotions", "suppliers", "saved-reports", "journal-reversals", "carriers",
                   "standing-orders")
 # documented calls whose answers need not match, as the instruction says: password sign-in, sessions and API keys, the
-# calls that set or change a password, and the request log (`/metrics` is not in the API description)
+# calls that set or change a user's password, and the request log (`/metrics` is not in the API description; the
+# graded POST /files/{id}/unlock opens a password-protected PDF and is not one of them)
 EXCEPTED = {("POST", "/api/ws/{ws}/auth/login"), ("POST", "/api/ws/{ws}/auth/logout"), ("POST", "/api/ws/{ws}/auth/password"),
             ("PUT", "/api/ws/{ws}/users/{id}/password"), ("GET", "/api/ws/{ws}/auth/credentials"), ("POST", "/api/ws/{ws}/auth/api-keys"),
             ("DELETE", "/api/ws/{ws}/auth/credentials/{id}"), ("GET", "/api/ws/{ws}/admin/requests")}
@@ -267,7 +268,7 @@ def test_every_documented_call_outside_the_exceptions_is_answered_in_the_corpus(
     assert not [f"{method} {path}" for method, path in EXCEPTED if f"{method} {path}" in statuses]
     instruction = " ".join((STEP / "instruction.md").read_text().split())
     assert ("password sign-in, sessions and API keys, which we do not use, and the request log and `/metrics`, which are for operators. Those "
-            "need not match, and neither do the calls that set or change a password, which we do not use either.") in instruction
+            "need not match, and neither do the calls that set or change a user's password, which we do not use either.") in instruction
 
 
 def test_routines_recorded_onto_a_corpus_are_what_a_full_recording_gives(tmp_path):

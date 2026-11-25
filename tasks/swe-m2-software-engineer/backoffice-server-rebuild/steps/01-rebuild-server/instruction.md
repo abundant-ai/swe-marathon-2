@@ -67,7 +67,7 @@ A server in `/app/server` with an executable file `/app/server/run` that starts 
 - Some answers will differ whatever you do, because they carry the real time or a random token:
   password sign-in, sessions and API keys, which we do not use, and the request log and
   `/metrics`, which are for operators. Those need not match, and neither do the calls that set or
-  change a password, which we do not use either.
+  change a user's password, which we do not use either.
 - Where the sealed server answers with a file instead of JSON (a document, a label, a
   thumbnail), yours answers with the same bytes and the same `Content-Type`: our document archive
   and our partners' portals file everything we send by its checksum, so a file that differs by
