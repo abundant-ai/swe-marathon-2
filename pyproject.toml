@@ -25,4 +25,5 @@ testpaths = [
     "tasks/swe-m2-software-engineering/dual-arm-handoff/checks",
     "tasks/swe-m2-software-engineering/fixed-lag-fusion/checks",
     "tasks/swe-m2-scientific-computing/sympy-restoration/checks",
+    "tasks/swe-m2-software-engineer/backoffice-server-rebuild/checks",
 ]
