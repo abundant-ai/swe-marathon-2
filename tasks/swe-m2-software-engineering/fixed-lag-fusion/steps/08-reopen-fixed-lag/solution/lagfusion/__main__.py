@@ -45,15 +45,15 @@ def main() -> int:
     for command, filename in (("smooth", "gaussian.py"), ("calibrate", "calibration.py"),
                               ("ingest", "session.py"), ("qualify-network", "network.py"),
                               ("track-integrity", "integrity.py"), ("smooth-tracks", "vision.py"),
-                              ("reopen-tracks", "rewind.py")):
+                              ("reopen-tracks", "rewind.py"), ("recalibrate-tracks", "mount.py")):
         if (package / filename).is_file():
             subcommand = commands.add_parser(command)
-            if command in ("smooth-tracks", "reopen-tracks"):
+            if command in ("smooth-tracks", "reopen-tracks", "recalibrate-tracks"):
                 subcommand.add_argument("--manifest", type=Path, required=True)
             else:
                 subcommand.add_argument("--spec", type=Path, required=True)
                 subcommand.add_argument("--output", type=Path, required=True)
-            if command in ("ingest", "track-integrity", "reopen-tracks"):
+            if command in ("ingest", "track-integrity", "reopen-tracks", "recalibrate-tracks"):
                 subcommand.add_argument("--state", type=Path, required=True)
     args = parser.parse_args()
 
@@ -64,9 +64,11 @@ def main() -> int:
             config = obj(json.loads(args.manifest.read_text(encoding="utf-8"), parse_constant=invalid_constant))
             stream(config, sys.stdin, sys.stdout)
             return 0
-        if args.command == "reopen-tracks":
-            from .rewind import stream
-
+        if args.command in ("reopen-tracks", "recalibrate-tracks"):
+            if args.command == "recalibrate-tracks":
+                from .mount import stream
+            else:
+                from .rewind import stream
             config = obj(json.loads(args.manifest.read_text(encoding="utf-8"), parse_constant=invalid_constant))
             stream(config, args.state, sys.stdin, sys.stdout)
             return 0

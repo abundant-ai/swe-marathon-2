@@ -15,6 +15,7 @@ ORACLE = [
     ("commission_native.py",),
     ("native_cell.py", "plan_native.py"),
     ("dispatch_native.py",),
+    ("grasp_recovery.py", "grasp_observations.py"),
 ]
 
 
@@ -55,6 +56,8 @@ def package(parent: Path) -> Path:
                 copy(TASK / "environment" / "requirements.txt", staged / prefix / "tests" / "requirements.txt")
             if index >= 6:
                 verifier_files += ("native_scenarios.py", "native_plan_checks.py")
+            if index >= 8:
+                verifier_files += ("grasp_recovery_checks.py",)
             for name in verifier_files:
                 copy(TASK / "common" / "verifier" / name, staged / prefix / "tests" / name)
             runtime.extend(modules)

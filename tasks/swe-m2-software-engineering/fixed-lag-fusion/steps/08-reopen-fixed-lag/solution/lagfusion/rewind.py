@@ -32,6 +32,8 @@ def ordered_joint(graph, value, keys):
 class Rewind:
     """Solve the archive and serve only the live state and a marginal of it."""
 
+    edit_kinds = frozenset({"loop", "pixel"})
+
     def __init__(self, manifest):
         self.lag = integer(manifest['lag_frames'], 2)
         self.horizon = integer(manifest['rewind_frames'], 3)
@@ -72,20 +74,21 @@ class Rewind:
         for name, (key, point, noise) in self.landmarks.items():
             yield ('landmark', name), gt.PriorFactorPoint3(key, point, noise)
         for name, row in self.edits.items():
-            if row['action'] != 'put':
-                continue
-            if row['kind'] == 'loop':
-                factor = gt.BetweenFactorPose3(
-                    X(row['i']), X(row['j']), pose(row['measurement']), diagonal(row['sigmas']),
-                )
-            else:
-                landmark, _, _ = self.landmarks[row['landmark']]
-                extrinsic, optical = self.cameras[row['camera']]
-                factor = gt.GenericProjectionFactorCal3_S2(
-                    np.asarray(row['pixel']), gt.noiseModel.Isotropic.Sigma(2, row['sigma_px']),
-                    X(row['i']), landmark, optical, extrinsic,
-                )
-            yield ('edit', name), factor
+            if row['action'] == 'put':
+                yield ('edit', name), self.measurement_factor(row)
+
+    def measurement_factor(self, row: dict) -> gt.NonlinearFactor:
+        """Build one native factor from a validated active loop or pixel record."""
+        if row['kind'] == 'loop':
+            return gt.BetweenFactorPose3(
+                X(row['i']), X(row['j']), pose(row['measurement']), diagonal(row['sigmas']),
+            )
+        landmark, _, _ = self.landmarks[row['landmark']]
+        extrinsic, optical = self.cameras[row['camera']]
+        return gt.GenericProjectionFactorCal3_S2(
+            np.asarray(row['pixel']), gt.noiseModel.Isotropic.Sigma(2, row['sigma_px']),
+            X(row['i']), landmark, optical, extrinsic,
+        )
 
     def graph(self):
         result = gt.NonlinearFactorGraph()
@@ -102,6 +105,12 @@ class Rewind:
         self.estimate = gt.LevenbergMarquardtOptimizer(graph, self.estimate, parameters).optimize()
         return graph
 
+    def initialize_values(self) -> None:
+        """Seed the first body pose and persistent world points prior to the first solve."""
+        self.estimate.insert(X(0), self.base_pose)
+        for key, point, _ in self.landmarks.values():
+            self.estimate.insert(key, point)
+
     def append(self, packet):
         index = packet['frame']
         if type(index) is not int or index != self.newest + 1:
@@ -109,9 +118,7 @@ class Rewind:
         if index == 0:
             if packet.get('odometry') is not None:
                 raise ValueError('Frame zero has no odometry')
-            self.estimate.insert(X(0), self.base_pose)
-            for key, point, _ in self.landmarks.values():
-                self.estimate.insert(key, point)
+            self.initialize_values()
         else:
             self.odometry[index] = packet['odometry']
             self.estimate.insert(
@@ -139,12 +146,31 @@ class Rewind:
         self.boundary_anchors = gt.Values()
         keys = {key for index in range(self.boundary.size()) for key in self.boundary.at(index).keys()}
         for key in sorted(keys):
-            if gt.Symbol(key).chr() == ord('x'):
-                self.boundary_anchors.insert(key, self.estimate.atPose3(key))
-            else:
-                self.boundary_anchors.insert(key, self.estimate.atPoint3(key))
+            self.boundary_anchors.insert(key, self.anchor_value(key))
         self.edits = {name: row for name, row in self.edits.items() if row['i'] >= floor}
         self.floor = floor
+
+    def anchor_value(self, key: int) -> gt.Pose3 | np.ndarray:
+        """Read the linearization point in the variable's native manifold."""
+        if gt.Symbol(key).chr() == ord('x'):
+            return self.estimate.atPose3(key)
+        return self.estimate.atPoint3(key)
+
+    def validate_measurement(self, row: dict, old: dict | None) -> None:
+        """Decode the editable content, retaining immutable pixel provenance on retraction."""
+        if row['kind'] == 'pixel':
+            if row['action'] == 'put':
+                self.cameras[row['camera']]
+                self.landmarks[row['landmark']]
+                vector(row['pixel'], 2)
+                sigma(row['sigma_px'])
+            else:
+                row.update(camera=old['camera'], landmark=old['landmark'])
+            if old and any(old[k] != row[k] for k in ('camera', 'landmark')):
+                raise ValueError('Pixel revision changed its calibration or landmark')
+        elif row['action'] == 'put':
+            pose(row['measurement'])
+            vector(row['sigmas'], 6, positive=True)
 
     def revise(self, updates):
         if self.newest < 0 or not isinstance(updates, list):
@@ -158,9 +184,10 @@ class Rewind:
             kind = entry['kind']
             action = entry['action']
             version = integer(entry['version'], 1)
-            if action not in ('put', 'retract') or kind not in ('pixel', 'loop'):
+            if action not in ('put', 'retract') or kind not in self.edit_kinds:
                 raise ValueError('Unknown factor operation')
-            if (kind == 'loop' and i == j) or (kind == 'pixel' and i != j):
+            single_frame = kind != 'loop'
+            if (i == j) != single_frame:
                 raise ValueError('Factor arity disagrees with endpoints')
             if i < self.floor:
                 results[name] = 'sealed'
@@ -173,19 +200,7 @@ class Rewind:
             if version != (old['version'] + 1 if old else 1):
                 raise ValueError('Nonconsecutive factor version')
             row = dict(entry)
-            if kind == 'pixel':
-                if action == 'put':
-                    self.cameras[row['camera']]
-                    self.landmarks[row['landmark']]
-                    vector(row['pixel'], 2)
-                    sigma(row['sigma_px'])
-                else:
-                    row.update(camera=old['camera'], landmark=old['landmark'])
-                if old and any(old[k] != row[k] for k in ('camera', 'landmark')):
-                    raise ValueError('Pixel revision changed its calibration or landmark')
-            elif action == 'put':
-                pose(row['measurement'])
-                vector(row['sigmas'], 6, positive=True)
+            self.validate_measurement(row, old)
             pending[name] = row
             results[name] = 'applied'
         self.edits.update(pending)
@@ -205,15 +220,27 @@ class Rewind:
         graph = self.solve()
         oldest = max(0, self.newest - self.lag)
         keys = [X(self.newest)] if oldest == self.newest else [X(oldest), X(self.newest)]
-        covariance = ordered_joint(graph, self.estimate, keys)
+        marginals = self.report_covariance(graph, keys, packet)
         return {
             'request_id': packet['request_id'], 'frame': self.newest,
             'active_frames': list(range(oldest, self.newest + 1)), 'archive_start': self.floor,
             'archived_frames': self.newest - self.floor + 1,
             'pose': output_pose(self.estimate.atPose3(X(self.newest))),
             'joint_frame_ids': [gt.Symbol(k).index() for k in keys],
-            'joint_covariance': covariance.tolist(), 'updates': dispositions,
+            **marginals, 'updates': dispositions,
         }
+
+    def report_covariance(self, graph: gt.NonlinearFactorGraph, keys: list[int], packet: dict) -> dict:
+        """Compute a pose-pair marginal in the requested output order."""
+        return {'joint_covariance': ordered_joint(graph, self.estimate, keys).tolist()}
+
+    def encode_state(self, data: dict) -> bytes:
+        """Encode a complete checkpoint including the last accepted receipt."""
+        return json_bytes(data)
+
+    def decode_state(self, data: bytes) -> dict:
+        """Decode a checkpoint written by this solver."""
+        return json.loads(data)
 
     def snapshot(self, path):
         data = {
@@ -226,7 +253,7 @@ class Rewind:
         with NamedTemporaryFile(dir=path.parent, delete=False) as output:
             temporary = Path(output.name)
             try:
-                output.write(json_bytes(data))
+                output.write(self.encode_state(data))
                 output.flush()
                 os.fsync(output.fileno())
                 os.replace(temporary, path)
@@ -239,7 +266,7 @@ class Rewind:
                 temporary.unlink(missing_ok=True)
 
     def recover(self, path):
-        data = json.loads(path.read_bytes())
+        data = self.decode_state(path.read_bytes())
         if data['manifest_sha256'] != hashlib.sha256(json_bytes(self.manifest)).hexdigest():
             raise ValueError('Manifest changed across restart')
         self.newest, self.floor = data['newest'], data['floor']
@@ -252,19 +279,25 @@ class Rewind:
 
 
 def stream(manifest, state: Path, source, destination):
+    """Run the fixed-extrinsic repair stream under the Stage 8 contract."""
+    run_stream(Rewind(manifest), state, source, destination)
+
+def run_stream(solver, state: Path, source, destination):
+    """Restore committed state and serve one writer with durable exact replies."""
     from .__main__ import invalid_constant
 
-    solver = Rewind(manifest)
     if state.exists():
         solver.recover(state)
     for line in source:
         packet = json.loads(line, parse_constant=invalid_constant)
+        request_id = packet['request_id']
+        if type(request_id) is not int:
+            raise ValueError('Request ID must be an integer')
         if packet == solver.last_request:
             reply = solver.last_reply
         else:
             prior_id = solver.last_request['request_id'] if solver.last_request else 0
-            request_id = packet['request_id']
-            if type(request_id) is not int or request_id != prior_id + 1:
+            if request_id != prior_id + 1:
                 raise ValueError('Missing sequence or modified retry')
             reply = solver.apply(packet)
             solver.last_request, solver.last_reply = packet, reply

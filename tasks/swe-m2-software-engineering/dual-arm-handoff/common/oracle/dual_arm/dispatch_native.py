@@ -1,8 +1,11 @@
 """Journal native move authority and settle it against measured arm receipts."""
 
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 import fcntl
 import json
 import os
+from pathlib import Path
 from uuid import uuid4
 
 import numpy as np
@@ -140,9 +143,19 @@ def choose(packet, problem, receipt):
     return planned["status"], None
 
 
-def dispatch_native(packet, state_path, publish):
-    """Persist the accepted controller decision before returning it to the publisher."""
-    identity, problem = checked_packet(packet)
+@contextmanager
+def locked_journal(state_path: Path) -> Iterator[tuple[dict, int]]:
+    """Read a journal under its parent directory lock for one dispatch transaction.
+
+    Args:
+        state_path: Journal the caller may atomically replace while holding the lock.
+
+    Yields:
+        Durable missions and the directory descriptor to sync after publication.
+
+    Raises:
+        ValueError: A readable journal has no mission mapping.
+    """
     state_path.parent.mkdir(parents=True, exist_ok=True)
     lock = os.open(state_path.parent, os.O_RDONLY | os.O_DIRECTORY)
     try:
@@ -153,6 +166,24 @@ def dispatch_native(packet, state_path, publish):
             state = {}
         if type(state) is not dict:
             raise ValueError("native authority journal must be an object")
+        yield state, lock
+    finally:
+        os.close(lock)
+
+
+def dispatch_native(packet: dict, state_path: Path, publish: Callable[[Path, dict], None]) -> dict:
+    """Validate a Stage 7 receipt and commit its response before publication.
+
+    Args:
+        packet: Incoming controller evidence and unchanged commissioning window.
+        state_path: Durable per-mission authority journal.
+        publish: Atomic JSON writer used to commit the accepted decision.
+
+    Returns:
+        The accepted, retried, or rejected Stage 7 decision.
+    """
+    identity, problem = checked_packet(packet)
+    with locked_journal(state_path) as (state, lock):
         key = identity["mission"]
         existing = state.get(key)
         if existing is not None and encoded(existing["packet"]) == encoded(packet):
@@ -166,5 +197,3 @@ def dispatch_native(packet, state_path, publish):
         publish(state_path, state)
         os.fsync(lock)
         return result
-    finally:
-        os.close(lock)

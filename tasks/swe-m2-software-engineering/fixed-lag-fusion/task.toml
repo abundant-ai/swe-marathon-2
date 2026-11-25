@@ -62,3 +62,6 @@ name = "07-smooth-native-tracks"
 
 [[steps]]
 name = "08-reopen-fixed-lag"
+
+[[steps]]
+name = "09-recalibrate-camera-mounts"

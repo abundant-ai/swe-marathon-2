@@ -16,7 +16,8 @@ def test_package_has_isolated_checkpoints_and_attributed_excerpt(tmp_path: Path)
     bundle = tmp_path / "swe-m2_software-engineering_fixed-lag-fusion"
     assert {path.name for path in bundle.iterdir()} == {"task.toml", "environment", "steps"}
     configuration = tomllib.loads((bundle / "task.toml").read_text(encoding="utf-8"))
-    assert len(configuration["steps"]) == 8
+    assert len(configuration["steps"]) == 9
+    assert configuration["steps"][-1]["name"] == "09-recalibrate-camera-mounts"
     source = bundle / "environment" / "resources" / "room1_xy.csv"
     assert sha256(source.read_bytes()).hexdigest() == "7af4a6b86a1a3bc35252693ecf7f1ba2cd5bc77922cfecc57782bb025bed0cad"
     base = bundle / "steps" / "01-smooth-window" / "solution" / "lagfusion"
@@ -45,4 +46,16 @@ def test_package_has_isolated_checkpoints_and_attributed_excerpt(tmp_path: Path)
     assert (rewind / "tests" / "rewind_probes.py").is_file()
     assert "reopen-tracks" not in (vision / "solution" / "lagfusion" / "__main__.py").read_text()
     assert "reopen-tracks" in (rewind / "solution" / "lagfusion" / "__main__.py").read_text()
+    mount = bundle / "steps" / "09-recalibrate-camera-mounts"
+    mount_solution = mount / "solution" / "lagfusion"
+    assert "recalibrate-tracks" in (mount_solution / "__main__.py").read_text()
+    assert (mount_solution / "__main__.py").read_bytes() == (rewind / "solution" / "lagfusion" / "__main__.py").read_bytes()
+    for name in ("mount.py", "mount_math.py"):
+        assert (mount_solution / name).is_file()
+        assert not (rewind / "solution" / "lagfusion" / name).exists()
+    assert (mount_solution / "rewind.py").read_bytes() == (rewind / "solution" / "lagfusion" / "rewind.py").read_bytes()
+    assert (mount / "tests" / "rewind_checkpoint.py").read_bytes() == (rewind / "tests" / "verify.py").read_bytes()
+    assert (mount / "tests" / "rewind_probes.py").read_bytes() == (rewind / "tests" / "rewind_probes.py").read_bytes()
+    assert (mount / "tests" / "mount_probes.py").is_file()
+    assert not (rewind / "tests" / "mount_probes.py").exists()
     assert not list((bundle / "environment").rglob("verify.py"))

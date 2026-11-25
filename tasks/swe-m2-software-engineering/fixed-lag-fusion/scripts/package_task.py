@@ -7,6 +7,7 @@ import tempfile
 import tomllib
 
 TASK = Path(__file__).resolve().parents[1]
+REWIND_TESTS = TASK / "steps" / "08-reopen-fixed-lag" / "tests"
 MODULES = [
     ("__init__.py", "__main__.py", "contract.py", "gaussian.py"),
     ("calibration.py",),
@@ -16,6 +17,7 @@ MODULES = [
     ("integrity.py",),
     ("vision.py",),
     ("rewind.py",),
+    ("mount.py", "mount_math.py"),
 ]
 
 
@@ -41,7 +43,7 @@ def package(output: Path) -> Path:
         for name in ("Dockerfile", ".dockerignore", "requirements.txt", "resources/README.md",
                      "resources/room1_xy.csv", "resources/native_track_example.py"):
             copy(TASK / "environment" / name, work / "environment" / name)
-        modules = []
+        modules: dict[str, Path] = {}
         for info, additions in zip(config["steps"], MODULES, strict=True):
             relative = Path("steps", info["name"])
             for name in ("instruction.md", "tests/Dockerfile", "tests/test.sh", "tests/verify.py", "solution/solve.sh"):
@@ -57,14 +59,16 @@ def package(output: Path) -> Path:
                 copy(TASK / "common" / "verifier" / "integrity_probes.py", work / relative / "tests" / "integrity_probes.py")
             if number >= 7:
                 copy(TASK / "common" / "verifier" / "vision_probes.py", work / relative / "tests" / "vision_probes.py")
-            if number == 8:
-                copy(TASK / relative / "tests/rewind_probes.py", work / relative / "tests/rewind_probes.py")
-            modules.extend(additions)
-            for name in modules:
+            if number >= 8:
+                copy(REWIND_TESTS / "rewind_probes.py", work / relative / "tests/rewind_probes.py")
+            if number == 9:
+                copy(REWIND_TESTS / "verify.py", work / relative / "tests/rewind_checkpoint.py")
+                copy(TASK / relative / "tests/mount_probes.py", work / relative / "tests/mount_probes.py")
+            for name in (*modules, *additions):
                 tail = Path("lagfusion", name)
                 local = TASK / relative / "solution" / tail
-                copy(local if local.is_file() else TASK / "common" / "oracle" / tail,
-                     work / relative / "solution" / tail)
+                modules[name] = local if local.is_file() else modules.get(name, TASK / "common" / "oracle" / tail)
+                copy(modules[name], work / relative / "solution" / tail)
         work.rename(target)
     return target
 

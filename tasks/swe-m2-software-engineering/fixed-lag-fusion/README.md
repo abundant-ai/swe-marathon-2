@@ -180,3 +180,154 @@ raised it to 0.466667 with unchanged native rewind results. Native GTSAM
 Marginals reproduced the submitted covariance on its own graph.
 Replaying the same short missions with a fixed prior chart reduced
 the terminal cross-covariance differences to about 7.3% in both.
+
+### 2026-11-24
+
+The top-ten GLM-5.3 Proximus submission scored 0.03952. It submitted
+normally after 343 turns. The exact attempt-one artifact reproduced the
+score and every check outcome locally with GTSAM 4.3.0 and NumPy 2.2.6.
+Calibration, fusion, revision, network qualification, and integrity
+passed every check. The window component passed two of five checks.
+Each native vision mission stopped at landmark retirement, and each
+rewind mission stopped at an extra checkpoint-directory entry.
+
+The retained visual command used acquisition time to age delayed landmarks.
+The contract measures age from acceptance. The single-writer rewind
+command left an advisory lock file in the checkpoint directory. A
+scratch replay using acceptance-frame stamps and a single-file checkpoint
+scored 0.092853333333. Camera handoff passed. At frame 22 after retraction,
+the remaining two visual missions differed from the batch poses by
+0.340 m and 0.541 m, with relative covariance errors of 57.1% and 72.5%.
+
+Removing only the sidecar revealed a separate pixel revision defect in
+all three rewind missions. The implementation stored an acquisition
+frame for a pixel record, then looked for loop endpoint fields when
+editing that record. The submitted reply also used the repair window for
+the public active-frame list and the first joint covariance endpoint.
+Those fields are defined by the narrower serving window. The rewind
+missions stopped before scoring the numerical consequences of these
+reply defects.
+
+A further scratch replay corrected the pixel record and used the serving
+window for the reply fields. The estimator then met the pose, covariance,
+and hard-expiry checks in both short missions. At the first late closure,
+its position errors against batch were 4.56 mm and 1.93 mm. Terminal
+cross-covariance errors were about 7.2% in both missions. The 720-frame
+replay peaked at 15,620 bytes of durable state, with a largest sampled
+position error of 0.104 m after compaction. All three missions still
+missed exact cold retry, keeping the cumulative score at 0.092853333333.
+
+The replay returned the saved response bytes correctly, then changed
+the checkpoint by serializing the loaded state again. Returning the
+stored receipt before any write passed all three rewind missions in a
+full replay and raised the cumulative score to 0.892853333333 with the
+submitted estimator.
+
+The checkpoint instruction now specifies that the committed file is the
+only entry in its directory after a reply. Temporary staging files can
+support atomic replacement during the request. The local replay results
+above used the same frozen verifier as the hosted submission.
+
+A second normally submitted GLM-5.3 trial scored 0.03984 on the same
+version. Its source also creates a permanent checkpoint `.lock` file,
+and all three rewind missions stopped at the same directory check. The
+two trials reported the same three retained landmark-retirement errors.
+The second trial passed all five window checks and four of five
+calibration checks. The 0.892853 replay applies to the first trial.
+
+DeepSeek V4.1 Flash scored 0.02578 on the same version. It submitted
+normally. Its rewind command left the same permanent `.lock` file, and
+all three rewind missions stopped before testing convergence. Its
+vision code likewise aged delayed measurements from acquisition, and
+all three missions stopped at landmark retirement. The retained
+results show additional misses in correlated marginalization,
+motion-capture fusion, held-out replay, and network calibration.
+
+The third GLM-5.3 trial scored 0.0384 and completed all three rewind
+simulations. It passed the late-loop pose checks in both short missions,
+with terminal positions within 12.4 mm of batch. Terminal cross-covariance
+errors were 77.3% and 73.2%, against the 18% limit. It also missed cold
+retry and hard-expiry checks. The 720-frame stream stayed within the
+file size budget and tracked within 0.105 m at the sampled points, but
+failed the active-support and restart or retry checks. All three
+retained vision missions stopped on landmark retirement.
+
+All three top-ten GPT‑6.2 Sol xhigh runs reported 0.04 with the
+same-version reference at 1.0 and no-op at 0.0. Each passed causal
+closure, pose and covariance accuracy, and cold exact replay in both
+short rewind missions. Sealed edits changed neither pose nor
+covariance. Their long replays passed cold recovery and tracking.
+
+The archived outputs use `[0,0]` for the first frame and a valid
+six-by-six covariance. The frozen instruction described the endpoint
+pair as `[first_live,n]`, while the verifier accepted only `[0]` for
+that frame. The support predicate consequently failed each rewind
+mission. The maintained verifier accepts either singleton encoding
+and reports the first support-envelope failure. All retained vision
+missions also failed landmark retirement.
+
+The maintained verifier accepted both singleton spellings and rejected
+a distinct endpoint or 12-by-12 covariance on the initial frame. The
+full packaged reference scored 1.0 and the no-op scored 0.0.
+
+Local replays of all three archived submissions reproduced six
+support rejections per trial, covering two frame-zero replies in each
+mission. Accepting the equivalent singleton spelling restored all
+three rewind missions for each submission. With the retained score
+of 0.20, all three diagnostic totals were 0.84. This is the
+same submitted estimator under the revised singleton check.
+
+Two full local replays also scored 0.84. The third scored 0.8392
+after a retained network probe failed during concurrent replay.
+That probe passed in isolation. All three full replays passed
+every rewind mission.
+
+### 2026-11-25
+
+#### Recalibrate a camera mount without discarding the map
+
+Checkpoint 9 changes what crosses the rewind boundary. The three archived
+GPT estimators recovered the earlier poses and landmarks with fixed
+camera calibrations. A serviced camera now has an uncertain persistent
+SE(3) attachment. Reprojection connects the attachment, the body pose and
+the uncertain landmark. An external camera pose survey connects the
+attachment directly to its historical body pose. Both factors can move
+the estimated mount and the trajectory. An older camera stays queryable
+when images begin arriving from its replacement. [Online visual-inertial self-calibration](https://arxiv.org/abs/2201.09170) ·
+[GTSAM variable-extrinsic projection factor](https://gtsam.org/doxygen/a07467.html)
+
+The independent verifier fits the accepted raw measurements over the
+whole short replay and uses dense QR to recover covariance in the
+requested right-local order. The short missions observe recovery on
+images before a tracker survey, apply a late survey to a retired serving
+frame, retract and correct it, and try another edit after that capture
+seals. A replacement-camera mission also tests covariance at its first
+activation and after the original camera leaves the repair window. The
+640-frame mission checks the durable state limit, cold retry after a
+process kill and tracking after compaction. The final score retains 20%
+of the preceding checkpoint. Equally weighted new missions share 80%,
+with new credit gated on a complete optical recovery mission.
+
+In the two packaged short replays, image measurements reduced mount
+translation error by 164–185 mm across the three camera activations.
+The estimated latest pose stayed within 1.04 mm of the independent fit.
+The largest full joint covariance error was 1.19%, and the largest
+pose–mount cross-block error was 4.04%. Both cold retries and mixed-edit
+atomic rejection checks passed.
+
+Four separate controls earned zero new credit in the two short replays.
+Zeroing only the pose–mount cross blocks preserved the estimated means
+and produced 100% cross-block error. Omitting surveys produced up to
+76.5% full covariance error. Treating the mount as fixed in the pixel
+factor prevented the optical correction. Dropping attached measurements
+at the hard cut drove one old mount to 191 mm of error against the raw
+batch estimate.
+
+The exact 186-file package scored 1.0 for the reference, 0.20 for the
+previous reference and 0.0 for the no-op. In the 640-frame replay,
+the committed checkpoint peaked at 19,439 bytes. The largest sampled
+position error after compaction was 0.041 m. An unchanged archived
+GPT‑6.2 Sol application scored 0.16784, with all three preceding rewind
+missions passing. The maintained package test, repository checks and
+Oddish preflight passed. A fresh GPT trial on camera recalibration
+remains unmeasured.

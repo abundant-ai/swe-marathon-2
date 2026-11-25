@@ -1,7 +1,9 @@
 """Score actual native delivery, fixture avoidance and restarted authority."""
 
+from collections.abc import Callable
 from copy import deepcopy
 from pathlib import Path
+from typing import Any
 
 import mujoco
 import numpy as np
@@ -135,17 +137,45 @@ def recovered_lost_reply(run,root,xml):
     return execute(run,state,NativePlant(spec),packet,original)
 
 
-def recover_revocation(run,root,xml):
+def recover_revocation(run: Callable[..., dict[str, Any] | bool | None], root: Path, xml: str) -> bool:
+    """Execute a loaded withdrawal, restart the dispatcher, and verify delivery.
+
+    Args:
+        run: Isolated candidate command runner.
+        root: Writable journal directory for the native dispatch cases.
+        xml: Model XML text for the supplied single arm.
+
+    Returns:
+        Whether the candidate retained custody, braked and recovered on the plant.
+    """
     spec=staging_case(xml,variant=2)
     state=root/'revoked-state.json'
     packet=request(spec,'withdrawn-loaded-motion')
     plant=NativePlant(spec)
-    first=run('dispatch-native',packet,state=state)
-    if not status(first,'issued') or first['command']['kind']!='move':
-        return False
-    primitive=first['command']
-    until=primitive['start']+max(1,(primitive['end']-primitive['start'])//5)
-    if not animate(plant,primitive,spec,until=until) or np.max(abs(plant.data.qvel[plant.dofs]))<.10:
+    reply=run('dispatch-native',packet,state=state)
+    issued=set()
+    while status(reply,'issued') and reply['command']['kind']=='move':
+        command_id=reply['command_id']
+        if not isinstance(command_id,str) or not command_id or command_id in issued:
+            return False
+        issued.add(command_id)
+        primitive=reply['command']
+        first_tick=primitive['start']+max(1,(primitive['end']-primitive['start'])//5)
+
+        def moving(cell: NativePlant) -> bool:
+            """Select a tick after the move has entered its measured motion."""
+            peak_rate = float(np.max(abs(cell.data.qvel[cell.dofs])))
+            return cell.tick >= first_tick and peak_rate > .025
+
+        plant.target=plant.data.qpos[plant.joints].copy()
+        if not animate(plant,primitive,spec,withdraw_at=moving):
+            return False
+        if plant.tick<primitive['end']:
+            break
+        # A short or slow prefix can finish before there is a moving interior tick.
+        packet=finish(reply,packet,plant.readback())
+        reply=run('dispatch-native',packet,state=state)
+    else:
         return False
     amended=staging_case(xml,variant=2,blocker=True)
     shape=unroll(amended['fixtures'][0]['world_from_box'])
@@ -155,9 +185,9 @@ def recover_revocation(run,root,xml):
     revised=deepcopy(packet)
     revised['window']['fixtures']=amended['fixtures']
     revised['window']['measured']=plant.readback()
-    revised['sequence']=2
+    revised['sequence']+=1
     revised['revision']+=1
-    revised['previous']={'id':first['command_id'],'outcome':'withdrawn'}
+    revised['previous']={'id':reply['command_id'],'outcome':'withdrawn'}
     fake=deepcopy(revised)
     fake['window']['measured']['owner']='right'
     if not status(run('dispatch-native',fake,state=state),'rejected'):
@@ -167,7 +197,7 @@ def recover_revocation(run,root,xml):
         return False
     if run('dispatch-native',revised,state=state)!=answer:
         return False
-    return execute(run,state,plant,revised,answer,known_ids=(first['command_id'],))
+    return execute(run,state,plant,revised,answer,known_ids=issued)
 
 
 def never_fake_custody(run,root,xml):

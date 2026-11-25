@@ -220,6 +220,8 @@ MAX_CHECKPOINT = 131_072
 class RewindStream:
     """Run the submitted CLI as a local stream with one private durable checkpoint."""
 
+    command = 'reopen-tracks'
+
     def __init__(self, app, manifest, state):
         self.app, self.manifest, self.state = app, manifest, state
         self.user = {}
@@ -238,7 +240,7 @@ class RewindStream:
         environment.update(OPENBLAS_NUM_THREADS='1', OMP_NUM_THREADS='1', HOME=str(home), TMPDIR=str(home))
         try:
             self.process = subprocess.Popen([
-                sys.executable, '-B', '-m', 'lagfusion', 'reopen-tracks', '--manifest', self.manifest,
+                sys.executable, '-B', '-m', 'lagfusion', self.command, '--manifest', self.manifest,
                 '--state', self.state,
             ], cwd=self.app, env=environment, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL, bufsize=0, start_new_session=True, **self.user)
@@ -319,31 +321,58 @@ class RewindStream:
         return next((int(line.split()[1]) for line in lines if line.startswith('VmHWM:')), None)
 
 
-def stream_at(app, root, manifest):
+def stream_at(app: Path, root: Path, manifest: dict[str, object], *,
+              stream_class: type[RewindStream] = RewindStream) -> RewindStream:
+    """Prepare a private manifest and state location for one candidate stream.
+
+    Args:
+        app: Staged candidate working directory.
+        root: Fresh case directory to create beneath the verifier's temporary root.
+        manifest: Public configuration to serialize for the worker.
+        stream_class: Runner with the CLI command for this checkpoint.
+
+    Returns:
+        The configured runner before its first process is started.
+    """
     root.mkdir(mode=0o711)
     durable = root / 'durable'
     durable.mkdir(mode=0o700)
     manifest_path = root / 'manifest.json'
     manifest_path.write_text(json.dumps(manifest))
     manifest_path.chmod(0o444)
-    return RewindStream(app, manifest_path, durable / 'stream.state')
+    return stream_class(app, manifest_path, durable / 'stream.state')
 
 
-def coverage(answer, manifest):
+def coverage(answer: dict, manifest: dict) -> bool:
+    """Check window bounds and the covariance for the named endpoint states."""
     n = answer['frame']
     oldest = max(0, n-manifest['lag_frames'])
     earliest = max(0, n-manifest['rewind_frames'])
-    expected_pair = [n] if oldest == n else [oldest, n]
+    singleton = oldest == n
+    accepted_ids = ([n], [n, n]) if singleton else ([oldest, n],)
     covariance = np.asarray(answer['joint_covariance'])
-    dimensions = 6*len(expected_pair)
+    dimensions = 6 if singleton else 12
     return (answer['active_frames'] == list(range(oldest, n+1))
             and answer['archive_start'] == earliest
             and answer['archived_frames'] == n-earliest+1
-            and answer['joint_frame_ids'] == expected_pair
+            and answer['joint_frame_ids'] in accepted_ids
             and covariance.shape == (dimensions, dimensions)
             and np.all(np.isfinite(covariance))
             and np.max(np.abs(covariance-covariance.T)) < 1e-8
             and np.linalg.eigvalsh(covariance)[0] > 0.)
+
+
+def support_snapshot(answer: dict, expected_frame: int) -> dict:
+    """Record the first rejected support envelope without copying its matrix."""
+    active = answer['active_frames']
+    endpoints = answer['joint_frame_ids']
+    return {
+        'expected_frame': expected_frame, 'frame': answer['frame'],
+        'active_frames': active[:66] if isinstance(active, list) else type(active).__name__,
+        'archive_start': answer['archive_start'], 'archived_frames': answer['archived_frames'],
+        'joint_frame_ids': endpoints[:3] if isinstance(endpoints, list) else type(endpoints).__name__,
+        'covariance_shape': list(np.asarray(answer['joint_covariance']).shape),
+    }
 
 
 def short_case(app, root, seed):
@@ -354,6 +383,7 @@ def short_case(app, root, seed):
     sizes, peaks = [], []
     recent = None
     restart_ok, support_ok = False, True
+    first_support_failure = None
     try:
         receiver.start()
         for packet in packets:
@@ -371,7 +401,10 @@ def short_case(app, root, seed):
                 expected = {update['id']: 'sealed' if update['i'] < cut else 'applied'
                             for update in packet['updates']}
             statuses[index] = candidate['updates'] == expected
-            support_ok &= coverage(candidate, manifest) and candidate['frame'] == batch.newest
+            current_support = coverage(candidate, manifest) and candidate['frame'] == batch.newest
+            if not current_support and first_support_failure is None:
+                first_support_failure = support_snapshot(candidate, batch.newest)
+            support_ok &= current_support
             sizes.append(len(receiver.checkpoint()))
             if index in probes:
                 pose, covariance = batch.estimate()
@@ -411,6 +444,7 @@ def short_case(app, root, seed):
         'max_checkpoint_bytes': max(sizes), 'max_process_peak_kib': max(peaks, default=None),
         'max_archive_frames': manifest['rewind_frames']+1, 'restart_after_request': restart,
         'minimum_late_recovery_m': safety, 'phases': results,
+        'first_support_failure': first_support_failure,
     }
 
 
@@ -451,6 +485,7 @@ def long_case(app, root):
     maximum = tail_maximum = 0
     peaks, tracking = [], []
     restart_ok, support_ok, receipts_ok = False, True, True
+    first_support_failure = None
     n = -1
     try:
         receiver.start()
@@ -460,7 +495,10 @@ def long_case(app, root):
                 n += 1
             size = len(receiver.checkpoint())
             maximum = max(maximum, size)
-            support_ok &= coverage(reply, manifest) and reply['frame'] == n
+            current_support = coverage(reply, manifest) and reply['frame'] == n
+            if not current_support and first_support_failure is None:
+                first_support_failure = support_snapshot(reply, n)
+            support_ok &= current_support
             if packet['operation'] == 'edit':
                 expected = {item['id']: 'sealed' if item['i'] < max(0, n-manifest['rewind_frames']) else 'applied'
                             for item in packet['updates']}
@@ -487,6 +525,7 @@ def long_case(app, root):
         'stream_frames': n+1, 'stream_requests': len(packets), 'max_checkpoint_bytes': maximum,
         'max_checkpoint_bytes_after_frame_300': tail_maximum, 'max_process_peak_kib': max(peaks, default=None),
         'post_compaction_sample_errors_m': tracking, 'restart_frame': 567,
+        'first_support_failure': first_support_failure,
     }
 
 

@@ -1,7 +1,8 @@
 """Run protected, process-isolated checkpoint probes and publish reward evidence."""
 
-from dataclasses import dataclass
 import argparse
+from collections.abc import Mapping
+from dataclasses import dataclass
 import json
 import os
 from pathlib import Path
@@ -16,6 +17,8 @@ from probes import checks
 
 
 PACKAGE = "dual_arm"
+POSITIVE_GRASP_CHECKS = ("native_relocalize_giver_grasp", "native_relocalize_receiver_grasp")
+GRASP_CHECKS = (*POSITIVE_GRASP_CHECKS, "native_hold_unconfirmed_grasp")
 
 
 @dataclass(frozen=True)
@@ -105,8 +108,41 @@ def stage(artifact: Path, app: Path) -> bool:
     return True
 
 
-def grade(artifact, level, robot_asset):
-    """Score named independent behaviors, with zero credit for a missing artifact."""
+def grasp_credit(grasp: Mapping[str, bool]) -> float:
+    """Score the three Stage 8 missions once an actual delivery succeeds.
+
+    Args:
+        grasp: Pass flags keyed by the registered grasp recovery scenarios.
+
+    Returns:
+        Fraction passed, or zero when neither positive mission delivered.
+    """
+    registered = [grasp[name] for name in GRASP_CHECKS]
+    if not any(grasp[name] for name in POSITIVE_GRASP_CHECKS):
+        return 0.0
+    return sum(registered) / len(GRASP_CHECKS)
+
+
+def grade(artifact: Path, level: int, robot_asset: Path, *,
+          grasp_only: bool = False) -> dict[str, object]:
+    """Score the checkpoint's candidate behavior in its isolated process area.
+
+    Args:
+        artifact: Submitted dual_arm Python package directory.
+        level: Configured checkpoint number from one through eight.
+        robot_asset: Verifier's trusted collision-only UR5e asset.
+        grasp_only: At Stage 8, execute only the new recovery missions.
+
+    Returns:
+        Checkpoint number, individual pass flags, and normalized reward.
+        Stage 8 reports measurements from the native grasp recovery missions.
+        A missing or unusable submission earns zero.
+    """
+    if grasp_only and level != 8:
+        raise ValueError("grasp-only grading requires stage 8")
+    retained_level = 0 if grasp_only else min(level, 7)
+    grasp = {}
+    observations: dict[str, object] = {}
     with tempfile.TemporaryDirectory(prefix="trusted-robotics-") as location:
         directory = Path(location)
         directory.chmod(0o755)
@@ -117,23 +153,34 @@ def grade(artifact, level, robot_asset):
         if not stage(artifact, app):
             return {"stage": level, "checks": {}, "reward": 0.0}
         runner = Runner(app, scratch)
-        evidence = checks(runner, min(level, 4))
+        evidence = checks(runner, min(retained_level, 4)) if retained_level else {}
         if level >= 5:
+            xml = robot_asset.read_text(encoding="utf-8")
+        if retained_level >= 5:
             from commission_native_checks import commission_native_checks
 
-            xml = robot_asset.read_text(encoding="utf-8")
             evidence.update({"survey_" + key: value for key, value in commission_native_checks(runner, xml).items()})
-        if level >= 6:
+        if retained_level >= 6:
             from native_plan_checks import native_plan_checks
 
             evidence.update({"synth_" + key: value for key, value in native_plan_checks(runner, xml).items()})
-        if level >= 7:
+        if retained_level >= 7:
             from native_plan_checks import native_dispatch_checks
 
             journal = directory / "native_state"
             journal.mkdir()
             journal.chmod(0o777)
             evidence.update({"live_" + key: value for key, value in native_dispatch_checks(runner, journal, xml).items()})
+        if level == 8:
+            from grasp_recovery_checks import grasp_recovery_checks
+
+            journal = directory / "grasp_state"
+            journal.mkdir()
+            journal.chmod(0o777)
+            grasp = grasp_recovery_checks(runner, journal, xml, observations=observations)
+    grasp_evidence = {"grasp_" + key: value for key, value in grasp.items()}
+    if grasp_only:
+        return {"stage": level, "checks": grasp_evidence, "reward": grasp_credit(grasp), "observations": observations}
     first_four = {key: flag for key, flag in evidence.items() if not key.startswith(("survey_", "synth_", "live_"))}
     passed = sum(bool(item) for item in first_four.values())
     reward = passed / len(first_four) if first_four and passed else 0.0
@@ -157,23 +204,33 @@ def grade(artifact, level, robot_asset):
         reward = .25*reward + .75*fit_fraction
     if level == 6:
         reward = .15*reward + .22*fit_fraction + .63*synthesis_fraction
-    if level == 7:
+    if retained_level == 7:
         live_positive = any(flag for name, flag in native.items() if name != "live_native_reject_forged_payload_owner")
         reward = .12*reward + .12*fit_fraction + .21*synthesis_fraction + (.55*fraction(native) if live_positive else 0.)
-    return {"stage": level, "checks": evidence, "reward": reward}
+    if level == 8:
+        reward = .20 * reward + .80 * grasp_credit(grasp)
+        evidence.update(grasp_evidence)
+    report: dict[str, object] = {"stage": level, "checks": evidence, "reward": reward}
+    if level == 8:
+        report["observations"] = observations
+    return report
 
 
-def main():
+def main() -> None:
+    """Run the verifier on a staged submission and write logs for the runner."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--stage", type=int, choices=range(1, 8), required=True)
+    parser.add_argument("--stage", type=int, choices=range(1, 9), required=True)
+    parser.add_argument("--grasp-only", action="store_true", help="run only the Stage 8 grasp recovery missions")
     parser.add_argument("--artifact", type=Path, default=Path("/app") / PACKAGE)
     parser.add_argument("--logs", type=Path, default=Path("/logs/verifier"))
     parser.add_argument("--robot-model", type=Path, default=Path(__file__).with_name("ur5e-headless.xml"))
     args = parser.parse_args()
+    if args.grasp_only and args.stage != 8:
+        parser.error("--grasp-only requires --stage 8")
     args.logs.mkdir(parents=True, exist_ok=True)
     args.logs.chmod(0o700)
     reward = args.logs / "reward.txt"
     reward.unlink(missing_ok=True)
-    report = grade(args.artifact, args.stage, args.robot_model)
-    (args.logs / "checkpoint.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    report = grade(args.artifact, args.stage, args.robot_model, grasp_only=args.grasp_only)
+    (args.logs / "checkpoint.json").write_text(json.dumps(report, indent=2, allow_nan=False) + "\n", encoding="utf-8")
     reward.write_text(f"{report['reward']:.12g}\n", encoding="utf-8")

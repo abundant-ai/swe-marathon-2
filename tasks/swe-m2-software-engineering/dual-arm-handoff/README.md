@@ -129,3 +129,126 @@ either outcome. The candidate eventually returned `blocked` at measured
 ticks 2127 and 2051, with its original holder still carrying the payload.
 The maintained verifier now uses the declared tick deadline to bound
 these missions. [Version 3 result](https://www.oddish.app/experiments/1c1d7b8b)
+
+### 2026-11-24
+
+The top-ten GLM-5.3 attempt scored 0.576666666667. The reference and no-op
+scored 1.0 and 0.0 on the same task checksum. An isolated local replay of
+the published package reproduced all 35 check outcomes. In the fixture
+revocation mission, the old verifier measured 0.07693 rad/s at tick 152
+and stopped at its 0.10 rad/s threshold before issuing a withdrawal.
+
+The verifier now selects an interior tick when measured speed exceeds
+the specified 0.025 rad/s threshold for motion. It acknowledges completed
+prefixes when a short or slow move gives no suitable withdrawal tick.
+The archived package regraded to 0.76 after passing the revocation mission.
+It braked to 0.01437 rad/s and delivered with confirmed right-arm custody
+at tick 2328, with zero contacts and 17.38 mm of minimum separation. A
+reference variant with a one-tick prefix also completed the mission.
+The packaged reference passed all 35 checks and the no-op scored 0.0.
+Oddish preflight returned no findings.
+
+The calibration report field `inliers` is now defined as an integer count.
+The same frozen package returned sample indices. Converting those arrays
+to counts as a separate diagnostic made all five metrology checks pass
+with the original fitted transforms and validation metrics. The five
+early motion checks have a separate parser failure. The package required
+an owner field inside `payload`, and the requests carry the documented
+top-level `owner`.
+
+A second GLM-5.3 attempt scored 0.297231 with all five metrology checks
+and the three positive native synthesis cases passing. Its workspace
+rejection failed. Both live recovery missions failed, while the forged
+custody check passed. The older verifier's speed threshold could have
+affected the withdrawal mission. The hosted report contains only
+pass flags, and the independent lost-reply mission has no withdrawal
+speed gate.
+
+A third GLM-5.3 trial scored 0.219231. All five synthesis checks passed,
+including the workspace rejection. The three positive metrology
+checks failed. The two live recovery checks also failed, and the
+forged custody check passed.
+
+The three top-ten GPT‑6.2 Sol xhigh trials reported 0.24, 0.24, and
+0.324. The Stage 6 input contract asks for a successful commissioning
+report, which includes per-arm validation errors. The synthetic
+planning fixture supplied the fitted transforms and omitted those
+errors. All three submitted planners rejected that incomplete report
+before reaching the motion checks. The maintained fixture supplies the
+validation fields for its exact synthetic calibration.
+
+With the complete report, the first two archived planners still
+returned `blocked` on both positive synthesis cases. The third
+completed normal and obstructed synthesis, lost-reply recovery, and
+withdrawal recovery. In the last case the cell withdrew at
+0.296 rad/s, settled to 0.008 rad/s after braking, and completed the
+confirmed handoff by tick 1650. It also rejected forged custody and
+blocked the out-of-workspace target.
+
+The full local replays scored 0.24, 0.24, and 1.0 with the report
+completed. The perfect replay also passed the original withdrawal
+witness after adding the metadata, because its measured speed
+exceeded the old threshold. The two lower replays passed 29 of 35
+checks and stalled at feasible transfer synthesis. The corrected
+replays use the unchanged submitted applications.
+
+The maintained package reference passed all 35 native and retained
+checks and scored 1.0. The no-op scored 0.0. Packaging and Oddish
+preflight passed.
+
+### 2026-11-25
+
+A DeepSeek V4.1 Flash trial scored 0.009231 on the seven-checkpoint
+comparison. Replaying the archived submission showed that early planning
+stopped in the shared motion parser, which looked for `owner` at the top
+level. The planning request supplies it in `measured.owner`. The
+commissioning and native planning commands tried to open the text in
+`robot_xml` as a file path and stopped before the native experiments.
+The planning brief now lists the inherited geometry fields and names the
+start and goal as node IDs. Both native briefs explicitly call for XML
+text in the model field. [Top-ten evaluation](https://www.oddish.app/experiments/4e6cfedb)
+
+#### Grasp recovery after a part slips
+
+Checkpoint 8 extends the native dispatcher to recover a changed
+attachment while the part remains clamped. The archived GPT solution
+that passed all 35 previous checks could reuse the commissioned grasp
+frames throughout. The new cell interlock holds the arms while the
+controller pairs independently measured object poses with encoder
+captures and rebuilds the grasp in the object frame. The recovered
+pose changes swept part geometry, receiver alignment and the goal
+configuration. MoveIt likewise represents a held collision body relative
+to a robot link in the planning scene. [MoveIt planning scene](https://moveit.picknik.ai/main/api/html/moveit__core_2planning__scene_2src_2planning__scene_8cpp_source.html)
+
+The independent MuJoCo cases change the active site weld after an executed
+move or a confirmed custody transfer. The plant sweeps the reseating for
+clearance and continues to integrate the native arms and free payload.
+The camera observations arrive with expired captures, out-of-order
+delivery, duplicates and competing pose hypotheses. The two positive
+missions require calibrated motion with the new frame and delivery to the
+surveyed destination. The ambiguous mission requires the existing holder
+to keep the transport interlocked through the deadline. A lost reply
+checks that the recovered transform and first motion authority were
+committed together.
+
+The checkpoint retains 20% of the previous score. The three new missions
+share the other 80%, with a physical delivery required for new credit.
+
+The native reference recovered slips of 32.0 mm in the giver and
+36.7 mm in the receiver. Both resolved grasps were within 1.1 mm of
+the measured attachment. The plant delivered both parts without contact.
+Minimum native separation was 30.4 mm and 17.6 mm, respectively. In the
+third mission the cell remained interlocked with its original holder and
+held at least 31.1 mm of separation through the deadline.
+
+A control that fitted the survey but continued planning with the nominal
+attachment missed both deliveries. A control that used expired captures
+issued motion prematurely in all three cases. Selecting a tied camera
+hypothesis completed both positive missions and released the ambiguous
+hold, failing that case.
+
+The cumulative local reference passed 38 of 38 checks and scored 1.0.
+The previous reference and the strongest archived GPT application passed
+all 35 retained checks and scored 0.20 each. The no-op scored 0.0.
+Package checks and Oddish preflight passed. A fresh GPT attempt at grasp
+recovery remains unmeasured.

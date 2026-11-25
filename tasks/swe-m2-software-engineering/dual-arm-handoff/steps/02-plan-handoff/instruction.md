@@ -9,8 +9,9 @@ Keep the spatial certifier available.
 python3 -m dual_arm plan --spec SPEC.json --output REPORT.json
 ```
 
-The planning spec uses the previous model, margin and tick duration.
-It adds the following fields.
+The planning spec carries over `arms`, `payload`, `fixtures`, `margin`
+and `tick_seconds` from the motion checker. The measured record supplies
+the current owner and joint state.
 
 - `nodes` maps nonempty IDs to paired poses in the motion checker format.
   `edges` is an array of `{"id": ..., "from": node, "to": node, "ticks": positive_integer}`.
@@ -21,16 +22,19 @@ It adds the following fields.
   radius within `1e-7`. Maintain clearance. Ownership changes at the
   operation's end. IDs are unique within each array.
 - `measured` gives `tick`, paired joint `pose`, paired joint
-  `velocity`, and `owner`. `start_node` is the measured pose when
-  stationary or the required rest pose after braking.
+  `velocity`, and `owner`. `start_node` is a string ID in `nodes`.
+  Its paired pose matches the measured pose at rest or the required
+  stop pose after braking.
 - `brake_ticks` is zero when starting at rest. Otherwise brake for
   that positive duration with constant deceleration from the measured
   velocities to zero. The displacement is half the initial velocity
-  times the duration in seconds. The stop must match `start_node` to
-  within `1e-7` per coordinate and satisfy the same motion limits and
-  continuous clearance. The owner stays the same during braking.
-- `goal_node` and `goal_owner` define completion. `deadline` is the
-  latest completion tick, at most 80 ticks after the measurement.
+  times the duration in seconds. The stop must match the pose at
+  `nodes[start_node]` within `1e-7` per coordinate and satisfy the same
+  motion limits and continuous clearance. The owner stays the same
+  during braking.
+- `goal_node` is the destination string ID in `nodes`. `goal_owner`
+  is the required holder at completion. `deadline` is the latest
+  completion tick, at most 80 ticks after the measurement.
 
 Return `{"status":"ready","commands":[...]}` for any safe completion
 by the deadline. Otherwise return `{"status":"blocked","commands":[]}`.

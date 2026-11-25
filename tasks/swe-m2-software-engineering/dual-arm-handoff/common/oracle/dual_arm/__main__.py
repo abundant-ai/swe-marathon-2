@@ -22,19 +22,20 @@ def publish(path, value):
         item.replace(path)
 
 
-def main():
+def main() -> int:
+    """Run one requested arm operation and report whether it published a response."""
     parser = argparse.ArgumentParser(description=__doc__)
     verbs = parser.add_subparsers(dest="command", required=True)
     names = ["certify", "plan", "dispatch", "contingency"]
     for name, module in (("commission-native", "commission_native.py"), ("plan-native", "plan_native.py"),
-                         ("dispatch-native", "dispatch_native.py")):
+                         ("dispatch-native", "dispatch_native.py"), ("dispatch-grasp-recovery", "grasp_recovery.py")):
         if Path(__file__).with_name(module).is_file():
             names.append(name)
     for name in names:
         run = verbs.add_parser(name)
         run.add_argument("--spec", type=Path, required=True)
         run.add_argument("--output", type=Path, required=True)
-        if name in ("dispatch", "dispatch-native"):
+        if name in ("dispatch", "dispatch-native", "dispatch-grasp-recovery"):
             run.add_argument("--state", type=Path, required=True)
     args = parser.parse_args()
     try:
@@ -67,6 +68,10 @@ def main():
                 from .dispatch_native import dispatch_native
 
                 report = dispatch_native(spec, state, publish)
+            elif args.command == "dispatch-grasp-recovery":
+                from .grasp_recovery import dispatch_grasp_recovery
+
+                report = dispatch_grasp_recovery(spec, state, publish)
             else:
                 report = dispatch(spec, state, publish)
         publish(args.output, report)

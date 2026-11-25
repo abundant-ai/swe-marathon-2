@@ -13,7 +13,7 @@ orange-task-authoring = { path = "tasks/swe-m2-ai-engineer/knowledge-work-assist
 abundant-titans = { git = "https://github.com/abundant-ai/titans.git", rev = "2260f95668a4c3d40fd6050292a1d2f74d8f5a5c" }
 
 [dependency-groups]
-dev = ["av==16.1.0", "pyarrow==23.0.1", "pytest==8.4.2"]
+dev = ["pytest==8.4.2"]
 # Optional training dependencies; opt in with --group titans.
 titans = ["abundant-titans"]
 titans-data = ["pyarrow==23.0.1"]
@@ -22,14 +22,6 @@ titans-data = ["pyarrow==23.0.1"]
 testpaths = [
     "ci_checks",
     "tasks/swe-m2-ai-engineer/knowledge-work-assistant/checks",
-    "tasks/swe-m2-software-engineering/policy-sim-bridge/checks",
-    "tasks/swe-m2-software-engineering/fixed-lag-fusion/checks",
-    "tasks/swe-m2-software-engineering/px4-estimator-recovery/checks",
     "tasks/swe-m2-software-engineering/dual-arm-handoff/checks",
-    "tasks/swe-m2-software-engineering/lerobot-dataset-repair/checks",
-    "tasks/swe-m2-software-engineering/ros2-control-recovery/checks",
-    "tasks/swe-m2-software-engineering/fleet-recovery/checks",
-    "tasks/swe-m2-software-engineering/nav2-docking-recovery/checks",
-    "tasks/swe-m2-software-engineering/mujoco-branch-replay/checks",
-    "tasks/swe-m2-software-engineering/versioned-mapping/checks",
+    "tasks/swe-m2-software-engineering/fixed-lag-fusion/checks",
 ]

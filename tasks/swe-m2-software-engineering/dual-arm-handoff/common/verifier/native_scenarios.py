@@ -1,7 +1,9 @@
 """Author measured native workcells and private full-pose transfer witnesses."""
 
+from collections.abc import Callable
 from copy import deepcopy
 from math import cos, sin
+from typing import Any
 import xml.etree.ElementTree as ET
 
 import mujoco
@@ -79,8 +81,18 @@ def session(robot_xml, *, variant=0):
     end=np.linalg.solve(offsets['right'].T,grip('right',qend).T).T
     payload={'mass_kg':.55+variant*.11,'half_size_m':[float(separation/2-.047),.026,.029],
              'object_from_grasp':{key:record(value) for key,value in offsets.items()}}
-    fitted={'status':'ok','calibration':{arm:{'world_from_base':record(bases[arm]),
-                                            'flange_from_marker':record(markers[arm]),'inliers':12} for arm in SIDES}}
+    fitted = {
+        'status': 'ok',
+        'calibration': {
+            arm: {'world_from_base': record(bases[arm]),
+                  'flange_from_marker': record(markers[arm]), 'inliers': 12}
+            for arm in SIDES
+        },
+        # These poses are the cell transforms used to generate its observations.
+        'validation': {
+            arm: {'translation_rmse_m': 0.0, 'rotation_rmse_rad': 0.0} for arm in SIDES
+        },
+    }
     spec={'robot_xml':robot_xml,'calibration':fitted,'payload':payload,'fixtures':[],
           'handoff_object_poses':[record(station)],'destination':{'owner':'right','world_from_object':record(end)},
           'measured':{'tick':20+7*variant,'owner':'left','q':group(qstart),'dq':group(np.zeros(12))},
@@ -243,15 +255,35 @@ def within(a,b,linear=.018,rotation=.060):
     return d<=linear and theta<=rotation
 
 
-def animate(plant, command, spec, *, until=None):
-    """Execute an issued motor primitive from current references without teleportation."""
+def animate(
+    plant: NativePlant,
+    command: dict[str, Any],
+    spec: dict[str, Any],
+    *,
+    until: int | None = None,
+    withdraw_at: Callable[[NativePlant], bool] | None = None,
+) -> bool:
+    """Drive the native plant from its current measured state.
+
+    Args:
+        plant: Live cell whose actuator and payload state will advance.
+        command: Issued move, brake or transfer with integer start and end ticks.
+        spec: Mission limits, geometric clearance and transfer station constraints.
+        until: Optional final tick when executing a fixed movement prefix.
+        withdraw_at: Optional predicate called after each safe interior move tick.
+
+    Returns:
+        Whether the executed portion stayed within the physical constraints.
+        Inspect the plant tick to distinguish a withdrawal from a full move.
+    """
     start,end=command.get('start'),command.get('end')
     if type(start) is not int or type(end) is not int or start!=plant.tick or not start<end<=spec['deadline_tick']:
         return False
     first=plant.target.copy()
     kind=command['kind']
     if kind=='transfer':
-        if end-start!=spec['transfer_ticks'] or command.get('to')==plant.owner or until is not None:
+        if (end-start!=spec['transfer_ticks'] or command.get('to')==plant.owner
+                or until is not None or withdraw_at is not None):
             return False
         if command.get('to') not in SIDES:
             return False
@@ -297,6 +329,8 @@ def animate(plant, command, spec, *, until=None):
         if not plant.step(command_q,slope*delta/seconds):
             return False
         plant.target=command_q
+        if kind=='move' and withdraw_at is not None and plant.tick<end and withdraw_at(plant):
+            break
     return True
 
 

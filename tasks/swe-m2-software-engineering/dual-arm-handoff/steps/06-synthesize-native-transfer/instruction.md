@@ -8,7 +8,7 @@ python3 -m dual_arm plan-native --spec SPEC.json --output REPORT.json
 
 ## Cell and objective
 
-- `robot_xml` is the supplied single-arm UR5e model. `calibration` is a successful `commission-native` report. The two calibrated marker frames serve as the gripper grasp sites. Each arm has six joints in model order. Retain the native collision shapes and hinge limits.
+- `robot_xml` contains the supplied single-arm UR5e model's XML text. `calibration` is a successful `commission-native` report. The two calibrated marker frames serve as the gripper grasp sites. Each arm has six joints in model order. Retain the native collision shapes and hinge limits.
 - `payload` has positive `half_size_m` for a rigid box, positive `mass_kg`, and `object_from_grasp` poses for `left` and `right`. These transform a gripper's grasp site from the part frame. The maximum box half dimension is 0.42 m, each grasp offset's norm is at most 0.48 m, and each marker's flange offset is at most 0.30 m. Keep the part rigidly attached to its current holder.
 - `fixtures` contains up to 16 fixed boxes, with `half_size_m` and `world_from_box` for each. Verify separation by at least `clearance_m` after subtracting the shapes. Include arm–arm, nonadjacent self, arm–part, fixture–arm and part–fixture pairs. Same-body and direct parent-child arm shapes may meet. The task uses authored collision envelopes and strictly positive margins.
 - `measured` contains nonnegative `tick`, `owner`, and `q` and `dq` maps with six joint positions and velocities for `left` and `right`. Concatenated `speed_rad_s` and `acceleration_rad_s2` hold positive limits, left then right. Each tick is 5 ms. `deadline_tick` is at most 7,000 ticks after measurement.
