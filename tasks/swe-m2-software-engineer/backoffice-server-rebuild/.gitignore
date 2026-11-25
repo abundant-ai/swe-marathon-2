@@ -1,3 +1,7 @@
 experiment/
 steps/*/tests/private/
 __pycache__/
+# the reference's source and bytecode, made into the bundle at build time from the private Stockwell checkout
+# (scripts/package_step.py) and never committed: this repository is public
+steps/*/solution/data/
+environment/sealed/

@@ -410,7 +410,7 @@ def test_bundles_hold_runtime_files_only(tmp_path):
             for required in ("task.toml", "environment/Dockerfile", "environment/requirements.txt", "environment/sealed/stockwell/app.pyc",
                              "environment/sealed/stockwell/media/pdf.pyc", "environment/client/dist/index.html", "environment/client/src/main.tsx",
                              "environment/fsmaint-sweep", prefix + "instruction.md", prefix + "tests/verify.py", prefix + "tests/requirements.txt",
-                             prefix + "tests/private/scenarios.json.gz", prefix + "solution/oracle.py", prefix + "solution/data/stockwell/api_routes.pyc",
+                             prefix + "tests/private/scenarios.json.gz", prefix + "solution/oracle.py", prefix + "solution/data/stockwell/api_routes.py",
                              prefix + "solution/data/stockwell.env"):
                 assert (bundle / required).is_file(), required
             # the corpus ships to the verifier image with its scenarios alone: how they were recorded (the seed, the legacy
@@ -432,13 +432,26 @@ def test_bundles_hold_runtime_files_only(tmp_path):
                                   capture_output=True, text=True, timeout=120)
             assert done.returncode == 0, done.stdout[-1000:] + done.stderr[-2000:]
             assert (installed / "stockwell.env").read_text() == (TASK / "environment" / "stockwell.env").read_text()
-            assert (installed / "stockwell" / "app.pyc").is_file() and not any(installed.rglob("*.py")) and os.access(installed / "run", os.X_OK)
+            assert (installed / "stockwell" / "app.py").is_file() and not any(installed.rglob("*.pyc")) and os.access(installed / "run", os.X_OK)
             if not flag:
                 assert serve_once(installed), "the packaged solution's server did not start and give a workspace"
-            # QA 08: the reference ships as Python 3.12 bytecode only, sealed and as the solution's data, never as source
-            for folder in (bundle / "environment" / "sealed", bundle / f"{prefix}solution" / "data"):
-                assert not any(path.suffix == ".py" for path in folder.rglob("*")), folder
-                assert all(path.read_bytes()[:4] == b"\xcb\r\r\n" for path in folder.rglob("*.pyc")), "Python 3.12 bytecode"
+            # QA 08: the sealed server, in the agent's image, is Python 3.12 bytecode alone, never source
+            sealed = bundle / "environment" / "sealed" / "stockwell"
+            assert not any(path.suffix == ".py" for path in sealed.rglob("*")), sealed
+            assert all(path.read_bytes()[:4] == b"\xcb\r\r\n" for path in sealed.rglob("*.pyc")), "Python 3.12 bytecode"
+            # version 12's audit (Q-09): the solution's data is the readable source, and it is the sealed program: one source
+            # file for each sealed module and none besides, each compiled as the sealed copy is (Python 3.12, unchecked-hash
+            # headers, the sealed path) giving the sealed .pyc byte for byte
+            source = bundle / f"{prefix}solution" / "data" / "stockwell"
+            modules = sorted(path.relative_to(source).as_posix()[:-3] for path in source.rglob("*.py"))
+            assert len(modules) > 150 and not any(path.suffix == ".pyc" for path in source.rglob("*"))
+            assert modules == sorted(path.relative_to(sealed).as_posix()[:-4] for path in sealed.rglob("*.pyc"))
+            again = tmp_path / f"again-{kind}"
+            jobs = [[str(source / f"{module}.py"), str(again / f"{module}.pyc"), f"/opt/stockwell/app/stockwell/{module}.py"] for module in modules]
+            done = subprocess.run([*package_step.python312(REFERENCE), "-I", "-c", package_step.COMPILE], input=json.dumps(jobs), text=True,
+                                  capture_output=True, timeout=300)
+            assert done.returncode == 0, done.stderr[-2000:]
+            assert [module for module in modules if (again / f"{module}.pyc").read_bytes() != (sealed / f"{module}.pyc").read_bytes()] == []
             config = (bundle / "task.toml").read_text()
             assert ("[[steps]]" in config) == (not flag) and "[[verifier.collect]]" in config
             # the candidate image must never receive the scenarios, the verifier or the client's test helpers
@@ -514,6 +527,59 @@ def test_bundles_hold_runtime_files_only(tmp_path):
             private.unlink()
         for kind in made_media:
             shutil.rmtree(media / kind)
+
+
+def test_the_solution_ships_the_pinned_source_and_the_repository_never_holds_it(tmp_path):
+    """Version 12's pre-trial audit (Q-09, must-fix): the solution held the reference as bytecode alone. Its data is now
+    the reference's readable source, taken at build time from the pinned checkout, each file checked against the pinned
+    commit's own Git blob (a changed, missing or extra file stops the build), and compiled as the sealed copy is it gives
+    the sealed bytecode byte for byte (the bundle check). The source is never committed: this repository is public, so
+    it tracks no file of the package and ignores the folders the build makes it in."""
+    from reference import commit
+
+    tree = package_step.source_tree(REFERENCE)
+    assert len(tree) == len(package_step.compiled(REFERENCE)) > 150
+    assert all(name.startswith("steps/01-rebuild-server/solution/data/stockwell/") and name.endswith(".py") for name in tree)
+    listing = subprocess.run(["git", "-C", str(package_step.repository()), "ls-tree", "-r", commit(), "backend/src/stockwell"],
+                             capture_output=True, text=True, timeout=60)
+    assert listing.returncode == 0 and len(listing.stdout.splitlines()) == len(tree)
+    # a checkout that differs from the pinned commit in one file, or lacks one, is refused
+    package = REFERENCE / "backend" / "src" / "stockwell"
+    for change in ("edited", "missing"):
+        copy = tmp_path / change
+        shutil.copytree(package, copy / "backend" / "src" / "stockwell", ignore=shutil.ignore_patterns("__pycache__"))
+        settings = copy / "backend" / "src" / "stockwell" / "settings.py"
+        if change == "edited":
+            settings.write_text(settings.read_text() + "\n# changed\n")
+        else:
+            settings.unlink()
+        try:
+            package_step.pinned_sources(copy)
+        except ValueError as refused:
+            assert "backend/src/stockwell/settings.py" in str(refused), refused
+        else:
+            raise AssertionError(f"a checkout with {change} settings.py was packaged")
+    # never in the repository: nothing of the package is tracked, and where the build makes it is ignored
+    tracked = subprocess.run(["git", "-C", str(TASK), "ls-files"], capture_output=True, text=True, timeout=60).stdout.splitlines()
+    assert tracked and not [path for path in tracked if "solution/data/" in path or path.startswith("environment/sealed/") or path.endswith(".pyc")
+                            or (path.endswith(".py") and "/stockwell/" in path)]
+    for made in ("steps/01-rebuild-server/solution/data/stockwell/app.py", "environment/sealed/stockwell/app.pyc"):
+        assert subprocess.run(["git", "-C", str(TASK), "check-ignore", "-q", made], timeout=60).returncode == 0, made
+    assert subprocess.run(["git", "-C", str(TASK), "check-ignore", "-q", "environment/sealed-supervisor"], timeout=60).returncode == 1
+
+
+def test_only_the_builds_have_network():
+    """Version 12's pre-trial audit (must-fix): the second image's Dockerfile installs system and Python packages, but
+    its build was declared without network. The two builds have public egress, the agent's session and the final check
+    have none, and the justification says so in plain words."""
+    values = tomllib.loads((TASK / "task.toml").read_text())
+    assert values["environment"]["network_mode"] == values["verifier"]["environment"]["network_mode"] == "public"
+    assert values["agent"]["network_mode"] == values["verifier"]["network_mode"] == "no-network"
+    docker = (STEP / "tests" / "Dockerfile").read_text()
+    assert "apt-get install" in docker and "pip install" in docker, "what the second image's build downloads"
+    reason = values["metadata"]["open_internet_justification"]
+    for part in ("the build of the second image have public egress", "The agent works without network access", "the final check runs without network"):
+        assert part in reason, part
 
 
 def test_the_sealed_server_is_started_as_its_own_user_from_bytecode():

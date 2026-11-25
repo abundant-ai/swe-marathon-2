@@ -7,10 +7,15 @@ usage: package_step.py [--flat [--keep-name]] [--output DIR]
 with --keep-name it keeps the task's own name, so that the flat bundle uploads as
 the next version of the same task.
 
-The reference server ships as bytecode only (compiled here with Python 3.12, the
-images' version), both as the sealed server and as the solution's data, so no
-source of it is in the bundle or in any layer of either image. Files are hashed
-and copied in chunks: the media alone is a couple of hundred megabytes.
+The reference server ships twice. The sealed server in the agent's image is bytecode
+alone (compiled here with Python 3.12, the images' version), so no layer of either
+image holds its source. The solution's data is its readable source (the pre-trial
+audit's Q-09), copied at build time from the pinned checkout in experiment/reference,
+each file first checked against the pinned commit's own Git blob in the private
+Stockwell repository; it is never committed, since this repository is public, and the
+folders it is made in are Git-ignored. The sealed bytecode is compiled from those same
+checked files. Files are hashed and copied in chunks: the media alone is a couple of
+hundred megabytes.
 """
 
 from __future__ import annotations
@@ -28,7 +33,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from reference import checkout  # noqa: E402
+from reference import checkout, commit, repository  # noqa: E402
 
 TASK_ROOT = Path(__file__).resolve().parent.parent
 STEP = "steps/01-rebuild-server"
@@ -59,10 +64,43 @@ def python312(reference: Path) -> list[str]:
     return ["uv", "run", "--no-project", "--python", "3.12", "python"]
 
 
-def compiled(reference: Path) -> dict[str, Path]:
-    """Bytecode of the reference package for the sealed server and for the solution, cached by source content."""
+def pinned_sources(reference: Path) -> list[Path]:
+    """The reference package's source files, each checked against the pinned commit's own Git blob.
+
+    Raises:
+        ValueError: A file differs from the pinned commit, or the commit has a file the checkout lacks (or the
+            other way round), or the Stockwell repository cannot be read.
+    """
     package = reference / "backend" / "src" / "stockwell"
-    sources = sorted(package.rglob("*.py"))
+    sources = sorted(path for path in package.rglob("*.py") if "__pycache__" not in path.relative_to(package).parts)
+    listing = subprocess.run(["git", "-C", str(repository()), "ls-tree", "-r", commit(), "backend/src/stockwell"],
+                             capture_output=True, text=True)
+    if listing.returncode != 0:
+        raise ValueError(f"cannot list the pinned commit {commit()} in {repository()}: {listing.stderr[-300:]}")
+    blobs = {}
+    for line in listing.stdout.splitlines():
+        meta, name = line.split("\t", 1)
+        blobs[name] = meta.split()[2]
+    shipped = {}
+    for path in sources:
+        data = path.read_bytes()
+        shipped[f"backend/src/stockwell/{path.relative_to(package).as_posix()}"] = hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
+    if shipped != blobs:
+        differ = sorted(name for name in set(shipped) | set(blobs) if shipped.get(name) != blobs.get(name))
+        raise ValueError(f"the checkout in {reference} is not the pinned commit {commit()}: {differ[:5]}")
+    return sources
+
+
+def source_tree(reference: Path) -> dict[str, Path]:
+    """The reference package's readable source for the solution's data, as the pinned commit holds it."""
+    package = reference / "backend" / "src" / "stockwell"
+    return {f"{STEP}/solution/data/stockwell/{path.relative_to(package).as_posix()}": path for path in pinned_sources(reference)}
+
+
+def compiled(reference: Path) -> dict[str, Path]:
+    """Bytecode of the reference package for the sealed server, cached by source content."""
+    package = reference / "backend" / "src" / "stockwell"
+    sources = pinned_sources(reference)
     command = python312(reference)
     version = subprocess.run([*command, "-c", "import sys; print(sys.version_info[:2] == (3, 12), sys.version.split()[0])"],
                              capture_output=True, text=True, check=True).stdout.split()
@@ -72,7 +110,7 @@ def compiled(reference: Path) -> dict[str, Path]:
     for path in sources:
         digest.update(path.relative_to(package).as_posix().encode() + b"\0" + path.read_bytes())
     folder = CACHE / f"bytecode-{digest.hexdigest()[:16]}"
-    places = {"environment/sealed/stockwell": "/opt/stockwell/app/stockwell", f"{STEP}/solution/data/stockwell": "/app/server/stockwell"}
+    places = {"environment/sealed/stockwell": "/opt/stockwell/app/stockwell"}
     jobs, out = [], {}
     for prefix, shown in places.items():
         for path in sources:
@@ -175,6 +213,7 @@ def collect() -> dict[str, Source]:
     content[f"{STEP}/solution/data/stockwell.env"] = TASK_ROOT / "environment" / "stockwell.env"
     source = checkout()
     content.update(compiled(source))
+    content.update(source_tree(source))
     content["environment/requirements.txt"] = source / "requirements.txt"
     content[f"{STEP}/tests/requirements.txt"] = source / "requirements.txt"
     client = source / "frontend"

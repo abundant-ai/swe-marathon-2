@@ -9,7 +9,7 @@ authors = [{ name = "Neel Harsola", email = "work.neelharsola@gmail.com" }]
 
 [metadata]
 reward_type = "continuous"
-open_internet_justification = "Only the environment build and agent setup have public egress, to install system packages and the agent's own tooling. The agent works without network access; the sealed server it studies runs inside its own container."
+open_internet_justification = "The environment build, the agent's tool setup and the build of the second image have public egress, to install system and Python packages. The agent works without network access, the sealed server it studies runs inside its own container, and the final check runs without network."
 
 [agent]
 timeout_sec = 34560
@@ -45,7 +45,7 @@ user = "root"
 timeout_sec = 600
 
 [verifier.environment]
-network_mode = "no-network"
+network_mode = "public"
 build_timeout_sec = 1800
 cpus = 4
 memory_mb = 8192

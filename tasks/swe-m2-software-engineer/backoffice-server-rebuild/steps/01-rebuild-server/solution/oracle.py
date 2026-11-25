@@ -2,8 +2,8 @@
 
 usage: oracle.py [TARGET]   (default /app/server)
 
-Everything it installs comes from `data/` beside this file: the `stockwell` package (bytecode) and
-`stockwell.env`, the server's settings. Nothing is read from outside this folder.
+Everything it installs comes from `data/` beside this file: the `stockwell` package, the server's
+Python source, and `stockwell.env`, the server's settings. Nothing is read from outside this folder.
 """
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ def oracle(reference: Path, target: Path, settings: Path | None = None) -> None:
     """
     package = reference / "stockwell"
     settings = settings or reference / "stockwell.env"
-    if not (package / "app.py").is_file() and not (package / "app.pyc").is_file():  # source, or the bytecode in `data/`
+    if not (package / "app.py").is_file() and not (package / "app.pyc").is_file():  # the source in `data/`, or bytecode
         raise RuntimeError(f"The reference server package is missing from {reference}")
     if not settings.is_file():
         raise RuntimeError(f"The server's settings are missing ({settings})")
