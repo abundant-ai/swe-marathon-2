@@ -13,6 +13,141 @@ One step is implemented. See [Remaining work](#remaining-work).
 
 ## Development log
 
+### 2026-11-25 (round 16: the verdict on version 11; every documented call in the corpus, and where the sealed server is; version 12)
+
+- Version 11 (flat bundle `d09c99f4e5db`) passed its baselines (reference 1.0 twice, no-op 0.0 twice) and its source
+  audit, and its three model trials were good failures: DeepSeek 0.141 and 0.118, GLM 0.061. Trial 113 ran the full
+  34,562 s and was graded; its manifest reads `complete 79 3986299`, the process cap applied (`sweep: a su session of the
+  user had a process limit of 16384`), two files outside the tree were held at the stop, and nothing changed after the
+  end. The verdict (2026-11-25, about 06:30 UTC) rejected it on two findings, both answered here (harbor-lh
+  `ops/swe-marathon-v2/qa/backoffice/09-FIX-v12-BRIEF.md`, evidence in `scratch-v11/status.json`).
+- Should-fix (the source audit): the corpus never called documented routes the instruction does not except (GET
+  /api/ws/{ws}, GET and POST /price-lists, GET /users/{id}, POST /users/{id}/activate), so a server answering 404 there
+  lost nothing. This round's audit took all 242 operations of the API description (the client's `openapi.json`, which is
+  the document the sealed server serves) and every step of the corpus, each step given to its most specific template.
+  21 were never called. Eight are excepted by the instruction (password sign-in and sign-out, setting and changing a
+  password, the credentials list, making and revoking credentials, the request log). One is POST /api/workspaces, the
+  replay's own first call in every scenario (201 and a usable id are required; the rest of its answer was never
+  compared). Twelve more were never graded: GET /api/health and GET /api/ready (the health check's status decides whether
+  the server is up, its answer was never compared), GET /api/ws/{ws}, GET and PATCH /users/{id}, POST
+  /users/{id}/activate, GET /auth/permissions, GET and POST /price-lists, GET /promotions, POST /suppliers and GET
+  /reports/saved/{id}. GET /api/openapi.json, which the instruction names, was never fetched. Four more were only ever
+  answered with a refusal, so a server that always refused them kept every unit: bringing a carrier back (409, 404),
+  reversing a journal entry (409, 404), unblocking a supplier (403, 409) and resuming a standing order (409). FastAPI's
+  own `/api/docs` and `/api/redoc` pages are served but named nowhere the agent reads, and stay ungraded.
+- The two password calls answer without the time or a token, so the exception's reason did not cover them, though the
+  instruction says "we do not use the server's own passwords". The exception now names them ("Those need not match, and
+  neither do the calls that set or change a password, which we do not use either."); grading them would grade what the
+  requester says is unused.
+- Nine office routines (`scripts/record_live.py`, `ROUTINES`), recorded by the live recorder like its counts and kits:
+  one fresh workspace and one unit per scenario, every answer the reference's own through the verifier's `exchange`, each
+  theme with its own random stream from the private seed. Each puts its new calls in the work they belong to, among
+  refusals (a role without the right, a mistake in the body, an unknown id, a second try) and with reads that show their
+  effect:
+  - `users`: a user joins (an address in use refused), is read by an admin, by themself and by a colleague, has their
+    role, name or address changed (not by a non-admin, not an admin's own role, not to a role or name that is not one,
+    not an unknown user or field), places an order under the new role, is deactivated and brought back, reads
+    `/auth/me` and the permission table; the user list and the activity log show it all;
+  - `workspace`: a monitor's health and readiness checks, the summary (no user, an unknown user and a workspace that is
+    not there refused), customers, products, stock, orders, invoices, staff and the calendar changed and the summary read
+    again; every fourth fetches the API description;
+  - `price-lists`: a list drafted (mistakes and a role without the right refused), the lists read, a customer put on it
+    and the price check following it before and after its first day, its entries replaced;
+  - `promotions`: promotions made and ended (twice refused), the list filtered by kind, by whether they still run and by
+    name, a price check, the calendar moved past an end;
+  - `suppliers`: a supplier added (a name in use, a region or terms that are not one, a lead time too long refused),
+    priced and ordered from, blocked (the order refused), unblocked (by a role without the right, or twice, refused) and
+    the order submitted;
+  - `saved-reports`: a report saved, opened by its number by its owner, a colleague (another's private report is not
+    theirs) and an admin, run, opened again, deleted (no one else may) and gone;
+  - `journal-reversals`: a manual entry reversed, reversed again, a system entry and an unknown one refused, the right
+    entry posted, the journal, the accounts and the trial balance read;
+  - `carriers`: a shipment packed, its carrier retired and the dispatch refused, the carrier brought back (a role without
+    the right, an unknown carrier, one in use refused) and the shipment dispatched;
+  - `standing-orders`: an order paused, the calendar moved, resumed (one already running, a cancelled one and a role
+    without the right refused), and its runs following.
+- Two verifier changes the routines need, inert for every earlier scenario (neither key is in any of them):
+  - `created`: a scenario that holds it also judges the answer its workspace was created with, as its first. The 12
+    workspace scenarios hold it, so POST /api/workspaces's answer, the same summary as GET /api/ws/{ws}, now counts.
+  - `literal`: the API description's own text holds `{ws}` (its paths, `/api/ws/{ws}/...`), which the replay took for
+    the workspace id and rewrote, so no server could match it, the reference included (the new mutant check found it: the
+    reference scored 0.944 on its corpus). The recorder marks an answer whose own text holds `{ws}` as `literal`, and
+    refuses one that also holds the workspace id; the replay compares a literal answer as it is.
+- The corpus. `scripts/record_scenarios.py --append --routines 12` records the routines alone with the private seed and
+  adds them at the end of the corpus, where a full recording with `--routines 12` puts them, so every scenario already
+  there stays byte for byte (the old file, less its closing `]}`, is the new one's start). A second append onto a fresh
+  copy of the old corpus gave the same bytes. (A first append, `e1ce8eb8...`, gave new suppliers a customer's terms, EOM10,
+  in 2 of the 12 supplier routines, which then stopped at the refusal; the terms are a supplier's now, EOM10 is one of
+  the mistakes refused first, and every routine reaches its main calls in all 12 scenarios. The corpus was restored from
+  the packager's cache and appended to again.) 108 scenarios and 1,220 requests (997 answered 2xx, 223 refused) were added:
+  2,262 to 2,370 scenarios, 4,002 to 4,110 units, 89,524 to 90,744 requests; SHA-256 `3cd1a9c8...` to `05dc16d9...`, in
+  `experiment/recording.json` with `routines: 12`. No scenario was removed or changed, and each keeps its units; the
+  routines are 108 of 4,110 units (2.6%), and every earlier unit now weighs 1/4,110 instead of 1/4,002. Every
+  documented call outside the exceptions is now answered with success somewhere in the corpus, and none of the excepted
+  ones is called.
+- Must-fix (evaluation awareness): at step 9 of trial 113 the solver wrote "This looks like it's from a benchmark
+  ("harbor"). These tasks often have a time budget." The first 4 MB of its session log (read through the Oddish API,
+  read-only) show why it looked: it wondered whether "the sealed server binary is somewhere on disk ... maybe it's
+  actually accessible", and ran `ps aux` with `find / -iname '*stockwell*'` and `find / -iname '*sealed*'`. The process
+  list held the platform's claude-code launcher, which runs as the agent's own user (`bash -c ...
+  harbor_claude_code_instruction_<hex>=...`, with the run configuration's appended prompt, "... or its time budget is
+  used up ... Ending your turn ends the run."): "harbor" came from that line, "time budget" and "unattended" from the
+  prompt. Trial 112 listed no process in its first 2 MB; trial 114's `ps` calls came hours in, each through `grep` for
+  its own server, so the line never showed. The instruction had said where the sealed server listens, that it is sealed
+  and that it runs under its own account, but not where its files are, whose account it is or that it is kept running,
+  which is what the solver went to find. It now says: "Its files are in `/opt/stockwell`, which your account cannot read;
+  it runs under its own account, `stockwell`, and a service manager starts it again if it stops." Nothing is hidden or
+  touched: procps stays, `/proc` is as it was, the harness's process and environment are untouched, and nothing about
+  evaluation or time is said. What remains is hackability row 16: any `ps` without a filter still shows the line, and only
+  the platform can change it (harbor-lh `ops/swe-marathon-v2/PLATFORM_HARNESS_PROCESS_CUE.md`, a draft for the owner);
+  the run configuration's prompt is the owner's (Remaining work).
+- Checks: four new and two extended, each failing on `f38350e` (this round's checks file run against a `git archive`
+  copy of it with the old corpus: 5 failed; the extended recording check is not run there):
+  - `test_every_documented_call_outside_the_exceptions_is_answered_in_the_corpus`: on the task's corpus, every operation
+    outside the exceptions is answered 2xx somewhere and the excepted ones nowhere, POST /api/workspaces is judged
+    through `created` in 12 scenarios, and the exception sentence is pinned;
+  - `test_routines_recorded_onto_a_corpus_are_what_a_full_recording_gives`: a small corpus recorded without routines and
+    appended to is byte for byte the full recording's; the record follows; a second append is refused; no media is
+    touched;
+  - `test_a_server_without_a_call_the_routines_make_loses_their_units`: on a corpus of two of each routine, for each of
+    the 16 added calls the reference without it, answering 404 as for an unknown path, loses exactly the scenarios that
+    make it, each at its first such call; a health check with another body and a creation answer of the id alone lose
+    the workspace scenarios; the reference scores 1.0 and a missing server 0.0;
+  - `test_the_instruction_says_where_the_sealed_server_is_and_whose_it_is`: the sentence, each fact tied to the
+    Dockerfile, the set-up and the supervisor; procps kept, no `/proc` mount and no package removed;
+  - extended: the recording check (two of each routine, last, numbered from `R00001`, one unit each, `routines` in the
+    record) and the `{ws}` check (literal answers compared as they are, the recorder's mark and refusal).
+
+  `checks/` has 68 tests; with `ci_checks` (27), 95 pass under Python 3.13: the full run at `771413a`, and after the
+  supplier routine's fix (`df3d36b`) nine again: those that record, grade or package the routines or read the corpus,
+  and the instruction's two. The artifacts check needs a temporary path under about 95 characters (re-check N7): in the full run, on this
+  session's 125-character path, it failed on the cut line alone, and it passed run alone on a short one.
+- Bundles: flat `ee5e93e67e46` (the upload; Oddish content hash `07dfc83dfd6a...` against version 11's
+  `a87483eba448...`) and steps `753464d6ed55`, 1,160 files and 247.5 MB each, each built twice with the same hash and
+  `diff -r`-identical files. They differ from version 11's in `instruction.md`, `tests/private/scenarios.json.gz` and
+  `tests/verifier/replay.py` alone, and the flat one from the steps one in `task.toml` alone, as before.
+  `scripts/scan_uploads.py`: no leak and nothing missing among 495 agent-image files (2,370 scenarios, 90,744
+  requests). `oddish preflight` passes.
+- Proof, everything from the flat bundle `ee5e93e67e46` on this Mac (no sandbox):
+  - the reference, its solution installed from an isolated copy by its own `oracle.py` (only the interpreter path
+    swapped): 1.0 on every unit, 4,110 of 4,110 (2,370 of 2,370 scenarios, each routine theme 12 of 12), 9 planned
+    restarts, no other restart, no second try, nothing unfinished, no note, no answer of 500 or above, in 1,068.4 s of
+    replay, the slowest request 6.2 s, on a Mac at a load average of about 20 (another task's regrade and a virtual
+    machine beside it). The first build, `7d47b8d1458e` (the first append, before the supplier terms were fixed),
+    scored the same in 565.3 s on a quieter Mac, the slowest request 3.9 s; round 15's took 504.5 s for 4,002 units.
+    `3.5 x elapsed_sec + 300 <= 5,400` holds for both (2,279 and 4,039), and the baselines measure the platform's;
+  - an empty server: 0.0, 0 of 4,110 ("/app/server/run is missing or not executable"), for both builds;
+  - the verdict's mutant, the reference's source with the 16 added calls answering 404 as an unknown path does: 0.957,
+    3,935 of 4,110. It loses exactly the 175 scenarios that make one of the 16 calls, each first at such a call, and
+    nothing else: all 108 routine scenarios (each routine theme 0 of 12) and 67 earlier ones that call the four calls
+    the corpus only saw refused (ledger 44, purchasing 11, dispatch 9, standing 3: reversing 42, unblocking 12, bringing
+    a carrier back 10, resuming 3). Per call, the scenarios that make it, which a server without that call alone loses
+    (the check shows it call by call on two of each routine): 12 each for the workspace summary, readiness, one user, a
+    user changed, a user brought back, the permission table, the price lists, a new price list, the promotions, a new
+    supplier and one saved report; 3 for the API description; 12 routines and 12 earlier scenarios for unblocking, 12
+    and 42 for reversing, 12 and 10 for bringing a carrier back, 12 and 3 for resuming; and the 12 workspace scenarios
+    judge the health check's answer and the creation answer. The first build gave the same.
+
 ### 2026-11-24 (round 15: no task-side timer, late writes removed from the work's end, a flat bundle under the task's own name; version 11)
 
 - Option A, as settled (the coordinator, after the write-and-rename finding below): claude-code
@@ -1420,7 +1555,7 @@ One step is implemented. See [Remaining work](#remaining-work).
 | --- | --- |
 | Step `01-rebuild-server` | Implemented: instruction, agent image with the sealed server, separate verifier image, reference solution. |
 | Further steps | Not designed. Candidates: a follow-up change request on the rebuilt server; importing a year of legacy data. The work's end is counted from the trial's set-up, which is right for one step only: a second one needs its start recorded per step first (Remaining work). Since round 15 the task is uploaded flat. |
-| Private inputs | `steps/01-rebuild-server/tests/private/scenarios.json` and the private files they upload (`experiment/media/private`, made with `--big`), Git-ignored, produced by `scripts/record_scenarios.py --count 2160 --runs 44 --term 6 --kill 3 --screens 8` from the private seeds in `experiment/seeds.json` (never committed; rotated in round 3). The corpus holds `scenarios` alone; how it was recorded (the seed, the legacy commit, the themes left out, the media set's digest, the live recorder's settings) is in `experiment/recording.json` with the corpus's SHA-256, never committed or packaged (round 11). |
+| Private inputs | `steps/01-rebuild-server/tests/private/scenarios.json` and the private files they upload (`experiment/media/private`, made with `--big`), Git-ignored, produced by `scripts/record_scenarios.py --count 2160 --runs 44 --term 6 --kill 3 --screens 8 --routines 12` from the private seeds in `experiment/seeds.json` (never committed; rotated in round 3); the routines (round 16) were added to the round 3 corpus with `--append --routines 12`, which gives the same file and leaves every earlier scenario byte for byte. The corpus holds `scenarios` alone; how it was recorded (the seed, the legacy commit, the themes left out, the media set's digest, the live recorder's settings) is in `experiment/recording.json` with the corpus's SHA-256, never committed or packaged (round 11). |
 | Oracle | The reference server, shipped as Python 3.12 bytecode in the solution's data, installed as the delivered server and run on the packages in `/opt/py`. |
 | Ratings (`harbor check`) | Not run. |
 
@@ -1455,8 +1590,8 @@ Closest comparisons:
 Every answer of the reference is a pure function of the requests made in a workspace: ids
 are sequential, the calendar is simulated, and nothing reads the wall clock. Recorded
 answers can therefore be compared exactly, types included. Partial progress is the share of
-units that match in full: a scenario of the legacy and media themes, a trading day, or a
-client screen opened after a month of trading. Uncertainty: a legacy scenario fails on its
+units that match in full: a scenario of the legacy, media, counts, kits and office-routine
+themes, a trading day, or a client screen opened after a month of trading. Uncertainty: a legacy scenario fails on its
 first difference, so one wrong rule in a common path hides later correct behaviour there; a
 month of trading goes on after a wrong answer and judges each day on its own, though a wrong
 day can make later days differ too. The per-theme breakdown in `metrics.json` shows where.
@@ -1676,18 +1811,21 @@ only**: the start is recorded at the trial's set-up, not at a step's start. See
    that many zero bytes (`body_size`, for bodies over a limit). An answer matches when the status
    code is equal and the JSON body is identical, types included, to the recorded one with the
    candidate's workspace id put where the recorder wrote `{ws}`; a file matches on its type,
-   length and SHA-256, hashed as it arrives. Every byte of an answer, headers, chunk sizes and
+   length and SHA-256, hashed as it arrives. An answer whose own text holds `{ws}` (the API
+   description's paths) is recorded `literal` and compared as it is (round 16), and a scenario
+   that holds `created` (the 12 workspace routines) also judges the answer its workspace was
+   created with, as its first. Every byte of an answer, headers, chunk sizes and
    trailers included, counts against 80 MiB plus 8 MiB of headers, and a chunk size that is not
    plain hexadecimal (`-1`, `+1a`, `0x10`) is a broken answer (QA 07c F1). A reply that is not
    HTTP, not JSON, larger than 4 MB of JSON or 80 MiB in all, or nested too deeply matches
    nothing. An answer cut short of its `Content-Length` is no answer. A connection the server
    closed while idle is reopened, and a request that never reached the server is sent once more.
-5. Units: a scenario of the legacy, media, counts and kits themes is one unit and stops at its
-   first difference. A month of trading lists its units, one per trading day and one per
+5. Units: a scenario of the legacy, media, counts, kits and office-routine themes is one unit and
+   stops at its first difference. A month of trading lists its units, one per trading day and one per
    client screen opened after it, goes on after a difference and judges each unit on its own
    answers.
 6. Time: each request has 30 seconds of wall clock and the whole replay 5,400 seconds (the step
-   allows 6,000; the reference takes about 520 here). A watcher cuts any request still running
+   allows 6,000; the reference takes about 500 to 570 here). A watcher cuts any request still running
    past either, and every read of an answer, the health check's included, is given only the time
    left, so no drip outlasts it whatever the answer's framing (`Connection: close`, HTTP/1.0, no
    length; QA 07d M1). Scenarios not played to the end by the deadline count as not matched, with
@@ -1738,17 +1876,21 @@ only**: the start is recorded at the trial's set-up, not at a step's start. See
 
 ```
 reward = (matched scenarios + matched trading days + matched screens)
-         / (2,218 scenarios + 1,432 trading days + 352 screens)
-       = matched units / 4,002
+         / (2,326 scenarios + 1,432 trading days + 352 screens)
+       = matched units / 4,110
 ```
 
 | Units | Count | Share of the reward |
 | --- | --- | --- |
-| Scenarios of the 26 legacy themes (refusal-only ones left out; counts and kits only where they post a count or build a kit) | 2,005 | 50.1% |
+| Scenarios of the 26 legacy themes (refusal-only ones left out; counts and kits only where they post a count or build a kit) | 2,005 | 48.8% |
 | Counts and kits made start to finish by the live recorder, filling those two themes back to 83 each | 130 | 3.2% |
-| Scenarios of the media theme | 83 | 2.1% |
-| Trading days (44 months of 30-35 days from four start dates, 11 each, each crossing a month's end) | 1,432 | 35.8% |
-| Client screens opened after a month (8 per month, each changed by the month) | 352 | 8.8% |
+| Scenarios of the media theme | 83 | 2.0% |
+| Office routines made by the live recorder for the documented calls the legacy streams never make or only see refused (round 16): 12 each of users, workspace, price-lists, promotions, suppliers, saved-reports, journal-reversals, carriers and standing-orders | 108 | 2.6% |
+| Trading days (44 months of 30-35 days from four start dates, 11 each, each crossing a month's end) | 1,432 | 34.8% |
+| Client screens opened after a month (8 per month, each changed by the month) | 352 | 8.6% |
+
+Round 16 added the routines and changed nothing else: every earlier scenario keeps its units and its bytes, and each
+unit now weighs 1/4,110 instead of 1/4,002.
 
 - Continuous. A unit matches only if every one of its answers matches; a trading day or a
   screen is judged on its own answers, so a wrong day does not cost the month's other days.
@@ -1783,14 +1925,15 @@ reward = (matched scenarios + matched trading days + matched screens)
 ## Hackability assessment
 
 Highest unresolved severity: 🟡 YELLOW (14 narrowed in round 12, its residuals accepted under the run policy; findings 1 and 2
-unassessed; 5, 7, 8, 9 and 11 mitigated but not yet exercised in a container; 10 keeps a residual the owner decides).
+unassessed; 5, 7, 8, 9 and 11 mitigated but not yet exercised in a container; 10 keeps a residual the owner decides; 16, the
+platform's own launcher in the process list, narrowed in round 16 but only the platform can close it).
 
 | # | Attack and impact | Boundary | Evidence | Mitigation | Residual risk | Next validation | Severity |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | 1 | Read the sealed server's code and copy it | File permissions in the agent image; what the bundle and its layers hold | Inspected by adversarial QA 04 and 08 (2026-11-19): as the agent's user, the bytecode, the database and `/proc/<pid>/{mem,environ}` of the sealed server are not readable. Not executed in a container | Server files are owned by user `stockwell`, mode 0700, and the agent runs as `dev`. Round 3 (QA 08): the bundle carries the reference as Python 3.12 bytecode only, for the sealed server and the solution, so no layer of either image holds its source (the build fails on a `.py`); every start of the sealed server first checks as `dev` that `/opt/stockwell` cannot be read or entered and fails the setup hook, which stops the trial, if it can. `/opt/py` holds only public third-party packages | A way to become root or `stockwell` inside the container; bytecode can be decompiled by anyone who has the bundle | Probe as `dev`: read `/opt/stockwell`, `/proc/<pid>/mem`, ptrace | 🟡 YELLOW / UNASSESSED |
 | 2 | Agent harness starts as root and hands the model a root shell | Harness and `[agent] user` on Oddish | Not tested on Oddish | `user = "dev"` in `task.toml` | Depends on each harness honouring it | Short model trial that prints `id` | 🟡 YELLOW / UNASSESSED |
 | 3 | Deliver a proxy to the sealed server | Separate verifier image | By design | The verifier image has no reference server and no network | None found | Keep | 🟢 GREEN / LOW |
-| 4 | Replay a table of recorded answers, including answers collected for inputs the agent already holds | Private scenarios; what the agent image holds | QA 06 (2026-11-19): the 19 Stockwell test fixtures shipped in `/app/samples` were uploaded byte for byte by the hidden `files` scenarios; fixed in round 1, and `scripts/scan_uploads.py` checks every bundle. QA 05 (2026-11-19): a crawl of a fresh workspace, a day counter and cheap rules cover 2.2 to 3.5% of round 2's units, through screens the month never changed (67 of 343) and legacy scenarios whose every write is refused (53); left out in round 3 | Scenarios come from a private seed, rotated in round 3 and kept out of the repository and, since round 11, out of the bundle (the corpus carried it in a `recorded_with` record until then): 89,524 requests in 2,262 scenarios (4,002 units), 44 of them months of trading from four start dates whose supplier invoices are made for each purchase order. No screen that answers as a fresh workspace on the same day and no legacy scenario that changes nothing is kept, and every count and kit scenario does its work. The private media share no file and no name with the samples, and the bundle check fails on any hidden upload, cut-short upload or file answer the agent image holds | A table cannot cover them; the generators' shape could be guessed only in outline | Measure a lookup-table submission on the round 3 corpus | 🟢 GREEN / LOW |
+| 4 | Replay a table of recorded answers, including answers collected for inputs the agent already holds | Private scenarios; what the agent image holds | QA 06 (2026-11-19): the 19 Stockwell test fixtures shipped in `/app/samples` were uploaded byte for byte by the hidden `files` scenarios; fixed in round 1, and `scripts/scan_uploads.py` checks every bundle. QA 05 (2026-11-19): a crawl of a fresh workspace, a day counter and cheap rules cover 2.2 to 3.5% of round 2's units, through screens the month never changed (67 of 343) and legacy scenarios whose every write is refused (53); left out in round 3 | Scenarios come from a private seed, rotated in round 3 and kept out of the repository and, since round 11, out of the bundle (the corpus carried it in a `recorded_with` record until then): 90,744 requests in 2,370 scenarios (4,110 units; round 16 added 108 office routines), 44 of them months of trading from four start dates whose supplier invoices are made for each purchase order. No screen that answers as a fresh workspace on the same day and no legacy scenario that changes nothing is kept, and every count and kit scenario does its work. The private media share no file and no name with the samples, and the bundle check fails on any hidden upload, cut-short upload or file answer the agent image holds | A table cannot cover them; the generators' shape could be guessed only in outline | Measure a lookup-table submission on the round 3 corpus | 🟢 GREEN / LOW |
 | 5 | Submitted server attacks the verifier process or its files, or exhausts processes, memory or disk so that the evaluation publishes no reward | Verifier sandbox | QA 10: a set-user-id binary could run as root; fixed. QA 07 F2: a full process table or disk lost the reward; fixed in round 3. QA 07c F1 and F3 (round 3 re-check): a chunked answer with size `-1` made http.client read the whole stream (300 MiB grew the verifier by 848 MiB); the server could lower its own OOM priority without CAP_SYS_RESOURCE; on providers that pack `/logs/verifier` before reading the reward, a full disk, a 4 GiB `server.log` or appends to it during the pack lost the reward. F1(a), F2 and F3 fixed in round 4, the `-1` case a check. QA 07d M3: the priority raised once a second is a race a server can win on purpose where no cgroup can be made (Docker's defaults, Archil), and the grader, the largest process at 0, then dies with no reward; narrowed in round 5. QA 07e M3: round 5's guard summed only memory the server's processes map, so SysV segments, memfds and `/dev/shm` files no process maps were invisible: a server could park the container's memory under its limit and have the grader killed within a millisecond (round 5's "1.5 GB within 50 ms" was wrong); S-a: the per-process sum could also count shared pages and a fork's pages more than once. Fixed in round 6, with checks that fail against round 5 | Runs as `nobody` through `setpriv --no-new-privs` under `prlimit` (4,096 threads, 4 GiB files, 6 GiB address space per process) and a cgroup where one can be made. The server's memory is read every 10 ms from what the kernel charges (the container's memory cgroup, or a virtual machine's own meminfo, never gVisor's, whose MemAvailable is MemFree; QA 07f S2), less the grader's own and what was in use before it started, so every page counts once whatever holds it; above 6 GiB, as the instruction states with shared memory included, the server is stopped for good. Every stop and halt removes its user's SysV objects and memory-backed files. Every 50 ms its processes are put back at OOM priority 1000; the grader asks for a low priority (it stays at 0 without CAP_SYS_RESOURCE) and keeps the corpus as compact text and uploads in a bounded cache. Every byte of an answer counts against the limit and chunk sizes are strict. The server's output goes to a pipe the grader drains (first and last MiB kept), so it holds no file of the grader's. A 256 MiB ballast is given back for the results, and a guard stops the server for good under 512 MiB free on a disk it can write that had room when it started. The cleanup never forks, never raises and finds what hides (9); the reward goes over a placeholder and is never taken back once published, and a grader that dies leaves no reward file, so the result is an evaluation error, never a 0 | Not exercised in a container. Where the cgroup or meminfo can be read, the race needs the rest of the machine (about 1.4 GB on 8 GiB) filled within one 10 ms tick after the server lowers its priority. Where neither can be read, the per-process fallback does not see a memfd no process maps. Either way a grader killed for memory leaves an evaluation error, not a 0. A disk burst within the guard's one-second disk check can still fill the disk, which costs the diagnostics but not the reward or its retrieval (the ballast) | QA 07e's red-team item 1 (park 7.5 GiB in SysV segments, lower the priority after the guard's raise, allocate 20 MB) and S-a's 3.5 GiB server that spawns a child per request; 07d's item 3 and 07c's OOM floor, `-1` chunk with 3 GB, full disk and big output on each provider | 🟡 YELLOW / MEDIUM |
 | 6 | Tamper with reward files | Separate verifier container | By design | Verifier starts fresh with only `/app/server`; the server cannot become root (5) and cannot reach `/logs/verifier` | None found | Keep | 🟢 GREEN / LOW |
 | 7 | Replace `/app/server` with a link to `/opt/stockwell/app`, so that Harbor's collector, running as root, copies the sealed bytecode into the trial artifacts and the verifier. Leaks the private reference; no reward (the copy has no `run`) | Ownership of `/app` in the agent image; Harbor's collector; the delivery hook | QA 04 (2026-11-19), traced in Harbor 0.20: `tar -czf ... -C /app/server .` as root follows the top-level link, and GNU tar stores links below it as links. Not executed | `/app` is root's with the sticky bit and `/app/server` root's and writable by everyone: the agent creates and changes anything inside it but cannot remove, rename or replace it. The delivery hook (11) copies what links point to only as `dev`, who cannot read `/opt/stockwell`, so such a link is removed as dangling | A provider whose collector follows links below the top; not executed in a container | In the next container run, as `dev`: `rm -rf /app/server` and `mv /app/server x` fail, and a link to `/opt/stockwell` is removed by the hook | 🟡 YELLOW / MEDIUM |
@@ -1802,11 +1945,21 @@ unassessed; 5, 7, 8, 9 and 11 mitigated but not yet exercised in a container; 10
 | 13 | A server that fails under concurrent load earns its units back on second tries played one at a time | Verifier's second tries | QA 20 (2026-11-19): second tries were uncapped and alone, and a sequential pass fits the deadline, so a server that crashes whenever requests overlap recovered most of its units. Fixed in round 4 | A second try only for a scenario in flight when the server stopped, never for a wrong answer or a request a live server left unanswered, and only while the units they decide stay within 2% of all units; the check pins the share and that a dropped request gets none | A server that crashes under load keeps 2% of the units at most | None | 🟢 GREEN / LOW |
 | 14 | A deliberately hostile submission makes the evaluation end in an error instead of 0, with no reward. Closed in round 12, each with a check that fails on round 11 (`375b570`): about 99,000 crafted links outlast the delivery hook's 600 s (QA 07g F1), and chains do the same (QA 22 F3 of the Carve task: 4,000 links took round 11's stage 22.6 s here, four times as long at each doubling); the link fixer uses up the spare inodes, so a refusal dies after `/app/server` is moved aside (07g F2); a link that resolves inside only through another link, or climbs above `/` and back in, hidden from the fixer, makes Harbor's extraction refuse the copy (07g F3, QA 22 F5: round 11 kept it, `LinkOutsideDestinationError`, "The copy arrived incomplete: 2 of 3 entries"); pipes left out of the entry count let tens of millions of them hold the hook; zombies kept the kill loop at 100 passes where the first process reaps nothing; the sweep exited without a manifest for a non-directory at `/app/server` and where the manifest's name could not be moved aside (QA 22 F6); the manifest's changes were unbounded and the verifier read it whole (QA 22 F1); a refusal's rename of `/app/server` was not guarded against EXDEV. Closed in round 13 (re-check 08), each with a check that fails on `cd98856`: a file with more names than a copy's file system allows links (65,000 on ext4) arrived as copies, whose extra bytes failed the count check and, for a large file, could fill the host's disk (now a file with more than 1,000 hard links refuses the tree, a stated limit, and more arriving than counted is scored with a note); a fork bomb left running past the session could keep the hook, and the copy, from starting (now a `su` session of `dev`, harbor's way of starting the agent's commands, is capped at 16,384 processes and threads, and the cap the platform gives is recorded in `sweep_log`). Left: where neither a memory cgroup nor a VM's own meminfo can be read, a memfd that no process maps is not counted (07f); where `/app/server` cannot be renamed, a refused tree with millions of entries at its top is moved aside one entry at a time; the process cap holds only where the kernel enforces RLIMIT_NPROC and the sandbox's own process limit is higher than the cap (both unmeasured; the baselines' `sweep_log` shows the cap a session got) | Delivery hooks; Harbor's artifact copy; the verifier's memory guard | QA 07e, 07f and 07g (2026-11-19); 07g F3 run through Harbor's own extraction code, F1 timed on macOS; round 12 against the catalogue of QA 22 and 23 of the Carve task, which shares this hook's family, each case run on `375b570` and on round 12 | None of these gives reward, reads answers or touches honest work: an honest delivery holds no crafted link chains, no tens of thousands of links and does not exhaust inodes. Round 12 makes each closed path a scored 0 with a note, or a tree copied as the agent left it, links straightened. Accepted on 2026-11-19 under a run policy for what is left: one attempt per trial; every errored trial is read; it scores 0 when its own files show the submission caused it, and is otherwise re-run as an infrastructure fault | A hostile run costs one trial and a read | The container red team repeats 07f's deep sparse file and full inodes, 07g's link chains and a file with 70,000 hard links | 🟡 YELLOW / LOW |
 | 15 | Outlast the session: go on working, writing or fetching after the agent's limit, while the platform leaves a capped turn's commands running, with the network back, until the collect hook (rounds 8 to 14: outlast or stop the maintenance timer that ended the session before the limit) | The platform's handling of a turn that reaches its limit; the collect hook; file change times | Round 15: the platform's verdicts on BasedPL's versions 2 and 4 rejected a task-side stop before the limit, and the judges dropped the timer (harbor-lh `ops/swe-marathon-v2/decisions/2026-11-24-timer-round3-flat-bundles-DECISION.md`: harbor stops waiting at the limit but never ends the agent's commands, and the network comes back once the turn is over, `PLATFORM_EGRESS_WINDOW.md`). `test_a_capped_session_keeps_and_records_what_it_writes_and_fetches_after_its_end` and `test_every_name_of_a_file_made_after_the_end_is_kept_and_recorded` (both fail on round 14, `1a6b87b`, which notes nothing); `test_an_honest_capped_tree_with_hard_links_loses_no_name` (Carve's re-check: a sweep that moves a name before judging makes another name of the same file read as late) loses nothing here and three names without the fence's upper bound; `test_files_a_stopped_process_could_still_write_after_the_end_are_recorded` (R1, a stand-in `/proc`); by the 09:40 UTC amendment (option A, as settled) `test_a_core_module_replaced_after_the_end_by_write_and_rename_arrives_and_is_graded` and `test_a_brand_new_file_made_after_the_end_is_kept_and_noted` fail on `8008b3b`, which refused files made after the end | The work's end is the start the set-up records plus 34,560 s. The collect hook ends the agent's processes, writes its fence once nothing else can touch the tree, keeps every file and link of `/app/server` whose change time falls between the end and the fence, with a note of its path and times and a count in `sweep_log` (option A as settled: Stockwell's code is private, so there is nothing to fetch, and the per-trial egress audit is the backstop); nothing is refused for being late, and the copy's own rules for links, special files, long paths and limits are as they were; nothing it changes after the fence is judged, so none of its own moves makes an honest name read as late. Before it ends the processes it stops them and, as the user, lists the files they map shared and writable or hold open for writing, in every thread, which can be written without their change time moving; once the end has passed each name of them gets a note (BasedPL's re-check R1, a record since the amendment). The change time is the kernel's: the agent can neither set it nor keep a write from moving it | The end comes from the set-up's last moment, a little before harbor starts the agent's clock, so a capped session's last moments are noted as after the end; whatever is written or fetched after the end is graded, and only the egress audit can tell a fetch; a directory moved in after the end keeps the files in it written before the end; writes through a shared memory map within one dirty-page window may not move a change time; a session that ends by itself has no end yet, so what its detached processes write before the collect hook counts (Stockwell's code is private, so the network has nothing of it to fetch); a pause of the trial queue stops the agent's clock but not the wall clock, so on a backend that can pause a sandbox (not Modal) the end comes early by the pause; a file hard-linked into the tree from the agent's own file under the manifest's name, or from `/logs/artifacts` where that cannot be renamed, reads as late in a capped session; a mapping written after the end and unmapped, or made read-only, before the collect hook leaves no trace, and a process of the user made undumpable cannot be read for the record | The first capped model trials: a reward about 15 minutes after the cap, no `step_results` in `result.json`, and the sweep's notes and `sweep:` lines for every entry kept, removed or held | 🟢 GREEN / LOW |
+| 16 | The platform's own launcher in the process list (evaluation awareness, not reward): the claude-code launcher runs as the agent's user, so any `ps` without a filter shows `bash -c ... harbor_claude_code_instruction_<hex>=...` with the run configuration's prompt ("... or its time budget is used up ... Ending your turn ends the run."), and a solver that reads it may call its session a benchmark, which the verdict counts as `info_leakage` (must-fix) | The platform's harness: its process line and environment, which the task must not touch (`hidepid` hides only other users' processes) | Version 11's verdict, trial 113, step 9: "This looks like it's from a benchmark ("harbor"). These tasks often have a time budget." Version 10's trial 99 had seen the line too. Trial 113's first 4 MB (round 16): it ran `ps aux` with `find / -iname '*stockwell*'` to find the sealed server's program and see whether it could read it; trial 112 listed no process early, and trial 114's `ps` calls, hours in, went through `grep` for its own server | Round 16: the instruction says what that search was after: the sealed server's files are in `/opt/stockwell`, which the agent's account cannot read, it runs under its own account, `stockwell`, and a service manager starts it again (`test_the_instruction_says_where_the_sealed_server_is_and_whose_it_is`). Nothing is hidden or changed: procps stays, `/proc` is as it was, the harness is untouched, and nothing about evaluation or time is said | Any `ps` without a filter still shows the line, whatever the motive, and whether a solver remarks on it is a draw per trial; only the platform can rename the variable or pass the instruction outside the command line (harbor-lh `ops/swe-marathon-v2/PLATFORM_HARNESS_PROCESS_CUE.md`, a draft for the owner); the run configuration's prompt is the owner's (Remaining work) | Version 12's trials: each one's `evaluation_awareness` record and whether its first steps list processes | 🟡 YELLOW / MEDIUM (outside the task) |
+| 17 | Leave out the documented calls the corpus never makes, or only ever sees refused, and lose nothing (version 11's verdict, should-fix: GET /api/ws/{ws}, GET and POST /price-lists, GET /users/{id}, POST /users/{id}/activate) | The corpus | Round 16's audit of all 242 operations against every step: 12 never called besides the 8 the instruction excepts and POST /api/workspaces (the replay's own call, whose answer beyond the id was never compared); 4 only ever answered with a refusal; the health check's answer and the API description never compared | Round 16: nine office routines, 108 scenarios of one unit, in which every documented call outside the exceptions is answered with success; POST /api/workspaces's answer judged in the 12 workspace scenarios (`created`); the health check's answer and the API description (`literal`) compared; the two password calls named among the exceptions. For each added call the reference without it loses exactly the scenarios that make it (`test_a_server_without_a_call_the_routines_make_loses_their_units`), and the corpus check keeps every such call answered (`test_every_documented_call_outside_the_exceptions_is_answered_in_the_corpus`) | A call made only in its routine weighs that routine's 12 units at most (0.3% of the reward); a server right only on the paths the routines take loses nothing on the others; FastAPI's own `/api/docs` and `/api/redoc` pages, named nowhere the agent reads, are not graded | The next source audit | 🟢 GREEN / LOW |
 
 ## Validation
 
 | Check | Revision | Result |
 | --- | --- | --- |
+| Every documented call outside the exceptions answered in the corpus | round 16 against `f38350e` (corpus `3cd1a9c8...`) | before: 21 of the 242 operations never called (8 excepted by the instruction, POST /api/workspaces the replay's own call, 12 more), 4 only ever refused, the health check's answer and the API description never compared; now 233 of 242 are called and each is answered 2xx at least once, the 8 excepted never, POST /api/workspaces's answer is judged in the 12 workspace scenarios (`created`) and the API description is fetched in 3 (`literal`) |
+| The verdict's mutant: the reference without an added call (404 as for an unknown path) | round 16: two of each routine (seed 15), and the task's whole corpus | two of each routine: for each of the 16 calls exactly the scenarios that make it fail, each at its first such call; a health answer with another body and a creation answer of the id alone lose the workspace scenarios; the reference 1.0, a missing server 0.0. The whole corpus, all 16 calls at once: 0.957 (3,935 of 4,110): exactly the 175 scenarios that make one of the calls are lost, each first at such a call, and nothing else (all 108 routine scenarios; 67 earlier ones that call the four calls the corpus only saw refused: ledger 44, purchasing 11, dispatch 9, standing 3); the first build, `7d47b8d1458e`, the same |
+| `--append` against a full recording | round 16 | a small corpus recorded without the routines and appended to is the full recording's file byte for byte, its record follows, a second append is refused and no media is touched; the task's append repeated onto a fresh copy of the old corpus gave the same `05dc16d9...`, whose start is the old file less its closing `]}` |
+| Reference and empty server through the verifier, local, no sandbox | round 16: everything from the flat bundle `ee5e93e67e46`, its solution installed from an isolated copy (only the interpreter path swapped for this Mac) | reference 1.0 on every unit: 4,110 of 4,110 (2,370 of 2,370 scenarios), 9 planned restarts, no other restart, no second try, nothing unfinished, no note; 1,068.4 s of replay against the 5,400 s deadline on a Mac at a load average of about 20 (the first build, `7d47b8d1458e`, the same in 565.3 s). Empty server 0.0, 0 of 4,110, "/app/server/run is missing or not executable" |
+| The new checks against the previous commit | round 16 against `f38350e` | this round's checks file on a `git archive` copy of `f38350e` with the old corpus: the four new checks and the extended `{ws}` check fail (5 failed) |
+| `checks/` (68 tests) with `ci_checks` (27) | round 16 | 95 pass under Python 3.13: 94 in the full run at `771413a` and the artifacts check (N7) alone on a short temporary path, since this session's 125-character path cuts its line; after `df3d36b` nine pass again: those that record, grade or package the routines or read the corpus, and the instruction's two |
+| Bundle | round 16: flat `ee5e93e67e46` (the upload), steps `753464d6ed55`, 1,160 files and 247.5 MB each | each built twice with the same hash and `diff -r`-identical files; they differ from version 11's in the instruction, the corpus and `replay.py` alone, and from each other in `task.toml` alone; Oddish preflight on the flat bundle passes; `compute_task_content_hash` `07dfc83dfd6a...` against version 11's `a87483eba448...`; no hidden upload among 495 agent-image files |
+| Oddish verdict | round 15: flat bundle `d09c99f4e5db`, version 11 | reject: should-fix, documented routes the corpus never calls (round 16, rows above); must-fix, trial 113 called its session a benchmark after reading the platform's launcher in `ps` (round 16, hackability row 16); baselines correct (reference 1.0 twice, no-op 0.0 twice), the three model trials good failures (0.141, 0.118, 0.061), trial 113 capped at 34,562 s and graded |
 | Late changes, option A as settled (nothing refused for being late) | round 15 against `8008b3b` | `8008b3b` refuses the main module replaced by write-and-rename after the end (the check finds no `app/main.py`) and a new module, a new link and a module renamed into place; now all of them arrive, the replaced module is what is graded (1.0 with the stand-in replay), and each has a note with its times (`made +S s` for a file born after the end); the capped session's late file, link and fetched file, and every name of a late file with three, are kept and noted |
 | Late changes, option A (the decision's 09:40 UTC amendment, before it was settled) | round 15 against `5fb8ab3` | `5fb8ab3` removes the main module written again in place after the end (the check finds no `app/main.py`) and notes every late entry as changed; now the module and the start script made executable again arrive, are graded (1.0 with the stand-in replay, the edited module what was graded) and are noted (`kept app/main.py: changed in place after the work's end (changed +S s, modified +S s, made -S s)`, `sweep: 3 files changed in place after the work's end were kept`); a new module, a new link and a file renamed into place over an old one are removed (`removed app/util.py: it was made after the work's end`), the file changed in place beside them kept |
 | Files a stopped process could still write (BasedPL's re-check R1, a record since the amendment) | round 15 against `bbae97b` and `5fb8ab3`, on a stand-in `/proc` | `bbae97b` keeps the held files unnoted (`complete 16 1716`); `5fb8ab3` removes them and reads no thread; now, once the end has passed, `mapped.bin` with its second name, `written.log` and a thread's own `thread.log` (R1a) are noted and stay, the held file outside is copied in, and `sweep_log` reads `sweep: 4 files were open for writing or mapped writable ...`; before the end nothing is listed; an unreadable `/proc` and an undumpable process are each a `sweep:` line, not a refusal |
@@ -1903,7 +2056,9 @@ rm -rf experiment/media/visible experiment/media/private                        
 python3 scripts/make_media.py --out experiment/media/visible --seed 20261121           # the samples
 python3 scripts/trading_media.py --examples experiment/media/visible --seed 20261121    # supplier invoices and delivery files among them
 python3 scripts/make_media.py --out experiment/media/private --seed "$(python3 scripts/seeds.py media)" --big   # full-size large files
-python3 scripts/record_scenarios.py --count 2160 --runs 44 --term 6 --kill 3 --screens 8   # seeds from experiment/seeds.json; the record of the recording goes to experiment/recording.json
+python3 scripts/record_scenarios.py --count 2160 --runs 44 --term 6 --kill 3 --screens 8 --routines 12   # seeds from experiment/seeds.json; the record of the recording goes to experiment/recording.json
+# round 16 added the routines to the round 3 corpus instead, leaving every earlier scenario byte for byte (the same file):
+# python3 scripts/record_scenarios.py --append --routines 12
 uv run --no-project --python 3.13 python scripts/package_step.py         # compiles the reference with Python 3.12; experiment/dist/bundles/<hash>/<task slug>/
 uv run --no-project --python 3.13 python scripts/package_step.py --flat  # same content without the steps wrapper, named <task>-single
 uv run --no-project --python 3.13 python scripts/package_step.py --flat --keep-name  # the upload since round 15: flat, under the task's own name; experiment/dist/flat/<hash>/
@@ -1912,14 +2067,13 @@ python3 scripts/scan_uploads.py experiment/dist/bundles/<hash>/<task slug>   # h
 
 ## Remaining work
 
-- Upload the flat bundle `d09c99f4e5db` (247.3 MB, `package_step.py --flat --keep-name`) under
-  the task's own name as version 11 (version 10, bundle `7a92d0bd02fe`, passed its baselines and
-  its source audit; its verdict rejected it on evaluation awareness and the instruction's
-  framework list, rounds 12-15; round 15 replaces the never-uploaded `f1293aa9de6f`), after an
-  independent re-check of round 15, run its baselines with `--no-archil` (reference twice, no-op
-  twice), and have its Oddish source audit pass before any model trial (the owner's gate since
-  version 8). Pass criteria for
-  the reference: 4,002 of 4,002, `planned_restarts` 9,
+- Upload the flat bundle `ee5e93e67e46` (247.5 MB, `package_step.py --flat --keep-name`) under
+  the task's own name as version 12 (version 11, `d09c99f4e5db`, passed its baselines and its
+  source audit; its verdict rejected it on the documented calls the corpus never graded and on a
+  solver that read the platform's launcher in the process list, round 16), after an independent
+  re-check of round 16, run its baselines with `--no-archil` (reference twice, no-op twice), and
+  have its Oddish source audit pass before any model trial (the owner's gate since version 8).
+  Pass criteria for the reference: 4,110 of 4,110, `planned_restarts` 9,
   `restarts` 0, `retried` 0, `unfinished` 0, no answer of 500 or above in
   `server_errors_by_theme`, no note of the hard stop, of a stop for disk or memory, or from the
   collect hook, and `3.5 x elapsed_sec + 300 <= 5,400`. For both baselines: a `sweep_log` of one
@@ -1973,7 +2127,14 @@ python3 scripts/scan_uploads.py experiment/dist/bundles/<hash>/<task slug>   # h
 - The run configuration's appended system prompt (harbor-lh `ops/swe-marathon-v2/agents-*.yaml`,
   shared by the five tasks) tells the agent it runs "unattended" until "the completion criteria
   of the task are met or its time budget is used up": the platform's evaluation-awareness check
-  may weigh that too, and the instruction states no time budget.
+  may weigh that too, and the instruction states no time budget. Version 11's trial 113 took
+  "unattended" and "time budget" from it into the sentence the verdict cited (round 16); the
+  prompt is the owner's to change.
+- The platform's own launcher in the process list (hackability row 16): in version 12's trials,
+  read each one's `evaluation_awareness` record and whether its first steps list processes
+  without a filter. Round 16 removed the one motive seen (finding the sealed server's files); a
+  habitual `ps aux` still shows the line, and only the platform can change it (harbor-lh
+  `ops/swe-marathon-v2/PLATFORM_HARNESS_PROCESS_CUE.md`, not sent; the owner decides).
 - Not run anywhere yet (QA 07h F2; see Validation): the two hooks as root in the image, with the
   real `setpriv`, `pkill`, `ps` and paths, and a turn that reaches the 34,560 s limit, the only
   place the rule on late writes acts on the platform. The checks run both scripts whole under dash
