@@ -1,0 +1,46 @@
+# Family B and design 6.4 item 9. Proving-ground handling for one car implementation.
+# Bands are proposed GDD numbers for the sedan class.
+template: vehicle.handling
+family: B
+tags: [physics-sensitive]
+weight: 1.0
+params:
+  impl: {choice: [raycast, vehicle_body]}
+setup:
+  - world.reset: {seed: $seed, density: 0}
+  - player.spawn: {lead: lead_a, at: {poi: proving_ground}, heading: 90}
+  - vehicle.spawn: {model: sedan, impl: $impl, at: player, driver: player, heading: 90}
+script:
+  - observe: {rate_hz: 10, state: true}
+  - wait_s: 1.5
+  - bot.brake_test: {heading_deg: 90, v_kmh: 60, prefix: dry, max_s: 30}
+  - wait_s: 1
+  - dev: [[weather.set, {kind: rain}]]
+  - bot.brake_test: {heading_deg: 90, v_kmh: 60, prefix: wet, max_s: 30}
+  - dev: [[weather.set, {kind: clear}]]
+  - wait_s: 1
+  - bot.turn_circle: {speed_kmh: 8, s: 14, max_s: 20}
+  - wait_s: 2
+  - bot.top_speed: {heading_deg: 90, max_s: 50, max_t: 60}
+assert:
+  - id: accel
+    w: 0.2
+    expr: "in_band(measure('t_0_60_s', S.get('dry_t_0_60_s')), 4.0, 7.0)"
+  - id: braking
+    w: 0.2
+    expr: "in_band(measure('brake_m', S.get('dry_brake_m')), 13.0, 22.0)"
+  - id: wet
+    w: 0.15
+    expr: "measure('wet_brake_m', S.get('wet_brake_m')) is not None and S['wet_brake_m'] >= 1.15 * S['dry_brake_m']"
+  - id: turning
+    w: 0.15
+    expr: "in_band(measure('turn_circle_m', S.get('turn_circle_m')), 9.0, 13.0)"
+  - id: top_speed
+    w: 0.1
+    expr: "in_band(measure('top_speed_kmh', S.get('top_speed_kmh')), 150.0, 210.0)"
+  - id: upright
+    w: 0.1
+    expr: "measure('min_up', min(player_vehicle(i)['up'] for i, f in T.window(M['setup_end']) if player_vehicle(i) is not None)) >= 0.9"
+  - id: continuous
+    w: 0.1
+    expr: "measure('max_frame_speed', round(max_speed_between_frames(player_vehicle_id(), M['setup_end']), 2)) <= 70"

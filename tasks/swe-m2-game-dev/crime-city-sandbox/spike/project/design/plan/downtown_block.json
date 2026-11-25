@@ -1,0 +1,1557 @@
+{
+ "schema": "spike-plan/0.1",
+ "name": "downtown_block",
+ "map": "downtown",
+ "seed": 7,
+ "conventions": {
+  "axes": "x east, y up, z south (Godot); metres",
+  "traffic": "right-hand",
+  "lane_centre": "offset (index + 0.5) * lane_width_m to the right of the direction of travel; index 0 is next to the centreline",
+  "lane_extent": "a lane runs from stop_line_m after its start junction to stop_line_m before its end junction",
+  "dir": "ab runs from edge.a to edge.b; ba the other way",
+  "approach": "an approach is one incoming direction of one edge at a junction; its stop line crosses all its lanes at stop_line_m from the junction centre",
+  "connectors": "inside a junction every lane may continue to the same lane index of any other road; left turns use index 0, right turns index 1, straight either, unless that leaves a lane without a way out",
+  "signal_cycle": "phases run in order: green_s, amber_s, all_red_s each; offset_s shifts the cycle start",
+  "ground": "outside the blocks the ground is at y = -0.05; road surfaces are at elevation_m",
+  "buildings": "one building per parcel, inset by setback_m, roof at base_m + height_m"
+ },
+ "nodes": [
+  {
+   "id": "j_00",
+   "p": [
+    -120.0,
+    0.0,
+    -120.0
+   ]
+  },
+  {
+   "id": "j_10",
+   "p": [
+    0.0,
+    0.0,
+    -120.0
+   ]
+  },
+  {
+   "id": "j_20",
+   "p": [
+    120.0,
+    0.0,
+    -120.0
+   ]
+  },
+  {
+   "id": "j_01",
+   "p": [
+    -120.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "id": "j_11",
+   "p": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "id": "j_21",
+   "p": [
+    120.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "id": "j_02",
+   "p": [
+    -120.0,
+    0.0,
+    120.0
+   ]
+  },
+  {
+   "id": "j_12",
+   "p": [
+    0.0,
+    0.0,
+    120.0
+   ]
+  },
+  {
+   "id": "j_22",
+   "p": [
+    120.0,
+    0.0,
+    120.0
+   ]
+  }
+ ],
+ "edges": [
+  {
+   "id": "e_00_10",
+   "a": "j_00",
+   "b": "j_10",
+   "lanes": [
+    {
+     "id": "e_00_10:ab0",
+     "dir": "ab",
+     "index": 0
+    },
+    {
+     "id": "e_00_10:ab1",
+     "dir": "ab",
+     "index": 1
+    },
+    {
+     "id": "e_00_10:ba0",
+     "dir": "ba",
+     "index": 0
+    },
+    {
+     "id": "e_00_10:ba1",
+     "dir": "ba",
+     "index": 1
+    }
+   ],
+   "lane_width_m": 3.5,
+   "speed_kmh": 50,
+   "elevation_m": 0.0,
+   "sidewalk_m": 3.0,
+   "surface": "asphalt"
+  },
+  {
+   "id": "e_10_20",
+   "a": "j_10",
+   "b": "j_20",
+   "lanes": [
+    {
+     "id": "e_10_20:ab0",
+     "dir": "ab",
+     "index": 0
+    },
+    {
+     "id": "e_10_20:ab1",
+     "dir": "ab",
+     "index": 1
+    },
+    {
+     "id": "e_10_20:ba0",
+     "dir": "ba",
+     "index": 0
+    },
+    {
+     "id": "e_10_20:ba1",
+     "dir": "ba",
+     "index": 1
+    }
+   ],
+   "lane_width_m": 3.5,
+   "speed_kmh": 50,
+   "elevation_m": 0.0,
+   "sidewalk_m": 3.0,
+   "surface": "asphalt"
+  },
+  {
+   "id": "e_01_11",
+   "a": "j_01",
+   "b": "j_11",
+   "lanes": [
+    {
+     "id": "e_01_11:ab0",
+     "dir": "ab",
+     "index": 0
+    },
+    {
+     "id": "e_01_11:ab1",
+     "dir": "ab",
+     "index": 1
+    },
+    {
+     "id": "e_01_11:ba0",
+     "dir": "ba",
+     "index": 0
+    },
+    {
+     "id": "e_01_11:ba1",
+     "dir": "ba",
+     "index": 1
+    }
+   ],
+   "lane_width_m": 3.5,
+   "speed_kmh": 50,
+   "elevation_m": 0.0,
+   "sidewalk_m": 3.0,
+   "surface": "asphalt"
+  },
+  {
+   "id": "e_11_21",
+   "a": "j_11",
+   "b": "j_21",
+   "lanes": [
+    {
+     "id": "e_11_21:ab0",
+     "dir": "ab",
+     "index": 0
+    },
+    {
+     "id": "e_11_21:ab1",
+     "dir": "ab",
+     "index": 1
+    },
+    {
+     "id": "e_11_21:ba0",
+     "dir": "ba",
+     "index": 0
+    },
+    {
+     "id": "e_11_21:ba1",
+     "dir": "ba",
+     "index": 1
+    }
+   ],
+   "lane_width_m": 3.5,
+   "speed_kmh": 50,
+   "elevation_m": 0.0,
+   "sidewalk_m": 3.0,
+   "surface": "asphalt"
+  },
+  {
+   "id": "e_02_12",
+   "a": "j_02",
+   "b": "j_12",
+   "lanes": [
+    {
+     "id": "e_02_12:ab0",
+     "dir": "ab",
+     "index": 0
+    },
+    {
+     "id": "e_02_12:ab1",
+     "dir": "ab",
+     "index": 1
+    },
+    {
+     "id": "e_02_12:ba0",
+     "dir": "ba",
+     "index": 0
+    },
+    {
+     "id": "e_02_12:ba1",
+     "dir": "ba",
+     "index": 1
+    }
+   ],
+   "lane_width_m": 3.5,
+   "speed_kmh": 50,
+   "elevation_m": 0.0,
+   "sidewalk_m": 3.0,
+   "surface": "asphalt"
+  },
+  {
+   "id": "e_12_22",
+   "a": "j_12",
+   "b": "j_22",
+   "lanes": [
+    {
+     "id": "e_12_22:ab0",
+     "dir": "ab",
+     "index": 0
+    },
+    {
+     "id": "e_12_22:ab1",
+     "dir": "ab",
+     "index": 1
+    },
+    {
+     "id": "e_12_22:ba0",
+     "dir": "ba",
+     "index": 0
+    },
+    {
+     "id": "e_12_22:ba1",
+     "dir": "ba",
+     "index": 1
+    }
+   ],
+   "lane_width_m": 3.5,
+   "speed_kmh": 50,
+   "elevation_m": 0.0,
+   "sidewalk_m": 3.0,
+   "surface": "asphalt"
+  },
+  {
+   "id": "e_00_01",
+   "a": "j_00",
+   "b": "j_01",
+   "lanes": [
+    {
+     "id": "e_00_01:ab0",
+     "dir": "ab",
+     "index": 0
+    },
+    {
+     "id": "e_00_01:ab1",
+     "dir": "ab",
+     "index": 1
+    },
+    {
+     "id": "e_00_01:ba0",
+     "dir": "ba",
+     "index": 0
+    },
+    {
+     "id": "e_00_01:ba1",
+     "dir": "ba",
+     "index": 1
+    }
+   ],
+   "lane_width_m": 3.5,
+   "speed_kmh": 50,
+   "elevation_m": 0.0,
+   "sidewalk_m": 3.0,
+   "surface": "asphalt"
+  },
+  {
+   "id": "e_01_02",
+   "a": "j_01",
+   "b": "j_02",
+   "lanes": [
+    {
+     "id": "e_01_02:ab0",
+     "dir": "ab",
+     "index": 0
+    },
+    {
+     "id": "e_01_02:ab1",
+     "dir": "ab",
+     "index": 1
+    },
+    {
+     "id": "e_01_02:ba0",
+     "dir": "ba",
+     "index": 0
+    },
+    {
+     "id": "e_01_02:ba1",
+     "dir": "ba",
+     "index": 1
+    }
+   ],
+   "lane_width_m": 3.5,
+   "speed_kmh": 50,
+   "elevation_m": 0.0,
+   "sidewalk_m": 3.0,
+   "surface": "asphalt"
+  },
+  {
+   "id": "e_10_11",
+   "a": "j_10",
+   "b": "j_11",
+   "lanes": [
+    {
+     "id": "e_10_11:ab0",
+     "dir": "ab",
+     "index": 0
+    },
+    {
+     "id": "e_10_11:ab1",
+     "dir": "ab",
+     "index": 1
+    },
+    {
+     "id": "e_10_11:ba0",
+     "dir": "ba",
+     "index": 0
+    },
+    {
+     "id": "e_10_11:ba1",
+     "dir": "ba",
+     "index": 1
+    }
+   ],
+   "lane_width_m": 3.5,
+   "speed_kmh": 50,
+   "elevation_m": 0.0,
+   "sidewalk_m": 3.0,
+   "surface": "asphalt"
+  },
+  {
+   "id": "e_11_12",
+   "a": "j_11",
+   "b": "j_12",
+   "lanes": [
+    {
+     "id": "e_11_12:ab0",
+     "dir": "ab",
+     "index": 0
+    },
+    {
+     "id": "e_11_12:ab1",
+     "dir": "ab",
+     "index": 1
+    },
+    {
+     "id": "e_11_12:ba0",
+     "dir": "ba",
+     "index": 0
+    },
+    {
+     "id": "e_11_12:ba1",
+     "dir": "ba",
+     "index": 1
+    }
+   ],
+   "lane_width_m": 3.5,
+   "speed_kmh": 50,
+   "elevation_m": 0.0,
+   "sidewalk_m": 3.0,
+   "surface": "asphalt"
+  },
+  {
+   "id": "e_20_21",
+   "a": "j_20",
+   "b": "j_21",
+   "lanes": [
+    {
+     "id": "e_20_21:ab0",
+     "dir": "ab",
+     "index": 0
+    },
+    {
+     "id": "e_20_21:ab1",
+     "dir": "ab",
+     "index": 1
+    },
+    {
+     "id": "e_20_21:ba0",
+     "dir": "ba",
+     "index": 0
+    },
+    {
+     "id": "e_20_21:ba1",
+     "dir": "ba",
+     "index": 1
+    }
+   ],
+   "lane_width_m": 3.5,
+   "speed_kmh": 50,
+   "elevation_m": 0.0,
+   "sidewalk_m": 3.0,
+   "surface": "asphalt"
+  },
+  {
+   "id": "e_21_22",
+   "a": "j_21",
+   "b": "j_22",
+   "lanes": [
+    {
+     "id": "e_21_22:ab0",
+     "dir": "ab",
+     "index": 0
+    },
+    {
+     "id": "e_21_22:ab1",
+     "dir": "ab",
+     "index": 1
+    },
+    {
+     "id": "e_21_22:ba0",
+     "dir": "ba",
+     "index": 0
+    },
+    {
+     "id": "e_21_22:ba1",
+     "dir": "ba",
+     "index": 1
+    }
+   ],
+   "lane_width_m": 3.5,
+   "speed_kmh": 50,
+   "elevation_m": 0.0,
+   "sidewalk_m": 3.0,
+   "surface": "asphalt"
+  }
+ ],
+ "intersections": [
+  {
+   "id": "j_00",
+   "node": "j_00",
+   "control": "none",
+   "signalised": false,
+   "box_half_m": 7.0,
+   "stop_line_m": 10.5,
+   "crosswalk_m": [
+    7.0,
+    10.0
+   ],
+   "approaches": [
+    {
+     "id": "j_00<e_00_10",
+     "edge": "e_00_10",
+     "dir": "ba"
+    },
+    {
+     "id": "j_00<e_00_01",
+     "edge": "e_00_01",
+     "dir": "ba"
+    }
+   ]
+  },
+  {
+   "id": "j_10",
+   "node": "j_10",
+   "control": "signal",
+   "signalised": true,
+   "box_half_m": 7.0,
+   "stop_line_m": 10.5,
+   "crosswalk_m": [
+    7.0,
+    10.0
+   ],
+   "approaches": [
+    {
+     "id": "j_10<e_00_10",
+     "edge": "e_00_10",
+     "dir": "ab"
+    },
+    {
+     "id": "j_10<e_10_20",
+     "edge": "e_10_20",
+     "dir": "ba"
+    },
+    {
+     "id": "j_10<e_10_11",
+     "edge": "e_10_11",
+     "dir": "ba"
+    }
+   ],
+   "signal": {
+    "phases": [
+     [
+      "j_10<e_10_20"
+     ],
+     [
+      "j_10<e_10_11"
+     ],
+     [
+      "j_10<e_00_10"
+     ]
+    ],
+    "green_s": 10.0,
+    "amber_s": 3.0,
+    "all_red_s": 1.0,
+    "offset_s": 7.0
+   }
+  },
+  {
+   "id": "j_20",
+   "node": "j_20",
+   "control": "none",
+   "signalised": false,
+   "box_half_m": 7.0,
+   "stop_line_m": 10.5,
+   "crosswalk_m": [
+    7.0,
+    10.0
+   ],
+   "approaches": [
+    {
+     "id": "j_20<e_10_20",
+     "edge": "e_10_20",
+     "dir": "ab"
+    },
+    {
+     "id": "j_20<e_20_21",
+     "edge": "e_20_21",
+     "dir": "ba"
+    }
+   ]
+  },
+  {
+   "id": "j_01",
+   "node": "j_01",
+   "control": "signal",
+   "signalised": true,
+   "box_half_m": 7.0,
+   "stop_line_m": 10.5,
+   "crosswalk_m": [
+    7.0,
+    10.0
+   ],
+   "approaches": [
+    {
+     "id": "j_01<e_01_11",
+     "edge": "e_01_11",
+     "dir": "ba"
+    },
+    {
+     "id": "j_01<e_00_01",
+     "edge": "e_00_01",
+     "dir": "ab"
+    },
+    {
+     "id": "j_01<e_01_02",
+     "edge": "e_01_02",
+     "dir": "ba"
+    }
+   ],
+   "signal": {
+    "phases": [
+     [
+      "j_01<e_00_01"
+     ],
+     [
+      "j_01<e_01_11"
+     ],
+     [
+      "j_01<e_01_02"
+     ]
+    ],
+    "green_s": 10.0,
+    "amber_s": 3.0,
+    "all_red_s": 1.0,
+    "offset_s": 7.0
+   }
+  },
+  {
+   "id": "j_11",
+   "node": "j_11",
+   "control": "signal",
+   "signalised": true,
+   "box_half_m": 7.0,
+   "stop_line_m": 10.5,
+   "crosswalk_m": [
+    7.0,
+    10.0
+   ],
+   "approaches": [
+    {
+     "id": "j_11<e_01_11",
+     "edge": "e_01_11",
+     "dir": "ab"
+    },
+    {
+     "id": "j_11<e_11_21",
+     "edge": "e_11_21",
+     "dir": "ba"
+    },
+    {
+     "id": "j_11<e_10_11",
+     "edge": "e_10_11",
+     "dir": "ab"
+    },
+    {
+     "id": "j_11<e_11_12",
+     "edge": "e_11_12",
+     "dir": "ba"
+    }
+   ],
+   "signal": {
+    "phases": [
+     [
+      "j_11<e_10_11"
+     ],
+     [
+      "j_11<e_11_21"
+     ],
+     [
+      "j_11<e_11_12"
+     ],
+     [
+      "j_11<e_01_11"
+     ]
+    ],
+    "green_s": 10.0,
+    "amber_s": 3.0,
+    "all_red_s": 1.0,
+    "offset_s": 0.0
+   }
+  },
+  {
+   "id": "j_21",
+   "node": "j_21",
+   "control": "signal",
+   "signalised": true,
+   "box_half_m": 7.0,
+   "stop_line_m": 10.5,
+   "crosswalk_m": [
+    7.0,
+    10.0
+   ],
+   "approaches": [
+    {
+     "id": "j_21<e_11_21",
+     "edge": "e_11_21",
+     "dir": "ab"
+    },
+    {
+     "id": "j_21<e_20_21",
+     "edge": "e_20_21",
+     "dir": "ab"
+    },
+    {
+     "id": "j_21<e_21_22",
+     "edge": "e_21_22",
+     "dir": "ba"
+    }
+   ],
+   "signal": {
+    "phases": [
+     [
+      "j_21<e_20_21"
+     ],
+     [
+      "j_21<e_21_22"
+     ],
+     [
+      "j_21<e_11_21"
+     ]
+    ],
+    "green_s": 10.0,
+    "amber_s": 3.0,
+    "all_red_s": 1.0,
+    "offset_s": 7.0
+   }
+  },
+  {
+   "id": "j_02",
+   "node": "j_02",
+   "control": "none",
+   "signalised": false,
+   "box_half_m": 7.0,
+   "stop_line_m": 10.5,
+   "crosswalk_m": [
+    7.0,
+    10.0
+   ],
+   "approaches": [
+    {
+     "id": "j_02<e_02_12",
+     "edge": "e_02_12",
+     "dir": "ba"
+    },
+    {
+     "id": "j_02<e_01_02",
+     "edge": "e_01_02",
+     "dir": "ab"
+    }
+   ]
+  },
+  {
+   "id": "j_12",
+   "node": "j_12",
+   "control": "signal",
+   "signalised": true,
+   "box_half_m": 7.0,
+   "stop_line_m": 10.5,
+   "crosswalk_m": [
+    7.0,
+    10.0
+   ],
+   "approaches": [
+    {
+     "id": "j_12<e_02_12",
+     "edge": "e_02_12",
+     "dir": "ab"
+    },
+    {
+     "id": "j_12<e_12_22",
+     "edge": "e_12_22",
+     "dir": "ba"
+    },
+    {
+     "id": "j_12<e_11_12",
+     "edge": "e_11_12",
+     "dir": "ab"
+    }
+   ],
+   "signal": {
+    "phases": [
+     [
+      "j_12<e_11_12"
+     ],
+     [
+      "j_12<e_12_22"
+     ],
+     [
+      "j_12<e_02_12"
+     ]
+    ],
+    "green_s": 10.0,
+    "amber_s": 3.0,
+    "all_red_s": 1.0,
+    "offset_s": 7.0
+   }
+  },
+  {
+   "id": "j_22",
+   "node": "j_22",
+   "control": "none",
+   "signalised": false,
+   "box_half_m": 7.0,
+   "stop_line_m": 10.5,
+   "crosswalk_m": [
+    7.0,
+    10.0
+   ],
+   "approaches": [
+    {
+     "id": "j_22<e_12_22",
+     "edge": "e_12_22",
+     "dir": "ab"
+    },
+    {
+     "id": "j_22<e_21_22",
+     "edge": "e_21_22",
+     "dir": "ab"
+    }
+   ]
+  }
+ ],
+ "blocks": [
+  {
+   "id": "b_00",
+   "poly": [
+    [
+     -113.0,
+     -113.0
+    ],
+    [
+     -7.0,
+     -113.0
+    ],
+    [
+     -7.0,
+     -7.0
+    ],
+    [
+     -113.0,
+     -7.0
+    ]
+   ],
+   "elevation_m": 0.15
+  },
+  {
+   "id": "b_10",
+   "poly": [
+    [
+     7.0,
+     -113.0
+    ],
+    [
+     113.0,
+     -113.0
+    ],
+    [
+     113.0,
+     -7.0
+    ],
+    [
+     7.0,
+     -7.0
+    ]
+   ],
+   "elevation_m": 0.15
+  },
+  {
+   "id": "b_01",
+   "poly": [
+    [
+     -113.0,
+     7.0
+    ],
+    [
+     -7.0,
+     7.0
+    ],
+    [
+     -7.0,
+     113.0
+    ],
+    [
+     -113.0,
+     113.0
+    ]
+   ],
+   "elevation_m": 0.15
+  },
+  {
+   "id": "b_11",
+   "poly": [
+    [
+     7.0,
+     7.0
+    ],
+    [
+     113.0,
+     7.0
+    ],
+    [
+     113.0,
+     113.0
+    ],
+    [
+     7.0,
+     113.0
+    ]
+   ],
+   "elevation_m": 0.15
+  }
+ ],
+ "sidewalks": [
+  {
+   "id": "sw_00",
+   "block": "b_00",
+   "width_m": 3.0,
+   "elevation_m": 0.15,
+   "ring": [
+    [
+     -111.5,
+     -111.5
+    ],
+    [
+     -8.5,
+     -111.5
+    ],
+    [
+     -8.5,
+     -8.5
+    ],
+    [
+     -111.5,
+     -8.5
+    ]
+   ]
+  },
+  {
+   "id": "sw_10",
+   "block": "b_10",
+   "width_m": 3.0,
+   "elevation_m": 0.15,
+   "ring": [
+    [
+     8.5,
+     -111.5
+    ],
+    [
+     111.5,
+     -111.5
+    ],
+    [
+     111.5,
+     -8.5
+    ],
+    [
+     8.5,
+     -8.5
+    ]
+   ]
+  },
+  {
+   "id": "sw_01",
+   "block": "b_01",
+   "width_m": 3.0,
+   "elevation_m": 0.15,
+   "ring": [
+    [
+     -111.5,
+     8.5
+    ],
+    [
+     -8.5,
+     8.5
+    ],
+    [
+     -8.5,
+     111.5
+    ],
+    [
+     -111.5,
+     111.5
+    ]
+   ]
+  },
+  {
+   "id": "sw_11",
+   "block": "b_11",
+   "width_m": 3.0,
+   "elevation_m": 0.15,
+   "ring": [
+    [
+     8.5,
+     8.5
+    ],
+    [
+     111.5,
+     8.5
+    ],
+    [
+     111.5,
+     111.5
+    ],
+    [
+     8.5,
+     111.5
+    ]
+   ]
+  }
+ ],
+ "parcels": [
+  {
+   "id": "p_00",
+   "block": "b_00",
+   "zoning": "civic",
+   "poly": [
+    [
+     -110.0,
+     -110.0
+    ],
+    [
+     -60.0,
+     -110.0
+    ],
+    [
+     -60.0,
+     -60.0
+    ],
+    [
+     -110.0,
+     -60.0
+    ]
+   ],
+   "base_m": 0.15,
+   "height_range_m": [
+    10.0,
+    14.0
+   ],
+   "height_m": 10.6,
+   "setback_m": 4.0
+  },
+  {
+   "id": "p_01",
+   "block": "b_00",
+   "zoning": "residential",
+   "poly": [
+    [
+     -110.0,
+     -60.0
+    ],
+    [
+     -60.0,
+     -60.0
+    ],
+    [
+     -60.0,
+     -10.0
+    ],
+    [
+     -110.0,
+     -10.0
+    ]
+   ],
+   "base_m": 0.15,
+   "height_range_m": [
+    8.0,
+    24.0
+   ],
+   "height_m": 9.2,
+   "setback_m": 4.0
+  },
+  {
+   "id": "p_02",
+   "block": "b_00",
+   "zoning": "commercial",
+   "poly": [
+    [
+     -60.0,
+     -110.0
+    ],
+    [
+     -10.0,
+     -110.0
+    ],
+    [
+     -10.0,
+     -60.0
+    ],
+    [
+     -60.0,
+     -60.0
+    ]
+   ],
+   "base_m": 0.15,
+   "height_range_m": [
+    12.0,
+    45.0
+   ],
+   "height_m": 24.1,
+   "setback_m": 4.0
+  },
+  {
+   "id": "p_03",
+   "block": "b_00",
+   "zoning": "commercial",
+   "poly": [
+    [
+     -60.0,
+     -60.0
+    ],
+    [
+     -10.0,
+     -60.0
+    ],
+    [
+     -10.0,
+     -10.0
+    ],
+    [
+     -60.0,
+     -10.0
+    ]
+   ],
+   "base_m": 0.15,
+   "height_range_m": [
+    12.0,
+    45.0
+   ],
+   "height_m": 28.7,
+   "setback_m": 4.0
+  },
+  {
+   "id": "p_04",
+   "block": "b_10",
+   "zoning": "commercial",
+   "poly": [
+    [
+     10.0,
+     -110.0
+    ],
+    [
+     60.0,
+     -110.0
+    ],
+    [
+     60.0,
+     -60.0
+    ],
+    [
+     10.0,
+     -60.0
+    ]
+   ],
+   "base_m": 0.15,
+   "height_range_m": [
+    12.0,
+    45.0
+   ],
+   "height_m": 26.3,
+   "setback_m": 4.0
+  },
+  {
+   "id": "p_05",
+   "block": "b_10",
+   "zoning": "commercial",
+   "poly": [
+    [
+     10.0,
+     -60.0
+    ],
+    [
+     60.0,
+     -60.0
+    ],
+    [
+     60.0,
+     -10.0
+    ],
+    [
+     10.0,
+     -10.0
+    ]
+   ],
+   "base_m": 0.15,
+   "height_range_m": [
+    12.0,
+    45.0
+   ],
+   "height_m": 15.0,
+   "setback_m": 4.0
+  },
+  {
+   "id": "p_06",
+   "block": "b_10",
+   "zoning": "commercial",
+   "poly": [
+    [
+     60.0,
+     -110.0
+    ],
+    [
+     110.0,
+     -110.0
+    ],
+    [
+     110.0,
+     -60.0
+    ],
+    [
+     60.0,
+     -60.0
+    ]
+   ],
+   "base_m": 0.15,
+   "height_range_m": [
+    12.0,
+    45.0
+   ],
+   "height_m": 39.3,
+   "setback_m": 4.0
+  },
+  {
+   "id": "p_07",
+   "block": "b_10",
+   "zoning": "commercial",
+   "poly": [
+    [
+     60.0,
+     -60.0
+    ],
+    [
+     110.0,
+     -60.0
+    ],
+    [
+     110.0,
+     -10.0
+    ],
+    [
+     60.0,
+     -10.0
+    ]
+   ],
+   "base_m": 0.15,
+   "height_range_m": [
+    12.0,
+    45.0
+   ],
+   "height_m": 19.4,
+   "setback_m": 4.0
+  },
+  {
+   "id": "p_08",
+   "block": "b_01",
+   "zoning": "residential",
+   "poly": [
+    [
+     -110.0,
+     10.0
+    ],
+    [
+     -60.0,
+     10.0
+    ],
+    [
+     -60.0,
+     60.0
+    ],
+    [
+     -110.0,
+     60.0
+    ]
+   ],
+   "base_m": 0.15,
+   "height_range_m": [
+    8.0,
+    24.0
+   ],
+   "height_m": 23.2,
+   "setback_m": 4.0
+  },
+  {
+   "id": "p_09",
+   "block": "b_01",
+   "zoning": "commercial",
+   "poly": [
+    [
+     -110.0,
+     60.0
+    ],
+    [
+     -60.0,
+     60.0
+    ],
+    [
+     -60.0,
+     110.0
+    ],
+    [
+     -110.0,
+     110.0
+    ]
+   ],
+   "base_m": 0.15,
+   "height_range_m": [
+    12.0,
+    45.0
+   ],
+   "height_m": 25.1,
+   "setback_m": 4.0
+  },
+  {
+   "id": "p_10",
+   "block": "b_01",
+   "zoning": "residential",
+   "poly": [
+    [
+     -60.0,
+     10.0
+    ],
+    [
+     -10.0,
+     10.0
+    ],
+    [
+     -10.0,
+     60.0
+    ],
+    [
+     -60.0,
+     60.0
+    ]
+   ],
+   "base_m": 0.15,
+   "height_range_m": [
+    8.0,
+    24.0
+   ],
+   "height_m": 8.7,
+   "setback_m": 4.0
+  },
+  {
+   "id": "p_11",
+   "block": "b_01",
+   "zoning": "residential",
+   "poly": [
+    [
+     -60.0,
+     60.0
+    ],
+    [
+     -10.0,
+     60.0
+    ],
+    [
+     -10.0,
+     110.0
+    ],
+    [
+     -60.0,
+     110.0
+    ]
+   ],
+   "base_m": 0.15,
+   "height_range_m": [
+    8.0,
+    24.0
+   ],
+   "height_m": 12.6,
+   "setback_m": 4.0
+  },
+  {
+   "id": "p_12",
+   "block": "b_11",
+   "zoning": "commercial",
+   "poly": [
+    [
+     10.0,
+     10.0
+    ],
+    [
+     60.0,
+     10.0
+    ],
+    [
+     60.0,
+     60.0
+    ],
+    [
+     10.0,
+     60.0
+    ]
+   ],
+   "base_m": 0.15,
+   "height_range_m": [
+    12.0,
+    45.0
+   ],
+   "height_m": 15.9,
+   "setback_m": 4.0
+  },
+  {
+   "id": "p_13",
+   "block": "b_11",
+   "zoning": "commercial",
+   "poly": [
+    [
+     10.0,
+     60.0
+    ],
+    [
+     60.0,
+     60.0
+    ],
+    [
+     60.0,
+     110.0
+    ],
+    [
+     10.0,
+     110.0
+    ]
+   ],
+   "base_m": 0.15,
+   "height_range_m": [
+    12.0,
+    45.0
+   ],
+   "height_m": 38.9,
+   "setback_m": 4.0
+  },
+  {
+   "id": "p_14",
+   "block": "b_11",
+   "zoning": "commercial",
+   "poly": [
+    [
+     60.0,
+     10.0
+    ],
+    [
+     110.0,
+     10.0
+    ],
+    [
+     110.0,
+     60.0
+    ],
+    [
+     60.0,
+     60.0
+    ]
+   ],
+   "base_m": 0.15,
+   "height_range_m": [
+    12.0,
+    45.0
+   ],
+   "height_m": 31.2,
+   "setback_m": 4.0
+  },
+  {
+   "id": "p_15",
+   "block": "b_11",
+   "zoning": "civic",
+   "poly": [
+    [
+     60.0,
+     60.0
+    ],
+    [
+     110.0,
+     60.0
+    ],
+    [
+     110.0,
+     110.0
+    ],
+    [
+     60.0,
+     110.0
+    ]
+   ],
+   "base_m": 0.15,
+   "height_range_m": [
+    10.0,
+    14.0
+   ],
+   "height_m": 11.5,
+   "setback_m": 4.0
+  }
+ ],
+ "pois": [
+  {
+   "id": "police_station_a",
+   "kind": "police_station",
+   "p": [
+    -85.0,
+    0.15,
+    -103.0
+   ],
+   "exit": {
+    "lane": "e_00_10:ab1",
+    "s": 40.0
+   }
+  },
+  {
+   "id": "police_station_b",
+   "kind": "police_station",
+   "p": [
+    85.0,
+    0.15,
+    103.0
+   ],
+   "exit": {
+    "lane": "e_12_22:ba1",
+    "s": 40.0
+   }
+  },
+  {
+   "id": "safehouse_a",
+   "kind": "safehouse",
+   "p": [
+    -30.0,
+    0.15,
+    25.0
+   ]
+  },
+  {
+   "id": "shop_corner",
+   "kind": "shop",
+   "p": [
+    30.0,
+    0.15,
+    -25.0
+   ]
+  },
+  {
+   "id": "proving_ground",
+   "kind": "test_area",
+   "p": [
+    0.0,
+    -0.05,
+    -600.0
+   ],
+   "heading_deg": 90.0,
+   "size_m": [
+    2400.0,
+    400.0
+   ]
+  }
+ ],
+ "spawn": {
+  "vehicles": "all lanes",
+  "pedestrians": [
+   "sw_00",
+   "sw_10",
+   "sw_01",
+   "sw_11"
+  ]
+ },
+ "density": {
+  "vehicles_base": 40,
+  "pedestrians_base": 60
+ }
+}

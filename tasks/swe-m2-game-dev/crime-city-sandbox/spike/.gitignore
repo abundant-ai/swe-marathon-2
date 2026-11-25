@@ -1,0 +1,12 @@
+# Big or generated: never committed
+/vendor/
+project/assets/vendor/**/*.glb
+project/assets/vendor/**/*.gltf
+project/assets/vendor/**/*.bin
+project/assets/vendor/**/*.png
+runs/
+**/.godot/
+*.dylib
+*.so
+__pycache__/
+*.pyc

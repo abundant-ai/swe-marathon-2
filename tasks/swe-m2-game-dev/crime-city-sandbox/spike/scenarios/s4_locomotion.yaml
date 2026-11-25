@@ -1,0 +1,43 @@
+# Family A. On foot through InputMap actions only; the probe reads skeleton bone poses.
+template: people.locomotion
+family: A
+weight: 1.0
+params:
+  lead: {choice: [lead_a, lead_b, lead_c]}
+setup:
+  - world.reset: {seed: $seed, density: 0}
+  - player.spawn: {lead: $lead, at: {poi: proving_ground}, heading: 0}
+script:
+  - observe: {rate_hz: 30, camera: true, state: true, bones_player: [Hips, Head, LeftFoot, RightFoot, LeftToes, RightToes, LeftHand, RightHand]}
+  - query: [{id: skel, type: skeleton, id_entity: 1}, {id: unregistered, type: unregistered}]
+  - wait_s: 1
+  - bot.walk: {heading_deg: 0, gait: walk, s: 6, mark: walk}
+  - bot.walk: {heading_deg: 0, gait: run, s: 6, mark: run}
+  - bot.walk: {heading_deg: 0, gait: sprint, s: 6, mark: sprint}
+  - bot.walk: {heading_deg: 0, gait: stand, s: 2, mark: stand}
+  - bot.walk: {heading_deg: 90, gait: walk, s: 5, mark: turn}
+assert:
+  - id: skeleton
+    kind: precondition
+    expr: "(lambda sk: measure('bones', len(sk.get('bones', []))) >= 56 and all(b in sk['bones'] for b in ['Hips', 'Spine', 'Chest', 'Neck', 'Head', 'LeftUpperArm', 'LeftHand', 'RightUpperArm', 'RightHand', 'LeftUpperLeg', 'LeftFoot', 'RightUpperLeg', 'RightFoot']) and measure('bound_meshes', sk.get('bound_meshes', 0)) >= 1)(S['queries']['skel'])"
+  - id: registered
+    kind: precondition
+    expr: "measure('unregistered', S['queries']['unregistered']) == []"
+  - id: height
+    w: 0.1
+    expr: "(lambda b: in_band(measure('height_m', round(b['Head'][1] + 0.18 - min(b['LeftToes'][1], b['RightToes'][1]) + 0.02, 3)), 1.5, 2.0))(T.frames[frame_at(M['stand_end'] - 10)]['bones'][str(T.player_id)])"
+  - id: speeds
+    w: 0.3
+    expr: "(lambda g: in_band(g['walk']['speed'], 1.3, 1.8) and in_band(g['run']['speed'], 3.5, 5.0) and in_band(g['sprint']['speed'], 6.0, 7.5))(measure('gait', {k: gait(T.player_id, M[k + '_start'], M[k + '_end']) for k in ('walk', 'run', 'sprint')}))"
+  - id: cadence
+    w: 0.15
+    expr: "(lambda g: g['walk']['cadence_hz'] < g['run']['cadence_hz'] < g['sprint']['cadence_hz'])({k: gait(T.player_id, M[k + '_start'], M[k + '_end']) for k in ('walk', 'run', 'sprint')})"
+  - id: alternate
+    w: 0.15
+    expr: "all(measure('alt_' + k, gait(T.player_id, M[k + '_start'], M[k + '_end'])['alternation']) >= 0.9 for k in ('walk', 'run', 'sprint'))"
+  - id: foot_slide
+    w: 0.2
+    expr: "all(measure('slide_' + k, gait(T.player_id, M[k + '_start'], M[k + '_end'])['slide_q95']) <= 0.25 for k in ('walk', 'run', 'sprint'))"
+  - id: input
+    w: 0.1
+    expr: "(lambda fr: measure('moved_after_2_ticks_m', round(math.hypot(T.ent(fr + 1, T.player_id)['p'][0] - T.ent(fr, T.player_id)['p'][0], T.ent(fr + 1, T.player_id)['p'][2] - T.ent(fr, T.player_id)['p'][2]), 4)) > 0)(frame_at(M['walk_start']))"
