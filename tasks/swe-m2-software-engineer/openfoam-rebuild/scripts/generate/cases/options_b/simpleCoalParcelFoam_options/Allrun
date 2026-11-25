@@ -1,0 +1,20 @@
+#!/bin/bash
+# from: lagrangian/coalChemistryFoam/simplifiedSiwek (steady coal cloud, 2D two-block mesh); exercises: simpleCoalParcelFoam options -noFunctionObjects, -postProcess -func/-latestTime, -parallel (simple and hierarchical via -decomposeParDict), errors: -dry-run (simplified mesh lacks fvOptions cellSet), -parallel without mpirun/decomposition, missing cellSet, missing cloud positions file
+cd "${0%/*}" || exit
+cp -r 0.orig 0
+blockMesh
+simpleCoalParcelFoam || true
+topoSet
+simpleCoalParcelFoam -dry-run || true
+simpleCoalParcelFoam -parallel || true
+mpirun --oversubscribe -np 2 simpleCoalParcelFoam -parallel || true
+simpleCoalParcelFoam -noFunctionObjects
+simpleCoalParcelFoam -postProcess -func 'mag(U)' -latestTime
+simpleCoalParcelFoam -postProcess -func 'magSqr(U)' -time 5
+decomposePar -time 0
+mpirun --oversubscribe -np 2 simpleCoalParcelFoam -parallel
+decomposePar -force -time 0 -decomposeParDict system/decomposeParDict.hier
+mpirun --oversubscribe -np 2 simpleCoalParcelFoam -parallel -decomposeParDict system/decomposeParDict.hier
+mv constant/coalCloud1Positions constant/coalCloud1Positions.off
+simpleCoalParcelFoam || true
+mv constant/coalCloud1Positions.off constant/coalCloud1Positions

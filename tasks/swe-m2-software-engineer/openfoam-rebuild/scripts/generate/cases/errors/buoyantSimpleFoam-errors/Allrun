@@ -1,0 +1,35 @@
+#!/bin/bash
+# from: heatTransfer/buoyantSimpleFoam/buoyantCavity; exercises: buoyantSimpleFoam errors - missing p_rgh/p/alphat/g, unknown thermo type, unknown compressible wall-function BC, unknown radiation model, P1 radiation without G field, missing energy scheme, missing omega patch entry
+blockMesh
+mv 0/p_rgh 0/p_rgh.off
+buoyantSimpleFoam || true
+mv 0/p_rgh.off 0/p_rgh
+mv 0/p 0/p.off
+buoyantSimpleFoam || true
+mv 0/p.off 0/p
+mv 0/alphat 0/alphat.off
+buoyantSimpleFoam || true
+mv 0/alphat.off 0/alphat
+mv constant/g constant/g.off
+buoyantSimpleFoam || true
+mv constant/g.off constant/g
+cp -r variants/unknownThermoType/. .
+buoyantSimpleFoam || true
+cp -r variants/orig/. .
+cp -r variants/unknownAlphatBC/. .
+buoyantSimpleFoam || true
+cp -r variants/orig/. .
+cp -r variants/missingOmegaPatch/. .
+buoyantSimpleFoam || true
+cp -r variants/orig/. .
+cp -r variants/missingEnergyScheme/. .
+buoyantSimpleFoam || true
+cp -r variants/orig/. .
+cp -r variants/missingSolverP_rgh/. .
+buoyantSimpleFoam || true
+cp -r variants/orig/. .
+cp variants/radiationProperties.unknownModel constant/radiationProperties
+buoyantSimpleFoam || true
+cp variants/radiationProperties.P1missingG constant/radiationProperties
+buoyantSimpleFoam || true
+rm constant/radiationProperties

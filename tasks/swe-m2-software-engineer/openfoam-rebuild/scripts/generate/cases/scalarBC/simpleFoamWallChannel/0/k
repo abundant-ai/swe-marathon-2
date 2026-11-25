@@ -1,0 +1,50 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       volScalarField;
+    object      k;
+}
+
+dimensions      [0 2 -2 0 0 0 0];
+internalField   uniform 0.01;
+boundaryField
+{
+    inlet_lo
+    {
+        type            scaledFixedValue;
+        scale           constant 0.5;
+        refValue
+        {
+            type            fixedValue;
+            value           uniform 0.02;
+        }
+        value           uniform 0.01;
+    }
+    inlet_hi
+    {
+        type            inletOutlet;
+        inletValue      uniform 0.01;
+        value           uniform 0.01;
+    }
+    outlet
+    {
+        type            inletOutlet;
+        inletValue      uniform 0.01;
+        value           uniform 0.01;
+    }
+    "(bottom1|top1)"
+    {
+        type            kLowReWallFunction;
+        value           uniform 0.01;
+    }
+    "(bottom|top).*"
+    {
+        type            kqRWallFunction;
+        value           uniform 0.01;
+    }
+    frontAndBack
+    {
+        type            empty;
+    }
+}

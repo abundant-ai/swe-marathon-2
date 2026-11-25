@@ -1,0 +1,9 @@
+#!/bin/bash
+# from: scratch; exercises: ideasUnvToFoam datasets 164 (units, mm scaling), 2411 nodes, 2412 tet/brick/tri/quad elements, 2467 groups -> patches/cellZones, reversed boundary faces, internal shell face group, -dump
+cd "${0%/*}" || exit 1
+ideasUnvToFoam -dump twoTets.unv
+sed -i "s/written [0-9]\{4\}-[0-9-]*T[0-9:]*/written DATE/" boundaryFaces.obj
+checkMesh
+mv constant/polyMesh mesh_tets
+ideasUnvToFoam twoHexMM.unv
+checkMesh

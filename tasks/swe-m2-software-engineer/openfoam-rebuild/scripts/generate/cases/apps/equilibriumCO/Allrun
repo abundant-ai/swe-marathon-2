@@ -1,0 +1,4 @@
+#!/bin/bash
+# from: scratch (constant/thermoData = CO2 CO O2 N2 H2O H2 OH O H entries from etc/thermoData/thermoData); exercises: equilibriumCO equilibrium constants Kc
+cd "${0%/*}" || exit 1
+equilibriumCO

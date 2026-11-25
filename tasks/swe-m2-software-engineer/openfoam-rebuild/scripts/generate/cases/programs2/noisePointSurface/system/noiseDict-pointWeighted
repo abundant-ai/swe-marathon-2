@@ -1,0 +1,42 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      noiseDict;
+}
+
+noiseModel      pointNoise;
+
+pointNoiseCoeffs
+{
+    windowModel     uniform;
+
+    uniformCoeffs
+    {
+        value           1;
+        overlapPercent  0;
+        symmetric       no;
+        extended        no;
+        nWindow         2;
+    }
+
+    SPLweighting    dBA;
+    minFreq         10;
+    maxFreq         400;
+    outputPrefix    weighted;
+
+    files
+    (
+        "observer0.dat"
+    );
+
+    nHeaderLine     6;
+    refColumn       0;
+    componentColumns (1);
+    mergeSeparators yes;
+    separator       " ";
+
+    N               128;
+    rhoRef          1.2;
+}

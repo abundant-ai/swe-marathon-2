@@ -1,0 +1,5 @@
+#!/bin/bash
+# from: scratch; exercises: netgenNeutralToFoam neutral v4.4 reader: tets, boundary-condition numbers -> patchN (incl. empty patch0), multiple-subdomain warning
+cd "${0%/*}" || exit 1
+netgenNeutralToFoam twoTets.neu
+checkMesh

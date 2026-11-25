@@ -1,0 +1,52 @@
+FoamFile { version 2.0; format ascii; class dictionary; object dropSizes; }
+functions
+{
+    readU
+    {
+        type            readFields;
+        libs            (fieldFunctionObjects);
+        fields          (U);
+    }
+    drops
+    {
+        type            regionSizeDistribution;
+        libs            (fieldFunctionObjects);
+        field           alpha.water;
+        patches         (inlet);
+        fields          (U);
+        threshold       0.5;
+        maxDiameter     0.5e-2;
+        minDiameter     0;
+        nBins           10;
+        setFormat       raw;
+    }
+    dropsPlanes
+    {
+        type            regionSizeDistribution;
+        libs            (fieldFunctionObjects);
+        field           alpha.water;
+        patches         ("in.*");
+        fields          (U);
+        threshold       0.6;
+        maxDiameter     0.4e-2;
+        minDiameter     0.05e-2;
+        nBins           5;
+        setFormat       csv;
+        coordinateSystem
+        {
+            origin  (0 0 0);
+            rotation
+            {
+                type    axes;
+                e3      (0 0 1);
+                e1      (0 1 0);
+            }
+        }
+        isoPlanes       true;
+        origin          (0.25e-2 0.5e-2 0.025e-2);
+        direction       (1 0 0);
+        maxD            1e-2;
+        maxDownstream   0.8e-2;
+        nDownstreamBins 4;
+    }
+}

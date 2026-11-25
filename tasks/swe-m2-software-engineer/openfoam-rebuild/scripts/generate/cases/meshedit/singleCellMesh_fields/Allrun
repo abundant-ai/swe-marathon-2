@@ -1,0 +1,6 @@
+#!/bin/bash
+# from: incompressible/icoFoam/cavity/cavity (6x6, 4 steps); exercises: singleCellMesh mapping vol fields to the single-cell region, default times and -latestTime
+blockMesh
+icoFoam
+singleCellMesh -time 0
+singleCellMesh -latestTime

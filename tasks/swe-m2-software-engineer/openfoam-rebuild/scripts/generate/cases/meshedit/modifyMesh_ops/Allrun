@@ -1,0 +1,8 @@
+#!/bin/bash
+# from: scratch (3x3x3 box blockMesh); exercises: modifyMesh boundary cutting (move point, split edges, triangulate face), cell-to-pyramid splitting, boundary edge collapse, ambiguous-lookup rejection, -dict, -overwrite
+blockMesh
+modifyMesh
+modifyMesh -dict system/modifyMeshDict.ambiguous
+modifyMesh -overwrite -dict system/modifyMeshDict.cells
+modifyMesh -overwrite -dict system/modifyMeshDict.collapse
+checkMesh -constant

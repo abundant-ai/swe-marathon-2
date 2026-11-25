@@ -1,0 +1,5 @@
+#!/bin/bash
+# from: incompressible/pimpleFoam/laminar/movingCone (coarsened); exercises: movingConeTopoFvMesh (topoChangerFvMesh) with layerAdditionRemoval modifiers adding and removing cell layers on two faceZones during moveDynamicMesh
+blockMesh
+moveDynamicMesh
+checkMesh -latestTime

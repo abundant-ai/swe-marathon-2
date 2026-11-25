@@ -1,0 +1,16 @@
+P 1e5;
+T0 293;
+reactants
+(
+    CH4___ANHARMONIC 0.095
+    O2 0.19
+    N2 0.715
+)
+reactants;
+products
+(
+    CO2 0.095
+    H2O 0.19
+    N2 0.715
+)
+products;

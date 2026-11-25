@@ -1,0 +1,94 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  v2606                                 |
+|   \\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      surfaceFilmProperties;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+surfaceFilmModel thermoSingleLayer;
+
+region          wallFilmRegion;
+
+active          true;
+
+thermoSingleLayerCoeffs
+{
+    filmThermoModel constant;
+    constantCoeffs
+    {
+        specie      water;
+        rho0        1000;
+        mu0         1e-3;
+        sigma0      0.07;
+        Cp0         4187;
+        kappa0      0.6;
+        D0          2e-9;
+        hl0         2.26e6;
+        pv0         3170;
+        W0          18;
+        Tb0         373;
+    }
+
+    filmViscosityModel constant;
+
+    deltaWet    2e-4;
+    hydrophilic no;
+
+    turbulence  laminar;
+    laminarCoeffs
+    {
+        Cf          0.005;
+    }
+
+    forces
+    (
+        thermocapillary
+    );
+
+    injectionModels
+    ();
+
+    transferModels ( VoFPatchTransfer );
+    VoFPatchTransferCoeffs
+    {
+        deltaFactorToVoF  0.2;
+        alphaToVoF        0.2;
+        deltaFactorToFilm 0.1;
+        alphaToFilm       0.1;
+        transferRateCoeff 0.1;
+    }
+
+    phaseChangeModel none;
+
+    radiationModel none;
+
+    upperSurfaceModels
+    {
+        heatTransferModel constant;
+        constantCoeffs
+        {
+            c0                1e-8;
+        }
+    }
+
+    lowerSurfaceModels
+    {
+        heatTransferModel constant;
+        constantCoeffs
+        {
+            c0                1e-8;
+        }
+    }
+}
+
+
+// ************************************************************************* //

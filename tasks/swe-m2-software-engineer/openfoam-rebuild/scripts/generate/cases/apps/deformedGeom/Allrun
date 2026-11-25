@@ -1,0 +1,6 @@
+#!/bin/bash
+# from: incompressible/icoFoam/cavity/cavity (10x10, 3 steps); exercises: deformedGeom moving points by factor*U interpolated to points, for every time directory
+cd "${0%/*}" || exit 1
+blockMesh
+icoFoam
+deformedGeom 0.01

@@ -1,0 +1,31 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  v2606                                 |
+|   \\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      surfaceSubsetDict;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+faces       ();
+localPoints ();
+edges       ();
+
+zone
+(
+    (0.6 0.3 0.3)
+    (2 2 2)
+);
+
+// Grow selection by one layer of edge neighbours, then invert
+addFaceNeighbours yes;
+invertSelection   true;
+
+// ************************************************************************* //

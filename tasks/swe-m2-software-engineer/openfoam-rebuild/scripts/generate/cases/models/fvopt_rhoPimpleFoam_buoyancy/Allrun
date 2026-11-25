@@ -1,0 +1,6 @@
+#!/bin/bash
+# from: compressible/rhoPimpleFoam/RAS/cavity; exercises: fvOptions buoyancyForce (U), buoyancyEnergy (h), buoyancyTurbSource (kOmegaSST k/omega), unstable T stratification via setFields
+cd "${0%/*}" || exit 1
+blockMesh
+setFields
+rhoPimpleFoam

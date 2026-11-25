@@ -1,0 +1,38 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  v2606                                 |
+|   \\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      setExprFieldsDict;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+// alternative dictionary: variables, volume-weighted condition, fixed-value patch
+readFields      ( U p );
+
+expressions
+(
+    kinetic
+    {
+        field       kinetic;
+        create      yes;
+        dimensions  [0 2 -2 0 0 0 0];
+        variables   ( "half=0.5" "Umag=mag(U)" );
+        expression  #{ half*Umag*Umag #};
+        valuePatches ( movingWall );
+    }
+    blob
+    {
+        field       blob;
+        create      yes;
+        dimensions  [0 0 0 0 0 0 0];
+        expression  #{ (mag(pos() - vector(0.05, 0.05, 0.005)) < 0.03) ? 1 : 0 #};
+    }
+);

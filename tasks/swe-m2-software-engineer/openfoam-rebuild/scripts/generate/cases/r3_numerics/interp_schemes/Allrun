@@ -1,0 +1,42 @@
+#!/bin/bash
+# from: basic/scalarTransportFoam/pitzDaily (16x8 skewed graded 2D channel); exercises: surface interpolation schemes in div(phi,T): linearFit, quadraticFit, quadraticLinearFit, biLinearFit, quadraticUpwindFit, quadraticLinearUpwindFit, cubicUpwindFit, linearPureUpwindFit, clippedLinear, deferredCorrection, downwind, fixedBlended, cellCoBlended_harmonicCo, cellCoBlended_localMaxCo, outletStabilised, skewCorrected, weighted, CoBlended, zoneBlended
+blockMesh
+topoSet
+cp -r variants/linearFit/. .
+scalarTransportFoam
+cp -r variants/quadraticFit/. .
+scalarTransportFoam
+cp -r variants/quadraticLinearFit/. .
+scalarTransportFoam
+cp -r variants/biLinearFit/. .
+scalarTransportFoam
+cp -r variants/quadraticUpwindFit/. .
+scalarTransportFoam
+cp -r variants/quadraticLinearUpwindFit/. .
+scalarTransportFoam
+cp -r variants/cubicUpwindFit/. .
+scalarTransportFoam
+cp -r variants/linearPureUpwindFit/. .
+scalarTransportFoam
+cp -r variants/clippedLinear/. .
+scalarTransportFoam
+cp -r variants/deferredCorrection/. .
+scalarTransportFoam
+cp -r variants/downwind/. .
+scalarTransportFoam
+cp -r variants/fixedBlended/. .
+scalarTransportFoam
+cp -r variants/cellCoBlended_harmonicCo/. .
+scalarTransportFoam
+cp -r variants/cellCoBlended_localMaxCo/. .
+scalarTransportFoam
+cp -r variants/outletStabilised/. .
+scalarTransportFoam
+cp -r variants/skewCorrected/. .
+scalarTransportFoam
+cp -r variants/weighted/. .
+scalarTransportFoam
+cp -r variants/CoBlended/. .
+scalarTransportFoam
+cp -r variants/zoneBlended/. .
+scalarTransportFoam

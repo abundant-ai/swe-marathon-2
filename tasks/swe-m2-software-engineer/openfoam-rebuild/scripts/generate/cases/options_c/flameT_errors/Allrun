@@ -1,0 +1,14 @@
+#!/bin/bash
+# from: scratch (control file as in applications/utilities/thermophysical/adiabaticFlameT); exercises: adiabaticFlameT/equilibriumFlameT control-file handling: H2 fuel (n=0) at preheated T0; errors: missing argument, nonexistent control file (adiabaticFlameT only; equilibriumFlameT aborts), missing T0 entry, unknown fuel species, non-numeric P
+cd "${0%/*}" || exit 1
+adiabaticFlameT || true
+adiabaticFlameT noSuchFile || true
+adiabaticFlameT controlDict.noT0 || true
+adiabaticFlameT controlDict.badFuel || true
+adiabaticFlameT controlDict.badP || true
+adiabaticFlameT controlDict.H2
+equilibriumFlameT || true
+equilibriumFlameT controlDict.noT0 || true
+equilibriumFlameT controlDict.badFuel || true
+equilibriumFlameT controlDict.badP || true
+equilibriumFlameT controlDict.H2

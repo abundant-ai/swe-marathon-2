@@ -1,0 +1,5 @@
+#!/bin/bash
+# from: incompressible/icoFoam/cavity/cavity; exercises: sampled sets array/abaqusMesh/circle/cellCentre/polyLine/patchCloud/patchEdge/patchSeed/triSurfaceMeshPointSet/midPoint/midPointAndFace/face/cloud written with raw/csv/gnuplot/xmgrace/vtk/nastran/abaqus/ensight(uncollated)/gltf/none set writers
+cd "${0%/*}" || exit 1
+blockMesh
+icoFoam

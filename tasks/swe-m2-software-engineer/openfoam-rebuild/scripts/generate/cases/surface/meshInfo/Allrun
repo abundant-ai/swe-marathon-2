@@ -1,0 +1,9 @@
+#!/bin/bash
+# from: scratch (surfaces from mesh/snappyHexMesh/rotated_block, resources/geometry/simpleShapes); exercises: surfaceMeshInfo default/-areas/-xml/-scale on STL multi-solid, OBJ quads, sphere
+cd "${0%/*}" || exit 1
+surfaceMeshInfo constant/triSurface/cube6.stl
+surfaceMeshInfo -areas constant/triSurface/cube6.stl
+surfaceMeshInfo -xml constant/triSurface/cube6.stl
+surfaceMeshInfo -xml -areas -scale 2 constant/triSurface/block.obj
+surfaceMeshInfo -scale 0.001 constant/triSurface/sphere.stl
+surfaceMeshInfo constant/triSurface/missing.stl || true

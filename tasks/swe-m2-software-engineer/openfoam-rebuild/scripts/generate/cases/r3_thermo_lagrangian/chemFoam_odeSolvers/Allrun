@@ -1,0 +1,33 @@
+#!/bin/bash
+# from: combustion/chemFoam/h2; exercises: ODE solvers Euler, EulerSI, Trapezoid, RKCK45, RKDP45, RKF45, Rosenbrock12, Rosenbrock23, rodas34, SIBS (chemistry odeCoeffs/solver, one chemFoam run each)
+cd "${0%/*}" || exit
+cp -r base Euler
+foamDictionary -entry odeCoeffs/solver -set Euler Euler/constant/chemistryProperties
+chemFoam -case Euler
+cp -r base EulerSI
+foamDictionary -entry odeCoeffs/solver -set EulerSI EulerSI/constant/chemistryProperties
+chemFoam -case EulerSI
+cp -r base Trapezoid
+foamDictionary -entry odeCoeffs/solver -set Trapezoid Trapezoid/constant/chemistryProperties
+chemFoam -case Trapezoid
+cp -r base RKCK45
+foamDictionary -entry odeCoeffs/solver -set RKCK45 RKCK45/constant/chemistryProperties
+chemFoam -case RKCK45
+cp -r base RKDP45
+foamDictionary -entry odeCoeffs/solver -set RKDP45 RKDP45/constant/chemistryProperties
+chemFoam -case RKDP45
+cp -r base RKF45
+foamDictionary -entry odeCoeffs/solver -set RKF45 RKF45/constant/chemistryProperties
+chemFoam -case RKF45
+cp -r base Rosenbrock12
+foamDictionary -entry odeCoeffs/solver -set Rosenbrock12 Rosenbrock12/constant/chemistryProperties
+chemFoam -case Rosenbrock12
+cp -r base Rosenbrock23
+foamDictionary -entry odeCoeffs/solver -set Rosenbrock23 Rosenbrock23/constant/chemistryProperties
+chemFoam -case Rosenbrock23
+cp -r base rodas34
+foamDictionary -entry odeCoeffs/solver -set rodas34 rodas34/constant/chemistryProperties
+chemFoam -case rodas34
+cp -r base SIBS
+foamDictionary -entry odeCoeffs/solver -set SIBS SIBS/constant/chemistryProperties
+chemFoam -case SIBS

@@ -1,0 +1,44 @@
+solid plate2
+ facet normal 0 0 1
+  outer loop
+   vertex 1.005 0 0
+   vertex 2 0 0
+   vertex 2 0.333333 0
+  endloop
+ endfacet
+ facet normal 0 0 1
+  outer loop
+   vertex 1.005 0 0
+   vertex 2 0.333333 0
+   vertex 1.005 0.333333 0
+  endloop
+ endfacet
+ facet normal 0 0 1
+  outer loop
+   vertex 1.005 0.333333 0
+   vertex 2 0.333333 0
+   vertex 2 0.666667 0
+  endloop
+ endfacet
+ facet normal 0 0 1
+  outer loop
+   vertex 1.005 0.333333 0
+   vertex 2 0.666667 0
+   vertex 1.005 0.666667 0
+  endloop
+ endfacet
+ facet normal 0 0 1
+  outer loop
+   vertex 1.005 0.666667 0
+   vertex 2 0.666667 0
+   vertex 2 1 0
+  endloop
+ endfacet
+ facet normal 0 0 1
+  outer loop
+   vertex 1.005 0.666667 0
+   vertex 2 1 0
+   vertex 1.005 1 0
+  endloop
+ endfacet
+endsolid plate2

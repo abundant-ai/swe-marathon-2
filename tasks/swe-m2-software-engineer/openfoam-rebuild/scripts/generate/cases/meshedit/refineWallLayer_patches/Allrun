@@ -1,0 +1,8 @@
+#!/bin/bash
+# from: incompressible/icoFoam/cavity/cavity (6x6); exercises: refineWallLayer on a named patch, regex patch list, -useSet restriction, -overwrite
+blockMesh
+topoSet
+refineWallLayer movingWall 0.5
+refineWallLayer -overwrite -useSet leftHalf '("fixed.*")' 0.3
+refineWallLayer -overwrite '(movingWall fixedWalls)' 0.25
+checkMesh

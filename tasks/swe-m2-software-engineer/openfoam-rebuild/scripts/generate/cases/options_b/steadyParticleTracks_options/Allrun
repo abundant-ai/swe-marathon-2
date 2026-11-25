@@ -1,0 +1,16 @@
+#!/bin/bash
+# from: lagrangian/uncoupledKinematicParcelDyMFoam/rotor2DAMI + reactingHeterogenousParcelFoam/rectangularDuct particleTrackDict; exercises: steadyParticleTracks options -time, -latestTime, -noZero, -constant, -dict, -verbose, errors: nonexistent -region, missing -dict file, unknown cloud, unknown field, missing fields entry
+cd "${0%/*}" || exit
+cp -r 0.orig 0
+blockMesh
+uncoupledKinematicParcelFoam
+steadyParticleTracks -time 0.005
+steadyParticleTracks -latestTime -verbose
+steadyParticleTracks -noZero -dict system/particleTrackDict.dOnly
+steadyParticleTracks -constant -time 0:0.006
+steadyParticleTracks -time 1
+steadyParticleTracks -region noSuchRegion || true
+steadyParticleTracks -dict system/noSuchDict || true
+steadyParticleTracks -latestTime -dict system/particleTrackDict.badCloud || true
+steadyParticleTracks -latestTime -dict system/particleTrackDict.badField || true
+steadyParticleTracks -latestTime -dict system/particleTrackDict.noFields || true

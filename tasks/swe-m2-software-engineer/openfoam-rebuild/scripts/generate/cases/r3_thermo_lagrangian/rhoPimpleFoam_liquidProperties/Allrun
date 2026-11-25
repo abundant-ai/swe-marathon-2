@@ -1,0 +1,138 @@
+#!/bin/bash
+# from: compressible/rhoPimpleFoam/RAS/squareBendLiq (tiny laminar 2D heated channel); exercises: heRhoThermo pureMixture liquidProperties for all 30 built-in liquids (N2: single step, T from e diverges on the 2nd) (rho/Cp/h/mu/kappa NSRDS functions), dictionary coefficient overrides, defaultCoeffs/explicit-type selection, generic Function1 liquid
+cd "${0%/*}" || exit
+blockMesh -case base
+cp -r base Ar
+foamDictionary -entry mixture -set "{ Ar; }" Ar/constant/thermophysicalProperties
+foamDictionary -entry Tref -set 117 Ar/constant/Tref
+rhoPimpleFoam -case Ar
+cp -r base C10H22
+foamDictionary -entry mixture -set "{ C10H22; }" C10H22/constant/thermophysicalProperties
+foamDictionary -entry Tref -set 300 C10H22/constant/Tref
+rhoPimpleFoam -case C10H22
+cp -r base C12H26
+foamDictionary -entry mixture -set "{ C12H26; }" C12H26/constant/thermophysicalProperties
+foamDictionary -entry Tref -set 300 C12H26/constant/Tref
+rhoPimpleFoam -case C12H26
+cp -r base C13H28
+foamDictionary -entry mixture -set "{ C13H28; }" C13H28/constant/thermophysicalProperties
+foamDictionary -entry Tref -set 300 C13H28/constant/Tref
+rhoPimpleFoam -case C13H28
+cp -r base C14H30
+foamDictionary -entry mixture -set "{ C14H30; }" C14H30/constant/thermophysicalProperties
+foamDictionary -entry Tref -set 300 C14H30/constant/Tref
+rhoPimpleFoam -case C14H30
+cp -r base C16H34
+foamDictionary -entry mixture -set "{ C16H34; }" C16H34/constant/thermophysicalProperties
+foamDictionary -entry Tref -set 310 C16H34/constant/Tref
+rhoPimpleFoam -case C16H34
+cp -r base C2H5OH
+foamDictionary -entry mixture -set "{ C2H5OH; }" C2H5OH/constant/thermophysicalProperties
+foamDictionary -entry Tref -set 300 C2H5OH/constant/Tref
+rhoPimpleFoam -case C2H5OH
+cp -r base C2H6
+foamDictionary -entry mixture -set "{ C2H6; }" C2H6/constant/thermophysicalProperties
+foamDictionary -entry Tref -set 200 C2H6/constant/Tref
+rhoPimpleFoam -case C2H6
+cp -r base C2H6O
+foamDictionary -entry mixture -set "{ C2H6O; }" C2H6O/constant/thermophysicalProperties
+foamDictionary -entry Tref -set 270 C2H6O/constant/Tref
+rhoPimpleFoam -case C2H6O
+cp -r base C3H6O
+foamDictionary -entry mixture -set "{ C3H6O; }" C3H6O/constant/thermophysicalProperties
+foamDictionary -entry Tref -set 300 C3H6O/constant/Tref
+rhoPimpleFoam -case C3H6O
+cp -r base C3H8
+foamDictionary -entry mixture -set "{ C3H8; }" C3H8/constant/thermophysicalProperties
+foamDictionary -entry Tref -set 230 C3H8/constant/Tref
+rhoPimpleFoam -case C3H8
+cp -r base C4H10O
+foamDictionary -entry mixture -set "{ C4H10O; }" C4H10O/constant/thermophysicalProperties
+foamDictionary -entry Tref -set 300 C4H10O/constant/Tref
+rhoPimpleFoam -case C4H10O
+cp -r base C6H14
+foamDictionary -entry mixture -set "{ C6H14; }" C6H14/constant/thermophysicalProperties
+foamDictionary -entry Tref -set 300 C6H14/constant/Tref
+rhoPimpleFoam -case C6H14
+cp -r base C6H6
+foamDictionary -entry mixture -set "{ C6H6; }" C6H6/constant/thermophysicalProperties
+foamDictionary -entry Tref -set 300 C6H6/constant/Tref
+rhoPimpleFoam -case C6H6
+cp -r base C7H16
+foamDictionary -entry mixture -set "{ C7H16; }" C7H16/constant/thermophysicalProperties
+foamDictionary -entry Tref -set 300 C7H16/constant/Tref
+rhoPimpleFoam -case C7H16
+cp -r base C7H8
+foamDictionary -entry mixture -set "{ C7H8; }" C7H8/constant/thermophysicalProperties
+foamDictionary -entry Tref -set 300 C7H8/constant/Tref
+rhoPimpleFoam -case C7H8
+cp -r base C8H10
+foamDictionary -entry mixture -set "{ C8H10; }" C8H10/constant/thermophysicalProperties
+foamDictionary -entry Tref -set 300 C8H10/constant/Tref
+rhoPimpleFoam -case C8H10
+cp -r base C8H18
+foamDictionary -entry mixture -set "{ C8H18; }" C8H18/constant/thermophysicalProperties
+foamDictionary -entry Tref -set 300 C8H18/constant/Tref
+rhoPimpleFoam -case C8H18
+cp -r base C9H20
+foamDictionary -entry mixture -set "{ C9H20; }" C9H20/constant/thermophysicalProperties
+foamDictionary -entry Tref -set 300 C9H20/constant/Tref
+rhoPimpleFoam -case C9H20
+cp -r base CH3OH
+foamDictionary -entry mixture -set "{ CH3OH; }" CH3OH/constant/thermophysicalProperties
+foamDictionary -entry Tref -set 300 CH3OH/constant/Tref
+rhoPimpleFoam -case CH3OH
+cp -r base CH4N2O
+foamDictionary -entry mixture -set "{ CH4N2O; }" CH4N2O/constant/thermophysicalProperties
+foamDictionary -entry Tref -set 500 CH4N2O/constant/Tref
+rhoPimpleFoam -case CH4N2O
+cp -r base H2O
+foamDictionary -entry mixture -set "{ H2O; }" H2O/constant/thermophysicalProperties
+foamDictionary -entry Tref -set 300 H2O/constant/Tref
+rhoPimpleFoam -case H2O
+cp -r base IC8H18
+foamDictionary -entry mixture -set "{ IC8H18; }" IC8H18/constant/thermophysicalProperties
+foamDictionary -entry Tref -set 300 IC8H18/constant/Tref
+rhoPimpleFoam -case IC8H18
+cp -r base IDEA
+foamDictionary -entry mixture -set "{ IDEA; }" IDEA/constant/thermophysicalProperties
+foamDictionary -entry Tref -set 300 IDEA/constant/Tref
+rhoPimpleFoam -case IDEA
+cp -r base MB
+foamDictionary -entry mixture -set "{ MB; }" MB/constant/thermophysicalProperties
+foamDictionary -entry Tref -set 300 MB/constant/Tref
+rhoPimpleFoam -case MB
+cp -r base N2
+foamDictionary -entry mixture -set "{ N2; }" N2/constant/thermophysicalProperties
+foamDictionary -entry Tref -set 80 N2/constant/Tref
+foamDictionary -entry endTime -set 0.01 N2/system/controlDict
+foamDictionary -entry writeInterval -set 1 N2/system/controlDict
+rhoPimpleFoam -case N2
+cp -r base aC11H10
+foamDictionary -entry mixture -set "{ aC11H10; }" aC11H10/constant/thermophysicalProperties
+foamDictionary -entry Tref -set 300 aC11H10/constant/Tref
+rhoPimpleFoam -case aC11H10
+cp -r base bC11H10
+foamDictionary -entry mixture -set "{ bC11H10; }" bC11H10/constant/thermophysicalProperties
+foamDictionary -entry Tref -set 350 bC11H10/constant/Tref
+rhoPimpleFoam -case bC11H10
+cp -r base iC3H8O
+foamDictionary -entry mixture -set "{ iC3H8O; }" iC3H8O/constant/thermophysicalProperties
+foamDictionary -entry Tref -set 300 iC3H8O/constant/Tref
+rhoPimpleFoam -case iC3H8O
+cp -r base nC3H8O
+foamDictionary -entry mixture -set "{ nC3H8O; }" nC3H8O/constant/thermophysicalProperties
+foamDictionary -entry Tref -set 300 nC3H8O/constant/Tref
+rhoPimpleFoam -case nC3H8O
+cp -r base C7H16_coeffDict
+cp thermophysicalProperties.C7H16_coeffDict C7H16_coeffDict/constant/thermophysicalProperties
+rhoPimpleFoam -case C7H16_coeffDict
+cp -r base H2O_defaultCoeffsNo
+cp thermophysicalProperties.H2O_defaultCoeffsNo H2O_defaultCoeffsNo/constant/thermophysicalProperties
+rhoPimpleFoam -case H2O_defaultCoeffsNo
+cp -r base explicitType_CH3OH
+cp thermophysicalProperties.explicitType_CH3OH explicitType_CH3OH/constant/thermophysicalProperties
+rhoPimpleFoam -case explicitType_CH3OH
+cp -r base genericLiquid
+cp thermophysicalProperties.genericLiquid genericLiquid/constant/thermophysicalProperties
+rhoPimpleFoam -case genericLiquid

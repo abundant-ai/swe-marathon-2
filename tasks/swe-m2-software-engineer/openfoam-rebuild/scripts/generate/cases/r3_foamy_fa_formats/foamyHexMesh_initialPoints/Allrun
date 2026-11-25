@@ -1,0 +1,14 @@
+#!/bin/bash
+# from: mesh/foamyHexMesh/blob; exercises: foamyHexMesh -conformationOnly with initialPointsMethod autoDensity, uniformGrid, bodyCentredCubic, faceCentredCubic (all randomised), rayShooting, pointFile (re-reads the Delaunay vertices a previous run wrote); -checkGeometry
+cd "${0%/*}" || exit 1
+for m in autoDensity uniformGrid bodyCentredCubic faceCentredCubic rayShooting
+do
+    foamDictionary -entry initialPoints/initialPointsMethod -set $m system/foamyHexMeshDict
+    foamyHexMesh -conformationOnly
+    mv 1 mesh_$m
+done
+cp mesh_uniformGrid/internalDelaunayVertices constant/
+foamDictionary -entry initialPoints/initialPointsMethod -set pointFile system/foamyHexMeshDict
+foamyHexMesh -conformationOnly
+mv 1 mesh_pointFile
+foamyHexMesh -checkGeometry

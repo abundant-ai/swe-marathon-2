@@ -1,0 +1,156 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  2606                                  |
+|   \\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    arch        "LSB;label=32;scalar=64";
+    class       dictionary;
+    location    "0.01/uniform";
+    object      profiling;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+profiling
+{
+    trigger0
+    {
+        id              0;
+        description     "application::main";
+        calls           1;
+        totalTime       0.00505968;
+        childTime       0.00242478;
+        active          true;
+    }
+
+    trigger2
+    {
+        id              2;
+        parentId        0;
+        description     "time.run() oprocessor1";
+        calls           2;
+        totalTime       0.00234161;
+        childTime       0.00152848;
+        active          true;
+    }
+
+    trigger1
+    {
+        id              1;
+        parentId        0;
+        description     "functionObjects.start()";
+        calls           1;
+        totalTime       8.2417e-05;
+        childTime       0;
+        active          false;
+    }
+
+    trigger3
+    {
+        id              3;
+        parentId        2;
+        description     "fvMatrix::solve.U";
+        calls           2;
+        totalTime       0.000549881;
+        childTime       0.00040788;
+        active          false;
+    }
+
+    trigger4
+    {
+        id              4;
+        parentId        3;
+        description     "lduMatrix::solver.Ux";
+        calls           2;
+        totalTime       0.000322296;
+        childTime       0.000292253;
+        active          false;
+    }
+
+    trigger5
+    {
+        id              5;
+        parentId        4;
+        description     "lduMatrix::smoother.Ux";
+        calls           2;
+        totalTime       0.000292253;
+        childTime       0;
+        active          false;
+    }
+
+    trigger6
+    {
+        id              6;
+        parentId        3;
+        description     "lduMatrix::solver.Uy";
+        calls           2;
+        totalTime       8.5584e-05;
+        childTime       6.7168e-05;
+        active          false;
+    }
+
+    trigger7
+    {
+        id              7;
+        parentId        2;
+        description     "fvMatrix::solve.p";
+        calls           4;
+        totalTime       0.000504422;
+        childTime       0.000431378;
+        active          false;
+    }
+
+    trigger8
+    {
+        id              8;
+        parentId        7;
+        description     "lduMatrix::solver.p";
+        calls           4;
+        totalTime       0.000431378;
+        childTime       0;
+        active          false;
+    }
+
+    trigger9
+    {
+        id              9;
+        parentId        0;
+        description     "functionObjects.execute()";
+        calls           1;
+        totalTime       7.5e-07;
+        childTime       0;
+        active          false;
+    }
+
+    trigger10
+    {
+        id              10;
+        parentId        6;
+        description     "lduMatrix::smoother.Uy";
+        calls           1;
+        totalTime       6.7168e-05;
+        childTime       0;
+        active          false;
+    }
+
+    trigger11
+    {
+        id              11;
+        parentId        2;
+        description     "objectRegistry::writeObject";
+        calls           1;
+        totalTime       0.000474172;
+        childTime       0;
+        active          false;
+    }
+}
+
+host            "00e2c3d9b7dc";
+
+
+// ************************************************************************* //

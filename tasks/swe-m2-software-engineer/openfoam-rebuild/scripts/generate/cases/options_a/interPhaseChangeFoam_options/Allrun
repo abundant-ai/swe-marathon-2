@@ -1,0 +1,38 @@
+#!/bin/bash
+# from: multiphase/interPhaseChangeFoam/cavitatingBullet (2D blockMesh channel with a step obstacle instead of snappy bullet, SchnerrSauer) + interPhaseChangeDyMFoam/propeller (solidBody motion, oscillatingLinearMotion); exercises: interPhaseChangeFoam options -dry-run, -dry-run-write, -noFunctionObjects, -postProcess (-func/-funcs/-latestTime/-time/-noZero), -parallel; interPhaseChangeDyMFoam options -noFunctionObjects, -postProcess, -parallel; errors: nonexistent/bad -time, -case noSuchDir, unsupported -dry-run (DyM), missing 0/alpha.water, unknown phaseChangeTwoPhaseMixture, missing pSat, missing SchnerrSauerCoeffs, missing motion amplitude
+cd "${0%/*}" || exit 1
+blockMesh
+interPhaseChangeFoam -dry-run
+interPhaseChangeFoam -dry-run-write
+rm -rf 0.0* [1-9]*
+interPhaseChangeFoam -noFunctionObjects
+interPhaseChangeFoam
+interPhaseChangeFoam -postProcess -func 'mag(U)' -latestTime
+interPhaseChangeFoam -postProcess -funcs '(mag(U) grad(p_rgh))' -time 1e-04
+interPhaseChangeFoam -postProcess -func 'fieldMinMax(alpha.water)' -noZero
+interPhaseChangeFoam -postProcess -func 'mag(U)' -time 99 || true
+interPhaseChangeFoam -postProcess -func 'mag(U)' -time abc || true
+interPhaseChangeFoam -case noSuchDir || true
+decomposePar
+mpirun --oversubscribe -np 2 interPhaseChangeFoam -parallel
+mkdir -p static
+mv 0.0* processor* postProcessing* static/
+interPhaseChangeDyMFoam -noFunctionObjects
+interPhaseChangeDyMFoam
+interPhaseChangeDyMFoam -postProcess -func 'mag(U)' -time 0
+interPhaseChangeDyMFoam -dry-run || true
+interPhaseChangeDyMFoam -case noSuchDir || true
+decomposePar
+mpirun --oversubscribe -np 2 interPhaseChangeDyMFoam -parallel
+rm -rf 0.0* [1-9]*
+mv 0/alpha.water alpha.water.off
+interPhaseChangeFoam || true
+mv alpha.water.off 0/alpha.water
+for v in unknownPhaseChangeModel missingPSat missingModelCoeffs; do
+    cp -r variants/$v/. .
+    interPhaseChangeFoam || true
+    cp -r variants/orig/. .
+done
+cp -r variants/missingAmplitude/. .
+interPhaseChangeDyMFoam || true
+cp -r variants/orig/. .

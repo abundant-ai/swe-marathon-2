@@ -1,0 +1,4 @@
+#!/bin/bash
+# from: scratch (8x8x8 box); exercises: topoSet searchableSurfaceToCell/Face/Point (searchableCone hollow and solid, searchableRotatedBox) and searchableSurfaceToFaceZone (searchableDisk with and without innerRadius, searchablePlane pointAndNormal and embeddedPoints, searchablePlate, rotated box)
+blockMesh
+topoSet

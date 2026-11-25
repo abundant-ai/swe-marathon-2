@@ -1,0 +1,31 @@
+#!/bin/bash
+# from: combustion/reactingFoam/laminar/counterFlowFlame2D (via apps/rhoReactingBuoyantFoam, 25x10 mesh, 1e-4 s); exercises: rhoReactingBuoyantFoam -dry-run, -dry-run-write, -noFunctionObjects, -postProcess (-latestTime BilgerMixtureFraction, -func/-time, -funcs/-fields/-noZero), -parallel with default and alternative -decomposeParDict, chemistry off; errors: -parallel before decomposePar, nonexistent -decomposeParDict, unknown chemistry solver, missing constant/g, missing p_rgh field, unknown -func
+blockMesh
+cp -r 0.orig 0
+rhoReactingBuoyantFoam -dry-run
+rhoReactingBuoyantFoam -dry-run-write
+foamListTimes -rm
+rhoReactingBuoyantFoam -noFunctionObjects
+rhoReactingBuoyantFoam -postProcess -latestTime
+rhoReactingBuoyantFoam -postProcess -func "mag(U)" -time 5e-05:1e-04
+rhoReactingBuoyantFoam -postProcess -funcs '("grad(T)" "components(U)")' -fields '(T U)' -noZero
+rhoReactingBuoyantFoam -postProcess -func noSuchFunctionObject -latestTime || true
+mpirun --oversubscribe -np 2 rhoReactingBuoyantFoam -parallel || true
+decomposePar
+mpirun --oversubscribe -np 2 rhoReactingBuoyantFoam -parallel
+decomposePar -force -decomposeParDict system/decomposeParDict.alt
+mpirun --oversubscribe -np 2 rhoReactingBuoyantFoam -parallel -decomposeParDict system/decomposeParDict.alt
+mpirun --oversubscribe -np 2 rhoReactingBuoyantFoam -parallel -decomposeParDict system/noSuchDecomposeParDict || true
+cp constant/chemistryProperties constant/chemistryProperties.orig
+foamDictionary -entry chemistry -set off constant/chemistryProperties
+rhoReactingBuoyantFoam -dry-run-write
+foamDictionary -entry chemistryType/solver -set noSuchChemistrySolver constant/chemistryProperties
+foamDictionary -entry chemistry -set on constant/chemistryProperties
+rhoReactingBuoyantFoam -dry-run || true
+cp constant/chemistryProperties.orig constant/chemistryProperties
+mv constant/g constant/g.off
+rhoReactingBuoyantFoam -dry-run || true
+mv constant/g.off constant/g
+mv 0/p_rgh 0/p_rgh.off
+rhoReactingBuoyantFoam -dry-run || true
+mv 0/p_rgh.off 0/p_rgh

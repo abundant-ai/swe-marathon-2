@@ -1,0 +1,6 @@
+#!/bin/bash
+# from: incompressible/simpleFoam/pitzDaily; exercises: fvOptions radialActuationDiskSource, fanMomentumSource, vectorFixedValueConstraint
+cd "${0%/*}" || exit 1
+blockMesh
+topoSet
+simpleFoam

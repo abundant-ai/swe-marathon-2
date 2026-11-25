@@ -1,0 +1,6 @@
+#!/bin/bash
+# from: incompressible/icoFoam/cavity/cavity; exercises: stabilityBlendingFactor function object (nonOrtho, gradCc, residuals PID, faceWeight, skewness, Co indicators) feeding a localBlended convection scheme
+cd "${0%/*}" || exit 1
+blockMesh > log.blockMesh 2>&1
+checkMesh -constant -writeFields '(nonOrthoAngle faceWeight skewness)' > log.checkMesh 2>&1
+icoFoam > log.icoFoam 2>&1

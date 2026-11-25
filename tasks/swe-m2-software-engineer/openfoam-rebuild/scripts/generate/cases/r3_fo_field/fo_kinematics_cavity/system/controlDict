@@ -1,0 +1,151 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  v2606                                 |
+|   \\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      controlDict;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+application     icoFoam;
+
+startFrom       startTime;
+
+startTime       0;
+
+stopAt          endTime;
+
+endTime         0.02;
+
+deltaT          0.005;
+
+writeControl    timeStep;
+
+writeInterval   2;
+
+purgeWrite      0;
+
+writeFormat     ascii;
+
+writePrecision  6;
+
+writeCompression off;
+
+timeFormat      general;
+
+timePrecision   6;
+
+runTimeModifiable true;
+
+
+functions
+{
+    lambda2
+    {
+        type            Lambda2;
+        libs            (fieldFunctionObjects);
+        writeControl    writeTime;
+    }
+    lambVector
+    {
+        type            LambVector;
+        libs            (fieldFunctionObjects);
+        field           U;
+        writeControl    writeTime;
+    }
+    flowType
+    {
+        type            flowType;
+        libs            (fieldFunctionObjects);
+        writeControl    writeTime;
+    }
+    peclet
+    {
+        type            PecletNo;
+        libs            (fieldFunctionObjects);
+        writeControl    writeTime;
+    }
+    volFlux
+    {
+        type            flux;
+        libs            (fieldFunctionObjects);
+        field           U;
+        rho             none;
+        writeControl    writeTime;
+    }
+    ddtP
+    {
+        type            ddt;
+        libs            (fieldFunctionObjects);
+        field           p;
+        writeControl    writeTime;
+    }
+    divPhi
+    {
+        type            div;
+        libs            (fieldFunctionObjects);
+        field           phi;
+        writeControl    writeTime;
+    }
+    divU
+    {
+        type            div;
+        libs            (fieldFunctionObjects);
+        field           U;
+        result          divergenceU;
+        writeControl    writeTime;
+    }
+    powP
+    {
+        type            pow;
+        libs            (fieldFunctionObjects);
+        field           p;
+        n               3;
+        scale           2;
+        offset          0.5;
+        checkDimensions false;
+        writeControl    writeTime;
+    }
+    randU
+    {
+        type            randomise;
+        libs            (fieldFunctionObjects);
+        field           U;
+        magPerturbation 0.1;
+        writeControl    writeTime;
+    }
+    randPbox
+    {
+        type            randomise;
+        libs            (fieldFunctionObjects);
+        field           p;
+        magPerturbation 0.01;
+        regionType      cellZone;
+        name            box;
+        writeControl    writeTime;
+    }
+    addP
+    {
+        type            add;
+        libs            (fieldFunctionObjects);
+        fields          (p pRandom);
+        result          pPlusRandom;
+        writeControl    writeTime;
+    }
+    subU
+    {
+        type            subtract;
+        libs            (fieldFunctionObjects);
+        fields          (U URandom);
+        writeControl    writeTime;
+    }
+}
+
+// ************************************************************************* //

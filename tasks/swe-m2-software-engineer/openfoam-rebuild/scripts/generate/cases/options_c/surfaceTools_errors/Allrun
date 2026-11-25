@@ -1,0 +1,22 @@
+#!/bin/bash
+# from: scratch (surfaces/dicts from surface/patch, surface/smoothSurfaceData, surface/meshImportExport); exercises: surfacePatch -dict with featureAngle autoPatch; errors: missing surfacePatchDict, nonexistent -dict, surface file not found, unknown patcher type, missing featureAngle, missing surfaces section; smoothSurfaceData errors (nonexistent input, unknown -read-format, missing argument) and -sweeps 0 (nothing to do); surfaceMeshImport option parsing (-clean/-read-scale/-write-scale/-name, -from/-to, -dict; all fail in v2606 with an empty detected format)
+cd "${0%/*}" || exit 1
+surfacePatch || true
+surfacePatch -dict system/noSuchDict || true
+surfacePatch -dict system/surfacePatchDict.cubeOne
+cp variants/surfacePatchDict.missingSurface system/surfacePatchDict
+surfacePatch || true
+cp variants/surfacePatchDict.badType system/surfacePatchDict
+surfacePatch || true
+cp variants/surfacePatchDict.noAngle system/surfacePatchDict
+surfacePatch || true
+cp variants/surfacePatchDict.noSurfaces system/surfacePatchDict
+surfacePatch || true
+rm system/surfacePatchDict
+smoothSurfaceData || true
+smoothSurfaceData -radius 0.15 constant/surfData/noSuch.case || true
+smoothSurfaceData -radius 0.15 -read-format noSuchFormat constant/surfData/surf.case || true
+smoothSurfaceData -radius 0.25 -sweeps 0 constant/surfData/surf.case
+surfaceMeshImport -clean -read-scale 2 -write-scale 3 -name cube constant/triSurface/cube6.stl || true
+surfaceMeshImport -from shifted -to rotZ90 constant/triSurface/cube6.stl || true
+surfaceMeshImport -dict constant/coordinateSystems -read-format stl constant/triSurface/cube6.stl || true

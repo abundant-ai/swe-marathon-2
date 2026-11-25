@@ -1,0 +1,18 @@
+#!/bin/bash
+# from: lagrangian/MPPICDyMFoam/denseRotor2DAMI (10 steps); exercises: MPPICDyMFoam options -cloudName (accepted, cloud stays kinematicCloud), -noFunctionObjects, -postProcess -func/-latestTime/-time, -parallel (simple and hierarchical via -decomposeParDict), errors: -cloud (unknown option), -parallel without mpirun/decomposition, missing kinematicCloudProperties
+cd "${0%/*}" || exit
+blockMesh
+MPPICDyMFoam -parallel || true
+mpirun --oversubscribe -np 2 MPPICDyMFoam -parallel || true
+MPPICDyMFoam -cloud particles || true
+MPPICDyMFoam -cloudName particles -noFunctionObjects
+MPPICDyMFoam
+MPPICDyMFoam -postProcess -func 'mag(U.air)' -latestTime
+MPPICDyMFoam -postProcess -func 'grad(p)' -time 0.005
+decomposePar
+mpirun --oversubscribe -np 2 MPPICDyMFoam -parallel
+decomposePar -force -decomposeParDict system/decomposeParDict.hier
+mpirun --oversubscribe -np 2 MPPICDyMFoam -parallel -cloudName particles -decomposeParDict system/decomposeParDict.hier
+mv constant/kinematicCloudProperties constant/kinematicCloudProperties.off
+MPPICDyMFoam || true
+mv constant/kinematicCloudProperties.off constant/kinematicCloudProperties

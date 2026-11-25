@@ -1,0 +1,12 @@
+#!/bin/bash
+# from: incompressible/icoFoam/cavity (two-block, two cellZone variant); exercises: foamToFireMesh ascii/binary/-scale export, fireToFoam -ascii/-check/-scale import round trip
+cd "${0%/*}" || exit 1
+blockMesh
+foamToFireMesh -ascii
+foamToFireMesh -scale 2
+mv constant/polyMesh constant/polyMesh.orig
+fireToFoam -ascii -check meshExport.fpma
+checkMesh
+mv constant/polyMesh fromAscii
+fireToFoam -scale 0.5 meshExport.fpmb
+checkMesh

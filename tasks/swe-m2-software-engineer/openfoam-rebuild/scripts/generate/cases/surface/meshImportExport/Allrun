@@ -1,0 +1,16 @@
+#!/bin/bash
+# from: scratch (hand-written surfMesh constant/surfaces/{default,tris}/surfMesh, block.obj from mesh/snappyHexMesh/rotated_block); exercises: surfaceMeshExport surfMesh -> stl/obj/vtk/nas/off with -name, -clean (duplicate point), -read-scale, -write-scale, -write-format, -from/-to coordinateSystems; missing surfMesh error; surfaceMeshImport (fails in v2606: input format not detected)
+cd "${0%/*}" || exit 1
+mkdir -p out
+surfaceMeshExport out/default.stl
+surfaceMeshExport out/default.obj
+surfaceMeshExport -write-format vtk out/default_fmt.dat
+surfaceMeshExport -name tris out/tris.off
+surfaceMeshExport -name tris -clean -verbose out/tris_clean.stl
+surfaceMeshExport -name tris -read-scale 2 -write-scale 10 out/tris_scaled.nas
+surfaceMeshExport -name tris -to rotZ90 out/tris_toRot.stl
+surfaceMeshExport -name tris -from shifted out/tris_fromShifted.stl
+surfaceMeshExport -name noSuchSurface out/missing.stl || true
+surfaceMeshImport constant/triSurface/cube6.stl || true
+surfaceMeshImport -name block -read-format obj constant/triSurface/block.obj || true
+sed -i -E 's/written [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}/written DATE/' out/*

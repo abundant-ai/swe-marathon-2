@@ -1,0 +1,24 @@
+#!/bin/bash
+# from: lagrangian/MPPICFoam/column (50 steps); exercises: MPPIC averaging methods moment and basic, explicit packing with particle stress models Lun and exponential, correction limiting relative and none, relaxation damping with equilibrium time scale, implicit packing with exponential stress, stochastic isotropy with nonEquilibrium time scale (one MPPICFoam run each)
+cd "${0%/*}" || exit
+blockMesh -case base
+cp -r base moment_explicitLun_relative
+foamDictionary -entry solution/averagingMethod -set moment moment_explicitLun_relative/constant/kinematicCloudProperties
+foamDictionary -entry subModels/packingModel -set explicit moment_explicitLun_relative/constant/kinematicCloudProperties
+foamDictionary -entry subModels/explicitCoeffs/particleStressModel -set "{ type Lun; alphaPacked 0.6; e 0.9; eps 0.01; }" moment_explicitLun_relative/constant/kinematicCloudProperties
+foamDictionary -entry subModels/explicitCoeffs/correctionLimitingMethod -set "{ type relative; e 0.9; }" moment_explicitLun_relative/constant/kinematicCloudProperties
+foamDictionary -entry subModels/isotropyModel -set none moment_explicitLun_relative/constant/kinematicCloudProperties
+MPPICFoam -case moment_explicitLun_relative
+cp -r base basic_explicitExponential_relaxationEquilibrium
+foamDictionary -entry solution/averagingMethod -set basic basic_explicitExponential_relaxationEquilibrium/constant/kinematicCloudProperties
+foamDictionary -entry subModels/packingModel -set explicit basic_explicitExponential_relaxationEquilibrium/constant/kinematicCloudProperties
+foamDictionary -entry subModels/explicitCoeffs/particleStressModel -set "{ type exponential; alphaPacked 0.6; preExp 1.0; expMax 1000; g0 1.0; }" basic_explicitExponential_relaxationEquilibrium/constant/kinematicCloudProperties
+foamDictionary -entry subModels/explicitCoeffs/correctionLimitingMethod -set "{ type none; }" basic_explicitExponential_relaxationEquilibrium/constant/kinematicCloudProperties
+foamDictionary -entry subModels/isotropyModel -set none basic_explicitExponential_relaxationEquilibrium/constant/kinematicCloudProperties
+foamDictionary -entry subModels/dampingModel -set relaxation basic_explicitExponential_relaxationEquilibrium/constant/kinematicCloudProperties
+foamDictionary -entry subModels/relaxationCoeffs/timeScaleModel -set "{ type equilibrium; alphaPacked 0.6; e 0.9; }" basic_explicitExponential_relaxationEquilibrium/constant/kinematicCloudProperties
+MPPICFoam -case basic_explicitExponential_relaxationEquilibrium
+cp -r base dual_implicitExponential_stochasticNonEquilibrium
+foamDictionary -entry subModels/implicitCoeffs/particleStressModel -set "{ type exponential; alphaPacked 0.6; preExp 2.0; expMax 500; g0 0.5; }" dual_implicitExponential_stochasticNonEquilibrium/constant/kinematicCloudProperties
+foamDictionary -entry subModels/stochasticCoeffs/timeScaleModel -set "{ type nonEquilibrium; alphaPacked 0.6; e 0.9; }" dual_implicitExponential_stochasticNonEquilibrium/constant/kinematicCloudProperties
+MPPICFoam -case dual_implicitExponential_stochasticNonEquilibrium

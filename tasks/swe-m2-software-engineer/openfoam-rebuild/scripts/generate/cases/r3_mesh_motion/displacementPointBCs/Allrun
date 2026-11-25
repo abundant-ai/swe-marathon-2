@@ -1,0 +1,5 @@
+#!/bin/bash
+# from: scratch (5x5x5 box, displacementLaplacian); exercises: moveDynamicMesh with pointDisplacement BCs angularOscillatingDisplacement, waveDisplacement, timeVaryingMappedFixedValue (point patch, boundaryData), uniformInterpolatedDisplacement (time-interpolated pointVectorField), surfaceSlipDisplacement onto a searchablePlane
+blockMesh
+moveDynamicMesh
+checkMesh -latestTime

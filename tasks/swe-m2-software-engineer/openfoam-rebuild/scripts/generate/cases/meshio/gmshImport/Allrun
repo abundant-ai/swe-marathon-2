@@ -1,0 +1,16 @@
+#!/bin/bash
+# from: scratch; exercises: gmshToFoam msh 2.2 mixed hex/prism/pyramid/tet with physical surfaces->patches and volumes->cellZones, automatic inversion vs -keepOrientation, msh 4.1 reader, -region
+cd "${0%/*}" || exit 1
+gmshToFoam mixed.msh
+checkMesh
+mv constant/polyMesh mesh_mixed
+gmshToFoam invertedHex.msh
+checkMesh
+mv constant/polyMesh mesh_invertedHex
+gmshToFoam -keepOrientation invertedHex.msh
+checkMesh
+mv constant/polyMesh mesh_keepOrientation
+gmshToFoam twoTetsV41.msh
+checkMesh
+gmshToFoam -region solid mixed.msh
+checkMesh -region solid

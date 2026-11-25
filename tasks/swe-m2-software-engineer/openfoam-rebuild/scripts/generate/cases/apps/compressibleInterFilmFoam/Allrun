@@ -1,0 +1,9 @@
+#!/bin/bash
+# from: multiphase/compressibleInterFoam/laminar/depthCharge2D thermo + lagrangian/reactingParcelFoam/splashPanel film region (8x4x8 mesh); exercises: compressibleInterFilmFoam: VoF water blob falling onto extruded wallFilmRegion, thermoSingleLayer film (constant filmThermo) with VoFPatchTransfer VoF<->film mass transfer
+blockMesh
+topoSet -dict system/wallFilmRegion.topoSet
+extrudeToRegionMesh -overwrite
+topoSet -region wallFilmRegion -dict system/createWallFilmRegionPatches.topoSet
+createPatch -region wallFilmRegion -overwrite
+setFields
+compressibleInterFilmFoam

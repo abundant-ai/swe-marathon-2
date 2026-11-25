@@ -1,0 +1,42 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  v2606                                 |
+|   \\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      fvOptions;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+hx1
+{
+    type            heatExchangerSource;
+    selectionMode   cellZone;
+    cellZone        hx1Zone;
+    faceZone        hx1Faces;
+
+    model           effectivenessTable;
+    secondaryMassFlowRate 0.01;
+    secondaryInletT 400;
+    file            "<constant>/effectivenessTable";
+}
+
+hx2
+{
+    type            heatExchangerSource;
+    selectionMode   cellZone;
+    cellZone        hx2Zone;
+    faceZone        hx2Faces;
+
+    model           referenceTemperature;
+    targetQdot      constant 5;
+    file            "<constant>/TrefTable";
+}
+
+// ************************************************************************* //

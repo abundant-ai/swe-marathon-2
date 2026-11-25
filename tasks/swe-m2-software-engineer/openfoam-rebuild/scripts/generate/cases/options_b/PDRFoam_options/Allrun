@@ -1,0 +1,23 @@
+#!/bin/bash
+# from: combustion/PDRFoam/flamePropagationWithObstacles (obstacle-free 6x6x4 box, uniform porosity fields in constant/, endTime 0.02); exercises: PDRFoam options -dry-run, -dry-run-write, -noFunctionObjects, -postProcess, -parallel (decomposePar -constant), -decomposeParDict; errors: missing b field, missing constant/betav, -postProcess (combustionProperties lookup), -parallel without processor dirs, -parallel with porosity fields not decomposed, missing -decomposeParDict file
+cp -r 0.orig 0
+blockMesh
+mv 0/b 0/b.off
+PDRFoam || true
+mv 0/b.off 0/b
+mv constant/betav constant/betav.off
+PDRFoam || true
+mv constant/betav.off constant/betav
+PDRFoam -dry-run
+PDRFoam -noFunctionObjects
+PDRFoam
+PDRFoam -postProcess -func 'mag(U)' -latestTime || true
+mpirun --oversubscribe -np 2 PDRFoam -parallel || true
+decomposePar
+mpirun --oversubscribe -np 2 PDRFoam -parallel || true
+decomposePar -force -constant
+mpirun --oversubscribe -np 2 PDRFoam -parallel
+mpirun --oversubscribe -np 2 PDRFoam -parallel -decomposeParDict system/noSuchDecomposeParDict || true
+decomposePar -force -constant -decomposeParDict system/decomposeParDict.4
+mpirun --oversubscribe -np 4 PDRFoam -parallel -decomposeParDict system/decomposeParDict.4
+PDRFoam -dry-run-write || true

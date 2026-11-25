@@ -1,0 +1,9 @@
+#!/bin/bash
+# from: scratch; exercises: foamHasLibrary exit status for present/missing libs, with and without .so suffix, -or and -detail
+cd "${0%/*}" || exit 1
+foamHasLibrary libfiniteVolume.so libOpenFOAM
+foamHasLibrary libfiniteVolume libnotALibrary || true
+foamHasLibrary -or libnotALibrary libmeshTools.so
+foamHasLibrary -or libnotALibrary libalsoMissing || true
+foamHasLibrary -detail libnotALibrary || true
+foamHasLibrary

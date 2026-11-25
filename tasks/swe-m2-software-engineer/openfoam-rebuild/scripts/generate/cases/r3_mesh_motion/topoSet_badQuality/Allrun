@@ -1,0 +1,5 @@
+#!/bin/bash
+# from: scratch (graded, sheared 4x4x3 block); exercises: topoSet badQualityToCell and badQualityToFace (motionSmoother mesh-quality checks: non-orthogonality, skewness, twist, determinant, face weight, volume ratio) with strict and loose meshQualityDict settings
+blockMesh
+checkMesh
+topoSet

@@ -1,0 +1,56 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  v2606                                 |
+|   \\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      dynamicMeshDict;
+}
+
+solver volumetricBSplinesMotionSolver;
+
+volumetricBSplinesMotionSolverCoeffs
+{
+    inletBox
+    {
+        type    cartesian;
+        nCPsU   4;
+        nCPsV   4;
+        nCPsW   3;
+        degreeU 2;
+        degreeV 2;
+        degreeW 2;
+        lowerCpBounds           (-0.05 -0.05 -0.01);
+        upperCpBounds           ( 0.52  0.25  0.03);
+        controlPointsDefinition axisAligned;
+
+        confineUMovement false;
+        confineVMovement false;
+        confineWMovement true;
+        confineBoundaryControlPoints true;
+    }
+    outletBox
+    {
+        type    cartesian;
+        nCPsU   4;
+        nCPsV   4;
+        nCPsW   3;
+        degreeU 2;
+        degreeV 2;
+        degreeW 2;
+        lowerCpBounds           ( 0.53 -0.05 -0.01);
+        upperCpBounds           ( 1.05  0.25  0.03);
+        controlPointsDefinition axisAligned;
+
+        confineUMovement false;
+        confineVMovement false;
+        confineWMovement true;
+        confineBoundaryControlPoints true;
+    }
+}

@@ -1,0 +1,36 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  v2606                                 |
+|   \\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       IOMap<dictionary>;
+    location    "constant";
+    object      boundaryRegion;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+(
+    1
+    {
+        Label           inlet;
+        BoundaryType    inlet;
+    }
+    2
+    {
+        Label           outlet;
+        BoundaryType    pressure;
+    }
+    5
+    {
+        Label           movingWall;
+        BoundaryType    wall;
+    }
+)
+
+// ************************************************************************* //

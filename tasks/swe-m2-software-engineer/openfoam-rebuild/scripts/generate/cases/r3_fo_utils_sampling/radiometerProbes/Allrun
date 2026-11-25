@@ -1,0 +1,6 @@
+#!/bin/bash
+# from: heatTransfer/buoyantPimpleFoam/thermocoupleTestCase; exercises: radiometerProbes function object (fvDOM incident radiative flux at oriented probes)
+cd "${0%/*}" || exit 1
+cp -r 0.orig 0
+blockMesh
+buoyantPimpleFoam

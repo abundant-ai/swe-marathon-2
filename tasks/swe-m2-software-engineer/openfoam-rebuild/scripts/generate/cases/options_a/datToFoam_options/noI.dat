@@ -1,0 +1,2 @@
+ variables = x y
+ zone t="z", j=3 f=block

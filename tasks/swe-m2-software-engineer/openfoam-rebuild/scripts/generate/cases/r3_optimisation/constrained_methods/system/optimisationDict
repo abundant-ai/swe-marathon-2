@@ -1,0 +1,117 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  v2606                                 |
+|   \\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      optimisationDict;
+}
+
+optimisationManager     steadyOptimisation;
+
+primalSolvers
+{
+    p1
+    {
+        active                 true;
+        type                   incompressible;
+        solver                 simple;
+        solutionControls
+        {
+            nIters 300;
+            residualControl
+            {
+                "p.*"       1.e-8;
+                "U.*"       1.e-8;
+            }
+        }
+    }
+}
+
+adjointManagers
+{
+    am1
+    {
+        primalSolver             p1;
+        adjointSolvers
+        {
+            as1
+            {
+                active                 true;
+                type                   incompressible;
+                solver                 adjointSimple;
+                objectives
+                {
+                    type                incompressible;
+                    objectiveNames
+                    {
+                        losses
+                        {
+                            weight          1;
+                            type            PtLosses;
+                            patches         (Inlet Outlet);
+                            normalise       true;
+                        }
+                    }
+                }
+                ATCModel
+                {
+                    ATCModel        standard;
+                }
+                solutionControls
+                {
+                    nIters 300;
+                    residualControl
+                    {
+                        "pa.*"       1.e-8;
+                        "Ua.*"       1.e-8;
+                    }
+                }
+            }
+            vol
+            {
+                active                 true;
+                type                   null;
+                isConstraint           true;
+                objectives
+                {
+                    type                geometric;
+                    objectiveNames
+                    {
+                        vol
+                        {
+                            weight      1;
+                            type        partialVolume;
+                            patches     (lower upper);
+                            target      0.005;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+optimisation
+{
+    designVariables
+    {
+        type            shape;
+        shapeType       volumetricBSplines;
+        sensitivityType shapeFI;
+        patches         (lower upper);
+        maxInitChange   2.e-3;
+        nonOverlappingCPs true;
+    }
+
+    updateMethod
+    {
+        #include "updateMethod"
+    }
+}

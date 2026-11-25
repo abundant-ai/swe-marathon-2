@@ -1,0 +1,12 @@
+#!/bin/bash
+# from: scratch (block.obj from mesh/snappyHexMesh/rotated_block, hand-written 6-solid cube6.stl); exercises: surfaceSplitByPatch per-region output files, -patches, -exclude-patches (names and regex)
+cd "${0%/*}" || exit 1
+mkdir -p all sel
+cp constant/triSurface/cube6.stl all/
+surfaceSplitByPatch all/cube6.stl
+cp constant/triSurface/block.obj sel/
+surfaceSplitByPatch -patches '(minX "max.*")' sel/block.obj
+cp constant/triSurface/cube6.stl sel/
+surfaceSplitByPatch -patches '("[xy].*")' -exclude-patches '(yMax xMin)' sel/cube6.stl
+surfaceSplitByPatch -exclude-patches '(".*")' sel/cube6.stl
+sed -i -E 's/written [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}/written DATE/' all/* sel/*

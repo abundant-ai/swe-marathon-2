@@ -1,0 +1,5 @@
+#!/bin/bash
+# from: incompressible/pimpleFoam/LES/periodicPlaneChannel (coarse scratch mesh); exercises: LES model DeardorffDiffStress (R transport)
+cd "${0%/*}" || exit 1
+blockMesh
+pimpleFoam

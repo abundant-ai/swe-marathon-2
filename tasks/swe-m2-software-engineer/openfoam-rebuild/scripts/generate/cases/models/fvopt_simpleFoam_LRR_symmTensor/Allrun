@@ -1,0 +1,6 @@
+#!/bin/bash
+# from: incompressible/simpleFoam/pitzDaily; exercises: fvOptions symmTensorSemiImplicitSource, symmTensorFixedValueConstraint on R (LRR model)
+cd "${0%/*}" || exit 1
+blockMesh
+topoSet
+simpleFoam

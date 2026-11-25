@@ -1,0 +1,9 @@
+#!/bin/bash
+# from: incompressible/icoFoam/cavity/cavity (6x6); exercises: attachMesh re-attaching a full-height splitMesh baffle via an attachDetach meshModifiers entry; second attach fails (patches already consumed)
+blockMesh
+topoSet
+splitMesh -overwrite cutFaces cutMaster cutSlave
+cp system/meshModifiers constant/polyMesh/meshModifiers
+attachMesh
+checkMesh
+attachMesh -overwrite || true

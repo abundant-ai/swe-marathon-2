@@ -1,0 +1,10 @@
+#!/bin/bash
+# from: compressible/rhoCentralFoam/biconic25-55Run35 (hand-written 5x3 grid instead of grid256.dat); exercises: datToFoam writing constant/polyMesh/points, -case; errors: missing file, missing argument, header without i=
+blockMesh
+datToFoam grid.dat
+checkMesh
+datToFoam -case other grid.dat
+datToFoam noSuch.dat || true
+datToFoam || true
+datToFoam -case other noI.dat || true
+datToFoam -case noSuchDir grid.dat || true

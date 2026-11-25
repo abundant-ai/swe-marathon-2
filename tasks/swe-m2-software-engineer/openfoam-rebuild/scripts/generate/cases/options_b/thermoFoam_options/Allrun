@@ -1,0 +1,25 @@
+#!/bin/bash
+# from: heatTransfer/buoyantPimpleFoam/hotRoom (10x5x10 mesh, 10 steps); exercises: thermoFoam options -dry-run, -dry-run-write, -noFunctionObjects, -postProcess -func/-latestTime/-time, -parallel, -decomposeParDict; errors: missing T, -parallel without processor dirs, missing -decomposeParDict file, unknown fvOption type, unknown equationOfState
+blockMesh
+mv 0/T 0/T.off
+thermoFoam || true
+mv 0/T.off 0/T
+setFields
+thermoFoam -dry-run
+thermoFoam -noFunctionObjects
+thermoFoam
+thermoFoam -postProcess -func 'mag(U)' -latestTime
+thermoFoam -postProcess -func 'grad(T)' -time 10
+mpirun --oversubscribe -np 2 thermoFoam -parallel || true
+decomposePar
+mpirun --oversubscribe -np 2 thermoFoam -parallel
+mpirun --oversubscribe -np 2 thermoFoam -parallel -decomposeParDict system/noSuchDecomposeParDict || true
+decomposePar -force -decomposeParDict system/decomposeParDict.3
+mpirun --oversubscribe -np 3 thermoFoam -parallel -decomposeParDict system/decomposeParDict.3
+cp -r variants/badFvOption/. .
+thermoFoam || true
+cp -r variants/orig/. .
+cp -r variants/badEoS/. .
+thermoFoam || true
+cp -r variants/orig/. .
+thermoFoam -dry-run-write

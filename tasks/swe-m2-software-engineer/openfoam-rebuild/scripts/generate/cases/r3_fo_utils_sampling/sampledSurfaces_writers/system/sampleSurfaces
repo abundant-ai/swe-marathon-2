@@ -1,0 +1,119 @@
+// one surfaces function object; every surface picks its own writer
+
+surfs
+{
+    type            surfaces;
+    libs            (sampling);
+    writeControl    writeTime;
+    interpolationScheme cellPoint;
+    surfaceFormat   raw;
+    fields          (p U);
+
+    surfaces
+    {
+        cutSurf
+        {
+            type        surfaceCut;
+            surfaceType triSurfaceMesh;
+            surfaceName probe.stl;
+            surfaceFormat x3d;
+        }
+        isoPoint
+        {
+            type        isoSurfacePoint;
+            isoField    p;
+            isoValue    0;
+            interpolate true;
+            surfaceFormat starcd;
+        }
+        isoCell
+        {
+            type        isoSurface;
+            isoMethod   cell;
+            isoField    p;
+            isoValue    0;
+            regularise  false;
+            surfaceFormat nastran;
+        }
+        isoTopo
+        {
+            type        isoSurfaceTopo;
+            isoField    p;
+            isoValues   (0 0.5);
+            interpolate true;
+        }
+        thresh
+        {
+            type        thresholdCellFaces;
+            field       p;
+            lowerLimit  0.1;
+            upperLimit  10;
+            triangulate false;
+            surfaceFormat abaqus;
+        }
+        thresh2
+        {
+            type        thresholdCellFaces;
+            field       p;
+            lowerLimit  0.1;
+            triangulate true;
+            surfaceFormat foam;
+        }
+        patchInt
+        {
+            type        patchInternalField;
+            patches     (movingWall);
+            offsetMode  normal;
+            distance    0.005;
+            interpolate true;
+            surfaceFormat ensight;
+            formatOptions { ensight { collateTimes false; } }
+        }
+        wallData
+        {
+            type        patch;
+            patches     (movingWall);
+            surfaceFormat boundaryData;
+        }
+        wallStl
+        {
+            type        patch;
+            patches     (fixedWalls);
+            surfaceFormat stl;
+        }
+        wallDebug
+        {
+            type        patch;
+            patches     (movingWall);
+            surfaceFormat debug;
+            formatOptions { debug { format ascii; } }
+        }
+        nothing
+        {
+            type        none;
+        }
+    }
+}
+
+// meshedSurfaceNormal only samples vector fields
+surfsNormal
+{
+    type            surfaces;
+    libs            (sampling);
+    writeControl    writeTime;
+    interpolationScheme cellPoint;
+    surfaceFormat   vtk;
+    formatOptions { vtk { format ascii; } }
+    fields          (U);
+
+    surfaces
+    {
+        meshedNormal
+        {
+            type        meshedSurfaceNormal;
+            surface     probe.stl;
+            source      cells;
+            surfaceFormat vtk;
+        }
+    }
+}

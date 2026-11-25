@@ -1,0 +1,11 @@
+#!/bin/bash
+# from: stressAnalysis/solidDisplacementFoam/plateHole; exercises: solidDisplacementFoam plane-stress tractionDisplacement (mechanical only, then thermalStress yes with T solve), missing mechanicalProperties error
+cd "${0%/*}" || exit 1
+blockMesh
+solidDisplacementFoam
+mv 5 5_mechanical
+foamDictionary constant/thermalProperties -entry thermalStress -set yes
+solidDisplacementFoam
+mv constant/mechanicalProperties constant/mechanicalProperties.off
+solidDisplacementFoam || true
+mv constant/mechanicalProperties.off constant/mechanicalProperties

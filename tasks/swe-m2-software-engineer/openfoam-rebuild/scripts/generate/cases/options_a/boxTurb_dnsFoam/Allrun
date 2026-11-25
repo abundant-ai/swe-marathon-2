@@ -1,0 +1,28 @@
+#!/bin/bash
+# from: DNS/dnsFoam/boxTurb16 (8^3 mesh, endTime 0.1, fieldMinMax added); exercises: boxTurb, -case; dnsFoam plain, -noFunctionObjects, -postProcess -func/-latestTime/-time, -case on a 6^3 copy; errors: missing boxTurbDict / Ea, missing UOsigma, nonexistent -time, -case noSuchDir
+cp -r 0.orig 0
+blockMesh
+boxTurb
+dnsFoam -noFunctionObjects
+dnsFoam
+dnsFoam -postProcess -func enstrophy -latestTime
+dnsFoam -postProcess -func 'mag(U)' -time 0.05
+dnsFoam -postProcess -func enstrophy -time 99 || true
+dnsFoam -case noSuchDir || true
+mv constant/boxTurbDict constant/boxTurbDict.off
+boxTurb || true
+mv constant/boxTurbDict.off constant/boxTurbDict
+cp -r variants/noEa/. .
+boxTurb || true
+cp -r variants/orig/. .
+cp -r variants/noUOsigma/. .
+dnsFoam || true
+cp -r variants/orig/. .
+mkdir -p odd/system odd/constant
+cp -r 0.orig odd/0
+cp system/controlDict system/fvSchemes system/fvSolution odd/system/
+cp variants/odd/system/blockMeshDict odd/system/
+cp constant/* odd/constant/
+blockMesh -case odd
+boxTurb -case odd
+dnsFoam -case odd

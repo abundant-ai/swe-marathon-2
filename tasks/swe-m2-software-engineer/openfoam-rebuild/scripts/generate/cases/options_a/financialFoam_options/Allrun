@@ -1,0 +1,25 @@
+#!/bin/bash
+# from: financial/financialFoam/europeanCall (40 cells, endTime 0.02, fieldMinMax added); exercises: financialFoam -dry-run, -dry-run-write, -noFunctionObjects, plain, -postProcess -func/-latestTime/-time/-noZero, -parallel; errors: nonexistent -time, missing/non-numeric sigma, missing 0/V, -case noSuchDir
+cp -r 0.orig 0
+blockMesh
+financialFoam -dry-run
+financialFoam -dry-run-write
+rm -rf 0.002
+financialFoam -noFunctionObjects
+financialFoam
+financialFoam -postProcess -func 'grad(V)' -latestTime
+financialFoam -postProcess -func 'mag(V)' -time 0.01
+financialFoam -postProcess -funcs '(mag(delta) grad(V))' -noZero
+decomposePar
+mpirun --oversubscribe -np 2 financialFoam -parallel
+financialFoam -postProcess -func 'mag(V)' -time 99 || true
+financialFoam -case noSuchDir || true
+cp -r variants/noSigma/. .
+financialFoam || true
+cp -r variants/orig/. .
+cp -r variants/badSigma/. .
+financialFoam || true
+cp -r variants/orig/. .
+mv 0/V 0/V.off
+financialFoam || true
+mv 0/V.off 0/V

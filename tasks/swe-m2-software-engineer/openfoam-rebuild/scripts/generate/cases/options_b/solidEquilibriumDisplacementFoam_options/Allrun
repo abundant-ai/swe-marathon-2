@@ -1,0 +1,23 @@
+#!/bin/bash
+# from: stressAnalysis/solidEquilibriumDisplacementFoam/beamEndLoad (40 iterations); exercises: solidEquilibriumDisplacementFoam options -dry-run, -dry-run-write, -noFunctionObjects, -postProcess -func/-latestTime, -parallel, -decomposeParDict; errors: no mesh, -parallel without processor dirs, missing -decomposeParDict file, unknown -func, missing E / stressAnalysis entries
+solidEquilibriumDisplacementFoam || true
+blockMesh
+solidEquilibriumDisplacementFoam -dry-run
+solidEquilibriumDisplacementFoam -noFunctionObjects
+solidEquilibriumDisplacementFoam
+solidEquilibriumDisplacementFoam -postProcess -func 'mag(D)' -latestTime
+solidEquilibriumDisplacementFoam -postProcess -func 'magSqr(D)' -time 20
+solidEquilibriumDisplacementFoam -postProcess -func noSuchFunctionObject -latestTime || true
+mpirun --oversubscribe -np 2 solidEquilibriumDisplacementFoam -parallel || true
+decomposePar
+mpirun --oversubscribe -np 2 solidEquilibriumDisplacementFoam -parallel
+mpirun --oversubscribe -np 2 solidEquilibriumDisplacementFoam -parallel -decomposeParDict system/noSuchDecomposeParDict || true
+decomposePar -force -decomposeParDict system/decomposeParDict.3
+mpirun --oversubscribe -np 3 solidEquilibriumDisplacementFoam -parallel -decomposeParDict system/decomposeParDict.3
+cp -r variants/noE/. .
+solidEquilibriumDisplacementFoam || true
+cp -r variants/orig/. .
+cp -r variants/noStressAnalysis/. .
+solidEquilibriumDisplacementFoam || true
+cp -r variants/orig/. .
+solidEquilibriumDisplacementFoam -dry-run-write

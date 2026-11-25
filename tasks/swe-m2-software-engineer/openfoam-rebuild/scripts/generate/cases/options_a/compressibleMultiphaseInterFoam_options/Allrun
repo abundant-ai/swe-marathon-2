@@ -1,0 +1,27 @@
+#!/bin/bash
+# from: multiphase/compressibleMultiphaseInterFoam/laminar/damBreak4phase (mesh halved, endTime 0.05); exercises: compressibleMultiphaseInterFoam options -dry-run, -dry-run-write, -noFunctionObjects, -postProcess (-func/-funcs/-latestTime/-time/-noZero), -parallel; errors: nonexistent/bad -time, -case noSuchDir, missing 0/alpha.oil, missing pMin, missing sigma pair, unknown equationOfState, phase without thermophysicalProperties file
+cd "${0%/*}" || exit 1
+blockMesh
+setFields
+compressibleMultiphaseInterFoam -dry-run
+compressibleMultiphaseInterFoam -dry-run-write
+rm -rf 0.[0-9]*
+compressibleMultiphaseInterFoam -noFunctionObjects
+compressibleMultiphaseInterFoam
+compressibleMultiphaseInterFoam -postProcess -func 'mag(U)' -latestTime
+compressibleMultiphaseInterFoam -postProcess -funcs '(mag(U) grad(p_rgh))' -time 0.025
+compressibleMultiphaseInterFoam -postProcess -func 'fieldMinMax(T)' -noZero
+compressibleMultiphaseInterFoam -postProcess -func 'mag(U)' -time 99 || true
+compressibleMultiphaseInterFoam -postProcess -func 'mag(U)' -time abc || true
+compressibleMultiphaseInterFoam -case noSuchDir || true
+decomposePar
+mpirun --oversubscribe -np 2 compressibleMultiphaseInterFoam -parallel
+rm -rf 0.[0-9]*
+mv 0/alpha.oil alpha.oil.off
+compressibleMultiphaseInterFoam || true
+mv alpha.oil.off 0/alpha.oil
+for v in missingPMin missingSigmaPair unknownEquationOfState missingPhaseThermo; do
+    cp -r variants/$v/. .
+    compressibleMultiphaseInterFoam || true
+    cp -r variants/orig/. .
+done

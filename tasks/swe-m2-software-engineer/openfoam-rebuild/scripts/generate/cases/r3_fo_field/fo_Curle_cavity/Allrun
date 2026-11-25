@@ -1,0 +1,8 @@
+#!/bin/bash
+# from: incompressible/icoFoam/cavity/cavity; exercises: Curle function object (point observers, surface input/output), its error paths (surface output without surface input, c0 <= 0, no matching patches)
+cd "${0%/*}" || exit 1
+blockMesh > log.blockMesh 2>&1
+icoFoam > log.icoFoam 2>&1
+postProcess -dict system/curleNoPatches -latestTime > log.postProcess.noPatches 2>&1
+postProcess -dict system/curleBadOutput -latestTime > log.postProcess.badOutput 2>&1 || true
+postProcess -dict system/curleBadC0 -latestTime > log.postProcess.badC0 2>&1 || true

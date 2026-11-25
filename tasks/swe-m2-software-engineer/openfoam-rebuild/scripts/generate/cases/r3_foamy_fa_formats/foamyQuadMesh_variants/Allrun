@@ -1,0 +1,27 @@
+#!/bin/bash
+# from: mesh/foamyQuadMesh/square; exercises: foamyQuadMesh meshedSurfaceOutput + objOutput debug surfaces, randomiseInitialGrid, mirrorPoints instead of point pairs, insertSurfaceNearestPointPairs off, inline extrusion (extrusion/extrude on), -pointsFile initial points
+cd "${0%/*}" || exit 1
+D=system/foamyQuadMeshDict
+surfaceFeatureExtract
+foamDictionary -entry motionControl/meshedSurfaceOutput -set yes $D
+foamDictionary -entry motionControl/objOutput -set yes $D
+foamyQuadMesh
+mkdir -p run_objOutput && mv 10 *.obj nearestFaces nearestTriangles boundaryFaces boundaryTriangles internalFaces internalTriangles run_objOutput/
+foamDictionary -entry motionControl/objOutput -set no $D
+foamDictionary -entry surfaceConformation/randomiseInitialGrid -set yes $D
+foamyQuadMesh -overwrite
+mkdir -p run_random && mv constant/polyMesh MeshedSurface.obj run_random/
+foamDictionary -entry surfaceConformation/randomiseInitialGrid -set no $D
+foamDictionary -entry surfaceConformation/mirrorPoints -set yes $D
+foamDictionary -entry surfaceConformation/insertSurfaceNearestPointPairs -set no $D
+foamyQuadMesh -overwrite
+mkdir -p run_mirror && mv constant/polyMesh MeshedSurface.obj run_mirror/
+foamDictionary -entry surfaceConformation/mirrorPoints -set no $D
+foamDictionary -entry surfaceConformation/insertSurfaceNearestPointPairs -set yes $D
+foamDictionary -entry extrusion/extrude -set on $D
+foamyQuadMesh -overwrite
+mkdir -p run_extrude && mv constant/polyMesh MeshedSurface.obj run_extrude/
+foamDictionary -entry extrusion/extrude -set off $D
+foamyQuadMesh -overwrite -pointsFile constant/points2D
+mkdir -p run_pointsFile && mv constant/polyMesh MeshedSurface.obj run_pointsFile/
+sed -i -E 's/written [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}/written DATE/' run_*/*.obj run_objOutput/*/*.obj

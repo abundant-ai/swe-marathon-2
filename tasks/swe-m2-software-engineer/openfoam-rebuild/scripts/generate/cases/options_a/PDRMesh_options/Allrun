@@ -1,0 +1,27 @@
+#!/bin/bash
+# from: combustion/PDRFoam/flamePropagationWithObstacles (blocks 2x2x2/2x2x3, nonuniform obstacle fields made uniform); exercises: PDRMesh without -overwrite (new time dirs), -overwrite with -case, -parallel on a copy decomposed with its sets; errors: nonexistent blockedCells set, missing defaultPatch / blockedCells entry, missing PDRMeshDict, -case noSuchDir
+cp -r 0.orig 0
+blockMesh
+changeDictionary
+topoSet
+mkdir -p copy par
+cp -r 0 constant system copy/
+cp -r 0 constant system par/
+PDRMesh
+PDRMesh -case copy -overwrite
+decomposePar -case par
+mpirun --oversubscribe -np 2 PDRMesh -parallel -case par
+rm -rf 5e-06 1e-05
+PDRMesh -case noSuchDir || true
+cp -r variants/badSet/. .
+PDRMesh || true
+cp -r variants/orig/. .
+cp -r variants/noDefaultPatch/. .
+PDRMesh || true
+cp -r variants/orig/. .
+cp -r variants/noBlockedCells/. .
+PDRMesh || true
+cp -r variants/orig/. .
+mv system/PDRMeshDict system/PDRMeshDict.off
+PDRMesh || true
+mv system/PDRMeshDict.off system/PDRMeshDict

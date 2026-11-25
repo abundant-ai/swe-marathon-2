@@ -1,0 +1,32 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  v2606                                 |
+|   \\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      setTurbulenceFieldsDict;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+// only k and epsilon, larger reference velocity and different wall constants
+uRef            30;
+
+initialiseU     false;
+initialiseEpsilon true;
+initialiseK     true;
+initialiseOmega false;
+initialiseR     false;
+writeF          false;
+
+kappa           0.4;
+Cmu             0.1;
+dPlusRef        20.0;
+
+
+// ************************************************************************* //

@@ -1,0 +1,5 @@
+#!/bin/bash
+# from: incompressible/simpleFoam/pitzDaily; exercises: RAS model GEKO (k-omega based, default coefficients)
+cd "${0%/*}" || exit 1
+blockMesh
+simpleFoam

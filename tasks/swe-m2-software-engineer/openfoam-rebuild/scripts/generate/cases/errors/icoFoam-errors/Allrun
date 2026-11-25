@@ -1,0 +1,109 @@
+#!/bin/bash
+# from: incompressible/icoFoam/cavity/cavity; exercises: icoFoam start-up/run errors - missing mesh/fields/dicts, unknown BC/scheme/solver/enum types (valid-type lists), missing patch/entries, wrong class/size/token, malformed field syntax, unknown functionObject warning
+icoFoam || true
+blockMesh
+mv 0/U 0/U.off
+icoFoam || true
+mv 0/U.off 0/U
+mv 0/p 0/p.off
+icoFoam || true
+mv 0/p.off 0/p
+mv constant/transportProperties constant/transportProperties.off
+icoFoam || true
+mv constant/transportProperties.off constant/transportProperties
+mv system/fvSchemes system/fvSchemes.off
+icoFoam || true
+mv system/fvSchemes.off system/fvSchemes
+mv system/fvSolution system/fvSolution.off
+icoFoam || true
+mv system/fvSolution.off system/fvSolution
+cp -r variants/unknownBC/. .
+icoFoam || true
+cp -r variants/orig/. .
+cp -r variants/unknownBCp/. .
+icoFoam || true
+cp -r variants/orig/. .
+cp -r variants/missingPatchField/. .
+icoFoam || true
+cp -r variants/orig/. .
+cp -r variants/missingBCType/. .
+icoFoam || true
+cp -r variants/orig/. .
+cp -r variants/missingValue/. .
+icoFoam || true
+cp -r variants/orig/. .
+cp -r variants/wrongPatchTypeEmpty/. .
+icoFoam || true
+cp -r variants/orig/. .
+cp -r variants/scalarForVector/. .
+icoFoam || true
+cp -r variants/orig/. .
+cp -r variants/wrongListSize/. .
+icoFoam || true
+cp -r variants/orig/. .
+cp -r variants/wrongFieldClass/. .
+icoFoam || true
+cp -r variants/orig/. .
+cp -r variants/missingNu/. .
+icoFoam || true
+cp -r variants/orig/. .
+cp -r variants/missingInternalField/. .
+icoFoam || true
+cp -r variants/orig/. .
+cp -r variants/missingSemicolonField/. .
+icoFoam || true
+cp -r variants/orig/. .
+cp -r variants/unbalancedBraceField/. .
+icoFoam || true
+cp -r variants/orig/. .
+cp -r variants/unknownDdtScheme/. .
+icoFoam || true
+cp -r variants/orig/. .
+cp -r variants/unknownInterpolation/. .
+icoFoam || true
+cp -r variants/orig/. .
+cp -r variants/unknownGradScheme/. .
+icoFoam || true
+cp -r variants/orig/. .
+cp -r variants/unknownSnGradInLaplacian/. .
+icoFoam || true
+cp -r variants/orig/. .
+cp -r variants/missingDivScheme/. .
+icoFoam || true
+cp -r variants/orig/. .
+cp -r variants/missingLaplacianSection/. .
+icoFoam || true
+cp -r variants/orig/. .
+cp -r variants/unknownSolver/. .
+icoFoam || true
+cp -r variants/orig/. .
+cp -r variants/unknownPreconditioner/. .
+icoFoam || true
+cp -r variants/orig/. .
+cp -r variants/unknownSmoother/. .
+icoFoam || true
+cp -r variants/orig/. .
+cp -r variants/symmetricSolverForAsymmetric/. .
+icoFoam || true
+cp -r variants/orig/. .
+cp -r variants/missingSolverEntry/. .
+icoFoam || true
+cp -r variants/orig/. .
+cp -r variants/missingPISO/. .
+icoFoam || true
+cp -r variants/orig/. .
+cp -r variants/unknownWriteControl/. .
+icoFoam || true
+cp -r variants/orig/. .
+cp -r variants/missingDeltaT/. .
+icoFoam || true
+cp -r variants/orig/. .
+cp -r variants/unknownStartFrom/. .
+icoFoam || true
+cp -r variants/orig/. .
+cp -r variants/badEndTime/. .
+icoFoam || true
+cp -r variants/orig/. .
+cp -r variants/unknownFunctionObject/. .
+icoFoam || true
+cp -r variants/orig/. .

@@ -1,0 +1,5 @@
+#!/bin/bash
+# from: multiphase/cavitatingFoam/RAS/throttle (replaced by a small laminar channel, mild pressure drop); exercises: scalar BC fixedPressureCompressibleDensity on rho
+cd "${0%/*}" || exit 1
+blockMesh
+cavitatingFoam

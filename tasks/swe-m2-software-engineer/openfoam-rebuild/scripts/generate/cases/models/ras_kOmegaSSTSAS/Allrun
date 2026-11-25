@@ -1,0 +1,5 @@
+#!/bin/bash
+# from: incompressible/simpleFoam/pitzDaily; exercises: RAS model kOmegaSSTSAS (scale-adaptive SST with LES delta)
+cd "${0%/*}" || exit 1
+blockMesh
+simpleFoam

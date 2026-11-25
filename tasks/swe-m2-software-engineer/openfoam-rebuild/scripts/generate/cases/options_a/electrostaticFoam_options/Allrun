@@ -1,0 +1,23 @@
+#!/bin/bash
+# from: electromagnetics/electrostaticFoam/chargedWire (mesh /5, 10 steps, fieldMinMax added); exercises: electrostaticFoam -dry-run, -dry-run-write, -noFunctionObjects, plain, -parallel; errors: missing k, missing 0/rho, unknown patch field type, -case noSuchDir, -postProcess (not an option)
+cp -r 0.orig 0
+blockMesh
+electrostaticFoam -dry-run
+electrostaticFoam -dry-run-write
+rm -rf 0.0001
+electrostaticFoam -noFunctionObjects
+electrostaticFoam
+decomposePar
+mpirun --oversubscribe -np 2 electrostaticFoam -parallel
+electrostaticFoam -postProcess || true
+electrostaticFoam -case noSuchDir || true
+cp -r variants/noK/. .
+electrostaticFoam || true
+cp -r variants/orig/. .
+mv 0/rho 0/rho.off
+electrostaticFoam || true
+mv 0/rho.off 0/rho
+cp 0/phi 0/phi.orig
+cp variants/badBC/0/phi 0/phi
+electrostaticFoam || true
+mv 0/phi.orig 0/phi

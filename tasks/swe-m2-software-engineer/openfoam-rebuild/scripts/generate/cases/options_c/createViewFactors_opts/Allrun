@@ -1,0 +1,16 @@
+#!/bin/bash
+# from: heatTransfer/chtMultiRegionSimpleFoam/multiRegionHeaterRadiation (viewFactor radiation setup) on a scratch 6-patch wall box; exercises: createViewFactors -parallel (decomposed, 2 ranks); errors: nonexistent -region, missing viewFactorsDict, unknown viewFactorModel / raySearchEngine (valid-type lists), agglomerate without finalAgglom (faceAgglomerate not run)
+cd "${0%/*}" || exit 1
+blockMesh
+createViewFactors -region noSuchRegion || true
+mv constant/viewFactorsDict constant/viewFactorsDict.orig
+createViewFactors || true
+cp variants/viewFactorsDict.badModel constant/viewFactorsDict
+createViewFactors || true
+cp variants/viewFactorsDict.badEngine constant/viewFactorsDict
+createViewFactors || true
+cp variants/viewFactorsDict.agglom constant/viewFactorsDict
+createViewFactors || true
+mv constant/viewFactorsDict.orig constant/viewFactorsDict
+decomposePar
+mpirun -np 2 createViewFactors -parallel

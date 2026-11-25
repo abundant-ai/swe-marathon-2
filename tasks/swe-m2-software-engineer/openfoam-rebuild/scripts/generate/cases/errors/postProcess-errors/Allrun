@@ -1,0 +1,24 @@
+#!/bin/bash
+# from: incompressible/icoFoam/cavity/cavity; exercises: postProcess error and warning reporting - no mesh, unknown function name, unclosed -func argument, missing fields, scalar field to components, unknown patch (lists known), bad time selection, unknown/missing functionObject type, bad enum in function dict, -list output
+postProcess -func 'mag(U)' || true
+blockMesh
+postProcess -list
+postProcess || true
+postProcess -func noSuchFunction || true
+postProcess -func 'mag(U' || true
+postProcess -func 'mag(noSuchField)' || true
+postProcess -funcs '(mag(U) noSuchFunction)' || true
+postProcess -func 'div(phi)' || true
+postProcess -func 'components(p)' || true
+postProcess -func 'patchAverage(name=noSuchPatch,p)' || true
+postProcess -func 'flowRatePatch(name=noSuchPatch)' || true
+postProcess -func probes || true
+postProcess -func 'mag(U)' -time 5 || true
+postProcess -func 'mag(U)' -time abc || true
+postProcess -func 'mag(U)' -noZero || true
+postProcess -func 'mag(U)' -field noSuchField || true
+postProcess -dict system/noSuchDict || true
+postProcess -dict system/functionsDict.unknownType || true
+postProcess -dict system/functionsDict.missingType || true
+postProcess -dict system/functionsDict.missingField || true
+postProcess -dict system/functionsDict.badMode || true

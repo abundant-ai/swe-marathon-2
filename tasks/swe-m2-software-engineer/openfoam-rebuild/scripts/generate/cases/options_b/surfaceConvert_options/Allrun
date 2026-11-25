@@ -1,0 +1,28 @@
+#!/bin/bash
+# from: scratch (hand-written OBJ: unit box + fin baffle, two groups, duplicate triangle, unused vertex); exercises: surfaceConvert -clean -group -scale -precision -verbose -read-format -write-format and format errors; surfaceSplitByTopology baffle/multiply-connected splitting and errors
+cd "${0%/*}" || exit 1
+mkdir -p out split
+surfaceConvert surf/boxFin.obj out/plain.stl
+surfaceConvert -clean surf/boxFin.obj out/clean.stl
+surfaceConvert -group surf/boxFin.obj out/group.stl
+surfaceConvert -clean -group -verbose surf/boxFin.obj out/cleanGroup.nas
+surfaceConvert -scale 0.5 surf/boxFin.obj out/scaled.ftr
+surfaceConvert -precision 3 -scale 0.3333 surf/boxFin.obj out/prec3.stl
+surfaceConvert -write-format stlb surf/boxFin.obj out/binary.dat
+surfaceConvert -read-format obj -write-format tri surf/boxFin.geom out/fromGeom.tri
+surfaceConvert -verbose -verbose -scale 2 surf/boxFin.obj out/v2.ac
+surfaceConvert -clean out/plain.stl out/roundTrip.x3d
+surfaceConvert surf/boxFin.obj out/bad.xyz || true
+surfaceConvert -read-format stl surf/boxFin.obj out/wrongReader.stl || true
+surfaceConvert surf/boxFin.geom out/unknownInput.stl || true
+surfaceConvert surf/noSuchFile.obj out/missing.stl || true
+surfaceConvert -precision abc surf/boxFin.obj out/badPrecision.stl || true
+surfaceConvert -scale abc surf/boxFin.obj out/badScale.stl || true
+surfaceConvert -write-format noSuchFormat surf/boxFin.obj out/badWriteFormat.stl || true
+surfaceConvert surf/boxFin.obj || true
+surfaceSplitByTopology surf/boxFin.obj split/boxFin.stl
+surfaceSplitByTopology out/clean.stl split/clean.stl
+surfaceSplitByTopology out/cleanGroup.nas split/cleanGroup.ftr
+surfaceSplitByTopology surf/noSuchFile.obj split/missing.stl || true
+surfaceSplitByTopology surf/boxFin.obj split/bad.xyz || true
+surfaceSplitByTopology surf/boxFin.obj || true

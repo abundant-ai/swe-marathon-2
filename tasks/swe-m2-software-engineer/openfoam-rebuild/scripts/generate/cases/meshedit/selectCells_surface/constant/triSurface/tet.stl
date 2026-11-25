@@ -1,0 +1,30 @@
+solid tet
+  facet normal 0.0219399 0.0483968 -0.998587
+    outer loop
+      vertex 0.1 0.1 0.1
+      vertex 0.2 0.88 0.14
+      vertex 0.9 0.15 0.12
+    endloop
+  endfacet
+  facet normal 0.0526556 -0.956828 0.285845
+    outer loop
+      vertex 0.1 0.1 0.1
+      vertex 0.9 0.15 0.12
+      vertex 0.3 0.35 0.9
+    endloop
+  endfacet
+  facet normal 0.678875 0.641173 0.357808
+    outer loop
+      vertex 0.9 0.15 0.12
+      vertex 0.2 0.88 0.14
+      vertex 0.3 0.35 0.9
+    endloop
+  endfacet
+  facet normal -0.97162 0.113936 0.2073
+    outer loop
+      vertex 0.1 0.1 0.1
+      vertex 0.3 0.35 0.9
+      vertex 0.2 0.88 0.14
+    endloop
+  endfacet
+endsolid tet

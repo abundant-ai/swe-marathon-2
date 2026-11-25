@@ -1,0 +1,6 @@
+#!/bin/bash
+# from: incompressible/icoFoam/cavity/cavity (6x6); exercises: rotateMesh rotating points and vector fields, -time and -latestTime selection, non-90-degree rotation
+blockMesh
+rotateMesh -time 0 "(1 0 0)" "(0 1 0)"
+rotateMesh -latestTime "(1 0 0)" "(1 1 0)"
+checkMesh -latestTime

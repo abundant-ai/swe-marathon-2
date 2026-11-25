@@ -1,0 +1,188 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  v2606                                 |
+|   \\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      kinematicCloudProperties;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+solution
+{
+    active          true;
+    coupled         false;
+    transient       yes;
+    cellValueSourceCorrection off;
+    maxCo           0.3;
+    sourceTerms     { schemes {} }
+    interpolationSchemes
+    {
+        rho             cell;
+        U               cellPoint;
+        thermo:mu       cell;
+        T               cell;
+    }
+    integrationSchemes
+    {
+        U               Euler;
+    }
+}
+
+constantProperties
+{
+    rho0            1000;
+}
+
+subModels
+{
+    particleForces
+    {
+        sphereDrag;
+        gravity;
+    }
+
+    injectionModels
+    {
+        inlet
+        {
+            type            patchInjection;
+            SOI             0;
+            parcelBasisType fixed;
+            nParticle       10;
+            massTotal       0;
+            patch           inlet;
+            U0              (0.6 0.2 0);
+            parcelsPerSecond 2000;
+            duration        0.15;
+            flowRateProfile constant 1;
+            sizeDistribution
+            {
+                type        normal;
+                normalDistribution
+                {
+                    mu          1e-4;
+                    sigma       3e-5;
+                    minValue    2e-5;
+                    maxValue    2.5e-4;
+                }
+            }
+        }
+    }
+
+    dispersionModel none;
+    patchInteractionModel localInteraction;
+    localInteractionCoeffs
+    {
+        patches
+        (
+            walls  { type rebound; e 0.8; mu 0.2; }
+            inlet  { type escape; }
+            outlet { type escape; }
+        );
+    }
+    surfaceFilmModel none;
+    stochasticCollisionModel none;
+}
+
+cloudFunctions
+{
+    collectorPolygonNormal
+    {
+        type            particleCollector;
+        mode            polygonWithNormal;
+        polygons
+        (
+            (((0.05 0 0) (0.05 0.025 0) (0.05 0.025 0.05) (0.05 0 0.05)) (1 0 0))
+            (((0.05 0.025 0) (0.05 0.05 0) (0.05 0.05 0.05) (0.05 0.025 0.05)) (1 0 0))
+        );
+        negateParcelsOppositeNormal yes;
+        removeCollected no;
+        surfaceFormat   raw;
+        resetOnWrite    no;
+        log             yes;
+    }
+    collectorPolygonRemove
+    {
+        type            particleCollector;
+        mode            polygon;
+        polygons
+        (
+            ((0.08 0 0) (0.08 0.02 0) (0.08 0.02 0.05) (0.08 0 0.05))
+        );
+        normal          (1 0 0);
+        negateParcelsOppositeNormal no;
+        removeCollected yes;
+        surfaceFormat   raw;
+        resetOnWrite    yes;
+        log             yes;
+    }
+    erosion
+    {
+        type            particleErosion;
+        patches         (walls);
+        p               5e4;
+        psi             2.5;
+        K               2.0;
+    }
+    histogram
+    {
+        type            particleHistogram;
+        patches         (walls);
+        nBins           8;
+        min             0;
+        max             2.5e-4;
+        maxStoredParcels 1000;
+    }
+    trap
+    {
+        type            particleTrap;
+        alpha           T;
+        threshold       250;
+    }
+    zoneInfo
+    {
+        type            particleZoneInfo;
+        cellZone        midZone;
+        writer          raw;
+    }
+    collisionDensity
+    {
+        type            patchCollisionDensity;
+        minSpeed        0.01;
+    }
+    interactionFields
+    {
+        type            patchInteractionFields;
+        resetMode       writeTime;
+    }
+    remove
+    {
+        type            removeParcels;
+        faceZones       (fzRemove);
+        log             yes;
+        resetOnWrite    no;
+        resetOnStart    no;
+    }
+    voidFraction
+    {
+        type            voidFraction;
+    }
+    faceInteraction
+    {
+        type            faceInteraction;
+        faceZones
+        (
+            (fzStick    stick)
+            (fzEscape   escape)
+        );
+        dMin            0;
+        dMax            1;
+    }
+}

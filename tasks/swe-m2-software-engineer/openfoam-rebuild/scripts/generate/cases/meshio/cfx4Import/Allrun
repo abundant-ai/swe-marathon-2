@@ -1,0 +1,8 @@
+#!/bin/bash
+# from: scratch; exercises: cfx4ToFoam CFX-4 geometry reader: WALL/INLET/SYMMET/PRESS patch types, BLKBDY block glueing of two blocks, -scale
+cd "${0%/*}" || exit 1
+cfx4ToFoam oneBlock.geo
+checkMesh
+mv constant/polyMesh mesh_oneBlock
+cfx4ToFoam -scale 0.1 twoBlocks.geo
+checkMesh

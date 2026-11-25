@@ -1,0 +1,6 @@
+#!/bin/bash
+# from: incompressible/icoFoam/cavity (two-block variant); exercises: smapToFoam STAR-CD SMAP reader mapping SU/SV/SW->U and P->p into existing fields, skipping columns without a field (TE, DENS), bad-header error
+cd "${0%/*}" || exit 1
+blockMesh
+smapToFoam star.smap
+smapToFoam bad.smap || true

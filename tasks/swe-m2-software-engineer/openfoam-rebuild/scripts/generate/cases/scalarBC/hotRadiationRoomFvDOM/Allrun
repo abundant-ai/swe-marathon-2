@@ -1,0 +1,5 @@
+#!/bin/bash
+# from: heatTransfer/buoyantSimpleFoam/hotRadiationRoomFvDOM (coarsened, 20 iterations); exercises: scalar BC specularRadiation on the fvDOM ray intensity fields (symmetryWall)
+cd "${0%/*}" || exit 1
+blockMesh
+buoyantSimpleFoam

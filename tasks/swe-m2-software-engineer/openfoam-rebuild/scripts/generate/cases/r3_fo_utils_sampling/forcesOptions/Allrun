@@ -1,0 +1,5 @@
+#!/bin/bash
+# from: incompressible/icoFoam/cavity/cavity; exercises: forces (porosity, writeFields, local coordinateSystem, directForceDensity), forceCoeffs (all coefficients, writeFields, pRef), propellerInfo (fixed URef, rpm, cell-interpolated raw sampleDisk), bladeForces (righthand, geometricVelocity)
+cd "${0%/*}" || exit 1
+blockMesh
+icoFoam

@@ -1,0 +1,22 @@
+#!/bin/bash
+# from: incompressible/icoFoam/cavity/cavity; exercises: argument parser errors (invalid option, option missing value, wrong argument count, bad option value) and -help/-help-full/-help-notes/-help-man/-help-compat output
+blockMesh checkMesh snappyHexMesh decomposePar reconstructPar setFields topoSet createPatch mapFields foamDictionary postProcess icoFoam simpleFoam pimpleFoam interFoam rhoSimpleFoam buoyantSimpleFoam -badOption || true
+blockMesh checkMesh snappyHexMesh decomposePar reconstructPar setFields topoSet createPatch mapFields foamDictionary postProcess icoFoam simpleFoam pimpleFoam interFoam rhoSimpleFoam buoyantSimpleFoam -help || true
+blockMesh checkMesh snappyHexMesh decomposePar reconstructPar setFields topoSet createPatch mapFields foamDictionary postProcess icoFoam simpleFoam pimpleFoam interFoam rhoSimpleFoam buoyantSimpleFoam -help-full || true
+blockMesh -help-notes || true
+blockMesh -help-man || true
+snappyHexMesh -help-compat || true
+foamDictionary -help-compat || true
+icoFoam -help-notes || true
+mapFields || true
+foamDictionary || true
+mapFields ../a ../b || true
+checkMesh extraArgument || true
+blockMesh -dict || true
+postProcess -func || true
+decomposePar -time || true
+foamDictionary -entry || true
+foamDictionary -precision abc system/controlDict || true
+blockMesh -verbose -badOption -alsoBad || true
+foamDictionary - -entry application system/controlDict || true
+icoFoam -case || true

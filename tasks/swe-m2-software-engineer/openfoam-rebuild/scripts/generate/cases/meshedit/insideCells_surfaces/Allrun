@@ -1,0 +1,6 @@
+#!/bin/bash
+# from: incompressible/icoFoam/cavity/cavity (made 3D, 6x6x6); exercises: insideCells cellSet from closed STL and OBJ surfaces
+blockMesh
+insideCells constant/triSurface/box.stl insideBox
+insideCells constant/triSurface/tet.obj insideTet
+setsToZones

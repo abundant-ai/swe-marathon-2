@@ -1,0 +1,5 @@
+#!/bin/bash
+# from: scratch (control file as in applications/utilities/thermophysical/equilibriumFlameT); exercises: equilibriumFlameT dissociation table over phi and T0 for CH4 and C3H8
+cd "${0%/*}" || exit 1
+equilibriumFlameT controlDict.CH4
+equilibriumFlameT controlDict.C3H8

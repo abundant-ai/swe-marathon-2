@@ -1,0 +1,27 @@
+#!/bin/bash
+# from: heatTransfer/overBuoyantPimpleDyMFoam/movingBox (endTime 0.01); exercises: overBuoyantPimpleDyMFoam options -noFunctionObjects, -postProcess (-func/-time), -parallel; errors: -dry-run (simplified mesh lacks movingZone1), nonexistent/bad -time, -case noSuchDir, missing 0/zoneID, unknown oversetInterpolation method, unknown zone solidBodyMotionFunction, missing pRefPoint
+cd "${0%/*}" || exit 1
+blockMesh
+topoSet
+subsetMesh box -patch hole -overwrite
+topoSet
+setFields
+overBuoyantPimpleDyMFoam -dry-run || true
+overBuoyantPimpleDyMFoam -noFunctionObjects
+overBuoyantPimpleDyMFoam
+overBuoyantPimpleDyMFoam -postProcess -func 'mag(U)' -latestTime
+overBuoyantPimpleDyMFoam -postProcess -funcs '(mag(U) grad(T))' -time 0
+overBuoyantPimpleDyMFoam -postProcess -func 'mag(U)' -time 99 || true
+overBuoyantPimpleDyMFoam -postProcess -func 'mag(U)' -time abc || true
+overBuoyantPimpleDyMFoam -case noSuchDir || true
+decomposePar
+mpirun --oversubscribe -np 2 overBuoyantPimpleDyMFoam -parallel
+rm -rf 0.0* [1-9]*
+mv 0/zoneID zoneID.off
+overBuoyantPimpleDyMFoam || true
+mv zoneID.off 0/zoneID
+for v in unknownOversetMethod unknownZoneMotion missingPRefPoint; do
+    cp -r variants/$v/. .
+    overBuoyantPimpleDyMFoam || true
+    cp -r variants/orig/. .
+done

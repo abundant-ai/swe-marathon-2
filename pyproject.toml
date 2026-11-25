@@ -29,4 +29,5 @@ testpaths = [
     "tasks/swe-m2-software-engineer/goose-compiler-rebuild/checks",
     "tasks/swe-m2-software-engineer/carve-html-renderer-from-spec-only/checks",
     "tasks/swe-m2-software-engineer/basedpl-interpreter-rebuild-no-examples/checks",
+    "tasks/swe-m2-software-engineer/openfoam-rebuild/checks",
 ]

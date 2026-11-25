@@ -1,0 +1,7 @@
+#!/bin/bash
+# from: scratch (hand-written EnSight surface + per-element field T with two outliers); exercises: smoothSurfaceData ensight surfaceReader, zero-radius no-op, -radius, -sweeps, -read-format, -field (missing field error), -verbose; writes filtered_<time>.vtp (stdout has wall-clock timings; sweeps=1 with neighbours is nondeterministic in v2606 so only sweeps>1 or self-only radius used)
+cd "${0%/*}" || exit 1
+smoothSurfaceData constant/surfData/surf.case
+smoothSurfaceData -read-format ensight -radius 0.15 constant/surfData/surf.case
+smoothSurfaceData -radius 0.25 -field p constant/surfData/surf.case || true
+smoothSurfaceData -radius 0.25 -sweeps 3 -verbose constant/surfData/surf.case

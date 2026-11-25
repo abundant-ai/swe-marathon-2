@@ -1,0 +1,29 @@
+#!/bin/bash
+# from: multiphase/potentialFreeSurfaceDyMFoam/oscillatingBox (40x6 mesh, 0.06 s); exercises: potentialFreeSurfaceDyMFoam -noFunctionObjects, -postProcess (-latestTime, -func/-time, -fields, -noZero, -dict), -parallel with default and alternative -decomposeParDict; errors: -parallel before decomposePar, unknown -func, missing -postProcess -dict file, missing dynamicMeshDict entry, missing pointDisplacement field, unknown motionSolver
+blockMesh
+topoSet
+subsetMesh -overwrite c0 -patch floatingObject
+topoSet -dict system/topoSetDict-selectBottom
+createPatch -overwrite
+cp -r 0.orig 0
+potentialFreeSurfaceDyMFoam -noFunctionObjects
+potentialFreeSurfaceDyMFoam -postProcess -latestTime
+potentialFreeSurfaceDyMFoam -postProcess -func "mag(U)" -time 0.02:0.04
+potentialFreeSurfaceDyMFoam -postProcess -fields '(p_gh)' -func "grad(p_gh)" -noZero
+potentialFreeSurfaceDyMFoam -postProcess -dict system/postProcessDict -latestTime
+potentialFreeSurfaceDyMFoam -postProcess -dict system/noSuchDict -latestTime || true
+potentialFreeSurfaceDyMFoam -postProcess -func noSuchFunctionObject -latestTime || true
+mpirun --oversubscribe -np 2 potentialFreeSurfaceDyMFoam -parallel || true
+decomposePar
+mpirun --oversubscribe -np 2 potentialFreeSurfaceDyMFoam -parallel
+decomposePar -force -decomposeParDict system/decomposeParDict.alt
+mpirun --oversubscribe -np 2 potentialFreeSurfaceDyMFoam -parallel -decomposeParDict system/decomposeParDict.alt
+cp constant/dynamicMeshDict constant/dynamicMeshDict.orig
+foamDictionary -entry diffusivity -remove constant/dynamicMeshDict
+potentialFreeSurfaceDyMFoam -noFunctionObjects || true
+foamDictionary -entry motionSolver -set noSuchMotionSolver constant/dynamicMeshDict
+potentialFreeSurfaceDyMFoam -noFunctionObjects || true
+cp constant/dynamicMeshDict.orig constant/dynamicMeshDict
+mv 0/pointDisplacement 0/pointDisplacement.off
+potentialFreeSurfaceDyMFoam -noFunctionObjects || true
+mv 0/pointDisplacement.off 0/pointDisplacement

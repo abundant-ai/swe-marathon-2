@@ -1,0 +1,70 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       volScalarField;
+    object      T;
+}
+
+dimensions      [0 0 0 1 0 0 0];
+internalField   uniform 300;
+boundaryField
+{
+    inlet
+    {
+        type            totalTemperature;
+        gamma           1.4;
+        T0              uniform 320;
+        value           uniform 320;
+    }
+    outlet
+    {
+        type            inletOutletTotalTemperature;
+        gamma           1.4;
+        T0              uniform 300;
+        value           uniform 300;
+    }
+    bottom
+    {
+        type            wallHeatTransfer;
+        Tinf            uniform 350;
+        alphaWall       uniform 50;
+        value           uniform 300;
+    }
+    top
+    {
+        type            fixedGradient;
+        gradient        uniform -200;
+        value           uniform 300;
+    }
+    ami1a
+    {
+        type            fixedJumpAMI;
+        patchType       cyclicAMI;
+        jump            uniform 5;
+        value           uniform 300;
+    }
+    ami1b
+    {
+        type            fixedJumpAMI;
+        patchType       cyclicAMI;
+        value           uniform 300;
+    }
+    cyc2a
+    {
+        type            fixedJump;
+        patchType       cyclic;
+        jump            uniform -3;
+        value           uniform 300;
+    }
+    cyc2b
+    {
+        type            fixedJump;
+        patchType       cyclic;
+        value           uniform 300;
+    }
+    frontAndBack
+    {
+        type            empty;
+    }
+}

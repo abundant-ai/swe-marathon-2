@@ -1,0 +1,17 @@
+#!/bin/bash
+# from: mesh/foamyHexMesh/blob; exercises: foamyHexMesh -conformationOnly cell size control: searchableSurfaceControl cellSizeFunction linearDistance, uniformDistance, surfaceOffsetLinearDistance, linearSpatial, uniform; surfaceCellSizeFunction nonUniformField with cellSizeCalculationType automatic (curvature from surfaceFeatureExtract) and fieldFromFile; cellAspectRatioControl; writeCellShapeControlMesh / writeTetDualMesh
+cd "${0%/*}" || exit 1
+for f in linearDistance uniformDistance surfaceOffsetLinearDistance linearSpatial
+do
+    foamDictionary -entry motionControl/shapeControlFunctions/blob/cellSizeFunction -set $f system/foamyHexMeshDict
+    foamyHexMesh -conformationOnly
+    mv 1 mesh_$f
+done
+surfaceFeatureExtract
+foamDictionary -entry motionControl/shapeControlFunctions/blob/cellSizeFunction -set linearDistance system/foamyHexMeshDict
+foamDictionary -entry motionControl/shapeControlFunctions/blob/surfaceCellSizeFunction -set nonUniformField system/foamyHexMeshDict
+foamyHexMesh -conformationOnly
+mv 1 mesh_automatic
+foamDictionary -entry motionControl/shapeControlFunctions/blob/nonUniformFieldCoeffs/cellSizeCalculationType -set fieldFromFile system/foamyHexMeshDict
+foamyHexMesh -conformationOnly
+mv 1 mesh_fieldFromFile

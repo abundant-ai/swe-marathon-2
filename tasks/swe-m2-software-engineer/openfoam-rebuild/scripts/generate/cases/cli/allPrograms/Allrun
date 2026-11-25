@@ -1,0 +1,9 @@
+#!/bin/bash
+# from: scratch; exercises: command-line interface of every program: -help, -help-full, an unknown option, and a run in an empty folder
+cd "${0%/*}" || exit 1
+for p in $(ls "$FOAM_APPBIN"); do
+    $p -help || true
+    $p -help-full || true
+    $p -notAnOption || true
+    (cd emptyCase && $p || true)
+done

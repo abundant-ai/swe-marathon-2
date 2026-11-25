@@ -1,0 +1,45 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       volScalarField;
+    object      p;
+}
+
+dimensions      [0 2 -2 0 0 0 0];
+internalField   uniform 0;
+boundaryField
+{
+    inlet_lo
+    {
+        type            zeroGradient;
+    }
+    inlet_hi
+    {
+        type            rotatingTotalPressure;
+        rho             none;
+        psi             none;
+        gamma           1;
+        p0              uniform 0.6;
+        omega           constant (0 0 5);
+        value           uniform 0.6;
+    }
+    outlet
+    {
+        type            fixedValue;
+        value           uniform 0;
+    }
+    "bottom.*"
+    {
+        type            fixedFluxExtrapolatedPressure;
+        value           uniform 0;
+    }
+    "top.*"
+    {
+        type            zeroGradient;
+    }
+    frontAndBack
+    {
+        type            empty;
+    }
+}

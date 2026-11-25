@@ -1,0 +1,40 @@
+#!/bin/bash
+# from: incompressible/adjointOptimisationFoam/shapeOptimisation/sbend/laminar/opt/unconstrained/losses/BFGS (blockMesh converging-diverging channel, volumetricBSplines cartesian box, PtLosses, 3 cycles); exercises: steadyOptimisation unconstrained update methods steepestDescent, BFGS, DBFGS, LBFGS (damping), SR1, conjugateGradient (PolakRibiereRestarted)
+cd "${0%/*}" || exit 1
+blockMesh
+
+rm -rf 0 && cp -r 0.orig 0
+cp variants/steepestDescent/system/updateMethod system/updateMethod
+adjointOptimisationFoam
+rm -f optimisation/CPUcost
+mkdir -p runs/steepestDescent && mv [1-9]* optimisation runs/steepestDescent/
+
+rm -rf 0 && cp -r 0.orig 0
+cp variants/BFGS/system/updateMethod system/updateMethod
+adjointOptimisationFoam
+rm -f optimisation/CPUcost
+mkdir -p runs/BFGS && mv [1-9]* optimisation runs/BFGS/
+
+rm -rf 0 && cp -r 0.orig 0
+cp variants/DBFGS/system/updateMethod system/updateMethod
+adjointOptimisationFoam
+rm -f optimisation/CPUcost
+mkdir -p runs/DBFGS && mv [1-9]* optimisation runs/DBFGS/
+
+rm -rf 0 && cp -r 0.orig 0
+cp variants/LBFGS/system/updateMethod system/updateMethod
+adjointOptimisationFoam
+rm -f optimisation/CPUcost
+mkdir -p runs/LBFGS && mv [1-9]* optimisation runs/LBFGS/
+
+rm -rf 0 && cp -r 0.orig 0
+cp variants/SR1/system/updateMethod system/updateMethod
+adjointOptimisationFoam
+rm -f optimisation/CPUcost
+mkdir -p runs/SR1 && mv [1-9]* optimisation runs/SR1/
+
+rm -rf 0 && cp -r 0.orig 0
+cp variants/conjugateGradient/system/updateMethod system/updateMethod
+adjointOptimisationFoam
+rm -f optimisation/CPUcost
+mkdir -p runs/conjugateGradient && mv [1-9]* optimisation runs/conjugateGradient/

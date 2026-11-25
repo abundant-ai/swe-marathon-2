@@ -1,0 +1,29 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      ROMfieldsDict;
+}
+
+ROMmodel    DMD;
+field       p;
+object      dmdP;
+deltaT      0.005;
+time        0.1;
+modes       (0 1);
+
+amplitudes
+(
+    (3.117855e+00   0)
+    (-7.002580e-01  0)
+);
+
+eigenvalues
+(
+    (1.000007e+00   0)
+    (2.101677e-01   0)
+);
+
+startTime   0.005;
+dimensions  [0 2 -2 0 0 0 0];

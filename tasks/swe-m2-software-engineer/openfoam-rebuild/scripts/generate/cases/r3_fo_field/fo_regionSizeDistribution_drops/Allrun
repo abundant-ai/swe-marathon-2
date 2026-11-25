@@ -1,0 +1,7 @@
+#!/bin/bash
+# from: scratch; exercises: regionSizeDistribution function object (liquid core from patch, droplet histograms, coordinateSystem, isoPlanes downstream bins) via postProcess
+cd "${0%/*}" || exit 1
+blockMesh > log.blockMesh 2>&1
+rm -rf 0 && cp -r 0.orig 0
+setFields > log.setFields 2>&1
+postProcess -dict system/dropSizes -time 0 > log.postProcess 2>&1

@@ -1,0 +1,35 @@
+#!/bin/bash
+# from: basic/scalarTransportFoam/pitzDaily (16x8 skewed graded 2D channel); exercises: convection limiters in div(phi,T): Gamma, Gamma01, limitedGamma, OSPRE, filteredLinear, filteredLinear2, filteredLinear3, limitedCubic, limitedCubic01, limitedLimitedCubic, limitedLimitedLinear, limitedVanLeer, limitedMUSCL, blended, limitWith, limiterBlended
+blockMesh
+cp -r variants/Gamma/. .
+scalarTransportFoam
+cp -r variants/Gamma01/. .
+scalarTransportFoam
+cp -r variants/limitedGamma/. .
+scalarTransportFoam
+cp -r variants/OSPRE/. .
+scalarTransportFoam
+cp -r variants/filteredLinear/. .
+scalarTransportFoam
+cp -r variants/filteredLinear2/. .
+scalarTransportFoam
+cp -r variants/filteredLinear3/. .
+scalarTransportFoam
+cp -r variants/limitedCubic/. .
+scalarTransportFoam
+cp -r variants/limitedCubic01/. .
+scalarTransportFoam
+cp -r variants/limitedLimitedCubic/. .
+scalarTransportFoam
+cp -r variants/limitedLimitedLinear/. .
+scalarTransportFoam
+cp -r variants/limitedVanLeer/. .
+scalarTransportFoam
+cp -r variants/limitedMUSCL/. .
+scalarTransportFoam
+cp -r variants/blended/. .
+scalarTransportFoam
+cp -r variants/limitWith/. .
+scalarTransportFoam
+cp -r variants/limiterBlended/. .
+scalarTransportFoam

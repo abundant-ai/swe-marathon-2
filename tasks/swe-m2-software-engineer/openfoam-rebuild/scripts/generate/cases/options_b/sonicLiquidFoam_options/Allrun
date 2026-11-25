@@ -1,0 +1,27 @@
+#!/bin/bash
+# from: compressible/sonicLiquidFoam/decompressionTank (coarse 4-block mesh, 20 steps); exercises: sonicLiquidFoam -dry-run, -dry-run-write, -noFunctionObjects, -postProcess (-func/-latestTime, -funcs/-time, -field), -parallel with default and alternative -decomposeParDict; errors: -parallel before decomposePar, nonexistent -decomposeParDict, missing psi entry, missing transportProperties, missing rho0 entry, unknown -func
+blockMesh
+sonicLiquidFoam -dry-run
+sonicLiquidFoam -dry-run-write
+foamListTimes -rm
+sonicLiquidFoam -noFunctionObjects
+sonicLiquidFoam -postProcess -func "mag(U)" -latestTime
+sonicLiquidFoam -postProcess -funcs '(vorticity "grad(p)")' -time 5e-06:1e-05
+sonicLiquidFoam -postProcess -func "magSqr(p)" -field p -latestTime
+sonicLiquidFoam -postProcess -func noSuchFunctionObject -latestTime || true
+mpirun --oversubscribe -np 2 sonicLiquidFoam -parallel || true
+decomposePar
+mpirun --oversubscribe -np 2 sonicLiquidFoam -parallel
+decomposePar -force -decomposeParDict system/decomposeParDict.alt
+mpirun --oversubscribe -np 2 sonicLiquidFoam -parallel -decomposeParDict system/decomposeParDict.alt
+mpirun --oversubscribe -np 2 sonicLiquidFoam -parallel -decomposeParDict system/noSuchDecomposeParDict || true
+cp constant/thermodynamicProperties constant/thermodynamicProperties.orig
+foamDictionary -entry psi -remove constant/thermodynamicProperties
+sonicLiquidFoam -dry-run || true
+cp constant/thermodynamicProperties.orig constant/thermodynamicProperties
+foamDictionary -entry rho0 -remove constant/thermodynamicProperties
+sonicLiquidFoam -dry-run || true
+cp constant/thermodynamicProperties.orig constant/thermodynamicProperties
+mv constant/transportProperties constant/transportProperties.off
+sonicLiquidFoam -dry-run || true
+mv constant/transportProperties.off constant/transportProperties

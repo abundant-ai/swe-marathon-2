@@ -1,0 +1,105 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       volVectorField;
+    object      U;
+}
+
+dimensions      [0 1 -1 0 0 0 0];
+
+internalField   uniform (0.5 0 0);
+
+boundaryField
+{
+    in00
+    {
+        type            fixedProfile;
+        profile         table ((0 (0.5 0 0)) (0.2 (1.2 0 0)));
+        direction       (0 0 1);
+        origin          0;
+    }
+    in10
+    {
+        type            scaledFixedValue;
+        scale           table ((0 0.2) (10 1));
+        refValue
+        {
+            type            uniformFixedValue;
+            uniformValue    constant (1 0 0.1);
+        }
+    }
+    in20
+    {
+        type            exprFixedValue;
+        valueExpr       #{ vector(1 + 0.5*sin(0.5*time()), 0, 2*pos().z()) #};
+        value           uniform (1 0 0);
+    }
+    in01
+    {
+        type            swirlFlowRateInletVelocity;
+        flowRate        constant 0.04;
+        rpm             constant 120;
+        origin          (0 0.1 0.3);
+        axis            (1 0 0);
+        value           uniform (0 0 0);
+    }
+    in11
+    {
+        type            swirlInletVelocity;
+        origin          (0 0.3 0.3);
+        axis            (1 0 0);
+        axialVelocity   constant 1;
+        radialVelocity  constant 0.1;
+        tangentialVelocity constant 0.5;
+        value           uniform (0 0 0);
+    }
+    in21
+    {
+        type            fixedValue;
+        value           uniform (1 0 0);
+    }
+    out0
+    {
+        type            matchedFlowRateOutletVelocity;
+        inletPatch      in21;
+        value           uniform (1 0 0);
+    }
+    out1
+    {
+        type            uniformInletOutlet;
+        uniformInletValue constant (0 0 0);
+        value           uniform (0 0 0);
+    }
+    out2
+    {
+        type            fixedMeanOutletInlet;
+        meanValue       table ((0 (0.8 0 0)) (10 (1 0 0)));
+        value           uniform (1 0 0);
+    }
+    bottom
+    {
+        type            partialSlip;
+        valueFraction   uniform 0.3;
+    }
+    top
+    {
+        type            directionMixed;
+        refValue        uniform (0 0 0);
+        refGradient     uniform (0 0 0);
+        valueFraction   uniform (1 0 0 1 0 0);
+    }
+    front
+    {
+        type            exprMixed;
+        valueExpr       "vector(0, 0, 0)";
+        gradientExpr    "vector(0, 0, 0)";
+        fractionExpr    "pos().x()/3";
+        value           uniform (0 0 0);
+    }
+    back
+    {
+        type            uniformFixedGradient;
+        uniformGradient table ((0 (0 0 0)) (10 (-0.5 0 0)));
+    }
+}

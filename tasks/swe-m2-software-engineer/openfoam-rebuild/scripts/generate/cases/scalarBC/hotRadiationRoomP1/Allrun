@@ -1,0 +1,5 @@
+#!/bin/bash
+# from: heatTransfer/buoyantSimpleFoam/hotRadiationRoom (coarsened, 20 iterations); exercises: scalar BC MarshakRadiationFixedTemperature on the P1 incident-radiation field G
+cd "${0%/*}" || exit 1
+blockMesh
+buoyantSimpleFoam

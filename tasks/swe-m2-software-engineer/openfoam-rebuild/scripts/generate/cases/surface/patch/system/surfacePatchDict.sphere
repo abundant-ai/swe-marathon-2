@@ -1,0 +1,49 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  v2606                                 |
+|   \\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      surfacePatchDict;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+geometry
+{
+    sphere.stl
+    {
+        type    triSurfaceMesh;
+    }
+
+    slab
+    {
+        type    searchableBox;
+        min     (1.5 -1 -1);
+        max     (3 2 1);
+    }
+
+    plate.stl
+    {
+        type triSurfaceMesh;
+    }
+};
+
+
+surfaces
+{
+    // Regionise the plate by two cutting surfaces
+    plate.stl
+    {
+        type        cut;
+        cutters     (sphere.stl slab);
+    }
+}
+
+
+// ************************************************************************* //

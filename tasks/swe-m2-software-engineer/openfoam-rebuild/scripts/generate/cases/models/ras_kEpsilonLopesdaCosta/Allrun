@@ -1,0 +1,6 @@
+#!/bin/bash
+# from: incompressible/simpleFoam/pitzDaily; exercises: RAS model kEpsilonLopesdaCosta with powerLawLopesdaCosta canopy porosity (explicitPorositySource, topSurface STL)
+cd "${0%/*}" || exit 1
+blockMesh
+topoSet
+simpleFoam

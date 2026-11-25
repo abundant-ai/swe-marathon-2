@@ -1,0 +1,6 @@
+#!/bin/bash
+# from: scratch (mixture control file format: list of (specie volFrac) followed by mixture name); exercises: mixtureAdiabaticFlameT for two mixtures, and the volume-fraction-sum error
+cd "${0%/*}" || exit 1
+mixtureAdiabaticFlameT controlDict.stoich
+mixtureAdiabaticFlameT controlDict.lean
+mixtureAdiabaticFlameT controlDict.badSum || true

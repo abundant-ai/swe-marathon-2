@@ -1,0 +1,9 @@
+#!/bin/bash
+# from: incompressible/pimpleFoam/LES/vortexShed (noiseDict-point/-surface) + icoFoam cavity for surface data; exercises: noise pointNoise (Hanning overlap, uniform window with dBA weighting and freq limits) on hand-written signals, surfaceNoise on ensight lid pressure, unknown noiseModel error
+cd "${0%/*}" || exit 1
+blockMesh
+icoFoam
+noise -dict system/noiseDict-point
+noise -dict system/noiseDict-pointWeighted
+noise -dict system/noiseDict-surface
+noise -dict system/noiseDict-bad || true

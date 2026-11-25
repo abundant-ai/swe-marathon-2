@@ -1,0 +1,15 @@
+#!/bin/bash
+# from: heatTransfer/chtMultiRegionSimpleFoam/multiRegionHeaterRadiation (viewFactor setup) on a scratch 6-patch wall box; exercises: faceAgglomerate plain, -dict (coarser, writeFacesAgglomeration), -region (mesh copied to constant/box), -parallel, -dict without the floor subdict (patch skipped); errors: nonexistent -dict, nonexistent region, nFacesInCoarsestLevel missing, -case noSuchDir
+blockMesh
+mkdir -p constant/box/polyMesh
+cp constant/polyMesh/* constant/box/polyMesh/
+faceAgglomerate
+faceAgglomerate -dict system/viewFactorsDict.coarse
+faceAgglomerate -region box
+decomposePar
+mpirun --oversubscribe -np 2 faceAgglomerate -parallel
+faceAgglomerate -dict system/noSuchDict || true
+faceAgglomerate -region noSuchRegion || true
+faceAgglomerate -dict system/viewFactorsDict.noFloor
+faceAgglomerate -dict system/viewFactorsDict.noNFaces || true
+faceAgglomerate -case noSuchDir || true

@@ -1,0 +1,6 @@
+#!/bin/bash
+# from: lagrangian/sprayFoam/aachenBomb; exercises: simpleSprayFoam (steady SIMPLE spray, steady-state cloud with calcFrequency/maxTrackTime)
+cd "${0%/*}" || exit
+cp -r 0.orig 0
+blockMesh
+simpleSprayFoam

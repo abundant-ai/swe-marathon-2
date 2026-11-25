@@ -1,0 +1,5 @@
+#!/bin/bash
+# from: incompressible/icoFoam/cavity/cavity; exercises: sampled surfaces surfaceCut/isoSurfacePoint/isoSurface(cell)/isoSurfaceTopo(multi-value)/thresholdCellFaces/patchInternalField/meshedSurfaceNormal/none written with x3d/starcd/nastran/abaqus/foam/ensight(uncollated)/vtk/boundaryData/debug/proxy(stl)/raw surface writers
+cd "${0%/*}" || exit 1
+blockMesh
+icoFoam

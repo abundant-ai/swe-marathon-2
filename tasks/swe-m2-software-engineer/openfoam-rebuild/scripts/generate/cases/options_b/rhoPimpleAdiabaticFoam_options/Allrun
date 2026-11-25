@@ -1,0 +1,30 @@
+#!/bin/bash
+# from: compressible/rhoPimpleAdiabaticFoam/rutlandVortex2D (8x10 cells per block, setFields pressure pulse instead of coded preProcess, 10 steps); exercises: rhoPimpleAdiabaticFoam -dry-run, -dry-run-write, -noFunctionObjects, -postProcess (-latestTime probes, -func/-time, -funcs/-fields/-noZero), -parallel with default and alternative -decomposeParDict, absent PIMPLE dict (defaults); errors: -parallel before decomposePar, nonexistent -decomposeParDict, unknown thermo type, missing T field, unknown -func
+blockMesh
+cp -r 0.orig 0
+setFields
+rhoPimpleAdiabaticFoam -dry-run
+rhoPimpleAdiabaticFoam -dry-run-write
+foamListTimes -rm
+rhoPimpleAdiabaticFoam -noFunctionObjects
+rhoPimpleAdiabaticFoam -postProcess -latestTime
+rhoPimpleAdiabaticFoam -postProcess -func "mag(U)" -time 0.00016:0.00032
+rhoPimpleAdiabaticFoam -postProcess -funcs '(vorticity "grad(p)")' -fields '(U p)' -noZero
+rhoPimpleAdiabaticFoam -postProcess -func noSuchFunctionObject -latestTime || true
+mpirun --oversubscribe -np 2 rhoPimpleAdiabaticFoam -parallel || true
+decomposePar
+mpirun --oversubscribe -np 2 rhoPimpleAdiabaticFoam -parallel
+decomposePar -force -decomposeParDict system/decomposeParDict.alt
+mpirun --oversubscribe -np 2 rhoPimpleAdiabaticFoam -parallel -decomposeParDict system/decomposeParDict.alt
+mpirun --oversubscribe -np 2 rhoPimpleAdiabaticFoam -parallel -decomposeParDict system/noSuchDecomposeParDict || true
+cp system/fvSolution system/fvSolution.orig
+foamDictionary -entry PIMPLE -remove system/fvSolution
+rhoPimpleAdiabaticFoam -dry-run
+cp system/fvSolution.orig system/fvSolution
+cp constant/thermophysicalProperties constant/thermophysicalProperties.orig
+foamDictionary -entry thermoType/type -set noSuchThermo constant/thermophysicalProperties
+rhoPimpleAdiabaticFoam -dry-run || true
+cp constant/thermophysicalProperties.orig constant/thermophysicalProperties
+mv 0/T 0/T.off
+rhoPimpleAdiabaticFoam -dry-run || true
+mv 0/T.off 0/T

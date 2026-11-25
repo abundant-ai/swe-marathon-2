@@ -1,0 +1,58 @@
+FoamFile { version 2.0; format ascii; class pointVectorField; object pointDisplacement; }
+dimensions [0 1 0 0 0 0 0];
+internalField uniform (0 0 0);
+boundaryField
+{
+    ymax
+    {
+        type            angularOscillatingDisplacement;
+        axis            (0 0 1);
+        origin          (0.5 0.5 0.5);
+        angle0          0;
+        amplitude       0.1;
+        omega           3.14159;
+        value           uniform (0 0 0);
+    }
+    ymin
+    {
+        type            waveDisplacement;
+        amplitude       (0 0.05 0);
+        omega           3.14159;
+        waveNumber      (6.28318 0 0);
+        value           uniform (0 0 0);
+    }
+    xmax
+    {
+        type            timeVaryingMappedFixedValue;
+        offset          (0 0 0);
+        setAverage      false;
+        value           uniform (0 0 0);
+    }
+    xmin
+    {
+        type            uniformInterpolatedDisplacement;
+        field           wantedDisplacement;
+        interpolationScheme linear;
+        value           uniform (0 0 0);
+    }
+    zmin
+    {
+        type            surfaceSlipDisplacement;
+        geometry
+        {
+            bottomPlane
+            {
+                type        searchablePlane;
+                planeType   pointAndNormal;
+                pointAndNormalDict { point (0 0 0); normal (0 0 1); }
+            }
+        }
+        projectMode     nearest;
+        value           uniform (0 0 0);
+    }
+    zmax
+    {
+        type            fixedValue;
+        value           uniform (0 0 0);
+    }
+}

@@ -1,0 +1,4 @@
+#!/bin/bash
+# from: combustion/XiEngineFoam/kivaTest (engineGeometry + swirl entries, blockMesh box); exercises: engineSwirl swirl-profile initialisation of U (swirlAxis/swirlCenter/swirlRPMRatio/swirlProfile)
+blockMesh
+engineSwirl

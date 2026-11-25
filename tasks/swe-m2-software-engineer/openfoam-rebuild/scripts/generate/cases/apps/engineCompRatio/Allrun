@@ -1,0 +1,4 @@
+#!/bin/bash
+# from: combustion/XiEngineFoam/kivaTest (engineGeometry, blockMesh box instead of kivaToFoam); exercises: engineCompRatio with layered engineMesh and crankConrod engineTime
+blockMesh
+engineCompRatio

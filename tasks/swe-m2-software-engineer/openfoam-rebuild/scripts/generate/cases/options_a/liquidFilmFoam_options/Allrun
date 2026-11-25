@@ -1,0 +1,22 @@
+#!/bin/bash
+# from: finiteArea/liquidFilmFoam/cylinder (coarsened 4/4/6/6 divisions, 100 steps); exercises: liquidFilmFoam options -noFunctionObjects (surfaceCourantNumber FO), plain run, -parallel (decomposePar incl. finite-area fields); errors: unsupported -postProcess, -case noSuchDir, run before makeFaMesh (no faMesh), missing 0/finite-area/h, missing sigma/h0, non-numeric sigma
+cd "${0%/*}" || exit 1
+blockMesh
+liquidFilmFoam || true
+makeFaMesh
+setFields
+liquidFilmFoam -noFunctionObjects
+liquidFilmFoam
+liquidFilmFoam -postProcess || true
+liquidFilmFoam -case noSuchDir || true
+decomposePar
+mpirun --oversubscribe -np 2 liquidFilmFoam -parallel
+rm -rf 0.0*
+mv 0/finite-area/h h.off
+liquidFilmFoam || true
+mv h.off 0/finite-area/h
+for v in missingSigma missingH0 badSigmaDims; do
+    cp -r variants/$v/. .
+    liquidFilmFoam || true
+    cp -r variants/orig/. .
+done

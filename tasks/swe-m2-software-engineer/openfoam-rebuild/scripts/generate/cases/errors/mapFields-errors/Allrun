@@ -1,0 +1,20 @@
+#!/bin/bash
+# from: incompressible/icoFoam/cavity/cavity; exercises: mapFields errors - nonexistent source case, source without mesh, missing mapFieldsDict (non-consistent mode), bad -sourceTime/-mapMethod, mapFieldsDict with unknown patches or missing patchMap, missing source field
+blockMesh
+mapFields noSuchCase -consistent || true
+mapFields source -consistent || true
+blockMesh -case source
+mapFields source || true
+mapFields source -consistent -sourceTime 5 || true
+mapFields source -consistent -sourceTime abc || true
+mapFields source -consistent -mapMethod badMethod || true
+cp system/mapFieldsDict.unknownPatch system/mapFieldsDict
+mapFields source || true
+cp system/mapFieldsDict.unknownCutting system/mapFieldsDict
+mapFields source || true
+cp system/mapFieldsDict.missingPatchMap system/mapFieldsDict
+mapFields source || true
+rm system/mapFieldsDict
+mv source/0/U source/U.off
+mapFields source -consistent || true
+mv source/U.off source/0/U

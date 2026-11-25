@@ -1,0 +1,29 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      1DbaffleSolidThermo;
+}
+
+specie
+{
+    molWeight       20;
+}
+transport
+{
+    kappa0          1;
+    n0              0.5;
+    Tref            300;
+}
+thermodynamics
+{
+    Hf              0;
+    C0              10;
+    n0              1.2;
+    Tref            300;
+}
+equationOfState
+{
+    rho             10;
+}

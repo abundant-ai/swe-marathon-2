@@ -1,0 +1,8 @@
+FoamFile { version 2.0; format ascii; class pointVectorField; object pointDisplacement; }
+dimensions [0 1 0 0 0 0 0];
+internalField uniform (0 0 0);
+boundaryField
+{
+    ymax { type oscillatingDisplacement; amplitude (0.15 0 0); omega 3.14159; value uniform (0 0 0); }
+    ".*" { type fixedValue; value uniform (0 0 0); }
+}

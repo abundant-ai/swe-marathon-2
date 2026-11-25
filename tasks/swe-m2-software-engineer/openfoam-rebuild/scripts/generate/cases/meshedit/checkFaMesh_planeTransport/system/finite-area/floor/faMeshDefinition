@@ -1,0 +1,44 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  v2606                                 |
+|   \\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      faMeshDefinition;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+// Second area region on the bottom wall; edges classified by neighbouring polyPatch
+polyMeshPatches ( bottom );
+
+emptyPatch      floorEdges;
+
+boundary
+{
+    floorSides
+    {
+        type patch;
+        neighbourPolyPatch bound;
+    }
+
+    floorIn
+    {
+        type patch;
+        neighbourPolyPatch inlet;
+    }
+
+    floorOut
+    {
+        type patch;
+        neighbourPolyPatch outlet;
+    }
+}
+
+
+// ************************************************************************** //

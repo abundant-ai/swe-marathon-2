@@ -1,0 +1,37 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+  =========                 |
+  \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox
+   \\    /   O peration     |
+    \\  /    A nd           | www.openfoam.com
+     \\/     M anipulation  |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      thermophysicalProperties;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+thermoType
+{
+    type            heRhoThermo;
+    mixture         pureMixture;
+    properties      liquid;
+    energy          sensibleInternalEnergy;
+}
+
+// built-in C7H16 with selected NSRDS coefficients overridden from the dictionary
+mixture
+{
+    C7H16
+    {
+        W       100.204;
+        Tc      540.2;
+        Pc      2.74e+6;
+        rho     { a 63.0; b 0.26211; c 540.2; d 0.28141; }
+        mu      { a -24.2; b 1533.1; c 2.0087; d 0; e 0; }
+        K       { a 0.22; b -0.000303; c 0; d 0; e 0; f 0; }
+    }
+}

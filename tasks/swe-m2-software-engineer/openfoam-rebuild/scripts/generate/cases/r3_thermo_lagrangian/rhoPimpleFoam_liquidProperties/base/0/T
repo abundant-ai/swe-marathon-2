@@ -1,0 +1,26 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+  =========                 |
+  \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox
+   \\    /   O peration     |
+    \\  /    A nd           | www.openfoam.com
+     \\/     M anipulation  |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       volScalarField;
+    object      T;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+#include "<constant>/Tref"
+dimensions      [0 0 0 1 0 0 0];
+internalField   uniform $Tref;
+boundaryField
+{
+    inlet        { type fixedValue; value uniform $Tref; }
+    outlet       { type inletOutlet; inletValue uniform $Tref; value uniform $Tref; }
+    walls        { type fixedValue; value uniform #eval{ $Tref + 10 }; }
+    frontAndBack { type empty; }
+}

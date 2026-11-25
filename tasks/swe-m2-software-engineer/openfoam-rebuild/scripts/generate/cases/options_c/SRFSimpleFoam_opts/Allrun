@@ -1,0 +1,24 @@
+#!/bin/bash
+# from: incompressible/SRFSimpleFoam/mixer (as vectorBC/SRFmixerWall, 20 iterations); exercises: SRFSimpleFoam -dry-run, -dry-run-write, -noFunctionObjects, -postProcess (-func mag(Urel) on -latestTime, -funcs vorticity+yPlus on -time), -parallel restart; errors: missing SRFProperties, unknown SRFModel (valid-type list), missing axis, missing Urel field
+cd "${0%/*}" || exit 1
+blockMesh
+SRFSimpleFoam -dry-run
+SRFSimpleFoam -dry-run-write
+rm -rf 1
+SRFSimpleFoam -noFunctionObjects
+SRFSimpleFoam -postProcess -latestTime -func "mag(Urel)"
+SRFSimpleFoam -postProcess -time 10 -funcs "(vorticity yPlus)"
+mv constant/SRFProperties constant/SRFProperties.orig
+SRFSimpleFoam -dry-run || true
+cp variants/SRFProperties.badModel constant/SRFProperties
+SRFSimpleFoam -dry-run || true
+cp variants/SRFProperties.noAxis constant/SRFProperties
+SRFSimpleFoam -dry-run || true
+mv constant/SRFProperties.orig constant/SRFProperties
+mv 0/Urel 0/Urel.off
+SRFSimpleFoam -dry-run || true
+mv 0/Urel.off 0/Urel
+foamDictionary -entry endTime -set 30 system/controlDict
+foamDictionary -entry startFrom -set latestTime system/controlDict
+decomposePar -latestTime
+mpirun -np 2 SRFSimpleFoam -parallel

@@ -1,0 +1,27 @@
+#!/bin/bash
+# from: multiphase/interMixingFoam/laminar/damBreak (mesh halved, endTime 0.05); exercises: interMixingFoam options -dry-run, -dry-run-write, -noFunctionObjects, -postProcess (-func/-funcs/-latestTime/-time/-noZero), -parallel; errors: nonexistent/bad -time, -case noSuchDir, missing 0/alpha.other, missing D23/sigma12, unknown phase transportModel, missing phase sub-dictionary
+cd "${0%/*}" || exit 1
+blockMesh
+setFields
+interMixingFoam -dry-run
+interMixingFoam -dry-run-write
+rm -rf 0.[0-9]*
+interMixingFoam -noFunctionObjects
+interMixingFoam
+interMixingFoam -postProcess -func 'mag(U)' -latestTime
+interMixingFoam -postProcess -funcs '(mag(U) grad(p_rgh))' -time 0.025
+interMixingFoam -postProcess -func 'fieldMinMax(alpha.other)' -noZero
+interMixingFoam -postProcess -func 'mag(U)' -time 99 || true
+interMixingFoam -postProcess -func 'mag(U)' -time abc || true
+interMixingFoam -case noSuchDir || true
+decomposePar
+mpirun --oversubscribe -np 2 interMixingFoam -parallel
+rm -rf 0.[0-9]*
+mv 0/alpha.other alpha.other.off
+interMixingFoam || true
+mv alpha.other.off 0/alpha.other
+for v in missingD23 missingSigma12 unknownTransportModel missingPhaseDict; do
+    cp -r variants/$v/. .
+    interMixingFoam || true
+    cp -r variants/orig/. .
+done

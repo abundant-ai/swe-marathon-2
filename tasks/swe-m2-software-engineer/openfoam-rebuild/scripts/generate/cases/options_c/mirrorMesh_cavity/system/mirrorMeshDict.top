@@ -1,0 +1,19 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      mirrorMeshDict;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+planeType           embeddedPoints;
+
+embeddedPointsDict
+{
+    point1  (0 0.1 0);
+    point2  (0.1 0.1 0);
+    point3  (0 0.1 0.01);
+}
+
+planeTolerance      1e-3;

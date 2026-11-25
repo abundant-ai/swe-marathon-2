@@ -1,0 +1,26 @@
+#!/bin/bash
+# from: incompressible/icoFoam/cavity (two-block variant); exercises: foamToSurface writers (obj stl stlb vtk vtp off smesh ac gts nas tri x3d starcd abaqus flma), -tri, -scale, unknown-extension error
+cd "${0%/*}" || exit 1
+blockMesh
+mkdir -p surf
+foamToSurface surf/boundary.obj
+foamToSurface surf/boundary.stl
+foamToSurface surf/boundary.stlb
+foamToSurface surf/boundary.vtk
+foamToSurface surf/boundary.vtp
+foamToSurface surf/boundary.off
+foamToSurface surf/boundary.smesh
+foamToSurface surf/boundary.ac
+foamToSurface surf/boundary.gts
+foamToSurface surf/boundary.nas
+foamToSurface surf/boundary.tri
+foamToSurface surf/boundary.x3d
+foamToSurface surf/boundary.starcd
+foamToSurface surf/boundary.abaqus
+foamToSurface surf/boundary.flma
+foamToSurface -tri surf/triangulated.obj
+foamToSurface -tri -scale 1000 surf/scaledMM.stl
+foamToSurface -scale 10 -constant -latestTime surf/scaled.vtk
+foamToSurface surf/boundary.unknownExt || true
+# obj/off/smesh/vtk/vtp/starcd headers carry a wall-clock timestamp: blank it so outputs compare
+sed -i 's/written [0-9]\{4\}-[0-9][0-9]-[0-9][0-9]T[0-9:]*/written DATE/' surf/*.obj surf/*.off surf/*.smesh surf/*.vtk surf/*.vtp surf/*.inp

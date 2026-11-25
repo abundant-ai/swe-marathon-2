@@ -1,0 +1,24 @@
+#!/bin/bash
+# from: lagrangian/sprayFoam/aachenBomb (spray on solidBody linearMotion mesh); exercises: sprayDyMFoam options -noFunctionObjects, -postProcess -func/-latestTime/-time, -parallel (simple and hierarchical via -decomposeParDict), errors: -parallel without mpirun/decomposition, missing -decomposeParDict file, missing cloud properties, missing dynamicMeshDict entry
+cd "${0%/*}" || exit
+cp -r 0.orig 0
+blockMesh
+sprayDyMFoam -parallel || true
+mpirun --oversubscribe -np 2 sprayDyMFoam -parallel || true
+sprayDyMFoam -noFunctionObjects
+sprayDyMFoam
+sprayDyMFoam -postProcess -func 'mag(U)' -latestTime
+sprayDyMFoam -postProcess -func 'grad(p)' -time 1e-05
+sprayDyMFoam -postProcess -func noSuchFunction -latestTime || true
+decomposePar
+mpirun --oversubscribe -np 2 sprayDyMFoam -parallel
+decomposePar -force -decomposeParDict system/decomposeParDict.hier
+mpirun --oversubscribe -np 2 sprayDyMFoam -parallel -decomposeParDict system/decomposeParDict.hier
+mpirun --oversubscribe -np 2 sprayDyMFoam -parallel -decomposeParDict system/noSuchDict || true
+mv constant/sprayCloudProperties constant/sprayCloudProperties.off
+sprayDyMFoam || true
+mv constant/sprayCloudProperties.off constant/sprayCloudProperties
+cp constant/dynamicMeshDict constant/dynamicMeshDict.orig
+foamDictionary -entry solidBodyMotionFunction -remove constant/dynamicMeshDict
+sprayDyMFoam || true
+mv constant/dynamicMeshDict.orig constant/dynamicMeshDict

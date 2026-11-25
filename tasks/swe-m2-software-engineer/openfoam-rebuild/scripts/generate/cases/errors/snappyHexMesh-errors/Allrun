@@ -1,0 +1,20 @@
+#!/bin/bash
+# from: scratch; exercises: snappyHexMesh errors - no mesh, missing dict, missing STL/eMesh files, unknown geometry type, missing geometry/castellation/quality/mergeTolerance entries, refinement surface not in geometry, locationInMesh outside domain, bad refinement mode
+snappyHexMesh -overwrite || true
+blockMesh
+mv system/snappyHexMeshDict system/snappyHexMeshDict.off
+snappyHexMesh -overwrite || true
+mv system/snappyHexMeshDict.off system/snappyHexMeshDict
+snappyHexMesh -overwrite -dict system/noSuchDict || true
+snappyHexMesh -overwrite -dict system/snappyHexMeshDict.badRefinementMode || true
+snappyHexMesh -overwrite -dict system/snappyHexMeshDict.locationOutside || true
+snappyHexMesh -overwrite -dict system/snappyHexMeshDict.missingCastellatedSwitch || true
+snappyHexMesh -overwrite -dict system/snappyHexMeshDict.missingFeatureFile || true
+snappyHexMesh -overwrite -dict system/snappyHexMeshDict.missingLevel || true
+snappyHexMesh -overwrite -dict system/snappyHexMeshDict.missingMaxGlobalCells || true
+snappyHexMesh -overwrite -dict system/snappyHexMeshDict.missingMergeTolerance || true
+snappyHexMesh -overwrite -dict system/snappyHexMeshDict.missingQualityControls || true
+snappyHexMesh -overwrite -dict system/snappyHexMeshDict.missingSurfaceFile || true
+snappyHexMesh -overwrite -dict system/snappyHexMeshDict.sphereMissingRadius || true
+snappyHexMesh -overwrite -dict system/snappyHexMeshDict.unknownGeometryType || true
+snappyHexMesh -overwrite -dict system/snappyHexMeshDict.unknownRefinementSurface || true

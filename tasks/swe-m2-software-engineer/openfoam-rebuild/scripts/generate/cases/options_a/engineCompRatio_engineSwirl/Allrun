@@ -1,0 +1,33 @@
+#!/bin/bash
+# from: combustion/XiEngineFoam/kivaTest (engineGeometry + swirl entries, blockMesh box); exercises: engineCompRatio and engineSwirl plain, -case, -parallel; errors: missing engineGeometry, stroke omitted (defaults to 0), missing swirlProfile, unknown engineMesh, missing U, -case noSuchDir
+cp -r ./-180.orig ./-180
+blockMesh
+engineCompRatio
+engineSwirl
+mkdir -p copy
+cp -r system constant copy/
+cp -r ./-180.orig copy/-180
+engineCompRatio -case copy
+engineSwirl -case copy
+decomposePar
+mpirun --oversubscribe -np 2 engineCompRatio -parallel
+mpirun --oversubscribe -np 2 engineSwirl -parallel
+engineCompRatio -case noSuchDir || true
+engineSwirl -case noSuchDir || true
+cp -r variants/noStroke/. .
+engineCompRatio || true
+cp -r variants/orig/. .
+cp -r variants/noSwirlProfile/. .
+engineSwirl || true
+cp -r variants/orig/. .
+cp -r variants/badEngineMesh/. .
+engineCompRatio || true
+engineSwirl || true
+cp -r variants/orig/. .
+mv constant/engineGeometry constant/engineGeometry.off
+engineCompRatio || true
+engineSwirl || true
+mv constant/engineGeometry.off constant/engineGeometry
+mv ./-180/U ./-180/U.off
+engineSwirl || true
+mv ./-180/U.off ./-180/U

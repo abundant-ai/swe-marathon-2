@@ -1,0 +1,24 @@
+#!/bin/bash
+# from: verificationAndValidation/turbulenceModels/planeChannel (EBRSM.setTurbulenceFields setup, 2x10 per block, plus a kEpsilon 'coarse' region); exercises: setTurbulenceFields default dict, -dict alternative (k/epsilon only, other constants), -region, -parallel, -decomposeParDict, and errors (missing uRef, missing dict, unknown field name, nonexistent region); -region (reads the default-region dict, writes R/omega/f for a kEpsilon model) and -region with -dict
+cd "${0%/*}" || exit 1
+blockMesh
+blockMesh -region coarse
+mkdir -p results
+cp -r 0.orig 0
+setTurbulenceFields
+mv 0 results/default
+cp -r 0.orig 0
+setTurbulenceFields -dict system/setTurbulenceFieldsDict.kOnly
+mv 0 results/kOnly
+cp -r 0.orig 0
+setTurbulenceFields -region coarse
+decomposePar
+mpirun --oversubscribe -np 2 setTurbulenceFields -parallel
+mkdir -p results/parallel && mv processor0 processor1 results/parallel/
+decomposePar -decomposeParDict system/decomposeParDict.alt
+mpirun --oversubscribe -np 3 setTurbulenceFields -parallel -decomposeParDict system/decomposeParDict.alt
+setTurbulenceFields -dict system/setTurbulenceFieldsDict.noURef || true
+setTurbulenceFields -dict system/setTurbulenceFieldsDict.badField || true
+setTurbulenceFields -dict system/noSuchDict || true
+setTurbulenceFields -region noSuchRegion || true
+setTurbulenceFields -region coarse -dict system/coarse/setTurbulenceFieldsDict

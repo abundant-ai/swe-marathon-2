@@ -1,0 +1,30 @@
+#!/bin/bash
+# from: compressible/overRhoSimpleFoam/hotCylinder (coarsened, 4 iterations); exercises: overRhoSimpleFoam options -noFunctionObjects -postProcess -func -latestTime -parallel -decomposeParDict, plus errors (unsupported -dry-run, unknown -func, unknown thermo transport type, missing T field, -parallel without processor dirs)
+extrudeMesh -case cylinderMesh
+createPatch -case cylinderMesh -overwrite
+blockMesh
+mergeMeshes . cylinderMesh -overwrite
+topoSet
+cp -r 0.orig 0
+setFields
+overRhoSimpleFoam -dry-run || true
+overRhoSimpleFoam
+overRhoSimpleFoam -postProcess -func 'mag(U)' -latestTime
+overRhoSimpleFoam -postProcess -func noSuchFunction -latestTime || true
+rm -rf [1-9]* postProcessing
+overRhoSimpleFoam -noFunctionObjects
+rm -rf [1-9]* postProcessing
+overRhoSimpleFoam -parallel || true
+mv 0/T 0/T.off
+overRhoSimpleFoam || true
+mv 0/T.off 0/T
+mv constant/thermophysicalProperties constant/thermophysicalProperties.orig
+sed 's/sutherland/sutherlandX/' constant/thermophysicalProperties.orig > constant/thermophysicalProperties
+overRhoSimpleFoam || true
+mv constant/thermophysicalProperties.orig constant/thermophysicalProperties
+decomposePar
+mpirun --oversubscribe -np 2 overRhoSimpleFoam -parallel
+reconstructPar -latestTime
+rm -rf [1-9]*
+decomposePar -force -decomposeParDict system/decomposeParDict.hier
+mpirun --oversubscribe -np 2 overRhoSimpleFoam -parallel -decomposeParDict system/decomposeParDict.hier

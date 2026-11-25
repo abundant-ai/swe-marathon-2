@@ -1,0 +1,6 @@
+#!/bin/bash
+# from: heatTransfer/buoyantSimpleFoam/hotRadiationRoomFvDOM (coarsened, 20 iterations); exercises: heatTransferCoeff models ReynoldsAnalogy (rho field / rhoInf), faceZoneReferenceTemperature, localReferenceTemperature; wallHeatFlux gauge model (convective/radiative files, fields)
+cd "${0%/*}" || exit 1
+blockMesh > log.blockMesh 2>&1
+topoSet > log.topoSet 2>&1
+buoyantSimpleFoam > log.buoyantSimpleFoam 2>&1

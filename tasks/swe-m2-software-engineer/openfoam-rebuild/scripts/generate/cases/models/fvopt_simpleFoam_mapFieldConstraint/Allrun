@@ -1,0 +1,7 @@
+#!/bin/bash
+# from: incompressible/simpleFoam/pitzDaily; exercises: fvOptions scalarMapFieldConstraint (k), vectorMapFieldConstraint (U), symmTensorMapFieldConstraint (R) mapped from a separate source mesh (LRR model)
+cd "${0%/*}" || exit 1
+blockMesh
+topoSet
+blockMesh -case source
+simpleFoam

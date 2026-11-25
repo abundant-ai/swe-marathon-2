@@ -1,0 +1,8 @@
+#!/bin/bash
+# from: scratch (profiling files as written by a parallel icoFoam run with profiling active); exercises: profilingSummary max/avg/min over 3 processors, all times and -latestTime, trigger missing on one processor, error with no processor dirs
+cd "${0%/*}" || exit 1
+profilingSummary
+mv postProcessing postProcessing_all
+profilingSummary -latestTime
+mkdir -p noProcs/system && cp system/controlDict noProcs/system/
+profilingSummary -case noProcs || true

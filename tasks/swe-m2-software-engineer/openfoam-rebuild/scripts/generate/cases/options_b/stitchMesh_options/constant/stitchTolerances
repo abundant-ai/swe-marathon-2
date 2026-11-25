@@ -1,0 +1,26 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  v2606                                 |
+|   \\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    location    "constant";
+    object      stitchTolerances;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+// slidingInterface tolerances (looser than default)
+pointMergeTol       0.1;
+edgeMergeTol        0.05;
+nFacesPerSlaveEdge  5;
+edgeFaceEscapeLimit 10;
+integralAdjTol      0.15;
+edgeMasterCatchFraction 0.4;
+edgeCoPlanarTol     0.8;
+edgeEndCutoffTol    0.0001;

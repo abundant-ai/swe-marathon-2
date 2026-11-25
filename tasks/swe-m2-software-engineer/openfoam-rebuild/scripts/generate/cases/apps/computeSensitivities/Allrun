@@ -1,0 +1,6 @@
+#!/bin/bash
+# from: incompressible/adjointOptimisationFoam/sensitivityMaps/sbend/laminar (blockMesh channel, 40 primal/adjoint iterations); exercises: computeSensitivities surfacePoints sensitivities from stored primal+adjoint fields (PtLosses objective)
+cd "${0%/*}" || exit 1
+blockMesh
+adjointOptimisationFoam
+computeSensitivities

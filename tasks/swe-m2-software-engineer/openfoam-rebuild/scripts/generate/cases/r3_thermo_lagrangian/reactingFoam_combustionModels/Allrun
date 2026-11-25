@@ -1,0 +1,32 @@
+#!/bin/bash
+# from: combustion/reactingFoam/laminar/counterFlowFlame2D (20x8 mesh, kEpsilon, 40 us) + fireFoam/LES/smallPoolFire2D; exercises: combustion models EDC versions v1981/v1996/v2016 (v2016 short run), diffusionMulticomponent, zoneCombustion (laminar in a cellZone), diffusion and FSD (Smagorinsky LES) with relaxation flame-area model (singleStepReactingMixture); one reactingFoam run each
+cd "${0%/*}" || exit
+blockMesh -case base
+topoSet -case base
+cp -r base EDC_v1981
+cp combustionProperties.EDC_v1981 EDC_v1981/constant/combustionProperties
+reactingFoam -case EDC_v1981
+cp -r base EDC_v1996
+cp combustionProperties.EDC_v1996 EDC_v1996/constant/combustionProperties
+reactingFoam -case EDC_v1996
+cp -r base EDC_v2016
+cp combustionProperties.EDC_v2016 EDC_v2016/constant/combustionProperties
+foamDictionary -entry endTime -set 6e-06 EDC_v2016/system/controlDict
+foamDictionary -entry writeInterval -set 3 EDC_v2016/system/controlDict
+reactingFoam -case EDC_v2016
+cp -r base diffusionMulticomponent
+cp combustionProperties.diffusionMulticomponent diffusionMulticomponent/constant/combustionProperties
+reactingFoam -case diffusionMulticomponent
+cp -r base zoneCombustion
+cp combustionProperties.zoneCombustion zoneCombustion/constant/combustionProperties
+cp zoneCombustionProperties zoneCombustion/constant/zoneCombustionProperties
+reactingFoam -case zoneCombustion
+cp -r base diffusion
+cp combustionProperties.diffusion diffusion/constant/combustionProperties
+cp thermophysicalProperties.singleStep diffusion/constant/thermophysicalProperties
+reactingFoam -case diffusion
+cp -r base FSD
+cp combustionProperties.FSD FSD/constant/combustionProperties
+cp thermophysicalProperties.singleStep FSD/constant/thermophysicalProperties
+cp turbulenceProperties.LES FSD/constant/turbulenceProperties
+reactingFoam -case FSD

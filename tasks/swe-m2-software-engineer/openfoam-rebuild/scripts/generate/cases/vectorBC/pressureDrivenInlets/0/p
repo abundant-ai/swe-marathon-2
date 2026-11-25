@@ -1,0 +1,39 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       volScalarField;
+    object      p;
+}
+
+dimensions      [0 2 -2 0 0 0 0];
+
+internalField   uniform 0;
+
+boundaryField
+{
+    "in(00|10|20|11)"
+    {
+        type            totalPressure;
+        p0              uniform 1;
+        value           uniform 1;
+    }
+    in01
+    {
+        type            fixedValue;
+        value           uniform 0.8;
+    }
+    in21
+    {
+        type            zeroGradient;
+    }
+    "out.*"
+    {
+        type            fixedValue;
+        value           uniform 0;
+    }
+    "(bottom|top|front|back)"
+    {
+        type            zeroGradient;
+    }
+}

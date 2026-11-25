@@ -1,0 +1,9 @@
+FoamFile { version 2.0; format ascii; class pointScalarField; object pointMotionUz; }
+dimensions      [0 1 -1 0 0 0 0];
+internalField   uniform 0;
+boundaryField
+{
+    piston       { type fixedValue; value uniform 0; }
+    cylinderHead { type fixedValue; value uniform 0; }
+    liner        { type slip; }
+}

@@ -1,0 +1,18 @@
+#!/bin/bash
+# from: incompressible/icoFoam/elbow (endTime 0.3); exercises: fluentMeshToFoam -writeSets -writeZones, -2D <thickness> -scale with -case; foamDataToFluent all times, -latestTime, -time, -noZero; errors: missing/truncated mesh file, bad -2D value, nonexistent/invalid -time, missing foamDataToFluentDict
+cp -r 0.orig 0
+fluentMeshToFoam elbow.msh -writeSets -writeZones
+fluentMeshToFoam -case thin elbow.msh -2D 0.5 -scale 0.001
+fluentMeshToFoam noSuch.msh || true
+fluentMeshToFoam -case thin truncated.msh || true
+fluentMeshToFoam -case thin elbow.msh -2D abc || true
+icoFoam
+foamDataToFluent -latestTime
+foamDataToFluent -time 0.1
+foamDataToFluent -noZero
+foamDataToFluent
+foamDataToFluent -time 99 || true
+foamDataToFluent -time abc || true
+mv system/foamDataToFluentDict system/foamDataToFluentDict.off
+foamDataToFluent -latestTime || true
+mv system/foamDataToFluentDict.off system/foamDataToFluentDict

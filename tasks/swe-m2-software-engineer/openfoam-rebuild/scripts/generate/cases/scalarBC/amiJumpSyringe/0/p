@@ -1,0 +1,66 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       volScalarField;
+    object      p;
+}
+
+dimensions      [0 2 -2 0 0 0 0];
+internalField   uniform 1;
+boundaryField
+{
+    inlet
+    {
+        type            zeroGradient;
+    }
+    outlet
+    {
+        type            syringePressure;
+        Ap              0.002;
+        Sp              0.05;
+        VsI             2e-5;
+        tas             0.02;
+        tae             0.08;
+        tds             0.12;
+        tde             0.18;
+        psI             1;
+        psi             1;
+        ams             2e-5;
+        value           uniform 1;
+    }
+    walls
+    {
+        type            zeroGradient;
+    }
+    ami1a
+    {
+        type            fixedJumpAMI;
+        patchType       cyclicAMI;
+        jump            uniform 0.01;
+        value           uniform 0;
+    }
+    ami1b
+    {
+        type            fixedJumpAMI;
+        patchType       cyclicAMI;
+        value           uniform 0;
+    }
+    ami2a
+    {
+        type            uniformJumpAMI;
+        patchType       cyclicAMI;
+        jumpTable       table ((0 0) (0.2 0.02));
+        value           uniform 0;
+    }
+    ami2b
+    {
+        type            uniformJumpAMI;
+        patchType       cyclicAMI;
+        value           uniform 0;
+    }
+    frontAndBack
+    {
+        type            empty;
+    }
+}
