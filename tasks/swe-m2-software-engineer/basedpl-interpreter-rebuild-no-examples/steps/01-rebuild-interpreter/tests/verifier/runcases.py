@@ -15,7 +15,8 @@ filesystem never stop a run; the per-file size limit (RLIMIT_FSIZE) holds everyw
 
 A case is {"argv": [...], "files": {path: text}, "stdin": text or null}. A run passes when the
 program's exit code and the bytes of its standard output equal the expected ones; answers hold
-standard output as text, invalid UTF-8 as surrogate escapes.
+standard output as text, invalid UTF-8 as surrogate escapes. `distinct_outputs` counts the different
+outputs of the passed cases that give the program code to run (`runs_a_program`).
 """
 
 from __future__ import annotations
@@ -373,3 +374,53 @@ def run_case(program: list[str], case: dict, prefix: list[str] | None = None, ow
 def matches(got: dict, want: dict) -> bool:
     """A run printed the expected answer: the same exit code and the same bytes on standard output."""
     return got["exit"] is not None and got["exit"] == want["exit"] and got["stdout"] == want["stdout"].encode(*ENCODING)
+
+
+def runs_a_program(case: dict) -> bool:
+    """Whether a case gives the program code of its own to run.
+
+    Used by distinct_outputs, whose count the verifier's reward needs and the recording reports.
+    A case runs a program when it passes code after -e, names a file of its own first, or gives a
+    program or the worker's requests on standard input (after -, with no arguments, or after --worker
+    alone). Options alone (--version, --help, a removed mode, wrong arguments) never do, and neither
+    does any of the command line's own cases (kind "cli": one case per behaviour of the command line,
+    whose answers a table of the original's answers gives).
+
+    Args:
+        case: A private case: "argv" (the arguments after the program, a list of text), "files" (path:
+            text, written into the run's directory), "stdin" (text, or None for no input) and "kind".
+
+    Returns:
+        True when the case runs code it gives, False otherwise. Reads and changes nothing.
+    """
+    if case.get("kind") == "cli":
+        return False
+    argv, stdin = case["argv"], case.get("stdin") or ""
+    if argv[:1] == ["-e"]:
+        return len(argv) > 1
+    if argv and argv[0] in case["files"]:
+        return True
+    return (not argv or argv[0] == "-" or argv == ["--worker"]) and stdin != ""
+
+
+def distinct_outputs(cases: list[dict], expected: dict[str, dict], passed: set[str]) -> int:
+    """How many different outputs the passed cases that run a program were recorded with.
+
+    The verifier awards a reward only when this count reaches its least (DISTINCT_OUTPUTS in verify.py),
+    after the last case; the recording reports it for every kept case and for what a program with no
+    interpreter in it passes. A case counts when it runs a program (runs_a_program) and its recorded
+    standard output is not empty, and each recorded output counts once, however many passed cases share
+    it: a program that prints one fixed answer counts 1 at most, and one that prints nothing, or answers
+    only options such as --version and --help, counts 0.
+
+    Args:
+        cases: The private cases, each with "id", "argv", "files", "stdin" and "kind".
+        expected: The recorded answers by case id, each {"stdout": text, "exit": code}; every case's id
+            is a key.
+        passed: The ids of the cases a program passed; ids of no case in `cases` are ignored.
+
+    Returns:
+        The number of distinct non-empty recorded outputs among the passed cases that run a program.
+    """
+    return len({expected[case["id"]]["stdout"] for case in cases
+                if case["id"] in passed and expected[case["id"]]["stdout"] and runs_a_program(case)})

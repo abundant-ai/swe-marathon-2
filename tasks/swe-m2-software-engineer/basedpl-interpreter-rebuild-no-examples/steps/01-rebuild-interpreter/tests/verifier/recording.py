@@ -11,7 +11,9 @@
 - What submissions that implement nothing pass (`baselines`): printing nothing and exiting 0, 1
   or 2; and the strongest dispatcher with no interpreter in it (recorder.no_interpreter: the
   command line's answers, an echo of a program's leading literals, one constant per visible shape
-  of case), by strategy. The largest share any one answer holds.
+  of case), by strategy. The largest share any one answer holds. The different outputs of programs
+  given to run (runcases.distinct_outputs, which a reward needs enough of) that the kept cases hold,
+  and that the dispatcher's cases hold.
 - The recording program (`--build`: its link, size and sha256, with the marker zeroed as the
   reference solution's copy has it), the build host, the recording's wall time, the sha256 of the
   kept ids and of the answers, so that two builds can be compared.
@@ -28,13 +30,15 @@ from collections import Counter
 from pathlib import Path
 
 from recorder import free_cases, free_union
+from runcases import distinct_outputs
 
 UPSTREAM_KINDS = ("expr", "apl", "script", "error", "worker", "display", "stdin", "module")
 
 
 def baselines(kept: list[dict], expected: dict) -> dict:
     """The share of the kept cases each trivial submission passes, and the largest share of any
-    one answer."""
+    one answer; and the different outputs of programs given to run (runcases.distinct_outputs)
+    that passing every kept case reaches, and that passing the dispatcher's cases reaches."""
     total = len(kept) or 1
     answers = [(expected[case["id"]]["stdout"], expected[case["id"]]["exit"]) for case in kept]
     free = free_cases(kept, expected)
@@ -47,6 +51,8 @@ def baselines(kept: list[dict], expected: dict) -> dict:
         "no_interpreter_dispatcher": round(len(dispatcher) / total, 4),
         "no_interpreter_dispatcher_by_strategy": {how: len(ids) for how, ids in sorted(free.items())},
         "largest_answer_share": round(common[0][1] / total, 4) if common else 0.0,
+        "distinct_outputs_kept": distinct_outputs(kept, expected, {case["id"] for case in kept}),
+        "no_interpreter_dispatcher_distinct_outputs": distinct_outputs(kept, expected, dispatcher),
     }
 
 

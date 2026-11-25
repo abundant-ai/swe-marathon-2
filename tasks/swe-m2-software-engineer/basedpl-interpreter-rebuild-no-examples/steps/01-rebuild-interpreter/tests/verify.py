@@ -49,6 +49,12 @@ MAX_PROGRAM = 512 << 20  # bytes of /app/rebuild/bpl hashed for metrics.json, at
 RESERVE_BYTES = 512 << 20  # bytes kept free in /tmp and /logs/verifier: no case starts with less
 CLEANUP_SEC = 60  # the cleanup after the last case, at most
 RETRIED_LIMITS = ("memory limit", "disk limit", "file limit")  # a case stopped by one runs once more
+# The least runcases.distinct_outputs a reward needs: of the passed cases that give the program code to run,
+# this many different recorded outputs. A program that prints only what options such as --version and --help
+# print, only nothing, or a few fixed or echoed answers runs nothing it is given: it passes a few cases and
+# scores 0. recording.json's baselines give the count for every kept case and for the strongest program with
+# no interpreter in it.
+DISTINCT_OUTPUTS = 40
 METRICS_SPACE = 1 << 18  # bytes metrics.json holds from the start, so that writing it needs no new space
 # Where the unprivileged user can leave files: these, and every other world-writable directory
 # that writable_dirs() finds when the evaluation starts.
@@ -583,11 +589,39 @@ def write_in_place(path: Path, data: bytes) -> None:
         path.write_bytes(data)
 
 
+def withheld(passed: int, distinct: int, least: int) -> str | None:
+    """Why the cases a program passed earn no reward, or None where they earn their share.
+
+    Called by grade() after the last case, with the count of runcases.distinct_outputs. A program
+    that prints the right output for fewer than `least` different programs given to it shows no
+    sign of running them: its passed cases then earn nothing (reward 0), with this note in
+    metrics.json. A program that passed nothing needs no note.
+
+    Args:
+        passed: The number of cases the program passed.
+        distinct: The different non-empty recorded outputs among the passed cases that give code to
+            run (runcases.distinct_outputs).
+        least: The count a reward needs (DISTINCT_OUTPUTS).
+
+    Returns:
+        The note for metrics.json when passed cases earn nothing, else None.
+    """
+    if not passed or distinct >= least:
+        return None
+    return (f"reward 0: the {passed:,} cases passed hold {distinct} different outputs of programs given to run "
+            f"(code after -e, a file of the case's own, a program or the worker's requests on standard input; "
+            f"the command line's own cases and empty outputs aside), fewer than the {least} a reward needs")
+
+
 def grade(program: Path, private: Path, prefix: list[str], owner: tuple[int, int] | None,
           deadline: float | None = None) -> dict:
     """Run every private case through `prefix` (as `owner`) and count exact matches, starting no
     case, and no reset, within MARGIN_SEC of `deadline` (time.monotonic(); by default TOTAL_SEC
     from now): the cases left count as failed. The cleanup after the last case is the caller's.
+
+    The reward is the share of cases passed, given only where the passed cases that give code to
+    run hold at least DISTINCT_OUTPUTS different outputs (runcases.distinct_outputs); otherwise it
+    is 0, with a note (withheld).
 
     A case that cannot be set up or started, runs too long or prints too much counts as failed:
     what the submission does never makes the evaluation an error. A case stopped by the memory,
@@ -619,7 +653,8 @@ def grade(program: Path, private: Path, prefix: list[str], owner: tuple[int, int
     kind = lambda case: case.get("kind", "?")  # noqa: E731
     for case in cases:
         metrics["by_kind"].setdefault(kind(case), {"total": 0, "run": 0, "passed": 0, "failed": 0})["total"] += 1
-    failed, seconds = [], []
+    kept = cases
+    failed, seconds, passed = [], [], set()
     if not program.is_file() or not os.access(program, os.X_OK):
         metrics["notes"].append("/app/rebuild/bpl is missing or not executable")
         cases = []
@@ -672,6 +707,7 @@ def grade(program: Path, private: Path, prefix: list[str], owner: tuple[int, int
         if runcases.matches(got, expected[case["id"]]):
             metrics["cases_passed"] += 1
             tally["passed"] += 1
+            passed.add(case["id"])
         else:
             failed.append(case["id"])
     seconds.sort()
@@ -682,6 +718,12 @@ def grade(program: Path, private: Path, prefix: list[str], owner: tuple[int, int
     for tally in metrics["by_kind"].values():
         tally["failed"] = tally["total"] - tally["passed"]
     metrics["reward"] = round(metrics["cases_passed"] / metrics["cases_total"], 6)
+    metrics["distinct_outputs"] = runcases.distinct_outputs(kept, expected, passed)
+    metrics["distinct_outputs_needed"] = DISTINCT_OUTPUTS
+    note = withheld(metrics["cases_passed"], metrics["distinct_outputs"], DISTINCT_OUTPUTS)
+    if note:
+        metrics["reward"] = 0.0
+        metrics["notes"].append(note)
     metrics["failed_sample"] = failed[:200]
     return metrics
 

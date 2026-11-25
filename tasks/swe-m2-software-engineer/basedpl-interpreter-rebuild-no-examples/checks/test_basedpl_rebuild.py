@@ -384,10 +384,14 @@ def plain_cases(argvs: list[list[str]], kinds: list[str] | None = None) -> tuple
 
 
 def test_many_slow_runs_do_not_stop_the_count(tmp_path):
-    cases, expected = plain_cases([["slow"]] * 65 + [["fast"]] * 5)
-    metrics = run_verifier(tmp_path, 'case "$1" in slow) exec sleep 5;; esac\necho ok\n', cases, expected, case_sec=0.05)
-    assert metrics["cases_run"] == 70 and metrics["timeouts"] == 65 and metrics["cases_passed"] == 5
-    assert metrics["reward"] == round(5 / 70, 6) and metrics["stopped"] is None and not metrics["notes"]
+    """65 runs past their limit, then 45 programs given after -e that each print their own output (enough of them
+    for a reward: see the distinct-output checks): every case is run and the reward is the share passed."""
+    cases, expected = plain_cases([["slow"]] * 65)
+    fast = [{"id": f"F{i}", "kind": "expr", "files": {}, "argv": ["-e", f"v{i}"], "stdin": None} for i in range(45)]
+    expected.update({case["id"]: {"exit": 0, "stdout": case["argv"][1] + "\n"} for case in fast})
+    metrics = run_verifier(tmp_path, 'case "$1" in slow) exec sleep 5;; esac\necho "$2"\n', cases + fast, expected, case_sec=0.05)
+    assert metrics["cases_run"] == 110 and metrics["timeouts"] == 65 and metrics["cases_passed"] == 45
+    assert metrics["reward"] == round(45 / 110, 6) and metrics["stopped"] is None and not metrics["notes"]
 
 
 def test_a_swapped_or_stuck_workspace_is_a_failed_case_not_an_evaluation_error(tmp_path):
@@ -823,6 +827,176 @@ def test_a_case_stopped_by_a_resource_limit_runs_once_more(tmp_path):
     """))
     calls, passed, retries, disk, files = out
     assert calls == ["C1", "C1", "C2", "C2"] and passed == 1 and retries == 2 and disk == 1 and files == 0
+
+
+# ---------------------------------------------------------------- a reward needs programs run
+
+def least_distinct_outputs() -> int:
+    """verify.DISTINCT_OUTPUTS, the different outputs of programs given to run that a reward needs, read from the
+    verifier itself in a process of its own.
+
+    Returns:
+        The count, a positive integer.
+    """
+    least = verifier_call("import json, verify\nprint(json.dumps(verify.DISTINCT_OUTPUTS))")
+    assert isinstance(least, int) and least > 1, least
+    return least
+
+
+def gate_cases(least: int) -> tuple[list[dict], dict]:
+    """Cases shaped as the kept ones are, for the distinct-output checks.
+
+    The command line's own cases (options, wrong arguments, and one that runs a program from standard input), then
+    `least` + 10 programs given after -e that each print their own code back (so that a program can answer any
+    chosen set of them by echoing), programs in a file that print nothing and exit 1, programs in a file that all
+    print one common answer, a program whose output is empty, one worker session and one program on standard input.
+
+    Args:
+        least: verify.DISTINCT_OUTPUTS.
+
+    Returns:
+        The cases, as the private cases.json holds them, and their recorded answers by id.
+    """
+    cases, expected = [], {}
+
+    def add(kind: str, argv: list[str], stdout: str, code: int = 0, files: dict | None = None, stdin: str | None = None) -> None:
+        ident = f"G{len(cases):03d}"
+        cases.append({"id": ident, "kind": kind, "argv": argv, "files": files or {}, "stdin": stdin})
+        expected[ident] = {"stdout": stdout, "exit": code}
+
+    add("cli", ["--version"], "basedpl 0.1.95\n")
+    add("cli", ["--help"], "Usage: bpl [-e EXPR [ARG...] | FILE [ARG...] | - [ARG...] | --worker]\n")
+    add("cli", ["--verbose"], "", 2)
+    add("cli", ["-e"], "", 2)
+    add("cli", ["-", "alpha"], '["alpha"]\n', stdin='⎕←•host "args"\n')
+    for i in range(least + 10):
+        add("expr", ["-e", f"v{i}"], f"v{i}\n")
+    for i in range(8):
+        add("error", ["main.bpl"], "", 1, files={"main.bpl": f"x{i}←1 2+1 2 3\n"})
+    for i in range(8):
+        add("script", ["main.bpl"], "1\n", files={"main.bpl": f"y{i}←1 ◇ 1\n"})
+    add("expr", ["-e", "⍬⍴0"], "")
+    add("worker", ["--worker"], '{"id":1}\n', stdin='{"id":1,"code":"1"}\n')
+    add("stdin", ["-"], "w\n", stdin='⎕←"w"\n')
+    return cases, expected
+
+
+def echoing(echoed: int, *, worker: bool, stdin: bool, command_line: bool) -> str:
+    """A program for gate_cases that echoes the code of the first `echoed` programs given after -e, prints the
+    common answer for the programs in a file that have one, nothing (exit 1) for the others, nothing for the empty
+    one, and, as asked, the worker's reply, the program on standard input's output, and the command line's own case
+    that runs a program.
+
+    Args:
+        echoed: How many of the -e programs (v0, v1, ...) it answers.
+        worker: Whether it answers the worker session.
+        stdin: Whether it answers the program on standard input.
+        command_line: Whether it answers the command line's own case that runs a program from standard input.
+
+    Returns:
+        The program's shell text, without its #! line (run_verifier adds it).
+    """
+    names = "|".join(f"v{i}" for i in range(echoed)) or "-"
+    return textwrap.dedent(f"""\
+        case "$1" in
+          -e) case "$2" in {names}) echo "$2"; exit 0;; '⍬⍴0') exit 0;; esac; exit 3;;
+          main.bpl) if grep -q '^y' main.bpl; then echo 1; exit 0; fi; exit 1;;
+          --worker) cat >/dev/null; [ {int(worker)} = 1 ] && echo '{{"id":1}}' && exit 0; exit 3;;
+          -) cat >/dev/null
+             if [ "$2" = alpha ]; then [ {int(command_line)} = 1 ] && echo '["alpha"]' && exit 0; exit 3; fi
+             [ {int(stdin)} = 1 ] && echo w && exit 0; exit 3;;
+        esac
+        exit 3
+    """)
+
+
+def test_a_case_counts_toward_a_reward_only_when_it_runs_code_it_gives():
+    """v5's verdict: two launchers that run nothing earned 6 and 1 of 1,673 cases with the command line's documented
+    strings and with empty output. A reward now needs DISTINCT_OUTPUTS different outputs among the passed cases that
+    give the program code of their own to run: code after -e, a file of the case's own named first, or a program or
+    worker requests on standard input. Options alone, a missing file, an empty input and the command line's own
+    cases never count, nor does an empty output, and an output counts once however many passed cases share it."""
+    found = verifier_call(textwrap.dedent('''
+        import json
+        from verifier import runcases
+        def case(ident, kind, argv, files=None, stdin=None):
+            return {"id": ident, "kind": kind, "argv": argv, "files": files or {}, "stdin": stdin}
+        shapes = [case("e", "expr", ["-e", "1+1"]), case("file", "script", ["main.bpl", "x"], {"main.bpl": "1"}),
+                  case("dash", "stdin", ["-", "a"], stdin="1\\n"), case("bare", "stdin", [], stdin="1\\n"),
+                  case("worker", "worker", ["--worker"], stdin='{"id":1,"code":"1"}\\n'),
+                  case("version", "expr", ["--version"]), case("help", "expr", ["--help"]), case("lone-e", "expr", ["-e"]),
+                  case("missing", "error", ["gone.bpl"], {"main.bpl": "1"}), case("no-input", "stdin", ["-"]),
+                  case("empty-input", "stdin", [], stdin=""), case("worker-args", "worker", ["--worker", "now"], stdin="{}"),
+                  case("cli-e", "cli", ["-e", "•host \\"version\\""]), case("cli-file", "cli", ["run.bpl"], {"run.bpl": "5"}),
+                  case("cli-stdin", "cli", ["-", "alpha"], stdin="1\\n")]
+        runs = {c["id"]: runcases.runs_a_program(c) for c in shapes}
+        answers = {"e": "2\\n", "file": "1\\n", "dash": "1\\n", "bare": "", "worker": "{}\\n", "version": "v\\n", "help": "h\\n",
+                   "lone-e": "", "missing": "", "no-input": "", "empty-input": "", "worker-args": "", "cli-e": "c\\n",
+                   "cli-file": "5\\n", "cli-stdin": "a\\n"}
+        expected = {ident: {"stdout": text, "exit": 0} for ident, text in answers.items()}
+        every = set(answers)
+        counts = [runcases.distinct_outputs(shapes, expected, every), runcases.distinct_outputs(shapes, expected, every - {"worker"}),
+                  runcases.distinct_outputs(shapes, expected, {"version", "help", "cli-e", "cli-file", "cli-stdin", "bare"}),
+                  runcases.distinct_outputs(shapes, expected, set())]
+        print(json.dumps([runs, counts]))
+    '''))
+    runs, counts = found
+    assert runs == {"e": True, "file": True, "dash": True, "bare": True, "worker": True, "version": False, "help": False,
+                    "lone-e": False, "missing": False, "no-input": False, "empty-input": False, "worker-args": False,
+                    "cli-e": False, "cli-file": False, "cli-stdin": False}, runs
+    # "2", "1" (the file's and the piped program's, once), "{}"; the empty output of `bare` never counts
+    assert counts == [3, 2, 0, 0], counts
+    # The rule and its note are worded as what a program must do, never as who checks it or why.
+    verify, runner = (STEP / "tests" / "verify.py").read_text(), RUNNER.read_text()
+    between = lambda text, start, end: text[text.index(start):text.index(end, text.index(start))]  # noqa: E731
+    gate = (between(verify, "# The least runcases.distinct_outputs", "METRICS_SPACE = ") + between(verify, "def withheld(", "def grade(")
+            + runner[runner.index("def runs_a_program("):])
+    assert "DISTINCT_OUTPUTS = 40" in gate and "def withheld(" in gate and "def distinct_outputs(" in gate
+    assert runner.rstrip().endswith("and runs_a_program(case)})"), "distinct_outputs is the runner's last function"
+    words = re.compile(r"platform|trial|evaluat|benchmark|stub|exploit|adversar|cheat|hack|oddish|harbor|modal|verdict|"
+                       r"\bQA\b|launcher|grader", re.I)
+    assert not words.findall(gate), words.findall(gate)
+
+
+def test_only_a_program_that_runs_what_it_is_given_earns_a_reward(tmp_path):
+    """The real grade() on cases shaped as the kept ones, against the programs v5's two replays delivered (the
+    command line's documented strings and exit 2 for everything else; exit 0 for everything), every constant answer
+    the cases share, and an echo of the programs' own code: each passes cases and scores exactly 0, with a note. One
+    more different output of a program given to run, and the same echo earns its share: the worker's reply and the
+    program on standard input count, the command line's own program, an empty output and a common answer's
+    repeats do not."""
+    least = least_distinct_outputs()
+    cases, expected = gate_cases(least)
+    total = len(cases)
+    docs = ('case "$*" in --version) echo "basedpl 0.1.95";; '
+            '--help) echo "Usage: bpl [-e EXPR [ARG...] | FILE [ARG...] | - [ARG...] | --worker]";; *) exit 2;; esac\n')
+    shared = sorted({(answer["stdout"], answer["exit"]) for answer in expected.values()
+                     if sum(other == answer for other in expected.values()) > 1})
+    assert len(shared) == 3, shared  # nothing and exit 1, the common answer, nothing and exit 2
+    programs = {"docs": docs, "exit 0": "exit 0\n",
+                **{f"constant {stdout!r} {code}": f"printf '%s' '{stdout}'\nexit {code}\n" for stdout, code in shared},
+                "too few": echoing(least - 3, worker=True, stdin=False, command_line=True),
+                "enough": echoing(least - 3, worker=True, stdin=True, command_line=False)}
+    results = {name: run_verifier(tmp_path, script, cases, expected) for name, script in programs.items()}
+    for name, metrics in results.items():
+        assert metrics["cases_total"] == total and metrics["distinct_outputs_needed"] == least, (name, metrics)
+        if name == "enough":
+            continue
+        assert metrics["cases_passed"] > 0 and metrics["reward"] == 0.0, (name, metrics["cases_passed"], metrics["reward"])
+        assert metrics["notes"] and metrics["notes"][-1].startswith(f"reward 0: the {metrics['cases_passed']} cases passed hold "
+                                                                    f"{metrics['distinct_outputs']} different outputs"), (name, metrics["notes"])
+    assert (results["docs"]["cases_passed"], results["docs"]["distinct_outputs"]) == (4, 0), "--version, --help and two exit 2s"
+    assert (results["exit 0"]["cases_passed"], results["exit 0"]["distinct_outputs"]) == (1, 0)
+    assert max(results[name]["distinct_outputs"] for name in results if name.startswith("constant")) == 1
+    too_few, enough = results["too few"], results["enough"]
+    # (least - 3) echoes, the common answer once, the worker's reply: one short, whatever the command line's case adds
+    assert too_few["distinct_outputs"] == least - 1 and too_few["cases_passed"] == (least - 3) + 8 + 8 + 1 + 1 + 1, too_few
+    assert enough["distinct_outputs"] == least and enough["cases_passed"] == (least - 3) + 8 + 8 + 1 + 1 + 1, enough
+    assert enough["reward"] == round(enough["cases_passed"] / total, 6) > 0 and not enough["notes"], enough
+    verify = (STEP / "tests" / "verify.py").read_text()
+    grade = verify[verify.index("def grade("):verify.index("def final_cleanup(")]
+    assert grade.index('metrics["reward"] = round(') < grade.index("runcases.distinct_outputs(kept, expected, passed)") \
+        < grade.index('metrics["reward"] = 0.0'), "the share is computed, then withheld below the least"
 
 
 DELIVERY = r"""
@@ -2468,7 +2642,7 @@ subprocess.run(["tar", "-cf", str(base / "copy.tar"), "-C", str(agent), "."], ch
 with tarfile.open(base / "copy.tar") as bundle:
     bundle.extractall(copied, filter="data")
 cases = [{"id": f"C{i}", "kind": kind, "argv": ["-e", str(i)], "files": {"main.bpl": "1\n"}, "stdin": None}
-         for i, kind in enumerate(["expr", "expr", "script", "worker"])]
+         for i, kind in enumerate(["expr", "expr", "script", "worker"] * 12)]  # 48 different outputs: a reward needs 40
 (base / "tests" / "private" / "cases.json").write_text(json.dumps({"cases": cases}))
 (base / "tests" / "private" / "expected.json").write_text(json.dumps({case["id"]: {"exit": 0, "stdout": case["argv"][1] + "\n"} for case in cases}))
 (base / "tests" / "private" / "marker").write_text("0123456789abcdef0123456789abcdef\n")
@@ -2626,13 +2800,14 @@ def test_the_whole_evaluation_runs_with_only_root_and_linux_stood_in(tmp_path):
     metrics, events = graded["metrics"], graded["events"]
     assert graded["exit"] == 0 and graded["reward"] == "1.000000" and metrics["status"] == "completed", graded
     assert graded["left"] == ["metrics.json", "reward.txt"], "the reserved reward file is renamed, nothing else is left"
-    assert [metrics[key] for key in ("cases_total", "cases_run", "cases_passed", "setup_errors", "timeouts")] == [4, 4, 4, 0, 0], metrics
-    assert metrics["notes"] == [] and metrics["seconds_total"] > 0 and metrics["by_kind"]["expr"]["passed"] == 2, metrics
+    assert [metrics[key] for key in ("cases_total", "cases_run", "cases_passed", "setup_errors", "timeouts")] == [48, 48, 48, 0, 0], metrics
+    assert metrics["notes"] == [] and metrics["seconds_total"] > 0 and metrics["by_kind"]["expr"]["passed"] == 24, metrics
+    assert (metrics["distinct_outputs"], metrics["distinct_outputs_needed"]) == (48, 40), metrics
     uid = graded["owner"][0]
     assert graded["owner_types"] == ["int", "int"] and graded["owner"] == [uid, uid] and 20000 <= uid < 60000, graded["owner"]
     assert graded["prefix"] == ["setpriv", "--reuid", str(uid), "--regid", str(uid), "--clear-groups", "--no-new-privs"]
-    assert events["through_the_drop"] == 4, "every case started through the prefix sandbox() returned"
-    assert events["lchown_in_prepare"] >= 4 * 4 and events["lchown_in_seal"] == 5, "integer ids reached every chown (a string raises)"
+    assert events["through_the_drop"] == 48, "every case started through the prefix sandbox() returned"
+    assert events["lchown_in_prepare"] >= 48 * 4 and events["lchown_in_seal"] == 5, "integer ids reached every chown (a string raises)"
     assert events["chown"] == 2, "the scratch directory, and the set-id probe file"
     assert len(events["probes"]) == 4 and [probe.split()[-1] for probe in events["probes"][2:]] == ["-u", "-g"], events["probes"]
     assert events["not_run"]["kill -KILL -1"] >= 5 and events["not_run"]["find"] >= 5 and events["not_run"]["ipcrm --all"] >= 5
@@ -2912,6 +3087,9 @@ def test_the_recording_report_counts_upstream_answers_and_the_baselines(tmp_path
     assert baselines["no_interpreter_dispatcher_by_strategy"] == {"command-line table": 1, "constant for FILE": 2}
     assert report["expected_sha256"] == hashlib.sha256(json.dumps(expected, sort_keys=True).encode()).hexdigest()
     assert baselines["largest_answer_share"] == round(2 / 8, 4)
+    # the different outputs of programs given to run: 6, 7, 8, the message and y (the help case is the command
+    # line's own, and the two silent programs print nothing); the dispatcher's three cases hold none of them
+    assert baselines["distinct_outputs_kept"] == 5 and baselines["no_interpreter_dispatcher_distinct_outputs"] == 0, baselines
 
 
 # ---------------------------------------------------------------- hardening and images
