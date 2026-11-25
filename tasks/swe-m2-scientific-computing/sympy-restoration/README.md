@@ -1200,7 +1200,19 @@ It does not yet meet the v2 workload target; see [Workload](#workload) and
   more units are whole (the 69 left whole by decision that were removed then,
   and the 2 the probe found) and 9 are removed again (6 near-copies with counted
   calls of their own, and 3 units that the new calls and the examples of the
-  units joining the set fail without).
+  units joining the set fail without). A first build with the token tests
+  counted one way only (commit `38486fe`, bundle `7c7478e2ca00`: 2,121 units)
+  passed the preflight and the sweep; the second way then found 2 more pairs,
+  and this build replaced it before any grade of it finished.
+- Reference 1.000000 and complete (1,825 / 1,825 units in the set, 6,137 /
+  6,137 counted calls, 14,508 / 14,508 calls, 2,114 / 2,114 units' examples,
+  10,428 / 10,428 tests, none unreached, nothing out of its time, no control
+  tripped); the starting tree 0.0; a turn of no length through the hooks 0.0
+  (`end_from` `unchanged`). With the examples' own times back, 7 units' examples
+  have a bound above the 2 s floor (up to 7.8 s) and 102 units' calls one above
+  1.5 s (up to 34.8 s), at this machine's factor of 1.024; no item of the
+  reference used more than half of its bound (the verifier now counts such
+  items, `over_half_bound`), so no margin was widened.
 - `checks/test_graded_units.py` runs the trace and the probe on the shipped
   inputs and fails on a removed unit that no graded item fails without, and on
   a body left whole that is a near-copy of a removed one (the builder's report,
@@ -1243,7 +1255,7 @@ It does not yet meet the v2 workload target; see [Workload](#workload) and
 | Step `01-restore-bodies` | Implemented. Instruction, agent image, separate verifier image, reference solution. |
 | Further steps | Not designed. See [Workload](#workload). |
 | Prepared inputs | Present locally under Git-ignored paths; produced by the builder in `scripts/builder/`. |
-| Oracle | 1.0 on the platform under the binary reward (at least 14 grades); 1.0 under the continuous reward through the entry point's steps on this machine (2026-11-20, and after each re-check since, last 2026-11-24). Not yet re-run on the platform. Provenance: the original SymPy 1.14.0 source of the 324 files. |
+| Oracle | 1.0 on the platform under the binary reward (at least 14 grades); 1.0 under the continuous reward through the entry point's steps on this machine (2026-11-20, and after each re-check and rebuild since, last 2026-11-26). Not yet re-run on the platform. Provenance: the original SymPy 1.14.0 source of the 322 files. |
 | Ratings (`harbor check`) | Not run. No `[metadata.task_rating]` yet. |
 
 Layout notes:
@@ -1335,7 +1347,7 @@ reference result comes from the original implementation. Results are counts over
 fixed lists, so partial progress needs no judge. See [Verification](#verification).
 
 Evidence: the reference solution scores 1.0 (every counted unit and call; all
-2,671 units and 16,737 calls on the bars of a complete restoration); an empty
+2,114 units and 14,508 calls on the bars of a complete restoration); an empty
 delivery and a tree of bare `raise NotImplementedError` bodies score 0. Grading
 one submission twice on the platform gave 9,298 and 9,305 passing tests before
 the deadline and seeding fixes of 2026-11-20; the examples are now seeded per
@@ -2075,6 +2087,11 @@ stored submissions of the earlier sessions of the same task; every one scored
 | Word sweep of the whole bundle; the archives and reference against the SymPy 1.14.0 wheel's record; the call data's pickle by opcode; the bundle against the worktree and the commit; the key | bundle `e4c15ab38d70` | the sweep's hits those of `54a8b4898f6e`; 0 non-ASCII bytes; no bytecode; the 324 reference files identical to upstream; the archives differ from upstream by 2,176 placeholders, the withheld tests and `pytest.ini`; the pickle holds SymPy names only; 384 files equal to the worktree, the 48 tracked ones to commit `ef1561c`; the key's copies equal, new and held by no other file |
 | Regrade of the stored submissions with the units left whole | this machine, the entry point's steps, examples and calls, one worker, 2026-11-26 | 16 submissions, reward 0.003 to 0.852, each the same or within 0.0050 of the fourth re-check's (11 down, 1 up, 4 the same), the order unchanged; none with a unit or call unreached, a late file or a control tripped; of the 99 units that moved, 96 run a body now left whole in the submission's own tree, 1 loops against two of them, 1 is flaky in its submission, 1 ran within its time this time (see [Trial evidence](#trial-evidence)) |
 | Floor fixtures through the verifier, built again for the 2,176 units (`fixtures.py`) | the same three rules | raise, first argument and flip 0.0; flip behind a table 0.0034; the same as before |
+| Fix round 9's build (`absorbed.py`, `twin_calls.py` and the variant builder, `keep_whole.py` with the token tests counted both ways) | the prepared inputs, 2026-11-26 | 46 near-copies of graded bodies: 23 given 62 counted calls (20 stay removed with 56), 23 with no valid call left whole with their 23 twins and the 32 graded bodies those give away (78 by decision, 138 counted calls out); 2 units no graded item fails without left whole; 2,114 units in 322 files, 14,508 calls (6,137 counted, 1,825 units in the set, 289 graded only through others: 241 by a call, 48 by examples); the skeleton with the reference over it is the original; two runs of the rule give the same files |
+| `checks/` (140 tests: every removed unit has an item that fails without it, no body left whole is a near-copy of a removed one, the example times complete, a post-egress fetch late and a last-second save kept, both runners' own encoder, namespace literals) and the repository check | commit `6735e56` (2026-11-26, before the package) | pass |
+| `oddish preflight` | flat bundle `32fbeb905028` (`ops/sympy-restoration/dist-12h/`, key rotated, 383 files; platform content hash `721d414d1e66…`, version 4's `4ce37762a342…`; network plan: agent environment public, work no network, verifier environment public, verification no network) | pass (1 task) |
+| Word sweep of the whole bundle; the archives and reference against the SymPy 1.14.0 wheel's record; the call data's pickle by opcode; the bundle against the worktree and the commit; the key | bundle `32fbeb905028` | the agent's and the hooks' lines and the counts the same as the round's first bundle's (`7c7478e2ca00`); 0 non-ASCII bytes; no bytecode; the 322 reference files identical to upstream; the archives differ from upstream by 2,114 placeholders, the withheld tests and `pytest.ini`; the pickle holds SymPy names only; 383 files equal to the worktree, the 48 tracked ones to commit `6735e56`; the key's copies equal, new and held by no other file |
+| Reference, the agent's starting tree and a turn of no length, after fix round 9 | this machine, the entry point's steps, one worker; the no-op through the shipped hooks and the real net check | reference 1.000000 and complete: 1,825 / 1,825 units in the set, 6,137 / 6,137 counted calls, 14,508 / 14,508 calls, 2,114 / 2,114 units' examples, 10,428 / 10,428 tests, none unreached, nothing out of its time and no item over half of its bound (322 starts in each phase; host factor 1.024: 7 units' example bounds above the 2 s floor, up to 7.8 s, 102 units' call bounds above 1.5 s, up to 34.8 s), no control tripped, 963 s; starting tree 0.0; no-op 0.0 with `end_from` `unchanged` (1,716 entries listed) |
 | `harbor check` with `resources/task-implementation.toml` | working tree, 2026-11-17 | attempted on Modal; failed before review with `NotFoundError: Environment not found` (no default Modal environment). Not run in local Docker. No ratings |
 | Local image builds | none | not run for the v2 Dockerfiles; the Oddish baselines are the first build |
 
