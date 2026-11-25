@@ -9,7 +9,9 @@ kinds:
   its errors: `"-" •nput`, `•nget` on a file, `•path` and `•path⁻`, the deterministic `•uuid`
   versions, `•normalize`, `•element`, `•xml` and `•xml⁻`, `•detach`, `•prefs ⍬` and the settings
   `fns`, `dissect`, `hanzi_aliases`, `int`, `float`, `trees`, `width` and `batch`, `⊘`, `⍢`, `⊽`
-  and `⍀`, and `•ucs⁻`, `•edge`, `•special`, `•host "version"`, `•literal`, `•src` and `•ex`;
+  and `⍀`, and `•ucs⁻`, `•edge`, `•special`, `•host "version"`, `•literal`, `•src` and `•ex`; and
+  (round 18, after the others: `errors`) the documented errors of `•prefs`, `•literal`, `•edge`
+  and `•host`;
 - sandbox: what the build reads through each of its read paths (the program file, `•nget`,
   `•load`): a file elsewhere by an absolute path, a path that climbs out with `..`, a link that
   leads out, files under `/proc`, `/sys` and `/dev`, and the reads it allows (a file in the
@@ -39,6 +41,7 @@ import programs
 # grading runs at their time limit still fit its deadline (a development check reads both).
 MOST = 70
 GUARD = '{{∞::$e.kind,": ",$e.message ◇ {body}}}0'
+KIND_ONLY = '{{∞::$e.kind ◇ {body}}}0'  # the kind alone, for reads whose message the machine decides
 WORDS = programs.TEXT_WORDS
 PLACES = programs.PLACES
 ITEMS_WORDS = programs.ITEMS
@@ -49,6 +52,13 @@ def case(kind: str, source: str, argv: list[str], files: dict[str, str] | None =
          **extra) -> dict:
     """One case as the recorder and the verifier read it (as make_cases.case builds them)."""
     return {"kind": kind, "source": source, "argv": argv, "files": files or {}, "stdin": stdin, **extra}
+
+
+def kind_only(*bodies: str) -> str:
+    """Guarded statements that print only the kind of what they caught: for reads whose message depends on the
+    machine (a file under /proc or /sys, refused where it exists and missing where it does not), while a reader
+    without the rule returns the file's content instead."""
+    return "".join(KIND_ONLY.format(body=body) + "\n" for body in bodies)
 
 
 def guarded(*bodies: str) -> str:
@@ -150,7 +160,7 @@ def normalize(rng: random.Random) -> list[dict]:
         script("normalize", f"t←•ucs {ord(base)} {mark} {ord(rng.choice('nmrst'))}\n⎕←•ucs •normalize t\n"
                             f'⎕←≢•normalize t\n⎕←•ucs "NFD" •normalize •normalize t\n'),
         script("normalize", f'f←"NFC" "NFD" "NFKC" "NFKD"\nt←"{letters}{rng.choice(["é", "ñ", "ü", "å"])}"\n'
-                            f"r←f •normalize¨⊂t\n⎕←≢¨r\n⎕←•ucs¨r\n"),
+                            f"r←(f)•normalize¨⊂t\n⎕←≢¨r\n⎕←•ucs¨r\n"),
         script("normalize", guarded('"NFX" •normalize "a"', "•normalize 65 66", '"nfc" •normalize "a"'), guards=True),
     ]
 
@@ -276,6 +286,35 @@ def systems(rng: random.Random) -> list[dict]:
     ]
 
 
+def errors(rng: random.Random) -> list[dict]:
+    """The documented errors of `•prefs` (an unknown setting, an invalid value of each kind of setting,
+    a record that isn't one, `hanzi_aliases` set after other code, and under static kinds an exact
+    integer that doesn't fit the `int` width), with the settings left as they were; and of `•literal`
+    and `•literal⁻`, `•edge` (and a position that isn't whole) and `•host`. Drawn from a generator of
+    their own, after every other case here, so that no other case changes."""
+    n, a, b, k = rng.randint(2, 99), rng.randint(2, 9), rng.randint(2, 9), rng.randint(2, 6)
+    big = f"{rng.randint(3, 9)}{rng.randint(0, 999999999):09d}ₓ"
+    settings = guarded('•prefs ["hanzi_aliases":$t]',
+                       f'•prefs ["{rng.choice(["margin", "indent", "digits", "color", "tabs", "style"])}":1]',
+                       f'•prefs ["fns":{a}]', f'•prefs ["dissect":{b}]',
+                       f'•prefs ["notation":"{rng.choice(["lisp", "forth", "infix", "prefix", "plain"])}"]',
+                       f'•prefs ["prec":¯{a}]', f'•prefs ["float":{rng.choice([8, 24, 48, 128])}]',
+                       f'•prefs ["int":{rng.choice([8, 16, 48, 128])}]',
+                       f'•prefs ["kinds":"{rng.choice(["lazy", "strict", "mixed", "fixed"])}"]',
+                       f'•prefs ["batch":{b}]', f"•prefs {k}")
+    name = rng.choice(["dune", "total", "price", "depth", "level", "rate"])
+    others = guarded(f'•literal "{name}+1"', f'•literal "{a}{rng.choice("+×⌈⌊")}{b}"', f'•literal "{a} ◇ {b}"',
+                     rng.choice([f'•literal "({a}"', f'•literal "[{a} {b}"']), f"•literal⁻ [+ {a}]",
+                     f"•literal⁻ [{b} ¨]", f"¯{k}•edge {a}", f"{k}.5•edge 1",
+                     f'•edge "{rng.choice(["bounce", "mirror", "repeat", "extend", "nearest"])}"',
+                     f'•host "{rng.choice(["user", "os", "pid", "home", "shell", "locale"])}"')
+    return [
+        script("prefs-errors", f"x←{n}\n{settings}s←•prefs ⍬\n⎕←s.fns s.dissect s.notation s.prec s.float s.int s.kinds s.batch\n"
+                               f'⎕←x\n•prefs ["kinds":"static" "int":32]\n' + guarded(f'•literal "{big}"'), guards=True),
+        script("errors", f"{others}⎕←{a}•edge {b}.5 {k}\n", guards=True),
+    ]
+
+
 def sandbox(rng: random.Random) -> list[dict]:
     """The file-read rule on each read path: a file elsewhere by an absolute path, a path that
     climbs out with `..`, links that lead out, and /proc, /sys and /dev, all refused; and a file
@@ -290,9 +329,12 @@ def sandbox(rng: random.Random) -> list[dict]:
              "abs.txt": "/etc/passwd", "info.txt": "data/info.txt", "m.bpl": "data/m.bpl", "p.bpl": "data/p.bpl"}
     inside = {"data/info.txt": f"{word(rng)} {word(rng)}\n", "data/m.bpl": module, "data/p.bpl": shout,
               "top.txt": f"{word(rng)} {rng.randint(10, 99)}\n", "here.bpl": f'k←{rng.randint(2, 9)}\nsquares←k×ι k\n'}
-    # Paths of the kernel's trees that every machine has: /sys itself is a directory, which the
-    # rule refuses before any read; the program file is also given a file under /sys.
-    kernel = ("/proc/self/stat", "/sys", "/dev/null")
+    # Files of the kernel's trees. Whether a file under /proc or /sys exists, and so whether a read
+    # of it is refused or finds nothing, depends on the machine, not on the image or the runner: those
+    # lines print only the kind of the error (`kind_only`), which is IO either way, while a reader
+    # without the rule returns the file's content. /dev/null is the same everywhere: its refusal is
+    # checked word for word.
+    trees = ("/proc/self/stat", "/sys/devices/system/cpu/online")
 
     def reads(name: str, text: str, **more) -> dict:
         return case("sandbox", f"sandbox:{name}", ["main.bpl"], dict(inside, **{"main.bpl": text}), links=links,
@@ -304,19 +346,23 @@ def sandbox(rng: random.Random) -> list[dict]:
     return [
         reads("nget-out", guarded('•nget "/etc/passwd"', f'•nget "{OUTSIDE}/secret.txt"',
                                   '•nget "data/../../bpl-outside/secret.txt"'), form="guarded"),
-        reads("nget-link", guarded('•nget "esc.txt"', '•nget "abs.txt"', *(f'•nget "{path}"' for path in kernel)),
-              form="guarded"),
-        reads("load-out", guarded('•load "/etc/hosts"', f'•load "{OUTSIDE}/mod.bpl"', '•load "esc.bpl"',
+        reads("nget-link", guarded('•nget "esc.txt"', '•nget "abs.txt"') + kind_only(*(f'•nget "{path}"' for path in trees))
+              + guarded('•nget "/dev/null"'), form="guarded"),
+        # The module outside by its absolute path: the runner's working directory is /tmp/bpl-run whenever answers
+        # are recorded or graded, so the directory beside it, which the runner makes, is /tmp/bpl-outside.
+        reads("load-out", guarded('•load "/tmp/bpl-outside/mod.bpl"', f'•load "{OUTSIDE}/mod.bpl"', '•load "esc.bpl"',
                                   '•load "data/../../bpl-outside/mod.bpl"'), form="guarded"),
-        reads("load-kernel", guarded(*(f'•load "{path}"' for path in kernel)), form="guarded"),
+        reads("load-kernel", kind_only(*(f'•load "{path}"' for path in trees)) + guarded('•load "/dev/null"'), form="guarded"),
         reads("reads-inside", 'a←•nget "data/info.txt"\nb←•nget "info.txt"\n⎕←a≡b\n⎕←⌽a\n⎕←≢•nget "top.txt"\n'
+                              '⎕←≢•nget •path⁻ ["absolute":1] •path "top.txt"\n'
                               '[msg: n:]←•load "m.bpl"\n⎕←msg n\nr←•load "data/m.bpl"\n⎕←r.n×(•load "here.bpl").k\n'),
         runs("program-out", f"{OUTSIDE}/prog.bpl"),
         # The same program by its absolute path: the runner's working directory is /tmp/bpl-run whenever answers
         # are recorded or graded, so the directory beside it is /tmp/bpl-outside.
         runs("program-abs", "/tmp/bpl-outside/prog.bpl"),
         runs("program-link", "run.bpl"),
-        runs("program-proc", "/proc/self/stat"),
+        # A number, so a reader without the rule runs it and prints it; refused or missing, nothing is printed.
+        runs("program-proc", "/proc/self/oom_score_adj"),
         runs("program-sys", "/sys/devices/system/cpu/online"),
         runs("program-dev", "/dev/null"),
         runs("program-inside", "data/p.bpl"),
@@ -530,4 +576,6 @@ def cases(seed: int, pages: dict[str, str]) -> list[dict]:
     built = (nput(rng) + nget(rng) + path(rng) + uuid(rng) + normalize(rng) + element(rng) + xml(rng) + detach(rng)
              + prefs(rng, hanzi_aliases(pages)) + glyphs(rng) + systems(rng) + sandbox(rng))
     rng.shuffle(built)
-    return built
+    # Round 18's cases for the documented errors come last, from a generator of their own, so that every
+    # case above keeps its place and its data.
+    return built + errors(random.Random(f"coverage-errors:{seed}"))

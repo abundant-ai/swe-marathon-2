@@ -457,6 +457,67 @@ def test_the_new_cases_come_after_every_other_case_and_change_none(tmp_path):
     assert first_ids == [f"P{alone + 1:05d}", f"P{alone + 2:05d}", f"P{alone + 3:05d}"], first_ids
 
 
+def test_the_scope_cases_read_no_file_the_machine_decides_and_give_the_documented_errors():
+    """Round 18 (the round-17 re-check's should-fix items and nits). Every file a sandbox case reads is one the runner
+    makes, the image holds or every machine has the same: the module outside by its absolute path is
+    /tmp/bpl-outside/mod.bpl, not /etc/hosts; a read under /proc or /sys prints only its error's kind (IO, whether the
+    file is refused or missing there), while /dev/null and the other refusals keep their messages. A read by an
+    absolute path inside the working directory is among the controls, and the program file under /proc holds a
+    number, which a reader without the rule runs. `•normalize` gets the four forms as one argument. Two guarded cases
+    give the documented errors of `•prefs`, `•literal`, `•edge` and `•host`, after every other case and from a
+    generator of their own, so that no other case changes."""
+    found = scripts_call(textwrap.dedent(f"""
+        import json, scope_cases
+        pages = {COVERAGE_PAGES!r}
+        cases = scope_cases.cases(7, pages)
+        errors, scope_cases.errors = scope_cases.errors, lambda rng: []
+        alone = scope_cases.cases(7, pages)
+        print(json.dumps([cases, len(alone), cases[:len(alone)] == alone]))
+    """))
+    cases, alone, same = found
+    assert same and len(cases) == alone + 2, (len(cases), alone)
+    sandbox = [case for case in cases if case["kind"] == "sandbox"]
+    lines = [line for case in sandbox for line in case["files"].get("main.bpl", "").splitlines()]
+    reads = re.compile(r'(•nget|•load) "(/[^"]*)"')
+    for line in lines:
+        for _, path in reads.findall(line):
+            assert path.startswith(("/tmp/bpl-outside/", "/proc/", "/sys/")) or path in ("/etc/passwd", "/dev/null"), line
+            if path.startswith(("/proc/", "/sys/")):
+                assert line.startswith("{∞::$e.kind ◇ "), line
+            else:
+                assert line.startswith('{∞::$e.kind,": ",$e.message ◇ '), line
+    programs = [case["argv"][0] for case in sandbox if case["argv"][0].startswith("/")]
+    assert sorted(programs) == ["/dev/null", "/proc/self/oom_score_adj", "/sys/devices/system/cpu/online",
+                                "/tmp/bpl-outside/prog.bpl"], programs
+    assert all(target.startswith("../") or target == "/etc/passwd" or not target.startswith("/")
+               for case in sandbox for target in case["links"].values())
+    assert "/etc/hosts" not in json.dumps(cases, ensure_ascii=False)
+    assert '⎕←≢•nget •path⁻ ["absolute":1] •path "top.txt"' in lines, "a read by an absolute path inside"
+    assert any("r←(f)•normalize¨⊂t" in case["files"]["main.bpl"] for case in cases if case.get("family") == "normalize")
+    settings_case, others_case = cases[-2:]
+    assert [settings_case["family"], others_case["family"]] == ["prefs-errors", "errors"], (settings_case, others_case)
+    assert settings_case.get("form") == others_case.get("form") == "guarded"
+    guard = re.compile(r'^\{∞::\$e\.kind,": ",\$e\.message ◇ (.*)\}0$', re.M)
+    settings = settings_case["files"]["main.bpl"]
+    assert not settings.startswith("•prefs") and settings.index('•prefs ["hanzi_aliases":$t]') > 0, "not the leading line"
+    keys = [match[1] for body in guard.findall(settings) for match in [re.fullmatch(r'•prefs \["([a-z_]+)":.*\]', body)] if match]
+    documented = {"box", "trees", "fns", "dissect", "fusion", "limit", "edges", "prec", "width", "notation", "hanzi_aliases",
+                  "mathish", "float", "kinds", "int", "threads", "batch", "seed"}
+    assert {"hanzi_aliases", "fns", "dissect", "notation", "prec", "float", "int", "kinds", "batch"} <= set(keys), keys
+    assert len([key for key in keys if key not in documented]) == 1, "one unknown setting"
+    assert any(re.fullmatch(r"•prefs \d+", body) for body in guard.findall(settings)), "a record that isn't one"
+    static, last = settings.rstrip("\n").splitlines()[-2:]
+    assert static == '•prefs ["kinds":"static" "int":32]' and int(re.fullmatch(r'.*•literal "(\d+)ₓ"\}0', last)[1]) > 2**31 - 1
+    others = guard.findall(others_case["files"]["main.bpl"])
+    shapes = [r'•literal "[a-z]+\+1"', r'•literal "\d[+×⌈⌊]\d"', r'•literal "\d ◇ \d"', r'•literal "(\(\d|\[\d \d)"',
+              r"•literal⁻ \[\+ \d\]", r"•literal⁻ \[\d ¨\]", r"¯\d•edge \d", r"\d\.5•edge 1", r'•edge "([a-z]+)"', r'•host "([a-z]+)"']
+    assert [sum(bool(re.fullmatch(shape, body)) for body in others) for shape in shapes] == [1] * len(shapes), others
+    mode, name = (re.fullmatch(shape, body)[1] for shape in shapes[-2:] for body in others if re.fullmatch(shape, body))
+    assert mode not in ("fill", "clamp", "wrap", "reflect", "symmetric") and name not in ("args", "version", "env", "width",
+                                                                                          "height", "cwd", "temp")
+    assert re.search(r"^⎕←\d•edge \d\.5 \d$", others_case["files"]["main.bpl"], re.M), "a position that isn't whole"
+
+
 # ---------------------------------------------------------------- the verifier
 
 def run_verifier(tmp_path: Path, script: str, cases: list[dict], expected: dict, case_sec: float = 2,
