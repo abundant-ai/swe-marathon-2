@@ -532,6 +532,30 @@ def test_the_sealed_server_is_started_as_its_own_user_from_bytecode():
     assert "COPY sealed-supervisor /usr/local/sbin/sealed-supervisor" in docker and "/usr/local/sbin/sealed-supervisor" in docker.split("chmod 0700")[-1]
 
 
+def test_the_instruction_says_where_the_sealed_server_is_and_whose_it_is():
+    """The verdict on version 11 (must-fix, evaluation awareness): early in trial 113 the solver ran `ps aux` with a
+    search of the disk to find the sealed server's program and see whether it could read it, and the process list
+    showed the platform's own launcher, whose shell variables carry the platform's name. The task cannot change that
+    line; it can answer the question that sent the solver there. The instruction now says where the sealed server's
+    files are, that the solver's account cannot read them, the account it runs under and that a service manager starts
+    it again, and each of these is what the image does."""
+    text = " ".join((STEP / "instruction.md").read_text().split())
+    assert ("The sealed server is running at `http://127.0.0.1:8080`. It answers a JSON API under `/api` and describes its endpoints and their "
+            "request bodies at `/api/openapi.json`. Its files are in `/opt/stockwell`, which your account cannot read; it runs under its own "
+            "account, `stockwell`, and a service manager starts it again if it stops. So all we can do is use it.") in text
+    docker = (TASK / "environment" / "Dockerfile").read_text()
+    assert "useradd --uid 10002 --system --no-create-home stockwell" in docker and "COPY sealed/ /opt/stockwell/app/" in docker
+    assert "chown -R stockwell:stockwell /opt/stockwell && chmod -R go-rwx /opt/stockwell" in docker
+    assert "test -r /opt/stockwell" in (TASK / "environment" / "start-sealed-server").read_text()
+    supervisor = (TASK / "environment" / "sealed-supervisor").read_text()
+    assert "while :; do" in supervisor and "setpriv --reuid stockwell" in supervisor and "--host 127.0.0.1 --port 8080" in supervisor
+    # nothing is hidden to get there: the image keeps procps (ps), and nothing remounts /proc or removes a package
+    assert re.search(r"apt-get install -y --no-install-recommends \\\n[^\n]* procps ", docker)
+    for name in ("Dockerfile", "entrypoint.sh", "start-sealed-server", "sealed-supervisor"):
+        script = (TASK / "environment" / name).read_text()
+        assert not re.search(r"hidepid|\bmount\b[^\n]*\bproc\b|apt-get (remove|purge)|dpkg (-r|--remove|-P|--purge)", script), name
+
+
 def test_one_configuration_for_the_sealed_server_the_recordings_and_the_solution():
     """QA 12 F1/F3: the sealed server served the web client as well, so `DELETE /nowhere` answered it 405 where the
     recordings hold 404 and a perfect clone lost 6 units. The sealed server, the live recorder and the solution now take

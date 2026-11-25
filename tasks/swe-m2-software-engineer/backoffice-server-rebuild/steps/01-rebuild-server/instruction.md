@@ -12,8 +12,9 @@ is today.
 ## Context
 
 - The sealed server is running at `http://127.0.0.1:8080`. It answers a JSON API under `/api`
-  and describes its endpoints and their request bodies at `/api/openapi.json`. It runs under its
-  own account, so all we can do is use it.
+  and describes its endpoints and their request bodies at `/api/openapi.json`. Its files are in
+  `/opt/stockwell`, which your account cannot read; it runs under its own account, `stockwell`,
+  and a service manager starts it again if it stops. So all we can do is use it.
 - The web client's source is in `/app/client`: React and TypeScript, with its built copy in
   `/app/client/dist`. It uses most of the API, its screens show what each record means to our
   staff, and nothing in it needs changing.
