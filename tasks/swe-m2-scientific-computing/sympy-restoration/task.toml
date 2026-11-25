@@ -9,7 +9,7 @@ authors = [{ name = "Neel Harsola", email = "work.neelharsola@gmail.com" }]
 
 [metadata]
 reward_type = "continuous"
-open_internet_justification = "The image build and the agent's set-up have public egress, to install system packages, Python packages and the agent's tooling. The work itself runs without network access."
+open_internet_justification = "Both images are built with public egress, to install their system packages and Python packages, and the agent's set-up has it too, to install the agent's tooling. The work itself, and the commands run in the second image after it, run without network access."
 
 [agent]
 timeout_sec = 34560
@@ -47,7 +47,7 @@ user = "root"
 timeout_sec = 600
 
 [verifier.environment]
-network_mode = "no-network"
+network_mode = "public"
 build_timeout_sec = 1800
 cpus = 4
 memory_mb = 16384

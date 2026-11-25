@@ -837,6 +837,10 @@ It does not yet meet the v2 workload target; see [Workload](#workload) and
   call unreached or failed for lack of time, no late file, no control tripped
   (the stored submissions are the verifier's own copies of the unit files, with
   no times from their runs, so a regrade cannot show what the end of a run cost).
+  The submissions' own bodies ran past their limits up to 15 times in the
+  examples and 24 in the calls, and up to 7 units per submission stopped being
+  run after two; every phase finished. Table under
+  [Trial evidence](#trial-evidence), with `RESULTS_12H.md` updated.
 
 ### 2026-11-24, fourth re-check
 
@@ -941,10 +945,27 @@ It does not yet meet the v2 workload target; see [Workload](#workload) and
   (verifier N5); a Float is said to compare within 2 to 4 units in its last place,
   and compares exactly below 4 bits (verifier N6); the hooks no longer say
   "collect step" (auditor R3).
-  The submissions' own bodies ran past their limits up to 15 times in the
-  examples and 24 in the calls, and up to 7 units per submission stopped being
-  run after two; every phase finished. Table under
-  [Trial evidence](#trial-evidence), with `RESULTS_12H.md` updated.
+- Regrade of the 16 stored submissions on this round's verifier (examples and
+  calls, one worker): every reward the same or lower, by at most 0.0043 (9
+  down, 7 the same; v2 trial 16 0.852, the weakest 0.003), the order unchanged,
+  no unit or call unreached or failed for lack of time, no late file, no control
+  tripped. Every item now has a time of its own, ten times the original's, and a
+  unit's other calls are not run once one has run out of its time, so a
+  submission's own slowest bodies cost a little more than under the old 20 s and
+  10 s limits: they ran past their times 0 to 22 times in the examples and 0 to
+  15 times in the calls, and 0 to 13 units per submission had their other calls
+  not run; every phase finished. Table under [Trial evidence](#trial-evidence),
+  with `RESULTS_12H.md` updated.
+- Two items of a sibling task's pre-trial audit, checked here. The reference
+  solution is readable source: `solution/` holds `oracle.py`, `solve.sh`, the
+  license and attribution, and the original text of the 355 SymPy files that
+  hold units (a prepared input, git-ignored in this repository and copied into
+  the bundle by the packager), with no bytecode, archive or other opaque file. The verifier image's build installs
+  system and Python packages while its environment was declared without network,
+  so `[verifier.environment] network_mode` is now `"public"`, for that
+  environment's build, with `[verifier] network_mode = "no-network"` kept for
+  the verification itself and the open-internet justification extended to the
+  second image's build (see [Verification](#verification)).
 
 ## Current implementation
 
@@ -953,7 +974,7 @@ It does not yet meet the v2 workload target; see [Workload](#workload) and
 | Step `01-restore-bodies` | Implemented. Instruction, agent image, separate verifier image, reference solution. |
 | Further steps | Not designed. See [Workload](#workload). |
 | Prepared inputs | Present locally under Git-ignored paths; produced by the builder in `scripts/builder/`. |
-| Oracle | 1.0 on the platform under the binary reward (at least 14 grades); 1.0 under the continuous reward through the entry point's steps on this machine (2026-11-20). Not yet re-run on the platform. Provenance: the original SymPy 1.14.0 source of the 355 files. |
+| Oracle | 1.0 on the platform under the binary reward (at least 14 grades); 1.0 under the continuous reward through the entry point's steps on this machine (2026-11-20, and after each re-check since, last 2026-11-24). Not yet re-run on the platform. Provenance: the original SymPy 1.14.0 source of the 355 files. |
 | Ratings (`harbor check`) | Not run. No `[metadata.task_rating]` yet. |
 
 Layout notes:
@@ -1140,6 +1161,12 @@ Not yet designed, listed as options and not as decisions:
 ## Verification
 
 The verifier runs in a separate image with only `/app/sympy` from the candidate.
+That image's build installs its system and Python packages, so its environment
+has public egress (`[verifier.environment] network_mode = "public"`); the
+verification itself runs with none (`[verifier] network_mode = "no-network"`,
+to which Harbor switches that environment before it runs the tests), and the
+verifier refuses to measure, an evaluation error, when a public host answers
+its handshake.
 
 0. Delivery (`verifier/delivery.py`). The work runs as `dev`. A root setup step
    records when the work started, to the fraction of a second, and starts
@@ -1173,7 +1200,8 @@ The verifier runs in a separate image with only `/app/sympy` from the candidate.
    without end leaves room for the steps after the work. And from 300 s before
    that time runs out until it does, every second, it copies each unit file that
    changed since its last copy into a folder only root can read (room for this
-   was set aside at setup and is given back before the first copy), when the
+   was set aside at setup and is given back before the first copy, or by the
+   collect step when there was none), when the
    file has not changed since that look began and stays the same file with the
    same times while it is read; it keeps the last two copies of each, with the
    time at which the file held that content, and makes its last look once the
@@ -1534,8 +1562,11 @@ reward = min(u, c)  if candidate_tree and measurement_integrity passed, else 0
   what such bodies could reach (`scripts/builder/floor.py`, and the reviewers'
   scripts, rerun on these calls). The third re-check also wrote its strongest
   strategies as bodies and graded them through the verifier's own runners, on
-  the calls of the round before (6,204 counted); those rows are its figures.
-  Unit rule "one counted call":
+  the calls of the round before (6,204 counted), and the fourth graded them
+  again on these 6,213: those rows are the fourth re-check's figures, on these
+  calls. Every other row was measured again on 2026-11-24 with the final
+  comparison and the final runners (a time for every item, answers over
+  pipes) and is unchanged. Unit rule "one counted call":
 
 | Strategy (bodies that restore nothing) | Through the verifier | Behind a table |
 | --- | --- | --- |
@@ -1547,15 +1578,16 @@ reward = min(u, c)  if candidate_tree and measurement_integrity passed, else 0
 | A default of the type the unit's visible results have (an empty container, a zero, an empty string, an empty matrix of the shown class) | | 0.0103 |
 | Delegation: the method further up the class hierarchy; a same-named function elsewhere | | 0.0052; 0.0053 |
 | A table keyed by the arguments of any unit's visible direct calls; one that also answers a documented call with its symbols renamed | | 0.0013; 0.0021 |
-| All of the above in one body per unit: per-call tables first, then one fallback per unit in a fixed order (the best of six orders) | 0.0135; 0.0166 with its per-call tables (third re-check) | 0.0249 |
-| An accessor of the call's own arguments (`x.args`, `x[0]`, `len(x)`, `list(x)`, `-x`, `str(x)` and eleven more, per argument), chosen per unit by how many of its visible calls it reproduces, then the combination above | 0.0374; 0.0401 with the per-call tables, 0.0171 of it in 38 units whose body matches every recorded call (`Point2D.x`, `Interval.start`); as a tree with its examples run and no table, 0.0174 (third re-check) | |
+| All of the above in one body per unit: per-call tables first, then one fallback per unit in a fixed order (the best of six orders) | 0.0135; 0.0166 with its per-call tables (fourth re-check, on these calls) | 0.0249 |
+| An accessor of the call's own arguments (`x.args`, `x[0]`, `len(x)`, `list(x)`, `-x`, `str(x)` and eleven more, per argument), chosen per unit by how many of its visible calls it reproduces, then the combination above | 0.0373; 0.0401 with the per-call tables, 0.0171 of it in 38 units whose body matches every recorded call (`Point2D.x`, `Interval.start`); as a tree with its examples run and no table, 0.0173 (fourth re-check, on these calls) | |
 | The integrity reviewer's rules together (first argument, its `sympify`, any renamed documented call, the other boolean), with every call cut at 3 s counted as a match | | 0.0064 (0.0124) |
 | The best strategy for each call, chosen with the hidden results (a bound, not buildable) | | 0.0274 |
 | The best constant per unit, chosen with the hidden results (a bound, not buildable) | | 0.0296 |
 
   Every strategy measured stays under the decision's 0.05: the strongest a
-  submission could build is the third re-check's accessor synthesis, 0.0401
-  behind a table of documented outputs, and the bounds that use the hidden
+  submission could build is the re-checks' accessor synthesis, 0.0401 behind a
+  table of documented outputs on these calls (0.0373 without its per-call
+  tables, 0.0173 as a tree), and the bounds that use the hidden
   results stay at 0.0296; so a unit still needs one matching
   counted call. The rounds before stated 0.015 and then 0.0245 for every
   buildable strategy: the first missed results the docstrings print, the second
@@ -1660,33 +1692,33 @@ Proximus on the v1 package, base experiment, 2026-11-17:
 - Proximus reports no cost. Its runs used 0.66 to 2.19 billion input tokens,
   over 99% of them cached.
 
-Regraded on the continuous reward after the third re-check (2026-11-24: Floats
-to a few units in their last place, signed runner records, the submission's own
-time scored, caches and rings in the forms; this machine, the entry point's steps
-without the privilege drop; examples and calls, the tests not run since they are
-not rewarded). The two columns before u are the regrades after the first and the
-second re-check. The twelve-hour trials' own files were not
-downloaded, so these are the stored submissions of the earlier sessions of the
-same task; every one scored 0 under the binary reward.
+Regraded on the continuous reward after the fourth re-check (2026-11-25: runners
+that hold no key and answer over pipes, a time for every item, the sieve as a
+cache; this machine, the entry point's steps without the privilege drop;
+examples and calls, the tests not run since they are not rewarded). The two
+columns before u are the regrades after the second and the third re-check.
+The twelve-hour trials' own files were not downloaded, so these are the
+stored submissions of the earlier sessions of the same task; every one scored
+0 under the binary reward.
 
-| Submission | Agent / model | Units passing, binary era (of 2,671) | Reward, binary | Reward after the first re-check | Reward after the second re-check | u | c | Reward now | Units whose examples pass | Bodies identical to upstream |
+| Submission | Agent / model | Units passing, binary era (of 2,671) | Reward, binary | Reward after the second re-check | Reward after the third re-check | u | c | Reward now | Units whose examples pass | Bodies identical to upstream |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| v2 trial 16 | claude-code / DeepSeek v4.1 Flash | 2,557 | 0 | 0.896 | 0.857 | 0.899 | 0.856 | **0.856** | 2,623 | 21.9% |
-| v2 trial 17 | claude-code / DeepSeek v4.1 Flash | 2,481 | 0 | 0.882 | 0.847 | 0.878 | 0.846 | **0.846** | 2,541 | 20.3% |
-| v2 trial 18 | claude-code / GLM 5.3 | 2,462 | 0 | 0.862 | 0.829 | 0.867 | 0.829 | **0.829** | 2,531 | 18.2% |
-| 48 h run b, session 1 | claude-code / DeepSeek v4.1 Flash | 2,338 | 0 | 0.843 | 0.811 | 0.820 | 0.811 | **0.811** | 2,384 | 21.8% |
-| 48 h run a, session 1 | claude-code / DeepSeek v4.1 Flash | 2,375 | 0 | 0.849 | 0.810 | 0.829 | 0.809 | **0.809** | 2,431 | 21.4% |
-| 48 h run, session 1 | claude-code / GLM 5.3 | 1,976 | 0 | 0.713 | 0.685 | 0.700 | 0.686 | **0.686** | 2,027 | 18.0% |
-| 48 h run b, session 1 | Proximus / DeepSeek v4.1 Flash | 1,289 | 0 | 0.425 | 0.398 | 0.420 | 0.399 | **0.399** | 1,352 | 12.7% |
-| 48 h run a, session 1 | Proximus / DeepSeek v4.1 Flash | 1,159 | 0 | 0.390 | 0.363 | 0.363 | 0.365 | **0.363** | 1,226 | 15.3% |
-| single-step trial 6 | Proximus / DeepSeek v4.1 Flash | 1,077 | 0 | 0.369 | 0.347 | 0.356 | 0.347 | **0.347** | 1,116 | 17.3% |
-| 48 h run, session 1 | Proximus / GLM 5.3 | 1,031 | 0 | 0.355 | 0.329 | 0.352 | 0.331 | **0.331** | 1,054 | 15.0% |
-| base trial 14 | mini-swe-agent / DeepSeek v4.1 Flash | 716 | 0 | 0.234 | 0.217 | 0.230 | 0.216 | **0.216** | 745 | 11.8% |
-| base trial 15 | mini-swe-agent / GLM 5.3 | 346 | 0 | 0.126 | 0.115 | 0.121 | 0.117 | **0.117** | 359 | 9.7% |
-| base trial 9 | mini-swe-agent / DeepSeek v4.1 Flash | 334 | 0 | 0.109 | 0.100 | 0.100 | 0.140 | **0.100** | 350 | 7.4% |
-| base trial 10 | mini-swe-agent / GLM 5.3 | 274 | 0 | 0.100 | 0.093 | 0.103 | 0.094 | **0.094** | 281 | 9.3% |
-| base trial 8 | claude-code / GLM 5.3 | 63 | 0 | 0.021 | 0.020 | 0.019 | 0.036 | **0.019** | 63 | 62.4% |
-| base trial 13 | claude-code / GLM 5.3 | 15 | 0 | 0.004 | 0.003 | 0.003 | 0.004 | **0.003** | 15 | 14.3% |
+| v2 trial 16 | claude-code / DeepSeek v4.1 Flash | 2,557 | 0 | 0.857 | 0.856 | 0.894 | 0.852 | **0.852** | 2,611 | 21.9% |
+| v2 trial 17 | claude-code / DeepSeek v4.1 Flash | 2,481 | 0 | 0.847 | 0.846 | 0.872 | 0.842 | **0.842** | 2,530 | 20.3% |
+| v2 trial 18 | claude-code / GLM 5.3 | 2,462 | 0 | 0.829 | 0.829 | 0.862 | 0.826 | **0.826** | 2,520 | 18.2% |
+| 48 h run b, session 1 | claude-code / DeepSeek v4.1 Flash | 2,338 | 0 | 0.811 | 0.811 | 0.815 | 0.807 | **0.807** | 2,377 | 21.8% |
+| 48 h run a, session 1 | claude-code / DeepSeek v4.1 Flash | 2,375 | 0 | 0.810 | 0.809 | 0.828 | 0.807 | **0.807** | 2,431 | 21.4% |
+| 48 h run, session 1 | claude-code / GLM 5.3 | 1,976 | 0 | 0.685 | 0.686 | 0.700 | 0.686 | **0.686** | 2,027 | 18.0% |
+| 48 h run b, session 1 | Proximus / DeepSeek v4.1 Flash | 1,289 | 0 | 0.398 | 0.399 | 0.420 | 0.399 | **0.399** | 1,352 | 12.7% |
+| 48 h run a, session 1 | Proximus / DeepSeek v4.1 Flash | 1,159 | 0 | 0.363 | 0.363 | 0.363 | 0.364 | **0.363** | 1,226 | 15.3% |
+| single-step trial 6 | Proximus / DeepSeek v4.1 Flash | 1,077 | 0 | 0.347 | 0.347 | 0.356 | 0.347 | **0.347** | 1,116 | 17.3% |
+| 48 h run, session 1 | Proximus / GLM 5.3 | 1,031 | 0 | 0.329 | 0.331 | 0.352 | 0.331 | **0.331** | 1,054 | 15.0% |
+| base trial 14 | mini-swe-agent / DeepSeek v4.1 Flash | 716 | 0 | 0.217 | 0.216 | 0.229 | 0.216 | **0.216** | 745 | 11.8% |
+| base trial 15 | mini-swe-agent / GLM 5.3 | 346 | 0 | 0.115 | 0.117 | 0.121 | 0.116 | **0.116** | 359 | 9.7% |
+| base trial 9 | mini-swe-agent / DeepSeek v4.1 Flash | 334 | 0 | 0.100 | 0.100 | 0.099 | 0.139 | **0.099** | 348 | 7.4% |
+| base trial 10 | mini-swe-agent / GLM 5.3 | 274 | 0 | 0.093 | 0.094 | 0.103 | 0.094 | **0.094** | 281 | 9.3% |
+| base trial 8 | claude-code / GLM 5.3 | 63 | 0 | 0.020 | 0.019 | 0.019 | 0.036 | **0.019** | 63 | 62.4% |
+| base trial 13 | claude-code / GLM 5.3 | 15 | 0 | 0.003 | 0.003 | 0.003 | 0.004 | **0.003** | 15 | 14.3% |
 
 ## Validation
 
@@ -1747,6 +1779,9 @@ same task; every one scored 0 under the binary reward.
 | `oddish preflight` | flat bundle `966f2b531f52` (`ops/sympy-restoration/dist-12h/`, key rotated; platform content hash `27ceda8716e8…`, version 4's `4ce37762a342…`) | pass (1 task) |
 | Word sweep of the whole bundle, its data, archives and key (the same scripts as the round before) | bundle `966f2b531f52` | clean: the agent's files use "deliver" only as the task's word; `platform` only as the forbidden standard-library module; SymPy's own names in the data and archives; 0 non-ASCII bytes; the key's copies equal, new and held by no other file; no bytecode |
 | Regrade of the stored submissions after the third re-check | this machine, the entry point's steps, examples and calls, one replay worker, 2026-11-24 | 16 submissions, reward 0.003 to 0.856, each within 0.0023 of the round before, the order unchanged; none with a unit or call unreached or failed for lack of time, a late file or a control tripped (see [Trial evidence](#trial-evidence)) |
+| Reference, the agent's starting tree and a turn of no length, after the fourth re-check | this machine, the entry point's steps, one worker, runners over pipes with a time for every item; the no-op through the shipped hooks, the real net check, a platform-style copy and the real mark, with root, the Linux tools, the network, `/proc` and the user `dev` stood in for | reference 1.000000 and complete: 1,847 / 1,847 units, 6,213 / 6,213 counted calls, 16,737 / 16,737 calls, 10,428 / 10,428 tests, none unreached, no item out of its time (355 starts in each phase), no control tripped, 1,209 s; starting tree 0.0; no-op 0.0 with `end_from` `unchanged` (12 polls, no opening, 1,716 entries listed) |
+| Floor on these calls with the final runners (`fixtures.py`, `floor.py`, the reviewers' scripts) | working tree, 2026-11-24 (fourth re-check) | the same as the round before: through the verifier raise, first argument and flip 0.0; behind a table flip 0.0034, the combination 0.0249 statically; integrity rules 0.0064 (0.0124); hidden-result bounds 0.0274 and 0.0296; the re-checks' accessor synthesis 0.0401 behind a table (the fourth re-check's figure, on these calls); all under 0.05 |
+| Regrade of the stored submissions after the fourth re-check | this machine, the entry point's steps, examples and calls, one worker, 2026-11-25 | 16 submissions, reward 0.003 to 0.852, each the same or up to 0.0043 lower than the round before, the order unchanged; none with a unit or call unreached or failed for lack of time, a late file or a control tripped (see [Trial evidence](#trial-evidence)) |
 | `harbor check` with `resources/task-implementation.toml` | working tree, 2026-11-17 | attempted on Modal; failed before review with `NotFoundError: Environment not found` (no default Modal environment). Not run in local Docker. No ratings |
 | Local image builds | none | not run for the v2 Dockerfiles; the Oddish baselines are the first build |
 
@@ -1843,12 +1878,18 @@ uv run --frozen pytest -q tasks/swe-m2-scientific-computing/sympy-restoration/ch
   canary whose reference leaves a detached fetch-and-overwrite loop must score 0
   with its files `late`; a time-limit canary, a reference that keeps working
   past the limit with a load process and a fetch, must score 0 with its files
-  `late` and `end_from` `limit` or earlier; the reference twice with the record present and
+  `late` and `end_from` `limit` or earlier; a reference that saves a unit file
+  by rename just after the limit must keep that file, `copied`, with its
+  content at the limit; the reference twice with the record present and
   `end_from` `session` (one session seen, began within seconds of the start),
   the no-op twice with `end_from` `unchanged`; claude-code and Proximus must
   start and work as `dev`; the flat single-step bundle must run the hooks. If
   the net check's probe does not see the opening there, certify copies taken
   while egress was closed instead.
+- On the platform's first grade of this version, confirm that Harbor switches
+  the verifier's environment, now declared with public egress for its build, to
+  no network before the tests run: the verifier refuses to measure otherwise
+  (an evaluation error), so the reference's first grade shows it either way.
 - Before a Proximus trial on this version, read the `sessions` of one Proximus
   record: if its work runs outside its exec sessions and its last session began
   within ten minutes of the start, the session end would cut its later writes,

@@ -45,10 +45,11 @@ for _ in $(seq 1 50); do
   setpriv --reuid dev --regid dev --clear-groups kill -STOP -1 >/dev/null 2>&1
   sleep 0.05
 done
-# No process of `dev` runs now: give back the room and the spare inodes fsmaint-reserve set aside,
-# before this step writes anything, so however full the disk was left, everything this step and the
-# net check write still fits.
+# No process of `dev` runs now: give back the room and the spare inodes fsmaint-reserve set aside
+# (and the room for the copies, when fsmaint-netcheck has not used it), before this step writes
+# anything, so however full the disk was left, everything this step and the net check write still fits.
 rm -f "$STATE/room"
+rm -f "$STATE/copy-room"
 rm -rf "$STATE/inodes"
 # The measuring program, written once and run twice: now, before anything else is written, to put
 # the tree aside and leave an empty one in its place with a mark that refuses it; and last, to
