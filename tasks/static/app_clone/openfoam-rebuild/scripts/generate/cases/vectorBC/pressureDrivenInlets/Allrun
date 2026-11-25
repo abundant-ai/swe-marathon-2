@@ -1,0 +1,5 @@
+#!/bin/bash
+# from: scratch; exercises: U BCs pressureDirectedInletVelocity pressureDirectedInletOutletVelocity pressureNormalInletOutletVelocity pressureInletUniformVelocity rotatingPressureInletOutletVelocity pressurePIDControlInletVelocity
+blockMesh
+topoSet
+pimpleFoam

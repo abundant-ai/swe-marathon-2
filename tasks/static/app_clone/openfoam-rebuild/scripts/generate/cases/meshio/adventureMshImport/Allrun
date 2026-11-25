@@ -1,0 +1,8 @@
+#!/bin/bash
+# from: scratch; exercises: mshToFoam (Adventure .msh) tet reader and -hex reader, boundary collected into defaultFaces
+cd "${0%/*}" || exit 1
+mshToFoam twoTets.msh
+checkMesh
+mv constant/polyMesh mesh_tets
+mshToFoam -hex twoHex.msh
+checkMesh

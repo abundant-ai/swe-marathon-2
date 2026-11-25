@@ -13,9 +13,14 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow from an idea to a runna
 task, and [resources/requirement.md](resources/requirement.md) for task requirements
 and development rules.
 
-Task sources live in `tasks/<family>/<task>/`. Start with the task's `README.md`
-and its `steps/<step>/instruction.md`. Authoring skills are in
-[resources/skills/](resources/skills/).
+Tasks with fixed instructions live under `tasks/static/<category>/<task>/`. The
+categories are `library_build`, `app_clone`, `app_building`, `ai_research`,
+`game_dev`, and `robotics`. Tasks that
+run with a simulated user live in [tasks/usersim/](tasks/usersim/). Both contain
+a version of Orange. Start with the README in the task you want to run.
+A single-step task starts from `instruction.md` at its root. Multi-step tasks
+keep the briefs under `steps/<step>/`. Authoring skills
+are in [resources/skills/](resources/skills/).
 
 ## Local setup and checks
 
@@ -30,13 +35,12 @@ uv sync --frozen
 This creates `.venv` with the locked development dependencies. Run project
 commands from the repository root with `uv run --frozen ...`.
 
-To check repository structure and documentation links:
+Ruff checks staged Python files before commit. To enable the
+[commit hook](resources/CI.md) in a new clone, use this command.
 
 ```bash
-uv run --no-project python ci_checks/check_repository.py
+git config core.hooksPath .githooks
 ```
-
-See [CI guidance](resources/CI.md) for the full checks and test commands.
 
 ### Optional tools
 
@@ -49,47 +53,3 @@ uv tool install "oddish @ git+https://github.com/abundant-ai/oddish.git@main#sub
 
 Run it as `oddish ...`. Follow [Oddish guidance](resources/ODDISH.md) for packaging
 and running a task.
-
-For Titans work, install the optional dependency group from the
-[public Abundant Titans repository](https://github.com/abundant-ai/titans):
-
-```bash
-uv sync --frozen --group titans
-```
-
-Include `--group titans` when running or syncing that environment.
-
-The [Titans training task](tasks/swe-m2-ai-research/titans-training/README.md)
-uses the published `pretrain` API from library commit `e277e2b` or a compatible
-newer checkout. The dependency pin above still predates that API. To run the
-offline CPU probe against a local checkout without changing the lockfile:
-
-```bash
-uv run --frozen --no-sync --with-editable /path/to/titans python \
-  tasks/swe-m2-ai-research/titans-training/scripts/check_train_eval.py
-```
-
-For application code importing `titans_task`, add
-`tasks/swe-m2-ai-research/titans-training/common` to `PYTHONPATH`. The probe sets
-that import path itself. It uses synthetic text and tiny decoders, not a GPU or
-the production training corpus.
-
-Prepare the fixed FineWeb-Edu, PG19 and WikiText token streams once before
-pretraining. The `titans-data` group adds the pinned Parquet reader; this command
-uses the same local library checkout:
-
-```bash
-uv run --frozen --group titans-data --with-editable /path/to/titans python \
-  tasks/swe-m2-ai-research/titans-training/scripts/prepare_data.py
-```
-
-The default output is the task's Git-ignored `experiment/data/`, with downloads
-cached in `experiment/source-cache/`. Use `--output-dir` for a fresh destination
-or `--validate-only` to check existing token files. Train/eval load those files
-without tokenizing text. To run the preparation checks and audit the full output:
-
-```bash
-uv run --frozen --group titans-data --with-editable /path/to/titans python \
-  tasks/swe-m2-ai-research/titans-training/scripts/check_preparation.py \
-  --data-dir tasks/swe-m2-ai-research/titans-training/experiment/data
-```

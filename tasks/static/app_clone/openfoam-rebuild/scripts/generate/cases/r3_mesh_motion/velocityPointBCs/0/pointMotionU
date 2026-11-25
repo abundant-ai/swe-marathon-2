@@ -1,0 +1,28 @@
+FoamFile { version 2.0; format ascii; class pointVectorField; object pointMotionU; }
+dimensions [0 1 -1 0 0 0 0];
+internalField uniform (0 0 0);
+boundaryField
+{
+    ymax
+    {
+        type            angularOscillatingVelocity;
+        axis            (0 0 1);
+        origin          (0.5 0.5 0.5);
+        angle0          0;
+        amplitude       0.1;
+        omega           3.14159;
+        value           uniform (0 0 0);
+    }
+    xmax
+    {
+        type            oscillatingVelocity;
+        amplitude       (0.1 0 0);
+        omega           3.14159;
+        value           uniform (0 0 0);
+    }
+    "(xmin|ymin|zmin|zmax)"
+    {
+        type            fixedValue;
+        value           uniform (0 0 0);
+    }
+}

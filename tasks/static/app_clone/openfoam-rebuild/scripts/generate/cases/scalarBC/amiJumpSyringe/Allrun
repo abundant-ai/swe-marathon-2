@@ -1,0 +1,5 @@
+#!/bin/bash
+# from: scratch (three-block channel joined by non-conformal cyclicAMI); exercises: scalar BCs fixedJumpAMI uniformJumpAMI syringePressure
+cd "${0%/*}" || exit 1
+blockMesh
+pimpleFoam

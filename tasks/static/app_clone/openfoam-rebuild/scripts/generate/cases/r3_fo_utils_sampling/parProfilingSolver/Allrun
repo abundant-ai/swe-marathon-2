@@ -1,0 +1,6 @@
+#!/bin/bash
+# from: IO/cavity_parProfiling; exercises: parProfiling wrapper linear solver (baseSolver PCG) with distributedDIC/distributedDILU preconditioners and parProfiling function object, 2-proc icoFoam
+cd "${0%/*}" || exit 1
+blockMesh
+decomposePar
+mpirun --oversubscribe -np 2 icoFoam -parallel

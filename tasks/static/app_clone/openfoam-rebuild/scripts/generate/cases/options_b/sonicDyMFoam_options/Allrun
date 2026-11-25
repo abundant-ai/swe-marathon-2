@@ -1,0 +1,24 @@
+#!/bin/bash
+# from: compressible/sonicDyMFoam/movingCone (coarse 5-block mesh, 2e-6 s); exercises: sonicDyMFoam -noFunctionObjects, -postProcess on moving-mesh times (-func/-latestTime, -funcs/-time, -fields/-noZero), -parallel with default and alternative -decomposeParDict; errors: -parallel before decomposePar, nonexistent -decomposeParDict, missing motion component entry, unknown dynamicFvMesh type, missing pointMotionUx field, unknown -func
+blockMesh
+sonicDyMFoam -noFunctionObjects
+sonicDyMFoam -postProcess -func "mag(U)" -latestTime
+sonicDyMFoam -postProcess -funcs '(MachNo "grad(p)")' -time 1e-06:2e-06
+sonicDyMFoam -postProcess -fields '(T p)' -func "magSqr(T)" -noZero
+sonicDyMFoam -postProcess -func noSuchFunctionObject -latestTime || true
+mpirun --oversubscribe -np 2 sonicDyMFoam -parallel || true
+decomposePar
+mpirun --oversubscribe -np 2 sonicDyMFoam -parallel
+decomposePar -force -decomposeParDict system/decomposeParDict.alt
+mpirun --oversubscribe -np 2 sonicDyMFoam -parallel -decomposeParDict system/decomposeParDict.alt
+mpirun --oversubscribe -np 2 sonicDyMFoam -parallel -decomposeParDict system/noSuchDecomposeParDict || true
+cp constant/dynamicMeshDict constant/dynamicMeshDict.orig
+foamDictionary -entry component -remove constant/dynamicMeshDict
+sonicDyMFoam -noFunctionObjects || true
+cp constant/dynamicMeshDict.orig constant/dynamicMeshDict
+foamDictionary -entry dynamicFvMesh -set noSuchDynamicFvMesh constant/dynamicMeshDict
+sonicDyMFoam -noFunctionObjects || true
+cp constant/dynamicMeshDict.orig constant/dynamicMeshDict
+mv 0/pointMotionUx 0/pointMotionUx.off
+sonicDyMFoam -noFunctionObjects || true
+mv 0/pointMotionUx.off 0/pointMotionUx

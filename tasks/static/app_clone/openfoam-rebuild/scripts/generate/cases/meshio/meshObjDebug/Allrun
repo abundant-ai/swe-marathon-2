@@ -1,0 +1,16 @@
+#!/bin/bash
+# from: incompressible/icoFoam/cavity (two-block, two cellZone variant); exercises: writeMeshObj default/-patchFaces/-patchEdges/-cell/-face/-point/-cellSet/-faceSet, objToVTK on writeMeshObj line output and a hand-written polyline obj
+cd "${0%/*}" || exit 1
+blockMesh
+topoSet
+writeMeshObj
+writeMeshObj -patchFaces -patchEdges
+writeMeshObj -cell 5 -face 3 -point 7
+mv meshPoints_0.obj meshPoints_0_all.obj
+writeMeshObj -cellSet rightCells
+mv meshPoints_0.obj meshPoints_0_rightCells.obj
+writeMeshObj -faceSet topFaces
+objToVTK patchEdges_inlet_0.obj patchEdges_inlet.vtk
+objToVTK meshPoints_0_5.obj cell5.vtk
+objToVTK polyline.obj polyline.vtk
+objToVTK missing.obj missing.vtk || true

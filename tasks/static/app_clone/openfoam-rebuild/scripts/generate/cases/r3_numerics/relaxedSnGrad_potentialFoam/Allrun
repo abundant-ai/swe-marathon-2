@@ -1,0 +1,7 @@
+#!/bin/bash
+# from: basic/potentialFoam/cylinder (replaced by a 16x8 skewed graded 2D channel); exercises: relaxed snGrad scheme (snGrad(Phi) field relaxation factor) alone and inside limited, for laplacian(1,Phi) with 3 non-orthogonal correctors
+blockMesh
+cp -r variants/relaxed/. .
+potentialFoam -writePhi
+cp -r variants/limitedRelaxed/. .
+potentialFoam -writePhi

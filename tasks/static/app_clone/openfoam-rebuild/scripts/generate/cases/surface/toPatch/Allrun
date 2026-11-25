@@ -1,0 +1,8 @@
+#!/bin/bash
+# from: scratch (blockMesh box with one 'walls' patch, hand-written 6-solid cubeBlock.stl / cube6.stl); exercises: surfaceToPatch repatching boundary faces by nearest surface region (startFrom latestTime: each run writes the next time), -faceSet restriction, unmatched faces beyond tolerance, -tol
+cd "${0%/*}" || exit 1
+blockMesh
+topoSet
+surfaceToPatch -faceSet lowerX constant/triSurface/cubeBlock.stl
+surfaceToPatch constant/triSurface/cube6.stl
+surfaceToPatch -tol 0.01 constant/triSurface/cubeBlock.stl

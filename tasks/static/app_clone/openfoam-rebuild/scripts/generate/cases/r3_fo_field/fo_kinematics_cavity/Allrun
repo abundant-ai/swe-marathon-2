@@ -1,0 +1,6 @@
+#!/bin/bash
+# from: incompressible/icoFoam/cavity/cavity; exercises: function objects Lambda2, LambVector, flowType, PecletNo, flux, ddt, div, pow, add, subtract, randomise (all cells and cellZone)
+cd "${0%/*}" || exit 1
+blockMesh > log.blockMesh 2>&1
+topoSet > log.topoSet 2>&1
+icoFoam > log.icoFoam 2>&1

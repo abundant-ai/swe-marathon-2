@@ -1,0 +1,12 @@
+#!/bin/bash
+# from: incompressible/icoFoam/cavity/cavity (5x4 mesh, front/back planes warped); exercises: flattenMesh plain, -case; errors: no mesh, -case on a copy whose front/back patch is a wall (cannot determine normal), -case noSuchDir
+flattenMesh || true
+blockMesh
+mkdir -p copy
+cp -r system constant copy/
+flattenMesh
+flattenMesh -case copy
+checkMesh
+blockMesh -case threeD
+flattenMesh -case threeD || true
+flattenMesh -case noSuchDir || true

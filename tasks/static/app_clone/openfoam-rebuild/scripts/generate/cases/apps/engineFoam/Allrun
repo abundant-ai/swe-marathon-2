@@ -1,0 +1,4 @@
+#!/bin/bash
+# from: lagrangian/sprayFoam/aachenBomb + combustion/XiEngineFoam/kivaTest engineGeometry; exercises: engineFoam spray engine solver: layered engineMesh piston motion, crank-angle time, coneNozzle spray, PaSR, logSummary
+blockMesh
+engineFoam

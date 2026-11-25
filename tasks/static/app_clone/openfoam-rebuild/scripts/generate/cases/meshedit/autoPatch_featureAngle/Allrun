@@ -1,0 +1,6 @@
+#!/bin/bash
+# from: scratch (icoFoam/cavity blockMesh shrunk to a skewed single block); exercises: autoPatch feature-angle splitting of a single default patch, with and without -overwrite
+blockMesh
+autoPatch 60
+autoPatch -overwrite 20
+checkMesh -constant

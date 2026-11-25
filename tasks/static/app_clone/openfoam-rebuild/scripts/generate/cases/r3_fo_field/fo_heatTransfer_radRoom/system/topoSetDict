@@ -1,0 +1,5 @@
+FoamFile { version 2.0; format ascii; class dictionary; object topoSetDict; }
+actions
+(
+    { name midPlane; type faceZoneSet; action new; source planeToFaceZone; point (5 3 1); normal (1 0 0); }
+);

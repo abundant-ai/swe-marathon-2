@@ -1,0 +1,1099 @@
+#!/bin/sh
+# Runs as root once the unprivileged user's session has ended, before /app/rebuild is copied to the machines it will
+# run on. It first ends the process the set-up hook left (which stops that user's processes once the session's limit
+# has passed), then stops every process of that user; it then lists those processes, ends them, records every entry's
+# own times before anything of its own touches the tree, and records whether this host has outbound connectivity, for
+# the maintenance log. A session that ran to its limit leaves its processes running until here: what changed after
+# the session's end (its start plus its limit) is taken out, by the times recorded before this step touched anything,
+# and so is every file those processes, frozen, still hold open for writing or map shared and writable.
+# What it lets through is what the copy can take: within the limits the instruction states, with nothing of that
+# user's processes running, and packed here first the way the copy packs it, with room left for this step's record;
+# and the last script refuses, rather than outlasts, a tree it cannot measure and pack in time.
+# The .manifest file lists what was packed; the .manifest.json record lists every entry it lets through with the times
+# it had when the session ended, and every link the step changed, with where a copied file came from.
+LIMIT_ENTRIES=100000
+LIMIT_BYTES=1000000000
+LIMIT_PATH=1000
+PACK_SECONDS=100
+LOOP_SECONDS=15  # the freeze and the kill below each stop this long after they begin, and say so
+STATE=/var/lib/scratch
+HOOK_STARTED=$(date +%s)
+mkdir -p "$STATE" && chmod 0700 "$STATE"
+# The process the set-up hook left, which stops that user's processes once the session's limit has passed, stops
+# nothing from here on: this step's mark first (it looks for it before every round), then the process itself, and its
+# sleep, are ended (it leads its own process group), before this step runs anything as that user.
+: > "$STATE/collect-began"
+holder=$(cat "$STATE/holder.pid" 2>/dev/null)
+case "$holder" in
+  ''|*[!0-9]*) ;;
+  *) if ps -ww -o args= -p "$holder" 2>/dev/null | grep -q -F -- ' -I - hold'; then
+       kill -KILL -- "-$holder" 2>/dev/null || kill -KILL "$holder" 2>/dev/null
+     fi ;;
+esac
+# Freeze every process of the unprivileged user next, before any other step. `kill -STOP -1` as that user reaches all
+# of them in one system call, so a process that forks cannot outrun it; repeat until none is left running (R or S: a
+# task in D, such as a parent waiting on its vfork child, runs nothing of its own until it leaves D, and the kill below
+# ends it), for LOOP_SECONDS at most.
+for _ in $(seq 1 100); do
+  pgrep -u dev -r R,S >/dev/null 2>&1 || break
+  setpriv --reuid dev --regid dev --clear-groups kill -STOP -1 >/dev/null 2>&1
+  [ "$(date +%s)" -lt $((HOOK_STARTED + LOOP_SECONDS)) ] || { echo "the freeze stopped after $LOOP_SECONDS s with a process of dev still running" >> "$STATE/loops.txt"; break; }
+  sleep 0.05
+done
+# The frozen processes, one command, then the kill: repeated until none is left, for LOOP_SECONDS at most.
+ps -eo pid=,ppid=,uid=,etimes=,args= > "$STATE/processes.txt" 2>/dev/null || :
+# What the frozen processes hold open for writing, or map shared and writable, before they are ended. A session that ran
+# to its limit kept them running past its end, and a write through such a mapping can leave a file's change time as it
+# was, so the last script takes those files out. Root may not read another user's process; when it could not read one,
+# the listing runs again as the user, who can read each of its own but one that ran a set-id program or made itself
+# undumpable. The script is written once, to the state directory, for both runs.
+cat > "$STATE/writers.py" <<'EOF'
+"""What the user's frozen processes hold open for writing, or map shared and writable, printed as JSON for the last
+script. For each process with the user's id among its ids, through each of its threads: the regular files open for
+writing in the thread's descriptor table (the access mode from fdinfo; one that shows none counts as writable) and the
+files its memory map holds shared and writable (`rw-s` in the thread's maps, with an inode), each with the path the
+process sees, its device and its inode. An entry
+is kept when either could be the tree's: a path under it, or the tree's device. A process that cannot be read is
+listed with its ids and command, and the exit status is then 3. Bounded in time, in entries and in bytes."""
+import json
+import os
+import signal
+import stat
+import sys
+
+PROC, TREE = sys.argv[1], sys.argv[2]
+UID, GID = (int(value) if value.isdigit() else None for value in (sys.argv[3:5] + ["", ""])[:2])
+SECONDS, MOST_HELD, MOST_UNREAD, MOST_BYTES, LONGEST = 20, 10000, 1000, 8 << 20, 1100
+out = {"complete": False, "processes": 0, "held": [], "unread": [], "outside": 0}
+printed = 0
+tree_dev = None
+
+
+class Stop(Exception):
+    pass
+
+
+def out_of_time(signum, frame):
+    raise Stop(f"it was not done within {SECONDS} s")
+
+
+def ids(base):
+    with open(os.path.join(base, "status"), errors="replace") as text:
+        fields = dict(line.split(":", 1) for line in text.read().splitlines() if ":" in line)
+    return [int(value) for value in fields["Uid"].split()], [int(value) for value in fields["Gid"].split()]
+
+
+def command(base):
+    try:
+        with open(os.path.join(base, "cmdline"), "rb") as text:
+            return text.read(400).replace(b"\0", b" ").decode(errors="backslashreplace").strip()[:200]
+    except OSError:
+        return ""
+
+
+def keep(entry):
+    global printed
+    path = entry["path"]
+    if not any(name == TREE or name.startswith(TREE + "/") for name in (path, path[:-10] if path.endswith(" (deleted)") else path)):
+        if entry["dev"] != tree_dev:
+            out["outside"] += 1
+            return
+    if len(os.fsencode(path)) > LONGEST:
+        entry["path"] = None  # longer than any path of the tree: its inode alone can match
+    printed += len(json.dumps(entry))
+    if len(out["held"]) >= MOST_HELD or printed > MOST_BYTES:
+        raise Stop(f"more than {MOST_HELD:,} files, or {MOST_BYTES >> 20} MiB of them, were held open for writing")
+    out["held"].append(entry)
+
+
+def flags_of(path):
+    with open(path, errors="replace") as text:
+        for line in text.read(4096).splitlines():
+            if line.startswith("flags:"):
+                return int(line.split()[1], 8)
+    return None
+
+
+def scan(pid, base):
+    """Every thread's memory map and descriptor table: the process's own maps is its first thread's, empty once that
+    thread has exited while others live, and a thread may have a table of its own. A thread that cannot be read
+    raises PermissionError, as a process does; one that is gone is passed over."""
+    seen = set()
+    for task in sorted(os.listdir(os.path.join(base, "task"))):
+        place = os.path.join(base, "task", task)
+        try:
+            with open(os.path.join(place, "maps"), "rb") as text:
+                maps = text.read()
+            fds = sorted(os.listdir(os.path.join(place, "fd")))
+        except (FileNotFoundError, ProcessLookupError):
+            continue
+        for line in maps.splitlines():
+            parts = line.split(maxsplit=5)
+            if len(parts) == 6 and parts[1][1:2] == b"w" and parts[1][3:4] == b"s" and parts[4] != b"0":
+                major, minor = (int(value, 16) for value in parts[3].split(b":"))
+                entry = {"pid": pid, "how": "mapped", "path": os.fsdecode(parts[5]).replace("\\012", "\n"), "dev": os.makedev(major, minor),
+                         "ino": int(parts[4])}
+                if ("mapped", entry["dev"], entry["ino"], entry["path"]) not in seen:  # the threads share one map
+                    seen.add(("mapped", entry["dev"], entry["ino"], entry["path"]))
+                    keep(entry)
+        for fd in fds:
+            link = os.path.join(place, "fd", fd)
+            try:
+                info = os.stat(link)
+                flags = flags_of(os.path.join(place, "fdinfo", fd))
+                path = os.readlink(link)
+            except (FileNotFoundError, ProcessLookupError):
+                continue
+            writable = flags is None or (flags & 0o3 != 0 and not flags & 0o10000000)  # O_ACCMODE, O_PATH
+            if stat.S_ISREG(info.st_mode) and writable and ("open", info.st_dev, info.st_ino) not in seen:
+                seen.add(("open", info.st_dev, info.st_ino))
+                keep({"pid": pid, "how": "open", "path": path, "dev": info.st_dev, "ino": info.st_ino})
+
+
+signal.signal(signal.SIGALRM, out_of_time)
+signal.alarm(SECONDS)
+try:
+    if UID is None or GID is None:
+        raise Stop("the user has no id here")
+    tree_dev = os.stat(TREE).st_dev
+    for name in sorted(os.listdir(PROC)):
+        if not name.isdigit() or int(name) == os.getpid():
+            continue
+        base = os.path.join(PROC, name)
+        try:
+            uids, gids = ids(base)
+        except (OSError, KeyError, ValueError):
+            continue  # ended, or not a process
+        if UID not in uids:
+            continue
+        out["processes"] += 1
+        try:
+            scan(int(name), base)
+        except PermissionError:
+            if len(out["unread"]) >= MOST_UNREAD:
+                raise Stop(f"more than {MOST_UNREAD:,} processes could not be read")
+            out["unread"].append({"pid": int(name), "uids": uids, "gids": gids, "command": command(base)})
+        except FileNotFoundError:
+            continue  # a process with no tasks left
+    out["complete"] = True
+except Stop as stop:
+    out["why"] = str(stop)
+except (OSError, ValueError, RecursionError) as exc:
+    out["why"] = f"{exc.__class__.__name__}: {exc}"[:300]
+finally:
+    signal.alarm(0)
+print(json.dumps(out))
+sys.exit(3 if out["complete"] and out["unread"] else 0)
+EOF
+timeout 30 /usr/bin/python3 -I - /proc /app/rebuild "$(id -u dev 2>/dev/null)" "$(id -g dev 2>/dev/null)" < "$STATE/writers.py" > "$STATE/writers.json" 2>/dev/null
+if [ $? -eq 3 ]; then
+  timeout 30 setpriv --reuid dev --regid dev --clear-groups --no-new-privs /usr/bin/python3 -I - /proc /app/rebuild "$(id -u dev 2>/dev/null)" "$(id -g dev 2>/dev/null)" < "$STATE/writers.py" > "$STATE/writers-user.json" 2>/dev/null || :
+fi
+rounds=0
+killing=$(date +%s)
+for _ in $(seq 1 100); do
+  { pgrep -u dev -r R,S,D,T || pgrep -U dev -r R,S,D,T; } >/dev/null 2>&1 || break  # zombies are not survivors
+  rounds=$((rounds + 1))
+  setpriv --reuid dev --regid dev --clear-groups kill -9 -1 >/dev/null 2>&1
+  pkill -KILL -u dev >/dev/null 2>&1
+  pkill -KILL -U dev >/dev/null 2>&1
+  [ "$(date +%s)" -lt $((killing + LOOP_SECONDS)) ] || { echo "the kill stopped after $LOOP_SECONDS s with a process of dev left" >> "$STATE/loops.txt"; break; }
+  sleep 0.1
+done
+left=$({ pgrep -u dev -r R,S,D,T; pgrep -U dev -r R,S,D,T; } 2>/dev/null | sort -u | wc -l)
+# Every entry's own times, before anything of this step touches the tree: a chmod changes a ctime, and the ctime is
+# the one time a user cannot set, so the manifest's authoritative times come from here. Then, as root, directories get
+# their owner's rwx back (a read-only folder would stop the link fixer and the copy) and a file its owner cannot read gets
+# u+r; each change is noted, and a change that fails refuses the delivery.
+if [ -d /app/rebuild ] && [ ! -L /app/rebuild ]; then
+timeout 300 /usr/bin/python3 -I - /app/rebuild "$LIMIT_ENTRIES" "$LIMIT_PATH" "$STATE" <<'EOF'
+"""Record every entry of /app/rebuild as it stands when the session has ended (STATE/before.jsonl: path, type, size,
+mode, owner, mtime, ctime, inode), walking by directory descriptor and never following a link, before any step of the
+hook changes anything. Then make every directory u+rwx and every regular file its owner cannot read u+r, noting each
+change, by name while the notes take NOTE_BYTES as written and then how many more (STATE/prescan.json: whether the
+listing is complete, the notes, and the paths whose change failed). Both files are written in ASCII, so a name that
+is not UTF-8 is kept as an escape rather than ending the listing."""
+import json
+import os
+import stat
+import sys
+
+ROOT = os.path.realpath(sys.argv[1])
+LIMIT_ENTRIES, LIMIT_PATH, STATE = int(sys.argv[2]), int(sys.argv[3]), sys.argv[4]
+NOTE_BYTES = 64 << 10
+found, notes, failed = [], [], []
+complete = True
+unnamed = note_bytes = 0
+
+
+class Stop(Exception):
+    pass
+
+
+def walk(fd, rel, visit):
+    with os.scandir(fd) as listing:
+        names = [entry.name for entry in listing]
+    for name in names:
+        path = f"{rel}/{name}" if rel else name
+        if len(os.fsencode(path)) > LIMIT_PATH:
+            raise Stop(f"a path longer than {LIMIT_PATH} bytes")
+        info = os.stat(name, dir_fd=fd, follow_symlinks=False)
+        visit(fd, name, path, info)
+        if stat.S_ISDIR(info.st_mode):
+            child = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+            try:
+                walk(child, path, visit)
+            finally:
+                os.close(child)
+
+
+def record(fd, name, path, info):
+    if len(found) >= LIMIT_ENTRIES + 1:
+        raise Stop(f"more than {LIMIT_ENTRIES} entries")
+    kind = "directory" if stat.S_ISDIR(info.st_mode) else "file" if stat.S_ISREG(info.st_mode) else "link" if stat.S_ISLNK(info.st_mode) else "other"
+    found.append({"path": path, "type": kind, "size": info.st_size, "mode": stat.S_IMODE(info.st_mode), "owner": info.st_uid,
+                  "mtime": round(info.st_mtime, 3), "ctime": round(info.st_ctime, 3), "inode": [info.st_dev, info.st_ino]})
+
+
+def restore(fd, name, path, info):
+    global unnamed, note_bytes
+    mode = stat.S_IMODE(info.st_mode)
+    wanted = mode | 0o700 if stat.S_ISDIR(info.st_mode) else mode | stat.S_IRUSR if stat.S_ISREG(info.st_mode) else mode
+    if wanted == mode:
+        return
+    try:
+        os.chmod(name, wanted, dir_fd=fd)  # an entry lstat just showed to be a directory or a regular file
+        note = f"{path}: {'made writable for its owner (a directory the hook has to work in)' if stat.S_ISDIR(info.st_mode) else 'made readable by its owner'}"
+        if note_bytes + len(json.dumps(note)) > NOTE_BYTES:
+            unnamed += 1
+            return
+        note_bytes += len(json.dumps(note))
+        notes.append(note)
+    except OSError as exc:
+        if len(failed) < 100:
+            failed.append(f"{path}: {exc.__class__.__name__}")
+
+
+sys.setrecursionlimit(max(10_000, LIMIT_PATH * 2))
+for visit in (record, restore):
+    try:
+        top = os.open(ROOT, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            walk(top, "", visit)
+        finally:
+            os.close(top)
+    except Stop as stop:
+        complete = False
+        notes.append(f"the listing before the hook stopped at {stop}")
+    except (OSError, RecursionError, ValueError) as exc:
+        complete = False
+        notes.append(f"the listing before the hook stopped ({exc.__class__.__name__}: {exc})")
+if unnamed:
+    notes.append(f"and {unnamed:,} more entries made accessible to their owner")
+with open(os.path.join(STATE, "before.jsonl"), "w") as out:
+    for item in found:
+        out.write(json.dumps(item) + "\n")
+with open(os.path.join(STATE, "prescan.json"), "w") as out:
+    json.dump({"complete": complete, "entries": len(found), "notes": notes, "chmod_failed": failed}, out)
+EOF
+fi
+# Connectivity, after the processes are ended (ending them changes nothing about it); three seconds for each host.
+timeout 30 /usr/bin/python3 -I - "$STATE/session.json" "$STATE/processes.txt" <<'EOF'
+"""Record whether this host has outbound connectivity (a TCP connection to port 443 of two public hosts,
+three seconds each) and which processes of the unprivileged user `dev` were alive when they were frozen (the `ps` listing
+taken then: pid, parent, uid, seconds since start, command line)."""
+import json
+import pwd
+import socket
+import sys
+import threading
+import time
+
+HOSTS = (("pypi.org", 443), ("github.com", 443))
+
+
+def reach(host, port, result):
+    try:
+        with socket.create_connection((host, port), timeout=3):
+            result["state"] = "open"
+    except OSError as exc:
+        result["state"] = f"closed ({exc.__class__.__name__})"
+
+
+connectivity = {}
+for host, port in HOSTS:
+    result = {"state": "no answer within 3 s"}
+    worker = threading.Thread(target=reach, args=(host, port, result), daemon=True)
+    worker.start()
+    worker.join(3)
+    connectivity[f"{host}:{port}"] = result["state"]
+try:
+    uid = str(pwd.getpwnam("dev").pw_uid)
+except KeyError:
+    uid = None
+processes = []
+try:
+    with open(sys.argv[2], errors="backslashreplace") as listing:
+        for line in listing:
+            fields = line.split(None, 4)
+            if len(fields) < 4 or (fields[2] != uid if uid is not None else fields[2] == "0"):
+                continue
+            processes.append({"pid": int(fields[0]), "ppid": int(fields[1]), "uid": int(fields[2]), "running_seconds": int(fields[3]),
+                              "command": (fields[4].strip() if len(fields) > 4 else "")[:1000]})
+except (OSError, ValueError):
+    pass
+record = {"checked_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "connectivity": connectivity,
+          "connectivity_open": any(state == "open" for state in connectivity.values()),
+          "user_process_count": len(processes), "user_processes": processes[:500]}
+with open(sys.argv[1], "w") as handle:
+    json.dump(record, handle)
+EOF
+# Give back the room and the spare inodes set aside when the session started, so however full the disk was left, the
+# record, the mark, a refusal and the copy's archive can be written.
+rm -f /var/lib/scratch/room
+rm -rf /var/lib/scratch/inodes
+if [ ! -d /app/rebuild ] || [ -L /app/rebuild ]; then exit 0; fi
+# Whatever was left under the mark's or the record's name is moved aside, never followed, and the mark says so.
+for name in .manifest .manifest.json; do
+  if [ -e "/app/rebuild/$name" ] || [ -L "/app/rebuild/$name" ]; then
+    aside=$(mktemp -d /app/.aside.XXXXXX) && mv -f "/app/rebuild/$name" "$aside/" || exit 0
+    echo "$name" >> "$STATE/aside.txt"
+  fi
+done
+# Links, as the unprivileged user (it copies nothing that user could not read), within the limits and two minutes. Each change
+# is one JSON line on standard output, kept root-owned for the record.
+timeout 120 setpriv --reuid dev --regid dev --clear-groups --no-new-privs /usr/bin/python3 -I - /app/rebuild "$LIMIT_ENTRIES" "$LIMIT_BYTES" > "$STATE/fixer.jsonl" <<'EOF'
+"""Make /app/rebuild safe to copy to the machine it will run on, as the user who built it.
+
+The copy keeps relative links that stay inside the directory and refuses everything else. A link
+inside it that points elsewhere inside it becomes relative. A link to a file or directory outside
+it becomes a copy of what it points to only when that is part of the machine's installation: owned
+by root, every file under a directory included (a virtual environment's link to the system Python,
+say), and only when the disk keeps room to spare after it (twice its bytes and KEEP_BYTES, its
+entries and KEEP_INODES), so that the later steps always have the room set aside for them. The
+copy takes the bytes and the mode, not the source's times. A link the system itself does not resolve
+(to nothing, through a loop, or through more links in a row than it follows) is removed before
+anything resolves it further, so no one link costs more than the system allows. A link to anything
+else outside (the user's own files anywhere, which could have been written after the session
+ended), or to a device, and a pipe, a socket or a device node, are removed. Each change is printed
+as one JSON line in ASCII: what was done and why, and for a copy or a refusal the source's path,
+owner, modification and change times and inode, as found before copying, with any name or note cut
+to its start and end past a few hundred bytes. Past NOTE_LIMIT lines or PRINT_BYTES, one last line
+says how many more changes there were.
+"""
+import json
+import os
+import shutil
+import stat
+import sys
+
+ROOT = os.path.realpath(sys.argv[1])
+ENTRIES = int(sys.argv[2]) if len(sys.argv) > 2 else 100_000  # what /app/rebuild may hold in all
+COPY_BYTES = int(sys.argv[3]) if len(sys.argv) > 3 else 1_000_000_000  # what the copies of outside targets may add in all
+KEEP_BYTES, KEEP_INODES = 64 << 20, 64  # left free after any copy: what setup set aside for the later steps
+NOTE_LIMIT, PRINT_BYTES = 10_000, 2 << 20  # change lines printed, and their bytes as written, at most
+spent = copied = printed = printed_bytes = unprinted = 0
+
+
+def inside(path):
+    return path == ROOT or path.startswith(ROOT + os.sep)
+
+
+def facts(path):
+    """The source's owner, times and inode, from lstat, as the record keeps them."""
+    info = os.lstat(path)
+    return {"source": path, "source_owner": info.st_uid, "source_mtime": round(info.st_mtime, 3),
+            "source_ctime": round(info.st_ctime, 3), "source_inode": [info.st_dev, info.st_ino],
+            "source_latest_ctime": round(info.st_ctime, 3), "source_latest_mtime": round(info.st_mtime, 3)}
+
+
+def measure(path, limit, most, found):
+    """Bytes and entries a copy of `path` would add, and whether root owns everything in it; the
+    latest change and modification times under it go into `found`. The count stops once a figure
+    passes its limit or an entry is not root's."""
+    info = os.lstat(path)
+    if info.st_uid != 0:
+        return 0, 1, False
+    if not stat.S_ISDIR(info.st_mode):
+        return info.st_size, 1, True
+    total, count = 0, 1
+    for folder, folders, files in os.walk(path):
+        for name in folders + files:
+            count += 1
+            try:
+                entry = os.lstat(os.path.join(folder, name))
+            except OSError:
+                return total, count, False
+            if entry.st_uid != 0:
+                return total, count, False
+            found["source_latest_ctime"] = max(found["source_latest_ctime"], round(entry.st_ctime, 3))
+            found["source_latest_mtime"] = max(found["source_latest_mtime"], round(entry.st_mtime, 3))
+            if stat.S_ISREG(entry.st_mode):
+                total += entry.st_size
+            if total > limit or count > most:
+                return total, count, True
+    return total, count, True
+
+
+def fix_link(path, name):
+    global spent, copied
+    target = os.readlink(path)
+    try:
+        os.stat(path)  # the system's own resolution first, with its own limit on links in a row
+    except OSError as exc:
+        os.unlink(path)
+        why = "it points at nothing" if isinstance(exc, FileNotFoundError) else f"the system does not resolve it ({exc.strerror})"
+        return {"kind": "removed", "note": f"removed {name} -> {target}: {why}"}
+    resolved = os.path.realpath(path)
+    if not os.path.exists(resolved):
+        os.unlink(path)
+        return {"kind": "removed", "note": f"removed {name} -> {target}: it points at nothing"}
+    if inside(resolved):
+        wanted = os.path.relpath(resolved, os.path.dirname(path))
+        if wanted == target:
+            return None
+        os.unlink(path)
+        os.symlink(wanted, path)
+        return {"kind": "relinked", "note": f"{name} -> {wanted} (was {target})"}
+    mode = os.stat(resolved).st_mode
+    if not (stat.S_ISREG(mode) or stat.S_ISDIR(mode)):
+        os.unlink(path)
+        return {"kind": "removed", "note": f"removed {name} -> {target}: it points at a device, a pipe or a socket"}
+    found = facts(resolved)
+    size, count, system = measure(resolved, COPY_BYTES - spent, ENTRIES - copied, found)
+    if not system:
+        os.unlink(path)
+        return dict(found, kind="refused", note=f"removed {name} -> {target}: it leads outside /app/rebuild to something that is "
+                                               "not part of the machine's installation (not owned by root) and is not copied; an "
+                                               "interpreter must be the machine's own, or copied into /app/rebuild")
+    if spent + size > COPY_BYTES or copied + count > ENTRIES:
+        os.unlink(path)
+        return dict(found, kind="refused", note=f"removed {name} -> {target}: copying it would pass {ENTRIES:,} entries or {COPY_BYTES:,} bytes")
+    if not room_for(size, count):
+        os.unlink(path)
+        return dict(found, kind="refused", note=f"removed {name} -> {target}: the disk has no room to spare for a copy of it")
+    os.unlink(path)
+    spent += size
+    copied += count
+    if os.path.isdir(resolved):
+        shutil.copytree(resolved, path, symlinks=True, ignore=special_files, copy_function=copy_file)
+    else:
+        copy_file(resolved, path)
+    return dict(found, kind="copied", path=name, note=f"{name}: a copy of {resolved} (was a link to {target})")
+
+
+def room_for(size, count):
+    """Whether the disk keeps, after a copy of `size` bytes in `count` entries and the copy's own pack of it, KEEP_BYTES
+    and KEEP_INODES free (inodes only where the filesystem counts them)."""
+    try:
+        disk = os.statvfs(ROOT)
+    except OSError:
+        return False
+    if disk.f_blocks and disk.f_bavail * disk.f_frsize < 2 * size + KEEP_BYTES:  # sizes, where the filesystem gives them
+        return False
+    return not disk.f_files or disk.f_favail >= count + KEEP_INODES
+
+
+def copy_file(source, target):
+    """The file's bytes and mode, nothing else: the copy's times are the hook's, and the source's
+    are in the record (copy2 would carry over a modification time anyone can set, and fails on
+    flags it may not set)."""
+    shutil.copyfile(source, target)
+    os.chmod(target, stat.S_IMODE(os.stat(source).st_mode))
+
+
+def special_files(folder, names):
+    kept = []
+    for entry in names:
+        mode = os.lstat(os.path.join(folder, entry)).st_mode
+        if not (stat.S_ISREG(mode) or stat.S_ISDIR(mode) or stat.S_ISLNK(mode)):
+            kept.append(entry)
+    return kept
+
+
+def cut(text, most):
+    """`text` as it is when its UTF-8 takes at most `most` bytes; else its start and its end around '...'."""
+    data = text.encode(errors="surrogateescape")
+    if len(data) <= most:
+        return text
+    return data[:most * 2 // 3].decode(errors="surrogateescape") + "..." + data[-(most // 3):].decode(errors="surrogateescape")
+
+
+def emit(change):
+    """Print one change, its names and its note cut to a few hundred bytes, while NOTE_LIMIT and PRINT_BYTES last."""
+    global printed, printed_bytes, unprinted
+    line = json.dumps({key: cut(value, 600 if key == "note" else 300) if isinstance(value, str) else value
+                       for key, value in change.items()})
+    if printed >= NOTE_LIMIT or printed_bytes + len(line) + 1 > PRINT_BYTES:
+        unprinted += 1
+        return
+    print(line, flush=True)
+    printed += 1
+    printed_bytes += len(line) + 1
+
+
+def one_pass():
+    changed = False
+    for folder, folders, files in os.walk(ROOT):
+        for entry in folders + files:
+            path = os.path.join(folder, entry)
+            name = os.path.relpath(path, ROOT)
+            try:
+                mode = os.lstat(path).st_mode
+                if stat.S_ISLNK(mode):
+                    note = fix_link(path, name)
+                elif stat.S_ISREG(mode) or stat.S_ISDIR(mode):
+                    note = None
+                else:
+                    os.unlink(path)
+                    note = {"kind": "removed", "note": f"removed {name}: not a file, a directory or a link"}
+            except Exception as exc:  # one entry it cannot fix never ends the others
+                note = {"kind": "failed", "note": f"could not fix {name}: {exc.__class__.__name__}: {exc}"}
+            if note:
+                emit(dict(note, path=note.get("path", name)))
+                changed = True
+    return changed
+
+
+for _ in range(10):
+    if not one_pass():
+        break
+if unprinted:
+    print(json.dumps({"kind": "more", "path": "", "note": f"and {unprinted:,} more changes of the link fixer"}), flush=True)
+EOF
+fixer_status=$?
+# Measure, bound, pack once, list and mark, as root.
+/usr/bin/python3 -I - /app/rebuild "$LIMIT_ENTRIES" "$LIMIT_BYTES" "$LIMIT_PATH" "$STATE" /tmp "$PACK_SECONDS" "$rounds" "$left" "$HOOK_STARTED" "$fixer_status" <<'EOF'
+"""Measure /app/rebuild, bound it, pack it once, list it and mark it, as root, once nothing of the user's runs.
+
+The tree is walked by directory descriptor, so no depth hides anything, and any step that cannot be completed refuses
+the delivery. Anything the copy would refuse is removed: a device, a pipe, a socket, and a link that does not lead,
+through directories of the tree alone, to a file or a directory of the tree (one that leaves it, lexically as the
+copy's extraction judges it, or that leads through another link or to nothing). Links are read by name against the
+walk's own listing, one lookup per part of a target, and nothing here resolves a link through the filesystem. A link
+that stays inside is kept as the direct relative path to what it reaches, as the link fixer leaves it: the copy
+resolves a link where it lands, and there a `..` that stops at / here climbs on. A delivery over the limits, one whose
+permissions could not be restored for its owner, one not measured within MEASURE_UNTIL seconds of this step's start
+(an alarm ends the walk and the links then, inside any one call), or one that the copy's own pack (tar -czf into /tmp)
+cannot make within PACK_SECONDS and by PACK_UNTIL seconds of that start, with room left on the disk for this step's
+record and mark beside it, is moved aside whole and replaced by an empty directory, whose record counts what the tree
+held and lists only the first notes; a pack that fails only for want of room or inodes the machine never had is left
+to the copy. What this step writes is bounded in bytes: its own notes take NOTE_BYTES as written, with a name cut to
+its start and end past a few hundred bytes, then only their count; the mark's notes take MARK_BYTES. A session that
+ran to its limit (SESSION_SECONDS after its start, STATE/turn-started from the setup hook) leaves its processes
+running until this hook, with the network open again: every file and link whose change time, as recorded before the
+hook touched anything (STATE/before.jsonl), is later than that end is taken out, noted and counted (`work_end`,
+`late_entries`), and nothing is killed for it. So is every name of each file that its processes, frozen, still held
+open for writing or mapped shared and writable (STATE/writers.json; `held_for_writing`, counted in `late_entries` too),
+since a write through such a mapping can leave the change time as it was. Where either listing is missing or
+incomplete for such a session, or one of its processes could be read neither as root nor as its user though it ran
+no set-id program, the delivery is refused. Files are hashed once per inode, within
+HASH_SECONDS in all; past that, the remaining files are listed without a hash and the record says so. Each entry's
+mtime and ctime are the ones recorded before the hook touched anything (STATE/before.jsonl, matched by path and
+type); where the hook's own steps changed them, the entry says so and carries the later values apart. The mark's first line is `delivered` with the
+number of entries (files, directories and links) and of bytes in its files (each file once, however many names it
+has), or `refused`; every line after it is a change made, the reason for the refusal, or how many more notes there
+were. The record
+(.manifest.json) holds what was found before the user's processes were ended (STATE/session.json), how many rounds of
+killing it took and how many processes were left, when the session started (STATE/turn-started, from the setup hook)
+and when this step started, the end of the work and how many entries changed after it, the disk's free figures,
+and, for a delivery that is copied, every change the link fixer printed
+(STATE/fixer.jsonl: the copies first, each with its source's path, owner, times and inode, and whether the source
+changed since the session started), every note, and every entry: its
+path, type, size, modification and change times, and a file's sha256 or a link's target. Neither file is counted among
+the entries. Two things are noted in the mark as well: a link fixer that did not end with status 0 (`fixer_status`:
+124 when its two minutes ran out, 128 plus the signal's number when a signal ended it), since the links it had not
+reached were then left to this step, which removes those that lead outside; and a file the session left under the
+mark's or the record's own name (STATE/aside.txt), which was moved out of the directory.
+"""
+import hashlib
+import json
+import os
+import shutil
+import signal
+import stat
+import subprocess
+import sys
+import tempfile
+import time
+
+ROOT = os.path.realpath(sys.argv[1])
+LIMIT_ENTRIES, LIMIT_BYTES, LIMIT_PATH = int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4])
+STATE, ARCHIVES, PACK_SECONDS = sys.argv[5], sys.argv[6], float(sys.argv[7])
+ROUNDS, LEFT, HOOK_STARTED, FIXER_STATUS = (int(value) if value.strip().isdigit() else -1 for value in (sys.argv[8:12] + [""] * 4)[:4])
+STARTED = HOOK_STARTED if HOOK_STARTED > 0 else int(time.time())  # when this step began
+MEASURE_UNTIL, PACK_UNTIL = 420, 510  # seconds after STARTED: the walk and the links end by the first, the pack by the second
+SESSION_SECONDS = 34560  # the session's limit: its work ends this long after it starts
+MARK = os.path.join(ROOT, ".manifest")
+RECORD = os.path.join(ROOT, ".manifest.json")
+TREE_PARTS = [part for part in ROOT.split("/") if part]
+SPARE_INODES = 16
+HASH_SECONDS = 240
+NOTE_BYTES, MARK_BYTES = 64 << 10, 32 << 10  # this step's own notes, and the mark's notes, in bytes as written
+notes, links, files = [], [], set()
+listing = {}
+digests = {}
+entries = size = unnoted = note_bytes = 0
+hashing_started = time.monotonic()
+hashing_complete = True
+
+
+class Refuse(Exception):
+    pass
+
+
+def in_time():
+    if time.time() > STARTED + MEASURE_UNTIL:
+        raise Refuse(f"it could not be measured within {MEASURE_UNTIL} s")
+
+
+def out_of_time(signum, frame):
+    raise Refuse(f"it could not be measured within {MEASURE_UNTIL} s")
+
+
+def cut(text, most=600):
+    """`text` as it is when its UTF-8 takes at most `most` bytes; else its start and its end around '...'."""
+    data = text.encode(errors="surrogateescape")
+    if len(data) <= most:
+        return text
+    return data[:most * 2 // 3].decode(errors="surrogateescape") + "..." + data[-(most // 3):].decode(errors="surrogateescape")
+
+
+def written(text):
+    """The bytes `text` takes in the mark, a line of its own."""
+    return len(text.encode(errors="backslashreplace")) + 1
+
+
+def add_note(text):
+    """A change of this step's own, cut to a few hundred bytes, kept while the notes take NOTE_BYTES; else counted."""
+    global unnoted, note_bytes
+    text = cut(text)
+    if note_bytes + written(text) > NOTE_BYTES:
+        unnoted += 1
+        return
+    note_bytes += written(text)
+    notes.append(text)
+
+
+def destination(path, target):
+    """Where the link at `path` (in the tree) leads, read as this system reads it but through directories of the tree
+    alone: (its path in the tree, "" for the top, None), or (None, "outside") or (None, "through") where it leaves the
+    tree or leads through another link or to nothing. Outside the tree the parts are taken by name, and inside it each
+    part is looked up in the walk's listing: nothing is followed or asked of the filesystem."""
+    parts = [part for part in target.split("/") if part not in ("", ".")]
+    current = [] if target.startswith("/") else TREE_PARTS + path.split("/")[:-1]
+    depth = len(TREE_PARTS)
+    for index, part in enumerate(parts):
+        if part == "..":
+            if current:
+                current.pop()
+            continue
+        current.append(part)
+        if len(current) > depth and current[:depth] == TREE_PARTS:
+            kind = listing.get("/".join(current[depth:]), {}).get("type")
+            if kind != "directory" and not (kind == "file" and index == len(parts) - 1):
+                return None, "through"
+    if current[:depth] != TREE_PARTS:
+        return None, "outside"
+    return "/".join(current[depth:]), None
+
+
+def digest(name, fd, inode):
+    """The sha256 of the regular file `name` in the directory open as `fd`, never following a link;
+    once per inode (hard links share it), and None once HASH_SECONDS of hashing are spent."""
+    global hashing_complete
+    if inode in digests:
+        return digests[inode]
+    if time.monotonic() - hashing_started > HASH_SECONDS:
+        hashing_complete = False
+        return None
+    handle = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_NONBLOCK", 0), dir_fd=fd)
+    try:
+        value = hashlib.sha256()
+        while chunk := os.read(handle, 1 << 20):
+            value.update(chunk)
+        digests[inode] = value.hexdigest()
+        return digests[inode]
+    finally:
+        os.close(handle)
+
+
+def walk(fd, rel):
+    """Count, list, and remove what the copy would refuse, below the directory open as `fd` (`rel` inside ROOT)."""
+    global entries, size
+    with os.scandir(fd) as found:
+        names = []
+        for entry in found:
+            names.append(entry.name)
+            if entries + len(names) > LIMIT_ENTRIES:
+                raise Refuse(f"it holds more than {LIMIT_ENTRIES:,} entries, the most /app/rebuild may hold")
+    for name in names:
+        in_time()
+        path = f"{rel}/{name}" if rel else name
+        if len(os.fsencode(path)) > LIMIT_PATH:
+            raise Refuse(f"it holds a path longer than {LIMIT_PATH:,} bytes, the longest /app/rebuild may hold")
+        info = os.stat(name, dir_fd=fd, follow_symlinks=False)
+        item = {"size": info.st_size, "mtime": round(info.st_mtime, 3), "ctime": round(info.st_ctime, 3)}
+        if stat.S_ISLNK(info.st_mode):
+            links.append(path)
+            item.update(type="link", target=os.readlink(name, dir_fd=fd))
+        elif not (stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode)):
+            os.unlink(name, dir_fd=fd)
+            add_note(f"removed {path}: not a file, a directory or a link")
+            continue
+        entries += 1
+        if stat.S_ISREG(info.st_mode):
+            item["type"] = "file"
+            if (info.st_dev, info.st_ino) not in files:
+                files.add((info.st_dev, info.st_ino))
+                size += info.st_size
+                if size > LIMIT_BYTES:
+                    raise Refuse(f"it holds more than {LIMIT_BYTES:,} bytes, the most /app/rebuild may hold")
+            item["sha256"] = digest(name, fd, (info.st_dev, info.st_ino))
+        listing[path] = item
+        if stat.S_ISDIR(info.st_mode):
+            item["type"] = "directory"
+            child = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+            try:
+                walk(child, path)
+            finally:
+                os.close(child)
+
+
+def inside(path):
+    return path == ROOT or path.startswith(ROOT + os.sep)
+
+
+def pack_once():
+    """(None, the pack's bytes) when the copy's own pack of ROOT succeeds within PACK_SECONDS and by PACK_UNTIL; else
+    (why not, 0)."""
+    probe = None
+    seconds = min(PACK_SECONDS, STARTED + PACK_UNTIL - time.time())
+    if seconds < 1:
+        return f"no time was left to pack it within {PACK_UNTIL} s", 0
+    try:
+        descriptor, probe = tempfile.mkstemp(prefix=".delivery-pack.", suffix=".tar.gz", dir=ARCHIVES)
+        os.close(descriptor)
+        done = subprocess.run(["tar", "-czf", probe, "-C", ROOT, "."], capture_output=True, timeout=seconds)
+        if done.returncode != 0:
+            last = done.stderr.decode(errors="backslashreplace").strip().splitlines()[-1:] or [f"exit status {done.returncode}"]
+            return f"the copy's pack of it failed ({last[0][:200]})", 0
+        return None, os.path.getsize(probe)
+    except subprocess.TimeoutExpired:
+        return f"the copy's pack of it took more than {seconds:.0f} seconds", 0
+    except OSError as exc:
+        return f"the copy's pack of it could not be made ({exc})", 0
+    finally:
+        if probe is not None:
+            try:
+                os.unlink(probe)
+            except OSError:
+                pass
+
+
+def state_json(name, default):
+    try:
+        with open(os.path.join(STATE, name)) as text:
+            return json.load(text)
+    except (OSError, ValueError):
+        return default
+
+
+def state_lines(name):
+    try:
+        with open(os.path.join(STATE, name), errors="backslashreplace") as text:
+            return text.read().splitlines()
+    except OSError:
+        return []
+
+
+prescan = state_json("prescan.json", {"complete": False, "notes": ["the listing before the hook is missing"], "chmod_failed": []})
+before = {}
+for line in state_lines("before.jsonl"):
+    try:
+        item = json.loads(line)
+        before[item["path"]] = item
+    except (ValueError, KeyError, TypeError):
+        continue
+turn_started = next((int(line.split()[0]) for line in state_lines("turn-started") if line.split() and line.split()[0].isdigit()), None)
+WORK_END = None if turn_started is None else turn_started + SESSION_SECONDS + 1  # (date +%s rounds the start down)
+late_entries = held_entries = 0
+
+
+def writers_listing():
+    """What the session's processes held open for writing, or mapped shared and writable, when they were frozen
+    (STATE/writers.json, read as root, and STATE/writers-user.json, read as the user, for the processes root could not
+    read): the entries, the processes read neither way, and why the listing cannot be relied on (None when it can)."""
+    first = state_json("writers.json", None)
+    if not isinstance(first, dict) or first.get("complete") is not True:
+        why = first.get("why") if isinstance(first, dict) else None
+        return [], [], "what its processes held open for writing could not be listed" + (f" ({cut(str(why), 300)})" if why else "")
+    entries, unread = list(first.get("held") or []), [item for item in first.get("unread") or [] if isinstance(item, dict)]
+    if unread:
+        second = state_json("writers-user.json", None)
+        if not isinstance(second, dict) or second.get("complete") is not True:
+            return entries, unread, "what its processes held open for writing could not be listed as their user"
+        entries += list(second.get("held") or [])
+        missed = {item.get("pid") for item in unread}
+        unread = [item for item in second.get("unread") or [] if isinstance(item, dict) and item.get("pid") in missed]
+    return [entry for entry in entries if isinstance(entry, dict)], unread, None
+
+
+writers_held, writers_unread, writers_problem = writers_listing()
+
+
+STOP_KEYS = ("first_process", "first_process_started", "due", "network_watched", "network_back", "at", "until", "rounds",
+             "processes", "still_running")
+
+
+def stopped_after_limit():
+    """When and how the process the set-up hook left stopped the user's processes, the session's limit having passed
+    (STATE/stopped: the session's first process and its start, when the stop was due, whether the network's return
+    was watched and when it came, the stop's first and last moment, its rounds of `kill -STOP -1`, how many processes
+    of the user there were and how many still ran), or None when it stopped nothing."""
+    found = state_json("stopped", None)
+    if not isinstance(found, dict):
+        return None
+    return {key: found[key] for key in STOP_KEYS if isinstance(found.get(key), (int, float, bool))}
+
+
+def remove(path):
+    """Take out whatever stands at `path` of the tree now; whether anything stood there."""
+    place = os.path.join(ROOT, path)
+    if os.path.isdir(place) and not os.path.islink(place):
+        shutil.rmtree(place)
+    elif os.path.lexists(place):
+        os.unlink(place)
+    else:
+        return False
+    return True
+
+
+def take_out_late():
+    """For a session that ran to its limit (this step began after WORK_END), take out every file and link whose change
+    time, as recorded before this step touched anything, is later than WORK_END, whatever stands at its path now (a
+    copy the link fixer made of such a link included); then every name of each file that a process of the session
+    still held open for writing, or mapped shared and writable, when it was frozen, since a write through such a
+    mapping can leave the change time as it was. None of it counts. The delivery is refused when the listing before
+    the hook, or that of what the processes held, is missing or incomplete, or when a process could be read neither as
+    root nor as its user although it ran no set-id program (its ids all the user's). Returns how many entries were
+    taken out for a change time and how many for being held."""
+    if WORK_END is None or STARTED < WORK_END:  # this step began before the end: nothing can be later (both in whole seconds)
+        return 0, 0
+    if not prescan.get("complete") or len(before) != prescan.get("entries"):  # (an empty tree lists nothing, completely)
+        raise Refuse("the session ran to its limit, and the listing of what it changed before then is missing")
+    if writers_problem:
+        raise Refuse(f"the session ran to its limit, and {writers_problem}")
+    for item in writers_unread:
+        if len(set(item.get("uids") or [None])) == 1 and len(set(item.get("gids") or [None])) == 1:
+            raise Refuse(f"the session ran to its limit, and its process {item.get('pid')} ({cut(str(item.get('command', '')), 200)}) "
+                         "could not be read for what it held open for writing")
+    late = 0
+    for path, item in before.items():
+        if item.get("type") not in ("file", "link") or not isinstance(item.get("ctime"), (int, float)) or item["ctime"] <= WORK_END:
+            continue
+        if remove(path):
+            late += 1
+            add_note(f"removed {path}: changed after the end of the work, {SESSION_SECONDS} s after the session began")
+    names = {}  # each file of the tree as listed before the hook, by device and inode: its names
+    for path, item in before.items():
+        inode = item.get("inode")
+        if item.get("type") == "file" and isinstance(inode, list) and len(inode) == 2:
+            names.setdefault((inode[0], inode[1]), []).append(path)
+    held = {}  # the files of the tree that were held, by device and inode: how
+    for entry in writers_held:
+        keys = [(entry.get("dev"), entry.get("ino"))]
+        path = entry.get("path")
+        if isinstance(path, str) and not path.endswith(" (deleted)"):  # a file gone from its name: by its inode alone, never
+            item = before.get(path[len(ROOT) + 1:]) if inside(path) and path != ROOT else None  # by what stands there now
+            if item and item.get("type") == "file" and isinstance(item.get("inode"), list) and len(item["inode"]) == 2:
+                keys.append((item["inode"][0], item["inode"][1]))
+        for key in keys:
+            if key in names:
+                held.setdefault(key, "mapped shared and writable" if entry.get("how") == "mapped" else "open for writing")
+    taken = 0
+    for key, how in sorted(held.items()):
+        for path in sorted(names[key]):
+            if remove(path):
+                taken += 1
+                add_note(f"removed {path}: a process of the session still had it {how} after the end of the work")
+    return late, taken
+
+
+reason = None
+complete = False
+sys.setrecursionlimit(max(10_000, LIMIT_PATH * 2))
+signal.signal(signal.SIGALRM, out_of_time)
+try:
+    signal.setitimer(signal.ITIMER_REAL, max(0.001, STARTED + MEASURE_UNTIL - time.time()))  # (0 would disarm it)
+    try:
+        late_entries, held_entries = take_out_late()
+        late_entries += held_entries
+        top = os.open(ROOT, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            walk(top, "")
+        finally:
+            os.close(top)
+        complete = True
+        for path in links:
+            in_time()
+            place = os.path.join(ROOT, path)
+            target = os.readlink(place)
+            found, why = destination(path, target)
+            if found is None:
+                os.unlink(place)
+                entries -= 1
+                listing.pop(path, None)
+                add_note(f"removed {path}: a link that leads outside /app/rebuild" if why == "outside"
+                         else f"removed {path} -> {target}: a link through another link, or to nothing")
+                continue
+            direct = os.path.relpath("/" + found, "/" + os.path.dirname(path))  # what the copy resolves the same way where it lands
+            if direct != target:
+                os.unlink(place)
+                os.symlink(direct, place)
+                made = os.lstat(place)
+                listing[path].update(target=direct, size=made.st_size, mtime=round(made.st_mtime, 3), ctime=round(made.st_ctime, 3))
+                add_note(f"{path} -> {direct} (was {target})")
+        if prescan.get("chmod_failed"):
+            raise Refuse("its permissions could not be restored for its owner")
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+except Refuse as refusal:
+    reason = str(refusal)
+except (OSError, RecursionError, ValueError) as exc:
+    reason = cut(f"it could not be measured ({exc.__class__.__name__}: {exc})")
+if unnoted:
+    notes.append(f"and {unnoted:,} more entries removed or relinked by this step")
+for line in state_lines("loops.txt")[:4]:  # a freeze or a kill that ran out of time
+    notes.append(cut(line))
+
+# The link fixer's changes: the copies first, each flagged when its source lies outside /app/rebuild (every copy does)
+# or changed since the session started; then the refusals and the rest.
+changes = []
+for line in state_lines("fixer.jsonl"):
+    try:
+        change = json.loads(line)
+    except ValueError:
+        changes.append({"kind": "failed", "note": f"an unreadable line from the link fixer: {line[:200]}"})
+        continue
+    if "source" in change:
+        change["outside_delivery"] = not inside(os.path.normpath(str(change["source"])))  # a path the fixer resolved
+        latest = max(change.get("source_latest_ctime", 0), change.get("source_latest_mtime", 0), change.get("source_ctime", 0),
+                     change.get("source_mtime", 0))
+        change["changed_since_session_started"] = None if turn_started is None else latest >= turn_started
+    changes.append(change)
+changes.sort(key=lambda change: {"refused": 0, "copied": 1}.get(change.get("kind"), 2))  # dropped links first: a silent 0 otherwise
+fixer_notes = [str(change.get("note", "")) for change in changes if change.get("note")]
+if FIXER_STATUS > 0:  # it was cut short: what it had not reached is in the notes of this step, below
+    fixer_notes.append(f"the link fixer ended with status {FIXER_STATUS}: the links it had not reached were not fixed, and those that "
+                       "lead outside /app/rebuild are removed")
+for name in state_lines("aside.txt"):
+    notes.append(f"moved {name} out of /app/rebuild: this step writes a file of that name there")
+# The entries' times as they were when the session ended; the hook's own changes (chmod, the fixer) are flagged.
+hook_changed = 0
+for path, item in listing.items():
+    earlier = before.get(path)
+    if earlier is None or earlier.get("type") != item["type"]:
+        item["times"] = "after the hook"  # made or replaced by the hook's own steps (a copy, a link made relative)
+        continue
+    if (earlier["mtime"], earlier["ctime"]) != (item["mtime"], item["ctime"]):
+        item["ctime_after_hook"], item["mtime_after_hook"] = item["ctime"], item["mtime"]
+        item["hook_changed_ctime"] = True
+        hook_changed += 1
+    item["mtime"], item["ctime"] = earlier["mtime"], earlier["ctime"]
+
+session = state_json("session.json", {"error": "the session record is missing"})
+if not hashing_complete:
+    notes.append(f"files were hashed for {HASH_SECONDS} s; the rest are listed without a hash")
+prescan_notes = [cut(str(text)) for text in prescan.get("notes", [])]
+
+
+def disk_figures():
+    """The bytes and the inodes free on the disk the copy packs on; None for a figure it does not report."""
+    disk = os.statvfs(ARCHIVES)
+    return (disk.f_bavail * disk.f_frsize if disk.f_blocks else None), (disk.f_favail if disk.f_files else None)
+
+
+def first(texts, room):
+    """The first of `texts`, while they take `room` bytes as written."""
+    kept, used = [], 0
+    for text in texts:
+        if used + written(text) > room:
+            break
+        kept.append(text)
+        used += written(text)
+    return kept
+
+
+def record_of(head):
+    """The record of a delivery whose mark begins with `head`. A refused one is not copied: its record counts the
+    entries, the link fixer's changes and the notes, and lists only the first notes, so that it fits in the room set
+    aside at setup however much the tree held."""
+    every = fixer_notes + notes + prescan_notes
+    copies = [change for change in changes if change.get("kind") == "copied"]
+    others = [change for change in changes if change.get("kind") != "copied"]
+    free_bytes, free_inodes = disk_figures()
+    record = dict(session, kill_rounds=ROUNDS, user_processes_left=LEFT, hook_started=HOOK_STARTED, turn_started=turn_started,
+                  work_end=WORK_END, late_entries=late_entries, held_for_writing=held_entries,
+                  stopped_after_limit=stopped_after_limit(),
+                  writers={"listed": writers_problem is None, "why_not": writers_problem, "held": len(writers_held),
+                           "not_read": [{key: item.get(key) for key in ("pid", "command", "uids", "gids")} for item in writers_unread[:20]],
+                           "not_read_count": len(writers_unread)},
+                  fixer_status=FIXER_STATUS,
+                  delivered=head, listing_complete=complete, hashing_complete=hashing_complete,
+                  prescan_complete=bool(prescan.get("complete")), hook_changed_entries=hook_changed,
+                  disk_free_bytes=free_bytes, disk_free_inodes=free_inodes)
+    if head != "refused":
+        return dict(record, copies=copies, links=others, notes=every,
+                    entries=[dict(item, path=path) for path, item in sorted(listing.items())])
+    shown = first(every, NOTE_BYTES)
+    return dict(record, copies=[], links=[], notes=shown, entries=[], copies_not_listed=len(copies), links_not_listed=len(others),
+                notes_not_listed=len(every) - len(shown), entries_not_listed=len(listing))
+
+
+def mark_text(lines):
+    """The mark: its first lines, then the notes in order while they take MARK_BYTES as written, then how many more."""
+    every = fixer_notes + notes + prescan_notes
+    shown = first(every, MARK_BYTES)
+    return "\n".join(lines + shown + ([f"and {len(every) - len(shown):,} more notes"] if len(shown) < len(every) else [])) + "\n"
+
+
+if reason is None:
+    failed, packed = pack_once()
+    if failed is None:  # the copy packs it beside this step's record and mark, so the disk has to hold all three
+        free_bytes, _ = disk_figures()
+        kept = len(json.dumps(record_of(f"delivered {entries} {size}"), separators=(",", ":")))
+        if free_bytes is not None and free_bytes < packed + 2 * (kept + MARK_BYTES) + (16 << 20):
+            failed = "the disk has no room for the copy's pack of it beside this step's record"
+    if failed is not None:
+        free_bytes, free_inodes = disk_figures()
+        need = size + entries * 1024 + (16 << 20)
+        short = (free_bytes is not None and free_bytes < need) or (free_inodes is not None and free_inodes < SPARE_INODES)
+        try:
+            with open(os.path.join(STATE, "free-at-start")) as text:  # free blocks, block size, free inodes
+                blocks, block, start_inodes = (int(value) for value in text.read().split()[:3])
+            had_room = blocks * block >= need and (free_inodes is None or start_inodes >= SPARE_INODES)
+        except (OSError, ValueError):
+            had_room = False
+        if short and not had_room:
+            notes.append(f"{failed}, for want of room the machine did not have when the session began")
+        else:
+            reason = failed
+
+lines = [f"delivered {entries} {size}"]
+if reason is not None:
+    os.rename(ROOT, os.path.join(os.path.dirname(ROOT), f".refused.{os.urandom(6).hex()}"))
+    os.mkdir(ROOT)
+    os.chmod(ROOT, 0o777)
+    lines = ["refused", f"{reason}: it was not copied"]
+record = record_of(lines[0])
+descriptor = os.open(RECORD, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644)
+with os.fdopen(descriptor, "w", errors="backslashreplace") as out:
+    json.dump(record, out, separators=(",", ":"))
+text = mark_text(lines)
+descriptor = os.open(MARK, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644)
+with os.fdopen(descriptor, "w", errors="backslashreplace") as mark:
+    mark.write(text)
+for line in text.splitlines()[1:]:
+    print(line.encode(errors="backslashreplace").decode(), flush=True)
+EOF

@@ -1,0 +1,114 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       volVectorField;
+    object      U;
+}
+
+dimensions      [0 1 -1 0 0 0 0];
+
+internalField   uniform (1 0 0);
+
+boundaryField
+{
+    inlet
+    {
+        type            fixedValue;
+        value           uniform (1 0 0);
+    }
+    outlet
+    {
+        type            inletOutlet;
+        inletValue      uniform (0 0 0);
+        value           uniform (1 0 0);
+    }
+    jump_half0
+    {
+        type            fixedJump;
+        patchType       cyclic;
+        jump            uniform (0.05 0 0.02);
+        value           uniform (1 0 0);
+    }
+    jump_half1
+    {
+        type            fixedJump;
+        patchType       cyclic;
+        value           uniform (1 0 0);
+    }
+    ami1_a
+    {
+        type            fixedJumpAMI;
+        patchType       cyclicAMI;
+        jump            uniform (0.04 0.01 0);
+        value           uniform (1 0 0);
+    }
+    ami1_b
+    {
+        type            fixedJumpAMI;
+        patchType       cyclicAMI;
+        value           uniform (1 0 0);
+    }
+    ami2_a
+    {
+        type            uniformJumpAMI;
+        patchType       cyclicAMI;
+        jumpTable       table ((0 (0 0 0)) (0.5 (0.1 0 0)));
+        value           uniform (1 0 0);
+    }
+    ami2_b
+    {
+        type            uniformJumpAMI;
+        patchType       cyclicAMI;
+        value           uniform (1 0 0);
+    }
+    fan_half0
+    {
+        type            swirlFanVelocity;
+        patchType       cyclic;
+        origin          (4 0.2 0.2);
+        rpm             constant 200;
+        fanEff          0.8;
+        rEff            0.1;
+        jump            uniform (0 0 0);
+        value           uniform (1 0 0);
+    }
+    fan_half1
+    {
+        type            swirlFanVelocity;
+        patchType       cyclic;
+        origin          (4 0.2 0.2);
+        rpm             constant 200;
+        fanEff          0.8;
+        rEff            0.1;
+        jump            uniform (0 0 0);
+        value           uniform (1 0 0);
+    }
+    door_half0
+    {
+        type            cyclic;
+    }
+    door_half1
+    {
+        type            cyclic;
+    }
+    baffleWall
+    {
+        type            activeBaffleVelocity;
+        p               p;
+        cyclicPatch     door_half0;
+        orientation     1;
+        openFraction    0.5;
+        openingTime     1;
+        maxOpenFractionDelta 0.03;
+        value           uniform (0 0 0);
+    }
+    baffleWallB
+    {
+        type            noSlip;
+    }
+    walls
+    {
+        type            noSlip;
+    }
+}

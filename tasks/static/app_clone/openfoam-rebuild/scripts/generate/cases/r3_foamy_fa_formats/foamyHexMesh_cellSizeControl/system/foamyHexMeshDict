@@ -1,0 +1,235 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  v2606                                 |
+|   \\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version         2.0;
+    format          ascii;
+    class           dictionary;
+    object          foamyHexMeshDict;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+// Include defaults parameters from master dictionary
+#includeEtc "caseDicts/foamyHexMeshDict"
+
+geometry
+{
+    blob.stl
+    {
+        name blob;
+        type triSurfaceMesh;
+    }
+
+    refinementBox
+    {
+        type box;
+        min  (-0.2  -0.6 -0.2);
+        max  ( 0.4   0.2  0.35);
+    }
+}
+
+
+backgroundMeshDecomposition
+{
+    minLevels           0;
+    sampleResolution    4;
+    spanScale           20;
+    maxCellWeightCoeff  20;
+}
+
+
+initialPoints
+{
+    initialPointsMethod         autoDensity;
+
+    autoDensityCoeffs
+    {
+        minLevels               0;
+        maxSizeRatio            5.0;
+        sampleResolution        5;
+        surfaceSampleResolution 5;
+    }
+
+    uniformGridCoeffs
+    {
+        initialCellSize         0.1;
+        randomiseInitialGrid    yes;
+        randomPerturbationCoeff 0.02;
+    }
+
+    bodyCentredCubicCoeffs
+    {
+        initialCellSize         0.1;
+        randomiseInitialGrid    yes;
+        randomPerturbationCoeff 0.05;
+    }
+
+    faceCentredCubicCoeffs
+    {
+        initialCellSize         0.12;
+        randomiseInitialGrid    yes;
+        randomPerturbationCoeff 0.05;
+    }
+
+    rayShootingCoeffs
+    {
+        randomiseInitialGrid    yes;
+        randomPerturbationCoeff 0.05;
+    }
+
+    pointFileCoeffs
+    {
+        pointFile               "<constant>/internalDelaunayVertices";
+        insideOutsideCheck      yes;
+        randomiseInitialGrid    no;
+        randomPerturbationCoeff 0.0;
+    }
+}
+
+
+surfaceConformation
+{
+    locationInMesh              (0.1 0.1 0.2);
+
+    featurePointControls
+    {
+        specialiseFeaturePoints off;
+        edgeAiming              off;
+        guardFeaturePoints      off;
+        snapFeaturePoints       off;
+        circulateEdges          off;
+    }
+
+    geometryToConformTo
+    {
+        blob
+        {
+            featureMethod       none;
+        }
+    }
+}
+
+
+motionControl
+{
+    defaultCellSize             0.12;
+
+    minimumCellSizeCoeff        0.1;
+
+    maxSmoothingIterations      20;
+
+    maxRefinementIterations     2;
+
+    shapeControlFunctions
+    {
+        blob
+        {
+            type                    searchableSurfaceControl;
+            forceInitialPointInsertion on;
+            priority                1;
+            mode                    inside;
+
+            surfaceCellSizeFunction uniformValue;
+            uniformValueCoeffs
+            {
+                surfaceCellSizeCoeff     0.6;
+            }
+            nonUniformFieldCoeffs
+            {
+                cellSizeCalculationType automatic;
+                automaticCoeffs
+                {
+                    curvature               yes;
+                    featureProximity        no;
+                    internalCloseness       no;
+                    curvatureFile           blob.curvature;
+                    featureProximityFile    none;
+                    internalClosenessFile   none;
+                    internalClosenessCellSizeCoeff 1;
+                    curvatureCellSizeCoeff  2;
+                    maximumCellSizeCoeff    1;
+                }
+                fieldFromFileCoeffs
+                {
+                    fieldFile               blob.stl.cellSize;
+                    cellSizeMultipleCoeff   1.5;
+                }
+            }
+
+            cellSizeFunction        linearDistance;
+            uniformCoeffs
+            {}
+            uniformDistanceCoeffs
+            {
+                distanceCoeff           2;
+            }
+            linearDistanceCoeffs
+            {
+                distanceCellSizeCoeff   1;
+                distanceCoeff           3;
+            }
+            surfaceOffsetLinearDistanceCoeffs
+            {
+                distanceCellSizeCoeff   1;
+                surfaceOffsetCoeff      0.5;
+                linearDistanceCoeff     2;
+            }
+            linearSpatialCoeffs
+            {
+                referencePoint          (-1.3 0 0);
+                referenceCellSizeCoeff  1;
+                direction               (1 0 0);
+                cellSizeGradient        0.05;
+            }
+        }
+
+        refinementBox
+        {
+            type                    searchableSurfaceControl;
+            priority                2;
+            mode                    inside;
+
+            surfaceCellSizeFunction uniformValue;
+            uniformValueCoeffs
+            {
+                surfaceCellSizeCoeff     0.5;
+            }
+
+            cellSizeFunction        uniform;
+            uniformCoeffs
+            {}
+        }
+    }
+
+    cellAspectRatioControl
+    {
+        aspectRatio                 1.5;
+        aspectRatioDirection        (0 0 1);
+    }
+
+    objOutput                   no;
+
+    timeChecks                  no;
+}
+
+
+polyMeshFiltering
+{
+    writeCellShapeControlMesh           true;
+    writeBackgroundMeshDecomposition    true;
+    writeTetDualMesh                    true;
+}
+
+
+meshQualityControls
+{
+    #include "meshQualityDict"
+}
+
+
+// ************************************************************************* //

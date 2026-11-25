@@ -1,0 +1,4 @@
+#!/bin/bash
+# from: combustion/reactingFoam/laminar/counterFlowFlame2D (50x20 mesh, heRhoThermo, gravity + p_rgh); exercises: rhoReactingBuoyantFoam laminar reacting flow with buoyancy: p_rgh fixedFluxPressure/prghPressure, heRhoThermo reactingMixture, BilgerMixtureFraction FO
+blockMesh
+rhoReactingBuoyantFoam

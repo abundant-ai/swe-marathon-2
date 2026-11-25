@@ -1,0 +1,5 @@
+#!/bin/bash
+# from: lagrangian/DPMFoam/Goldschmidt; exercises: DPMDyMFoam (DPM colliding cloud on a solidBody oscillatingLinearMotion dynamic mesh)
+cd "${0%/*}" || exit
+blockMesh
+DPMDyMFoam

@@ -1,0 +1,44 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  v2606                                 |
+|   \\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    location    "system";
+    object      setExprFieldsDict;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+// synthetic channel statistics (scale with time so each time dir differs)
+expressions
+(
+    UMean
+    {
+        field       UMean;
+        create      yes;
+        dimensions  [0 1 -1 0 0 0 0];
+        expression  #{ vector(time()*pos().y()*(2 - pos().y()), 0.01*pos().x(), 0.02*pos().z()) #};
+    }
+    UPrime2Mean
+    {
+        field       UPrime2Mean;
+        create      yes;
+        dimensions  [0 2 -2 0 0 0 0];
+        expression  #{ symmTensor(time()*pos().y(), 0.1*pos().y(), 0, 0.2*pos().y()*pos().y(), 0, 0.3) #};
+    }
+    pPrime2Mean
+    {
+        field       pPrime2Mean;
+        create      yes;
+        dimensions  [0 4 -4 0 0 0 0];
+        expression  #{ time()*pos().y()*pos().y() #};
+    }
+);
+
+// ************************************************************************* //

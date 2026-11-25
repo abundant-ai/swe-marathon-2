@@ -1,0 +1,7 @@
+#!/bin/bash
+# from: incompressible/icoFoam/cavity/cavity; exercises: wallFunctionTable SpaldingsLaw inverted table (log10 and linear spacing)
+cd "${0%/*}" || exit 1
+blockMesh
+wallFunctionTable
+cp constant/wallFunctionDict.linear constant/wallFunctionDict
+wallFunctionTable

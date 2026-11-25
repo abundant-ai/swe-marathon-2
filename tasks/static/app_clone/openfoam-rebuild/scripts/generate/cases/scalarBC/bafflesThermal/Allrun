@@ -1,0 +1,8 @@
+#!/bin/bash
+# from: heatTransfer/buoyantSimpleFoam/circuitBoardCooling (coarsened, analytic searchablePlate baffles, no 3D baffle region); exercises: scalar BCs compressible::thermalBaffle1D<hPowerSolidThermoPhysics> and compressible::turbulentTemperatureCoupledBaffleMixed (single-region mappedWall baffle)
+cd "${0%/*}" || exit 1
+blockMesh
+createBaffles -overwrite
+# createBaffles drops the hPower 'thermodynamics' sub-dictionary when writing 0/T; put it back
+foamDictionary 0/T -entry boundaryField/baffle1D_master/thermodynamics -add "{ Hf 0; C0 10; n0 1.2; Tref 300; }"
+buoyantSimpleFoam

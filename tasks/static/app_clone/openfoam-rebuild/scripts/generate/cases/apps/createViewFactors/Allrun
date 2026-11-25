@@ -1,0 +1,10 @@
+#!/bin/bash
+# from: heatTransfer/chtMultiRegionSimpleFoam/multiRegionHeaterRadiation (viewFactor radiation setup) on a scratch 6-patch wall box; exercises: createViewFactors viewFactor2AI + voxel ray search, then viewFactor2LI with faceAgglomerate coarse faces
+cd "${0%/*}" || exit 1
+blockMesh
+createViewFactors
+mkdir -p results2AI
+mv constant/F constant/globalFaceFaces constant/mapDist 0/viewFactorField results2AI/
+cp constant/viewFactorsDict.LI constant/viewFactorsDict
+faceAgglomerate
+createViewFactors

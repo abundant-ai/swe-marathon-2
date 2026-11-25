@@ -1,0 +1,20 @@
+#!/bin/bash
+# from: combustion/XiDyMFoam/oscillatingCylinder (half resolution, 10 fixed steps, codedFixedValue cylinder motion replaced by uniformFixedValue sine); exercises: XiDyMFoam options -noFunctionObjects, -postProcess (-func -latestTime -time -fields), -parallel; errors: -dry-run (not an option), unknown laminarFlameSpeedCorrelation, fuel without GuldersCoeffs entry, nonexistent time, -case noSuchDir
+cd "${0%/*}" || exit 1
+cp -r 0.orig 0
+blockMesh
+XiDyMFoam -dry-run || true
+XiDyMFoam -noFunctionObjects
+XiDyMFoam
+XiDyMFoam -postProcess -func 'mag(U)' -latestTime
+XiDyMFoam -postProcess -fields '(T)' -func 'grad(T)' -time 5e-05
+decomposePar
+mpirun --oversubscribe -np 2 XiDyMFoam -parallel
+XiDyMFoam -postProcess -func 'mag(U)' -time 99 || true
+XiDyMFoam -case noSuchDir || true
+cp -r variants/unknownFlameSpeed/. .
+XiDyMFoam || true
+cp -r variants/orig/. .
+cp -r variants/missingFuelCoeffs/. .
+XiDyMFoam || true
+cp -r variants/orig/. .

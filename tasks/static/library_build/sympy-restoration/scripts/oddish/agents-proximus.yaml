@@ -1,0 +1,13 @@
+# Proximus on the single-step variant (package_single_step.py). Proximus on Oddish rejects
+# tasks that declare [[steps]], so it cannot run the multi-step bundle.
+#   oddish run --task <single-step task id> -c scripts/oddish/agents-proximus.yaml -E <experiment> --no-archil --json
+# time_budget_sec defaults to the task's agent timeout; Oddish adds 1,200 s for the final
+# Git submission. The Relace key, endpoint and context limit are set by the worker.
+agents:
+  - name: proximus
+    model_name: relace/deepseek-v4.1-flash
+    n_trials: 2
+  - name: proximus
+    model_name: relace/glm-5.3
+    n_trials: 1
+max_trial_attempts: 2

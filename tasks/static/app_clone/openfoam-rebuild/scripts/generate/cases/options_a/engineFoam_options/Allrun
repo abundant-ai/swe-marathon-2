@@ -1,0 +1,23 @@
+#!/bin/bash
+# from: lagrangian/sprayFoam/aachenBomb + combustion/XiEngineFoam/kivaTest engineGeometry (8x8x10 box, 20 crank-angle steps, fieldMinMax instead of particleDistribution); exercises: engineFoam -noFunctionObjects, plain, -postProcess -func/-funcs/-fields/-latestTime/-time, -parallel; errors: nonexistent -time, -dry-run (not an option), -case noSuchDir, unknown breakupModel, missing rpm, missing sprayCloudProperties
+cp -r 0.orig 0
+blockMesh
+engineFoam -noFunctionObjects
+engineFoam
+engineFoam -postProcess -func 'mag(U)' -latestTime
+engineFoam -postProcess -funcs '(mag(U) components(U))' -time 0.5 -fields '(U)'
+decomposePar
+mpirun --oversubscribe -np 2 engineFoam -parallel
+engineFoam -postProcess -func 'mag(U)' -time 99 || true
+engineFoam -dry-run || true
+engineFoam -case noSuchDir || true
+rm -rf 0.5 1
+cp -r variants/badBreakup/. .
+engineFoam || true
+cp -r variants/orig/. .
+cp -r variants/noRpm/. .
+engineFoam || true
+cp -r variants/orig/. .
+mv constant/sprayCloudProperties constant/sprayCloudProperties.off
+engineFoam || true
+mv constant/sprayCloudProperties.off constant/sprayCloudProperties

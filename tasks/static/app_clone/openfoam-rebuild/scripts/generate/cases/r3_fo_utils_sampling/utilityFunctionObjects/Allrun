@@ -1,0 +1,5 @@
+#!/bin/bash
+# from: incompressible/icoFoam/cavity/cavity; exercises: function objects caseInfo (dictionary+json), foamReport (dictionaryValue/userValue/environmentVariable/functionObjectValue/fileRegEx), graphFunctionObject, agglomerationInfo, removeRegisteredObject, writeDictionary, timeInfo, syncObjects, runTimeControl conditions (equationInitialResidual/equationMaxIter/minMax/minTimeStep/none, setTrigger, trigger mode, end)
+cd "${0%/*}" || exit 1
+blockMesh
+REPORT_GREETING=hello icoFoam

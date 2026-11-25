@@ -1,0 +1,40 @@
+#!/bin/bash
+# from: mesh/polyDualMesh/missingCorner (4x4x4 block, tet-decomposed, plus a planeToFaceZone faceZone); exercises: polyDualMesh featureAngle argument, time-dir vs -overwrite output, -concaveMultiCells, -splitAllFaces, -doNotPreserveFaceZones, and missing/bad featureAngle errors
+cd "${0%/*}" || exit 1
+blockMesh
+topoSet
+subsetMesh c0 -patch exposedFaces -overwrite
+postProcess -func tetDecomposition
+rm -r constant/polyMesh
+mv constant/tetMesh/polyMesh constant/polyMesh
+rm -rf constant/tetMesh system/tetMesh 0
+topoSet -dict system/topoSetDict.zone
+rm -rf constant/polyMesh/sets
+cp -r constant/polyMesh constant/polyMesh.orig
+restore() { rm -rf constant/polyMesh [1-9]*; cp -r constant/polyMesh.orig constant/polyMesh; }
+mkdir -p results
+
+polyDualMesh 45
+mv 1 results/default
+restore
+polyDualMesh 45 -overwrite
+checkMesh
+mv constant/polyMesh results/overwrite45
+restore
+polyDualMesh 80 -concaveMultiCells -overwrite
+mv constant/polyMesh results/concave80
+restore
+polyDualMesh 30 -splitAllFaces -overwrite
+mv constant/polyMesh results/splitAll30
+restore
+polyDualMesh 45 -doNotPreserveFaceZones -overwrite
+mv constant/polyMesh results/noFaceZones45
+restore
+polyDualMesh 0 -concaveMultiCells -splitAllFaces -doNotPreserveFaceZones -overwrite
+checkMesh
+mv constant/polyMesh results/all0
+restore
+
+polyDualMesh -overwrite || true
+polyDualMesh abc -overwrite || true
+polyDualMesh 45 extra -overwrite || true

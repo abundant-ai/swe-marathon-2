@@ -1,0 +1,7 @@
+#!/bin/bash
+# from: stressAnalysis/solidDisplacementFoam/plateHole (mesh halved, 5 steps of 1e-5 s); exercises: d2dt2Schemes Euler (transient elastic waves) with GAMG, and with coupled LduMatrix SmoothSolver (GaussSeidel) for D
+blockMesh
+cp -r variants/EulerGAMG/. .
+solidDisplacementFoam
+cp -r variants/coupledSmoothGS/. .
+solidDisplacementFoam

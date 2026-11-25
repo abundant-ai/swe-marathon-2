@@ -1,0 +1,17 @@
+#!/bin/bash
+# from: incompressible/icoFoam/cavity/cavity (12x12, 10 steps); exercises: time schemes for ddt(U) incl. ddtCorr flux coupling: CoEuler, SLTS, bounded Euler/backward, CrankNicolson (constant and linearRamp ocCoeff), backward with fixed ddtPhiCoeff
+blockMesh
+cp -r variants/CoEuler/. .
+icoFoam
+cp -r variants/SLTS/. .
+icoFoam
+cp -r variants/boundedEuler/. .
+icoFoam
+cp -r variants/boundedBackward/. .
+icoFoam
+cp -r variants/CrankNicolson/. .
+icoFoam
+cp -r variants/CrankNicolsonRamp/. .
+icoFoam
+cp -r variants/backwardDdtPhiCoeff/. .
+icoFoam

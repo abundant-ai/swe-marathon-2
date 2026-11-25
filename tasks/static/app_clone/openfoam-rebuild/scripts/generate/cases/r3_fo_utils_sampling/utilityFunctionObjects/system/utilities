@@ -1,0 +1,302 @@
+solverInfo1
+{
+    type            solverInfo;
+    libs            (utilityFunctionObjects);
+    fields          (U p);
+    writeResidualFields no;
+}
+
+fieldMinMax1
+{
+    type            fieldMinMax;
+    libs            (fieldFunctionObjects);
+    fields          (p);
+    mode            magnitude;
+}
+
+caseInfoDict
+{
+    type            caseInfo;
+    libs            (utilityFunctionObjects);
+    writeControl    writeTime;
+    writeFormat     dictionary;
+    dictionaries
+    {
+        timeScheme
+        {
+            name        "fvSchemes";
+            include     ( "/ddtSchemes/default" "divSchemes" );
+        }
+        transport
+        {
+            name        "transportProperties";
+        }
+        control
+        {
+            path        "<system>/controlDict";
+            include     ( "application" "deltaT" "endTime" );
+        }
+        field_U
+        {
+            path        "0/U";
+            include     ( "boundaryField/movingWall/type" "boundaryField/movingWall/value" );
+        }
+        missing
+        {
+            path        "<system>/doesNotExist";
+        }
+    }
+    functionObjects (solverInfo1 fieldMinMax1);
+}
+
+caseInfoJson
+{
+    $caseInfoDict;
+    writeFormat     json;
+}
+
+report1
+{
+    type            foamReport;
+    libs            (utilityFunctionObjects);
+    writeControl    writeTime;
+    template        "<system>/reportTemplate.md";
+    substitutions
+    {
+        solution
+        {
+            type        dictionaryValue;
+            path        "<system>/fvSolution";
+            entries
+            {
+                p_solver    "solvers/p/solver";
+                p_tol       "solvers/p/tolerance";
+            }
+        }
+        schemes
+        {
+            type        dictionaryValue;
+            object      fvSchemes;
+            entries
+            {
+                ddt         "ddtSchemes/default";
+            }
+        }
+        transport
+        {
+            type        dictionaryValue;
+            object      transportProperties;
+            entries
+            {
+                nu          "nu";
+            }
+        }
+        user
+        {
+            type        userValue;
+            entries
+            {
+                author      "test-user";
+            }
+        }
+        env
+        {
+            type        environmentVariable;
+            entries
+            {
+                greeting    "REPORT_GREETING";
+            }
+        }
+        residual
+        {
+            type        functionObjectValue;
+            functionObject solverInfo1;
+            entries
+            {
+                p_initial   "p_initial";
+            }
+        }
+        mesh
+        {
+            type        fileRegEx;
+            path        "constant/runSummary.txt";
+            entries
+            {
+                scale       "meshScale = ([0-9.]+)";
+            }
+        }
+    }
+}
+
+residualGraph
+{
+    type            graphFunctionObject;
+    libs            (utilityFunctionObjects);
+    writeControl    writeTime;
+    logScaleX       no;
+    logScaleY       yes;
+    xlabel          "Iteration";
+    ylabel          "log10(Initial residual)";
+    functions
+    {
+        Ux
+        {
+            object      solverInfo1;
+            entry       Ux_initial;
+        }
+        p
+        {
+            object      solverInfo1;
+            entry       p_initial;
+            title       pressure;
+            colour      (200 0 0);
+            dashes      (4 2);
+        }
+    }
+}
+
+pMaxGraph
+{
+    type            graphFunctionObject;
+    libs            (utilityFunctionObjects);
+    writeControl    writeTime;
+    xMin            0;
+    xMax            10;
+    yMin            0;
+    yMax            5;
+    width           400;
+    height          300;
+    strokeWidth     1;
+    drawGrid        no;
+    functions
+    {
+        pmax
+        {
+            object      fieldMinMax1;
+            entry       max(mag(p));
+        }
+    }
+}
+
+agglomInfo
+{
+    type            agglomerationInfo;
+    libs            (utilityFunctionObjects);
+    writeControl    writeTime;
+    field           p;
+}
+
+magU
+{
+    type            mag;
+    libs            (fieldFunctionObjects);
+    field           U;
+}
+
+removeMagU
+{
+    type            removeRegisteredObject;
+    libs            (utilityFunctionObjects);
+    objects         (mag(U) notRegistered);
+}
+
+writeDict
+{
+    type            writeDictionary;
+    libs            (utilityFunctionObjects);
+    dictNames       (fvSolution transportProperties);
+}
+
+timeInfo1
+{
+    type            timeInfo;
+    libs            (utilityFunctionObjects);
+    writeToFile     false;
+    perTimeStep     true;
+}
+
+sync1
+{
+    type            syncObjects;
+    libs            (utilityFunctionObjects);
+}
+
+rtcNever
+{
+    type            runTimeControl;
+    libs            (utilityFunctionObjects);
+    conditions
+    {
+        resid
+        {
+            type        equationInitialResidual;
+            groupID     1;
+            fields      (p);
+            value       1e-20;
+            mode        maximum;
+        }
+        iters
+        {
+            type        equationMaxIter;
+            groupID     1;
+            fields      (p);
+            threshold   1000;
+        }
+        pRange
+        {
+            type        minMax;
+            groupID     1;
+            functionObject fieldMinMax1;
+            fields      (max(p));
+            mode        maximum;
+            value       1e-30;
+        }
+        dt
+        {
+            type        minTimeStep;
+            groupID     1;
+            minValue    1e-12;
+        }
+        nothing
+        {
+            type        none;
+            groupID     1;
+        }
+    }
+}
+
+rtcStop
+{
+    type            runTimeControl;
+    libs            (utilityFunctionObjects);
+    conditions
+    {
+        pResid
+        {
+            type        equationInitialResidual;
+            fields      (p);
+            value       0.2;
+            mode        minimum;
+        }
+    }
+    satisfiedAction setTrigger;
+    trigger         1;
+}
+
+rtcTriggered
+{
+    type            runTimeControl;
+    libs            (utilityFunctionObjects);
+    controlMode     trigger;
+    triggerStart    1;
+    conditions
+    {
+        steps
+        {
+            type        equationMaxIter;
+            fields      (p);
+            threshold   0;
+        }
+    }
+    satisfiedAction end;
+}

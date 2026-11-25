@@ -1,0 +1,8 @@
+#!/bin/bash
+# from: scratch (4x4x4 box blockMesh); exercises: refinementLevel deriving volume-bin refinement levels of a two-level hex-refined cartesian mesh (2:1 check)
+blockMesh
+topoSet
+refineHexMesh -overwrite corner
+topoSet -dict system/topoSetDict.inner
+refineHexMesh -overwrite inner
+refinementLevel

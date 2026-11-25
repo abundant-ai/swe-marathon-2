@@ -1,0 +1,8 @@
+#!/bin/bash
+# from: scratch (6x6x6 box blockMesh); exercises: selectCells with selectCut/selectInside, selectOutside with nearDistance, and useSurface false (dict variants copied into place)
+blockMesh
+selectCells
+cp system/selectCellsDict.outside system/selectCellsDict
+selectCells
+cp system/selectCellsDict.noSurface system/selectCellsDict
+selectCells

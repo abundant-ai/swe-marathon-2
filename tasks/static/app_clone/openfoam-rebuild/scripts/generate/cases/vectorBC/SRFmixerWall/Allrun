@@ -1,0 +1,4 @@
+#!/bin/bash
+# from: incompressible/SRFSimpleFoam/mixer; exercises: Urel BC SRFWallVelocity (stationary outer wall in rotating frame)
+blockMesh
+SRFSimpleFoam

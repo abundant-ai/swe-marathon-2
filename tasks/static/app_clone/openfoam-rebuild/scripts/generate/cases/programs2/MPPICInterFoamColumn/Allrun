@@ -1,0 +1,8 @@
+#!/bin/bash
+# from: multiphase/MPPICInterFoam/twoPhasePachuka; exercises: MPPICInterFoam VOF water/air column with MPPIC kinematic cloud (patchInjection, WenYu drag, interface force, explicit packing, stochastic isotropy) on a coarse box column, inlet created by topoSet/createPatch, 5 time steps
+cd "${0%/*}" || exit 1
+blockMesh
+topoSet
+createPatch -overwrite
+setFields
+MPPICInterFoam

@@ -9,28 +9,21 @@ dependencies = ["orange-task-authoring"]
 package = false
 
 [tool.uv.sources]
-orange-task-authoring = { path = "tasks/swe-m2-ai-engineer/knowledge-work-assistant", package = false }
-abundant-titans = { git = "https://github.com/abundant-ai/titans.git", rev = "2260f95668a4c3d40fd6050292a1d2f74d8f5a5c" }
+orange-task-authoring = { path = "tasks/static/app_building/knowledge-work-assistant", package = false }
 
 [dependency-groups]
-dev = ["av==16.1.0", "pyarrow==23.0.1", "pytest==8.4.2"]
-# Optional training dependencies; opt in with --group titans.
-titans = ["abundant-titans"]
-titans-data = ["pyarrow==23.0.1"]
+dev = ["pytest==8.4.2", "ruff==0.17.6"]
 
 [tool.pytest.ini_options]
 testpaths = [
-    "ci_checks",
-    "tasks/swe-m2-ai-engineer/knowledge-work-assistant/checks",
-    "tasks/swe-m2-software-engineering/policy-sim-bridge/checks",
-    "tasks/swe-m2-software-engineering/fixed-lag-fusion/checks",
-    "tasks/swe-m2-software-engineering/px4-estimator-recovery/checks",
-    "tasks/swe-m2-software-engineering/dual-arm-handoff/checks",
-    "tasks/swe-m2-software-engineering/lerobot-dataset-repair/checks",
-    "tasks/swe-m2-software-engineering/ros2-control-recovery/checks",
-    "tasks/swe-m2-software-engineering/fleet-recovery/checks",
-    "tasks/swe-m2-software-engineering/nav2-docking-recovery/checks",
-    "tasks/swe-m2-software-engineering/mujoco-branch-replay/checks",
-    "tasks/swe-m2-software-engineering/versioned-mapping/checks",
-    "tasks/swe-m2-software-engineering/scan-n-plan-coating/checks",
+    "tasks/static/app_building/knowledge-work-assistant/checks",
+    "tasks/static/robotics/dual-arm-handoff/checks",
+    "tasks/static/robotics/fixed-lag-fusion/checks",
+    "tasks/static/robotics/scan-n-plan-coating/checks",
+    "tasks/static/library_build/sympy-restoration/checks",
+    "tasks/static/app_clone/backoffice-server-rebuild/checks",
+    "tasks/static/app_clone/goose-compiler-rebuild/checks",
+    "tasks/static/app_clone/carve-html-renderer-from-spec-only/checks",
+    "tasks/static/app_clone/basedpl-interpreter-rebuild-no-examples/checks",
+    "tasks/static/app_clone/openfoam-rebuild/checks",
 ]

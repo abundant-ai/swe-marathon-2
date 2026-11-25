@@ -1,0 +1,5 @@
+#!/bin/bash
+# from: scratch (control file as in applications/utilities/thermophysical/adiabaticFlameT, species from etc/thermoData/thermoData); exercises: adiabaticFlameT for CH4 and C3H8 fuels (stoichiometric products, Tad iteration)
+cd "${0%/*}" || exit 1
+adiabaticFlameT controlDict.CH4
+adiabaticFlameT controlDict.C3H8

@@ -1,0 +1,41 @@
+services:
+  main:
+    environment:
+      ORANGE_CHROMA_HOST: chroma
+      ORANGE_CHROMA_PORT: "8000"
+    depends_on:
+      chroma:
+        condition: service_healthy
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+  chroma:
+    build:
+      context: ./chroma-service
+    user: "10002:10002"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 256
+    cpus: 4
+    mem_limit: 8g
+    environment:
+      CHROMA_MAX_READ_RECORDS: "100"
+      CHROMA_MAX_BODY_BYTES: "16777216"
+      CHROMA_PERSIST_DIRECTORY: /var/lib/orange-chroma
+      ANONYMIZED_TELEMETRY: "False"
+    # Anonymous volume belongs only to this service and this environment.
+    # Never mount it, the Docker socket, or service configuration in main.
+    volumes:
+      - /var/lib/orange-chroma
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v2/heartbeat', timeout=2)"]
+      interval: 2s
+      timeout: 3s
+      retries: 60

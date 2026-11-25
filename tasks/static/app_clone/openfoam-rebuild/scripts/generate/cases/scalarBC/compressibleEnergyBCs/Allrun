@@ -1,0 +1,5 @@
+#!/bin/bash
+# from: compressible/rhoPimpleFoam/RAS/cavity (thermo/schemes) on a scratch channel; exercises: scalar BCs totalTemperature inletOutletTotalTemperature wallHeatTransfer, and the energy BCs derived from T: fixedEnergy gradientEnergy mixedEnergy energyJump (T fixedJump on cyclic) energyJumpAMI (T fixedJumpAMI on cyclicAMI)
+cd "${0%/*}" || exit 1
+blockMesh
+rhoPimpleFoam

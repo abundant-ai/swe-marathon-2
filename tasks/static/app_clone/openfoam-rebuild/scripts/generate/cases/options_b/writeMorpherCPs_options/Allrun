@@ -1,0 +1,24 @@
+#!/bin/bash
+# from: incompressible/adjointOptimisationFoam/shapeOptimisation/sbend/turbulent/SA/primalAdjointFullSetup (10x4 box mesh, 5x4x3 volumetric B-spline CPs); exercises: writeMorpherCPs serial, -noFunctionObjects, -parallel, -decomposeParDict; errors: no mesh, missing dynamicMeshDict, unknown controlPointsDefinition, missing coeffs dict, missing nCPsU, -parallel without processor dirs, missing -decomposeParDict file
+writeMorpherCPs || true
+blockMesh
+mv constant/dynamicMeshDict constant/dynamicMeshDict.off
+writeMorpherCPs || true
+mv constant/dynamicMeshDict.off constant/dynamicMeshDict
+writeMorpherCPs
+writeMorpherCPs -noFunctionObjects
+mpirun --oversubscribe -np 2 writeMorpherCPs -parallel || true
+decomposePar
+mpirun --oversubscribe -np 2 writeMorpherCPs -parallel
+mpirun --oversubscribe -np 2 writeMorpherCPs -parallel -decomposeParDict system/noSuchDecomposeParDict || true
+decomposePar -force -decomposeParDict system/decomposeParDict.3
+mpirun --oversubscribe -np 3 writeMorpherCPs -parallel -decomposeParDict system/decomposeParDict.3
+cp -r variants/badCPDef/. .
+writeMorpherCPs || true
+cp -r variants/orig/. .
+cp -r variants/noCoeffs/. .
+writeMorpherCPs || true
+cp -r variants/orig/. .
+cp -r variants/noNCPsU/. .
+writeMorpherCPs || true
+cp -r variants/orig/. .

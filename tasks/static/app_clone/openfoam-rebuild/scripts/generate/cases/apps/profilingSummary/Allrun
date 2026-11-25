@@ -1,0 +1,6 @@
+#!/bin/bash
+# from: IO/cavity_parProfiling (processor*/<time>/uniform/profiling recorded from a 2-proc icoFoam cavity run with profiling active); exercises: profilingSummary max/avg/min over processors, time selection
+cd "${0%/*}" || exit 1
+profilingSummary
+mv postProcessing postProcessing.all
+profilingSummary -latestTime

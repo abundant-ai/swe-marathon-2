@@ -1,0 +1,25 @@
+solid
+  facet normal 0 0 -1
+    outer loop
+      vertex 0 0 0
+      vertex 1.0e+00 1 0
+      vertex 1 0 0
+    endloop
+  endfacet
+  FACET NORMAL 0 0 -1
+    OUTER LOOP
+      VERTEX 0 0 0
+      VERTEX 0 1 0
+      VERTEX 1 1 0
+    ENDLOOP
+  ENDFACET
+endsolid
+solid   top plate
+facet normal 0 0 1
+outer loop
+vertex 0 0 1E-1
+vertex 1 0 0.1
+vertex 1 1 0.1
+endloop
+endfacet
+endsolid top plate

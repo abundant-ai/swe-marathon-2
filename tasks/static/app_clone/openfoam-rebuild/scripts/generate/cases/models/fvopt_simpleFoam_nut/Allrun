@@ -1,0 +1,5 @@
+#!/bin/bash
+# from: incompressible/simpleFoam/pitzDaily; exercises: fvOptions atmNutSource (artNut field), limitTurbulenceViscosity
+cd "${0%/*}" || exit 1
+blockMesh
+simpleFoam

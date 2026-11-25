@@ -1,0 +1,9 @@
+#!/bin/bash
+# from: incompressible/icoFoam/cavity/cavity (one-cell-thick slab with walls, 6x6 source, 5x4 target with renamed lid); exercises: mapFieldsPar non-consistent mapping via mapFieldsDict patchMap/cuttingPatches, mapNearest + nearestFaceAMI, -subtract; correctedCellVolumeWeight aborts (source schemes not read)
+blockMesh -case source
+icoFoam -case source
+blockMesh -case target
+mapFieldsPar -case target -sourceTime latestTime source
+mapFieldsPar -case target -sourceTime 0.01 -mapMethod mapNearest -patchMapMethod nearestFaceAMI source
+mapFieldsPar -case target -sourceTime latestTime -subtract -fields '(p)' source
+mapFieldsPar -case target -sourceTime latestTime -mapMethod correctedCellVolumeWeight source || true

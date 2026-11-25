@@ -1,0 +1,7 @@
+#!/bin/bash
+# from: heatTransfer/buoyantPimpleFoam/thermocoupleTestCase with viewFactor radiation set up as in chtMultiRegionSimpleFoam/multiRegionHeaterRadiation; exercises: viewFactorHeatFlux function object
+cd "${0%/*}" || exit 1
+cp -r 0.orig 0
+blockMesh
+createViewFactors
+buoyantPimpleFoam

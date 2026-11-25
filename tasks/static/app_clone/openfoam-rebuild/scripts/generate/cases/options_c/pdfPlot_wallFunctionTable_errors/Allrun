@@ -1,0 +1,24 @@
+#!/bin/bash
+# from: incompressible/icoFoam/cavity/cavity (+ apps/pdfPlot and apps/wallFunctionTable dicts); exercises: pdfPlot and wallFunctionTable dictionary error handling: missing dict, unknown distribution / tabulatedWallFunction type (valid-type lists), missing required entries
+cd "${0%/*}" || exit 1
+blockMesh
+mv constant/pdfDict constant/pdfDict.orig
+pdfPlot || true
+cp variants/pdfDict.badType constant/pdfDict
+pdfPlot || true
+cp variants/pdfDict.noSamples constant/pdfDict
+pdfPlot || true
+cp variants/pdfDict.noLambda constant/pdfDict
+pdfPlot || true
+mv constant/pdfDict.orig constant/pdfDict
+pdfPlot
+mv constant/wallFunctionDict constant/wallFunctionDict.orig
+wallFunctionTable || true
+cp variants/wallFunctionDict.badType constant/wallFunctionDict
+wallFunctionTable || true
+cp variants/wallFunctionDict.noKappa constant/wallFunctionDict
+wallFunctionTable || true
+cp variants/wallFunctionDict.noDx constant/wallFunctionDict
+wallFunctionTable || true
+mv constant/wallFunctionDict.orig constant/wallFunctionDict
+wallFunctionTable

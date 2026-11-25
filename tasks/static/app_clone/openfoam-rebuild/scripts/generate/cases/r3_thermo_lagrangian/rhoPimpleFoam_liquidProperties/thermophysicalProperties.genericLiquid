@@ -1,0 +1,56 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+  =========                 |
+  \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox
+   \\    /   O peration     |
+    \\  /    A nd           | www.openfoam.com
+     \\/     M anipulation  |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      thermophysicalProperties;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+thermoType
+{
+    type            heRhoThermo;
+    mixture         pureMixture;
+    properties      liquid;
+    energy          sensibleInternalEnergy;
+}
+
+// generic Function1-based "liquid" model
+mixture
+{
+    oil
+    {
+        type    liquid;
+        W       200;
+        Tc      700;
+        Pc      1.5e+6;
+        Vc      0.8;
+        Zc      0.25;
+        Tt      250;
+        Pt      1;
+        Tb      550;
+        dipm    0;
+        omega   0.5;
+        delta   1.6e+4;
+        rho     polynomial ((900 0) (-0.6 1));
+        Cp      constant 2000;
+        h       polynomial ((-600000 0) (2000 1));
+        mu      table ((280 0.05) (320 0.02));
+        kappa   constant 0.14;
+        pv      constant 100;
+        hl      constant 3e+5;
+        Cpg     constant 1800;
+        B       constant 0;
+        mug     constant 1e-5;
+        kappag  constant 0.02;
+        sigma   constant 0.03;
+        D       constant 1e-5;
+    }
+}

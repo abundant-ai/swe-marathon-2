@@ -1,5 +1,0 @@
-<library path="fenced_drive">
-  <class name="fenced_drive/FencedSystem" type="fenced_drive::FencedSystem" base_class_type="hardware_interface::SystemInterface">
-    <description>Single-joint actuator with a generation-fenced shared-memory device exchange.</description>
-  </class>
-</library>

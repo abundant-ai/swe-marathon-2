@@ -1,0 +1,23 @@
+#!/bin/bash
+# from: lagrangian/simpleReactingParcelFoam/verticalChannel (1600 cells, 5 iterations); exercises: simpleReactingParcelFoam options -dry-run, -dry-run-write, -noFunctionObjects, -postProcess -func/-latestTime/-time, -parallel (simple and hierarchical via -decomposeParDict), errors: -parallel without mpirun/decomposition, missing cloud properties
+cd "${0%/*}" || exit
+cp -r 0.orig 0
+blockMesh
+potentialFoam
+simpleReactingParcelFoam -dry-run
+simpleReactingParcelFoam -dry-run-write
+rm -rf 1
+simpleReactingParcelFoam -parallel || true
+mpirun --oversubscribe -np 2 simpleReactingParcelFoam -parallel || true
+simpleReactingParcelFoam -noFunctionObjects
+simpleReactingParcelFoam
+simpleReactingParcelFoam -postProcess -func 'mag(U)' -latestTime
+simpleReactingParcelFoam -postProcess -func 'grad(T)' -time 5
+simpleReactingParcelFoam -postProcess -func noSuchFunction -latestTime || true
+decomposePar -time 0
+mpirun --oversubscribe -np 2 simpleReactingParcelFoam -parallel
+decomposePar -force -time 0 -decomposeParDict system/decomposeParDict.hier
+mpirun --oversubscribe -np 2 simpleReactingParcelFoam -parallel -decomposeParDict system/decomposeParDict.hier
+mv constant/reactingCloud1Properties constant/reactingCloud1Properties.off
+simpleReactingParcelFoam || true
+mv constant/reactingCloud1Properties.off constant/reactingCloud1Properties

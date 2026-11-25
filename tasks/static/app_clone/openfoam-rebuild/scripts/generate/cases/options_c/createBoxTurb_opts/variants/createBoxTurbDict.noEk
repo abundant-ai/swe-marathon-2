@@ -1,0 +1,30 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  v2606                                 |
+|   \\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      createBoxTurbDict;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+N           (6 6 6);
+//N           (128 128 128);
+//N           (256 256 256);
+
+// Suggested box size of 9*2*pi [cm]
+L           (0.56548667765 0.56548667765 0.56548667765);
+
+nModes      50;
+
+// Energy as a function of wave number
+// Here using Comte-Bellot and Corrsin data at t.U_0/M = 42 (see Ref. table 3)
+
+
+// ************************************************************************* //

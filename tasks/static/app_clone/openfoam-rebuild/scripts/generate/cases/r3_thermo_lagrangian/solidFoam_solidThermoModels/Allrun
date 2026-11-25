@@ -1,0 +1,19 @@
+#!/bin/bash
+# from: heatTransfer/solidFoam/movingCone (static 1D bar, 10 cells); exercises: solid thermo combinations exponential+hPower+rhoConst, polynomial+hPolynomial+icoPolynomial, tabulated+hTabulated+icoPolynomial, tabulated+hTabulated+icoTabulated, tabulatedAnIso+hTabulated+icoPolynomial (one solidFoam run each)
+cd "${0%/*}" || exit
+blockMesh -case base
+cp -r base exponential_hPower
+cp thermophysicalProperties.exponential_hPower exponential_hPower/constant/thermophysicalProperties
+solidFoam -case exponential_hPower
+cp -r base polynomial_hPolynomial
+cp thermophysicalProperties.polynomial_hPolynomial polynomial_hPolynomial/constant/thermophysicalProperties
+solidFoam -case polynomial_hPolynomial
+cp -r base tabulated_hTabulated_icoPolynomial
+cp thermophysicalProperties.tabulated_hTabulated_icoPolynomial tabulated_hTabulated_icoPolynomial/constant/thermophysicalProperties
+solidFoam -case tabulated_hTabulated_icoPolynomial
+cp -r base tabulated_hTabulated_icoTabulated
+cp thermophysicalProperties.tabulated_hTabulated_icoTabulated tabulated_hTabulated_icoTabulated/constant/thermophysicalProperties
+solidFoam -case tabulated_hTabulated_icoTabulated
+cp -r base tabulatedAnIso_hTabulated
+cp thermophysicalProperties.tabulatedAnIso_hTabulated tabulatedAnIso_hTabulated/constant/thermophysicalProperties
+solidFoam -case tabulatedAnIso_hTabulated

@@ -1,0 +1,223 @@
+#!/bin/sh
+# Ends every process of one user a set time after it is started: SIGTERM, repeated for up to a minute, then SIGKILL. The
+# first start arms one detached sleeper and returns at once; a second start finds the sleeper's pid file and arms nothing.
+# Each step (armed, fired, done) is logged with its time to a root-only file.
+#
+# Once armed, the sleeper stops only by being ended or by finishing. Its wait is one child that starts nothing and counts
+# by a clock no time change moves. Whatever else fails (the child cannot be started or is ended early, a clock does
+# not answer, no command can be started at all) is counted, logged and tried again, and what is left of the wait is then
+# taken from the seconds since boot, which the shell reads without starting anything. Where pgrep and pkill cannot be
+# started when the time has come, the shell's own kill goes to each process of the user found under PROC.
+# usage: proc-reaper        arms the sleeper        proc-reaper run        the sleeper itself
+AFTER_SECONDS=${REAPER_AFTER_SECONDS:-33900}
+case $AFTER_SECONDS in ''|*[!0-9]*|0?*) AFTER_SECONDS=33900 ;; esac   # digits, and no leading zero: arithmetic would read it as octal
+WHO=${REAPER_USER:-dev}                  # the user, by name or by number
+SELECT=${REAPER_SELECT:--u $WHO}         # pgrep/pkill selection of the processes to end
+LOG=${REAPER_LOG:-/var/log/proc-reaper.log}
+PIDFILE=${REAPER_PIDFILE:-/run/proc-reaper.pid}
+UPTIME=${REAPER_UPTIME:-/proc/uptime}    # the seconds since boot
+PROC=${REAPER_PROC:-/proc}               # where each process's status file is
+umask 077
+
+# Runs one command line. Where it cannot be started, that is its status and not the end of this script: dash ends a script
+# whose command it cannot start, except inside `command eval`.
+try() { command eval "$1"; }
+
+log() {
+    stamp=
+    try 'stamp=$(date -u +%FT%TZ 2>/dev/null)' || stamp=
+    echo "$stamp $*" >> "$LOG"
+}
+
+misses=0
+miss() {   # $1 says what failed: counted, and the first few are logged
+    misses=$(( misses + 1 ))
+    if [ "$misses" -le 5 ]; then log "$1"
+    elif [ "$misses" -eq 6 ]; then log "more of the same: counted from here on, not listed"; fi
+}
+
+clock=none
+tick() {   # `at`: the seconds of the clock in use, or nothing where it does not answer
+    at=
+    case $clock in
+        boot) read -r at rest 2>/dev/null < "$UPTIME" ;;
+        wall) try 'at=$(date +%s 2>/dev/null)' ;;
+    esac
+    at=${at%%.*}
+    case $at in ''|*[!0-9]*|0?*) at= ;; esac
+}
+
+settle() {   # `left`: what is left of the wait, by the clock in use where it answers, else by the waits that were completed
+    left=$(( left - waited ))
+    waited=0
+    tick
+    if [ -z "$at" ]; then
+        [ "$clock" = none ] || miss "the $clock clock did not answer; trying again"
+        return 0
+    fi
+    byclock=$(( end - at ))
+    if [ "$clock" = boot ] || [ "$byclock" -lt "$left" ]; then left=$byclock; fi
+    return 0
+}
+
+# The wait in one child, which starts nothing and counts by a clock that only moves forward (the seconds since boot, else
+# the interpreter's own steady clock), in steps of a minute at most; no argument of it shows how long the wait is.
+wait_in_one() {
+    REAPER_WAIT=$1 /usr/bin/python3 -I - 2>/dev/null <<'EOF'
+import os, time
+clock = time.monotonic
+if hasattr(time, "CLOCK_BOOTTIME"):
+    try:
+        time.clock_gettime(time.CLOCK_BOOTTIME)
+        clock = lambda: time.clock_gettime(time.CLOCK_BOOTTIME)
+    except OSError:
+        pass
+end = clock() + float(os.environ["REAPER_WAIT"])
+while True:
+    left = end - clock()
+    if left <= 0:
+        break
+    time.sleep(min(60.0, left))
+EOF
+}
+
+# Waits $1 seconds: a sleep, or where none can be started, the seconds since boot read until they have moved that far (in
+# whole seconds). Fails where neither can be had.
+pause() {
+    span=$1
+    if try 'sleep "$span"'; then return 0; fi
+    miss "sleep could not be run; trying again"
+    [ "$clock" = boot ] || return 1
+    tick
+    from=$at
+    [ -n "$from" ] || return 1
+    span=${span%%.*}
+    [ "${span:-0}" -gt 0 ] || span=1
+    while tick; [ -n "$at" ] && [ $(( at - from )) -lt "$span" ]; do :; done
+    [ -n "$at" ]
+}
+
+# Looks at every process under PROC whose status file names the user's number as its real or effective id, zombies aside:
+# counts them in `found` and, given a signal, sends it with the shell's own kill. Starts nothing. Fails where the user's
+# number is not known.
+sweep() {
+    found=0
+    [ -n "$uid" ] || return 1
+    for entry in "$PROC"/[0-9]*; do
+        state=
+        ids=
+        while read -r key first second rest; do
+            case $key in
+                State:) state=$first ;;
+                Uid:) ids="$first $second"; break ;;
+            esac
+        done 2>/dev/null < "$entry/status"
+        case " $ids " in *" $uid "*) ;; *) continue ;; esac
+        [ "$state" != Z ] || continue
+        found=$(( found + 1 ))
+        [ -z "${1:-}" ] || kill "-$1" "${entry##*/}" 2>/dev/null
+    done
+    return 0
+}
+
+none_left() {   # true only where the selection is known to be empty: by pgrep, or where it cannot be started, by PROC
+    try "$FIND >/dev/null 2>&1"
+    case $? in
+        0) return 1 ;;
+        1) return 0 ;;
+    esac
+    miss "pgrep could not be run; trying again"
+    sweep && [ "$found" -eq 0 ]
+}
+
+signal() {   # $1 to every process of the selection: pkill, or where it cannot be started, the shell's own kill
+    sig=$1
+    try 'pkill -$sig $SELECT >/dev/null 2>&1'
+    case $? in 0|1) return 0 ;; esac
+    miss "pkill could not be run; trying again"
+    sweep "$sig"
+}
+
+try 'mkdir -p "$(dirname "$LOG")" "$(dirname "$PIDFILE")" 2>/dev/null'
+# pgrep's state filter (procps) leaves zombies out; where pgrep lacks it, every match counts.
+if try 'pgrep -r R,S,D,T -u 0 >/dev/null 2>&1'; then FIND='pgrep $SELECT -r R,S,D,T'; else FIND='pgrep $SELECT'; fi
+if [ "${1:-}" = "run" ]; then
+    echo $$ > "$PIDFILE"
+    log "armed pid $$: ending the processes selected by '$SELECT' in $AFTER_SECONDS s"
+    # The user's number, for the status files under PROC, looked up once.
+    uid=$WHO
+    case $uid in *[!0-9]*) uid=; try 'uid=$(id -u "$WHO" 2>/dev/null)' ;; esac
+    case $uid in ''|*[!0-9]*|0) uid= ;; esac
+    # The clock in use: the seconds since boot where they can be read, else the wall clock, else none, and the waits
+    # that were completed are counted. The end of the wait is worked out once, here.
+    clock=boot
+    tick
+    if [ -z "$at" ]; then clock=wall; tick; fi
+    if [ -z "$at" ]; then clock=none; fi
+    end=0
+    if [ -n "$at" ]; then end=$(( at + AFTER_SECONDS )); fi
+    case $clock in
+        wall) log "the seconds since boot cannot be read: waiting by the wall clock" ;;
+        none) log "no clock answers: counting the waits that are completed" ;;
+    esac
+    left=$AFTER_SECONDS
+    waited=0
+    # A child that finished has waited the whole time by its own clock, and that is final: the clocks above are read only
+    # where it did not (on some machines the seconds since boot are the wall clock less the time of boot).
+    if try 'wait_in_one "$left"'; then
+        left=0
+    else
+        miss "the waiting child could not be started or ended before its time; the rest is waited in short steps"
+        settle
+    fi
+    while [ "$left" -gt 0 ]; do   # only where the child could not do it all: the rest, in steps of a minute at most
+        if [ "$left" -gt 60 ]; then step=60; else step=$left; fi
+        if pause "$step"; then waited=$step; fi
+        settle
+    done
+    log "fired after $AFTER_SECONDS s: SIGTERM to the processes selected by '$SELECT'"
+    for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
+        none_left && break
+        signal TERM
+        pause 5
+    done
+    if ! none_left; then
+        log "SIGKILL to what is left"
+        for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+            none_left && break
+            signal KILL
+            pause 0.5
+        done
+    fi
+    # What is left of the selection, zombies and all: by pgrep, or where it did not run, by PROC.
+    list=
+    try 'list=$(pgrep $SELECT 2>/dev/null)'
+    case $? in
+        0|1) set -- $list; count=$# ;;
+        *) if sweep; then count=$found; else count="an unknown number of"; fi ;;
+    esac
+    [ "$misses" -eq 0 ] || log "$misses failure(s) in all"
+    log "done: $count process(es) of the selection left"
+    try 'rm -f "$PIDFILE"'
+    exit 0
+fi
+# The arming entry: one sleeper, detached, and return at once.
+if [ -f "$PIDFILE" ]; then
+    old=$(cat "$PIDFILE" 2>/dev/null)
+    if [ -z "$old" ] || kill -0 "$old" 2>/dev/null; then
+        log "already armed (pid ${old:-being written}); nothing started"
+        exit 0
+    fi
+    rm -f "$PIDFILE"   # a sleeper that is gone
+fi
+if ! ( set -C; : > "$PIDFILE" ) 2>/dev/null; then
+    log "already arming; nothing started"
+    exit 0
+fi
+if command -v setsid >/dev/null 2>&1; then
+    setsid nohup "$0" run >/dev/null 2>&1 </dev/null &
+else
+    nohup "$0" run >/dev/null 2>&1 </dev/null &
+fi
+echo "proc-reaper armed for $AFTER_SECONDS s"
+exit 0

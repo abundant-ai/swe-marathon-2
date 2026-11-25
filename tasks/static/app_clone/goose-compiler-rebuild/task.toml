@@ -1,0 +1,57 @@
+schema_version = "1.4"
+artifacts = ["/app/rebuild"]
+
+[task]
+name = "abundant/swe-m2_software-engineering_goose-compiler-rebuild"
+description = "Reimplement the compiler and runner of a programming language first published in late 2026, from an execute-only copy of the compiler, its documentation and a set of example runs."
+authors = [{ name = "Neel Harsola", email = "work.neelharsola@gmail.com" }]
+
+[metadata]
+reward_type = "continuous"
+open_internet_justification = "Only the image builds have public egress, to install system packages and to compile the original compiler from its pinned public commit. The agent works without network access."
+
+[agent]
+timeout_sec = 34560
+network_mode = "no-network"
+user = "dev"
+
+[[agent.setup_begin]]
+command = "/usr/local/sbin/fs-reserve"
+timeout_sec = 120
+
+[[agent.setup_complete]]
+command = "/usr/local/sbin/fs-reserve"
+timeout_sec = 120
+
+[[agent.setup_complete]]
+command = "/usr/local/sbin/proc-reaper"
+user = "root"
+timeout_sec = 60
+
+[environment]
+network_mode = "public"
+build_timeout_sec = 3600
+cpus = 4
+memory_mb = 8192
+storage_mb = 20480
+gpus = 0
+workdir = "/app"
+
+[verifier]
+environment_mode = "separate"
+network_mode = "no-network"
+timeout_sec = 3600
+user = "root"
+
+[[verifier.collect]]
+command = "/usr/local/sbin/app-manifest"
+user = "root"
+timeout_sec = 900
+
+[verifier.environment]
+network_mode = "no-network"
+build_timeout_sec = 3600
+cpus = 4
+memory_mb = 8192
+storage_mb = 20480
+gpus = 0

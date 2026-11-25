@@ -1,0 +1,29 @@
+#!/bin/bash
+# from: incompressible/shallowWaterFoam/squareBump (20x20 mesh, 10 steps); exercises: shallowWaterFoam -dry-run, -dry-run-write, -noFunctionObjects, -postProcess (-func/-latestTime, -funcs/-time, -fields), -parallel with default and alternative -decomposeParDict, non-rotating gravitationalProperties; errors: -parallel before decomposePar, nonexistent -decomposeParDict, missing Omega entry, missing gravitationalProperties, unknown -func; also optional h0 field absent
+blockMesh
+cp -r 0.orig 0
+setFields
+shallowWaterFoam -dry-run
+shallowWaterFoam -dry-run-write
+foamListTimes -rm
+shallowWaterFoam -noFunctionObjects
+shallowWaterFoam -postProcess -func "mag(hU)" -latestTime
+shallowWaterFoam -postProcess -funcs '("magSqr(hU)" "grad(h)")' -fields '(h hTotal)' -time 0.5:1
+shallowWaterFoam -postProcess -func noSuchFunctionObject -latestTime || true
+mpirun --oversubscribe -np 2 shallowWaterFoam -parallel || true
+decomposePar
+mpirun --oversubscribe -np 2 shallowWaterFoam -parallel
+decomposePar -force -decomposeParDict system/decomposeParDict.alt
+mpirun --oversubscribe -np 2 shallowWaterFoam -parallel -decomposeParDict system/decomposeParDict.alt
+mpirun --oversubscribe -np 2 shallowWaterFoam -parallel -decomposeParDict system/noSuchDecomposeParDict || true
+cp constant/gravitationalProperties constant/gravitationalProperties.orig
+foamDictionary -entry Omega -remove constant/gravitationalProperties
+shallowWaterFoam -dry-run || true
+foamDictionary -entry rotating -set false constant/gravitationalProperties
+shallowWaterFoam -dry-run-write
+mv constant/gravitationalProperties constant/gravitationalProperties.off
+shallowWaterFoam -dry-run || true
+cp constant/gravitationalProperties.orig constant/gravitationalProperties
+mv 0/h0 0/h0.off
+shallowWaterFoam -dry-run
+mv 0/h0.off 0/h0

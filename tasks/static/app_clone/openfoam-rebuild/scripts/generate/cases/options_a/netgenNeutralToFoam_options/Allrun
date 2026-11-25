@@ -1,0 +1,9 @@
+#!/bin/bash
+# from: scratch (two-tet Netgen neutral file); exercises: netgenNeutralToFoam plain and -case; errors: missing file, missing argument, truncated file, non-numeric coordinate, -case noSuchDir
+netgenNeutralToFoam twoTets.neu
+netgenNeutralToFoam -case other twoTets.neu
+netgenNeutralToFoam noSuch.neu || true
+netgenNeutralToFoam || true
+netgenNeutralToFoam -case other truncated.neu || true
+netgenNeutralToFoam -case other badNumber.neu || true
+netgenNeutralToFoam -case noSuchDir twoTets.neu || true

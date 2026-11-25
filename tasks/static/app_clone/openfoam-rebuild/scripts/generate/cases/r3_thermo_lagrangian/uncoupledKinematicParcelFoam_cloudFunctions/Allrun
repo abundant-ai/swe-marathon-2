@@ -1,0 +1,8 @@
+#!/bin/bash
+# from: lagrangian/uncoupledKinematicParcelDyMFoam/rotor2DAMI (frozen uniform flow in a box) + reactingParcelFoam/splashPanel particleCollector; exercises: cloud functions particleCollector (polygonWithNormal, polygon+removeCollected), particleErosion, particleHistogram, particleTrap, particleZoneInfo (raw writer), patchCollisionDensity, patchInteractionFields, removeParcels, voidFraction, faceInteraction (stick/escape faceZones); localInteraction patch model; normal size distribution
+cd "${0%/*}" || exit
+cp -r 0.orig 0
+blockMesh
+topoSet
+setFields
+uncoupledKinematicParcelFoam

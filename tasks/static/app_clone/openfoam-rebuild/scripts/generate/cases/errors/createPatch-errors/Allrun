@@ -1,0 +1,15 @@
+#!/bin/bash
+# from: incompressible/icoFoam/cavity/cavity; exercises: createPatch errors - no mesh, missing dict, unknown source patch/constructFrom type, missing entries/patchInfo/pointSync, missing set, cyclic without neighbourPatch
+createPatch -overwrite || true
+blockMesh
+mv system/createPatchDict system/createPatchDict.off
+createPatch -overwrite || true
+mv system/createPatchDict.off system/createPatchDict
+createPatch -overwrite -dict system/noSuchDict || true
+createPatch -overwrite -dict system/createPatchDict.cyclicNoNeighbour || true
+createPatch -overwrite -dict system/createPatchDict.missingPatchInfo || true
+createPatch -overwrite -dict system/createPatchDict.missingPatchesList || true
+createPatch -overwrite -dict system/createPatchDict.missingPointSync || true
+createPatch -overwrite -dict system/createPatchDict.missingSet || true
+createPatch -overwrite -dict system/createPatchDict.unknownConstructFrom || true
+createPatch -overwrite -dict system/createPatchDict.unknownSourcePatch || true

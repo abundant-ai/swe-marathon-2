@@ -1,0 +1,6 @@
+#!/bin/bash
+# from: scratch; exercises: processorCyclic U/p patches created by decomposePar for a cyclic split across processors, parallel pimpleFoam
+blockMesh
+decomposePar
+mpirun -np 2 pimpleFoam -parallel
+reconstructPar

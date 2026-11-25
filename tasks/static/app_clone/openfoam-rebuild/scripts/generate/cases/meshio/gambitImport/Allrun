@@ -1,0 +1,8 @@
+#!/bin/bash
+# from: scratch; exercises: gambitToFoam GAMBIT neutral reader: brick elements, element groups, boundary-condition sets -> patches, -scale
+cd "${0%/*}" || exit 1
+gambitToFoam twoBricks.neu
+checkMesh
+mv constant/polyMesh mesh_default
+gambitToFoam -scale 1000 twoBricks.neu
+checkMesh

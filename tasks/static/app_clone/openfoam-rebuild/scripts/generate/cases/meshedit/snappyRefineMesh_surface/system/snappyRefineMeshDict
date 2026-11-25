@@ -1,0 +1,36 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      snappyRefineMeshDict;
+}
+
+// Surface to refine near
+surface             "constant/triSurface/box.stl";
+
+// Cells to select for refinement
+outsidePoints       ((0.05 0.05 0.05));
+nCutLayers          0;
+cellLimit           100000;
+selectCut           true;
+selectInside        true;
+selectOutside       false;
+selectHanging       false;
+minEdgeLen          0.1;
+maxEdgeLen          1;
+curvature           0.9;
+curvatureDistance   -1;
+splitLevel          1;
+writeMesh           false;
+
+// Refinement (as refineMesh)
+coordinateSystem    global;
+globalCoeffs
+{
+    tan1            (1 0 0);
+    tan2            (0 1 0);
+}
+directions          (tan1 tan2 normal);
+useHexTopology      true;
+geometricCut        false;

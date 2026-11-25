@@ -1,0 +1,20 @@
+#!/bin/bash
+# from: lagrangian/coalChemistryFoam/simplifiedSiwek (12x10 mesh, 10 fixed steps, ignition fvOption from t=0); exercises: coalChemistryFoam options -noFunctionObjects, -postProcess (-func -latestTime -time -fields), -parallel; errors: unknown radiationModel, missing limestone cloud properties, nonexistent time, -case noSuchDir
+cd "${0%/*}" || exit 1
+cp -r 0.orig 0
+blockMesh
+topoSet
+coalChemistryFoam -noFunctionObjects
+coalChemistryFoam
+coalChemistryFoam -postProcess -func 'mag(U)' -latestTime
+coalChemistryFoam -postProcess -fields '(T)' -func 'grad(T)' -time 0.0005
+decomposePar
+mpirun --oversubscribe -np 2 coalChemistryFoam -parallel
+coalChemistryFoam -postProcess -func 'mag(U)' -time 99 || true
+coalChemistryFoam -case noSuchDir || true
+cp -r variants/unknownRadiation/. .
+coalChemistryFoam || true
+cp -r variants/orig/. .
+mv constant/limestoneCloud1Properties constant/limestoneCloud1Properties.off
+coalChemistryFoam || true
+mv constant/limestoneCloud1Properties.off constant/limestoneCloud1Properties

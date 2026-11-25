@@ -1,0 +1,11 @@
+#!/bin/bash
+# from: scratch (simpleShapes/sphere, resources/geometry/baffle3D, hand-written cubeDirty.stl with duplicate+degenerate triangles); exercises: surfaceClean edge collapse with length+quality thresholds, duplicate/illegal triangle removal, -no-clean, -scale
+cd "${0%/*}" || exit 1
+mkdir -p out
+surfaceClean constant/triSurface/sphere.stl 0.01 0.1 out/sphere_unchanged.stl
+surfaceClean constant/triSurface/sphere.stl 0.03 0.5 out/sphere_collapsed.stl
+surfaceClean constant/triSurface/cubeDirty.stl 0.01 0.1 out/cubeDirty_clean.stl
+surfaceClean -no-clean constant/triSurface/cubeDirty.stl 0.01 0.1 out/cubeDirty_noClean.stl
+surfaceClean -scale 2 constant/triSurface/cube6.stl 0.01 0.1 out/cube6_scaled.obj
+surfaceClean constant/triSurface/baffle3D.stl 0.001 0.05 out/baffle3D_clean.stl
+sed -i -E 's/written [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}/written DATE/' out/*

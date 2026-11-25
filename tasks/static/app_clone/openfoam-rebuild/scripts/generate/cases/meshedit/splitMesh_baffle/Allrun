@@ -1,0 +1,7 @@
+#!/bin/bash
+# from: incompressible/icoFoam/cavity/cavity (6x6); exercises: splitMesh detaching internal faceSet into master/slave patches (baffle), with and without -overwrite
+blockMesh
+topoSet
+splitMesh cutFaces cutMaster cutSlave
+splitMesh -overwrite cutFaces cutMaster cutSlave
+checkMesh

@@ -1,9 +1,0 @@
-# Guard the actuator bus and resume controller state
-
-A slow, stale or unhealthy sensor publisher must not keep sending the robot its last target. Add a watchdog and a durable restart path to the same stream command. Keep the earlier modes available.
-
-When `watchdog_ticks` is supplied, it is a positive integer. A `step` can carry `healthy:false` and omit the sensor fields, or carry `healthy:true` or omit the flag with a complete sample. An unhealthy step or a gap greater than the watchdog since the last accepted event latches neutral output before any inference. While latched, subsequent steps keep returning neutral with status `latched` and null diagnostics, including after restart. The first step of a new session starts active, and omitting the watchdog disables gap detection. An explicitly unhealthy step latches regardless of whether a watchdog interval is configured.
-
-An operator `{"kind":"arm","tick":integer}` request clears the latch, even after a long gap. Return neutral with status `armed` and null diagnostics. Reset observation history and previous actions, and use the arm tick as the origin of subsequent policy updates. The first update can occur one full policy period after arming.
-
-Persist the event, response, history, phase, watchdog state and committed control in the supplied directory before replying. With the same config and state, a restarted process must match the uninterrupted process. An exact retransmission of the latest event returns the original reply and does not advance any state. An older tick or a changed event at the latest tick returns neutral with status `rejected`, null diagnostics and no state change. Only the latest accepted event is eligible for retry. Use one process at a time for a state directory. Malformed lines must exit nonzero without corrupting the prior state.

@@ -1,0 +1,6 @@
+#!/bin/bash
+# from: multiphase/compressibleInterFoam/laminar/depthCharge2D (coarsened, short); exercises: scalar BC temperatureDependentAlphaContactAngle (theta0 as Function1 of T)
+cd "${0%/*}" || exit 1
+blockMesh
+setFields
+compressibleInterFoam

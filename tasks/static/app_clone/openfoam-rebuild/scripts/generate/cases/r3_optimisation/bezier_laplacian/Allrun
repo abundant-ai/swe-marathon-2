@@ -1,0 +1,34 @@
+#!/bin/bash
+# from: incompressible/adjointOptimisationFoam/shapeOptimisation/sbend/laminar/primalAdjoint (Bezier block) on a blockMesh converging-diverging channel with hand-made dxidXj fields (8 Bezier CPs on the walls), PtLosses, 2 cycles, steepestDescent; exercises: Bezier shape design variables with displacement methods laplacianMotionSolver, pLaplacianMotionSolver, elasticityMotionSolver, velocityLaplacian, displacementLaplacian
+cd "${0%/*}" || exit 1
+blockMesh
+
+rm -rf 0 && cp -r 0.orig 0
+cp -r variants/laplacianMotionSolver/. .
+adjointOptimisationFoam
+rm -f optimisation/CPUcost
+mkdir -p runs/laplacianMotionSolver && mv [1-9]* optimisation runs/laplacianMotionSolver/
+
+rm -rf 0 && cp -r 0.orig 0
+cp -r variants/pLaplacianMotionSolver/. .
+adjointOptimisationFoam
+rm -f optimisation/CPUcost
+mkdir -p runs/pLaplacianMotionSolver && mv [1-9]* optimisation runs/pLaplacianMotionSolver/
+
+rm -rf 0 && cp -r 0.orig 0
+cp -r variants/elasticityMotionSolver/. .
+adjointOptimisationFoam
+rm -f optimisation/CPUcost
+mkdir -p runs/elasticityMotionSolver && mv [1-9]* optimisation runs/elasticityMotionSolver/
+
+rm -rf 0 && cp -r 0.orig 0
+cp -r variants/velocityLaplacian/. .
+adjointOptimisationFoam
+rm -f optimisation/CPUcost
+mkdir -p runs/velocityLaplacian && mv [1-9]* optimisation runs/velocityLaplacian/
+
+rm -rf 0 && cp -r 0.orig 0
+cp -r variants/displacementLaplacian/. .
+adjointOptimisationFoam
+rm -f optimisation/CPUcost
+mkdir -p runs/displacementLaplacian && mv [1-9]* optimisation runs/displacementLaplacian/

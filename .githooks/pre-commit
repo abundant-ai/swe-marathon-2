@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(git rev-parse --show-toplevel)"
+export PATH="$HOME/.local/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+
+git diff --cached --name-only --diff-filter=ACMRT -z -- '*.py' '*.pyi' |
+while IFS= read -r -d '' path; do
+    git show ":$path" | uv run --frozen ruff format --check --stdin-filename "$path" -
+    git show ":$path" | uv run --frozen ruff check --stdin-filename "$path" -
+done

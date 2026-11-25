@@ -1,0 +1,201 @@
+// common settings are not a function object: removed below
+// one sets function object per coordSet writer, every set type spread over them
+
+common
+{
+    type            sets;
+    libs            (sampling);
+    writeControl    writeTime;
+    interpolationScheme cellPoint;
+    setFormat       raw;
+    fields          (p U);
+}
+
+setsRaw
+{
+    $common;
+    sets
+    {
+        arr
+        {
+            type    array;
+            axis    xyz;
+            origin  (0.02 0.02 0.005);
+            rotation { type none; }
+            pointsDensity (3 3 1);
+            spanBox (0.06 0.06 0);
+        }
+        abq
+        {
+            type    abaqusMesh;
+            axis    xyz;
+            file    "<constant>/probe.inp";
+        }
+        circ
+        {
+            type        circle;
+            axis        distance;
+            origin      (0.05 0.05 0.005);
+            circleAxis  (0 0 1);
+            startPoint  (0.08 0.05 0.005);
+            dTheta      45;
+        }
+    }
+}
+
+setsCsv
+{
+    $common;
+    setFormat   csv;
+    formatOptions { csv { separator ";"; buffer false; } }
+    sets
+    {
+        centres
+        {
+            type    cellCentre;
+            axis    xyz;
+        }
+        poly
+        {
+            type    polyLine;
+            axis    distance;
+            points  ((0.01 0.01 0.005) (0.09 0.05 0.005) (0.01 0.09 0.005));
+        }
+    }
+}
+
+setsGnuplot
+{
+    $common;
+    setFormat   gnuplot;
+    sets
+    {
+        pcloud
+        {
+            type        patchCloud;
+            axis        xyz;
+            patches     (movingWall);
+            points      ((0.025 0.11 0.005) (0.075 0.11 0.005));
+            maxDistance 0.05;
+        }
+    }
+}
+
+setsXmgrace
+{
+    $common;
+    setFormat   xmgr;
+    sets
+    {
+        pedge
+        {
+            type    patchEdge;
+            axis    xyz;
+            patches (fixedWalls);
+            surfaceType plane;
+            planeType   pointAndNormal;
+            pointAndNormalDict { point (0.05 0.05 0.005); normal (1 -1 0); }
+            origin  (0 0 0.005);
+        }
+    }
+}
+
+setsVtk
+{
+    $common;
+    setFormat   vtk;
+    formatOptions { vtk { format ascii; } }
+    sets
+    {
+        seed
+        {
+            type        patchSeed;
+            axis        xyz;
+            patches     (fixedWalls);
+            maxPoints   8;
+        }
+    }
+}
+
+setsNastran
+{
+    $common;
+    setFormat   nastran;
+    sets
+    {
+        tri
+        {
+            type    triSurfaceMeshPointSet;
+            axis    xyz;
+            surface probe.stl;
+        }
+    }
+}
+
+setsAbaqus
+{
+    $common;
+    setFormat   abaqus;
+    fields      (p);
+    sets
+    {
+        mid
+        {
+            type    midPoint;
+            axis    x;
+            start   (0.005 0.045 0.005);
+            end     (0.095 0.045 0.005);
+        }
+    }
+}
+
+setsEnsight
+{
+    $common;
+    setFormat   ensight;
+    formatOptions { ensight { collateTimes false; } }
+    sets
+    {
+        midFace
+        {
+            type    midPointAndFace;
+            axis    y;
+            start   (0.045 0.005 0.005);
+            end     (0.045 0.095 0.005);
+        }
+    }
+}
+
+setsGltf
+{
+    $common;
+    setFormat   gltf;
+    fields      (p);
+    sets
+    {
+        faceLine
+        {
+            type    face;
+            axis    distance;
+            start   (0.005 0.005 0.005);
+            end     (0.095 0.095 0.005);
+        }
+    }
+}
+
+setsNull
+{
+    $common;
+    setFormat   none;
+    sets
+    {
+        cloudPts
+        {
+            type    cloud;
+            axis    xyz;
+            points  ((0.05 0.05 0.005));
+        }
+    }
+}
+
+#remove common

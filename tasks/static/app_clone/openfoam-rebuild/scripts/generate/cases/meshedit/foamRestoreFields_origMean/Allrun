@@ -1,0 +1,9 @@
+#!/bin/bash
+# from: incompressible/icoFoam/cavity/cavity (6x6, hand-made time dirs with .orig and *Mean fields); exercises: foamRestoreFields -method orig/mean, -dry-run, default zero exclusion vs -withZero, -latestTime, -time, named field arguments, backups of existing fields
+blockMesh
+foamRestoreFields -method orig -dry-run -withZero
+foamRestoreFields -method orig -withZero p
+foamRestoreFields -method orig
+foamRestoreFields -method mean -latestTime
+foamRestoreFields -method mean -time 0.1 U
+foamRestoreFields -method orig -withZero

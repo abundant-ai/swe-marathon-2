@@ -1,6 +1,6 @@
 # Instruction-writing comparisons
 
-The [Orange instruction](../../../../tasks/swe-m2-ai-engineer/knowledge-work-assistant/steps/01-build-rag/instruction.md)
+The [Orange instruction](../../../../tasks/static/app_building/knowledge-work-assistant/instruction.md)
 is the genuine user-written voice reference. The pairs below are constructed
 examples in that style. They are not presented as quotations from a human author
 or as records of an actual model's output. Their filenames, commands, and

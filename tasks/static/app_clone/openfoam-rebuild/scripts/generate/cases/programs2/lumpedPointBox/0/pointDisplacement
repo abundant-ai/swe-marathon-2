@@ -1,0 +1,30 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       pointVectorField;
+    object      pointDisplacement;
+}
+
+dimensions      [0 1 0 0 0 0 0];
+
+internalField   uniform (0 0 0);
+
+boundaryField
+{
+    building
+    {
+        type            lumpedPointDisplacement;
+        value           uniform (0 0 0);
+        controllers     ( vertical );
+    }
+    ground
+    {
+        type            slip;
+    }
+    outer
+    {
+        type            uniformFixedValue;
+        uniformValue    (0 0 0);
+    }
+}

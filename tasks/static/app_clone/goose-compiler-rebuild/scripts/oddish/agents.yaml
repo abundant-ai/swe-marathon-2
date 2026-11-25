@@ -1,0 +1,24 @@
+# Model trials, only after the baselines of the same task version are green. The same settings as
+# harbor-lh ops/swe-marathon-v2/agents-claude-code-1attempt.yaml: one attempt per trial (judges,
+# 2026-11-19), so that every errored trial is read before any re-run (a capped, ungraded trial was
+# re-run from scratch three times over on version 4); background tasks off, since with them on
+# claude-code ended its turn to wait for helpers and the headless run then exited (SymPy).
+agents:
+  - name: claude-code
+    model_name: relace/deepseek-v4.1-flash
+    n_trials: 2
+    env:
+      CLAUDE_CODE_AUTO_COMPACT_WINDOW: "300000"
+      CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: "1"
+    kwargs:
+      # no apostrophes or quotes here: with a non-root agent user the harness passes this through a shell
+      append_system_prompt: "You are running unattended. Keep working until the completion criteria of the task are met or its time budget is used up. Do not stop to report progress, to summarise, or to wait for helper agents. Ending your turn ends the run."
+  - name: claude-code
+    model_name: relace/glm-5.3
+    n_trials: 1
+    env:
+      CLAUDE_CODE_AUTO_COMPACT_WINDOW: "300000"
+      CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: "1"
+    kwargs:
+      append_system_prompt: "You are running unattended. Keep working until the completion criteria of the task are met or its time budget is used up. Do not stop to report progress, to summarise, or to wait for helper agents. Ending your turn ends the run."
+max_trial_attempts: 1

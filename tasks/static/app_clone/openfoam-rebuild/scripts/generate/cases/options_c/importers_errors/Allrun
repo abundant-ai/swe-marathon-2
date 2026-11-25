@@ -1,0 +1,30 @@
+#!/bin/bash
+# from: scratch (input files from meshio/{cfx4Import,gambitImport,ideasUnvImport,adventureMshImport,smapImport,vtkRoundTrip}); exercises: mesh-converter option/argument handling: -scale values, -dump, mshToFoam with and without -hex; errors: missing argument, nonexistent input files (vtkUnstructuredToFoam writes an empty mesh), non-numeric -scale, malformed fire file, smapToFoam without mesh (missing-file aborts/segfaults of gambitToFoam and fireToFoam left out: stack traces)
+cd "${0%/*}" || exit 1
+cfx4ToFoam || true
+cfx4ToFoam input/noSuch.geo || true
+cfx4ToFoam -scale abc input/oneBlock.geo || true
+cfx4ToFoam -scale 0.001 input/oneBlock.geo
+checkMesh
+gambitToFoam || true
+gambitToFoam -scale 1 input/twoBricks.neu
+checkMesh
+ideasUnvToFoam input/noSuch.unv || true
+ideasUnvToFoam -dump input/twoHexMM.unv
+sed -i "s/written [0-9]\{4\}-[0-9-]*T[0-9:]*/written DATE/" boundaryFaces.obj
+checkMesh
+mshToFoam input/noSuch.msh || true
+mshToFoam input/twoTets.msh
+checkMesh
+mshToFoam -hex input/twoHex.msh
+checkMesh
+vtkUnstructuredToFoam input/noSuch.vtk || true
+vtkUnstructuredToFoam input/mixed.vtk
+checkMesh
+fireToFoam input/noSuch.fpma || true
+fireToFoam -ascii input/junk.fpma || true
+rm -rf constant/polyMesh
+smapToFoam input/star.smap || true
+blockMesh
+smapToFoam input/noSuch.smap || true
+smapToFoam input/star.smap

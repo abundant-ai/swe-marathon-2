@@ -6,8 +6,8 @@ of fresh GPT-6.2 Sol xhigh scores below 0.5. The ordering is a design judgment
 based on the number of coupled decisions and the cost of making a useful
 implementation. None of these proposals has a model score.
 
-Two proposals have checkpoint briefs. [Flexible harness routing](../tasks/swe-m2-software-engineering/cable-harness-routing/README.md)
-has the largest gap from the earlier tasks. [Interrupted Scan-N-Plan coating](../tasks/swe-m2-software-engineering/scan-n-plan-coating/README.md)
+Two proposals have checkpoint briefs. [Flexible harness routing](../tasks/static/robotics/cable-harness-routing/README.md)
+has the largest gap from the earlier tasks. [Interrupted Scan-N-Plan coating](../tasks/static/robotics/scan-n-plan-coating/README.md)
 has the most direct path to a useful independent verifier.
 
 ## Candidates in expected difficulty order

@@ -1,0 +1,47 @@
+#!/bin/bash
+# from: mesh/stitchMesh/simple-cube1 (coarsened) plus a scratch 3-block region; exercises: stitchMesh dict mode, -dict, -overwrite vs time-dir output, -intermediate, 2-argument -partial/-perfect/-integral, -toleranceDict, -region, and errors (bad match type, unknown patch, conflicting/missing args, nonexistent region, missing dict)
+cd "${0%/*}" || exit 1
+blockMesh
+topoSet
+subsetMesh final -patch outer -overwrite
+rm -f constant/polyMesh/{cellZones,faceZones,pointZones}
+topoSet -dict system/topoSetDict.patches
+createPatch -overwrite
+rm -rf constant/polyMesh/sets
+cp -r constant/polyMesh constant/polyMesh.orig
+restore() { rm -rf 0 constant/polyMesh [1-9]*; cp -r constant/polyMesh.orig constant/polyMesh; }
+
+stitchMesh -overwrite
+checkMesh
+restore
+stitchMesh -intermediate
+mkdir -p results && mv 1 results/intermediate1 && mv 2 results/intermediate2 && mv 3 results/intermediate3
+restore
+stitchMesh -dict system/stitchMeshDict.xOnly
+mv 1 results/xOnly
+restore
+stitchMesh -partial outery innery
+mv 1 results/partialArgs
+restore
+stitchMesh -partial -toleranceDict stitchTolerances outerz innerz -overwrite
+mv constant/polyMesh results/toleranceDict
+restore
+
+blockMesh -region twoBlock
+cp -r constant/twoBlock/polyMesh constant/twoBlock/polyMesh.orig
+stitchMesh -region twoBlock -overwrite || true
+stitchMesh -region twoBlock -dict system/twoBlock/stitchMeshDict -overwrite
+checkMesh -region twoBlock
+rm -rf 0 constant/twoBlock/polyMesh && cp -r constant/twoBlock/polyMesh.orig constant/twoBlock/polyMesh
+stitchMesh -region twoBlock -perfect aRight bLeft -overwrite
+stitchMesh -region twoBlock -integral cLeft bRight -overwrite
+checkMesh -region twoBlock
+
+stitchMesh -dict system/stitchMeshDict.badMatch -overwrite || true
+stitchMesh -dict system/stitchMeshDict.badPatch -overwrite || true
+stitchMesh -partial outerx noSuchPatch -overwrite || true
+stitchMesh -perfect -partial outerx innerx -overwrite || true
+stitchMesh -partial outerx || true
+stitchMesh -region noSuchRegion -overwrite || true
+stitchMesh -dict system/noSuchDict -overwrite || true
+stitchMesh -toleranceDict noSuchTolerances -partial outerx innerx -overwrite || true

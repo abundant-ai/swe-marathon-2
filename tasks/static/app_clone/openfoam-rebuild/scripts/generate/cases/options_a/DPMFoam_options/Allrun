@@ -1,0 +1,28 @@
+#!/bin/bash
+# from: lagrangian/DPMFoam/Goldschmidt (2x6x18 mesh, 20 steps, apps/DPMDyMFoam setup); exercises: DPMFoam/DPMDyMFoam options -dry-run, -dry-run-write, -noFunctionObjects, -cloud/-cloudName alternative cloud, -postProcess (-func -latestTime -time -fields), -parallel; errors: DPMDyMFoam -dry-run (not an option), unknown cloud name, nonexistent time, bad -time value, unknown patchInteractionModel, missing injection positionsFile, DPMDyMFoam ignoring -cloudName, -case noSuchDir
+cd "${0%/*}" || exit 1
+blockMesh
+DPMFoam -dry-run
+DPMFoam -dry-run-write
+rm -rf 0.0001
+DPMFoam -noFunctionObjects
+DPMFoam -cloud altCloud
+rm -rf 0.001 0.002 postProcessing
+DPMFoam
+DPMFoam -postProcess -func 'mag(U.air)' -latestTime
+DPMFoam -postProcess -func 'mag(U.air)' -time 0.001
+DPMDyMFoam -dry-run || true
+DPMDyMFoam -cloudName altCloud -noFunctionObjects
+DPMDyMFoam -postProcess -fields '(p)' -func 'components(U.air)' -time 0.002
+decomposePar -force
+mpirun --oversubscribe -np 2 DPMFoam -parallel -noFunctionObjects
+DPMFoam -cloud noSuchCloud || true
+DPMFoam -postProcess -func 'mag(U.air)' -time 99 || true
+DPMFoam -postProcess -func 'mag(U.air)' -time abc || true
+DPMFoam -case noSuchDir || true
+cp -r variants/badPatchInteraction/. .
+DPMFoam || true
+cp -r variants/orig/. .
+cp -r variants/missingPositionsFile/. .
+DPMFoam || true
+cp -r variants/orig/. .

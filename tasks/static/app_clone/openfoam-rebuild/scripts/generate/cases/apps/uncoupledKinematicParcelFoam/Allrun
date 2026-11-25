@@ -1,0 +1,6 @@
+#!/bin/bash
+# from: lagrangian/uncoupledKinematicParcelDyMFoam/rotor2DAMI; exercises: uncoupledKinematicParcelFoam (frozen-flow kinematic cloud, patchInjection, static cyclicAMI mesh, -cloud option)
+cd "${0%/*}" || exit
+cp -r 0.orig 0
+blockMesh
+uncoupledKinematicParcelFoam -cloud beads

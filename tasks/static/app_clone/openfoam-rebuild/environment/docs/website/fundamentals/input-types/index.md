@@ -1,0 +1,45 @@
+<!-- https://doc.openfoam.com/2606/fundamentals/input-types/ -->
+
+# Input types
+
+## Input types
+
+OpenFOAM input dictionaries are designed to be human\-readable ASCII text files,
+consisting of collections of keyword\-value entries bounded by curly braces `{}`,
+e.g.
+
+```
+dictionary_name
+{
+    labelType       1;
+    scalarType      1.0;
+    vectorType      (0 0 0);
+    wordType        word;
+    stringType      "string";
+    ...
+}
+
+```
+
+The main basic entry types include:
+
+| Type | Description | Example |
+| --- | --- | --- |
+| boolean | state | `on`, `off`, `true`, `false` |
+| label | integer | `123` |
+| scalar | float | `123.456` |
+| word | a single word | `value` |
+| string | quoted text | `"this is a string value"` |
+| list | a list of entries bounded by () braces | `(0 1 2 3 4 5)` |
+| vector | a list of 3 values, nominally (x y z) components | `(0 0 0)` |
+| sphericalTensor | a spherical tensor | `(0)` |
+| symmTensor | a symmetric tensor defined by (xx xy xz yy yz zz) | `(0 0 0 0 0 0)` |
+| tensor | a nine component tensor defined by (xx xy xz yx yy yz zx zy zz) | `(0 0 0 0 0 0 0 0 0)` |
+
+## Expressions
+
+See [expressions](expression-syntax.md)
+
+## Function1 types
+
+See [Function1s](Function1/index.md)

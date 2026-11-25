@@ -1,0 +1,59 @@
+FoamFile { version 2.0; format ascii; class dictionary; object topoSetDict; }
+actions
+(
+    {
+        name coneCells; type cellSet; action new; source searchableSurfaceToCell;
+        surfaceType searchableCone; surfaceName hollowCone;
+        point1 (0.5 0.5 0); radius1 0.45; innerRadius1 0.1;
+        point2 (0.5 0.5 1); radius2 0.15; innerRadius2 0;
+    }
+    {
+        name rotBoxCells; type cellSet; action new; source searchableSurfaceToCell;
+        surfaceType searchableRotatedBox; surfaceName rotBox;
+        span (0.8 0.3 0.4); origin (0.5 0.1 0.3); e1 (0.70710678 0.70710678 0); e3 (0 0 1);
+    }
+    {
+        name coneFaces; type faceSet; action new; source searchableSurfaceToFace;
+        surfaceType searchableCone; surfaceName cone2;
+        point1 (0.1 0.1 0.1); radius1 0.3; innerRadius1 0;
+        point2 (0.9 0.9 0.9); radius2 0.1; innerRadius2 0;
+    }
+    {
+        name conePoints; type pointSet; action new; source searchableSurfaceToPoint;
+        surfaceType searchableCone; surfaceName cone3;
+        point1 (0 0 0); radius1 0.2; innerRadius1 0;
+        point2 (1 1 1); radius2 0.4; innerRadius2 0.2;
+    }
+    {
+        name diskZone; type faceZoneSet; action new; source searchableSurfaceToFaceZone;
+        surfaceType searchableDisk; surfaceName disk;
+        origin (0.5 0.5 0.55); normal (0 0.2 1); radius 0.35;
+    }
+    {
+        name ringZone; type faceZoneSet; action new; source searchableSurfaceToFaceZone;
+        surfaceType searchableDisk; surfaceName ring;
+        origin (0.5 0.5 0.3); normal (0 0 1); radius 0.4; innerRadius 0.2;
+    }
+    {
+        name planeZone; type faceZoneSet; action new; source searchableSurfaceToFaceZone;
+        surfaceType searchablePlane; surfaceName plane1;
+        planeType pointAndNormal;
+        pointAndNormalDict { point (0.3 0.3 0.3); normal (1 1 0); }
+    }
+    {
+        name plane2Zone; type faceZoneSet; action new; source searchableSurfaceToFaceZone;
+        surfaceType searchablePlane; surfaceName plane2;
+        planeType embeddedPoints;
+        embeddedPointsDict { point1 (0 0 0.4); point2 (1 0 0.6); point3 (0 1 0.4); }
+    }
+    {
+        name plateZone; type faceZoneSet; action new; source searchableSurfaceToFaceZone;
+        surfaceType searchablePlate; surfaceName plate;
+        origin (0.1 0.2 0.3); span (0.6 0 0.5);
+    }
+    {
+        name rotBoxZone; type faceZoneSet; action new; source searchableSurfaceToFaceZone;
+        surfaceType searchableRotatedBox; surfaceName rotBox2;
+        span (0.5 0.5 0.5); origin (0.2 0.2 0.2); e1 (1 0 0); e3 (0 0.6 0.8);
+    }
+);

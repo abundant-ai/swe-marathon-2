@@ -1,0 +1,42 @@
+#!/bin/bash
+# from: scratch (4x4x4 box, two-level refineHexMesh; box.stl for snappyRefineMesh); exercises: refinementLevel serial, -readLevel (segfaults in v2606), -parallel, -decomposeParDict; snappyRefineMesh default, writeMesh/splitLevel 2, outside/nCutLayers and directional (useHexTopology false, 2 directions) variants; errors (missing surface, missing outsidePoints, bad coordinateSystem, missing dict, -parallel without decomposition)
+cd "${0%/*}" || exit 1
+blockMesh
+topoSet
+refineHexMesh -overwrite corner
+topoSet -dict system/topoSetDict.inner
+refineHexMesh -overwrite inner
+refinementLevel -parallel || true
+refinementLevel
+refinementLevel -readLevel || true
+decomposePar
+mpirun --oversubscribe -np 2 refinementLevel -parallel
+decomposePar -force -decomposeParDict system/decomposeParDict.alt
+mpirun --oversubscribe -np 4 refinementLevel -parallel -decomposeParDict system/decomposeParDict.alt
+mkdir -p results && mv 0 constant/polyMesh processor* results/
+restore() { rm -rf 0 [1-9]* constant/polyMesh; blockMesh; }
+blockMesh
+snappyRefineMesh
+mv 0 results/snappyDefault
+restore
+cp system/snappyRefineMeshDict.writeMesh system/snappyRefineMeshDict
+snappyRefineMesh
+mv 0 results/snappyWriteMesh
+restore
+cp system/snappyRefineMeshDict.outside system/snappyRefineMeshDict
+snappyRefineMesh
+mv 0 results/snappyOutside
+restore
+cp system/snappyRefineMeshDict.directional system/snappyRefineMeshDict
+snappyRefineMesh
+mv 0 results/snappyDirectional
+restore
+cp system/snappyRefineMeshDict.noSurface system/snappyRefineMeshDict
+snappyRefineMesh || true
+cp system/snappyRefineMeshDict.noOutsidePoints system/snappyRefineMeshDict
+snappyRefineMesh || true
+cp system/snappyRefineMeshDict.badCoordSys system/snappyRefineMeshDict
+snappyRefineMesh || true
+rm system/snappyRefineMeshDict
+snappyRefineMesh || true
+cp system/snappyRefineMeshDict.orig system/snappyRefineMeshDict

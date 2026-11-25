@@ -1,0 +1,8 @@
+#!/bin/bash
+# from: incompressible/icoFoam/cavity/cavity (4x3, skewed quadrilateral block); exercises: splitCells by internal-angle threshold, -set, -tol, -overwrite, iteration until no cuts remain
+blockMesh
+topoSet
+splitCells -set lowerRow -tol 0.1 100
+splitCells -overwrite 100
+splitCells -overwrite 120
+checkMesh

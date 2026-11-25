@@ -1,0 +1,32 @@
+#!/bin/bash
+# from: multiphase/potentialFreeSurfaceFoam/oscillatingBox (40x6 mesh, 0.06 s); exercises: potentialFreeSurfaceFoam -dry-run, -dry-run-write (with -noFunctionObjects; plain -dry-run fails on missing faceZone / zoned column mesh), -noFunctionObjects, -postProcess (-latestTime, -func/-fields/-time, -funcs, -noZero, -list), -parallel with default and alternative -decomposeParDict; errors: -parallel before decomposePar, missing -decomposeParDict file, unknown -func, missing constant/g, missing p_gh field
+blockMesh
+cp -r 0.orig 0
+potentialFreeSurfaceFoam -dry-run || true
+potentialFreeSurfaceFoam -dry-run -noFunctionObjects
+potentialFreeSurfaceFoam -dry-run-write -noFunctionObjects
+foamListTimes -rm
+rm -rf 0 postProcessing-dry-run
+topoSet
+subsetMesh -overwrite c0 -patch floatingObject
+cp -r 0.orig 0
+potentialFreeSurfaceFoam -dry-run || true
+potentialFreeSurfaceFoam -noFunctionObjects
+potentialFreeSurfaceFoam -postProcess -latestTime
+potentialFreeSurfaceFoam -postProcess -func "mag(U)" -time 0.02:0.04
+potentialFreeSurfaceFoam -postProcess -funcs '(vorticity "components(U)")' -noZero
+potentialFreeSurfaceFoam -postProcess -fields '(p p_gh)' -func "grad(p_gh)" -latestTime
+potentialFreeSurfaceFoam -postProcess -list
+potentialFreeSurfaceFoam -postProcess -func noSuchFunctionObject -latestTime || true
+mpirun --oversubscribe -np 2 potentialFreeSurfaceFoam -parallel || true
+decomposePar
+mpirun --oversubscribe -np 2 potentialFreeSurfaceFoam -parallel
+decomposePar -force -decomposeParDict system/decomposeParDict.alt
+mpirun --oversubscribe -np 2 potentialFreeSurfaceFoam -parallel -decomposeParDict system/decomposeParDict.alt
+mpirun --oversubscribe -np 2 potentialFreeSurfaceFoam -parallel -decomposeParDict system/noSuchDecomposeParDict || true
+mv constant/g constant/g.off
+potentialFreeSurfaceFoam || true
+mv constant/g.off constant/g
+mv 0/p_gh 0/p_gh.off
+potentialFreeSurfaceFoam -noFunctionObjects || true
+mv 0/p_gh.off 0/p_gh

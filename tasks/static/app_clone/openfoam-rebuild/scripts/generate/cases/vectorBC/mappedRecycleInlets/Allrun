@@ -1,0 +1,4 @@
+#!/bin/bash
+# from: scratch; exercises: U BCs mappedFixedPushedInternalValue mappedFixedInternalValue mappedVelocityFlux fixedInternalValue
+blockMesh
+pimpleFoam

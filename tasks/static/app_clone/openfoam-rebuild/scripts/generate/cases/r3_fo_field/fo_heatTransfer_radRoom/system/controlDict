@@ -1,0 +1,125 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  v2606                                 |
+|   \\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      controlDict;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+application     buoyantSimpleFoam;
+
+startFrom       startTime;
+
+startTime       0;
+
+stopAt          endTime;
+
+endTime         20;
+
+deltaT          1;
+
+writeControl    timeStep;
+
+writeInterval   10;
+
+purgeWrite      0;
+
+writeFormat     ascii;
+
+writePrecision  6;
+
+writeCompression off;
+
+timeFormat      general;
+
+timePrecision   6;
+
+runTimeModifiable false;
+
+
+functions
+{
+    htcReynolds
+    {
+        type            heatTransferCoeff;
+        libs            (fieldFunctionObjects);
+        field           T;
+        patches         (floor ceiling);
+        htcModel        ReynoldsAnalogy;
+        UInf            (0.2 0 0);
+        Cp              CpInf;
+        CpInf           1000;
+        rho             rho;
+        writeControl    writeTime;
+    }
+    htcReynoldsRhoInf
+    {
+        type            heatTransferCoeff;
+        libs            (fieldFunctionObjects);
+        field           T;
+        patches         (box);
+        htcModel        ReynoldsAnalogy;
+        UInf            (0.1 0.1 0);
+        Cp              CpInf;
+        CpInf           1005;
+        rho             rhoInf;
+        rhoInf          1.2;
+        result          htcBoxRA;
+        writeControl    writeTime;
+    }
+    htcFaceZone
+    {
+        type            heatTransferCoeff;
+        libs            (fieldFunctionObjects);
+        field           T;
+        patches         ("(floor|box)");
+        htcModel        faceZoneReferenceTemperature;
+        referenceFaceZone midPlane;
+        result          htcZone;
+        writeControl    writeTime;
+    }
+    htcLocal
+    {
+        type            heatTransferCoeff;
+        libs            (fieldFunctionObjects);
+        field           T;
+        patches         (box);
+        htcModel        localReferenceTemperature;
+        result          htcLocal;
+        writeControl    writeTime;
+    }
+    gaugeFloor
+    {
+        type            wallHeatFlux;
+        libs            (fieldFunctionObjects);
+        model           gauge;
+        patch           floor;
+        probeLocations  ((5 3 0) (8 5 0) (1 1 0));
+        Tgauge          310;
+        absorptivity    0.9;
+        emissivity      0.8;
+        convective      true;
+        radiative       true;
+        writeFields     true;
+        writeControl    writeTime;
+    }
+    gaugeCeiling
+    {
+        type            wallHeatFlux;
+        libs            (fieldFunctionObjects);
+        model           gauge;
+        patch           ceiling;
+        probeLocations  ((5 3 2));
+        Tgauge          290;
+    }
+}
+
+// ************************************************************************* //

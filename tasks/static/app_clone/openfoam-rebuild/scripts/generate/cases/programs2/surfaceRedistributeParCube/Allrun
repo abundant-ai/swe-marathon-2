@@ -1,0 +1,7 @@
+#!/bin/bash
+# from: incompressible/simpleFoam/motorBike (surfaceRedistributePar step); exercises: surfaceRedistributePar on a 2-processor decomposed box (v2606 aborts in writeProcStats: non-contiguous gather), non-parallel run error
+cd "${0%/*}" || exit 1
+blockMesh
+decomposePar
+mpirun -np 2 surfaceRedistributePar unit_cube.stl independent -parallel || true
+surfaceRedistributePar unit_cube.stl independent || true

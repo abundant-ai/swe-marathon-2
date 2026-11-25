@@ -1,0 +1,12 @@
+#!/bin/bash
+# from: combustion/XiEngineFoam/kivaTest (kivaToFoam step, hand-written small KIVA grids); exercises: kivaToFoam kiva3v reader (piston/valve/liner/cylinderHead/symmetryPlane patches, cellZoning), -zHeadMin liner transfer, -version kiva3 with -file, bad version and missing file errors
+cd "${0%/*}" || exit 1
+kivaToFoam
+checkMesh
+mkdir -p mesh_kiva3v && cp -r constant/polyMesh mesh_kiva3v/
+kivaToFoam -zHeadMin 0.035
+mkdir -p mesh_zHeadMin && cp -r constant/polyMesh mesh_zHeadMin/
+kivaToFoam -version kiva3 -file box.kiva3
+checkMesh
+kivaToFoam -version kiva4 || true
+kivaToFoam -file noSuchFile || true

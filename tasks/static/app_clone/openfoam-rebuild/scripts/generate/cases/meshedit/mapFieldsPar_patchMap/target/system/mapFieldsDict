@@ -1,0 +1,19 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      mapFieldsDict;
+}
+
+// target patch name   source patch name
+patchMap
+(
+    lid movingWall
+);
+
+// target patches that cut through the source domain (mapped from source cells)
+cuttingPatches
+(
+    fixedWalls
+);

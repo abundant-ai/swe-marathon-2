@@ -1,0 +1,17 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      modifyMeshDict;
+}
+
+// Cell splitting: convert a cell into pyramids around a point
+pointsToMove        ();
+edgesToSplit        ();
+facesToTriangulate  ();
+edgesToCollapse     ();
+cellsToSplit
+(
+    ((0.5 0.5 0.5) (0.55 0.5 0.45))
+);

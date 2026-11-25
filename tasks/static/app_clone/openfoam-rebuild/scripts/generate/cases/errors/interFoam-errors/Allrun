@@ -1,0 +1,51 @@
+#!/bin/bash
+# from: multiphase/interFoam/laminar/damBreak/damBreak; exercises: interFoam errors - missing alpha/p_rgh/g, wrong phase names/count, missing sigma/rho, unknown phase viscosity model and surface-tension model, unknown alpha BC, missing alpha solver controls and div scheme
+blockMesh
+mv 0/alpha.water 0/alpha.water.off
+interFoam || true
+mv 0/alpha.water.off 0/alpha.water
+mv 0/p_rgh 0/p_rgh.off
+interFoam || true
+mv 0/p_rgh.off 0/p_rgh
+mv constant/g constant/g.off
+interFoam || true
+mv constant/g.off constant/g
+cp -r variants/wrongPhaseName/. .
+interFoam || true
+cp -r variants/orig/. .
+cp -r variants/threePhases/. .
+interFoam || true
+cp -r variants/orig/. .
+cp -r variants/missingPhases/. .
+interFoam || true
+cp -r variants/orig/. .
+cp -r variants/missingSigma/. .
+interFoam || true
+cp -r variants/orig/. .
+cp -r variants/unknownSigmaModel/. .
+interFoam || true
+cp -r variants/orig/. .
+cp -r variants/missingRho/. .
+interFoam || true
+cp -r variants/orig/. .
+cp -r variants/unknownPhaseViscosity/. .
+interFoam || true
+cp -r variants/orig/. .
+cp -r variants/unknownAlphaBC/. .
+interFoam || true
+cp -r variants/orig/. .
+cp -r variants/inletOutletMissingInletValue/. .
+interFoam || true
+cp -r variants/orig/. .
+cp -r variants/missingAlphaControls/. .
+interFoam || true
+cp -r variants/orig/. .
+cp -r variants/missingDivAlpha/. .
+interFoam || true
+cp -r variants/orig/. .
+cp -r variants/missingDivRhoPhiU/. .
+interFoam || true
+cp -r variants/orig/. .
+cp -r variants/badMULESCorr/. .
+interFoam || true
+cp -r variants/orig/. .

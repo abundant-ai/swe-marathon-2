@@ -1,0 +1,9 @@
+#!/bin/bash
+# from: scratch (6x4x3 box, 3 simple subdomains); exercises: reconstructParMesh geometric face matching via faceCoupleInfo/polyMeshAdder (-fullMatch over all boundary faces, -procMatch over processor faces)
+blockMesh
+decomposePar
+reconstructParMesh -fullMatch -constant
+checkMesh -constant
+rm -rf constant/polyMesh
+reconstructParMesh -procMatch -constant
+checkMesh -constant

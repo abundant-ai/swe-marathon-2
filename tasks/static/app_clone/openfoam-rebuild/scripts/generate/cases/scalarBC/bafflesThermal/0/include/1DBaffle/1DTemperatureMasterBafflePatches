@@ -1,0 +1,16 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      1DTemperatureMasterBafflePatches;
+}
+
+T
+{
+    type            compressible::thermalBaffle1D<hPowerSolidThermoPhysics>;
+    thickness       uniform 0.005;
+    qs              uniform 500;
+    #include "1DbaffleSolidThermo"
+    value           uniform 300;
+}

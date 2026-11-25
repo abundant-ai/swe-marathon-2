@@ -1,0 +1,44 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  v2606                                 |
+|   \\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       coordinateSystems;
+    object      coordinateSystems;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+2
+(
+shifted
+{
+    type    cartesian;
+    origin  (10 0 0);
+    rotation
+    {
+        type    axes;
+        e1      (1 0 0);
+        e3      (0 0 1);
+    }
+}
+
+rotZ90
+{
+    type    cartesian;
+    origin  (0 0 0);
+    rotation
+    {
+        type    axisAngle;
+        axis    (0 0 1);
+        angle   90;
+    }
+}
+)
+
+// ************************************************************************* //

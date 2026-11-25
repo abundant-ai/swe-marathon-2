@@ -1,0 +1,38 @@
+#!/bin/bash
+# from: incompressible/icoFoam/cavity/cavity (5x5, binary writeFormat, times 0.01 0.02); exercises: setExprFields dict/-dict/command-line modes (-create -field -expression -dimensions -field-mask -keepPatches -value-patches -load-fields -dummy-phi), time selection (-time -latestTime -noZero), -ascii, -dry-run, -verbose, -no-variable-cache, -debug-parser, -withFunctionObjects, -region, -parallel; setExprBoundaryFields default/-dict, -backup, -cache-fields, -load-fields, -dry-run, -ascii, time selection, -region, -parallel; errors (bad expression, unknown field/patch/region, missing dict/expression, missing -expression)
+cd "${0%/*}" || exit 1
+blockMesh
+icoFoam
+setExprFields
+setExprFields -latestTime -dict system/setExprFieldsDict.alt -verbose
+setExprFields -time 0.01 -create -field T -expression 'pos().x()' -dimensions '[0 0 0 1 0 0 0]' -ascii
+setExprFields -latestTime -field p -expression 'mag(U)' -load-fields '(U)' -field-mask 'pos().y()>0.05' -keepPatches
+setExprFields -noZero -create -field s -expression '3' -value-patches '(movingWall fixedWalls)' -no-variable-cache
+setExprFields -latestTime -dummy-phi -create -field one -expression '1' -dimensions '[0 0 0 0 0 0 0]'
+setExprFields -latestTime -dry-run -field p -expression '42'
+setExprFields -time 0 -debug-parser -field p -expression 'pos().x() + pos().y()'
+setExprFields -latestTime -withFunctionObjects -create -field w -expression 'pos().y()'
+setExprBoundaryFields
+setExprBoundaryFields -latestTime -dict system/setExprBoundaryFieldsDict.alt -backup
+setExprBoundaryFields -time 0.01 -cache-fields -load-fields '(U)' -ascii
+setExprBoundaryFields -noZero -dry-run
+blockMesh -region other
+mkdir -p 0/other && cp 0/p 0/other/p
+setExprFields -region other -time 0 -create -field r -expression 'pos().x()+1'
+setExprBoundaryFields -region other -time 0
+setExprBoundaryFields -region other -time 0 -dict system/setExprBoundaryFieldsDict.alt || true
+decomposePar -latestTime
+mpirun --oversubscribe -np 2 setExprFields -parallel -latestTime -create -field par -expression 'pos().x()*2'
+mpirun --oversubscribe -np 2 setExprBoundaryFields -parallel -latestTime
+setExprFields -dict system/setExprFieldsDict.badExpr -latestTime || true
+setExprFields -dict system/setExprFieldsDict.noField -latestTime || true
+setExprFields -dict system/setExprFieldsDict.noExpression -latestTime || true
+setExprFields -dict system/noSuchDict -latestTime || true
+setExprFields -latestTime -field notThere -expression '1' || true
+setExprFields -latestTime -field p || true
+setExprFields -latestTime -region noSuchRegion || true
+setExprFields -latestTime -create -field bad -expression 'pos(' || true
+setExprBoundaryFields -dict system/setExprBoundaryFieldsDict.badPatch -latestTime || true
+setExprBoundaryFields -dict system/setExprBoundaryFieldsDict.noExpression -latestTime || true
+setExprBoundaryFields -dict system/noSuchDict -latestTime || true
+setExprBoundaryFields -latestTime -region noSuchRegion || true

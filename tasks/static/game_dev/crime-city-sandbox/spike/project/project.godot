@@ -1,0 +1,146 @@
+; Spike City: Phase 0 spike project (Godot 4.7.2)
+config_version=5
+
+[application]
+
+config/name="Spike City"
+run/main_scene="res://main.tscn"
+config/features=PackedStringArray("4.7", "GL Compatibility")
+
+[autoload]
+
+Game="*res://scripts/game.gd"
+DevConsole="*res://scripts/dev_console.gd"
+
+[display]
+
+window/size/viewport_width=960
+window/size/viewport_height=540
+
+[input]
+
+move_forward={
+"deadzone": 0.2,
+"events": []
+}
+move_back={
+"deadzone": 0.2,
+"events": []
+}
+move_left={
+"deadzone": 0.2,
+"events": []
+}
+move_right={
+"deadzone": 0.2,
+"events": []
+}
+look_left={
+"deadzone": 0.2,
+"events": []
+}
+look_right={
+"deadzone": 0.2,
+"events": []
+}
+look_up={
+"deadzone": 0.2,
+"events": []
+}
+look_down={
+"deadzone": 0.2,
+"events": []
+}
+sprint={
+"deadzone": 0.2,
+"events": []
+}
+jump={
+"deadzone": 0.2,
+"events": []
+}
+crouch={
+"deadzone": 0.2,
+"events": []
+}
+interact={
+"deadzone": 0.2,
+"events": []
+}
+attack={
+"deadzone": 0.2,
+"events": []
+}
+aim={
+"deadzone": 0.2,
+"events": []
+}
+lock_target={
+"deadzone": 0.2,
+"events": []
+}
+reload={
+"deadzone": 0.2,
+"events": []
+}
+weapon_next={
+"deadzone": 0.2,
+"events": []
+}
+weapon_prev={
+"deadzone": 0.2,
+"events": []
+}
+cover={
+"deadzone": 0.2,
+"events": []
+}
+accelerate={
+"deadzone": 0.2,
+"events": []
+}
+brake={
+"deadzone": 0.2,
+"events": []
+}
+steer_left={
+"deadzone": 0.2,
+"events": []
+}
+steer_right={
+"deadzone": 0.2,
+"events": []
+}
+handbrake={
+"deadzone": 0.2,
+"events": []
+}
+horn={
+"deadzone": 0.2,
+"events": []
+}
+phone={
+"deadzone": 0.2,
+"events": []
+}
+map={
+"deadzone": 0.2,
+"events": []
+}
+pause={
+"deadzone": 0.2,
+"events": []
+}
+
+[physics]
+
+3d/physics_engine="Jolt Physics"
+3d/run_on_separate_thread=false
+common/physics_ticks_per_second=60
+common/physics_jitter_fix=0.0
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+

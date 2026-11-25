@@ -1,0 +1,26 @@
+#!/bin/bash
+# from: heatTransfer/buoyantBoussinesqPimpleFoam/hotRoom (5x3x5, 3 steps); exercises: buoyantBoussinesqPimpleFoam -dry-run, -dry-run-write, -noFunctionObjects, -postProcess (-func on -latestTime, -noZero), -parallel restart; errors: missing beta, missing p_rgh field, missing constant/g
+cd "${0%/*}" || exit 1
+cp -r 0.orig 0
+blockMesh
+setFields
+buoyantBoussinesqPimpleFoam -dry-run
+buoyantBoussinesqPimpleFoam -dry-run-write
+rm -rf 2
+buoyantBoussinesqPimpleFoam -noFunctionObjects
+buoyantBoussinesqPimpleFoam -postProcess -latestTime -func "grad(T)"
+buoyantBoussinesqPimpleFoam -postProcess -noZero -func "mag(U)"
+cp constant/transportProperties constant/transportProperties.orig
+cp variants/transportProperties.noBeta constant/transportProperties
+buoyantBoussinesqPimpleFoam -dry-run || true
+cp constant/transportProperties.orig constant/transportProperties
+mv 0/p_rgh 0/p_rgh.off
+buoyantBoussinesqPimpleFoam -dry-run || true
+mv 0/p_rgh.off 0/p_rgh
+mv constant/g constant/g.off
+buoyantBoussinesqPimpleFoam -dry-run || true
+mv constant/g.off constant/g
+foamDictionary -entry endTime -set 8 system/controlDict
+foamDictionary -entry startFrom -set latestTime system/controlDict
+decomposePar -latestTime
+mpirun -np 2 buoyantBoussinesqPimpleFoam -parallel

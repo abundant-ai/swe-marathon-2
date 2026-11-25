@@ -1,0 +1,19 @@
+#!/bin/bash
+# from: multiphase/interFoam/laminar/damBreak/damBreak; exercises: setFields errors - no mesh, missing/alternate dict, unknown field/fieldValue type/topoSetSource (valid-type lists), missing/malformed source parameters, wrong value type, unknown-field and class-mismatch warnings
+setFields || true
+blockMesh
+mv system/setFieldsDict system/setFieldsDict.off
+setFields || true
+mv system/setFieldsDict.off system/setFieldsDict
+setFields -dict system/noSuchDict || true
+setFields -dict system/setFieldsDict.badBox || true
+setFields -dict system/setFieldsDict.missingBox || true
+setFields -dict system/setFieldsDict.missingFieldValues || true
+setFields -dict system/setFieldsDict.scalarAsVector || true
+setFields -dict system/setFieldsDict.sphereMissingRadius || true
+setFields -dict system/setFieldsDict.unbalancedParen || true
+setFields -dict system/setFieldsDict.unknownDefaultField || true
+setFields -dict system/setFieldsDict.unknownField || true
+setFields -dict system/setFieldsDict.unknownSource || true
+setFields -dict system/setFieldsDict.unknownValueType || true
+setFields -dict system/setFieldsDict.wrongValueKind || true

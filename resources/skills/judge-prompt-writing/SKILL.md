@@ -157,8 +157,8 @@ answers, contradictions, unverified additions, supported extra details, and
 misleading evidence as applicable. Report controlled checks and live calibration
 separately. Prompt editing alone does not authorize uploads, trials, or model calls.
 
-The knowledge assistant's [answer prompt](../../../tasks/swe-m2-ai-engineer/knowledge-work-assistant/steps/01-build-rag/tests/verifier/judging/answer_prompt.md),
-[output schemas](../../../tasks/swe-m2-ai-engineer/knowledge-work-assistant/steps/01-build-rag/tests/verifier/judging/schemas.py),
-and [answer validation and scoring](../../../tasks/swe-m2-ai-engineer/knowledge-work-assistant/steps/01-build-rag/tests/verifier/judging/answer_scoring.py)
+The knowledge assistant's [answer prompt](../../../tasks/static/app_building/knowledge-work-assistant/tests/verifier/judging/answer_prompt.md),
+[output schemas](../../../tasks/static/app_building/knowledge-work-assistant/tests/verifier/judging/schemas.py),
+and [answer validation and scoring](../../../tasks/static/app_building/knowledge-work-assistant/tests/verifier/judging/answer_scoring.py)
 are maintained examples. Read their current versions before describing their
 behavior; do not copy their domain assumptions into another task.

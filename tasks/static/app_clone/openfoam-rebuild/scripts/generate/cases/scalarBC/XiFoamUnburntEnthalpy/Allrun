@@ -1,0 +1,5 @@
+#!/bin/bash
+# from: combustion/XiFoam/RAS/moriyoshiHomogeneous (coarsened, right/top/bottom turned into outlet/walls); exercises: unburnt-enthalpy BCs derived from Tu: fixedUnburntEnthalpy gradientUnburntEnthalpy mixedUnburntEnthalpy
+cd "${0%/*}" || exit 1
+blockMesh
+XiFoam

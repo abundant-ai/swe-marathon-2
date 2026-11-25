@@ -1,0 +1,36 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      noiseDict;
+}
+
+noiseModel      pointNoise;
+
+pointNoiseCoeffs
+{
+    windowModel     Hanning;
+
+    HanningCoeffs
+    {
+        overlapPercent  50;
+        symmetric       yes;
+        extended        yes;
+    }
+
+    files
+    (
+        "observer0.dat"
+        "observer1.dat"
+    );
+
+    nHeaderLine     6;
+    refColumn       0;
+    componentColumns (1);
+    mergeSeparators yes;
+    separator       " ";
+
+    N               64;
+    rhoRef          1;
+}

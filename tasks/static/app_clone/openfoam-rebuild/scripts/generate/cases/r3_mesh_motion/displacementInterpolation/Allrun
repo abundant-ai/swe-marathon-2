@@ -1,0 +1,6 @@
+#!/bin/bash
+# from: scratch (5x5x5 box, two planar faceZones); exercises: displacementInterpolation motion solver interpolating tabulated faceZone displacements between zones in each direction
+blockMesh
+topoSet
+moveDynamicMesh
+checkMesh -latestTime

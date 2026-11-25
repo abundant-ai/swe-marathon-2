@@ -1,0 +1,20 @@
+# Model trials, appended only after the baselines of the same task version are green.
+#   oddish run --task <task-id> -c scripts/oddish/agents.yaml -E <experiment> --no-archil --json
+# claude-code compacts its context and delegates to helper agents; a harness that keeps
+# the whole history stops near 1,000 steps on this task.
+agents:
+  - name: claude-code
+    model_name: relace/deepseek-v4.1-flash
+    n_trials: 2
+    env:
+      CLAUDE_CODE_AUTO_COMPACT_WINDOW: "300000"
+    kwargs:
+      append_system_prompt: "You are running unattended. Keep working until the task's own completion criteria are met or its time budget is used up. Do not stop to report progress, to summarise, or to ask a question: nobody will answer. After a context compaction, find out where the work stands with the task's own tools and continue."
+  - name: claude-code
+    model_name: relace/glm-5.3
+    n_trials: 1
+    env:
+      CLAUDE_CODE_AUTO_COMPACT_WINDOW: "300000"
+    kwargs:
+      append_system_prompt: "You are running unattended. Keep working until the task's own completion criteria are met or its time budget is used up. Do not stop to report progress, to summarise, or to ask a question: nobody will answer. After a context compaction, find out where the work stands with the task's own tools and continue."
+max_trial_attempts: 2

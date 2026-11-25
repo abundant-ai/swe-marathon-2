@@ -1,0 +1,52 @@
+schema_version = "1.4"
+artifacts = ["/app/rebuild", "/var/lib/fsmaint/out"]
+
+[task]
+name = "abundant/swe-m2_software-engineering_carve-html-renderer-from-spec-only"
+description = "Implement a renderer for a markup language first published in 2026 from its normative specification and documentation alone, producing byte for byte the HTML of the reference implementation, which the implementer never sees."
+authors = [{ name = "Neel Harsola", email = "work.neelharsola@gmail.com" }]
+
+[metadata]
+reward_type = "continuous"
+open_internet_justification = "Only the image builds have public egress, to install system packages from Ubuntu's archive. The work itself runs without network access."
+
+[agent]
+timeout_sec = 34560
+network_mode = "no-network"
+user = "dev"
+
+[[agent.setup_begin]]
+command = "/usr/local/lib/fsmaint/fsmaint-reserve"
+timeout_sec = 120
+
+[[agent.setup_complete]]
+command = "/usr/local/lib/fsmaint/fsmaint-reserve --netcheck"
+timeout_sec = 120
+
+[environment]
+network_mode = "public"
+build_timeout_sec = 3600
+cpus = 4
+memory_mb = 8192
+storage_mb = 20480
+gpus = 0
+workdir = "/app"
+
+[verifier]
+environment_mode = "separate"
+network_mode = "no-network"
+timeout_sec = 6000
+user = "root"
+
+[[verifier.collect]]
+command = "/usr/local/lib/fsmaint/fsmaint-sweep"
+user = "root"
+timeout_sec = 600
+
+[verifier.environment]
+network_mode = "no-network"
+build_timeout_sec = 3600
+cpus = 4
+memory_mb = 8192
+storage_mb = 20480
+gpus = 0

@@ -1,0 +1,7 @@
+#!/bin/bash
+# from: incompressible/lumpedPointMotion/building/steady (blockMesh box with a building hole instead of snappy); exercises: lumpedPointForces per-zone forces/moments for lumpedPointDisplacement patch, -vtk output, -latestTime
+cd "${0%/*}" || exit 1
+blockMesh
+simpleFoam
+lumpedPointForces
+lumpedPointForces -latestTime -vtk

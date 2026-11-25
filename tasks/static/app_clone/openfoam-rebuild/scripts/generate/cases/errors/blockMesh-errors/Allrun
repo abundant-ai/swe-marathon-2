@@ -1,0 +1,23 @@
+#!/bin/bash
+# from: incompressible/icoFoam/cavity/cavity; exercises: blockMesh error reporting for malformed/invalid blockMeshDict variants, missing dict, missing controlDict
+blockMesh -dict system/blockMeshDict.badScale || true
+blockMesh -dict system/blockMeshDict.emptyFile || true
+blockMesh -dict system/blockMeshDict.extraBrace || true
+blockMesh -dict system/blockMeshDict.insideOut || true
+blockMesh -dict system/blockMeshDict.missingBlocks || true
+blockMesh -dict system/blockMeshDict.missingFacesKeyword || true
+blockMesh -dict system/blockMeshDict.missingInclude || true
+blockMesh -dict system/blockMeshDict.missingSemicolon || true
+blockMesh -dict system/blockMeshDict.unbalancedBrace || true
+blockMesh -dict system/blockMeshDict.unbalancedParen || true
+blockMesh -dict system/blockMeshDict.undefinedVariable || true
+blockMesh -dict system/blockMeshDict.vertexNotList || true
+blockMesh -dict system/blockMeshDict.vertexOutOfRange || true
+blockMesh -dict system/blockMeshDict.wrongCellCount || true
+blockMesh -dict system/doesNotExist || true
+mv system/blockMeshDict system/blockMeshDict.orig
+blockMesh || true
+mv system/blockMeshDict.orig system/blockMeshDict
+mv system/controlDict system/controlDict.orig
+blockMesh || true
+mv system/controlDict.orig system/controlDict

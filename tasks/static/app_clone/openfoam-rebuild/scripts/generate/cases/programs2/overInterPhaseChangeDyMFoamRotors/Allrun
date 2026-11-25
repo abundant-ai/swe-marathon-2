@@ -1,0 +1,9 @@
+#!/bin/bash
+# from: multiphase/overInterPhaseChangeDyMFoam/twoSimpleRotors; exercises: overInterPhaseChangeDyMFoam on a coarsened two-rotor overset mesh (dynamicOversetFvMesh, multiSolidBodyMotionSolver, hole cutting via subsetMesh/zoneID), 4 fixed time steps
+cd "${0%/*}" || exit 1
+blockMesh
+topoSet
+subsetMesh box -patch hole -overwrite
+topoSet
+setFields
+overInterPhaseChangeDyMFoam

@@ -1,0 +1,5 @@
+#!/bin/bash
+# from: incompressible/pimpleFoam/LES/periodicPlaneChannel (coarse scratch mesh); exercises: fvOptions patchMeanVelocityForce (laminar periodic channel, mean velocity on cyclic patch)
+cd "${0%/*}" || exit 1
+blockMesh
+pimpleFoam

@@ -1,0 +1,308 @@
+{
+ "builds": [
+  {
+   "sha256": "559ad7572df89fcd1273512d8679528bcdf876c252ec1f31608d3808b24125b3",
+   "size": 12007975,
+   "source": "GitHub release v2026.4: goose-v2026.4-linux-x64.tar.gz"
+  },
+  {
+   "sha256": "3d584165b790da8aab9169936b9c97262f0be6537866825f02e12169fad9251c",
+   "size": 10972584,
+   "source": "GitHub release v2026.4: goose-v2026.4-linux-x64.tar.gz: goose-v2026.4-linux-x64/goose",
+   "usage_text": {
+    "Writes the program's C, for a build of your own or a C host": 1,
+    "goose help c covers writing the C yourself (goose -o out.c)": 1
+   }
+  },
+  {
+   "sha256": "8ef0b5a864a719bd095b8376bed069d0edc77a0ce8f3cb9d59fdf87291a3a922",
+   "size": 10713979,
+   "source": "GitHub release v2026.4: goose-v2026.4-macos-arm64.tar.gz"
+  },
+  {
+   "sha256": "8648b48d6fbd357d3a63b9a8d78d5e52b9e32fe5025995c8e5c5bbff2d28f4f6",
+   "size": 9201608,
+   "source": "GitHub release v2026.4: goose-v2026.4-macos-arm64.tar.gz: goose-v2026.4-macos-arm64/goose",
+   "usage_text": {
+    "Writes the program's C, for a build of your own or a C host": 1,
+    "goose help c covers writing the C yourself (goose -o out.c)": 1
+   }
+  },
+  {
+   "sha256": "471beefd5787ff96b68c1a059ac4de0973a86a540efda9f2b084b540b5d73db0",
+   "size": 11155837,
+   "source": "GitHub release v2026.4: goose-v2026.4-macos-x64.tar.gz"
+  },
+  {
+   "sha256": "0551e71016aff7d7e007fd67e9d024a5933ed85bb2e5ef51af5360861181fbc6",
+   "size": 10193256,
+   "source": "GitHub release v2026.4: goose-v2026.4-macos-x64.tar.gz: goose-v2026.4-macos-x64/goose",
+   "usage_text": {
+    "Writes the program's C, for a build of your own or a C host": 1,
+    "goose help c covers writing the C yourself (goose -o out.c)": 1
+   }
+  },
+  {
+   "sha256": "87ceb0ff2394e0ac4154b6c6b865c084cadbf236558cc956b114f37d6e619cdb",
+   "size": 13070150,
+   "source": "GitHub release v2026.4: goose-v2026.4-windows-x64.zip"
+  },
+  {
+   "sha256": "a8de0875b8ed525077ff7728c3f70bdaace27be220fbdbd182202e9a73ba5651",
+   "size": 8538624,
+   "source": "GitHub release v2026.4: goose-v2026.4-windows-x64.zip: goose-v2026.4-windows-x64/goose.exe",
+   "usage_text": {
+    "Writes the program's C, for a build of your own or a C host": 1,
+    "goose help c covers writing the C yourself (goose -o out.c)": 1
+   }
+  },
+  {
+   "sha256": "06ac30284338269d3996d457412bf4f2b47c1f9a5601de65b6317187fe78d5c9",
+   "size": 11313561,
+   "source": "GitHub release v2026.3: goose-v2026.3-linux-x64.tar.gz"
+  },
+  {
+   "sha256": "b56c1cf28f020a89ae164ee53c086d8ffff04f285331115ce448e1d4244eca24",
+   "size": 10167160,
+   "source": "GitHub release v2026.3: goose-v2026.3-linux-x64.tar.gz: goose-v2026.3-linux-x64/goose",
+   "usage_text": {
+    "Writes the program's C, for a build of your own or a C host": 1,
+    "goose help c covers writing the C yourself (goose -o out.c)": 1
+   }
+  },
+  {
+   "sha256": "2ffaaf46b3edde27aed03fcd9ebe73e9b6639cac30d8a6915f7dc00795b7aedf",
+   "size": 10043918,
+   "source": "GitHub release v2026.3: goose-v2026.3-macos-arm64.tar.gz"
+  },
+  {
+   "sha256": "1a95a810fd78c4938648d1c32d4c1a16331e97aa3962515a6aad5e5b478d157c",
+   "size": 8475000,
+   "source": "GitHub release v2026.3: goose-v2026.3-macos-arm64.tar.gz: goose-v2026.3-macos-arm64/goose",
+   "usage_text": {
+    "Writes the program's C, for a build of your own or a C host": 1,
+    "goose help c covers writing the C yourself (goose -o out.c)": 1
+   }
+  },
+  {
+   "sha256": "3c7f2895f3dcab5f39ee52808446b00688b975620d1d27e23694dd22b82abfe7",
+   "size": 10445254,
+   "source": "GitHub release v2026.3: goose-v2026.3-macos-x64.tar.gz"
+  },
+  {
+   "sha256": "6fc3279e504327944bc8b52522bf5a52b0c54838fe655cc968d7a42c1dd28e4e",
+   "size": 9356048,
+   "source": "GitHub release v2026.3: goose-v2026.3-macos-x64.tar.gz: goose-v2026.3-macos-x64/goose",
+   "usage_text": {
+    "Writes the program's C, for a build of your own or a C host": 1,
+    "goose help c covers writing the C yourself (goose -o out.c)": 1
+   }
+  },
+  {
+   "sha256": "e30cfa398c0362cef4b8f311cf5496743920b6d3a6c4a6d818fc47ee1e56be7d",
+   "size": 12379759,
+   "source": "GitHub release v2026.3: goose-v2026.3-windows-x64.zip"
+  },
+  {
+   "sha256": "bea7d6c98b063ce19c6f35e8395b8626fb6c54fa0a10c9bd88c43f5613501ee9",
+   "size": 7794688,
+   "source": "GitHub release v2026.3: goose-v2026.3-windows-x64.zip: goose-v2026.3-windows-x64/goose.exe",
+   "usage_text": {
+    "Writes the program's C, for a build of your own or a C host": 1,
+    "goose help c covers writing the C yourself (goose -o out.c)": 1
+   }
+  },
+  {
+   "sha256": "f9f0b448800b27b9d86fcd8341a08e8cda790ff86cd500c90e287fa1a616197c",
+   "size": 10807938,
+   "source": "GitHub release v2026.2: goose-v2026.2-linux-x64.tar.gz"
+  },
+  {
+   "sha256": "8f6d3e883f9d6ea655263b445da02bd4f6c85b4a7bbd3ca5c268bcabd7aff296",
+   "size": 9549664,
+   "source": "GitHub release v2026.2: goose-v2026.2-linux-x64.tar.gz: goose-v2026.2-linux-x64/goose",
+   "usage_text": {
+    "Writes the program's C, for a build of your own or a C host": 1,
+    "goose help c covers writing the C yourself (goose -o out.c)": 1
+   }
+  },
+  {
+   "sha256": "d945c8cc1ce35f964ebde9a9e0a40e62533ff55010ed30bf2412af87aa44552a",
+   "size": 9563666,
+   "source": "GitHub release v2026.2: goose-v2026.2-macos-arm64.tar.gz"
+  },
+  {
+   "sha256": "8604e9f317ce2896958b34a2caeb5c9e8e887f4893ccab1a2e9e60fac06da83b",
+   "size": 7850616,
+   "source": "GitHub release v2026.2: goose-v2026.2-macos-arm64.tar.gz: goose-v2026.2-macos-arm64/goose",
+   "usage_text": {
+    "Writes the program's C, for a build of your own or a C host": 1,
+    "goose help c covers writing the C yourself (goose -o out.c)": 1
+   }
+  },
+  {
+   "sha256": "341053fb7122c2871f9bf1e8caa19ff45e96549b27804dac0c62d2e45974e649",
+   "size": 9934025,
+   "source": "GitHub release v2026.2: goose-v2026.2-macos-x64.tar.gz"
+  },
+  {
+   "sha256": "956493ea6522333bf306074f7d8f784eeb44f2e95af4f672ac0d0328f528337b",
+   "size": 8644176,
+   "source": "GitHub release v2026.2: goose-v2026.2-macos-x64.tar.gz: goose-v2026.2-macos-x64/goose",
+   "usage_text": {
+    "Writes the program's C, for a build of your own or a C host": 1,
+    "goose help c covers writing the C yourself (goose -o out.c)": 1
+   }
+  },
+  {
+   "sha256": "16b44686cf4286a4868fb1b7d78c5aafa17eee679aea66b5e8268cc7513d458a",
+   "size": 11910323,
+   "source": "GitHub release v2026.2: goose-v2026.2-windows-x64.zip"
+  },
+  {
+   "sha256": "6b11ad6418348039a755926ab5cc03b4fb312fbad8d602f62e65a7618454d1d6",
+   "size": 7310848,
+   "source": "GitHub release v2026.2: goose-v2026.2-windows-x64.zip: goose-v2026.2-windows-x64/goose.exe",
+   "usage_text": {
+    "Writes the program's C, for a build of your own or a C host": 1,
+    "goose help c covers writing the C yourself (goose -o out.c)": 1
+   }
+  },
+  {
+   "sha256": "c4b7eabfaef9662d451a8d760e44215cfd8a4ed10a4e32e2769820508aa79c9a",
+   "size": 10712651,
+   "source": "GitHub release v2026.1: goose-v2026.1-linux-x64.tar.gz"
+  },
+  {
+   "sha256": "1eab29a8fba03e036425b70a59e80c1d06b7dc0067d113975a89fdb4d3f734ec",
+   "size": 9412016,
+   "source": "GitHub release v2026.1: goose-v2026.1-linux-x64.tar.gz: goose-v2026.1-linux-x64/goose",
+   "usage_text": {
+    "Writes the program's C, for a build of your own or a C host": 0,
+    "goose help c covers writing the C yourself (goose -o out.c)": 0
+   }
+  },
+  {
+   "sha256": "939be9b05b983fc4a474ed13a7448d8638911829fabcfb2d0d58357bd39c88e5",
+   "size": 9482536,
+   "source": "GitHub release v2026.1: goose-v2026.1-macos-arm64.tar.gz"
+  },
+  {
+   "sha256": "d117a158629f6544801962b2cbcb712eb6b5c440d51d85a1e7aaa4ed7ecaa1a1",
+   "size": 7733192,
+   "source": "GitHub release v2026.1: goose-v2026.1-macos-arm64.tar.gz: goose-v2026.1-macos-arm64/goose",
+   "usage_text": {
+    "Writes the program's C, for a build of your own or a C host": 0,
+    "goose help c covers writing the C yourself (goose -o out.c)": 0
+   }
+  },
+  {
+   "sha256": "64dcae32d6e8ef511f44dc2d0799034bea034bfa4f27866550a5d35165bcb73e",
+   "size": 9850470,
+   "source": "GitHub release v2026.1: goose-v2026.1-macos-x64.tar.gz"
+  },
+  {
+   "sha256": "3e3bc1e8d5bf8e9be1aa9f9d291c06faa2de4b6c9517daa8943b4866aea88759",
+   "size": 8507376,
+   "source": "GitHub release v2026.1: goose-v2026.1-macos-x64.tar.gz: goose-v2026.1-macos-x64/goose",
+   "usage_text": {
+    "Writes the program's C, for a build of your own or a C host": 0,
+    "goose help c covers writing the C yourself (goose -o out.c)": 0
+   }
+  },
+  {
+   "sha256": "dcca0f1fa9b6681b77d27aaee3d4d892b1fe2fdf291248db5beeabcd62c63eb5",
+   "size": 11833954,
+   "source": "GitHub release v2026.1: goose-v2026.1-windows-x64.zip"
+  },
+  {
+   "sha256": "7e4e5e5183dd2dc3d7f40a943b78cb48f588d2c3d86d9848a0f3108e0d209626",
+   "size": 7213568,
+   "source": "GitHub release v2026.1: goose-v2026.1-windows-x64.zip: goose-v2026.1-windows-x64/goose.exe",
+   "usage_text": {
+    "Writes the program's C, for a build of your own or a C host": 0,
+    "goose help c covers writing the C yourself (goose -o out.c)": 0
+   }
+  },
+  {
+   "sha256": "28a9e5fee8c539aa2c7737ccfce3f5d3dac632f45a05665b3d2868fa975a28f9",
+   "size": 4740295,
+   "source": "Homebrew bottle goose-lang 2026.4 arm64_golden_gate: goose-lang-2026.4.arm64_golden_gate.bottle.tar.gz"
+  },
+  {
+   "sha256": "8134c1bc60a80d7544f0ee6d4e407718c64e67d4a72282f947df885cad60cd36",
+   "size": 4921128,
+   "source": "Homebrew bottle goose-lang 2026.4 arm64_golden_gate: goose-lang-2026.4.arm64_golden_gate.bottle.tar.gz: goose-lang/2026.4/bin/goose",
+   "usage_text": {
+    "Writes the program's C, for a build of your own or a C host": 1,
+    "goose help c covers writing the C yourself (goose -o out.c)": 1
+   }
+  },
+  {
+   "sha256": "54a2bb55837e0e800801836da97109175855e94e4dc7e5e71dc838d3bd3f429e",
+   "size": 4709152,
+   "source": "Homebrew bottle goose-lang 2026.4 arm64_tahoe: goose-lang-2026.4.arm64_tahoe.bottle.tar.gz"
+  },
+  {
+   "sha256": "3db9c257e069d1890e472188d61b489a610890711ea414cb5df1a3a234116377",
+   "size": 4823960,
+   "source": "Homebrew bottle goose-lang 2026.4 arm64_tahoe: goose-lang-2026.4.arm64_tahoe.bottle.tar.gz: goose-lang/2026.4/bin/goose",
+   "usage_text": {
+    "Writes the program's C, for a build of your own or a C host": 1,
+    "goose help c covers writing the C yourself (goose -o out.c)": 1
+   }
+  },
+  {
+   "sha256": "c3ab0cae845f314248cd6116f5ad49d52f9b13c5032a4ea7cd8e3b6083b17215",
+   "size": 4746870,
+   "source": "Homebrew bottle goose-lang 2026.4 arm64_sequoia: goose-lang-2026.4.arm64_sequoia.bottle.tar.gz"
+  },
+  {
+   "sha256": "a8f6d6c34ade8fbaf2d217eb53ca5508a89126c4e58b984235180e5242a3efb3",
+   "size": 4849352,
+   "source": "Homebrew bottle goose-lang 2026.4 arm64_sequoia: goose-lang-2026.4.arm64_sequoia.bottle.tar.gz: goose-lang/2026.4/bin/goose",
+   "usage_text": {
+    "Writes the program's C, for a build of your own or a C host": 1,
+    "goose help c covers writing the C yourself (goose -o out.c)": 1
+   }
+  },
+  {
+   "sha256": "af6715deb202646c6e0fdaefc85526ba66270809b430fa6992d176a2b02082b7",
+   "size": 5091262,
+   "source": "Homebrew bottle goose-lang 2026.4 arm64_linux: goose-lang-2026.4.arm64_linux.bottle.tar.gz"
+  },
+  {
+   "sha256": "65d4df15368920ba50a8e83803a0de3df7b0b26455a9927b586188abe0ccf2bd",
+   "size": 4981008,
+   "source": "Homebrew bottle goose-lang 2026.4 arm64_linux: goose-lang-2026.4.arm64_linux.bottle.tar.gz: goose-lang/2026.4/bin/goose",
+   "usage_text": {
+    "Writes the program's C, for a build of your own or a C host": 1,
+    "goose help c covers writing the C yourself (goose -o out.c)": 1
+   }
+  },
+  {
+   "sha256": "f3c32cd23fd97a2f097318aa18006542fa9bd0fe65c1357d1a47352f5ec89290",
+   "size": 5194566,
+   "source": "Homebrew bottle goose-lang 2026.4 x86_64_linux: goose-lang-2026.4.x86_64_linux.bottle.tar.gz"
+  },
+  {
+   "sha256": "e80dead5adecfe81ae9c1029d05456700a8e13e3a3f17e7778f41477c6bcbef6",
+   "size": 5165432,
+   "source": "Homebrew bottle goose-lang 2026.4 x86_64_linux: goose-lang-2026.4.x86_64_linux.bottle.tar.gz: goose-lang/2026.4/bin/goose",
+   "usage_text": {
+    "Writes the program's C, for a build of your own or a C host": 1,
+    "goose help c covers writing the C yourself (goose -o out.c)": 1
+   }
+  }
+ ],
+ "notes": [
+  "GitHub release v2026.1: goose-v2026.1-linux-x64.tar.gz: goose-v2026.1-linux-x64/goose lacks the usage text ['goose help c covers writing the C yourself (goose -o out.c)', \"Writes the program's C, for a build of your own or a C host\"]",
+  "GitHub release v2026.1: goose-v2026.1-macos-arm64.tar.gz: goose-v2026.1-macos-arm64/goose lacks the usage text ['goose help c covers writing the C yourself (goose -o out.c)', \"Writes the program's C, for a build of your own or a C host\"]",
+  "GitHub release v2026.1: goose-v2026.1-macos-x64.tar.gz: goose-v2026.1-macos-x64/goose lacks the usage text ['goose help c covers writing the C yourself (goose -o out.c)', \"Writes the program's C, for a build of your own or a C host\"]",
+  "GitHub release v2026.1: goose-v2026.1-windows-x64.zip: goose-v2026.1-windows-x64/goose.exe lacks the usage text ['goose help c covers writing the C yourself (goose -o out.c)', \"Writes the program's C, for a build of your own or a C host\"]"
+ ],
+ "usage_text": [
+  "goose help c covers writing the C yourself (goose -o out.c)",
+  "Writes the program's C, for a build of your own or a C host"
+ ]
+}

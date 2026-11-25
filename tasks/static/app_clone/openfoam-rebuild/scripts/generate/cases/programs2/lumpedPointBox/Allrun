@@ -1,0 +1,13 @@
+#!/bin/bash
+# from: incompressible/lumpedPointMotion/building (steady + files/Allrun.movement); exercises: lumpedPointZones pressure-zone segmentation (-dry-run, mesh), lumpedPointMovement response-file visualisation (-dry-run, with mesh, -span/-scale), missing response file error
+cd "${0%/*}" || exit 1
+blockMesh
+lumpedPointZones -dry-run
+mkdir -p zonesDryRun && mv state.vtp zonesDryRun/
+lumpedPointZones
+lumpedPointMovement -dry-run response.txt
+mkdir -p movementDryRun && mv state*.vtp* movementDryRun/
+lumpedPointMovement -span 2 -scale 0.5 response.txt
+mkdir -p movementSpan && mv state*.vtp* geom*.vtp* movementSpan/
+lumpedPointMovement response.txt
+lumpedPointMovement -dry-run noSuchResponse.txt || true

@@ -1,0 +1,28 @@
+#!/bin/bash
+# from: compressible/rhoPimpleFoam/RAS/squareBendLiq (tiny laminar 2D heated channel); exercises: equations of state PengRobinsonGas (heRhoThermo/hePsiThermo with sutherland, polynomial, janaf, hConst, hPolynomial), adiabaticPerfectFluid (hConst/h and eConst/e), Boussinesq (janaf, internal energy), WLF transport with rhoConst (one rhoPimpleFoam run each)
+cd "${0%/*}" || exit
+blockMesh -case base
+cp -r base PengRobinson_rho_sutherland_hConst
+cp thermophysicalProperties.PengRobinson_rho_sutherland_hConst PengRobinson_rho_sutherland_hConst/constant/thermophysicalProperties
+rhoPimpleFoam -case PengRobinson_rho_sutherland_hConst
+cp -r base PengRobinson_rho_polynomial_janaf
+cp thermophysicalProperties.PengRobinson_rho_polynomial_janaf PengRobinson_rho_polynomial_janaf/constant/thermophysicalProperties
+rhoPimpleFoam -case PengRobinson_rho_polynomial_janaf
+cp -r base PengRobinson_psi_sutherland_janaf_e
+cp thermophysicalProperties.PengRobinson_psi_sutherland_janaf_e PengRobinson_psi_sutherland_janaf_e/constant/thermophysicalProperties
+rhoPimpleFoam -case PengRobinson_psi_sutherland_janaf_e
+cp -r base PengRobinson_psi_polynomial_hPolynomial
+cp thermophysicalProperties.PengRobinson_psi_polynomial_hPolynomial PengRobinson_psi_polynomial_hPolynomial/constant/thermophysicalProperties
+rhoPimpleFoam -case PengRobinson_psi_polynomial_hPolynomial
+cp -r base adiabaticPerfectFluid_hConst_h
+cp thermophysicalProperties.adiabaticPerfectFluid_hConst_h adiabaticPerfectFluid_hConst_h/constant/thermophysicalProperties
+rhoPimpleFoam -case adiabaticPerfectFluid_hConst_h
+cp -r base adiabaticPerfectFluid_eConst_e
+cp thermophysicalProperties.adiabaticPerfectFluid_eConst_e adiabaticPerfectFluid_eConst_e/constant/thermophysicalProperties
+rhoPimpleFoam -case adiabaticPerfectFluid_eConst_e
+cp -r base WLF_eConst_rhoConst
+cp thermophysicalProperties.WLF_eConst_rhoConst WLF_eConst_rhoConst/constant/thermophysicalProperties
+rhoPimpleFoam -case WLF_eConst_rhoConst
+cp -r base Boussinesq_sutherland_janaf_e
+cp thermophysicalProperties.Boussinesq_sutherland_janaf_e Boussinesq_sutherland_janaf_e/constant/thermophysicalProperties
+rhoPimpleFoam -case Boussinesq_sutherland_janaf_e

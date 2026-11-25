@@ -1,0 +1,40 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  v2606                                 |
+|   \\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       surfZoneList;
+    location    "constant/surfaces/default/surfMesh";
+    object      surfZones;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+3
+(
+    sides
+    {
+        geometricType   patch;
+        nFaces          4;
+        startFace       0;
+    }
+    bottom
+    {
+        geometricType   patch;
+        nFaces          1;
+        startFace       4;
+    }
+    top
+    {
+        geometricType   patch;
+        nFaces          1;
+        startFace       5;
+    }
+)
+
+// ************************************************************************* //

@@ -1,0 +1,5 @@
+harbor:
+  user_sim_model: anthropic/claude-sonnet-4-5
+  user_agent:
+    user_persona_path: user_agent.md
+    user_prompt_template_path: prompt.j2

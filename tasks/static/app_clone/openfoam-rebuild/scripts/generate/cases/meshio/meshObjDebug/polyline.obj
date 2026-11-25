@@ -1,0 +1,12 @@
+# hand-written OBJ with polylines, a comment, a group and a face
+g track
+v 0 0 0
+v 0.1 0 0
+v 0.1 0.1 0
+v 0 0.1 0
+v 0 0 0.1
+v 0.05 0.05 0.2
+l 1 2 3 4 1
+l 4 5
+l 5 6
+f 1 2 3

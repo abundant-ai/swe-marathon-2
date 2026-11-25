@@ -1,0 +1,47 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      lumpedPointMovement;
+}
+
+points
+(
+    (0 0.5 0.0)
+    (0 0.5 0.25)
+    (0 0.5 0.5)
+);
+
+controllers
+{
+    vertical
+    {
+        pointLabels (0 1 2);
+    }
+}
+
+origin  (0 0 0);
+
+relax   1.0;
+
+forces
+{
+    p       p;
+    pRef    0;
+    rhoRef  1;
+}
+
+communication
+{
+    commsDir        "comms";
+    log             on;
+    waitInterval    1;
+    timeOut         100;
+    initByExternal  false;
+    inputName       positions.in;
+    outputName      forces.out;
+    logName         movement.log;
+    inputFormat     dictionary;
+    outputFormat    dictionary;
+}

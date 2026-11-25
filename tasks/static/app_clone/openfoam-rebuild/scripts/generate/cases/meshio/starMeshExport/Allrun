@@ -1,0 +1,10 @@
+#!/bin/bash
+# from: incompressible/icoFoam/cavity (two-block, two cellZone variant); exercises: foamToStarMesh default mm scaling, -noBnd, -scale 1, cellTable/boundaryRegion created from zones vs read from constant
+cd "${0%/*}" || exit 1
+blockMesh
+foamToStarMesh
+mkdir -p default && mv meshExport.* default/
+foamToStarMesh -noBnd -scale 1
+mkdir -p noBnd && mv meshExport.* noBnd/
+cp tables/cellTable tables/boundaryRegion constant/
+foamToStarMesh -constant -latestTime

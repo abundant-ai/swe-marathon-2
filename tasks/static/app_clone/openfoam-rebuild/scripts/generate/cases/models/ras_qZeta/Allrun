@@ -1,0 +1,5 @@
+#!/bin/bash
+# from: incompressible/simpleFoam/pitzDaily; exercises: low-Re RAS model qZeta (q/zeta transport)
+cd "${0%/*}" || exit 1
+blockMesh
+simpleFoam

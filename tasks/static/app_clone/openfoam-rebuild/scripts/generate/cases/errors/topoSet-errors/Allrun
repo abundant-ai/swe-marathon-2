@@ -1,0 +1,20 @@
+#!/bin/bash
+# from: incompressible/icoFoam/cavity/cavity; exercises: topoSet errors - no mesh, missing dict, unknown action/set type/source (valid lists), missing name/source/parameters, operations on non-existent sets/patches, missing actions list
+topoSet || true
+blockMesh
+mv system/topoSetDict system/topoSetDict.off
+topoSet || true
+mv system/topoSetDict.off system/topoSetDict
+topoSet -dict system/noSuchDict || true
+topoSet -dict system/topoSetDict.deleteMissingSet || true
+topoSet -dict system/topoSetDict.missingActions || true
+topoSet -dict system/topoSetDict.missingBox || true
+topoSet -dict system/topoSetDict.missingName || true
+topoSet -dict system/topoSetDict.missingSource || true
+topoSet -dict system/topoSetDict.refMissingSet || true
+topoSet -dict system/topoSetDict.subsetMissingSet || true
+topoSet -dict system/topoSetDict.unknownAction || true
+topoSet -dict system/topoSetDict.unknownPatch || true
+topoSet -dict system/topoSetDict.unknownSetType || true
+topoSet -dict system/topoSetDict.unknownSource || true
+topoSet -dict system/topoSetDict.zoneFromMissingSet || true

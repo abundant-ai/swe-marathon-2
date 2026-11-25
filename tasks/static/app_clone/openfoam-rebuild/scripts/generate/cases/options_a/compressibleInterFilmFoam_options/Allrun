@@ -1,0 +1,27 @@
+#!/bin/bash
+# from: multiphase/compressibleInterFoam/laminar/depthCharge2D + lagrangian/reactingParcelFoam/splashPanel film region (8x4x8 mesh); exercises: compressibleInterFilmFoam options -noFunctionObjects, -postProcess (-func/-latestTime/-time/-fields), -parallel with film region; errors: -dry-run (simplified mesh lacks the film faceZone), nonexistent/bad -time, -case noSuchDir, unknown surfaceFilmModel/filmThermoModel, missing pMin/sigma
+cd "${0%/*}" || exit 1
+blockMesh
+topoSet -dict system/wallFilmRegion.topoSet
+extrudeToRegionMesh -overwrite
+topoSet -region wallFilmRegion -dict system/createWallFilmRegionPatches.topoSet
+createPatch -region wallFilmRegion -overwrite
+setFields
+compressibleInterFilmFoam -dry-run || true
+compressibleInterFilmFoam -noFunctionObjects
+compressibleInterFilmFoam
+compressibleInterFilmFoam -postProcess -func 'mag(U)' -latestTime
+compressibleInterFilmFoam -postProcess -func 'grad(p_rgh)' -time 0.05
+compressibleInterFilmFoam -postProcess -fields '(T)' -func 'fieldMinMax(T)' -time '0.05:'
+compressibleInterFilmFoam -postProcess -func 'mag(U)' -time 99 || true
+compressibleInterFilmFoam -postProcess -func 'mag(U)' -time abc || true
+compressibleInterFilmFoam -case noSuchDir || true
+decomposePar
+decomposePar -region wallFilmRegion
+mpirun --oversubscribe -np 2 compressibleInterFilmFoam -parallel
+rm -rf 0.[0-9]*
+for v in unknownFilmModel unknownFilmThermo missingPMin missingSigma; do
+    cp -r variants/$v/. .
+    compressibleInterFilmFoam || true
+    cp -r variants/orig/. .
+done

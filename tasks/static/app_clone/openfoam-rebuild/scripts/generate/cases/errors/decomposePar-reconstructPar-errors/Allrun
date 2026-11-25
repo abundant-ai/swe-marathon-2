@@ -1,0 +1,25 @@
+#!/bin/bash
+# from: incompressible/icoFoam/cavity/cavity; exercises: decomposePar/reconstructPar errors - no mesh, missing/invalid decomposeParDict (unknown method, wrong divisions, missing coeffs/subdomains, manual without file), already-decomposed case, reconstruct without processor dirs, bad time/field selections, missing processor dir
+decomposePar || true
+reconstructPar || true
+blockMesh
+mv system/decomposeParDict system/decomposeParDict.off
+decomposePar || true
+mv system/decomposeParDict.off system/decomposeParDict
+decomposePar -decomposeParDict system/noSuchDict || true
+decomposePar -decomposeParDict system/decomposeParDict.unknownMethod || true
+decomposePar -decomposeParDict system/decomposeParDict.wrongDivisions || true
+decomposePar -decomposeParDict system/decomposeParDict.missingCoeffs || true
+decomposePar -decomposeParDict system/decomposeParDict.missingNumberOfSubdomains || true
+decomposePar -decomposeParDict system/decomposeParDict.manualMissingFile || true
+decomposePar -decomposeParDict system/decomposeParDict.badOrder || true
+decomposePar -time 5 || true
+decomposePar || true
+reconstructPar -time 5 || true
+reconstructPar -withZero -fields '(noSuchField)' || true
+reconstructPar -time abc || true
+mv processor3 processor3.off
+reconstructPar -withZero || true
+mv processor3.off processor3
+rm processor1/0/U
+reconstructPar -withZero || true

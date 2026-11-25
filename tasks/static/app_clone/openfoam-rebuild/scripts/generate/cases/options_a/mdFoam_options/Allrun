@@ -1,0 +1,25 @@
+#!/bin/bash
+# from: discreteMethods/molecularDynamics/mdFoam/nanoNozzle (single 3x2x2 box section, 891 water molecules pre-initialised by mdInitialise into 0.orig and constant/idList since mdInitialise orientations are random, 10 steps); exercises: mdFoam options -noFunctionObjects, -postProcess (-func -latestTime -time), -parallel; errors: -dry-run (not an option), unknown pairPotential, missing lennardJonesCoeffs sigma, missing moleculeProperties, nonexistent time, -case noSuchDir
+cd "${0%/*}" || exit 1
+cp -r 0.orig 0
+blockMesh
+mdFoam -dry-run || true
+mdFoam -noFunctionObjects
+mdFoam
+mdFoam -postProcess -func 'mag(U)' -latestTime
+mdFoam -postProcess -func 'components(U)' -time 5e-15
+decomposePar
+cp constant/idList processor0/constant/
+cp constant/idList processor1/constant/
+mpirun --oversubscribe -np 2 mdFoam -parallel
+mdFoam -postProcess -func 'mag(U)' -time 99 || true
+mdFoam -case noSuchDir || true
+cp -r variants/unknownPairPotential/. .
+mdFoam || true
+cp -r variants/orig/. .
+cp -r variants/missingSigma/. .
+mdFoam || true
+cp -r variants/orig/. .
+mv constant/moleculeProperties constant/moleculeProperties.off
+mdFoam || true
+mv constant/moleculeProperties.off constant/moleculeProperties

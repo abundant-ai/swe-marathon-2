@@ -1,0 +1,24 @@
+#!/bin/bash
+# from: incompressible/adjointOptimisationFoam/sensitivityMaps/sbend/laminar (blockMesh channel, 40 primal/adjoint iterations); exercises: computeSensitivities surfacePoints and surface sensitivityType, -parallel on the decomposed latest time, unknown patch name in patches (warning); errors: unknown sensitivityType, missing optimisationDict, missing Ua at the latest time, -case noSuchDir
+cp -r 0.orig 0
+blockMesh
+adjointOptimisationFoam
+computeSensitivities
+cp -r variants/surface/. .
+computeSensitivities
+cp -r variants/orig/. .
+decomposePar -latestTime
+mpirun --oversubscribe -np 2 computeSensitivities -parallel
+cp -r variants/badPatch/. .
+computeSensitivities
+cp -r variants/orig/. .
+computeSensitivities -case noSuchDir || true
+cp -r variants/badType/. .
+computeSensitivities || true
+cp -r variants/orig/. .
+mv system/optimisationDict system/optimisationDict.off
+computeSensitivities || true
+mv system/optimisationDict.off system/optimisationDict
+mv 80/Ua 80/Ua.off
+computeSensitivities || true
+mv 80/Ua.off 80/Ua

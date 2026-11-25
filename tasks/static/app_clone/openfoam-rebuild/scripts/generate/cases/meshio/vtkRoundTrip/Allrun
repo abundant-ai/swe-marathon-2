@@ -1,0 +1,12 @@
+#!/bin/bash
+# from: incompressible/icoFoam/cavity (two-block variant); exercises: vtkUnstructuredToFoam on foamToVTK legacy ascii output and on a hand-written hex/pyramid/wedge/tet file with POINT_DATA (cell fields skipped: converter writes uninitialised values)
+cd "${0%/*}" || exit 1
+blockMesh
+foamToVTK -legacy -ascii -no-boundary -no-fields
+mv constant/polyMesh constant/polyMesh.orig
+mv VTK/*_0.vtk VTK/exported.vtk
+vtkUnstructuredToFoam VTK/exported.vtk
+checkMesh
+mv constant/polyMesh fromFoamToVTK
+vtkUnstructuredToFoam mixed.vtk
+checkMesh

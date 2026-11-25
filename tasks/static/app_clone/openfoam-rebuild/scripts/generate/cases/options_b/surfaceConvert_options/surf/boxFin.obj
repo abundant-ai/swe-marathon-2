@@ -1,0 +1,32 @@
+# unit box (group box) with a fin baffle (group fin) on edge x=1,y=0; one duplicate triangle and one unused vertex
+v 0 0 0
+v 1 0 0
+v 1 1 0
+v 0 1 0
+v 0 0 1
+v 1 0 1
+v 1 1 1
+v 0 1 1
+v 2 0 0
+v 2 0 1
+v 5 5 5
+g box
+f 1 3 2
+f 1 4 3
+f 5 6 7
+f 5 7 8
+g fin
+f 2 9 10
+g box
+f 1 2 6
+f 1 6 5
+f 4 8 7
+f 4 7 3
+g fin
+f 2 10 6
+g box
+f 1 5 8
+f 1 8 4
+f 2 3 7
+f 2 7 6
+f 1 3 2

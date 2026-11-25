@@ -1,0 +1,25 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      topoSetDict;
+}
+
+actions
+(
+    {
+        name    upstreamZone;
+        type    faceZoneSet;
+        action  new;
+        source  boxToFace;
+        box     (0.99 0.4 0.2) (1.01 0.6 0.4);
+    }
+    {
+        name    downstreamZone;
+        type    faceZoneSet;
+        action  new;
+        source  boxToFace;
+        box     (1.99 0.4 0.2) (2.01 0.6 0.3);
+    }
+);

@@ -1,0 +1,241 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  v2606                                 |
+|   \\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      coalCloud1Properties;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+solution
+{
+    active          true;
+    transient       yes;
+    coupled         true;
+    cellValueSourceCorrection on;
+    maxCo           0.3;
+
+    sourceTerms
+    {
+        schemes
+        {
+            rho             semiImplicit 1;
+            U               semiImplicit 1;
+            Yi              semiImplicit 1;
+            h               semiImplicit 1;
+            radiation       semiImplicit 1;
+        }
+    }
+
+    interpolationSchemes
+    {
+        rho             cell;
+        U               cellPoint;
+        thermo:mu       cell;
+        T               cell;
+        Cp              cell;
+        kappa           cell;
+        p               cell;
+        G               cell;
+    }
+
+    integrationSchemes
+    {
+        U               Euler;
+        T               analytical;
+    }
+}
+
+constantProperties
+{
+    rho0            1000;
+    T0              1200;
+    Cp0             4187;
+    epsilon0        1;
+    f0              0.5;
+
+    TDevol          400;
+    LDevol          0;
+    hRetentionCoeff 1;
+
+    constantVolume  true;
+}
+
+subModels
+{
+    particleForces
+    {
+        sphereDrag;
+        gravity;
+    }
+
+    injectionModels
+    {
+        model1
+        {
+            type            manualInjection;
+            massTotal       0.0001;
+            parcelBasisType mass;
+            SOI             0;
+            positionsFile   "coalCloud1Positions";
+            U0              (0 -10 0);
+            sizeDistribution
+            {
+                type        RosinRammler;
+                RosinRammlerDistribution
+                {
+                    minValue        5e-06;
+                    maxValue        0.0005;
+                    lambda          5e-05;
+                    n               0.5;
+                }
+            }
+        }
+    }
+
+    dispersionModel stochasticDispersionRAS;
+
+    patchInteractionModel standardWallInteraction;
+
+    heatTransferModel RanzMarshall;
+
+    compositionModel singleMixtureFraction;
+
+    phaseChangeModel liquidEvaporation;
+
+    devolatilisationModel constantRateDevolatilisation;
+
+    stochasticCollisionModel none;
+
+    surfaceReactionModel COxidationKineticDiffusionLimitedRate;
+
+    surfaceFilmModel none;
+
+    radiation       on;
+
+    standardWallInteractionCoeffs
+    {
+        type            rebound;
+        e               1;
+        mu              0;
+    }
+
+    RanzMarshallCoeffs
+    {
+        BirdCorrection  true;
+    }
+
+    singleMixtureFractionCoeffs
+    {
+        phases
+        (
+            gas
+            {
+                CH4             0.604;
+                H2              0.099;
+                CO2             0.297;
+            }
+            liquid
+            {
+                H2O             1;
+            }
+            solid
+            {
+                ash             0.136304;
+                C               0.863696;
+            }
+        );
+        YGasTot0        0.002;
+        YLiquidTot0     0.001;
+        YSolidTot0      0.997;
+    }
+
+    liquidEvaporationCoeffs
+    {
+        enthalpyTransfer enthalpyDifference;
+
+        activeLiquids
+        (
+            H2O
+        );
+    }
+
+    constantRateDevolatilisationCoeffs
+    {
+        volatileData
+        (
+            (CH4            1e+05)
+            (H2             1e+05)
+            (CO2            1e+05)
+        );
+        residualCoeff   0.001;
+    }
+
+    COxidationKineticDiffusionLimitedRateCoeffs
+    {
+        Sb              1;
+        C1              5.0E-12;
+        C2              0.002;
+        E               7.9E+07;
+    }
+
+    singleKineticRateDevolatilisationCoeffs
+    {
+        volatileData
+        (
+            (CH4            1e+05   5e+04)
+            (H2             1e+05   5e+04)
+            (CO2            1e+05   5e+04)
+        );
+        residualCoeff   0.001;
+    }
+
+    COxidationDiffusionLimitedRateCoeffs
+    {
+        Sb              1;
+        D               1.5e-05;
+    }
+
+    COxidationHurtMitchellCoeffs
+    {
+        Sb              1;
+    }
+
+    COxidationIntrinsicRateCoeffs
+    {
+        Sb              1;
+        C1              5.0e-12;
+        rMean           6e-08;
+        theta           0.312;
+        Ai              7.6e+01;
+        Ei              1.8e+08;
+        Ag              2.3;
+        tau             2.0;
+    }
+
+    COxidationMurphyShaddixCoeffs
+    {
+        D0              1.0e-03;
+        rho0            1.2;
+        T0              1200;
+        Dn              1.5;
+        A               1.0;
+        E               1.4e+08;
+        n               0.68;
+        WVol            12;
+    }
+}
+
+
+cloudFunctions
+{}
+
+
+// ************************************************************************* //

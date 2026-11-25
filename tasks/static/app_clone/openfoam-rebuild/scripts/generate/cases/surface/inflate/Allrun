@@ -1,0 +1,6 @@
+#!/bin/bash
+# from: scratch (simpleShapes/sphere,cone); exercises: surfaceInflate point-normal inflation (surface read from constant/triSurface, each Time step writes <time>/triSurface/<name>), -featureAngle, -checkSelfIntersection with iterative scale reduction over 3 steps, -nSmooth
+cd "${0%/*}" || exit 1
+surfaceInflate sphere.stl 0.01 1.5
+surfaceInflate -checkSelfIntersection -featureAngle 45 cube6.stl 0.05 1.2
+surfaceInflate -checkSelfIntersection -nSmooth 5 cone.stl 0.3 1.5

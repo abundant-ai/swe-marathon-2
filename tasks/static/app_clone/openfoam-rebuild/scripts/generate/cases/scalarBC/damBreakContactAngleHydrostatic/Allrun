@@ -1,0 +1,6 @@
+#!/bin/bash
+# from: multiphase/interFoam/laminar/damBreak (coarsened, atmosphere split in three); exercises: scalar BCs dynamicAlphaContactAngle timeVaryingAlphaContactAngle alphaFixedPressure uniformDensityHydrostaticPressure phaseHydrostaticPressure
+cd "${0%/*}" || exit 1
+blockMesh
+setFields
+interFoam

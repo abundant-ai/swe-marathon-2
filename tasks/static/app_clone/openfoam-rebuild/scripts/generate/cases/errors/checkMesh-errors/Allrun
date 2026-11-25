@@ -1,0 +1,26 @@
+#!/bin/bash
+# from: incompressible/icoFoam/cavity/cavity; exercises: checkMesh errors - missing/corrupt polyMesh files (missing entries, wrong list count, bad tokens), unknown patch type fallback, unknown region/time selection, bad -writeFields/-writeSets arguments
+mv constant/polyMesh/faces constant/polyMesh/faces.off
+checkMesh || true
+mv constant/polyMesh/faces.off constant/polyMesh/faces
+mv constant/polyMesh/boundary constant/polyMesh/boundary.off
+checkMesh || true
+mv constant/polyMesh/boundary.off constant/polyMesh/boundary
+cp -r variants/boundaryUnknownPatchType/. .
+checkMesh || true
+cp -r variants/orig/. .
+cp -r variants/boundaryMissingStartFace/. .
+checkMesh || true
+cp -r variants/orig/. .
+cp -r variants/boundaryWrongCount/. .
+checkMesh || true
+cp -r variants/orig/. .
+cp -r variants/pointsBadToken/. .
+checkMesh || true
+cp -r variants/orig/. .
+checkMesh -region noSuchRegion || true
+checkMesh -time 7 || true
+checkMesh -time abc || true
+checkMesh -writeFields "(noSuchField)" || true
+checkMesh -writeSets badFormat || true
+checkMesh -writeChecks badFormat || true

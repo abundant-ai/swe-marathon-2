@@ -1,0 +1,35 @@
+#!/bin/bash
+# from: incompressible/icoFoam/cavity/cavity (12x12, 10 steps); exercises: vector-limited (V) convection schemes in div(phi,U): GammaV, OSPREV, Phi, QUICKV, filteredLinear2V, filteredLinear3V, limitedCubicV, limitedLinearV, MinmodV, MUSCLV, SFCDV, SuperBeeV, UMISTV, vanAlbadaV, vanLeerV, linearUpwindV
+blockMesh
+cp -r variants/GammaV/. .
+icoFoam
+cp -r variants/OSPREV/. .
+icoFoam
+cp -r variants/Phi/. .
+icoFoam
+cp -r variants/QUICKV/. .
+icoFoam
+cp -r variants/filteredLinear2V/. .
+icoFoam
+cp -r variants/filteredLinear3V/. .
+icoFoam
+cp -r variants/limitedCubicV/. .
+icoFoam
+cp -r variants/limitedLinearV/. .
+icoFoam
+cp -r variants/MinmodV/. .
+icoFoam
+cp -r variants/MUSCLV/. .
+icoFoam
+cp -r variants/SFCDV/. .
+icoFoam
+cp -r variants/SuperBeeV/. .
+icoFoam
+cp -r variants/UMISTV/. .
+icoFoam
+cp -r variants/vanAlbadaV/. .
+icoFoam
+cp -r variants/vanLeerV/. .
+icoFoam
+cp -r variants/linearUpwindV/. .
+icoFoam

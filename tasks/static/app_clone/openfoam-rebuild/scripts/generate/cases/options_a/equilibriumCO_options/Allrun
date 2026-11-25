@@ -1,0 +1,17 @@
+#!/bin/bash
+# from: scratch (constant/thermoData = CO2 CO O2 N2 H2O H2 OH O H entries from etc/thermoData/thermoData); exercises: equilibriumCO plain and -case (copy with altered CO Cp coefficients); errors: missing thermoData, missing CO2 specie, missing Tcommon, short lowCpCoeffs list, -case noSuchDir
+equilibriumCO
+equilibriumCO -case other
+equilibriumCO -case noSuchDir || true
+mv constant/thermoData constant/thermoData.off
+equilibriumCO || true
+mv constant/thermoData.off constant/thermoData
+cp -r variants/noCO2/. .
+equilibriumCO || true
+cp -r variants/orig/. .
+cp -r variants/noTcommon/. .
+equilibriumCO || true
+cp -r variants/orig/. .
+cp -r variants/badCoeffs/. .
+equilibriumCO || true
+cp -r variants/orig/. .

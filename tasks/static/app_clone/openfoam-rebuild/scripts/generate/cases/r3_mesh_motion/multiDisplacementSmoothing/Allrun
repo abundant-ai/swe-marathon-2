@@ -1,0 +1,4 @@
+#!/bin/bash
+# from: mesh/blockMesh/sphere7 (dynamicMeshDict idea, 5x5x5 box); exercises: multiDisplacement motion solver chaining displacementLaplacian and displacementSmartPointSmoothing (laplacianConstraint point smoother)
+blockMesh
+moveDynamicMesh

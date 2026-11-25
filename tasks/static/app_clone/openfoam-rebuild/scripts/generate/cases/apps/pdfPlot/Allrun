@@ -1,0 +1,7 @@
+#!/bin/bash
+# from: incompressible/icoFoam/cavity/cavity; exercises: pdfPlot sampling of distributionModels (RosinRammler with writeData, normal without)
+cd "${0%/*}" || exit 1
+blockMesh
+pdfPlot
+cp constant/pdfDict.normal constant/pdfDict
+pdfPlot

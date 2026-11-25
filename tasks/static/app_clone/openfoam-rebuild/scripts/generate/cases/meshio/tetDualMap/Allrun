@@ -1,0 +1,9 @@
+#!/bin/bash
+# from: scratch; exercises: foamToTetDualMesh mapping cell + boundary-face values of volFields (p, U, cell centres) to the points of a tetDualMesh region via pointDualAddressing
+cd "${0%/*}" || exit 1
+blockMesh
+blockMesh -region tetDualMesh
+cp addressing/pointDualAddressing constant/tetDualMesh/polyMesh/
+postProcess -func writeCellCentres -time 0
+foamToTetDualMesh
+foamToTetDualMesh -latestTime -overwrite

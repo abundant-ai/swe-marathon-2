@@ -1,0 +1,8 @@
+#!/bin/bash
+# from: incompressible/pimpleFoam/laminar/cylinder2D (DMD + createROMfields); exercises: STDMD function object on U and p of a coarse cavity, then createROMfields DMD reconstruction (volVector all times, volScalar with -time) from the written modes, inconsistent amplitudes error
+cd "${0%/*}" || exit 1
+blockMesh
+icoFoam
+createROMfields -dict system/ROMfieldsDict.U
+createROMfields -dict system/ROMfieldsDict.p -time '0.05:0.1'
+createROMfields -dict system/ROMfieldsDict.bad || true

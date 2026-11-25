@@ -1,0 +1,5 @@
+#!/bin/bash
+# from: basic/simpleFoam/implicitAMI; exercises: U BCs fixedJump fixedJumpAMI uniformJumpAMI swirlFanVelocity activeBaffleVelocity
+blockMesh
+checkMesh
+pimpleFoam

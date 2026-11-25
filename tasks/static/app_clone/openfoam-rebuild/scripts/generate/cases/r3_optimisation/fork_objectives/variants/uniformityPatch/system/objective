@@ -1,0 +1,15 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  v2606                                 |
+|   \\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+// objective entries, included into system/optimisationDict objectiveNames
+uniformity
+{
+    weight      1;
+    type        uniformityPatch;
+    patches     (outlet1 outlet2);
+    normalise   true;
+}

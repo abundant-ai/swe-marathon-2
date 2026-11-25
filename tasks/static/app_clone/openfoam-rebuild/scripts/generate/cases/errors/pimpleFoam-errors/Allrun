@@ -1,0 +1,36 @@
+#!/bin/bash
+# from: incompressible/pimpleFoam/RAS/pitzDaily; exercises: pimpleFoam errors - missing 0/ dir, missing Final solver entry, unknown ddt, unknown/incomplete fvOptions and MRF, bad controlDict enums (fatal and warning-with-default), unloadable libs warning
+blockMesh
+mv 0 0.off
+pimpleFoam || true
+mv 0.off 0
+cp -r variants/missingPFinal/. .
+pimpleFoam || true
+cp -r variants/orig/. .
+cp -r variants/unknownDdt/. .
+pimpleFoam || true
+cp -r variants/orig/. .
+cp -r variants/badStopAt/. .
+pimpleFoam || true
+cp -r variants/orig/. .
+cp -r variants/badWriteFormat/. .
+pimpleFoam || true
+cp -r variants/orig/. .
+cp -r variants/badTimeFormat/. .
+pimpleFoam || true
+cp -r variants/orig/. .
+cp -r variants/missingLib/. .
+pimpleFoam || true
+cp -r variants/orig/. .
+cp variants/fvOptions.unknownType constant/fvOptions
+pimpleFoam || true
+cp variants/fvOptions.missingSelectionMode constant/fvOptions
+pimpleFoam || true
+cp variants/fvOptions.missingCellZone constant/fvOptions
+pimpleFoam || true
+cp variants/fvOptions.badSelectionMode constant/fvOptions
+pimpleFoam || true
+rm constant/fvOptions
+cp variants/MRFProperties.missingZone constant/MRFProperties
+pimpleFoam || true
+rm constant/MRFProperties

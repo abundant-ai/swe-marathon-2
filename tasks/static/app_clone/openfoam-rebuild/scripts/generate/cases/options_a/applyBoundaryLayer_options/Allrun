@@ -1,0 +1,20 @@
+#!/bin/bash
+# from: incompressible/simpleFoam/pitzDaily (mesh coarsened to ~250 cells); exercises: applyBoundaryLayer -ybl, -Cbl, -writeTurbulenceFields, -region (mesh copied to constant/fluid); errors: neither/both of -ybl/-Cbl, bad -ybl value, nonexistent region, missing U, missing turbulenceProperties
+cp -r 0.orig 0
+blockMesh
+mkdir -p constant/fluid/polyMesh
+cp constant/polyMesh/* constant/fluid/polyMesh/
+applyBoundaryLayer -ybl 0.01
+applyBoundaryLayer -Cbl 0.2
+applyBoundaryLayer -Cbl 0.2 -writeTurbulenceFields
+applyBoundaryLayer -region fluid -ybl 0.005 -writeTurbulenceFields
+applyBoundaryLayer || true
+applyBoundaryLayer -ybl 0.01 -Cbl 0.2 || true
+applyBoundaryLayer -ybl abc || true
+applyBoundaryLayer -region noSuchRegion -ybl 0.01 || true
+mv 0/U 0/U.off
+applyBoundaryLayer -ybl 0.01 || true
+mv 0/U.off 0/U
+mv constant/turbulenceProperties constant/turbulenceProperties.off
+applyBoundaryLayer -ybl 0.01 -writeTurbulenceFields || true
+mv constant/turbulenceProperties.off constant/turbulenceProperties

@@ -18,12 +18,18 @@ Keep runner configuration and its ratings outside candidate-visible files.
 
 ## Layout and packaging
 
-This repository keeps tasks directly under `tasks/<family>/<task>/`. Its verifier
-entry point is `steps/<step>/tests/verify.py`, with supporting modules inside that
-step's `tests/`. Preserve that layout when adapting examples from another repo.
+For static tasks, use `tasks/static/<category>/<task>/`. For tasks that run a
+user agent, use `tasks/usersim/<task>/` and keep `user_agent.yaml` at the root.
+
+With one implemented step, put `instruction.md`, `tests/`, and any `solution/`
+beside `task.toml`. Omit `[[steps]]` and set timeouts and artifact paths at
+the task level. Several messages between the solver and user agent can belong
+to this one step.
+
+For two or more scripted steps, use the following layout.
 
 ```text
-tasks/<family>/<task>/
+<task-root>/
 ├── README.md                        # Task rationale and dated development log
 ├── task.toml                        # Add when a step is implemented
 ├── common/                          # Shared resources selected by each image
@@ -65,20 +71,20 @@ these tools and the task README stay outside the uploaded runtime artifact.
 A bundle manifest is optional.
 
 Task-root `checks/` and `scripts/` are optional tools for local task development
-and testing. They may be tracked and run in CI. Never put either folder or its
+and testing. They may be tracked and run locally. Never put either folder or its
 contents in uploaded runtime bundles, Docker build contexts, or agent or verifier
 images. Dockerfiles must not `COPY`, `ADD`, or mount them, even through a broad
 parent-directory copy or an intermediate build stage. Runtime containers must
-not mount them either. Run preparation scripts locally or in CI, then stage only
+not mount them either. Run preparation scripts locally, then stage only
 their required generated runtime inputs. Put any code needed at runtime in the
-appropriate runtime directory. The verifier's `steps/<step>/tests/` and nested
+appropriate runtime directory. The runtime `tests/` beside the brief and its nested
 `verifier/checks/` are runtime code and are not the task-root development suite.
 
 Create `experiment/` inside the task when running local experiments. Store scratch
 scripts, generated bundles, trial outputs, calibration reports, and other local
 results there. It must be Git-ignored and excluded from image builds and runtime
 packages. Promote reproducible scripts and regression tests into maintained task
-source when they become necessary to reproduce or validate the task. CI must not
+source when they become necessary to reproduce or validate the task. Local regression checks must not
 depend on files available only in an ignored experiment directory.
 
 ## Record development progress
@@ -97,8 +103,7 @@ findings in the README even when detailed local outputs remain in `experiment/`.
 
 ## Share and package resources
 
-Declare implemented steps in execution order in `task.toml`. Use one step for a
-single-turn task. Add later inputs through that step's `workdir/`, preserving
+For a multi-step task, declare the implemented steps in execution order in `task.toml`. Add later inputs through that step's `workdir/`, preserving
 prior application state where the instruction requires it. Put resources shared
 across steps or images in task-root `common/`. Organize public and verifier-only
 resources separately so an image can select exactly what it needs.
@@ -108,7 +113,7 @@ a task-specific description, and actual authors. Follow Oddish preflight for
 packaged-directory naming and identity checks.
 
 Build the agent image from `environment/Dockerfile`. For a dedicated verifier
-image, `steps/<step>/tests/` is its Docker build context. Its Dockerfile must copy
+image, the brief’s `tests/` directory is its Docker build context. Its Dockerfile must copy
 the entry point, supporting modules, private inputs, and `test.sh` into the image.
 A Dockerfile can selectively `COPY` or `ADD` resources only from its build
 context. When Harbor uses a narrower context, have the packaging script stage
@@ -120,7 +125,7 @@ image merely because both images need one shared file. Keep the README, task-roo
 populate a dedicated verifier image.
 
 Use the task's packaging script before preflight, upload, or execution. The
-[knowledge-work assistant packager](../../../tasks/swe-m2-ai-engineer/knowledge-work-assistant/scripts/package_step.py)
+[knowledge-work assistant packager](../../../tasks/static/app_building/knowledge-work-assistant/scripts/package_step.py)
 is an example for that task. Write generated bundles under `experiment/dist/`,
 edit only maintained source files, and validate an extracted bundle from an
 isolated process. Exclude `experiment/` from input selection to prevent a bundle

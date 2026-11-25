@@ -1,0 +1,36 @@
+<!-- https://doc.openfoam.com/2606/tools/processing/boundary-conditions/rtm/derived/thermal/ -->
+
+# Thermal boundary conditions
+
+Available thermal boundary conditions include:
+
+* [alphatJayatillekeWallFunction](alphatJayatillekeWallFunction.md)
+* [alphatWallFunction](alphatWallFunction.md)
+* [convectiveHeatTransfer](convectiveHeatTransfer.md)
+* [enthalpySorption](enthalpySorption.md)
+* [externalWallHeatFluxTemperature](externalWallHeatFluxTemperature.md)
+* [fixedEnergy](fixedEnergy.md)
+* [fixedIncidentRadiation](fixedIncidentRadiation.md)
+* [fixedUnburntEnthalpy](fixedUnburntEnthalpy.md)
+* [gradientEnergy](gradientEnergy.md)
+* [gradientUnburntEnthalpy](gradientUnburntEnthalpy.md)
+* [greyDiffusiveRadiation](greyDiffusiveRadiation.md)
+* [greyDiffusiveViewFactor](greyDiffusiveViewFactor.md)
+* [lumpedMassWallTemperature](lumpedMassWallTemperature.md)
+* [MarshakRadiation](MarshakRadiation.md)
+* [MarshakRadiationFixedTemperature](MarshakRadiationFixedTemperature.md)
+* [mixedEnergy](mixedEnergy.md)
+* [mixedUnburntEnthalpy](mixedUnburntEnthalpy.md)
+* [outletMachNumberPressure](outletMachNumberPressure.md)
+* [outletMappedUniformInletHeatAddition](outletMappedUniformInletHeatAddition.md)
+* [semiPermeableBaffleMassFraction](semiPermeableBaffleMassFraction.md)
+* [semiPermeableBaffleVelocity](semiPermeableBaffleVelocity.md)
+* [sorptionWallFunction](sorptionWallFunction.md)
+* [speciesSorption](speciesSorption.md)
+* [specularRadiation](specularRadiation.md)
+* [thermalBaffle1D](thermalBaffle1D.md)
+* [totalFlowRateAdvectiveDiffusive](totalFlowRateAdvectiveDiffusive.md)
+* [turbulentTemperatureCoupledBaffleMixed](turbulentTemperatureCoupledBaffleMixed.md)
+* [turbulentTemperatureRadCoupledMixed](turbulentTemperatureRadCoupledMixed.md)
+* [wallHeatTransfer](wallHeatTransfer.md)
+* [wideBandDiffusiveRadiation](wideBandDiffusiveRadiation.md)

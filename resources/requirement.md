@@ -83,9 +83,24 @@ review into a claim that the task has been solved.
 
 ## Development scope
 
-This repository is currently for task design. Each step keeps its `instruction.md`
-under `tasks/<family>/<task>/steps/<step>/`. Preserve those files unless the user
-asks to revise them. References to runtime files in an instruction describe the
+### Static tasks
+
+Keep tasks with fixed briefs under `tasks/static/<category>/<task>/`. A single
+step uses `instruction.md`, `tests/`, and any `solution/` at the task root.
+Use root agent and verifier settings in `task.toml` and omit `[[steps]]`.
+For two or more scripted steps, move each brief, verifier and solution into
+`steps/<step>/` and declare the steps in execution order.
+
+### User-sim tasks
+
+Keep tasks with a simulated user under `tasks/usersim/<task>/`. Configure the
+user in the task-root `user_agent.yaml`. One run of the opening brief can
+include many exchanges with that user. Use the single-step layout for that
+conversation. Use step directories when the task declares multiple Harbor steps.
+
+### Shared development rules
+
+Preserve candidate briefs unless the user asks to revise them. References to runtime files in an instruction describe the
 intended environment; they do not mean that environment already exists.
 
 Create implementation files when the user asks for implementation. A request to
@@ -93,26 +108,26 @@ discuss a contract or design a verifier is permission to do that design work.
 It does not call for scaffolding, downloading a corpus, or launching a GPU run.
 Existing authorization in the conversation still counts; do not ask for it again.
 
-Keep each task under `tasks/<family>/<task>/`, including its README, maintained
+Keep each task in its own directory, including its README, maintained
 checks, preparation and packaging scripts, and development dependencies. Put
 shared resources in task-root `common/`; each image includes only the files it
 needs. Store scratch work, experiment results, and generated bundles in the task's
 Git-ignored `experiment/` directory. Exclude development tools, the task README,
 and experiments from runtime packages and candidate images. Do not create
-`tasks/swe-m2-ai-engineer/`-level utilities. Add a shared abstraction only when the
+utilities shared across a task category. Add a shared abstraction only when the
 user requests one and there is a concrete use for it. Create future steps when
 requested, without placeholder implementations or unused directories.
 
 Task-root `checks/` and `scripts/` are optional development folders for local
-testing, data preparation, and packaging. They may be tracked and used by CI;
+testing, data preparation, and packaging. They may be tracked and run locally;
 they are not required folders for every task. Never include either folder or its
 contents in an uploaded runtime bundle, Docker build context, or task image.
 No agent or verifier Dockerfile may `COPY`, `ADD`, or mount them, including through
 a broad parent-directory copy or an intermediate build stage. Do not mount them
-into runtime containers. Run preparation scripts locally or in CI and stage only
+into runtime containers. Run preparation scripts locally and stage only
 the required generated runtime inputs. Keep runtime code in the appropriate
 runtime directory. This restriction applies to task-root `checks/` and `scripts/`,
-not the actual verifier under `steps/<step>/tests/`, including its nested
+not the runtime `tests/` beside the brief, including its nested
 `verifier/checks/` modules.
 
 Every task, including a draft, must have a task-root `README.md` with a
@@ -166,14 +181,14 @@ candidate's own development experiments can remain part of the assignment.
 This repository has no version directory under `tasks/`. Each declared step uses
 the [Harbor layout and contracts](skills/multi-turn-task-structure/SKILL.md), including
 `tests/test.sh` and `tests/verify.py`. Optional `verifier/` modules live inside that
-step's `tests/` directory. Use the task's packaging script before preflight.
+brief's `tests/` directory. For tasks with a packager, run it before preflight.
 
 Keep packaged task folders limited to runtime artifacts: task configuration,
 environment build inputs, step instructions, and verifier or solution files needed
 by the runner. Exclude authoring scripts, local checks, and author dependency files.
 Generate Oddish upload code when needed and keep it outside the task artifact.
 
-Use `abundant/swe-m2_<domain>_<task>` for `[task].name` in `task.toml`. For example:
+For packaged releases, use `abundant/swe-m2_<domain>_<task>` for `[task].name`. A directly uploaded task uses `abundant/<directory-name>`. A packaged example follows.
 
 ```toml
 [task]
@@ -237,12 +252,12 @@ orchestration behavior only. Keep all evaluation details author-only.
 
 ## Reward justification
 
-State the published formula in `tasks/<family>/<task>/README.md` and the PR.
+State the published formula in the task’s README and the PR.
 Define components, weights, normalization, denominators, thresholds, mandatory
 conditions, missing or skipped cases, and aggregation across turns. Explain why
 the result measures the requested outcome. Link each term to its implementation
 and boundary tests. Use the current formula from the
-[knowledge-assistant notes](../tasks/swe-m2-ai-engineer/knowledge-work-assistant/README.md#reward-formula)
+[knowledge-assistant notes](../tasks/static/app_building/knowledge-work-assistant/README.md#reward-formula)
 as an example of task-specific documentation, not as universal weights.
 
 Keep denominators fixed when candidate checks fail or skip. Evaluation errors
@@ -343,7 +358,7 @@ the chosen model. Inspect the installed command's options before running it:
 
 ```bash
 uv run --frozen harbor check --help
-uv run --frozen harbor check -r resources/task-implementation.toml tasks/swe-m2-ai-engineer/knowledge-work-assistant
+uv run --frozen harbor check -r resources/task-implementation.toml tasks/static/app_building/knowledge-work-assistant
 ```
 
 Read the task README alongside the result. A file review may not see
@@ -351,6 +366,6 @@ those notes, PR discussion, or remote trial evidence. Report unavailable evidenc
 as a gap. The rubric can guide proposals before an oracle is available; a file
 review pass does not establish release readiness.
 
-[Automatic CI](CI.md) runs source checks and author tests.
+The [commit hook](CI.md) runs Ruff.
 [Oddish](ODDISH.md) handles package preflight, remote trials, QA, and artifacts.
 Report their results separately and tie evidence to the evaluated revision.

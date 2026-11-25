@@ -1,0 +1,38 @@
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      noiseDict;
+}
+
+noiseModel      surfaceNoise;
+
+surfaceNoiseCoeffs
+{
+    windowModel     Hanning;
+
+    HanningCoeffs
+    {
+        overlapPercent  50;
+        symmetric       yes;
+        extended        yes;
+    }
+
+    file        "postProcessing/lidSurface/lid/lid.case";
+    areaAverage yes;
+    reader      ensight;
+    writer      ensight;
+    writeOptions
+    {
+        ensight
+        {
+            collateTimes    1;
+            format          ascii;
+        }
+    }
+
+    p               p;
+    N               16;
+    rhoRef          1;
+}

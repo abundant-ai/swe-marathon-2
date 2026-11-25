@@ -1,0 +1,36 @@
+#!/bin/bash
+# from: incompressible/overSimpleFoam/aeroFoil (settings) on the cylinder overset mesh of basic/overPotentialFoam/cylinder (coarsened, 4 iterations); exercises: overSimpleFoam options -noFunctionObjects -postProcess -func -latestTime -time -parallel -decomposeParDict, plus errors (unsupported -dry-run, unknown -func, missing nu entry, unknown RAS model, unknown oversetInterpolation method, -parallel without processor dirs)
+extrudeMesh -case cylinderMesh
+createPatch -case cylinderMesh -overwrite
+blockMesh
+mergeMeshes . cylinderMesh -overwrite
+topoSet
+cp -r 0.orig 0
+setFields
+overSimpleFoam -dry-run || true
+overSimpleFoam
+overSimpleFoam -postProcess -func 'mag(U)' -latestTime
+overSimpleFoam -postProcess -func vorticity -time 2
+overSimpleFoam -postProcess -func noSuchFunction -latestTime || true
+rm -rf [1-9]* postProcessing
+overSimpleFoam -noFunctionObjects
+rm -rf [1-9]* postProcessing
+overSimpleFoam -parallel || true
+mv constant/transportProperties constant/transportProperties.orig
+sed '/^nu /d' constant/transportProperties.orig > constant/transportProperties
+overSimpleFoam || true
+mv constant/transportProperties.orig constant/transportProperties
+mv constant/turbulenceProperties constant/turbulenceProperties.orig
+sed 's/kEpsilon;/kEpsilonX;/' constant/turbulenceProperties.orig > constant/turbulenceProperties
+overSimpleFoam || true
+mv constant/turbulenceProperties.orig constant/turbulenceProperties
+mv system/fvSchemes system/fvSchemes.orig
+sed 's/inverseDistance;/noSuchMethod;/' system/fvSchemes.orig > system/fvSchemes
+overSimpleFoam || true
+mv system/fvSchemes.orig system/fvSchemes
+decomposePar
+mpirun --oversubscribe -np 2 overSimpleFoam -parallel
+reconstructPar -latestTime
+rm -rf [1-9]*
+decomposePar -force -decomposeParDict system/decomposeParDict.hier
+mpirun --oversubscribe -np 2 overSimpleFoam -parallel -decomposeParDict system/decomposeParDict.hier

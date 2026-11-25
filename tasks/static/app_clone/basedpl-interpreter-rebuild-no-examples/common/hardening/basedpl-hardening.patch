@@ -1,0 +1,354 @@
+diff --git a/cli/src/cli.rs b/cli/src/cli.rs
+index 74fc651..cc9ddd0 100644
+--- a/cli/src/cli.rs
++++ b/cli/src/cli.rs
+@@ -2,7 +2,7 @@ use basedpl::{EvalOptions, Evaluation, Input, InterruptHandle, Output, ParseStat
+ use rustyline::error::ReadlineError;
+ use std::{io::{self, IsTerminal, Read, Write}, sync::{Arc, Mutex}};
+ 
+-const USAGE: &str = "Usage: bpl [-e EXPR [ARG...] | FILE [ARG...] | - [ARG...] | --worker | --costs PATH | --kernel -f CONNECTION_FILE]\n\nNo arguments: persistent BPL REPL (Ctrl-D to exit, Ctrl-C to cancel input or interrupt an evaluation).\nType `name then Tab or a non-letter to enter a symbol, e.g. `iota5 becomes ι5.\nUse - to execute all of stdin as one source.\n`•host \"args\"` gives the ARGs.\nUse --worker for JSON-lines requests with deadlines and interruption.\nUse --costs PATH to time a BPL speed file or directory, printing each cost and this machine's budget.\nUse --kernel -f CONNECTION_FILE to run a Jupyter kernel.\n";
++const USAGE: &str = "Usage: bpl [-e EXPR [ARG...] | FILE [ARG...] | - [ARG...] | --worker]\n\nNo arguments: persistent BPL REPL (Ctrl-D to exit, Ctrl-C to cancel input or interrupt an evaluation).\nType `name then Tab or a non-letter to enter a symbol, e.g. `iota5 becomes ι5.\nUse - to execute all of stdin as one source.\n`•host \"args\"` gives the ARGs.\nUse --worker for JSON-lines requests with deadlines and interruption.\n";
+ 
+ /// Writes each output to stdout as the evaluation produces it. A failed write interrupts the evaluation, and `finish` then gives the write's error. Evaluations can also read standard input, when the program didn't come from it. Ctrl-C interrupts the evaluation that is running.
+ struct Printer { interrupt: Arc<Mutex<InterruptHandle>>, failure: Arc<Mutex<Option<io::Error>>>, input: Option<Arc<dyn Input>> }
+@@ -109,23 +109,9 @@ fn repl(err: &mut impl Write, interactive: bool) -> io::Result<i32> {
+     }
+ }
+ 
+-/// Times a BPL speed file or directory, reporting budgets without failing on them.
+-fn costs(path: &str, out: &mut impl Write, err: &mut impl Write) -> io::Result<i32> {
+-    let mut written = Ok(());
+-    let measured = basedpl_testkit::reference::load(std::path::Path::new(path)).and_then(|files| {
+-        basedpl_testkit::timing::measured(&files, None, true, |line| {
+-            if written.is_ok() { written = writeln!(out, "{line}"); }
+-        })
+-    });
+-    written?;
+-    match measured { Ok(_) => Ok(0), Err(e) => writeln!(err, "{e}").map(|_| 1) }
+-}
+-
+ /// Runs `bpl` with `args`, the command line after the program name, and gives the exit status.
+ pub(crate) fn run(args: &[String]) -> i32 {
+-    if let [mode, flag, file] = args {
+-        if mode == "--kernel" && flag == "-f" { return match crate::kernel::run(file) { Ok(()) => 0, Err(e) => { eprintln!("Kernel error: {e}"); 1 } }; }
+-    }
++    // Hardened build: no Jupyter kernel and no --costs timing.
+     let program = match args { [flag, _, ..] if flag == "-e" => 2, [file, ..] if file == "-" || !file.starts_with('-') => 1, _ => args.len() };
+     let (args, program_args) = args.split_at(program);
+     let stdin = io::stdin();
+@@ -135,7 +121,6 @@ pub(crate) fn run(args: &[String]) -> i32 {
+     let result = match args {
+         [] => repl(&mut err, stdin.is_terminal() && stdout.is_terminal()),
+         [flag] if flag == "--worker" => crate::worker::run(&mut stdout.lock()).map(|_| 0),
+-        [flag, file] if flag == "--costs" => costs(file, &mut stdout.lock(), &mut err),
+         [flag, code] if flag == "-e" => expression(Source::new("<expression>", code.as_str()), true, program_args, &mut err),
+         [flag] if flag == "--help" || flag == "-h" => write!(stdout.lock(), "{USAGE}").map(|_| 0),
+         [flag] if flag == "--version" => writeln!(stdout.lock(), "basedpl {}", env!("CARGO_PKG_VERSION")).map(|_| 0),
+@@ -143,7 +128,9 @@ pub(crate) fn run(args: &[String]) -> i32 {
+             let mut code = String::new();
+             stdin.lock().read_to_string(&mut code).and_then(|_| expression(Source::new("<stdin>", code), false, program_args, &mut err))
+         }
+-        [file] if !file.starts_with('-') => std::fs::read_to_string(file).and_then(|code| expression(Source::file(file, code), true, program_args, &mut err)),
++        [file] if !file.starts_with('-') => basedpl::read_file(std::path::Path::new(file))
++            .and_then(|bytes| String::from_utf8(bytes).map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "stream did not contain valid UTF-8")))
++            .and_then(|code| expression(Source::file(file, code), true, program_args, &mut err)),
+         _ => write!(err, "{USAGE}").map(|_| 2),
+     };
+     match result { Ok(code) => code, Err(e) if e.kind() == io::ErrorKind::BrokenPipe => 0, Err(e) => { let _ = writeln!(err, "I/O error: {e}"); 1 } }
+diff --git a/cli/src/editor.rs b/cli/src/editor.rs
+index 3da733a..56b0957 100644
+--- a/cli/src/editor.rs
++++ b/cli/src/editor.rs
+@@ -182,9 +182,8 @@ impl LineEditor {
+         let symbols = Symbols::default();
+         editor.bind_sequence(Event::Any, EventHandler::Conditional(Box::new(symbols.clone())));
+         editor.set_helper(Some(symbols));
+-        let config = std::env::var_os("XDG_CONFIG_HOME").map(std::path::PathBuf::from).filter(|dir| dir.is_absolute())
+-            .or_else(|| std::env::var_os("HOME").map(|home| std::path::PathBuf::from(home).join(".config")));
+-        let history = config.map(|dir| dir.join("basedpl/history"));
++        // Hardened build: the REPL keeps its history in memory and reads or writes no history file.
++        let history: Option<std::path::PathBuf> = None;
+         if let Some(path) = &history {
+             match editor.load_history(path) {
+                 Ok(()) => {} Err(rustyline::error::ReadlineError::Io(e)) if e.kind() == std::io::ErrorKind::NotFound => {} Err(e) => eprintln!("History: {e}")
+diff --git a/cli/src/main.rs b/cli/src/main.rs
+index c4eb635..c7eb3b3 100644
+--- a/cli/src/main.rs
++++ b/cli/src/main.rs
+@@ -1,9 +1,14 @@
+ mod cli;
+ mod editor;
+-mod kernel;
+ mod worker;
+ 
+ #[global_allocator]
+ static GUARD: rustymath::memory::Guard = rustymath::memory::Guard::new();
+ 
+-fn main() { std::process::exit(cli::run(&std::env::args().skip(1).collect::<Vec<_>>())); }
++/// Hardened build: the random marker that tells this build apart, written into `build_marker.txt` before the build. Nothing prints it.
++static BUILD_MARKER: &[u8] = include_bytes!("build_marker.txt");
++
++fn main() {
++    let _ = std::hint::black_box(BUILD_MARKER);
++    std::process::exit(cli::run(&std::env::args().skip(1).collect::<Vec<_>>()));
++}
+diff --git a/cli/src/worker.rs b/cli/src/worker.rs
+index 0fbeb57..0bbf60f 100644
+--- a/cli/src/worker.rs
++++ b/cli/src/worker.rs
+@@ -62,21 +62,9 @@ fn write_reply(output: &mut impl Write, id: Option<u64>, result: Reply) -> io::R
+ }
+ 
+ /// The result of one request, or why it can't run.
+-fn reply(session: &Session, request: &Value, interrupt: InterruptHandle, output: &mut impl Write) -> Result<Reply, String> {
++fn reply(session: &Session, request: &Value, interrupt: InterruptHandle, _output: &mut impl Write) -> Result<Reply, String> {
+     if request.get("id").is_some_and(|id| !id.is_u64()) { return Err("id must be a nonnegative integer".into()); }
+     let options = EvalOptions { interrupt, ..basedpl::protocol::options(request)? };
+-    if let Some(case) = request.get("case") { return Ok(Reply::Json(basedpl_testkit::reference::check(case, &options.interrupt))); }
+-    if let Some(spec) = request.get("timing") { return basedpl_testkit::timing::request(spec, &options.interrupt).map(Reply::Json); }
+-    if let Some(spec) = request.get("steps") { return basedpl_testkit::timing::steps_request(spec, &options.interrupt).map(Reply::Json); }
+-    if let Some(spec) = request.get("profile") {
+-        return basedpl_testkit::timing::profile_request(spec, &options.interrupt, || {
+-            write_reply(output, request["id"].as_u64(), Reply::Json(serde_json::json!({"ready":true,"error":null}))).map_err(|error| error.to_string())
+-        }).map(Reply::Json);
+-    }
+-    if let Some(spec) = request.get("costs") { return basedpl_testkit::timing::file_request(spec, &options.interrupt).map(Reply::Json); }
+-    if let Some(spec) = request.get("check") { return basedpl_testkit::reference::runner::check_file(spec, options.timeout).map(Reply::Json); }
+-    if let Some(spec) = request.get("reference") { return basedpl_testkit::reference::file_request(spec, &options.interrupt).map(Reply::Json); }
+-    if let Some(spec) = request.get("page") { return basedpl_testkit::reference::page_request(spec, &options.interrupt, options.timeout).map(Reply::Json); }
+-    if let Some(spec) = request.get("route") { return basedpl_testkit::timing::route_request(spec, &options.interrupt).map(Reply::Json); }
++    // Hardened build: no reference checks, timings or file requests; only code, call and bindings.
+     basedpl::protocol::request(session, request, options).map(|e| Reply::Response(basedpl::protocol::Response(e)))
+ }
+diff --git a/jit/src/lib.rs b/jit/src/lib.rs
+index 2a4174a..bf7d759 100644
+--- a/jit/src/lib.rs
++++ b/jit/src/lib.rs
+@@ -9,7 +9,7 @@ use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext, Variable};
+ use cranelift_jit::{JITBuilder, JITModule};
+ use cranelift_module::{Linkage, Module, default_libcall_names};
+ use rustymath::{buffer::{DType, FloatWidth, Width}, hashing::HashMap, reduce::running};
+-use std::{sync::{Arc, Mutex, OnceLock, PoisonError}, time::{Duration, Instant}};
++use std::{sync::{Arc, Mutex, OnceLock, PoisonError}, time::Duration};
+ 
+ /// A value's type: a Boolean, an integer that wraps at its width, unsigned at 8 bits and signed at 16, 32 and 64, or a float.
+ #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+@@ -147,14 +147,8 @@ fn kept<'a>(k: &'a mut HashMap<Kernel, Observation>, key: &Kernel) -> &'a mut Ha
+ 
+ impl Kernel {
+     /// This kernel's native code, compiled the first time and kept with at most `KEPT` others, with the compile's time where this call compiled it. Kernels that differ only in their constants share one code.
+-    pub fn compiled(&self) -> Result<(Arc<Compiled>, Option<Duration>), String> {
+-        let key = self.key();
+-        if let Some(c) = kernels().get(&key).and_then(|held| held.code.as_ref()) { return Ok((c.clone(), None)); }
+-        let start = Instant::now();
+-        let c = Arc::new(self.compile()?);
+-        let time = start.elapsed();
+-        Ok((kept(&mut kernels(), &key).entry(key).or_default().code.get_or_insert(c).clone(), Some(time)))
+-    }
++    /// Hardened build: no kernel is ever compiled to machine code. Every stage runs on its precompiled kernels.
++    pub fn compiled(&self) -> Result<(Arc<Compiled>, Option<Duration>), String> { Err("this build of bpl compiles no machine code".into()) }
+ 
+     /// Records this run's `items`: whether this kernel has code or has seen at least `least` items. Constants don't distinguish observations.
+     pub fn seen(&self, items: usize, least: usize) -> bool {
+diff --git a/src/data.rs b/src/data.rs
+index 01b2544..33c008e 100644
+--- a/src/data.rs
++++ b/src/data.rs
+@@ -297,26 +297,9 @@ pub(crate) fn write(left: Option<&Value>, right: &Value, span: &Span) -> Result<
+     Ok((count, true))
+ }
+ 
+-/// Writes `data` to the file `path` names, as `•nput` does for any path but `"-"`. `count` is the result.
++/// Hardened build: `•nput` writes no file. Standard output, `"-"`, is unchanged.
+ #[cfg(not(web))]
+-fn write_file(opts: &Options, path: &str, data: &[u8], count: Value, span: &Span) -> Result<(Value, bool), Error> {
+-    use std::io::Write;
+-    if let Some(unique) = crate::files::Unique::new(opts, "•nput")? {
+-        check()?;
+-        let path = unique.make(path, span, |builder, dir| {
+-            let mut file = builder.tempfile_in(dir)?;
+-            file.write_all(data)?;
+-            file.keep().map(|(_, made)| made).map_err(|e| e.error)
+-        })?;
+-        return Ok((path, false));
+-    }
+-    let overwrite = opts.boolean("overwrite", false)?;
+-    check()?;
+-    let mut file = std::fs::OpenOptions::new().write(true).create_new(!overwrite).create(overwrite).truncate(overwrite).open(span.path(path))
+-        .map_err(|e| Error::io(path, e))?;
+-    file.write_all(data).map_err(|e| Error::io(path, e))?;
+-    Ok((count, true))
+-}
++fn write_file(_: &Options, path: &str, _: &[u8], _: Value, _: &Span) -> Result<(Value, bool), Error> { Err(Error::io(path, "this build of bpl writes no files")) }
+ 
+ /// The browser can't write files.
+ #[cfg(web)]
+diff --git a/src/files.rs b/src/files.rs
+index 6bff79b..ce13c07 100644
+--- a/src/files.rs
++++ b/src/files.rs
+@@ -3,6 +3,9 @@ use crate::cancel::check;
+ use crate::{Described, Error, Number, Span, Value, data::{Options, text}, keyed};
+ use std::{fs, path::Path};
+ 
++/// Hardened build: `•metadata`, `•readdir`, `•copy`, `•rename`, `•remove` and `•mkdir` read and change nothing. `•path` is unchanged.
++fn refuse(name: &str) -> Result<(), Error> { Err(Error::io(name, "this build of bpl has no file system functions apart from •path")) }
++
+ /// The parts of a path that `•path` gives. `•path⁻` joins `parent`, `stem` and `extension`. `name` follows from the last two, and `•path⁻` ignores it.
+ const PARTS: [&str; 4] = ["parent", "stem", "extension", "name"];
+ 
+@@ -102,6 +105,7 @@ fn entries(rows: Vec<Vec<Value>>) -> Result<Value, Error> {
+ 
+ /// `•metadata Y`: a table with a row for the path `Y`, or for each path in `Y`.
+ pub(crate) fn metadata(_: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
++    refuse("•metadata")?;
+     crate::transform::acts()?;
+     let (_, paths) = paths(right)?;
+     entries(paths.iter().map(|p| row(&span.path(p), p)).collect())
+@@ -109,6 +113,7 @@ pub(crate) fn metadata(_: Option<&Value>, right: &Value, span: &Span) -> Result<
+ 
+ /// `•readdir Y`: a table with a row for each entry of the directory `Y`, sorted by path. The left argument is a glob that each entry's path within `Y` must match, or options `glob` and `recurse`, which also lists entries of subdirectories.
+ pub(crate) fn readdir(left: Option<&Value>, right: &Value, span: &Span) -> Result<Value, Error> {
++    refuse("•readdir")?;
+     crate::transform::acts()?;
+     let opts = Options::new("•readdir", left, Some("glob"), &["glob", "recurse"])?;
+     let dir = text(right)?;
+@@ -140,6 +145,7 @@ fn argument(value: &Value, span: &Span) -> Result<(String, std::path::PathBuf),
+ 
+ /// `to •copy from`: copies the file or directory `from` to `to`, and gives `to`.
+ pub(crate) fn copy(left: Option<&Value>, right: &Value, span: &Span) -> Result<(Value, bool), Error> {
++    refuse("•copy")?;
+     let ((to, dest), (from, source)) = (argument(left.expect("•copy is dyadic"), span)?, argument(right, span)?);
+     if source.is_dir() {
+         for entry in walkdir::WalkDir::new(&source) {
+@@ -155,6 +161,7 @@ pub(crate) fn copy(left: Option<&Value>, right: &Value, span: &Span) -> Result<(
+ 
+ /// `to •rename from`: moves `from` to `to`, and gives `to`.
+ pub(crate) fn rename(left: Option<&Value>, right: &Value, span: &Span) -> Result<(Value, bool), Error> {
++    refuse("•rename")?;
+     let ((to, dest), (from, source)) = (argument(left.expect("•rename is dyadic"), span)?, argument(right, span)?);
+     fs::rename(&source, &dest).map_err(|e| Error::io(&format!("{from} to {to}"), e))?;
+     Ok((keyed::text(&to), true))
+@@ -162,6 +169,7 @@ pub(crate) fn rename(left: Option<&Value>, right: &Value, span: &Span) -> Result
+ 
+ /// `•remove Y`: removes the file or empty directory `Y`, and gives `Y`. The `recurse` option removes a directory and everything in it.
+ pub(crate) fn remove(left: Option<&Value>, right: &Value, span: &Span) -> Result<(Value, bool), Error> {
++    refuse("•remove")?;
+     let recurse = Options::new("•remove", left, None, &["recurse"])?.boolean("recurse", false)?;
+     let (path, file) = argument(right, span)?;
+     let removed = match (file.symlink_metadata().is_ok_and(|m| m.is_dir()), recurse) {
+@@ -173,6 +181,7 @@ pub(crate) fn remove(left: Option<&Value>, right: &Value, span: &Span) -> Result
+ 
+ /// `•mkdir Y`: makes the directory `Y` and any missing parents, and gives `Y`, which isn't displayed. The `unique` option then makes a directory with a new, unique name inside `Y`, starting with the `prefix` option, and gives its path, which is displayed. It stays until removed.
+ pub(crate) fn mkdir(left: Option<&Value>, right: &Value, span: &Span) -> Result<(Value, bool), Error> {
++    refuse("•mkdir")?;
+     let unique = Unique::new(&Options::new("•mkdir", left, None, &["unique", "prefix"])?, "•mkdir")?;
+     let (path, file) = argument(right, span)?;
+     fs::create_dir_all(&file).map_err(|e| Error::io(&path, e))?;
+diff --git a/src/host.rs b/src/host.rs
+index b6551d4..ba14ff1 100644
+--- a/src/host.rs
++++ b/src/host.rs
+@@ -1,9 +1,35 @@
+ //! What the native build takes from its operating system and crates: the clock, files, the environment, Unicode normalization, `•fetch`'s transport and `•r`'s regular expressions. `host_web.rs` gives the browser's versions of the same functions. Each passes straight through to its host, and keeps the host's own behaviour and syntax.
+ use crate::cancel::check;
+ use crate::{Error, array::generated_len, data::{Request, Response}, regex::Match};
+-use std::{io, path::{Path, PathBuf}, time::Duration};
++use std::{io, path::{Path, PathBuf}};
+ 
+-pub(crate) fn read(path: &Path) -> io::Result<Vec<u8>> { std::fs::read(path) }
++/// Hardened build: the bytes of the file at `path`, read only where the file actually opened lies under the working directory that the process started in, and never under `/proc`, `/sys` or `/dev`. The check reads the opened file's own path, so no link, `..` or swapped link leads elsewhere.
++pub(crate) fn read(path: &Path) -> io::Result<Vec<u8>> {
++    use std::io::Read;
++    let mut file = std::fs::File::open(path)?;
++    let opened = opened(&file, path)?;
++    if !allowed(&opened) { return Err(io::Error::new(io::ErrorKind::PermissionDenied, OUTSIDE)); }
++    let mut data = Vec::new();
++    file.read_to_end(&mut data)?;
++    Ok(data)
++}
++/// Hardened build: why a file is not read.
++const OUTSIDE: &str = "this build of bpl reads only files under its working directory";
++/// Hardened build: the real path of the file that `file` opened, from its `/proc/self/fd` entry.
++#[cfg(target_os = "linux")]
++fn opened(file: &std::fs::File, _: &Path) -> io::Result<PathBuf> {
++    use std::os::fd::AsRawFd;
++    std::fs::read_link(format!("/proc/self/fd/{}", file.as_raw_fd()))
++}
++/// Hardened build: the real path of the file at `path`.
++#[cfg(not(target_os = "linux"))]
++fn opened(_: &std::fs::File, path: &Path) -> io::Result<PathBuf> { std::fs::canonicalize(path) }
++/// Hardened build: whether a real path lies under the working directory that the process started in, and outside `/proc`, `/sys` and `/dev`.
++fn allowed(real: &Path) -> bool {
++    static ROOT: std::sync::OnceLock<Option<PathBuf>> = std::sync::OnceLock::new();
++    let Some(root) = ROOT.get_or_init(|| std::env::current_dir().and_then(std::fs::canonicalize).ok()) else { return false };
++    real.is_absolute() && real.starts_with(root) && !["/proc", "/sys", "/dev"].iter().any(|kernel| real.starts_with(kernel))
++}
+ /// The name that identifies the file at `path`, for `•load`'s cycle check.
+ pub(crate) fn canonical(path: &Path) -> PathBuf { std::fs::canonicalize(path).unwrap_or_else(|_| path.to_owned()) }
+ /// The environment variables, as names and values.
+@@ -18,48 +44,8 @@ pub(crate) fn normalize(form: &str, text: &str) -> String {
+         "NFKC" => Composing::new_nfkc().normalize(text).into_owned(), _ => Decomposing::new_nfkd().normalize(text).into_owned()
+     }
+ }
+-/// The response to `request`, from the system's `curl`, run with an argument list. An interrupt stops it.
+-pub(crate) fn fetch(request: Request) -> Result<Response, Error> {
+-    let url = &request.url;
+-    let mut args: Vec<String> = ["--silent", "--show-error", "--location", "--include", "--write-out", "\\n%{size_header}"].map(String::from).into();
+-    if let Some(method) = &request.method { args.extend(["--request".into(), method.clone()]); }
+-    for (name, value) in &request.headers { args.extend(["--header".into(), format!("{name}: {value}")]); }
+-    if request.body.is_some() { args.extend(["--data-binary".into(), "@-".into()]); }
+-    args.extend(["--url".into(), url.clone()]);
+-    let out = curl(&args, request.body, url)?;
+-    // The headers of every response come first, then the body, then the headers' total size.
+-    let unreadable = || Error::io(url, "curl gave a response BPL can't read");
+-    let end = out.iter().rposition(|&b| b == b'\n').ok_or_else(unreadable)?;
+-    let size = std::str::from_utf8(&out[end + 1..]).ok().and_then(|s| s.parse::<usize>().ok()).filter(|&n| n <= end).ok_or_else(unreadable)?;
+-    let head = String::from_utf8_lossy(&out[..size]);
+-    let mut lines = head.split("\r\n\r\n").filter(|block| !block.is_empty()).last().unwrap_or("").lines();
+-    let status = lines.next().and_then(|line| line.split_whitespace().nth(1)?.parse::<i64>().ok()).ok_or_else(unreadable)?;
+-    let mut headers: Vec<(String, String)> = Vec::new();
+-    for (name, value) in lines.filter_map(|line| line.split_once(':')) {
+-        let (name, value) = (name.trim().to_ascii_lowercase(), value.trim());
+-        match headers.iter_mut().find(|(n, _)| *n == name) {
+-            Some((_, values)) => *values = format!("{values}, {value}"), None => headers.push((name, value.into()))
+-        }
+-    }
+-    Ok(Response { status, headers, body: out[size..end].to_vec() })
+-}
+-
+-/// What the system's `curl` writes when run with `args`, given `body` as its input. An interrupt stops it.
+-fn curl(args: &[String], body: Option<Vec<u8>>, url: &str) -> Result<Vec<u8>, Error> {
+-    use std::{io::{Read, Write}, process::{Command, Stdio}};
+-    let mut child = Command::new("curl").args(args).stdin(if body.is_some() { Stdio::piped() } else { Stdio::null() }).stdout(Stdio::piped())
+-        .stderr(Stdio::piped()).spawn().map_err(|e| Error::io("•fetch needs curl", e))?;
+-    if let (Some(body), Some(mut input)) = (body, child.stdin.take()) { std::thread::spawn(move || input.write_all(&body)); }
+-    let mut output = child.stdout.take().expect("stdout is piped");
+-    let reader = std::thread::spawn(move || { let mut out = Vec::new(); output.read_to_end(&mut out).map(|_| out) });
+-    while !reader.is_finished() { if let Err(e) = crate::cancel::pause(Duration::MAX) { let _ = child.kill(); return Err(e); } }
+-    let out = reader.join().expect("the reader doesn't panic").map_err(|e| Error::io(url, e))?;
+-    let status = child.wait().map_err(|e| Error::io(url, e))?;
+-    if status.success() { return Ok(out); }
+-    let mut message = String::new();
+-    child.stderr.take().expect("stderr is piped").read_to_string(&mut message).map_err(|e| Error::io(url, e))?;
+-    Err(Error::io(url, message.trim().trim_start_matches("curl: ")))
+-}
++/// Hardened build: `•fetch` has no transport. It never starts a program or opens a connection.
++pub(crate) fn fetch(request: Request) -> Result<Response, Error> { Err(Error::io(&request.url, "this build of bpl has no network access")) }
+ 
+ /// A compiled pattern for `•r` and help search, in fancy-regex's syntax.
+ #[derive(Debug)]
+diff --git a/src/lib.rs b/src/lib.rs
+index 3eb11e2..fea0111 100644
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -62,6 +62,9 @@ pub mod hooks {
+     }
+ }
+ 
++/// Hardened build: the bytes of a file, read under the rule that `•nget` and `•load` follow: only under the working directory, never under `/proc`, `/sys` or `/dev`. The command line reads a program file through it.
++#[cfg(not(web))]
++pub fn read_file(path: &std::path::Path) -> std::io::Result<Vec<u8>> { host::read(path) }
+ pub use array::{Layout, Prototype, Shape, Value};
+ pub use cancel::{InterruptHandle, Poll};
+ pub(crate) use error::{At, Described};

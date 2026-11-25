@@ -1,0 +1,22 @@
+#!/bin/bash
+# from: incompressible/icoFoam/cavity (two-block variant) + hand-written gmsh mixed mesh; exercises: foamMeshToFluent export then fluent3DMeshToFoam import (hex and tri/quad mixed faces), -scale, -ignoreFaceGroups, -ignoreCellGroups, -cubit
+cd "${0%/*}" || exit 1
+blockMesh
+foamMeshToFluent
+mv fluentInterface/*.msh hexBlocks.msh
+mv constant/polyMesh constant/polyMesh.orig
+fluent3DMeshToFoam hexBlocks.msh
+checkMesh
+mv constant/polyMesh mesh_default
+fluent3DMeshToFoam -scale 10 -ignoreFaceGroups '(interior-1)' hexBlocks.msh
+checkMesh
+mv constant/polyMesh mesh_scaled
+fluent3DMeshToFoam -ignoreCellGroups '(fluid-1)' -cubit hexBlocks.msh
+checkMesh
+mv constant/polyMesh mesh_cubit
+gmshToFoam gmshMixed.msh
+foamMeshToFluent
+mv fluentInterface/*.msh mixedCells.msh
+mv constant/polyMesh mesh_gmsh
+fluent3DMeshToFoam mixedCells.msh
+checkMesh
