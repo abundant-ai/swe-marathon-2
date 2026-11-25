@@ -17,7 +17,8 @@ Needs, all made beforehand and none committed:
 - experiment/seeds.json: the private seeds (scripts/seeds.py), for the marker.
 - an upstream checkout holding the pinned commit (BASEDPL_CHECKOUT, default
   ../../../../.cache-src/basedpl next to this repository), whose documentation goes into the
-  agent image (bpl_text.documentation) and whose licence goes with the solution.
+  agent image (bpl_text.documentation) and whose licence goes with the solution, with the source
+  the build was compiled from (`hardened_source`, in the solution's source/).
 
 Packaging stops if a private case holds a program the shipped documentation holds, or a
 near-copy of one (make_cases.leaks), or if the build's sha256 is not the one build.txt records.
@@ -38,7 +39,9 @@ import lzma
 import os
 import re
 import shutil
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -55,6 +58,12 @@ SHIPPED_TOOLS = ("mark.py", "smoke.sh")  # what of common/hardening both images 
 CASE_KEYS = ("argv", "files", "form", "id", "kind", "stdin")  # what the verifier image reads of a private case
 PLAN_KEYS = ("unset", "variants")  # and of its "record" entry: the recorder's settling plan
 BUILD_KEYS = ("link", "sha256")  # what mark.py reads of build.txt: the link mode it reports and the sha256 it checks
+# Of upstream's files at the pinned commit, the ones the build of `bpl` reads, for the solution's source/: the
+# workspace's manifests, every crate's build script and sources, and what the build embeds (the documentation pages
+# build.rs reads, llms.txt, the key layout); not upstream's tests, notes, Python package or web files.
+SOURCE_FILES = re.compile(r"Cargo\.toml|build\.rs|LICENSE|\.cargo/config\.toml|src/.+|"
+                          r"(cli|jit|image|py|testkit|wasm|xtask)/(Cargo\.toml|build\.rs|src/.+)|"
+                          r"nbs/llms\.txt|nbs/((glyphs|system)/)?[^/]+\.(qmd|ipynb)|python/basedpl/browser/layout\.json")
 
 
 def shipped_cases(cases: list[dict]) -> bytes:
@@ -93,6 +102,28 @@ def original() -> tuple[bytes, bytes]:
     if not packed.is_file() or lzma.decompress(packed.read_bytes()) != data:
         packed.write_bytes(lzma.compress(data, preset=9 | lzma.PRESET_EXTREME))
     return packed.read_bytes(), build.read_bytes()
+
+
+def hardened_source(checkout: Path) -> dict[str, bytes]:
+    """The source the original was compiled from, as readable files: upstream's files at the pinned
+    commit that the build reads (SOURCE_FILES), hardened by common/hardening/apply.sh as
+    scripts/build_original.py hardens them before it builds (the patch, the all-zero build marker,
+    the pinned Cargo.lock).
+
+    Args:
+        checkout: An upstream checkout that holds the pinned commit (see bpl_text.git_files).
+
+    Returns:
+        The files' bytes by their path in the source tree, sorted.
+    """
+    with tempfile.TemporaryDirectory() as folder:
+        tree = Path(folder) / "basedpl"
+        for path in bpl_text.git_files(checkout):
+            if SOURCE_FILES.fullmatch(path):
+                (tree / path).parent.mkdir(parents=True, exist_ok=True)
+                (tree / path).write_bytes(bpl_text.git_bytes(checkout, path))
+        subprocess.run(["sh", str(HARDENING / "apply.sh"), str(tree)], capture_output=True, check=True)
+        return {path.relative_to(tree).as_posix(): path.read_bytes() for path in sorted(tree.rglob("*")) if path.is_file()}
 
 
 def collect() -> dict[str, bytes]:
@@ -134,6 +165,8 @@ def collect() -> dict[str, bytes]:
     content[f"{STEP}/solution/build.txt"] = build
     content[f"{STEP}/solution/mark.py"] = tools["mark.py"]
     content[f"{STEP}/solution/LICENSE"] = bpl_text.git_bytes(checkout, "LICENSE")
+    for name, data in hardened_source(checkout).items():  # the source of that build, to read: never installed
+        content[f"{STEP}/solution/source/{name}"] = data
     return dict(sorted(content.items()))
 
 

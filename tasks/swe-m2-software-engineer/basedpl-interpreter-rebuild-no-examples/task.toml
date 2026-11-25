@@ -9,7 +9,7 @@ authors = [{ name = "Neel Harsola", email = "work.neelharsola@gmail.com" }]
 
 [metadata]
 reward_type = "continuous"
-open_internet_justification = "Only the image builds have public egress, to install system packages from Ubuntu's archive. The agent works without network access."
+open_internet_justification = "Only the image builds have public egress, to install system packages from Ubuntu's archive: the agent's image, and the separate image that later runs the rebuild. The agent works without network access, and so does that later run of the rebuild."
 
 [agent]
 timeout_sec = 34560
@@ -45,7 +45,7 @@ user = "root"
 timeout_sec = 600
 
 [verifier.environment]
-network_mode = "no-network"
+network_mode = "public"
 build_timeout_sec = 3600
 cpus = 4
 memory_mb = 8192

@@ -3281,6 +3281,23 @@ def test_images_and_solution_install_one_build_and_ship_no_private_cases():
         assert fact in build, fact
 
 
+def test_both_images_build_with_public_egress_and_nothing_runs_with_it():
+    """Round 16, from a sibling task's pre-trial audit: the second image's build installs Ubuntu packages in both of
+    its stages, so its environment has public egress while it is built, as the agent's image's has; the agent's
+    session and the run of its rebuild have none. The justification names both builds, in plain words."""
+    import tomllib
+    config = tomllib.loads((TASK / "task.toml").read_text())
+    assert config["environment"]["network_mode"] == "public" and config["verifier"]["environment"]["network_mode"] == "public"
+    assert config["agent"]["network_mode"] == "no-network" and config["verifier"]["network_mode"] == "no-network"
+    assert config["verifier"]["environment_mode"] == "separate"
+    for dockerfile in (TASK / "environment" / "Dockerfile", STEP / "tests" / "Dockerfile"):
+        assert dockerfile.read_text().count("apt-get update && apt-get install -y --no-install-recommends") == 2, dockerfile
+    justification = config["metadata"]["open_internet_justification"]
+    assert "the agent's image" in justification and "the separate image" in justification, justification
+    assert justification.count("without network access") == 1 and "run of the rebuild" in justification, justification
+    assert not re.search(r"evaluat|grad|trial|platform|verif|score|test|bench|\bcases?\b|hidden", justification, re.I), justification
+
+
 def test_the_hardening_patch_applies_once_and_its_refusals_are_the_ones_the_smoke_test_proves(tmp_path):
     patch = (HARDENING / "basedpl-hardening.patch").read_text()
     added = "\n".join(line[1:] for line in patch.splitlines() if line.startswith("+") and not line.startswith("+++"))
@@ -3406,15 +3423,34 @@ def test_the_reference_solution_installs_the_original_and_its_licence_and_nothin
     """The pre-trial audit's one must-fix on round 8's bundle: the solution kept an author-only probe (probe.c, built
     with gcc and run as the agent's user, its output copied into the run's logs). The solution's one job is the
     install: the original with the zero marker, and upstream's licence, in /app/rebuild. It runs nothing else, writes
-    nowhere else, and is packaged with only what the install needs. No shipped file of ours outside the verifier names
-    an author, the run's logs, a sandbox of its own, or a file that does not ship."""
+    nowhere else, and is packaged with what the install needs and, since round 16 (a sibling task's pre-trial audit,
+    Q-09: the complete reference solution as readable source), the source that build was compiled from, to read, in
+    source/ (package_step.hardened_source: upstream's files the build reads, hardened as the build hardens them).
+    No shipped file of ours outside the verifier names an author, the run's logs, a sandbox of its own, or a file
+    that does not ship."""
     solve = (STEP / "solution" / "solve.sh").read_text()
     commands = [line for line in solve.splitlines() if line.strip() and not line.startswith("#")]
     assert commands == ["set -euo pipefail", 'here="$(cd "$(dirname "$0")" && pwd)"', "mkdir -p /app/rebuild",
                         'python3 "$here/mark.py" "$here/bpl.xz" "$here/build.txt" - /app/rebuild/bpl',
                         "rm -f /app/rebuild/build.txt", 'install -m 0644 "$here/LICENSE" /app/rebuild/LICENSE'], commands
-    packaged = sorted(re.findall(r'content\[f"\{STEP\}/solution/([^"]+)"\]', (SCRIPTS / "package_step.py").read_text()))
-    assert packaged == ["LICENSE", "bpl.xz", "build.txt", "mark.py"], packaged
+    package = (SCRIPTS / "package_step.py").read_text()
+    packaged = sorted(re.findall(r'content\[f"\{STEP\}/solution/([^"]+)"\]', package))
+    assert packaged == ["LICENSE", "bpl.xz", "build.txt", "mark.py", "source/{name}"], packaged
+    assert "for name, data in hardened_source(checkout).items():" in package
+    source = package[package.index("def hardened_source("):package.index("def collect(")]
+    assert 'subprocess.run(["sh", str(HARDENING / "apply.sh"), str(tree)], capture_output=True, check=True)' in source
+    assert source.index("bpl_text.git_bytes(checkout, path)") < source.index('HARDENING / "apply.sh"'), "hardened after it is exported"
+    found = scripts_call("import json, package_step\nprint(json.dumps(package_step.SOURCE_FILES.pattern))")
+    pattern = re.compile(found)
+    # what upstream's build of bpl reads (its dependency file lists 101 files of the tree), and what it does not
+    for name in ("Cargo.toml", "build.rs", "LICENSE", ".cargo/config.toml", "src/lib.rs", "src/canvas.js", "src/eval/session.rs",
+                 "cli/Cargo.toml", "cli/src/main.rs", "cli/src/worker.rs", "jit/src/lib.rs", "image/src/lib.rs", "py/build.rs",
+                 "testkit/src/lib.rs", "wasm/Cargo.toml", "xtask/src/main.rs", "nbs/llms.txt", "nbs/guide.qmd",
+                 "nbs/glyphs/plus.qmd", "nbs/system/demo.ipynb", "python/basedpl/browser/layout.json"):
+        assert pattern.fullmatch(name), name
+    for name in ("tests/reference/core.bpl", "cli/tests/cli.rs", "provenance/aplcart.jsonl", "python/basedpl/__init__.py",
+                 "nbs/study/notes.ipynb", "nbs/gallery/art.bpl", "DEV.md", "README.md", "lib/array.bpl", "package.json"):
+        assert not pattern.fullmatch(name), name
     ours = [*sorted((TASK / "environment").iterdir()), HARDENING / "mark.py", HARDENING / "smoke.sh", STEP / "instruction.md",
             STEP / "solution" / "solve.sh"]
     unwanted = re.compile(r"\bauthors?\b|/logs/|this sandbox|not part of the solution|\bprobe\.c\b|scripts/|apply\.sh|"
