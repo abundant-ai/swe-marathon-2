@@ -143,3 +143,20 @@ Phase A design. What was done:
 
 Not done: no download, build, run, case, mutant or platform action. Next: the owner's approval of
 the spike's download list.
+
+Later the same day, the Phase A deliverables were completed:
+
+| Commit | Deliverable |
+| --- | --- |
+| `0135866` | `notes/DESIGN.md` |
+| `3ab158a` | `notes/STEPS.md` and the chain drafts |
+| `03cb1e9` | `notes/VALIDITY.md`: 43 claims, 21 verified, 14 corrected, 1 invalid, 7 unverified |
+| `5dca4a2` | `notes/QA-PLAN.md` |
+| `a1c992d` | `notes/SPIKE-PLAN.md`: 222 crates, 50.3 MB in all; the agent's registry is 82 crates, 14.5 MB |
+
+`notes/PHASE-A-REPORT.md` summarises them. Checks actually run:
+
+- the instruction and all four step drafts were swept for cue words, with zero hits;
+- `task.toml`, and a chain fragment, were parsed with Harbor's `TaskConfig`;
+- the crate closures were computed from the clone's `Cargo.lock`, and their sizes looked up on
+  crates.io.

@@ -8,6 +8,7 @@ Hacker News API; Cursor's blog page text. All read on 2026-11-26. Line counts co
 that drops blank lines, `//` lines and `#[cfg(test)] mod` blocks, like the deep dive's.
 
 **Verdicts:** ✅ verified · ✏️ verified with a correction · ❌ invalid · ❔ unverified here.
+**Tally:** 43 claims: 21 ✅, 14 ✏️, 1 ❌, 7 ❔.
 
 ## 1. Claims
 
@@ -17,7 +18,7 @@ that drops blank lines, `//` lines and `#[cfg(test)] mod` blocks, like the deep 
 | C2 | Licence is MIT OR Apache-2.0, not Apache-2.0 alone (deep dive Q1) | ✅ | every crate's `license = "MIT OR Apache-2.0"`; README "Dual-licensed"; crates.io: `weave-core`, `sem-core` and `diffy` all MIT OR Apache-2.0. GitHub's detector says Apache-2.0 and `docs/llms.txt` says MIT, both wrong |
 | C3 | 1,364 stars (report) | ✅ | 1,365 on 2026-11-26; 48 forks, 6 open issues |
 | C4 | Dates from 6 February 2026 (report) | ✅ | `created_at` 2026-02-06T18:15:59Z; v0.1.0 released 2026-02-08 |
-| C5 | Hacker News front page in March, 188 points (report) | ✏️ | item 47241976, "Weave – A language aware merge algorithm based on entities", by rs545837, 188 points, 113 comments, 2026-03-04T01:52Z. Front-page placement is inferred from the points, not recorded by the API |
+| C5 | Hacker News front page in March, 188 points (report) | ✏️ | item 47241976, "Weave – A language aware merge algorithm based on entities", posted by the project's author, 188 points, 113 comments, 2026-03-04T01:52Z. Front-page placement is inferred from the points, not recorded by the API |
 | C6 | The v2 matching and placement engine landed 12 August (report) | ✅ | first commit of `v2/plan.rs`, `v2/mod.rs`, `v2/match_phase.rs`: 2026-08-12T04:33Z; v0.5.0 released the same day, 15:57Z |
 | C7 | The gate, region rules and element union landed 3 October (report) | ✅ | first commit of `verify.rs` and `determinate.rs` 2026-10-03T18:19Z, `elements.rs` 18:22Z |
 | C8 | They shipped in 0.6.0 on 19 October (report) | ✅ | v0.6.0 released 2026-10-19T13:24Z (tag `2fd8769`); crates.io `weave-core` 0.6.0 the same day |
@@ -52,7 +53,7 @@ that drops blank lines, `//` lines and `#[cfg(test)] mod` blocks, like the deep 
 | C37 | crates.io: `weave-core` first published 2026-03-14, 15 versions; `sem-core` about 112,894 downloads, max 0.30.1 (deep dive) | ✅ | 2026-11-26: `weave-core` 1,632 downloads, 15 versions; `sem-core` 112,923 downloads, max 0.30.1, 61 versions; `sem-core` 0.29.0 published 2026-10-30, 0.28.0 2026-10-19 |
 | C38 | 36 releases: v0.1.0 2026-02-08 to v0.7.1 2026-11-02; 26 in February-June, 10 in August-November; none for 0.4.x (deep dive) | ✅ | releases API; no 0.4.x tag either |
 | C39 | Root commit 2026-02-06T18:16:44Z; 379 commits on main (deep dive) | ❔ | not re-counted (shallow clone); not load-bearing |
-| C40 | The author said Elijah Newren and Taylor Blau reviewed Weave favourably in private emails (deep dive) | ❔ | not re-read; already marked unverified upstream; nothing in the task rests on it |
+| C40 | The author said two well-known git maintainers reviewed Weave favourably in private emails (deep dive) | ❔ | not re-read; already marked unverified upstream; nothing in the task rests on it |
 | C41 | `verify` can be disabled without touching the element union's own refusals (deep dive gap) | ✅ | `elements.rs` has its own guards ("Refusals (each leaves the conflict as it was)") and calls nothing in `verify.rs`; the gate's call sites are listed in section 2 |
 | C42 | Execute-only works for a native ELF as in Goose and BasedPL (deep dive) | ❔ | a design claim; the spike's protection probe settles it |
 | C43 | Scores: frontier 0.45-0.70, mid-tier 0.15-0.40; cost 15-22 person-days (report) | ❔ | estimates from proxies, not claims of fact; unchanged by Phase A |
