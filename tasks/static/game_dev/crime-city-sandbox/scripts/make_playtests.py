@@ -3151,6 +3151,7 @@ def lock_on() -> Playtest:
     # from the player here, so earlier targets never come back into the way)
     p.dev(("world.reset", {"variation": 22}))
     p.dev(("traffic.set", {"density": 0}))
+    p.dev(("player.spawn", {"at": [-35.0, PLAZA_Y, -20.0], "heading": 0}))
     for gun in ("pistol", "rifle", "smg"):
         p.dev(("player.give", {"weapon": gun, "ammo": 30}))
         tap(p, "reload", 180)  # a full magazine for the ten rounds
