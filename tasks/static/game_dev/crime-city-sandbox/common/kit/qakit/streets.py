@@ -1560,15 +1560,22 @@ def check_no_pop_in(rec: PlayRecord, args: dict) -> Result:
 
 
 # ------------------------------------------------------------------ TR-6 all-way stops
+PASS_GAP = 10 * TICK_HZ  # ticks out of the box before a vehicle's next pass begins
+
+
 def _stop_events(
     frames: list[dict], approaches: list[dict], box: list, zone_m: float, pv: object
 ) -> dict:
-    """For each NPC vehicle at the all-way stop: {"arrive": tick, "approach", "go": tick (its
-    line crossing), "box_in": tick, "box_out": tick, "entry": (x, z), "exit": (x, z), "stood":
-    bool (it stood within zone_m before the line before crossing)}. A vehicle arrives the
-    first frame it stands (1 km/h or less) within zone_m before a listed line with no vehicle
-    between it and the line in the approach's lanes."""
+    """For each pass of an NPC vehicle through the all-way stop: {"arrive": tick,
+    "approach", "go": tick (its line crossing), "box_in": tick, "box_out": tick, "entry":
+    (x, z), "exit": (x, z), "stood": bool (it stood within zone_m before the line before
+    crossing)}, keyed by the vehicle's id (a later pass, when it comes back to a listed
+    approach more than PASS_GAP ticks after it was last in the box, by "id#2", "id#3"...). A vehicle arrives the first frame it
+    stands (1 km/h or less) within zone_m before a listed line with no vehicle between it and
+    the line in the approach's lanes."""
     ev: dict = {}
+    cur: dict = {}  # vehicle id -> the key of its current pass
+    passes: dict = {}  # vehicle id -> passes so far
     prev, rp = None, None
     for fr in frames:
         rc = rows(fr)
@@ -1588,7 +1595,15 @@ def _stop_events(
                 if -0.5 <= u <= ln + 0.5 and -1.0 < d <= 40.0:
                     here[eid] = (ap["approach"], d, u)
         for eid, (apid, d, u) in here.items():
-            rec_ = ev.setdefault(eid, {"approach": apid})
+            key = cur.get(eid)
+            if key is not None and t - ev[key].get("box_out", t) > PASS_GAP:
+                # back at the junction a while after leaving its box: a new pass
+                passes[eid] = passes.get(eid, 1) + 1
+                key = f"{eid}#{passes[eid]}"
+            if key is None:
+                key = eid
+            cur[eid] = key
+            rec_ = ev.setdefault(key, {"approach": apid})
             sp = speed(prev, fr, eid, rp, rc)
             if 0 < d <= zone_m and sp is not None and sp <= KMH and "go" not in rec_:
                 rec_["stood"] = True
@@ -1597,10 +1612,10 @@ def _stop_events(
                 if "arrive" not in rec_ and not ahead:
                     rec_["arrive"] = t
         for eid, e in rc.items():
-            if eid not in ev or not isinstance(e.get("p"), list):
+            if eid not in cur or not isinstance(e.get("p"), list):
                 continue
             x, z = flat(e["p"])
-            r = ev[eid]
+            r = ev[cur[eid]]
             if eid in here and "go" not in r and here[eid][1] <= 0:
                 r["go"] = t
             if inside(box, x, z):

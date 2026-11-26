@@ -479,6 +479,29 @@ def test_stop_order_and_box() -> None:
     assert outcome(record(together), "box_clear", STOP_ARGS).ok is False
 
 
+def test_a_second_pass_is_a_new_visit() -> None:
+    """A car that goes through, round the block and back is two visits, not one long stay in
+    the box overlapping everyone who crossed in between."""
+    frames = []
+    for t in range(0, 1800, 6):
+        census = [player(30, 30)]
+        # the south car: through at 120-260, away, back at the line from 1200 and through at 1300
+        if t < 1200:
+            sx, sz = south_car(t, 120, 0)
+            if sz < -40.0:
+                sx, sz = (60.0, 60.0)  # round the block, far off
+        else:
+            sx, sz = south_car(t - 1080, 220, 0)
+        census.append(vehicle(10, sx, sz))
+        ex, ez = east_car(t, 500, 600)
+        census.append(vehicle(11, ex, ez, along_z=False))
+        frames.append({"t": t, "census": census})
+    rec = record(frames)
+    assert outcome(rec, "box_clear", STOP_ARGS).ok is True
+    assert outcome(rec, "stop_full", STOP_ARGS).ok is True
+    assert outcome(rec, "stop_order", dict(STOP_ARGS, late_s=1.2, tie_s=0.8)).ok is True
+
+
 # ------------------------------------------------------------------ selectors and shared values
 def test_selectors_pick_the_nearest_of_a_kind() -> None:
     frame = {"census": [player(), person(5, 3.0, 0.0, seat=0, vehicle=9), person(6, 1.0, 0.0, seat=0, vehicle=8),
