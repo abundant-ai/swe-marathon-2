@@ -1,0 +1,10 @@
+# Private, staged or generated material for this task. None of it is committed:
+# hidden cases, seeds and recorded outputs live in each step's tests/private/
+# (backed up outside this repository), and the upstream sources, the trimmed docs
+# and the crate registry are staged from pinned downloads at packaging time.
+tests/private/
+steps/*/tests/private/
+steps/*/solution/upstream/
+steps/*/workdir/docs/
+common/staged/
+experiment/

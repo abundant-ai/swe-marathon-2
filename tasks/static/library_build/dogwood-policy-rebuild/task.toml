@@ -1,0 +1,67 @@
+schema_version = "1.4"
+multi_step_reward_strategy = "final"
+artifacts = ["/app/dogwood-rebuild"]
+
+[task]
+name = "abundant/swe-m2_software-engineering_dogwood-policy-rebuild"
+description = "Reimplement, clean-room, the command-line tool of Dogwood, a temporal policy language for AI agents' tool calls first published in 2026, from its guide and an execute-only build of release 1.1.2; then carry the same implementation to release 1.2.0 and its breaking changes."
+authors = [{ name = "Neel Harsola", email = "work.neelharsola@gmail.com" }]
+
+[metadata]
+reward_type = "continuous"
+open_internet_justification = "Only the image builds have public egress: they download the pinned Dogwood release sources, a pinned Rust toolchain and the locked crates. The agent works without network access, and so does the separate image that later builds and runs the rebuild."
+
+[agent]
+network_mode = "no-network"
+user = "dev"
+
+[environment]
+network_mode = "public"
+build_timeout_sec = 3600
+cpus = 4
+memory_mb = 8192
+storage_mb = 20480
+gpus = 0
+workdir = "/app"
+
+[verifier]
+environment_mode = "separate"
+network_mode = "no-network"
+timeout_sec = 2700
+user = "root"
+
+[verifier.environment]
+network_mode = "public"
+build_timeout_sec = 3600
+cpus = 4
+memory_mb = 8192
+storage_mb = 20480
+gpus = 0
+
+[[steps]]
+name = "01-rebuild"
+
+[steps.agent]
+timeout_sec = 21600
+network_mode = "no-network"
+user = "dev"
+
+[steps.verifier]
+environment_mode = "separate"
+network_mode = "no-network"
+timeout_sec = 2700
+user = "root"
+
+[[steps]]
+name = "02-upgrade"
+
+[steps.agent]
+timeout_sec = 12600
+network_mode = "no-network"
+user = "dev"
+
+[steps.verifier]
+environment_mode = "separate"
+network_mode = "no-network"
+timeout_sec = 2700
+user = "root"
