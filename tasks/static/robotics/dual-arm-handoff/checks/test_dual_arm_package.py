@@ -39,7 +39,14 @@ def test_dual_arm_runtime_contains_only_the_enabled_reference_modules(
     assert (commission / "solution/dual_arm/commission_native.py").is_file()
     assert (commission / "tests/UR5E-LICENSE.txt").is_file()
     assert (synthesis / "tests/native_scenarios.py").is_file()
+    assert (synthesis / "tests/cell_truth.py").is_file()
+    assert not (synthesis / "solution/dual_arm/drawn_cell.py").exists()
     assert (native / "solution/dual_arm/dispatch_native.py").is_file()
+    assert (native / "solution/dual_arm/drawn_cell.py").is_file()
+    environment = steps.parent / "environment"
+    sheets = sorted(path.name for path in (environment / "resources/cell").iterdir())
+    assert sheets == [f"cell-sheet-{n}.png" for n in range(1, 5)]
+    assert not any(path.name == "cell_truth.py" for path in environment.rglob("*"))
     assert grasp.name == "08-recover-slipped-grasp"
     assert (grasp / "tests/requirements.txt").read_bytes() == (
         native / "tests/requirements.txt"

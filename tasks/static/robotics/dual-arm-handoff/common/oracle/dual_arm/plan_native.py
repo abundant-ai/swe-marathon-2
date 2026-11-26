@@ -45,6 +45,11 @@ class Problem:
 
     @classmethod
     def read(cls, spec):
+        if "layout" in spec:
+            # Stage 7 windows can name the drawn staging cell instead.
+            from .drawn_cell import resolve
+
+            spec = resolve(spec)
         model = spec["calibration"]
         if model["status"] != "ok" or set(model["calibration"]) != set(ARMS):
             raise ValueError("commissioned arm calibration required")

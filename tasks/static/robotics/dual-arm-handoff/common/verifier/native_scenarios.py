@@ -6,10 +6,13 @@ from copy import deepcopy
 from math import cos, sin
 from typing import Any
 
+import cell_truth
 import mujoco
 import numpy as np
 
 SIDES = ("left", "right")
+DRAWN_VARIANT = 2
+LAYOUT = "STAGING CELL B HANDOFF LAYOUT"
 
 
 def rotation_z(yaw):
@@ -55,8 +58,15 @@ def group(q):
     return dict(zip(SIDES, [q[:6].tolist(), q[6:].tolist()], strict=True))
 
 
-def session(robot_xml, *, variant=0):
-    """Plant calibration and useful task-space targets without supplying waypoint joints."""
+def session(robot_xml, *, variant=0, drawn=False):
+    """Plant calibration and useful task-space targets without supplying waypoint joints.
+
+    A drawn session takes its station, nest and dwell from the private cell
+    truth printed on the staging-cell sheets. The hidden joint witnesses then
+    realize the drawn station exactly.
+    """
+    if drawn and variant != DRAWN_VARIANT:
+        raise ValueError("only the staging cell has drawings")
     model = mujoco.MjModel.from_xml_string(robot_xml)
     data = mujoco.MjData(model)
     detector = model.site("attachment_site").id
@@ -86,6 +96,8 @@ def session(robot_xml, *, variant=0):
     y /= np.linalg.norm(y)
     z = np.cross(x, y)
     station = xform((left[:3, 3] + right[:3, 3]) / 2, np.column_stack((x, y, z)))
+    if drawn:
+        station = unroll(cell_truth.station_poses()[0])
     offsets = {
         "left": np.linalg.solve(station, left),
         "right": np.linalg.solve(station, right),
@@ -96,6 +108,8 @@ def session(robot_xml, *, variant=0):
     ]
     qend = qr + [0.37, -0.14, 0.31, -0.16, 0.14, 0.24]
     end = np.linalg.solve(offsets["right"].T, grip("right", qend).T).T
+    if drawn:
+        end = unroll(cell_truth.nest_pose())
     payload = {
         "mass_kg": 0.55 + variant * 0.11,
         "half_size_m": [float(separation / 2 - 0.047), 0.026, 0.029],
@@ -130,7 +144,7 @@ def session(robot_xml, *, variant=0):
             "dq": group(np.zeros(12)),
         },
         "deadline_tick": 2500 + 7 * variant,
-        "transfer_ticks": 160,
+        "transfer_ticks": cell_truth.TRANSFER_TICKS if drawn else 160,
         "clearance_m": 0.006,
         "speed_rad_s": [0.65] * 12,
         "acceleration_rad_s2": [1.8] * 12,
@@ -502,15 +516,23 @@ def success(plant, spec):
     )
 
 
-def staging_case(robot_xml, *, variant=0, blocker=False, blocked=False):
-    """Commission native authored station alternatives and hide their joint witnesses."""
-    spec, _station, _ = session(robot_xml, variant=variant)
+def staging_case(robot_xml, *, variant=0, blocker=False, blocked=False, drawn=False):
+    """Commission native authored station alternatives and hide their joint witnesses.
+
+    With ``drawn`` the case is the staging cell on the sheets. The spec keeps
+    every true value for scoring and names the layout, and ``public`` removes
+    the drawn facts from the copy the candidate receives.
+    """
+    spec, _station, _ = session(robot_xml, variant=variant, drawn=drawn)
     first = unroll(spec["handoff_object_poses"][0])
     raised = first.copy()
     raised[:3, 3] += [0.018, 0.018, 0.178]
     spec["handoff_object_poses"].append(record(raised))
     raised[:3, 3] = first[:3, 3] + [0.04, 0.02, 0.14]
     spec["handoff_object_poses"][1] = record(raised)
+    if drawn:
+        spec["handoff_object_poses"] = cell_truth.station_poses()
+        spec["layout"] = {"drawing": LAYOUT, "stations": ["H1", "H2"]}
     position = (
         first[:3, 3] - 0.75 * spec["payload"]["half_size_m"][0] * first[:3, 0]
         if blocker
@@ -523,3 +545,38 @@ def staging_case(robot_xml, *, variant=0, blocker=False, blocked=False):
         {"half_size_m": span, "world_from_box": record(xform(position, np.eye(3)))}
     ]
     return spec
+
+
+WITHHELD = ("handoff_object_poses", "transfer_ticks")
+
+
+def public(spec):
+    """Return the candidate's copy of a spec or packet without the drawn facts.
+
+    A spec that names a layout loses its handoff poses, dwell and destination
+    pose, which the candidate must read from the sheets. Key order is kept so
+    reordered retries stay reordered.
+    """
+    if not isinstance(spec, dict):
+        return spec
+    window = spec.get("window")
+    if isinstance(window, dict) and "layout" in window:
+        return {**spec, "window": public(window)}
+    if "layout" not in spec:
+        return spec
+    copy = {key: value for key, value in spec.items() if key not in WITHHELD}
+    copy["destination"] = {
+        key: value
+        for key, value in spec["destination"].items()
+        if key != "world_from_object"
+    }
+    return copy
+
+
+def withholding(run):
+    """Wrap a candidate runner so every request passes through ``public``."""
+
+    def send(command, spec, **options):
+        return run(command, public(spec), **options)
+
+    return send

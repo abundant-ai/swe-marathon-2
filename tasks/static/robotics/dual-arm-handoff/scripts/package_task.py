@@ -14,7 +14,7 @@ ORACLE = [
     ("contingency.py",),
     ("commission_native.py",),
     ("native_cell.py", "plan_native.py"),
-    ("dispatch_native.py",),
+    ("dispatch_native.py", "drawn_cell.py"),
     ("grasp_recovery.py", "grasp_observations.py"),
 ]
 
@@ -45,6 +45,7 @@ def package(parent: Path) -> Path:
             "resources/README.md",
             "resources/ur5e-headless.xml",
             "resources/UR5E-LICENSE.txt",
+            *(f"resources/cell/cell-sheet-{n}.png" for n in range(1, 5)),
         ):
             copy(TASK / "environment" / name, staged / "environment" / name)
         runtime = []
@@ -75,7 +76,11 @@ def package(parent: Path) -> Path:
                     staged / prefix / "tests" / "requirements.txt",
                 )
             if index >= 6:
-                verifier_files += ("native_scenarios.py", "native_plan_checks.py")
+                verifier_files += (
+                    "cell_truth.py",
+                    "native_scenarios.py",
+                    "native_plan_checks.py",
+                )
             if index >= 8:
                 verifier_files += ("grasp_recovery_checks.py",)
             for name in verifier_files:

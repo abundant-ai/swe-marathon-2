@@ -401,8 +401,9 @@ def episode(
     run: Run, root: Path, xml: str, name: str, holder: str, *, contradictory: bool
 ) -> Record:
     """Run one native grasp recovery and return the independently witnessed measurements."""
-    window = staging_case(xml, variant=2)
+    window = staging_case(xml, variant=2, drawn=True)
     window["handoff_object_poses"] = window["handoff_object_poses"][:1]
+    window["layout"]["stations"] = ["H1"]
     window["deadline_tick"] = 1500 if contradictory else 3600
     packet = {
         **request(window, name),

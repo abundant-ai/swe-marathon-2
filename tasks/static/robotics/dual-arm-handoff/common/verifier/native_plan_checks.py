@@ -41,9 +41,9 @@ def transfer(run, spec, *, plant_spec=None):
     )
 
 
-def calibrated_transfer(run, xml):
+def calibrated_transfer(run, xml, *, drawn=False):
     """Require the same fitted metrology to drive the separate true physical rig."""
-    truth = staging_case(xml, variant=2)
+    truth = staging_case(xml, variant=2, drawn=drawn)
     candidate = deepcopy(truth)
     native = mujoco.MjModel.from_xml_string(xml)
     data = mujoco.MjData(native)
@@ -82,16 +82,17 @@ def calibrated_transfer(run, xml):
     return transfer(run, candidate, plant_spec=truth)
 
 
-def native_plan_checks(run, xml):
+def native_plan_checks(run, xml, *, drawn=False):
+    """Score plan-native, reading the staging cell from its sheets when drawn."""
     cases = {
         "native_handoff_12_axis_shape": lambda: transfer(
             run, staging_case(xml, variant=0)
         ),
         "native_transfer_shifted_bases_and_tools": lambda: calibrated_transfer(
-            run, xml
+            run, xml, drawn=drawn
         ),
         "native_raise_object_around_fixture": lambda: transfer(
-            run, staging_case(xml, variant=2, blocker=True)
+            run, staging_case(xml, variant=2, blocker=True, drawn=drawn)
         ),
         "native_block_outside_arm_workspace": lambda: (
             run("plan-native", staging_case(xml, variant=1, blocked=True))
@@ -176,7 +177,7 @@ def execute(run, state, plant, packet, reply, *, known_ids=()):
 
 
 def recovered_lost_reply(run, root, xml):
-    spec = staging_case(xml, variant=2)
+    spec = staging_case(xml, variant=2, drawn=True)
     state = root / "lost-state.json"
     packet = request(spec, "loaded-arm-transfer")
     if run("dispatch-native", packet, state=state, lost_reply=True) is not True:
@@ -205,7 +206,7 @@ def recover_revocation(
     Returns:
         Whether the candidate retained custody, braked and recovered on the plant.
     """
-    spec = staging_case(xml, variant=2)
+    spec = staging_case(xml, variant=2, drawn=True)
     state = root / "revoked-state.json"
     packet = request(spec, "withdrawn-loaded-motion")
     plant = NativePlant(spec)
@@ -236,7 +237,7 @@ def recover_revocation(
         reply = run("dispatch-native", packet, state=state)
     else:
         return False
-    amended = staging_case(xml, variant=2, blocker=True)
+    amended = staging_case(xml, variant=2, blocker=True, drawn=True)
     shape = unroll(amended["fixtures"][0]["world_from_box"])
     geom = plant.model.geom("fixture_0").id
     plant.model.geom_pos[geom] = shape[:3, 3]
@@ -260,7 +261,7 @@ def recover_revocation(
 
 
 def never_fake_custody(run, root, xml):
-    spec = staging_case(xml, variant=2)
+    spec = staging_case(xml, variant=2, drawn=True)
     state = root / "corrupt-custody.json"
     packet = request(spec, "guarded-custody")
     reply = run("dispatch-native", packet, state=state)

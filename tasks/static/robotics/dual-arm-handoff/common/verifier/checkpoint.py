@@ -198,13 +198,20 @@ def grade(
                     for key, value in commission_native_checks(runner, xml).items()
                 }
             )
+        if level >= 6:
+            from native_scenarios import withholding
+
+            # Stages 7 and 8 read the staging cell from its sheets.
+            drawn = withholding(runner)
         if retained_level >= 6:
             from native_plan_checks import native_plan_checks
 
             evidence.update(
                 {
                     "synth_" + key: value
-                    for key, value in native_plan_checks(runner, xml).items()
+                    for key, value in native_plan_checks(
+                        drawn, xml, drawn=retained_level >= 7
+                    ).items()
                 }
             )
         if retained_level >= 7:
@@ -217,7 +224,7 @@ def grade(
                 {
                     "live_" + key: value
                     for key, value in native_dispatch_checks(
-                        runner, journal, xml
+                        drawn, journal, xml
                     ).items()
                 }
             )
@@ -228,7 +235,7 @@ def grade(
             journal.mkdir()
             journal.chmod(0o777)
             grasp = grasp_recovery_checks(
-                runner, journal, xml, observations=observations
+                drawn, journal, xml, observations=observations
             )
     grasp_evidence = {"grasp_" + key: value for key, value in grasp.items()}
     if grasp_only:
