@@ -8,10 +8,15 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends build-essential pkg-config ninja-build python3 python3-venv \
        ragel git ca-certificates xz-utils patch \
     && rm -rf /var/lib/apt/lists/*
+# Upstream's gen-ucd-table.py reads the UCD XML through packtab, which needs lxml. A layer of its own, so the
+# toolchain layer above (and the compiler every recorded output came from) stays as it was.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends python3-lxml \
+    && rm -rf /var/lib/apt/lists/*
 COPY wheels/ /opt/wheels/
 COPY SHA256SUMS /opt/SHA256SUMS
 RUN cd /opt && sha256sum -c --ignore-missing --strict SHA256SUMS \
-    && python3 -m venv /opt/py \
+    && python3 -m venv --system-site-packages /opt/py \
     && /opt/py/bin/pip install --no-index --no-deps /opt/wheels/*.whl \
     && dpkg-query -W -f '${Package}\t${Version}\t${Architecture}\n' > /opt/dpkg-versions.tsv \
     && /opt/py/bin/pip freeze > /opt/pip-versions.txt

@@ -118,6 +118,8 @@ def docker_run(
         f"{DRIVER}:/drv:ro",
         "-v",
         f"{PIPE}:/pipe:ro",
+        "-v",
+        f"{TASK / 'environment'}:/env:ro",
     ]
     cmd += [IMAGE if not platform else f"{IMAGE}-{platform.split('/')[1]}", *args]
     result = subprocess.run(cmd, check=False)
@@ -145,16 +147,21 @@ def build_context() -> Path:
     return ctx
 
 
-def cmd_image(args: argparse.Namespace) -> None:
+def build_pipeline_image(platform: str | None) -> None:
+    """Build the pipeline image (for another platform when given); the caller holds the heavy lock."""
     ctx = build_context()
-    tag = IMAGE if not args.platform else f"{IMAGE}-{args.platform.split('/')[1]}"
+    tag = IMAGE if not platform else f"{IMAGE}-{platform.split('/')[1]}"
     cmd = ["docker", "build", "-t", tag, "--label", LABEL]
-    if args.platform:
-        cmd += ["--platform", args.platform]
-    with heavy(f"image {tag}"):
-        started = time.time()
-        subprocess.run([*cmd, str(ctx)], check=True)
-        log_event(event="image", tag=tag, seconds=round(time.time() - started, 1))
+    if platform:
+        cmd += ["--platform", platform]
+    started = time.time()
+    subprocess.run([*cmd, str(ctx)], check=True)
+    log_event(event="image", tag=tag, seconds=round(time.time() - started, 1))
+
+
+def cmd_image(args: argparse.Namespace) -> None:
+    with heavy(f"image {args.platform or 'native'}"):
+        build_pipeline_image(args.platform)
 
 
 def stack36() -> list[str]:
@@ -340,47 +347,54 @@ def cmd_run(args: argparse.Namespace) -> None:
         do_run(args.id, args.cases, args.out, args.platform)
 
 
+def run_ops(ops: list[dict]) -> None:
+    """Run build, run and shell operations in order; the caller holds the heavy lock."""
+    for op in ops:
+        if op["op"] == "build":
+            do_build(
+                op["id"],
+                op["release"],
+                op.get("unit"),
+                op.get("jobs", 4),
+                op.get("cpus", 6),
+                op.get("ragel", "on"),
+                op.get("platform"),
+                op.get("meson_extra", ""),
+            )
+        elif op["op"] == "run":
+            do_run(
+                op["id"],
+                op["cases"],
+                op["out"],
+                op.get("platform"),
+                op.get("env", ""),
+                op.get("cpus", 2),
+            )
+        elif op["op"] == "image":
+            build_pipeline_image(op.get("platform"))
+        elif op["op"] == "sh":
+            started = time.time()
+            code = docker_run(
+                op["args"],
+                cpus=op.get("cpus", 2),
+                platform=op.get("platform"),
+                check=False,
+            )
+            log_event(
+                event="sh",
+                args=op["args"][:3],
+                code=code,
+                wall_s=round(time.time() - started, 1),
+            )
+        else:
+            raise SystemExit(f"unknown op {op['op']}")
+
+
 def cmd_batch(args: argparse.Namespace) -> None:
     """Run a JSON list of build, run and shell operations under one hold of the heavy lock."""
     ops = json.loads(Path(args.plan).read_text())
     with heavy(f"batch {Path(args.plan).name} ({len(ops)} ops)"):
-        for op in ops:
-            if op["op"] == "build":
-                do_build(
-                    op["id"],
-                    op["release"],
-                    op.get("unit"),
-                    op.get("jobs", 4),
-                    op.get("cpus", 6),
-                    op.get("ragel", "on"),
-                    op.get("platform"),
-                    op.get("meson_extra", ""),
-                )
-            elif op["op"] == "run":
-                do_run(
-                    op["id"],
-                    op["cases"],
-                    op["out"],
-                    op.get("platform"),
-                    op.get("env", ""),
-                    op.get("cpus", 2),
-                )
-            elif op["op"] == "sh":
-                started = time.time()
-                code = docker_run(
-                    op["args"],
-                    cpus=op.get("cpus", 2),
-                    platform=op.get("platform"),
-                    check=False,
-                )
-                log_event(
-                    event="sh",
-                    args=op["args"][:3],
-                    code=code,
-                    wall_s=round(time.time() - started, 1),
-                )
-            else:
-                raise SystemExit(f"unknown op {op['op']}")
+        run_ops(ops)
 
 
 VERIFIER_IMAGE = "hbfp-verifier:phaseB"
@@ -419,27 +433,26 @@ def stage_verifier(selection_path: Path) -> int:
     return len(selection)
 
 
-def build_verifier_image() -> None:
-    """Build the verifier image from tests/; the caller holds the heavy lock."""
+def verifier_tag(platform: str | None) -> str:
+    return (
+        VERIFIER_IMAGE if not platform else f"{VERIFIER_IMAGE}-{platform.split('/')[1]}"
+    )
+
+
+def build_verifier_image(platform: str | None = None) -> None:
+    """Build the verifier image from tests/ (for another platform when given); the caller holds the heavy lock."""
+    tag = verifier_tag(platform)
+    cmd = ["docker", "build", "-t", tag, "--label", LABEL]
+    if platform:
+        cmd += ["--platform", platform]
     started = time.time()
-    subprocess.run(
-        [
-            "docker",
-            "build",
-            "-t",
-            VERIFIER_IMAGE,
-            "--label",
-            LABEL,
-            str(TASK / "tests"),
-        ],
-        check=True,
-    )
-    log_event(
-        event="image", tag=VERIFIER_IMAGE, seconds=round(time.time() - started, 1)
-    )
+    subprocess.run([*cmd, str(TASK / "tests")], check=True)
+    log_event(event="image", tag=tag, seconds=round(time.time() - started, 1))
 
 
-def run_verifier(tree: Path, name: str, release: str) -> dict:
+def run_verifier(
+    tree: Path, name: str, release: str, platform: str | None = None
+) -> dict:
     """Run the verifier image against one tree, the way the platform would (tree read-only, logs mounted).
 
     The caller holds the heavy lock.
@@ -455,13 +468,14 @@ def run_verifier(tree: Path, name: str, release: str) -> dict:
         "--cpus=4",
         "--label",
         LABEL,
+        *(["--platform", platform] if platform else []),
         "-e",
         f"RELEASE={release}",
         "-v",
         f"{tree.resolve()}:/app/harfbuzz:ro",
         "-v",
         f"{logs}:/logs/verifier",
-        VERIFIER_IMAGE,
+        verifier_tag(platform),
         "bash",
         "/tests/test.sh",
     ]
@@ -495,11 +509,13 @@ def cmd_milestone(args: argparse.Namespace) -> None:
     """Stage a selection, then under one hold of the lock build the verifier image and verify each tree."""
     n = stage_verifier(Path(args.selection))
     print(f"staged {n} cases")
-    with heavy(f"milestone: verifier image and {len(args.tree)} verifier runs"):
-        build_verifier_image()
+    ops = json.loads(Path(args.plan).read_text()) if args.plan else []
+    with heavy(f"milestone: {len(ops)} ops, verifier image, {len(args.tree)} runs"):
+        run_ops(ops)
+        build_verifier_image(args.platform)
         for spec in args.tree:
             name, _, tree = spec.partition("=")
-            run_verifier(Path(tree), name, args.release)
+            run_verifier(Path(tree), name, args.release, args.platform)
 
 
 def main() -> None:
@@ -540,6 +556,8 @@ def main() -> None:
     p.add_argument("selection")
     p.add_argument("tree", nargs="+", help="NAME=TREE, verified in order")
     p.add_argument("--release", default="15.2.0")
+    p.add_argument("--plan", help="operations to run first, under the same hold")
+    p.add_argument("--platform", help="build and run the verifier for this platform")
     p.set_defaults(func=cmd_milestone)
     args = parser.parse_args()
     WORK.mkdir(parents=True, exist_ok=True)

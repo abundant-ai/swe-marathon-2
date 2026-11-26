@@ -2,14 +2,14 @@ FROM ubuntu:24.04@sha256:73b999393d07f2bf65a40373778a44dc9a6d54ad7718d29247d8ff9
 ENV DEBIAN_FRONTEND=noninteractive LC_ALL=C.UTF-8 LANG=C.UTF-8
 RUN apt-get update \
     && apt-get install -y --no-install-recommends build-essential pkg-config ninja-build python3 python3-venv \
-       ragel git ca-certificates curl xz-utils patch libglib2.0-dev less nano procps \
+       ragel git ca-certificates curl xz-utils patch libglib2.0-dev less nano procps python3-lxml \
     && rm -rf /var/lib/apt/lists/*
 RUN printf '%s\n' \
        "fonttools==4.69.1 --hash=sha256:20e9dfac71694d9eeae48bb53c877bdf43b914794d69a769940728a1929cc835" \
        "packtab==1.9.0 --hash=sha256:5641d7505ea726c21501101af32f21908180db84eae0f04e3b70a5cb40fd10a1" \
        "meson==1.12.1 --hash=sha256:930bc7542cbd9f57009e182fd014eba48cf1a0180a7b9006d2d32d8f168d8b02" \
        > /tmp/requirements.txt \
-    && python3 -m venv /opt/py \
+    && python3 -m venv --system-site-packages /opt/py \
     && /opt/py/bin/pip install --no-cache-dir --no-deps --only-binary=:all: --require-hashes -r /tmp/requirements.txt \
     && rm /tmp/requirements.txt
 ENV PATH=/opt/py/bin:$PATH

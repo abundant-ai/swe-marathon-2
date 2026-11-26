@@ -6,6 +6,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 COPY wheels/ /opt/wheels/
 RUN python3 -m venv /opt/py && /opt/py/bin/pip install --no-index --no-deps /opt/wheels/meson-*.whl \
+    && dpkg-query -W -f '${Package}\t${Version}\t${Architecture}\n' > /opt/dpkg-versions.tsv \
     && useradd --system --create-home --shell /usr/sbin/nologin builder
 COPY test.sh verify.py /tests/
 COPY driver/ /tests/driver/
