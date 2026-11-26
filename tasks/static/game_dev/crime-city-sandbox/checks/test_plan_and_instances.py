@@ -61,7 +61,9 @@ def test_before_m_counts_back_from_the_stop_line() -> None:
             "lane_index": lane["index"],
         }
     )
-    assert abs(math.dist((pl.p[0], pl.p[2]), (end.p[0], end.p[2])) - 30) < 1e-6
+    back = PLAN.lane_point(lane["id"], PLAN.lane_length(lane["id"]) - 30)
+    assert math.dist(pl.p, back.p) < 1e-6  # 30 m back along the lane, curves included
+    assert math.dist((pl.p[0], pl.p[2]), (end.p[0], end.p[2])) <= 30 + 1e-6
 
 
 def test_poi_and_front_m() -> None:

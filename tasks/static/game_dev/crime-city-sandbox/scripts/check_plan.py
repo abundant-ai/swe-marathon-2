@@ -1,14 +1,20 @@
 """Check a city-plan/1 file against the rules of common/design/plan/FORMAT.md.
 
 Author tool (never packaged). Prints one line per problem and exits 1 if there is any.
+With --gdd it also checks that every point of interest the design document names for the
+plan's map exists in the plan (the ids of maps not given are listed as still to come).
 
-Usage: python scripts/check_plan.py common/design/plan/downtown.json [more plans]
+Usage: python scripts/check_plan.py [--gdd common/design/GDD.md] PLAN [PLAN ...]
 """
 
+import argparse
+import itertools
 import json
 import math
+import re
 import sys
 from collections import defaultdict
+from pathlib import Path
 
 ZONINGS = {
     "commercial",
@@ -20,6 +26,10 @@ ZONINGS = {
     "parking",
 }
 BUILT = {"commercial", "residential", "civic", "industrial"}
+CLASSES = {"arterial", "street", "highway", "dock", "track"}
+STRUCTURES = {"ground", "bridge", "tunnel"}
+NODE_KINDS = {"junction", "bend", "end", "portal"}
+CONTROLS = {"signal", "stop", "none"}
 POI_FIELDS = {
     "police_station": {"parcel", "exit", "respawn"},
     "hospital": {"parcel", "exit", "respawn"},
@@ -35,6 +45,28 @@ POI_FIELDS = {
     "plaza": {"parcel"},
 }
 TOL = 0.05
+
+# The points of interest the design document names, by the map that holds them.
+GDD_POIS = {
+    "downtown": [
+        "safehouse_downtown", "garage_downtown", "bank_downtown", "giver_delivery",
+        "giver_race", "giver_heist", "d1_pickup", "d1_dropoff", "r1_start",
+        *(f"r1_cp{i}" for i in range(1, 9)), "h1_car", "h1_stash",
+    ],
+    "port": [
+        "giver_chase", "garage_port", "ferry_terminal_port", "c1_start", "c2_start",
+        "d2_pickup", "d2_dropoff", "h2_van", "h2_stash",
+    ],
+    "hills": [
+        "garage_hills", "ferry_terminal_hills", "r2_start",
+        *(f"r2_cp{i}" for i in range(1, 13)),
+    ],
+}  # fmt: skip
+# Checkpoint ranges the design document writes as "first-last".
+GDD_RANGES = {"r1_cp": 8, "r2_cp": 12}
+POI_LIKE = re.compile(
+    r"`((?:[a-z]+_)*(?:downtown|port|hills)|[cdhr][12]_[a-z0-9_]+|giver_[a-z]+)`"
+)
 
 
 def inside(poly, x, z, tol=TOL):
@@ -81,6 +113,34 @@ def heading_vec(h):
     return math.sin(r), -math.cos(r)
 
 
+def cut(pts, d0, d1):
+    """The part of a 2D polyline between distances d0 and d1 along it."""
+    out, walked = [], 0.0
+    for p, q in itertools.pairwise(pts):
+        seg = math.dist(p, q)
+        if seg <= 0:
+            continue
+        s0, s1 = walked, walked + seg
+        if s1 >= d0 and s0 <= d1:
+            a = max(0.0, min(1.0, (d0 - s0) / seg))
+            b = max(0.0, min(1.0, (d1 - s0) / seg))
+            pa = (p[0] + (q[0] - p[0]) * a, p[1] + (q[1] - p[1]) * a)
+            if not out or math.dist(out[-1], pa) > 1e-9:
+                out.append(pa)
+            out.append((p[0] + (q[0] - p[0]) * b, p[1] + (q[1] - p[1]) * b))
+        walked = s1
+    return out
+
+
+def length_of(pts):
+    return sum(math.dist(p, q) for p, q in itertools.pairwise(pts))
+
+
+def unit(p, q):
+    d = math.dist(p, q)
+    return ((q[0] - p[0]) / d, (q[1] - p[1]) / d)
+
+
 class Plan:
     def __init__(self, data):
         self.d = data
@@ -105,20 +165,10 @@ class Plan:
                 self.bad(f"{key}: duplicate id {it['id']}")
             seen.add(it["id"])
 
-    def lane_frame(self, lane_id):
-        e, ln = self.lanes[lane_id]
-        start, end = (e["a"], e["b"]) if ln["dir"] == "ab" else (e["b"], e["a"])
-        ps, pe = self.nodes[start]["p"], self.nodes[end]["p"]
-        dx, dz = pe[0] - ps[0], pe[2] - ps[2]
-        full = math.hypot(dx, dz)
-        ux, uz = dx / full, dz / full
-        n = len(e["lanes"])
-        w = e["lane_width_m"]
-        off = (ln["index"] + 0.5 - (n / 2.0 if e["oneway"] else 0.0)) * w
-        s0 = self.leg(start, e["id"])["box_m"]
-        s1 = (self.leg(end, e["id"])["approach"] or {}).get("stop_line_m", 0.0)
-        ox, oz = ps[0] + ux * s0 - uz * off, ps[2] + uz * s0 + ux * off
-        return (ox, oz), (ux, uz), full - s0 - s1, start, end
+    def centreline(self, e):
+        """The edge's centreline from a to b as (x, z) points."""
+        pts = [self.nodes[e["a"]]["p"], *e.get("points", []), self.nodes[e["b"]]["p"]]
+        return [(float(p[0]), float(p[2])) for p in pts]
 
     def leg(self, node, edge):
         for leg in self.inters[node]["legs"]:
@@ -126,21 +176,65 @@ class Plan:
                 return leg
         raise KeyError((node, edge))
 
+    def lane_frame(self, lane_id):
+        """(centre polyline of the lane from s=0 to its end, length, start node, end node,
+        start direction, end direction)."""
+        e, ln = self.lanes[lane_id]
+        start, end = (e["a"], e["b"]) if ln["dir"] == "ab" else (e["b"], e["a"])
+        pts = self.centreline(e)
+        if ln["dir"] == "ba":
+            pts = pts[::-1]
+        n = len(e["lanes"])
+        w = e["lane_width_m"]
+        off = (ln["index"] + 0.5 - (n / 2.0 if e["oneway"] else 0.0)) * w
+        s0 = self.leg(start, e["id"])["box_m"]
+        s1 = (self.leg(end, e["id"])["approach"] or {}).get("stop_line_m", 0.0)
+        total = length_of(pts)
+        mid = cut(pts, s0, total - s1)
+        lane = []
+        for i, p in enumerate(mid):
+            a = mid[max(i - 1, 0)]
+            b = mid[min(i + 1, len(mid) - 1)]
+            ux, uz = unit(a, b) if math.dist(a, b) > 0 else (0.0, 0.0)
+            lane.append((p[0] - uz * off, p[1] + ux * off))
+        return (
+            lane,
+            total - s0 - s1,
+            start,
+            end,
+            unit(pts[0], pts[1]),
+            unit(pts[-2], pts[-1]),
+        )
+
     def check(self):
         d = self.d
         if d.get("format") != "city-plan/1":
             self.bad("format is not city-plan/1")
         for key in ("nodes", "edges", "intersections", "blocks", "sidewalks"):
             self.unique(key, d[key])
-        self.unique("parcels", d["parcels"])
-        self.unique("pois", d["pois"])
+        for key in ("parcels", "pois", "districts", "turfs"):
+            self.unique(key, d.get(key, []))
         self.unique("lanes", [ln for e in d["edges"] for ln in e["lanes"]])
-        self.check_edges()
-        self.check_intersections()
-        self.check_lanes()
-        self.check_blocks()
-        self.check_pois()
-        self.check_districts()
+        for part in (
+            self.check_edges,
+            self.check_intersections,
+            self.check_lanes,
+            self.check_blocks,
+            self.check_pois,
+            self.check_portals,
+            self.check_bounds,
+            self.check_districts,
+        ):
+            try:
+                part()
+            except (
+                KeyError,
+                IndexError,
+                TypeError,
+                ValueError,
+                ZeroDivisionError,
+            ) as exc:
+                self.bad(f"{part.__name__} could not finish: {exc!r}")
         return self.err
 
     def check_edges(self):
@@ -148,6 +242,12 @@ class Plan:
             for end in ("a", "b"):
                 if e[end] not in self.nodes:
                     self.bad(f"edge {e['id']}: unknown node {e[end]}")
+            if e.get("class") not in CLASSES:
+                self.bad(f"edge {e['id']}: unknown class {e.get('class')}")
+            if e.get("structure") not in STRUCTURES:
+                self.bad(f"edge {e['id']}: unknown structure {e.get('structure')}")
+            if any(len(p) != 3 for p in e.get("points", [])):
+                self.bad(f"edge {e['id']}: points must be [x, y, z]")
             per_dir = defaultdict(list)
             for ln in e["lanes"]:
                 per_dir[ln["dir"]].append(ln["index"])
@@ -156,6 +256,9 @@ class Plan:
             for dr, idx in per_dir.items():
                 if sorted(idx) != list(range(len(idx))):
                     self.bad(f"edge {e['id']}: lane indices {dr} not 0..n-1")
+        for n in self.d["nodes"]:
+            if n.get("kind") not in NODE_KINDS:
+                self.bad(f"node {n['id']}: unknown kind {n.get('kind')}")
 
     def check_intersections(self):
         touching = defaultdict(set)
@@ -167,6 +270,8 @@ class Plan:
             if it is None:
                 self.bad(f"node {node}: no intersection record")
                 continue
+            if it.get("control") not in CONTROLS:
+                self.bad(f"{node}: unknown control {it.get('control')}")
             legs = {leg["edge"] for leg in it["legs"]}
             if legs != edges:
                 self.bad(f"intersection {node}: legs {sorted(legs)} != {sorted(edges)}")
@@ -197,10 +302,26 @@ class Plan:
                         self.bad(f"{cw['id']}: band not outside the box")
                     if ap is not None and cw["to_m"] > ap["stop_line_m"]:
                         self.bad(f"{cw['id']}: band beyond the stop line")
+                self.check_leg_straight(node, e, leg)
             if it["control"] == "signal":
                 self.check_signal(it, approaches, crosswalks)
             elif "signal" in it:
                 self.bad(f"{node}: signal program without signal control")
+
+    def check_leg_straight(self, node, e, leg):
+        """The box, crosswalk band and stop line of a leg lie on its first straight piece."""
+        pts = self.centreline(e)
+        if e["b"] == node:
+            pts = pts[::-1]
+        reach = max(
+            leg["box_m"],
+            (leg["crosswalk"] or {}).get("to_m", 0.0),
+            (leg["approach"] or {}).get("stop_line_m", 0.0),
+        )
+        if reach > math.dist(pts[0], pts[1]) + TOL:
+            self.bad(
+                f"{node}/{e['id']}: box, crosswalk or stop line past the first straight"
+            )
 
     def check_signal(self, it, approaches, crosswalks):
         sig = it.get("signal")
@@ -220,13 +341,20 @@ class Plan:
             self.bad(f"{it['id']}: bad amber or all-red time")
 
     def successors(self, frames):
-        """Lane-to-lane movements allowed by the turn rules of FORMAT.md."""
+        """Lane-to-lane movements allowed by the turn rules of FORMAT.md, plus the way
+        out and back in at each portal (the road goes on on another map)."""
         leaving = defaultdict(list)
-        for lid, (_, _, _, start, _) in frames.items():
-            leaving[start].append(lid)
+        for lid, f in frames.items():
+            leaving[f[2]].append(lid)
+        kinds = {n["id"]: n["kind"] for n in self.d["nodes"]}
         succ = defaultdict(set)
-        for lid, (_, (ux, uz), _, _, end) in frames.items():
+        for lid, (_, _, _, end, _, (ux, uz)) in frames.items():
             e, ln = self.lanes[lid]
+            if kinds[end] == "portal":
+                succ[lid].update(
+                    x for x in leaving[end] if self.lanes[x][0]["id"] == e["id"]
+                )
+                continue
             n_in = sum(1 for x in e["lanes"] if x["dir"] == ln["dir"])
             bend = len(self.inters[end]["legs"]) == 2
             exits = defaultdict(list)
@@ -234,29 +362,29 @@ class Plan:
                 if self.lanes[nxt][0]["id"] != e["id"]:
                     exits[self.lanes[nxt][0]["id"]].append(nxt)
             for out in exits.values():
-                ox, oz = frames[out[0]][1]
+                ox, oz = frames[out[0]][4]
                 theta = math.degrees(math.atan2(ux * oz - uz * ox, ux * ox + uz * oz))
-                by_index = {self.lanes[x][1]["index"]: x for x in out}
-                n_out = len(out)
+                ordered = sorted(out, key=lambda x: self.lanes[x][1]["index"])
+                n_out = len(ordered)
                 i = ln["index"]
                 if bend or abs(theta) <= 30.0:
-                    succ[lid].add(by_index[min(i, n_out - 1)])
+                    succ[lid].add(ordered[max(0, min(i, n_out - 1))])
                 elif 30.0 < theta <= 150.0 and i == n_in - 1:
-                    succ[lid].add(by_index[n_out - 1])
+                    succ[lid].add(ordered[-1])
                 elif -150.0 <= theta < -30.0 and i == 0:
-                    succ[lid].add(by_index[0])
+                    succ[lid].add(ordered[0])
         return succ
 
     def check_lanes(self):
         frames = {lid: self.lane_frame(lid) for lid in self.lanes}
-        for lid, (_, _, length, _, _) in frames.items():
-            if length < 5.0:
-                self.bad(f"lane {lid}: length {length:.2f} m under 5 m")
+        for lid, f in frames.items():
+            if f[1] < 5.0:
+                self.bad(f"lane {lid}: length {f[1]:.2f} m under 5 m")
         succ = self.successors(frames)
         kinds = {n["id"]: n["kind"] for n in self.d["nodes"]}
         for lid in self.lanes:
-            end = frames[lid][4]
-            if not succ[lid] and kinds[end] not in ("end", "portal"):
+            end = frames[lid][3]
+            if not succ[lid] and kinds[end] != "end":
                 self.bad(f"lane {lid}: no way out at {end}")
         # every lane reachable from every other (one connected traffic network)
         start = next(iter(self.lanes))
@@ -322,11 +450,12 @@ class Plan:
     def surface_at(self, x, z):
         """'road', 'block' or None for a ground point of the plan."""
         for lid in self.lanes:
-            (ox, oz), (ux, uz), length, _, _ = self.lane_frame(lid)
+            pts = self.lane_frame(lid)[0]
             w = self.lanes[lid][0]["lane_width_m"]
-            s = (x - ox) * ux + (z - oz) * uz
-            lat = abs(-(x - ox) * uz + (z - oz) * ux)
-            if -1.0 <= s <= length + 1.0 and lat <= w / 2.0 + TOL:
+            if any(
+                seg_dist(x, z, *p, *q) <= w / 2.0 + TOL
+                for p, q in itertools.pairwise(pts)
+            ):
                 return "road"
         if any(inside(b["poly"], x, z) for b in self.d["blocks"]):
             return "block"
@@ -344,14 +473,14 @@ class Plan:
             if missing:
                 self.bad(f"poi {poi['id']}: missing {sorted(missing)}")
             x, _, z = poi["p"]
-            if self.surface_at(x, z) is None:
+            if kind != "portal" and self.surface_at(x, z) is None:
                 self.bad(f"poi {poi['id']}: p is not on a road or a block")
             for key in ("exit", "driveway"):
                 if key in poi:
                     lane = poi[key]["lane"]
                     if lane not in self.lanes:
                         self.bad(f"poi {poi['id']}: {key} on unknown lane {lane}")
-                    elif not 0 <= poi[key]["s"] <= self.lane_frame(lane)[2]:
+                    elif not 0 <= poi[key]["s"] <= self.lane_frame(lane)[1]:
                         self.bad(f"poi {poi['id']}: {key} s outside the lane")
             if "parcel" in poi and poi["parcel"] not in self.parcels:
                 self.bad(f"poi {poi['id']}: unknown parcel")
@@ -371,6 +500,63 @@ class Plan:
             if sorted(idx) != list(range(1, len(idx) + 1)):
                 self.bad(f"race {race}: checkpoint indices not 1..n")
 
+    def check_portals(self):
+        """Portal nodes end one edge on the map's edge, uncontrolled, and one portal point
+        of interest names each; portal points of interest name a portal node and a link."""
+        (x0, z0), (x1, z1) = self.d["bounds"]["min"], self.d["bounds"]["max"]
+        named = defaultdict(list)
+        for poi in self.d["pois"]:
+            if poi["kind"] != "portal":
+                continue
+            node = self.nodes.get(poi.get("node"))
+            if node is None or node["kind"] != "portal":
+                self.bad(f"poi {poi['id']}: names {poi.get('node')}, not a portal node")
+                continue
+            named[node["id"]].append(poi["id"])
+            if not isinstance(poi.get("link"), str) or not poi["link"]:
+                self.bad(f"poi {poi['id']}: no link")
+            if (
+                math.dist((poi["p"][0], poi["p"][2]), (node["p"][0], node["p"][2]))
+                > 0.5
+            ):
+                self.bad(f"poi {poi['id']}: p is not at its node")
+        for n in self.d["nodes"]:
+            if n["kind"] != "portal":
+                continue
+            x, _, z = n["p"]
+            if min(abs(x - x0), abs(x - x1), abs(z - z0), abs(z - z1)) > TOL:
+                self.bad(f"portal {n['id']}: not on the edge of bounds")
+            inter = self.inters.get(n["id"])
+            if inter is None or len(inter["legs"]) != 1:
+                self.bad(f"portal {n['id']}: must end exactly one edge")
+            elif inter["control"] != "none" or inter["legs"][0]["box_m"] != 0:
+                self.bad(f"portal {n['id']}: must be uncontrolled with box_m 0")
+            if len(named[n["id"]]) != 1:
+                self.bad(
+                    f"portal {n['id']}: named by {len(named[n['id']])} points of interest"
+                )
+
+    def check_bounds(self):
+        """Everything the plan places lies inside bounds."""
+        (x0, z0), (x1, z1) = self.d["bounds"]["min"], self.d["bounds"]["max"]
+
+        def out(x, z):
+            return not (x0 - TOL <= x <= x1 + TOL and z0 - TOL <= z <= z1 + TOL)
+
+        for n in self.d["nodes"]:
+            if out(n["p"][0], n["p"][2]):
+                self.bad(f"node {n['id']}: outside the bounds")
+        for e in self.d["edges"]:
+            if any(out(p[0], p[2]) for p in e.get("points", [])):
+                self.bad(f"edge {e['id']}: a point outside the bounds")
+        for key in ("blocks", "parcels"):
+            for item in self.d[key]:
+                if any(out(x, z) for x, z in item["poly"]):
+                    self.bad(f"{key[:-1]} {item['id']}: outside the bounds")
+        for poi in self.d["pois"]:
+            if out(poi["p"][0], poi["p"][2]):
+                self.bad(f"poi {poi['id']}: outside the bounds")
+
     def check_districts(self):
         (x0, z0), (x1, z1) = self.d["bounds"]["min"], self.d["bounds"]["max"]
         polys = [dd["poly"] for dd in self.d["districts"]]
@@ -384,11 +570,49 @@ class Plan:
                     return
 
 
-def main(paths):
+def gdd_problems(gdd_text, plans):
+    """Points of interest the design document names: each must be in the plan of its map.
+
+    Returns (problems, still to come): problems for the maps given, and the ids of maps
+    not given.
+    """
+    problems = []
+    listed = {i for ids in GDD_POIS.values() for i in ids}
+    for found in sorted(set(POI_LIKE.findall(gdd_text))):
+        if found not in listed and not any(found.startswith(r) for r in GDD_RANGES):
+            problems.append(f"GDD names {found}, which no map lists")
+    for ident in sorted(listed):
+        rng = next((r for r in GDD_RANGES if ident.startswith(r)), None)
+        if rng is None and f"`{ident}`" not in gdd_text:
+            problems.append(f"{ident} is listed but the GDD does not name it")
+        if rng and f"`{rng}1`" not in gdd_text:
+            problems.append(f"the GDD does not name the {rng} range")
+    by_map = {p["map"]: {poi["id"] for poi in p["pois"]} for p in plans}
+    pending = {}
+    for map_id, ids in GDD_POIS.items():
+        if map_id not in by_map:
+            pending[map_id] = ids
+            continue
+        for ident in ids:
+            if ident not in by_map[map_id]:
+                problems.append(f"{map_id}: point of interest {ident} missing")
+    return problems, pending
+
+
+def main(argv):
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument(
+        "--gdd", type=Path, help="also cross-check the design document's ids"
+    )
+    ap.add_argument("plans", nargs="+")
+    a = ap.parse_args(argv)
     failed = False
-    for path in paths:
+    loaded = []
+    for path in a.plans:
         with open(path) as f:
-            plan = Plan(json.load(f))
+            data = json.load(f)
+        loaded.append(data)
+        plan = Plan(data)
         errors = plan.check()
         for msg in errors:
             print(f"{path}: {msg}")
@@ -397,6 +621,16 @@ def main(paths):
             f"{path}: {len(errors)} problems ({lanes} lanes, {len(plan.parcels)} parcels)"
         )
         failed = failed or bool(errors)
+    if a.gdd:
+        problems, pending = gdd_problems(a.gdd.read_text(), loaded)
+        for msg in problems:
+            print(f"{a.gdd}: {msg}")
+        for map_id, ids in pending.items():
+            print(
+                f"{a.gdd}: {map_id} (no plan yet): {len(ids)} points of interest to come"
+            )
+        print(f"{a.gdd}: {len(problems)} problems")
+        failed = failed or bool(problems)
     return 1 if failed else 0
 
 

@@ -1,0 +1,132 @@
+{
+ "format": "qa-play/1",
+ "name": "people.locomotion/crouch",
+ "template": "people.locomotion",
+ "about": "crouch toggles crouching: crouched, the hips are at most 75% of their standing height above the plaza, and a crouched walk keeps its pace.",
+ "rules": ["FT-6", "FT-1"],
+ "role": "solo",
+ "args": ["--role=solo", "--variation=6", "--save-dir={save_dir}"],
+ "mode": "lockstep",
+ "runs": [
+  {
+   "pace_ms": 0
+  }
+ ],
+ "limits": {
+  "wall_s": 240,
+  "boot_s": 60,
+  "step_s": 30,
+  "cpu_s": 600,
+  "memory_mb": 1536,
+  "disk_mb": 512
+ },
+ "steps": [
+  {
+   "observe": {
+    "census": true,
+    "every": 6,
+    "bones": {
+     "ids": ["player"],
+     "names": ["Hips"]
+    }
+   }
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 6
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": {
+       "poi": "plaza_central"
+      },
+      "heading": 90
+     }
+    ]
+   ]
+  },
+  {
+   "run": 60
+  },
+  {
+   "mark": "standing"
+  },
+  {
+   "press": {
+    "crouch": 1.0
+   }
+  },
+  {
+   "run": 2
+  },
+  {
+   "release": ["crouch"]
+  },
+  {
+   "run": 60
+  },
+  {
+   "mark": "crouched"
+  },
+  {
+   "press": {
+    "move_forward": 0.3
+   }
+  },
+  {
+   "run": 90
+  },
+  {
+   "mark": "crouch_walk_a"
+  },
+  {
+   "run": 60
+  },
+  {
+   "mark": "crouch_walk_b"
+  },
+  {
+   "release": ["move_forward"]
+  }
+ ],
+ "expect": [
+  {
+   "id": "crouch_height",
+   "check": "hips_ratio",
+   "args": {
+    "standing": "standing",
+    "crouched": "crouched",
+    "kind": "player",
+    "bone": "Hips",
+    "ground_y": 0.15,
+    "max_ratio": 0.75
+   },
+   "rule": "FT-6",
+   "says": "after crouch is pressed once, the hips are at most 75% of their standing height"
+  },
+  {
+   "id": "crouch_pace",
+   "check": "pace",
+   "args": {
+    "from": "crouch_walk_a",
+    "to": "crouch_walk_b",
+    "kind": "player",
+    "bone": "Hips",
+    "min_mps": 0.5,
+    "max_mps": 1.1
+   },
+   "rule": "FT-1",
+   "says": "a crouched walk moves the hips at 0.50-1.10 m/s"
+  }
+ ],
+ "tags": []
+}

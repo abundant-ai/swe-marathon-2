@@ -48,8 +48,8 @@ The examples below are taken from `downtown.json`.
   "format": "city-plan/1",
   "map": "downtown",
   "name": "downtown",
-  "revision": 1,
-  "bounds": {"min": [-230.0, -220.0], "max": [220.0, 210.0]},
+  "revision": 2,
+  "bounds": {"min": [-420.0, -468.829], "max": [440.0, 400.0]},
   "ground_m": 0.0,
   "nodes": [], "edges": [], "intersections": [],
   "blocks": [], "sidewalks": [], "parcels": [],
@@ -68,7 +68,7 @@ The examples below are taken from `downtown.json`.
 ### Nodes
 
 ```json
-{"id": "j_10", "p": [-70.0, 0.0, -180.0], "kind": "junction"}
+{"id": "j_32", "p": [-70.0, 0.0, -180.0], "kind": "junction"}
 ```
 
 `kind` is `junction` (three or more roads meet), `bend` (two roads meet), `end` (a dead end) or
@@ -79,11 +79,11 @@ the node centre.
 
 ```json
 {
-  "id": "e_00_10", "a": "j_00", "b": "j_10", "class": "street",
+  "id": "e_22_32", "a": "j_22", "b": "j_32", "class": "street",
   "oneway": false, "lane_width_m": 3.25, "speed_kmh": 40, "surface": "asphalt",
   "structure": "ground", "points": [],
-  "lanes": [{"id": "e_00_10:ab0", "dir": "ab", "index": 0},
-            {"id": "e_00_10:ba0", "dir": "ba", "index": 0}]
+  "lanes": [{"id": "e_22_32:ab0", "dir": "ab", "index": 0},
+            {"id": "e_22_32:ba0", "dir": "ba", "index": 0}]
 }
 ```
 
@@ -116,18 +116,18 @@ Every node with at least one edge has one intersection record.
 
 ```json
 {
-  "id": "j_10", "node": "j_10", "control": "signal",
+  "id": "j_32", "node": "j_32", "control": "signal",
   "legs": [
-    {"edge": "e_10_20", "box_m": 7.0,
-     "crosswalk": {"id": "cw_j_10_e_10_20", "from_m": 7.5, "to_m": 10.5},
-     "approach": {"id": "j_10<e_10_20", "dir": "ba", "stop_line_m": 11.5}}
+    {"edge": "e_32_42", "box_m": 7.0,
+     "crosswalk": {"id": "cw_j_32_e_32_42", "from_m": 7.5, "to_m": 10.5},
+     "approach": {"id": "j_32<e_32_42", "dir": "ba", "stop_line_m": 11.5}}
   ],
-  "signal": {"phases": [{"green": ["j_10<e_10_20"], "walk": [], "green_s": 9.0}],
-             "amber_s": 3.0, "all_red_s": 1.0, "offset_s": 24.0}
+  "signal": {"phases": [{"green": ["j_32<e_32_42"], "walk": [], "green_s": 9.0}],
+             "amber_s": 3.0, "all_red_s": 1.0, "offset_s": 31.2}
 }
 ```
 
-(One of the three legs and one of the four phases shown.)
+(One of the four legs and one of the five phases shown.)
 
 - **Legs.** One per edge that touches the node, in a fixed order (clockwise from north).
   - `box_m`: how far the intersection box reaches along this edge from the node. Inside the box,
@@ -164,7 +164,7 @@ Every node with at least one edge has one intersection record.
 ## Blocks, sidewalks and parcels
 
 ```json
-{"id": "b_00", "poly": [[-186.75, -176.75], [-77.0, -176.75], [-77.0, -63.25], [-186.75, -63.25]],
+{"id": "b_22", "poly": [[-186.75, -176.75], [-77.0, -176.75], [-77.0, -63.25], [-186.75, -63.25]],
  "elevation_m": 0.15}
 ```
 
@@ -173,7 +173,7 @@ Every node with at least one edge has one intersection record.
 - **Sidewalks** run around the inside edge of a block:
 
   ```json
-  {"id": "sw_00", "block": "b_00", "width_m": 3.0, "elevation_m": 0.15,
+  {"id": "sw_22", "block": "b_22", "width_m": 3.0, "elevation_m": 0.15,
    "ring": [[-185.25, -175.25], [-78.5, -175.25], [-78.5, -64.75], [-185.25, -64.75]]}
   ```
 
@@ -183,7 +183,7 @@ Every node with at least one edge has one intersection record.
 - **Parcels** split the inside of a block (inside the sidewalks):
 
   ```json
-  {"id": "p_12", "block": "b_01", "zoning": "commercial",
+  {"id": "p_12", "block": "b_23", "zoning": "commercial",
    "poly": [[-183.75, -53.75], [-137.23, -53.75], [-137.23, -15.69], [-183.75, -15.69]],
    "base_m": 0.15, "height_m": 35.3, "height_range_m": [14.0, 60.0], "setback_m": 3.0,
    "interior": {}}
@@ -277,7 +277,7 @@ vehicle can stop) and `heading_deg`. Kinds and their extra fields:
 ## Spawning
 
 ```json
-"spawn": {"vehicle_edges": "all", "pedestrian_areas": ["sw_00", "p_10"], "no_spawn": []}
+"spawn": {"vehicle_edges": "all", "pedestrian_areas": ["sw_22", "p_16"], "no_spawn": []}
 ```
 
 - `vehicle_edges`: `"all"` or a list of edge ids whose lanes may receive new traffic.

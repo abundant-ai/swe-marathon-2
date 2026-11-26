@@ -146,7 +146,7 @@
      {
       "model": "sedan",
       "at": {
-       "lane": "e_00_01:ab0",
+       "lane": "e_22_23:ab0",
        "s": 20.0
       }
      }
@@ -163,7 +163,7 @@
      {
       "archetype": "shopper",
       "at": {
-       "sidewalk": "sw_11",
+       "sidewalk": "sw_33",
        "s": 15.0
       }
      }

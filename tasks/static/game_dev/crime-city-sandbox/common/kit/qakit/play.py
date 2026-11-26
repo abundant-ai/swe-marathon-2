@@ -23,7 +23,7 @@ Each run is a fresh game process (and a fresh home folder) running the same step
 "{save_dir}" and "{home}" in args are replaced by the run's folders and "{plans}" by the
 plan folder; when a plan folder is given and args name none, "--plan-dir=<plans>" is added.
 
-In a dev step, an argument value {"$answer": [step, key]} (or [step, index, key]) is
+In a dev or query step, a value {"$answer": [step, key]} (or [step, index, key]) is
 replaced by that field of the answer to an earlier dev step's command (index counts the
 commands of that step, from 0), so a play can use an id the game handed out.
 
@@ -550,7 +550,7 @@ class _LockstepRun:
             self.advance(1, i, dev=fill_answers(arg, self._answers()))
             self.rec.step_frame[i] = len(self.rec.frames) - 1
         elif kind == "query":
-            self.advance(1, i, queries=arg)
+            self.advance(1, i, queries=fill_answers(arg, self._answers()))
             self.rec.step_frame[i] = len(self.rec.frames) - 1
         elif kind == "run":
             self.advance(int(arg), i)

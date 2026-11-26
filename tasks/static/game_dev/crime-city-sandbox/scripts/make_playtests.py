@@ -190,8 +190,8 @@ def commands() -> Playtest:
     )
     plaza = {"poi": "plaza_central"}
     crate_at = [12.0, 0.15, -2.0]
-    lane = {"lane": "e_00_01:ab0", "s": 20.0}
-    walk = {"sidewalk": "sw_11", "s": 15.0}
+    lane = {"lane": "e_22_23:ab0", "s": 20.0}
+    walk = {"sidewalk": "sw_33", "s": 15.0}
     p.step("observe", {"census": True, "state": True, "every": 6})
     p.dev(("world.reset", {"variation": 2}))
     p.mark("reset")
@@ -786,10 +786,304 @@ def plan_compliance() -> Playtest:
     return p
 
 
+# Chapter 5 (FT-1, FT-2, FT-6), chapter 4 (IN-2, CM-1 to CM-3), chapter 2 (CA-1, CA-2).
+PACES = {
+    "walk": (0.80, 1.50),
+    "run": (4.60, 6.40),
+    "sprint": (7.40, 9.60),
+    "crouched": (0.50, 1.10),
+}
+SLIDE = {"walk": 0.25, "run": 0.40, "sprint": 0.60}
+ASPECT = 1280 / 720  # the window the project sets (display/window/size)
+PLAZA = {"poi": "plaza_central"}
+LEAD_BONES = [
+    "Hips", "Spine", "Chest", "Neck", "Head", "LeftUpperArm", "LeftHand", "LeftUpperLeg",
+    "LeftFoot", "LeftToes", "RightUpperArm", "RightHand", "RightUpperLeg", "RightFoot",
+    "RightToes",
+]  # fmt: skip
+
+
+def lead_table() -> dict[str, dict]:
+    """Chapter 2's table of leads, read from the design document."""
+    text = (TASK / "common" / "design" / "GDD.md").read_text()
+    out = {}
+    for line in text.splitlines():
+        if line.startswith("| `lead_"):
+            cells = [c.strip().strip("`") for c in line.strip("|").split("|")]
+            out[cells[0]] = dict(
+                zip(
+                    ("body", "hair", "skin", "top", "bottom", "shoes"),
+                    cells[2:8],
+                    strict=True,
+                )
+            )
+    return out
+
+
+def gait_segment(
+    p: Playtest, name: str, press: dict, settle: int, measure: int
+) -> None:
+    """Spawn at the plaza, hold the actions, let the gait settle, mark, measure, mark."""
+    p.dev(("player.spawn", {"at": PLAZA, "heading": 90}))
+    p.step("press", press)
+    p.step("run", settle)
+    p.mark(f"{name}_a")
+    p.step("run", measure)
+    p.mark(f"{name}_b")
+    p.step("release", sorted(press))
+
+
+def paces() -> Playtest:
+    p = Playtest(
+        "people.locomotion/paces",
+        ["FT-1", "IN-2"],
+        "On the level plaza the player walks, runs and sprints: QA presses move_forward at "
+        "different strengths (and sprint), lets each gait settle for 1.5 s, and measures the "
+        "horizontal speed of the hips over the next second.",
+        ["--role=solo", "--variation=2", "--save-dir={save_dir}"],
+    )
+    p.step(
+        "observe",
+        {"census": True, "every": 6, "bones": {"ids": ["player"], "names": ["Hips"]}},
+    )
+    p.dev(("world.reset", {"variation": 2}))
+    segments = [
+        ("walk", {"move_forward": 0.3}, "walk", "FT-1", "at a walk the hips move at 0.80-1.50 m/s"),
+        ("half", {"move_forward": 0.5}, "walk", "IN-2", "a move strength of 0.5 still walks"),
+        ("over_half", {"move_forward": 0.6}, "run", "IN-2", "a move strength above 0.5 runs"),
+        ("run", {"move_forward": 1.0}, "run", "FT-1", "running, the hips move at 4.60-6.40 m/s"),
+        ("sprint", {"move_forward": 1.0, "sprint": 1.0}, "sprint", "FT-1",
+         "sprinting, the hips move at 7.40-9.60 m/s"),
+    ]  # fmt: skip
+    for name, press, _, _, _ in segments:
+        gait_segment(p, name, press, 90, 60)
+    for name, _, gait, rule, says in segments:
+        lo, hi = PACES[gait]
+        p.expect(
+            f"pace_{name}", "pace",
+            {"from": f"{name}_a", "to": f"{name}_b", "kind": "player", "bone": "Hips",
+             "min_mps": lo, "max_mps": hi},
+            rule, says,
+        )  # fmt: skip
+    p.expect(
+        "sprint_while_running", "pace",
+        {"from": "sprint_a", "to": "sprint_b", "kind": "player", "bone": "Hips",
+         "min_mps": PACES["sprint"][0]},
+        "IN-2", "sprint held while running sprints",
+    )  # fmt: skip
+    return p
+
+
+def camera() -> Playtest:
+    p = Playtest(
+        "people.locomotion/camera",
+        ["CM-1", "CM-2", "CM-3"],
+        "On foot on the plaza: the camera's distance from the head and where the hips sit in "
+        "the view while the player stands, turns the camera, tilts it up and down, and walks; "
+        "how fast look_right turns it; and that move_forward follows the camera.",
+        ["--role=solo", "--variation=3", "--save-dir={save_dir}"],
+    )
+    p.step(
+        "observe",
+        {"census": True, "camera": True, "every": 2,
+         "bones": {"ids": ["player"], "names": ["Head", "Hips"]}},
+    )  # fmt: skip
+    p.dev(("world.reset", {"variation": 3}))
+    p.dev(("player.spawn", {"at": PLAZA, "heading": 0}))
+    p.step("run", 30)
+    p.mark("start")
+    p.step("run", 30)
+    p.step("press", {"look_right": 1.0})
+    p.step("run", 6)
+    p.mark("turn_a")
+    p.step("run", 30)
+    p.mark("turn_b")
+    p.step("release", ["look_right"])
+    p.step("run", 6)
+    p.mark("tilt_a")
+    p.step("press", {"look_up": 1.0})
+    p.step("run", 120)
+    p.mark("tilt_up")
+    p.step("release", ["look_up"])
+    p.step("press", {"look_down": 1.0})
+    p.step("run", 180)
+    p.mark("tilt_down")
+    p.step("release", ["look_down"])
+    p.step("run", 6)
+    p.mark("move_a")
+    p.step("press", {"move_forward": 1.0})
+    p.step("run", 60)
+    p.mark("move_b")
+    p.step("release", ["move_forward"])
+    p.step("run", 6)
+    p.mark("end")
+    p.expect(
+        "camera_frame", "camera_frame",
+        {"from": "start", "to": "end", "kind": "player", "min_m": 2.5, "max_m": 6.0,
+         "middle": 0.4, "aspect": round(ASPECT, 4)},
+        "CM-1",
+        "on foot the camera stays 2.5-6.0 m from the player's Head bone and the Hips bone "
+        "stays inside the middle 40% of the 1280 x 720 view, by width and height",
+    )  # fmt: skip
+    p.expect(
+        "look_rate", "look_rate",
+        {"from": "turn_a", "to": "turn_b", "min_dps": 120, "max_dps": 240},
+        "CM-2", "look_right at full strength turns the camera at 120-240 degrees per second",
+    )  # fmt: skip
+    p.expect(
+        "tilt_up", "camera_tilt",
+        {"from": "tilt_a", "to": "tilt_up", "min_deg": -60, "max_deg": 30, "rises": True,
+         "min_change_deg": 1.0},
+        "CM-2", "look_up tilts the camera up, never past +30 degrees",
+    )  # fmt: skip
+    p.expect(
+        "tilt_down", "camera_tilt",
+        {"from": "tilt_up", "to": "tilt_down", "min_deg": -60, "max_deg": 30, "falls": True,
+         "min_change_deg": 1.0},
+        "CM-2", "look_down tilts the camera down, never past -60 degrees",
+    )  # fmt: skip
+    p.expect(
+        "moves_along_camera", "moves_along_camera",
+        {"from": "move_a", "to": "move_b", "kind": "player", "within_deg": 15},
+        "CM-3",
+        "move_forward moves the player within 15 degrees of the camera's horizontal forward",
+    )  # fmt: skip
+    return p
+
+
+def lineup() -> Playtest:
+    p = Playtest(
+        "people.lineup/leads",
+        ["CA-1", "CA-2", "AC-5", "AC-11", "AR-3"],
+        "Each of the six leads in turn on the plaza: its look matches chapter 2's table, the "
+        "leads differ from each other, and each has one Skeleton3D with the humanoid profile's "
+        "bone names and a skinned body bound to it.",
+        ["--role=solo", "--variation=4", "--save-dir={save_dir}"],
+    )
+    p.step("observe", {"census": {"meta": ["look"]}, "every": 6})
+    p.dev(("world.reset", {"variation": 4}))
+    table = lead_table()
+    marks = []
+    for lead in sorted(table):
+        spawn = p.dev(("player.spawn", {"lead": lead, "at": PLAZA}))
+        p.step("run", 6)
+        p.mark(lead)
+        marks.append(lead)
+        sk = p.step(
+            "query",
+            [{"id": "skeleton", "type": "skeleton", "entity": {"$answer": [spawn, "id"]}},
+             {"id": "unregistered", "type": "unregistered"}],
+        )  # fmt: skip
+        p.expect(
+            f"look_{lead}", "look",
+            {"mark": lead, "kind": "player", "expect": dict(table[lead], scale=1.0),
+             "colour_tol": 0.02},
+            "CA-1",
+            f"{lead} is spawned with chapter 2's body, hair and colours (within 0.02 per "
+            "channel) at scale 1.0, and its look metadata has every field of AC-11",
+        )  # fmt: skip
+        p.expect(
+            f"skeleton_{lead}", "skeleton",
+            {"step": sk, "query": "skeleton", "bones": LEAD_BONES, "min_bound_meshes": 1},
+            "AC-5",
+            f"{lead} has exactly one Skeleton3D using the humanoid profile's bone names, with "
+            "skinned meshes bound to it",
+        )  # fmt: skip
+        if lead == "lead_1":
+            p.expect(
+                "unregistered", "none_listed", {"step": sk, "query": "unregistered"}, "AC-5",
+                "nothing outside the entity registry has a Skeleton3D, CharacterBody3D or "
+                "VehicleBody3D",
+            )  # fmt: skip
+    p.expect(
+        "leads_distinct", "looks_distinct", {"marks": marks, "kind": "player", "min_top_distance": 0.2},
+        "CA-2", "any two leads differ in body or hair, and their tops by at least 0.20",
+    )  # fmt: skip
+    return p
+
+
+def feet() -> Playtest:
+    p = Playtest(
+        "people.locomotion/feet",
+        ["FT-2"],
+        "Walking, running and sprinting on the plaza, the feet are planted: steps alternate "
+        "between the feet, and a planted toe barely slides. A stance is a run of samples with "
+        "the toe within 0.04 m of its lowest height; slide is measured over its middle 60%.",
+        ["--role=solo", "--variation=5", "--save-dir={save_dir}"],
+    )
+    p.step(
+        "observe",
+        {"census": True, "every": 2,
+         "bones": {"ids": ["player"], "names": ["LeftToes", "RightToes"]}},
+    )  # fmt: skip
+    p.dev(("world.reset", {"variation": 5}))
+    gaits = [
+        ("walk", {"move_forward": 0.3}),
+        ("run", {"move_forward": 1.0}),
+        ("sprint", {"move_forward": 1.0, "sprint": 1.0}),
+    ]
+    for name, press in gaits:
+        gait_segment(p, name, press, 90, 120)
+    for name, _ in gaits:
+        p.expect(
+            f"feet_{name}", "feet",
+            {"from": f"{name}_a", "to": f"{name}_b", "kind": "player", "min_steps": 3,
+             "min_alternation": 0.9, "max_slide_mps": SLIDE[name], "contact_m": 0.04},
+            "FT-2",
+            f"at a {name} at least 90% of steps alternate feet and a planted toe slides at "
+            f"most {SLIDE[name]:.2f} m/s (p95, middle 60% of each stance)",
+        )  # fmt: skip
+    return p
+
+
+def crouch() -> Playtest:
+    p = Playtest(
+        "people.locomotion/crouch",
+        ["FT-6", "FT-1"],
+        "crouch toggles crouching: crouched, the hips are at most 75% of their standing height "
+        "above the plaza, and a crouched walk keeps its pace.",
+        ["--role=solo", "--variation=6", "--save-dir={save_dir}"],
+    )
+    p.step(
+        "observe",
+        {"census": True, "every": 6, "bones": {"ids": ["player"], "names": ["Hips"]}},
+    )
+    p.dev(("world.reset", {"variation": 6}))
+    p.dev(("player.spawn", {"at": PLAZA, "heading": 90}))
+    p.step("run", 60)
+    p.mark("standing")
+    p.step("press", {"crouch": 1.0})
+    p.step("run", 2)
+    p.step("release", ["crouch"])
+    p.step("run", 60)
+    p.mark("crouched")
+    p.step("press", {"move_forward": 0.3})
+    p.step("run", 90)
+    p.mark("crouch_walk_a")
+    p.step("run", 60)
+    p.mark("crouch_walk_b")
+    p.step("release", ["move_forward"])
+    plaza_y = point(PLAZA)[1]
+    p.expect(
+        "crouch_height", "hips_ratio",
+        {"standing": "standing", "crouched": "crouched", "kind": "player", "bone": "Hips",
+         "ground_y": plaza_y, "max_ratio": 0.75},
+        "FT-6", "after crouch is pressed once, the hips are at most 75% of their standing height",
+    )  # fmt: skip
+    lo, hi = PACES["crouched"]
+    p.expect(
+        "crouch_pace", "pace",
+        {"from": "crouch_walk_a", "to": "crouch_walk_b", "kind": "player", "bone": "Hips",
+         "min_mps": lo, "max_mps": hi},
+        "FT-1", "a crouched walk moves the hips at 0.50-1.10 m/s",
+    )  # fmt: skip
+    return p
+
+
 BUILDERS = (
     bad_input, commands, state_report, new_game, server_role, same_start, replay,
     same_tick, clock_rate, weather_hold, kill_after_save, damaged_slot, realtime,
-    plan_compliance,
+    plan_compliance, paces, camera, lineup, feet, crouch,
 )  # fmt: skip
 
 

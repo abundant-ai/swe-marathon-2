@@ -1,0 +1,481 @@
+{
+ "format": "qa-play/1",
+ "name": "people.lineup/leads",
+ "template": "people.lineup",
+ "about": "Each of the six leads in turn on the plaza: its look matches chapter 2's table, the leads differ from each other, and each has one Skeleton3D with the humanoid profile's bone names and a skinned body bound to it.",
+ "rules": ["CA-1", "CA-2", "AC-5", "AC-11", "AR-3"],
+ "role": "solo",
+ "args": ["--role=solo", "--variation=4", "--save-dir={save_dir}"],
+ "mode": "lockstep",
+ "runs": [
+  {
+   "pace_ms": 0
+  }
+ ],
+ "limits": {
+  "wall_s": 240,
+  "boot_s": 60,
+  "step_s": 30,
+  "cpu_s": 600,
+  "memory_mb": 1536,
+  "disk_mb": 512
+ },
+ "steps": [
+  {
+   "observe": {
+    "census": {
+     "meta": ["look"]
+    },
+    "every": 6
+   }
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 4
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "lead": "lead_1",
+      "at": {
+       "poi": "plaza_central"
+      }
+     }
+    ]
+   ]
+  },
+  {
+   "run": 6
+  },
+  {
+   "mark": "lead_1"
+  },
+  {
+   "query": [
+    {
+     "id": "skeleton",
+     "type": "skeleton",
+     "entity": {
+      "$answer": [2, "id"]
+     }
+    },
+    {
+     "id": "unregistered",
+     "type": "unregistered"
+    }
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "lead": "lead_2",
+      "at": {
+       "poi": "plaza_central"
+      }
+     }
+    ]
+   ]
+  },
+  {
+   "run": 6
+  },
+  {
+   "mark": "lead_2"
+  },
+  {
+   "query": [
+    {
+     "id": "skeleton",
+     "type": "skeleton",
+     "entity": {
+      "$answer": [6, "id"]
+     }
+    },
+    {
+     "id": "unregistered",
+     "type": "unregistered"
+    }
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "lead": "lead_3",
+      "at": {
+       "poi": "plaza_central"
+      }
+     }
+    ]
+   ]
+  },
+  {
+   "run": 6
+  },
+  {
+   "mark": "lead_3"
+  },
+  {
+   "query": [
+    {
+     "id": "skeleton",
+     "type": "skeleton",
+     "entity": {
+      "$answer": [10, "id"]
+     }
+    },
+    {
+     "id": "unregistered",
+     "type": "unregistered"
+    }
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "lead": "lead_4",
+      "at": {
+       "poi": "plaza_central"
+      }
+     }
+    ]
+   ]
+  },
+  {
+   "run": 6
+  },
+  {
+   "mark": "lead_4"
+  },
+  {
+   "query": [
+    {
+     "id": "skeleton",
+     "type": "skeleton",
+     "entity": {
+      "$answer": [14, "id"]
+     }
+    },
+    {
+     "id": "unregistered",
+     "type": "unregistered"
+    }
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "lead": "lead_5",
+      "at": {
+       "poi": "plaza_central"
+      }
+     }
+    ]
+   ]
+  },
+  {
+   "run": 6
+  },
+  {
+   "mark": "lead_5"
+  },
+  {
+   "query": [
+    {
+     "id": "skeleton",
+     "type": "skeleton",
+     "entity": {
+      "$answer": [18, "id"]
+     }
+    },
+    {
+     "id": "unregistered",
+     "type": "unregistered"
+    }
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "lead": "lead_6",
+      "at": {
+       "poi": "plaza_central"
+      }
+     }
+    ]
+   ]
+  },
+  {
+   "run": 6
+  },
+  {
+   "mark": "lead_6"
+  },
+  {
+   "query": [
+    {
+     "id": "skeleton",
+     "type": "skeleton",
+     "entity": {
+      "$answer": [22, "id"]
+     }
+    },
+    {
+     "id": "unregistered",
+     "type": "unregistered"
+    }
+   ]
+  }
+ ],
+ "expect": [
+  {
+   "id": "look_lead_1",
+   "check": "look",
+   "args": {
+    "mark": "lead_1",
+    "kind": "player",
+    "expect": {
+     "body": "female",
+     "hair": "long",
+     "skin": "#8d5524",
+     "top": "#b03a2e",
+     "bottom": "#1c2833",
+     "shoes": "#17202a",
+     "scale": 1.0
+    },
+    "colour_tol": 0.02
+   },
+   "rule": "CA-1",
+   "says": "lead_1 is spawned with chapter 2's body, hair and colours (within 0.02 per channel) at scale 1.0, and its look metadata has every field of AC-11"
+  },
+  {
+   "id": "skeleton_lead_1",
+   "check": "skeleton",
+   "args": {
+    "step": 5,
+    "query": "skeleton",
+    "bones": [
+     "Hips", "Spine", "Chest", "Neck", "Head", "LeftUpperArm", "LeftHand", "LeftUpperLeg", "LeftFoot", "LeftToes",
+     "RightUpperArm", "RightHand", "RightUpperLeg", "RightFoot", "RightToes"
+    ],
+    "min_bound_meshes": 1
+   },
+   "rule": "AC-5",
+   "says": "lead_1 has exactly one Skeleton3D using the humanoid profile's bone names, with skinned meshes bound to it"
+  },
+  {
+   "id": "unregistered",
+   "check": "none_listed",
+   "args": {
+    "step": 5,
+    "query": "unregistered"
+   },
+   "rule": "AC-5",
+   "says": "nothing outside the entity registry has a Skeleton3D, CharacterBody3D or VehicleBody3D"
+  },
+  {
+   "id": "look_lead_2",
+   "check": "look",
+   "args": {
+    "mark": "lead_2",
+    "kind": "player",
+    "expect": {
+     "body": "male",
+     "hair": "buzzed",
+     "skin": "#c68642",
+     "top": "#f4d03f",
+     "bottom": "#34495e",
+     "shoes": "#ecf0f1",
+     "scale": 1.0
+    },
+    "colour_tol": 0.02
+   },
+   "rule": "CA-1",
+   "says": "lead_2 is spawned with chapter 2's body, hair and colours (within 0.02 per channel) at scale 1.0, and its look metadata has every field of AC-11"
+  },
+  {
+   "id": "skeleton_lead_2",
+   "check": "skeleton",
+   "args": {
+    "step": 9,
+    "query": "skeleton",
+    "bones": [
+     "Hips", "Spine", "Chest", "Neck", "Head", "LeftUpperArm", "LeftHand", "LeftUpperLeg", "LeftFoot", "LeftToes",
+     "RightUpperArm", "RightHand", "RightUpperLeg", "RightFoot", "RightToes"
+    ],
+    "min_bound_meshes": 1
+   },
+   "rule": "AC-5",
+   "says": "lead_2 has exactly one Skeleton3D using the humanoid profile's bone names, with skinned meshes bound to it"
+  },
+  {
+   "id": "look_lead_3",
+   "check": "look",
+   "args": {
+    "mark": "lead_3",
+    "kind": "player",
+    "expect": {
+     "body": "female",
+     "hair": "buns",
+     "skin": "#f1c27d",
+     "top": "#1e8449",
+     "bottom": "#2c3e50",
+     "shoes": "#6e2c00",
+     "scale": 1.0
+    },
+    "colour_tol": 0.02
+   },
+   "rule": "CA-1",
+   "says": "lead_3 is spawned with chapter 2's body, hair and colours (within 0.02 per channel) at scale 1.0, and its look metadata has every field of AC-11"
+  },
+  {
+   "id": "skeleton_lead_3",
+   "check": "skeleton",
+   "args": {
+    "step": 13,
+    "query": "skeleton",
+    "bones": [
+     "Hips", "Spine", "Chest", "Neck", "Head", "LeftUpperArm", "LeftHand", "LeftUpperLeg", "LeftFoot", "LeftToes",
+     "RightUpperArm", "RightHand", "RightUpperLeg", "RightFoot", "RightToes"
+    ],
+    "min_bound_meshes": 1
+   },
+   "rule": "AC-5",
+   "says": "lead_3 has exactly one Skeleton3D using the humanoid profile's bone names, with skinned meshes bound to it"
+  },
+  {
+   "id": "look_lead_4",
+   "check": "look",
+   "args": {
+    "mark": "lead_4",
+    "kind": "player",
+    "expect": {
+     "body": "male",
+     "hair": "beard",
+     "skin": "#e0ac69",
+     "top": "#2471a3",
+     "bottom": "#5d4037",
+     "shoes": "#1b1b1b",
+     "scale": 1.0
+    },
+    "colour_tol": 0.02
+   },
+   "rule": "CA-1",
+   "says": "lead_4 is spawned with chapter 2's body, hair and colours (within 0.02 per channel) at scale 1.0, and its look metadata has every field of AC-11"
+  },
+  {
+   "id": "skeleton_lead_4",
+   "check": "skeleton",
+   "args": {
+    "step": 17,
+    "query": "skeleton",
+    "bones": [
+     "Hips", "Spine", "Chest", "Neck", "Head", "LeftUpperArm", "LeftHand", "LeftUpperLeg", "LeftFoot", "LeftToes",
+     "RightUpperArm", "RightHand", "RightUpperLeg", "RightFoot", "RightToes"
+    ],
+    "min_bound_meshes": 1
+   },
+   "rule": "AC-5",
+   "says": "lead_4 has exactly one Skeleton3D using the humanoid profile's bone names, with skinned meshes bound to it"
+  },
+  {
+   "id": "look_lead_5",
+   "check": "look",
+   "args": {
+    "mark": "lead_5",
+    "kind": "player",
+    "expect": {
+     "body": "female",
+     "hair": "buzzed_female",
+     "skin": "#5c3a21",
+     "top": "#7d3c98",
+     "bottom": "#212f3d",
+     "shoes": "#f5f5f5",
+     "scale": 1.0
+    },
+    "colour_tol": 0.02
+   },
+   "rule": "CA-1",
+   "says": "lead_5 is spawned with chapter 2's body, hair and colours (within 0.02 per channel) at scale 1.0, and its look metadata has every field of AC-11"
+  },
+  {
+   "id": "skeleton_lead_5",
+   "check": "skeleton",
+   "args": {
+    "step": 21,
+    "query": "skeleton",
+    "bones": [
+     "Hips", "Spine", "Chest", "Neck", "Head", "LeftUpperArm", "LeftHand", "LeftUpperLeg", "LeftFoot", "LeftToes",
+     "RightUpperArm", "RightHand", "RightUpperLeg", "RightFoot", "RightToes"
+    ],
+    "min_bound_meshes": 1
+   },
+   "rule": "AC-5",
+   "says": "lead_5 has exactly one Skeleton3D using the humanoid profile's bone names, with skinned meshes bound to it"
+  },
+  {
+   "id": "look_lead_6",
+   "check": "look",
+   "args": {
+    "mark": "lead_6",
+    "kind": "player",
+    "expect": {
+     "body": "male",
+     "hair": "simple_parted",
+     "skin": "#ffdbac",
+     "top": "#d35400",
+     "bottom": "#1b2631",
+     "shoes": "#6e2c00",
+     "scale": 1.0
+    },
+    "colour_tol": 0.02
+   },
+   "rule": "CA-1",
+   "says": "lead_6 is spawned with chapter 2's body, hair and colours (within 0.02 per channel) at scale 1.0, and its look metadata has every field of AC-11"
+  },
+  {
+   "id": "skeleton_lead_6",
+   "check": "skeleton",
+   "args": {
+    "step": 25,
+    "query": "skeleton",
+    "bones": [
+     "Hips", "Spine", "Chest", "Neck", "Head", "LeftUpperArm", "LeftHand", "LeftUpperLeg", "LeftFoot", "LeftToes",
+     "RightUpperArm", "RightHand", "RightUpperLeg", "RightFoot", "RightToes"
+    ],
+    "min_bound_meshes": 1
+   },
+   "rule": "AC-5",
+   "says": "lead_6 has exactly one Skeleton3D using the humanoid profile's bone names, with skinned meshes bound to it"
+  },
+  {
+   "id": "leads_distinct",
+   "check": "looks_distinct",
+   "args": {
+    "marks": ["lead_1", "lead_2", "lead_3", "lead_4", "lead_5", "lead_6"],
+    "kind": "player",
+    "min_top_distance": 0.2
+   },
+   "rule": "CA-2",
+   "says": "any two leads differ in body or hair, and their tops by at least 0.20"
+  }
+ ],
+ "tags": []
+}

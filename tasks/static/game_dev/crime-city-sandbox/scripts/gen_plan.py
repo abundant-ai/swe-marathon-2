@@ -1,11 +1,17 @@
-"""Generate the Downtown core block in the city-plan/1 format.
+"""Generate the Downtown plan in the city-plan/1 format.
 
 Author tool (never packaged). The format is defined in common/design/plan/FORMAT.md.
-The layout below is the public Downtown core: a 4 x 4 junction grid with uneven spacing,
-mixed road classes (arterials, two-way streets, one one-way street), signalised and
-all-way-stop junctions, nine city blocks, parcels with zoning and interiors, and the
-points of interest the missions and shops use. --seed only draws building heights, parcel
-splits and signal offsets; the output never names it.
+Downtown is about 0.86 x 0.87 km: an 8 x 8 junction grid with uneven spacing and 7 x 7
+blocks, mixed road classes (arterials, two-way streets, one-way streets), signalised and
+all-way-stop junctions, parcels with zoning and interiors, the points of interest the
+missions and shops use, and two highways that leave the map at portal nodes: east to Ashby
+Port and north, through an S-curve, to Sable Hills.
+
+The central 4 x 4 junctions are the Downtown core block. Its random values (signal offsets,
+parcel splits, building heights) are drawn first, in the same order as when the core was
+the whole map, so its parcels and points of interest keep their places; everything else
+draws from its own generator keyed by its id, so editing one block changes nothing else.
+--seed only draws heights, splits, zonings and signal offsets; the output never names it.
 
 Usage: python scripts/gen_plan.py --out common/design/plan/downtown.json
 """
@@ -29,14 +35,50 @@ ROAD = {
     "arterial": {"lanes": 2, "width": 3.5, "speed": 50, "oneway": False},
     "street": {"lanes": 1, "width": 3.25, "speed": 40, "oneway": False},
     "oneway": {"lanes": 2, "width": 3.25, "speed": 40, "oneway": True},
+    "highway": {"lanes": 2, "width": 3.75, "speed": 90, "oneway": False},
 }
-RANK = {"arterial": 2, "oneway": 1, "street": 1}
+CLASS_NAME = {
+    "arterial": "arterial",
+    "street": "street",
+    "oneway": "street",
+    "highway": "highway",
+}
+RANK = {"highway": 3, "arterial": 2, "oneway": 1, "street": 1}
 
 # Columns run north-south (constant x), rows run east-west (constant z). Row 0 is north.
-XS = [-190.0, -70.0, 60.0, 180.0]
-ZS = [-180.0, -60.0, 50.0, 170.0]
-COL_CLASS = ["street", "arterial", "street", "street"]
-ROW_CLASS = ["street", "oneway", "arterial", "street"]
+XS = [-380.0, -290.0, -190.0, -70.0, 60.0, 180.0, 280.0, 370.0]
+ZS = [-370.0, -280.0, -180.0, -60.0, 50.0, 170.0, 270.0, 360.0]
+COL_CLASS = [
+    "street",
+    "street",
+    "street",
+    "arterial",
+    "street",
+    "street",
+    "oneway",
+    "street",
+]
+ROW_CLASS = [
+    "street",
+    "street",
+    "street",
+    "oneway",
+    "arterial",
+    "street",
+    "street",
+    "street",
+]
+CORE = range(2, 6)  # the core's columns and rows (junction indices)
+CORE_BLOCKS = range(2, 5)  # the core's blocks
+
+# The highways: from a grid junction to a portal node on the map's edge.
+EAST_FROM = (7, 4)  # the arterial row 4 continues east
+NORTH_FROM = (3, 0)  # the arterial column 3 continues north
+EAST_LEN = 70.0
+NORTH_STRAIGHT = 15.0  # straight run before the S-curve and after it
+NORTH_RADIUS = 60.0
+NORTH_TURN_DEG = 35.0
+MARGIN = 40.0
 
 ZONING = {
     "commercial": [14.0, 60.0],
@@ -49,39 +91,53 @@ ZONING = {
 }
 BUILT = {"commercial", "residential", "civic", "industrial"}
 
-# Parcel zoning per block, quadrants in the order NW, NE, SW, SE. A single entry means one
-# parcel covers the block.
-BLOCKS = {
-    "b_00": ["residential", "residential", "commercial", "residential"],
-    "b_10": ["commercial", "residential", "commercial", "commercial"],
-    "b_20": ["civic", "residential", "residential", "commercial"],
-    "b_01": ["commercial", "parking", "commercial", "commercial"],
-    "b_11": ["plaza"],
-    "b_21": ["civic", "commercial", "commercial", "commercial"],
-    "b_02": ["commercial", "parking", "residential", "residential"],
-    "b_12": ["civic", "commercial", "commercial", "parking"],
-    "b_22": ["parking", "commercial", "residential", "parking"],
+# Parcel zoning of the core's blocks (core block indices), quadrants NW, NE, SW, SE. A
+# single entry means one parcel covers the block.
+CORE_ZONING = {
+    (0, 0): ["residential", "residential", "commercial", "residential"],
+    (1, 0): ["commercial", "residential", "commercial", "commercial"],
+    (2, 0): ["civic", "residential", "residential", "commercial"],
+    (0, 1): ["commercial", "parking", "commercial", "commercial"],
+    (1, 1): ["plaza"],
+    (2, 1): ["civic", "commercial", "commercial", "commercial"],
+    (0, 2): ["commercial", "parking", "residential", "residential"],
+    (1, 2): ["civic", "commercial", "commercial", "parking"],
+    (2, 2): ["parking", "commercial", "residential", "parking"],
+}
+# Outer blocks draw one of their area's layouts.
+OUTER_ZONING = {
+    "residential": [
+        ["residential", "residential", "residential", "residential"],
+        ["residential", "park", "residential", "residential"],
+        ["residential", "residential", "civic", "parking"],
+        ["park"],
+    ],
+    "east": [
+        ["industrial", "commercial", "industrial", "parking"],
+        ["commercial", "industrial", "parking", "industrial"],
+        ["commercial", "commercial", "parking", "commercial"],
+    ],
 }
 QUADS = ["NW", "NE", "SW", "SE"]
 
-# Points of interest placed on parcels: (block, quadrant) -> spec.
+# Points of interest placed on core parcels: (core block, quadrant) -> spec.
 PARCEL_POIS = {
-    ("b_00", "NW"): {
+    ((0, 0), "NW"): {
         "id": "safehouse_downtown",
         "kind": "safehouse",
         "room": (8.0, 8.0),
     },
-    ("b_00", "SW"): {"id": "shop_food_downtown", "kind": "shop", "shop": "food"},
-    ("b_10", "NW"): {"id": "shop_clothes_downtown", "kind": "shop", "shop": "clothes"},
-    ("b_20", "NW"): {"id": "hospital_downtown", "kind": "hospital"},
-    ("b_01", "NW"): {"id": "shop_weapons_downtown", "kind": "shop", "shop": "weapons"},
-    ("b_01", "NE"): {"id": "garage_downtown", "kind": "garage"},
-    ("b_21", "NW"): {"id": "bank_downtown", "kind": "bank"},
-    ("b_02", "NE"): {"id": "d1_pickup", "kind": "mission_point"},
-    ("b_12", "NW"): {"id": "police_station_downtown", "kind": "police_station"},
-    ("b_12", "SE"): {"id": "h1_car", "kind": "mission_point"},
-    ("b_22", "NW"): {"id": "h1_stash", "kind": "mission_point"},
-    ("b_22", "SE"): {"id": "d1_dropoff", "kind": "mission_point"},
+    ((0, 0), "SW"): {"id": "shop_food_downtown", "kind": "shop", "shop": "food"},
+    ((1, 0), "NW"): {"id": "shop_clothes_downtown", "kind": "shop", "shop": "clothes"},
+    ((2, 0), "NW"): {"id": "hospital_downtown", "kind": "hospital"},
+    ((0, 1), "NW"): {"id": "shop_weapons_downtown", "kind": "shop", "shop": "weapons"},
+    ((0, 1), "NE"): {"id": "garage_downtown", "kind": "garage"},
+    ((2, 1), "NW"): {"id": "bank_downtown", "kind": "bank"},
+    ((0, 2), "NE"): {"id": "d1_pickup", "kind": "mission_point"},
+    ((1, 2), "NW"): {"id": "police_station_downtown", "kind": "police_station"},
+    ((1, 2), "SE"): {"id": "h1_car", "kind": "mission_point"},
+    ((2, 2), "NW"): {"id": "h1_stash", "kind": "mission_point"},
+    ((2, 2), "SE"): {"id": "d1_dropoff", "kind": "mission_point"},
 }
 
 
@@ -101,15 +157,47 @@ def half_width(cls):
     return spec["lanes"] * spec["width"]
 
 
+def keyed(seed, *key):
+    """A generator of its own for one part of the map."""
+    return random.Random(f"{seed}:" + ":".join(str(k) for k in key))
+
+
+def is_core_node(c, r):
+    return c in CORE and r in CORE
+
+
+def r3(v):
+    return round(v, 3)
+
+
+def north_curve(x0, z0):
+    """The S-curve of the north highway: straight, left by the turn, right by it, straight.
+    Returns the points after the junction (the last one is the portal) as [x, 0, z]."""
+    pts = [[x0, 0.0, z0 - NORTH_STRAIGHT]]
+    x, z, h = x0, z0 - NORTH_STRAIGHT, 0.0  # heading north
+    steps = 7
+    for turn in (-NORTH_TURN_DEG, NORTH_TURN_DEG):
+        dh = math.radians(turn) / steps
+        chord = 2.0 * NORTH_RADIUS * math.sin(abs(dh) / 2.0)
+        for _ in range(steps):
+            mid = h + dh / 2.0
+            x += chord * math.sin(mid)
+            z -= chord * math.cos(mid)
+            h += dh
+            pts.append([r3(x), 0.0, r3(z)])
+    pts.append([r3(x), 0.0, r3(z - NORTH_STRAIGHT)])
+    return pts
+
+
 def build_network():
     nodes, edges = [], []
     for r, z in enumerate(ZS):
         for c, x in enumerate(XS):
             nodes.append({"id": nid(c, r), "p": [x, 0.0, z], "kind": "junction"})
 
-    def add_edge(a, b, cls):
+    def add_edge(a, b, cls, eid=None, points=()):
         spec = ROAD[cls]
-        eid = f"e_{a[2:]}_{b[2:]}"
+        eid = eid or f"e_{a[2:]}_{b[2:]}"
         dirs = ["ab"] if spec["oneway"] else ["ab", "ba"]
         lanes = [
             {"id": f"{eid}:{d}{k}", "dir": d, "index": k}
@@ -121,13 +209,13 @@ def build_network():
                 "id": eid,
                 "a": a,
                 "b": b,
-                "class": "arterial" if cls == "arterial" else "street",
+                "class": CLASS_NAME[cls],
                 "oneway": spec["oneway"],
                 "lane_width_m": spec["width"],
                 "speed_kmh": spec["speed"],
                 "surface": "asphalt",
                 "structure": "ground",
-                "points": [],
+                "points": [list(p) for p in points],
                 "lanes": lanes,
                 "_cls": cls,
             }
@@ -139,22 +227,45 @@ def build_network():
     for r in range(len(ZS)):
         for c in range(len(XS) - 1):
             add_edge(nid(c, r), nid(c + 1, r), ROW_CLASS[r])
+    # The highways to the portal nodes on the map's edge.
+    ec, er = EAST_FROM
+    east = {"id": "pt_east", "p": [XS[ec] + EAST_LEN, 0.0, ZS[er]], "kind": "portal"}
+    nc, nr = NORTH_FROM
+    curve = north_curve(XS[nc], ZS[nr])
+    north = {"id": "pt_north", "p": curve[-1], "kind": "portal"}
+    nodes += [east, north]
+    add_edge(nid(ec, er), "pt_east", "highway", "e_hw_east")
+    add_edge(nid(nc, nr), "pt_north", "highway", "e_hw_north", curve[:-1])
     return nodes, edges
 
 
-def build_intersections(nodes, edges, rng):
+def away_dir(e, node_id, pos):
+    """Unit direction of an edge leaving a node (towards its first point or other node)."""
+    p = pos[node_id]
+    if e["points"]:
+        q = e["points"][0] if e["a"] == node_id else e["points"][-1]
+    else:
+        q = pos[e["b"] if e["a"] == node_id else e["a"]]
+    dx, dz = q[0] - p[0], q[2] - p[2]
+    length = math.hypot(dx, dz)
+    return dx / length, dz / length
+
+
+def build_intersections(nodes, edges, rng, seed):
     pos = {n["id"]: n["p"] for n in nodes}
     incident = {n["id"]: [] for n in nodes}
     for e in edges:
         incident[e["a"]].append(e)
         incident[e["b"]].append(e)
+    grid = {nid(c, r): (c, r) for r in range(len(ZS)) for c in range(len(XS))}
     out = []
     for n in nodes:
         nid_ = n["id"]
         inc = incident[nid_]
-        p = pos[nid_]
-        has_arterial = any(e["_cls"] == "arterial" for e in inc)
-        if len(inc) <= 2:
+        has_arterial = any(RANK[e["_cls"]] >= 2 for e in inc)
+        if n["kind"] == "portal":
+            control = "none"
+        elif len(inc) <= 2:
             control = "none"
             n["kind"] = "bend" if len(inc) == 2 else "end"
         elif has_arterial:
@@ -162,9 +273,8 @@ def build_intersections(nodes, edges, rng):
         else:
             control = "stop"
 
-        def away(e, p=p, nid_=nid_):
-            other = pos[e["b"] if e["a"] == nid_ else e["a"]]
-            return other[0] - p[0], other[2] - p[2]
+        def away(e, nid_=nid_):
+            return away_dir(e, nid_, pos)
 
         legs = []
         for e in sorted(inc, key=lambda e: heading_of(*away(e))):
@@ -213,17 +323,19 @@ def build_intersections(nodes, edges, rng):
                     {
                         "green": [leg["approach"]["id"]],
                         "walk": [],
-                        "green_s": 12.0 if cls == "arterial" else 9.0,
+                        "green_s": 12.0 if RANK[cls] >= 2 else 9.0,
                     }
                 )
             walk = [leg["crosswalk"]["id"] for leg in legs if leg["crosswalk"]]
             phases.append({"green": [], "walk": walk, "green_s": 7.0})
             cycle = sum(ph["green_s"] + 3.0 + 1.0 for ph in phases)
+            c, r = grid.get(nid_, (None, None))
+            draw = rng if c is not None and is_core_node(c, r) else keyed(seed, nid_)
             rec["signal"] = {
                 "phases": phases,
                 "amber_s": 3.0,
                 "all_red_s": 1.0,
-                "offset_s": round(rng.uniform(0.0, cycle), 1),
+                "offset_s": round(draw.uniform(0.0, cycle), 1),
             }
         out.append(rec)
     return out
@@ -289,62 +401,81 @@ def r2(v):
     return [round(a, 3) for a in v]
 
 
-def build_blocks(rng):
+def outer_area(bc, br):
+    """The layout family of an outer block: east of the core it is commercial and
+    industrial (towards the port); north, west and south it is residential."""
+    return "east" if bc > max(CORE_BLOCKS) and min(CORE_BLOCKS) <= br else "residential"
+
+
+def block_zoning(bc, br, seed):
+    if bc in CORE_BLOCKS and br in CORE_BLOCKS:
+        return CORE_ZONING[(bc - min(CORE_BLOCKS), br - min(CORE_BLOCKS))]
+    return keyed(seed, "zoning", bc, br).choice(OUTER_ZONING[outer_area(bc, br)])
+
+
+def build_blocks(rng, seed):
+    """Blocks, sidewalks and parcels. Core blocks first (core parcels are p_00 to p_32 and
+    draw from the core's generator), then the rest."""
+    core = [(bc, br) for br in CORE_BLOCKS for bc in CORE_BLOCKS]
+    rest = [
+        (bc, br)
+        for br in range(len(ZS) - 1)
+        for bc in range(len(XS) - 1)
+        if (bc, br) not in core
+    ]
     blocks, sidewalks, parcels, placed = [], [], [], []
     pid = 0
-    for br in range(3):
-        for bc in range(3):
-            bid = f"b_{bc}{br}"
-            x0, z0, x1, z1 = block_rect(bc, br)
-            blocks.append(
-                {"id": bid, "poly": rect(x0, z0, x1, z1), "elevation_m": CURB_M}
-            )
-            o = SIDEWALK_W / 2.0
-            sidewalks.append(
-                {
-                    "id": f"sw_{bc}{br}",
-                    "block": bid,
-                    "width_m": SIDEWALK_W,
-                    "elevation_m": CURB_M,
-                    "ring": rect(x0 + o, z0 + o, x1 - o, z1 - o),
-                }
-            )
-            ix0, iz0 = x0 + SIDEWALK_W, z0 + SIDEWALK_W
-            ix1, iz1 = x1 - SIDEWALK_W, z1 - SIDEWALK_W
-            zones = BLOCKS[bid]
-            if len(zones) == 1:
-                cells = [("ALL", (ix0, iz0, ix1, iz1))]
-            else:
-                mx = round(ix0 + (ix1 - ix0) * rng.uniform(0.4, 0.6), 2)
-                mz = round(iz0 + (iz1 - iz0) * rng.uniform(0.4, 0.6), 2)
-                cells = [
-                    ("NW", (ix0, iz0, mx, mz)),
-                    ("NE", (mx, iz0, ix1, mz)),
-                    ("SW", (ix0, mz, mx, iz1)),
-                    ("SE", (mx, mz, ix1, iz1)),
-                ]
-            for (quad, (px0, pz0, px1, pz1)), zone in zip(cells, zones):
-                lo, hi = ZONING[zone]
-                height = round(rng.uniform(lo, hi), 1) if zone in BUILT else 0.0
-                parcel = {
-                    "id": f"p_{pid:02d}",
-                    "block": bid,
-                    "zoning": zone,
-                    "poly": rect(px0, pz0, px1, pz1),
-                    "base_m": CURB_M,
-                    "height_m": height,
-                    "height_range_m": [lo, hi],
-                    "setback_m": SETBACK_M if zone in BUILT else 0.0,
-                    "interior": None,
-                }
-                parcels.append(parcel)
-                placed.append((bid, bc, br, quad, parcel))
-                pid += 1
+    for bc, br in core + rest:
+        bid = f"b_{bc}{br}"
+        draw = rng if (bc, br) in core else keyed(seed, bid)
+        x0, z0, x1, z1 = block_rect(bc, br)
+        blocks.append({"id": bid, "poly": rect(x0, z0, x1, z1), "elevation_m": CURB_M})
+        o = SIDEWALK_W / 2.0
+        sidewalks.append(
+            {
+                "id": f"sw_{bc}{br}",
+                "block": bid,
+                "width_m": SIDEWALK_W,
+                "elevation_m": CURB_M,
+                "ring": rect(x0 + o, z0 + o, x1 - o, z1 - o),
+            }
+        )
+        ix0, iz0 = x0 + SIDEWALK_W, z0 + SIDEWALK_W
+        ix1, iz1 = x1 - SIDEWALK_W, z1 - SIDEWALK_W
+        zones = block_zoning(bc, br, seed)
+        if len(zones) == 1:
+            cells = [("ALL", (ix0, iz0, ix1, iz1))]
+        else:
+            mx = round(ix0 + (ix1 - ix0) * draw.uniform(0.4, 0.6), 2)
+            mz = round(iz0 + (iz1 - iz0) * draw.uniform(0.4, 0.6), 2)
+            cells = [
+                ("NW", (ix0, iz0, mx, mz)),
+                ("NE", (mx, iz0, ix1, mz)),
+                ("SW", (ix0, mz, mx, iz1)),
+                ("SE", (mx, mz, ix1, iz1)),
+            ]
+        for (quad, (px0, pz0, px1, pz1)), zone in zip(cells, zones, strict=True):
+            lo, hi = ZONING[zone]
+            height = round(draw.uniform(lo, hi), 1) if zone in BUILT else 0.0
+            parcel = {
+                "id": f"p_{pid:02d}",
+                "block": bid,
+                "zoning": zone,
+                "poly": rect(px0, pz0, px1, pz1),
+                "base_m": CURB_M,
+                "height_m": height,
+                "height_range_m": [lo, hi],
+                "setback_m": SETBACK_M if zone in BUILT else 0.0,
+                "interior": None,
+            }
+            parcels.append(parcel)
+            placed.append((bid, bc, br, quad, parcel))
+            pid += 1
     return blocks, sidewalks, parcels, placed
 
 
 def lane_geometry(edges, nodes, intersections):
-    """Start point, unit direction and length of every lane, following FORMAT.md."""
+    """Start, direction and length of every lane of a straight edge (FORMAT.md)."""
     pos = {n["id"]: n["p"] for n in nodes}
     legs = {}
     for it in intersections:
@@ -352,6 +483,8 @@ def lane_geometry(edges, nodes, intersections):
             legs[(it["node"], leg["edge"])] = leg
     out = {}
     for e in edges:
+        if e["points"]:
+            continue
         pa, pb = pos[e["a"]], pos[e["b"]]
         n = sum(1 for ln in e["lanes"])
         for ln in e["lanes"]:
@@ -374,6 +507,7 @@ def lane_geometry(edges, nodes, intersections):
                 "dir": (ux, uz),
                 "length": length - s0 - s1,
                 "y": ps[1],
+                "class": e["class"],
             }
     return out
 
@@ -388,6 +522,8 @@ def lane_point(geo, lane_id, s):
 def nearest_lane(geo, x, z):
     best = None
     for lid, g in geo.items():
+        if g["class"] == "highway":
+            continue
         ox, oz = g["origin"]
         ux, uz = g["dir"]
         s = (x - ox) * ux + (z - oz) * uz
@@ -401,9 +537,10 @@ def nearest_lane(geo, x, z):
 
 def place_pois(placed, geo):
     pois = []
+    lo = min(CORE_BLOCKS)
     for bid, bc, br, quad, parcel in placed:
-        spec = PARCEL_POIS.get((bid, quad))
-        if spec is None:
+        spec = PARCEL_POIS.get(((bc - lo, br - lo), quad))
+        if spec is None or bc not in CORE_BLOCKS or br not in CORE_BLOCKS:
             continue
         (px0, pz0), _, (px1, pz1), _ = parcel["poly"]
         centre = ((px0 + px1) / 2.0, (pz0 + pz1) / 2.0)
@@ -504,12 +641,13 @@ def place_pois(placed, geo):
 
 
 def race_pois(geo, edges):
-    """R1: two laps clockwise round the perimeter, start on the north street."""
+    """R1: two laps clockwise round the core's perimeter, start on its north street."""
     by_id = {e["id"]: e for e in edges}
-    north = [f"e_{c}0_{c + 1}0" for c in range(3)]
-    east = [f"e_3{r}_3{r + 1}" for r in range(3)]
-    south = [f"e_{c}3_{c + 1}3" for c in range(3)][::-1]
-    west = [f"e_0{r}_0{r + 1}" for r in range(3)][::-1]
+    c0, c1 = min(CORE), max(CORE)
+    north = [f"e_{c}{c0}_{c + 1}{c0}" for c in range(c0, c1)]
+    east = [f"e_{c1}{r}_{c1}{r + 1}" for r in range(c0, c1)]
+    south = [f"e_{c}{c1}_{c + 1}{c1}" for c in range(c0, c1)][::-1]
+    west = [f"e_{c0}{r}_{c0}{r + 1}" for r in range(c0, c1)][::-1]
     route = [
         (north[2], "ab"),
         (east[0], "ab"),
@@ -559,8 +697,9 @@ def ring_point(sidewalk, frac_side, side_index):
 
 
 def people_pois(sidewalks, parcels):
+    lo = min(CORE_BLOCKS)
     sw = {s["id"]: s for s in sidewalks}
-    plaza = next(p for p in parcels if p["zoning"] == "plaza")
+    plaza = next(p for p in parcels if p["block"] == f"b_{lo + 1}{lo + 1}")
     (px0, pz0), _, (px1, pz1), _ = plaza["poly"]
     cx, cz = (px0 + px1) / 2.0, (pz0 + pz1) / 2.0
     return [
@@ -582,17 +721,57 @@ def people_pois(sidewalks, parcels):
             "id": "giver_race",
             "kind": "mission_giver",
             "giver": "giver_race",
-            "p": ring_point(sw["sw_10"], 0.5, 0),
+            "p": ring_point(sw[f"sw_{lo + 1}{lo}"], 0.5, 0),
             "heading_deg": 0.0,
         },
         {
             "id": "giver_heist",
             "kind": "mission_giver",
             "giver": "giver_heist",
-            "p": ring_point(sw["sw_02"], 0.5, 0),
+            "p": ring_point(sw[f"sw_{lo}{lo + 2}"], 0.5, 0),
             "heading_deg": 0.0,
         },
     ]
+
+
+def portal_pois(nodes, edges):
+    """The two highway portals: where each highway meets the map's edge."""
+    pos = {n["id"]: n["p"] for n in nodes}
+    out = []
+    for poi_id, node, link in (
+        ("highway_downtown_port", "pt_east", "hw_downtown_port"),
+        ("highway_downtown_hills", "pt_north", "hw_downtown_hills"),
+    ):
+        e = next(e for e in edges if e["b"] == node)
+        before = e["points"][-1] if e["points"] else pos[e["a"]]
+        p = pos[node]
+        out.append(
+            {
+                "id": poi_id,
+                "kind": "portal",
+                "node": node,
+                "link": link,
+                "p": [p[0], p[1], p[2]],
+                "heading_deg": heading_of(p[0] - before[0], p[2] - before[2]),
+            }
+        )
+    return out
+
+
+def districts(bounds):
+    """The residential north, west and south first, then the core (first match wins). The
+    highway district starts past the portals, on the other maps."""
+    (bx0, bz0), (bx1, bz1) = bounds["min"], bounds["max"]
+    return [
+        {
+            "id": "downtown_residential",
+            "poly": [
+                [bx0, bz0], [bx1, bz0], [bx1, ZS[3]], [XS[2], ZS[3]],
+                [XS[2], ZS[6]], [bx1, ZS[6]], [bx1, bz1], [bx0, bz1],
+            ],
+        },
+        {"id": "downtown_core", "poly": rect(bx0, bz0, bx1, bz1)},
+    ]  # fmt: skip
 
 
 def main():
@@ -603,26 +782,29 @@ def main():
     rng = random.Random(args.seed)
 
     nodes, edges = build_network()
-    intersections = build_intersections(nodes, edges, rng)
-    blocks, sidewalks, parcels, placed = build_blocks(rng)
+    intersections = build_intersections(nodes, edges, rng, args.seed)
+    blocks, sidewalks, parcels, placed = build_blocks(rng, args.seed)
     geo = lane_geometry(edges, nodes, intersections)
     pois = place_pois(placed, geo) + race_pois(geo, edges)
     pois += people_pois(sidewalks, parcels)
+    pois += portal_pois(nodes, edges)
     for e in edges:
         del e["_cls"]
 
-    margin = 40.0
+    north = next(n for n in nodes if n["id"] == "pt_north")
+    east = next(n for n in nodes if n["id"] == "pt_east")
     bounds = {
-        "min": [XS[0] - margin, ZS[0] - margin],
-        "max": [XS[-1] + margin, ZS[-1] + margin],
+        "min": [XS[0] - MARGIN, north["p"][2]],
+        "max": [east["p"][0], ZS[-1] + MARGIN],
     }
-    (bx0, bz0), (bx1, bz1) = bounds["min"], bounds["max"]
+    lo = min(CORE)
     plan = {
         "format": FORMAT,
         "map": "downtown",
         "name": "downtown",
-        "revision": 1,
-        "note": "Downtown core block; the rest of Downtown is laid out around it.",
+        "revision": 2,
+        "note": "Downtown: the core block and the blocks around it, with the highways to "
+        "Ashby Port (east) and Sable Hills (north).",
         "bounds": bounds,
         "ground_m": 0.0,
         "nodes": nodes,
@@ -633,18 +815,12 @@ def main():
         "parcels": parcels,
         "water": [],
         "terrain": None,
-        "districts": [
-            {
-                "id": "downtown_residential",
-                "poly": rect(bx0, bz0, bx1, ZS[1]),
-            },
-            {"id": "downtown_core", "poly": rect(bx0, bz0, bx1, bz1)},
-        ],
+        "districts": districts(bounds),
         "turfs": [
             {
                 "id": "turf_crew_a",
                 "crew": "crew_a",
-                "poly": rect(XS[0], ZS[2], XS[1], ZS[3]),
+                "poly": rect(XS[lo], ZS[lo + 2], XS[lo + 1], ZS[lo + 3]),
             }
         ],
         "pois": pois,

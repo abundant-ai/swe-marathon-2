@@ -1,0 +1,218 @@
+{
+ "format": "qa-play/1",
+ "name": "people.locomotion/camera",
+ "template": "people.locomotion",
+ "about": "On foot on the plaza: the camera's distance from the head and where the hips sit in the view while the player stands, turns the camera, tilts it up and down, and walks; how fast look_right turns it; and that move_forward follows the camera.",
+ "rules": ["CM-1", "CM-2", "CM-3"],
+ "role": "solo",
+ "args": ["--role=solo", "--variation=3", "--save-dir={save_dir}"],
+ "mode": "lockstep",
+ "runs": [
+  {
+   "pace_ms": 0
+  }
+ ],
+ "limits": {
+  "wall_s": 240,
+  "boot_s": 60,
+  "step_s": 30,
+  "cpu_s": 600,
+  "memory_mb": 1536,
+  "disk_mb": 512
+ },
+ "steps": [
+  {
+   "observe": {
+    "census": true,
+    "camera": true,
+    "every": 2,
+    "bones": {
+     "ids": ["player"],
+     "names": ["Head", "Hips"]
+    }
+   }
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 3
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": {
+       "poi": "plaza_central"
+      },
+      "heading": 0
+     }
+    ]
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "start"
+  },
+  {
+   "run": 30
+  },
+  {
+   "press": {
+    "look_right": 1.0
+   }
+  },
+  {
+   "run": 6
+  },
+  {
+   "mark": "turn_a"
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "turn_b"
+  },
+  {
+   "release": ["look_right"]
+  },
+  {
+   "run": 6
+  },
+  {
+   "mark": "tilt_a"
+  },
+  {
+   "press": {
+    "look_up": 1.0
+   }
+  },
+  {
+   "run": 120
+  },
+  {
+   "mark": "tilt_up"
+  },
+  {
+   "release": ["look_up"]
+  },
+  {
+   "press": {
+    "look_down": 1.0
+   }
+  },
+  {
+   "run": 180
+  },
+  {
+   "mark": "tilt_down"
+  },
+  {
+   "release": ["look_down"]
+  },
+  {
+   "run": 6
+  },
+  {
+   "mark": "move_a"
+  },
+  {
+   "press": {
+    "move_forward": 1.0
+   }
+  },
+  {
+   "run": 60
+  },
+  {
+   "mark": "move_b"
+  },
+  {
+   "release": ["move_forward"]
+  },
+  {
+   "run": 6
+  },
+  {
+   "mark": "end"
+  }
+ ],
+ "expect": [
+  {
+   "id": "camera_frame",
+   "check": "camera_frame",
+   "args": {
+    "from": "start",
+    "to": "end",
+    "kind": "player",
+    "min_m": 2.5,
+    "max_m": 6.0,
+    "middle": 0.4,
+    "aspect": 1.7778
+   },
+   "rule": "CM-1",
+   "says": "on foot the camera stays 2.5-6.0 m from the player's Head bone and the Hips bone stays inside the middle 40% of the 1280 x 720 view, by width and height"
+  },
+  {
+   "id": "look_rate",
+   "check": "look_rate",
+   "args": {
+    "from": "turn_a",
+    "to": "turn_b",
+    "min_dps": 120,
+    "max_dps": 240
+   },
+   "rule": "CM-2",
+   "says": "look_right at full strength turns the camera at 120-240 degrees per second"
+  },
+  {
+   "id": "tilt_up",
+   "check": "camera_tilt",
+   "args": {
+    "from": "tilt_a",
+    "to": "tilt_up",
+    "min_deg": -60,
+    "max_deg": 30,
+    "rises": true,
+    "min_change_deg": 1.0
+   },
+   "rule": "CM-2",
+   "says": "look_up tilts the camera up, never past +30 degrees"
+  },
+  {
+   "id": "tilt_down",
+   "check": "camera_tilt",
+   "args": {
+    "from": "tilt_up",
+    "to": "tilt_down",
+    "min_deg": -60,
+    "max_deg": 30,
+    "falls": true,
+    "min_change_deg": 1.0
+   },
+   "rule": "CM-2",
+   "says": "look_down tilts the camera down, never past -60 degrees"
+  },
+  {
+   "id": "moves_along_camera",
+   "check": "moves_along_camera",
+   "args": {
+    "from": "move_a",
+    "to": "move_b",
+    "kind": "player",
+    "within_deg": 15
+   },
+   "rule": "CM-3",
+   "says": "move_forward moves the player within 15 degrees of the camera's horizontal forward"
+  }
+ ],
+ "tags": []
+}

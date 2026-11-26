@@ -60,7 +60,8 @@ A playtest is a JSON file (format `qa-play/1`) in `playtests/`. Every value in i
     `unregistered` (nodes with a `Skeleton3D`, `CharacterBody3D` or `VehicleBody3D` outside the
     entity registry) and `meta` (an entity's metadata by key); rays use collision `mask`
     (default 1, the world layer) and answer with the point hit, the collider's `surface`
-    metadata and the entity it belongs to;
+    metadata and the entity it belongs to; an entity can be named as `{"$answer": [step,
+    "id"]}`, the id a command of an earlier step answered with;
   - `wait_for`: advance until an event arrives;
   - `files`: corrupt the save files written since a mark, as a failed disk write would;
   - `restart`: kill the game and start it again with the same save folder;

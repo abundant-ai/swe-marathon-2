@@ -179,8 +179,8 @@ Menus and the phone use Godot's `ui_up ui_down ui_left ui_right ui_accept ui_can
 - **IN-3** An action pressed in physics tick t takes effect in tick t (read input in
   `_physics_process`; the QA kit's input arrives before the tick runs).
 - **CM-1** The camera is a third-person camera behind and above the player: 2.5-6.0 m from the
-  player's head on foot and 5.0-10.0 m from the vehicle's centre when driving, and the player stays
-  inside the middle 40% of the view (by width and height).
+  player's head on foot and 5.0-10.0 m from the vehicle's centre when driving, and the player (the
+  `Hips` bone) stays inside the middle 40% of the view (by width and height).
 - **CM-2** At full strength, `look_left` and `look_right` turn the camera around the player at
   120-240 degrees per second; `look_up` and `look_down` tilt it between -60 and +30 degrees.
 - **CM-3** On foot, movement is relative to the camera: `move_forward` moves the player within 15
