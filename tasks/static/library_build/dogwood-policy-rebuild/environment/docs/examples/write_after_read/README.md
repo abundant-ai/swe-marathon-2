@@ -7,7 +7,7 @@ context.input.stock`).
 
 The trace shows all three cases:
 
-- `@0` — `ApproveSale` for AMZN by alice (a history-only event here; no
+- `@0` — `ApproveSale` for AMZN by alice (history for this rule; no
   `SellShares` permit applies, so the decision is a deny).
 - `@100` — alice sells AMZN, 100s after the approval → **allow** (a matching
   approval is within the window).

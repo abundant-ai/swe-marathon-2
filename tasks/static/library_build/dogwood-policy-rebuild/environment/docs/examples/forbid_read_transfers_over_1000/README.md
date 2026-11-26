@@ -14,7 +14,7 @@ fires (an explicit deny, shown as `[rules: 0]`) or not (a default deny).
 
 The trace shows both sides of the threshold:
 
-- `@0`/`@1` — alice's first `Transfer` resolves to 600 (a history-only event; no
+- `@0`/`@1` — alice's first `Transfer` resolves to 600 (history for this rule; no
   matching rule applies, so the decision is a default deny).
 - `@10` — alice reads with only 600 transferred in the last hour → **default
   deny** (the `forbid` does not fire; 600 is not over 1000).

@@ -163,8 +163,8 @@ points `"scriptFile": "filter.rhai"` at an external script), and in the
 The command line reads `--providers` as text, so it never resolves a
 `scriptFile` reference: the declaration's inline `script` stays unset. `validate`
 and `lower` still work, but evaluating such a provider at authorize time fails
-with an error telling you the `scriptFile` reference was never resolved and to
-load the declarations with `from_json_file`. Rule of thumb: when a provider will
+with an error telling you the `scriptFile` reference was never resolved. Rule of
+thumb: when a provider will
 be evaluated through `dogwood replay`, put its Rhai inline under
 `implementation.script` (see [The command line](12-cli.md)).
 

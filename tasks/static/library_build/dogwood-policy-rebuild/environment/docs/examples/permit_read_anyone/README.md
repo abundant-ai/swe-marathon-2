@@ -7,7 +7,7 @@ minimal `Login`/`Read` Drupe schema (`schema.cedarschema`).
 
 The trace shows both outcomes:
 
-- `@0` — alice's `Login` (a history-only occurrence here; the policy gates
+- `@0` — alice's `Login` (history for this rule; the policy gates
   `Read`, not `Login`, so no `permit` matches → **deny**).
 - `@10` — alice's `Read` → **allow** (rule 0 matches; bare `principal`/`resource`
   mean "any").

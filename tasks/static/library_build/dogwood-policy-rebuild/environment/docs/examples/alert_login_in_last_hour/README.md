@@ -9,7 +9,7 @@ count is positive.
 
 The trace shows both a fire and a non-fire:
 
-- `@0` — `Login` to `s1` by alice (a history-only event here; no `Alert` permit
+- `@0` — `Login` to `s1` by alice (history for this rule; no `Alert` permit
   applies, so the decision is a deny).
 - `@100` — alice raises an `Alert` for server `s1`, with a matching `Login` to
   `s1` within the window → **allow**.

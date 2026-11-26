@@ -2,7 +2,7 @@
 replace-with = "vendored"
 
 [source.vendored]
-directory = "/opt/verifier/registry"
+directory = "/opt/cargo-registry"
 
 [net]
 offline = true

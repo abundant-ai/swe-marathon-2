@@ -15,11 +15,11 @@ policy permits `Alert` once at least one matching `Login` is in the last hour.
 
 The trace shows both verdicts:
 
-- `@0` — alice `Login` on `s1` (a history-only event here; no `Alert` permit
+- `@0` — alice `Login` on `s1` (history for this rule; no `Alert` permit
   applies, so the decision is a deny).
 - `@2`, `@10` — alice `Alert` on `s1`, within 1h of her login → **allow**
   (`count == 1`, so `n > 0`).
-- `@20` — bob `Login` on `s1` (history-only again → deny).
+- `@20` — bob `Login` on `s1` (history for this rule again → deny).
 - `@22` — alice `Alert` on `s1`, still within the window → **allow**.
 
 Run from this directory:

@@ -20,7 +20,7 @@ import argparse
 import json
 import re
 import sys
-from collections import defaultdict
+from collections import Counter, defaultdict
 from pathlib import Path
 
 CHECKS = Path(__file__).resolve().parent
@@ -72,9 +72,13 @@ def inputs(private: Path, case: dict) -> dict[str, str]:
         )
         and len(args) > 1
     ):
-        add("policy", args[1])
+        add(
+            "policy", case["stdin"] if args[1] == "-" and case.get("stdin") else args[1]
+        )
     if route(args) == "schema" and len(args) > 2:
-        add("schema", args[2])
+        add(
+            "schema", case["stdin"] if args[2] == "-" and case.get("stdin") else args[2]
+        )
     for i, a in enumerate(args):
         if a in FILE_FLAGS and i + 1 < len(args):
             add(FILE_FLAGS[a], args[i + 1])
@@ -83,18 +87,42 @@ def inputs(private: Path, case: dict) -> dict[str, str]:
     return out
 
 
-def matches(detect: dict, inp: dict, tags: list[str]) -> bool:
-    for key, field in (
-        ("policy_regex", "policy"),
-        ("trace_regex", "trace"),
-        ("schema_regex", "schema"),
-        ("args_regex", "args"),
-    ):
-        pattern = detect.get(key)
-        if pattern and re.search(pattern, inp.get(field, ""), flags=re.MULTILINE):
+def alternatives(f: dict) -> list[dict]:
+    d = f.get("detect") or []
+    return d if isinstance(d, list) else [d]
+
+
+def matches(detect: list[dict], inp: dict, tags: list[str]) -> bool:
+    """Whether any non-error alternative of an id's `detect` matches the case's inputs."""
+    for alt in detect:
+        for key, field in (
+            ("policy_regex", "policy"),
+            ("trace_regex", "trace"),
+            ("schema_regex", "schema"),
+            ("args_regex", "args"),
+        ):
+            pattern = alt.get(key)
+            if pattern and re.search(pattern, inp.get(field, ""), flags=re.MULTILINE):
+                return True
+        tag = alt.get("gen_tag")
+        if tag and any(t == tag or t.startswith(tag + ":") for t in tags):
             return True
-    tag = detect.get("gen_tag")
-    return bool(tag) and any(t == tag or t.startswith(tag + ":") for t in tags)
+    return False
+
+
+def squash(text: str) -> str:
+    return " ".join(text.replace("**", "").replace("`", "").split())
+
+
+def stated(f: dict, guide: dict[str, str]) -> str | None:
+    """The shipped guide chapter that still holds the id's quote, or None."""
+    quote = squash((f.get("doc") or {}).get("quote", ""))
+    if not quote:
+        return None
+    for name, text in guide.items():
+        if quote in text:
+            return name
+    return None
 
 
 def mutant_ids() -> dict[str, list[str]]:
@@ -114,6 +142,7 @@ def main() -> int:
         "--mutants", type=Path, help="directory of run_cases.py records, one per mutant"
     )
     ap.add_argument("--report", type=Path)
+    ap.add_argument("--docs", type=Path, default=CHECKS.parent / "environment" / "docs")
     a = ap.parse_args()
     features = json.loads((CHECKS / "features.json").read_text())
     cases = [
@@ -146,11 +175,15 @@ def main() -> int:
                     killed[i] |= changed
     by_id: dict[str, dict] = {}
     inp_cache = {c["id"]: inputs(a.private, c) for c in cases}
+    guide = {
+        p.name: squash(p.read_text(encoding="utf-8"))
+        for p in sorted((a.docs / "guide").glob("*.md"))
+    }
     for f in features:
         fid, kind = f["id"], f["kind"]
         routes = set(f.get("routes") or [])
-        detect = f.get("detect") or {}
-        err = detect.get("error")
+        detect = alternatives(f)
+        errs = [alt["error"] for alt in detect if alt.get("error")]
         use, errors = set(), set()
         for c in cases:
             if routes and route(c["args"]) not in routes:
@@ -158,28 +191,25 @@ def main() -> int:
             g = answer(gold, c["id"])
             if g is None:
                 continue
-            inp = inp_cache[c["id"]]
-            if (
-                err
-                and err.get("message_substring")
-                and err["message_substring"] in g[1]
+            if any(
+                e.get("message_substring") and e["message_substring"] in g[1]
+                for e in errs
             ):
                 errors.add(c["id"])
-            elif (
-                matches(detect, inp, tags.get(c["bundle"], {}).get("tags", []))
-                and g[0] == 0
+            elif g[0] == 0 and matches(
+                detect, inp_cache[c["id"]], tags.get(c["bundle"], {}).get("tags", [])
             ):
                 use.add(c["id"])
         mutated = killed.get(fid, set())
         if kind == "restriction":
-            n = len(errors | mutated)
-            need = 1
+            n, need = len(errors | mutated), 1
+            evidence = "mutant" if mutated else ("error" if errors else "none")
         elif kind == "feature":
-            n = len(mutated) if mutated else len(use)
-            need = 3
+            n, need = (len(mutated), 3) if mutated else (len(use), 3)
+            evidence = "mutant" if mutated else ("use" if use else "none")
         else:
-            n = len(use | errors)
-            need = 0
+            n, need, evidence = len(use | errors), 0, "out of scope"
+        doc = (f.get("doc") or {}).get("file", "")
         by_id[fid] = {
             "kind": kind,
             "family": f.get("family"),
@@ -189,6 +219,8 @@ def main() -> int:
             "use_cases": len(use),
             "count": n,
             "need": need,
+            "evidence": evidence,
+            "stated_in": stated(f, guide) if doc.startswith("guide/") else doc,
         }
     gaps = sorted(
         fid
@@ -207,6 +239,14 @@ def main() -> int:
         },
         "unchecked": sum(1 for r in by_id.values() if r["unchecked"]),
         "gaps": gaps,
+        "evidence": dict(Counter(r["evidence"] for r in by_id.values())),
+        "not_stated": sorted(
+            fid
+            for fid, r in by_id.items()
+            if r["kind"] in ("feature", "restriction")
+            and not r["unchecked"]
+            and r["stated_in"] is None
+        ),
         "mutants": {
             name: sum(1 for c in cases if answer(run, c["id"]) != answer(gold, c["id"]))
             for name, run in mutant_runs.items()
@@ -217,8 +257,8 @@ def main() -> int:
         a.report.write_text(json.dumps(report, indent=1, sort_keys=True) + "\n")
     print(
         json.dumps(
-            {k: report[k] for k in ("ids", "by_kind", "unchecked")}
-            | {"gaps": len(gaps)}
+            {k: report[k] for k in ("ids", "by_kind", "unchecked", "evidence")}
+            | {"gaps": len(gaps), "not_stated": len(report["not_stated"])}
         )
     )
     for g in gaps[:80]:

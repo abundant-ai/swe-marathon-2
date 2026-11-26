@@ -8,7 +8,7 @@ timepoint `previous` is always false.
 
 The trace shows both outcomes:
 
-- `@0` — `Login` by alice (a history-only event here; no `Read` permit applies,
+- `@0` — `Login` by alice (history for this rule; no `Read` permit applies,
   so the decision is a deny).
 - `@100` — alice reads doc1, immediately after the login → **allow** (the
   directly preceding event was a matching `Login` within the window).

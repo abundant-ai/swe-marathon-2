@@ -1752,5 +1752,159 @@
   "op": "write_file",
   "file": "NOTICE",
   "text": "The guide and the example bundles in this directory are Dogwood 1.2.0's documentation,\nCopyright Amazon.com, Inc. or its affiliates, licensed under the Apache License, Version 2.0\n(LICENSE in this directory).\n\nWe changed them for our team: the chapters on Dogwood's Rust library and its MCP tooling are\nleft out, the trace file format moved into the command-line chapter, and passages about the\nlibrary interface and the project's own tooling were removed or reworded.\n"
+ },
+ {
+  "op": "replace",
+  "file": "examples/alert_login_in_last_hour/README.md",
+  "old": "(a history-only event here; no `Alert` permit",
+  "new": "(history for this rule; no `Alert` permit",
+  "count": 1
+ },
+ {
+  "op": "replace",
+  "file": "examples/alert_same_user_login_and_transfer/README.md",
+  "old": "(history-only event; no `Alert`, so deny)",
+  "new": "(history for this rule; no `Alert`, so deny)",
+  "count": 1
+ },
+ {
+  "op": "replace",
+  "file": "examples/alert_same_user_login_and_transfer/README.md",
+  "old": "(history-only event → deny)",
+  "new": "(history for this rule → deny)",
+  "count": 1
+ },
+ {
+  "op": "replace",
+  "file": "examples/alert_same_user_login_and_transfer/README.md",
+  "old": "(both history-only → deny)",
+  "new": "(both history for this rule → deny)",
+  "count": 1
+ },
+ {
+  "op": "replace",
+  "file": "examples/call_temporal_condition_macro_once/README.md",
+  "old": "(history-only here; no `Write` permit",
+  "new": "(history for this rule; no `Write` permit",
+  "count": 1
+ },
+ {
+  "op": "replace",
+  "file": "examples/call_temporal_aggregation_macro_count/README.md",
+  "old": "(a history-only event here; no `Alert` permit",
+  "new": "(history for this rule; no `Alert` permit",
+  "count": 1
+ },
+ {
+  "op": "replace",
+  "file": "examples/call_temporal_aggregation_macro_count/README.md",
+  "old": "(history-only again → deny)",
+  "new": "(history for this rule again → deny)",
+  "count": 1
+ },
+ {
+  "op": "replace",
+  "file": "examples/login_attempt_custom_kind/README.md",
+  "old": "(a history-only event here; no `Read` permit",
+  "new": "(history for this rule; no `Read` permit",
+  "count": 1
+ },
+ {
+  "op": "replace",
+  "file": "examples/forbid_read_transfers_over_1000/README.md",
+  "old": "(a history-only event; no",
+  "new": "(history for this rule; no",
+  "count": 1
+ },
+ {
+  "op": "replace",
+  "file": "examples/macro_library_once_is_small/README.md",
+  "old": "(history-only; no `SellShares` permit",
+  "new": "(history for this rule; no `SellShares` permit",
+  "count": 1
+ },
+ {
+  "op": "replace",
+  "file": "examples/heartbeat_scope_alias/README.md",
+  "old": "(history-only event; no",
+  "new": "(history for this rule; no",
+  "count": 1
+ },
+ {
+  "op": "replace",
+  "file": "examples/permit_read_anyone/README.md",
+  "old": "(a history-only occurrence here; the policy gates",
+  "new": "(history for this rule; the policy gates",
+  "count": 1
+ },
+ {
+  "op": "replace",
+  "file": "examples/read_prev_login/README.md",
+  "old": "(a history-only event here; no `Read` permit applies,",
+  "new": "(history for this rule; no `Read` permit applies,",
+  "count": 1
+ },
+ {
+  "op": "replace",
+  "file": "examples/read_since_login/README.md",
+  "old": "(history-only; the scope is `Read`, so no",
+  "new": "(history for this rule; the scope is `Read`, so no",
+  "count": 1
+ },
+ {
+  "op": "replace",
+  "file": "examples/sell_after_approval_valid_ticker/README.md",
+  "old": "**DENY** (history-only; no `SellShares`",
+  "new": "**DENY** (history for this rule; no `SellShares`",
+  "count": 1
+ },
+ {
+  "op": "replace",
+  "file": "examples/sell_after_approval_valid_ticker/README.md",
+  "old": "**DENY** (history-only).",
+  "new": "**DENY** (history for this rule).",
+  "count": 1
+ },
+ {
+  "op": "replace",
+  "file": "examples/temporal_login_then_read/README.md",
+  "old": "(history-only; not a `Write`, so **deny**)",
+  "new": "(history for this rule; not a `Write`, so **deny**)",
+  "count": 2
+ },
+ {
+  "op": "replace",
+  "file": "examples/temporal_count_formerly_login/README.md",
+  "old": "(a history-only event; no `Alert` permit",
+  "new": "(history for this rule; no `Alert` permit",
+  "count": 1
+ },
+ {
+  "op": "replace",
+  "file": "examples/temporal_sum_formerly_transfer/README.md",
+  "old": "(history-only; running sum = 40)",
+  "new": "(history for this rule, denied; running sum = 40)",
+  "count": 1
+ },
+ {
+  "op": "replace",
+  "file": "examples/write_after_read/README.md",
+  "old": "(a history-only event here; no",
+  "new": "(history for this rule; no",
+  "count": 1
+ },
+ {
+  "op": "replace",
+  "file": "examples/read_login_not_logout/README.md",
+  "old": "(line 525, the accepted\n",
+  "new": "(the accepted\n",
+  "count": 1
+ },
+ {
+  "op": "replace",
+  "file": "guide/10-provider-schema.md",
+  "old": "with an error telling you the `scriptFile` reference was never resolved and to\nload the declarations with `from_json_file`. Rule of thumb: when a provider will\n",
+  "new": "with an error telling you the `scriptFile` reference was never resolved. Rule of\nthumb: when a provider will\n",
+  "count": 1
  }
 ]

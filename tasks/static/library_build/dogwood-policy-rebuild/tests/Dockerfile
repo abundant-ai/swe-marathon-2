@@ -48,7 +48,7 @@ FROM ${RUST_IMAGE}
 ENV PYTHONDONTWRITEBYTECODE=1 LANG=C.UTF-8 LC_ALL=C.UTF-8
 RUN apt-get update && apt-get install -y --no-install-recommends python3 && rm -rf /var/lib/apt/lists/* \
     && useradd --system --create-home --shell /usr/sbin/nologin builder
-COPY --from=release /opt/registry /opt/verifier/registry
+COPY --from=release /opt/registry /opt/cargo-registry
 COPY cargo-config.toml /opt/verifier/cargo-config.toml
 COPY test.sh verify.py /tests/
 COPY verifier/ /tests/verifier/

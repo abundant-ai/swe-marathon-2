@@ -19,7 +19,7 @@ dogwood replay   policy.dw --policy-schema schema.cedarschema --macros macros.dw
 
 The trace shows every case:
 
-- `@0` — `ApproveSale` for AMZN by alice (history-only; no `SellShares` permit
+- `@0` — `ApproveSale` for AMZN by alice (history for this rule; no `SellShares` permit
   applies, so the decision is a deny).
 - `@100` — alice sells 5 AMZN, 100s after the approval → **allow** (`is_small(5)`
   holds and a matching approval is within the window).

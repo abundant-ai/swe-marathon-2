@@ -12,11 +12,12 @@ from typing import Literal
 class Limits:
     """Resource limits, as the brief states them to the requester's CI."""
 
-    case_timeout_sec: float = 5.0
+    case_timeout_sec: float = 1.0
     case_memory_bytes: int = 2 << 30
     case_stdout_bytes: int = 8 << 20
     build_timeout_sec: float = 1200.0
-    deadline_sec: float = 2400.0
+    deadline_sec: float = 600.0
+    case_overhead_sec: float = 0.25  # copying a bundle, starting and ending a run
     max_files: int = 100_000
     max_bytes: int = 1 << 30
 
@@ -44,6 +45,7 @@ class Case:
     pair: str | None
     expected_rc: int
     expected_stdout: str
+    stdin: str | None = None  # a bundle file given as standard input; empty when None
 
 
 @dataclass(frozen=True)

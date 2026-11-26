@@ -56,6 +56,7 @@ def load_cases(private: Path) -> list[Case]:
                 pair=c.get("pair"),
                 expected_rc=g["rc"],
                 expected_stdout=g["stdout"],
+                stdin=c.get("stdin"),
             )
         )
     if not cases:

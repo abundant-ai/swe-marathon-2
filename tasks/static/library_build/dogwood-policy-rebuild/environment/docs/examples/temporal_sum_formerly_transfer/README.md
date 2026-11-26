@@ -15,7 +15,7 @@ aggregate inside an `exists (total: Long)` binder.
 
 The trace shows both outcomes:
 
-- `@0` — `Transfer` of 40 by alice (history-only; running sum = 40).
+- `@0` — `Transfer` of 40 by alice (history for this rule, denied; running sum = 40).
 - `@2` — `Alert`: cumulative Transfer sum within 1h is 40, not `> 100` → **DENY**.
 - `@4` — `Transfer` of 80 by bob (running sum = 40 + 80 = 120).
 - `@6` — `Alert`: cumulative Transfer sum is 120, which is `> 100` → **ALLOW**.

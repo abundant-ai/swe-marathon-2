@@ -40,6 +40,7 @@ def main(binary: Path, private: Path, out: Path) -> int:
             c.get("pair"),
             0,
             "",
+            c.get("stdin"),
         )
         seen = set()
         for _ in range(RUNS):

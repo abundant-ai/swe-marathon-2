@@ -13,7 +13,7 @@ CLI would default to `request`/`response` and reject the `::attempt` kind.
 
 The trace shows all three cases:
 
-- `@0` — alice attempts a `Login` (a history-only event here; no `Read` permit
+- `@0` — alice attempts a `Login` (history for this rule; no `Read` permit
   applies to a login, so the decision is a **deny**).
 - `@10` — alice reads, 10s after her login → **allow** (a matching login by the
   same actor is within the window).

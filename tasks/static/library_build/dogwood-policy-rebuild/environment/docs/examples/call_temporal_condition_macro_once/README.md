@@ -10,7 +10,7 @@ request's context.
 Net effect: permit a `Write` only if the same user recently `Read` the same
 document (within 1h). The trace shows both outcomes:
 
-- `@0` — `Read` of `doc1` by alice (history-only here; no `Write` permit
+- `@0` — `Read` of `doc1` by alice (history for this rule; no `Write` permit
   applies, so the decision is a **deny**).
 - `@10` — alice writes `doc1`, 10s after the read → **allow** (matching read is
   within the window and pins both `user` and `document`).

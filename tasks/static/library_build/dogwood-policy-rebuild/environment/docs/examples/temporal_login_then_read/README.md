@@ -7,8 +7,8 @@ document (`recently_read`) — each a `formerly within 1h` wrapper.
 
 The trace shows both outcomes:
 
-- `@0` — alice `Login` (history-only; not a `Write`, so **deny**).
-- `@10` — alice `Read` doc1 (history-only; not a `Write`, so **deny**).
+- `@0` — alice `Login` (history for this rule; not a `Write`, so **deny**).
+- `@10` — alice `Read` doc1 (history for this rule; not a `Write`, so **deny**).
 - `@20` — alice `Write` doc1 → **allow** (both macros hold: logged in within 1h
   and read doc1 within 1h).
 - `@30` — alice `Write` doc2 → **deny** (logged in, but never read doc2, so

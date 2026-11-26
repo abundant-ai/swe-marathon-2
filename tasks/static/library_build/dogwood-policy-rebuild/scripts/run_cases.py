@@ -39,6 +39,7 @@ def one(item) -> tuple[str, dict, float]:
         c.get("pair"),
         0,
         "",
+        c.get("stdin"),
     )
     runs = []
     slowest = 0.0

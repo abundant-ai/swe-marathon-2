@@ -7,6 +7,7 @@ A run that hangs, crashes or overruns loses only its own case.
 
 from __future__ import annotations
 
+import hashlib
 import os
 import resource
 import shutil
@@ -60,18 +61,23 @@ def run_case(
             for name in filenames:
                 shutil.chown(Path(dirpath) / name, user=RUNNER, group=RUNNER_GROUP)
         env = dict(ENV, HOME=str(home), TMPDIR=str(scratch))
-        proc = subprocess.Popen(
-            [str(binary), *case.args],
-            cwd=work,
-            env=env,
-            user=RUNNER,
-            group=RUNNER_GROUP,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
-            preexec_fn=_limits(limits),  # noqa: PLW1509 - the grader runs one case at a time, single-threaded
-        )
+        feed = (work / case.stdin).open("rb") if case.stdin else None
+        try:
+            proc = subprocess.Popen(
+                [str(binary), *case.args],
+                cwd=work,
+                env=env,
+                user=RUNNER,
+                group=RUNNER_GROUP,
+                stdin=feed if feed is not None else subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+                preexec_fn=_limits(limits),  # noqa: PLW1509 - the grader runs one case at a time, single-threaded
+            )
+        finally:
+            if feed is not None:
+                feed.close()
         try:
             out, timed_out, overflow = capture(
                 proc, limits.case_timeout_sec, limits.case_stdout_bytes
@@ -93,10 +99,16 @@ def run_all(
     """Run every case under one global deadline; cases left when it passes fail.
 
     The denominator never changes: a missing binary, a timeout or the deadline fails cases,
-    it does not remove them.
+    it does not remove them. The deadline leaves every case its full time limit, so it binds
+    only a run that overruns; cases run in a fixed order mixed across families (by a hash of
+    their ids), so what a deadline cuts is spread over them.
     """
     results: list[CaseResult] = []
-    deadline = time.monotonic() + limits.deadline_sec
+    cases = sorted(cases, key=lambda c: hashlib.sha256(c.case_id.encode()).hexdigest())
+    deadline = time.monotonic() + max(
+        limits.deadline_sec,
+        len(cases) * (limits.case_timeout_sec + limits.case_overhead_sec),
+    )
     for case in cases:
         if binary is None:
             results.append(

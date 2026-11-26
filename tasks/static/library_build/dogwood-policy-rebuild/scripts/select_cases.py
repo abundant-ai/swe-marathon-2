@@ -120,7 +120,8 @@ def main() -> int:
             if twin is not None and uniform_stream(twin):
                 return f"uniform {uniform_stream(twin)}"
         if c["args"][0] == "format":
-            src = (a.candidates / "bundles" / c["bundle"] / c["args"][1]).read_text()
+            name = c["stdin"] if c["args"][1] == "-" else c["args"][1]
+            src = (a.candidates / "bundles" / c["bundle"] / name).read_text()
             if out == src:
                 return "unchanged"
         return None

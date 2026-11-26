@@ -12,7 +12,7 @@ for that server.
 
 The trace shows both outcomes:
 
-- `@0` — `machine-a` sends a `Heartbeat` for `s1` (history-only event; no
+- `@0` — `machine-a` sends a `Heartbeat` for `s1` (history for this rule; no
   `Alert` permit applies, so the decision is a deny).
 - `@100` — `machine-a` raises an `Alert` for `s1` → **allow** (its own
   heartbeat, same server, same principal/resource, is within the window).

@@ -4,7 +4,8 @@ Runs inside the toolchain container (python3 -I), never on the host. Three sourc
 - upstream's Apache-2.0 bundle generator (`dogwood-lean/conformance/gen/gen.py` of the 1.2.0
   source), run with private seeds, one family at a time, near misses and schema cases included;
 - the paired cases of `pairs.py` (B-dedup, B-scope and the K shapes);
-- command-line cases (`--help`, `--version`, usage and I/O errors) on a small bundle of their own.
+- command-line cases (`--help`, `--version`, usage and I/O errors) on a small bundle of their own,
+  and, on a quarter of the bundles, commands that read their input from standard input (`-`).
 
 Each bundle is made fit for the command line: provider scripts are inlined (the CLI never resolves
 `scriptFile`), and a bundle with a trace whose timestamps repeat or go back is dropped, since the
@@ -152,8 +153,8 @@ def broken(text: str, r: random.Random) -> str | None:
     return None
 
 
-def case(name, cid, family, args, fmt, pair=None):
-    return {
+def case(name, cid, family, args, fmt, pair=None, stdin=None):
+    c = {
         "id": f"{name}/{cid}",
         "bundle": name,
         "family": family,
@@ -161,6 +162,9 @@ def case(name, cid, family, args, fmt, pair=None):
         "args": args,
         "fmt": fmt,
     }
+    if stdin:
+        c["stdin"] = stdin
+    return c
 
 
 def replay_family(meta: dict) -> str:
@@ -297,6 +301,47 @@ def cases_for(name: str, bundle: Path, meta: dict, r: random.Random) -> list[dic
     policy = (bundle / "policy.dw").read_text(encoding="utf-8")
     (bundle / "layout.dw").write_text(disturb(policy, r), encoding="utf-8")
     out.append(case(name, "format/human", "F", ["format", "layout.dw"], "human"))
+    if r.random() < 0.25:  # the same commands reading `-`, standard input
+        out.append(
+            case(
+                name,
+                "format-stdin/human",
+                "F",
+                ["format", "-"],
+                "human",
+                stdin="layout.dw",
+            )
+        )
+        out.append(
+            case(
+                name,
+                "check-parse-stdin/human",
+                "F",
+                ["check-parse", "-", *fl],
+                "human",
+                stdin="policy.dw",
+            )
+        )
+        out.append(
+            case(
+                name,
+                "validate-stdin/human",
+                "F",
+                ["validate", "-", "--policy-schema", "schema.cedarschema", *fl],
+                "human",
+                stdin="policy.dw",
+            )
+        )
+        out.append(
+            case(
+                name,
+                "schema-action-stdin/human",
+                "F",
+                ["schema", "action", "-"],
+                "human",
+                stdin="schema.cedarschema",
+            )
+        )
     bad = broken(policy, r)
     if bad is not None:
         (bundle / "typo.dw").write_text(bad, encoding="utf-8")

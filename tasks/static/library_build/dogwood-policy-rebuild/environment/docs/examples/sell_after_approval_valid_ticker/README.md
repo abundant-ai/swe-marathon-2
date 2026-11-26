@@ -27,11 +27,11 @@ Both clauses must hold for the rule to permit.
 
 ## Verdicts (from `dogwood replay`)
 
-- `@0` — alice `ApproveSale` AMZN → **DENY** (history-only; no `SellShares`
+- `@0` — alice `ApproveSale` AMZN → **DENY** (history for this rule; no `SellShares`
   permit applies).
 - `@100` — alice `SellShares` AMZN → **ALLOW**: temporal passes (AMZN approval
   at `@0` is within 1h) *and* guardrails passes (`AMZN` matches `^[A-Z]+$`).
-- `@200` — bob `ApproveSale` goog → **DENY** (history-only).
+- `@200` — bob `ApproveSale` goog → **DENY** (history for this rule).
 - `@300` — bob `SellShares` goog → **DENY**: temporal passes (goog approval at
   `@200`) but guardrails **fails** — `goog` is lowercase. Isolates the
   guardrails clause.

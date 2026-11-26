@@ -71,21 +71,22 @@ Your implementation in `/app/dogwood-rebuild`: a Cargo project from which
 - Given the same files, arguments and standard input, your `dogwood` prints the same standard
   output and ends with the same exit status as the 1.2.0 build, with `--format human` and with
   `--format json`. Nothing of ours reads standard error, so what it writes there may differ.
-- In JSON output, the order of keys inside an object does not matter. The rules listed for a
-  decision are a set to our incident tools, so their order does not matter either. Everything
-  else reaches our tools as it is printed: the order of lists, every message, every span and every
-  number.
+- In JSON output, layout and the order of keys inside an object do not matter. The rules listed
+  for a decision are a set to our incident tools, so their order does not matter either.
+  Everything else reaches our tools as it is printed: the order of lists, every message, every
+  span and every number.
 - Our traces always have strictly increasing timestamps. What the build does with a trace whose
   timestamps repeat or go back does not matter to us.
-- Our release machines build `/app/dogwood-rebuild` from a clean copy of the directory:
+- When you finish, anything you left running is stopped, and our release machines build
+  `/app/dogwood-rebuild` from a clean copy of the directory:
   - they use the same Rust toolchain and registry, without network access, on 4 cores and 8 GB of
     memory, and give the build 20 minutes;
-  - the copy leaves out `target/`, any link that points outside the directory, and pipes,
-    sockets and devices; it may hold at most 100,000 files and 1 GB;
+  - the copy leaves out `target/`, links to directories, links that point outside the
+    directory, and pipes, sockets and devices; it may hold at most 100,000 files and 1 GB;
   - everything the build and the tool need, apart from the toolchain and the registry, must be
     inside the directory.
 - Your `dogwood` must not call the 1.2.0 build. It replaces it, and will run where that build is
-  not installed. Being clean-room, the project holds none of Dogwood's own source code.
+  not installed.
 - Our CI starts every `dogwood` the same way:
   - it runs as an unprivileged user that cannot write to the project directory;
   - each run gets a new, empty working directory holding only that run's files, with `HOME` and
@@ -93,11 +94,11 @@ Your implementation in `/app/dogwood-rebuild`: a Cargo project from which
     before the next starts;
   - the environment holds only `PATH=/usr/local/bin:/usr/bin:/bin`, `LANG` and `LC_ALL` set to
     `C.UTF-8`, `TERM=dumb`, `NO_COLOR=1`, `HOME` and `TMPDIR`;
-  - standard input is empty (`/dev/null`), standard output is a pipe, and none of the standard
-    streams is a terminal;
+  - standard input holds what a command reads from `-` and is empty otherwise, standard output is
+    a pipe, and none of the standard streams is a terminal;
   - a run may start at most 512 processes and threads, write files of at most 256 MB, and print
     at most 8 MB.
-- Each run finishes within 5 seconds and uses at most 2 GB of memory; CI stops any `dogwood` still
+- Each run finishes within 1 second and uses at most 2 GB of memory; CI stops any `dogwood` still
   running then. The 1.2.0 build finishes each of our runs well within that.
 - Out of scope, because nothing of ours uses it:
   - MCP schema generation (the 1.2.0 build has no `schema mcp`, and neither does ours);

@@ -50,6 +50,8 @@ def case_inputs(case: dict) -> list[str]:
     files = []
     if len(args) > 1 and args[0] != "schema" and not args[1].startswith("-"):
         files.append(args[1])
+    if case.get("stdin"):
+        files.append(case["stdin"])
     if args[:1] == ["schema"] and len(args) > 2:
         files.append(args[2])
     for i, a in enumerate(args):

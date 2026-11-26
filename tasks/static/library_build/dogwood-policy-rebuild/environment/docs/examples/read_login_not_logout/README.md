@@ -25,5 +25,5 @@ The trace shows both an allow and a deny:
 - `@4000` — alice reads 4000s after login (login now outside the 1h window) -> **deny**.
 - `@4100` — bob reads with no prior login -> **deny**.
 
-Referenced by `guide/04-temporal-expressions.md` (line 525, the accepted
+Referenced by `guide/04-temporal-expressions.md` (the accepted
 restrictor-first example).

@@ -19,7 +19,7 @@ between the reads does not change this.
 
 The trace exercises the natural cases, all of which deny:
 
-- `@0`, `@10` — two `Login`s by alice (history-only; the scope is `Read`, so no
+- `@0`, `@10` — two `Login`s by alice (history for this rule; the scope is `Read`, so no
   permit applies → deny).
 - `@12`, `@20` — alice `Read`s within an hour of her logins. The anchor
   (`Login`) is in the window, but the left operand (`Login`) does not hold at
