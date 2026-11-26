@@ -210,4 +210,5 @@ bindings.
 - `efd7bd3` CLAIMS.md
 - `a8e4d86` QA-PLAN.md
 - `0a71743` SPIKE-PLAN.md (and the CLAIMS clone note)
-- this report, the brief wording fixes and the README dev log: the next commit
+- `e57cfe8` this report, the brief wording fixes and the README dev log
+- then a final commit that only fills in this list
