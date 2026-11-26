@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 import re
 import tomllib
@@ -81,7 +82,7 @@ def test_pins_agree_between_images_and_grader():
     agent = (TASK / "environment" / "Dockerfile").read_text()
     verifier = (TASK / "tests" / "Dockerfile").read_text()
     grader = (TASK / "tests" / "grader.py").read_text()
-    for key in ("KEV_COMMIT", "QWEN_BASE_REVISION"):
+    for key in ("KEV_COMMIT", "QWEN_BASE_REVISION", "KEV_08B_REVISION"):
         values = {
             re.search(rf"{key}=(\w+)", text).group(1) for text in (agent, verifier)
         }
@@ -98,7 +99,7 @@ def test_agent_image_ships_no_held_out_material():
         if not line.startswith("#")
     ]
     assert not any(
-        p.startswith("evals/v4") or "transfer" in p or "study_v3" in p for p in listed
+        p.startswith("evals/") or "transfer" in p or "study_v3" in p for p in listed
     )
     assert (
         "rm -f /opt/kev/kev/study_v3.py /opt/kev/kev/transfer_v9.py"
@@ -128,3 +129,45 @@ def test_bundle_holds_only_runtime_files(tmp_path, monkeypatch):
     )
     for relative in package.EXECUTABLE:
         assert os.access(bundle / relative, os.X_OK)
+
+
+def test_public_examples_hide_source_names():
+    for line in (
+        (TASK / "environment" / "resources" / "public-20.jsonl")
+        .read_text()
+        .splitlines()
+    ):
+        record = json.loads(line)
+        assert set(record) == {"state", "questions"}
+        assert all("src" not in q for q in record["questions"].values())
+
+
+def test_reward_is_gain_over_the_released_model():
+    suites = {
+        "transfer_test": {"acc": 0.70},
+        "decision_test": {"acc": 0.84},
+        "released_transfer_test": {"acc": 0.70},
+        "released_decision_test": {"acc": 0.84},
+    }
+    assert verify.improvement(suites)["reward"] == 0.0
+    suites["transfer_test"]["acc"] = 0.86
+    gain = verify.improvement(suites)
+    assert gain["reward"] == pytest.approx((0.85 - 0.77) / (0.85 - 0.77))
+    suites["decision_test"]["acc"] = 0.60
+    assert verify.improvement(suites)["reward"] == 0.0
+
+
+def test_records_are_required(tmp_path, monkeypatch):
+    monkeypatch.setattr(verify, "APP_TRAIN", tmp_path / "train")
+    monkeypatch.setattr(verify, "APP_REPORT", tmp_path / "REPORT.md")
+    with pytest.raises(verify.CandidateError):
+        verify.check_records()
+    (tmp_path / "REPORT.md").write_text("runs")
+    (tmp_path / "train").mkdir()
+    with pytest.raises(verify.CandidateError):
+        verify.check_records()
+    (tmp_path / "train" / "link.py").symlink_to("/etc/passwd")
+    with pytest.raises(verify.CandidateError):
+        verify.check_records()
+    (tmp_path / "train" / "train.sh").write_text("python -m kev.train")
+    verify.check_records()

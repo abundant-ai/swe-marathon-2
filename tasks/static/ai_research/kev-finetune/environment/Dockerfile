@@ -33,13 +33,11 @@ assert got['torch'].startswith('2.8.0') and got['triton'] == '3.7.1' and got['fl
     && uv pip install --python /opt/kev/.venv/bin/python --no-cache anthropic==2.14.0 \
     && rm -rf /root/.cache/uv
 
-RUN cd /opt/kev && /opt/kev/.venv/bin/python -c "from kev.suite import load_split; \
-[load_split('evals/v7/decision-v7', s) for s in ('train', 'calibration', 'development')]" \
-    && /opt/kev/.venv/bin/python -c "import os; from huggingface_hub import snapshot_download as get; \
+RUN /opt/kev/.venv/bin/python -c "import os; from huggingface_hub import snapshot_download as get; \
 get('Qwen/Qwen3.5-0.8B-Base', revision=os.environ['QWEN_BASE_REVISION']); \
 get('jaredpalmer/kev-0.8b', revision=os.environ['KEV_08B_REVISION'], local_dir='/opt/models/kev-0.8b', \
     allow_patterns=['adapter_config.json', 'adapter_model.safetensors', 'head.pt', 'training_config.json', 'provenance.json', 'README.md'])" \
-    && rm -rf /opt/hf/hub/datasets--jaredpalmer--kev-suites /opt/models/kev-0.8b/.cache \
+    && rm -rf /opt/models/kev-0.8b/.cache \
     && chmod -R a+rX,a-w /opt/hf /opt/models
 
 COPY resources/ /opt/task/

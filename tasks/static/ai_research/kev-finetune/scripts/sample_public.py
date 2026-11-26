@@ -1,4 +1,4 @@
-"""Draw 20 clean transfer-v4 development records, stratified by source (largest remainder, fixed seed)."""
+"""Draw the 20 public examples: 10 clean records from each development partition, stratified by source, with `src` and `_meta` removed."""
 
 import collections
 import json
@@ -7,47 +7,57 @@ import random
 import sys
 
 SEED = 20261127
-TOTAL = 20
-TIE_ORDER = ["mmlu", "sciq", "emotion", "qnli", "paws", "tweet_offensive"]
+PER_SUITE = 10
 
-src_path, out_dir = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
-rows = [json.loads(line) for line in src_path.open()]
-clean = [r for r in rows if r["_meta"].get("variant") == "clean"]
-by_src = collections.defaultdict(list)
-for r in clean:
-    (q,) = r["questions"].values()
-    by_src[q["src"]].append(r)
 
-exact = {s: len(v) * TOTAL / len(clean) for s, v in by_src.items()}
-alloc = {s: int(x) for s, x in exact.items()}
-rank = sorted(
-    exact,
-    key=lambda s: (
-        -(exact[s] - alloc[s]),
-        TIE_ORDER.index(s) if s in TIE_ORDER else -1,
-    ),
-)
-for s in rank[: TOTAL - sum(alloc.values())]:
-    alloc[s] += 1
+def source(record: dict) -> str:
+    return next(iter(record["questions"].values()))["src"]
 
-rng = random.Random(SEED)
-picked = []
-for s in sorted(by_src):
-    picked += rng.sample(sorted(by_src[s], key=lambda r: r["_meta"]["id"]), alloc[s])
 
-out_dir.mkdir(parents=True, exist_ok=True)
-with (out_dir / "public-20.jsonl").open("w") as f:
-    for r in picked:
-        f.write(json.dumps({"state": r["state"], "questions": r["questions"]}) + "\n")
-(out_dir / "public-20.ids.json").write_text(
-    json.dumps(
-        {
-            "seed": SEED,
-            "source_file": src_path.name,
-            "allocation": alloc,
-            "ids": [r["_meta"]["id"] for r in picked],
-        },
-        indent=1,
+def draw(path: pathlib.Path, rng: random.Random) -> list[dict]:
+    rows = [json.loads(line) for line in path.open()]
+    clean = [r for r in rows if r["_meta"].get("variant", "clean") == "clean"]
+    by_src = collections.defaultdict(list)
+    for r in clean:
+        by_src[source(r)].append(r)
+    exact = {s: len(v) * PER_SUITE / len(clean) for s, v in by_src.items()}
+    alloc = {s: int(x) for s, x in exact.items()}
+    rank = sorted(exact, key=lambda s: (-(exact[s] - alloc[s]), s))
+    for s in rank[: PER_SUITE - sum(alloc.values())]:
+        alloc[s] += 1
+    picked = []
+    for s in sorted(by_src):
+        picked += rng.sample(
+            sorted(by_src[s], key=lambda r: r["_meta"]["id"]), alloc[s]
+        )
+    return picked
+
+
+def public_copy(record: dict) -> dict:
+    questions = {
+        k: {f: v for f, v in q.items() if f != "src"}
+        for k, q in record["questions"].items()
+    }
+    return {"state": record["state"], "questions": questions}
+
+
+def main(transfer_dev: str, decision_dev: str, out_dir: str) -> None:
+    rng = random.Random(SEED)
+    picked = draw(pathlib.Path(transfer_dev), rng) + draw(
+        pathlib.Path(decision_dev), rng
     )
-)
-print(json.dumps(alloc, indent=1))
+    random.Random(SEED).shuffle(picked)
+    out = pathlib.Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    with (out / "public-20.jsonl").open("w") as f:
+        for r in picked:
+            f.write(json.dumps(public_copy(r)) + "\n")
+    ids = [{"id": r["_meta"]["id"], "src": source(r)} for r in picked]
+    (out / "public-20.ids.json").write_text(
+        json.dumps({"seed": SEED, "records": ids}, indent=1)
+    )
+    print(json.dumps(collections.Counter(i["src"] for i in ids), indent=1))
+
+
+if __name__ == "__main__":
+    main(*sys.argv[1:4])

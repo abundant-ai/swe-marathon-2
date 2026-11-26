@@ -1,4 +1,5 @@
-"""Stage /app/model, score it with Kev's benchmark as an unprivileged uid, and write the reward (transfer-v4 test accuracy)."""
+"""Stage /app/model, score it and the released Kev-0.8B with Kev's benchmark as an unprivileged uid, and write the reward:
+clip((S - S_released) / (TARGET - S_released), 0, 1), S = mean accuracy over transfer-v4 test and decision-v7 test."""
 
 from __future__ import annotations
 
@@ -12,6 +13,10 @@ import time
 from pathlib import Path
 
 APP_MODEL = Path("/app/model")
+APP_TRAIN = Path("/app/train")
+APP_REPORT = Path("/app/REPORT.md")
+TARGET = 0.85
+GRADED = ("transfer_test", "decision_test")
 TESTS = Path("/tests")
 WORK = Path("/var/lib/kev-verifier")
 LOGS = Path("/logs/verifier")
@@ -70,6 +75,34 @@ def stage_checkpoint(dst: Path) -> None:
     dst.mkdir(parents=True)
     for name, limit in CHECKPOINT_FILES.items():
         copy_regular_file(APP_MODEL / name, dst / name, limit)
+
+
+def check_records() -> None:
+    try:
+        report = os.lstat(APP_REPORT)
+    except FileNotFoundError:
+        raise CandidateError("/app/REPORT.md is missing") from None
+    if not stat.S_ISREG(report.st_mode) or report.st_size == 0:
+        raise CandidateError("/app/REPORT.md is not a non-empty regular file")
+    try:
+        train = os.lstat(APP_TRAIN)
+    except FileNotFoundError:
+        raise CandidateError("/app/train is missing") from None
+    if not stat.S_ISDIR(train.st_mode):
+        raise CandidateError("/app/train is not a directory")
+    for root, dirs, files in os.walk(APP_TRAIN):
+        for name in files:
+            info = os.lstat(os.path.join(root, name))
+            if stat.S_ISREG(info.st_mode) and info.st_size > 0:
+                return
+    raise CandidateError("/app/train holds no non-empty regular file")
+
+
+def improvement(suites: dict) -> dict:
+    score = sum(suites[n]["acc"] for n in GRADED) / len(GRADED)
+    released = sum(suites[f"released_{n}"]["acc"] for n in GRADED) / len(GRADED)
+    reward = min(1.0, max(0.0, (score - released) / (TARGET - released)))
+    return {"score": score, "released": released, "target": TARGET, "reward": reward}
 
 
 def read_report(path: Path) -> dict:
@@ -159,6 +192,7 @@ def main() -> int:
     model, out = WORK / "model", WORK / "out"
     metrics: dict = {"suites": {}}
     try:
+        check_records()
         stage_checkpoint(model)
         for path in [model, *model.iterdir()]:
             os.chown(path, 0, 0)
@@ -173,15 +207,16 @@ def main() -> int:
             result.stdout[-200_000:] + "\n--- stderr ---\n" + result.stderr[-200_000:]
         )
         if result.returncode == 3:
-            print("verifier suite check failed", file=sys.stderr)
+            print("verifier suites or released checkpoint failed", file=sys.stderr)
             return 1
         if result.returncode != 0:
             raise CandidateError(
                 f"Kev could not load or score the checkpoint (grader exit {result.returncode}); see grader.log"
             )
-        for name in ("transfer_test", "transfer_dev", "decision_test"):
+        for name in (*GRADED, "transfer_dev", *(f"released_{n}" for n in GRADED)):
             metrics["suites"][name] = summary(read_report(out / name / "report.json"))
-        reward = float(metrics["suites"]["transfer_test"]["acc"])
+        metrics["improvement"] = improvement(metrics["suites"])
+        reward = metrics["improvement"]["reward"]
         metrics["checkpoint"] = read_report(out / "checkpoint.json")
     except CandidateError as exc:
         reward = 0.0

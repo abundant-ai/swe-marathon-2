@@ -1,4 +1,4 @@
-"""Usage: leak_scan.py <shipped-tree> <transfer-v4 dev.jsonl> <transfer-v4 test.jsonl> <public-20.jsonl>; exits 1 on any hit."""
+"""Usage: leak_scan.py <shipped-tree> <public-20.jsonl> <held-out.jsonl>...; exits 1 on any hit."""
 
 from __future__ import annotations
 
@@ -9,7 +9,15 @@ import sys
 import tempfile
 
 MIN_CHARS = 40
-SEEDS = ("v3-legacy-transfer", "v3-composition-transfer", "v3-locked", "20260920-eval")
+SEEDS = (
+    "v3-legacy-transfer",
+    "v3-composition-transfer",
+    "v3-locked",
+    "20260920-eval",
+    "v3-control",
+    "v3-composition",
+    "v7-composition",
+)
 
 
 def strings(value: object) -> list[str]:
@@ -25,23 +33,20 @@ def strings(value: object) -> list[str]:
 def record_texts(record: dict) -> list[str]:
     texts = strings(record["state"])
     for question in record["questions"].values():
-        texts.append(question.get("instructions", ""))
+        texts += strings(question.get("instructions", ""))
     return [t.strip() for t in texts if len(t.strip()) >= MIN_CHARS]
 
 
-def needles(dev: pathlib.Path, test: pathlib.Path, public: pathlib.Path) -> set[str]:
+def needles(public: pathlib.Path, held_out: list[pathlib.Path]) -> set[str]:
     public_texts = {t for line in public.open() for t in record_texts(json.loads(line))}
-    found = set()
-    for path in (dev, test):
+    counts: dict[str, int] = {}
+    for path in held_out:
         for line in path.open():
-            found.update(record_texts(json.loads(line)))
-    shared = {
-        t
-        for t in found
-        if t.startswith(
-            ("Which option", "Which emotion", "Is this post", "Apply the policy")
-        )
-    }
+            for t in set(record_texts(json.loads(line))):
+                counts[t] = counts.get(t, 0) + 1
+    found = set(counts)
+    # Text shared by many records is a question template, not record material.
+    shared = {t for t, n in counts.items() if n > 3}
     raw = found - public_texts - shared
     escaped = {json.dumps(t, ensure_ascii=True)[1:-1] for t in raw} | {
         json.dumps(t, ensure_ascii=False)[1:-1] for t in raw
@@ -63,8 +68,8 @@ def grep(tree: pathlib.Path, patterns: set[str]) -> list[str]:
 
 
 def main(argv: list[str]) -> int:
-    tree, dev, test, public = (pathlib.Path(a) for a in argv)
-    text_needles = needles(dev, test, public)
+    tree, public, *held_out = (pathlib.Path(a) for a in argv)
+    text_needles = needles(public, held_out)
     print(f"text needles: {len(text_needles)}; seed needles: {len(SEEDS)}")
     hits = 0
     for name, patterns in (("text", text_needles), ("seed", set(SEEDS))):

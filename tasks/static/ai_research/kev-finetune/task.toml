@@ -3,7 +3,7 @@ artifacts = ["/app"]
 
 [task]
 name = "abundant/swe-m2_ai-research_kev-finetune"
-description = "Fine-tune the open Kev-0.8B decision model with Kev's own training recipe on one H100 so it gets better at a general text-decision domain without forgetting, judged by Kev's benchmark on questions the agent never sees."
+description = "Train the open Kev-0.8B decision model with Kev's own recipe on one H100 for a blended set of short-text decision domains, judged by its gain over the released model on held-out questions."
 authors = [{ name = "Fenil Faldu", email = "fenilfaldu143@gmail.com" }]
 
 [metadata]
@@ -27,6 +27,7 @@ workdir = "/app"
 
 [environment.env]
 KEV_ANTHROPIC_API_KEY = "${ANTHROPIC_API_KEY}"
+KEV_ANTHROPIC_BASE_URL = "https://api.anthropic.com"
 
 [verifier]
 environment_mode = "separate"

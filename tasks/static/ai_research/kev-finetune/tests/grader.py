@@ -1,4 +1,4 @@
-"""Check a staged Kev checkpoint and score it with kev.benchmark. Exit 0 scored, 2 unusable checkpoint, 3 broken suites."""
+"""Check a staged Kev checkpoint and score it, and the released Kev-0.8B, with kev.benchmark. Exit 0 scored, 2 unusable checkpoint, 3 verifier problem."""
 
 from __future__ import annotations
 
@@ -11,6 +11,8 @@ import torch
 
 BASE = "Qwen/Qwen3.5-0.8B-Base"
 BASE_REVISION = "dc7cdfe2ee4154fa7e30f5b51ca41bfa40174e68"
+RELEASED = Path("/opt/models/kev-0.8b")
+GRADED = ("transfer_test", "decision_test")
 SUITES = {
     "transfer_test": ("/opt/kev/evals/v4/transfer-v4", "test"),
     "transfer_dev": ("/opt/kev/evals/v4/transfer-v4", "development"),
@@ -72,27 +74,37 @@ def main(model: Path, out: Path) -> int:
     if facts is None:
         return 2
     (out / "checkpoint.json").write_text(json.dumps(facts, indent=1))
-    for name, (suite, split) in SUITES.items():
-        command = [
-            sys.executable,
-            "-I",
-            "-m",
-            "kev.benchmark",
-            "--run",
-            str(model),
-            "--suite",
-            suite,
-            "--out",
-            str(out / name),
-            "--device",
-            "cuda",
-        ]
-        command += ["--allow-test"] if split == "test" else ["--split", split]
-        print("running", " ".join(command), flush=True)
-        if subprocess.run(command, check=False).returncode != 0:
-            print(f"kev.benchmark failed on {name}", file=sys.stderr)
+    for name in GRADED:
+        if not benchmark(RELEASED, name, out / f"released_{name}"):
+            return 3
+    for name in SUITES:
+        if not benchmark(model, name, out / name):
             return 2
     return 0
+
+
+def benchmark(run: Path, name: str, out: Path) -> bool:
+    suite, split = SUITES[name]
+    command = [
+        sys.executable,
+        "-I",
+        "-m",
+        "kev.benchmark",
+        "--run",
+        str(run),
+        "--suite",
+        suite,
+        "--out",
+        str(out),
+        "--device",
+        "cuda",
+    ]
+    command += ["--allow-test"] if split == "test" else ["--split", split]
+    print("running", " ".join(command), flush=True)
+    if subprocess.run(command, check=False).returncode != 0:
+        print(f"kev.benchmark failed on {name} for {run}", file=sys.stderr)
+        return False
+    return True
 
 
 if __name__ == "__main__":
