@@ -193,13 +193,14 @@ def units() -> list[dict[str, str]]:
 
 
 def cmd_patches(_: argparse.Namespace) -> None:
-    """Export each unit's commits, restricted to the build inputs, as numbered patches (oldest first)."""
+    """Export each unit's commits as numbered patches (oldest first), restricted to what the product build
+    compiles: src/ without unit tests, generators and the Rust and WebAssembly back ends, plus the meson files."""
     report = []
     for unit in units():
         commits = (
             stack36() if unit["commits"] == "@stack36" else unit["commits"].split()
         )
-        dest = WORK / "patches" / unit["unit"]
+        dest = WORK / "patches-lib" / unit["unit"]
         dest.mkdir(parents=True, exist_ok=True)
         written = 0
         for i, sha in enumerate(commits):
@@ -215,6 +216,10 @@ def cmd_patches(_: argparse.Namespace) -> None:
                 "src",
                 "meson.build",
                 "meson_options.txt",
+                ":(exclude)src/test-*",
+                ":(exclude)src/gen-*",
+                ":(exclude)src/rust",
+                ":(exclude)src/wasm",
             ]
             for attempt in range(
                 4
@@ -233,7 +238,7 @@ def cmd_patches(_: argparse.Namespace) -> None:
         report.append(
             {"unit": unit["unit"], "commits": len(commits), "patches": written}
         )
-    (WORK / "patches" / "index.json").write_text(json.dumps(report, indent=1))
+    (WORK / "patches-lib" / "index.json").write_text(json.dumps(report, indent=1))
     print(json.dumps(report))
 
 
@@ -244,7 +249,7 @@ def cmd_revert_check(_: argparse.Namespace) -> None:
             [
                 "sh",
                 "/pipe/revert_check.sh",
-                "/work/patches",
+                "/work/patches-lib",
                 "/work/s6-revert-check.tsv",
             ],
             cpus=2,
@@ -263,7 +268,7 @@ def do_build(
 ) -> dict:
     """Build one tree (a release, optionally with a unit's commits reverted) in one bounded container."""
     src = f"/dl/harfbuzz/harfbuzz-{release}.tar.xz"
-    patches = f"/work/patches/{unit}" if unit else ""
+    patches = f"/work/patches-lib/{unit}" if unit else ""
     out = f"/work/out/hb/{bid}"
     started = time.time()
     code = docker_run(
