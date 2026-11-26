@@ -1,0 +1,49 @@
+--- a/src/interpreter/eval.rs	2026-11-27 01:17:18
++++ b/src/interpreter/eval.rs	2026-11-27 01:17:18
+@@ -128,18 +128,44 @@
+             body,
+         } => {
+             let inner = shed_for_binders(env, for_vars);
+-            let rel = project_dedup(&match_occurrences(trace, i, &inner, body), for_vars);
++            let rel = project_dedup(&mutant_scope_rows(trace, i, &inner, body), for_vars);
+             sum_column(&rel, bound_var.name())
+         }
+         AggExprKind::Count { for_vars, body } => {
+             let inner = shed_for_binders(env, for_vars);
+-            project_dedup(&match_occurrences(trace, i, &inner, body), for_vars).len() as i64
++            project_dedup(&mutant_scope_rows(trace, i, &inner, body), for_vars).len() as i64
+         }
+         AggExprKind::Call(call) => panic!(
+             "eval reached unresolved macro call `{}` — expansion did not run",
+             call.name
+         ),
++    }
++}
++
++/// MUTANT (feat:12:explain-current-count): does the aggregation body contain a past operator anywhere?
++fn mutant_has_past_operator(cond: &Condition) -> bool {
++    match &cond.kind {
++        ConditionKind::Formerly { .. } | ConditionKind::Previous { .. } | ConditionKind::Since { .. } => true,
++        ConditionKind::And { left, right } | ConditionKind::Or { left, right } => {
++            mutant_has_past_operator(left) || mutant_has_past_operator(right)
++        }
++        ConditionKind::Not { inner } => mutant_has_past_operator(inner),
++        ConditionKind::Exists { body, .. } => mutant_has_past_operator(body),
++        _ => false,
++    }
++}
++
++/// MUTANT (feat:12:explain-current-count): a body with no past operator is read over every timepoint `0..=i`
++/// instead of the decision point only.
++fn mutant_scope_rows(trace: &Trace, i: usize, env: &Env, body: &Condition) -> Vec<Row> {
++    if mutant_has_past_operator(body) {
++        return match_occurrences(trace, i, env, body);
++    }
++    let mut out = Vec::new();
++    for j in 0..=i {
++        out.extend(match_occurrences(trace, j, env, body));
+     }
++    out
+ }
+ 
+ /// Clone `env` and shed each **local** `for` binder name, so an enclosing

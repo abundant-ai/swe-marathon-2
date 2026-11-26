@@ -238,11 +238,12 @@ when {
 
 A call is read as a provider invocation because of its shape — any
 namespace-qualified name — not because it is declared. Declaredness is a separate
-check, made at lowering: a namespace-qualified call that matches no declared provider
-(and no macro and no Cedar built-in) is a hard error, "unresolved call to `Ns::Fn`
-reached lowering — it is not a declared information provider, not a declared macro,
-and not a Cedar built-in". So a mistyped provider name is caught, not silently
-ignored.
+check: `validate` reports a namespace-qualified call that matches no declared provider
+("provider `Ns::Fn` is not present in the provider declarations"), and `replay` fails
+such a decision closed. A call with no namespace that is neither a declared macro nor a
+Cedar built-in is a hard error at lowering ("unresolved call to `fn` reached lowering —
+it is not a declared information provider, not a declared macro, and not a Cedar
+built-in …"). So a mistyped provider name is caught, not silently ignored.
 
 ---
 

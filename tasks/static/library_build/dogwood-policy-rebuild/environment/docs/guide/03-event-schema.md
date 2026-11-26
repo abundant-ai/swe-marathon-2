@@ -22,6 +22,7 @@ Every declaration has the form:
 - **`kind` — the event kind.** An author-chosen name such as `request`, `response`, `attempt`, `outcome`, or `audit`. Kind names are *not* reserved; you pick them.
 - **The angle brackets and body braces are mandatory.** `event A::r { }` (no `<>`) and `event <A>::r` (no body) are both parse errors. An *empty* body is fine: `event <A>::ping {}` declares a kind with zero fields.
 - **`decision` prefix** marks the kind as a decision point (see [Decision kinds](#decision-kinds-when-authorization-runs)).
+- **Each kind once.** Declaring the same kind twice is an error (`event kind \`r\` is declared more than once; …`), and an event schema that declares no event at all is rejected.
 
 Comments use `//` to end of line; a trailing comma after the last field is allowed.
 

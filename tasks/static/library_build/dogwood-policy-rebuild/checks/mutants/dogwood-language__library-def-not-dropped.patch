@@ -1,0 +1,11 @@
+--- a/src/api.rs
++++ b/src/api.rs
+@@ -1655,7 +1655,7 @@
+     let to_add: Vec<_> = library
+         .defs
+         .into_iter()
+-        .filter(|d| !defined.contains(d.name.as_str()))
++        // MUTANT (feat:06:policy-def-wins): a library def of the same name is kept, so overriding it is a duplicate
+         .collect();
+     surface.defs.extend(to_add);
+     Ok(())

@@ -1,0 +1,11 @@
+--- a/src/event_schema/relativize.rs
++++ b/src/event_schema/relativize.rs
+@@ -542,7 +542,7 @@
+             self.tp(span, &ti)?,
+             anchor,
+             self.cmp(span, CmpOp::Lt, &tj, &ti)?,
+-            self.not(span, between)?,
++            // MUTANT (feat:03:key-local-previous): drops "no mine position in between", so any earlier in-window event of the key satisfies `previous`
+         ];
+         let body = self.ands(span, body_parts)?;
+         let inner = self.exists_tp_inner(span, &tj, body)?;

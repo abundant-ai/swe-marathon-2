@@ -214,7 +214,7 @@ arith       ::= arith_mul { add_op arith_mul }
 arith_mul   ::= term { mul_op term }
 add_op      ::= "+" | "-"
 mul_op      ::= "*"
-cmp_op      ::= "<=" | ">=" | "==" | "<" | ">"
+cmp_op      ::= "<=" | ">=" | "!=" | "==" | "<" | ">"
 
 agg_expr    ::= sum_expr | count_expr | call
 sum_expr    ::= "sum" binder_slot for_binders "where" condition

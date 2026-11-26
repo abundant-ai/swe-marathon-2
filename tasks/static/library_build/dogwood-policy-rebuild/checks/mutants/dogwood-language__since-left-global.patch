@@ -1,0 +1,11 @@
+--- a/src/event_schema/relativize.rs
++++ b/src/event_schema/relativize.rs
+@@ -580,6 +580,8 @@
+         // body (grouped per outer correlation), which matches the ∀-side's
+         // non-binding role in MFOTL since.
+         let l = self.rewrite(left)?;
++        // MUTANT (feat:03:key-local-since-left): a positive left of `since` is checked at every position of the global trace
++        if true { return self.since(span, l, within.clone(), anchor_body); }
+         let ti = self.fresh("ti");
+         let tj = self.fresh("tj");
+         // Distinct stems for the two count-body timepoint binders. They must

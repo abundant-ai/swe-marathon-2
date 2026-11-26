@@ -92,20 +92,29 @@ def alternatives(f: dict) -> list[dict]:
     return d if isinstance(d, list) else [d]
 
 
+KEYS = (
+    ("policy_regex", "policy"),
+    ("trace_regex", "trace"),
+    ("schema_regex", "schema"),
+    ("args_regex", "args"),
+)
+
+
 def matches(detect: list[dict], inp: dict, tags: list[str]) -> bool:
-    """Whether any non-error alternative of an id's `detect` matches the case's inputs."""
+    """Whether any alternative of an id's `detect` matches the case's inputs. Alternatives are
+    OR-ed; inside one alternative every regex and the generator tag must all match (AND)."""
     for alt in detect:
-        for key, field in (
-            ("policy_regex", "policy"),
-            ("trace_regex", "trace"),
-            ("schema_regex", "schema"),
-            ("args_regex", "args"),
-        ):
-            pattern = alt.get(key)
-            if pattern and re.search(pattern, inp.get(field, ""), flags=re.MULTILINE):
-                return True
+        keys = [(k, field) for k, field in KEYS if alt.get(k)]
         tag = alt.get("gen_tag")
-        if tag and any(t == tag or t.startswith(tag + ":") for t in tags):
+        if not keys and not tag:
+            continue
+        ok = all(
+            re.search(alt[k], inp.get(field, ""), flags=re.MULTILINE)
+            for k, field in keys
+        )
+        if tag:
+            ok = ok and any(t == tag or t.startswith(tag + ":") for t in tags)
+        if ok:
             return True
     return False
 

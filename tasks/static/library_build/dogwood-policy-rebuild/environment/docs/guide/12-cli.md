@@ -83,8 +83,8 @@ Parses, lowers against the schema, and type-checks in one shot — the two error
 classes (syntax/macro/lowering failures, and schema-aware type errors) are both
 covered, so a clean `validate` means the policy is fully accepted. On success it
 prints `OK: validation passed …` and exits 0; on rejection it prints each
-finding as an underlined source snippet pointing at the offending `.dw` span and
-exits 2.
+finding on a line of its own (`error: …`, then any `warning: …`), then
+`FAILED: <n> error(s), <m> warning(s).`, and exits 2.
 
 ```text
 $ dogwood validate examples/write_after_read/policy.dw \
@@ -270,7 +270,7 @@ before running `validate`.
 Each `.log` line is: the `@<timestamp>`, then up to three optional **request-supplement envelopes** in a fixed order, then the event itself — a **quoted, fully-qualified** action id (`Drupe::Action::"Read"`) with an explicit **`::<kind>`** segment (`::request`) and its trailing `(<field>: …)` group. That trailing group is the **logged** record (the temporal-history fields a predicate correlates on); the envelopes carry the request-only supplements, each parsed positionally when present:
 
 - `scope(principal: …, resource: …)` — the request's principal and resource entities. (A decision-kind event omitting `scope(...)` has no principal/resource and fails closed to `Deny`.) The envelope does not log them: the trailing logged group writes `callerPrincipal` / `callerResource` itself, and the default event schema requires them, since it pins `callerPrincipal` and a logged caller field must hold the request's own.
-- `entities(<uid>: { <attr>: … }, …)` — the entity attribute store: each `uid` (e.g. `Drupe::OAuthUser::"alice"`) maps to its attributes, so a policy can read `principal.<attr>` / `resource.<attr>` or a provider can resolve one. A uid `"id"` containing `"` or `\` is escaped as in Cedar (`"a\"b"`).
+- `entities(<uid>: { <attr>: … }, …)` — the entity attribute store: each `uid` (e.g. `Drupe::OAuthUser::"alice"`) maps to its attributes, so a policy can read `principal.<attr>` / `resource.<attr>` or a provider can resolve one. A uid `"id"` containing `"` or `\` is escaped as in Cedar (`"a\"b"`). An entry may end with `in [ <parent uid>, … ]`, its direct parents, so that `in` sees the hierarchy: `Drupe::OAuthUser::"alice": { } in [Drupe::Team::"ops"]`.
 - `request_context(<group>: { … }, …)` — the request-only context the Cedar request is built from (`input`, `system`, …), distinct from the trailing logged group. A field a policy reads via `context.<group>.<name>` must appear here; a field a temporal predicate correlates on must appear in the trailing logged group. A field both need (`input`) is supplied in both. The context must be an instance of the action's context record type: every attribute it requires, such as the Drupe template's `system: { now: datetime }`, and no other. A value of an extension type is written as Cedar writes it: `system: { now: datetime("2024-01-01T00:00:00Z") }`, or `duration("1h")`, `ip("10.0.0.1")`, `decimal("1.50")`.
 
 The envelopes appear in that order (`scope`, then `entities`, then `request_context`) before the event group, and any may be omitted. Parsing is **strict**: an unterminated envelope, or a **duplicate key** within any group (a repeated uid in `entities(...)`, a repeated group in `scope`/`request_context`, a repeated field in the logged group or a nested record), is a parse error rather than a silent last-wins — so a hand-written trace cannot mis-decide on an accidental duplicate.

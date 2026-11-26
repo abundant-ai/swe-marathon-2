@@ -1,0 +1,12 @@
+--- a/src/extension/temporal/check.rs
++++ b/src/extension/temporal/check.rs
+@@ -424,7 +424,8 @@
+     }
+     let mut rho = rho.clone();
+     for c in &conjuncts {
+-        check_conjunct_demands(c, &rho)?;
++        // MUTANT (restr:04:producer-before-consumer): a consumer before its restrictor is accepted
++        let _ = check_conjunct_demands(c, &rho);
+         descend_nested_chains(c, &rho)?;
+         collect_range_restricted(c, &mut rho);
+     }

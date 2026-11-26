@@ -317,7 +317,7 @@ Two restrictions to know:
 - `action is Type` is invalid — the `is` form is not allowed on the action slot. You
   will get `` `action is Type` is not valid in the action scope ``.
 - Only `is Type in …` may follow an `is` test. Writing `is Type == …` is rejected with
-  `` `is Type {op} …` is not valid; only `is Type in …` is allowed ``.
+  `` `is Type {op} ...` is not valid; only `is Type in ...` is allowed ``.
 
 ### What the scope rejects
 
@@ -780,7 +780,8 @@ unrecognized method name gives `` unknown method `{other}` ``.
 
 At the base of the tower, a **primary** is one of: a dialect marker, a literal, a template
 slot, an entity reference, a variable name, a parenthesized expression, a set literal, or a
-record literal.
+record literal. As in Cedar, a key may appear only once in a record literal (keys compare after
+decoding): `{ a: 1, "a": 2 }` is rejected with ``duplicate key `a` in record literal``.
 
 **Variable names.** A bare name in value position must resolve to one of the four request
 variables: `principal`, `action`, `resource`, or `context`. Any other bare identifier is an

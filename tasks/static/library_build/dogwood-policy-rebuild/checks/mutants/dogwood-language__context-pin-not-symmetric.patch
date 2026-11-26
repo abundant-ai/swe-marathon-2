@@ -1,0 +1,12 @@
+--- a/src/event_schema/relativize.rs
++++ b/src/event_schema/relativize.rs
+@@ -140,7 +140,8 @@
+ /// principal.id`) is not symmetric, and its field need only be logged.
+ fn is_symmetric(pin: &Pin) -> bool {
+     match pin.root {
+-        PinRoot::Context => true,
++        // MUTANT (feat:03:symmetric-pin): a universal context pin no longer switches on key-local semantics
++        PinRoot::Context => false,
+         // Compared as paths: `["principal"]` and `["resource"]` exactly.
+         PinRoot::Scope => matches!(
+             pin.context_path.as_slice(),

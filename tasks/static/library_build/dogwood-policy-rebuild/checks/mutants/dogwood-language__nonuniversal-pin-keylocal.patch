@@ -1,0 +1,11 @@
+--- a/src/event_schema/relativize.rs
++++ b/src/event_schema/relativize.rs
+@@ -120,7 +120,7 @@
+         .pins
+         .iter()
+         .filter(|pin| is_symmetric(pin))
+-        .filter(|pin| rest.iter().all(|ev| ev.pins.contains(pin)))
++        // MUTANT (feat:03:non-universal-pin-global): a symmetric pin on only some kinds also switches on key-local semantics
+         .map(|pin| UniversalPin {
+             field_path: pin.field_path.clone(),
+             context_path: pin.context_path.clone(),

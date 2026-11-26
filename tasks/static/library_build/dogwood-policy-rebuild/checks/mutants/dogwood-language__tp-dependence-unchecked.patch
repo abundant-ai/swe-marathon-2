@@ -1,0 +1,11 @@
+--- a/src/extension/temporal/validate.rs
++++ b/src/extension/temporal/validate.rs
+@@ -71,7 +71,7 @@
+     check_entity_types(&leaf.condition, info, &mut errs);
+     check_decimal_literals(&leaf.condition, &mut errs);
+     check_context_fields(&leaf.condition, info, target_actions, narrow, &mut errs);
+-    check_tp_dependence(&leaf.condition, &mut errs);
++    // MUTANT (restr:04:tp-dependence): degenerate (timepoint-independent) monitoring scopes are accepted
+     check_types(&leaf.condition, info, events, target_actions, narrow, &mut errs);
+     check_sum_summands(&leaf.condition, &mut errs);
+     errs

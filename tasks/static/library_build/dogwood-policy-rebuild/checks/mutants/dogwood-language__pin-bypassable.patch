@@ -1,0 +1,11 @@
+--- a/src/event_schema/pin.rs
++++ b/src/event_schema/pin.rs
+@@ -103,6 +103,8 @@
+         return;
+     }
+     for pin in &event.pins {
++        // MUTANT (feat:03:pin-unconditional): an author-written field of the pin's name replaces the pin
++        if p.args.iter().any(|a| a.name == crate::field_path::join(&pin.field_path)) { continue; }
+         // A scope pin (`= principal` / `= resource`) lowers to a scope term; a
+         // context pin (`= context.<path>`) to a context-field term. Both carry
+         // the same dotted path shape, distinguished only by their root.

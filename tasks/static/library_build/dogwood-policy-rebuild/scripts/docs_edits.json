@@ -1906,5 +1906,110 @@
   "old": "with an error telling you the `scriptFile` reference was never resolved and to\nload the declarations with `from_json_file`. Rule of thumb: when a provider will\n",
   "new": "with an error telling you the `scriptFile` reference was never resolved. Rule of\nthumb: when a provider will\n",
   "count": 1
+ },
+ {
+  "op": "replace",
+  "file": "guide/04-temporal-expressions.md",
+  "old": "sits exactly at the default cap and is allowed. **Nested windows add up**",
+  "new": "sits exactly at the default cap and is allowed. A window must also be positive, so `within 0s` is rejected, and so is a window too long for its length in seconds to fit a 64-bit integer. **Nested windows add up**",
+  "count": 1
+ },
+ {
+  "op": "replace",
+  "file": "guide/04-temporal-expressions.md",
+  "old": "as in Cedar.\n\n### `tp` — the timepoint binder",
+  "new": "as in Cedar.\n\nNo binder, whether of an `exists`, a `for` list or a `tp`, may be named `principal`, `action`, `resource` or `context`: those are Cedar's request variables.\n\n### `tp` — the timepoint binder",
+  "count": 1
+ },
+ {
+  "op": "replace",
+  "file": "guide/03-event-schema.md",
+  "old": "- **`decision` prefix** marks the kind as a decision point (see [Decision kinds](#decision-kinds-when-authorization-runs)).\n",
+  "new": "- **`decision` prefix** marks the kind as a decision point (see [Decision kinds](#decision-kinds-when-authorization-runs)).\n- **Each kind once.** Declaring the same kind twice is an error (`event kind \\`r\\` is declared more than once; …`), and an event schema that declares no event at all is rejected.\n",
+  "count": 1
+ },
+ {
+  "op": "replace",
+  "file": "guide/02-policy-language.md",
+  "old": "slot, an entity reference, a variable name, a parenthesized expression, a set literal, or a\nrecord literal.\n",
+  "new": "slot, an entity reference, a variable name, a parenthesized expression, a set literal, or a\nrecord literal. As in Cedar, a key may appear only once in a record literal (keys compare after\ndecoding): `{ a: 1, \"a\": 2 }` is rejected with ``duplicate key `a` in record literal``.\n",
+  "count": 1
+ },
+ {
+  "op": "replace",
+  "file": "guide/10-provider-schema.md",
+  "old": "fails if two declared enums map to the same exported name (`A_B::C` and `A::B_C`).\n",
+  "new": "fails if two declared enums map to the same exported name (`A_B::C` and `A::B_C`).\n\nLoading also checks each declaration on its own: an enum in `entityTypes` must be named\n`Ns::Type` in a namespace this file declares providers in, must list at least one value,\nand must not list a value twice; a `paramType` must be one of the kinds above; an `entity`\n`paramType` requires an `entityType`, takes no other field such as `fields` or `items`, and\nits `entityType` must be a fully qualified name, outside the reserved `__cedar` namespace,\nthat names an enum when it is in this file's namespaces.\n",
+  "count": 1
+ },
+ {
+  "op": "replace",
+  "file": "guide/12-cli.md",
+  "old": "A uid `\"id\"` containing `\"` or `\\` is escaped as in Cedar (`\"a\\\"b\"`).\n",
+  "new": "A uid `\"id\"` containing `\"` or `\\` is escaped as in Cedar (`\"a\\\"b\"`). An entry may end with `in [ <parent uid>, … ]`, its direct parents, so that `in` sees the hierarchy: `Drupe::OAuthUser::\"alice\": { } in [Drupe::Team::\"ops\"]`.\n",
+  "count": 1
+ },
+ {
+  "op": "replace",
+  "file": "guide/05-information-providers.md",
+  "old": "namespace-qualified name — not because it is declared. Declaredness is a separate\ncheck, made at lowering: a namespace-qualified call that matches no declared provider\n(and no macro and no Cedar built-in) is a hard error, \"unresolved call to `Ns::Fn`\nreached lowering — it is not a declared information provider, not a declared macro,\nand not a Cedar built-in\". So a mistyped provider name is caught, not silently\nignored.\n",
+  "new": "namespace-qualified name — not because it is declared. Declaredness is a separate\ncheck: `validate` reports a namespace-qualified call that matches no declared provider\n(\"provider `Ns::Fn` is not present in the provider declarations\"), and `replay` fails\nsuch a decision closed. A call with no namespace that is neither a declared macro nor a\nCedar built-in is a hard error at lowering (\"unresolved call to `fn` reached lowering —\nit is not a declared information provider, not a declared macro, and not a Cedar\nbuilt-in …\"). So a mistyped provider name is caught, not silently ignored.\n",
+  "count": 1
+ },
+ {
+  "op": "replace",
+  "file": "guide/12-cli.md",
+  "old": "prints `OK: validation passed …` and exits 0; on rejection it prints each\nfinding as an underlined source snippet pointing at the offending `.dw` span and\nexits 2.\n",
+  "new": "prints `OK: validation passed …` and exits 0; on rejection it prints each\nfinding on a line of its own (`error: …`, then any `warning: …`), then\n`FAILED: <n> error(s), <m> warning(s).`, and exits 2.\n",
+  "count": 1
+ },
+ {
+  "op": "replace",
+  "file": "guide/10-provider-schema.md",
+  "old": "(`p_0`, `p_1`, …) is assigned per invocation",
+  "new": "(`policy_0_p_0`, `policy_0_p_1`, …: the rule's id, then `p_` and the invocation's number) is assigned per invocation",
+  "count": 1
+ },
+ {
+  "op": "replace",
+  "file": "guide/10-provider-schema.md",
+  "old": "keyed by field id. So `context.providers.p_N` holds",
+  "new": "keyed by field id. So `context.providers.<field>` holds",
+  "count": 1
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "cmp_op      ::= \"<=\" | \">=\" | \"==\" | \"<\" | \">\"\n",
+  "new": "cmp_op      ::= \"<=\" | \">=\" | \"!=\" | \"==\" | \"<\" | \">\"\n",
+  "count": 1
+ },
+ {
+  "op": "replace",
+  "file": "guide/10-provider-schema.md",
+  "old": "  Validation checks the argument's enum type only for a direct `context` field (see\n",
+  "new": "  Validation checks the argument's enum type wherever the argument comes from (see\n",
+  "count": 1
+ },
+ {
+  "op": "replace",
+  "file": "guide/02-policy-language.md",
+  "old": "`` `is Type {op} …` is not valid; only `is Type in …` is allowed ``.",
+  "new": "`` `is Type {op} ...` is not valid; only `is Type in ...` is allowed ``.",
+  "count": 1
+ },
+ {
+  "op": "replace",
+  "file": "guide/10-provider-schema.md",
+  "old": "If a provider has no `implementation`, evaluating it errors (\"has no implementation;\ncannot evaluate it at authorize time\"). Compile errors in the script surface as \"script\ncompile error,\" and errors thrown while calling `evaluate` surface as \"script error\ncalling evaluate.\"\n",
+  "new": "If a provider has no `implementation`, evaluating it errors (``has no `implementation`;\ncannot evaluate it at authorize time``). Compile errors in the script surface as \"script\ncompile error\", and errors thrown while calling `evaluate` surface as ``script error\ncalling `evaluate` ``.\n",
+  "count": 1
+ },
+ {
+  "op": "replace",
+  "file": "guide/10-provider-schema.md",
+  "old": "`provider ... has no implementation; cannot evaluate it at authorize time`.",
+  "new": "``provider `…` has no `implementation`; cannot evaluate it at authorize time``.",
+  "count": 1
  }
 ]

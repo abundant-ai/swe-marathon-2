@@ -3,7 +3,8 @@
 Runs inside the toolchain container (python3 -I), never on the host. Three sources:
 - upstream's Apache-2.0 bundle generator (`dogwood-lean/conformance/gen/gen.py` of the 1.2.0
   source), run with private seeds, one family at a time, near misses and schema cases included;
-- the paired cases of `pairs.py` (B-dedup, B-scope and the K shapes);
+- the paired cases of `pairs.py` (B-dedup, B-scope and the K shapes), and the bundles of
+  `restrictions.py`, each breaking one stated restriction the generator never breaks;
 - command-line cases (`--help`, `--version`, usage and I/O errors) on a small bundle of their own,
   and, on a quarter of the bundles, commands that read their input from standard input (`-`).
 
@@ -37,6 +38,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import pairs
+import restrictions
 
 TRACE_NAME = re.compile(r"trace(_\d+)?\.log")
 STAMP = re.compile(r"^@(-?\d+)\s")
@@ -178,6 +180,8 @@ def cases_for(name: str, bundle: Path, meta: dict, r: random.Random) -> list[dic
     fl = flags(bundle)
     family = meta.get("family", "")
     pair = f"{meta['b_family']}:{meta['pair']}" if meta.get("b_family") else None
+    if family == "restrictions":
+        return restriction_cases(name, bundle, meta, base, fl)
     out = []
     for trace in sorted(
         p.name for p in bundle.iterdir() if TRACE_NAME.fullmatch(p.name)
@@ -358,6 +362,36 @@ def cases_for(name: str, bundle: Path, meta: dict, r: random.Random) -> list[dic
     return out
 
 
+def restriction_cases(name, bundle, meta, base, fl) -> list[dict]:
+    """The commands whose answers show the one restriction a `restrictions.py` bundle breaks."""
+    targets = {
+        "action": "schema.cedarschema",
+        "event": "event.dwschema",
+        "providers": "providers.json",
+    }
+    out = []
+    for cmd in meta["cmds"]:
+        if cmd == "check-parse":
+            args = ["check-parse", "policy.dw", *fl]
+            out.append(case(name, "check-parse/human", "F", args, "human"))
+        elif cmd == "validate":
+            for fmt, fam in (("human", "V"), ("json", "V-msg")):
+                args = ["validate", *base, *fl, "--format", fmt]
+                out.append(case(name, f"validate/{fmt}", fam, args, fmt))
+        elif cmd == "lower":
+            args = ["lower", *base, *fl, "--format", "human"]
+            out.append(case(name, "lower/human", "L", args, "human"))
+        elif cmd == "replay":
+            for fmt in ("human", "json"):
+                args = ["replay", *base, "--trace", "trace.log", *fl, "--format", fmt]
+                out.append(case(name, f"trace.log/replay/{fmt}", "R", args, fmt))
+        elif cmd.startswith("schema-"):
+            what = cmd.split("-", 1)[1]
+            args = ["schema", what, targets[what]]
+            out.append(case(name, f"{cmd}/human", "F", args, "human"))
+    return out
+
+
 def cli_cases(bundles: Path) -> list[dict]:
     """The command line itself, on a bundle of its own: help and version text, usage errors and
     I/O errors."""
@@ -415,6 +449,11 @@ def cli_cases(bundles: Path) -> list[dict]:
                 "absent.log",
             ],
         ),
+        (
+            "replay-no-trace",
+            ["replay", "policy.dw", "--policy-schema", "schema.cedarschema"],
+        ),
+        ("format-with-format", ["format", "policy.dw", "--format", "json"]),
     ]
     for cmd in (
         "format",
@@ -493,6 +532,7 @@ def main() -> int:
     key = {shape: a.key_other for shape in pairs.KEY_SHAPES}
     key["previous"] = a.key_previous
     pairs.write_pairs(a.seed + 100, a.pairs, raw, key)
+    restrictions.write_restrictions(a.seed + 300, raw)
 
     r = random.Random(a.seed + 200)
     bundles.mkdir(parents=True)

@@ -1,0 +1,12 @@
+--- a/src/validate.rs
++++ b/src/validate.rs
+@@ -213,7 +213,8 @@
+             push_cedar_error(lowered, warning, warning.policy_id().as_ref(), errors);
+             continue;
+         }
+-        if !matches!(warning, cedar_policy::ValidationWarning::ImpossiblePolicy(_)) {
++        // MUTANT (restr:08:impossible-policy): an impossible policy stays a Cedar warning instead of an error
++        if true || !matches!(warning, cedar_policy::ValidationWarning::ImpossiblePolicy(_)) {
+             warnings.push(ValidationWarning::Cedar(warning.clone()));
+             continue;
+         }

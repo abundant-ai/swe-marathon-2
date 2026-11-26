@@ -1,0 +1,12 @@
+--- a/src/cedarify/to_ast.rs
++++ b/src/cedarify/to_ast.rs
+@@ -320,7 +320,8 @@
+         BinOp::NotEq => b().noteq(l, r),
+         BinOp::Less => b().less(l, r),
+         BinOp::LessEq => b().lesseq(l, r),
+-        BinOp::Greater => b().greater(l, r),
++        // MUTANT (feat:08:binary-desugar): `>` lowers to a swapped `<` instead of `!(l <= r)`
++        BinOp::Greater => b().less(r, l),
+         BinOp::GreaterEq => b().greatereq(l, r),
+         BinOp::And => b().and(l, r),
+         BinOp::Or => b().or(l, r),

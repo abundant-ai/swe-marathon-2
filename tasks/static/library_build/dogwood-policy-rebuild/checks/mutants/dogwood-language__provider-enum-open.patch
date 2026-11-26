@@ -1,0 +1,12 @@
+--- a/src/extension/provider/eval.rs
++++ b/src/extension/provider/eval.rs
+@@ -431,7 +431,8 @@
+                     ));
+                 }
+             };
+-            if decl.values.contains(&id) {
++            // MUTANT (feat:05:enum-unexpected-denied): an id outside the declared enum becomes an entity instead of denying
++            if true || decl.values.contains(&id) {
+                 Ok(Value::Entity {
+                     ty: exported.to_string(),
+                     id,

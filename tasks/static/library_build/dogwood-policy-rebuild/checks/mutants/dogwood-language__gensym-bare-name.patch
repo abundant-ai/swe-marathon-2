@@ -1,0 +1,12 @@
+--- a/src/macros/mod.rs
++++ b/src/macros/mod.rs
+@@ -1597,7 +1597,8 @@
+         if let Some(s) = self.binder_gensym.get(binder_name) {
+             return s.clone();
+         }
+-        let s = format!("{}${}", binder_name, self.call_span.start);
++        // MUTANT (feat:06:hygiene): `$t` expands to the bare name `t`, so it can capture a call-site variable
++        let s = binder_name.to_string();
+         self.binder_gensym
+             .insert(binder_name.to_string(), s.clone());
+         s

@@ -96,7 +96,7 @@ when { GuardDuty::ThreatDetector([context.input.prompt]).threatSeverity == Guard
 - **Not the action schema's enums:** an output can't use an enum declared in the action
   schema, and comparing a provider enum with one is never true. An action-schema enum can
   still be an argument (`"paramType": "entity"` with its name as `entityType`).
-  Validation checks the argument's enum type only for a direct `context` field (see
+  Validation checks the argument's enum type wherever the argument comes from (see
   [How invocations are validated](#how-invocations-are-validated-against-declarations)).
   See [Enum-typed values](05-information-providers.md#enum-typed-values).
 
@@ -119,6 +119,13 @@ so a policy over several namespaces matches on all of them. Validation messages 
 declared name. Lowering fails if the action schema already declares the exported name or
 the declared name, or if the exported name would shadow a root-namespace name; loading
 fails if two declared enums map to the same exported name (`A_B::C` and `A::B_C`).
+
+Loading also checks each declaration on its own: an enum in `entityTypes` must be named
+`Ns::Type` in a namespace this file declares providers in, must list at least one value,
+and must not list a value twice; a `paramType` must be one of the kinds above; an `entity`
+`paramType` requires an `entityType`, takes no other field such as `fields` or `items`, and
+its `entityType` must be a fully qualified name, outside the reserved `__cedar` namespace,
+that names an enum when it is in this file's namespaces.
 
 ### Choosing the implementation: inline `script` vs `scriptFile`
 
@@ -457,10 +464,10 @@ decimal text semantics), strings ↔ string, arrays ↔ arrays, and object maps 
 produces the error "script returned an unsupported value type." In practice, return an
 object map (`#{ … }`) whose fields match your declared `outputType`.
 
-If a provider has no `implementation`, evaluating it errors ("has no implementation;
-cannot evaluate it at authorize time"). Compile errors in the script surface as "script
-compile error," and errors thrown while calling `evaluate` surface as "script error
-calling evaluate."
+If a provider has no `implementation`, evaluating it errors (``has no `implementation`;
+cannot evaluate it at authorize time``). Compile errors in the script surface as "script
+compile error", and errors thrown while calling `evaluate` surface as ``script error
+calling `evaluate` ``.
 
 ---
 
@@ -469,7 +476,7 @@ calling evaluate."
 Putting the pieces together, here is the full life cycle of a provider invocation.
 
 **At lowering time**, every provider invocation is hoisted. A generated field name
-(`p_0`, `p_1`, …) is assigned per invocation, and the call leaf is replaced with
+(`policy_0_p_0`, `policy_0_p_1`, …: the rule's id, then `p_` and the invocation's number) is assigned per invocation, and the call leaf is replaced with
 `context.providers.<field>`. The surrounding projection and comparison were already
 ordinary Cedar, so they lower natively — an index `["k"]` becomes `.k`, and the
 comparison stays as whatever Cedar op you wrote.
@@ -496,7 +503,7 @@ schema-aware request-context validation must account for that distinction.
 context. It passes `context.input` through from the event, evaluates **every**
 declared provider field (resolving each argument, then running the
 Rhai `evaluate`), and collects the outputs into a single `context.providers` object
-keyed by field id. So `context.providers.p_N` holds that provider's evaluated output
+keyed by field id. So `context.providers.<field>` holds that provider's evaluated output
 record, and Cedar evaluates the (already-lowered) comparison against it.
 
 The net effect: you write the *surface* form `Ns::Fn(args).field <cmp> literal`, and
@@ -633,7 +640,7 @@ The provider's output is nothing more than a record bound into
 declares the *contract* for that record without a script to produce it. If you
 evaluate such a provider through the built-in path, as `dogwood replay` does, you
 get a clear error —
-`provider ... has no implementation; cannot evaluate it at authorize time`.
+``provider `…` has no `implementation`; cannot evaluate it at authorize time``.
 
 Use this to declare the shape of a value the sandbox deliberately cannot
 compute — a service call, a model, a database lookup — so that policies can be

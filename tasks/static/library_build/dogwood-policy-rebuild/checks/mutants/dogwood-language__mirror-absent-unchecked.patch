@@ -1,0 +1,12 @@
+--- a/src/conformance.rs
++++ b/src/conformance.rs
+@@ -563,7 +563,8 @@
+                     render_value(expected)
+                 ));
+             }
+-            (None, Some(logged)) if rule == MirrorRule::Strict => {
++            // MUTANT (restr:03:mirror-absent-without-value): an event without the request-side value may log the mirrored field
++            (None, Some(logged)) if rule == MirrorRule::Unchecked => {
+                 return Some(format!(
+                     "`{head}` logs `{field_name}` as {}, but has no value for {what} for it to \
+                      mirror: an event that reports on a key must carry that key's scope",

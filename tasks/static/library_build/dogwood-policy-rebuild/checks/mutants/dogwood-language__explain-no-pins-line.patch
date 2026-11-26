@@ -1,0 +1,12 @@
+--- a/src/informalize.rs
++++ b/src/informalize.rs
+@@ -480,7 +480,8 @@
+     facts: &SchemaFacts,
+ ) -> Informalization {
+     let any_temporal = policies.iter().any(|p| p.temporal_block_count() > 0);
+-    let preamble = if any_temporal {
++    // MUTANT (feat:12:explain-pins-line): the event schema's pins line is never printed
++    let preamble = if false && any_temporal {
+         preamble_phrase(event_schema)
+     } else {
+         None

@@ -1,0 +1,11 @@
+--- a/src/cedarify/mod.rs
++++ b/src/cedarify/mod.rs
+@@ -461,7 +461,7 @@
+         // Each rule opens a fresh field-ordinal namespace under its own key, so
+         // hoisted names are `<rule_key>__temporal_0`, `…__temporal_1`, ….
+         ctx.rule_key = key.clone();
+-        ctx.field_ordinal = 0;
++        // MUTANT (feat:08:field-ordinal-reset): the hoisting ordinal is not reset at each rule boundary
+         ctx.context_reads.clear();
+         let static_policy = emit_policy(policy, &id, true, ctx)?;
+         context_reads.extend(

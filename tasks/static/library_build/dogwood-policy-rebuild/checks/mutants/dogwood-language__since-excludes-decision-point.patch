@@ -1,0 +1,12 @@
+--- a/src/interpreter/eval.rs
++++ b/src/interpreter/eval.rs
+@@ -566,7 +566,8 @@
+         if eval_condition(trace, j, env, right) {
+             // Check left across (j, i].
+             let mut ok = true;
+-            for k in (j + 1)..=i {
++            // MUTANT (feat:04:since): the left of `since` is no longer required at the decision point
++            for k in (j + 1)..i {
+                 if !eval_condition(trace, k, env, left) {
+                     ok = false;
+                     break;
