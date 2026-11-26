@@ -507,7 +507,8 @@ def delivery_notes(top: Path, mark: Path = DELIVERY_MARK) -> list[str]:
 def delivery_record(path: Path = DELIVERY_RECORD) -> dict:
     """The collect hook's record, cut to what metrics.json holds: whether public connectivity was open
     when the session ended, the agent's processes then, how many rounds of killing they took and
-    how many were left, when set-up ended, when the session's first process and the step started, the
+    how many were left, when set-up ended, when the session's first process (with how many short ones were
+    passed over before it) and the step started, the
     end of the work, what it was counted from and how many entries the hook took out for changing
     after it (never a reason to change the reward here: what
     changed late did not arrive), when the session's processes were stopped after its limit, if they
@@ -530,7 +531,8 @@ def delivery_record(path: Path = DELIVERY_RECORD) -> dict:
                 "user_processes": (record.get("user_processes") or [])[:50],
                 "kill_rounds": record.get("kill_rounds"), "user_processes_left": record.get("user_processes_left"),
                 "turn_started": record.get("turn_started"), "hook_started": record.get("hook_started"),
-                "first_process_started": record.get("first_process_started"), "work_end": record.get("work_end"),
+                "first_process_started": record.get("first_process_started"),
+                "first_process_passed_over": record.get("first_process_passed_over"), "work_end": record.get("work_end"),
                 "work_end_from": record.get("work_end_from"), "late_entries": record.get("late_entries"),
                 "stopped_after_limit": record.get("stopped_after_limit"),
                 "delivered": record.get("delivered"), "listing_complete": record.get("listing_complete"),

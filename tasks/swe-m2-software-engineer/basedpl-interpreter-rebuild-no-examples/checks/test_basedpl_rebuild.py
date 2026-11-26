@@ -2273,15 +2273,19 @@ def test_the_stop_after_the_limit_counts_from_the_sessions_first_process_even_te
         proc.at(1029.0)
         time.sleep(0.5)
         assert not (state / "first-process").exists(), "no first process yet"
+        proc.at(1031.5)
         proc.process(70, MY_UID, 40, 1030.0)  # the session's first process, under root's su
         proc.process(80, MY_UID, 70, 1031.0)
-        proc.at(1031.5)
         time.sleep(0.5)
         assert not stamped(trace), "nothing before the end"
-        # Round 19 (M1 of the v7 verdict): the process and the wall-clock time of its start are recorded at once, long
-        # before the stop, for the collect hook's end of the work. Its uptime read 1,029 or 1,031.5 when it saw it.
+        assert not (state / "first-process").exists(), "seen by looks at one moment of its clock: not yet confirmed"
+        proc.at(1032.6)  # a second look, 1.1 s later on the clock it reads, sees it alive with the same start
+        time.sleep(0.5)
+        # Round 19 (M1 of the v7 verdict): the process and the wall-clock time of its start are recorded once confirmed,
+        # long before the stop, for the collect hook's end of the work. Its uptime read 1,032.6 when it confirmed it.
         first = json.loads((state / "first-process").read_text())
-        assert first["first_process"] == 70 and abs(first["first_process_started"] - time.time()) < 4, first
+        assert (first["first_process"], first["first_process_passed_over"]) == (70, 0), first
+        assert abs(first["first_process_started"] - (time.time() - 2.6)) < 1.5, first
         due = 1030.0 + 34560 + 2
         proc.at(due - 0.5)
         time.sleep(1.0)
@@ -2292,9 +2296,57 @@ def test_the_stop_after_the_limit_counts_from_the_sessions_first_process_even_te
             time.sleep(0.05)
         record = json.loads((state / "stopped").read_text())
         assert record["first_process"] == 70 and record["network_watched"] is False and record["rounds"] == 1, record
+        assert record["first_process_passed_over"] == 0, record
         assert (record["processes"], record["still_running"]) == (1, 0) and record["at"] >= record["due"] - 0.2, record
         assert [call for _, call in stamped(trace) if call.startswith("setpriv")] == ["setpriv --reuid " + ME + " --regid " + ME +
                                                                                     " --clear-groups kill -STOP -1"]
+        assert not holder_alive(holder, wait=2), "it exits once it has stopped them"
+    finally:
+        end_holder(state)
+
+
+def test_a_short_command_before_the_clock_is_never_the_first_process(tmp_path):
+    """Round 19 (M1 of the v7 verdict; SymPy's re-check 7 found the same path in its own watch). Harbor runs a short
+    `pwd` as the user before it starts the agent's clock. Seen by one look, such a command became the session's first
+    process, and both the stop after the limit and, since this round, the collect hook's end of the work counted from
+    a start before harbor's clock: the end then fell before harbor's limit, and the turn's last saves were taken out.
+    A process now counts as the first only once two looks at least CONFIRM_SECONDS apart, on the clock the process
+    reads, both saw it alive with the same start; those seen once and gone are counted as passed over. Against a
+    stand-in /proc: a short command after set-up, gone before a second look; another short one under the same pid,
+    with a later start, also gone; then the session's process, seen twice. Before this round the first look took the
+    first short command."""
+    trace, proc = tmp_path / "trace", FakeProc(tmp_path / "t", 1000.0)
+    state, holder = set_up(tmp_path / "t", proc, trace)
+    try:
+        time.sleep(0.3)
+        proc.at(1005.2)
+        proc.process(65, MY_UID, 40, 1005.0)  # harbor's pwd, before the agent's clock
+        time.sleep(0.5)
+        assert not (state / "first-process").exists(), "seen once: not the first process"
+        shutil.rmtree(proc.root / "65")  # gone within milliseconds
+        proc.at(1006.3)
+        proc.process(65, MY_UID, 40, 1006.0)  # the same pid again, another short command
+        time.sleep(0.5)
+        assert not (state / "first-process").exists(), "a later start under the same pid: another process, seen once"
+        shutil.rmtree(proc.root / "65")
+        proc.at(1007.6)
+        proc.process(70, MY_UID, 40, 1007.5)  # the session's first process, after harbor's clock
+        time.sleep(0.5)
+        assert not (state / "first-process").exists(), "seen at one moment of its clock only"
+        proc.at(1008.7)  # a second look, 1.1 s later, sees it alive with the same start
+        until = time.monotonic() + 5
+        while time.monotonic() < until and not (state / "first-process").exists():
+            time.sleep(0.05)
+        first = json.loads((state / "first-process").read_text())
+        assert (first["first_process"], first["first_process_passed_over"]) == (70, 2), first
+        assert abs(first["first_process_started"] - (time.time() - 1.2)) < 1.5, first
+        proc.at(1007.5 + 34560 + 2 + 0.05)  # its own due time, not the short command's
+        until = time.monotonic() + 10
+        while time.monotonic() < until and not (state / "stopped").exists():
+            time.sleep(0.05)
+        record = json.loads((state / "stopped").read_text())
+        assert (record["first_process"], record["first_process_passed_over"]) == (70, 2), record
+        assert record["at"] >= record["due"] - 0.2, record
         assert not holder_alive(holder, wait=2), "it exits once it has stopped them"
     finally:
         end_holder(state)
@@ -2862,11 +2914,13 @@ def test_the_end_of_the_work_counts_from_the_sessions_first_process_not_from_set
 
     def build(rebuild):
         (rebuild / "bpl").write_text("#!/bin/sh\necho mine\n")
-        when["end"] = int(time.time()) + 2  # the end of the work: after the last save, before the late one
+        when["end"] = round(time.time() + 2, 3)  # the end of the work: after the last save, before the late one
         state = rebuild.parent.parent / "state"
-        when["first"] = when["end"] - 34561 + 0.4  # rounded down, plus the limit and the one second: the end
-        (state / "turn-started").write_text(f"{when['end'] - 34561 - 30}\n")  # set-up, 30 s before the first process
-        (state / "first-process").write_text(json.dumps({"first_process": 70, "first_process_started": when["first"]}))
+        when["first"] = round(when["end"] - 34560 - 0.1, 3)  # plus the limit and a tenth of a second for the reads: the end
+        when["setup"] = int(when["first"]) - 30  # set-up, 30 s before the first process
+        (state / "turn-started").write_text(f"{when['setup']}\n")
+        (state / "first-process").write_text(json.dumps({"first_process": 70, "first_process_started": when["first"],
+                                                         "first_process_passed_over": 1}))
         (rebuild / "last-second.txt").write_text("saved in the turn's last second\n")
         while time.time() < when["end"] + 0.3:
             time.sleep(0.05)
@@ -2877,8 +2931,9 @@ def test_the_end_of_the_work_counts_from_the_sessions_first_process_not_from_set
     assert mark[1:] == ["removed after-the-end.txt: changed after the end of the work, 34560 s after the session began"], mark
     assert sorted(path.name for path in rebuild.iterdir()) == ["bpl", "last-second.txt"], mark
     record = json.loads(hook_record(rebuild).read_text())
-    assert (record["work_end"], record["work_end_from"], record["late_entries"]) == (when["end"], "first process", 1), record
-    assert record["first_process_started"] == when["first"] and record["turn_started"] == when["end"] - 34561 - 30
+    assert abs(record["work_end"] - when["end"]) < 0.0015 and (record["work_end_from"], record["late_entries"]) == ("first process", 1), record
+    assert record["first_process_started"] == when["first"] and record["turn_started"] == when["setup"]
+    assert record["first_process_passed_over"] == 1, record
     limits = re.search(r"^LIMIT_SECONDS, MARGIN_SECONDS, STOP_SECONDS = (\d+), (\d+), (\d+)$",
                        (TASK / "environment" / "provision-scratch").read_text(), re.MULTILINE)
     stop = when["first"] + int(limits.group(1)) + int(limits.group(2))  # the stop, and the network's return it waits for
@@ -2888,7 +2943,8 @@ def test_the_end_of_the_work_counts_from_the_sessions_first_process_not_from_set
         from pathlib import Path
         print(json.dumps(verify.delivery_record(Path({str(hook_record(rebuild))!r}))))
     """))
-    assert (summary["work_end"], summary["work_end_from"], summary["first_process_started"]) == (when["end"], "first process", when["first"])
+    assert (summary["work_end"], summary["work_end_from"], summary["first_process_started"], summary["first_process_passed_over"]) == (
+        record["work_end"], "first process", when["first"], 1)
 
     def set_up_only(rebuild):  # no first process recorded: set-up's time, as before round 19
         (rebuild / "bpl").write_text("#!/bin/sh\n")
@@ -2900,7 +2956,8 @@ def test_the_end_of_the_work_counts_from_the_sessions_first_process_not_from_set
     record = json.loads(hook_record(rebuild).read_text())
     assert (record["work_end"], record["work_end_from"], record["first_process_started"]) == (when["setup"] + 34561, "set-up", None)
     holder, measure = (TASK / "environment" / "provision-scratch").read_text(), hook_scripts()["measure"]
-    assert holder.index("record_first(pid, start)") < holder.index("due = start + LIMIT_SECONDS + MARGIN_SECONDS"), "recorded at once"
+    assert holder.index("record_first(pid, start, passed_over)") < holder.index("due = start + LIMIT_SECONDS + MARGIN_SECONDS"), \
+        "recorded once confirmed, before the stop is timed"
     assert 'for name in ("first-process", "stopped"):' in measure, "the hook reads the start the stop counts from"
 
 

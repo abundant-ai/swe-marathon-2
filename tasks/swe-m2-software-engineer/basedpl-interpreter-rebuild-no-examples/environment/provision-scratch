@@ -4,9 +4,10 @@
 # is left, that step can still do its work, and it records how much was free, and the time, when the session began.
 # Each run also leaves one process of root's behind, detached, in place of the one an earlier run left, so that the
 # last run's remains: /var/lib/scratch/holder.py, below, which stops the user's processes with SIGSTOP, and ends none,
-# once the session's limit has passed, counted from the start of the session's first process. It records that process
-# and its start as soon as it sees it (/var/lib/scratch/first-process), and the maintenance step counts the end of the
-# work from the same start.
+# once the session's limit has passed, counted from the start of the session's first process: one that two looks a
+# second apart both see alive, so that a short command run as the user before the session's clock starts never counts.
+# It records that process and its start then (/var/lib/scratch/first-process), and the maintenance step counts the end
+# of the work from the same start.
 mkdir -p /var/lib/scratch/inodes /var/lib/scratch/out && chmod 0700 /var/lib/scratch /var/lib/scratch/out  # out: the maintenance
 # step's mark and record of what it collects, which go with /app/rebuild to the machine that runs it, never inside it
 if [ ! -e /var/lib/scratch/room ]; then
@@ -18,9 +19,12 @@ date +%s > /var/lib/scratch/turn-started 2>/dev/null
 cat > /var/lib/scratch/holder.py <<'EOF'
 """Stops the user's processes with SIGSTOP, and ends none, once the session's limit has passed. The limit counts from
 the start of the session's first process: the first process of the user that begins after this one, its parent not the
-user's (what set-up left, and what that forks, does not count), its start read from /proc in seconds since boot. As
-soon as it is seen, that process and the wall-clock time of its start are written to STATE/first-process, from which
-the maintenance step that collects the session counts the end of the work too. Once
+user's (what set-up left, and what that forks, does not count), its start read from /proc in seconds since boot, and
+one that two looks at least CONFIRM_SECONDS apart, on the same clock, both saw alive with the same start. A short
+command run as the user before the session's clock starts (a `pwd`, gone within milliseconds) is gone by the second
+look and never counts; how many were seen once and gone is recorded. Once the process is confirmed, it and the
+wall-clock time of its start are written to STATE/first-process, from which the maintenance step that collects the
+session counts the end of the work too. Once
 LIMIT_SECONDS plus MARGIN_SECONDS have passed since then, and, where the network's return can be seen (HOSTS resolved
 at the start, while names resolve, then tried by address), not before one of them answers again, it repeats `kill
 -STOP -1` as the user until no process of the user is running (states R, S, D; for STOP_SECONDS at most), records
@@ -39,6 +43,7 @@ STATE, PROC, USER = "/var/lib/scratch", "/proc", "dev"
 LIMIT_SECONDS, MARGIN_SECONDS, STOP_SECONDS = 34560, 2, 15
 HOSTS, PORT, CONNECT_SECONDS = ("pypi.org", "github.com"), 443, 0.3
 POLL_SECONDS, STEP_SECONDS = 0.5, 30  # between looks for the first process; the longest single sleep after it
+CONFIRM_SECONDS, SAME_START_SECONDS = 1.0, 0.5  # seen alive by two looks this far apart; two reads of one start differ less
 
 
 def begun():
@@ -122,13 +127,15 @@ def wall(since_boot):
     return round(time.time() - (now - since_boot), 3) if now is not None else None
 
 
-def record_first(pid, start):
-    """STATE/first-process: the session's first process and the wall-clock time of its start, written whole (a new file
-    renamed into place), so that a reader finds the old one or the new one, never part of one."""
+def record_first(pid, start, passed_over):
+    """STATE/first-process: the session's first process, the wall-clock time of its start and how many processes were
+    seen as the first once and gone before a second look, written whole (a new file renamed into place), so that a
+    reader finds the old one or the new one, never part of one."""
     path = os.path.join(STATE, "first-process")
     try:
         with open(path + ".new", "w") as handle:
-            json.dump({"first_process": pid, "first_process_started": wall(start)}, handle)
+            json.dump({"first_process": pid, "first_process_started": wall(start), "first_process_passed_over": passed_over},
+                      handle)
         os.replace(path + ".new", path)
     except OSError:  # a full disk: the stop below still comes; the maintenance step then counts from set-up's time
         pass
@@ -150,19 +157,27 @@ def main():
     except KeyError:
         return
     since, addresses = uptime(), resolved()
-    found = None
+    sighted, sightings, found = {}, 0, None  # each process seen as the first: its start, and when it was first seen
     while found is None:
         if begun():
             return
+        now = uptime()
         try:
-            found = first_process(uid, since) if since is not None else None
+            candidate = first_process(uid, since) if since is not None and now is not None else None
         except OSError:
-            found = None
-        if found is None:
-            time.sleep(POLL_SECONDS)
-            since = uptime() if since is None else since
+            candidate = None
+        if candidate is not None:
+            seen = sighted.get(candidate[0])
+            if seen is None or abs(seen[0] - candidate[1]) >= SAME_START_SECONDS:  # new, or another process under that pid
+                sighted[candidate[0]], sightings = (candidate[1], now), sightings + 1
+            elif now - seen[1] >= CONFIRM_SECONDS:  # alive again, with the same start, a second or more later
+                found = candidate
+                continue
+        time.sleep(POLL_SECONDS)
+        since = uptime() if since is None else since
     pid, start = found
-    record_first(pid, start)
+    passed_over = sightings - 1  # seen as the first process, then gone (or replaced) before a second look
+    record_first(pid, start, passed_over)
     due = start + LIMIT_SECONDS + MARGIN_SECONDS
     while True:
         if begun():
@@ -171,7 +186,8 @@ def main():
         if now is not None and now >= due:
             break
         time.sleep(min(STEP_SECONDS, due - now) if now is not None else STEP_SECONDS)
-    record = {"first_process": pid, "first_process_started": wall(start), "due": wall(due), "network_watched": bool(addresses)}
+    record = {"first_process": pid, "first_process_started": wall(start), "first_process_passed_over": passed_over,
+              "due": wall(due), "network_watched": bool(addresses)}
     if addresses:  # the network comes back when the session's network policy ends
         while not answers(addresses):
             if begun():
