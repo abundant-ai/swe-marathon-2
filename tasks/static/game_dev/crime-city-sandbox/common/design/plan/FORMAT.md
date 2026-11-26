@@ -160,7 +160,9 @@ Every node with at least one edge has one intersection record.
   exactly one phase; a phase with no `green` is a walk-only phase.
   - Cycle length `C` is the sum over phases of `green_s + amber_s + all_red_s`.
   - Program time is `t = (physics ticks since the last world reset) / 60 + offset_s`, and the
-    program is at `t mod C`. At program time 0 the first phase turns green.
+    program is at `t mod C`. At program time 0 the first phase turns green. The ticks count
+    from the tick a `world.reset` command runs in (GDD chapter 17), however long the rest of
+    the reset takes.
 
 ## Blocks, sidewalks and parcels
 

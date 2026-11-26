@@ -40,6 +40,9 @@ Steps (one key each, run in order):
   {"mark": name}             remember the current tick (and the save folder's files)
   {"query": [...]}           queries answered at the next tick (1 tick)
   {"wait_for": {"event": name, "max_ticks": N}}   advance until that event arrives
+  {"wait_for": {"near": {"kind": k, "p": [x, y, z], "within_m": d}, "max_ticks": N}}
+                             lockstep: advance tick by tick until an entity of that kind
+                             (default player) is within d metres of the point, horizontally
   {"files": {"op": "damage"|"truncate", "since": mark}}
                              damage the save-folder files that changed since a mark
   {"restart": {}}            lockstep only: kill the process tree and start it again
@@ -50,6 +53,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import random
 import time
 from collections.abc import Callable
@@ -172,6 +176,21 @@ def _step_problem(i: int, step: object, mode: str) -> str | None:
         ok = isinstance(arg, list) and all(isinstance(q, dict) for q in arg)
         return None if ok else f"step {i}: query takes [{{...}}, ...]"
     if kind == "wait_for":
+        near = arg.get("near") if isinstance(arg, dict) else None
+        if isinstance(near, dict):
+            p = near.get("p")
+            ok = (
+                mode == "lockstep"
+                and isinstance(p, list)
+                and len(p) == 3
+                and all(isinstance(c, (int, float)) for c in p)
+                and isinstance(near.get("within_m"), (int, float))
+            )
+            return (
+                None
+                if ok
+                else f"step {i}: wait_for near takes {{p, within_m}} (lockstep)"
+            )
         ok = isinstance(arg, dict) and isinstance(arg.get("event"), str)
         return None if ok else f"step {i}: wait_for takes {{event, max_ticks}}"
     if kind == "files":
@@ -451,6 +470,21 @@ def resolve_observe(obs: dict, frame: dict | None) -> dict:
     return out
 
 
+def is_near(frame: dict, near: dict) -> bool:
+    """Whether an entity of near["kind"] (default player) in a frame's census stands within
+    near["within_m"] of near["p"], horizontally."""
+    p = [float(c) for c in near["p"]]
+    for e in frame.get("census") or []:
+        q = e.get("p")
+        if e.get("k") != near.get("kind", "player") or not isinstance(q, list):
+            continue
+        if math.hypot(float(q[0]) - p[0], float(q[2]) - p[2]) <= float(
+            near["within_m"]
+        ):
+            return True
+    return False
+
+
 class _LockstepRun:
     """Executes one lockstep run of a play (see run_play)."""
 
@@ -572,8 +606,17 @@ class _LockstepRun:
             self.start()
 
     def _wait_for(self, i: int, arg: dict) -> None:
-        """Advance until the named event arrives or max_ticks pass."""
-        want, limit = arg["event"], int(arg.get("max_ticks", 600))
+        """Advance until the named event arrives (or, with "near", until an entity is
+        within a distance of a point, checked every tick) or max_ticks pass."""
+        limit = int(arg.get("max_ticks", 600))
+        if isinstance(arg.get("near"), dict):
+            near = arg["near"]
+            for _ in range(limit):
+                if is_near(self.advance(1, i), near):
+                    break
+            self.rec.step_frame[i] = len(self.rec.frames) - 1
+            return
+        want = arg["event"]
         done = 0
         while done < limit:
             fr = self.advance(min(6, limit - done), i)

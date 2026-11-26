@@ -1100,10 +1100,240 @@ def crouch() -> Playtest:
     return p
 
 
+# Chapter 5 (FT-3 to FT-5) and CM-4, with props placed by prop.spawn: a prop stands on its
+# `at` point (the middle of its base); its size is [width, height, depth], its depth along
+# its heading.
+BODY_BONES = [
+    "Hips", "Spine", "Chest", "Neck", "Head", "LeftUpperArm", "LeftLowerArm", "LeftHand",
+    "RightUpperArm", "RightLowerArm", "RightHand", "LeftUpperLeg", "LeftLowerLeg", "LeftFoot",
+    "LeftToes", "RightUpperLeg", "RightLowerLeg", "RightFoot", "RightToes",
+]  # fmt: skip
+NO_DEEPER_M = 0.05  # FT-4, FT-5: no bone more than 0.05 m into the obstacle
+
+
+def prop_box(at: list[float], size: list[float], heading: float) -> dict:
+    """The box a prop placed at `at` with `size` and `heading` fills."""
+    return {"p": [round(c, 3) for c in at], "size": size, "heading": heading}
+
+
+def jump_climb_vault() -> Playtest:
+    p = Playtest(
+        "people.jump_climb_vault/plaza",
+        ["FT-3", "FT-4", "FT-5", "CM-4"],
+        "On the plaza: a jump from standing; walking into a 1.2 m and a 2.2 m ledge and "
+        "pressing jump; running at a 0.8 m barrier and pressing jump 1.2 m before it; then "
+        "standing 2 m in front of a wall with the camera behind it, turning the camera and "
+        "backing towards the wall. QA reads the bones every tick and checks them against "
+        "each prop.",
+        ["--role=solo", "--variation=8", "--save-dir={save_dir}"],
+        limits={"step_s": 60},
+    )
+    x0, y0, z0 = point(PLAZA)
+    light = {"census": True, "every": 6}
+    dense = {"census": True, "camera": True, "every": 1,
+             "bones": {"ids": ["player"], "names": BODY_BONES}}  # fmt: skip
+    p.step("observe", light)
+    p.dev(("world.reset", {"variation": 8}))
+    # FT-3: a jump from standing on the level plaza
+    p.dev(("player.spawn", {"at": [x0, y0, z0], "heading": 0}))
+    p.step("run", 30)
+    p.step("observe", dense)
+    p.step("run", 1)
+    p.mark("jump_a")
+    p.step("press", {"jump": 1.0})
+    p.step("run", 2)
+    p.step("release", ["jump"])
+    p.step("run", 70)
+    p.mark("jump_b")
+    p.step("observe", light)
+    p.expect(
+        "jump", "jump",
+        {"from": "jump_a", "to": "jump_b", "kind": "player", "bone": "Hips", "ground_y": y0,
+         "off_m": 0.02, "min_rise_m": 0.40, "max_rise_m": 0.80, "min_air_s": 0.50,
+         "max_air_s": 0.90},
+        "FT-3",
+        "jump from standing lifts the hips 0.40-0.80 m and keeps the player off the ground "
+        "(more than 0.02 m above it) for 0.50-0.90 s",
+    )  # fmt: skip
+    # FT-4: walk into a ledge 2 m ahead, then press jump
+    for name, dx, height in (("climb_low", -15.0, 1.2), ("climb_high", -30.0, 2.2)):
+        at = [x0 + dx, y0, z0 - 3.0]
+        size = [4.0, height, 2.0]
+        p.dev(("prop.spawn", {"kind": "wall", "at": at, "size": size, "heading": 0}))
+        p.dev(("player.spawn", {"at": [x0 + dx, y0, z0], "heading": 0}))
+        p.step("press", {"move_forward": 0.3})
+        p.step("run", 120)
+        p.step("observe", dense)
+        p.step("run", 1)
+        p.mark(f"{name}_a")
+        p.step("press", {"jump": 1.0})
+        p.step("run", 2)
+        p.step("release", ["jump", "move_forward"])
+        p.step("run", 240)
+        p.mark(f"{name}_b")
+        p.step("observe", light)
+        top = round(y0 + height, 3)
+        edge = [[round(x0 + dx - 2.0, 3), top, round(z0 - 2.0, 3)],
+                [round(x0 + dx + 2.0, 3), top, round(z0 - 2.0, 3)]]  # fmt: skip
+        p.expect(
+            name, "climb",
+            {"from": f"{name}_a", "to": f"{name}_b", "kind": "player",
+             "box": prop_box(at, size, 0), "edge": edge, "within_s": 3.5, "hand_m": 0.35,
+             "on_top_m": 0.10, "max_into_m": NO_DEEPER_M},
+            "FT-4",
+            f"walking into a {height} m ledge and pressing jump climbs on top within 3.5 s; a "
+            "hand comes within 0.35 m of the top edge while the hips are below it, and no bone "
+            "goes more than 0.05 m into the ledge",
+        )  # fmt: skip
+    # FT-5: run at a barrier and press jump 1.2 m before it
+    at = [x0 + 15.0, y0, z0 - 8.0]
+    size = [3.0, 0.8, 0.4]
+    face = [round(x0 + 15.0, 3), y0, round(z0 - 8.0 + 0.2, 3)]
+    p.dev(("prop.spawn", {"kind": "barrier", "at": at, "size": size, "heading": 0}))
+    p.dev(("player.spawn", {"at": [x0 + 15.0, y0, z0], "heading": 0}))
+    p.step("press", {"move_forward": 1.0})
+    p.step("observe", dense)
+    p.step(
+        "wait_for",
+        {"near": {"kind": "player", "p": face, "within_m": 1.2}, "max_ticks": 240},
+    )
+    p.mark("vault_a")
+    p.step("press", {"jump": 1.0})
+    p.step("run", 2)
+    p.step("release", ["jump"])
+    p.step("run", 70)
+    p.mark("vault_b")
+    p.step("release", ["move_forward"])
+    p.step("observe", light)
+    p.expect(
+        "vault_press", "entity_near",
+        {"mark": "vault_a", "kind": "player", "p": face, "max_m": 1.5},
+        "FT-5", "jump is pressed while the player runs at the barrier, 1.0-1.5 m before it", "pre",
+    )  # fmt: skip
+    p.expect(
+        "vault", "vault",
+        {"from": "vault_a", "to": "vault_b", "kind": "player", "box": prop_box(at, size, 0),
+         "within_s": 1.2, "clear_m": 0.10, "max_into_m": NO_DEEPER_M},
+        "FT-5",
+        "running at a 0.8 m barrier and pressing jump takes the player over it within 1.2 s, "
+        "the hips at least 0.10 m above its top while crossing, no bone more than 0.05 m into it",
+    )  # fmt: skip
+    # CM-4: a wall 2 m behind the player, the camera turned and the player backing towards it
+    at = [x0, y0, z0 + 17.0]
+    size = [8.0, 3.0, 0.4]
+    p.dev(("prop.spawn", {"kind": "wall", "at": at, "size": size, "heading": 0}))
+    p.dev(("player.spawn", {"at": [x0, y0, z0 + 15.0], "heading": 0}))
+    p.step("run", 30)
+    p.step("observe", dense)
+    p.step("run", 1)
+    p.mark("wall_a")
+    for action, ticks in (("look_left", 60), ("look_right", 120), ("move_back", 60)):
+        p.step("press", {action: 1.0 if action != "move_back" else 0.3})
+        p.step("run", ticks)
+        p.step("release", [action])
+    p.mark("wall_b")
+    p.step("observe", light)
+    p.expect(
+        "camera_clear", "camera_clear",
+        {"from": "wall_a", "to": "wall_b", "kind": "player", "boxes": [prop_box(at, size, 0)],
+         "min_share": 0.99},
+        "CM-4",
+        "with a wall behind the player, the segment from the Head bone to the camera misses "
+        "the wall in at least 99% of ticks",
+    )  # fmt: skip
+    return p
+
+
+# Chapter 7, TR-4, and chapter 17, AC-7: the signals of every signalised junction.
+SIGNAL_META = ["intersection", "approach", "crosswalk", "state"]
+TICKS = 60  # physics ticks per second
+
+
+def signal_programs() -> dict[str, dict]:
+    """Every signalised junction's program in ticks (plan/FORMAT.md, "Signal program")."""
+    out = {}
+    for it in PLAN.data["intersections"]:
+        if it.get("control") != "signal":
+            continue
+        sig = it["signal"]
+        amber, all_red = round(sig["amber_s"] * TICKS), round(sig["all_red_s"] * TICKS)
+        phases, t = [], 0
+        for ph in sig["phases"]:
+            green = round(ph["green_s"] * TICKS)
+            phases.append({"start": t, "green_end": t + green, "amber_end": t + green + amber,
+                           "green": list(ph["green"]), "walk": list(ph["walk"])})  # fmt: skip
+            t += green + amber + all_red
+        out[it["id"]] = {
+            "offset": round(sig["offset_s"] * TICKS),
+            "cycle": t,
+            "phases": phases,
+        }
+    return out
+
+
+def intersection_watch() -> Playtest:
+    p = Playtest(
+        "traffic.intersection_watch/signals",
+        ["TR-4", "AC-7"],
+        "Downtown's signals after a world reset: every signalised approach and every crosswalk "
+        "with walk signals has its signal entity, and for 77 s (a full cycle of the longest "
+        "program) every signal shows its plan program's state within one tick.",
+        ["--role=solo", "--variation=9", "--save-dir={save_dir}"],
+    )
+    programs = signal_programs()
+    approaches, crosswalks = [], []
+    for it in PLAN.data["intersections"]:
+        if it["id"] not in programs:
+            continue
+        walks = {c for ph in it["signal"]["phases"] for c in ph["walk"]}
+        for leg in it["legs"]:
+            if leg.get("approach"):
+                approaches.append([it["id"], leg["approach"]["id"]])
+            cw = leg.get("crosswalk")
+            if cw and cw["id"] in walks:
+                crosswalks.append([it["id"], cw["id"]])
+    longest = max(prog["cycle"] for prog in programs.values())
+    p.step("observe", {"census": {"meta": SIGNAL_META}, "every": 30})
+    reset = p.dev(("world.reset", {"variation": 9}))
+    p.step("run", 1)
+    p.mark("after_reset")
+    p.step("observe", {"census": {"meta": SIGNAL_META}, "every": 7})
+    p.mark("watch_a")
+    p.step("run", longest + 2 * TICKS)
+    p.mark("watch_b")
+    p.expect(
+        "signal_entities", "signal_entities",
+        {"mark": "after_reset", "approaches": approaches, "crosswalks": crosswalks},
+        "AC-7",
+        "each signalised approach has one signal entity with intersection, approach and a state "
+        "of red, amber or green; each crosswalk with walk signals one with crosswalk and a state "
+        "of walk or dont_walk",
+    )  # fmt: skip
+    p.expect(
+        "program", "signal_program",
+        {"from": "watch_a", "to": "watch_b", "programs": programs, "reset_step": reset},
+        "TR-4",
+        "every signal shows its program's state within one tick, program time counted from the "
+        "tick the world.reset command ran in",
+    )  # fmt: skip
+    p.expect(
+        "greens_compatible", "signal_greens",
+        {"from": "watch_a", "to": "watch_b", "programs": programs},
+        "TR-4", "no two approaches are green at once unless their program puts them in one phase",
+    )  # fmt: skip
+    p.expect(
+        "walk_in_green", "signal_walks",
+        {"from": "watch_a", "to": "watch_b", "programs": programs},
+        "TR-4", "a crosswalk shows walk only during the green of the phase that lists it",
+    )  # fmt: skip
+    return p
+
+
 BUILDERS = (
     bad_input, commands, state_report, new_game, server_role, same_start, replay,
     same_tick, clock_rate, weather_hold, kill_after_save, damaged_slot, realtime,
-    plan_compliance, paces, camera, lineup, feet, crouch,
+    plan_compliance, paces, camera, lineup, feet, crouch, jump_climb_vault,
+    intersection_watch,
 )  # fmt: skip
 
 

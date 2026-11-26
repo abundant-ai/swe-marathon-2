@@ -66,7 +66,8 @@ A playtest is a JSON file (format `qa-play/1`) in `playtests/`. Every value in i
     "surface": ..., "entity": ...}` (the collider's `surface` metadata and the id of the
     entity it belongs to, when it has them); any value in a query can be `{"$answer": [step,
     key]}`, as in `dev` (an entity named by the id a command answered with, for example);
-  - `wait_for`: advance until an event arrives;
+  - `wait_for`: advance until an event arrives, or (`near`) tick by tick until an entity of a
+    kind stands within a distance of a point, horizontally (to press an action at that spot);
   - `files`: corrupt the save files written since a mark, as a failed disk write would;
   - `restart`: kill the game and start it again with the same save folder;
 - `expect`: what must hold, each with the rule it comes from (`rule`) and what it means (`says`).
@@ -99,6 +100,19 @@ The checks an expectation can use:
 | `moves_along_camera` | the player moves along the camera's forward direction |
 | `look` | an entity's `look` metadata has every field and the expected values |
 | `looks_distinct` | the looks at several marks differ from each other enough |
+| `jump` | between two marks the hips rise within a range above their height at the first, and the entity is off the ground (its position more than `off_m` above `ground_y`) for a time within a range: the longest run of samples off the ground |
+| `climb` | from the mark where jump is pressed the entity stands on top of a box (over its top, within `on_top_m` of its height) in time; before that a hand comes within `hand_m` of the top edge (`edge`) while the `Hips` are below the top; no observed bone is ever more than `max_into_m` inside the box |
+| `vault` | from the mark where jump is pressed the entity's position goes past the box's far side in time; while the `Hips` are over its top they are at least `clear_m` above it; no observed bone is ever more than `max_into_m` inside the box |
+| `camera_clear` | in at least `min_share` of the samples, the segment from the `Head` bone to the camera passes through none of the listed boxes |
+| `signal_entities` | at a mark, each listed signalised approach and each listed crosswalk with walk signals has exactly one `signal` entity with its metadata and a valid state |
+| `signal_program` | every signal shows its plan program's state within one tick; program ticks count from the tick the `world.reset` of `reset_step` ran in, and a frame taken at tick t shows the game's tick t - 1 |
+| `signal_greens` | the approaches of a junction that are green at the same time all belong to one phase |
+| `signal_walks` | while a crosswalk shows walk, every approach of its junction is red except those green in the phase that lists it |
+
+A box is a solid placed with `prop.spawn`: `{"p": the middle of its base, "size": [width,
+height, depth], "heading": degrees}`, its depth along the heading (chapter 17). A program is a
+junction's plan program in ticks: `{"offset", "cycle", "phases": [{"start", "green_end",
+"amber_end", "green", "walk"}]}`, phases in order from program time 0.
 
 You can add playtests of your own in the same format and run them with
 `qa run path/to/file.json`.

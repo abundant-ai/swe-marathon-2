@@ -179,7 +179,8 @@ Menus and the phone use Godot's `ui_up ui_down ui_left ui_right ui_accept ui_can
 - **IN-3** An action pressed in physics tick t takes effect in tick t (read input in
   `_physics_process`; the QA kit's input arrives before the tick runs).
 - **CM-1** The camera is a third-person camera behind and above the player: 2.5-6.0 m from the
-  player's head on foot and 5.0-10.0 m from the vehicle's centre when driving, and the player (the
+  player's head on foot (nearer only where a wall pulls it in, CM-4) and 5.0-10.0 m from the
+  vehicle's centre when driving, and the player (the
   `Hips` bone) stays inside the middle 40% of the view (by width and height, on the project's
   1280 x 720 window with the camera's `fov` vertical, Godot's default).
 - **CM-2** At full strength, `look_left` and `look_right` turn the camera around the player at
@@ -207,13 +208,15 @@ and 8.5 m/s, its crouch walk at about 0.75 and its swim at about 2.2.
   0.60 sprinting (p95, measured in the middle 60% of each stance). A foot is planted while its
   `LeftToes` or `RightToes` bone is within 0.04 m of its lowest height in the gait; a step is a
   foot coming down to plant.
-- **FT-3** `jump` from standing lifts the hips 0.40-0.80 m and keeps the player airborne 0.50-0.90 s
-  on level ground.
+- **FT-3** `jump` from standing lifts the hips 0.40-0.80 m and keeps the player off the ground (its
+  position more than 0.02 m above it) for 0.50-0.90 s on level ground.
 - **FT-4** Climbing: moving into a wall or ledge 1.0-2.4 m high and pressing `jump` climbs on top
-  within 3.5 s. During the climb a hand comes within 0.35 m of the top edge while the hips are below
-  it, and no bone passes more than 0.05 m into the obstacle.
-- **FT-5** Vaulting: running at an obstacle 0.5-1.0 m high and pressing `jump` takes the player
-  over it in at most 1.2 s, the hips at least 0.10 m above its top while crossing, with no bone
+  (the player's position over its top, within 0.10 m of its height) within 3.5 s. During the climb
+  a hand comes within 0.35 m of the top edge on the player's side while the hips are below it, and
+  no bone passes more than 0.05 m into the obstacle.
+- **FT-5** Vaulting: running at an obstacle 0.5-1.0 m high and pressing `jump` 1.0-1.5 m before it
+  (from the player's position to its near side) takes the player over it (the position past its
+  far side) in at most 1.2 s, the hips at least 0.10 m above its top while crossing, with no bone
   passing more than 0.05 m into it.
 - **FT-6** `crouch` toggles crouching; crouched, the hips are at most 75% of their standing height
   above the ground.
@@ -798,7 +801,7 @@ data: Dictionary)`. The commands set up situations for development and QA.
 | `player.give` | `weapon`, `ammo`, `money`, `outfit`, `health`, `armour` | Give or set: `weapon` and `outfit` become owned, `ammo` rounds go into the reserve of `weapon` (or of the gun in hand), `money` is added; `health` and `armour` are set |
 | `vehicle.spawn` | `model`, `at`, `heading`, `driver` (`player`, an archetype or `none`), `damage`, `colour` | Spawn a vehicle |
 | `npc.spawn` | `archetype`, `at`, `heading`, `behaviour` (`idle`, `wander`, `guard`, `hostile`, `reckless`), `seat` (`{"vehicle": id, "index": i}`) | Spawn a person |
-| `prop.spawn` | `kind` (`wall`, `crate`, `low_cover`, `ramp`, `barrier`, `tower`), `at`, `size` (`[x, y, z]`), `heading` | Spawn a solid object (static, layer 5) |
+| `prop.spawn` | `kind` (`wall`, `crate`, `low_cover`, `ramp`, `barrier`, `tower`), `at`, `size` (`[x, y, z]`), `heading` | Spawn a solid object (static, layer 5) standing on `at`, the middle of its base; `size` is its width, height and depth, the depth along `heading` |
 | `traffic.set` | `density` (0 to 2) | Scale traffic and people around the player |
 | `mission.start` | `id`, `stage` | Start a mission at a stage, skipping its contact |
 | `save`, `load` | `slot` | Save or load |

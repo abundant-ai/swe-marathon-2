@@ -1250,6 +1250,478 @@ def check_hips_ratio(rec: PlayRecord, args: dict) -> Result:
     return ok, measured, "" if ok else f"the hips stay at {ratio:.0%} of their height"
 
 
+# ---------------------------------------------------------------- jumping, climbing, vaulting
+# A box is a solid placed with prop.spawn: {"p": the middle of its base, "size": [width,
+# height, depth], "heading": degrees}. Its depth runs along the heading, its width across.
+HANDS = ("LeftHand", "RightHand")
+
+
+def box_frame(box: dict, p: list[float]) -> tuple[float, float, float]:
+    """A world point in a box's own frame: (across, up, along) from the middle of its base."""
+    h = math.radians(float(box.get("heading", 0.0)))
+    fx, fz = math.sin(h), -math.cos(h)
+    rx, rz = math.cos(h), math.sin(h)
+    dx, dz = p[0] - float(box["p"][0]), p[2] - float(box["p"][2])
+    return dx * rx + dz * rz, p[1] - float(box["p"][1]), dx * fx + dz * fz
+
+
+def box_half(box: dict) -> tuple[float, float, float]:
+    """(half width, height, half depth) of a box."""
+    w, h, d = (float(c) for c in box["size"])
+    return w / 2.0, h, d / 2.0
+
+
+def depth_into(box: dict, p: list[float]) -> float:
+    """How far a point lies inside a box: its distance to the nearest face (0 outside)."""
+    u, w, v = box_frame(box, p)
+    hw, height, hd = box_half(box)
+    return max(0.0, min(hw - abs(u), hd - abs(v), w, height - w))
+
+
+def segment_hits_box(box: dict, a: list[float], b: list[float]) -> bool:
+    """Whether the segment from a to b passes through the inside of a box."""
+    pa, pb = box_frame(box, a), box_frame(box, b)
+    hw, height, hd = box_half(box)
+    lo, hi = (-hw, 0.0, -hd), (hw, height, hd)
+    t0, t1 = 0.0, 1.0
+    for k in range(3):
+        d = pb[k] - pa[k]
+        if abs(d) < 1e-12:
+            if not lo[k] < pa[k] < hi[k]:
+                return False
+            continue
+        ta, tb = (lo[k] - pa[k]) / d, (hi[k] - pa[k]) / d
+        t0, t1 = max(t0, min(ta, tb)), min(t1, max(ta, tb))
+        if t0 >= t1:
+            return False
+    return True
+
+
+def segment_distance(p: list[float], a: list[float], b: list[float]) -> float:
+    """Distance from a point to the segment a-b."""
+    ab = [b[k] - a[k] for k in range(3)]
+    n2 = sum(c * c for c in ab)
+    t = 0.0
+    if n2 > 0:
+        t = max(0.0, min(1.0, sum(ab[k] * (p[k] - a[k]) for k in range(3)) / n2))
+    return math.dist(p, [a[k] + ab[k] * t for k in range(3)])
+
+
+def bones_in(frame: dict, args: dict) -> dict[str, list[float]]:
+    """{bone: world position} of the named entity's observed bones in a frame."""
+    e = entity_of(frame, args)
+    if e is None:
+        return {}
+    raw = ((frame.get("bones") or {}).get(str(e.get("id"))) or {}).items()
+    return {
+        k: [float(c) for c in v] for k, v in raw if isinstance(v, list) and len(v) == 3
+    }
+
+
+def deepest_bone(
+    frames: list[dict], args: dict, box: dict
+) -> tuple[float, str, object]:
+    """(depth, bone, tick) of the observed bone that went furthest into a box."""
+    worst = (0.0, "", None)
+    for fr in frames:
+        for name, p in bones_in(fr, args).items():
+            d = depth_into(box, p)
+            if d > worst[0]:
+                worst = (d, name, fr.get("t"))
+    return worst
+
+
+def sample_ticks(frames: list[dict]) -> int:
+    """The ticks between consecutive samples (the smallest gap seen, at least 1)."""
+    ts = [int(f.get("t", 0)) for f in frames]
+    gaps = [b - a for a, b in itertools.pairwise(ts) if b > a]
+    return min(gaps) if gaps else 1
+
+
+def check_jump(rec: PlayRecord, args: dict) -> Result:
+    """FT-3: between two marks, the first taken standing on level ground before jump is
+    pressed, the bone (default Hips) rises min_rise_m-max_rise_m above its height at the
+    first mark, and the entity is off the ground (its position more than off_m above
+    ground_y) for min_air_s-max_air_s: the longest run of consecutive samples off the
+    ground, each sample counting for the ticks between samples."""
+    run = rec.runs[int(args.get("run", 0))]
+    frames = frames_between(run, args["from"], args["to"])
+    bone = dict(args, bone=args.get("bone", "Hips"))
+    first = point_of(frames[0], bone) if frames else None
+    if first is None:
+        return None, {}, f"the {bone['bone']} bone was not observed at {args['from']}"
+    heights = [p[1] for p in (point_of(f, bone) for f in frames) if p is not None]
+    rise = max(heights) - first[1]
+    ground = float(args["ground_y"]) + float(args.get("off_m", 0.02))
+    step = sample_ticks(frames)
+    best = cur = 0
+    for fr in frames:
+        e = entity_of(fr, args)
+        off = (
+            e is not None and isinstance(e.get("p"), list) and float(e["p"][1]) > ground
+        )
+        cur = cur + 1 if off else 0
+        best = max(best, cur)
+    air = best * step / TICK_HZ
+    measured = {"rise_m": round(rise, 3), "airborne_s": round(air, 3)}
+    lo, hi = float(args["min_rise_m"]), float(args["max_rise_m"])
+    if not lo <= rise <= hi:
+        return False, measured, f"the hips rose {rise:.2f} m, expected {lo}-{hi}"
+    lo, hi = float(args["min_air_s"]), float(args["max_air_s"])
+    if not lo <= air <= hi:
+        return False, measured, f"off the ground for {air:.2f} s, expected {lo}-{hi}"
+    return True, measured, ""
+
+
+def check_climb(rec: PlayRecord, args: dict) -> Result:
+    """FT-4: from the mark where jump is pressed (`from`) to `to`, the entity stands on top
+    of the box (its position over the top and within on_top_m of its height) within
+    within_s; before that, a hand comes within hand_m of the top edge (the segment `edge`)
+    while the Hips bone is below the top; and no observed bone is ever more than max_into_m
+    inside the box."""
+    run = rec.runs[int(args.get("run", 0))]
+    frames = frames_between(run, args["from"], args["to"])
+    if not frames:
+        return None, {}, "the marks were not reached"
+    box, edge = args["box"], args["edge"]
+    hw, height, hd = box_half(box)
+    top = float(box["p"][1]) + height
+    t0 = int(frames[0].get("t", 0))
+    on_top = None
+    reach = None
+    for fr in frames:
+        e = entity_of(fr, args)
+        if e is None or not isinstance(e.get("p"), list):
+            continue
+        u, w, v = box_frame(box, [float(c) for c in e["p"]])
+        if (
+            abs(u) <= hw
+            and abs(v) <= hd
+            and abs(w - height) <= float(args.get("on_top_m", 0.1))
+        ):
+            on_top = int(fr.get("t", 0))
+            break
+        b = bones_in(fr, args)
+        if "Hips" in b and b["Hips"][1] < top:
+            near = [segment_distance(b[h], edge[0], edge[1]) for h in HANDS if h in b]
+            if near and (reach is None or min(near) < reach):
+                reach = min(near)
+    depth, which, tick = deepest_bone(frames, args, box)
+    measured = {
+        "on_top_after_s": None if on_top is None else round((on_top - t0) / TICK_HZ, 3),
+        "hand_to_edge_m": None if reach is None else round(reach, 3),
+        "deepest_bone_m": round(depth, 3),
+    }
+    limit = float(args["within_s"])
+    if on_top is None or on_top - t0 > limit * TICK_HZ:
+        return False, measured, f"not on top within {limit} s"
+    if reach is None or reach > float(args["hand_m"]):
+        what = (
+            "no hand was observed"
+            if reach is None
+            else f"the nearest came {reach:.2f} m"
+        )
+        return (
+            False,
+            measured,
+            (
+                f"no hand within {args['hand_m']} m of the top edge while the hips were below it "
+                f"({what})"
+            ),
+        )
+    if depth > float(args["max_into_m"]):
+        return (
+            False,
+            measured,
+            f"at tick {tick} {which} is {depth:.3f} m inside the obstacle",
+        )
+    return True, measured, ""
+
+
+def check_vault(rec: PlayRecord, args: dict) -> Result:
+    """FT-5: from the mark where jump is pressed (`from`) to `to`, the entity's position goes
+    past the far side of the box (the side away from where it stood at `from`) within
+    within_s; whenever the Hips bone is over the top it is at least clear_m above it (and
+    it does pass over the top); and no observed bone is ever more than max_into_m inside the
+    box."""
+    run = rec.runs[int(args.get("run", 0))]
+    frames = frames_between(run, args["from"], args["to"])
+    e0 = entity_of(frames[0], args) if frames else None
+    if e0 is None or not isinstance(e0.get("p"), list):
+        return None, {}, "the entity was not observed at the first mark"
+    box = args["box"]
+    hw, height, hd = box_half(box)
+    top = float(box["p"][1]) + height
+    side = 1.0 if box_frame(box, [float(c) for c in e0["p"]])[2] >= 0 else -1.0
+    t0 = int(frames[0].get("t", 0))
+    over = None
+    clear = None
+    for fr in frames:
+        e = entity_of(fr, args)
+        past = (
+            e is not None
+            and isinstance(e.get("p"), list)
+            and box_frame(box, [float(c) for c in e["p"]])[2] * side < -hd
+        )
+        if over is None and past:
+            over = int(fr.get("t", 0))
+        hips = bones_in(fr, args).get("Hips")
+        if hips is not None:
+            u, _w, v = box_frame(box, hips)
+            if abs(u) <= hw and abs(v) <= hd:
+                c = hips[1] - top
+                clear = c if clear is None else min(clear, c)
+    depth, which, tick = deepest_bone(frames, args, box)
+    measured = {
+        "over_after_s": None if over is None else round((over - t0) / TICK_HZ, 3),
+        "hips_clearance_m": None if clear is None else round(clear, 3),
+        "deepest_bone_m": round(depth, 3),
+    }
+    limit = float(args["within_s"])
+    if over is None or over - t0 > limit * TICK_HZ:
+        return False, measured, f"not past the obstacle within {limit} s"
+    if clear is None:
+        return False, measured, "the hips never passed over the obstacle"
+    if clear < float(args["clear_m"]):
+        return (
+            False,
+            measured,
+            (
+                f"the hips crossed {clear:.2f} m above the top, at least {args['clear_m']} expected"
+            ),
+        )
+    if depth > float(args["max_into_m"]):
+        return (
+            False,
+            measured,
+            f"at tick {tick} {which} is {depth:.3f} m inside the obstacle",
+        )
+    return True, measured, ""
+
+
+def check_camera_clear(rec: PlayRecord, args: dict) -> Result:
+    """CM-4: between two marks, in at least min_share of the samples the segment from the
+    entity's Head bone to the camera passes through none of the listed boxes."""
+    run = rec.runs[int(args.get("run", 0))]
+    frames = frames_between(run, args["from"], args["to"])
+    n = blocked = 0
+    first = None
+    for fr in frames:
+        cam = fr.get("camera")
+        head = bones_in(fr, args).get("Head")
+        if not isinstance(cam, dict) or head is None:
+            continue
+        n += 1
+        p = [float(c) for c in cam["p"]]
+        if any(segment_hits_box(box, head, p) for box in args["boxes"]):
+            blocked += 1
+            first = fr.get("t") if first is None else first
+    if not n:
+        return None, {}, "the camera and the Head bone were not observed"
+    share = (n - blocked) / n
+    measured = {"samples": n, "through_a_wall": blocked, "clear_share": round(share, 4)}
+    need = float(args.get("min_share", 0.99))
+    if share < need:
+        return (
+            False,
+            measured,
+            (
+                f"the camera is behind a wall in {blocked} of {n} samples, first at tick {first}"
+            ),
+        )
+    return True, measured, ""
+
+
+# ---------------------------------------------------------------- signals
+# A program, as a check reads it (plan/FORMAT.md, in ticks of 1/60 s): {"offset": ticks,
+# "cycle": ticks, "phases": [{"start", "green_end", "amber_end", "green": [approach ids],
+# "walk": [crosswalk ids]}]}, phases in order from program time 0.
+LIGHTS = ("red", "amber", "green")
+WALKS = ("walk", "dont_walk")
+
+
+def signals_seen(frame: dict | None) -> dict[tuple[str, str], list[str]]:
+    """{(intersection, approach or crosswalk id): [states]} of the signal entities in a
+    frame's census (the metadata observed with census {"meta": [...]})."""
+    out: dict[tuple[str, str], list[str]] = {}
+    for e in (frame or {}).get("census") or []:
+        if e.get("k") != "signal":
+            continue
+        m = e.get("m") or {}
+        key = m.get("approach", m.get("crosswalk"))
+        if isinstance(m.get("intersection"), str) and isinstance(key, str):
+            out.setdefault((m["intersection"], key), []).append(m.get("state"))
+    return out
+
+
+def program_states(prog: dict, k: int) -> dict[str, str]:
+    """The state of every approach and crosswalk of a program at program tick k."""
+    pos = (k + int(prog["offset"])) % int(prog["cycle"])
+    out: dict[str, str] = {}
+    for ph in prog["phases"]:
+        for c in ph["walk"]:
+            out.setdefault(c, "dont_walk")
+    for ph in prog["phases"]:
+        green = int(ph["start"]) <= pos < int(ph["green_end"])
+        amber = int(ph["green_end"]) <= pos < int(ph["amber_end"])
+        for a in ph["green"]:
+            out[a] = "green" if green else ("amber" if amber else "red")
+        if green:
+            for c in ph["walk"]:
+                out[c] = "walk"
+    return out
+
+
+def check_signal_entities(rec: PlayRecord, args: dict) -> Result:
+    """AC-7: at a mark, every listed signalised approach ([intersection, approach]) has
+    exactly one signal entity with that intersection and approach and a state of red,
+    amber or green; every listed crosswalk ([intersection, crosswalk]) exactly one with
+    that crosswalk and a state of walk or dont_walk."""
+    run = rec.runs[int(args.get("run", 0))]
+    frame = frame_at_mark(run, args["mark"])
+    if frame is None:
+        return None, {}, "the mark was not reached"
+    seen = signals_seen(frame)
+    problems = []
+    for kind, states in (("approaches", LIGHTS), ("crosswalks", WALKS)):
+        for inter, key in args[kind]:
+            got = seen.get((inter, key), [])
+            if len(got) != 1:
+                problems.append(f"{key} at {inter}: {len(got)} signal entities")
+            elif got[0] not in states:
+                problems.append(f"{key} at {inter}: state {got[0]!r}")
+    measured = {
+        "signals": sum(len(v) for v in seen.values()),
+        "problems": problems[:5],
+        "problem_count": len(problems),
+    }
+    return not problems, measured, problems[0] if problems else ""
+
+
+def reset_tick(run: RunRecord, step: int) -> int | None:
+    """The tick the DevConsole commands of a step ran at."""
+    for fr in run.frames:
+        if fr.get("_step") == step:
+            for d in fr.get("dev") or []:
+                if isinstance(d.get("t"), int):
+                    return int(d["t"])
+    return None
+
+
+def check_signal_program(rec: PlayRecord, args: dict) -> Result:
+    """TR-4: between two marks every signal of the listed programs shows its program's
+    state within one tick. Program ticks count from the tick the world.reset command of
+    step reset_step ran in; a frame taken at tick t shows what the game did in tick t - 1,
+    so it must show the program's state at t - 1 - reset, give or take one tick."""
+    run = rec.runs[int(args.get("run", 0))]
+    frames = [
+        f for f in frames_between(run, args["from"], args["to"]) if signals_seen(f)
+    ]
+    t_reset = reset_tick(run, int(args["reset_step"]))
+    if not frames or t_reset is None:
+        return None, {}, "no signals were observed after the reset"
+    progs = args["programs"]
+    wrong = []
+    for fr in frames:
+        k = int(fr["t"]) - 1 - t_reset
+        seen = signals_seen(fr)
+        for inter, prog in progs.items():
+            want = [program_states(prog, k + d) for d in (-1, 0, 1)]
+            for key, expected in want[1].items():
+                got = seen.get((inter, key))
+                if got and len(got) == 1 and all(got[0] != w.get(key) for w in want):
+                    wrong.append(
+                        {"tick": fr["t"], "at": inter, "signal": key, "shows": got[0],
+                         "program": expected}
+                    )  # fmt: skip
+    measured = {
+        "frames": len(frames),
+        "off_program": len(wrong),
+        "first_off_program": wrong[:3],
+    }
+    if wrong:
+        w = wrong[0]
+        return (
+            False,
+            measured,
+            (
+                f"at tick {w['tick']} {w['signal']} at {w['at']} shows {w['shows']}, its "
+                f"program {w['program']}"
+            ),
+        )
+    return True, measured, ""
+
+
+def check_signal_greens(rec: PlayRecord, args: dict) -> Result:
+    """TR-4: between two marks, the approaches of an intersection that show green at the
+    same time all belong to one phase of its program."""
+    run = rec.runs[int(args.get("run", 0))]
+    frames = [
+        f for f in frames_between(run, args["from"], args["to"]) if signals_seen(f)
+    ]
+    if not frames:
+        return None, {}, "no signals were observed"
+    clash = []
+    for fr in frames:
+        seen = signals_seen(fr)
+        for inter, prog in args["programs"].items():
+            green = {k for (i, k), v in seen.items() if i == inter and "green" in v}
+            if green and not any(green <= set(ph["green"]) for ph in prog["phases"]):
+                clash.append({"tick": fr.get("t"), "at": inter, "green": sorted(green)})
+    measured = {"frames": len(frames), "conflicts": len(clash), "first": clash[:3]}
+    if clash:
+        c = clash[0]
+        return (
+            False,
+            measured,
+            f"at tick {c['tick']} {', '.join(c['green'])} are green together",
+        )
+    return True, measured, ""
+
+
+def check_signal_walks(rec: PlayRecord, args: dict) -> Result:
+    """TR-4: between two marks, while a crosswalk shows walk, every approach of its
+    intersection is red except those green in the phase that lets it walk (none shows
+    amber)."""
+    run = rec.runs[int(args.get("run", 0))]
+    frames = [
+        f for f in frames_between(run, args["from"], args["to"]) if signals_seen(f)
+    ]
+    if not frames:
+        return None, {}, "no signals were observed"
+    wrong = []
+    for fr in frames:
+        seen = signals_seen(fr)
+        for inter, prog in args["programs"].items():
+            lit = {k: v[0] for (i, k), v in seen.items() if i == inter and len(v) == 1}
+            for cw, st in lit.items():
+                if st != "walk":
+                    continue
+                phases = [ph for ph in prog["phases"] if cw in ph["walk"]]
+                moving = {k: s for k, s in lit.items() if s in ("green", "amber")}
+                if not any(
+                    all(s == "green" and k in ph["green"] for k, s in moving.items())
+                    for ph in phases
+                ):
+                    wrong.append({"tick": fr.get("t"), "at": inter, "crosswalk": cw,
+                                  "lit": sorted(moving.items())})  # fmt: skip
+    measured = {
+        "frames": len(frames),
+        "walks_out_of_phase": len(wrong),
+        "first": wrong[:3],
+    }
+    if wrong:
+        w = wrong[0]
+        return (
+            False,
+            measured,
+            (
+                f"at tick {w['tick']} {w['crosswalk']} shows walk while {w['lit'] or 'its phase is over'}"
+            ),
+        )
+    return True, measured, ""
+
+
 CHECKS: dict[str, Callable[[PlayRecord, dict], Result]] = {
     "dev_answers": check_dev_answers,
     "dev_result": check_dev_result,
@@ -1275,6 +1747,14 @@ CHECKS: dict[str, Callable[[PlayRecord, dict], Result]] = {
     "look": check_look,
     "looks_distinct": check_looks_distinct,
     "hips_ratio": check_hips_ratio,
+    "jump": check_jump,
+    "climb": check_climb,
+    "vault": check_vault,
+    "camera_clear": check_camera_clear,
+    "signal_entities": check_signal_entities,
+    "signal_program": check_signal_program,
+    "signal_greens": check_signal_greens,
+    "signal_walks": check_signal_walks,
 }
 
 

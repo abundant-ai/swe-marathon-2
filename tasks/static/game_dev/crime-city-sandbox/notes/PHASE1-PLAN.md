@@ -180,7 +180,7 @@ row, a row names no assertion, or an assertion's template is not in the catalog.
 | FT-1 | paces | `people.locomotion: paces` | P | a pace out of band |
 | FT-2 | planted feet | `people.locomotion: alternation`, `people.locomotion: foot_slide` | P | sliding or non-alternating feet |
 | FT-3 | jump | `people.jump_climb_vault: jump` | P | rise or air time out of band |
-| FT-4 | climbing | `people.jump_climb_vault: climb` | P | not on top in time, hand far, penetration |
+| FT-4 | climbing | `people.jump_climb_vault: climb_low`, `people.jump_climb_vault: climb_high` | P | not on top in time, hand far, penetration |
 | FT-5 | vaulting | `people.jump_climb_vault: vault` | P | too slow, too low, penetration |
 | FT-6 | crouch | `people.locomotion: crouch_pose` | P | hips above 75% |
 | FT-7 | swimming | `people.swim: swim_pose`, `people.swim: swim_pace`, `people.swim: exits` | P | head under, pitch, pace, no exit |
@@ -204,7 +204,7 @@ row, a row names no assertion, or an assertion's template is not in the catalog.
 | TR-1 | densities | `traffic.intersection_watch: density`, `traffic.density_profile: table` | P | counts outside the table |
 | TR-2 | rain thins pedestrians | `traffic.density_profile: rain_ratio` | R | ratio outside 40-80% |
 | TR-3 | steady density | `traffic.steady: drift` | R | a later minute off by more than 30% |
-| TR-4 | signal programs | `traffic.intersection_watch: program` | P | states off schedule, conflicting greens |
+| TR-4 | signal programs | `traffic.intersection_watch: program`, `traffic.intersection_watch: greens_compatible`, `traffic.intersection_watch: walk_in_green` | P | states off schedule, conflicting greens, walk out of its phase |
 | TR-5 | obeying signals | `traffic.intersection_watch: no_red_entry`, `traffic.intersection_watch: green_flow` | P | entries on red, or no flow |
 | TR-6 | all-way stops | `traffic.stop_junction: full_stop`, `traffic.stop_junction: order`, `traffic.stop_junction: box_clear`, `traffic.stop_junction: no_deadlock` | P | rolling stops, two in the box, waits over 30 s |
 | TR-7 | lane keeping | `traffic.intersection_watch: lane_offset`, `traffic.intersection_watch: direction` | P | offset p95 over 1 m, wrong way |

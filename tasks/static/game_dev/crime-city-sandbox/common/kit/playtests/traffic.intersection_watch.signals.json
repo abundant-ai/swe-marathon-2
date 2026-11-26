@@ -1,0 +1,1892 @@
+{
+ "format": "qa-play/1",
+ "name": "traffic.intersection_watch/signals",
+ "template": "traffic.intersection_watch",
+ "about": "Downtown's signals after a world reset: every signalised approach and every crosswalk with walk signals has its signal entity, and for 77 s (a full cycle of the longest program) every signal shows its plan program's state within one tick.",
+ "rules": ["TR-4", "AC-7"],
+ "role": "solo",
+ "args": ["--role=solo", "--variation=9", "--save-dir={save_dir}"],
+ "mode": "lockstep",
+ "runs": [
+  {
+   "pace_ms": 0
+  }
+ ],
+ "limits": {
+  "wall_s": 240,
+  "boot_s": 60,
+  "step_s": 30,
+  "cpu_s": 600,
+  "memory_mb": 1536,
+  "disk_mb": 512
+ },
+ "steps": [
+  {
+   "observe": {
+    "census": {
+     "meta": ["intersection", "approach", "crosswalk", "state"]
+    },
+    "every": 30
+   }
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 9
+     }
+    ]
+   ]
+  },
+  {
+   "run": 1
+  },
+  {
+   "mark": "after_reset"
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["intersection", "approach", "crosswalk", "state"]
+    },
+    "every": 7
+   }
+  },
+  {
+   "mark": "watch_a"
+  },
+  {
+   "run": 4620
+  },
+  {
+   "mark": "watch_b"
+  }
+ ],
+ "expect": [
+  {
+   "id": "signal_entities",
+   "check": "signal_entities",
+   "args": {
+    "mark": "after_reset",
+    "approaches": [
+     ["j_30", "j_30<e_hw_north"], ["j_30", "j_30<e_30_40"], ["j_30", "j_30<e_30_31"], ["j_30", "j_30<e_20_30"], ["j_31", "j_31<e_30_31"], ["j_31", "j_31<e_31_41"], ["j_31", "j_31<e_31_32"], ["j_31", "j_31<e_21_31"], ["j_32", "j_32<e_31_32"], ["j_32", "j_32<e_32_42"],
+     ["j_32", "j_32<e_32_33"], ["j_32", "j_32<e_22_32"], ["j_33", "j_33<e_32_33"], ["j_33", "j_33<e_33_34"], ["j_33", "j_33<e_23_33"], ["j_04", "j_04<e_03_04"], ["j_04", "j_04<e_04_14"], ["j_04", "j_04<e_04_05"], ["j_14", "j_14<e_13_14"], ["j_14", "j_14<e_14_24"],
+     ["j_14", "j_14<e_14_15"], ["j_14", "j_14<e_04_14"], ["j_24", "j_24<e_23_24"], ["j_24", "j_24<e_24_34"], ["j_24", "j_24<e_24_25"], ["j_24", "j_24<e_14_24"], ["j_34", "j_34<e_33_34"], ["j_34", "j_34<e_34_44"], ["j_34", "j_34<e_34_35"], ["j_34", "j_34<e_24_34"],
+     ["j_44", "j_44<e_43_44"], ["j_44", "j_44<e_44_54"], ["j_44", "j_44<e_44_45"], ["j_44", "j_44<e_34_44"], ["j_54", "j_54<e_53_54"], ["j_54", "j_54<e_54_64"], ["j_54", "j_54<e_54_55"], ["j_54", "j_54<e_44_54"], ["j_64", "j_64<e_63_64"], ["j_64", "j_64<e_64_74"],
+     ["j_64", "j_64<e_54_64"], ["j_74", "j_74<e_73_74"], ["j_74", "j_74<e_hw_east"], ["j_74", "j_74<e_74_75"], ["j_74", "j_74<e_64_74"], ["j_35", "j_35<e_34_35"], ["j_35", "j_35<e_35_45"], ["j_35", "j_35<e_35_36"], ["j_35", "j_35<e_25_35"], ["j_36", "j_36<e_35_36"],
+     ["j_36", "j_36<e_36_46"], ["j_36", "j_36<e_36_37"], ["j_36", "j_36<e_26_36"], ["j_37", "j_37<e_36_37"], ["j_37", "j_37<e_37_47"], ["j_37", "j_37<e_27_37"]
+    ],
+    "crosswalks": [
+     ["j_30", "cw_j_30_e_hw_north"], ["j_30", "cw_j_30_e_30_40"], ["j_30", "cw_j_30_e_30_31"], ["j_30", "cw_j_30_e_20_30"], ["j_31", "cw_j_31_e_30_31"], ["j_31", "cw_j_31_e_31_41"], ["j_31", "cw_j_31_e_31_32"], ["j_31", "cw_j_31_e_21_31"], ["j_32", "cw_j_32_e_31_32"], ["j_32", "cw_j_32_e_32_42"],
+     ["j_32", "cw_j_32_e_32_33"], ["j_32", "cw_j_32_e_22_32"], ["j_33", "cw_j_33_e_32_33"], ["j_33", "cw_j_33_e_33_43"], ["j_33", "cw_j_33_e_33_34"], ["j_33", "cw_j_33_e_23_33"], ["j_04", "cw_j_04_e_03_04"], ["j_04", "cw_j_04_e_04_14"], ["j_04", "cw_j_04_e_04_05"], ["j_14", "cw_j_14_e_13_14"],
+     ["j_14", "cw_j_14_e_14_24"], ["j_14", "cw_j_14_e_14_15"], ["j_14", "cw_j_14_e_04_14"], ["j_24", "cw_j_24_e_23_24"], ["j_24", "cw_j_24_e_24_34"], ["j_24", "cw_j_24_e_24_25"], ["j_24", "cw_j_24_e_14_24"], ["j_34", "cw_j_34_e_33_34"], ["j_34", "cw_j_34_e_34_44"], ["j_34", "cw_j_34_e_34_35"],
+     ["j_34", "cw_j_34_e_24_34"], ["j_44", "cw_j_44_e_43_44"], ["j_44", "cw_j_44_e_44_54"], ["j_44", "cw_j_44_e_44_45"], ["j_44", "cw_j_44_e_34_44"], ["j_54", "cw_j_54_e_53_54"], ["j_54", "cw_j_54_e_54_64"], ["j_54", "cw_j_54_e_54_55"], ["j_54", "cw_j_54_e_44_54"], ["j_64", "cw_j_64_e_63_64"],
+     ["j_64", "cw_j_64_e_64_74"], ["j_64", "cw_j_64_e_64_65"], ["j_64", "cw_j_64_e_54_64"], ["j_74", "cw_j_74_e_73_74"], ["j_74", "cw_j_74_e_hw_east"], ["j_74", "cw_j_74_e_74_75"], ["j_74", "cw_j_74_e_64_74"], ["j_35", "cw_j_35_e_34_35"], ["j_35", "cw_j_35_e_35_45"], ["j_35", "cw_j_35_e_35_36"],
+     ["j_35", "cw_j_35_e_25_35"], ["j_36", "cw_j_36_e_35_36"], ["j_36", "cw_j_36_e_36_46"], ["j_36", "cw_j_36_e_36_37"], ["j_36", "cw_j_36_e_26_36"], ["j_37", "cw_j_37_e_36_37"], ["j_37", "cw_j_37_e_37_47"], ["j_37", "cw_j_37_e_27_37"]
+    ]
+   },
+   "rule": "AC-7",
+   "says": "each signalised approach has one signal entity with intersection, approach and a state of red, amber or green; each crosswalk with walk signals one with crosswalk and a state of walk or dont_walk"
+  },
+  {
+   "id": "program",
+   "check": "signal_program",
+   "args": {
+    "from": "watch_a",
+    "to": "watch_b",
+    "programs": {
+     "j_30": {
+      "offset": 3342,
+      "cycle": 4140,
+      "phases": [
+       {
+        "start": 0,
+        "green_end": 720,
+        "amber_end": 900,
+        "green": ["j_30<e_hw_north"],
+        "walk": []
+       },
+       {
+        "start": 960,
+        "green_end": 1500,
+        "amber_end": 1680,
+        "green": ["j_30<e_30_40"],
+        "walk": []
+       },
+       {
+        "start": 1740,
+        "green_end": 2460,
+        "amber_end": 2640,
+        "green": ["j_30<e_30_31"],
+        "walk": []
+       },
+       {
+        "start": 2700,
+        "green_end": 3240,
+        "amber_end": 3420,
+        "green": ["j_30<e_20_30"],
+        "walk": []
+       },
+       {
+        "start": 3480,
+        "green_end": 3900,
+        "amber_end": 4080,
+        "green": [],
+        "walk": ["cw_j_30_e_hw_north", "cw_j_30_e_30_40", "cw_j_30_e_30_31", "cw_j_30_e_20_30"]
+       }
+      ]
+     },
+     "j_31": {
+      "offset": 2562,
+      "cycle": 4140,
+      "phases": [
+       {
+        "start": 0,
+        "green_end": 720,
+        "amber_end": 900,
+        "green": ["j_31<e_30_31"],
+        "walk": []
+       },
+       {
+        "start": 960,
+        "green_end": 1500,
+        "amber_end": 1680,
+        "green": ["j_31<e_31_41"],
+        "walk": []
+       },
+       {
+        "start": 1740,
+        "green_end": 2460,
+        "amber_end": 2640,
+        "green": ["j_31<e_31_32"],
+        "walk": []
+       },
+       {
+        "start": 2700,
+        "green_end": 3240,
+        "amber_end": 3420,
+        "green": ["j_31<e_21_31"],
+        "walk": []
+       },
+       {
+        "start": 3480,
+        "green_end": 3900,
+        "amber_end": 4080,
+        "green": [],
+        "walk": ["cw_j_31_e_30_31", "cw_j_31_e_31_41", "cw_j_31_e_31_32", "cw_j_31_e_21_31"]
+       }
+      ]
+     },
+     "j_32": {
+      "offset": 1872,
+      "cycle": 4140,
+      "phases": [
+       {
+        "start": 0,
+        "green_end": 720,
+        "amber_end": 900,
+        "green": ["j_32<e_31_32"],
+        "walk": []
+       },
+       {
+        "start": 960,
+        "green_end": 1500,
+        "amber_end": 1680,
+        "green": ["j_32<e_32_42"],
+        "walk": []
+       },
+       {
+        "start": 1740,
+        "green_end": 2460,
+        "amber_end": 2640,
+        "green": ["j_32<e_32_33"],
+        "walk": []
+       },
+       {
+        "start": 2700,
+        "green_end": 3240,
+        "amber_end": 3420,
+        "green": ["j_32<e_22_32"],
+        "walk": []
+       },
+       {
+        "start": 3480,
+        "green_end": 3900,
+        "amber_end": 4080,
+        "green": [],
+        "walk": ["cw_j_32_e_31_32", "cw_j_32_e_32_42", "cw_j_32_e_32_33", "cw_j_32_e_22_32"]
+       }
+      ]
+     },
+     "j_33": {
+      "offset": 1878,
+      "cycle": 3360,
+      "phases": [
+       {
+        "start": 0,
+        "green_end": 720,
+        "amber_end": 900,
+        "green": ["j_33<e_32_33"],
+        "walk": []
+       },
+       {
+        "start": 960,
+        "green_end": 1680,
+        "amber_end": 1860,
+        "green": ["j_33<e_33_34"],
+        "walk": []
+       },
+       {
+        "start": 1920,
+        "green_end": 2460,
+        "amber_end": 2640,
+        "green": ["j_33<e_23_33"],
+        "walk": []
+       },
+       {
+        "start": 2700,
+        "green_end": 3120,
+        "amber_end": 3300,
+        "green": [],
+        "walk": ["cw_j_33_e_32_33", "cw_j_33_e_33_43", "cw_j_33_e_33_34", "cw_j_33_e_23_33"]
+       }
+      ]
+     },
+     "j_04": {
+      "offset": 246,
+      "cycle": 3180,
+      "phases": [
+       {
+        "start": 0,
+        "green_end": 540,
+        "amber_end": 720,
+        "green": ["j_04<e_03_04"],
+        "walk": []
+       },
+       {
+        "start": 780,
+        "green_end": 1500,
+        "amber_end": 1680,
+        "green": ["j_04<e_04_14"],
+        "walk": []
+       },
+       {
+        "start": 1740,
+        "green_end": 2280,
+        "amber_end": 2460,
+        "green": ["j_04<e_04_05"],
+        "walk": []
+       },
+       {
+        "start": 2520,
+        "green_end": 2940,
+        "amber_end": 3120,
+        "green": [],
+        "walk": ["cw_j_04_e_03_04", "cw_j_04_e_04_14", "cw_j_04_e_04_05"]
+       }
+      ]
+     },
+     "j_14": {
+      "offset": 3726,
+      "cycle": 4140,
+      "phases": [
+       {
+        "start": 0,
+        "green_end": 540,
+        "amber_end": 720,
+        "green": ["j_14<e_13_14"],
+        "walk": []
+       },
+       {
+        "start": 780,
+        "green_end": 1500,
+        "amber_end": 1680,
+        "green": ["j_14<e_14_24"],
+        "walk": []
+       },
+       {
+        "start": 1740,
+        "green_end": 2280,
+        "amber_end": 2460,
+        "green": ["j_14<e_14_15"],
+        "walk": []
+       },
+       {
+        "start": 2520,
+        "green_end": 3240,
+        "amber_end": 3420,
+        "green": ["j_14<e_04_14"],
+        "walk": []
+       },
+       {
+        "start": 3480,
+        "green_end": 3900,
+        "amber_end": 4080,
+        "green": [],
+        "walk": ["cw_j_14_e_13_14", "cw_j_14_e_14_24", "cw_j_14_e_14_15", "cw_j_14_e_04_14"]
+       }
+      ]
+     },
+     "j_24": {
+      "offset": 3828,
+      "cycle": 4140,
+      "phases": [
+       {
+        "start": 0,
+        "green_end": 540,
+        "amber_end": 720,
+        "green": ["j_24<e_23_24"],
+        "walk": []
+       },
+       {
+        "start": 780,
+        "green_end": 1500,
+        "amber_end": 1680,
+        "green": ["j_24<e_24_34"],
+        "walk": []
+       },
+       {
+        "start": 1740,
+        "green_end": 2280,
+        "amber_end": 2460,
+        "green": ["j_24<e_24_25"],
+        "walk": []
+       },
+       {
+        "start": 2520,
+        "green_end": 3240,
+        "amber_end": 3420,
+        "green": ["j_24<e_14_24"],
+        "walk": []
+       },
+       {
+        "start": 3480,
+        "green_end": 3900,
+        "amber_end": 4080,
+        "green": [],
+        "walk": ["cw_j_24_e_23_24", "cw_j_24_e_24_34", "cw_j_24_e_24_25", "cw_j_24_e_14_24"]
+       }
+      ]
+     },
+     "j_34": {
+      "offset": 2094,
+      "cycle": 4500,
+      "phases": [
+       {
+        "start": 0,
+        "green_end": 720,
+        "amber_end": 900,
+        "green": ["j_34<e_33_34"],
+        "walk": []
+       },
+       {
+        "start": 960,
+        "green_end": 1680,
+        "amber_end": 1860,
+        "green": ["j_34<e_34_44"],
+        "walk": []
+       },
+       {
+        "start": 1920,
+        "green_end": 2640,
+        "amber_end": 2820,
+        "green": ["j_34<e_34_35"],
+        "walk": []
+       },
+       {
+        "start": 2880,
+        "green_end": 3600,
+        "amber_end": 3780,
+        "green": ["j_34<e_24_34"],
+        "walk": []
+       },
+       {
+        "start": 3840,
+        "green_end": 4260,
+        "amber_end": 4440,
+        "green": [],
+        "walk": ["cw_j_34_e_33_34", "cw_j_34_e_34_44", "cw_j_34_e_34_35", "cw_j_34_e_24_34"]
+       }
+      ]
+     },
+     "j_44": {
+      "offset": 2100,
+      "cycle": 4140,
+      "phases": [
+       {
+        "start": 0,
+        "green_end": 540,
+        "amber_end": 720,
+        "green": ["j_44<e_43_44"],
+        "walk": []
+       },
+       {
+        "start": 780,
+        "green_end": 1500,
+        "amber_end": 1680,
+        "green": ["j_44<e_44_54"],
+        "walk": []
+       },
+       {
+        "start": 1740,
+        "green_end": 2280,
+        "amber_end": 2460,
+        "green": ["j_44<e_44_45"],
+        "walk": []
+       },
+       {
+        "start": 2520,
+        "green_end": 3240,
+        "amber_end": 3420,
+        "green": ["j_44<e_34_44"],
+        "walk": []
+       },
+       {
+        "start": 3480,
+        "green_end": 3900,
+        "amber_end": 4080,
+        "green": [],
+        "walk": ["cw_j_44_e_43_44", "cw_j_44_e_44_54", "cw_j_44_e_44_45", "cw_j_44_e_34_44"]
+       }
+      ]
+     },
+     "j_54": {
+      "offset": 2430,
+      "cycle": 4140,
+      "phases": [
+       {
+        "start": 0,
+        "green_end": 540,
+        "amber_end": 720,
+        "green": ["j_54<e_53_54"],
+        "walk": []
+       },
+       {
+        "start": 780,
+        "green_end": 1500,
+        "amber_end": 1680,
+        "green": ["j_54<e_54_64"],
+        "walk": []
+       },
+       {
+        "start": 1740,
+        "green_end": 2280,
+        "amber_end": 2460,
+        "green": ["j_54<e_54_55"],
+        "walk": []
+       },
+       {
+        "start": 2520,
+        "green_end": 3240,
+        "amber_end": 3420,
+        "green": ["j_54<e_44_54"],
+        "walk": []
+       },
+       {
+        "start": 3480,
+        "green_end": 3900,
+        "amber_end": 4080,
+        "green": [],
+        "walk": ["cw_j_54_e_53_54", "cw_j_54_e_54_64", "cw_j_54_e_54_55", "cw_j_54_e_44_54"]
+       }
+      ]
+     },
+     "j_64": {
+      "offset": 732,
+      "cycle": 3360,
+      "phases": [
+       {
+        "start": 0,
+        "green_end": 540,
+        "amber_end": 720,
+        "green": ["j_64<e_63_64"],
+        "walk": []
+       },
+       {
+        "start": 780,
+        "green_end": 1500,
+        "amber_end": 1680,
+        "green": ["j_64<e_64_74"],
+        "walk": []
+       },
+       {
+        "start": 1740,
+        "green_end": 2460,
+        "amber_end": 2640,
+        "green": ["j_64<e_54_64"],
+        "walk": []
+       },
+       {
+        "start": 2700,
+        "green_end": 3120,
+        "amber_end": 3300,
+        "green": [],
+        "walk": ["cw_j_64_e_63_64", "cw_j_64_e_64_74", "cw_j_64_e_64_65", "cw_j_64_e_54_64"]
+       }
+      ]
+     },
+     "j_74": {
+      "offset": 246,
+      "cycle": 4140,
+      "phases": [
+       {
+        "start": 0,
+        "green_end": 540,
+        "amber_end": 720,
+        "green": ["j_74<e_73_74"],
+        "walk": []
+       },
+       {
+        "start": 780,
+        "green_end": 1500,
+        "amber_end": 1680,
+        "green": ["j_74<e_hw_east"],
+        "walk": []
+       },
+       {
+        "start": 1740,
+        "green_end": 2280,
+        "amber_end": 2460,
+        "green": ["j_74<e_74_75"],
+        "walk": []
+       },
+       {
+        "start": 2520,
+        "green_end": 3240,
+        "amber_end": 3420,
+        "green": ["j_74<e_64_74"],
+        "walk": []
+       },
+       {
+        "start": 3480,
+        "green_end": 3900,
+        "amber_end": 4080,
+        "green": [],
+        "walk": ["cw_j_74_e_73_74", "cw_j_74_e_hw_east", "cw_j_74_e_74_75", "cw_j_74_e_64_74"]
+       }
+      ]
+     },
+     "j_35": {
+      "offset": 762,
+      "cycle": 4140,
+      "phases": [
+       {
+        "start": 0,
+        "green_end": 720,
+        "amber_end": 900,
+        "green": ["j_35<e_34_35"],
+        "walk": []
+       },
+       {
+        "start": 960,
+        "green_end": 1500,
+        "amber_end": 1680,
+        "green": ["j_35<e_35_45"],
+        "walk": []
+       },
+       {
+        "start": 1740,
+        "green_end": 2460,
+        "amber_end": 2640,
+        "green": ["j_35<e_35_36"],
+        "walk": []
+       },
+       {
+        "start": 2700,
+        "green_end": 3240,
+        "amber_end": 3420,
+        "green": ["j_35<e_25_35"],
+        "walk": []
+       },
+       {
+        "start": 3480,
+        "green_end": 3900,
+        "amber_end": 4080,
+        "green": [],
+        "walk": ["cw_j_35_e_34_35", "cw_j_35_e_35_45", "cw_j_35_e_35_36", "cw_j_35_e_25_35"]
+       }
+      ]
+     },
+     "j_36": {
+      "offset": 3702,
+      "cycle": 4140,
+      "phases": [
+       {
+        "start": 0,
+        "green_end": 720,
+        "amber_end": 900,
+        "green": ["j_36<e_35_36"],
+        "walk": []
+       },
+       {
+        "start": 960,
+        "green_end": 1500,
+        "amber_end": 1680,
+        "green": ["j_36<e_36_46"],
+        "walk": []
+       },
+       {
+        "start": 1740,
+        "green_end": 2460,
+        "amber_end": 2640,
+        "green": ["j_36<e_36_37"],
+        "walk": []
+       },
+       {
+        "start": 2700,
+        "green_end": 3240,
+        "amber_end": 3420,
+        "green": ["j_36<e_26_36"],
+        "walk": []
+       },
+       {
+        "start": 3480,
+        "green_end": 3900,
+        "amber_end": 4080,
+        "green": [],
+        "walk": ["cw_j_36_e_35_36", "cw_j_36_e_36_46", "cw_j_36_e_36_37", "cw_j_36_e_26_36"]
+       }
+      ]
+     },
+     "j_37": {
+      "offset": 1242,
+      "cycle": 3180,
+      "phases": [
+       {
+        "start": 0,
+        "green_end": 720,
+        "amber_end": 900,
+        "green": ["j_37<e_36_37"],
+        "walk": []
+       },
+       {
+        "start": 960,
+        "green_end": 1500,
+        "amber_end": 1680,
+        "green": ["j_37<e_37_47"],
+        "walk": []
+       },
+       {
+        "start": 1740,
+        "green_end": 2280,
+        "amber_end": 2460,
+        "green": ["j_37<e_27_37"],
+        "walk": []
+       },
+       {
+        "start": 2520,
+        "green_end": 2940,
+        "amber_end": 3120,
+        "green": [],
+        "walk": ["cw_j_37_e_36_37", "cw_j_37_e_37_47", "cw_j_37_e_27_37"]
+       }
+      ]
+     }
+    },
+    "reset_step": 1
+   },
+   "rule": "TR-4",
+   "says": "every signal shows its program's state within one tick, program time counted from the tick the world.reset command ran in"
+  },
+  {
+   "id": "greens_compatible",
+   "check": "signal_greens",
+   "args": {
+    "from": "watch_a",
+    "to": "watch_b",
+    "programs": {
+     "j_30": {
+      "offset": 3342,
+      "cycle": 4140,
+      "phases": [
+       {
+        "start": 0,
+        "green_end": 720,
+        "amber_end": 900,
+        "green": ["j_30<e_hw_north"],
+        "walk": []
+       },
+       {
+        "start": 960,
+        "green_end": 1500,
+        "amber_end": 1680,
+        "green": ["j_30<e_30_40"],
+        "walk": []
+       },
+       {
+        "start": 1740,
+        "green_end": 2460,
+        "amber_end": 2640,
+        "green": ["j_30<e_30_31"],
+        "walk": []
+       },
+       {
+        "start": 2700,
+        "green_end": 3240,
+        "amber_end": 3420,
+        "green": ["j_30<e_20_30"],
+        "walk": []
+       },
+       {
+        "start": 3480,
+        "green_end": 3900,
+        "amber_end": 4080,
+        "green": [],
+        "walk": ["cw_j_30_e_hw_north", "cw_j_30_e_30_40", "cw_j_30_e_30_31", "cw_j_30_e_20_30"]
+       }
+      ]
+     },
+     "j_31": {
+      "offset": 2562,
+      "cycle": 4140,
+      "phases": [
+       {
+        "start": 0,
+        "green_end": 720,
+        "amber_end": 900,
+        "green": ["j_31<e_30_31"],
+        "walk": []
+       },
+       {
+        "start": 960,
+        "green_end": 1500,
+        "amber_end": 1680,
+        "green": ["j_31<e_31_41"],
+        "walk": []
+       },
+       {
+        "start": 1740,
+        "green_end": 2460,
+        "amber_end": 2640,
+        "green": ["j_31<e_31_32"],
+        "walk": []
+       },
+       {
+        "start": 2700,
+        "green_end": 3240,
+        "amber_end": 3420,
+        "green": ["j_31<e_21_31"],
+        "walk": []
+       },
+       {
+        "start": 3480,
+        "green_end": 3900,
+        "amber_end": 4080,
+        "green": [],
+        "walk": ["cw_j_31_e_30_31", "cw_j_31_e_31_41", "cw_j_31_e_31_32", "cw_j_31_e_21_31"]
+       }
+      ]
+     },
+     "j_32": {
+      "offset": 1872,
+      "cycle": 4140,
+      "phases": [
+       {
+        "start": 0,
+        "green_end": 720,
+        "amber_end": 900,
+        "green": ["j_32<e_31_32"],
+        "walk": []
+       },
+       {
+        "start": 960,
+        "green_end": 1500,
+        "amber_end": 1680,
+        "green": ["j_32<e_32_42"],
+        "walk": []
+       },
+       {
+        "start": 1740,
+        "green_end": 2460,
+        "amber_end": 2640,
+        "green": ["j_32<e_32_33"],
+        "walk": []
+       },
+       {
+        "start": 2700,
+        "green_end": 3240,
+        "amber_end": 3420,
+        "green": ["j_32<e_22_32"],
+        "walk": []
+       },
+       {
+        "start": 3480,
+        "green_end": 3900,
+        "amber_end": 4080,
+        "green": [],
+        "walk": ["cw_j_32_e_31_32", "cw_j_32_e_32_42", "cw_j_32_e_32_33", "cw_j_32_e_22_32"]
+       }
+      ]
+     },
+     "j_33": {
+      "offset": 1878,
+      "cycle": 3360,
+      "phases": [
+       {
+        "start": 0,
+        "green_end": 720,
+        "amber_end": 900,
+        "green": ["j_33<e_32_33"],
+        "walk": []
+       },
+       {
+        "start": 960,
+        "green_end": 1680,
+        "amber_end": 1860,
+        "green": ["j_33<e_33_34"],
+        "walk": []
+       },
+       {
+        "start": 1920,
+        "green_end": 2460,
+        "amber_end": 2640,
+        "green": ["j_33<e_23_33"],
+        "walk": []
+       },
+       {
+        "start": 2700,
+        "green_end": 3120,
+        "amber_end": 3300,
+        "green": [],
+        "walk": ["cw_j_33_e_32_33", "cw_j_33_e_33_43", "cw_j_33_e_33_34", "cw_j_33_e_23_33"]
+       }
+      ]
+     },
+     "j_04": {
+      "offset": 246,
+      "cycle": 3180,
+      "phases": [
+       {
+        "start": 0,
+        "green_end": 540,
+        "amber_end": 720,
+        "green": ["j_04<e_03_04"],
+        "walk": []
+       },
+       {
+        "start": 780,
+        "green_end": 1500,
+        "amber_end": 1680,
+        "green": ["j_04<e_04_14"],
+        "walk": []
+       },
+       {
+        "start": 1740,
+        "green_end": 2280,
+        "amber_end": 2460,
+        "green": ["j_04<e_04_05"],
+        "walk": []
+       },
+       {
+        "start": 2520,
+        "green_end": 2940,
+        "amber_end": 3120,
+        "green": [],
+        "walk": ["cw_j_04_e_03_04", "cw_j_04_e_04_14", "cw_j_04_e_04_05"]
+       }
+      ]
+     },
+     "j_14": {
+      "offset": 3726,
+      "cycle": 4140,
+      "phases": [
+       {
+        "start": 0,
+        "green_end": 540,
+        "amber_end": 720,
+        "green": ["j_14<e_13_14"],
+        "walk": []
+       },
+       {
+        "start": 780,
+        "green_end": 1500,
+        "amber_end": 1680,
+        "green": ["j_14<e_14_24"],
+        "walk": []
+       },
+       {
+        "start": 1740,
+        "green_end": 2280,
+        "amber_end": 2460,
+        "green": ["j_14<e_14_15"],
+        "walk": []
+       },
+       {
+        "start": 2520,
+        "green_end": 3240,
+        "amber_end": 3420,
+        "green": ["j_14<e_04_14"],
+        "walk": []
+       },
+       {
+        "start": 3480,
+        "green_end": 3900,
+        "amber_end": 4080,
+        "green": [],
+        "walk": ["cw_j_14_e_13_14", "cw_j_14_e_14_24", "cw_j_14_e_14_15", "cw_j_14_e_04_14"]
+       }
+      ]
+     },
+     "j_24": {
+      "offset": 3828,
+      "cycle": 4140,
+      "phases": [
+       {
+        "start": 0,
+        "green_end": 540,
+        "amber_end": 720,
+        "green": ["j_24<e_23_24"],
+        "walk": []
+       },
+       {
+        "start": 780,
+        "green_end": 1500,
+        "amber_end": 1680,
+        "green": ["j_24<e_24_34"],
+        "walk": []
+       },
+       {
+        "start": 1740,
+        "green_end": 2280,
+        "amber_end": 2460,
+        "green": ["j_24<e_24_25"],
+        "walk": []
+       },
+       {
+        "start": 2520,
+        "green_end": 3240,
+        "amber_end": 3420,
+        "green": ["j_24<e_14_24"],
+        "walk": []
+       },
+       {
+        "start": 3480,
+        "green_end": 3900,
+        "amber_end": 4080,
+        "green": [],
+        "walk": ["cw_j_24_e_23_24", "cw_j_24_e_24_34", "cw_j_24_e_24_25", "cw_j_24_e_14_24"]
+       }
+      ]
+     },
+     "j_34": {
+      "offset": 2094,
+      "cycle": 4500,
+      "phases": [
+       {
+        "start": 0,
+        "green_end": 720,
+        "amber_end": 900,
+        "green": ["j_34<e_33_34"],
+        "walk": []
+       },
+       {
+        "start": 960,
+        "green_end": 1680,
+        "amber_end": 1860,
+        "green": ["j_34<e_34_44"],
+        "walk": []
+       },
+       {
+        "start": 1920,
+        "green_end": 2640,
+        "amber_end": 2820,
+        "green": ["j_34<e_34_35"],
+        "walk": []
+       },
+       {
+        "start": 2880,
+        "green_end": 3600,
+        "amber_end": 3780,
+        "green": ["j_34<e_24_34"],
+        "walk": []
+       },
+       {
+        "start": 3840,
+        "green_end": 4260,
+        "amber_end": 4440,
+        "green": [],
+        "walk": ["cw_j_34_e_33_34", "cw_j_34_e_34_44", "cw_j_34_e_34_35", "cw_j_34_e_24_34"]
+       }
+      ]
+     },
+     "j_44": {
+      "offset": 2100,
+      "cycle": 4140,
+      "phases": [
+       {
+        "start": 0,
+        "green_end": 540,
+        "amber_end": 720,
+        "green": ["j_44<e_43_44"],
+        "walk": []
+       },
+       {
+        "start": 780,
+        "green_end": 1500,
+        "amber_end": 1680,
+        "green": ["j_44<e_44_54"],
+        "walk": []
+       },
+       {
+        "start": 1740,
+        "green_end": 2280,
+        "amber_end": 2460,
+        "green": ["j_44<e_44_45"],
+        "walk": []
+       },
+       {
+        "start": 2520,
+        "green_end": 3240,
+        "amber_end": 3420,
+        "green": ["j_44<e_34_44"],
+        "walk": []
+       },
+       {
+        "start": 3480,
+        "green_end": 3900,
+        "amber_end": 4080,
+        "green": [],
+        "walk": ["cw_j_44_e_43_44", "cw_j_44_e_44_54", "cw_j_44_e_44_45", "cw_j_44_e_34_44"]
+       }
+      ]
+     },
+     "j_54": {
+      "offset": 2430,
+      "cycle": 4140,
+      "phases": [
+       {
+        "start": 0,
+        "green_end": 540,
+        "amber_end": 720,
+        "green": ["j_54<e_53_54"],
+        "walk": []
+       },
+       {
+        "start": 780,
+        "green_end": 1500,
+        "amber_end": 1680,
+        "green": ["j_54<e_54_64"],
+        "walk": []
+       },
+       {
+        "start": 1740,
+        "green_end": 2280,
+        "amber_end": 2460,
+        "green": ["j_54<e_54_55"],
+        "walk": []
+       },
+       {
+        "start": 2520,
+        "green_end": 3240,
+        "amber_end": 3420,
+        "green": ["j_54<e_44_54"],
+        "walk": []
+       },
+       {
+        "start": 3480,
+        "green_end": 3900,
+        "amber_end": 4080,
+        "green": [],
+        "walk": ["cw_j_54_e_53_54", "cw_j_54_e_54_64", "cw_j_54_e_54_55", "cw_j_54_e_44_54"]
+       }
+      ]
+     },
+     "j_64": {
+      "offset": 732,
+      "cycle": 3360,
+      "phases": [
+       {
+        "start": 0,
+        "green_end": 540,
+        "amber_end": 720,
+        "green": ["j_64<e_63_64"],
+        "walk": []
+       },
+       {
+        "start": 780,
+        "green_end": 1500,
+        "amber_end": 1680,
+        "green": ["j_64<e_64_74"],
+        "walk": []
+       },
+       {
+        "start": 1740,
+        "green_end": 2460,
+        "amber_end": 2640,
+        "green": ["j_64<e_54_64"],
+        "walk": []
+       },
+       {
+        "start": 2700,
+        "green_end": 3120,
+        "amber_end": 3300,
+        "green": [],
+        "walk": ["cw_j_64_e_63_64", "cw_j_64_e_64_74", "cw_j_64_e_64_65", "cw_j_64_e_54_64"]
+       }
+      ]
+     },
+     "j_74": {
+      "offset": 246,
+      "cycle": 4140,
+      "phases": [
+       {
+        "start": 0,
+        "green_end": 540,
+        "amber_end": 720,
+        "green": ["j_74<e_73_74"],
+        "walk": []
+       },
+       {
+        "start": 780,
+        "green_end": 1500,
+        "amber_end": 1680,
+        "green": ["j_74<e_hw_east"],
+        "walk": []
+       },
+       {
+        "start": 1740,
+        "green_end": 2280,
+        "amber_end": 2460,
+        "green": ["j_74<e_74_75"],
+        "walk": []
+       },
+       {
+        "start": 2520,
+        "green_end": 3240,
+        "amber_end": 3420,
+        "green": ["j_74<e_64_74"],
+        "walk": []
+       },
+       {
+        "start": 3480,
+        "green_end": 3900,
+        "amber_end": 4080,
+        "green": [],
+        "walk": ["cw_j_74_e_73_74", "cw_j_74_e_hw_east", "cw_j_74_e_74_75", "cw_j_74_e_64_74"]
+       }
+      ]
+     },
+     "j_35": {
+      "offset": 762,
+      "cycle": 4140,
+      "phases": [
+       {
+        "start": 0,
+        "green_end": 720,
+        "amber_end": 900,
+        "green": ["j_35<e_34_35"],
+        "walk": []
+       },
+       {
+        "start": 960,
+        "green_end": 1500,
+        "amber_end": 1680,
+        "green": ["j_35<e_35_45"],
+        "walk": []
+       },
+       {
+        "start": 1740,
+        "green_end": 2460,
+        "amber_end": 2640,
+        "green": ["j_35<e_35_36"],
+        "walk": []
+       },
+       {
+        "start": 2700,
+        "green_end": 3240,
+        "amber_end": 3420,
+        "green": ["j_35<e_25_35"],
+        "walk": []
+       },
+       {
+        "start": 3480,
+        "green_end": 3900,
+        "amber_end": 4080,
+        "green": [],
+        "walk": ["cw_j_35_e_34_35", "cw_j_35_e_35_45", "cw_j_35_e_35_36", "cw_j_35_e_25_35"]
+       }
+      ]
+     },
+     "j_36": {
+      "offset": 3702,
+      "cycle": 4140,
+      "phases": [
+       {
+        "start": 0,
+        "green_end": 720,
+        "amber_end": 900,
+        "green": ["j_36<e_35_36"],
+        "walk": []
+       },
+       {
+        "start": 960,
+        "green_end": 1500,
+        "amber_end": 1680,
+        "green": ["j_36<e_36_46"],
+        "walk": []
+       },
+       {
+        "start": 1740,
+        "green_end": 2460,
+        "amber_end": 2640,
+        "green": ["j_36<e_36_37"],
+        "walk": []
+       },
+       {
+        "start": 2700,
+        "green_end": 3240,
+        "amber_end": 3420,
+        "green": ["j_36<e_26_36"],
+        "walk": []
+       },
+       {
+        "start": 3480,
+        "green_end": 3900,
+        "amber_end": 4080,
+        "green": [],
+        "walk": ["cw_j_36_e_35_36", "cw_j_36_e_36_46", "cw_j_36_e_36_37", "cw_j_36_e_26_36"]
+       }
+      ]
+     },
+     "j_37": {
+      "offset": 1242,
+      "cycle": 3180,
+      "phases": [
+       {
+        "start": 0,
+        "green_end": 720,
+        "amber_end": 900,
+        "green": ["j_37<e_36_37"],
+        "walk": []
+       },
+       {
+        "start": 960,
+        "green_end": 1500,
+        "amber_end": 1680,
+        "green": ["j_37<e_37_47"],
+        "walk": []
+       },
+       {
+        "start": 1740,
+        "green_end": 2280,
+        "amber_end": 2460,
+        "green": ["j_37<e_27_37"],
+        "walk": []
+       },
+       {
+        "start": 2520,
+        "green_end": 2940,
+        "amber_end": 3120,
+        "green": [],
+        "walk": ["cw_j_37_e_36_37", "cw_j_37_e_37_47", "cw_j_37_e_27_37"]
+       }
+      ]
+     }
+    }
+   },
+   "rule": "TR-4",
+   "says": "no two approaches are green at once unless their program puts them in one phase"
+  },
+  {
+   "id": "walk_in_green",
+   "check": "signal_walks",
+   "args": {
+    "from": "watch_a",
+    "to": "watch_b",
+    "programs": {
+     "j_30": {
+      "offset": 3342,
+      "cycle": 4140,
+      "phases": [
+       {
+        "start": 0,
+        "green_end": 720,
+        "amber_end": 900,
+        "green": ["j_30<e_hw_north"],
+        "walk": []
+       },
+       {
+        "start": 960,
+        "green_end": 1500,
+        "amber_end": 1680,
+        "green": ["j_30<e_30_40"],
+        "walk": []
+       },
+       {
+        "start": 1740,
+        "green_end": 2460,
+        "amber_end": 2640,
+        "green": ["j_30<e_30_31"],
+        "walk": []
+       },
+       {
+        "start": 2700,
+        "green_end": 3240,
+        "amber_end": 3420,
+        "green": ["j_30<e_20_30"],
+        "walk": []
+       },
+       {
+        "start": 3480,
+        "green_end": 3900,
+        "amber_end": 4080,
+        "green": [],
+        "walk": ["cw_j_30_e_hw_north", "cw_j_30_e_30_40", "cw_j_30_e_30_31", "cw_j_30_e_20_30"]
+       }
+      ]
+     },
+     "j_31": {
+      "offset": 2562,
+      "cycle": 4140,
+      "phases": [
+       {
+        "start": 0,
+        "green_end": 720,
+        "amber_end": 900,
+        "green": ["j_31<e_30_31"],
+        "walk": []
+       },
+       {
+        "start": 960,
+        "green_end": 1500,
+        "amber_end": 1680,
+        "green": ["j_31<e_31_41"],
+        "walk": []
+       },
+       {
+        "start": 1740,
+        "green_end": 2460,
+        "amber_end": 2640,
+        "green": ["j_31<e_31_32"],
+        "walk": []
+       },
+       {
+        "start": 2700,
+        "green_end": 3240,
+        "amber_end": 3420,
+        "green": ["j_31<e_21_31"],
+        "walk": []
+       },
+       {
+        "start": 3480,
+        "green_end": 3900,
+        "amber_end": 4080,
+        "green": [],
+        "walk": ["cw_j_31_e_30_31", "cw_j_31_e_31_41", "cw_j_31_e_31_32", "cw_j_31_e_21_31"]
+       }
+      ]
+     },
+     "j_32": {
+      "offset": 1872,
+      "cycle": 4140,
+      "phases": [
+       {
+        "start": 0,
+        "green_end": 720,
+        "amber_end": 900,
+        "green": ["j_32<e_31_32"],
+        "walk": []
+       },
+       {
+        "start": 960,
+        "green_end": 1500,
+        "amber_end": 1680,
+        "green": ["j_32<e_32_42"],
+        "walk": []
+       },
+       {
+        "start": 1740,
+        "green_end": 2460,
+        "amber_end": 2640,
+        "green": ["j_32<e_32_33"],
+        "walk": []
+       },
+       {
+        "start": 2700,
+        "green_end": 3240,
+        "amber_end": 3420,
+        "green": ["j_32<e_22_32"],
+        "walk": []
+       },
+       {
+        "start": 3480,
+        "green_end": 3900,
+        "amber_end": 4080,
+        "green": [],
+        "walk": ["cw_j_32_e_31_32", "cw_j_32_e_32_42", "cw_j_32_e_32_33", "cw_j_32_e_22_32"]
+       }
+      ]
+     },
+     "j_33": {
+      "offset": 1878,
+      "cycle": 3360,
+      "phases": [
+       {
+        "start": 0,
+        "green_end": 720,
+        "amber_end": 900,
+        "green": ["j_33<e_32_33"],
+        "walk": []
+       },
+       {
+        "start": 960,
+        "green_end": 1680,
+        "amber_end": 1860,
+        "green": ["j_33<e_33_34"],
+        "walk": []
+       },
+       {
+        "start": 1920,
+        "green_end": 2460,
+        "amber_end": 2640,
+        "green": ["j_33<e_23_33"],
+        "walk": []
+       },
+       {
+        "start": 2700,
+        "green_end": 3120,
+        "amber_end": 3300,
+        "green": [],
+        "walk": ["cw_j_33_e_32_33", "cw_j_33_e_33_43", "cw_j_33_e_33_34", "cw_j_33_e_23_33"]
+       }
+      ]
+     },
+     "j_04": {
+      "offset": 246,
+      "cycle": 3180,
+      "phases": [
+       {
+        "start": 0,
+        "green_end": 540,
+        "amber_end": 720,
+        "green": ["j_04<e_03_04"],
+        "walk": []
+       },
+       {
+        "start": 780,
+        "green_end": 1500,
+        "amber_end": 1680,
+        "green": ["j_04<e_04_14"],
+        "walk": []
+       },
+       {
+        "start": 1740,
+        "green_end": 2280,
+        "amber_end": 2460,
+        "green": ["j_04<e_04_05"],
+        "walk": []
+       },
+       {
+        "start": 2520,
+        "green_end": 2940,
+        "amber_end": 3120,
+        "green": [],
+        "walk": ["cw_j_04_e_03_04", "cw_j_04_e_04_14", "cw_j_04_e_04_05"]
+       }
+      ]
+     },
+     "j_14": {
+      "offset": 3726,
+      "cycle": 4140,
+      "phases": [
+       {
+        "start": 0,
+        "green_end": 540,
+        "amber_end": 720,
+        "green": ["j_14<e_13_14"],
+        "walk": []
+       },
+       {
+        "start": 780,
+        "green_end": 1500,
+        "amber_end": 1680,
+        "green": ["j_14<e_14_24"],
+        "walk": []
+       },
+       {
+        "start": 1740,
+        "green_end": 2280,
+        "amber_end": 2460,
+        "green": ["j_14<e_14_15"],
+        "walk": []
+       },
+       {
+        "start": 2520,
+        "green_end": 3240,
+        "amber_end": 3420,
+        "green": ["j_14<e_04_14"],
+        "walk": []
+       },
+       {
+        "start": 3480,
+        "green_end": 3900,
+        "amber_end": 4080,
+        "green": [],
+        "walk": ["cw_j_14_e_13_14", "cw_j_14_e_14_24", "cw_j_14_e_14_15", "cw_j_14_e_04_14"]
+       }
+      ]
+     },
+     "j_24": {
+      "offset": 3828,
+      "cycle": 4140,
+      "phases": [
+       {
+        "start": 0,
+        "green_end": 540,
+        "amber_end": 720,
+        "green": ["j_24<e_23_24"],
+        "walk": []
+       },
+       {
+        "start": 780,
+        "green_end": 1500,
+        "amber_end": 1680,
+        "green": ["j_24<e_24_34"],
+        "walk": []
+       },
+       {
+        "start": 1740,
+        "green_end": 2280,
+        "amber_end": 2460,
+        "green": ["j_24<e_24_25"],
+        "walk": []
+       },
+       {
+        "start": 2520,
+        "green_end": 3240,
+        "amber_end": 3420,
+        "green": ["j_24<e_14_24"],
+        "walk": []
+       },
+       {
+        "start": 3480,
+        "green_end": 3900,
+        "amber_end": 4080,
+        "green": [],
+        "walk": ["cw_j_24_e_23_24", "cw_j_24_e_24_34", "cw_j_24_e_24_25", "cw_j_24_e_14_24"]
+       }
+      ]
+     },
+     "j_34": {
+      "offset": 2094,
+      "cycle": 4500,
+      "phases": [
+       {
+        "start": 0,
+        "green_end": 720,
+        "amber_end": 900,
+        "green": ["j_34<e_33_34"],
+        "walk": []
+       },
+       {
+        "start": 960,
+        "green_end": 1680,
+        "amber_end": 1860,
+        "green": ["j_34<e_34_44"],
+        "walk": []
+       },
+       {
+        "start": 1920,
+        "green_end": 2640,
+        "amber_end": 2820,
+        "green": ["j_34<e_34_35"],
+        "walk": []
+       },
+       {
+        "start": 2880,
+        "green_end": 3600,
+        "amber_end": 3780,
+        "green": ["j_34<e_24_34"],
+        "walk": []
+       },
+       {
+        "start": 3840,
+        "green_end": 4260,
+        "amber_end": 4440,
+        "green": [],
+        "walk": ["cw_j_34_e_33_34", "cw_j_34_e_34_44", "cw_j_34_e_34_35", "cw_j_34_e_24_34"]
+       }
+      ]
+     },
+     "j_44": {
+      "offset": 2100,
+      "cycle": 4140,
+      "phases": [
+       {
+        "start": 0,
+        "green_end": 540,
+        "amber_end": 720,
+        "green": ["j_44<e_43_44"],
+        "walk": []
+       },
+       {
+        "start": 780,
+        "green_end": 1500,
+        "amber_end": 1680,
+        "green": ["j_44<e_44_54"],
+        "walk": []
+       },
+       {
+        "start": 1740,
+        "green_end": 2280,
+        "amber_end": 2460,
+        "green": ["j_44<e_44_45"],
+        "walk": []
+       },
+       {
+        "start": 2520,
+        "green_end": 3240,
+        "amber_end": 3420,
+        "green": ["j_44<e_34_44"],
+        "walk": []
+       },
+       {
+        "start": 3480,
+        "green_end": 3900,
+        "amber_end": 4080,
+        "green": [],
+        "walk": ["cw_j_44_e_43_44", "cw_j_44_e_44_54", "cw_j_44_e_44_45", "cw_j_44_e_34_44"]
+       }
+      ]
+     },
+     "j_54": {
+      "offset": 2430,
+      "cycle": 4140,
+      "phases": [
+       {
+        "start": 0,
+        "green_end": 540,
+        "amber_end": 720,
+        "green": ["j_54<e_53_54"],
+        "walk": []
+       },
+       {
+        "start": 780,
+        "green_end": 1500,
+        "amber_end": 1680,
+        "green": ["j_54<e_54_64"],
+        "walk": []
+       },
+       {
+        "start": 1740,
+        "green_end": 2280,
+        "amber_end": 2460,
+        "green": ["j_54<e_54_55"],
+        "walk": []
+       },
+       {
+        "start": 2520,
+        "green_end": 3240,
+        "amber_end": 3420,
+        "green": ["j_54<e_44_54"],
+        "walk": []
+       },
+       {
+        "start": 3480,
+        "green_end": 3900,
+        "amber_end": 4080,
+        "green": [],
+        "walk": ["cw_j_54_e_53_54", "cw_j_54_e_54_64", "cw_j_54_e_54_55", "cw_j_54_e_44_54"]
+       }
+      ]
+     },
+     "j_64": {
+      "offset": 732,
+      "cycle": 3360,
+      "phases": [
+       {
+        "start": 0,
+        "green_end": 540,
+        "amber_end": 720,
+        "green": ["j_64<e_63_64"],
+        "walk": []
+       },
+       {
+        "start": 780,
+        "green_end": 1500,
+        "amber_end": 1680,
+        "green": ["j_64<e_64_74"],
+        "walk": []
+       },
+       {
+        "start": 1740,
+        "green_end": 2460,
+        "amber_end": 2640,
+        "green": ["j_64<e_54_64"],
+        "walk": []
+       },
+       {
+        "start": 2700,
+        "green_end": 3120,
+        "amber_end": 3300,
+        "green": [],
+        "walk": ["cw_j_64_e_63_64", "cw_j_64_e_64_74", "cw_j_64_e_64_65", "cw_j_64_e_54_64"]
+       }
+      ]
+     },
+     "j_74": {
+      "offset": 246,
+      "cycle": 4140,
+      "phases": [
+       {
+        "start": 0,
+        "green_end": 540,
+        "amber_end": 720,
+        "green": ["j_74<e_73_74"],
+        "walk": []
+       },
+       {
+        "start": 780,
+        "green_end": 1500,
+        "amber_end": 1680,
+        "green": ["j_74<e_hw_east"],
+        "walk": []
+       },
+       {
+        "start": 1740,
+        "green_end": 2280,
+        "amber_end": 2460,
+        "green": ["j_74<e_74_75"],
+        "walk": []
+       },
+       {
+        "start": 2520,
+        "green_end": 3240,
+        "amber_end": 3420,
+        "green": ["j_74<e_64_74"],
+        "walk": []
+       },
+       {
+        "start": 3480,
+        "green_end": 3900,
+        "amber_end": 4080,
+        "green": [],
+        "walk": ["cw_j_74_e_73_74", "cw_j_74_e_hw_east", "cw_j_74_e_74_75", "cw_j_74_e_64_74"]
+       }
+      ]
+     },
+     "j_35": {
+      "offset": 762,
+      "cycle": 4140,
+      "phases": [
+       {
+        "start": 0,
+        "green_end": 720,
+        "amber_end": 900,
+        "green": ["j_35<e_34_35"],
+        "walk": []
+       },
+       {
+        "start": 960,
+        "green_end": 1500,
+        "amber_end": 1680,
+        "green": ["j_35<e_35_45"],
+        "walk": []
+       },
+       {
+        "start": 1740,
+        "green_end": 2460,
+        "amber_end": 2640,
+        "green": ["j_35<e_35_36"],
+        "walk": []
+       },
+       {
+        "start": 2700,
+        "green_end": 3240,
+        "amber_end": 3420,
+        "green": ["j_35<e_25_35"],
+        "walk": []
+       },
+       {
+        "start": 3480,
+        "green_end": 3900,
+        "amber_end": 4080,
+        "green": [],
+        "walk": ["cw_j_35_e_34_35", "cw_j_35_e_35_45", "cw_j_35_e_35_36", "cw_j_35_e_25_35"]
+       }
+      ]
+     },
+     "j_36": {
+      "offset": 3702,
+      "cycle": 4140,
+      "phases": [
+       {
+        "start": 0,
+        "green_end": 720,
+        "amber_end": 900,
+        "green": ["j_36<e_35_36"],
+        "walk": []
+       },
+       {
+        "start": 960,
+        "green_end": 1500,
+        "amber_end": 1680,
+        "green": ["j_36<e_36_46"],
+        "walk": []
+       },
+       {
+        "start": 1740,
+        "green_end": 2460,
+        "amber_end": 2640,
+        "green": ["j_36<e_36_37"],
+        "walk": []
+       },
+       {
+        "start": 2700,
+        "green_end": 3240,
+        "amber_end": 3420,
+        "green": ["j_36<e_26_36"],
+        "walk": []
+       },
+       {
+        "start": 3480,
+        "green_end": 3900,
+        "amber_end": 4080,
+        "green": [],
+        "walk": ["cw_j_36_e_35_36", "cw_j_36_e_36_46", "cw_j_36_e_36_37", "cw_j_36_e_26_36"]
+       }
+      ]
+     },
+     "j_37": {
+      "offset": 1242,
+      "cycle": 3180,
+      "phases": [
+       {
+        "start": 0,
+        "green_end": 720,
+        "amber_end": 900,
+        "green": ["j_37<e_36_37"],
+        "walk": []
+       },
+       {
+        "start": 960,
+        "green_end": 1500,
+        "amber_end": 1680,
+        "green": ["j_37<e_37_47"],
+        "walk": []
+       },
+       {
+        "start": 1740,
+        "green_end": 2280,
+        "amber_end": 2460,
+        "green": ["j_37<e_27_37"],
+        "walk": []
+       },
+       {
+        "start": 2520,
+        "green_end": 2940,
+        "amber_end": 3120,
+        "green": [],
+        "walk": ["cw_j_37_e_36_37", "cw_j_37_e_37_47", "cw_j_37_e_27_37"]
+       }
+      ]
+     }
+    }
+   },
+   "rule": "TR-4",
+   "says": "a crosswalk shows walk only during the green of the phase that lists it"
+  }
+ ],
+ "tags": []
+}

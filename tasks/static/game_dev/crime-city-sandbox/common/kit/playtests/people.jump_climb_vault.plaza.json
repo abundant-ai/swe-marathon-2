@@ -1,0 +1,533 @@
+{
+ "format": "qa-play/1",
+ "name": "people.jump_climb_vault/plaza",
+ "template": "people.jump_climb_vault",
+ "about": "On the plaza: a jump from standing; walking into a 1.2 m and a 2.2 m ledge and pressing jump; running at a 0.8 m barrier and pressing jump 1.2 m before it; then standing 2 m in front of a wall with the camera behind it, turning the camera and backing towards the wall. QA reads the bones every tick and checks them against each prop.",
+ "rules": ["FT-3", "FT-4", "FT-5", "CM-4"],
+ "role": "solo",
+ "args": ["--role=solo", "--variation=8", "--save-dir={save_dir}"],
+ "mode": "lockstep",
+ "runs": [
+  {
+   "pace_ms": 0
+  }
+ ],
+ "limits": {
+  "wall_s": 240,
+  "boot_s": 60,
+  "step_s": 60,
+  "cpu_s": 600,
+  "memory_mb": 1536,
+  "disk_mb": 512
+ },
+ "steps": [
+  {
+   "observe": {
+    "census": true,
+    "every": 6
+   }
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 8
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [-3.12, 0.15, -6.88],
+      "heading": 0
+     }
+    ]
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "observe": {
+    "census": true,
+    "camera": true,
+    "every": 1,
+    "bones": {
+     "ids": ["player"],
+     "names": [
+      "Hips", "Spine", "Chest", "Neck", "Head", "LeftUpperArm", "LeftLowerArm", "LeftHand", "RightUpperArm", "RightLowerArm",
+      "RightHand", "LeftUpperLeg", "LeftLowerLeg", "LeftFoot", "LeftToes", "RightUpperLeg", "RightLowerLeg", "RightFoot", "RightToes"
+     ]
+    }
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "mark": "jump_a"
+  },
+  {
+   "press": {
+    "jump": 1.0
+   }
+  },
+  {
+   "run": 2
+  },
+  {
+   "release": ["jump"]
+  },
+  {
+   "run": 70
+  },
+  {
+   "mark": "jump_b"
+  },
+  {
+   "observe": {
+    "census": true,
+    "every": 6
+   }
+  },
+  {
+   "dev": [
+    [
+     "prop.spawn",
+     {
+      "kind": "wall",
+      "at": [-18.12, 0.15, -9.879999999999999],
+      "size": [4.0, 1.2, 2.0],
+      "heading": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [-18.12, 0.15, -6.88],
+      "heading": 0
+     }
+    ]
+   ]
+  },
+  {
+   "press": {
+    "move_forward": 0.3
+   }
+  },
+  {
+   "run": 120
+  },
+  {
+   "observe": {
+    "census": true,
+    "camera": true,
+    "every": 1,
+    "bones": {
+     "ids": ["player"],
+     "names": [
+      "Hips", "Spine", "Chest", "Neck", "Head", "LeftUpperArm", "LeftLowerArm", "LeftHand", "RightUpperArm", "RightLowerArm",
+      "RightHand", "LeftUpperLeg", "LeftLowerLeg", "LeftFoot", "LeftToes", "RightUpperLeg", "RightLowerLeg", "RightFoot", "RightToes"
+     ]
+    }
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "mark": "climb_low_a"
+  },
+  {
+   "press": {
+    "jump": 1.0
+   }
+  },
+  {
+   "run": 2
+  },
+  {
+   "release": ["jump", "move_forward"]
+  },
+  {
+   "run": 240
+  },
+  {
+   "mark": "climb_low_b"
+  },
+  {
+   "observe": {
+    "census": true,
+    "every": 6
+   }
+  },
+  {
+   "dev": [
+    [
+     "prop.spawn",
+     {
+      "kind": "wall",
+      "at": [-33.12, 0.15, -9.879999999999999],
+      "size": [4.0, 2.2, 2.0],
+      "heading": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [-33.12, 0.15, -6.88],
+      "heading": 0
+     }
+    ]
+   ]
+  },
+  {
+   "press": {
+    "move_forward": 0.3
+   }
+  },
+  {
+   "run": 120
+  },
+  {
+   "observe": {
+    "census": true,
+    "camera": true,
+    "every": 1,
+    "bones": {
+     "ids": ["player"],
+     "names": [
+      "Hips", "Spine", "Chest", "Neck", "Head", "LeftUpperArm", "LeftLowerArm", "LeftHand", "RightUpperArm", "RightLowerArm",
+      "RightHand", "LeftUpperLeg", "LeftLowerLeg", "LeftFoot", "LeftToes", "RightUpperLeg", "RightLowerLeg", "RightFoot", "RightToes"
+     ]
+    }
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "mark": "climb_high_a"
+  },
+  {
+   "press": {
+    "jump": 1.0
+   }
+  },
+  {
+   "run": 2
+  },
+  {
+   "release": ["jump", "move_forward"]
+  },
+  {
+   "run": 240
+  },
+  {
+   "mark": "climb_high_b"
+  },
+  {
+   "observe": {
+    "census": true,
+    "every": 6
+   }
+  },
+  {
+   "dev": [
+    [
+     "prop.spawn",
+     {
+      "kind": "barrier",
+      "at": [11.879999999999999, 0.15, -14.879999999999999],
+      "size": [3.0, 0.8, 0.4],
+      "heading": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [11.879999999999999, 0.15, -6.88],
+      "heading": 0
+     }
+    ]
+   ]
+  },
+  {
+   "press": {
+    "move_forward": 1.0
+   }
+  },
+  {
+   "observe": {
+    "census": true,
+    "camera": true,
+    "every": 1,
+    "bones": {
+     "ids": ["player"],
+     "names": [
+      "Hips", "Spine", "Chest", "Neck", "Head", "LeftUpperArm", "LeftLowerArm", "LeftHand", "RightUpperArm", "RightLowerArm",
+      "RightHand", "LeftUpperLeg", "LeftLowerLeg", "LeftFoot", "LeftToes", "RightUpperLeg", "RightLowerLeg", "RightFoot", "RightToes"
+     ]
+    }
+   }
+  },
+  {
+   "wait_for": {
+    "near": {
+     "kind": "player",
+     "p": [11.88, 0.15, -14.68],
+     "within_m": 1.2
+    },
+    "max_ticks": 240
+   }
+  },
+  {
+   "mark": "vault_a"
+  },
+  {
+   "press": {
+    "jump": 1.0
+   }
+  },
+  {
+   "run": 2
+  },
+  {
+   "release": ["jump"]
+  },
+  {
+   "run": 70
+  },
+  {
+   "mark": "vault_b"
+  },
+  {
+   "release": ["move_forward"]
+  },
+  {
+   "observe": {
+    "census": true,
+    "every": 6
+   }
+  },
+  {
+   "dev": [
+    [
+     "prop.spawn",
+     {
+      "kind": "wall",
+      "at": [-3.12, 0.15, 10.120000000000001],
+      "size": [8.0, 3.0, 0.4],
+      "heading": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [-3.12, 0.15, 8.120000000000001],
+      "heading": 0
+     }
+    ]
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "observe": {
+    "census": true,
+    "camera": true,
+    "every": 1,
+    "bones": {
+     "ids": ["player"],
+     "names": [
+      "Hips", "Spine", "Chest", "Neck", "Head", "LeftUpperArm", "LeftLowerArm", "LeftHand", "RightUpperArm", "RightLowerArm",
+      "RightHand", "LeftUpperLeg", "LeftLowerLeg", "LeftFoot", "LeftToes", "RightUpperLeg", "RightLowerLeg", "RightFoot", "RightToes"
+     ]
+    }
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "mark": "wall_a"
+  },
+  {
+   "press": {
+    "look_left": 1.0
+   }
+  },
+  {
+   "run": 60
+  },
+  {
+   "release": ["look_left"]
+  },
+  {
+   "press": {
+    "look_right": 1.0
+   }
+  },
+  {
+   "run": 120
+  },
+  {
+   "release": ["look_right"]
+  },
+  {
+   "press": {
+    "move_back": 0.3
+   }
+  },
+  {
+   "run": 60
+  },
+  {
+   "release": ["move_back"]
+  },
+  {
+   "mark": "wall_b"
+  },
+  {
+   "observe": {
+    "census": true,
+    "every": 6
+   }
+  }
+ ],
+ "expect": [
+  {
+   "id": "jump",
+   "check": "jump",
+   "args": {
+    "from": "jump_a",
+    "to": "jump_b",
+    "kind": "player",
+    "bone": "Hips",
+    "ground_y": 0.15,
+    "off_m": 0.02,
+    "min_rise_m": 0.4,
+    "max_rise_m": 0.8,
+    "min_air_s": 0.5,
+    "max_air_s": 0.9
+   },
+   "rule": "FT-3",
+   "says": "jump from standing lifts the hips 0.40-0.80 m and keeps the player off the ground (more than 0.02 m above it) for 0.50-0.90 s"
+  },
+  {
+   "id": "climb_low",
+   "check": "climb",
+   "args": {
+    "from": "climb_low_a",
+    "to": "climb_low_b",
+    "kind": "player",
+    "box": {
+     "p": [-18.12, 0.15, -9.88],
+     "size": [4.0, 1.2, 2.0],
+     "heading": 0
+    },
+    "edge": [[-20.12, 1.35, -8.88], [-16.12, 1.35, -8.88]],
+    "within_s": 3.5,
+    "hand_m": 0.35,
+    "on_top_m": 0.1,
+    "max_into_m": 0.05
+   },
+   "rule": "FT-4",
+   "says": "walking into a 1.2 m ledge and pressing jump climbs on top within 3.5 s; a hand comes within 0.35 m of the top edge while the hips are below it, and no bone goes more than 0.05 m into the ledge"
+  },
+  {
+   "id": "climb_high",
+   "check": "climb",
+   "args": {
+    "from": "climb_high_a",
+    "to": "climb_high_b",
+    "kind": "player",
+    "box": {
+     "p": [-33.12, 0.15, -9.88],
+     "size": [4.0, 2.2, 2.0],
+     "heading": 0
+    },
+    "edge": [[-35.12, 2.35, -8.88], [-31.12, 2.35, -8.88]],
+    "within_s": 3.5,
+    "hand_m": 0.35,
+    "on_top_m": 0.1,
+    "max_into_m": 0.05
+   },
+   "rule": "FT-4",
+   "says": "walking into a 2.2 m ledge and pressing jump climbs on top within 3.5 s; a hand comes within 0.35 m of the top edge while the hips are below it, and no bone goes more than 0.05 m into the ledge"
+  },
+  {
+   "id": "vault_press",
+   "check": "entity_near",
+   "args": {
+    "mark": "vault_a",
+    "kind": "player",
+    "p": [11.88, 0.15, -14.68],
+    "max_m": 1.5
+   },
+   "rule": "FT-5",
+   "says": "jump is pressed while the player runs at the barrier, 1.0-1.5 m before it",
+   "kind": "pre"
+  },
+  {
+   "id": "vault",
+   "check": "vault",
+   "args": {
+    "from": "vault_a",
+    "to": "vault_b",
+    "kind": "player",
+    "box": {
+     "p": [11.88, 0.15, -14.88],
+     "size": [3.0, 0.8, 0.4],
+     "heading": 0
+    },
+    "within_s": 1.2,
+    "clear_m": 0.1,
+    "max_into_m": 0.05
+   },
+   "rule": "FT-5",
+   "says": "running at a 0.8 m barrier and pressing jump takes the player over it within 1.2 s, the hips at least 0.10 m above its top while crossing, no bone more than 0.05 m into it"
+  },
+  {
+   "id": "camera_clear",
+   "check": "camera_clear",
+   "args": {
+    "from": "wall_a",
+    "to": "wall_b",
+    "kind": "player",
+    "boxes": [
+     {
+      "p": [-3.12, 0.15, 10.12],
+      "size": [8.0, 3.0, 0.4],
+      "heading": 0
+     }
+    ],
+    "min_share": 0.99
+   },
+   "rule": "CM-4",
+   "says": "with a wall behind the player, the segment from the Head bone to the camera misses the wall in at least 99% of ticks"
+  }
+ ],
+ "tags": []
+}
