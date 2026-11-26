@@ -5,9 +5,9 @@
 
 qa run copies the game (without its .godot folder), adds QA's telemetry node, imports the
 copy headless, then plays each playtest in fresh game processes and checks its
-expectations, plus the ones every playtest carries: the game keeps running (PF-8), the
-telemetry node is left alone (AC-18), entity ids hold (AC-4) and events carry their
-fields (AC-13). It prints each playtest that does not hold with the expectations that
+expectations, plus the ones every playtest carries: the game keeps running (PF-8) within
+its memory (PF-7), the telemetry node keeps ticking (AC-18), entity ids hold (AC-4) and
+events carry their fields (AC-13). It prints each playtest that does not hold with the expectations that
 failed and what was measured. The game itself is never changed.
 
 Exit status: 0 when every expectation held, 1 when one did not (or the copy could not be
@@ -121,7 +121,7 @@ def describe(o: expect.Outcome) -> list[str]:
     """The lines that explain one expectation that did not hold."""
     head = f"  - {o.id}" + (f" ({o.rule})" if o.rule else "")
     if o.kind == "pre":
-        head += " [the situation this playtest sets up]"
+        head += " [setup: the rest of this playtest depends on it]"
     lines = [head + (f": {o.says}" if o.says else "")]
     lines.append(f"      {o.note or 'could not be measured'}")
     if o.measured:

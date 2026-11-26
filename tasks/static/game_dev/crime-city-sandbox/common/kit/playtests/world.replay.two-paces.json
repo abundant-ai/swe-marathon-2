@@ -2,7 +2,7 @@
  "format": "qa-play/1",
  "name": "world.replay/two-paces",
  "template": "world.replay",
- "about": "One input timeline played twice, once with QA's bots slower between ticks: the game does the same thing tick for tick.",
+ "about": "One input timeline played twice, the second time with a pause between ticks as on a slower machine: the game does the same thing tick for tick.",
  "rules": [
   "AC-15",
   "AC-17"
@@ -72,6 +72,9 @@
    ]
   },
   {
+   "mark": "start"
+  },
+  {
    "press": {
     "move_forward": 0.4
    }
@@ -118,9 +121,26 @@
   },
   {
    "run": 60
+  },
+  {
+   "mark": "end"
   }
  ],
  "expect": [
+  {
+   "id": "player_moves",
+   "check": "moved",
+   "args": {
+    "from": "start",
+    "to": "end",
+    "kind": "player",
+    "min_m": 1.0,
+    "horizontal": true
+   },
+   "rule": "AC-17",
+   "says": "the player walks, runs and sprints during the timeline",
+   "kind": "pre"
+  },
   {
    "id": "replay",
    "check": "replay_equal",

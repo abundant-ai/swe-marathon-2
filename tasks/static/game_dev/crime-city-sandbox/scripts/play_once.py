@@ -46,6 +46,8 @@ def summary(frame: dict, paths: list[str]) -> str:
         )
     for e in frame.get("events") or []:
         parts.append(f"event {e.get('n')} {json.dumps(e.get('d'))[:120]}")
+    for qid, ans in (frame.get("q") or {}).items():
+        parts.append(f"query {qid} -> {json.dumps(ans)[:600]}")
     if "census" in frame:
         kinds: dict[str, int] = {}
         for e in frame["census"]:
@@ -114,6 +116,7 @@ def main() -> int:
                         a.all_frames
                         or fr.get("dev")
                         or fr.get("events")
+                        or fr.get("q")
                         or fr.get("_step") == -1
                     ):
                         print("  " + summary(fr, paths))

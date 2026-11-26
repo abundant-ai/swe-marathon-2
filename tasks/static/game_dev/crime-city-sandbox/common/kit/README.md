@@ -2,7 +2,7 @@
 
 This is the kit our QA team plays Merrow Bay with. Its bots run the game headless, press the input
 actions of chapter 4 of the design document, and read what the game exposes for them (chapter 17).
-Run it on your builds as often as you like; it never changes your project.
+Use it while you build; it never changes your project.
 
 ## qa run
 
@@ -21,7 +21,7 @@ every expectation held, 1 when one did not or the copy could not be prepared, an
 not run at all.
 
 Besides its own expectations, every playtest also expects that:
-- the game keeps running and answering, within its memory (PF-7, PF-8);
+- the game keeps running and answering (PF-8), within 1.5 GB of memory (PF-7);
 - QA's telemetry node is left alone and runs every tick (AC-18);
 - every entity carries its metadata, and ids are whole numbers, unique and never reused (AC-4);
 - every event carries its fields and its tick (AC-13).
@@ -31,8 +31,8 @@ Besides its own expectations, every playtest also expects that:
 `qa run` adds one node to the copy: a small native library, listed first among the autoloads,
 that steps the game tick by tick under `--fixed-fps 60`, presses actions, calls the DevConsole and
 reads the entity census, bones, camera, HUD groups and the state report. The game runs with one
-worker thread (`override.cfg`), as on QA's machines (PF-6). Leave the node alone (AC-18): a game
-that frees, pauses or moves it, or stops its ticks, stops the run.
+worker thread (`override.cfg`), as on QA's machines (PF-6). The node is part of QA's tooling and
+the game has no reason to touch it (AC-18); if it goes missing or stops ticking, `qa run` says so.
 
 ## Playtests
 
@@ -40,17 +40,21 @@ A playtest is a JSON file (format `qa-play/1`) in `playtests/`. Every value in i
 
 - `args`: the game's command line after `--` (`{save_dir}` is a fresh folder per run);
 - `mode`: `lockstep` (QA's bots advance the game tick by tick) or `realtime`;
-- `runs`: one entry per run; `pace_ms` slows QA's bots between ticks, which must change nothing;
+- `runs`: one entry per run; `pace_ms` adds a pause between ticks, as a slower machine would
+  (AC-17: the game plays the same either way);
+- `limits`: what one run may use: wall and CPU seconds, memory (PF-7's 1.5 GB), disk, and the
+  seconds allowed to start (PF-4) and per step;
 - `steps`, in order:
   - `observe`: what each frame reports (`census`, `bones`, `camera`, `hud`, `state`) and how
     often (`every` N ticks);
-  - `dev`: DevConsole commands, run at the next tick; an argument `{"$answer": [step, key]}`
-    takes that field of an earlier step's answer (an id the game handed out, for example);
+  - `dev`: DevConsole commands, run at the start of the next tick, so their effect shows in that
+    tick (AC-3); an argument `{"$answer": [step, key]}` takes that field of an earlier step's
+    answer (an id the game handed out, for example);
   - `press` and `release`: input actions and their strengths;
   - `run`: advance N ticks; `wait_s`: let a real-time run go on;
   - `mark`: name the current frame for the expectations;
   - `wait_for`: advance until an event arrives;
-  - `files`: damage the save files written since a mark;
+  - `files`: corrupt the save files written since a mark, as a failed disk write would;
   - `restart`: kill the game and start it again with the same save folder;
 - `expect`: what must hold, each with the rule it comes from (`rule`) and what it means (`says`).
 
@@ -69,4 +73,5 @@ The checks an expectation can use:
 | `replay_equal` | every run did the same thing tick for tick |
 | `heartbeat` | in real time, the telemetry node reported every tick |
 
-Write your own playtests in the same format and run them with `qa run path/to/file.json`.
+You can add playtests of your own in the same format and run them with
+`qa run path/to/file.json`.

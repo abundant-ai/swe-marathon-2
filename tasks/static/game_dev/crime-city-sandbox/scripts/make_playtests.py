@@ -499,7 +499,7 @@ def same_start() -> Playtest:
     kinds = ["player", "npc", "vehicle"]
     p.expect(
         "same_start", "same_start", {"same": ["a", "b"], "different": ["a", "c"], "kinds": kinds},
-        "AC-16", "variation 7 twice gives one population; variation 8 another",
+        "AC-16", "the same variation number rebuilds the same starting population; 8 builds another",
     )  # fmt: skip
     p.expect(
         "variation_flag", "same_start", {"same": ["boot", "a"], "different": ["boot", "c"], "kinds": kinds},
@@ -512,8 +512,8 @@ def replay() -> Playtest:
     p = Playtest(
         "world.replay/two-paces",
         ["AC-15", "AC-17"],
-        "One input timeline played twice, once with QA's bots slower between ticks: the game "
-        "does the same thing tick for tick.",
+        "One input timeline played twice, the second time with a pause between ticks as on a slower "
+        "machine: the game does the same thing tick for tick.",
         ["--role=solo", "--variation=5", "--save-dir={save_dir}"],
         runs=[{"pace_ms": 0}, {"pace_ms": 4}],
         tags=["physics-sensitive"],
@@ -531,6 +531,7 @@ def replay() -> Playtest:
     )
     p.dev(("world.reset", {"variation": 5}))
     p.dev(("player.spawn", {"at": {"poi": "plaza_central"}, "heading": 90}))
+    p.mark("start")
     p.step("press", {"move_forward": 0.4})
     p.step("run", 60)
     p.step("press", {"move_forward": 1.0, "look_left": 0.5})
@@ -542,6 +543,11 @@ def replay() -> Playtest:
     p.step("run", 30)
     p.step("release", ["move_right"])
     p.step("run", 60)
+    p.mark("end")
+    p.expect(
+        "player_moves", "moved", {"from": "start", "to": "end", "kind": "player", "min_m": 1.0, "horizontal": True},
+        "AC-17", "the player walks, runs and sprints during the timeline", "pre",
+    )  # fmt: skip
     p.expect("replay", "replay_equal", {}, "AC-17", "both runs give the same trace")
     return p
 
@@ -733,17 +739,23 @@ def realtime() -> Playtest:
     p = Playtest(
         "inv.telemetry/realtime",
         ["AC-18"],
-        "Played in real time, QA's telemetry node reports every tick: nothing stalls or removes it.",
+        "Played in real time, the game keeps QA's telemetry node ticking with it.",
         ["--role=solo", "--variation=9", "--save-dir={save_dir}"],
         mode="realtime",
         limits={"heartbeat_gap_s": 1.0},
     )
     p.step("observe", {"census": True, "every": 30})
     p.step("wait_s", 1.5)
+    p.mark("start")
     p.step("press", {"move_forward": 1.0})
     p.step("wait_s", 1.0)
     p.step("release", ["move_forward"])
     p.step("wait_s", 0.5)
+    p.mark("end")
+    p.expect(
+        "player_moves", "moved", {"from": "start", "to": "end", "kind": "player", "min_m": 0.5, "horizontal": True},
+        "AC-18", "the player runs while QA watches in real time", "pre",
+    )  # fmt: skip
     p.expect(
         "heartbeat", "heartbeat", {"max_gap_s": 1.0}, "AC-18", "a heartbeat every tick, no silence over 1 s"
     )  # fmt: skip

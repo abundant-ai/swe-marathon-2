@@ -109,7 +109,7 @@
     ]
    },
    "rule": "AC-16",
-   "says": "variation 7 twice gives one population; variation 8 another"
+   "says": "the same variation number rebuilds the same starting population; 8 builds another"
   },
   {
    "id": "variation_flag",

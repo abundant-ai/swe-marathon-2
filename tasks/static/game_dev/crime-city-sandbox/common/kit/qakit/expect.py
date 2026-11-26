@@ -616,7 +616,7 @@ def standing_process(rec: PlayRecord) -> Outcome:
         measured,
         note,
         "PF-8",
-        "the game keeps running and answering, within its memory",
+        "the game keeps running and answering, within 1.5 GB of memory (PF-7)",
     )
 
 
@@ -651,7 +651,7 @@ def standing_telemetry(rec: PlayRecord) -> Outcome:
         {"errors": errors, "heartbeat": hb_bad},
         note,
         "AC-18",
-        "QA's telemetry node is left alone and runs every tick",
+        "QA's telemetry node keeps running every tick",
     )
 
 

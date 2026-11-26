@@ -771,7 +771,7 @@ godot --headless --path /app/game -- --role=server --port=P [--variation=N] [--m
 godot [--headless] --path /app/game -- --role=client --connect=HOST:P --name=NAME [--lead=ID]
 ```
 
-`--variation` picks the starting population (default 1). With no `--role`, players get the main
+`--variation` picks the starting population (any whole number; default 1). With no `--role`, players get the main
 menu (UI-6); `--role=solo` starts a new game at once, as the menu's "New game" does. Without
 `--plan-dir` the game reads the plans in `/app/design/plan`.
 

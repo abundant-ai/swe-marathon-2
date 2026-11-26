@@ -2,7 +2,7 @@
  "format": "qa-play/1",
  "name": "inv.telemetry/realtime",
  "template": "inv.telemetry",
- "about": "Played in real time, QA's telemetry node reports every tick: nothing stalls or removes it.",
+ "about": "Played in real time, the game keeps QA's telemetry node ticking with it.",
  "rules": [
   "AC-18"
  ],
@@ -38,6 +38,9 @@
    "wait_s": 1.5
   },
   {
+   "mark": "start"
+  },
+  {
    "press": {
     "move_forward": 1.0
    }
@@ -52,9 +55,26 @@
   },
   {
    "wait_s": 0.5
+  },
+  {
+   "mark": "end"
   }
  ],
  "expect": [
+  {
+   "id": "player_moves",
+   "check": "moved",
+   "args": {
+    "from": "start",
+    "to": "end",
+    "kind": "player",
+    "min_m": 0.5,
+    "horizontal": true
+   },
+   "rule": "AC-18",
+   "says": "the player runs while QA watches in real time",
+   "kind": "pre"
+  },
   {
    "id": "heartbeat",
    "check": "heartbeat",
