@@ -55,8 +55,9 @@ how compatible second implementations are made.
 About 16.5-17k code-only lines of merge logic with entity extraction supplied (measured on the
 cloned tree); undocumented heuristics that our specification must publish; byte dependence on
 `diffy` and `git merge-file`; a gate whose refusals are low-frequency, multi-language and against
-the prior that line-disjoint edits merge clean. Expected (untested): frontier 0.45-0.70, mid-tier
-0.15-0.40.
+the prior that line-disjoint edits merge clean. Sized in Phase B to the owner's target (frontier at
+or below about 0.6, mid-tier 0.1-0.4): expected about 0.55 frontier and 0.29 mid-tier, untested
+(`notes/DESIGN.md` section 8).
 
 ### Initial feasibility
 Solvable by construction if the upstream source, built against exactly the agent's crates and
@@ -64,8 +65,8 @@ features, reproduces the installed build on every kept case. That is a spike che
 
 ## Workload
 
-One step, `timeout_sec` 34,560 (9.6 h); the instruction states no time budget. A two-step chain
-is designed (`notes/STEPS.md`) and needs measured evidence first.
+One step, `timeout_sec` 34,560 (9.6 h); the instruction states no time budget. The two-step chain
+drafts in `notes/STEPS.md` were parked by the owner on 2026-11-26 and are kept as history only.
 
 ## Verification (planned)
 
@@ -84,7 +85,7 @@ g_f = max(0, (p_f - s_f) / (1 - s_f))
 reward = sum over families f of w_f * g_f
 ```
 
-Ten families; the fail-closed gate carries 20%. Denominators are fixed per build. No submission or
+Ten families; the fail-closed gate carries 25%. Denominators are fixed per build. No submission or
 a submission that does not build: reward 0. An infrastructure fault is an evaluation error and
 leaves no reward file. Weights and families: `notes/DESIGN.md`.
 
