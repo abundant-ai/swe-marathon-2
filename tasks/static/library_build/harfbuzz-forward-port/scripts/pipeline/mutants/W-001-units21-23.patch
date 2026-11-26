@@ -1,0 +1,20 @@
+--- b/src/hb-ot-shape.cc
++++ a/src/hb-ot-shape.cc
+@@ -170,7 +170,7 @@
+   }
+ #endif
+ 
+-  bool needs_kerning HB_UNUSED = true;
++  bool needs_kerning HB_UNUSED = !has_gpos_kern || !plan.apply_gpos;
+ #ifndef HB_NO_AAT_SHAPE
+   if (needs_kerning && has_kerx)
+     plan.apply_kerx = true;
+@@ -373,7 +373,7 @@
+   else
+   {
+     /* Keep a fallback mask when vertical kerning is requested. */
+-    map->add_feature (HB_TAG ('v','k','r','n'), F_GLOBAL_HAS_FALLBACK, 1);
++    map->add_feature (HB_TAG ('v','k','r','n'), F_GLOBAL_HAS_FALLBACK, 0);
+ 
+     /* We only apply `vert` feature. See:
+      * https://github.com/harfbuzz/harfbuzz/commit/d71c0df2d17f4590d5611239577a6cb532c26528

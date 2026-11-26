@@ -1,0 +1,11 @@
+--- b/src/hb-ot-shaper-khmer.cc
++++ a/src/hb-ot-shaper-khmer.cc
+@@ -239,7 +239,7 @@
+      * the 'pref' OpenType feature applied to them.
+      * """
+      */
+-    if (info[i].khmer_category() == K_Cat(H) && num_coengs < 1 && i + 1 < end)
++    if (info[i].khmer_category() == K_Cat(H) && num_coengs < 2 && i + 1 < end)
+     {
+       num_coengs++;
+ 
