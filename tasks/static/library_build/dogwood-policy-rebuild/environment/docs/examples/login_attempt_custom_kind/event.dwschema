@@ -1,0 +1,16 @@
+// A custom event schema in place of the default: the event kinds
+// are `attempt` (the decision kind) and `outcome` (history), NOT the
+// conventional request/response, and the injected principal field is
+// named `actor` rather than `callerPrincipal`. It shows that (a) a
+// bundle's own event.dwschema replaces the default, (b) author-defined
+// kinds work end to end, and (c) a renamed injected field is usable.
+decision event <A>::attempt {
+    ...inputs(A),
+    actor: principalType(A),
+}
+
+event <A>::outcome {
+    ...inputs(A),
+    ...outputs(A),
+    actor: principalType(A),
+}

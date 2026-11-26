@@ -10,7 +10,6 @@ from __future__ import annotations
 import os
 import resource
 import shutil
-import signal
 import subprocess
 import tempfile
 import time
@@ -18,6 +17,7 @@ from pathlib import Path
 
 from .contracts import Case, CaseResult, Limits
 from .normalise import normalise
+from .procs import capture, end_group, end_user
 
 RUNNER = "nobody"
 RUNNER_GROUP = "nogroup"
@@ -43,7 +43,7 @@ def _limits(limits: Limits):
 
 
 def run_case(
-    binary: Path, case: Case, bundles: Path, limits: Limits
+    binary: Path, case: Case, bundles: Path, limits: Limits, sweep: bool = True
 ) -> tuple[object, bytes]:
     """Return (exit status or 'timeout' / 'overflow', stdout) for one case."""
     with tempfile.TemporaryDirectory(prefix="case-") as tmp:
@@ -73,19 +73,18 @@ def run_case(
             preexec_fn=_limits(limits),  # noqa: PLW1509 - the grader runs one case at a time, single-threaded
         )
         try:
-            out, _ = proc.communicate(timeout=limits.case_timeout_sec)
-            status: object = proc.returncode
-        except subprocess.TimeoutExpired:
-            out, status = b"", "timeout"
+            out, timed_out, overflow = capture(
+                proc, limits.case_timeout_sec, limits.case_stdout_bytes
+            )
         finally:
-            try:
-                os.killpg(proc.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-            proc.wait()
-        if len(out) > limits.case_stdout_bytes:
+            end_group(proc)
+            if sweep:  # a process that left its group, too
+                end_user(RUNNER)
+        if overflow:
             return "overflow", b""
-        return status, out
+        if timed_out:
+            return "timeout", b""
+        return proc.returncode, out
 
 
 def run_all(

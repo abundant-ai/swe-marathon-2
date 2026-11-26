@@ -30,6 +30,11 @@ network_mode = "no-network"
 timeout_sec = 4500
 user = "root"
 
+[[verifier.collect]]
+command = "/usr/local/sbin/stop-user-processes"
+user = "root"
+timeout_sec = 60
+
 [verifier.environment]
 network_mode = "public"
 build_timeout_sec = 3600

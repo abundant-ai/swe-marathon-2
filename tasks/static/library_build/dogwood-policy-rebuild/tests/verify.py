@@ -1,7 +1,9 @@
 """Build the delivered `dogwood` project, run every private case, write the reward and metrics.
 
-Candidate failures (no project, a failed build, wrong output, a hang) are results. A failure of
-the evaluation itself exits non-zero and leaves no reward file.
+Candidate failures (no project, a failed build, wrong output, a hang) are results. The metrics
+also list any delivered file that is a copy of Dogwood's own source, for review against the
+clean-room rule; that list does not change the reward. A failure of the evaluation itself exits
+non-zero and leaves no reward file.
 """
 
 from __future__ import annotations
@@ -15,6 +17,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from verifier import integrity, procs
 from verifier.build import build
 from verifier.contracts import (
     Case,
@@ -67,6 +70,9 @@ def verify(context: VerificationContext) -> VerificationResult:
         json.loads(baselines_path.read_text()) if baselines_path.is_file() else {}
     )
     started = time.monotonic()
+    copied = (
+        integrity.findings(context.submission) if context.submission.is_dir() else []
+    )
     built = build(context.submission, context.work, context.limits)
     results = run_all(built.binary, cases, context.private / "bundles", context.limits)
     rates = family_pass_rates(results)
@@ -88,6 +94,8 @@ def verify(context: VerificationContext) -> VerificationResult:
         "at_least_95pct": passed >= 0.95 * len(results),
         "seconds": round(time.monotonic() - started, 1),
         "failed_cases": [r.case_id for r in results if not r.passed][:200],
+        "dogwood_source_files": copied,
+        "leftover_processes_ended": dict(procs.LEFTOVERS),
     }
     return VerificationResult(reward=score, metrics=metrics)
 

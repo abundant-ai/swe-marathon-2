@@ -1,0 +1,12 @@
+// Permit reading stock info only for AMZN. The tool's `stock` argument is
+// one of its inputs, so in the Drupe schema it
+// lands at `context.input.stock` — meaning a plain Cedar `when` clause validates
+// against it. A complete rule, with an @id.
+//
+@id("get_amzn_stock_info")
+permit (
+    principal,
+    action == Drupe::Action::"GetStockInfo",
+    resource
+)
+when { context.input.stock == "AMZN" };

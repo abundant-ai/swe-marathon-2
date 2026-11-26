@@ -44,8 +44,8 @@ A different output, report or exit status breaks one of them.
   build that the guide describes.
 - Its documentation is in `/app/docs`:
   - The guide is in `guide/`. We left out the chapters on Dogwood's Rust library and its MCP
-    tooling, and moved the trace file format, which upstream describes in the library chapter,
-    into the command-line chapter.
+    tooling, and moved the trace file format, which the library chapter described, into the
+    command-line chapter.
   - `examples/` holds the guide's example bundles: each has its policy and schemas, what
     `dogwood explain` printed for it, and, where it has a trace, what `dogwood replay` printed.
   - If the guide and the build differ, follow the build: it is what our tools run today.
@@ -53,7 +53,7 @@ A different output, report or exit status breaks one of them.
   `cargo` is already set up to use. The registry holds the Cedar crates at 4.14.0, the Cedar
   release that 1.2.0 uses, and the other libraries our team has approved. No Dogwood crate is
   available. We maintain this tool in Rust next to the rest of our authorization code, so write it
-  in Rust.
+  in Rust. Python 3 is installed as well, for any scripts of your own.
 
 ## What to deliver
 
@@ -80,19 +80,23 @@ Your implementation in `/app/dogwood-rebuild`: a Cargo project from which
 - Our release machines build `/app/dogwood-rebuild` from a clean copy of the directory:
   - they use the same Rust toolchain and registry, without network access, on 4 cores and 8 GB of
     memory, and give the build 20 minutes;
-  - the copy leaves out `target/` and any link that points outside the directory, and it may hold
-    at most 100,000 files and directories and 1 GB;
+  - the copy leaves out `target/`, any link that points outside the directory, and pipes,
+    sockets and devices; it may hold at most 100,000 files and 1 GB;
   - everything the build and the tool need, apart from the toolchain and the registry, must be
     inside the directory.
 - Your `dogwood` must not call the 1.2.0 build. It replaces it, and will run where that build is
-  not installed.
+  not installed. Being clean-room, the project holds none of Dogwood's own source code.
 - Our CI starts every `dogwood` the same way:
   - it runs as an unprivileged user that cannot write to the project directory;
   - each run gets a new, empty working directory holding only that run's files, with `HOME` and
-    `TMPDIR` set to new empty directories;
+    `TMPDIR` set to new empty directories, and runs share nothing: whatever one run writes is gone
+    before the next starts;
   - the environment holds only `PATH=/usr/local/bin:/usr/bin:/bin`, `LANG` and `LC_ALL` set to
     `C.UTF-8`, `TERM=dumb`, `NO_COLOR=1`, `HOME` and `TMPDIR`;
-  - standard input and output are pipes, and none of the standard streams is a terminal.
+  - standard input is empty (`/dev/null`), standard output is a pipe, and none of the standard
+    streams is a terminal;
+  - a run may start at most 512 processes and threads, write files of at most 256 MB, and print
+    at most 8 MB.
 - Each run finishes within 5 seconds and uses at most 2 GB of memory; CI stops any `dogwood` still
   running then. The 1.2.0 build finishes each of our runs well within that.
 - Out of scope, because nothing of ours uses it:

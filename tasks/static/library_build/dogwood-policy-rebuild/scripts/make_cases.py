@@ -1,28 +1,32 @@
-"""Generate the private case set: bundles, the command lines run on them, and their families.
+"""Generate the candidate case set: bundles, the command lines run on them, and their families.
 
-Runs inside the toolchain container (python3 -I), never on the host. Two sources:
+Runs inside the toolchain container (python3 -I), never on the host. Three sources:
 - upstream's Apache-2.0 bundle generator (`dogwood-lean/conformance/gen/gen.py` of the 1.2.0
-  source), run with private seeds, one family at a time;
-- the paired cases of `pairs.py` (B-dedup, B-scope and K).
+  source), run with private seeds, one family at a time, near misses and schema cases included;
+- the paired cases of `pairs.py` (B-dedup, B-scope and the K shapes);
+- command-line cases (`--help`, `--version`, usage and I/O errors) on a small bundle of their own.
 
-Each bundle is made fit for the command line and for this task: provider scripts are inlined
-(the CLI never resolves `scriptFile`), and a bundle with a trace whose timestamps repeat or go back
-is dropped. Expected results are not recorded here; the grader's image records them from the
-release build.
+Each bundle is made fit for the command line: provider scripts are inlined (the CLI never resolves
+`scriptFile`), and a bundle with a trace whose timestamps repeat or go back is dropped, since the
+brief puts such traces out of contract. Every bundle also gets two derived policy files: a copy
+with its layout disturbed (whitespace only), for `format`, and a copy with one token broken, for
+`check-parse`'s syntax errors.
 
-Families are assigned by what a case is meant to exercise, never by how any build answers:
-- replay cases go to B-dedup when an aggregate's `for` list leaves out the timepoint, to B-scope
-  for the generator's aggregates whose body has no past operator, and otherwise by the generator
-  family (events to K, providers to P, macros to M, the rest to R);
-- validate cases to V (human) and V-msg (JSON), lower to L, explain to X, check-parse to F.
+This writes candidates. `select_cases.py` keeps the cases a trivial program cannot pass, once the
+release build's answers are recorded (`run_cases.py`), and `retag.py` then checks the B and K
+families against the mutants. Families are assigned by what a case is meant to exercise:
+- replay: a pair's declared family; otherwise P for providers bundles, M for macros bundles, R;
+- validate: V (human) and V-msg (JSON); explain: X; lower: L;
+- format, check-parse, schema and the command line: F.
 
-Usage: make_cases.py --gen DIR --out DIR --seed S [--per-family N] [--pairs N]
+Usage: make_cases.py --gen DIR --out DIR --seed S [counts...]
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import random
 import re
 import shutil
 import subprocess
@@ -33,12 +37,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import pairs
 
-GEN_FAMILIES = ("temporal", "traces", "events", "providers", "macros")
-AGG = re.compile(r"\b(?:count|sum\s+\w+)\s+for\s+\(([^.]*?)\)\.\s*where", re.DOTALL)
 TRACE_NAME = re.compile(r"trace(_\d+)?\.log")
 STAMP = re.compile(r"^@(-?\d+)\s")
-PRINCIPAL = re.compile(r"scope\(principal:\s*([^,)]+)")
-KEY_LOCAL_OPS = re.compile(r"\bprevious\s+within\b|\bsince\s+within\b")
+EVENT_SCHEMAS = ("events.dwschema", "event.dwschema")
+
+CLI_POLICY = """@id("open_reads")
+permit (
+    principal,
+    action == Ledger::Action::"Login",
+    resource
+);
+"""
 
 
 def trace_ok(path: Path) -> bool:
@@ -87,45 +96,83 @@ def flags(bundle: Path) -> list[str]:
         out += ["--macros", "macros.dw"]
     if (bundle / "providers.json").exists():
         out += ["--providers", "providers.json"]
-    for name in ("events.dwschema", "event.dwschema"):
+    for name in EVENT_SCHEMAS:
         if (bundle / name).exists():
             out += ["--event-schema", name]
             break
     return out
 
 
-def principals(trace: Path) -> int:
-    """How many principals act in a trace (its `scope(principal: ...)` envelopes)."""
-    return len(
-        set(PRINCIPAL.findall(trace.read_text(encoding="utf-8", errors="replace")))
-    )
+def disturb(text: str, r: random.Random) -> str:
+    """The same policy with its layout disturbed: indentation, blank lines and trailing spaces
+    change, tokens and comments do not."""
+    lines = text.splitlines()
+    how = r.choice(["flush", "deep", "blank", "trailing", "mixed"])
+    out = []
+    for line in lines:
+        body = line.lstrip(" ")
+        if how in ("flush", "mixed") and r.random() < 0.8:
+            line = body
+        elif how == "deep" and body:
+            line = "        " + line
+        if how in ("trailing", "mixed") and line and r.random() < 0.5:
+            line += "   "
+        out.append(line)
+        if how in ("blank", "mixed") and r.random() < 0.3:
+            out.append("")
+    result = "\n".join(out) + "\n"
+    if result == text:
+        result = "\n" + result.replace("\n", "\n\n", 1)
+    return result
 
 
-def replay_family(policy: str, meta: dict, trace: Path) -> str:
-    """The family a replay case is meant to exercise, from the policy text and generator tags.
+BREAKS = (
+    ("drop the last semicolon", lambda t: t[: t.rfind(";")] + t[t.rfind(";") + 1 :]),
+    ("misspell permit", lambda t: t.replace("permit", "permt", 1)),
+    ("misspell forbid", lambda t: t.replace("forbid", "forbd", 1)),
+    ("misspell within", lambda t: t.replace("within", "wthin", 1)),
+    ("drop a closing brace", lambda t: t[: t.rfind("}")] + t[t.rfind("}") + 1 :]),
+    ("drop a closing parenthesis", lambda t: t[: t.find(")")] + t[t.find(")") + 1 :]),
+    ("double an operator", lambda t: t.replace("&&", "&& &&", 1)),
+    ("stray token", lambda t: t.replace("when", "when @", 1)),
+)
 
-    Order: a declared pair family; an aggregate whose `for` list leaves out the timepoint
-    (B-dedup); `previous` or `since` over a trace where several principals act, which only the
-    key-local reading gets right (K); an aggregate body with no past operator (B-scope); then the
-    generator family.
-    """
+
+def broken(text: str, r: random.Random) -> str | None:
+    """The policy with one token broken, or None when no break changes it."""
+    options = list(BREAKS)
+    r.shuffle(options)
+    for _, f in options:
+        try:
+            out = f(text)
+        except ValueError:
+            continue
+        if out != text:
+            return out
+    return None
+
+
+def case(name, cid, family, args, fmt, pair=None):
+    return {
+        "id": f"{name}/{cid}",
+        "bundle": name,
+        "family": family,
+        "pair": pair,
+        "args": args,
+        "fmt": fmt,
+    }
+
+
+def replay_family(meta: dict) -> str:
     if meta.get("b_family"):
         return meta["b_family"]
-    if any("Timepoint" not in m.group(1) for m in AGG.finditer(policy)):
-        return "B-dedup"
-    if KEY_LOCAL_OPS.search(policy) and principals(trace) > 1:
-        return "K"
-    if "temporal:agg_no_temporal" in meta.get("tags", []):
-        return "B-scope"
-    return {"events": "K", "providers": "P", "macros": "M"}.get(
-        meta.get("family", ""), "R"
-    )
+    return {"providers": "P", "macros": "M"}.get(meta.get("family", ""), "R")
 
 
-def cases_for(name: str, bundle: Path, meta: dict) -> list[dict]:
+def cases_for(name: str, bundle: Path, meta: dict, r: random.Random) -> list[dict]:
     base = ["policy.dw", "--policy-schema", "schema.cedarschema"]
     fl = flags(bundle)
-    policy = (bundle / "policy.dw").read_text(encoding="utf-8", errors="replace")
+    family = meta.get("family", "")
     pair = f"{meta['b_family']}:{meta['pair']}" if meta.get("b_family") else None
     out = []
     for trace in sorted(
@@ -133,42 +180,231 @@ def cases_for(name: str, bundle: Path, meta: dict) -> list[dict]:
     ):
         for fmt in ("human", "json"):
             out.append(
-                {
-                    "id": f"{name}/{trace}/replay/{fmt}",
-                    "bundle": name,
-                    "family": replay_family(policy, meta, bundle / trace),
-                    "pair": pair,
-                    "args": ["replay", *base, "--trace", trace, *fl, "--format", fmt],
-                    "fmt": fmt,
-                }
+                case(
+                    name,
+                    f"{trace}/replay/{fmt}",
+                    replay_family(meta),
+                    ["replay", *base, "--trace", trace, *fl, "--format", fmt],
+                    fmt,
+                    pair,
+                )
             )
-    for cmd, fam_h, fam_j, extra in (
-        ("validate", "V", "V-msg", []),
-        ("explain", "X", "X", []),
-        ("lower", "L", "L", ["--emit", "both"]),
-    ):
-        for fmt, fam in (("human", fam_h), ("json", fam_j)):
-            out.append(
-                {
-                    "id": f"{name}/{cmd}/{fmt}",
-                    "bundle": name,
-                    "family": fam,
-                    "pair": None,
-                    "args": [cmd, *base, *fl, *extra, "--format", fmt],
-                    "fmt": fmt,
-                }
+    if pair:
+        return (
+            out  # a pair grades replay; its other routes repeat the generated bundles'
+        )
+    for fmt, fam in (("human", "V"), ("json", "V-msg")):
+        out.append(
+            case(
+                name,
+                f"validate/{fmt}",
+                fam,
+                ["validate", *base, *fl, "--format", fmt],
+                fmt,
             )
+        )
+    for fmt in ("human", "json"):
+        out.append(
+            case(
+                name,
+                f"check-parse/{fmt}",
+                "F",
+                ["check-parse", "policy.dw", *fl, "--format", fmt],
+                fmt,
+            )
+        )
+    if family == "nearmiss":
+        out.append(
+            case(
+                name,
+                "lower/human",
+                "L",
+                ["lower", *base, *fl, "--format", "human"],
+                "human",
+            )
+        )
+        return out
+    for fmt in ("human", "json"):
+        out.append(
+            case(
+                name,
+                f"explain/{fmt}",
+                "X",
+                ["explain", *base, *fl, "--format", fmt],
+                fmt,
+            )
+        )
+        out.append(
+            case(
+                name,
+                f"lower/{fmt}",
+                "L",
+                ["lower", *base, *fl, "--emit", "both", "--format", fmt],
+                fmt,
+            )
+        )
+    emit = r.choice(["cedar-json", "cedar-policies", "cedar-schema"])
     out.append(
-        {
-            "id": f"{name}/check-parse/human",
-            "bundle": name,
-            "family": "F",
-            "pair": None,
-            "args": ["check-parse", "policy.dw", *fl],
-            "fmt": "human",
-        }
+        case(
+            name,
+            f"lower-{emit}/human",
+            "L",
+            ["lower", *base, *fl, "--emit", emit, "--format", "human"],
+            "human",
+        )
     )
+    if r.random() < 0.3:
+        out.append(
+            case(
+                name,
+                "explain-bare/human",
+                "X",
+                ["explain", "policy.dw", *fl, "--format", "human"],
+                "human",
+            )
+        )
+    fmt = r.choice(["human", "json"])
+    out.append(
+        case(
+            name,
+            f"schema-action/{fmt}",
+            "F",
+            ["schema", "action", "schema.cedarschema", "--format", fmt],
+            fmt,
+        )
+    )
+    for ev in EVENT_SCHEMAS:
+        if (bundle / ev).exists():
+            out.append(
+                case(
+                    name,
+                    f"schema-event/{fmt}",
+                    "F",
+                    ["schema", "event", ev, "--format", fmt],
+                    fmt,
+                )
+            )
+    if (bundle / "providers.json").exists():
+        out.append(
+            case(
+                name,
+                f"schema-providers/{fmt}",
+                "F",
+                ["schema", "providers", "providers.json", "--format", fmt],
+                fmt,
+            )
+        )
+    policy = (bundle / "policy.dw").read_text(encoding="utf-8")
+    (bundle / "layout.dw").write_text(disturb(policy, r), encoding="utf-8")
+    out.append(case(name, "format/human", "F", ["format", "layout.dw"], "human"))
+    bad = broken(policy, r)
+    if bad is not None:
+        (bundle / "typo.dw").write_text(bad, encoding="utf-8")
+        fmt = r.choice(["human", "json"])
+        out.append(
+            case(
+                name,
+                f"check-parse-typo/{fmt}",
+                "F",
+                ["check-parse", "typo.dw", *fl, "--format", fmt],
+                fmt,
+            )
+        )
     return out
+
+
+def cli_cases(bundles: Path) -> list[dict]:
+    """The command line itself, on a bundle of its own: help and version text, usage errors and
+    I/O errors."""
+    name = "cli"
+    d = bundles / name
+    d.mkdir()
+    (d / "policy.dw").write_text(CLI_POLICY)
+    (d / "schema.cedarschema").write_text(pairs.SCHEMA)
+    (d / "folder").mkdir()
+    (d / "folder" / "keep.txt").write_text("\n")
+    runs = [
+        ("version", ["--version"]),
+        ("help", ["--help"]),
+        ("help-cmd", ["help"]),
+        ("no-args", []),
+        ("unknown-cmd", ["audit", "policy.dw"]),
+        ("schema-mcp", ["schema", "mcp", "--manifest", "tools.json"]),
+        ("validate-no-schema", ["validate", "policy.dw"]),
+        (
+            "bad-format",
+            [
+                "validate",
+                "policy.dw",
+                "--policy-schema",
+                "schema.cedarschema",
+                "--format",
+                "yaml",
+            ],
+        ),
+        (
+            "bad-emit",
+            [
+                "lower",
+                "policy.dw",
+                "--policy-schema",
+                "schema.cedarschema",
+                "--emit",
+                "rust",
+            ],
+        ),
+        ("missing-file", ["check-parse", "absent.dw"]),
+        ("directory", ["format", "folder"]),
+        (
+            "missing-schema",
+            ["validate", "policy.dw", "--policy-schema", "absent.cedarschema"],
+        ),
+        (
+            "missing-trace",
+            [
+                "replay",
+                "policy.dw",
+                "--policy-schema",
+                "schema.cedarschema",
+                "--trace",
+                "absent.log",
+            ],
+        ),
+    ]
+    for cmd in (
+        "format",
+        "check-parse",
+        "validate",
+        "lower",
+        "replay",
+        "explain",
+        "schema",
+    ):
+        runs.append((f"help-{cmd}", [cmd, "--help"]))
+    for sub in ("action", "event", "providers"):
+        runs.append((f"help-schema-{sub}", ["schema", sub, "--help"]))
+    return [case(name, f"{cid}/human", "F", args, "human") for cid, args in runs]
+
+
+def generate(gen: Path, raw: Path, seed: int, counts: dict[str, int]) -> None:
+    for i, (fam, count) in enumerate(sorted(counts.items())):
+        if count:
+            subprocess.run(
+                [
+                    sys.executable,
+                    "-I",
+                    str(gen / "gen.py"),
+                    "--seed",
+                    str(seed + i),
+                    "--count",
+                    str(count),
+                    "--family",
+                    fam,
+                    "--out",
+                    str(raw),
+                ],
+                check=True,
+            )
 
 
 def main() -> int:
@@ -177,40 +413,46 @@ def main() -> int:
         "--gen", required=True, type=Path, help="upstream conformance/gen directory"
     )
     ap.add_argument(
-        "--out", required=True, type=Path, help="the step's tests/private directory"
+        "--out", required=True, type=Path, help="an empty directory for the candidates"
     )
     ap.add_argument("--seed", required=True, type=int)
-    ap.add_argument("--per-family", type=int, default=40)
     ap.add_argument("--temporal", type=int, default=120)
-    ap.add_argument("--pairs", type=int, default=40)
+    ap.add_argument(
+        "--per-family", type=int, default=40, help="traces, events, providers, macros"
+    )
+    ap.add_argument("--nearmiss", type=int, default=300)
+    ap.add_argument("--schema", type=int, default=60)
+    ap.add_argument(
+        "--pairs", type=int, default=40, help="B-dedup and B-scope pairs each"
+    )
+    ap.add_argument("--key-previous", type=int, default=24)
+    ap.add_argument("--key-other", type=int, default=12, help="each other K shape")
     a = ap.parse_args()
     bundles = a.out / "bundles"
     if bundles.exists():
         raise SystemExit(f"{bundles} exists; stage into an empty directory")
     raw = Path("/tmp/make-cases-raw")
-    raw.mkdir(parents=True, exist_ok=True)
-    for i, fam in enumerate(GEN_FAMILIES):
-        count = a.temporal if fam == "temporal" else a.per_family
-        subprocess.run(
-            [
-                sys.executable,
-                "-I",
-                str(a.gen / "gen.py"),
-                "--seed",
-                str(a.seed + i),
-                "--count",
-                str(count),
-                "--family",
-                fam,
-                "--out",
-                str(raw),
-            ],
-            check=True,
-        )
-    pairs.write_pairs(a.seed + 100, a.pairs, raw)
+    if raw.exists():
+        shutil.rmtree(raw)
+    raw.mkdir(parents=True)
+    counts = {
+        "temporal": a.temporal,
+        "traces": a.per_family,
+        "events": a.per_family,
+        "providers": a.per_family,
+        "macros": a.per_family,
+        "nearmiss": a.nearmiss,
+        "schema": a.schema,
+    }
+    generate(a.gen, raw, a.seed, counts)
+    key = {shape: a.key_other for shape in pairs.KEY_SHAPES}
+    key["previous"] = a.key_previous
+    pairs.write_pairs(a.seed + 100, a.pairs, raw, key)
 
+    r = random.Random(a.seed + 200)
     bundles.mkdir(parents=True)
     cases: list[dict] = []
+    tags: dict[str, dict] = {}
     dropped = {"timestamps": 0}
     for src in sorted(raw.iterdir()):
         meta_path = src / "meta.json"
@@ -223,19 +465,27 @@ def main() -> int:
         shutil.copytree(src, dst)
         (dst / "meta.json").unlink(missing_ok=True)
         inline_scripts(dst)
-        cases.extend(cases_for(src.name, dst, meta))
+        tags[src.name] = {
+            "family": meta.get("family"),
+            "tags": sorted(meta.get("tags", [])),
+            "kind": meta.get("kind"),
+        }
+        cases.extend(cases_for(src.name, dst, meta, r))
+    cases.extend(cli_cases(bundles))
     with (a.out / "cases.jsonl").open("w") as f:
         for c in cases:
             f.write(json.dumps(c, sort_keys=True) + "\n")
+    (a.out / "bundle_tags.json").write_text(
+        json.dumps(tags, indent=0, sort_keys=True) + "\n"
+    )
     fams: dict[str, int] = {}
     for c in cases:
         fams[c["family"]] = fams.get(c["family"], 0) + 1
     manifest = {
         "seed": a.seed,
-        "generator_counts": {
-            f: (a.temporal if f == "temporal" else a.per_family) for f in GEN_FAMILIES
-        },
+        "generator_counts": counts,
         "pairs": a.pairs,
+        "key_pairs": key,
         "bundles": sum(1 for _ in bundles.iterdir()),
         "dropped": dropped,
         "cases": len(cases),

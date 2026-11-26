@@ -22,10 +22,12 @@ Author notes, never shipped.
 | Path | What it is |
 | --- | --- |
 | `/usr/local/bin/dogwood` | Dogwood 1.2.0 as released. It is built at image build time from the published `dogwood-cli-1.2.0.crate`, which was published from tag commit `8ffd2106`. The build uses its published `Cargo.lock`, every dependency is vendored from crates.io and checked against that lock, and `experimental-arithmetic` is on. It is built for the image's own glibc target, because a static musl build failed Cedar evaluations at random ("recursion limit reached"; see the Phase B report). Mode 2711, root-owned, setgid to an empty group |
-| `/app/docs/guide/`, `/app/docs/examples/` | 1.2.0's guide and its 93 example bundles, trimmed and scrubbed (section 1.2). **Not in the image yet**: the trim and scrub is the next work item |
+| `/app/docs/guide/`, `/app/docs/examples/` | 1.2.0's guide and its 93 example bundles, trimmed and scrubbed (section 1.2). `scripts/build_docs.py` makes them from the pinned source and the edit list `scripts/docs_edits.json`; the result is committed as `environment/docs/` |
 | Rust 1.100.0 | The pinned `rust:1.100.0-slim-bookworm` image (index digest `sha256:bb875b0f…`) |
 | `/opt/cargo-registry` with `~/.cargo/config.toml` | The vendored crates of the published lock, without the four `dogwood-*` crates. `cargo` uses it offline |
 | `/app/dogwood-rebuild/` | Empty, owned by the agent user `dev` |
+| Python 3.11 | Debian's, for the agent's own scripts (the brief says so) |
+| `/usr/local/sbin/stop-user-processes` | Root-only (0700). Harbor runs it as `[[verifier.collect]]` after the session: it stops and then ends every process of `dev`, so nothing left running changes the deliverable while it is copied |
 
 The agent runs as `dev`, with no network and no `sudo`.
 
@@ -100,14 +102,14 @@ case.
 | R core replay | 0.20 | `formerly`, `previous`, `since` on single-principal traces; windows and units; `exists`; `tp`; `&&`/`!`; comparisons and the `==` binder; arithmetic; fail-closed decisions; Cedar conditions next to temporal ones |
 | B-dedup aggregation, deduplication | 0.17 | `count`/`sum` over the deduplicated projection onto the `for` domain: repeated equal values, `for` lists without the timepoint (dual pairs) |
 | B-scope aggregation, decision point | 0.05 | Aggregates whose body has no past operator read only the decision event (dual pairs) |
-| K key-local slicing | 0.15 | Universal symmetric pins: `previous` is the key's previous event, the left of `since` ranges over the key's positions, the 1.2.0 rule that any universal pin is key-local, non-universal pins staying global, the strict mirror rule, and non-conforming events rejected (`REJECTED, not ingested`). Traces interleave principals; key-local pairs are duals |
-| V validate verdict | 0.13 | Accept/reject and exit status of `validate`, as accept/near-miss pairs, one near-miss per stated rule |
-| V-msg validate text | 0.05 | The `--format json` findings (message, severity, byte spans) |
-| L lowering | 0.10 | `lower --emit …`: hoisted names, the balanced `&&` fold, desugaring, schema augmentation |
+| K key-local slicing | 0.15 | Dual pairs in eight shapes (`scripts/pairs.py`): `previous` is the key's previous event; the positive left of `since` ranges over the key's positions, and the key's own non-matching event still breaks it; a pin on some kinds only keeps global semantics; a universal pin to `context.session` keys on the session; the mirror rule rejects a history event that logs a caller it does not carry, fails a decision event that does, and rejects a history event with no principal under the default pin. Traces interleave principals |
+| V validate verdict | 0.13 | `validate` in human form: the generator's near misses (64 kinds, each breaking one stated rule) and accepted bundles; an accepted bundle counts only paired with a rejected one |
+| V-msg validate text | 0.05 | The same in `--format json` (message, severity, byte spans), paired the same way |
+| L lowering | 0.10 | `lower` with `--emit both` (human and JSON), `cedar-policies`, `cedar-schema` and `cedar-json`: hoisted names, the balanced `&&` fold, desugaring, schema augmentation; `lower` on near misses, which it does not validate |
 | M macros | 0.05 | `def cedar` / `def temporal`, sigils, hygiene, the standard library, `--macros`, the rejection classes |
 | P providers | 0.05 | Rhai providers, `paramType` variants, enums, methods, fail-closed outputs, `scriptFile` over the CLI |
-| X `explain` | 0.03 | Text and JSON phrase trees; the four rewrites; the pins line |
-| F `format`, `check-parse`, `schema` | 0.02 | `format` cases whose output differs from the input; `check-parse` counts; `schema …` accept/reject |
+| X `explain` | 0.03 | Text and JSON phrase trees, with and without `--policy-schema`; the four rewrites; the pins line |
+| F `format`, `check-parse`, `schema`, the command line | 0.02 | `format` on a copy of each policy with its layout disturbed; `check-parse` (human and JSON) on each policy and on a copy with one token broken; `schema action`, `schema event`, `schema providers`; `--help`, `--version`, usage and I/O errors |
 
 ### 3a. Difficulty sizing and the levers chosen (2026-11-27)
 
@@ -164,11 +166,13 @@ therefore made only of the dual pairs from `scripts/pairs.py` (40 per family). B
 retagging, M-dedup scored 0.932 and M-global 0.963, because uninformative cases diluted their
 families.
 
-**K is narrow so far.** Its 40 pairs use one shape: `previous within W` with another principal's
-event between two of this principal's events. Upstream's generator never produced a trace where
-the key-local reading changes a decision. The next case work adds the other stated K rules: the
-left of `since`, a pin that is not universal keeping global semantics, the strict mirror rule,
-and non-conforming events that are rejected and not ingested.
+**K's shapes (Phase C).** Phase B's K was one shape (`previous` with another principal's event in
+between). Phase C adds the other stated K rules as dual shapes, so a reading that gets one rule
+right and another wrong fails pairs: the positive left of `since` over another principal's event
+and over the key's own non-matching event, a pin on `request` only (global, no slicing), a
+universal pin to `context.session` (slicing by session, not principal), and the three mirror-rule
+cases. M-global breaks the slicing shapes; the mirror-rule shapes need their own mutants (section
+3a's table and the Phase C report).
 
 **Sizing (estimates, to check against the first trials):**
 - **A frontier agent at the cap:** R 0.85, B 0.30, K 0.40, V 0.60, V-msg 0.30, L 0.70, M 0.60,

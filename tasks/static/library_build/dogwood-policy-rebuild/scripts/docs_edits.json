@@ -1,0 +1,1756 @@
+[
+ {
+  "op": "replace",
+  "file": "guide/README.md",
+  "old": "Complete documentation for the Dogwood policy language — its syntax, its\ntemporal expressions and information providers, its schemas, and the Rust API\nfor evaluating policies.\n",
+  "new": "Complete documentation for the Dogwood policy language — its syntax, its\ntemporal expressions and information providers, its schemas, and the `dogwood`\ncommand line for checking and evaluating policies.\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/README.md",
+  "old": "  authorization, end to end, with runnable code.\n",
+  "new": "  authorization, end to end, with runnable commands.\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/README.md",
+  "old": "Deep dives on the three fixed inputs the core language takes as given, plus MCP\nschema generation.\n",
+  "new": "Deep dives on the three fixed inputs the core language takes as given.\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/README.md",
+  "old": "  `providers.json` format, the Rhai implementation contract (sandbox, host\n  functions, decimal, the `net` feature), output methods, no-implementation\n  providers, and the `guardrails { … }` sugar.\n",
+  "new": "  `providers.json` format, the Rhai implementation contract (sandbox, host\n  functions, decimal), output methods, no-implementation providers, and the\n  `guardrails { … }` sugar.\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/README.md",
+  "old": "- **[Generating the action schema from an MCP manifest](11-mcp-schema-generation.md)**\n  — a Dogwood action schema *is* an MCP tool manifest; the manifest format, the\n  JSON→Cedar type mapping, and the Drupe template.\n",
+  "new": ""
+ },
+ {
+  "op": "replace",
+  "file": "guide/README.md",
+  "old": "- **[The command line](12-cli.md)** — the `dogwood` CLI: `validate`, `replay`,\n  `lower`, `check-parse`, and the `schema` subcommands, driven over plain files.\n  The quickest way to check a policy or watch a temporal policy decide across a\n  trace, with no Rust.\n- **[The API and workflow](07-api-and-workflow.md)** — the Rust API reference and\n  end-to-end workflow: `ServiceSchema`/`PolicySchema` → `LoweredPolicySet` →\n  `Validator` → `Authorizer` → `Event` → `Response`.\n",
+  "new": "- **[The command line](12-cli.md)** — the `dogwood` CLI: `validate`, `replay`,\n  `lower`, `check-parse`, and the `schema` subcommands, driven over plain files,\n  and the trace file format `replay` reads. The quickest way to check a policy\n  or watch a temporal policy decide across a trace.\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/README.md",
+  "old": "  authorization rules, each cross-referenced to its source of record.\n",
+  "new": "  authorization rules.\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/README.md",
+  "old": "Every policy-level example in this guide is a complete, runnable **bundle**\nunder this crate's [`examples/`](../examples/) directory — a `policy.dw`, its\n`schema.cedarschema`, and (for history-dependent examples) a `trace.log` plus\nthe expected verdict stream, along with any `providers.json` / `macros.dw` /\nevent schema the example needs. A test harness checks every bundle on each\nbuild (validating each policy, and replaying traces against the expected\nverdict stream), so a guide example that stops parsing, validating, or\nreplaying as written is a build failure. To run one yourself, see\n[The command line](12-cli.md).\n\nTo *embed* the engine rather than drive it over files — building events\nprogrammatically and feeding them one at a time to a stateful `Authorizer` —\nuse the Rust API, walked through end to end in\n[The API and workflow](07-api-and-workflow.md).\n\n",
+  "new": "Every policy-level example in this guide is a complete, runnable **bundle**\nunder the [`examples/`](../examples/) directory — a `policy.dw`, its\n`schema.cedarschema`, and (for history-dependent examples) a `trace.log` plus\nthe verdict stream `dogwood replay` prints for it (`expected.out`), along with\nany `providers.json` / `macros.dw` / event schema the example needs and what\n`dogwood explain` prints for the policy (`explain.out`). To run one yourself,\nsee [The command line](12-cli.md).\n\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/README.md",
+  "old": "Then reach into the Advanced topics as you need them:\n[the event schema](03-event-schema.md), [the provider schema](10-provider-schema.md),\n[macros](06-macros.md), and [MCP schema generation](11-mcp-schema-generation.md).\nIntegrate from Rust with [The API and workflow](07-api-and-workflow.md), and\nconsult the [Formal specification](08-formal-specification.md) as the reference.\n",
+  "new": "Then reach into the Advanced topics as you need them:\n[the event schema](03-event-schema.md), [the provider schema](10-provider-schema.md),\nand [macros](06-macros.md). Consult the\n[Formal specification](08-formal-specification.md) as the reference.\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/00-introduction.md",
+  "old": "Information providers are the exception: the language leaves an erroring\nprovider *undefined*, and while this reference interpreter does deny, a policy\nmust not rely on that (see\n[Information providers](05-information-providers.md)). Driving the authorizer\nfrom Rust is the subject of\n[The API and workflow](07-api-and-workflow.md).\n",
+  "new": "Information providers are the exception: the language leaves an erroring\nprovider *undefined*, and while this implementation does deny, a policy\nmust not rely on that (see\n[Information providers](05-information-providers.md)).\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/00-introduction.md",
+  "old": "                LoweredPolicySet      ← parsed + lowered",
+  "new": "               lowered policy set     ← parsed + lowered"
+ },
+ {
+  "op": "replace",
+  "file": "guide/00-introduction.md",
+  "old": "Cedar then sees. You do not need to know this to use Dogwood, but it is why the\nAPI mirrors Cedar's.\n",
+  "new": "Cedar then sees. You do not need to know this to use Dogwood.\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/00-introduction.md",
+  "old": "- **Integrating from Rust?** → [The API and workflow](07-api-and-workflow.md).\n",
+  "new": ""
+ },
+ {
+  "op": "replace",
+  "file": "guide/01-getting-started.md",
+  "old": "*This page walks you through your first Dogwood authorization end to end — a\nschema, a policy, and the Rust code that decides a request. It starts with the\nsimplest possible policy and then adds a decision that depends on history. The\ntwo policies here are the `permit_read_anyone` and `read_after_login` example\nbundles, checked on every build, so they do validate and replay as shown.*\n",
+  "new": "*This page walks you through your first Dogwood authorization end to end — a\nschema, a policy, and the `dogwood` commands that decide a request. It starts\nwith the simplest possible policy and then adds a decision that depends on\nhistory. The two policies here are the `permit_read_anyone` and\n`read_after_login` example bundles, and they validate and replay as shown.*\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/01-getting-started.md",
+  "old": "- **Build the two schema halves** — a `ServiceSchema` (macros, providers, and\n  the event-schema DSL — the fixed, service-provided inputs) and a\n  `PolicySchema` (your action schema).\n- **Parse and lower a `LoweredPolicySet`** from your policy source, against\n  those two schemas.\n- **(Optionally) validate** the policy set with a `Validator`.\n- **Build an `Authorizer`** and feed it **events**, getting a **`Response`** back.\n",
+  "new": "- **Gather the two schema halves** — the service schema (macros, providers,\n  and the event-schema DSL — the fixed, service-provided inputs) and the\n  policy schema (your action schema).\n- **Parse and lower** your policy source against those two schemas.\n- **(Optionally) validate** the lowered policy set.\n- **Feed events** to a stateful authorizer, getting a **response** — a\n  decision — back for each decision event.\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/01-getting-started.md",
+  "old": "## Step 3 — decide, from Rust\n\nHere is the whole pipeline in Rust. Build the schema, parse the policy, validate,\nthen authorize one event:\n\n```rust\nuse dogwood_language::{\n    Authorizer, Decision, Event, LoweredPolicySet, PolicySchema, ServiceSchema, Validator, Value,\n};\n\n// (SCHEMA and POLICY are the strings from steps 1 and 2.)\n// The service half takes its defaults (no macros/providers/event schema here);\n// the policy half is your action schema.\nlet service = ServiceSchema::defaults();\nlet policy_schema = PolicySchema::from_cedarschema_str(SCHEMA)?;\nlet policies = LoweredPolicySet::from_str(POLICY, &service, &policy_schema)?;\n\n// Optional but recommended: type-check the policy against the schema.\n// The validator takes no schema — the one the policy set was lowered\n// against already travels on the `LoweredPolicySet`.\nlet report = Validator::new().validate(&policies);\nassert!(report.validation_passed());\n\n// Build the authorizer and ask it about one Read request.\nlet mut authorizer = Authorizer::new(policies);\nlet event = Event::builder(\"Drupe::Action::Read\", \"request\")\n    .principal(\"Drupe::OAuthUser::\\\"alice\\\"\")\n    .resource(\"Drupe::Gateway::\\\"gw1\\\"\")\n    .field(\"input\", \"user\", Value::String(\"alice\".to_string()))\n    .request_context(\"input\", \"user\", Value::String(\"alice\".to_string()))\n    .build();\n\nif let Some(response) = authorizer.is_authorized(&event) {\n    assert_eq!(response.decision(), Decision::Allow);\n}\n```\n\n- You authorize an `Event`, not a bare request. An event is a timestamped\n  occurrence of an action with a *kind* (here `\"request\"`), a principal and a\n  resource. `Event::builder` constructs one.\n- The builder sets `input.user` in two places. `.field` sets a logged field,\n  which the history keeps and temporal conditions match against.\n  `.request_context` sets a field of the Cedar request context, which policies\n  read as `context.input.user`. If a `request` event lacks the logged field or\n  the request context, the authorizer denies it and reports an error.\n- `is_authorized` returns `Option<Response>`. You get `Some(response)` for a\n  *decision-kind* event (like `request`) and `None` for a history-only event.\n  With the default event schema, `request` is a decision kind — so this call\n  returns `Some`.\n- The `Authorizer` is `&mut`. It is stateful: it remembers every event you\n  feed it. That does not matter for this pure-Cedar policy, but the next step\n  depends on it.\n\nThe full API is [The API and workflow](07-api-and-workflow.md).\n",
+  "new": "## Step 3 — decide, on the command line\n\nHere is the whole pipeline on the command line. With the schema saved as\n`schema.cedarschema` and the policy as `policy.dw`, validate the policy, then\nreplay a trace of events through the authorizer:\n\n```text\ndogwood validate policy.dw --policy-schema schema.cedarschema\ndogwood replay   policy.dw --policy-schema schema.cedarschema --trace trace.log\n```\n\nA trace holds one event per line. The `permit_read_anyone` bundle's\n`trace.log` holds three: alice's `Login` at t=0, alice's `Read` at t=10, and\nbob's `Read` at t=20. Here is alice's `Read`:\n\n```text\n@10 scope(principal: Drupe::OAuthUser::\"alice\", resource: Drupe::Gateway::\"gw1\") request_context(input: { user: \"alice\" }) Drupe::Action::\"Read\"::request(input: { user: \"alice\" }, callerPrincipal: Drupe::OAuthUser::\"alice\", callerResource: Drupe::Gateway::\"gw1\", requestId: \"u2\")\n```\n\n`dogwood replay` prints one verdict per decision:\n\n```text\n@0 (time point 0): DENY\n@10 (time point 1): ALLOW  [rules: 0]\n@20 (time point 2): ALLOW  [rules: 0]\n```\n\n- You authorize an *event*, not a bare request. An event is a timestamped\n  occurrence of an action with a *kind* (here `request`), a principal and a\n  resource: the line's `@10`, the `::request` after the action, and the\n  `scope(...)` envelope.\n- The event carries `input.user` in two places. The group after the action is\n  the logged record, which the history keeps and temporal conditions match\n  against. `request_context(...)` sets a field of the Cedar request context,\n  which policies read as `context.input.user`. If a `request` event lacks the\n  logged field or the request context, the authorizer denies it and reports an\n  error.\n- A *decision-kind* event (like `request`) gets a verdict, and a history-only\n  event gets none. With the default event schema, `request` is a decision kind\n  — so each event of this trace gets one. The `Login` is denied because the\n  policy permits only `Read`.\n- The authorizer is stateful: it remembers every event of the trace. That does\n  not matter for this pure-Cedar policy, but the next step depends on it.\n\nThe trace format is in [The command line](12-cli.md#the-trace-file-format).\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/01-getting-started.md",
+  "old": "Because the decision now depends on history, we feed the authorizer a **stream**\nof events and watch the verdicts change over time:\n\n```rust\nlet mut authorizer = Authorizer::new(policies);\n\nlet events = vec![\n    // A Login request at t=0.\n    Event::builder(\"Drupe::Action::Login\", \"request\")\n        .timestamp(0)\n        .principal(\"Drupe::OAuthUser::\\\"alice\\\"\")\n        .resource(\"Drupe::Gateway::\\\"gw1\\\"\")\n        .field(\"input\", \"user\", Value::String(\"alice\".to_string()))\n        .request_context(\"input\", \"user\", Value::String(\"alice\".to_string()))\n        .build(),\n    // The Login response at t=5. It records that the login succeeded.\n    Event::builder(\"Drupe::Action::Login\", \"response\")\n        .timestamp(5)\n        .principal(\"Drupe::OAuthUser::\\\"alice\\\"\")\n        .resource(\"Drupe::Gateway::\\\"gw1\\\"\")\n        .field(\"input\", \"user\", Value::String(\"alice\".to_string()))\n        .build(),\n    // A Read at t=10, 5s after the login response, well within the 1h window.\n    Event::builder(\"Drupe::Action::Read\", \"request\")\n        .timestamp(10)\n        .principal(\"Drupe::OAuthUser::\\\"alice\\\"\")\n        .resource(\"Drupe::Gateway::\\\"gw1\\\"\")\n        .field(\"input\", \"user\", Value::String(\"alice\".to_string()))\n        .request_context(\"input\", \"user\", Value::String(\"alice\".to_string()))\n        .build(),\n    // A Read at t=7200 — two hours later; the login has expired.\n    Event::builder(\"Drupe::Action::Read\", \"request\")\n        .timestamp(7200)\n        .principal(\"Drupe::OAuthUser::\\\"alice\\\"\")\n        .resource(\"Drupe::Gateway::\\\"gw1\\\"\")\n        .field(\"input\", \"user\", Value::String(\"alice\".to_string()))\n        .request_context(\"input\", \"user\", Value::String(\"alice\".to_string()))\n        .build(),\n];\n\nfor event in &events {\n    if let Some(response) = authorizer.is_authorized(event) {\n        println!(\"@{:<5} {:?}\", event.timestamp(), response.decision());\n    }\n}\n```\n\nThis prints:\n\n```text\n@0     Deny\n@10    Allow\n@7200  Deny\n```\n",
+  "new": "Because the decision now depends on history, we feed the authorizer a **stream**\nof events and watch the verdicts change over time. The `read_after_login`\nbundle's `trace.log` holds four events: a `Login` request at t=0; the `Login`\nresponse at t=5, which records that the login succeeded; a `Read` at t=10, 5s\nafter the login response, well within the 1h window; and a `Read` at t=7200,\ntwo hours later, when the login has expired:\n\n```text\n@0 scope(principal: Drupe::OAuthUser::\"alice\", resource: Drupe::Gateway::\"gw1\") request_context(input: { user: \"alice\" }) Drupe::Action::\"Login\"::request(input: { user: \"alice\" }, callerPrincipal: Drupe::OAuthUser::\"alice\", callerResource: Drupe::Gateway::\"gw1\", requestId: \"u1\")\n@5 scope(principal: Drupe::OAuthUser::\"alice\", resource: Drupe::Gateway::\"gw1\") request_context(input: { user: \"alice\" }) Drupe::Action::\"Login\"::response(input: { user: \"alice\" }, callerPrincipal: Drupe::OAuthUser::\"alice\", callerResource: Drupe::Gateway::\"gw1\", requestId: \"u1\")\n@10 scope(principal: Drupe::OAuthUser::\"alice\", resource: Drupe::Gateway::\"gw1\") request_context(input: { user: \"alice\" }) Drupe::Action::\"Read\"::request(input: { user: \"alice\" }, callerPrincipal: Drupe::OAuthUser::\"alice\", callerResource: Drupe::Gateway::\"gw1\", requestId: \"u2\")\n@7200 scope(principal: Drupe::OAuthUser::\"alice\", resource: Drupe::Gateway::\"gw1\") request_context(input: { user: \"alice\" }) Drupe::Action::\"Read\"::request(input: { user: \"alice\" }, callerPrincipal: Drupe::OAuthUser::\"alice\", callerResource: Drupe::Gateway::\"gw1\", requestId: \"u3\")\n```\n\nReplaying it with `dogwood replay` prints:\n\n```text\n@0 (time point 0): DENY\n@10 (time point 1): ALLOW  [rules: 0]\n@7200 (time point 2): DENY\n```\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/01-getting-started.md",
+  "old": "  a history-only kind, so `is_authorized` returns `None`. The authorizer still\n",
+  "new": "  a history-only kind, so it gets no verdict. The authorizer still\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/01-getting-started.md",
+  "old": "Same policy, same code — the verdict changes",
+  "new": "Same policy, same command — the verdict changes"
+ },
+ {
+  "op": "replace",
+  "file": "guide/01-getting-started.md",
+  "old": "You have two ways to run Dogwood, and this guide uses both.\n\n**The command line.** The `dogwood` CLI drives the whole pipeline over plain\nfiles — no Rust needed. Save the policy above to `policy.dw` and its schema to\n`schema.cedarschema`, then validate and replay a trace:\n\n```text\ndogwood validate policy.dw --policy-schema schema.cedarschema\ndogwood replay   policy.dw --policy-schema schema.cedarschema --trace trace.log\n```\n\nEvery policy-level example in this guide is a complete, runnable bundle under\nthis crate's `examples/` directory — a `policy.dw`, its `schema.cedarschema`,\nand (where the example is history-dependent) a `trace.log` and the expected\nverdict stream. A test harness checks *every* bundle on each build, so the\nexamples cannot drift from the language. The two policies above are the\n`permit_read_anyone` and `read_after_login` bundles. See\n[The command line](12-cli.md) for the full CLI.\n\n**The library.** To *embed* the engine instead of driving it over files —\nbuilding events programmatically, feeding them one at a time, and reading each\n`Response` — use the Rust API, walked through end to end in\n[The API and workflow](07-api-and-workflow.md). The CLI cannot drive the\nbuilder API.\n",
+  "new": "The `dogwood` CLI drives the whole pipeline over plain files. Save the policy\nabove to `policy.dw` and its schema to `schema.cedarschema`, then validate and\nreplay a trace:\n\n```text\ndogwood validate policy.dw --policy-schema schema.cedarschema\ndogwood replay   policy.dw --policy-schema schema.cedarschema --trace trace.log\n```\n\nEvery policy-level example in this guide is a complete, runnable bundle under\nthe `examples/` directory — a `policy.dw`, its `schema.cedarschema`, and (where\nthe example is history-dependent) a `trace.log` and the verdict stream\n`dogwood replay` prints for it. The two policies above are the\n`permit_read_anyone` and `read_after_login` bundles. See\n[The command line](12-cli.md) for the full CLI.\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/01-getting-started.md",
+  "old": "- **Customizing the fixed inputs** — the event schema, providers, and MCP\n  generation: [The event schema](03-event-schema.md),\n  [The provider schema](10-provider-schema.md), and\n  [Generating the action schema from an MCP manifest](11-mcp-schema-generation.md).\n- **The full Rust API** — the end-to-end flow, and how to plug in your own\n  policy or temporal engine: [The API and workflow](07-api-and-workflow.md).\n",
+  "new": "- **Customizing the fixed inputs** — the event schema and providers:\n  [The event schema](03-event-schema.md) and\n  [The provider schema](10-provider-schema.md).\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/02-policy-language.md",
+  "old": "[`examples/`](../examples/), checked on every build.\n",
+  "new": "[`examples/`](../examples/).\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/02-policy-language.md",
+  "old": "`cedar-policy-core` v4.11.0; differential tests check it against v4.14.0)",
+  "new": "`cedar-policy-core` v4.11.0, checked against v4.14.0)"
+ },
+ {
+  "op": "replace",
+  "file": "guide/02-policy-language.md",
+  "old": "need to customize them. You can also *generate* an action schema from an MCP tool\nmanifest — see\n[Generating the action schema from an MCP manifest](11-mcp-schema-generation.md).)\n",
+  "new": "need to customize them.)\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/02-policy-language.md",
+  "old": "Here is a trimmed but complete schema from the tested corpus (case `1113`). It declares",
+  "new": "Here is a trimmed but complete schema. It declares"
+ },
+ {
+  "op": "replace",
+  "file": "guide/02-policy-language.md",
+  "old": "for example the corpus schema at case `0407` has `CallTool in [Action::\"Mcp\"]` and `Login in [Action::\"CallTool\"]`, which is exactly the shape the MCP generator produces (see [Generating the action schema from an MCP manifest](11-mcp-schema-generation.md)).",
+  "new": "for example a schema can declare `CallTool in [Action::\"Mcp\"]` and `Login in [Action::\"CallTool\"]`."
+ },
+ {
+  "op": "replace",
+  "file": "guide/02-policy-language.md",
+  "old": "By convention every policy in the corpus opens with",
+  "new": "By convention every policy opens with"
+ },
+ {
+  "op": "replace",
+  "file": "guide/02-policy-language.md",
+  "old": "- `!` is boolean negation (`UnaryOp::Not`).\n- `-` is arithmetic negation (`UnaryOp::Neg`).\n",
+  "new": "- `!` is boolean negation.\n- `-` is arithmetic negation.\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/02-policy-language.md",
+  "old": "- [API and workflow](07-api-and-workflow.md) — parsing, compiling, and evaluating policies from Rust.\n",
+  "new": ""
+ },
+ {
+  "op": "replace",
+  "file": "guide/03-event-schema.md",
+  "old": "rewritten form is what engines evaluate, so any conforming engine agrees\nwith the in-memory interpreter). The default event schema carries such a\n",
+  "new": "rewritten form is what is evaluated). The default event schema carries such a\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/03-event-schema.md",
+  "old": "evaluation per key with stamps per key (`dogwood-lean`,\n`Dogwood.Spec.Partitioned`); see\n",
+  "new": "evaluation per key with stamps per key; see\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/03-event-schema.md",
+  "old": "### Worked examples from the corpus\n\nThese are real, passing `event.dwschema` files from the tested corpus. Each case named below is a directory under `dogwood-language/tests/passing/temporal_only/corpus/`.\n",
+  "new": "### Worked examples\n\nThe examples below show custom event schemas, and policies written against them.\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/03-event-schema.md",
+  "old": "**Author-defined kinds and a renamed principal field (`1110_custom_event_schema_renamed_reserved`).**",
+  "new": "**Author-defined kinds and a renamed principal field.**"
+ },
+ {
+  "op": "replace",
+  "file": "guide/03-event-schema.md",
+  "old": "**A renamed flat reserved field (`1111_custom_injected_sessionid`).**",
+  "new": "**A renamed flat reserved field.**"
+ },
+ {
+  "op": "replace",
+  "file": "guide/03-event-schema.md",
+  "old": "**Input/output field-name collision (`1112_input_output_field_name_collision`).**",
+  "new": "**Input/output field-name collision.**"
+ },
+ {
+  "op": "replace",
+  "file": "guide/03-event-schema.md",
+  "old": "**Nested reserved field (`1113_nested_reserved_field_correlation`).**",
+  "new": "**Nested reserved field.**"
+ },
+ {
+  "op": "replace",
+  "file": "guide/03-event-schema.md",
+  "old": "**Depth-3 nested fields (`1114_deep_nested_field_correlation` / `1116_injection_onto_deep_path`).** `__drupe: { session: { id: String, region: String } }` derives `__drupe.session.id`. `1114_deep_nested_field_correlation` correlates it directly; `1116_injection_onto_deep_path` injects the same correlation through",
+  "new": "**Depth-3 nested fields.** `__drupe: { session: { id: String, region: String } }` derives `__drupe.session.id`. A policy can correlate it directly, or inject the same correlation through"
+ },
+ {
+  "op": "replace",
+  "file": "guide/03-event-schema.md",
+  "old": "**Two deep siblings (`1115_multiple_deep_path_constraints`).**",
+  "new": "**Two deep siblings.**"
+ },
+ {
+  "op": "replace",
+  "file": "guide/03-event-schema.md",
+  "old": "**Top-level pin (`1117_pin_principal_correlation`).**",
+  "new": "**Top-level pin.**"
+ },
+ {
+  "op": "replace",
+  "file": "guide/03-event-schema.md",
+  "old": "**Nested-leaf pin (`1118_pin_nested_session_id`).**",
+  "new": "**Nested-leaf pin.**"
+ },
+ {
+  "op": "replace",
+  "file": "guide/03-event-schema.md",
+  "old": "**A pin cannot be bypassed by a hand-written field (`1119_pin_not_bypassed_by_wildcard`, `1120_pin_agrees_with_author_written_field`, `1121_pin_not_bypassed_by_fresh_binder`, `1122_pin_disagree_denies_despite_author_literal`).** These all have the policy *write* the pinned field, proving the append is unconditional.",
+  "new": "**A pin cannot be bypassed by a hand-written field.** In each of the four cases below the policy *writes* the pinned field, and the pin is appended all the same: the append is unconditional."
+ },
+ {
+  "op": "replace",
+  "file": "guide/03-event-schema.md",
+  "old": "- **`1119_pin_not_bypassed_by_wildcard` — wildcard.**",
+  "new": "- **Wildcard.**"
+ },
+ {
+  "op": "replace",
+  "file": "guide/03-event-schema.md",
+  "old": "- **`1121_pin_not_bypassed_by_fresh_binder` — fresh variable.**",
+  "new": "- **Fresh variable.**"
+ },
+ {
+  "op": "replace",
+  "file": "guide/03-event-schema.md",
+  "old": "- **`1122_pin_disagree_denies_despite_author_literal` — disagreeing concrete value.** Using the nested-session schema of `1118_pin_nested_session_id`,",
+  "new": "- **Disagreeing concrete value.** Using the nested-leaf pin schema above,"
+ },
+ {
+  "op": "replace",
+  "file": "guide/03-event-schema.md",
+  "old": "The fourth, **`1120_pin_agrees_with_author_written_field` — agreeing value**, writes",
+  "new": "The fourth, an **agreeing value**, writes"
+ },
+ {
+  "op": "replace",
+  "file": "guide/03-event-schema.md",
+  "old": "the appended pin is then a redundant no-op and the verdicts match `1117_pin_principal_correlation`.",
+  "new": "the appended pin is then a redundant no-op and the verdicts match those of the top-level pin alone."
+ },
+ {
+  "op": "replace",
+  "file": "guide/03-event-schema.md",
+  "old": "here is an event from `1113_nested_reserved_field_correlation`'s trace (against",
+  "new": "here is an event of a trace under the nested reserved field schema above (against"
+ },
+ {
+  "op": "replace",
+  "file": "guide/03-event-schema.md",
+  "old": "in a temporal correlation like this case's.",
+  "new": "in a temporal correlation like this example's."
+ },
+ {
+  "op": "replace",
+  "file": "guide/03-event-schema.md",
+  "old": "- `LoweredPolicySet::decision_kinds()` exposes the set of kinds marked `decision` (with `is_decision_kind(kind)` for a single check).\n",
+  "new": ""
+ },
+ {
+  "op": "replace",
+  "file": "guide/03-event-schema.md",
+  "old": "- A custom schema may mark any kinds — `1110_custom_event_schema_renamed_reserved` makes",
+  "new": "- A custom schema may mark any kinds — the author-defined kinds example above makes"
+ },
+ {
+  "op": "replace",
+  "file": "guide/03-event-schema.md",
+  "old": "If you never supply an event schema, Dogwood uses `DEFAULT_EVENT_SCHEMA`. Here it is in full:",
+  "new": "If you never supply an event schema, Dogwood uses its default event schema. Here it is in full:"
+ },
+ {
+  "op": "replace",
+  "file": "guide/03-event-schema.md",
+  "old": "- [The API and workflow](07-api-and-workflow.md) — assembling `ServiceSchema` + `PolicySchema`.\n- [The provider schema](10-provider-schema.md) — how information providers are declared (another input the `ServiceSchema` carries).\n- [Macros](06-macros.md) — the macro library the `ServiceSchema` also carries.\n",
+  "new": "- [The provider schema](10-provider-schema.md) — how information providers are declared (another input the service schema carries).\n- [Macros](06-macros.md) — the macro library the service schema also carries.\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/04-temporal-expressions.md",
+  "old": "backed by a runnable bundle under [`examples/`](../examples/) that the `dogwood` CLI validates (and, where a `trace.log` is present, replays) on each build.",
+  "new": "backed by a runnable bundle under [`examples/`](../examples/), which the `dogwood` CLI validates (and, where a `trace.log` is present, replays)."
+ },
+ {
+  "op": "replace",
+  "file": "guide/04-temporal-expressions.md",
+  "old": " (This is corpus case `0004_write_after_read`.)",
+  "new": ""
+ },
+ {
+  "op": "replace",
+  "file": "guide/04-temporal-expressions.md",
+  "old": "Internally the codebase sometimes calls the temporal extension a",
+  "new": "The temporal extension is sometimes called a"
+ },
+ {
+  "op": "replace",
+  "file": "guide/04-temporal-expressions.md",
+  "old": "Nothing stops a schema from naming other kinds; corpus case `1110_custom_event_schema_renamed_reserved` uses a custom `attempt` kind (runnable as [`examples/login_attempt_custom_kind/`](../examples/login_attempt_custom_kind/)):",
+  "new": "Nothing stops a schema from naming other kinds; a custom `attempt` kind is runnable as [`examples/login_attempt_custom_kind/`](../examples/login_attempt_custom_kind/):"
+ },
+ {
+  "op": "replace",
+  "file": "guide/04-temporal-expressions.md",
+  "old": "  (Corpus case `0036_plain_heartbeat`.) A trailing attribute",
+  "new": "  A trailing attribute"
+ },
+ {
+  "op": "replace",
+  "file": "guide/04-temporal-expressions.md",
+  "old": "(corpus `0004_write_after_read`; runnable as",
+  "new": "(runnable as"
+ },
+ {
+  "op": "replace",
+  "file": "guide/04-temporal-expressions.md",
+  "old": "(corpus `0183_previous_at_tp0_no_verdict`; runnable as",
+  "new": "(runnable as"
+ },
+ {
+  "op": "replace",
+  "file": "guide/04-temporal-expressions.md",
+  "old": "(corpus `0034_since_explicit`; runnable as",
+  "new": "(runnable as"
+ },
+ {
+  "op": "replace",
+  "file": "guide/04-temporal-expressions.md",
+  "old": "(corpus `0156_without_since_access_control`; runnable as",
+  "new": "(runnable as"
+ },
+ {
+  "op": "replace",
+  "file": "guide/04-temporal-expressions.md",
+  "old": "(corpus `0184_since_window_anchor_too_old`; runnable as",
+  "new": "(runnable as"
+ },
+ {
+  "op": "replace",
+  "file": "guide/04-temporal-expressions.md",
+  "old": "(corpus `0059_count_threshold`; runnable as",
+  "new": "(runnable as"
+ },
+ {
+  "op": "replace",
+  "file": "guide/04-temporal-expressions.md",
+  "old": "(corpus `0462_previous_and_without_since_top_level`; runnable as",
+  "new": "(runnable as"
+ },
+ {
+  "op": "replace",
+  "file": "guide/04-temporal-expressions.md",
+  "old": "(corpus `1142_exists_correlation`; runnable as",
+  "new": "(runnable as"
+ },
+ {
+  "op": "replace",
+  "file": "guide/04-temporal-expressions.md",
+  "old": "(corpus `1143_nested_exists_threshold`; runnable as",
+  "new": "(runnable as"
+ },
+ {
+  "op": "replace",
+  "file": "guide/04-temporal-expressions.md",
+  "old": "(corpus `0178_agg_no_temporal_counts_current_tp`; runnable as",
+  "new": "(runnable as"
+ },
+ {
+  "op": "replace",
+  "file": "guide/04-temporal-expressions.md",
+  "old": "(corpus `0179_agg_with_once_counts_history`; runnable as",
+  "new": "(runnable as"
+ },
+ {
+  "op": "replace",
+  "file": "guide/04-temporal-expressions.md",
+  "old": "(corpus `1117_count_for_tp`; runnable as",
+  "new": "(runnable as"
+ },
+ {
+  "op": "replace",
+  "file": "guide/04-temporal-expressions.md",
+  "old": "(corpus `0299_sum_resolved_filter`; runnable as",
+  "new": "(runnable as"
+ },
+ {
+  "op": "replace",
+  "file": "guide/04-temporal-expressions.md",
+  "old": "(corpus `0036_plain_heartbeat`; the same pattern",
+  "new": "(the same pattern"
+ },
+ {
+  "op": "replace",
+  "file": "guide/04-temporal-expressions.md",
+  "old": "Corpus `0243_kernel_previous_within` (runnable as a `Read`-after-login permit in [`examples/read_prev_login/`](../examples/read_prev_login/)):",
+  "new": "A `Read`-after-login permit (runnable as [`examples/read_prev_login/`](../examples/read_prev_login/)):"
+ },
+ {
+  "op": "replace",
+  "file": "guide/04-temporal-expressions.md",
+  "old": " (corpus `0268_previous_containing_nested`):",
+  "new": ":"
+ },
+ {
+  "op": "replace",
+  "file": "guide/04-temporal-expressions.md",
+  "old": " (corpus `1140_exists_login_no_agg`):",
+  "new": ":"
+ },
+ {
+  "op": "replace",
+  "file": "guide/04-temporal-expressions.md",
+  "old": " (corpus `0062_count_exact`):",
+  "new": ":"
+ },
+ {
+  "op": "replace",
+  "file": "guide/04-temporal-expressions.md",
+  "old": " (corpus `1144_agg_vs_agg`):",
+  "new": ":"
+ },
+ {
+  "op": "replace",
+  "file": "guide/04-temporal-expressions.md",
+  "old": "Simple sum of a bound value column — total transferred exceeds 200 (corpus `0063_sum_threshold`; runnable as an `Alert` permit in [`examples/alert_total_transfer_over_200/`](../examples/alert_total_transfer_over_200/)):\n\n```text\nwhen temporal {\n    exists (total: Long). (\n        (sum a for (a: Long). where Drupe::Action::\"Transfer\"::request{ input.amount: a }) == total\n        && total > 200\n    )\n};\n```\n",
+  "new": "Simple sum of a bound value column, over a bare predicate (runnable as an `Alert` permit in [`examples/alert_total_transfer_over_200/`](../examples/alert_total_transfer_over_200/)):\n\n```text\nwhen temporal {\n    exists (total: Long). (\n        (sum a for (a: Long). where Drupe::Action::\"Transfer\"::request{ input.amount: a }) == total\n        && total > 200\n    )\n};\n```\n\nThe body is a bare predicate with no past operator, so it matches only the event being decided: a row exists only when that event is itself a `Transfer` request, and the sum adds the distinct `amount` values of those rows (the `for` list is `a` alone). The rule decides `Alert` requests, so at every decision it governs the relation is empty, the sum is `0`, and `total > 200` does not hold: every verdict the bundle's trace produces is a deny. To sum past transfers, put the body under a past operator, as the next example does.\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/04-temporal-expressions.md",
+  "old": "A range filter on the bound value (corpus `0301_sum_resolved_range_filter`) works the same way",
+  "new": "A range filter on the bound value works the same way"
+ },
+ {
+  "op": "replace",
+  "file": "guide/04-temporal-expressions.md",
+  "old": "Corpus case `1116_injection_onto_deep_path` refines a predicate-valued parameter",
+  "new": "This macro refines a predicate-valued parameter"
+ },
+ {
+  "op": "replace",
+  "file": "guide/04-temporal-expressions.md",
+  "old": "The call site for the `same_session` macro above (corpus `1116_injection_onto_deep_path`):",
+  "new": "The call site for the `same_session` macro above:"
+ },
+ {
+  "op": "replace",
+  "file": "guide/04-temporal-expressions.md",
+  "old": "This section states precisely how a temporal condition is evaluated. Any conforming temporal engine must produce these verdicts.",
+  "new": "This section states precisely how a temporal condition is evaluated."
+ },
+ {
+  "op": "replace",
+  "file": "guide/04-temporal-expressions.md",
+  "old": "case, timestamps must be strictly increasing in the observed sequence.\n",
+  "new": "case, timestamps strictly increase in the observed sequence: a trace with\nrepeated or decreasing timestamps is out of contract, and its behaviour is\nunspecified.\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/04-temporal-expressions.md",
+  "old": "The reference interpreter is for testing semantics. Test authors must\ndeliberately choose the observation sequence and supply strictly increasing\ntimestamps. The interpreter preserves supplied timestamps; it neither constructs\nnor validates that sequence, and does not check the timestamp contract. Accepting\nan input does not establish that it satisfies that contract. An authorizer\nthat stamps events at ingestion establishes it instead.\n",
+  "new": "A trace that `dogwood replay` reads supplies its own timestamps, and its author\nchooses the observation sequence. The authorizer preserves supplied timestamps,\nso the trace itself must supply strictly increasing ones: a trace with repeated\nor decreasing timestamps is out of contract, and its behaviour is unspecified.\nAn authorizer that stamps events at ingestion establishes the contract instead.\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/04-temporal-expressions.md",
+  "old": "The authorizer calls the temporal engine's `observe` for every ingested event before deciding it.",
+  "new": "The authorizer adds every ingested event to the history before deciding it."
+ },
+ {
+  "op": "replace",
+  "file": "guide/04-temporal-expressions.md",
+  "old": "is implementation-defined — a conforming implementation may clamp, widen, or report an error,",
+  "new": "is implementation-defined — an implementation may clamp, widen, or report an error,"
+ },
+ {
+  "op": "replace",
+  "file": "guide/04-temporal-expressions.md",
+  "old": "- [07-api-and-workflow.md](07-api-and-workflow.md) — lowering policies and running the monitor.\n",
+  "new": ""
+ },
+ {
+  "op": "replace",
+  "file": "guide/05-information-providers.md",
+  "old": "`context.providers.<id>`. Corpus cases named below are directories under\n`dogwood-language/tests/passing/provider_only/corpus/`; each complete policy\nshown below is also a runnable bundle under [`examples/`](../examples/).\n",
+  "new": "`context.providers.<id>`. Each complete policy shown below is a runnable bundle\nunder [`examples/`](../examples/).\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/05-information-providers.md",
+  "old": "functions, decimal support, the off-by-default `net` feature), and the advanced",
+  "new": "functions, and decimal support), and the advanced"
+ },
+ {
+  "op": "replace",
+  "file": "guide/05-information-providers.md",
+  "old": "provider (corpus case `0001_regex_matches_uppercase`), which asks whether",
+  "new": "provider, which asks whether"
+ },
+ {
+  "op": "replace",
+  "file": "guide/05-information-providers.md",
+  "old": "The policy (`policy_1.dw`):",
+  "new": "The policy:"
+ },
+ {
+  "op": "replace",
+  "file": "guide/05-information-providers.md",
+  "old": "providers of case `0004_two_providers_and_not`) — a fragment",
+  "new": "providers) — a fragment"
+ },
+ {
+  "op": "replace",
+  "file": "guide/05-information-providers.md",
+  "old": " providers of\ncase `0007_boolean_or_parens`) — a fragment",
+  "new": " providers) — a\nfragment"
+ },
+ {
+  "op": "replace",
+  "file": "guide/05-information-providers.md",
+  "old": "plain-Cedar comparisons — case `0005_regex_operations`\n(a fragment;",
+  "new": "plain-Cedar comparisons\n(a fragment;"
+ },
+ {
+  "op": "replace",
+  "file": "guide/05-information-providers.md",
+  "old": "field — case `0010_unwrapped_mixed_with_cedar` (a fragment;",
+  "new": "field (a fragment;"
+ },
+ {
+  "op": "replace",
+  "file": "guide/05-information-providers.md",
+  "old": "Verified examples\nacross the corpus include `.matched == true` (case `0001_regex_matches_uppercase`), `.length < 5`\n(case `0002_length_threshold`), and `.count >= 2` (case `0008_greater_than_family`) — this fragment's",
+  "new": "Examples\ninclude `.matched == true`, `.length < 5`, and `.count >= 2` — this fragment's"
+ },
+ {
+  "op": "replace",
+  "file": "guide/05-information-providers.md",
+  "old": "provider of\ncase `0003_decimal_score_method`) — a fragment",
+  "new": "provider) — a\nfragment"
+ },
+ {
+  "op": "replace",
+  "file": "guide/05-information-providers.md",
+  "old": "provider of case `0006_set_arg_index_projection` chains",
+  "new": "provider chains"
+ },
+ {
+  "op": "replace",
+  "file": "guide/05-information-providers.md",
+  "old": "provider of case `0008_greater_than_family` gates",
+  "new": "provider gates"
+ },
+ {
+  "op": "replace",
+  "file": "guide/05-information-providers.md",
+  "old": "Field-and-string arguments — case `0001_regex_matches_uppercase`:",
+  "new": "Field-and-string arguments:"
+ },
+ {
+  "op": "replace",
+  "file": "guide/05-information-providers.md",
+  "old": "A principal-rooted argument — case `0015_principal_id_arg` (a fragment;",
+  "new": "A principal-rooted argument (a fragment;"
+ },
+ {
+  "op": "replace",
+  "file": "guide/05-information-providers.md",
+  "old": "A set argument — cases `0006_set_arg_index_projection` / `0009_unwrapped_no_marker`:",
+  "new": "A set argument:"
+ },
+ {
+  "op": "replace",
+  "file": "guide/05-information-providers.md",
+  "old": "output. For case `0001_regex_matches_uppercase`, the engine runs the provider",
+  "new": "output. For the `Strings::Matches` example, the engine runs the provider"
+ },
+ {
+  "op": "replace",
+  "file": "guide/05-information-providers.md",
+  "old": "For case `0006_set_arg_index_projection`, `document=",
+  "new": "For the `Content::Filter` example, `document="
+ },
+ {
+  "op": "replace",
+  "file": "guide/05-information-providers.md",
+  "old": "   `dogwood replay` — and checking one engine against another also assume this.)",
+  "new": "   `dogwood replay` — also assumes this.)"
+ },
+ {
+  "op": "replace",
+  "file": "guide/05-information-providers.md",
+  "old": "   (a script that throws, an external resolver that fails), the decision outcome\n   carries no guarantees. This reference interpreter fails closed: it denies the",
+  "new": "   (a script that throws, for example), the decision outcome\n   carries no guarantees. This implementation fails closed: it denies the"
+ },
+ {
+  "op": "replace",
+  "file": "guide/05-information-providers.md",
+  "old": "The same contract applies to external providers supplied through a\n`ProviderResolver`: pure, tolerant of Null arguments, never relying on error\nbehavior.\n\n",
+  "new": ""
+ },
+ {
+  "op": "replace",
+  "file": "guide/05-information-providers.md",
+  "old": "  provider with *no* implementation so its value is supplied by your own code.",
+  "new": "  provider with *no* implementation, as an interface only."
+ },
+ {
+  "op": "replace",
+  "file": "guide/05-information-providers.md",
+  "old": "- [The API and workflow](07-api-and-workflow.md) — wiring provider declarations\n  into a `ServiceSchema` (`ServiceSchemaBuilder::providers`) and the authorize-time\n  flow that evaluates providers.\n",
+  "new": ""
+ },
+ {
+  "op": "replace",
+  "file": "guide/06-macros.md",
+  "old": "### `DEFAULT_MACROS`: the built-in standard library\n\nIf you build a schema without specifying a library, Dogwood uses a built-in\ndefault, `DEFAULT_MACROS`. It ships a small **standard library** of temporal\n",
+  "new": "### The built-in standard library\n\nIf you do not supply a library, Dogwood uses a built-in default. It ships a\nsmall **standard library** of temporal\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/06-macros.md",
+  "old": "The file backing `DEFAULT_MACROS` is embedded into the crate at build time via\n`include_str!`, so these macros are available to every caller regardless of\nworking directory — there is no runtime file lookup. A policy's own `def` of the\n",
+  "new": "The default library is built in, so these macros are available regardless of\nworking directory — there is no runtime file lookup. A policy's own `def` of the\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/06-macros.md",
+  "old": "`Alert` actions;\neach is a runnable corpus case (`tests/passing/macros/corpus/stdlib_default_*`).\n",
+  "new": "`Alert` actions.\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/06-macros.md",
+  "old": "### Supplying your own library with `macros_str`\n\nThe macro library is part of the **`ServiceSchema`** — the fixed,\nservice-provided half of a schema (macros, providers, event schema). Provide the\nlibrary source to the `ServiceSchemaBuilder` via `macros_str` (see\n[API and workflow](07-api-and-workflow.md) for the full builder). The library\nsource is ordinary Dogwood source containing `def` definitions:\n\n```rust\nlet service = ServiceSchema::builder()\n    .macros_str(\n        \"def temporal once(?w, ?s) { formerly within ?w ?s };\\n\\\n         def cedar    is_small(?n) { ?n < 100 };\",\n    )\n    .build()?;\n```\n\nEvery policy set parsed against this service schema can then call `once` and\n`is_small` without redeclaring them (macro expansion runs in the parse phase,\nagainst the `ServiceSchema` alone — no action schema needed). Supplying\n`macros_str` **replaces** `DEFAULT_MACROS` entirely, so a custom library does\nnot automatically include the standard-library macros; if you want them\nalongside your own, copy their definitions into your library source. If you omit\n`macros_str`, `DEFAULT_MACROS` (the standard library above) is used.\n",
+  "new": "### Supplying your own library\n\nThe macro library is part of the **service schema** — the fixed,\nservice-provided half of a schema (macros, providers, event schema). On the\ncommand line you supply the library source with `--macros <file>`. The library\nsource is ordinary Dogwood source containing `def` definitions:\n\n```text\ndef temporal once(?w, ?s) { formerly within ?w ?s };\ndef cedar    is_small(?n) { ?n < 100 };\n```\n\nEvery policy set parsed against this library can then call `once` and\n`is_small` without redeclaring them (macro expansion runs in the parse phase,\nagainst the service schema alone — no action schema needed). Supplying a\nlibrary **replaces** the default library entirely, so a custom library does\nnot automatically include the standard-library macros; if you want them\nalongside your own, copy their definitions into your library source. If you\nsupply none, the default library (the standard library above) is used.\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/06-macros.md",
+  "old": "(for example, one supplied via `macros_str` that contains only comments)",
+  "new": "(for example, one that contains only comments)"
+ },
+ {
+  "op": "replace",
+  "file": "guide/06-macros.md",
+  "old": "- [The API and workflow](07-api-and-workflow.md) — `ServiceSchemaBuilder::macros_str`, the\n  lowering pipeline, and where macro expansion sits (the `ServiceSchema` a macro\n  library attaches to).\n",
+  "new": ""
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "Where the rest of the guide (from [Getting started](01-getting-started.md) through\n[The API and workflow](07-api-and-workflow.md)) explains *how to use* Dogwood, this\nchapter states *what it is*, at the level of detail a second implementation or a\nproof would need. Every rule is annotated\nwith its source of record — the file and function; the code is authoritative, and\nthis document tracks it.\n",
+  "new": "Where the rest of the guide explains *how to use* Dogwood, this chapter states\n*what it is*, in full detail.\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "`x | y` is alternation, `\"lit\"` is a terminal. It is transcribed from the three\n`pest` grammars of record:\n\n- core policy — `dogwood-syntax/src/grammar.pest`\n- temporal — `dogwood-language/src/extension/temporal/grammar.pest`\n- event schema — `dogwood-language/src/event_schema/grammar.pest`\n",
+  "new": "`x | y` is alternation, `\"lit\"` is a terminal. There are three grammars: the\ncore policy grammar, the temporal sub-language, and the event schema.\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "The core expression grammar is a `pest` transliteration of Cedar's own",
+  "new": "The core expression grammar is a transliteration of Cedar's own"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "for every policy set the event schema lets validate (Lean:\n`authorize_drop_maxHorizon`).\n",
+  "new": "for every policy set the event schema lets validate.\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "Dogwood's own\n(`src/ast.rs`); leaf",
+  "new": "Dogwood's own;\nleaf"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "**Temporal abstract syntax** (`src/extension/temporal/ast.rs`):",
+  "new": "**Temporal abstract syntax**:"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "written as one string\n(`src/field_path.rs`): each segment",
+  "new": "written as one string:\neach segment"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "`NamedArg::field_path` splits the string at its",
+  "new": "Reading the path back splits the string at its"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "**Provider data types** (`src/extension/provider/ast.rs`): there is no provider",
+  "new": "**Provider data types**: there is no provider"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "The module holds only the data types the",
+  "new": "These are only the data types the"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "list of *hoisted leaves*. It is the crate-private `parse`/`lower` pipeline\n(`src/api.rs`), split into two phases along the one input that motivates the\nsplit — the action schema (see [Chapter 07](07-api-and-workflow.md)):\n\n- **`parse(source, ServiceSchema)`** — pure syntax: parse, merge the macro\n  library, macro-expand. No action schema. (`api.rs`, `ParsedPolicySet::parse`, rule **L-Phase-Parse**.)\n- **`lower(parsed, PolicySchema, distincter?)`** — derive the event schema\n  against the action schema, translate each rule, augment the schema, inject\n  pins, and assemble the `Lowered` artifact. (`api.rs`, `lower`, rule **L-Phase-Lower**.)\n",
+  "new": "list of *hoisted leaves*. It is a `parse`/`lower` pipeline, split into two\nphases along the one input that motivates the split — the action schema:\n\n- **`parse(source, service_schema)`** — pure syntax: parse, merge the macro\n  library, macro-expand. No action schema. (Rule **L-Phase-Parse**.)\n- **`lower(parsed, action_schema, distincter?)`** — derive the event schema\n  against the action schema, translate each rule, augment the schema, inject\n  pins, and assemble the `Lowered` artifact. (Rule **L-Phase-Lower**.)\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "*(`cedarify/mod.rs` `emit_policy`.)* The scope constraints",
+  "new": "The scope constraints"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "(**L-ScopePassthrough**, `cedarify/mod.rs` `emit_policy`).",
+  "new": "(**L-ScopePassthrough**)."
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "(**L-Annotations**, `cedarify/mod.rs` `emit_policy`). A rule containing an unfilled template slot\n(`?principal`/`?resource`) fails: `StaticPolicy::try_from` errors *\"policy is not\nstatic\"*.\n",
+  "new": "(**L-Annotations**). A rule containing an unfilled template slot\n(`?principal`/`?resource`) fails with *\"policy is not static\"*.\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "*(`cedarify/mod.rs` `rule_key`, rule **L-RuleKey**.)*",
+  "new": "*(Rule **L-RuleKey**.)*"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "sets can be combined without colliding ids (see [Chapter 07](07-api-and-workflow.md)\non `lower_with_distincter`). Two rules",
+  "new": "sets can be combined without colliding ids. Two rules"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "*(`cedarify/mod.rs` `emit_policy`.)* Each clause translates",
+  "new": "Each clause translates"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "*(`to_ast.rs` `lower_binary`, **L-Binary-Table**.)*",
+  "new": "*(**L-Binary-Table**.)*"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "(**L-Unary-Table**, `to_ast.rs` `lower_unary`)",
+  "new": "(**L-Unary-Table**)"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "*(`to_ast.rs` `lower_expr`.)* The recorded",
+  "new": "The recorded"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "**L-ScopeAction-Classification**, `cedarify/mod.rs` `scope_action`)",
+  "new": "**L-ScopeAction-Classification**)"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "(**L-Expr-Method-Chain**, `to_ast.rs:peel_provider_chain` — a",
+  "new": "(**L-Expr-Method-Chain** — a"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "*(`to_ast.rs` `lower_provider_invocation`.)* `τ`",
+  "new": "`τ`"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "   `decision_kinds` used by the authorizer (`event_schema/derive.rs`).\n",
+  "new": "   `decision_kinds` used by the authorizer.\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "preserving earlier providers\n   (`cedarify/schema_augment.rs`).\n",
+  "new": "preserving earlier providers.\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "   A temporal leaf's field is added only to the actions its rule's action scope\n   can apply to, and the Lean specification augments the same actions\n   (`PolicySet.augmentedSchema`), up to two differences that change no\n   verdict: the crate gives each action a provider rule reaches the whole\n   shared provider record, and leaves out pure action groups, which have no\n   request environment. Adding the fields to more actions gives the same\n   validation verdict (`Dogwood.Thm.valid_iff_covers`).\n",
+  "new": "   A temporal leaf's field is added only to the actions its rule's action scope\n   can apply to. Each action a provider rule reaches gets the whole shared\n   provider record, and pure action groups, which have no request environment,\n   are left out. Adding the fields to more actions would give the same\n   validation verdict.\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "   the same action. The specification states the rule precisely\n   (`Dogwood.Thm.Composition`): two lowerings, each valid, compose into a valid\n   set exactly when the combined set passes the context-read check\n   (`valid_join_iff_contextReadsOk`), provided the second set's leaves and the\n   pins read none of the first set's hoisted attributes. The crate rejects such\n   reads. A whole-context read in the first set breaks composition once the\n   second has a leaf\n   (`not_valid_join_of_whole_context_read`). `Validator::validate` on the\n   result of `lower_many` performs that check on the combined set.\n",
+  "new": "   the same action. The specification states the rule precisely: two\n   lowerings, each valid, compose into a valid set exactly when the combined\n   set passes the context-read check, provided the second set's leaves and the\n   pins read none of the first set's hoisted attributes; such reads are\n   rejected. A whole-context read in the first set breaks composition once the\n   second has a leaf. Validating the combined set performs that check.\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "realizing the \"same X\" correlation (`event_schema/pin.rs`). The",
+  "new": "realizing the \"same X\" correlation. The"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "(**L-Relativize**,\n`event_schema/relativize.rs`). Let μ",
+  "new": "(**L-Relativize**).\nLet μ"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "engines receive the rewritten leaves\n(`Lowered.temporal_rewritten`, surfaced by `temporal_fields()` /\n`temporal_leaves()`). With no",
+  "new": "engines receive the rewritten leaves.\nWith no"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "whose timestamps are given. An authorizer that assigns the timestamps itself, as\nthe formal specification's does (`dogwood-lean`, `Dogwood.Spec.Ingest`: an\nevent's stamp is `max(reading, last + 1)`), and that keeps one log per key,\nstamps each key's log on its own: `last` is the stamp of the last event of the\nsame key. The formal specification defines this partitioned evaluation\n(`dogwood-lean`, `Dogwood.Spec.Partitioned`, `PolicySet.PartLeafHolds`): each\ntemporal leaf of a decision is evaluated over the decision's own key's log,\nstamped on its own. It is what `AuthorizerBuilder::partition_temporal()`\n([API and workflow](07-api-and-workflow.md)) and an engine that keeps one log\nper key compute. It agrees with stamping one log of all events\n",
+  "new": "whose timestamps are given. An authorizer that assigns the timestamps itself, as\nthe formal specification's does (an event's stamp is `max(reading, last + 1)`),\nand that keeps one log per key, stamps each key's log on its own: `last` is the\nstamp of the last event of the same key. The formal specification defines this\npartitioned evaluation: each temporal leaf of a decision is evaluated over the\ndecision's own key's log, stamped on its own. It is what an engine that keeps\none log per key computes. It agrees with stamping one log of all events\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "(**L-Lowered-Artifact**, `api.rs`, `struct Lowered`):",
+  "new": "(**L-Lowered-Artifact**):"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "augmented schema `Σ`, produces **no error findings**. It is `Validator::new().validate(&L)`\n(`src/validate.rs`, `src/validator.rs`). The validator holds no schema of its\nown — the augmented schema travels on `L` — which is why, unlike Cedar's\n`Validator::new(schema)`, Dogwood's takes none.\n",
+  "new": "augmented schema `Σ`, produces **no error findings**. The validator holds no\nschema of its own — the augmented schema travels on `L`.\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "*(`validate.rs`.)* A **fatal `Error`**",
+  "new": "A **fatal `Error`**"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "*(`validate.rs` `validate_impl`.)* Checks run in a fixed order",
+  "new": "Checks run in a fixed order"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "*(`validate.rs` `validate_impl`.)* Cedar's own validator",
+  "new": "Cedar's own validator"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "which is an error, as\ncedar-lean's validator reports it (**V-Cedar-Impossible**).",
+  "new": "which is an error\n(**V-Cedar-Impossible**)."
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "checker (`src/extension/temporal/check.rs`), run at parse time via\n`check_condition(φ, ∅)`. This enforces",
+  "new": "checker, run at parse time with an empty\nbinding environment. This enforces"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "*(`check.rs` `check_exists_safe`.)* An `exists`-bound",
+  "new": "An `exists`-bound"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "*(`check.rs` `check_demands`/`check_chain`.)* The demanding",
+  "new": "The demanding"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "*(`check.rs` `check_leaf_closed`; run by `Temporal::parse` and again\npost-expansion.)*",
+  "new": "*(Checked at parse time and again\npost-expansion.)*"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "vary with the current timepoint (`is_tp_dep`):",
+  "new": "vary with the current timepoint:"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "*(`check.rs`, `temporal/validate.rs` `check_tp_dependence`.)* A `Predicate`",
+  "new": "A `Predicate`"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "*(`check.rs` `check_aggregation`.)* Four obligations",
+  "new": "Four obligations"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "looks for what `sum` means.\n*(`src/interpreter/eval.rs` `eval_agg_expr`, `sum_column`.)*\n",
+  "new": "looks for what `sum` means.\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "as: a conforming implementation may clamp it to the `Long` range, evaluate the\ncomparison at a wider precision, report an error, or otherwise yield an unspecified\nvalue. A policy whose verdict depends on which of those an implementation chose is not\nportable, and two implementations may disagree on it without either being wrong, so\nsuch a policy is not a sound basis for comparing them.\n",
+  "new": "as: an implementation may clamp it to the `Long` range, evaluate the\ncomparison at a wider precision, report an error, or otherwise yield an unspecified\nvalue. A policy whose verdict depends on which of those an implementation chose is not\nportable.\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "*(`check.rs` `check_operand` / `reject_nested_agg`.)* Violations:",
+  "new": "Violations:"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "are all conforming. This implementation clamps",
+  "new": "are all allowed. This implementation clamps"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "(`temporal/validate.rs`, **TEMP-Order**).",
+  "new": "(**TEMP-Order**)."
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "  predicate argument, or a pin's request-side path, as in the formal\n  specification's typing (`CedarType.temporalSupported`). A predicate that\n",
+  "new": "  predicate argument, or a pin's request-side path. A predicate that\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "(**TEMP-MaxHorizon**; Lean: `Formula.horizon`, `PolicySet.Valid.horizon`).",
+  "new": "(**TEMP-MaxHorizon**)."
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "**lexically scoped** (`walk_typed`):",
+  "new": "**lexically scoped**:"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "Four further rules come from the formal specification's typing relation\n(`dogwood-lean`, `Formula.WellTyped`; `temporal/validity.rs`). Each is checked in\n",
+  "new": "Four further typing rules follow. Each is checked in\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "read off the lowered rule (`temporal/facts.rs`): a `has` test",
+  "new": "read off the lowered rule: a `has` test"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "For each hoisted provider leaf (`provider/validate.rs`):",
+  "new": "For each hoisted provider leaf:"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "The authority on predicate names (`event_schema/validate.rs`), applied",
+  "new": "The authority on predicate names, applied"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "*(`event_schema/validate.rs` `validate_condition`.)* A predicate must",
+  "new": "A predicate must"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "errors: String*)`. This is `Authorizer::submit` (`authorize/mod.rs`, `api.rs`);\n`Authorizer::is_authorized` reports `Rejected` as `None`. The `None` result —\n\"this event decided nothing\" — is the essential difference from Cedar.\n",
+  "new": "errors: String*)`. The `None` result — \"this event decided nothing\" — is the\nessential difference from Cedar.\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "Event timestamps are assumed to be **increasing** along `H`:\n`ts(i + 1) > ts(i)`, so timestamps are also unique. The reference interpreter\nneither sorts events nor checks this assumption. Other authorizer implementations\ncan assign strictly increasing timestamps at ingestion, as the formal\nspecification's authorizer does. An authorizer that keeps one log per partition key assigns\nthem per key, so they increase within each key's log; the formal specification's\npartitioned evaluation evaluates a decision over its own key's log\n(see **Sharding by key, and stamps** in §4.5). Traces with repeated or decreasing\ntimestamps are outside the specified semantics. See\n",
+  "new": "Event timestamps are assumed to be **increasing** along `H`:\n`ts(i + 1) > ts(i)`, so timestamps are also unique. A trace with repeated or\ndecreasing timestamps is out of contract, and its behaviour is unspecified. An\nauthorizer can instead assign strictly increasing timestamps at ingestion, as the\nformal specification's authorizer does. An authorizer that keeps one log per\npartition key assigns them per key, so they increase within each key's log; the\nformal specification's partitioned evaluation evaluates a decision over its own\nkey's log (see **Sharding by key, and stamps** in §4.5). See\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "*(`api.rs`, `ingest`; `conformance.rs`, `RuntimeChecks`, `check_pins`.)* `e ⊨ S`",
+  "new": "`e ⊨ S`"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "The pin clauses follow the\nauthorizer's mirror rule (`MirrorRule`; `conformance.rs`, `check_pins`): under\nthe default, **strict**, rule a mirrored field is also absent when the event\nhas no request-side value for it; `Current` drops that case; `Unchecked` checks no pin clause. A field",
+  "new": "The pin clauses follow the\nauthorizer's **strict** mirror rule: a mirrored field is also absent when the\nevent has no request-side value for it. A field"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "A `Null` value is absent.\n`LoweredPolicySet::check_event_conformance(e, rule)` decides `e ⊨ S` under a\nmirror rule without ingesting `e`, through the same function `ingest` calls.\n",
+  "new": "A `Null` value is absent.\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "(**A-Reject-History**), which `Authorizer::submit` reports as\n`Err(Rejection::Nonconforming)` and `Authorizer::is_authorized` as `None`; a\nrejection is not a decision",
+  "new": "(**A-Reject-History**); a\nrejection is not a decision"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "A conforming event is observed (`try_observe`; an event the engine could not\nrecord is not in the history: a history event is rejected as\n`Rejection::Unavailable`, a decision event fails closed)",
+  "new": "A conforming event is observed (an event the engine could not record is not\nin the history: a history event is rejected as unavailable, a decision event fails\nclosed)"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "The authorizer preserves supplied\ntimestamps; it does not check their order.\n",
+  "new": "The authorizer preserves supplied\ntimestamps.\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "`⇓_d` makes its checks in the order of the formal specification's\n`PolicySet.decideWith` (`dogwood-lean`, `Dogwood.Spec.Decision`), each a\n**fail-closed** short-circuit, then decides.",
+  "new": "`⇓_d` makes its checks in this order, each a **fail-closed** short-circuit,\nthen decides."
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "*(`api.rs`, `ingest` and `decide_at`; `conformance.rs`.)* The Cedar request",
+  "new": "The Cedar request"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "specification fixes this reference implementation's choice",
+  "new": "specification fixes this implementation's choice"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "(`api.rs`, `build_context`, **A-Context-Keys**):",
+  "new": "(**A-Context-Keys**):"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "Value mapping (`value_to_expr`, **A-Context-ValueMap**)",
+  "new": "Value mapping (**A-Context-ValueMap**)"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "(what `Value::extension`\nbuilds and a trace writes `datetime(\"…\")`)",
+  "new": "(which a trace writes as\n`datetime(\"…\")`)"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "Each provider's value is computed **resolver-first, Rhai-fallback**\n(`api.rs`, `eval_provider`):\n\n```\n   resolver present     resolver.resolve(name, args) = Some(res)\n  ──────────────────────────────────────────────────────────────── (A-Provider-Resolver)\n   eval_provider = res        (res = Ok(v) ⇒ v ; res = Err(m) ⇒ FailClosed-Provider)\n```\n```\n   resolver absent ∨ resolver declines (None)     field.declaration = Some(decl)\n  ─────────────────────────────────────────────────────────────────────────────── (A-Provider-Rhai)\n   eval_provider = evaluate(invocation, decl, args)\n```\n\nA caller-supplied `ProviderResolver` gets first refusal on every invocation; if\nit declines, the declared sandboxed Rhai implementation runs. An invocation with\nno declaration and no resolver value is an error (⇒ **FailClosed-Provider**):\n",
+  "new": "Each provider's value is computed by its declared, sandboxed Rhai\nimplementation:\n\n```\n   field.declaration = Some(decl)\n  ────────────────────────────────────────────────── (A-Provider-Rhai)\n   eval_provider = evaluate(invocation, decl, args)\n```\n\nAn invocation with no declaration is an error (⇒ **FailClosed-Provider**):\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "Once context and request are built, the decision is delegated to the pluggable\n`PolicyEngine` (default: local Cedar; alternatively, a remote Cedar-based engine) over the entity store\n`E` assembled by `build_entities`: the schema's",
+  "new": "Once context and request are built, Cedar decides over the entity store `E`:\nthe schema's"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "*(`api.rs`, `decide`.)* The engine returns",
+  "new": "The engine returns"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "The crate's `Authorizer` is one instance that ingests",
+  "new": "Dogwood's authorizer is one instance that ingests"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "guarantee, the **event-log contract** (`dogwood-lean`, `Dogwood.Spec.Contract`,\n`Run.Meets`); it is what implementations are measured against. Its log `L`",
+  "new": "guarantee, the **event-log contract**. Its log `L`"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "the universal symmetric pins\n(`EventSchema.partitionKey`). A deployment",
+  "new": "the universal symmetric pins.\nA deployment"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "retry window `W` (`Submission.RetryOf`) when",
+  "new": "retry window `W` when"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "in the clock's\nticks (`defaultRetryWindow`). A single instance that receives the submissions in\narrival order (`Sequential.step`) takes these steps, where `decide(L, i)` is the\noutcome at position `i` of the log (`Log.decide`), and `keys(L)` the retry keys",
+  "new": "in the clock's\nticks. A single instance that receives the submissions in\narrival order takes these steps, where `decide(L, i)` is the\noutcome at position `i` of the log, and `keys(L)` the retry keys"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "C-Nonconforming are ingestion (`Log.submit`). A single instance meets the\ncontract for every `W` (`sequential_meets`).",
+  "new": "C-Nonconforming are ingestion. A single instance meets the\ncontract for every `W`."
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "**meets the contract** (`Run.Meets`) when:",
+  "new": "**meets the contract** when:"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "What follows (`Dogwood.Thm.Contract`):",
+  "new": "What follows:"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": " (`Run.Meets.retry_not_logged`), and leaves a\n  single instance's log as it was (`sequential_retry_log`);",
+  "new": ", and leaves a\n  single instance's log as it was;"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "an unavailability\n  (`Run.Meets.retry_reply`, `sequential_retry_reply`). A decision depends only\n  on the log up to its position (`decide_append`), so the answer is the",
+  "new": "an unavailability.\n  A decision depends only\n  on the log up to its position, so the answer is the"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "is rejected\n  (`Run.Meets.duplicate_rejected`);",
+  "new": "is rejected;"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "  `W`, `W = 0` included (`Run.meets_iff_withoutRetries`).",
+  "new": "  `W`, `W = 0` included."
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "The crate's `Authorizer` has no event ids: each submission is new, so only",
+  "new": "Dogwood's authorizer, which `dogwood replay` drives, has no event ids: each\nsubmission is new, so only"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "  through `observe`/`evaluate` and the hoisted `context.<id>` booleans.",
+  "new": "  through the temporal engine and the hoisted `context.<id>` booleans."
+ },
+ {
+  "op": "replace",
+  "file": "guide/10-provider-schema.md",
+  "old": "you write so that such a call resolves. The corpus cases named below are directories\nunder `dogwood-language/tests/passing/provider_only/corpus/`.\n",
+  "new": "you write so that such a call resolves.\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/10-provider-schema.md",
+  "old": "You use exactly one of these. The inline form (the same `Http::Fetch` provider used\nin [The `net` feature and `http_get`](#the-net-feature-and-http_get) below) looks like:\n\n```json\n{\n  \"availableProviders\": {\n    \"Http::Fetch\": {\n      \"argumentTypes\": [\n        { \"paramType\": \"string\" },\n        { \"paramType\": \"string\" }\n      ],\n      \"outputType\": {\n        \"paramType\": \"record\",\n        \"fields\": { \"body\": { \"paramType\": \"string\" } },\n        \"required\": [\"body\"]\n      },\n      \"implementation\": {\n        \"kind\": \"rhai\",\n        \"script\": \"fn evaluate(base, key) { if regex_is_match(\\\"^[a-z0-9_-]+(\\\\\\\\.[a-z0-9_-]+)*$\\\", key) { #{ body: http_get(base + \\\"/lookup/\\\" + key) } } else { #{ body: \\\"\\\" } } }\"\n      }\n    }\n  }\n}\n```\n",
+  "new": "You use exactly one of these. The inline form (here the `Strings::Length` provider, whose\nscript, `length.rhai`, is shown under [The `evaluate` function](#the-evaluate-function)\nbelow) looks like:\n\n```json\n{\n  \"availableProviders\": {\n    \"Strings::Length\": {\n      \"argumentTypes\": [\n        { \"paramType\": \"string\" }\n      ],\n      \"outputType\": {\n        \"paramType\": \"record\",\n        \"fields\": { \"length\": { \"paramType\": \"integer\" } },\n        \"required\": [\"length\"]\n      },\n      \"implementation\": {\n        \"kind\": \"rhai\",\n        \"script\": \"fn evaluate(text) { if type_of(text) == \\\"()\\\" { return #{ length: -1 }; } #{ length: text.len() } }\"\n      }\n    }\n  }\n}\n```\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/10-provider-schema.md",
+  "old": "### `from_json` vs `from_json_file`\n\nHow you load `providers.json` determines whether a `scriptFile` reference gets\nresolved. (These are API entry points; see\n[The API and workflow](07-api-and-workflow.md) for the full loading surface.)\n\n- **`from_json(text)`** parses JSON text only. A `scriptFile` reference is left\n  **unresolved** — the inline `script` stays `None`.\n- **`from_json_file(path)`** reads the file and then, for every Rhai implementation\n  that has a `scriptFile` but no inline `script`, reads that file (relative to the\n  declarations file's directory) and folds its contents into the script. After\n  loading this way, the resolved script is available regardless of which form was\n  used.\n\nThis matters at authorize time: if a provider declared with `scriptFile` was loaded\nvia `from_json` instead of `from_json_file`, evaluating it fails with an error telling\nyou the `scriptFile` reference was never resolved and to load with `from_json_file`.\nRule of thumb: when your declarations reference external `.rhai` files, load with\n`from_json_file`.\n",
+  "new": "### `scriptFile` and the command line\n\nThe command line reads `--providers` as text, so it never resolves a\n`scriptFile` reference: the declaration's inline `script` stays unset. `validate`\nand `lower` still work, but evaluating such a provider at authorize time fails\nwith an error telling you the `scriptFile` reference was never resolved and to\nload the declarations with `from_json_file`. Rule of thumb: when a provider will\nbe evaluated through `dogwood replay`, put its Rhai inline under\n`implementation.script` (see [The command line](12-cli.md)).\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/10-provider-schema.md",
+  "old": "The corpus exercises the full range of output types. A few representative shapes:",
+  "new": "A few representative declaration shapes:"
+ },
+ {
+  "op": "replace",
+  "file": "guide/10-provider-schema.md",
+  "old": "(`Strings::Length`, case `0002_length_threshold`)",
+  "new": "(`Strings::Length`)"
+ },
+ {
+  "op": "replace",
+  "file": "guide/10-provider-schema.md",
+  "old": "(`Content::Risk`, case `0003_decimal_score_method`)",
+  "new": "(`Content::Risk`)"
+ },
+ {
+  "op": "replace",
+  "file": "guide/10-provider-schema.md",
+  "old": "(`Regex::Analyze`, case `0005_regex_operations`)",
+  "new": "(`Regex::Analyze`)"
+ },
+ {
+  "op": "replace",
+  "file": "guide/10-provider-schema.md",
+  "old": "(case `0004_two_providers_and_not`: `Strings::Matches` + `Lists::Blocked`;\n  case `0007_boolean_or_parens`: `Lists::Allowed` + `Strings::Length`)",
+  "new": "(`Strings::Matches` + `Lists::Blocked`, or\n  `Lists::Allowed` + `Strings::Length`)"
+ },
+ {
+  "op": "replace",
+  "file": "guide/10-provider-schema.md",
+  "old": "The most elaborate is `Content::Filter` (cases `0006_set_arg_index_projection` / `0009_unwrapped_no_marker`), which",
+  "new": "The most elaborate is `Content::Filter`, which"
+ },
+ {
+  "op": "replace",
+  "file": "guide/10-provider-schema.md",
+  "old": "The simplest possible script — `length.rhai` (case `0002_length_threshold`). Note",
+  "new": "The simplest possible script — `length.rhai`. Note"
+ },
+ {
+  "op": "replace",
+  "file": "guide/10-provider-schema.md",
+  "old": "Every corpus script carries this\nguard;",
+  "new": "Every script in the example bundles\ncarries this guard;"
+ },
+ {
+  "op": "replace",
+  "file": "guide/10-provider-schema.md",
+  "old": "All three appear together in `analyze.rhai` (case `0005_regex_operations`):",
+  "new": "All three appear together in `analyze.rhai`:"
+ },
+ {
+  "op": "replace",
+  "file": "guide/10-provider-schema.md",
+  "old": "The denylist in `blocked.rhai` (case `0004_two_providers_and_not`) uses",
+  "new": "The denylist in `blocked.rhai` uses"
+ },
+ {
+  "op": "replace",
+  "file": "guide/10-provider-schema.md",
+  "old": "The risk-score provider — `risk.rhai` (case `0003_decimal_score_method`):",
+  "new": "The risk-score provider — `risk.rhai`:"
+ },
+ {
+  "op": "delete_section",
+  "file": "guide/10-provider-schema.md",
+  "heading": "### The `net` feature and `http_get`"
+ },
+ {
+  "op": "replace",
+  "file": "guide/10-provider-schema.md",
+  "old": "files in the corpus are un-augmented",
+  "new": "files in the examples are un-augmented"
+ },
+ {
+  "op": "replace",
+  "file": "guide/10-provider-schema.md",
+  "old": "output. For case `0001_regex_matches_uppercase`, the engine runs `matches.rhai`",
+  "new": "output. For the `Strings::Matches` provider, the engine runs `matches.rhai`"
+ },
+ {
+  "op": "replace",
+  "file": "guide/10-provider-schema.md",
+  "old": "For case `0006_set_arg_index_projection`, `document=",
+  "new": "For the `Content::Filter` provider, `document="
+ },
+ {
+  "op": "replace",
+  "file": "guide/10-provider-schema.md",
+  "old": "### Providers with no implementation — plugging in your own code",
+  "new": "### Providers with no implementation"
+ },
+ {
+  "op": "replace",
+  "file": "guide/10-provider-schema.md",
+  "old": "This is the hook for supplying the value from **your own code** instead of a Rhai\nscript. The provider's output is nothing more than a record bound into\n`context.providers.<id>` at authorize time; a declaration with no `implementation`\ndeclares the *contract* for that record and leaves the *production* of it to you. If\nyou evaluate such a provider through the built-in path, you get a clear error —\n`provider ... has no implementation; cannot evaluate it at authorize time` — which is\nthe signal that this provider is meant to be satisfied by a caller-supplied\ncomputation rather than the sandboxed Rhai engine.\n\nUse this when the value comes from somewhere the sandbox deliberately cannot reach — a\nservice call, a model, a database lookup — and you want to keep that computation in\nyour own (unsandboxed, non-deterministic-allowed) code while still declaring the\nprovider's shape so policies can be written and validated against it.\n",
+  "new": "The provider's output is nothing more than a record bound into\n`context.providers.<id>` at authorize time; a declaration with no `implementation`\ndeclares the *contract* for that record without a script to produce it. If you\nevaluate such a provider through the built-in path, as `dogwood replay` does, you\nget a clear error —\n`provider ... has no implementation; cannot evaluate it at authorize time`.\n\nUse this to declare the shape of a value the sandbox deliberately cannot\ncompute — a service call, a model, a database lookup — so that policies can be\nwritten and validated against it.\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/10-provider-schema.md",
+  "old": "- [The API and workflow](07-api-and-workflow.md) — loading declarations (`from_json`\n  vs `from_json_file`) and the authorize-time flow that evaluates providers.\n",
+  "new": ""
+ },
+ {
+  "op": "replace",
+  "file": "guide/12-cli.md",
+  "old": "trace, and it needs no Rust: everything is a file in, a verdict (or a\ndiagnostic) out.\n",
+  "new": "trace: everything is a file in, a verdict (or a diagnostic) out.\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/12-cli.md",
+  "old": "Every policy-level example in this guide is a complete, runnable **bundle** in\nthis crate's `examples/` directory, and a test harness runs each one through\nthis exact CLI on every build. So the commands below are not illustrative — they\nare what checks the documentation.\n",
+  "new": "Every policy-level example in this guide is a complete, runnable **bundle** in\n`examples/`, with what the CLI prints for it: `explain.out` is the output of\n`dogwood explain` for the bundle's policy and, where the bundle has a\n`trace.log`, `expected.out` is the output of `dogwood replay` for that trace.\nBoth are run with the bundle's own files — `--policy-schema schema.cedarschema`,\nplus `--event-schema`, `--providers` and `--macros` for a bundle that has an\nevent schema, a `providers.json` or a `macros.dw`.\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/12-cli.md",
+  "old": "the form a CI job or\nan editor integration wants.\n",
+  "new": "the form a CI job\nwants.\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/12-cli.md",
+  "old": "  schema, manifest, or trace that does not parse)",
+  "new": "  schema, or trace that does not parse)"
+ },
+ {
+  "op": "replace",
+  "file": "guide/12-cli.md",
+  "old": "[`examples/`](../examples/) does exactly this. (Library callers are\nunaffected: load with `ProviderDeclarations::from_json_file`, which folds\n`scriptFile` contents in. An `implementation`-less, interface-only declaration\nvalidates and lowers through the CLI too, but `replay` cannot evaluate it —\nits value comes from your code via a `ProviderResolver`.)\n",
+  "new": "[`examples/`](../examples/) does exactly this. (An `implementation`-less,\ninterface-only declaration validates and lowers through the CLI too, but\n`replay` cannot evaluate it.)\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/12-cli.md",
+  "old": "other) kind and its logged record. See\n[The event schema](03-event-schema.md) for the event model.\n",
+  "new": "other) kind and its logged record. See\n[The trace file format](#the-trace-file-format) below for the whole format, and\n[The event schema](03-event-schema.md) for the event model.\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/12-cli.md",
+  "old": "before running `validate`. `dogwood schema mcp --manifest tools.json` generates a\nCedar action schema from an MCP tool manifest when the CLI is built with the\n`mcp-schema` feature (`cargo build -p dogwood-cli --features mcp-schema`;\nsee [MCP schema generation](11-mcp-schema-generation.md)).\n",
+  "new": "before running `validate`.\n"
+ },
+ {
+  "op": "delete_section",
+  "file": "guide/12-cli.md",
+  "heading": "## When to reach for the library instead"
+ },
+ {
+  "op": "move_section",
+  "file": "guide/12-cli.md",
+  "from": "guide/07-api-and-workflow.md",
+  "heading": "## Trace replay",
+  "before": "## Pipelines and stdin",
+  "edits": [
+   {
+    "op": "replace",
+    "old": "## Trace replay\n\n`parse_trace` and `replay_log` are conveniences over the core `Authorizer` loop for driving a recorded `.log` event trace — useful for regression testing and for reproducing a sequence of events without hand-building each `Event`.\n\n```rust\npub fn parse_trace(log: &str) -> Result<Vec<Event>, Error>;\npub fn replay_log(policies: LoweredPolicySet, log: &str) -> Result<String, Error>;\n```\n\n- `parse_trace(log)` — parse a `.log` trace into its sequence of `Event`s. Each non-blank line is one timepoint of the form `@<ts> [envelopes] <Action>(<field>: <value>, …)` (the optional `scope` / `entities` / `request_context` envelopes are described below). Values use Cedar surface forms (entity refs `Ns::Type::\"id\"`, strings, integers, decimals, `true`/`false`, arrays, objects, and the extension constructors `datetime(\"…\")`, `duration(\"…\")`, `ip(\"…\")`, `decimal(\"…\")`). Feed the events to an `Authorizer` in order to replay them. On failure it returns `Error::TraceParse(\"…\")`.\n- `replay_log(policies, log)` — replay a whole `.log` trace through `policies` and return the per-timepoint verdict stream: one `@<ts> (time point <i>): <bool>` line for **every decision point** (`true` for `Allow`, `false` for `Deny`), newline-joined. This is the corpus-comparison format. It **consumes** the `LoweredPolicySet` (it drives a fresh stateful `Authorizer`, so temporal leaves see prior events as history). History-only events (non-decision kinds) contribute **no line**, and neither does a history event the authorizer rejects; drive an `Authorizer` with `submit` to see rejections.\n",
+    "new": "## The trace file format\n\n`dogwood replay` reads the event trace named by `--trace`, a `.log` file. Each non-blank line is one timepoint of the form `@<ts> [envelopes] <Action>(<field>: <value>, …)` (the optional `scope` / `entities` / `request_context` envelopes are described below). Values use Cedar surface forms (entity refs `Ns::Type::\"id\"`, strings, integers, decimals, `true`/`false`, arrays, objects, and the extension constructors `datetime(\"…\")`, `duration(\"…\")`, `ip(\"…\")`, `decimal(\"…\")`). `replay` feeds the events to the authorizer in the order of their lines. A trace that does not parse is an error, and `replay` exits 2.\n"
+   },
+   {
+    "op": "replace",
+    "old": "Unlike `EventBuilder::principal` / `resource`, the envelope does not log them:",
+    "new": "The envelope does not log them:"
+   },
+   {
+    "op": "replace",
+    "old": "is a `TraceParse` error rather than a silent last-wins",
+    "new": "is a parse error rather than a silent last-wins"
+   },
+   {
+    "op": "replace",
+    "old": "\nRunning `replay_log` on the trace above (which uses only `scope(...)`) with the tour's policy produces one line per `request`-kind timepoint:\n\n```text\n@0 (time point 0): false\n@10 (time point 1): true\n@7200 (time point 2): false\n```\n\n— the same `[Deny, Allow, Deny]` shape you saw in the tutorial (`false`/`true` = `Deny`/`Allow`; note `replay_log` emits a line for *every* decision point, not only allows).\n\n---\n\n",
+    "new": ""
+   }
+  ]
+ },
+ {
+  "op": "move_section",
+  "file": "guide/12-cli.md",
+  "from": "guide/07-api-and-workflow.md",
+  "heading": "## Event kinds, decisions, and failure handling",
+  "before": "## Pipelines and stdin",
+  "edits": [
+   {
+    "op": "replace",
+    "old": "Two behaviors thread through the whole API and deserve to be stated plainly.",
+    "new": "Two behaviors thread through every replay and deserve to be stated plainly."
+   },
+   {
+    "op": "replace",
+    "old": " (queryable on a lowered set via `LoweredPolicySet::decision_kinds()` / `is_decision_kind(kind)`)",
+    "new": ""
+   },
+   {
+    "op": "replace",
+    "old": "- A **decision-kind event** makes `is_authorized` return `Some(Response)` — it observes the event *and* decides.\n- A **history-only event** makes `is_authorized` return `None` — it observes the event to update temporal state but yields no verdict, and contributes no line in `replay_log`.\n- **Statelessness is just a special case:** a single stateless decision is a fresh `Authorizer` fed one `request`-kind event (for example via `Event::from_request`).\n",
+    "new": "- A **decision-kind event** observes the event *and* decides: `replay` prints a verdict line for it.\n- A **history-only event** observes the event to update temporal state but yields no verdict, and contributes no verdict line in `replay`.\n- **Statelessness is just a special case:** a single stateless decision is a trace of one `request`-kind event.\n"
+   },
+   {
+    "op": "replace",
+    "old": "Verdicts are computed over events in the order you pass them to `is_authorized`. An integration should:",
+    "new": "Verdicts are computed over events in the order they are passed in, which for `replay` is the order of the trace. An integration, and a trace that records one, should:"
+   },
+   {
+    "op": "replace",
+    "old": "- **supply increasing timestamps**, each greater than the previous one, in the order events are passed in.",
+    "new": "- **supply increasing timestamps**, each greater than the previous one, in the order events are passed in. A trace with repeated or decreasing timestamps is out of contract, and its behaviour is unspecified."
+   },
+   {
+    "op": "replace",
+    "old": "a decision event missing a principal/resource, a policy engine that was never prepared — yields a `Deny` with the reason recorded in `Response::diagnostics().errors()`.",
+    "new": "a decision event missing a principal/resource — yields a `Deny` with the reason recorded among the decision's errors: `replay` prints each one as an `error:` line under the `DENY` line (and in the verdict's `errors` with `--format json`)."
+   },
+   {
+    "op": "replace",
+    "old": " The temporal seam's `evaluate` returning `Err` and the policy seam's `errors` vector both funnel into this same place. So a caller that wants to distinguish \"denied by policy\" from \"denied because something broke\" should always inspect `diagnostics().errors()`, not just `decision()`.",
+    "new": " So a reader who wants to distinguish \"denied by policy\" from \"denied because something broke\" should always look at the errors, not just the verdict."
+   },
+   {
+    "op": "replace",
+    "old": "\nFinally, the three policy-clause forms map cleanly onto the seams, which is a useful mental model when reading a policy:\n\n- `when { … }` — a plain Cedar condition, decided by the `PolicyEngine`.\n- `when temporal { … }` — hoisted to a `TemporalField` and evaluated by the `TemporalEngine` (not self-contained Cedar). See [Temporal expressions](04-temporal-expressions.md).\n- `when guardrails { … }` — an information-provider invocation, evaluated from `ProviderDeclarations` (not self-contained Cedar). See [Information providers](05-information-providers.md).\n\n---\n\n",
+    "new": ""
+   }
+  ]
+ },
+ {
+  "op": "move_section",
+  "file": "guide/12-cli.md",
+  "from": "guide/07-api-and-workflow.md",
+  "heading": "## Retries and event ids",
+  "before": "## Pipelines and stdin",
+  "edits": [
+   {
+    "op": "replace",
+    "old": "A client that loses the reply to a submission cannot tell whether the event was ingested. If it submits the event again, the event must not enter the history twice, and the client should be told what it would have been told the first time. The formal specification's **event-log contract** (`dogwood-lean`, `Dogwood.Spec.Contract`, `Run.Meets`) says how: it is what every implementation is measured against, whether it runs one instance or several. The crate's `Authorizer` has no notion of an event id: every call to `submit` or `is_authorized` is a new submission, and an event submitted twice is ingested twice. An implementation that accepts event ids follows the rules below.\n\nA submission may carry an **event id**, which its client chooses. The contract has a **retry window** `W`; the default is **five minutes**, counted in the clock's ticks. A submission is a **retry** of an earlier, accepted submission when all of these hold:\n\n- it is on the same **partition key**: the logged values of the event schema's universal symmetric pins, such as the caller under the default `callerPrincipal = principal` pin. So it is in the same log of an implementation that keeps one log per partition key;\n- it has the same **event id**, and the same **action and kind**;\n- its **content is identical**: the same logged record, and the same request (principal, resource, context, and entity data). Values are compared as values: two spellings of one decimal, or a set in another order, are the same;\n- its **time** is at most `W` after the earlier submission's timestamp. Its time is its clock reading, or the server's time when it has none.\n\nWhat an implementation does with a submission:\n\n| The submission | It is | The reply |\n|---|---|---|\n| a retry of an accepted submission | **not ingested again** | the earlier submission's: accepted at its position, with the decision there |\n| the same partition key, event id, action, and kind as an accepted submission, but not a retry of it (other content, or later than `W`) | **rejected** as a duplicate: not ingested, and not decided | a rejection, never a decision |\n| anything else, including every submission without an event id | ingested as a new event | as for `Authorizer::submit` |\n\nThe answer to a retry is the decision at the earlier submission's position, which depends only on the history up to that position. So the client gets the decision it would have got the first time, even when a policy update came between the two submissions. An implementation may still reject a retry it cannot serve as unavailable (the contract never requires availability), but never as a duplicate. A submission whose earlier attempt was rejected, as unavailable or as nonconforming, is not a retry: nothing was accepted, so it is ingested as a new event. When no two submissions share an event id, the contract is the one without retries, whatever the window.\n\nFor a client, this means:\n\n- **give each event a fresh event id**, unique among the events of its partition key with the same action and kind;\n- **resubmit the same event with the same id** after a lost reply or an unavailability rejection, within the window. A retry after the window is rejected as a duplicate: the event id was used, and the earlier reply is no longer available;\n- **never reuse an event id for another event**: the second event is rejected as a duplicate, and it is not recorded.\n\n[A formal specification of Dogwood](08-formal-specification.md#66-the-event-log-contract-and-retries) gives the rules as inference rules.\n\n---\n\n",
+    "new": "`dogwood replay` has no notion of an event id: every event of the trace is a new submission, and an event that a trace submits twice is ingested twice. An implementation that accepts event ids follows the event-log contract of [A formal specification of Dogwood](08-formal-specification.md#66-the-event-log-contract-and-retries): its retry window, and when a resubmission is a retry or a duplicate.\n"
+   }
+  ]
+ },
+ {
+  "op": "delete_file",
+  "file": "examples/cap_open_agent_prs_windowed/requires-experimental-arithmetic"
+ },
+ {
+  "op": "replace",
+  "file": "examples/cap_open_agent_prs_windowed/README.md",
+  "old": "> `experimental-arithmetic`. A default build rejects this policy; the test\n> harnesses check this bundle only when built with that feature.\n",
+  "new": "> `experimental-arithmetic`. A default build rejects this policy; a build\n> with that feature accepts it.\n"
+ },
+ {
+  "op": "delete_file",
+  "file": "examples/refund_budget_settled_plus_current/requires-experimental-arithmetic"
+ },
+ {
+  "op": "replace",
+  "file": "examples/refund_budget_settled_plus_current/README.md",
+  "old": "> `experimental-arithmetic`. A default build rejects this policy; the test\n> harnesses check this bundle only when built with that feature.\n",
+  "new": "> `experimental-arithmetic`. A default build rejects this policy; a build\n> with that feature accepts it.\n"
+ },
+ {
+  "op": "delete_file",
+  "file": "examples/touchless_invoice_within_tolerance/requires-experimental-arithmetic"
+ },
+ {
+  "op": "replace",
+  "file": "examples/touchless_invoice_within_tolerance/README.md",
+  "old": "> `experimental-arithmetic`. A default build rejects this policy; the test\n> harnesses check this bundle only when built with that feature.\n",
+  "new": "> `experimental-arithmetic`. A default build rejects this policy; a build\n> with that feature accepts it.\n"
+ },
+ {
+  "op": "delete_file",
+  "file": "examples/touchless_share_capped/requires-experimental-arithmetic"
+ },
+ {
+  "op": "replace",
+  "file": "examples/touchless_share_capped/README.md",
+  "old": "> `experimental-arithmetic`. A default build rejects this policy; the test\n> harnesses check this bundle only when built with that feature.\n",
+  "new": "> `experimental-arithmetic`. A default build rejects this policy; a build\n> with that feature accepts it.\n"
+ },
+ {
+  "op": "replace",
+  "file": "examples/alert_heartbeat_and_login_rate/README.md",
+  "old": "Schema is lifted from the `temporal_only` corpus case `0059_count_threshold`\n(it declares `Heartbeat`/`Login`/`Alert` with a `server` input); the trace is\nlifted from that case's `trace_1.log`. The default event schema\n(request/response) is used.\n",
+  "new": "The schema declares `Heartbeat`/`Login`/`Alert` with a `server` input. The\ndefault event schema (request/response) is used.\n"
+ },
+ {
+  "op": "replace",
+  "file": "examples/alert_heartbeat_and_login_rate/README.md",
+  "old": "(compare corpus `0179_agg_with_once_counts_history`).",
+  "new": "(compare `alert_login_in_last_hour`)."
+ },
+ {
+  "op": "replace",
+  "file": "examples/alert_pending_transfers/README.md",
+  "old": "World: `drupe`. Schema lifted from the `temporal_only` corpus case\n`ea_0014_agg_vs_agg` (has the `Transfer` and `Alert` actions). Default event\nschema; no trace.\n",
+  "new": "World: `drupe`. The schema has the `Transfer` and `Alert` actions. Default\nevent schema; no trace.\n"
+ },
+ {
+  "op": "replace",
+  "file": "examples/alert_same_principal_login_transfer/README.md",
+  "old": "(both present in the lifted `ea_0012_exists_correlation` schema).",
+  "new": "(both present in this bundle's schema)."
+ },
+ {
+  "op": "replace",
+  "file": "examples/alert_same_principal_login_transfer/README.md",
+  "old": "Schema lifted from the `temporal_only` corpus case\n`ea_0012_exists_correlation` (declares `Login`, `Transfer`, `Alert`, and the\n`OAuthUser` entity), with `Alert`, `Login` and `Transfer` applying to\n`OAuthUser` principals only. Uses the default event schema.\n",
+  "new": "The schema declares `Login`, `Transfer`, `Alert`, and the `OAuthUser` entity,\nwith `Alert`, `Login` and `Transfer` applying to `OAuthUser` principals only.\nUses the default event schema.\n"
+ },
+ {
+  "op": "replace",
+  "file": "examples/alert_total_transfer_over_200/README.md",
+  "old": "satisfied. Every verdict in the trace is therefore a **deny** — matching the\nall-`false` oracle for corpus `0063_sum_threshold`. (To make this fire you would\nwrap the body in a temporal operator so the sum ranges over past transfers, as\nin the `0299_sum_resolved_filter` / `0301_sum_resolved_range_filter` variants.)\n",
+  "new": "satisfied. Every verdict in the trace is therefore a **deny**. (A sum over past\ntransfers wraps its body in a temporal operator, as\n`forbid_read_transfers_over_1000` does.)\n"
+ },
+ {
+  "op": "replace",
+  "file": "examples/alert_total_transfer_over_200/README.md",
+  "old": "- `schema.cedarschema` — Drupe action schema (lifted from corpus\n  `temporal_only/0063_sum_threshold`; has `Transfer` with a `Long amount` input\n  and `Alert`).\n",
+  "new": "- `schema.cedarschema` — Drupe action schema (has `Transfer` with a `Long\n  amount` input and `Alert`).\n"
+ },
+ {
+  "op": "replace",
+  "file": "examples/alert_total_transfer_over_200/README.md",
+  "old": "- `trace.log` — lifted from `0063_sum_threshold/trace_1.log`: transfers of 100,\n  200, and 50 by three users interleaved with three Alerts.\n",
+  "new": "- `trace.log` — transfers of 100, 200, and 50 by three users interleaved with\n  three Alerts.\n"
+ },
+ {
+  "op": "replace",
+  "file": "examples/call_cedar_macro_as_argument/README.md",
+  "old": "The two macros (`semver`, `semverGT`) are lifted verbatim from macros corpus\n`0036_semver_rfc0061` (Cedar RFC-0061, translated to Dogwood) and live in\n`macros.dw`, passed via `--macros`.\n",
+  "new": "The two macros (`semver`, `semverGT`) come from Cedar RFC-0061, translated to\nDogwood, and live in `macros.dw`, passed via `--macros`.\n"
+ },
+ {
+  "op": "replace",
+  "file": "examples/get_amzn_stock_info/README.md",
+  "old": "A plain (non-temporal) `permit` showing that an MCP-manifest input field\nvalidates at `context.input.stock`. The tool's `stock` argument comes from the\nMCP manifest's `inputSchema`, so in the generated Drupe schema it lands at\n`context.input.stock` — meaning an ordinary Cedar `when` clause type-checks\nagainst it. The rule allows `GetStockInfo` only when the requested stock is\n`AMZN`; everything else is denied.\n",
+  "new": "A plain (non-temporal) `permit` showing that a tool's input field validates\nat `context.input.stock`. The tool's `stock` argument lands at\n`context.input.stock` in the Drupe schema — meaning an ordinary Cedar `when`\nclause type-checks against it. The rule allows `GetStockInfo` only when the\nrequested stock is `AMZN`; everything else is denied.\n"
+ },
+ {
+  "op": "replace",
+  "file": "examples/get_amzn_stock_info/README.md",
+  "old": "`schema.cedarschema` is the output of\n`dogwood schema mcp --manifest dogwood-language/mcp_tools.json`, run from the\npackage root with a `dogwood` built with the `mcp-schema` feature.\n\n",
+  "new": ""
+ },
+ {
+  "op": "replace",
+  "file": "examples/get_amzn_stock_info/README.md",
+  "old": "\nReferenced by `guide/11-mcp-schema-generation.md`.\n",
+  "new": ""
+ },
+ {
+  "op": "replace",
+  "file": "examples/login_attempt_custom_kind/README.md",
+  "old": "A custom, author-defined event kind. The per-case event schema\n",
+  "new": "A custom, author-defined event kind. The bundle's event schema\n"
+ },
+ {
+  "op": "replace",
+  "file": "examples/provider_allowed_or_short/README.md",
+  "old": "CLI parses declarations with `ProviderDeclarations::from_json` (which does not\nresolve `scriptFile`),",
+  "new": "CLI parses the declarations as text (and does not\nresolve `scriptFile`),"
+ },
+ {
+  "op": "replace",
+  "file": "examples/provider_int_arithmetic_trusted/README.md",
+  "old": "Schema, provider declaration, and Rhai script are lifted from corpus case\n`0010_unwrapped_mixed_with_cedar`; the schema's `ReadInput` carries an extra\n`trusted: Bool` field so the plain Cedar condition has something to read.\n",
+  "new": "The schema's `ReadInput` carries a `trusted: Bool` field so the plain Cedar\ncondition has something to read.\n"
+ },
+ {
+  "op": "replace",
+  "file": "examples/provider_matches_and_not_blocked/README.md",
+  "old": "  `ReadInput = { document: String }`), lifted from\n  `provider_only/corpus/0004_two_providers_and_not`.\n",
+  "new": "  `ReadInput = { document: String }`).\n"
+ },
+ {
+  "op": "replace",
+  "file": "examples/provider_matches_and_not_blocked/README.md",
+  "old": "  `scriptFile`) because the `dogwood` CLI reads `--providers` as text with\n  `ProviderDeclarations::from_json`, which does not resolve external\n  `scriptFile` references at replay time.\n",
+  "new": "  `scriptFile`) because the `dogwood` CLI reads `--providers` as text, and\n  does not resolve external `scriptFile` references at replay time.\n"
+ },
+ {
+  "op": "replace",
+  "file": "examples/provider_matches_and_not_blocked/README.md",
+  "old": "  source (lifted from the corpus).\n",
+  "new": "  source.\n"
+ },
+ {
+  "op": "replace",
+  "file": "examples/provider_principal_id_allowlist/README.md",
+  "old": "(`alice`). Because the CLI loads `providers.json` via `from_json` (text only,\n`scriptFile` is not resolved),",
+  "new": "(`alice`). Because the CLI loads `providers.json` as text only (`scriptFile` is\nnot resolved),"
+ },
+ {
+  "op": "replace",
+  "file": "examples/provider_regex_analyze_fields/README.md",
+  "old": "\nLifted from corpus case `0005_regex_operations`.\n",
+  "new": ""
+ },
+ {
+  "op": "replace",
+  "file": "examples/provider_regex_matches_uppercase/README.md",
+  "old": "flag parses the declarations\nwith `from_json`, which does **not** resolve",
+  "new": "flag parses the declarations\nas text, and does **not** resolve"
+ },
+ {
+  "op": "replace",
+  "file": "examples/read_heartbeat_since_login_30s/README.md",
+  "old": "The trace (lifted from corpus `0184_since_window_anchor_too_old`) shows the\nanchor aging out of the 30s window:",
+  "new": "The trace shows the anchor aging out of the 30s window:"
+ },
+ {
+  "op": "replace",
+  "file": "examples/read_since_login/README.md",
+  "old": "\nThis is corpus case `0034_since_explicit`, lifted verbatim.\n",
+  "new": ""
+ },
+ {
+  "op": "replace",
+  "file": "examples/read_since_login/README.md",
+  "old": "structurally always-DENY** — matching corpus 0034, whose reference outputs are\nall `false`. An ALLOW is not achievable for a faithful positive-left\n`Login since Login` guarding a `Read`; interleaving extra logins between the\nreads (verified against the CLI) does not change this.\n",
+  "new": "structurally always-DENY**. An ALLOW is not achievable for a faithful\npositive-left `Login since Login` guarding a `Read`; interleaving extra logins\nbetween the reads does not change this.\n"
+ },
+ {
+  "op": "replace",
+  "file": "examples/read_since_login/README.md",
+  "old": "idiom (`!left since …`,\ncorpus `0418`/`0547`), where",
+  "new": "idiom (`!left since …`),\nwhere"
+ },
+ {
+  "op": "replace",
+  "file": "examples/sell_after_approval_valid_ticker/README.md",
+  "old": "  `dogwood` CLI reads `--providers` as text with `ProviderDeclarations::from_json`,\n  which does not resolve external `scriptFile` references at replay time.\n",
+  "new": "  `dogwood` CLI reads `--providers` as text, and does not resolve external\n  `scriptFile` references at replay time.\n"
+ },
+ {
+  "op": "replace",
+  "file": "examples/sell_after_approval_valid_ticker/README.md",
+  "old": "standalone source\n  (lifted from `provider_only/corpus/0001_regex_matches_uppercase`).\n",
+  "new": "standalone source.\n"
+ },
+ {
+  "op": "replace",
+  "file": "examples/submit_after_approval_injection/README.md",
+  "old": "(Approve + Submit under `Drupe`), lifted from macros corpus `0041_field_injection_omitted_field`.\n",
+  "new": "(Approve + Submit under `Drupe`).\n"
+ },
+ {
+  "op": "replace",
+  "file": "examples/submit_after_approval_injection/README.md",
+  "old": "The guide's literal `same_session` example (guide/04-temporal-expressions.md:482)\ninjects a deep context path (`context.__drupe.session.id`) and does **not**\npass `validate` -- the validator rejects that deep path (only the corpus's\nreplay-only test accepts it). This bundle substitutes the semantically\nequivalent, *validating* field-injection macro from corpus\n`0041_field_injection_omitted_field` to teach the same `?s{…}`\nrefinement-in-macro-body point.\n",
+  "new": "The guide's literal `same_session` example (in guide/04-temporal-expressions.md)\ninjects a deep context path (`context.__drupe.session.id`) and does **not**\npass `validate` -- the validator rejects that deep path. This bundle\nsubstitutes a semantically equivalent, *validating* field-injection macro to\nteach the same `?s{…}` refinement-in-macro-body point.\n"
+ },
+ {
+  "op": "replace",
+  "file": "examples/temporal_once_read_recent/README.md",
+  "old": "the schema (`schema.cedarschema`, which carries a `Read` action) is copied from\n`tests/passing/macros/corpus/0020_condition_macro_bare`.\n",
+  "new": "the schema (`schema.cedarschema`) carries a `Read` action.\n"
+ },
+ {
+  "op": "replace",
+  "file": "examples/temporal_sum_formerly_transfer/README.md",
+  "old": "Note: the guide uses `total > 100`; the corpus source policy\n(`tests/passing/macros/corpus/0010_sum_formerly_exact`) uses `total == 100`.\nThis example follows the guide (`> 100`), so `expected.out` was captured from a\nfresh `dogwood replay` of this policy.\n\n",
+  "new": ""
+ },
+ {
+  "op": "replace",
+  "file": "examples/transfer_prev_nested_conj/README.md",
+  "old": "Schema lifted from the `temporal_only` corpus case\n`0268_previous_containing_nested` (`Login` with `user`+`server` input, plus\n`Transfer`). Default event schema.\n",
+  "new": "The schema has `Login` with `user`+`server` input, plus `Transfer`. Default\nevent schema.\n"
+ },
+ {
+  "op": "replace",
+  "file": "examples/write_after_read_formerly/README.md",
+  "old": "The schema here is lifted from temporal\ncorpus case `0004_write_after_read`, which carries the `Read`/`Write` actions.\n",
+  "new": "The schema here carries the `Read`/`Write`\nactions.\n"
+ },
+ {
+  "op": "replace",
+  "file": "examples/call_cedar_macro_as_argument/macros.dw",
+  "old": "// RFC-0061 semantic-versioning macros (lifted verbatim from macros corpus\n// 0036_semver_rfc0061/policy_1.dw): a record-building macro `semver` and a\n",
+  "new": "// RFC-0061 semantic-versioning macros, as a team might keep them in a\n// shared macro library: a record-building macro `semver` and a\n",
+  "count": 1
+ },
+ {
+  "op": "replace",
+  "file": "examples/login_attempt_custom_kind/event.dwschema",
+  "old": "// A custom event schema exercising the per-case override: the event kinds\n// are `attempt` (the decision kind) and `outcome` (history), NOT the\n// conventional request/response, and the injected principal field is\n// named `actor` rather than `callerPrincipal`. This probes that (a) the\n// harness honors a per-case event.dwschema, (b) author-defined kinds work\n// end to end, and (c) a renamed injected reserved field is usable.\n",
+  "new": "// A custom event schema in place of the default: the event kinds\n// are `attempt` (the decision kind) and `outcome` (history), NOT the\n// conventional request/response, and the injected principal field is\n// named `actor` rather than `callerPrincipal`. It shows that (a) a\n// bundle's own event.dwschema replaces the default, (b) author-defined\n// kinds work end to end, and (c) a renamed injected field is usable.\n",
+  "count": 1
+ },
+ {
+  "op": "replace",
+  "file": "examples/get_amzn_stock_info/policy.dw",
+  "old": "// Permit reading stock info only for AMZN. The tool's `stock` argument comes\n// from the MCP manifest's inputSchema, so in the generated Drupe schema it\n// lands at `context.input.stock` — meaning a plain Cedar `when` clause validates\n// against it. This is the policy from guide chapter 11 (\"What you get\"),\n// promoted to a complete rule with an @id.\n",
+  "new": "// Permit reading stock info only for AMZN. The tool's `stock` argument is\n// one of its inputs, so in the Drupe schema it\n// lands at `context.input.stock` — meaning a plain Cedar `when` clause validates\n// against it. A complete rule, with an @id.\n//\n",
+  "count": 1
+ },
+ {
+  "op": "replace",
+  "file": "examples/provider_principal_id_allowlist/allowed.rhai",
+  "old": "// everyone else is not. Mirrors allowed.rhai (inlined because the CLI loads\n// providers.json via from_json, which does not resolve scriptFile).\n",
+  "new": "// everyone else is not. Mirrors allowed.rhai (inlined because the command\n// line does not resolve scriptFile).\n",
+  "count": 1
+ },
+ {
+  "op": "replace",
+  "file": "examples/provider_principal_id_allowlist/providers.json",
+  "old": "Mirrors allowed.rhai (inlined because the CLI loads\\n// providers.json via from_json, which does not resolve scriptFile)",
+  "new": "Mirrors allowed.rhai (inlined because the command\\n// line does not resolve scriptFile)",
+  "count": 1
+ },
+ {
+  "op": "write_file",
+  "file": "NOTICE",
+  "text": "The guide and the example bundles in this directory are Dogwood 1.2.0's documentation,\nCopyright Amazon.com, Inc. or its affiliates, licensed under the Apache License, Version 2.0\n(LICENSE in this directory).\n\nWe changed them for our team: the chapters on Dogwood's Rust library and its MCP tooling are\nleft out, the trace file format moved into the command-line chapter, and passages about the\nlibrary interface and the project's own tooling were removed or reworded.\n"
+ }
+]

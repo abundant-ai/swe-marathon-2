@@ -1,25 +1,27 @@
 """Copy the delivered project and build it offline as an unprivileged user.
 
-The copy follows the brief: `target/` and links that point outside the directory are left out,
-and a project over the file or size limit is not copied (it then builds nothing). The build runs
-as `builder`, with no network and with no read access to the private cases, in its own process
-group, which is killed when the build ends or times out.
+The copy follows the brief: `target/`, links that point outside the directory, and pipes, sockets
+and devices are left out, and a project over the file or size limit is not copied (it then builds
+nothing). The build runs as `builder`, with no network and with no read access to the private
+cases, in its own process group; when it ends or times out, every process of `builder` is killed,
+one that left the group included.
 """
 
 from __future__ import annotations
 
 import os
 import shutil
-import signal
 import subprocess
 import tempfile
 import time
 from pathlib import Path
 
 from .contracts import BuildResult, Limits
+from .procs import capture, end_group, end_user
 
 BUILDER = "builder"
 CARGO_CONFIG = Path("/opt/verifier/cargo-config.toml")
+BUILD_LOG_CAP = 16 << 20
 
 
 def copy_project(src: Path, dst: Path, limits: Limits) -> str | None:
@@ -96,20 +98,17 @@ def build(submission: Path, work: Path, limits: Limits) -> BuildResult:
         start_new_session=True,
     )
     try:
-        out, _ = proc.communicate(timeout=limits.build_timeout_sec)
-        timed_out = False
-    except subprocess.TimeoutExpired:
-        timed_out = True
-        out = b""
+        out, timed_out, overflow = capture(
+            proc, limits.build_timeout_sec, BUILD_LOG_CAP
+        )
     finally:
-        try:
-            os.killpg(proc.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-        proc.wait()
+        end_group(proc)
+        end_user(BUILDER)
     seconds = time.monotonic() - start
     if timed_out:
         return BuildResult(False, None, "build did not finish in time", seconds)
+    if overflow:
+        return BuildResult(False, None, "build printed more than 16 MB", seconds)
     binary = work / "target" / "release" / "dogwood"
     if proc.returncode != 0 or not binary.is_file():
         tail = out.decode("utf-8", "replace").strip().splitlines()[-5:]
