@@ -1,0 +1,16 @@
+--- a/src/hb-ot-shape.cc
++++ b/src/hb-ot-shape.cc
+@@ -763,7 +763,12 @@
+       unsigned int shift;
+       bool is_global;
+       hb_mask_t mask = map->get_mask (feature->tag, &shift, &is_global);
+-      /* A later global request supersedes earlier ranges for this tag. */
++      /* A global request supersedes every ranged request for this tag. */
++      for (unsigned int j = 0; j < c->num_user_features && !is_global; j++)
++	if (c->user_features[j].tag == feature->tag &&
++	    c->user_features[j].start == HB_FEATURE_GLOBAL_START &&
++	    c->user_features[j].end == HB_FEATURE_GLOBAL_END)
++	  is_global = true;
+       if (!is_global)
+ 	buffer->set_masks (feature->value << shift, mask, feature->start, feature->end);
+     }

@@ -1,0 +1,27 @@
+--- a/src/hb-ot-layout.cc
++++ b/src/hb-ot-layout.cc
+@@ -1976,6 +1976,8 @@
+   /* The lookup digest is immutable. Keep its masks in registers while
+    * scanning glyphs, including across table-access compiler barriers. */
+   const hb_set_digest_t digest = accel.digest;
++  /* Lookups do not apply at glyph IDs beyond the font's glyph count. */
++  const unsigned num_glyphs = c->face->get_num_glyphs ();
+   bool ret = false;
+   hb_buffer_t *buffer = c->buffer;
+   while (buffer->successful)
+@@ -1984,6 +1986,7 @@
+     unsigned j = buffer->idx;
+     while (j < buffer->len &&
+ 	   !(digest.may_have (info[j].codepoint) &&
++	     info[j].codepoint < num_glyphs &&
+ 	     (info[j].mask & c->lookup_mask) &&
+ 	     c->check_glyph_property (&info[j], c->lookup_props)))
+       j++;
+@@ -2014,6 +2017,7 @@
+   {
+     auto &cur = buffer->cur();
+     if (accel.digest.may_have (cur.codepoint) &&
++	cur.codepoint < c->face->get_num_glyphs () &&
+ 	(cur.mask & c->lookup_mask) &&
+ 	c->check_glyph_property (&cur, c->lookup_props))
+       ret |= accel.apply (c, false);

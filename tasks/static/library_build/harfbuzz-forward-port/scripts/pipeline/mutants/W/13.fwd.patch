@@ -1,0 +1,15 @@
+--- a/src/hb-ot-shape-normalize.cc
++++ b/src/hb-ot-shape-normalize.cc
+@@ -307,9 +307,10 @@
+   c.override_decompose_and_compose (plan->shaper->decompose, plan->shaper->compose);
+ 
+   bool always_short_circuit = mode == HB_OT_SHAPE_NORMALIZATION_MODE_NONE;
++  /* Keep every precomposed character the font supports in runs without
++   * marks, in every composing mode. */
+   bool might_short_circuit = always_short_circuit ||
+-			     (mode != HB_OT_SHAPE_NORMALIZATION_MODE_DECOMPOSED &&
+-			      mode != HB_OT_SHAPE_NORMALIZATION_MODE_COMPOSED_DIACRITICS_NO_SHORT_CIRCUIT);
++			     mode != HB_OT_SHAPE_NORMALIZATION_MODE_DECOMPOSED;
+   unsigned int count;
+ 
+   /* We do a fairly straightforward yet custom normalization process in three

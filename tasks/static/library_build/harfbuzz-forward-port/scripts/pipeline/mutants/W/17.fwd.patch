@@ -1,0 +1,24 @@
+--- a/src/OT/Layout/GPOS/MarkBasePosFormat1.hh
++++ b/src/OT/Layout/GPOS/MarkBasePosFormat1.hh
+@@ -113,6 +113,9 @@
+     for (j = buffer->idx; j > c->last_base_until; j--)
+     {
+       auto match = skippy_iter.match (buffer->info[j - 1]);
++      /* A glyph the lookup is not enabled for ends the search, mark or not. */
++      if (!(buffer->info[j - 1].mask & c->lookup_mask))
++	match = skippy_iter.NOT_MATCH;
+       if (match == skippy_iter.MATCH)
+       {
+         // https://github.com/harfbuzz/harfbuzz/issues/4124
+--- a/src/OT/Layout/GPOS/MarkLigPosFormat1.hh
++++ b/src/OT/Layout/GPOS/MarkLigPosFormat1.hh
+@@ -102,6 +102,9 @@
+     for (j = buffer->idx; j > c->last_base_until; j--)
+     {
+       auto match = skippy_iter.match (buffer->info[j - 1]);
++      /* A glyph the lookup is not enabled for ends the search, mark or not. */
++      if (!(buffer->info[j - 1].mask & c->lookup_mask))
++	match = skippy_iter.NOT_MATCH;
+       if (match == skippy_iter.MATCH)
+       {
+         // https://github.com/harfbuzz/harfbuzz/issues/4124

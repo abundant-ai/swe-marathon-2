@@ -1,0 +1,14 @@
+--- a/src/hb-aat-layout-kerx-table.hh
++++ b/src/hb-aat-layout-kerx-table.hh
+@@ -1212,9 +1212,8 @@
+     if (c->buffer_is_reversed)
+       c->reverse_buffer ();
+ 
+-    /* Cross-stream offsets propagate beyond the matched pairs. */
+-    if (seenCrossStream &&
+-	(c->buffer->scratch_flags & HB_BUFFER_SCRATCH_FLAG_HAS_GPOS_ATTACHMENT))
++    /* Text kerned by a cross-stream subtable is unsafe to break anywhere. */
++    if (seenCrossStream)
+       c->buffer->unsafe_to_break ();
+ 
+     return ret;
