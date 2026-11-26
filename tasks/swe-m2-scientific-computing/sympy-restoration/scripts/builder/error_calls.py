@@ -132,7 +132,7 @@ def main():
                         outcomes.append(["EXC", type(e).__name__, chain[:12]])
                 first = outcomes[0]
                 ok = (first is not None and all(o == first for o in outcomes)
-                      and same(["EXC", exc_name, [exc_name]], first) and first[1] != "NotImplementedError")
+                      and same(first, ["EXC", exc_name, [exc_name]]) and first[1] != "NotImplementedError")
                 rows.append({"example_raised": raised, "shown": exc_name, "replayed": first[1] if first else None, "kept": ok})
                 if ok and all(blob != b for _v, _u, b, _c in added if _u == uid):
                     last += 1

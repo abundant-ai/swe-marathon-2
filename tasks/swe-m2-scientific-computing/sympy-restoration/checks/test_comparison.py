@@ -471,3 +471,36 @@ print(json.dumps(out))
     assert got == {"grown_less": True, "grown_more": True, "left_wrong": False, "result_wrong": False, "unchanged_sieve": True,
                    "strict_elsewhere": False, "p3_one_unit": False, "p3_same": True, "p4_one_unit": True,
                    "p53_five_units": False}, got
+
+
+def test_a_raised_error_matches_the_expected_class_or_a_subclass_never_a_base(task_root):
+    """Fix round 11: a call whose expected result is an error is answered by that class or a subclass of
+    it, never by a base of it (the comparison before took either way round). The verifier gives the
+    candidate's form first; `chain` is the runner's list of the class and its bases."""
+    lib = task_root / "steps" / "01-restore-bodies" / "tests" / "verifier" / "lib"
+    code = f"""
+import json, sys
+sys.path.insert(0, {str(lib)!r})
+from canon import same
+def exc(name, *bases):
+    return ["EXC", name, [name, *bases]]
+not_a_field = exc("DMNotAField", "DMDomainError", "DMError")
+out = {{
+    "the_class": same(not_a_field, not_a_field),
+    "a_base": same(exc("DMDomainError", "DMError"), not_a_field),
+    "the_root_base": same(exc("DMError"), not_a_field),
+    "a_subclass": same(exc("UnicodeError", "ValueError"), exc("ValueError")),
+    "a_sibling": same(exc("TypeError"), exc("ValueError")),
+    "the_placeholder": same(exc("NotImplementedError", "RuntimeError"), exc("ValueError")),
+    "a_value": same(["I", "1"], exc("ValueError")),
+    "unresolved": same(["EXC", "Unresolved"], exc("ValueError")),
+}}
+print(json.dumps(out))
+"""
+    done = subprocess.run([sys.executable, "-I", "-B", "-c", code], capture_output=True, text=True, timeout=120)
+    assert done.returncode == 0, done.stderr[-2000:]
+    got = json.loads(done.stdout)
+    assert got == {"the_class": True, "a_base": False, "the_root_base": False, "a_subclass": True, "a_sibling": False,
+                   "the_placeholder": False, "a_value": False, "unresolved": False}, got
+    engine = (lib.parent / "engine.py").read_text()
+    assert "same(c, g, profile=" in engine, "the verifier gives the candidate's form first"

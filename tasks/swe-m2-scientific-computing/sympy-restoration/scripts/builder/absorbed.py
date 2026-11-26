@@ -123,7 +123,7 @@ def main():
             signal.setitimer(signal.ITIMER_REAL, 0)
         u = units[uid]
         try:
-            return bool(same(gold[vid], c, profile=profile_of(f"{u['file']}::{u['qualname']}")))
+            return bool(same(c, gold[vid], profile=profile_of(f"{u['file']}::{u['qualname']}")))
         except BaseException:  # noqa: BLE001
             return False
 

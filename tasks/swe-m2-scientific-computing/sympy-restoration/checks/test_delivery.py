@@ -1458,6 +1458,91 @@ def test_with_no_first_process_seen_dev_is_never_ended_by_time_alone(tmp_path):
     assert record.get("ending", "").startswith("waits") and "ended_at" not in record, record
 
 
+def test_a_short_command_before_the_agents_clock_is_never_the_first_process(tmp_path, monkeypatch):
+    """Fix round 11 (the seventh re-check's stop path): after the setup step and before its own clock starts,
+    Harbor runs a short `pwd` as `dev`. A look that catches it must not take it for the first process,
+    or the time counted from it runs out before the agent's limit and a blip of egress during the turn
+    ends `dev` early. A process counts only once two looks at least a second apart both see it alive.
+    The shipped watch runs on a stand-in /proc with the limit scaled to 3 s: the `pwd` (under a root `su`)
+    for one look, Harbor's clock at 1.0 s, the agent's session from 1.3 s on, a blip at 1.7 s. The net
+    check before fix round 11 took the `pwd` and ended `dev` 0.8 s before the agent's limit."""
+    netcheck = load_netcheck(tmp_path / "state")
+    monkeypatch.setattr(netcheck, "cap_processes", lambda *args, **kwargs: None)   # no prlimit on stand-in pids
+    dev, limit = 10001, 3.0
+    ticks = os.sysconf("SC_CLK_TCK")
+    proc = tmp_path / "proc"
+    proc.mkdir()
+    s = time.time()                       # the start of the work
+    boot = s - 5000.0
+    done = threading.Event()
+
+    def uptime():                         # the stand-in's time since boot keeps up with the clock
+        while not done.is_set():
+            (proc / "uptime.tmp").write_text(f"{time.time() - boot:.2f} 0.00\n")
+            os.replace(proc / "uptime.tmp", proc / "uptime")
+            time.sleep(0.01)
+
+    def process(pid, uid, parent, name, start):
+        (proc / str(pid)).mkdir()
+        (proc / str(pid) / "status").write_text(f"Name:\t{name}\nState:\tS (sleeping)\nPPid:\t{parent}\nUid:\t{uid}\t{uid}\t{uid}\t{uid}\n")
+        fields = ["S", str(parent)] + ["0"] * 17 + [str(int(round((start - boot) * ticks)))] + ["0"] * 10
+        (proc / str(pid) / "stat").write_text(f"{pid} ({name}) " + " ".join(fields) + "\n")
+
+    def at(moment):
+        time.sleep(max(0.0, s + moment - time.time()))
+
+    (proc / "uptime").write_text(f"{time.time() - boot:.2f} 0.00\n")
+    process(1, 0, 0, "init", s - 100)
+    threading.Thread(target=uptime, daemon=True).start()
+    record, stop = {}, threading.Event()
+    watcher = threading.Thread(target=netcheck.watch_sessions, args=(dev, record, stop, str(proc), netcheck.SESSION_SECONDS),
+                               kwargs={"since": s}, daemon=True)
+    watcher.start()
+    at(0.2)
+    process(20, 0, 1, "su", s + 0.2)
+    process(21, dev, 20, "pwd", s + 0.2)                                      # Harbor's pre-clock command
+    scans = record.get("scans", 0)
+    while record.get("scans", 0) < scans + 2 and time.time() < s + 0.8:      # one whole look sees it
+        time.sleep(0.01)
+    shutil.rmtree(proc / "21")
+    shutil.rmtree(proc / "20")
+    clock = s + 1.0                                                           # Harbor's clock starts
+    at(1.3)
+    process(30, 0, 1, "su", s + 1.3)
+    process(31, dev, 30, "bash", s + 1.3)                                     # the agent's session, for the turn
+    ended = {}
+
+    def ending():
+        ended["at"] = time.time()
+        return 0, 0
+
+    def stop_of():                                                            # as the net check's main() counts it
+        first = record.get("first_process")
+        if not (isinstance(first, dict) and isinstance(first.get("start"), (int, float))):
+            return None
+        return max(first["start"], s) + limit
+
+    assert "return max(first[\"start\"], since) + WORK_LIMIT_SECONDS" in (ENV_DIR / "fsmaint-netcheck").read_text()
+    moments = [1.4, 1.5, 1.6, 1.7] + [1.8 + 0.1 * k for k in range(39)]
+    states = ["closed", "closed", "closed", "open"] + ["closed"] * 39
+
+    def stream():
+        for moment, state in zip(moments, states):
+            at(moment)
+            yield s + moment, state, ("pypi.org" if state == "open" else None)
+
+    openings = netcheck.watch(stream(), {}, ending=ending, session_alive=lambda: netcheck.session_seen(record),
+                              limit=lambda: s + limit, stop_limit=stop_of)
+    stop.set()
+    done.set()
+    watcher.join(2)
+    first = record.get("first_process")
+    assert first is not None and first["pid"] == 31 and abs(first["start"] - (s + 1.3)) < 0.1, first
+    assert record["first_process_passed_over"] >= 1, record
+    assert [(o["session_alive"], o["after_limit"], o.get("ending", "")[:5]) for o in openings] == [(True, False, "waits")], openings
+    assert "at" in ended and ended["at"] >= clock + limit, (ended, clock + limit)
+
+
 def test_the_limit_ends_the_work_when_the_collect_step_began_after_it_with_no_session_seen(tmp_path, verifier_call):
     """Nothing else tells the end (the stretch reached into this step, the hosts answered it only after a
     longer wait, no session was watched), and this step began after the time the work is given ran out:

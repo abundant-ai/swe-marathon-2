@@ -1,4 +1,4 @@
-"""Run the docstring examples of selected functions of ONE module.
+"""Run the docstring examples of the named functions of ONE module.
 
 usage: unitcheck.py <tree_root> <module> <names.json> [timeout_sec]
 

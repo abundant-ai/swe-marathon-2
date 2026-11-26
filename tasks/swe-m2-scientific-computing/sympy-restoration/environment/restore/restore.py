@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""restore - workspace helper for restoring SymPy's function bodies.
+"""restore - our recovery tooling's helper for writing back the blanked function bodies of SymPy.
 
   restore status                 progress summary
   restore next [N] [--file F]    next N units still to restore; F is a file or a directory
@@ -15,8 +15,10 @@
                                  in it uses a listed construct or the file does not parse)
   restore reset FILE             put FILE back to its blanked state
 
-The build takes only the bodies of the restorable functions from your tree;
-`check` and `pytest` run on your tree in that form.
+Each blanked body holds the numbered placeholder our recovery tooling put there,
+such as `raise NotImplementedError("RESTORE U0421")`; the commands name a unit by
+its id (U0421). The build takes only the bodies of the restorable functions from
+your tree; `check` and `pytest` run on your tree in that form.
 """
 from __future__ import annotations
 

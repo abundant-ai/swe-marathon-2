@@ -1,9 +1,9 @@
 """How a work tree is turned into the form the build takes.
 
-That tree is built from the blanked skeleton by replacing, for every
-restorable unit, the placeholder statement with the body found in the work tree
-for the function of the same qualified name in the same file.  Nothing else
-from the work tree is used.
+That tree is built from the blanked copy, as the recovery tooling marked it, by
+replacing, for every restorable unit, its placeholder statement with the body
+found in the work tree for the function of the same qualified name in the same
+file.  Nothing else from the work tree is used.
 """
 from __future__ import annotations
 
@@ -172,7 +172,6 @@ def rules_text() -> str:
         "  " + ", ".join(sorted(DENY_ATTRS)),
         "Modules named as a literal to import_module or __import__, as for imports.",
         "Any of the names above as a literal key, whatever holds it (`x['os']`, `d.get('sys')`, `x.__dict__.pop('open')`).",
-        "These are lists of names: a body that reaches the same things another way is not thereby allowed.",
     ])
 
 

@@ -1398,6 +1398,53 @@ It does not yet meet the v2 workload target; see [Workload](#workload) and
   units, the same seed) over unit ids the rebuild renumbered, so other units
   never end.
 
+### 2026-11-26, seventh re-check and fix round 11: a first process seen twice, the placeholders in the story
+
+- The seventh re-check (`swe-marathon-v2/qa/sympy/27-recheck-*.md`) passed the
+  verifier and reward lenses and raised concerns in the auditor and integrity
+  lenses, with no must-fix. Its items: Harbor's short `pwd`, run as `dev` after
+  the setup step and before Harbor's clock, could be taken for the first
+  process if a look caught it, so that a blip of egress during the turn would
+  end `dev` before Harbor's limit (0.79 s early in the integrity lens's probe);
+  `/app/ATTRIBUTION.txt` said that the bodies of "selected" functions "were
+  replaced by placeholder statements", a curated change at odds with the
+  instruction's faulty clean-up step; nothing in the story wrote the numbered
+  placeholders; the error comparison also took a base of the expected class; the
+  last line of `restore rules` stated a rule ("another way") that nothing
+  checks; two claims of this README about the limit no longer held; and
+  `RESULTS_12H.md` was a round behind.
+- The first process (made a must-fix by the brief, since the platform's verdict
+  rejects any stop before `timeout_sec`): a process counts only once two looks
+  at least 1 s apart both see it alive, with the same start, so a command that
+  lives milliseconds never does; the record counts the ones seen once and gone
+  (`first_process_passed_over`). `checks/test_delivery.py` runs the shipped
+  watch on a stand-in `/proc` with the limit scaled to 3 s: `pwd` under a root
+  `su` for one look, Harbor's clock at 1.0 s, the agent's session from 1.3 s, a
+  blip at 1.7 s. The first process is the session, the blip waits, and `dev` is
+  ended only after the agent's limit; on the net check before, the first
+  process is the `pwd` (the check fails there).
+- The story: `ATTRIBUTION.txt` now says that a faulty clean-up step in the
+  requester's packaging blanked the bodies of functions and methods in this copy
+  and dropped part of its test suite, and that their recovery tooling then
+  marked each blanked body with a numbered placeholder statement; the
+  instruction ("Once we noticed, our recovery tooling marked each blanked body
+  with one numbered placeholder statement") and `restore`'s help credit the
+  placeholders and the tool to the same tooling. `restore rules` ends with the
+  literal-key line; the sentence about reaching the same things "another way"
+  is gone, since nothing checked it. `checks/test_packaging.py` pins each of
+  these.
+- The error comparison: a call whose expected result is an error is answered
+  by that class or a subclass of it, never by a base (`canon.same`, in which
+  the verifier gives the candidate's form first; the build's two comparisons of
+  errors now do too). One of the 8 error calls expects a class with named bases;
+  its unit's examples ask for the exact class already. A check compares the
+  class, a subclass, a base, the root base, a sibling, the placeholder's error
+  and a value (it fails on the comparison before, which took the base).
+- This README: the time limit counts from the start of the work, and the first
+  process is one two looks a second apart saw alive, which Harbor's `pwd`
+  cannot be (both under [Verification](#verification)); the rules passage and
+  the error-call passage say what the code does.
+
 ## Current implementation
 
 | Part | State |
@@ -1626,14 +1673,22 @@ its handshake.
    `task.toml`; a check holds the two equal), counts from the start of the work,
    which the setup step takes before Harbor starts the agent's own clock, so the
    work ends no later than Harbor's limit and a fetch after it saves nothing
-   that counts. The same look finds the first process of `dev` that began after
-   the work did and whose parent is not one of `dev`'s (its start read from
-   `/proc` in clock ticks since boot); it serves only to say when `dev` may be
-   ended while a session still runs: not before that time counted from the
-   first process, which comes after Harbor's clock started, so nothing ends the
-   agent within its own limit. A save in the last seconds before the end is
-   kept by the copies below. It gives every process of
-   `dev` a limit of 8,192 processes of that user, so that a process that forks
+   that counts. The same looks find the first process of `dev`: one that began
+   after the work did, whose parent is not one of `dev`'s (its start read from
+   `/proc` in clock ticks since boot), and that two looks at least 1 s apart
+   both saw alive, with the same start. After the setup step and before its own
+   clock starts, Harbor runs a short `pwd` as `dev` (Harbor 0.20's step
+   preparation); a look can catch it, but it is gone within milliseconds, so it
+   is never the first process (since fix round 11; the record counts such
+   processes in `first_process_passed_over`). The agent's exec session, which
+   Harbor starts after its clock, counts a second after it starts (claude-code,
+   mini-swe-agent and the oracle run one for the whole turn; a harness that runs
+   one exec per command gives its first command that lives a second or more,
+   later still). The first process serves only to say when `dev` may be ended
+   while a session still runs: not before that time counted from its start, so
+   nothing ends the agent within its own limit; with none seen, never by time. A
+   save in the last seconds before the end is kept by the copies below. It gives
+   every process of `dev` a limit of 8,192 processes of that user, so that a process that forks
    without end leaves room for the steps after the work. And from 300 s before
    that time runs out until it does, every second, it copies each unit file that
    changed since its last copy into a folder only root can read (room for this
@@ -1675,8 +1730,8 @@ its handshake.
    the start of the work (one session for the whole of the work, as claude-code,
    mini-swe-agent and the oracle run) and no session was alive when the collect
    step began; a harness that runs one exec per command gives no such end. The
-   third is the time limit: the first process's start (else the start of the
-   work) plus 34,560 s. No end is later than it, and when the collect step began
+   third is the time limit: the start of the work plus 34,560 s. No end is later
+   than it, and when the collect step began
    after it with no other end known, it is the end, whatever the sessions show
    (nothing fetched can come before it); no kill enforces it (a killed
    claude-code exits 137, and Harbor classifies that exit by its transcript,
@@ -1728,11 +1783,13 @@ its handshake.
    collect step's record go to `metrics.json`.
 1. Graded tree. Start from the reference skeleton. For each unit, copy in the body
    found in the submitted file for the function of the same qualified name.
-   Nothing else from the submission is used. A body containing constructs for
-   reaching the process, the file system, the interpreter or a test framework is
-   rejected (`common/restorelib.py`); the rules are lists of names, which the
-   agent can read in full (`restore rules`), and a body that reaches the same
-   things by another way is not thereby allowed (see the hackability table).
+   Nothing else from the submission is used. A body containing one of the listed
+   constructs for reaching the process, the file system, the interpreter or a
+   test framework is refused (`common/restorelib.py`); the rules are lists of
+   names, which the agent can read in full (`restore rules`), and since fix
+   round 11 they state nothing beyond them: a body that names a listed name only
+   through a string built at run time passes, and runs as every body does, in
+   the sandbox (see the hackability table, finding 1).
    The whole measurement has one deadline, 6,000 s from its start
    (`measure_budget_sec`), inside the verifier's 6,600 s. The docstring and call
    phases also have their own caps (45 and 40 minutes), now only a guard: each
@@ -1897,7 +1954,8 @@ Limits:
   and not rewarded). The 7 units outside the set whose docstring examples show
   an error have, since fix round 10, a counted call that expects it: the
   example's own call (8 in all, `scripts/builder/error_calls.py`), its result
-  that error, compared by class (or a subclass of it). It is counted although
+  that error, compared by class: the expected class or a subclass of it, never
+  a base of it (one way since fix round 11). It is counted although
   the example makes it, since what it grades is the one thing the example
   states; a body that raises that error for every argument it does not know
   would answer it too (7 units, 8 calls).

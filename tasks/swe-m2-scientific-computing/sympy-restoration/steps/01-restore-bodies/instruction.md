@@ -9,7 +9,8 @@ them written back, so that our code, and the parts of SymPy that call these func
 
 ## Context
 
-Each blanked body was replaced by one placeholder statement:
+Once we noticed, our recovery tooling marked each blanked body with one numbered placeholder
+statement:
 
 ```python
 raise NotImplementedError("RESTORE U0421")
@@ -68,9 +69,9 @@ Our build takes only the bodies of the units from your tree:
 
 ## Tools
 
-The `restore` command (on `PATH`) reports progress and runs the examples and the tests on your
-tree as our build takes it: the blanked copy with your unit bodies in it, and nothing else from
-your tree.
+The `restore` command (on `PATH`), part of the same recovery tooling, reports progress and runs
+the examples and the tests on your tree as our build takes it: the blanked copy with your unit
+bodies in it, and nothing else from your tree.
 
 | Command | What it does |
 | --- | --- |
