@@ -27,8 +27,8 @@ COPY sealed/ /opt/stockwell/app/
 COPY client/ /app/client/
 COPY samples/ /app/samples/
 COPY stockwell.env /usr/local/lib/stockwell/stockwell.env
-COPY start-sealed-server /usr/local/sbin/start-sealed-server
-COPY sealed-supervisor /usr/local/sbin/sealed-supervisor
+COPY start-stockwell /usr/local/sbin/start-stockwell
+COPY stockwell-supervisor /usr/local/sbin/stockwell-supervisor
 COPY fsmaint-sweep /usr/local/sbin/fsmaint-sweep
 COPY entrypoint.sh /usr/local/sbin/entrypoint.sh
 RUN mkdir -p /app/server /opt/stockwell/data \
@@ -37,7 +37,7 @@ RUN mkdir -p /app/server /opt/stockwell/data \
     && chown -R dev:dev /app && chown root:root /app /app/server && chmod 1777 /app && chmod 0777 /app/server \
     && git config --system --add safe.directory '*' \
     && chmod 0600 /usr/local/lib/stockwell/stockwell.env \
-    && chmod 0700 /usr/local/sbin/start-sealed-server /usr/local/sbin/sealed-supervisor /usr/local/sbin/entrypoint.sh \
+    && chmod 0700 /usr/local/sbin/start-stockwell /usr/local/sbin/stockwell-supervisor /usr/local/sbin/entrypoint.sh \
         /usr/local/sbin/fsmaint-sweep
 WORKDIR /app
 ENTRYPOINT ["/usr/local/sbin/entrypoint.sh"]

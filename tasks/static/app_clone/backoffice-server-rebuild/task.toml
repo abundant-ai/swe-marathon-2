@@ -16,11 +16,11 @@ network_mode = "no-network"
 user = "dev"
 
 [[agent.setup_begin]]
-command = "/usr/local/sbin/start-sealed-server"
+command = "/usr/local/sbin/start-stockwell"
 timeout_sec = 120
 
 [[agent.setup_complete]]
-command = "/usr/local/sbin/start-sealed-server"
+command = "/usr/local/sbin/start-stockwell"
 timeout_sec = 120
 
 [environment]

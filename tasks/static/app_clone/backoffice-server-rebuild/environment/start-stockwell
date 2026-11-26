@@ -1,7 +1,7 @@
 #!/bin/sh
 if setpriv --reuid dev --regid dev --clear-groups --no-new-privs sh -c \
     'test -r /opt/stockwell || test -x /opt/stockwell || test -r /opt/stockwell/app || ls /opt/stockwell/app' >/dev/null 2>&1; then
-    echo "the sealed server's files are readable by dev; stopping" >&2
+    echo "Stockwell's files are readable by dev; stopping" >&2
     exit 1
 fi
 mkdir -p /var/lib/fsmaint/inodes && chmod 0700 /var/lib/fsmaint
@@ -12,10 +12,10 @@ for spare in $(seq 1 64); do [ -e "/var/lib/fsmaint/inodes/$spare" ] || : > "/va
 stat -f -c '%a %S %d' /tmp > /var/lib/fsmaint/free-at-start 2>/dev/null
 timeout 10 su dev -s /bin/bash -c 'ulimit -Hu' > /var/lib/fsmaint/user-limit 2>/dev/null
 if curl -fsS -m 3 http://127.0.0.1:8080/api/health >/dev/null 2>&1; then date > /var/lib/fsmaint/work-started 2>/dev/null || exit 1; exit 0; fi
-setsid /usr/local/sbin/sealed-supervisor >/dev/null 2>&1 </dev/null &
+setsid /usr/local/sbin/stockwell-supervisor >/dev/null 2>&1 </dev/null &
 for _ in $(seq 1 90); do
     if curl -fsS -m 3 http://127.0.0.1:8080/api/health >/dev/null 2>&1; then date > /var/lib/fsmaint/work-started 2>/dev/null || exit 1; exit 0; fi
     sleep 1
 done
-echo "the sealed server did not start" >&2
+echo "Stockwell did not start" >&2
 exit 1
