@@ -817,8 +817,9 @@ the speed limit, ignoring signals.
   attack or are about to attack the player). Nothing outside the registry has a `Skeleton3D`, a
   `CharacterBody3D` or a `VehicleBody3D`. The library bodies and clips use their own bone names;
   import them through a `BoneMap` with Godot's `SkeletonProfileHumanoid` so the skeleton gets the
-  profile's names (it works headless, from the `.import` files alone). TODO(panel): whether the
-  project as handed over already includes that bone map and the bodies' import settings.
+  profile's names (it works headless, from the `.import` files alone). The project as handed over
+  already does this: `assets/vendor/humanoid_bone_map.tres`, referenced from the `.import` files
+  of the bodies, the hair and the animation library. Keep them or replace them.
 - **AC-6** Vehicles have a physics body at their root on the vehicles layer, metadata `model`,
   `damage`, `burning` and `colour`, and one `Marker3D` per seat in group `seat` with metadata `index`
   (0 is the driver) and `door` (a door point in vehicle space). The driver's seat also has metadata

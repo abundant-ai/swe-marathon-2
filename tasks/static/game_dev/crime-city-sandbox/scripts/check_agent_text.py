@@ -76,6 +76,9 @@ WORDS = [
 PATTERN = re.compile(
     r"\b(" + "|".join(re.escape(w) for w in WORDS) + r")\b", re.IGNORECASE
 )
+# Phrases that contain a listed word but name something else. The CC0 licence texts that
+# ship with the art library say "Public Domain Dedication": a licence, not our process.
+ALLOWED = re.compile(r"\bpublic domain\b", re.IGNORECASE)
 TODO = re.compile(r"TODO\((owner|panel)\)")
 TEXT_SUFFIXES = {
     ".md",
@@ -110,7 +113,7 @@ def scan(path):
     hits, todos = [], []
     text = path.read_text(errors="replace")
     for n, line in enumerate(text.splitlines(), start=1):
-        for m in PATTERN.finditer(line):
+        for m in PATTERN.finditer(ALLOWED.sub("", line)):
             hits.append((n, m.group(0), line.strip()))
         for m in TODO.finditer(line):
             todos.append((n, m.group(0)))
