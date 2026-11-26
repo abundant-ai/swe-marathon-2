@@ -390,6 +390,50 @@ def run_ops(ops: list[dict]) -> None:
             )
         elif op["op"] == "image":
             build_pipeline_image(op.get("platform"))
+        elif op["op"] == "run_image":
+            # A bounded, network-less run of one of our task images; stdout and stderr go to WORK/<out>.
+            started = time.time()
+            cmd = [
+                "docker",
+                "run",
+                "--rm",
+                "--network=none",
+                "--memory=4g",
+                "--memory-swap=4g",
+            ]
+            cmd += [f"--cpus={op.get('cpus', 2)}", "--label", LABEL]
+            if op.get("platform"):
+                cmd += ["--platform", op["platform"]]
+            if op.get("user"):
+                cmd += ["--user", op["user"]]
+            with (WORK / op["out"]).open("w") as fh:
+                code = subprocess.run(
+                    [*cmd, op["image"], *op["args"]],
+                    stdout=fh,
+                    stderr=subprocess.STDOUT,
+                    check=False,
+                ).returncode
+            log_event(
+                event="run_image",
+                image=op["image"],
+                code=code,
+                wall_s=round(time.time() - started, 1),
+            )
+        elif op["op"] == "docker_build":
+            # A task image (the agent image from environment/), labelled as ours.
+            started = time.time()
+            cmd = ["docker", "build", "-t", op["tag"], "--label", LABEL]
+            if op.get("platform"):
+                cmd += ["--platform", op["platform"]]
+            code = subprocess.run(
+                [*cmd, str(TASK / op["context"])], check=False
+            ).returncode
+            log_event(
+                event="image",
+                tag=op["tag"],
+                code=code,
+                seconds=round(time.time() - started, 1),
+            )
         elif op["op"] == "host":
             # Our own host-side scripts only (classify.py and the like), with the host's isolated Python.
             started = time.time()
