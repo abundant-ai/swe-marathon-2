@@ -44,7 +44,7 @@ meson setup build --buildtype=release -Ddefault_library=static \
   -Dglib=disabled -Dgobject=disabled -Dcairo=disabled -Dchafa=disabled -Dicu=disabled \
   -Dfreetype=disabled -Dpng=disabled -Dzlib=disabled -Dgraphite2=disabled \
   -Draster=disabled -Dvector=disabled -Dgpu=disabled -Dsubset=disabled \
-  -Dtests=disabled -Dintrospection=disabled -Ddocs=disabled -Dutilities=disabled \
+  -Dtests=disabled -Dintrospection=disabled -Ddocs=disabled -Dutilities=disabled ${MESON_EXTRA:-} \
   > "$OUT/setup.log" 2>&1 || { echo '{"status": "setup-failed"}' > "$OUT/build.json"; exit 4; }
 t1=$(date +%s)
 ninja -C build -j "$JOBS" > "$OUT/ninja.log" 2>&1 || { echo '{"status": "build-failed"}' > "$OUT/build.json"; exit 5; }

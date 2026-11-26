@@ -265,6 +265,7 @@ def do_build(
     cpus: int = 6,
     ragel: str = "on",
     platform: str | None = None,
+    meson_extra: str = "",
 ) -> dict:
     """Build one tree (a release, optionally with a unit's commits reverted) in one bounded container."""
     src = f"/dl/harfbuzz/harfbuzz-{release}.tar.xz"
@@ -272,7 +273,17 @@ def do_build(
     out = f"/work/out/hb/{bid}"
     started = time.time()
     code = docker_run(
-        ["sh", "/pipe/hb_build.sh", src, out, patches, str(jobs), ragel],
+        [
+            "env",
+            f"MESON_EXTRA={meson_extra}",
+            "sh",
+            "/pipe/hb_build.sh",
+            src,
+            out,
+            patches,
+            str(jobs),
+            ragel,
+        ],
         cpus=cpus,
         platform=platform,
         check=False,
@@ -341,6 +352,7 @@ def cmd_batch(args: argparse.Namespace) -> None:
                     op.get("cpus", 6),
                     op.get("ragel", "on"),
                     op.get("platform"),
+                    op.get("meson_extra", ""),
                 )
             elif op["op"] == "run":
                 do_run(
