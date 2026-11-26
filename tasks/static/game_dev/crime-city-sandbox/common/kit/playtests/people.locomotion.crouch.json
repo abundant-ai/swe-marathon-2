@@ -2,7 +2,7 @@
  "format": "qa-play/1",
  "name": "people.locomotion/crouch",
  "template": "people.locomotion",
- "about": "crouch toggles crouching: crouched, the hips are at most 75% of their standing height above the plaza, and a crouched walk keeps its pace.",
+ "about": "crouch toggles crouching: crouched, the hips are at most 75% of their standing height above the plaza, and a crouched walk moves at 0.50-1.10 m/s.",
  "rules": ["FT-6", "FT-1"],
  "role": "solo",
  "args": ["--role=solo", "--variation=6", "--save-dir={save_dir}"],

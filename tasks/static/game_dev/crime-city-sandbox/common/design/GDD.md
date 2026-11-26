@@ -180,9 +180,11 @@ Menus and the phone use Godot's `ui_up ui_down ui_left ui_right ui_accept ui_can
   `_physics_process`; the QA kit's input arrives before the tick runs).
 - **CM-1** The camera is a third-person camera behind and above the player: 2.5-6.0 m from the
   player's head on foot and 5.0-10.0 m from the vehicle's centre when driving, and the player (the
-  `Hips` bone) stays inside the middle 40% of the view (by width and height).
+  `Hips` bone) stays inside the middle 40% of the view (by width and height, on the project's
+  1280 x 720 window with the camera's `fov` vertical, Godot's default).
 - **CM-2** At full strength, `look_left` and `look_right` turn the camera around the player at
-  120-240 degrees per second; `look_up` and `look_down` tilt it between -60 and +30 degrees.
+  120-240 degrees per second; `look_up` and `look_down` tilt it between -60 and +30 degrees (the
+  pitch of the view, positive looking up).
 - **CM-3** On foot, movement is relative to the camera: `move_forward` moves the player within 15
   degrees of the camera's horizontal forward direction.
 - **CM-4** The camera never ends up inside a wall: the segment from the player's head to the camera
@@ -202,7 +204,9 @@ and 8.5 m/s, its crouch walk at about 0.75 and its swim at about 2.2.
 - **FT-1** Paces: walk 0.80-1.50 m/s, run 4.60-6.40, sprint 7.40-9.60, crouched 0.50-1.10.
 - **FT-2** Feet are planted: in each gait the feet alternate (at least 90% of steps alternate
   left and right), and a planted foot's toe slides at most 0.25 m/s at a walk, 0.40 running and
-  0.60 sprinting (p95, measured in the middle 60% of each stance).
+  0.60 sprinting (p95, measured in the middle 60% of each stance). A foot is planted while its
+  `LeftToes` or `RightToes` bone is within 0.04 m of its lowest height in the gait; a step is a
+  foot coming down to plant.
 - **FT-3** `jump` from standing lifts the hips 0.40-0.80 m and keeps the player airborne 0.50-0.90 s
   on level ground.
 - **FT-4** Climbing: moving into a wall or ledge 1.0-2.4 m high and pressing `jump` climbs on top
@@ -211,7 +215,8 @@ and 8.5 m/s, its crouch walk at about 0.75 and its swim at about 2.2.
 - **FT-5** Vaulting: running at an obstacle 0.5-1.0 m high and pressing `jump` takes the player
   over it in at most 1.2 s, the hips at least 0.10 m above its top while crossing, with no bone
   passing more than 0.05 m into it.
-- **FT-6** `crouch` toggles crouching; crouched, the hips are at most 75% of their standing height.
+- **FT-6** `crouch` toggles crouching; crouched, the hips are at most 75% of their standing height
+  above the ground.
 - **FT-7** Swimming: in water deeper than 1.4 m the player swims. The head bone stays no lower than
   0.10 m below the surface, the torso pitches at most 45 degrees from horizontal, and the swim pace
   is 1.50-3.00 m/s. The player can leave the water up a ladder or a beach.
@@ -577,14 +582,15 @@ a `surface` tag (chapter 17) so QA can tell what a probe hits.
 - **WD-1** Roads: along every lane centre, the road surface (tagged `road`) is at the plan's height
   within 0.10 m, for at least 98% of points sampled every 10 m.
 - **WD-2** Sidewalks (tagged `sidewalk`) are at their elevation within 0.05 m along every ring;
-  crosswalk bands are road surface tagged `crosswalk`.
+  crosswalk bands are road surface (at the road's height within 0.10 m, as in WD-1) tagged
+  `crosswalk`.
 - **WD-3** Buildings: every parcel zoned commercial, residential, civic or industrial has one
   building (tagged `building`) whose roof is at `base_m + height_m` within 0.5 m over at least 95%
   of its footprint, and no building surface lies outside its parcel. Plazas, parks and parking lots
   are open ground at `base_m` within 0.05 m (tagged `plaza`, `park`, `parking`).
 - **WD-4** Interiors: each door is an opening at least as wide and high as the plan says; rooms are
   empty from the floor (at `floor_m` within 0.10 m, tagged `interior`) to at least 0.10 m under
-  `ceiling_m`; connected rooms have openings at least 1.2 m wide.
+  `ceiling_m`; connected rooms have openings at least 1.2 m wide (1.0 m above the floor).
 - **WD-5** Every point of interest stands on a surface: a ray down from 0.6 m above `p` hits within
   0.30 m of its height.
 - **WD-6** Water: each plan water polygon is covered by a water area (chapter 17) with its surface
@@ -788,7 +794,7 @@ data: Dictionary)`. The commands set up situations for development and QA.
 | `world.reset` | `variation`, `map` | Rebuild people, vehicles, missions, clock (08:00) and weather (clear) from the variation; the static world stays |
 | `time.set` | `hhmm` (a string such as `"21:30"`) | Set the clock |
 | `weather.set` | `kind` | Set the weather |
-| `player.spawn` | `lead`, `at`, `heading` | Spawn the player, or move the existing one |
+| `player.spawn` | `lead`, `at`, `heading` | Spawn the player, or move the existing one; with `lead`, the player becomes that lead (its body, hair and colours, chapter 2) |
 | `player.give` | `weapon`, `ammo`, `money`, `outfit`, `health`, `armour` | Give or set: `weapon` and `outfit` become owned, `ammo` rounds go into the reserve of `weapon` (or of the gun in hand), `money` is added; `health` and `armour` are set |
 | `vehicle.spawn` | `model`, `at`, `heading`, `driver` (`player`, an archetype or `none`), `damage`, `colour` | Spawn a vehicle |
 | `npc.spawn` | `archetype`, `at`, `heading`, `behaviour` (`idle`, `wander`, `guard`, `hostile`, `reckless`), `seat` (`{"vehicle": id, "index": i}`) | Spawn a person |

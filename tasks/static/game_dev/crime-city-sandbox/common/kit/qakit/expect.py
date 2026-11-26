@@ -68,7 +68,7 @@ class Outcome:
         check: The check's name.
         kind: "assert", "pre" or "standing".
         w: Weight (asserts only).
-        ok: Whether it held (None when it could not be judged, which counts as not held).
+        ok: Whether it held (None when it could not be measured, which counts as not held).
         measured: The values the check measured.
         note: A short explanation when it did not hold.
         rule: The design document's rule id, when the expectation names one.
@@ -600,8 +600,8 @@ def ray_answers(
     return [got.get(i) for i in ids], casts
 
 
-def judge_ray(answer: object, args: dict, y: float | None) -> str:
-    """Why one ray's answer does not meet the expectation ("" when it does)."""
+def ray_problem(answer: object, args: dict, y: float | None) -> str:
+    """Why one ray's answer is off the plan ("" when it is not)."""
     if not isinstance(answer, dict):
         return "the ray was not answered"
     hit = answer.get("hit") is True
@@ -612,12 +612,14 @@ def judge_ray(answer: object, args: dict, y: float | None) -> str:
             f"hit {answer.get('surface', 'an untagged surface')} at {answer.get('p')}"
         )
     if not hit:
-        return "the ray hit nothing"
+        return "" if args.get("hit_optional") else "the ray hit nothing"
     surface = answer.get("surface")
+    want = " or ".join(repr(t) for t in args.get("tags", []))
     if "tags" in args and surface not in args["tags"]:
-        return f"hit {surface!r}" if surface is not None else "hit an untagged surface"
+        got = repr(surface) if surface is not None else "an untagged surface"
+        return f"hit {got} at {answer.get('p')}, expected {want}"
     if surface in (args.get("not_tags") or ()):
-        return f"hit {surface!r}"
+        return f"hit {surface!r} at {answer.get('p')}"
     if y is not None and "tol_m" in args:
         p = answer.get("p")
         hy = float(p[1]) if isinstance(p, list) and len(p) == 3 else None
@@ -643,9 +645,10 @@ def check_rays(rec: PlayRecord, args: dict) -> Result:
 
     Each ray meets the expectation when it hits a surface tagged as listed ("tags"), not
     one of "not_tags", at the expected height ("y", one number or one per ray) within
-    "tol_m"; or, with "clear", when it hits nothing. Rays come in groups (consecutive
-    counts, "groups"); the expectation holds when in every group at least "min_share"
-    (default all) of the rays meet it.
+    "tol_m"; with "hit_optional", a ray that hits nothing meets it too; with "clear", a ray
+    meets it only when it hits nothing. Rays come in groups (consecutive counts,
+    "groups"); the expectation holds when in every group at least "min_share" (default
+    all) of the rays meet it.
     """
     run = rec.runs[int(args.get("run", 0))]
     answers, casts = ray_answers(rec, run, args)
@@ -658,7 +661,7 @@ def check_rays(rec: PlayRecord, args: dict) -> Result:
     ys = args.get("y")
     min_share = float(args.get("min_share", 1.0))
     why = [
-        judge_ray(a, args, float(ys[k]) if isinstance(ys, list) else ys)
+        ray_problem(a, args, float(ys[k]) if isinstance(ys, list) else ys)
         for k, a in enumerate(answers)
     ]
     short, misses = [], []
@@ -674,22 +677,31 @@ def check_rays(rec: PlayRecord, args: dict) -> Result:
         "rays": n,
         "as_planned": met_all,
         "share": round(met_all / n, 4),
-        "groups_short": short[:5],
-        "groups_short_count": len(short),
-        "first_misses": misses,
+        "groups_below_share": short[:5],
+        "groups_below_share_count": len(short),
+        "first_off_plan": misses,
     }
     if not short:
         return True, measured, ""
-    names = ", ".join(f"{s['group']} ({s['share']})" for s in short[:3])
-    return False, measured, f"below {min_share} of the rays: {names}"
+    names = ", ".join(f"{s['group']} ({s['share']:.0%})" for s in short[:3])
+    first = misses[0] if misses else {}
+    return (
+        False,
+        measured,
+        (
+            f"under {min_share:.0%} of the rays as planned in {len(short)} groups ({names}); "
+            f"first at {first.get('at')}: {first.get('why')}"
+        ),
+    )
 
 
 def check_clear_run(rec: PlayRecord, args: dict) -> Result:
     """An opening is at least min_width_m wide.
 
-    The rays of each group cross the opening side by side, spacing_m apart, in order;
-    the widest run of consecutive rays that hit nothing must span min_width_m (the run of
-    k clear rays spans (k - 1) * spacing_m).
+    The rays of each group cross the opening side by side, spacing_m apart, in order,
+    each standing for a strip spacing_m wide; the widest run of k consecutive rays that
+    hit nothing is k * spacing_m wide and must be at least min_width_m (so a measured
+    width is within one spacing of the true one).
     """
     run = rec.runs[int(args.get("run", 0))]
     answers, _ = ray_answers(rec, run, args)
@@ -706,7 +718,7 @@ def check_clear_run(rec: PlayRecord, args: dict) -> Result:
             clear = isinstance(ans, dict) and ans.get("hit") is False
             cur = cur + 1 if clear else 0
             best = max(best, cur)
-        widths[label] = round(max(best - 1, 0) * spacing, 3)
+        widths[label] = round(best * spacing, 3)
         if widths[label] < need - 1e-9:
             narrow.append(label)
     measured = {"clear_width_m": widths}
@@ -765,7 +777,7 @@ def check_skeleton(rec: PlayRecord, args: dict) -> Result:
         return None, {}, "the query was not answered"
     res = got.get(str(args["query"]))
     if not isinstance(res, dict) or res.get("ok") is not True:
-        return False, {"answer": res}, "no such entity"
+        return False, {"answer": res}, "no entity with the id the query names"
     bones = set(res.get("bones") or [])
     missing = [b for b in args.get("bones", []) if b not in bones]
     measured = {
@@ -775,11 +787,20 @@ def check_skeleton(rec: PlayRecord, args: dict) -> Result:
         "bound_meshes": res.get("bound_meshes"),
     }
     if res.get("skeletons") != 1:
-        return False, measured, f"{res.get('skeletons')} skeletons"
+        return (
+            False,
+            measured,
+            f"the entity has {res.get('skeletons')} Skeleton3D nodes, not 1",
+        )
     if missing:
         return False, measured, f"bones missing: {', '.join(missing[:6])}"
-    if int(res.get("bound_meshes") or 0) < int(args.get("min_bound_meshes", 1)):
-        return False, measured, "no skinned mesh is bound to the skeleton"
+    need = int(args.get("min_bound_meshes", 1))
+    if int(res.get("bound_meshes") or 0) < need:
+        return (
+            False,
+            measured,
+            f"fewer than {need} skinned meshes are bound to the skeleton",
+        )
     return True, measured, ""
 
 
@@ -911,12 +932,26 @@ def check_feet(rec: PlayRecord, args: dict) -> Result:
         "alternation": round(alternation, 3),
         "slide_p95_mps": None if slide is None else round(slide, 3),
     }
-    if len(steps) < int(args.get("min_steps", 4)):
-        return False, measured, f"{len(steps)} steps"
+    need = int(args.get("min_steps", 4))
+    if len(steps) < need:
+        return (
+            False,
+            measured,
+            (
+                f"{len(steps)} steps, at least {need} expected (a step is a toe coming down to "
+                f"within {contact} m of its lowest height after being above it)"
+            ),
+        )
     if alternation < float(args.get("min_alternation", 0.9)):
         return False, measured, f"steps alternate feet {alternation:.0%} of the time"
-    if slide is None or slide > float(args["max_slide_mps"]):
-        return False, measured, f"planted toes slide at {slide} m/s (p95)"
+    if slide is None:
+        return False, measured, "no planted samples in the middle of any stance"
+    if slide > float(args["max_slide_mps"]):
+        return (
+            False,
+            measured,
+            f"planted toes slide at {slide:.3f} m/s (p95), at most {args['max_slide_mps']}",
+        )
     return True, measured, ""
 
 
@@ -958,6 +993,7 @@ def check_camera_frame(rec: PlayRecord, args: dict) -> Result:
     frames = frames_between(run, args["from"], args["to"])
     aspect, middle = float(args.get("aspect", 16 / 9)), float(args.get("middle", 0.4))
     dists, worst, n = [], 0.0, 0
+    far = near = off_tick = None
     for fr in frames:
         cam, e = fr.get("camera"), entity_of(fr, args)
         if not isinstance(cam, dict) or e is None:
@@ -967,9 +1003,16 @@ def check_camera_frame(rec: PlayRecord, args: dict) -> Result:
         if head is None or body is None:
             continue
         n += 1
-        dists.append(math.dist(head, [float(c) for c in cam["p"]]))
+        d = math.dist(head, [float(c) for c in cam["p"]])
+        dists.append(d)
+        if far is None or d > far[0]:
+            far = (d, fr.get("t"))
+        if near is None or d < near[0]:
+            near = (d, fr.get("t"))
         off = view_offset(cam, body, aspect)
-        worst = max(worst, 2.0 if off is None else max(abs(off[0]), abs(off[1])))
+        o = 2.0 if off is None else max(abs(off[0]), abs(off[1]))
+        if o > worst:
+            worst, off_tick = o, fr.get("t")
     if not n:
         return None, {}, "the camera and the player's bones were not observed"
     measured = {
@@ -978,14 +1021,32 @@ def check_camera_frame(rec: PlayRecord, args: dict) -> Result:
         "farthest_from_middle": round(worst, 3),
     }
     lo, hi = float(args["min_m"]), float(args["max_m"])
-    if min(dists) < lo or max(dists) > hi:
+    if far[0] > hi:
         return (
             False,
             measured,
-            f"the camera is {measured['head_distance_m']} m from the head",
+            f"at tick {far[1]} the camera is {far[0]:.2f} m from the head (at most {hi})",
+        )
+    if near[0] < lo:
+        return (
+            False,
+            measured,
+            f"at tick {near[1]} the camera is {near[0]:.2f} m from the head (at least {lo})",
         )
     if worst > middle:
-        return False, measured, f"the player leaves the middle {middle:.0%} of the view"
+        where = (
+            "behind the camera"
+            if worst >= 2.0
+            else f"{worst:.2f} of the way to the view's edge"
+        )
+        return (
+            False,
+            measured,
+            (
+                f"at tick {off_tick} the {args.get('frame_bone', 'Hips')} bone is {where} "
+                f"(at most {middle})"
+            ),
+        )
     return True, measured, ""
 
 
@@ -1043,7 +1104,15 @@ def check_camera_tilt(rec: PlayRecord, args: dict) -> Result:
     need = float(args.get("min_change_deg", 0.0))
     change = measured["change_deg"] * (-1.0 if args.get("falls") else 1.0)
     if (args.get("rises") or args.get("falls")) and change < need:
-        return False, measured, "the camera does not tilt that way"
+        way = "up" if args.get("rises") else "down"
+        return (
+            False,
+            measured,
+            (
+                f"the camera tilted {measured['change_deg']} degrees, expected at least "
+                f"{need} {way}"
+            ),
+        )
     return True, measured, ""
 
 
@@ -1146,10 +1215,18 @@ def check_looks_distinct(rec: PlayRecord, args: dict) -> Result:
             same_shape = a.get("body") == b.get("body") and a.get("hair") == b.get(
                 "hair"
             )
-            if same_shape or dist < need:
-                close.append([ma, mb, round(dist, 3)])
+            if same_shape:
+                close.append([ma, mb, "same body and hair"])
+            elif dist < need:
+                close.append([ma, mb, f"tops {dist:.3f} apart"])
     measured = {"looks": len(looks), "too_alike": close[:5]}
-    return not close, measured, "" if not close else f"too alike: {close[:2]}"
+    if not close:
+        return True, measured, ""
+    return (
+        False,
+        measured,
+        f"{close[0][0]} and {close[0][1]}: {close[0][2]} (tops at least {need} apart)",
+    )
 
 
 def check_hips_ratio(rec: PlayRecord, args: dict) -> Result:
@@ -1226,7 +1303,7 @@ def check_play(rec: PlayRecord) -> list[Outcome]:
         try:
             ok, measured, note = fn(rec, e.get("args") or {})
         except (KeyError, TypeError, ValueError, IndexError) as exc:
-            ok, measured, note = None, {}, f"could not be judged: {exc!r}"
+            ok, measured, note = None, {}, f"could not be measured: {exc!r}"
         out.append(
             Outcome(e["id"], e["check"], kind, w, ok, measured, note, rule, says)
         )

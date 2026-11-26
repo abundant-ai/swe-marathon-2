@@ -258,7 +258,9 @@ class Probes:
         self.rays.expect(
             "crosswalk_tags", "rays",
             {"query": "crosswalks", "y": ys, "tol_m": 0.10, "tags": ["crosswalk"]},
-            "WD-2", "across every crosswalk band the road surface is tagged crosswalk",
+            "WD-2",
+            "across every crosswalk band the surface is road surface at the road's height "
+            "(within 0.10 m), tagged crosswalk",
         )  # fmt: skip
 
     def sidewalks(self) -> None:
@@ -315,9 +317,10 @@ class Probes:
         self.rays.down("beside_parcels", out_pts)
         self.rays.expect(
             "within_parcels", "rays",
-            {"query": "beside_parcels", "not_tags": ["building"], "groups": out_groups},
+            {"query": "beside_parcels", "not_tags": ["building"], "hit_optional": True,
+             "groups": out_groups},
             "WD-3",
-            "just outside each built parcel, on the sidewalk around its block, there is no "
+            "just outside each built parcel, on its sidewalk sides, the rays down meet no "
             "building surface",
         )  # fmt: skip
 
@@ -477,8 +480,10 @@ class Probes:
             self.rays.expect(
                 "connected_rooms", "clear_run",
                 {"rays": {"prefix": "opening.", "count": open_n}, "groups": open_groups,
-                 "spacing_m": 0.1, "min_width_m": 1.2},
-                "WD-4", "rooms listed together are joined by an opening at least 1.2 m wide",
+                 "spacing_m": 0.05, "min_width_m": 1.2},
+                "WD-4",
+                "rooms listed together are joined by an opening at least 1.2 m wide (measured "
+                "1.0 m above the floor)",
             )  # fmt: skip
 
     @staticmethod
@@ -495,7 +500,7 @@ class Probes:
         )
 
     def opening_rays(self, a: dict, b: dict) -> list:
-        """Rays across the boundary two rooms share, 0.1 m apart (none when they share
+        """Rays across the boundary two rooms share, 0.05 m apart (none when they share
         no edge)."""
         out = []
         pa, pb = a["poly"], b["poly"]
@@ -509,7 +514,7 @@ class Probes:
                     continue
                 (sx, sz), (tx, tz), (nx, nz) = seg
                 length = math.hypot(tx - sx, tz - sz)
-                n = int(length // 0.1)
+                n = int(length // 0.05)
                 for j in range(n + 1):
                     t = j / n if n else 0.5
                     x, z = sx + (tx - sx) * t, sz + (tz - sz) * t

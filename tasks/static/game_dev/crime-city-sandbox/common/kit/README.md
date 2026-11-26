@@ -45,8 +45,11 @@ A playtest is a JSON file (format `qa-play/1`) in `playtests/`. Every value in i
 - `limits`: what one run may use: wall and CPU seconds, memory (PF-7's 1.5 GB), disk, and the
   seconds allowed to start (PF-4) and per step;
 - `steps`, in order:
-  - `observe`: what each frame reports (`census`, `bones`, `camera`, `hud`, `state`) and how
-    often (`every` N ticks);
+  - `observe`: what each frame reports and how often: `census` (`true`, or `{"meta": [keys],
+    "view": true}` to add those metadata values and whether each entity is in the camera's
+    view), `bones` (`{"ids": [entity ids, or "player"], "names": [bone names]}`: world
+    positions), `camera` (`true`: position, back axis and `fov`), `hud` (a list of HUD group
+    names), `state` (`true`: the state report) and `every` (ticks between frames, default 6);
   - `dev`: DevConsole commands, run at the start of the next tick, so their effect shows in that
     tick (AC-3); an argument `{"$answer": [step, key]}` takes that field of an earlier step's
     answer (an id the game handed out, for example);
@@ -59,9 +62,10 @@ A playtest is a JSON file (format `qa-play/1`) in `playtests/`. Every value in i
     `skeleton` (an entity's `Skeleton3D`: its bone names and the skinned meshes bound to it),
     `unregistered` (nodes with a `Skeleton3D`, `CharacterBody3D` or `VehicleBody3D` outside the
     entity registry) and `meta` (an entity's metadata by key); rays use collision `mask`
-    (default 1, the world layer) and answer with the point hit, the collider's `surface`
-    metadata and the entity it belongs to; an entity can be named as `{"$answer": [step,
-    "id"]}`, the id a command of an earlier step answered with;
+    (default 1, the world layer) and answer `{"hit": false}` or `{"hit": true, "p": [x, y, z],
+    "surface": ..., "entity": ...}` (the collider's `surface` metadata and the id of the
+    entity it belongs to, when it has them); any value in a query can be `{"$answer": [step,
+    key]}`, as in `dev` (an entity named by the id a command answered with, for example);
   - `wait_for`: advance until an event arrives;
   - `files`: corrupt the save files written since a mark, as a failed disk write would;
   - `restart`: kill the game and start it again with the same save folder;
@@ -81,17 +85,17 @@ The checks an expectation can use:
 | `same_start` | equal variations gave equal starting populations and different ones differed |
 | `replay_equal` | every run did the same thing tick for tick |
 | `heartbeat` | in real time, the telemetry node reported every tick |
-| `rays` | the rays of a query hit surfaces with the listed tags at the expected heights (or, with `clear`, hit nothing), in at least the given share of each group of rays |
-| `clear_run` | rays laid side by side across an opening leave a clear run at least as wide as asked |
+| `rays` | the rays of a query hit surfaces with the listed tags (`tags`, not `not_tags`) at the expected heights (`y` within `tol_m`), in at least `min_share` of each group of rays (default all); with `hit_optional` a ray that hits nothing is fine, with `clear` only a ray that hits nothing is |
+| `clear_run` | rays laid side by side across an opening, `spacing_m` apart, leave a run of k rays that hit nothing with k times `spacing_m` at least `min_width_m` |
 | `surface_tags` | every surface the rays of a query step hit carries one of the listed `surface` tags |
 | `none_listed` | a query that lists things (such as `unregistered`) lists nothing |
 | `skeleton` | an entity has exactly one `Skeleton3D` with the listed bone names and skinned meshes bound to it |
 | `pace` | a bone (or the entity) moved at a horizontal speed inside a range between two marks |
 | `feet` | between two marks the toes take alternating steps and stay put while planted (a stance is the toe within 0.04 m of its lowest height; slide is measured over the middle 60% of each stance) |
 | `hips_ratio` | the hips are at most a share of their standing height above the ground |
-| `camera_frame` | the camera keeps its distance from the head and the hips in the middle of the view |
+| `camera_frame` | the camera keeps its distance from the `Head` bone, and a bone (the `Hips`, or `frame_bone`) inside the middle of the view, the camera's `fov` read as vertical on a view of the given `aspect` |
 | `look_rate` | the camera turns around the player at a rate inside a range |
-| `camera_tilt` | the camera's pitch stays inside a range and tilts the way asked |
+| `camera_tilt` | the camera's pitch (positive looking up) stays inside a range, within half a degree, and tilts the way asked |
 | `moves_along_camera` | the player moves along the camera's forward direction |
 | `look` | an entity's `look` metadata has every field and the expected values |
 | `looks_distinct` | the looks at several marks differ from each other enough |

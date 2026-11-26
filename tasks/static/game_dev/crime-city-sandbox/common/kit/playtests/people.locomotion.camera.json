@@ -99,7 +99,7 @@
    "run": 120
   },
   {
-   "mark": "tilt_up"
+   "mark": "tilt_top"
   },
   {
    "release": ["look_up"]
@@ -113,10 +113,24 @@
    "run": 180
   },
   {
-   "mark": "tilt_down"
+   "mark": "tilt_bottom"
   },
   {
    "release": ["look_down"]
+  },
+  {
+   "press": {
+    "look_up": 1.0
+   }
+  },
+  {
+   "run": 60
+  },
+  {
+   "mark": "tilt_up"
+  },
+  {
+   "release": ["look_up"]
   },
   {
    "run": 6
@@ -174,10 +188,36 @@
    "says": "look_right at full strength turns the camera at 120-240 degrees per second"
   },
   {
-   "id": "tilt_up",
+   "id": "tilt_range",
    "check": "camera_tilt",
    "args": {
     "from": "tilt_a",
+    "to": "tilt_up",
+    "min_deg": -60,
+    "max_deg": 30
+   },
+   "rule": "CM-2",
+   "says": "while look_up and look_down are held the camera's pitch (positive looking up) stays between -60 and +30 degrees"
+  },
+  {
+   "id": "tilt_down",
+   "check": "camera_tilt",
+   "args": {
+    "from": "tilt_top",
+    "to": "tilt_bottom",
+    "min_deg": -60,
+    "max_deg": 30,
+    "falls": true,
+    "min_change_deg": 1.0
+   },
+   "rule": "CM-2",
+   "says": "after look_up has been held, holding look_down tilts the camera down"
+  },
+  {
+   "id": "tilt_up",
+   "check": "camera_tilt",
+   "args": {
+    "from": "tilt_bottom",
     "to": "tilt_up",
     "min_deg": -60,
     "max_deg": 30,
@@ -185,21 +225,7 @@
     "min_change_deg": 1.0
    },
    "rule": "CM-2",
-   "says": "look_up tilts the camera up, never past +30 degrees"
-  },
-  {
-   "id": "tilt_down",
-   "check": "camera_tilt",
-   "args": {
-    "from": "tilt_up",
-    "to": "tilt_down",
-    "min_deg": -60,
-    "max_deg": 30,
-    "falls": true,
-    "min_change_deg": 1.0
-   },
-   "rule": "CM-2",
-   "says": "look_down tilts the camera down, never past -60 degrees"
+   "says": "after look_down has been held, holding look_up tilts the camera up"
   },
   {
    "id": "moves_along_camera",

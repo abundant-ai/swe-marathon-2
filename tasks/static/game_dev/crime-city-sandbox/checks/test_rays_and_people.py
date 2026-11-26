@@ -62,11 +62,11 @@ def test_rays_heights_tags_and_shares() -> None:
     assert (
         o.ok is False and o.measured["as_planned"] == 2 and o.measured["share"] == 0.5
     )
-    assert "height 0.3" in o.measured["first_misses"][0]["why"]
+    assert "height 0.3" in o.measured["first_off_plan"][0]["why"]
     assert outcome(rec, "rays", dict(args, min_share=0.5)).ok is True
     grouped = dict(args, groups=[["a", 2], ["b", 2]], min_share=0.6)
     o = outcome(rec, "rays", grouped)
-    assert o.ok is False and o.measured["groups_short"] == [
+    assert o.ok is False and o.measured["groups_below_share"] == [
         {"group": "b", "share": 0.0}
     ]
     per_ray = dict(args, y=[0.0, 0.0, 0.3, 0.0], tags=["road", "terrain"])
@@ -87,11 +87,14 @@ def test_rays_clear_not_tags_and_unanswered() -> None:
         "groups": [["s", 1], ["t", 2]],
     }
     o = outcome(rec, "rays", side)
-    assert o.ok is False and o.measured["groups_short"] == [
+    assert o.ok is False and o.measured["groups_below_share"] == [
         {"group": "s", "share": 0.0},
         {"group": "t", "share": 0.5},
     ]
-    assert o.measured["first_misses"][0]["why"] == "the ray hit nothing"
+    assert o.measured["first_off_plan"][0]["why"] == "the ray hit nothing"
+    optional = dict(side, hit_optional=True)
+    o = outcome(rec, "rays", optional)
+    assert o.measured["groups_below_share"] == [{"group": "t", "share": 0.5}]
     assert outcome(down_record([]), "rays", {"step": 1, "query": "q"}).ok is None
     unanswered = record(
         [{"run": 1}, {"query": [{"id": "q", "type": "down", "points": [[0, 0]]}]}],
@@ -118,11 +121,11 @@ def test_ray_queries_by_prefix_and_clear_runs() -> None:
         "clear_run",
         {"step": 1, "rays": rays, "spacing_m": 0.1, "min_width_m": 1.2},
     )
-    assert o.ok is True and o.measured["clear_width_m"]["all"] == 1.2
-    narrow = {"step": 1, "rays": rays, "spacing_m": 0.1, "min_width_m": 1.25}
+    assert o.ok is True and o.measured["clear_width_m"]["all"] == 1.3
+    narrow = {"step": 1, "rays": rays, "spacing_m": 0.1, "min_width_m": 1.35}
     assert outcome(rec, "clear_run", narrow).ok is False
     o = outcome(rec, "rays", {"step": 1, "rays": rays, "clear": True})
-    assert o.ok is False and o.measured["first_misses"][0]["at"] == [
+    assert o.ok is False and o.measured["first_off_plan"][0]["at"] == [
         [0, 1, 13],
         [1, 1, 13],
     ]

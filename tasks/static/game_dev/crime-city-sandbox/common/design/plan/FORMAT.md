@@ -22,7 +22,8 @@ The `--plan-dir=DIR` flag points the game at another folder with the same file n
 designers use it to try layouts. Plans there can have different roads, blocks and parcels and keep
 the same point-of-interest ids.
 
-The examples below are taken from `downtown.json`.
+The examples below are taken from `downtown.json`, except those for water, terrain and
+`links.json`, which Downtown does not have.
 
 ## Conventions
 
@@ -209,9 +210,10 @@ Every node with at least one edge has one intersection record.
   ```
 
   - `door.p` lies on the footprint outline; `heading_deg` points from the street into the
-    building. The doorway is open, at least `width_m` wide and `height_m` high.
+    building. The doorway is open, at least `width_m` wide and `height_m` high above the floor
+    of the room it opens into.
   - Each room is an empty space over `poly`, floor at `floor_m`, ceiling at `ceiling_m`. Rooms
-    listed together are connected by openings at least 1.2 m wide.
+    listed together are connected by openings at least 1.2 m wide (1.0 m above the floor).
   - `points` names spots that points of interest use (a shop counter, a bank vault, a save point).
   - The rest of the building is solid.
 

@@ -466,7 +466,7 @@ class RealtimeSession(_Base):
     def wait(self, seconds: float) -> None:
         """Let the game run for `seconds` of wall time.
 
-        Heartbeat gaps are recorded, not raised: the caller judges them afterwards
+        Heartbeat gaps are recorded, not raised: the caller checks them afterwards
         through heartbeat().
 
         Raises:

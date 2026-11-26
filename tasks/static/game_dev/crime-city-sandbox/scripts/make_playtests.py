@@ -869,7 +869,7 @@ def paces() -> Playtest:
         "sprint_while_running", "pace",
         {"from": "sprint_a", "to": "sprint_b", "kind": "player", "bone": "Hips",
          "min_mps": PACES["sprint"][0]},
-        "IN-2", "sprint held while running sprints",
+        "IN-2", "sprint held while running sprints: the hips reach FT-1's sprint pace, 7.40 m/s",
     )  # fmt: skip
     return p
 
@@ -903,12 +903,16 @@ def camera() -> Playtest:
     p.mark("tilt_a")
     p.step("press", {"look_up": 1.0})
     p.step("run", 120)
-    p.mark("tilt_up")
+    p.mark("tilt_top")
     p.step("release", ["look_up"])
     p.step("press", {"look_down": 1.0})
     p.step("run", 180)
-    p.mark("tilt_down")
+    p.mark("tilt_bottom")
     p.step("release", ["look_down"])
+    p.step("press", {"look_up": 1.0})
+    p.step("run", 60)
+    p.mark("tilt_up")
+    p.step("release", ["look_up"])
     p.step("run", 6)
     p.mark("move_a")
     p.step("press", {"move_forward": 1.0})
@@ -931,16 +935,23 @@ def camera() -> Playtest:
         "CM-2", "look_right at full strength turns the camera at 120-240 degrees per second",
     )  # fmt: skip
     p.expect(
-        "tilt_up", "camera_tilt",
-        {"from": "tilt_a", "to": "tilt_up", "min_deg": -60, "max_deg": 30, "rises": True,
-         "min_change_deg": 1.0},
-        "CM-2", "look_up tilts the camera up, never past +30 degrees",
+        "tilt_range", "camera_tilt",
+        {"from": "tilt_a", "to": "tilt_up", "min_deg": -60, "max_deg": 30},
+        "CM-2",
+        "while look_up and look_down are held the camera's pitch (positive looking up) stays "
+        "between -60 and +30 degrees",
     )  # fmt: skip
     p.expect(
         "tilt_down", "camera_tilt",
-        {"from": "tilt_up", "to": "tilt_down", "min_deg": -60, "max_deg": 30, "falls": True,
+        {"from": "tilt_top", "to": "tilt_bottom", "min_deg": -60, "max_deg": 30, "falls": True,
          "min_change_deg": 1.0},
-        "CM-2", "look_down tilts the camera down, never past -60 degrees",
+        "CM-2", "after look_up has been held, holding look_down tilts the camera down",
+    )  # fmt: skip
+    p.expect(
+        "tilt_up", "camera_tilt",
+        {"from": "tilt_bottom", "to": "tilt_up", "min_deg": -60, "max_deg": 30, "rises": True,
+         "min_change_deg": 1.0},
+        "CM-2", "after look_down has been held, holding look_up tilts the camera up",
     )  # fmt: skip
     p.expect(
         "moves_along_camera", "moves_along_camera",
@@ -995,6 +1006,15 @@ def lineup() -> Playtest:
                 "nothing outside the entity registry has a Skeleton3D, CharacterBody3D or "
                 "VehicleBody3D",
             )  # fmt: skip
+            p.expect(
+                "look_fields", "look", {"mark": lead, "kind": "player", "expect": {}}, "AC-11",
+                "the player's look metadata has body, hair, skin, top, bottom, shoes, "
+                "hair_colour, props and scale",
+            )  # fmt: skip
+            p.expect(
+                "lead_scale", "look", {"mark": lead, "kind": "player", "expect": {"scale": 1.0}},
+                "AR-3", "a lead is shown at scale 1.0",
+            )  # fmt: skip
     p.expect(
         "leads_distinct", "looks_distinct", {"marks": marks, "kind": "player", "min_top_distance": 0.2},
         "CA-2", "any two leads differ in body or hair, and their tops by at least 0.20",
@@ -1023,7 +1043,7 @@ def feet() -> Playtest:
         ("sprint", {"move_forward": 1.0, "sprint": 1.0}),
     ]
     for name, press in gaits:
-        gait_segment(p, name, press, 90, 120)
+        gait_segment(p, name, press, 90, 240 if name == "walk" else 180)
     for name, _ in gaits:
         p.expect(
             f"feet_{name}", "feet",
@@ -1041,7 +1061,7 @@ def crouch() -> Playtest:
         "people.locomotion/crouch",
         ["FT-6", "FT-1"],
         "crouch toggles crouching: crouched, the hips are at most 75% of their standing height "
-        "above the plaza, and a crouched walk keeps its pace.",
+        "above the plaza, and a crouched walk moves at 0.50-1.10 m/s.",
         ["--role=solo", "--variation=6", "--save-dir={save_dir}"],
     )
     p.step(

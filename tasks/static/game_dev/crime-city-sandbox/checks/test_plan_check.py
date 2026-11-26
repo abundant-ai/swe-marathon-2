@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -178,8 +179,6 @@ def test_the_plan_is_what_the_generator_writes(tmp_path: Path) -> None:
 
 def test_the_format_examples_name_what_the_plan_has() -> None:
     """Every id FORMAT.md's examples quote exists in downtown.json, which they are taken from."""
-    import re
-
     text = (TASK / "common/design/plan/FORMAT.md").read_text()
     quoted = set(re.findall(r'"id": "([^"]+)"', text))
     d = SHIPPED

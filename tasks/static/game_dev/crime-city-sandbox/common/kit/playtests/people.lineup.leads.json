@@ -291,6 +291,30 @@
    "says": "nothing outside the entity registry has a Skeleton3D, CharacterBody3D or VehicleBody3D"
   },
   {
+   "id": "look_fields",
+   "check": "look",
+   "args": {
+    "mark": "lead_1",
+    "kind": "player",
+    "expect": {}
+   },
+   "rule": "AC-11",
+   "says": "the player's look metadata has body, hair, skin, top, bottom, shoes, hair_colour, props and scale"
+  },
+  {
+   "id": "lead_scale",
+   "check": "look",
+   "args": {
+    "mark": "lead_1",
+    "kind": "player",
+    "expect": {
+     "scale": 1.0
+    }
+   },
+   "rule": "AR-3",
+   "says": "a lead is shown at scale 1.0"
+  },
+  {
    "id": "look_lead_2",
    "check": "look",
    "args": {

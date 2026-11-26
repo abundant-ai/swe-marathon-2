@@ -42,8 +42,18 @@ files with every option explicit, the bodies, hair and clips retargeted through 
 (panel decision, unanimous). The reference holds all 13 playtests and grades 1.000000 through the
 real grader; the starter fails every playtest cleanly and grades 0. Report: `notes/PHASE1C-REPORT.md`.
 
-Next: the world builder (WS6 module 2) on the Downtown core with its plan-compliance playtest, the
-rest of the plans, and the remaining WS3 pieces (proxy, online sessions, report page).
+Phase 1d: the reference's world builder (WS6 module 2, private), the full Downtown plan (WS2) and
+the first people playtests (WS4). The builder makes the static world from the plan (roads split at
+crosswalks, junction boxes, kerbed blocks with sidewalks, parcels, solid buildings with their
+interiors cut out, signals running their programs), every collider tagged with its surface.
+`world.plan_compliance/downtown` checks it with 10,866 rays. Downtown is now about 0.86 x 0.87 km
+(7 x 7 blocks, 160 parcels, 260 lanes) with both highway portals; `check_plan.py` reports 0
+problems and catches all 17 mutations of its set. Five people playtests: paces, camera and the
+leads' lineup hold on the reference; feet and crouch wait for module 3. Report:
+`notes/PHASE1D-REPORT.md`.
+
+Next: the reference's people module (WS6 module 3: animation from the shipped clips, crouching,
+jumping and climbing), which the feet and crouch playtests wait for.
 
 The art (Kenney and Quaternius CC0 packs) and the Godot binary are not committed; `.gitignore` and
 `spike/.gitignore` list them. The reference game and the hidden material live outside this public
@@ -52,6 +62,63 @@ repository (`notes/PHASE1-PLAN.md`, section 4).
 ## Development log
 
 ### 2026-11-26
+
+Phase 1d: the world builder on Downtown, the full Downtown plan and the first people playtests, on
+macOS. There were no downloads, no Docker, no Linux VM and no platform runs. Every Godot run went
+through `scripts/heavy.py`; free memory stayed at 34-47%.
+- **World builder (WS6 module 2, private).** The reference builds the static world from the plan
+  when a map loads:
+  - roads along each centreline, split at the crosswalk bands (tagged `crosswalk`);
+  - junction boxes;
+  - blocks raised to their elevation, with a sidewalk band and its kerb;
+  - parcels as open ground (plaza, park, parking) or a forecourt round a solid building;
+  - interiors cut out of their buildings (room floors tagged `interior`, doorways, openings);
+  - painted lane markings;
+  - signal entities running their plan programs every tick, traffic lights and stop signs.
+
+  Each surface is one trimesh collider on layer 1 with its `surface` tag.
+- **Plan compliance (WS4).** `world.plan_compliance/downtown` casts 10,866 rays in one query step:
+  - lanes, sidewalk rings and crosswalk bands (WD-1, WD-2);
+  - roofs over every footprint and the sidewalk beside every parcel, and the open parcels (WD-3);
+  - doors, room floors, empty rooms and the opening between connected rooms (WD-4);
+  - points of interest (WD-5);
+  - every hit's surface tag (AC-8).
+
+  New kit checks back it: `rays`, `clear_run`, `surface_tags`, `none_listed` and `skeleton`. The
+  module 1 placeholder and three builder mutants (interiors left solid, crosswalks tagged `road`,
+  roofs a metre low) each fail the expectations aimed at them.
+- **Full Downtown (WS2).** About 0.86 x 0.87 km: 7 x 7 blocks, 160 parcels, 260 lanes, 15
+  signalised and 45 all-way-stop junctions. The highways leave through portals to Ashby Port (east)
+  and to Sable Hills (north, through an S-curve). The core keeps its parcels and points of interest.
+  `check_plan.py` now follows curves and checks portals, bounds and the GDD's point-of-interest ids.
+  It reports 0 problems, and `checks/test_plan_check.py` holds its mutation set: 17 mutations, all
+  caught.
+- **People playtests (WS4).**
+  - **Paces** (FT-1, IN-2) and **camera** (CM-1 to CM-3) hold on the reference.
+  - **The leads' lineup** (CA-1, CA-2, AC-5, AC-11) holds too.
+  - **Feet** (FT-2) and **crouch** (FT-6) need module 3's animation and crouch, so they are out of
+    the reference's required set until it lands.
+  - New kit checks: `pace`, `feet`, `hips_ratio`, `camera_frame`, `look_rate`, `camera_tilt`,
+    `moves_along_camera`, `look` and `looks_distinct`.
+- **Results.**
+  - Reference: 17 of the 19 playtests hold (the other two are feet and crouch). The real grader
+    gives 1.000000 with the 17 as instances, and 1.000000 on the private set (14 of 14).
+  - Starter: every playtest lists what did not hold, and it grades 0.000000.
+  - Ten replays give one hash.
+  - On the full map, imports take 2.8-3.6 s with a 64 MB cache, boots 0.22-0.55 s, and each game
+    process peaks at about 130 MB.
+- **Clarifications.** An independent read of every new developer-facing file found no evaluation
+  wording. Its findings led to seven clarifications, none adding a feature:
+  - which body point CM-1 frames, and on which window;
+  - CM-2's pitch sign;
+  - FT-2's planted toe and step;
+  - FT-6's hip height measured above the ground;
+  - the crosswalk height (WD-2);
+  - where door and opening heights are measured (WD-4, FORMAT.md);
+  - `player.spawn` with `lead`.
+
+  It also made the checks fairer and their notes clearer. Three private templates that spawned
+  inside the new world were repaired and the set redrawn.
 
 Phase 1c: the starter, the contract module, the first playtests and `qa run`, on macOS; no
 downloads, no Docker, no Linux VM, no platform runs. Every Godot run went through `scripts/heavy.py`
