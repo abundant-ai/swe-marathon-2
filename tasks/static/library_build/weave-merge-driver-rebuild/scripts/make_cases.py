@@ -816,6 +816,77 @@ def r_gate_dup_line(rng, lang):
     return base, ours, theirs, "F8", "gate.lines_restated"
 
 
+# ----------------------------------------------------------------------------- F1 routing sub-family
+
+
+def comment(lang: str, text: str) -> str:
+    """A whole-line comment in the language."""
+    return f"# {text}" if lang == "py" else f"// {text}"
+
+
+def padded(rng, lang, used, nbytes: int) -> Module:
+    """A module whose text before its last function is at least `nbytes` long."""
+    m = module(rng, lang, 3, used)
+    while len(render(m)) < nbytes:
+        m.items.insert(0, func(rng, lang, ident(rng, lang, used)))
+    return m
+
+
+def r_route_nul_between_git_and_driver(rng, lang):
+    """F1 routing: a NUL byte at offset 8,001-8,191 of ours: the driver exits 2; git still merges."""
+    used: set[str] = set()
+    base = padded(rng, lang, used, 8300)
+    ours, theirs = sides(base)
+    edit_line(rng, theirs.items[-1], 1)
+    text = render(ours)
+    at = rng.randint(8010, 8180)
+    cut = text.rfind("\n", 0, at) + 1
+    ours_text = text[:cut] + comment(lang, "marker \x00 byte") + "\n" + text[cut:]
+    return render(base), ours_text, render(theirs), "F1", "routing.binary_first_8192"
+
+
+def r_route_nul_after_8192(rng, lang):
+    """F1 routing dual: a NUL byte after offset 8,192 does not make the file binary."""
+    used: set[str] = set()
+    base = padded(rng, lang, used, 9000)
+    k = len(base.items) - 2
+    ours, theirs = sides(base)
+    ours.items.insert(
+        k + 1,
+        func(rng, lang, ident(rng, lang, used), [comment(lang, "late \x00 byte")]),
+    )
+    edit_line(rng, theirs.items[k + 1], 1)
+    return render(base), render(ours), render(theirs), "F1", "routing.nul_after_8192"
+
+
+def r_route_not_utf8(rng, lang):
+    """F1 routing: ours carries one byte that is not UTF-8 (in a comment): status 2."""
+    used: set[str] = set()
+    base = module(rng, lang, rng.randint(2, 4), used)
+    ours, theirs = sides(base)
+    ours.items[0].lines.insert(
+        1,
+        ("    " if lang == "py" else "  " if lang == "ts" else "\t")
+        + comment(lang, "caf\udce9"),
+    )
+    edit_line(rng, theirs.items[0], 2)
+    return render(base), render(ours), render(theirs), "F1", "routing.not_utf8"
+
+
+def r_route_markers_in_theirs(rng, lang):
+    """F1 routing: theirs already carries both marker strings: it is written back, status 1."""
+    used: set[str] = set()
+    base = module(rng, lang, rng.randint(2, 4), used)
+    ours, theirs = sides(base)
+    edit_line(rng, ours.items[0], 1)
+    theirs.items[-1].lines.insert(
+        1,
+        ("    " if lang == "py" else "  " if lang == "ts" else "\t")
+        + comment(lang, "<<<<<<< ours >>>>>>> theirs"),
+    )
+    return render(base), render(ours), render(theirs), "F1", "routing.markers_in_input"
+
+
 # ----------------------------------------------------------------------------- F9: rules that settle conflicts
 
 
@@ -963,6 +1034,12 @@ DATA_RECIPES = [
     r_data_dup_key,
     r_data_dual_keys,
 ]
+ROUTING_RECIPES = [
+    r_route_nul_between_git_and_driver,
+    r_route_nul_after_8192,
+    r_route_not_utf8,
+    r_route_markers_in_theirs,
+]
 LAYOUT_SOURCES = [
     r_insert_vs_header_edit,
     r_delete_vs_next_edit,
@@ -1020,6 +1097,11 @@ def main() -> None:
                     lang,
                     recipe.__name__,
                 )
+    for recipe in ROUTING_RECIPES:
+        for lang in ALL3:
+            for _ in range(max(2, args.per_recipe // 4)):
+                b, o, t, fam, feat = recipe(rng, lang)
+                emit((b, o, t), path_for(rng, lang), fam, feat, lang, recipe.__name__)
     for recipe in DATA_RECIPES:
         for lang in ("json", "toml"):
             for _ in range(args.per_recipe):
@@ -1033,7 +1115,7 @@ def main() -> None:
         )
         emit(texts, path_for(rng, lang), "F1", feat, lang, recipe.__name__ + "+layout")
     with open(args.out, "w", encoding="utf-8") as fh:
-        json.dump(cases, fh, ensure_ascii=False)
+        json.dump(cases, fh)
     print(f"{len(cases)} candidate cases")
 
 

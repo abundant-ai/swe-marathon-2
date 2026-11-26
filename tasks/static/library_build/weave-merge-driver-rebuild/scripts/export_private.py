@@ -36,7 +36,7 @@ def main() -> None:
     }
     netting = analysis["summary"]["netting"]["s_f"]
     with open(os.path.join(out_dir, "cases.json"), "w", encoding="utf-8") as fh:
-        json.dump(rows, fh, ensure_ascii=False)
+        json.dump(rows, fh)
     with open(os.path.join(out_dir, "expected.json"), "w") as fh:
         json.dump(expected, fh)
     with open(os.path.join(out_dir, "netting.json"), "w") as fh:
