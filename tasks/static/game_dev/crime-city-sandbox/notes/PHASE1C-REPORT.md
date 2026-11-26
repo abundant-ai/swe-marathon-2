@@ -210,7 +210,8 @@ This phase adds:
 | `a54e291` | WS4: the 13 playtests, `qa run` and `qa list`, the kit additions, `--plan-dir` through the grader, the GDD clarifications, the checks |
 | `bfe50e3` | WS4: wording from the independent read; movement preconditions; the acceptance runner |
 | `8a0ddb7` | WS4: a refused `state` command is reported plainly |
-| (next) | this report, the README and the acceptance numbers |
+| `5d6548f` | this report, the README and the acceptance numbers |
+| (next) | this table's hashes |
 
 Private (`crime-city-reference`, bundle refreshed after each): `cd0b2e2`, the contract layer;
 `1c44a1d`, the compile fix (explicit `Variant` returns) and the `corner_of` guard.
