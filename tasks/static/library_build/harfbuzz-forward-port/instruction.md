@@ -19,11 +19,11 @@ own.
 - `test/` in the tree holds upstream's own expectations for 14.3.0, and `util/` builds `hb-shape` and the other
   command-line tools when you configure a build of your own with them. Where a note below changes behaviour, an
   expectation under `test/` may change with it.
-- `/app/docs/specs/` describes the OpenType tables, Microsoft's script shaping rules, Apple's AAT tables and Unicode's
-  text segmentation. `/app/docs/unicode/` has the Unicode 18.0 data files that upstream's table generators read
-  (`src/update-unicode-tables.make` lists them), Microsoft's Universal Shaping Engine override files for Unicode 18,
-  the IANA language subtag registry and the OpenType language tag list. `/app/docs/notes.md` has the notes below as
-  a file.
+- `/app/docs/specs/` has notes on the OpenType tables, Apple's AAT tables, Microsoft's script shaping rules and
+  Unicode's text segmentation rules. `/app/docs/unicode/` has the data files that upstream's table generators read
+  (`src/update-unicode-tables.make` lists them) as upstream used them for Unicode 18.0, with Microsoft's Universal
+  Shaping Engine override files for Unicode 18 under `ms-use/`; the two sources of the language tag table are not
+  included. `/app/docs/notes.md` has the notes below as a file.
 - There is no network access. gcc and g++ 13, meson, ninja, ragel 6.10, Python 3 with fontTools and packTab, and the
   GLib development files are installed; fontTools is there so that you can build fonts of your own.
 
@@ -45,11 +45,11 @@ machines from the `.rl` files with ragel and regenerates nothing else, so any ot
 be in the tree.
 
 Our layout engine calls HarfBuzz's public C API only. It shapes runs of text, passing the text around each run as
-context, with features turned on for the whole run or for ranges of it, sets the direction, script and language or
-lets HarfBuzz guess them, chooses cluster levels and buffer flags, sets the buffer's not-found glyph, and applies variations, synthetic slant and synthetic emboldening. It
-reads glyph positions, glyph flags, glyph extents, font and fallback metrics, baselines, style values, language and
-script tags, and face data. Our customers also bring Apple-format fonts with `morx`, `mort`, `kerx`, `kern` and `trak`
-tables, and we lay those out with the same library.
+context, with features turned on for the whole run or for ranges of it. It sets the direction, script and language or
+lets HarfBuzz guess them, chooses cluster levels and buffer flags, sets the buffer's not-found glyph, and applies
+variations, synthetic slant and synthetic emboldening. It reads glyph positions, glyph flags, glyph extents, font and
+fallback metrics, baselines, style values, language and script tags, and face data. Our customers also bring
+Apple-format fonts with `morx`, `mort`, `kerx`, `kern` and `trak` tables, and we lay those out with the same library.
 
 Our customers' documents depend on every detail of what the library returns. A document a customer has approved is
 laid out again each time it is opened, exported or printed, and a glyph that moves, or a line that breaks in a
