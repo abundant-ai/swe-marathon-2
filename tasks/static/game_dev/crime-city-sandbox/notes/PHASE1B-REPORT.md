@@ -300,7 +300,8 @@ touch PRs; push it with `push_ops.sh` when convenient.
 | `f9280f0` | plays, traces, expectations; the grader with its self-test; self-test project and plays; hostile fixtures; checks |
 | `5a82219` | plan anchors, instance maker; play time without memory waits; first full grade |
 | `d2498ca` | children leaving the process group, lifetime memory peaks, deadline case, fail-fast self-test, Godot e2e checks |
-| FINAL_COMMIT | final runs: deadline case reworked, build and grader without deletions, README, this report |
+| `5e4484f` | final runs: deadline case reworked, build and grader without deletions, README, this report |
+| (next) | this table's hashes |
 
 ## Next workstream
 
