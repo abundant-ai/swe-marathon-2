@@ -393,7 +393,8 @@ def gen_aat(rng: random.Random, n: int) -> Iterator[dict]:
         p.stem: Font(p)
         for p in sorted(SYNTH.glob("k*.ttf")) + sorted(SYNTH.glob("trak-*.ttf"))
     }
-    words = ["AVATAR", "TOWAWAY", "LYNX", "WAVE", "HELLO", "ATOLL", "VALLEY", "TOTAL"]
+    # Every word holds at least one of the fonts' kerning pairs (AV, TO, LY, WA), so every case can show kerning.
+    words = ["AVATAR", "TOWAWAY", "LYNX", "WAVE", "WAYLAY", "ATOLL", "LYRE", "TOTAL"]
     for i in range(n):
         word = [ord(c) for c in rng.choice(words)]
         name = rng.choice(("trak-stat", "trak-stat", "trak-nostat"))
