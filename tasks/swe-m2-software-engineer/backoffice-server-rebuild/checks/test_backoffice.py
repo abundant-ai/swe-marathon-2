@@ -653,6 +653,9 @@ def test_nothing_the_agent_sees_calls_the_old_server_sealed():
     copies = re.findall(r"^COPY (\S+) (\S+)$", docker, flags=re.M)
     assert [source for source, _ in copies if "sealed" in source] == ["sealed/"]
     assert not [target for _, target in copies if "sealed" in target.lower()]
+    # the whole Dockerfile, its RUN and ENV lines too (re-check 12, S3): a RUN that writes the word into a file, or an
+    # ENV that names it, would put it in the image; the build folder's COPY line is the one place it may stand
+    assert "sealed" not in docker.replace("COPY sealed/ /opt/stockwell/app/", "").lower()
     for name in ("start-stockwell", "stockwell-supervisor", "fsmaint-sweep", "entrypoint.sh"):
         assert (name, f"/usr/local/sbin/{name}") in copies, name
         assert os.access(TASK / "environment" / name, os.X_OK) and name.endswith(package_step.EXECUTABLE), name
@@ -1846,9 +1849,11 @@ def test_memory_the_server_holds_stops_it_and_a_dead_grader_leaves_no_reward(tmp
     source = (STEP / "tests" / "verifier" / "replay.py").read_text()
     stop = source[source.index("    def stop(self) -> None:\n        \"\"\"Stop the server for good"):source.index("    def clean_slate(self)")]
     halt = source[source.index("    def halt(self, reason: str)"):source.index("    def _watch(self) -> None:\n        candidate, meter")]
-    assert "release_memory(self.uid)" in stop and "release_memory(candidate.uid)" in halt
+    # whitespace and line breaks do not count: a formatter may break these calls over lines (main's ruff splits
+    # `release_memory(self.uid)` in replay.py over three)
+    assert re.search(r"release_memory\(\s*self\.uid\s*,?\s*\)", stop) and re.search(r"release_memory\(\s*candidate\.uid\s*,?\s*\)", halt)
     release = source[source.index("def release_memory("):source.index("def cgroup_dirs(")]
-    assert 'DROP + ["ipcrm", "--all"]' in release and "memory_backed_dirs()" in release
+    assert re.search(r'DROP\s*\+\s*\[\s*"ipcrm"\s*,\s*"--all"\s*,?\s*\]', release) and re.search(r"memory_backed_dirs\(\s*\)", release)
     probe = r"""
 import json, sys
 from pathlib import Path
