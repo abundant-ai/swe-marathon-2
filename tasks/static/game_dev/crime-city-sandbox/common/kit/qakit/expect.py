@@ -99,6 +99,16 @@ def state_of(frame: dict | None) -> dict:
     return {k: v for k, v in st.items() if k != "ok"}
 
 
+def state_refused(frame: dict | None) -> str:
+    """Why the state command gave no report in a frame ("" when it gave one)."""
+    st = (frame or {}).get("state")
+    if isinstance(st, dict) and st.get("ok") is False:
+        return f"the state command answered: {st.get('error', 'no report')}"
+    if frame is not None and "state" in frame and not isinstance(st, dict):
+        return "the state command gave no answer"
+    return ""
+
+
 def dig(obj: object, path: str) -> object:
     """Follow a dotted path ("player.money") through nested dicts; None when absent."""
     for part in path.split("."):
@@ -291,10 +301,15 @@ def check_state_value(rec: PlayRecord, args: dict) -> Result:
     "as": "minutes" reads an "hh:mm" clock as minutes after midnight before comparing.
     """
     run = rec.runs[int(args.get("run", 0))]
-    val = dig(state_of(frame_at_mark(run, args["mark"])), args["path"])
+    frame = frame_at_mark(run, args["mark"])
+    val = dig(state_of(frame), args["path"])
     measured = {"value": val}
     if val is None:
-        return None, measured, f"no {args['path']} in the state report"
+        return (
+            None,
+            measured,
+            state_refused(frame) or f"no {args['path']} in the state report",
+        )
     if "equals_answer" in args:
         want = answer_id(run, args["equals_answer"])
         measured["expected"] = want
@@ -514,8 +529,9 @@ def check_state_fields(rec: PlayRecord, args: dict) -> Result:
     run = rec.runs[int(args.get("run", 0))]
     frame = frame_at_mark(run, args["mark"])
     st = state_of(frame)
-    if not st:
-        return None if frame is None else False, {}, "no state report"
+    refused = state_refused(frame)
+    if not st or refused:
+        return None if frame is None else False, {}, refused or "no state report"
     probs = state_problems(st, bool(args.get("player", True)))
     return (
         not probs,
