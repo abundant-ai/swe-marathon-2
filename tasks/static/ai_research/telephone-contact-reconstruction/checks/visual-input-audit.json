@@ -1,0 +1,74 @@
+{
+  "experiment": "6dc2a858",
+  "task_version": 1,
+  "audit_utc": "2026-11-26T23:23:58.376585+00:00",
+  "arms": {
+    "correct": {
+      "registry_id": "swe-m2_ai-research_telephone-contact-reconstruction-correct-10b5125a",
+      "candidate_inputs": {
+        "environment/.dockerignore": "403a447a64f4bf43173bae2a5d49364dcd1a6a2513a6e484a93541b067dffa44",
+        "environment/Dockerfile": "42aef6c717d24794cc299595b441440ff88f48847400d1ec1d94bbe64ee2288a",
+        "environment/public/a-keyframes.txt": "bb03d8297fff9cd189f5ea74a895791a912c76d10259906d52a172d04425eabf",
+        "environment/public/a-poses.csv": "c40574ddcf90653334fa90977070d5a3ffd817bde53a3ba3e35e25ef10ad861e",
+        "environment/public/attribution.txt": "fb62a0dd096f3c2913f7696a30d84b7abcb1deaed2f868943b16438e6c722479",
+        "environment/public/b-keyframes.txt": "33878dfda498eb2c72f437826056380bcfa9cef7f7d69689e56182ffc1c5e3e1",
+        "environment/public/b-poses.csv": "e04bbe13daa93cb76f5ca6870d28444d85eb487c83dd762353db170a5753e1cd",
+        "environment/public/clip.mp4": "63aa6b07ef517cf796e5bf4746101966fc719ff28b3430d4c07769c3c65ab75c",
+        "environment/public/frames.zip": "21c66e1957c304c9bad17937acb52e6a0e1285440950664c5781a2d67fd03ffa",
+        "environment/public/observation.png": "b4146a2fba7dbf24b7137e286b271bd46aacff8e25ba2e275add8833a8290291",
+        "environment/public/python": "aef50a93a1c42f7c76b83adf8f28bfb04bb543f62f79dc48b7a40024edba101e",
+        "environment/public/smoke.py": "0b73d9497f6b140f44743be413dd0fa2ecbab3ef7c75aff2514b083d6af0a58e",
+        "environment/public/submission.py": "41a778dc70e907fed83d3638ed855e443c9856c316ed32bde92ca5f86f9b9edb",
+        "environment/public/test_receipt.json": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356",
+        "instruction.md": "a076bc3f8630ec456b8f929bae0299f4b26cb28c4d336956ce288518dc32e145"
+      }
+    },
+    "swapped": {
+      "registry_id": "swe-m2_ai-research_telephone-contact-reconstruction-swapped-908d14d9",
+      "candidate_inputs": {
+        "environment/.dockerignore": "403a447a64f4bf43173bae2a5d49364dcd1a6a2513a6e484a93541b067dffa44",
+        "environment/Dockerfile": "42aef6c717d24794cc299595b441440ff88f48847400d1ec1d94bbe64ee2288a",
+        "environment/public/a-keyframes.txt": "bb03d8297fff9cd189f5ea74a895791a912c76d10259906d52a172d04425eabf",
+        "environment/public/a-poses.csv": "c40574ddcf90653334fa90977070d5a3ffd817bde53a3ba3e35e25ef10ad861e",
+        "environment/public/attribution.txt": "fb62a0dd096f3c2913f7696a30d84b7abcb1deaed2f868943b16438e6c722479",
+        "environment/public/b-keyframes.txt": "33878dfda498eb2c72f437826056380bcfa9cef7f7d69689e56182ffc1c5e3e1",
+        "environment/public/b-poses.csv": "e04bbe13daa93cb76f5ca6870d28444d85eb487c83dd762353db170a5753e1cd",
+        "environment/public/clip.mp4": "8571b3c8e79496f9dc7a3d1f7f6b643ca9fbce98b9541838ae70bb4dc0a32e94",
+        "environment/public/frames.zip": "0f590868af25305e1c97061096a6d4d285cd554102995150902cac766ee686c4",
+        "environment/public/observation.png": "51e93c4932df1fdaafbfc5fdfc254149f79112e2c1bd29e0c6ac4a82c202a5dd",
+        "environment/public/python": "aef50a93a1c42f7c76b83adf8f28bfb04bb543f62f79dc48b7a40024edba101e",
+        "environment/public/smoke.py": "0b73d9497f6b140f44743be413dd0fa2ecbab3ef7c75aff2514b083d6af0a58e",
+        "environment/public/submission.py": "41a778dc70e907fed83d3638ed855e443c9856c316ed32bde92ca5f86f9b9edb",
+        "environment/public/test_receipt.json": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356",
+        "instruction.md": "a076bc3f8630ec456b8f929bae0299f4b26cb28c4d336956ce288518dc32e145"
+      },
+      "differences_from_matching": [
+        "environment/public/clip.mp4",
+        "environment/public/frames.zip",
+        "environment/public/observation.png"
+      ]
+    },
+    "none": {
+      "registry_id": "swe-m2_ai-research_telephone-contact-reconstruction-none-75282dc0",
+      "candidate_inputs": {
+        "environment/.dockerignore": "403a447a64f4bf43173bae2a5d49364dcd1a6a2513a6e484a93541b067dffa44",
+        "environment/Dockerfile": "42aef6c717d24794cc299595b441440ff88f48847400d1ec1d94bbe64ee2288a",
+        "environment/public/a-keyframes.txt": "bb03d8297fff9cd189f5ea74a895791a912c76d10259906d52a172d04425eabf",
+        "environment/public/a-poses.csv": "c40574ddcf90653334fa90977070d5a3ffd817bde53a3ba3e35e25ef10ad861e",
+        "environment/public/attribution.txt": "fb62a0dd096f3c2913f7696a30d84b7abcb1deaed2f868943b16438e6c722479",
+        "environment/public/b-keyframes.txt": "33878dfda498eb2c72f437826056380bcfa9cef7f7d69689e56182ffc1c5e3e1",
+        "environment/public/b-poses.csv": "e04bbe13daa93cb76f5ca6870d28444d85eb487c83dd762353db170a5753e1cd",
+        "environment/public/python": "aef50a93a1c42f7c76b83adf8f28bfb04bb543f62f79dc48b7a40024edba101e",
+        "environment/public/smoke.py": "0b73d9497f6b140f44743be413dd0fa2ecbab3ef7c75aff2514b083d6af0a58e",
+        "environment/public/submission.py": "41a778dc70e907fed83d3638ed855e443c9856c316ed32bde92ca5f86f9b9edb",
+        "environment/public/test_receipt.json": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356",
+        "instruction.md": "a076bc3f8630ec456b8f929bae0299f4b26cb28c4d336956ce288518dc32e145"
+      },
+      "differences_from_matching": [
+        "environment/public/clip.mp4",
+        "environment/public/frames.zip",
+        "environment/public/observation.png"
+      ]
+    }
+  }
+}
