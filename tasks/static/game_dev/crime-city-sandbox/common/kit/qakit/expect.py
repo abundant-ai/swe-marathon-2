@@ -1576,8 +1576,9 @@ def check_fall_damage(rec: PlayRecord, args: dict) -> Result:
     """FT-8: between two marks, the first standing on the ground the player falls from and
     the second standing (or lying) on the ground it landed on, the entity's position drops
     h metres and the state report's player.health falls by: nothing when h is under safe_m
-    (3.0); 100 * (h - safe_m) / (fatal_m - safe_m) within tol (a share of that, 0.10) up to
-    fatal_m (15.0); to 0 from fatal_m."""
+    (3.0); 100 * (h - safe_m) / (fatal_m - safe_m) within tol (a share of that, 0.10, and
+    at least half a health point, for health kept in whole numbers) up to fatal_m (15.0); to
+    0 from fatal_m."""
     run = rec.runs[int(args.get("run", 0))]
     fa, fb = frame_at_mark(run, args["from"]), frame_at_mark(run, args["to"])
     pa, pb = point_of(fa, args), point_of(fb, args)
@@ -1608,7 +1609,8 @@ def check_fall_damage(rec: PlayRecord, args: dict) -> Result:
     want = 100.0 * (drop - safe) / (fatal - safe)
     tol = float(args.get("tol", 0.1))
     measured["expected_loss"] = round(want, 2)
-    ok = abs(loss - want) <= tol * want
+    # health may be kept in whole numbers: half a point is always allowed
+    ok = abs(loss - want) <= max(tol * want, 0.5)
     note = (
         ""
         if ok

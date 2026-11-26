@@ -4,7 +4,11 @@ A template is a play (qa-play/1) with three additions:
 - "family": the reward family it counts in;
 - "params": how to draw each parameter: {"choice": [...]}, {"randint": [lo, hi]},
   {"uniform": [lo, hi], "round": k}, {"const": value}, or {"sum": [names or numbers]}
-  drawn after the others (a drawn object's fields are "$name.field");
+  drawn after the others (a drawn object's fields are "$name.field"), or
+  {"expr": text, "round": k} computed last, once every parameter it names is known: the
+  text is arithmetic (numbers, + - * /, parentheses, min, max, abs) over "$name" and
+  "$name.field" of other parameters, rounded to k decimals (default 3; 0 gives a whole
+  number, halves to even); it draws nothing, so the other parameters come out the same;
 - "anchors": named plan anchors ({"poi": ...}, {"lane": ..., "s": ...}, a point, ...),
   which may use parameters.
 
@@ -22,9 +26,12 @@ usage: python scripts/make_instances.py --templates DIR --draw FILE --out DIR
 from __future__ import annotations
 
 import argparse
+import ast
 import hashlib
 import json
+import operator
 import random
+import re
 import sys
 from pathlib import Path
 
@@ -41,6 +48,60 @@ FAMILY_WEIGHTS = {
 }  # fmt: skip
 
 
+EXPR_NAME = re.compile(r"\$([A-Za-z_]\w*(?:\.\w+)?)")
+EXPR_OPS = {
+    ast.Add: operator.add, ast.Sub: operator.sub, ast.Mult: operator.mul,
+    ast.Div: operator.truediv, ast.USub: operator.neg, ast.UAdd: operator.pos,
+}  # fmt: skip
+EXPR_FUNCS = {"min": min, "max": max, "abs": abs}
+
+
+def eval_expr(text: str, values: dict) -> float:
+    """The value of an "expr" parameter's text (see the module docstring).
+
+    Only numbers, the four operations, parentheses, min, max, abs and "$name" references
+    to numeric parameters are accepted; nothing else is evaluated.
+
+    Raises:
+        ValueError: Anything else in the text, a name that is not a known number, or a
+            division by zero.
+    """
+    refs: dict[str, str] = {}
+
+    def ref(m: re.Match) -> str:
+        refs[f"_p{len(refs)}"] = m.group(1)
+        return f"_p{len(refs) - 1}"
+
+    def ev(node: ast.AST) -> float:
+        if isinstance(node, ast.Expression):
+            return ev(node.body)
+        if isinstance(node, ast.Constant) and type(node.value) in (int, float):
+            return node.value
+        if isinstance(node, ast.Name) and node.id in refs:
+            v = values.get(refs[node.id])
+            if type(v) not in (int, float):
+                raise ValueError(f"expr {text!r}: ${refs[node.id]} is not a number")
+            return v
+        if isinstance(node, ast.UnaryOp) and type(node.op) in EXPR_OPS:
+            return EXPR_OPS[type(node.op)](ev(node.operand))
+        if isinstance(node, ast.BinOp) and type(node.op) in EXPR_OPS:
+            return EXPR_OPS[type(node.op)](ev(node.left), ev(node.right))
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id in EXPR_FUNCS
+            and node.args
+            and not node.keywords
+        ):
+            return EXPR_FUNCS[node.func.id](*(ev(a) for a in node.args))
+        raise ValueError(f"expr {text!r}: {type(node).__name__} is not allowed")
+
+    try:
+        return ev(ast.parse(EXPR_NAME.sub(ref, text), mode="eval"))
+    except (SyntaxError, TypeError, ZeroDivisionError) as exc:
+        raise ValueError(f"expr {text!r}: {exc}") from exc
+
+
 def draw_params(spec: dict, rng: random.Random) -> dict:
     """Draw every parameter of a template, in sorted name order.
 
@@ -52,10 +113,11 @@ def draw_params(spec: dict, rng: random.Random) -> dict:
         {name: value}.
 
     Raises:
-        ValueError: A distribution of an unknown kind.
+        ValueError: A distribution of an unknown kind, or "expr" parameters that name
+            unknown parameters or each other in a cycle.
     """
     out = {}
-    plain = sorted(n for n in spec if "sum" not in spec[n])
+    plain = sorted(n for n in spec if "sum" not in spec[n] and "expr" not in spec[n])
     derived = sorted(n for n in spec if "sum" in spec[n])
     for name in plain + derived:
         d = spec[name]
@@ -74,6 +136,20 @@ def draw_params(spec: dict, rng: random.Random) -> dict:
         if isinstance(out[name], dict):  # a drawn object: its fields are $name.field
             for k, v in out[name].items():
                 out[f"{name}.{k}"] = v
+    pending = sorted(n for n in spec if "expr" in spec[n])
+    while pending:
+        ready = [
+            n
+            for n in pending
+            if all(x in out for x in EXPR_NAME.findall(spec[n]["expr"]))
+        ]
+        if not ready:
+            raise ValueError(f"parameters {pending}: unknown names or a cycle")
+        for name in ready:
+            x = eval_expr(spec[name]["expr"], out)
+            k = int(spec[name].get("round", 3))
+            out[name] = round(x) if k == 0 else round(x, k)
+            pending.remove(name)
     return out
 
 
