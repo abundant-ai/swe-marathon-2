@@ -101,15 +101,15 @@ The checks an expectation can use:
 | `moves_along_camera` | the player moves along the camera's forward direction |
 | `look` | an entity's `look` metadata has every field and the expected values |
 | `looks_distinct` | the looks at several marks differ from each other enough |
-| `jump` | between two marks the hips rise within a range above their height at the first, and the entity is off the ground (its position more than `off_m` above `ground_y`) for a time within a range: the longest run of samples off the ground |
+| `jump` | between two marks the hips rise within a range above their height at the first, and the entity is off the ground (its position more than `off_m` above `ground_y`, by default its height at the first mark) for a time within a range: the longest run of samples off the ground |
 | `climb` | from the mark where jump is pressed the entity stands on top of a box (over its top, within `on_top_m` of its height) in time; before that a hand comes within `hand_m` of the top edge (`edge`) while the `Hips` are below the top; no observed bone is ever more than `max_into_m` inside the box |
-| `vault` | from the mark where jump is pressed the entity's position goes past the box's far side in time; while the `Hips` are over its top they are at least `clear_m` above it; no observed bone is ever more than `max_into_m` inside the box |
-| `fall_damage` | between a mark standing before a fall and one standing after it, the hips drop h metres and `player.health` falls by FT-8's amount for h (nothing under 3 m, all of it from 15 m, within `tol` in between) |
+| `vault` | from the mark where jump is pressed the entity's position goes past the box's far side in time; the `Hips` pass over its top, and while they are over it they are at least `clear_m` above it; no observed bone is ever more than `max_into_m` inside the box |
+| `fall_damage` | between a mark standing before a fall and one after it, the entity's position drops h metres and `player.health` falls by FT-8's amount for h: nothing under 3 m, all of it from 15 m, and in between `100 * (h - 3) / 12` within `tol` (a share of that amount) |
 | `camera_clear` | in at least `min_share` of the samples, the segment from the `Head` bone to the camera passes through none of the listed boxes |
 | `signal_entities` | at a mark, each listed signalised approach and each listed crosswalk with walk signals has exactly one `signal` entity with its metadata and a valid state |
-| `signal_program` | every signal shows its plan program's state within one tick; program ticks count from the tick the `world.reset` of `reset_step` ran in, and a frame taken at tick t shows the game's tick t - 1 |
-| `signal_greens` | the approaches of a junction that are green at the same time all belong to one phase |
-| `signal_walks` | while a crosswalk shows walk, every approach of its junction is red except those green in the phase that lists it |
+| `signal_program` | every signal shows its plan program's state at that tick or one tick either side; program ticks count from the tick the `world.reset` of `reset_step` ran in, and a frame taken at tick t shows the game's tick t - 1 |
+| `signal_greens` | the approaches of a junction that are green at the same time all belong to one phase (with `reset_step`, the tick on either side of a phase change is let off) |
+| `signal_walks` | while a crosswalk shows walk, every approach of its junction is red except those green in the phase that lists it, and none is amber (with `reset_step`, the tick on either side of a phase change is let off) |
 
 A box is a solid placed with `prop.spawn`: `{"p": the middle of its base, "size": [width,
 height, depth], "heading": degrees}`, its depth along the heading (chapter 17). A program is a

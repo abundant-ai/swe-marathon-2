@@ -223,8 +223,9 @@ and 8.5 m/s, its crouch walk at about 0.75 and its swim at about 2.2.
 - **FT-7** Swimming: in water deeper than 1.4 m the player swims. The head bone stays no lower than
   0.10 m below the surface, the torso pitches at most 45 degrees from horizontal, and the swim pace
   is 1.50-3.00 m/s. The player can leave the water up a ladder or a beach.
-- **FT-8** Falls: a drop of the hips of less than 3.0 m does no damage; from 3.0 m to 15.0 m it
-  takes `100 * (h - 3) / 12` health (within 10%); 15 m or more kills.
+- **FT-8** Falls: a fall of h metres (from the ground the player leaves to the ground it lands on)
+  does no damage when h is less than 3.0; from 3.0 m to 15.0 m it takes `100 * (h - 3) / 12`
+  health (within 10%); 15 m or more kills.
 - **FT-9** Ragdoll: a person goes limp under physics within 0.2 s of dying, of an explosion within
   6 m, of a fall of 6 m or more, or of being hit by a vehicle at 20 km/h or more. While limp, the
   hips move under physics (in free fall their vertical acceleration is within 20% of gravity), no

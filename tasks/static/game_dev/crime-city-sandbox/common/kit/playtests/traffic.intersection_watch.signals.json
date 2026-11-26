@@ -1283,7 +1283,8 @@
        }
       ]
      }
-    }
+    },
+    "reset_step": 1
    },
    "rule": "TR-4",
    "says": "no two approaches are green at once unless their program puts them in one phase"
@@ -1882,7 +1883,8 @@
        }
       ]
      }
-    }
+    },
+    "reset_step": 1
    },
    "rule": "TR-4",
    "says": "a crosswalk shows walk only during the green of the phase that lists it"

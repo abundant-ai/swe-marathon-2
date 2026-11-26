@@ -1352,7 +1352,12 @@ def check_jump(rec: PlayRecord, args: dict) -> Result:
         return None, {}, f"the {bone['bone']} bone was not observed at {args['from']}"
     heights = [p[1] for p in (point_of(f, bone) for f in frames) if p is not None]
     rise = max(heights) - first[1]
-    ground = float(args["ground_y"]) + float(args.get("off_m", 0.02))
+    start = point_of(frames[0], dict(args, bone=None))
+    if "ground_y" not in args and start is None:
+        return None, {}, f"the entity was not observed at {args['from']}"
+    ground_y = float(args["ground_y"]) if "ground_y" in args else start[1]
+    off_m = float(args.get("off_m", 0.02))
+    ground = ground_y + off_m
     step = sample_ticks(frames)
     best = cur = 0
     for fr in frames:
@@ -1369,7 +1374,14 @@ def check_jump(rec: PlayRecord, args: dict) -> Result:
         return False, measured, f"the hips rose {rise:.2f} m, expected {lo}-{hi}"
     lo, hi = float(args["min_air_s"]), float(args["max_air_s"])
     if not lo <= air <= hi:
-        return False, measured, f"off the ground for {air:.2f} s, expected {lo}-{hi}"
+        return (
+            False,
+            measured,
+            (
+                f"off the ground (more than {off_m} m above {ground_y:.2f}) for {air:.2f} s, "
+                f"expected {lo}-{hi}"
+            ),
+        )
     return True, measured, ""
 
 
@@ -1389,11 +1401,13 @@ def check_climb(rec: PlayRecord, args: dict) -> Result:
     t0 = int(frames[0].get("t", 0))
     on_top = None
     reach = None
+    highest = None
     for fr in frames:
         e = entity_of(fr, args)
         if e is None or not isinstance(e.get("p"), list):
             continue
         u, w, v = box_frame(box, [float(c) for c in e["p"]])
+        highest = w if highest is None else max(highest, w)
         if (
             abs(u) <= hw
             and abs(v) <= hd
@@ -1414,7 +1428,19 @@ def check_climb(rec: PlayRecord, args: dict) -> Result:
     }
     limit = float(args["within_s"])
     if on_top is None or on_top - t0 > limit * TICK_HZ:
-        return False, measured, f"not on top within {limit} s"
+        got = "never" if on_top is None else f"after {(on_top - t0) / TICK_HZ:.2f} s"
+        up = (
+            ""
+            if highest is None
+            else f", the position at most {highest:.2f} m above its base"
+        )
+        return (
+            False,
+            measured,
+            (
+                f"not on top within {limit} s (on top {got}; the top is {height:.2f} m up{up})"
+            ),
+        )
     if reach is None or reach > float(args["hand_m"]):
         what = (
             "no hand was observed"
@@ -1456,8 +1482,12 @@ def check_vault(rec: PlayRecord, args: dict) -> Result:
     t0 = int(frames[0].get("t", 0))
     over = None
     clear = None
+    furthest = None
     for fr in frames:
         e = entity_of(fr, args)
+        if e is not None and isinstance(e.get("p"), list):
+            along = -box_frame(box, [float(c) for c in e["p"]])[2] * side
+            furthest = along if furthest is None else max(furthest, along)
         past = (
             e is not None
             and isinstance(e.get("p"), list)
@@ -1479,7 +1509,14 @@ def check_vault(rec: PlayRecord, args: dict) -> Result:
     }
     limit = float(args["within_s"])
     if over is None or over - t0 > limit * TICK_HZ:
-        return False, measured, f"not past the obstacle within {limit} s"
+        short = (
+            ""
+            if furthest is None
+            else f"; it got {hd - furthest:.2f} m short of the far side"
+        )
+        if over is not None:
+            short = f"; it was past after {(over - t0) / TICK_HZ:.2f} s"
+        return False, measured, f"not past the obstacle within {limit} s{short}"
     if clear is None:
         return False, measured, "the hips never passed over the obstacle"
     if clear < float(args["clear_m"]):
@@ -1515,7 +1552,8 @@ def check_camera_clear(rec: PlayRecord, args: dict) -> Result:
         p = [float(c) for c in cam["p"]]
         if any(segment_hits_box(box, head, p) for box in args["boxes"]):
             blocked += 1
-            first = fr.get("t") if first is None else first
+            if first is None:
+                first = (fr.get("t"), math.dist(head, p))
     if not n:
         return None, {}, "the camera and the Head bone were not observed"
     share = (n - blocked) / n
@@ -1526,42 +1564,54 @@ def check_camera_clear(rec: PlayRecord, args: dict) -> Result:
             False,
             measured,
             (
-                f"the camera is behind a wall in {blocked} of {n} samples, first at tick {first}"
+                f"the camera is behind a wall in {blocked} of {n} samples, first at tick "
+                f"{first[0]}, {first[1]:.2f} m from the head"
             ),
         )
     return True, measured, ""
 
 
 def check_fall_damage(rec: PlayRecord, args: dict) -> Result:
-    """FT-8: between two marks, the first standing before a fall and the second standing
-    after landing, the bone (default Hips) drops h metres and the state report's
-    player.health falls by: nothing when h is under safe_m (3.0); 100 * (h - safe_m) /
-    (fatal_m - safe_m) within tol (a share, 0.10) up to fatal_m (15.0); to 0 from fatal_m."""
+    """FT-8: between two marks, the first standing on the ground the player falls from and
+    the second standing (or lying) on the ground it landed on, the entity's position drops
+    h metres and the state report's player.health falls by: nothing when h is under safe_m
+    (3.0); 100 * (h - safe_m) / (fatal_m - safe_m) within tol (a share of that, 0.10) up to
+    fatal_m (15.0); to 0 from fatal_m."""
     run = rec.runs[int(args.get("run", 0))]
     fa, fb = frame_at_mark(run, args["from"]), frame_at_mark(run, args["to"])
-    bone = dict(args, bone=args.get("bone", "Hips"))
-    pa, pb = point_of(fa, bone), point_of(fb, bone)
+    pa, pb = point_of(fa, args), point_of(fb, args)
     ha = dig(state_of(fa), "player.health")
     hb = dig(state_of(fb), "player.health")
     if pa is None or pb is None:
-        return None, {}, f"the {bone['bone']} bone was not observed at both marks"
+        return None, {}, "the entity was not observed at both marks"
     if not _is_num(ha) or not _is_num(hb):
         return None, {}, "player.health was not in the state report at both marks"
     drop = pa[1] - pb[1]
     loss = float(ha) - float(hb)
     safe, fatal = float(args.get("safe_m", 3.0)), float(args.get("fatal_m", 15.0))
-    measured = {"drop_m": round(drop, 3), "health_before": ha, "health_after": hb}
+    measured = {"fall_m": round(drop, 3), "health_before": ha, "health_after": hb}
     if drop < safe:
         ok = abs(loss) < 0.5
-        return ok, measured, "" if ok else f"a {drop:.2f} m drop took {loss:g} health"
+        return (
+            ok,
+            measured,
+            "" if ok else f"a {drop:.2f} m fall took {loss:g} health, expected none",
+        )
     if drop >= fatal:
         ok = float(hb) <= 0.0
-        return ok, measured, "" if ok else f"a {drop:.2f} m drop left {hb:g} health"
+        return (
+            ok,
+            measured,
+            "" if ok else f"a {drop:.2f} m fall left {hb:g} health, expected 0",
+        )
     want = 100.0 * (drop - safe) / (fatal - safe)
+    tol = float(args.get("tol", 0.1))
     measured["expected_loss"] = round(want, 2)
-    ok = abs(loss - want) <= float(args.get("tol", 0.1)) * want
+    ok = abs(loss - want) <= tol * want
     note = (
-        "" if ok else f"a {drop:.2f} m drop took {loss:g} health, expected {want:.1f}"
+        ""
+        if ok
+        else f"a {drop:.2f} m fall took {loss:g} health, expected {want:.1f} (within {tol:.0%})"
     )
     return ok, measured, note
 
@@ -1646,7 +1696,7 @@ def check_signal_program(rec: PlayRecord, args: dict) -> Result:
     """TR-4: between two marks every signal of the listed programs shows its program's
     state within one tick. Program ticks count from the tick the world.reset command of
     step reset_step ran in; a frame taken at tick t shows what the game did in tick t - 1,
-    so it must show the program's state at t - 1 - reset, give or take one tick."""
+    so it must show the program's state at t - 1 - reset, or one tick either side."""
     run = rec.runs[int(args.get("run", 0))]
     frames = [
         f for f in frames_between(run, args["from"], args["to"]) if signals_seen(f)
@@ -1665,8 +1715,8 @@ def check_signal_program(rec: PlayRecord, args: dict) -> Result:
                 got = seen.get((inter, key))
                 if got and len(got) == 1 and all(got[0] != w.get(key) for w in want):
                     wrong.append(
-                        {"tick": fr["t"], "at": inter, "signal": key, "shows": got[0],
-                         "program": expected}
+                        {"tick": fr["t"], "program_tick": k, "at": inter, "signal": key,
+                         "shows": got[0], "program": expected}
                     )  # fmt: skip
     measured = {
         "frames": len(frames),
@@ -1679,26 +1729,44 @@ def check_signal_program(rec: PlayRecord, args: dict) -> Result:
             False,
             measured,
             (
-                f"at tick {w['tick']} {w['signal']} at {w['at']} shows {w['shows']}, its "
-                f"program {w['program']}"
+                f"at tick {w['tick']}, {w['program_tick']} ticks after the reset, "
+                f"{w['signal']} at {w['at']} shows {w['shows']}; its program shows "
+                f"{w['program']} then"
             ),
         )
     return True, measured, ""
 
 
-def check_signal_greens(rec: PlayRecord, args: dict) -> Result:
-    """TR-4: between two marks, the approaches of an intersection that show green at the
-    same time all belong to one phase of its program."""
+def changing(prog: dict, k: int) -> bool:
+    """Whether a program changes any state within one tick of program tick k."""
+    return program_states(prog, k - 1) != program_states(prog, k + 1)
+
+
+def signal_frames(rec: PlayRecord, args: dict) -> tuple[list[dict], int | None]:
+    """The frames between the marks that show signals, and the reset tick (when the args
+    name reset_step: frames within one tick of a phase change are then let off, as TR-4
+    allows a tick either way)."""
     run = rec.runs[int(args.get("run", 0))]
     frames = [
         f for f in frames_between(run, args["from"], args["to"]) if signals_seen(f)
     ]
+    t_reset = reset_tick(run, int(args["reset_step"])) if "reset_step" in args else None
+    return frames, t_reset
+
+
+def check_signal_greens(rec: PlayRecord, args: dict) -> Result:
+    """TR-4: between two marks, the approaches of an intersection that show green at the
+    same time all belong to one phase of its program (with reset_step, not counting the
+    tick on either side of a phase change)."""
+    frames, t_reset = signal_frames(rec, args)
     if not frames:
         return None, {}, "no signals were observed"
     clash = []
     for fr in frames:
         seen = signals_seen(fr)
         for inter, prog in args["programs"].items():
+            if t_reset is not None and changing(prog, int(fr["t"]) - 1 - t_reset):
+                continue
             green = {k for (i, k), v in seen.items() if i == inter and "green" in v}
             if green and not any(green <= set(ph["green"]) for ph in prog["phases"]):
                 clash.append({"tick": fr.get("t"), "at": inter, "green": sorted(green)})
@@ -1708,25 +1776,27 @@ def check_signal_greens(rec: PlayRecord, args: dict) -> Result:
         return (
             False,
             measured,
-            f"at tick {c['tick']} {', '.join(c['green'])} are green together",
+            (
+                f"at tick {c['tick']} {', '.join(c['green'])} at {c['at']} are green "
+                "together, and no phase of its program has them all"
+            ),
         )
     return True, measured, ""
 
 
 def check_signal_walks(rec: PlayRecord, args: dict) -> Result:
     """TR-4: between two marks, while a crosswalk shows walk, every approach of its
-    intersection is red except those green in the phase that lets it walk (none shows
-    amber)."""
-    run = rec.runs[int(args.get("run", 0))]
-    frames = [
-        f for f in frames_between(run, args["from"], args["to"]) if signals_seen(f)
-    ]
+    intersection is red except those green in the phase that lists it, and none shows
+    amber (with reset_step, not counting the tick on either side of a phase change)."""
+    frames, t_reset = signal_frames(rec, args)
     if not frames:
         return None, {}, "no signals were observed"
     wrong = []
     for fr in frames:
         seen = signals_seen(fr)
         for inter, prog in args["programs"].items():
+            if t_reset is not None and changing(prog, int(fr["t"]) - 1 - t_reset):
+                continue
             lit = {k: v[0] for (i, k), v in seen.items() if i == inter and len(v) == 1}
             for cw, st in lit.items():
                 if st != "walk":
@@ -1746,12 +1816,12 @@ def check_signal_walks(rec: PlayRecord, args: dict) -> Result:
     }
     if wrong:
         w = wrong[0]
+        lit = ", ".join(f"{k} is {st}" for k, st in w["lit"])
+        why = f"while {lit}" if lit else "outside the phases that list it"
         return (
             False,
             measured,
-            (
-                f"at tick {w['tick']} {w['crosswalk']} shows walk while {w['lit'] or 'its phase is over'}"
-            ),
+            f"at tick {w['tick']} {w['crosswalk']} at {w['at']} shows walk {why}",
         )
     return True, measured, ""
 

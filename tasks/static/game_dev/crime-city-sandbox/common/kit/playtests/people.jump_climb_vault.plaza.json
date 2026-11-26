@@ -425,7 +425,6 @@
     "to": "jump_b",
     "kind": "player",
     "bone": "Hips",
-    "ground_y": 0.15,
     "off_m": 0.02,
     "min_rise_m": 0.4,
     "max_rise_m": 0.8,

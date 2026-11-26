@@ -1148,9 +1148,8 @@ def jump_climb_vault() -> Playtest:
     p.step("observe", light)
     p.expect(
         "jump", "jump",
-        {"from": "jump_a", "to": "jump_b", "kind": "player", "bone": "Hips", "ground_y": y0,
-         "off_m": 0.02, "min_rise_m": 0.40, "max_rise_m": 0.80, "min_air_s": 0.50,
-         "max_air_s": 0.90},
+        {"from": "jump_a", "to": "jump_b", "kind": "player", "bone": "Hips", "off_m": 0.02,
+         "min_rise_m": 0.40, "max_rise_m": 0.80, "min_air_s": 0.50, "max_air_s": 0.90},
         "FT-3",
         "jump from standing lifts the hips 0.40-0.80 m and keeps the player off the ground "
         "(more than 0.02 m above it) for 0.50-0.90 s",
@@ -1248,9 +1247,10 @@ def falls() -> Playtest:
     p = Playtest(
         "people.fall_ragdoll/falls",
         ["FT-8"],
-        "The player walks off towers 2.4, 6, 10 and 16 m high on the plaza: a drop of the hips "
-        "under 3 m costs no health, one from 3 m to 15 m costs 100 * (h - 3) / 12 (within 10%), "
-        "and 15 m or more kills. Health is set back to 100 before each tower.",
+        "The player walks off towers 2.4, 6, 10 and 16 m high on the plaza: a fall of under 3 m "
+        "costs no health, one from 3 m to 15 m costs 100 * (h - 3) / 12 (within 10%), and 15 m "
+        "or more kills. QA reads the health 12 s after the walk starts, time enough to land and "
+        "get up, and sets it back to 100 before each tower.",
         ["--role=solo", "--variation=10", "--save-dir={save_dir}"],
     )
     x0, y0, z0 = point(PLAZA)
@@ -1281,7 +1281,7 @@ def falls() -> Playtest:
         p.step("press", {"move_forward": 0.3})
         p.step("run", 150)
         p.step("release", ["move_forward"])
-        p.step("run", 120)
+        p.step("run", 570)
         p.mark(f"{name}_down")
         lost = (
             "nothing"
@@ -1292,8 +1292,8 @@ def falls() -> Playtest:
         )
         p.expect(
             f"fall_{k + 1}", "fall_damage",
-            {"from": f"{name}_top", "to": f"{name}_down", "kind": "player", "bone": "Hips",
-             "safe_m": 3.0, "fatal_m": 15.0, "tol": 0.1},
+            {"from": f"{name}_top", "to": f"{name}_down", "kind": "player", "safe_m": 3.0,
+             "fatal_m": 15.0, "tol": 0.1},
             "FT-8", f"walking off a {height} m tower costs {lost}",
         )  # fmt: skip
     p.expect(
@@ -1378,12 +1378,12 @@ def intersection_watch() -> Playtest:
     )  # fmt: skip
     p.expect(
         "greens_compatible", "signal_greens",
-        {"from": "watch_a", "to": "watch_b", "programs": programs},
+        {"from": "watch_a", "to": "watch_b", "programs": programs, "reset_step": reset},
         "TR-4", "no two approaches are green at once unless their program puts them in one phase",
     )  # fmt: skip
     p.expect(
         "walk_in_green", "signal_walks",
-        {"from": "watch_a", "to": "watch_b", "programs": programs},
+        {"from": "watch_a", "to": "watch_b", "programs": programs, "reset_step": reset},
         "TR-4", "a crosswalk shows walk only during the green of the phase that lists it",
     )  # fmt: skip
     return p

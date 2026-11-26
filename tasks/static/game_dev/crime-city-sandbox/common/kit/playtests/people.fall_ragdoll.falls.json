@@ -2,7 +2,7 @@
  "format": "qa-play/1",
  "name": "people.fall_ragdoll/falls",
  "template": "people.fall_ragdoll",
- "about": "The player walks off towers 2.4, 6, 10 and 16 m high on the plaza: a drop of the hips under 3 m costs no health, one from 3 m to 15 m costs 100 * (h - 3) / 12 (within 10%), and 15 m or more kills. Health is set back to 100 before each tower.",
+ "about": "The player walks off towers 2.4, 6, 10 and 16 m high on the plaza: a fall of under 3 m costs no health, one from 3 m to 15 m costs 100 * (h - 3) / 12 (within 10%), and 15 m or more kills. QA reads the health 12 s after the walk starts, time enough to land and get up, and sets it back to 100 before each tower.",
  "rules": ["FT-8"],
  "role": "solo",
  "args": ["--role=solo", "--variation=10", "--save-dir={save_dir}"],
@@ -94,7 +94,7 @@
    "release": ["move_forward"]
   },
   {
-   "run": 120
+   "run": 570
   },
   {
    "mark": "tower_1_down"
@@ -151,7 +151,7 @@
    "release": ["move_forward"]
   },
   {
-   "run": 120
+   "run": 570
   },
   {
    "mark": "tower_2_down"
@@ -208,7 +208,7 @@
    "release": ["move_forward"]
   },
   {
-   "run": 120
+   "run": 570
   },
   {
    "mark": "tower_3_down"
@@ -265,7 +265,7 @@
    "release": ["move_forward"]
   },
   {
-   "run": 120
+   "run": 570
   },
   {
    "mark": "tower_4_down"
@@ -279,7 +279,6 @@
     "from": "tower_1_top",
     "to": "tower_1_down",
     "kind": "player",
-    "bone": "Hips",
     "safe_m": 3.0,
     "fatal_m": 15.0,
     "tol": 0.1
@@ -294,7 +293,6 @@
     "from": "tower_2_top",
     "to": "tower_2_down",
     "kind": "player",
-    "bone": "Hips",
     "safe_m": 3.0,
     "fatal_m": 15.0,
     "tol": 0.1
@@ -309,7 +307,6 @@
     "from": "tower_3_top",
     "to": "tower_3_down",
     "kind": "player",
-    "bone": "Hips",
     "safe_m": 3.0,
     "fatal_m": 15.0,
     "tol": 0.1
@@ -324,7 +321,6 @@
     "from": "tower_4_top",
     "to": "tower_4_down",
     "kind": "player",
-    "bone": "Hips",
     "safe_m": 3.0,
     "fatal_m": 15.0,
     "tol": 0.1
