@@ -27,8 +27,8 @@ TODO(owner): final names.
 In: three maps (Downtown, Ashby Port, Sable Hills) joined by two highways and a ferry; six playable
 leads and 35 kinds of city people built from the library's two base bodies; cars, a motorbike, two
 boats and the ferry; traffic, signals and pedestrians; on-foot movement, climbing, swimming and
-ragdolls; guns, melee and cover; crimes, witnesses and police response on a five-badge wanted
-scale; eight missions; money, shops, garages and outfits; a day-night clock and four weathers;
+ragdolls; guns, melee and cover; crimes, witnesses and police response on a five-badge police
+alert scale; eight missions; money, shops, garages and outfits; a day-night clock and four weathers;
 HUD, minimap, phone and menus; saving; online play for two to eight players on a dedicated server.
 
 Out: aircraft; interiors other than shops, safehouses and the bank; cutscenes; voice and music
@@ -42,25 +42,26 @@ character creation beyond the outfits in chapter 11.
 Merrow Bay is a coastal city of three districts: a dense Downtown, the docks and warehouses of
 Ashby Port, and the farms and dry hills of Sable Hills across the bay. You play one of six people
 who take jobs from four contacts: deliveries, chases, races and two heists. The tone is grounded
-and wry; the city is busy and reacts to what you do.
+and wry; the city is busy and reacts to what you do. The city, cast and missions are the ones in
+this document and the plans; the art is the CC0 library we ship plus what the team makes.
 
-- **OR-1** Everything in the game is ours or from the CC0 library we ship. No name, character,
-  logo, map layout, music, story or art from any existing game, film or franchise appears in the
-  project: not in text the player sees, not in file, node, class or asset names. Use the working
-  names in this document.
-- **OR-2** The wanted level is shown as a row of police badges, one per level (chapter 13).
+- **OR-1** No name or text from any existing game, film or franchise appears in the project: not in
+  text the player sees, and not in file, node, class or asset names. Use the working names in this
+  document.
+- **OR-2** The police alert level is shown as a row of badges: one visible child of `hud_alert` per
+  level (UI-1).
 
 ## 2. Cast: the six leads
 
 The player is one of six leads. Each uses one of the two library bodies, one of its hairstyles and
-an outfit palette (chapter 17, AC-19, says how looks are exposed). Leads share one wallet, one set
+an outfit palette (chapter 17, AC-11, says how looks are exposed). Leads share one wallet, one set
 of weapons and one garage list; switching changes who you are, not what you own.
 
 | Id | Working name | Body | Hair | Skin | Top | Bottom | Shoes | Unlocked |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `lead_1` | Rosa Vell | `female` | `long` | `#8d5524` | `#b03a2e` | `#1c2833` | `#17202a` | from the start |
 | `lead_2` | Teo Marsh | `male` | `buzzed` | `#c68642` | `#f4d03f` | `#34495e` | `#ecf0f1` | when D1 is passed |
-| `lead_3` | Dara Quill | `female` | `buns` | `#f1c27d` | `#1e8449` | `#2c3e50` | `#6e2c00` | when C1 is passed |
+| `lead_3` | Dara Lund | `female` | `buns` | `#f1c27d` | `#1e8449` | `#2c3e50` | `#6e2c00` | when C1 is passed |
 | `lead_4` | Ike Brannock | `male` | `beard` | `#e0ac69` | `#2471a3` | `#5d4037` | `#1b1b1b` | when R1 is passed |
 | `lead_5` | Nell Okafor | `female` | `buzzed_female` | `#5c3a21` | `#7d3c98` | `#212f3d` | `#f5f5f5` | when D2 is passed |
 | `lead_6` | Bram Ostrow | `male` | `simple_parted` | `#ffdbac` | `#d35400` | `#1b2631` | `#6e2c00` | when H1 is passed |
@@ -85,7 +86,7 @@ characters pack. Hair ids are the pack's hair meshes in snake case (`Hair_Buzzed
 
 Everyone else in the city belongs to one of these 35 archetypes. Members of an archetype share its
 signature (top colour, bottom colour and props) and vary in skin, hair, hair colour and scale
-(0.92 to 1.08). Props are small meshes we build ourselves (a cap, a bag, a hard hat) attached to
+(0.92 to 1.08). Props are small meshes made in the project (a cap, a bag, a hard hat) attached to
 a bone; chapter 17 says how they are exposed. Hours wrap past midnight (20:00-04:00 is overnight).
 
 | Id | Faction | Top | Bottom | Props | Behaviour | Where | Hours | At least |
@@ -101,7 +102,7 @@ a bone; chapter 17 says how they are exposed. Hours wrap past midnight (20:00-04
 | `construction_worker` | civilian | `#f39c12` | `#5d6d7e` | hard_hat, vest | work | downtown_core, port_industrial | 07:00-17:00 | 1 |
 | `dock_worker` | civilian | `#2e86c1` | `#212f3d` | hard_hat | work | port_docks | 06:00-22:00 | 2 |
 | `warehouse_worker` | civilian | `#7f8c8d` | `#2c3e50` | vest | work | port_industrial | 06:00-22:00 | 1 |
-| `fisher` | civilian | `#117a65` | `#4d5656` | cap | stand (5 m), by water | port_docks, hills_town | 05:00-12:00 | 1 |
+| `fisher` | civilian | `#117a65` | `#4d5656` | cap | stand (5 m), within 3 m of water | port_docks, hills_town | 05:00-12:00 | 1 |
 | `farmer` | civilian | `#a04000` | `#1a5276` | cap | work | hills_farms | 05:00-20:00 | 1 |
 | `hiker` | civilian | `#58d68d` | `#6e2c00` | backpack | wander | hills_open | 08:00-18:00 | 1 |
 | `commuter_driver` | civilian | `#d5d8dc` | `#283747` | none | drive | every district | all day | - |
@@ -131,12 +132,11 @@ of interest id. "At least" is how many must be present within 200 m of the playe
 player is in one of those places during those hours.
 
 Behaviours:
-- **wander**: walks the sidewalks, plazas and parks at walking pace (FT-1), turning at corners and
-  crossing at crosswalks (TR-10). **stroll** is wander at 0.50-0.90 m/s. **jog** is wander at
-  running pace (FT-1).
-- **stand (r)**: stays within r metres of its spot (for contacts, their point of interest), facing
-  about, occasionally idling or talking.
-- **work**: moves about its district on foot and never leaves it.
+- **wander**: walks the sidewalks, plazas and parks at walking pace (FT-1), crossing roads at
+  crosswalks (TR-10). **stroll** is wander at 0.50-0.90 m/s. **jog** is wander at running pace
+  (FT-1).
+- **stand (r)**: stays within r metres of its spot (for contacts, their point of interest).
+- **work**: moves about its district on foot.
 - **patrol**: police walk the sidewalks of their district or drive its roads in police cars, two
   officers per car.
 - **guard turf**: stays inside its crew's turf, unless it is fighting or fleeing.
@@ -146,18 +146,20 @@ Behaviours:
   the player at its places and hours (median over one minute, sampled every 10 s).
 - **AR-2** Every member of an archetype shows its signature: top and bottom within 0.05 per
   channel of the table, and exactly the listed props. Signatures differ between archetypes.
-- **AR-3** Every person is a humanoid built from a library body: body height 1.50-2.00 m (top of
-  the head to the soles, standing), scale 0.92-1.08 except leads at 1.0.
+- **AR-3** Every person is a humanoid whose skinned body mesh comes from one of the two library
+  body files: height 1.50-2.00 m (top of the head to the soles, standing), scale 0.92-1.08 except
+  leads at 1.0.
 - **AR-4** Behaviours hold: wander, stroll and jog keep FT-1's paces and TR-9; stand stays within
   its radius for at least 95% of samples; work stays in its districts for at least 95%; guard turf
   stays inside the turf for at least 90% while not fighting or fleeing; patrol stays in its
-  district; drive follows chapter 7.
-- **AR-5** Armed archetypes (enforcers, the bank guard, police) carry a gun; nobody else does.
+  district while the alert level is 0; drive follows chapter 7.
+- **AR-5** Armed archetypes (enforcers, the bank guard, police) carry a gun (their `weapon`
+  metadata, AC-5, names it); nobody else does.
 
 ## 4. Controls and camera
 
 The game reads player input through these InputMap actions. Each has default keyboard-and-mouse
-and gamepad bindings; players can rebind them.
+and gamepad bindings.
 
 `move_forward move_back move_left move_right look_left look_right look_up look_down sprint jump
 crouch interact attack aim lock_target reload weapon_next weapon_prev cover accelerate brake
@@ -165,11 +167,12 @@ steer_left steer_right handbrake horn phone map pause`
 
 Menus and the phone use Godot's `ui_up ui_down ui_left ui_right ui_accept ui_cancel`.
 
-- **IN-1** All 30 actions above exist in the project's InputMap, each with at least one keyboard or
+- **IN-1** All 28 actions above exist in the project's InputMap, each with at least one keyboard or
   mouse event and at least one gamepad event.
 - **IN-2** Movement reads action strength: a move strength up to 0.5 walks, above 0.5 runs, and
   `sprint` held while running sprints. `move_*` and `look_*` act on foot; `accelerate`, `brake`,
-  `steer_*` and `handbrake` act in vehicles.
+  `steer_*` and `handbrake` act in vehicles. `handbrake` brakes the rear wheels: held alone, it
+  slows a car at 2-6 m/s².
 - **IN-3** An action pressed in physics tick t takes effect in tick t (read input in
   `_physics_process`; the QA kit's input arrives before the tick runs).
 - **CM-1** The camera is a third-person camera behind and above the player: 2.5-6.0 m from the
@@ -180,10 +183,12 @@ Menus and the phone use Godot's `ui_up ui_down ui_left ui_right ui_accept ui_can
 - **CM-3** On foot, movement is relative to the camera: `move_forward` moves the player within 15
   degrees of the camera's horizontal forward direction.
 - **CM-4** The camera never ends up inside a wall: the segment from the player's head to the camera
-  is free of static geometry in at least 99% of frames (pull the camera in when a wall is behind).
+  is free of static geometry in at least 99% of physics ticks (pull the camera in when a wall is
+  behind).
 - **CM-5** `lock_target` locks onto the nearest person within 30 m and within 45 degrees of the
   camera's forward direction, preferring hostiles. While locked, the camera keeps the target inside
-  the middle 30% of the view and the player's aim points at the target's chest.
+  the middle 30% of the view and the player's aim point (`state.player.aim`, AC-12) is within 0.3 m
+  of the target's `Chest` bone.
 
 ## 5. On foot
 
@@ -220,17 +225,19 @@ and 8.5 m/s, its crouch walk at about 0.75 and its swim at about 2.2.
   stay within 0.30 m of the steering wheel point. `interact` in a vehicle gets out within 1.0-3.0 s,
   ending on foot within 2.5 m of that door.
 - **FT-11** Aiming: holding `aim` with a gun raises it; the gun hand is within 0.25 m of shoulder
-  height and the forearm points within 20 degrees of the aim direction.
+  height and the forearm points within 20 degrees of the direction from the gun hand to the aim
+  point (`state.player.aim`).
 - **FT-12** Cover: pressing `cover` within 1.5 m of an obstacle 0.8-1.4 m high moves the player to
   it within 1.0 s. In cover the player is within 0.6 m of the obstacle with the hips at most 75% of
-  standing height. Moving away from the obstacle leaves cover.
+  standing height. Moving away from the obstacle leaves cover. `state.player.cover` is true exactly
+  while the player is in cover.
 
 ## 6. Vehicles
 
-Cars are the Kenney car kit's models. The motorbike is ours: there is no motorbike in the library,
-so build a simple one from primitive meshes; the art team replaces it later. Boats come from the
-watercraft kit (TODO(owner): approve that download; until then, primitive hulls). Every vehicle is
-registered with its `model` id (chapter 17).
+Cars are built on the Kenney car kit's models (the table's library model). The motorbike is ours:
+there is no motorbike in the library, so build a simple one from primitive meshes; the art team
+replaces it later. Boats come from the watercraft kit (TODO(owner): approve that download; until
+then, primitive hulls). Every vehicle is registered with its `model` id (chapter 17).
 
 Handling, measured on level dry asphalt with the driver alone:
 
@@ -254,7 +261,7 @@ strip have one).
 
 - **VH-1** Each model reaches 60 km/h from rest in the time band, tops out inside its top-speed
   band, stops from 60 km/h within its dry braking band, turns inside its turning-circle band, and
-  has its listed mass within 10%.
+  has its listed mass within 10%. A car's body mesh comes from its library model's file.
 - **VH-2** In rain the same vehicle needs at least 1.15 and at most 1.60 times its dry braking
   distance from 60 km/h.
 - **VH-3** Each vehicle exposes `damage` from 0.0 (new) to 1.0. Damage rises only from impacts and
@@ -275,19 +282,22 @@ strip have one).
   repaired.
 - **VH-8** Taking a car: `interact` at the driver's door of a car with an NPC driver pulls the
   driver out within 2.0 s and seats the player within 4.0 s. The driver lands on foot, then flees
-  (at least 10 m away within 10 s) or, if police or crew, fights. This is the crime
-  `vehicle_theft` (chapter 9).
+  (at least 10 m away within 10 s); a crew member turns hostile within 2.0 s instead (CB-9), and a
+  police officer acts by the alert level (AL-9, CB-10). This is the crime `vehicle_theft`
+  (chapter 9).
 - **VH-9** The motorbike leans into turns: at least 10 degrees of roll when cornering at 2 m/s² or
   more of lateral acceleration. An impact of Δv 40 km/h or more throws the rider off (FT-9).
 - **VH-10** Boats: `speedboat` (0-40 km/h in 3.0-6.0 s, top 70-90 km/h) and `fishing_boat` (0-20
-  km/h in 3.0-8.0 s, top 30-45 km/h). A boat floats with its waterline within 0.50 m of the
-  surface (within 0.25 m at rest), only moves under power on water, and run onto a beach at up to
-  40 km/h stops within 15 m of the shore line.
-- **VH-11** The ferry runs between `ferry_terminal_port` and `ferry_terminal_hills`. It leaves Ashby
-  Port at 00:00, 06:00, 12:00 and 18:00 and Sable Hills at 03:00, 09:00, 15:00 and 21:00 game time,
-  each within 10 game minutes of the hour. Its ramp is open for boarding from the moment it docks
-  until it leaves. It carries up to 6 vehicles and 30 people; boarding is refused beyond that. A
-  crossing takes 120-170 s of play.
+  km/h in 3.0-8.0 s, top 30-45 km/h). A boat floats with its waterline (metadata `waterline_m`,
+  the waterline's height in the boat's own space) within 0.50 m of the surface (within 0.25 m at
+  rest), only moves under power on water, and run onto a beach at up to 40 km/h stops within 15 m
+  of the shore line.
+- **VH-11** The ferry is a registered vehicle with model `ferry`, running between
+  `ferry_terminal_port` and `ferry_terminal_hills`. It leaves Ashby Port at 00:00, 06:00, 12:00 and
+  18:00 and Sable Hills at 03:00, 09:00, 15:00 and 21:00 game time, each within 5 game minutes of
+  the hour. A crossing takes 120-150 s of play, so it is docked for at least 20 game minutes before
+  each departure; its ramp is open for boarding while it is docked. It carries up to 6 vehicles
+  and 30 people; boarding is refused beyond that.
 - **VH-12** Vehicles and people on the ferry ride with it: over a crossing, each moves at most
   1.0 m relative to the deck unless driven or walked; they arrive at the other terminal with it
   (the deck within 15 m of the terminal's dock point).
@@ -307,6 +317,9 @@ median of samples taken every second over a minute.
 | `hills_farms` | 1-5 / 1-6 | 0-4 / 0-4 | 0-2 / 0-2 |
 | `hills_open` | 0-4 / 0-4 | 0-3 / 0-2 | 0-2 / 0-1 |
 | `highway` | 4-16 / 0 | 3-12 / 0 | 1-8 / 0 |
+
+TR-5 to TR-8, TR-11 and TR-12 are about ordinary traffic: police responding to an alert, mission
+targets and racers are exempt.
 
 - **TR-1** Densities stay inside the table in clear and overcast weather.
 - **TR-2** In rain, the number of people on foot is 40-80% of the clear-weather count at the same
@@ -374,30 +387,33 @@ Everyone has 100 health. Armour goes from 0 to 100.
   bodies.
 - **CB-7** Health 0 means death: event `died` and a ragdoll (FT-9).
 - **CB-8** In cover, the player takes at most 40% of the damage the same attackers deal in the open
-  over the same time. From cover, holding `aim` leans out and `attack` fires.
-- **CB-9** Crew members turn hostile when the player attacks any member of their crew, or aims a gun
-  inside their turf for more than 5 s. Hostile crew members attack from up to 40 m, and at least
-  half of them reach cover (within 1.0 m of an obstacle 0.8-1.4 m high) within 10 s of a fight
-  starting. Below 30 health they move at least 10 m away from the player.
-- **CB-10** Police fight only at wanted level 3 or more; at levels 1 and 2 they try to arrest
-  (WN-9).
+  over the same time. From cover, holding `aim` leans out (the `Head` bone rises at least 0.30 m)
+  and `attack` fires.
+- **CB-9** Crew members turn hostile (their `hostile` metadata, AC-5) when the player attacks any
+  member of their crew, or aims a gun inside their turf for more than 5 s. Hostile enforcers attack
+  from up to 40 m, and at least half of them reach cover (within 1.0 m of an obstacle 0.8-1.4 m
+  high) within 10 s of a fight starting; hostile lookouts flee (at least 20 m away within 10 s).
+  Below 30 health an enforcer moves at least 10 m away from the player.
+- **CB-10** Police fight only at alert level 3 or more; at levels 1 and 2 they try to arrest
+  (AL-9).
 
-## 9. Crime and the wanted level
+## 9. Crime and the alert level
 
 | Crime | Committed when | Level if witnessed |
 | --- | --- | --- |
 | `red_light` | a vehicle the player drives crosses a stop line 0.5 s or more after its light turned red | 1 |
 | `speeding` | the player drives 30 km/h or more above the limit within sight of police | 1 |
 | `vehicle_theft` | the player pulls a driver out (VH-8) | 1 |
-| `assault` | the player damages a civilian or a crew member | 1 |
+| `assault` | the player damages a person who is not police | 1 |
 | `hit_person` | a vehicle the player drives hits a person at 20 km/h or more | 1 |
 | `shots_fired` | the player fires a gun | 2 |
-| `murder` | the player kills a civilian or a crew member | 2 |
+| `murder` | the player kills a person who is not police | 2 |
 | `vehicle_destroyed` | a vehicle explodes because of the player | 2 |
 | `assault_police` | the player damages a police officer | 3 |
 | `kill_police` | the player kills a police officer | 4 |
 
-Witnesses are police officers and civilians. A witness sees a crime when there is a clear line from
+Witnesses are police officers and everyone else except crew members (civilians, service staff and
+contacts). A witness sees a crime when there is a clear line from
 its head bone to any part of the player (or the player's vehicle) within its sight range at that
 moment. Gunshots are also heard: anyone within 40 m witnesses `shots_fired` without a clear line.
 
@@ -409,73 +425,75 @@ moment. Gunshots are also heard: anyone within 40 m witnesses `shots_fired` with
 
 | Level | Police cars (two officers each) | Tactical vans | First unit within 25 m of the player | Search zone radius | Cooling-off time |
 | --- | --- | --- | --- | --- | --- |
-| 1 | 1 | 0 | 60 s | 150 m | 20 s |
-| 2 | 2 | 0 | 50 s | 250 m | 30 s |
-| 3 | 4 | 0 | 45 s | 400 m | 45 s |
-| 4 | 6 | 1 | 40 s | 600 m | 60 s |
-| 5 | 8 | 2 | 40 s | 800 m | 90 s |
+| 1 | 1 | 0 | 60 s | 100 m | 20 s |
+| 2 | 2 | 0 | 50 s | 150 m | 30 s |
+| 3 | 4 | 0 | 45 s | 200 m | 45 s |
+| 4 | 6 | 1 | 40 s | 260 m | 60 s |
+| 5 | 8 | 2 | 40 s | 320 m | 90 s |
 
-- **WN-1** Every crime in the table emits a `crime` event with its type and the ids of its
+- **AL-1** Every crime in the table emits a `crime` event with its type and the ids of its
   witnesses, witnessed or not.
-- **WN-2** A crime seen by a police officer raises the wanted level within 1.0 s. A crime seen only
-  by civilians is phoned in: the level rises 10 s (within 1 s) after the crime if at least one of
-  those civilian witnesses is still alive then.
-- **WN-3** A crime nobody witnesses never raises the level.
-- **WN-4** A witnessed crime sets the level to the higher of the current level and the crime's
+- **AL-2** A crime seen by a police officer raises the alert level within 1.0 s. A crime seen only
+  by other witnesses is phoned in: the level rises 10 s (within 1 s) after the crime if at least one
+  of those witnesses is still alive then.
+- **AL-3** A crime nobody witnesses never raises the level.
+- **AL-4** A witnessed crime sets the level to the higher of the current level and the crime's
   level; if the player is already at or above the crime's level, the level goes up by one, to at
   most 5. Mission events can set the level directly (chapter 10).
-- **WN-5** Sight ranges follow the table: a crime committed just outside every witness's range is
+- **AL-5** Sight ranges follow the table: a crime committed just outside every witness's range is
   not seen, and one just inside is.
-- **WN-6** Response: the first police unit gets within 25 m of the player within the table's time
+- **AL-6** Response: the first police unit gets within 25 m of the player within the table's time
   after the level is reached; within 90 s the number of police vehicles moving towards the player
   or within 100 m of them reaches the table's count, and never exceeds it by more than 2.
-- **WN-7** Police come from police stations or from patrols already in the world: a unit new to the
+- **AL-7** Police come from police stations or from patrols already in the world: a unit new to the
   world first appears at least 100 m from the player and outside the camera's view. Units move
   continuously (never more than 1.1 times their model's top speed), drive on roads, and never pass
   through buildings or other static geometry.
-- **WN-8** From level 3, within 90 s of reaching it, police set at least one roadblock ahead of the
+- **AL-8** From level 3, within 90 s of reaching it, police set at least one roadblock ahead of the
   player: at least two police vehicles stopped across the road (within 30 degrees of square to the
-  lanes, covering at least 70% of the carriageway's width) on the player's route, within 300 m.
-- **WN-9** Arrest: while the level is 1 or 2, a player on foot or in a vehicle stopped below 1 km/h
+  lanes, covering at least 70% of the carriageway's width) on a lane within 300 m ahead of the
+  player, along the lanes the player's vehicle can reach.
+- **AL-9** Arrest: while the level is 1 or 2, a player on foot or in a vehicle stopped below 1 km/h
   with a police officer within 2.0 m for 3.0 s is arrested (event `arrested`). The player comes back
   at the nearest police station's respawn point within 10 s, at level 0, having lost every weapon
   except fists and paid a $500 fine (or all their money if they have less).
-- **WN-10** Death: the player comes back at the nearest hospital's respawn point within 10 s (event
+- **AL-10** Death: the player comes back at the nearest hospital's respawn point within 10 s (event
   `respawned`), with 100 health, 0 armour and level 0, having paid a $250 fee (or all their money
   if less), keeping weapons.
-- **WN-11** Escape: the search zone is centred where a unit last saw the player. The level drops to
-  0 only once the player has stayed outside the zone and out of every unit's sight for the
-  cooling-off time; being seen re-centres the zone and restarts the time. The level never drops in
-  any other way except arrest and death.
-- **WN-12** At level 0 police leave the player alone: no unit pursues and no officer approaches
-  within 10 m on purpose.
+- **AL-11** Escape: the search zone is centred where a unit last saw the player, or where the crime
+  happened if no unit has seen the player yet. The level drops to 0 only once the player has stayed
+  outside the zone and out of every unit's sight for the cooling-off time; being seen re-centres the
+  zone and restarts the time. The level never drops in any other way except arrest and death.
+- **AL-12** At level 0 police leave the player alone: no police unit keeps moving towards the
+  player for more than 10 s, and no officer stays within 5 m of the player for more than 5 s.
 
 ## 10. Missions
 
 Four contacts give missions. A contact offers each mission once it is unlocked and until it is
-passed. Every objective uses a point of interest from the plans; the ones not yet in the plan
-files arrive with the Ashby Port and Sable Hills plans.
+passed. Every stage that is about a place uses a point of interest from the plans; the ones not
+yet in the plan files arrive with the Ashby Port and Sable Hills plans.
 
 | Id | Type | Contact | Unlocked by | Stages | Fails when | Payout |
 | --- | --- | --- | --- | --- | --- | --- |
-| D1 | delivery | `giver_delivery` | new game | 1. get in the van at `d1_pickup`; 2. drive it to `d1_dropoff` within 100 s and stop inside the point | timer runs out; van damage reaches 0.75 or the van enters water; death; arrest | $1,500 |
+| D1 | delivery | `giver_delivery` | new game | 1. get in the van at `d1_pickup`; 2. drive it to `d1_dropoff` within 120 s and stop inside the point | timer runs out; van damage reaches 0.75 or the van enters water; death; arrest | $1,500 |
 | C1 | chase | `giver_chase` | D1 | 1. get to `c1_start`; 2. stop the target car before it escapes, within 180 s | target more than 400 m away for 10 s; timer; death; arrest | $2,000 |
 | R1 | race | `giver_race` | D1 | 1. get a car to `r1_start`; 2. two laps through `r1_cp1`-`r1_cp8` in order, back to `r1_start`, within 180 s | time runs out; car wrecked; death; arrest | $1,200 |
 | D2 | delivery | `giver_delivery` | C1 and R1 | 1. take the sports car at `d2_pickup`; 2. deliver it to `d2_dropoff` within 600 s with damage under 0.50 | timer; damage 0.50 or more at delivery; car wrecked or in water; death; arrest | $3,000 |
 | C2 | chase on foot | `giver_chase` | C1 | 1. get to `c2_start`; 2. catch the runner (within 2.0 m, then `interact`) within 120 s | runner more than 150 m away for 10 s; timer; death; arrest | $1,800 |
 | R2 | race | `giver_race` | R1 and D2 | 1. get a car to `r2_start`; 2. one lap through `r2_cp1`-`r2_cp12` against three NPC racers, finishing first | not first; car wrecked; death; arrest | $4,000 |
-| H1 | heist | `giver_heist` | D2 and C2 | 1. take the getaway car at `h1_car`; 2. drive to `bank_downtown`; 3. go into the bank; 4. hold the vault for 30 s; 5. lose the wanted level; 6. take the cash to `h1_stash` | death; arrest; leaving the vault before 30 s (the hold restarts) | $16,000 take, $4,000 crew cut |
-| H2 | heist | `giver_heist` | H1 and R2 | 1. hijack the container truck at `h2_truck`; 2. drive it to `h2_stash` with damage under 0.75; 3. lose the wanted level on the way | truck wrecked; death; arrest | $15,000 |
+| H1 | heist | `giver_heist` | D2 and C2 | 1. take the getaway car at `h1_car`; 2. drive to `bank_downtown`; 3. go into the bank; 4. hold the vault for 30 s (leaving the vault restarts the hold); 5. get the alert level back to 0; 6. take the cash to `h1_stash` | death; arrest | $16,000 haul, $4,000 crew share |
+| H2 | heist | `giver_heist` | H1 and R2 | 1. take the cargo van at `h2_van`; 2. get the alert level back to 0; 3. drive it to `h2_stash` | van damage reaches 0.75; death; arrest | $15,000 |
 
 - **MS-1** A contact offers its unlocked missions: walking within 3.0 m and pressing `interact`
   starts the mission it offers (event `mission` with state `active` within 1.0 s). Locked missions
   are not offered.
-- **MS-2** Each active stage shows one marker (a registered `marker`) within 5 m of its point of
-  interest; the next stage's marker appears only when the current stage is done, and the minimap
-  route leads to the current marker (UI-3).
-- **MS-3** Stages complete in order, only when the player (or the mission vehicle, for driving
-  stages) is within the point's `radius_m` (6 m unless the plan says otherwise); getting in a
-  vehicle needs the player seated in it (FT-10).
+- **MS-2** Each active stage that is about a place shows one marker (a registered `marker`) within
+  5 m of its point of interest; stages without a place (holding the vault, getting the alert level
+  back to 0, stopping or catching a target) show none. The next stage's marker appears only when
+  the current stage is done, and the minimap route leads to the current marker (UI-3).
+- **MS-3** Stages complete in order. A stage about a place completes only when the player (or the
+  mission vehicle, for driving stages) is within the point's `radius_m` (6 m unless the plan says
+  otherwise); getting in a vehicle needs the player seated in it (FT-10).
 - **MS-4** A timed stage shows the remaining time on the HUD (UI-8) and fails within 2.0 s after
   the time runs out; a stage passed in time does not fail.
 - **MS-5** Each listed failure fails the mission within 2.0 s of happening: event `mission` with
@@ -491,8 +509,8 @@ files arrive with the Ashby Port and Sable Hills plans.
 - **MS-10** C1's target drives away along roads at up to 120 km/h, ignoring signals. It is stopped
   when its damage reaches 0.75 or when it stays below 1 km/h for 3 s with the player within 10 m.
   C2's runner keeps to walkable ground at 5.0-6.0 m/s, so a sprinting player can catch it.
-- **MS-11** H1's vault hold sets the wanted level to 3 at once (no witness needed). H1 pays the take
-  and the crew cut as two `money_changed` events (`payout` +16,000, `crew_cut` -4,000).
+- **MS-11** H1's vault hold sets the alert level to 3 at once (no witness needed). H1 pays the haul
+  and the crew share as two `money_changed` events (`payout` +16,000, `crew_share` -4,000).
 - **MS-12** `state.missions` reports each mission as `locked`, `available`, `active` (with the
   stage number), `passed` or `failed`.
 
@@ -535,8 +553,8 @@ Every lead also owns its own outfit (`default`, chapter 2).
 - **EC-3** A purchase you cannot afford is refused: money and possessions unchanged, and the shop
   shows the notice "Not enough money".
 - **EC-4** Every change of money is announced by a `money_changed` event (amount, reason, new
-  balance); the reasons are `purchase`, `payout`, `crew_cut`, `fine`, `fee`, `repair` and
-  `setup`. Money changes in no other way.
+  balance); the reasons are `purchase`, `payout`, `crew_share`, `fine`, `fee`, `repair`, `setup`,
+  `load` (loading a save) and `rejoin` (reconnecting online). Money changes in no other way.
 - **EC-5** Clothes: buying an outfit adds it to `state.player.outfits`; wearing one (the clothes
   shop's "Wear" or the safehouse's "Wardrobe") changes the player's top, bottom and shoes to the
   outfit's colours within 1.0 s. Outfits are owned by all leads.
@@ -575,14 +593,14 @@ a `surface` tag (chapter 17) so QA can tell what a probe hits.
   missions hold on it.
 - **WD-9** Highways: driving through a portal node moves the player, the vehicle and its passengers
   to the linked map within 10 s (event `map_transition`). The vehicle keeps its id, its damage
-  (within 0.02) and its passengers in their seats; the player keeps the wanted level; the vehicle
+  (within 0.02) and its passengers in their seats; the player keeps the alert level; the vehicle
   appears on the matching lane within 30 m past the linked portal, at its speed within 20%.
 - **WD-10** The ferry changes map at its portal the same way, carrying everything on its deck.
 - **WD-11** Clock: game time advances one minute per second of play (within 1%) and is reported as
   `hh:mm`. `time.set` changes it at once.
 - **WD-12** Street lights: a lamp post (an `OmniLight3D` or `SpotLight3D` in group `street_light`)
-  at most every 35 m along every sidewalk ring; lights are on (visible, energy above 0) from 19:30 to 06:30
-  and off otherwise, within one game minute.
+  at most every 35 m along every sidewalk ring; lights are on (visible, energy above 0) from 19:30
+  to 06:30 and off otherwise, within one game minute.
 - **WD-13** The sun is a `DirectionalLight3D` in group `sun`. Its elevation follows the clock: up
   from 06:00 to 19:00, `65 * sin(pi * (t - 6) / 13)` degrees at hour t (within 3 degrees), and at
   least 5 degrees below the horizon from 20:00 to 05:00.
@@ -605,26 +623,28 @@ find items by that text.
 
 - **UI-1** HUD: `hud_health` shows health and `hud_armour` armour as whole numbers; `hud_money`
   shows money as "$" with comma thousands separators (`$1,250`); `hud_weapon` shows the weapon's
-  name and, for guns, "magazine/reserve" (`Pistol 12/36`); `hud_wanted` has one visible badge per
-  wanted level and none at 0. Each matches the state report within 0.5 s.
+  name and, for guns, "magazine/reserve" (`Pistol 12/36`); `hud_alert` has one visible badge per
+  alert level and none at 0. Each matches the state report within 0.5 s.
 - **UI-2** Minimap (`hud_minimap`): it shows the area within 150-400 m around the player, with icons
-  (`minimap_icon`) for the player, every police station, hospital, shop, garage and safehouse in
-  that area, the contacts with a mission to offer, the current mission marker and, while wanted,
-  police units. Icon positions fit the world positions with one rotation, scale and offset to
-  within 3 px for at least 95% of icons.
+  (`minimap_icon`, each with metadata `poi` or `entity_id` naming what it stands for) for the
+  player, every police station, hospital, shop, garage and safehouse in that area, the contacts with
+  a mission to offer, the current mission marker and, while the alert is up, police units. Icon
+  positions fit the world positions with one rotation, scale and offset to within 3 px for at least
+  95% of icons.
 - **UI-3** Route (`minimap_route`): a line from the player to the current destination (a mission
   marker, or a place picked in the phone's Map app). At least 90% of its points lie within 8 m of a
   lane, and its length is at most 1.25 times the shortest path over the plan's lanes.
-- **UI-4** While wanted, the minimap shows the search zone (`minimap_search_zone`) as a circle whose
-  centre and radius fit the zone within 10%.
+- **UI-4** While the alert is up, the minimap shows the search zone (`minimap_search_zone`) as a
+  circle whose centre and radius fit the zone within 10%.
 - **UI-5** Phone (`phone`, opened and closed with the `phone` action or `ui_cancel`): the apps
-  "Contacts" (contacts the player has met), "Messages" (their messages, newest first) and "Map"
-  (pick a point of interest to set the route). The phone works while walking and driving.
+  "Contacts" (contacts whose missions the player has started), "Messages" (their messages, newest
+  first) and "Map" (pick a point of interest to set the route). The phone works while walking and
+  driving.
 - **UI-6** Main menu: started without `--role`, the game shows the main menu (`main_menu`) with
   "New game", "Load", "Host", "Join" and "Quit". "New game" starts at `safehouse_downtown` with
   `lead_1`, $500, 08:00 and clear weather, with D1 available. "Load" lists the save slots. "Host"
-  asks for a port and starts a server the menu's player joins; "Join" asks for an address and a
-  name.
+  asks for a port and starts a server the menu's player joins; "Join" asks for an address, a name
+  and a lead.
 - **UI-7** Pause (`pause`): solo, the world stops (no entity moves and the clock stands still) and
   the pause menu shows "Resume" and "Quit to menu"; `state.ui.paused` is true. Online, the menu
   opens and the world goes on.
@@ -637,17 +657,20 @@ find items by that text.
   menu has "Save", "Switch lead" and "Wardrobe".
 - **UI-10** Online, `hud_net_warning` appears within 1.5 s of the client receiving no update from
   the server and hides within 1.5 s after updates resume.
+- **UI-11** The `map` action opens a full-screen map (`map_screen`) of the whole map with the same
+  icons as the minimap, fitting the world the same way; `state.ui.map` is true while it is open, and
+  `map` or `ui_cancel` closes it.
 
 ## 14. Saving and loading
 
 - **SV-1** The player saves at a safehouse ("Save", then "Slot 1", "Slot 2" or "Slot 3"). The game
-  also saves to the slot "Auto" after every mission passed.
-- **SV-2** Saving is refused, with a notice, while the wanted level is above 0 or a mission is
+  also saves to the slot "Auto" after every mission passed, as soon as the alert level is 0.
+- **SV-2** Saving is refused, with a notice, while the alert level is above 0 or a mission is
   active.
 - **SV-3** A save holds money, weapons and ammo, armour and health, owned and worn outfits, the
   current lead and unlocked leads, garages and their vehicles, every mission's state, the time of
   day and the weather. Loading puts the player at the safehouse where the save was made (Auto: the
-  safehouse nearest to where the mission ended) at wanted level 0, with all of that restored.
+  safehouse nearest to where the mission ended) at alert level 0, with all of that restored.
 - **SV-4** Saves are atomic: once the `saved` event fires, killing the process at any moment leaves
   that slot loadable with that state; a kill during a save leaves the slot's previous save loadable.
 - **SV-5** A damaged save file does not crash the game: loading it shows "Slot n is damaged", the
@@ -658,8 +681,8 @@ find items by that text.
 
 A session is one dedicated server (`--role=server`, headless) and two to eight clients on one map
 (the server's `--map`). Use Godot's ENet transport (`ENetMultiplayerPeer`, UDP). Travel between
-maps is solo-only in this milestone. TODO(owner): eight players, or six if the machines QA uses for
-online sessions are smaller.
+maps is solo-only in this milestone (NT-15). TODO(owner): eight players, or six if server costs
+require it.
 
 Our network targets: players up to 250 ms round trip, 10% packet loss in bursts, and short
 drop-outs of a few seconds. Plan bandwidth from the start: full snapshots of about 160 entities at
@@ -683,7 +706,7 @@ changes, not everything.
   at most 2.5 m and 5.0 m at 250 ms with 10% bursty loss.
 - **NT-7** The local player responds at once: on the client it starts moving within 100 ms of the
   input and agrees with the server within 1.0 m (p95) once it has stopped for 1 s.
-- **NT-8** Deaths, wanted-level changes, mission states and vehicle entries reach every client that
+- **NT-8** Deaths, alert-level changes, mission states and vehicle entries reach every client that
   shows the entity within 2.0 s (p95 at 120 ms with 5% loss), in order for each entity.
 - **NT-9** A player who drops out disappears from other clients within 10 s. Reconnecting under the
   same name within 5 minutes restores their money, weapons, lead and position (within 10 m).
@@ -694,12 +717,15 @@ changes, not everything.
 - **NT-11** With `--pvp=on` players can damage each other: the victim's health drops on the server
   and on the victim's client within 1.0 s (p95), and the shooter's client shows the hit. With
   `--pvp=off` they cannot.
-- **NT-12** H1 can be played together: the players within 30 m of the contact when it starts form
-  the crew; every crew member sees the markers and gets the full payout; the mission fails only
-  when every crew member is dead or arrested.
+- **NT-12** An online session starts with every mission available at its contact, and H1 can be
+  played together: the players within 30 m of the contact when it starts form the crew; every crew
+  member sees the markers and gets the full payout; the mission fails only when every crew member is
+  dead or arrested.
 - **NT-13** Bandwidth with eight players: each client receives at most 48 KB/s (median) and 96 KB/s
   (p95), and sends at most 16 KB/s (median).
 - **NT-14** The server's physics tick takes at most 16.7 ms (p95) with eight players.
+- **NT-15** An online session stays on its map: no player changes map, and the ferry stays docked at
+  its terminal.
 
 ## 16. Performance and project settings
 
@@ -717,8 +743,8 @@ changes, not everything.
 - **PF-6** Our QA runs each game process with one worker thread
   (`threading/worker_pool/max_threads=1`, set in `override.cfg`). Under that setting, with the day
   population of the busiest district around the player, a solo physics tick takes at most 8 ms on
-  average and 12 ms at p95 on one core. TODO(panel): confirm both limits once the QA machines' cores
-  are measured.
+  average and 12 ms at p95 on one core. TODO(panel): confirm both limits on the target server
+  hardware.
 - **PF-7** Each game process (solo, server or client) stays under 1.5 GB of resident memory.
 - **PF-8** No crash: in an hour of play the process never exits or stops answering, whatever the
   player does.
@@ -750,7 +776,7 @@ menu (UI-6).
 
 An autoload named `DevConsole` (also on a console key in development builds) with
 `exec(command: String, args: Dictionary) -> Dictionary` and `signal event(name: String,
-data: Dictionary)`. Commands are for setting up a situation, not for playing.
+data: Dictionary)`. The commands set up situations for development and QA.
 
 | Command | Arguments | Effect |
 | --- | --- | --- |
@@ -767,7 +793,10 @@ data: Dictionary)`. Commands are for setting up a situation, not for playing.
 | `save`, `load` | `slot` | Save or load |
 | `state` | none | The state report |
 
-`at` takes any anchor from `plan/FORMAT.md`, or `"player"` for the player's position.
+`at` takes any anchor from `plan/FORMAT.md`, or `"player"` for the player's position. NPC
+behaviours: `idle` stands still; `wander` is the archetype behaviour of chapter 3; `guard` stands
+and turns hostile when attacked; `hostile` attacks the player; `reckless` drives at up to 1.3 times
+the speed limit, ignoring signals.
 
 - **AC-2** `exec` answers `{"ok": true, ...}` or `{"ok": false, "error": "..."}` and never crashes on
   unknown commands or bad arguments. Arguments arrive from JSON, so numbers may be floats: accept
@@ -784,15 +813,16 @@ data: Dictionary)`. Commands are for setting up a situation, not for playing.
 - **AC-5** People (`player`, `npc`) have exactly one `Skeleton3D` using the humanoid profile's bone
   names (`Hips`, `Spine`, `Chest`, `Neck`, `Head`, `LeftUpperArm`, `LeftHand`, `LeftUpperLeg`,
   `LeftFoot`, `LeftToes` and the rest), skinned meshes bound to it, and a physics body on the people
-  layer. Nothing outside the registry has a `Skeleton3D`, a `CharacterBody3D` or a `VehicleBody3D`.
-  The library bodies and clips use their own bone names; import them through a `BoneMap` with
-  Godot's `SkeletonProfileHumanoid` so the skeleton gets the profile's names (it works headless,
-  from the `.import` files alone). TODO(panel): whether the starter project ships that bone map
-  and the bodies' import settings already done.
+  layer, plus metadata `weapon` (the weapon in hand, or `none`) and `hostile` (true while they
+  attack or are about to attack the player). Nothing outside the registry has a `Skeleton3D`, a
+  `CharacterBody3D` or a `VehicleBody3D`. The library bodies and clips use their own bone names;
+  import them through a `BoneMap` with Godot's `SkeletonProfileHumanoid` so the skeleton gets the
+  profile's names (it works headless, from the `.import` files alone). TODO(panel): whether the
+  project as handed over already includes that bone map and the bodies' import settings.
 - **AC-6** Vehicles have a physics body at their root on the vehicles layer, metadata `model`,
   `damage`, `burning` and `colour`, and one `Marker3D` per seat in group `seat` with metadata `index`
   (0 is the driver) and `door` (a door point in vehicle space). The driver's seat also has metadata
-  `wheel` (the steering wheel point).
+  `wheel` (the steering wheel point). Boats also have `waterline_m` (VH-10).
 - **AC-7** Each signalised approach has a `signal` entity with metadata `intersection`, `approach`
   and `state` (`red`, `amber`, `green`); each crosswalk with walk signals has one with `crosswalk`
   and `state` (`walk`, `dont_walk`).
@@ -815,15 +845,16 @@ data: Dictionary)`. Commands are for setting up a situation, not for playing.
 ### State report
 
 - **AC-12** `state` returns: `tick`, `map`, `clock` (`hh:mm`), `weather`, `variation`; `player`
-  (`id`, `lead`, `health`, `armour`, `money`, `wanted`, `weapon`, `weapons`, `ammo`
-  (`{"magazine", "reserve"}`), `vehicle`, `seat`, `outfit`, `outfits`, `leads_unlocked`);
-  `missions` (per id: `state`, `stage`); `garages` (per garage id: a list of `{"model", "colour",
-  "damage"}`); `ui` (`phone`, `map`, `paused`, `menu`); `network` (`role`, `peers`, `id`). Every
-  value is the game's real state.
+  (`id`, `lead`, `health`, `armour`, `money`, `alert`, `weapon`, `weapons`, `ammo`
+  (`{"magazine", "reserve"}`), `aim` (the world point the player aims at, or `null`), `cover`,
+  `vehicle`, `seat`, `outfit`, `outfits`, `leads_unlocked`); `missions` (per id: `state`, `stage`);
+  `garages` (per garage id: a list of `{"model", "colour", "damage"}`); `ui` (`phone`, `map`,
+  `paused`, `menu`); `network` (`role`, `peers`, `id`). Values are read live when `state` is
+  called; nothing is cached.
 
 ### Events
 
-- **AC-13** `DevConsole.event` fires: `crime` (`type`, `witnesses`, `pos`), `wanted_changed`
+- **AC-13** `DevConsole.event` fires: `crime` (`type`, `witnesses`, `pos`), `alert_changed`
   (`level`, `reason`), `police_dispatched` (`unit`, `from`), `vehicle_entered` and
   `vehicle_exited` (`entity`, `vehicle`, `seat`), `damaged` (`entity`, `source`, `amount`,
   `health`, `armour`), `died` (`entity`, `cause`), `arrested`, `respawned` (`entity`, `poi`),
@@ -832,20 +863,21 @@ data: Dictionary)`. Commands are for setting up a situation, not for playing.
   `debris`), `saved` and `loaded` (`slot`), `map_transition` (`from`, `to`, `vehicle`), and
   `teleport` (`entity`, `reason`). Every event carries `tick`.
 - **AC-14** The player, or a vehicle carrying the player, moves discontinuously only with a
-  `teleport` event, and only for setup commands, respawns and map transitions.
+  `teleport` event, and only for setup commands, respawns, map transitions, loading a save,
+  rejoining online and (on clients) the server's corrections.
 
 ### Timing and randomness
 
 - **AC-15** Game logic runs in `_physics_process` at 60 Hz and never reads the wall clock.
 - **AC-16** All randomness comes from the variation number: the same variation gives the same
-  starting population (every entity's id, kind, archetype and position at the first tick after
-  `world.reset`), and a different variation a different one.
+  starting population (every entity's kind, archetype and position, in creation order, at the first
+  tick after `world.reset`), and a different variation a different one.
 - **AC-17** Runs replay: with the same plan files, variation and input timeline, the game does the
   same thing tick for tick, however fast or slow the engine is driven (`--fixed-fps 60` with the
   QA kit pacing it). TODO(panel): exact replay, or replay within a small position tolerance.
 
 ### The QA kit's telemetry
 
-- **AC-18** When the QA kit runs the game, it adds its own telemetry autoload ahead of the game's
-  autoloads and runs the game with one worker thread (PF-6). The game leaves nodes it did not
-  create alone.
+- **AC-18** Don't free, move or rename nodes your code didn't create; QA's telemetry autoload and
+  tools rely on this. (The QA kit adds its autoload ahead of the game's and runs one worker
+  thread, PF-6.)

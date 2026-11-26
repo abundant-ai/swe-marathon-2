@@ -16,7 +16,7 @@ Phase 1a brief, `CHECKLIST.md` Part 1, and these overrides of 2026-11-24 to 11-2
 - `solution/` holds the reference as readable source;
 - an original game with placeholder names.
 
-Status after Phase 1a: GDD v1 (`common/design/GDD.md`, 175 rules), the plan format
+Status after Phase 1a: GDD v1 (`common/design/GDD.md`, 177 rules), the plan format
 (`common/design/plan/FORMAT.md`), the Downtown core block (`common/design/plan/downtown.json`),
 its generator and checker (`scripts/gen_plan.py`, `scripts/check_plan.py`), and this plan.
 
@@ -48,7 +48,7 @@ s_i    = 0 if a precondition or an invariant fails on instance i, or the game cr
 | B Vehicles | 0.10 | 22 |
 | C Traffic and pedestrians | 0.09 | 16 |
 | D Combat and cover | 0.08 | 16 |
-| E Crime, wanted, police | 0.12 | 24 |
+| E Crime, the alert level, police | 0.12 | 24 |
 | F Missions | 0.11 | 20 |
 | G Economy | 0.05 | 10 |
 | H World, links, replay | 0.07 | 12 (2 on the alternative plan) |
@@ -74,7 +74,7 @@ instances drawn from it; **R** a release-only template (tests a stated rule; no 
 | `inv.registry` | - | I | every frame's census |
 | `inv.teleport` | - | I | player and carrying-vehicle continuity |
 | `inv.money` | - | I | money against `money_changed` events |
-| `inv.wanted_honest` | - | I | every wanted change against crimes, witnesses, missions |
+| `inv.alert_honest` | - | I | every alert change against crimes, witnesses, missions |
 | `inv.damage_honest` | - | I | vehicle damage against observed impacts |
 | `inv.mission_honest` | - | I | stage changes against observed arrivals |
 | `inv.state_honest` | - | I | state report against census, HUD and events |
@@ -108,17 +108,17 @@ instances drawn from it; **R** a release-only template (tests a stated rule; no 
 | `combat.armour` | D | P | hits with and without armour |
 | `combat.crew_hostility` | D | P | aiming inside a turf, attacking a member |
 | `combat.police_force` | D | R | police at levels 1-2 and 3+ |
-| `wanted.red_light` | E | P | witnessed red light (6 of 8 hidden draws) |
-| `wanted.unwitnessed` | E | R | the same crimes with no witness |
-| `wanted.phone_in` | E | P | civilian-only witness, witness killed |
-| `wanted.crime_table` | E | P | each crime type, escalation |
-| `wanted.sight_range` | E | R | crimes just inside and outside the range, by weather and hour |
-| `wanted.response_levels` | E | R | levels 2-5 reached by crimes |
-| `wanted.roadblock` | E | P | level 3 and a drive |
-| `wanted.arrest` | E | P | level 1, standing still near an officer |
-| `wanted.death` | E | P | death while wanted |
-| `wanted.escape` | E | P | breaking sight, leaving the zone |
-| `wanted.ignore_at_zero` | E | R | officers near a player at level 0 |
+| `alert.red_light` | E | P | witnessed red light (6 of 8 hidden draws) |
+| `alert.unwitnessed` | E | R | the same crimes with no witness |
+| `alert.phone_in` | E | P | civilian-only witness, witness killed |
+| `alert.crime_table` | E | P | each crime type, escalation |
+| `alert.sight_range` | E | R | crimes just inside and outside the range, by weather and hour |
+| `alert.response_levels` | E | R | levels 2-5 reached by crimes |
+| `alert.roadblock` | E | P | level 3 and a drive |
+| `alert.arrest` | E | P | level 1, standing still near an officer |
+| `alert.death` | E | P | death during an alert |
+| `alert.escape` | E | P | breaking sight, leaving the zone |
+| `alert.ignore_at_zero` | E | R | officers near a player at level 0 |
 | `mission.delivery` | F | P | D1 pass and timeout; D2 and destroyed cargo hidden |
 | `mission.chase` | F | P | C1; C2 hidden |
 | `mission.race` | F | P | R1 pass and a skipped checkpoint; R2 hidden |
@@ -158,7 +158,7 @@ row, a row names no assertion, or an assertion's template is not in the catalog.
 | Rule | Requires | Exercised by | Kind | Fails when missing |
 | --- | --- | --- | --- | --- |
 | OR-1 | no outside IP in project text or names | `gate.static: denylist` | G | a denylisted name zeroes the reward |
-| OR-2 | wanted shown as badges | `ui.hud: wanted_badges` | P | badge count differs from the level |
+| OR-2 | alert level shown as badges | `ui.hud: alert_badges` | P | badge count differs from the level |
 | CA-1 | leads spawn with their table looks | `people.lineup: lead_looks` | P | missing lead, wrong body, hair or colours |
 | CA-2 | leads pairwise distinct | `people.lineup: leads_distinct` | P | two leads too alike |
 | CA-3 | lead unlocks | `mission.unlocks: leads_unlocked` | R | unlock list wrong after a pass |
@@ -166,11 +166,11 @@ row, a row names no assertion, or an assertion's template is not in the catalog.
 | CA-5 | leads online | `online.session_a: lead_skins` | P | a remote client shows another look |
 | AR-1 | archetypes present by place and hour | `people.census: presence` | P | an archetype absent or under its count |
 | AR-2 | archetype signatures | `people.census: signatures` | P | wrong colours or props |
-| AR-3 | humanoid heights and scale | `people.lineup: heights`, `people.census: heights` | P | height or scale out of band |
+| AR-3 | library bodies, heights and scale | `people.lineup: body_mesh`, `people.lineup: heights`, `people.census: heights` | P | body not from a library file, height or scale out of band |
 | AR-4 | behaviours | `people.census: behaviours` | P | a stand, work, turf or patrol rule broken |
 | AR-5 | who is armed | `people.census: armed` | P | unarmed enforcer or armed civilian |
-| IN-1 | the 30 actions with bindings | `gate.static: inputmap` | G | an action or binding missing |
-| IN-2 | strength gaits, mode actions | `people.locomotion: gait_select`, `people.vehicle_entry: drive_actions` | P | half strength runs, vehicles ignore their actions |
+| IN-1 | the 28 actions with bindings | `gate.static: inputmap` | G | an action or binding missing |
+| IN-2 | strength gaits, mode actions, handbrake | `people.locomotion: gait_select`, `people.vehicle_entry: drive_actions`, `vehicle.handling: handbrake` | P | half strength runs, vehicles ignore their actions, handbrake outside 2-6 m/s² |
 | IN-3 | input acts in its tick | `people.locomotion: same_tick` | P | movement starts a tick late |
 | CM-1 | camera distance and framing | `people.locomotion: camera_frame`, `people.vehicle_entry: camera_vehicle` | P | camera too near or far, player off centre |
 | CM-2 | look rates and tilt | `people.locomotion: look_rates` | P | rate or tilt out of band |
@@ -188,8 +188,8 @@ row, a row names no assertion, or an assertion's template is not in the catalog.
 | FT-9 | ragdoll and getting up | `people.fall_ragdoll: ragdoll`, `people.fall_ragdoll: get_up`, `vehicle.crash: blast_ragdoll` | P | scripted fall, bone below ground, no get-up |
 | FT-10 | getting in and out | `people.vehicle_entry: door_path`, `people.vehicle_entry: seated`, `people.vehicle_entry: exit` | P | path misses the door, hips out of the seat |
 | FT-11 | aim pose | `combat.weapons: aim_pose` | P | hand or forearm off |
-| FT-12 | cover | `combat.cover_firefight: cover_pose` | P | not in cover within 1 s, hips high |
-| VH-1 | handling and mass | `vehicle.handling: accel`, `vehicle.handling: top_speed`, `vehicle.handling: brake_dry`, `vehicle.handling: turn_circle`, `vehicle.handling: mass` | P | any value out of band |
+| FT-12 | cover | `combat.cover_firefight: cover_pose`, `combat.cover_firefight: cover_state` | P | not in cover within 1 s, hips high, `cover` state wrong |
+| VH-1 | handling, mass, library models | `vehicle.handling: accel`, `vehicle.handling: top_speed`, `vehicle.handling: brake_dry`, `vehicle.handling: turn_circle`, `vehicle.handling: mass`, `vehicle.handling: model_mesh` | P | any value out of band, body not from its library model |
 | VH-2 | wet braking | `vehicle.handling: brake_wet`, `world.weather: rain_braking` | P | ratio under 1.15 or over 1.60 |
 | VH-3 | damage from impacts | `vehicle.crash: damage_rate`, `inv.damage_honest: impacts_only` | P | no damage, or damage without an impact |
 | VH-4 | parts come off | `vehicle.crash: parts` | P | no debris entity |
@@ -225,20 +225,20 @@ row, a row names no assertion, or an assertion's template is not in the catalog.
 | CB-6 | no shots through walls | `combat.cover_firefight: los_only` | P | damage through a wall |
 | CB-7 | death | `combat.cover_firefight: kills` | P | no `died` event or no ragdoll |
 | CB-8 | cover cuts damage, firing from cover | `combat.cover_firefight: cover_cuts`, `combat.cover_firefight: fire_from_cover` | P | ratio over 0.4, cannot fire |
-| CB-9 | crew hostility and tactics | `combat.crew_hostility: turn_hostile`, `combat.cover_firefight: enemy_cover`, `combat.cover_firefight: retreat` | P | no hostility, under half reach cover, no retreat |
+| CB-9 | crew hostility and tactics | `combat.crew_hostility: turn_hostile`, `combat.crew_hostility: lookouts_flee`, `combat.cover_firefight: enemy_cover`, `combat.cover_firefight: retreat` | P | no hostility, lookouts stay, under half reach cover, no retreat |
 | CB-10 | police force by level | `combat.police_force: by_level` | R | police shooting at level 1 |
-| WN-1 | crime events | `wanted.crime_table: events` | P | a crime without its event |
-| WN-2 | reporting delays | `wanted.red_light: police_witness`, `wanted.phone_in: delay`, `wanted.phone_in: dead_witness` | P | late rise, wrong phone-in time, a dead witness still reports |
-| WN-3 | unwitnessed crimes | `wanted.unwitnessed: stays_zero`, `inv.wanted_honest: witnessed_only` | R | the level rises without a witness |
-| WN-4 | level rule and escalation | `wanted.red_light: no_escalation`, `wanted.crime_table: levels`, `wanted.crime_table: escalation` | P | wrong level |
-| WN-5 | sight ranges | `wanted.sight_range: inside`, `wanted.sight_range: outside` | R | seen from outside the range, missed inside it |
-| WN-6 | response time and count | `wanted.red_light: arrival`, `wanted.response_levels: counts` | P | late, too few or too many units |
-| WN-7 | where police come from | `wanted.red_light: origin`, `wanted.red_light: kinematics` | P | appears near or in view, too fast, through walls |
-| WN-8 | roadblocks | `wanted.roadblock: ahead`, `mission.heist: roadblock` | P | no roadblock within 90 s |
-| WN-9 | arrest | `wanted.arrest: arrested`, `wanted.arrest: consequences` | P | no arrest, wrong fine, weapons or place |
-| WN-10 | death and respawn | `wanted.death: respawn`, `wanted.death: fee` | P | wrong place, fee or level |
-| WN-11 | escape | `wanted.escape: cooling_off`, `wanted.escape: zone`, `inv.wanted_honest: drops_only_on_escape` | P | drops early, never drops |
-| WN-12 | ignored at level 0 | `wanted.ignore_at_zero: no_pursuit` | R | police approach at level 0 |
+| AL-1 | crime events | `alert.crime_table: events` | P | a crime without its event |
+| AL-2 | reporting delays | `alert.red_light: police_witness`, `alert.phone_in: delay`, `alert.phone_in: dead_witness` | P | late rise, wrong phone-in time, a dead witness still reports |
+| AL-3 | unwitnessed crimes | `alert.unwitnessed: stays_zero`, `inv.alert_honest: witnessed_only` | R | the level rises without a witness |
+| AL-4 | alert rule and escalation | `alert.red_light: no_escalation`, `alert.crime_table: levels`, `alert.crime_table: escalation` | P | wrong level |
+| AL-5 | sight ranges | `alert.sight_range: inside`, `alert.sight_range: outside` | R | seen from outside the range, missed inside it |
+| AL-6 | response time and count | `alert.red_light: arrival`, `alert.response_levels: counts` | P | late, too few or too many units |
+| AL-7 | where police come from | `alert.red_light: origin`, `alert.red_light: kinematics` | P | appears near or in view, too fast, through walls |
+| AL-8 | roadblocks | `alert.roadblock: ahead`, `mission.heist: roadblock` | P | no roadblock within 90 s |
+| AL-9 | arrest | `alert.arrest: arrested`, `alert.arrest: consequences` | P | no arrest, wrong fine, weapons or place |
+| AL-10 | death and respawn | `alert.death: respawn`, `alert.death: fee` | P | wrong place, fee or level |
+| AL-11 | escape | `alert.escape: cooling_off`, `alert.escape: zone`, `inv.alert_honest: drops_only_on_escape` | P | drops early, never drops |
+| AL-12 | ignored at level 0 | `alert.ignore_at_zero: no_pursuit` | R | police approach at level 0 |
 | MS-1 | contacts offer missions | `mission.delivery: accepted`, `mission.unlocks: locked_not_offered` | P | no start, a locked mission offered |
 | MS-2 | markers | `mission.delivery: markers` | P | marker far from its point, next shown early |
 | MS-3 | stage completion | `mission.delivery: stages_in_order`, `inv.mission_honest: arrivals` | P | a stage done away from its point |
@@ -275,18 +275,19 @@ row, a row names no assertion, or an assertion's template is not in the catalog.
 | WD-15 | rain effects | `world.weather: rain_fx` | P | no emitting rain node |
 | WD-16 | fog | `world.weather: fog_env` | P | fog off |
 | WD-17 | overcast light | `world.weather: overcast_light` | P | sun too bright |
-| UI-1 | HUD | `ui.hud: health`, `ui.hud: armour`, `ui.hud: money`, `ui.hud: weapon`, `ui.hud: wanted_badges` | P | a widget disagrees with state |
+| UI-1 | HUD | `ui.hud: health`, `ui.hud: armour`, `ui.hud: money`, `ui.hud: weapon`, `ui.hud: alert_badges` | P | a widget disagrees with state |
 | UI-2 | minimap icons | `ui.minimap: icons_fit`, `ui.minimap: icon_set` | P | residual over 3 px, icons missing |
 | UI-3 | route | `ui.minimap: route_on_roads`, `ui.minimap: route_length` | P | off the roads, too long |
-| UI-4 | search zone | `ui.minimap: search_zone`, `wanted.escape: zone_shown` | P | zone missing or off |
+| UI-4 | search zone | `ui.minimap: search_zone`, `alert.escape: zone_shown` | P | zone missing or off |
 | UI-5 | phone | `ui.phone: open`, `ui.phone: apps`, `ui.phone: gps` | P | apps missing, not navigable with `ui_*` |
 | UI-6 | main menu | `ui.menus: main_menu`, `ui.menus: new_game`, `ui.menus: load`, `ui.menus: host`, `ui.menus: join` | P | buttons missing, host or join fails |
 | UI-7 | pause | `ui.menus: pause` | P | the world moves while paused |
 | UI-8 | timer and notices | `mission.delivery: timer_hud`, `economy.shops: notice` | P | timer or notice missing |
 | UI-9 | place menus | `economy.shops: menu`, `economy.garage: menu`, `people.switch_lead: menu` | P | entries missing |
 | UI-10 | net warning | `online.session_a: net_warning` | P | warning absent or late |
+| UI-11 | full-screen map | `ui.minimap: map_screen` | P | no map screen, icons off, `state.ui.map` wrong |
 | SV-1 | saving and autosave | `persistence.round_trip: save`, `persistence.rules: autosave` | P | no `saved` event |
-| SV-2 | refusals | `persistence.rules: refused_wanted`, `persistence.rules: refused_mission` | P | saves while wanted |
+| SV-2 | refusals | `persistence.rules: refused_alert`, `persistence.rules: refused_mission` | P | saves during an alert |
 | SV-3 | contents and placement | `persistence.round_trip: restored` | P | a field lost |
 | SV-4 | atomic saves | `persistence.round_trip: sigkill` | P | slot unreadable after SIGKILL |
 | SV-5 | damaged slot | `persistence.round_trip: corrupt` | P | crash, or another slot fails |
@@ -302,9 +303,10 @@ row, a row names no assertion, or an assertion's template is not in the catalog.
 | NT-9 | dropping and reconnecting | `online.session_b: reconnect` | R | avatar stays, state not restored |
 | NT-10 | surviving a partition | `online.session_a: partition`, `online.session_c: recovery` | P | dropped, ghosts, oscillation |
 | NT-11 | PvP switch | `online.session_a: pvp`, `online.session_b: pvp_off` | P | damage with PvP off, none with it on |
-| NT-12 | co-op heist | `online.session_d: crew`, `online.session_d: payout_each`, `online.session_d: fails_all` | P | payout to one player only |
+| NT-12 | missions online, co-op heist | `online.session_d: offered`, `online.session_d: crew`, `online.session_d: payout_each`, `online.session_d: fails_all` | P | H1 not offered in a fresh session, payout to one player only |
 | NT-13 | bandwidth | `online.session_b: bandwidth` | R | over 48/96/16 KB/s |
 | NT-14 | server tick | `online.session_b: tick` | R | p95 over 16.7 ms |
+| NT-15 | online sessions stay on one map | `online.session_b: one_map` | R | a map change, or the ferry sailing, online |
 | PF-1 | GDScript and shaders only | `gate.static: languages` | G | C# or a native library present |
 | PF-2 | project settings | `gate.static: settings` | G | a setting differs |
 | PF-3 | import time and cache | `gate.import: time`, `gate.import: cache_size` | G | over 10 minutes or 1 GB |
@@ -318,7 +320,7 @@ row, a row names no assertion, or an assertion's template is not in the catalog.
 | AC-2 | robust `exec` | `contract.devconsole: bad_input`, `contract.devconsole: float_ids` | P | crash, no error answer, floats refused |
 | AC-3 | commands do what they say | `contract.devconsole: commands` | P | a command missing or without effect |
 | AC-4 | entity registry | `inv.registry: ids` | I | reused id, missing metadata |
-| AC-5 | people's skeletons | `people.lineup: skeleton`, `inv.registry: unregistered` | P | wrong bone names, unbound mesh, unregistered actor |
+| AC-5 | people's skeletons, weapon and hostility | `people.lineup: skeleton`, `inv.registry: unregistered`, `combat.crew_hostility: hostile_meta` | P | wrong bone names, unbound mesh, unregistered actor, `weapon` or `hostile` wrong |
 | AC-6 | vehicles' metadata and seats | `people.vehicle_entry: seats`, `vehicle.crash: metadata` | P | seats, doors or wheel point missing |
 | AC-7 | signal entities | `traffic.intersection_watch: signal_entities` | P | an approach without its signal |
 | AC-8 | layers, surface tags, water areas | `world.plan_compliance: tags`, `people.swim: water_area` | P | tags or layers wrong |
@@ -343,7 +345,7 @@ revised with Phase 0's head start). "Acceptance" is what must hold before the wo
 done.
 
 ### WS1 GDD (v1 done)
-- **Deliverables:** v1 (done, 175 rules); v2 after the first playtests and reference modules
+- **Deliverables:** v1 (done, 177 rules); v2 after the first playtests and reference modules
   (numbers re-measured on the reference, TODO markers settled, the Port and Hills points of
   interest named); freeze before hidden instances are drawn.
 - **Acceptance:** `check_agent_text.py --release` 0 hits and 0 open markers; `check_coverage.py`
@@ -408,7 +410,7 @@ done.
 
 ### WS5 Starter project
 - **Deliverables:** `project.godot` (4.7 features, Jolt, 60 Hz, jitter fix 0, main-thread physics,
-  Compatibility); the 30 actions with keyboard-and-mouse and gamepad defaults; a `DevConsole` stub
+  Compatibility); the 28 actions with keyboard-and-mouse and gamepad defaults; a `DevConsole` stub
   that answers `{"ok": false, "error": "not implemented"}`; the vendor library under
   `assets/vendor/` with explicit texture import settings; the bone map if the panel says so; the
   prebuilt import cache; an empty main scene; a short README.
@@ -473,7 +475,7 @@ done.
 - **Deliverables:**
   - exact-replay calibration on the verifier's CPU (Linux x86_64): every instance once, plus sweeps
     (variations, handling across the GDD bands, weather and hour) to find the reference's spread;
-  - one mutant per assertion family member (police that warp in, wanted levels without witnesses,
+  - one mutant per assertion family member (police that warp in, alert levels without witnesses,
     client-authoritative movement, NPC drivers that ignore red, sliding feet, damage without
     impacts, missions passed on a timer, saves that drop garages, misplaced minimap icons,
     teleporting ragdolls, wall-clock timers, reused ids, filled interiors, unannounced teleports);
@@ -491,6 +493,11 @@ done.
   gate (reference 1.0 x2, no-op 0 x2, audit clean) before any model trial.
 - **Acceptance:** every must-fix closed and re-checked; CHECKLIST Part 1 all ticked.
 - **Size:** 9 days plus fix rounds.
+
+**Total:** about 119 days of people's time (4 + 9 + 16 + 9 + 2 + 50 + 7 + 4 + 9 + 9), above the
+design's 95 because every rule now needs a failing check and the kit gains the sandbox and
+self-test. The fifteen weeks of section 6 assume about 1.6 people's worth of review in parallel,
+with agents writing the code; one person alone needs about 24 weeks.
 
 ## 4. Public and private layout
 
@@ -638,12 +645,12 @@ meet, fail.**
 
 How the per-family results will show it:
 - Group the families: foundation (A people, B vehicles, H world, I time and weather), systems (C
-  traffic, D combat, G economy, J UI, K saving), integration (E wanted, F missions, L online, M free
+  traffic, D combat, G economy, J UI, K saving), integration (E alert level, F missions, L online, M free
   play).
 - Report per trial the three group means and the **integration gap**
   `mean(S_A, S_B, S_H, S_I) - mean(S_E, S_F, S_L, S_M)`.
 - The failure mode shows as a staircase falling from foundation to integration, a gap of 0.3 or
-  more, and in E and F a large share of instances zeroed by invariants (`inv.wanted_honest`,
+  more, and in E and F a large share of instances zeroed by invariants (`inv.alert_honest`,
   `inv.mission_honest`, police origin and kinematics) rather than by missing features.
 - A trial that breaks the pattern (integration close to foundation) is worth reading in full: either
   a strong model or a gap in the checks.

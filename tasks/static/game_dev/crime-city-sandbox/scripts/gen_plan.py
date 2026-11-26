@@ -461,16 +461,19 @@ def place_pois(placed, geo):
             points["counter"] = [round(inside[0], 2), CURB_M, round(inside[1], 2)]
         if kind == "safehouse":
             points["save"] = [round(inside[0], 2), CURB_M, round(inside[1], 2)]
-        parcel["interior"] = {
-            "door": {
-                "p": [round(door[0], 2), round(door[1], 2)],
-                "heading_deg": INWARD[side],
-                "width_m": 2.0,
-                "height_m": 2.6,
-            },
-            "rooms": rooms,
-            "points": points,
-        }
+        # Only shops, safehouses and the bank have interiors (GDD scope); the police
+        # station and the hospital keep a front door point outside the facade.
+        if kind in ("shop", "safehouse", "bank"):
+            parcel["interior"] = {
+                "door": {
+                    "p": [round(door[0], 2), round(door[1], 2)],
+                    "heading_deg": INWARD[side],
+                    "width_m": 2.0,
+                    "height_m": 2.6,
+                },
+                "rooms": rooms,
+                "points": points,
+            }
         outside = [
             round(door[0] - ix * 1.5, 2),
             CURB_M,

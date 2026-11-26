@@ -18,9 +18,11 @@ and chapter 17). This file says what a plan contains and what each field means.
 | `hills_height.png` | Sable Hills terrain, a 16-bit greyscale heightmap |
 | `links.json` | Highway portals between maps and the ferry route (format `city-links/1`) |
 
-The `--plan-dir=DIR` flag points the game at another folder with the same file names. Plans in
-another folder can have different roads, blocks and parcels; they keep the same point-of-interest
-ids.
+The `--plan-dir=DIR` flag points the game at another folder with the same file names; the level
+designers use it to try layouts. Plans there can have different roads, blocks and parcels and keep
+the same point-of-interest ids.
+
+The examples below are taken from `downtown.json`.
 
 ## Conventions
 
@@ -30,8 +32,8 @@ ids.
   north (-z), 90 is east (+x).
 - **Traffic** drives on the right.
 - **Ids** are strings, unique within a plan. Point-of-interest ids stay the same across plan
-  revisions and across maps' alternative layouts; every other id (nodes, edges, lanes, parcels,
-  blocks) can change when a designer edits the plan. Anything that must survive an edit, such as
+  revisions; every other id (nodes, edges, lanes, parcels, blocks) can change when a designer edits
+  the plan. Anything that must survive an edit, such as
   a mission objective, refers to a point of interest.
 - **Unknown fields** are ignored, so designers can add notes.
 - **Order.** Lists have no meaning in their order except where this file says so (signal phases,
@@ -47,7 +49,7 @@ ids.
   "map": "downtown",
   "name": "downtown",
   "revision": 1,
-  "bounds": {"min": [-260.0, -250.0], "max": [250.0, 240.0]},
+  "bounds": {"min": [-230.0, -220.0], "max": [220.0, 210.0]},
   "ground_m": 0.0,
   "nodes": [], "edges": [], "intersections": [],
   "blocks": [], "sidewalks": [], "parcels": [],
@@ -114,16 +116,18 @@ Every node with at least one edge has one intersection record.
 
 ```json
 {
-  "id": "j_11", "node": "j_11", "control": "signal",
+  "id": "j_10", "node": "j_10", "control": "signal",
   "legs": [
-    {"edge": "e_11_12", "box_m": 7.0,
-     "crosswalk": {"id": "cw_j_11_e_11_12", "from_m": 7.5, "to_m": 10.5},
-     "approach": {"id": "j_11<e_11_12", "dir": "ba", "stop_line_m": 11.5}}
+    {"edge": "e_10_20", "box_m": 7.0,
+     "crosswalk": {"id": "cw_j_10_e_10_20", "from_m": 7.5, "to_m": 10.5},
+     "approach": {"id": "j_10<e_10_20", "dir": "ba", "stop_line_m": 11.5}}
   ],
-  "signal": {"phases": [{"green": ["j_11<e_11_12"], "walk": [], "green_s": 12.0}],
-             "amber_s": 3.0, "all_red_s": 1.0, "offset_s": 4.0}
+  "signal": {"phases": [{"green": ["j_10<e_10_20"], "walk": [], "green_s": 9.0}],
+             "amber_s": 3.0, "all_red_s": 1.0, "offset_s": 24.0}
 }
 ```
+
+(One of the three legs and one of the four phases shown.)
 
 - **Legs.** One per edge that touches the node, in a fixed order (clockwise from north).
   - `box_m`: how far the intersection box reaches along this edge from the node. Inside the box,
@@ -160,7 +164,7 @@ Every node with at least one edge has one intersection record.
 ## Blocks, sidewalks and parcels
 
 ```json
-{"id": "b_00", "poly": [[-186.75, -176.75], [-73.25, -176.75], [-73.25, -63.5], [-186.75, -63.5]],
+{"id": "b_00", "poly": [[-186.75, -176.75], [-77.0, -176.75], [-77.0, -63.25], [-186.75, -63.25]],
  "elevation_m": 0.15}
 ```
 
@@ -170,7 +174,7 @@ Every node with at least one edge has one intersection record.
 
   ```json
   {"id": "sw_00", "block": "b_00", "width_m": 3.0, "elevation_m": 0.15,
-   "ring": [[-185.25, -175.25], [-74.75, -175.25], [-74.75, -65.0], [-185.25, -65.0]]}
+   "ring": [[-185.25, -175.25], [-78.5, -175.25], [-78.5, -64.75], [-185.25, -64.75]]}
   ```
 
   `ring` is the closed centreline of a band `width_m` wide. A sidewalk point at distance `s`
@@ -179,10 +183,10 @@ Every node with at least one edge has one intersection record.
 - **Parcels** split the inside of a block (inside the sidewalks):
 
   ```json
-  {"id": "p_00", "block": "b_00", "zoning": "residential",
-   "poly": [[-183.75, -173.75], [-130.0, -173.75], [-130.0, -120.5], [-183.75, -120.5]],
-   "base_m": 0.15, "height_m": 18.4, "height_range_m": [9.0, 30.0], "setback_m": 3.0,
-   "interior": null}
+  {"id": "p_12", "block": "b_01", "zoning": "commercial",
+   "poly": [[-183.75, -53.75], [-137.23, -53.75], [-137.23, -15.69], [-183.75, -15.69]],
+   "base_m": 0.15, "height_m": 35.3, "height_range_m": [14.0, 60.0], "setback_m": 3.0,
+   "interior": {}}
   ```
 
   - `zoning`: `commercial`, `residential`, `civic`, `industrial`, `plaza`, `park` or `parking`.
@@ -192,14 +196,15 @@ Every node with at least one edge has one intersection record.
     the designers picked inside it.
   - `plaza`, `park` and `parking` parcels hold no building (`height_m` is 0). Their surface is at
     `base_m`; plazas and parks are open to people on foot, parking lots to vehicles and people.
-- **Interiors.** A parcel can have one interior: rooms at street level that people walk into.
+- **Interiors.** A parcel can have one interior (otherwise `null`): rooms at street level that
+  people walk into. The weapons shop's parcel above has this one:
 
   ```json
   "interior": {
-    "door": {"p": [-120.0, -150.0], "heading_deg": 90.0, "width_m": 2.0, "height_m": 2.6},
-    "rooms": [{"id": "main", "poly": [[-128.0, -158.0], [-116.0, -158.0], [-116.0, -142.0],
-                                     [-128.0, -142.0]], "floor_m": 0.15, "ceiling_m": 3.6}],
-    "points": {"counter": [-125.0, 0.15, -150.0]}
+    "door": {"p": [-160.49, -50.75], "heading_deg": 180.0, "width_m": 2.0, "height_m": 2.6},
+    "rooms": [{"id": "main", "poly": [[-166.49, -50.45], [-154.49, -50.45], [-154.49, -40.75],
+                                     [-166.49, -40.75]], "floor_m": 0.15, "ceiling_m": 3.75}],
+    "points": {"counter": [-160.49, 0.15, -43.75]}
   }
   ```
 
@@ -248,7 +253,7 @@ Every node with at least one edge has one intersection record.
 
 ```json
 {"id": "shop_weapons_downtown", "kind": "shop", "shop": "weapons",
- "p": [-120.0, 0.15, -146.0], "heading_deg": 90.0, "parcel": "p_04", "point": "counter"}
+ "p": [-160.49, 0.15, -43.75], "heading_deg": 180.0, "parcel": "p_12", "point": "counter"}
 ```
 
 Every point of interest has `id`, `kind`, `p` (a spot on the ground where a person can stand or a
@@ -315,7 +320,7 @@ position and a heading.
 | `{"corner_of": id, "approach": k}` | the sidewalk point nearest to the right-hand end of approach `k`'s stop line (the outer edge of its rightmost lane) | towards the node |
 | `{"poi": id}` | the point of interest's `p` | its `heading_deg` |
 | `{"poi": id, "front_m": d}` | `d` metres in front of `p` along its heading, at the height of the ground there | the point of interest's heading |
-| `{"portal": id, "before_m": d, "lane_index": i}` | on lane `i` of the lanes travelling into the portal node, `d` metres before the node | towards the portal |
+| `{"portal": id, "before_m": d, "lane_index": i}` | `id` names a `portal` point of interest; on lane `i` of the lanes travelling into its node, `d` metres before the node | towards the portal |
 
 When an anchor resolves on the ground, things are placed standing on that surface. A `heading`
 argument given with a command overrides the anchor's heading.
