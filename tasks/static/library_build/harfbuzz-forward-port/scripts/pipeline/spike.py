@@ -278,7 +278,10 @@ def do_build(
 ) -> dict:
     """Build one tree (a release, optionally with a unit's commits reverted) in one bounded container."""
     src = f"/dl/harfbuzz/harfbuzz-{release}.tar.xz"
-    patches = f"/work/patches-lib/{unit}" if unit else ""
+    if unit and unit.startswith("W"):
+        patches = f"/pipe/mutants/{unit}"  # our own mutations, applied forward
+    else:
+        patches = f"/work/patches-lib/{unit}" if unit else ""
     out = f"/work/out/hb/{bid}"
     started = time.time()
     code = docker_run(
@@ -314,17 +317,27 @@ def do_run(
     platform: str | None = None,
     env: str = "",
     cpus: int = 2,
+    driver: str = "hbdrv",
 ) -> int:
-    """Run the driver of one build over a case file, in one bounded container."""
+    """Run one driver of one build over a case file, in one bounded container."""
     started = time.time()
     code = docker_run(
-        ["sh", "-c", f"{env} timeout 1800 /work/out/hb/{bid}/hbdrv < {cases} > {out}"],
+        [
+            "sh",
+            "-c",
+            f"{env} sh /pipe/run_cases.sh /work/out/hb/{bid} {driver} {cases} {out}",
+        ],
         cpus=cpus,
         platform=platform,
         check=False,
     )
     log_event(
-        event="run", id=bid, out=out, code=code, wall_s=round(time.time() - started, 1)
+        event="run",
+        id=bid,
+        driver=driver,
+        out=out,
+        code=code,
+        wall_s=round(time.time() - started, 1),
     )
     return code
 
@@ -369,6 +382,7 @@ def run_ops(ops: list[dict]) -> None:
                 op.get("platform"),
                 op.get("env", ""),
                 op.get("cpus", 2),
+                op.get("driver", "hbdrv"),
             )
         elif op["op"] == "image":
             build_pipeline_image(op.get("platform"))
@@ -412,11 +426,13 @@ def cmd_batch(args: argparse.Namespace) -> None:
 VERIFIER_IMAGE = "hbfp-verifier:phaseB"
 
 
-def stage_verifier(selection_path: Path) -> int:
+def stage_verifier(selection_path: Path, recorded: Path | None = None) -> int:
     """Stage a private selection into tests/ (its git-ignored private/, inputs/ and wheels/); return the case count.
 
-    tests/ is the verifier's build context, as on the platform. The selection's cases and recorded outputs go to
-    tests/private/ (root-only in the image), the fonts they use to tests/inputs/, and the meson wheel to tests/wheels/.
+    tests/ is the verifier's build context, as on the platform. The cases go to tests/private/cases.jsonl
+    (root-only in the image), the fonts they use to tests/inputs/, the meson wheel to tests/wheels/. The expected
+    outputs come from `recorded` (outputs.tsv of a RECORD=1 run of the verifier image on 15.2.0) when given, else from
+    the pipeline's builds as recorded in the selection.
     """
     selection = [
         json.loads(line) for line in selection_path.read_text().splitlines() if line
@@ -430,17 +446,34 @@ def stage_verifier(selection_path: Path) -> int:
         kind, name = font.split("/", 1)
         src = (DL / "fonts" / name) if kind == "noto" else (WORK / "fonts" / name)
         shutil.copy2(src, tests / "inputs" / "fonts" / kind / name)
-    keys = ("id", "unit", "family", "kind", "window", "font", "idx", "opts", "text")
+    keys = (
+        "id",
+        "unit",
+        "family",
+        "kind",
+        "window",
+        "drv",
+        "font",
+        "idx",
+        "opts",
+        "text",
+    )
     (tests / "private" / "cases.jsonl").write_text(
         "".join(
-            json.dumps({k: c[k] for k in keys}, sort_keys=True) + "\n"
+            json.dumps({k: c.get(k, "shape") for k in keys}, sort_keys=True) + "\n"
             for c in selection
         )
     )
-    expected = {
-        rel: {c["id"]: c["gold"][rel] for c in selection}
-        for rel in ("15.0.0", "15.1.0", "15.2.0")
-    }
+    if recorded:
+        rows = dict(
+            line.split("\t", 1) for line in recorded.read_text().splitlines() if line
+        )
+        expected = {"15.2.0": {c["id"]: rows[c["id"]] for c in selection}}
+    else:
+        expected = {
+            rel: {c["id"]: c["gold"][rel] for c in selection}
+            for rel in ("15.0.0", "15.1.0", "15.2.0")
+        }
     (tests / "private" / "expected.json").write_text(json.dumps(expected))
     return len(selection)
 
@@ -463,7 +496,11 @@ def build_verifier_image(platform: str | None = None) -> None:
 
 
 def run_verifier(
-    tree: Path, name: str, release: str, platform: str | None = None
+    tree: Path,
+    name: str,
+    release: str,
+    platform: str | None = None,
+    record: bool = False,
 ) -> dict:
     """Run the verifier image against one tree, the way the platform would (tree read-only, logs mounted).
 
@@ -483,6 +520,7 @@ def run_verifier(
         *(["--platform", platform] if platform else []),
         "-e",
         f"RELEASE={release}",
+        *(["-e", "RECORD=1"] if record else []),
         "-v",
         f"{tree.resolve()}:/app/harfbuzz:ro",
         "-v",
@@ -517,14 +555,41 @@ def cmd_verify(args: argparse.Namespace) -> None:
         run_verifier(Path(args.tree), args.name, args.release)
 
 
+def record_gold(
+    selection: Path, platform: str | None, release: str, tree: Path
+) -> None:
+    """Record the expected outputs through the verifier image itself (RECORD=1 on the reference tree), compare them
+    with the pipeline's outputs, restage them as the expected outputs and rebuild the image."""
+    res = run_verifier(tree, "record", release, platform, record=True)
+    recorded = WORK / "verify" / "record" / "outputs.tsv"
+    if res["code"] != 0 or not recorded.exists():
+        raise SystemExit("recording through the verifier image failed")
+    rows = dict(
+        line.split("\t", 1) for line in recorded.read_text().splitlines() if line
+    )
+    cases = [json.loads(line) for line in selection.read_text().splitlines() if line]
+    differ = [c["cid"] for c in cases if rows.get(c["id"]) != c["gold"][release]]
+    (WORK / "verify" / "record" / "differ-from-pipeline.txt").write_text(
+        "".join(f"{cid}\n" for cid in differ)
+    )
+    log_event(event="record", cases=len(cases), differ_from_pipeline=len(differ))
+    stage_verifier(selection, recorded)
+    build_verifier_image(platform)
+
+
 def cmd_milestone(args: argparse.Namespace) -> None:
-    """Under one hold of the lock: run the plan's operations, stage the selection, build the verifier, verify trees."""
+    """Under one hold of the lock: run the plan's operations, stage the selection, build the verifier (recording
+    the expected outputs through it when asked), and verify each tree."""
     ops = json.loads(Path(args.plan).read_text()) if args.plan else []
     with heavy(f"milestone: {len(ops)} ops, verifier image, {len(args.tree)} runs"):
         run_ops(ops)
         n = stage_verifier(Path(args.selection))
         print(f"staged {n} cases", flush=True)
         build_verifier_image(args.platform)
+        if args.record:
+            record_gold(
+                Path(args.selection), args.platform, args.release, Path(args.record)
+            )
         for spec in args.tree:
             name, _, tree = spec.partition("=")
             run_verifier(Path(tree), name, args.release, args.platform)
@@ -570,6 +635,10 @@ def main() -> None:
     p.add_argument("--release", default="15.2.0")
     p.add_argument("--plan", help="operations to run first, under the same hold")
     p.add_argument("--platform", help="build and run the verifier for this platform")
+    p.add_argument(
+        "--record",
+        help="reference tree: record the expected outputs through the verifier image",
+    )
     p.set_defaults(func=cmd_milestone)
     args = parser.parse_args()
     WORK.mkdir(parents=True, exist_ok=True)

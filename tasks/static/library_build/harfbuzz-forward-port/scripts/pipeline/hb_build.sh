@@ -26,9 +26,17 @@ cd "$W"
 
 applied=0
 if [ -n "$PATCHES" ]; then
-  for p in $(ls -r "$PATCHES"/*.patch); do
+  # Upstream commits (*.patch) are reverted newest first; mutations of our own (*.fwd.patch) are then applied.
+  for p in $(ls -r "$PATCHES"/*.patch 2>/dev/null | grep -v '[.]fwd[.]patch$'); do
     patch -R -p1 -s --no-backup-if-mismatch -r - < "$p" > "$OUT/patch.log" 2>&1 || {
       echo "{\"status\": \"revert-failed\", \"patch\": \"$(basename "$p")\"}" > "$OUT/build.json"
+      exit 3
+    }
+    applied=$((applied + 1))
+  done
+  for p in $(ls "$PATCHES"/*.fwd.patch 2>/dev/null); do
+    patch -p1 -s --no-backup-if-mismatch -r - < "$p" > "$OUT/patch.log" 2>&1 || {
+      echo "{\"status\": \"apply-failed\", \"patch\": \"$(basename "$p")\"}" > "$OUT/build.json"
       exit 3
     }
     applied=$((applied + 1))
@@ -60,6 +68,13 @@ if [ -f /drv/hbprops.c ]; then
   cc -O2 -c -I"$OUT/include/harfbuzz" -o "$W/hbprops.o" /drv/hbprops.c
   c++ -o "$OUT/hbprops" "$W/hbprops.o" "$OUT/lib/libharfbuzz.a" -lm
 fi
+# The API drivers. A probe of a function this tree does not have fails to compile; it is then simply absent.
+for d in hbapi hbmeta hbapi48 hbapi49 hbapi51; do
+  [ -f "/drv/$d.c" ] || continue
+  rm -f "$OUT/$d"
+  { cc -O2 -Werror=implicit-function-declaration -c -I"$OUT/include/harfbuzz" -o "$W/$d.o" "/drv/$d.c" \
+    && c++ -o "$OUT/$d" "$W/$d.o" "$OUT/lib/libharfbuzz.a" -lm; } > "$OUT/$d.compile.log" 2>&1 || rm -f "$OUT/$d"
+done
 regen=$(grep -c "machine.hh with a custom command" "$OUT/ninja.log" || true)
 peak=$(cat /sys/fs/cgroup/memory.peak 2>/dev/null || echo 0)
 printf '{"status": "ok", "setup_s": %s, "build_s": %s, "jobs": %s, "ragel": "%s", "ragel_steps": %s, "reverted_patches": %s, "mem_peak_bytes": %s}\n' \

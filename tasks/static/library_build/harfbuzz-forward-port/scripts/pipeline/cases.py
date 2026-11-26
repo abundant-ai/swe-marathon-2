@@ -8,100 +8,33 @@ case, or nothing. Development tooling, never shipped.
 
 from __future__ import annotations
 
+import functools
+import importlib
 import json
 import random
 import sys
 import tarfile
 import unicodedata
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
-from fontTools.ttLib import TTFont
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-NOTO = Path("/dl/fonts")
-SYNTH = Path("/work/fonts")
-TARBALL = Path("/dl/harfbuzz/harfbuzz-14.3.0.tar.xz")
-
-ZWJ, ZWNJ, CGJ, WJ, SHY, NBSP, DOTTED = (
-    0x200D,
-    0x200C,
-    0x034F,
-    0x2060,
-    0x00AD,
-    0x00A0,
-    0x25CC,
+from casekit import (
+    CGJ,
+    DOTTED,
+    NBSP,
+    NOTO,
+    SHY,
+    SYNTH,
+    TARBALL,
+    WJ,
+    ZWJ,
+    ZWNJ,
+    Font,
+    case,
+    init_inputs,
 )
-
-
-class Font:
-    """The cmap and layout features of one font file."""
-
-    def __init__(self, path: Path) -> None:
-        self.path = path
-        font = TTFont(str(path), lazy=True)
-        self.glyph_of: dict[int, str] = dict(font.getBestCmap() or {})
-        self.cmap = set(self.glyph_of)
-        self.features: set[str] = set()
-        for tag in ("GSUB", "GPOS"):
-            if tag in font and font[tag].table.FeatureList:
-                self.features |= {
-                    rec.FeatureTag for rec in font[tag].table.FeatureList.FeatureRecord
-                }
-
-    def has(self, *cps: int) -> bool:
-        return all(cp in self.cmap for cp in cps)
-
-    def block(self, lo: int, hi: int, cats: tuple[str, ...]) -> list[int]:
-        out = []
-        for cp in range(lo, hi + 1):
-            if cp in self.cmap:
-                try:
-                    if unicodedata.category(chr(cp)) in cats:
-                        out.append(cp)
-                except ValueError:
-                    pass
-        return out
-
-
-def case(
-    unit: str, kind: str, font: Font, text: list[int], nb: str = "", **opts: object
-) -> dict:
-    """One candidate. `nb` names which neighbour of the unit's condition it is (analysis only, never shaped)."""
-    opt = ";".join(f"{k}={v}" for k, v in opts.items())
-    out = {
-        "unit": unit,
-        "kind": kind,
-        "font": str(font.path),
-        "idx": 0,
-        "opts": opt,
-        "text": text,
-    }
-    if nb:
-        out["nb"] = nb
-    return out
-
-
-def init_inputs(path: Path) -> set[str]:
-    """Glyphs that an `init` lookup of the font substitutes (single, multiple, alternate, ligature; extensions unwrapped)."""
-    font = TTFont(str(path), lazy=True)
-    if "GSUB" not in font or not font["GSUB"].table.FeatureList:
-        return set()
-    table = font["GSUB"].table
-    lookups = {
-        i
-        for rec in table.FeatureList.FeatureRecord
-        if rec.FeatureTag == "init"
-        for i in rec.Feature.LookupListIndex
-    }
-    out: set[str] = set()
-    for i in lookups:
-        lookup = table.LookupList.Lookup[i]
-        for sub in lookup.SubTable:
-            if lookup.LookupType == 7:
-                sub = sub.ExtSubTable
-            for attr in ("mapping", "alternates", "ligatures"):
-                out |= set(getattr(sub, attr, None) or {})
-    return out
 
 
 def gen_khmer(rng: random.Random, fonts: list[Font], n: int) -> Iterator[dict]:
@@ -455,13 +388,10 @@ def gen_broad(rng: random.Random, fonts: list[Font], n: int) -> Iterator[dict]:
             yield case("broad", "broad", f, text, **opts)
 
 
-def main() -> None:
-    out = Path(sys.argv[1])
-    seed = int(sys.argv[2])
-    per_unit = int(sys.argv[3]) if len(sys.argv) > 3 else 2000
-    out.mkdir(parents=True, exist_ok=True)
-    rng = random.Random(seed)
-    noto = {p.stem: Font(p) for p in sorted(NOTO.glob("*.[ot]tf"))}
+def builtin_units(
+    noto: dict[str, Font],
+) -> dict[str, Callable[[random.Random, int], Iterator[dict]]]:
+    """The generators written during the spike, keyed by unit."""
     khmer = [noto["NotoSansKhmer-Regular"], noto["NotoSerifKhmer-Regular"]]
     indic = [noto["NotoSansBengali-Regular"], noto["NotoSansDevanagari-Regular"]]
     use = [
@@ -469,36 +399,99 @@ def main() -> None:
         noto["NotoSansJavanese-Regular"],
         noto["NotoSansTaiTham-Regular"],
     ]
-    gens = [
-        gen_khmer(rng, khmer, per_unit),
-        gen_indic_init(rng, [*indic, Font(SYNTH / "beng-init.ttf")], per_unit),
-        gen_use_space(rng, use, per_unit),
-        gen_hangul_tone(rng, [noto["NotoSansKR-Regular"]], per_unit),
-        gen_vowel_constraints(rng, indic + use, per_unit),
-        gen_precomposed(
-            rng, indic + khmer + use + [noto["NotoSansMyanmar-Regular"]], per_unit
+
+    def aat(unit: str) -> Callable[[random.Random, int], Iterator[dict]]:
+        return lambda rng, n: (c for c in gen_aat(rng, n) if c["unit"] == unit)
+
+    return {
+        "4": lambda rng, n: gen_khmer(rng, khmer, n),
+        "1": lambda rng, n: gen_indic_init(
+            rng, [*indic, Font(SYNTH / "beng-init.ttf")], n
         ),
-        gen_global_over_ranged(
-            rng, [noto["NotoSans-VF"], noto["NotoSerif-VF"]], per_unit
+        "2": lambda rng, n: gen_use_space(rng, use, n),
+        "5": lambda rng, n: gen_hangul_tone(rng, [noto["NotoSansKR-Regular"]], n),
+        "7": lambda rng, n: gen_vowel_constraints(rng, indic + use, n),
+        "13": lambda rng, n: gen_precomposed(
+            rng, indic + khmer + use + [noto["NotoSansMyanmar-Regular"]], n
         ),
-        gen_missing_vs(
-            rng, [noto["NotoSansHebrew-Regular"], noto["NotoSans-VF"]], per_unit
+        "14": lambda rng, n: gen_global_over_ranged(
+            rng, [noto["NotoSans-VF"], noto["NotoSerif-VF"]], n
         ),
-        gen_aat(rng, per_unit // 3),
-        gen_broad(rng, list(noto.values()), 60),
-    ]
+        "15": lambda rng, n: gen_missing_vs(
+            rng, [noto["NotoSansHebrew-Regular"], noto["NotoSans-VF"]], n
+        ),
+        "21": aat("21"),
+        "22": aat("22"),
+        "23": aat("23"),
+        "broad": lambda rng, n: gen_broad(rng, list(noto.values()), max(1, n // 30)),
+    }
+
+
+def _call_module_gen(
+    gen: Callable[..., Iterator[dict]],
+    noto: dict[str, Font],
+    rng: random.Random,
+    n: int,
+) -> Iterator[dict]:
+    return gen(rng, noto, SYNTH, n)
+
+
+def module_units(
+    noto: dict[str, Font],
+) -> tuple[dict[str, Callable[[random.Random, int], Iterator[dict]]], dict[str, int]]:
+    """Generators from the family modules (`gen_*.py` beside this file), and their per-unit candidate counts."""
+    units: dict[str, Callable[[random.Random, int], Iterator[dict]]] = {}
+    counts: dict[str, int] = {}
+    here = Path(__file__).resolve().parent
+    for path in sorted(here.glob("gen_*.py")):
+        mod = importlib.import_module(path.stem)
+        for unit, gen in getattr(mod, "UNITS", {}).items():
+            units[unit] = functools.partial(_call_module_gen, gen, noto)
+        counts.update(getattr(mod, "PER_UNIT", {}))
+    return units, counts
+
+
+def main() -> None:
+    """cases.py OUT_DIR SEED [PER_UNIT] [UNIT,UNIT,...]
+
+    Each unit draws from its own random stream (seed and unit id), so changing one generator leaves every other
+    unit's candidates as they were. Shaping candidates go to cases.tsv, API candidates to <driver>.tsv.
+    """
+    out = Path(sys.argv[1])
+    seed = int(sys.argv[2])
+    per_unit = int(sys.argv[3]) if len(sys.argv) > 3 else 2000
+    only = set(sys.argv[4].split(",")) if len(sys.argv) > 4 else None
+    out.mkdir(parents=True, exist_ok=True)
+    noto = {p.stem: Font(p) for p in sorted(NOTO.glob("*.[ot]tf"))}
+    gens = builtin_units(noto)
+    extra, counts = module_units(noto)
+    gens.update(extra)
     n = 0
-    with (out / "cases.tsv").open("w") as tsv, (out / "meta.jsonl").open("w") as meta:
-        for gen in gens:
-            for c in gen:
+    files: dict[str, object] = {}
+    per_unit_count: dict[str, int] = {}
+    with (out / "meta.jsonl").open("w") as meta:
+        for unit, gen in sorted(gens.items()):
+            if only and unit not in only:
+                continue
+            rng = random.Random(f"{seed}:{unit}")
+            for c in gen(rng, counts.get(unit, per_unit)):
                 n += 1
                 c["id"] = f"c{n:06d}"
+                drv = c.get("drv", "shape")
+                name = "cases.tsv" if drv == "shape" else f"{drv}.tsv"
+                if name not in files:
+                    files[name] = (out / name).open("w")
                 text = ",".join(f"{cp:X}" for cp in c["text"])
-                tsv.write(f"{c['id']}\t{c['font']}\t{c['idx']}\t{c['opts']}\t{text}\n")
+                files[name].write(
+                    f"{c['id']}\t{c['font']}\t{c['idx']}\t{c['opts']}\t{text}\n"
+                )
                 meta.write(json.dumps(c) + "\n")
+                per_unit_count[unit] = per_unit_count.get(unit, 0) + 1
+    for f in files.values():
+        f.close()
     print(
         json.dumps(
-            {"candidates": n, "fonts": {k: len(v.cmap) for k, v in noto.items()}}
+            {"candidates": n, "files": sorted(files), "per_unit": per_unit_count}
         )
     )
 

@@ -6,6 +6,7 @@ box outlines, Latin letters, and the one table feature a unit needs. Development
 
 from __future__ import annotations
 
+import importlib
 import struct
 import sys
 from pathlib import Path
@@ -262,6 +263,12 @@ def kern_vertical_fonts(out: Path) -> None:
 def main() -> None:
     out = Path(sys.argv[1])
     out.mkdir(parents=True, exist_ok=True)
+    here = Path(__file__).resolve().parent
+    sys.path.insert(0, str(here))
+    for path in sorted(here.glob("gen_*.py")):
+        build = getattr(importlib.import_module(path.stem), "build_fonts", None)
+        if build:
+            build(out)
     kerx_fonts(out)
     trak_fonts(out)
     bengali_init_font(out)

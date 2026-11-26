@@ -1,9 +1,16 @@
 """Build the delivered tree with the product's commands, run every case batch, and publish the reward.
 
-The release to check comes from the step's verifier environment (`RELEASE`), never from the tree. The tree's own
-build scripts and library code run only as the unprivileged `builder` user, which cannot read the recorded outputs
-in /tests/private; a root process compares the outputs after the driver has exited. An evaluation fault leaves no
+The release to check comes from the verifier environment (`RELEASE`), never from the tree. The tree's own build
+scripts and library code run only as the unprivileged `builder` user, which cannot read the recorded outputs in
+/tests/private; a root process compares the outputs after each driver has exited. An evaluation fault leaves no
 reward file.
+
+Reward: D x G. D is the mean over the graded changes of each change's pass fraction. G is the held-fixed gate:
+h_d x (1 - 0.10 x (1 - h_b)), where h_d is the mean over the changes of the pass fraction of each change's
+neighbouring cases (inputs one stated condition away, on which the library must behave as 14.3.0 does) and h_b the
+pass fraction of the other unchanged cases.
+
+With RECORD=1 the outputs of every case are written to /logs/verifier/outputs.tsv and nothing is scored.
 """
 
 from __future__ import annotations
@@ -20,12 +27,22 @@ from pathlib import Path
 TESTS = Path("/tests")
 PRIVATE = TESTS / "private"
 FONTS = TESTS / "inputs" / "fonts"
-DRIVER = TESTS / "driver" / "hbdrv.c"
+DRIVERS = TESTS / "driver"
 TREE = Path("/app/harfbuzz")
 WORK = Path("/tmp/hbv")
 LOGS = Path("/logs/verifier")
-WINDOWS = {"15.0.0": {"A"}, "15.1.0": {"A", "B"}, "15.2.0": {"A", "B", "C"}}
-W_DUAL, W_BROAD = 0.25, 0.10
+RELEASES = ("15.0.0", "15.1.0", "15.2.0")
+W_BROAD = 0.10
+# Case driver per case kind. hbdrv, hbapi and hbmeta use API that every release has; each hbapiNN probes one function
+# the notes add, so a tree without that function fails only that function's cases.
+PROGRAMS = {
+    "shape": "hbdrv",
+    "api": "hbapi",
+    "meta": "hbmeta",
+    "api48": "hbapi48",
+    "api49": "hbapi49",
+    "api51": "hbapi51",
+}
 MESON = [
     "meson", "setup", "/tmp/hbv/b", "--buildtype=release", "-Ddefault_library=static",
     "-Dglib=disabled", "-Dgobject=disabled", "-Dcairo=disabled", "-Dchafa=disabled", "-Dicu=disabled",
@@ -65,9 +82,9 @@ def as_builder(
     )
 
 
-def prepare() -> tuple[list[dict], dict[str, str]]:
+def prepare(record: bool) -> tuple[list[dict], dict[str, str]]:
     release = os.environ.get("RELEASE", "")
-    if release not in WINDOWS:
+    if release not in RELEASES:
         raise EvaluationError(f"unknown RELEASE {release!r}")
     for tool in ("setpriv", "prlimit", "meson", "ninja", "cc", "c++"):
         if shutil.which(tool, path=ENV["PATH"]) is None:
@@ -78,13 +95,18 @@ def prepare() -> tuple[list[dict], dict[str, str]]:
             for line in (PRIVATE / "cases.jsonl").read_text().splitlines()
             if line
         ]
-        expected = json.loads((PRIVATE / "expected.json").read_text())[release]
+        expected = (
+            {}
+            if record
+            else json.loads((PRIVATE / "expected.json").read_text())[release]
+        )
     except (OSError, ValueError, KeyError) as exc:
         raise EvaluationError(f"private inputs unreadable: {exc}") from exc
-    windows = WINDOWS[release]
-    cases = [c for c in cases if c["kind"] != "changed" or c["window"] in windows]
-    if not DRIVER.is_file():
-        raise EvaluationError("driver source missing")
+    if not cases or (not record and any(c["id"] not in expected for c in cases)):
+        raise EvaluationError("private inputs incomplete")
+    for kind in {c.get("drv", "shape") for c in cases}:
+        if kind not in PROGRAMS or not (DRIVERS / f"{PROGRAMS[kind]}.c").is_file():
+            raise EvaluationError(f"driver for {kind!r} missing")
     return cases, expected
 
 
@@ -93,66 +115,68 @@ def skip_build_dirs(directory: str, names: list[str]) -> set[str]:
     return {n for n in names if (Path(directory) / n / "meson-private").is_dir()}
 
 
-def build(notes: list[str]) -> Path | None:
-    """Copy and build the delivered tree as builder; return the linked driver, or None for a candidate failure."""
+def step(notes: list[str], name: str, cmd: list[str], cwd: Path, limit: int) -> bool:
+    started = time.time()
+    result = as_builder(cmd, cwd=cwd, timeout=limit)
+    notes.append(f"{name}: exit {result.returncode} in {time.time() - started:.0f}s")
+    if result.returncode:
+        (WORK / f"{name}.log").write_bytes(result.stdout or b"")
+    return result.returncode == 0
+
+
+def build(notes: list[str], kinds: set[str]) -> dict[str, Path]:
+    """Copy and build the delivered tree as builder; return the drivers that compiled and linked against it."""
     WORK.mkdir(
         parents=True
     )  # a fresh container each time; an existing one fails loudly
     if not TREE.is_dir():
         notes.append("/app/harfbuzz is missing")
-        return None
+        return {}
     # Build out of tree, and leave out any build directory the tree carries (meson marks them).
     shutil.copytree(TREE, WORK / "tree", symlinks=True, ignore=skip_build_dirs)
     subprocess.run(["chown", "-R", "builder:builder", str(WORK)], check=True)
     tree = WORK / "tree"
-    for step, cmd, limit in (
-        ("setup", MESON, 900),
-        ("build", ["ninja", "-C", str(WORK / "b"), "-j", "4"], 1800),
-        (
-            "driver",
-            [
-                "cc",
-                "-O2",
-                "-c",
-                "-Isrc",
-                f"-I{WORK / 'b' / 'src'}",
-                "-o",
-                str(WORK / "hbdrv.o"),
-                str(DRIVER),
-            ],
-            300,
-        ),
-        (
-            "link",
-            [
-                "c++",
-                "-o",
-                str(WORK / "hbdrv"),
-                str(WORK / "hbdrv.o"),
-                str(WORK / "b" / "src" / "libharfbuzz.a"),
-                "-lm",
-            ],
-            300,
-        ),
-    ):
-        started = time.time()
-        result = as_builder(cmd, cwd=tree, timeout=limit)
-        notes.append(
-            f"{step}: exit {result.returncode} in {time.time() - started:.0f}s"
+    if not (
+        step(notes, "setup", MESON, tree, 900)
+        and step(
+            notes, "build", ["ninja", "-C", str(WORK / "b"), "-j", "4"], tree, 1800
         )
-        if result.returncode:
-            (WORK / f"{step}.log").write_bytes(result.stdout or b"")
-            return None
-    return WORK / "hbdrv"
+    ):
+        return {}
+    drivers: dict[str, Path] = {}
+    for kind in sorted(kinds):
+        name = PROGRAMS[kind]
+        obj, exe = WORK / f"{name}.o", WORK / name
+        compiled = step(
+            notes,
+            f"{name}-compile",
+            [
+                "cc", "-O2", "-Werror=implicit-function-declaration", "-c",
+                "-Isrc", f"-I{WORK / 'b' / 'src'}", "-o", str(obj), str(DRIVERS / f"{name}.c"),
+            ],
+            tree,
+            300,
+        ) and step(
+            notes,
+            f"{name}-link",
+            ["c++", "-o", str(exe), str(obj), str(WORK / "b" / "src" / "libharfbuzz.a"), "-lm"],
+            tree,
+            300,
+        )  # fmt: skip
+        if compiled:
+            drivers[kind] = exe
+    return drivers
 
 
-def run_batches(driver: Path, cases: list[dict]) -> dict[str, str]:
-    """One driver process per font, so a hang or crash costs only that font's cases."""
-    batches: dict[str, list[dict]] = defaultdict(list)
+def run_batches(drivers: dict[str, Path], cases: list[dict]) -> dict[str, str]:
+    """One driver process per driver and font, so a hang or crash costs only that batch's cases."""
+    batches: dict[tuple[str, str], list[dict]] = defaultdict(list)
     for c in cases:
-        batches[c["font"]].append(c)
+        batches[(c.get("drv", "shape"), c["font"])].append(c)
     outputs: dict[str, str] = {}
-    for n, (font, items) in enumerate(sorted(batches.items())):
+    for n, ((kind, font), items) in enumerate(sorted(batches.items())):
+        if kind not in drivers:
+            continue
         batch = WORK / f"batch-{n}.tsv"
         batch.write_text(
             "".join(
@@ -163,7 +187,9 @@ def run_batches(driver: Path, cases: list[dict]) -> dict[str, str]:
         os.chmod(batch, 0o644)
         out = WORK / f"batch-{n}.out"
         with batch.open() as fin, out.open("wb") as fout:
-            as_builder([str(driver)], cwd=WORK, timeout=300, stdin=fin, stdout=fout)
+            as_builder(
+                [str(drivers[kind])], cwd=WORK, timeout=300, stdin=fin, stdout=fout
+            )
         for line in out.read_text(errors="replace").splitlines():
             cid, _, result = line.partition("\t")
             outputs[cid] = result
@@ -172,20 +198,24 @@ def run_batches(driver: Path, cases: list[dict]) -> dict[str, str]:
 
 def score(cases: list[dict], expected: dict[str, str], outputs: dict[str, str]) -> dict:
     units: dict[str, list[bool]] = defaultdict(list)
-    held: dict[str, list[bool]] = {"dual": [], "broad": []}
+    duals: dict[str, list[bool]] = defaultdict(list)
+    broad: list[bool] = []
     families: dict[str, list[bool]] = defaultdict(list)
     for c in cases:
         ok = outputs.get(c["id"]) == expected[c["id"]]
         if c["kind"] == "changed":
             units[c["unit"]].append(ok)
             families[c["family"]].append(ok)
+        elif c["kind"] == "dual":
+            duals[c["unit"]].append(ok)
         else:
-            held[c["kind"]].append(ok)
+            broad.append(ok)
     per_unit = {u: sum(v) / len(v) for u, v in sorted(units.items())}
+    per_dual = {u: sum(v) / len(v) for u, v in sorted(duals.items())}
     d = sum(per_unit.values()) / len(per_unit) if per_unit else 0.0
-    h_d = sum(held["dual"]) / len(held["dual"]) if held["dual"] else 1.0
-    h_b = sum(held["broad"]) / len(held["broad"]) if held["broad"] else 1.0
-    gate = max(0.0, 1 - W_DUAL * (1 - h_d) - W_BROAD * (1 - h_b))
+    h_d = sum(per_dual.values()) / len(per_dual) if per_dual else 1.0
+    h_b = sum(broad) / len(broad) if broad else 1.0
+    gate = h_d * (1 - W_BROAD * (1 - h_b))
     return {
         "reward": round(d * gate, 6),
         "D": round(d, 6),
@@ -196,33 +226,52 @@ def score(cases: list[dict], expected: dict[str, str], outputs: dict[str, str]) 
             u: {"pass": round(p, 4), "cases": len(units[u])}
             for u, p in per_unit.items()
         },
+        "neighbours": {
+            u: {"pass": round(p, 4), "cases": len(duals[u])}
+            for u, p in per_dual.items()
+        },
         "families": {
             f: {"pass": round(sum(v) / len(v), 4), "cases": len(v)}
             for f, v in sorted(families.items())
         },
-        "held": {
-            k: {"pass": round(sum(v) / len(v), 4) if v else None, "cases": len(v)}
-            for k, v in held.items()
+        "broad": {
+            "pass": round(h_b, 4) if broad else None,
+            "cases": len(broad),
         },
     }
 
 
 def main() -> int:
     LOGS.mkdir(parents=True, exist_ok=True)
-    for name in ("reward.txt", "reward.json", "metrics.json"):
+    for name in ("reward.txt", "reward.json", "metrics.json", "outputs.tsv"):
         (LOGS / name).unlink(missing_ok=True)
+    record = os.environ.get("RECORD") == "1"
     notes: list[str] = []
     try:
-        cases, expected = prepare()
-        driver = build(notes)
-        outputs = run_batches(driver, cases) if driver else {}
+        cases, expected = prepare(record)
+        drivers = build(notes, {c.get("drv", "shape") for c in cases})
+        outputs = run_batches(drivers, cases)
     except EvaluationError as exc:
         print(f"evaluation error: {exc}", file=sys.stderr)
         return 1
+    if record:
+        if "shape" not in drivers:
+            print("evaluation error: the reference tree did not build", file=sys.stderr)
+            return 1
+        (LOGS / "outputs.tsv").write_text(
+            "".join(f"{c['id']}\t{outputs.get(c['id'], '!missing')}\n" for c in cases)
+        )
+        print(
+            json.dumps(
+                {"recorded": len(cases), "drivers": sorted(drivers), "notes": notes}
+            )
+        )
+        return 0
     metrics = score(cases, expected, outputs)
     metrics |= {
         "release": os.environ["RELEASE"],
         "notes": notes,
+        "drivers": sorted(drivers),
         "cases": len(cases),
         "outputs": len(outputs),
     }

@@ -13,7 +13,7 @@ from pathlib import Path
 CACHE = Path.home() / "Documents/github/Abundant/lib-tasks-cache/harfbuzz-forward-port"
 WORK = CACHE / "work"
 RUNS = WORK / "runs"
-W_DUAL, W_BROAD = 0.25, 0.10
+W_BROAD = 0.10
 
 
 def read_out(path: Path) -> dict[str, str]:
@@ -42,24 +42,34 @@ def differs(a: dict[str, str], b: dict[str, str]) -> dict[str, int]:
     }
 
 
-def score(selection: list[dict], outputs: dict[str, str]) -> dict:
+def score(
+    selection: list[dict], outputs: dict[str, str], release: str = "15.2.0"
+) -> dict:
     """The verifier's formula (tests/verify.py) on outputs keyed by the selection's original candidate ids."""
     units: dict[str, list[bool]] = defaultdict(list)
-    held: dict[str, list[bool]] = {"dual": [], "broad": []}
+    duals: dict[str, list[bool]] = defaultdict(list)
+    broad: list[bool] = []
     for c in selection:
-        ok = outputs.get(c["cid"]) == c["gold"]["15.2.0"]
-        (units[c["unit"]] if c["kind"] == "changed" else held[c["kind"]]).append(ok)
+        ok = outputs.get(c["cid"]) == c["gold"][release]
+        if c["kind"] == "changed":
+            units[c["unit"]].append(ok)
+        elif c["kind"] == "dual":
+            duals[c["unit"]].append(ok)
+        else:
+            broad.append(ok)
     per_unit = {u: sum(v) / len(v) for u, v in units.items()}
+    per_dual = {u: sum(v) / len(v) for u, v in duals.items()}
     d = sum(per_unit.values()) / len(per_unit) if per_unit else 0.0
-    h_d = sum(held["dual"]) / len(held["dual"]) if held["dual"] else 1.0
-    h_b = sum(held["broad"]) / len(held["broad"]) if held["broad"] else 1.0
-    gate = max(0.0, 1 - W_DUAL * (1 - h_d) - W_BROAD * (1 - h_b))
+    h_d = sum(per_dual.values()) / len(per_dual) if per_dual else 1.0
+    h_b = sum(broad) / len(broad) if broad else 1.0
+    gate = h_d * (1 - W_BROAD * (1 - h_b))
     return {
         "reward": round(d * gate, 4),
         "D": round(d, 4),
         "h_dual": round(h_d, 4),
         "h_broad": round(h_b, 4),
         "units": {u: round(p, 3) for u, p in sorted(per_unit.items())},
+        "neighbours": {u: round(p, 3) for u, p in sorted(per_dual.items())},
     }
 
 
