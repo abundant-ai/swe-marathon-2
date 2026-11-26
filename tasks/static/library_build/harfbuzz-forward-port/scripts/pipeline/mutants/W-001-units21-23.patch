@@ -4,7 +4,7 @@
    }
  #endif
  
--  bool needs_kerning HB_UNUSED = true;
+-  bool needs_kerning HB_UNUSED = has_gpos_kern || true;
 +  bool needs_kerning HB_UNUSED = !has_gpos_kern || !plan.apply_gpos;
  #ifndef HB_NO_AAT_SHAPE
    if (needs_kerning && has_kerx)

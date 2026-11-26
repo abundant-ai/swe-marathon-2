@@ -63,6 +63,31 @@ def score(selection: list[dict], outputs: dict[str, str]) -> dict:
     }
 
 
+def mutant_w(selection: list[dict], w_out: dict[str, str]) -> dict:
+    """S11: does W pass each unit's changed cases and fail its duals? Duals broken down by neighbour."""
+    report = {}
+    for unit in ("4", "21", "23"):
+        changed = [c for c in selection if c["kind"] == "changed" and c["unit"] == unit]
+        duals = [c for c in selection if c["kind"] == "dual" and c["unit"] == unit]
+        by_nb: dict[str, list[int]] = defaultdict(lambda: [0, 0])
+        for c in duals:
+            row = by_nb[c.get("nb", "")]
+            row[0] += 1
+            row[1] += w_out.get(c["cid"]) != c["gold"]["15.2.0"]
+        report[unit] = {
+            "changed": len(changed),
+            "W_passes_changed": sum(
+                w_out.get(c["cid"]) == c["gold"]["15.2.0"] for c in changed
+            ),
+            "duals": len(duals),
+            "W_fails_duals": sum(v[1] for v in by_nb.values()),
+            "by_neighbour": {
+                k: {"duals": v[0], "W_fails": v[1]} for k, v in sorted(by_nb.items())
+            },
+        }
+    return report
+
+
 def main() -> None:
     report: dict = {}
     b = builds()
@@ -110,6 +135,7 @@ def main() -> None:
         report["S11_selection"] = dict(Counter(c["kind"] for c in selection))
         for name in ("rel-15.2.0", "rel-14.3.0", "rel-15.1.0", "mut-W"):
             report[f"score_{name}"] = score(selection, read_out(RUNS / f"{name}.out"))
+        report["S11_mutant_W"] = mutant_w(selection, read_out(RUNS / "mut-W.out"))
     print(json.dumps(report, indent=1))
 
 

@@ -167,11 +167,18 @@ parse_flags (char *s)
 static void
 run_case (char *line)
 {
+  /* Split on tabs by hand: strtok_r would merge two tabs and lose an empty options field. */
   char *fields[5];
   int nf = 0;
-  char *save = NULL;
-  for (char *tok = strtok_r (line, "\t", &save); tok && nf < 5; tok = strtok_r (NULL, "\t", &save))
-    fields[nf++] = tok;
+  for (char *p = line; nf < 5;)
+  {
+    fields[nf++] = p;
+    char *tab = strchr (p, '\t');
+    if (!tab)
+      break;
+    *tab = 0;
+    p = tab + 1;
+  }
   if (nf < 5)
   {
     if (nf >= 1)

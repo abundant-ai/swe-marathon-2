@@ -39,7 +39,8 @@ class Font:
     def __init__(self, path: Path) -> None:
         self.path = path
         font = TTFont(str(path), lazy=True)
-        self.cmap = set(font.getBestCmap() or {})
+        self.glyph_of: dict[int, str] = dict(font.getBestCmap() or {})
+        self.cmap = set(self.glyph_of)
         self.features: set[str] = set()
         for tag in ("GSUB", "GPOS"):
             if tag in font and font[tag].table.FeatureList:
@@ -62,9 +63,12 @@ class Font:
         return out
 
 
-def case(unit: str, kind: str, font: Font, text: list[int], **opts: object) -> dict:
+def case(
+    unit: str, kind: str, font: Font, text: list[int], nb: str = "", **opts: object
+) -> dict:
+    """One candidate. `nb` names which neighbour of the unit's condition it is (analysis only, never shaped)."""
     opt = ";".join(f"{k}={v}" for k, v in opts.items())
-    return {
+    out = {
         "unit": unit,
         "kind": kind,
         "font": str(font.path),
@@ -72,6 +76,32 @@ def case(unit: str, kind: str, font: Font, text: list[int], **opts: object) -> d
         "opts": opt,
         "text": text,
     }
+    if nb:
+        out["nb"] = nb
+    return out
+
+
+def init_inputs(path: Path) -> set[str]:
+    """Glyphs that an `init` lookup of the font substitutes (single, multiple, alternate, ligature; extensions unwrapped)."""
+    font = TTFont(str(path), lazy=True)
+    if "GSUB" not in font or not font["GSUB"].table.FeatureList:
+        return set()
+    table = font["GSUB"].table
+    lookups = {
+        i
+        for rec in table.FeatureList.FeatureRecord
+        if rec.FeatureTag == "init"
+        for i in rec.Feature.LookupListIndex
+    }
+    out: set[str] = set()
+    for i in lookups:
+        lookup = table.LookupList.Lookup[i]
+        for sub in lookup.SubTable:
+            if lookup.LookupType == 7:
+                sub = sub.ExtSubTable
+            for attr in ("mapping", "alternates", "ligatures"):
+                out |= set(getattr(sub, attr, None) or {})
+    return out
 
 
 def gen_khmer(rng: random.Random, fonts: list[Font], n: int) -> Iterator[dict]:
@@ -96,60 +126,62 @@ def gen_khmer(rng: random.Random, fonts: list[Font], n: int) -> Iterator[dict]:
         yield case("4", "cand", f, text, cl=rng.choice((0, 1, 2)))
 
 
+INDIC = {
+    # script: (first, last, virama, pre-base vowel signs, native digit one)
+    "beng": (0x0980, 0x09FF, 0x09CD, (0x09BF, 0x09C7, 0x09C8), 0x09E7),
+    "deva": (0x0900, 0x097F, 0x094D, (0x093F,), 0x0967),
+}
+
+
 def gen_indic_init(rng: random.Random, fonts: list[Font], n: int) -> Iterator[dict]:
-    """Unit 1: no `init` on a first syllable that follows a letter or mark in the pre-context."""
-    blocks = {
-        "beng": (0x0980, 0x09FF, 0x09BF, 0x09CD),
-        "deva": (0x0900, 0x097F, 0x093F, 0x094D),
-    }
-    usable = [
-        (f, b)
-        for f in fonts
-        for b in blocks.values()
-        if f.has(b[2]) and "init" in f.features
-    ]
+    """Unit 1: no `init` on a first syllable that follows a letter or mark in the pre-context.
+
+    Only fonts whose `init` substitutes a pre-base vowel sign can show the change. Pre-contexts: a letter or a mark
+    (changed), or nothing, a space, punctuation or a digit (neighbours that keep `init`); a first syllable later in
+    the text is another neighbour. Format characters such as ZWJ are left out as pre-context: 15.2.0 treats them as
+    it treats letters, which the note does not say.
+    """
+    usable = []
+    for f in fonts:
+        inputs = init_inputs(f.path)
+        for lo, hi, virama, pre_base, digit in INDIC.values():
+            signs = [cp for cp in pre_base if f.glyph_of.get(cp) in inputs]
+            if signs:
+                usable.append((f, lo, hi, virama, signs, digit))
     if not usable:
         return
     for i in range(n):
-        f, (lo, hi, matra, virama) = usable[i % len(usable)]
+        f, lo, hi, virama, signs, digit = usable[i % len(usable)]
         cons = f.block(lo, hi, ("Lo",))
         marks = f.block(lo, hi, ("Mn", "Mc"))
         pre_kind = rng.choice(
-            (
-                "none",
-                "letter",
-                "mark",
-                "latin",
-                "space",
-                "punct",
-                "digit",
-                "zwj",
-                "zwnj",
-            )
+            ("none", "letter", "letter", "mark", "mark", "latin")
+            + ("space", "punct", "digit", "later")
         )
         pre = {
             "none": [],
             "letter": [rng.choice(cons)],
             "mark": [rng.choice(cons), rng.choice(marks)],
-            "latin": [0x61],
+            "latin": [rng.choice((0x61, 0x6B))],
             "space": [0x20],
             "punct": [rng.choice((0x2C, 0x2E, 0x2D, 0x0964))],
-            "digit": [0x31],
-            "zwj": [ZWJ],
-            "zwnj": [ZWNJ],
+            "digit": [rng.choice((0x31, digit))],
+            "later": [rng.choice(cons)],
         }[pre_kind]
         syl = (
             [rng.choice(cons)]
             if rng.random() < 0.7
             else [rng.choice(cons), virama, rng.choice(cons)]
         )
-        text = [*syl, matra]
+        text = [*syl, rng.choice(signs)]
         if rng.random() < 0.4:
-            text += [rng.choice(cons), matra]
+            text += [rng.choice(cons), rng.choice(signs)]
         opts = {"cl": rng.choice((0, 1))}
-        if pre:
+        if pre_kind == "later":
+            text = [*pre, rng.choice((0x20, *pre)), *text]
+        elif pre:
             opts["pre"] = ",".join(f"{cp:X}" for cp in pre)
-        yield case("1", "cand", f, text, **opts)
+        yield case("1", "cand", f, text, nb=pre_kind, **opts)
 
 
 def gen_use_space(rng: random.Random, fonts: list[Font], n: int) -> Iterator[dict]:
@@ -171,24 +203,35 @@ def gen_use_space(rng: random.Random, fonts: list[Font], n: int) -> Iterator[dic
 
 
 def gen_hangul_tone(rng: random.Random, fonts: list[Font], n: int) -> Iterator[dict]:
-    """Unit 5: one dotted circle for a tone mark at the start of the text."""
+    """Unit 5: a tone mark after a dotted circle at the start of the text gets no second dotted circle.
+
+    Changed: the text starts with U+25CC and a tone mark. Neighbours every release treats alike: a tone mark alone,
+    after a space, a syllable or a white circle, and a dotted circle with another mark. A dotted circle and a tone mark
+    later in the text are left out: 15.2.0 changes those too, which the note does not say.
+    """
+    usable = [f for f in fonts if f.has(0x302E, 0x302F, DOTTED)]
     for i in range(n):
-        f = fonts[i % len(fonts)]
+        f = usable[i % len(usable)]
         tone = rng.choice((0x302E, 0x302F))
         syl = rng.randrange(0xAC00, 0xD7A4)
-        shape = rng.choice(("start", "start2", "after", "space", "twice", "pre"))
+        shape = rng.choice(
+            ("dc", "dc", "dc-syl", "dc-space", "tone", "space-tone")
+            + ("syl-tone", "white-tone", "dc-acute")
+        )
         text = {
-            "start": [tone],
-            "start2": [tone, syl],
-            "after": [syl, tone],
-            "space": [0x20, tone],
-            "twice": [syl, tone, tone],
-            "pre": [tone, syl],
+            "dc": [DOTTED, tone],
+            "dc-syl": [DOTTED, tone, syl],
+            "dc-space": [DOTTED, tone, 0x20, syl],
+            "tone": [tone],
+            "space-tone": [0x20, tone],
+            "syl-tone": [syl, tone],
+            "white-tone": [0x25CB, tone],
+            "dc-acute": [DOTTED, 0x0301],
         }[shape]
         opts = {"cl": rng.choice((0, 1, 2))}
-        if shape == "pre":
-            opts["pre"] = f"{syl:X}"
-        yield case("5", "cand", f, text, **opts)
+        if rng.random() < 0.3:
+            opts["flags"] = "bot"
+        yield case("5", "cand", f, text, nb=shape, **opts)
 
 
 def invalid_clusters() -> list[list[int]]:
@@ -345,42 +388,52 @@ def gen_missing_vs(rng: random.Random, fonts: list[Font], n: int) -> Iterator[di
 
 def gen_aat(rng: random.Random, n: int) -> Iterator[dict]:
     """Units 21, 22, 23 on our synthetic fonts."""
+    fonts = {
+        p.stem: Font(p)
+        for p in sorted(SYNTH.glob("k*.ttf")) + sorted(SYNTH.glob("trak-*.ttf"))
+    }
     words = ["AVATAR", "TOWAWAY", "LYNX", "WAVE", "HELLO", "ATOLL", "VALLEY", "TOTAL"]
     for i in range(n):
         word = [ord(c) for c in rng.choice(words)]
-        trak = Font(SYNTH / "trak-font.ttf")
+        name = rng.choice(("trak-stat", "trak-stat", "trak-nostat"))
+        direction = rng.choice(("ttb", "ttb", "ltr", "btt"))
         yield case(
-            "22", "cand", trak, word, dir=rng.choice(("ttb", "ttb", "ltr", "btt"))
+            "22",
+            "cand",
+            fonts[name],
+            word,
+            nb=f"{name}-{direction}",
+            dir=direction,
         )
-        kx = Font(
-            SYNTH
-            / rng.choice(
-                (
-                    "kerx-gpos-nokern.ttf",
-                    "kerx-gpos-nokern.ttf",
-                    "kerx-gpos-kern.ttf",
-                    "kerx-nogpos.ttf",
-                )
-            )
+        name = rng.choice(
+            ("kerx-gsub-gpos-nokern",) * 3
+            + ("kerx-gsub-gpos-kern",) * 2
+            + ("kerx-gsub-gpos-nokern-cross", "kerx-gpos-nokern", "kerx-gpos-kern")
+            + ("kerx-gsub-nogpos", "kerx-nogpos")
         )
-        yield case("23", "cand", kx, word, dir=rng.choice(("ltr", "ltr", "rtl")))
-        kv = Font(
-            SYNTH
-            / rng.choice(
-                (
-                    "kern-gpos-novkrn-h.ttf",
-                    "kern-gpos-novkrn-v.ttf",
-                    "kern-gpos-vkrn-h.ttf",
-                    "kern-gpos-vkrn-v.ttf",
-                    "kern-nogpos-h.ttf",
-                    "kern-nogpos-v.ttf",
-                )
-            )
+        yield case(
+            "23",
+            "cand",
+            fonts[name],
+            word,
+            nb=name,
+            dir=rng.choice(("ltr", "ltr", "rtl")),
+        )
+        name = rng.choice(
+            ("kern-gpos-novkrn-h", "kern-gpos-novkrn-v", "kern-gpos-vkrn-h")
+            + ("kern-gpos-vkrn-v", "kern-nogpos-h", "kern-nogpos-v")
         )
         opts = {"dir": rng.choice(("ttb", "ttb", "ltr"))}
         if rng.random() < 0.7:
             opts["feat"] = "vkrn=1"
-        yield case("21", "cand", kv, word, **opts)
+        yield case(
+            "21",
+            "cand",
+            fonts[name],
+            word,
+            nb=f"{name}-{opts['dir']}-{'vkrn' if 'feat' in opts else 'novkrn'}",
+            **opts,
+        )
 
 
 def gen_broad(rng: random.Random, fonts: list[Font], n: int) -> Iterator[dict]:
@@ -415,7 +468,7 @@ def main() -> None:
     ]
     gens = [
         gen_khmer(rng, khmer, per_unit),
-        gen_indic_init(rng, indic, per_unit),
+        gen_indic_init(rng, [*indic, Font(SYNTH / "beng-init.ttf")], per_unit),
         gen_use_space(rng, use, per_unit),
         gen_hangul_tone(rng, [noto["NotoSansKR-Regular"]], per_unit),
         gen_vowel_constraints(rng, indic + use, per_unit),

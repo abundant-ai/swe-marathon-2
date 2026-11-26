@@ -131,6 +131,7 @@ def select(
                     .replace("/work/fonts/", ""),
                     "text": ",".join(f"{cp:X}" for cp in c["text"]),
                     "gold": c["gold"],
+                    "nb": c.get("nb", ""),
                 }
             )
     return chosen

@@ -386,16 +386,14 @@ def cmd_batch(args: argparse.Namespace) -> None:
 VERIFIER_IMAGE = "hbfp-verifier:phaseB"
 
 
-def cmd_stage_verifier(args: argparse.Namespace) -> None:
-    """Stage a private selection into tests/ (its git-ignored private/, inputs/ and wheels/) and build the image.
+def stage_verifier(selection_path: Path) -> int:
+    """Stage a private selection into tests/ (its git-ignored private/, inputs/ and wheels/); return the case count.
 
     tests/ is the verifier's build context, as on the platform. The selection's cases and recorded outputs go to
     tests/private/ (root-only in the image), the fonts they use to tests/inputs/, and the meson wheel to tests/wheels/.
     """
     selection = [
-        json.loads(line)
-        for line in Path(args.selection).read_text().splitlines()
-        if line
+        json.loads(line) for line in selection_path.read_text().splitlines() if line
     ]
     tests = TASK / "tests"
     for sub in ("wheels", "private", "inputs/fonts/noto", "inputs/fonts/synth"):
@@ -418,20 +416,35 @@ def cmd_stage_verifier(args: argparse.Namespace) -> None:
         for rel in ("15.0.0", "15.1.0", "15.2.0")
     }
     (tests / "private" / "expected.json").write_text(json.dumps(expected))
-    with heavy("verifier image"):
-        started = time.time()
-        subprocess.run(
-            ["docker", "build", "-t", VERIFIER_IMAGE, "--label", LABEL, str(tests)],
-            check=True,
-        )
-        log_event(
-            event="image", tag=VERIFIER_IMAGE, seconds=round(time.time() - started, 1)
-        )
+    return len(selection)
 
 
-def cmd_verify(args: argparse.Namespace) -> None:
-    """Run the verifier image against one tree, the way the platform would (tree read-only, logs mounted)."""
-    logs = WORK / "verify" / args.name
+def build_verifier_image() -> None:
+    """Build the verifier image from tests/; the caller holds the heavy lock."""
+    started = time.time()
+    subprocess.run(
+        [
+            "docker",
+            "build",
+            "-t",
+            VERIFIER_IMAGE,
+            "--label",
+            LABEL,
+            str(TASK / "tests"),
+        ],
+        check=True,
+    )
+    log_event(
+        event="image", tag=VERIFIER_IMAGE, seconds=round(time.time() - started, 1)
+    )
+
+
+def run_verifier(tree: Path, name: str, release: str) -> dict:
+    """Run the verifier image against one tree, the way the platform would (tree read-only, logs mounted).
+
+    The caller holds the heavy lock.
+    """
+    logs = WORK / "verify" / name
     logs.mkdir(parents=True, exist_ok=True)
     cmd = [
         "docker",
@@ -442,30 +455,51 @@ def cmd_verify(args: argparse.Namespace) -> None:
         "--cpus=4",
         "--label",
         LABEL,
-    ]
-    cmd += [
         "-e",
-        f"RELEASE={args.release}",
+        f"RELEASE={release}",
         "-v",
-        f"{Path(args.tree).resolve()}:/app/harfbuzz:ro",
+        f"{tree.resolve()}:/app/harfbuzz:ro",
+        "-v",
+        f"{logs}:/logs/verifier",
+        VERIFIER_IMAGE,
+        "bash",
+        "/tests/test.sh",
     ]
-    cmd += ["-v", f"{logs}:/logs/verifier", VERIFIER_IMAGE, "bash", "/tests/test.sh"]
+    started = time.time()
+    code = subprocess.run(cmd, check=False).returncode
+    reward_file = logs / "reward.txt"
+    reward = reward_file.read_text().strip() if reward_file.exists() else None
+    result = {
+        "name": name,
+        "code": code,
+        "reward": reward,
+        "wall_s": round(time.time() - started, 1),
+    }
+    log_event(event="verify", **result)
+    print(json.dumps(result))
+    return result
+
+
+def cmd_stage_verifier(args: argparse.Namespace) -> None:
+    stage_verifier(Path(args.selection))
+    with heavy("verifier image"):
+        build_verifier_image()
+
+
+def cmd_verify(args: argparse.Namespace) -> None:
     with heavy(f"verify {args.name}"):
-        started = time.time()
-        code = subprocess.run(cmd, check=False).returncode
-        reward = (
-            (logs / "reward.txt").read_text().strip()
-            if (logs / "reward.txt").exists()
-            else None
-        )
-        log_event(
-            event="verify",
-            name=args.name,
-            code=code,
-            reward=reward,
-            wall_s=round(time.time() - started, 1),
-        )
-        print(json.dumps({"name": args.name, "code": code, "reward": reward}))
+        run_verifier(Path(args.tree), args.name, args.release)
+
+
+def cmd_milestone(args: argparse.Namespace) -> None:
+    """Stage a selection, then under one hold of the lock build the verifier image and verify each tree."""
+    n = stage_verifier(Path(args.selection))
+    print(f"staged {n} cases")
+    with heavy(f"milestone: verifier image and {len(args.tree)} verifier runs"):
+        build_verifier_image()
+        for spec in args.tree:
+            name, _, tree = spec.partition("=")
+            run_verifier(Path(tree), name, args.release)
 
 
 def main() -> None:
@@ -502,6 +536,11 @@ def main() -> None:
     p.add_argument("tree")
     p.add_argument("--release", default="15.2.0")
     p.set_defaults(func=cmd_verify)
+    p = sub.add_parser("milestone")
+    p.add_argument("selection")
+    p.add_argument("tree", nargs="+", help="NAME=TREE, verified in order")
+    p.add_argument("--release", default="15.2.0")
+    p.set_defaults(func=cmd_milestone)
     args = parser.parse_args()
     WORK.mkdir(parents=True, exist_ok=True)
     args.func(args)

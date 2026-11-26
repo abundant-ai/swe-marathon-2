@@ -82,14 +82,29 @@ def add_raw_table(fb: FontBuilder, tag: str, data: bytes) -> None:
     fb.font[tag] = table
 
 
+CROSS_STREAM = 0x40000000  # `kerx` subtable coverage bit
+
+
 def kerx_fonts(out: Path) -> None:
-    """Unit 23: `kerx` pair kerning with a `GPOS` that has no kerning feature (and its neighbours)."""
+    """Unit 23: `kerx` pair kerning beside a `GSUB` and a `GPOS` that has no kerning feature, and its neighbours.
+
+    HarfBuzz prefers `GPOS` over `kerx` only when a font has both `GSUB` and `GPOS`, so the changed font needs all
+    three tables. Neighbours: `GPOS` with `kern` (`kerx` stays off), no `GSUB` or no `GPOS` (`kerx` alone, before and
+    after), and a cross-stream `kerx` subtable, which is not simple kerning and stays off beside `GPOS`.
+    """
+    gsub = "feature ss02 { sub A by B; } ss02;"
+    nokern = "feature ss01 { pos A 30; } ss01;"
+    kern = "feature kern { pos A V -40; pos T O -40; } kern;"
     variants = {
-        "kerx-gpos-nokern": "feature ss01 { pos A 30; } ss01;",
-        "kerx-gpos-kern": "feature kern { pos A V -40; pos T O -40; } kern;",
-        "kerx-nogpos": None,
+        "kerx-gsub-gpos-nokern": (gsub + nokern, 0),
+        "kerx-gsub-gpos-kern": (gsub + kern, 0),
+        "kerx-gsub-gpos-nokern-cross": (gsub + nokern, CROSS_STREAM),
+        "kerx-gpos-nokern": (nokern, 0),
+        "kerx-gpos-kern": (kern, 0),
+        "kerx-gsub-nogpos": (gsub, 0),
+        "kerx-nogpos": (None, 0),
     }
-    for name, fea in variants.items():
+    for name, (fea, coverage) in variants.items():
         fb = base_font(name)
         pairs = {
             (gid(fb, "A"), gid(fb, "V")): -120,
@@ -97,29 +112,122 @@ def kerx_fonts(out: Path) -> None:
             (gid(fb, "L"), gid(fb, "Y")): -150,
             (gid(fb, "W"), gid(fb, "A")): -60,
         }
-        add_raw_table(fb, "kerx", kerx_format0(pairs))
+        add_raw_table(fb, "kerx", kerx_format0(pairs, coverage))
         if fea:
             addOpenTypeFeaturesFromString(fb.font, fea)
         fb.save(str(out / f"{name}.ttf"))
 
 
-def trak_font(out: Path) -> None:
-    """Unit 22: `trak` tracking, horizontal and vertical, positive and negative tracks."""
-    fb = base_font("trak-font")
-    trak = newTable("trak")
-    trak.version = 1.0
-    trak.format = 0
-    for attr, values in (("horizData", (40, 80, 120)), ("vertData", (60, 100, 140))):
-        data = _t_r_a_k.TrackData()
-        data[0.0] = _t_r_a_k.TrackTableEntry(
-            {8.0: values[0], 12.0: values[1], 24.0: values[2]}, nameIndex=256
-        )
-        data[-1.0] = _t_r_a_k.TrackTableEntry(
-            {8.0: -values[0], 12.0: -values[1], 24.0: -values[2]}, nameIndex=257
-        )
-        setattr(trak, attr, data)
-    fb.font["trak"] = trak
-    fb.save(str(out / "trak-font.ttf"))
+def trak_fonts(out: Path) -> None:
+    """Unit 22: `trak` tracking, horizontal and vertical, positive and negative tracks.
+
+    HarfBuzz applies `trak` only to fonts that also have a `STAT` table, so the font that shows the change has one;
+    the same font without `STAT` is a neighbour that no release tracks.
+    """
+    for name, stat in (("trak-stat", True), ("trak-nostat", False)):
+        fb = base_font(name)
+        trak = newTable("trak")
+        trak.version = 1.0
+        trak.format = 0
+        for attr, values in (
+            ("horizData", (40, 80, 120)),
+            ("vertData", (60, 100, 140)),
+        ):
+            data = _t_r_a_k.TrackData()
+            data[0.0] = _t_r_a_k.TrackTableEntry(
+                {8.0: values[0], 12.0: values[1], 24.0: values[2]}, nameIndex=256
+            )
+            data[-1.0] = _t_r_a_k.TrackTableEntry(
+                {8.0: -values[0], 12.0: -values[1], 24.0: -values[2]}, nameIndex=257
+            )
+            setattr(trak, attr, data)
+        fb.font["trak"] = trak
+        if stat:
+            fb.setupStat(
+                [
+                    {
+                        "tag": "wght",
+                        "name": "Weight",
+                        "values": [{"value": 400, "name": "Regular", "flags": 0x2}],
+                    }
+                ]
+            )
+        fb.save(str(out / f"{name}.ttf"))
+
+
+BENGALI = {
+    0x0995: "ka",
+    0x0996: "kha",
+    0x0997: "ga",
+    0x099A: "ca",
+    0x099C: "ja",
+    0x099F: "tta",
+    0x09A4: "ta",
+    0x09A6: "da",
+    0x09A8: "na",
+    0x09AA: "pa",
+    0x09AC: "ba",
+    0x09AE: "ma",
+    0x09AF: "ya",
+    0x09B0: "ra",
+    0x09B2: "la",
+    0x09B8: "sa",
+    0x09B9: "ha",
+    0x0985: "aIndep",
+    0x0987: "iIndep",
+    0x09BE: "aaSign",
+    0x09BF: "iSign",
+    0x09C0: "iiSign",
+    0x09C1: "uSign",
+    0x09C7: "eSign",
+    0x09C8: "aiSign",
+    0x09CD: "virama",
+    0x0981: "candrabindu",
+    0x0982: "anusvara",
+    0x09E7: "beng1",
+    0x0964: "danda",
+    0x0020: "space",
+    0x002C: "comma",
+    0x002D: "hyphen",
+    0x002E: "period",
+    0x0031: "one",
+    0x0061: "a",
+    0x25CC: "dottedCircle",
+}
+BENGALI_MARKS = {"uSign", "virama", "candrabindu", "anusvara"}
+BENGALI_INIT = ("iSign", "eSign", "aiSign")
+
+
+def bengali_init_font(out: Path) -> None:
+    """Unit 1: a Bengali font whose `init` feature has word-initial forms of the pre-base vowel signs I, E and AI.
+
+    No downloaded Bengali font has such forms (Noto Sans Bengali's `init` does not cover them), so this one is ours.
+    """
+    names = [".notdef", *BENGALI.values(), *(f"{g}.init" for g in BENGALI_INIT)]
+    fb = FontBuilder(UPEM, isTTF=True)
+    fb.setupGlyphOrder(names)
+    fb.setupCharacterMap({cp: name for cp, name in BENGALI.items()})
+    glyphs, metrics = {}, {}
+    for i, name in enumerate(names):
+        width = 0 if name in BENGALI_MARKS else 400 + 10 * i
+        glyphs[name] = box(max(width, 120), 600) if width else TTGlyphPen(None).glyph()
+        metrics[name] = (width, 50 if width else 0)
+    fb.setupGlyf(glyphs)
+    fb.setupHorizontalMetrics(metrics)
+    fb.setupHorizontalHeader(ascent=800, descent=-200)
+    fb.setupNameTable({"familyName": "beng-init", "styleName": "Regular"})
+    fb.setupOS2(
+        sTypoAscender=800, sTypoDescender=-200, usWinAscent=800, usWinDescent=200
+    )
+    fb.setupPost()
+    subs = " ".join(f"sub {g} by {g}.init;" for g in BENGALI_INIT)
+    # No GDEF: HarfBuzz then classes the glyphs from their Unicode properties, marks included.
+    fea = (
+        "languagesystem DFLT dflt; languagesystem bng2 dflt; languagesystem beng dflt;\n"
+        f"feature init {{ {subs} }} init;\n"
+    )
+    addOpenTypeFeaturesFromString(fb.font, fea)
+    fb.save(str(out / "beng-init.ttf"))
 
 
 def kern_vertical_fonts(out: Path) -> None:
@@ -155,7 +263,8 @@ def main() -> None:
     out = Path(sys.argv[1])
     out.mkdir(parents=True, exist_ok=True)
     kerx_fonts(out)
-    trak_font(out)
+    trak_fonts(out)
+    bengali_init_font(out)
     kern_vertical_fonts(out)
     for path in sorted(out.glob("*.ttf")):
         print(path.name, path.stat().st_size)
