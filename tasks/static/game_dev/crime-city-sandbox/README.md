@@ -35,8 +35,15 @@ always written after the self-test), a self-test project of ours, the instance m
 instance set, 16 hostile projects, and the development checks. Report: `notes/PHASE1B-REPORT.md`.
 Linux halves (the `.so`, cgroups, the unprivileged user, x86_64 replays) wait for a Linux machine.
 
-Next: the starter project and the reference game's first module (the contract) against the kit,
-the rest of the plans, and the remaining WS3 pieces (proxy, online sessions, report page).
+Phase 1c: the starter project (WS5), the reference game's contract layer (WS6 module 1, kept in a
+private repository), the first 13 playtests (WS4) and `qa run`. The starter (`environment/game`) has
+the engine settings, the 28 actions, a DevConsole stub, an empty scene and 177 vendor `.import`
+files with every option explicit, the bodies, hair and clips retargeted through the shipped bone map
+(panel decision, unanimous). The reference holds all 13 playtests and grades 1.000000 through the
+real grader; the starter fails every playtest cleanly and grades 0. Report: `notes/PHASE1C-REPORT.md`.
+
+Next: the world builder (WS6 module 2) on the Downtown core with its plan-compliance playtest, the
+rest of the plans, and the remaining WS3 pieces (proxy, online sessions, report page).
 
 The art (Kenney and Quaternius CC0 packs) and the Godot binary are not committed; `.gitignore` and
 `spike/.gitignore` list them. The reference game and the hidden material live outside this public
@@ -45,6 +52,42 @@ repository (`notes/PHASE1-PLAN.md`, section 4).
 ## Development log
 
 ### 2026-11-26
+
+Phase 1c: the starter, the contract module, the first playtests and `qa run`, on macOS; no
+downloads, no Docker, no Linux VM, no platform runs. Every Godot run went through `scripts/heavy.py`
+and the kit's memory gate; free memory sat at 26-29% for long stretches and runs waited.
+- **Starter (WS5).** `environment/game`: chapter 16's settings, the 28 actions with keyboard or mouse
+  and gamepad bindings, a DevConsole stub ("not implemented"), an empty main scene, a README, and
+  the vendor library's 177 `.import` files written by `scripts/make_vendor_imports.py` (textures
+  VRAM-compressed with mipmaps and "detect 3D" off; bodies, hair and the animation library
+  retargeted through `humanoid_bone_map.tres`). The art stays out of Git
+  (`scripts/stage_project.py` copies it from the packs on this machine). Imports: engine defaults
+  7.87 s and 2.30 GB peak; explicit settings 3.25 s and 1.53 GB fresh, 1.26 s with the cache, no
+  `.import` file changing on that pass.
+- **Bone map.** A three-judge panel (opus, sonnet, haiku) voted unanimously to ship it wired into
+  the imports; the GDD's AC-5 marker is settled. The reference's player has one `Skeleton3D` with
+  the profile's names (Root, Hips, Spine, Chest, Head, ...) and no unregistered skeleton.
+- **Reference contract layer (WS6 module 1).** GDScript in a private repository (bundle in
+  harbor-lh): command line and roles, the DevConsole with every command and argument checks, the
+  registry, the plan reader with every anchor, a placeholder static world, people from the variation
+  on library bodies, vehicles on their library models with seats, the clock, weather, missions as
+  states, hashed atomic saves, the state report, events with ticks and teleport events.
+- **Playtests (WS4).** 13 in `common/kit/playtests`, written by `scripts/make_playtests.py` with
+  every expected point resolved through the kit's plan reader: DevConsole bad input, every command,
+  the state report's fields, the new game, the server role, same start per variation, replay at two
+  paces, input in its tick, the clock rate, weather held, a kill after a save, a damaged slot, the
+  real-time heartbeat. Each expectation cites its rule and says what it means; no weights.
+- **`qa run` and `qa list`.** Prepare a copy, play the playtests, print per playtest "every
+  expectation holds" or the expectations that did not hold with what was measured; never a total.
+- **Results.** Reference: 13 of 13 playtests hold; the real grader with the playtests as instances
+  gives 1.000000 (self-test 12.9 s; import 3.86 s, 64 MB; boot 0.2 s solo and server; 25.5 s in
+  all), and with Phase 1b's private set 1.000000 (14 of 14). Starter: every playtest lists what
+  did not hold, no run stopped on a kit error; graded 0.000000 (the boot gate: nothing playable
+  within 60 s).
+- **GDD clarifications the playtests rely on:** placement within 0.5 m, `--role=solo` starts a new
+  game, the default plan folder, any whole variation, `time.set`'s "hh:mm", what `player.give` gives
+  or sets, spawn answers carry the id, the damaged-slot answer. An independent read of everything
+  new the developer sees found tampering-flavoured phrasing and three inconsistencies; all fixed.
 
 Phase 1b, the grading kit core (WS3) on macOS; no downloads, no Docker, no Linux VM, no platform
 runs. Every Godot run went through `scripts/heavy.py` (one heavy job at a time, at least 30% free
