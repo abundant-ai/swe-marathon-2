@@ -1,175 +1,227 @@
-diff --git a/src/OSspecific/POSIX/POSIX.C b/src/OSspecific/POSIX/POSIX.C
-index d385a425..1824aed2 100644
---- a/src/OSspecific/POSIX/POSIX.C
-+++ b/src/OSspecific/POSIX/POSIX.C
-@@ -61,6 +61,8 @@ Description
- #include <netdb.h>
- #include <netinet/in.h>
- #include <dlfcn.h>
-+#include <fcntl.h>
-+#include <vector>
+diff -ruN a/src/OSspecific/POSIX/Make/files b/src/OSspecific/POSIX/Make/files
+--- a/src/OSspecific/POSIX/Make/files	2026-11-26 16:32:28
++++ b/src/OSspecific/POSIX/Make/files	2026-11-26 16:32:28
+@@ -1,4 +1,5 @@
+ POSIX.C
++hardened.C
  
- #ifdef __APPLE__
-     #define EXT_SO  "dylib"
-@@ -113,6 +115,68 @@ static inline void redirects(const bool bg)
- }
- 
- 
-+// * * * * * * * * * * * * * * * Hardened build  * * * * * * * * * * * * * * //
-+
-+Foam::userFile::userFile(const std::string& path, bool library)
-+:
-+    fd_(-1),
-+    path_(path)
-+{
-+    if (::getegid() == ::getgid())
-+    {
-+        return;
-+    }
-+
-+    path_.clear();
-+    fd_ = ::open(path.c_str(), O_RDONLY | O_CLOEXEC);
-+
-+    struct stat st;
-+    if (fd_ < 0 || ::fstat(fd_, &st) != 0)
-+    {
-+        return;
-+    }
-+
-+    bool allowed;
-+    if (library)
-+    {
-+        // a library the user can change would run the user's code
-+        allowed = st.st_uid == 0 && !(st.st_mode & (S_IWGRP | S_IWOTH));
-+    }
-+    else
-+    {
-+        bool inGroup = st.st_gid == ::getgid();
-+        const int n = ::getgroups(0, nullptr);
-+        if (!inGroup && n > 0)
-+        {
-+            std::vector<gid_t> groups(n);
-+            const int m = ::getgroups(n, groups.data());
-+            for (int i = 0; i < m && !inGroup; ++i)
-+            {
-+                inGroup = groups[i] == st.st_gid;
-+            }
-+        }
-+        allowed =
-+            (st.st_mode & S_IROTH)
-+         || (st.st_uid == ::getuid() && (st.st_mode & S_IRUSR))
-+         || (inGroup && (st.st_mode & S_IRGRP));
-+    }
-+
-+    if (allowed)
-+    {
-+        path_ = "/proc/self/fd/" + std::to_string(fd_);
-+    }
-+}
-+
-+
-+Foam::userFile::~userFile()
-+{
-+    if (fd_ >= 0)
-+    {
-+        ::close(fd_);
-+    }
-+}
-+
-+
- // Library loading is normally simply via dlopen(),
- // but SIP (System Integrity Protection) on Apple will generally
- // clear out the DYLD_LIBRARY_PATH set from shell scripts.
-@@ -156,6 +220,13 @@ static inline void* loadLibrary(const Foam::fileName& libName)
+ cpuInfo/cpuInfo.C
+ cpuTime/cpuTimePosix.C
+diff -ruN a/src/OSspecific/POSIX/POSIX.C b/src/OSspecific/POSIX/POSIX.C
+--- a/src/OSspecific/POSIX/POSIX.C	2026-11-26 16:32:28
++++ b/src/OSspecific/POSIX/POSIX.C	2026-11-26 16:32:28
+@@ -156,6 +156,13 @@
      }
  #endif
  
-+    // Hardened build: a library named by path is checked (see userFile)
-+    if (libName.find('/') != std::string::npos)
++    // Hardened build: a program running with its installation's group (set-group-id) loads
++    // libraries only by name, from the system's library paths, never from a path the user names
++    if (::getegid() != ::getgid() && libName.find('/') != std::string::npos)
 +    {
-+        const Foam::userFile lib(libName, true);
-+        return lib.path().empty() ? nullptr : ::dlopen(lib.path().c_str(), ldflags);
++        return nullptr;
 +    }
 +
      // Regular loading
      return ::dlopen(libName.c_str(), ldflags);
  }
-@@ -1079,7 +1150,8 @@ bool Foam::cp(const fileName& src, const fileName& dest, const bool followLink)
-         }
- 
-         // Open and check streams. Enforce binary for extra safety
--        std::ifstream srcStream(src, ios_base::in | ios_base::binary);
-+        const userFile in(src, false);
-+        std::ifstream srcStream(in.path(), ios_base::in | ios_base::binary);
-         if (!srcStream)
-         {
-             return false;
-diff --git a/src/OpenFOAM/db/IOstreams/Fstreams/fstreamPointers.C b/src/OpenFOAM/db/IOstreams/Fstreams/fstreamPointers.C
-index 7e8d3282..62dffe77 100644
---- a/src/OpenFOAM/db/IOstreams/Fstreams/fstreamPointers.C
-+++ b/src/OpenFOAM/db/IOstreams/Fstreams/fstreamPointers.C
-@@ -327,7 +327,10 @@ void Foam::ifstreamPointer::open
-         std::ios_base::in | std::ios_base::binary
-     );
- 
--    ptr_.reset(new std::ifstream(pathname, openmode));
-+    {
-+        const userFile in(pathname, false);
-+        ptr_.reset(new std::ifstream(in.path(), openmode));
-+    }
- 
-     if (!ptr_->good())
-     {
-@@ -339,7 +342,8 @@ void Foam::ifstreamPointer::open
-         {
-             #ifdef HAVE_LIBZ
- 
--            ptr_.reset(new igzstream(pathname_gz, openmode));
-+            const userFile in(pathname_gz, false);
-+            ptr_.reset(new igzstream(in.path(), openmode));
- 
-             #else /* HAVE_LIBZ */
- 
-@@ -374,9 +378,10 @@ void Foam::ifstreamPointer::reopen_gz(const std::string& pathname)
-         gz->close();
-         gz->clear();
- 
-+        const userFile in(pathname + ".gz", false);
-         gz->open
-         (
--            pathname + ".gz",
-+            in.path().c_str(),
-             (std::ios_base::in | std::ios_base::binary)
-         );
-         return;
-diff --git a/src/OpenFOAM/include/OSspecific.H b/src/OpenFOAM/include/OSspecific.H
-index 8d494326..a343ebc7 100644
---- a/src/OpenFOAM/include/OSspecific.H
-+++ b/src/OpenFOAM/include/OSspecific.H
-@@ -192,6 +192,26 @@ fileNameList readDir
- //  An empty source name is a no-op and always returns false.
- bool cp(const fileName& src, const fileName& dst, const bool followLink=true);
- 
-+//- Hardened build: the name under which to open a file on the user's behalf.
-+//  A program installed set-group-id may read files the user cannot. In such a
-+//  process the file is opened here, checked, and given as /proc/self/fd/N:
-+//  empty if the user could not read it (or, for a library, could change it).
-+//  Otherwise the name is unchanged.
-+class userFile
+diff -ruN a/src/OSspecific/POSIX/hardened.C b/src/OSspecific/POSIX/hardened.C
+--- a/src/OSspecific/POSIX/hardened.C	1969-12-31 19:00:00
++++ b/src/OSspecific/POSIX/hardened.C	2026-11-26 16:32:42
+@@ -0,0 +1,197 @@
++/*---------------------------------------------------------------------------*\
++Description
++    Hardened build. The installed programs run set-group-id: their group may
++    read the installed programs and libraries, which the user may not. A file
++    opened for reading in such a process is kept only if the user could read
++    it too: open() and fopen() and their variants are replaced here for every
++    program (libOpenFOAM comes before the C library), and the check is made on
++    the file actually opened. Without set-group-id nothing changes.
++
++\*---------------------------------------------------------------------------*/
++
++// The replacements are definitions of the C library's functions themselves
++#undef _FORTIFY_SOURCE
++
++#include <dlfcn.h>
++#include <errno.h>
++#include <fcntl.h>
++#include <stdarg.h>
++#include <stdio.h>
++#include <string.h>
++#include <sys/stat.h>
++#include <sys/syscall.h>
++#include <unistd.h>
++#include <vector>
++
++namespace
 +{
-+    int fd_;
-+    std::string path_;
 +
-+public:
++bool setGroupId()
++{
++    return ::getegid() != ::getgid();
++}
 +
-+    userFile(const std::string& path, bool library);
-+    ~userFile();
-+    userFile(const userFile&) = delete;
-+    void operator=(const userFile&) = delete;
++// The user (real uid and groups) may read the file
++bool userMayRead(const struct stat& st)
++{
++    if (st.st_uid == ::getuid())
++    {
++        return st.st_mode & S_IRUSR;
++    }
++    bool inGroup = st.st_gid == ::getgid();
++    const int n = ::getgroups(0, nullptr);
++    if (!inGroup && n > 0)
++    {
++        std::vector<gid_t> groups(n);
++        const int m = ::getgroups(n, groups.data());
++        for (int i = 0; i < m && !inGroup; ++i)
++        {
++            inGroup = groups[i] == st.st_gid;
++        }
++    }
++    if (inGroup)
++    {
++        return st.st_mode & S_IRGRP;
++    }
++    return st.st_mode & S_IROTH;
++}
 +
-+    const std::string& path() const noexcept { return path_; }
-+};
++int keepReadable(int fd, int flags)
++{
++    if (fd < 0 || (flags & O_ACCMODE) == O_WRONLY || !setGroupId())
++    {
++        return fd;
++    }
++    struct stat st;
++    if (::fstat(fd, &st) == 0 && userMayRead(st))
++    {
++        return fd;
++    }
++    ::close(fd);
++    errno = EACCES;
++    return -1;
++}
 +
- //- Create a softlink. dst should not exist. Returns true if successful.
- //  An empty source or destination name is a no-op that always returns false,
- //  but also produces a warning.
++FILE* keepReadable(FILE* file, const char* mode)
++{
++    const bool writeOnly = (mode[0] == 'w' || mode[0] == 'a') && !::strchr(mode, '+');
++    if (!file || writeOnly || !setGroupId())
++    {
++        return file;
++    }
++    struct stat st;
++    if (::fstat(::fileno(file), &st) == 0 && userMayRead(st))
++    {
++        return file;
++    }
++    ::fclose(file);
++    errno = EACCES;
++    return nullptr;
++}
++
++int openAt(int dir, const char* path, int flags, mode_t mode)
++{
++    return keepReadable(int(::syscall(SYS_openat, dir, path, flags, mode)), flags);
++}
++
++mode_t modeArg(int flags, va_list args)
++{
++    return (flags & O_CREAT) || (flags & O_TMPFILE) == O_TMPFILE ? mode_t(va_arg(args, int)) : 0;
++}
++
++template<class Fn>
++Fn next(const char* name)
++{
++    return reinterpret_cast<Fn>(::dlsym(RTLD_NEXT, name));
++}
++
++} // End anonymous namespace
++
++
++extern "C"
++{
++
++int open(const char* path, int flags, ...)
++{
++    va_list args;
++    va_start(args, flags);
++    const mode_t mode = modeArg(flags, args);
++    va_end(args);
++    return openAt(AT_FDCWD, path, flags, mode);
++}
++
++int open64(const char* path, int flags, ...)
++{
++    va_list args;
++    va_start(args, flags);
++    const mode_t mode = modeArg(flags, args);
++    va_end(args);
++    return openAt(AT_FDCWD, path, flags, mode);
++}
++
++int openat(int dir, const char* path, int flags, ...)
++{
++    va_list args;
++    va_start(args, flags);
++    const mode_t mode = modeArg(flags, args);
++    va_end(args);
++    return openAt(dir, path, flags, mode);
++}
++
++int openat64(int dir, const char* path, int flags, ...)
++{
++    va_list args;
++    va_start(args, flags);
++    const mode_t mode = modeArg(flags, args);
++    va_end(args);
++    return openAt(dir, path, flags, mode);
++}
++
++int __open_2(const char* path, int flags)
++{
++    return openAt(AT_FDCWD, path, flags, 0);
++}
++
++int __open64_2(const char* path, int flags)
++{
++    return openAt(AT_FDCWD, path, flags, 0);
++}
++
++int __openat_2(int dir, const char* path, int flags)
++{
++    return openAt(dir, path, flags, 0);
++}
++
++int __openat64_2(int dir, const char* path, int flags)
++{
++    return openAt(dir, path, flags, 0);
++}
++
++FILE* fopen(const char* path, const char* mode)
++{
++    static auto real = next<FILE* (*)(const char*, const char*)>("fopen");
++    return keepReadable(real(path, mode), mode);
++}
++
++FILE* fopen64(const char* path, const char* mode)
++{
++    static auto real = next<FILE* (*)(const char*, const char*)>("fopen64");
++    return keepReadable(real(path, mode), mode);
++}
++
++FILE* freopen(const char* path, const char* mode, FILE* file)
++{
++    static auto real = next<FILE* (*)(const char*, const char*, FILE*)>("freopen");
++    return keepReadable(real(path, mode, file), mode);
++}
++
++FILE* freopen64(const char* path, const char* mode, FILE* file)
++{
++    static auto real = next<FILE* (*)(const char*, const char*, FILE*)>("freopen64");
++    return keepReadable(real(path, mode, file), mode);
++}
++
++} // End extern "C"
++
++
++// ************************************************************************* //

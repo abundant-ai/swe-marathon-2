@@ -1,5 +1,5 @@
-"""Applies a patch to the files it changes inside a source tar, in place, without unpacking
-the whole tree (a case-insensitive file system would lose some of OpenFOAM's files).
+"""Applies a patch to the files it changes or adds inside a source tar, in place, without
+unpacking the whole tree (a case-insensitive file system would lose some of OpenFOAM's files).
 
 usage: harden_archive.py <source.tar> <patch>   (paths in the patch: a/<path>, b/<path>;
                                                 in the tar: openfoam/<path>)
@@ -19,10 +19,11 @@ def main():
     paths = re.findall(r"^\+\+\+ b/(\S+)", patch.read_text(), flags=re.MULTILINE)
     with tempfile.TemporaryDirectory() as tmp, tarfile.open(archive) as src:
         members = src.getmembers()
+        names = {m.name for m in members}
         for p in paths:
-            data = src.extractfile(f"openfoam/{p}").read()
             (Path(tmp) / p).parent.mkdir(parents=True, exist_ok=True)
-            (Path(tmp) / p).write_bytes(data)
+            if f"openfoam/{p}" in names:
+                (Path(tmp) / p).write_bytes(src.extractfile(f"openfoam/{p}").read())
         subprocess.run(
             ["patch", "-p1", "-s", "-d", tmp, "-i", str(patch.resolve())], check=True
         )
@@ -36,6 +37,14 @@ def main():
                     dst.addfile(m, io.BytesIO(data))
                 else:
                     dst.addfile(m, src.extractfile(m) if m.isfile() else None)
+            like = next(m for m in members if m.isfile())
+            for p in paths:
+                if f"openfoam/{p}" not in names:  # a file the patch adds
+                    data = (Path(tmp) / p).read_bytes()
+                    m = tarfile.TarInfo(f"openfoam/{p}")
+                    m.size, m.mode, m.mtime = len(data), 0o644, like.mtime
+                    m.uname, m.gname = like.uname, like.gname
+                    dst.addfile(m, io.BytesIO(data))
     archive.write_bytes(out.getvalue())
     print(f"patched {len(paths)} files in {archive.name}")
 

@@ -71,7 +71,7 @@ Highest unresolved severity: 🟡 YELLOW / UNASSESSED.
 | # | Attack | Mitigation | Severity |
 | --- | --- | --- | --- |
 | 1 | Reproduce OpenFOAM's source from memory | Clean-room rule; no source in the image; artifacts audited against upstream after each trial (as ProgramBench reviews trajectories), not by the verifier | 🟡 YELLOW / UNASSESSED |
-| 2 | Read, copy or trace the installed programs | Setgid mode 2711, libraries readable by that group only, loaded through `ldconfig`; the hardened build (`common/reference/hardening.patch`) reads no file for the user that the user cannot read and loads no library the user can change; `environment/check_hardening.sh` checks both at every image build | 🟡 YELLOW / UNASSESSED |
+| 2 | Read, copy or trace the installed programs | Setgid mode 2711, libraries readable by that group only, loaded through `ldconfig`; in the hardened build (`common/reference/hardening.patch`) every file a program opens for reading is checked, once open, to be one the user may read (`open` and `fopen` are replaced in `libOpenFOAM`), and libraries load only by name; `environment/check_hardening.sh` checks both at every image build | 🟡 YELLOW / UNASSESSED |
 | 3 | Wrap or deliver the original | Verifier image (`tests/Dockerfile`) holds no OpenFOAM, only the same toolchain | 🟡 YELLOW / UNASSESSED |
 | 4 | Fetch the source | No network | 🟡 YELLOW / UNASSESSED |
 | 5 | Pass tests without an implementation | Every kept check fails a program that prints nothing and exits with 0, and one that exits with 1 | 🟢 GREEN / LOW |
@@ -128,8 +128,9 @@ agent and verifier settings from the root configuration.
 Changes for Oddish's QA review of version 10:
 
 - Reference solution runs as the agent's user: OpenFOAM's source, built by `compile.sh`.
-- Hardened OpenFOAM build in the image; `etc/` and `bin/` scripts readable (the trial above
-  read `etc/` through `#includeEtc`).
+- Hardened OpenFOAM build in the image: a program opens for reading only files the user may
+  read, and loads libraries only by name. `etc/` and `bin/` scripts are readable (the trial
+  above read `etc/` through `#includeEtc`).
 - Verifier: integers exact; finer printed precision on either side; dictionary order free; a
   missing program fails its run; owner-only executables stay executable; no set-user-id; no
   link followed; system `mpirun`; input copy out of the program's reach.

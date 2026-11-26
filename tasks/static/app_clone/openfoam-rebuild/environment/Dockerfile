@@ -36,8 +36,8 @@ COPY --from=openfoam /opt/openfoam /opt/openfoam
 COPY --from=openfoam /opt/tutorials /app/tutorials
 # Programs can be run but not read: setgid group openfoam, mode 2711; libraries readable by
 # that group only. Setgid programs ignore LD_LIBRARY_PATH, so the libraries go through ldconfig,
-# with lib/dummy stand-ins for libraries not built (KaHIP). The hardened build (hardening.patch)
-# keeps the programs from reading those files for the user or loading the user's libraries.
+# with lib/dummy stand-ins for libraries not built (KaHIP). In the hardened build (hardening.patch)
+# the programs open for reading only files the user may read, and load libraries only by name.
 # The run-time data in etc and the scripts in bin are readable.
 RUN groupadd --system openfoam && useradd --uid 10001 --create-home dev \
     && O=/opt/openfoam/platforms/$(cat /opt/openfoam/WM_OPTIONS) \

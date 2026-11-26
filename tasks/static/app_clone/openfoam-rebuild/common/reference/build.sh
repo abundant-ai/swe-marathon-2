@@ -13,7 +13,7 @@ hardening="$(dirname "$(readlink -f "$0")")/hardening.patch"
 if [ -f "$hardening" ]; then
     patch -p1 -R -s -f --dry-run < "$hardening" > /dev/null 2>&1 || patch -p1 -s < "$hardening"
 fi
-grep -q "class userFile" src/OpenFOAM/include/OSspecific.H || { echo "source not hardened" >&2; exit 1; }
+[ -f src/OSspecific/POSIX/hardened.C ] || { echo "source not hardened" >&2; exit 1; }
 # Third-party libraries: Ubuntu's own, as in the official openfoam2606 package.
 sed -i 's/^SCOTCH_VERSION=.*/SCOTCH_VERSION=scotch-system/' etc/config.sh/scotch
 sed -i 's/^METIS_VERSION=.*/METIS_VERSION=metis-system/' etc/config.sh/metis

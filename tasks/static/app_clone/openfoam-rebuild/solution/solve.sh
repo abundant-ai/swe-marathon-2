@@ -1,6 +1,6 @@
 #!/bin/bash
 # Reference solution: OpenFOAM v2606 itself. Its source (tag OpenFOAM-v2606, commit 481094fdf34f,
-# without tutorials and doc, hardened like the installed one) goes into the submission with the
+# without tutorials and doc, with the installed build's hardening) goes into the submission with the
 # installed OpenFOAM's build script; compile.sh builds it the same way and makes bin/<program>
 # run each program with OpenFOAM's environment set up from that build.
 set -euo pipefail
