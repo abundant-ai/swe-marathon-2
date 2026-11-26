@@ -1310,6 +1310,37 @@ def test_nothing_the_agent_sees_calls_the_old_server_sealed():
     )
 
 
+def test_the_verifier_prose_and_the_task_description_use_neutral_words():
+    """Round 19, after the verdict on version 14 (no task defect; one helper agent described its session as an
+    evaluation, prompted by its parent's own wording): the agent never sees the verifier or task.toml, but both keep
+    neutral words all the same. No comment, docstring, note or message of the verifier says evaluation, graded or
+    benchmark (its own notes say "the checker raises it again every 50 ms"); its identifiers stay, the class
+    EvaluationError, the function evaluate() and the status value "evaluation_error", which the checks and readers of
+    metrics.json use. task.toml's description and justification say "the old server", never "sealed"."""
+    kept = re.compile(r"\bEvaluationError\b|\bevaluate\b|\"evaluation_error\"")
+    tests = STEP / "tests"
+    for path in (
+        tests / "verify.py",
+        tests / "verifier" / "replay.py",
+        tests / "verifier" / "__init__.py",
+        tests / "test.sh",
+        tests / "Dockerfile",
+    ):
+        for number, line in enumerate(path.read_text().splitlines(), start=1):
+            assert not re.search(r"(?i)evaluat|graded|benchmark", kept.sub("", line)), (
+                f"{path.name}:{number}: {line.strip()}"
+            )
+    replay = (tests / "verifier" / "replay.py").read_text()
+    assert "on this machine; the checker raises it again every 50 ms" in replay
+    config = (TASK / "task.toml").read_text()
+    values = tomllib.loads(config)
+    assert "sealed" not in config.lower()
+    assert (
+        "the old server" in values["task"]["description"]
+        and "the old server" in values["metadata"]["open_internet_justification"]
+    )
+
+
 def test_one_configuration_for_the_sealed_server_the_recordings_and_the_solution():
     """QA 12 F1/F3: the sealed server served the web client as well, so `DELETE /nowhere` answered it 405 where the
     recordings hold 404 and a perfect clone lost 6 units. The sealed server, the live recorder and the solution now take

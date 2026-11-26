@@ -31,11 +31,11 @@ hangs or is too slow loses the units it did not answer and nothing else.
 - Planned restarts: after a step marked `restart` the server is stopped (SIGTERM, or
   SIGKILL straight after the answer) and started again on the same DATA_DIR, and the
   scenario goes on in the same workspace: what a workspace holds must survive.
-- Nothing the server sends or does makes the evaluation fail: a reply that is not
+- Nothing the server sends or does makes the check fail: a reply that is not
   HTTP, not JSON, too large in any transfer encoding or nested too deeply is an answer
   that matches nothing. The server runs as an unprivileged user under limits on
   threads, file size and memory, cannot write its own files, is the first process
-  ended when memory runs out, writes its output into a pipe the evaluation reads
+  ended when memory runs out, writes its output into a pipe the checker reads
   (keeping the first and last LOG_KEEP bytes), and is stopped for good, its remaining
   scenarios failed, when the disk runs low.
 """
@@ -77,7 +77,7 @@ FILE_LIMIT = 4 << 30  # bytes in any one file it writes
 MEMORY_LIMIT = (
     6 << 30
 )  # address space of each of its processes, on a machine with 8 GB; the same for the whole group in a cgroup
-# Run as root before the drop: puts the server first in line for the OOM killer (the evaluation raises it again every
+# Run as root before the drop: puts the server first in line for the OOM killer (the checker raises it again every
 # GUARD_SEC, since without CAP_SYS_RESOURCE the server could lower it), and into its cgroup when there is one ($1, or -).
 OOM_FIRST = [
     "sh",
@@ -170,7 +170,7 @@ MEMORY = "the server was stopped when it held more than 6 GiB of memory"
 
 
 class EvaluationError(Exception):
-    """Evaluation could not be carried out; no valid reward may be published."""
+    """The check could not be carried out; no valid reward may be published."""
 
 
 class NoAnswer(Exception):
@@ -471,7 +471,7 @@ def raise_oom_priority(uid: int) -> None:
 
 def reap_orphans() -> None:
     """Collect the exit status of every finished child, so the server's killed helpers do not linger as zombies (they
-    would count against its thread limit). The evaluation is their reaper (PR_SET_CHILD_SUBREAPER) when sandboxed."""
+    would count against its thread limit). The checker is their reaper (PR_SET_CHILD_SUBREAPER) when sandboxed."""
     with contextlib.suppress(ChildProcessError, OSError):
         while os.waitpid(-1, os.WNOHANG)[0] > 0:
             pass
@@ -501,7 +501,7 @@ def remove_user_files(
     followed), and in the scratch places every hard link, which can only be one made to another user's file; returns
     how many. A directory is moved into `aside` (a root-only directory: constant time, however big it is), or, on
     another filesystem, removed by `remove_tree` within the time left. The walk stops at `until` (a time.monotonic()
-    value) and never enters `skip` (the evaluation's own folders)."""
+    value) and never enters `skip` (the checker's own folders)."""
     removed = 0
     skipped = {os.path.realpath(path) for path in skip}
 
@@ -560,7 +560,7 @@ def remove_user_files(
 
 
 class Cgroup:
-    """A cgroup v2 group of the server's own, where this machine lets the evaluation make one: memory and processes capped
+    """A cgroup v2 group of the server's own, where this machine lets the checker make one: memory and processes capped
     for the whole group, its processes killed as one. Where it cannot (a read-only /sys/fs/cgroup, as on Docker's
     defaults), the per-process limits and the /proc sweep stand alone."""
 
@@ -605,8 +605,8 @@ class Cgroup:
 class LogCapture:
     """The server's standard output and error: a pipe a thread drains, keeping the first and the last LOG_KEEP bytes.
 
-    The server never holds a file of the evaluation's, so it cannot fill the disk through its output, read it back, see
-    its size, or keep writing to it after the evaluation ends.
+    The server never holds a file of the checker's, so it cannot fill the disk through its output, read it back, see
+    its size, or keep writing to it after the check ends.
     """
 
     def __init__(self) -> None:
@@ -669,7 +669,7 @@ class LogCapture:
 
 
 class Ballast:
-    """Space set aside on the evaluation's disk before the server starts and given back for the results: however full the
+    """Space set aside on the checker's disk before the server starts and given back for the results: however full the
     server leaves the disk, the reward, the summary and the archive made of them afterwards have room."""
 
     def __init__(self, path: Path, size: int = BALLAST) -> None:
@@ -724,7 +724,7 @@ def read_fields(path: str) -> dict[str, int]:
 
 
 def own_anon() -> int:
-    """The evaluation's own anonymous memory (RssAnon of this process), in bytes; 0 where it is not reported."""
+    """The checker's own anonymous memory (RssAnon of this process), in bytes; 0 where it is not reported."""
     try:
         return read_fields(f"{PROC}/self/status").get("RssAnon", 0)
     except OSError:
@@ -859,15 +859,15 @@ class MemoryMeter:
     """How much memory the server holds that the kernel cannot reclaim, each page counted once.
 
     The best source the machine has is chosen once, before the server starts:
-    - "server cgroup": the server's own group (`Cgroup`), where the machine lets the evaluation make one; the kernel
+    - "server cgroup": the server's own group (`Cgroup`), where the machine lets the checker make one; the kernel
       caps it at the same size and charges it for every page the server holds, so it is read as it is.
-    - "cgroup v2" or "cgroup v1": the memory cgroup this evaluation runs in. The kernel charges it for every page,
+    - "cgroup v2" or "cgroup v1": the memory cgroup this check runs in. The kernel charges it for every page,
       whatever holds it: a process, a SysV segment no one attaches, a memfd, a file in /dev/shm, socket buffers. v2:
       memory.current less reclaimable page cache and slab; v1: rss and shmem.
     - "meminfo": MemTotal less MemAvailable, only on a machine of at most MEMINFO_MACHINE, where it is this machine's own
       (a virtual machine's) and not a shared host's, and only where the kernel reports RssAnon (not gVisor, whose
       MemAvailable is its MemFree).
-      In both, the evaluation's own anonymous memory and whatever was in use before the server started are taken off,
+      In both, the checker's own anonymous memory and whatever was in use before the server started are taken off,
       so a page an honest server shares among workers, or keeps in /dev/shm for SQLite or multiprocessing, counts once,
       at its real size.
     - "processes": where neither can be read, `processes_memory`.
@@ -944,7 +944,7 @@ class MemoryMeter:
             "cgroup v2",
             "cgroup v1",
             "meminfo",
-        )  # sources that also count the evaluation's memory
+        )  # sources that also count the checker's memory
         found = (
             max(0, self.pinned() - own_anon() - self.base) if shared else self.pinned()
         )
@@ -1030,7 +1030,7 @@ class Candidate:
 
     def stop(self) -> None:
         """Stop the server for good or before a start. Never raises: a server that has exhausted processes, memory or disk
-        must not turn a finished evaluation into an error."""
+        must not turn a finished check into an error."""
         self.note_memory()
         self.kill_all()
         if self.proc is not None:
@@ -1049,7 +1049,7 @@ class Candidate:
 
         DATA_DIR and every directory the user owns are moved aside into a directory only root can enter (constant time,
         however much they hold; nothing is deleted), the search for the user's files stops after SWEEP_SEC and never
-        enters the evaluation's own folders. The submission is read-only to the server, so it starts again
+        enters the checker's own folders. The submission is read-only to the server, so it starts again
         exactly as it arrived.
         """
         with self.lock:
@@ -1185,7 +1185,7 @@ class Candidate:
 
 class Guard:
     """While the server may run: every GUARD_SEC (10 ms) where one file reports it, else every 50 ms, stop the server for
-    good when it holds more than SERVER_MEMORY, measured by `meter`, so memory it takes cannot end the evaluation; every
+    good when it holds more than SERVER_MEMORY, measured by `meter`, so memory it takes cannot end the check; every
     50 ms put its processes back at the front of the OOM killer's line; every second stop it
     for good when a disk it can write has run low. A disk is watched only if it reports its size, had room
     when the server started and is one the server can write to: a server cannot be blamed for a
@@ -1264,7 +1264,7 @@ class Guard:
 
 
 def protect_grader() -> str:
-    """Ask the kernel to end the evaluation last when memory runs out. Lowering the value needs CAP_SYS_RESOURCE, which
+    """Ask the kernel to end the checker last when memory runs out. Lowering the value needs CAP_SYS_RESOURCE, which
     Docker's defaults do not give, so this may not take; the server's own value is kept at 1000 either way."""
     for value in ("-1000", "-900", "-500"):
         with contextlib.suppress(OSError):
@@ -1327,7 +1327,7 @@ def exchange(
     otherwise `body` is sent as JSON. A JSON answer that cannot be parsed (not JSON, too long,
     nested too deeply) becomes a value no recorded answer equals; a file is compared by its
     type, its length and its SHA-256. On a connection made by `connect`, no answer can make the
-    evaluation read more than ANSWER_LIMIT and HEADER_ROOM bytes.
+    checker read more than ANSWER_LIMIT and HEADER_ROOM bytes.
     """
     sent = dict(headers)
     if raw is not None:
@@ -1609,7 +1609,7 @@ def iter_scenarios(text: str) -> Iterator[dict[str, Any]]:
 
 class Corpus:
     """The private scenarios, each held as compact JSON text and decoded only when it is played: the decoded corpus takes
-    several times the memory, and a small evaluation is a small target when memory runs out."""
+    several times the memory, and a small checker is a small target when memory runs out."""
 
     def __init__(self, path: Path, media: Media) -> None:
         self.blobs: list[bytes] = []
@@ -1928,7 +1928,7 @@ def play_all(
     Scenarios run WORKERS at a time in `play_order`; one that runs alone has nothing beside it. A second try is only for
     a scenario in flight when the server stopped, never for a wrong answer, and the units second tries decide stay within
     RETRY_SHARE of all units, so they rescue a server that stops now and then, not one that fails under load.
-    Each result goes into `results` as soon as it is decided, where a caller can read it if the evaluation overruns.
+    Each result goes into `results` as soon as it is decided, where a caller can read it if the check overruns.
     """
     results = results if results is not None else [None] * len(corpus)
     gate = Gate()
@@ -2104,7 +2104,7 @@ def check_sandbox() -> list[str]:
         )
     if "OomLowered:\t1" in done.stdout:
         return [
-            "the server's user can lower its own OOM priority on this machine; the evaluation raises it again every 50 ms"
+            "the server's user can lower its own OOM priority on this machine; the checker raises it again every 50 ms"
         ]
     return []
 
@@ -2136,7 +2136,7 @@ def become_reaper() -> None:
 
 
 class Progress:
-    """What the evaluation has decided so far, shared with its caller: if the evaluation itself overruns, the
+    """What the check has decided so far, shared with its caller: if the check itself overruns, the
     caller publishes the reward from here, with a note, and the scenarios not yet decided count as not matched."""
 
     def __init__(self) -> None:
@@ -2295,7 +2295,7 @@ def evaluate(
             for path in (
                 work,
                 output,
-            ):  # the evaluation needs room here: a machine that has none is not the server's fault
+            ):  # the checker needs room here: a machine that has none is not the server's fault
                 free = free_bytes(path)
                 if free is not None and free < DISK_RESERVE:
                     raise EvaluationError(
