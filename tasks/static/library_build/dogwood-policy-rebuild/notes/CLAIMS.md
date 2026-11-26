@@ -9,9 +9,14 @@ Both are in the private ops repository. Every claim they use to justify the task
 
 ## How I checked (2026-11-26)
 
-- **The clone:** a read-only depth-1 clone of upstream `main` at `c7124710` (2026-11-19, v1.2.0
-  plus CI commits). Read with `grep`/`wc` and a small Python script run from outside the clone;
-  nothing in it was built or executed.
+- **The clone:** a read-only depth-1 clone of upstream `main` at `c7124710` (2026-11-19). Read with
+  `grep`/`wc` and a small Python script run from outside the clone; nothing in it was built or
+  executed.
+  - GitHub's compare `v1.2.0...c7124710` shows 5 commits after the tag. They touch only CI,
+    `AGENTS.md`, one line of `CHANGELOG.md`, 17 lines of `RELEASE_NOTES.md` and Lean files: no
+    Rust, guide chapter or example.
+  - So every code, guide and example count below holds for the 1.2.0 tag. The deep dive called
+    these "CI-only commits"; one of them is a docs sync.
 - **The GitHub API** (read-only):
   - the repository record;
   - releases and tags;
