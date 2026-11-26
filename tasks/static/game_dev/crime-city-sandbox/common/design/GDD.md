@@ -175,12 +175,12 @@ Menus and the phone use Godot's `ui_up ui_down ui_left ui_right ui_accept ui_can
 - **IN-2** Movement reads action strength: a move strength up to 0.5 walks, above 0.5 runs, and
   `sprint` held while running sprints. `move_*` and `look_*` act on foot; `accelerate`, `brake`,
   `steer_*` and `handbrake` act in vehicles. `handbrake` brakes the rear wheels: held alone, it
-  slows a car at 2-6 m/s².
+  slows a car at 2-6 m/s² (on level dry asphalt, from 40 km/h, over its first second).
 - **IN-3** An action pressed in physics tick t takes effect in tick t (read input in
   `_physics_process`; the QA kit's input arrives before the tick runs).
 - **CM-1** The camera is a third-person camera behind and above the player: 2.5-6.0 m from the
   player's head on foot (nearer only where a wall pulls it in, CM-4) and 5.0-10.0 m from the
-  vehicle's centre when driving, and the player (the
+  vehicle's centre (its position) when driving, and the player (the
   `Hips` bone) stays inside the middle 40% of the view (by width and height, on the project's
   1280 x 720 window with the camera's `fov` vertical, Godot's default).
 - **CM-2** At full strength, `look_left` and `look_right` turn the camera around the player at
@@ -227,15 +227,23 @@ and 8.5 m/s, its crouch walk at about 0.75 and its swim at about 2.2.
   does no damage when h is less than 3.0; from 3.0 m to 15.0 m it takes `100 * (h - 3) / 12`
   health (within 10%); 15 m or more kills.
 - **FT-9** Ragdoll: a person goes limp under physics within 0.2 s of dying, of an explosion within
-  6 m, of a fall of 6 m or more, or of being hit by a vehicle at 20 km/h or more. While limp, the
-  hips move under physics (in free fall their vertical acceleration is within 20% of gravity), no
-  bone goes more than 0.05 m below the ground, and the body stays limp for at least 1.0 s. A person
-  still alive gets up within 6.0 s (hips back to at least 90% of standing height).
+  6 m, of landing from a fall of 6 m or more (going limp earlier in such a fall is fine), or of
+  being hit by a vehicle at 20 km/h or more. A person's `limp` metadata (AC-5) is true exactly while
+  its body is under ragdoll physics: from the tick it goes limp until physics stops driving the
+  body, before any blend into getting up; it is false at all other times. While limp, the hips move
+  under physics (in free fall their vertical acceleration is within 20% of gravity, and they never
+  move more than 1 m between two ticks), no bone goes more than 0.05 m below the ground, and the
+  body stays limp for at least 1.0 s. A person still alive gets up within 6.0 s of going limp
+  (`limp` false again and the hips back to at least 90% of standing height).
 - **FT-10** Getting in and out: `interact` within 3.0 m of a vehicle door walks the player to that
-  door (the path passes within 1.0 m of it) and seats them within 1.0-4.0 s. The door nearest the
-  player picks the seat. Seated, the hips stay within 0.35 m of the seat point; a driver's hands
-  stay within 0.30 m of the steering wheel point. `interact` in a vehicle gets out within 1.0-3.0 s,
-  ending on foot within 2.5 m of that door.
+  door (the path passes within 1.0 m of it; these distances are horizontal) and seats them within
+  1.0-4.0 s. The door nearest the
+  player picks the seat. Seated means the state report's `player.vehicle` and `player.seat` name
+  the vehicle and seat (AC-12), as the `vehicle_entered` event says. Seated, until `interact` is
+  pressed to get out, the hips stay within 0.35 m of the seat point and a driver's hands within
+  0.30 m of the steering wheel point. `interact` in a vehicle gets out within 1.0-3.0 s (until
+  `player.vehicle` is `null`, with the `vehicle_exited` event), ending on foot within 2.5 m of that
+  door.
 - **FT-11** Aiming: holding `aim` with a gun raises it; the gun hand is within 0.25 m of shoulder
   height and the forearm points within 20 degrees of the direction from the gun hand to the aim
   point (`state.player.aim`).
@@ -251,7 +259,7 @@ there is no motorbike in the library, so build a simple one from primitive meshe
 replaces it later. Boats come from the watercraft kit (TODO(owner): approve that download; until
 then, primitive hulls). Every vehicle is registered with its `model` id (chapter 17).
 
-Handling, measured on level dry asphalt with the driver alone:
+Handling, measured on level dry asphalt (a road or a parking lot) with the driver alone:
 
 | Model | Library model | Seats | Mass kg | 0-60 km/h s | Top km/h | Brake from 60 km/h, dry m | Turning circle m |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -267,7 +275,8 @@ Handling, measured on level dry asphalt with the driver alone:
 | `tactical_van` | `van` (police palette) | 2 | 3,000 | 7.0-10.0 | 125-150 | 17.0-24.0 | 12.5-16.0 |
 | `motorbike` | ours | 2 | 220 | 2.5-4.0 | 170-210 | 12.0-17.0 | 6.0-9.0 |
 
-The turning circle is the diameter of the path of the vehicle's centre at 8 km/h with full lock.
+The turning circle is the diameter of the path of the vehicle's centre (its position, chapter 17) at
+8 km/h with full lock.
 Top speed is reached on a straight of at least 1.5 km (the highways and the Sable Hills drag
 strip have one).
 
@@ -277,18 +286,21 @@ strip have one).
 - **VH-2** In rain the same vehicle needs at least 1.15 and at most 1.60 times its dry braking
   distance from 60 km/h.
 - **VH-3** Each vehicle exposes `damage` from 0.0 (new) to 1.0. Damage rises only from impacts and
-  explosions, and never falls except by repair. An impact that changes the vehicle's speed by Δv
-  km/h within 0.2 s adds `0.004 * (Δv - 8)` damage (within 25%) when Δv is above 8, and nothing
-  below that; bigger impacts add more.
+  explosions, and never falls except by repair. An impact that changes the vehicle's velocity by Δv
+  km/h within 0.2 s (Δv is the size of the change from just before the impact to 0.2 s after it,
+  so a bounce back counts) adds `0.004 * (Δv - 8)` damage (within 25%) when Δv is above 8, and
+  nothing below that; bigger impacts add more.
 - **VH-4** Parts come off: an impact of Δv 25 km/h or more that leaves damage at 0.25 or above
   detaches one part (bumper, door, plate, spoiler, wheel) within 0.5 s as a separate physics body
   registered as `debris`; at most six parts per vehicle.
 - **VH-5** At damage 0.75 or more the engine fails: full throttle gives at most 10 km/h.
 - **VH-6** At damage 0.80 or more the vehicle burns (`burning` true) and explodes 8-12 s later
-  (event `vehicle_exploded`). The explosion pushes every physics body within 8 m away from it, kills
-  people within 3 m, takes `100 * (6 - d) / 3` health from people at d = 3-6 m, ragdolls everyone
-  within 6 m (FT-9), and adds 0.30 damage to vehicles within 6 m. The wreck stays, at damage 1.0,
-  and cannot be driven.
+  (event `vehicle_exploded`). The explosion pushes every physics body within 8 m away from it (a
+  parked car 5 m away ends at least 0.3 m further off), kills people within 3 m, takes
+  `100 * (6 - d) / 3` health from people at d = 3-6 m (d from the vehicle's position to theirs),
+  ragdolls everyone within 6 m (FT-9), and adds 0.30 damage to vehicles within 6 m (that is all
+  the damage it adds: its push is not an impact of VH-3). The wreck stays, at damage 1.0, and
+  cannot be driven.
 - **VH-7** Repair: in a garage zone, the garage menu's "Repair" sets damage to 0 and restores the
   parts, for `800 * damage` dollars rounded to the nearest $10, at least $50. Wrecks cannot be
   repaired.
@@ -799,7 +811,7 @@ data: Dictionary)`. The commands set up situations for development and QA.
 | `time.set` | `hhmm` (a string such as `"21:30"`) | Set the clock |
 | `weather.set` | `kind` | Set the weather |
 | `player.spawn` | `lead`, `at`, `heading` | Spawn the player, or move the existing one; with `lead`, the player becomes that lead (its body, hair and colours, chapter 2) |
-| `player.give` | `weapon`, `ammo`, `money`, `outfit`, `health`, `armour` | Give or set: `weapon` and `outfit` become owned, `ammo` rounds go into the reserve of `weapon` (or of the gun in hand), `money` is added; `health` and `armour` are set |
+| `player.give` | `weapon`, `ammo`, `money`, `outfit`, `health`, `armour` | Give or set: `weapon` and `outfit` become owned, `ammo` rounds go into the reserve of `weapon` (or of the gun in hand), `money` is added; `health` and `armour` are set (health 0 is death, CB-7) |
 | `vehicle.spawn` | `model`, `at`, `heading`, `driver` (`player`, an archetype or `none`), `damage`, `colour` | Spawn a vehicle |
 | `npc.spawn` | `archetype`, `at`, `heading`, `behaviour` (`idle`, `wander`, `guard`, `hostile`, `reckless`), `seat` (`{"vehicle": id, "index": i}`) | Spawn a person |
 | `prop.spawn` | `kind` (`wall`, `crate`, `low_cover`, `ramp`, `barrier`, `tower`), `at`, `size` (`[x, y, z]`), `heading` | Spawn a solid object (static, layer 5) standing on `at`, the middle of its base; `size` is its width, height and depth, the depth along `heading` |
@@ -829,9 +841,10 @@ the speed limit, ignoring signals.
 - **AC-5** People (`player`, `npc`) have exactly one `Skeleton3D` using the humanoid profile's bone
   names (`Hips`, `Spine`, `Chest`, `Neck`, `Head`, `LeftUpperArm`, `LeftHand`, `LeftUpperLeg`,
   `LeftFoot`, `LeftToes` and the rest), skinned meshes bound to it, and a physics body on the people
-  layer, plus metadata `weapon` (the weapon in hand, or `none`) and `hostile` (true while they
-  attack or are about to attack the player). Nothing outside the registry has a `Skeleton3D`, a
-  `CharacterBody3D` or a `VehicleBody3D`. The library bodies and clips use their own bone names;
+  layer, plus metadata `weapon` (the weapon in hand, or `none`), `hostile` (true while they
+  attack or are about to attack the player) and `limp` (true while the body is under ragdoll
+  physics, FT-9). Nothing outside the registry has a `Skeleton3D`, a `CharacterBody3D` or a
+  `VehicleBody3D`. The library bodies and clips use their own bone names;
   import them through a `BoneMap` with Godot's `SkeletonProfileHumanoid` so the skeleton gets the
   profile's names (it works headless, from the `.import` files alone). The project as handed over
   already does this: `assets/vendor/humanoid_bone_map.tres`, referenced from the `.import` files
@@ -839,7 +852,8 @@ the speed limit, ignoring signals.
 - **AC-6** Vehicles have a physics body at their root on the vehicles layer, metadata `model`,
   `damage`, `burning` and `colour`, and one `Marker3D` per seat in group `seat` with metadata `index`
   (0 is the driver) and `door` (a door point in vehicle space). The driver's seat also has metadata
-  `wheel` (the steering wheel point). Boats also have `waterline_m` (VH-10).
+  `wheel` (the steering wheel point, in vehicle space). A seat's position is its seat point (FT-10).
+  Boats also have `waterline_m` (VH-10).
 - **AC-7** Each signalised approach has a `signal` entity with metadata `intersection`, `approach`
   and `state` (`red`, `amber`, `green`); each crosswalk with walk signals has one with `crosswalk`
   and `state` (`walk`, `dont_walk`).
@@ -864,7 +878,7 @@ the speed limit, ignoring signals.
 - **AC-12** `state` returns: `tick`, `map`, `clock` (`hh:mm`), `weather`, `variation`; `player`
   (`id`, `lead`, `health`, `armour`, `money`, `alert`, `weapon`, `weapons`, `ammo`
   (`{"magazine", "reserve"}`), `aim` (the world point the player aims at, or `null`), `cover`,
-  `vehicle`, `seat`, `outfit`, `outfits`, `leads_unlocked`); `missions` (per id: `state`, `stage`);
+  `vehicle`, `seat`, `limp`, `outfit`, `outfits`, `leads_unlocked`); `missions` (per id: `state`, `stage`);
   `garages` (per garage id: a list of `{"model", "colour", "damage"}`); `ui` (`phone`, `map`,
   `paused`, `menu`); `network` (`role`, `peers`, `id`). Values are read live when `state` is
   called; nothing is cached.

@@ -79,10 +79,11 @@ A playtest is a JSON file (format `qa-play/1`) in `playtests/`. Every value in i
     or (`entity`, by `id` or `kind`) tick by tick until its horizontal speed is at least
     `min_kmh` or at most `max_kmh`, or its position is below `below_y` (to brake at 60 km/h,
     or to act at a point of a fall);
-  - `cruise`: QA's bot driving a vehicle at `kmh` for `ticks` ticks: each tick it presses
-    `accelerate` by how far the speed it saw is below `kmh` (half strength per m/s) and `brake`
-    a little past a small margin above it, while holding the actions in `hold` (`steer_left`
-    at full strength, for example); it lets go of them at the end unless `keep` is true;
+  - `cruise`: QA's bot driving a vehicle at `kmh` for `ticks` ticks, one tick at a time (so it
+    reads the vehicle's speed every tick, whatever `every` says): each tick it presses
+    `accelerate` at 0.5 for each m/s the speed is below `kmh`, and `brake` at 0.3 for each m/s
+    past 0.15 m/s above it, while holding the actions in `hold` (`steer_left` at full strength,
+    for example); it lets go of them at the end unless `keep` is true;
   - `files`: corrupt the save files written since a mark, as a failed disk write would;
   - `restart`: kill the game and start it again with the same save folder;
 - `expect`: what must hold, each with the rule it comes from (`rule`) and what it means (`says`).
@@ -136,7 +137,14 @@ The checks an expectation can use:
 | `camera_vehicle` | between two marks, driving, the camera stays `min_m`-`max_m` from the vehicle's position and the player's `Hips` bone inside the middle `middle` of the view |
 | `ragdoll` | between two marks the person is not limp at the first; its `limp` metadata turns true within `within_ticks` of the trigger (its `died` event, or the tick its position comes within `near_m` of `landing_y`; going limp earlier in a fall is fine) and stays true at least `min_s`; meanwhile no observed bone is more than `below_m` under the ground (`ground_y`, or the top of a listed box it is over), the `Hips` never move more than `step_m` in a tick, and the state report's `player.limp` says what the metadata says |
 | `free_fall` | over the limp frames where every observed bone is at least `clear_m` above `ground_y`, a parabola fitted to the `Hips` bone's height gives a downward acceleration within `tol` of 9.81 m/s^2 |
-| `get_up` | a person still alive is back on its feet within `within_s` of going limp: `limp` false and the `Hips` at least `ratio` of their standing height (at the first mark) above `ground_y` |
+| `impact_damage` | across one impact between two marks, the vehicle's `damage` metadata rises by `rate * (dv - free_kmh)` within `tol`, dv being the change of its velocity (from its positions) from just before the impact to 0.2 s after it, in km/h; and it never falls |
+| `part_off` | an impact of at least `min_dv_kmh` that leaves the damage at `min_damage` or above is followed within `within_s` by a `part_detached` event for the vehicle, and a `debris` entity whose `vehicle` metadata is the vehicle's id |
+| `max_speed` | between two marks the vehicle's horizontal speed, over every 6 ticks, stays at or below `max_kmh` |
+| `meta_value` | at a mark an entity's metadata `key` equals `equals` (or lies in `min`-`max`) |
+| `explosion` | the vehicle, burning from the first mark, explodes (its `vehicle_exploded` event) `min_s`-`max_s` later and is a wreck at damage 1.0 at the second |
+| `blast` | when the vehicle explodes, the entity `of` (the player by default) at distance d from it: with `what` `harm`, a person loses all its health within 3 m and `100 * (6 - d) / 3` from 3 to 6 m (within `tol`), read from the state report for the player and from its `died` event for anyone else within 3 m; with `what` `push`, a vehicle within 8 m ends at least `push_m` further away a second later and, within 6 m, its damage has risen by 0.30 |
+| `lean` | on the samples where the vehicle corners at `min_lat` m/s^2 or more (its speed times its turn rate, from its positions), its up axis tilts at least `min_deg` degrees on at least `share` of them |
+| `get_up` | a person still alive is back on its feet within `within_s` of going limp: `limp` false and the `Hips` at least `ratio` of their standing height (at the first mark) above `ground_y`; a person that died (its `died` event) is not expected to get up |
 
 A box is a solid placed with `prop.spawn`: `{"p": the middle of its base, "size": [width,
 height, depth], "heading": degrees}`, its depth along the heading (chapter 17). A program is a

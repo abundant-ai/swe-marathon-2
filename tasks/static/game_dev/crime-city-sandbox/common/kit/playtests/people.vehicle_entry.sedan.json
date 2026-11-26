@@ -1,0 +1,450 @@
+{
+ "format": "qa-play/1",
+ "name": "people.vehicle_entry/sedan",
+ "template": "people.vehicle_entry",
+ "about": "A sedan parked on the north-south arterial, traffic and people set to none. The player stands 2.4 m to the right of its centre line, level with the front seats, presses interact, sits in the seat whose door is nearest, then presses interact to get out. Then the same 2.4 m to the left, and this time drives 3 s and stops before getting out. QA reads the seat points (seat, door and wheel, in world space) every tick: the walk passes within 1.0 m of the door, the player is seated 1.0-4.0 s after interact, the hips stay within 0.35 m of the seat point and a driver's hands within 0.30 m of the wheel point, getting out takes 1.0-3.0 s and ends within 2.5 m of the door (horizontally), and while driving the camera keeps 5.0-10.0 m from the sedan with the hips in the middle of the view.",
+ "rules": ["FT-10", "AC-6", "CM-1", "IN-2"],
+ "role": "solo",
+ "args": ["--role=solo", "--variation=11", "--save-dir={save_dir}"],
+ "mode": "lockstep",
+ "runs": [
+  {
+   "pace_ms": 0
+  }
+ ],
+ "limits": {
+  "wall_s": 240,
+  "boot_s": 60,
+  "step_s": 60,
+  "cpu_s": 600,
+  "memory_mb": 1536,
+  "disk_mb": 512
+ },
+ "steps": [
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "state": true,
+    "every": 6
+   }
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 11
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "traffic.set",
+     {
+      "density": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "vehicle.spawn",
+     {
+      "model": "sedan",
+      "at": {
+       "lane": "e_34_35:ab0",
+       "s": 40
+      },
+      "driver": "none"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [-74.15, 0.0, 97.6],
+      "heading": 75.96
+     }
+    ]
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "state": true,
+    "camera": true,
+    "every": 1,
+    "bones": {
+     "ids": ["player"],
+     "names": ["Hips", "Head", "LeftHand", "RightHand"]
+    },
+    "seats": {
+     "ids": [
+      {
+       "$answer": [3, "id"]
+      }
+     ]
+    }
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "mark": "right_ready"
+  },
+  {
+   "mark": "right_in_a"
+  },
+  {
+   "press": {
+    "interact": 1.0
+   }
+  },
+  {
+   "run": 2
+  },
+  {
+   "release": ["interact"]
+  },
+  {
+   "run": 300
+  },
+  {
+   "mark": "right_in_b"
+  },
+  {
+   "run": 60
+  },
+  {
+   "mark": "right_seated_b"
+  },
+  {
+   "mark": "right_out_a"
+  },
+  {
+   "press": {
+    "interact": 1.0
+   }
+  },
+  {
+   "run": 2
+  },
+  {
+   "release": ["interact"]
+  },
+  {
+   "run": 240
+  },
+  {
+   "mark": "right_out_b"
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "state": true,
+    "every": 6
+   }
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [-69.35, 0.0, 97.6],
+      "heading": 284.04
+     }
+    ]
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "state": true,
+    "camera": true,
+    "every": 1,
+    "bones": {
+     "ids": ["player"],
+     "names": ["Hips", "Head", "LeftHand", "RightHand"]
+    },
+    "seats": {
+     "ids": [
+      {
+       "$answer": [3, "id"]
+      }
+     ]
+    }
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "mark": "left_ready"
+  },
+  {
+   "mark": "left_in_a"
+  },
+  {
+   "press": {
+    "interact": 1.0
+   }
+  },
+  {
+   "run": 2
+  },
+  {
+   "release": ["interact"]
+  },
+  {
+   "run": 300
+  },
+  {
+   "mark": "left_in_b"
+  },
+  {
+   "run": 60
+  },
+  {
+   "mark": "drive_a"
+  },
+  {
+   "press": {
+    "accelerate": 0.6
+   }
+  },
+  {
+   "run": 180
+  },
+  {
+   "release": ["accelerate"]
+  },
+  {
+   "press": {
+    "brake": 1.0
+   }
+  },
+  {
+   "wait_for": {
+    "entity": {
+     "id": {
+      "$answer": [3, "id"]
+     },
+     "max_kmh": 0.5
+    },
+    "max_ticks": 300
+   }
+  },
+  {
+   "release": ["brake"]
+  },
+  {
+   "mark": "drive_b"
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "left_seated_b"
+  },
+  {
+   "mark": "left_out_a"
+  },
+  {
+   "press": {
+    "interact": 1.0
+   }
+  },
+  {
+   "run": 2
+  },
+  {
+   "release": ["interact"]
+  },
+  {
+   "run": 240
+  },
+  {
+   "mark": "left_out_b"
+  },
+  {
+   "observe": {
+    "census": {
+     "kinds": ["player", "vehicle"]
+    },
+    "state": true,
+    "every": 6
+   }
+  }
+ ],
+ "expect": [
+  {
+   "id": "right_get_in",
+   "check": "get_in",
+   "args": {
+    "from": "right_in_a",
+    "to": "right_in_b",
+    "id_from": {
+     "step": 3,
+     "index": 0
+    },
+    "near_m": 3.0,
+    "door_m": 1.0,
+    "min_s": 1.0,
+    "max_s": 4.0
+   },
+   "rule": "FT-10",
+   "says": "interact 2.4 m to the right of the sedan's centre line walks the player to the nearest door (the path within 1.0 m of it) and seats them in that door's seat 1.0-4.0 s later"
+  },
+  {
+   "id": "right_seated",
+   "check": "seated",
+   "args": {
+    "from": "right_in_a",
+    "to": "right_seated_b",
+    "id_from": {
+     "step": 3,
+     "index": 0
+    },
+    "hips_m": 0.35,
+    "hands_m": 0.3
+   },
+   "rule": "FT-10",
+   "says": "seated (and driving), the hips stay within 0.35 m of the seat point; in the driver's seat both hands stay within 0.30 m of the wheel point"
+  },
+  {
+   "id": "right_get_out",
+   "check": "get_out",
+   "args": {
+    "from": "right_out_a",
+    "to": "right_out_b",
+    "id_from": {
+     "step": 3,
+     "index": 0
+    },
+    "min_s": 1.0,
+    "max_s": 3.0,
+    "door_m": 2.5
+   },
+   "rule": "FT-10",
+   "says": "interact in the sedan gets the player out within 1.0-3.0 s, on foot within 2.5 m of the door of the seat they sat in"
+  },
+  {
+   "id": "left_get_in",
+   "check": "get_in",
+   "args": {
+    "from": "left_in_a",
+    "to": "left_in_b",
+    "id_from": {
+     "step": 3,
+     "index": 0
+    },
+    "near_m": 3.0,
+    "door_m": 1.0,
+    "min_s": 1.0,
+    "max_s": 4.0
+   },
+   "rule": "FT-10",
+   "says": "interact 2.4 m to the left of the sedan's centre line walks the player to the nearest door (the path within 1.0 m of it) and seats them in that door's seat 1.0-4.0 s later"
+  },
+  {
+   "id": "left_seated",
+   "check": "seated",
+   "args": {
+    "from": "left_in_a",
+    "to": "left_seated_b",
+    "id_from": {
+     "step": 3,
+     "index": 0
+    },
+    "hips_m": 0.35,
+    "hands_m": 0.3
+   },
+   "rule": "FT-10",
+   "says": "seated (and driving), the hips stay within 0.35 m of the seat point; in the driver's seat both hands stay within 0.30 m of the wheel point"
+  },
+  {
+   "id": "left_get_out",
+   "check": "get_out",
+   "args": {
+    "from": "left_out_a",
+    "to": "left_out_b",
+    "id_from": {
+     "step": 3,
+     "index": 0
+    },
+    "min_s": 1.0,
+    "max_s": 3.0,
+    "door_m": 2.5
+   },
+   "rule": "FT-10",
+   "says": "interact in the sedan gets the player out within 1.0-3.0 s, on foot within 2.5 m of the door of the seat they sat in"
+  },
+  {
+   "id": "seats",
+   "check": "seats",
+   "args": {
+    "mark": "left_ready",
+    "id_from": {
+     "step": 3,
+     "index": 0
+    },
+    "count": 4
+   },
+   "rule": "AC-6",
+   "says": "the sedan has 4 seat markers, indices 0 to 3, each with a door point, the driver's with a wheel point"
+  },
+  {
+   "id": "camera_vehicle",
+   "check": "camera_vehicle",
+   "args": {
+    "from": "drive_a",
+    "to": "drive_b",
+    "id_from": {
+     "step": 3,
+     "index": 0
+    },
+    "min_m": 5.0,
+    "max_m": 10.0,
+    "middle": 0.4,
+    "aspect": 1.7777777777777777
+   },
+   "rule": "CM-1",
+   "says": "driving, the camera stays 5.0-10.0 m from the sedan's position and the player's hips inside the middle 40% of the view"
+  },
+  {
+   "id": "drive_moves",
+   "check": "moved",
+   "args": {
+    "from": "drive_a",
+    "to": "drive_b",
+    "kind": "vehicle",
+    "min_m": 3.0
+   },
+   "rule": "IN-2",
+   "says": "accelerate drives the sedan (it moves at least 3 m)",
+   "kind": "pre"
+  }
+ ],
+ "tags": []
+}

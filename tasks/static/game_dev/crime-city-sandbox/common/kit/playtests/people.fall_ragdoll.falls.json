@@ -2,8 +2,8 @@
  "format": "qa-play/1",
  "name": "people.fall_ragdoll/falls",
  "template": "people.fall_ragdoll",
- "about": "The player walks off towers 2.4, 6, 10 and 16 m high on the plaza: a fall of under 3 m costs no health, one from 3 m to 15 m costs 100 * (h - 3) / 12 (within 10%), and 15 m or more kills. QA reads the health 12 s after the walk starts, time enough to land and get up, and sets it back to 100 before each tower.",
- "rules": ["FT-8"],
+ "about": "The player walks off towers 2.4, 6, 10 and 16 m high on the plaza: a fall of under 3 m costs no health, one from 3 m to 15 m costs 100 * (h - 3) / 12 (within 10%), and 15 m or more kills. Landing from 10 m and from 16 m the body goes limp at once (the limp metadata) and moves under physics with no bone under the ground; from 10 m the player gets up within 6 s. Then the player walks off a fifth tower, 16 m, and is killed 1.5 m into the fall: limp in mid-air, the hips fall at g within 20%. QA reads the health 12 s after each walk starts, time enough to land and get up, and sets it back to 100 before each tower.",
+ "rules": ["FT-8", "FT-9"],
  "role": "solo",
  "args": ["--role=solo", "--variation=10", "--save-dir={save_dir}"],
  "mode": "lockstep",
@@ -15,7 +15,7 @@
  "limits": {
   "wall_s": 240,
   "boot_s": 60,
-  "step_s": 30,
+  "step_s": 60,
   "cpu_s": 600,
   "memory_mb": 1536,
   "disk_mb": 512
@@ -23,7 +23,9 @@
  "steps": [
   {
    "observe": {
-    "census": true,
+    "census": {
+     "meta": ["limp"]
+    },
     "state": true,
     "every": 6,
     "bones": {
@@ -194,6 +196,23 @@
    "run": 30
   },
   {
+   "observe": {
+    "census": {
+     "meta": ["limp"],
+     "kinds": ["player"]
+    },
+    "state": true,
+    "every": 1,
+    "bones": {
+     "ids": ["player"],
+     "names": [
+      "Hips", "Spine", "Chest", "Neck", "Head", "LeftUpperArm", "LeftLowerArm", "LeftHand", "RightUpperArm", "RightLowerArm",
+      "RightHand", "LeftUpperLeg", "LeftLowerLeg", "LeftFoot", "LeftToes", "RightUpperLeg", "RightLowerLeg", "RightFoot", "RightToes"
+     ]
+    }
+   }
+  },
+  {
    "mark": "tower_3_top"
   },
   {
@@ -212,6 +231,19 @@
   },
   {
    "mark": "tower_3_down"
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["limp"]
+    },
+    "state": true,
+    "every": 6,
+    "bones": {
+     "ids": ["player"],
+     "names": ["Hips"]
+    }
+   }
   },
   {
    "dev": [
@@ -251,6 +283,23 @@
    "run": 30
   },
   {
+   "observe": {
+    "census": {
+     "meta": ["limp"],
+     "kinds": ["player"]
+    },
+    "state": true,
+    "every": 1,
+    "bones": {
+     "ids": ["player"],
+     "names": [
+      "Hips", "Spine", "Chest", "Neck", "Head", "LeftUpperArm", "LeftLowerArm", "LeftHand", "RightUpperArm", "RightLowerArm",
+      "RightHand", "LeftUpperLeg", "LeftLowerLeg", "LeftFoot", "LeftToes", "RightUpperLeg", "RightLowerLeg", "RightFoot", "RightToes"
+     ]
+    }
+   }
+  },
+  {
    "mark": "tower_4_top"
   },
   {
@@ -269,6 +318,122 @@
   },
   {
    "mark": "tower_4_down"
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["limp"]
+    },
+    "state": true,
+    "every": 6,
+    "bones": {
+     "ids": ["player"],
+     "names": ["Hips"]
+    }
+   }
+  },
+  {
+   "dev": [
+    [
+     "prop.spawn",
+     {
+      "kind": "tower",
+      "at": [46.88, 0.15, 13.12],
+      "size": [4.0, 16.0, 4.0],
+      "heading": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "health": 100
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [46.88, 16.15, 13.12],
+      "heading": 0
+     }
+    ]
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["limp"],
+     "kinds": ["player"]
+    },
+    "state": true,
+    "every": 1,
+    "bones": {
+     "ids": ["player"],
+     "names": [
+      "Hips", "Spine", "Chest", "Neck", "Head", "LeftUpperArm", "LeftLowerArm", "LeftHand", "RightUpperArm", "RightLowerArm",
+      "RightHand", "LeftUpperLeg", "LeftLowerLeg", "LeftFoot", "LeftToes", "RightUpperLeg", "RightLowerLeg", "RightFoot", "RightToes"
+     ]
+    }
+   }
+  },
+  {
+   "mark": "tower_5_top"
+  },
+  {
+   "press": {
+    "move_forward": 0.3
+   }
+  },
+  {
+   "wait_for": {
+    "entity": {
+     "kind": "player",
+     "below_y": 14.65
+    },
+    "max_ticks": 300
+   }
+  },
+  {
+   "release": ["move_forward"]
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "health": 0
+     }
+    ]
+   ]
+  },
+  {
+   "run": 600
+  },
+  {
+   "mark": "tower_5_down"
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["limp"]
+    },
+    "state": true,
+    "every": 6,
+    "bones": {
+     "ids": ["player"],
+     "names": ["Hips"]
+    }
+   }
   }
  ],
  "expect": [
@@ -338,6 +503,186 @@
    },
    "rule": "FT-8",
    "says": "a fall of 15 m or more kills: the player's died event"
+  },
+  {
+   "id": "ragdoll_10",
+   "check": "ragdoll",
+   "args": {
+    "from": "tower_3_top",
+    "to": "tower_3_down",
+    "kind": "player",
+    "trigger": {
+     "landing_y": 0.15,
+     "near_m": 0.25
+    },
+    "within_ticks": 12,
+    "min_s": 1.0,
+    "below_m": 0.05,
+    "step_m": 1.0,
+    "ground_y": 0.15,
+    "boxes": [
+     {
+      "p": [-33.12, 0.15, 13.12],
+      "size": [4.0, 2.4, 4.0],
+      "heading": 0
+     },
+     {
+      "p": [-13.12, 0.15, 13.12],
+      "size": [4.0, 6.0, 4.0],
+      "heading": 0
+     },
+     {
+      "p": [6.88, 0.15, 13.12],
+      "size": [4.0, 10.0, 4.0],
+      "heading": 0
+     },
+     {
+      "p": [26.88, 0.15, 13.12],
+      "size": [4.0, 16.0, 4.0],
+      "heading": 0
+     },
+     {
+      "p": [46.88, 0.15, 13.12],
+      "size": [4.0, 16.0, 4.0],
+      "heading": 0
+     }
+    ]
+   },
+   "rule": "FT-9",
+   "says": "landing from 10 m the player goes limp within 0.2 s (its limp metadata, the state report's player.limp the same) and stays limp at least 1.0 s; meanwhile no bone is more than 0.05 m under the ground and the hips never move more than 1 m in a tick"
+  },
+  {
+   "id": "get_up_10",
+   "check": "get_up",
+   "args": {
+    "from": "tower_3_top",
+    "to": "tower_3_down",
+    "kind": "player",
+    "ground_y": 0.15,
+    "within_s": 6.0,
+    "ratio": 0.9
+   },
+   "rule": "FT-9",
+   "says": "still alive after the 10 m fall, the player gets up within 6.0 s of going limp: limp false and the hips back to at least 90% of their standing height"
+  },
+  {
+   "id": "ragdoll_16",
+   "check": "ragdoll",
+   "args": {
+    "from": "tower_4_top",
+    "to": "tower_4_down",
+    "kind": "player",
+    "trigger": {
+     "event": "died"
+    },
+    "within_ticks": 12,
+    "min_s": 1.0,
+    "below_m": 0.05,
+    "step_m": 1.0,
+    "ground_y": 0.15,
+    "boxes": [
+     {
+      "p": [-33.12, 0.15, 13.12],
+      "size": [4.0, 2.4, 4.0],
+      "heading": 0
+     },
+     {
+      "p": [-13.12, 0.15, 13.12],
+      "size": [4.0, 6.0, 4.0],
+      "heading": 0
+     },
+     {
+      "p": [6.88, 0.15, 13.12],
+      "size": [4.0, 10.0, 4.0],
+      "heading": 0
+     },
+     {
+      "p": [26.88, 0.15, 13.12],
+      "size": [4.0, 16.0, 4.0],
+      "heading": 0
+     },
+     {
+      "p": [46.88, 0.15, 13.12],
+      "size": [4.0, 16.0, 4.0],
+      "heading": 0
+     }
+    ]
+   },
+   "rule": "FT-9",
+   "says": "killed by the 16 m fall, the player goes limp within 0.2 s of the died event and stays limp; no bone is more than 0.05 m under the ground"
+  },
+  {
+   "id": "midair_died",
+   "check": "event_seen",
+   "args": {
+    "after": "tower_5_top",
+    "before": "tower_5_down",
+    "name": "died"
+   },
+   "rule": "CB-7",
+   "says": "health set to 0 in mid-fall kills: the player's died event",
+   "kind": "pre"
+  },
+  {
+   "id": "ragdoll_midair",
+   "check": "ragdoll",
+   "args": {
+    "from": "tower_5_top",
+    "to": "tower_5_down",
+    "kind": "player",
+    "trigger": {
+     "event": "died"
+    },
+    "within_ticks": 12,
+    "min_s": 1.0,
+    "below_m": 0.05,
+    "step_m": 1.0,
+    "ground_y": 0.15,
+    "boxes": [
+     {
+      "p": [-33.12, 0.15, 13.12],
+      "size": [4.0, 2.4, 4.0],
+      "heading": 0
+     },
+     {
+      "p": [-13.12, 0.15, 13.12],
+      "size": [4.0, 6.0, 4.0],
+      "heading": 0
+     },
+     {
+      "p": [6.88, 0.15, 13.12],
+      "size": [4.0, 10.0, 4.0],
+      "heading": 0
+     },
+     {
+      "p": [26.88, 0.15, 13.12],
+      "size": [4.0, 16.0, 4.0],
+      "heading": 0
+     },
+     {
+      "p": [46.88, 0.15, 13.12],
+      "size": [4.0, 16.0, 4.0],
+      "heading": 0
+     }
+    ]
+   },
+   "rule": "FT-9",
+   "says": "killed 1.5 m into a 16 m fall, the player goes limp in mid-air within 0.2 s and stays limp; no bone goes more than 0.05 m under the ground on landing"
+  },
+  {
+   "id": "free_fall",
+   "check": "free_fall",
+   "args": {
+    "from": "tower_5_top",
+    "to": "tower_5_down",
+    "kind": "player",
+    "ground_y": 0.15,
+    "clear_m": 0.3,
+    "tol": 0.2,
+    "min_ticks": 10
+   },
+   "rule": "FT-9",
+   "says": "limp in mid-air, the hips fall under physics: a parabola fitted to their height while every bone is at least 0.3 m above the ground gives 9.81 m/s^2 within 20%"
   }
  ],
  "tags": []

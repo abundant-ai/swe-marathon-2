@@ -185,14 +185,14 @@ row, a row names no assertion, or an assertion's template is not in the catalog.
 | FT-6 | crouch | `people.locomotion: crouch_pose` | P | hips above 75% |
 | FT-7 | swimming | `people.swim: swim_pose`, `people.swim: swim_pace`, `people.swim: exits` | P | head under, pitch, pace, no exit |
 | FT-8 | fall damage | `people.fall_ragdoll: fall_damage` | P | health loss off the formula |
-| FT-9 | ragdoll and getting up | `people.fall_ragdoll: ragdoll`, `people.fall_ragdoll: get_up`, `vehicle.crash: blast_ragdoll` | P | scripted fall, bone below ground, no get-up |
-| FT-10 | getting in and out | `people.vehicle_entry: door_path`, `people.vehicle_entry: seated`, `people.vehicle_entry: exit` | P | path misses the door, hips out of the seat |
+| FT-9 | ragdoll and getting up | `people.fall_ragdoll: ragdoll`, `people.fall_ragdoll: get_up`, `people.fall_ragdoll: free_fall`, `vehicle.crash: blast_ragdoll`, `vehicle.crash: run_into` | P | no `limp` flag, scripted fall, bone below ground, no get-up |
+| FT-10 | getting in and out | `people.vehicle_entry: get_in`, `people.vehicle_entry: seated`, `people.vehicle_entry: get_out` | P | path misses the door, hips out of the seat |
 | FT-11 | aim pose | `combat.weapons: aim_pose` | P | hand or forearm off |
 | FT-12 | cover | `combat.cover_firefight: cover_pose`, `combat.cover_firefight: cover_state` | P | not in cover within 1 s, hips high, `cover` state wrong |
 | VH-1 | handling, mass, library models | `vehicle.handling: accel`, `vehicle.handling: top_speed`, `vehicle.handling: brake_dry`, `vehicle.handling: turn_circle`, `vehicle.handling: mass`, `vehicle.handling: model_mesh` | P | any value out of band, body not from its library model |
 | VH-2 | wet braking | `vehicle.handling: brake_wet`, `world.weather: rain_braking` | P | ratio under 1.15 or over 1.60 |
-| VH-3 | damage from impacts | `vehicle.crash: damage_rate`, `inv.damage_honest: impacts_only` | P | no damage, or damage without an impact |
-| VH-4 | parts come off | `vehicle.crash: parts` | P | no debris entity |
+| VH-3 | damage from impacts | `vehicle.crash: impact_damage`, `inv.damage_honest: impacts_only` | P | no damage, or damage without an impact |
+| VH-4 | parts come off | `vehicle.crash: part_off` | P | no debris entity |
 | VH-5 | engine failure | `vehicle.crash: disabled` | P | above 10 km/h at full throttle |
 | VH-6 | fire and explosion | `vehicle.crash: burning`, `vehicle.crash: explosion`, `vehicle.crash: blast` | P | no explosion, no push, no harm |
 | VH-7 | repair | `economy.garage: repair` | P | damage unchanged or price wrong |
@@ -320,7 +320,7 @@ row, a row names no assertion, or an assertion's template is not in the catalog.
 | AC-2 | robust `exec` | `contract.devconsole: bad_input`, `contract.devconsole: float_ids` | P | crash, no error answer, floats refused |
 | AC-3 | commands do what they say | `contract.devconsole: commands` | P | a command missing or without effect |
 | AC-4 | entity registry | `inv.registry: ids` | I | reused id, missing metadata |
-| AC-5 | people's skeletons, weapon and hostility | `people.lineup: skeleton`, `inv.registry: unregistered`, `combat.crew_hostility: hostile_meta` | P | wrong bone names, unbound mesh, unregistered actor, `weapon` or `hostile` wrong |
+| AC-5 | people's skeletons, weapon, hostility and limp | `people.lineup: skeleton`, `inv.registry: unregistered`, `combat.crew_hostility: hostile_meta`, `people.fall_ragdoll: ragdoll` | P | wrong bone names, unbound mesh, unregistered actor, `weapon`, `hostile` or `limp` wrong |
 | AC-6 | vehicles' metadata and seats | `people.vehicle_entry: seats`, `vehicle.crash: metadata` | P | seats, doors or wheel point missing |
 | AC-7 | signal entities | `traffic.intersection_watch: signal_entities` | P | an approach without its signal |
 | AC-8 | layers, surface tags, water areas | `world.plan_compliance: tags`, `people.swim: water_area` | P | tags or layers wrong |

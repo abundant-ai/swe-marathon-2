@@ -846,6 +846,14 @@ def frames_between(run: RunRecord, a: str, b: str) -> list[dict]:
     return run.frames[i : j + 1]
 
 
+def frames_around(run: RunRecord, a: str, b: str) -> list[dict]:
+    """The frames from the one before mark a to mark b, so a speed at mark a can be read."""
+    i, j = run.marks.get(a), run.marks.get(b)
+    if i is None or j is None:
+        return []
+    return run.frames[max(0, i - 1) : j + 1]
+
+
 def check_pace(rec: PlayRecord, args: dict) -> Result:
     """The horizontal speed of an entity's bone (or position) between two marks lies in
     [min_mps, max_mps]: horizontal distance over the ticks between them, at 60 per second."""
@@ -1915,10 +1923,11 @@ def check_accel(rec: PlayRecord, args: dict) -> Result:
 
 def braking_distance(run: RunRecord, args: dict) -> tuple[dict, str]:
     """The distance a vehicle needs to stop from `kmh` (60): from the last sample before
-    braking takes hold (after mark `from`) to where it stands still, scaled from the speed it
-    had then to `kmh` (by the square of the speeds, as at a steady deceleration)."""
+    braking takes hold (from mark `from` on, its speed there read from the frame before) to
+    where it stands still, scaled from the speed it had then to `kmh` (by the square of the
+    speeds, as at a steady deceleration)."""
     vid = vehicle_id(run, args)
-    sp = speeds(track(frames_between(run, args["from"], args["to"]), vid))
+    sp = speeds(track(frames_around(run, args["from"], args["to"]), vid))
     k = braking_onset(sp)
     if k is None:
         return {"id": vid}, "the vehicle did not start braking between the marks"
@@ -2043,7 +2052,7 @@ def check_decel(rec: PlayRecord, args: dict) -> Result:
     average over over_s (1.0) seconds."""
     run = rec.runs[int(args.get("run", 0))]
     vid = vehicle_id(run, args)
-    sp = speeds(track(frames_between(run, args["from"], args["to"]), vid))
+    sp = speeds(track(frames_around(run, args["from"], args["to"]), vid))
     k = braking_onset(sp, float(args.get("onset_drop", 0.005)))
     if k is None:
         return None, {"id": vid}, "the vehicle did not slow down between the marks"
@@ -2217,9 +2226,10 @@ def player_seat(frame: dict | None, vid: object) -> int | None:
 
 
 def check_seated(rec: PlayRecord, args: dict) -> Result:
-    """FT-10: on every frame between two marks with the player seated in the vehicle, the
-    Hips bone is within hips_m (0.35) of that seat's point and, in the driver's seat (0),
-    both hands are within hands_m (0.30) of the wheel point."""
+    """FT-10: on every frame between two marks (the second before interact is pressed to get
+    out) with the player seated in the vehicle, the Hips bone is within hips_m (0.35) of that
+    seat's point and, in the driver's seat (0), both hands are within hands_m (0.30) of the
+    wheel point."""
     run = rec.runs[int(args.get("run", 0))]
     vid = vehicle_id(run, args)
     worst_hips = worst_hand = 0.0
@@ -2630,7 +2640,8 @@ def check_free_fall(rec: PlayRecord, args: dict) -> Result:
 def check_get_up(rec: PlayRecord, args: dict) -> Result:
     """FT-9: a person still alive gets up within within_s (6.0) of going limp: `limp` false
     again and the Hips at least ratio (0.9) of their standing height above ground_y (their
-    height above the entity's position at mark `from`, where it stands)."""
+    height above the entity's position at mark `from`, where it stands). A person whose died
+    event came between the marks is not to get up: that holds."""
     run = rec.runs[int(args.get("run", 0))]
     frames = frames_between(run, args["from"], args["to"])
     e0 = person_of(run, frames[0] if frames else None, args)
@@ -2645,6 +2656,10 @@ def check_get_up(rec: PlayRecord, args: dict) -> Result:
     measured: dict = {"standing_hips_m": round(stand, 3)}
     if start is None:
         return None, measured, "the entity never went limp"
+    died = event_tick(frames, "died", "entity", eid)
+    if died is not None:
+        measured["died_tick"] = died
+        return True, measured, "it died, so it is not to get up"
     t0 = int(frames[start].get("t", 0))
     ground_y, ratio = float(args["ground_y"]), float(args.get("ratio", 0.9))
     up = None
@@ -2684,18 +2699,27 @@ def velocities(tr: list[tuple[int, list[float]]]) -> list[tuple[int, list[float]
 def impact_dv(
     tr: list[tuple[int, list[float]]], window: int = 12
 ) -> tuple[float, int | None]:
-    """(the largest change of velocity, in km/h, over any `window` ticks, the tick that
-    window starts at)."""
+    """(an impact's change of velocity in km/h, the tick it starts at): from the last sample
+    before the velocity first changes by more than 1.5 m/s in a tick, to the mean velocity of
+    the samples `window` ticks later (one either side), so a one-tick push back out of a wall
+    is not read as a bounce and a lasting one is."""
     vel = velocities(tr)
-    by_tick = dict(vel)
-    best, at = 0.0, None
-    for t, v in vel:
-        w = by_tick.get(t + window)
-        if w is not None:
-            d = math.dist(v, w) * 3.6
-            if d > best:
-                best, at = d, t
-    return best, at
+    onset = next(
+        (
+            k - 1
+            for k in range(1, len(vel))
+            if math.dist(vel[k][1], vel[k - 1][1]) > 1.5
+        ),
+        None,
+    )
+    if onset is None:
+        return 0.0, None
+    t0, v0 = vel[onset]
+    later = [v for t, v in vel if t0 + window - 1 <= t <= t0 + window + 1]
+    if not later:
+        return 0.0, t0
+    vm = [sum(v[k] for v in later) / len(later) for k in range(3)]
+    return math.dist(vm, v0) * 3.6, t0
 
 
 def meta_of(frame: dict | None, eid: object, key: str) -> object:
@@ -2715,8 +2739,9 @@ def entity_id(run: RunRecord, frame: dict | None, args: dict) -> object:
 
 def check_impact_damage(rec: PlayRecord, args: dict) -> Result:
     """VH-3: across one impact between two marks, the vehicle's damage metadata rises by
-    rate * (dv - free_kmh) within tol (a share), where dv is the largest change of its
-    velocity over 0.2 s (12 ticks), in km/h, and it never falls."""
+    rate * (dv - free_kmh) within tol (a share), where dv is the change of its velocity from
+    just before the impact to 0.2 s (12 ticks) after it, in km/h (impact_dv), and it never
+    falls."""
     run = rec.runs[int(args.get("run", 0))]
     vid = vehicle_id(run, args)
     frames = frames_between(run, args["from"], args["to"])
@@ -2947,6 +2972,55 @@ def check_blast(rec: PlayRecord, args: dict) -> Result:
     return True, measured, ""
 
 
+def check_lean(rec: PlayRecord, args: dict) -> Result:
+    """VH-9: between two marks, on the samples where the vehicle corners at min_lat (2.0)
+    m/s^2 or more (its speed times its turn rate, both from its positions over every 6
+    ticks), it leans at least min_deg (10) degrees (the tilt of its up axis from the census)
+    on at least share (0.9) of them; at least min_samples (30) such samples."""
+    run = rec.runs[int(args.get("run", 0))]
+    vid = vehicle_id(run, args)
+    frames = frames_between(run, args["from"], args["to"])
+    rows = []
+    for fr in frames:
+        e = census_row(fr, vid)
+        if e and isinstance(e.get("p"), list) and _is_num(e.get("up")):
+            rows.append(
+                (int(fr.get("t", 0)), [float(c) for c in e["p"]], float(e["up"]))
+            )
+    lats, tilts = [], []
+    for k in range(6, len(rows) - 6):
+        (t0, p0, _), (t1, p1, up), (t2, p2, _) = rows[k - 6], rows[k], rows[k + 6]
+        if not t0 < t1 < t2:
+            continue
+        h0 = math.atan2(p1[0] - p0[0], p1[2] - p0[2])
+        h1 = math.atan2(p2[0] - p1[0], p2[2] - p1[2])
+        turn = (h1 - h0 + math.pi) % (2 * math.pi) - math.pi
+        v = math.dist([p0[0], p0[2]], [p2[0], p2[2]]) * TICK_HZ / (t2 - t0)
+        a_lat = abs(v * turn / ((t2 - t0) / 2 / TICK_HZ))
+        if a_lat >= float(args.get("min_lat", 2.0)):
+            lats.append(a_lat)
+            tilts.append(math.degrees(math.acos(max(-1.0, min(1.0, up)))))
+    measured: dict = {"samples": len(tilts)}
+    if len(tilts) < int(args.get("min_samples", 30)):
+        return (
+            None,
+            measured,
+            f"only {len(tilts)} samples cornering at {args.get('min_lat', 2.0)} m/s^2",
+        )
+    want = float(args.get("min_deg", 10.0))
+    ok_share = sum(1 for x in tilts if x >= want) / len(tilts)
+    measured.update(
+        median_lat_mps2=round(quantile(lats, 0.5), 2),
+        median_lean_deg=round(quantile(tilts, 0.5), 2),
+        share_leaning=round(ok_share, 3),
+    )
+    ok = ok_share >= float(args.get("share", 0.9))
+    note = (
+        f"it leaned {want} degrees or more on {ok_share:.0%} of the cornering samples"
+    )
+    return ok, measured, "" if ok else note
+
+
 CHECKS: dict[str, Callable[[PlayRecord, dict], Result]] = {
     "dev_answers": check_dev_answers,
     "dev_result": check_dev_result,
@@ -3000,6 +3074,7 @@ CHECKS: dict[str, Callable[[PlayRecord, dict], Result]] = {
     "meta_value": check_meta_value,
     "explosion": check_explosion,
     "blast": check_blast,
+    "lean": check_lean,
 }
 
 

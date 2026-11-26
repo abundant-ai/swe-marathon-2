@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from pathlib import Path
 
@@ -1246,22 +1247,29 @@ def jump_climb_vault() -> Playtest:
 def falls() -> Playtest:
     p = Playtest(
         "people.fall_ragdoll/falls",
-        ["FT-8"],
+        ["FT-8", "FT-9"],
         "The player walks off towers 2.4, 6, 10 and 16 m high on the plaza: a fall of under 3 m "
         "costs no health, one from 3 m to 15 m costs 100 * (h - 3) / 12 (within 10%), and 15 m "
-        "or more kills. QA reads the health 12 s after the walk starts, time enough to land and "
-        "get up, and sets it back to 100 before each tower.",
+        "or more kills. Landing from 10 m and from 16 m the body goes limp at once (the limp "
+        "metadata) and moves under physics with no bone under the ground; from 10 m the player "
+        "gets up within 6 s. Then the player walks off a fifth tower, 16 m, and is killed 1.5 m "
+        "into the fall: limp in mid-air, the hips fall at g within 20%. QA reads the health 12 s "
+        "after each walk starts, time enough to land and get up, and sets it back to 100 before "
+        "each tower.",
         ["--role=solo", "--variation=10", "--save-dir={save_dir}"],
+        limits={"step_s": 60},
     )
     x0, y0, z0 = point(PLAZA)
-    p.step(
-        "observe",
-        {"census": True, "state": True, "every": 6,
-         "bones": {"ids": ["player"], "names": ["Hips"]}},
-    )  # fmt: skip
+    light = {"census": {"meta": ["limp"]}, "state": True, "every": 6,
+             "bones": {"ids": ["player"], "names": ["Hips"]}}  # fmt: skip
+    dense = {"census": {"meta": ["limp"], "kinds": ["player"]}, "state": True, "every": 1,
+             "bones": {"ids": ["player"], "names": BODY_BONES}}  # fmt: skip
+    p.step("observe", light)
     p.dev(("world.reset", {"variation": 10}))
-    for k, height in enumerate((2.4, 6.0, 10.0, 16.0)):
+    towers = []
+    for k, height in enumerate((2.4, 6.0, 10.0, 16.0, 16.0)):
         at = [round(x0 - 30.0 + 20.0 * k, 3), y0, round(z0 + 20.0, 3)]
+        towers.append(prop_box(at, [4.0, height, 4.0], 0))
         p.dev(
             (
                 "prop.spawn",
@@ -1277,12 +1285,26 @@ def falls() -> Playtest:
         )
         p.step("run", 30)
         name = f"tower_{k + 1}"
+        if k >= 2:
+            p.step("observe", dense)
         p.mark(f"{name}_top")
         p.step("press", {"move_forward": 0.3})
-        p.step("run", 150)
-        p.step("release", ["move_forward"])
-        p.step("run", 570)
+        if k == 4:
+            # killed 1.5 m into the fall (CB-7: health 0 is death)
+            p.step("wait_for", {"entity": {"kind": "player", "below_y": round(y0 + height - 1.5, 3)},
+                                "max_ticks": 300})  # fmt: skip
+            p.step("release", ["move_forward"])
+            p.dev(("player.give", {"health": 0}))
+            p.step("run", 600)
+        else:
+            p.step("run", 150)
+            p.step("release", ["move_forward"])
+            p.step("run", 570)
         p.mark(f"{name}_down")
+        if k >= 2:
+            p.step("observe", light)
+        if k == 4:
+            continue
         lost = (
             "nothing"
             if height < 3
@@ -1300,6 +1322,624 @@ def falls() -> Playtest:
         "fall_kills", "event_seen",
         {"after": "tower_4_top", "before": "tower_4_down", "name": "died"},
         "FT-8", "a fall of 15 m or more kills: the player's died event",
+    )  # fmt: skip
+    ground = {"ground_y": y0, "boxes": towers}
+    p.expect(
+        "ragdoll_10", "ragdoll",
+        {"from": "tower_3_top", "to": "tower_3_down", "kind": "player",
+         "trigger": {"landing_y": y0, "near_m": 0.25}, "within_ticks": 12, "min_s": 1.0,
+         "below_m": 0.05, "step_m": 1.0, **ground},
+        "FT-9",
+        "landing from 10 m the player goes limp within 0.2 s (its limp metadata, the state "
+        "report's player.limp the same) and stays limp at least 1.0 s; meanwhile no bone is more "
+        "than 0.05 m under the ground and the hips never move more than 1 m in a tick",
+    )  # fmt: skip
+    p.expect(
+        "get_up_10", "get_up",
+        {"from": "tower_3_top", "to": "tower_3_down", "kind": "player", "ground_y": y0,
+         "within_s": 6.0, "ratio": 0.9},
+        "FT-9",
+        "still alive after the 10 m fall, the player gets up within 6.0 s of going limp: limp "
+        "false and the hips back to at least 90% of their standing height",
+    )  # fmt: skip
+    p.expect(
+        "ragdoll_16", "ragdoll",
+        {"from": "tower_4_top", "to": "tower_4_down", "kind": "player",
+         "trigger": {"event": "died"}, "within_ticks": 12, "min_s": 1.0, "below_m": 0.05,
+         "step_m": 1.0, **ground},
+        "FT-9",
+        "killed by the 16 m fall, the player goes limp within 0.2 s of the died event and stays "
+        "limp; no bone is more than 0.05 m under the ground",
+    )  # fmt: skip
+    p.expect(
+        "midair_died", "event_seen",
+        {"after": "tower_5_top", "before": "tower_5_down", "name": "died"},
+        "CB-7", "health set to 0 in mid-fall kills: the player's died event", "pre",
+    )  # fmt: skip
+    p.expect(
+        "ragdoll_midair", "ragdoll",
+        {"from": "tower_5_top", "to": "tower_5_down", "kind": "player",
+         "trigger": {"event": "died"}, "within_ticks": 12, "min_s": 1.0, "below_m": 0.05,
+         "step_m": 1.0, **ground},
+        "FT-9",
+        "killed 1.5 m into a 16 m fall, the player goes limp in mid-air within 0.2 s and stays "
+        "limp; no bone goes more than 0.05 m under the ground on landing",
+    )  # fmt: skip
+    p.expect(
+        "free_fall", "free_fall",
+        {"from": "tower_5_top", "to": "tower_5_down", "kind": "player", "ground_y": y0,
+         "clear_m": 0.3, "tol": 0.2, "min_ticks": 10},
+        "FT-9",
+        "limp in mid-air, the hips fall under physics: a parabola fitted to their height while "
+        "every bone is at least 0.3 m above the ground gives 9.81 m/s^2 within 20%",
+    )  # fmt: skip
+    return p
+
+
+# Chapter 6: vehicles. The handling table is read from the design document itself.
+GDD_FILE = TASK / "common" / "design" / "GDD.md"
+VEHICLE_KINDS = ["player", "vehicle"]
+DRIVE_BONES = ["Hips", "Head", "LeftHand", "RightHand"]
+# The proving runs (chapter 6: level dry asphalt, a road or a parking lot): the north-south
+# arterial's lanes towards the south, and the parking lot north-east of the plaza.
+DRY_LANE = {"lane": "e_30_31:ab0", "s": 8}
+HANDBRAKE_LANE = {"lane": "e_32_33:ab0", "s": 8}
+PAD = [29.25, 0.15, 135.65]  # parking lot p_28, 7 m east of its middle
+
+
+def vehicle_table() -> dict[str, dict]:
+    """Chapter 6's handling table: model -> seats, mass and the bands, from GDD.md."""
+    out = {}
+    text = GDD_FILE.read_text()
+    chapter = text[text.index("## 6. Vehicles") : text.index("## 7. ")]
+    for line in chapter.splitlines():
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if len(cells) != 8 or not cells[0].startswith("`") or cells[0] == "`Model`":
+            continue
+        if not cells[2].isdigit():
+            continue
+
+        def band(text: str) -> list[float]:
+            lo, hi = text.replace(",", "").split("-")
+            return [float(lo), float(hi)]
+
+        out[cells[0].strip("`")] = {
+            "seats": int(cells[2]), "mass": float(cells[3].replace(",", "")),
+            "t060": band(cells[4]), "top": band(cells[5]), "brake": band(cells[6]),
+            "circle": band(cells[7]),
+        }  # fmt: skip
+    return out
+
+
+def heading_to(a: list[float], b: list[float]) -> float:
+    """The heading (degrees clockwise from north, -z) from point a towards point b."""
+    return round(math.degrees(math.atan2(b[0] - a[0], -(b[2] - a[2]))) % 360.0, 2)
+
+
+def beside(
+    at: list[float], heading: float, left_m: float, ahead_m: float
+) -> list[float]:
+    """A point left_m to the left of (negative: right of) and ahead_m ahead of `at` for
+    something facing `heading`."""
+    h = math.radians(heading)
+    fwd = (math.sin(h), -math.cos(h))
+    left = (fwd[1], -fwd[0])  # facing north (-z), left is west (-x)
+    return [
+        round(at[0] + left[0] * left_m + fwd[0] * ahead_m, 3),
+        at[1],
+        round(at[2] + left[1] * left_m + fwd[1] * ahead_m, 3),
+    ]
+
+
+def handling(label: str, models: list[str], variation: int) -> Playtest:
+    table = vehicle_table()
+    p = Playtest(
+        f"vehicle.handling/{label}",
+        ["VH-1", "VH-2", "IN-2", "AC-6"] + (["VH-9"] if "motorbike" in models else []),
+        "Proving runs for each model in turn, the player driving alone, on Downtown's north-south "
+        "arterial (level dry asphalt) and in the parking lot north-east of the plaza: 0-60 km/h "
+        "at full throttle; a full stop from 60 km/h, dry and then in rain; the handbrake alone "
+        "from 40 km/h; the turning circle at 8 km/h with full lock. Each model's body is a "
+        "physics body on the vehicles layer with its listed mass. Traffic and people are set to "
+        "none for the runs, and the wet stop uses the dry stop's lane. (Top speed needs a "
+        "straight of at least 1.5 km, which Downtown does not have.)",
+        ["--role=solo", f"--variation={variation}", "--save-dir={save_dir}"],
+        limits={"wall_s": 900, "cpu_s": 1200, "step_s": 60},
+    )
+    light = {"census": {"kinds": VEHICLE_KINDS}, "every": 30}
+    dense = {"census": {"kinds": VEHICLE_KINDS}, "every": 1}
+    p.step("observe", light)
+    for model in models:
+        row = table[model]
+        p.dev(("world.reset", {"variation": variation}))
+        p.dev(("traffic.set", {"density": 0}))
+        # IN-2 and VH-1: move_* does not drive; full throttle from rest to 60 km/h; stop
+        spawn = p.dev(
+            ("vehicle.spawn", {"model": model, "at": DRY_LANE, "driver": "player"})
+        )
+        vid = {"$answer": [spawn, "id"]}
+        body = p.step("query", [{"id": "body", "type": "body", "entity": vid}])
+        p.step("run", 30)
+        p.mark(f"{model}_walk_a")
+        p.step("press", {"move_forward": 1.0})
+        p.step("run", 60)
+        p.step("release", ["move_forward"])
+        p.mark(f"{model}_walk_b")
+        p.step("run", 30)
+        p.step("observe", dense)
+        p.step("run", 1)
+        p.mark(f"{model}_accel_a")
+        p.step("press", {"accelerate": 1.0})
+        p.step("wait_for", {"entity": {"id": vid, "min_kmh": 60.0}, "max_ticks": 900})
+        p.step("release", ["accelerate"])
+        p.step("press", {"brake": 1.0})
+        p.mark(f"{model}_brake_a")
+        p.step("wait_for", {"entity": {"id": vid, "max_kmh": 0.2}, "max_ticks": 480})
+        p.step("run", 10)
+        p.step("release", ["brake"])
+        p.mark(f"{model}_brake_b")
+        p.step("observe", light)
+        idf = {"id_from": {"step": spawn, "index": 0}}
+        p.expect(
+            f"{model}_body", "body", {"step": body, "query": "body", "layer": 2,
+             "mass_kg": row["mass"], "tol": 0.1},
+            "VH-1", f"the {model} model's root is a physics body on the vehicles layer with a mass of "
+            f"{row['mass']:,.0f} kg within 10%",
+        )  # fmt: skip
+        p.expect(
+            f"{model}_walk_keys", "moved",
+            {"from": f"{model}_walk_a", "to": f"{model}_walk_b", "kind": "vehicle",
+             "min_m": 0.0, "max_m": 0.3},
+            "IN-2", f"move_forward held for 1 s in the {model} model does not drive it (at most 0.3 m)",
+        )  # fmt: skip
+        lo, hi = row["t060"]
+        p.expect(
+            f"{model}_accel", "accel",
+            {"from": f"{model}_accel_a", "to": f"{model}_brake_a", **idf, "kmh": 60.0,
+             "min_s": lo, "max_s": hi},
+            "VH-1", f"the {model} model reaches 60 km/h from rest in {lo}-{hi} s",
+        )  # fmt: skip
+        lo, hi = row["brake"]
+        p.expect(
+            f"{model}_brake_dry", "brake",
+            {"from": f"{model}_brake_a", "to": f"{model}_brake_b", **idf, "kmh": 60.0,
+             "min_m": lo, "max_m": hi},
+            "VH-1", f"the {model} model stops from 60 km/h within {lo}-{hi} m on dry asphalt",
+        )  # fmt: skip
+        # VH-2: the same stop in rain, on the same lane
+        p.dev(("world.reset", {"variation": variation}))
+        p.dev(("traffic.set", {"density": 0}))
+        p.dev(("weather.set", {"kind": "rain"}))
+        wet = p.dev(
+            ("vehicle.spawn", {"model": model, "at": DRY_LANE, "driver": "player"})
+        )
+        wid = {"$answer": [wet, "id"]}
+        p.step("run", 30)
+        p.step("observe", dense)
+        p.step("press", {"accelerate": 1.0})
+        p.step("wait_for", {"entity": {"id": wid, "min_kmh": 60.0}, "max_ticks": 900})
+        p.step("release", ["accelerate"])
+        p.step("press", {"brake": 1.0})
+        p.mark(f"{model}_wet_a")
+        p.step("wait_for", {"entity": {"id": wid, "max_kmh": 0.2}, "max_ticks": 600})
+        p.step("run", 10)
+        p.step("release", ["brake"])
+        p.mark(f"{model}_wet_b")
+        p.step("observe", light)
+        p.dev(("weather.set", {"kind": "clear"}))
+        p.expect(
+            f"{model}_brake_wet", "brake",
+            {"from": f"{model}_wet_a", "to": f"{model}_wet_b",
+             "id_from": {"step": wet, "index": 0}, "kmh": 60.0,
+             "dry": {"from": f"{model}_brake_a", "to": f"{model}_brake_b", **idf},
+             "min_ratio": 1.15, "max_ratio": 1.60},
+            "VH-2", f"in rain the {model} model needs 1.15-1.60 times its dry distance to stop from 60 km/h",
+        )  # fmt: skip
+        if model != "motorbike":
+            # IN-2: the handbrake alone from 40 km/h
+            hb = p.dev(
+                (
+                    "vehicle.spawn",
+                    {"model": model, "at": HANDBRAKE_LANE, "driver": "player"},
+                )
+            )
+            hid = {"$answer": [hb, "id"]}
+            p.step("run", 30)
+            p.step("observe", dense)
+            p.step("press", {"accelerate": 1.0})
+            p.step(
+                "wait_for", {"entity": {"id": hid, "min_kmh": 40.0}, "max_ticks": 600}
+            )
+            p.step("release", ["accelerate"])
+            p.step("press", {"handbrake": 1.0})
+            p.mark(f"{model}_handbrake_a")
+            p.step("run", 90)
+            p.step("release", ["handbrake"])
+            p.step("press", {"brake": 1.0})
+            p.mark(f"{model}_handbrake_b")
+            p.step("run", 240)
+            p.step("release", ["brake"])
+            p.step("observe", light)
+            p.expect(
+                f"{model}_handbrake", "decel",
+                {"from": f"{model}_handbrake_a", "to": f"{model}_handbrake_b",
+                 "id_from": {"step": hb, "index": 0}, "min_kmh": 35.0, "over_s": 1.0,
+                 "min_mps2": 2.0, "max_mps2": 6.0},
+                "IN-2", f"the handbrake held alone slows the {model} model at 2-6 m/s^2 from 40 km/h",
+            )  # fmt: skip
+        # VH-1: the turning circle at 8 km/h with full lock, in the parking lot
+        pad = p.dev(
+            (
+                "vehicle.spawn",
+                {"model": model, "at": PAD, "heading": 0, "driver": "player"},
+            )
+        )
+        pid = {"$answer": [pad, "id"]}
+        p.step("run", 30)
+        p.step(
+            "cruise",
+            {
+                "entity": {"id": pid},
+                "kmh": 8.0,
+                "ticks": 240,
+                "hold": {"steer_left": 1.0},
+            },
+        )
+        p.step("observe", dense)
+        p.mark(f"{model}_circle_a")
+        p.step(
+            "cruise",
+            {
+                "entity": {"id": pid},
+                "kmh": 8.0,
+                "ticks": 900,
+                "hold": {"steer_left": 1.0},
+            },
+        )
+        p.mark(f"{model}_circle_b")
+        p.step("observe", light)
+        lo, hi = row["circle"]
+        p.expect(
+            f"{model}_circle", "turn_circle",
+            {"from": f"{model}_circle_a", "to": f"{model}_circle_b",
+             "id_from": {"step": pad, "index": 0}, "kmh": 8.0, "kmh_tol": 1.5,
+             "min_turn_deg": 180.0, "min_m": lo, "max_m": hi},
+            "VH-1", f"at 8 km/h with full lock the {model} model's position traces a circle {lo}-{hi} m across",
+        )  # fmt: skip
+        if model == "motorbike":
+            # VH-9: leaning into a tight turn at 15 km/h (about 4 m/s^2)
+            p.step("cruise", {"entity": {"id": pid}, "kmh": 15.0, "ticks": 240,
+                              "hold": {"steer_left": 1.0}, "keep": True})  # fmt: skip
+            p.step("observe", dense)
+            p.mark("motorbike_lean_a")
+            p.step("cruise", {"entity": {"id": pid}, "kmh": 15.0, "ticks": 300,
+                              "hold": {"steer_left": 1.0}})  # fmt: skip
+            p.mark("motorbike_lean_b")
+            p.step("observe", light)
+            p.expect(
+                "motorbike_lean", "lean",
+                {"from": "motorbike_lean_a", "to": "motorbike_lean_b",
+                 "id_from": {"step": pad, "index": 0}, "min_lat": 2.0, "min_deg": 10.0,
+                 "share": 0.9, "min_samples": 30},
+                "VH-9", "cornering at 2 m/s^2 or more, the motorbike leans at least 10 degrees",
+            )  # fmt: skip
+    return p
+
+
+def handling_cars() -> Playtest:
+    return handling(
+        "cars", ["sedan", "hatchback", "sports", "suv", "van", "pickup"], 12
+    )
+
+
+def handling_service() -> Playtest:
+    return handling(
+        "service", ["taxi", "police", "ambulance", "tactical_van", "motorbike"], 13
+    )
+
+
+def vehicle_entry() -> Playtest:
+    table = vehicle_table()
+    p = Playtest(
+        "people.vehicle_entry/sedan",
+        ["FT-10", "AC-6", "CM-1", "IN-2"],
+        "A sedan parked on the north-south arterial, traffic and people set to none. The player "
+        "stands 2.4 m to the right of its centre line, level with the front seats, presses "
+        "interact, sits in the seat whose door is nearest, then presses interact to get out. Then "
+        "the same 2.4 m to the left, and this time drives 3 s and stops before getting out. QA reads the seat points (seat, door "
+        "and wheel, in world space) every tick: "
+        "the walk passes within 1.0 m of the door, the player is seated 1.0-4.0 s after "
+        "interact, the hips stay within 0.35 m of the seat point and a driver's hands within "
+        "0.30 m of the wheel point, getting out takes 1.0-3.0 s and ends within 2.5 m of the "
+        "door (horizontally), and while driving the camera keeps 5.0-10.0 m from the sedan with the hips in "
+        "the middle of the view.",
+        ["--role=solo", "--variation=11", "--save-dir={save_dir}"],
+        limits={"step_s": 60},
+    )
+    at_lane = {"lane": "e_34_35:ab0", "s": 40}
+    car = PLAN.resolve(at_lane)
+    car_p, car_h = [round(c, 3) for c in car.p], car.heading_deg
+    p.step("observe", {"census": {"kinds": VEHICLE_KINDS}, "state": True, "every": 6})
+    p.dev(("world.reset", {"variation": 11}))
+    p.dev(("traffic.set", {"density": 0}))
+    spawn = p.dev(
+        ("vehicle.spawn", {"model": "sedan", "at": at_lane, "driver": "none"})
+    )
+    vid = {"$answer": [spawn, "id"]}
+    idf = {"id_from": {"step": spawn, "index": 0}}
+    dense = {"census": {"kinds": VEHICLE_KINDS}, "state": True, "camera": True, "every": 1,
+             "bones": {"ids": ["player"], "names": DRIVE_BONES}, "seats": {"ids": [vid]}}  # fmt: skip
+    for side, left_m in (("right", -2.4), ("left", 2.4)):
+        stand = beside(car_p, car_h, left_m, 0.6)
+        p.dev(("player.spawn", {"at": stand, "heading": heading_to(stand, car_p)}))
+        p.step("run", 30)
+        p.step("observe", dense)
+        p.step("run", 1)
+        p.mark(f"{side}_ready")
+        p.mark(f"{side}_in_a")
+        p.step("press", {"interact": 1.0})
+        p.step("run", 2)
+        p.step("release", ["interact"])
+        p.step("run", 300)
+        p.mark(f"{side}_in_b")
+        p.step("run", 60)
+        if side == "left":
+            p.mark("drive_a")
+            p.step("press", {"accelerate": 0.6})
+            p.step("run", 180)
+            p.step("release", ["accelerate"])
+            p.step("press", {"brake": 1.0})
+            p.step(
+                "wait_for", {"entity": {"id": vid, "max_kmh": 0.5}, "max_ticks": 300}
+            )
+            p.step("release", ["brake"])
+            p.mark("drive_b")
+            p.step("run", 30)
+        p.mark(f"{side}_seated_b")
+        p.mark(f"{side}_out_a")
+        p.step("press", {"interact": 1.0})
+        p.step("run", 2)
+        p.step("release", ["interact"])
+        p.step("run", 240)
+        p.mark(f"{side}_out_b")
+        p.step(
+            "observe", {"census": {"kinds": VEHICLE_KINDS}, "state": True, "every": 6}
+        )
+        p.expect(
+            f"{side}_get_in", "get_in",
+            {"from": f"{side}_in_a", "to": f"{side}_in_b", **idf, "near_m": 3.0, "door_m": 1.0,
+             "min_s": 1.0, "max_s": 4.0},
+            "FT-10",
+            f"interact 2.4 m to the {side} of the sedan's centre line walks the player to the nearest "
+            "door "
+            "(the path within 1.0 m of it) and seats them in that door's seat 1.0-4.0 s later",
+        )  # fmt: skip
+        p.expect(
+            f"{side}_seated", "seated",
+            {"from": f"{side}_in_a", "to": f"{side}_seated_b", **idf, "hips_m": 0.35,
+             "hands_m": 0.30},
+            "FT-10",
+            "seated (and driving), the hips stay within 0.35 m of the seat point; in the driver's "
+            "seat both hands stay within 0.30 m of the wheel point",
+        )  # fmt: skip
+        p.expect(
+            f"{side}_get_out", "get_out",
+            {"from": f"{side}_out_a", "to": f"{side}_out_b", **idf, "min_s": 1.0, "max_s": 3.0,
+             "door_m": 2.5},
+            "FT-10",
+            "interact in the sedan gets the player out within 1.0-3.0 s, on foot within 2.5 m of "
+            "the door of the seat they sat in",
+        )  # fmt: skip
+    p.expect(
+        "seats", "seats", {"mark": "left_ready", **idf, "count": table["sedan"]["seats"]},
+        "AC-6",
+        f"the sedan has {table['sedan']['seats']} seat markers, indices 0 to "
+        f"{table['sedan']['seats'] - 1}, each with a door point, the driver's with a wheel point",
+    )  # fmt: skip
+    p.expect(
+        "camera_vehicle", "camera_vehicle",
+        {"from": "drive_a", "to": "drive_b", **idf, "min_m": 5.0, "max_m": 10.0,
+         "middle": 0.4, "aspect": ASPECT},
+        "CM-1",
+        "driving, the camera stays 5.0-10.0 m from the sedan's position and the player's hips "
+        "inside the middle 40% of the view",
+    )  # fmt: skip
+    p.expect(
+        "drive_moves", "moved",
+        {"from": "drive_a", "to": "drive_b", "kind": "vehicle", "min_m": 3.0},
+        "IN-2", "accelerate drives the sedan (it moves at least 3 m)", "pre",
+    )  # fmt: skip
+    return p
+
+
+def crash() -> Playtest:
+    p = Playtest(
+        "vehicle.crash/barrier",
+        ["VH-3", "VH-4", "VH-5", "VH-6", "FT-9", "AC-10"],
+        "Damage. A sedan already at damage 0.15 coasts from 45 km/h into a wall across the "
+        "east-west arterial: the damage rises by 0.004 * (dv - 8) within 25% and, the impact "
+        "being 25 km/h or more with the damage at 0.25 or above, a part comes off within 0.5 s. "
+        "A sedan at damage 0.78 gets at most 10 km/h from full throttle. A sedan put on the "
+        "plaza at damage 0.85 burns and explodes 8-12 s later, leaving a wreck at 1.0: a man "
+        "2 m from it dies, the player 4.5 m away loses 50 health and goes limp, and a parked "
+        "sedan 5 m away is pushed at least 0.3 m off and takes 0.30 damage. Last, the player drives "
+        "a sedan at 30 km/h into a man standing in the lane 35 m ahead: he goes limp within 0.2 s "
+        "and, if he lives, gets up. Traffic and people are set to none.",
+        ["--role=solo", "--variation=14", "--save-dir={save_dir}"],
+        limits={"step_s": 60, "wall_s": 400},
+    )
+    meta = ["damage", "burning", "vehicle", "limp"]
+    kinds = ["player", "npc", "vehicle", "debris"]
+    light = {"census": {"meta": meta, "kinds": kinds}, "state": True, "every": 6}
+    dense = {"census": {"meta": meta, "kinds": kinds}, "state": True, "every": 1}
+    p.step("observe", light)
+    p.dev(("world.reset", {"variation": 14}))
+    p.dev(("traffic.set", {"density": 0}))
+    # VH-3, VH-4: into a wall at 45 km/h
+    wall_at = point({"lane": "e_14_24:ab0", "s": 60})
+    p.dev(
+        (
+            "prop.spawn",
+            {"kind": "wall", "at": wall_at, "size": [8.0, 3.0, 1.0], "heading": 90},
+        )
+    )
+    car = p.dev(("vehicle.spawn", {"model": "sedan", "at": {"lane": "e_14_24:ab0", "s": 5},
+                                    "driver": "player", "damage": 0.15}))  # fmt: skip
+    cid = {"$answer": [car, "id"]}
+    p.step("run", 30)
+    p.step("press", {"accelerate": 1.0})
+    p.step("wait_for", {"entity": {"id": cid, "min_kmh": 45.0}, "max_ticks": 600})
+    p.step("release", ["accelerate"])
+    p.step("observe", dense)
+    p.mark("crash_a")
+    p.step("run", 300)
+    p.mark("crash_b")
+    p.step("observe", light)
+    car_from = {"id_from": {"step": car, "index": 0}}
+    p.expect(
+        "impact_damage", "impact_damage",
+        {"from": "crash_a", "to": "crash_b", **car_from, "rate": 0.004, "free_kmh": 8.0,
+         "tol": 0.25, "min_dv_kmh": 15.0},
+        "VH-3",
+        "coasting into the wall from 45 km/h, the sedan's damage rises by 0.004 * (dv - 8) "
+        "within 25%, dv the change of its velocity in km/h from just before the impact to 0.2 s "
+        "after it, and never falls",
+    )  # fmt: skip
+    p.expect(
+        "part_off", "part_off",
+        {"from": "crash_a", "to": "crash_b", **car_from, "min_dv_kmh": 25.0,
+         "min_damage": 0.25, "within_s": 0.5},
+        "VH-4",
+        "the impact (dv of 25 km/h or more, damage 0.25 or above after it) detaches a part "
+        "within 0.5 s: a part_detached event and a debris entity naming the sedan",
+    )  # fmt: skip
+    # VH-5: an engine at damage 0.78
+    weak = p.dev(("vehicle.spawn", {"model": "sedan", "at": {"lane": "e_24_34:ab0", "s": 5},
+                                     "driver": "player", "damage": 0.78}))  # fmt: skip
+    p.step("run", 30)
+    p.step("observe", dense)
+    p.mark("weak_a")
+    p.step("press", {"accelerate": 1.0})
+    p.step("run", 300)
+    p.step("release", ["accelerate"])
+    p.mark("weak_b")
+    p.step("observe", light)
+    p.expect(
+        "engine_failed", "max_speed",
+        {"from": "weak_a", "to": "weak_b", "id_from": {"step": weak, "index": 0},
+         "max_kmh": 10.0},
+        "VH-5", "at damage 0.78 full throttle for 5 s gives the sedan at most 10 km/h",
+    )  # fmt: skip
+    # VH-6 and FT-9: a burning sedan on the plaza
+    x0, y0, z0 = point(PLAZA)
+    burn_at = [round(x0 + 10.0, 3), y0, round(z0 + 10.0, 3)]
+    p.dev(
+        (
+            "player.spawn",
+            {"at": [round(burn_at[0] - 4.5, 3), y0, burn_at[2]], "heading": 90},
+        )
+    )
+    p.dev(("player.give", {"health": 100}))
+    man = p.dev(("npc.spawn", {"archetype": "office_worker",
+                               "at": [burn_at[0], y0, round(burn_at[2] + 2.0, 3)],
+                               "heading": 0, "behaviour": "idle"}))  # fmt: skip
+    parked = p.dev(("vehicle.spawn", {"model": "sedan",
+                                       "at": [burn_at[0], y0, round(burn_at[2] - 5.0, 3)],
+                                       "heading": 90, "driver": "none"}))  # fmt: skip
+    p.step("run", 10)
+    burning = p.dev(("vehicle.spawn", {"model": "sedan", "at": burn_at, "heading": 90,
+                                        "driver": "none", "damage": 0.85}))  # fmt: skip
+    bid = {"id_from": {"step": burning, "index": 0}}
+    p.step("observe", {**dense, "bones": {"ids": ["player"], "names": BODY_BONES}})
+    p.step("run", 2)
+    p.mark("burn_a")
+    p.step("run", 900)
+    p.mark("burn_b")
+    p.step("observe", light)
+    p.expect(
+        "burning", "meta_value", {"mark": "burn_a", **bid, "key": "burning", "equals": True},
+        "VH-6", "a sedan put down at damage 0.85 is burning (its burning metadata true)",
+    )  # fmt: skip
+    p.expect(
+        "explosion", "explosion", {"from": "burn_a", "to": "burn_b", **bid, "min_s": 8.0,
+                                   "max_s": 12.0},
+        "VH-6",
+        "the burning sedan explodes 8-12 s after it began burning (vehicle_exploded) and is "
+        "left a wreck at damage 1.0",
+    )  # fmt: skip
+    p.expect(
+        "blast_kills", "blast",
+        {"from": "burn_a", "to": "burn_b", **bid, "what": "harm",
+         "of": {"id_from": {"step": man, "index": 0}}},
+        "VH-6", "the explosion kills a man 2 m away (his died event)",
+    )  # fmt: skip
+    p.expect(
+        "blast_hurts", "blast",
+        {"from": "burn_a", "to": "burn_b", **bid, "what": "harm", "tol": 0.1},
+        "VH-6", "the player 4.5 m away loses 100 * (6 - 4.5) / 3 = 50 health, within 10%",
+    )  # fmt: skip
+    p.expect(
+        "blast_push", "blast",
+        {"from": "burn_a", "to": "burn_b", **bid, "what": "push", "push_m": 0.3,
+         "of": {"id_from": {"step": parked, "index": 0}}},
+        "VH-6",
+        "a parked sedan 5 m away is pushed at least 0.3 m further off and takes 0.30 damage",
+    )  # fmt: skip
+    p.expect(
+        "blast_ragdoll", "ragdoll",
+        {"from": "burn_a", "to": "burn_b", "kind": "player",
+         "trigger": {"event": "vehicle_exploded", "any": True}, "within_ticks": 12,
+         "min_s": 1.0, "below_m": 0.05, "step_m": 1.0, "ground_y": y0, "boxes": []},
+        "FT-9",
+        "the player, 4.5 m from the explosion, goes limp within 0.2 s and stays limp at least "
+        "1.0 s, no bone more than 0.05 m under the ground",
+    )  # fmt: skip
+    # FT-9: run into at 30 km/h
+    lane = {"lane": "e_34_44:ab0", "s": 5}
+    stand = point({"lane": "e_34_44:ab0", "s": 40})
+    walker = p.dev(("npc.spawn", {"archetype": "office_worker", "at": stand, "heading": 270,
+                                  "behaviour": "idle"}))  # fmt: skip
+    driven = p.dev(
+        ("vehicle.spawn", {"model": "sedan", "at": lane, "driver": "player"})
+    )
+    did = {"$answer": [driven, "id"]}
+    p.step("run", 30)
+    p.step(
+        "observe",
+        {**light, "bones": {"ids": [{"$answer": [walker, "id"]}], "names": BODY_BONES}},
+    )
+    p.step("run", 1)
+    p.mark("hit_a")
+    p.step("press", {"accelerate": 1.0})
+    p.step("wait_for", {"entity": {"id": did, "min_kmh": 30.0}, "max_ticks": 600})
+    p.step(
+        "observe",
+        {**dense, "bones": {"ids": [{"$answer": [walker, "id"]}], "names": BODY_BONES}},
+    )
+    p.step("cruise", {"entity": {"id": did}, "kmh": 30.0, "ticks": 300})
+    p.step("press", {"brake": 1.0})
+    p.step("wait_for", {"entity": {"id": did, "max_kmh": 0.5}, "max_ticks": 300})
+    p.step("release", ["brake"])
+    p.step("run", 240)
+    p.mark("hit_b")
+    p.step("observe", light)
+    wid = {"id_from": {"step": walker, "index": 0}}
+    p.expect(
+        "run_into", "ragdoll",
+        {"from": "hit_a", "to": "hit_b", **wid,
+         "trigger": {"near_id_from": {"step": driven, "index": 0}, "near_m": 2.5},
+         "within_ticks": 18, "min_s": 1.0, "below_m": 0.05, "step_m": 1.0, "ground_y": 0.0,
+         "boxes": []},
+        "FT-9",
+        "a man the sedan runs into at 30 km/h (QA's bot holding the speed) goes limp within "
+        "0.2 s of the hit, counted from the sedan's centre coming within 2.5 m of him (about "
+        "where a sedan's front meets him) with 0.1 s more for a shorter front, and stays limp at "
+        "least 1.0 s",
+    )  # fmt: skip
+    p.expect(
+        "run_into_up", "get_up",
+        {"from": "hit_a", "to": "hit_b", **wid, "ground_y": 0.0, "within_s": 6.0, "ratio": 0.9},
+        "FT-9", "still alive, he gets up within 6.0 s of going limp",
     )  # fmt: skip
     return p
 
@@ -1393,7 +2033,7 @@ BUILDERS = (
     bad_input, commands, state_report, new_game, server_role, same_start, replay,
     same_tick, clock_rate, weather_hold, kill_after_save, damaged_slot, realtime,
     plan_compliance, paces, camera, lineup, feet, crouch, jump_climb_vault, falls,
-    intersection_watch,
+    intersection_watch, handling_cars, handling_service, vehicle_entry, crash,
 )  # fmt: skip
 
 
