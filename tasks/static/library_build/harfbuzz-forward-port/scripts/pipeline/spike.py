@@ -387,59 +387,41 @@ VERIFIER_IMAGE = "hbfp-verifier:phaseB"
 
 
 def cmd_stage_verifier(args: argparse.Namespace) -> None:
-    """Stage the verifier's build context from tests/ and a private selection, then build its image."""
+    """Stage a private selection into tests/ (its git-ignored private/, inputs/ and wheels/) and build the image.
+
+    tests/ is the verifier's build context, as on the platform. The selection's cases and recorded outputs go to
+    tests/private/ (root-only in the image), the fonts they use to tests/inputs/, and the meson wheel to tests/wheels/.
+    """
     selection = [
         json.loads(line)
         for line in Path(args.selection).read_text().splitlines()
         if line
     ]
-    ctx = CACHE / "ctx" / "verifier"
-    for sub in (
-        "driver",
-        "wheels",
-        "private",
-        "inputs/fonts/noto",
-        "inputs/fonts/synth",
-    ):
-        (ctx / sub).mkdir(parents=True, exist_ok=True)
-    for name in ("Dockerfile", "test.sh", "verify.py"):
-        shutil.copy2(TASK / "tests" / name, ctx / name)
-    shutil.copy2(DRIVER / "hbdrv.c", ctx / "driver" / "hbdrv.c")
+    tests = TASK / "tests"
+    for sub in ("wheels", "private", "inputs/fonts/noto", "inputs/fonts/synth"):
+        (tests / sub).mkdir(parents=True, exist_ok=True)
     meson = next((DL / "python").glob("meson-*.whl"))
-    shutil.copy2(meson, ctx / "wheels" / meson.name)
+    shutil.copy2(meson, tests / "wheels" / meson.name)
     for font in sorted({c["font"] for c in selection}):
         kind, name = font.split("/", 1)
         src = (DL / "fonts" / name) if kind == "noto" else (WORK / "fonts" / name)
-        shutil.copy2(src, ctx / "inputs" / "fonts" / kind / name)
-    cases = [
-        {
-            k: c[k]
-            for k in (
-                "id",
-                "unit",
-                "family",
-                "kind",
-                "window",
-                "font",
-                "idx",
-                "opts",
-                "text",
-            )
-        }
-        for c in selection
-    ]
-    (ctx / "private" / "cases.jsonl").write_text(
-        "".join(json.dumps(c, sort_keys=True) + "\n" for c in cases)
+        shutil.copy2(src, tests / "inputs" / "fonts" / kind / name)
+    keys = ("id", "unit", "family", "kind", "window", "font", "idx", "opts", "text")
+    (tests / "private" / "cases.jsonl").write_text(
+        "".join(
+            json.dumps({k: c[k] for k in keys}, sort_keys=True) + "\n"
+            for c in selection
+        )
     )
     expected = {
         rel: {c["id"]: c["gold"][rel] for c in selection}
         for rel in ("15.0.0", "15.1.0", "15.2.0")
     }
-    (ctx / "private" / "expected.json").write_text(json.dumps(expected))
+    (tests / "private" / "expected.json").write_text(json.dumps(expected))
     with heavy("verifier image"):
         started = time.time()
         subprocess.run(
-            ["docker", "build", "-t", VERIFIER_IMAGE, "--label", LABEL, str(ctx)],
+            ["docker", "build", "-t", VERIFIER_IMAGE, "--label", LABEL, str(tests)],
             check=True,
         )
         log_event(
