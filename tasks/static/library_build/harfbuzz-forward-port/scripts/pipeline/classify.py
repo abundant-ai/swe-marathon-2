@@ -146,6 +146,9 @@ def main() -> None:
     p.add_argument("--select-to", type=Path)
     p.add_argument("--seed", type=int, default=20261127)
     p.add_argument("--salt", default="")
+    p.add_argument(
+        "--salt-file", type=Path, help="read the salt from this private file"
+    )
     p.add_argument("--per-unit", type=int, default=60)
     p.add_argument("--duals", type=int, default=50)
     p.add_argument("--broad", type=int, default=600)
@@ -156,7 +159,13 @@ def main() -> None:
     print(json.dumps(report, indent=1))
     if args.select_to:
         chosen = select(
-            rows, units, args.seed, args.per_unit, args.duals, args.broad, args.salt
+            rows,
+            units,
+            args.seed,
+            args.per_unit,
+            args.duals,
+            args.broad,
+            args.salt_file.read_text().strip() if args.salt_file else args.salt,
         )
         args.select_to.parent.mkdir(parents=True, exist_ok=True)
         with args.select_to.open("w") as fh:

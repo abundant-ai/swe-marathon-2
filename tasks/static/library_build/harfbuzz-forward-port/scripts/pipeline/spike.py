@@ -372,6 +372,18 @@ def run_ops(ops: list[dict]) -> None:
             )
         elif op["op"] == "image":
             build_pipeline_image(op.get("platform"))
+        elif op["op"] == "host":
+            # Our own host-side scripts only (classify.py and the like), with the host's isolated Python.
+            started = time.time()
+            code = subprocess.run(op["args"], cwd=TASK, check=False).returncode
+            log_event(
+                event="host",
+                args=op["args"][:3],
+                code=code,
+                wall_s=round(time.time() - started, 1),
+            )
+            if code:
+                raise SystemExit(f"host step failed ({code}): {op['args'][:3]}")
         elif op["op"] == "sh":
             started = time.time()
             code = docker_run(
@@ -506,12 +518,12 @@ def cmd_verify(args: argparse.Namespace) -> None:
 
 
 def cmd_milestone(args: argparse.Namespace) -> None:
-    """Stage a selection, then under one hold of the lock build the verifier image and verify each tree."""
-    n = stage_verifier(Path(args.selection))
-    print(f"staged {n} cases")
+    """Under one hold of the lock: run the plan's operations, stage the selection, build the verifier, verify trees."""
     ops = json.loads(Path(args.plan).read_text()) if args.plan else []
     with heavy(f"milestone: {len(ops)} ops, verifier image, {len(args.tree)} runs"):
         run_ops(ops)
+        n = stage_verifier(Path(args.selection))
+        print(f"staged {n} cases", flush=True)
         build_verifier_image(args.platform)
         for spec in args.tree:
             name, _, tree = spec.partition("=")

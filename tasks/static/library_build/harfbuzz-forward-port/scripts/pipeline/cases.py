@@ -203,33 +203,34 @@ def gen_use_space(rng: random.Random, fonts: list[Font], n: int) -> Iterator[dic
 
 
 def gen_hangul_tone(rng: random.Random, fonts: list[Font], n: int) -> Iterator[dict]:
-    """Unit 5: a tone mark after a dotted circle at the start of the text gets no second dotted circle.
+    """Unit 5: a Hangul tone mark at the start of the text gets only one dotted circle.
 
-    Changed: the text starts with U+25CC and a tone mark. Neighbours every release treats alike: a tone mark alone,
-    after a space, a syllable or a white circle, and a dotted circle with another mark. A dotted circle and a tone mark
-    later in the text are left out: 15.2.0 changes those too, which the note does not say.
+    The start of the text is the client's beginning-of-text flag: 14.3.0 then gives a tone mark that opens the text
+    the dotted circle every broken cluster at the start gets, plus a second one from the Hangul shaper. Changed: a
+    tone mark opening the text, flagged. Neighbours every release treats alike: the same text without the flag, and
+    flagged text that opens with a space, a syllable or a white circle. A dotted circle already in the text before
+    the tone mark is left out: 15.2.0 changes that too, which the note does not say.
     """
     usable = [f for f in fonts if f.has(0x302E, 0x302F, DOTTED)]
     for i in range(n):
         f = usable[i % len(usable)]
         tone = rng.choice((0x302E, 0x302F))
         syl = rng.randrange(0xAC00, 0xD7A4)
+        tail = rng.choice(([], [syl], [0x20, syl], [syl, syl]))
         shape = rng.choice(
-            ("dc", "dc", "dc-syl", "dc-space", "tone", "space-tone")
-            + ("syl-tone", "white-tone", "dc-acute")
+            ("start", "start", "start", "noflag", "noflag")
+            + ("space", "syllable", "white", "dc-acute")
         )
         text = {
-            "dc": [DOTTED, tone],
-            "dc-syl": [DOTTED, tone, syl],
-            "dc-space": [DOTTED, tone, 0x20, syl],
-            "tone": [tone],
-            "space-tone": [0x20, tone],
-            "syl-tone": [syl, tone],
-            "white-tone": [0x25CB, tone],
-            "dc-acute": [DOTTED, 0x0301],
+            "start": [tone, *tail],
+            "noflag": [tone, *tail],
+            "space": [0x20, tone, *tail],
+            "syllable": [syl, tone, *tail],
+            "white": [0x25CB, tone, *tail],
+            "dc-acute": [DOTTED, 0x0301, *tail],
         }[shape]
-        opts = {"cl": rng.choice((0, 1, 2))}
-        if rng.random() < 0.3:
+        opts: dict[str, object] = {"cl": rng.choice((0, 1, 2))}
+        if shape != "noflag":
             opts["flags"] = "bot"
         yield case("5", "cand", f, text, nb=shape, **opts)
 
