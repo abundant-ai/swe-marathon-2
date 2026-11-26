@@ -137,8 +137,8 @@ AAT/`kern` assembler.
 | 50 | 15.2.0 | C | F8 | `CBDT` format 19 bitmaps | P (C30) | `ebb58687` (#6754) | S |
 | 52-55 | 14.6.0-15.2.0 | – | – | `DMAP`, beyond-64k, the number parser, raised work limits | X | – | – |
 
-Every "R" restatement is written in Phase B, beside its derivation path (QA gate item 1). Windows: A = step 1
-(14.3.1 to 15.0.0), B = step 2 (15.1.0), C = step 3 (15.2.0).
+Every "R" restatement is written in Phase B, beside its derivation path (QA gate item 1). Windows (release tags
+on the cases; the task itself is single-step since 2026-11-26): A = 14.3.1 to 15.0.0, B = 15.1.0, C = 15.2.0.
 
 ## Failure sentence and its proof plan
 
@@ -168,8 +168,8 @@ negated. It enters the reward only through the gate (DESIGN.md section 6). The B
 - **No oracle exists for the new behaviour, but one exists for the old.** Agents check the positive example they
   construct. Checking neighbours needs a second build and a diff harness, which nothing in the work asks for
   outright.
-- **Later steps revise earlier code** (`hb_font_set_face()`, the `kern` and `kerx` fixes, Arabic fallback), so
-  each step can regress cases an earlier step got right.
+- **Later releases revise earlier fixes** (`hb_font_set_face()`, the `kern` and `kerx` fixes, Arabic fallback), so
+  a later note can regress cases an earlier one got right.
 - **Published pattern.** Long-horizon agents break existing functionality while adding features: the C compiler
   report, SWE-Chain's "struggle to preserve existing functionality" (second-hand via the research notes, not
   re-read).
@@ -179,7 +179,7 @@ negated. It enters the reward only through the gate (DESIGN.md section 6). The B
 
 ### 3. It is provable by a named mutant that moves only its family
 
-**Mutant W (condition-widened).** Built from each step's release, it removes the stated condition from every
+**Mutant W (condition-widened).** Built from 15.2.0, it removes the stated condition from every
 conditional note:
 
 | Item | W's widening |

@@ -1,5 +1,8 @@
 # Phase A report: HarfBuzz forward-port, 14.3.0 → 15.2.0 (2026-11-26)
 
+> **Superseded in part, 2026-11-26:** the owner parked multi-turn, so the three-step layout below became the
+> single-step task (one instruction, one 34,560 s session, graded as step 3). See the README and notes/DESIGN.md.
+
 Phase A delivered the design, the three-step plan with its acceptance criteria, the claim check, the QA plan and the
 spike plan with its download list. Nothing was downloaded, built or run, and neither Oddish nor Docker was used. The
 upstream clone was read with lazy fetching disabled. The pick survives the claim check, but three findings make the

@@ -1,7 +1,7 @@
 """Host-side driver for the HarfBuzz forward-port pipeline: bounded Docker jobs under the shared heavy lock.
 
 Development tooling, never shipped. Downloaded code only ever runs inside the pipeline image's containers.
-Run as `python3 -I scripts/pipeline/spike.py <command> ...` from the task folder.
+Run with Python 3.11 or later (the repository's venv), as `python -I scripts/pipeline/spike.py <command> ...`.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ from pathlib import Path
 
 TASK = Path(__file__).resolve().parents[2]
 PIPE = TASK / "scripts" / "pipeline"
-DRIVER = TASK / "common" / "verifier" / "driver"
+DRIVER = TASK / "tests" / "driver"
 CACHE = Path.home() / "Documents/github/Abundant/lib-tasks-cache/harfbuzz-forward-port"
 DL = CACHE / "dl"
 WORK = CACHE / "work"
@@ -260,7 +260,7 @@ def cmd_build(args: argparse.Namespace) -> None:
     with heavy(f"build {args.id}"):
         started = time.time()
         code = docker_run(
-            ["hb_build", src, out, patches, str(args.jobs), args.ragel],
+            ["sh", "/pipe/hb_build.sh", src, out, patches, str(args.jobs), args.ragel],
             cpus=args.cpus,
             platform=args.platform,
             check=False,

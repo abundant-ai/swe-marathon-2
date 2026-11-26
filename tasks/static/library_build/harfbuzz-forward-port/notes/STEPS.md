@@ -1,5 +1,10 @@
 # Multi-step plan and acceptance criteria (Phase A)
 
+> **Parked by the owner, 2026-11-26** ("we dont have to promote multi-turn as well so make stuff likewise").
+> The task is single-step: one instruction and one 34,560 s session from 14.3.0 to 15.2.0, graded as step 3
+> below (all 56 units against 15.2.0, with the held-fixed duals gate). This file is kept as history; the panel's
+> decision on steps no longer applies.
+
 Author notes, never shipped. The design is in [DESIGN.md](DESIGN.md), the units in the
 [CLAIMS.md inventory](CLAIMS.md#item-inventory), the gate in [QA-PLAN.md](QA-PLAN.md).
 

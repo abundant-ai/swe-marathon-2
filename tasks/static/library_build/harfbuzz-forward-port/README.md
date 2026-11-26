@@ -1,20 +1,20 @@
 # HarfBuzz forward-port, 14.3.0 → 15.2.0
 
-**Status: Phase A, design only.** Nothing here is runnable yet: no environment, verifier, oracle or case exists,
-and nothing has been built, downloaded or run for this task. Category: Library Reproduction
-(`tasks/static/library_build/`). Branch `neel/harfbuzz-forward-port`.
+**Status: Phase B, spike and first build milestone in progress.** The task is single-step (owner, 2026-11-26). The
+pipeline tooling, the case driver and a verifier skeleton exist; no agent image, no complete case set and no oracle
+validation yet. Category: Library Reproduction (`tasks/static/library_build/`). Branch `neel/harfbuzz-forward-port`.
 
 A product ships HarfBuzz 14.3.0 and has frozen that build. The agent brings it forward to the shaping, layout,
-metrics and API behaviour of upstream's next eight releases (14.3.1 to 15.2.0, 2026-08-13 to 2026-11-19), release
-window by release window, working from the release notes, the specifications and its own test fonts. It never sees
-a 15.x tree or binary. A separate verifier compiles the delivered tree and compares integer shaping and API outputs
+metrics and API behaviour of upstream's next eight releases (14.3.1 to 15.2.0, 2026-08-13 to 2026-11-19), in one
+session, working from the release notes, the specifications and its own test fonts. It never sees a 15.x tree or
+binary. A separate verifier compiles the delivered tree and compares integer shaping and API outputs
 on private fonts and strings with the upstream releases. Only behaviour a listed note changed is credited; behaviour
 no note changed must stay as it was, and that is where agents are expected to fail.
 
 | Document | Contents |
 | --- | --- |
 | [notes/DESIGN.md](notes/DESIGN.md) | What the agent gets and delivers, the hidden reference, cases and attribution, families, reward, stub filters, determinism, expected scores, effort, risks |
-| [notes/STEPS.md](notes/STEPS.md) | The three-step chain, each step's acceptance criteria, timeouts, reward strategy, the single-step fallback, the panel decision |
+| [notes/STEPS.md](notes/STEPS.md) | History: the three-step plan, parked by the owner on 2026-11-26; its step 3 is the task's grading |
 | [notes/CLAIMS.md](notes/CLAIMS.md) | Every claim behind the task checked against primary evidence; the item inventory; the failure sentence and its proof plan |
 | [notes/QA-PLAN.md](notes/QA-PLAN.md) | The 12-item pre-upload gate for this task, coverage inventory, stub zoo, cue-word sweep, 20 QA lenses, post-run checks |
 | [notes/SPIKE.md](notes/SPIKE.md) | The spike that must pass before the build, and the exact download list |
@@ -30,21 +30,18 @@ no note changed must stay as it was, and that is where agents are expected to fa
 | Difficulty | About 57 changes across 8 families in C++, AAT and `kern` fonts the agent must build itself, Unicode 18 tables to regenerate, no oracle for the new behaviour, and a gate that punishes over-broad fixes | Report's estimate: frontier 0.35-0.65, mid-tier 0.10-0.30 | Unmeasured; mid-tier floor risk |
 | Initial feasibility | Every in-scope note is either stated precisely by upstream or restated by us as a behaviour rule; the base tree, its own tests and fontTools let the agent check its work against 14.3.0 for everything the notes leave alone | Example: the Khmer fix is a one-token change whose rule is quoted from Microsoft's spec in the 14.3.0 source itself | E-item restatements; fontTools has no `kerx` writer (our assembler) |
 
-## Steps
+## One step
 
-Three steps in one sandbox, decided unanimously by a three-judge panel (notes/STEPS.md): 14.3.0 → 15.0.0 (9 units,
-7,200 s), → 15.1.0 (13 new units, 7,200 s), → 15.2.0 (35 new units, 20,160 s). Each step's verifier re-checks every
-unit released so far against that release, and the trial reward is the last step's (`final`). By design,
-`hb_font_set_face()` changes between steps: step 1 asks for 15.0.0's behaviour (reset the font functions), step 3 for
-15.2.0's (do nothing), so step 3 grades the later behaviour and does not count the change as a regression. A flat
-single-step bundle with step 3's verifier is the fallback for harnesses that cannot run steps.
+The owner parked multi-turn on 2026-11-26, so the task is a single step: one instruction listing every note from
+14.3.1 to 15.2.0, one 34,560 s session, and one verifier run at the end that checks all 56 units against 15.2.0
+(the 15.0.0 note on `hb_font_set_face()` is superseded by 15.2.0's, so only the final behaviour counts). The
+three-step plan the panel chose in Phase A stays in notes/STEPS.md as history; its step 3 is exactly this grading.
 
 ## Reward formula
 
-Per step, over the units released up to that step: reward = D · G, where D is the mean over units of each unit's
-pass fraction on its changed cases, and G = max(0, 1 − 0.25·(1 − h_d) − 0.10·(1 − h_b)) with h_d the pass fraction of
-the held-fixed duals and h_b that of the broad held-fixed cases. The trial reward is the last step's
-(`final`). A tree that does not build scores 0; a verifier fault leaves no reward. Details and rationale:
+reward = D · G, where D is the mean over the 56 units of each unit's pass fraction on its changed cases, and
+G = max(0, 1 − 0.25·(1 − h_d) − 0.10·(1 − h_b)) with h_d the pass fraction of the held-fixed duals and h_b that of the
+broad held-fixed cases. A tree that does not build scores 0; a verifier fault leaves no reward. Details and rationale:
 [notes/DESIGN.md](notes/DESIGN.md#6-reward).
 
 ## Hackability assessment
@@ -66,9 +63,13 @@ Highest unresolved severity: 🟡 YELLOW / UNASSESSED (all boundaries).
 
 ```
 README.md            this file (never shipped)
-task.toml            draft: three steps, final reward (no step is implemented yet)
+task.toml            single step, 34,560 s, separate verifier checking RELEASE=15.2.0
+instruction.md       the request, every note from 14.3.1 to 15.2.0
+tests/               verifier skeleton: Dockerfile, test.sh, verify.py, driver/hbdrv.c
+                     (private/, inputs/ and wheels/ are staged by packaging and git-ignored)
+solution/            solve.sh applies the generated upstream patch (solution/private/, git-ignored)
+scripts/             development tooling, never shipped: fetch_inputs.sh, pipeline/
 notes/               design documents (never shipped)
-steps/<step>/        instruction.md (draft), tests/ and solution/ (empty until Phase B)
 .gitignore           private material, generated oracle patches, experiments
 ```
 
@@ -101,3 +102,23 @@ Private material (cases, seeds, gold outputs, private fonts, the duals catalogue
   lenses and the post-run checks.
 - Private store started (git-ignored `private/`, the duals catalogue) and backed up as a bundle in harbor-lh.
 - notes/PHASE-A-REPORT.md. Next: the owner's OK for the downloads and a Linux x86_64 build host, then the spike.
+
+### 2026-11-27
+
+- Phase B started (owner's approval of the Phase A download list, relayed by the coordinator): every pinned input
+  fetched into the durable cache by `scripts/fetch_inputs.sh`, 121 MB, with size and SHA-256 per file in the
+  cache's `MANIFEST.tsv` (the emoji test file moved to `/Public/18.0.0/emoji/`; the script has both URLs).
+- **Single step.** The owner parked multi-turn ("we dont have to promote multi-turn as well so make stuff
+  likewise"). The `steps/` layout and the per-step `task.toml` entries are gone; the flat layout has `instruction.md`
+  (every note from 14.3.1 to 15.2.0, cue-word sweep clean, ASCII only), `tests/` (the verifier skeleton, moved from
+  `common/verifier/`) and `solution/` at the task root, and `task.toml` checks `RELEASE=15.2.0` in one 34,560 s
+  session. Grading is the old step 3: all 56 units against 15.2.0 with the held-fixed duals gate. notes/STEPS.md
+  is kept as history, marked parked.
+- **Difficulty sizing.** The owner asked that the single session be "difficult enough"; target frontier at most
+  about 0.6. notes/DESIGN.md section 13 keeps the dual gate at full strength (weight never below 0.25), keeps the
+  AAT and `kern` families, drops no hard but fair note, and estimates frontier ≈ 0.48 (0.36-0.60) and mid-tier
+  ≈ 0.12-0.30, with how each yield-driven cut would move it.
+- Upstream's `CLAUDE.md` is a symlink to `AGENTS.md`, whose rules (narrow changes, preserve behaviour) fit the work
+  order: kept, without its `perf/: benchmarks` line. `CODE_OF_AI_CONDUCT.md` ("Do not fabricate benchmarks") and
+  `test/vector/README.md` ("golden files") join the prune list.
+
