@@ -154,7 +154,7 @@ reverts give 15.2.0's.
 
 `2cce559`, `47b8f47` (single step and the difficulty sizing), `d7deb05`, `47640c9`, `70c4f30`, `3f3fee7`, `c2cbbce`,
 `dbbb512`, `799dbf1`, `f4c36da`, `bb0268c`, `7a119c5`, `a513b51`, `ea0d1d0`, `54316b8`, `95ff140`, `1ecf4a7`,
-`f01de85`, `c8df2d9`, `257dac9`, `1fc8a1d`, and the commit holding this report.
+`f01de85`, `c8df2d9`, `257dac9`, `1fc8a1d`, `521a60d` (this report), and the commit adding this line.
 
 ## Next steps (Phase C)
 
