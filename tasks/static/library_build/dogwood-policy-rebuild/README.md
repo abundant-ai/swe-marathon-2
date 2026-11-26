@@ -14,12 +14,16 @@ and JSON output.
 the single-step fallback that plan kept: the 1.2.0 rebuild, graded by the same verifier and
 families. The two-step plan stays in `notes/` as history.
 
-**Status (2026-11-27, Phase B):**
-- The task image builds the release from pinned sources.
-- The verifier skeleton, the case generator and the oracle exist.
+**Status (2026-11-27, Phase B done, GO):**
+- The task image builds the release from pinned sources, and the grading image records gold from
+  the same build.
+- The grader, the first case set (3,758 cases, private) and the oracle exist. Locally the oracle
+  scores 1.0, the empty submission 0 and the M-dedup source 0.83.
 - See the development log and `notes/PHASE-B-REPORT.md` for what has been run.
 - No trial has run.
-- The guide shipped to the agent is not trimmed or scrubbed yet.
+- The guide is not in the working machine yet: its trim and scrub are the next work item.
+- V's near-miss pairs, wider K and F cases, the stub zoo and the coverage inventory are still to
+  do.
 
 The rest of this README and the `notes/` folder are author notes. Nothing here is shipped to the
 agent.
@@ -63,7 +67,9 @@ agent.
   generated cases.
 - **Determinism exceptions:** two outputs vary in the reference and are normalised: replay's rule
   list comes from a hash set, and human-mode fatal errors go to standard error.
-- **Pending:** the determinism recording (`notes/SPIKE-PLAN.md`).
+- **Measured in Phase B:** 3,758 cases × 3 runs plus a perturbed fourth all give one answer after
+  normalisation. The 25 cases whose bytes moved differ only in rule-list order; on multi-permit
+  bundles that order changes on every run.
 
 **Realism.**
 - **Who needs it:** teams that gate agents' tool calls with Dogwood. Upstream calls its interpreter
@@ -85,8 +91,10 @@ agent.
 **Initial feasibility.**
 - **Plausible path:** parse with pest from the guide's grammar, evaluate Cedar parts with the
   vendored `cedar-policy`, and replay with a relational, key-local monitor.
-- **Shown in Phase B:** the release builds statically and offline from its published lock, and
-  upstream's own source scores 1 through the grader.
+- **Shown in Phase B:** the release builds offline from its published lock (for the image's glibc
+  target; a static musl build fails Cedar evaluations at random) and reproduces every shipped
+  example. Upstream's own source, built by the grader as a submission, scores 1.0 on all 3,758
+  cases (an 83 s build, 101 s in all).
 
 ## Reward
 
@@ -122,18 +130,19 @@ restriction, preferring 2. A feature with zero cases blocks upload. The procedur
 
 ## Hackability assessment
 
-Nothing is built, so every boundary is unassessed.
+Assessed in Phase B on the local arm64 images; everything is re-checked on the platform's image
+before upload.
 
-| Boundary | Attack | Planned mitigation | Severity |
+| Boundary | Attack | Mitigation | Severity |
 | --- | --- | --- | --- |
-| The installed builds | Read, copy, trace, preload or dump the binary | musl-static, mode 2711, non-dumpable; multi-stage image with no source or cargo cache; protection probe as the agent user | 🟡 YELLOW / UNASSESSED |
-| Wrapper | Ship a submission that calls `dogwood` | The verifier image holds no build; integrity check on the submission | 🟡 YELLOW / UNASSESSED |
-| Stubs | Credit from help text, constant exit codes, all-DENY streams, `cat` as `format` | Stub zoo at every build; paired cases; baseline subtraction | 🟡 YELLOW / UNASSESSED |
-| Lookup tables | Hard-code the shipped examples' outputs | Hidden cases never equal or near-copy a shipped example (leak scan); paired duals | 🟡 YELLOW / UNASSESSED |
-| Verifier and reward | Tamper with grading files or the reward | Separate verifier image; submission runs as an unprivileged user in fresh directories | 🟡 YELLOW / UNASSESSED |
-| Build-time code | The submission's `build.rs` or proc macros run while the verifier builds it: read gold, write a reward, leave processes | Build as a dedicated unprivileged user with no network and no read access to gold or the grader; kill its process group after the build | 🟡 YELLOW / UNASSESSED |
+| The installed build | Read, copy, trace, preload or dump the binary | Mode 2711, `root:dogwood-run` (unreadable; setgid makes the loader ignore `LD_PRELOAD`; non-dumpable); multi-stage image with no source or cargo cache. Probe as `dev`: reading, copying, `dd`, `/proc/<pid>/{exe,mem,maps}` and `PTRACE_ATTACH` are refused; `LD_PRELOAD` is ignored while the same library runs in `/bin/true`; a `PTRACE_TRACEME` read of its memory fails with `EIO` while the same read of `/bin/true` works; no `dogwood-*` crate or source on disk | 🟢 GREEN (local probe) |
+| Wrapper | Ship a submission that calls `dogwood` | The grading image holds no build (checked: no file named `dogwood*`, no `dogwood-*` crate); the integrity check on the submission is not written yet | 🟡 YELLOW |
+| Stubs | Credit from help text, constant exit codes, all-DENY streams, `cat` as `format` | Paired cases; baseline subtraction; the stub zoo at every build. First estimate from the recorded results: B-dedup, B-scope, K, L and X give every stub 0, but a `validate` that always accepts passes 80% of V | 🟡 YELLOW (V needs near-miss pairs) |
+| Lookup tables | Hard-code the shipped examples' outputs | Hidden cases never equal or near-copy a shipped example (leak scan, not run yet); paired duals | 🟡 YELLOW / UNASSESSED |
+| Verifier and reward | Tamper with grading files or the reward | Separate grading image; `/tests` is root-only; the submission is built as `builder` and run as `nobody` in fresh directories | 🟡 YELLOW (no tamper probe yet) |
+| Build-time code | The submission's `build.rs` or proc macros run while the grader builds it: read gold, write a reward, leave processes | Build as `builder` with no network and no read access to gold or the grader; its process group is killed after the build | 🟡 YELLOW (no hostile `build.rs` probe yet) |
 
-Highest unresolved severity: 🟡 YELLOW / UNASSESSED (everything).
+Highest unresolved severity: 🟡 YELLOW.
 
 ## Development log
 
@@ -166,3 +175,36 @@ Phase A, design only. No downloads, builds, runs, Docker or Oddish.
 
   The mechanical sweep now finds no banned word in either brief.
 - **Next:** the spike in `notes/SPIKE-PLAN.md`, after the owner approves the download list.
+
+### 2026-11-27
+
+Phase B: downloads, the spike and the first build milestone, in local Docker (arm64). Details are
+in `notes/PHASE-B-REPORT.md`.
+- **Single step.** The owner set multi-turn aside, so the task became the 1.2.0 rebuild in one
+  34,560 s session, graded by what was step 2's verifier. The two-step plan is parked in `notes/`.
+- **Difficulty.** The owner asked for a single turn that is "difficult enough":
+  - K (key-local slicing) is a second counter-intuitive family at 0.15, with its own mutant;
+  - aggregation plus `validate` hold 0.40 of the weight;
+  - the estimate is frontier near 0.52 and mid-tier near 0.25.
+- **Downloads:** D1-D8 and D10 as approved, checksummed in the cache. D9 was not needed.
+- **The release build is glibc, not static musl.** Under musl, Cedar's stack check failed
+  evaluations at random (36 of 56 shipped replay streams wrong). The glibc build reproduces all 93
+  shipped bundles. The binary is mode 2711, as SPIKE-PLAN S2's fallback named.
+- **Determinism:** 3,758 cases × 3 runs plus a perturbed fourth give one answer each after
+  normalisation. Multi-permit rule lists change order on every run, so they compare as sets.
+- **Mutants:** M-dedup 0.83, M-scope 0.95, M-naive 0.78, M-global 0.85, each touching only its own
+  family. That holds once family tagging is checked by the mutants: the generator's own cases
+  never exercised the two rules, so B-dedup, B-scope and K are made of dual pairs.
+- **Stub estimate:** a `validate` that always accepts passes 80% of V, because most generated
+  bundles are valid. V needs its near-miss pairs before any QA pass.
+- **Milestone:** both images build. The first grading run scored even the oracle 0: the runner
+  copied root-only private files that `nobody` could not read. Fixed. After the fix the oracle
+  scores 1.0, the empty submission 0 and the M-dedup source 0.83.
+- **Protection probe as `dev`:** reading, copying, `/proc/<pid>/{exe,mem,maps}`, `PTRACE_ATTACH`
+  and a traced read of the build's memory are refused, and `LD_PRELOAD` is ignored. The grading
+  image holds no `dogwood` build.
+- **Resources:** 9 heavy jobs (37 minutes), peak memory 3.02 GB per container. Disk peaked at about
+  5.5 GB for half an hour (superseded build-cache records), and is 1.81 GB after cleanup by exact
+  name and ID.
+- **Next:** the docs trim and scrub into `/app/docs`, V near-miss pairs, wider K and F cases, the
+  coverage inventory, the stub zoo and the leak scan.
