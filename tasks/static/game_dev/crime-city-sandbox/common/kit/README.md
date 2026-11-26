@@ -99,6 +99,8 @@ A playtest is a JSON file (format `qa-play/1`) in `playtests/`. Every value in i
   - `files`: corrupt the save files written since a mark, as a failed disk write would;
   - `restart`: kill the game and start it again with the same save folder;
 - `expect`: what must hold, each with the rule it comes from (`rule`) and what it means (`says`);
+  one marked `"kind": "pre"` describes the situation the playtest sets up (when it does not hold,
+  the playtest's other expectations say little);
 - `shared`: values several expectations use, given once (a map of the streets around a
   junction, for example); an argument `{"$shared": name}` stands for one.
 

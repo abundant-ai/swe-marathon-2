@@ -482,26 +482,35 @@
    ]
   },
   {
-   "press": {
-    "lock_target": 1.0
-   }
+   "release": ["aim"]
   },
   {
-   "run": 3
+   "aim_at": {
+    "entity": {
+     "id": {
+      "$answer": [29, "id"]
+     }
+    },
+    "bone": "Chest",
+    "ticks": 30
+   }
   },
   {
    "mark": "wound_a"
   },
   {
-   "press": {
-    "attack": 1.0
+   "aim_at": {
+    "entity": {
+     "id": {
+      "$answer": [29, "id"]
+     }
+    },
+    "bone": "Chest",
+    "ticks": 45,
+    "hold": {
+     "attack": 1.0
+    }
    }
-  },
-  {
-   "run": 45
-  },
-  {
-   "release": ["attack", "lock_target", "aim"]
   },
   {
    "run": 30
@@ -535,34 +544,32 @@
    ]
   },
   {
-   "press": {
-    "aim": 1.0
+   "aim_at": {
+    "entity": {
+     "id": {
+      "$answer": [30, "id"]
+     }
+    },
+    "bone": "Chest",
+    "ticks": 30
    }
-  },
-  {
-   "run": 20
-  },
-  {
-   "press": {
-    "lock_target": 1.0
-   }
-  },
-  {
-   "run": 3
   },
   {
    "mark": "kill_a"
   },
   {
-   "press": {
-    "attack": 1.0
+   "aim_at": {
+    "entity": {
+     "id": {
+      "$answer": [30, "id"]
+     }
+    },
+    "bone": "Chest",
+    "ticks": 80,
+    "hold": {
+     "attack": 1.0
+    }
    }
-  },
-  {
-   "run": 80
-  },
-  {
-   "release": ["attack", "lock_target", "aim"]
   },
   {
    "run": 120
@@ -667,7 +674,7 @@
      "ids": [
       "player",
       {
-       "$answer": [88, "id"]
+       "$answer": [81, "id"]
       }
      ],
      "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
@@ -774,7 +781,7 @@
      "ids": [
       "player",
       {
-       "$answer": [104, "id"]
+       "$answer": [97, "id"]
       }
      ],
      "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
@@ -945,7 +952,7 @@
     "min_m": 10.0
    },
    "rule": "CB-9",
-   "says": "the attacker hit three times (25 health left) ends at least 10 m farther from the player within 10 s"
+   "says": "the attacker hit three times from cover (25 health left) ends at least 10 m farther from the player within 10 s of dropping below 30"
   },
   {
    "id": "kill_hits",
@@ -1010,7 +1017,7 @@
     "to": "wall_b",
     "targets": [
      {
-      "step": 88
+      "step": 81
      }
     ],
     "min_rounds": 3
@@ -1026,7 +1033,7 @@
     "to": "van_b",
     "targets": [
      {
-      "step": 104
+      "step": 97
      }
     ],
     "min_rounds": 3

@@ -196,7 +196,8 @@ Menus and the phone use Godot's `ui_up ui_down ui_left ui_right ui_accept ui_can
   camera's forward direction, preferring hostiles. While locked, the camera keeps the target (its
   `Chest` bone, measured as CM-1 measures the player's `Hips`) inside the middle 30% of the view
   and the player's aim point (`state.player.aim`, AC-12) is within 0.3 m of the target's `Chest`
-  bone. Distances are horizontal, from the player's position to the person's.
+  bone. Distances are horizontal, from the player's position to the person's. The lock holds
+  from 0.5 s after `lock_target` is pressed for as long as it is held and the target stands.
 
 ## 5. On foot
 
@@ -439,10 +440,11 @@ guns in the right hand (FT-11).
 - **CB-1** Weapons follow the table: damage per hit exactly (before armour), rate of fire within 5%
   when `attack` is held, magazine size exactly, reload time within 10%. Hits beyond the range do no
   damage. A weapon's range is the distance from the attacker's position to the position of the
-  person hit. The shotgun's round is eight pellets, and each pellet that hits is a hit of 10. The
-  rate counts rounds leaving the magazine (guns) or blows that land (melee weapons). A reload's
-  time runs from the tick `reload` is pressed, or the magazine runs empty, to the tick the state
-  report shows the magazine refilled.
+  person hit; a round or a blow that reaches a person beyond it is no hit (no damage and no
+  `damaged` event). The shotgun's round is eight pellets, and each pellet that hits is a hit of
+  10. The rate counts rounds leaving the magazine (guns) or blows that land (melee weapons). A
+  reload refills the magazine in one go: its time runs from the tick `reload` is pressed, or the
+  magazine runs empty, to the tick the state report shows the magazine refilled.
 - **CB-2** Ammo: firing takes rounds from the magazine; `reload` (or an empty magazine) refills it
   from the reserve; with nothing left `attack` does nothing. `state.player.ammo` shows magazine and
   reserve.
@@ -451,7 +453,8 @@ guns in the right hand (FT-11).
 - **CB-4** With lock-on, at 15 m, at least 60% of pistol and rifle shots and 45% of SMG rounds hit
   a standing person.
 - **CB-5** Armour absorbs 60% of each hit's damage until it runs out; health takes the rest. Where
-  60% of a hit is not a whole number it is rounded. Armour takes weapon hits only: falls and
+  60% of a hit is not a whole number it is rounded. With less armour left than that, the armour
+  takes what it has and health the rest of the hit. Armour takes weapon hits only: falls and
   explosions take health (FT-8, VH-6).
 - **CB-6** Shots need a clear line from the muzzle: nothing is hit through walls or vehicles' solid
   bodies.
@@ -459,8 +462,10 @@ guns in the right hand (FT-11).
 - **CB-8** In cover, the player takes at most 40% of the damage the same attackers deal in the open
   over the same time. From cover, holding `aim` leans out (the `Head` bone rises at least 0.30 m)
   and `attack` fires. "The same attackers over the same time" means the same people, from the same
-  start, firing over the same span of play: once with the player in the open beside the obstacle,
-  once with the player in cover behind it, with the attackers in front of the obstacle.
+  start, firing over the same span of play: once with the player standing a step behind the
+  obstacle (not in cover), once with the player in cover behind it, with the attackers in front of
+  the obstacle. The damage is the sum of the `amount`s of the `damaged` events those attackers
+  cause the player (AC-13), so cover cuts it by keeping hits off the player.
 - **CB-9** Crew members turn hostile (their `hostile` metadata, AC-5) when the player attacks any
   member of their crew, or aims a gun inside their turf for more than 5 s. Hostile enforcers attack
   from up to 40 m, and at least half of them reach cover (within 1.0 m of an obstacle 0.8-1.4 m
@@ -471,7 +476,8 @@ guns in the right hand (FT-11).
   turf for more than 5 s in one go, the members of that crew within 100 m turn hostile within
   2.0 s, not before, whatever behaviour they were given (chapter 17). A fight starts when the first
   member turns hostile. A hostile enforcer with the player within 40 m and in sight fires at the
-  player; reaching cover counts at any moment within the 10 s. A hostile lookout keeps `hostile`
+  player and lands at least one hit within 15 s; reaching cover counts at any moment within the
+  10 s. A hostile lookout keeps `hostile`
   true while it flees and ends at least 20 m farther from the player within 10 s of turning
   hostile; an enforcer below 30 health ends at least 10 m farther from the player within 10 s of
   dropping below it.
@@ -868,7 +874,7 @@ data: Dictionary)`. The commands set up situations for development and QA.
 | `time.set` | `hhmm` (a string such as `"21:30"`) | Set the clock |
 | `weather.set` | `kind` | Set the weather |
 | `player.spawn` | `lead`, `at`, `heading` | Spawn the player, or move the existing one; with `lead`, the player becomes that lead (its body, hair and colours, chapter 2) |
-| `player.give` | `weapon`, `ammo`, `money`, `outfit`, `health`, `armour` | Give or set: `weapon` and `outfit` become owned, `ammo` rounds go into the reserve of `weapon` (or of the gun in hand), `money` is added; `health` and `armour` are set (health 0 is death, CB-7) |
+| `player.give` | `weapon`, `ammo`, `money`, `outfit`, `health`, `armour` | Give or set: `weapon` and `outfit` become owned (a gun the player did not own comes with a full magazine; the weapon given is put in hand), `ammo` rounds go into the reserve of `weapon` (or of the gun in hand), `money` is added; `health` and `armour` are set (health 0 is death, CB-7) |
 | `vehicle.spawn` | `model`, `at`, `heading`, `driver` (`player`, an archetype or `none`), `damage`, `colour` | Spawn a vehicle; an archetype as `driver` sits in seat 0 with `wander`, so a driving archetype drives it in traffic at once. The city's own vehicles in its spot make way (TR-15 lets them leave at once) |
 | `npc.spawn` | `archetype`, `at`, `heading`, `behaviour` (`idle`, `wander`, `guard`, `hostile`, `reckless`), `seat` (`{"vehicle": id, "index": i}`) | Spawn a person |
 | `prop.spawn` | `kind` (`wall`, `crate`, `low_cover`, `ramp`, `barrier`, `tower`), `at`, `size` (`[x, y, z]`), `heading` | Spawn a solid object (static, layer 5) standing on `at`, the middle of its base; `size` is its width, height and depth, the depth along `heading` |
@@ -900,7 +906,8 @@ archetype), `reckless` drives that way, and `idle` holds the vehicle still.
   names (`Hips`, `Spine`, `Chest`, `Neck`, `Head`, `LeftUpperArm`, `LeftHand`, `LeftUpperLeg`,
   `LeftFoot`, `LeftToes` and the rest), skinned meshes bound to it, and a physics body on the people
   layer, plus metadata `weapon` (the weapon in hand, or `none`), `hostile` (true while they
-  attack or are about to attack the player), `limp` (true while the body is under ragdoll
+  attack or are about to attack the player; a crew member that has turned hostile keeps it, CB-9),
+  `limp` (true while the body is under ragdoll
   physics, FT-9), and `vehicle` and `seat` (the id of the vehicle they sit in and the seat's index
   while seated, FT-10, otherwise `null`; for the player, what `player.vehicle` and `player.seat`
   report). Nothing outside the registry has a `Skeleton3D`, a `CharacterBody3D` or a
@@ -940,7 +947,7 @@ archetype), `reckless` drives that way, and `idle` holds the vehicle still.
   (`id`, `lead`, `health`, `armour`, `money`, `alert`, `weapon`, `weapons`, `ammo`
   (`{"magazine", "reserve"}`), `aim` (the world point the player aims at while `aim` or a lock-on
   is held: the first thing the line of aim meets, a person, a vehicle or the world, at any
-  distance; otherwise `null`), `cover`,
+  distance; locked on, the point aimed at on the target, CM-5; otherwise `null`), `cover`,
   `vehicle`, `seat`, `limp`, `outfit`, `outfits`, `leads_unlocked`); `missions` (per id: `state`, `stage`);
   `garages` (per garage id: a list of `{"model", "colour", "damage"}`); `ui` (`phone`, `map`,
   `paused`, `menu`); `network` (`role`, `peers`, `id`). Values are read live when `state` is

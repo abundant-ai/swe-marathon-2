@@ -2,7 +2,7 @@
  "format": "qa-play/1",
  "name": "combat.weapons/range",
  "template": "combat.weapons",
- "about": "A firing range on the plaza and, for the long guns, down the north-south arterial, with traffic and people set to none. The player owns all six weapons and cycles through them, raises the pistol and the rifle, then uses each weapon on people standing in front (lock-on for the guns, 8-10 m away; within reach for the fists and the bat): what each hit takes, the rate, the magazine, the reload after it runs dry and a reload by hand, a gun with nothing left; then people just beyond each weapon's range, and for the pistol, the SMG and the rifle QA's bot aiming by the camera at people just inside and just beyond it.",
+ "about": "A firing range on the plaza and, for the long guns, down the north-south arterial, with traffic and people set to none. The player owns all six weapons and cycles through them, raises the pistol and the rifle, then uses each weapon on people standing in front (lock-on for the guns, 8-10 m away; within reach for the fists and the bat): what each hit takes, the rate, the magazine, the reload after it runs dry and a reload by hand, a gun with nothing left; then people just beyond each weapon's range, and for the pistol, the SMG and the rifle QA's bot aiming by the camera at people just inside and just beyond it. People shot at run from the gunshots (TR-13); lock-on follows them.",
  "rules": ["CB-1", "CB-2", "CB-3", "FT-11", "CB-7"],
  "role": "solo",
  "args": ["--role=solo", "--variation=21", "--save-dir={save_dir}"],
@@ -392,7 +392,7 @@
    }
   },
   {
-   "run": 2
+   "run": 30
   },
   {
    "mark": "pistol_fire_a"
@@ -537,7 +537,7 @@
    }
   },
   {
-   "run": 2
+   "run": 30
   },
   {
    "mark": "smg_fire_a"
@@ -628,7 +628,7 @@
    }
   },
   {
-   "run": 2
+   "run": 30
   },
   {
    "mark": "shotgun_fire_a"
@@ -695,7 +695,7 @@
    }
   },
   {
-   "run": 2
+   "run": 30
   },
   {
    "mark": "shotgun_far_a"
@@ -780,7 +780,7 @@
    }
   },
   {
-   "run": 2
+   "run": 30
   },
   {
    "mark": "rifle_fire_a"
@@ -1204,6 +1204,17 @@
    ]
   },
   {
+   "press": {
+    "reload": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["reload"]
+  },
+  {
    "run": 180
   },
   {
@@ -1279,6 +1290,17 @@
    ]
   },
   {
+   "press": {
+    "reload": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["reload"]
+  },
+  {
    "run": 180
   },
   {
@@ -1352,6 +1374,17 @@
      }
     ]
    ]
+  },
+  {
+   "press": {
+    "reload": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["reload"]
   },
   {
    "run": 180
@@ -1620,7 +1653,7 @@
     "ground_y": 0.15
    },
    "rule": "CB-7",
-   "says": "health 0 is death: the person shot dead has a died event and goes limp within 0.2 s of it, staying limp"
+   "says": "health 0 is death: the person shot dead has a died event and goes limp within 0.2 s (12 ticks) of it, staying limp at least 1.0 s, no bone more than 0.05 m under the ground"
   },
   {
    "id": "pistol_reload_hand",

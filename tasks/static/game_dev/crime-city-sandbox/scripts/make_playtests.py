@@ -2776,7 +2776,8 @@ def weapons_range() -> Playtest:
         "the bat): what each hit takes, the rate, the magazine, the reload after it runs dry and "
         "a reload by hand, a gun with nothing left; then people just beyond each weapon's "
         "range, and for the pistol, the SMG and the rifle QA's bot aiming by the camera at "
-        "people just inside and just beyond it.",
+        "people just inside and just beyond it. People shot at run from the gunshots (TR-13); "
+        "lock-on follows them.",
         ["--role=solo", "--variation=21", "--save-dir={save_dir}"],
         limits={"wall_s": 900, "cpu_s": 1800, "step_s": 120},
     )
@@ -2862,7 +2863,7 @@ def weapons_range() -> Playtest:
             f"the {gun}'s magazine holds {w['magazine']} (the table's size)",
         )  # fmt: skip
         p.step("press", {"lock_target": 1.0})
-        p.step("run", 2)
+        p.step("run", 30)
         p.mark(f"{gun}_fire_a")
         p.step("press", {"attack": 1.0})
         burst = round(60 / w["rate"]) * (w["magazine"] - 1) + 20
@@ -2913,7 +2914,8 @@ def weapons_range() -> Playtest:
                  "below_m": 0.05, "step_m": 1.0, "ground_y": PLAZA_Y},
                 "CB-7",
                 "health 0 is death: the person shot dead has a died event and goes limp within "
-                "0.2 s of it, staying limp",
+                "0.2 s (12 ticks) of it, staying limp at least 1.0 s, no bone more than 0.05 m "
+                "under the ground",
             )  # fmt: skip
             # a reload by hand, then everything fired: with nothing left attack does nothing
             tap(p, "attack", 45)
@@ -2944,7 +2946,7 @@ def weapons_range() -> Playtest:
             fight_watch(p, [ans(far)])
             p.step("run", 10)
             p.step("press", {"lock_target": 1.0})
-            p.step("run", 2)
+            p.step("run", 30)
             p.mark("shotgun_far_a")
             p.step("press", {"attack": 1.0})
             p.step("run", 110)
@@ -3032,7 +3034,7 @@ def weapons_range() -> Playtest:
     for gun, (s_in, s_out) in placed.items():
         (xi, di), (xo, do) = spots[gun]
         p.dev(("player.give", {"weapon": gun}))
-        p.step("run", 180)  # a gun left empty reloads by itself once in hand
+        tap(p, "reload", 180)
         p.step("aim_at", {"entity": {"id": ans(s_in)}, "bone": "Chest", "ticks": 90})
         p.mark(f"{gun}_in_a")
         p.step(
@@ -3088,8 +3090,8 @@ def lock_on() -> Playtest:
         "off: lock_target takes the nearer. A hostile person (unarmed) comes at the player from "
         "22 m: lock_target takes it over the nearer one, the camera keeps it in the middle of "
         "the view and the aim point on its Chest while it runs in, and the pistol stops it. "
-        "Then single rounds with lock-on at people standing 15 m away, one each: six from the "
-        "pistol, six from the rifle, six from the SMG.",
+        "Then single rounds with lock-on at people standing 15 m away, one each: ten from the "
+        "pistol, ten from the rifle, ten from the SMG. People near a gunshot run from it (TR-13).",
         ["--role=solo", "--variation=22", "--save-dir={save_dir}"],
         limits={"wall_s": 600, "cpu_s": 1200, "step_s": 120},
     )
@@ -3103,7 +3105,7 @@ def lock_on() -> Playtest:
     fight_watch(p, [ans(near), ans(farther)])
     p.step("run", 20)
     p.step("press", {"lock_target": 1.0})
-    p.step("run", 10)
+    p.step("run", 30)
     p.mark("near_a")
     p.step("run", 60)
     p.mark("near_b")
@@ -3114,16 +3116,16 @@ def lock_on() -> Playtest:
          "middle": 0.3, "aspect": ASPECT, "min_frames": 30},
         "CM-5",
         "lock_target takes the nearer of two people ahead (12.2 m, 9 degrees right; the other "
-        "18.4 m, 13 degrees left): its Chest bone stays in the middle 30% of the view and the "
-        "aim point within 0.3 m of it",
+        "18.4 m, 13 degrees left): from 0.5 s after the press its Chest bone stays in the middle "
+        "30% of the view and the aim point within 0.3 m of it",
     )  # fmt: skip
     hostile = p.dev(person("shopper", [-30.0, PLAZA_Y, -10.0], 180, "hostile"))
     fight_watch(p, [ans(near), ans(farther), ans(hostile)])
     p.step("run", 10)
     p.step("press", {"lock_target": 1.0})
-    p.step("run", 10)
+    p.step("run", 30)
     p.mark("hostile_a")
-    p.step("run", 50)
+    p.step("run", 40)
     p.mark("hostile_b")
     p.step("press", {"attack": 1.0})
     p.step("run", 90)
@@ -3135,8 +3137,8 @@ def lock_on() -> Playtest:
          "middle": 0.3, "aspect": ASPECT, "min_frames": 30},
         "CM-5",
         "with a hostile person coming in from 22 m (27 degrees right) and a nearer one standing, "
-        "lock_target takes the hostile one and keeps it in the middle 30% of the view, the aim "
-        "point within 0.3 m of its Chest, as it runs",
+        "lock_target takes the hostile one and, from 0.5 s after the press, keeps it in the middle "
+        "30% of the view, the aim point within 0.3 m of its Chest, as it runs",
     )  # fmt: skip
     p.expect(
         "hostile_stopped", "event_seen",
@@ -3147,8 +3149,8 @@ def lock_on() -> Playtest:
     for gun in ("pistol", "rifle", "smg"):
         p.dev(("player.give", {"weapon": gun, "ammo": 30}))
         bursts = []
-        for k in range(6):
-            heading = 60 * k
+        for k in range(10):
+            heading = (108 * k) % 360
             h = math.radians(heading)
             at = [
                 round(-35.0 + 15.0 * math.sin(h), 2),
@@ -3160,7 +3162,7 @@ def lock_on() -> Playtest:
             fight_watch(p, [ans(tgt)])
             p.step("run", 10)
             p.step("press", {"lock_target": 1.0})
-            p.step("run", 3)
+            p.step("run", 30)
             p.mark(f"{gun}_{k}_a")
             tap(p, "attack", 20)
             p.mark(f"{gun}_{k}_b")
@@ -3171,10 +3173,11 @@ def lock_on() -> Playtest:
         floor = 0.45 if gun == "smg" else 0.6
         p.expect(
             f"hit_rate_{gun}", "hit_rate",
-            {"bursts": bursts, "min_share": floor, "grace_s": 0.5, "min_rounds": 6},
+            {"bursts": bursts, "min_share": floor, "grace_s": 0.5, "min_rounds": 10},
             "CB-4",
-            f"with lock-on at 15 m, at least {floor:.0%} of {gun} rounds hit the standing person "
-            "they are fired at (one round at each of six)",
+            f"with lock-on at 15 m (from 0.5 s after the press), at least {floor:.0%} of {gun} "
+            "rounds hit the person standing still in clear view they are fired at (one round at "
+            "each of ten people)",
         )  # fmt: skip
     return p
 
@@ -3326,14 +3329,15 @@ def cover_firefight() -> Playtest:
         "in cover, holding aim leans out: the Head bone rises at least 0.30 m within 1.0 s, cover "
         "still true, and attack fires",
     )  # fmt: skip
-    # wound the nearer attacker below 30 health, then shoot the other dead
+    # wound one attacker below 30 health, then shoot the other dead: QA's bot aims at each
     p.dev(("player.give", {"health": 100, "armour": 100, "ammo": 24}))
-    p.step("press", {"lock_target": 1.0})
-    p.step("run", 3)
+    p.step("release", ["aim"])
+    p.step(
+        "aim_at", {"entity": {"id": ans(cover_att[0])}, "bone": "Chest", "ticks": 30}
+    )
     p.mark("wound_a")
-    p.step("press", {"attack": 1.0})
-    p.step("run", 45)
-    p.step("release", ["attack", "lock_target", "aim"])
+    p.step("aim_at", {"entity": {"id": ans(cover_att[0])}, "bone": "Chest", "ticks": 45,
+                      "hold": {"attack": 1.0}})  # fmt: skip
     p.step("run", 30)
     p.dev(("player.give", {"health": 100, "armour": 100}))
     p.step("run", 570)
@@ -3343,18 +3347,16 @@ def cover_firefight() -> Playtest:
         {"from": "wound_a", "to": "wound_b", "enforcers": [{"step": s} for s in cover_att],
          "below": 30, "within_s": 10.0, "min_m": 10.0},
         "CB-9",
-        "the attacker hit three times (25 health left) ends at least 10 m farther from the "
-        "player within 10 s",
+        "the attacker hit three times from cover (25 health left) ends at least 10 m farther "
+        "from the player within 10 s of dropping below 30",
     )  # fmt: skip
     p.dev(("player.give", {"health": 100, "armour": 100}))
-    p.step("press", {"aim": 1.0})
-    p.step("run", 20)
-    p.step("press", {"lock_target": 1.0})
-    p.step("run", 3)
+    p.step(
+        "aim_at", {"entity": {"id": ans(cover_att[1])}, "bone": "Chest", "ticks": 30}
+    )
     p.mark("kill_a")
-    p.step("press", {"attack": 1.0})
-    p.step("run", 80)
-    p.step("release", ["attack", "lock_target", "aim"])
+    p.step("aim_at", {"entity": {"id": ans(cover_att[1])}, "bone": "Chest", "ticks": 80,
+                      "hold": {"attack": 1.0}})  # fmt: skip
     p.step("run", 120)
     p.mark("kill_b")
     p.expect(
