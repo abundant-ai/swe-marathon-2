@@ -147,27 +147,34 @@ In all 56 graded units, by release window 8 (A, 14.3.1 to 15.0.0, 47a superseded
 
 ## 6. Reward
 
-One verifier run at the end of the session, over the 56 units I, against 15.2.0:
+One verifier run at the end of the session, over the graded units I, against 15.2.0:
 
-- p_k = passed_k / n_k for each unit k, with a fixed denominator: a crash, timeout or missing output fails its cases.
+- p_k = passed_k / n_k for each unit k, with a fixed denominator: a crash, timeout, missing output or a driver that
+  does not compile fails its cases.
 - D = mean of p_k over I (every unit counts the same; family scores are reported, not weighted).
-- h_d = pass fraction of the duals; h_b = pass fraction of the broad held-fixed cases.
-- G = max(0, 1 − w_d·(1 − h_d) − 0.10·(1 − h_b)), with w_d = 0.25 at least.
-- **reward = D · G.**
+- h_k = the pass fraction of unit k's duals; h_d = mean of h_k over the units that have duals (unit-equal, like D).
+- h_b = the pass fraction of the broad held-fixed cases.
+- **G = h_d · (1 − 0.10 · (1 − h_b))** and **reward = D · G**.
+
+**The gate is fully multiplicative (Phase C, 2026-11-27).** The Phase A gate, G = 1 − w_d(1 − h_d) − 0.10(1 − h_b)
+with w_d between 0.25 and 0.35, could take at most a third of the reward from a port that breaks every dual, and the
+Phase B prototype of the failure-sentence mutant W scored 0.960 with it. With h_d as a factor, a port that applies
+every note one condition too broadly keeps D ≈ 1 and loses exactly the share of neighbours it breaks; the duals are
+drawn evenly over each unit's boundaries (one stratum per negated condition, 30 per unit), so a unit whose widening
+breaks one of three boundaries keeps about two thirds of its neighbours. The broad set keeps its light weight: it
+guards against general damage, which also shows in D.
 
 A tree that does not build under the stated command scores 0, a candidate failure; a verifier fault (toolchain
-missing, gold unreadable, driver crash on the oracle) leaves no reward file. The held-fixed sets only ever
-multiply, so the unmodified base scores exactly 0: it fails every changed case by construction. The dual weight
-w_d is the B family's share. Per the owner's sizing (section 13) it stays at full strength: 0.25 is the floor,
-and the band check (QA gate item 12) may raise it, up to 0.35, so that mutant W lands in 0.60-0.85. It is never
-lowered.
+missing, private inputs unreadable, the reference tree not building in record mode) leaves no reward file. The
+held-fixed sets only ever multiply, so the unmodified base scores exactly 0: it fails every changed case by
+construction.
 
-`metrics.json`: per family and per unit the pass fraction and case count, per release tag the pass fraction,
-h_d, h_b, G, D, the build result and the build time.
+`metrics.json`: per unit the pass fraction and case count of its changed cases and of its duals, per family the pass
+fraction, h_d, h_b, G, D, the drivers that compiled and the build steps with their times.
 
 **Why every unit counts the same and not every family.** The requester asked for a list of changes, and "how
 much of the list works" is the plain measure. Family-equal weights would make one `gvar` fix worth as much as
-eleven script fixes. The cost: F8 (metrics and API, 19 units) carries 34% of D, and its units are the easiest.
+eleven script fixes. The cost: F8 (metrics and API) carries about a third of D, and its units are the easiest.
 That is why the expected profile below has F8 high, and why the failure mode sits in a gate rather than in D.
 
 ## 7. Stub filters
@@ -253,8 +260,8 @@ arm64 containers in local Docker Desktop, with emulated amd64 samples only where
 The owner asked that the single-session task be "difficult enough". Target: **frontier at most about 0.6**, with
 no full solve. The sizing keeps four levers:
 
-1. **The dual gate at full strength.** It is multiplicative, and w_d never drops below 0.25. An agent that implements
-   notes broadly loses up to a quarter of its reward. The band check may raise w_d toward 0.35, never lower it.
+1. **The dual gate at full strength.** h_d multiplies the reward directly (section 6): an agent that implements
+   notes broadly loses the share of neighbouring cases it breaks, with no cap.
 2. **The AAT and `kern` families stay in scope** (F4, 9 units; F5, 3 units), with cases on fonts we build, including
    `kerx` through our own writer. Agents must build such fonts to see these notes work at all.
 3. **No hard but fair note is dropped.** The 16 example-dependent notes are restated as precise rules rather than
@@ -276,14 +283,15 @@ the inventory's ratings.
 | F6 variations | 2 | 0.40 | 0.20 | `avar` and `gvar` edge cases need variable fonts of their own |
 | F7 Unicode 18 and tags | 3 | 0.60 | 0.35 | Table regeneration is mechanical but long; `fonupa` is easy |
 
-D (frontier) ≈ (19·0.70 + 12·0.50 + 5·0.50 + 3·0.45 + 9·0.30 + 3·0.20 + 2·0.40 + 3·0.60) / 56 ≈ **0.52**. With an
-expected dual failure of 10-30% and a few broad slips, G ≈ 0.92-0.97, so the frontier reward is **≈ 0.48, range
-0.36-0.60**. The mid-tier D is about 0.27; with G ≈ 0.88-0.95, the mid-tier reward is **≈ 0.12-0.30**, above the
-0.10 floor below which a task reads as broken.
+D (frontier) ≈ (19·0.70 + 12·0.50 + 5·0.50 + 3·0.45 + 9·0.30 + 3·0.20 + 2·0.40 + 3·0.60) / 56 ≈ **0.52**. Only
+the units an agent changes can break their own duals; an agent that implements half the notes, a fifth of them too
+broadly with one boundary in three crossed, keeps h_d ≈ 0.97. So G ≈ 0.90-0.97 and the frontier reward is **≈ 0.48,
+range 0.36-0.60**. The mid-tier D is about 0.27; with G ≈ 0.88-0.97, the mid-tier reward is **≈ 0.12-0.30**, above
+the 0.10 floor below which a task reads as broken.
 
 **Where the estimate could go above 0.6, and the answer.** F8 is a third of D and the easiest family. If frontier
 agents reach 0.9 on F8 and 0.7 on F1, D rises to about 0.62. The answers, in order:
-- raise w_d within the band check (an agent that broadens rules loses more);
+- more duals on the boundaries a broad port crosses most (within the even per-boundary draw);
 - widen each F8 unit's cases (more scales, fonts and edge values per unit, so half-right fixes earn half);
 - add no new obligations: the scope is the notes.
 

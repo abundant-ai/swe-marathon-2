@@ -42,10 +42,13 @@ three-step plan the panel chose in Phase A stays in notes/STEPS.md as history; i
 
 ## Reward formula
 
-reward = D · G, where D is the mean over the 56 units of each unit's pass fraction on its changed cases, and
-G = max(0, 1 − 0.25·(1 − h_d) − 0.10·(1 − h_b)) with h_d the pass fraction of the held-fixed duals and h_b that of the
-broad held-fixed cases. A tree that does not build scores 0; a verifier fault leaves no reward. Details and rationale:
-[notes/DESIGN.md](notes/DESIGN.md#6-reward).
+reward = D · G, where D is the mean over the graded units of each unit's pass fraction on its changed cases, and
+G = h_d · (1 − 0.10·(1 − h_b)). h_d is the mean over the units of the pass fraction of each unit's neighbouring cases
+(the duals: inputs one stated condition away from the note, drawn evenly over the unit's boundaries, on which every
+release behaves as 14.3.0 does); h_b is the pass fraction of the broad held-fixed cases. The dual gate is fully
+multiplicative: a port that applies every note one condition too broadly keeps D but loses the share of neighbours it
+breaks. A tree that does not build scores 0; a missing driver output fails its case; a verifier fault leaves no
+reward. Details and rationale: [notes/DESIGN.md](notes/DESIGN.md#6-reward).
 
 ## Hackability assessment
 
