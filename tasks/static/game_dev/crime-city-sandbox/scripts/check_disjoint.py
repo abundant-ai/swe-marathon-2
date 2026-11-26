@@ -25,6 +25,22 @@ instance REPEATS its playtest when any of these holds:
    count 1 per dev or query step and N per run step; with a wait_for between the reset and
    the mark the count is unknown and matches nothing.
 6. steps: the instance's steps are exactly the playtest's.
+7. models: the playtest spawns vehicles and the instance's vehicle.spawn commands name the
+   same models in the same order (the whole list of "model" values, one per command).
+   (A vehicle placed within 1.0 m of one of the playtest's is rule 2.)
+8. speeds: a speed the instance drives at lies within 0.5 km/h of one the playtest drives
+   at. The speeds a play drives at are the "kmh" of its cruise steps and the "min_kmh" of
+   its wait_for entity steps, except 60, 40 and 8 km/h: the design document fixes those for
+   its checks (VH-1's 0-60 km/h and braking from 60, IN-2's handbrake from 40, VH-1's
+   turning circle at 8), so every instance of a handling playtest uses them.
+9. stand-offs: the playtest stands the player beside a parked vehicle and the instance does
+   so on the same sides and at the same ends, in the same order. A player.spawn stands
+   beside a parked vehicle when its point lies within 4.0 m (horizontally) of the most
+   recent vehicle.spawn whose driver is "none" (or not given); its side is left or right of
+   that vehicle's centre line and its end ahead of or behind its centre, along the
+   vehicle's heading (the command's "heading", else its anchor's, else 0).
+10. damage: a vehicle.spawn of the instance has a "damage" within 0.005 of the "damage" of
+    a vehicle.spawn of the playtest (damages above 0 only).
 
 Instances whose name has no shipped playtest (release-only templates, such as the plan
 swap) are listed as such and not compared.
@@ -54,6 +70,11 @@ NEAR_M = 1.0
 SAME_HEIGHT_M = 0.01
 SAME_TICKS = 1
 DEFAULT_VARIATION = 1  # GDD chapter 17: --variation defaults to 1
+SAME_KMH = 0.5
+# VH-1's 0-60 km/h and braking from 60, IN-2's handbrake from 40, VH-1's circle at 8
+FIXED_KMH = (60.0, 40.0, 8.0)
+BESIDE_M = 4.0
+SAME_DAMAGE = 0.005
 
 
 def commands(play: dict) -> list[tuple[int, str, dict]]:
@@ -105,25 +126,114 @@ def variations(play: dict) -> set[int]:
     return out
 
 
+def spot(at: object, plan: Plan | None) -> tuple[float, float, float | None] | None:
+    """(x, z, the anchor's heading or None) of an "at" value: a point [x, y, z] as it is, an
+    anchor resolved against the plan; None for anything else ("player", malformed or
+    unresolvable anchors, or an anchor without a plan)."""
+    if (
+        isinstance(at, list)
+        and len(at) == 3
+        and all(isinstance(c, (int, float)) and not isinstance(c, bool) for c in at)
+    ):
+        return float(at[0]), float(at[2]), None
+    if isinstance(at, dict) and plan is not None:
+        try:
+            pl = plan.resolve(at)
+        except (AnchorError, KeyError, TypeError, ValueError, StopIteration):
+            return None
+        return pl.p[0], pl.p[2], pl.heading_deg
+    return None
+
+
 def places(play: dict, plan: Plan | None) -> list[tuple[float, float]]:
     """(x, z) of every point where a play puts something (rule 2)."""
     out = []
     for _, cmd, args in commands(play):
         if cmd not in PLACING or "at" not in args:
             continue
-        at = args["at"]
-        if (
-            isinstance(at, list)
-            and len(at) == 3
-            and all(isinstance(c, (int, float)) and not isinstance(c, bool) for c in at)
+        s = spot(args["at"], plan)
+        if s is not None:
+            out.append((s[0], s[1]))
+    return out
+
+
+def models(play: dict) -> list[str]:
+    """The model of every vehicle.spawn command, in order (rule 7)."""
+    return [
+        a["model"]
+        for _, c, a in commands(play)
+        if c == "vehicle.spawn" and isinstance(a.get("model"), str)
+    ]
+
+
+def speeds(play: dict) -> list[float]:
+    """The speeds a play drives at (rule 8): the kmh of its cruise steps and the min_kmh of
+    its wait_for entity steps, without FIXED_KMH."""
+    out = []
+    for step in play.get("steps", []):
+        if not isinstance(step, dict) or len(step) != 1:
+            continue
+        ((kind, arg),) = step.items()
+        v = None
+        if kind == "cruise" and isinstance(arg, dict):
+            v = arg.get("kmh")
+        elif (
+            kind == "wait_for"
+            and isinstance(arg, dict)
+            and isinstance(arg.get("entity"), dict)
         ):
-            out.append((float(at[0]), float(at[2])))
-        elif isinstance(at, dict) and plan is not None:
-            try:
-                p = plan.resolve(at).p
-            except (AnchorError, KeyError, TypeError, ValueError, StopIteration):
-                continue
-            out.append((p[0], p[2]))
+            v = arg["entity"].get("min_kmh")
+        if (
+            isinstance(v, (int, float))
+            and not isinstance(v, bool)
+            and float(v) not in FIXED_KMH
+        ):
+            out.append(float(v))
+    return out
+
+
+def stand_offs(play: dict, plan: Plan | None) -> list[tuple[str, str]]:
+    """(side, end) of every player.spawn standing beside a parked vehicle (rule 9)."""
+    out = []
+    parked = None  # (x, z, heading) of the most recent vehicle spawned without a driver
+    for _, cmd, args in commands(play):
+        if cmd not in ("vehicle.spawn", "player.spawn") or "at" not in args:
+            continue
+        s = spot(args["at"], plan)
+        if s is None:
+            continue
+        if cmd == "vehicle.spawn":
+            if args.get("driver", "none") == "none":
+                h = args.get("heading", s[2] if s[2] is not None else 0.0)
+                if isinstance(h, (int, float)) and not isinstance(h, bool):
+                    parked = (s[0], s[1], float(h))
+            continue
+        if parked is None:
+            continue
+        dx, dz = s[0] - parked[0], s[1] - parked[1]
+        if math.hypot(dx, dz) > BESIDE_M:
+            continue
+        h = math.radians(parked[2])
+        ahead = dx * math.sin(h) - dz * math.cos(h)
+        right = dx * math.cos(h) + dz * math.sin(h)
+        out.append(
+            ("right" if right > 0 else "left", "ahead" if ahead > 0 else "behind")
+        )
+    return out
+
+
+def damages(play: dict) -> list[float]:
+    """The damage of every vehicle.spawn that has one above 0 (rule 10)."""
+    out = []
+    for _, cmd, args in commands(play):
+        d = args.get("damage")
+        if (
+            cmd == "vehicle.spawn"
+            and isinstance(d, (int, float))
+            and not isinstance(d, bool)
+            and d > 0
+        ):
+            out.append(float(d))
     return out
 
 
@@ -193,7 +303,7 @@ def watches(play: dict) -> list[tuple[str, int | None]]:
 def repeats(
     inst: dict, test: dict, inst_plan: Plan | None, test_plan: Plan | None
 ) -> list[str]:
-    """Why an instance repeats its playtest (rules 1-6); empty when it does not.
+    """Why an instance repeats its playtest (rules 1-10); empty when it does not.
 
     Args:
         inst: The instance (a qa-play/1 object).
@@ -244,6 +354,22 @@ def repeats(
         break
     if inst.get("steps") == test.get("steps"):
         why.append("the same steps as the playtest")
+    if models(test) and models(inst) == models(test):
+        why.append("the same models in the same order")
+    theirs_kmh = speeds(test)
+    for v in speeds(inst):
+        near_kmh = [abs(v - w) for w in theirs_kmh]
+        if near_kmh and min(near_kmh) <= SAME_KMH:
+            why.append(f"a speed of {v:g} km/h, as the playtest drives")
+            break
+    sides = stand_offs(test, test_plan)
+    if sides and stand_offs(inst, inst_plan) == sides:
+        why.append("the player stands on the same sides and ends of the parked vehicle")
+    theirs_dmg = damages(test)
+    for d in damages(inst):
+        if any(abs(d - e) <= SAME_DAMAGE + 1e-9 for e in theirs_dmg):
+            why.append(f"a vehicle at damage {d:g}, as in the playtest")
+            break
     return why
 
 

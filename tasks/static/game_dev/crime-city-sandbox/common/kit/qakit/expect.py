@@ -23,6 +23,7 @@ import math
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
+from . import streets
 from .play import PlayRecord, RunRecord
 
 # AC-13: the fields each event carries (every event also carries "tick").
@@ -263,11 +264,27 @@ def entity_pos(frame: dict | None, kind: str) -> list[float] | None:
 
 
 def check_moved(rec: PlayRecord, args: dict) -> Result:
-    """An entity moved at least min_m between two marks that are `ticks` ticks apart."""
+    """An entity (the first of `kind`, or the one a command's answer named, "id_from":
+    {"step", "index"}) moved at least min_m between two marks that are `ticks` ticks apart."""
     run = rec.runs[int(args.get("run", 0))]
     fa, fb = frame_at_mark(run, args["from"]), frame_at_mark(run, args["to"])
     kind = args.get("kind", "player")
-    pa, pb = entity_pos(fa, kind), entity_pos(fb, kind)
+    if "id_from" in args:
+        eid = answer_id(run, args["id_from"])
+        ra, rb = census_row(fa, eid), census_row(fb, eid)
+        pa = (
+            [float(c) for c in ra["p"]]
+            if ra and isinstance(ra.get("p"), list)
+            else None
+        )
+        pb = (
+            [float(c) for c in rb["p"]]
+            if rb and isinstance(rb.get("p"), list)
+            else None
+        )
+        kind = f"entity {eid}"
+    else:
+        pa, pb = entity_pos(fa, kind), entity_pos(fb, kind)
     measured: dict = {
         "ticks": (fb or {}).get("t", 0) - (fa or {}).get("t", 0) if fa and fb else None
     }
@@ -3075,7 +3092,20 @@ CHECKS: dict[str, Callable[[PlayRecord, dict], Result]] = {
     "explosion": check_explosion,
     "blast": check_blast,
     "lean": check_lean,
+    **streets.CHECKS,
 }
+
+
+def shared(value: object, data: dict) -> object:
+    """Fill in {"$shared": name} inside expectation arguments from the play's "shared"
+    values (data several expectations use, given once)."""
+    if isinstance(value, dict):
+        if len(value) == 1 and "$shared" in value:
+            return data.get(value["$shared"])
+        return {k: shared(v, data) for k, v in value.items()}
+    if isinstance(value, list):
+        return [shared(v, data) for v in value]
+    return value
 
 
 def check_play(rec: PlayRecord) -> list[Outcome]:
@@ -3101,7 +3131,8 @@ def check_play(rec: PlayRecord) -> list[Outcome]:
             )
             continue
         try:
-            ok, measured, note = fn(rec, e.get("args") or {})
+            args = shared(e.get("args") or {}, rec.play.raw.get("shared") or {})
+            ok, measured, note = fn(rec, args)
         except (KeyError, TypeError, ValueError, IndexError) as exc:
             ok, measured, note = None, {}, f"could not be measured: {exc!r}"
         out.append(

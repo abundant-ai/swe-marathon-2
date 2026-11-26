@@ -48,14 +48,19 @@ A playtest is a JSON file (format `qa-play/1`) in `playtests/`. Every value in i
 - `steps`, in order:
   - `observe`: what each frame reports and how often: `census` (`true`, or `{"meta": [keys],
     "view": true}` to add those metadata values and whether each entity is in the camera's
-    view, with `"kinds": [kinds]` to list only the entities of those kinds), `bones`
+    view (the point 1 m above its position inside the camera's frustum), with `"kinds": [kinds]`
+    to list only the entities of those kinds, and `"shapes": [kinds]` to give the entities of
+    those kinds their collision shapes: for each `CollisionShape3D` that is a direct child of the
+    entity, the box of its shape in world space, as its centre and three half-axis vectors), `bones`
     (`{"ids": [entity ids, or "player"], "names": [bone names]}`: world positions), `seats`
     (`{"ids": [entity ids, or "vehicle"]}`: each vehicle's `Marker3D` nodes in group `seat`,
     in tree order, with their `index` and, in world space, the seat point and the `door` and
     `wheel` points, `null` where a seat has none), `camera` (`true`: position, back axis and
     `fov`), `hud` (a list of HUD group names), `state` (`true`: the state report) and `every`
     (ticks between frames, default 6); an id can also be `{"$answer": [step, key]}`, as in
-    `dev`;
+    `dev`, or `{"kind": k, "meta": {key: value}, "within_m": d, "max": n}`: the n entities of
+    that kind nearest the player within d metres whose census metadata has those values (so a
+    play can read the bones of the drivers around the player);
   - `dev`: DevConsole commands, run at the start of the next tick, so their effect shows in that
     tick (AC-3); an argument `{"$answer": [step, key]}` takes that field of an earlier step's
     answer (an id the game handed out, for example);
@@ -86,7 +91,9 @@ A playtest is a JSON file (format `qa-play/1`) in `playtests/`. Every value in i
     for example); it lets go of them at the end unless `keep` is true;
   - `files`: corrupt the save files written since a mark, as a failed disk write would;
   - `restart`: kill the game and start it again with the same save folder;
-- `expect`: what must hold, each with the rule it comes from (`rule`) and what it means (`says`).
+- `expect`: what must hold, each with the rule it comes from (`rule`) and what it means (`says`);
+- `shared`: values several expectations use, given once (a map of the streets around a
+  junction, for example); an argument `{"$shared": name}` stands for one.
 
 The checks an expectation can use:
 
@@ -145,9 +152,36 @@ The checks an expectation can use:
 | `blast` | when the vehicle explodes, the entity `of` (the player by default) at distance d from it: with `what` `harm`, a person loses all its health within 3 m and `100 * (6 - d) / 3` from 3 to 6 m (within `tol`), read from the state report for the player and from its `died` event for anyone else within 3 m; with `what` `push`, a vehicle within 8 m ends at least `push_m` further away a second later and, within 6 m, its damage has risen by 0.30 |
 | `lean` | on the samples where the vehicle corners at `min_lat` m/s^2 or more (its speed times its turn rate, from its positions), its up axis tilts at least `min_deg` degrees on at least `share` of them |
 | `get_up` | a person still alive is back on its feet within `within_s` of going limp: `limp` false and the `Hips` at least `ratio` of their standing height (at the first mark) above `ground_y`; a person that died (its `died` event) is not expected to get up |
+| `drivers` | every vehicle moving faster than `min_kmh` and carrying no player has a person of one of the `archetypes` whose `vehicle` metadata names it and whose `seat` is 0; where the frame has that person's `Hips` and the vehicle's seats, the hips are within `hips_m` of seat 0's point; no two people name one seat |
+| `density` | once a second, the moving NPC vehicles (faster than 1 km/h) and the NPC people on foot (alive, `vehicle` null) within `within_m` of the player are counted; each full minute's median lies within `vehicles` and `people` |
+| `red_entries` | no NPC vehicle's position passes a listed stop line (`approaches`: its line, the direction towards the junction) once the approach's light has been red for `grace_s` (plus a frame); none passes at amber, or in red's first `grace_s`, when at amber's first frame it could have stopped braking at `amber_mps2` or less (with 10% to spare) |
+| `green_flow` | at least `min_vehicles` NPC vehicles pass each listed stop line towards its junction |
+| `lane_keeping` | on the listed lanes (`lanes`, or those of `area`), NPC vehicles' offsets from the lane centre are at most `max_offset_m` at the 95th percentile; past each lane's first `skip_start_m` (where turns out of a junction end), their forward axis is within `max_heading_deg` of the lane's on at least `min_share` of moving samples and none moves more than 90 degrees off its lane's direction |
+| `lane_speeds` | on the listed lanes, NPC vehicles' speed over every `window` ticks stays at or under the lane's `limit_kmh` times `share` |
+| `walkable` | at least `min_share` of the samples of NPC people on foot in `area` stand on walkable ground: a crosswalk band, a block outside every building's footprint, a room of an interior, or ground off the road network |
+| `crosswalk_use` | of the road crossings of NPC people on foot in `area` (on a carriageway or junction box between samples off it), at least `min_share` start and end on a crosswalk band; one that starts on a band with walk signals starts while it shows walk (that frame or the one before); one that starts at an all-way stop starts with no NPC vehicle approaching the band (moving faster than 1 km/h with its line of travel, `gap_m` long from its position, entering the band) |
+| `crosswalk_hits` | no NPC vehicle's collision boxes come within `clear_m` of a person standing on a crosswalk band of `area`, and nobody goes limp on one |
+| `vehicle_contacts` | NPC vehicles' collision boxes start touching (within `touch_m`) at most `max_rate` times per vehicle per minute of moving NPC vehicles; a contact counts once for each of the two, and the same two again only after `apart_s` apart |
+| `stop_short` | no NPC vehicle's collision boxes come within `touch_m` of a listed prop's box (`props`) or a listed vehicle's boxes (`vehicles`), or within `person_m` of a listed person (`people`); each listed driving vehicle (`drivers`) stands still (1 km/h or less) within `stop_within_m` of them |
+| `horn_clear` | the listed people standing in `lane` within `ahead_m` ahead of `vehicle` at the first mark (where `horn` is pressed) are out of the lane's band within `within_s` |
+| `sidewalk_dodge` | while `vehicle` drives on a sidewalk (on a listed block) at `min_kmh` or more, the people on foot standing in its path anywhere up to `ahead_m` ahead of it step out of it before it reaches them: its collision boxes never come within `clear_m` of them and none goes limp |
+| `no_pop_in` | NPC people and vehicles that join the census are at least `near_m` from the player (less what they could have covered since the frame before) and, nearer than `view_m`, outside the camera's view; those that leave are held to the same in the last frame that shows them; frames made by DevConsole steps are let off, and so are the frames up to `settle_s` after a world.reset or a load |
+| `stop_full` | at an all-way stop (`approaches`, `box`), every NPC vehicle that crosses a stop line first stood (1 km/h or less) within `zone_m` before it |
+| `stop_order` | of two NPC vehicles on different approaches whose paths through the box cross: arrivals `late_s` or more apart go in order of arrival; when exactly two arrived within `tie_s` of each other (no third within `tie_s` of either), the one on the right (`right_of`) goes first; other pairs, and three or four arriving together, may go in any order. A vehicle arrives when it first stands within `zone_m` before its line with no vehicle ahead of it there, and goes when it crosses the line |
+| `box_clear` | no two NPC vehicles on crossing paths through the box (from where each entered it to where it left, or leaving by the same lane) are in the box at once |
+| `stop_wait` | no NPC vehicle waits more than `max_s` from its arrival to crossing its stop line |
 
 A box is a solid placed with `prop.spawn`: `{"p": the middle of its base, "size": [width,
-height, depth], "heading": degrees}`, its depth along the heading (chapter 17). A program is a
+height, depth], "heading": degrees}`, its depth along the heading (chapter 17). An `area` is a
+map of the streets around a place, worked out from the plan: its lanes (`id`, centre line `pts`
+from the start box to the stop line, `width`, `limit_kmh`), its carriageways and junction boxes
+(`roads`), its crosswalk bands (`crosswalks`: `id`, `intersection`, `control`, `walk_signals`,
+`poly`), `blocks`, building footprints (`buildings`) and interior `rooms`, every polygon a list of
+`[x, z]` corners. An approach's stop line is `{"intersection", "approach", "line": [[x, z], [x,
+z]], "toward": [dx, dz]}`, the line across the lanes that arrive and the direction of travel
+towards the junction. QA reads speeds from positions, counts people and vehicles with the
+`vehicle` and `seat` metadata (AC-5), and takes each collision shape as the box the shape's own
+mesh fills (exact for a box shape, a little larger for rounded ones). A program is a
 junction's plan program in ticks: `{"offset", "cycle", "phases": [{"start", "green_end",
 "amber_end", "green", "walk"}]}`, phases in order from program time 0.
 

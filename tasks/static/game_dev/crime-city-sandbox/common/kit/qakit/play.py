@@ -36,7 +36,9 @@ Steps (one key each, run in order):
                              space), "camera", "hud" ([group names]), "state", "every"
                              (ticks between frames, default 6); an id can be a role
                              such as "player" or "vehicle" (the first entity of that
-                             kind)
+                             kind), or {"kind": k, "meta": {key: value}, "within_m": d,
+                             "max": n}: the n entities of that kind nearest the player
+                             within d metres whose census metadata has those values
   {"dev": [[cmd, args], ...]} DevConsole commands, run at the next tick (1 tick)
   {"press": {action: s}}     hold actions at strength s from the next tick on
   {"release": [action, ...]} release held actions at the next tick
@@ -488,13 +490,44 @@ def limits_of(play: Play) -> Limits:
     )
 
 
+MAX_SELECTED = (
+    64  # the telemetry node reads bones and seats of at most 64 entities a frame
+)
+
+
+def selected(frame: dict | None, sel: dict) -> list:
+    """Ids a selector picks from a frame's census, nearest the player first: entities of
+    kind sel["kind"] within sel["within_m"] metres of the player (horizontally) whose census
+    metadata has every value of sel["meta"], at most sel["max"] of them."""
+    census = (frame or {}).get("census") or []
+    me = next((e for e in census if e.get("k") == "player"), None)
+    if me is None or not isinstance(me.get("p"), list):
+        return []
+    px, pz = float(me["p"][0]), float(me["p"][2])
+    want = sel.get("meta") or {}
+    within = float(sel.get("within_m", 1e9))
+    picks = []
+    for e in census:
+        p = e.get("p")
+        if e.get("k") != sel.get("kind") or not isinstance(p, list):
+            continue
+        if any((e.get("m") or {}).get(k) != v for k, v in want.items()):
+            continue
+        d = math.hypot(float(p[0]) - px, float(p[2]) - pz)
+        if d <= within and isinstance(e.get("id"), int):
+            picks.append((d, e["id"]))
+    picks.sort()
+    return [i for _d, i in picks[: int(sel.get("max", MAX_SELECTED))]]
+
+
 def resolve_observe(obs: dict, frame: dict | None) -> dict:
-    """Replace entity roles in observation settings with entity ids.
+    """Replace entity roles and selectors in observation settings with entity ids.
 
     Bone and seat observations may name an entity by role ("player", "vehicle": the
-    first entity of that kind in the latest census) instead of by id, so a play need not
-    know ids in advance. A role with no matching entity yet is left out, and so is any
-    other id that is not a number (such as an answer that never came).
+    first entity of that kind in the latest census) or by a selector (see `selected`)
+    instead of by id, so a play need not know ids in advance. A role with no matching
+    entity yet is left out, and so is any other id that is not a number (such as an
+    answer that never came).
 
     Args:
         obs: Observation settings as written in the play, answers filled in.
@@ -518,9 +551,11 @@ def resolve_observe(obs: dict, frame: dict | None) -> dict:
             if isinstance(x, str):
                 if x in by_kind:
                     ids.append(by_kind[x])
+            elif isinstance(x, dict) and "kind" in x:
+                ids.extend(i for i in selected(frame, x) if i not in ids)
             elif isinstance(x, (int, float)) and not isinstance(x, bool):
                 ids.append(x)
-        out[part] = dict(sub, ids=ids)
+        out[part] = dict(sub, ids=ids[:MAX_SELECTED])
     return out
 
 

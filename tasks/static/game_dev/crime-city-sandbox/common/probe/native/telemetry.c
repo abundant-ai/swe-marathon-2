@@ -98,6 +98,7 @@ enum {
 	T_ARRAY = GDEXTENSION_VARIANT_TYPE_ARRAY,
 	T_PACKED_FIRST = GDEXTENSION_VARIANT_TYPE_PACKED_BYTE_ARRAY,
 	T_PACKED_LAST = GDEXTENSION_VARIANT_TYPE_PACKED_VECTOR4_ARRAY,
+	T_AABB = GDEXTENSION_VARIANT_TYPE_AABB,
 	T_MAX = GDEXTENSION_VARIANT_TYPE_VARIANT_MAX,
 };
 
@@ -158,13 +159,14 @@ static SN sn_get_skeleton_path, sn_get_mesh, sn_surface_count, sn_surface_arrays
 static SN sn_get_version_info, sn_get_setting, sn_get_ticks, sn_get_jitter, sn_get_max_steps;
 static SN sn_render_method, sn_display_name, sn_cpu_count, sn_get_env, sn_is_instance_valid;
 static SN sn_is_connected, sn_disconnect, sn_seat, sn_m_index, sn_m_door, sn_m_wheel;
-static SN sn_collision_object, sn_get_class;
+static SN sn_collision_object, sn_get_class, sn_collision_shape, sn_get_debug_mesh, sn_get_aabb;
 
 static Var k_run, k_inputs, k_dev, k_observe, k_queries, k_quit, k_n, k_census, k_meta, k_view;
 static Var k_bones, k_ids, k_names, k_camera, k_hud, k_state, k_every, k_id, k_type, k_from;
 static Var k_to, k_mask, k_points, k_y0, k_y1, k_a, k_b, k_a_up, k_b_up, k_entity, k_keys;
 static Var k_position, k_collider, k_string, k_ok, k_event, k_text, k_star, k_empty;
 static Var k_skeleton_updated, k_seats, k_mass, k_collision_layer, k_collision_mask, k_kinds;
+static Var k_shapes, k_shape, k_disabled;
 
 // ------------------------------------------------------------------ state
 typedef struct {
@@ -180,6 +182,9 @@ typedef struct {
 	char *meta_txt[MAX_KEYS];
 	SN kinds[MAX_KEYS];         // census_kinds: only entities of these kinds are listed
 	char *kind_txt[MAX_KEYS];
+	int n_shape_kinds;          // entities of these kinds list their collision shapes
+	SN shape_kinds[MAX_KEYS];
+	char *shape_kind_txt[MAX_KEYS];
 	int64_t bone_ids[MAX_BONE_IDS];
 	int64_t seat_ids[MAX_SEAT_IDS];
 	GS bone_gs[MAX_BONE_NAMES];
@@ -1074,6 +1079,58 @@ static void follow_queried(void) {
 }
 
 // ------------------------------------------------------------------ observations
+static int kind_in(Obj o, char *const *txt, int n);
+
+// The entity's own collision shapes: each CollisionShape3D that is a direct child of it and not
+// disabled, as an oriented box in world space: [centre x, y, z, then the box's three half-axis
+// vectors (its x, y and z axes, each times half its size)], 12 numbers. The box is the bounding
+// box of the shape's own mesh (exact for a box shape), placed by the shape node's transform.
+static void write_shapes(jbuf *b, Obj o) {
+	jb_lit(b, ",\"sh\":[");
+	GA shapes = find_children(o, "CollisionShape3D");
+	int64_t n = garr_size(&shapes);
+	int first = 1;
+	for (int64_t i = 0; i < n && !b->over; i++) {
+		Obj s = garr_obj(&shapes, i);
+		if (!s) continue;
+		Obj parent = NULL;
+		f_ptrcall(mb_get_parent, s, NULL, &parent);
+		if (parent != o) continue;
+		Var dis, shape, mesh, box;
+		ocall(s, &sn_get, &k_disabled, NULL, NULL, &dis);
+		int off = as_num(&dis, 0) != 0;
+		v_free(&dis);
+		if (off) continue;
+		ocall(s, &sn_get, &k_shape, NULL, NULL, &shape);
+		if (!as_obj(&shape)) {
+			v_free(&shape);
+			continue;
+		}
+		v_nil(&mesh);
+		v_nil(&box);
+		vcall(&shape, &sn_get_debug_mesh, NULL, 0, &mesh);
+		if (as_obj(&mesh)) vcall(&mesh, &sn_get_aabb, NULL, 0, &box);
+		if (v_type(&box) == T_AABB) {
+			float ab[6];
+			vto[T_AABB](ab, (GDExtensionVariantPtr)&box);
+			Xf x = global_xf(s);
+			float c[3] = {ab[0] + ab[3] * 0.5f, ab[1] + ab[4] * 0.5f, ab[2] + ab[5] * 0.5f};
+			V3 w = xf_apply(&x, c);
+			float out[12] = {w.x, w.y, w.z};
+			for (int k = 0; k < 3; k++)
+				for (int r = 0; r < 3; r++) out[3 + k * 3 + r] = x.r[r][k] * ab[3 + k] * 0.5f;
+			if (!first) jb_raw(b, ",", 1);
+			first = 0;
+			jw_floats(b, out, 12);
+		}
+		v_free(&box);
+		v_free(&mesh);
+		v_free(&shape);
+	}
+	dtor_array(&shapes);
+	jb_lit(b, "]");
+}
+
 static void write_entity(jbuf *b, Obj o, Obj camera) {
 	jb_lit(b, "{\"id\":");
 	Var m = meta(o, &sn_m_id);
@@ -1136,6 +1193,8 @@ static void write_entity(jbuf *b, Obj o, Obj camera) {
 		}
 		jb_lit(b, "}");
 	}
+	if (g_obs.n_shape_kinds > 0 && kind_in(o, g_obs.shape_kind_txt, g_obs.n_shape_kinds))
+		write_shapes(b, o);
 	jb_lit(b, "}");
 }
 
@@ -1147,17 +1206,20 @@ static Obj current_camera(void) {
 	return cam;
 }
 
-// Whether entity o's "kind" metadata is one of the kinds the census lists.
-static int kind_listed(Obj o) {
-	if (!has_meta(o, &sn_m_kind)) return 0;
+// Whether entity o's "kind" metadata is one of the n kinds named in txt.
+static int kind_in(Obj o, char *const *txt, int n) {
+	if (n <= 0 || !has_meta(o, &sn_m_kind)) return 0;
 	Var m = meta(o, &sn_m_kind);
 	char *t = as_text(&m, NULL);
 	int found = 0;
-	for (int i = 0; t && i < g_obs.n_kinds && !found; i++) found = !strcmp(t, g_obs.kind_txt[i]);
+	for (int i = 0; t && i < n && !found; i++) found = !strcmp(t, txt[i]);
 	free(t);
 	v_free(&m);
 	return found;
 }
+
+// Whether entity o's "kind" metadata is one of the kinds the census lists.
+static int kind_listed(Obj o) { return kind_in(o, g_obs.kind_txt, g_obs.n_kinds); }
 
 static void write_census(jbuf *b) {
 	Obj cam = g_obs.view ? current_camera() : NULL;
@@ -1970,6 +2032,10 @@ static void free_observe(void) {
 		dtor_sname(&g_obs.kinds[i]);
 		free(g_obs.kind_txt[i]);
 	}
+	for (int i = 0; i < g_obs.n_shape_kinds; i++) {
+		dtor_sname(&g_obs.shape_kinds[i]);
+		free(g_obs.shape_kind_txt[i]);
+	}
 	for (int i = 0; i < g_obs.n_bone_names; i++) {
 		dtor_string(&g_obs.bone_gs[i]);
 		free(g_obs.bone_txt[i]);
@@ -2017,6 +2083,8 @@ static void set_observe(const Var *o) {
 			g_obs.census_kinds = dget(&c, &k_kinds, &kinds) && v_type(&kinds) == T_ARRAY;
 			v_free(&kinds);
 			g_obs.n_kinds = names_into(&c, &k_kinds, g_obs.kinds, g_obs.kind_txt, MAX_KEYS);
+			g_obs.n_shape_kinds =
+				names_into(&c, &k_shapes, g_obs.shape_kinds, g_obs.shape_kind_txt, MAX_KEYS);
 		}
 	}
 	v_free(&c);
@@ -2408,6 +2476,9 @@ static void make_names(void) {
 	sn_static(&sn_m_door, "door");
 	sn_static(&sn_m_wheel, "wheel");
 	sn_static(&sn_collision_object, "CollisionObject3D");
+	sn_static(&sn_collision_shape, "CollisionShape3D");
+	sn_static(&sn_get_debug_mesh, "get_debug_mesh");
+	sn_static(&sn_get_aabb, "get_aabb");
 	sn_static(&sn_get_class, "get_class");
 	static const struct {
 		Var *v;
@@ -2424,7 +2495,8 @@ static void make_names(void) {
 		{&k_collider, "collider"}, {&k_string, "string"}, {&k_ok, "ok"}, {&k_event, "event"},
 		{&k_text, "text"}, {&k_star, "*"}, {&k_empty, ""}, {&k_skeleton_updated, "skeleton_updated"},
 		{&k_seats, "seats"}, {&k_mass, "mass"}, {&k_collision_layer, "collision_layer"},
-		{&k_collision_mask, "collision_mask"}, {&k_kinds, "kinds"},
+		{&k_collision_mask, "collision_mask"}, {&k_kinds, "kinds"}, {&k_shapes, "shapes"},
+		{&k_shape, "shape"}, {&k_disabled, "disabled"},
 	};
 	for (size_t i = 0; i < sizeof keys / sizeof keys[0]; i++) v_text(keys[i].v, keys[i].text);
 	v_nil(&g_pending_queries);
