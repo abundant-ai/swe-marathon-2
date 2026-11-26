@@ -2522,7 +2522,9 @@ def panic_horn() -> Playtest:
         "towards two people standing on it, 40 m and 52 m ahead: each steps out of its path "
         "before it comes, and the car never touches them. Then the player waits in an arterial "
         "lane with a person standing in it 15 m ahead and sounds the horn: the person is out "
-        "of the lane within 3 s.",
+        "of the lane within 3 s. Last, standing on the plaza block's south sidewalk with people "
+        "along it 6-24 m either side, the player fires a pistol round towards the street: they "
+        "run.",
         ["--role=solo", "--variation=17", "--save-dir={save_dir}"],
         limits={"step_s": 60},
     )
@@ -2610,6 +2612,38 @@ def panic_horn() -> Playtest:
          "horizontal": True},
         "TR-13", "the sedan drives along the sidewalk (at least 30 m)", "pre",
     )  # fmt: skip
+    # a gunshot: the player stands on the plaza block's south sidewalk and fires one round
+    # towards the street; people stand along the sidewalk 6-24 m either side
+    mid = 269.0  # sw_33, s at x = 0 on its south side
+    p.dev(("player.spawn", {"at": {"sidewalk": walk, "s": mid}, "heading": 180}))
+    p.dev(("player.give", {"weapon": "pistol", "ammo": 12}))
+    near = []
+    for k, (d, arch) in enumerate(
+        [(6.0, "office_worker"), (-9.0, "shopper"), (14.0, "tourist"), (-17.0, "office_worker"),
+         (21.0, "shopper"), (-24.0, "tourist")]
+    ):  # fmt: skip
+        near.append(p.dev(("npc.spawn", {"archetype": arch, "at": {"sidewalk": walk, "s": mid + d},
+                                         "behaviour": "idle" if k % 2 == 0 else "wander"})))  # fmt: skip
+    p.step("observe", {"census": {"meta": STREET_META, "kinds": ["player", "npc"]}, "state": True,
+                       "every": 3})  # fmt: skip
+    p.step("run", 30)
+    p.mark("shot_a")
+    p.step("press", {"attack": 1.0})
+    p.step("run", 1)
+    p.step("release", ["attack"])
+    p.step("run", 780)
+    p.mark("shot_b")
+    p.expect(
+        "flee", "gunshot_flee",
+        {"from": "shot_a", "to": "shot_b", "people": [{"step": s} for s in near], "near_m": 28.0,
+         "start_s": 2.0, "end_s": 12.0, "min_mps": 3.0, "min_gain_m": 20.0, "min_share": 0.9,
+         "min_people": 4},
+        "TR-13",
+        "the player fires one pistol round towards the street: from 2 s to 12 s after it, each "
+        "person standing or walking on the sidewalk 6-24 m away runs at least 3 m/s on average, "
+        "ends at least 20 m farther from where the player stood and gets farther over at least "
+        "90% of the half seconds",
+    )  # fmt: skip
     return p
 
 
@@ -2676,12 +2710,842 @@ def replay_car_ragdoll() -> Playtest:
     return p
 
 
+# Chapter 8: combat. Every number comes from the weapon table and CB-1 to CB-9, FT-11, FT-12 and
+# CM-5 (with chapter 17's clarifications of `damaged` and `aim`). Traffic and people are set to
+# none so only the people a play puts down are about.
+WEAPON_TABLE = {
+    "fists": {"damage": 10, "rate": 2.0, "range": 1.5},
+    "bat": {"damage": 25, "rate": 1.25, "range": 1.8},
+    "pistol": {"damage": 25, "rate": 3.0, "magazine": 12, "reload_s": 1.6, "range": 50.0},
+    "smg": {"damage": 14, "rate": 12.0, "magazine": 30, "reload_s": 2.2, "range": 40.0},
+    "shotgun": {"damage": 10, "rate": 1.2, "magazine": 6, "reload_s": 3.0, "range": 20.0},
+    "rifle": {"damage": 32, "rate": 6.0, "magazine": 30, "reload_s": 2.6, "range": 120.0},
+}  # fmt: skip
+ARM_BONES = ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
+FIGHT_META = ["hostile", "limp", "vehicle", "weapon"]
+FIGHT_KINDS = ["player", "npc", "prop", "vehicle"]
+PLAZA_Y = 0.15  # the plaza's surface (p_16, base_m)
+
+
+def fight_watch(p: Playtest, ids: list) -> None:
+    """Observe every tick: the census of people, props and vehicles with their fight metadata,
+    the state report, the camera and the bones of the player and the listed people."""
+    p.step(
+        "observe",
+        {
+            "census": {"meta": FIGHT_META, "kinds": FIGHT_KINDS},
+            "state": True,
+            "camera": True,
+            "every": 1,
+            "bones": {"ids": ["player", *ids], "names": ARM_BONES},
+        },
+    )
+
+
+def person(
+    arch: str, at: list[float], heading: float, behaviour: str
+) -> tuple[str, dict]:
+    return (
+        "npc.spawn",
+        {"archetype": arch, "at": at, "heading": heading, "behaviour": behaviour},
+    )
+
+
+def ans(step: int) -> dict:
+    """The id an earlier command answered with, for observation settings and bot steps."""
+    return {"$answer": [step, "id"]}
+
+
+def tap(p: Playtest, action: str, then: int) -> None:
+    """Press an action for one tick, then run `then` ticks more."""
+    p.step("press", {action: 1.0})
+    p.step("run", 1)
+    p.step("release", [action])
+    if then > 0:
+        p.step("run", then)
+
+
+def weapons_range() -> Playtest:
+    p = Playtest(
+        "combat.weapons/range",
+        ["CB-1", "CB-2", "CB-3", "FT-11", "CB-7"],
+        "A firing range on the plaza and, for the long guns, down the north-south arterial, "
+        "with traffic and people set to none. The player owns all six weapons and cycles "
+        "through them, raises the pistol and the rifle, then uses each weapon on people "
+        "standing in front (lock-on for the guns, 8-10 m away; within reach for the fists and "
+        "the bat): what each hit takes, the rate, the magazine, the reload after it runs dry and "
+        "a reload by hand, a gun with nothing left; then people just beyond each weapon's "
+        "range, and for the pistol, the SMG and the rifle QA's bot aiming by the camera at "
+        "people just inside and just beyond it.",
+        ["--role=solo", "--variation=21", "--save-dir={save_dir}"],
+        limits={"wall_s": 900, "cpu_s": 1800, "step_s": 120},
+    )
+    fight_watch(p, [])
+    p.dev(("world.reset", {"variation": 21}))
+    p.dev(("traffic.set", {"density": 0}))
+    p.dev(("player.spawn", {"at": [-40.0, PLAZA_Y, 30.0], "heading": 0}))
+    p.dev(
+        ("player.give", {"weapon": "bat"}),
+        ("player.give", {"weapon": "pistol", "ammo": 24}),
+        ("player.give", {"weapon": "smg", "ammo": 60}),
+        ("player.give", {"weapon": "shotgun", "ammo": 12}),
+        ("player.give", {"weapon": "rifle", "ammo": 60}),
+    )
+    p.step("run", 10)
+    p.mark("owned")
+    p.expect(
+        "fists_owned", "state_value", {"mark": "owned", "path": "player.weapons", "contains": "fists"},
+        "CB-3", "fists are always owned: the weapons list holds them with the five given",
+    )  # fmt: skip
+    # CB-3: cycling, wrapping round, each switch done within 0.5 s
+    order = ["fists", "bat", "pistol", "smg", "shotgun", "rifle"]
+    for k, want in enumerate(order):
+        tap(p, "weapon_next", 29)
+        p.mark(f"next_{k}")
+        p.state_is(
+            f"switch_next_{k}", f"next_{k}", "player.weapon", want, "CB-3",
+            f"weapon_next from {order[k - 1]} gives the {want} (the next owned weapon in table "
+            f"order, wrapping round) within 0.5 s",
+        )  # fmt: skip
+    tap(p, "weapon_prev", 29)
+    p.mark("prev_0")
+    p.state_is(
+        "switch_prev", "prev_0", "player.weapon", "shotgun", "CB-3",
+        "weapon_prev from the rifle gives the shotgun within 0.5 s",
+    )  # fmt: skip
+    # FT-11: the rifle (a long gun), then the pistol, raised
+    tap(p, "weapon_next", 29)
+    p.step("press", {"aim": 1.0})
+    p.step("run", 30)
+    p.mark("aim_rifle_a")
+    p.step("run", 60)
+    p.mark("aim_rifle_b")
+    p.step("release", ["aim"])
+    for want in ("fists", "bat", "pistol"):
+        tap(p, "weapon_next", 29)
+    p.step("press", {"aim": 1.0})
+    p.step("run", 30)
+    p.mark("aim_pistol_a")
+    p.step("run", 60)
+    p.mark("aim_pistol_b")
+    p.step("release", ["aim"])
+    for gun, (lo, hi) in {
+        "rifle": ("aim_rifle_a", "aim_rifle_b"),
+        "pistol": ("aim_pistol_a", "aim_pistol_b"),
+    }.items():
+        p.expect(
+            f"aim_pose_{gun}", "aim_pose",
+            {"from": lo, "to": hi, "hand_m": 0.25, "max_deg": 20.0, "min_frames": 30},
+            "FT-11",
+            f"holding aim with the {gun}, from 0.5 s after the press: the right hand within "
+            f"0.25 m of the height of RightUpperArm, and the forearm (RightLowerArm to "
+            f"RightHand) within 20 degrees of the direction from the hand to the aim point",
+        )  # fmt: skip
+
+    # each gun on a person 8-10 m ahead: lock on, hold attack through the magazine
+    guns = [
+        ("pistol", -40.0, 10.0, 340),
+        ("smg", -30.0, 10.0, 330),
+        ("shotgun", -20.0, 8.0, 470),
+        ("rifle", -10.0, 10.0, 480),
+    ]
+    for gun, x, dist, ticks in guns:
+        w = WEAPON_TABLE[gun]
+        p.dev(("player.spawn", {"at": [x, PLAZA_Y, 30.0], "heading": 0}))
+        p.dev(("player.give", {"weapon": gun}))
+        tgt = p.dev(person("tourist", [x, PLAZA_Y, 30.0 - dist], 180, "idle"))
+        fight_watch(p, [ans(tgt)])
+        p.step("run", 10)
+        p.mark(f"{gun}_full")
+        p.state_is(
+            f"{gun}_magazine", f"{gun}_full", "player.ammo.magazine", w["magazine"], "CB-1",
+            f"the {gun}'s magazine holds {w['magazine']} (the table's size)",
+        )  # fmt: skip
+        p.step("press", {"lock_target": 1.0})
+        p.step("run", 2)
+        p.mark(f"{gun}_fire_a")
+        p.step("press", {"attack": 1.0})
+        burst = round(60 / w["rate"]) * (w["magazine"] - 1) + 20
+        p.step("run", burst)
+        p.mark(f"{gun}_burst_b")
+        p.step("run", ticks - burst)
+        p.mark(f"{gun}_fire_b")
+        p.step("release", ["attack", "lock_target"])
+        pellets = gun == "shotgun"
+        p.expect(
+            f"{gun}_hits", "hits",
+            {"from": f"{gun}_fire_a", "to": f"{gun}_fire_b", "targets": [{"step": tgt}],
+             "damage": w["damage"], "min_hits": 4, **({"per_round": 8} if pellets else {})},
+            "CB-1",
+            (f"every pellet that hits the person {dist:g} m ahead takes 10 (eight per round at "
+             "most)" if pellets else f"every hit on the person {dist:g} m ahead takes "
+             f"{w['damage']}") + "; health falls by each hit's amount and the person dies on "
+            "the hit that takes it to 0, with no hit after",
+        )  # fmt: skip
+        p.expect(
+            f"{gun}_rate", "fire_rate",
+            {"from": f"{gun}_fire_a", "to": f"{gun}_burst_b", "rate": w["rate"], "tol": 0.05,
+             "min_count": 3},
+            "CB-1",
+            f"with attack held the {gun} fires {w['rate']:g} rounds per second within 5% "
+            "(rounds leaving the magazine)",
+        )  # fmt: skip
+        p.expect(
+            f"{gun}_reload", "reload",
+            {"from": f"{gun}_fire_a", "to": f"{gun}_fire_b", "start": "empty",
+             "reload_s": w["reload_s"], "tol": 0.1, "magazine": w["magazine"]},
+            "CB-1",
+            f"the empty magazine refills from the reserve {w['reload_s']:g} s later within 10%",
+        )  # fmt: skip
+        p.expect(
+            f"{gun}_ammo", "ammo_flow",
+            {"from": f"{gun}_fire_a", "to": f"{gun}_fire_b", "min_rounds": w["magazine"],
+             "min_reloads": 1},
+            "CB-2",
+            "every change of the ammo is a round taken from the magazine or a reload from the "
+            "reserve",
+        )  # fmt: skip
+        if gun == "pistol":
+            p.expect(
+                "pistol_kill", "ragdoll",
+                {"from": "pistol_fire_a", "to": "pistol_fire_b", "id_from": {"step": tgt},
+                 "trigger": {"event": "died"}, "within_ticks": 12, "min_s": 1.0,
+                 "below_m": 0.05, "step_m": 1.0, "ground_y": PLAZA_Y},
+                "CB-7",
+                "health 0 is death: the person shot dead has a died event and goes limp within "
+                "0.2 s of it, staying limp",
+            )  # fmt: skip
+            # a reload by hand, then everything fired: with nothing left attack does nothing
+            tap(p, "attack", 45)
+            p.mark("pistol_reload_a")
+            tap(p, "reload", 130)
+            p.mark("pistol_reload_b")
+            p.expect(
+                "pistol_reload_hand", "reload",
+                {"from": "pistol_reload_a", "to": "pistol_reload_b", "start": "mark",
+                 "reload_s": 1.6, "tol": 0.1, "magazine": 12},
+                "CB-2",
+                "reload with a part-used magazine refills it from the reserve in 1.6 s within "
+                "10%",
+            )  # fmt: skip
+            p.step("press", {"attack": 1.0})
+            p.step("run", 600)
+            p.mark("dry_a")
+            p.step("run", 60)
+            p.mark("dry_b")
+            p.step("release", ["attack"])
+            p.expect(
+                "dry_fire", "dry_fire", {"from": "dry_a", "to": "dry_b"}, "CB-2",
+                "with the magazine and the reserve empty, attack held does nothing: the ammo "
+                "stays empty and nobody takes a hit",
+            )  # fmt: skip
+        if gun == "shotgun":
+            far = p.dev(person("tourist", [x, PLAZA_Y, 5.0], 180, "idle"))
+            fight_watch(p, [ans(far)])
+            p.step("run", 10)
+            p.step("press", {"lock_target": 1.0})
+            p.step("run", 2)
+            p.mark("shotgun_far_a")
+            p.step("press", {"attack": 1.0})
+            p.step("run", 110)
+            p.mark("shotgun_far_b")
+            p.step("release", ["attack", "lock_target"])
+            p.expect(
+                "shotgun_range", "untouched",
+                {"from": "shotgun_far_a", "to": "shotgun_far_b", "targets": [{"step": far}],
+                 "min_rounds": 2},
+                "CB-1",
+                "the person 25 m ahead, beyond the shotgun's 20 m, takes no hit from two rounds "
+                "fired at it",
+            )  # fmt: skip
+
+    # melee: the fists and the bat on people within reach, then just beyond it
+    for k, (weapon, reach_m, near_m, far_m, hold) in enumerate(
+        [("fists", 1.5, 1.2, 2.0, 210), ("bat", 1.8, 1.5, 2.3, 170)]
+    ):
+        w = WEAPON_TABLE[weapon]
+        x = 5.0 + 12.0 * k
+        p.dev(("player.spawn", {"at": [x, PLAZA_Y, 30.0], "heading": 0}))
+        p.dev(("player.give", {"weapon": weapon}))
+        near = p.dev(person("office_worker", [x, PLAZA_Y, 30.0 - near_m], 180, "idle"))
+        fight_watch(p, [ans(near)])
+        p.step("run", 10)
+        p.mark(f"{weapon}_a")
+        p.step("press", {"attack": 1.0})
+        p.step("run", hold)
+        p.mark(f"{weapon}_b")
+        p.step("release", ["attack"])
+        p.expect(
+            f"{weapon}_hits", "hits",
+            {"from": f"{weapon}_a", "to": f"{weapon}_b", "targets": [{"step": near}],
+             "damage": w["damage"], "min_hits": 4},
+            "CB-1",
+            f"every blow of the {weapon} on the person {near_m:g} m ahead takes {w['damage']}",
+        )  # fmt: skip
+        p.expect(
+            f"{weapon}_rate", "fire_rate",
+            {"from": f"{weapon}_a", "to": f"{weapon}_b", "blows": [{"step": near}],
+             "rate": w["rate"], "tol": 0.05, "min_count": 4},
+            "CB-1",
+            f"with attack held the {weapon} lands {w['rate']:g} blows per second within 5%",
+        )  # fmt: skip
+        p.dev(("player.spawn", {"at": [x + 6.0, PLAZA_Y, 30.0], "heading": 0}))
+        far = p.dev(
+            person("office_worker", [x + 6.0, PLAZA_Y, 30.0 - far_m], 180, "idle")
+        )
+        p.step("run", 10)
+        p.mark(f"{weapon}_far_a")
+        p.step("press", {"attack": 1.0})
+        p.step("run", 150)
+        p.mark(f"{weapon}_far_b")
+        p.step("release", ["attack"])
+        p.expect(
+            f"{weapon}_range", "untouched",
+            {"from": f"{weapon}_far_a", "to": f"{weapon}_far_b", "targets": [{"step": far}],
+             "min_rounds": 0},
+            "CB-1",
+            f"the person {far_m:g} m ahead, beyond the {weapon}'s {reach_m:g} m, takes no blow "
+            "in 2.5 s of attack held",
+        )  # fmt: skip
+
+    # the long guns' ranges: QA's bot aims with the camera, down the arterial
+    lane_z = 160.0
+    p.dev(("player.spawn", {"at": [-71.75, 0.0, lane_z], "heading": 0}))
+    p.dev(
+        ("player.give", {"weapon": "pistol", "ammo": 24}),
+        ("player.give", {"weapon": "smg", "ammo": 60}),
+        ("player.give", {"weapon": "rifle", "ammo": 60}),
+    )
+    spots = {
+        "pistol": ((-68.25, 45.0), (-64.75, 55.0)),
+        "smg": ((-75.25, 35.0), (-71.75, 45.0)),
+        "rifle": ((-68.25, 115.0), (-75.25, 125.0)),
+    }
+    placed = {}
+    for gun, ((xi, di), (xo, do)) in spots.items():
+        placed[gun] = (
+            p.dev(person("tourist", [xi, 0.0, lane_z - di], 180, "idle")),
+            p.dev(person("tourist", [xo, 0.0, lane_z - do], 180, "idle")),
+        )
+    fight_watch(p, [ans(s) for pair in placed.values() for s in pair])
+    p.step("run", 10)
+    for gun, (s_in, s_out) in placed.items():
+        (xi, di), (xo, do) = spots[gun]
+        p.dev(("player.give", {"weapon": gun}))
+        p.step("run", 180)  # a gun left empty reloads by itself once in hand
+        p.step("aim_at", {"entity": {"id": ans(s_in)}, "bone": "Chest", "ticks": 90})
+        p.mark(f"{gun}_in_a")
+        p.step(
+            "aim_at",
+            {
+                "entity": {"id": ans(s_in)},
+                "bone": "Chest",
+                "ticks": 60,
+                "hold": {"attack": 1.0},
+            },
+        )
+        p.mark(f"{gun}_in_b")
+        p.step("aim_at", {"entity": {"id": ans(s_out)}, "bone": "Chest", "ticks": 90})
+        p.mark(f"{gun}_out_a")
+        p.step(
+            "aim_at",
+            {
+                "entity": {"id": ans(s_out)},
+                "bone": "Chest",
+                "ticks": 60,
+                "hold": {"attack": 1.0},
+            },
+        )
+        p.mark(f"{gun}_out_b")
+        rng = WEAPON_TABLE[gun]["range"]
+        d_in = round(math.hypot(xi + 71.75, di), 1)
+        d_out = round(math.hypot(xo + 71.75, do), 1)
+        p.expect(
+            f"{gun}_range_inside", "hits",
+            {"from": f"{gun}_in_a", "to": f"{gun}_in_b", "targets": [{"step": s_in}],
+             "damage": WEAPON_TABLE[gun]["damage"], "min_hits": 1},
+            "CB-1",
+            f"aimed by the camera at the person {d_in:g} m away, inside the {gun}'s {rng:g} m, "
+            "the rounds hit",
+            "pre",
+        )  # fmt: skip
+        p.expect(
+            f"{gun}_range", "untouched",
+            {"from": f"{gun}_out_a", "to": f"{gun}_out_b", "targets": [{"step": s_out}],
+             "min_rounds": 2},
+            "CB-1",
+            f"aimed the same way at the person {d_out:g} m away, beyond the {gun}'s {rng:g} m, "
+            "the rounds do no damage",
+        )  # fmt: skip
+    return p
+
+
+def lock_on() -> Playtest:
+    p = Playtest(
+        "combat.lock_on/targets",
+        ["CM-5", "CB-4"],
+        "On the plaza with traffic and people set to none. Two people stand ahead, 12 and 18 m "
+        "off: lock_target takes the nearer. A hostile person (unarmed) comes at the player from "
+        "22 m: lock_target takes it over the nearer one, the camera keeps it in the middle of "
+        "the view and the aim point on its Chest while it runs in, and the pistol stops it. "
+        "Then single rounds with lock-on at people standing 15 m away, one each: six from the "
+        "pistol, six from the rifle, six from the SMG.",
+        ["--role=solo", "--variation=22", "--save-dir={save_dir}"],
+        limits={"wall_s": 600, "cpu_s": 1200, "step_s": 120},
+    )
+    fight_watch(p, [])
+    p.dev(("world.reset", {"variation": 22}))
+    p.dev(("traffic.set", {"density": 0}))
+    p.dev(("player.spawn", {"at": [-40.0, PLAZA_Y, 10.0], "heading": 0}))
+    p.dev(("player.give", {"weapon": "pistol", "ammo": 24}))
+    near = p.dev(person("office_worker", [-38.0, PLAZA_Y, -2.0], 180, "idle"))
+    farther = p.dev(person("shopper", [-44.0, PLAZA_Y, -8.0], 180, "idle"))
+    fight_watch(p, [ans(near), ans(farther)])
+    p.step("run", 20)
+    p.step("press", {"lock_target": 1.0})
+    p.step("run", 10)
+    p.mark("near_a")
+    p.step("run", 60)
+    p.mark("near_b")
+    p.step("release", ["lock_target"])
+    p.expect(
+        "lock_nearest", "lock_on",
+        {"from": "near_a", "to": "near_b", "target": {"step": near}, "aim_m": 0.3,
+         "middle": 0.3, "aspect": ASPECT, "min_frames": 30},
+        "CM-5",
+        "lock_target takes the nearer of two people ahead (12.2 m, 9 degrees right; the other "
+        "18.4 m, 13 degrees left): its Chest bone stays in the middle 30% of the view and the "
+        "aim point within 0.3 m of it",
+    )  # fmt: skip
+    hostile = p.dev(person("shopper", [-30.0, PLAZA_Y, -10.0], 180, "hostile"))
+    fight_watch(p, [ans(near), ans(farther), ans(hostile)])
+    p.step("run", 10)
+    p.step("press", {"lock_target": 1.0})
+    p.step("run", 10)
+    p.mark("hostile_a")
+    p.step("run", 50)
+    p.mark("hostile_b")
+    p.step("press", {"attack": 1.0})
+    p.step("run", 90)
+    p.mark("hostile_c")
+    p.step("release", ["attack", "lock_target"])
+    p.expect(
+        "lock_hostile", "lock_on",
+        {"from": "hostile_a", "to": "hostile_b", "target": {"step": hostile}, "aim_m": 0.3,
+         "middle": 0.3, "aspect": ASPECT, "min_frames": 30},
+        "CM-5",
+        "with a hostile person coming in from 22 m (27 degrees right) and a nearer one standing, "
+        "lock_target takes the hostile one and keeps it in the middle 30% of the view, the aim "
+        "point within 0.3 m of its Chest, as it runs",
+    )  # fmt: skip
+    p.expect(
+        "hostile_stopped", "event_seen",
+        {"after": "hostile_b", "before": "hostile_c", "name": "died", "where": {}},
+        "CB-7", "the pistol stops the hostile person: a died event", "pre",
+    )  # fmt: skip
+    # CB-4: single rounds at people 15 m away, a fresh one for each round
+    for gun in ("pistol", "rifle", "smg"):
+        p.dev(("player.give", {"weapon": gun, "ammo": 30}))
+        bursts = []
+        for k in range(6):
+            heading = 60 * k
+            h = math.radians(heading)
+            at = [
+                round(-35.0 + 15.0 * math.sin(h), 2),
+                PLAZA_Y,
+                round(-20.0 - 15.0 * math.cos(h), 2),
+            ]
+            tgt = p.dev(person("tourist", at, (heading + 180) % 360, "idle"))
+            p.dev(("player.spawn", {"at": [-35.0, PLAZA_Y, -20.0], "heading": heading}))
+            fight_watch(p, [ans(tgt)])
+            p.step("run", 10)
+            p.step("press", {"lock_target": 1.0})
+            p.step("run", 3)
+            p.mark(f"{gun}_{k}_a")
+            tap(p, "attack", 20)
+            p.mark(f"{gun}_{k}_b")
+            p.step("release", ["lock_target"])
+            bursts.append(
+                {"from": f"{gun}_{k}_a", "to": f"{gun}_{k}_b", "target": {"step": tgt}}
+            )
+        floor = 0.45 if gun == "smg" else 0.6
+        p.expect(
+            f"hit_rate_{gun}", "hit_rate",
+            {"bursts": bursts, "min_share": floor, "grace_s": 0.5, "min_rounds": 6},
+            "CB-4",
+            f"with lock-on at 15 m, at least {floor:.0%} of {gun} rounds hit the standing person "
+            "they are fired at (one round at each of six)",
+        )  # fmt: skip
+    return p
+
+
+def armour() -> Playtest:
+    p = Playtest(
+        "combat.armour/hits",
+        ["CB-5", "CB-9"],
+        "On the plaza with traffic and people set to none. The player stands with 40 armour and "
+        "100 health; an armed hostile person 12 m away fires at the player until the player "
+        "falls. Every hit's split between armour and health is read from its damaged event.",
+        ["--role=solo", "--variation=23", "--save-dir={save_dir}"],
+        limits={"wall_s": 300, "cpu_s": 600, "step_s": 120},
+    )
+    fight_watch(p, [])
+    p.dev(("world.reset", {"variation": 23}))
+    p.dev(("traffic.set", {"density": 0}))
+    p.dev(("player.spawn", {"at": [-40.0, PLAZA_Y, 30.0], "heading": 0}))
+    p.dev(("player.give", {"weapon": "fists", "health": 100, "armour": 40}))
+    p.step("run", 5)
+    p.mark("armour_a")
+    shooter = p.dev(person("crew_a_enforcer", [-40.0, PLAZA_Y, 18.0], 180, "hostile"))
+    p.step("run", 1800)
+    p.mark("armour_b")
+    p.expect(
+        "absorb", "armour_split",
+        {"from": "armour_a", "to": "armour_b", "share": 0.6, "min_armoured": 2, "min_bare": 1},
+        "CB-5",
+        "armour takes 60% of each hit (rounded, within a point) until it runs out and health "
+        "the rest; then health takes whole hits",
+    )  # fmt: skip
+    p.expect(
+        "shooter_fires", "fires_at",
+        {"from": "armour_a", "to": "armour_b", "attackers": [{"step": shooter}], "max_m": 40.0,
+         "min_hits": 3},
+        "CB-9", "the hostile enforcer 12 m away fires at the player and hits", "pre",
+    )  # fmt: skip
+    return p
+
+
+def cover_setup(
+    p: Playtest, obstacle: dict, spot: list[float], attackers: list[list[float]]
+) -> list[int]:
+    """The shared start of both cover runs: the low wall, the player 1.4 m behind it standing,
+    two armed hostile people 20 m beyond it; returns the attackers' spawn steps."""
+    fight_watch(p, [])
+    p.dev(("world.reset", {"variation": 24}))
+    p.dev(("traffic.set", {"density": 0}))
+    p.dev(("prop.spawn", {"kind": "low_cover", "at": obstacle["p"], "size": obstacle["size"],
+                          "heading": obstacle["heading"]}))  # fmt: skip
+    p.dev(("player.spawn", {"at": spot, "heading": 0}))
+    p.dev(
+        ("player.give", {"weapon": "pistol", "ammo": 60, "health": 100, "armour": 100})
+    )
+    steps = [p.dev(person("crew_b_enforcer", a, 180, "hostile")) for a in attackers]
+    fight_watch(p, [ans(s) for s in steps])
+    return steps
+
+
+def cover_window(p: Playtest, label: str) -> None:
+    """Fifteen seconds under fire, the player's health and armour topped up every 3 s."""
+    p.mark(f"{label}_a")
+    for _ in range(5):
+        p.step("run", 180)
+        p.dev(("player.give", {"health": 100, "armour": 100}))
+    p.mark(f"{label}_b")
+
+
+def cover_firefight() -> Playtest:
+    p = Playtest(
+        "combat.cover_firefight/low-wall",
+        ["FT-12", "CB-6", "CB-7", "CB-8", "CB-9", "FT-9"],
+        "On the plaza with traffic and people set to none. Two armed hostile people stand 20 m "
+        "beyond a low wall (2.0 x 1.1 x 0.5 m); the player stands 1.4 m behind it. The game is "
+        "played twice from that start: first the player stays standing in the open for 15 s, "
+        "then (the game started again) the player takes cover behind the wall and stays there "
+        "for the same 15 s, health and armour topped up every 3 s both times. In cover the "
+        "player leans out and fires, wounds one attacker below 30 health and shoots the other "
+        "dead. Then, after a world reset, a person behind a wall and one behind a parked van "
+        "are shot at.",
+        ["--role=solo", "--variation=24", "--save-dir={save_dir}"],
+        limits={"wall_s": 900, "cpu_s": 1800, "step_s": 120},
+    )
+    obstacle = {"p": [-30.0, PLAZA_Y, 10.0], "size": [2.0, 1.1, 0.5], "heading": 0}
+    spot = [-30.0, PLAZA_Y, 11.65]
+    attackers = [[-32.0, PLAZA_Y, -9.0], [-27.0, PLAZA_Y, -11.0]]
+    # the open run
+    open_att = cover_setup(p, obstacle, spot, attackers)
+    p.step("run", 120)
+    cover_window(p, "open")
+    p.step("restart", {})
+    # the cover run: the same start, cover taken during the same warm-up
+    cover_att = cover_setup(p, obstacle, spot, attackers)
+    p.mark("cover_press")
+    p.step("press", {"cover": 1.0})
+    p.step("run", 1)
+    p.step("release", ["cover"])
+    p.step("run", 119)
+    cover_window(p, "cover")
+    p.expect(
+        "cover_enter", "cover_enter",
+        {"from": "cover_press", "within_s": 1.0, "box": obstacle, "near_m": 0.6, "ratio": 0.75,
+         "ground_y": PLAZA_Y},
+        "FT-12",
+        "pressing cover 1.4 m from the 1.1 m wall puts the player in cover within 1.0 s: cover "
+        "true, within 0.6 m of the wall, the hips at most 75% of their standing height",
+    )  # fmt: skip
+    p.expect(
+        "cover_hold", "cover_hold",
+        {"from": "cover_a", "to": "cover_b", "box": obstacle, "near_m": 0.6, "ratio": 0.75,
+         "ground_y": PLAZA_Y, "standing_mark": "cover_press"},
+        "FT-12",
+        "staying in cover (aim not held), on every frame cover is true, the player within 0.6 m "
+        "of the wall and the hips at most 75% of standing height",
+    )  # fmt: skip
+    p.expect(
+        "cover_cuts", "cover_cuts",
+        {"open": {"from": "open_a", "to": "open_b", "attackers": [{"step": s} for s in open_att]},
+         "cover": {"from": "cover_a", "to": "cover_b", "attackers": [{"step": s} for s in cover_att]},
+         "max_ratio": 0.4, "min_open_hits": 8},
+        "CB-8",
+        "over the same 15 s from the same start, the two attackers' damage to the player in cover "
+        "is at most 40% of their damage to the player standing in the open (with at least 8 hits "
+        "in the open)",
+    )  # fmt: skip
+    p.expect(
+        "attackers_fire", "fires_at",
+        {"from": "open_a", "to": "open_b", "attackers": [{"step": s} for s in open_att],
+         "max_m": 40.0, "min_hits": 1},
+        "CB-9",
+        "hostile enforcers with the player 21-23 m away and in sight fire at the player: each "
+        "lands hits",
+    )  # fmt: skip
+    # leaning out and firing from cover
+    p.step("press", {"aim": 1.0})
+    p.mark("lean_a")
+    p.step("run", 60)
+    p.mark("lean_fire_a")
+    p.step("press", {"attack": 1.0})
+    p.step("run", 30)
+    p.mark("lean_fire_b")
+    p.step("release", ["attack"])
+    p.step("run", 10)
+    p.expect(
+        "fire_from_cover", "lean_out",
+        {"from": "lean_a", "within_s": 1.0, "rise_m": 0.30, "fire_from": "lean_fire_a",
+         "fire_to": "lean_fire_b"},
+        "CB-8",
+        "in cover, holding aim leans out: the Head bone rises at least 0.30 m within 1.0 s, cover "
+        "still true, and attack fires",
+    )  # fmt: skip
+    # wound the nearer attacker below 30 health, then shoot the other dead
+    p.dev(("player.give", {"health": 100, "armour": 100, "ammo": 24}))
+    p.step("press", {"lock_target": 1.0})
+    p.step("run", 3)
+    p.mark("wound_a")
+    p.step("press", {"attack": 1.0})
+    p.step("run", 45)
+    p.step("release", ["attack", "lock_target", "aim"])
+    p.step("run", 30)
+    p.dev(("player.give", {"health": 100, "armour": 100}))
+    p.step("run", 570)
+    p.mark("wound_b")
+    p.expect(
+        "retreat", "retreat",
+        {"from": "wound_a", "to": "wound_b", "enforcers": [{"step": s} for s in cover_att],
+         "below": 30, "within_s": 10.0, "min_m": 10.0},
+        "CB-9",
+        "the attacker hit three times (25 health left) ends at least 10 m farther from the "
+        "player within 10 s",
+    )  # fmt: skip
+    p.dev(("player.give", {"health": 100, "armour": 100}))
+    p.step("press", {"aim": 1.0})
+    p.step("run", 20)
+    p.step("press", {"lock_target": 1.0})
+    p.step("run", 3)
+    p.mark("kill_a")
+    p.step("press", {"attack": 1.0})
+    p.step("run", 80)
+    p.step("release", ["attack", "lock_target", "aim"])
+    p.step("run", 120)
+    p.mark("kill_b")
+    p.expect(
+        "kill_hits", "hits",
+        {"from": "kill_a", "to": "kill_b", "targets": [{"step": cover_att[1]}], "damage": 25,
+         "min_hits": 4},
+        "CB-7",
+        "the other attacker, shot four times with the pistol, dies on the hit that takes its "
+        "health to 0: its died event",
+    )  # fmt: skip
+    p.expect(
+        "kill_ragdoll", "ragdoll",
+        {"from": "kill_a", "to": "kill_b", "id_from": {"step": cover_att[1]},
+         "trigger": {"event": "died"}, "within_ticks": 12, "min_s": 1.0, "below_m": 0.05,
+         "step_m": 1.0, "ground_y": PLAZA_Y},
+        "CB-7",
+        "dead, it goes limp within 0.2 s of its died event and stays limp; no bone more than "
+        "0.05 m under the ground",
+    )  # fmt: skip
+    # leaving cover
+    p.step("press", {"move_back": 1.0})
+    p.mark("leave_a")
+    p.step("run", 60)
+    p.mark("leave_b")
+    p.step("release", ["move_back"])
+    p.expect(
+        "cover_leave", "cover_leave",
+        {"from": "leave_a", "to": "leave_b", "box": obstacle, "within_s": 0.5, "near_m": 0.6},
+        "FT-12",
+        "moving away from the wall leaves cover: cover false within 0.5 s and the player more "
+        "than 0.6 m from it after a second",
+    )  # fmt: skip
+    # no shots through walls or a car's body
+    p.dev(("world.reset", {"variation": 24}))
+    p.dev(("traffic.set", {"density": 0}))
+    for k, (label, block) in enumerate(
+        [("wall", ("prop.spawn", {"kind": "wall", "at": [-10.0, PLAZA_Y, 25.0], "heading": 0})),
+         ("van", ("vehicle.spawn", {"model": "van", "at": [2.0, PLAZA_Y, 25.0], "heading": 90,
+                                    "driver": "none"}))]
+    ):  # fmt: skip
+        x = -10.0 if k == 0 else 2.0
+        p.dev(block)
+        hidden = p.dev(person("tourist", [x, PLAZA_Y, 20.0], 180, "idle"))
+        p.dev(("player.spawn", {"at": [x, PLAZA_Y, 30.0], "heading": 0}))
+        p.dev(("player.give", {"weapon": "pistol", "ammo": 24}))
+        fight_watch(p, [ans(hidden)])
+        tap(p, "reload", 120)
+        p.step("press", {"lock_target": 1.0})
+        p.step("run", 3)
+        p.mark(f"{label}_a")
+        p.step("press", {"attack": 1.0})
+        p.step("run", 50)
+        p.mark(f"{label}_b")
+        p.step("release", ["attack", "lock_target"])
+        p.expect(
+            f"through_{label}", "untouched",
+            {"from": f"{label}_a", "to": f"{label}_b", "targets": [{"step": hidden}],
+             "min_rounds": 3},
+            "CB-6",
+            "three rounds fired with lock-on at a person 10 m away behind a "
+            + ("wall (4.0 x 2.5 m, 5 m ahead)" if k == 0 else "parked van broadside, 5 m ahead")
+            + ": nobody is hit through it",
+        )  # fmt: skip
+    return p
+
+
+def crew_hostility() -> Playtest:
+    p = Playtest(
+        "combat.crew_hostility/turf",
+        ["CB-9", "AC-5"],
+        "On the parking lot inside turf_crew_a, with traffic and people set to none. Two crew_a "
+        "lookouts and four enforcers stand guard 20-28 m in front of the player, a low wall "
+        "(2.0 x 1.1 x 0.5 m) 4-5 m behind each enforcer. The player raises a pistol and keeps "
+        "aiming: after 5 s the crew turns hostile, the lookouts run off and the enforcers take "
+        "cover and fire. After a world reset the same crew stands again, and the player punches "
+        "a lookout: the whole crew turns hostile.",
+        ["--role=solo", "--variation=25", "--save-dir={save_dir}"],
+        limits={"wall_s": 600, "cpu_s": 1200, "step_s": 120},
+    )
+    lookouts = [[-106.0, PLAZA_Y, 88.0], [-93.0, PLAZA_Y, 82.0]]
+    enforcers = [[-110.0, PLAZA_Y, 92.0], [-102.0, PLAZA_Y, 90.0], [-96.0, PLAZA_Y, 92.0],
+                 [-89.0, PLAZA_Y, 90.0]]  # fmt: skip
+    walls = [
+        {
+            "p": [e[0], PLAZA_Y, e[2] - 5.0 + (k % 2)],
+            "size": [2.0, 1.1, 0.5],
+            "heading": 0,
+        }
+        for k, e in enumerate(enforcers)
+    ]
+
+    def crew() -> tuple[list[int], list[int]]:
+        look = [p.dev(person("crew_a_lookout", at, 180, "guard")) for at in lookouts]
+        enf = [p.dev(person("crew_a_enforcer", at, 180, "guard")) for at in enforcers]
+        fight_watch(p, [ans(s) for s in look + enf])
+        return look, enf
+
+    fight_watch(p, [])
+    p.dev(("world.reset", {"variation": 25}))
+    p.dev(("traffic.set", {"density": 0}))
+    for w in walls:
+        p.dev(
+            (
+                "prop.spawn",
+                {"kind": "low_cover", "at": w["p"], "size": w["size"], "heading": 0},
+            )
+        )
+    p.dev(("player.spawn", {"at": [-100.0, PLAZA_Y, 112.0], "heading": 0}))
+    p.dev(("player.give", {"weapon": "pistol", "ammo": 24, "armour": 100}))
+    look, enf = crew()
+    p.step("run", 30)
+    p.mark("aim_a")
+    p.step("press", {"aim": 1.0})
+    for _ in range(10):
+        p.step("run", 120)
+        p.dev(("player.give", {"health": 100, "armour": 100}))
+    p.mark("aim_b")
+    p.step("release", ["aim"])
+    members = [{"step": s} for s in look + enf]
+    p.expect(
+        "turn_hostile_aim", "turn_hostile",
+        {"from": "aim_a", "to": "aim_b", "members": members, "trigger": "aim", "after_s": 5.0,
+         "within_s": 2.0},
+        "CB-9",
+        "with the player aiming a pistol inside turf_crew_a, all six crew members' hostile "
+        "metadata turns true after 5.0 s and by 7.0 s, none before",
+    )  # fmt: skip
+    p.expect(
+        "lookouts_flee", "flee_away",
+        {"from": "aim_a", "to": "aim_b", "people": [{"step": s} for s in look], "min_m": 20.0,
+         "within_s": 10.0},
+        "CB-9",
+        "each hostile lookout ends at least 20 m farther from the player within 10 s of turning "
+        "hostile, its hostile metadata still true",
+    )  # fmt: skip
+    p.expect(
+        "enforcers_cover", "reach_cover",
+        {"from": "aim_a", "to": "aim_b", "crew": members, "enforcers": [{"step": s} for s in enf],
+         "boxes": walls, "within_s": 10.0, "near_m": 1.0, "min_share": 0.5},
+        "CB-9",
+        "within 10 s of the crew turning hostile, at least half of the four hostile enforcers "
+        "stand within 1.0 m of one of the low walls",
+    )  # fmt: skip
+    p.expect(
+        "enforcers_fire", "fires_at",
+        {"from": "aim_a", "to": "aim_b", "attackers": [{"step": s} for s in enf], "max_m": 40.0,
+         "min_hits": 1},
+        "CB-9",
+        "each hostile enforcer, the player 20-30 m away and in sight, fires at the player and "
+        "hits",
+    )  # fmt: skip
+    p.expect(
+        "hostile_meta", "meta_value",
+        {"mark": "aim_b", "id_from": {"step": enf[0]}, "key": "hostile", "equals": True},
+        "AC-5", "an enforcer attacking the player carries hostile metadata true",
+    )  # fmt: skip
+    # the same crew again; the player punches a lookout
+    p.dev(("world.reset", {"variation": 25}))
+    p.dev(("traffic.set", {"density": 0}))
+    p.dev(
+        (
+            "player.spawn",
+            {"at": [lookouts[0][0], PLAZA_Y, lookouts[0][2] + 1.0], "heading": 0},
+        )
+    )
+    p.dev(("player.give", {"weapon": "fists", "health": 100, "armour": 100}))
+    look2, enf2 = crew()
+    p.step("run", 30)
+    p.mark("hit_a")
+    p.step("press", {"attack": 1.0})
+    p.step("run", 2)
+    p.step("release", ["attack"])
+    p.step("run", 180)
+    p.mark("hit_b")
+    p.expect(
+        "turn_hostile_hit", "turn_hostile",
+        {"from": "hit_a", "to": "hit_b", "members": [{"step": s} for s in look2 + enf2],
+         "trigger": "hit", "within_s": 2.0},
+        "CB-9",
+        "the player punches a lookout: every crew_a member turns hostile within 2.0 s of the hit",
+    )  # fmt: skip
+    return p
+
+
 BUILDERS = (
     bad_input, commands, state_report, new_game, server_role, same_start, replay,
     same_tick, clock_rate, weather_hold, kill_after_save, damaged_slot, realtime,
     plan_compliance, paces, camera, lineup, feet, crouch, jump_climb_vault, falls,
     intersection_watch, handling_cars, handling_service, vehicle_entry, crash,
     intersection_flow, stop_junction, obstacle, speed_limits, panic_horn, replay_car_ragdoll,
+    weapons_range, lock_on, armour, cover_firefight, crew_hostility,
 )  # fmt: skip
 
 

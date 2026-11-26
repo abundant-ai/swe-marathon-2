@@ -176,7 +176,7 @@ row, a row names no assertion, or an assertion's template is not in the catalog.
 | CM-2 | look rates and tilt | `people.locomotion: look_rates` | P | rate or tilt out of band |
 | CM-3 | camera-relative movement | `people.locomotion: camera_relative` | P | movement not along the camera |
 | CM-4 | camera never in walls | `people.jump_climb_vault: camera_clear` | P | head-to-camera segment hits static geometry |
-| CM-5 | lock-on | `combat.lock_on: lock_frame`, `combat.lock_on: aim_chest` | P | no lock, target off centre |
+| CM-5 | lock-on | `combat.lock_on: lock_nearest`, `combat.lock_on: lock_hostile` | P | no lock, the wrong person, target off centre, aim off the Chest |
 | FT-1 | paces | `people.locomotion: paces` | P | a pace out of band |
 | FT-2 | planted feet | `people.locomotion: alternation`, `people.locomotion: foot_slide` | P | sliding or non-alternating feet |
 | FT-3 | jump | `people.jump_climb_vault: jump` | P | rise or air time out of band |
@@ -187,8 +187,8 @@ row, a row names no assertion, or an assertion's template is not in the catalog.
 | FT-8 | fall damage | `people.fall_ragdoll: fall_damage` | P | health loss off the formula |
 | FT-9 | ragdoll and getting up | `people.fall_ragdoll: ragdoll`, `people.fall_ragdoll: get_up`, `people.fall_ragdoll: free_fall`, `vehicle.crash: blast_ragdoll`, `vehicle.crash: run_into` | P | no `limp` flag, scripted fall, bone below ground, no get-up |
 | FT-10 | getting in and out | `people.vehicle_entry: get_in`, `people.vehicle_entry: seated`, `people.vehicle_entry: get_out`, `traffic.intersection_watch: drivers` | P | path misses the door, hips out of the seat (the player's or a city driver's) |
-| FT-11 | aim pose | `combat.weapons: aim_pose` | P | hand or forearm off |
-| FT-12 | cover | `combat.cover_firefight: cover_pose`, `combat.cover_firefight: cover_state` | P | not in cover within 1 s, hips high, `cover` state wrong |
+| FT-11 | aim pose | `combat.weapons: aim_pose_rifle`, `combat.weapons: aim_pose_pistol` | P | hand or forearm off, no aim point |
+| FT-12 | cover | `combat.cover_firefight: cover_enter`, `combat.cover_firefight: cover_hold`, `combat.cover_firefight: cover_leave` | P | not in cover within 1 s, hips high, `cover` state wrong, cover kept moving away |
 | VH-1 | handling, mass, library models | `vehicle.handling: accel`, `vehicle.handling: top_speed`, `vehicle.handling: brake_dry`, `vehicle.handling: turn_circle`, `vehicle.handling: mass`, `vehicle.handling: model_mesh` | P | any value out of band, body not from its library model |
 | VH-2 | wet braking | `vehicle.handling: brake_wet`, `world.weather: rain_braking` | P | ratio under 1.15 or over 1.60 |
 | VH-3 | damage from impacts | `vehicle.crash: impact_damage`, `inv.damage_honest: impacts_only` | P | no damage, or damage without an impact |
@@ -217,15 +217,15 @@ row, a row names no assertion, or an assertion's template is not in the catalog.
 | TR-14 | horn | `traffic.panic_horn: horn_clear` | P | people stay in the lane |
 | TR-15 | no pop-in | `traffic.intersection_watch: no_pop_in` | P | appearing near or in view |
 | TR-16 | drivers | `traffic.intersection_watch: drivers` | P | a moving NPC car without a driver |
-| CB-1 | weapon table | `combat.weapons: damage`, `combat.weapons: rate`, `combat.weapons: magazine`, `combat.weapons: reload`, `combat.weapons: range` | P | any value off the table |
-| CB-2 | ammo | `combat.weapons: ammo` | P | ammo unchanged, firing when empty |
-| CB-3 | switching weapons | `combat.weapons: switch` | P | wrong order or slow |
-| CB-4 | lock-on hit rate | `combat.lock_on: hit_rate` | P | rate under the floor |
+| CB-1 | weapon table | `combat.weapons: pistol_hits`, `combat.weapons: shotgun_hits`, `combat.weapons: fists_hits`, `combat.weapons: smg_rate`, `combat.weapons: bat_rate`, `combat.weapons: rifle_magazine`, `combat.weapons: rifle_reload`, `combat.weapons: shotgun_range`, `combat.weapons: rifle_range`, `combat.weapons: fists_range` (each for every weapon of its kind) | P | any value off the table, damage beyond the range |
+| CB-2 | ammo | `combat.weapons: pistol_ammo`, `combat.weapons: pistol_reload_hand`, `combat.weapons: dry_fire` | P | ammo unchanged, no reload, firing when empty |
+| CB-3 | switching weapons | `combat.weapons: switch_next_0`, `combat.weapons: switch_next_5`, `combat.weapons: switch_prev`, `combat.weapons: fists_owned` | P | wrong order, no wrap, slow, fists missing |
+| CB-4 | lock-on hit rate | `combat.lock_on: hit_rate_pistol`, `combat.lock_on: hit_rate_rifle`, `combat.lock_on: hit_rate_smg` | P | rate under the floor |
 | CB-5 | armour | `combat.armour: absorb` | P | split off 60/40 |
-| CB-6 | no shots through walls | `combat.cover_firefight: los_only` | P | damage through a wall |
-| CB-7 | death | `combat.cover_firefight: kills` | P | no `died` event or no ragdoll |
+| CB-6 | no shots through walls | `combat.cover_firefight: through_wall`, `combat.cover_firefight: through_van` | P | damage through a wall or a vehicle |
+| CB-7 | death | `combat.cover_firefight: kill_hits`, `combat.cover_firefight: kill_ragdoll`, `combat.weapons: pistol_kill` | P | no `died` event, death at the wrong hit, or no ragdoll |
 | CB-8 | cover cuts damage, firing from cover | `combat.cover_firefight: cover_cuts`, `combat.cover_firefight: fire_from_cover` | P | ratio over 0.4, cannot fire |
-| CB-9 | crew hostility and tactics | `combat.crew_hostility: turn_hostile`, `combat.crew_hostility: lookouts_flee`, `combat.cover_firefight: enemy_cover`, `combat.cover_firefight: retreat` | P | no hostility, lookouts stay, under half reach cover, no retreat |
+| CB-9 | crew hostility and tactics | `combat.crew_hostility: turn_hostile_aim`, `combat.crew_hostility: turn_hostile_hit`, `combat.crew_hostility: lookouts_flee`, `combat.crew_hostility: enforcers_cover`, `combat.crew_hostility: enforcers_fire`, `combat.cover_firefight: retreat` | P | no hostility, hostile before 5 s, lookouts stay, under half reach cover, no fire, no retreat |
 | CB-10 | police force by level | `combat.police_force: by_level` | R | police shooting at level 1 |
 | AL-1 | crime events | `alert.crime_table: events` | P | a crime without its event |
 | AL-2 | reporting delays | `alert.red_light: police_witness`, `alert.phone_in: delay`, `alert.phone_in: dead_witness` | P | late rise, wrong phone-in time, a dead witness still reports |

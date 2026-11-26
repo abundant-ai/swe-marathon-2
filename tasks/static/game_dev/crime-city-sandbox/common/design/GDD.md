@@ -185,16 +185,18 @@ Menus and the phone use Godot's `ui_up ui_down ui_left ui_right ui_accept ui_can
   1280 x 720 window with the camera's `fov` vertical, Godot's default).
 - **CM-2** At full strength, `look_left` and `look_right` turn the camera around the player at
   120-240 degrees per second; `look_up` and `look_down` tilt it between -60 and +30 degrees (the
-  pitch of the view, positive looking up).
+  pitch of the view, positive looking up). At lower strengths the look actions turn the camera in
+  proportion to their strength.
 - **CM-3** On foot, movement is relative to the camera: `move_forward` moves the player within 15
   degrees of the camera's horizontal forward direction.
 - **CM-4** The camera never ends up inside a wall: the segment from the player's head to the camera
   is free of static geometry in at least 99% of physics ticks (pull the camera in when a wall is
   behind).
 - **CM-5** `lock_target` locks onto the nearest person within 30 m and within 45 degrees of the
-  camera's forward direction, preferring hostiles. While locked, the camera keeps the target inside
-  the middle 30% of the view and the player's aim point (`state.player.aim`, AC-12) is within 0.3 m
-  of the target's `Chest` bone.
+  camera's forward direction, preferring hostiles. While locked, the camera keeps the target (its
+  `Chest` bone, measured as CM-1 measures the player's `Hips`) inside the middle 30% of the view
+  and the player's aim point (`state.player.aim`, AC-12) is within 0.3 m of the target's `Chest`
+  bone. Distances are horizontal, from the player's position to the person's.
 
 ## 5. On foot
 
@@ -247,11 +249,17 @@ and 8.5 m/s, its crouch walk at about 0.75 and its swim at about 2.2.
   door.
 - **FT-11** Aiming: holding `aim` with a gun raises it; the gun hand is within 0.25 m of shoulder
   height and the forearm points within 20 degrees of the direction from the gun hand to the aim
-  point (`state.player.aim`).
+  point (`state.player.aim`). People hold guns in the right hand (two-handed guns by the grip):
+  the gun hand is the `RightHand` bone, the forearm runs from `RightLowerArm` to `RightHand`, and
+  shoulder height is the height of `RightUpperArm` at the same moment. This holds for every gun,
+  from 0.5 s after `aim` is pressed for as long as it is held.
 - **FT-12** Cover: pressing `cover` within 1.5 m of an obstacle 0.8-1.4 m high moves the player to
   it within 1.0 s. In cover the player is within 0.6 m of the obstacle with the hips at most 75% of
   standing height. Moving away from the obstacle leaves cover. `state.player.cover` is true exactly
-  while the player is in cover.
+  while the player is in cover. Distances to the obstacle are horizontal, from the player's
+  position to the nearest point of the obstacle. Leaning out to aim from cover (CB-8) is still
+  cover (`cover` stays true); the hips clause holds while `aim` is not held. A move action pointing
+  away from the obstacle leaves cover within 0.5 s.
 
 ## 6. Vehicles
 
@@ -362,7 +370,9 @@ shapes, each taken as the box its shape fills (in the shape's own axes).
   them in the same phase; walk signals show walk only during their phase's green.
 - **TR-5** NPC drivers obey signals: none crosses a stop line after the light has been red for
   0.5 s, and traffic flows on green (at day density at least 3 vehicles enter from each approach
-  per 3 minutes). At amber a driver stops if it can do so braking at 4 m/s² or less.
+  per 3 minutes). At amber a driver stops if it can do so braking at 4 m/s² or less. The flow
+  leaves out an approach whose lanes start at a highway portal (WD-9): its traffic comes from the
+  next map.
 - **TR-6** All-way stops: NPC drivers come to a stop (1 km/h or less) within 4 m before the stop
   line, then go in order of arrival (the vehicle on the right first when two arrive together); no
   two vehicles on crossing paths are in the box at once; no vehicle waits more than 30 s at a stop
@@ -392,7 +402,12 @@ shapes, each taken as the box its shape fills (in the shape's own axes).
   body comes within 0.3 m of the person's position.
 - **TR-13** Panic: within 2 s of a gunshot within 30 m, people on foot run away from the shooter (at
   least 3 m/s, moving away) for at least 10 s. People within 8 m ahead of a vehicle driving on a
-  sidewalk at 20 km/h or more step out of its path (it does not hit them, TR-12).
+  sidewalk at 20 km/h or more step out of its path (it does not hit them, TR-12). A gunshot is a
+  round leaving a gun's magazine (CB-2), whoever fires it. Those who run are the people on foot
+  other than crew members, police and anyone in a fight (they act by CB-9 and chapter 9): from 2 s
+  after the shot until 12 s after it, each runs at least 3 m/s on average, ends at least 20 m
+  farther from where the shooter stood, and gets farther from it over at least 90% of the half
+  seconds. TR-9 and TR-10 do not bind people while they run.
 - **TR-14** `horn`: people on foot standing in the lane within 20 m ahead of the honking vehicle step
   out of the lane within 3 s. People on foot react to gunshots, vehicles on sidewalks and the horn
   whatever their behaviour (chapter 17's `idle` included).
@@ -418,11 +433,16 @@ shapes, each taken as the box its shape fills (in the shape's own axes).
 | `shotgun` | gun | 8 pellets of 10 | 1.2 | 6 | 3.0 | 20 | 60 |
 | `rifle` | gun | 32 | 6.0 | 30 | 2.6 | 120 | 300 |
 
-Everyone has 100 health. Armour goes from 0 to 100.
+Everyone has 100 health. Armour goes from 0 to 100. Health and armour are whole numbers. People hold
+guns in the right hand (FT-11).
 
 - **CB-1** Weapons follow the table: damage per hit exactly (before armour), rate of fire within 5%
   when `attack` is held, magazine size exactly, reload time within 10%. Hits beyond the range do no
-  damage.
+  damage. A weapon's range is the distance from the attacker's position to the position of the
+  person hit. The shotgun's round is eight pellets, and each pellet that hits is a hit of 10. The
+  rate counts rounds leaving the magazine (guns) or blows that land (melee weapons). A reload's
+  time runs from the tick `reload` is pressed, or the magazine runs empty, to the tick the state
+  report shows the magazine refilled.
 - **CB-2** Ammo: firing takes rounds from the magazine; `reload` (or an empty magazine) refills it
   from the reserve; with nothing left `attack` does nothing. `state.player.ammo` shows magazine and
   reserve.
@@ -430,18 +450,31 @@ Everyone has 100 health. Armour goes from 0 to 100.
   the switch takes at most 0.5 s. Fists are always owned.
 - **CB-4** With lock-on, at 15 m, at least 60% of pistol and rifle shots and 45% of SMG rounds hit
   a standing person.
-- **CB-5** Armour absorbs 60% of each hit's damage until it runs out; health takes the rest.
+- **CB-5** Armour absorbs 60% of each hit's damage until it runs out; health takes the rest. Where
+  60% of a hit is not a whole number it is rounded. Armour takes weapon hits only: falls and
+  explosions take health (FT-8, VH-6).
 - **CB-6** Shots need a clear line from the muzzle: nothing is hit through walls or vehicles' solid
   bodies.
 - **CB-7** Health 0 means death: event `died` and a ragdoll (FT-9).
 - **CB-8** In cover, the player takes at most 40% of the damage the same attackers deal in the open
   over the same time. From cover, holding `aim` leans out (the `Head` bone rises at least 0.30 m)
-  and `attack` fires.
+  and `attack` fires. "The same attackers over the same time" means the same people, from the same
+  start, firing over the same span of play: once with the player in the open beside the obstacle,
+  once with the player in cover behind it, with the attackers in front of the obstacle.
 - **CB-9** Crew members turn hostile (their `hostile` metadata, AC-5) when the player attacks any
   member of their crew, or aims a gun inside their turf for more than 5 s. Hostile enforcers attack
   from up to 40 m, and at least half of them reach cover (within 1.0 m of an obstacle 0.8-1.4 m
   high) within 10 s of a fight starting; hostile lookouts flee (at least 20 m away within 10 s).
-  Below 30 health an enforcer moves at least 10 m away from the player.
+  Below 30 health an enforcer moves at least 10 m away from the player. In detail: attacking a
+  member means hitting it, and every member of that crew within 100 m of the player turns hostile
+  within 2.0 s of the hit. Once the player has aimed a gun (`aim` held) while standing inside the
+  turf for more than 5 s in one go, the members of that crew within 100 m turn hostile within
+  2.0 s, not before, whatever behaviour they were given (chapter 17). A fight starts when the first
+  member turns hostile. A hostile enforcer with the player within 40 m and in sight fires at the
+  player; reaching cover counts at any moment within the 10 s. A hostile lookout keeps `hostile`
+  true while it flees and ends at least 20 m farther from the player within 10 s of turning
+  hostile; an enforcer below 30 health ends at least 10 m farther from the player within 10 s of
+  dropping below it.
 - **CB-10** Police fight only at alert level 3 or more; at levels 1 and 2 they try to arrest
   (AL-9).
 
@@ -905,7 +938,9 @@ archetype), `reckless` drives that way, and `idle` holds the vehicle still.
 
 - **AC-12** `state` returns: `tick`, `map`, `clock` (`hh:mm`), `weather`, `variation`; `player`
   (`id`, `lead`, `health`, `armour`, `money`, `alert`, `weapon`, `weapons`, `ammo`
-  (`{"magazine", "reserve"}`), `aim` (the world point the player aims at, or `null`), `cover`,
+  (`{"magazine", "reserve"}`), `aim` (the world point the player aims at while `aim` or a lock-on
+  is held: the first thing the line of aim meets, a person, a vehicle or the world, at any
+  distance; otherwise `null`), `cover`,
   `vehicle`, `seat`, `limp`, `outfit`, `outfits`, `leads_unlocked`); `missions` (per id: `state`, `stage`);
   `garages` (per garage id: a list of `{"model", "colour", "damage"}`); `ui` (`phone`, `map`,
   `paused`, `menu`); `network` (`role`, `peers`, `id`). Values are read live when `state` is
@@ -920,7 +955,11 @@ archetype), `reckless` drives that way, and `idle` holds the vehicle still.
   `mission` (`id`, `state`, `stage`), `money_changed` (`amount`, `reason`, `balance`),
   `phone_message` (`from`, `text`), `vehicle_exploded` (`vehicle`), `part_detached` (`vehicle`,
   `debris`), `saved` and `loaded` (`slot`), `map_transition` (`from`, `to`, `vehicle`), and
-  `teleport` (`entity`, `reason`). Every event carries `tick`.
+  `teleport` (`entity`, `reason`). Every event carries `tick`. A `damaged` event is one hit on one
+  person (NPCs included; each shotgun pellet that hits is one): `amount` is the hit's damage before
+  armour (a weapon's table damage; for a fall or a blast, the health it takes), `health` and
+  `armour` are that person's values after it, and `source` is the attacker's entity id when a person
+  dealt it, otherwise `fall`, `explosion` or `vehicle`. None comes after the person's `died`.
 - **AC-14** The player, or a vehicle carrying the player, moves discontinuously only with a
   `teleport` event, and only for setup commands, respawns, map transitions, loading a save,
   rejoining online and (on clients) the server's corrections.

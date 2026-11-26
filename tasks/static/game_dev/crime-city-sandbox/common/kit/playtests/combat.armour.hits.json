@@ -1,0 +1,142 @@
+{
+ "format": "qa-play/1",
+ "name": "combat.armour/hits",
+ "template": "combat.armour",
+ "about": "On the plaza with traffic and people set to none. The player stands with 40 armour and 100 health; an armed hostile person 12 m away fires at the player until the player falls. Every hit's split between armour and health is read from its damaged event.",
+ "rules": ["CB-5", "CB-9"],
+ "role": "solo",
+ "args": ["--role=solo", "--variation=23", "--save-dir={save_dir}"],
+ "mode": "lockstep",
+ "runs": [
+  {
+   "pace_ms": 0
+  }
+ ],
+ "limits": {
+  "wall_s": 300,
+  "boot_s": 60,
+  "step_s": 120,
+  "cpu_s": 600,
+  "memory_mb": 1536,
+  "disk_mb": 512
+ },
+ "steps": [
+  {
+   "observe": {
+    "census": {
+     "meta": ["hostile", "limp", "vehicle", "weapon"],
+     "kinds": ["player", "npc", "prop", "vehicle"]
+    },
+    "state": true,
+    "camera": true,
+    "every": 1,
+    "bones": {
+     "ids": ["player"],
+     "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
+    }
+   }
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 23
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "traffic.set",
+     {
+      "density": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [-40.0, 0.15, 30.0],
+      "heading": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "weapon": "fists",
+      "health": 100,
+      "armour": 40
+     }
+    ]
+   ]
+  },
+  {
+   "run": 5
+  },
+  {
+   "mark": "armour_a"
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "crew_a_enforcer",
+      "at": [-40.0, 0.15, 18.0],
+      "heading": 180,
+      "behaviour": "hostile"
+     }
+    ]
+   ]
+  },
+  {
+   "run": 1800
+  },
+  {
+   "mark": "armour_b"
+  }
+ ],
+ "expect": [
+  {
+   "id": "absorb",
+   "check": "armour_split",
+   "args": {
+    "from": "armour_a",
+    "to": "armour_b",
+    "share": 0.6,
+    "min_armoured": 2,
+    "min_bare": 1
+   },
+   "rule": "CB-5",
+   "says": "armour takes 60% of each hit (rounded, within a point) until it runs out and health the rest; then health takes whole hits"
+  },
+  {
+   "id": "shooter_fires",
+   "check": "fires_at",
+   "args": {
+    "from": "armour_a",
+    "to": "armour_b",
+    "attackers": [
+     {
+      "step": 7
+     }
+    ],
+    "max_m": 40.0,
+    "min_hits": 3
+   },
+   "rule": "CB-9",
+   "says": "the hostile enforcer 12 m away fires at the player and hits",
+   "kind": "pre"
+  }
+ ],
+ "tags": []
+}

@@ -1,0 +1,781 @@
+{
+ "format": "qa-play/1",
+ "name": "combat.crew_hostility/turf",
+ "template": "combat.crew_hostility",
+ "about": "On the parking lot inside turf_crew_a, with traffic and people set to none. Two crew_a lookouts and four enforcers stand guard 20-28 m in front of the player, a low wall (2.0 x 1.1 x 0.5 m) 4-5 m behind each enforcer. The player raises a pistol and keeps aiming: after 5 s the crew turns hostile, the lookouts run off and the enforcers take cover and fire. After a world reset the same crew stands again, and the player punches a lookout: the whole crew turns hostile.",
+ "rules": ["CB-9", "AC-5"],
+ "role": "solo",
+ "args": ["--role=solo", "--variation=25", "--save-dir={save_dir}"],
+ "mode": "lockstep",
+ "runs": [
+  {
+   "pace_ms": 0
+  }
+ ],
+ "limits": {
+  "wall_s": 600,
+  "boot_s": 60,
+  "step_s": 120,
+  "cpu_s": 1200,
+  "memory_mb": 1536,
+  "disk_mb": 512
+ },
+ "steps": [
+  {
+   "observe": {
+    "census": {
+     "meta": ["hostile", "limp", "vehicle", "weapon"],
+     "kinds": ["player", "npc", "prop", "vehicle"]
+    },
+    "state": true,
+    "camera": true,
+    "every": 1,
+    "bones": {
+     "ids": ["player"],
+     "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
+    }
+   }
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 25
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "traffic.set",
+     {
+      "density": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "prop.spawn",
+     {
+      "kind": "low_cover",
+      "at": [-110.0, 0.15, 87.0],
+      "size": [2.0, 1.1, 0.5],
+      "heading": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "prop.spawn",
+     {
+      "kind": "low_cover",
+      "at": [-102.0, 0.15, 86.0],
+      "size": [2.0, 1.1, 0.5],
+      "heading": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "prop.spawn",
+     {
+      "kind": "low_cover",
+      "at": [-96.0, 0.15, 87.0],
+      "size": [2.0, 1.1, 0.5],
+      "heading": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "prop.spawn",
+     {
+      "kind": "low_cover",
+      "at": [-89.0, 0.15, 86.0],
+      "size": [2.0, 1.1, 0.5],
+      "heading": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [-100.0, 0.15, 112.0],
+      "heading": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "weapon": "pistol",
+      "ammo": 24,
+      "armour": 100
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "crew_a_lookout",
+      "at": [-106.0, 0.15, 88.0],
+      "heading": 180,
+      "behaviour": "guard"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "crew_a_lookout",
+      "at": [-93.0, 0.15, 82.0],
+      "heading": 180,
+      "behaviour": "guard"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "crew_a_enforcer",
+      "at": [-110.0, 0.15, 92.0],
+      "heading": 180,
+      "behaviour": "guard"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "crew_a_enforcer",
+      "at": [-102.0, 0.15, 90.0],
+      "heading": 180,
+      "behaviour": "guard"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "crew_a_enforcer",
+      "at": [-96.0, 0.15, 92.0],
+      "heading": 180,
+      "behaviour": "guard"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "crew_a_enforcer",
+      "at": [-89.0, 0.15, 90.0],
+      "heading": 180,
+      "behaviour": "guard"
+     }
+    ]
+   ]
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["hostile", "limp", "vehicle", "weapon"],
+     "kinds": ["player", "npc", "prop", "vehicle"]
+    },
+    "state": true,
+    "camera": true,
+    "every": 1,
+    "bones": {
+     "ids": [
+      "player",
+      {
+       "$answer": [9, "id"]
+      },
+      {
+       "$answer": [10, "id"]
+      },
+      {
+       "$answer": [11, "id"]
+      },
+      {
+       "$answer": [12, "id"]
+      },
+      {
+       "$answer": [13, "id"]
+      },
+      {
+       "$answer": [14, "id"]
+      }
+     ],
+     "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
+    }
+   }
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "aim_a"
+  },
+  {
+   "press": {
+    "aim": 1.0
+   }
+  },
+  {
+   "run": 120
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "health": 100,
+      "armour": 100
+     }
+    ]
+   ]
+  },
+  {
+   "run": 120
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "health": 100,
+      "armour": 100
+     }
+    ]
+   ]
+  },
+  {
+   "run": 120
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "health": 100,
+      "armour": 100
+     }
+    ]
+   ]
+  },
+  {
+   "run": 120
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "health": 100,
+      "armour": 100
+     }
+    ]
+   ]
+  },
+  {
+   "run": 120
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "health": 100,
+      "armour": 100
+     }
+    ]
+   ]
+  },
+  {
+   "run": 120
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "health": 100,
+      "armour": 100
+     }
+    ]
+   ]
+  },
+  {
+   "run": 120
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "health": 100,
+      "armour": 100
+     }
+    ]
+   ]
+  },
+  {
+   "run": 120
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "health": 100,
+      "armour": 100
+     }
+    ]
+   ]
+  },
+  {
+   "run": 120
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "health": 100,
+      "armour": 100
+     }
+    ]
+   ]
+  },
+  {
+   "run": 120
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "health": 100,
+      "armour": 100
+     }
+    ]
+   ]
+  },
+  {
+   "mark": "aim_b"
+  },
+  {
+   "release": ["aim"]
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 25
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "traffic.set",
+     {
+      "density": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [-106.0, 0.15, 89.0],
+      "heading": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "weapon": "fists",
+      "health": 100,
+      "armour": 100
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "crew_a_lookout",
+      "at": [-106.0, 0.15, 88.0],
+      "heading": 180,
+      "behaviour": "guard"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "crew_a_lookout",
+      "at": [-93.0, 0.15, 82.0],
+      "heading": 180,
+      "behaviour": "guard"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "crew_a_enforcer",
+      "at": [-110.0, 0.15, 92.0],
+      "heading": 180,
+      "behaviour": "guard"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "crew_a_enforcer",
+      "at": [-102.0, 0.15, 90.0],
+      "heading": 180,
+      "behaviour": "guard"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "crew_a_enforcer",
+      "at": [-96.0, 0.15, 92.0],
+      "heading": 180,
+      "behaviour": "guard"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "crew_a_enforcer",
+      "at": [-89.0, 0.15, 90.0],
+      "heading": 180,
+      "behaviour": "guard"
+     }
+    ]
+   ]
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["hostile", "limp", "vehicle", "weapon"],
+     "kinds": ["player", "npc", "prop", "vehicle"]
+    },
+    "state": true,
+    "camera": true,
+    "every": 1,
+    "bones": {
+     "ids": [
+      "player",
+      {
+       "$answer": [45, "id"]
+      },
+      {
+       "$answer": [46, "id"]
+      },
+      {
+       "$answer": [47, "id"]
+      },
+      {
+       "$answer": [48, "id"]
+      },
+      {
+       "$answer": [49, "id"]
+      },
+      {
+       "$answer": [50, "id"]
+      }
+     ],
+     "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
+    }
+   }
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "hit_a"
+  },
+  {
+   "press": {
+    "attack": 1.0
+   }
+  },
+  {
+   "run": 2
+  },
+  {
+   "release": ["attack"]
+  },
+  {
+   "run": 180
+  },
+  {
+   "mark": "hit_b"
+  }
+ ],
+ "expect": [
+  {
+   "id": "turn_hostile_aim",
+   "check": "turn_hostile",
+   "args": {
+    "from": "aim_a",
+    "to": "aim_b",
+    "members": [
+     {
+      "step": 9
+     },
+     {
+      "step": 10
+     },
+     {
+      "step": 11
+     },
+     {
+      "step": 12
+     },
+     {
+      "step": 13
+     },
+     {
+      "step": 14
+     }
+    ],
+    "trigger": "aim",
+    "after_s": 5.0,
+    "within_s": 2.0
+   },
+   "rule": "CB-9",
+   "says": "with the player aiming a pistol inside turf_crew_a, all six crew members' hostile metadata turns true after 5.0 s and by 7.0 s, none before"
+  },
+  {
+   "id": "lookouts_flee",
+   "check": "flee_away",
+   "args": {
+    "from": "aim_a",
+    "to": "aim_b",
+    "people": [
+     {
+      "step": 9
+     },
+     {
+      "step": 10
+     }
+    ],
+    "min_m": 20.0,
+    "within_s": 10.0
+   },
+   "rule": "CB-9",
+   "says": "each hostile lookout ends at least 20 m farther from the player within 10 s of turning hostile, its hostile metadata still true"
+  },
+  {
+   "id": "enforcers_cover",
+   "check": "reach_cover",
+   "args": {
+    "from": "aim_a",
+    "to": "aim_b",
+    "crew": [
+     {
+      "step": 9
+     },
+     {
+      "step": 10
+     },
+     {
+      "step": 11
+     },
+     {
+      "step": 12
+     },
+     {
+      "step": 13
+     },
+     {
+      "step": 14
+     }
+    ],
+    "enforcers": [
+     {
+      "step": 11
+     },
+     {
+      "step": 12
+     },
+     {
+      "step": 13
+     },
+     {
+      "step": 14
+     }
+    ],
+    "boxes": [
+     {
+      "p": [-110.0, 0.15, 87.0],
+      "size": [2.0, 1.1, 0.5],
+      "heading": 0
+     },
+     {
+      "p": [-102.0, 0.15, 86.0],
+      "size": [2.0, 1.1, 0.5],
+      "heading": 0
+     },
+     {
+      "p": [-96.0, 0.15, 87.0],
+      "size": [2.0, 1.1, 0.5],
+      "heading": 0
+     },
+     {
+      "p": [-89.0, 0.15, 86.0],
+      "size": [2.0, 1.1, 0.5],
+      "heading": 0
+     }
+    ],
+    "within_s": 10.0,
+    "near_m": 1.0,
+    "min_share": 0.5
+   },
+   "rule": "CB-9",
+   "says": "within 10 s of the crew turning hostile, at least half of the four hostile enforcers stand within 1.0 m of one of the low walls"
+  },
+  {
+   "id": "enforcers_fire",
+   "check": "fires_at",
+   "args": {
+    "from": "aim_a",
+    "to": "aim_b",
+    "attackers": [
+     {
+      "step": 11
+     },
+     {
+      "step": 12
+     },
+     {
+      "step": 13
+     },
+     {
+      "step": 14
+     }
+    ],
+    "max_m": 40.0,
+    "min_hits": 1
+   },
+   "rule": "CB-9",
+   "says": "each hostile enforcer, the player 20-30 m away and in sight, fires at the player and hits"
+  },
+  {
+   "id": "hostile_meta",
+   "check": "meta_value",
+   "args": {
+    "mark": "aim_b",
+    "id_from": {
+     "step": 11
+    },
+    "key": "hostile",
+    "equals": true
+   },
+   "rule": "AC-5",
+   "says": "an enforcer attacking the player carries hostile metadata true"
+  },
+  {
+   "id": "turn_hostile_hit",
+   "check": "turn_hostile",
+   "args": {
+    "from": "hit_a",
+    "to": "hit_b",
+    "members": [
+     {
+      "step": 45
+     },
+     {
+      "step": 46
+     },
+     {
+      "step": 47
+     },
+     {
+      "step": 48
+     },
+     {
+      "step": 49
+     },
+     {
+      "step": 50
+     }
+    ],
+    "trigger": "hit",
+    "within_s": 2.0
+   },
+   "rule": "CB-9",
+   "says": "the player punches a lookout: every crew_a member turns hostile within 2.0 s of the hit"
+  }
+ ],
+ "tags": []
+}
