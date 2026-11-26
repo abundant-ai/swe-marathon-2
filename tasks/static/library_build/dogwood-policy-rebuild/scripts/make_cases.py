@@ -180,7 +180,7 @@ def cases_for(name: str, bundle: Path, meta: dict, r: random.Random) -> list[dic
     fl = flags(bundle)
     family = meta.get("family", "")
     pair = f"{meta['b_family']}:{meta['pair']}" if meta.get("b_family") else None
-    if family == "restrictions":
+    if family in ("restrictions", "features"):
         return restriction_cases(name, bundle, meta, base, fl)
     out = []
     for trace in sorted(
@@ -363,7 +363,7 @@ def cases_for(name: str, bundle: Path, meta: dict, r: random.Random) -> list[dic
 
 
 def restriction_cases(name, bundle, meta, base, fl) -> list[dict]:
-    """The commands whose answers show the one restriction a `restrictions.py` bundle breaks."""
+    """The commands whose answers show what a `restrictions.py` bundle breaks or uses."""
     targets = {
         "action": "schema.cedarschema",
         "event": "event.dwschema",
@@ -385,6 +385,14 @@ def restriction_cases(name, bundle, meta, base, fl) -> list[dict]:
             for fmt in ("human", "json"):
                 args = ["replay", *base, "--trace", "trace.log", *fl, "--format", fmt]
                 out.append(case(name, f"trace.log/replay/{fmt}", "R", args, fmt))
+        elif cmd == "explain":
+            for fmt in ("human", "json"):
+                args = ["explain", *base, *fl, "--format", fmt]
+                out.append(case(name, f"explain/{fmt}", "X", args, fmt))
+        elif cmd == "format":
+            out.append(
+                case(name, "format/human", "F", ["format", "policy.dw"], "human")
+            )
         elif cmd.startswith("schema-"):
             what = cmd.split("-", 1)[1]
             args = ["schema", what, targets[what]]
@@ -533,6 +541,7 @@ def main() -> int:
     key["previous"] = a.key_previous
     pairs.write_pairs(a.seed + 100, a.pairs, raw, key)
     restrictions.write_restrictions(a.seed + 300, raw)
+    restrictions.write_features(a.seed + 400, raw)
 
     r = random.Random(a.seed + 200)
     bundles.mkdir(parents=True)
@@ -549,7 +558,8 @@ def main() -> int:
         dst = bundles / src.name
         shutil.copytree(src, dst)
         (dst / "meta.json").unlink(missing_ok=True)
-        inline_scripts(dst)
+        if not meta.get("keep_script_file"):
+            inline_scripts(dst)
         tags[src.name] = {
             "family": meta.get("family"),
             "tags": sorted(meta.get("tags", [])),

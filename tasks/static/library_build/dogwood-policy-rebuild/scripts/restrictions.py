@@ -561,3 +561,238 @@ def write_restrictions(seed: int, out, copies: int = 2) -> int:
         write_sandbox_bundle(r, idx, str(out))
         idx += 1
     return idx
+
+
+# Bundles that use, correctly, a documented feature the generator never writes. Each names the
+# inventory id it exercises and the commands that show it; replays run on a short mixed trace.
+LOGIN_REQ = 'Ledger::Action::"Login"::request{ input.user: _, input.server: context.input.server }'
+TRANSFER_REQ = 'Ledger::Action::"Transfer"::request{ input.amount: a }'
+REGEX_PROVIDER = {
+    "availableProviders": {
+        "Text::Flag": {
+            "argumentTypes": [{"paramType": "string"}],
+            "outputType": {
+                "paramType": "record",
+                "fields": {"hit": {"paramType": "bool"}, "n": {"paramType": "integer"}},
+                "required": ["hit", "n"],
+            },
+            "implementation": {
+                "kind": "rhai",
+                "script": (
+                    "fn evaluate(text) {\n"
+                    '    if type_of(text) == "()" {\n'
+                    "        return #{ hit: false, n: 0 };\n"
+                    "    }\n"
+                    '    #{ hit: regex_is_match("^u[0-@K@]$", text), n: regex_count("[0-9]", text) }\n'
+                    "}\n"
+                ),
+            },
+        }
+    }
+}
+FEATURES: dict[str, tuple[tuple[str, ...], dict[str, str]]] = {
+    "feat:02:arithmetic": (
+        ("validate", "replay", "lower", "explain"),
+        {
+            "policy.dw": policy(
+                "context.input.amount + @N@ > 100 && context.input.amount * 2 < 1000"
+            )
+        },
+    ),
+    "feat:02:has-reserved-words": (
+        ("check-parse", "lower", "explain"),
+        {"policy.dw": policy("context has output || context.input has if")},
+    ),
+    "feat:02:in-expression": (
+        ("validate", "replay", "lower"),
+        {
+            "policy.dw": policy(
+                'principal in Ledger::User::"@WHO@" && context.input.amount > @N@'
+            )
+        },
+    ),
+    "feat:02:line-comments": (
+        ("check-parse", "format", "explain", "replay"),
+        {
+            "policy.dw": "// Transfers under the limit, from anyone.\n"
+            + policy(
+                'context.input.amount < @N@ // the limit\n    && context.input.user != "u9"'
+            )
+            + "\n// end of file\n"
+        },
+    ),
+    "feat:02:scope-order-omission": (
+        ("validate", "replay", "lower"),
+        {
+            "policy.dw": '@id("@RID@")\npermit (resource, principal)\nwhen { context.input.amount > @N@ };\n'
+        },
+    ),
+    "feat:02:template-slots": (
+        ("check-parse", "format"),
+        {
+            "policy.dw": policy(
+                "context.input.amount < @N@",
+                scope="principal == ?principal,\n    action,\n    resource == ?resource",
+            )
+        },
+    ),
+    "feat:02:unary-runs": (
+        ("validate", "replay", "lower"),
+        {
+            "policy.dw": policy(
+                "!!(context.input.amount > @N@) && --context.input.amount > 0"
+            )
+        },
+    ),
+    "feat:03:comments-trailing-comma": (
+        ("validate", "replay", "schema-event"),
+        {
+            "policy.dw": alert(f"formerly within @W@ {LOGIN_REQ}"),
+            "event.dwschema": "// Our two kinds; trailing commas are fine.\nmax_horizon = 6h\n\n"
+            + pairs.UNIVERSAL_EVENTS.replace(
+                "requestId: String,\n}", "requestId: String, // last\n}"
+            ),
+        },
+    ),
+    "feat:04:aggregate-comparisons": (
+        ("validate", "replay"),
+        {
+            "policy.dw": alert(
+                f"(count for (t: Timepoint). where formerly within @W@ ({LOGIN_REQ} && tp(t))) >= "
+                '(count for (t: Timepoint). where formerly within @W@ (Ledger::Action::"Transfer"::request{ input.amount: * } && tp(t)))'
+            )
+        },
+    ),
+    "feat:04:compound-never-binds": (
+        ("validate", "replay"),
+        {
+            "policy.dw": alert(
+                f"exists (a: Long). formerly within @W@ {TRANSFER_REQ} && a + 1 == 11"
+            )
+        },
+    ),
+    "feat:04:entity-equality-other": (
+        ("validate", "replay", "explain"),
+        {"policy.dw": policy("principal != resource && context.input.amount > @N@")},
+    ),
+    "feat:04:macro-call-args": (
+        ("validate", "replay", "explain"),
+        {
+            "policy.dw": "def temporal recent(?w, ?s) { formerly within ?w ?s };\n\n"
+            + alert(f"recent(@W@, {LOGIN_REQ})")
+        },
+    ),
+    "feat:09:value-macro-as-argument": (
+        ("validate", "replay"),
+        {
+            "policy.dw": "def temporal bind(?n, ?A, ?B) { exists (?n: Long). (?A == ?n && ?B) };\n\n"
+            + alert(f"bind(n, count_within(@W@, {LOGIN_REQ}), n > 1)")
+        },
+    ),
+    "feat:05:projection": (
+        ("validate", "replay", "lower"),
+        {
+            "policy.dw": policy('Risk::Score(context.input.amount)["score"] > @N@'),
+            "providers.json": providers(),
+        },
+    ),
+    "feat:06:callable-positions": (
+        ("validate", "replay"),
+        {
+            "policy.dw": "def cedar small(?n) { ?n < @N@ };\n\n"
+            + policy(
+                f"small(context.input.level) && temporal {{ formerly within @W@ {LOGIN_REQ} }}",
+                scope=ALERT_SCOPE,
+            )
+        },
+    ),
+    "feat:08:balanced-fold": (
+        ("lower", "explain", "replay"),
+        {
+            "policy.dw": '@id("@RID@")\npermit (\n    '
+            + TRANSFER_SCOPE
+            + "\n)\nwhen { context.input.amount > 1 }\nwhen { context.input.amount < @N@ }\n"
+            + 'unless { context.input.user == "u9" }\nwhen { context.input.amount != 7 };\n'
+        },
+    ),
+    "feat:10:host-functions": (
+        ("validate", "replay"),
+        {
+            "policy.dw": policy("Text::Flag(context.input.user).hit"),
+            "providers.json": json.dumps(REGEX_PROVIDER, indent=1) + "\n",
+        },
+    ),
+}
+
+
+SCRIPT_FILE = "feat:10:scriptfile-unresolved"
+
+
+def write_script_file_bundle(r, idx, out):
+    """A provider whose script is a `scriptFile`: the command line never resolves it, so
+    `validate` and `lower` work and `replay` cannot evaluate the provider."""
+    decl = json.loads(providers())
+    impl = decl["availableProviders"]["Risk::Score"]["implementation"]
+    script = impl.pop("script")
+    impl["scriptFile"] = "score.rhai"
+    d = os.path.join(out, f"fx{idx:03d}")
+    os.makedirs(d, exist_ok=True)
+    files = {
+        "policy.dw": fill(
+            policy("Risk::Score(context.input.amount).score > @N@"), r, idx
+        ),
+        "schema.cedarschema": pairs.SCHEMA,
+        "providers.json": json.dumps(decl, indent=1) + "\n",
+        "score.rhai": fill(script, r, idx),
+        "trace.log": "\n".join(mixed_trace(r)) + "\n",
+    }
+    for name, text in files.items():
+        with open(os.path.join(d, name), "w") as f:
+            f.write(text)
+    meta = {
+        "family": "features",
+        "kind": SCRIPT_FILE,
+        "cmds": ["validate", "lower", "replay"],
+        "keep_script_file": True,
+    }
+    with open(os.path.join(d, "meta.json"), "w") as f:
+        json.dump(meta, f, indent=1)
+
+
+def mixed_trace(r):
+    """A short trace: Logins, Transfers and Alerts by two principals, increasing timestamps."""
+    c = pairs.Clock(r)
+    who = r.sample(pairs.PEOPLE, 2)
+    lines = []
+    for _ in range(r.randint(4, 7)):
+        ev = r.choice(
+            [pairs.login(r), pairs.transfer(r), pairs.transfer(r), pairs.ALERT]
+        )
+        ts, rid = c.tick()
+        lines.append(pairs.line(ts, ev[0], ev[1], rid, scope=r.choice(who)))
+    return lines
+
+
+def write_features(seed: int, out, copies: int = 2) -> int:
+    r = random.Random(seed)
+    idx = 0
+    for fid, (cmds, files) in FEATURES.items():
+        for _ in range(copies):
+            d = os.path.join(out, f"fx{idx:03d}")
+            os.makedirs(d, exist_ok=True)
+            texts = {name: fill(text, r, idx) for name, text in files.items()}
+            texts.setdefault("schema.cedarschema", pairs.SCHEMA)
+            if "replay" in cmds:
+                texts["trace.log"] = "\n".join(mixed_trace(r)) + "\n"
+            for name, text in texts.items():
+                with open(os.path.join(d, name), "w") as f:
+                    f.write(text)
+            with open(os.path.join(d, "meta.json"), "w") as f:
+                json.dump(
+                    {"family": "features", "kind": fid, "cmds": list(cmds)}, f, indent=1
+                )
+            idx += 1
+    for _ in range(copies):
+        write_script_file_bundle(r, idx, out)
+        idx += 1
+    return idx
