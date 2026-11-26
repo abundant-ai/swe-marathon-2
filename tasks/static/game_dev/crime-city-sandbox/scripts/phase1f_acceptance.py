@@ -8,6 +8,8 @@ game process also waits for QA_MEM_FLOOR, default 30, percent free memory):
            playtest as the instance set, and on the reference and the starter with the
            private set (tests/private/instances.json: the alternative Downtown and, since
            Phase 1f, the people and signal instances)
+  private  the grader on the reference and on the starter with the private set only (to rerun
+           those two alone; give it another --work than a grade run's)
   replay10 world.replay/two-paces on the reference, ten fresh processes: distinct hashes
 Projects come from --starter and --reference (staged with scripts/stage_project.py).
 Results go to experiment/phase1f/<part>.json.
@@ -86,7 +88,7 @@ def manifest(work: Path) -> Path:
 def main() -> int:
     """Run one part and write its results."""
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("part", choices=["qa", "grade", "replay10"])
+    ap.add_argument("part", choices=["qa", "grade", "private", "replay10"])
     ap.add_argument("--work", type=Path, required=True)
     ap.add_argument("--starter", type=Path, required=True)
     ap.add_argument("--reference", type=Path, required=True)
@@ -119,6 +121,24 @@ def main() -> int:
                     "starter-private", "--skip-selftest",
                 ),
             }  # fmt: skip
+        elif a.part == "private":
+            private = TASK / "tests/private/instances.json"
+            result = {
+                "reference_private": base.run_grade(
+                    a.reference.resolve(),
+                    work,
+                    private,
+                    "ref-private",
+                    "--skip-selftest",
+                ),
+                "starter_private": base.run_grade(
+                    a.starter.resolve(),
+                    work,
+                    private,
+                    "starter-private",
+                    "--skip-selftest",
+                ),
+            }
         else:
             result = base.replay10(a.reference.resolve(), work / "replay10")
     finally:

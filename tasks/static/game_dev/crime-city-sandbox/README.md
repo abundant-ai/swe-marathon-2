@@ -64,8 +64,17 @@ the private one shares no node, edge or parcel with the shipped plan and keeps i
 interest, and the reference builds it with every compliance ray as planned. Report:
 `notes/PHASE1E-REPORT.md`.
 
-Next: vehicles (WS6 module 4) with getting in and out (FT-10), and the ragdoll (FT-9) once the
-design says how QA sees a person go limp.
+Phase 1f: the reference's vehicles (WS6 module 4) and the rest of its people module (getting in
+and out, the ragdoll), four new playtests, the telemetry's seat read, and hidden instances for the
+people and signal playtests. Every one of the 11 models sits in the middle of its handling bands
+(0-60 km/h, dry braking, the wet ratio, the turning circle, the handbrake; top speed at a rev limit
+reached within about 1.2 km); impacts damage vehicles, parts come off, damaged engines fail, burning
+vehicles explode. A three-judge panel chose how QA sees a person go limp: the `limp` metadata (A,
+by majority), with the physical clauses checked on the bones while it is true. The reference holds
+all 26 playtests; the private set has 31 instances, none repeating its playtest. Report:
+`notes/PHASE1F-REPORT.md`.
+
+Next: traffic and pedestrians (WS6 module 5), and the vehicle and entry hidden instances.
 
 The art (Kenney and Quaternius CC0 packs) and the Godot binary are not committed; `.gitignore` and
 `spike/.gitignore` list them. The reference game and the hidden material live outside this public
@@ -74,6 +83,40 @@ repository (`notes/PHASE1-PLAN.md`, section 4).
 ## Development log
 
 ### 2026-11-26
+
+Phase 1f: vehicles (WS6 module 4), getting in and out, the ragdoll's limp flag, and hidden
+instances, on macOS. There were no downloads, no Docker, no Linux VM and no platform runs. Every
+Godot run went through `scripts/heavy.py`; free memory sat at 26-39% and runs waited below 30%.
+- **Vehicles (WS6 module 4, private).** Raycast vehicles on `RigidBody3D` for all 11 models: car
+  kit models at 1.72 times their size, all-wheel drive under force, power and rev limits, brakes
+  at the grip limit (rain's 0.78 grip lengthens stops 1.28 times), the handbrake on the rear
+  wheels, the motorbike leaning into turns. A small Python model sized each model for the middle
+  of its bands; measured 0-60 times match it to 0.01 s. Damage from impacts, parts as debris
+  bodies, engines failing at 0.75, burning and exploding at 0.80, people run into at 20 km/h or
+  more going limp.
+- **Getting in and out (FT-10).** The nearest door's seat, a 1.4 m/s walk and a 1.4 s slide in;
+  seated, the person rides as the vehicle's child with the hips on the seat point and the driver's
+  hands on the wheel point; a 2.0 s slide out to the door.
+- **The ragdoll (FT-9).** A panel (opus A, haiku A, sonnet A plus a cross-check) chose a documented
+  flag: people carry `limp` and the state report `player.limp`; QA checks the rule's physical
+  clauses on the bones while it is true. The reference's ragdoll is position-based physics on 17
+  joints with a rigid torso fitted every tick; free fall measures 9.81 m/s^2.
+- **Telemetry (WS3).** A seat read in the style of the bone reads (each vehicle's seat, door and
+  wheel points in world space, every tick), a `body` query (class, mass, layers) and a census of
+  some kinds; a Godot check compares 252 points with exact positions (worst 2.35e-6 m).
+- **Kit and playtests (WS4).** `wait_for` an entity's speed or height, and `cruise` (QA's bot
+  holding a speed). Twenty checks, each over hand-made frames from a good game and a broken
+  one. `vehicle.handling/cars`, `vehicle.handling/service`, `people.vehicle_entry/sedan`,
+  `vehicle.crash/barrier`; the falls playtest checks the ragdoll, getting up and free fall.
+- **Hidden instances (WS8).** Private templates for the eight people and signal playtests, 31
+  instances in all, and `scripts/check_disjoint.py`: no instance repeats its playtest. The new
+  instances found a real defect: the reference measured falls from where its capsule had slid
+  over the edge.
+- **Clarifications.** FT-9 and FT-10 (what limp and seated mean and when they end), AC-5, AC-6,
+  AC-12, chapter 6 (where handling is measured; the turning circle at the vehicle's position),
+  IN-2, VH-3 (dv across the 0.2 s), VH-6 (the push), `player.give` (health 0 kills). An
+  independent read found no evaluation wording; its fairness findings are fixed.
+
 
 Phase 1e: people (WS6 module 3, first part), the signals playtest and the alternative Downtown, on
 macOS. There were no downloads, no Docker, no Linux VM and no platform runs. Every Godot run went
