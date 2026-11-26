@@ -110,9 +110,26 @@ def prepare(record: bool) -> tuple[list[dict], dict[str, str]]:
     return cases, expected
 
 
-def skip_build_dirs(directory: str, names: list[str]) -> set[str]:
-    """copytree filter: subdirectories that are meson build directories are not copied."""
-    return {n for n in names if (Path(directory) / n / "meson-private").is_dir()}
+MAX_FILE = 512 * 1024 * 1024  # no file of a HarfBuzz tree comes near this
+MAX_OUTPUT = 256 * 1024 * 1024  # far above any batch's real output
+
+
+def skip_entries(directory: str, names: list[str]) -> set[str]:
+    """copytree filter: leave out meson build directories, special files (pipes, sockets, devices) and huge files.
+
+    Symbolic links are copied as links (copytree runs with symlinks=True), never followed.
+    """
+    skipped = set()
+    for n in names:
+        path = Path(directory) / n
+        if path.is_symlink():
+            continue
+        if path.is_dir():
+            if (path / "meson-private").is_dir():
+                skipped.add(n)
+        elif not path.is_file() or path.stat().st_size > MAX_FILE:
+            skipped.add(n)
+    return skipped
 
 
 def step(notes: list[str], name: str, cmd: list[str], cwd: Path, limit: int) -> bool:
@@ -132,8 +149,8 @@ def build(notes: list[str], kinds: set[str]) -> dict[str, Path]:
     if not TREE.is_dir():
         notes.append("/app/harfbuzz is missing")
         return {}
-    # Build out of tree, and leave out any build directory the tree carries (meson marks them).
-    shutil.copytree(TREE, WORK / "tree", symlinks=True, ignore=skip_build_dirs)
+    # Build out of tree, and leave out build directories, special files and huge files the tree may carry.
+    shutil.copytree(TREE, WORK / "tree", symlinks=True, ignore=skip_entries)
     subprocess.run(["chown", "-R", "builder:builder", str(WORK)], check=True)
     tree = WORK / "tree"
     if not (
@@ -190,6 +207,8 @@ def run_batches(drivers: dict[str, Path], cases: list[dict]) -> dict[str, str]:
             as_builder(
                 [str(drivers[kind])], cwd=WORK, timeout=300, stdin=fin, stdout=fout
             )
+        if out.stat().st_size > MAX_OUTPUT:
+            continue  # a driver that floods its output fails its batch
         for line in out.read_text(errors="replace").splitlines():
             cid, _, result = line.partition("\t")
             outputs[cid] = result
