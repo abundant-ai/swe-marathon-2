@@ -15,3 +15,6 @@
 solution/game/
 tests/private/
 experiment/
+# Built telemetry libraries and Python caches.
+common/probe/build/
+**/__pycache__/
