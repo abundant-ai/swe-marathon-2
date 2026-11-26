@@ -325,7 +325,7 @@ For the Linux items above, ask the owner for an x86_64 Linux machine.
 | --- | --- |
 | `1d3cfd3` | WS4/WS6: the plan-compliance playtest (core block, 2,746 rays), the kit's ray and people checks, the README's `query` step; playtest files keep short lists on one line |
 | `1679499` | WS2/WS4: the full Downtown, the checker's curves, portals, bounds and GDD cross-check, the mutation set as a development check, FORMAT.md's examples; the five people playtests; CM-1's `Hips` |
-| `COMMIT_FIXES` | The independent read's findings (wording, fairness, notes, README, seven clarifications), the lineup's own AC-11 and AR-3 expectations, the acceptance tool, this report and the README |
+| `269fe89` | The independent read's findings (wording, fairness, notes, README, seven clarifications), the lineup's own AC-11 and AR-3 expectations, the acceptance tool, this report and the README |
 | (next) | this table's hashes |
 
 Private, with both bundles refreshed in `harbor-lh/ops/swe-marathon-v2/next-tasks/game-private/`:
