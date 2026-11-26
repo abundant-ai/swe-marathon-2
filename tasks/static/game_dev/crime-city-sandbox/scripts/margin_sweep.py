@@ -4,12 +4,12 @@ WS1 and WS9 (notes/PHASE1-PLAN.md) ask the reference to hold every band with its
 least 15% of the band's width inside each edge. This reads what `qa run --json` found and the
 playtests' expectations, and for every measured value with a band works out its margin:
 - a band [lo, hi]: min(value - lo, hi - value) / (hi - lo);
-- "at most hi" for a quantity that cannot go below 0 (a time, a distance, a rate): the band
-  [0, hi];
-- "at least lo" for a share (at most 1): the band [lo, 1];
+- "at most hi" for a quantity whose floor, 0, is no limit (a time, a distance, a rate): the
+  room below hi as a share of hi;
+- "at least lo" for a share (1 is no limit): the room above lo as a share of 1 - lo;
 - "at least lo" for an open-ended quantity (a count, a distance, a speed): (value - lo) / lo.
 Values the rule itself pins to an edge (the camera's tilt limits, which CM-2 makes the camera's
-stops) are listed as such, not as margins.
+stops) and a clock read in whole minutes are listed as such, not as margins.
 
 Usage:
   python scripts/margin_sweep.py FOUND.json [--playtests DIR] [--min 0.15] [--json OUT]
@@ -37,14 +37,18 @@ def band(v: object, lo: object, hi: object) -> float | None:
 
 
 def upto(v: object, hi: object) -> float | None:
-    """At most hi, from 0."""
-    return (
-        band(v, 0.0, hi) if isinstance(v, (int, float)) and v >= 0 else band(v, v, hi)
-    )
+    """At most hi, for a quantity whose floor (0) is no limit: the room left below hi, as a
+    share of hi (the band [0, hi], judged at its upper edge only)."""
+    if not isinstance(v, (int, float)) or not isinstance(hi, (int, float)) or hi <= 0:
+        return None
+    return (hi - v) / hi
 
 
 def share(v: object, lo: object) -> float | None:
-    return band(v, lo, 1.0)
+    """At least lo, for a share up to 1 (1 is no limit): the band [lo, 1] at its lower edge."""
+    if not isinstance(v, (int, float)) or not isinstance(lo, (int, float)) or lo >= 1.0:
+        return None
+    return (v - lo) / (1.0 - lo)
 
 
 def atleast(v: object, lo: object) -> float | None:
@@ -356,7 +360,11 @@ def margins(check: str, a: dict, m: dict) -> list[tuple[str, object, float | Non
         )
     elif check in ("state_value",) and ("min" in a or "max" in a):
         v = m.get("minutes", m.get("value"))
-        add("value", v, band(v, a.get("min"), a.get("max")))
+        if a.get("as") == "minutes":
+            # a clock read in whole minutes: the band's ends are the rounding of the rule's
+            add("clock (whole minutes)", v, None)
+        else:
+            add("value", v, band(v, a.get("min"), a.get("max")))
     elif check == "moved":
         if "min_m" in a:
             add("moved_m", m.get("moved_m"), atleast(m.get("moved_m"), a["min_m"]))
