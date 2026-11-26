@@ -112,6 +112,8 @@ def prepare(record: bool) -> tuple[list[dict], dict[str, str]]:
 
 MAX_FILE = 512 * 1024 * 1024  # no file of a HarfBuzz tree comes near this
 MAX_OUTPUT = 256 * 1024 * 1024  # far above any batch's real output
+BATCH_TIMEOUT = 300  # one driver process over one font's cases
+DRIVER_BUDGET = 1200  # all batches together, so a hanging library cannot outlast the verifier's own limit
 
 
 def skip_entries(directory: str, names: list[str]) -> set[str]:
@@ -191,9 +193,11 @@ def run_batches(drivers: dict[str, Path], cases: list[dict]) -> dict[str, str]:
     for c in cases:
         batches[(c.get("drv", "shape"), c["font"])].append(c)
     outputs: dict[str, str] = {}
+    deadline = time.time() + DRIVER_BUDGET
     for n, ((kind, font), items) in enumerate(sorted(batches.items())):
-        if kind not in drivers:
-            continue
+        remaining = int(deadline - time.time())
+        if kind not in drivers or remaining < 5:
+            continue  # its cases fail: no driver, or the drivers have used up their time
         batch = WORK / f"batch-{n}.tsv"
         batch.write_text(
             "".join(
@@ -205,7 +209,11 @@ def run_batches(drivers: dict[str, Path], cases: list[dict]) -> dict[str, str]:
         out = WORK / f"batch-{n}.out"
         with batch.open() as fin, out.open("wb") as fout:
             as_builder(
-                [str(drivers[kind])], cwd=WORK, timeout=300, stdin=fin, stdout=fout
+                [str(drivers[kind])],
+                cwd=WORK,
+                timeout=min(BATCH_TIMEOUT, remaining),
+                stdin=fin,
+                stdout=fout,
             )
         if out.stat().st_size > MAX_OUTPUT:
             continue  # a driver that floods its output fails its batch
