@@ -53,7 +53,9 @@ def memory_free_pct() -> int:
 
 
 @contextlib.contextmanager
-def heavy(job: str, poll_s: int = 120) -> Iterator[None]:
+def heavy(
+    job: str, poll_s: int = int(os.environ.get("HBFP_POLL_S", "120"))
+) -> Iterator[None]:
     """Hold the shared heavy-job lock, taken only while at least 30% of memory is free."""
     while True:
         free = memory_free_pct()
