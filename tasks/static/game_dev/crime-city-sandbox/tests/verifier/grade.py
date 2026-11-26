@@ -9,7 +9,9 @@ Order:
 3. G_static on the submission as collected, G_import (preparation of a copy), G_boot.
 4. Every instance of the release manifest, one fresh game process per run, in manifest
    order, within the grader's own deadline. An instance that cannot start before the
-   deadline (or is cut by it) counts 0 within its family's fixed N_f.
+   deadline (or is cut by it) counts 0 within its family's fixed N_f. Game processes get
+   the shipped plans (--plan-dir), except those of an instance whose manifest entry names
+   its own plan folder (load_manifest), which get a fresh copy of that folder (GDD WD-8).
 5. Physics-sensitive instances scoring below 1 rerun once (at most 15% of instances).
 6. reward.txt (six decimals) and report.json, each written to a temporary name and
    renamed into place.
@@ -25,6 +27,7 @@ import dataclasses
 import json
 import os
 import random
+import shutil
 import signal
 import threading
 import time
@@ -171,11 +174,60 @@ def make_options(
 
 
 def load_manifest(path: Path) -> tuple[dict, list[dict]]:
-    """Read a release manifest: ({family: {"w", "n"}}, [{"file", "family"}])."""
+    """Read a release manifest (format "qa-instances/1").
+
+    The manifest is {"format", "release", "families", "instances"}: "families" maps each
+    family letter to {"w": weight, "n": fixed instance count}, and "instances" lists the
+    instances in the order they run, each {"file": play file, "family": letter} with an
+    optional "plans": a plan folder (the same file names as the shipped plans). Paths are
+    relative to the manifest's folder. An instance with "plans" runs its game processes
+    with --plan-dir=<a fresh copy of that folder> (instance_plans); the others get the
+    shipped plans.
+
+    Returns:
+        ({family: {"w", "n"}}, [{"file", "family", "plans"?}]).
+    """
     m = json.loads(path.read_text())
     if m.get("format") != "qa-instances/1":
         raise EvaluationError(f"{path} is not a qa-instances/1 manifest")
     return m["families"], m["instances"]
+
+
+def instance_plans(cfg: GradeConfig, entry: dict, work: Path) -> Path | None:
+    """The plan folder one instance's game processes get as --plan-dir.
+
+    An entry that names "plans" (a folder relative to the manifest) runs on a fresh copy
+    of that folder, made in the instance's work folder and readable by every user: the
+    game runs as a user that cannot read the grader's private inputs (sandbox.py), and no
+    earlier game process can have changed the copy. Every other entry runs on the shipped
+    plans (cfg.plans).
+
+    Args:
+        cfg: The grading run's configuration.
+        entry: The instance's manifest entry.
+        work: The instance's work folder (created when needed).
+
+    Returns:
+        The folder to pass, or None when there is none.
+
+    Raises:
+        EvaluationError: The entry names something that is not a folder.
+    """
+    rel = entry.get("plans")
+    if rel is None:
+        return cfg.plans
+    src = cfg.instances.parent / str(rel)
+    if not isinstance(rel, str) or not rel or not src.is_dir():
+        raise EvaluationError(
+            f"instance {entry.get('file')}: plans {rel!r} is not a folder next to the manifest"
+        )
+    dst = work / "plans"
+    if dst.exists():
+        shutil.rmtree(dst)
+    shutil.copytree(src, dst, copy_function=shutil.copyfile)
+    for path in [dst, *dst.rglob("*")]:
+        path.chmod(0o755 if path.is_dir() else 0o644)
+    return dst
 
 
 def grade_instance(
@@ -213,7 +265,7 @@ def grade_instance(
         cfg.godot,
         work,
         lambda _k, _n, folder: options(folder, play_limited),
-        plans=cfg.plans,
+        plans=instance_plans(cfg, entry, work),
     )
     outcomes = expect.check_play(rec) + expect.standing(rec)
     checks = [scoring.Check(o.id, o.kind, o.w, o.ok) for o in outcomes]
@@ -225,6 +277,8 @@ def grade_instance(
         "exits": [r.exits for r in rec.runs],
         "replay": [r.chain.replay_hash if r.chain else None for r in rec.runs],
     }
+    if "plans" in entry:
+        detail["plans"] = entry["plans"]
     return scoring.InstanceResult(
         play.name,
         entry["family"],
