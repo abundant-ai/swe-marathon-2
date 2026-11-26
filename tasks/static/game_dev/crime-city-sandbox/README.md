@@ -52,8 +52,20 @@ problems and catches all 17 mutations of its set. Five people playtests: paces, 
 leads' lineup hold on the reference; feet and crouch wait for module 3. Report:
 `notes/PHASE1D-REPORT.md`.
 
-Next: the reference's people module (WS6 module 3: animation from the shipped clips, crouching,
-jumping and climbing), which the feet and crouch playtests wait for.
+Phase 1e: the reference's people module, first part (WS6 module 3, private), three new playtests,
+the telemetry reading bones after skeleton modifiers, and the private alternative Downtown (WD-8).
+Every person plays the shipped clips time-scaled to its speed, with planted toes held still by leg
+IK; the player crouches, jumps, climbs ledges up to 2.45 m with its hands on the edge, vaults
+obstacles up to 1.05 m while running, is hurt by falls, and its camera stays out of walls. The feet
+and crouch playtests now hold and join the reference's required set, as do
+`people.jump_climb_vault/plaza`, `people.fall_ragdoll/falls` and
+`traffic.intersection_watch/signals`. `scripts/gen_plan.py --layout random` draws other Downtowns;
+the private one shares no node, edge or parcel with the shipped plan and keeps its 27 points of
+interest, and the reference builds it with every compliance ray as planned. Report:
+`notes/PHASE1E-REPORT.md`.
+
+Next: vehicles (WS6 module 4) with getting in and out (FT-10), and the ragdoll (FT-9) once the
+design says how QA sees a person go limp.
 
 The art (Kenney and Quaternius CC0 packs) and the Godot binary are not committed; `.gitignore` and
 `spike/.gitignore` list them. The reference game and the hidden material live outside this public
@@ -62,6 +74,42 @@ repository (`notes/PHASE1-PLAN.md`, section 4).
 ## Development log
 
 ### 2026-11-26
+
+Phase 1e: people (WS6 module 3, first part), the signals playtest and the alternative Downtown, on
+macOS. There were no downloads, no Docker, no Linux VM and no platform runs. Every Godot run went
+through `scripts/heavy.py`; free memory sat at 27-47% and runs waited below 30%.
+- **People (WS6 module 3, private).** Every person plays the shipped clips on an AnimationPlayer
+  stepped in physics ticks, the clip chosen by gait and time-scaled by its speed over the clip's
+  toe speed (measured on both library bodies). After the animation, a pose node holds a planted
+  toe still with two-bone leg IK, keeps toes above the ground and puts the hands on a ledge while
+  climbing. The player crouches, jumps, climbs ledges up to 2.45 m, vaults obstacles up to 1.05 m
+  while running, takes fall damage, and its camera pulls in front of walls and, looking up, keeps
+  above the ground. The shipped sprint clip's left toe dips mid-stance, so no time scale alone
+  holds FT-2 at a sprint as QA measures it (the kit's own check, simulated over 26 scales and 12
+  phases: at best 4 of 12); holding the planted toe brings the slide to 0.
+- **Telemetry (WS3).** It read bones with `get_bone_global_pose` at the start of a tick, after the
+  engine had put back the pose a `SkeletonModifier3D` (the engine's IK, look-at or ragdoll) set: a
+  game using TwoBoneIK3D for climbing hands would have been measured on the wrong pose. It now keeps
+  each skeleton's bones at `skeleton_updated` and reads those; a Godot check proves it (2.6e-7 m;
+  the old library misses by 0.25-1.10 m).
+- **Playtests (WS4).** `people.jump_climb_vault/plaza` (FT-3, FT-4, FT-5, CM-4),
+  `people.fall_ragdoll/falls` (FT-8) and `traffic.intersection_watch/signals` (TR-4, AC-7), with
+  the checks `jump`, `climb`, `vault`, `camera_clear`, `fall_damage`, `signal_entities`,
+  `signal_program`, `signal_greens` and `signal_walks`, and `wait_for` with `near` (to press jump
+  at a set distance). The feet and crouch playtests join the required set.
+- **WD-8.** `scripts/gen_plan.py --layout random` draws other Downtowns (the default output is
+  unchanged). The private one (9 x 8 lines, 74 nodes, 129 edges, 308 lanes, 33 signalised
+  junctions, 180 parcels) shares no node, edge, block or parcel with the shipped plan and keeps its
+  27 points of interest; `check_plan.py` reports 0 problems. A manifest entry can name its own plan
+  folder, and the plan-swap instance (12,503 rays) holds on the reference.
+- **Results.** The reference holds all 22 playtests and grades 1.000000 with them as instances
+  and 1.000000 on the private set (15 instances); the starter fails every playtest cleanly and
+  grades 0.000000; ten replays give one hash; each game process peaks at about 134 MB.
+- **Clarifications.** FT-3 (off the ground), FT-4 (on top; the edge on the player's side), FT-5
+  (jump pressed 1.0-1.5 m before; over: past the far side), FT-8 (a fall from the ground left to the
+  ground landed on), CM-1 (nearer where a wall pulls the camera in), `prop.spawn`'s box, and the
+  plan program's start tick. An independent read found no evaluation wording; its other findings
+  (the falls mark, tolerances at phase changes, notes without numbers) are fixed.
 
 Phase 1d: the world builder on Downtown, the full Downtown plan and the first people playtests, on
 macOS. There were no downloads, no Docker, no Linux VM and no platform runs. Every Godot run went
