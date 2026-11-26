@@ -10,7 +10,8 @@ for each file OpenFOAM wrote.
              OpenFOAM data files that change get tolerance FACTOR x the change; if they are
              integers, or anything else changes, the record is unstable. Runs that compile code
              at run time are out of scope. Writes stability.json.
-  dummy      run once with a do-nothing program first on PATH; checks it passes are dropped.
+  dummy      run once with a do-nothing program first on PATH; checks it passes are dropped
+             (run with each do-nothing program; the passes add up).
              Adds "dummy_passes" to stability.json.
 
 usage: replay.py check|stability|dummy <verifier dir> <records or record dirs>...
@@ -138,7 +139,8 @@ def run_one(a, rec, name):
         res = check(run, st.get("tolerances"), st.get("masked", ()))
         run.close()
         if a.mode == "dummy":
-            st["dummy_passes"] = sorted(n for n, r in res.items() if r.ok)
+            passes = {n for n, r in res.items() if r.ok}
+            st["dummy_passes"] = sorted(passes | set(st.get("dummy_passes", ())))
             rec.save_stability(st)
             return 0, 0
         names = kept(rec, res) if st else list(res)

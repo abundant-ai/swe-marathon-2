@@ -3,6 +3,7 @@ reproduces that part of the recorded outcome."""
 
 import hashlib
 import json
+import os
 
 import pytest
 from openfoam_verifier import recorded as R
@@ -118,14 +119,43 @@ def test_timeout_fails_every_check(dataset, monkeypatch):
     assert failing(replay(dataset, "sleep 5\n" + GOOD, timeout=1.0)) == set(CHECKS)
 
 
-def test_missing_program_fails(dataset):
+def replay_as(dataset, program_name):
     root, record = dataset
-    record["command"]["program"] = str(root / "absent")
+    record = {**record, "command": {**record["command"], "program": program_name}}
     (root / "records" / "r.json").write_text(json.dumps(record))
-    test = Case("records/r.json", "src", "prog", CHECKS, (), {}, 1.0)
-    assert "exit" in failing(
-        runs.replay(test, str(root), str(root / "app"), None, None, str(root))
+    test = Case("records/r.json", "src", "prog", CHECKS, (), {}, 10 / runs.SLOWDOWN)
+    return runs.replay(test, str(root), str(root / "app"), None, None, str(root))
+
+
+def test_missing_program_fails_every_check(dataset):
+    assert failing(replay_as(dataset, str(dataset[0] / "absent"))) == set(CHECKS)
+
+
+def test_output_written_as_a_link_fails(dataset):
+    body = GOOD + 'cp out.txt .copy; ln -sf "$PWD/.copy" out.txt\n'
+    assert "file out.txt" in failing(replay(dataset, body))
+
+
+def test_mpirun_is_the_systems(dataset, monkeypatch):
+    monkeypatch.setattr(R, "MPIRUN", program(dataset[0], GOOD))
+    assert failing(replay_as(dataset, "mpirun")) == set()
+
+
+def test_input_snapshot_is_out_of_the_programs_reach(dataset):
+    root, record = dataset
+    path = root / "records" / "r.json"
+    path.write_text(
+        json.dumps({**record, "command": {**record["command"], "program": "true"}})
     )
+    rec = R.Record.load(str(path), str(root / "files"))
+    run = R.Run(
+        rec, R.Limits(env={"PATH": "/usr/bin:/bin"}, timeout=10), work_root=str(root)
+    )
+    try:
+        assert not run.before.startswith(run.work + "/")
+        assert os.stat(run.private).st_mode & 0o777 == 0o700
+    finally:
+        run.close()
 
 
 def test_time_limit_and_processes():

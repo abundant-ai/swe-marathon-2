@@ -1,5 +1,5 @@
 # Stage 1 builds OpenFOAM from source. Stage 2 gets only the programs, libraries,
-# run-time data and tutorials. Build context: this folder plus reference/ (copy of common/reference/).
+# run-time data and tutorials. Build context: this folder plus reference/.
 FROM ubuntu:26.04 AS openfoam
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -26,7 +26,7 @@ FROM ubuntu:26.04
 ENV DEBIAN_FRONTEND=noninteractive LC_ALL=C.UTF-8 LANG=C.UTF-8
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential cmake python3 python-is-python3 golang-go rustc cargo \
-        zlib1g-dev libopenmpi-dev openmpi-bin libreadline-dev libncurses-dev \
+        flex libfl-dev bison libcgal-dev zlib1g-dev libopenmpi-dev openmpi-bin libreadline-dev libncurses-dev \
         libscotch-dev libptscotch-dev libfftw3-dev libgmp-dev libmpfr-dev libmetis-dev \
         libboost-system-dev libboost-thread-dev \
         m4 perl bc gnuplot-nox unzip xz-utils bzip2 git ripgrep jq less procps ca-certificates \
@@ -36,19 +36,12 @@ COPY --from=openfoam /opt/openfoam /opt/openfoam
 COPY --from=openfoam /opt/tutorials /app/tutorials
 # Programs can be run but not read: setgid group openfoam, mode 2711; libraries readable by
 # that group only. Setgid programs ignore LD_LIBRARY_PATH, so the libraries go through ldconfig,
-# with lib/dummy stand-ins for libraries not built (KaHIP). The run-time data in etc
-# (controlDict, caseDicts, thermoData, ...) likewise: readable by the programs, not by the
-# user. Only the shell setup scripts (bashrc, cshrc, config.sh, config.csh, openfoam) stay
-# readable, since every shell sources them.
+# with lib/dummy stand-ins for libraries not built (KaHIP). The hardened build (hardening.patch)
+# keeps the programs from reading those files for the user or loading the user's libraries.
+# The run-time data in etc and the scripts in bin are readable.
 RUN groupadd --system openfoam && useradd --uid 10001 --create-home dev \
     && O=/opt/openfoam/platforms/$(cat /opt/openfoam/WM_OPTIONS) \
     && chown -R root:openfoam "$O" \
-    && for x in caseDicts cellModels codeTemplates colourTables controlDict templates thermoData; do \
-           chown -R root:openfoam "/opt/openfoam/etc/$x" \
-           && find "/opt/openfoam/etc/$x" -type d -exec chmod 0750 {} + \
-           && find "/opt/openfoam/etc/$x" -type f -exec chmod 0640 {} + ; done \
-    && test -z "$(find /opt/openfoam/etc -mindepth 1 -maxdepth 1 ! -group openfoam \
-           ! -name bashrc ! -name cshrc ! -name config.sh ! -name config.csh ! -name openfoam)" \
     && find "$O/bin" -type f -exec chmod 2711 {} + \
     && find "$O/lib" -type d -exec chmod 0750 {} + \
     && find "$O/lib" -type f -exec chmod 0640 {} + \
@@ -66,7 +59,7 @@ RUN groupadd --system openfoam && useradd --uid 10001 --create-home dev \
     && echo 'source /etc/openfoam-env.sh' > /etc/profile.d/openfoam.sh \
     && echo 'source /etc/openfoam-env.sh' >> /etc/bash.bashrc \
     && mkdir -p /app/rebuild && chown -R dev:dev /app
-# The published v2606 documentation (scripts/docs/build_docs.sh), read-only.
+# The published v2606 documentation, read-only.
 COPY docs/ /app/docs/
 # Time left of the agent's 12 hours: `bash /app/timer.sh`.
 COPY timer.sh /app/timer.sh
@@ -77,4 +70,8 @@ ENV WM_PROJECT_DIR=/opt/openfoam FOAM_TUTORIALS=/app/tutorials PMIX_MCA_psec=non
     BASH_ENV=/etc/openfoam-env.sh \
     PATH=/opt/openfoam/platforms/current/bin:/opt/openfoam/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 WORKDIR /app
+# As the agent's user: the programs neither read the libraries nor load a library of the user's.
+COPY check_hardening.sh /tmp/check_hardening.sh
+RUN setpriv --reuid=dev --regid=dev --init-groups env HOME=/home/dev bash /tmp/check_hardening.sh \
+    && rm /tmp/check_hardening.sh
 USER dev

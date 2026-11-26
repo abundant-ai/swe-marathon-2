@@ -111,3 +111,44 @@ def test_binary_file_must_be_identical(tmp_path):
     assert C.compare_file(a, b).ok
     b.write_bytes(b"\xff\x00\x02")
     assert not C.compare_file(a, b).ok
+
+
+def test_integer_against_decimal_needs_the_decimal_precision():
+    assert not C.compare_lines(["max: 5"], ["max: 5.9"]).ok
+    assert not C.compare_lines(["alpha 0"], ["alpha 1.0"]).ok
+    assert C.compare_lines(["max: 1"], ["max: 0.999999"]).ok
+
+
+def test_exponent_form_allows_only_the_sixth_significant_digit():
+    assert not C.compare_lines(["p 1e+05"], ["p 2e+05"]).ok
+    assert C.compare_lines(["p 1e+05"], ["p 1.00001e+05"]).ok
+
+
+LABELS = """FoamFile
+{{
+    version     2.0;
+    format      ascii;
+    class       labelList;
+    object      owner;
+}}
+4({values})
+"""
+
+
+def test_integer_lists_must_match_exactly(tmp_path):
+    a, b = tmp_path / "a", tmp_path / "b"
+    a.write_text(LABELS.format(values="0 1 2 3"))
+    b.write_text(LABELS.format(values="0 1 2 4"))
+    assert not C.compare_file(a, b).ok
+    b.write_text(LABELS.format(values="0 1 2 3"))
+    assert C.compare_file(a, b).ok
+
+
+def test_dictionary_entries_in_any_order(tmp_path):
+    head = "FoamFile { version 2.0; format ascii; class dictionary; object d; }\n"
+    a, b = tmp_path / "a", tmp_path / "b"
+    a.write_text(head + "x 1;\ny 2;\n")
+    b.write_text(head + "y 2;\nx 1;\n")
+    assert C.compare_file(a, b).ok
+    b.write_text(head + "y 1;\nx 2;\n")
+    assert not C.compare_file(a, b).ok

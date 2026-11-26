@@ -17,6 +17,8 @@ def test_build(context: VerificationContext) -> CheckResult:
     script = app / "compile.sh"
     if not script.is_file():
         return CheckResult("build", "failed", "compile.sh not found")
+    if (app / "bin").is_symlink():
+        (app / "bin").unlink()
     shutil.rmtree(app / "bin", ignore_errors=True)
     _chown_tree(app, context.uid, context.gid)
     home = tempfile.mkdtemp(dir=context.work)
@@ -50,18 +52,26 @@ def test_build(context: VerificationContext) -> CheckResult:
         except subprocess.TimeoutExpired:
             rc = None
     _chown_tree(app, 0, 0)
+    # root's, readable by everyone, executable by everyone where the owner could execute it,
+    # never set-user-id or set-group-id
     for d, dirs, files in os.walk(app):
         for x in [d, *(os.path.join(d, n) for n in dirs + files)]:
             if not os.path.islink(x):
+                mode = os.stat(x).st_mode
                 os.chmod(
                     x,
-                    os.stat(x).st_mode & 0o7755
+                    mode & 0o1755
                     | 0o444
-                    | (0o111 if os.path.isdir(x) else 0),
+                    | (0o111 if os.path.isdir(x) or mode & 0o100 else 0),
                 )
+    bin_dir = app / "bin"
     programs = (
-        sorted(p.name for p in (app / "bin").iterdir() if os.access(p, os.X_OK))
-        if (app / "bin").is_dir()
+        sorted(
+            p.name
+            for p in bin_dir.iterdir()
+            if p.is_file() and os.stat(p).st_mode & 0o001
+        )
+        if bin_dir.is_dir() and not bin_dir.is_symlink()
         else []
     )
     if rc is None:
