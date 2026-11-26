@@ -1244,6 +1244,14 @@ It does not yet meet the v2 workload target; see [Workload](#workload) and
   them (one of the refused hosts this time is a polynomial method much of
   `sympy.polys` calls, where the round before's hosts had 3 callers); nothing
   unreached, no control tripped, no evaluation error.
+- Hostile trees graded as the platform grades (the shipped limits: 4 workers,
+  examples 2,700 s, calls 2,400 s, the measurement 6,000 s; the rounds before
+  ran one worker with four times the time): 5% of the units never end 0.6164,
+  completed (691 + 708 items out of time, the phases 689 s and 694 s); half the
+  units wait 0.05 s first 0.7211, completed (468 + 437 out of time, 620 s and
+  1,107 s); every body never ends 0.0000, completed (2,114 + 2,114 out of time,
+  1,769 s and 1,554 s); nothing unreached, no control tripped, none an
+  evaluation error.
 - `checks/test_graded_units.py` runs the trace and the probe on the shipped
   inputs and fails on a removed unit that no graded item fails without, and on
   a body left whole that is a near-copy of a removed one (the builder's report,
@@ -2131,6 +2139,7 @@ stored submissions of the earlier sessions of the same task; every one scored
 | Regrade of the stored submissions after fix round 9 | this machine, the entry point's steps, examples and calls, one worker, 2026-11-26 | 16 submissions, reward 0.003 to 0.853, each within 0.006 of the regrade with the units left whole (8 up, 8 down), the order unchanged but for two sessions 0.0015 apart; every move made of the 42 units that left the set, the 20 that joined it and 32 verdict changes in 8 submissions, each of the 32 running a body whose state changed this round (31 now whole, 1 removed again), traced in the submission's own tree; none with a unit or call unreached, a late file or a control tripped (see [Trial evidence](#trial-evidence)) |
 | Floor on fix round 9's calls (`fixtures.py`, `floor.py`, the reviewers' composite with each delegation also run as the unit's own body, the integrity reviewer's rules) | this machine, 2026-11-26 | through the verifier raise, first argument and flip 0.0 (flip behind a table 0.0034); one constant 0.0065, type default 0.0103, delegation 0.0052 and 0.0132 in the original tree (0.0003 and 0.0 as the unit's own body), the combination 0.0324 (0.0163); the reviewer's rules 0.0064 (0.0121); hidden-result bounds 0.0350 (0.0173) and 0.0290; all under 0.05 |
 | Hostile cases through the verifier's steps (one unit each: `preview` to a file, `open` with a seek, `json` rebound, `os.fork` in a loop, a 64 MiB result, a 256 MiB print before the original body), on fix round 9's build | this machine, the entry point's steps, one worker, 2026-11-26 | 0.9721, completed: the first four refused by the body rules; 1,774 / 1,825 units in the set and 6,048 / 6,137 counted calls (the six units and their callers, a polynomial method much of `sympy.polys` calls among the hosts); nothing unreached, no control tripped, none an evaluation error |
+| Hostile trees as the platform grades them (the shipped limits: 4 workers, examples 2,700 s, calls 2,400 s, measurement 6,000 s), on fix round 9's build | this machine, the entry point's steps, the tests not run, 2026-11-26 | loop-5 0.6164, completed, 691 + 708 items out of time, 0 not reached; slow-50 0.7211, completed, 468 + 437 out of time, 0 not reached; loop-all 0.0000, completed, 2,114 + 2,114 out of time, 0 not reached, the phases 1,769 s and 1,554 s; none an evaluation error, no control tripped |
 | `harbor check` with `resources/task-implementation.toml` | working tree, 2026-11-17 | attempted on Modal; failed before review with `NotFoundError: Environment not found` (no default Modal environment). Not run in local Docker. No ratings |
 | Local image builds | none | not run for the v2 Dockerfiles; the Oddish baselines are the first build |
 
