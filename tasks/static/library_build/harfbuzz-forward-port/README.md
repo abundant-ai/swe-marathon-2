@@ -1,8 +1,10 @@
 # HarfBuzz forward-port, 14.3.0 → 15.2.0
 
-**Status: Phase B, spike and first build milestone in progress.** The task is single-step (owner, 2026-11-26). The
-pipeline tooling, the case driver and a verifier skeleton exist; no agent image, no complete case set and no oracle
-validation yet. Category: Library Reproduction (`tasks/static/library_build/`). Branch `neel/harfbuzz-forward-port`.
+**Status: Phase B done, spike go, first build milestone reached (2026-11-27).** The task is single-step (owner,
+2026-11-26). The pipeline builds every release, revert and mutant; the verifier image builds a delivered tree and
+scores the first three families (11 units, 1,802 cases): upstream 15.2.0 scores 1.0, 14.3.0 and the pruned starting
+tree 0.0. Not yet: the other 45 units' cases, the agent image build, the oracle patch. Category: Library
+Reproduction (`tasks/static/library_build/`). Branch `neel/harfbuzz-forward-port`.
 
 A product ships HarfBuzz 14.3.0 and has frozen that build. The agent brings it forward to the shaping, layout,
 metrics and API behaviour of upstream's next eight releases (14.3.1 to 15.2.0, 2026-08-13 to 2026-11-19), in one
@@ -19,6 +21,7 @@ no note changed must stay as it was, and that is where agents are expected to fa
 | [notes/QA-PLAN.md](notes/QA-PLAN.md) | The 12-item pre-upload gate for this task, coverage inventory, stub zoo, cue-word sweep, 20 QA lenses, post-run checks |
 | [notes/SPIKE.md](notes/SPIKE.md) | The spike that must pass before the build, and the exact download list |
 | [notes/PHASE-A-REPORT.md](notes/PHASE-A-REPORT.md) | Phase A summary |
+| [notes/PHASE-B-REPORT.md](notes/PHASE-B-REPORT.md) | Phase B: downloads, spike results (go), yield per unit, milestone, resource use |
 
 ## Design dimensions (proposal stage)
 
@@ -121,4 +124,17 @@ Private material (cases, seeds, gold outputs, private fonts, the duals catalogue
 - Upstream's `CLAUDE.md` is a symlink to `AGENTS.md`, whose rules (narrow changes, preserve behaviour) fit the work
   order: kept, without its `perf/: benchmarks` line. `CODE_OF_AI_CONDUCT.md` ("Do not fabricate benchmarks") and
   `test/vector/README.md` ("golden files") join the prune list.
-
+- **Spike: go.** S2: the product build takes 15-31 s on 4 CPUs (arm64), and outputs are identical with and without
+  ragel. S3: the driver reproduces all 16 of upstream's new Khmer expectations. S6: 49 of 56 units revert cleanly.
+  S7: a 14.3.0 tree regenerated from the shipped Unicode 18 files matches 15.0.0's Unicode properties on every code
+  point. S8: the verifier builds a tree and runs 1,802 cases in 27 s. S10: three runs and a perturbed fourth are
+  byte-identical; no-FMA and emulated amd64 give the same outputs. Yield: 51-855 attributable changed cases for
+  each of the 11 units measured; no unit cut, so the difficulty estimate stands.
+- What the first sweep taught: HarfBuzz applies `trak` only with `STAT`, and prefers `GPOS` over `kerx` only when
+  `GSUB` is present too, so our fonts now have those tables; Noto Sans Bengali's `init` covers the E and AI signs;
+  the Hangul note is about the beginning-of-text flag. Generators leave out what 15.2.0 changes beyond a note.
+- Upstream's `gen-ucd-table.py` needs `lxml`; the agent and pipeline images now install Ubuntu's `python3-lxml`.
+- The instruction now says the product passes each run's surrounding text as context.
+- Milestone: 15.2.0 scores 1.0 (also on amd64, emulated), 14.3.0 and the pruned starting tree 0.0. The private
+  selection and its salt are in the private store and its harbor-lh bundle. notes/PHASE-B-REPORT.md has the
+  numbers and the next steps.
