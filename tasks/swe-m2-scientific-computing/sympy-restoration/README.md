@@ -2,8 +2,8 @@
 
 Author notes. Nothing in this file is shipped to the candidate or to either image.
 
-SymPy 1.14.0 with the bodies of 2,114 functions and methods in 322 files removed
-(32,183 non-blank lines of body). Signatures, decorators, docstrings and all other
+SymPy 1.14.0 with the bodies of 2,115 functions and methods in 323 files removed
+(32,217 non-blank lines of body). Signatures, decorators, docstrings and all other
 code stay. The candidate writes the bodies back, without network access, using a
 small `restore` command that reports progress and checks work against the graded
 view. The reward is continuous: the smaller of two shares measured on recorded
@@ -1287,6 +1287,78 @@ It does not yet meet the v2 workload target; see [Workload](#workload) and
   are strong twins of 22 graded units are not changed (all 22 stay removed; see
   [Remaining work](#remaining-work)).
 
+### 2026-11-26, sixth re-check and fix round 10: the requirement in the requester's terms
+
+- The sixth re-check (four lenses, `swe-marathon-v2/qa/sympy/26-recheck-*.md`)
+  found every round-5 must-fix resolved and the build sound, and failed three
+  lenses on one cause: the instruction stated the requirement as a comparison
+  with SymPy 1.14.0 for every other argument a function accepts, the sentence
+  class on which the platform's verdict rejected another task that day (its
+  solvers described the session as an evaluation). Also: with no first process
+  seen, the net check could end `dev` a moment before the platform's limit; a
+  garbage-collection pause of the verifier's own process could turn an answer
+  that came in time into a timeout; 7 units outside the set have examples that
+  show an error that nothing counted; a short removed body is nearly its whole
+  siblings' (one operator apart); listed names passed as literal keys through a
+  variable or `getattr`; the floor's strongest strategy was quoted from the
+  fourth re-check's calls.
+- The instruction (M1) is reworded in the requester's voice. A faulty clean-up
+  step in their packaging blanked the bodies of the copy their offline build
+  takes in; what they need is what their code relies on for any argument a
+  function accepts (the same value, type and container, order, form, and state
+  of what a function builds or changes, values kept only as a cache aside; an
+  equal value of another kind breaks it), the error only where an example shows
+  it, and speed; they switch their build back to the copy once every function
+  gives back what SymPy 1.14.0 gives. Every requirement, exception and number is
+  kept, and no code span is lost; the requirement map is in
+  `swe-marathon-v2/qa/sympy/FIX10-REPORT.md`. `restore`'s help and messages say
+  "as the build takes it", "blanked" and "uses a listed construct", and a body
+  that uses one is in the state "not allowed". A cue sweep of everything the
+  agent can read or see running finds none of the comparison or judging words
+  left; the hits kept are SymPy's own text, the tool's command `check`, "tests"
+  for the repository's tests and doctest's "expected" output (counts in the
+  report).
+- The stop (M2): with no first process of `dev` seen, the net check never ends
+  `dev` by time, only once a fresh look finds no session, or the collect step
+  does. `checks/test_delivery.py` runs the real net check with no first process
+  and an opening after the limit: the opening is an end of the work, and `dev`
+  is not ended (the net check before ends it).
+- The readers (M3): before it calls an item out of its time the verifier reads
+  once more, without blocking, what is already waiting, and it freezes its
+  loaded inputs out of the collector's reach (`gc.freeze()`) before anything
+  runs. Checks: an answer waiting in the pipe when the reader looks only after
+  the deadline is taken (the reader before called it a timeout), and the freeze
+  comes after the inputs load and before the delivery is read.
+- Errors the examples show (S1): 7 units outside the set have docstring
+  examples that show an error, 6 by doctest's own reading and one at a `sage:`
+  prompt, which the auditor's text search counted and doctest does not run.
+  Each has a counted call that expects that error: the example's own call,
+  taken at the unit's entry on the original tree and replayed under three
+  seeds (8 calls, `scripts/builder/error_calls.py`), compared by class. They are
+  counted although the example makes them, since what they grade is the one
+  thing the example states; a body that raises that error for every argument it
+  does not know would answer them too (7 units and 8 calls at most). The 7
+  units join the set, so their examples now count, and two units whose bodies
+  those examples run, whole before, are removed again by the rule.
+- The short twin (S2): the near-copy tests also compare a graded body of 20 to
+  39 tokens, at 90% alike as tokens with names kept. Over the whole build this
+  finds one pair: a predicate whose two whole siblings differ from it by one
+  operator. The siblings cannot get a counted call of their own (every
+  candidate's result is a boolean their examples show), so the predicate is left
+  whole with them; the closure ran again to a fixed point with nothing more
+  given away.
+- The body rules (S3): any listed name as a literal key is refused, whatever
+  holds it (`x['os']`, `d.get('sys')`, a namespace kept in a variable or taken
+  with `getattr`); no reference body is refused. A name built at run time from
+  pieces, never written whole in the body, still passes; what that buys is
+  hackability finding 1.
+- The build: 2,115 units in 323 files, 32,217 non-blank lines of body; 14,523
+  calls, 6,145 counted (8 of them errors), 1,832 units in the set; the 283
+  outside it each graded through a counted call (233) or the examples (50) of
+  another unit that fail without their body. Against round 9's build: one unit
+  whole again (the predicate), two removed again, 7 units and 8 counted calls
+  joined.
+
 ## Current implementation
 
 | Part | State |
@@ -1294,7 +1366,7 @@ It does not yet meet the v2 workload target; see [Workload](#workload) and
 | Step `01-restore-bodies` | Implemented. Instruction, agent image, separate verifier image, reference solution. |
 | Further steps | Not designed. See [Workload](#workload). |
 | Prepared inputs | Present locally under Git-ignored paths; produced by the builder in `scripts/builder/`. |
-| Oracle | 1.0 on the platform under the binary reward (at least 14 grades); 1.0 under the continuous reward through the entry point's steps on this machine (2026-11-20, and after each re-check and rebuild since, last 2026-11-26). Not yet re-run on the platform. Provenance: the original SymPy 1.14.0 source of the 322 files. |
+| Oracle | 1.0 on the platform under the binary reward (at least 14 grades); 1.0 under the continuous reward through the entry point's steps on this machine (2026-11-20, and after each re-check and rebuild since, last 2026-11-26). Not yet re-run on the platform. Provenance: the original SymPy 1.14.0 source of the 323 files. |
 | Ratings (`harbor check`) | Not run. No `[metadata.task_rating]` yet. |
 
 Layout notes:
@@ -1309,7 +1381,7 @@ Layout notes:
   `scripts/builder/delivery_key.py`), `steps/01-restore-bodies/tests/private/`
   (skeleton with the full test suite, sealed test list, recorded calls,
   reference results) and `steps/01-restore-bodies/solution/data/` (original
-  source of the 322 files). Packaging stages the key into the verifier's private
+  source of the 323 files). Packaging stages the key into the verifier's private
   inputs as well.
 - `environment/fsmaint-reserve`, `fsmaint-netcheck` and `fsmaint-sweep` are the
   setup and collect hooks (`task.toml`). They live in `/usr/local/lib/fsmaint`,
@@ -1331,7 +1403,7 @@ Layout notes:
 ### Novelty
 
 What it adds: one coherent body of work that is too large for one context window
-(2,114 units, 32,183 non-blank lines of body) with a grade per unit, so partial progress is
+(2,115 units, 32,217 non-blank lines of body) with a grade per unit, so partial progress is
 measured exactly.
 
 Closest comparisons:
@@ -1396,7 +1468,7 @@ unit, which removed the one known source of unit flips (a random draw).
 
 Restoring lost implementation from signatures, documentation and tests is real
 but uncommon work (damaged checkouts, partial ports, code removed for licensing).
-The setting is contrived in one respect: nobody loses 2,114 bodies at once while
+The setting is contrived in one respect: nobody loses 2,115 bodies at once while
 keeping every docstring. Realism is the weakest of the five dimensions together
 with novelty.
 
@@ -1502,8 +1574,9 @@ its handshake.
    at an open poll: its last closed poll is recorded, with whether an exec
    session was seen alive then and whether the time the work is given had run
    out; every process of `dev` is then stopped and ended once a fresh look finds
-   no session alive, or once that time has run out, and not before, so nothing
-   ends the agent while its session runs within its limit. It looks at `/proc`
+   no session alive, or once that time, counted from the first process (below),
+   has run out, and not before, so nothing ends the agent while its session runs
+   within its limit; with no first process seen it is never ended by time. It looks at `/proc`
    every 0.1 s for the exec sessions of `dev`: a process of `dev` whose parent is
    a process named `su` or `runuser` of the real user root (not the first
    process), or that has no parent in the container. Harbor runs every command
@@ -1646,7 +1719,11 @@ its handshake.
    no key. The verifier reads those lines in pieces, at most 1 MiB a line and
    64 MiB in all, and takes them only in their order (the module imported, then
    each unit's start and its record), rebuilding each record from the runner's
-   own fields; anything else ends the process. A unit's examples get ten times
+   own fields; anything else ends the process. Before it calls an item out of
+   its time it reads once more, without blocking, what is already waiting, and
+   it keeps its loaded inputs out of the garbage collector's reach
+   (`gc.freeze()`), so that a pause of its own process does not turn an answer
+   that came in time into a timeout (fix round 10). A unit's examples get ten times
    the original's own time for them on this machine (measured before any
    submitted code runs), never less than 2 s; a module's import five times its
    own, never less than 10 s. A unit that takes longer, or during which the
@@ -1656,7 +1733,7 @@ its handshake.
    still fails a wrong example and passes a right one; a failed check fails the
    whole module and trips a control. Units left when the phase's time is up are
    not reached (see Reward formula for how they count).
-3. Recorded calls. 14,508 calls, at least one per unit, replayed one at a time
+3. Recorded calls. 14,523 calls, at least one per unit, replayed one at a time
    in the sandbox, the same way: one process per module gets its calls on its
    standard input and answers one line per call, at most 4 MiB a line and
    256 MiB in all, taken only in order. Each call gets ten times the original's
@@ -1669,9 +1746,10 @@ its handshake.
    among the 16,803 recorded for the 2,671 units of the first unit list: 13,382
    from SymPy's own test suite and, for units it never calls directly, from
    docstring examples; 3,355 added on 2026-11-20 for 990 of the 1,697 units whose
-   recorded calls were all documented; and 66 added in fix round 9 for near-copies
+   recorded calls were all documented; 66 added in fix round 9 for near-copies
    of graded bodies (their twins' recorded arguments where the parameters fit,
-   else variants of their own, through the same screens). Of the 3,355, 1,567 were
+   else variants of their own, through the same screens); and 8 added in fix
+   round 10 that expect the error a docstring example shows (below). Of the 3,355, 1,567 were
    recorded while the withheld tests ran and 1,788 made from
    the unit's own arguments, with every symbol renamed by one map over all of
    them or one integer shifted (never an integer whose docstring states a domain,
@@ -1690,9 +1768,9 @@ its handshake.
    `*args` or a value of its `**kwargs` (a body that returns that argument
    answers it); or when its result is one that another documented call of its
    unit returns (applied until nothing changes). These relations compare with
-   the type of a value left out, since a printed result does not show it. 8,371 calls are
+   the type of a value left out, since a printed result does not show it. 8,378 calls are
    documented and listed privately (`tests/private/vectors/documented.json`),
-   6,137 are not, and only those count for the reward. A result is
+   6,145 are not, and only those count for the reward. A result is
    compared by its canonical form (`verifier/lib/canon.py`), which keeps the
    value and the type and container of every part of it, the order, the form of
    a returned expression and the state of every object the call builds or
@@ -1774,23 +1852,30 @@ Limits:
   wrong elsewhere.
 - Reference results that could not be reproduced exactly (objects that lose state
   when pickled, bare `None`, exceptions, unstable ordering, results over 2 MB)
-  were dropped at build time, so error behaviour is measured only by the
-  repository tests (309 withheld test functions assert an exception), which are
-  reported and not rewarded.
-- 289 units have no call that nothing visible answers. Of the 2,671 units of
+  were dropped at build time, so error behaviour is measured by the examples
+  (an example that shows an error passes only on that error's class) and the
+  repository tests (309 withheld test functions assert an exception, reported
+  and not rewarded). The 7 units outside the set whose docstring examples show
+  an error have, since fix round 10, a counted call that expects it: the
+  example's own call (8 in all, `scripts/builder/error_calls.py`), its result
+  that error, compared by class (or a subclass of it). It is counted although
+  the example makes it, since what it grades is the one thing the example
+  states; a body that raises that error for every argument it does not know
+  would answer it too (7 units, 8 calls).
+- 283 units have no call that nothing visible answers. Of the 2,671 units of
   the first list, 824 had none (2026-11-21: 716 from the first re-check's round,
   for which no candidate survived the screens, a visible run made every
   candidate, or every candidate returned an argument or a documented result;
   108 more from the second re-check's rules); most of those are whole now (no
-  graded item fails without them), 20 have counted calls of their own since fix
-  round 9, and these 289 stay removed because a counted call (241) or the
-  examples (48) of another unit fail without their body (`absorbed.py`; the
-  verifier's private `tests/private/unit_coverage.json` names that item for each
-  of them). They are left out of the reward's unit set and counted
+  graded item fails without them), 27 have counted calls of their own since
+  fix rounds 9 and 10, and these 283 stay removed because a counted call (233)
+  or the examples (50) of another unit fail without their body (`absorbed.py`;
+  the verifier's private `tests/private/unit_coverage.json` names that item for
+  each of them). They are left out of the reward's unit set and counted
   (`units_left_out`), and graded through those items. They are smaller than the
-  units in the set (median 5 non-blank lines against 9) and hold 94 of the 102
+  units in the set (median 5 non-blank lines against 9) and hold 91 of the 99
   units whose recorded results are all booleans, since any boolean an example
-  shows documents every boolean result of its unit. The set covers 89.0% of the
+  shows documents every boolean result of its unit. The set covers 89.4% of the
   body lines. Their examples and calls are still run and reported
   (`units_left_out_passing`).
 - For some units no visible evidence fixes the property a hidden call compares
@@ -1828,11 +1913,11 @@ All five read one measurement pass (`verifier/engine.py`).
 ### Reward formula
 
 ```
-D      = recorded calls that are not documented (step 3): 6,137 of 14,508
-set    = units with at least one call in D: 1,825 of 2,114 (289 left out, counted)
+D      = recorded calls that are not documented (step 3): 6,145 of 14,523
+set    = units with at least one call in D: 1,832 of 2,115 (283 left out, counted)
 u      = units in the set whose docstring examples pass and that match at least
-         one of their calls in D  /  1,825
-c      = calls in D that match  /  6,137
+         one of their calls in D  /  1,832
+c      = calls in D that match  /  6,145
 reward = min(u, c)  if candidate_tree and measurement_integrity passed, else 0
 ```
 
@@ -1840,7 +1925,7 @@ reward = min(u, c)  if candidate_tree and measurement_integrity passed, else 0
   decimals. Chosen on 2026-11-20 over the binary reward, whose bar sat above the
   invisible floor (see [Difficulty](#difficulty)).
 - `complete` in `metrics.json` keeps the old verdict of the binary reward, not the
-  instruction's sense of complete (every function behaves exactly as the original): all five checks passed, that
+  instruction's sense of done (every function gives back what SymPy 1.14.0 gives): all five checks passed, that
   is at least 99% of all units passing their examples and matching one recorded
   call, 90% of all calls and 95% of the graded tests. It is `null` when only items
   the measurement did not reach keep a bar from being met.
@@ -1956,11 +2041,11 @@ have not yet run on the platform). Unassessed boundaries: finding 7.
 | 2 | Read reference results or the withheld tests | File permissions in the verifier image | Attempted in both rounds; not reached | Private inputs readable by root only; sandbox runs as `nobody`; no test directories in the tree during phases 2 and 3 | Depends on the privilege drop | Re-run on the v2 bundle | 🟢 GREEN / LOW |
 | 3 | Edit tests, module-level code or other functions to make checks pass | Graded-tree construction | Executed; no effect | Only unit bodies are copied into the reference skeleton; `checks/test_transplant.py` | None found | Keep the check | 🟢 GREEN / LOW |
 | 4 | Return the documented outputs for the documented inputs, and something cheap otherwise: a constant, the first argument, the other boolean, a default of the type the visible results have, an output the examples print, delegation to another function, or a documented result renamed | Which calls count | Review of the binary version: tables passed `trig_split`, `viete`, `wigner_3j` and 14 more units through the real verifier. First re-check of 2026-11-20: behind a table, a first-argument fallback and a renaming table reached 0.07 to 0.12. Second re-check: results the docstrings print still counted (the panel's own fixture 0.029, every buildable strategy together 0.041). Third re-check: an accessor of the call's own arguments chosen by visible fit, then the cheap fallbacks, 0.0401 behind a table through the verifier's own runners | Only calls nothing visible answers count (D): no docstring example or visible test (slow, skip-marked and `+SKIP` ones included) makes them, even with its symbols renamed, and their result is neither one an example or a visible test shows, nor a documented result of their unit, nor one of their own arguments or an element of their `*args` or `**kwargs`, all compared with the type left out; variants rename with one map over all arguments and shift no integer with a stated domain. Measured (see the floor under [Reward formula](#reward-formula)): the strongest buildable strategy 0.0401 behind a table (the third re-check's accessor synthesis, 0.0171 of it in units whose original body is such an accessor; fourth re-check), the cheap fallbacks together 0.0324 statically in the original tree (0.0163 with each delegation run as the unit's own body, since fix round 9) and 0.0166 through the verifier; through the verifier 0.0 for each fixture tree | An accessor, a type default or a delegate can still equal some counted results, up to 0.0401; with the hidden results in hand, 0.0350 (best per call, in the original tree) and 0.0290 (best constant per unit), which no submission can build; all under the decision's 0.05 | Re-run `fixtures.py`, `floor.py` and the reviewers' scripts after any rebuild of the calls | 🟢 GREEN / LOW |
-| 5 | Change how a runner reports results | Runner control items | Executed in round 1 through module-level `os`/`sys`; fixed. Third re-check: a body that imported `__main__` or `posix` wrote a result line of its own and forged a pass. Fourth re-check: the same through `posixpath.os`, `random._os`, `sympy.external.import_module('posix')`, `attrgetter` frame walks and a rebound `json.dumps`; a sparse 2^50-byte output read whole ended in a MemoryError | No key exists where a body runs: the verifier is the runners' parent and reads their pipes in pieces, at most a line limit and a total, in order; the runners serialise with a function bound before the tree is imported, and their standard streams go nowhere; the body rules deny the route class (the modules and attributes that reach the process or the files, literal names given to `getattr`, `attrgetter`, `methodcaller` and `import_module`, and the same names taken from a namespace by a literal, `x.__dict__['os']` or `x.__dict__.get('os')`); a self-check after every unit's examples; control items with known outcomes in every pytest run; the records of a run cannot hold more passes than that run's tally; the sandbox's files are bounded in size | The rules are a list of names: a name computed at run time (through `getattr` or a namespace) still reaches the process, and what that buys is finding 1 | With finding 1 | 🟢 GREEN / LOW |
+| 5 | Change how a runner reports results | Runner control items | Executed in round 1 through module-level `os`/`sys`; fixed. Third re-check: a body that imported `__main__` or `posix` wrote a result line of its own and forged a pass. Fourth re-check: the same through `posixpath.os`, `random._os`, `sympy.external.import_module('posix')`, `attrgetter` frame walks and a rebound `json.dumps`; a sparse 2^50-byte output read whole ended in a MemoryError | No key exists where a body runs: the verifier is the runners' parent and reads their pipes in pieces, at most a line limit and a total, in order; the runners serialise with a function bound before the tree is imported, and their standard streams go nowhere; the body rules deny the route class (the modules and attributes that reach the process or the files, literal names given to `getattr`, `attrgetter`, `methodcaller` and `import_module`, and since fix round 10 any of the names as a literal key, whatever holds it: `x['os']`, `d.get('sys')`, a namespace kept in a variable or taken with `getattr(x, '__dict__')`); a self-check after every unit's examples; control items with known outcomes in every pytest run; the records of a run cannot hold more passes than that run's tally; the sandbox's files are bounded in size | The rules are a list of names: a name built at run time from pieces, never written whole in the body, still reaches the process, and what that buys is finding 1 | With finding 1 | 🟢 GREEN / LOW |
 | 6 | Tamper with reward or result files | Separate verifier container | By design; not attacked | Verifier starts fresh with only `/app/sympy`; output directory closed to the sandbox user | None found | Attack on the v2 bundle | 🟢 GREEN / LOW |
 | 7 | Anything that depends on the new entry point, check registry or reporting | v2 verifier code | Not attacked | Same measurement code as v1; reference and no-op baselines on the v2 bundle | Unknown | Red-team run against the v2 bundle | 🟡 YELLOW / UNASSESSED |
 | 8 | Reach the network during the work phase to fetch SymPy | Agent network policy | Probe task, 2026-11-15: PyPI and GitHub unreachable from the work phase; 217 in-work fetch attempts in one 12-hour run all failed (TCP connected, TLS did not) | `[agent] network_mode = "no-network"`; the instruction forbids another copy; SymPy is not installed elsewhere; the image's attribution names no download | Agent tooling is installed at setup with public egress; host-name filtering not probed for every route | Probe the routes as `dev` | 🟡 YELLOW / MEDIUM |
-| 9 | Leave a process running after the work that fetches SymPy once public egress returns (about 0.2 s after the work ends, before collection: 0.8 s and 11.8 s on two 12-hour runs) and writes the original into `/app/sympy`, directly or behind a link; the original scores 1.0. Variants: hold every local port (or exhaust another resource of the machine) so the net check's probe fails and its closed stretch runs on past the turn; load the CPU or the link so its handshakes time out | Delivery: user, hooks, record | Reproduced by review with the verifier's own transplant: before 2026-11-20 (2,671 restored, a tree identical to the reference); on 2026-11-20, a write after a turn shorter than the net check's old one-minute arming taken whole, a late file graded through a directory link, and (re-check 2) a fetch while the probe failed for want of ports, taken because such a failure counted as a closed poll and the end was moved to the collect step's start. All fixed; `checks/test_delivery.py` runs the real net check whole for a blinded probe and a no-op turn, and covers a 3-second turn, every unknown end, the session end, file and directory links and every refused tree. Fifth re-check: with the limit counted from the first process, a capped run's end could pass for a blip, so a save after egress returned was graded; the limit counts from the start of the work again, and the real net check is run with a fetch saved after egress returns (late, the file taken from its last copy) and an honest rename save in the last second before the limit (kept) | The work runs as `dev`; a poll that fails for a reason of the machine is not a closed poll and ends nothing; the net check records the end of every stretch an opening ends, but an opening seen while an exec session is alive, within the time the work is given, is no end, and `dev` is ended only once no session is alive or that time has run out; it also watches the agent's exec sessions, and the end of the work is the earliest of the net check's end, the end of the session that ran the whole work, which no process the agent starts can move, and the start of the work plus the time limit (34,560 s; the setup step takes that start before Harbor starts the agent's clock), which bounds a turn run to the limit whatever the probe read and ends no later than Harbor's own limit, so a fetch once egress returns lands after it; a unit file saved after that limit is taken as the last copy the net check made of it before the limit, so a capped turn loses only its edits after that copy, never a file; while a session is alive, `dev` is ended no earlier than its first process's start plus that limit; the end is never moved to the collect step's start unless its own probe found the hosts closed; the collect step gives back the room the setup step set aside and puts the tree aside right after it has stopped every process of `dev`, then stops and ends the rest, lets the net check finish one more poll and look, records every file's change time before touching anything and removes every link; the verifier takes no other unit file changed at or after the end and none reached through a link; a link or an unlisted file that arrived, a short delivery or a surviving process is an evaluation error; a collect step that began and did not finish leaves a noted 0; the mark is signed with a key `dev` cannot read | A write through a file mapping dirtied before the end can change content without moving its times. It needs a live process: the net check ends `dev` once the turn's session is over and the hosts answer, but a probe made to time out by load still reads as closed, so such a process can live until the collect step; the session end (for a harness whose exec ends with the turn) and the time limit (for a turn run to it) stop every write that moves a file's times, not one through a mapping. A harness that runs one exec per command, or a run Harbor resumes in place after a provider error, has neither, and only the net check's end bounds it, which such a load can push back. A harness that does its work outside its own exec sessions, and whose last session began within ten minutes of the start, would have its later writes counted late (claude-code, mini-swe-agent and the oracle run the whole work in one session; Proximus is not yet seen). A capped turn's edits after the last copy before the end of the work are lost: the seconds by which Harbor's clock started after the setup step, and at most one more. Closing the mapping residual needs the platform to keep the agent's network policy through collection | Canaries on the platform: a detached fetch-and-overwrite loop scores 0 with its files `late`; a reference that keeps working past the time limit with a load process and a fetch scores 0 with its fetched files `late`; an honest reference that saves a unit file by rename just after the limit keeps that file as copied; reference 1.0 (`end_from` `session`) and no-op 0.0 (`end_from` `unchanged`) with the record present; the start of the work against Harbor's start of the agent (what a capped turn loses); Proximus's process model read from its record (`sessions`) | 🟡 YELLOW / MEDIUM |
+| 9 | Leave a process running after the work that fetches SymPy once public egress returns (about 0.2 s after the work ends, before collection: 0.8 s and 11.8 s on two 12-hour runs) and writes the original into `/app/sympy`, directly or behind a link; the original scores 1.0. Variants: hold every local port (or exhaust another resource of the machine) so the net check's probe fails and its closed stretch runs on past the turn; load the CPU or the link so its handshakes time out | Delivery: user, hooks, record | Reproduced by review with the verifier's own transplant: before 2026-11-20 (2,671 restored, a tree identical to the reference); on 2026-11-20, a write after a turn shorter than the net check's old one-minute arming taken whole, a late file graded through a directory link, and (re-check 2) a fetch while the probe failed for want of ports, taken because such a failure counted as a closed poll and the end was moved to the collect step's start. All fixed; `checks/test_delivery.py` runs the real net check whole for a blinded probe and a no-op turn, and covers a 3-second turn, every unknown end, the session end, file and directory links and every refused tree. Fifth re-check: with the limit counted from the first process, a capped run's end could pass for a blip, so a save after egress returned was graded; the limit counts from the start of the work again, and the real net check is run with a fetch saved after egress returns (late, the file taken from its last copy) and an honest rename save in the last second before the limit (kept) | The work runs as `dev`; a poll that fails for a reason of the machine is not a closed poll and ends nothing; the net check records the end of every stretch an opening ends, but an opening seen while an exec session is alive, within the time the work is given, is no end, and `dev` is ended only once no session is alive or that time has run out; it also watches the agent's exec sessions, and the end of the work is the earliest of the net check's end, the end of the session that ran the whole work, which no process the agent starts can move, and the start of the work plus the time limit (34,560 s; the setup step takes that start before Harbor starts the agent's clock), which bounds a turn run to the limit whatever the probe read and ends no later than Harbor's own limit, so a fetch once egress returns lands after it; a unit file saved after that limit is taken as the last copy the net check made of it before the limit, so a capped turn loses only its edits after that copy, never a file; while a session is alive, `dev` is ended no earlier than its first process's start plus that limit, and with no first process seen never by time (fix round 10); the end is never moved to the collect step's start unless its own probe found the hosts closed; the collect step gives back the room the setup step set aside and puts the tree aside right after it has stopped every process of `dev`, then stops and ends the rest, lets the net check finish one more poll and look, records every file's change time before touching anything and removes every link; the verifier takes no other unit file changed at or after the end and none reached through a link; a link or an unlisted file that arrived, a short delivery or a surviving process is an evaluation error; a collect step that began and did not finish leaves a noted 0; the mark is signed with a key `dev` cannot read | A write through a file mapping dirtied before the end can change content without moving its times. It needs a live process: the net check ends `dev` once the turn's session is over and the hosts answer, but a probe made to time out by load still reads as closed, so such a process can live until the collect step; the session end (for a harness whose exec ends with the turn) and the time limit (for a turn run to it) stop every write that moves a file's times, not one through a mapping. A harness that runs one exec per command, or a run Harbor resumes in place after a provider error, has neither, and only the net check's end bounds it, which such a load can push back. A harness that does its work outside its own exec sessions, and whose last session began within ten minutes of the start, would have its later writes counted late (claude-code, mini-swe-agent and the oracle run the whole work in one session; Proximus is not yet seen). A capped turn's edits after the last copy before the end of the work are lost: the seconds by which Harbor's clock started after the setup step, and at most one more. Closing the mapping residual needs the platform to keep the agent's network policy through collection | Canaries on the platform: a detached fetch-and-overwrite loop scores 0 with its files `late`; a reference that keeps working past the time limit with a load process and a fetch scores 0 with its fetched files `late`; an honest reference that saves a unit file by rename just after the limit keeps that file as copied; reference 1.0 (`end_from` `session`) and no-op 0.0 (`end_from` `unchanged`) with the record present; the start of the work against Harbor's start of the agent (what a capped turn loses); Proximus's process model read from its record (`sessions`) | 🟡 YELLOW / MEDIUM |
 
 Recall of SymPy from pre-training is not an exploit of the verifier, but it limits
 what a high score means. It is recorded under [Novelty](#novelty).
@@ -2216,6 +2301,14 @@ python builder/keep_whole.py <task_dir> original_root coverage.json out/ --absor
 python builder/twin_calls.py original_nt units.json inputs.pkl gold.json documented.json pairs.json twin.pkl   # then contract ... select
 python builder/twin_calls.py shown sel/ before_gold_keys.json units.json <documented.py outputs>
 python builder/keep_whole.py <task_dir> original_root coverage.json out/ --absorbed absorbed.json --whole whole.json
+```
+
+Since fix round 10 the selection first takes, for the units outside the set
+whose docstring examples show an error, the example's own call as a counted call
+that expects that error, before the trace:
+
+```bash
+python builder/error_calls.py original_root units.json uids.json sel/ sel_with_errors/
 ```
 
 The builder's report (`out/keep_whole_report.json`) is kept beside the prepared

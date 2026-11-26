@@ -90,6 +90,8 @@ class _Blind(ast.NodeTransformer):
 
 TOKEN_MIN = 40          # a graded body this many tokens long or more is compared token by token
 TOKEN_PLAIN = 0.80     # alike as tokens, names kept
+TOKEN_SHORT_MIN = 20    # a shorter graded body, from this many tokens, is compared too, at a stricter bar
+TOKEN_SHORT = 0.90     # alike as tokens, names kept, for a body of TOKEN_SHORT_MIN to TOKEN_MIN tokens
 TOKEN_BLIND = 0.90     # alike as tokens, every name blinded
 TOKEN_CONTAINED = 0.90 # the graded body's tokens, names kept, found in order in the visible one
 SHINGLE = 4            # the prefilter: blinded runs of this many tokens
@@ -152,6 +154,12 @@ TOKEN_FORMS = (("plain_tokens", "blind_tokens", "shingles", ""),
 
 def _token_test(unit, r, plain_key, blind_key, shingle_key):
     """The token tests on one form of the tokens: None, or the test that finds the pair alike."""
+    if TOKEN_SHORT_MIN <= len(unit[plain_key]) < TOKEN_MIN:
+        # a short body: only one alike as tokens with names kept at TOKEN_SHORT (a body its sibling
+        # spells out but for an operator), not the idioms short bodies share
+        if difflib.SequenceMatcher(None, unit[plain_key], r[plain_key], autojunk=False).ratio() >= TOKEN_SHORT:
+            return "tokens-alike-short"
+        return None
     if len(unit[plain_key]) < TOKEN_MIN or not unit[shingle_key] or not r[shingle_key]:
         return None
     shared = len(unit[shingle_key] & r[shingle_key]) / min(len(unit[shingle_key]), len(r[shingle_key]))
@@ -174,7 +182,8 @@ def near_copies(unit, visible):
     85% alike, for two statements, under the same name or in the same file; and, across names and
     files, for a body of TOKEN_MIN tokens or more, its tokens TOKEN_PLAIN alike with names kept,
     TOKEN_BLIND alike with every name blinded, or the unit's tokens TOKEN_CONTAINED found in order in
-    the visible body (after a prefilter on shared runs of tokens), each on the tokens without and
+    the visible body (after a prefilter on shared runs of tokens), and for a body of TOKEN_SHORT_MIN
+    to TOKEN_MIN tokens, its tokens TOKEN_SHORT alike with names kept; each on the tokens without and
     with the line and indentation tokens."""
     found = []
     for r in visible:

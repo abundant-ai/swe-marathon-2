@@ -108,8 +108,8 @@ def main():
     signal.signal(signal.SIGALRM, _late)
     quiet = open(os.devnull, "w")
     by_calls, by_examples, runs, trouble, example_runs = {}, {}, {}, [], {}
-    stats = {"calls": 0, "calls_raised": 0, "calls_out_of_time": 0, "examples": 0, "examples_missing": 0,
-             "examples_out_of_time": 0}
+    stats = {"calls": 0, "calls_raised": 0, "calls_raising_as_recorded": 0, "calls_out_of_time": 0, "examples": 0,
+             "examples_missing": 0, "examples_out_of_time": 0}
     began = time.time()
 
     # the counted calls
@@ -147,8 +147,11 @@ def main():
                 stats["calls_out_of_time"] += 1
                 trouble.append(vid)
             except BaseException:  # noqa: BLE001
-                stats["calls_raised"] += 1
-                trouble.append(vid)
+                if isinstance(gold.get(vid), list) and gold[vid][:1] == ["EXC"]:
+                    stats["calls_raising_as_recorded"] += 1   # a call whose recorded result is the error
+                else:
+                    stats["calls_raised"] += 1
+                    trouble.append(vid)
             finally:
                 signal.setitimer(signal.ITIMER_REAL, 0)
             stats["calls"] += 1

@@ -4,7 +4,7 @@
 
 Our analysis service is built on SymPy 1.14.0, a pure-Python computer algebra library, and our
 build takes SymPy from the copy in `/app/sympy`. A faulty clean-up step in our packaging blanked
-the bodies of 2,114 functions and methods, spread over 322 files, before anyone noticed. I need
+the bodies of 2,115 functions and methods, spread over 323 files, before anyone noticed. I need
 them written back, so that our code, and the parts of SymPy that call these functions, work again.
 
 ## Context
