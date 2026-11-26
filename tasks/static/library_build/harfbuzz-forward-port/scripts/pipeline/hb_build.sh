@@ -56,6 +56,10 @@ cp src/hb*.h "$OUT/include/harfbuzz/"
 cp build/src/hb*.h "$OUT/include/harfbuzz/" 2>/dev/null || true
 cc -O2 -c -I"$OUT/include/harfbuzz" -o "$W/hbdrv.o" /drv/hbdrv.c
 c++ -o "$OUT/hbdrv" "$W/hbdrv.o" "$OUT/lib/libharfbuzz.a" -lm
+if [ -f /drv/hbprops.c ]; then
+  cc -O2 -c -I"$OUT/include/harfbuzz" -o "$W/hbprops.o" /drv/hbprops.c
+  c++ -o "$OUT/hbprops" "$W/hbprops.o" "$OUT/lib/libharfbuzz.a" -lm
+fi
 regen=$(grep -c "gen-ragel-artifacts" "$OUT/ninja.log" || true)
 peak=$(cat /sys/fs/cgroup/memory.peak 2>/dev/null || echo 0)
 printf '{"status": "ok", "setup_s": %s, "build_s": %s, "jobs": %s, "ragel": "%s", "ragel_steps": %s, "reverted_patches": %s, "mem_peak_bytes": %s}\n' \
