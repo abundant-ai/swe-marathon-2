@@ -1,0 +1,3 @@
+# The upstream source the solution builds from is staged by packaging, never committed.
+private/
+upstream/
