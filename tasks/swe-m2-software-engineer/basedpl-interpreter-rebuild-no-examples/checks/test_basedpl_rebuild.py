@@ -2854,8 +2854,10 @@ def test_the_end_of_the_work_counts_from_the_sessions_first_process_not_from_set
     in the turn's last seconds was then taken out as late, and with it the reward. The end now counts from the first
     process's start, which the process the set-up hook left records as soon as it sees it (STATE/first-process), and
     set-up's time only where none was recorded. Here the first process starts 30 s after set-up: a save in the turn's
-    last second is kept (set-up's end would have taken it out), and one made after the end, with the network open
-    again, is still late. Without a record of the first process the end is set-up's time plus the limit, as before."""
+    last second is kept (set-up's end would have taken it out), and one made after the end is late. The end falls
+    before the stop after the limit, for the same start, and so before the network the stop waits for is open again:
+    a save made once it is open is later still. Without a record of the first process the end is set-up's time plus
+    the limit, as before."""
     when = {}
 
     def build(rebuild):
@@ -2868,7 +2870,7 @@ def test_the_end_of_the_work_counts_from_the_sessions_first_process_not_from_set
         (rebuild / "last-second.txt").write_text("saved in the turn's last second\n")
         while time.time() < when["end"] + 0.3:
             time.sleep(0.05)
-        (rebuild / "after-the-end.txt").write_text("saved after the end, the network open again\n")
+        (rebuild / "after-the-end.txt").write_text("saved after the end\n")
 
     rebuild = collected(tmp_path / "first", build)
     mark = hook_mark(rebuild).read_text().splitlines()
@@ -2877,6 +2879,10 @@ def test_the_end_of_the_work_counts_from_the_sessions_first_process_not_from_set
     record = json.loads(hook_record(rebuild).read_text())
     assert (record["work_end"], record["work_end_from"], record["late_entries"]) == (when["end"], "first process", 1), record
     assert record["first_process_started"] == when["first"] and record["turn_started"] == when["end"] - 34561 - 30
+    limits = re.search(r"^LIMIT_SECONDS, MARGIN_SECONDS, STOP_SECONDS = (\d+), (\d+), (\d+)$",
+                       (TASK / "environment" / "provision-scratch").read_text(), re.MULTILINE)
+    stop = when["first"] + int(limits.group(1)) + int(limits.group(2))  # the stop, and the network's return it waits for
+    assert record["work_end"] < stop, (record["work_end"], stop)
     summary = verifier_call(textwrap.dedent(f"""
         import json, verify
         from pathlib import Path
