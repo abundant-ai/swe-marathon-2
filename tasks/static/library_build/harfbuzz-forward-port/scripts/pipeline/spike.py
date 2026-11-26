@@ -552,6 +552,7 @@ def run_verifier(
     release: str,
     platform: str | None = None,
     record: bool = False,
+    cpus: int = 4,
 ) -> dict:
     """Run the verifier image against one tree, the way the platform would (tree read-only, logs mounted).
 
@@ -565,7 +566,7 @@ def run_verifier(
         "--rm",
         "--memory=4g",
         "--memory-swap=4g",
-        "--cpus=4",
+        f"--cpus={cpus}",
         "--label",
         LABEL,
         *(["--platform", platform] if platform else []),
@@ -641,9 +642,27 @@ def cmd_milestone(args: argparse.Namespace) -> None:
             record_gold(
                 Path(args.selection), args.platform, args.release, Path(args.record)
             )
+        if args.record and args.determinism:
+            determinism(Path(args.record), args.release, args.platform)
         for spec in args.tree:
-            name, _, tree = spec.partition("=")
-            run_verifier(Path(tree), name, args.release, args.platform)
+            name, _, rest = spec.partition("=")
+            tree, _, release = rest.partition("@")
+            run_verifier(Path(tree), name, release or args.release, args.platform)
+
+
+def determinism(tree: Path, release: str, platform: str | None) -> None:
+    """3+1: record the reference twice more as before and once on one CPU; every outputs.tsv must be identical."""
+    runs = {"record-2": 4, "record-3": 4, "record-1cpu": 1}
+    for name, cpus in runs.items():
+        run_verifier(tree, name, release, platform, record=True, cpus=cpus)
+    first = (WORK / "verify" / "record" / "outputs.tsv").read_bytes()
+    same = {
+        name: (WORK / "verify" / name / "outputs.tsv").exists()
+        and (WORK / "verify" / name / "outputs.tsv").read_bytes() == first
+        for name in runs
+    }
+    log_event(event="determinism", identical=same)
+    print(json.dumps({"determinism": same}), flush=True)
 
 
 def main() -> None:
@@ -682,13 +701,18 @@ def main() -> None:
     p.set_defaults(func=cmd_verify)
     p = sub.add_parser("milestone")
     p.add_argument("selection")
-    p.add_argument("tree", nargs="+", help="NAME=TREE, verified in order")
+    p.add_argument("tree", nargs="+", help="NAME=TREE[@RELEASE], verified in order")
     p.add_argument("--release", default="15.2.0")
     p.add_argument("--plan", help="operations to run first, under the same hold")
     p.add_argument("--platform", help="build and run the verifier for this platform")
     p.add_argument(
         "--record",
         help="reference tree: record the expected outputs through the verifier image",
+    )
+    p.add_argument(
+        "--determinism",
+        action="store_true",
+        help="with --record: three more recordings, one of them on 1 CPU",
     )
     p.set_defaults(func=cmd_milestone)
     args = parser.parse_args()
