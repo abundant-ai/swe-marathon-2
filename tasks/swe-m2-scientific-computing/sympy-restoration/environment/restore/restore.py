@@ -9,14 +9,14 @@
                                  run the docstring examples of restored units (20 s per
                                  unit); the first failing example is shown for up to
                                  three failing units per call
-  restore pytest [pytest args]   run the repository tests against the delivered form
+  restore pytest [pytest args]   run the repository tests on your tree as the build takes it
                                  (60 s per test unless --timeout is given)
-  restore sync FILE              rewrite FILE in delivered form (refused while a body
-                                 in it is rejected or the file does not parse)
-  restore reset FILE             put FILE back to its original skeleton state
+  restore sync FILE              rewrite FILE as the build takes it (refused while a body
+                                 in it uses a listed construct or the file does not parse)
+  restore reset FILE             put FILE back to its blanked state
 
-Only the bodies of the restorable functions are delivered.
-`check` and `pytest` run on exactly that form of your work tree.
+The build takes only the bodies of the restorable functions from your tree;
+`check` and `pytest` run on your tree in that form.
 """
 from __future__ import annotations
 
@@ -45,7 +45,7 @@ RESTARTS = 8
 
 
 def run_examples(names_by_module, workers, timeout=20.0):
-    """Run docstring examples, one process per module. Returns {dotted: record}.
+    """Run docstring examples, one process per module. Returns {dotted: result}.
 
     A unit that ends its process, or keeps it busy past its time, fails alone: the
     units behind it run again in a new process, at most RESTARTS times per module.
@@ -196,7 +196,7 @@ def cmd_status(args):
     if len(bad) > 10:
         print(f"  ... and {len(bad) - 10} more broken")
     for rel in notes[:5]:
-        print(f"  note: {rel} has edits outside restorable bodies; they are not delivered")
+        print(f"  note: {rel} has edits outside restorable bodies; they do not reach the build")
     if todo:
         nxt = min((u for u in units if states[u["uid"]] == "todo"), key=lambda u: u["order"])
         print(f"next: {nxt['uid']} {nxt['file']}:{current_line(nxt)} {nxt['qualname']}")
@@ -394,7 +394,7 @@ def cmd_check(args):
             shown += 1
     save_state(st)
     for rel in notes[:5]:
-        print(f"note: {rel} has edits outside restorable bodies; they are not delivered")
+        print(f"note: {rel} has edits outside restorable bodies; they do not reach the build")
     print("checked {}: {} pass, {} fail, {} blocked, {} todo{}".format(
         len(sel), counts["pass"], counts["fail"], counts["blocked"], counts["todo"],
         f", {counts['broken']} broken" if counts["broken"] else ""))
@@ -414,7 +414,7 @@ def cmd_pytest(args):
     if not any(a.startswith("--timeout") for a in args):
         base += ["--timeout", "60"]
     # paths inside the work tree, absolute or relative to the current directory, are run
-    # in the delivered form of the tree
+    # on the tree in the form the build takes
     mapped = []
     root = os.path.realpath(WORK)
     for a in args:
@@ -445,11 +445,11 @@ def cmd_sync(args):
         return 2
     lost = [uid for uid in byfile[rel].values() if states.get(uid) not in ("restored", "todo")]
     if lost:
-        print(f"{rel}: not rewritten. {len(lost)} unit(s) in it are rejected or the file does not parse, "
+        print(f"{rel}: not rewritten. {len(lost)} unit(s) in it use a listed construct or the file does not parse, "
               "and rewriting would replace their bodies with placeholders. Fix them first (see `restore check`).")
         return 1
     shutil.copyfile(os.path.join(CAND, rel), os.path.join(WORK, rel))
-    print(f"{rel} rewritten in delivered form (skeleton + your restored bodies)")
+    print(f"{rel} rewritten as the build takes it (the blanked file + your restored bodies)")
 
 
 def cmd_reset(args):
@@ -459,10 +459,10 @@ def cmd_reset(args):
     rel = _rel(args[0])
     src = os.path.join(SKEL, rel)
     if not os.path.isfile(src):
-        print(f"{rel}: not a file of the original tree")
+        print(f"{rel}: not a file of the checkout")
         return 2
     shutil.copyfile(src, os.path.join(WORK, rel))
-    print(f"{rel} reset to its original skeleton state (restored bodies in it are gone)")
+    print(f"{rel} reset to its blanked state (restored bodies in it are gone)")
 
 
 def cmd_rules(args):

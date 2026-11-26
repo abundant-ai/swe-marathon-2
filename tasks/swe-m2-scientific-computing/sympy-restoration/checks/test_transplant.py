@@ -5,10 +5,10 @@ def test_only_accepted_unit_bodies_reach_the_graded_tree(scenario):
     data = scenario("transplant")
     assert data["states"]["U0001"] == "restored"
     assert data["states"]["U0002"] == "todo"
-    assert data["states"]["U0003"].startswith("rejected")
+    assert data["states"]["U0003"].startswith("not allowed")
     candidate = data["candidate"]
     assert "return x * 2" in candidate
-    # edits outside unit bodies and rejected bodies never arrive
+    # edits outside unit bodies and bodies that use a listed construct never arrive
     assert "return x + 1\n" in candidate and "x + 100" not in candidate
     assert "HELPER" not in candidate and "os.getcwd" not in candidate
     assert 'raise NotImplementedError("RESTORE U0003")' in candidate
@@ -46,12 +46,19 @@ def test_routes_to_the_process_and_to_files_are_rejected_and_every_original_body
         "json rebinding": "import json\njson.dumps = str\nreturn 1",
         "a handle's write": "return x.write('data')",
         "getattr os": "return getattr(posixpath, 'os')",
+        # a listed name as a literal key, whatever holds it (fix round 10)
+        "namespace in a variable": "d = sympy.utilities.misc.__dict__\nreturn d['os']",
+        "namespace's get in a variable": "d = sympy.utilities.misc.__dict__\nreturn d.get('sys')",
+        "namespace from getattr": "return getattr(sympy.utilities.misc, '__dict__')['os']",
+        "namespace pop": "return vars_of(x).pop('open')",
+        "builtins by key": "b = x.__dict__\nreturn b['__builtins__']",
     }
     for name, body in hostile.items():
         tree = ast.parse("def f(x):\n" + "\n".join("    " + line for line in body.split("\n")))
         assert restorelib.scan_body(tree.body[0].body, tree.body[0]) is not None, name
     allowed = {"getattr": "return getattr(x, 'name')", "import_module": "return import_module('z3')",
-               "list.remove": "x.remove(1)\nreturn x", "operator": "return operator.add(x, 1)"}
+               "list.remove": "x.remove(1)\nreturn x", "operator": "return operator.add(x, 1)",
+               "a key that is not listed": "return kwargs.get('order', x['mode'])"}
     for name, body in allowed.items():
         tree = ast.parse("def f(x):\n" + "\n".join("    " + line for line in body.split("\n")))
         assert restorelib.scan_body(tree.body[0].body, tree.body[0]) is None, name

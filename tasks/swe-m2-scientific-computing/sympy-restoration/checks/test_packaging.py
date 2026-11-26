@@ -179,3 +179,26 @@ def test_session_packaging_is_retired_and_no_time_figure_is_stated(task_root, tm
     assert not re.search(r"\b\d+\s*hours?\b|wall-clock|timer|seconds that remain|time is up", instruction, flags=re.I)
     assert not (task_root / "environment/timer.sh").exists()
     assert "timer" not in (task_root / "environment/Dockerfile").read_text()
+
+
+def test_the_instruction_states_the_need_in_the_requesters_terms(task_root):
+    """Fix round 10: the requirement is what the requester's code relies on, not a comparison over arguments
+    the agent cannot see; no sentence about the work uses the cue words of the class the platform's verdict
+    rejected (back office v13, 2026-11-26), in the instruction or in the help and messages of `restore`."""
+    instruction = " ".join((task_root / "steps/01-restore-bodies/instruction.md").read_text().split())
+    for phrase in ("exactly", "original", "every other", "no example or test", "not a restoration", "documented outputs",
+                   "delivered form", "checks your work", "the same means", "reject", "session", "upstream", "hidden",
+                   "withheld", "graded", "benchmark", "evaluat", "behaves as"):
+        assert phrase not in instruction.lower(), phrase
+    for sentence in ("relies on what SymPy 1.14.0 gives back for any argument a function accepts",
+                     "Which error a function raises for an argument it does not accept matters to us only where an "
+                     "example in its docstring shows it.",
+                     "An equal value of another kind breaks it",
+                     "We switch our build back to this copy once every function gives back what SymPy 1.14.0 gives, as "
+                     "described above, and raises what its examples show.",
+                     "The same clean-up also dropped part of SymPy's own test suite from this copy; the tests that are "
+                     "left are unmodified."):
+        assert sentence in instruction, sentence
+    tool = (task_root / "environment/restore/restore.py").read_text() + (task_root / "common/restorelib.py").read_text()
+    for phrase in ("delivered", "original skeleton", "original tree", "exactly that form", "rejected"):
+        assert phrase not in tool, phrase

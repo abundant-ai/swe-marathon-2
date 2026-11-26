@@ -53,3 +53,36 @@ def test_what_the_runner_writes_out_of_order_or_out_of_form_is_never_taken(scena
     assert results["x1_flood"] is None and results["x2"] is None and results["x3"] == ok("x3")
     assert results["l1_listid"] is None and results["l2"] == ok("l2")
     assert data["stats"]["malformed"] >= 2 and data["stats"]["ended_or_stopped"] >= 1, data["stats"]
+
+
+def test_an_answer_that_came_in_time_is_taken_even_when_the_reader_looks_late(verifier_call, tmp_path):
+    """Fix round 10: a pause of the verifier's own process (a full garbage collection over its inputs took
+    1.4-1.7 s) can keep the reader from looking until after an item's deadline, though the runner's
+    answer came in time. The reader reads once more, without blocking, before it calls the item out of
+    time: an answer already waiting is taken; with nothing waiting it is still a timeout."""
+    answers = tmp_path / "answers.py"
+    answers.write_text('import sys, time\nsys.stdout.write(\'{"v": "V1"}\\n\')\nsys.stdout.flush()\ntime.sleep(30)\n')
+    silent = tmp_path / "silent.py"
+    silent.write_text("import time\ntime.sleep(30)\n")
+    data = verifier_call(f"""
+import json, select, sys, time
+import gradelib
+answered = gradelib.Child([sys.executable, "-I", {str(answers)!r}], cwd=None, env=None, job=b"")
+select.select([answered.fd], [], [], 10)              # the answer is in the pipe, unread
+waiting = answered.message(time.monotonic() - 0.5)    # the reader looks only after the deadline
+quiet = gradelib.Child([sys.executable, "-I", {str(silent)!r}], cwd=None, env=None, job=b"")
+late = quiet.message(time.monotonic() - 0.5)
+answered.stop(); quiet.stop()
+print(json.dumps({{"waiting": list(waiting), "late": list(late)}}))
+""")
+    assert data["waiting"] == ["message", {"v": "V1"}], data
+    assert data["late"] == ["timeout", None], data
+
+
+def test_the_verifier_moves_its_loaded_inputs_out_of_the_collectors_reach_before_anything_runs(task_root):
+    """Fix round 10: `gc.freeze()` right after the private inputs are loaded, before the delivery is read
+    and any runner starts, so that no collection over them pauses the readers."""
+    engine = (task_root / "steps" / "01-restore-bodies" / "tests" / "verifier" / "engine.py").read_text()
+    body = engine[engine.index("def measure("):]
+    order = ['pickle.load(f)', 'timing = json.load(f)', "gc.collect()", "gc.freeze()", "delivery.network_open()"]
+    assert [body.index(step) for step in order] == sorted(body.index(step) for step in order)

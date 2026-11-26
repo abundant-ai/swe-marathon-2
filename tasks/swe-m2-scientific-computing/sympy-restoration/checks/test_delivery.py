@@ -1046,7 +1046,8 @@ def test_the_agent_works_as_dev_and_the_hooks_are_out_of_its_reach(task_root):
              "if delivered.end_bound is None:", "withhold(skel, cand, byfile, metrics[\"late_files\"], states)"]
     assert [body.index(step) for step in order] == sorted(body.index(step) for step in order), "the record is read before anything is graded"
     instruction = (task_root / "steps" / "01-restore-bodies" / "instruction.md").read_text()
-    assert "Another copy of\nSymPy's source, from an installed package, a download, a mirror or any other place, is not to\nbe used" in instruction
+    assert ("Another copy of SymPy's source, from an installed package, a download, a mirror or any other place, is not "
+            "to be used, in whole or in part.") in " ".join(instruction.split())
     for word in ("fsmaint", "collect", "sweep", "mark", "verifier", "late", "signed"):
         assert not re.search(rf"\b{word}\b", instruction.lower()), word
     # the hooks say nothing of what the copy is for
@@ -1428,6 +1429,33 @@ def test_a_fetch_saved_after_egress_returns_is_late_and_the_last_second_before_t
     result = read_delivery(verifier_call, arrived, hooks.lib / "key")
     assert result["late"] == [] and list(result["copied"]) == ["m.py"], result
     assert graded_states(verifier_call, {"sympy/m.py": PLACEHOLDER}, arrived.parent) == {"U0001": "restored"}
+
+
+def test_with_no_first_process_seen_dev_is_never_ended_by_time_alone(tmp_path):
+    """Fix round 10: no process of `dev` is seen (no `/proc` here, so the sessions cannot be seen either),
+    the network is closed through the turn and opens after the time the work is given, counted from the
+    start of the work. The opening is an end of the work, but `dev` is not ended by it: without a first
+    process the net check cannot tell when the platform's own limit, which counts from later, falls, so it
+    ends `dev` only once a fresh look finds no session (here never), or the collect step does."""
+    hooks = Hooks(tmp_path / "t", real_netcheck=True, WORK_LIMIT_SECONDS=3,
+                  netcheck_settings={"WORK_LIMIT_SECONDS": 3, "COPY_LEAD_SECONDS": 2.5, "COPY_INTERVAL_SECONDS": 0.2})
+    hooks.setup()
+    started = hooks.work_started()
+    hooks.network("closed")
+    time.sleep(max(0.0, started + 3.5 - time.time()))
+    hooks.network("open")                                                     # after the limit counted from the start
+    opened = hooks.state / "netcheck-open.json"
+    for _ in range(100):
+        if opened.exists():
+            break
+        time.sleep(0.05)
+    time.sleep(1.0)                                                           # time for an ending, were there one
+    record = json.loads(opened.read_text())
+    sessions = json.loads((hooks.state / "sessions.json").read_text())
+    hooks.run("fsmaint-sweep", egress="open")
+    assert sessions.get("first_process") is None and record["session_alive"] is None, (sessions, record)
+    assert record["after_limit"] is True, record
+    assert record.get("ending", "").startswith("waits") and "ended_at" not in record, record
 
 
 def test_the_limit_ends_the_work_when_the_collect_step_began_after_it_with_no_session_seen(tmp_path, verifier_call):

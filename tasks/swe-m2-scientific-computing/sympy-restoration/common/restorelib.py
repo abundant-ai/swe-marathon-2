@@ -1,6 +1,6 @@
-"""How a work tree is turned into its delivered form.
+"""How a work tree is turned into the form the build takes.
 
-The delivered tree is built from the original skeleton by replacing, for every
+That tree is built from the blanked skeleton by replacing, for every
 restorable unit, the placeholder statement with the body found in the work tree
 for the function of the same qualified name in the same file.  Nothing else
 from the work tree is used.
@@ -42,7 +42,7 @@ DENY_NAMES = {
     "breakpoint", "input", "exit", "quit", "__builtins__", "__loader__", "__spec__",
     "preview", "autowrap", "ufuncify", "binary_function", "print_gtk", "attrgetter", "methodcaller",
 }
-# module names that are also rejected when a body uses them as globals of its module
+# module names that are also refused when a body uses them as globals of its module
 DENY_GLOBAL_MODULES = {
     "os", "sys", "subprocess", "importlib", "inspect", "builtins", "ctypes", "gc", "shutil",
     "socket", "pathlib", "pickle", "marshal", "signal", "threading", "multiprocessing",
@@ -63,14 +63,14 @@ DENY_ATTRS = {
     "f_builtins", "f_code", "tb_frame", "tb_next", "gi_frame", "cr_frame", "ag_frame",
     "_getframe", "settrace", "setprofile", "__stdout__", "__stderr__", "stdout", "stderr",
     "displayhook", "excepthook", "meta_path", "path_hooks",
-    # a module's own handle on the process, the interpreter or the files: no original body needs one
+    # a module's own handle on the process, the interpreter or the files: no body of SymPy 1.14.0 needs one
     "os", "_os", "sys", "modules", "__traceback__", "tb_lineno", "f_trace", "testing", "runtests", "importtools",
     "_compilation", "autowrap", "plotting", "interactive", "gtk", "pytest", "conftest", "preview", "attrgetter",
     "methodcaller", "open", "write", "writelines", "popen", "fork", "kill", "unlink", "rmtree", "mkdir",
     "makedirs", "rename", "chmod", "chdir", "putenv", "environ", "_exit", "abort",
 }
 # functions that reach an attribute or a module by a name given as a string: a literal name on the
-# lists above is rejected there too
+# lists above is refused there too
 NAME_CALLS = {"getattr", "setattr", "delattr", "hasattr", "attrgetter", "methodcaller"}
 MODULE_CALLS = {"import_module", "__import__"}
 MAX_SOURCE_BYTES = 4_000_000
@@ -123,14 +123,13 @@ def scan_body(nodes, fn=None) -> str | None:
                     return f"use of module '{n.id}'"
             elif isinstance(n, ast.Attribute) and n.attr in DENY_ATTRS:
                 return f"attribute '.{n.attr}'"
-            elif isinstance(n, ast.Subscript) and _namespace(n.value) and _denied_entry(n.slice):
-                return f"namespace entry '{n.slice.value}'"
+            elif isinstance(n, ast.Subscript) and _denied_entry(n.slice):
+                return f"literal key '{n.slice.value}'"
             elif isinstance(n, ast.Call):
                 called = n.func.id if isinstance(n.func, ast.Name) else n.func.attr if isinstance(n.func, ast.Attribute) else None
                 literals = [a.value for a in n.args if isinstance(a, ast.Constant) and isinstance(a.value, str)]
-                if called in NAMESPACE_CALLS and isinstance(n.func, ast.Attribute) and _namespace(n.func.value) \
-                        and n.args and _denied_entry(n.args[0]):
-                    return f"namespace entry '{n.args[0].value}'"
+                if called in KEY_CALLS and isinstance(n.func, ast.Attribute) and n.args and _denied_entry(n.args[0]):
+                    return f"literal key '{n.args[0].value}'"
                 if called in NAME_CALLS:
                     for name in literals:
                         if any(part in DENY_ATTRS for part in name.split(".")):
@@ -140,17 +139,14 @@ def scan_body(nodes, fn=None) -> str | None:
     return None
 
 
-NAMESPACE_CALLS = {"get", "pop", "setdefault", "__getitem__", "__setitem__"}
-
-
-def _namespace(node) -> bool:
-    """A module's or a class's namespace: `x.__dict__`."""
-    return isinstance(node, ast.Attribute) and node.attr == "__dict__"
+# methods that take a key: a literal name on the lists above given to one is refused, whatever holds it
+# (a namespace from `x.__dict__`, from `getattr(x, '__dict__')` or kept in a variable, or any mapping)
+KEY_CALLS = {"get", "pop", "setdefault", "__getitem__", "__setitem__", "__delitem__"}
 
 
 def _denied_entry(node) -> bool:
-    """A literal name taken from a namespace that names something on the lists: a module, a builtin, an
-    attribute (`x.__dict__['os']`, `x.__dict__.get('__builtins__')`)."""
+    """A literal key that names something on the lists: a module, a builtin, an attribute (`x['os']`,
+    `d.get('__builtins__')`, `getattr(m, '__dict__')['open']`), whatever holds it."""
     if not (isinstance(node, ast.Constant) and isinstance(node.value, str)):
         return False
     name = node.value
@@ -160,7 +156,7 @@ def _denied_entry(node) -> bool:
 def rules_text() -> str:
     """The complete list of constructs a restored body may not use."""
     return "\n".join([
-        "A restored body is rejected when it contains any of the following.",
+        "The build does not take a restored body that contains any of the following.",
         "",
         "Imports (also `from X import ...`):",
         "  " + ", ".join(sorted(DENY_MODULES)),
@@ -175,7 +171,7 @@ def rules_text() -> str:
         "as a literal):",
         "  " + ", ".join(sorted(DENY_ATTRS)),
         "Modules named as a literal to import_module or __import__, as for imports.",
-        "Any of the names above taken from a namespace by a literal (`x.__dict__['os']`, `x.__dict__.get(...)`).",
+        "Any of the names above as a literal key, whatever holds it (`x['os']`, `d.get('sys')`, `x.__dict__.pop('open')`).",
         "These are lists of names: a body that reaches the same things another way is not thereby allowed.",
     ])
 
@@ -282,7 +278,7 @@ def _masked_dump(src: str, keys):
 def transplant_file(skel_src: str, work_src: str | None, uids_by_qualname: dict):
     """Return (candidate_src, {uid: state}).
 
-    state is one of: 'restored', 'todo', 'missing', 'syntax', 'rejected: <why>'.
+    state is one of: 'restored', 'todo', 'missing', 'syntax', 'not allowed: <why>'.
     The candidate is guaranteed to differ from the skeleton only inside unit bodies.
     """
     states = {}
@@ -323,7 +319,7 @@ def transplant_file(skel_src: str, work_src: str | None, uids_by_qualname: dict)
                 continue
             why = scan_body(rest, fn)
             if why:
-                states[uid] = "rejected: " + why
+                states[uid] = "not allowed: " + why
                 continue
             if uid not in ph:
                 states[uid] = "missing"
@@ -381,7 +377,7 @@ def build_candidate(skel_root: str, work_root: str, cand_root: str, byfile: dict
     """Refresh candidate files for all unit-bearing files. Returns {uid: state}.
 
     work_root/<file> is read, unless it or a directory on its way is a link (then it counts as
-    missing); skel_root/<file> is the original skeleton; the result is written to
+    missing); skel_root/<file> is the blanked skeleton; the result is written to
     cand_root/<file>.  `cache` (mutable dict) memoises per-file results on (mtime_ns, size).
     """
     states = {}

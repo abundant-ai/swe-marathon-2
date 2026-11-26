@@ -22,6 +22,7 @@ replayed call should return.
 from __future__ import annotations
 
 import collections
+import gc
 import json
 import math
 import os
@@ -813,6 +814,10 @@ def measure(context: VerificationContext) -> Measurement:
     uid_of = {v[0]: v[1] for p in payload.values() for v in p["vectors"]}
     deciding = sorted(vid for vid in gold if vid not in documented)
     unit_set = {uid_of[vid] for vid in deciding if vid in uid_of}
+    # the private inputs are millions of objects this process holds to the end: a full collection over
+    # them pauses every reader of the runners for a second or more, so they are moved out of its reach
+    gc.collect()
+    gc.freeze()
     if not deciding or not unit_set or not U:
         raise EvaluationError("Private verifier inputs hold no unit or no counted call")
     metrics: dict[str, Any] = {

@@ -478,8 +478,9 @@ def watch(stream, status, ending=end_processes, session_alive=lambda: None, limi
     whether the time `limit()` (the time the work is given ran out, counted from the start of the work;
     seconds since the epoch, or None) had come (`after_limit`), then end the processes of the user when
     `session_alive()` is False (a fresh look found no session) or the time `stop_limit()` (counted from the
-    first process of the user, never earlier than `limit()`; `limit` when not given) has come; otherwise
-    that ending waits until one of the two holds. Local polls end nothing.
+    first process of the user, never earlier than `limit()`; None, so never, while no first process is
+    known; `limit` when not given) has come; otherwise that ending waits until one of the two holds. Local
+    polls end nothing.
 
     Returns the openings when the stream ends (it does not while the probe runs)."""
     stop_limit = stop_limit or limit
@@ -685,10 +686,12 @@ def main():
 
     def stop_of():
         # ending `dev`: counted from its first process, which began after the clock of the work's own
-        # limit, so that nothing ends the work before that limit
+        # limit, so that nothing ends the work before that limit; with no first process seen, never by
+        # time (only once a fresh look finds no session, or at the step that measures the tree)
         first = record.get("first_process")
-        start = first["start"] if isinstance(first, dict) and isinstance(first.get("start"), (int, float)) else since
-        return max(start, since) + WORK_LIMIT_SECONDS
+        if not (isinstance(first, dict) and isinstance(first.get("start"), (int, float))):
+            return None
+        return max(first["start"], since) + WORK_LIMIT_SECONDS
 
     try:
         uid = pwd.getpwnam(USER).pw_uid

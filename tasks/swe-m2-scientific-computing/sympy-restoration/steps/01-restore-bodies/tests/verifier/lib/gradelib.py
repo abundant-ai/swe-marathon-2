@@ -71,7 +71,14 @@ class Child:
                 return "bad", None
             left = deadline - time.monotonic()
             if left <= 0:
-                return "timeout", None
+                # a pause of this process (a garbage collection, the machine) can keep it from reading an
+                # answer that came in time: what is already waiting is read once more, without blocking,
+                # and a complete line there is taken
+                if self._read_waiting() == "bad":
+                    return "bad", None
+                if self.buffer.find(b"\n") >= 0:
+                    continue
+                return ("bad", None) if len(self.buffer) > self.line_limit else ("timeout", None)
             try:
                 ready, _, _ = select.select([self.fd], [], [], min(left, 1.0))
             except (OSError, ValueError):
@@ -90,6 +97,22 @@ class Child:
             if self.total > self.total_limit:
                 return "bad", None
             self.buffer += chunk
+
+    def _read_waiting(self) -> str | None:
+        """Read what the runner has already written, without blocking, up to a complete line or the
+        limits: "bad" past the total limit, else None (the end of its output is left to message())."""
+        while self.buffer.find(b"\n") < 0 and len(self.buffer) <= self.line_limit:
+            try:
+                chunk = os.read(self.fd, 1 << 16)
+            except (BlockingIOError, OSError):
+                return None
+            if not chunk:
+                return None
+            self.total += len(chunk)
+            if self.total > self.total_limit:
+                return "bad"
+            self.buffer += chunk
+        return None
 
     def stop(self) -> None:
         """End the runner and everything it started in its session."""
