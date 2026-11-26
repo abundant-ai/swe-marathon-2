@@ -334,11 +334,12 @@ Alongside it:
 | `0bd3925` | WS3/WS4: the telemetry's seat read, `body` query and census `kinds`; `wait_for` entity and `cruise`; the vehicle, getting in and out, ragdoll and damage checks with their hand-made-frame checks; the seat read's Godot check |
 | `ca4c901` | WS8: `scripts/check_disjoint.py` and its check, `expr` parameters; `fall_damage` allows half a health point |
 | `60ff0ec` | WS1/WS4: the GDD's clarifications (FT-9, FT-10, AC-5, AC-6, AC-12, chapter 6, IN-2, VH-3, VH-6, `player.give`), the four new playtests and the falls playtest's FT-9, the lean check, the independent read's fixes, the acceptance tool, the coverage map |
-| (next) | the acceptance tool's `private` part, this report, the README |
+| `8676f3e` | the acceptance tool's `private` part, this report, the README |
+| (next) | this table's hashes |
 
 Private, with both bundles refreshed in `harbor-lh/ops/swe-marathon-v2/next-tasks/game-private/`:
 - `crime-city-reference` `62ab893`, `2bc0c5f`: module 4 (vehicles) and module 3's rest (getting in
   and out, the ragdoll), falls measured from the ground straight under, the ragdoll settling at
   its start;
 - `tests/private` `d77977e` (the helper: templates, 16 instances, the builder), `101feca` (FT-9 in
-  the falls template, its two instances redrawn), RESULTS_COMMIT (the results).
+  the falls template, its two instances redrawn), `e7ae072` (the results).
