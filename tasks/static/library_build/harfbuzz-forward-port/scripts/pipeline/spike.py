@@ -252,44 +252,110 @@ def cmd_revert_check(_: argparse.Namespace) -> None:
     print((WORK / "s6-revert-check.tsv").read_text())
 
 
+def do_build(
+    bid: str,
+    release: str,
+    unit: str | None = None,
+    jobs: int = 4,
+    cpus: int = 6,
+    ragel: str = "on",
+    platform: str | None = None,
+) -> dict:
+    """Build one tree (a release, optionally with a unit's commits reverted) in one bounded container."""
+    src = f"/dl/harfbuzz/harfbuzz-{release}.tar.xz"
+    patches = f"/work/patches/{unit}" if unit else ""
+    out = f"/work/out/hb/{bid}"
+    started = time.time()
+    code = docker_run(
+        ["sh", "/pipe/hb_build.sh", src, out, patches, str(jobs), ragel],
+        cpus=cpus,
+        platform=platform,
+        check=False,
+    )
+    info = {"event": "build", "id": bid, "code": code, "cpus": cpus}
+    info["wall_s"] = round(time.time() - started, 1)
+    build_json = WORK / "out" / "hb" / bid / "build.json"
+    if build_json.exists():
+        info |= json.loads(build_json.read_text())
+    log_event(**info)
+    print(json.dumps(info), flush=True)
+    return info
+
+
+def do_run(
+    bid: str, cases: str, out: str, platform: str | None = None, env: str = ""
+) -> int:
+    """Run the driver of one build over a case file, in one bounded container."""
+    started = time.time()
+    code = docker_run(
+        ["sh", "-c", f"{env} timeout 1800 /work/out/hb/{bid}/hbdrv < {cases} > {out}"],
+        cpus=2,
+        platform=platform,
+        check=False,
+    )
+    log_event(
+        event="run", id=bid, out=out, code=code, wall_s=round(time.time() - started, 1)
+    )
+    return code
+
+
 def cmd_build(args: argparse.Namespace) -> None:
-    """Build one tree: a release, optionally with a unit's commits reverted."""
-    src = f"/dl/harfbuzz/harfbuzz-{args.release}.tar.xz"
-    patches = f"/work/patches/{args.unit}" if args.unit else ""
-    out = f"/work/out/hb/{args.id}"
     with heavy(f"build {args.id}"):
-        started = time.time()
-        code = docker_run(
-            ["sh", "/pipe/hb_build.sh", src, out, patches, str(args.jobs), args.ragel],
-            cpus=args.cpus,
-            platform=args.platform,
-            check=False,
+        do_build(
+            args.id,
+            args.release,
+            args.unit,
+            args.jobs,
+            args.cpus,
+            args.ragel,
+            args.platform,
         )
-        info = {
-            "event": "build",
-            "id": args.id,
-            "code": code,
-            "wall_s": round(time.time() - started, 1),
-        }
-        build_json = WORK / "out" / "hb" / args.id / "build.json"
-        if build_json.exists():
-            info |= json.loads(build_json.read_text())
-        log_event(**info)
-        print(json.dumps(info))
 
 
 def cmd_run(args: argparse.Namespace) -> None:
-    """Run the driver of one build over a case file."""
     with heavy(f"run {args.id}"):
-        docker_run(
-            [
-                "sh",
-                "-c",
-                f"timeout 1200 /work/out/hb/{args.id}/hbdrv < {args.cases} > {args.out}",
-            ],
-            cpus=2,
-            platform=args.platform,
-        )
+        do_run(args.id, args.cases, args.out, args.platform)
+
+
+def cmd_batch(args: argparse.Namespace) -> None:
+    """Run a JSON list of build, run and shell operations under one hold of the heavy lock."""
+    ops = json.loads(Path(args.plan).read_text())
+    with heavy(f"batch {Path(args.plan).name} ({len(ops)} ops)"):
+        for op in ops:
+            if op["op"] == "build":
+                do_build(
+                    op["id"],
+                    op["release"],
+                    op.get("unit"),
+                    op.get("jobs", 4),
+                    op.get("cpus", 6),
+                    op.get("ragel", "on"),
+                    op.get("platform"),
+                )
+            elif op["op"] == "run":
+                do_run(
+                    op["id"],
+                    op["cases"],
+                    op["out"],
+                    op.get("platform"),
+                    op.get("env", ""),
+                )
+            elif op["op"] == "sh":
+                started = time.time()
+                code = docker_run(
+                    op["args"],
+                    cpus=op.get("cpus", 2),
+                    platform=op.get("platform"),
+                    check=False,
+                )
+                log_event(
+                    event="sh",
+                    args=op["args"][:3],
+                    code=code,
+                    wall_s=round(time.time() - started, 1),
+                )
+            else:
+                raise SystemExit(f"unknown op {op['op']}")
 
 
 def main() -> None:
@@ -315,6 +381,9 @@ def main() -> None:
     p.add_argument("out")
     p.add_argument("--platform")
     p.set_defaults(func=cmd_run)
+    p = sub.add_parser("batch")
+    p.add_argument("plan")
+    p.set_defaults(func=cmd_batch)
     args = parser.parse_args()
     WORK.mkdir(parents=True, exist_ok=True)
     args.func(args)
