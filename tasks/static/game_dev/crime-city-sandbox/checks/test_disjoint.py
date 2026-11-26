@@ -1,8 +1,8 @@
 """Release instances against their playtests, without Godot: scripts/check_disjoint.py on
 tiny synthetic plays (one instance per way of repeating a playtest, and one that repeats
-nothing; for the vehicle rules also a near miss that must not count), and the "expr"
-parameters of scripts/make_instances.py that the instance templates compute their geometry
-with."""
+nothing; for the vehicle and street rules also near misses that must not count), and the
+"expr" parameters and "when" expectations of scripts/make_instances.py that the instance
+templates compute their geometry and daytime-only rules with."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ TASK = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(TASK / "scripts"))
 
 import check_disjoint as cd
-from make_instances import draw_params, eval_expr
+from make_instances import draw_params, eval_expr, expand, keep_when
 
 # ---------------------------------------------------------------- check_disjoint.py
 # A made-up playtest: a reset, a lead, a wall, a spawn, then a signal-style watch.
@@ -230,6 +230,174 @@ def test_stand_offs_follow_the_parked_vehicle_and_its_anchor_heading() -> None:
     assert cd.stand_offs(driven, plan) == []
 
 
+# A made-up street playtest on the shipped plan: a reset (clock 08:00), the player on a
+# corner, a minute's settle, then a watch of a signalised junction's stop line and of a
+# street map around it (given through "shared"), a density count from 09:00, and a car sent
+# along a lane towards a barrier standing in it (a stop_short watch).
+STEST = {
+    "format": "qa-play/1",
+    "name": "demo.streets/label",
+    "template": "demo.streets",
+    "role": "solo",
+    "args": ["--role=solo", "--variation=3"],
+    "shared": {"area": {"centre": [-70.0, 50.0], "radius_m": 75.0}},
+    "steps": [
+        {"dev": [["world.reset", {"variation": 3}]]},
+        {"dev": [["player.spawn", {"at": {"corner_of": "j_34", "approach": 0}}]]},
+        {"run": 3598},
+        {"mark": "watch_a"},
+        {"dev": [["vehicle.spawn", {"model": "sedan", "at": {"lane": "e_44_54:ab1", "s": 8.0}, "driver": "commuter_driver"}]]},
+        {"dev": [["prop.spawn", {"kind": "barrier", "at": [133.25, 0.0, 55.25], "size": [3.0, 0.8, 0.4], "heading": 90.0}]]},
+        {"run": 600},
+        {"mark": "watch_b"},
+    ],
+    "expect": [
+        {"id": "flow", "check": "green_flow", "args": {"from": "watch_a", "to": "watch_b", "approaches": [
+            {"intersection": "j_34", "approach": "j_34<e_33_34", "line": [[-77.0, 38.5], [-70.0, 38.5]], "toward": [0.0, 1.0]}]}},
+        {"id": "lanes", "check": "lane_keeping", "args": {"from": "watch_a", "to": "watch_b", "area": {"$shared": "area"}}},
+        {"id": "count", "check": "density", "args": {"from": "watch_a", "to": "watch_b", "vehicles": [10, 30], "people": [20, 60]}},
+        {"id": "short", "check": "stop_short", "args": {"from": "watch_a", "to": "watch_b"}},
+    ],
+}  # fmt: skip
+
+
+def street_instance(time_set: str | None = "21:30", **change: object) -> dict:
+    """An instance of STEST that repeats nothing: another variation and junction, a street map
+    centred on that junction, the clock set to `time_set` after the reset (none when None),
+    the car and the barrier on the lane beside the playtest's, a taxi and a higher barrier;
+    with the changes asked for (keys as in instance(), step indices of STEST)."""
+    inst = json.loads(json.dumps(STEST))
+    inst["name"] = "demo.streets/label/0a1b2c3d"
+    inst["args"] = ["--role=solo", "--variation=40"]
+    inst["shared"]["area"]["centre"] = [60.0, 50.0]
+    inst["expect"][0]["args"]["approaches"][0]["intersection"] = "j_44"
+    steps = inst["steps"]
+    steps[0] = {"dev": [["world.reset", {"variation": 40}]]}
+    steps[1]["dev"][0][1]["at"] = {"corner_of": "j_44", "approach": 2}
+    steps[4]["dev"][0][1].update(model="taxi", at={"lane": "e_44_54:ab0", "s": 8.0})
+    steps[5]["dev"][0][1].update(at=[133.25, 0.0, 51.75], size=[3.0, 1.1, 0.4])
+    for key, value in change.items():
+        step, cmd, field = key.split("__") if "__" in key else (key, None, None)
+        if cmd is None:
+            steps[int(step[1:])] = value
+        else:
+            steps[int(step[1:])]["dev"][int(cmd[1:])][1][field] = value
+    # the watch starts 3600 ticks (an hour of game time) after the clock is set
+    if time_set is not None:
+        steps.insert(1, {"dev": [["time.set", {"hhmm": time_set}]]})
+    return inst
+
+
+@pytest.fixture(scope="module")
+def plan():
+    from qakit.plan import Plan
+
+    return Plan.load(TASK / "common/design/plan/downtown.json")
+
+
+def test_a_street_instance_that_changes_everything_repeats_nothing(plan) -> None:
+    assert cd.repeats(street_instance(), STEST, plan, plan) == []
+    assert cd.density_clocks(STEST) == [540.0]  # 3600 ticks after the reset: 09:00
+    assert cd.density_clocks(street_instance()) == [21 * 60 + 30 + 60.0]
+    # the car's lane anchor, and the barrier's point on the same lane
+    assert cd.ground(STEST, plan) == {"e_44_54:ab1"}
+
+
+def test_rule_11_the_same_junction_or_street_map_is_caught(plan) -> None:
+    same = street_instance()
+    same["expect"][0]["args"]["approaches"][0]["intersection"] = "j_34"
+    why = cd.repeats(same, STEST, plan, plan)
+    assert len(why) == 1 and "green_flow watches j_34" in why[0], why
+    near = street_instance()
+    near["shared"]["area"]["centre"] = [-70.4, 50.5]
+    why = cd.repeats(near, STEST, plan, plan)
+    assert len(why) == 1 and "map centred 0.64 m" in why[0], why
+
+
+def test_rule_11_near_misses(plan) -> None:
+    # a map centred 1.2 m away; the same junction under another check; the signal checks'
+    # [junction, approach] lists
+    near = street_instance()
+    near["shared"]["area"]["centre"] = [-70.0, 51.2]
+    assert cd.repeats(near, STEST, plan, plan) == []
+    other = street_instance()
+    other["expect"][0]["check"] = "red_entries"
+    other["expect"][0]["args"]["approaches"][0]["intersection"] = "j_34"
+    assert cd.repeats(other, STEST, plan, plan) == []
+    lists = json.loads(json.dumps(STEST))
+    lists["expect"][0]["args"]["approaches"] = [["j_34", "j_34<e_33_34"]]
+    assert cd.watched(lists) == [("lane_keeping", "centre", (-70.0, 50.0))]
+
+
+@pytest.mark.parametrize(("hhmm", "repeat"), [
+    ("08:25", True),   # the watch starts at 09:25, 25 min after the playtest's
+    ("07:31", True),   # 08:31
+    ("07:20", False),  # 08:20, 40 min before
+    ("09:31", False),  # 10:31
+    ("21:30", False),
+])  # fmt: skip
+def test_rule_12_the_density_watch_at_the_playtests_hour(
+    plan, hhmm: str, repeat: bool
+) -> None:
+    why = cd.repeats(street_instance(hhmm), STEST, plan, plan)
+    assert bool(why) == repeat, why
+    assert all("a density watch starts at" in w for w in why), why
+
+
+def test_rule_12_round_the_clock_defaults_and_unknowns(plan) -> None:
+    late = json.loads(json.dumps(STEST))  # the playtest's watch starts at 00:30
+    late["steps"].insert(1, {"dev": [["time.set", {"hhmm": "23:30"}]]})
+    assert cd.density_clocks(late) == [30.0]
+    assert cd.repeats(street_instance("23:10"), late, plan, plan)  # 00:10
+    assert cd.repeats(street_instance("22:10"), late, plan, plan) == []  # 23:10
+    # no time.set: the reset's 08:00, as the playtest's
+    why = cd.repeats(street_instance(None), STEST, plan, plan)
+    assert "a density watch starts at 09:00" in why[0]
+    # a wait_for between the clock and the mark, or a malformed hhmm: unknown, no repeat
+    wait = {"wait_for": {"event": "saved", "max_ticks": 9}}
+    waits = street_instance("08:20", s2=wait)
+    assert cd.density_clocks(waits) == [] and cd.repeats(waits, STEST, plan, plan) == []
+    assert cd.density_clocks(street_instance("8.20")) == []
+    # plays without a density expectation are not compared
+    bare = street_instance("08:20")
+    bare["expect"] = [e for e in bare["expect"] if e["check"] != "density"]
+    assert cd.repeats(bare, STEST, plan, plan) == []
+
+
+# In order: the car further along the playtest's lane; the barrier on that lane, as a point;
+# the car on it through an intersection anchor (approach 3 of j_54, its lane 1).
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"s4__c0__at": {"lane": "e_44_54:ab1", "s": 40.0}},
+        {"s5__c0__at": [100.0, 0.0, 55.0]},
+        {"s4__c0__at": {"intersection": "j_54", "approach": 3, "before_m": 40.0, "lane_index": 1}},
+    ],
+)  # fmt: skip
+def test_rule_13_the_same_lane_is_caught(plan, change: dict) -> None:
+    why = cd.repeats(street_instance(**change), STEST, plan, plan)
+    assert len(why) == 1 and "something is put on e_44_54:ab1" in why[0], why
+
+
+def test_rule_13_near_misses(plan) -> None:
+    # the other lane of the approach; the player standing on the lane; plays without a lane
+    # check; a sidewalk anchor against the sidewalk under a point on it
+    assert cd.repeats(street_instance(s4__c0__at={"intersection": "j_54", "approach": 3, "before_m": 40.0}),
+                      STEST, plan, plan) == []  # fmt: skip
+    player = street_instance()
+    player["steps"][2]["dev"][0][1]["at"] = {"lane": "e_44_54:ab1", "s": 60.0}
+    assert cd.repeats(player, STEST, plan, plan) == []
+    same = street_instance(s4__c0__at={"lane": "e_44_54:ab1", "s": 40.0})
+    test = json.loads(json.dumps(STEST))
+    for play in (same, test):
+        play["expect"] = [e for e in play["expect"] if e["check"] != "stop_short"]
+    assert cd.repeats(same, test, plan, plan) == []
+    walk = plan.sidewalk_point("sw_44", 30.0).p
+    assert cd.ground_of({"sidewalk": "sw_44", "s": 30.0}, plan) == {"sw_44"}
+    assert cd.ground_of([walk[0], walk[1], walk[2] + 1.4], plan) == {"sw_44"}
+    assert cd.ground_of([walk[0], walk[1], walk[2] + 1.6], plan) == set()
+
+
 def write_set(folder: Path, inst: dict) -> Path:
     """A playtest folder with TEST and a manifest with one instance; returns the manifest."""
     (folder / "tests").mkdir(parents=True)
@@ -315,3 +483,29 @@ def test_expr_cycles_and_unknown_names_are_refused() -> None:
         draw_params({"x": {"expr": "$y"}, "y": {"expr": "$x"}}, random.Random(1))
     with pytest.raises(ValueError, match="cycle"):
         draw_params({"x": {"expr": "$missing + 1"}}, random.Random(1))
+
+
+# ---------------------------------------------------------------- make_instances.py "when"
+def test_when_keeps_an_expectation_only_where_it_is_true() -> None:
+    expect = [{"id": "a", "check": "x"}, {"id": "b", "check": "x", "when": 0},
+              {"id": "c", "check": "x", "when": 1, "args": {}}, {"id": "d", "check": "x", "when": None}]  # fmt: skip
+    kept = [{"id": "a", "check": "x"}, {"id": "c", "check": "x", "args": {}}]
+    assert keep_when(expect) == kept
+
+
+def test_when_follows_the_draw_and_is_never_written(plan) -> None:
+    tpl = {
+        "format": "qa-play/1", "name": "demo.when/label", "template": "demo.when", "role": "solo",
+        "params": {"P": {"choice": [{"day": 1, "text": "day"}, {"day": 0, "text": "night"}]}},
+        "steps": [{"run": 1}],
+        "expect": [{"id": "flow", "check": "green_flow", "when": "$P.day", "says": "by $P.text"},
+                   {"id": "count", "check": "density", "says": "by $P.text"}],
+    }  # fmt: skip
+    rng, seen = random.Random("when"), set()
+    for _ in range(20):
+        inst = expand(tpl, rng, plan)
+        ids = [e["id"] for e in inst["expect"]]
+        assert ids == (["flow", "count"] if inst["drawn"]["P.day"] else ["count"])
+        assert all("when" not in e for e in inst["expect"])
+        seen.add(inst["drawn"]["P.day"])
+    assert seen == {0, 1}

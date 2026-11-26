@@ -11,6 +11,10 @@ A template is a play (qa-play/1) with three additions:
   number, halves to even); it draws nothing, so the other parameters come out the same;
 - "anchors": named plan anchors ({"poi": ...}, {"lane": ..., "s": ...}, a point, ...),
   which may use parameters.
+An expectation may also carry "when": a value, usually "$name". The instance keeps the
+expectation only when that value is true (not 0, false, null or empty), and the key itself
+is not written; so a rule that holds only for some draws (one stated for daytime, say) is
+checked only on those.
 
 "$name" anywhere in the template is replaced by the parameter's value (a string that is
 exactly "$name" takes the value's type; "$name" inside a longer string, or an object key
@@ -173,6 +177,19 @@ def substitute(obj: object, values: dict) -> object:
     return obj
 
 
+def keep_when(expect: list) -> list:
+    """The expectations to keep: those without "when", and those whose "when" is true,
+    with the key taken out (see the module docstring)."""
+    out = []
+    for e in expect:
+        if isinstance(e, dict) and "when" in e:
+            if not e["when"]:
+                continue
+            e = {k: v for k, v in e.items() if k != "when"}
+        out.append(e)
+    return out
+
+
 def expand(template: dict, rng: random.Random, plan: Plan) -> dict:
     """One instance from a template and the draw's random source.
 
@@ -195,6 +212,8 @@ def expand(template: dict, rng: random.Random, plan: Plan) -> dict:
         values["anchor:" + name] = resolved[name]["p"]
     body = {k: v for k, v in template.items() if k not in ("params", "anchors")}
     inst = substitute(body, values)
+    if isinstance(inst.get("expect"), list):
+        inst["expect"] = keep_when(inst["expect"])
     tag = hashlib.sha256(json.dumps(values, sort_keys=True).encode()).hexdigest()[:8]
     inst["name"] = f"{template['name']}/{tag}"
     inst["drawn"] = {k: v for k, v in values.items() if not k.startswith("anchor:")}

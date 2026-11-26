@@ -41,6 +41,29 @@ instance REPEATS its playtest when any of these holds:
    vehicle's heading (the command's "heading", else its anchor's, else 0).
 10. damage: a vehicle.spawn of the instance has a "damage" within 0.005 of the "damage" of
     a vehicle.spawn of the playtest (damages above 0 only).
+11. junction: an expectation of the instance and one of the playtest with the same check
+    watch the same junction: both list stop lines ("approaches", objects that name their
+    "intersection") with a junction in common, or both give a street map ("area", in the
+    args or through the play's "shared") whose "centre" lies within 1.0 m (horizontally)
+    of the other's. (The signal checks' lists of every approach, [junction, approach]
+    pairs, are not stop lines and count for nothing here.)
+12. clock: both plays have a density expectation (TR-1's table depends on the hour) and the
+    clock at the "from" mark of one of the instance's lies within 30 game minutes (either
+    way, round the clock) of the clock at the "from" mark of one of the playtest's. A
+    play's clock at a mark is the "hhmm" ("hh:mm") of the last time.set before the mark,
+    else 08:00 from the last world.reset before it (chapter 17's table), advanced one game
+    minute per 60 ticks from that command's step to the mark (ticks as in rule 5). With
+    neither command before the mark, a malformed hhmm, or a wait_for in between, the clock
+    is unknown and matches nothing.
+13. lanes: both plays have an expectation of a check that watches things in lanes or on
+    sidewalks (stop_short, lane_speeds, sidewalk_dodge, horn_clear), and the instance puts
+    a person, a vehicle or a prop (npc.spawn, vehicle.spawn, prop.spawn; the player is not
+    counted) on a lane or a sidewalk on which the playtest puts one. A command's "at" is
+    on a lane when it is a lane anchor ({"lane": id}), an intersection anchor (the lane it
+    names on its approach), or a point (or an anchor resolved against the plan) within
+    half the lane's width of the lane's centre line, between its start and its stop line
+    (chapter 7's introduction); on a sidewalk when it is a sidewalk anchor ({"sidewalk":
+    id}) or a point within half the sidewalk's width of its ring (plan/FORMAT.md).
 
 Instances whose name has no shipped playtest (release-only templates, such as the plan
 swap) are listed as such and not compared.
@@ -55,8 +78,10 @@ one does, 2 when an input cannot be read.
 from __future__ import annotations
 
 import argparse
+import itertools
 import json
 import math
+import re
 import sys
 from pathlib import Path
 
@@ -75,6 +100,13 @@ SAME_KMH = 0.5
 FIXED_KMH = (60.0, 40.0, 8.0)
 BESIDE_M = 4.0
 SAME_DAMAGE = 0.005
+CLOCKED_CHECKS = ("density",)  # TR-1's table depends on the hour
+SAME_CLOCK_MIN = 30.0
+RESET_CLOCK_MIN = 8 * 60  # chapter 17: world.reset sets the clock to 08:00
+DAY_MIN = 24 * 60
+HHMM = re.compile(r"^(\d{1,2}):(\d{2})$")
+LANE_CHECKS = ("stop_short", "lane_speeds", "sidewalk_dodge", "horn_clear")
+LANE_PLACING = ("npc.spawn", "vehicle.spawn", "prop.spawn")
 
 
 def commands(play: dict) -> list[tuple[int, str, dict]]:
@@ -300,10 +332,206 @@ def watches(play: dict) -> list[tuple[str, int | None]]:
     return out
 
 
+def number(v: object) -> bool:
+    return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+
+def watched(play: dict) -> list[tuple[str, str, object]]:
+    """(check, "junction" or "centre", the junction id or the map's (x, z) centre) of every
+    junction an expectation watches (rule 11)."""
+    shared = play.get("shared") if isinstance(play.get("shared"), dict) else {}
+    out: list[tuple[str, str, object]] = []
+    for e in play.get("expect", []):
+        if not isinstance(e, dict) or not isinstance(e.get("args"), dict):
+            continue
+        check, args = str(e.get("check")), e["args"]
+        aps = args.get("approaches")
+        for ap in aps if isinstance(aps, list) else []:
+            if isinstance(ap, dict) and isinstance(ap.get("intersection"), str):
+                out.append((check, "junction", ap["intersection"]))
+        area = args.get("area")
+        if isinstance(area, dict) and list(area) == ["$shared"]:
+            area = shared.get(area["$shared"])
+        c = area.get("centre") if isinstance(area, dict) else None
+        if isinstance(c, list) and len(c) == 2 and all(number(v) for v in c):
+            out.append((check, "centre", (float(c[0]), float(c[1]))))
+    return out
+
+
+def same_junction(inst: dict, test: dict) -> str | None:
+    """Rule 11: what the instance watches as the playtest does, or None."""
+    theirs = watched(test)
+    for check, what, v in watched(inst):
+        for c2, w2, v2 in theirs:
+            if c2 != check or w2 != what:
+                continue
+            if what == "junction" and v == v2:
+                return f"{check} watches {v}, as the playtest does"
+            if what == "centre" and math.dist(v, v2) < NEAR_M:
+                return f"{check} watches a street map centred {math.dist(v, v2):.2f} m from the playtest's"
+    return None
+
+
+def hhmm_minutes(value: object) -> float | None:
+    """Minutes after midnight of an "hh:mm" text, or None when it is not one."""
+    m = HHMM.match(value) if isinstance(value, str) else None
+    if not m or int(m.group(1)) > 23 or int(m.group(2)) > 59:
+        return None
+    return float(int(m.group(1)) * 60 + int(m.group(2)))
+
+
+def clock_at(play: dict, mark: str) -> float | None:
+    """The game clock (minutes after midnight) at a mark, as rule 12 defines it; None when
+    it is unknown."""
+    steps = play.get("steps", [])
+    at = None  # a mark set twice names its later frame, as in rule 5
+    for i, step in enumerate(steps):
+        if isinstance(step, dict) and step.get("mark") == mark:
+            at = i
+    if at is None:
+        return None
+    base, since = None, None
+    for i, cmd, args in commands(play):
+        if i >= at:
+            break
+        if cmd == "world.reset":
+            base, since = float(RESET_CLOCK_MIN), i
+        elif cmd == "time.set":
+            base, since = hhmm_minutes(args.get("hhmm")), i
+    if base is None:
+        return None
+    ticks = 0
+    for step in steps[since:at]:
+        cost = tick_cost(step)
+        if cost is None:
+            return None
+        ticks += cost
+    return (base + ticks / 60.0) % DAY_MIN
+
+
+def density_clocks(play: dict) -> list[float]:
+    """The known clocks at the "from" marks of a play's density expectations (rule 12)."""
+    out = []
+    for e in play.get("expect", []):
+        if not isinstance(e, dict) or e.get("check") not in CLOCKED_CHECKS:
+            continue
+        args = e.get("args") if isinstance(e.get("args"), dict) else {}
+        c = clock_at(play, args["from"]) if isinstance(args.get("from"), str) else None
+        if c is not None:
+            out.append(c)
+    return out
+
+
+def same_clock(inst: dict, test: dict) -> str | None:
+    """Rule 12: the instance's density watch starting at the playtest's hour, or None."""
+    theirs = density_clocks(test)
+    for c in density_clocks(inst):
+        for c2 in theirs:
+            gap = abs(c - c2) % DAY_MIN
+            if min(gap, DAY_MIN - gap) <= SAME_CLOCK_MIN:
+                return (
+                    f"a density watch starts at {int(c // 60):02d}:{int(c % 60):02d}, within "
+                    f"{SAME_CLOCK_MIN:g} game minutes of the playtest's"
+                )
+    return None
+
+
+_GROUND: dict = {}  # id(plan) -> (plan, lanes, sidewalks), worked out once per plan
+
+
+def ground_lines(plan: Plan) -> tuple[list, list]:
+    """([(lane id, half width, [(x, z), ...] from its start to its stop line)], [(sidewalk
+    id, half width, closed ring [(x, z), ...])]) of a plan; lanes sampled every 10 m."""
+    key = id(plan)
+    if key not in _GROUND or _GROUND[key][0] is not plan:
+        lanes = []
+        for lane_id, (edge, _ln) in sorted(plan.lanes.items()):
+            length = plan.lane_length(lane_id)
+            n = max(1, math.ceil(length / 10.0))
+            pts = [plan.lane_point(lane_id, length * k / n).p for k in range(n + 1)]
+            half = float(edge["lane_width_m"]) / 2.0
+            lanes.append((lane_id, half, [(p[0], p[2]) for p in pts]))
+        walks = []
+        for sw in plan.data.get("sidewalks", []):
+            ring = [(float(x), float(z)) for x, z in sw["ring"]]
+            walks.append((sw["id"], float(sw["width_m"]) / 2.0, ring + ring[:1]))
+        _GROUND[key] = (plan, lanes, walks)
+    return _GROUND[key][1], _GROUND[key][2]
+
+
+def near_line(pts: list, x: float, z: float, half: float) -> bool:
+    """Whether (x, z) lies within `half` of a polyline, measured square to one of its
+    segments (its foot on the segment)."""
+    for (ax, az), (bx, bz) in itertools.pairwise(pts):
+        dx, dz = bx - ax, bz - az
+        n2 = dx * dx + dz * dz
+        if n2 <= 0:
+            continue
+        t = ((x - ax) * dx + (z - az) * dz) / n2
+        off = abs((x - ax) * dz - (z - az) * dx) / math.sqrt(n2)
+        if -1e-9 <= t <= 1 + 1e-9 and off <= half + 1e-9:
+            return True
+    return False
+
+
+def ground_of(at: object, plan: Plan | None) -> set[str]:
+    """The lanes and sidewalks an "at" value stands on (rule 13)."""
+    if isinstance(at, dict):
+        if isinstance(at.get("lane"), str):
+            return {at["lane"]}
+        if isinstance(at.get("sidewalk"), str):
+            return {at["sidewalk"]}
+        if isinstance(at.get("intersection"), str) and plan is not None:
+            inter = plan.intersections.get(at["intersection"])
+            legs = [lg for lg in (inter or {}).get("legs", []) if lg.get("approach")]
+            k, idx = at.get("approach", 0), at.get("lane_index", 0)
+            leg = None
+            if whole(k) is not None and 0 <= whole(k) < len(legs):
+                leg = legs[whole(k)]
+            elif isinstance(k, str):
+                leg = next((lg for lg in legs if lg["approach"]["id"] == k), None)
+            edge = plan.edges.get(leg["edge"]) if leg else None
+            return {
+                ln["id"]
+                for ln in (edge or {}).get("lanes", [])
+                if ln["dir"] == leg["approach"]["dir"] and ln["index"] == whole(idx)
+            }
+    s = spot(at, plan)
+    if s is None or plan is None:
+        return set()
+    lanes, walks = ground_lines(plan)
+    return {lid for lid, half, pts in lanes + walks if near_line(pts, s[0], s[1], half)}
+
+
+def ground(play: dict, plan: Plan | None) -> set[str]:
+    """The lanes and sidewalks a play puts people, vehicles and props on (rule 13)."""
+    out: set[str] = set()
+    for _, cmd, args in commands(play):
+        if cmd in LANE_PLACING and "at" in args:
+            out |= ground_of(args["at"], plan)
+    return out
+
+
+def checks_of(play: dict) -> set[str]:
+    return {str(e.get("check")) for e in play.get("expect", []) if isinstance(e, dict)}
+
+
+def same_lanes(
+    inst: dict, test: dict, inst_plan: Plan | None, test_plan: Plan | None
+) -> str | None:
+    """Rule 13: a lane or sidewalk the instance puts something on as the playtest does."""
+    if not (checks_of(inst) & set(LANE_CHECKS) and checks_of(test) & set(LANE_CHECKS)):
+        return None
+    common = sorted(ground(inst, inst_plan) & ground(test, test_plan))
+    if common:
+        return f"something is put on {common[0]}, as in the playtest"
+    return None
+
+
 def repeats(
     inst: dict, test: dict, inst_plan: Plan | None, test_plan: Plan | None
 ) -> list[str]:
-    """Why an instance repeats its playtest (rules 1-10); empty when it does not.
+    """Why an instance repeats its playtest (rules 1-13); empty when it does not.
 
     Args:
         inst: The instance (a qa-play/1 object).
@@ -370,6 +598,13 @@ def repeats(
         if any(abs(d - e) <= SAME_DAMAGE + 1e-9 for e in theirs_dmg):
             why.append(f"a vehicle at damage {d:g}, as in the playtest")
             break
+    for found in (
+        same_junction(inst, test),
+        same_clock(inst, test),
+        same_lanes(inst, test, inst_plan, test_plan),
+    ):
+        if found:
+            why.append(found)
     return why
 
 
