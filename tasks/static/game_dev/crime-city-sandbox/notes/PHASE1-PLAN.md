@@ -186,7 +186,7 @@ row, a row names no assertion, or an assertion's template is not in the catalog.
 | FT-7 | swimming | `people.swim: swim_pose`, `people.swim: swim_pace`, `people.swim: exits` | P | head under, pitch, pace, no exit |
 | FT-8 | fall damage | `people.fall_ragdoll: fall_damage` | P | health loss off the formula |
 | FT-9 | ragdoll and getting up | `people.fall_ragdoll: ragdoll`, `people.fall_ragdoll: get_up`, `people.fall_ragdoll: free_fall`, `vehicle.crash: blast_ragdoll`, `vehicle.crash: run_into` | P | no `limp` flag, scripted fall, bone below ground, no get-up |
-| FT-10 | getting in and out | `people.vehicle_entry: get_in`, `people.vehicle_entry: seated`, `people.vehicle_entry: get_out` | P | path misses the door, hips out of the seat |
+| FT-10 | getting in and out | `people.vehicle_entry: get_in`, `people.vehicle_entry: seated`, `people.vehicle_entry: get_out`, `traffic.intersection_watch: drivers` | P | path misses the door, hips out of the seat (the player's or a city driver's) |
 | FT-11 | aim pose | `combat.weapons: aim_pose` | P | hand or forearm off |
 | FT-12 | cover | `combat.cover_firefight: cover_pose`, `combat.cover_firefight: cover_state` | P | not in cover within 1 s, hips high, `cover` state wrong |
 | VH-1 | handling, mass, library models | `vehicle.handling: accel`, `vehicle.handling: top_speed`, `vehicle.handling: brake_dry`, `vehicle.handling: turn_circle`, `vehicle.handling: mass`, `vehicle.handling: model_mesh` | P | any value out of band, body not from its library model |
@@ -207,13 +207,13 @@ row, a row names no assertion, or an assertion's template is not in the catalog.
 | TR-4 | signal programs | `traffic.intersection_watch: program`, `traffic.intersection_watch: greens_compatible`, `traffic.intersection_watch: walk_in_green` | P | states off schedule, conflicting greens, walk out of its phase |
 | TR-5 | obeying signals | `traffic.intersection_watch: no_red_entry`, `traffic.intersection_watch: green_flow` | P | entries on red, or no flow |
 | TR-6 | all-way stops | `traffic.stop_junction: full_stop`, `traffic.stop_junction: order`, `traffic.stop_junction: box_clear`, `traffic.stop_junction: no_deadlock` | P | rolling stops, two in the box, waits over 30 s |
-| TR-7 | lane keeping | `traffic.intersection_watch: lane_offset`, `traffic.intersection_watch: direction` | P | offset p95 over 1 m, wrong way |
+| TR-7 | lane keeping | `traffic.intersection_watch: lane_keeping` | P | offset p95 over 1 m, heading off, wrong way |
 | TR-8 | speed limits | `traffic.speed: limit` | P | NPC over the limit plus 10% |
 | TR-9 | walkable ground | `traffic.intersection_watch: walkable` | P | under 95% on walkable ground |
 | TR-10 | crossing at crosswalks | `traffic.intersection_watch: crosswalks`, `traffic.stop_junction: ped_gap` | P | jaywalking, crossing on don't walk |
 | TR-11 | yielding to pedestrians | `traffic.intersection_watch: no_ped_hits` | P | a person hit on a crosswalk |
 | TR-12 | obstacles, crash rate | `traffic.obstacle: stop_short`, `traffic.intersection_watch: crash_rate` | P | NPC hits the object, rate over 0.02 |
-| TR-13 | panic | `traffic.panic_horn: flee`, `traffic.panic_horn: dodge` | P | no flight, no dodge |
+| TR-13 | panic | `traffic.panic_horn: flee`, `traffic.panic_horn: dodge` | P | no flight (with module 6's firing), no dodge |
 | TR-14 | horn | `traffic.panic_horn: horn_clear` | P | people stay in the lane |
 | TR-15 | no pop-in | `traffic.intersection_watch: no_pop_in` | P | appearing near or in view |
 | TR-16 | drivers | `traffic.intersection_watch: drivers` | P | a moving NPC car without a driver |
@@ -320,7 +320,7 @@ row, a row names no assertion, or an assertion's template is not in the catalog.
 | AC-2 | robust `exec` | `contract.devconsole: bad_input`, `contract.devconsole: float_ids` | P | crash, no error answer, floats refused |
 | AC-3 | commands do what they say | `contract.devconsole: commands` | P | a command missing or without effect |
 | AC-4 | entity registry | `inv.registry: ids` | I | reused id, missing metadata |
-| AC-5 | people's skeletons, weapon, hostility and limp | `people.lineup: skeleton`, `inv.registry: unregistered`, `combat.crew_hostility: hostile_meta`, `people.fall_ragdoll: ragdoll` | P | wrong bone names, unbound mesh, unregistered actor, `weapon`, `hostile` or `limp` wrong |
+| AC-5 | people's skeletons, weapon, hostility, limp, vehicle and seat | `people.lineup: skeleton`, `inv.registry: unregistered`, `combat.crew_hostility: hostile_meta`, `people.fall_ragdoll: ragdoll`, `traffic.intersection_watch: drivers` | P | wrong bone names, unbound mesh, unregistered actor, `weapon`, `hostile`, `limp`, `vehicle` or `seat` wrong |
 | AC-6 | vehicles' metadata and seats | `people.vehicle_entry: seats`, `vehicle.crash: metadata` | P | seats, doors or wheel point missing |
 | AC-7 | signal entities | `traffic.intersection_watch: signal_entities` | P | an approach without its signal |
 | AC-8 | layers, surface tags, water areas | `world.plan_compliance: tags`, `people.swim: water_area` | P | tags or layers wrong |

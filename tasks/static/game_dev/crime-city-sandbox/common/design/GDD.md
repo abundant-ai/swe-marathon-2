@@ -239,9 +239,10 @@ and 8.5 m/s, its crouch walk at about 0.75 and its swim at about 2.2.
   door (the path passes within 1.0 m of it; these distances are horizontal) and seats them within
   1.0-4.0 s. The door nearest the
   player picks the seat. Seated means the state report's `player.vehicle` and `player.seat` name
-  the vehicle and seat (AC-12), as the `vehicle_entered` event says. Seated, until `interact` is
+  the vehicle and seat (AC-12), as the `vehicle_entered` event says; for anyone else, their
+  `vehicle` and `seat` metadata do (AC-5). Seated, until `interact` is
   pressed to get out, the hips stay within 0.35 m of the seat point and a driver's hands within
-  0.30 m of the steering wheel point. `interact` in a vehicle gets out within 1.0-3.0 s (until
+  0.30 m of the steering wheel point; city people in seats hold the same pose. `interact` in a vehicle gets out within 1.0-3.0 s (until
   `player.vehicle` is `null`, with the `vehicle_exited` event), ending on foot within 2.5 m of that
   door.
 - **FT-11** Aiming: holding `aim` with a gun raises it; the gun hand is within 0.25 m of shoulder
@@ -329,7 +330,9 @@ strip have one).
 ## 7. Traffic and pedestrians
 
 Count moving NPC vehicles (above 1 km/h) and NPC people on foot within 150 m of the player, as the
-median of samples taken every second over a minute.
+median of samples taken every second over a minute. NPC vehicles are those that carry no player;
+people on foot are living NPCs whose `vehicle` metadata is null (AC-5). The table is for
+`traffic.set` density 1, the default, and counts start a minute after the last setup command.
 
 | District | Day 07:00-19:00 vehicles / people | Evening 19:00-23:00 | Night 23:00-07:00 |
 | --- | --- | --- | --- |
@@ -343,7 +346,11 @@ median of samples taken every second over a minute.
 | `highway` | 4-16 / 0 | 3-12 / 0 | 1-8 / 0 |
 
 TR-5 to TR-8, TR-11 and TR-12 are about ordinary traffic: police responding to an alert, mission
-targets and racers are exempt.
+targets and racers are exempt. A vehicle's place is its position (its origin, the middle of the
+vehicle as chapter 6 has it): it crosses a stop line when its position passes the line, and it is
+on a lane when its position is within half the lane's width of the lane's centre line, between
+the lane's start box and its stop line (plan/FORMAT.md). A vehicle's body is its collision
+shapes, each taken as the box its shape fills (in the shape's own axes).
 
 - **TR-1** Densities stay inside the table in clear and overcast weather.
 - **TR-2** In rain, the number of people on foot is 40-80% of the clear-weather count at the same
@@ -359,29 +366,46 @@ targets and racers are exempt.
 - **TR-6** All-way stops: NPC drivers come to a stop (1 km/h or less) within 4 m before the stop
   line, then go in order of arrival (the vehicle on the right first when two arrive together); no
   two vehicles on crossing paths are in the box at once; no vehicle waits more than 30 s at a stop
-  line.
+  line. A vehicle arrives when it first stands within 4 m before its stop line with no vehicle
+  ahead of it in its lane; arrivals within 1.0 s of each other are together. The order binds
+  vehicles whose paths through the box cross; where the right-hand rule cannot decide (opposite
+  approaches, three or four arriving together) any of them may go first.
 - **TR-7** Lane keeping: on lanes, NPC vehicles' offset from the lane centre is at most 1.0 m (p95),
   their heading is within 15 degrees of the lane's for at least 98% of samples, and none drives
-  against a lane's direction.
+  against a lane's direction. The heading and direction clauses leave out each lane's first
+  10 m, where turns out of a junction end.
 - **TR-8** NPC vehicles keep to the speed limit plus 10%, except police responding, chase targets
-  and racers.
+  and racers (speeds taken over 0.1 s, 6 ticks, on the lane the vehicle is on).
 - **TR-9** People on foot are on walkable ground (sidewalk, crosswalk, plaza, park, parking lot,
   the interiors of shops and the bank, terrain off-road) for at least 95% of samples.
 - **TR-10** People cross roads at crosswalks: at least 90% of road crossings start and end inside a
   crosswalk band. At signals they start crossing only during walk; at all-way stops, only when no
-  vehicle is within 15 m approaching that crosswalk.
-- **TR-11** Drivers yield to people on crosswalks: no NPC vehicle hits a person on a crosswalk.
+  vehicle is within 15 m approaching that crosswalk (moving faster than 1 km/h with its line of
+  travel entering the band within 15 m).
+- **TR-11** Drivers yield to people on crosswalks: no NPC vehicle hits a person on a crosswalk (its
+  body comes within 0.3 m of the person's position).
 - **TR-12** NPC vehicles stop for anything in their lane (a stopped vehicle, a person, an object):
   no NPC vehicle hits a stationary obstacle, and NPC vehicles collide with each other at most 0.02
-  times per vehicle per minute.
+  times per vehicle per minute. Two vehicles collide when their bodies start touching, at any
+  speed; each such contact counts once for each of the two, the same two count again only after
+  being apart for 1 s, and the rate is per minute of moving NPC vehicles. A person is hit when a
+  body comes within 0.3 m of the person's position.
 - **TR-13** Panic: within 2 s of a gunshot within 30 m, people on foot run away from the shooter (at
   least 3 m/s, moving away) for at least 10 s. People within 8 m ahead of a vehicle driving on a
-  sidewalk at 20 km/h or more step out of its path.
+  sidewalk at 20 km/h or more step out of its path (it does not hit them, TR-12).
 - **TR-14** `horn`: people on foot standing in the lane within 20 m ahead of the honking vehicle step
-  out of the lane within 3 s.
+  out of the lane within 3 s. People on foot react to gunshots, vehicles on sidewalks and the horn
+  whatever their behaviour (chapter 17's `idle` included).
 - **TR-15** Pop-in: NPC people and vehicles never appear within 80 m of the player, nor inside the
-  camera's view closer than 200 m; they never vanish under those conditions either.
-- **TR-16** Every moving NPC vehicle has a driver: an NPC of a driving archetype, seated (FT-10).
+  camera's view closer than 200 m; they never vanish under those conditions either. Inside the
+  camera's view means the point 1 m above the entity's position is inside the camera's frustum,
+  whatever stands in between. In the tick a setup command runs (`world.reset`, `traffic.set`,
+  `player.spawn`, `vehicle.spawn`, `npc.spawn`, `prop.spawn`, `load`; `world.reset` and `load`
+  until they finish), the game may add or remove city people and vehicles anywhere, for example to
+  fill the streets around a player `player.spawn` has moved.
+- **TR-16** Every moving NPC vehicle has a driver: an NPC of a driving archetype (`commuter_driver`,
+  `taxi_driver`, `truck_driver`, `paramedic`, and `police_officer` and `police_tactical` in police
+  vehicles), seated (FT-10).
 
 ## 8. Combat
 
@@ -812,7 +836,7 @@ data: Dictionary)`. The commands set up situations for development and QA.
 | `weather.set` | `kind` | Set the weather |
 | `player.spawn` | `lead`, `at`, `heading` | Spawn the player, or move the existing one; with `lead`, the player becomes that lead (its body, hair and colours, chapter 2) |
 | `player.give` | `weapon`, `ammo`, `money`, `outfit`, `health`, `armour` | Give or set: `weapon` and `outfit` become owned, `ammo` rounds go into the reserve of `weapon` (or of the gun in hand), `money` is added; `health` and `armour` are set (health 0 is death, CB-7) |
-| `vehicle.spawn` | `model`, `at`, `heading`, `driver` (`player`, an archetype or `none`), `damage`, `colour` | Spawn a vehicle |
+| `vehicle.spawn` | `model`, `at`, `heading`, `driver` (`player`, an archetype or `none`), `damage`, `colour` | Spawn a vehicle; an archetype as `driver` sits in seat 0 with `wander`, so a driving archetype drives it in traffic at once. The city's own vehicles in its spot make way (TR-15 lets them leave at once) |
 | `npc.spawn` | `archetype`, `at`, `heading`, `behaviour` (`idle`, `wander`, `guard`, `hostile`, `reckless`), `seat` (`{"vehicle": id, "index": i}`) | Spawn a person |
 | `prop.spawn` | `kind` (`wall`, `crate`, `low_cover`, `ramp`, `barrier`, `tower`), `at`, `size` (`[x, y, z]`), `heading` | Spawn a solid object (static, layer 5) standing on `at`, the middle of its base; `size` is its width, height and depth, the depth along `heading` |
 | `traffic.set` | `density` (0 to 2) | Scale traffic and people around the player |
@@ -823,7 +847,8 @@ data: Dictionary)`. The commands set up situations for development and QA.
 `at` takes any anchor from `plan/FORMAT.md`, or `"player"` for the player's position. NPC
 behaviours: `idle` stands still; `wander` is the archetype behaviour of chapter 3; `guard` stands
 and turns hostile when attacked; `hostile` attacks the player; `reckless` drives at up to 1.3 times
-the speed limit, ignoring signals.
+the speed limit, ignoring signals. In seat 0 (`seat`), `wander` drives in traffic (a driving
+archetype), `reckless` drives that way, and `idle` holds the vehicle still.
 
 - **AC-2** `exec` answers `{"ok": true, ...}` or `{"ok": false, "error": "..."}` and never crashes on
   unknown commands or bad arguments. Arguments arrive from JSON, so numbers may be floats: accept
@@ -842,8 +867,10 @@ the speed limit, ignoring signals.
   names (`Hips`, `Spine`, `Chest`, `Neck`, `Head`, `LeftUpperArm`, `LeftHand`, `LeftUpperLeg`,
   `LeftFoot`, `LeftToes` and the rest), skinned meshes bound to it, and a physics body on the people
   layer, plus metadata `weapon` (the weapon in hand, or `none`), `hostile` (true while they
-  attack or are about to attack the player) and `limp` (true while the body is under ragdoll
-  physics, FT-9). Nothing outside the registry has a `Skeleton3D`, a `CharacterBody3D` or a
+  attack or are about to attack the player), `limp` (true while the body is under ragdoll
+  physics, FT-9), and `vehicle` and `seat` (the id of the vehicle they sit in and the seat's index
+  while seated, FT-10, otherwise `null`; for the player, what `player.vehicle` and `player.seat`
+  report). Nothing outside the registry has a `Skeleton3D`, a `CharacterBody3D` or a
   `VehicleBody3D`. The library bodies and clips use their own bone names;
   import them through a `BoneMap` with Godot's `SkeletonProfileHumanoid` so the skeleton gets the
   profile's names (it works headless, from the `.import` files alone). The project as handed over
@@ -851,7 +878,8 @@ the speed limit, ignoring signals.
   of the bodies, the hair and the animation library. Keep them or replace them.
 - **AC-6** Vehicles have a physics body at their root on the vehicles layer, metadata `model`,
   `damage`, `burning` and `colour`, and one `Marker3D` per seat in group `seat` with metadata `index`
-  (0 is the driver) and `door` (a door point in vehicle space). The driver's seat also has metadata
+  (0 is the driver: a car's front left seat, as traffic drives on the right; the motorbike's
+  front seat) and `door` (a door point in vehicle space). The driver's seat also has metadata
   `wheel` (the steering wheel point, in vehicle space). A seat's position is its seat point (FT-10).
   Boats also have `waterline_m` (VH-10).
 - **AC-7** Each signalised approach has a `signal` entity with metadata `intersection`, `approach`

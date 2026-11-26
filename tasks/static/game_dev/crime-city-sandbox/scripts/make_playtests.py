@@ -18,6 +18,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import itertools
 import json
 import math
 import sys
@@ -30,7 +31,7 @@ from qakit.plan import Plan
 from qakit.play import parse_play
 
 sys.path.insert(0, str(TASK / "scripts"))
-from plan_probes import Probes
+from plan_probes import BUILT, Probes, inset
 
 OUT = TASK / "common" / "kit" / "playtests"
 PLAN_FILE = TASK / "common" / "design" / "plan" / "downtown.json"
@@ -2029,11 +2030,658 @@ def intersection_watch() -> Playtest:
     return p
 
 
+# Chapter 7: traffic and people on foot.
+STREET_META = [
+    "vehicle",
+    "seat",
+    "limp",
+    "state",
+    "intersection",
+    "approach",
+    "crosswalk",
+]
+DRIVING = [
+    "commuter_driver", "taxi_driver", "truck_driver", "paramedic", "police_officer",
+    "police_tactical",
+]  # fmt: skip
+PROBES = Probes(PLAN.data)
+WATCH_R = 75.0
+
+
+def r2(v: float) -> float:
+    return round(float(v), 2)
+
+
+def node_xz(node_id: str) -> tuple[float, float]:
+    n = PLAN.nodes[node_id]["p"]
+    return float(n[0]), float(n[2])
+
+
+def leg_geometry(inter: dict, leg: dict) -> tuple:
+    """(node xz, unit direction away from the node, left and right half widths seen leaving
+    it) of a leg."""
+    edge = PLAN.edges[leg["edge"]]
+    o, u, _y = PROBES.leg_frame(inter["node"], edge)
+    left, right = PROBES.half_widths(edge, inter["node"])
+    return o, u, left, right
+
+
+def rect(o, u, a: float, b: float, left: float, right: float) -> list:
+    """The part of a leg's carriageway from a to b metres out from the node."""
+    rx, rz = -u[1], u[0]
+    pts = []
+    for d, side in ((a, -left), (b, -left), (b, right), (a, right)):
+        pts.append([r2(o[0] + u[0] * d + rx * side), r2(o[1] + u[1] * d + rz * side)])
+    return pts
+
+
+def box_of(inter_id: str) -> list:
+    """The junction box: the hull of every leg's carriageway out to its box_m."""
+    inter = PLAN.intersections[inter_id]
+    pts = []
+    for leg in inter["legs"]:
+        o, u, left, right = leg_geometry(inter, leg)
+        pts += rect(o, u, 0.0, float(leg["box_m"]), left, right)
+    return hull_xz(pts)
+
+
+def hull_xz(points: list) -> list:
+    pts = sorted({(p[0], p[1]) for p in points})
+
+    def cross(o, a, b):
+        return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+
+    lower: list = []
+    for q in pts:
+        while len(lower) >= 2 and cross(lower[-2], lower[-1], q) <= 0:
+            lower.pop()
+        lower.append(q)
+    upper: list = []
+    for q in reversed(pts):
+        while len(upper) >= 2 and cross(upper[-2], upper[-1], q) <= 0:
+            upper.pop()
+        upper.append(q)
+    return [[r2(a), r2(b)] for a, b in lower[:-1] + upper[:-1]]
+
+
+def stop_lines(inter_id: str) -> list[dict]:
+    """Every approach of a junction: its stop line across the lanes that arrive there (the
+    left part of the carriageway seen leaving the node; all of it on a one-way street), and
+    the direction of travel towards the node."""
+    inter = PLAN.intersections[inter_id]
+    out = []
+    for leg in inter["legs"]:
+        ap = leg.get("approach")
+        if not ap:
+            continue
+        edge = PLAN.edges[leg["edge"]]
+        o, u, left, right = leg_geometry(inter, leg)
+        d = float(ap["stop_line_m"])
+        rx, rz = -u[1], u[0]
+        far = -left
+        near = right if edge.get("oneway") else 0.0
+        out.append({
+            "intersection": inter_id, "approach": ap["id"],
+            "line": [[r2(o[0] + u[0] * d + rx * far), r2(o[1] + u[1] * d + rz * far)],
+                     [r2(o[0] + u[0] * d + rx * near), r2(o[1] + u[1] * d + rz * near)]],
+            "toward": [round(-u[0], 5), round(-u[1], 5)],
+        })  # fmt: skip
+    return out
+
+
+def right_hand(inter_id: str) -> dict:
+    """{approach: the approach on its right}: the leg whose outward heading is 90 degrees
+    anticlockwise of its own (within 45 degrees)."""
+    inter = PLAN.intersections[inter_id]
+    heads = {}
+    for leg in inter["legs"]:
+        if leg.get("approach"):
+            _o, u, _l, _r = leg_geometry(inter, leg)
+            heads[leg["approach"]["id"]] = math.degrees(math.atan2(u[0], -u[1])) % 360.0
+    out = {}
+    for a, ha in heads.items():
+        for b, hb in heads.items():
+            rel = (hb - ha + 180.0) % 360.0 - 180.0
+            if -135.0 < rel < -45.0:
+                out[a] = b
+    return out
+
+
+def street_area(node_id: str, radius: float) -> dict:
+    """The places QA's street checks read around a node (qakit/streets.py, "area"): lanes,
+    carriageways and junction boxes, crosswalk bands, blocks, building footprints and rooms
+    within about `radius` metres."""
+    cx, cz = node_xz(node_id)
+
+    def near(points: list, extra: float) -> bool:
+        return any(math.hypot(q[0] - cx, q[1] - cz) <= radius + extra for q in points)
+
+    lanes = []
+    for lane_id in sorted(PLAN.lanes):
+        edge, _lane = PLAN.lanes[lane_id]
+        length = PLAN.lane_length(lane_id)
+        n = max(1, math.ceil(length / 10.0))
+        pts = [PLAN.lane_point(lane_id, length * k / n).p for k in range(n + 1)]
+        xz = [[r2(q[0]), r2(q[2])] for q in pts]
+        if near(xz, 15.0):
+            lanes.append({"id": lane_id, "pts": xz, "width": float(edge["lane_width_m"]),
+                          "limit_kmh": float(edge["speed_kmh"])})  # fmt: skip
+    roads, crosswalks = [], []
+    for edge in PLAN.data["edges"]:
+        pts = PLAN.centreline(edge)
+        if not near([[q[0], q[2]] for q in pts], 40.0):
+            continue
+        w = float(edge["lane_width_m"])
+        if edge.get("oneway"):
+            left = right = len(edge["lanes"]) * w / 2.0
+        else:
+            right = sum(1 for ln in edge["lanes"] if ln["dir"] == "ab") * w
+            left = sum(1 for ln in edge["lanes"] if ln["dir"] == "ba") * w
+        for a, b in itertools.pairwise(pts):
+            ln = math.hypot(b[0] - a[0], b[2] - a[2])
+            u = ((b[0] - a[0]) / ln, (b[2] - a[2]) / ln)
+            roads.append(rect((a[0], a[2]), u, 0.0, ln, left, right))
+    for inter in PLAN.data["intersections"]:
+        if not near([list(node_xz(inter["node"]))], 40.0):
+            continue
+        box = box_of(inter["id"])
+        if len(box) >= 3:
+            roads.append(box)
+        walks = set()
+        if inter.get("signal"):
+            walks = {c for ph in inter["signal"]["phases"] for c in ph["walk"]}
+        for leg in inter["legs"]:
+            cw = leg.get("crosswalk")
+            if not cw:
+                continue
+            o, u, left, right = leg_geometry(inter, leg)
+            crosswalks.append({
+                "id": cw["id"], "intersection": inter["id"], "control": inter["control"],
+                "walk_signals": cw["id"] in walks,
+                "poly": rect(o, u, float(cw["from_m"]), float(cw["to_m"]), left, right),
+            })  # fmt: skip
+    blocks = [
+        [[r2(x), r2(z)] for x, z in b["poly"]]
+        for b in PLAN.data["blocks"]
+        if near(b["poly"], 120.0)
+    ]
+    buildings, rooms = [], []
+    for parcel in PLAN.data["parcels"]:
+        if not near(parcel["poly"], 60.0):
+            continue
+        if parcel["zoning"] in BUILT:
+            foot = inset(parcel["poly"], float(parcel["setback_m"]))
+            buildings.append([[r2(x), r2(z)] for x, z in foot])
+            for room in (parcel.get("interior") or {}).get("rooms", []):
+                rooms.append([[r2(x), r2(z)] for x, z in room["poly"]])
+    return {
+        "centre": [cx, cz], "radius_m": radius, "lanes": lanes, "roads": roads,
+        "crosswalks": crosswalks, "blocks": blocks, "buildings": buildings, "rooms": rooms,
+    }  # fmt: skip
+
+
+def street_watch(p: Playtest, every: int, near_m: float) -> None:
+    """Observe the street: the census with the metadata the street checks read, the
+    in-view flag and vehicles' collision boxes; the state report; and the hips of the
+    nearest drivers with their vehicles' seat points (FT-10's seated pose)."""
+    p.step("observe", {
+        "census": {"meta": STREET_META, "view": True, "shapes": ["vehicle"]},
+        "state": True, "every": every,
+        "bones": {"ids": [{"kind": "npc", "meta": {"seat": 0}, "within_m": near_m, "max": 16}],
+                  "names": ["Hips"]},
+        "seats": {"ids": [{"kind": "vehicle", "within_m": near_m, "max": 16}]},
+    })  # fmt: skip
+
+
+def intersection_flow() -> Playtest:
+    inter = "j_34"
+    lines = stop_lines(inter)
+    p = Playtest(
+        "traffic.intersection_watch/day-flow",
+        ["TR-1", "TR-5", "TR-7", "TR-9", "TR-10", "TR-11", "TR-12", "TR-15", "TR-16"],
+        "Three minutes of a weekday morning at Downtown's busiest signalised junction "
+        "(j_34, four arterials), after a minute for the streets to settle. The player stands "
+        "on the corner of approach 0 and watches. QA counts the moving vehicles and the "
+        "people on foot within 150 m once a second, watches every stop line, lane, crosswalk "
+        "and sidewalk within 75 m of the junction, and reads every vehicle's collision boxes "
+        "and the hips of the drivers nearest the player.",
+        ["--role=solo", "--variation=12", "--save-dir={save_dir}"],
+        limits={"wall_s": 1200, "cpu_s": 2400, "step_s": 120},
+    )
+    p.raw["shared"] = {"area": street_area(PLAN.intersections[inter]["node"], WATCH_R)}
+    area = {"$shared": "area"}
+    p.step("observe", {"census": {"meta": STREET_META}, "state": True, "every": 30})
+    p.dev(("world.reset", {"variation": 12}))
+    p.dev(("player.spawn", {"at": {"corner_of": inter, "approach": 0}}))
+    p.step("run", 3600)
+    street_watch(p, 12, 60.0)
+    p.step("run", 1)
+    p.mark("watch_a")
+    p.step("run", 10800)
+    p.mark("watch_b")
+    span = {"from": "watch_a", "to": "watch_b"}
+    p.expect(
+        "drivers", "drivers",
+        {**span, "archetypes": DRIVING, "min_kmh": 1.0, "hips_m": 0.35},
+        "TR-16",
+        "every NPC vehicle moving faster than 1 km/h has a driver: a person of a driving "
+        "archetype whose vehicle metadata names it and whose seat is 0, with the hips within "
+        "0.35 m of the driver's seat point where QA reads them; no seat holds two people",
+    )  # fmt: skip
+    p.expect(
+        "density", "density",
+        {**span, "within_m": 150.0, "vehicles": [10, 30], "people": [20, 60]},
+        "TR-1",
+        "in downtown_core by day the median of each minute is 10-30 moving NPC vehicles and "
+        "20-60 NPC people on foot within 150 m of the player, counted once a second",
+    )  # fmt: skip
+    p.expect(
+        "no_red_entry", "red_entries",
+        {**span, "approaches": lines, "grace_s": 0.5, "amber_mps2": 4.0},
+        "TR-5",
+        "no NPC vehicle crosses a stop line of j_34 after its light has been red for 0.5 s, "
+        "and none crosses at amber when it could have stopped braking at 4 m/s^2 or less",
+    )  # fmt: skip
+    p.expect(
+        "green_flow", "green_flow", {**span, "approaches": lines, "min_vehicles": 3},
+        "TR-5", "at least 3 NPC vehicles enter j_34 from each of its four approaches in the three minutes",
+    )  # fmt: skip
+    p.expect(
+        "lane_keeping", "lane_keeping",
+        {**span, "area": area, "max_offset_m": 1.0, "max_heading_deg": 15.0,
+         "min_share": 0.98, "skip_start_m": 10.0},
+        "TR-7",
+        "on the lanes within 75 m, NPC vehicles keep within 1.0 m of the lane centre (95th "
+        "percentile); past each lane's first 10 m (where turns out of a junction end) they head "
+        "within 15 degrees of the lane on 98% of moving samples, and none drives against a "
+        "lane's direction",
+    )  # fmt: skip
+    p.expect(
+        "walkable", "walkable", {**span, "area": area, "min_share": 0.95},
+        "TR-9",
+        "people on foot within 75 m stand on walkable ground (sidewalks, crosswalks, open "
+        "parcels, interiors, off-road ground) on at least 95% of samples",
+    )  # fmt: skip
+    p.expect(
+        "crosswalks", "crosswalk_use", {**span, "area": area, "min_share": 0.9, "gap_m": 15.0},
+        "TR-10",
+        "at least 90% of road crossings start and end on a crosswalk band, and at j_34's "
+        "signals people start across only while their crosswalk shows walk",
+    )  # fmt: skip
+    p.expect(
+        "no_ped_hits", "crosswalk_hits", {**span, "area": area, "clear_m": 0.3},
+        "TR-11",
+        "no NPC vehicle's collision boxes come within 0.3 m of a person on a crosswalk band, "
+        "and nobody goes limp there",
+    )  # fmt: skip
+    p.expect(
+        "crash_rate", "vehicle_contacts", {**span, "max_rate": 0.02, "touch_m": 0.02, "apart_s": 1.0},
+        "TR-12",
+        "NPC vehicles' collision boxes start touching each other at most 0.02 times per "
+        "vehicle per minute of moving NPC vehicles",
+    )  # fmt: skip
+    p.expect(
+        "no_pop_in", "no_pop_in", {**span, "near_m": 80.0, "view_m": 200.0},
+        "TR-15",
+        "no NPC person or vehicle appears or vanishes within 80 m of the player, or within "
+        "200 m inside the camera's view",
+    )  # fmt: skip
+    return p
+
+
+def stop_junction() -> Playtest:
+    inter = "j_45"
+    lines = stop_lines(inter)
+    box = box_of(inter)
+    p = Playtest(
+        "traffic.stop_junction/four-way",
+        ["TR-6", "TR-10", "TR-16"],
+        "Three minutes at the all-way stop j_45 (four streets, downtown_core, morning), with "
+        "the city's traffic and people about. QA also sends cars at it, each driven by a "
+        "commuter from 30 m before a stop line: four at once, then two on neighbouring "
+        "approaches at once, then two 3 s apart, then four 1 s apart. Every NPC vehicle "
+        "stops within 4 m before its line, goes in order of arrival (the one on the right "
+        "first when two arrive within 1.0 s), no two on crossing paths are in the box at "
+        "once, none waits over 30 s, and people start across a crosswalk only with no "
+        "vehicle within 15 m coming towards it.",
+        ["--role=solo", "--variation=14", "--save-dir={save_dir}"],
+        limits={"wall_s": 1200, "cpu_s": 2400, "step_s": 120},
+    )
+    p.raw["shared"] = {"area": street_area(PLAN.intersections[inter]["node"], 45.0)}
+    p.step("observe", {"census": {"meta": STREET_META}, "state": True, "every": 30})
+    p.dev(("world.reset", {"variation": 14}))
+    p.dev(("player.spawn", {"at": {"corner_of": inter, "approach": 1}}))
+    p.step("run", 600)
+    street_watch(p, 6, 45.0)
+    p.step("run", 1)
+    p.mark("watch_a")
+    waves = [
+        [(0, "sedan"), (1, "sedan"), (2, "sedan"), (3, "sedan")],
+        [(0, "hatchback"), (1, "hatchback")],
+        [(2, "suv")],
+        [(3, "suv")],
+        [(0, "sedan")],
+        [(1, "taxi")],
+        [(2, "hatchback")],
+        [(3, "sedan")],
+    ]
+    gaps = [2100, 2100, 180, 2100, 60, 60, 60, 2400]
+    for wave, gap in zip(waves, gaps, strict=True):
+        cmds = []
+        for k, model in wave:
+            at = {"intersection": inter, "approach": k, "before_m": 30.0}
+            driver = "taxi_driver" if model == "taxi" else "commuter_driver"
+            cmds.append(("vehicle.spawn", {"model": model, "at": at, "driver": driver}))
+        p.dev(*cmds)
+        p.step("run", gap)
+    p.mark("watch_b")
+    span = {"from": "watch_a", "to": "watch_b"}
+    stop = {**span, "approaches": lines, "box": box, "zone_m": 4.0}
+    p.expect(
+        "full_stop", "stop_full", stop, "TR-6",
+        "every NPC vehicle stands (1 km/h or less) within 4 m before its stop line before it crosses it",
+    )  # fmt: skip
+    p.expect(
+        "order", "stop_order",
+        {**stop, "late_s": 1.2, "tie_s": 0.8, "right_of": right_hand(inter)},
+        "TR-6",
+        "vehicles on crossing paths go in order of arrival, the one on the right first when "
+        "two arrive within 1.0 s (pairs 0.8-1.2 s apart, and ties of three or four, may go "
+        "either way)",
+    )  # fmt: skip
+    p.expect(
+        "box_clear", "box_clear", stop, "TR-6",
+        "no two NPC vehicles on crossing paths are in the junction box at once",
+    )  # fmt: skip
+    p.expect(
+        "no_deadlock", "stop_wait", {**stop, "max_s": 30.0}, "TR-6",
+        "no NPC vehicle waits more than 30 s at a stop line",
+    )  # fmt: skip
+    p.expect(
+        "ped_gap", "crosswalk_use",
+        {**span, "area": {"$shared": "area"}, "min_share": 0.9, "gap_m": 15.0},
+        "TR-10",
+        "people cross only on crosswalk bands, starting across one at the all-way stop only "
+        "when no vehicle within 15 m is coming towards it",
+    )  # fmt: skip
+    p.expect(
+        "drivers", "drivers", {**span, "archetypes": DRIVING, "min_kmh": 1.0, "hips_m": 0.35},
+        "TR-16", "every moving NPC vehicle has a seated driver of a driving archetype",
+    )  # fmt: skip
+    return p
+
+
+def obstacle() -> Playtest:
+    p = Playtest(
+        "traffic.obstacle/lane-blocked",
+        ["TR-12", "TR-16"],
+        "Traffic and people set to none. Three cars driven by commuters each meet something "
+        "standing in their lane: a barrier across the eastbound arterial's right lane 62 m "
+        "ahead, a person standing in the westbound right lane, and a van parked in the "
+        "southbound right lane. Each car stops before it and never touches it.",
+        ["--role=solo", "--variation=15", "--save-dir={save_dir}"],
+        limits={"step_s": 60},
+    )
+    barrier_lane, person_lane, van_lane = "e_44_54:ab1", "e_44_54:ba1", "e_34_35:ab1"
+    barrier_at = point({"lane": barrier_lane, "s": 70.0})
+    barrier_h = PLAN.lane_point(barrier_lane, 70.0).heading_deg
+    barrier = {"p": barrier_at, "size": [3.0, 0.8, 0.4], "heading": round(barrier_h, 3)}
+    p.step(
+        "observe",
+        {
+            "census": {"meta": STREET_META, "shapes": ["vehicle"]},
+            "state": True,
+            "every": 6,
+        },
+    )
+    p.dev(("world.reset", {"variation": 15}))
+    p.dev(("traffic.set", {"density": 0}))
+    p.dev(("player.spawn", {"at": {"sidewalk": "sw_44", "s": 30.0}}))
+    p.dev(("prop.spawn", {"kind": "barrier", "at": barrier_at, "size": [3.0, 0.8, 0.4],
+                          "heading": barrier["heading"]}))  # fmt: skip
+    person = p.dev(("npc.spawn", {"archetype": "tourist", "at": {"lane": person_lane, "s": 70.0},
+                                  "behaviour": "idle"}))  # fmt: skip
+    van = p.dev(
+        (
+            "vehicle.spawn",
+            {"model": "van", "at": {"lane": van_lane, "s": 70.0}, "driver": "none"},
+        )
+    )
+    cars = p.dev(
+        ("vehicle.spawn", {"model": "sedan", "at": {"lane": barrier_lane, "s": 8.0}, "driver": "commuter_driver"}),
+        ("vehicle.spawn", {"model": "hatchback", "at": {"lane": person_lane, "s": 8.0}, "driver": "commuter_driver"}),
+        ("vehicle.spawn", {"model": "suv", "at": {"lane": van_lane, "s": 8.0}, "driver": "commuter_driver"}),
+    )  # fmt: skip
+    p.mark("drive_a")
+    p.step("run", 1500)
+    p.mark("drive_b")
+    drivers = [{"step": cars, "index": k} for k in range(3)]
+    p.expect(
+        "stop_short", "stop_short",
+        {"from": "drive_a", "to": "drive_b", "props": [barrier], "vehicles": [{"step": van, "index": 0}],
+         "people": [{"step": person, "index": 0}], "drivers": drivers, "touch_m": 0.02,
+         "person_m": 0.3, "stop_within_m": 40.0},
+        "TR-12",
+        "each car comes to a stand within 40 m before what is in its lane (a barrier, a person, "
+        "a parked van), and its collision boxes never come within 0.02 m of the barrier or the "
+        "van, nor within 0.3 m of the person",
+    )  # fmt: skip
+    for k in range(3):
+        p.expect(
+            f"moves_{k}", "moved",
+            {"from": "drive_a", "to": "drive_b", "id_from": {"step": cars, "index": k},
+             "min_m": 20.0, "horizontal": True},
+            "AC-3",
+            "vehicle.spawn with a commuter as driver drives the car in traffic at once: it moves "
+            "at least 20 m towards the obstacle",
+            "pre",
+        )  # fmt: skip
+    return p
+
+
+def speed_limits() -> Playtest:
+    centre = PLAN.intersections["j_34"]["node"]
+    p = Playtest(
+        "traffic.speed/arterials",
+        ["TR-8"],
+        "Two minutes of morning traffic around j_34, with four more cars sent from the start "
+        "of the long arterial lanes nearby. Every NPC vehicle on the lanes within 130 m keeps "
+        "to its lane's limit plus 10% (50 km/h on the arterials, 40 km/h on the streets): "
+        "its speed over every 6 ticks stays at or under 55 and 44 km/h.",
+        ["--role=solo", "--variation=16", "--save-dir={save_dir}"],
+        limits={"wall_s": 900, "cpu_s": 1800, "step_s": 120},
+    )
+    p.raw["shared"] = {"area": street_area(centre, 130.0)}
+    p.step("observe", {"census": {"meta": STREET_META}, "state": True, "every": 6})
+    p.dev(("world.reset", {"variation": 16}))
+    p.dev(("player.spawn", {"at": {"sidewalk": "sw_34", "s": 58.0}}))
+    p.dev(
+        ("vehicle.spawn", {"model": "sports", "at": {"lane": "e_34_44:ab1", "s": 4.0}, "driver": "commuter_driver"}),
+        ("vehicle.spawn", {"model": "sedan", "at": {"lane": "e_34_44:ba1", "s": 4.0}, "driver": "commuter_driver"}),
+        ("vehicle.spawn", {"model": "taxi", "at": {"lane": "e_34_35:ab0", "s": 4.0}, "driver": "taxi_driver"}),
+        ("vehicle.spawn", {"model": "hatchback", "at": {"lane": "e_32_33:ab1", "s": 4.0}, "driver": "commuter_driver"}),
+    )  # fmt: skip
+    p.mark("watch_a")
+    p.step("run", 7200)
+    p.mark("watch_b")
+    p.expect(
+        "limit", "lane_speeds",
+        {"from": "watch_a", "to": "watch_b", "area": {"$shared": "area"}, "window": 6, "share": 1.1},
+        "TR-8",
+        "on every lane within 130 m, NPC vehicles never go faster than the lane's limit plus "
+        "10%, measured over every 6 ticks",
+    )  # fmt: skip
+    return p
+
+
+def panic_horn() -> Playtest:
+    p = Playtest(
+        "traffic.panic_horn/sidewalk-and-horn",
+        ["TR-13", "TR-14"],
+        "Traffic and people set to none. The player drives a sedan along a sidewalk at 30 km/h "
+        "towards two people standing on it, 40 m and 52 m ahead: each steps out of its path "
+        "before it comes, and the car never touches them. Then the player waits in an arterial "
+        "lane with a person standing in it 15 m ahead and sounds the horn: the person is out "
+        "of the lane within 3 s.",
+        ["--role=solo", "--variation=17", "--save-dir={save_dir}"],
+        limits={"step_s": 60},
+    )
+    walk = "sw_33"
+    walk_blocks = [[[r2(x), r2(z)] for x, z in b["poly"]] for b in PLAN.data["blocks"]]
+    lane_id = "e_34_44:ab1"
+    edge, _ = PLAN.lanes[lane_id]
+    length = PLAN.lane_length(lane_id)
+    lane = {"id": lane_id, "width": float(edge["lane_width_m"]),
+            "pts": [[r2(q.p[0]), r2(q.p[2])] for q in (PLAN.lane_point(lane_id, 0.0), PLAN.lane_point(lane_id, length))]}  # fmt: skip
+    p.step(
+        "observe",
+        {
+            "census": {"meta": STREET_META, "shapes": ["vehicle"]},
+            "state": True,
+            "every": 3,
+        },
+    )
+    p.dev(("world.reset", {"variation": 17}))
+    p.dev(("traffic.set", {"density": 0}))
+    car = p.dev(
+        (
+            "vehicle.spawn",
+            {"model": "sedan", "at": {"sidewalk": walk, "s": 6.0}, "driver": "player"},
+        )
+    )
+    p.dev(
+        ("npc.spawn", {"archetype": "office_worker", "at": {"sidewalk": walk, "s": 46.0}, "behaviour": "idle"}),
+        ("npc.spawn", {"archetype": "tourist", "at": {"sidewalk": walk, "s": 58.0}, "behaviour": "idle"}),
+    )  # fmt: skip
+    p.step("run", 30)
+    p.mark("sidewalk_a")
+    p.step(
+        "cruise",
+        {"entity": {"id": {"$answer": [car, "id"]}}, "kmh": 30.0, "ticks": 420},
+    )
+    p.step("press", {"brake": 1.0})
+    p.step("run", 120)
+    p.step("release", ["brake"])
+    p.mark("sidewalk_b")
+    honk_car = p.dev(
+        (
+            "vehicle.spawn",
+            {"model": "sedan", "at": {"lane": lane_id, "s": 10.0}, "driver": "player"},
+        )
+    )
+    walkers = p.dev(
+        (
+            "npc.spawn",
+            {
+                "archetype": "shopper",
+                "at": {"lane": lane_id, "s": 25.0},
+                "behaviour": "idle",
+            },
+        ),
+    )
+    p.step("run", 60)
+    p.mark("horn_a")
+    p.step("press", {"horn": 1.0})
+    p.step("run", 2)
+    p.step("release", ["horn"])
+    p.step("run", 240)
+    p.mark("horn_b")
+    p.expect(
+        "dodge", "sidewalk_dodge",
+        {"from": "sidewalk_a", "to": "sidewalk_b", "vehicle": {"step": car, "index": 0},
+         "blocks": walk_blocks, "min_kmh": 20.0, "ahead_m": 60.0, "clear_m": 0.3},
+        "TR-13",
+        "the two people standing in the path of the sedan (within half its width and 0.3 m of "
+        "its line of travel, up to 60 m ahead), which drives on the sidewalk at 20 km/h or more, "
+        "step out of it in time: its collision boxes never come within 0.3 m of them and none "
+        "goes limp",
+    )  # fmt: skip
+    p.expect(
+        "horn_clear", "horn_clear",
+        {"from": "horn_a", "to": "horn_b", "vehicle": {"step": honk_car, "index": 0}, "lane": lane,
+         "people": [{"step": walkers, "index": 0}], "ahead_m": 20.0, "within_s": 3.0},
+        "TR-14",
+        "the person standing in the honking car's lane 15 m ahead is out of the lane (more "
+        "than 1.75 m, half its 3.5 m width, from its centre line) within 3 s of the horn",
+    )  # fmt: skip
+    p.expect(
+        "sidewalk_drive", "moved",
+        {"from": "sidewalk_a", "to": "sidewalk_b", "id_from": {"step": car}, "min_m": 30.0,
+         "horizontal": True},
+        "TR-13", "the sedan drives along the sidewalk (at least 30 m)", "pre",
+    )  # fmt: skip
+    return p
+
+
+def replay_car_ragdoll() -> Playtest:
+    p = Playtest(
+        "world.replay/car-and-ragdoll",
+        ["AC-15", "AC-17", "FT-9"],
+        "One input timeline played twice, the second time with a pause between ticks: the "
+        "player drives a sedan at 30 km/h into a person standing in the lane, who goes limp "
+        "and is thrown. Traffic and people set to none. The game does the same thing tick for "
+        "tick, the car and the ragdoll's bones included.",
+        ["--role=solo", "--variation=6", "--save-dir={save_dir}"],
+        runs=[{"pace_ms": 0}, {"pace_ms": 4}],
+        tags=["physics-sensitive"],
+    )
+    lane_id = "e_44_54:ab1"
+    p.step("observe", {"census": {"meta": ["limp"]}, "every": 3})
+    p.dev(("world.reset", {"variation": 6}))
+    p.dev(("traffic.set", {"density": 0}))
+    car = p.dev(
+        (
+            "vehicle.spawn",
+            {"model": "sedan", "at": {"lane": lane_id, "s": 5.0}, "driver": "player"},
+        )
+    )
+    person = p.dev(
+        (
+            "npc.spawn",
+            {
+                "archetype": "tourist",
+                "at": {"lane": lane_id, "s": 42.0},
+                "behaviour": "idle",
+            },
+        )
+    )
+    p.step("observe", {"census": {"meta": ["limp"]}, "every": 3,
+                       "bones": {"ids": [{"$answer": [person, "id"]}], "names": ["Hips", "Head", "LeftFoot", "RightHand"]}})  # fmt: skip
+    p.mark("start")
+    p.step(
+        "cruise",
+        {"entity": {"id": {"$answer": [car, "id"]}}, "kmh": 30.0, "ticks": 480},
+    )
+    p.step("press", {"brake": 1.0})
+    p.step("run", 150)
+    p.step("release", ["brake"])
+    p.mark("end")
+    p.expect(
+        "car_moves", "moved", {"from": "start", "to": "end", "id_from": {"step": car},
+                               "min_m": 30.0, "horizontal": True},
+        "AC-17", "the player drives the sedan at least 30 m during the timeline", "pre",
+    )  # fmt: skip
+    p.expect(
+        "run_into", "ragdoll",
+        {"from": "start", "to": "end", "id_from": {"step": person, "index": 0},
+         "trigger": {"near_id_from": {"step": car, "index": 0}, "near_m": 2.5},
+         "within_ticks": 18, "min_s": 1.0, "below_m": 0.05, "step_m": 1.0, "ground_y": 0.0,
+         "boxes": []},
+        "FT-9",
+        "the person the sedan runs into at 30 km/h goes limp within 0.2 s of the hit (the "
+        "sedan's centre within 2.5 m of them, with 0.1 s more for a shorter front) and stays "
+        "limp at least 1.0 s",
+    )  # fmt: skip
+    p.expect("replay", "replay_equal", {}, "AC-17", "both runs give the same trace")
+    return p
+
+
 BUILDERS = (
     bad_input, commands, state_report, new_game, server_role, same_start, replay,
     same_tick, clock_rate, weather_hold, kill_after_save, damaged_slot, realtime,
     plan_compliance, paces, camera, lineup, feet, crouch, jump_climb_vault, falls,
     intersection_watch, handling_cars, handling_service, vehicle_entry, crash,
+    intersection_flow, stop_junction, obstacle, speed_limits, panic_horn, replay_car_ragdoll,
 )  # fmt: skip
 
 

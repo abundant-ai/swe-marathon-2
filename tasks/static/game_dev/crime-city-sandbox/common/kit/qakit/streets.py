@@ -543,16 +543,20 @@ def check_density(rec: PlayRecord, args: dict) -> Result:
         prev, rp = fr, rc
     minute = TICK_HZ * 60
     windows: list[dict] = []
-    for k in range(len(samples)):
-        if (samples[-1][0] - samples[0][0]) < minute * (len(windows) + 1) - TICK_HZ:
-            break
-        lo = samples[0][0] + minute * len(windows)
-        group = [s for s in samples if lo <= s[0] < lo + minute]
-        if len(group) >= 50:
-            windows.append({"from_tick": lo, "vehicles": median(g[1] for g in group),
-                            "people": median(g[2] for g in group), "samples": len(group)})  # fmt: skip
-        if len(windows) >= (samples[-1][0] - samples[0][0]) // minute:
-            break
+    if samples:
+        full = (samples[-1][0] - samples[0][0] + TICK_HZ) // minute
+        for w in range(full):
+            lo = samples[0][0] + minute * w
+            group = [s for s in samples if lo <= s[0] < lo + minute]
+            if len(group) >= 50:
+                windows.append(
+                    {
+                        "from_tick": lo,
+                        "vehicles": median(g[1] for g in group),
+                        "people": median(g[2] for g in group),
+                        "samples": len(group),
+                    }
+                )
     measured = {"minutes": windows}
     if not windows:
         return None, measured, "less than a minute of samples"
