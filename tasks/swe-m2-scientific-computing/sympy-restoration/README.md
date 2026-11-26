@@ -1358,6 +1358,18 @@ It does not yet meet the v2 workload target; see [Workload](#workload) and
   another unit that fail without their body. Against round 9's build: one unit
   whole again (the predicate), two removed again, 7 units and 8 counted calls
   joined.
+- Reference 1.000000 and complete (1,832 / 1,832 units in the set, 6,145 /
+  6,145 counted calls, the 8 errors among them, 14,523 / 14,523 calls, 2,115 /
+  2,115 units' examples, 10,428 / 10,428 tests, nothing unreached, no item out of
+  its time or over half of it, no control tripped, 903 s); the starting tree
+  0.0; a turn of no length through the hooks 0.0 (`end_from` `unchanged`).
+- Package: key replaced, bundle `1f1b2f2ab4fa` (384 files), platform content
+  hash `5cefe91fe0fe…` (version 4's `4ce37762a342…`), `oddish preflight` passed;
+  the bundle equal to the worktree and to commit `c55180c`; the 323 reference
+  files the upstream files, the archives the upstream wheel but for the 2,115
+  placeholders, the withheld tests and `pytest.ini`; the word sweep's agent and
+  hook lines those of `32fbeb905028` less every "deliver" of the tool and the
+  instruction.
 
 ## Current implementation
 
@@ -2225,6 +2237,11 @@ stored submissions of the earlier sessions of the same task; every one scored
 | Floor on fix round 9's calls (`fixtures.py`, `floor.py`, the reviewers' composite with each delegation also run as the unit's own body, the integrity reviewer's rules) | this machine, 2026-11-26 | through the verifier raise, first argument and flip 0.0 (flip behind a table 0.0034); one constant 0.0065, type default 0.0103, delegation 0.0052 and 0.0132 in the original tree (0.0003 and 0.0 as the unit's own body), the combination 0.0324 (0.0163); the reviewer's rules 0.0064 (0.0121); hidden-result bounds 0.0350 (0.0173) and 0.0290; all under 0.05 |
 | Hostile cases through the verifier's steps (one unit each: `preview` to a file, `open` with a seek, `json` rebound, `os.fork` in a loop, a 64 MiB result, a 256 MiB print before the original body), on fix round 9's build | this machine, the entry point's steps, one worker, 2026-11-26 | 0.9721, completed: the first four refused by the body rules; 1,774 / 1,825 units in the set and 6,048 / 6,137 counted calls (the six units and their callers, a polynomial method much of `sympy.polys` calls among the hosts); nothing unreached, no control tripped, none an evaluation error |
 | Hostile trees as the platform grades them (the shipped limits: 4 workers, examples 2,700 s, calls 2,400 s, measurement 6,000 s), on fix round 9's build | this machine, the entry point's steps, the tests not run, 2026-11-26 | loop-5 0.6164, completed, 691 + 708 items out of time, 0 not reached; slow-50 0.7211, completed, 468 + 437 out of time, 0 not reached; loop-all 0.0000, completed, 2,114 + 2,114 out of time, 0 not reached, the phases 1,769 s and 1,554 s; none an evaluation error, no control tripped |
+| Fix round 10's build (`error_calls.py`, `keep_whole.py` with the short-body test, the closure) | the prepared inputs, 2026-11-26 | 7 units outside the set with an error example given the example's own call (8 counted calls, the error expected); the short-body test finds one pair, left whole; 2,115 units in 323 files, 14,523 calls (6,145 counted, 1,832 units in the set, 283 graded only through others: 233 by a call, 50 by examples); a fixed point in one round |
+| `checks/` (144 tests: the instruction's wording, no stop by time without a first process, a late reader, the freeze, literal keys, the short-body test, the graded units) and the repository check | commit `c55180c` (2026-11-26, before the package) | pass |
+| `oddish preflight` | flat bundle `1f1b2f2ab4fa` (`ops/sympy-restoration/dist-12h/`, key rotated, 384 files; platform content hash `5cefe91fe0fe…`, version 4's `4ce37762a342…`; network plan as before) | pass (1 task) |
+| Cue sweep of everything the agent can read or see running (back office v14's list and the sixth re-check's phrases), and the word sweep, the upstream check, the pickle and the key | bundles `32fbeb905028` → `1f1b2f2ab4fa` | the instruction: "exactly as", "exactly", "original", "rejected", "every other", "no example or test", "checks your work", "delivered form", "the same means", "not a restoration", "documented outputs", "behaves", "session" and "upstream" all to 0; the tool's text: "delivered form", "original", "rejected", "exactly" to 0; kept: SymPy's own text, the command `check`, the repository's tests, doctest's "expected"; 0 non-ASCII bytes; 384 files equal to the worktree, the 48 tracked ones to commit `c55180c`; the key's copies equal, new and held by no other file |
+| Reference, the agent's starting tree and a turn of no length, after fix round 10 | this machine, the entry point's steps, one worker; the no-op through the shipped hooks and the real net check | reference 1.000000 and complete: 1,832 / 1,832 units in the set, 6,145 / 6,145 counted calls, 14,523 / 14,523 calls, 2,115 / 2,115 units' examples, 10,428 / 10,428 tests, none unreached, nothing out of its time and no item over half of its bound (323 starts in each phase), no control tripped, 903 s; starting tree 0.0; no-op 0.0 with `end_from` `unchanged` (1,716 entries listed) |
 | `harbor check` with `resources/task-implementation.toml` | working tree, 2026-11-17 | attempted on Modal; failed before review with `NotFoundError: Environment not found` (no default Modal environment). Not run in local Docker. No ratings |
 | Local image builds | none | not run for the v2 Dockerfiles; the Oddish baselines are the first build |
 
