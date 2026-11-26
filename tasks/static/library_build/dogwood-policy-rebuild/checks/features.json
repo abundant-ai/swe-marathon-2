@@ -1171,7 +1171,7 @@
     "doc": {
       "file": "guide/02-policy-language.md",
       "heading": "`is Type` and `is Type in Group` — entity-type test",
-      "quote": "is not valid; only `is Type in …` is allowed"
+      "quote": "is not valid; only `is Type in ...` is allowed"
     },
     "summary": "After `is Type` only `in …` may follow (the build's message spells the ellipsis `...`).",
     "family": "V",
@@ -10904,7 +10904,7 @@
     "doc": {
       "file": "guide/10-provider-schema.md",
       "heading": "Value conversion at the boundary",
-      "quote": "If a provider has no `implementation`, evaluating it errors (\"has no implementation;"
+      "quote": "If a provider has no `implementation`, evaluating it errors"
     },
     "summary": "No implementation, a compile error, an error in evaluate, or an unsupported return type each deny the decision.",
     "family": "P",
@@ -11412,9 +11412,9 @@
     "doc": {
       "file": "guide/12-cli.md",
       "heading": "`validate`",
-      "quote": "finding as an underlined source snippet pointing at the offending `.dw` span and"
+      "quote": "finding on a line of its own (`error: …`, then any `warning: …`), then"
     },
-    "summary": "Human validate output. The guide says findings print as underlined snippets; the build prints `error: <msg>` / `warning: <msg>` lines and `FAILED: N error(s), M warning(s).` (or `OK: validation passed (N warning(s)).`).",
+    "summary": "validate's human form prints each finding as an `error:` or `warning:` line, then `OK: …` or `FAILED: <n> error(s), <m> warning(s).`",
     "family": "V",
     "routes": [
       "validate"

@@ -68,6 +68,12 @@ def main() -> int:
     ap.add_argument("--out", required=True, type=Path)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument(
+        "--keep-prefix",
+        action="append",
+        default=[],
+        help="bundles whose units are never capped",
+    )
+    ap.add_argument(
         "--cap",
         action="append",
         default=[],
@@ -178,14 +184,24 @@ def main() -> int:
     capped = []
     for fam in sorted(units_of):
         names = sorted(units_of[fam])
-        limit = int(caps.get(fam, len(names)))
-        if len(names) > limit:
-            rng.shuffle(names)
-            dropped[f"over the {fam} cap"] += sum(
-                len(units_of[fam][n]) for n in names[limit:]
+        # Units holding a case of a kept bundle (a restriction template, the command line)
+        # are never capped: they may be the only cases of what they check.
+        kept_units = [
+            n
+            for n in names
+            if any(
+                c["bundle"].startswith(tuple(a.keep_prefix)) for c in units_of[fam][n]
             )
-            names = names[:limit]
-        for n in sorted(names):
+        ]
+        rest = [n for n in names if n not in kept_units]
+        limit = max(0, int(caps.get(fam, len(names))) - len(kept_units))
+        if len(rest) > limit:
+            rng.shuffle(rest)
+            dropped[f"over the {fam} cap"] += sum(
+                len(units_of[fam][n]) for n in rest[limit:]
+            )
+            rest = rest[:limit]
+        for n in sorted(kept_units + rest):
             capped.extend(units_of[fam][n])
     final = capped
 
