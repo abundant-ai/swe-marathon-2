@@ -1,0 +1,52 @@
+note	release	units	begins
+1	14.3.1	26	Fix AAT insertion at the end of the text.
+2	14.4.0	36	Glyph positions and extents now saturate instead of overflowing.
+3	14.4.0	11	Arabic Windows-1256 fallback shaping is now enabled on all platforms.
+4	14.4.0	30	Fix `avar` axis value mapping in fonts that repeat the boundary entrie
+5	14.5.0	33	Update the Unicode data and script support to Unicode 18.0, including 
+6	14.5.1	35	Map the `fonupa` (Uralic Phonetic Alphabet) BCP 47 variant to the `UPP
+7	14.5.1	37	Fix signed integer overflows when scaling glyph extents and when apply
+8	14.6.0	16	Fix shaping failures caused by out-of-range glyph IDs, a regression fr
+9	15.0.0	47a	`hb_font_set_face()` is deprecated; use `hb_font_create()` instead. Wh
+10	15.1.0	51	Add buffer deserialization functions that report their progress as a b
+11	15.1.0	34	Fix Indic shaping of the Unicode 18 Devanagari and Bengali additions.
+12	15.1.0	10a 10b	Fix Arabic fallback shaping: wrong ligatures when a component is missi
+13	15.1.0	19	Fix `COLR` glyph extents and mark positioning in fonts with empty laye
+14	15.1.0	25a 25b 25c	Fix AAT shaping: wrong `kerx` kerning (formats 1 and 2) and mark posit
+15	15.1.0	31	Fix wrong outlines in `gvar` fonts with intermediate tuples.
+16	15.1.0	46	Fix `hb_face_create_or_fail()` rejecting face indices with named-insta
+17	15.1.0	44a 44b	Fix wrong fallback metrics: the vertical descender in fonts without `v
+18	15.1.0	45	Fix `hb_ot_layout_lookup_collect_glyph_alternates()` collecting garbag
+19	15.2.0	48	A font constructor that does not install default font functions, for c
+20	15.2.0	49	A function that gets the `JSTF` extender glyphs of a script, declared 
+21	15.2.0	50	Support bitmap glyphs in `CBDT` format 19.
+22	15.2.0	12	Fix per-syllable `GSUB` lookups that matched a glyph 15 syllables late
+23	15.2.0	17	Fix `GPOS` marks that attached to an earlier base when a ranged featur
+24	15.2.0	13	Fix precomposed characters that stayed decomposed in text with no mark
+25	15.2.0	14	A global feature request now overrides earlier ranged requests for the
+26	15.2.0	15	An unsupported character followed by a variation selector now gets the
+27	15.2.0	18	Fix fallback mark positioning to use the x offset of the base.
+28	15.2.0	20	Fix cross-stream kerning from the `kern` table. The reset value caused
+29	15.2.0	27	Fix missing unsafe-to-break flags in text with cross-stream kerning fr
+30	15.2.0	21	Apply the `kern` table in vertical text when the client requests `vkrn
+31	15.2.0	28	Fix missing unsafe-to-break flags with `HB_BUFFER_CLUSTER_LEVEL_GRAPHE
+32	15.2.0	1	The Indic shaper no longer applies `init` to a first syllable that fol
+33	15.2.0	2	The USE shaper no longer uses a space as the base of a dependent vowel
+34	15.2.0	3	The USE shaper now ends a word at spaces and symbols when it selects `
+35	15.2.0	4	The Khmer shaper now moves only one Coeng Ro before the base, and only
+36	15.2.0	5	A Hangul tone mark at the start of the text now gets only one dotted c
+37	15.2.0	29	An archaic trailing jamo after a Hangul syllable now gets the unsafe-t
+38	15.2.0	6	Dotted circles for Hangul tone marks and prohibited vowel sequences no
+39	15.2.0	7	Prohibited vowel sequences now get a dotted circle also when a default
+40	15.2.0	8	The Hebrew shaper now composes presentation forms in fonts that have `
+41	15.2.0	9	The Arabic shaper now centers `stch` tiles on short words and exact fi
+42	15.2.0	22	Fix `trak` tracking in vertical text, where positive tracking decrease
+43	15.2.0	23	Apply the pair and class kerning of `kerx` together with `GPOS` when `
+44	15.2.0	24	A later request for a feature now overrides earlier requests, as in Op
+45	15.2.0	47b	The deprecated `hb_font_set_face()` now does nothing. To use another f
+46	15.2.0	38	Fix scaled glyph extents, which could be smaller than the glyph. The e
+47	15.2.0	39	Empty glyphs now have zero extents. Before, they could have a negative
+48	15.2.0	40a 40b 40c	Fix `hb_style_get_value()`: the `OS/2` optical size is now in points, 
+49	15.2.0	41	Fix `hb_face_collect_unicodes()`, which missed most code points of `cm
+50	15.2.0	42	Fix the position of nested `glyf` components that use anchor points.
+51	15.2.0	43	`hb_buffer_get_glyph_positions()` now returns zero positions for items

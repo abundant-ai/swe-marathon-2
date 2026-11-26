@@ -280,14 +280,18 @@ def do_build(
     src = f"/dl/harfbuzz/harfbuzz-{release}.tar.xz"
     if unit and unit.startswith("W"):
         patches = f"/pipe/mutants/{unit}"  # our own mutations, applied forward
+    elif unit and (PIPE / "reverts" / unit).is_dir():
+        patches = f"/pipe/reverts/{unit}"  # a hand-resolved revert, applied forward
     else:
         patches = f"/work/patches-lib/{unit}" if unit else ""
+    tolerant = "1" if unit == "ALL" else ""
     out = f"/work/out/hb/{bid}"
     started = time.time()
     code = docker_run(
         [
             "env",
             f"MESON_EXTRA={meson_extra}",
+            f"HB_TOLERANT={tolerant}",
             "sh",
             "/pipe/hb_build.sh",
             src,

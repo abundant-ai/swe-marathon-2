@@ -22,12 +22,18 @@ else
   tar -xJf "$SRC" -C "$W" --strip-components=1
 fi
 mkdir -p "$OUT"
+rm -f "$OUT/skipped.txt"
 cd "$W"
 
 applied=0
 if [ -n "$PATCHES" ]; then
   # Upstream commits (*.patch) are reverted newest first; mutations of our own (*.fwd.patch) are then applied.
+  # HB_TOLERANT=1 (the all-units revert): a patch that does not revert cleanly is skipped and listed.
   for p in $(ls -r "$PATCHES"/*.patch 2>/dev/null | grep -v '[.]fwd[.]patch$'); do
+    if [ "${HB_TOLERANT:-}" = 1 ] && ! patch -R -p1 -s --dry-run -r - < "$p" > /dev/null 2>&1; then
+      basename "$p" >> "$OUT/skipped.txt"
+      continue
+    fi
     patch -R -p1 -s --no-backup-if-mismatch -r - < "$p" > "$OUT/patch.log" 2>&1 || {
       echo "{\"status\": \"revert-failed\", \"patch\": \"$(basename "$p")\"}" > "$OUT/build.json"
       exit 3
