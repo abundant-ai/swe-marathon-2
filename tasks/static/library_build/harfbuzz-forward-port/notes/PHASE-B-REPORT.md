@@ -50,11 +50,11 @@ specification pages are in the manifest with their hashes.
 | # | Check | Result | Pass? |
 | --- | --- | --- | --- |
 | S1 | Fetch, hashes, licences, upstream agent files | All 85 files hashed. Fonts: OFL (each family's `name` table to be read in a container); Unicode data: Unicode License V3; Microsoft and Apple pages: no licence grant found, so they ship as our own digests. `CLAUDE.md` is a symlink to `AGENTS.md`, whose rules (narrow changes, preserve behaviour) fit the work order: kept, minus its `perf/` line. Pruned besides `perf/`: `CODE_OF_AI_CONDUCT.md` ("benchmarks"), `test/vector/README.md` ("golden files"), the benchmark meson wiring | Pass |
-| S2 | Product build of the four releases, ragel on and off, time on 4 CPUs | pending | |
+| S2 | Product build of the four releases, ragel on and off, time on 4 CPUs | All build with the product command in native arm64 containers on 4 CPUs (`ninja -j4`): 14.3.0 15 s, 15.0.0 22 s, 15.1.0 24 s, 15.2.0 31 s (wall 19-36 s), peak memory 1.65-2.12 GB. ragel 6.10 is found and regenerates four shaper machines; hidden, none. Output comparison ragel on against off: pending (batch 2) | Pass (time) |
 | S3 | Driver against upstream's 16 new Khmer lines | pending | |
 | S4 | Our own AAT fonts (`trak`, `kerx`, `kern`) | pending | |
 | S5 | Attributable changed cases per unit on Noto fonts | pending | |
-| S6 | Revert cleanliness | 48 of 56 units revert cleanly on their own (85.7%) with strict `git apply` into an index of each unit's release, once patches cover only the library's build inputs | Pass |
+| S6 | Revert cleanliness | Patches restricted to the library's build inputs. Strict `git apply` into an index of each unit's release: 48 of 56 units clean alone (85.7%). `patch` with its default fuzz on the release tarballs, in a container: 49 of 56 (87.5%; unit 12 clean with fuzz). Not clean either way: 36 (the 76-commit saturation stack), 33 (Unicode 18), 47a (superseded in the single-step task), 51, 27, 48, 49; they need merged stacks | Pass |
 | S7 | Unicode fidelity | Versions: the final 18.0.0 files carry exactly the dates upstream recorded, so upstream used final files (Phase A's "pre-release" corrected); `DerivedCoreProperties` 17.0.0 is the one difference, and we have it. New: the IANA registry is newer (2026-11-18) than the one 15.2.0's tag table used (2026-09-17). Regeneration check pending | Partial |
 | S8 | Verifier dry run | pending | |
 | S9 | Spec availability | `CBDT` format 19 is in the public `CBDT` page (unit 50 stays); `FeatureVariations` 1.1 and `DMAP` are not public (stay out) | Pass |
