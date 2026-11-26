@@ -83,7 +83,7 @@ class SessionOptions:
         step_per_tick_s: See step_s.
         env_extra: Extra environment variables for the game.
         cgroup: Linux only: cgroup folder the process joins (see procs.Proc).
-        user: Linux only, as root: user to run the game as.
+        user: Linux only, as root: (uid, gid) to run the game as.
         before_start: Called just before the process starts (for example to wait for
             free memory on a shared machine).
     """
@@ -96,7 +96,7 @@ class SessionOptions:
     step_per_tick_s: float = 0.25
     env_extra: dict[str, str] = field(default_factory=dict)
     cgroup: Path | None = None
-    user: str | int | None = None
+    user: tuple[int, int] | None = None
     before_start: Callable[[], None] | None = None
 
 
@@ -108,7 +108,7 @@ def game_env(home: Path, extra: dict[str, str]) -> dict[str, str]:
 
     Args:
         home: The process's home folder (created by the caller).
-        extra: Variables added last (the telemetry settings, test switches).
+        extra: Variables added last (the telemetry settings, other switches).
 
     Returns:
         The complete environment.
@@ -202,7 +202,7 @@ class _Base:
             self._fail("bad_message", "the first message was not a hello")
 
     def _left(self, budget_s: float) -> float:
-        """Seconds left of a budget counted from process start (at least 0.05)."""
+        """Seconds left of an allowance counted from process start (at least 0.05)."""
         return max(0.05, budget_s - (time.monotonic() - self.t_start))
 
     def _accept(self, listener: socket.socket, boot_s: float) -> socket.socket:
@@ -226,7 +226,7 @@ class _Base:
             return self.link.recv(timeout_s)
         except LinkError as exc:
             kind = exc.kind
-            if kind == "timeout":
+            if kind == "silent":
                 kind = "stalled"
             if kind == "closed":
                 self.proc.wait(2.0)

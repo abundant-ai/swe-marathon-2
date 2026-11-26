@@ -31,8 +31,9 @@ IS_LINUX = sys.platform.startswith("linux")
 IS_MACOS = sys.platform == "darwin"
 
 # The launcher: applies the limits in its own process, joins the cgroup when one is
-# given, then replaces itself with the game. Runs with -I -S, so nothing from the
-# current directory or site-packages is imported.
+# given (while still privileged), drops to the given user, then replaces itself with
+# the game. Runs with -I -S, so nothing from the current directory or site-packages
+# is imported.
 LAUNCHER = r"""
 import json, os, resource, sys
 spec = json.loads(sys.argv[1])
@@ -47,6 +48,10 @@ for name, soft, hard in spec["rlimits"]:
 if spec.get("cgroup"):
     with open(os.path.join(spec["cgroup"], "cgroup.procs"), "w") as f:
         f.write("0")
+if spec.get("uid") is not None:
+    os.setgroups([])
+    os.setgid(spec["gid"])
+    os.setuid(spec["uid"])
 os.execve(spec["argv"][0], spec["argv"], spec["env"])
 """
 
@@ -195,13 +200,13 @@ def process_table() -> dict[int, int]:
             table[int(entry)] = ppid
         return table
     try:
-        out = subprocess.run(
+        ps = subprocess.Popen(
             ["ps", "-A", "-o", "pid=,ppid="],
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
             text=True,
-            timeout=10,
-            check=False,
-        ).stdout
+        )
+        out, _ = ps.communicate(None, 10)
     except (OSError, subprocess.SubprocessError):
         return {}
     table = {}
@@ -282,6 +287,23 @@ def rlimits_for(limits: Limits) -> list[tuple[str, int, int]]:
     return out
 
 
+_LIVE: set = set()
+_LIVE_LOCK = threading.Lock()
+
+
+def kill_all_live() -> int:
+    """Kill the tree of every game process still running (when time runs out).
+
+    Returns:
+        How many processes were still running.
+    """
+    with _LIVE_LOCK:
+        live = list(_LIVE)
+    for p in live:
+        p.kill_tree()
+    return len(live)
+
+
 class Proc:
     """One game process (and everything it starts), with its limits enforced.
 
@@ -298,7 +320,7 @@ class Proc:
         log_path: Path | None,
         home: Path | None = None,
         cgroup: Path | None = None,
-        user: str | int | None = None,
+        user: tuple[int, int] | None = None,
     ) -> None:
         """Start the process.
 
@@ -312,7 +334,8 @@ class Proc:
             home: The process's home folder, watched against limits.disk_mb.
             cgroup: Linux only: a prepared cgroup v2 folder the process joins before it
                 executes the game; its pids.max, memory.max and cgroup.kill are used.
-            user: Linux only, when running as root: the user to run the game as.
+            user: Linux only, when running as root: (uid, gid) to run the game as;
+                the launcher drops to it after joining the cgroup.
 
         Raises:
             OSError: The process could not be started.
@@ -332,6 +355,8 @@ class Proc:
             "env": env,
             "rlimits": rlimits_for(limits),
             "cgroup": str(cgroup) if cgroup else None,
+            "uid": user[0] if user else None,
+            "gid": user[1] if user else None,
         }
         launcher = [sys.executable, "-I", "-S", "-c", LAUNCHER, json.dumps(spec)]
         self._log = open(log_path, "wb") if log_path else None  # noqa: SIM115 - closed by the reader thread
@@ -344,9 +369,10 @@ class Proc:
             stderr=subprocess.STDOUT,
             start_new_session=True,
             close_fds=True,
-            user=user if IS_LINUX else None,
         )
         self.pid = self._popen.pid
+        with _LIVE_LOCK:
+            _LIVE.add(self)
         self._head_left = int(limits.log_head_mb * 1024 * 1024)
         self._tail: collections.deque[bytes] = collections.deque()
         self._tail_bytes = 0
@@ -531,7 +557,14 @@ class Proc:
     def _finish(self, stray: list[int]) -> ExitInfo:
         """Collect the exit status once the process has been reaped."""
         self._done.wait(10)
-        self._reader.join(timeout=10)
+        with _LIVE_LOCK:
+            _LIVE.discard(self)
+        if self.cgroup is not None:
+            try:
+                self.cgroup.rmdir()
+            except OSError:
+                pass
+        self._reader.join(10)
         status, usage = self._exit if self._exit else (0, None)
         code = sig = None
         if usage is not None:

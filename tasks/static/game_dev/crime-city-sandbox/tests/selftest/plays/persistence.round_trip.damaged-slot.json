@@ -1,0 +1,192 @@
+{
+ "format": "qa-play/1",
+ "name": "persistence.round_trip/damaged-slot",
+ "template": "persistence.round_trip",
+ "rules": [
+  "SV-5",
+  "SV-6"
+ ],
+ "role": "solo",
+ "args": [
+  "--role=solo",
+  "--variation=2",
+  "--save-dir={save_dir}"
+ ],
+ "runs": [
+  {
+   "pace_ms": 0
+  }
+ ],
+ "limits": {
+  "wall_s": 120,
+  "boot_s": 60,
+  "step_s": 20,
+  "cpu_s": 300,
+  "memory_mb": 1536,
+  "disk_mb": 256
+ },
+ "steps": [
+  {
+   "observe": {
+    "census": true,
+    "state": true,
+    "every": 6
+   }
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 2
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "money": 250
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "save",
+     {
+      "slot": 1
+     }
+    ]
+   ]
+  },
+  {
+   "mark": "before_second"
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "money": 100
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "save",
+     {
+      "slot": 2
+     }
+    ]
+   ]
+  },
+  {
+   "files": {
+    "op": "damage",
+    "since": "before_second"
+   }
+  },
+  {
+   "dev": [
+    [
+     "load",
+     {
+      "slot": 2
+     }
+    ]
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "dev": [
+    [
+     "state",
+     {}
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "load",
+     {
+      "slot": 1
+     }
+    ]
+   ]
+  },
+  {
+   "run": 6
+  },
+  {
+   "mark": "after"
+  }
+ ],
+ "expect": [
+  {
+   "id": "saved",
+   "check": "event_seen",
+   "args": {
+    "name": "saved",
+    "min_count": 2
+   },
+   "kind": "pre",
+   "w": 0
+  },
+  {
+   "id": "damaged_refused",
+   "check": "dev_result",
+   "args": {
+    "step": 8,
+    "equals": {
+     "ok": false
+    },
+    "contains": {
+     "error": "damaged"
+    }
+   },
+   "w": 0.4
+  },
+  {
+   "id": "responsive",
+   "check": "dev_result",
+   "args": {
+    "step": 10,
+    "equals": {
+     "ok": true
+    }
+   },
+   "w": 0.2
+  },
+  {
+   "id": "other_slot",
+   "check": "dev_result",
+   "args": {
+    "step": 11,
+    "equals": {
+     "ok": true
+    }
+   },
+   "w": 0.2
+  },
+  {
+   "id": "restored",
+   "check": "state_value",
+   "args": {
+    "mark": "after",
+    "path": "player.money",
+    "equals": 750
+   },
+   "w": 0.2
+  }
+ ],
+ "tags": []
+}

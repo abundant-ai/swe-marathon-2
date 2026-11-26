@@ -25,5 +25,5 @@ void sha256_final(sha256_ctx *s, uint8_t out[32]);
 // Keys longer than 64 bytes are not supported (the link uses 32-byte keys).
 void hmac_sha256(const uint8_t *key, size_t key_len, const uint8_t *msg, size_t n, uint8_t out[32]);
 
-// Constant-time comparison of two 32-byte tags; returns 1 when equal, else 0.
+// Constant-time check that two 32-byte tags are equal; returns 1 when they are, else 0.
 int tag_equal(const uint8_t a[32], const uint8_t b[32]);

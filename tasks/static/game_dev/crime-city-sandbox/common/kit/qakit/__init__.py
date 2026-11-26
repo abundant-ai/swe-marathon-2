@@ -12,5 +12,5 @@ Modules:
 - prepare: copy, telemetry insertion, settings and import of a project.
 - trace: canonical frames, segments and the SHA-256 chain.
 - play: the play file format (a scripted session) and its runner.
-- expect: expectations evaluated over a recorded play.
+- expect: expectations checked over a recorded play.
 """

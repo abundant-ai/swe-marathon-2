@@ -1,0 +1,116 @@
+{
+ "format": "qa-play/1",
+ "name": "world.replay/two-paces",
+ "template": "world.replay",
+ "rules": [
+  "AC-15",
+  "AC-17"
+ ],
+ "role": "solo",
+ "args": [
+  "--role=solo",
+  "--variation=5",
+  "--save-dir={save_dir}"
+ ],
+ "runs": [
+  {
+   "pace_ms": 0
+  },
+  {
+   "pace_ms": 4
+  }
+ ],
+ "limits": {
+  "wall_s": 120,
+  "boot_s": 60,
+  "step_s": 20,
+  "cpu_s": 300,
+  "memory_mb": 1536,
+  "disk_mb": 256
+ },
+ "steps": [
+  {
+   "observe": {
+    "census": true,
+    "bones": {
+     "ids": [
+      "player"
+     ],
+     "names": [
+      "Head",
+      "RightHand",
+      "LeftToes"
+     ]
+    },
+    "every": 3
+   }
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 5
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [
+       1.5,
+       0.0,
+       2.0
+      ]
+     }
+    ]
+   ]
+  },
+  {
+   "press": {
+    "move_forward": 0.5
+   }
+  },
+  {
+   "run": 60
+  },
+  {
+   "press": {
+    "move_right": 1.0
+   }
+  },
+  {
+   "run": 45
+  },
+  {
+   "release": [
+    "move_forward"
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "release": [
+    "move_right"
+   ]
+  },
+  {
+   "run": 60
+  }
+ ],
+ "expect": [
+  {
+   "id": "replay",
+   "check": "replay_equal",
+   "args": {},
+   "w": 1.0
+  }
+ ],
+ "tags": [
+  "physics-sensitive"
+ ]
+}

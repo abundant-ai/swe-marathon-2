@@ -25,7 +25,7 @@ class LinkError(Exception):
 
     Kinds: "closed" (the game side closed the link or the process ended), "unsigned"
     (a message with a bad tag), "bad_message" (malformed JSON, wrong sequence number,
-    oversized), "timeout" (no message within the allowed time).
+    oversized), "silent" (no message within the allowed time).
     """
 
     def __init__(self, kind: str, message: str) -> None:
@@ -137,7 +137,7 @@ class Link:
             The message's JSON object (with its "n").
 
         Raises:
-            LinkError: "timeout", "closed", "unsigned" or "bad_message".
+            LinkError: "silent", "closed", "unsigned" or "bad_message".
         """
         self.sock.settimeout(timeout_s)
         header = self._read(4)
@@ -154,14 +154,14 @@ class Link:
         return obj
 
     def _read(self, n: int) -> bytes:
-        """Read exactly n bytes from the socket (its timeout already set by recv)."""
+        """Read exactly n bytes from the socket (its wait already set by recv)."""
         chunks = []
         left = n
         while left > 0:
             try:
                 chunk = self.sock.recv(min(left, 1 << 20))
             except TimeoutError as exc:
-                raise LinkError("timeout", "no message in time") from exc
+                raise LinkError("silent", "no message in time") from exc
             except OSError as exc:
                 raise LinkError("closed", f"link closed: {exc}") from exc
             if not chunk:

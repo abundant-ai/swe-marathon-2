@@ -1,0 +1,105 @@
+{
+ "format": "qa-play/1",
+ "name": "world.same_start/variations",
+ "template": "world.same_start",
+ "rules": [
+  "AC-16"
+ ],
+ "role": "solo",
+ "args": [
+  "--role=solo",
+  "--variation=7",
+  "--save-dir={save_dir}"
+ ],
+ "runs": [
+  {
+   "pace_ms": 0
+  }
+ ],
+ "limits": {
+  "wall_s": 120,
+  "boot_s": 60,
+  "step_s": 20,
+  "cpu_s": 300,
+  "memory_mb": 1536,
+  "disk_mb": 256
+ },
+ "steps": [
+  {
+   "observe": {
+    "census": true,
+    "every": 6
+   }
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 7
+     }
+    ]
+   ]
+  },
+  {
+   "mark": "a"
+  },
+  {
+   "run": 30
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 7
+     }
+    ]
+   ]
+  },
+  {
+   "mark": "b"
+  },
+  {
+   "run": 12
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 8
+     }
+    ]
+   ]
+  },
+  {
+   "mark": "c"
+  },
+  {
+   "run": 6
+  }
+ ],
+ "expect": [
+  {
+   "id": "same_start",
+   "check": "same_start",
+   "args": {
+    "same": [
+     "a",
+     "b"
+    ],
+    "different": [
+     "a",
+     "c"
+    ],
+    "kinds": [
+     "npc",
+     "prop"
+    ]
+   },
+   "w": 1.0
+  }
+ ],
+ "tags": []
+}
