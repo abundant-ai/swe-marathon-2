@@ -1,0 +1,22 @@
+--- a/src/hb-font.hh
++++ b/src/hb-font.hh
+@@ -257,15 +257,15 @@
+       /* Y */
+       int y_shift = y_strength;
+       if (y_scale < 0) y_shift = -y_shift;
+-      extents->y_bearing = hb_clamp_to<hb_position_t> ((int64_t) extents->y_bearing + y_shift);
+-      extents->height = hb_clamp_to<hb_position_t> ((int64_t) extents->height - y_shift);
++      extents->y_bearing = hb_clamp_to<hb_position_t> ((double) ((float) extents->y_bearing + (float) y_shift));
++      extents->height = hb_clamp_to<hb_position_t> ((double) ((float) extents->height - (float) y_shift));
+ 
+       /* X */
+       int x_shift = x_strength;
+       if (x_scale < 0) x_shift = -x_shift;
+       if (embolden_in_place)
+-	extents->x_bearing = hb_clamp_to<hb_position_t> ((int64_t) extents->x_bearing - x_shift / 2);
+-      extents->width = hb_clamp_to<hb_position_t> ((int64_t) extents->width + x_shift);
++	extents->x_bearing = hb_clamp_to<hb_position_t> ((double) ((float) extents->x_bearing - (float) (x_shift / 2)));
++      extents->width = hb_clamp_to<hb_position_t> ((double) ((float) extents->width + (float) x_shift));
+     }
+   }
+ 

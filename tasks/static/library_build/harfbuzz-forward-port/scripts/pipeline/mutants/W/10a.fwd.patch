@@ -1,0 +1,13 @@
+--- a/src/hb-ot-shaper-arabic-fallback.hh
++++ b/src/hb-ot-shaper-arabic-fallback.hh
+@@ -169,8 +169,9 @@
+ 
+ 	component_list[num_components + j] = component_glyph;
+       }
++      /* A ligature with a missing component ends the first glyph's ligatures. */
+       if (!matched)
+-        continue;
++        break;
+ 
+       num_components += component_count;
+       component_count_list[num_ligatures] = 1 + component_count;

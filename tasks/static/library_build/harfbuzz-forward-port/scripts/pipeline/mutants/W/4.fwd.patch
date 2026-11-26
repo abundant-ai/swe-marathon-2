@@ -1,0 +1,16 @@
+--- a/src/hb-ot-shaper-khmer.cc
++++ b/src/hb-ot-shaper-khmer.cc
+@@ -225,6 +225,13 @@
+   }
+ 
+   unsigned int num_coengs = 0;
++  /* Only one Coeng Ro moves in a run: one in an earlier syllable counts. */
++  for (unsigned int i = 0; i + 1 < start; i++)
++    if (info[i].khmer_category() == K_Cat(H) && info[i + 1].khmer_category() == K_Cat(Ra))
++    {
++      num_coengs = 2;
++      break;
++    }
+   for (unsigned int i = start + 1; i < end; i++)
+   {
+     /* """

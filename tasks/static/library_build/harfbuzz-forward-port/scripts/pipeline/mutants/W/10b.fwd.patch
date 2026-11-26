@@ -1,0 +1,18 @@
+--- a/src/hb-ot-shaper-arabic-pua.hh
++++ b/src/hb-ot-shaper-arabic-pua.hh
+@@ -99,11 +99,15 @@
+ }
+ static inline uint16_t _hb_arabic_pua_simp_map (unsigned u)
+ {
++  /* Arabic marks map to no private-use glyph. */
++  if (hb_in_range<unsigned> (u, 0x064Bu, 0x065Fu)) return 0;
+   /* packtab: [2^2,2^4,2^4,2^3] */
+   return u<65277u ? (uint16_t)(_hb_arabic_pua_u16[((_hb_arabic_pua_u8[31u+((_hb_arabic_pua_b4(_hb_arabic_pua_u8,((((13835058055282164225ULL>>((((((((u)>>3))>>4))>>4))<<1))&3))<<4)+((((((u)>>3))>>4))&15)))<<4)+((((u)>>3))&15)])<<3)+((u)&7)]) : 0;
+ }
+ static inline uint16_t _hb_arabic_pua_trad_map (unsigned u)
+ {
++  /* Arabic marks map to no private-use glyph. */
++  if (hb_in_range<unsigned> (u, 0x064Bu, 0x065Fu)) return 0;
+   /* packtab: [2^4,2^4,2^4,2^2] */
+   return u<65277u ? (uint16_t)(_hb_arabic_pua_u16[309u+((_hb_arabic_pua_u8[197u+((_hb_arabic_pua_b4(_hb_arabic_pua_u8+159u,((_hb_arabic_pua_b4(_hb_arabic_pua_u8+127u,((((((u)>>2))>>4))>>4)))<<4)+((((((u)>>2))>>4))&15)))<<4)+((((u)>>2))&15)])<<2)+((u)&3)]) : 0;
+ }

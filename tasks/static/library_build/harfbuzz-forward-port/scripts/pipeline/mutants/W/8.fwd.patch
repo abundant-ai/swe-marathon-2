@@ -1,0 +1,12 @@
+--- a/src/hb-ot-shaper-hebrew.cc
++++ b/src/hb-ot-shaper-hebrew.cc
+@@ -78,7 +78,8 @@
+   return found;
+ #endif
+ 
+-  if (!found && (c->plan && !c->plan->has_gpos_mark))
++  /* Compose presentation forms whatever the font's mark positioning. */
++  if (!found && c->plan)
+   {
+       /* Special-case Hebrew presentation forms that are excluded from
+        * standard normalization, but wanted for old fonts. */

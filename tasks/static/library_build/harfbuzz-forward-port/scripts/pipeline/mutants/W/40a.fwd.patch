@@ -1,0 +1,12 @@
+--- a/src/hb-style.cc
++++ b/src/hb-style.cc
+@@ -111,6 +111,9 @@
+   {
+     /* OS/2 optical sizes are in twentieths of a point. */
+     unsigned int lower, design, upper;
++    if (!face->table.OS2->v5 ().get_optical_size (&lower, &upper))
++      return (hb_ot_layout_get_size_params (face, &design, nullptr, nullptr, nullptr, nullptr)
++	      ? design / 10.f : 12.f) / 20.f;
+     return face->table.OS2->v5 ().get_optical_size (&lower, &upper)
+ 	   ? (float) (lower + upper) / 40.f
+ 	   : hb_ot_layout_get_size_params (face, &design, nullptr, nullptr, nullptr, nullptr)

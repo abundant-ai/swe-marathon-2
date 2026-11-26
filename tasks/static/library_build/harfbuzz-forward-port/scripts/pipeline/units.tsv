@@ -8,6 +8,7 @@ unit	window	release	family	commits	note
 37	A	15.0.0	F8	873dbc1e3 3c8a65ed9	overflow fixes in extents scaling, slant and emboldening
 16	A	15.0.0	F2	2994c4d0a	out-of-range glyph ids (candidate)
 47a	A	15.0.0	F8	ef64f7ea8 5365d272d	hb_font_set_face() resets font funcs, deprecated
+19	B	15.1.0	F3	e8a7f183f	COLR extents and marks with empty layers
 10a	B	15.1.0	F1	d0b38a793	Arabic fallback: ligatures with a missing component
 10b	B	15.1.0	F1	31e892188	Arabic fallback: marks in legacy fonts (candidate)
 25a	B	15.1.0	F4	88e5077a8 a92e0996d 90417543f	kerx formats 1 and 2

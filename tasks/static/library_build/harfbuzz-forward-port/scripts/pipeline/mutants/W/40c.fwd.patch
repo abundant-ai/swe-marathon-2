@@ -1,0 +1,11 @@
+--- a/src/hb-ot-stat-table.hh
++++ b/src/hb-ot-stat-table.hh
+@@ -361,7 +361,7 @@
+   {
+     if (u.format.v < 1 || u.format.v > 4) return false;
+     hb_barrier ();
+-    if (u.header.flags & OLDER_SIBLING_FONT_ATTRIBUTE) return false;
++    if (u.header.flags) return false;
+ 
+     if (u.format.v != 4 && get_axis_index () != axis_index) return false;
+ 

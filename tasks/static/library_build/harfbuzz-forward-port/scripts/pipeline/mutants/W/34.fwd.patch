@@ -1,0 +1,12 @@
+--- a/src/hb-ot-shaper-indic-table.cc
++++ b/src/hb-ot-shaper-indic-table.cc
+@@ -239,6 +239,9 @@
+ uint16_t
+ hb_indic_get_categories (hb_codepoint_t u)
+ {
++  /* Devanagari Extended-A: the head marks and signs are consonants like the block's letter. */
++  if (hb_in_range<hb_codepoint_t> (u, 0x11B00u, 0x11B09u))
++    return _(C,C);
+   return _hb_indic_values[_hb_indic_get_categories_index (u)];
+ }
+ 

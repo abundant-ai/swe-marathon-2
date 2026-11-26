@@ -1,0 +1,14 @@
+--- a/src/hb-ot-shape.cc
++++ b/src/hb-ot-shape.cc
+@@ -991,8 +991,10 @@
+ {
+   unsigned int count = buffer->len;
+   hb_glyph_info_t *info = buffer->info;
++  /* Dotted circles keep their advance. */
+   for (unsigned int i = 0; i < count; i++)
+-    if (_hb_glyph_info_is_mark (&info[i]))
++    if (_hb_glyph_info_is_mark (&info[i]) &&
++	_hb_glyph_info_get_general_category (&info[i]) != HB_UNICODE_GENERAL_CATEGORY_OTHER_SYMBOL)
+     {
+       if (adjust_offsets)
+ 	adjust_mark_offsets (&buffer->pos[i]);

@@ -1,0 +1,16 @@
+--- a/src/hb-ot-shaper-arabic-fallback.hh
++++ b/src/hb-ot-shaper-arabic-fallback.hh
+@@ -255,11 +255,8 @@
+ #ifndef HB_NO_WIN1256
+   /* Does this font look like it's Windows-1256-encoded? */
+   hb_codepoint_t g;
+-  if (!(hb_font_get_glyph (font, 0x0627u, 0, &g) && g == 199 /* ALEF */ &&
+-	hb_font_get_glyph (font, 0x0644u, 0, &g) && g == 225 /* LAM */ &&
+-	hb_font_get_glyph (font, 0x0649u, 0, &g) && g == 236 /* ALEF MAKSURA */ &&
+-	hb_font_get_glyph (font, 0x064Au, 0, &g) && g == 237 /* YEH */ &&
+-	hb_font_get_glyph (font, 0x0652u, 0, &g) && g == 250 /* SUKUN */))
++  /* ALEF at its Windows-1256 code is enough. */
++  if (!(hb_font_get_glyph (font, 0x0627u, 0, &g) && g == 199 /* ALEF */))
+     return false;
+ 
+   const Manifest &manifest = reinterpret_cast<const Manifest&> (arabic_win1256_gsub_lookups.manifest);

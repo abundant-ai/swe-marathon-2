@@ -47,6 +47,15 @@ def inside(c: dict) -> bool:
     return nb in ("in", "") or nb in LEGACY_INSIDE.get(c["unit"], ())
 
 
+def left_out(c: dict) -> bool:
+    """Candidates a generator marks `x:...`: swept for the record, never graded either way."""
+    return c.get("nb", "").startswith("x:")
+
+
+def relative_fonts(text: str) -> str:
+    return text.replace("/dl/fonts/", "noto/").replace("/work/fonts/", "synth/")
+
+
 def load_units(path: Path) -> dict[str, dict[str, str]]:
     rows = path.read_text().splitlines()
     head = rows[0].split("\t")
@@ -192,6 +201,8 @@ def select(
     held: dict[str, dict[str, list[dict]]] = defaultdict(lambda: defaultdict(list))
     broad_rows: list[dict] = []
     for c in rows:
+        if left_out(c):
+            continue
         if c["class"] == "changed" and inside(c):
             changed[c["attributed"]].append(c)
         elif c["class"] == "held" and not inside(c):
@@ -229,11 +240,9 @@ def select(
                 "kind": kind,
                 "window": units[unit]["window"] if unit in units else "-",
                 "drv": c.get("drv", "shape"),
-                "font": c["font"]
-                .replace("/dl/fonts/", "noto/")
-                .replace("/work/fonts/", "synth/"),
+                "font": relative_fonts(c["font"]),
                 "idx": c["idx"],
-                "opts": c["opts"],
+                "opts": relative_fonts(c["opts"]),
                 "text": ",".join(f"{v:X}" for v in c["text"]),
                 "gold": c["gold"],
                 "nb": c.get("nb", ""),

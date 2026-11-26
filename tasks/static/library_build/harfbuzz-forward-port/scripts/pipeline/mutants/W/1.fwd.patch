@@ -1,0 +1,12 @@
+--- a/src/hb-ot-shaper-indic.cc
++++ b/src/hb-ot-shaper-indic.cc
+@@ -1442,7 +1442,8 @@
+     if (start)
+       previous_category = _hb_glyph_info_get_general_category (&info[start - 1]);
+     else if (buffer->context_len[0])
+-      previous_category = buffer->unicode->general_category (buffer->context[0][0]);
++      /* Any character before the text continues the word. */
++      previous_category = HB_UNICODE_GENERAL_CATEGORY_OTHER_LETTER;
+ 
+     if (!(FLAG_UNSAFE (previous_category) &
+ 	  FLAG_RANGE (HB_UNICODE_GENERAL_CATEGORY_FORMAT, HB_UNICODE_GENERAL_CATEGORY_NON_SPACING_MARK)))

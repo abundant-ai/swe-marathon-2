@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -187,6 +188,13 @@ def build(notes: list[str], kinds: set[str]) -> dict[str, Path]:
     return drivers
 
 
+def in_fonts(opts: str) -> str:
+    """Option values that name a second font (noto/... or synth/...) point into the font folder."""
+    return re.sub(
+        r"(^|=)((?:noto|synth)/)", lambda m: f"{m.group(1)}{FONTS}/{m.group(2)}", opts
+    )
+
+
 def run_batches(drivers: dict[str, Path], cases: list[dict]) -> dict[str, str]:
     """One driver process per driver and font, so a hang or crash costs only that batch's cases."""
     batches: dict[tuple[str, str], list[dict]] = defaultdict(list)
@@ -201,7 +209,7 @@ def run_batches(drivers: dict[str, Path], cases: list[dict]) -> dict[str, str]:
         batch = WORK / f"batch-{n}.tsv"
         batch.write_text(
             "".join(
-                f"{c['id']}\t{FONTS / font}\t{c['idx']}\t{c['opts']}\t{c['text']}\n"
+                f"{c['id']}\t{FONTS / font}\t{c['idx']}\t{in_fonts(c['opts'])}\t{c['text']}\n"
                 for c in items
             )
         )

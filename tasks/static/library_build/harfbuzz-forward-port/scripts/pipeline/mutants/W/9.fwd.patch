@@ -1,0 +1,22 @@
+--- a/src/hb-ot-shaper-arabic.cc
++++ b/src/hb-ot-shaper-arabic.cc
+@@ -588,17 +588,14 @@
+       /* See if we can improve the fit by adding an extra repeat and squeezing them together a bit. */
+       hb_position_t extra_repeat_overlap = 0;
+       int64_t shortfall = w_remaining_signed - w_repeating_signed * (n_copies + 1);
+-      if (shortfall <= 0)
+-	w_remaining = hb_clamp_to<hb_position_t> (-shortfall * sign);
++      /* Center the tiles on every word: what the repeats leave over is split in two. */
++      w_remaining = hb_clamp_to<hb_position_t> (-shortfall * sign);
+       if (shortfall > 0 && n_repeating > 0)
+       {
+ 	++n_copies;
+ 	int64_t excess = (n_copies + 1) * w_repeating_signed - w_remaining_signed;
+ 	if (excess > 0)
+-	{
+ 	  extra_repeat_overlap = hb_clamp_to<hb_position_t> (excess / ((int64_t) n_copies * (int64_t) n_repeating));
+-	  w_remaining = 0;
+-	}
+       }
+ 
+       unsigned int max_copies = 0;

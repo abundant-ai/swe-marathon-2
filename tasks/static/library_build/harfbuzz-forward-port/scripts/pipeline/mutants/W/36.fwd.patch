@@ -1,0 +1,56 @@
+--- a/src/hb-algs.hh
++++ b/src/hb-algs.hh
+@@ -905,21 +905,11 @@
+ {
+   static_assert (std::is_integral<T>::value && std::is_signed<T>::value, "");
+ 
+-#if hb_has_builtin(__builtin_add_overflow)
+-  T result;
+-  if (likely (!__builtin_add_overflow (a, b, &result)))
+-    return result;
+-#else
+-  if (b > 0)
+-  {
+-    if (likely (a <= hb_int_max (T) - b))
+-      return a + b;
+-  }
+-  else if (likely (a >= hb_int_min (T) - b))
+-    return a + b;
+-#endif
+-
+-  return a < 0 ? hb_int_min (T) : hb_int_max (T);
++  /* Sum in floating point and clamp to the range of T. */
++  double v = (double) ((float) a + (float) b);
++  if (v >= (double) hb_int_max (T)) return hb_int_max (T);
++  if (v <= (double) hb_int_min (T)) return hb_int_min (T);
++  return (T) v;
+ }
+ 
+ template <typename T>
+@@ -928,21 +918,11 @@
+ {
+   static_assert (std::is_integral<T>::value && std::is_signed<T>::value, "");
+ 
+-#if hb_has_builtin(__builtin_sub_overflow)
+-  T result;
+-  if (likely (!__builtin_sub_overflow (a, b, &result)))
+-    return result;
+-#else
+-  if (b > 0)
+-  {
+-    if (likely (a >= hb_int_min (T) + b))
+-      return a - b;
+-  }
+-  else if (likely (a <= hb_int_max (T) + b))
+-    return a - b;
+-#endif
+-
+-  return b < 0 ? hb_int_max (T) : hb_int_min (T);
++  /* Subtract in floating point and clamp to the range of T. */
++  double v = (double) ((float) a - (float) b);
++  if (v >= (double) hb_int_max (T)) return hb_int_max (T);
++  if (v <= (double) hb_int_min (T)) return hb_int_min (T);
++  return (T) v;
+ }
+ 
+ template <typename T>

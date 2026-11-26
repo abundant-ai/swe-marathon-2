@@ -1,0 +1,10 @@
+--- a/src/hb-ot-layout.cc
++++ b/src/hb-ot-layout.cc
+@@ -2444,6 +2444,7 @@
+ 					 hb_tag_t                     language_tag,
+ 					 hb_position_t               *coord /* OUT */)
+ {
++  script_tag = (hb_tag_t) hb_ot_tag_to_script (script_tag);
+   if (hb_ot_layout_get_baseline (font,
+ 				 baseline_tag,
+ 				 direction,

@@ -490,7 +490,10 @@ def stage_verifier(selection_path: Path, recorded: Path | None = None) -> int:
         (tests / sub).mkdir(parents=True, exist_ok=True)
     meson = next((DL / "python").glob("meson-*.whl"))
     shutil.copy2(meson, tests / "wheels" / meson.name)
-    for font in sorted({c["font"] for c in selection}):
+    named = {c["font"] for c in selection}
+    for c in selection:
+        named |= set(re.findall(r"(?:^|=)((?:noto|synth)/[^;,]+)", c["opts"]))
+    for font in sorted(named):
         kind, name = font.split("/", 1)
         src = (DL / "fonts" / name) if kind == "noto" else (WORK / "fonts" / name)
         shutil.copy2(src, tests / "inputs" / "fonts" / kind / name)

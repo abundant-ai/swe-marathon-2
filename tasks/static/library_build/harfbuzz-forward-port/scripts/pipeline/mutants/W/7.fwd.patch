@@ -1,0 +1,35 @@
+--- a/src/hb-ot-shaper-vowel-constraints.cc
++++ b/src/hb-ot-shaper-vowel-constraints.cc
+@@ -19,6 +19,14 @@
+ #ifndef HB_NO_OT_SHAPE
+ 
+ #include "hb-ot-shaper-vowel-constraints.hh"
++
++/* Default ignorables and spaces between the vowels are transparent. */
++static inline bool
++_vowel_constraint_transparent (const hb_glyph_info_t *info)
++{
++  return _hb_glyph_info_is_default_ignorable (info) ||
++	 info->codepoint == 0x0020u || info->codepoint == 0x00A0u;
++}
+ 
+ static hb_codepoint_t
+ _vowel_constraint_glyph (const hb_buffer_t *buffer, unsigned int i)
+@@ -27,7 +35,7 @@
+   for (unsigned int j = 0; j < i && pos < buffer->len; j++)
+   {
+     pos++;
+-    while (pos < buffer->len && _hb_glyph_info_is_default_ignorable (&buffer->info[pos]))
++    while (pos < buffer->len && _vowel_constraint_transparent (&buffer->info[pos]))
+       pos++;
+   }
+   return pos < buffer->len ? buffer->info[pos].codepoint : 0;
+@@ -40,7 +48,7 @@
+   do
+     (void) buffer->next_glyph ();
+   while (buffer->successful && buffer->idx < buffer->len &&
+-         _hb_glyph_info_is_default_ignorable (&buffer->cur()));
++         _vowel_constraint_transparent (&buffer->cur()));
+ }
+ 
+ static void

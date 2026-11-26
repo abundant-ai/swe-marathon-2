@@ -1,0 +1,12 @@
+--- a/src/hb-style.cc
++++ b/src/hb-style.cc
+@@ -119,7 +119,8 @@
+   }
+   case HB_STYLE_TAG_SLANT_ANGLE:
+     return _hb_style_apply_synthetic_slant (font, style_tag,
+-					  face->table.post->table->italicAngle.to_float ());
++					  _hb_style_apply_synthetic_slant (font, style_tag,
++									   face->table.post->table->italicAngle.to_float ()));
+   case HB_STYLE_TAG_WIDTH:
+     return face->table.OS2->has_data ()
+ 	   ? face->table.OS2->get_width ()
