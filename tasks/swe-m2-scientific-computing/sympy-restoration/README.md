@@ -1417,7 +1417,9 @@ It does not yet meet the v2 workload target; see [Workload](#workload) and
   rejects any stop before `timeout_sec`): a process counts only once two looks
   at least 1 s apart both see it alive, with the same start, so a command that
   lives milliseconds never does; the record counts the ones seen once and gone
-  (`first_process_passed_over`). `checks/test_delivery.py` runs the shipped
+  (`first_process_passed_over`). `first_process()` takes no process from one
+  look in any call, so the re-check's own probe, which calls it once, now finds
+  no first process and ends nothing. `checks/test_delivery.py` runs the shipped
   watch on a stand-in `/proc` with the limit scaled to 3 s: `pwd` under a root
   `su` for one look, Harbor's clock at 1.0 s, the agent's session from 1.3 s, a
   blip at 1.7 s. The first process is the session, the blip waits, and `dev` is
@@ -1444,6 +1446,20 @@ It does not yet meet the v2 workload target; see [Workload](#workload) and
   process is one two looks a second apart saw alive, which Harbor's `pwd`
   cannot be (both under [Verification](#verification)); the rules passage and
   the error-call passage say what the code does.
+- Checks: 147 pass at `1b6a171` (the three new ones among them), and the
+  delivery, packaging, comparison and transplant checks (93) again at
+  `93d26de`, which changed only the net check. Package: key replaced,
+  bundle `cbe004ce22d8` (384 files; only the instruction, `ATTRIBUTION.txt`, the
+  net check, `restore.py`, `unitcheck.py`, both staged copies of
+  `restorelib.py`, `canon.py` and the key differ from `1f1b2f2ab4fa`), platform
+  content hash `22886dfb8414…`, `oddish preflight` passed, the bundle equal to
+  the worktree at commit `93d26de`. The call data, the units and the
+  archives are round 10's.
+- Reference 1.000000 and complete (1,832 / 1,832 units in the set, 6,145 /
+  6,145 counted calls, 14,523 / 14,523 calls, 2,115 / 2,115 units' examples,
+  10,428 / 10,428 tests, nothing unreached, no item out of its time or
+  over half of it, no control tripped, 974 s); the starting tree 0.0; a
+  turn of no length through the shipped hooks 0.0 (`end_from` `unchanged`).
 
 ## Current implementation
 
@@ -2333,6 +2349,11 @@ stored submissions of the earlier sessions of the same task; every one scored
 | A collection pause while a reader waits (the private inputs loaded: 3.83 million tracked objects, a full collection 1.62 s; a stand-in runner answering at 1.1 s, a collection from 0.95 s, the deadline at 2.0 s) | this machine, 2026-11-26 | the reader before fix round 10: a timeout 3 times of 3 (at 2.34 to 2.39 s); the reader after: the answer 3 times of 3; the reader before with the inputs frozen: the answer at 1.11 to 1.12 s, the collection 0.00 s |
 | Floor on fix round 10's calls, with the accessor synthesis graded again (`fixtures.py`, `floor.py`, the reviewers' composite, the integrity reviewer's rules; the fourth re-check's synthesis tree through the verifier's runners with every call's result kept, scored as that re-check scored it) | this machine, 2026-11-26 | through the verifier raise, first argument and flip 0.0 (flip behind a table 0.0034); one constant 0.0065, type default 0.0103, delegation 0.0052 and 0.0132 in the original tree (0.0003 and 0.0 as the unit's own body), the combination 0.0324 (0.0163); the reviewer's rules 0.0063 (0.0120); hidden-result bounds 0.0350 (0.0172) and 0.0290; the accessor synthesis 0.0175 as a tree, 0.0356 behind a table, 0.0384 with its per-call tables (at most 0.0413 were its 8 refused bodies to match, 0.0426 with the error strategy); all under 0.05 |
 | One hostile tree as the platform grades it (5% of the units never end; the shipped limits: 4 workers, examples 2,700 s, calls 2,400 s, measurement 6,000 s), on fix round 10's build | this machine, the entry point's steps, the tests not run, 2026-11-26 | loop-5 0.5862, completed, 775 + 733 items out of time, 0 not reached, the phases 681 s and 635 s (round 9's 0.6164: the same draw over renumbered unit ids); no evaluation error, no control tripped |
+| `checks/` (147 tests: the first process seen twice on a stand-in `/proc`, the placeholders in the story and the rules' last line, an error compared one way) and the repository check | commit `1b6a171` (2026-11-26); the delivery, packaging, comparison and transplant checks (93) again at `93d26de` | pass |
+| The seventh re-check's stop path on the shipped watch (`pwd` under a root `su` for one look before the clock, the session from 0.3 s after it, a blip mid-turn; the limit scaled to 3 s) | this machine, a stand-in `/proc` | the net check of fix round 10: the first process the `pwd`, `dev` ended 0.7 to 0.79 s before the agent's limit (two runs); fix round 11's: the session, the `pwd` passed over, `dev` ended 0.31 to 0.41 s after the agent's limit; the re-check's own probe, which calls `first_process` once, now finds no first process and ends nothing |
+| `oddish preflight` | flat bundle `cbe004ce22d8` (`ops/sympy-restoration/dist-12h/`, key rotated, 384 files; platform content hash `22886dfb8414…`; network plan as before) | pass (1 task) |
+| Cue sweep with the seventh re-check's words ("selected", "replaced by placeholder", "another way", "skeleton", "curated", "constructed", "deliberate", "exercise" and others) | bundles `1f1b2f2ab4fa` → `cbe004ce22d8` | "selected" and "replaced by placeholder" gone from the instruction, the tool's text and `ATTRIBUTION.txt`, "another way" from `restore rules` (the instruction's one is the requirement's "the same expression written another way"); "recovery tooling" in the instruction, `restore`'s help, the library and `ATTRIBUTION.txt`; "skeleton" left only as the tool's own path and code; nothing else moved but one root-only comment |
+| Reference, the agent's starting tree and a turn of no length, after fix round 11 | this machine, the entry point's steps, one worker; the no-op through the shipped hooks and the real net check | reference 1.000000 and complete: 1,832 / 1,832 units in the set, 6,145 / 6,145 counted calls, 14,523 / 14,523 calls, 2,115 / 2,115 units' examples, 10,428 / 10,428 tests, none unreached, nothing out of its time and no item over half of its bound, no control tripped, 974 s; starting tree 0.0; no-op 0.0 with `end_from` `unchanged` |
 | `harbor check` with `resources/task-implementation.toml` | working tree, 2026-11-17 | attempted on Modal; failed before review with `NotFoundError: Environment not found` (no default Modal environment). Not run in local Docker. No ratings |
 | Local image builds | none | not run for the v2 Dockerfiles; the Oddish baselines are the first build |
 
