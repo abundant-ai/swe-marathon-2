@@ -74,7 +74,24 @@ by majority), with the physical clauses checked on the bones while it is true. T
 all 26 playtests; the private set has 31 instances, none repeating its playtest. Report:
 `notes/PHASE1F-REPORT.md`.
 
-Next: traffic and pedestrians (WS6 module 5), and the vehicle and entry hidden instances.
+Phase 1g: the reference's traffic and people on foot (WS6 module 5, private), six new playtests,
+the telemetry's collision-shape read, and hidden instances for the vehicle, entry and crash
+playtests. NPC drivers drive the module 4 vehicles through their own controls along the plan's
+lanes and junction movements: they keep to the limit, stop on red and at amber when it takes
+4 m/s^2 or less, take turns at all-way stops by arrival, wait for people on crosswalks and hold
+behind anything in their path; out of the one-lane streets' tight corners a right turn swings over
+the centre line, so the turn and the cars beside it make room for each other. People on foot walk
+the sidewalk rings, cross only on crosswalk bands and step out of the way of the horn and of a
+vehicle on the sidewalk. The city keeps chapter 7's densities of moving vehicles and people on
+foot around the player and adds or removes them only out of sight. A three-judge panel settled
+how QA observes traffic: people's `vehicle` and `seat` metadata, setup commands placing the
+population at once, collisions as collision shapes touching, arrivals within 1.0 s together,
+`vehicle.spawn` with a driving archetype driving in traffic, and the gunshot reaction waiting for
+combat. The reference holds all 32 playtests and grades 1.000000 on them and on the private set
+(39 instances, none repeating its playtest), the starter 0; a replay with a car and a ragdoll gives
+one hash over ten runs. Report: `notes/PHASE1G-REPORT.md`.
+
+Next: combat (WS6 module 6), with the gunshot reaction it opens; then police and missions.
 
 The art (Kenney and Quaternius CC0 packs) and the Godot binary are not committed; `.gitignore` and
 `spike/.gitignore` list them. The reference game and the hidden material live outside this public
@@ -83,6 +100,48 @@ repository (`notes/PHASE1-PLAN.md`, section 4).
 ## Development log
 
 ### 2026-11-26
+
+Phase 1g: traffic and people on foot (WS6 module 5), the collision-shape read, the traffic and
+replay playtests, and the vehicle hidden instances, on macOS. There were no downloads, no Docker,
+no Linux VM and no platform runs. Every Godot run went through `scripts/heavy.py`; free memory sat
+at 26-46% and runs waited below 30%.
+- **Traffic (WS6 module 5, private).** A road graph from the plan (lanes, junction movements by
+  FORMAT.md's turn rules and which of them cross, crosswalk bands); NPC drivers steering the module
+  4 vehicles by pure pursuit and the intelligent driver model, obeying signals, amber and all-way
+  stops, yielding to crosswalks and holding behind anything in their path; people on foot on the
+  sidewalk rings, crossing on bands at walk or with no vehicle coming, stepping aside for the horn
+  and for a vehicle on the sidewalk; chapter 7's densities kept around the player, new arrivals
+  only out of sight.
+- **What the playtests found in the reference, all fixed:** jams where movements crossed within a
+  car's width (now 2.8 m, 4.2 m when one turns); the car kit's wide toy bodies colliding at right
+  turns (collision boxes now at most 2.0 m wide); right turns out of the one-lane streets' square
+  corners swinging up to 1.5 m into the street they turn into, into cars waiting there (now each
+  turn waits for its own vehicle's swing to be clear, those cars stay back while one may come, and
+  turns straighten out at 2.5 m/s); people starting across as a car began to move up (they step
+  back now); and too few moving vehicles while many stood at the plan's long signal cycles (now
+  kept by the moving count chapter 7 uses, each new one to the side round the player with the
+  fewest on their way in); and at start-up every variation drew the same traffic, and the
+  population settled a tick differently from `world.reset`'s (both fixed).
+- **Telemetry (WS3).** The census can carry each listed kind's collision shapes as world-space
+  boxes; a Godot check compares 80 points with exact positions (worst 4.6e-6 m). Census selectors
+  for bone and seat reads, and values a playtest gives once (`shared`).
+- **Kit and playtests (WS4).** `qakit/streets.py`: 18 street checks (drivers, density, red-light
+  entries, green flow, lane keeping, speeds, crosswalk use and hits, collisions, stopping short,
+  the horn, the sidewalk dodge, pop-in, the all-way stop's full stops, order, box and waits), each
+  over hand-made frames from a good street and a broken one. Six playtests:
+  `traffic.intersection_watch/day-flow`, `traffic.stop_junction/four-way`,
+  `traffic.obstacle/lane-blocked`, `traffic.speed/arterials`,
+  `traffic.panic_horn/sidewalk-and-horn` and `world.replay/car-and-ragdoll`. Two faults of the
+  new all-way stop checks, found on the way, are fixed: each pass through the junction now counts
+  on its own, and a car already moving off its line when the watch begins is left out.
+- **Hidden instances (WS8).** Private templates for the vehicle handling, getting-in and crash
+  playtests (39 instances in all); `scripts/check_disjoint.py` gains rules for models, speeds,
+  stand-offs and damage.
+- **Panel and clarifications.** A three-judge panel (opus, sonnet, haiku) settled six questions
+  on how QA observes traffic; chapter 7's introduction, TR-6 to TR-16, FT-10, AC-5, AC-6 and
+  chapter 17's `vehicle.spawn` and behaviours now say what the checks measure. An independent read
+  found no evaluation wording; its fairness findings are fixed.
+- **Not done:** a 1.5 km straight in Downtown (the layout has none without moving its portals).
 
 Phase 1f: vehicles (WS6 module 4), getting in and out, the ragdoll's limp flag, and hidden
 instances, on macOS. There were no downloads, no Docker, no Linux VM and no platform runs. Every
