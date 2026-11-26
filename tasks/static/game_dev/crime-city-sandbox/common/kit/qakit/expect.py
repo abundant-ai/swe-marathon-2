@@ -1532,6 +1532,40 @@ def check_camera_clear(rec: PlayRecord, args: dict) -> Result:
     return True, measured, ""
 
 
+def check_fall_damage(rec: PlayRecord, args: dict) -> Result:
+    """FT-8: between two marks, the first standing before a fall and the second standing
+    after landing, the bone (default Hips) drops h metres and the state report's
+    player.health falls by: nothing when h is under safe_m (3.0); 100 * (h - safe_m) /
+    (fatal_m - safe_m) within tol (a share, 0.10) up to fatal_m (15.0); to 0 from fatal_m."""
+    run = rec.runs[int(args.get("run", 0))]
+    fa, fb = frame_at_mark(run, args["from"]), frame_at_mark(run, args["to"])
+    bone = dict(args, bone=args.get("bone", "Hips"))
+    pa, pb = point_of(fa, bone), point_of(fb, bone)
+    ha = dig(state_of(fa), "player.health")
+    hb = dig(state_of(fb), "player.health")
+    if pa is None or pb is None:
+        return None, {}, f"the {bone['bone']} bone was not observed at both marks"
+    if not _is_num(ha) or not _is_num(hb):
+        return None, {}, "player.health was not in the state report at both marks"
+    drop = pa[1] - pb[1]
+    loss = float(ha) - float(hb)
+    safe, fatal = float(args.get("safe_m", 3.0)), float(args.get("fatal_m", 15.0))
+    measured = {"drop_m": round(drop, 3), "health_before": ha, "health_after": hb}
+    if drop < safe:
+        ok = abs(loss) < 0.5
+        return ok, measured, "" if ok else f"a {drop:.2f} m drop took {loss:g} health"
+    if drop >= fatal:
+        ok = float(hb) <= 0.0
+        return ok, measured, "" if ok else f"a {drop:.2f} m drop left {hb:g} health"
+    want = 100.0 * (drop - safe) / (fatal - safe)
+    measured["expected_loss"] = round(want, 2)
+    ok = abs(loss - want) <= float(args.get("tol", 0.1)) * want
+    note = (
+        "" if ok else f"a {drop:.2f} m drop took {loss:g} health, expected {want:.1f}"
+    )
+    return ok, measured, note
+
+
 # ---------------------------------------------------------------- signals
 # A program, as a check reads it (plan/FORMAT.md, in ticks of 1/60 s): {"offset": ticks,
 # "cycle": ticks, "phases": [{"start", "green_end", "amber_end", "green": [approach ids],
@@ -1751,6 +1785,7 @@ CHECKS: dict[str, Callable[[PlayRecord, dict], Result]] = {
     "climb": check_climb,
     "vault": check_vault,
     "camera_clear": check_camera_clear,
+    "fall_damage": check_fall_damage,
     "signal_entities": check_signal_entities,
     "signal_program": check_signal_program,
     "signal_greens": check_signal_greens,

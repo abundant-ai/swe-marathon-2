@@ -1244,6 +1244,66 @@ def jump_climb_vault() -> Playtest:
     return p
 
 
+def falls() -> Playtest:
+    p = Playtest(
+        "people.fall_ragdoll/falls",
+        ["FT-8"],
+        "The player walks off towers 2.4, 6, 10 and 16 m high on the plaza: a drop of the hips "
+        "under 3 m costs no health, one from 3 m to 15 m costs 100 * (h - 3) / 12 (within 10%), "
+        "and 15 m or more kills. Health is set back to 100 before each tower.",
+        ["--role=solo", "--variation=10", "--save-dir={save_dir}"],
+    )
+    x0, y0, z0 = point(PLAZA)
+    p.step(
+        "observe",
+        {"census": True, "state": True, "every": 6,
+         "bones": {"ids": ["player"], "names": ["Hips"]}},
+    )  # fmt: skip
+    p.dev(("world.reset", {"variation": 10}))
+    for k, height in enumerate((2.4, 6.0, 10.0, 16.0)):
+        at = [round(x0 - 30.0 + 20.0 * k, 3), y0, round(z0 + 20.0, 3)]
+        p.dev(
+            (
+                "prop.spawn",
+                {"kind": "tower", "at": at, "size": [4.0, height, 4.0], "heading": 0},
+            )
+        )
+        p.dev(("player.give", {"health": 100}))
+        p.dev(
+            (
+                "player.spawn",
+                {"at": [at[0], round(y0 + height, 3), at[2]], "heading": 0},
+            )
+        )
+        p.step("run", 30)
+        name = f"tower_{k + 1}"
+        p.mark(f"{name}_top")
+        p.step("press", {"move_forward": 0.3})
+        p.step("run", 150)
+        p.step("release", ["move_forward"])
+        p.step("run", 120)
+        p.mark(f"{name}_down")
+        lost = (
+            "nothing"
+            if height < 3
+            else (
+                "all of it" if height >= 15 else f"{100 * (height - 3) / 12:.1f} health"
+            )
+        )
+        p.expect(
+            f"fall_{k + 1}", "fall_damage",
+            {"from": f"{name}_top", "to": f"{name}_down", "kind": "player", "bone": "Hips",
+             "safe_m": 3.0, "fatal_m": 15.0, "tol": 0.1},
+            "FT-8", f"walking off a {height} m tower costs {lost}",
+        )  # fmt: skip
+    p.expect(
+        "fall_kills", "event_seen",
+        {"after": "tower_4_top", "before": "tower_4_down", "name": "died"},
+        "FT-8", "a fall of 15 m or more kills: the player's died event",
+    )  # fmt: skip
+    return p
+
+
 # Chapter 7, TR-4, and chapter 17, AC-7: the signals of every signalised junction.
 SIGNAL_META = ["intersection", "approach", "crosswalk", "state"]
 TICKS = 60  # physics ticks per second
@@ -1332,7 +1392,7 @@ def intersection_watch() -> Playtest:
 BUILDERS = (
     bad_input, commands, state_report, new_game, server_role, same_start, replay,
     same_tick, clock_rate, weather_hold, kill_after_save, damaged_slot, realtime,
-    plan_compliance, paces, camera, lineup, feet, crouch, jump_climb_vault,
+    plan_compliance, paces, camera, lineup, feet, crouch, jump_climb_vault, falls,
     intersection_watch,
 )  # fmt: skip
 

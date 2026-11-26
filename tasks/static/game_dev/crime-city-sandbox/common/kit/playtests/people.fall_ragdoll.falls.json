@@ -1,0 +1,348 @@
+{
+ "format": "qa-play/1",
+ "name": "people.fall_ragdoll/falls",
+ "template": "people.fall_ragdoll",
+ "about": "The player walks off towers 2.4, 6, 10 and 16 m high on the plaza: a drop of the hips under 3 m costs no health, one from 3 m to 15 m costs 100 * (h - 3) / 12 (within 10%), and 15 m or more kills. Health is set back to 100 before each tower.",
+ "rules": ["FT-8"],
+ "role": "solo",
+ "args": ["--role=solo", "--variation=10", "--save-dir={save_dir}"],
+ "mode": "lockstep",
+ "runs": [
+  {
+   "pace_ms": 0
+  }
+ ],
+ "limits": {
+  "wall_s": 240,
+  "boot_s": 60,
+  "step_s": 30,
+  "cpu_s": 600,
+  "memory_mb": 1536,
+  "disk_mb": 512
+ },
+ "steps": [
+  {
+   "observe": {
+    "census": true,
+    "state": true,
+    "every": 6,
+    "bones": {
+     "ids": ["player"],
+     "names": ["Hips"]
+    }
+   }
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 10
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "prop.spawn",
+     {
+      "kind": "tower",
+      "at": [-33.12, 0.15, 13.12],
+      "size": [4.0, 2.4, 4.0],
+      "heading": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "health": 100
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [-33.12, 2.55, 13.12],
+      "heading": 0
+     }
+    ]
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "tower_1_top"
+  },
+  {
+   "press": {
+    "move_forward": 0.3
+   }
+  },
+  {
+   "run": 150
+  },
+  {
+   "release": ["move_forward"]
+  },
+  {
+   "run": 120
+  },
+  {
+   "mark": "tower_1_down"
+  },
+  {
+   "dev": [
+    [
+     "prop.spawn",
+     {
+      "kind": "tower",
+      "at": [-13.12, 0.15, 13.12],
+      "size": [4.0, 6.0, 4.0],
+      "heading": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "health": 100
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [-13.12, 6.15, 13.12],
+      "heading": 0
+     }
+    ]
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "tower_2_top"
+  },
+  {
+   "press": {
+    "move_forward": 0.3
+   }
+  },
+  {
+   "run": 150
+  },
+  {
+   "release": ["move_forward"]
+  },
+  {
+   "run": 120
+  },
+  {
+   "mark": "tower_2_down"
+  },
+  {
+   "dev": [
+    [
+     "prop.spawn",
+     {
+      "kind": "tower",
+      "at": [6.88, 0.15, 13.12],
+      "size": [4.0, 10.0, 4.0],
+      "heading": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "health": 100
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [6.88, 10.15, 13.12],
+      "heading": 0
+     }
+    ]
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "tower_3_top"
+  },
+  {
+   "press": {
+    "move_forward": 0.3
+   }
+  },
+  {
+   "run": 150
+  },
+  {
+   "release": ["move_forward"]
+  },
+  {
+   "run": 120
+  },
+  {
+   "mark": "tower_3_down"
+  },
+  {
+   "dev": [
+    [
+     "prop.spawn",
+     {
+      "kind": "tower",
+      "at": [26.88, 0.15, 13.12],
+      "size": [4.0, 16.0, 4.0],
+      "heading": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "health": 100
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [26.88, 16.15, 13.12],
+      "heading": 0
+     }
+    ]
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "tower_4_top"
+  },
+  {
+   "press": {
+    "move_forward": 0.3
+   }
+  },
+  {
+   "run": 150
+  },
+  {
+   "release": ["move_forward"]
+  },
+  {
+   "run": 120
+  },
+  {
+   "mark": "tower_4_down"
+  }
+ ],
+ "expect": [
+  {
+   "id": "fall_1",
+   "check": "fall_damage",
+   "args": {
+    "from": "tower_1_top",
+    "to": "tower_1_down",
+    "kind": "player",
+    "bone": "Hips",
+    "safe_m": 3.0,
+    "fatal_m": 15.0,
+    "tol": 0.1
+   },
+   "rule": "FT-8",
+   "says": "walking off a 2.4 m tower costs nothing"
+  },
+  {
+   "id": "fall_2",
+   "check": "fall_damage",
+   "args": {
+    "from": "tower_2_top",
+    "to": "tower_2_down",
+    "kind": "player",
+    "bone": "Hips",
+    "safe_m": 3.0,
+    "fatal_m": 15.0,
+    "tol": 0.1
+   },
+   "rule": "FT-8",
+   "says": "walking off a 6.0 m tower costs 25.0 health"
+  },
+  {
+   "id": "fall_3",
+   "check": "fall_damage",
+   "args": {
+    "from": "tower_3_top",
+    "to": "tower_3_down",
+    "kind": "player",
+    "bone": "Hips",
+    "safe_m": 3.0,
+    "fatal_m": 15.0,
+    "tol": 0.1
+   },
+   "rule": "FT-8",
+   "says": "walking off a 10.0 m tower costs 58.3 health"
+  },
+  {
+   "id": "fall_4",
+   "check": "fall_damage",
+   "args": {
+    "from": "tower_4_top",
+    "to": "tower_4_down",
+    "kind": "player",
+    "bone": "Hips",
+    "safe_m": 3.0,
+    "fatal_m": 15.0,
+    "tol": 0.1
+   },
+   "rule": "FT-8",
+   "says": "walking off a 16.0 m tower costs all of it"
+  },
+  {
+   "id": "fall_kills",
+   "check": "event_seen",
+   "args": {
+    "after": "tower_4_top",
+    "before": "tower_4_down",
+    "name": "died"
+   },
+   "rule": "FT-8",
+   "says": "a fall of 15 m or more kills: the player's died event"
+  }
+ ],
+ "tags": []
+}

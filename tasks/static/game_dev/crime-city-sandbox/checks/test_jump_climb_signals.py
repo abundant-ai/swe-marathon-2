@@ -280,3 +280,30 @@ def test_wait_for_near_steps() -> None:
     assert play.is_near(fr, {"p": [0.5, 0.0, 0.5], "within_m": 1.0})
     assert not play.is_near(fr, {"p": [0.0, 0.0, 1.5], "within_m": 1.0})
     assert play.is_near(fr, {"kind": "npc", "p": [0.0, 0.0, 1.5], "within_m": 1.0})
+
+
+def fall_record(drop: float, health_after: float | None) -> play.PlayRecord:
+    top = body(0, [0.0, Y0 + drop, 0.0])
+    top["state"] = {"ok": True, "player": {"health": 100}}
+    down = body(200, [3.0, Y0, 0.0])
+    down["state"] = {"ok": True, "player": {"health": health_after}}
+    return framed([top, down])
+
+
+def test_fall_damage_bands() -> None:
+    args = {
+        "from": "a",
+        "to": "b",
+        "kind": "player",
+        "safe_m": 3.0,
+        "fatal_m": 15.0,
+        "tol": 0.1,
+    }
+    assert outcome(fall_record(2.4, 100), "fall_damage", args).ok is True
+    assert outcome(fall_record(2.4, 95), "fall_damage", args).ok is False
+    assert outcome(fall_record(9.0, 50), "fall_damage", args).ok is True
+    o = outcome(fall_record(9.0, 70), "fall_damage", args)
+    assert o.ok is False and "expected 50.0" in o.note
+    assert outcome(fall_record(16.0, 0), "fall_damage", args).ok is True
+    assert outcome(fall_record(16.0, 10), "fall_damage", args).ok is False
+    assert outcome(fall_record(9.0, None), "fall_damage", args).ok is None
