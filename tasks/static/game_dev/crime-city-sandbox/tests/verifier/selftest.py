@@ -20,6 +20,7 @@ none). It checks, on tests/selftest/project:
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import math
 import random
@@ -175,7 +176,7 @@ def run_selftest(
     options: Callable[[Path, object], SessionOptions],
     before_start=None,
 ) -> SelftestResult:
-    """Run every self-test check; never raises for a failed check.
+    """Run the self-test checks, stopping at the first problem; never raises for one.
 
     Args:
         selftest_dir: tests/selftest (project/, plays/, instances.json).
@@ -208,6 +209,17 @@ def run_selftest(
             res.problems += [f"preparation: {p}" for p in prep.problems]
             return res
         game = prep.game_dir
+        # First a short start-up: when the kit cannot reach the game at all, say so
+        # in seconds instead of letting every play wait out its start-up allowance.
+        first = dataclasses.replace(options(work / "first", None), boot_s=20.0)
+        try:
+            probs, measured = check_kill(game, godot, first)
+        except SessionError as exc:
+            probs, measured = [f"first start: {exc.kind}: {exc}"], {}
+        res.measured["first"] = measured
+        if probs:
+            res.problems += probs
+            return res
         manifest = json.loads((selftest_dir / "instances.json").read_text())
         for inst in manifest["instances"]:
             play = load_play(selftest_dir / inst["file"])
@@ -240,6 +252,8 @@ def run_selftest(
                             f"{play.name}: the game could read the link key"
                         )
                         break
+            if res.problems:  # one failure is enough: the kit cannot be trusted
+                return res
         for name, fn in (
             ("bones", check_bones),
             ("forged", check_forged),
@@ -252,6 +266,8 @@ def run_selftest(
                 probs, measured = [f"{name}: {exc!r}"], {}
             res.problems += probs
             res.measured[name] = measured
+            if res.problems:
+                return res
     finally:
         res.wall_s = round(time.monotonic() - t0, 2)
     res.ok = not res.problems

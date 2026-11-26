@@ -113,58 +113,126 @@ class ExitInfo:
     stray_pids: list[int] = field(default_factory=list)
 
 
-def footprint_mb(pid: int) -> float | None:
-    """Current memory footprint of one process in MiB, or None when unknown.
+@dataclass(frozen=True)
+class MemorySample:
+    """One reading of a process's memory, in MiB.
 
-    macOS: phys_footprint from proc_pid_rusage (what Activity Monitor calls memory;
-    RSS shrinks under memory pressure and understates it). Linux: VmRSS.
+    Attributes:
+        now_mb: Current footprint (macOS phys_footprint; Linux VmRSS).
+        peak_mb: Largest footprint over the process's life so far (macOS
+            lifetime_max_phys_footprint; Linux VmHWM), so a short burst between two
+            samples is not missed.
+    """
+
+    now_mb: float
+    peak_mb: float
+
+
+def memory_sample(pid: int) -> MemorySample | None:
+    """Current and lifetime-peak memory of one process, or None when unknown.
+
+    macOS: proc_pid_rusage (RUSAGE_INFO_V4); RSS shrinks under memory pressure and
+    understates use, the footprint does not. Linux: VmRSS and VmHWM.
 
     Args:
         pid: Process id.
 
     Returns:
-        The footprint, or None when the process is gone or the platform gives none.
+        The sample, or None when the process is gone or the platform gives none.
     """
     if IS_MACOS:
-        return _macos_footprint(pid)
+        info = _macos_rusage(pid)
+        if info is None:
+            return None
+        mb = 1024.0 * 1024.0
+        return MemorySample(
+            info.ri_phys_footprint / mb, info.ri_lifetime_max_phys_footprint / mb
+        )
+    now = peak = None
     try:
         for line in Path(f"/proc/{pid}/status").read_text().splitlines():
             if line.startswith("VmRSS:"):
-                return int(line.split()[1]) / 1024.0
+                now = int(line.split()[1]) / 1024.0
+            elif line.startswith("VmHWM:"):
+                peak = int(line.split()[1]) / 1024.0
     except (OSError, ValueError, IndexError):
         return None
-    return None
+    if now is None:
+        return None
+    return MemorySample(now, peak if peak is not None else now)
 
 
-class _RusageInfoV2(ctypes.Structure):
-    _fields_ = [  # the ctypes layout of rusage_info_v2
+def start_stamp(pid: int) -> int | None:
+    """A number that identifies one process among all that ever had this pid.
+
+    The process's start time (macOS: proc_start_abstime; Linux: starttime from
+    /proc/<pid>/stat). Used to kill an escaped process later only if it is still the
+    same process.
+
+    Returns:
+        The stamp, or None when the process is gone.
+    """
+    if IS_MACOS:
+        info = _macos_rusage(pid)
+        return None if info is None else int(info.ri_proc_start_abstime)
+    try:
+        stat = Path(f"/proc/{pid}/stat").read_text()
+        return int(stat.rsplit(")", 1)[1].split()[19])
+    except (OSError, ValueError, IndexError):
+        return None
+
+
+class _RusageInfoV4(ctypes.Structure):
+    _fields_ = [  # the ctypes layout of rusage_info_v4 (sys/resource.h)
         ("ri_uuid", ctypes.c_uint8 * 16),
-        ("ri_user_time", ctypes.c_uint64),
-        ("ri_system_time", ctypes.c_uint64),
-        ("ri_pkg_idle_wkups", ctypes.c_uint64),
-        ("ri_interrupt_wkups", ctypes.c_uint64),
-        ("ri_pageins", ctypes.c_uint64),
-        ("ri_wired_size", ctypes.c_uint64),
-        ("ri_resident_size", ctypes.c_uint64),
-        ("ri_phys_footprint", ctypes.c_uint64),
-        ("ri_proc_start_abstime", ctypes.c_uint64),
-        ("ri_proc_exit_abstime", ctypes.c_uint64),
-        ("ri_child_user_time", ctypes.c_uint64),
-        ("ri_child_system_time", ctypes.c_uint64),
-        ("ri_child_pkg_idle_wkups", ctypes.c_uint64),
-        ("ri_child_interrupt_wkups", ctypes.c_uint64),
-        ("ri_child_pageins", ctypes.c_uint64),
-        ("ri_child_elapsed_abstime", ctypes.c_uint64),
-        ("ri_diskio_bytesread", ctypes.c_uint64),
-        ("ri_diskio_byteswritten", ctypes.c_uint64),
+        *[
+            (name, ctypes.c_uint64)
+            for name in [
+                "ri_user_time",
+                "ri_system_time",
+                "ri_pkg_idle_wkups",
+                "ri_interrupt_wkups",
+                "ri_pageins",
+                "ri_wired_size",
+                "ri_resident_size",
+                "ri_phys_footprint",
+                "ri_proc_start_abstime",
+                "ri_proc_exit_abstime",
+                "ri_child_user_time",
+                "ri_child_system_time",
+                "ri_child_pkg_idle_wkups",
+                "ri_child_interrupt_wkups",
+                "ri_child_pageins",
+                "ri_child_elapsed_abstime",
+                "ri_diskio_bytesread",
+                "ri_diskio_byteswritten",
+                "ri_cpu_time_qos_default",
+                "ri_cpu_time_qos_maintenance",
+                "ri_cpu_time_qos_background",
+                "ri_cpu_time_qos_utility",
+                "ri_cpu_time_qos_legacy",
+                "ri_cpu_time_qos_user_initiated",
+                "ri_cpu_time_qos_user_interactive",
+                "ri_billed_system_time",
+                "ri_serviced_system_time",
+                "ri_logical_writes",
+                "ri_lifetime_max_phys_footprint",
+                "ri_instructions",
+                "ri_cycles",
+                "ri_billed_energy",
+                "ri_serviced_energy",
+                "ri_interval_max_phys_footprint",
+                "ri_runnable_time",
+            ]
+        ],
     ]
 
 
 _LIBPROC = None
 
 
-def _macos_footprint(pid: int) -> float | None:
-    """phys_footprint of pid in MiB via libproc (see footprint_mb)."""
+def _macos_rusage(pid: int) -> _RusageInfoV4 | None:
+    """proc_pid_rusage(pid, RUSAGE_INFO_V4) via libproc, or None."""
     global _LIBPROC
     if _LIBPROC is None:
         try:
@@ -173,10 +241,10 @@ def _macos_footprint(pid: int) -> float | None:
             _LIBPROC = False
     if not _LIBPROC:
         return None
-    info = _RusageInfoV2()
-    if _LIBPROC.proc_pid_rusage(pid, 2, ctypes.byref(info)) != 0:
+    info = _RusageInfoV4()
+    if _LIBPROC.proc_pid_rusage(pid, 4, ctypes.byref(info)) != 0:
         return None
-    return info.ri_phys_footprint / (1024.0 * 1024.0)
+    return info
 
 
 def process_table() -> dict[int, int]:
@@ -346,7 +414,7 @@ class Proc:
         self.violation: str | None = None
         self.peak_mb = 0.0
         self.t_start = time.monotonic()
-        self._seen: set[int] = set()
+        self._seen: dict[int, int] = {}
         self._exit: tuple[int, object] | None = None
         self._done = threading.Event()
         self._lock = threading.Lock()
@@ -435,20 +503,14 @@ class Proc:
         """Sample memory, disk and wall time; track descendants; kill on a violation."""
         lim = self.limits
         last_tree = last_disk = 0.0
-        while not self._done.wait(0.25):
+        while not self._done.wait(0.1):
             now = time.monotonic()
-            mb = footprint_mb(self.pid)
-            if mb is not None:
-                self.peak_mb = max(self.peak_mb, mb)
-            if lim.memory_mb is not None and mb is not None and mb > lim.memory_mb:
-                self._violate("memory")
+            self.sample_memory()
             if lim.wall_s is not None and now - self.t_start > lim.wall_s:
                 self._violate("wall")
-            if now - last_tree > 2.0:
+            if now - last_tree > 0.5:
                 last_tree = now
-                found = descendants(self.pid, process_table())
-                with self._lock:
-                    self._seen |= found
+                self.snapshot_tree()
             if (
                 self.home is not None
                 and lim.disk_mb is not None
@@ -457,6 +519,36 @@ class Proc:
                 last_disk = now
                 if folder_mb(self.home, lim.disk_mb) > lim.disk_mb:
                     self._violate("disk")
+
+    def sample_memory(self, kill: bool = True) -> None:
+        """Read the lifetime-peak footprint; past the cap, record "memory" (and kill).
+
+        Args:
+            kill: Kill the tree on a violation (False while the caller is closing it).
+        """
+        ms = memory_sample(self.pid)
+        if ms is None:
+            return
+        self.peak_mb = max(self.peak_mb, ms.peak_mb)
+        cap = self.limits.memory_mb
+        if cap is not None and ms.peak_mb > cap:
+            if kill:
+                self._violate("memory")
+            else:
+                with self._lock:
+                    if self.violation is None:
+                        self.violation = "memory"
+
+    def snapshot_tree(self) -> None:
+        """Remember every current descendant (with its start stamp) for later kills."""
+        if not self.alive():
+            return
+        found = descendants(self.pid, process_table())
+        stamps = {pid: start_stamp(pid) for pid in found}
+        with self._lock:
+            for pid, stamp in stamps.items():
+                if stamp is not None:
+                    self._seen.setdefault(pid, stamp)
 
     def _violate(self, kind: str) -> None:
         """Record the first violated limit and kill the tree."""
@@ -512,23 +604,23 @@ class Proc:
     def _tree_now(self) -> set[int]:
         """Processes of this game's tree that exist now.
 
-        The descendants of the game process (while it is alive) plus processes seen
-        earlier that are still in its process group. A process seen earlier that is in
-        neither may be an unrelated process that reused the id, so it is left alone.
+        The descendants of the game process (while it is alive) plus every process seen
+        in its tree earlier that is still the same process (same start stamp), even if
+        it left the process group or its parent ended. A pid now used by another
+        process is left alone.
         """
         found = descendants(self.pid, process_table()) if self.alive() else set()
         with self._lock:
-            seen = set(self._seen)
-        for pid in seen - found:
-            try:
-                if os.getpgid(pid) == self.pid:
-                    found.add(pid)
-            except (ProcessLookupError, PermissionError):
-                continue
+            seen = dict(self._seen)
+        for pid, stamp in seen.items():
+            if pid not in found and start_stamp(pid) == stamp:
+                found.add(pid)
         return found
 
     def kill(self) -> ExitInfo:
         """Kill the tree now (marking the end as "killed" unless a limit came first)."""
+        self.snapshot_tree()
+        self.sample_memory(kill=False)
         with self._lock:
             if self.violation is None and self.alive():
                 self.violation = "killed"
@@ -546,6 +638,8 @@ class Proc:
         Returns:
             How the process ended.
         """
+        self.snapshot_tree()
+        self.sample_memory(kill=False)
         ended = self.wait(grace_s)
         if not ended:
             with self._lock:

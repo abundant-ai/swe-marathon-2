@@ -21,6 +21,7 @@ whatever the game does.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
 import random
@@ -73,6 +74,7 @@ class GradeConfig:
         seed_names: Random source for the telemetry names (None: fresh each run).
         memory_mb: Development only: a lower memory cap for every game process.
         step_s: Development only: a shorter stall allowance per lockstep step.
+        margin_s: Seconds kept back from the deadline when sizing an instance's time.
     """
 
     project: Path
@@ -92,6 +94,7 @@ class GradeConfig:
     seed_names: int | None = None
     memory_mb: float | None = None
     step_s: float | None = None
+    margin_s: float = 60.0
 
 
 @dataclass
@@ -195,7 +198,7 @@ def grade_instance(
             "telemetry_files",
             detail={"problems": tampered},
         )
-    left = cfg.deadline_s - (time.monotonic() - g.t0) - 60
+    left = cfg.deadline_s - (time.monotonic() - g.t0) - cfg.margin_s
     budget = min(float(play.limits.get("wall_s", 600)), left)
     if budget < 10:
         return scoring.InstanceResult(
@@ -402,7 +405,9 @@ def grade(cfg: GradeConfig) -> float:
                 prep,
                 cfg.godot,
                 cfg.work / "boot",
-                lambda _role, folder: options(folder, None),
+                lambda _role, folder: dataclasses.replace(
+                    options(folder, None), boot_s=cfg.boot_s
+                ),
                 cfg.boot_s,
                 cfg.server_boot,
             )

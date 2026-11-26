@@ -49,7 +49,7 @@ EXPECTED: dict[str, tuple[str, dict]] = {
         {"step_s": 8},
     ),
     "memory_hog": (
-        "every instance passes its memory limit: reward 0",
+        "every instance's process passes its memory cap: reward 0",
         {"memory_mb": 400},
     ),
     "corrupt_save": (
@@ -59,7 +59,12 @@ EXPECTED: dict[str, tuple[str, dict]] = {
     "wallclock": ("the replay instance scores 0 (traces differ by pace)", {}),
     "giant_logs": ("a reward is written; the output kept is capped", {}),
     "spawner": ("a reward is written; no spawned process outlives its game", {}),
+    "deadline": (
+        "the grader's own deadline stops a stalled grading: a reward is still written",
+        {"deadline_s": 75, "margin_s": 5, "step_s": 60},
+    ),
 }
+OVERLAY = {"deadline": "stall"}  # cases that reuse another case's overlay
 
 
 def png_bytes(width: int, height: int, pixels: bytes) -> bytes:
@@ -103,7 +108,7 @@ def build(case: str, dst: Path) -> Path:
         shutil.copytree(FOREIGN, dst, ignore=shutil.ignore_patterns(".godot"))
         return dst
     shutil.copytree(BASE, dst, ignore=shutil.ignore_patterns(".godot"))
-    overlay = FIXTURES / case
+    overlay = FIXTURES / OVERLAY.get(case, case)
     if overlay.is_dir():
         for src in sorted(overlay.rglob("*")):
             rel = src.relative_to(overlay)

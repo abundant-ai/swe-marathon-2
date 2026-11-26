@@ -358,9 +358,24 @@ FATAL_PROCESS = ("closed", "limit", "stalled", "no_link", "play_time")
 FATAL_TELEMETRY = ("gone", "out_of_step", "unsigned", "bad_message")
 
 
+LIMIT_VIOLATIONS = ("memory", "disk", "cpu", "file_size", "wall")
+
+
 def standing_process(rec: PlayRecord) -> Outcome:
-    """The game process stayed up and answered for the whole play (PF-8, PF-7)."""
+    """The game process stayed up, answered and kept within its limits (PF-8, PF-7)."""
     errors = [r.error for r in rec.runs if r.error and r.error["kind"] in FATAL_PROCESS]
+    for r in rec.runs:
+        for ex in r.exits:
+            if ex.get("violation") in LIMIT_VIOLATIONS and not any(
+                e is r.error for e in errors
+            ):
+                errors.append(
+                    {
+                        "kind": "limit",
+                        "message": f"passed its {ex['violation']} limit",
+                        "step": None,
+                    }
+                )
     measured = {"errors": errors, "exits": [r.exits for r in rec.runs]}
     note = "" if not errors else f"{errors[0]['kind']}: {errors[0]['message']}"
     return Outcome("process", "standing", "standing", 0.0, not errors, measured, note)

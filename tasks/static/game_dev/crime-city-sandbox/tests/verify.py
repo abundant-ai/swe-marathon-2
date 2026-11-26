@@ -48,6 +48,7 @@ def main() -> int:
     ap.add_argument("--skip-selftest", action="store_true", help="development only")
     ap.add_argument("--memory-mb", type=float, default=None, help="development only")
     ap.add_argument("--step-s", type=float, default=None, help="development only")
+    ap.add_argument("--margin-s", type=float, default=60.0)
     a = ap.parse_args()
     cfg = GradeConfig(
         project=a.project.resolve(),
@@ -66,6 +67,7 @@ def main() -> int:
         skip_selftest=a.skip_selftest,
         memory_mb=a.memory_mb,
         step_s=a.step_s,
+        margin_s=a.margin_s,
     )
     try:
         reward = grade(cfg)

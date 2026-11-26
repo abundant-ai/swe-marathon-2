@@ -3,13 +3,14 @@
 A template is a play (qa-play/1) with three additions:
 - "family": the reward family it counts in;
 - "params": how to draw each parameter: {"choice": [...]}, {"randint": [lo, hi]},
-  {"uniform": [lo, hi], "round": k} or {"const": value};
+  {"uniform": [lo, hi], "round": k}, {"const": value}, or {"sum": [names or numbers]}
+  drawn after the others (a drawn object's fields are "$name.field");
 - "anchors": named plan anchors ({"poi": ...}, {"lane": ..., "s": ...}, a point, ...),
   which may use parameters.
 
 "$name" anywhere in the template is replaced by the parameter's value (a string that is
-exactly "$name" takes the value's type; "$name" inside a longer string is replaced by its
-text), and "$anchor:name" by the anchor's resolved point [x, y, z]. The draw (a private
+exactly "$name" takes the value's type; "$name" inside a longer string, or an object key
+"$name", is replaced by its text), and "$anchor:name" by the anchor's resolved point. The draw (a private
 number in a private file) fixes every choice, so the same templates and draw always give
 the same instances. Each instance records every drawn value and every anchor's resolved
 position and heading, so it runs without this script or the plan.
@@ -54,9 +55,13 @@ def draw_params(spec: dict, rng: random.Random) -> dict:
         ValueError: A distribution of an unknown kind.
     """
     out = {}
-    for name in sorted(spec):
+    plain = sorted(n for n in spec if "sum" not in spec[n])
+    derived = sorted(n for n in spec if "sum" in spec[n])
+    for name in plain + derived:
         d = spec[name]
-        if "choice" in d:
+        if "sum" in d:
+            out[name] = sum(out[x] if isinstance(x, str) else x for x in d["sum"])
+        elif "choice" in d:
             out[name] = rng.choice(d["choice"])
         elif "randint" in d:
             out[name] = rng.randint(*d["randint"])
@@ -66,6 +71,9 @@ def draw_params(spec: dict, rng: random.Random) -> dict:
             out[name] = d["const"]
         else:
             raise ValueError(f"parameter {name}: unknown distribution {d}")
+        if isinstance(out[name], dict):  # a drawn object: its fields are $name.field
+            for k, v in out[name].items():
+                out[f"{name}.{k}"] = v
     return out
 
 
@@ -80,7 +88,12 @@ def substitute(obj: object, values: dict) -> object:
     if isinstance(obj, list):
         return [substitute(v, values) for v in obj]
     if isinstance(obj, dict):
-        return {k: substitute(v, values) for k, v in obj.items()}
+        return {
+            (
+                str(values[k[1:]]) if k.startswith("$") and k[1:] in values else k
+            ): substitute(v, values)
+            for k, v in obj.items()
+        }
     return obj
 
 

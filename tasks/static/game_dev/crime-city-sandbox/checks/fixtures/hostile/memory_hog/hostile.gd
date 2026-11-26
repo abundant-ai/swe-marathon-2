@@ -1,12 +1,12 @@
 extends Node
-## Broken on purpose: allocates 8 MB more every physics tick from tick 10 on (at most 1.6 GB).
+## Broken on purpose: from physics tick 8 allocates 96 MB more every tick (at most 768 MB).
 var world: Node
 var hog := []
 
 
 func _physics_process(_dt: float) -> void:
-	if Engine.get_physics_frames() >= 10 and hog.size() < 200:
+	if Engine.get_physics_frames() >= 8 and hog.size() < 8:
 		var b := PackedByteArray()
-		b.resize(8 << 20)
+		b.resize(96 << 20)
 		b.fill(7)
 		hog.append(b)

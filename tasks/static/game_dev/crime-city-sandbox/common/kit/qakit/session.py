@@ -258,6 +258,9 @@ class _Base:
         """Ask the game to quit, wait up to grace_s, then kill whatever is left."""
         if self.exit_info is not None:
             return self.exit_info
+        # Before the game quits: what it started would be orphaned by its exit.
+        self.proc.snapshot_tree()
+        self.proc.sample_memory(kill=False)
         if self.link:
             try:
                 self.link.send({"quit": True})
@@ -480,5 +483,10 @@ class RealtimeSession(_Base):
                 )
                 if self.link:
                     self.link.close()
+                violation = self.exit_info.violation
+                if violation and violation != "killed" and err.kind == "closed":
+                    raise SessionError(
+                        "limit", f"stopped for its {violation} limit ({err})"
+                    )
                 raise err
             time.sleep(min(0.05, max(0.0, end - time.monotonic())))
