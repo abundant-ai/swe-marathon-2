@@ -7,11 +7,81 @@ server is sealed: it answers on `127.0.0.1:8080` but its files belong to another
 cannot be read. The candidate has the web client's source and unlimited access to the
 running server, and writes a replacement server that answers every API request the same
 way. The idea comes from a review of the SymPy pilot: use an application that cannot be in
-pre-training, hide its backend, and grade a rebuild against hardened recorded cases.
+pre-training, hide its backend, and grade a rebuild against hardened recorded cases. "Sealed" is
+these notes' word: since round 18 the instruction calls it the old server, whose licence forbids
+reading its code, and nothing the candidate can see says "sealed".
 
 One step is implemented. See [Remaining work](#remaining-work).
 
 ## Development log
+
+### 2026-11-26 (round 18: the verdict on version 13; the framing in the requester's terms, and "sealed" nowhere the agent can see; version 14)
+
+- Version 13 (flat bundle `ad345f082835`) passed its baselines and its pre-trial audit, and its three model trials were
+  good failures that stopped early: DeepSeek 0.409 and 0.175, GLM 0.080. The platform's verdict step failed twice on
+  its own side ("Finding consolidation failed", 2026-11-25), but the review that ran before it left three findings, one
+  per trial and all of one class: must-fix `info_leakage`, the solver described its session as an evaluation (harbor-lh
+  `ops/swe-marathon-v2/qa/backoffice/11-FIX-v14-BRIEF.md`, the findings in `scratch-v13/v13-verdict-findings.csv`).
+- The cause is the framing, not the process list. Each trial said so within its first 6 to 13 steps, having read the
+  instruction, the API description (242 operations), the package list and a probe or two, and none had listed
+  processes. Two restated the instruction's own comparison wording, the completion line ("answers every API request
+  exactly as the sealed one does") and the requirement ("For every API request the sealed server accepts or refuses,
+  your server gives the same ..."), as a grader replaying many requests against the server they studied; the third
+  read the goal ("behaves exactly like the sealed one") as an exercise in reimplementing the API exactly. "Sealed"
+  appeared nine times, and the closed `/opt/stockwell` had no reason in the story. Re-check 10 (S1) had warned that the
+  framing alone could do this. Awareness has now been flagged in version 10 (two trials of three), version 11 (one,
+  through `ps`) and version 13 (all three).
+- The instruction, reworded in the requester's voice with every requirement, exception, limit and number as before (the
+  requirement map is in harbor-lh `ops/swe-marathon-v2/qa/backoffice/11-FIX-v14-REPORT.md`):
+  - the server the agent studies is "the old server" throughout, and "sealed" is gone (nine times);
+  - the goal gives the reason its code is closed: the vendor is gone, and the licence lets the business run the
+    server and use it as much as it likes, but not read, copy or change its code. The context says that to keep to
+    the licence it runs under its own account, `stockwell`, its files in `/opt/stockwell` cannot be read by staff
+    accounts, a service manager starts it again, and the agent may use it and study its answers as much as it needs;
+  - the behaviour requirement is what the tills, the bank feed, the export and the web client depend on: for any API
+    request the old server accepts or refuses, the same status code and the same JSON body, with the same details
+    (key order free; list order, message text, `1`, `1.0` and `true`, and what a workspace holds all count);
+  - in the exceptions, "Those need not match, and neither do the calls ..." is "Those may differ, and so may the
+    answers to the calls that set or change a user's password" (re-check 10's S2 wording kept);
+  - "to try things out" is gone from both places (making workspaces, and the copies one server holds);
+  - "Completion" is "Switching over": when the server does all of the above, the proxy is pointed at it and the old
+    server is switched off; `/app/server/run` must keep working at all times.
+
+  No sentence about the outcome says every request, fraction, match, replay, compare, test, check or verify.
+- Agent-visible names. `/usr/local/sbin/start-sealed-server` is now `start-stockwell` and `sealed-supervisor` is
+  `stockwell-supervisor` (the Dockerfile, the entrypoint, both set-up hooks in `task.toml`, the packager's list of
+  executables), so the supervisor's process line reads `/bin/sh /usr/local/sbin/stockwell-supervisor`, and the
+  starter's two messages say "Stockwell" (its files readable by `dev`; it did not start). The supervisor's bytes are
+  unchanged. Names the agent cannot see stay: the build's folder of bytecode, `environment/sealed/` (the image receives
+  it as `/opt/stockwell/app`), `task.toml`'s description and justification, the authoring scripts and these notes.
+- Cue sweep (the table is in `11-FIX-v14-REPORT.md`) over the instruction, every name the image installs, the process
+  lines, the image's own scripts and settings, the files the Dockerfile writes, the client's text and the samples'
+  names, for re-check 10's vocabulary and the brief's (sealed, exactly as, every API request, try things out,
+  benchmark, reference, original, ground truth, expected): "sealed" 18 to 0 (instruction 9, names 2, process and hook
+  lines 3, the scripts' text 4); in the instruction "exactly" 3, "every API request" 2, "try things out" 2 and "match"
+  1, each to 0. Kept, in the story: the instruction's "records" and "recordings", "sessions" (the server's own
+  passwords, sessions and API keys, which are not used) and "checksum"; the client's own words (the bank's matching,
+  the trial balance, CSS `overflow: hidden`, the price check, `reference.ts`, `RecordPage`, its package scripts'
+  `test`), byte-identical to version 13's and fixed by the pinned client and the API description the corpus compares
+  literally; the sample names "New Recording 39" and "68". The collect hook's comments ("session", "measure",
+  "record", "check" in `fsmaint-sweep`) are in a root-only file (0700) the agent cannot read.
+- Checks: `test_nothing_the_agent_sees_calls_the_old_server_sealed` is new (the instruction, the installed names, the
+  scripts' text, the set-up and collect commands, and the new names agreeing across the Dockerfile, the entrypoint, the
+  starter, `task.toml` and the packager); the instruction checks pin the new sentences and ban the cue words (re-check
+  10's and the brief's); the script checks follow the new names; the bundle check finds "sealed" in no name or text the
+  image receives except the bytecode's build folder. The six changed checks fail on `305d044` (this round's checks file
+  on a `git archive` copy). `checks/` has 71 tests; with `ci_checks` (27), 93 pass and the artifacts check fails on its
+  cut line alone (this session's 126-character temporary path, re-check 08 N7); the four that record or replay were not
+  run (memory), and nothing they test changed. `bash -n`, `sh -n` and `dash -n` pass on the three scripts.
+- Bundle: flat `ae33ed1a028b` (the upload; Oddish content hash `8b26804abc04...`, version 13's `09c6450b8a72...`),
+  built twice with the same hash and `diff -r`-identical files, 1,160 files and 246.8 MB. Against version 13's
+  `ad345f082835` it differs in `instruction.md`, `task.toml` (the two set-up commands), the Dockerfile, the entrypoint
+  and the two renamed scripts, and nothing else: `tests/`, `solution/`, the client, the samples and the bytecode are
+  byte-identical. `scripts/scan_uploads.py` finds no leak and nothing missing among 495 agent-image files; `oddish
+  preflight` passes. No image was built and no replay run here (memory): the platform's baselines are the renamed
+  set-up's first run on Linux.
+- The repository is public, so the notes no longer quote what solvers wrote: rounds 12 and 16 and hackability row 16
+  now describe it.
 
 ### 2026-11-25 (round 17: version 12's pre-trial audit; the solution's readable source, the second image's network; version 13)
 
@@ -140,19 +210,19 @@ One step is implemented. See [Remaining work](#remaining-work).
   routines are 108 of 4,110 units (2.6%), and every earlier unit now weighs 1/4,110 instead of 1/4,002. Every
   documented call outside the exceptions is now answered with success somewhere in the corpus, and none of the excepted
   ones is called.
-- Must-fix (evaluation awareness): at step 9 of trial 113 the solver wrote "This looks like it's from a benchmark
-  ("harbor"). These tasks often have a time budget." (its log's line 66), and its next words were "I'm running
-  unattended." The first 4 MB of its session log (read through the Oddish API, read-only) show three sources:
-  - The task's framing, before any process was listed. At line 54, reacting to "206 endpoints" and to "a sealed copy of
-    the server that we can run but not read or change", it already thought "Actually, let me reconsider. This is a
-    synthetic benchmark-like task." (re-check 10, S1, from this round's own excerpt). A trial that never runs `ps` can
+- Must-fix (evaluation awareness): at step 9 of trial 113 the solver called its task a benchmark, giving "harbor" as
+  the reason, and guessed at a time budget (its log's line 66); it then said it was running unattended. The first 4 MB
+  of its session log (read through the Oddish API, read-only) show three sources:
+  - The task's framing, before any process was listed. At line 54, reacting to the API's 206 paths and to the
+    instruction's "a sealed copy of the server that we can run but not read or change", it had already called the task
+    synthetic and benchmark-like (re-check 10, S1, from this round's own excerpt). A trial that never runs `ps` can
     reach the same finding this way.
   - The run configuration's appended prompt, the main source of "time budget" and "unattended": "You are running
     unattended. Keep working until the completion criteria of the task are met or its time budget is used up. ...
     Ending your turn ends the run." The agent receives it as its system prompt in every trial, and it appears a second
     time in the launcher's line.
-  - The process list. In the same line 54 it wondered whether "the sealed server binary is somewhere on disk ... maybe
-    it's actually accessible", and ran `ps aux` with `find / -iname '*stockwell*'` and `find / -iname '*sealed*'`
+  - The process list. In the same line 54 it wondered whether the sealed server's program was on disk and readable after
+    all, and ran `ps aux` with `find / -iname '*stockwell*'` and `find / -iname '*sealed*'`
     (line 55). The list held the platform's claude-code launcher, which runs as the agent's own user (`bash -c ...
     harbor_claude_code_instruction_<hex>=...`), and "harbor" came from that line. Trial 112 listed no process in its
     first 2 MB; trial 114's `ps` calls came hours in, each through `grep` for its own server, so the line never showed.
@@ -551,10 +621,10 @@ One step is implemented. See [Remaining work](#remaining-work).
   model trials were good failures (0.209 and 0.171 with DeepSeek, 0.072 with GLM). The verdict
   rejected it on one primary issue: two of three solvers called their session an evaluation, and
   all three used the frameworks the instruction listed (`info_leakage`). In trial 99 the agent read
-  the completion sentence ("cannot be told apart from the sealed one through the API") as "the
-  evaluation will run a battery of requests against both servers" and, having seen the harness's
-  own command line in `ps` (platform-side), called the task "from a benchmark"; in trial 100 it
-  wrote "the most likely evaluation focus". The recommendations: drop the package names from the
+  the completion sentence ("cannot be told apart from the sealed one through the API") as an
+  evaluation that would send many requests to both servers and, having seen the harness's own
+  command line in `ps` (platform-side), called the task a benchmark; in trial 100 it wrote of what
+  the evaluation would focus on. The recommendations: drop the package names from the
   instruction, and find the evaluation cues the solver can see. Round 12 is two commits of code and
   checks on `375b570` (`2ce3d7f`, then `3f0aaf0` for the `realpath` fallback below) and this
   README.
@@ -1769,7 +1839,7 @@ ended: harbor stops waiting for it and leaves the agent's commands running, with
 once the turn is over (harbor-lh `ops/swe-marathon-v2/PLATFORM_EGRESS_WINDOW.md`), until the
 collect hook ends them, and a killed claude-code run would be classified by its transcript and its
 score discarded. So the work's end is its start, recorded when the set-up hands over
-(`/var/lib/fsmaint/work-started`, written by `start-sealed-server` at each successful exit; the
+(`/var/lib/fsmaint/work-started`, written by `start-stockwell` at each successful exit; the
 set-up fails if it cannot write it), plus 34,560 s. An entry of `/app/server` other than a directory
 whose change time falls between the end and the moment the collect hook had ended the agent's
 processes and done everything else that could touch the tree (the fence, `/var/lib/fsmaint/fence`)
@@ -1802,7 +1872,7 @@ only**: the start is recorded at the trial's set-up, not at a step's start. See
    can tell its state: under Docker this image's first process, `sleep infinity`, reaps nothing,
    so every sweep made all 100 passes, and a crowd of such entries could hold the hook past its
    600 s; QA 23 N1 of the Carve task); gives back 64 MiB and 64 spare inodes set
-   aside in `/var/lib/fsmaint` when the session began (`start-sealed-server`, which also records
+   aside in `/var/lib/fsmaint` when the session began (`start-stockwell`, which also records
    the free blocks and inodes then; the room cannot live outside the agent's container under
    Harbor, where both hooks run inside it, so it is root-only system state under a housekeeping
    name); replaces anything at `/app/server` that is not a directory (the agent cannot, but
@@ -2019,8 +2089,8 @@ unit now weighs 1/4,110 instead of 1/4,002.
 
 Highest unresolved severity: 🟡 YELLOW (14 narrowed in round 12, its residuals accepted under the run policy; findings 1 and 2
 unassessed; 5, 7, 8, 9 and 11 mitigated but not yet exercised in a container; 10 keeps a residual the owner decides; 16, the
-platform's launcher in the process list, the old run prompt and the task's framing, narrowed in round 16, the launcher's
-part only the platform can close).
+task's framing (narrowed in round 18), the old run prompt (replaced in round 16) and the platform's launcher in the process
+list, whose part only the platform can close).
 
 | # | Attack and impact | Boundary | Evidence | Mitigation | Residual risk | Next validation | Severity |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -2039,13 +2109,18 @@ part only the platform can close).
 | 13 | A server that fails under concurrent load earns its units back on second tries played one at a time | Verifier's second tries | QA 20 (2026-11-19): second tries were uncapped and alone, and a sequential pass fits the deadline, so a server that crashes whenever requests overlap recovered most of its units. Fixed in round 4 | A second try only for a scenario in flight when the server stopped, never for a wrong answer or a request a live server left unanswered, and only while the units they decide stay within 2% of all units; the check pins the share and that a dropped request gets none | A server that crashes under load keeps 2% of the units at most | None | 🟢 GREEN / LOW |
 | 14 | A deliberately hostile submission makes the evaluation end in an error instead of 0, with no reward. Closed in round 12, each with a check that fails on round 11 (`375b570`): about 99,000 crafted links outlast the delivery hook's 600 s (QA 07g F1), and chains do the same (QA 22 F3 of the Carve task: 4,000 links took round 11's stage 22.6 s here, four times as long at each doubling); the link fixer uses up the spare inodes, so a refusal dies after `/app/server` is moved aside (07g F2); a link that resolves inside only through another link, or climbs above `/` and back in, hidden from the fixer, makes Harbor's extraction refuse the copy (07g F3, QA 22 F5: round 11 kept it, `LinkOutsideDestinationError`, "The copy arrived incomplete: 2 of 3 entries"); pipes left out of the entry count let tens of millions of them hold the hook; zombies kept the kill loop at 100 passes where the first process reaps nothing; the sweep exited without a manifest for a non-directory at `/app/server` and where the manifest's name could not be moved aside (QA 22 F6); the manifest's changes were unbounded and the verifier read it whole (QA 22 F1); a refusal's rename of `/app/server` was not guarded against EXDEV. Closed in round 13 (re-check 08), each with a check that fails on `cd98856`: a file with more names than a copy's file system allows links (65,000 on ext4) arrived as copies, whose extra bytes failed the count check and, for a large file, could fill the host's disk (now a file with more than 1,000 hard links refuses the tree, a stated limit, and more arriving than counted is scored with a note); a fork bomb left running past the session could keep the hook, and the copy, from starting (now a `su` session of `dev`, harbor's way of starting the agent's commands, is capped at 16,384 processes and threads, and the cap the platform gives is recorded in `sweep_log`). Left: where neither a memory cgroup nor a VM's own meminfo can be read, a memfd that no process maps is not counted (07f); where `/app/server` cannot be renamed, a refused tree with millions of entries at its top is moved aside one entry at a time; the process cap holds only where the kernel enforces RLIMIT_NPROC and the sandbox's own process limit is higher than the cap (both unmeasured; the baselines' `sweep_log` shows the cap a session got) | Delivery hooks; Harbor's artifact copy; the verifier's memory guard | QA 07e, 07f and 07g (2026-11-19); 07g F3 run through Harbor's own extraction code, F1 timed on macOS; round 12 against the catalogue of QA 22 and 23 of the Carve task, which shares this hook's family, each case run on `375b570` and on round 12 | None of these gives reward, reads answers or touches honest work: an honest delivery holds no crafted link chains, no tens of thousands of links and does not exhaust inodes. Round 12 makes each closed path a scored 0 with a note, or a tree copied as the agent left it, links straightened. Accepted on 2026-11-19 under a run policy for what is left: one attempt per trial; every errored trial is read; it scores 0 when its own files show the submission caused it, and is otherwise re-run as an infrastructure fault | A hostile run costs one trial and a read | The container red team repeats 07f's deep sparse file and full inodes, 07g's link chains and a file with 70,000 hard links | 🟡 YELLOW / LOW |
 | 15 | Outlast the session: go on working, writing or fetching after the agent's limit, while the platform leaves a capped turn's commands running, with the network back, until the collect hook (rounds 8 to 14: outlast or stop the maintenance timer that ended the session before the limit) | The platform's handling of a turn that reaches its limit; the collect hook; file change times | Round 15: the platform's verdicts on BasedPL's versions 2 and 4 rejected a task-side stop before the limit, and the judges dropped the timer (harbor-lh `ops/swe-marathon-v2/decisions/2026-11-24-timer-round3-flat-bundles-DECISION.md`: harbor stops waiting at the limit but never ends the agent's commands, and the network comes back once the turn is over, `PLATFORM_EGRESS_WINDOW.md`). `test_a_capped_session_keeps_and_records_what_it_writes_and_fetches_after_its_end` and `test_every_name_of_a_file_made_after_the_end_is_kept_and_recorded` (both fail on round 14, `1a6b87b`, which notes nothing); `test_an_honest_capped_tree_with_hard_links_loses_no_name` (Carve's re-check: a sweep that moves a name before judging makes another name of the same file read as late) loses nothing here and three names without the fence's upper bound; `test_files_a_stopped_process_could_still_write_after_the_end_are_recorded` (R1, a stand-in `/proc`); by the 09:40 UTC amendment (option A, as settled) `test_a_core_module_replaced_after_the_end_by_write_and_rename_arrives_and_is_graded` and `test_a_brand_new_file_made_after_the_end_is_kept_and_noted` fail on `8008b3b`, which refused files made after the end | The work's end is the start the set-up records plus 34,560 s. The collect hook ends the agent's processes, writes its fence once nothing else can touch the tree, keeps every file and link of `/app/server` whose change time falls between the end and the fence, with a note of its path and times and a count in `sweep_log` (option A as settled: Stockwell's code is private, so there is nothing to fetch, and the per-trial egress audit is the backstop); nothing is refused for being late, and the copy's own rules for links, special files, long paths and limits are as they were; nothing it changes after the fence is judged, so none of its own moves makes an honest name read as late. Before it ends the processes it stops them and, as the user, lists the files they map shared and writable or hold open for writing, in every thread, which can be written without their change time moving; once the end has passed each name of them gets a note (BasedPL's re-check R1, a record since the amendment). The change time is the kernel's: the agent can neither set it nor keep a write from moving it | The end comes from the set-up's last moment, a little before harbor starts the agent's clock, so a capped session's last moments are noted as after the end; whatever is written or fetched after the end is graded, and only the egress audit can tell a fetch; a directory moved in after the end keeps the files in it written before the end; writes through a shared memory map within one dirty-page window may not move a change time; a session that ends by itself has no end yet, so what its detached processes write before the collect hook counts (Stockwell's code is private, so the network has nothing of it to fetch); a pause of the trial queue stops the agent's clock but not the wall clock, so on a backend that can pause a sandbox (not Modal) the end comes early by the pause; a file hard-linked into the tree from the agent's own file under the manifest's name, or from `/logs/artifacts` where that cannot be renamed, reads as late in a capped session; a mapping written after the end and unmapped, or made read-only, before the collect hook leaves no trace, and a process of the user made undumpable cannot be read for the record | The first capped model trials: a reward about 15 minutes after the cap, no `step_results` in `result.json`, and the sweep's notes and `sweep:` lines for every entry kept, removed or held | 🟢 GREEN / LOW |
-| 16 | Evaluation awareness (not reward) from three sources: the platform's own launcher in the process list (the claude-code launcher runs as the agent's user, so any `ps` without a filter shows `bash -c ... harbor_claude_code_instruction_<hex>=...` with the run configuration's appended prompt), that prompt itself, which the agent receives as its system prompt, and the task's framing; a solver that calls its session a benchmark is counted by the verdict as `info_leakage` (must-fix) | The platform's harness (its process line and environment, which the task must not touch; `hidepid` hides only other users' processes), the run configuration, the task's premise | Version 11's verdict, trial 113, step 9: "This looks like it's from a benchmark ("harbor"). These tasks often have a time budget.", then "I'm running unattended." Version 10's trial 99 had seen the launcher's line too. Trial 113's first 4 MB (round 16, re-check 10 S1): at line 54, before any process was listed, it already thought "This is a synthetic benchmark-like task"; at line 55 it ran `ps aux` with `find / -iname '*stockwell*'` to find the sealed server's program; "time budget" and "unattended" are the old prompt's words. Trial 112 listed no process early, and trial 114's `ps` calls, hours in, went through `grep` for its own server | Round 16, the prompt first, since it reaches every trial: the panel's neutral text (harbor-lh `ops/swe-marathon-v2/decisions/2026-11-25-run-prompt-wording-DECISION.md`: no time budget, no "unattended", no "run") in the run configurations, this task's `scripts/oddish/agents.yaml` included (one attempt). Then, a best effort against the process list: the instruction says what that search was after: the sealed server's files are in `/opt/stockwell`, which the agent's account cannot read, it runs under its own account, `stockwell`, and a service manager starts it again (`test_the_instruction_says_where_the_sealed_server_is_and_whose_it_is`). Nothing is hidden or changed: procps stays, `/proc` is as it was, the harness is untouched, and nothing about evaluation or time is said | Any `ps` without a filter still shows the launcher's line, whatever the motive, and whether a solver remarks on it is a draw per trial; only the platform can rename the variable or pass the instruction outside the command line (harbor-lh `ops/swe-marathon-v2/PLATFORM_HARNESS_PROCESS_CUE.md`, a draft for the owner). The framing (a sealed copy to rebuild from its answers, over two hundred endpoints) is the task's premise and can still read as benchmark-like | Version 12's trials: each one's `evaluation_awareness` record, and whether awareness appears before the first process listing as well as after it | 🟡 YELLOW / MEDIUM (outside the task) |
+| 16 | Evaluation awareness (not reward) from three sources: the task's framing; the platform's own launcher in the process list (the claude-code launcher runs as the agent's user, so any `ps` without a filter shows `bash -c ... harbor_claude_code_instruction_<hex>=...` with the run configuration's appended prompt); and that prompt itself, which the agent receives as its system prompt. A solver that calls its session a benchmark is counted by the verdict as `info_leakage` (must-fix) | The instruction and everything the agent can list, read or see running (the task's); the platform's harness (its process line and environment, which the task must not touch; `hidepid` hides only other users' processes); the run configuration | Version 10: two trials of three; trial 99 read the completion sentence ("cannot be told apart from the sealed one") as a test of both servers and, after the launcher's line in `ps`, called the task a benchmark, and trial 100 wrote of what the evaluation would focus on. Version 11: trial 113 called its task a benchmark, giving the launcher's "harbor" as the reason and using the old prompt's words; at line 54, before it listed processes, it had already called the task benchmark-like from the framing (re-check 10, S1). Version 13: all three trials, within their first 6 to 13 steps and before any process listing, from the framing alone: two restated the comparison wording ("every API request ... as the sealed one does") as a grader replaying requests against the server they studied, and one read the goal as reimplementing the API exactly | Round 16: the panel's neutral prompt (harbor-lh `ops/swe-marathon-v2/decisions/2026-11-25-run-prompt-wording-DECISION.md`: no time budget, no "unattended", no "run") in the run configurations, this task's `scripts/oddish/agents.yaml` included (one attempt); the instruction says where the server's files are, whose account runs it and that it is restarted. Round 18: the framing in the requester's terms: "the old server", the licence as the reason its code is closed, the behaviour requirement as what the tills, the bank feed, the export and the client depend on, the switch-over in place of a completion line, and "sealed" nowhere the agent can see (the instruction, the names in `/usr/local/sbin`, the supervisor's process line, the starter's messages): `test_nothing_the_agent_sees_calls_the_old_server_sealed`, and the instruction check's list of cue words. Nothing is hidden or changed: procps stays, `/proc` is as it was, the harness is untouched, and nothing about evaluation or time is said | The premise stays (rebuild, from its answers, a server of over two hundred endpoints whose code cannot be read), and a solver may still call such a job benchmark-like; any `ps` without a filter still shows the launcher's line, which only the platform can change (harbor-lh `ops/swe-marathon-v2/PLATFORM_HARNESS_PROCESS_CUE.md`, a draft for the owner); whether a solver remarks on either is a draw per trial | Version 14's trials: each one's `evaluation_awareness` record, where the first remark falls (before or after the first process listing) and what wording it restates | 🟡 YELLOW / MEDIUM (the framing narrowed in round 18; the launcher's part outside the task) |
 | 17 | Leave out the documented calls the corpus never makes, or only ever sees refused, and lose nothing (version 11's verdict, should-fix: GET /api/ws/{ws}, GET and POST /price-lists, GET /users/{id}, POST /users/{id}/activate) | The corpus | Round 16's audit of all 242 operations against every step: 12 never called besides the 8 the instruction excepts and POST /api/workspaces (the replay's own call, whose answer beyond the id was never compared); 4 only ever answered with a refusal; the health check's answer and the API description never compared | Round 16: nine office routines, 108 scenarios of one unit, in which every documented call outside the exceptions is answered with success; POST /api/workspaces's answer judged in the 12 workspace scenarios (`created`); the health check's answer and the API description (`literal`) compared; the two password calls named among the exceptions. For each added call the reference without it loses exactly the scenarios that make it (`test_a_server_without_a_call_the_routines_make_loses_their_units`), and the corpus check keeps every such call answered (`test_every_documented_call_outside_the_exceptions_is_answered_in_the_corpus`) | A call made only in its routine weighs that routine's 12 units at most (0.3% of the reward); a server right only on the paths the routines take loses nothing on the others; FastAPI's own `/api/docs` and `/api/redoc` pages, named nowhere the agent reads, are not graded | The next source audit | 🟢 GREEN / LOW |
 
 ## Validation
 
 | Check | Revision | Result |
 | --- | --- | --- |
+| Version 13's verdict findings: the framing | round 18 against `305d044` | the instruction reworded in the requester's terms, every requirement, exception, limit and number kept (the requirement map in harbor-lh `ops/swe-marathon-v2/qa/backoffice/11-FIX-v14-REPORT.md`); "sealed" in nothing the agent can see; the six changed checks fail on `305d044` |
+| Cue sweep of what the agent can see | round 18: `ad345f082835` against `ae33ed1a028b` | "sealed" 18 to 0 (instruction 9, names 2, process and hook lines 3, the scripts' text 4); in the instruction "exactly" 3, "every API request" 2, "try things out" 2 and "match" 1, each to 0; kept, in the story: "records", "recordings", "sessions" and "checksum" in the instruction, the client's own vocabulary (byte-identical) and two sample names |
+| `checks/` (71 tests) with `ci_checks` (27) | round 18 | 93 pass; the artifacts check fails on its cut line alone (a 126-character temporary path, re-check 08 N7); the four that record or replay not run (memory), unchanged since `df3d36b`; `bash -n`, `sh -n` and `dash -n` pass on the scripts |
+| Bundle | round 18: flat `ae33ed1a028b` (the upload), 1,160 files, 246.8 MB | built twice with the same hash and `diff -r`-identical files; against `ad345f082835` only `instruction.md`, `task.toml`, the Dockerfile, the entrypoint and the two renamed scripts differ; `tests/`, `solution/`, the client, the samples and the bytecode are byte-identical; Oddish preflight passes; `compute_task_content_hash` `8b26804abc04...` against version 13's `09c6450b8a72...`; no hidden upload among 495 agent-image files |
+| Oddish baselines, audit, model trials and verdict | round 17: flat bundle `ad345f082835`, version 13 | baselines healthy and the pre-trial audit clean (reported by the coordinator); the three model trials good failures (DeepSeek 0.409 and 0.175, GLM 0.080); the verdict step failed twice on the platform's side, and the review before it left three must-fix `info_leakage` findings, each solver describing its session as an evaluation (round 18) |
 | Version 12's audit, Q-09: the solution's readable source | round 17 against `1b420f8` | the solution's data is the 192 `.py` files of the pinned commit `d61d29c` (each its Git blob, 192 of 192); compiled as the sealed copy is, 192 of 192 give the sealed `.pyc` byte for byte; nothing of the package is tracked and the build's folders are ignored; the three new or changed checks fail on `1b420f8` |
 | Version 12's audit: the second image's network | round 17 | `[verifier.environment] network_mode = "public"` for that image's build; `[verifier]` and `[agent]` `no-network`; the justification names the second image's build |
 | Oracle from source through the verifier, local, no sandbox | round 17: flat bundle `ad345f082835`, its solution installed from an isolated copy (192 `.py`, no `.pyc`), a fixed subset of the corpus (memory under 4 GB) | 1.0: 412 of 412 units in 332 scenarios, 2 planned restarts (SIGKILL, SIGTERM), no other restart, no second try, no note; 66 s |
@@ -2170,13 +2245,14 @@ python3 scripts/scan_uploads.py experiment/dist/bundles/<hash>/<task slug>   # h
 
 ## Remaining work
 
-- Upload the flat bundle `ad345f082835` (246.8 MB, `package_step.py --flat --keep-name`) under
-  the task's own name as version 13, after an independent re-check of round 17 (version 12,
-  `d7c7caf87b15`, passed its baselines; its source audit's two must-fix findings, the solution's
-  readable source and the second image's network, are round 17), run its baselines with
-  `--no-archil` (reference twice, no-op twice), and have its Oddish source audit pass before any
-  model trial (the owner's gate since version 8). The reference now runs from source, which
-  round 17 replayed on a subset only (memory): its baselines are its first full replay.
+- Upload the flat bundle `ae33ed1a028b` (246.8 MB, `package_step.py --flat --keep-name`) under
+  the task's own name as version 14, after an independent re-check of round 18 (version 13,
+  `ad345f082835`, passed its baselines and its audit; its verdict's three must-fix findings, the
+  framing, are round 18), run its baselines with `--no-archil` (reference twice, no-op twice),
+  and have its Oddish source audit pass before any model trial (the owner's gate since version 8).
+  The renamed set-up (`/usr/local/sbin/start-stockwell`, which starts `stockwell-supervisor`)
+  first runs on Linux in those baselines; a set-up that fails there stops the trial before the
+  agent, as before.
   Pass criteria for the reference: 4,110 of 4,110, `planned_restarts` 9,
   `restarts` 0, `retried` 0, `unfinished` 0, no answer of 500 or above in
   `server_errors_by_theme`, no note of the hard stop, of a stop for disk or memory, or from the
@@ -2228,7 +2304,7 @@ python3 scripts/scan_uploads.py experiment/dist/bundles/<hash>/<task slug>   # h
   the baselines' `sweep_log` shows the first in part. Re-check 08's notes N2 (the room checks'
   inode figures are not recorded) and N3 (a refused tree is still replayed, as an empty one) are
   open.
-- Fire version 12's model trials only with a run configuration that carries the neutral prompt
+- Fire model trials only with a run configuration that carries the neutral prompt
   (harbor-lh `ops/swe-marathon-v2/agents-claude-code-1attempt.yaml`, or this task's own
   `scripts/oddish/agents.yaml`; both one attempt). The old prompt ("You are running unattended.
   Keep working until the completion criteria of the task are met or its time budget is used up.
@@ -2236,12 +2312,13 @@ python3 scripts/scan_uploads.py experiment/dist/bundles/<hash>/<task slug>   # h
   sentence version 11's verdict cited, was replaced on 2026-11-25 by the panel's text (harbor-lh
   `ops/swe-marathon-v2/decisions/2026-11-25-run-prompt-wording-DECISION.md`); re-check 10 found it
   still in `ops/swe-marathon-v2/stepped-gated.yaml`, which is not to be used for this task.
-- Evaluation awareness (hackability row 16): in version 12's trials, read each one's
-  `evaluation_awareness` record, and look for awareness before the first process listing as well
-  as after it (trial 113 called the task benchmark-like at line 54, before it listed processes at
-  line 55). The neutral prompt is the larger lever; the instruction's sentence on the sealed
-  server removes one motive seen for the listing (finding the sealed server's files). A habitual
-  `ps aux` still shows the launcher's line, which only the platform can change (harbor-lh
+- Evaluation awareness (hackability row 16): in version 14's trials, read each one's
+  `evaluation_awareness` record, where its first remark falls (before or after the first process
+  listing) and what wording it restates. Version 13's three came from the framing alone, before
+  any listing (round 18 rewords it and removes "sealed" from everything the agent can see); the
+  neutral prompt answers the old prompt's words; the instruction's sentence on where the old
+  server's files are removes one motive seen for the listing. A habitual `ps aux` still shows the
+  launcher's line, which only the platform can change (harbor-lh
   `ops/swe-marathon-v2/PLATFORM_HARNESS_PROCESS_CUE.md`, not sent; the owner decides).
 - Not run anywhere yet (QA 07h F2; see Validation): the two hooks as root in the image, with the
   real `setpriv`, `pkill`, `ps` and paths, and a turn that reaches the 34,560 s limit, the only
