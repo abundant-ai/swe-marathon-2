@@ -1460,6 +1460,10 @@ It does not yet meet the v2 workload target; see [Workload](#workload) and
   10,428 / 10,428 tests, nothing unreached, no item out of its time or
   over half of it, no control tripped, 974 s); the starting tree 0.0; a
   turn of no length through the shipped hooks 0.0 (`end_from` `unchanged`).
+- The 16 stored submissions regraded on this build (one worker, as in round 9):
+  0.003 to 0.853, each within 0.0005 of round 9's regrade (11 up, 5 down), the
+  order unchanged; table under [Trial evidence](#trial-evidence), with
+  `RESULTS_12H.md` updated to this build's basis.
 
 ## Current implementation
 
@@ -2226,33 +2230,37 @@ Proximus on the v1 package, base experiment, 2026-11-17:
 - Proximus reports no cost. Its runs used 0.66 to 2.19 billion input tokens,
   over 99% of them cached.
 
-Regraded on the continuous reward after fix round 9 (2026-11-26: every removed
-unit graded, 2,114 units; this machine, the entry point's steps without the
-privilege drop; examples and calls, the tests not run since they are not
-rewarded). The two columns before u are the regrades after the fourth re-check
-and with the units no graded item ran left whole.
+Regraded on the continuous reward after fix round 11 (2026-11-26: the call
+data of fix round 10, 2,115 units, errors compared one way; this machine, the
+entry point's steps without the privilege drop, one worker; examples and calls,
+the tests not run since they are not rewarded). The three columns before u are
+the regrades after the fourth re-check, with the units no graded item ran left
+whole, and after fix round 9. Against fix round 9 every reward moved by at most
+0.0005 (11 up, 5 down) and the order is unchanged: the 7 units whose examples
+show an error joined the set (a submission passes 0 to 7 of them), and 2 units
+changed their verdict through a call that ran out of its time, one each way.
 The twelve-hour trials' own files were not downloaded, so these are the
 stored submissions of the earlier sessions of the same task; every one scored
 0 under the binary reward.
 
-| Submission | Agent / model | Units passing, binary era (of the 2,671 then) | Reward, binary | Reward after the fourth re-check | Reward with the units left whole | u | c | Reward now | Units whose examples pass | Bodies identical to upstream |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| v2 trial 16 | claude-code / DeepSeek v4.1 Flash | 2,557 | 0 | 0.852 | 0.852 | 0.894 | 0.853 | **0.853** | 2,064 | 19.8% |
-| v2 trial 17 | claude-code / DeepSeek v4.1 Flash | 2,481 | 0 | 0.842 | 0.838 | 0.859 | 0.834 | **0.834** | 1,987 | 18.5% |
-| v2 trial 18 | claude-code / GLM 5.3 | 2,462 | 0 | 0.826 | 0.826 | 0.861 | 0.824 | **0.824** | 1,988 | 16.9% |
-| 48 h run a, session 1 | claude-code / DeepSeek v4.1 Flash | 2,375 | 0 | 0.807 | 0.802 | 0.818 | 0.802 | **0.802** | 1,904 | 19.5% |
-| 48 h run b, session 1 | claude-code / DeepSeek v4.1 Flash | 2,338 | 0 | 0.807 | 0.803 | 0.807 | 0.800 | **0.800** | 1,863 | 19.8% |
-| 48 h run, session 1 | claude-code / GLM 5.3 | 1,976 | 0 | 0.686 | 0.685 | 0.692 | 0.679 | **0.679** | 1,599 | 16.2% |
-| 48 h run b, session 1 | Proximus / DeepSeek v4.1 Flash | 1,289 | 0 | 0.399 | 0.398 | 0.419 | 0.399 | **0.399** | 1,064 | 11.8% |
-| 48 h run a, session 1 | Proximus / DeepSeek v4.1 Flash | 1,159 | 0 | 0.363 | 0.362 | 0.365 | 0.367 | **0.365** | 950 | 14.6% |
-| single-step trial 6 | Proximus / DeepSeek v4.1 Flash | 1,077 | 0 | 0.347 | 0.346 | 0.348 | 0.341 | **0.341** | 869 | 16.2% |
-| 48 h run, session 1 | Proximus / GLM 5.3 | 1,031 | 0 | 0.331 | 0.330 | 0.345 | 0.325 | **0.325** | 842 | 15.0% |
-| base trial 14 | mini-swe-agent / DeepSeek v4.1 Flash | 716 | 0 | 0.216 | 0.216 | 0.221 | 0.211 | **0.211** | 579 | 13.3% |
-| base trial 15 | mini-swe-agent / GLM 5.3 | 346 | 0 | 0.116 | 0.116 | 0.120 | 0.116 | **0.116** | 286 | 10.7% |
-| base trial 9 | mini-swe-agent / DeepSeek v4.1 Flash | 334 | 0 | 0.099 | 0.099 | 0.100 | 0.139 | **0.100** | 263 | 8.2% |
-| base trial 10 | mini-swe-agent / GLM 5.3 | 274 | 0 | 0.094 | 0.094 | 0.100 | 0.092 | **0.092** | 246 | 7.7% |
-| base trial 8 | claude-code / GLM 5.3 | 63 | 0 | 0.019 | 0.019 | 0.020 | 0.037 | **0.020** | 51 | 57.7% |
-| base trial 13 | claude-code / GLM 5.3 | 15 | 0 | 0.003 | 0.003 | 0.003 | 0.004 | **0.003** | 10 | 14.3% |
+| Submission | Agent / model | Units passing, binary era (of the 2,671 then) | Reward, binary | Reward after the fourth re-check | Reward with the units left whole | Reward, fix round 9 | u | c | Reward now | Units whose examples pass | Bodies identical to upstream |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| v2 trial 16 | claude-code / DeepSeek v4.1 Flash | 2,557 | 0 | 0.852 | 0.852 | 0.853 | 0.895 | 0.853 | **0.853** | 2,065 | 19.8% |
+| v2 trial 17 | claude-code / DeepSeek v4.1 Flash | 2,481 | 0 | 0.842 | 0.838 | 0.834 | 0.860 | 0.835 | **0.835** | 1,988 | 18.4% |
+| v2 trial 18 | claude-code / GLM 5.3 | 2,462 | 0 | 0.826 | 0.826 | 0.824 | 0.861 | 0.823 | **0.823** | 1,989 | 16.8% |
+| 48 h run a, session 1 | claude-code / DeepSeek v4.1 Flash | 2,375 | 0 | 0.807 | 0.802 | 0.802 | 0.819 | 0.803 | **0.803** | 1,905 | 19.5% |
+| 48 h run b, session 1 | claude-code / DeepSeek v4.1 Flash | 2,338 | 0 | 0.807 | 0.803 | 0.800 | 0.807 | 0.800 | **0.800** | 1,864 | 19.8% |
+| 48 h run, session 1 | claude-code / GLM 5.3 | 1,976 | 0 | 0.686 | 0.685 | 0.679 | 0.692 | 0.679 | **0.679** | 1,600 | 16.2% |
+| 48 h run b, session 1 | Proximus / DeepSeek v4.1 Flash | 1,289 | 0 | 0.399 | 0.398 | 0.399 | 0.419 | 0.399 | **0.399** | 1,064 | 11.8% |
+| 48 h run a, session 1 | Proximus / DeepSeek v4.1 Flash | 1,159 | 0 | 0.363 | 0.362 | 0.365 | 0.365 | 0.367 | **0.365** | 950 | 14.6% |
+| single-step trial 6 | Proximus / DeepSeek v4.1 Flash | 1,077 | 0 | 0.347 | 0.346 | 0.341 | 0.349 | 0.341 | **0.341** | 869 | 16.2% |
+| 48 h run, session 1 | Proximus / GLM 5.3 | 1,031 | 0 | 0.331 | 0.330 | 0.325 | 0.344 | 0.325 | **0.325** | 842 | 15.0% |
+| base trial 14 | mini-swe-agent / DeepSeek v4.1 Flash | 716 | 0 | 0.216 | 0.216 | 0.211 | 0.221 | 0.211 | **0.211** | 580 | 13.3% |
+| base trial 15 | mini-swe-agent / GLM 5.3 | 346 | 0 | 0.116 | 0.116 | 0.116 | 0.120 | 0.116 | **0.116** | 286 | 10.7% |
+| base trial 9 | mini-swe-agent / DeepSeek v4.1 Flash | 334 | 0 | 0.099 | 0.099 | 0.100 | 0.099 | 0.139 | **0.099** | 264 | 8.2% |
+| base trial 10 | mini-swe-agent / GLM 5.3 | 274 | 0 | 0.094 | 0.094 | 0.092 | 0.100 | 0.092 | **0.092** | 246 | 7.7% |
+| base trial 8 | claude-code / GLM 5.3 | 63 | 0 | 0.019 | 0.019 | 0.020 | 0.021 | 0.037 | **0.021** | 51 | 57.7% |
+| base trial 13 | claude-code / GLM 5.3 | 15 | 0 | 0.003 | 0.003 | 0.003 | 0.003 | 0.004 | **0.003** | 10 | 14.3% |
 
 ## Validation
 
@@ -2354,6 +2362,7 @@ stored submissions of the earlier sessions of the same task; every one scored
 | `oddish preflight` | flat bundle `cbe004ce22d8` (`ops/sympy-restoration/dist-12h/`, key rotated, 384 files; platform content hash `22886dfb8414…`; network plan as before) | pass (1 task) |
 | Cue sweep with the seventh re-check's words ("selected", "replaced by placeholder", "another way", "skeleton", "curated", "constructed", "deliberate", "exercise" and others) | bundles `1f1b2f2ab4fa` → `cbe004ce22d8` | "selected" and "replaced by placeholder" gone from the instruction, the tool's text and `ATTRIBUTION.txt`, "another way" from `restore rules` (the instruction's one is the requirement's "the same expression written another way"); "recovery tooling" in the instruction, `restore`'s help, the library and `ATTRIBUTION.txt`; "skeleton" left only as the tool's own path and code; nothing else moved but one root-only comment |
 | Reference, the agent's starting tree and a turn of no length, after fix round 11 | this machine, the entry point's steps, one worker; the no-op through the shipped hooks and the real net check | reference 1.000000 and complete: 1,832 / 1,832 units in the set, 6,145 / 6,145 counted calls, 14,523 / 14,523 calls, 2,115 / 2,115 units' examples, 10,428 / 10,428 tests, none unreached, nothing out of its time and no item over half of its bound, no control tripped, 974 s; starting tree 0.0; no-op 0.0 with `end_from` `unchanged` |
+| Regrade of the stored submissions after fix round 11 | this machine, the entry point's steps, examples and calls, one worker, 2026-11-26 (the machine shared with other work during the last grades) | 16 submissions, reward 0.003 to 0.853, each within 0.0005 of fix round 9's regrade (11 up, 5 down), the order unchanged; every move made of the 7 units that joined the set (a submission passes 0 to 7 of them, the full-session claude-code runs 6 or 7) and 2 units whose verdict a call's time-out changed, one each way; none unreached, no late file, no control tripped |
 | `harbor check` with `resources/task-implementation.toml` | working tree, 2026-11-17 | attempted on Modal; failed before review with `NotFoundError: Environment not found` (no default Modal environment). Not run in local Docker. No ratings |
 | Local image builds | none | not run for the v2 Dockerfiles; the Oddish baselines are the first build |
 
