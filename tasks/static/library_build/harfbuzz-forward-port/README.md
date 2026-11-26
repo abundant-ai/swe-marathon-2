@@ -88,3 +88,16 @@ Private material (cases, seeds, gold outputs, private fonts, the duals catalogue
   the new API declarations, and fontTools' table support (read from an installed copy's source, not run).
   Results and corrections in notes/CLAIMS.md.
 - Wrote notes/DESIGN.md. Remaining Phase A deliverables are added in the entries below as they land.
+- notes/CLAIMS.md: 40 claims; 22 verified (2 partly), 11 corrected, 6 unverified, 1 estimate. The 57-unit
+  inventory with candidate upstream commits; the failure sentence's proof plan.
+- notes/SPIKE.md: what is built where, the download list (nothing downloaded; every item needs the owner's OK),
+  eleven pass/fail spike checks and a go/no-go rule.
+- Three-judge panel (opus, sonnet, haiku): three steps by release window and the `final` reward, both unanimous;
+  by majority, a capped oracle chain on the steps bundle before any model run. notes/STEPS.md, a draft `task.toml`
+  (parses with Harbor's `TaskConfig`; every step sets its verifier timeout because Harbor otherwise defaults it to
+  600 s), three draft instructions (cue-word sweep clean, ASCII only), and ignore rules in each step's `tests/`
+  and `solution/`.
+- notes/QA-PLAN.md: the twelve-item gate for this task, the coverage inventory, the stub zoo, the sweep, twenty QA
+  lenses and the post-run checks.
+- Private store started (git-ignored `private/`, the duals catalogue) and backed up as a bundle in harbor-lh.
+- notes/PHASE-A-REPORT.md. Next: the owner's OK for the downloads and a Linux x86_64 build host, then the spike.
