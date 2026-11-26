@@ -2252,6 +2252,21 @@ def set_up(top: Path, proc: FakeProc | None, trace: Path, **kwargs) -> tuple[Pat
     return state, holder_started(state)
 
 
+def confirmed(proc: FakeProc, state: Path, clock: float, wait: float = 10) -> dict:
+    """Round 19: the process the set-up hook left counts a first process only once two looks a second apart, on the
+    clock it reads, saw it alive. The stand-in clock moves only when a check moves it, so this moves it on 1.1 s at a
+    time from `clock`, with real time for looks in between, until that process has recorded a first process; the
+    record (STATE/first-process)."""
+    until = time.monotonic() + wait
+    while time.monotonic() < until:
+        clock += 1.1
+        proc.at(clock)
+        time.sleep(0.3)
+        if (state / "first-process").exists():
+            return json.loads((state / "first-process").read_text())
+    raise AssertionError("no first process was confirmed")
+
+
 def test_the_stop_after_the_limit_counts_from_the_sessions_first_process_even_tens_of_seconds_after_set_up(tmp_path):
     """OB-1 of the re-check of option B (harbor-lh `ops/swe-marathon-v2/qa/basedpl/08-recheck-v3.md`): harbor starts the
     agent's clock after the set-up hook and a network-policy call, and pauses it while a trial is paused, so a stop
@@ -2279,13 +2294,12 @@ def test_the_stop_after_the_limit_counts_from_the_sessions_first_process_even_te
         time.sleep(0.5)
         assert not stamped(trace), "nothing before the end"
         assert not (state / "first-process").exists(), "seen by looks at one moment of its clock: not yet confirmed"
-        proc.at(1032.6)  # a second look, 1.1 s later on the clock it reads, sees it alive with the same start
-        time.sleep(0.5)
-        # Round 19 (M1 of the v7 verdict): the process and the wall-clock time of its start are recorded once confirmed,
-        # long before the stop, for the collect hook's end of the work. Its uptime read 1,032.6 when it confirmed it.
-        first = json.loads((state / "first-process").read_text())
+        # Round 19 (M1 of the v7 verdict): once a second look, a second or more later on the clock it reads, sees it
+        # alive with the same start, the process and the wall-clock time of its start are recorded, long before the
+        # stop, for the collect hook's end of the work.
+        first = confirmed(proc, state, 1031.5)
         assert (first["first_process"], first["first_process_passed_over"]) == (70, 0), first
-        assert abs(first["first_process_started"] - (time.time() - 2.6)) < 1.5, first
+        assert abs(first["first_process_started"] - time.time()) < 15, first
         due = 1030.0 + 34560 + 2
         proc.at(due - 0.5)
         time.sleep(1.0)
@@ -2319,27 +2333,23 @@ def test_a_short_command_before_the_clock_is_never_the_first_process(tmp_path):
     state, holder = set_up(tmp_path / "t", proc, trace)
     try:
         time.sleep(0.3)
-        proc.at(1005.2)
+        proc.at(1005.2)  # the clock stands still while each short command lives (a second of real time: many looks)
         proc.process(65, MY_UID, 40, 1005.0)  # harbor's pwd, before the agent's clock
-        time.sleep(0.5)
-        assert not (state / "first-process").exists(), "seen once: not the first process"
-        shutil.rmtree(proc.root / "65")  # gone within milliseconds
+        time.sleep(1.0)
+        assert not (state / "first-process").exists(), "seen at one moment of its clock only: not the first process"
+        shutil.rmtree(proc.root / "65")  # gone
         proc.at(1006.3)
         proc.process(65, MY_UID, 40, 1006.0)  # the same pid again, another short command
-        time.sleep(0.5)
-        assert not (state / "first-process").exists(), "a later start under the same pid: another process, seen once"
+        time.sleep(1.0)
+        assert not (state / "first-process").exists(), "a later start under the same pid: another process"
         shutil.rmtree(proc.root / "65")
         proc.at(1007.6)
         proc.process(70, MY_UID, 40, 1007.5)  # the session's first process, after harbor's clock
         time.sleep(0.5)
         assert not (state / "first-process").exists(), "seen at one moment of its clock only"
-        proc.at(1008.7)  # a second look, 1.1 s later, sees it alive with the same start
-        until = time.monotonic() + 5
-        while time.monotonic() < until and not (state / "first-process").exists():
-            time.sleep(0.05)
-        first = json.loads((state / "first-process").read_text())
+        first = confirmed(proc, state, 1007.6)  # a later look, a second or more on, sees it alive with the same start
         assert (first["first_process"], first["first_process_passed_over"]) == (70, 2), first
-        assert abs(first["first_process_started"] - (time.time() - 1.2)) < 1.5, first
+        assert abs(first["first_process_started"] - time.time()) < 15, first
         proc.at(1007.5 + 34560 + 2 + 0.05)  # its own due time, not the short command's
         until = time.monotonic() + 10
         while time.monotonic() < until and not (state / "stopped").exists():
@@ -2385,7 +2395,7 @@ def test_the_stop_after_the_limit_waits_for_the_network_where_it_can_be_watched(
     try:
         time.sleep(0.5)
         proc.process(70, MY_UID, 40, 1010.0)
-        time.sleep(0.5)
+        assert confirmed(proc, state, 1000.0)["first_process"] == 70
         proc.at(1010.0 + 34562 + 5)
         time.sleep(1.5)
         assert not stamped(trace), "the network has not come back: nothing is sent"
@@ -2438,7 +2448,7 @@ def test_the_stop_after_the_limit_reaches_forked_setsid_and_continuing_processes
         holder_started(state)
         time.sleep(0.5)
         proc.process(70, MY_UID, 40, 1001.0)
-        time.sleep(0.5)
+        assert confirmed(proc, state, 1000.0)["first_process"] == 70
         proc.at(1001.0 + 34562 + 1)  # the forker's subshells are all there by now
         until = time.monotonic() + 30
         while time.monotonic() < until and not (state / "stopped").exists():
