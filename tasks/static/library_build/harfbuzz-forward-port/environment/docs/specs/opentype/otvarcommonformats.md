@@ -31,69 +31,12 @@ Where each family of deltas lives:
 | font-wide values from OS/2, 'hhea', 'gasp', 'post', 'vhea' | MVAR (mvar.md) |
 | BASE baseline metrics, COLR values | an ItemVariationStore inside BASE or COLR itself |
 
-## Coordinate normalization (Overview chapter material)
+## Coordinate normalization and region scalars
 
-This page works in normalized coordinates throughout but leaves both their derivation and
-the scalar arithmetic to the OpenType Font Variations Overview chapter, which has no digest
-in this folder. This section and the next summarize that chapter so this file can be used on
-its own; fvar.md and avar.md describe the inputs.
+The source defers both to the Font Variations Overview chapter, which is not among these notes; they are not
+restated here.
 
-For each axis, in 'fvar' axis order:
 
-1. Start from the requested user-scale value. If the caller gave none for this axis, use the
-   axis defaultValue from 'fvar'.
-2. Clamp the value into [minValue, maxValue] of that axis record.
-3. Default normalization, giving n:
-   - value below defaultValue: n = (value - defaultValue) / (defaultValue - minValue), so n lies in [-1, 0);
-   - value above defaultValue: n = (value - defaultValue) / (maxValue - defaultValue), so n lies in (0, +1];
-   - value equal to defaultValue: n = 0.
-   Thanks to step 2, a branch whose denominator would be zero is never reached.
-4. If the font has an 'avar' table and that axis has a usable segment map, replace n by its
-   image under the piecewise-linear map (steps and validity rules in avar.md).
-5. The Overview carries steps 3 and 4 in 16.16 fixed point (an F2DOT14 map value widens to
-   16.16 exactly by a left shift of 2) and converts only the final result to F2DOT14: add 2
-   (0x00000002) to the 16.16 value, then shift it right by 2 bits with sign extension. This
-   rounds to the nearest 1/16384, sending exact halves toward positive infinity.
-
-The resulting values lie in [-1.0, +1.0] (F2DOT14 units -16384 to 16384) and are the
-instance coordinates that tuple records and region records are compared with.
-
-## Region scalars (Overview chapter material)
-
-Every region gives, for each axis, a start, a peak and an end coordinate:
-
-- ItemVariationStore: all three are stored in a RegionAxisCoordinates record.
-- Tuple variation store, INTERMEDIATE_REGION set: the peak comes from the peak tuple
-  (embedded or shared), start and end from the two embedded intermediate tuples.
-- Tuple variation store, INTERMEDIATE_REGION clear: only the peak is stored. The implied
-  start is min(0, peak) and the implied end is max(0, peak), so on that axis the factor grows
-  linearly from 0 at the default to 1 at the peak and is 0 on the other side of the default
-  or beyond the peak.
-
-Per-axis factor and region scalar, for instance coordinates c[]:
-
-```
-factor(start, peak, end, c):
-    if peak == 0                    -> 1     # axis does not take part in this region
-    if start > peak or peak > end   -> 1     # malformed axis triple: axis is ignored
-    if start < 0 and end > 0        -> 1     # triple straddles 0 with a non-zero peak: ignored
-    if c == peak                    -> 1
-    if c < start or c > end         -> 0     # instance lies outside the region on this axis
-    if c < peak                     -> (c - start) / (peak - start)
-    otherwise                       -> (end - c) / (end - peak)
-
-scalar(region, c[]):
-    s = 1
-    for each axis a:
-        f = factor(region.start[a], region.peak[a], region.end[a], c[a])
-        if f == 0: return 0
-        s = s * f
-    return s
-```
-
-The adjustment for a target is the sum, over all regions that carry a delta for it, of
-scalar x delta; the instance value is the default value plus that sum. The worked figures in
-gvar.md keep fractional sums; nothing on these pages rounds individual scaled deltas.
 
 ## Tuple variation store
 

@@ -145,6 +145,34 @@ would show up as a rise on the oldest releases first.
 In all 56 graded units, by release window 8 (A, 14.3.1 to 15.0.0, 47a superseded), 13 (B, 15.1.0) and 35 (C,
 15.2.0). The windows survive as release tags on the cases. The spike may cut some units.
 
+### Scope decisions of Phase C (2026-11-27)
+
+**Units cut** (scripts/pipeline/cuts.tsv; their notes stay in the instruction, ungraded):
+
+| Unit | Reason |
+| --- | --- |
+| 47a | Superseded: in 15.2.0 `hb_font_set_face()` is the no-op of 47b, so nothing of 15.0.0's behaviour remains observable except a deprecation attribute, which no output shows. Its cases belong to 47b |
+| 28 | Unobservable: the syllabic shapers already set the unsafe-to-break flags that 15.2.0 adds at the graphemes level, so only removals differ, which the note does not state (0 differences in 6,109 probed texts on 7 fonts) |
+| 30 | Unreachable: the changed branch needs a normalized coordinate below -1, and every public way to set variations clamps to [-1, 1] before the `avar` maps |
+| 50 | Rule not in the materials: format 19 takes its metrics from `CBLC` index subtable formats 2 and 5, which only the EBLC chapter defines. That chapter is not among the shipped specification notes, and 14.3.0 implements neither format (audit class c/d) |
+
+**Inputs left out of a unit, so no case grades them either way:**
+
+- Unit 36: values that overflowed 14.3.0's 16-bit scaler arguments (advances above 32767 units, stored extents whose
+  bearing plus width passes 32767), marked `x:16bit`. 15.0.0 gives their exact values, while the note promises only
+  that values saturate, so a port that saturates them at 16 bits would be as faithful to the note. Confirmed by the
+  coordinator, 2026-11-27.
+- Every generator leaves out what 15.2.0 changes beyond its note (each module's docstrings list them): for example
+  format characters as Indic pre-context (1), a dotted circle already in the text before a Hangul tone mark (5),
+  `kerx` resets (20), vertical `kerx` (21), format 17/18 glyphs through index formats 2/5 (50), STAT format 4 (40c).
+
+**Specification notes.** The digests in `environment/docs/specs/` restate the downloaded pages only. Material the
+pages cite without defining (the EBLC/EBDT formats, the baseline tag and axis tag registries, the Variations
+Overview's normalization and region scalars, W3C compositing, `gvar`'s vertical phantom points, the AAT lookup
+formats, and the interpretive reading notes) was cut rather than shipped unverified. Of the graded units only 50
+depended on it (above); 31's per-tuple region rule is in 14.3.0's own `gvar` code, 44b's baseline tags and 40b's
+slant axis are documented in 14.3.0's public headers, and the AAT lookup formats are implemented in 14.3.0.
+
 ## 6. Reward
 
 One verifier run at the end of the session, over the graded units I, against 15.2.0:

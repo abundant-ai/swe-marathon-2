@@ -107,4 +107,4 @@ Script tag: `hebr` (Hebrew).
 
 - In three cases a meteg (U+05BD, the page's "METEG/SOF PASUQ") is written between the two parts of a single nikud. For correct display the page suggests adding three extra glyphs for these combinations to the font, produced by a `ccmp` ligature lookup (GSUB type 4). The glyphs need no Unicode code points of their own.
 - The page also refers to the Unicode Standard for further guidance on meteg combined with hataf vowels.
-- The page presents the three glyphs only as a picture and names no code points in its text, so the exact list cannot be transcribed here. Inference (not page text): the only two-part points are the hataf vowels, so the three cases are most likely U+05B1 HEBREW POINT HATAF SEGOL, U+05B2 HEBREW POINT HATAF PATAH and U+05B3 HEBREW POINT HATAF QAMATS, each combined with U+05BD.
+- The page presents the three glyphs only as a picture and names no code points in its text, so the exact list cannot be transcribed here.

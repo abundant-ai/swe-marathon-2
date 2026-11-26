@@ -144,22 +144,10 @@ Name ID rules:
 4. Normalize the clamped values before using any variation data (otvarcommonformats.md,
    Coordinate normalization; avar.md).
 
-## Registered axes (outside this page)
+## Registered axes
 
-This page names 'wght' as an example but does not list the registered axes; it refers to the
-OpenType Design-Variation Axis Tag Registry, which has no digest in this folder. For
-orientation only, the registry defines these axes and valid user-scale ranges:
-
-| Tag | Axis | Valid user-scale values |
-|---|---|---|
-| 'ital' | Italic | 0 to 1 |
-| 'opsz' | Optical size | greater than 0 |
-| 'slnt' | Slant | greater than -90 and less than 90 (degrees) |
-| 'wdth' | Width | greater than 0 (percent of normal width) |
-| 'wght' | Weight | 1 to 1000 |
-
-OS/2.usWeightClass, OS/2.usWidthClass and post.italicAngle track 'wght', 'wdth' and 'slnt'
-directly, which is why MVAR cannot vary them (mvar.md).
+Registered axis tags and their ranges are defined in the OpenType Design-Variation Axis Tag Registry, which is not
+among these notes.
 
 ## Example from the page (layout check)
 

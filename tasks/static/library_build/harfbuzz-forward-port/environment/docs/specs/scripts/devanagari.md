@@ -7,7 +7,6 @@ These notes restate the source's structures and rules; where they differ, the so
 - Code points are written U+XXXX and ranges U+XXXX..U+YYYY. Where the source writes bare hexadecimal (its reorder table has cells such as `0945-0948`), only the notation changes here; every value is kept.
 - Feature tags are written in single quotes ('rphf'). Script and language system tags are written in double quotes, exactly as registered, including trailing spaces.
 - Anything labelled "Reference (Unicode)" is a Unicode Character Database fact added to make a character concrete. The source names that character but does not give the code point or name.
-- Anything labelled "Reading note" is an interpretation added to these notes, not a statement of the source.
 - The source describes the revised Indic model, whose script tag is "dev2". Its remarks about the earlier model (tag "deva") are collected in section 10.
 
 ## 1. Terms
@@ -78,7 +77,6 @@ Column headings as in the source: Characters, Reorder Class. Rows are in source 
 Notes:
 - Apart from U+093F, every matra in the table has class AfterSubscript; the source keeps them in three separate rows without explaining the grouping.
 - No Devanagari character is assigned AfterPostscript, and the table gives no class for syllable modifier signs or vedic signs.
-- Reading note: the source never defines the class names. They match the target slots used in reordering (section 5): BeforeHalf = before the first half form; AfterSubscript = after the subjoined (below-base) consonants; AfterPostscript = after the post-base consonant forms; BeforePostscript = before the post-base consonant forms.
 
 ### 2.4 Consonant types read from the font
 
@@ -301,7 +299,6 @@ Input U+0930 U+094D U+0926 U+094D U+092E U+093F (Ra, virama, Da, virama, Ma, vow
 - Invalid means: a combining mark or sign that has no valid base to go with.
 - Engines are free to choose how they treat invalid marks, and their notions of validity can differ at the edges (the example given is a cap of a single above-base vowel mark, applied by some engines and not by others).
 - The strategy the source describes: make the invalid mark a cluster of its own and draw it on a default base glyph such as the dotted circle U+25CC. The source points to "Fallback Rendering" in the Unicode Standard 4.0 (its section 5.13) and does not prescribe a more exact insertion rule.
-- Reading note: a mark that none of the three patterns in 3.2 can absorb is the case that has no valid base.
 - Fonts should contain a glyph for U+25CC. Without it, engines following this strategy draw the mark on the missing-glyph shape (a white box).
 - Fonts should also contain glyphs for ZWJ (U+200D), ZWNJ (U+200C) and ZWSP (U+200B).
 - To show a mark by itself without a dotted circle, text puts NBSP in front of it (section 7).
@@ -321,7 +318,6 @@ The Indic behaviour keeps the general Unicode meaning: ZWJ asks for neighbouring
 
 Notes:
 - A half form can be shown alone with ZWJ and no NBSP. Marks and below-base or post-base forms need a leading NBSP instead, because a mark glyph has to combine with some base glyph.
-- Reading note: the Stand Alone pattern (3.2) accepts NBSP followed by an optional joiner, a halant and a consonant, for example U+00A0 U+200D U+094D U+0930. The source shows the rakaar sequence only as an illustration, not in text.
 
 ## 8. Base elements and mark classes
 

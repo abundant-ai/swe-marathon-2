@@ -141,17 +141,7 @@ order; bit 30 (0x40000000) chooses forward versus backward within it:
   units, then a guard unit made of 0xFFFF glyph values that is not counted in
   nUnits. Format 6 units are {glyph, value}; format 2 units are
   {lastGlyph, firstGlyph, value}.
-- Supplement (the lookup formats are defined in the manual's common table
-  chapter, not on this page):
-
-| Format | Name | Body after the uint16 format |
-|---|---|---|
-| 0 | simple array | one value per glyph, indexed by glyph ID |
-| 2 | segment single | binary-search header, then {lastGlyph, firstGlyph, value} segments |
-| 4 | segment array | binary-search header, then {lastGlyph, firstGlyph, offset} segments; offset (from the lookup table start) to one value per glyph of the segment |
-| 6 | single table | binary-search header, then {glyph, value} pairs |
-| 8 | trimmed array | uint16 firstGlyph, uint16 glyphCount, then glyphCount values |
-| 10 | extended trimmed array | uint16 unitSize, uint16 firstGlyph, uint16 glyphCount, then glyphCount values of unitSize bytes |
+- The lookup table formats are defined in the manual's common table chapter, which is not among these notes.
 
 ## Extended state tables (types 0, 1, 2 and 5)
 

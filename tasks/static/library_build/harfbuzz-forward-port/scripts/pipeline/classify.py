@@ -164,6 +164,12 @@ def yields(rows: list[dict]) -> dict[str, dict[str, int]]:
     return {u: dict(v) for u, v in sorted(table.items())}
 
 
+def recorded_cuts() -> dict[str, str]:
+    """Units cut for a reason the sweep cannot see (scripts/pipeline/cuts.tsv), whatever their yield."""
+    rows = (Path(__file__).resolve().parent / "cuts.tsv").read_text().splitlines()[1:]
+    return dict(row.split("\t", 1) for row in rows if row)
+
+
 def opaque(cid: str, salt: str) -> str:
     return hashlib.sha256(f"{salt}:{cid}".encode()).hexdigest()[:12]
 
@@ -214,6 +220,7 @@ def select(
         for u in units
         if len(changed.get(u, [])) < floor
     }
+    cut |= recorded_cuts()
     chosen: list[tuple[str, dict]] = []
     for u, items in sorted(changed.items()):
         if u in cut:
@@ -268,6 +275,9 @@ def main() -> None:
     p.add_argument("--broad", type=int, default=600)
     p.add_argument("--floor", type=int, default=3)
     p.add_argument("--rows-to", type=Path, help="write every classified row here")
+    p.add_argument(
+        "--cut-to", type=Path, help="write the units not graded, with reasons, here"
+    )
     args = p.parse_args()
     units = load_units(args.units)
     rows, stats = classify(args.runs, args.meta, units, args.reverts)
@@ -288,6 +298,8 @@ def main() -> None:
             args.salt_file.read_text().strip() if args.salt_file else args.salt,
             args.floor,
         )
+        if args.cut_to:
+            args.cut_to.write_text(json.dumps(cut, indent=1, sort_keys=True))
         args.select_to.parent.mkdir(parents=True, exist_ok=True)
         with args.select_to.open("w") as fh:
             for c in chosen:

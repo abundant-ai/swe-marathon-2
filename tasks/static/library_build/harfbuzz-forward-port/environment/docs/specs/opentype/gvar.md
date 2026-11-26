@@ -137,9 +137,7 @@ Phantom points:
   y = 0 (hmtx.md, head.md). A variable font with TrueType outlines must have lsb equal to xMin
   (bit 1 of the 'head' flags set), so pp1 starts at x = 0. In the page's example, advance 1358
   and lsb = xMin = 16 put the two points at (0, 0) and (1358, 0).
-- Vertical start positions are not given on this page. Readers commonly place the top point
-  at y = yMax + top side bearing and the bottom point at that y minus the advance height, both
-  values from 'vmtx' (vmtx.md), with x = 0.
+- Vertical start positions are not given on this page.
 - After variation: advance width = pp2.x - pp1.x, left side bearing = xMin - pp1.x (xMin of the
   varied outline), advance height = top y - bottom y.
 - In a simple glyph, deltas for phantom points are applied like those of any other point.

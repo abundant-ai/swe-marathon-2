@@ -496,18 +496,6 @@ How a position is decided:
 - USE does not implement topographical features for non-joining scripts; the
   page says further specification is needed.
 
-Which feature each position receives:
-
-| Boundary before the cluster | Boundary after the cluster | Feature |
-|---|---|---|
-| yes | yes | isol |
-| yes | no | init |
-| no | no | medi |
-| no | yes | fina |
-
-The page gives the boundary rule but no table; the rows above apply the
-standard meaning of the four tags to a cluster lying between boundaries,
-reading the start and end of the run as boundaries.
 
 ### 7.2 Standard typographic presentation (GSUB)
 

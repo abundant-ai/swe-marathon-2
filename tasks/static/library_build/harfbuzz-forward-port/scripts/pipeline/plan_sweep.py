@@ -124,7 +124,7 @@ def main() -> None:
                 HOST_PY, "-I", "scripts/pipeline/classify.py", str(WORK / f"runs-{args.tag}"), str(WORK / f"cand-{args.tag}" / "meta.jsonl"),
                 "scripts/pipeline/units.tsv", "--reverts", *reverts,
                 "--select-to", "tests/private/selection.jsonl", "--salt-file", "private/salt.txt",
-                "--rows-to", str(WORK / f"classified-{args.tag}.jsonl"),
+                "--rows-to", str(WORK / f"classified-{args.tag}.jsonl"), "--cut-to", str(WORK / f"cut-{args.tag}.json"),
             ],
         }
     )  # fmt: skip

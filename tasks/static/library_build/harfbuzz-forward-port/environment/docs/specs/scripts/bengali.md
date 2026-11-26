@@ -7,7 +7,6 @@ These notes restate the source's structures and rules; where they differ, the so
 - Code points are written U+XXXX and ranges U+XXXX..U+YYYY. Where the source writes bare hexadecimal (its reorder table has cells such as `09C1-09C4`), only the notation changes here; every value is kept.
 - Feature tags are written in single quotes ('rphf'). Script and language system tags are written in double quotes, exactly as registered, including trailing spaces.
 - Anything labelled "Reference (Unicode)" is a Unicode Character Database fact added to make a character concrete. The source names that character but does not give the code point or name.
-- Anything labelled "Reading note" is an interpretation added to these notes, not a statement of the source.
 - The source describes the revised Indic model, whose script tag is "bng2". Its remarks about the earlier model (tag "beng") are collected in section 10.
 - The source covers the Bengali script as used for Bengali (Bangla), Assamese and Manipuri.
 
@@ -85,9 +84,7 @@ Column headings as in the source: Characters, Reorder Class. Rows are in source 
 
 Notes:
 - U+0981 (candrabindu) is the only syllable modifier sign the table classifies; it gives no class for vedic signs.
-- The two-part matras U+09CB and U+09CC are not in the table. Reading note: initial reordering splits multi-part matras before moving them (5.1), and by their Unicode decompositions the parts fall under row 2 (U+09C7, BeforeHalf) and row 4 (U+09BE or U+09D7, AfterPostscript).
-- Reading note: the source never defines the class names. They match the target slots used in reordering (section 5): BeforeHalf = before the first half form; AfterSubscript = after the subjoined (below-base) consonants; AfterPostscript = after the post-base consonant forms; BeforePostscript (not used in this table) = before the post-base consonant forms.
-- Reading note: the reph steps in 5.2 name three reph positions (after the main consonant, before the post-base consonant forms, after the post-base consonant forms), and AfterSubscript is not literally one of them. Read by its name, the class puts reph after the below-base consonants, which in the syllable order of 3.5 come before any post-base consonants.
+- The two-part matras U+09CB and U+09CC are not in the table.
 
 ### 2.4 Consonant types read from the font
 
@@ -317,7 +314,6 @@ The source's 'rphf' example makes the same point: reph is moved onto the first m
 - Invalid means: a combining mark or sign that has no valid base to go with.
 - Engines are free to choose how they treat invalid marks, and their notions of validity can differ at the edges (the example given is a cap of a single above-base vowel mark, applied by some engines and not by others).
 - The strategy the source describes: make the invalid mark a cluster of its own and draw it on a default base glyph such as the dotted circle U+25CC. The source points to "Fallback Rendering" in the Unicode Standard 4.0 (its section 5.13) and does not prescribe a more exact insertion rule.
-- Reading note: a mark that none of the three patterns in 3.2 can absorb is the case that has no valid base.
 - Fonts should contain a glyph for U+25CC. Without it, engines following this strategy draw the mark on the missing-glyph shape (a white box).
 - Fonts should also contain glyphs for ZWJ (U+200D), ZWNJ (U+200C) and ZWSP (U+200B); see the note in 2.1 about the swapped labels in the source.
 - To show a mark by itself without a dotted circle, text puts NBSP in front of it (section 7).
@@ -337,7 +333,6 @@ The Indic behaviour keeps the general Unicode meaning: ZWJ asks for neighbouring
 Notes:
 - A half form can be shown alone with ZWJ and no NBSP. Marks and below-base or post-base forms need a leading NBSP instead; the source's reason is that such glyphs are zero-width, so they need the NBSP to sit on.
 - The Bengali page has no counterpart of the Devanagari eyelash-RA use of RA + H + ZWJ.
-- Reading note: the Stand Alone pattern (3.2) accepts NBSP followed by an optional joiner, a halant and a consonant, for example U+00A0 U+200D U+09CD U+09B0. The source shows the below-base Ra sequence only as an illustration, not in text.
 
 ## 8. Base elements and mark classes
 

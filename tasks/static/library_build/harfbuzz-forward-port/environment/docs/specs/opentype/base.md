@@ -329,20 +329,5 @@ lands on the dominant run's position for T and S scales about that baseline.
 
 ## Registered baseline tags
 
-The baseline tags are registered in the OpenType Layout tag registry, on its own page
-(Baseline tags, https://learn.microsoft.com/en-us/typography/opentype/spec/baselinetags),
-not on the BASE page; the BASE page's examples use 'hang', 'ideo' and 'romn'. The registry, in
-alphabetical order:
-
-| Tag | Baseline |
-|---|---|
-| 'hang' | Hanging baseline: the line from which syllables appear to hang in Tibetan and similar scripts (several Indic scripts align glyph tops on a high hanging baseline) |
-| 'icfb' | Ideographic character face, bottom edge in horizontal layout (left edge in vertical layout) |
-| 'icft' | Ideographic character face, top edge in horizontal layout (right edge in vertical layout) |
-| 'ideo' | Ideographic em-box, bottom edge in horizontal layout (left edge in vertical layout) |
-| 'idtp' | Ideographic em-box, top edge in horizontal layout (right edge in vertical layout) |
-| 'math' | Baseline about which mathematical characters are centered; in vertical layout, about which math characters rotated 90 degrees clockwise are centered |
-| 'romn' | Baseline of simple alphabetic scripts such as Latin, Cyrillic and Greek; in vertical layout, the baseline of such text rotated 90 degrees clockwise (not of characters that stay upright) |
-
-The ideographic em-box is the design square of the ideographs; the ideographic character face
-is the usually smaller area inside it that their shapes occupy.
+The baseline tags are registered in the OpenType Layout tag registry, on its own page (Baseline tags), not on the
+BASE page, and that page is not among these notes. The BASE page's examples use 'hang', 'ideo' and 'romn'.

@@ -118,30 +118,5 @@ that is larger than the target size.
 
 ## Image formats inherited from EBDT
 
-The source page names the nine EBDT formats but does not restate them. The EBDT chapter is
-not one of these digests; this summary lets a reader decode them. The pixel depth is the
-strike's bitDepth. "Byte-aligned" means every row of pixels starts on a byte boundary;
-"bit-aligned" means rows follow each other with no padding and only the end of the image is
-padded to a byte.
-
-| Format | Layout | Metrics |
-|---|---|---|
-| 1 | SmallGlyphMetrics, then byte-aligned image data | in the record (small) |
-| 2 | SmallGlyphMetrics, then bit-aligned image data | in the record (small) |
-| 3 | obsolete; not used | - |
-| 4 | not supported in OpenType (compressed data, metrics in the location table) | - |
-| 5 | bit-aligned image data only | in CBLC (index format 2 or 5) |
-| 6 | BigGlyphMetrics, then byte-aligned image data | in the record (big) |
-| 7 | BigGlyphMetrics, then bit-aligned image data | in the record (big) |
-| 8 | SmallGlyphMetrics; uint8 pad; uint16 numComponents; EbdtComponent components[numComponents] | in the record (small) |
-| 9 | BigGlyphMetrics; uint16 numComponents; EbdtComponent components[numComponents] | in the record (big) |
-
-Formats 8 and 9 build a composite bitmap from other glyphs of the same strike.
-
-EbdtComponent record:
-
-| Type | Name | Description |
-|---|---|---|
-| uint16 | glyphID | Glyph ID of the component bitmap. |
-| int8 | xOffset | Position of the component's left edge. |
-| int8 | yOffset | Position of the component's top edge. |
+The source keeps the EBDT image formats by reference; the EBDT page is not among these notes, so they are not
+restated here.

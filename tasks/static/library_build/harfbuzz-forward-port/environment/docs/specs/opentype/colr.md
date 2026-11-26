@@ -704,19 +704,19 @@ CompositeMode enumeration (the rows without a value are group headings, as in th
 | Value | Name | Description |
 |---|---|---|
 |  | Porter-Duff modes |  |
-| 0 | COMPOSITE_CLEAR | Clear: nothing kept (Fa = 0, Fb = 0) |
-| 1 | COMPOSITE_SRC | Source only; W3C name: copy (Fa = 1, Fb = 0) |
-| 2 | COMPOSITE_DEST | Backdrop only (Fa = 0, Fb = 1) |
-| 3 | COMPOSITE_SRC_OVER | Source on top of backdrop (Fa = 1, Fb = 1 - As) |
-| 4 | COMPOSITE_DEST_OVER | Backdrop on top of source (Fa = 1 - Ab, Fb = 1) |
-| 5 | COMPOSITE_SRC_IN | Source kept where the backdrop has coverage (Fa = Ab, Fb = 0) |
-| 6 | COMPOSITE_DEST_IN | Backdrop kept where the source has coverage (Fa = 0, Fb = As) |
-| 7 | COMPOSITE_SRC_OUT | Source kept where the backdrop lacks coverage (Fa = 1 - Ab, Fb = 0) |
-| 8 | COMPOSITE_DEST_OUT | Backdrop kept where the source lacks coverage (Fa = 0, Fb = 1 - As) |
-| 9 | COMPOSITE_SRC_ATOP | Source over backdrop, limited to the backdrop (Fa = Ab, Fb = 1 - As) |
-| 10 | COMPOSITE_DEST_ATOP | Backdrop over source, limited to the source (Fa = 1 - Ab, Fb = As) |
-| 11 | COMPOSITE_XOR | Only the parts that do not overlap (Fa = 1 - Ab, Fb = 1 - As) |
-| 12 | COMPOSITE_PLUS | Sum of both; W3C name: lighter (Fa = 1, Fb = 1) |
+| 0 | COMPOSITE_CLEAR | Clear: nothing kept |
+| 1 | COMPOSITE_SRC | Source only; W3C name: copy |
+| 2 | COMPOSITE_DEST | Backdrop only |
+| 3 | COMPOSITE_SRC_OVER | Source on top of backdrop |
+| 4 | COMPOSITE_DEST_OVER | Backdrop on top of source |
+| 5 | COMPOSITE_SRC_IN | Source kept where the backdrop has coverage |
+| 6 | COMPOSITE_DEST_IN | Backdrop kept where the source has coverage |
+| 7 | COMPOSITE_SRC_OUT | Source kept where the backdrop lacks coverage |
+| 8 | COMPOSITE_DEST_OUT | Backdrop kept where the source lacks coverage |
+| 9 | COMPOSITE_SRC_ATOP | Source over backdrop, limited to the backdrop |
+| 10 | COMPOSITE_DEST_ATOP | Backdrop over source, limited to the source |
+| 11 | COMPOSITE_XOR | Only the parts that do not overlap |
+| 12 | COMPOSITE_PLUS | Sum of both; W3C name: lighter |
 |  | Separable color blend modes: |  |
 | 13 | COMPOSITE_SCREEN | B = Cb + Cs - Cb * Cs |
 | 14 | COMPOSITE_OVERLAY | Hard-light with backdrop and source swapped |
@@ -725,7 +725,7 @@ CompositeMode enumeration (the rows without a value are group headings, as in th
 | 17 | COMPOSITE_COLOR_DODGE | B = min(1, Cb / (1 - Cs)); but 0 when Cb = 0, else 1 when Cs = 1 |
 | 18 | COMPOSITE_COLOR_BURN | B = 1 - min(1, (1 - Cb) / Cs); but 1 when Cb = 1, else 0 when Cs = 0 |
 | 19 | COMPOSITE_HARD_LIGHT | Multiply(Cb, 2 * Cs) if Cs <= 0.5, else Screen(Cb, 2 * Cs - 1) |
-| 20 | COMPOSITE_SOFT_LIGHT | W3C soft-light; formula below |
+| 20 | COMPOSITE_SOFT_LIGHT | W3C soft-light |
 | 21 | COMPOSITE_DIFFERENCE | B = abs(Cb - Cs) |
 | 22 | COMPOSITE_EXCLUSION | B = Cb + Cs - 2 * Cb * Cs |
 | 23 | COMPOSITE_MULTIPLY | B = Cb * Cs |
@@ -734,13 +734,6 @@ CompositeMode enumeration (the rows without a value are group headings, as in th
 | 25 | COMPOSITE_HSL_SATURATION | Saturation from source; hue and luminosity from backdrop |
 | 26 | COMPOSITE_HSL_COLOR | Hue and saturation from source; luminosity from backdrop |
 | 27 | COMPOSITE_HSL_LUMINOSITY | Luminosity from source; hue and saturation from backdrop |
-
-The formulas in this table restate W3C Compositing and Blending Level 1 (the source cites it rather than repeating it; that specification governs):
-
-- Porter-Duff: with premultiplied colors, result = Fa * source + Fb * backdrop, and likewise for alpha. As and Ab are the source and backdrop alpha.
-- Blend modes: B(Cb, Cs) works on unpremultiplied backdrop color Cb and source color Cs, per channel for the separable modes and on the whole RGB color for the non-separable ones (W3C SetLum, SetSat, Lum and Sat helpers). The source color is first replaced by (1 - Ab) * Cs + Ab * B(Cb, Cs), and the result is then composited source-over.
-- Soft-light: if Cs <= 0.5, B = Cb - (1 - 2 * Cs) * Cb * (1 - Cb); otherwise B = Cb + (2 * Cs - 1) * (D(Cb) - Cb), where D(Cb) = ((16 * Cb - 12) * Cb + 4) * Cb when Cb <= 0.25 and sqrt(Cb) otherwise.
-- Hue, saturation, color, luminosity: B = SetLum(SetSat(Cs, Sat(Cb)), Lum(Cb)), SetLum(SetSat(Cb, Sat(Cs)), Lum(Cb)), SetLum(Cs, Lum(Cb)) and SetLum(Cb, Lum(Cs)) respectively.
 
 Boundedness of a PaintComposite sub-graph, by mode:
 
