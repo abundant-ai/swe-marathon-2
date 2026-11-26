@@ -8,14 +8,14 @@ Writing only: no downloads, no Docker, no Godot run, no Oddish.
 
 | Deliverable | Path (under `tasks/static/game_dev/crime-city-sandbox/`) | Commit |
 | --- | --- | --- |
-| Plan format `city-plan/1` (agent-facing) | `common/design/plan/FORMAT.md` | `a4cc385`, revised in the review commit |
-| Downtown core block | `common/design/plan/downtown.json` (16 nodes, 24 edges, 60 lanes, 7 signalised and 5 all-way-stop junctions, 9 blocks, 33 parcels, 25 points of interest) | `a4cc385`, revised in the review commit |
+| Plan format `city-plan/1` (agent-facing) | `common/design/plan/FORMAT.md` | `a4cc385`, revised in `29f23da` |
+| Downtown core block | `common/design/plan/downtown.json` (16 nodes, 24 edges, 60 lanes, 7 signalised and 5 all-way-stop junctions, 9 blocks, 33 parcels, 25 points of interest) | `a4cc385`, revised in `29f23da` |
 | Plan generator and checker | `scripts/gen_plan.py`, `scripts/check_plan.py` (0 problems; 9 mutations caught) | `a4cc385` |
-| GDD v1 (agent-facing) | `common/design/GDD.md`: 17 chapters, 177 numbered rules, about 11,100 words | `90e6ad9`, revised in the review commit |
+| GDD v1 (agent-facing) | `common/design/GDD.md`: 17 chapters, 177 numbered rules, about 11,100 words | `90e6ad9`, revised in `29f23da` |
 | Wording check | `scripts/check_agent_text.py` (0 hits on the design folder; 9 open TODO markers) | `90e6ad9` |
-| Phase 1 plan | `notes/PHASE1-PLAN.md`: reward, 79-check catalog, 177-row coverage map, 10 workstreams, layout, Linux and downloads, schedule, 20 risks, failure mode | `9f5d05b`, revised in the review commit |
+| Phase 1 plan | `notes/PHASE1-PLAN.md`: reward, 79-check catalog, 177-row coverage map, 10 workstreams, layout, Linux and downloads, schedule, 20 risks, failure mode | `9f5d05b`, revised in `29f23da` |
 | Coverage check | `scripts/check_coverage.py` (0 problems; 7 mutations caught) | `9f5d05b` |
-| Review fixes, this report, the README log | all of the above | the last commit on the branch |
+| Review fixes, this report, the README log | all of the above | `29f23da` (this table's hashes: the next commit) |
 
 ## Decisions taken
 
@@ -74,7 +74,7 @@ Writing only: no downloads, no Docker, no Godot run, no Oddish.
 
 One independent read of the GDD and the plan format, by an opus agent that had not seen my
 reasoning. It reported cues, unmeasurable rules, contradictions, restrictions, originality and time
-budget. Everything below was fixed in the review commit and is covered by the coverage map.
+budget. Everything below was fixed in `29f23da` and is covered by the coverage map.
 - **Evaluation cues:**
   - "Every value is the game's real state" was reworded;
   - the telemetry rule is now a plain "leave other nodes alone";
