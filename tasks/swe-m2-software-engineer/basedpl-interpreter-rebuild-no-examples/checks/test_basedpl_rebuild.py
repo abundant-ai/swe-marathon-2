@@ -2241,17 +2241,25 @@ def test_the_stop_after_the_limit_counts_from_the_sessions_first_process_even_te
     + 34,562.05 s the stop comes, and its record names the process."""
     trace, proc = tmp_path / "trace", FakeProc(tmp_path / "t", 1000.0)
     proc.process(50, MY_UID, 40, 990.0)  # set-up's: began before the set-up hook's process
+    (tmp_path / "t" / "state").mkdir()
+    (tmp_path / "t" / "state" / "first-process").write_text('{"first_process": 50, "first_process_started": 5.0}')  # an earlier run's
     state, holder = set_up(tmp_path / "t", proc, trace)
     try:
         time.sleep(0.5)  # the process has read its own start
+        assert not (state / "first-process").exists(), "an earlier run's record of a first process is removed"
         proc.process(60, MY_UID, 50, 1010.0)  # forked after set-up by set-up's own process of the user
         proc.at(1029.0)
         time.sleep(0.5)
+        assert not (state / "first-process").exists(), "no first process yet"
         proc.process(70, MY_UID, 40, 1030.0)  # the session's first process, under root's su
         proc.process(80, MY_UID, 70, 1031.0)
         proc.at(1031.5)
         time.sleep(0.5)
         assert not stamped(trace), "nothing before the end"
+        # Round 19 (M1 of the v7 verdict): the process and the wall-clock time of its start are recorded at once, long
+        # before the stop, for the collect hook's end of the work. Its uptime read 1,029 or 1,031.5 when it saw it.
+        first = json.loads((state / "first-process").read_text())
+        assert first["first_process"] == 70 and abs(first["first_process_started"] - time.time()) < 4, first
         due = 1030.0 + 34560 + 2
         proc.at(due - 0.5)
         time.sleep(1.0)
@@ -2805,6 +2813,56 @@ def test_a_capped_turn_counts_nothing_written_after_its_end(tmp_path):
     measure = hook_scripts()["measure"]
     assert "SESSION_SECONDS = 34560" in measure and "late_entries, held_entries = take_out_late()" in measure
     assert measure.index("late_entries, held_entries = take_out_late()") < measure.index('walk(top, "")'), "taken out before the walk counts"
+
+
+def test_the_end_of_the_work_counts_from_the_sessions_first_process_not_from_set_up(tmp_path):
+    """Round 19 (M1 of the v7 verdict, F4). The end of the work counted from set-up's own time (turn-started), while the
+    agent's turn, and the stop after the limit, begin with the session's first process, seconds or more later: a save
+    in the turn's last seconds was then taken out as late, and with it the reward. The end now counts from the first
+    process's start, which the process the set-up hook left records as soon as it sees it (STATE/first-process), and
+    set-up's time only where none was recorded. Here the first process starts 30 s after set-up: a save in the turn's
+    last second is kept (set-up's end would have taken it out), and one made after the end, with the network open
+    again, is still late. Without a record of the first process the end is set-up's time plus the limit, as before."""
+    when = {}
+
+    def build(rebuild):
+        (rebuild / "bpl").write_text("#!/bin/sh\necho mine\n")
+        when["end"] = int(time.time()) + 2  # the end of the work: after the last save, before the late one
+        state = rebuild.parent.parent / "state"
+        when["first"] = when["end"] - 34561 + 0.4  # rounded down, plus the limit and the one second: the end
+        (state / "turn-started").write_text(f"{when['end'] - 34561 - 30}\n")  # set-up, 30 s before the first process
+        (state / "first-process").write_text(json.dumps({"first_process": 70, "first_process_started": when["first"]}))
+        (rebuild / "last-second.txt").write_text("saved in the turn's last second\n")
+        while time.time() < when["end"] + 0.3:
+            time.sleep(0.05)
+        (rebuild / "after-the-end.txt").write_text("saved after the end, the network open again\n")
+
+    rebuild = collected(tmp_path / "first", build)
+    mark = (rebuild / ".manifest").read_text().splitlines()
+    assert mark[1:] == ["removed after-the-end.txt: changed after the end of the work, 34560 s after the session began"], mark
+    assert sorted(path.name for path in rebuild.iterdir()) == [".manifest", ".manifest.json", "bpl", "last-second.txt"], mark
+    record = json.loads((rebuild / ".manifest.json").read_text())
+    assert (record["work_end"], record["work_end_from"], record["late_entries"]) == (when["end"], "first process", 1), record
+    assert record["first_process_started"] == when["first"] and record["turn_started"] == when["end"] - 34561 - 30
+    summary = verifier_call(textwrap.dedent(f"""
+        import json, verify
+        from pathlib import Path
+        print(json.dumps(verify.delivery_record(Path({str(rebuild)!r}))))
+    """))
+    assert (summary["work_end"], summary["work_end_from"], summary["first_process_started"]) == (when["end"], "first process", when["first"])
+
+    def set_up_only(rebuild):  # no first process recorded: set-up's time, as before round 19
+        (rebuild / "bpl").write_text("#!/bin/sh\n")
+        state = rebuild.parent.parent / "state"
+        when["setup"] = int(time.time()) - 34561 - 5
+        (state / "turn-started").write_text(f"{when['setup']}\n")
+
+    rebuild = collected(tmp_path / "set-up", set_up_only)
+    record = json.loads((rebuild / ".manifest.json").read_text())
+    assert (record["work_end"], record["work_end_from"], record["first_process_started"]) == (when["setup"] + 34561, "set-up", None)
+    holder, measure = (TASK / "environment" / "provision-scratch").read_text(), hook_scripts()["measure"]
+    assert holder.index("record_first(pid, start)") < holder.index("due = start + LIMIT_SECONDS + MARGIN_SECONDS"), "recorded at once"
+    assert 'for name in ("first-process", "stopped"):' in measure, "the hook reads the start the stop counts from"
 
 
 def test_a_capped_turn_that_delivered_nothing_or_lost_its_listing(tmp_path):

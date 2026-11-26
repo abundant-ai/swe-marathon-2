@@ -4,7 +4,8 @@
 # has passed), then stops every process of that user; it then lists those processes, ends them, records every entry's
 # own times before anything of its own touches the tree, and records whether this host has outbound connectivity, for
 # the maintenance log. A session that ran to its limit leaves its processes running until here: what changed after
-# the session's end (its start plus its limit) is taken out, by the times recorded before this step touched anything,
+# the session's end (the start of its first process plus its limit) is taken out, by the times recorded before this
+# step touched anything,
 # and so is every file those processes, frozen, still hold open for writing or map shared and writable.
 # What it lets through is what the copy can take: within the limits the instruction states, with nothing of that
 # user's processes running, and packed here first the way the copy packs it, with room left for this step's record;
@@ -580,7 +581,9 @@ record and mark beside it, is moved aside whole and replaced by an empty directo
 held and lists only the first notes; a pack that fails only for want of room or inodes the machine never had is left
 to the copy. What this step writes is bounded in bytes: its own notes take NOTE_BYTES as written, with a name cut to
 its start and end past a few hundred bytes, then only their count; the mark's notes take MARK_BYTES. A session that
-ran to its limit (SESSION_SECONDS after its start, STATE/turn-started from the setup hook) leaves its processes
+ran to its limit (SESSION_SECONDS after its start: the start of its first process, which the process the setup hook
+left records in STATE/first-process as soon as it sees it, and which also times that process's stop; the setup hook's
+own time, STATE/turn-started, only where no first process was recorded) leaves its processes
 running until this hook, with the network open again: every file and link whose change time, as recorded before the
 hook touched anything (STATE/before.jsonl), is later than that end is taken out, noted and counted (`work_end`,
 `late_entries`), and nothing is killed for it. So is every name of each file that its processes, frozen, still held
@@ -595,8 +598,9 @@ number of entries (files, directories and links) and of bytes in its files (each
 has), or `refused`; every line after it is a change made, the reason for the refusal, or how many more notes there
 were. The record
 (.manifest.json) holds what was found before the user's processes were ended (STATE/session.json), how many rounds of
-killing it took and how many processes were left, when the session started (STATE/turn-started, from the setup hook)
-and when this step started, the end of the work and how many entries changed after it, the disk's free figures,
+killing it took and how many processes were left, when set-up ended (STATE/turn-started) and the session's first
+process started (STATE/first-process), when this step started, the end of the work, what it was counted from and
+how many entries changed after it, the disk's free figures,
 and, for a delivery that is copied, every change the link fixer printed
 (STATE/fixer.jsonl: the copies first, each with its source's path, owner, times and inode, and whether the source
 changed since the session started), every note, and every entry: its
@@ -816,7 +820,26 @@ for line in state_lines("before.jsonl"):
     except (ValueError, KeyError, TypeError):
         continue
 turn_started = next((int(line.split()[0]) for line in state_lines("turn-started") if line.split() and line.split()[0].isdigit()), None)
-WORK_END = None if turn_started is None else turn_started + SESSION_SECONDS + 1  # (date +%s rounds the start down)
+
+
+def first_process_started():
+    """The wall-clock start of the session's first process, as the process the setup hook left recorded it when it
+    first saw it (STATE/first-process), or when it stopped the session's processes (STATE/stopped); None when neither
+    holds one."""
+    for name in ("first-process", "stopped"):
+        found = state_json(name, None)
+        value = found.get("first_process_started") if isinstance(found, dict) else None
+        if isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0:
+            return value
+    return None
+
+
+# The end of the work: the session's limit after the start of its first process, which the agent's turn begins with and
+# the stop after the limit counts from too; set-up's own time only where no first process was recorded. Whole seconds,
+# the start rounded down, and one more for the clocks' reads.
+FIRST_STARTED = first_process_started()
+WORK_END_FROM = "first process" if FIRST_STARTED is not None else ("set-up" if turn_started is not None else None)
+WORK_END = None if WORK_END_FROM is None else int(FIRST_STARTED if FIRST_STARTED is not None else turn_started) + SESSION_SECONDS + 1
 late_entries = held_entries = 0
 
 
@@ -1034,7 +1057,8 @@ def record_of(head):
     others = [change for change in changes if change.get("kind") != "copied"]
     free_bytes, free_inodes = disk_figures()
     record = dict(session, kill_rounds=ROUNDS, user_processes_left=LEFT, hook_started=HOOK_STARTED, turn_started=turn_started,
-                  work_end=WORK_END, late_entries=late_entries, held_for_writing=held_entries,
+                  first_process_started=FIRST_STARTED, work_end=WORK_END, work_end_from=WORK_END_FROM,
+                  late_entries=late_entries, held_for_writing=held_entries,
                   stopped_after_limit=stopped_after_limit(),
                   writers={"listed": writers_problem is None, "why_not": writers_problem, "held": len(writers_held),
                            "not_read": [{key: item.get(key) for key in ("pid", "command", "uids", "gids")} for item in writers_unread[:20]],

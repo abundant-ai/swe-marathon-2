@@ -4,7 +4,9 @@
 # is left, that step can still do its work, and it records how much was free, and the time, when the session began.
 # Each run also leaves one process of root's behind, detached, in place of the one an earlier run left, so that the
 # last run's remains: /var/lib/scratch/holder.py, below, which stops the user's processes with SIGSTOP, and ends none,
-# once the session's limit has passed, counted from the start of the session's first process.
+# once the session's limit has passed, counted from the start of the session's first process. It records that process
+# and its start as soon as it sees it (/var/lib/scratch/first-process), and the maintenance step counts the end of the
+# work from the same start.
 mkdir -p /var/lib/scratch/inodes && chmod 0700 /var/lib/scratch
 if [ ! -e /var/lib/scratch/room ]; then
     fallocate -l 64M /var/lib/scratch/room 2>/dev/null || head -c 67108864 /dev/zero > /var/lib/scratch/room 2>/dev/null
@@ -15,7 +17,9 @@ date +%s > /var/lib/scratch/turn-started 2>/dev/null
 cat > /var/lib/scratch/holder.py <<'EOF'
 """Stops the user's processes with SIGSTOP, and ends none, once the session's limit has passed. The limit counts from
 the start of the session's first process: the first process of the user that begins after this one, its parent not the
-user's (what set-up left, and what that forks, does not count), its start read from /proc in seconds since boot. Once
+user's (what set-up left, and what that forks, does not count), its start read from /proc in seconds since boot. As
+soon as it is seen, that process and the wall-clock time of its start are written to STATE/first-process, from which
+the maintenance step that collects the session counts the end of the work too. Once
 LIMIT_SECONDS plus MARGIN_SECONDS have passed since then, and, where the network's return can be seen (HOSTS resolved
 at the start, while names resolve, then tried by address), not before one of them answers again, it repeats `kill
 -STOP -1` as the user until no process of the user is running (states R, S, D; for STOP_SECONDS at most), records
@@ -117,6 +121,18 @@ def wall(since_boot):
     return round(time.time() - (now - since_boot), 3) if now is not None else None
 
 
+def record_first(pid, start):
+    """STATE/first-process: the session's first process and the wall-clock time of its start, written whole (a new file
+    renamed into place), so that a reader finds the old one or the new one, never part of one."""
+    path = os.path.join(STATE, "first-process")
+    try:
+        with open(path + ".new", "w") as handle:
+            json.dump({"first_process": pid, "first_process_started": wall(start)}, handle)
+        os.replace(path + ".new", path)
+    except OSError:  # a full disk: the stop below still comes; the maintenance step then counts from set-up's time
+        pass
+
+
 def users_processes(states=None):
     pids = set()
     for select in ("-u", "-U"):
@@ -145,6 +161,7 @@ def main():
             time.sleep(POLL_SECONDS)
             since = uptime() if since is None else since
     pid, start = found
+    record_first(pid, start)
     due = start + LIMIT_SECONDS + MARGIN_SECONDS
     while True:
         if begun():
@@ -175,7 +192,8 @@ def main():
 
 main()
 EOF
-# The process an earlier run left is ended (it leads its own process group), then this run's started.
+# The process an earlier run left is ended (it leads its own process group), and what it recorded of a first process
+# (one of set-up's own, at most) is removed; then this run's started.
 holder=$(cat /var/lib/scratch/holder.pid 2>/dev/null)
 case "$holder" in
     ''|*[!0-9]*) ;;
@@ -183,6 +201,7 @@ case "$holder" in
            kill -KILL -- "-$holder" 2>/dev/null || kill -KILL "$holder" 2>/dev/null
        fi ;;
 esac
+rm -f /var/lib/scratch/first-process /var/lib/scratch/first-process.new
 if command -v setsid >/dev/null 2>&1; then
     setsid nohup /usr/bin/python3 -I - hold < /var/lib/scratch/holder.py >/dev/null 2>&1 &
 else
