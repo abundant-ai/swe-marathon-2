@@ -419,7 +419,7 @@ def test_every_documented_item_in_scope_and_every_read_path_has_a_case():
                           "subdirectory", "here", "here", "subdirectory", None], read_kinds
     assert reads == ["read program climbs out", "read •load subdirectory", "read •nget /sys"], reads
     instruction = " ".join((STEP / "instruction.md").read_text().split())
-    scope = instruction[instruction.index("Out of scope:"):instruction.index("## Completion")]
+    scope = instruction[instruction.index("Out of scope:"):instruction.index("## Switching over")]
     for item in out:
         name = item.split(" ", 1)[1].rstrip("⁻")
         assert name.strip("•") in scope or name in ("•copy", "•rename", "•remove", "•mkdir", "•readdir", "•metadata"), item
@@ -3992,8 +3992,16 @@ def test_the_instruction_states_the_requirement_and_never_a_comparison_of_the_wo
     requirement in the requester's terms, and nothing of ours in the agent's image or instruction uses that phrase
     class. Upstream's manual, which ships as it is, speaks only of evaluation order, APL's grade and Python benchmarks."""
     instruction = " ".join((STEP / "instruction.md").read_text().split())
-    assert ("The work is complete when, for every script, input and command line we run, your program writes to standard "
-            "output exactly what the sandboxed build writes and exits with the same status.") in instruction
+    assert ("## Switching over When your implementation does all of the above, we point our reports, pipelines, notebooks, "
+            "shell jobs and wrappers at it and retire the sandboxed build. Keep `/app/rebuild/bpl` runnable at all times.") in instruction
+    # Round 19 (M2 of the v7 verdict): a solver restated the instruction's own framing (a build to behave exactly like,
+    # scripts compared with golden files in CI, every script and command line we run) as a suite scoring it. Each
+    # requirement is now stated by what depends on it; none of that framing is left, nor the words of a judged outcome.
+    framing = re.compile(r"golden|\bCI\b|compar|behave exactly|\bexactly\b|every script|\bmatch|\bcheck|\bverif|\bexpect|"
+                         r"specification|\bsuite\b|fraction|deadline|\bsession\b|\breferenc", re.I)
+    assert not framing.findall(instruction), framing.findall(instruction)
+    assert "Everything that uses it depends on what it prints" in instruction.replace("everything that uses it", "Everything that uses it")
+    assert "modular" not in instruction and "where every part came from" not in instruction, "S3: no requirement that nothing grades"
     phrases = re.compile(r"told apart|tell (?:them |it )?apart|indistinguishab|\bgrad(?:ed|ing|er)\b|evaluat|test corpus|"
                          r"hidden test|held.out|benchmark|rubric|\bjudged?\b", re.I)
     ours = [STEP / "instruction.md", TASK / "environment" / "Dockerfile", HARDENING / "mark.py",
