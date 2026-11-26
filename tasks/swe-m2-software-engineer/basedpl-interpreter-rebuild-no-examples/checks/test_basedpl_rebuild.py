@@ -1648,7 +1648,7 @@ STARTED = str(int(__import__("time").time()))  # when the hook began: its last s
 
 
 def deliver(name, build, entries="100000", size="1000000000", path="1000", seconds="100", start=None, tar=None, prelude="",
-            fixer_status="0", aside=()):
+            fixer_status="0"):
     app = base / name / "app"
     rebuild, state, archives = app / "rebuild", base / name / "state", base / name / "tmp"
     for folder in (rebuild, state, archives):
@@ -1658,8 +1658,6 @@ def deliver(name, build, entries="100000", size="1000000000", path="1000", secon
     (state / "session.json").write_text(json.dumps({"connectivity": {"pypi.org:443": "closed"}, "connectivity_open": False,
                                                     "user_process_count": 1, "user_processes": [{"pid": 7, "command": "sleep 99"}]}))
     (state / "turn-started").write_text(f"{int(STARTED) - 100}\n")  # well inside the session's limit
-    if aside:  # the names the shell moved out of the directory before the fixer ran
-        (state / "aside.txt").write_text("".join(f"{moved}\n" for moved in aside))
     if name == "good":  # what the link fixer printed: a copy of a system file, and a refused link to the user's own files
         (state / "fixer.jsonl").write_text(json.dumps({
             "kind": "copied", "path": "venv/bin/python3", "source": "/usr/bin/python3.12", "source_owner": 0,
@@ -1705,8 +1703,16 @@ def deliver(name, build, entries="100000", size="1000000000", path="1000", secon
 EARLIER = {}
 
 
+def hook_mark(rebuild):  # the hook writes its mark and record beside the tree (STATE/out), never into it
+    return rebuild.parent.parent / "state" / "out" / "mark"
+
+
+def hook_record(rebuild):
+    return rebuild.parent.parent / "state" / "out" / "record.json"
+
+
 def mark(rebuild):
-    return (rebuild / ".manifest").read_text().splitlines()
+    return hook_mark(rebuild).read_text().splitlines()
 
 
 def copy(rebuild, target, cut=None):  # what Harbor does: tar on the agent's machine, extract with the data filter
@@ -1724,9 +1730,9 @@ def copy(rebuild, target, cut=None):  # what Harbor does: tar on the agent's mac
     return target
 
 
-def notes(rebuild):
+def notes(arrived, marked):  # what arrived, with the mark the hook wrote for the tree at `marked` (None: no mark arrived)
     try:
-        return verify.delivery_notes(rebuild)
+        return verify.delivery_notes(arrived, hook_mark(marked) if marked is not None else base / "no-mark-arrived")
     except verify.EvaluationError as exc:
         return ["ERROR " + str(exc)]
 
@@ -1771,13 +1777,13 @@ out = {}
 app, rebuild = deliver("good", tree)
 out["mark"] = mark(rebuild)
 out["left"] = sorted(path.name for path in rebuild.iterdir())
-record = json.loads((rebuild / ".manifest.json").read_text())
+record = json.loads(hook_record(rebuild).read_text())
 out["record"] = [record["connectivity_open"], record["kill_rounds"], record["user_processes_left"], record["delivered"],
                  record["listing_complete"], sorted(item["path"] for item in record["entries"]),
                  next(item for item in record["entries"] if item["path"] == "bpl")]
 out["copies"] = [record["turn_started"], record["hook_started"], record["copies"], record["links"], record["notes"]]
 out["started"] = int(STARTED)
-out["end"] = [record["work_end"], record["late_entries"], verify.delivery_record(rebuild)["late_entries"]]
+out["end"] = [record["work_end"], record["late_entries"], verify.delivery_record(hook_record(rebuild))["late_entries"]]
 earlier = EARLIER["good"]
 out["times"] = [all(item["ctime"] == earlier[item["path"]][1] and item["mtime"] == earlier[item["path"]][0]
                     for item in record["entries"] if item["path"] in earlier),
@@ -1785,23 +1791,32 @@ out["times"] = [all(item["ctime"] == earlier[item["path"]][1] and item["mtime"] 
                 sorted(item["path"] for item in record["entries"] if item["path"] not in earlier),
                 record["prescan_complete"], record["hook_changed_entries"],
                 oct(os.stat(rebuild / "ro").st_mode & 0o777), oct(os.stat(rebuild / "secret").st_mode & 0o777)]
-out["summary"] = verify.delivery_record(rebuild)
+out["summary"] = verify.delivery_record(hook_record(rebuild))
 out["latest"] = max(earlier[item["path"]][1] for item in record["entries"])  # the latest change the session itself made
-out["complete"] = notes(copy(rebuild, base / "good" / "copied"))
+out["complete"] = notes(copy(rebuild, base / "good" / "copied"), rebuild)
 partial = copy(rebuild, base / "good" / "partial")
 (partial / "src" / "main.py").unlink()  # the mark arrived, a file did not
-out["partial"] = notes(partial)
+out["partial"] = notes(partial, rebuild)
 size = os.path.getsize(base / "good" / "copied.tar")
-out["cut"] = notes(copy(rebuild, base / "good" / "cut", cut=size // 3))
-out["nothing"] = notes(copy(rebuild, base / "good" / "empty", cut=0))
-(rebuild / ".manifest").write_text("delivered ² 5\n")  # not ASCII digits: a mark the hook did not write
-out["odd"] = notes(rebuild)
-(rebuild / ".manifest").unlink()
-out["unmarked"] = notes(copy(rebuild, base / "good" / "unmarked"))
+out["cut"] = notes(copy(rebuild, base / "good" / "cut", cut=size // 3), rebuild)
+empty_copy = copy(rebuild, base / "good" / "empty", cut=0)
+out["nothing"] = notes(empty_copy, None)  # neither the tree nor the mark arrived
+out["nothing_marked"] = notes(empty_copy, rebuild)  # the mark arrived, the tree did not
+hook_mark(rebuild).write_text("delivered ² 5\n")  # not ASCII digits: a mark the hook did not write
+out["odd"] = notes(rebuild, rebuild)
+hook_mark(rebuild).unlink()
+out["unmarked"] = notes(copy(rebuild, base / "good" / "unmarked"), rebuild)
+def own_names(rebuild):  # the names the hook wrote into the tree before round 19: now the session's own, like any other
+    (rebuild / "bpl").write_text("#!/bin/sh\n")
+    (rebuild / ".manifest").write_text("mine\n")
+    (rebuild / ".manifest.json").write_text("{}\n")
+app, rebuild = deliver("own", own_names)
+out["own"] = [mark(rebuild), sorted(path.name for path in rebuild.iterdir()), notes(copy(rebuild, base / "own" / "copied"), rebuild),
+              sorted(path.name for path in (base / "own" / "copied").iterdir()), sorted(item["path"] for item in json.loads(hook_record(rebuild).read_text())["entries"])]
 app, rebuild = deliver("many", tree, entries="3")
 out["many"] = [mark(rebuild), sorted(path.name for path in rebuild.iterdir()),
                sorted(path.name.split(".")[1] if path.name.startswith(".") else path.name for path in app.iterdir())]
-out["many_notes"] = notes(copy(rebuild, base / "many" / "copied"))
+out["many_notes"] = notes(copy(rebuild, base / "many" / "copied"), rebuild)
 app, rebuild = deliver("sparse", lambda rebuild: deep(rebuild, levels=0))
 out["sparse"] = mark(rebuild)[:2]
 app, rebuild = deliver("deep", deep)  # past PATH_MAX, the path limit refuses it
@@ -1818,23 +1833,23 @@ out["inodes"] = mark(rebuild)[:2]
 app, rebuild = deliver("never-room", tree, tar=failing, prelude=FULL)
 out["never_room"] = mark(rebuild)
 app, rebuild = deliver("nop", lambda rebuild: None)
-out["nop"] = [mark(rebuild), notes(copy(rebuild, base / "nop" / "copied")), verify.delivery_record(base / "nop" / "copied")["entries"]]
-out["end"].append(verify.delivery_record(base / "nop" / "copied")["late_entries"])
-app, rebuild = deliver("cut-short", tree, fixer_status="143", aside=(".manifest", ".manifest.json"))  # the fixer was ended by a signal
-record = json.loads((rebuild / ".manifest.json").read_text())
-out["cut_short"] = [mark(rebuild), record["fixer_status"], notes(copy(rebuild, base / "cut-short" / "copied"))]
+out["nop"] = [mark(rebuild), notes(copy(rebuild, base / "nop" / "copied"), rebuild), verify.delivery_record(hook_record(rebuild))["entries"]]
+out["end"].append(verify.delivery_record(hook_record(rebuild))["late_entries"])
+app, rebuild = deliver("cut-short", tree, fixer_status="143")  # the fixer was ended by a signal
+record = json.loads(hook_record(rebuild).read_text())
+out["cut_short"] = [mark(rebuild), record["fixer_status"], notes(copy(rebuild, base / "cut-short" / "copied"), rebuild)]
 app, rebuild = deliver("old-arguments", lambda rebuild: None, fixer_status=None)  # without the status: no note, never an error
-out["old_arguments"] = [mark(rebuild), json.loads((rebuild / ".manifest.json").read_text())["fixer_status"]]
+out["old_arguments"] = [mark(rebuild), json.loads(hook_record(rebuild).read_text())["fixer_status"]]
 app, rebuild = deliver("unwritable", tree)
 out["unwritable"] = mark(rebuild)[:2]
 linked = base / "linked" / "app" / "rebuild"
 app, rebuild = deliver("linked", lambda rebuild: [(rebuild / "big").write_bytes(os.urandom(1 << 20)),
                                                    *(os.link(rebuild / "big", rebuild / f"big{i}") for i in range(30))])
-record = json.loads((rebuild / ".manifest.json").read_text())
+record = json.loads(hook_record(rebuild).read_text())
 out["linked"] = [mark(rebuild)[0], len({item["sha256"] for item in record["entries"]}), record["hashing_complete"]]
 more = copy(rebuild, base / "linked" / "copied")
 (more / "extra").write_text("added by the transport")
-out["more"] = notes(more)
+out["more"] = notes(more, rebuild)
 outside = base / "venv-like"
 outside.mkdir()
 for number in range(20):
@@ -1862,11 +1877,12 @@ for name, prelude in (("closed", CLOSED), ("slow", SLOW)):
     checks[name] = [done.returncode, json.loads((base / f"session-{name}.json").read_text()),
                     round(__import__("time").monotonic() - started)]
 out["session"] = checks
-long_mark = base / "long" / "rebuild"
+long_mark = base / "long" / "app" / "rebuild"
 long_mark.mkdir(parents=True)
+hook_mark(long_mark).parent.mkdir(parents=True)
 (long_mark / "bpl").write_text("#!/bin/sh\n")
-(long_mark / ".manifest").write_text("delivered 1 10\n" + "".join(f"removed decoy{i} -> /home/dev/x{i}: it leads outside\n" for i in range(60)))
-out["long_mark"] = len(verify.delivery_notes(long_mark))
+hook_mark(long_mark).write_text("delivered 1 10\n" + "".join(f"removed decoy{i} -> /home/dev/x{i}: it leads outside\n" for i in range(60)))
+out["long_mark"] = len(verify.delivery_notes(long_mark, hook_mark(long_mark)))
 print(json.dumps(out))
 """
 
@@ -1907,7 +1923,7 @@ def test_the_delivery_is_bounded_recorded_and_marked_before_the_copy_and_graded_
     assert copies[0]["source_inode"] == [66, 1234] and copies[0]["outside_delivery"] is True
     assert copies[0]["changed_since_session_started"] is False, "a system file from the image build"
     assert links[0]["kind"] == "refused" and links[0]["changed_since_session_started"] is True and links[0]["outside_delivery"] is True
-    assert out["left"] == [".manifest", ".manifest.json", "bpl", "bpl-again", "empty", "inside", "ro", "secret", "src"]
+    assert out["left"] == ["bpl", "bpl-again", "empty", "inside", "ro", "secret", "src"], "the mark and the record are beside the tree"
     connectivity_open, rounds, left, delivered, complete, paths, bpl = out["record"]
     assert [connectivity_open, rounds, left, delivered, complete] == [False, 2, 0, out["mark"][0], True]
     assert paths == ["bpl", "bpl-again", "empty", "inside", "ro", "ro/lnk", "secret", "src", "src/b", "src/b/up", "src/main.py"]
@@ -1929,8 +1945,12 @@ def test_the_delivery_is_bounded_recorded_and_marked_before_the_copy_and_graded_
     assert hook_text.index("for visit in (record, restore):") < hook_text.index("timeout 120 setpriv"), "times first, then permissions, then the fixer"
     assert "def destination(path, target):" in hook_text and "HASH_SECONDS = 240" in hook_text and "if inode in digests:" in hook_text
     assert out["complete"] == [f"maintenance step: {line}" for line in out["mark"][1:]], out["complete"]
-    assert out["cut"][0].startswith(("ERROR The copy arrived incomplete", "the delivery arrived without", "ERROR Nothing")), out["cut"]
+    assert out["cut"][0].startswith("ERROR The copy arrived incomplete"), out["cut"]
     assert out["nothing"][0].startswith("ERROR Nothing arrived") and out["unmarked"][0].startswith("the delivery arrived without")
+    assert out["nothing_marked"][0].startswith(f"ERROR The copy arrived incomplete: 0 of 11 entries"), "the mark arrived, the tree did not"
+    own_mark, own_left, own_notes, own_copied, own_listed = out["own"]  # round 19 (S2 of the v7 verdict): no name is the hook's
+    assert own_mark == ["delivered 3 18"] and own_left == own_copied == [".manifest", ".manifest.json", "bpl"], out["own"]
+    assert own_notes == [] and own_listed == [".manifest", ".manifest.json", "bpl"], out["own"]
     assert out["partial"] == [f"ERROR The copy arrived incomplete: 10 of 11 entries and {run + 1:,} of {601 + run:,} bytes"], out["partial"]
     assert out["more"] == ["more arrived than the collect hook marked: 32 entries and 1,048,598 bytes against 31 and 1,048,576 "
                            "(hard links split, or files the transport added)"], "more than marked is a note, not an error"
@@ -1940,7 +1960,7 @@ def test_the_delivery_is_bounded_recorded_and_marked_before_the_copy_and_graded_
     assert out["many"][0][:2] == ["refused", "it holds more than 3 entries, the most /app/rebuild may hold: it was not copied"], out["many"]
     assert out["many"][0][2:] == ["the listing before the hook stopped at more than 3 entries",
                                   "ro: made writable for its owner (a directory the hook has to work in)", "secret: made readable by its owner"]
-    assert out["many"][1:] == [[".manifest", ".manifest.json"], ["rebuild", "refused"]], out["many"]
+    assert out["many"][1:] == [[], ["rebuild", "refused"]], out["many"]  # refused: an empty directory, which arrives as one
     assert out["many_notes"][0] == "maintenance step: it holds more than 3 entries, the most /app/rebuild may hold: it was not copied"
     assert out["sparse"] == ["refused", "it holds more than 1,000,000,000 bytes, the most /app/rebuild may hold: it was not copied"]
     assert out["deep"] == ["refused", "it holds a path longer than 1,000 bytes, the longest /app/rebuild may hold: it was not copied"]
@@ -1951,11 +1971,9 @@ def test_the_delivery_is_bounded_recorded_and_marked_before_the_copy_and_graded_
     assert out["never_room"][0].startswith("delivered ") and any("room the machine did not have" in line for line in out["never_room"])
     assert out["nop"] == [["delivered 0 0"], [], 0]
     cut_mark, cut_status, cut_notes = out["cut_short"]  # QA 07e F1 and F5: neither is silent any more
-    assert cut_mark[0] == out["mark"][0] and cut_status == 143 and len(cut_mark) == 11, cut_mark
+    assert cut_mark[0] == out["mark"][0] and cut_status == 143 and len(cut_mark) == 9, cut_mark
     assert cut_mark[1] == ("the link fixer ended with status 143: the links it had not reached were not fixed, and those that lead "
                            "outside /app/rebuild are removed"), "a fixer that was cut short is said first, before the links removed for it"
-    assert cut_mark[7:9] == [f"moved {name} out of /app/rebuild: this step writes a file of that name there"
-                             for name in (".manifest", ".manifest.json")], "a file the session left under the hook's own names is noted"
     assert cut_notes == [f"maintenance step: {line}" for line in cut_mark[1:]], "and both reach the trial's notes"
     assert out["old_arguments"] == [["delivered 0 0"], -1]
     assert "never a reason to change the reward" in (STEP / "tests" / "verify.py").read_text(), "the late count is never scored"
@@ -1978,9 +1996,10 @@ def test_the_delivery_is_bounded_recorded_and_marked_before_the_copy_and_graded_
              '> "$STATE/writers-user.json"', "kill -9 -1",
              'timeout 300 /usr/bin/python3 -I - /app/rebuild "$LIMIT_ENTRIES" "$LIMIT_PATH" "$STATE"',
              "/usr/bin/python3 -I - \"$STATE/session.json\" \"$STATE/processes.txt\"", "rm -f /var/lib/scratch/room",
-             "rm -rf /var/lib/scratch/inodes", 'mv -f "/app/rebuild/$name" "$aside/"', 'echo "$name" >> "$STATE/aside.txt"',
+             "rm -rf /var/lib/scratch/inodes",
              "timeout 120 setpriv --reuid dev --regid dev --clear-groups --no-new-privs /usr/bin/python3 -I -",
              '> "$STATE/fixer.jsonl"', "\nEOF\nfixer_status=$?\n",
+             "mkdir -p /var/lib/scratch/out && chmod 0700 /var/lib/scratch/out && rm -f /var/lib/scratch/out/mark /var/lib/scratch/out/record.json",
              '\n/usr/bin/python3 -I - /app/rebuild "$LIMIT_ENTRIES" "$LIMIT_BYTES" "$LIMIT_PATH" "$STATE" /tmp "$PACK_SECONDS" "$rounds" '
              '"$left" "$HOOK_STARTED" "$fixer_status" <<']
     assert [hook.index(step) for step in order] == sorted(hook.index(step) for step in order)
@@ -2003,7 +2022,10 @@ def test_the_delivery_is_bounded_recorded_and_marked_before_the_copy_and_graded_
     assert "chmod 0700 /usr/local/sbin/provision-scratch /usr/local/sbin/reclaim-scratch \\\n" in docker
     verify = (STEP / "tests" / "verify.py").read_text()
     main = verify[verify.index("def main() -> int:"):]
-    assert main.index("delivery_notes(SUBMISSION)") < main.index("sandbox()") < main.index("seal(SUBMISSION)")
+    assert main.index("delivery_notes(SUBMISSION, DELIVERY_MARK)") < main.index("sandbox()") < main.index("seal(SUBMISSION)")
+    assert 'artifacts = ["/app/rebuild", "/var/lib/scratch/out"]' in (TASK / "task.toml").read_text(), "the mark goes with the tree"
+    assert 'DELIVERY_OUT = Path("/var/lib/scratch/out")' in verify and "/var/lib/scratch/out" in setup, "made at set-up, read here"
+    assert ".manifest" not in hook and ".manifest" not in verify, "no name in /app/rebuild is the hook's (round 19, S2)"
     assert "delivery_record=record" in main, "the record goes to metrics.json"
     assert "[:20]" not in verify[verify.index("def delivery_notes"):verify.index("def delivery_record")], "every note of the mark"
     instruction = " ".join((STEP / "instruction.md").read_text().split())
@@ -2455,7 +2477,7 @@ def test_both_hooks_run_whole_with_the_root_and_linux_tools_stood_in(tmp_path):
     for name, body in stand_ins.items():
         (shims / name).write_text("#!/bin/sh\n" + body)
         (shims / name).chmod(0o755)
-    rewrites = [("/usr/bin/python3", f"{shims}/python3"), ("/app/.aside.XXXXXX", f"{top}/app/.aside.XXXXXX"), ("/app/rebuild", str(rebuild)),
+    rewrites = [("/usr/bin/python3", f"{shims}/python3"), ("/app/rebuild", str(rebuild)),
                 ("/var/lib/scratch", str(state)), ('"$STATE" /tmp "$PACK_SECONDS"', f'"$STATE" {top}/tmp "$PACK_SECONDS"'),
                 ('"/proc", "dev"', f'"/proc", "{ME}"'), ('("pypi.org", "github.com"), 443, 0.3', "(), 443, 0.3")]
     setup_only = {'"/proc", "dev"', '("pypi.org", "github.com"), 443, 0.3'}  # the set-up hook's process: this user, no network
@@ -2487,28 +2509,28 @@ def test_both_hooks_run_whole_with_the_root_and_linux_tools_stood_in(tmp_path):
     (rebuild / "abs").symlink_to(rebuild / "LICENSE")           # inside, absolute: made relative
     (rebuild / "gone").symlink_to("nowhere")                    # points at nothing: removed
     os.mkfifo(rebuild / "pipe")                                 # removed
-    (rebuild / ".manifest").symlink_to("/etc/hosts")            # the hook's own two names, left by the session
-    (rebuild / ".manifest.json").write_text('{"delivered": "delivered 999 999"}\n')
+    (top / "elsewhere.txt").write_text("the user's own file, outside the tree\n")
+    (rebuild / ".manifest").symlink_to(top / "elsewhere.txt")  # names the hook wrote here before round 19: now the session's
+    (rebuild / ".manifest.json").write_text('{"delivered": "delivered 999 999"}\n')  # own, a link out (removed) and a file (kept)
     ran = subprocess.run(["sh", str(top / "reclaim-scratch")], env=hook_env, cwd=top / "app", capture_output=True, text=True, timeout=300)
     assert not holder_alive(holders[1], wait=2), "the hook ends the process the set-up hook left"
     assert ran.returncode == 0 and ran.stderr == "", ran
-    mark = [line.replace(str(top), "") for line in (rebuild / ".manifest").read_text().splitlines()]
-    assert mark[0].startswith("delivered 5 ") and mark[1:] == [
+    mark = [line.replace(str(top), "") for line in hook_mark(rebuild).read_text().splitlines()]
+    refused_own = [line for line in mark[1:] if line.startswith("removed .manifest -> /elsewhere.txt: it leads outside /app/rebuild")]
+    assert mark[0].startswith("delivered 6 ") and len(refused_own) == 1 and sorted(line for line in mark[1:] if line not in refused_own) == sorted([
         "tools/sh: a copy of /bin/sh (was a link to /bin/sh)", "removed pipe: not a file, a directory or a link",
-        "removed gone -> nowhere: it points at nothing", "abs -> LICENSE (was /app/rebuild/LICENSE)",
-        "moved .manifest out of /app/rebuild: this step writes a file of that name there",
-        "moved .manifest.json out of /app/rebuild: this step writes a file of that name there"], mark
+        "removed gone -> nowhere: it points at nothing", "abs -> LICENSE (was /app/rebuild/LICENSE)"]), mark
     assert ran.stdout.replace(str(top), "").splitlines() == mark[1:], "what the hook prints is the mark's notes"
-    assert not (rebuild / ".manifest").is_symlink() and (rebuild / ".manifest").stat().st_mode & 0o777 == 0o644
-    assert sorted(path.name for path in rebuild.iterdir()) == [".manifest", ".manifest.json", "LICENSE", "abs", "bpl", "tools"]
+    assert not hook_mark(rebuild).is_symlink() and hook_mark(rebuild).stat().st_mode & 0o777 == 0o644
+    assert hook_mark(rebuild).parent.stat().st_mode & 0o777 == 0o700, "beside the tree, in a directory only root may enter"
+    assert sorted(path.name for path in rebuild.iterdir()) == [".manifest.json", "LICENSE", "abs", "bpl", "tools"], "the session's own"
     assert (rebuild / "tools" / "sh").is_file() and not (rebuild / "tools" / "sh").is_symlink() and os.readlink(rebuild / "abs") == "LICENSE"
-    aside = sorted(path for path in (top / "app").iterdir() if path.name.startswith(".aside."))
-    assert sorted(item.name for folder in aside for item in folder.iterdir()) == [".manifest", ".manifest.json"], "moved, never followed"
-    assert sorted(path.name for path in state.iterdir()) == ["aside.txt", "before.jsonl", "collect-began", "fixer.jsonl", "free-at-start",
-                                                             "holder.pid", "holder.py", "prescan.json", "processes.txt", "session.json", "turn-started",
-                                                             "writers.json", "writers.py"], \
+    assert not [path for path in (top / "app").iterdir() if path.name.startswith(".aside.")], "nothing is moved aside"
+    assert sorted(path.name for path in state.iterdir()) == ["before.jsonl", "collect-began", "fixer.jsonl", "free-at-start",
+                                                             "holder.pid", "holder.py", "out", "prescan.json", "processes.txt", "session.json",
+                                                             "turn-started", "writers.json", "writers.py"], \
         "the room and the spare inodes are given back"
-    record = json.loads((rebuild / ".manifest.json").read_text())
+    record = json.loads(hook_record(rebuild).read_text())
     assert record["delivered"] == mark[0] and record["fixer_status"] == 0 and record["listing_complete"] is True, record["delivered"]
     assert [record["kill_rounds"], record["user_processes_left"], record["user_process_count"]] == [0, 0, 1]
     assert record["user_processes"][0]["command"] == "sleep 99" and record["connectivity_open"] is False
@@ -2517,6 +2539,17 @@ def test_both_hooks_run_whole_with_the_root_and_linux_tools_stood_in(tmp_path):
 
 
 # ---------------------------------------------------------------- what a tree can do to the copy
+
+def hook_mark(rebuild: Path) -> Path:
+    """Where the collect hook writes its mark of the tree at top/app/rebuild: beside it, in the state directory's out/
+    (top/state/out, /var/lib/scratch/out as shipped), never into it."""
+    return rebuild.parent.parent / "state" / "out" / "mark"
+
+
+def hook_record(rebuild: Path) -> Path:
+    """Where the collect hook writes its record of the tree at top/app/rebuild (see hook_mark)."""
+    return rebuild.parent.parent / "state" / "out" / "record.json"
+
 
 def hook_scripts() -> dict[str, str]:
     """The Python scripts of environment/reclaim-scratch as shipped: what the frozen processes hold open for writing
@@ -2592,7 +2625,7 @@ def arrival(rebuild: Path, target: Path) -> tuple[str | None, list[str]]:
         import json, verify
         from pathlib import Path
         try:
-            print(json.dumps(verify.delivery_notes(Path({str(target)!r}))))
+            print(json.dumps(verify.delivery_notes(Path({str(target)!r}), Path({str(hook_mark(rebuild))!r}))))
         except verify.EvaluationError as exc:
             print(json.dumps(["EVALUATION ERROR " + str(exc)]))
     """))
@@ -2619,13 +2652,13 @@ def test_a_link_that_climbs_past_the_root_is_kept_only_as_a_direct_one(tmp_path)
         (rebuild / "y").symlink_to("d/" * depth + "up/" + "../" * depth + root.lstrip("/") + "/bpl")  # lexically inside
 
     rebuild = collected(tmp_path / "climb", build)
-    mark = (rebuild / ".manifest").read_text().splitlines()
+    mark = hook_mark(rebuild).read_text().splitlines()
     assert mark[0].startswith("delivered ") and len(mark) == 3, mark
     assert [line.split(" (was ")[0] for line in mark[1:] if " (was " in line] == ["zz/x -> ../bpl"], mark
     removed = [line for line in mark[1:] if line.startswith("removed ")]
     assert len(removed) == 1 and removed[0].startswith("removed y -> d/") and removed[0].endswith(": a link through another link, or to nothing")
     assert os.readlink(rebuild / "zz" / "x") == "../bpl" and not os.path.lexists(rebuild / "y"), "made direct; removed"
-    record = json.loads((rebuild / ".manifest.json").read_text())
+    record = json.loads(hook_record(rebuild).read_text())
     made = {item["path"]: item for item in record["entries"] if item["path"] in ("y", "zz/x")}
     assert list(made) == ["zz/x"] and made["zz/x"]["target"] == "../bpl" and made["zz/x"]["hook_changed_ctime"], made
     stopped, notes = arrival(rebuild, tmp_path / "climb" / "copied")
@@ -2642,13 +2675,13 @@ def test_a_tree_the_last_script_cannot_finish_in_time_is_refused_not_left_to_the
     refuses a tree it has not measured within 420 s of the hook's start, and packs only by 510 s; the earlier stages'
     own limits leave it that time, or it refuses at once."""
     rebuild = collected(tmp_path / "late", lambda rebuild: (rebuild / "bpl").write_text("#!/bin/sh\n"), started_ago=10_000)
-    mark = (rebuild / ".manifest").read_text().splitlines()
+    mark = hook_mark(rebuild).read_text().splitlines()
     assert mark == ["refused", "it could not be measured within 420 s: it was not copied"], mark
-    assert json.loads((rebuild / ".manifest.json").read_text())["delivered"] == "refused"
+    assert json.loads(hook_record(rebuild).read_text())["delivered"] == "refused"
     stopped, notes = arrival(rebuild, tmp_path / "late" / "copied")
     assert stopped is None and notes == [f"maintenance step: {mark[1]}"], (stopped, notes)
     rebuild = collected(tmp_path / "in-time", lambda rebuild: (rebuild / "bpl").write_text("#!/bin/sh\n"), started_ago=400)
-    assert (rebuild / ".manifest").read_text().splitlines() == ["delivered 1 10"], "a start 400 s ago is still in time"
+    assert hook_mark(rebuild).read_text().splitlines() == ["delivered 1 10"], "a start 400 s ago is still in time"
     hook, measure = (TASK / "environment" / "reclaim-scratch").read_text(), hook_scripts()["measure"]
     assert "MEASURE_UNTIL, PACK_UNTIL = 420, 510" in measure and "STARTED = HOOK_STARTED if HOOK_STARTED > 0 else" in measure
     assert "seconds = min(PACK_SECONDS, STARTED + PACK_UNTIL - time.time())" in measure and "timeout=seconds)" in measure
@@ -2704,12 +2737,12 @@ def test_the_hook_names_a_bounded_number_of_changes_and_counts_the_rest(tmp_path
     assert done.returncode == 0 and len(printed) == 10_001 and not any(tree.iterdir()), (done.returncode, len(printed))
     assert json.loads(printed[-1]) == {"kind": "more", "path": "", "note": "and 50 more changes of the link fixer"}
     rebuild = collected(tmp_path / "last", pipes(2_000))  # the pipes the fixer did not reach: the last script removes them
-    record = json.loads((rebuild / ".manifest.json").read_text())
+    record = json.loads(hook_record(rebuild).read_text())
     named = [note for note in record["notes"] if note.startswith("removed p")]
     more = re.fullmatch(r"and ([\d,]+) more entries removed or relinked by this step", record["notes"][len(named)])
     assert more and len(named) + int(more.group(1).replace(",", "")) == 2_000, record["notes"][len(named)]
     assert sum(len(note.encode()) + 1 for note in named) <= 64 << 10, "its own notes take 64 KiB at most"
-    mark = (rebuild / ".manifest").read_text().splitlines()
+    mark = hook_mark(rebuild).read_text().splitlines()
     assert mark[0] == "delivered 0 0" and re.fullmatch(r"and [\d,]+ more notes", mark[-1]), mark[-1]
     assert len("\n".join(mark[1:-1]).encode()) + 1 <= 32 << 10, "the mark's notes take 32 KiB at most"
 
@@ -2722,7 +2755,7 @@ def test_the_hook_names_a_bounded_number_of_changes_and_counts_the_rest(tmp_path
     more = re.fullmatch(r"and ([\d,]+) more entries made accessible to their owner", prescan["notes"][-1])
     assert more and len(prescan["notes"]) - 1 + int(more.group(1).replace(",", "")) == 1_050, prescan["notes"][-1]
     assert sum(len(json.dumps(note)) for note in prescan["notes"][:-1]) <= 64 << 10, "the first script's notes take 64 KiB at most"
-    assert (rebuild / ".manifest").read_text().splitlines()[0] == "delivered 1050 0" and (rebuild / "d7").stat().st_mode & 0o777 == 0o755
+    assert hook_mark(rebuild).read_text().splitlines()[0] == "delivered 1050 0" and (rebuild / "d7").stat().st_mode & 0o777 == 0o755
 
 
 def test_a_tree_the_disk_cannot_pack_beside_the_record_is_refused_and_its_record_lists_nothing(tmp_path):
@@ -2741,15 +2774,15 @@ def test_a_tree_the_disk_cannot_pack_beside_the_record_is_refused_and_its_record
             (rebuild / f"f{number}").write_text("x" * 100)
 
     rebuild = collected(tmp_path / "small", build, prelude=small)
-    mark = (rebuild / ".manifest").read_text().splitlines()
+    mark = hook_mark(rebuild).read_text().splitlines()
     assert mark == ["refused", "the disk has no room for the copy's pack of it beside this step's record: it was not copied"], mark
-    record = json.loads((rebuild / ".manifest.json").read_text())
+    record = json.loads(hook_record(rebuild).read_text())
     assert record["delivered"] == "refused" and record["entries"] == [] and record["entries_not_listed"] == 41, record.get("entries_not_listed")
-    assert sorted(path.name for path in rebuild.iterdir()) == [".manifest", ".manifest.json"]
+    assert sorted(path.name for path in rebuild.iterdir()) == [], "refused: an empty directory; the mark and record beside it"
     stopped, notes = arrival(rebuild, tmp_path / "small" / "copied")
     assert stopped is None and notes == [f"maintenance step: {mark[1]}"], (stopped, notes)
     rebuild = collected(tmp_path / "room", build)  # the control: the same tree on a disk with room
-    assert (rebuild / ".manifest").read_text().splitlines() == [f"delivered 41 {18 + 40 * 100}"]
+    assert hook_mark(rebuild).read_text().splitlines() == [f"delivered 41 {18 + 40 * 100}"]
 
 
 # A process of a session that ran to its limit, still running when the hook comes: it "fetches" a build once the network
@@ -2800,13 +2833,12 @@ def test_a_capped_turn_counts_nothing_written_after_its_end(tmp_path):
             writer.stdout.close()
 
     rebuild = collected(tmp_path / "capped", build)
-    mark = (rebuild / ".manifest").read_text().splitlines()
+    mark = hook_mark(rebuild).read_text().splitlines()
     late = sorted(line.split(":")[0].removeprefix("removed ") for line in mark[1:])
     assert mark[0] == f"delivered 4 {len('print(1)\n') + len('in time\n')}" and late == ["bpl", "fetched/upstream.tar", "latest", "progress.log"], mark
     assert all(line.endswith(": changed after the end of the work, 34560 s after the session began") for line in mark[1:]), mark
-    assert sorted(str(path.relative_to(rebuild)) for path in rebuild.rglob("*")) == [".manifest", ".manifest.json", "fetched", "notes.txt",
-                                                                                   "src", "src/main.py"]
-    record = json.loads((rebuild / ".manifest.json").read_text())
+    assert sorted(str(path.relative_to(rebuild)) for path in rebuild.rglob("*")) == ["fetched", "notes.txt", "src", "src/main.py"]
+    record = json.loads(hook_record(rebuild).read_text())
     assert (record["work_end"], record["late_entries"]) == (when["end"], 4), (record["work_end"], record["late_entries"])
     stopped, notes = arrival(rebuild, tmp_path / "capped" / "copied")
     assert stopped is None and notes == [f"maintenance step: {line}" for line in mark[1:]], (stopped, notes)
@@ -2838,16 +2870,16 @@ def test_the_end_of_the_work_counts_from_the_sessions_first_process_not_from_set
         (rebuild / "after-the-end.txt").write_text("saved after the end, the network open again\n")
 
     rebuild = collected(tmp_path / "first", build)
-    mark = (rebuild / ".manifest").read_text().splitlines()
+    mark = hook_mark(rebuild).read_text().splitlines()
     assert mark[1:] == ["removed after-the-end.txt: changed after the end of the work, 34560 s after the session began"], mark
-    assert sorted(path.name for path in rebuild.iterdir()) == [".manifest", ".manifest.json", "bpl", "last-second.txt"], mark
-    record = json.loads((rebuild / ".manifest.json").read_text())
+    assert sorted(path.name for path in rebuild.iterdir()) == ["bpl", "last-second.txt"], mark
+    record = json.loads(hook_record(rebuild).read_text())
     assert (record["work_end"], record["work_end_from"], record["late_entries"]) == (when["end"], "first process", 1), record
     assert record["first_process_started"] == when["first"] and record["turn_started"] == when["end"] - 34561 - 30
     summary = verifier_call(textwrap.dedent(f"""
         import json, verify
         from pathlib import Path
-        print(json.dumps(verify.delivery_record(Path({str(rebuild)!r}))))
+        print(json.dumps(verify.delivery_record(Path({str(hook_record(rebuild))!r}))))
     """))
     assert (summary["work_end"], summary["work_end_from"], summary["first_process_started"]) == (when["end"], "first process", when["first"])
 
@@ -2858,7 +2890,7 @@ def test_the_end_of_the_work_counts_from_the_sessions_first_process_not_from_set
         (state / "turn-started").write_text(f"{when['setup']}\n")
 
     rebuild = collected(tmp_path / "set-up", set_up_only)
-    record = json.loads((rebuild / ".manifest.json").read_text())
+    record = json.loads(hook_record(rebuild).read_text())
     assert (record["work_end"], record["work_end_from"], record["first_process_started"]) == (when["setup"] + 34561, "set-up", None)
     holder, measure = (TASK / "environment" / "provision-scratch").read_text(), hook_scripts()["measure"]
     assert holder.index("record_first(pid, start)") < holder.index("due = start + LIMIT_SECONDS + MARGIN_SECONDS"), "recorded at once"
@@ -2873,8 +2905,8 @@ def test_a_capped_turn_that_delivered_nothing_or_lost_its_listing(tmp_path):
         (rebuild.parent.parent / "state" / "turn-started").write_text(f"{int(time.time()) - 34561 - 30}\n")
 
     empty = collected(tmp_path / "empty", ran_out)
-    record = json.loads((empty / ".manifest.json").read_text())
-    assert (empty / ".manifest").read_text() == "delivered 0 0\n" and record["late_entries"] == 0 and record["work_end"] < time.time()
+    record = json.loads(hook_record(empty).read_text())
+    assert hook_mark(empty).read_text() == "delivered 0 0\n" and record["late_entries"] == 0 and record["work_end"] < time.time()
 
     def kept(rebuild):
         ran_out(rebuild)
@@ -2882,7 +2914,7 @@ def test_a_capped_turn_that_delivered_nothing_or_lost_its_listing(tmp_path):
 
     lost = 'import os, sys\nos.remove(os.path.join(sys.argv[5], "before.jsonl"))\n'
     refused = collected(tmp_path / "lost", kept, prelude=lost)
-    mark = (refused / ".manifest").read_text().splitlines()
+    mark = hook_mark(refused).read_text().splitlines()
     assert mark == ["refused", "the session ran to its limit, and the listing of what it changed before then is missing: it was not copied"], mark
 
 
@@ -2988,15 +3020,15 @@ def test_a_capped_turn_takes_out_what_its_frozen_processes_held_open_for_writing
             capped=True)
 
     rebuild = collected(tmp_path / "capped", build)
-    mark = (rebuild / ".manifest").read_text().splitlines()
+    mark = hook_mark(rebuild).read_text().splitlines()
     held = {"data/alias.bin": "mapped shared and writable", "data/out.bin": "open for writing", "deep/view.bin": "mapped shared and writable",
             "log.txt": "open for writing", "mapped.bin": "mapped shared and writable", "shared.dat": "mapped shared and writable",
             "src/main.py": "open for writing"}
     assert sorted(mark[1:]) == sorted(f"removed {name}: a process of the session still had it {how} after the end of the work"
                                       for name, how in held.items()), mark
     assert sorted(str(path.relative_to(rebuild)) for path in rebuild.rglob("*") if path.is_file()) == [
-        ".manifest", ".manifest.json", "bpl", "keep.txt", "notes.txt", "other.txt"]
-    record = json.loads((rebuild / ".manifest.json").read_text())
+        "bpl", "keep.txt", "notes.txt", "other.txt"]
+    record = json.loads(hook_record(rebuild).read_text())
     assert (record["late_entries"], record["held_for_writing"]) == (7, 7), "counted with the late entries, and apart"
     writers = record["writers"]
     assert writers["listed"] is True and writers["not_read_count"] == 1 and writers["not_read"][0]["pid"] == 4300
@@ -3028,10 +3060,10 @@ def test_what_was_held_counts_only_after_a_capped_turn_and_a_hidden_process_refu
     reading = lambda tree: {4242: {"uids": [me] * 4, "gids": [group] * 4, "tasks": {4242: {3: (str(tree / "log.txt"), "0100000")}}}}
     hidden = lambda tree: {4400: {"uids": [me] * 4, "gids": [group] * 4, "unreadable": True, "command": b"python3\0-c\0hold()\0"}}
     in_time = collected(tmp_path / "in-time", tree_with(appending, capped=False))
-    record = json.loads((in_time / ".manifest.json").read_text())
-    assert (in_time / ".manifest").read_text() == "delivered 2 14\n" and record["held_for_writing"] == 0 and record["writers"]["held"] == 1
+    record = json.loads(hook_record(in_time).read_text())
+    assert hook_mark(in_time).read_text() == "delivered 2 14\n" and record["held_for_writing"] == 0 and record["writers"]["held"] == 1
     nothing = collected(tmp_path / "nothing", tree_with(reading, capped=True))
-    assert (nothing / ".manifest").read_text() == "delivered 2 14\n", "a read-only descriptor takes nothing out"
+    assert hook_mark(nothing).read_text() == "delivered 2 14\n", "a read-only descriptor takes nothing out"
     refused = {}
     refused["hidden"] = collected(tmp_path / "hidden", tree_with(hidden, capped=True))
     refused["no user run"] = collected(tmp_path / "no-user-run", tree_with(hidden, capped=True, user_run=False))
@@ -3039,7 +3071,7 @@ def test_what_was_held_counts_only_after_a_capped_turn_and_a_hidden_process_refu
     refused["lost"] = collected(tmp_path / "lost", tree_with(reading, capped=True), prelude=lost)
     cut_short = 'import json, os, sys\nopen(os.path.join(sys.argv[5], "writers.json"), "w").write(json.dumps({"complete": False, "why": "it was not done within 20 s"}))\n'
     refused["cut short"] = collected(tmp_path / "cut-short", tree_with(appending, capped=True), prelude=cut_short)
-    marks = {name: (tree / ".manifest").read_text().splitlines() for name, tree in refused.items()}
+    marks = {name: hook_mark(tree).read_text().splitlines() for name, tree in refused.items()}
     start = "the session ran to its limit, and "
     assert marks == {
         "hidden": ["refused", start + "its process 4400 (python3 -c hold()) could not be read for what it held open for writing: it was not copied"],
@@ -3067,11 +3099,11 @@ def test_a_thread_whose_leader_has_exited_is_read_and_an_unreadable_thread_count
     exited = lambda tree: {5000: {"uids": [me] * 4, "gids": [group] * 4, "leader_exited": True,
                                   "maps": [maps_line(tree / "bpl", "rw-s")], "tasks": {5000: {}, 5001: {}}}}
     rebuild = collected(tmp_path / "exited", tree_with(exited))
-    assert (rebuild / ".manifest").read_text().splitlines() == [
+    assert hook_mark(rebuild).read_text().splitlines() == [
         "delivered 1 5", "removed bpl: a process of the session still had it mapped shared and writable after the end of the work"]
     thread = lambda tree: {5100: {"uids": [me] * 4, "gids": [group] * 4, "tasks": {5100: {}, 5101: {}}, "unreadable_tasks": [5101]}}
     refused = collected(tmp_path / "thread", tree_with(thread))
-    assert (refused / ".manifest").read_text().splitlines() == [
+    assert hook_mark(refused).read_text().splitlines() == [
         "refused", "the session ran to its limit, and its process 5100 (worker --busy) could not be read for what it held open for "
         "writing: it was not copied"]
 
@@ -3121,15 +3153,15 @@ def test_no_one_link_holds_the_last_script_past_its_time(tmp_path):
         < measure.index("signal.setitimer(signal.ITIMER_REAL, 0)") < measure.index("pack_once()\n    if failed is None")
     times = {}
     rebuild = collected(tmp_path / "late", every_link_reached, started_ago=418, timeout=120, times=times)
-    mark = (rebuild / ".manifest").read_text().splitlines()
+    mark = hook_mark(rebuild).read_text().splitlines()
     assert mark[:2] == ["refused", "it could not be measured within 420 s: it was not copied"], mark[:3]
     assert times["last"] < 4, times  # 9433aa9's last script spends several seconds more inside the one link's realpath
     now = tmp_path / "now"
     head = []
     rebuild = collected(now, lambda rebuild: head.append(every_link_reached(rebuild, leaves=3_000)), timeout=120)
-    mark = (rebuild / ".manifest").read_text().splitlines()
+    mark = hook_mark(rebuild).read_text().splitlines()
     assert mark[0].startswith("delivered ") and not os.path.lexists(rebuild / head[0]), mark[:3]
-    record = json.loads((rebuild / ".manifest.json").read_text())
+    record = json.loads(hook_record(rebuild).read_text())
     assert any(note.startswith(f"removed {head[0]} -> ") and note.endswith("a link through another link, or to nothing")
                for note in record["notes"]), record["notes"][:3]
 
@@ -3184,11 +3216,11 @@ def test_what_the_hook_writes_stays_far_inside_the_room_set_aside(tmp_path):
     small = ("import os\nclass Small:\n    f_bavail, f_frsize, f_favail, f_files, f_blocks = 256, 4096, 1000000, 2000000, 2000000\n"
              "os.statvfs = lambda path: Small()\n")  # 1 MiB free: the tree is refused for want of room beside its record
     rebuild = collected(tmp_path / "last", pipes, prelude=small, state_files={"fixer.jsonl": done.stdout})
-    mark = (rebuild / ".manifest").read_text().splitlines()
+    mark = hook_mark(rebuild).read_text().splitlines()
     assert mark[:2] == ["refused", "the disk has no room for the copy's pack of it beside this step's record: it was not copied"]
-    sizes = [len(done.stdout.encode()), (rebuild / ".manifest").stat().st_size, (rebuild / ".manifest.json").stat().st_size]
+    sizes = [len(done.stdout.encode()), hook_mark(rebuild).stat().st_size, hook_record(rebuild).stat().st_size]
     assert sizes[1] <= (32 << 10) + 1_000 and sizes[2] <= 1 << 20 and sum(sizes) <= 4 << 20, sizes
-    record = json.loads((rebuild / ".manifest.json").read_text())
+    record = json.loads(hook_record(rebuild).read_text())
     assert record["links"] == record["entries"] == [] and record["links_not_listed"] >= 2_000 and record["notes_not_listed"] > 0, \
         {key: record[key] for key in ("links_not_listed", "notes_not_listed", "entries_not_listed")}
     fixer, measure = hook_scripts()["fixer"], hook_scripts()["measure"]
@@ -3283,9 +3315,9 @@ def test_a_filesystem_that_counts_no_inodes_is_judged_by_its_bytes(tmp_path):
     failing = "echo 'tar: /tmp/x: Cannot write: No space left on device' >&2; exit 2\n"
     rebuild = collected(tmp_path / "no-inodes", lambda rebuild: (rebuild / "bpl").write_text("#!/bin/sh\n"), prelude=no_inodes,
                         tar=failing, start="2500000 4096 0\n")
-    mark = (rebuild / ".manifest").read_text().splitlines()
+    mark = hook_mark(rebuild).read_text().splitlines()
     assert mark[0] == "refused" and "No space left on device" in mark[1], mark
-    record = json.loads((rebuild / ".manifest.json").read_text())
+    record = json.loads(hook_record(rebuild).read_text())
     assert record["disk_free_bytes"] == 0 and record["disk_free_inodes"] is None, record
 
 
@@ -3330,6 +3362,7 @@ subprocess.run(["tar", "-cf", str(base / "copy.tar"), "-C", str(agent), "."], ch
                env=dict(os.environ, COPYFILE_DISABLE="1"))
 with tarfile.open(base / "copy.tar") as bundle:
     bundle.extractall(copied, filter="data")
+shutil.copytree(state / "out", base / "v" / "var" / "lib" / "scratch" / "out")  # the second artifact: the hook's mark and record
 cases = [{"id": f"C{i}", "kind": kind, "argv": ["-e", str(i)], "files": {"main.bpl": "1\n"}, "stdin": None}
          for i, kind in enumerate(["expr", "expr", "script", "worker"] * 12)]  # 48 different outputs: a reward needs 40
 (base / "tests" / "private" / "cases.json").write_text(json.dumps({"cases": cases}))
@@ -3458,6 +3491,8 @@ verify.os, verify.shutil, verify.subprocess, verify.Path = VerifyOs(os), VerifyS
 rc.os, rc.subprocess = RunOs(os), RunSubprocess(subprocess)
 verify.sandbox = sandbox_recorded
 verify.SUBMISSION, verify.MARKER = copied, base / "tests" / "private" / "marker"
+verify.DELIVERY_OUT = base / "v" / "var" / "lib" / "scratch" / "out"
+verify.DELIVERY_MARK, verify.DELIVERY_RECORD = verify.DELIVERY_OUT / "mark", verify.DELIVERY_OUT / "record.json"
 verify.LEFTOVER_DIRS[:] = [str(base / "tmp")]
 verify.writable_dirs = lambda root="/": []
 verify.RESERVE_BYTES = 1 << 20  # this machine's free space is not what is checked here
@@ -3501,7 +3536,8 @@ def test_the_whole_evaluation_runs_with_only_root_and_linux_stood_in(tmp_path):
     assert graded["owner_types"] == ["int", "int"] and graded["owner"] == [uid, uid] and 20000 <= uid < 60000, graded["owner"]
     assert graded["prefix"] == ["setpriv", "--reuid", str(uid), "--regid", str(uid), "--clear-groups", "--no-new-privs"]
     assert events["through_the_drop"] == 48, "every case started through the prefix sandbox() returned"
-    assert events["lchown_in_prepare"] >= 48 * 4 and events["lchown_in_seal"] == 5, "integer ids reached every chown (a string raises)"
+    assert events["lchown_in_prepare"] >= 48 * 4 and events["lchown_in_seal"] == 3, "integer ids reached every chown (a string raises)"
+    # (the tree, bpl and LICENSE: since round 19 the hook's mark and record are beside the tree, not in it)
     assert events["chown"] == 2, "the scratch directory, and the set-id probe file"
     assert len(events["probes"]) == 4 and [probe.split()[-1] for probe in events["probes"][2:]] == ["-u", "-g"], events["probes"]
     assert events["not_run"]["kill -KILL -1"] >= 5 and events["not_run"]["find"] >= 5 and events["not_run"]["ipcrm --all"] >= 5

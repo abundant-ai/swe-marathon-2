@@ -29,14 +29,16 @@ MARKER = Path(__file__).resolve().parent / "private" / "marker"   # the original
 # hardened build lacks: a delivered file that is either is a fetched original.
 UPSTREAM_BUILDS = Path(__file__).resolve().parent / "verifier" / "upstream_builds.json"
 UNHARDENED_USAGE = b"--kernel -f CONNECTION_FILE"
-# What the collect hook (environment/reclaim-scratch) leaves in the delivery: its mark, whose first
-# line is "delivered <entries> <bytes>" or "refused", and its record (connectivity, the agent's processes
-# when the session ended, every entry), which goes to metrics.json and decides nothing.
-DELIVERY_MARK = ".manifest"
-DELIVERY_RECORD = ".manifest.json"
+# What the collect hook (environment/reclaim-scratch) writes beside the delivery, never into it, and the copy brings
+# here as a second artifact: its mark, whose first line is "delivered <entries> <bytes>" or "refused", and its record
+# (connectivity, the agent's processes when the session ended, every entry), which goes to metrics.json and decides
+# nothing. Everything in /app/rebuild is the agent's own.
+DELIVERY_OUT = Path("/var/lib/scratch/out")
+DELIVERY_MARK = DELIVERY_OUT / "mark"
+DELIVERY_RECORD = DELIVERY_OUT / "record.json"
 RECORD_LIMIT = 64 << 20  # bytes of the record read, at most
 MARK_LIMIT = 1 << 20     # bytes of the mark read, at most (a planted multi-GB mark is no reason to run out of memory)
-MISSING_MARK = ("the delivery arrived without the collect hook's mark (the hook did not run, or the copy was cut short); "
+MISSING_MARK = ("the delivery arrived without the collect hook's mark (the hook did not run, or its mark was not copied); "
                 "it was scored as it arrived")
 MARKER_RE = re.compile(rb"BPL-BUILD-MARKER-[0-9a-f]{32}")
 MARKER_LEN = len("BPL-BUILD-MARKER-") + 32
@@ -428,9 +430,8 @@ def upstream_builds(path: Path = UPSTREAM_BUILDS) -> dict[str, set[int]]:
 
 
 def arrived(top: Path) -> tuple[int, int]:
-    """Entries (files, directories and links; the collect hook's mark and record left out) under
-    `top`, and bytes in its files (each file once, however many names it has), counted as the
-    collect hook counts them."""
+    """Entries (files, directories and links) under `top`, and bytes in its files (each file once,
+    however many names it has), counted as the collect hook counts them; (0, 0) where nothing is."""
     entries = size = 0
     files: set[tuple[int, int]] = set()
     folders = [str(top)]
@@ -442,8 +443,6 @@ def arrived(top: Path) -> tuple[int, int]:
             continue
         with listing:
             for entry in listing:
-                if folder == str(top) and entry.name in (DELIVERY_MARK, DELIVERY_RECORD):
-                    continue
                 try:
                     info = entry.stat(follow_symlinks=False)
                 except OSError:
@@ -457,26 +456,25 @@ def arrived(top: Path) -> tuple[int, int]:
     return entries, size
 
 
-def delivery_notes(top: Path) -> list[str]:
-    """What the collect hook's mark and the copy that arrived say about the delivery.
+def delivery_notes(top: Path, mark: Path = DELIVERY_MARK) -> list[str]:
+    """What the collect hook's mark (beside the delivery) and the copy that arrived say about the delivery.
 
     The hook marks every delivery before the copy, an empty one too, after bounding it and packing
     it once the way the copy packs it, so that nothing the agent leaves can make the copy fail. A
     delivery that arrived is graded as it arrived, with a note when the mark is missing or says it
-    was refused.
+    was refused. An empty or missing /app/rebuild is what a refused delivery, and one of nothing,
+    leave: the mark says so.
 
     Raises:
-        EvaluationError: Nothing arrived at all, so the copy never happened; or fewer entries or
-            bytes arrived than the mark counts, so the copy was cut short, which only the runner
-            can do. More than marked (hard links split, or files the transport added) is a note.
+        EvaluationError: Nothing arrived at all, neither the delivery nor the mark, so the copy
+            never happened; or fewer entries or bytes arrived than the mark counts, so the copy was
+            cut short, which only the runner can do. More than marked (hard links split, or files
+            the transport added) is a note.
     """
     try:
         empty = top.is_symlink() or not top.is_dir() or next(top.iterdir(), None) is None
     except OSError:
         empty = True
-    if empty:
-        raise EvaluationError("Nothing arrived: /app/rebuild is missing or empty, though the collect hook marks every delivery")
-    mark = top / DELIVERY_MARK
     try:
         with open(mark, "r", errors="replace") as handle:  # bounded: the mark is read before sealing
             text = handle.read(MARK_LIMIT + 1) if mark.is_file() and not mark.is_symlink() else ""
@@ -484,6 +482,9 @@ def delivery_notes(top: Path) -> list[str]:
         text = ""
     lines = text[:MARK_LIMIT].splitlines()
     if not lines:
+        if empty:
+            raise EvaluationError("Nothing arrived: /app/rebuild is missing or empty, and so is the collect hook's mark, "
+                                  "which the hook writes for every delivery")
         return [MISSING_MARK]
     head, notes = lines[0].split(), [f"maintenance step: {line}" for line in lines[1:] if line.strip()]  # every note, unbounded
     if len(text) > MARK_LIMIT:
@@ -503,7 +504,7 @@ def delivery_notes(top: Path) -> list[str]:
     return notes + ["the collect hook's mark could not be read; the delivery was graded as it arrived"]
 
 
-def delivery_record(top: Path) -> dict:
+def delivery_record(path: Path = DELIVERY_RECORD) -> dict:
     """The collect hook's record, cut to what metrics.json holds: whether public connectivity was open
     when the session ended, the agent's processes then, how many rounds of killing they took and
     how many were left, when set-up ended, when the session's first process and the step started, the
@@ -516,7 +517,6 @@ def delivery_record(top: Path) -> dict:
     (count, latest change and modification times, `bpl`'s own entry). Never raising, and never part
     of the reward. Each entry's `mtime` and `ctime` are the ones the hook recorded before any of
     its own steps, so `latest_ctime` is the latest change the agent's session made."""
-    path = top / DELIVERY_RECORD
     try:
         info = os.lstat(path)
         if not stat.S_ISREG(info.st_mode) or info.st_size > RECORD_LIMIT:
@@ -770,7 +770,7 @@ def main() -> int:
     try:
         if os.geteuid() != 0:
             raise EvaluationError("Verifier must start as root to isolate submitted code")
-        for closed in (tests, output, Path("/logs/artifacts")):  # the agent's artifacts: never read, never written
+        for closed in (tests, output, Path("/logs/artifacts"), DELIVERY_OUT):  # never read by submitted code, never written
             if closed.is_dir() and not closed.is_symlink():
                 closed.chmod(0o700)
         # The results' space, taken before any submitted code runs: written in place at the end,
@@ -792,7 +792,7 @@ def main() -> int:
             pass
         # What arrived, before the sandbox seals it: an error when nothing did or the copy was cut
         # short; the hook's record goes to metrics.json.
-        delivery, record = delivery_notes(SUBMISSION), delivery_record(SUBMISSION)
+        delivery, record = delivery_notes(SUBMISSION, DELIVERY_MARK), delivery_record(DELIVERY_RECORD)
         builds = upstream_builds()
         prefix, owner, limits = sandbox()
         refused = None

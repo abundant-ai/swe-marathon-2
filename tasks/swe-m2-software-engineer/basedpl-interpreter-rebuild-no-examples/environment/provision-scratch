@@ -7,7 +7,8 @@
 # once the session's limit has passed, counted from the start of the session's first process. It records that process
 # and its start as soon as it sees it (/var/lib/scratch/first-process), and the maintenance step counts the end of the
 # work from the same start.
-mkdir -p /var/lib/scratch/inodes && chmod 0700 /var/lib/scratch
+mkdir -p /var/lib/scratch/inodes /var/lib/scratch/out && chmod 0700 /var/lib/scratch /var/lib/scratch/out  # out: the maintenance
+# step's mark and record of what it collects, which go with /app/rebuild to the machine that runs it, never inside it
 if [ ! -e /var/lib/scratch/room ]; then
     fallocate -l 64M /var/lib/scratch/room 2>/dev/null || head -c 67108864 /dev/zero > /var/lib/scratch/room 2>/dev/null
 fi

@@ -10,8 +10,10 @@
 # What it lets through is what the copy can take: within the limits the instruction states, with nothing of that
 # user's processes running, and packed here first the way the copy packs it, with room left for this step's record;
 # and the last script refuses, rather than outlasts, a tree it cannot measure and pack in time.
-# The .manifest file lists what was packed; the .manifest.json record lists every entry it lets through with the times
-# it had when the session ended, and every link the step changed, with where a copied file came from.
+# Its mark says what was packed, and its record lists every entry it lets through with the times it had when the
+# session ended, and every link the step changed, with where a copied file came from. Both are written beside the tree,
+# in the state directory's out/ (which goes with /app/rebuild to the machine that runs it), never into it: everything in
+# /app/rebuild is the session's own.
 LIMIT_ENTRIES=100000
 LIMIT_BYTES=1000000000
 LIMIT_PATH=1000
@@ -203,7 +205,7 @@ for _ in $(seq 1 100); do
 done
 left=$({ pgrep -u dev -r R,S,D,T; pgrep -U dev -r R,S,D,T; } 2>/dev/null | sort -u | wc -l)
 # Every entry's own times, before anything of this step touches the tree: a chmod changes a ctime, and the ctime is
-# the one time a user cannot set, so the manifest's authoritative times come from here. Then, as root, directories get
+# the one time a user cannot set, so the record's authoritative times come from here. Then, as root, directories get
 # their owner's rwx back (a read-only folder would stop the link fixer and the copy) and a file its owner cannot read gets
 # u+r; each change is noted, and a change that fails refuses the delivery.
 if [ -d /app/rebuild ] && [ ! -L /app/rebuild ]; then
@@ -354,13 +356,6 @@ EOF
 rm -f /var/lib/scratch/room
 rm -rf /var/lib/scratch/inodes
 if [ ! -d /app/rebuild ] || [ -L /app/rebuild ]; then exit 0; fi
-# Whatever was left under the mark's or the record's name is moved aside, never followed, and the mark says so.
-for name in .manifest .manifest.json; do
-  if [ -e "/app/rebuild/$name" ] || [ -L "/app/rebuild/$name" ]; then
-    aside=$(mktemp -d /app/.aside.XXXXXX) && mv -f "/app/rebuild/$name" "$aside/" || exit 0
-    echo "$name" >> "$STATE/aside.txt"
-  fi
-done
 # Links, as the unprivileged user (it copies nothing that user could not read), within the limits and two minutes. Each change
 # is one JSON line on standard output, kept root-owned for the record.
 timeout 120 setpriv --reuid dev --regid dev --clear-groups --no-new-privs /usr/bin/python3 -I - /app/rebuild "$LIMIT_ENTRIES" "$LIMIT_BYTES" > "$STATE/fixer.jsonl" <<'EOF'
@@ -563,7 +558,8 @@ if unprinted:
     print(json.dumps({"kind": "more", "path": "", "note": f"and {unprinted:,} more changes of the link fixer"}), flush=True)
 EOF
 fixer_status=$?
-# Measure, bound, pack once, list and mark, as root.
+# Measure, bound, pack once, list and mark, as root; the mark and the record go to out/, made new.
+mkdir -p /var/lib/scratch/out && chmod 0700 /var/lib/scratch/out && rm -f /var/lib/scratch/out/mark /var/lib/scratch/out/record.json
 /usr/bin/python3 -I - /app/rebuild "$LIMIT_ENTRIES" "$LIMIT_BYTES" "$LIMIT_PATH" "$STATE" /tmp "$PACK_SECONDS" "$rounds" "$left" "$HOOK_STARTED" "$fixer_status" <<'EOF'
 """Measure /app/rebuild, bound it, pack it once, list it and mark it, as root, once nothing of the user's runs.
 
@@ -577,7 +573,7 @@ resolves a link where it lands, and there a `..` that stops at / here climbs on.
 permissions could not be restored for its owner, one not measured within MEASURE_UNTIL seconds of this step's start
 (an alarm ends the walk and the links then, inside any one call), or one that the copy's own pack (tar -czf into /tmp)
 cannot make within PACK_SECONDS and by PACK_UNTIL seconds of that start, with room left on the disk for this step's
-record and mark beside it, is moved aside whole and replaced by an empty directory, whose record counts what the tree
+record and mark, is moved aside whole and replaced by an empty directory, whose record counts what the tree
 held and lists only the first notes; a pack that fails only for want of room or inodes the machine never had is left
 to the copy. What this step writes is bounded in bytes: its own notes take NOTE_BYTES as written, with a name cut to
 its start and end past a few hundred bytes, then only their count; the mark's notes take MARK_BYTES. A session that
@@ -596,19 +592,19 @@ mtime and ctime are the ones recorded before the hook touched anything (STATE/be
 type); where the hook's own steps changed them, the entry says so and carries the later values apart. The mark's first line is `delivered` with the
 number of entries (files, directories and links) and of bytes in its files (each file once, however many names it
 has), or `refused`; every line after it is a change made, the reason for the refusal, or how many more notes there
-were. The record
-(.manifest.json) holds what was found before the user's processes were ended (STATE/session.json), how many rounds of
+were. The mark (STATE/out/mark) and the record (STATE/out/record.json) are written beside the tree, never into it, and
+go with it to the machine that runs it. The record holds what was found before the user's processes were ended
+(STATE/session.json), how many rounds of
 killing it took and how many processes were left, when set-up ended (STATE/turn-started) and the session's first
 process started (STATE/first-process), when this step started, the end of the work, what it was counted from and
 how many entries changed after it, the disk's free figures,
 and, for a delivery that is copied, every change the link fixer printed
 (STATE/fixer.jsonl: the copies first, each with its source's path, owner, times and inode, and whether the source
 changed since the session started), every note, and every entry: its
-path, type, size, modification and change times, and a file's sha256 or a link's target. Neither file is counted among
-the entries. Two things are noted in the mark as well: a link fixer that did not end with status 0 (`fixer_status`:
-124 when its two minutes ran out, 128 plus the signal's number when a signal ended it), since the links it had not
-reached were then left to this step, which removes those that lead outside; and a file the session left under the
-mark's or the record's own name (STATE/aside.txt), which was moved out of the directory.
+path, type, size, modification and change times, and a file's sha256 or a link's target. One thing is noted in the
+mark as well: a link fixer that did not end with status 0 (`fixer_status`: 124 when its time ran out, 128 plus the
+signal's number when a signal ended it), since the links it had not reached were then left to this step, which
+removes those that lead outside.
 """
 import hashlib
 import json
@@ -628,8 +624,9 @@ ROUNDS, LEFT, HOOK_STARTED, FIXER_STATUS = (int(value) if value.strip().isdigit(
 STARTED = HOOK_STARTED if HOOK_STARTED > 0 else int(time.time())  # when this step began
 MEASURE_UNTIL, PACK_UNTIL = 420, 510  # seconds after STARTED: the walk and the links end by the first, the pack by the second
 SESSION_SECONDS = 34560  # the session's limit: its work ends this long after it starts
-MARK = os.path.join(ROOT, ".manifest")
-RECORD = os.path.join(ROOT, ".manifest.json")
+OUT = os.path.join(STATE, "out")  # beside the tree, never in it: it goes with the tree to the machine that runs it
+MARK = os.path.join(OUT, "mark")
+RECORD = os.path.join(OUT, "record.json")
 TREE_PARTS = [part for part in ROOT.split("/") if part]
 SPARE_INODES = 16
 HASH_SECONDS = 240
@@ -1010,8 +1007,6 @@ fixer_notes = [str(change.get("note", "")) for change in changes if change.get("
 if FIXER_STATUS > 0:  # it was cut short: what it had not reached is in the notes of this step, below
     fixer_notes.append(f"the link fixer ended with status {FIXER_STATUS}: the links it had not reached were not fixed, and those that "
                        "lead outside /app/rebuild are removed")
-for name in state_lines("aside.txt"):
-    notes.append(f"moved {name} out of /app/rebuild: this step writes a file of that name there")
 # The entries' times as they were when the session ended; the hook's own changes (chmod, the fixer) are flagged.
 hook_changed = 0
 for path, item in listing.items():
@@ -1111,11 +1106,12 @@ if reason is not None:
     os.chmod(ROOT, 0o777)
     lines = ["refused", f"{reason}: it was not copied"]
 record = record_of(lines[0])
-descriptor = os.open(RECORD, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644)
+os.makedirs(OUT, 0o700, exist_ok=True)
+descriptor = os.open(RECORD, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o644)
 with os.fdopen(descriptor, "w", errors="backslashreplace") as out:
     json.dump(record, out, separators=(",", ":"))
 text = mark_text(lines)
-descriptor = os.open(MARK, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644)
+descriptor = os.open(MARK, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o644)
 with os.fdopen(descriptor, "w", errors="backslashreplace") as mark:
     mark.write(text)
 for line in text.splitlines()[1:]:

@@ -1,6 +1,6 @@
 schema_version = "1.4"
 multi_step_reward_strategy = "final"
-artifacts = ["/app/rebuild"]
+artifacts = ["/app/rebuild", "/var/lib/scratch/out"]
 
 [task]
 name = "abundant/swe-m2_software-engineering_basedpl-interpreter-rebuild-no-examples"
