@@ -36,13 +36,13 @@ workdir = "/app"
 [verifier]
 environment_mode = "separate"
 network_mode = "no-network"
-timeout_sec = 4500
+timeout_sec = 5000
 user = "root"
 
 [[verifier.collect]]
 command = "/usr/local/sbin/reclaim-scratch"
 user = "root"
-timeout_sec = 600
+timeout_sec = 1200
 
 [verifier.environment]
 network_mode = "public"
@@ -59,4 +59,4 @@ name = "01-rebuild-interpreter"
 timeout_sec = 34560
 
 [steps.verifier]
-timeout_sec = 4500
+timeout_sec = 5000

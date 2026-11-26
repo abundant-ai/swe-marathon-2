@@ -17,7 +17,7 @@
 LIMIT_ENTRIES=100000
 LIMIT_BYTES=1000000000
 LIMIT_PATH=1000
-PACK_SECONDS=100
+PACK_SECONDS=400
 LOOP_SECONDS=15  # the freeze and the kill below each stop this long after they begin, and say so
 STATE=/var/lib/scratch
 HOOK_STARTED=$(date +%s)
@@ -209,7 +209,7 @@ left=$({ pgrep -u dev -r R,S,D,T; pgrep -U dev -r R,S,D,T; } 2>/dev/null | sort 
 # their owner's rwx back (a read-only folder would stop the link fixer and the copy) and a file its owner cannot read gets
 # u+r; each change is noted, and a change that fails refuses the delivery.
 if [ -d /app/rebuild ] && [ ! -L /app/rebuild ]; then
-timeout 300 /usr/bin/python3 -I - /app/rebuild "$LIMIT_ENTRIES" "$LIMIT_PATH" "$STATE" <<'EOF'
+timeout 400 /usr/bin/python3 -I - /app/rebuild "$LIMIT_ENTRIES" "$LIMIT_PATH" "$STATE" <<'EOF'
 """Record every entry of /app/rebuild as it stands when the session has ended (STATE/before.jsonl: path, type, size,
 mode, owner, mtime, ctime, inode), walking by directory descriptor and never following a link, before any step of the
 hook changes anything. Then make every directory u+rwx and every regular file its owner cannot read u+r, noting each
@@ -356,9 +356,9 @@ EOF
 rm -f /var/lib/scratch/room
 rm -rf /var/lib/scratch/inodes
 if [ ! -d /app/rebuild ] || [ -L /app/rebuild ]; then exit 0; fi
-# Links, as the unprivileged user (it copies nothing that user could not read), within the limits and two minutes. Each change
+# Links, as the unprivileged user (it copies nothing that user could not read), within the limits and 400 s. Each change
 # is one JSON line on standard output, kept root-owned for the record.
-timeout 120 setpriv --reuid dev --regid dev --clear-groups --no-new-privs /usr/bin/python3 -I - /app/rebuild "$LIMIT_ENTRIES" "$LIMIT_BYTES" > "$STATE/fixer.jsonl" <<'EOF'
+timeout 400 setpriv --reuid dev --regid dev --clear-groups --no-new-privs /usr/bin/python3 -I - /app/rebuild "$LIMIT_ENTRIES" "$LIMIT_BYTES" > "$STATE/fixer.jsonl" <<'EOF'
 """Make /app/rebuild safe to copy to the machine it will run on, as the user who built it.
 
 The copy keeps relative links that stay inside the directory and refuses everything else. A link
@@ -622,14 +622,14 @@ LIMIT_ENTRIES, LIMIT_BYTES, LIMIT_PATH = int(sys.argv[2]), int(sys.argv[3]), int
 STATE, ARCHIVES, PACK_SECONDS = sys.argv[5], sys.argv[6], float(sys.argv[7])
 ROUNDS, LEFT, HOOK_STARTED, FIXER_STATUS = (int(value) if value.strip().isdigit() else -1 for value in (sys.argv[8:12] + [""] * 4)[:4])
 STARTED = HOOK_STARTED if HOOK_STARTED > 0 else int(time.time())  # when this step began
-MEASURE_UNTIL, PACK_UNTIL = 420, 510  # seconds after STARTED: the walk and the links end by the first, the pack by the second
+MEASURE_UNTIL, PACK_UNTIL = 1000, 1120  # seconds after STARTED: the walk and the links end by the first, the pack by the second
 SESSION_SECONDS = 34560  # the session's limit: its work ends this long after it starts
 OUT = os.path.join(STATE, "out")  # beside the tree, never in it: it goes with the tree to the machine that runs it
 MARK = os.path.join(OUT, "mark")
 RECORD = os.path.join(OUT, "record.json")
 TREE_PARTS = [part for part in ROOT.split("/") if part]
 SPARE_INODES = 16
-HASH_SECONDS = 240
+HASH_SECONDS = 400
 NOTE_BYTES, MARK_BYTES = 64 << 10, 32 << 10  # this step's own notes, and the mark's notes, in bytes as written
 notes, links, files = [], [], set()
 listing = {}

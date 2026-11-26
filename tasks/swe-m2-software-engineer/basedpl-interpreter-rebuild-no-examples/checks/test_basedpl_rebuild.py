@@ -1942,8 +1942,8 @@ def test_the_delivery_is_bounded_recorded_and_marked_before_the_copy_and_graded_
     hook_text = (TASK / "environment" / "reclaim-scratch").read_text()
     assert "pgrep -u dev -r R,S,D,T" in hook_text and "pgrep -u dev -r R,S >" in hook_text, "zombies are never survivors"
     assert "chmod -R" not in hook_text, "no chmod of every entry: that would set every ctime to the hook's time (07c F1)"
-    assert hook_text.index("for visit in (record, restore):") < hook_text.index("timeout 120 setpriv"), "times first, then permissions, then the fixer"
-    assert "def destination(path, target):" in hook_text and "HASH_SECONDS = 240" in hook_text and "if inode in digests:" in hook_text
+    assert hook_text.index("for visit in (record, restore):") < hook_text.index("timeout 400 setpriv"), "times first, then permissions, then the fixer"
+    assert "def destination(path, target):" in hook_text and "HASH_SECONDS = 400" in hook_text and "if inode in digests:" in hook_text
     assert out["complete"] == [f"maintenance step: {line}" for line in out["mark"][1:]], out["complete"]
     assert out["cut"][0].startswith("ERROR The copy arrived incomplete"), out["cut"]
     assert out["nothing"][0].startswith("ERROR Nothing arrived") and out["unmarked"][0].startswith("the delivery arrived without")
@@ -1994,17 +1994,17 @@ def test_the_delivery_is_bounded_recorded_and_marked_before_the_copy_and_graded_
              'timeout 30 /usr/bin/python3 -I - /proc /app/rebuild "$(id -u dev 2>/dev/null)"', '> "$STATE/writers.json" 2>/dev/null\n',
              'if [ $? -eq 3 ]; then', "timeout 30 setpriv --reuid dev --regid dev --clear-groups --no-new-privs /usr/bin/python3 -I - /proc",
              '> "$STATE/writers-user.json"', "kill -9 -1",
-             'timeout 300 /usr/bin/python3 -I - /app/rebuild "$LIMIT_ENTRIES" "$LIMIT_PATH" "$STATE"',
+             'timeout 400 /usr/bin/python3 -I - /app/rebuild "$LIMIT_ENTRIES" "$LIMIT_PATH" "$STATE"',
              "/usr/bin/python3 -I - \"$STATE/session.json\" \"$STATE/processes.txt\"", "rm -f /var/lib/scratch/room",
              "rm -rf /var/lib/scratch/inodes",
-             "timeout 120 setpriv --reuid dev --regid dev --clear-groups --no-new-privs /usr/bin/python3 -I -",
+             "timeout 400 setpriv --reuid dev --regid dev --clear-groups --no-new-privs /usr/bin/python3 -I -",
              '> "$STATE/fixer.jsonl"', "\nEOF\nfixer_status=$?\n",
              "mkdir -p /var/lib/scratch/out && chmod 0700 /var/lib/scratch/out && rm -f /var/lib/scratch/out/mark /var/lib/scratch/out/record.json",
              '\n/usr/bin/python3 -I - /app/rebuild "$LIMIT_ENTRIES" "$LIMIT_BYTES" "$LIMIT_PATH" "$STATE" /tmp "$PACK_SECONDS" "$rounds" '
              '"$left" "$HOOK_STARTED" "$fixer_status" <<']
     assert [hook.index(step) for step in order] == sorted(hook.index(step) for step in order)
     assert hook.endswith('print(line.encode(errors="backslashreplace").decode(), flush=True)\nEOF\n'), "the last script ends the hook"
-    for setting in ("LIMIT_ENTRIES=100000", "LIMIT_BYTES=1000000000", "LIMIT_PATH=1000", "PACK_SECONDS=100", "STATE=/var/lib/scratch"):
+    for setting in ("LIMIT_ENTRIES=100000", "LIMIT_BYTES=1000000000", "LIMIT_PATH=1000", "PACK_SECONDS=400", "STATE=/var/lib/scratch"):
         assert setting in hook, setting
     assert "rm -rf \"$" not in hook and "rm -f \"$" not in hook, "nothing is removed through a variable"
     setup = (TASK / "environment" / "provision-scratch").read_text()
@@ -2014,7 +2014,7 @@ def test_the_delivery_is_bounded_recorded_and_marked_before_the_copy_and_graded_
     assert hook.index("--clear-groups kill -STOP -1 >") < hook.index("/usr/bin/python3"), "before the freeze: the hook's settings and the mark"
     import tomllib
     config = tomllib.loads((TASK / "task.toml").read_text())
-    assert config["verifier"]["collect"] == [{"command": "/usr/local/sbin/reclaim-scratch", "user": "root", "timeout_sec": 600}]
+    assert config["verifier"]["collect"] == [{"command": "/usr/local/sbin/reclaim-scratch", "user": "root", "timeout_sec": 1200}]
     assert config["agent"]["setup_begin"] == [{"command": "/usr/local/sbin/provision-scratch", "timeout_sec": 120}]
     assert config["agent"]["setup_complete"] == [{"command": "/usr/local/sbin/provision-scratch", "timeout_sec": 120}]
     docker = (TASK / "environment" / "Dockerfile").read_text()
@@ -2111,7 +2111,7 @@ def test_reclaim_scratch_freezes_the_users_processes_before_anything_else(tmp_pa
     assert trace == ["pgrep -u dev -r R,S", "setpriv --reuid dev --regid dev --clear-groups kill -STOP -1", "pgrep -u dev -r R,S"], trace
     hook = (TASK / "environment" / "reclaim-scratch").read_text()
     start, freeze = 'mkdir -p "$STATE" && chmod 0700 "$STATE"\n', "for _ in $(seq 1 100); do\n  pgrep -u dev -r R,S >"
-    steps = [start, freeze, "--clear-groups kill -STOP -1 >", "ps -eo pid=", "timeout 120 setpriv"]
+    steps = [start, freeze, "--clear-groups kill -STOP -1 >", "ps -eo pid=", "timeout 400 setpriv"]
     assert [hook.index(step) for step in steps] == sorted(hook.index(step) for step in steps), "the freeze, then the rest"
     between = hook[hook.index(start) + len(start):hook.index(freeze)]
     code = [line.strip() for line in between.splitlines() if not line.lstrip().startswith("#")]
@@ -2672,24 +2672,25 @@ def test_a_tree_the_last_script_cannot_finish_in_time_is_refused_not_left_to_the
     over a chain (6a93903's last script: 2,000 links 5.95 s, 4,000 24.4 s, 8,000 101.5 s on this Mac; ten chains of
     9,999 stay under the entry limit). The hook's 600 s then ran out before the mark, with the links the copy refuses
     still in the tree: "nothing arrived", an evaluation error, when such a link comes first. The last script now
-    refuses a tree it has not measured within 420 s of the hook's start, and packs only by 510 s; the earlier stages'
-    own limits leave it that time, or it refuses at once."""
+    refuses a tree it has not measured within 1,000 s of the hook's start (420 s before round 19), and packs only by
+    1,120 s (510 s); the earlier stages' own limits leave it that time, or it refuses at once."""
     rebuild = collected(tmp_path / "late", lambda rebuild: (rebuild / "bpl").write_text("#!/bin/sh\n"), started_ago=10_000)
     mark = hook_mark(rebuild).read_text().splitlines()
-    assert mark == ["refused", "it could not be measured within 420 s: it was not copied"], mark
+    assert mark == ["refused", "it could not be measured within 1000 s: it was not copied"], mark
     assert json.loads(hook_record(rebuild).read_text())["delivered"] == "refused"
     stopped, notes = arrival(rebuild, tmp_path / "late" / "copied")
     assert stopped is None and notes == [f"maintenance step: {mark[1]}"], (stopped, notes)
     rebuild = collected(tmp_path / "in-time", lambda rebuild: (rebuild / "bpl").write_text("#!/bin/sh\n"), started_ago=400)
     assert hook_mark(rebuild).read_text().splitlines() == ["delivered 1 10"], "a start 400 s ago is still in time"
     hook, measure = (TASK / "environment" / "reclaim-scratch").read_text(), hook_scripts()["measure"]
-    assert "MEASURE_UNTIL, PACK_UNTIL = 420, 510" in measure and "STARTED = HOOK_STARTED if HOOK_STARTED > 0 else" in measure
+    assert "MEASURE_UNTIL, PACK_UNTIL = 1000, 1120" in measure and "STARTED = HOOK_STARTED if HOOK_STARTED > 0 else" in measure
     assert "seconds = min(PACK_SECONDS, STARTED + PACK_UNTIL - time.time())" in measure and "timeout=seconds)" in measure
     assert measure.count("in_time()") == 3, "defined once, then called for every entry the walk lists and for every link"
     import tomllib
     limit = tomllib.loads((TASK / "task.toml").read_text())["verifier"]["collect"][0]["timeout_sec"]
     earlier = [int(value) for value in re.findall(r"^\s*timeout (\d+) ", hook, re.M)]  # R1's two listings, then the rest
-    assert earlier == [30, 30, 300, 30, 120] and sum(earlier) + 60 < limit == 600 and 510 + 60 <= limit, (earlier, limit)
+    assert earlier == [30, 30, 400, 30, 400] and sum(earlier) + 30 < 1000 and 1120 + 60 <= limit == 1200, (earlier, limit)
+    assert "PACK_SECONDS=400\n" in hook, "round 19 (F3 of the v7 verdict): the copy's pack, and the link fixer, 400 s each"
 
 
 def test_the_link_fixer_copies_only_with_room_to_spare(tmp_path):
@@ -3145,16 +3146,17 @@ def test_no_one_link_holds_the_last_script_past_its_time(tmp_path):
     limit of 40: one link whose resolution reaches every other one held it inside a single call past the hook's 600 s
     at the stated limits, and the copy then met the links as the session left them ("nothing arrived" when one of them
     climbs past / and comes first). The last script now reads every link by name against its own listing (nothing
-    follows a link), and an alarm ends the walk and the links at 420 s, inside any call. Started 418 s after the hook,
+    follows a link), and an alarm ends the walk and the links at 1,000 s since round 19 (420 s before), inside any call.
+    Started 999 s after the hook,
     it refuses QA 08's tree within about two seconds; started at once, it finishes it, the long link removed."""
     measure = hook_scripts()["measure"]
     assert [line.strip() for line in measure.splitlines() if "realpath(" in line] == ["ROOT = os.path.realpath(sys.argv[1])"]
     assert measure.index("signal.setitimer(signal.ITIMER_REAL, max(0.001,") < measure.index("walk(top, \"\")") \
         < measure.index("signal.setitimer(signal.ITIMER_REAL, 0)") < measure.index("pack_once()\n    if failed is None")
     times = {}
-    rebuild = collected(tmp_path / "late", every_link_reached, started_ago=418, timeout=120, times=times)
+    rebuild = collected(tmp_path / "late", every_link_reached, started_ago=999, timeout=120, times=times)  # the alarm within 1 s
     mark = hook_mark(rebuild).read_text().splitlines()
-    assert mark[:2] == ["refused", "it could not be measured within 420 s: it was not copied"], mark[:3]
+    assert mark[:2] == ["refused", "it could not be measured within 1000 s: it was not copied"], mark[:3]
     assert times["last"] < 4, times  # 9433aa9's last script spends several seconds more inside the one link's realpath
     now = tmp_path / "now"
     head = []
@@ -3590,9 +3592,14 @@ def test_every_run_fits_inside_the_step_verifier_time():
     import make_cases
     cases = sum(make_cases.KIND_COUNTS.values()) + scope_cases.MOST  # round 17's cases come after the others
     assert cases * (per_run + 0.1) + margin + 120 <= total and total + 300 <= min(step_verifier, verifier)
+    # Round 19 (F1 of the v7 verdict): every run at its limit with 0.35 s of cleanup before it (the platform's measured 0.015 s
+    # more than twenty times over) still fits, where 4,200 s fitted only 0.1 s
+    assert cases * (per_run + 0.35) + margin + 120 <= total, (cases, total)
     import tomllib
     agent = tomllib.loads(toml)["steps"][0]["agent"]["timeout_sec"]
+    collect = tomllib.loads(toml)["verifier"]["collect"][0]["timeout_sec"]
     assert agent + step_verifier <= 11 * 3600, "the attempt stays inside the platform's 12 hours"
+    assert agent + collect + step_verifier <= 11.5 * 3600, "with the collect hook, still half an hour for the images and set-up"
     assert f"Each run finishes within {per_run} seconds" in (STEP / "instruction.md").read_text()
 
 
