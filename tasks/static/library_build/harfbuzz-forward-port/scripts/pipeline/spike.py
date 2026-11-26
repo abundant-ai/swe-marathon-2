@@ -283,13 +283,18 @@ def do_build(
 
 
 def do_run(
-    bid: str, cases: str, out: str, platform: str | None = None, env: str = ""
+    bid: str,
+    cases: str,
+    out: str,
+    platform: str | None = None,
+    env: str = "",
+    cpus: int = 2,
 ) -> int:
     """Run the driver of one build over a case file, in one bounded container."""
     started = time.time()
     code = docker_run(
         ["sh", "-c", f"{env} timeout 1800 /work/out/hb/{bid}/hbdrv < {cases} > {out}"],
-        cpus=2,
+        cpus=cpus,
         platform=platform,
         check=False,
     )
@@ -339,6 +344,7 @@ def cmd_batch(args: argparse.Namespace) -> None:
                     op["out"],
                     op.get("platform"),
                     op.get("env", ""),
+                    op.get("cpus", 2),
                 )
             elif op["op"] == "sh":
                 started = time.time()
@@ -356,6 +362,109 @@ def cmd_batch(args: argparse.Namespace) -> None:
                 )
             else:
                 raise SystemExit(f"unknown op {op['op']}")
+
+
+VERIFIER_IMAGE = "hbfp-verifier:phaseB"
+
+
+def cmd_stage_verifier(args: argparse.Namespace) -> None:
+    """Stage the verifier's build context from tests/ and a private selection, then build its image."""
+    selection = [
+        json.loads(line)
+        for line in Path(args.selection).read_text().splitlines()
+        if line
+    ]
+    ctx = CACHE / "ctx" / "verifier"
+    for sub in (
+        "driver",
+        "wheels",
+        "private",
+        "inputs/fonts/noto",
+        "inputs/fonts/synth",
+    ):
+        (ctx / sub).mkdir(parents=True, exist_ok=True)
+    for name in ("Dockerfile", "test.sh", "verify.py"):
+        shutil.copy2(TASK / "tests" / name, ctx / name)
+    shutil.copy2(DRIVER / "hbdrv.c", ctx / "driver" / "hbdrv.c")
+    meson = next((DL / "python").glob("meson-*.whl"))
+    shutil.copy2(meson, ctx / "wheels" / meson.name)
+    for font in sorted({c["font"] for c in selection}):
+        kind, name = font.split("/", 1)
+        src = (DL / "fonts" / name) if kind == "noto" else (WORK / "fonts" / name)
+        shutil.copy2(src, ctx / "inputs" / "fonts" / kind / name)
+    cases = [
+        {
+            k: c[k]
+            for k in (
+                "id",
+                "unit",
+                "family",
+                "kind",
+                "window",
+                "font",
+                "idx",
+                "opts",
+                "text",
+            )
+        }
+        for c in selection
+    ]
+    (ctx / "private" / "cases.jsonl").write_text(
+        "".join(json.dumps(c, sort_keys=True) + "\n" for c in cases)
+    )
+    expected = {
+        rel: {c["id"]: c["gold"][rel] for c in selection}
+        for rel in ("15.0.0", "15.1.0", "15.2.0")
+    }
+    (ctx / "private" / "expected.json").write_text(json.dumps(expected))
+    with heavy("verifier image"):
+        started = time.time()
+        subprocess.run(
+            ["docker", "build", "-t", VERIFIER_IMAGE, "--label", LABEL, str(ctx)],
+            check=True,
+        )
+        log_event(
+            event="image", tag=VERIFIER_IMAGE, seconds=round(time.time() - started, 1)
+        )
+
+
+def cmd_verify(args: argparse.Namespace) -> None:
+    """Run the verifier image against one tree, the way the platform would (tree read-only, logs mounted)."""
+    logs = WORK / "verify" / args.name
+    logs.mkdir(parents=True, exist_ok=True)
+    cmd = [
+        "docker",
+        "run",
+        "--rm",
+        "--memory=4g",
+        "--memory-swap=4g",
+        "--cpus=4",
+        "--label",
+        LABEL,
+    ]
+    cmd += [
+        "-e",
+        f"RELEASE={args.release}",
+        "-v",
+        f"{Path(args.tree).resolve()}:/app/harfbuzz:ro",
+    ]
+    cmd += ["-v", f"{logs}:/logs/verifier", VERIFIER_IMAGE, "bash", "/tests/test.sh"]
+    with heavy(f"verify {args.name}"):
+        started = time.time()
+        code = subprocess.run(cmd, check=False).returncode
+        reward = (
+            (logs / "reward.txt").read_text().strip()
+            if (logs / "reward.txt").exists()
+            else None
+        )
+        log_event(
+            event="verify",
+            name=args.name,
+            code=code,
+            reward=reward,
+            wall_s=round(time.time() - started, 1),
+        )
+        print(json.dumps({"name": args.name, "code": code, "reward": reward}))
 
 
 def main() -> None:
@@ -384,6 +493,14 @@ def main() -> None:
     p = sub.add_parser("batch")
     p.add_argument("plan")
     p.set_defaults(func=cmd_batch)
+    p = sub.add_parser("stage-verifier")
+    p.add_argument("selection")
+    p.set_defaults(func=cmd_stage_verifier)
+    p = sub.add_parser("verify")
+    p.add_argument("name")
+    p.add_argument("tree")
+    p.add_argument("--release", default="15.2.0")
+    p.set_defaults(func=cmd_verify)
     args = parser.parse_args()
     WORK.mkdir(parents=True, exist_ok=True)
     args.func(args)

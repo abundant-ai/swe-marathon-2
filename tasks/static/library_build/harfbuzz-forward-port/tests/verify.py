@@ -27,7 +27,7 @@ LOGS = Path("/logs/verifier")
 WINDOWS = {"15.0.0": {"A"}, "15.1.0": {"A", "B"}, "15.2.0": {"A", "B", "C"}}
 W_DUAL, W_BROAD = 0.25, 0.10
 MESON = [
-    "meson", "setup", "build", "--buildtype=release", "-Ddefault_library=static",
+    "meson", "setup", "/tmp/hbv/b", "--buildtype=release", "-Ddefault_library=static",
     "-Dglib=disabled", "-Dgobject=disabled", "-Dcairo=disabled", "-Dchafa=disabled", "-Dicu=disabled",
     "-Dfreetype=disabled", "-Dpng=disabled", "-Dzlib=disabled", "-Dgraphite2=disabled",
     "-Draster=disabled", "-Dvector=disabled", "-Dgpu=disabled", "-Dsubset=disabled",
@@ -88,20 +88,26 @@ def prepare() -> tuple[list[dict], dict[str, str]]:
     return cases, expected
 
 
+def skip_build_dirs(directory: str, names: list[str]) -> set[str]:
+    """copytree filter: subdirectories that are meson build directories are not copied."""
+    return {n for n in names if (Path(directory) / n / "meson-private").is_dir()}
+
+
 def build(notes: list[str]) -> Path | None:
     """Copy and build the delivered tree as builder; return the linked driver, or None for a candidate failure."""
     WORK.mkdir(
         parents=True
-    )  # a fresh container each time; an existing directory fails loudly
+    )  # a fresh container each time; an existing one fails loudly
     if not TREE.is_dir():
         notes.append("/app/harfbuzz is missing")
         return None
-    shutil.copytree(TREE, WORK / "tree", symlinks=True)
+    # Build out of tree, and leave out any build directory the tree carries (meson marks them).
+    shutil.copytree(TREE, WORK / "tree", symlinks=True, ignore=skip_build_dirs)
     subprocess.run(["chown", "-R", "builder:builder", str(WORK)], check=True)
     tree = WORK / "tree"
     for step, cmd, limit in (
         ("setup", MESON, 900),
-        ("build", ["ninja", "-C", "build", "-j", "4"], 1800),
+        ("build", ["ninja", "-C", str(WORK / "b"), "-j", "4"], 1800),
         (
             "driver",
             [
@@ -109,7 +115,7 @@ def build(notes: list[str]) -> Path | None:
                 "-O2",
                 "-c",
                 "-Isrc",
-                "-Ibuild/src",
+                f"-I{WORK / 'b' / 'src'}",
                 "-o",
                 str(WORK / "hbdrv.o"),
                 str(DRIVER),
@@ -123,7 +129,7 @@ def build(notes: list[str]) -> Path | None:
                 "-o",
                 str(WORK / "hbdrv"),
                 str(WORK / "hbdrv.o"),
-                "build/src/libharfbuzz.a",
+                str(WORK / "b" / "src" / "libharfbuzz.a"),
                 "-lm",
             ],
             300,
