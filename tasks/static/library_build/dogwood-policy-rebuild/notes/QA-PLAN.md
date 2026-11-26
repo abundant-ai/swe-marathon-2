@@ -1,5 +1,11 @@
 # QA plan (Phase A, 2026-11-26)
 
+> **2026-11-27:** the task is now single-step (the 1.2.0 rebuild; see DESIGN.md). Read "step 2"
+> below as the task. The step-1 items (1.1.2 gold, the no-upgrade anchor, the step-boundary lens)
+> are parked with the two-step plan. Lens 19 becomes "the requester's world": does every graded
+> rule have its sentence in the shipped guide?
+
+
 Author notes, never shipped. This plans the checks that must pass before the first upload:
 - the 12-item pre-upload gate from the grading guide (section 12), mapped to this task;
 - the coverage inventory;

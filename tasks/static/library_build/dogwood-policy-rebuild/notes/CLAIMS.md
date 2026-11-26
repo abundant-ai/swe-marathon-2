@@ -1,5 +1,9 @@
 # Are the reasons valid? Claims re-checked, and the failure sentence's proof plan (2026-11-26)
 
+> **2026-11-27:** the claims hold for the single-step 1.2.0 task; rows about the two-step split
+> (4, 9, 42, 55) now only explain why the parked plan was shaped as it was.
+
+
 Author notes, never shipped. The research behind this task re-checked here:
 - **The report:** `SWE Marathon 2 library reproduction picks`, section 2.
 - **The deep dive:** `deep_dogwood.md`.

@@ -1,5 +1,11 @@
 # Steps, acceptance criteria and the panel decision (2026-11-26)
 
+> **Parked by the owner, 2026-11-26.** The owner set multi-turn aside ("we dont have to promote
+> multi-turn as well so make stuff likewise"). The task is now the single-step 1.2.0 rebuild this
+> plan kept as its fallback (section 8), graded by the same verifier. This file and
+> `parked-two-step/` are kept as history, not as the plan.
+
+
 Author notes, never shipped. The brief the panel read, the three votes and the decision record
 live in the private ops repository (`harbor-lh`). The record is
 `ops/swe-marathon-v2/decisions/2026-11-26-dogwood-policy-rebuild-steps-DECISION.md`.

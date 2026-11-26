@@ -1,31 +1,46 @@
-# Dogwood policy tool rebuild, then the 1.2.0 upgrade (design, Phase A)
+# Dogwood policy tool rebuild (single step)
 
-Rebuild `dogwood`, the command-line tool of Dogwood, clean-room. Dogwood is the temporal
+Rebuild `dogwood` 1.2.0, the command-line tool of Dogwood, clean-room. Dogwood is the temporal
 agent-policy language that AWS published in August 2026 (Apache-2.0, built on Cedar). Bedrock
 AgentCore writes its temporal policies in it.
 
-The agent works from the guide and an execute-only build. It cannot read Dogwood's source.
-The task runs in two steps in one sandbox:
-1. **`01-rebuild`:** rebuild `dogwood` 1.1.2: `format`, `check-parse`, `validate`, `lower`,
-   `replay`, `explain` and `schema`, with their human and JSON output.
-2. **`02-upgrade`:** carry the same implementation to 1.2.0, whose release notes list 39 breaking
-   changes against 1.1.2.
+**What the agent gets and delivers.** In one session it works from the trimmed guide and an
+execute-only build it can run but not read, and cannot read Dogwood's source. It delivers
+`format`, `check-parse`, `validate`, `lower`, `replay`, `explain` and `schema`, with their human
+and JSON output.
 
-**Status: design only.** Nothing has been built, run or downloaded. No oracle exists, no verifier
-exists, and no trial has run. The rest of this README and the `notes/` folder are author notes.
-Nothing here is shipped to the agent.
+**Why single step.** The Phase A panel chose a two-step chain (1.1.2, then the 1.2.0 upgrade). On
+2026-11-26 the owner set multi-turn aside ("we dont have to promote multi-turn"), so the task is
+the single-step fallback that plan kept: the 1.2.0 rebuild, graded by the same verifier and
+families. The two-step plan stays in `notes/` as history.
+
+**Status (2026-11-27, Phase B):**
+- The task image builds the release from pinned sources.
+- The verifier skeleton, the case generator and the oracle exist.
+- See the development log and `notes/PHASE-B-REPORT.md` for what has been run.
+- No trial has run.
+- The guide shipped to the agent is not trimmed or scrubbed yet.
+
+The rest of this README and the `notes/` folder are author notes. Nothing here is shipped to the
+agent.
 
 | Document | What it holds |
 | --- | --- |
+| [instruction.md](instruction.md) | The brief (draft) |
 | [notes/DESIGN.md](notes/DESIGN.md) | What the agent gets and delivers, the hidden reference, grading families and weights, stub filters, determinism, score bands, effort, risks |
-| [notes/STEPS.md](notes/STEPS.md) | The multi-step plan, each step's acceptance criteria, the reward strategy and timeouts, the single-step fallback |
 | [notes/CLAIMS.md](notes/CLAIMS.md) | Every claim used to justify the task, re-checked against primary evidence; the failure sentence and its proof plan |
 | [notes/QA-PLAN.md](notes/QA-PLAN.md) | The 12-item pre-upload gate, coverage inventory, stub zoo, wording sweep, QA lenses and post-run checks |
-| [notes/SPIKE-PLAN.md](notes/SPIKE-PLAN.md) | The spike that comes before any build, with the exact download list |
-| [notes/PHASE-A-REPORT.md](notes/PHASE-A-REPORT.md) | Phase A summary |
+| [notes/SPIKE-PLAN.md](notes/SPIKE-PLAN.md) | The spike and the exact download list |
+| [notes/PHASE-A-REPORT.md](notes/PHASE-A-REPORT.md), [notes/PHASE-B-REPORT.md](notes/PHASE-B-REPORT.md) | Phase summaries |
+| [notes/STEPS.md](notes/STEPS.md), [notes/parked-two-step/](notes/parked-two-step/) | The two-step plan and its briefs, parked by the owner on 2026-11-26 |
 
-The step briefs are [steps/01-rebuild/instruction.md](steps/01-rebuild/instruction.md) and
-[steps/02-upgrade/instruction.md](steps/02-upgrade/instruction.md) (drafts).
+**Where things are:**
+- `environment/` builds the working machine.
+- `tests/` is the separate grading image: the grader, and the private cases in Git-ignored
+  `tests/private/`.
+- `solution/solve.sh` delivers upstream's own 1.2.0 source. It is staged into Git-ignored
+  `solution/upstream/` by `scripts/stage_oracle.py`.
+- `scripts/` holds the development tools, which are never shipped.
 
 ## Task design dimensions
 
@@ -34,10 +49,8 @@ The step briefs are [steps/01-rebuild/instruction.md](steps/01-rebuild/instructi
   only internal neighbour shares the topic, not the task shape: Forge's `cedar-typeof-soundness`, a
   Lean proof-hole task about Cedar.
 - **Same family as ours:** the closest tasks in this repository are the black-box language rebuilds
-  (Goose, BasedPL). This one adds three things:
-  - stateful decision streams over event traces;
-  - validation verdicts;
-  - a version upgrade as a second step.
+  (Goose, BasedPL). This one adds stateful decision streams over event traces and validation
+  verdicts.
 - **Unverified:** benchmarks outside the lists in `notes/CLAIMS.md` were not searched.
 
 **Verifiability.**
@@ -55,8 +68,6 @@ The step briefs are [steps/01-rebuild/instruction.md](steps/01-rebuild/instructi
 **Realism.**
 - **Who needs it:** teams that gate agents' tool calls with Dogwood. Upstream calls its interpreter
   a reference "NOT intended for production use", so such teams need an implementation they own.
-- **Why two steps:** a 1.1.2 deployment that must move to 1.2.0 is the upgrade upstream's own
-  release notes describe.
 - **Weakest point:** a clean-room rule for an Apache-2.0 project is a business choice, not a legal
   necessity. Goose's accepted brief uses the same framing.
 
@@ -66,47 +77,41 @@ The step briefs are [steps/01-rebuild/instruction.md](steps/01-rebuild/instructi
 - **The hard part:** correct decisions need a relational evaluator for past-time first-order
   temporal logic with deduplicating aggregation and key-local slicing. Validation has dozens of
   stated rules.
-- **Step 2:** the agent must find and apply about 45 CLI-visible changes in a codebase it already
-  wrote, some of them silent verdict changes.
-- **Failure sentence:** see `notes/CLAIMS.md`.
+- **Two families cut against a model's prior,** both stated in the guide:
+  - aggregation over a deduplicated projection (B);
+  - `previous` and `since` read over the deciding principal's own events (K).
+- **Sizing:** frontier at about 0.6 or less, mid-tier 0.1-0.4 (`notes/DESIGN.md` section 3a).
 
 **Initial feasibility.**
 - **Plausible path:** parse with pest from the guide's grammar, evaluate Cedar parts with the
-  vendored `cedar-policy`, and replay with a relational monitor; then work through the release
-  notes in step 2.
-- **Unknowns:**
-  - whether both releases build offline from a lock we freeze;
-  - how stable Cedar's printer and 1.1.2's validator ordering are;
-  - whether the case generator yields enough discriminating cases per feature.
+  vendored `cedar-policy`, and replay with a relational, key-local monitor.
+- **Shown in Phase B:** the release builds statically and offline from its published lock, and
+  upstream's own source scores 1 through the grader.
 
 ## Reward
 
-The trial reward is step 2's score (`multi_step_reward_strategy = "final"`). Step 1 is scored the
-same way on 1.1.2 and reported, not counted.
-
-Each step's score is `S = Σ_f w_f · g_f`, where:
+`S = Σ_f w_f · g_f`, where:
 - `g_f = max(0, (pass_f − b_f) / (1 − b_f))`;
 - `pass_f` is the family's pass fraction over paired cases;
 - `b_f` is the best stub's pass fraction in that family.
 
 Integrity failures set the score to 0: the submission calls a `dogwood` build or holds one, or it
-tampers with the verifier's files. An evaluation error writes no reward.
+tampers with the grader's files. An evaluation error writes no reward. While a family has no cases
+yet, its weight leaves the denominator, which is the Phase B milestone state.
 
 | Family | Weight |
 | --- | --- |
-| R core replay | 0.25 |
-| B aggregation semantics (B-dedup 0.18, B-scope 0.07) | 0.25 |
-| K key-local pins, mirror rule, decision kinds, custom event schemas | 0.10 |
-| V validate accept/reject and exit status | 0.10 |
+| R core replay | 0.20 |
+| B-dedup aggregation, deduplication | 0.17 |
+| B-scope aggregation, decision point | 0.05 |
+| K key-local slicing, pins, mirror rule | 0.15 |
+| V validate accept/reject and exit status | 0.13 |
 | V-msg validate finding text (JSON) | 0.05 |
 | L lowered Cedar and augmented schema | 0.10 |
 | M macros | 0.05 |
 | P providers | 0.05 |
 | X `explain` | 0.03 |
 | F `format`, `check-parse`, `schema` | 0.02 |
-
-These weights are provisional. Case counts, the "same in both versions" and "changed in 1.2.0"
-partition, and the anchors each step must hit are in `notes/STEPS.md`.
 
 ## Verification coverage
 
@@ -122,7 +127,6 @@ Nothing is built, so every boundary is unassessed.
 | Boundary | Attack | Planned mitigation | Severity |
 | --- | --- | --- | --- |
 | The installed builds | Read, copy, trace, preload or dump the binary | musl-static, mode 2711, non-dumpable; multi-stage image with no source or cargo cache; protection probe as the agent user | 🟡 YELLOW / UNASSESSED |
-| Future step material | Find the 1.2.0 build, docs or crates during step 1 | Root-only staging directory, unlistable; installed only by step 2's `setup.sh` | 🟡 YELLOW / UNASSESSED |
 | Wrapper | Ship a submission that calls `dogwood` | The verifier image holds no build; integrity check on the submission | 🟡 YELLOW / UNASSESSED |
 | Stubs | Credit from help text, constant exit codes, all-DENY streams, `cat` as `format` | Stub zoo at every build; paired cases; baseline subtraction | 🟡 YELLOW / UNASSESSED |
 | Lookup tables | Hard-code the shipped examples' outputs | Hidden cases never equal or near-copy a shipped example (leak scan); paired duals | 🟡 YELLOW / UNASSESSED |

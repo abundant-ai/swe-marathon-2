@@ -1,0 +1,122 @@
+"""Copy the delivered project and build it offline as an unprivileged user.
+
+The copy follows the brief: `target/` and links that point outside the directory are left out,
+and a project over the file or size limit is not copied (it then builds nothing). The build runs
+as `builder`, with no network and with no read access to the private cases, in its own process
+group, which is killed when the build ends or times out.
+"""
+
+from __future__ import annotations
+
+import os
+import shutil
+import signal
+import subprocess
+import tempfile
+import time
+from pathlib import Path
+
+from .contracts import BuildResult, Limits
+
+BUILDER = "builder"
+CARGO_CONFIG = Path("/opt/verifier/cargo-config.toml")
+
+
+def copy_project(src: Path, dst: Path, limits: Limits) -> str | None:
+    """Copy `src` to `dst` under the brief's rules. Return a refusal reason, or None."""
+    files = 0
+    size = 0
+    root = src.resolve()
+    for dirpath, dirnames, filenames in os.walk(src, followlinks=False):
+        here = Path(dirpath)
+        rel = here.relative_to(src)
+        if rel.parts[:1] == ("target",):
+            dirnames[:] = []
+            continue
+        dirnames[:] = [d for d in dirnames if not (rel == Path(".") and d == "target")]
+        (dst / rel).mkdir(parents=True, exist_ok=True)
+        for name in filenames:
+            path = here / name
+            if path.is_symlink():
+                target = path.resolve()
+                if root not in target.parents or not target.is_file():
+                    continue
+            if not (path.is_file()):
+                continue
+            files += 1
+            size += path.stat().st_size
+            if files > limits.max_files or size > limits.max_bytes:
+                return f"project over the copy limits ({files} files, {size} bytes)"
+            shutil.copyfile(path, dst / rel / name)
+    return None
+
+
+def _chown_tree(path: Path, user: str) -> None:
+    for dirpath, _, filenames in os.walk(path):
+        shutil.chown(dirpath, user=user, group=user)
+        for name in filenames:
+            shutil.chown(Path(dirpath) / name, user=user, group=user)
+
+
+def build(submission: Path, work: Path, limits: Limits) -> BuildResult:
+    """Build `submission` with `cargo build --release --offline`; never raises on a bad project."""
+    start = time.monotonic()
+    src = work / "src"
+    home = work / "home"
+    if not submission.is_dir():
+        return BuildResult(False, None, "no project delivered", 0.0)
+    reason = copy_project(submission, src, limits)
+    if reason is not None:
+        return BuildResult(False, None, reason, time.monotonic() - start)
+    if not (src / "Cargo.toml").is_file():
+        return BuildResult(
+            False, None, "no Cargo.toml at the project root", time.monotonic() - start
+        )
+    cargo_home = home / ".cargo"
+    cargo_home.mkdir(parents=True)
+    shutil.copyfile(CARGO_CONFIG, cargo_home / "config.toml")
+    _chown_tree(work, BUILDER)
+    env = {
+        "PATH": "/usr/local/cargo/bin:/usr/local/bin:/usr/bin:/bin",
+        "HOME": str(home),
+        "CARGO_HOME": str(cargo_home),
+        "RUSTUP_HOME": "/usr/local/rustup",
+        "CARGO_TARGET_DIR": str(work / "target"),
+        "LANG": "C.UTF-8",
+    }
+    proc = subprocess.Popen(
+        ["cargo", "build", "--release", "--offline"],
+        cwd=src,
+        env=env,
+        user=BUILDER,
+        group=BUILDER,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        start_new_session=True,
+    )
+    try:
+        out, _ = proc.communicate(timeout=limits.build_timeout_sec)
+        timed_out = False
+    except subprocess.TimeoutExpired:
+        timed_out = True
+        out = b""
+    finally:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        proc.wait()
+    seconds = time.monotonic() - start
+    if timed_out:
+        return BuildResult(False, None, "build did not finish in time", seconds)
+    binary = work / "target" / "release" / "dogwood"
+    if proc.returncode != 0 or not binary.is_file():
+        tail = out.decode("utf-8", "replace").strip().splitlines()[-5:]
+        return BuildResult(False, None, "build failed: " + " | ".join(tail), seconds)
+    bindir = Path(tempfile.mkdtemp(prefix="dw-bin-"))
+    bindir.chmod(0o755)
+    installed = bindir / "dogwood"
+    shutil.copyfile(binary, installed)
+    installed.chmod(0o755)
+    return BuildResult(True, installed, "built", seconds)

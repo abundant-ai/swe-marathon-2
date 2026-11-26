@@ -1,3 +1,0 @@
-# The oracle delivers upstream's 1.1.2 source (tag commit 929f49e7) with our frozen
-# Cargo.lock; it is staged here from the pinned tarball when the task is packaged.
-upstream/

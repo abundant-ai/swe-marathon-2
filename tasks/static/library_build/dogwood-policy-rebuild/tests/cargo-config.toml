@@ -1,0 +1,8 @@
+[source.crates-io]
+replace-with = "vendored"
+
+[source.vendored]
+directory = "/opt/verifier/registry"
+
+[net]
+offline = true

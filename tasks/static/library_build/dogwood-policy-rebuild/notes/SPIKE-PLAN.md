@@ -1,5 +1,9 @@
 # Spike plan and the exact download list (Phase A, 2026-11-26)
 
+> **2026-11-27:** single-step now. S2's 1.1.2 build is skipped (the coordinator's note: it was only
+> needed for the no-upgrade anchor, which is gone). Results are in PHASE-B-REPORT.md.
+
+
 Author notes, never shipped.
 
 **Nothing on this page has been downloaded, built or run.** Phase A used only:
