@@ -1,0 +1,12 @@
+--- a/src/hb-ot-shape.cc
++++ b/src/hb-ot-shape.cc
+@@ -128,6 +128,9 @@
+ 		      HB_TAG ('k','e','r','n') : HB_TAG ('v','k','r','n');
+ #ifndef HB_NO_OT_KERN
+   plan.kern_mask = plan.map.get_mask (kern_tag);
++  /* Vertical text kerns with the legacy tables by default. */
++  if (!plan.kern_mask && HB_DIRECTION_IS_VERTICAL (props.direction))
++    plan.kern_mask = plan.map.get_global_mask ();
+   plan.requested_kerning = !!plan.kern_mask;
+ #endif
+ 

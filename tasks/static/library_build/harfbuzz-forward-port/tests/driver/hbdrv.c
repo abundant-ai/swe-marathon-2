@@ -8,7 +8,7 @@
  *   dir=ltr|rtl|ttb|btt   script=Khmr   lang=km   cl=0..3
  *   feat=tag[=value][@start:end],...   (value 1 when omitted; start and end are cluster indices)
  *   var=tag=value,...   nf=<glyph id>   flags=bot,eot,pdi,rdi,nodc,utc,tatweel
- *   pre=<code points>   post=<code points>   scale=<int>   ppem=<int>
+ *   pre=<code points>   post=<code points>   scale=<int>[,<int y>]   ppem=<int>
  *   slant=<float>   bold=<float>,<float>   gf=1 (print glyph flags)   names=1 (glyph names)
  * Output (stdout), one line per case:
  *   id <TAB> glyph=cluster@x_offset,y_offset+x_advance,y_advance[#flags]|...
@@ -197,7 +197,7 @@ run_case (char *line)
   int n_text = parse_cps (fields[4], text, MAX_CPS), n_pre = 0, n_post = 0;
   hb_feature_t feats[MAX_FEATS];
   hb_variation_t vars[MAX_VARS];
-  int n_feats = 0, n_vars = 0, show_flags = 0, names = 0, scale = 0, ppem = 0, have_nf = 0;
+  int n_feats = 0, n_vars = 0, show_flags = 0, names = 0, scale = 0, scale_y = 0, ppem = 0, have_nf = 0;
   int have_slant = 0, have_bold = 0;
   float slant = 0, bold_x = 0, bold_y = 0;
   hb_codepoint_t not_found = 0;
@@ -232,7 +232,7 @@ run_case (char *line)
     else if (!strcmp (kv, "post"))
       n_post = parse_cps (v, post, MAX_CPS);
     else if (!strcmp (kv, "scale"))
-      scale = atoi (v);
+      scale = (int) strtol (v, &v, 10), scale_y = (*v == ',') ? atoi (v + 1) : scale;
     else if (!strcmp (kv, "ppem"))
       ppem = atoi (v);
     else if (!strcmp (kv, "slant"))
@@ -261,7 +261,7 @@ run_case (char *line)
 
   hb_font_t *font = hb_font_create (face);
   if (scale)
-    hb_font_set_scale (font, scale, scale);
+    hb_font_set_scale (font, scale, scale_y);
   if (ppem)
     hb_font_set_ppem (font, (unsigned) ppem, (unsigned) ppem);
   if (n_vars)
