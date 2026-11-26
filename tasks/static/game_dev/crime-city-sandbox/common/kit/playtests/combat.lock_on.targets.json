@@ -2,7 +2,7 @@
  "format": "qa-play/1",
  "name": "combat.lock_on/targets",
  "template": "combat.lock_on",
- "about": "On the plaza with traffic and people set to none. Two people stand ahead, 12 and 18 m off: lock_target takes the nearer. A hostile person (unarmed) comes at the player from 22 m: lock_target takes it over the nearer one, the camera keeps it in the middle of the view and the aim point on its Chest while it runs in, and the pistol stops it. Then single rounds with lock-on at people standing 15 m away, one each: ten from the pistol, ten from the rifle, ten from the SMG. People near a gunshot run from it (TR-13).",
+ "about": "On the plaza with traffic and people set to none. Two people stand ahead, 12 and 18 m off: lock_target takes the nearer. A hostile person (unarmed) comes at the player from 22 m: lock_target takes it over the nearer one, the camera keeps it in the middle of the view and the aim point on its Chest while it runs in, and the pistol stops it. Then single rounds with lock-on at people standing 15 m away, one each: ten from the pistol, ten from the rifle, ten from the SMG, after a world reset. People near a gunshot run from it (TR-13).",
  "rules": ["CM-5", "CB-4"],
  "role": "solo",
  "args": ["--role=solo", "--variation=22", "--save-dir={save_dir}"],
@@ -226,6 +226,26 @@
   {
    "dev": [
     [
+     "world.reset",
+     {
+      "variation": 22
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "traffic.set",
+     {
+      "density": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
      "player.give",
      {
       "weapon": "pistol",
@@ -233,6 +253,20 @@
      }
     ]
    ]
+  },
+  {
+   "press": {
+    "reload": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["reload"]
+  },
+  {
+   "run": 180
   },
   {
    "dev": [
@@ -271,7 +305,7 @@
      "ids": [
       "player",
       {
-       "$answer": [28, "id"]
+       "$answer": [34, "id"]
       }
      ],
      "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
@@ -349,7 +383,7 @@
      "ids": [
       "player",
       {
-       "$answer": [41, "id"]
+       "$answer": [47, "id"]
       }
      ],
      "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
@@ -427,7 +461,7 @@
      "ids": [
       "player",
       {
-       "$answer": [54, "id"]
+       "$answer": [60, "id"]
       }
      ],
      "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
@@ -505,7 +539,7 @@
      "ids": [
       "player",
       {
-       "$answer": [67, "id"]
+       "$answer": [73, "id"]
       }
      ],
      "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
@@ -583,7 +617,7 @@
      "ids": [
       "player",
       {
-       "$answer": [80, "id"]
+       "$answer": [86, "id"]
       }
      ],
      "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
@@ -661,7 +695,7 @@
      "ids": [
       "player",
       {
-       "$answer": [93, "id"]
+       "$answer": [99, "id"]
       }
      ],
      "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
@@ -739,7 +773,7 @@
      "ids": [
       "player",
       {
-       "$answer": [106, "id"]
+       "$answer": [112, "id"]
       }
      ],
      "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
@@ -817,7 +851,7 @@
      "ids": [
       "player",
       {
-       "$answer": [119, "id"]
+       "$answer": [125, "id"]
       }
      ],
      "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
@@ -895,7 +929,7 @@
      "ids": [
       "player",
       {
-       "$answer": [132, "id"]
+       "$answer": [138, "id"]
       }
      ],
      "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
@@ -973,7 +1007,7 @@
      "ids": [
       "player",
       {
-       "$answer": [145, "id"]
+       "$answer": [151, "id"]
       }
      ],
      "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
@@ -1026,6 +1060,20 @@
    ]
   },
   {
+   "press": {
+    "reload": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["reload"]
+  },
+  {
+   "run": 180
+  },
+  {
    "dev": [
     [
      "npc.spawn",
@@ -1062,7 +1110,7 @@
      "ids": [
       "player",
       {
-       "$answer": [159, "id"]
+       "$answer": [169, "id"]
       }
      ],
      "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
@@ -1140,7 +1188,7 @@
      "ids": [
       "player",
       {
-       "$answer": [172, "id"]
+       "$answer": [182, "id"]
       }
      ],
      "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
@@ -1218,7 +1266,7 @@
      "ids": [
       "player",
       {
-       "$answer": [185, "id"]
+       "$answer": [195, "id"]
       }
      ],
      "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
@@ -1296,7 +1344,7 @@
      "ids": [
       "player",
       {
-       "$answer": [198, "id"]
+       "$answer": [208, "id"]
       }
      ],
      "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
@@ -1374,7 +1422,7 @@
      "ids": [
       "player",
       {
-       "$answer": [211, "id"]
+       "$answer": [221, "id"]
       }
      ],
      "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
@@ -1452,7 +1500,7 @@
      "ids": [
       "player",
       {
-       "$answer": [224, "id"]
+       "$answer": [234, "id"]
       }
      ],
      "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
@@ -1530,7 +1578,7 @@
      "ids": [
       "player",
       {
-       "$answer": [237, "id"]
+       "$answer": [247, "id"]
       }
      ],
      "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
@@ -1608,7 +1656,7 @@
      "ids": [
       "player",
       {
-       "$answer": [250, "id"]
+       "$answer": [260, "id"]
       }
      ],
      "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
@@ -1686,7 +1734,7 @@
      "ids": [
       "player",
       {
-       "$answer": [263, "id"]
+       "$answer": [273, "id"]
       }
      ],
      "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
@@ -1764,7 +1812,7 @@
      "ids": [
       "player",
       {
-       "$answer": [276, "id"]
+       "$answer": [286, "id"]
       }
      ],
      "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
@@ -1817,6 +1865,20 @@
    ]
   },
   {
+   "press": {
+    "reload": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["reload"]
+  },
+  {
+   "run": 180
+  },
+  {
    "dev": [
     [
      "npc.spawn",
@@ -1853,7 +1915,7 @@
      "ids": [
       "player",
       {
-       "$answer": [290, "id"]
+       "$answer": [304, "id"]
       }
      ],
      "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
@@ -1931,7 +1993,7 @@
      "ids": [
       "player",
       {
-       "$answer": [303, "id"]
+       "$answer": [317, "id"]
       }
      ],
      "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
@@ -2009,7 +2071,7 @@
      "ids": [
       "player",
       {
-       "$answer": [316, "id"]
+       "$answer": [330, "id"]
       }
      ],
      "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
@@ -2087,7 +2149,7 @@
      "ids": [
       "player",
       {
-       "$answer": [329, "id"]
+       "$answer": [343, "id"]
       }
      ],
      "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
@@ -2165,7 +2227,7 @@
      "ids": [
       "player",
       {
-       "$answer": [342, "id"]
+       "$answer": [356, "id"]
       }
      ],
      "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
@@ -2243,7 +2305,7 @@
      "ids": [
       "player",
       {
-       "$answer": [355, "id"]
+       "$answer": [369, "id"]
       }
      ],
      "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
@@ -2321,7 +2383,7 @@
      "ids": [
       "player",
       {
-       "$answer": [368, "id"]
+       "$answer": [382, "id"]
       }
      ],
      "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
@@ -2399,7 +2461,7 @@
      "ids": [
       "player",
       {
-       "$answer": [381, "id"]
+       "$answer": [395, "id"]
       }
      ],
      "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
@@ -2477,7 +2539,7 @@
      "ids": [
       "player",
       {
-       "$answer": [394, "id"]
+       "$answer": [408, "id"]
       }
      ],
      "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
@@ -2555,7 +2617,7 @@
      "ids": [
       "player",
       {
-       "$answer": [407, "id"]
+       "$answer": [421, "id"]
       }
      ],
      "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
@@ -2654,70 +2716,70 @@
       "from": "pistol_0_a",
       "to": "pistol_0_b",
       "target": {
-       "step": 28
+       "step": 34
       }
      },
      {
       "from": "pistol_1_a",
       "to": "pistol_1_b",
       "target": {
-       "step": 41
+       "step": 47
       }
      },
      {
       "from": "pistol_2_a",
       "to": "pistol_2_b",
       "target": {
-       "step": 54
+       "step": 60
       }
      },
      {
       "from": "pistol_3_a",
       "to": "pistol_3_b",
       "target": {
-       "step": 67
+       "step": 73
       }
      },
      {
       "from": "pistol_4_a",
       "to": "pistol_4_b",
       "target": {
-       "step": 80
+       "step": 86
       }
      },
      {
       "from": "pistol_5_a",
       "to": "pistol_5_b",
       "target": {
-       "step": 93
+       "step": 99
       }
      },
      {
       "from": "pistol_6_a",
       "to": "pistol_6_b",
       "target": {
-       "step": 106
+       "step": 112
       }
      },
      {
       "from": "pistol_7_a",
       "to": "pistol_7_b",
       "target": {
-       "step": 119
+       "step": 125
       }
      },
      {
       "from": "pistol_8_a",
       "to": "pistol_8_b",
       "target": {
-       "step": 132
+       "step": 138
       }
      },
      {
       "from": "pistol_9_a",
       "to": "pistol_9_b",
       "target": {
-       "step": 145
+       "step": 151
       }
      }
     ],
@@ -2737,70 +2799,70 @@
       "from": "rifle_0_a",
       "to": "rifle_0_b",
       "target": {
-       "step": 159
+       "step": 169
       }
      },
      {
       "from": "rifle_1_a",
       "to": "rifle_1_b",
       "target": {
-       "step": 172
+       "step": 182
       }
      },
      {
       "from": "rifle_2_a",
       "to": "rifle_2_b",
       "target": {
-       "step": 185
+       "step": 195
       }
      },
      {
       "from": "rifle_3_a",
       "to": "rifle_3_b",
       "target": {
-       "step": 198
+       "step": 208
       }
      },
      {
       "from": "rifle_4_a",
       "to": "rifle_4_b",
       "target": {
-       "step": 211
+       "step": 221
       }
      },
      {
       "from": "rifle_5_a",
       "to": "rifle_5_b",
       "target": {
-       "step": 224
+       "step": 234
       }
      },
      {
       "from": "rifle_6_a",
       "to": "rifle_6_b",
       "target": {
-       "step": 237
+       "step": 247
       }
      },
      {
       "from": "rifle_7_a",
       "to": "rifle_7_b",
       "target": {
-       "step": 250
+       "step": 260
       }
      },
      {
       "from": "rifle_8_a",
       "to": "rifle_8_b",
       "target": {
-       "step": 263
+       "step": 273
       }
      },
      {
       "from": "rifle_9_a",
       "to": "rifle_9_b",
       "target": {
-       "step": 276
+       "step": 286
       }
      }
     ],
@@ -2820,70 +2882,70 @@
       "from": "smg_0_a",
       "to": "smg_0_b",
       "target": {
-       "step": 290
+       "step": 304
       }
      },
      {
       "from": "smg_1_a",
       "to": "smg_1_b",
       "target": {
-       "step": 303
+       "step": 317
       }
      },
      {
       "from": "smg_2_a",
       "to": "smg_2_b",
       "target": {
-       "step": 316
+       "step": 330
       }
      },
      {
       "from": "smg_3_a",
       "to": "smg_3_b",
       "target": {
-       "step": 329
+       "step": 343
       }
      },
      {
       "from": "smg_4_a",
       "to": "smg_4_b",
       "target": {
-       "step": 342
+       "step": 356
       }
      },
      {
       "from": "smg_5_a",
       "to": "smg_5_b",
       "target": {
-       "step": 355
+       "step": 369
       }
      },
      {
       "from": "smg_6_a",
       "to": "smg_6_b",
       "target": {
-       "step": 368
+       "step": 382
       }
      },
      {
       "from": "smg_7_a",
       "to": "smg_7_b",
       "target": {
-       "step": 381
+       "step": 395
       }
      },
      {
       "from": "smg_8_a",
       "to": "smg_8_b",
       "target": {
-       "step": 394
+       "step": 408
       }
      },
      {
       "from": "smg_9_a",
       "to": "smg_9_b",
       "target": {
-       "step": 407
+       "step": 421
       }
      }
     ],

@@ -3091,7 +3091,8 @@ def lock_on() -> Playtest:
         "22 m: lock_target takes it over the nearer one, the camera keeps it in the middle of "
         "the view and the aim point on its Chest while it runs in, and the pistol stops it. "
         "Then single rounds with lock-on at people standing 15 m away, one each: ten from the "
-        "pistol, ten from the rifle, ten from the SMG. People near a gunshot run from it (TR-13).",
+        "pistol, ten from the rifle, ten from the SMG, after a world reset. People near a gunshot "
+        "run from it (TR-13).",
         ["--role=solo", "--variation=22", "--save-dir={save_dir}"],
         limits={"wall_s": 600, "cpu_s": 1200, "step_s": 120},
     )
@@ -3145,9 +3146,14 @@ def lock_on() -> Playtest:
         {"after": "hostile_b", "before": "hostile_c", "name": "died", "where": {}},
         "CB-7", "the pistol stops the hostile person: a died event", "pre",
     )  # fmt: skip
-    # CB-4: single rounds at people 15 m away, a fresh one for each round
+    # CB-4: single rounds at people 15 m away, a fresh one for each round; a world reset first,
+    # so nobody from the first part runs through (people flee the shots, TR-13, straight away
+    # from the player here, so earlier targets never come back into the way)
+    p.dev(("world.reset", {"variation": 22}))
+    p.dev(("traffic.set", {"density": 0}))
     for gun in ("pistol", "rifle", "smg"):
         p.dev(("player.give", {"weapon": gun, "ammo": 30}))
+        tap(p, "reload", 180)  # a full magazine for the ten rounds
         bursts = []
         for k in range(10):
             heading = (108 * k) % 360
