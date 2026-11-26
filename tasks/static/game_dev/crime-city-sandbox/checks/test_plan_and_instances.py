@@ -82,11 +82,27 @@ def test_bad_anchors_are_refused() -> None:
     for anchor in (
         {"poi": "nowhere"},
         {"lane": lane_id, "s": 1e6},
-        {"sidewalk": "sw_00", "s": 1},
+        {"sidewalk": "sw_nowhere", "s": 1},
+        {"corner_of": "j_10", "approach": 0},
         "x",
     ):
         with pytest.raises(AnchorError):
             PLAN.resolve(anchor)
+
+
+def test_sidewalk_points_follow_the_ring() -> None:
+    """A sidewalk anchor is on its ring at its elevation, and s wraps around the ring."""
+    sw = PLAN.sidewalks["sw_00"]
+    ring = sw["ring"]
+    first = PLAN.resolve({"sidewalk": "sw_00", "s": 0})
+    assert first.p == (ring[0][0], sw["elevation_m"], ring[0][1])
+    side = math.dist(ring[0], ring[1])
+    corner = PLAN.resolve({"sidewalk": "sw_00", "s": side})
+    assert math.dist((corner.p[0], corner.p[2]), ring[1]) < 1e-9
+    total = sum(math.dist(a, b) for a, b in zip(ring, ring[1:] + ring[:1]))
+    again = PLAN.resolve({"sidewalk": "sw_00", "s": total + 2.5})
+    once = PLAN.resolve({"sidewalk": "sw_00", "s": 2.5})
+    assert math.dist(again.p, once.p) < 1e-9 and again.heading_deg == once.heading_deg
 
 
 def test_expand_fills_every_value_and_records_the_draw() -> None:

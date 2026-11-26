@@ -1,0 +1,278 @@
+{
+ "format": "qa-play/1",
+ "name": "contract.devconsole/bad-input",
+ "template": "contract.devconsole",
+ "about": "Commands with mistakes in them: an unknown command, wrong types, values out of range. Every answer keeps the contract's form, nothing changes, and the game goes on.",
+ "rules": [
+  "AC-2",
+  "EC-4"
+ ],
+ "role": "solo",
+ "args": [
+  "--role=solo",
+  "--variation=3",
+  "--save-dir={save_dir}"
+ ],
+ "mode": "lockstep",
+ "runs": [
+  {
+   "pace_ms": 0
+  }
+ ],
+ "limits": {
+  "wall_s": 240,
+  "boot_s": 60,
+  "step_s": 30,
+  "cpu_s": 600,
+  "memory_mb": 1536,
+  "disk_mb": 512
+ },
+ "steps": [
+  {
+   "observe": {
+    "census": true,
+    "state": true,
+    "every": 6
+   }
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 3
+     }
+    ]
+   ]
+  },
+  {
+   "mark": "before"
+  },
+  {
+   "dev": [
+    [
+     "no.such.command",
+     {}
+    ],
+    [
+     "player.spawn",
+     {
+      "at": "nowhere"
+     }
+    ],
+    [
+     "player.spawn",
+     {
+      "at": [
+       1,
+       2
+      ]
+     }
+    ],
+    [
+     "time.set",
+     {
+      "hhmm": "25:61"
+     }
+    ],
+    [
+     "weather.set",
+     {
+      "kind": [
+       "rain"
+      ]
+     }
+    ],
+    [
+     "player.give",
+     {
+      "money": "lots"
+     }
+    ],
+    [
+     "world.reset",
+     {
+      "variation": "x"
+     }
+    ],
+    [
+     "load",
+     {
+      "slot": 9
+     }
+    ],
+    [
+     "save",
+     {
+      "slot": -1.5
+     }
+    ],
+    [
+     "vehicle.spawn",
+     {
+      "model": "hovercraft",
+      "at": [
+       0.0,
+       0.0,
+       0.0
+      ]
+     }
+    ],
+    [
+     "npc.spawn",
+     {
+      "archetype": "office_worker",
+      "at": {
+       "poi": "no_such_place"
+      }
+     }
+    ],
+    [
+     "prop.spawn",
+     {
+      "kind": "crate",
+      "at": [
+       0.0,
+       0.0,
+       0.0
+      ],
+      "size": "big"
+     }
+    ],
+    [
+     "traffic.set",
+     {
+      "density": 7
+     }
+    ],
+    [
+     "mission.start",
+     {
+      "id": "Z9"
+     }
+    ]
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "after"
+  },
+  {
+   "dev": [
+    [
+     "state",
+     {}
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 4.0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "money": 100.0
+     }
+    ]
+   ]
+  }
+ ],
+ "expect": [
+  {
+   "id": "answers",
+   "check": "dev_answers",
+   "args": {
+    "steps": [
+     3
+    ]
+   },
+   "rule": "AC-2",
+   "says": "every command gets an answer {\"ok\": true, ...} or {\"ok\": false, \"error\": \"...\"}"
+  },
+  {
+   "id": "unknown_refused",
+   "check": "dev_result",
+   "args": {
+    "step": 3,
+    "index": 0,
+    "equals": {
+     "ok": false
+    }
+   },
+   "rule": "AC-2",
+   "says": "an unknown command is refused"
+  },
+  {
+   "id": "no_money_moves",
+   "check": "event_seen",
+   "args": {
+    "name": "money_changed",
+    "after": "before",
+    "before": "after",
+    "min_count": 0,
+    "max_count": 0
+   },
+   "rule": "EC-4",
+   "says": "commands with mistakes move no money"
+  },
+  {
+   "id": "money_kept",
+   "check": "state_value",
+   "args": {
+    "mark": "after",
+    "path": "player.money",
+    "equals": 500
+   },
+   "rule": "EC-4",
+   "says": "the new game's $500 are still there"
+  },
+  {
+   "id": "still_answers",
+   "check": "dev_result",
+   "args": {
+    "step": 6,
+    "equals": {
+     "ok": true
+    }
+   },
+   "rule": "AC-2",
+   "says": "the game keeps answering after the bad commands"
+  },
+  {
+   "id": "whole_float_variation",
+   "check": "dev_result",
+   "args": {
+    "step": 7,
+    "equals": {
+     "ok": true
+    }
+   },
+   "rule": "AC-2",
+   "says": "a whole number sent as 4.0 is accepted"
+  },
+  {
+   "id": "whole_float_money",
+   "check": "dev_result",
+   "args": {
+    "step": 8,
+    "equals": {
+     "ok": true
+    }
+   },
+   "rule": "AC-2",
+   "says": "a whole number of dollars sent as 100.0 is accepted"
+  }
+ ],
+ "tags": []
+}

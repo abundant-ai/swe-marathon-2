@@ -1,0 +1,199 @@
+{
+ "format": "qa-play/1",
+ "name": "persistence.round_trip/damaged-slot",
+ "template": "persistence.round_trip",
+ "about": "A damaged save file does not crash the game: loading it answers \"Slot 2 is damaged\", the game keeps answering, and another slot still loads.",
+ "rules": [
+  "SV-5",
+  "SV-6"
+ ],
+ "role": "solo",
+ "args": [
+  "--role=solo",
+  "--variation=2",
+  "--save-dir={save_dir}"
+ ],
+ "mode": "lockstep",
+ "runs": [
+  {
+   "pace_ms": 0
+  }
+ ],
+ "limits": {
+  "wall_s": 240,
+  "boot_s": 60,
+  "step_s": 30,
+  "cpu_s": 600,
+  "memory_mb": 1536,
+  "disk_mb": 512
+ },
+ "steps": [
+  {
+   "observe": {
+    "census": true,
+    "state": true,
+    "every": 6
+   }
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 2
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "money": 250
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "save",
+     {
+      "slot": 1
+     }
+    ]
+   ]
+  },
+  {
+   "mark": "before_second"
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "money": 100
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "save",
+     {
+      "slot": 2
+     }
+    ]
+   ]
+  },
+  {
+   "files": {
+    "op": "damage",
+    "since": "before_second"
+   }
+  },
+  {
+   "dev": [
+    [
+     "load",
+     {
+      "slot": 2
+     }
+    ]
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "dev": [
+    [
+     "state",
+     {}
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "load",
+     {
+      "slot": 1
+     }
+    ]
+   ]
+  },
+  {
+   "run": 6
+  },
+  {
+   "mark": "after"
+  }
+ ],
+ "expect": [
+  {
+   "id": "saved",
+   "check": "event_seen",
+   "args": {
+    "name": "saved",
+    "min_count": 2
+   },
+   "rule": "SV-1",
+   "says": "both saves fire saved",
+   "kind": "pre"
+  },
+  {
+   "id": "damaged_refused",
+   "check": "dev_result",
+   "args": {
+    "step": 8,
+    "equals": {
+     "ok": false
+    },
+    "contains": {
+     "error": "Slot 2 is damaged"
+    }
+   },
+   "rule": "SV-5",
+   "says": "loading the damaged slot answers \"Slot 2 is damaged\""
+  },
+  {
+   "id": "still_answers",
+   "check": "dev_result",
+   "args": {
+    "step": 10,
+    "equals": {
+     "ok": true
+    }
+   },
+   "rule": "SV-5",
+   "says": "the game stays responsive"
+  },
+  {
+   "id": "other_slot",
+   "check": "dev_result",
+   "args": {
+    "step": 11,
+    "equals": {
+     "ok": true
+    }
+   },
+   "rule": "SV-5",
+   "says": "slot 1 still loads"
+  },
+  {
+   "id": "restored",
+   "check": "state_value",
+   "args": {
+    "mark": "after",
+    "path": "player.money",
+    "equals": 750
+   },
+   "rule": "SV-6",
+   "says": "slot 1's money comes back from the save folder given ($750)"
+  }
+ ],
+ "tags": []
+}

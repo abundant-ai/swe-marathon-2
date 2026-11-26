@@ -74,6 +74,8 @@ class GradeConfig:
         memory_mb: Development only: a lower memory cap for every game process.
         step_s: Development only: a shorter stall allowance per lockstep step.
         margin_s: Seconds kept back from the deadline when sizing an instance's time.
+        plans: The shipped plan folder; every game process gets --plan-dir=<plans> unless
+            its instance names another (None: no plan folder is passed).
     """
 
     project: Path
@@ -94,6 +96,7 @@ class GradeConfig:
     memory_mb: float | None = None
     step_s: float | None = None
     margin_s: float = 60.0
+    plans: Path | None = None
 
 
 @dataclass
@@ -210,6 +213,7 @@ def grade_instance(
         cfg.godot,
         work,
         lambda _k, _n, folder: options(folder, play_limited),
+        plans=cfg.plans,
     )
     outcomes = expect.check_play(rec) + expect.standing(rec)
     checks = [scoring.Check(o.id, o.kind, o.w, o.ok) for o in outcomes]
@@ -408,6 +412,7 @@ def grade(cfg: GradeConfig) -> float:
                 ),
                 cfg.boot_s,
                 cfg.server_boot,
+                cfg.plans,
             )
         else:
             g.gates["boot"] = gates.GateResult(

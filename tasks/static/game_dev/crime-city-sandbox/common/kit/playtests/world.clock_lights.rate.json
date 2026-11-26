@@ -1,0 +1,94 @@
+{
+ "format": "qa-play/1",
+ "name": "world.clock_lights/rate",
+ "template": "world.clock_lights",
+ "about": "Game time runs one minute per second of play: an hour of game time in 3,600 ticks, within 1%.",
+ "rules": [
+  "WD-11"
+ ],
+ "role": "solo",
+ "args": [
+  "--role=solo",
+  "--variation=1",
+  "--save-dir={save_dir}"
+ ],
+ "mode": "lockstep",
+ "runs": [
+  {
+   "pace_ms": 0
+  }
+ ],
+ "limits": {
+  "wall_s": 240,
+  "boot_s": 60,
+  "step_s": 30,
+  "cpu_s": 600,
+  "memory_mb": 1536,
+  "disk_mb": 512
+ },
+ "steps": [
+  {
+   "observe": {
+    "census": false,
+    "state": true,
+    "every": 60
+   }
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 1
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "time.set",
+     {
+      "hhmm": "10:00"
+     }
+    ]
+   ]
+  },
+  {
+   "mark": "start"
+  },
+  {
+   "run": 3600
+  },
+  {
+   "mark": "hour"
+  }
+ ],
+ "expect": [
+  {
+   "id": "set",
+   "check": "state_value",
+   "args": {
+    "mark": "start",
+    "path": "clock",
+    "equals": "10:00"
+   },
+   "rule": "WD-11",
+   "says": "time.set changes the clock at once"
+  },
+  {
+   "id": "rate",
+   "check": "state_value",
+   "args": {
+    "mark": "hour",
+    "path": "clock",
+    "as": "minutes",
+    "min": 659,
+    "max": 660
+   },
+   "rule": "WD-11",
+   "says": "60 seconds of play later the clock reads 10:59 or 11:00 (60 minutes within 1%)"
+  }
+ ],
+ "tags": []
+}

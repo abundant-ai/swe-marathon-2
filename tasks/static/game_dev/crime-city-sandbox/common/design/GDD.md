@@ -15,6 +15,9 @@ TODO(owner): final names.
   (60 physics ticks per second).
 - **Measured how** is part of a rule when it matters, so the design team and QA read it the same
   way. "p95" is the 95th percentile of the samples.
+- **Places.** An entity's position is its node's origin, the point QA reads. Where this document
+  puts something at a point (an anchor, a point of interest, a respawn point), its position ends
+  within 0.5 m of that point, measured horizontally.
 - **QA.** Our QA team plays every build with bots: they run the game headless, press the same
   input actions a player presses (chapter 4), and read what the game exposes for them
   (chapter 17). The kit they use is in `/app/qa-kit`, with its playtests; run them yourself as
@@ -673,8 +676,9 @@ find items by that text.
   safehouse nearest to where the mission ended) at alert level 0, with all of that restored.
 - **SV-4** Saves are atomic: once the `saved` event fires, killing the process at any moment leaves
   that slot loadable with that state; a kill during a save leaves the slot's previous save loadable.
-- **SV-5** A damaged save file does not crash the game: loading it shows "Slot n is damaged", the
-  game stays responsive, and other slots still load.
+- **SV-5** A damaged save file does not crash the game: loading it shows "Slot n is damaged" (the
+  `load` command answers `{"ok": false, "error": "Slot n is damaged"}`), the game stays
+  responsive, and other slots still load.
 - **SV-6** `--save-dir=DIR` keeps saves in DIR (default `user://saves`).
 
 ## 15. Online play
@@ -768,7 +772,8 @@ godot [--headless] --path /app/game -- --role=client --connect=HOST:P --name=NAM
 ```
 
 `--variation` picks the starting population (default 1). With no `--role`, players get the main
-menu (UI-6).
+menu (UI-6); `--role=solo` starts a new game at once, as the menu's "New game" does. Without
+`--plan-dir` the game reads the plans in `/app/design/plan`.
 
 - **AC-1** The game accepts the flags above with these meanings.
 
@@ -781,10 +786,10 @@ data: Dictionary)`. The commands set up situations for development and QA.
 | Command | Arguments | Effect |
 | --- | --- | --- |
 | `world.reset` | `variation`, `map` | Rebuild people, vehicles, missions, clock (08:00) and weather (clear) from the variation; the static world stays |
-| `time.set` | `hhmm` | Set the clock |
+| `time.set` | `hhmm` (a string such as `"21:30"`) | Set the clock |
 | `weather.set` | `kind` | Set the weather |
 | `player.spawn` | `lead`, `at`, `heading` | Spawn the player, or move the existing one |
-| `player.give` | `weapon`, `ammo`, `money`, `outfit`, `health`, `armour` | Give or set |
+| `player.give` | `weapon`, `ammo`, `money`, `outfit`, `health`, `armour` | Give or set: `weapon` and `outfit` become owned, `ammo` rounds go into the reserve of `weapon` (or of the gun in hand), `money` is added; `health` and `armour` are set |
 | `vehicle.spawn` | `model`, `at`, `heading`, `driver` (`player`, an archetype or `none`), `damage`, `colour` | Spawn a vehicle |
 | `npc.spawn` | `archetype`, `at`, `heading`, `behaviour` (`idle`, `wander`, `guard`, `hostile`, `reckless`), `seat` (`{"vehicle": id, "index": i}`) | Spawn a person |
 | `prop.spawn` | `kind` (`wall`, `crate`, `low_cover`, `ramp`, `barrier`, `tower`), `at`, `size` (`[x, y, z]`), `heading` | Spawn a solid object (static, layer 5) |
@@ -802,7 +807,8 @@ the speed limit, ignoring signals.
   unknown commands or bad arguments. Arguments arrive from JSON, so numbers may be floats: accept
   `12.0` wherever an id or an integer is expected.
 - **AC-3** Every command does what the table says, immediately (within the same tick, except that
-  `world.reset` and `load` may take up to 3 s).
+  `world.reset` and `load` may take up to 3 s). `player.spawn`, `vehicle.spawn`, `npc.spawn` and
+  `prop.spawn` answer with the entity's id: `{"ok": true, "id": 42}`.
 
 ### Entities
 

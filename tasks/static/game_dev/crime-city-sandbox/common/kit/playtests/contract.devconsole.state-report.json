@@ -1,0 +1,107 @@
+{
+ "format": "qa-play/1",
+ "name": "contract.devconsole/state-report",
+ "template": "contract.devconsole",
+ "about": "The state report carries every field chapter 17 lists, on foot and at the wheel.",
+ "rules": [
+  "AC-12",
+  "MS-12",
+  "WD-14",
+  "NT-1"
+ ],
+ "role": "solo",
+ "args": [
+  "--role=solo",
+  "--variation=5",
+  "--save-dir={save_dir}"
+ ],
+ "mode": "lockstep",
+ "runs": [
+  {
+   "pace_ms": 0
+  }
+ ],
+ "limits": {
+  "wall_s": 240,
+  "boot_s": 60,
+  "step_s": 30,
+  "cpu_s": 600,
+  "memory_mb": 1536,
+  "disk_mb": 512
+ },
+ "steps": [
+  {
+   "observe": {
+    "census": true,
+    "state": true,
+    "every": 6
+   }
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 5
+     }
+    ]
+   ]
+  },
+  {
+   "run": 6
+  },
+  {
+   "mark": "on_foot"
+  },
+  {
+   "dev": [
+    [
+     "vehicle.spawn",
+     {
+      "model": "suv",
+      "at": "player",
+      "driver": "player"
+     }
+    ]
+   ]
+  },
+  {
+   "run": 6
+  },
+  {
+   "mark": "driving"
+  }
+ ],
+ "expect": [
+  {
+   "id": "fields_on_foot",
+   "check": "state_fields",
+   "args": {
+    "mark": "on_foot"
+   },
+   "rule": "AC-12",
+   "says": "the report has tick, map, clock, weather, variation, player, missions, garages, ui and network"
+  },
+  {
+   "id": "fields_driving",
+   "check": "state_fields",
+   "args": {
+    "mark": "driving"
+   },
+   "rule": "AC-12",
+   "says": "the report has tick, map, clock, weather, variation, player, missions, garages, ui and network"
+  },
+  {
+   "id": "role",
+   "check": "state_value",
+   "args": {
+    "mark": "on_foot",
+    "path": "network.role",
+    "equals": "solo"
+   },
+   "rule": "NT-1",
+   "says": "a solo game reports role solo"
+  }
+ ],
+ "tags": []
+}

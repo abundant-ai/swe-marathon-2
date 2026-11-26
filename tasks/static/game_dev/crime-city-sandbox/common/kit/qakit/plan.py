@@ -2,8 +2,9 @@
 
 The kit reads the plan on its own, so where things should be is known without asking the
 game. Supported anchors: a point [x, y, z]; {"poi": id} and {"poi": id, "front_m": d};
-{"lane": id, "s": s}; {"intersection": id, "approach": k, "before_m": d,
-"lane_index": i}. Headings are degrees clockwise from north (north is -z, east is +x).
+{"lane": id, "s": s}; {"sidewalk": id, "s": s}; {"intersection": id, "approach": k,
+"before_m": d, "lane_index": i}. Headings are degrees clockwise from north (north is -z,
+east is +x).
 """
 
 from __future__ import annotations
@@ -57,6 +58,7 @@ class Plan:
         self.edges = {e["id"]: e for e in data["edges"]}
         self.pois = {p["id"]: p for p in data["pois"]}
         self.intersections = {i["id"]: i for i in data["intersections"]}
+        self.sidewalks = {s["id"]: s for s in data.get("sidewalks", [])}
         self.lanes = {}
         for e in data["edges"]:
             for ln in e["lanes"]:
@@ -135,6 +137,29 @@ class Plan:
             along -= seg
         raise AnchorError(f"lane {lane_id} has no geometry")
 
+    def sidewalk_point(self, sidewalk_id: str, s: float) -> Placement:
+        """The point at s along a sidewalk ring (wrapping), at its elevation, and the ring heading.
+
+        Raises:
+            AnchorError: Unknown sidewalk.
+        """
+        sw = self.sidewalks.get(sidewalk_id)
+        if sw is None:
+            raise AnchorError(f"unknown sidewalk {sidewalk_id}")
+        ring = [(float(x), float(z)) for x, z in sw["ring"]]
+        pairs = list(zip(ring, ring[1:] + ring[:1]))
+        total = sum(math.dist(a, b) for a, b in pairs)
+        along = s % total
+        for i, (a, b) in enumerate(pairs):
+            seg = math.dist(a, b)
+            if along <= seg or i == len(pairs) - 1:
+                t = 0.0 if seg == 0 else min(1.0, along / seg)
+                dx, dz = (b[0] - a[0]) / seg, (b[1] - a[1]) / seg
+                x, z = a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t
+                return Placement((x, float(sw["elevation_m"]), z), heading_of(dx, dz))
+            along -= seg
+        raise AnchorError(f"sidewalk {sidewalk_id} has no geometry")
+
     def resolve(self, anchor: object) -> Placement:
         """Resolve an anchor (see the module docstring).
 
@@ -156,6 +181,8 @@ class Plan:
             return Placement((x + math.sin(r) * d, y, z - math.cos(r) * d), h)
         if "lane" in anchor:
             return self.lane_point(anchor["lane"], float(anchor.get("s", 0.0)))
+        if "sidewalk" in anchor:
+            return self.sidewalk_point(anchor["sidewalk"], float(anchor.get("s", 0.0)))
         if "intersection" in anchor:
             inter = self.intersections.get(anchor["intersection"])
             if inter is None:

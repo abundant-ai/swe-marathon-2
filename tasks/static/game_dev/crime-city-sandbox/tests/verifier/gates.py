@@ -344,6 +344,7 @@ def boot_gate(
     options,
     budget_s: float = 60.0,
     server: bool = True,
+    plans: Path | None = None,
 ) -> GateResult:
     """G_boot: solo (and server) processes become playable within budget_s.
 
@@ -354,6 +355,7 @@ def boot_gate(
         options: options(name, folder) -> SessionOptions.
         budget_s: Seconds from process start (PF-4: 60).
         server: Also boot the server role.
+        plans: The plan folder passed as --plan-dir, or None.
 
     Returns:
         The gate's verdict.
@@ -364,6 +366,8 @@ def boot_gate(
     if server:
         roles.append(("server", ("--role=server", "--port=47011", "--variation=1")))
     for role, args in roles:
+        if plans is not None:
+            args = (*args, f"--plan-dir={plans}")
         folder = work / f"boot-{role}"
         spec = GameSpec(prepared.game_dir, args, godot)
         p, m = boot_once(spec, options(role, folder), budget_s, role)

@@ -20,7 +20,12 @@ explicit, so it runs the same way without whatever produced it:
 
 Each run is a fresh game process (and a fresh home folder) running the same steps;
 "pace_ms" adds that much wall time after every step, which must change nothing.
-"{save_dir}" and "{home}" in args are replaced by the run's folders.
+"{save_dir}" and "{home}" in args are replaced by the run's folders and "{plans}" by the
+plan folder; when a plan folder is given and args name none, "--plan-dir=<plans>" is added.
+
+In a dev step, an argument value {"$answer": [step, key]} (or [step, index, key]) is
+replaced by that field of the answer to an earlier dev step's command (index counts the
+commands of that step, from 0), so a play can use an id the game handed out.
 
 Steps (one key each, run in order):
   {"observe": {...}}         observation settings for what follows: "census" (true, or
@@ -360,13 +365,46 @@ def damage_files(
 
 
 def substitute(args: tuple[str, ...], folders: dict[str, Path]) -> tuple[str, ...]:
-    """Replace {save_dir} and {home} in game arguments with the run's folders."""
+    """Replace {save_dir}, {home} and {plans} in game arguments with the run's folders.
+
+    When folders has "plans" and no argument sets --plan-dir, --plan-dir=<plans> is added.
+    """
     out = []
     for a in args:
         for key, path in folders.items():
             a = a.replace("{" + key + "}", str(path))
         out.append(a)
+    if "plans" in folders and not any(a.startswith("--plan-dir=") for a in out):
+        out.append(f"--plan-dir={folders['plans']}")
     return tuple(out)
+
+
+def fill_answers(value: object, answers: dict[int, list]) -> object:
+    """Fill in {"$answer": [step, (index,) key]} inside a value from the recorded answers.
+
+    Args:
+        value: A dev command's arguments (or any part of them).
+        answers: Step index -> the answers of that step's commands, in order.
+
+    Returns:
+        A copy with each such value filled in (None when the answer or field is missing).
+    """
+    if isinstance(value, dict):
+        ref = value.get("$answer") if len(value) == 1 else None
+        if isinstance(ref, list) and len(ref) in (2, 3):
+            step, key = ref[0], ref[-1]
+            index = ref[1] if len(ref) == 3 else 0
+            got = answers.get(step) or []
+            res = (
+                got[index].get("res")
+                if isinstance(index, int) and index < len(got)
+                else None
+            )
+            return res.get(key) if isinstance(res, dict) else None
+        return {k: fill_answers(v, answers) for k, v in value.items()}
+    if isinstance(value, list):
+        return [fill_answers(v, answers) for v in value]
+    return value
 
 
 def limits_of(play: Play) -> Limits:
@@ -481,6 +519,14 @@ class _LockstepRun:
             self._check_time()
         return fr
 
+    def _answers(self) -> dict[int, list]:
+        """Step index -> the DevConsole answers recorded for that step so far."""
+        out: dict[int, list] = {}
+        for fr in self.rec.frames:
+            for d in fr.get("dev") or []:
+                out.setdefault(fr.get("_step"), []).append(d)
+        return out
+
     def _check_time(self) -> None:
         wall = self.play.limits.get("wall_s")
         if wall is not None and time.monotonic() - self.t0 - self.waited > wall:
@@ -501,7 +547,7 @@ class _LockstepRun:
                     self.pending.append([0, a, 0.0])
                     self.held[a] = 0.0
         elif kind == "dev":
-            self.advance(1, i, dev=arg)
+            self.advance(1, i, dev=fill_answers(arg, self._answers()))
             self.rec.step_frame[i] = len(self.rec.frames) - 1
         elif kind == "query":
             self.advance(1, i, queries=arg)
@@ -618,6 +664,7 @@ def run_play(
     work: Path,
     options: OptionsFactory,
     write_traces: bool = True,
+    plans: Path | None = None,
 ) -> PlayRecord:
     """Run every run of a play against a prepared game and record what happened.
 
@@ -630,6 +677,7 @@ def run_play(
             each game process (the caller decides limits, logs and the memory gate;
             the home folder must be run_folder / "home").
         write_traces: Write each lockstep run's trace to run_folder / "trace.jsonl.gz".
+        plans: The plan folder for "{plans}" and the default --plan-dir, or None.
 
     Returns:
         The record. Failures of the game are recorded in each RunRecord.error; this
@@ -641,7 +689,10 @@ def run_play(
         folder = work / f"run{k}"
         save_dir = folder / "saves"
         save_dir.mkdir(parents=True, exist_ok=True)
-        args = substitute(play.args, {"save_dir": save_dir, "home": folder / "home"})
+        folders = {"save_dir": save_dir, "home": folder / "home"}
+        if plans is not None:
+            folders["plans"] = Path(plans)
+        args = substitute(play.args, folders)
         spec = GameSpec(game_dir, args, godot, mode=play.mode)
         rec = RunRecord(index=k, pace_ms=float(run_spec.get("pace_ms", 0)))
         opts = options(k, 0, folder)

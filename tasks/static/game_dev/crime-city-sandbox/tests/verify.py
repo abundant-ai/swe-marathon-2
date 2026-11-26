@@ -49,6 +49,13 @@ def main() -> int:
     ap.add_argument("--memory-mb", type=float, default=None, help="development only")
     ap.add_argument("--step-s", type=float, default=None, help="development only")
     ap.add_argument("--margin-s", type=float, default=60.0)
+    ap.add_argument(
+        "--plans",
+        type=Path,
+        default=HERE / "plans"
+        if (HERE / "plans").is_dir()
+        else HERE.parent / "common" / "design" / "plan",
+    )
     a = ap.parse_args()
     cfg = GradeConfig(
         project=a.project.resolve(),
@@ -68,6 +75,7 @@ def main() -> int:
         memory_mb=a.memory_mb,
         step_s=a.step_s,
         margin_s=a.margin_s,
+        plans=a.plans.resolve() if a.plans.is_dir() else None,
     )
     try:
         reward = grade(cfg)

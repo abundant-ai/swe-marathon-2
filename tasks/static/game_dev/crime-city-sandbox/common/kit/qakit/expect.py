@@ -2,11 +2,14 @@
 
 A play's "expect" list names checks with explicit arguments:
 
-    {"id": "answers", "check": "dev_answers", "args": {...}, "w": 1.0, "kind": "assert"}
+    {"id": "answers", "check": "dev_answers", "args": {...}, "rule": "AC-2",
+     "says": "every command gets an answer of the contract's form"}
 
-"kind" is "assert" (weighted by "w") or "pre" (a precondition: the situation the play
-sets up; when it does not hold, the play's other expectations say nothing useful).
-Every check returns whether it held and the values it measured, so a failure says why.
+"rule" names the design document's rule and "says" what the expectation means in a
+sentence; both are optional. "kind" is "assert" (the default) or "pre" (a precondition:
+the situation the play sets up; when it does not hold, the play's other expectations say
+nothing useful). Every check returns whether it held and the values it measured, so a
+failure says why.
 
 Besides a play's own expectations, every run is held to the standing ones in
 standing(): the process stayed up and answered, the telemetry node was left alone,
@@ -67,6 +70,8 @@ class Outcome:
         ok: Whether it held (None when it could not be judged, which counts as not held).
         measured: The values the check measured.
         note: A short explanation when it did not hold.
+        rule: The design document's rule id, when the expectation names one.
+        says: What the expectation means, in a sentence, when it says.
     """
 
     id: str
@@ -76,6 +81,8 @@ class Outcome:
     ok: bool | None
     measured: dict = field(default_factory=dict)
     note: str = ""
+    rule: str = ""
+    says: str = ""
 
 
 Result = tuple[bool | None, dict, str]
@@ -255,6 +262,8 @@ def check_moved(rec: PlayRecord, args: dict) -> Result:
     }
     if pa is None or pb is None:
         return None, measured, f"no {kind} at both marks"
+    if args.get("horizontal"):
+        pa, pb = [pa[0], pa[2]], [pb[0], pb[2]]
     dist = math.dist(pa, pb)
     measured["moved_m"] = round(dist, 6)
     if "ticks" in args and measured["ticks"] != args["ticks"]:
@@ -265,19 +274,50 @@ def check_moved(rec: PlayRecord, args: dict) -> Result:
     return ok, measured, "" if ok else f"moved {dist:.4f} m"
 
 
+def clock_minutes(value: object) -> int | None:
+    """Minutes after midnight of an "hh:mm" clock reading, or None for anything else."""
+    if not isinstance(value, str) or len(value) != 5 or value[2] != ":":
+        return None
+    hh, mm = value[:2], value[3:]
+    if not (hh.isdigit() and mm.isdigit()) or int(hh) > 23 or int(mm) > 59:
+        return None
+    return int(hh) * 60 + int(mm)
+
+
 def check_state_value(rec: PlayRecord, args: dict) -> Result:
-    """A state-report value at a mark equals a value or lies in [min, max]."""
+    """A state-report value at a mark equals a value (or the id a command's answer gave,
+    "equals_answer": {"step", "index"}), contains an item, or lies in [min, max].
+
+    "as": "minutes" reads an "hh:mm" clock as minutes after midnight before comparing.
+    """
     run = rec.runs[int(args.get("run", 0))]
     val = dig(state_of(frame_at_mark(run, args["mark"])), args["path"])
     measured = {"value": val}
     if val is None:
         return None, measured, f"no {args['path']} in the state report"
+    if "equals_answer" in args:
+        want = answer_id(run, args["equals_answer"])
+        measured["expected"] = want
+        ok = want is not None and val == want
+        return (
+            ok,
+            measured,
+            "" if ok else f"{args['path']} is {val!r}, the command gave {want!r}",
+        )
     if "equals" in args:
         return (
             val == args["equals"],
             measured,
             "" if val == args["equals"] else f"{args['path']} is {val!r}",
         )
+    if "contains" in args:
+        ok = isinstance(val, list) and args["contains"] in val
+        return ok, measured, "" if ok else f"{args['path']} lacks {args['contains']!r}"
+    if args.get("as") == "minutes":
+        val = clock_minutes(val)
+        measured["minutes"] = val
+        if val is None:
+            return False, measured, f"{args['path']} is not an hh:mm clock"
     if not isinstance(val, (int, float)):
         return False, measured, f"{args['path']} is not a number"
     lo, hi = args.get("min", -math.inf), args.get("max", math.inf)
@@ -286,7 +326,8 @@ def check_state_value(rec: PlayRecord, args: dict) -> Result:
 
 
 def check_event_seen(rec: PlayRecord, args: dict) -> Result:
-    """An event with the given name arrived between two marks (or after one)."""
+    """Events with the given name (and the given field values, "where") arrived between
+    two marks (or after one): at least min_count (default 1), at most max_count."""
     run = rec.runs[int(args.get("run", 0))]
     lo = run.marks.get(args["after"], len(run.frames)) if "after" in args else 0
     hi = (
@@ -294,14 +335,193 @@ def check_event_seen(rec: PlayRecord, args: dict) -> Result:
         if "before" in args
         else len(run.frames) - 1
     )
-    n = sum(
-        1
+    where = args.get("where") or {}
+    found = [
+        e.get("d")
         for fr in run.frames[lo + 1 : hi + 1]
         for e in fr.get("events") or []
-        if isinstance(e, dict) and e.get("n") == args["name"]
+        if isinstance(e, dict)
+        and e.get("n") == args["name"]
+        and all(
+            isinstance(e.get("d"), dict) and e["d"].get(k) == v
+            for k, v in where.items()
+        )
+    ]
+    n = len(found)
+    low, high = int(args.get("min_count", 1)), args.get("max_count")
+    ok = n >= low and (high is None or n <= int(high))
+    measured = {"count": n, "first": found[0] if found else None}
+    if ok:
+        return True, measured, ""
+    what = args["name"] + (f" {where}" if where else "")
+    return False, measured, f"{n} {what} events" if n else f"no {what} event"
+
+
+def answer_id(run: RunRecord, ref: dict) -> object:
+    """The "id" field of the answer to the command at {"step", "index"} (None when absent)."""
+    answers = [d for s, d in dev_answers_of(run, None) if s == ref.get("step")]
+    i = int(ref.get("index", 0))
+    res = answers[i].get("res") if i < len(answers) else None
+    return res.get("id") if isinstance(res, dict) else None
+
+
+def check_entity_near(rec: PlayRecord, args: dict) -> Result:
+    """At a mark, an entity of a kind (and archetype, or the id a command's answer gave,
+    "id_from": {"step", "index"}) stands within max_m of a point (horizontally by default)."""
+    run = rec.runs[int(args.get("run", 0))]
+    frame = frame_at_mark(run, args["mark"])
+    want_id = None
+    measured: dict = {}
+    if "id_from" in args:
+        want_id = answer_id(run, args["id_from"])
+        measured["id"] = want_id
+        if not isinstance(want_id, int) or isinstance(want_id, bool):
+            return False, measured, "the command's answer gave no entity id"
+    point = [float(c) for c in args["p"]]
+    flat = args.get("horizontal", True)
+    best = None
+    for e in (frame or {}).get("census") or []:
+        if e.get("k") != args.get("kind", e.get("k")):
+            continue
+        if "archetype" in args and e.get("a") != args["archetype"]:
+            continue
+        if want_id is not None and e.get("id") != want_id:
+            continue
+        if not isinstance(e.get("p"), list):
+            continue
+        p = [float(c) for c in e["p"]]
+        d = (
+            math.dist([p[0], p[2]], [point[0], point[2]])
+            if flat
+            else math.dist(p, point)
+        )
+        best = d if best is None else min(best, d)
+    measured["distance_m"] = None if best is None else round(best, 4)
+    if frame is None:
+        return None, measured, "the mark was not reached"
+    if best is None:
+        return False, measured, "no such entity in the census"
+    ok = best <= float(args["max_m"])
+    return ok, measured, "" if ok else f"the nearest is {best:.3f} m away"
+
+
+# AC-12: the state report's fields, with the values other rules give them.
+WEATHERS = ("clear", "overcast", "rain", "fog")
+MISSIONS = ("D1", "C1", "R1", "D2", "C2", "R2", "H1", "H2")
+MISSION_STATES = ("locked", "available", "active", "passed", "failed")
+GARAGES = ("garage_downtown", "garage_port", "garage_hills")
+ROLES = ("solo", "server", "client")
+
+
+def _is_int(v: object) -> bool:
+    return (
+        isinstance(v, int)
+        and not isinstance(v, bool)
+        or (isinstance(v, float) and v.is_integer())
     )
-    ok = n >= int(args.get("min_count", 1))
-    return ok, {"count": n}, "" if ok else f"no {args['name']} event"
+
+
+def _is_num(v: object) -> bool:
+    return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+
+def state_problems(st: dict, player: bool) -> list[str]:
+    """What is missing or malformed in a state report (AC-12), in plain words."""
+    probs = []
+
+    def need(ok: bool, what: str) -> None:
+        if not ok:
+            probs.append(what)
+
+    need(_is_int(st.get("tick")), "tick is not a whole number")
+    need(isinstance(st.get("map"), str), "map is not a name")
+    need(clock_minutes(st.get("clock")) is not None, "clock is not hh:mm")
+    need(st.get("weather") in WEATHERS, "weather is not clear, overcast, rain or fog")
+    need(_is_int(st.get("variation")), "variation is not a whole number")
+    pl = st.get("player")
+    if player or pl is not None:
+        if not isinstance(pl, dict):
+            probs.append("player is missing")
+        else:
+            for k in ("id", "money"):
+                need(_is_int(pl.get(k)), f"player.{k} is not a whole number")
+            for k in ("health", "armour"):
+                need(_is_num(pl.get(k)), f"player.{k} is not a number")
+            need(
+                _is_int(pl.get("alert")) and 0 <= pl.get("alert", -1) <= 5,
+                "player.alert is not 0-5",
+            )
+            for k in ("lead", "weapon", "outfit"):
+                need(isinstance(pl.get(k), str), f"player.{k} is not a name")
+            for k in ("weapons", "outfits", "leads_unlocked"):
+                need(isinstance(pl.get(k), list), f"player.{k} is not a list")
+            ammo = pl.get("ammo")
+            need(
+                isinstance(ammo, dict)
+                and _is_int(ammo.get("magazine"))
+                and _is_int(ammo.get("reserve")),
+                "player.ammo is not {magazine, reserve}",
+            )
+            aim = pl.get("aim", "missing")
+            need(
+                aim is None or (isinstance(aim, list) and len(aim) == 3),
+                "player.aim is not a point or null",
+            )
+            need(isinstance(pl.get("cover"), bool), "player.cover is not true or false")
+            for k in ("vehicle", "seat"):
+                need(
+                    k in pl and (pl[k] is None or _is_int(pl[k])),
+                    f"player.{k} is not an id or null",
+                )
+    ms = st.get("missions")
+    if not isinstance(ms, dict):
+        probs.append("missions is missing")
+    else:
+        for m in MISSIONS:
+            row = ms.get(m)
+            need(
+                isinstance(row, dict)
+                and row.get("state") in MISSION_STATES
+                and "stage" in row,
+                f"missions.{m} is not {{state, stage}}",
+            )
+    gs = st.get("garages")
+    if not isinstance(gs, dict):
+        probs.append("garages is missing")
+    else:
+        for g in GARAGES:
+            need(isinstance(gs.get(g), list), f"garages.{g} is not a list")
+    ui = st.get("ui")
+    need(
+        isinstance(ui, dict)
+        and all(isinstance(ui.get(k), bool) for k in ("phone", "map", "paused"))
+        and "menu" in ui,
+        "ui is not {phone, map, paused, menu}",
+    )
+    net = st.get("network")
+    need(
+        isinstance(net, dict)
+        and net.get("role") in ROLES
+        and _is_int(net.get("peers"))
+        and _is_int(net.get("id")),
+        "network is not {role, peers, id}",
+    )
+    return probs
+
+
+def check_state_fields(rec: PlayRecord, args: dict) -> Result:
+    """The state report at a mark has every field of AC-12 in its form."""
+    run = rec.runs[int(args.get("run", 0))]
+    frame = frame_at_mark(run, args["mark"])
+    st = state_of(frame)
+    if not st:
+        return None if frame is None else False, {}, "no state report"
+    probs = state_problems(st, bool(args.get("player", True)))
+    return (
+        not probs,
+        {"problems": probs[:8], "count": len(probs)},
+        probs[0] if probs else "",
+    )
 
 
 def check_heartbeat(rec: PlayRecord, args: dict) -> Result:
@@ -325,6 +545,8 @@ CHECKS: dict[str, Callable[[PlayRecord, dict], Result]] = {
     "state_value": check_state_value,
     "event_seen": check_event_seen,
     "heartbeat": check_heartbeat,
+    "entity_near": check_entity_near,
+    "state_fields": check_state_fields,
 }
 
 
@@ -342,14 +564,21 @@ def check_play(rec: PlayRecord) -> list[Outcome]:
         fn = CHECKS.get(e["check"])
         kind = e.get("kind", "assert")
         w = float(e.get("w", 1.0))
+        rule, says = str(e.get("rule", "")), str(e.get("says", ""))
         if fn is None:
-            out.append(Outcome(e["id"], e["check"], kind, w, None, {}, "unknown check"))
+            out.append(
+                Outcome(
+                    e["id"], e["check"], kind, w, None, {}, "unknown check", rule, says
+                )
+            )
             continue
         try:
             ok, measured, note = fn(rec, e.get("args") or {})
         except (KeyError, TypeError, ValueError, IndexError) as exc:
             ok, measured, note = None, {}, f"could not be judged: {exc!r}"
-        out.append(Outcome(e["id"], e["check"], kind, w, ok, measured, note))
+        out.append(
+            Outcome(e["id"], e["check"], kind, w, ok, measured, note, rule, says)
+        )
     return out
 
 
@@ -378,7 +607,17 @@ def standing_process(rec: PlayRecord) -> Outcome:
                 )
     measured = {"errors": errors, "exits": [r.exits for r in rec.runs]}
     note = "" if not errors else f"{errors[0]['kind']}: {errors[0]['message']}"
-    return Outcome("process", "standing", "standing", 0.0, not errors, measured, note)
+    return Outcome(
+        "process",
+        "standing",
+        "standing",
+        0.0,
+        not errors,
+        measured,
+        note,
+        "PF-8",
+        "the game keeps running and answering, within its memory",
+    )
 
 
 def standing_telemetry(rec: PlayRecord) -> Outcome:
@@ -411,6 +650,8 @@ def standing_telemetry(rec: PlayRecord) -> Outcome:
         ok,
         {"errors": errors, "heartbeat": hb_bad},
         note,
+        "AC-18",
+        "QA's telemetry node is left alone and runs every tick",
     )
 
 
@@ -459,6 +700,8 @@ def standing_registry(rec: PlayRecord) -> Outcome:
         not problems,
         {"problems": problems[:10], "count": len(problems)},
         problems[0] if problems else "",
+        "AC-4",
+        "entities carry their metadata; ids are whole numbers, unique, never reused",
     )
 
 
@@ -491,6 +734,8 @@ def standing_events(rec: PlayRecord) -> Outcome:
         not problems,
         {"problems": problems[:10], "count": len(problems)},
         problems[0] if problems else "",
+        "AC-13",
+        "every event carries its fields and its tick",
     )
 
 
