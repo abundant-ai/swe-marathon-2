@@ -1569,10 +1569,12 @@ def _stop_events(
     """For each pass of an NPC vehicle through the all-way stop: {"arrive": tick,
     "approach", "go": tick (its line crossing), "box_in": tick, "box_out": tick, "entry":
     (x, z), "exit": (x, z), "stood": bool (it stood within zone_m before the line before
-    crossing)}, keyed by the vehicle's id (a later pass, when it comes back to a listed
-    approach more than PASS_GAP ticks after it was last in the box, by "id#2", "id#3"...). A vehicle arrives the first frame it
-    stands (1 km/h or less) within zone_m before a listed line with no vehicle between it and
-    the line in the approach's lanes."""
+    crossing), "before": true when it was already within zone_m of its line, or past it, in
+    the first frame (it may have stood before)}, keyed by the vehicle's id (a later pass, when
+    it comes back to a listed approach more than PASS_GAP ticks after it was last in the box,
+    by "id#2", "id#3"...). A vehicle arrives the first frame it stands (1 km/h or less) within
+    zone_m before a listed line with no vehicle between it and the line in the approach's
+    lanes."""
     ev: dict = {}
     cur: dict = {}  # vehicle id -> the key of its current pass
     passes: dict = {}  # vehicle id -> passes so far
@@ -1604,6 +1606,10 @@ def _stop_events(
                 key = eid
             cur[eid] = key
             rec_ = ev.setdefault(key, {"approach": apid})
+            if fr is frames[0] and d <= zone_m:
+                rec_["before"] = (
+                    True  # at its line when the watch began: it may have stood
+                )
             sp = speed(prev, fr, eid, rp, rc)
             if 0 < d <= zone_m and sp is not None and sp <= KMH and "go" not in rec_:
                 rec_["stood"] = True
@@ -1656,11 +1662,13 @@ def _stop_args(rec: PlayRecord, args: dict):
 
 def check_stop_full(rec: PlayRecord, args: dict) -> Result:
     """TR-6: every NPC vehicle that crosses a listed stop line of the all-way stop between the
-    marks first stood (1 km/h or less) with its position within `zone_m` before that line."""
+    marks first stood (1 km/h or less) with its position within `zone_m` before that line
+    (those already within `zone_m` of their line at the first mark may have stood before it,
+    and are left out)."""
     frames, ev = _stop_args(rec, args)
     if len(frames) < 2:
         return None, {}, "the marks were not reached"
-    went = {k: v for k, v in ev.items() if "go" in v}
+    went = {k: v for k, v in ev.items() if "go" in v and not v.get("before")}
     rolled = [k for k, v in went.items() if not v.get("stood")]
     measured = {"crossed": len(went), "without_stopping": rolled[:5]}
     if not went:

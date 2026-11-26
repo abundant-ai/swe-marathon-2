@@ -436,7 +436,9 @@ def stop_frames(
     for t in range(0, 900, 6):
         sx, sz = south_car(t, s_go, 0)
         if rolling:
-            sz = 11.0 - 5.0 * t / 60
+            sz = (
+                20.0 - 5.0 * t / 60
+            )  # from 11 m before the line, through it without a stop
         ex, ez = east_car(t, e_arrive, e_go)
         frames.append(
             {
@@ -477,6 +479,17 @@ def test_stop_order_and_box() -> None:
     assert outcome(record(in_order), "box_clear", STOP_ARGS).ok is True
     together = stop_frames(s_go=300, e_arrive=60, e_go=300)
     assert outcome(record(together), "box_clear", STOP_ARGS).ok is False
+
+
+def test_a_car_moving_off_its_line_when_the_watch_begins_is_left_out() -> None:
+    """full_stop cannot know whether a car already at its line at the first mark stood."""
+    frames = stop_frames(s_go=120, e_arrive=300, e_go=480)
+    late = [
+        fr for fr in frames if fr["t"] >= 126
+    ]  # the south car is moving off at the first
+    assert outcome(record(late), "stop_full", STOP_ARGS).ok is True
+    rolling = stop_frames(120, 300, 480, rolling=True)
+    assert outcome(record(rolling), "stop_full", STOP_ARGS).ok is False
 
 
 def test_a_second_pass_is_a_new_visit() -> None:
