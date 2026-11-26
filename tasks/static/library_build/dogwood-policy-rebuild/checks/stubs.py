@@ -94,15 +94,17 @@ def fmt_of(c: dict) -> str:
     return args[args.index("--format") + 1] if "--format" in args else "human"
 
 
-def most_common(cases: list[dict], run: dict) -> list[str]:
+def most_common(cases: list[dict], run: dict, least: int = 1) -> list[str]:
+    """Each command's most common answer, when it was given at least `least` times."""
     counts: dict[str, Counter] = defaultdict(Counter)
     for c in cases:
         first = run[c["id"]]["runs"][0]
         counts[f"{route(c)}/{fmt_of(c)}"][(first["rc"], first["norm"])] += 1
     lines = []
     for key, counter in sorted(counts.items()):
-        (rc, out), _ = counter.most_common(1)[0]
-        lines.append(f"{key}\t{rc}\t{out.encode('utf-8').hex()}")
+        (rc, out), n = counter.most_common(1)[0]
+        if n >= least:
+            lines.append(f"{key}\t{rc}\t{out.encode('utf-8').hex()}")
     return lines
 
 
@@ -133,7 +135,7 @@ def main() -> int:
     run = json.loads(a.run.read_text())
     tables = {
         "usual-status": most_common(cases, run),
-        "most-common": most_common(cases, run),
+        "most-common": most_common(cases, run, least=2),
         "lookup": lookup(a.examples),
     }
     if a.out.exists():

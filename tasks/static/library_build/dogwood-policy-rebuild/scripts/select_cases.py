@@ -48,6 +48,23 @@ def route(c: dict) -> str:
     return args[0]
 
 
+def stub_group(c: dict) -> str:
+    """The command a table-driven stub sees (`checks/stubs.py` keys its answers the same way):
+    the subcommand, `--emit` form or schema part, and the `--format` value."""
+    args = c["args"]
+    if args and args[0] == "schema":
+        head = f"schema-{args[1] if len(args) > 1 else ''}"
+    elif args and args[0] == "lower":
+        head = f"lower-{args[args.index('--emit') + 1] if '--emit' in args else 'both'}"
+    elif args and args[0] == "explain" and "--policy-schema" not in args:
+        head = "explain-bare"
+    else:
+        head = args[0] if args else ""
+    i = args.index("--format") + 1 if "--format" in args else -1
+    fmt = args[i] if 0 < i < len(args) else "human"
+    return f"{head}/{fmt}"
+
+
 def uniform_stream(text: str) -> str | None:
     """'DENY' or 'ALLOW <rules>' when every line of a human replay stream is that verdict and
     nothing else is printed; None otherwise."""
@@ -106,10 +123,15 @@ def main() -> int:
     # 2. What makes a case passable by a trivial program.
     groups: dict[tuple, Counter] = defaultdict(Counter)
     for c in kept:
-        groups[(route(c), c["fmt"])][gold[c["id"]]] += 1
+        groups[stub_group(c)][gold[c["id"]]] += 1
     constant = set()
     for key, counts in groups.items():
         total = sum(counts.values())
+        (top, top_n), *_ = counts.most_common(1)
+        if (
+            top_n >= 2
+        ):  # what a program printing each command's most common answer passes
+            constant.add((key, top))
         for answer, n in counts.items():
             if n >= max(3, 0.02 * total):
                 constant.add((key, answer))
@@ -119,8 +141,10 @@ def main() -> int:
         rc, out = gold[c["id"]]
         if not out.strip():
             return "empty"
-        if ((route(c), c["fmt"]), (rc, out)) in constant:
+        if (stub_group(c), (rc, out)) in constant:
             return "constant"
+        if groups[stub_group(c)][(rc, out)] >= 2:
+            return "shared"
         if c["args"][0] == "replay":
             twin = human.get(c["id"].rsplit("/", 1)[0] + "/human")
             if twin is not None and uniform_stream(twin):
@@ -205,7 +229,25 @@ def main() -> int:
             capped.extend(units_of[fam][n])
     final = capped
 
-    # 6. Write the case set and the bundles it uses.
+    # 6. Capping changes which answer each command gives most often. A program that prints each
+    # command's most common answer (one given at least twice) can pass a unit only when every
+    # member's answer is given at least twice for its command, so such units are dropped; a unit
+    # with one answer of its own is safe whatever that program picks.
+    counts: dict[str, Counter] = defaultdict(Counter)
+    for c in final:
+        counts[stub_group(c)][gold[c["id"]]] += 1
+    members: dict[str, list[dict]] = defaultdict(list)
+    for c in final:
+        members[c.get("pair") or c["id"]].append(c)
+    shared = {
+        u
+        for u, ms in members.items()
+        if all(counts[stub_group(m)][gold[m["id"]]] >= 2 for m in ms)
+    }
+    dropped["answers all given elsewhere too"] += sum(len(members[u]) for u in shared)
+    final = [c for c in final if (c.get("pair") or c["id"]) not in shared]
+
+    # 7. Write the case set and the bundles it uses.
     out_bundles = a.out / "bundles"
     if out_bundles.exists():
         raise SystemExit(f"{out_bundles} exists; select into an empty directory")
