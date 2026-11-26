@@ -54,8 +54,8 @@ source. Everything downstream depends on what the driver writes and how it exits
 - Inputs are files of up to 2 MB; each merge must finish within 10 seconds on one CPU core with
   2 GB of memory.
 - It must not call the installed build.
-- Keep it highly modular: the merge rules in focused functions, apart from file handling, the
-  command line and the calls to `git`.
+- We will maintain this code for years: keep it modular, with the merge rules in focused
+  functions, kept apart from reading and writing files, the command line, and the calls to `git`.
 
 ## Switching over
 

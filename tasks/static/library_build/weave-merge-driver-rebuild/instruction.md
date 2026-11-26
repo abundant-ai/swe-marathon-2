@@ -72,8 +72,8 @@ crates above.
   2 GB of memory.
 - It must not call the installed build: it replaces it, and it will run where that build is not
   installed.
-- Write it as highly modular code: the merge rules in focused functions, kept apart from reading
-  and writing files, the command line, and the calls to `git`.
+- We will maintain this code for years: keep it modular, with the merge rules in focused
+  functions, kept apart from reading and writing files, the command line, and the calls to `git`.
 
 ## Switching over
 
