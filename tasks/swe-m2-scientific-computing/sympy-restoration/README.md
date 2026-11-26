@@ -1235,6 +1235,15 @@ It does not yet meet the v2 workload target; see [Workload](#workload) and
   nothing, and the static combination 0.0163 (0.0324 in the original tree). The
   bounds that choose with the hidden results 0.0350 and 0.0290; all under the
   decision's 0.05.
+- Hostile cases through the verifier's steps (one unit each, chosen by the same
+  rule over this unit list: `preview` to a file, `open` with a seek, `json`
+  imported and rebound, `os.fork` in a loop, a 64 MiB result, a 256 MiB print
+  before the original body): 0.9721, completed; the first four refused by the
+  body rules, the other two failing their own items; 1,774 / 1,825 units in the
+  set and 6,048 / 6,137 counted calls, the six units and the units that call
+  them (one of the refused hosts this time is a polynomial method much of
+  `sympy.polys` calls, where the round before's hosts had 3 callers); nothing
+  unreached, no control tripped, no evaluation error.
 - `checks/test_graded_units.py` runs the trace and the probe on the shipped
   inputs and fails on a removed unit that no graded item fails without, and on
   a body left whole that is a near-copy of a removed one (the builder's report,
@@ -2121,6 +2130,7 @@ stored submissions of the earlier sessions of the same task; every one scored
 | Reference, the agent's starting tree and a turn of no length, after fix round 9 | this machine, the entry point's steps, one worker; the no-op through the shipped hooks and the real net check | reference 1.000000 and complete: 1,825 / 1,825 units in the set, 6,137 / 6,137 counted calls, 14,508 / 14,508 calls, 2,114 / 2,114 units' examples, 10,428 / 10,428 tests, none unreached, nothing out of its time and no item over half of its bound (322 starts in each phase; host factor 1.024: 7 units' example bounds above the 2 s floor, up to 7.8 s, 102 units' call bounds above 1.5 s, up to 34.8 s), no control tripped, 963 s; starting tree 0.0; no-op 0.0 with `end_from` `unchanged` (1,716 entries listed) |
 | Regrade of the stored submissions after fix round 9 | this machine, the entry point's steps, examples and calls, one worker, 2026-11-26 | 16 submissions, reward 0.003 to 0.853, each within 0.006 of the regrade with the units left whole (8 up, 8 down), the order unchanged but for two sessions 0.0015 apart; every move made of the 42 units that left the set, the 20 that joined it and 32 verdict changes in 8 submissions, each of the 32 running a body whose state changed this round (31 now whole, 1 removed again), traced in the submission's own tree; none with a unit or call unreached, a late file or a control tripped (see [Trial evidence](#trial-evidence)) |
 | Floor on fix round 9's calls (`fixtures.py`, `floor.py`, the reviewers' composite with each delegation also run as the unit's own body, the integrity reviewer's rules) | this machine, 2026-11-26 | through the verifier raise, first argument and flip 0.0 (flip behind a table 0.0034); one constant 0.0065, type default 0.0103, delegation 0.0052 and 0.0132 in the original tree (0.0003 and 0.0 as the unit's own body), the combination 0.0324 (0.0163); the reviewer's rules 0.0064 (0.0121); hidden-result bounds 0.0350 (0.0173) and 0.0290; all under 0.05 |
+| Hostile cases through the verifier's steps (one unit each: `preview` to a file, `open` with a seek, `json` rebound, `os.fork` in a loop, a 64 MiB result, a 256 MiB print before the original body), on fix round 9's build | this machine, the entry point's steps, one worker, 2026-11-26 | 0.9721, completed: the first four refused by the body rules; 1,774 / 1,825 units in the set and 6,048 / 6,137 counted calls (the six units and their callers, a polynomial method much of `sympy.polys` calls among the hosts); nothing unreached, no control tripped, none an evaluation error |
 | `harbor check` with `resources/task-implementation.toml` | working tree, 2026-11-17 | attempted on Modal; failed before review with `NotFoundError: Environment not found` (no default Modal environment). Not run in local Docker. No ratings |
 | Local image builds | none | not run for the v2 Dockerfiles; the Oddish baselines are the first build |
 
