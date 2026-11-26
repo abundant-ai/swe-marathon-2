@@ -324,7 +324,8 @@ For the Linux items above, ask the owner for an x86_64 Linux machine.
 | `9333af0` | WS4: the falls playtest (FT-8) and `fall_damage` |
 | `2cf1644` | WS2/WS3: the generator's randomised layout, per-instance plan folders in the grader, the plan-swap tool |
 | `0289e78` | WS4: the independent read's fixes (FT-8's fall, one tick at phase changes, notes with numbers, README rows) |
-| (next) | the acceptance tool, the README and this report |
+| `f4286b2` | the acceptance tool, the README and this report |
+| (next) | this table's hashes |
 
 Private, with both bundles refreshed in `harbor-lh/ops/swe-marathon-v2/next-tasks/game-private/`:
 - `crime-city-reference` `8f48ecf`, `08db084`, `6d7e9db`, `05b1e36`: module 3's first part (people,
