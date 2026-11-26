@@ -89,6 +89,13 @@ A playtest is a JSON file (format `qa-play/1`) in `playtests/`. Every value in i
     `accelerate` at 0.5 for each m/s the speed is below `kmh`, and `brake` at 0.3 for each m/s
     past 0.15 m/s above it, while holding the actions in `hold` (`steer_left` at full strength,
     for example); it lets go of them at the end unless `keep` is true;
+  - `aim_at`: QA's bot aiming like a player at an entity's bone (`entity` by `id`, `bone`,
+    `Chest` by default) for `ticks` ticks, one tick at a time: it holds `aim` (and the actions
+    in `hold`, `attack` for example) and turns the camera with `look_left`, `look_right`,
+    `look_up` and `look_down`, at a strength in proportion to the angle, seen from the camera,
+    between the state report's aim point and the bone (full strength from 4 degrees); it lets go
+    of them at the end unless `keep` is true (the play observes the state, the camera and that
+    entity's bones);
   - `files`: corrupt the save files written since a mark, as a failed disk write would;
   - `restart`: kill the game and start it again with the same save folder;
 - `expect`: what must hold, each with the rule it comes from (`rule`) and what it means (`says`);
@@ -170,6 +177,27 @@ The checks an expectation can use:
 | `stop_order` | of two NPC vehicles on different approaches whose paths through the box cross: arrivals `late_s` or more apart go in order of arrival; when exactly two arrived within `tie_s` of each other (no third within `tie_s` of either), the one on the right (`right_of`) goes first; other pairs, and three or four arriving together, may go in any order. A vehicle arrives when it first stands within `zone_m` before its line with no vehicle ahead of it there, and goes when it crosses the line |
 | `box_clear` | no two NPC vehicles on crossing paths through the box (from where each entered it to where it left, or leaving by the same lane) are in the box at once |
 | `stop_wait` | no NPC vehicle waits more than `max_s` from its arrival to crossing its stop line |
+| `hits` | every damaged event on the listed people dealt by the player has `amount` equal to `damage`, at least `min_hits` of them; on a hit that does not kill, the person's health falls by the amount (from `start_health`, 100 by default); the person's died event comes on the hit that takes its health to 0 and no hit after it; with `per_round`, no round lands more than that many hits |
+| `fire_rate` | rounds leaving the magazine (or, with `blows`, the player's hits on the listed people) come at `rate` per second within `tol`: the count less one over the time from the first to the last |
+| `reload` | from the first mark (`start` `mark`) or the first tick after it with the magazine empty (`start` `empty`), the magazine rises `reload_s` later within `tol`, to `magazine` or by the whole reserve (one less when a round leaves in that same tick), and the reserve gives exactly what the reload moved |
+| `ammo_flow` | every change of the ammo in the state report is a round (the magazine down by one, the reserve unchanged) or a reload (the magazine up, the reserve down as much, or one less up when a round leaves in that same tick), with at least `min_rounds` rounds and `min_reloads` reloads |
+| `dry_fire` | with the magazine and the reserve empty at the first mark, the ammo stays empty and nobody takes a hit from the player until the second |
+| `aim_pose` | on every frame, the `RightHand` is within `hand_m` of the height of `RightUpperArm`, and the forearm (`RightLowerArm` to `RightHand`) points within `max_deg` of the direction from the hand to the state report's aim point |
+| `lock_on` | on every frame, the aim point is within `aim_m` of the target's `Chest` bone and that bone lies inside the middle `middle` of the view (by width and height, the camera's `fov` vertical, the view's `aspect`) |
+| `hit_rate` | over `bursts` (`from`, `to`, `target`), of the rounds that left the magazine while the target stood (alive, not limp), at least `min_share` landed on it (its damaged events from the player, until `grace_s` after the burst) |
+| `untouched` | the player fires at least `min_rounds` rounds and none of the listed people takes a hit |
+| `cover_enter` | from the mark where `cover` is pressed, within `within_s` the state report's `cover` is true with the player within `near_m` of the box and the `Hips` at most `ratio` of their standing height (at the mark) above `ground_y` |
+| `cover_hold` | on every frame `cover` is true, the player within `near_m` of the box and the `Hips` at most `ratio` of their standing height (read at `standing_mark`) above `ground_y` |
+| `cover_leave` | from the mark where a move away from the box is pressed, `cover` turns false within `within_s` and stays false, and at the second mark the player is more than `near_m` from the box |
+| `lean_out` | from the mark where `aim` is pressed in cover, the `Head` bone rises at least `rise_m` within `within_s` with `cover` still true, and between `fire_from` and `fire_to`, in cover, a round leaves the magazine |
+| `cover_cuts` | two windows of equal length in separate game processes (`open` and `cover`, each with `from`, `to` and the `attackers`): the damage those attackers deal the player in the cover window is at most `max_ratio` of the open window's, which holds at least `min_open_hits` hits |
+| `armour_split` | for every damaged event on the player, armour falls by `share` of the hit's amount (within a point) until it runs out and health by the rest (within a point), from the values before the hit; at least `min_armoured` hits while armour lasted and `min_bare` after |
+| `turn_hostile` | the listed people's `hostile` metadata turns true within `within_s` of the trigger: with `trigger` `hit`, the first damaged event the player deals one of them; with `aim`, `after_s` after the first mark, and none turns hostile before that |
+| `flee_away` | each listed person ends at least `min_m` farther from the player (horizontally) within `within_s` of its `hostile` metadata turning true, still `hostile` |
+| `reach_cover` | within `within_s` of the first of `crew` turning hostile, at least `min_share` of the hostile `enforcers` stand at some moment within `near_m` of one of the `boxes` |
+| `retreat` | each listed enforcer whose health drops below `below` (alive) ends at least `min_m` farther from the player within `within_s` |
+| `fires_at` | each listed attacker that comes within `max_m` of the player lands at least `min_hits` hits on the player |
+| `gunshot_flee` | the first round after the first mark is the shot; each listed person on foot within `near_m` of the player at the shot (and not limp, dead or seated meanwhile), from `start_s` to `end_s` after it, moves at least `min_mps` on average, ends at least `min_gain_m` farther from where the player stood, and gets farther over at least `min_share` of the half seconds |
 
 A box is a solid placed with `prop.spawn`: `{"p": the middle of its base, "size": [width,
 height, depth], "heading": degrees}`, its depth along the heading (chapter 17). An `area` is a
@@ -183,7 +211,10 @@ towards the junction. QA reads speeds from positions, counts people and vehicles
 `vehicle` and `seat` metadata (AC-5), and takes each collision shape as the box the shape's own
 mesh fills (exact for a box shape, a little larger for rounded ones). A program is a
 junction's plan program in ticks: `{"offset", "cycle", "phases": [{"start", "green_end",
-"amber_end", "green", "walk"}]}`, phases in order from program time 0.
+"amber_end", "green", "walk"}]}`, phases in order from program time 0. In fights, QA counts a
+round each time the state report's magazine drops (by one per round), reads every hit from its
+`damaged` event (AC-13: the hit's damage, the values after it, the attacker's id as `source`)
+and names people by the ids the commands that placed them answered with.
 
 You can add playtests of your own in the same format and run them with
 `qa run path/to/file.json`.

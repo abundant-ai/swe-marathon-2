@@ -23,7 +23,7 @@ import math
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from . import streets
+from . import combat, streets
 from .play import PlayRecord, RunRecord
 
 # AC-13: the fields each event carries (every event also carries "tick").
@@ -3093,6 +3093,7 @@ CHECKS: dict[str, Callable[[PlayRecord, dict], Result]] = {
     "blast": check_blast,
     "lean": check_lean,
     **streets.CHECKS,
+    **combat.CHECKS,
 }
 
 

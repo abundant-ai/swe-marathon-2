@@ -100,6 +100,7 @@ STEP_KINDS = (
     "query",
     "wait_for",
     "cruise",
+    "aim_at",
     "files",
     "restart",
 )
@@ -244,6 +245,24 @@ def _step_problem(i: int, step: object, mode: str) -> str | None:
             None
             if ok
             else f"step {i}: cruise takes {{entity, kmh, ticks, hold}} (lockstep)"
+        )
+    if kind == "aim_at":
+        ent = arg.get("entity") if isinstance(arg, dict) else None
+        ok = (
+            mode == "lockstep"
+            and isinstance(ent, dict)
+            and "id" in ent
+            and isinstance(arg.get("bone", "Chest"), str)
+            and isinstance(arg.get("ticks"), int)
+            and not isinstance(arg.get("ticks"), bool)
+            and arg["ticks"] >= 1
+            and isinstance(arg.get("hold", {}), dict)
+            and all(isinstance(v, (int, float)) for v in arg.get("hold", {}).values())
+        )
+        return (
+            None
+            if ok
+            else f"step {i}: aim_at takes {{entity: {{id}}, bone, ticks, hold}} (lockstep)"
         )
     if kind == "files":
         ok = (
@@ -606,6 +625,30 @@ def is_near(frame: dict, near: dict) -> bool:
     return False
 
 
+def _aim_turn(frame: dict, target: object, name: str) -> tuple[float, float] | None:
+    """(yaw, pitch) in degrees from the state report's aim point to the target's bone, both
+    seen from the camera (yaw positive to the right, pitch positive up), or None."""
+    cam = frame.get("camera")
+    st = frame.get("state")
+    if isinstance(st, dict) and isinstance(st.get("state"), dict):
+        st = st["state"]
+    aim = ((st or {}).get("player") or {}).get("aim") if isinstance(st, dict) else None
+    tb = ((frame.get("bones") or {}).get(str(target)) or {}).get(name)
+    if not (isinstance(cam, dict) and isinstance(aim, list) and isinstance(tb, list)):
+        return None
+    c = [float(v) for v in cam["p"]]
+
+    def angles(p: list) -> tuple[float, float]:
+        d = [float(p[k]) - c[k] for k in range(3)]
+        return (
+            math.degrees(math.atan2(d[0], -d[2])),
+            math.degrees(math.atan2(d[1], math.hypot(d[0], d[2]))),
+        )
+
+    (ya, pa), (yt, pt) = angles(aim), angles(tb)
+    return (yt - ya + 180.0) % 360.0 - 180.0, pt - pa
+
+
 class _LockstepRun:
     """Executes one lockstep run of a play (see run_play)."""
 
@@ -727,6 +770,8 @@ class _LockstepRun:
             self._wait_for(i, fill_answers(arg, self._answers()))
         elif kind == "cruise":
             self._cruise(i, fill_answers(arg, self._answers()))
+        elif kind == "aim_at":
+            self._aim_at(i, fill_answers(arg, self._answers()))
         elif kind == "restart":
             assert self.session is not None
             self.rec.exits.append(exit_dict(self.session.kill()))
@@ -804,6 +849,32 @@ class _LockstepRun:
             self.advance(1, i)
         if not arg.get("keep"):
             for a in ("accelerate", "brake", *(arg.get("hold") or {})):
+                self._set(a, 0.0)
+        self.rec.step_frame[i] = len(self.rec.frames) - 1
+
+    def _aim_at(self, i: int, arg: dict) -> None:
+        """QA's bot aiming like a player: each tick it holds `aim` (and the "hold" actions) and
+        turns the camera with the look actions, at a strength in proportion to the angle, seen
+        from the camera, between the state report's aim point and the target's bone (full
+        strength from 4 degrees), for "ticks" ticks; it lets go of them at the end unless
+        "keep" is true. The play observes the state, the camera and the target's bones."""
+        target = arg["entity"]["id"]
+        name = str(arg.get("bone", "Chest"))
+        held = {"aim": 1.0, **{a: float(v) for a, v in (arg.get("hold") or {}).items()}}
+        for a, v in held.items():
+            self._set(a, v)
+        for _ in range(int(arg["ticks"])):
+            fr = self.rec.frames[-1] if self.rec.frames else {}
+            turn = _aim_turn(fr, target, name)
+            if turn is not None:
+                yaw, pitch = turn
+                self._set("look_right", round(min(1.0, max(0.0, yaw / 4.0)), 3))
+                self._set("look_left", round(min(1.0, max(0.0, -yaw / 4.0)), 3))
+                self._set("look_up", round(min(1.0, max(0.0, pitch / 4.0)), 3))
+                self._set("look_down", round(min(1.0, max(0.0, -pitch / 4.0)), 3))
+            self.advance(1, i)
+        if not arg.get("keep"):
+            for a in ("look_right", "look_left", "look_up", "look_down", *held):
                 self._set(a, 0.0)
         self.rec.step_frame[i] = len(self.rec.frames) - 1
 
