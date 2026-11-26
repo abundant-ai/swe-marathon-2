@@ -1,0 +1,11 @@
+[package]
+name = "diffy-stub"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+diffy = "=0.5.2"
+
+[profile.release]
+strip = true
