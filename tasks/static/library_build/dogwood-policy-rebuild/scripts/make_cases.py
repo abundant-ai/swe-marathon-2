@@ -37,6 +37,8 @@ GEN_FAMILIES = ("temporal", "traces", "events", "providers", "macros")
 AGG = re.compile(r"\b(?:count|sum\s+\w+)\s+for\s+\(([^.]*?)\)\.\s*where", re.DOTALL)
 TRACE_NAME = re.compile(r"trace(_\d+)?\.log")
 STAMP = re.compile(r"^@(-?\d+)\s")
+PRINCIPAL = re.compile(r"scope\(principal:\s*([^,)]+)")
+KEY_LOCAL_OPS = re.compile(r"\bprevious\s+within\b|\bsince\s+within\b")
 
 
 def trace_ok(path: Path) -> bool:
@@ -92,11 +94,27 @@ def flags(bundle: Path) -> list[str]:
     return out
 
 
-def replay_family(policy: str, meta: dict) -> str:
+def principals(trace: Path) -> int:
+    """How many principals act in a trace (its `scope(principal: ...)` envelopes)."""
+    return len(
+        set(PRINCIPAL.findall(trace.read_text(encoding="utf-8", errors="replace")))
+    )
+
+
+def replay_family(policy: str, meta: dict, trace: Path) -> str:
+    """The family a replay case is meant to exercise, from the policy text and generator tags.
+
+    Order: a declared pair family; an aggregate whose `for` list leaves out the timepoint
+    (B-dedup); `previous` or `since` over a trace where several principals act, which only the
+    key-local reading gets right (K); an aggregate body with no past operator (B-scope); then the
+    generator family.
+    """
     if meta.get("b_family"):
         return meta["b_family"]
     if any("Timepoint" not in m.group(1) for m in AGG.finditer(policy)):
         return "B-dedup"
+    if KEY_LOCAL_OPS.search(policy) and principals(trace) > 1:
+        return "K"
     if "temporal:agg_no_temporal" in meta.get("tags", []):
         return "B-scope"
     return {"events": "K", "providers": "P", "macros": "M"}.get(
@@ -118,7 +136,7 @@ def cases_for(name: str, bundle: Path, meta: dict) -> list[dict]:
                 {
                     "id": f"{name}/{trace}/replay/{fmt}",
                     "bundle": name,
-                    "family": replay_family(policy, meta),
+                    "family": replay_family(policy, meta, bundle / trace),
                     "pair": pair,
                     "args": ["replay", *base, "--trace", trace, *fl, "--format", fmt],
                     "fmt": fmt,

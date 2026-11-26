@@ -52,8 +52,13 @@ def run_case(
         shutil.copytree(bundles / case.bundle, work)
         home.mkdir()
         scratch.mkdir()
-        for path in (root, work, home, scratch):
+        for path in (root, home, scratch):
             shutil.chown(path, user=RUNNER, group=RUNNER_GROUP)
+        # The private store is root-only; the run's own copy belongs to the user it runs as.
+        for dirpath, _, filenames in os.walk(work):
+            shutil.chown(dirpath, user=RUNNER, group=RUNNER_GROUP)
+            for name in filenames:
+                shutil.chown(Path(dirpath) / name, user=RUNNER, group=RUNNER_GROUP)
         env = dict(ENV, HOME=str(home), TMPDIR=str(scratch))
         proc = subprocess.Popen(
             [str(binary), *case.args],

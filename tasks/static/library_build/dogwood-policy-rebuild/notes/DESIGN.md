@@ -21,7 +21,7 @@ Author notes, never shipped.
 
 | Path | What it is |
 | --- | --- |
-| `/usr/local/bin/dogwood` | Dogwood 1.2.0 as released. It is built at image build time from the published `dogwood-cli-1.2.0.crate`, which was published from tag commit `8ffd2106`. The build uses its published `Cargo.lock`, every dependency is vendored from crates.io and checked against that lock, `experimental-arithmetic` is on, and the target is the architecture's `*-unknown-linux-musl`, static. Mode 2711, root-owned, setgid to an empty group |
+| `/usr/local/bin/dogwood` | Dogwood 1.2.0 as released. It is built at image build time from the published `dogwood-cli-1.2.0.crate`, which was published from tag commit `8ffd2106`. The build uses its published `Cargo.lock`, every dependency is vendored from crates.io and checked against that lock, and `experimental-arithmetic` is on. It is built for the image's own glibc target, because a static musl build failed Cedar evaluations at random ("recursion limit reached"; see the Phase B report). Mode 2711, root-owned, setgid to an empty group |
 | `/app/docs/guide/`, `/app/docs/examples/` | 1.2.0's guide and its 93 example bundles, trimmed and scrubbed (section 1.2). **Not in the image yet**: the trim and scrub is the next work item |
 | Rust 1.100.0 | The pinned `rust:1.100.0-slim-bookworm` image (index digest `sha256:bb875b0f…`) |
 | `/opt/cargo-registry` with `~/.cargo/config.toml` | The vendored crates of the published lock, without the four `dogwood-*` crates. `cargo` uses it offline |
@@ -68,8 +68,9 @@ The agent runs as `dev`, with no network and no `sudo`.
 **The working machine.**
 - It is multi-stage: no upstream source, `target/` or crate cache from the release build reaches
   the final stage.
-- The build is mode 2711. It cannot be read, setgid gives `AT_SECURE`, a static binary has no
-  loader for `LD_PRELOAD`, and an unreadable executable makes a non-dumpable process.
+- The build is mode 2711. It cannot be read, and setgid gives `AT_SECURE`, so the dynamic loader
+  ignores `LD_PRELOAD` and `LD_LIBRARY_PATH`. An unreadable executable also makes a non-dumpable
+  process.
 - The registry holds no `dogwood-*` crate.
 
 **Leak scan.** No private case equals or near-copies a shipped example or a public upstream corpus
@@ -126,16 +127,48 @@ used: nothing hidden, every graded rule stated in the shipped guide.
 **Not levers:** undocumented behaviour, hidden rules, timing pressure, and exact error wording
 beyond the 5% V-msg share.
 
+**The second sentence (K).**
+> Agents pin each predicate to the request's principal but read `previous` and the left of `since`
+> over the whole trace, so a decision flips whenever another principal's event sits between two
+> of this principal's events.
+
+Where 1.2.0's guide states it, so the trim must keep it:
+- **Chapter 03, "The mirror rule" and "Universal symmetric pins: key-local semantics and the
+  partition guarantee"** (lines 95-163):
+  - "`previous` means 'this key's previous event.'";
+  - "The positive left of `since` quantifies over this key's positions";
+  - the default schema's `callerPrincipal` pin;
+  - "A pin that is not universal silently keeps global semantics".
+- **Chapter 04, line 721:** the key-local reading under universal pins.
+- **Chapter 12, lines 134-139:** non-conforming history events are "rejected, and not ingested".
+
+The mutant is M-global: upstream's relativisation pass is skipped, so predicates stay pinned but
+`previous` and `since` read the global trace.
+
 **Mutant proofs after the reweighting** (all in the 0.60-0.85 band or below the top family drop):
 
-| Mutant | Family drop | Overall if the family fails fully |
-| --- | --- | --- |
-| M-dedup (no projection or deduplication) | B-dedup | 1 − 0.17 = **0.83** |
-| M-scope (bodies without a past operator read the whole history) | B-scope | 0.95 |
-| M-naive (both) | B | 0.78 |
-| M-global (no key-local rewrite: `previous` and the left of `since` read the whole trace) | K | 1 − 0.15 × (share of K that M-global fails) |
+| Mutant | Family drop | Predicted | Measured, Phase B first case set |
+| --- | --- | --- | --- |
+| M-dedup (no projection or deduplication) | B-dedup | 1 − 0.17 = **0.83** | **0.83**: B-dedup 0 of 40 pairs, every other family 1.0 |
+| M-scope (bodies without a past operator read the whole history) | B-scope | 0.95 | **0.95**: B-scope 0 of 40 pairs, every other family 1.0 |
+| M-naive (both) | B | 0.78 | **0.78**: B-dedup and B-scope 0 of 40 pairs each |
+| M-global (no key-local rewrite: `previous` and the left of `since` read the whole trace) | K | 1 − 0.15 × (share of K it fails) | **0.85**: K 0 of 40 pairs, every other family 1.0 |
 
-The Phase B spike measured these on the first case set ([PHASE-B-REPORT.md](PHASE-B-REPORT.md)).
+Each mutant moves only its own family, so every signature is single-family.
+
+**Family tagging is checked by the mutants** (`scripts/retag.py`). `make_cases.py` tags a case by
+what its policy and trace contain. On the first case set that intent tagging over-counted: no
+unpaired case it put in B-dedup (60), B-scope (6) or K (122) changed under the matching mutant.
+Those cases still check core replay, so they move to R. The three counter-intuitive families are
+therefore made only of the dual pairs from `scripts/pairs.py` (40 per family). Before the
+retagging, M-dedup scored 0.932 and M-global 0.963, because uninformative cases diluted their
+families.
+
+**K is narrow so far.** Its 40 pairs use one shape: `previous within W` with another principal's
+event between two of this principal's events. Upstream's generator never produced a trace where
+the key-local reading changes a decision. The next case work adds the other stated K rules: the
+left of `since`, a pin that is not universal keeping global semantics, the strict mirror rule,
+and non-conforming events that are rejected and not ingested.
 
 **Sizing (estimates, to check against the first trials):**
 - **A frontier agent at the cap:** R 0.85, B 0.30, K 0.40, V 0.60, V-msg 0.30, L 0.70, M 0.60,
@@ -183,8 +216,8 @@ spike's 3+1 and 10-repeat recordings are in the Phase B report.
 **Builds:**
 - The published lock with `--locked`.
 - The pinned toolchain image.
-- C dependencies built with `musl-gcc` from Debian's `musl-tools` (cedar's `stacker` pulls in
-  `psm`).
+- The image's glibc target. The static musl build was dropped: under musl, Cedar's stack check
+  (via `stacker`) misjudges the main thread's stack and fails evaluations at random.
 
 ## 6. Expected score bands (estimates)
 

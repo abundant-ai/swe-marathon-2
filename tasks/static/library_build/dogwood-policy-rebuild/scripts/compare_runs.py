@@ -5,7 +5,8 @@ exit status and normalised output equal the release build's first run. Families 
 rates and, where cases come in pairs, pair pass rates (both members must pass). The weighted
 score uses the grader's own weights and normalisation.
 
-Usage: compare_runs.py --gold RUN.json --other RUN.json [--out FILE]
+Usage: compare_runs.py --gold RUN.json --other RUN.json [--cases CASES.jsonl] [--out FILE]
+(--cases takes each case's family and pair from the case list, after retag.py.)
 """
 
 from __future__ import annotations
@@ -27,9 +28,17 @@ def main() -> int:
     ap.add_argument("--gold", required=True, type=Path)
     ap.add_argument("--other", required=True, type=Path)
     ap.add_argument("--out", type=Path)
+    ap.add_argument("--cases", type=Path)
     a = ap.parse_args()
     gold = json.loads(a.gold.read_text())
     other = json.loads(a.other.read_text())
+    if a.cases:
+        for raw in a.cases.read_text().splitlines():
+            if raw.strip():
+                c = json.loads(raw)
+                if c["id"] in gold:
+                    gold[c["id"]]["family"] = c["family"]
+                    gold[c["id"]]["pair"] = c.get("pair")
     results: list[CaseResult] = []
     case_rates: dict[str, list[int]] = {}
     for cid, g in gold.items():

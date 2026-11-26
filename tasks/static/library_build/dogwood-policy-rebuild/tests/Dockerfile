@@ -4,29 +4,26 @@
 ARG RUST_IMAGE=rust:1.100.0-slim-bookworm@sha256:bb875b0f8ce726053e259034848c471840e96bfe591fd52556178ae9a05e6126
 
 # Dogwood 1.2.0 as released: the published dogwood-cli package (from tag commit 8ffd2106) with its
-# published Cargo.lock, every dependency vendored from crates.io and checked against that lock.
+# published Cargo.lock, every dependency vendored from crates.io and checked against that lock,
+# built for the image's own glibc target (a static musl build lets Cedar's stack check fail at
+# random, so it is not used).
 # The working machine's Dockerfile has the same stage, so both images carry the same build.
 FROM ${RUST_IMAGE} AS release
-ARG TARGETARCH
+ARG CARGO_BUILD_JOBS=4
 ADD --checksum=sha256:2390e687a9101ba29a7a949bef711c5d6ae5926dcdecd427d71d9424f3c211b0 \
     https://static.crates.io/crates/dogwood-cli/dogwood-cli-1.2.0.crate /tmp/dogwood-cli-1.2.0.crate
 RUN set -eu; \
-    case "$TARGETARCH" in \
-      amd64) T=x86_64-unknown-linux-musl ;; \
-      arm64) T=aarch64-unknown-linux-musl ;; \
-      *) echo "unsupported architecture $TARGETARCH" >&2; exit 1 ;; \
-    esac; \
-    rustup target add "$T"; \
     tar -xzf /tmp/dogwood-cli-1.2.0.crate -C /opt --no-same-owner; \
     cd /opt/dogwood-cli-1.2.0; \
-    cargo vendor --locked --versioned-dirs /opt/vendor > /opt/vendor-source.toml; \
+    cargo vendor --locked --versioned-dirs /opt/registry > /opt/vendor-source.toml; \
     mkdir -p .cargo; cp /opt/vendor-source.toml .cargo/config.toml; \
     CARGO_PROFILE_RELEASE_DEBUG=0 CARGO_INCREMENTAL=0 \
-      cargo build --release --locked --offline --features experimental-arithmetic --target "$T"; \
-    cp "target/$T/release/dogwood" /opt/dogwood-release; \
-    mkdir /opt/registry; cp -R /opt/vendor/. /opt/registry/; \
+      cargo build --release --locked --offline --features experimental-arithmetic; \
+    cp target/release/dogwood /opt/dogwood-release; \
+    rm -r target /usr/local/cargo/registry; \
     rm -r /opt/registry/dogwood-language-1.2.0 /opt/registry/dogwood-ops-1.2.0 \
-          /opt/registry/dogwood-formatter-1.2.0 /opt/registry/dogwood-syntax-1.2.0
+          /opt/registry/dogwood-formatter-1.2.0 /opt/registry/dogwood-syntax-1.2.0; \
+    chmod -R a+rX /opt/registry
 
 # Expected results: every private case run three times through the release build, the way the
 # grader runs it; a case without a single answer stops the build.
@@ -51,8 +48,7 @@ COPY private/cases.jsonl /tests/private/cases.jsonl
 COPY private/bundles/ /tests/private/bundles/
 COPY --from=record /record/gold.jsonl /tests/private/gold.jsonl
 RUN mkdir -p /app /logs/verifier \
-    && chown -R root:root /tests /opt/verifier \
+    && chown -R root:root /tests \
     && chmod -R go-rwx /tests \
-    && chmod -R a+rX /opt/verifier \
     && chmod 0700 /tests/test.sh
 WORKDIR /
