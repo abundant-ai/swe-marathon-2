@@ -185,7 +185,7 @@ def test_verifier_scores_the_reference_one_and_defects_lower(tmp_path):
 # the office routines (scripts/record_live.py ROUTINES), in recording order
 ROUTINE_THEMES = ("users", "workspace", "price-lists", "promotions", "suppliers", "saved-reports", "journal-reversals", "carriers",
                   "standing-orders")
-# documented calls whose answers need not match, as the instruction says: password sign-in, sessions and API keys, the
+# documented calls whose answers may differ, as the instruction says: password sign-in, sessions and API keys, the
 # calls that set or change a user's password, and the request log (`/metrics` is not in the API description; the
 # graded POST /files/{id}/unlock opens a password-protected PDF and is not one of them)
 EXCEPTED = {("POST", "/api/ws/{ws}/auth/login"), ("POST", "/api/ws/{ws}/auth/logout"), ("POST", "/api/ws/{ws}/auth/password"),
@@ -268,7 +268,7 @@ def test_every_documented_call_outside_the_exceptions_is_answered_in_the_corpus(
     assert not [f"{method} {path}" for method, path in EXCEPTED if f"{method} {path}" in statuses]
     instruction = " ".join((STEP / "instruction.md").read_text().split())
     assert ("password sign-in, sessions and API keys, which we do not use, and the request log and `/metrics`, which are for operators. Those "
-            "need not match, and neither do the calls that set or change a user's password, which we do not use either.") in instruction
+            "may differ, and so may the answers to the calls that set or change a user's password, which we do not use either.") in instruction
 
 
 def test_routines_recorded_onto_a_corpus_are_what_a_full_recording_gives(tmp_path):
@@ -494,9 +494,17 @@ def test_bundles_hold_runtime_files_only(tmp_path):
             housekeeping = re.compile(r"oracle|verif|grad|hidden|parity|scenario|benchmark|harbor|oddish|reward|platform|watchdog|precap|deliver|"
                                       r"submission|collect|audit|\bqa\b|budget|deadline|attempt|\bcap\b|capped|owner|\bround\b|2026-|modal|archil|"
                                       r"trial|harness|\bscor", re.I)
-            for name in ("Dockerfile", "entrypoint.sh", "fsmaint-sweep", "start-sealed-server", "sealed-supervisor", "stockwell.env", ".dockerignore"):
+            for name in ("Dockerfile", "entrypoint.sh", "fsmaint-sweep", "start-stockwell", "stockwell-supervisor", "stockwell.env", ".dockerignore"):
                 found = housekeeping.search((bundle / "environment" / name).read_text())
                 assert found is None, f"{name}: {found.group(0)!r}"
+            # version 13's verdict: nothing that reaches the agent's image calls the old server sealed, in a name or in a
+            # file's text; the one name that holds the word is the build's own folder of bytecode, which the image
+            # receives as /opt/stockwell/app
+            assert [path.relative_to(bundle / "environment").as_posix() for path in (bundle / "environment").rglob("*")
+                    if "sealed" in path.name.lower()] == ["sealed"]
+            for path in (bundle / "environment").rglob("*"):
+                if path.is_file() and path.name != "Dockerfile" and "sealed" not in path.parts and path.suffix not in (".png", ".jpg", ".mp4", ".pdf", ".gif"):
+                    assert "sealed" not in path.read_bytes().decode(errors="replace").lower(), path
             assert not re.search(r"watchdog|precap|deliver|submission|grad|audit|\bcap\b|budget|deadline|attempt|timer|#", config), "task.toml"
         # Round 15: the upload is the flat bundle under the task's own name (`--flat --keep-name`), the next version of the
         # same task. It holds the steps bundle's files without the step's prefix, with the same bytes and modes in all but
@@ -565,7 +573,8 @@ def test_the_solution_ships_the_pinned_source_and_the_repository_never_holds_it(
                             or (path.endswith(".py") and "/stockwell/" in path)]
     for made in ("steps/01-rebuild-server/solution/data/stockwell/app.py", "environment/sealed/stockwell/app.pyc"):
         assert subprocess.run(["git", "-C", str(TASK), "check-ignore", "-q", made], timeout=60).returncode == 0, made
-    assert subprocess.run(["git", "-C", str(TASK), "check-ignore", "-q", "environment/sealed-supervisor"], timeout=60).returncode == 1
+    for script in ("environment/start-stockwell", "environment/stockwell-supervisor"):
+        assert subprocess.run(["git", "-C", str(TASK), "check-ignore", "-q", script], timeout=60).returncode == 1, script
 
 
 def test_only_the_builds_have_network():
@@ -586,17 +595,18 @@ def test_the_sealed_server_is_started_as_its_own_user_from_bytecode():
     """QA 08: the image receives bytecode only (no source in any layer, the build fails on a .py), and every start
     first checks as dev that /opt/stockwell cannot be read or entered; if it can, the setup hook fails and the trial stops.
     QA 20: a root supervisor keeps the sealed server running for the whole session, restarting it when it exits or stops
-    answering its health check."""
-    script = (TASK / "environment" / "start-sealed-server").read_text()
-    supervisor = (TASK / "environment" / "sealed-supervisor").read_text()
+    answering its health check. (Since round 18 the two scripts are start-stockwell and stockwell-supervisor.)"""
+    script = (TASK / "environment" / "start-stockwell").read_text()
+    supervisor = (TASK / "environment" / "stockwell-supervisor").read_text()
     docker = (TASK / "environment" / "Dockerfile").read_text()
     check = script.index("setpriv --reuid dev")
     assert check < script.index("curl") and "test -r /opt/stockwell" in script and "exit 1" in script[check:script.index("curl")]
-    assert "setsid /usr/local/sbin/sealed-supervisor" in script and "setpriv --reuid stockwell" not in script
+    assert "setsid /usr/local/sbin/stockwell-supervisor" in script and "setpriv --reuid stockwell" not in script
     assert "flock -n 9" in supervisor and "while :; do" in supervisor and "setpriv --reuid stockwell" in supervisor
     assert "pkill -KILL -u stockwell" in supervisor and "/usr/local/lib/stockwell/stockwell.env" in supervisor
     assert "compileall" not in docker and "test -z \"$(find /opt/stockwell/app -name '*.py'" in docker and "chmod -R go-rwx /opt/stockwell" in docker
-    assert "COPY sealed-supervisor /usr/local/sbin/sealed-supervisor" in docker and "/usr/local/sbin/sealed-supervisor" in docker.split("chmod 0700")[-1]
+    assert "COPY stockwell-supervisor /usr/local/sbin/stockwell-supervisor" in docker
+    assert "/usr/local/sbin/stockwell-supervisor" in docker.split("chmod 0700")[-1]
 
 
 def test_the_instruction_says_where_the_sealed_server_is_and_whose_it_is():
@@ -605,22 +615,57 @@ def test_the_instruction_says_where_the_sealed_server_is_and_whose_it_is():
     showed the platform's own launcher, whose shell variables carry the platform's name. The task cannot change that
     line; it can answer the question that sent the solver there. The instruction now says where the sealed server's
     files are, that the solver's account cannot read them, the account it runs under and that a service manager starts
-    it again, and each of these is what the image does."""
+    it again, and each of these is what the image does. Round 18 (the verdict on version 13) words it in the requester's
+    terms: the old server, and the licence as the reason its files are closed to staff accounts."""
     text = " ".join((STEP / "instruction.md").read_text().split())
-    assert ("The sealed server is running at `http://127.0.0.1:8080`. It answers a JSON API under `/api` and describes its endpoints and their "
-            "request bodies at `/api/openapi.json`. Its files are in `/opt/stockwell`, which your account cannot read; it runs under its own "
-            "account, `stockwell`, and a service manager starts it again if it stops. So all we can do is use it.") in text
+    assert ("The old server is running at `http://127.0.0.1:8080`. It answers a JSON API under `/api` and describes its endpoints and their "
+            "request bodies at `/api/openapi.json`. To keep to the licence, it runs under its own account, `stockwell`, and its files, in "
+            "`/opt/stockwell`, cannot be read by staff accounts such as yours; a service manager starts it again if it stops. Use it and "
+            "study its answers as much as you need.") in text
     docker = (TASK / "environment" / "Dockerfile").read_text()
     assert "useradd --uid 10002 --system --no-create-home stockwell" in docker and "COPY sealed/ /opt/stockwell/app/" in docker
     assert "chown -R stockwell:stockwell /opt/stockwell && chmod -R go-rwx /opt/stockwell" in docker
-    assert "test -r /opt/stockwell" in (TASK / "environment" / "start-sealed-server").read_text()
-    supervisor = (TASK / "environment" / "sealed-supervisor").read_text()
+    assert "test -r /opt/stockwell" in (TASK / "environment" / "start-stockwell").read_text()
+    supervisor = (TASK / "environment" / "stockwell-supervisor").read_text()
     assert "while :; do" in supervisor and "setpriv --reuid stockwell" in supervisor and "--host 127.0.0.1 --port 8080" in supervisor
     # nothing is hidden to get there: the image keeps procps (ps), and nothing remounts /proc or removes a package
     assert re.search(r"apt-get install -y --no-install-recommends \\\n[^\n]* procps ", docker)
-    for name in ("Dockerfile", "entrypoint.sh", "start-sealed-server", "sealed-supervisor"):
+    for name in ("Dockerfile", "entrypoint.sh", "start-stockwell", "stockwell-supervisor"):
         script = (TASK / "environment" / name).read_text()
         assert not re.search(r"hidepid|\bmount\b[^\n]*\bproc\b|apt-get (remove|purge)|dpkg (-r|--remove|-P|--purge)", script), name
+
+
+def test_nothing_the_agent_sees_calls_the_old_server_sealed():
+    """The verdict on version 13 (must-fix, evaluation awareness, in all three trials): the framing read as a grader's,
+    with a "sealed" server and a vendor's folder closed for no reason the story gives. Round 18 calls it the old server
+    and gives the licence as the reason. Nothing the agent can list, read or see running says "sealed": the
+    instruction, the names the image installs, the scripts' text (their messages, and the supervisor's command line
+    that `ps` shows), the set-up and collect commands. The scripts' new names agree wherever they are named."""
+    instruction = (STEP / "instruction.md").read_text()
+    assert "sealed" not in instruction.lower()
+    docker = (TASK / "environment" / "Dockerfile").read_text()
+    values = tomllib.loads((TASK / "task.toml").read_text())
+    commands = [hook["command"] for key in ("setup_begin", "setup_complete") for hook in values["agent"][key]]
+    commands += [hook["command"] for hook in values["verifier"]["collect"]]
+    assert sorted(set(commands)) == ["/usr/local/sbin/fsmaint-sweep", "/usr/local/sbin/start-stockwell"], commands
+    # every destination the image installs is free of the word; the one source that holds it is the build's folder of
+    # bytecode, which the image receives as /opt/stockwell/app
+    copies = re.findall(r"^COPY (\S+) (\S+)$", docker, flags=re.M)
+    assert [source for source, _ in copies if "sealed" in source] == ["sealed/"]
+    assert not [target for _, target in copies if "sealed" in target.lower()]
+    for name in ("start-stockwell", "stockwell-supervisor", "fsmaint-sweep", "entrypoint.sh"):
+        assert (name, f"/usr/local/sbin/{name}") in copies, name
+        assert os.access(TASK / "environment" / name, os.X_OK) and name.endswith(package_step.EXECUTABLE), name
+        assert f"/usr/local/sbin/{name}" in docker.split("chmod 0700")[-1], name
+        assert "sealed" not in (TASK / "environment" / name).read_text().lower(), name
+    assert "/usr/local/sbin/start-stockwell || true" in (TASK / "environment" / "entrypoint.sh").read_text()
+    assert "setsid /usr/local/sbin/stockwell-supervisor " in (TASK / "environment" / "start-stockwell").read_text()
+    assert "sealed" not in (TASK / "environment" / "stockwell.env").read_text().lower()
+    assert not [path.name for path in (TASK / "environment").iterdir() if "sealed" in path.name and path.name != "sealed"]
+    # the story in the requester's words: the licence closes the files, and the work ends with the switch-over
+    text = " ".join(instruction.split())
+    assert "our licence lets us run the server and use it as much as we like, but not read, copy or change its code." in text
+    assert "When your server does all of the above, we point our proxy at it and switch the old server off." in text
 
 
 def test_one_configuration_for_the_sealed_server_the_recordings_and_the_solution():
@@ -632,7 +677,7 @@ def test_one_configuration_for_the_sealed_server_the_recordings_and_the_solution
     assert "CLIENT_DIR" not in settings and "STOCKWELL_AUTH_MODE=proxy" in settings and "{data}" in settings
     docker = (TASK / "environment" / "Dockerfile").read_text()
     assert "COPY stockwell.env /usr/local/lib/stockwell/stockwell.env" in docker and "/opt/stockwell/client" not in docker
-    for path in (TASK / "environment" / "start-sealed-server", TASK / "environment" / "sealed-supervisor", STEP / "solution" / "oracle.py",
+    for path in (TASK / "environment" / "start-stockwell", TASK / "environment" / "stockwell-supervisor", STEP / "solution" / "oracle.py",
                  TASK / "scripts" / "record_live.py"):
         text = path.read_text()
         assert "CLIENT_DIR" not in text and not re.search(r"STOCKWELL_(AUTH_MODE|DATABASE_URL|METRICS|REQUEST_LOG)=", text), path
@@ -710,31 +755,45 @@ def test_instruction_and_config_hold_no_session_or_grading_text():
     requirement in the requester's terms, and the stack is left to `python3 -m pip list`. task.toml holds no comment,
     the agent's time limit is the platform's own 34,560 s at both places, and nothing is armed at set-up but the sealed
     server (no task-side timer since round 15). Nothing the agent can see names how its work is judged, ended or
-    packed: the set-up and collect commands, the image's installed paths and the set-up's state files."""
+    packed: the set-up and collect commands, the image's installed paths and the set-up's state files.
+
+    Round 18: the verdict on version 13 found all three solvers calling their session a benchmark, two of them
+    paraphrasing the instruction's comparison wording ("every API request ... as the sealed one does"). The instruction
+    now says what the integrations depend on, gives the licence as the reason the old server's files are closed, ends
+    with the switch-over, and says "sealed" nowhere; neither does anything the agent can see (the installed names, the
+    set-up command, the scripts' messages and the supervisor's process line)."""
     text = " ".join((STEP / "instruction.md").read_text().split())
     instruction = text.lower()
     config = (TASK / "task.toml").read_text()
-    # "compare" too (QA 08 S3): integrations rely on answers; comparing them is what an answer key does
+    # "compare" too (QA 08 S3): integrations rely on answers; comparing them is what an answer key does. Round 18 adds
+    # re-check 10's vocabulary and the words of version 13's finding. Kept, in-story: "records" (the business's),
+    # "sessions" (of the server's passwords, which are not used) and "checksum" (how the archive files documents).
     for word in ("oracle", "reference", "hidden", "grading", "working session", "fresh context", "scenario", "hours", "told apart", "tell apart",
-                 "indistinguishable", "graded", "evaluat", "test corpus", "benchmark", "score", "trial", "harness", "vendor's server ran", "compar"):
+                 "indistinguishable", "graded", "evaluat", "test corpus", "benchmark", "score", "trial", "harness", "vendor's server ran", "compar",
+                 "sealed", "exactly", "every api request", "every request", "try things out", "ground truth", "original", "expect", "fraction",
+                 "match", "replay", "verif", "test", r"check(?!sum)", "grad", "rubric", "held-out", "fixture", "reward", "criteria", "budget",
+                 "platform", "harbor", "assess", "judge", r"exam\b", "measure", "unattended", "time limit", "deadline"):
         assert not re.search(r"\b" + word, instruction), word  # at the start of a word: "underscores" holds no score
-    assert "which rely on every value they receive, and its type, staying exactly as it is today." in text
+    assert "which rely on every value they receive, and its type, staying as it is today." in text
+    assert ("The tills, the bank feed, the export and the web client depend on the answers the old server gives. For any API request it "
+            "accepts or refuses, your server gives the same status code and the same JSON body,") in text
     assert "because the integrations depend on every detail of an answer:" in text
     for package in ("fastapi", "starlette", "pydantic", "sqlalchemy", "uvicorn", "httpx"):
         assert package not in instruction, package
-    assert "The work is complete when your server answers every API request exactly as the sealed one does, apart from the exceptions above." in text
+    assert ("## Switching over When your server does all of the above, we point our proxy at it and switch the old server off. Keep "
+            "`/app/server/run` working at all times.") in text
     assert "`python3` is Python 3.12 with the packages listed by `python3 -m pip list`. Node.js and Go are installed with their standard libraries." in text
     assert "#" not in config and "timer" not in config, "task.toml holds no comment and no timer"
     values = tomllib.loads(config)
     assert [values["agent"]["timeout_sec"]] + [step["agent"]["timeout_sec"] for step in values["steps"]] == [34560, 34560]
-    assert values["agent"]["setup_begin"] == values["agent"]["setup_complete"] == [{"command": "/usr/local/sbin/start-sealed-server", "timeout_sec": 120}]
-    docker, setup = (TASK / "environment" / "Dockerfile").read_text(), (TASK / "environment" / "start-sealed-server").read_text()
+    assert values["agent"]["setup_begin"] == values["agent"]["setup_complete"] == [{"command": "/usr/local/sbin/start-stockwell", "timeout_sec": 120}]
+    docker, setup = (TASK / "environment" / "Dockerfile").read_text(), (TASK / "environment" / "start-stockwell").read_text()
     assert not (TASK / "environment" / "fsmaint-timer").exists() and "timer" not in docker and "timer" not in setup
     assert "fsmaint-timer" not in (TASK / "scripts" / "package_step.py").read_text()
     visible = " ".join([values["verifier"]["collect"][0]["command"], values["agent"]["setup_complete"][0]["command"]]
                        + re.findall(r"^COPY \S+ (\S+)", docker, flags=re.M) + re.findall(r"/var/lib/\S+", setup))
-    assert not re.search(r"deliver|watchdog|precap|grad|submission|collect|verif|\bcap\b|deadline|judge|session|timer", visible, flags=re.I), visible
-    for name in ("Dockerfile", "start-sealed-server"):
+    assert not re.search(r"deliver|watchdog|precap|grad|submission|collect|verif|\bcap\b|deadline|judge|session|timer|sealed", visible, flags=re.I), visible
+    for name in ("Dockerfile", "start-stockwell"):
         lines = (TASK / "environment" / name).read_text().splitlines()
         assert not any(line.startswith("#") for line in lines[1 if name != "Dockerfile" else 0:]), name
 
@@ -753,7 +812,7 @@ def test_the_agent_image_keeps_no_file_that_states_the_sealed_servers_stack():
     install = next(block for block in docker.split("\nRUN ")[1:] if "-r /opt/py/requirements.txt" in block)
     assert install.index("-r /opt/py/requirements.txt") < install.index("&& rm /opt/py/requirements.txt \\"), install
     assert docker.count("requirements.txt") == 4, "copied once (two names on the line), installed from and removed: nowhere else"
-    for name in ("Dockerfile", "entrypoint.sh", "fsmaint-sweep", "start-sealed-server", "sealed-supervisor", "stockwell.env"):
+    for name in ("Dockerfile", "entrypoint.sh", "fsmaint-sweep", "start-stockwell", "stockwell-supervisor", "stockwell.env"):
         assert not STACK.search((TASK / "environment" / name).read_text()), name
 
 
@@ -2055,7 +2114,7 @@ def test_a_delivery_the_agent_can_make_uncopyable_is_bounded_before_the_copy_and
     assert hook.index('mv -f /app/server/.fsmaint-manifest "$aside/"') < hook.index("timeout 120 setpriv --reuid dev --regid dev --clear-groups --no-new-privs")
     for setting in ("LIMIT_ENTRIES=100000", "LIMIT_BYTES=1000000000", "LIMIT_PATH=1000", "PACK_SECONDS=100", "STATE=/var/lib/fsmaint"):
         assert setting in hook, setting
-    setup = (TASK / "environment" / "start-sealed-server").read_text()
+    setup = (TASK / "environment" / "start-stockwell").read_text()
     assert "fallocate -l 64M /var/lib/fsmaint/room" in setup and '/var/lib/fsmaint/inodes/$spare' in setup and "seq 1 64" in setup
     assert "stat -f -c '%a %S %d' /tmp > /var/lib/fsmaint/free-at-start" in setup
     instruction = " ".join((STEP / "instruction.md").read_text().split())
@@ -2658,7 +2717,7 @@ def test_the_users_processes_are_capped_in_the_session_harbor_starts(tmp_path):
     # the shell it names as this user (the image's /bin/sh is dash, whose ulimit has no -u: v11b's re-check found the
     # first form, `-s /bin/sh`, wrote nothing), then the whole sweep: the limit's line must reach sweep_log as its first
     # line, the one line the baselines' criterion under the README's Remaining work expects.
-    setup = (TASK / "environment" / "start-sealed-server").read_text()
+    setup = (TASK / "environment" / "start-stockwell").read_text()
     line = next(text for text in setup.splitlines() if "/var/lib/fsmaint/user-limit" in text)
     assert line.startswith("timeout 10 su dev -s /bin/bash -c 'ulimit -Hu' > /var/lib/fsmaint/user-limit"), line
     tools = tmp_path / "setup-bin"

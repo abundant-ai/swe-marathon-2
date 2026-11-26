@@ -1,3 +1,3 @@
 #!/bin/sh
-/usr/local/sbin/start-sealed-server || true
+/usr/local/sbin/start-stockwell || true
 exec "$@"
