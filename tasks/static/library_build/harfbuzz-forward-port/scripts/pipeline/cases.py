@@ -389,7 +389,7 @@ def gen_broad(rng: random.Random, fonts: list[Font], n: int) -> Iterator[dict]:
         letters = sorted(
             cp
             for cp in f.cmap
-            if 0x20 < cp < 0x3000 and unicodedata.category(chr(cp))[0] in "LMNP"
+            if cp > 0x20 and unicodedata.category(chr(cp))[0] in "LMNP"
         )
         for _ in range(n):
             text = [rng.choice(letters) for _ in range(rng.randrange(1, 9))]
