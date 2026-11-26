@@ -1,0 +1,57 @@
+schema_version = "1.4"
+artifacts = ["/app/work/submission.py", "/app/work/test_receipt.json"]
+[task]
+name = "abundant/swe-m2_ai-research_telephone-contact-reconstruction-correct"
+description = "Reconstruct the telephone desk and four named contact surfaces from calibrated RGB video."
+authors = [{name = "Qingyuan Wu", email = "qingyuanwu4work@gmail.com"}]
+[metadata]
+reward_type = "continuous"
+open_internet_justification = "Container builds install the Python numerical stack. The task and its verifier run offline."
+[agent]
+timeout_sec = 2700
+network_mode = "no-network"
+user = "dev"
+[environment]
+network_mode = "public"
+build_timeout_sec = 1200
+cpus = 2
+memory_mb = 4096
+storage_mb = 8192
+gpus = 0
+workdir = "/app/work"
+[verifier]
+environment_mode = "separate"
+network_mode = "no-network"
+timeout_sec = 900
+user = "root"
+[verifier.environment]
+network_mode = "public"
+build_timeout_sec = 1200
+cpus = 2
+memory_mb = 4096
+storage_mb = 8192
+gpus = 0
+
+[metadata.task_rating]
+schema_version = 1
+status = "rated"
+scale_max = 5
+stage = "implementation"
+rated_at = "2026-11-26T23:07:40Z"
+source_ref = "sha256:5f7e42bac4abd6c7af1758dd4b4ec263a7fd6091341e0b80abe88dc5a435f241"
+harbor_report = "https://www.oddish.app/tasks/swe-m2_ai-research_telephone-clean-publication-review-59ad214e?trial=swe-m2_ai-research_telephone-clean-publication-review-59ad214e-0&file=artifacts%2Fapp%2Fcheck-result.json"
+rubric_sha256 = "5fcba0cf139695f1ed5390085b37ed71d64023ea2ae6c44d340dea7e7e31db70"
+
+[metadata.task_rating.scores]
+novelty = 3
+verifiability = 3
+realism = 4
+difficulty = 4
+initial_feasibility = 4
+
+[metadata.task_rating.confidence]
+novelty = "medium"
+verifiability = "high"
+realism = "high"
+difficulty = "high"
+initial_feasibility = "medium"

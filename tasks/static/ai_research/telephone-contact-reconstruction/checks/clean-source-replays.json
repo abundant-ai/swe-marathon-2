@@ -1,0 +1,247 @@
+{
+  "original_model_experiment": "https://www.oddish.app/experiments/6dc2a858",
+  "final_runtime_inventory_sha256": "39baf37435380bba2cb4dc8fadf37cad273cc4312e716b1a4b442166241ed71d",
+  "tested_in": "Separate local offline namespaces for the clean development check and deployment bootstrap with the original public inputs for each condition. Hosted model scores come from the 49-file model runtime.",
+  "source_replays": [
+    {
+      "trial_id": "swe-m2_ai-research_telephone-contact-reconstruction-correct-10b5125a-2",
+      "condition": "correct",
+      "model": "openai/gpt-6.2-sol",
+      "source_sha256": "0a7889bb44c1a3d8ff2b87be5b80bc979af0bd5413d88d9db697212525580d9d",
+      "clean_development_check": true,
+      "clean_deployment_rebuild": true,
+      "max_abs_array_difference_from_hosted": {
+        "vertices": 0.0,
+        "faces": 0.0,
+        "colors": 0.0,
+        "face_ids": 0.0,
+        "part_ids": 0.0
+      },
+      "intermediate_worker_reward": 0.0
+    },
+    {
+      "trial_id": "swe-m2_ai-research_telephone-contact-reconstruction-correct-10b5125a-5",
+      "condition": "correct",
+      "model": "openai/gpt-6.2-sol",
+      "source_sha256": "450cf840b07c7094c32c02e82b69e15edc3c7f42e35d1e71248e1a9051a1c7a7",
+      "clean_development_check": true,
+      "clean_deployment_rebuild": true,
+      "max_abs_array_difference_from_hosted": {
+        "vertices": 4.440892098500626e-16,
+        "faces": 0.0,
+        "colors": 0.0,
+        "face_ids": 0.0,
+        "part_ids": 0.0
+      },
+      "intermediate_worker_reward": 0.011784469847977307
+    },
+    {
+      "trial_id": "swe-m2_ai-research_telephone-contact-reconstruction-correct-10b5125a-6",
+      "condition": "correct",
+      "model": "openai/gpt-6.2-sol",
+      "source_sha256": "b409a972712a504b21425817ad13b66aff1c9d58a9612ade2ee338bf9c1c347d",
+      "clean_development_check": true,
+      "clean_deployment_rebuild": true,
+      "max_abs_array_difference_from_hosted": {
+        "vertices": 0.0,
+        "faces": 0.0,
+        "colors": 0.0,
+        "face_ids": 0.0,
+        "part_ids": 0.0
+      },
+      "intermediate_worker_reward": 0.00625
+    },
+    {
+      "trial_id": "swe-m2_ai-research_telephone-contact-reconstruction-swapped-908d14d9-2",
+      "condition": "swapped",
+      "model": "openai/gpt-6.2-sol",
+      "source_sha256": "b0d22b04f80b4a0438358a0b5381d2999015322679ab82386673c25f63e63c74",
+      "clean_development_check": true,
+      "clean_deployment_rebuild": true,
+      "max_abs_array_difference_from_hosted": {
+        "vertices": 0.0,
+        "faces": 0.0,
+        "colors": 0.0,
+        "face_ids": 0.0,
+        "part_ids": 0.0
+      },
+      "intermediate_worker_reward": 0.0
+    },
+    {
+      "trial_id": "swe-m2_ai-research_telephone-contact-reconstruction-swapped-908d14d9-3",
+      "condition": "swapped",
+      "model": "openai/gpt-6.2-sol",
+      "source_sha256": "a3ffdd08bf5aa09f55572674096566944a9dd33367283dc9634f151d5aabfeaf",
+      "clean_development_check": true,
+      "clean_deployment_rebuild": true,
+      "max_abs_array_difference_from_hosted": {
+        "vertices": 0.0,
+        "faces": 0.0,
+        "colors": 0.0,
+        "face_ids": 0.0,
+        "part_ids": 0.0
+      },
+      "intermediate_worker_reward": 0.0
+    },
+    {
+      "trial_id": "swe-m2_ai-research_telephone-contact-reconstruction-swapped-908d14d9-4",
+      "condition": "swapped",
+      "model": "openai/gpt-6.2-sol",
+      "source_sha256": "4cbdfe1e8d8a0abd83fdee4d748b0a234eff93841d7694e6d56c37b1ed41f1b2",
+      "clean_development_check": true,
+      "clean_deployment_rebuild": true,
+      "max_abs_array_difference_from_hosted": {
+        "vertices": 0.0,
+        "faces": 0.0,
+        "colors": 0.0,
+        "face_ids": 0.0,
+        "part_ids": 0.0
+      },
+      "intermediate_worker_reward": 0.0
+    },
+    {
+      "trial_id": "swe-m2_ai-research_telephone-contact-reconstruction-none-75282dc0-2",
+      "condition": "none",
+      "model": "openai/gpt-6.2-sol",
+      "source_sha256": "b4ae7dc952d8662de5092bf6a15d6eae938534a7ad831c5bf21028acc1c085a6",
+      "clean_development_check": true,
+      "clean_deployment_rebuild": true,
+      "max_abs_array_difference_from_hosted": {
+        "vertices": 0.0,
+        "faces": 0.0,
+        "colors": 0.0,
+        "face_ids": 0.0,
+        "part_ids": 0.0
+      },
+      "intermediate_worker_reward": 0.0
+    },
+    {
+      "trial_id": "swe-m2_ai-research_telephone-contact-reconstruction-none-75282dc0-3",
+      "condition": "none",
+      "model": "openai/gpt-6.2-sol",
+      "source_sha256": "ef7707b1172d909140a57cc1a19c3d513891bc475dc7c774fa86a69617117433",
+      "clean_development_check": true,
+      "clean_deployment_rebuild": true,
+      "max_abs_array_difference_from_hosted": {
+        "vertices": 4.440892098500626e-16,
+        "faces": 0.0,
+        "colors": 0.0,
+        "face_ids": 0.0,
+        "part_ids": 0.0
+      },
+      "intermediate_worker_reward": 0.0
+    },
+    {
+      "trial_id": "swe-m2_ai-research_telephone-contact-reconstruction-none-75282dc0-4",
+      "condition": "none",
+      "model": "openai/gpt-6.2-sol",
+      "source_sha256": "aa71fee208b5a9d4fbc2597378e3317f05fffe8b041341c537ec78d1539102e3",
+      "clean_development_check": true,
+      "clean_deployment_rebuild": true,
+      "max_abs_array_difference_from_hosted": {
+        "vertices": 0.0,
+        "faces": 0.0,
+        "colors": 0.0,
+        "face_ids": 0.0,
+        "part_ids": 0.0
+      },
+      "intermediate_worker_reward": 0.0
+    },
+    {
+      "trial_id": "swe-m2_ai-research_telephone-contact-reconstruction-correct-10b5125a-7",
+      "condition": "correct",
+      "model": "relace/deepseek-v4.1-flash",
+      "source_sha256": "984a43963d6af518ce1b0814458c500ce9cc5103aa99c98d73dbfa3e5ad5960f",
+      "clean_development_check": true,
+      "clean_deployment_rebuild": true,
+      "max_abs_array_difference_from_hosted": {
+        "vertices": 6.938893903907228e-18,
+        "faces": 0.0,
+        "colors": 0.0,
+        "face_ids": 0.0,
+        "part_ids": 0.0
+      },
+      "intermediate_worker_reward": 0.0
+    },
+    {
+      "trial_id": "swe-m2_ai-research_telephone-contact-reconstruction-correct-10b5125a-8",
+      "condition": "correct",
+      "model": "relace/deepseek-v4.1-flash",
+      "source_sha256": "07ae43edf1a763fc821460ee91a3a422ae973d4e81fbea6656352bf63820e78d",
+      "clean_development_check": true,
+      "clean_deployment_rebuild": true,
+      "max_abs_array_difference_from_hosted": {
+        "vertices": 0.0,
+        "faces": 0.0,
+        "colors": 0.0,
+        "face_ids": 0.0,
+        "part_ids": 0.0
+      },
+      "intermediate_worker_reward": 0.0
+    },
+    {
+      "trial_id": "swe-m2_ai-research_telephone-contact-reconstruction-correct-10b5125a-9",
+      "condition": "correct",
+      "model": "relace/deepseek-v4.1-flash",
+      "source_sha256": "9126bd8b815754b326be00dcdffc964561520dfc304301df81911cdea80b2b56",
+      "clean_development_check": true,
+      "clean_deployment_rebuild": true,
+      "max_abs_array_difference_from_hosted": {
+        "vertices": 8.881784197001252e-16,
+        "faces": 0.0,
+        "colors": 0.0,
+        "face_ids": 0.0,
+        "part_ids": 0.0
+      },
+      "intermediate_worker_reward": 0.0
+    },
+    {
+      "trial_id": "swe-m2_ai-research_telephone-contact-reconstruction-correct-10b5125a-10",
+      "condition": "correct",
+      "model": "relace/glm-5.3",
+      "source_sha256": "abbc96bc517c586d7c2332de6465021ee76fcf18958405b7089b448ce3931d1e",
+      "clean_development_check": true,
+      "clean_deployment_rebuild": true,
+      "max_abs_array_difference_from_hosted": {
+        "vertices": 0.0,
+        "faces": 0.0,
+        "colors": 0.0,
+        "face_ids": 0.0,
+        "part_ids": 0.0
+      },
+      "intermediate_worker_reward": 0.0
+    },
+    {
+      "trial_id": "swe-m2_ai-research_telephone-contact-reconstruction-correct-10b5125a-11",
+      "condition": "correct",
+      "model": "relace/glm-5.3",
+      "source_sha256": "4e7b84958f769de4df22cf9b38cfc70f77b640df947ea761984f0498915edd3a",
+      "clean_development_check": true,
+      "clean_deployment_rebuild": true,
+      "max_abs_array_difference_from_hosted": {
+        "vertices": 2.220446049250313e-16,
+        "faces": 0.0,
+        "colors": 2.5011104298755527e-12,
+        "face_ids": 0.0,
+        "part_ids": 0.0
+      },
+      "intermediate_worker_reward": 0.0
+    },
+    {
+      "trial_id": "swe-m2_ai-research_telephone-contact-reconstruction-correct-10b5125a-12",
+      "condition": "correct",
+      "model": "relace/glm-5.3",
+      "source_sha256": "fa38d5bd34db43f05ef3ed8fac673f935e8db49d1f5846ab08b81eb20039a5a3",
+      "clean_development_check": true,
+      "clean_deployment_rebuild": true,
+      "max_abs_array_difference_from_hosted": {
+        "vertices": 0.0,
+        "faces": 0.0,
+        "colors": 0.0,
+        "face_ids": 0.0,
+        "part_ids": 0.0
+      },
+      "intermediate_worker_reward": 0.0
+    }
+  ]
+}

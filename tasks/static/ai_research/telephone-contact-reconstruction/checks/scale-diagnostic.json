@@ -1,0 +1,752 @@
+{
+  "swe-m2_ai-research_telephone-contact-reconstruction-correct-10b5125a-2": [
+    {
+      "transform": "identity",
+      "value": 0.0,
+      "reward": 0.0,
+      "object_depth_f1": 0.0,
+      "part_success": 0.0,
+      "whole_rgbd": 0.05335322355726184
+    },
+    {
+      "transform": "depth_translation_m",
+      "value": -0.12,
+      "reward": 0.0,
+      "object_depth_f1": 0.0,
+      "part_success": 0.03125,
+      "whole_rgbd": 0.0072595705147155114
+    },
+    {
+      "transform": "depth_translation_m",
+      "value": -0.1,
+      "reward": 0.0,
+      "object_depth_f1": 0.0,
+      "part_success": 0.08124999999999999,
+      "whole_rgbd": 0.008609228971440454
+    },
+    {
+      "transform": "depth_translation_m",
+      "value": -0.08,
+      "reward": 0.0,
+      "object_depth_f1": 0.0,
+      "part_success": 0.125,
+      "whole_rgbd": 0.010317782143485893
+    },
+    {
+      "transform": "depth_translation_m",
+      "value": -0.06,
+      "reward": 0.0,
+      "object_depth_f1": 0.0,
+      "part_success": 0.125,
+      "whole_rgbd": 0.021759878825811846
+    },
+    {
+      "transform": "depth_translation_m",
+      "value": -0.04,
+      "reward": 0.0,
+      "object_depth_f1": 0.0,
+      "part_success": 0.08125,
+      "whole_rgbd": 0.0383510164999
+    },
+    {
+      "transform": "depth_translation_m",
+      "value": -0.02,
+      "reward": 0.0,
+      "object_depth_f1": 0.0,
+      "part_success": 0.025,
+      "whole_rgbd": 0.049607135218388665
+    },
+    {
+      "transform": "depth_translation_m",
+      "value": 0.02,
+      "reward": 0.0,
+      "object_depth_f1": 0.003165418644220845,
+      "part_success": 0.0,
+      "whole_rgbd": 0.061020957820512846
+    },
+    {
+      "transform": "depth_translation_m",
+      "value": 0.04,
+      "reward": 0.0,
+      "object_depth_f1": 0.11323834403340072,
+      "part_success": 0.0,
+      "whole_rgbd": 0.06334028418304292
+    },
+    {
+      "transform": "depth_translation_m",
+      "value": 0.06,
+      "reward": 0.0,
+      "object_depth_f1": 0.2681951747511682,
+      "part_success": 0.0,
+      "whole_rgbd": 0.09919777049002187
+    },
+    {
+      "transform": "depth_translation_m",
+      "value": 0.08,
+      "reward": 0.0,
+      "object_depth_f1": 0.4147071797788042,
+      "part_success": 0.0,
+      "whole_rgbd": 0.19704434666259124
+    },
+    {
+      "transform": "depth_translation_m",
+      "value": 0.1,
+      "reward": 0.0,
+      "object_depth_f1": 0.4724938789404134,
+      "part_success": 0.0,
+      "whole_rgbd": 0.27730741577537343
+    },
+    {
+      "transform": "depth_translation_m",
+      "value": 0.12,
+      "reward": 0.0,
+      "object_depth_f1": 0.3826713051519253,
+      "part_success": 0.0,
+      "whole_rgbd": 0.3310923622980656
+    },
+    {
+      "transform": "depth_translation_m",
+      "value": 0.14,
+      "reward": 0.0,
+      "object_depth_f1": 0.29562372438078277,
+      "part_success": 0.0,
+      "whole_rgbd": 0.3570265790751366
+    },
+    {
+      "transform": "depth_translation_m",
+      "value": 0.16,
+      "reward": 0.0,
+      "object_depth_f1": 0.1611016159163424,
+      "part_success": 0.0,
+      "whole_rgbd": 0.3710148373145971
+    },
+    {
+      "transform": "isotropic_scale",
+      "value": 0.88,
+      "reward": 0.0,
+      "object_depth_f1": 0.0,
+      "part_success": 0.0,
+      "whole_rgbd": 0.003290287189601596
+    },
+    {
+      "transform": "isotropic_scale",
+      "value": 0.9,
+      "reward": 0.0,
+      "object_depth_f1": 0.0,
+      "part_success": 0.0,
+      "whole_rgbd": 0.0032307516259295257
+    },
+    {
+      "transform": "isotropic_scale",
+      "value": 0.92,
+      "reward": 0.0,
+      "object_depth_f1": 0.0,
+      "part_success": 0.0,
+      "whole_rgbd": 0.00810607264774289
+    },
+    {
+      "transform": "isotropic_scale",
+      "value": 0.94,
+      "reward": 0.0,
+      "object_depth_f1": 0.0,
+      "part_success": 0.0,
+      "whole_rgbd": 0.018738616079246186
+    },
+    {
+      "transform": "isotropic_scale",
+      "value": 0.96,
+      "reward": 0.0,
+      "object_depth_f1": 0.0,
+      "part_success": 0.0,
+      "whole_rgbd": 0.03476539196695883
+    },
+    {
+      "transform": "isotropic_scale",
+      "value": 0.98,
+      "reward": 0.0,
+      "object_depth_f1": 0.0,
+      "part_success": 0.0,
+      "whole_rgbd": 0.0426833395588932
+    },
+    {
+      "transform": "isotropic_scale",
+      "value": 1.02,
+      "reward": 0.0065426304755062115,
+      "object_depth_f1": 0.0065426304755062115,
+      "part_success": 0.018750000000000003,
+      "whole_rgbd": 0.11433046509679576
+    },
+    {
+      "transform": "isotropic_scale",
+      "value": 1.04,
+      "reward": 0.0625,
+      "object_depth_f1": 0.19920667733212769,
+      "part_success": 0.0625,
+      "whole_rgbd": 0.3762379063791005
+    },
+    {
+      "transform": "isotropic_scale",
+      "value": 1.06,
+      "reward": 0.0375,
+      "object_depth_f1": 0.649577214768809,
+      "part_success": 0.0375,
+      "whole_rgbd": 0.5342575842081675
+    },
+    {
+      "transform": "isotropic_scale",
+      "value": 1.08,
+      "reward": 0.0,
+      "object_depth_f1": 0.664386845327401,
+      "part_success": 0.0,
+      "whole_rgbd": 0.4084280554247274
+    },
+    {
+      "transform": "isotropic_scale",
+      "value": 1.1,
+      "reward": 0.0,
+      "object_depth_f1": 0.24911185737981834,
+      "part_success": 0.0,
+      "whole_rgbd": 0.19189742709903754
+    },
+    {
+      "transform": "isotropic_scale",
+      "value": 1.12,
+      "reward": 0.0,
+      "object_depth_f1": 0.05867655450371784,
+      "part_success": 0.0,
+      "whole_rgbd": 0.036963035759502993
+    },
+    {
+      "transform": "isotropic_scale",
+      "value": 1.14,
+      "reward": 0.0,
+      "object_depth_f1": 0.02581348135584509,
+      "part_success": 0.0,
+      "whole_rgbd": 0.004875579489067492
+    },
+    {
+      "transform": "isotropic_scale",
+      "value": 1.16,
+      "reward": 0.0,
+      "object_depth_f1": 0.013410035009535989,
+      "part_success": 0.0,
+      "whole_rgbd": 0.0032436024167114197
+    },
+    {
+      "transform": "isotropic_scale",
+      "value": 1.18,
+      "reward": 0.0,
+      "object_depth_f1": 0.0065951194478225325,
+      "part_success": 0.0,
+      "whole_rgbd": 0.0027750164133398298
+    },
+    {
+      "transform": "isotropic_scale",
+      "value": 1.2,
+      "reward": 0.0,
+      "object_depth_f1": 0.0014748463734398927,
+      "part_success": 0.0,
+      "whole_rgbd": 0.002299227379968306
+    }
+  ],
+  "swe-m2_ai-research_telephone-contact-reconstruction-correct-10b5125a-5": [
+    {
+      "transform": "identity",
+      "value": 0.0,
+      "reward": 0.011784469847977307,
+      "object_depth_f1": 0.011784469847977307,
+      "part_success": 0.018750000000000003,
+      "whole_rgbd": 0.08268670459417168
+    },
+    {
+      "transform": "depth_translation_m",
+      "value": -0.12,
+      "reward": 0.0,
+      "object_depth_f1": 0.0,
+      "part_success": 0.04375,
+      "whole_rgbd": 0.011287728127073338
+    },
+    {
+      "transform": "depth_translation_m",
+      "value": -0.1,
+      "reward": 0.0,
+      "object_depth_f1": 0.0,
+      "part_success": 0.1125,
+      "whole_rgbd": 0.012997648345090564
+    },
+    {
+      "transform": "depth_translation_m",
+      "value": -0.08,
+      "reward": 0.0,
+      "object_depth_f1": 0.0,
+      "part_success": 0.17500000000000002,
+      "whole_rgbd": 0.014589082820560147
+    },
+    {
+      "transform": "depth_translation_m",
+      "value": -0.06,
+      "reward": 0.0004941932295527551,
+      "object_depth_f1": 0.0004941932295527551,
+      "part_success": 0.225,
+      "whole_rgbd": 0.015952790292252814
+    },
+    {
+      "transform": "depth_translation_m",
+      "value": -0.04,
+      "reward": 0.0005035246727089627,
+      "object_depth_f1": 0.0005035246727089627,
+      "part_success": 0.16874999999999998,
+      "whole_rgbd": 0.02058175716485789
+    },
+    {
+      "transform": "depth_translation_m",
+      "value": -0.02,
+      "reward": 0.0005136106831022085,
+      "object_depth_f1": 0.0005136106831022085,
+      "part_success": 0.09375000000000001,
+      "whole_rgbd": 0.042535327344323956
+    },
+    {
+      "transform": "depth_translation_m",
+      "value": 0.02,
+      "reward": 0.0,
+      "object_depth_f1": 0.19763207393498475,
+      "part_success": 0.0,
+      "whole_rgbd": 0.13744769343380492
+    },
+    {
+      "transform": "depth_translation_m",
+      "value": 0.04,
+      "reward": 0.0,
+      "object_depth_f1": 0.3659563379402336,
+      "part_success": 0.0,
+      "whole_rgbd": 0.2302253163601158
+    },
+    {
+      "transform": "depth_translation_m",
+      "value": 0.06,
+      "reward": 0.0125,
+      "object_depth_f1": 0.5800629637391501,
+      "part_success": 0.0125,
+      "whole_rgbd": 0.2698306490423967
+    },
+    {
+      "transform": "depth_translation_m",
+      "value": 0.08,
+      "reward": 0.025,
+      "object_depth_f1": 0.5080268560031396,
+      "part_success": 0.025,
+      "whole_rgbd": 0.26553926461427657
+    },
+    {
+      "transform": "depth_translation_m",
+      "value": 0.1,
+      "reward": 0.05,
+      "object_depth_f1": 0.40759725757708853,
+      "part_success": 0.05,
+      "whole_rgbd": 0.24672831790043004
+    },
+    {
+      "transform": "depth_translation_m",
+      "value": 0.12,
+      "reward": 0.0625,
+      "object_depth_f1": 0.23337586701274557,
+      "part_success": 0.0625,
+      "whole_rgbd": 0.22455052473725612
+    },
+    {
+      "transform": "depth_translation_m",
+      "value": 0.14,
+      "reward": 0.05625000000000001,
+      "object_depth_f1": 0.1341578563172576,
+      "part_success": 0.05625000000000001,
+      "whole_rgbd": 0.20567354157393902
+    },
+    {
+      "transform": "depth_translation_m",
+      "value": 0.16,
+      "reward": 0.056249999999999994,
+      "object_depth_f1": 0.07964553749382015,
+      "part_success": 0.056249999999999994,
+      "whole_rgbd": 0.2101681460004631
+    },
+    {
+      "transform": "isotropic_scale",
+      "value": 0.88,
+      "reward": 0.0,
+      "object_depth_f1": 0.0,
+      "part_success": 0.0,
+      "whole_rgbd": 0.0019426253987561222
+    },
+    {
+      "transform": "isotropic_scale",
+      "value": 0.9,
+      "reward": 0.0,
+      "object_depth_f1": 0.0,
+      "part_success": 0.0,
+      "whole_rgbd": 0.003334212684366582
+    },
+    {
+      "transform": "isotropic_scale",
+      "value": 0.92,
+      "reward": 0.0,
+      "object_depth_f1": 0.0,
+      "part_success": 0.0,
+      "whole_rgbd": 0.005986338730227222
+    },
+    {
+      "transform": "isotropic_scale",
+      "value": 0.94,
+      "reward": 0.0,
+      "object_depth_f1": 0.0,
+      "part_success": 0.0,
+      "whole_rgbd": 0.009230631724076668
+    },
+    {
+      "transform": "isotropic_scale",
+      "value": 0.96,
+      "reward": 0.0,
+      "object_depth_f1": 0.0,
+      "part_success": 0.0,
+      "whole_rgbd": 0.013467023295072187
+    },
+    {
+      "transform": "isotropic_scale",
+      "value": 0.98,
+      "reward": 0.0,
+      "object_depth_f1": 0.0,
+      "part_success": 0.0,
+      "whole_rgbd": 0.032237984047208595
+    },
+    {
+      "transform": "isotropic_scale",
+      "value": 1.02,
+      "reward": 0.0625,
+      "object_depth_f1": 0.26206489032217223,
+      "part_success": 0.0625,
+      "whole_rgbd": 0.24966225280333837
+    },
+    {
+      "transform": "isotropic_scale",
+      "value": 1.04,
+      "reward": 0.06875,
+      "object_depth_f1": 0.7093199575312413,
+      "part_success": 0.06875,
+      "whole_rgbd": 0.39642769723177274
+    },
+    {
+      "transform": "isotropic_scale",
+      "value": 1.06,
+      "reward": 0.0125,
+      "object_depth_f1": 0.6309943323059751,
+      "part_success": 0.0125,
+      "whole_rgbd": 0.5531921474566452
+    },
+    {
+      "transform": "isotropic_scale",
+      "value": 1.08,
+      "reward": 0.0,
+      "object_depth_f1": 0.21470419030821028,
+      "part_success": 0.0,
+      "whole_rgbd": 0.4257452199867803
+    },
+    {
+      "transform": "isotropic_scale",
+      "value": 1.1,
+      "reward": 0.0,
+      "object_depth_f1": 0.06106657690699522,
+      "part_success": 0.0,
+      "whole_rgbd": 0.11786494939970348
+    },
+    {
+      "transform": "isotropic_scale",
+      "value": 1.12,
+      "reward": 0.0,
+      "object_depth_f1": 0.024589170095301222,
+      "part_success": 0.0,
+      "whole_rgbd": 0.00805211657048844
+    },
+    {
+      "transform": "isotropic_scale",
+      "value": 1.14,
+      "reward": 0.0,
+      "object_depth_f1": 0.0109204368174727,
+      "part_success": 0.0,
+      "whole_rgbd": 0.004556629814794221
+    },
+    {
+      "transform": "isotropic_scale",
+      "value": 1.16,
+      "reward": 0.0,
+      "object_depth_f1": 0.0019216430975321408,
+      "part_success": 0.0,
+      "whole_rgbd": 0.005140127272064186
+    },
+    {
+      "transform": "isotropic_scale",
+      "value": 1.18,
+      "reward": 0.0,
+      "object_depth_f1": 0.0008795074758135443,
+      "part_success": 0.0,
+      "whole_rgbd": 0.005465163341105217
+    },
+    {
+      "transform": "isotropic_scale",
+      "value": 1.2,
+      "reward": 0.0,
+      "object_depth_f1": 0.0,
+      "part_success": 0.0,
+      "whole_rgbd": 0.00425252744389359
+    }
+  ],
+  "swe-m2_ai-research_telephone-contact-reconstruction-correct-10b5125a-6": [
+    {
+      "transform": "identity",
+      "value": 0.0,
+      "reward": 0.00625,
+      "object_depth_f1": 0.009970846820044095,
+      "part_success": 0.00625,
+      "whole_rgbd": 0.08908050107176672
+    },
+    {
+      "transform": "depth_translation_m",
+      "value": -0.12,
+      "reward": 0.0,
+      "object_depth_f1": 0.0,
+      "part_success": 0.0625,
+      "whole_rgbd": 0.0033222988607775903
+    },
+    {
+      "transform": "depth_translation_m",
+      "value": -0.1,
+      "reward": 0.0,
+      "object_depth_f1": 0.0,
+      "part_success": 0.125,
+      "whole_rgbd": 0.004146226092023498
+    },
+    {
+      "transform": "depth_translation_m",
+      "value": -0.08,
+      "reward": 0.0,
+      "object_depth_f1": 0.0,
+      "part_success": 0.20625,
+      "whole_rgbd": 0.00613844884840684
+    },
+    {
+      "transform": "depth_translation_m",
+      "value": -0.06,
+      "reward": 0.0,
+      "object_depth_f1": 0.0,
+      "part_success": 0.2,
+      "whole_rgbd": 0.009775810705927415
+    },
+    {
+      "transform": "depth_translation_m",
+      "value": -0.04,
+      "reward": 0.0,
+      "object_depth_f1": 0.0,
+      "part_success": 0.1,
+      "whole_rgbd": 0.01808355068625903
+    },
+    {
+      "transform": "depth_translation_m",
+      "value": -0.02,
+      "reward": 0.0005257623554153522,
+      "object_depth_f1": 0.0005257623554153522,
+      "part_success": 0.037500000000000006,
+      "whole_rgbd": 0.04708167620539818
+    },
+    {
+      "transform": "depth_translation_m",
+      "value": 0.02,
+      "reward": 0.0,
+      "object_depth_f1": 0.17745871214792905,
+      "part_success": 0.0,
+      "whole_rgbd": 0.13557239025073492
+    },
+    {
+      "transform": "depth_translation_m",
+      "value": 0.04,
+      "reward": 0.0,
+      "object_depth_f1": 0.4063935165883558,
+      "part_success": 0.0,
+      "whole_rgbd": 0.1912088816538326
+    },
+    {
+      "transform": "depth_translation_m",
+      "value": 0.06,
+      "reward": 0.0,
+      "object_depth_f1": 0.5840308417662392,
+      "part_success": 0.0,
+      "whole_rgbd": 0.23596939841745163
+    },
+    {
+      "transform": "depth_translation_m",
+      "value": 0.08,
+      "reward": 0.0,
+      "object_depth_f1": 0.4873290463581839,
+      "part_success": 0.0,
+      "whole_rgbd": 0.22269191995539578
+    },
+    {
+      "transform": "depth_translation_m",
+      "value": 0.1,
+      "reward": 0.00625,
+      "object_depth_f1": 0.3454899164814336,
+      "part_success": 0.00625,
+      "whole_rgbd": 0.19689455702059516
+    },
+    {
+      "transform": "depth_translation_m",
+      "value": 0.12,
+      "reward": 0.0125,
+      "object_depth_f1": 0.13164832255586595,
+      "part_success": 0.0125,
+      "whole_rgbd": 0.16803166771126365
+    },
+    {
+      "transform": "depth_translation_m",
+      "value": 0.14,
+      "reward": 0.00625,
+      "object_depth_f1": 0.13650860217769617,
+      "part_success": 0.00625,
+      "whole_rgbd": 0.12904926616449508
+    },
+    {
+      "transform": "depth_translation_m",
+      "value": 0.16,
+      "reward": 0.00625,
+      "object_depth_f1": 0.08534830779936049,
+      "part_success": 0.00625,
+      "whole_rgbd": 0.10314717673755529
+    },
+    {
+      "transform": "isotropic_scale",
+      "value": 0.88,
+      "reward": 0.0,
+      "object_depth_f1": 0.0,
+      "part_success": 0.0,
+      "whole_rgbd": 0.0008104573997412799
+    },
+    {
+      "transform": "isotropic_scale",
+      "value": 0.9,
+      "reward": 0.0,
+      "object_depth_f1": 0.0,
+      "part_success": 0.0,
+      "whole_rgbd": 0.0012034545737083936
+    },
+    {
+      "transform": "isotropic_scale",
+      "value": 0.92,
+      "reward": 0.0,
+      "object_depth_f1": 0.0,
+      "part_success": 0.0,
+      "whole_rgbd": 0.00256548272058282
+    },
+    {
+      "transform": "isotropic_scale",
+      "value": 0.94,
+      "reward": 0.0,
+      "object_depth_f1": 0.0,
+      "part_success": 0.0,
+      "whole_rgbd": 0.0037871810022466227
+    },
+    {
+      "transform": "isotropic_scale",
+      "value": 0.96,
+      "reward": 0.0,
+      "object_depth_f1": 0.0,
+      "part_success": 0.0,
+      "whole_rgbd": 0.014842769037993855
+    },
+    {
+      "transform": "isotropic_scale",
+      "value": 0.98,
+      "reward": 0.0,
+      "object_depth_f1": 0.0,
+      "part_success": 0.0,
+      "whole_rgbd": 0.03303534726822267
+    },
+    {
+      "transform": "isotropic_scale",
+      "value": 1.02,
+      "reward": 0.01875,
+      "object_depth_f1": 0.245784335250389,
+      "part_success": 0.01875,
+      "whole_rgbd": 0.21019566561404393
+    },
+    {
+      "transform": "isotropic_scale",
+      "value": 1.04,
+      "reward": 0.05,
+      "object_depth_f1": 0.6925135178568017,
+      "part_success": 0.05,
+      "whole_rgbd": 0.31532905993130145
+    },
+    {
+      "transform": "isotropic_scale",
+      "value": 1.06,
+      "reward": 0.00625,
+      "object_depth_f1": 0.5610158967545021,
+      "part_success": 0.00625,
+      "whole_rgbd": 0.4139269397181841
+    },
+    {
+      "transform": "isotropic_scale",
+      "value": 1.08,
+      "reward": 0.0,
+      "object_depth_f1": 0.19386425168087654,
+      "part_success": 0.0,
+      "whole_rgbd": 0.40505982773624777
+    },
+    {
+      "transform": "isotropic_scale",
+      "value": 1.1,
+      "reward": 0.0,
+      "object_depth_f1": 0.04586672288773899,
+      "part_success": 0.0,
+      "whole_rgbd": 0.3068575994587134
+    },
+    {
+      "transform": "isotropic_scale",
+      "value": 1.12,
+      "reward": 0.0,
+      "object_depth_f1": 0.024964673798723552,
+      "part_success": 0.0,
+      "whole_rgbd": 0.05665556337554514
+    },
+    {
+      "transform": "isotropic_scale",
+      "value": 1.14,
+      "reward": 0.0,
+      "object_depth_f1": 0.012345679012345678,
+      "part_success": 0.0,
+      "whole_rgbd": 0.014670267103612689
+    },
+    {
+      "transform": "isotropic_scale",
+      "value": 1.16,
+      "reward": 0.0,
+      "object_depth_f1": 0.004695192411165185,
+      "part_success": 0.0,
+      "whole_rgbd": 0.009912871904563574
+    },
+    {
+      "transform": "isotropic_scale",
+      "value": 1.18,
+      "reward": 0.0,
+      "object_depth_f1": 0.0014620034711535764,
+      "part_success": 0.0,
+      "whole_rgbd": 0.007901603323932976
+    },
+    {
+      "transform": "isotropic_scale",
+      "value": 1.2,
+      "reward": 0.0,
+      "object_depth_f1": 0.0,
+      "part_success": 0.0,
+      "whole_rgbd": 0.005185117511539465
+    }
+  ]
+}

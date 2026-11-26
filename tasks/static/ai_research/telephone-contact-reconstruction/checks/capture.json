@@ -1,0 +1,22 @@
+{
+  "sequence": "rgbd_dataset_freiburg2_desk",
+  "upstream_sha256": "1a0756d72510a26e26e2a02bf0b6c69c2796619fca531e176fc2e5110173807c",
+  "n_consecutive_exposures": 73,
+  "first_rgb_s": 1311868168.431214,
+  "last_rgb_s": 1311868170.831309,
+  "coordinate_origin_rgb_s": 1311868170.831309,
+  "nearest_public_exposure_to_each_private_rgb_s": [
+    0.20018386840820312,
+    1.2002239227294922,
+    1.7322919368743896,
+    2.7003188133239746
+  ],
+  "private_rgb_pixel_duplicates": 0,
+  "max_adjacent_rgb_interval_s": 0.0362551212310791,
+  "camera_end_to_end_m": 0.3874363381696427,
+  "camera_path_length_m": 0.5551826678901485,
+  "files": {
+    "poses.csv": "e04bbe13daa93cb76f5ca6870d28444d85eb487c83dd762353db170a5753e1cd",
+    "frames.zip": "21c66e1957c304c9bad17937acb52e6a0e1285440950664c5781a2d67fd03ffa"
+  }
+}

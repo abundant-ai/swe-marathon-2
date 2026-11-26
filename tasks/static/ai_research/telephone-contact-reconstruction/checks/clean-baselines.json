@@ -1,0 +1,75 @@
+{
+  "oracle": {
+    "build": "valid",
+    "reward": 0.5015882586469972,
+    "error_domain": null,
+    "source_sha256": "4e2d2b2a1133a242ac44b7dcb739d855da8e51970a298b4c91e170451bab136f",
+    "test_receipt_matches": true,
+    "id": "swe-m2_ai-research_telephone-contact-reconstruction-clean-d662f1f9-0",
+    "checks": {
+      "scene": "passed",
+      "final_test": "passed",
+      "fine_parts": "passed",
+      "parent_surfaces": "passed",
+      "colored_scene": "passed"
+    },
+    "sheet_reconstructed_colors": 9110,
+    "extracted_endpoint_colors": 2,
+    "max_abs_difference_from_original_fit": {
+      "vertices": 0.0,
+      "faces": 0.0,
+      "colors": 4.0,
+      "face_ids": 0.0,
+      "part_ids": 0.0
+    },
+    "changed_color_vertices": [
+      1683,
+      11633
+    ],
+    "changed_colors_match_original_dense_png": true,
+    "measurements": {
+      "fine_parts": {
+        "part_success": 0.51875
+      },
+      "parent_surfaces": {
+        "object_depth_f1": 0.5291445286791273
+      },
+      "colored_scene": {
+        "rgbd_5cm_10percent_coverage": 0.5015882586469972
+      }
+    },
+    "receipt": {
+      "source_sha256": "4e2d2b2a1133a242ac44b7dcb739d855da8e51970a298b4c91e170451bab136f",
+      "details": {
+        "vertices": 17432,
+        "triangles": 16110,
+        "part_counts": [
+          15047,
+          406,
+          160,
+          150,
+          347
+        ],
+        "numeric_archive_bytes": 1482388
+      }
+    }
+  },
+  "nop": {
+    "build": "invalid",
+    "reward": 0.0,
+    "error_domain": "candidate",
+    "source_sha256": "41a778dc70e907fed83d3638ed855e443c9856c316ed32bde92ca5f86f9b9edb",
+    "test_receipt_matches": false,
+    "id": "swe-m2_ai-research_telephone-contact-reconstruction-clean-d662f1f9-1",
+    "checks": {
+      "scene": "failed",
+      "final_test": "failed",
+      "fine_parts": "skipped",
+      "parent_surfaces": "skipped",
+      "colored_scene": "skipped"
+    }
+  },
+  "experiment": "https://www.oddish.app/experiments/f47796ed",
+  "version": 1,
+  "runtime_inventory_sha256": "39baf37435380bba2cb4dc8fadf37cad273cc4312e716b1a4b442166241ed71d"
+}

@@ -1,0 +1,18 @@
+{
+  "dense-telephone-parts/h0.json": "47047f3f74ab499eba76c4ce7771cec8ccb1ec7be07b6b9474a4893aa664d23b",
+  "dense-telephone-parts/h1.json": "ea43be9899f8c8cb7e3757e04901a00409bfac512743babdf60730a41a36fb32",
+  "dense-telephone-parts/h2.json": "a02f0c26cc5ae68bcb6b4e38316879a8e611018e3e2aaaa5fbbdf52418f22c93",
+  "dense-telephone-parts/h3.json": "d393a1686939e3fc2fc4df9e6282db365900e84b0aaa27405367f16c273850b4",
+  "dense-telephone-parts/optical-poses.npz": "c0f2339400580104703ad075f023df9f1a3f867b7906d4f844f1605d05ec0bef",
+  "dense-telephone-parts/scoring-rgb.npz": "7200d9ac82a89c1b3a1ee3b290ab0827a3c028896629e745d4c50b92466e69d0",
+  "precision-pilot/data/clutter/data/masks-b.npz": "7fb086b7bf55e080584002709170a3d7302209f534104e5eba83df6838863a91",
+  "precision-pilot/data/clutter/data/sensor-b.npz": "fadf093f1975435b8ae6aae627fdb0b15c014ff5d799d645aa43628fd089fbaf",
+  "public-observations/a-keyframes.txt": "bb03d8297fff9cd189f5ea74a895791a912c76d10259906d52a172d04425eabf",
+  "public-observations/a-poses.csv": "c40574ddcf90653334fa90977070d5a3ffd817bde53a3ba3e35e25ef10ad861e",
+  "public-observations/attribution.txt": "fb62a0dd096f3c2913f7696a30d84b7abcb1deaed2f868943b16438e6c722479",
+  "public-observations/b-keyframes.txt": "33878dfda498eb2c72f437826056380bcfa9cef7f7d69689e56182ffc1c5e3e1",
+  "public-observations/b-poses.csv": "e04bbe13daa93cb76f5ca6870d28444d85eb487c83dd762353db170a5753e1cd",
+  "public-observations/clip.mp4": "63aa6b07ef517cf796e5bf4746101966fc719ff28b3430d4c07769c3c65ab75c",
+  "public-observations/frames.zip": "21c66e1957c304c9bad17937acb52e6a0e1285440950664c5781a2d67fd03ffa",
+  "public-observations/observation.png": "b4146a2fba7dbf24b7137e286b271bd46aacff8e25ba2e275add8833a8290291"
+}

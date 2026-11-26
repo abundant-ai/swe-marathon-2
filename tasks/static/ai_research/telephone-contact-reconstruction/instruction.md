@@ -1,0 +1,18 @@
+Reconstruct workspace B, a desk holding a tape roll, white mug and landline telephone, as one colored metric triangle mesh. We use the model to render new views of the desk and locate exposed surfaces that a robot could touch. Include the supporting table, nearby objects, and the surrounding visible room. Preserve the gaps in the tape roll and mug handle and the separation between the handset and its base.
+
+The supplied observations, when available, are in /app/work. Open observation.png with your image viewer. It shows six 640 × 480 RGB keyframes in row-major order. clip.mp4 plays the additional continuous recording. frames.zip holds its 73 original RGB images. Both camera tracks are provided so you can identify the available recording and map the evidence into a first-keyframe coordinate system. Use the recording you have to reconstruct workspace B as accurately as you can.
+
+The rows in b-keyframes.txt and b-poses.csv give camera centers in meters and quaternions in x, y, z, w order. Each transform maps optical camera coordinates (right, down, forward) into B's first-keyframe coordinates. The dense CSV names the archive member for each pose. The analogous A files describe the alternate capture. For B, use the Freiburg 2 RGB calibration: fx = 520.9, fy = 521.0, cx = 325.1, cy = 249.7. The Brown–Conrady coefficients (k1, k2, p1, p2, k3) are (0.2312, −0.7849, −0.0033, −0.0001, 0.9172). The B poses come from motion capture and can be refined from RGB feature tracks.
+
+Write submission.py defining scene() to return (vertices, triangles, colors, object_ids, part_ids). The vertices and sRGB colors are N × 3 arrays. Use meters for coordinates and values from 0 through 255 for colors. Triangles are M × 3 integer vertex indices, with 1 to 20,000 triangles. Both label arrays contain one integer per triangle. Use at most 60,000 vertices and coordinates within 10,000 meters of zero on each axis. Use ordinary real numerical arrays with up to eight bytes per value. Keep the five-array uncompressed NumPy archive within 5 MiB and the Python source within 2 MiB. Only submission.py and the test receipt transfer to the offline rebuild. Submit auxiliary fitted data inside the source or derive them from the supplied observations. The build runs in /app/work, where it can extract the supplied archive or create scratch files. It starts with an empty temporary directory. The original media and pose files are read-only. You may fit geometry in advance or read the supplied observations when scene() runs. It should build in under ten CPU minutes using Python, NumPy, SciPy and Pillow.
+
+Assign object ID 1 to the tape roll, 2 to the mug, 3 to the telephone base and handset, and 0 to everything else. Exclude detached cords. Part ID 0 covers other surfaces. Assign these four functional part IDs where the corresponding surfaces are visible.
+
+| Part ID | Object | Surface |
+|---|---|---|
+| 1 | Tape roll | Gray top annulus between the outer lip and the mouth of the circular opening. |
+| 2 | Tape roll | Exposed printed inner wall of the cardboard core. Model its depth and the surrounding opening. |
+| 3 | Mug | Curved ceramic handle from its upper attachment to its lower attachment. Leave the opening through the handle clear. |
+| 4 | Telephone | Pale upward-facing surface of the removable handset, including its ends and the narrow grip between them. Exclude the darker sidewalls, base and gap under the grip. |
+
+Run ./python smoke.py after your final edit. It runs scene() in a fresh /app/work with only your source and the supplied observations, validates the complete mesh contract and prints the tested source digest. The check uses a clean temporary directory, so rerun it whenever your source or its data dependencies change.

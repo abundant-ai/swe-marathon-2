@@ -1,0 +1,255 @@
+{
+  "protocol": "Diagnostic only: take 4x native-grid rays inside the 1-native-pixel-eroded manually drawn contact surface, with positive registered depth and its parent object label. Pool four withheld views.",
+  "models": {
+    "packaged_reference": {
+      "1": {
+        "support_per_view": [
+          57,
+          43,
+          39,
+          51
+        ],
+        "number_of_rays": 190,
+        "correct_label_rate": 0.8947368421052632,
+        "correct_label_and_3cm_depth": 0.6,
+        "median_abs_depth_error_on_matching_labels_m": 0.020479260466425675
+      },
+      "2": {
+        "support_per_view": [
+          27,
+          22,
+          26,
+          31
+        ],
+        "number_of_rays": 106,
+        "correct_label_rate": 0.9056603773584906,
+        "correct_label_and_3cm_depth": 0.9056603773584906,
+        "median_abs_depth_error_on_matching_labels_m": 0.008547980073183914
+      },
+      "3": {
+        "support_per_view": [
+          1,
+          2,
+          3,
+          2
+        ],
+        "number_of_rays": 8,
+        "correct_label_rate": 0.875,
+        "correct_label_and_3cm_depth": 0.5,
+        "median_abs_depth_error_on_matching_labels_m": 0.026050161809334504
+      },
+      "4": {
+        "support_per_view": [
+          18,
+          20,
+          26,
+          32
+        ],
+        "number_of_rays": 96,
+        "correct_label_rate": 0.7083333333333334,
+        "correct_label_and_3cm_depth": 0.5833333333333334,
+        "median_abs_depth_error_on_matching_labels_m": 0.017435619146087378
+      }
+    },
+    "extra_rgb_control": {
+      "1": {
+        "support_per_view": [
+          57,
+          43,
+          39,
+          51
+        ],
+        "number_of_rays": 190,
+        "correct_label_rate": 0.8947368421052632,
+        "correct_label_and_3cm_depth": 0.6,
+        "median_abs_depth_error_on_matching_labels_m": 0.020479260466425675
+      },
+      "2": {
+        "support_per_view": [
+          27,
+          22,
+          26,
+          31
+        ],
+        "number_of_rays": 106,
+        "correct_label_rate": 0.9056603773584906,
+        "correct_label_and_3cm_depth": 0.9056603773584906,
+        "median_abs_depth_error_on_matching_labels_m": 0.008547980073183914
+      },
+      "3": {
+        "support_per_view": [
+          1,
+          2,
+          3,
+          2
+        ],
+        "number_of_rays": 8,
+        "correct_label_rate": 1.0,
+        "correct_label_and_3cm_depth": 0.75,
+        "median_abs_depth_error_on_matching_labels_m": 0.02676864139226609
+      },
+      "4": {
+        "support_per_view": [
+          18,
+          20,
+          26,
+          32
+        ],
+        "number_of_rays": 96,
+        "correct_label_rate": 0.9895833333333334,
+        "correct_label_and_3cm_depth": 0.96875,
+        "median_abs_depth_error_on_matching_labels_m": 0.010381196235940804
+      }
+    },
+    "swe-m2_ai-research_telephone-contact-reconstruction-correct-10b5125a-2": {
+      "1": {
+        "support_per_view": [
+          57,
+          43,
+          39,
+          51
+        ],
+        "number_of_rays": 190,
+        "correct_label_rate": 0.3631578947368421,
+        "correct_label_and_3cm_depth": 0.0,
+        "median_abs_depth_error_on_matching_labels_m": 0.10857004591060426
+      },
+      "2": {
+        "support_per_view": [
+          27,
+          22,
+          26,
+          31
+        ],
+        "number_of_rays": 106,
+        "correct_label_rate": 0.6132075471698113,
+        "correct_label_and_3cm_depth": 0.0,
+        "median_abs_depth_error_on_matching_labels_m": 0.07349504933512518
+      },
+      "3": {
+        "support_per_view": [
+          1,
+          2,
+          3,
+          2
+        ],
+        "number_of_rays": 8,
+        "correct_label_rate": 0.25,
+        "correct_label_and_3cm_depth": 0.0,
+        "median_abs_depth_error_on_matching_labels_m": 0.08194556132052178
+      },
+      "4": {
+        "support_per_view": [
+          18,
+          20,
+          26,
+          32
+        ],
+        "number_of_rays": 96,
+        "correct_label_rate": 0.3958333333333333,
+        "correct_label_and_3cm_depth": 0.0,
+        "median_abs_depth_error_on_matching_labels_m": 0.10066296725809076
+      }
+    },
+    "swe-m2_ai-research_telephone-contact-reconstruction-correct-10b5125a-5": {
+      "1": {
+        "support_per_view": [
+          57,
+          43,
+          39,
+          51
+        ],
+        "number_of_rays": 190,
+        "correct_label_rate": 0.5526315789473685,
+        "correct_label_and_3cm_depth": 0.0,
+        "median_abs_depth_error_on_matching_labels_m": 0.07773221605708591
+      },
+      "2": {
+        "support_per_view": [
+          27,
+          22,
+          26,
+          31
+        ],
+        "number_of_rays": 106,
+        "correct_label_rate": 0.6792452830188679,
+        "correct_label_and_3cm_depth": 0.018867924528301886,
+        "median_abs_depth_error_on_matching_labels_m": 0.042358322516447
+      },
+      "3": {
+        "support_per_view": [
+          1,
+          2,
+          3,
+          2
+        ],
+        "number_of_rays": 8,
+        "correct_label_rate": 0.75,
+        "correct_label_and_3cm_depth": 0.0,
+        "median_abs_depth_error_on_matching_labels_m": 0.08146045081623987
+      },
+      "4": {
+        "support_per_view": [
+          18,
+          20,
+          26,
+          32
+        ],
+        "number_of_rays": 96,
+        "correct_label_rate": 0.6666666666666666,
+        "correct_label_and_3cm_depth": 0.0,
+        "median_abs_depth_error_on_matching_labels_m": 0.07960375513234863
+      }
+    },
+    "swe-m2_ai-research_telephone-contact-reconstruction-correct-10b5125a-6": {
+      "1": {
+        "support_per_view": [
+          57,
+          43,
+          39,
+          51
+        ],
+        "number_of_rays": 190,
+        "correct_label_rate": 0.46842105263157896,
+        "correct_label_and_3cm_depth": 0.0,
+        "median_abs_depth_error_on_matching_labels_m": 0.08353264844251629
+      },
+      "2": {
+        "support_per_view": [
+          27,
+          22,
+          26,
+          31
+        ],
+        "number_of_rays": 106,
+        "correct_label_rate": 0.6226415094339622,
+        "correct_label_and_3cm_depth": 0.0,
+        "median_abs_depth_error_on_matching_labels_m": 0.05090766584289663
+      },
+      "3": {
+        "support_per_view": [
+          1,
+          2,
+          3,
+          2
+        ],
+        "number_of_rays": 8,
+        "correct_label_rate": 0.5,
+        "correct_label_and_3cm_depth": 0.0,
+        "median_abs_depth_error_on_matching_labels_m": 0.05343718289935162
+      },
+      "4": {
+        "support_per_view": [
+          18,
+          20,
+          26,
+          32
+        ],
+        "number_of_rays": 96,
+        "correct_label_rate": 0.4166666666666667,
+        "correct_label_and_3cm_depth": 0.0,
+        "median_abs_depth_error_on_matching_labels_m": 0.06833744730473845
+      }
+    }
+  }
+}

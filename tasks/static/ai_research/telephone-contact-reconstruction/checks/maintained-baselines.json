@@ -1,0 +1,103 @@
+{
+  "oracle": {
+    "build": "valid",
+    "reward": 0.5015882586469972,
+    "error_domain": null,
+    "reason": null,
+    "source_sha256": "5e682cfb46740c7e6c5ce44dbabd7061da71a6cdedfbeef255c4a40103c6d2ba",
+    "test_receipt_matches": true,
+    "id": "swe-m2_ai-research_telephone-contact-reconstruction-release-e8e06a9c-0",
+    "computed_source_sha256": "5e682cfb46740c7e6c5ce44dbabd7061da71a6cdedfbeef255c4a40103c6d2ba",
+    "verified_checks": [
+      {
+        "requirement_id": "scene",
+        "status": "passed",
+        "explanation": "Transferred source produced a valid scene.",
+        "measurements": {}
+      },
+      {
+        "requirement_id": "final_test",
+        "status": "passed",
+        "explanation": "Final-source smoke receipt matched.",
+        "measurements": {}
+      },
+      {
+        "requirement_id": "fine_parts",
+        "status": "passed",
+        "explanation": "Mean per-part silhouette success on unseen views.",
+        "measurements": {
+          "part_success": 0.51875
+        }
+      },
+      {
+        "requirement_id": "parent_surfaces",
+        "status": "passed",
+        "explanation": "Macro object F1 for surface depth within 3 cm.",
+        "measurements": {
+          "object_depth_f1": 0.5291445286791273
+        }
+      },
+      {
+        "requirement_id": "colored_scene",
+        "status": "passed",
+        "explanation": "Fraction of measured pixels recovered within 5 cm and the color tolerance.",
+        "measurements": {
+          "rgbd_5cm_10percent_coverage": 0.5015882586469972
+        }
+      }
+    ],
+    "max_abs_array_differences_from_fitted_reference": {
+      "vertices": 0.0,
+      "faces": 0.0,
+      "colors": 0.0,
+      "face_ids": 0.0,
+      "part_ids": 0.0
+    },
+    "uses_public_observations_by_absolute_path": true
+  },
+  "nop": {
+    "build": "invalid",
+    "reward": 0.0,
+    "error_domain": "candidate",
+    "reason": "Scene builder failed: Traceback (most recent call last):\n  File \"/tmp/mesh-efp7vbm2/inputs/_bootstrap.py\", line 22, in <module>\n    runpy.run_path(\"build.py\", run_name=\"__main__\")\n  File \"<frozen runpy>\", line 287, in run_path\n  File \"<frozen runpy>\", line 98, in _run_module_code\n  File \"<frozen runpy>\", line 88, in _run_code\n  File \"build.py\", line 4, in <module>\n    arrays=submission.scene()\n           ^^^^^^^^^^^^^^^^\nAttributeError: module 'submission' has no attribute 'scene'\n",
+    "source_sha256": "41a778dc70e907fed83d3638ed855e443c9856c316ed32bde92ca5f86f9b9edb",
+    "test_receipt_matches": false,
+    "id": "swe-m2_ai-research_telephone-contact-reconstruction-release-e8e06a9c-1",
+    "computed_source_sha256": "41a778dc70e907fed83d3638ed855e443c9856c316ed32bde92ca5f86f9b9edb",
+    "verified_checks": [
+      {
+        "requirement_id": "scene",
+        "status": "failed",
+        "explanation": "Scene builder failed: Traceback (most recent call last):\n  File \"/tmp/mesh-efp7vbm2/inputs/_bootstrap.py\", line 22, in <module>\n    runpy.run_path(\"build.py\", run_name=\"__main__\")\n  File \"<frozen runpy>\", line 287, in run_path\n  File \"<frozen runpy>\", line 98, in _run_module_code\n  File \"<frozen runpy>\", line 88, in _run_code\n  File \"build.py\", line 4, in <module>\n    arrays=submission.scene()\n           ^^^^^^^^^^^^^^^^\nAttributeError: module 'submission' has no attribute 'scene'\n",
+        "measurements": {}
+      },
+      {
+        "requirement_id": "final_test",
+        "status": "failed",
+        "explanation": "No matching final-source smoke receipt.",
+        "measurements": {}
+      },
+      {
+        "requirement_id": "fine_parts",
+        "status": "skipped",
+        "explanation": "Requires a valid reconstructed scene.",
+        "measurements": {}
+      },
+      {
+        "requirement_id": "parent_surfaces",
+        "status": "skipped",
+        "explanation": "Requires a valid reconstructed scene.",
+        "measurements": {}
+      },
+      {
+        "requirement_id": "colored_scene",
+        "status": "skipped",
+        "explanation": "Requires a valid reconstructed scene.",
+        "measurements": {}
+      }
+    ]
+  },
+  "experiment": "https://www.oddish.app/experiments/f66b2a5c",
+  "version": 1,
+  "release_inventory_sha256": "39458ef65e4ac20941e9ce9b2d5127a5ab532de08e9cf7528b781c07d33c0afe"
+}
