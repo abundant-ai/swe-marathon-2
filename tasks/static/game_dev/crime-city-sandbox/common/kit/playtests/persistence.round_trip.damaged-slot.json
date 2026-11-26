@@ -3,16 +3,9 @@
  "name": "persistence.round_trip/damaged-slot",
  "template": "persistence.round_trip",
  "about": "A damaged save file does not crash the game: loading it answers \"Slot 2 is damaged\", the game keeps answering, and another slot still loads.",
- "rules": [
-  "SV-5",
-  "SV-6"
- ],
+ "rules": ["SV-5", "SV-6"],
  "role": "solo",
- "args": [
-  "--role=solo",
-  "--variation=2",
-  "--save-dir={save_dir}"
- ],
+ "args": ["--role=solo", "--variation=2", "--save-dir={save_dir}"],
  "mode": "lockstep",
  "runs": [
   {

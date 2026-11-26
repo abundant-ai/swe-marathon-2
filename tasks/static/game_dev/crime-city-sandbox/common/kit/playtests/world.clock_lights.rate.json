@@ -3,15 +3,9 @@
  "name": "world.clock_lights/rate",
  "template": "world.clock_lights",
  "about": "Game time runs one minute per second of play: an hour of game time in 3,600 ticks, within 1%.",
- "rules": [
-  "WD-11"
- ],
+ "rules": ["WD-11"],
  "role": "solo",
- "args": [
-  "--role=solo",
-  "--variation=1",
-  "--save-dir={save_dir}"
- ],
+ "args": ["--role=solo", "--variation=1", "--save-dir={save_dir}"],
  "mode": "lockstep",
  "runs": [
   {

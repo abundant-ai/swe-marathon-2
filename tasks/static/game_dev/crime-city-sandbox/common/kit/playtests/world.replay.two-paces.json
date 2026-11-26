@@ -3,16 +3,9 @@
  "name": "world.replay/two-paces",
  "template": "world.replay",
  "about": "One input timeline played twice, the second time with a pause between ticks as on a slower machine: the game does the same thing tick for tick.",
- "rules": [
-  "AC-15",
-  "AC-17"
- ],
+ "rules": ["AC-15", "AC-17"],
  "role": "solo",
- "args": [
-  "--role=solo",
-  "--variation=5",
-  "--save-dir={save_dir}"
- ],
+ "args": ["--role=solo", "--variation=5", "--save-dir={save_dir}"],
  "mode": "lockstep",
  "runs": [
   {
@@ -36,15 +29,8 @@
     "census": true,
     "every": 3,
     "bones": {
-     "ids": [
-      "player"
-     ],
-     "names": [
-      "Hips",
-      "Head",
-      "LeftToes",
-      "RightHand"
-     ]
+     "ids": ["player"],
+     "names": ["Hips", "Head", "LeftToes", "RightHand"]
     }
    }
   },
@@ -100,11 +86,7 @@
    "run": 30
   },
   {
-   "release": [
-    "move_forward",
-    "look_left",
-    "sprint"
-   ]
+   "release": ["move_forward", "look_left", "sprint"]
   },
   {
    "press": {
@@ -115,9 +97,7 @@
    "run": 30
   },
   {
-   "release": [
-    "move_right"
-   ]
+   "release": ["move_right"]
   },
   {
    "run": 60
@@ -149,7 +129,5 @@
    "says": "both runs give the same trace"
   }
  ],
- "tags": [
-  "physics-sensitive"
- ]
+ "tags": ["physics-sensitive"]
 }

@@ -3,16 +3,9 @@
  "name": "contract.devconsole/bad-input",
  "template": "contract.devconsole",
  "about": "Commands with mistakes in them: an unknown command, wrong types, values out of range. Every answer keeps the contract's form, nothing changes, and the game goes on.",
- "rules": [
-  "AC-2",
-  "EC-4"
- ],
+ "rules": ["AC-2", "EC-4"],
  "role": "solo",
- "args": [
-  "--role=solo",
-  "--variation=3",
-  "--save-dir={save_dir}"
- ],
+ "args": ["--role=solo", "--variation=3", "--save-dir={save_dir}"],
  "mode": "lockstep",
  "runs": [
   {
@@ -63,10 +56,7 @@
     [
      "player.spawn",
      {
-      "at": [
-       1,
-       2
-      ]
+      "at": [1, 2]
      }
     ],
     [
@@ -78,9 +68,7 @@
     [
      "weather.set",
      {
-      "kind": [
-       "rain"
-      ]
+      "kind": ["rain"]
      }
     ],
     [
@@ -111,11 +99,7 @@
      "vehicle.spawn",
      {
       "model": "hovercraft",
-      "at": [
-       0.0,
-       0.0,
-       0.0
-      ]
+      "at": [0.0, 0.0, 0.0]
      }
     ],
     [
@@ -131,11 +115,7 @@
      "prop.spawn",
      {
       "kind": "crate",
-      "at": [
-       0.0,
-       0.0,
-       0.0
-      ],
+      "at": [0.0, 0.0, 0.0],
       "size": "big"
      }
     ],
@@ -193,9 +173,7 @@
    "id": "answers",
    "check": "dev_answers",
    "args": {
-    "steps": [
-     3
-    ]
+    "steps": [3]
    },
    "rule": "AC-2",
    "says": "every command gets an answer {\"ok\": true, ...} or {\"ok\": false, \"error\": \"...\"}"

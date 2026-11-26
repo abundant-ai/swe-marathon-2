@@ -3,15 +3,9 @@
  "name": "inv.telemetry/realtime",
  "template": "inv.telemetry",
  "about": "Played in real time, the game keeps QA's telemetry node ticking with it.",
- "rules": [
-  "AC-18"
- ],
+ "rules": ["AC-18"],
  "role": "solo",
- "args": [
-  "--role=solo",
-  "--variation=9",
-  "--save-dir={save_dir}"
- ],
+ "args": ["--role=solo", "--variation=9", "--save-dir={save_dir}"],
  "mode": "realtime",
  "runs": [
   {
@@ -49,9 +43,7 @@
    "wait_s": 1.0
   },
   {
-   "release": [
-    "move_forward"
-   ]
+   "release": ["move_forward"]
   },
   {
    "wait_s": 0.5

@@ -3,19 +3,9 @@
  "name": "contract.devconsole/commands",
  "template": "contract.devconsole",
  "about": "Each DevConsole command does what chapter 17 says, at once, with the events it causes.",
- "rules": [
-  "AC-3",
-  "AC-13",
-  "AC-14",
-  "EC-4",
-  "MS-12"
- ],
+ "rules": ["AC-3", "AC-13", "AC-14", "EC-4", "MS-12"],
  "role": "solo",
- "args": [
-  "--role=solo",
-  "--variation=2",
-  "--save-dir={save_dir}"
- ],
+ "args": ["--role=solo", "--variation=2", "--save-dir={save_dir}"],
  "mode": "lockstep",
  "runs": [
   {
@@ -141,11 +131,7 @@
      "prop.spawn",
      {
       "kind": "crate",
-      "at": [
-       12.0,
-       0.15,
-       -2.0
-      ]
+      "at": [12.0, 0.15, -2.0]
      }
     ]
    ]
@@ -195,10 +181,7 @@
       "archetype": "tourist",
       "seat": {
        "vehicle": {
-        "$answer": [
-         17,
-         "id"
-        ]
+        "$answer": [17, "id"]
        },
        "index": 1
       }
@@ -409,11 +392,7 @@
     "id_from": {
      "step": 13
     },
-    "p": [
-     -3.12,
-     0.15,
-     -6.88
-    ],
+    "p": [-3.12, 0.15, -6.88],
     "max_m": 0.5
    },
    "rule": "AC-3",
@@ -443,11 +422,7 @@
     "id_from": {
      "step": 15
     },
-    "p": [
-     12.0,
-     0.15,
-     -2.0
-    ],
+    "p": [12.0, 0.15, -2.0],
     "max_m": 0.5
    },
    "rule": "AC-3",
@@ -463,11 +438,7 @@
     "id_from": {
      "step": 17
     },
-    "p": [
-     -191.625,
-     0.0,
-     -156.75
-    ],
+    "p": [-191.625, 0.0, -156.75],
     "max_m": 0.5
    },
    "rule": "AC-3",
@@ -483,11 +454,7 @@
     "id_from": {
      "step": 19
     },
-    "p": [
-     -46.5,
-     0.15,
-     -55.25
-    ],
+    "p": [-46.5, 0.15, -55.25],
     "max_m": 0.5
    },
    "rule": "AC-3",

@@ -28,8 +28,12 @@ sys.path.insert(0, str(TASK / "common" / "kit"))
 from qakit.plan import Plan
 from qakit.play import parse_play
 
+sys.path.insert(0, str(TASK / "scripts"))
+from plan_probes import Probes
+
 OUT = TASK / "common" / "kit" / "playtests"
-PLAN = Plan.load(TASK / "common" / "design" / "plan" / "downtown.json")
+PLAN_FILE = TASK / "common" / "design" / "plan" / "downtown.json"
+PLAN = Plan.load(PLAN_FILE)
 LIMITS = {
     "wall_s": 240,
     "boot_s": 60,
@@ -762,10 +766,62 @@ def realtime() -> Playtest:
     return p
 
 
+def plan_compliance() -> Playtest:
+    p = Playtest(
+        "world.plan_compliance/downtown",
+        ["WD-1", "WD-2", "WD-3", "WD-4", "WD-5", "AC-8"],
+        "QA casts rays over the whole of Downtown: along every lane and sidewalk, across every "
+        "crosswalk, over every parcel, through every door and room, and down onto every point "
+        "of interest. What they hit has the plan's heights and the surface tags of chapter 17.",
+        ["--role=solo", "--variation=1", "--save-dir={save_dir}"],
+        limits={"step_s": 60},
+    )
+    rays = Probes(json.loads(PLAN_FILE.read_text())).build()
+    p.step("observe", {"census": False, "every": 30})
+    p.step("run", 30)
+    step = p.step("query", rays.queries)
+    p.step("run", 1)
+    for e in rays.expects:
+        p.expect(e["id"], e["check"], dict(e["args"], step=step), e["rule"], e["says"])
+    return p
+
+
 BUILDERS = (
     bad_input, commands, state_report, new_game, server_role, same_start, replay,
     same_tick, clock_rate, weather_hold, kill_after_save, damaged_slot, realtime,
+    plan_compliance,
 )  # fmt: skip
+
+
+def _scalar(v: object) -> bool:
+    return not isinstance(v, (dict, list))
+
+
+def render(obj: object, level: int = 0) -> str:
+    """JSON with one key per line (one space per level), short lists on one line, and long
+    lists of values or points ten to a line."""
+    pad = " " * (level + 1)
+    if isinstance(obj, dict):
+        if not obj:
+            return "{}"
+        items = [
+            f"{pad}{json.dumps(k)}: {render(v, level + 1)}" for k, v in obj.items()
+        ]
+        return "{\n" + ",\n".join(items) + "\n" + " " * level + "}"
+    if isinstance(obj, list):
+        if not obj:
+            return "[]"
+        if all(
+            _scalar(v) or (isinstance(v, list) and all(map(_scalar, v))) for v in obj
+        ):
+            parts = [json.dumps(v) for v in obj]
+            if len(parts) <= 10:
+                return "[" + ", ".join(parts) + "]"
+            rows = [", ".join(parts[i : i + 10]) for i in range(0, len(parts), 10)]
+            return "[\n" + ",\n".join(pad + r for r in rows) + "\n" + " " * level + "]"
+        items = [pad + render(v, level + 1) for v in obj]
+        return "[\n" + ",\n".join(items) + "\n" + " " * level + "]"
+    return json.dumps(obj)
 
 
 def main() -> int:
@@ -779,7 +835,8 @@ def main() -> int:
     for build in BUILDERS:
         p = build()
         parse_play(p.raw)  # the kit's own validation
-        text = json.dumps(p.raw, indent=1) + "\n"
+        text = render(p.raw) + "\n"
+        assert json.loads(text) == p.raw
         path = a.out / (p.name.replace("/", ".") + ".json")
         if a.check:
             if not path.is_file() or path.read_text() != text:

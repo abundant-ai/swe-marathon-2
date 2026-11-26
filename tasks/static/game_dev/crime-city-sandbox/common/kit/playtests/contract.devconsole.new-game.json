@@ -3,19 +3,9 @@
  "name": "contract.devconsole/new-game",
  "template": "contract.devconsole",
  "about": "--role=solo starts a new game: lead_1 at the Downtown safehouse at 08:00 in clear weather, with $500, fists only, 100 health, no armour, and D1 the only mission offered.",
- "rules": [
-  "AC-1",
-  "EC-1",
-  "CA-3",
-  "MS-12",
-  "UI-6"
- ],
+ "rules": ["AC-1", "EC-1", "CA-3", "MS-12", "UI-6"],
  "role": "solo",
- "args": [
-  "--role=solo",
-  "--variation=1",
-  "--save-dir={save_dir}"
- ],
+ "args": ["--role=solo", "--variation=1", "--save-dir={save_dir}"],
  "mode": "lockstep",
  "runs": [
   {
@@ -63,9 +53,7 @@
    "args": {
     "mark": "start",
     "path": "player.weapons",
-    "equals": [
-     "fists"
-    ]
+    "equals": ["fists"]
    },
    "rule": "EC-1",
    "says": "and fists only"
@@ -109,9 +97,7 @@
    "args": {
     "mark": "start",
     "path": "player.leads_unlocked",
-    "equals": [
-     "lead_1"
-    ]
+    "equals": ["lead_1"]
    },
    "rule": "CA-3",
    "says": "only lead_1 unlocked"
@@ -243,11 +229,7 @@
    "args": {
     "mark": "start",
     "kind": "player",
-    "p": [
-     -157.69,
-     0.15,
-     -165.75
-    ],
+    "p": [-157.69, 0.15, -165.75],
     "max_m": 0.5
    },
    "rule": "UI-6",

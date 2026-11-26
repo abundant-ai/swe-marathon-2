@@ -3,18 +3,9 @@
  "name": "contract.devconsole/server-role",
  "template": "contract.devconsole",
  "about": "--role=server starts a dedicated server: it builds the world and reports role server.",
- "rules": [
-  "AC-1",
-  "NT-1",
-  "PF-4"
- ],
+ "rules": ["AC-1", "NT-1", "PF-4"],
  "role": "server",
- "args": [
-  "--role=server",
-  "--port=47031",
-  "--variation=1",
-  "--save-dir={save_dir}"
- ],
+ "args": ["--role=server", "--port=47031", "--variation=1", "--save-dir={save_dir}"],
  "mode": "lockstep",
  "runs": [
   {

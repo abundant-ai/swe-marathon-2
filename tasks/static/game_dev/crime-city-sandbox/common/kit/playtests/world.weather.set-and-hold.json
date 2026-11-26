@@ -3,15 +3,9 @@
  "name": "world.weather/set-and-hold",
  "template": "world.weather",
  "about": "Weather changes only when set, and the state report says which it is.",
- "rules": [
-  "WD-14"
- ],
+ "rules": ["WD-14"],
  "role": "solo",
- "args": [
-  "--role=solo",
-  "--variation=1",
-  "--save-dir={save_dir}"
- ],
+ "args": ["--role=solo", "--variation=1", "--save-dir={save_dir}"],
  "mode": "lockstep",
  "runs": [
   {

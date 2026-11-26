@@ -3,18 +3,9 @@
  "name": "persistence.round_trip/kill-after-save",
  "template": "persistence.round_trip",
  "about": "Once saved fires, killing the process leaves the slot loadable with what was saved.",
- "rules": [
-  "SV-1",
-  "SV-3",
-  "SV-4",
-  "SV-6"
- ],
+ "rules": ["SV-1", "SV-3", "SV-4", "SV-6"],
  "role": "solo",
- "args": [
-  "--role=solo",
-  "--variation=4",
-  "--save-dir={save_dir}"
- ],
+ "args": ["--role=solo", "--variation=4", "--save-dir={save_dir}"],
  "mode": "lockstep",
  "runs": [
   {

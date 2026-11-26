@@ -3,16 +3,9 @@
  "name": "world.same_start/variations",
  "template": "world.same_start",
  "about": "The same variation gives the same starting population and another variation another one; --variation=7 starts the population world.reset builds for 7.",
- "rules": [
-  "AC-16",
-  "AC-1"
- ],
+ "rules": ["AC-16", "AC-1"],
  "role": "solo",
- "args": [
-  "--role=solo",
-  "--variation=7",
-  "--save-dir={save_dir}"
- ],
+ "args": ["--role=solo", "--variation=7", "--save-dir={save_dir}"],
  "mode": "lockstep",
  "runs": [
   {
@@ -94,19 +87,9 @@
    "id": "same_start",
    "check": "same_start",
    "args": {
-    "same": [
-     "a",
-     "b"
-    ],
-    "different": [
-     "a",
-     "c"
-    ],
-    "kinds": [
-     "player",
-     "npc",
-     "vehicle"
-    ]
+    "same": ["a", "b"],
+    "different": ["a", "c"],
+    "kinds": ["player", "npc", "vehicle"]
    },
    "rule": "AC-16",
    "says": "the same variation number rebuilds the same starting population; 8 builds another"
@@ -115,19 +98,9 @@
    "id": "variation_flag",
    "check": "same_start",
    "args": {
-    "same": [
-     "boot",
-     "a"
-    ],
-    "different": [
-     "boot",
-     "c"
-    ],
-    "kinds": [
-     "player",
-     "npc",
-     "vehicle"
-    ]
+    "same": ["boot", "a"],
+    "different": ["boot", "c"],
+    "kinds": ["player", "npc", "vehicle"]
    },
    "rule": "AC-1",
    "says": "--variation=7 starts the population of variation 7"

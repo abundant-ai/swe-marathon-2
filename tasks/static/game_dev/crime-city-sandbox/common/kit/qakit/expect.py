@@ -18,6 +18,7 @@ entity ids are unique and never reused, and every event carries its fields and t
 
 from __future__ import annotations
 
+import itertools
 import math
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -552,6 +553,626 @@ def check_heartbeat(rec: PlayRecord, args: dict) -> Result:
     return ok, measured, "" if ok else "heartbeat missed"
 
 
+# ---------------------------------------------------------------- rays cast by QA
+def step_queries(rec: PlayRecord, step: int) -> dict[str, dict]:
+    """The queries of a query step, by id."""
+    arg = rec.play.steps[step].get("query") if 0 <= step < len(rec.play.steps) else None
+    return {str(q.get("id")): q for q in arg or [] if isinstance(q, dict)}
+
+
+def step_answers(run: RunRecord, step: int) -> dict | None:
+    """The answers ("q") recorded for a query step, or None when it was not answered."""
+    i = run.step_frame.get(step)
+    if i is None or i >= len(run.frames):
+        return None
+    q = run.frames[i].get("q")
+    return q if isinstance(q, dict) else None
+
+
+def ray_answers(
+    rec: PlayRecord, run: RunRecord, args: dict
+) -> tuple[list | None, list]:
+    """The answers a ray expectation reads, with what each ray was cast at.
+
+    args["query"] names a "down" query of step args["step"] (one answer per point), or
+    args["rays"] = {"prefix": p, "count": n} names its "ray" queries p0 .. p(n-1).
+
+    Returns:
+        (answers, casts): one answer per ray (None where the game gave none) and, per
+        ray, its point [x, z] or its segment [from, to]. answers is None when the step
+        was not answered.
+    """
+    step = int(args["step"])
+    got = step_answers(run, step)
+    if got is None:
+        return None, []
+    asked = step_queries(rec, step)
+    if "query" in args:
+        qid = str(args["query"])
+        pts = (asked.get(qid) or {}).get("points") or []
+        res = got.get(qid)
+        if not isinstance(res, list):
+            return [None] * len(pts), list(pts)
+        return list(res) + [None] * (len(pts) - len(res)), list(pts)
+    prefix, count = str(args["rays"]["prefix"]), int(args["rays"]["count"])
+    ids = [f"{prefix}{k}" for k in range(count)]
+    casts = [[asked.get(i, {}).get("from"), asked.get(i, {}).get("to")] for i in ids]
+    return [got.get(i) for i in ids], casts
+
+
+def judge_ray(answer: object, args: dict, y: float | None) -> str:
+    """Why one ray's answer does not meet the expectation ("" when it does)."""
+    if not isinstance(answer, dict):
+        return "the ray was not answered"
+    hit = answer.get("hit") is True
+    if args.get("clear"):
+        if not hit:
+            return ""
+        return (
+            f"hit {answer.get('surface', 'an untagged surface')} at {answer.get('p')}"
+        )
+    if not hit:
+        return "the ray hit nothing"
+    surface = answer.get("surface")
+    if "tags" in args and surface not in args["tags"]:
+        return f"hit {surface!r}" if surface is not None else "hit an untagged surface"
+    if surface in (args.get("not_tags") or ()):
+        return f"hit {surface!r}"
+    if y is not None and "tol_m" in args:
+        p = answer.get("p")
+        hy = float(p[1]) if isinstance(p, list) and len(p) == 3 else None
+        if hy is None or abs(hy - y) > float(args["tol_m"]):
+            return (
+                f"hit {surface!r} at height {hy}, expected {y} within {args['tol_m']} m"
+            )
+    return ""
+
+
+def groups_of(args: dict, n: int) -> list[tuple[str, int, int]] | None:
+    """(label, start, end) of each group of consecutive rays; None when they do not add up."""
+    spec = args.get("groups") or [["all", n]]
+    out, start = [], 0
+    for label, count in spec:
+        out.append((str(label), start, start + int(count)))
+        start += int(count)
+    return out if start == n else None
+
+
+def check_rays(rec: PlayRecord, args: dict) -> Result:
+    """Rays QA cast at one step hit what the plan puts there.
+
+    Each ray meets the expectation when it hits a surface tagged as listed ("tags"), not
+    one of "not_tags", at the expected height ("y", one number or one per ray) within
+    "tol_m"; or, with "clear", when it hits nothing. Rays come in groups (consecutive
+    counts, "groups"); the expectation holds when in every group at least "min_share"
+    (default all) of the rays meet it.
+    """
+    run = rec.runs[int(args.get("run", 0))]
+    answers, casts = ray_answers(rec, run, args)
+    if answers is None:
+        return None, {}, "the rays were not answered"
+    n = len(answers)
+    groups = groups_of(args, n)
+    if not n or groups is None:
+        return None, {"rays": n}, "the expectation names no rays it can read"
+    ys = args.get("y")
+    min_share = float(args.get("min_share", 1.0))
+    why = [
+        judge_ray(a, args, float(ys[k]) if isinstance(ys, list) else ys)
+        for k, a in enumerate(answers)
+    ]
+    short, misses = [], []
+    for label, a, b in groups:
+        met = sum(1 for w in why[a:b] if not w)
+        if b > a and met / (b - a) < min_share:
+            short.append({"group": label, "share": round(met / (b - a), 4)})
+    for k, w in enumerate(why):
+        if w and len(misses) < 5:
+            misses.append({"at": casts[k] if k < len(casts) else None, "why": w})
+    met_all = sum(1 for w in why if not w)
+    measured = {
+        "rays": n,
+        "as_planned": met_all,
+        "share": round(met_all / n, 4),
+        "groups_short": short[:5],
+        "groups_short_count": len(short),
+        "first_misses": misses,
+    }
+    if not short:
+        return True, measured, ""
+    names = ", ".join(f"{s['group']} ({s['share']})" for s in short[:3])
+    return False, measured, f"below {min_share} of the rays: {names}"
+
+
+def check_clear_run(rec: PlayRecord, args: dict) -> Result:
+    """An opening is at least min_width_m wide.
+
+    The rays of each group cross the opening side by side, spacing_m apart, in order;
+    the widest run of consecutive rays that hit nothing must span min_width_m (the run of
+    k clear rays spans (k - 1) * spacing_m).
+    """
+    run = rec.runs[int(args.get("run", 0))]
+    answers, _ = ray_answers(rec, run, args)
+    if answers is None:
+        return None, {}, "the rays were not answered"
+    groups = groups_of(args, len(answers))
+    if not answers or groups is None:
+        return None, {"rays": len(answers)}, "the expectation names no rays it can read"
+    spacing, need = float(args["spacing_m"]), float(args["min_width_m"])
+    widths, narrow = {}, []
+    for label, a, b in groups:
+        best = cur = 0
+        for ans in answers[a:b]:
+            clear = isinstance(ans, dict) and ans.get("hit") is False
+            cur = cur + 1 if clear else 0
+            best = max(best, cur)
+        widths[label] = round(max(best - 1, 0) * spacing, 3)
+        if widths[label] < need - 1e-9:
+            narrow.append(label)
+    measured = {"clear_width_m": widths}
+    if narrow:
+        return False, measured, f"narrower than {need} m: {', '.join(narrow[:4])}"
+    return True, measured, ""
+
+
+def check_surface_tags(rec: PlayRecord, args: dict) -> Result:
+    """Every ray that hit something, of every query of one step, hit a collider whose
+    "surface" metadata is one of the listed tags (AC-8)."""
+    run = rec.runs[int(args.get("run", 0))]
+    got = step_answers(run, int(args["step"]))
+    if got is None:
+        return None, {}, "the rays were not answered"
+    allowed = set(args["allowed"])
+    hits, odd = 0, {}
+    for ans in got.values():
+        for a in ans if isinstance(ans, list) else [ans]:
+            if isinstance(a, dict) and a.get("hit") is True:
+                hits += 1
+                tag = a.get("surface")
+                if tag not in allowed:
+                    key = "untagged" if tag is None else str(tag)
+                    odd[key] = odd.get(key, 0) + 1
+    measured = {"hits": hits, "other_tags": odd}
+    if not hits:
+        return None, measured, "no ray hit anything"
+    if odd:
+        return False, measured, f"surfaces outside the list: {sorted(odd)[:5]}"
+    return True, measured, ""
+
+
+def check_none_listed(rec: PlayRecord, args: dict) -> Result:
+    """A query that lists things (such as "unregistered") answered with an empty list."""
+    run = rec.runs[int(args.get("run", 0))]
+    got = step_answers(run, int(args["step"]))
+    if got is None:
+        return None, {}, "the query was not answered"
+    res = got.get(str(args["query"]))
+    if not isinstance(res, list):
+        return False, {"answer": res}, "the query gave no list"
+    return (
+        not res,
+        {"listed": res[:10], "count": len(res)},
+        ("" if not res else f"{len(res)} listed: {res[:3]}"),
+    )
+
+
+def check_skeleton(rec: PlayRecord, args: dict) -> Result:
+    """A "skeleton" query found exactly one Skeleton3D with the listed bone names and at
+    least min_bound_meshes skinned meshes bound to it (AC-5)."""
+    run = rec.runs[int(args.get("run", 0))]
+    got = step_answers(run, int(args["step"]))
+    if got is None:
+        return None, {}, "the query was not answered"
+    res = got.get(str(args["query"]))
+    if not isinstance(res, dict) or res.get("ok") is not True:
+        return False, {"answer": res}, "no such entity"
+    bones = set(res.get("bones") or [])
+    missing = [b for b in args.get("bones", []) if b not in bones]
+    measured = {
+        "skeletons": res.get("skeletons"),
+        "bones": len(bones),
+        "missing_bones": missing[:10],
+        "bound_meshes": res.get("bound_meshes"),
+    }
+    if res.get("skeletons") != 1:
+        return False, measured, f"{res.get('skeletons')} skeletons"
+    if missing:
+        return False, measured, f"bones missing: {', '.join(missing[:6])}"
+    if int(res.get("bound_meshes") or 0) < int(args.get("min_bound_meshes", 1)):
+        return False, measured, "no skinned mesh is bound to the skeleton"
+    return True, measured, ""
+
+
+# ---------------------------------------------------------------- people and the camera
+TICK_HZ = 60
+
+
+def entity_of(frame: dict | None, args: dict) -> dict | None:
+    """The census row of the entity an expectation names: by "kind" (and "archetype")."""
+    for e in (frame or {}).get("census") or []:
+        if e.get("k") != args.get("kind", "player"):
+            continue
+        if "archetype" in args and e.get("a") != args["archetype"]:
+            continue
+        return e
+    return None
+
+
+def bone_of(frame: dict | None, eid: object, bone: str) -> list[float] | None:
+    """A bone's world position in a frame's bone observation, or None."""
+    b = ((frame or {}).get("bones") or {}).get(str(eid)) or {}
+    p = b.get(bone)
+    return [float(c) for c in p] if isinstance(p, list) and len(p) == 3 else None
+
+
+def point_of(frame: dict | None, args: dict) -> list[float] | None:
+    """The entity's bone (args["bone"]) or, without one, its position, in a frame."""
+    e = entity_of(frame, args)
+    if e is None:
+        return None
+    if args.get("bone"):
+        return bone_of(frame, e.get("id"), args["bone"])
+    p = e.get("p")
+    return [float(c) for c in p] if isinstance(p, list) else None
+
+
+def frames_between(run: RunRecord, a: str, b: str) -> list[dict]:
+    """The frames from mark a to mark b, both included (empty when a mark is missing)."""
+    i, j = run.marks.get(a), run.marks.get(b)
+    if i is None or j is None:
+        return []
+    return run.frames[i : j + 1]
+
+
+def check_pace(rec: PlayRecord, args: dict) -> Result:
+    """The horizontal speed of an entity's bone (or position) between two marks lies in
+    [min_mps, max_mps]: horizontal distance over the ticks between them, at 60 per second."""
+    run = rec.runs[int(args.get("run", 0))]
+    fa, fb = frame_at_mark(run, args["from"]), frame_at_mark(run, args["to"])
+    pa, pb = point_of(fa, args), point_of(fb, args)
+    if fa is None or fb is None or pa is None or pb is None:
+        what = args.get("bone") or "position"
+        return None, {}, f"no {what} at both marks"
+    ticks = int(fb.get("t", 0)) - int(fa.get("t", 0))
+    if ticks <= 0:
+        return None, {"ticks": ticks}, "the marks are not in order"
+    speed = math.dist([pa[0], pa[2]], [pb[0], pb[2]]) * TICK_HZ / ticks
+    measured = {"speed_mps": round(speed, 4), "ticks": ticks}
+    lo, hi = float(args.get("min_mps", 0.0)), float(args.get("max_mps", math.inf))
+    ok = lo <= speed <= hi
+    return ok, measured, "" if ok else f"{speed:.3f} m/s, expected {lo}-{hi}"
+
+
+def quantile(values: list[float], q: float) -> float:
+    """The q-quantile of values (linear between neighbours)."""
+    s = sorted(values)
+    pos = (len(s) - 1) * q
+    lo = math.floor(pos)
+    hi = min(lo + 1, len(s) - 1)
+    return s[lo] + (s[hi] - s[lo]) * (pos - lo)
+
+
+def stances(rows: list[tuple[int, list[float]]], contact_m: float) -> list[list]:
+    """Runs of consecutive samples with the toe within contact_m of its lowest height."""
+    floor = min(p[1] for _, p in rows) + contact_m
+    runs, cur = [], []
+    for t, p in rows:
+        if p[1] <= floor:
+            cur.append((t, p))
+        elif cur:
+            runs.append(cur)
+            cur = []
+    if cur:
+        runs.append(cur)
+    return runs
+
+
+def check_feet(rec: PlayRecord, args: dict) -> Result:
+    """Planted feet between two marks (FT-2), from the LeftToes and RightToes bones.
+
+    A stance is a run of samples with the toe within contact_m (default 0.04) of its
+    lowest height in the window; a step is the start of a stance that the window did not
+    begin in. Slide is the toe's horizontal speed over the middle 60% of each stance.
+    Holds when at least min_steps steps were taken, at least min_alternation of
+    consecutive steps change foot, and the slide's p95 is at most max_slide_mps.
+    """
+    run = rec.runs[int(args.get("run", 0))]
+    frames = frames_between(run, args["from"], args["to"])
+    contact = float(args.get("contact_m", 0.04))
+    sides: dict[str, list] = {"left": [], "right": []}
+    for fr in frames:
+        e = entity_of(fr, args)
+        if e is None:
+            continue
+        for side, bone in (("left", "LeftToes"), ("right", "RightToes")):
+            p = bone_of(fr, e.get("id"), bone)
+            if p is not None:
+                sides[side].append((int(fr.get("t", 0)), p))
+    if min(len(v) for v in sides.values()) < 10:
+        return None, {"samples": len(frames)}, "the toes were not observed"
+    steps, slides = [], []
+    for side, rows in sides.items():
+        runs = stances(rows, contact)
+        for k, r in enumerate(runs):
+            if k > 0 or r[0][0] != rows[0][0]:
+                steps.append((r[0][0], side))
+            n = len(r)
+            mid = r[int(n * 0.2) : max(int(n * 0.2) + 2, math.ceil(n * 0.8))]
+            for (ta, pa), (tb, pb) in itertools.pairwise(mid):
+                if tb > ta:
+                    d = math.dist([pa[0], pa[2]], [pb[0], pb[2]])
+                    slides.append(d * TICK_HZ / (tb - ta))
+    steps.sort()
+    changes = [1 if a[1] != b[1] else 0 for a, b in itertools.pairwise(steps)]
+    alternation = sum(changes) / len(changes) if changes else 0.0
+    slide = quantile(slides, 0.95) if slides else None
+    measured = {
+        "steps": len(steps),
+        "alternation": round(alternation, 3),
+        "slide_p95_mps": None if slide is None else round(slide, 3),
+    }
+    if len(steps) < int(args.get("min_steps", 4)):
+        return False, measured, f"{len(steps)} steps"
+    if alternation < float(args.get("min_alternation", 0.9)):
+        return False, measured, f"steps alternate feet {alternation:.0%} of the time"
+    if slide is None or slide > float(args["max_slide_mps"]):
+        return False, measured, f"planted toes slide at {slide} m/s (p95)"
+    return True, measured, ""
+
+
+def camera_axes(cam: dict) -> tuple[list[float], list[float], list[float]]:
+    """(forward, right, up) of a camera from its back axis, for a camera without roll."""
+    bz = [float(c) for c in cam["bz"]]
+    fwd = [-c for c in bz]
+    rx, rz = bz[2], -bz[0]  # world up x back
+    norm = math.hypot(rx, rz) or 1.0
+    right = [rx / norm, 0.0, rz / norm]
+    up = [
+        bz[1] * right[2] - bz[2] * right[1],
+        bz[2] * right[0] - bz[0] * right[2],
+        bz[0] * right[1] - bz[1] * right[0],
+    ]
+    return fwd, right, up
+
+
+def view_offset(cam: dict, p: list[float], aspect: float) -> tuple[float, float] | None:
+    """Where a point appears in a camera's view: (x, y) from -1 to 1 across the width and
+    the height (0 is the middle), with the field of view taken as vertical; None when the
+    point is behind the camera."""
+    fwd, right, up = camera_axes(cam)
+    d = [p[k] - float(cam["p"][k]) for k in range(3)]
+    depth = sum(d[k] * fwd[k] for k in range(3))
+    if depth <= 0:
+        return None
+    half = math.tan(math.radians(float(cam["fov"])) / 2.0)
+    x = sum(d[k] * right[k] for k in range(3)) / depth / (half * aspect)
+    y = sum(d[k] * up[k] for k in range(3)) / depth / half
+    return x, y
+
+
+def check_camera_frame(rec: PlayRecord, args: dict) -> Result:
+    """Between two marks the camera stays min_m-max_m from the player's Head bone and the
+    player's frame bone (default Hips) inside the middle `middle` (default 0.4) of the view,
+    by width and height, for a view of the given aspect (width / height). (CM-1)"""
+    run = rec.runs[int(args.get("run", 0))]
+    frames = frames_between(run, args["from"], args["to"])
+    aspect, middle = float(args.get("aspect", 16 / 9)), float(args.get("middle", 0.4))
+    dists, worst, n = [], 0.0, 0
+    for fr in frames:
+        cam, e = fr.get("camera"), entity_of(fr, args)
+        if not isinstance(cam, dict) or e is None:
+            continue
+        head = bone_of(fr, e.get("id"), "Head")
+        body = bone_of(fr, e.get("id"), args.get("frame_bone", "Hips"))
+        if head is None or body is None:
+            continue
+        n += 1
+        dists.append(math.dist(head, [float(c) for c in cam["p"]]))
+        off = view_offset(cam, body, aspect)
+        worst = max(worst, 2.0 if off is None else max(abs(off[0]), abs(off[1])))
+    if not n:
+        return None, {}, "the camera and the player's bones were not observed"
+    measured = {
+        "frames": n,
+        "head_distance_m": [round(min(dists), 3), round(max(dists), 3)],
+        "farthest_from_middle": round(worst, 3),
+    }
+    lo, hi = float(args["min_m"]), float(args["max_m"])
+    if min(dists) < lo or max(dists) > hi:
+        return (
+            False,
+            measured,
+            f"the camera is {measured['head_distance_m']} m from the head",
+        )
+    if worst > middle:
+        return False, measured, f"the player leaves the middle {middle:.0%} of the view"
+    return True, measured, ""
+
+
+def camera_heading(cam: dict) -> float:
+    """The heading (degrees clockwise from north) of the camera's horizontal forward."""
+    bz = cam["bz"]
+    return math.degrees(math.atan2(-float(bz[0]), float(bz[2]))) % 360.0
+
+
+def camera_pitch(cam: dict) -> float:
+    """The camera's pitch in degrees: positive when it looks up."""
+    return math.degrees(math.asin(max(-1.0, min(1.0, -float(cam["bz"][1])))))
+
+
+def check_look_rate(rec: PlayRecord, args: dict) -> Result:
+    """Between two marks the camera turns around the player at min_dps-max_dps degrees
+    per second (CM-2): the change of its heading, followed frame by frame."""
+    run = rec.runs[int(args.get("run", 0))]
+    frames = [
+        f for f in frames_between(run, args["from"], args["to"]) if f.get("camera")
+    ]
+    if len(frames) < 2:
+        return None, {}, "the camera was not observed"
+    turned = 0.0
+    for a, b in itertools.pairwise(frames):
+        d = camera_heading(b["camera"]) - camera_heading(a["camera"])
+        turned += (d + 180.0) % 360.0 - 180.0
+    secs = (int(frames[-1]["t"]) - int(frames[0]["t"])) / TICK_HZ
+    rate = abs(turned) / secs if secs > 0 else 0.0
+    measured = {"turned_deg": round(turned, 2), "seconds": round(secs, 3)}
+    measured["rate_dps"] = round(rate, 2)
+    lo, hi = float(args["min_dps"]), float(args["max_dps"])
+    ok = lo <= rate <= hi
+    return ok, measured, "" if ok else f"{rate:.1f} degrees per second"
+
+
+def check_camera_tilt(rec: PlayRecord, args: dict) -> Result:
+    """Between two marks the camera's pitch stays within [min_deg, max_deg] (with tol_deg)
+    and, with "rises" or "falls", changes that way by at least min_change_deg (CM-2)."""
+    run = rec.runs[int(args.get("run", 0))]
+    frames = [
+        f for f in frames_between(run, args["from"], args["to"]) if f.get("camera")
+    ]
+    if len(frames) < 2:
+        return None, {}, "the camera was not observed"
+    pitches = [camera_pitch(f["camera"]) for f in frames]
+    tol = float(args.get("tol_deg", 0.5))
+    lo, hi = float(args["min_deg"]), float(args["max_deg"])
+    measured = {
+        "pitch_deg": [round(min(pitches), 2), round(max(pitches), 2)],
+        "change_deg": round(pitches[-1] - pitches[0], 2),
+    }
+    if min(pitches) < lo - tol or max(pitches) > hi + tol:
+        return False, measured, f"the pitch reaches {measured['pitch_deg']} degrees"
+    need = float(args.get("min_change_deg", 0.0))
+    change = measured["change_deg"] * (-1.0 if args.get("falls") else 1.0)
+    if (args.get("rises") or args.get("falls")) and change < need:
+        return False, measured, "the camera does not tilt that way"
+    return True, measured, ""
+
+
+def check_moves_along_camera(rec: PlayRecord, args: dict) -> Result:
+    """Between two marks the player moves within within_deg of the camera's horizontal
+    forward direction as it was at the first mark (CM-3)."""
+    run = rec.runs[int(args.get("run", 0))]
+    fa, fb = frame_at_mark(run, args["from"]), frame_at_mark(run, args["to"])
+    pa, pb = point_of(fa, args), point_of(fb, args)
+    cam = (fa or {}).get("camera")
+    if pa is None or pb is None or not isinstance(cam, dict):
+        return None, {}, "the player or the camera was not observed"
+    dx, dz = pb[0] - pa[0], pb[2] - pa[2]
+    if math.hypot(dx, dz) < 0.05:
+        return (
+            False,
+            {"moved_m": round(math.hypot(dx, dz), 4)},
+            "the player did not move",
+        )
+    moved = math.degrees(math.atan2(dx, -dz)) % 360.0
+    off = abs((moved - camera_heading(cam) + 180.0) % 360.0 - 180.0)
+    measured = {
+        "moved_heading": round(moved, 2),
+        "camera_heading": round(camera_heading(cam), 2),
+        "off_deg": round(off, 2),
+    }
+    ok = off <= float(args["within_deg"])
+    return ok, measured, "" if ok else f"{off:.1f} degrees off the camera's forward"
+
+
+LOOK_FIELDS = (
+    "body",
+    "hair",
+    "skin",
+    "top",
+    "bottom",
+    "shoes",
+    "hair_colour",
+    "props",
+    "scale",
+)
+
+
+def rgb(text: object) -> tuple[float, float, float] | None:
+    """A "#rrggbb" colour as three channels from 0 to 1, or None."""
+    if not isinstance(text, str) or len(text) != 7 or text[0] != "#":
+        return None
+    try:
+        return tuple(int(text[k : k + 2], 16) / 255.0 for k in (1, 3, 5))
+    except ValueError:
+        return None
+
+
+def look_at_mark(run: RunRecord, args: dict, mark: str) -> dict | None:
+    """The "look" metadata (AC-11) of the entity an expectation names, at a mark."""
+    e = entity_of(frame_at_mark(run, mark), args)
+    lk = ((e or {}).get("m") or {}).get("look")
+    return lk if isinstance(lk, dict) else None
+
+
+def check_look(rec: PlayRecord, args: dict) -> Result:
+    """At a mark the entity's "look" metadata has every field of AC-11 and matches the
+    expected look: names equal, colours within colour_tol per channel (0-1 scale)."""
+    run = rec.runs[int(args.get("run", 0))]
+    lk = look_at_mark(run, args, args["mark"])
+    if lk is None:
+        return False, {}, "no look metadata"
+    missing = [f for f in LOOK_FIELDS if f not in lk]
+    measured = {"look": lk}
+    if missing:
+        return False, measured, f"look lacks {', '.join(missing)}"
+    tol = float(args.get("colour_tol", 0.02))
+    for key, want in args["expect"].items():
+        got = lk.get(key)
+        if rgb(want) is not None:
+            g = rgb(got)
+            if g is None or max(abs(a - b) for a, b in zip(g, rgb(want))) > tol:
+                return False, measured, f"{key} is {got!r}, expected {want}"
+        elif isinstance(want, (int, float)) and not isinstance(want, bool):
+            if not isinstance(got, (int, float)) or abs(float(got) - want) > 1e-6:
+                return False, measured, f"{key} is {got!r}, expected {want}"
+        elif got != want:
+            return False, measured, f"{key} is {got!r}, expected {want!r}"
+    return True, measured, ""
+
+
+def check_looks_distinct(rec: PlayRecord, args: dict) -> Result:
+    """The looks at the listed marks differ pairwise in body or hair, and their tops by at
+    least min_top_distance (RGB distance, channels 0-1) (CA-2)."""
+    run = rec.runs[int(args.get("run", 0))]
+    looks = [(m, look_at_mark(run, args, m)) for m in args["marks"]]
+    if any(lk is None for _, lk in looks):
+        return None, {}, "a look was not observed"
+    need = float(args.get("min_top_distance", 0.2))
+    close = []
+    for i, (ma, a) in enumerate(looks):
+        for mb, b in looks[i + 1 :]:
+            ta, tb = rgb(a.get("top")), rgb(b.get("top"))
+            dist = math.dist(ta, tb) if ta and tb else 0.0
+            same_shape = a.get("body") == b.get("body") and a.get("hair") == b.get(
+                "hair"
+            )
+            if same_shape or dist < need:
+                close.append([ma, mb, round(dist, 3)])
+    measured = {"looks": len(looks), "too_alike": close[:5]}
+    return not close, measured, "" if not close else f"too alike: {close[:2]}"
+
+
+def check_hips_ratio(rec: PlayRecord, args: dict) -> Result:
+    """The bone's height above ground_y at one mark is at most max_ratio of its height at
+    another (FT-6: crouched hips at most 75% of standing)."""
+    run = rec.runs[int(args.get("run", 0))]
+    bone = dict(args, bone=args.get("bone", "Hips"))
+    up = point_of(frame_at_mark(run, args["standing"]), bone)
+    low = point_of(frame_at_mark(run, args["crouched"]), bone)
+    if up is None or low is None:
+        return None, {}, "the bone was not observed at both marks"
+    g = float(args["ground_y"])
+    h_up, h_low = up[1] - g, low[1] - g
+    ratio = h_low / h_up if h_up > 0 else math.inf
+    measured = {
+        "standing_m": round(h_up, 3),
+        "crouched_m": round(h_low, 3),
+        "ratio": round(ratio, 3),
+    }
+    ok = ratio <= float(args["max_ratio"])
+    return ok, measured, "" if ok else f"the hips stay at {ratio:.0%} of their height"
+
+
 CHECKS: dict[str, Callable[[PlayRecord, dict], Result]] = {
     "dev_answers": check_dev_answers,
     "dev_result": check_dev_result,
@@ -563,6 +1184,20 @@ CHECKS: dict[str, Callable[[PlayRecord, dict], Result]] = {
     "heartbeat": check_heartbeat,
     "entity_near": check_entity_near,
     "state_fields": check_state_fields,
+    "rays": check_rays,
+    "clear_run": check_clear_run,
+    "surface_tags": check_surface_tags,
+    "none_listed": check_none_listed,
+    "skeleton": check_skeleton,
+    "pace": check_pace,
+    "feet": check_feet,
+    "camera_frame": check_camera_frame,
+    "look_rate": check_look_rate,
+    "camera_tilt": check_camera_tilt,
+    "moves_along_camera": check_moves_along_camera,
+    "look": check_look,
+    "looks_distinct": check_looks_distinct,
+    "hips_ratio": check_hips_ratio,
 }
 
 

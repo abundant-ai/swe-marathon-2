@@ -3,18 +3,9 @@
  "name": "contract.devconsole/state-report",
  "template": "contract.devconsole",
  "about": "The state report carries every field chapter 17 lists, on foot and at the wheel.",
- "rules": [
-  "AC-12",
-  "MS-12",
-  "WD-14",
-  "NT-1"
- ],
+ "rules": ["AC-12", "MS-12", "WD-14", "NT-1"],
  "role": "solo",
- "args": [
-  "--role=solo",
-  "--variation=5",
-  "--save-dir={save_dir}"
- ],
+ "args": ["--role=solo", "--variation=5", "--save-dir={save_dir}"],
  "mode": "lockstep",
  "runs": [
   {

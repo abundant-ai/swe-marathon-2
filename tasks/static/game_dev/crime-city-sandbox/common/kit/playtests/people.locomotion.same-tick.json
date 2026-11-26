@@ -3,15 +3,9 @@
  "name": "people.locomotion/same-tick",
  "template": "people.locomotion",
  "about": "An action pressed in physics tick t takes effect in tick t: the player moves in the tick move_forward is pressed.",
- "rules": [
-  "IN-3"
- ],
+ "rules": ["IN-3"],
  "role": "solo",
- "args": [
-  "--role=solo",
-  "--variation=6",
-  "--save-dir={save_dir}"
- ],
+ "args": ["--role=solo", "--variation=6", "--save-dir={save_dir}"],
  "mode": "lockstep",
  "runs": [
   {
@@ -74,9 +68,7 @@
    "mark": "after"
   },
   {
-   "release": [
-    "move_forward"
-   ]
+   "release": ["move_forward"]
   },
   {
    "run": 1
