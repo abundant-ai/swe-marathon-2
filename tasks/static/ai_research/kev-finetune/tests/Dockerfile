@@ -27,8 +27,8 @@ RUN cd /opt/kev && uv sync --frozen --no-dev \
     && uv pip install --python /opt/kev/.venv/bin/python --no-cache flash-linear-attention==0.5.2 triton==3.7.1 \
     && uv pip install --python /opt/kev/.venv/bin/python --no-cache --no-deps \
         "https://github.com/Dao-AILab/causal-conv1d/releases/download/v1.7.0/causal_conv1d-1.7.0%2Bcu12torch2.8cxx11abiTRUE-cp313-cp313-linux_x86_64.whl" \
-    && /opt/kev/.venv/bin/python -c "import torch, triton, fla; assert torch.__version__.startswith('2.8.0'), torch.__version__; \
-assert triton.__version__ == '3.7.1' and fla.__version__ == '0.5.2'; print('torch', torch.__version__, 'triton', triton.__version__, 'fla', fla.__version__)" \
+    && /opt/kev/.venv/bin/python -c "from importlib.metadata import version as v; got = {p: v(p) for p in ('torch', 'triton', 'flash-linear-attention', 'causal-conv1d')}; print(got); \
+assert got['torch'].startswith('2.8.0') and got['triton'] == '3.7.1' and got['flash-linear-attention'] == '0.5.2'" \
     && rm -rf /root/.cache/uv
 
 RUN /opt/kev/.venv/bin/python -c "import os; from huggingface_hub import snapshot_download as get; \
