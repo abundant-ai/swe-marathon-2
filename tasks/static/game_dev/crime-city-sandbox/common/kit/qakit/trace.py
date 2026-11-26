@@ -3,9 +3,9 @@
 A trace is the list of frames one run of a game produced. Two runs did the same thing
 when their traces hash the same. What is hashed of each frame is its tick and the
 physical record: the entity census (ids, kinds, positions, orientations, velocities,
-metadata asked for), the bone positions, and the name and tick of each event. Command
-answers, the state report, query answers and timing are kept in the trace file but not
-hashed (they may carry incidental values such as how long a command took).
+metadata asked for), the bone positions, the seat points, and the name and tick of each
+event. Command answers, the state report, query answers and timing are kept in the trace
+file but not hashed (they may carry incidental values such as how long a command took).
 
 Each world.reset starts a new segment (the frame after a successful world.reset
 answer is the first frame of the new segment), so a run can be compared from the
@@ -52,14 +52,16 @@ def physical(frame: dict) -> dict:
         frame: A frame as the telemetry node sent it.
 
     Returns:
-        {"t", "census", "bones", "ev"} where "ev" lists [name, tick] of each event.
-        Missing parts are left out.
+        {"t", "census", "bones", "seats", "ev"} where "ev" lists [name, tick] of each
+        event. Missing parts are left out.
     """
     out: dict = {"t": frame.get("t")}
     if "census" in frame:
         out["census"] = frame["census"]
     if "bones" in frame:
         out["bones"] = frame["bones"]
+    if "seats" in frame:
+        out["seats"] = frame["seats"]
     events = frame.get("events") or []
     if events:
         out["ev"] = [[e.get("n"), e.get("t")] for e in events if isinstance(e, dict)]
@@ -211,6 +213,8 @@ def describe_difference(a: dict | None, b: dict | None) -> str:
             return f"entity {ea.get('id')}: {', '.join(keys)}"
     if a.get("bones") != b.get("bones"):
         return "bone positions"
+    if a.get("seats") != b.get("seats"):
+        return "seat points"
     return "events"
 
 

@@ -1,0 +1,30 @@
+{
+  "format": "qa-play/1",
+  "name": "seats.read/vehicles",
+  "template": "seats.read",
+  "rules": [],
+  "role": "solo",
+  "args": [],
+  "mode": "lockstep",
+  "runs": [{"pace_ms": 0}],
+  "limits": {"wall_s": 120, "cpu_s": 120, "memory_mb": 1536, "boot_s": 60, "step_s": 30},
+  "steps": [
+    {"dev": [["vehicle.spawn", {"at": [4.0, 0.2, 9.0], "heading": 150.0}]]},
+    {"query": [
+      {"id": "body_car", "type": "body", "entity": 1},
+      {"id": "body_van", "type": "body", "entity": 2},
+      {"id": "body_walker", "type": "body", "entity": 3},
+      {"id": "body_spawned", "type": "body", "entity": {"$answer": [0, "id"]}},
+      {"id": "body_none", "type": "body", "entity": 99}]},
+    {"observe": {"census": true, "state": true, "every": 1, "seats": {
+      "ids": ["vehicle", 2, {"$answer": [0, "id"]}, 3, 99]}}},
+    {"run": 12},
+    {"observe": {"census": {"kinds": ["vehicle", "boat"], "meta": ["faction"]}, "state": true,
+      "every": 4, "seats": {"ids": [2, "vehicle", 2]}}},
+    {"run": 24},
+    {"observe": {"census": {"kinds": []}, "every": 1}},
+    {"run": 2}
+  ],
+  "expect": [],
+  "tags": []
+}

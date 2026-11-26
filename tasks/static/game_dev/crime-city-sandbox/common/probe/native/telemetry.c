@@ -59,6 +59,7 @@
 #define MAX_KEYS 32
 #define MAX_BONE_IDS 64
 #define MAX_BONE_NAMES 96
+#define MAX_SEAT_IDS 64                // vehicles whose seats a frame lists
 #define MAX_SHOWN (MAX_BONE_IDS + 16)  // skeletons followed for the pose they show
 #define MAX_SHOWN_BONES 256            // bones kept per followed skeleton
 #define EXIT_BAD_LINK 3
@@ -156,13 +157,14 @@ static SN sn_get, sn_is_visible, sn_get_children, sn_get_fov, sn_get_bone_name, 
 static SN sn_get_skeleton_path, sn_get_mesh, sn_surface_count, sn_surface_arrays, sn_get_path;
 static SN sn_get_version_info, sn_get_setting, sn_get_ticks, sn_get_jitter, sn_get_max_steps;
 static SN sn_render_method, sn_display_name, sn_cpu_count, sn_get_env, sn_is_instance_valid;
-static SN sn_is_connected, sn_disconnect;
+static SN sn_is_connected, sn_disconnect, sn_seat, sn_m_index, sn_m_door, sn_m_wheel;
+static SN sn_collision_object, sn_get_class;
 
 static Var k_run, k_inputs, k_dev, k_observe, k_queries, k_quit, k_n, k_census, k_meta, k_view;
 static Var k_bones, k_ids, k_names, k_camera, k_hud, k_state, k_every, k_id, k_type, k_from;
 static Var k_to, k_mask, k_points, k_y0, k_y1, k_a, k_b, k_a_up, k_b_up, k_entity, k_keys;
 static Var k_position, k_collider, k_string, k_ok, k_event, k_text, k_star, k_empty;
-static Var k_skeleton_updated;
+static Var k_skeleton_updated, k_seats, k_mass, k_collision_layer, k_collision_mask, k_kinds;
 
 // ------------------------------------------------------------------ state
 typedef struct {
@@ -172,11 +174,14 @@ typedef struct {
 } Input;
 
 typedef struct {
-	int census, view, camera, state, every;
-	int n_meta, n_bone_ids, n_bone_names, n_hud;
+	int census, view, camera, state, every, census_kinds;
+	int n_meta, n_bone_ids, n_bone_names, n_hud, n_seat_ids, n_kinds;
 	SN meta[MAX_KEYS];
 	char *meta_txt[MAX_KEYS];
+	SN kinds[MAX_KEYS];         // census_kinds: only entities of these kinds are listed
+	char *kind_txt[MAX_KEYS];
 	int64_t bone_ids[MAX_BONE_IDS];
+	int64_t seat_ids[MAX_SEAT_IDS];
 	GS bone_gs[MAX_BONE_NAMES];
 	char *bone_txt[MAX_BONE_NAMES];
 	SN hud[MAX_KEYS];
@@ -262,6 +267,21 @@ static double as_num(const Var *v, double dflt) {
 		return b ? 1.0 : 0.0;
 	}
 	return dflt;
+}
+
+// A whole number variant (an int, or a float without a fraction) as an entity id. Returns 1
+// and sets *out when it is one.
+static int as_id(const Var *v, int64_t *out) {
+	int t = v_type(v);
+	if (t == T_INT) {
+		vto[T_INT](out, (GDExtensionVariantPtr)v);
+		return 1;
+	}
+	if (t != T_FLOAT) return 0;
+	double x = as_num(v, 0);
+	if (x != floor(x) || fabs(x) > 9.0e18) return 0;
+	*out = (int64_t)x;
+	return 1;
 }
 
 // UTF-8 text of any variant (its string form); the caller frees the result.
@@ -405,6 +425,13 @@ static int is_class(Obj o, const SN *cls) {
 	GDExtensionBool b = 0;
 	const void *args[1] = {cls};
 	f_ptrcall(mb_is_class, o, args, &b);
+	return b != 0;
+}
+
+static int in_group(Obj o, const SN *group) {
+	GDExtensionBool b = 0;
+	const void *args[1] = {group};
+	f_ptrcall(mb_is_in_group, o, args, &b);
 	return b != 0;
 }
 
@@ -1120,6 +1147,18 @@ static Obj current_camera(void) {
 	return cam;
 }
 
+// Whether entity o's "kind" metadata is one of the kinds the census lists.
+static int kind_listed(Obj o) {
+	if (!has_meta(o, &sn_m_kind)) return 0;
+	Var m = meta(o, &sn_m_kind);
+	char *t = as_text(&m, NULL);
+	int found = 0;
+	for (int i = 0; t && i < g_obs.n_kinds && !found; i++) found = !strcmp(t, g_obs.kind_txt[i]);
+	free(t);
+	v_free(&m);
+	return found;
+}
+
 static void write_census(jbuf *b) {
 	Obj cam = g_obs.view ? current_camera() : NULL;
 	GA arr = group_nodes(&sn_entity);
@@ -1128,7 +1167,7 @@ static void write_census(jbuf *b) {
 	int first = 1;
 	for (int64_t i = 0; i < n && !b->over; i++) {
 		Obj o = garr_obj(&arr, i);
-		if (!o) continue;
+		if (!o || (g_obs.census_kinds && !kind_listed(o))) continue;
 		if (!first) jb_raw(b, ",", 1);
 		first = 0;
 		write_entity(b, o, cam);
@@ -1168,6 +1207,90 @@ static void write_bones(jbuf *b) {
 			jb_vec3(b, w.x, w.y, w.z);
 		}
 		jb_lit(b, "}");
+	}
+	jb_lit(b, "}");
+}
+
+// Metadata key of o as a point: a Vector3, or an array of three numbers. Returns 1 and
+// sets out when it is one.
+static int meta_point(Obj o, const SN *key, float out[3]) {
+	if (!has_meta(o, key)) return 0;
+	Var m = meta(o, key);
+	int ok = 0;
+	if (v_type(&m) == T_V3) {
+		vto[T_V3](out, (GDExtensionVariantPtr)&m);
+		ok = 1;
+	} else if (asize(&m) == 3) {
+		ok = 1;
+		for (int i = 0; i < 3 && ok; i++) {
+			Var e;
+			int t = aget(&m, i, &e) ? v_type(&e) : T_NIL;
+			ok = t == T_INT || t == T_FLOAT;
+			if (ok) out[i] = (float)as_num(&e, 0);
+			v_free(&e);
+		}
+	}
+	v_free(&m);
+	return ok;
+}
+
+// A seat's point metadata (in vehicle space) in world space, or null when the marker has
+// no such point or the vehicle has no transform (vx NULL).
+static void write_seat_point(jbuf *b, Obj marker, const SN *key, const Xf *vx) {
+	float p[3] = {0, 0, 0};
+	if (vx && meta_point(marker, key, p)) {
+		V3 w = xf_apply(vx, p);
+		jb_vec3(b, w.x, w.y, w.z);
+	} else {
+		jb_lit(b, "null");
+	}
+}
+
+// For each observed vehicle, the Marker3D nodes under it (any depth) in group "seat", in
+// tree order: the "index" metadata as written, the marker's world origin, and the "door"
+// and "wheel" metadata (points in the vehicle's space) in world space.
+static void write_seats(jbuf *b) {
+	jb_lit(b, ",\"seats\":{");
+	int first = 1;
+	for (int i = 0; i < g_obs.n_seat_ids && !b->over; i++) {
+		Obj e = entity_by_id(g_obs.seat_ids[i]);
+		if (!e) continue;
+		Xf vx;
+		memset(&vx, 0, sizeof vx);
+		int spatial = is_class(e, &sn_node3d);
+		if (spatial) vx = global_xf(e);
+		if (!first) jb_raw(b, ",", 1);
+		first = 0;
+		jb_raw(b, "\"", 1);
+		jb_i64(b, g_obs.seat_ids[i]);
+		jb_lit(b, "\":[");
+		GA marks = find_children(e, "Marker3D");
+		int64_t n = garr_size(&marks);
+		int sfirst = 1;
+		for (int64_t k = 0; k < n && !b->over; k++) {
+			Obj m = garr_obj(&marks, k);
+			if (!m || !in_group(m, &sn_seat)) continue;
+			if (!sfirst) jb_raw(b, ",", 1);
+			sfirst = 0;
+			jb_lit(b, "{\"index\":");
+			if (has_meta(m, &sn_m_index)) {
+				Var v = meta(m, &sn_m_index);
+				jw_var(b, &v, 0);
+				v_free(&v);
+			} else {
+				jb_lit(b, "null");
+			}
+			Xf mx = global_xf(m);
+			jb_lit(b, ",\"p\":");
+			jb_vec3(b, mx.o[0], mx.o[1], mx.o[2]);
+			jb_lit(b, ",\"door\":");
+			write_seat_point(b, m, &sn_m_door, spatial ? &vx : NULL);
+			jb_lit(b, ",\"wheel\":");
+			write_seat_point(b, m, &sn_m_wheel, spatial ? &vx : NULL);
+			jb_lit(b, "}");
+		}
+		dtor_array(&marks);
+		jb_lit(b, "]");
 	}
 	jb_lit(b, "}");
 }
@@ -1543,6 +1666,40 @@ static void query_meta(jbuf *b, const Var *q) {
 	v_free(&keys);
 }
 
+// A property of o read by name, when it is a number; null otherwise (or when o has none).
+static void write_number_property(jbuf *b, Obj o, const Var *name) {
+	Var v;
+	ocall(o, &sn_get, name, NULL, NULL, &v);
+	int t = v_type(&v);
+	if (t == T_INT || t == T_FLOAT) jw_var(b, &v, 0);
+	else jb_lit(b, "null");
+	v_free(&v);
+}
+
+// An entity's node: its class, whether it is a physics body (a CollisionObject3D), and its
+// mass, collision layer and collision mask properties.
+static void query_body(jbuf *b, const Var *q) {
+	Obj e = entity_by_id((int64_t)dnum(q, &k_entity, -1));
+	if (!e) {
+		jb_lit(b, "{\"ok\":false}");
+		return;
+	}
+	Var cls;
+	ocall(e, &sn_get_class, NULL, NULL, NULL, &cls);
+	jb_lit(b, "{\"ok\":true,\"class\":");
+	jw_var(b, &cls, 0);
+	v_free(&cls);
+	jb_lit(b, ",\"physics\":");
+	jb_bool(b, is_class(e, &sn_collision_object));
+	jb_lit(b, ",\"mass\":");
+	write_number_property(b, e, &k_mass);
+	jb_lit(b, ",\"layer\":");
+	write_number_property(b, e, &k_collision_layer);
+	jb_lit(b, ",\"mask\":");
+	write_number_property(b, e, &k_collision_mask);
+	jb_lit(b, "}");
+}
+
 static void write_queries(jbuf *b) {
 	int64_t n = asize(&g_pending_queries);
 	if (n <= 0) return;
@@ -1598,6 +1755,8 @@ static void write_queries(jbuf *b) {
 			query_unregistered(b);
 		} else if (!strcmp(type, "meta")) {
 			query_meta(b, &q);
+		} else if (!strcmp(type, "body")) {
+			query_body(b, &q);
 		} else {
 			jb_lit(b, "null");
 		}
@@ -1646,6 +1805,7 @@ static void send_frame(int64_t t) {
 	jb_clear(&g_dev);
 	if (g_obs.census) write_census(b);
 	if (g_obs.n_bone_ids > 0) write_bones(b);
+	if (g_obs.n_seat_ids > 0) write_seats(b);
 	if (g_obs.camera) write_camera(b);
 	if (g_obs.n_hud > 0) write_hud(b);
 	if (g_obs.state) write_state(b);
@@ -1806,6 +1966,10 @@ static void free_observe(void) {
 		dtor_sname(&g_obs.meta[i]);
 		free(g_obs.meta_txt[i]);
 	}
+	for (int i = 0; i < g_obs.n_kinds; i++) {
+		dtor_sname(&g_obs.kinds[i]);
+		free(g_obs.kind_txt[i]);
+	}
 	for (int i = 0; i < g_obs.n_bone_names; i++) {
 		dtor_string(&g_obs.bone_gs[i]);
 		free(g_obs.bone_txt[i]);
@@ -1849,6 +2013,10 @@ static void set_observe(const Var *o) {
 		if (v_type(&c) == T_DICT) {
 			g_obs.view = dnum(&c, &k_view, 0) != 0;
 			g_obs.n_meta = names_into(&c, &k_meta, g_obs.meta, g_obs.meta_txt, MAX_KEYS);
+			Var kinds;  // a list of kinds (even an empty one) limits the census to them
+			g_obs.census_kinds = dget(&c, &k_kinds, &kinds) && v_type(&kinds) == T_ARRAY;
+			v_free(&kinds);
+			g_obs.n_kinds = names_into(&c, &k_kinds, g_obs.kinds, g_obs.kind_txt, MAX_KEYS);
 		}
 	}
 	v_free(&c);
@@ -1880,6 +2048,23 @@ static void set_observe(const Var *o) {
 		v_free(&ids);
 	}
 	v_free(&bones);
+	Var seats;
+	if (dget(o, &k_seats, &seats)) {
+		Var ids;
+		dget(&seats, &k_ids, &ids);
+		int64_t n = asize(&ids);
+		for (int64_t i = 0; i < n && g_obs.n_seat_ids < MAX_SEAT_IDS; i++) {
+			Var e;
+			int64_t id = 0;
+			aget(&ids, i, &e);
+			int skip = !as_id(&e, &id);  // not a whole number, or listed already
+			for (int k = 0; k < g_obs.n_seat_ids && !skip; k++) skip = g_obs.seat_ids[k] == id;
+			if (!skip) g_obs.seat_ids[g_obs.n_seat_ids++] = id;
+			v_free(&e);
+		}
+		v_free(&ids);
+	}
+	v_free(&seats);
 	g_obs.camera = dnum(o, &k_camera, 0) != 0;
 	g_obs.state = dnum(o, &k_state, 0) != 0;
 	g_obs.n_hud = names_into(o, &k_hud, g_obs.hud, g_obs.hud_txt, MAX_KEYS);
@@ -2218,6 +2403,12 @@ static void make_names(void) {
 	sn_static(&sn_is_instance_valid, "is_instance_valid");
 	sn_static(&sn_is_connected, "is_connected");
 	sn_static(&sn_disconnect, "disconnect");
+	sn_static(&sn_seat, "seat");
+	sn_static(&sn_m_index, "index");
+	sn_static(&sn_m_door, "door");
+	sn_static(&sn_m_wheel, "wheel");
+	sn_static(&sn_collision_object, "CollisionObject3D");
+	sn_static(&sn_get_class, "get_class");
 	static const struct {
 		Var *v;
 		const char *text;
@@ -2232,6 +2423,8 @@ static void make_names(void) {
 		{&k_entity, "entity"}, {&k_keys, "keys"}, {&k_position, "position"},
 		{&k_collider, "collider"}, {&k_string, "string"}, {&k_ok, "ok"}, {&k_event, "event"},
 		{&k_text, "text"}, {&k_star, "*"}, {&k_empty, ""}, {&k_skeleton_updated, "skeleton_updated"},
+		{&k_seats, "seats"}, {&k_mass, "mass"}, {&k_collision_layer, "collision_layer"},
+		{&k_collision_mask, "collision_mask"}, {&k_kinds, "kinds"},
 	};
 	for (size_t i = 0; i < sizeof keys / sizeof keys[0]; i++) v_text(keys[i].v, keys[i].text);
 	v_nil(&g_pending_queries);
@@ -2321,10 +2514,12 @@ static void deinitialize(void *ud, GDExtensionInitializationLevel level) {
 	g_on = 0;
 }
 
-#define LOAD(var, name)                          \
-	do {                                         \
-		var = (__typeof__(var))gpa(name);        \
-		if (!var) return 0;                      \
+// The cast goes through void (*)(void), which compilers let any function pointer type be
+// cast to and from; -Wextra warns about a direct cast from the interface's void (*)().
+#define LOAD(var, name)                                   \
+	do {                                                  \
+		var = (__typeof__(var))(void (*)(void))gpa(name); \
+		if (!var) return 0;                               \
 	} while (0)
 
 EXPORT GDExtensionBool qa_telemetry_init(GDExtensionInterfaceGetProcAddress gpa,

@@ -48,9 +48,14 @@ A playtest is a JSON file (format `qa-play/1`) in `playtests/`. Every value in i
 - `steps`, in order:
   - `observe`: what each frame reports and how often: `census` (`true`, or `{"meta": [keys],
     "view": true}` to add those metadata values and whether each entity is in the camera's
-    view), `bones` (`{"ids": [entity ids, or "player"], "names": [bone names]}`: world
-    positions), `camera` (`true`: position, back axis and `fov`), `hud` (a list of HUD group
-    names), `state` (`true`: the state report) and `every` (ticks between frames, default 6);
+    view, with `"kinds": [kinds]` to list only the entities of those kinds), `bones`
+    (`{"ids": [entity ids, or "player"], "names": [bone names]}`: world positions), `seats`
+    (`{"ids": [entity ids, or "vehicle"]}`: each vehicle's `Marker3D` nodes in group `seat`,
+    in tree order, with their `index` and, in world space, the seat point and the `door` and
+    `wheel` points, `null` where a seat has none), `camera` (`true`: position, back axis and
+    `fov`), `hud` (a list of HUD group names), `state` (`true`: the state report) and `every`
+    (ticks between frames, default 6); an id can also be `{"$answer": [step, key]}`, as in
+    `dev`;
   - `dev`: DevConsole commands, run at the start of the next tick, so their effect shows in that
     tick (AC-3); an argument `{"$answer": [step, key]}` takes that field of an earlier step's
     answer (an id the game handed out, for example);
@@ -62,13 +67,22 @@ A playtest is a JSON file (format `qa-play/1`) in `playtests/`. Every value in i
     `[x, z]` points, from height `y0` to `y1`), `los` (a clear line between two entities),
     `skeleton` (an entity's `Skeleton3D`: its bone names and the skinned meshes bound to it),
     `unregistered` (nodes with a `Skeleton3D`, `CharacterBody3D` or `VehicleBody3D` outside the
-    entity registry) and `meta` (an entity's metadata by key); rays use collision `mask`
+    entity registry), `body` (an entity's node class, whether it is a physics body, and its
+    `mass`, `collision_layer` and `collision_mask`, `null` where it has none) and
+    `meta` (an entity's metadata by key); rays use collision `mask`
     (default 1, the world layer) and answer `{"hit": false}` or `{"hit": true, "p": [x, y, z],
     "surface": ..., "entity": ...}` (the collider's `surface` metadata and the id of the
     entity it belongs to, when it has them); any value in a query can be `{"$answer": [step,
     key]}`, as in `dev` (an entity named by the id a command answered with, for example);
   - `wait_for`: advance until an event arrives, or (`near`) tick by tick until an entity of a
-    kind stands within a distance of a point, horizontally (to press an action at that spot);
+    kind stands within a distance of a point, horizontally (to press an action at that spot),
+    or (`entity`, by `id` or `kind`) tick by tick until its horizontal speed is at least
+    `min_kmh` or at most `max_kmh`, or its position is below `below_y` (to brake at 60 km/h,
+    or to act at a point of a fall);
+  - `cruise`: QA's bot driving a vehicle at `kmh` for `ticks` ticks: each tick it presses
+    `accelerate` by how far the speed it saw is below `kmh` (half strength per m/s) and `brake`
+    a little past a small margin above it, while holding the actions in `hold` (`steer_left`
+    at full strength, for example); it lets go of them at the end unless `keep` is true;
   - `files`: corrupt the save files written since a mark, as a failed disk write would;
   - `restart`: kill the game and start it again with the same save folder;
 - `expect`: what must hold, each with the rule it comes from (`rule`) and what it means (`says`).
@@ -110,6 +124,19 @@ The checks an expectation can use:
 | `signal_program` | every signal shows its plan program's state at that tick or one tick either side; program ticks count from the tick the `world.reset` of `reset_step` ran in, and a frame taken at tick t shows the game's tick t - 1 |
 | `signal_greens` | the approaches of a junction that are green at the same time all belong to one phase (with `reset_step`, the tick on either side of a phase change is let off) |
 | `signal_walks` | while a crosswalk shows walk, every approach of its junction is red except those green in the phase that lists it, and none is amber (with `reset_step`, the tick on either side of a phase change is let off) |
+| `body` | a `body` query found the entity's root a physics body on collision layer `layer` (2 is vehicles), with `mass_kg` within `tol` when given |
+| `accel` | from rest at the first mark, the vehicle's horizontal speed (from its position tick by tick) reaches `kmh` within `min_s`-`max_s`, interpolated between ticks |
+| `brake` | from the last tick before the vehicle starts slowing (after the first mark) to where it stands still, the distance it needs, scaled from the speed it had to `kmh` (by the square of the speeds), lies in `min_m`-`max_m`; with `dry` (the marks of a dry stop of the same model) it is the ratio to that stop's distance that lies in `min_ratio`-`max_ratio` |
+| `decel` | from the last tick before the vehicle starts slowing (from at least `min_kmh`), its speed falls at `min_mps2`-`max_mps2` on average over `over_s` seconds |
+| `turn_circle` | between two marks, driven at `kmh` (within `kmh_tol`) with full lock, the vehicle's position traces a circle (fitted by least squares) whose diameter lies in `min_m`-`max_m`, after turning at least `min_turn_deg` around it |
+| `seats` | at a mark the vehicle's seat read lists `count` seats, indices 0 to `count` - 1 once each, each with a door point, and the driver's seat with a wheel point |
+| `get_in` | at the first mark `interact` is pressed with the player within `near_m` of a door; the door nearest the player picks the seat; the player's path passes within `door_m` of that door, and `player.vehicle` and `player.seat` name the vehicle and that seat `min_s`-`max_s` after the press |
+| `seated` | on every frame with the player seated in the vehicle, the `Hips` bone is within `hips_m` of that seat's point and, in the driver's seat, both hands within `hands_m` of the wheel point |
+| `get_out` | from the first mark (`interact` pressed in the vehicle), `player.vehicle` is `null` `min_s`-`max_s` later, with the player within `door_m` of the door of the seat it sat in, horizontally |
+| `camera_vehicle` | between two marks, driving, the camera stays `min_m`-`max_m` from the vehicle's position and the player's `Hips` bone inside the middle `middle` of the view |
+| `ragdoll` | between two marks the person is not limp at the first; its `limp` metadata turns true within `within_ticks` of the trigger (its `died` event, or the tick its position comes within `near_m` of `landing_y`; going limp earlier in a fall is fine) and stays true at least `min_s`; meanwhile no observed bone is more than `below_m` under the ground (`ground_y`, or the top of a listed box it is over), the `Hips` never move more than `step_m` in a tick, and the state report's `player.limp` says what the metadata says |
+| `free_fall` | over the limp frames where every observed bone is at least `clear_m` above `ground_y`, a parabola fitted to the `Hips` bone's height gives a downward acceleration within `tol` of 9.81 m/s^2 |
+| `get_up` | a person still alive is back on its feet within `within_s` of going limp: `limp` false and the `Hips` at least `ratio` of their standing height (at the first mark) above `ground_y` |
 
 A box is a solid placed with `prop.spawn`: `{"p": the middle of its base, "size": [width,
 height, depth], "heading": degrees}`, its depth along the heading (chapter 17). A program is a

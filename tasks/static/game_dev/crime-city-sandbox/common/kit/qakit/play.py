@@ -23,15 +23,20 @@ Each run is a fresh game process (and a fresh home folder) running the same step
 "{save_dir}" and "{home}" in args are replaced by the run's folders and "{plans}" by the
 plan folder; when a plan folder is given and args name none, "--plan-dir=<plans>" is added.
 
-In a dev or query step, a value {"$answer": [step, key]} (or [step, index, key]) is
-replaced by that field of the answer to an earlier dev step's command (index counts the
-commands of that step, from 0), so a play can use an id the game handed out.
+In a dev, query or observe step, a value {"$answer": [step, key]} (or [step, index,
+key]) is replaced by that field of the answer to an earlier dev step's command (index
+counts the commands of that step, from 0), so a play can use an id the game handed out.
 
 Steps (one key each, run in order):
   {"observe": {...}}         observation settings for what follows: "census" (true, or
-                             {"meta": [...], "view": true}), "bones" ({"ids", "names"}),
-                             "camera", "hud" ([group names]), "state", "every" (ticks
-                             between frames, default 6)
+                             {"meta": [...], "view": true, "kinds": [...]}, where
+                             "kinds" keeps only entities of those kinds), "bones"
+                             ({"ids", "names"}), "seats" ({"ids"}: each vehicle's seat
+                             markers, with the seat, door and wheel points in world
+                             space), "camera", "hud" ([group names]), "state", "every"
+                             (ticks between frames, default 6); an id can be a role
+                             such as "player" or "vehicle" (the first entity of that
+                             kind)
   {"dev": [[cmd, args], ...]} DevConsole commands, run at the next tick (1 tick)
   {"press": {action: s}}     hold actions at strength s from the next tick on
   {"release": [action, ...]} release held actions at the next tick
@@ -43,6 +48,17 @@ Steps (one key each, run in order):
   {"wait_for": {"near": {"kind": k, "p": [x, y, z], "within_m": d}, "max_ticks": N}}
                              lockstep: advance tick by tick until an entity of that kind
                              (default player) is within d metres of the point, horizontally
+  {"wait_for": {"entity": {"id": n | "kind": k, "min_kmh": v | "max_kmh": v | "below_y": y},
+                "max_ticks": N}}
+                             lockstep: advance tick by tick until that entity's horizontal
+                             speed (from its position in the last two frames) is at least
+                             (or at most) v km/h, or its position is below height y
+  {"cruise": {"entity": {"id": n | "kind": k}, "kmh": v, "ticks": N, "hold": {action: s},
+              "keep": false}}
+                             lockstep: N ticks of QA's bot driving at v km/h: each tick it
+                             presses accelerate or brake by how far the speed it saw is from
+                             v, while holding the "hold" actions; at the end it lets go of
+                             all of them unless "keep" (another cruise takes over at once)
   {"files": {"op": "damage"|"truncate", "since": mark}}
                              damage the save-folder files that changed since a mark
   {"restart": {}}            lockstep only: kill the process tree and start it again
@@ -81,6 +97,7 @@ STEP_KINDS = (
     "mark",
     "query",
     "wait_for",
+    "cruise",
     "files",
     "restart",
 )
@@ -191,8 +208,41 @@ def _step_problem(i: int, step: object, mode: str) -> str | None:
                 if ok
                 else f"step {i}: wait_for near takes {{p, within_m}} (lockstep)"
             )
+        ent = arg.get("entity") if isinstance(arg, dict) else None
+        if isinstance(ent, dict):
+            what = [k for k in ("min_kmh", "max_kmh", "below_y") if k in ent]
+            ok = (
+                mode == "lockstep"
+                and len(what) == 1
+                and isinstance(ent[what[0]], (int, float))
+                and ("id" in ent or isinstance(ent.get("kind"), str))
+            )
+            return (
+                None
+                if ok
+                else f"step {i}: wait_for entity takes {{id or kind, and one of min_kmh, "
+                "max_kmh, below_y}} (lockstep)"
+            )
         ok = isinstance(arg, dict) and isinstance(arg.get("event"), str)
         return None if ok else f"step {i}: wait_for takes {{event, max_ticks}}"
+    if kind == "cruise":
+        ent = arg.get("entity") if isinstance(arg, dict) else None
+        ok = (
+            mode == "lockstep"
+            and isinstance(ent, dict)
+            and ("id" in ent or isinstance(ent.get("kind"), str))
+            and isinstance(arg.get("kmh"), (int, float))
+            and isinstance(arg.get("ticks"), int)
+            and not isinstance(arg.get("ticks"), bool)
+            and arg["ticks"] >= 1
+            and isinstance(arg.get("hold", {}), dict)
+            and all(isinstance(v, (int, float)) for v in arg.get("hold", {}).values())
+        )
+        return (
+            None
+            if ok
+            else f"step {i}: cruise takes {{entity, kmh, ticks, hold}} (lockstep)"
+        )
     if kind == "files":
         ok = (
             isinstance(arg, dict)
@@ -402,7 +452,8 @@ def fill_answers(value: object, answers: dict[int, list]) -> object:
     """Fill in {"$answer": [step, (index,) key]} inside a value from the recorded answers.
 
     Args:
-        value: A dev command's arguments (or any part of them).
+        value: A dev command's arguments, a query or observation settings (or any part
+            of them).
         answers: Step index -> the answers of that step's commands, in order.
 
     Returns:
@@ -440,34 +491,69 @@ def limits_of(play: Play) -> Limits:
 def resolve_observe(obs: dict, frame: dict | None) -> dict:
     """Replace entity roles in observation settings with entity ids.
 
-    Bone observations may name an entity by role ("player": the first entity of kind
-    player in the latest census) instead of by id, so a play need not know ids in
-    advance. A role with no matching entity yet is left out.
+    Bone and seat observations may name an entity by role ("player", "vehicle": the
+    first entity of that kind in the latest census) instead of by id, so a play need not
+    know ids in advance. A role with no matching entity yet is left out, and so is any
+    other id that is not a number (such as an answer that never came).
 
     Args:
-        obs: Observation settings as written in the play.
+        obs: Observation settings as written in the play, answers filled in.
         frame: The latest frame (its census is used), or None.
 
     Returns:
         A copy of obs with numeric ids only.
     """
-    bones = obs.get("bones")
-    if not isinstance(bones, dict):
-        return dict(obs)
     by_kind: dict[str, int] = {}
     for e in (frame or {}).get("census") or []:
         if isinstance(e.get("id"), int) and e.get("k") not in by_kind:
             by_kind[e.get("k")] = e["id"]
-    ids = []
-    for x in bones.get("ids", []):
-        if isinstance(x, str):
-            if x in by_kind:
-                ids.append(by_kind[x])
-        else:
-            ids.append(x)
     out = dict(obs)
-    out["bones"] = dict(bones, ids=ids)
+    for part in ("bones", "seats"):
+        sub = obs.get(part)
+        if not isinstance(sub, dict):
+            continue
+        ids = []
+        given = sub.get("ids")
+        for x in given if isinstance(given, list) else []:
+            if isinstance(x, str):
+                if x in by_kind:
+                    ids.append(by_kind[x])
+            elif isinstance(x, (int, float)) and not isinstance(x, bool):
+                ids.append(x)
+        out[part] = dict(sub, ids=ids)
     return out
+
+
+def entity_in(frame: dict | None, ent: dict) -> dict | None:
+    """The census row of the entity {"id": n} or {"kind": k} (the first of that kind)."""
+    for e in (frame or {}).get("census") or []:
+        if "id" in ent:
+            if e.get("id") == ent["id"]:
+                return e
+        elif e.get("k") == ent.get("kind"):
+            return e
+    return None
+
+
+def speed_between(a: dict | None, b: dict | None, ent: dict) -> float | None:
+    """An entity's horizontal speed (m/s) from its positions in two frames, or None."""
+    ea, eb = entity_in(a, ent), entity_in(b, ent)
+    if (
+        not ea
+        or not eb
+        or not isinstance(ea.get("p"), list)
+        or not isinstance(eb.get("p"), list)
+    ):
+        return None
+    ticks = int(b.get("t", 0)) - int(a.get("t", 0))
+    if ticks <= 0:
+        return None
+    pa, pb = ea["p"], eb["p"]
+    return (
+        math.hypot(float(pb[0]) - float(pa[0]), float(pb[2]) - float(pa[2]))
+        * TICK_HZ
+        / ticks
+    )
 
 
 def is_near(frame: dict, near: dict) -> bool:
@@ -546,6 +632,11 @@ class _LockstepRun:
             self.pending, first = [], False
             rec = dict(fr)
             rec.update(_step=step_i, _proc=self.proc_no)
+            census = obs.get("census")
+            if isinstance(census, dict) and isinstance(census.get("kinds"), list):
+                rec["_kinds"] = list(
+                    census["kinds"]
+                )  # this frame lists only these kinds
             self.rec.frames.append(rec)
             left -= n
             if self.rec.pace_ms:
@@ -569,7 +660,7 @@ class _LockstepRun:
     def do(self, i: int, kind: str, arg) -> None:
         """Execute step i."""
         if kind == "observe":
-            self.obs = dict(DEFAULT_OBSERVE, **arg)
+            self.obs = dict(DEFAULT_OBSERVE, **fill_answers(arg, self._answers()))
         elif kind == "press":
             for a, v in arg.items():
                 if self.held.get(a) != float(v):
@@ -598,7 +689,9 @@ class _LockstepRun:
             )
             self.rec.file_ops.append({"step": i, "op": arg["op"], "files": done})
         elif kind == "wait_for":
-            self._wait_for(i, arg)
+            self._wait_for(i, fill_answers(arg, self._answers()))
+        elif kind == "cruise":
+            self._cruise(i, fill_answers(arg, self._answers()))
         elif kind == "restart":
             assert self.session is not None
             self.rec.exits.append(exit_dict(self.session.kill()))
@@ -609,6 +702,16 @@ class _LockstepRun:
         """Advance until the named event arrives (or, with "near", until an entity is
         within a distance of a point, checked every tick) or max_ticks pass."""
         limit = int(arg.get("max_ticks", 600))
+        if isinstance(arg.get("entity"), dict):
+            ent = arg["entity"]
+            prev = self.rec.frames[-1] if self.rec.frames else None
+            for _ in range(limit):
+                fr = self.advance(1, i)
+                if self._entity_reached(prev, self.rec.frames[-1], ent):
+                    break
+                prev = self.rec.frames[-1]
+            self.rec.step_frame[i] = len(self.rec.frames) - 1
+            return
         if isinstance(arg.get("near"), dict):
             near = arg["near"]
             for _ in range(limit):
@@ -626,6 +729,47 @@ class _LockstepRun:
                 for e in fr.get("events") or []
             ):
                 break
+        self.rec.step_frame[i] = len(self.rec.frames) - 1
+
+    @staticmethod
+    def _entity_reached(prev: dict | None, fr: dict, ent: dict) -> bool:
+        """Whether a wait_for entity condition holds at frame fr (prev: the frame before)."""
+        if "below_y" in ent:
+            e = entity_in(fr, ent)
+            p = (e or {}).get("p")
+            return isinstance(p, list) and float(p[1]) < float(ent["below_y"])
+        v = speed_between(prev, fr, ent)
+        if v is None:
+            return False
+        if "min_kmh" in ent:
+            return v * 3.6 >= float(ent["min_kmh"])
+        return v * 3.6 <= float(ent["max_kmh"])
+
+    def _set(self, action: str, value: float) -> None:
+        """Hold an action at a strength from the next tick on (sent only when it changes)."""
+        if self.held.get(action, 0.0) != value:
+            self.pending.append([0, action, value])
+            self.held[action] = value
+
+    def _cruise(self, i: int, arg: dict) -> None:
+        """QA's bot holding a speed: each tick, accelerate in proportion to how far below the
+        speed it is, brake past a small margin above it, and hold the "hold" actions."""
+        ent, want = arg["entity"], float(arg["kmh"]) / 3.6
+        for a, v in (arg.get("hold") or {}).items():
+            self._set(a, float(v))
+        prev = self.rec.frames[-1] if self.rec.frames else None
+        for _ in range(int(arg["ticks"])):
+            fr = self.rec.frames[-1] if self.rec.frames else None
+            v = speed_between(prev, fr, ent) if prev is not fr else None
+            if v is not None:
+                err = want - v
+                self._set("accelerate", round(min(1.0, max(0.0, 0.5 * err)), 3))
+                self._set("brake", round(min(1.0, max(0.0, 0.3 * (-err - 0.15))), 3))
+            prev = fr
+            self.advance(1, i)
+        if not arg.get("keep"):
+            for a in ("accelerate", "brake", *(arg.get("hold") or {})):
+                self._set(a, 0.0)
         self.rec.step_frame[i] = len(self.rec.frames) - 1
 
     def execute(self) -> None:

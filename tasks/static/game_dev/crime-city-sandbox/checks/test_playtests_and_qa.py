@@ -179,7 +179,8 @@ GOOD_STATE = {
     "player": {
         "id": 1, "lead": "lead_1", "health": 100, "armour": 0, "money": 500, "alert": 0,
         "weapon": "fists", "weapons": ["fists"], "ammo": {"magazine": 0, "reserve": 0},
-        "aim": None, "cover": False, "vehicle": None, "seat": None, "outfit": "default",
+        "aim": None, "cover": False, "vehicle": None, "seat": None, "limp": False,
+        "outfit": "default",
         "outfits": ["default"], "leads_unlocked": ["lead_1"],
     },
     "missions": {m: {"state": "locked", "stage": None} for m in expect.MISSIONS},

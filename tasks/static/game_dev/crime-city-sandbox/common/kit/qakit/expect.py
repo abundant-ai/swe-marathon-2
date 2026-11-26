@@ -484,6 +484,7 @@ def state_problems(st: dict, player: bool) -> list[str]:
                 "player.aim is not a point or null",
             )
             need(isinstance(pl.get("cover"), bool), "player.cover is not true or false")
+            need(isinstance(pl.get("limp"), bool), "player.limp is not true or false")
             for k in ("vehicle", "seat"):
                 need(
                     k in pl and (pl[k] is None or _is_int(pl[k])),
@@ -1826,6 +1827,1124 @@ def check_signal_walks(rec: PlayRecord, args: dict) -> Result:
     return True, measured, ""
 
 
+# ---------------------------------------------------------------- vehicles (chapter 6)
+KMH = 1 / 3.6
+
+
+def census_row(frame: dict | None, eid: object) -> dict | None:
+    """The census row of the entity with id eid in a frame, or None."""
+    for e in (frame or {}).get("census") or []:
+        if e.get("id") == eid:
+            return e
+    return None
+
+
+def track(frames: list[dict], eid: object) -> list[tuple[int, list[float]]]:
+    """(tick, position) of an entity in each frame that has it."""
+    out = []
+    for fr in frames:
+        e = census_row(fr, eid)
+        if e is not None and isinstance(e.get("p"), list):
+            out.append((int(fr.get("t", 0)), [float(c) for c in e["p"]]))
+    return out
+
+
+def speeds(tr: list[tuple[int, list[float]]]) -> list[tuple[int, float, list[float]]]:
+    """(tick, horizontal speed in m/s, position) at each sample after the first: the distance
+    from the previous sample over the ticks between them, at 60 ticks per second."""
+    out = []
+    for (ta, pa), (tb, pb) in itertools.pairwise(tr):
+        if tb > ta:
+            d = math.dist([pa[0], pa[2]], [pb[0], pb[2]])
+            out.append((tb, d * TICK_HZ / (tb - ta), pb))
+    return out
+
+
+def vehicle_id(run: RunRecord, args: dict) -> object:
+    """The id of the vehicle an expectation names: {"id_from": {"step", "index"}} (the id a
+    command answered with) or {"id": n}."""
+    return answer_id(run, args["id_from"]) if "id_from" in args else args.get("id")
+
+
+def braking_onset(
+    sp: list[tuple[int, float, list[float]]], drop: float = 0.02
+) -> int | None:
+    """Index of the last sample before the speed starts falling by more than `drop` m/s per
+    sample (the moment braking takes hold), or None."""
+    for k in range(1, len(sp)):
+        if sp[k][1] < sp[k - 1][1] - drop:
+            return k - 1
+    return None
+
+
+def check_accel(rec: PlayRecord, args: dict) -> Result:
+    """VH-1: from rest at mark `from` (accelerate pressed), the vehicle's horizontal speed
+    reaches `kmh` (60) within min_s-max_s; the time is interpolated between samples."""
+    run = rec.runs[int(args.get("run", 0))]
+    vid = vehicle_id(run, args)
+    sp = speeds(track(frames_between(run, args["from"], args["to"]), vid))
+    if len(sp) < 2:
+        return None, {"id": vid}, "the vehicle was not observed between the marks"
+    t0 = int(frame_at_mark(run, args["from"]).get("t", 0))
+    target = float(args.get("kmh", 60.0)) * KMH
+    measured: dict = {"start_kmh": round(sp[0][1] / KMH, 2)}
+    if sp[0][1] > 1.0 * KMH:
+        return None, measured, f"the vehicle was not at rest: {sp[0][1] / KMH:.1f} km/h"
+    reach = None
+    for (ta, va, _), (tb, vb, _) in itertools.pairwise(sp):
+        if vb >= target > va:
+            reach = ta + (tb - ta) * (target - va) / (vb - va)
+            break
+    measured["top_seen_kmh"] = round(max(v for _, v, _ in sp) / KMH, 1)
+    if reach is None:
+        return False, measured, f"{args.get('kmh', 60)} km/h was not reached"
+    secs = (reach - t0) / TICK_HZ
+    measured["seconds"] = round(secs, 3)
+    lo, hi = float(args["min_s"]), float(args["max_s"])
+    ok = lo <= secs <= hi
+    return (
+        ok,
+        measured,
+        ""
+        if ok
+        else f"0-{args.get('kmh', 60)} km/h in {secs:.2f} s, expected {lo}-{hi}",
+    )
+
+
+def braking_distance(run: RunRecord, args: dict) -> tuple[dict, str]:
+    """The distance a vehicle needs to stop from `kmh` (60): from the last sample before
+    braking takes hold (after mark `from`) to where it stands still, scaled from the speed it
+    had then to `kmh` (by the square of the speeds, as at a steady deceleration)."""
+    vid = vehicle_id(run, args)
+    sp = speeds(track(frames_between(run, args["from"], args["to"]), vid))
+    k = braking_onset(sp)
+    if k is None:
+        return {"id": vid}, "the vehicle did not start braking between the marks"
+    v0, p0 = sp[k][1], sp[k][2]
+    target = float(args.get("kmh", 60.0)) * KMH
+    stop = next((s for s in sp[k + 1 :] if s[1] < 0.05), None)
+    measured = {"braking_from_kmh": round(v0 / KMH, 2)}
+    if v0 < target - 0.5 * KMH:
+        return (
+            measured,
+            f"braking began at {v0 / KMH:.1f} km/h, below {args.get('kmh', 60)}",
+        )
+    if stop is None:
+        return measured, "the vehicle did not come to a stop before the second mark"
+    d = math.dist([p0[0], p0[2]], [stop[2][0], stop[2][2]]) * (target / v0) ** 2
+    measured["metres"] = round(d, 3)
+    measured["seconds"] = round((stop[0] - sp[k][0]) / TICK_HZ, 3)
+    return measured, ""
+
+
+def check_brake(rec: PlayRecord, args: dict) -> Result:
+    """VH-1: the vehicle stops from 60 km/h within min_m-max_m (see braking_distance). With
+    "dry" ({"from", "to"} of a dry stop of the same vehicle), it is instead the ratio of this
+    distance to that one that lies in [min_ratio, max_ratio] (VH-2)."""
+    run = rec.runs[int(args.get("run", 0))]
+    measured, why = braking_distance(run, args)
+    if why:
+        return None, measured, why
+    if "dry" in args:
+        dry, why = braking_distance(run, dict(args, **args["dry"]))
+        if why:
+            return None, dict(measured, dry=dry), f"dry stop: {why}"
+        ratio = measured["metres"] / dry["metres"]
+        measured.update(dry_metres=dry["metres"], ratio=round(ratio, 4))
+        lo, hi = float(args["min_ratio"]), float(args["max_ratio"])
+        ok = lo <= ratio <= hi
+        note = f"{ratio:.2f} times the dry distance ({measured['metres']:.2f} m against {dry['metres']:.2f} m), expected {lo}-{hi}"
+        return ok, measured, "" if ok else note
+    lo, hi = float(args["min_m"]), float(args["max_m"])
+    d = measured["metres"]
+    ok = lo <= d <= hi
+    return (
+        ok,
+        measured,
+        ""
+        if ok
+        else f"stopped from {args.get('kmh', 60)} km/h in {d:.2f} m, expected {lo}-{hi}",
+    )
+
+
+def fit_circle(pts: list[list[float]]) -> tuple[float, float, float, float]:
+    """Least-squares circle through horizontal points [x, z]: (centre x, centre z, radius,
+    root-mean-square distance of the points from it)."""
+    n = len(pts)
+    mx = sum(p[0] for p in pts) / n
+    mz = sum(p[1] for p in pts) / n
+    u = [p[0] - mx for p in pts]
+    v = [p[1] - mz for p in pts]
+    suu = sum(a * a for a in u)
+    svv = sum(b * b for b in v)
+    suv = sum(a * b for a, b in zip(u, v, strict=True))
+    a = 0.5 * sum(x * x * x + x * y * y for x, y in zip(u, v, strict=True))
+    b = 0.5 * sum(y * y * y + y * x * x for x, y in zip(u, v, strict=True))
+    det = suu * svv - suv * suv
+    if abs(det) < 1e-12:
+        return mx, mz, 0.0, math.inf
+    uc = (a * svv - b * suv) / det
+    vc = (b * suu - a * suv) / det
+    r = math.sqrt(uc * uc + vc * vc + (suu + svv) / n)
+    cx, cz = uc + mx, vc + mz
+    rms = math.sqrt(sum((math.dist(p, [cx, cz]) - r) ** 2 for p in pts) / n)
+    return cx, cz, r, rms
+
+
+def check_turn_circle(rec: PlayRecord, args: dict) -> Result:
+    """VH-1: between two marks, driven at `kmh` (8) with full lock, the vehicle's position
+    traces a circle whose diameter lies in [min_m, max_m]. The vehicle must keep within
+    kmh_tol of the speed and turn at least min_turn_deg around the circle."""
+    run = rec.runs[int(args.get("run", 0))]
+    vid = vehicle_id(run, args)
+    tr = track(frames_between(run, args["from"], args["to"]), vid)
+    if len(tr) < 10:
+        return None, {"id": vid}, "the vehicle was not observed between the marks"
+    sp = speeds(tr)
+    mean_kmh = sum(v for _, v, _ in sp) / len(sp) / KMH
+    pts = [[p[0], p[2]] for _, p in tr]
+    cx, cz, r, rms = fit_circle(pts)
+    angles = [math.atan2(p[1] - cz, p[0] - cx) for p in pts]
+    turned = sum(
+        abs((b - a + math.pi) % (2 * math.pi) - math.pi)
+        for a, b in itertools.pairwise(angles)
+    )
+    measured = {
+        "diameter_m": round(2 * r, 3), "mean_kmh": round(mean_kmh, 2),
+        "turned_deg": round(math.degrees(turned), 1), "fit_rms_m": round(rms, 3),
+    }  # fmt: skip
+    want, tol = float(args.get("kmh", 8.0)), float(args.get("kmh_tol", 1.5))
+    if abs(mean_kmh - want) > tol:
+        return (
+            None,
+            measured,
+            f"driven at {mean_kmh:.1f} km/h, not {want} (within {tol})",
+        )
+    if math.degrees(turned) < float(args.get("min_turn_deg", 270.0)):
+        return (
+            None,
+            measured,
+            f"the vehicle turned only {math.degrees(turned):.0f} degrees",
+        )
+    lo, hi = float(args["min_m"]), float(args["max_m"])
+    ok = lo <= 2 * r <= hi
+    return (
+        ok,
+        measured,
+        "" if ok else f"a turning circle of {2 * r:.2f} m, expected {lo}-{hi}",
+    )
+
+
+def check_decel(rec: PlayRecord, args: dict) -> Result:
+    """IN-2: from the last sample before the vehicle starts slowing (after mark `from`, with
+    the action held alone from at least min_kmh), its speed falls at min_mps2-max_mps2 on
+    average over over_s (1.0) seconds."""
+    run = rec.runs[int(args.get("run", 0))]
+    vid = vehicle_id(run, args)
+    sp = speeds(track(frames_between(run, args["from"], args["to"]), vid))
+    k = braking_onset(sp, float(args.get("onset_drop", 0.005)))
+    if k is None:
+        return None, {"id": vid}, "the vehicle did not slow down between the marks"
+    t0, v0 = sp[k][0], sp[k][1]
+    later = next(
+        (s for s in sp[k:] if s[0] - t0 >= float(args.get("over_s", 1.0)) * TICK_HZ),
+        None,
+    )
+    measured = {"from_kmh": round(v0 / KMH, 2)}
+    if v0 < float(args.get("min_kmh", 30.0)) * KMH:
+        return None, measured, f"slowing began at {v0 / KMH:.1f} km/h"
+    if later is None:
+        return None, measured, "the second mark came too soon"
+    rate = (v0 - later[1]) / ((later[0] - t0) / TICK_HZ)
+    measured["mps2"] = round(rate, 3)
+    lo, hi = float(args["min_mps2"]), float(args["max_mps2"])
+    ok = lo <= rate <= hi
+    return ok, measured, "" if ok else f"slowed at {rate:.2f} m/s^2, expected {lo}-{hi}"
+
+
+def check_body(rec: PlayRecord, args: dict) -> Result:
+    """AC-6, VH-1: a "body" query found the entity's root a physics body on the listed layer
+    (`layer`, its number: 2 is the vehicles layer) with a mass within tol (0.1) of mass_kg."""
+    run = rec.runs[int(args.get("run", 0))]
+    got = step_answers(run, int(args["step"]))
+    res = (got or {}).get(str(args["query"]))
+    if not isinstance(res, dict):
+        return None, {}, "the query was not answered"
+    if res.get("ok") is not True:
+        return False, {"answer": res}, "no entity with the id the query names"
+    measured = {k: res.get(k) for k in ("class", "physics", "mass", "layer")}
+    if res.get("physics") is not True:
+        return False, measured, f"the root is a {res.get('class')}, not a physics body"
+    bit = 1 << (int(args.get("layer", 2)) - 1)
+    if not (_is_int(res.get("layer")) and int(res["layer"]) & bit):
+        return False, measured, f"the root is not on layer {args.get('layer', 2)}"
+    if "mass_kg" in args:
+        want, tol = float(args["mass_kg"]), float(args.get("tol", 0.1))
+        if not _is_num(res.get("mass")) or abs(float(res["mass"]) - want) > tol * want:
+            return (
+                False,
+                measured,
+                f"mass {res.get('mass')}, expected {want:g} kg within {tol:.0%}",
+            )
+    return True, measured, ""
+
+
+# ---------------------------------------------------------------- getting in and out (FT-10)
+def seat_rows(frame: dict | None, vid: object) -> dict[int, dict]:
+    """{index: row} of a vehicle's seats in a frame's seat read ({"index", "p", "door",
+    "wheel"}, world space)."""
+    rows = ((frame or {}).get("seats") or {}).get(str(vid))
+    out = {}
+    for r in rows if isinstance(rows, list) else []:
+        if isinstance(r, dict) and _is_int(r.get("index")):
+            out[int(r["index"])] = r
+    return out
+
+
+def _point(v: object) -> list[float] | None:
+    return [float(c) for c in v] if isinstance(v, list) and len(v) == 3 else None
+
+
+def check_seats(rec: PlayRecord, args: dict) -> Result:
+    """AC-6: at a mark the vehicle has `count` seats, indices 0 to count - 1 each once, each
+    with a door point, and the driver's seat (0) with a wheel point."""
+    run = rec.runs[int(args.get("run", 0))]
+    vid = vehicle_id(run, args)
+    frame = frame_at_mark(run, args["mark"])
+    rows = ((frame or {}).get("seats") or {}).get(str(vid))
+    if not isinstance(rows, list):
+        return None, {"id": vid}, "the vehicle's seats were not read"
+    idx = sorted(
+        int(r["index"]) for r in rows if isinstance(r, dict) and _is_int(r.get("index"))
+    )
+    measured = {"indices": idx, "seats": len(rows)}
+    n = int(args["count"])
+    if idx != list(range(n)) or len(rows) != n:
+        return False, measured, f"seat indices {idx}, expected 0 to {n - 1} once each"
+    by = seat_rows(frame, vid)
+    no_door = [i for i in idx if _point(by[i].get("door")) is None]
+    if no_door:
+        return False, measured, f"seats without a door point: {no_door}"
+    if _point(by[0].get("wheel")) is None:
+        return False, measured, "the driver's seat has no wheel point"
+    return True, measured, ""
+
+
+def seated_in(frame: dict | None, vid: object, seat: int) -> bool:
+    """Whether a frame's state report has the player in that vehicle and seat."""
+    pl = dig(state_of(frame), "player") or {}
+    return pl.get("vehicle") == vid and pl.get("seat") == seat
+
+
+def nearest_door(frame: dict | None, vid: object) -> tuple[int | None, float | None]:
+    """(seat index, horizontal distance) of the vehicle's door nearest the player in a frame."""
+    p = entity_pos(frame, "player")
+    best: tuple[int | None, float | None] = (None, None)
+    if p is None:
+        return best
+    for i, row in seat_rows(frame, vid).items():
+        door = _point(row.get("door"))
+        if door is None:
+            continue
+        d = math.dist([p[0], p[2]], [door[0], door[2]])
+        if best[1] is None or d < best[1]:
+            best = (i, d)
+    return best
+
+
+def check_get_in(rec: PlayRecord, args: dict) -> Result:
+    """FT-10: at mark `from` interact is pressed with the player within near_m (3.0) of a
+    door; the door nearest the player picks the seat (or `seat` names it). The player's path
+    passes within door_m (1.0) of that door and the player is seated there (the state report
+    names the vehicle and the seat) min_s-max_s (1.0-4.0) after the press."""
+    run = rec.runs[int(args.get("run", 0))]
+    vid = vehicle_id(run, args)
+    frames = frames_between(run, args["from"], args["to"])
+    if not frames:
+        return None, {}, "the marks were not reached"
+    pick, dist = nearest_door(frames[0], vid)
+    seat = int(args["seat"]) if "seat" in args else pick
+    measured: dict = {
+        "seat": seat,
+        "door_at_press_m": None if dist is None else round(dist, 3),
+    }
+    if seat is None:
+        return None, measured, "no door point was read at the press"
+    if dist is not None and dist > float(args.get("near_m", 3.0)):
+        return None, measured, f"the nearest door was {dist:.2f} m away at the press"
+    t0 = int(frames[0].get("t", 0))
+    at = next((fr for fr in frames if seated_in(fr, vid, seat)), None)
+    closest = None
+    for fr in frames:
+        door = _point(seat_rows(fr, vid).get(seat, {}).get("door"))
+        p = entity_pos(fr, "player")
+        if door is not None and p is not None:
+            d = math.dist([p[0], p[2]], [door[0], door[2]])
+            closest = d if closest is None else min(closest, d)
+        if fr is at:
+            break
+    measured["closest_to_door_m"] = None if closest is None else round(closest, 3)
+    if at is None:
+        pl = dig(state_of(frames[-1]), "player") or {}
+        where = f" (the state report has vehicle {pl.get('vehicle')}, seat {pl.get('seat')})"
+        return False, measured, f"the player was not seated in seat {seat}{where}"
+    secs = (int(at.get("t", 0)) - t0) / TICK_HZ
+    measured["seconds"] = round(secs, 3)
+    if closest is None:
+        return None, measured, "the seat's door point was not read"
+    if closest > float(args.get("door_m", 1.0)):
+        return (
+            False,
+            measured,
+            f"the path came no nearer than {closest:.2f} m to the door",
+        )
+    lo, hi = float(args.get("min_s", 1.0)), float(args.get("max_s", 4.0))
+    ok = lo <= secs <= hi
+    return (
+        ok,
+        measured,
+        "" if ok else f"seated {secs:.2f} s after interact, expected {lo}-{hi}",
+    )
+
+
+def player_seat(frame: dict | None, vid: object) -> int | None:
+    """The seat the state report has the player in, when it is in that vehicle."""
+    pl = dig(state_of(frame), "player") or {}
+    s = pl.get("seat")
+    return int(s) if pl.get("vehicle") == vid and _is_int(s) else None
+
+
+def check_seated(rec: PlayRecord, args: dict) -> Result:
+    """FT-10: on every frame between two marks with the player seated in the vehicle, the
+    Hips bone is within hips_m (0.35) of that seat's point and, in the driver's seat (0),
+    both hands are within hands_m (0.30) of the wheel point."""
+    run = rec.runs[int(args.get("run", 0))]
+    vid = vehicle_id(run, args)
+    worst_hips = worst_hand = 0.0
+    hips_at = hand_at = None
+    n = drove = 0
+    for fr in frames_between(run, args["from"], args["to"]):
+        seat = player_seat(fr, vid)
+        if seat is None:
+            continue
+        row = seat_rows(fr, vid).get(seat) or {}
+        e = entity_of(fr, {"kind": "player"})
+        sp = _point(row.get("p"))
+        hips = bone_of(fr, (e or {}).get("id"), "Hips")
+        if sp is None or hips is None:
+            continue
+        n += 1
+        d = math.dist(hips, sp)
+        if d > worst_hips:
+            worst_hips, hips_at = d, fr.get("t")
+        wheel = _point(row.get("wheel"))
+        if seat == 0 and wheel is not None:
+            drove += 1
+            for hand in ("LeftHand", "RightHand"):
+                hp = bone_of(fr, e.get("id"), hand)
+                if hp is None:
+                    continue
+                d = math.dist(hp, wheel)
+                if d > worst_hand:
+                    worst_hand, hand_at = d, (fr.get("t"), hand)
+    measured = {"frames": n, "worst_hips_m": round(worst_hips, 3)}
+    if drove:
+        measured["worst_hand_m"] = round(worst_hand, 3)
+    if not n:
+        return (
+            None,
+            measured,
+            "no frame had the player seated with the seat point and Hips read",
+        )
+    if worst_hips > float(args.get("hips_m", 0.35)):
+        return (
+            False,
+            measured,
+            f"at tick {hips_at} the hips are {worst_hips:.2f} m from the seat point",
+        )
+    if drove and worst_hand > float(args.get("hands_m", 0.30)):
+        return (
+            False,
+            measured,
+            f"at tick {hand_at[0]} the {hand_at[1]} is {worst_hand:.2f} m from the wheel point",
+        )
+    return True, measured, ""
+
+
+def check_get_out(rec: PlayRecord, args: dict) -> Result:
+    """FT-10: from mark `from` (interact pressed in the vehicle), the player is on foot (the
+    state report's player.vehicle null) min_s-max_s (1.0-3.0) later, within door_m (2.5) of
+    the door of the seat it sat in, horizontally."""
+    run = rec.runs[int(args.get("run", 0))]
+    vid = vehicle_id(run, args)
+    frames = frames_between(run, args["from"], args["to"])
+    if not frames:
+        return None, {}, "the marks were not reached"
+    seat = player_seat(frames[0], vid)
+    if seat is None:
+        return None, {}, "the player was not in the vehicle when interact was pressed"
+    t0 = int(frames[0].get("t", 0))
+    last_door = None
+    out = None
+    for fr in frames:
+        door = _point(seat_rows(fr, vid).get(seat, {}).get("door"))
+        last_door = door or last_door
+        pl = dig(state_of(fr), "player") or {}
+        if "vehicle" in pl and pl.get("vehicle") is None:
+            out = fr
+            break
+    measured: dict = {"seat": seat}
+    if out is None:
+        return False, measured, "the player was still in the vehicle at the second mark"
+    secs = (int(out.get("t", 0)) - t0) / TICK_HZ
+    p = entity_pos(out, "player")
+    measured["seconds"] = round(secs, 3)
+    if p is None or last_door is None:
+        return None, measured, "the player or the door point was not observed"
+    d = math.dist([p[0], p[2]], [last_door[0], last_door[2]])
+    measured["from_door_m"] = round(d, 3)
+    lo, hi = float(args.get("min_s", 1.0)), float(args.get("max_s", 3.0))
+    if not lo <= secs <= hi:
+        return False, measured, f"out {secs:.2f} s after interact, expected {lo}-{hi}"
+    ok = d <= float(args.get("door_m", 2.5))
+    return ok, measured, "" if ok else f"on foot {d:.2f} m from the door"
+
+
+def check_camera_vehicle(rec: PlayRecord, args: dict) -> Result:
+    """CM-1, driving: between two marks the camera stays min_m-max_m (5.0-10.0) from the
+    vehicle's position and the player's Hips bone inside the middle `middle` (0.4) of the view."""
+    run = rec.runs[int(args.get("run", 0))]
+    vid = vehicle_id(run, args)
+    aspect, middle = float(args.get("aspect", 16 / 9)), float(args.get("middle", 0.4))
+    lo, hi = float(args["min_m"]), float(args["max_m"])
+    dists, worst, off_t, n = [], 0.0, None, 0
+    for fr in frames_between(run, args["from"], args["to"]):
+        cam, v, e = (
+            fr.get("camera"),
+            census_row(fr, vid),
+            entity_of(fr, {"kind": "player"}),
+        )
+        if not isinstance(cam, dict) or v is None or e is None:
+            continue
+        hips = bone_of(fr, e.get("id"), "Hips")
+        if hips is None:
+            continue
+        n += 1
+        dists.append(
+            (
+                math.dist([float(c) for c in cam["p"]], [float(c) for c in v["p"]]),
+                fr.get("t"),
+            )
+        )
+        off = view_offset(cam, hips, aspect)
+        o = 2.0 if off is None else max(abs(off[0]), abs(off[1]))
+        if o > worst:
+            worst, off_t = o, fr.get("t")
+    if not n:
+        return (
+            None,
+            {},
+            "the camera, the vehicle and the player's Hips were not observed",
+        )
+    near, far = min(dists), max(dists)
+    measured = {
+        "frames": n, "vehicle_distance_m": [round(near[0], 3), round(far[0], 3)],
+        "farthest_from_middle": round(worst, 3),
+    }  # fmt: skip
+    if far[0] > hi or near[0] < lo:
+        bad = far if far[0] > hi else near
+        return (
+            False,
+            measured,
+            f"at tick {bad[1]} the camera is {bad[0]:.2f} m from the vehicle ({lo}-{hi})",
+        )
+    if worst > middle:
+        return (
+            False,
+            measured,
+            f"at tick {off_t} the Hips bone is {worst:.2f} of the way to the view's edge",
+        )
+    return True, measured, ""
+
+
+# ---------------------------------------------------------------- ragdoll (FT-9)
+def person_of(run: RunRecord, frame: dict | None, args: dict) -> dict | None:
+    """The census row of the person an expectation names: "id_from" (a command's answer),
+    else by kind (the player by default)."""
+    if "id_from" in args:
+        return census_row(frame, answer_id(run, args["id_from"]))
+    return entity_of(frame, args)
+
+
+def limp_of(frame: dict | None, eid: object) -> object:
+    """The `limp` metadata of an entity in a frame's census (read with census meta), or None."""
+    e = census_row(frame, eid)
+    return ((e or {}).get("m") or {}).get("limp") if e else None
+
+
+def under_ground(p: list[float], ground_y: float, boxes: list[dict]) -> float:
+    """How far a point is below the ground: inside a box (a prop) by its depth, else below
+    ground_y."""
+    for box in boxes:
+        hw, _h, hd = box_half(box)
+        x, _y, z = box_frame(box, p)
+        if abs(x) <= hw and abs(z) <= hd:
+            return depth_into(box, p)
+    return ground_y - p[1]
+
+
+def limp_span(frames: list[dict], eid: object) -> tuple[int | None, int | None]:
+    """(index of the first frame with limp true, index of the first later frame with it
+    false or the entity gone), as indices into frames."""
+    start = next((i for i, fr in enumerate(frames) if limp_of(fr, eid) is True), None)
+    if start is None:
+        return None, None
+    end = next(
+        (
+            i
+            for i in range(start + 1, len(frames))
+            if limp_of(frames[i], eid) is not True
+        ),
+        None,
+    )
+    return start, end
+
+
+def trigger_tick(
+    run: RunRecord, frames: list[dict], eid: object, trig: dict
+) -> int | None:
+    """The tick a ragdoll is due from: an event naming the entity in `field` (default
+    "entity"; with "any", the first such event at all), the first frame its position comes
+    within near_m of landing_y (a landing), or the first frame it is within near_m of the
+    entity a command answered with (near_id_from: {"step", "index"}), horizontally (run
+    into)."""
+    if trig.get("event"):
+        field = trig.get("field", "entity")
+        for fr in frames:
+            for ev in fr.get("events") or []:
+                d = ev.get("d") if isinstance(ev, dict) else None
+                if (
+                    ev.get("n") == trig["event"]
+                    and isinstance(d, dict)
+                    and (trig.get("any") or d.get(field) == eid)
+                ):
+                    return int(d.get("tick", fr.get("t", 0)))
+        return None
+    if "landing_y" in trig:
+        for fr in frames:
+            e = census_row(fr, eid)
+            if (
+                e
+                and isinstance(e.get("p"), list)
+                and float(e["p"][1])
+                <= float(trig["landing_y"]) + float(trig.get("near_m", 0.25))
+            ):
+                return int(fr.get("t", 0))
+    if "near_id_from" in trig:
+        other = answer_id(run, trig["near_id_from"])
+        for fr in frames:
+            a, b = census_row(fr, eid), census_row(fr, other)
+            if a and b:
+                gap = math.dist(
+                    [float(a["p"][0]), float(a["p"][2])],
+                    [float(b["p"][0]), float(b["p"][2])],
+                )
+                if gap <= float(trig.get("near_m", 2.5)):
+                    return int(fr.get("t", 0))
+    return None
+
+
+def check_ragdoll(rec: PlayRecord, args: dict) -> Result:
+    """FT-9: between two marks the entity (by kind; the player by default) is not limp at the
+    first; `limp` turns true no later than within_ticks (12, 0.2 s) after the trigger (its
+    `died` event, or a landing near landing_y) and stays true at least min_s (1.0); while it
+    is true no observed bone is more than below_m (0.05) under the ground (ground_y, or the
+    top of a listed box it is over), the Hips never move more than step_m (1.0) between two
+    ticks, and the state report's player.limp says the same as the metadata."""
+    run = rec.runs[int(args.get("run", 0))]
+    frames = frames_between(run, args["from"], args["to"])
+    e0 = person_of(run, frames[0] if frames else None, args)
+    if e0 is None:
+        return None, {}, "the entity was not observed at the first mark"
+    eid = e0.get("id")
+    if limp_of(frames[0], eid) is True:
+        return False, {}, "the entity was already limp at the first mark"
+    trig = trigger_tick(run, frames, eid, args["trigger"])
+    start, end = limp_span(frames, eid)
+    measured: dict = {"trigger_tick": trig}
+    if trig is None:
+        return None, measured, "the trigger was not seen"
+    if start is None:
+        return False, measured, "the entity never went limp"
+    t_start = int(frames[start].get("t", 0))
+    t_end = (
+        int(frames[end].get("t", 0)) if end is not None else int(frames[-1].get("t", 0))
+    )
+    limp_s = (t_end - t_start) / TICK_HZ
+    measured.update(
+        limp_tick=t_start, limp_s=round(limp_s, 3), late_ticks=t_start - trig
+    )
+    if t_start - trig > int(args.get("within_ticks", 12)) + 1:
+        return (
+            False,
+            measured,
+            f"limp {t_start - trig} ticks after the trigger (at most {args.get('within_ticks', 12)})",
+        )
+    ground_y, boxes = float(args["ground_y"]), list(args.get("boxes", []))
+    deepest, deep_at, jump, jump_at, mismatch = 0.0, None, 0.0, None, None
+    last = None
+    for fr in frames[start : end if end is not None else len(frames)]:
+        bones = ((fr.get("bones") or {}).get(str(eid))) or {}
+        for name, p in bones.items():
+            if isinstance(p, list) and len(p) == 3:
+                d = under_ground([float(c) for c in p], ground_y, boxes)
+                if d > deepest:
+                    deepest, deep_at = d, (fr.get("t"), name)
+        hips = bone_of(fr, eid, "Hips")
+        if hips is not None and last is not None and int(fr.get("t", 0)) > last[0]:
+            step = math.dist(hips, last[1]) / (int(fr.get("t", 0)) - last[0])
+            if step > jump:
+                jump, jump_at = step, fr.get("t")
+        if hips is not None:
+            last = (int(fr.get("t", 0)), hips)
+    for fr in frames:
+        pl = dig(state_of(fr), "player")
+        meta = limp_of(fr, eid)
+        if (
+            e0.get("k") == "player"
+            and isinstance(pl, dict)
+            and meta is not None
+            and pl.get("limp") != meta
+        ):
+            mismatch = fr.get("t")
+            break
+    measured.update(deepest_below_m=round(deepest, 3), hips_step_m=round(jump, 3))
+    if limp_s < float(args.get("min_s", 1.0)):
+        return (
+            False,
+            measured,
+            f"limp for {limp_s:.2f} s (at least {args.get('min_s', 1.0)})",
+        )
+    if deepest > float(args.get("below_m", 0.05)):
+        return (
+            False,
+            measured,
+            f"at tick {deep_at[0]} the {deep_at[1]} bone is {deepest:.2f} m under the ground",
+        )
+    if jump > float(args.get("step_m", 1.0)):
+        return (
+            False,
+            measured,
+            f"at tick {jump_at} the hips moved {jump:.2f} m in one tick",
+        )
+    if mismatch is not None:
+        return (
+            False,
+            measured,
+            f"at tick {mismatch} the state report's player.limp differs from the limp metadata",
+        )
+    return True, measured, ""
+
+
+def check_free_fall(rec: PlayRecord, args: dict) -> Result:
+    """FT-9: over the frames between two marks where the entity is limp and every observed
+    bone is at least clear_m (0.3) above ground_y, a parabola fitted to the Hips bone's height
+    gives a downward acceleration within tol (0.2) of gravity; at least min_ticks (10) ticks."""
+    run = rec.runs[int(args.get("run", 0))]
+    frames = frames_between(run, args["from"], args["to"])
+    e0 = person_of(run, frames[0] if frames else None, args)
+    if e0 is None:
+        return None, {}, "the entity was not observed at the first mark"
+    eid, ground_y = e0.get("id"), float(args["ground_y"])
+    clear = float(args.get("clear_m", 0.3))
+    runs, cur = [], []
+    for fr in frames:
+        bones = ((fr.get("bones") or {}).get(str(eid))) or {}
+        ys = [
+            float(p[1]) for p in bones.values() if isinstance(p, list) and len(p) == 3
+        ]
+        hips = bone_of(fr, eid, "Hips")
+        free = (
+            limp_of(fr, eid) is True
+            and hips is not None
+            and ys
+            and min(ys) >= ground_y + clear
+        )
+        if free:
+            cur.append((int(fr.get("t", 0)) / TICK_HZ, hips[1]))
+        elif cur:
+            runs.append(cur)
+            cur = []
+    if cur:
+        runs.append(cur)
+    best = max(runs, key=len) if runs else []
+    measured: dict = {"samples": len(best)}
+    if len(best) < int(args.get("min_ticks", 10)):
+        return None, measured, f"only {len(best)} limp samples clear of the ground"
+    t0 = best[0][0]
+    ts = [t - t0 for t, _ in best]
+    ys = [y for _, y in best]
+    # least squares y = a t^2 + b t + c
+    s = [sum(t**k for t in ts) for k in range(5)]
+    r = [sum(y * t**k for t, y in zip(ts, ys, strict=True)) for k in range(3)]
+    m = [[s[4], s[3], s[2]], [s[3], s[2], s[1]], [s[2], s[1], s[0]]]
+
+    def det3(q: list[list[float]]) -> float:
+        return (
+            q[0][0] * (q[1][1] * q[2][2] - q[1][2] * q[2][1])
+            - q[0][1] * (q[1][0] * q[2][2] - q[1][2] * q[2][0])
+            + q[0][2] * (q[1][0] * q[2][1] - q[1][1] * q[2][0])
+        )
+
+    d = det3(m)
+    if abs(d) < 1e-18:
+        return None, measured, "the samples do not fit a parabola"
+    # the normal equations' right-hand side, in the rows' order (t^2, t, 1)
+    rhs = [r[2], r[1], r[0]]
+    a = (
+        det3(
+            [
+                [rhs[0], m[0][1], m[0][2]],
+                [rhs[1], m[1][1], m[1][2]],
+                [rhs[2], m[2][1], m[2][2]],
+            ]
+        )
+        / d
+    )
+    accel = -2.0 * a
+    g = 9.81
+    measured["accel_mps2"] = round(accel, 3)
+    tol = float(args.get("tol", 0.2))
+    ok = abs(accel - g) <= tol * g
+    return (
+        ok,
+        measured,
+        ""
+        if ok
+        else f"the hips fell at {accel:.2f} m/s^2, expected {g} within {tol:.0%}",
+    )
+
+
+def check_get_up(rec: PlayRecord, args: dict) -> Result:
+    """FT-9: a person still alive gets up within within_s (6.0) of going limp: `limp` false
+    again and the Hips at least ratio (0.9) of their standing height above ground_y (their
+    height above the entity's position at mark `from`, where it stands)."""
+    run = rec.runs[int(args.get("run", 0))]
+    frames = frames_between(run, args["from"], args["to"])
+    e0 = person_of(run, frames[0] if frames else None, args)
+    if e0 is None:
+        return None, {}, "the entity was not observed at the first mark"
+    eid = e0.get("id")
+    hips0 = bone_of(frames[0], eid, "Hips")
+    if hips0 is None:
+        return None, {}, "the Hips bone was not observed at the first mark"
+    stand = hips0[1] - float(e0["p"][1])
+    start, _end = limp_span(frames, eid)
+    measured: dict = {"standing_hips_m": round(stand, 3)}
+    if start is None:
+        return None, measured, "the entity never went limp"
+    t0 = int(frames[start].get("t", 0))
+    ground_y, ratio = float(args["ground_y"]), float(args.get("ratio", 0.9))
+    up = None
+    for fr in frames[start:]:
+        hips = bone_of(fr, eid, "Hips")
+        if (
+            limp_of(fr, eid) is False
+            and hips is not None
+            and hips[1] - ground_y >= ratio * stand
+        ):
+            up = fr
+            break
+    if up is None:
+        return False, measured, "the person was not back on its feet by the second mark"
+    secs = (int(up.get("t", 0)) - t0) / TICK_HZ
+    measured["seconds"] = round(secs, 3)
+    ok = secs <= float(args.get("within_s", 6.0))
+    return (
+        ok,
+        measured,
+        ""
+        if ok
+        else f"up {secs:.2f} s after going limp (within {args.get('within_s', 6.0)})",
+    )
+
+
+# ---------------------------------------------------------------- damage (VH-3 to VH-6)
+def velocities(tr: list[tuple[int, list[float]]]) -> list[tuple[int, list[float]]]:
+    """(tick, velocity in m/s) from consecutive positions."""
+    out = []
+    for (ta, pa), (tb, pb) in itertools.pairwise(tr):
+        if tb > ta:
+            out.append((tb, [(pb[k] - pa[k]) * TICK_HZ / (tb - ta) for k in range(3)]))
+    return out
+
+
+def impact_dv(
+    tr: list[tuple[int, list[float]]], window: int = 12
+) -> tuple[float, int | None]:
+    """(the largest change of velocity, in km/h, over any `window` ticks, the tick that
+    window starts at)."""
+    vel = velocities(tr)
+    by_tick = dict(vel)
+    best, at = 0.0, None
+    for t, v in vel:
+        w = by_tick.get(t + window)
+        if w is not None:
+            d = math.dist(v, w) * 3.6
+            if d > best:
+                best, at = d, t
+    return best, at
+
+
+def meta_of(frame: dict | None, eid: object, key: str) -> object:
+    """An entity's metadata value in a frame's census (read with census meta), or None."""
+    e = census_row(frame, eid)
+    return ((e or {}).get("m") or {}).get(key) if e else None
+
+
+def entity_id(run: RunRecord, frame: dict | None, args: dict) -> object:
+    """The id an expectation names: "id_from" (a command's answer), "id", or the first
+    entity of "kind" in a frame."""
+    if "id_from" in args or "id" in args:
+        return vehicle_id(run, args)
+    e = entity_of(frame, args)
+    return e.get("id") if e else None
+
+
+def check_impact_damage(rec: PlayRecord, args: dict) -> Result:
+    """VH-3: across one impact between two marks, the vehicle's damage metadata rises by
+    rate * (dv - free_kmh) within tol (a share), where dv is the largest change of its
+    velocity over 0.2 s (12 ticks), in km/h, and it never falls."""
+    run = rec.runs[int(args.get("run", 0))]
+    vid = vehicle_id(run, args)
+    frames = frames_between(run, args["from"], args["to"])
+    tr = track(frames, vid)
+    if len(tr) < 14:
+        return None, {"id": vid}, "the vehicle was not observed between the marks"
+    dv, _at = impact_dv(tr)
+    dmg = [d for d in (meta_of(fr, vid, "damage") for fr in frames) if _is_num(d)]
+    measured: dict = {"dv_kmh": round(dv, 2)}
+    if len(dmg) < 2:
+        return None, measured, "the damage metadata was not read"
+    added = float(dmg[-1]) - float(dmg[0])
+    measured.update(damage_before=dmg[0], damage_after=dmg[-1])
+    if any(b < a - 1e-6 for a, b in itertools.pairwise(dmg)):
+        return False, measured, "the damage fell without a repair"
+    if dv < float(args.get("min_dv_kmh", 15.0)):
+        return None, measured, f"the impact changed the speed by only {dv:.1f} km/h"
+    rate, free = float(args.get("rate", 0.004)), float(args.get("free_kmh", 8.0))
+    want = rate * (dv - free) if dv > free else 0.0
+    measured["expected"] = round(want, 4)
+    tol = float(args.get("tol", 0.25))
+    ok = abs(added - want) <= max(tol * want, 0.002)
+    note = (
+        f"the damage rose by {added:.3f} for a {dv:.1f} km/h impact, expected "
+        f"{want:.3f} within {tol:.0%}"
+    )
+    return ok, measured, "" if ok else note
+
+
+def check_part_off(rec: PlayRecord, args: dict) -> Result:
+    """VH-4: an impact between two marks with dv of at least min_dv_kmh (25) that leaves the
+    damage at min_damage (0.25) or above detaches a part within within_s (0.5): a
+    part_detached event for the vehicle, and a debris entity whose `vehicle` metadata is the
+    vehicle's id in the census."""
+    run = rec.runs[int(args.get("run", 0))]
+    vid = vehicle_id(run, args)
+    frames = frames_between(run, args["from"], args["to"])
+    tr = track(frames, vid)
+    dv, _ = impact_dv(tr)
+    vel = velocities(tr)
+    hit = next(
+        (t for (_, a), (t, b) in itertools.pairwise(vel) if math.dist(a, b) > 1.5), None
+    )
+    dmg = meta_of(frames[-1], vid, "damage") if frames else None
+    measured: dict = {"dv_kmh": round(dv, 2), "damage_after": dmg}
+    if hit is None or dv < float(args.get("min_dv_kmh", 25.0)):
+        return (
+            None,
+            measured,
+            f"no impact of {args.get('min_dv_kmh', 25)} km/h or more was seen",
+        )
+    if not _is_num(dmg) or float(dmg) < float(args.get("min_damage", 0.25)):
+        return None, measured, f"the damage after the impact was {dmg}"
+    ev_tick = event_tick(frames, "part_detached", "vehicle", vid)
+    debris = None
+    for fr in frames:
+        for e in fr.get("census") or []:
+            if e.get("k") == "debris" and (e.get("m") or {}).get("vehicle") == vid:
+                debris = e.get("id")
+    measured.update(event_tick=ev_tick, debris=debris)
+    if ev_tick is None:
+        return False, measured, "no part_detached event for the vehicle"
+    if debris is None:
+        return False, measured, "no debris entity with the vehicle's id in its metadata"
+    secs = (ev_tick - hit) / TICK_HZ
+    measured["seconds"] = round(secs, 3)
+    ok = secs <= float(args.get("within_s", 0.5))
+    return (
+        ok,
+        measured,
+        "" if ok else f"the part came off {secs:.2f} s after the impact",
+    )
+
+
+def check_max_speed(rec: PlayRecord, args: dict) -> Result:
+    """VH-5: between two marks the vehicle's horizontal speed, averaged over every 6 ticks,
+    never exceeds max_kmh."""
+    run = rec.runs[int(args.get("run", 0))]
+    vid = vehicle_id(run, args)
+    tr = track(frames_between(run, args["from"], args["to"]), vid)
+    if len(tr) < 8:
+        return None, {"id": vid}, "the vehicle was not observed between the marks"
+    top = 0.0
+    for i in range(len(tr) - 6):
+        (ta, pa), (tb, pb) = tr[i], tr[i + 6]
+        if tb > ta:
+            v = math.dist([pa[0], pa[2]], [pb[0], pb[2]]) * TICK_HZ / (tb - ta)
+            top = max(top, v * 3.6)
+    measured = {"top_kmh": round(top, 2)}
+    ok = top <= float(args["max_kmh"])
+    return (
+        ok,
+        measured,
+        "" if ok else f"it reached {top:.1f} km/h (at most {args['max_kmh']})",
+    )
+
+
+def check_meta_value(rec: PlayRecord, args: dict) -> Result:
+    """At a mark an entity's metadata `key` equals `equals` (or lies in [min, max])."""
+    run = rec.runs[int(args.get("run", 0))]
+    frame = frame_at_mark(run, args["mark"])
+    eid = entity_id(run, frame, args)
+    got = meta_of(frame, eid, args["key"])
+    measured = {args["key"]: got}
+    if census_row(frame, eid) is None:
+        return None, measured, "the entity was not in the census at the mark"
+    if "equals" in args:
+        ok = got == args["equals"]
+    else:
+        lo, hi = float(args.get("min", -math.inf)), float(args.get("max", math.inf))
+        ok = _is_num(got) and lo <= float(got) <= hi
+    return ok, measured, "" if ok else f"{args['key']} is {got!r}"
+
+
+def event_tick(frames: list[dict], name: str, field: str, value: object) -> int | None:
+    """The tick of the first event `name` whose `field` is `value`, or None."""
+    for fr in frames:
+        for ev in fr.get("events") or []:
+            d = ev.get("d") if isinstance(ev, dict) else None
+            if ev.get("n") == name and isinstance(d, dict) and d.get(field) == value:
+                return int(d.get("tick", fr.get("t", 0)))
+    return None
+
+
+def check_explosion(rec: PlayRecord, args: dict) -> Result:
+    """VH-6: the vehicle, burning from mark `from`, explodes (its vehicle_exploded event)
+    min_s-max_s (8-12) later, and is a wreck at damage 1.0 at mark `to`."""
+    run = rec.runs[int(args.get("run", 0))]
+    vid = vehicle_id(run, args)
+    frames = frames_between(run, args["from"], args["to"])
+    if not frames:
+        return None, {}, "the marks were not reached"
+    tick = event_tick(frames, "vehicle_exploded", "vehicle", vid)
+    measured: dict = {"damage_after": meta_of(frames[-1], vid, "damage")}
+    if tick is None:
+        return False, measured, "no vehicle_exploded event for the vehicle"
+    secs = (tick - int(frames[0].get("t", 0))) / TICK_HZ
+    measured["seconds"] = round(secs, 3)
+    lo, hi = float(args.get("min_s", 8.0)), float(args.get("max_s", 12.0))
+    if not lo <= secs <= hi:
+        return (
+            False,
+            measured,
+            f"it exploded {secs:.2f} s after it began burning, not {lo}-{hi}",
+        )
+    after = measured["damage_after"]
+    ok = _is_num(after) and abs(float(after) - 1.0) < 1e-6
+    return ok, measured, "" if ok else f"the wreck's damage is {after}, not 1.0"
+
+
+def at_tick(frames: list[dict], tick: int) -> dict | None:
+    """The last frame at or before a tick."""
+    best = None
+    for fr in frames:
+        if int(fr.get("t", 0)) <= tick:
+            best = fr
+    return best
+
+
+def check_blast(rec: PlayRecord, args: dict) -> Result:
+    """VH-6: when the vehicle (id_from) explodes, the entity `of` ({"id_from"}, or the player)
+    at distance d from it (positions in the last frame before) is affected as the rule says.
+    what "harm": a person loses all its health within 3 m and 100 * (6 - d) / 3 from 3 to 6 m
+    (within tol, a share), read from the state report for the player; for anyone else within
+    3 m, its died event. what "push": a vehicle within 8 m is at least push_m further away
+    after_s (1.0) later, and within 6 m its damage has risen by 0.30 (within 0.02)."""
+    run = rec.runs[int(args.get("run", 0))]
+    vid = vehicle_id(run, args)
+    frames = frames_between(run, args["from"], args["to"])
+    tick = event_tick(frames, "vehicle_exploded", "vehicle", vid)
+    if tick is None:
+        return None, {}, "the vehicle did not explode between the marks"
+    before = at_tick(frames, tick - 1)
+    after = at_tick(frames, tick + int(float(args.get("after_s", 1.0)) * TICK_HZ))
+    of = args.get("of") or {}
+    if "id_from" in of:
+        oid = answer_id(run, of["id_from"])
+    else:
+        oid = (entity_of(before, {"kind": "player"}) or {}).get("id")
+    c, e = census_row(before, vid), census_row(before, oid)
+    if not c or not e:
+        return None, {}, "the vehicle or the other entity was not observed before it"
+    d = math.dist([float(x) for x in c["p"]], [float(x) for x in e["p"]])
+    measured: dict = {"distance_m": round(d, 3)}
+    if args["what"] == "harm":
+        want = 100.0 if d <= 3.0 else (100.0 * (6.0 - d) / 3.0 if d < 6.0 else 0.0)
+        measured["expected_loss"] = round(want, 2)
+        if e.get("k") == "player":
+            hb = dig(state_of(before), "player.health")
+            ha = dig(state_of(after), "player.health")
+            if not _is_num(hb) or not _is_num(ha):
+                return (
+                    None,
+                    measured,
+                    "player.health was not in the state report around it",
+                )
+            loss = float(hb) - float(ha)
+            measured["loss"] = loss
+            tol = float(args.get("tol", 0.1))
+            ok = abs(loss - min(want, float(hb))) <= max(tol * want, 1.0)
+            note = f"{loss:g} health lost {d:.2f} m away, expected {want:.1f}"
+            return ok, measured, "" if ok else note
+        died = event_tick(frames, "died", "entity", oid)
+        measured["died_tick"] = died
+        if want >= 100.0:
+            ok = died is not None and died - tick <= 12
+            return ok, measured, "" if ok else f"a person {d:.2f} m away did not die"
+        return None, measured, "only deaths are read for people other than the player"
+    ca, ea = census_row(after, vid), census_row(after, oid)
+    if not ca or not ea:
+        return None, measured, "the vehicles were not observed after the explosion"
+    d2 = math.dist([float(x) for x in ca["p"]], [float(x) for x in ea["p"]])
+    measured["distance_after_m"] = round(d2, 3)
+    if d <= 8.0 and d2 - d < float(args.get("push_m", 0.3)):
+        return (
+            False,
+            measured,
+            f"a vehicle {d:.2f} m away moved only {d2 - d:.2f} m further off",
+        )
+    db, da = meta_of(before, oid, "damage"), meta_of(after, oid, "damage")
+    if d <= 6.0:
+        if not _is_num(db) or not _is_num(da):
+            return None, measured, "the damage metadata was not read around it"
+        measured.update(damage_before=db, damage_after=da)
+        rise = float(da) - float(db)
+        if abs(rise - 0.30) > 0.02:
+            return False, measured, f"its damage rose by {rise:.3f}, expected 0.30"
+    return True, measured, ""
+
+
 CHECKS: dict[str, Callable[[PlayRecord, dict], Result]] = {
     "dev_answers": check_dev_answers,
     "dev_result": check_dev_result,
@@ -1860,6 +2979,25 @@ CHECKS: dict[str, Callable[[PlayRecord, dict], Result]] = {
     "signal_program": check_signal_program,
     "signal_greens": check_signal_greens,
     "signal_walks": check_signal_walks,
+    "accel": check_accel,
+    "brake": check_brake,
+    "turn_circle": check_turn_circle,
+    "decel": check_decel,
+    "body": check_body,
+    "seats": check_seats,
+    "get_in": check_get_in,
+    "seated": check_seated,
+    "get_out": check_get_out,
+    "camera_vehicle": check_camera_vehicle,
+    "ragdoll": check_ragdoll,
+    "free_fall": check_free_fall,
+    "get_up": check_get_up,
+    "impact_damage": check_impact_damage,
+    "part_off": check_part_off,
+    "max_speed": check_max_speed,
+    "meta_value": check_meta_value,
+    "explosion": check_explosion,
+    "blast": check_blast,
 }
 
 
@@ -2001,7 +3139,18 @@ def standing_registry(rec: PlayRecord) -> Outcome:
                 if eid in retired:
                     problems.append(f"tick {fr.get('t')}: id {eid} reused")
                 live[eid] = e.get("k")
-            retired |= set(live_prev) - set(live)
+            kinds = fr.get("_kinds")
+            if isinstance(kinds, list):
+                # this frame lists only some kinds: the others are not gone, just not listed
+                retired |= {
+                    i for i in set(live_prev) - set(live) if live_prev[i] in kinds
+                }
+                live = {
+                    **{i: k for i, k in live_prev.items() if k not in kinds},
+                    **live,
+                }
+            else:
+                retired |= set(live_prev) - set(live)
             live_prev = live
             if len(problems) > 20:
                 break
