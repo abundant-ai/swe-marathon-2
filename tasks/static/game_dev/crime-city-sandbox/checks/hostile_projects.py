@@ -61,7 +61,7 @@ EXPECTED: dict[str, tuple[str, dict]] = {
     "spawner": ("a reward is written; no spawned process outlives its game", {}),
     "deadline": (
         "the grader's own deadline stops a stalled grading: a reward is still written",
-        {"deadline_s": 75, "margin_s": 5, "step_s": 60},
+        {"deadline_s": 60, "margin_s": 5, "step_s": 120},
     ),
 }
 OVERLAY = {"deadline": "stall"}  # cases that reuse another case's overlay

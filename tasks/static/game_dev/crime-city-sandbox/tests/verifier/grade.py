@@ -25,7 +25,6 @@ import dataclasses
 import json
 import os
 import random
-import shutil
 import signal
 import threading
 import time
@@ -381,7 +380,6 @@ def grade(cfg: GradeConfig) -> float:
                     ),
                 )
                 raise EvaluationError("self-test failed: " + "; ".join(st.problems[:5]))
-            shutil.rmtree(cfg.work / "selftest" / "game", ignore_errors=True)
         denylist = (
             cfg.denylist.read_text().splitlines()
             if cfg.denylist and cfg.denylist.is_file()

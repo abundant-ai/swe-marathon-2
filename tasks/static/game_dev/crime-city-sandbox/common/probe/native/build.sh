@@ -21,8 +21,7 @@ mkdir -p "$out"
 src=("$here/telemetry.c" "$here/sha256.c" "$here/jw.c")
 common=(-std=c11 -O2 -fPIC -shared -Wall -Wextra -Werror
   -Wno-unused-parameter -Wno-unused-function -I"$here")
-lists="$(mktemp -d)"
-trap 'rm -f "$lists/exports.txt" "$lists/exports.map"; rmdir "$lists"' EXIT
+lists="$out"  # the export lists stay next to the library they describe
 if [ "$os" = "Darwin" ]; then
   echo "_qa_telemetry_init" > "$lists/exports.txt"
   clang "${common[@]}" -arch arm64 -arch x86_64 -Wno-cast-function-type-mismatch \
