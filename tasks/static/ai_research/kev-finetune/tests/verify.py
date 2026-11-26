@@ -1,0 +1,198 @@
+"""Stage /app/model, score it with Kev's benchmark as an unprivileged uid, and write the reward (transfer-v4 test accuracy)."""
+
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import stat
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+APP_MODEL = Path("/app/model")
+TESTS = Path("/tests")
+WORK = Path("/var/lib/kev-verifier")
+LOGS = Path("/logs/verifier")
+VENV_PYTHON = "/opt/kev/.venv/bin/python"
+GRADER_UID = 10021
+
+CHECKPOINT_FILES = {
+    "adapter_config.json": 1 << 20,
+    "adapter_model.safetensors": 4 << 30,
+    "head.pt": 256 << 20,
+}
+GRADER_TIMEOUT_SEC = 5400
+
+
+class CandidateError(Exception):
+    """The delivered checkpoint cannot earn credit; the message says why."""
+
+
+def copy_regular_file(src: Path, dst: Path, limit: int) -> None:
+    try:
+        before = os.lstat(src)
+    except FileNotFoundError:
+        raise CandidateError(f"{src} is missing") from None
+    if not stat.S_ISREG(before.st_mode):
+        raise CandidateError(f"{src} is not a regular file")
+    fd = os.open(src, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    try:
+        opened = os.fstat(fd)
+        if not stat.S_ISREG(opened.st_mode) or (opened.st_dev, opened.st_ino) != (
+            before.st_dev,
+            before.st_ino,
+        ):
+            raise CandidateError(f"{src} changed while it was opened")
+        if opened.st_size > limit:
+            raise CandidateError(
+                f"{src} is {opened.st_size} bytes, over the {limit}-byte limit"
+            )
+        with os.fdopen(fd, "rb", closefd=False) as reader, open(dst, "xb") as writer:
+            copied = 0
+            while chunk := reader.read(1 << 20):
+                copied += len(chunk)
+                if copied > limit:
+                    raise CandidateError(f"{src} grew past the {limit}-byte limit")
+                writer.write(chunk)
+    finally:
+        os.close(fd)
+
+
+def stage_checkpoint(dst: Path) -> None:
+    try:
+        info = os.lstat(APP_MODEL)
+    except FileNotFoundError:
+        raise CandidateError("/app/model does not exist") from None
+    if not stat.S_ISDIR(info.st_mode):
+        raise CandidateError("/app/model is not a directory")
+    dst.mkdir(parents=True)
+    for name, limit in CHECKPOINT_FILES.items():
+        copy_regular_file(APP_MODEL / name, dst / name, limit)
+
+
+def read_report(path: Path) -> dict:
+    try:
+        info = os.lstat(path)
+    except FileNotFoundError:
+        raise CandidateError(f"{path.name} was not written") from None
+    if not stat.S_ISREG(info.st_mode) or info.st_size > (64 << 20):
+        raise CandidateError(f"{path.name} is not a usable report")
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    with os.fdopen(fd, "rb") as handle:
+        return json.loads(handle.read())
+
+
+def run_grader(model: Path, out: Path) -> subprocess.CompletedProcess:
+    env = {
+        "PATH": "/opt/kev/.venv/bin:/usr/local/bin:/usr/bin:/bin",
+        "HOME": str(out / "home"),
+        "HF_HOME": "/opt/hf",
+        "HF_HUB_OFFLINE": "1",
+        "TRANSFORMERS_OFFLINE": "1",
+        "HF_HUB_DISABLE_TELEMETRY": "1",
+        "PYTHONDONTWRITEBYTECODE": "1",
+    }
+
+    def drop() -> None:
+        os.setgroups([])
+        os.setgid(GRADER_UID)
+        os.setuid(GRADER_UID)
+
+    return subprocess.run(
+        [VENV_PYTHON, "-I", str(TESTS / "grader.py"), str(model), str(out)],
+        cwd="/opt/kev",
+        env=env,
+        preexec_fn=drop,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=GRADER_TIMEOUT_SEC,
+    )
+
+
+def summary(report: dict) -> dict:
+    clean = report["clean"]
+    return {
+        "n": clean["n"],
+        "acc": clean["acc"],
+        "brier": clean["brier"],
+        "ece": clean["ece"],
+        "by_task": {
+            task: {"n": v["n"], "acc": v["acc"]}
+            for task, v in report.get("tasks", {}).items()
+        },
+    }
+
+
+def write_reward(reward: float, metrics: dict) -> None:
+    LOGS.mkdir(parents=True, exist_ok=True)
+    (LOGS / "metrics.json").write_text(json.dumps(metrics, indent=1))
+    (LOGS / "reward.txt").write_text(f"{reward:.6f}\n")
+    print(
+        json.dumps(
+            {"reward": reward, **{k: v for k, v in metrics.items() if k != "suites"}},
+            indent=1,
+        )
+    )
+
+
+def main() -> int:
+    started = time.time()
+    check = subprocess.run(
+        [
+            VENV_PYTHON,
+            "-I",
+            "-c",
+            "import torch; raise SystemExit(0 if torch.cuda.is_available() else 1)",
+        ],
+        check=False,
+        capture_output=True,
+        timeout=600,
+    )
+    if check.returncode != 0:
+        print("verifier environment has no usable GPU", file=sys.stderr)
+        return 1
+    shutil.rmtree(WORK, ignore_errors=True)
+    WORK.mkdir(mode=0o711, parents=True)
+    model, out = WORK / "model", WORK / "out"
+    metrics: dict = {"suites": {}}
+    try:
+        stage_checkpoint(model)
+        for path in [model, *model.iterdir()]:
+            os.chown(path, 0, 0)
+            os.chmod(path, 0o755 if path.is_dir() else 0o644)
+        out.mkdir(mode=0o700)
+        (out / "home").mkdir(mode=0o700)
+        for path in (out, out / "home"):
+            os.chown(path, GRADER_UID, GRADER_UID)
+        result = run_grader(model, out)
+        (LOGS).mkdir(parents=True, exist_ok=True)
+        (LOGS / "grader.log").write_text(
+            result.stdout[-200_000:] + "\n--- stderr ---\n" + result.stderr[-200_000:]
+        )
+        if result.returncode == 3:
+            print("verifier suite check failed", file=sys.stderr)
+            return 1
+        if result.returncode != 0:
+            raise CandidateError(
+                f"Kev could not load or score the checkpoint (grader exit {result.returncode}); see grader.log"
+            )
+        for name in ("transfer_test", "transfer_dev", "decision_test"):
+            metrics["suites"][name] = summary(read_report(out / name / "report.json"))
+        reward = float(metrics["suites"]["transfer_test"]["acc"])
+        metrics["checkpoint"] = read_report(out / "checkpoint.json")
+    except CandidateError as exc:
+        reward = 0.0
+        metrics["error"] = str(exc)
+    except subprocess.TimeoutExpired:
+        reward = 0.0
+        metrics["error"] = f"scoring did not finish within {GRADER_TIMEOUT_SEC} s"
+    metrics["seconds"] = round(time.time() - started, 1)
+    write_reward(reward, metrics)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,46 @@
+schema_version = "1.4"
+artifacts = ["/app"]
+
+[task]
+name = "abundant/swe-m2_ai-research_kev-finetune"
+description = "Fine-tune the open Kev-0.8B decision model with Kev's own training recipe on one H100 so it gets better at a general text-decision domain without forgetting, judged by Kev's benchmark on questions the agent never sees."
+authors = [{ name = "Fenil Faldu", email = "fenilfaldu143@gmail.com" }]
+
+[metadata]
+reward_type = "continuous"
+open_internet_justification = "The agent session is an allowlist with one host, api.anthropic.com, so the candidate can use Claude Fable 5.2 (key in KEV_ANTHROPIC_API_KEY) to generate training data. Kev's code, Kev-0.8B, its base model and decision-v7 are baked into the image; GitHub, the model hub and the package indexes stay closed, so the public copies of the held-out suite cannot be fetched. The verifier is no-network and has no key."
+
+[agent]
+timeout_sec = 21600
+user = "candidate"
+
+[environment]
+network_mode = "allowlist"
+allowed_hosts = ["api.anthropic.com"]
+build_timeout_sec = 7200
+cpus = 16
+memory_mb = 131072
+storage_mb = 204800
+gpus = 1
+gpu_types = ["H100"]
+workdir = "/app"
+
+[environment.env]
+KEV_ANTHROPIC_API_KEY = "${ANTHROPIC_API_KEY}"
+
+[verifier]
+environment_mode = "separate"
+user = "root"
+network_mode = "no-network"
+timeout_sec = 7200
+
+[verifier.environment]
+network_mode = "no-network"
+build_timeout_sec = 7200
+cpus = 16
+memory_mb = 131072
+storage_mb = 102400
+gpus = 1
+gpu_types = ["H100"]
+workdir = "/tests"
+

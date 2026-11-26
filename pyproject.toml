@@ -25,4 +25,5 @@ testpaths = [
     "tasks/static/app_clone/carve-html-renderer-from-spec-only/checks",
     "tasks/static/app_clone/basedpl-interpreter-rebuild-no-examples/checks",
     "tasks/static/app_clone/openfoam-rebuild/checks",
+    "tasks/static/ai_research/kev-finetune/checks",
 ]
