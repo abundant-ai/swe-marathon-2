@@ -61,6 +61,12 @@ Steps (one key each, run in order):
                              presses accelerate or brake by how far the speed it saw is from
                              v, while holding the "hold" actions; at the end it lets go of
                              all of them unless "keep" (another cruise takes over at once)
+  {"aim_at": {"entity": {"id": n}, "bone": "Chest", "ticks": N, "hold": {action: s},
+              "keep": false}}
+                             lockstep: N ticks of QA's bot aiming: each tick it holds aim
+                             (and the "hold" actions) and turns the camera with the look
+                             actions by the angle, seen from the camera, between the state
+                             report's aim point and that entity's bone
   {"files": {"op": "damage"|"truncate", "since": mark}}
                              damage the save-folder files that changed since a mark
   {"restart": {}}            lockstep only: kill the process tree and start it again

@@ -226,10 +226,10 @@ def box_distance(box: dict, p: list[float]) -> float:
 def check_hits(rec: PlayRecord, args: dict) -> Result:
     """CB-1 with AC-13: between two marks, every damaged event on the listed people dealt by
     the player has `amount` equal to `damage`; at least `min_hits` of them; on every hit that
-    does not kill, the person's health falls by the amount (from `start_health`, 100 by
-    default, then from event to event); the person dies (its died event) on exactly the hit
-    that takes its health to 0 and takes no hit after it; with `per_round`, no round lands
-    more than that many hits."""
+    does not kill (whoever dealt it), the person's health falls by the amount (from
+    `start_health`, 100 by default, then from event to event); the person dies (its died event)
+    on exactly the hit that takes its health to 0 and takes no hit after it; with `per_round`,
+    no round lands more than that many hits."""
     run = rec.runs[int(args.get("run", 0))]
     frames = frames_between(run, args["from"], args["to"])
     if not frames:
@@ -241,10 +241,12 @@ def check_hits(rec: PlayRecord, args: dict) -> Result:
     died = died_at(frames)
     health = {t: int(args.get("start_health", 100)) for t in targets}
     off, problems = [], []
-    for t, d in hits:
+    # health is followed through every hit on them, whoever dealt it
+    every = [(t, d) for t, d in events(frames, "damaged") if d.get("entity") in health]
+    for t, d in every:
         eid = d.get("entity")
         amount, left = d.get("amount"), d.get("health")
-        if amount != want:
+        if d.get("source") == me and amount != want:
             off.append(amount)
         if eid in died and died[eid] < t:
             problems.append(f"entity {eid} took a hit after its died event")

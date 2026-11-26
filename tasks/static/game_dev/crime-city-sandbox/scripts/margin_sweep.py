@@ -13,8 +13,10 @@ stops) are listed as such, not as margins.
 
 Usage:
   python scripts/margin_sweep.py FOUND.json [--playtests DIR] [--min 0.15] [--json OUT]
-FOUND.json is what `qa run --json` wrote. Prints every margin under --min and a summary;
-exit code 1 when one is under it.
+  python scripts/margin_sweep.py REPORT.json --plays DIR [--min 0.15] [--json OUT]
+FOUND.json is what `qa run --json` wrote; REPORT.json a grader report (tests/verify.py), with
+the instances' play files in --plays (named after the instance, "/" as "."). Prints every
+margin under --min and a summary; exit code 1 when one is under it.
 """
 
 from __future__ import annotations
@@ -478,14 +480,27 @@ def main() -> int:
     ap.add_argument("found", type=Path)
     ap.add_argument("--playtests", type=Path, default=PLAYTESTS)
     ap.add_argument("--min", type=float, default=0.15)
+    ap.add_argument("--plays", type=Path)
     ap.add_argument("--json", type=Path)
     a = ap.parse_args()
+    found = json.loads(a.found.read_text())
     plays = {}
-    for path in sorted(a.playtests.glob("*.json")):
-        d = json.loads(path.read_text())
-        plays[d["name"]] = {e["id"]: e for e in d["expect"]}
+    if isinstance(found, dict):  # a grader report: its instances and their play files
+        found = [
+            {"playtest": i["name"], "expectations": i.get("checks") or []}
+            for i in found.get("instances", [])
+        ]
+        for f in found:
+            path = a.plays / (f["playtest"].replace("/", ".") + ".json")
+            if path.is_file():
+                d = json.loads(path.read_text())
+                plays[f["playtest"]] = {e["id"]: e for e in d["expect"]}
+    else:
+        for path in sorted(a.playtests.glob("*.json")):
+            d = json.loads(path.read_text())
+            plays[d["name"]] = {e["id"]: e for e in d["expect"]}
     rows, low = [], []
-    for f in json.loads(a.found.read_text()):
+    for f in found:
         exps = plays.get(f["playtest"], {})
         for o in f["expectations"]:
             e = exps.get(o["id"])
