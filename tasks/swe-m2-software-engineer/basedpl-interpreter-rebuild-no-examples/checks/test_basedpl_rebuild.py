@@ -2927,10 +2927,9 @@ def test_the_end_of_the_work_counts_from_the_sessions_first_process_not_from_set
     in the turn's last seconds was then taken out as late, and with it the reward. The end now counts from the first
     process's start, which the process the set-up hook left records as soon as it sees it (STATE/first-process), and
     set-up's time only where none was recorded. Here the first process starts 30 s after set-up: a save in the turn's
-    last second is kept (set-up's end would have taken it out), and one made after the end is late. The end falls
-    before the stop after the limit, for the same start, and so before the network the stop waits for is open again:
-    a save made once it is open is later still. Without a record of the first process the end is set-up's time plus
-    the limit, as before."""
+    last second is kept (set-up's end would have taken it out), and one made after the end is late, however soon after
+    it. The end falls before the stop after the limit for the same start, which also waits for the network to answer
+    again. Without a record of the first process the end is set-up's time plus the limit, as before."""
     when = {}
 
     def build(rebuild):
