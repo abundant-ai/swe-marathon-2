@@ -18,7 +18,7 @@ from pathlib import Path
 
 TASK = Path(__file__).resolve().parent.parent
 CACHE = Path.home() / "Documents/github/Abundant/lib-tasks-cache/harfbuzz-forward-port"
-RUNS = CACHE / "work" / "runs"
+RUNS = CACHE / "work" / "runs-c2"
 VERIFY = CACHE / "work" / "verify"
 CUES = re.compile(
     r"evaluation|benchmark|graded|grader|hidden test|golden|behave exactly like|every request exactly as|"
@@ -147,6 +147,19 @@ def band(selection: list[dict], name: str = "mut-W") -> dict:
     }
 
 
+def determinism() -> dict:
+    first = VERIFY / "record" / "outputs.tsv"
+    if not first.exists():
+        return {"pass": False, "note": "no recording"}
+    ref = first.read_bytes()
+    same = {
+        n: (VERIFY / n / "outputs.tsv").exists()
+        and (VERIFY / n / "outputs.tsv").read_bytes() == ref
+        for n in ("record-2", "record-3", "record-1cpu")
+    }
+    return {"identical": same, "cases": ref.count(b"\n"), "pass": all(same.values())}
+
+
 def cue_sweep() -> dict:
     hits = []
     for path in [TASK / "instruction.md", *sorted((TASK / "environment").rglob("*"))]:
@@ -174,18 +187,22 @@ def main() -> None:
         "1_inventory": inventory(selection, cut),
         "2_kill_matrix": kill_matrix(selection, units),
         "3_stub_zoo": {
-            n: verify_result(n)
-            for n in (
-                "stub-comments",
-                "stub-refactor",
-                "stub-nobuild",
-                "stub-empty",
-                "stub-abort",
-                "stub-rall",
-                "nop",
-            )
+            **{
+                n: verify_result(n)
+                for n in (
+                    "nop",
+                    "stub-comments",
+                    "stub-refactor",
+                    "stub-nobuild",
+                    "stub-empty",
+                    "stub-abort",
+                )
+            },
+            "R_all (pipeline)": band(selection, "rk-ALL"),
         },
-        "4_oracle_nop": {n: verify_result(n) for n in ("oracle", "nop")},
+        "4_oracle_nop": {n: verify_result(n) for n in ("oracle", "nop", "base-14.3.0")},
+        "5_determinism": determinism(),
+        "8_robustness": {n: verify_result(n) for n in ("robust", "fault")},
         "6_cue_words": cue_sweep(),
         "12_band": band(selection),
     }
