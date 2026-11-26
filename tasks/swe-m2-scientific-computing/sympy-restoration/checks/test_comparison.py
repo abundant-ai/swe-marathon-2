@@ -484,11 +484,11 @@ sys.path.insert(0, {str(lib)!r})
 from canon import same
 def exc(name, *bases):
     return ["EXC", name, [name, *bases]]
-not_a_field = exc("DMNotAField", "DMDomainError", "DMError")
+leaf = exc("LeafError", "MiddleError", "RootError")
 out = {{
-    "the_class": same(not_a_field, not_a_field),
-    "a_base": same(exc("DMDomainError", "DMError"), not_a_field),
-    "the_root_base": same(exc("DMError"), not_a_field),
+    "the_class": same(leaf, leaf),
+    "a_base": same(exc("MiddleError", "RootError"), leaf),
+    "the_root_base": same(exc("RootError"), leaf),
     "a_subclass": same(exc("UnicodeError", "ValueError"), exc("ValueError")),
     "a_sibling": same(exc("TypeError"), exc("ValueError")),
     "the_placeholder": same(exc("NotImplementedError", "RuntimeError"), exc("ValueError")),
