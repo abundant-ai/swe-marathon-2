@@ -36,9 +36,22 @@ def band(v: object, lo: object, hi: object) -> float | None:
     return min(v - lo, hi - v) / (hi - lo)
 
 
+def worst_of(v: object) -> object:
+    """A value given per person ({id: value}) as its largest; anything else as it is."""
+    if (
+        isinstance(v, dict)
+        and v
+        and all(isinstance(x, (int, float)) for x in v.values())
+    ):
+        return max(v.values())
+    return v
+
+
 def upto(v: object, hi: object) -> float | None:
     """At most hi, for a quantity whose floor (0) is no limit: the room left below hi, as a
-    share of hi (the band [0, hi], judged at its upper edge only)."""
+    share of hi (the band [0, hi], judged at its upper edge only). A value per person is
+    judged by its largest."""
+    v = worst_of(v)
     if not isinstance(v, (int, float)) or not isinstance(hi, (int, float)) or hi <= 0:
         return None
     return (hi - v) / hi
@@ -61,9 +74,13 @@ def pair(v: object) -> list:
     return list(v) if isinstance(v, list) and len(v) == 2 else []
 
 
-def margins(check: str, a: dict, m: dict) -> list[tuple[str, object, float | None]]:
+def margins(
+    check: str, a: dict, m: dict, others: tuple = ()
+) -> list[tuple[str, object, float | None]]:
     """(what, value, margin) for one expectation's measured values; an empty list when the
-    check has no band (counts that must be zero, exact values, yes-or-no answers)."""
+    check has no band (counts that must be zero, exact values, yes-or-no answers). `others`
+    are the args of the play's expectations of the same check: a one-sided pace measured over
+    the same window as a banded one (IN-2's sprint over FT-1's) is judged in that band."""
     out: list[tuple[str, object, float | None]] = []
 
     def add(what: str, v: object, mg: float | None) -> None:
@@ -183,17 +200,44 @@ def margins(check: str, a: dict, m: dict) -> list[tuple[str, object, float | Non
         if isinstance(exp, (int, float)) and isinstance(loss, (int, float)) and exp > 0:
             tol = float(a.get("tol", 0.1))
             add("loss", loss, band(loss, exp * (1 - tol), exp * (1 + tol)))
-        if m.get("distance_after_m") is not None and a.get("push_m") is not None:
-            add(
-                "pushed_m",
-                m.get("pushed_m"),
-                atleast(m.get("pushed_m"), a.get("push_m")),
-            )
+        before, after = m.get("distance_m"), m.get("distance_after_m")
+        if (
+            isinstance(before, (int, float))
+            and isinstance(after, (int, float))
+            and a.get("push_m") is not None
+        ):
+            pushed = round(after - before, 4)
+            add("pushed_m", pushed, atleast(pushed, a.get("push_m")))
     elif check == "pace":
+        hi = a.get("max_mps")
+        if hi is None:
+            same = [
+                o.get("max_mps")
+                for o in others
+                if (
+                    o.get("from"),
+                    o.get("to"),
+                    o.get("kind"),
+                    o.get("bone"),
+                    o.get("min_mps"),
+                )
+                == (
+                    a.get("from"),
+                    a.get("to"),
+                    a.get("kind"),
+                    a.get("bone"),
+                    a.get("min_mps"),
+                )
+                and o.get("max_mps") is not None
+            ]
+            hi = same[0] if same else None
+        v = m.get("speed_mps")
         add(
             "speed_mps",
-            m.get("speed_mps"),
-            band(m.get("speed_mps"), a.get("min_mps"), a.get("max_mps")),
+            v,
+            band(v, a.get("min_mps"), hi)
+            if hi is not None
+            else atleast(v, a.get("min_mps")),
         )
     elif check == "feet":
         add(
@@ -366,7 +410,7 @@ def margins(check: str, a: dict, m: dict) -> list[tuple[str, object, float | Non
         else:
             add("value", v, band(v, a.get("min"), a.get("max")))
     elif check == "moved":
-        if "min_m" in a:
+        if float(a.get("min_m") or 0.0) > 0.0:
             add("moved_m", m.get("moved_m"), atleast(m.get("moved_m"), a["min_m"]))
         if "max_m" in a:
             add("moved_m", m.get("moved_m"), upto(m.get("moved_m"), a["max_m"]))
@@ -514,7 +558,14 @@ def main() -> int:
             e = exps.get(o["id"])
             if e is None or not o.get("measured"):
                 continue
-            for what, v, mg in margins(e["check"], e.get("args") or {}, o["measured"]):
+            others = tuple(
+                x.get("args") or {}
+                for x in exps.values()
+                if x is not e and x.get("check") == e["check"]
+            )
+            for what, v, mg in margins(
+                e["check"], e.get("args") or {}, o["measured"], others
+            ):
                 row = {"playtest": f["playtest"], "id": o["id"], "rule": o.get("rule"), "what": what,
                        "value": v, "margin": None if mg is None else round(mg, 3)}  # fmt: skip
                 rows.append(row)
