@@ -1,5 +1,8 @@
 # Draft step instructions for the candidate chains (proposals)
 
+> **Parked by the owner, 2026-11-26.** The task stays single-step; these drafts are kept as history
+> and will not be built unless the owner reopens multi-turn work.
+
 These are drafts in the requester's voice for the two chains in `../STEPS.md`. They are not
 implemented steps: the repository allows only implemented steps in `task.toml`, and the panel
 decided to build the single step (the task root's `instruction.md`) first. If spike days 4-5 adopt

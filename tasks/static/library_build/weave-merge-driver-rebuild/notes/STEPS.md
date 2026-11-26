@@ -1,5 +1,10 @@
 # Weave merge-driver rebuild: steps, acceptance criteria, reward strategy (Phase A, 2026-11-26)
 
+> **Update, Phase B: the chains are parked by the owner, 2026-11-26.** "we dont have to promote
+> multi-turn as well so make stuff likewise." Weave stays single-step (plan A). Chains B and C
+> below, their draft instructions in `notes/steps/`, and the measurements of section 5 are kept as
+> history only; none was built or measured.
+
 Author notes. The decision record, with the brief and the three votes verbatim, is in harbor-lh:
 `ops/swe-marathon-v2/decisions/2026-11-26-weave-merge-driver-rebuild-steps-{BRIEF,opus,sonnet,haiku,DECISION}.md`.
 

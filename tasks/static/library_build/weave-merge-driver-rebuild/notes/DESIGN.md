@@ -74,15 +74,15 @@ not exist). Standard error is ignored (the instruction says so).
 
 | Id | Family | Weight | Kept cases (target) | What it exercises | Its mutant |
 | --- | --- | --- | --- | --- | --- |
-| F1 | Disjoint entity edits, routing, layout sub-family | 10% | 150 | identity matching; edits to different definitions that a line merge conflicts on; markers in an input; status 2 for binary and non-UTF-8 inputs (near-boundary duals: a NUL after byte 8,192); the 1,000,000-byte limit from below; a small layout sub-family (CRLF, BOM, missing final newline, separator ties) | M-D1 (identity off), M-layout |
-| F2 | Placement and ordering | 15% | 170 | anchor rank, input order, identity key, one side reordering, both reordering (base order for all three languages) | M-place (v1's ours skeleton) |
-| F3 | Renames | 10% | 120 | identical-body and edited renames, call-site corroboration, short bodies, rare tokens, rehoming; every case at least 0.15 from each threshold | M-rename (identity only) |
-| F4 | Edits by both sides to one definition; conflict boxes | 13% | 150 | the in-definition ladder (diffy, whitespace shortcut outside Python, decorator-aware merge), adjacent-line conflicts, scoped boxes, the frame cut, box refinement, the hint on the first closing marker | M-fold (0.4-style statement fold), M-frame |
-| F5 | Containers | 7% | 90 | classes and type bodies merged member by member, git's plain merge as second opinion, member conflicts | M-container |
+| F1 | Disjoint entity edits, routing, layout sub-family | 8% | 150 | identity matching; edits to different definitions that a line merge conflicts on; markers in an input; status 2 for binary and non-UTF-8 inputs (near-boundary duals: a NUL after byte 8,192); the 1,000,000-byte limit from below; a small layout sub-family (CRLF, BOM, missing final newline, separator ties) | M-D1 (identity off), M-layout |
+| F2 | Placement and ordering | 15% | 170 | anchor rank, input order, identity key, one side reordering, both reordering (base order for all three languages); near-miss pairs where the identity-key order and an ours-first order differ | M-place (v1's ours skeleton) |
+| F3 | Renames | 12% | 150 | identical-body and edited renames, call-site corroboration, short bodies, rare tokens, rehoming; near-miss pairs on each side of each published threshold, every case at least 0.15 from it | M-rename (identity only) |
+| F4 | Edits by both sides to one definition; conflict boxes | 11% | 150 | the in-definition ladder (diffy, whitespace shortcut outside Python, decorator-aware merge), adjacent-line conflicts, scoped boxes, the frame cut, box refinement, the hint on the first closing marker | M-fold (0.4-style statement fold), M-frame |
+| F5 | Containers | 6% | 90 | classes and type bodies merged member by member, git's plain merge as second opinion, member conflicts | M-container |
 | F6 | Element union and its refusals | 8% | 100 | Go maps and keyed structs, TS object literals and export lists, Python dicts, tagged switches without fallthrough, `const` blocks, slices in test files; the element guards (duplicate key, both-changed element, type or tagless switch, no reparse) | M-elem |
-| F7 | Imports and decorators | 7% | 90 | import-region union only when only import lines changed and no name binds twice; name lists; different decorators conflict in Python and TS | M-import, M-decor |
-| **F8** | **Fail-closed gate (B)** | **20%** | **at least 200: at least 100 refusals, at least 100 paired accept-duals** | a composition that states a line too often or drops one both sides kept, re-declares a name, repeats a key or case label, renumbers an `iota` constant, leaves a name unbound, stops parsing, or makes JSON or TOML stop loading or repeat a key; refusals whose answer is one whole-file box (git's line merge is clean but fails the same checks), and accept-duals built the same way that pass | **M-gate** |
-| F9 | Region rules | 5% | 70 | D0/D1 agreement and subsumption, D3 import set union, D4 layout-equal creations, D6 layout-only side; never for modify/delete, two renames, or markers | M-D |
+| F7 | Imports and decorators | 6% | 90 | import-region union only when only import lines changed and no name binds twice; name lists; different decorators conflict in Python and TS | M-import, M-decor |
+| **F8** | **Fail-closed gate (B)** | **25%** | **at least 300: at least 150 refusals, at least 150 paired accept-duals (near-misses that turn on one documented condition)** | a composition that states a line too often or drops one both sides kept, re-declares a name, repeats a key or case label, renumbers an `iota` constant, leaves a name unbound, stops parsing, or makes JSON or TOML stop loading or repeat a key; refusals whose answer is one whole-file box (git's line merge is clean but fails the same checks), and accept-duals built the same way that pass | **M-gate** |
+| F9 | Region rules | 4% | 70 | D0/D1 agreement and subsumption, D3 import set union, D4 layout-equal creations, D6 layout-only side; never for modify/delete, two renames, or markers | M-D |
 | F10 | JSON and TOML | 5% | 60 | key paths as entities, data union, sections | M-data |
 
 About 1,200 kept cases. Families map to capabilities, not to generator buckets; every case has
@@ -209,15 +209,39 @@ are stated as rules, with one small worked triple per rule where words are ambig
 never introduce a requirement. Each rule carries a feature id that the inventory (QA-PLAN.md)
 maps to cases.
 
-## 8. Expected score bands (untested)
+## 8. Difficulty sizing and expected score bands (untested)
 
-Per family, frontier / mid-tier (the deep dive's guesses): F1 0.85/0.6, F2 0.65/0.35, F3
-0.55/0.25, F4 0.65/0.4, F5 0.65/0.4, F6 0.45/0.2, F7 0.55/0.3, F8 0.35/0.1, F9 0.45/0.2, F10
-0.65/0.4. Weighted: about 0.58 frontier, about 0.33 mid-tier, inside both target bands
-(frontier 0.45-0.8, mid-tier 0.15-0.45). Netting does not move these: F8's credit is the share
-of refusals an agent gets right while keeping its accept-duals. If layout were not controlled, both
-could fall to 0.1-0.2. The mid-tier floor of 0.10 ("risks looking unfair or broken") is the
-number to watch in the first trials.
+**Target (owner, 2026-11-26):** single turn, hard enough: frontier at or below about 0.6, mid-tier
+0.1-0.4. Phase A's sizing (frontier 0.45-0.70) was too generous at the top.
+
+**Fair levers only.** Every rule a case tests is stated in the specification; difficulty comes
+from rules that cut against what models already believe, never from anything hidden:
+
+1. **The gate at 25%** (was 20%). It is the rule most against the prior (git, Mergiraf and Weave's
+   own pre-0.6.0 releases return line-disjoint edits clean).
+2. **Renames and placement as full families** (F3 12%, F2 15%). Their thresholds and tie-breaks are
+   now published (chapters 4 and 10), so they can carry weight fairly; recalled habits (v1's and the
+   README's "ours-side ordering", Mergiraf's keep-left) point the wrong way.
+3. **More near-miss pairs**: cases where refusing or merging, or renaming or not, turns on one
+   documented condition (a case label added twice against two different labels; a rename with an
+   identical body against one rewritten far below 0.3; two additions at one anchor whose key order
+   differs from ours-first). A heuristic that gets the common case right and the condition wrong
+   fails half of each pair.
+
+**Weights:** F1 8, F2 15, F3 12, F4 11, F5 6, F6 8, F7 6, F8 25, F9 4, F10 5 (sum 100).
+
+**Expected (the deep dive's per-family guesses, frontier / mid-tier):** F1 0.85/0.6, F2 0.65/0.35,
+F3 0.55/0.25, F4 0.65/0.4, F5 0.65/0.4, F6 0.45/0.2, F7 0.55/0.3, F8 0.35/0.1, F9 0.45/0.2, F10
+0.65/0.4. Weighted: **about 0.55 frontier and about 0.29 mid-tier** (Phase A's weights gave 0.58 and
+0.33). The near-miss pairs should pull F2, F3 and F8 a little lower; the bands to expect are
+frontier 0.45-0.6 and mid-tier 0.15-0.35, inside the target. Netting does not move these: F8's
+credit is the share of refusals an agent gets right while keeping its accept-duals.
+
+**The gate mutant after reweighting:** M-gate fails exactly F8's refusals and nothing else, so it
+scores 1 - w_F8 = **0.75**, inside the 0.6-0.85 band (it was 0.80 at 20%).
+
+**Watch in the first trials:** the mid-tier floor of 0.10 ("risks looking unfair or broken"); if
+layout were not controlled, both bands could fall to 0.1-0.2.
 
 ## 9. Effort
 
