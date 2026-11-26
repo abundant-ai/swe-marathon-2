@@ -1374,8 +1374,12 @@ def test_the_end_of_the_work_counts_from_its_start_and_the_first_process_only_fr
         fields = ["S", str(ppid)] + ["0"] * 17 + [str(int((1000.0 - ago) * ticks))] + ["0"] * 10
         (proc / str(pid) / "stat").write_text(f"{pid} ({name}) " + " ".join(fields) + "\n")
     table = netcheck.processes(str(proc))
-    first = netcheck.first_process(table, 1000, now - 50, str(proc))
+    sighted = {}
+    assert netcheck.first_process(table, 1000, now - 50, str(proc), sighted=sighted, now=now) is None, "one look counts none"
+    assert netcheck.first_process(table, 1000, now - 50, str(proc), sighted=sighted, now=now + 0.5) is None, sighted
+    first = netcheck.first_process(table, 1000, now - 50, str(proc), sighted=sighted, now=now + 1.0)
     assert first["pid"] == 11 and first["parent"] == "su" and abs(first["start"] - (now - 40)) < 0.5, first
+    assert netcheck.first_process(table, 1000, now - 50, str(proc)) is None, "called once, it takes no process"
     assert netcheck.first_process(table, 1000, now - 50, str(proc), known=dict(first, start=now - 45))["start"] == now - 45
     # the collect step counts from the start of the work
     hooks = Hooks(tmp_path / "t", WORK_LIMIT_SECONDS=1)

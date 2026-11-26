@@ -308,11 +308,13 @@ def first_process(table, uid, since, proc=PROC, known=None, examined=None, sight
     not a process of that user, as {"pid", "start", "name", "parent"}; `known` (the earliest found
     before) when none began earlier. Processes in `examined` (a set, added to) are not read again.
 
-    With `sighted` (a dict kept from one look to the next) and `now` (when this look began), a process
-    counts only once two looks at least `confirm` seconds apart have both seen it alive, with the same
-    start: a short command, such as a `pwd` run as that user before the clock of the work's limit
-    starts, is gone by the second look and never counts (it is added to `gone`, a list, when given).
-    Without `sighted`, every process found counts at once."""
+    A process counts only once two looks at least `confirm` seconds apart have both seen it alive, with
+    the same start: `sighted` (a dict kept from one look to the next) holds the ones seen so far and when
+    (`now`, the start of this look), so a short command, such as a `pwd` run as that user before the
+    clock of the work's limit starts, is gone by the second look and never counts (it is added to
+    `gone`, a list, when given). Called once, without `sighted`, it returns `known`."""
+    sighted = {} if sighted is None else sighted
+    now = time.time() if now is None else now
     best = known
     for pid, (owner, parent, name, state) in table.items():
         if owner != uid or state in ("Z", "X") or (examined is not None and pid in examined):
@@ -326,30 +328,26 @@ def first_process(table, uid, since, proc=PROC, known=None, examined=None, sight
         if start is None or start < since or (best is not None and start >= best["start"]):
             continue
         found = {"pid": pid, "start": start, "name": name, "parent": above[2] if above else None}
-        if sighted is None:
-            best = found
-        else:
-            sighted[pid] = dict(found, seen=now)
-    if sighted is not None:
-        for pid in sorted(sighted):
-            candidate = sighted[pid]
-            info = table.get(pid)
-            if info is None or info[0] != uid or info[3] in ("Z", "X"):
-                del sighted[pid]                  # gone before a second look: never the first process
-                if examined is not None:
+        sighted.setdefault(pid, dict(found, seen=now))
+    for pid in sorted(sighted):
+        candidate = sighted[pid]
+        info = table.get(pid)
+        if info is None or info[0] != uid or info[3] in ("Z", "X"):
+            del sighted[pid]                      # gone before a second look: never the first process
+            if examined is not None:
+                examined.discard(pid)
+            if gone is not None:
+                gone.append(candidate)
+        elif best is not None and candidate["start"] >= best["start"]:
+            del sighted[pid]                      # began after the first process found since
+        elif now - candidate["seen"] >= confirm:
+            del sighted[pid]
+            again = started_at(pid, proc)
+            if again is None or abs(again - candidate["start"]) > SAME_START_SECONDS:
+                if examined is not None:          # another process under the same pid: looked at afresh
                     examined.discard(pid)
-                if gone is not None:
-                    gone.append(candidate)
-            elif best is not None and candidate["start"] >= best["start"]:
-                del sighted[pid]                  # began after the first process found since
-            elif now - candidate["seen"] >= confirm:
-                del sighted[pid]
-                again = started_at(pid, proc)
-                if again is None or abs(again - candidate["start"]) > SAME_START_SECONDS:
-                    if examined is not None:      # another process under the same pid: looked at afresh
-                        examined.discard(pid)
-                    continue
-                best = {key: candidate[key] for key in ("pid", "start", "name", "parent")}
+                continue
+            best = {key: candidate[key] for key in ("pid", "start", "name", "parent")}
     return best
 
 
