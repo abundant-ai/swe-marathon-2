@@ -44,9 +44,9 @@ So the library uses its own OpenType font functions and its own Unicode data. Th
 machines from the `.rl` files with ragel and regenerates nothing else, so any other generated file you change has to
 be in the tree.
 
-Our layout engine calls HarfBuzz's public C API only. It shapes text with features turned on for the whole text or
-for ranges of it, sets the direction, script and language or lets HarfBuzz guess them, chooses cluster levels and
-buffer flags, sets the buffer's not-found glyph, and applies variations, synthetic slant and synthetic emboldening. It
+Our layout engine calls HarfBuzz's public C API only. It shapes runs of text, passing the text around each run as
+context, with features turned on for the whole run or for ranges of it, sets the direction, script and language or
+lets HarfBuzz guess them, chooses cluster levels and buffer flags, sets the buffer's not-found glyph, and applies variations, synthetic slant and synthetic emboldening. It
 reads glyph positions, glyph flags, glyph extents, font and fallback metrics, baselines, style values, language and
 script tags, and face data. Our customers also bring Apple-format fonts with `morx`, `mort`, `kerx`, `kern` and `trak`
 tables, and we lay those out with the same library.
