@@ -33,6 +33,12 @@ RECORDER = STEP / "tests" / "verifier" / "recorder.py"
 HARDENING = TASK / "common" / "hardening"
 
 
+def squeezed(code: str) -> str:
+    """Source with its whitespace, and each comma before a closing bracket, taken out: a fragment of code that a check
+    quotes is found in it however a formatter has wrapped the lines (main's layout is ruff-formatted; this one is not)."""
+    return re.sub(r",([)\]}])", r"\1", re.sub(r"\s+", "", code))
+
+
 def scripts_call(code: str) -> object:
     """The JSON a snippet prints with the task's scripts importable, in a process of its own."""
     done = subprocess.run([sys.executable, "-B", "-c", f"import sys; sys.path.insert(0, {str(SCRIPTS)!r})\n" + code],
@@ -1087,12 +1093,15 @@ def test_results_are_reserved_written_in_place_and_limits_hold(tmp_path):
     assert disk == "disk limit" and files == "file limit" and unknown is None
     verify = (STEP / "tests" / "verify.py").read_text()
     main = verify[verify.index("def main() -> int:"):]
-    assert main.index('(output / ".reward.tmp").write_text("--------")') < main.index("raise EvaluationError(f\"Less than") \
-        < main.index("sandbox()") < main.index("final_cleanup(owner[0], min(deadline") \
-        < main.index('write_in_place(output / ".reward.tmp"') < main.index('os.replace(output / ".reward.tmp", output / "reward.txt")')
+    steps = [squeezed(main).index(squeezed(fragment)) for fragment in (
+        '(output / ".reward.tmp").write_text("--------")', 'raise EvaluationError(f"Less than', "sandbox()",
+        "final_cleanup(owner[0], min(deadline", 'write_in_place(output / ".reward.tmp"',
+        'os.replace(output / ".reward.tmp", output / "reward.txt")')]
+    assert steps == sorted(steps), steps
     assert 'reward.txt").write_text' not in main, "no reward exists until the real end"
-    assert "runcases.OWN_ROOTS[:] = LEFTOVER_DIRS" in main
-    assert 'if str(uid) in (values.get("uid"), values.get("cuid"))' in RUNNER.read_text(), "shared memory by its creator too"
+    assert re.search(r"runcases\.OWN_ROOTS\[:\] = \(?\s*LEFTOVER_DIRS\b", main)  # however a formatter wraps it
+    assert squeezed('if str(uid) in (values.get("uid"), values.get("cuid"))') in squeezed(RUNNER.read_text()), \
+        "shared memory by its creator too"
     assert "if os.geteuid() != 0 or uid == os.geteuid()" in verify, "never kill -1 as the verifier's own uid"
 
 
@@ -1329,7 +1338,7 @@ def test_a_case_counts_toward_a_reward_only_when_only_a_run_of_its_code_gives_it
             + derivations)
     assert "DISTINCT_OUTPUTS = 12" in gate and "DISTINCT_OUTPUTS = runcases.DISTINCT_OUTPUTS" in gate and "def counts(" in gate
     assert "MESSAGE_HANDLERS" not in runner and "def guarded_error(" in gate, "no list of handlers to fall behind the generator's"
-    assert runner.rstrip().endswith("if case[\"id\"] in passed and counts(case, expected[case[\"id\"]], derived)})"), \
+    assert squeezed(runner).endswith(squeezed('if case["id"] in passed and counts(case, expected[case["id"]], derived)})')), \
         "the runner's last function"
     words = re.compile(r"platform|trial|evaluat|benchmark|stub|exploit|adversar|cheat|hack|oddish|harbor|modal|verdict|"
                        r"\bQA\b|launcher|grader", re.I)
@@ -1529,8 +1538,9 @@ def test_only_a_program_that_runs_what_it_is_given_earns_a_reward(tmp_path):
     assert enough["reward"] == round(enough["cases_passed"] / total, 6) > 0 and not enough["notes"] and enough["withheld"] is None
     verify = (STEP / "tests" / "verify.py").read_text()
     grade = verify[verify.index("def grade("):verify.index("def final_cleanup(")]
-    assert grade.index('metrics["reward"] = round(') < grade.index("runcases.distinct_outputs(kept, expected, passed, derived)") \
-        < grade.index('metrics["reward"] = 0.0'), "the share is computed, then withheld below the least"
+    assert squeezed(grade).index(squeezed('metrics["reward"] = round(')) \
+        < squeezed(grade).index(squeezed("runcases.distinct_outputs(kept, expected, passed, derived)")) \
+        < squeezed(grade).index(squeezed('metrics["reward"] = 0.0')), "the share is computed, then withheld below the least"
 
 
 def test_a_partial_interpreter_shaped_as_v4s_glm_run_keeps_its_share(tmp_path):
@@ -1938,7 +1948,8 @@ def test_the_delivery_is_bounded_recorded_and_marked_before_the_copy_and_graded_
     assert (summary["turn_started"], summary["hook_started"]) == (out["started"] - 100, out["started"])
     assert out["long_mark"] == 60, "the verifier reads the whole mark, however many notes"
     verify_text = (STEP / "tests" / "verify.py").read_text()
-    assert "handle.read(MARK_LIMIT + 1)" in verify_text and "MARK_LIMIT = 1 << 20" in verify_text, "bounded all the same"
+    assert "handle.read(MARK_LIMIT + 1)" in verify_text and re.search(r"^MARK_LIMIT = \(?\s*1 << 20\b", verify_text, re.MULTILINE), \
+        "bounded all the same"
     hook_text = (TASK / "environment" / "reclaim-scratch").read_text()
     assert "pgrep -u dev -r R,S,D,T" in hook_text and "pgrep -u dev -r R,S >" in hook_text, "zombies are never survivors"
     assert "chmod -R" not in hook_text, "no chmod of every entry: that would set every ctime to the hook's time (07c F1)"
@@ -3840,8 +3851,8 @@ def test_no_dispatcher_without_an_interpreter_passes_more_than_five_percent():
     assert before["last literal echoed"] == 11 and before["error lookup"] == 5, before
     assert free_after <= 0.05 * kept and dropped > 0, out
     recorder = (STEP / "tests" / "verifier" / "recorder.py").read_text()
-    assert "raise SystemExit(f\"{len(free)} of {len(kept)} kept cases pass with no interpreter" in recorder
-    assert "FLOOR_SHARE = 0.05" in recorder
+    assert squeezed('raise SystemExit(f"{len(free)} of {len(kept)} kept cases pass with no interpreter') in squeezed(recorder)
+    assert re.search(r"^FLOOR_SHARE = \(?\s*0\.05\b", recorder, re.MULTILINE)  # however a formatter wraps it
 
 
 def test_selection_drops_shared_answers_answers_in_the_input_and_free_cases():
@@ -4089,7 +4100,8 @@ def test_no_shipped_file_of_ours_outside_the_verifier_uses_a_word_the_audit_scan
     are the schema's): the agent image's files and installed scripts, the hardening tools both images take (the solution
     takes mark.py), the instruction and the solution."""
     flagged = re.compile(r"grade|score|verif|harness|oddish|modal|harbor|\bcap\b|budget|attempt|audit|QA|round [0-9]|trial", re.I)
-    assert 'SHIPPED_TOOLS = ("mark.py", "smoke.sh")' in (SCRIPTS / "package_step.py").read_text(), "what of common/hardening ships"
+    assert squeezed('SHIPPED_TOOLS = ("mark.py", "smoke.sh")') in squeezed((SCRIPTS / "package_step.py").read_text()), \
+        "what of common/hardening ships"
     assert sorted(path.name for path in (STEP / "solution").iterdir() if path.name != "__pycache__") == ["solve.sh"]
     shipped = [*sorted((TASK / "environment").iterdir()), HARDENING / "mark.py", HARDENING / "smoke.sh", STEP / "instruction.md",
                *sorted((STEP / "solution").iterdir())]
@@ -4117,9 +4129,9 @@ def test_the_reference_solution_installs_the_original_and_its_licence_and_nothin
     package = (SCRIPTS / "package_step.py").read_text()
     packaged = sorted(re.findall(r'content\[f"\{STEP\}/solution/([^"]+)"\]', package))
     assert packaged == ["LICENSE", "bpl.xz", "build.txt", "mark.py", "source/{name}"], packaged
-    assert "for name, data in hardened_source(checkout).items():" in package
+    assert squeezed("for name, data in hardened_source(checkout).items():") in squeezed(package)
     source = package[package.index("def hardened_source("):package.index("def collect(")]
-    assert 'subprocess.run(["sh", str(HARDENING / "apply.sh"), str(tree)], capture_output=True, check=True)' in source
+    assert squeezed('subprocess.run(["sh", str(HARDENING / "apply.sh"), str(tree)], capture_output=True, check=True)') in squeezed(source)
     assert source.index("bpl_text.git_bytes(checkout, path)") < source.index('HARDENING / "apply.sh"'), "hardened after it is exported"
     found = scripts_call("import json, package_step\nprint(json.dumps(package_step.SOURCE_FILES.pattern))")
     pattern = re.compile(found)
