@@ -59,6 +59,8 @@
 #define MAX_KEYS 32
 #define MAX_BONE_IDS 64
 #define MAX_BONE_NAMES 96
+#define MAX_SHOWN (MAX_BONE_IDS + 16)  // skeletons followed for the pose they show
+#define MAX_SHOWN_BONES 256            // bones kept per followed skeleton
 #define EXIT_BAD_LINK 3
 #define EXIT_LOST_LINK 4
 
@@ -132,7 +134,7 @@ static GDExtensionInterfaceCallableCustomCreate2 f_callable_new;
 static GDExtensionVariantFromTypeConstructorFunc vfrom[T_MAX];
 static GDExtensionTypeFromVariantConstructorFunc vto[T_MAX];
 static GDExtensionPtrConstructor ctor_array, ctor_string;
-static GDExtensionPtrDestructor dtor_array, dtor_string, dtor_sname;
+static GDExtensionPtrDestructor dtor_array, dtor_string, dtor_sname, dtor_callable;
 static GDExtensionPtrBuiltInMethod bm_array_size;
 
 static GDExtensionMethodBindPtr mb_get_meta, mb_has_meta, mb_is_class, mb_notification;
@@ -154,11 +156,13 @@ static SN sn_get, sn_is_visible, sn_get_children, sn_get_fov, sn_get_bone_name, 
 static SN sn_get_skeleton_path, sn_get_mesh, sn_surface_count, sn_surface_arrays, sn_get_path;
 static SN sn_get_version_info, sn_get_setting, sn_get_ticks, sn_get_jitter, sn_get_max_steps;
 static SN sn_render_method, sn_display_name, sn_cpu_count, sn_get_env, sn_is_instance_valid;
+static SN sn_is_connected, sn_disconnect;
 
 static Var k_run, k_inputs, k_dev, k_observe, k_queries, k_quit, k_n, k_census, k_meta, k_view;
 static Var k_bones, k_ids, k_names, k_camera, k_hud, k_state, k_every, k_id, k_type, k_from;
 static Var k_to, k_mask, k_points, k_y0, k_y1, k_a, k_b, k_a_up, k_b_up, k_entity, k_keys;
 static Var k_position, k_collider, k_string, k_ok, k_event, k_text, k_star, k_empty;
+static Var k_skeleton_updated;
 
 // ------------------------------------------------------------------ state
 typedef struct {
@@ -362,6 +366,21 @@ static Obj singleton(const char *name) {
 	Obj o = f_singleton(&n);
 	dtor_sname(&n);
 	return o;
+}
+
+// A Callable variant that calls fn(ud, ...) on behalf of the node; out must be destroyed.
+// Two such callables with the same fn and ud are equal (connect, is_connected, disconnect).
+static void custom_callable(GDExtensionCallableCustomCall fn, void *ud, Var *out) {
+	GDExtensionCallableCustomInfo2 info;
+	memset(&info, 0, sizeof info);
+	info.callable_userdata = ud;
+	info.token = g_lib;
+	info.object_id = g_node ? f_instance_id(g_node) : 0;
+	info.call_func = fn;
+	uint64_t cbuf[2];
+	f_callable_new(cbuf, &info);
+	vfrom[T_CALLABLE](out, cbuf);
+	dtor_callable(cbuf);
 }
 
 // ------------------------------------------------------------------ ptrcall wrappers
@@ -821,17 +840,8 @@ static void hook_events(void) {
 	v_text(&sig, "event");
 	vcall(&g_devconsole, &sn_has_signal, (const Var *[]){&sig}, 1, &has);
 	if (as_num(&has, 0) != 0) {
-		GDExtensionCallableCustomInfo2 info;
-		memset(&info, 0, sizeof info);
-		info.token = g_lib;
-		info.object_id = g_node ? f_instance_id(g_node) : 0;
-		info.call_func = on_event;
-		uint64_t cbuf[2];
-		f_callable_new(cbuf, &info);
 		Var cb, rc;
-		vfrom[T_CALLABLE](&cb, cbuf);
-		GDExtensionPtrDestructor dtor_callable = f_dtor(GDEXTENSION_VARIANT_TYPE_CALLABLE);
-		dtor_callable(cbuf);
+		custom_callable(on_event, NULL, &cb);
 		vcall(&g_devconsole, &sn_connect, (const Var *[]){&sig, &cb}, 2, &rc);
 		v_free(&rc);
 		v_free(&cb);
@@ -859,6 +869,181 @@ static void run_dev(const Var *cmd, const Var *args, int64_t tick) {
 	jb_i64(&g_dev, tick);
 	jb_lit(&g_dev, "}");
 	v_free(&res);
+}
+
+// ------------------------------------------------------------------ bones as shown
+// A skeleton's modifiers (IK, look-at, ragdoll, a script's _process_modification_with_delta)
+// act only while the engine updates the skeleton: it runs them, emits skeleton_updated,
+// updates the skins, then puts the unmodified pose back. A read at the start of the next
+// tick sees the pose without them. So the node follows each skeleton it reads: at every
+// skeleton_updated it keeps the skeleton-space origin of each bone's global pose, and a read
+// uses those when the skeleton updated during the last tick (or earlier in this one).
+// Otherwise it reads the bones directly: a skeleton nothing changed does not update, and an
+// update that changes no pose emits nothing and leaves the bones as they are.
+typedef struct {
+	GDObjectInstanceID id;  // the skeleton; 0 for a free slot
+	int64_t used;           // tick of its latest read (main thread only)
+	int64_t tick;           // tick of the latest update kept, -1 before the first
+	int64_t count;          // the skeleton's bone count at that update
+	int n;                  // bones kept: count, at most MAX_SHOWN_BONES
+	float o[MAX_SHOWN_BONES][3];
+} Shown;
+
+// What one read of a skeleton's bones uses: n kept origins, or n == 0 to read directly.
+typedef struct {
+	int n;
+	float o[MAX_SHOWN_BONES][3];
+} BoneSnap;
+
+static Shown g_shown[MAX_SHOWN];
+// Guards the kept poses: an update runs on the thread that processes the skeleton.
+static pthread_mutex_t g_shown_mu = PTHREAD_MUTEX_INITIALIZER;
+_Static_assert(sizeof(void *) >= sizeof(GDObjectInstanceID), "instance id as callable userdata");
+
+// The slot following skeleton id, or NULL. Slots change on the main thread only; other
+// threads look them up with g_shown_mu held.
+static Shown *shown_slot(GDObjectInstanceID id) {
+	for (int i = 0; i < MAX_SHOWN; i++)
+		if (g_shown[i].id == id) return &g_shown[i];
+	return NULL;
+}
+
+// skeleton_updated of a followed skeleton (userdata: its instance id): keep its pose as
+// the modifiers left it. No engine call is made with g_shown_mu held.
+static void on_skeleton_updated(void *ud, const GDExtensionConstVariantPtr *args, GDExtensionInt argc,
+		GDExtensionVariantPtr r_ret, GDExtensionCallError *err) {
+	(void)args;
+	(void)argc;
+	(void)r_ret;
+	err->error = GDEXTENSION_CALL_OK;
+	GDObjectInstanceID id = (GDObjectInstanceID)(uintptr_t)ud;
+	pthread_mutex_lock(&g_shown_mu);
+	int followed = shown_slot(id) != NULL;
+	pthread_mutex_unlock(&g_shown_mu);
+	Obj sk = g_on && followed ? f_from_id(id) : NULL;
+	if (!sk) return;
+	int64_t count = 0;
+	f_ptrcall(mb_bone_count, sk, NULL, &count);
+	int n = count <= 0 ? 0 : count < MAX_SHOWN_BONES ? (int)count : MAX_SHOWN_BONES;
+	float o[MAX_SHOWN_BONES][3];
+	for (int64_t i = 0; i < n; i++) {
+		Xf pose;
+		const void *pa[1] = {&i};
+		f_ptrcall(mb_bone_global_pose, sk, pa, &pose);
+		memcpy(o[i], pose.o, sizeof o[i]);
+	}
+	int64_t tick = physics_frames();
+	pthread_mutex_lock(&g_shown_mu);
+	Shown *s = shown_slot(id);
+	if (s) {
+		memcpy(s->o, o, (size_t)n * sizeof o[0]);
+		s->n = n;
+		s->count = count;
+		s->tick = tick;
+	}
+	pthread_mutex_unlock(&g_shown_mu);
+}
+
+// Connect (on) or disconnect (!on) the node's skeleton_updated callable for skeleton sk
+// (instance id id) unless it already is so. Returns 1 when it is connected afterwards.
+static int skeleton_hook(Obj sk, GDObjectInstanceID id, int on) {
+	Var cb, has, rc;
+	custom_callable(on_skeleton_updated, (void *)(uintptr_t)id, &cb);
+	ocall(sk, &sn_is_connected, &k_skeleton_updated, &cb, NULL, &has);
+	int connected = as_num(&has, 0) != 0;
+	if (on && !connected) {
+		connected = ocall(sk, &sn_connect, &k_skeleton_updated, &cb, NULL, &rc) && as_num(&rc, -1) == 0;
+		v_free(&rc);
+	} else if (!on && connected) {
+		ocall(sk, &sn_disconnect, &k_skeleton_updated, &cb, NULL, &rc);
+		v_free(&rc);
+		connected = 0;
+	}
+	v_free(&has);
+	v_free(&cb);
+	return connected;
+}
+
+// Follow skeleton sk from now on (connecting once). Returns its slot, or NULL when every
+// slot holds a skeleton read in this tick. A new skeleton takes a free slot, else one whose
+// skeleton is gone, else the least recently read one (disconnected first). Main thread only.
+static Shown *follow_skeleton(Obj sk, int64_t now) {
+	GDObjectInstanceID id = f_instance_id(sk);
+	Shown *s = shown_slot(id);
+	if (!s && g_node) {
+		Shown *lru = NULL;
+		for (int i = 0; i < MAX_SHOWN && !s; i++) {
+			Shown *c = &g_shown[i];
+			if (!c->id || !f_from_id(c->id)) s = c;
+			else if (c->used < now && (!lru || c->used < lru->used)) lru = c;
+		}
+		if (!s && lru) {
+			Obj old = f_from_id(lru->id);
+			if (old) skeleton_hook(old, lru->id, 0);
+			s = lru;
+		}
+		if (s) {
+			pthread_mutex_lock(&g_shown_mu);
+			s->id = id;
+			s->tick = -1;
+			s->count = 0;
+			s->n = 0;
+			pthread_mutex_unlock(&g_shown_mu);
+			skeleton_hook(sk, id, 1);
+		}
+	}
+	if (s) s->used = now;
+	return s;
+}
+
+// Prepare a read of skeleton sk's bones in this tick: the pose kept at its latest update
+// when that update ran during the last tick (or earlier in this one), else nothing.
+static void snap_bones(Obj sk, BoneSnap *snap) {
+	snap->n = 0;
+	int64_t now = physics_frames();
+	Shown *s = follow_skeleton(sk, now);
+	if (!s) return;
+	int64_t count = 0;
+	f_ptrcall(mb_bone_count, sk, NULL, &count);
+	pthread_mutex_lock(&g_shown_mu);
+	if (s->tick >= 0 && s->tick >= now - 1 && s->count == count) {
+		snap->n = s->n;
+		memcpy(snap->o, s->o, (size_t)s->n * sizeof s->o[0]);
+	}
+	pthread_mutex_unlock(&g_shown_mu);
+}
+
+// The skeleton-space origin of bone idx of sk as the game shows it (see snap_bones).
+static void bone_origin(Obj sk, const BoneSnap *snap, int64_t idx, float out[3]) {
+	if (idx >= 0 && idx < snap->n) {
+		memcpy(out, snap->o[idx], sizeof snap->o[idx]);
+		return;
+	}
+	Xf pose;
+	const void *pa[1] = {&idx};
+	f_ptrcall(mb_bone_global_pose, sk, pa, &pose);
+	memcpy(out, pose.o, sizeof pose.o);
+}
+
+// Follow the skeleton of entity id ahead of the frame that reads it.
+static void follow_entity(int64_t id) {
+	Obj e = entity_by_id(id);
+	Obj sk = e ? first_skeleton(e) : NULL;
+	if (sk) follow_skeleton(sk, physics_frames());
+}
+
+// Follow the skeletons whose Head starts a line-of-sight query of the pending batch.
+static void follow_queried(void) {
+	int64_t n = asize(&g_pending_queries);
+	for (int64_t i = 0; i < n; i++) {
+		Var q, tv;
+		aget(&g_pending_queries, i, &q);
+		char *type = dget(&q, &k_type, &tv) ? as_text(&tv, NULL) : NULL;
+		if (type && !strcmp(type, "los")) follow_entity((int64_t)dnum(&q, &k_a, -1));
+		free(type);
+		v_free(&tv);
+		v_free(&q);
+	}
 }
 
 // ------------------------------------------------------------------ observations
@@ -955,10 +1140,12 @@ static void write_census(jbuf *b) {
 static void write_bones(jbuf *b) {
 	jb_lit(b, ",\"bones\":{");
 	int first = 1;
+	BoneSnap snap;
 	for (int i = 0; i < g_obs.n_bone_ids; i++) {
 		Obj e = entity_by_id(g_obs.bone_ids[i]);
 		Obj sk = e ? first_skeleton(e) : NULL;
 		if (!sk) continue;
+		snap_bones(sk, &snap);
 		Xf skx = global_xf(sk);
 		if (!first) jb_raw(b, ",", 1);
 		first = 0;
@@ -971,10 +1158,9 @@ static void write_bones(jbuf *b) {
 			const void *fa[1] = {&g_obs.bone_gs[k]};
 			f_ptrcall(mb_find_bone, sk, fa, &idx);
 			if (idx < 0) continue;
-			Xf pose;
-			const void *pa[1] = {&idx};
-			f_ptrcall(mb_bone_global_pose, sk, pa, &pose);
-			V3 w = xf_apply(&skx, pose.o);
+			float o[3];
+			bone_origin(sk, &snap, idx, o);
+			V3 w = xf_apply(&skx, o);
 			if (!bfirst) jb_raw(b, ",", 1);
 			bfirst = 0;
 			jb_cstr(b, g_obs.bone_txt[k]);
@@ -1193,10 +1379,12 @@ static void query_los(jbuf *b, const Var *q) {
 		f_ptrcall(mb_find_bone, sk, fa, &idx);
 		dtor_string(&head);
 		if (idx >= 0) {
-			Xf pose, skx = global_xf(sk);
-			const void *ia[1] = {&idx};
-			f_ptrcall(mb_bone_global_pose, sk, ia, &pose);
-			pa = xf_apply(&skx, pose.o);
+			BoneSnap snap;
+			snap_bones(sk, &snap);
+			float o[3];
+			bone_origin(sk, &snap, idx, o);
+			Xf skx = global_xf(sk);
+			pa = xf_apply(&skx, o);
 		}
 	}
 	jbuf tmp;
@@ -1718,11 +1906,16 @@ static int apply_command(const Var *cmd, int64_t t) {
 	if (dget(cmd, &k_inputs, &v)) set_inputs(&v);
 	else clear_inputs();
 	v_free(&v);
-	if (dget(cmd, &k_observe, &v)) set_observe(&v);
+	int new_observe = 0, new_queries = 0;
+	if (dget(cmd, &k_observe, &v)) {
+		set_observe(&v);
+		new_observe = 1;
+	}
 	v_free(&v);
 	if (dget(cmd, &k_queries, &v) && asize(&v) > 0) {
 		v_free(&g_pending_queries);
 		f_v_copy(&g_pending_queries, &v);
+		new_queries = 1;
 	}
 	v_free(&v);
 	if (dget(cmd, &k_dev, &v)) {
@@ -1743,6 +1936,10 @@ static int apply_command(const Var *cmd, int64_t t) {
 		}
 	}
 	v_free(&v);
+	// Follow the skeletons the next frame reads now, so that it already has their pose as
+	// shown (after the commands above, which may have made them).
+	for (int i = 0; new_observe && g_on && i < g_obs.n_bone_ids; i++) follow_entity(g_obs.bone_ids[i]);
+	if (new_queries && g_on) follow_queried();
 	return g_on;
 }
 
@@ -2019,6 +2216,8 @@ static void make_names(void) {
 	sn_static(&sn_cpu_count, "get_processor_count");
 	sn_static(&sn_get_env, "get_environment");
 	sn_static(&sn_is_instance_valid, "is_instance_valid");
+	sn_static(&sn_is_connected, "is_connected");
+	sn_static(&sn_disconnect, "disconnect");
 	static const struct {
 		Var *v;
 		const char *text;
@@ -2032,7 +2231,7 @@ static void make_names(void) {
 		{&k_y1, "y1"}, {&k_a, "a"}, {&k_b, "b"}, {&k_a_up, "a_up"}, {&k_b_up, "b_up"},
 		{&k_entity, "entity"}, {&k_keys, "keys"}, {&k_position, "position"},
 		{&k_collider, "collider"}, {&k_string, "string"}, {&k_ok, "ok"}, {&k_event, "event"},
-		{&k_text, "text"}, {&k_star, "*"}, {&k_empty, ""},
+		{&k_text, "text"}, {&k_star, "*"}, {&k_empty, ""}, {&k_skeleton_updated, "skeleton_updated"},
 	};
 	for (size_t i = 0; i < sizeof keys / sizeof keys[0]; i++) v_text(keys[i].v, keys[i].text);
 	v_nil(&g_pending_queries);
@@ -2084,6 +2283,7 @@ static void initialize(void *ud, GDExtensionInitializationLevel level) {
 	dtor_array = f_dtor(GDEXTENSION_VARIANT_TYPE_ARRAY);
 	dtor_string = f_dtor(GDEXTENSION_VARIANT_TYPE_STRING);
 	dtor_sname = f_dtor(GDEXTENSION_VARIANT_TYPE_STRING_NAME);
+	dtor_callable = f_dtor(GDEXTENSION_VARIANT_TYPE_CALLABLE);
 	jb_init(&g_frame, FRAME_LIMIT);
 	jb_init(&g_dev, DEV_LIMIT);
 	jb_init(&g_events, EVENTS_LIMIT);

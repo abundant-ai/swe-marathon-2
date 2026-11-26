@@ -30,7 +30,8 @@ Besides its own expectations, every playtest also expects that:
 
 `qa run` adds one node to the copy: a small native library, listed first among the autoloads,
 that steps the game tick by tick under `--fixed-fps 60`, presses actions, calls the DevConsole and
-reads the entity census, bones, camera, HUD groups and the state report. The game runs with one
+reads the entity census, bones, camera, HUD groups and the state report. Bones are read as the game
+shows them, after its skeleton modifiers (IK, look-at, ragdoll) have run. The game runs with one
 worker thread (`override.cfg`), as on QA's machines (PF-6). The node is part of QA's tooling and
 the game has no reason to touch it (AC-18); if it goes missing or stops ticking, `qa run` says so.
 
