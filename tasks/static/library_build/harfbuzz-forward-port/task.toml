@@ -1,0 +1,70 @@
+schema_version = "1.4"
+multi_step_reward_strategy = "final"
+artifacts = ["/app/harfbuzz"]
+
+[task]
+name = "abundant/swe-m2_software-engineering_harfbuzz-forward-port"
+description = "Bring a frozen HarfBuzz 14.3.0 forward to the shaping, layout, metrics and API fixes of upstream's releases 14.3.1 to 15.2.0, one release window at a time, from the release notes and the specifications."
+authors = [{ name = "Neel Harsola", email = "work.neelharsola@gmail.com" }]
+
+[metadata]
+reward_type = "continuous"
+open_internet_justification = "Only the image builds have public egress, to install system and Python packages and to fetch the pinned HarfBuzz 14.3.0 release and the public documents it ships with. The agent works without network access, and so does every later command in the second image."
+
+[agent]
+timeout_sec = 34560
+network_mode = "no-network"
+user = "dev"
+
+[environment]
+network_mode = "public"
+build_timeout_sec = 3600
+cpus = 4
+memory_mb = 8192
+storage_mb = 20480
+gpus = 0
+workdir = "/app"
+
+[verifier]
+environment_mode = "separate"
+network_mode = "no-network"
+timeout_sec = 2400
+user = "root"
+
+[verifier.environment]
+network_mode = "no-network"
+build_timeout_sec = 3600
+cpus = 4
+memory_mb = 8192
+storage_mb = 20480
+gpus = 0
+
+[[steps]]
+name = "01-releases-14.3.1-to-15.0.0"
+
+[steps.agent]
+timeout_sec = 7200
+
+[steps.verifier]
+timeout_sec = 2400
+env = { RELEASE = "15.0.0" }
+
+[[steps]]
+name = "02-release-15.1.0"
+
+[steps.agent]
+timeout_sec = 7200
+
+[steps.verifier]
+timeout_sec = 2400
+env = { RELEASE = "15.1.0" }
+
+[[steps]]
+name = "03-release-15.2.0"
+
+[steps.agent]
+timeout_sec = 20160
+
+[steps.verifier]
+timeout_sec = 2400
+env = { RELEASE = "15.2.0" }

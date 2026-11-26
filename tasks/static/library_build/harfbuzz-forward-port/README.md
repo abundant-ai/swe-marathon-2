@@ -30,6 +30,15 @@ no note changed must stay as it was, and that is where agents are expected to fa
 | Difficulty | About 57 changes across 8 families in C++, AAT and `kern` fonts the agent must build itself, Unicode 18 tables to regenerate, no oracle for the new behaviour, and a gate that punishes over-broad fixes | Report's estimate: frontier 0.35-0.65, mid-tier 0.10-0.30 | Unmeasured; mid-tier floor risk |
 | Initial feasibility | Every in-scope note is either stated precisely by upstream or restated by us as a behaviour rule; the base tree, its own tests and fontTools let the agent check its work against 14.3.0 for everything the notes leave alone | Example: the Khmer fix is a one-token change whose rule is quoted from Microsoft's spec in the 14.3.0 source itself | E-item restatements; fontTools has no `kerx` writer (our assembler) |
 
+## Steps
+
+Three steps in one sandbox, decided unanimously by a three-judge panel (notes/STEPS.md): 14.3.0 → 15.0.0 (9 units,
+7,200 s), → 15.1.0 (13 new units, 7,200 s), → 15.2.0 (35 new units, 20,160 s). Each step's verifier re-checks every
+unit released so far against that release, and the trial reward is the last step's (`final`). By design,
+`hb_font_set_face()` changes between steps: step 1 asks for 15.0.0's behaviour (reset the font functions), step 3 for
+15.2.0's (do nothing), so step 3 grades the later behaviour and does not count the change as a regression. A flat
+single-step bundle with step 3's verifier is the fallback for harnesses that cannot run steps.
+
 ## Reward formula
 
 Per step, over the units released up to that step: reward = D · G, where D is the mean over units of each unit's
