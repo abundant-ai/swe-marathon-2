@@ -178,8 +178,11 @@ class _Base:
             QA_TELEMETRY_KEY=self.key.hex(),
             QA_TELEMETRY_MODE=spec.mode,
         )
+        self.gate_wait_s = 0.0
         if opts.before_start:
+            t_gate = time.monotonic()
             opts.before_start()
+            self.gate_wait_s = time.monotonic() - t_gate
         self.t_start = time.monotonic()
         self.proc = Proc(
             engine_argv(spec),

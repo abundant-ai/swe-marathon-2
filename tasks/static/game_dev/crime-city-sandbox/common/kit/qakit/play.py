@@ -437,10 +437,13 @@ class _LockstepRun:
         self.session: Session | None = None
         self.snapshots: dict[str, dict] = {}
         self.t0 = time.monotonic()
+        self.waited = 0.0  # seconds spent waiting before process starts (not play time)
 
     def start(self) -> None:
         """Start a game process and record its first frame."""
-        self.session = Session(self.spec, self.opts)
+        session = Session(self.spec, self.opts)
+        self.waited += session.gate_wait_s
+        self.session = session
         if self.rec.hello is None:
             self.rec.hello = self.session.hello
             self.rec.boot_s = round(self.session.t_first_frame_s, 3)
@@ -480,7 +483,7 @@ class _LockstepRun:
 
     def _check_time(self) -> None:
         wall = self.play.limits.get("wall_s")
-        if wall is not None and time.monotonic() - self.t0 > wall:
+        if wall is not None and time.monotonic() - self.t0 - self.waited > wall:
             raise SessionError("play_time", f"the play took longer than {wall} s")
 
     def do(self, i: int, kind: str, arg) -> None:
