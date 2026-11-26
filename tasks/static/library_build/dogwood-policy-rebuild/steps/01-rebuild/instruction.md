@@ -5,7 +5,7 @@
 Our AI agents call tools on our customers' behalf, and every one of those calls is authorized
 against our policies, which are written in Dogwood. Dogwood is a policy language built on Cedar
 whose rules can also look back over what an agent did before: an approval within the last hour, a
-running total over a day, a login since the last logout. Our policy authors, our CI and our review
+running total over a day, no logout since the last login. Our policy authors, our CI and our review
 and incident tools all work through Dogwood's command-line tool, `dogwood`, and today we run the
 1.1.2 build of it.
 
@@ -20,9 +20,9 @@ on what it prints:
   decides whether the change can merge, and the review page shows each finding's message at its
   byte span. Authors also run `dogwood check-parse` before they commit.
 - Our replay job runs recorded agent traces through `dogwood replay` against the policies they
-  were recorded under and keeps the verdict streams, plain and `--format json`. Our incident tools
-  read them decision by decision: the verdict, the rules it lists and the errors of a decision
-  that failed closed.
+  were recorded under and keeps the decision streams, plain and `--format json`. Our incident
+  tools read them decision by decision: ALLOW or DENY, the rules listed for it and the errors of a
+  decision that failed closed.
 - Our policy store takes what `dogwood lower` emits as it is: the Cedar policies, the augmented
   schema and its Cedar JSON form. It files each version by checksum, so a lowered policy or schema
   that differs by one byte is a new version to it.
@@ -46,8 +46,8 @@ A different output, report or exit status breaks one of them.
   Dogwood's Rust library and its MCP tooling, and moved the trace file format, which upstream
   describes in the library chapter, into the command-line chapter. `examples/` holds the guide's
   example bundles: each has its policy and schemas, what `dogwood explain` printed for it, and,
-  where it has a trace, what `dogwood replay` printed. When the guide and the build disagree, the
-  build is right.
+  where it has a trace, what `dogwood replay` printed. If the guide and the build differ, follow
+  the build: it is what our tools run today.
 - There is no network access. Rust is installed with `cargo` and an offline crate registry that
   `cargo` is already set up to use. The registry holds the Cedar crates at 4.11.0, the Cedar
   release that 1.1.2 uses, and the other libraries our team has approved. No Dogwood crate is
@@ -70,7 +70,8 @@ Your implementation in `/app/dogwood-rebuild`: a Cargo project from which
   `--format json`. Nothing of ours reads standard error, so what it writes there may differ.
 - In JSON output, the order of keys inside an object does not matter. The rules listed for a
   decision are a set to our incident tools, so their order does not matter either. Everything
-  else does: the order of lists, every message, every span and every number.
+  else reaches our tools as it is printed: the order of lists, every message, every span and every
+  number.
 - Our traces always have strictly increasing timestamps. What the build does with a trace whose
   timestamps repeat or go back does not matter to us.
 - Our release machines build `/app/dogwood-rebuild` from a clean copy of the directory with the
@@ -95,8 +96,7 @@ Your implementation in `/app/dogwood-rebuild`: a Cargo project from which
 
   You need not make any of these work.
 
-Dogwood is young and still changing, and we will move to its newer releases as they come out, so
-build it so that it is easy to change.
+Dogwood is young and still changing, and we will move to its newer releases as they come out.
 
 ## Switching over
 

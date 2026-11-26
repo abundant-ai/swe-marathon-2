@@ -30,9 +30,10 @@ Everything that uses `dogwood` depends on what it prints:
   decides whether the change can merge, and the review page shows each finding's message at its
   byte span. Authors also run `dogwood check-parse` before they commit.
 - Our replay job runs recorded agent traces through `dogwood replay` against the policies they
-  were recorded under and keeps the verdict streams, plain and `--format json`. Our incident tools
-  read them decision by decision: the verdict, the rules it lists, the errors of a decision that
-  failed closed, and the events of the trace that were not taken into the history.
+  were recorded under and keeps the decision streams, plain and `--format json`. Our incident
+  tools read them decision by decision: ALLOW or DENY, the rules listed for it, the errors of a
+  decision that failed closed, and the events of the trace that were not taken into the history
+  (the command-line chapter's `replay` section describes them).
 - Our policy store takes what `dogwood lower` emits as it is: the Cedar policies, the augmented
   schema and its Cedar JSON form. It files each version by checksum, so a lowered policy or schema
   that differs by one byte is a new version to it.
@@ -46,9 +47,10 @@ A different output, report or exit status breaks one of them.
 
 ## Context
 
-- The 1.2.0 build is now installed as `dogwood` on `PATH`. The 1.1.2 build stays installed as
-  `dogwood-1.1.2` until we switch. Both are execute-only, so that nobody in the clean room reads
-  their code: you can run them as often as you like, but not read, copy or inspect the files.
+- The 1.2.0 build is now installed as `dogwood` on `PATH`, and the 1.1.2 build is still installed,
+  as `dogwood-1.1.2`, only so that you can see what changed: everything of ours moves to 1.2.0.
+  Both are execute-only, so that nobody in the clean room reads their code: you can run them as
+  often as you like, but not read, copy or inspect the files.
 - Like the 1.1.2 build, the 1.2.0 build has arithmetic in comparison operands switched on: it is
   the `experimental-arithmetic` build that the guide describes.
 - 1.2.0's documentation is in `/app/docs/1.2.0`:
@@ -58,7 +60,8 @@ A different output, report or exit status breaks one of them.
     `dogwood replay` printed for them.
   - `RELEASE_NOTES.md` has the 1.2.0 release notes and upgrade notes, without the items about the
     Rust library and the build.
-  - When the guide and the build disagree, the build is right.
+  - If 1.2.0's guide or release notes and the 1.2.0 build differ, follow the build: it is what
+    our tools will run.
 - 1.1.2's documentation is still in `/app/docs/1.1.2`.
 - There is no network access. Rust is installed with `cargo` and an offline crate registry that
   `cargo` is already set up to use. The registry now also holds the Cedar crates at 4.14.0. No
@@ -82,7 +85,8 @@ The implementation in `/app/dogwood-rebuild`, brought to 1.2.0: a Cargo project 
   `--format json`. Nothing of ours reads standard error, so what it writes there may differ.
 - In JSON output, the order of keys inside an object does not matter. The rules listed for a
   decision are a set to our incident tools, so their order does not matter either. Everything
-  else does: the order of lists, every message, every span and every number.
+  else reaches our tools as it is printed: the order of lists, every message, every span and every
+  number.
 - Our traces always have strictly increasing timestamps. What the build does with a trace whose
   timestamps repeat or go back does not matter to us.
 - Our release machines build `/app/dogwood-rebuild` from a clean copy of the directory:

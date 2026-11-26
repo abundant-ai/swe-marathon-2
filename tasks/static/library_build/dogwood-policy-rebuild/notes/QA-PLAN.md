@@ -167,8 +167,8 @@ Z1-Z13 at 0.000.
   "corpus" 24, "test" 12, "harness" 4, "oracle" 1.
 
 **The briefs.**
-- Today's drafts are clean apart from the domain term "comparison operands" and the substring
-  "grade" in "upgrade".
+- An independent wording review (sonnet) found no must-fix. Its should-fixes are applied, and
+  the mechanical sweep finds no banned word in either brief.
 - Both stay in the requester's voice. Each requirement is stated by what depends on it. Both end
   with the cut-over line.
 - No "step", "stage" or "session" wording, and no time budget.

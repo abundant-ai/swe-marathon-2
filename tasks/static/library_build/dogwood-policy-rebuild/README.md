@@ -127,6 +127,7 @@ Nothing is built, so every boundary is unassessed.
 | Stubs | Credit from help text, constant exit codes, all-DENY streams, `cat` as `format` | Stub zoo at every build; paired cases; baseline subtraction | 🟡 YELLOW / UNASSESSED |
 | Lookup tables | Hard-code the shipped examples' outputs | Hidden cases never equal or near-copy a shipped example (leak scan); paired duals | 🟡 YELLOW / UNASSESSED |
 | Verifier and reward | Tamper with grading files or the reward | Separate verifier image; submission runs as an unprivileged user in fresh directories | 🟡 YELLOW / UNASSESSED |
+| Build-time code | The submission's `build.rs` or proc macros run while the verifier builds it: read gold, write a reward, leave processes | Build as a dedicated unprivileged user with no network and no read access to gold or the grader; kill its process group after the build | 🟡 YELLOW / UNASSESSED |
 
 Highest unresolved severity: 🟡 YELLOW / UNASSESSED (everything).
 
@@ -152,6 +153,12 @@ Phase A, design only. No downloads, builds, runs, Docker or Oddish.
   - Told afterwards that the itemised cost is +8 to +9 person-days rather than +3-5, none changed
     its vote. Opus asked that S's assets (step 2's) be built first.
   - Votes: `harbor-lh` `ops/swe-marathon-v2/decisions/2026-11-26-dogwood-policy-rebuild-steps-*.md`.
-- **Drafts:** both step briefs are drafted in the requester's voice. Their wording sweep is clean
-  apart from the domain terms "comparison operands" and "upgrade notes".
+- **Drafts:** both step briefs are drafted in the requester's voice. An independent reviewer
+  (sonnet) found no must-fix wording. Its four should-fixes are applied:
+  - "decision streams" instead of "verdict streams";
+  - a reason given for following the build when the guide differs;
+  - why the 1.1.2 build stays in step 2;
+  - a pointer for the events `replay` does not take into the history.
+
+  The mechanical sweep now finds no banned word in either brief.
 - **Next:** the spike in `notes/SPIKE-PLAN.md`, after the owner approves the download list.
