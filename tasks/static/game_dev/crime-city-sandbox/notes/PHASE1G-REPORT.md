@@ -269,7 +269,8 @@ junctions, hours and weathers).
 | `77fe670` | WS1/WS4: the six playtests, the GDD's clarifications (the panel), the coverage map |
 | `e5de73c` | WS4: the all-way stop checks count each pass through the junction on its own |
 | `37195ac` | WS4: `stop_full` leaves out a vehicle already at its line when the watch begins |
-| (next) | this report and the README |
+| `be4c6b2` | the acceptance runs, this report and the README |
+| (next) | this table's hashes |
 
 Private, with both bundles refreshed in `harbor-lh/ops/swe-marathon-v2/next-tasks/game-private/`
 (and its README's table):
