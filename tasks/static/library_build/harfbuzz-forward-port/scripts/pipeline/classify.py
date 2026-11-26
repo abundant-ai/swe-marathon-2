@@ -117,6 +117,7 @@ def select(
             chosen.append(
                 {
                     "id": opaque(c["id"], salt),
+                    "cid": c["id"],
                     "unit": unit,
                     "family": fam,
                     "kind": kind,
