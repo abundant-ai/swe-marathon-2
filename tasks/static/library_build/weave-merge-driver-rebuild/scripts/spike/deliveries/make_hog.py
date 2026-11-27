@@ -1,11 +1,8 @@
 """Turn a staged copy of the upstream solution into a submission that misbehaves on a few cases.
 
 Usage: python3 -I make_hog.py STAGED_SOURCE_DIR
-On a case whose BASE is a multiple of 200 bytes long it hangs. On other residues it first does
-something hostile and then merges normally:
-- 1: leaves 64 sleeping children;
-- 2: prints 64 MB to standard output;
-- 3: plants a file in /tmp.
+By the length of BASE modulo 499: at 13 it hangs; at 1 it leaves 64 sleeping children, at 2 it
+prints 64 MB to standard output and at 3 it plants a file in /tmp, and then merges normally.
 A bounded runner should lose only the hanging cases.
 """
 
@@ -18,8 +15,8 @@ HOSTILE = """fn main() {
     {
         let args: Vec<String> = std::env::args().collect();
         let n = args.get(1).and_then(|p| std::fs::metadata(p).ok()).map(|m| m.len()).unwrap_or(1);
-        match n % 200 {
-            0 => loop {
+        match n % 499 {
+            13 => loop {
                 std::thread::sleep(std::time::Duration::from_secs(1));
             },
             1 => {

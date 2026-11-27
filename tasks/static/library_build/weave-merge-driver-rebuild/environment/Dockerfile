@@ -29,8 +29,12 @@ RUN set -e; arch="$(dpkg --print-architecture)"; \
     rustc --version; cargo --version; git --version
 
 FROM base AS original
-RUN set -e; git clone --quiet --depth 1 --branch v0.7.1 https://github.com/Ataraxy-Labs/weave /src; \
-    test "$(git -C /src rev-parse HEAD)" = 527ccb37a951bc114e6988318ad0774771c6d58f; \
+# The v0.7.1 tag (commit 527ccb37a951) as a source archive, checked by its sha256; no history.
+RUN set -e; curl -fsSL --proto '=https' -o /tmp/weave.tar.gz \
+# provenance-okay
+        https://github.com/Ataraxy-Labs/weave/archive/refs/tags/v0.7.1.tar.gz; \
+    echo "2c3c913b1b2ae8c2c90ec152211a5818828714f142436c32df6b21391ad9cc35  /tmp/weave.tar.gz" | sha256sum -c -; \
+    mkdir /src; tar -xzf /tmp/weave.tar.gz -C /src --strip-components=1; rm /tmp/weave.tar.gz; \
     cd /src; CARGO_BUILD_JOBS=4 cargo build --release --locked -q -p weave-driver; \
     strip target/release/weave-driver; cp target/release/weave-driver /weave-driver; \
     rm -r target /root/.cargo/registry

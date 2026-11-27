@@ -819,6 +819,50 @@ MUTANTS: dict[str, dict] = {
 }
 
 
+# The superset route's refusal conditions, switched off: a side is taken as holding the other's
+# edits even when a line moved, a deletion was rewritten, insertions sit at different points, the
+# superset does not parse or a definition the other side deleted is still there. The near misses of
+# the superset recipes then come out as that side's file instead of the merge.
+MUTANTS["superset_relaxed"] = {
+    "feature": "FT-SUPERSET",
+    "rules": ["ROUTE-7", "ROUTE-8"],
+    "family": "F1",
+    "why": "The refusal conditions of the superset route are ignored, so near misses are answered "
+    "with the larger side's file.",
+    "patches": [
+        (
+            SUBSUMPTION,
+            "    outer: &HashMap<&str, usize>,\n) -> bool {\n    if inner.old.is_empty() {",
+            (
+                "    outer: &HashMap<&str, usize>,\n) -> bool {\n    if true {\n        return false;\n    }\n"
+                "    if inner.old.is_empty() {"
+            ),
+        ),
+        (
+            SUBSUMPTION,
+            (
+                "    if inner.ins.is_empty() && !inner.old.is_empty() && !outer.ins.is_empty() {\n"
+                "        return false; // a deletion is carried only by a deletion\n    }\n"
+            ),
+            "",
+        ),
+        (
+            SUBSUMPTION,
+            (
+                "    } else if outer.old.start != inner.old.start {\n"
+                "        // two insertions: they must be at the same anchor\n        return false;\n    }"
+            ),
+            "    }",
+        ),
+        (
+            MERGE,
+            ") -> bool {\n    if [base, superset, subsumed]",
+            ") -> bool {\n    if true {\n        return true;\n    }\n    if [base, superset, subsumed]",
+        ),
+    ],
+}
+
+
 def read(path: Path) -> str:
     """A source file's text, byte for byte (no newline translation)."""
     return path.read_bytes().decode("utf-8")

@@ -46,12 +46,17 @@ NETTING = [
     "ours_conflict",
     "ours_hint",
 ]
-# Cases that grade a stated restriction (status 2 writes nothing; what counts as binary) are kept
-# even when a filter program reproduces them; their family is netted against every program.
+# Cases that grade a stated rule a trivial program happens to reproduce are kept anyway, and their
+# family is netted against every program: the stated restrictions (status 2 writes nothing; what
+# counts as binary), the line route for files the entity model does not describe (a build without
+# it entity-merges them), and two boxes far apart (the hint goes on the first closing marker only).
 RESTRICTION_FEATURES = {
     "routing.binary_first_8192",
     "routing.nul_after_8192",
     "routing.not_utf8",
+    "routing.both_created",
+    "routing.many_same_name_line_route",
+    "boxes.near_miss_seven_lines_apart",
 }
 
 
