@@ -1,0 +1,20 @@
+! Molecular Orbital PACkage (MOPAC)
+! Copyright 2021 Virginia Polytechnic Institute and State University
+!
+! Licensed under the Apache License, Version 2.0 (the "License");
+! you may not use this file except in compliance with the License.
+! You may obtain a copy of the License at
+!
+!    http://www.apache.org/licenses/LICENSE-2.0
+!
+! Unless required by applicable law or agreed to in writing, software
+! distributed under the License is distributed on an "AS IS" BASIS,
+! WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+! See the License for the specific language governing permissions and
+! limitations under the License.
+
+module common_atomtx
+    implicit none
+    integer, parameter, private :: numatm = 20000
+    character (len=16), dimension (numatm) :: txtatm
+end module common_atomtx
