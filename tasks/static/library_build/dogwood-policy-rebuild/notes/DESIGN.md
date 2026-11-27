@@ -75,8 +75,30 @@ The agent runs as `dev`, with no network and no `sudo`.
   process.
 - The registry holds no `dogwood-*` crate.
 
-**Leak scan.** No private case equals or near-copies a shipped example or a public upstream corpus
-case.
+**Leak scan** (`checks/leaks.py`). The agent can run the build on anything it sees, so no private
+case may read only files it can see: every file a case reads (policy, schemas, providers, macros,
+trace) equal, up to comments and whitespace, to the files of one shipped example or of one
+directory of upstream's public repository fails the scan. Policies equal to a public one, and
+near copies (word 5-grams, Jaccard 0.9 or more), are counted.
+
+**The grader's own hardening** (`tests/verifier/`):
+- output is read with a cap (8 MB a run, 16 MB for the build log), so a flood cannot exhaust
+  the grader;
+- after the build and after every run, every process of `builder` or `nobody` still alive is
+  ended (a process that left its group included) and counted in the metrics;
+- runs are in a fixed order hashed from the case ids, and the global deadline gives every case
+  its full per-run limit, so it binds only a run that overruns;
+- the metrics list any delivered `.rs`/`.pest` file that is a copy of Dogwood's own source (by
+  digests made in the release stage, as written and with whitespace removed). This is for
+  review against the clean-room rule and does not change the reward: the oracle is upstream's
+  own source, and any edit to a copied file would evade a hard check anyway.
+
+**After the session.** Harbor runs `/usr/local/sbin/stop-user-processes` as root
+(`[[verifier.collect]]`) before it copies `/app/dogwood-rebuild`: it stops, then kills, every
+process of `dev`. The platform restores public egress when the agent's turn ends, before
+collection (harbor-lh `PLATFORM_EGRESS_WINDOW.md`); a process the agent left behind could fetch
+Dogwood's crates in that window. The hook shortens the window but cannot close it, the clean-room
+report flags a verbatim drop-in, and the trajectory audit is the remaining check.
 
 ## 3. Grading families and weights
 
@@ -183,22 +205,45 @@ cases. M-global breaks the slicing shapes; the mirror-rule shapes need their own
 
 ## 4. Stub filters
 
-The stub zoo runs at every build and must score 0.000 after pairing and baseline subtraction
-([QA-PLAN.md](QA-PLAN.md) section 3).
+**Selection makes every stub score 0 by construction** (`scripts/select_cases.py`, from the
+release build's recorded answers). A unit is a single case, or a pair that counts only when both
+members pass. A case is weak when a trivial program could print its answer:
+- its standard output is empty;
+- its answer is the one its command gives most often, or one given more than once for its
+  command (commands are keyed as the table-driven stubs key them: subcommand, `--emit` form or
+  schema part, and `--format` value);
+- it is a replay whose stream is DENY, or ALLOW with one rule list, for every event;
+- it is a `format` whose output is its input.
 
-| Stub | What it would pass | What zeroes it |
-| --- | --- | --- |
-| nop (empty directory) | nothing | the build fails |
-| prints nothing | nothing | every case has stdout |
-| exit status only | validate rejects | stdout compared too |
-| "OK: validation passed…" | accepted validate cases | accept/near-miss pairs |
-| all-DENY / all-ALLOW replayer | single-verdict streams | R, B and K streams are mixed or paired |
-| `format` as `cat` | already-formatted input | `format` cases differ from their input; the comment rule is paired |
-| `check-parse` counter | clean parses | paired with syntax errors |
-| `schema` "OK" | valid schemas | paired with invalid ones |
-| lookup table of shipped examples | shipped examples | leak scan |
-| wrapper around `dogwood` | everything in the sandbox | no build in the grading image |
-| Cedar-only implementation | cases with no temporal or provider leaf | legitimate partial credit, held under 10% of the weight |
+A weak case is paired with a case of the same family and command whose answer is its own, or
+dropped. A declared B or K pair one program passes whole is dropped. After the family caps, a unit
+whose every answer is also given elsewhere is dropped. `checks/stub_estimate.py` predicts the
+zoo from the recorded answers.
+
+**The zoo itself** (`checks/stubs.py`): std-only Cargo projects, built and run by the real grader
+the way a submission is. They must all score 0.
+
+| Stub | What it does |
+| --- | --- |
+| nop | an empty directory (the build fails) |
+| silent, usual-status | print nothing; exit 0, or each command's most common status |
+| accept, reject | `validate` prints the accept line, or a generic error |
+| deny, allow | `replay` prints DENY, or ALLOW with rule 0, for every request line |
+| cat | `format` prints its input |
+| count | `check-parse` prints "OK: parsed N policies." from a count of rules |
+| most-common | every command prints its most common recorded answer (one given at least twice) |
+| echo | `lower` prints the policy without its temporal and provider blocks, then the schema |
+| lookup | prints a shipped example's recorded output when the policy (and trace) is that example's |
+| wrapper | runs `dogwood` from `PATH` (the grading image has none) |
+
+**Robustness probes**, in the same zoo: `hang` (sleeps past the per-run limit on two command
+lines), `flood` (prints without end on `--help`), `forkbomb` (forks without end on
+`--version`), `daemon` (leaves a detached process on `format`), and `buildrs` (a build script that
+tries to read the private cases and the grader, write the reward, and leave a process behind).
+Each must leave the grader working: no evaluation error, a reward of 0, and its leftovers ended.
+
+A Cedar-only implementation earns legitimate partial credit on the cases without temporal or
+provider leaves; that is held well under the weight of R, B and K.
 
 ## 5. Determinism controls
 
