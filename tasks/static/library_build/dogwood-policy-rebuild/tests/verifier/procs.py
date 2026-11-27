@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ctypes
 import os
 import pwd
 import select
@@ -11,8 +12,21 @@ import time
 from pathlib import Path
 
 CHUNK = 1 << 16
+PR_SET_CHILD_SUBREAPER = 36
+SWEEPS = 100
 # user -> how many of its processes were still alive, and ended, once a run or the build was over
 LEFTOVERS: dict[str, int] = {}
+
+
+def become_subreaper() -> bool:
+    """Adopt every orphaned descendant instead of PID 1, so that reap() collects what a run or the
+    build leaves behind wherever the grader runs (PID 1 of the grading machine may never reap,
+    and unreaped processes still count against the user's process limit)."""
+    try:
+        libc = ctypes.CDLL(None, use_errno=True)
+        return libc.prctl(PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) == 0
+    except (OSError, AttributeError):
+        return False
 
 
 def capture(
@@ -67,11 +81,9 @@ def reap() -> None:
             return
 
 
-def end_user(user: str) -> int:
-    """Kill every live process that runs as `user` (one that left its process group included).
-    Return how many were signalled."""
-    uid = pwd.getpwnam(user).pw_uid
-    killed = 0
+def _live(uid: int) -> list[int]:
+    """The processes of `uid` that have not exited."""
+    pids: list[int] = []
     for entry in Path("/proc").iterdir():
         if not entry.name.isdigit():
             continue
@@ -85,13 +97,29 @@ def end_user(user: str) -> int:
             continue
         state = fields.get("State", "").split()
         uids = fields.get("Uid", "").split()
-        if not uids or int(uids[0]) != uid or (state and state[0] == "Z"):
-            continue
-        try:
-            os.kill(int(entry.name), signal.SIGKILL)
-            killed += 1
-        except (ProcessLookupError, PermissionError):
-            pass
+        if uids and int(uids[0]) == uid and not (state and state[0] == "Z"):
+            pids.append(int(entry.name))
+    return pids
+
+
+def end_user(user: str) -> int:
+    """Kill every live process that runs as `user` (one that left its process group included),
+    sweeping again until none is left, so one forked during a sweep is caught by the next.
+    Return how many were signalled."""
+    uid = pwd.getpwnam(user).pw_uid
+    signalled: set[int] = set()
+    for _ in range(SWEEPS):
+        live = _live(uid)
+        if not live:
+            break
+        for pid in live:
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
+        signalled.update(live)
+        reap()
+        time.sleep(0.005)
     reap()
-    LEFTOVERS[user] = LEFTOVERS.get(user, 0) + killed
-    return killed
+    LEFTOVERS[user] = LEFTOVERS.get(user, 0) + len(signalled)
+    return len(signalled)

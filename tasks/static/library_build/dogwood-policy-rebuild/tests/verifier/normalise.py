@@ -13,7 +13,10 @@ RULES = re.compile(rb"\[rules: ([0-9, ]+)\]")
 
 
 def _sorted_rules(match: re.Match[bytes]) -> bytes:
-    numbers = sorted(int(n) for n in match.group(1).split(b","))
+    try:
+        numbers = sorted(int(n) for n in match.group(1).split(b","))
+    except ValueError:  # an empty or overlong number: compared as printed
+        return match.group(0)
     return b"[rules: " + b", ".join(str(n).encode() for n in numbers) + b"]"
 
 
@@ -35,13 +38,13 @@ def _walk(value: object) -> object:
 def normalise(stdout: bytes, fmt: str) -> str:
     """Return the comparable form of one run's standard output.
 
-    JSON output that does not parse is compared as text, so a malformed report fails
-    against a well-formed expected one instead of raising.
+    Output that does not parse (JSON that is malformed or nested past the parser's depth, a
+    rule list that mixes kinds of values, a rule number that is empty or overlong) is compared
+    as printed, so it fails against the well-formed expected answer instead of raising.
     """
     if fmt == "json":
         try:
-            parsed = json.loads(stdout.decode("utf-8"))
-        except (UnicodeDecodeError, ValueError):
+            return json.dumps(_walk(json.loads(stdout.decode("utf-8"))), sort_keys=True)
+        except (UnicodeDecodeError, ValueError, TypeError, RecursionError):
             return stdout.decode("utf-8", "replace")
-        return json.dumps(_walk(parsed), sort_keys=True)
     return RULES.sub(_sorted_rules, stdout).decode("utf-8", "replace")

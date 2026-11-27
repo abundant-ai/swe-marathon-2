@@ -186,6 +186,24 @@ fn main() {
             let _ = Command::new("setsid").args(["sleep", "600"]).spawn();
             exit(0)
         }
+        // Output the grader must compare without failing: JSON nested deeper than a parser goes,
+        // a rule list of mixed values, and rule numbers that are empty or overlong.
+        "garbage" => {
+            if fmt == "json" {
+                if cmd == "replay" {
+                    emit(0, b"{\"verdicts\": [{\"determining_rules\": [1, \"a\", null]}]}\n")
+                }
+                let mut deep = "[".repeat(100_000);
+                deep.push_str(&"]".repeat(100_000));
+                deep.push('\n');
+                emit(0, deep.as_bytes())
+            }
+            let mut text = String::from("@1 (time point 0): ALLOW  [rules: 1,,2]\n");
+            text.push_str("@2 (time point 1): ALLOW  [rules: ");
+            text.push_str(&"9".repeat(5000));
+            text.push_str("]\n");
+            emit(0, text.as_bytes())
+        }
         _ => exit(0),
     }
 }

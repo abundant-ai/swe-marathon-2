@@ -22,7 +22,9 @@ stay out of the repository.
 | lookup | prints the shipped examples' recorded output when the policy (and trace) is an example's |
 | wrapper | runs `dogwood` from PATH with the same arguments |
 | hang, flood, forkbomb, daemon | robustness probes: sleep past the limit, print without end, fork without end, or leave a detached process, on one or two command lines |
+| garbage | prints what the comparison must survive: JSON nested past a parser's depth, a rule list of mixed values, empty and overlong rule numbers |
 | buildrs | a build script that tries to read the grader's files, write the reward and leave a process behind |
+| badexec | a build that leaves, where the program belongs, a file the machine cannot run |
 """
 
 from __future__ import annotations
@@ -52,6 +54,7 @@ MODES = (
     "flood",
     "forkbomb",
     "daemon",
+    "garbage",
 )
 BUILD_RS = """// Tries, while the grader builds the project, to reach the grader's files and to leave a process
 // behind. The build fails if any of the reads or writes succeeds.
@@ -65,6 +68,18 @@ fn main() {
     if gold || grader || reward {
         panic!("reached: gold {gold}, grader {grader}, reward {reward}");
     }
+}
+"""
+BADEXEC_RS = """// Leaves, where the release build of the `dogwood` program belongs, a file no machine can run.
+use std::os::unix::fs::PermissionsExt;
+use std::path::PathBuf;
+
+fn main() {
+    // OUT_DIR is <target>/<profile>/build/<package>-<hash>/out.
+    let out = PathBuf::from(std::env::var("OUT_DIR").unwrap());
+    let path = out.ancestors().nth(3).unwrap().join("dogwood");
+    std::fs::write(&path, b"not a program\\n").unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
 }
 """
 CARGO = '[package]\nname = "dogwood"\nversion = "0.1.0"\nedition = "2021"\n\n[dependencies]\n'
@@ -157,7 +172,16 @@ def main() -> int:
     shutil.copyfile(HERE / "stub_src" / "main.rs", d / "src" / "main.rs")
     (d / "src" / "mode.txt").write_text("silent\n")
     (d / "src" / "table.txt").write_text("\n")
-    print(json.dumps({"stubs": ["nop", *MODES, "buildrs"], "out": str(a.out)}))
+    d = a.out / "badexec"
+    (d / "src").mkdir(parents=True)
+    (d / "Cargo.toml").write_text(
+        CARGO.replace("[dependencies]", 'build = "build.rs"\n\n[dependencies]')
+    )
+    (d / "build.rs").write_text(BADEXEC_RS)
+    (d / "src" / "lib.rs").write_text("")
+    print(
+        json.dumps({"stubs": ["nop", *MODES, "buildrs", "badexec"], "out": str(a.out)})
+    )
     return 0
 
 

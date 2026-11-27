@@ -7,6 +7,7 @@ A run that hangs, crashes or overruns loses only its own case.
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import os
 import resource
@@ -16,7 +17,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from .contracts import Case, CaseResult, Limits
+from .contracts import Case, CaseResult, EvaluationError, Limits
 from .normalise import normalise
 from .procs import capture, end_group, end_user
 
@@ -43,10 +44,32 @@ def _limits(limits: Limits):
     return apply
 
 
+def _can_start(limits: Limits) -> bool:
+    """Whether the machine starts /bin/true as the runner, with the runner's limits."""
+    try:
+        return (
+            subprocess.run(
+                ["/bin/true"],
+                check=False,
+                env=ENV,
+                user=RUNNER,
+                group=RUNNER_GROUP,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                preexec_fn=_limits(limits),
+                timeout=10,
+            ).returncode
+            == 0
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
 def run_case(
     binary: Path, case: Case, bundles: Path, limits: Limits, sweep: bool = True
 ) -> tuple[object, bytes]:
-    """Return (exit status or 'timeout' / 'overflow', stdout) for one case."""
+    """Return (exit status, or 'timeout' / 'overflow' / 'could not start (...)', stdout)."""
     with tempfile.TemporaryDirectory(prefix="case-") as tmp:
         root = Path(tmp)
         work, home, scratch = root / "work", root / "home", root / "tmp"
@@ -74,6 +97,16 @@ def run_case(
                 stderr=subprocess.DEVNULL,
                 start_new_session=True,
                 preexec_fn=_limits(limits),  # noqa: PLW1509 - the grader runs one case at a time, single-threaded
+            )
+        except OSError as exc:
+            # The delivered program cannot be started (not a program this machine runs, a
+            # missing loader, more than the memory limit to load): its own case fails. If the
+            # machine cannot start /bin/true the same way either, the evaluation itself fails.
+            if not _can_start(limits):
+                raise EvaluationError(f"cannot start processes: {exc}") from exc
+            return (
+                f"could not start ({errno.errorcode.get(exc.errno or 0, exc.errno)})",
+                b"",
             )
         finally:
             if feed is not None:

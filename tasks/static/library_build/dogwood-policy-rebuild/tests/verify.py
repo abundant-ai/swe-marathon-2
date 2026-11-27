@@ -102,6 +102,7 @@ def verify(context: VerificationContext) -> VerificationResult:
 
 
 def main() -> int:
+    adopts_orphans = procs.become_subreaper()
     logs = Path("/logs/verifier")
     logs.mkdir(parents=True, exist_ok=True)
     for name in REWARD_FILES:
@@ -117,9 +118,8 @@ def main() -> int:
     except Exception:  # noqa: BLE001 - any failure here is the evaluation's, never the candidate's
         (logs / "evaluation-error.txt").write_text(traceback.format_exc())
         return 1
-    (logs / "metrics.json").write_text(
-        json.dumps(result.metrics, indent=1, sort_keys=True)
-    )
+    metrics = dict(result.metrics, adopts_orphans=adopts_orphans)
+    (logs / "metrics.json").write_text(json.dumps(metrics, indent=1, sort_keys=True))
     (logs / "reward.txt").write_text(f"{result.reward}\n")
     return 0
 

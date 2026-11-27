@@ -1,8 +1,8 @@
 """Copy the delivered project and build it offline as an unprivileged user.
 
-The copy follows the brief: `target/`, links that point outside the directory, and pipes, sockets
-and devices are left out, and a project over the file or size limit is not copied (it then builds
-nothing). The build runs as `builder`, with no network and with no read access to the private
+The copy follows the brief: `target/`, links to directories, links that point outside the
+directory or nowhere (loops included), and pipes, sockets and devices are left out, and a project
+over the file or size limit is not copied (it then builds nothing). The build runs as `builder`, with no network and with no read access to the private
 cases, in its own process group; when it ends or times out, every process of `builder` is killed,
 one that left the group included.
 """
@@ -40,7 +40,9 @@ def copy_project(src: Path, dst: Path, limits: Limits) -> str | None:
         for name in filenames:
             path = here / name
             if path.is_symlink():
-                target = path.resolve()
+                # os.path.realpath, unlike Path.resolve before Python 3.13, does not raise on a
+                # loop; is_file() is then False for it.
+                target = Path(os.path.realpath(path))
                 if root not in target.parents or not target.is_file():
                     continue
             if not (path.is_file()):
