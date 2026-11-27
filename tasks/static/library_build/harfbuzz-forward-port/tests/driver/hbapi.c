@@ -518,6 +518,19 @@ utf8_encode (uint32_t cp, uint8_t *p)
 	 p[2] = (uint8_t) (0x80 | ((cp >> 6) & 0x3F)), p[3] = (uint8_t) (0x80 | (cp & 0x3F)), 4;
 }
 
+/* The case only says something when shaping really ran: the shaped text has glyphs, and some glyph moves the pen.
+ * Otherwise the positions left in the buffer's memory would be zero for want of shaping, not because of the fix. */
+static int
+shaped (hb_buffer_t *buf)
+{
+  unsigned len = 0;
+  hb_glyph_position_t *pos = hb_buffer_get_glyph_positions (buf, &len);
+  for (unsigned i = 0; i < len; i++)
+    if (pos[i].x_advance || pos[i].y_advance)
+      return 1;
+  return 0;
+}
+
 static void
 cmd_pos (hb_font_t *font, const opts_t *o, const uint32_t *args, int n)
 {
@@ -551,6 +564,12 @@ cmd_pos (hb_font_t *font, const opts_t *o, const uint32_t *args, int n)
     hb_buffer_add_codepoints (buf, args, pre, 0, pre);
     hb_buffer_guess_segment_properties (buf);
     hb_shape (font, buf, feats, (unsigned) n_feats);
+    if (!shaped (buf))
+    {
+      hb_buffer_destroy (buf);
+      emit ("!err:noshape");
+      return;
+    }
     hb_buffer_get_glyph_positions (buf, NULL);
     if (clr && !strcmp (clr, "reset"))
       hb_buffer_reset (buf);
@@ -566,6 +585,12 @@ cmd_pos (hb_font_t *font, const opts_t *o, const uint32_t *args, int n)
   {
     hb_buffer_guess_segment_properties (buf);
     hb_shape (font, buf, feats, (unsigned) n_feats);
+    if (a > 0 && !shaped (buf))
+    {
+      hb_buffer_destroy (buf);
+      emit ("!err:noshape");
+      return;
+    }
   }
   unsigned len1 = 0, len2 = 0;
   hb_buffer_get_glyph_positions (buf, &len1);
