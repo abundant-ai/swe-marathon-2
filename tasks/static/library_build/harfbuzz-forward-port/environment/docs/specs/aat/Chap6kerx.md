@@ -173,15 +173,14 @@ Class lookups:
   offsets; a glyph absent from a lookup gets 0.
 - Right-hand values are already multiplied by the size of one kerning value
   (2 bytes).
-- Left-hand values are already multiplied by the row size in bytes and also
-  carry the array's offset (the page phrases this as offset "from the start
-  of the kerning array"). Because the products are pre-computed, no
-  multiplication is needed at run time.
+- Left-hand values are already multiplied by the row size in bytes.
+  Because the products are pre-computed, no multiplication is needed at
+  run time.
 - To read a pair's value, look up the left-hand (or top) glyph and the
-  right-hand (or bottom) glyph, add the two values, and fetch the value at
-  that position; the page describes adding them to the address of the
-  kerning array. (The 'kern' format 2 text measures the same sum from the
-  start of the subtable.)
+  right-hand (or bottom) glyph and add the two values: the sum is a byte
+  offset from the start of the kerning array, and the pair's value is the
+  one at that offset. (The 'kern' format 2 text measures its sum from the
+  start of the subtable instead.)
 
 Values: tupleCount 0 gives FUnit values (positive apart, negative together);
 tupleCount >= 1 gives offsets from the start of the subtable to
