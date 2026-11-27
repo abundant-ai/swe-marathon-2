@@ -6,11 +6,14 @@ shared). No downloads, no Docker, no Linux VM, no Oddish.
 
 Every Godot run went through `scripts/heavy.py` (one exclusive lock, then at least 30% free memory
 per `memory_pressure`), and every game process re-checked through the kit's gate
-(`QA_MEM_FLOOR=30`). Free memory sat at 24-40% (other work on this Mac held several GB: two
-virtual machines, Docker's backend, editors); runs waited whenever it dipped under 30%. A helper
-(opus) built the traffic hidden instances on files of its own and queued its Godot runs through the
-same lock; its runs on the reference found three reference defects and a gap in the GDD, all fixed
-(section 8). Three judges (opus,
+(`QA_MEM_FLOOR=30`); from 2026-11-27 every run also took the shared heavy lock that every campaign
+on this Mac uses (`scratchpad/heavy-docker.lock`, taken only at 30% free). Free memory sat at 24-40%
+(other work on this Mac held several GB: two virtual machines, Docker's backend, editors; swap
+nearly full), and runs waited whenever it dipped under 30%. The author stopped at a usage limit
+around 2026-11-27 01:30 UTC with the final runs on `943dec9` done (the coordinator committed this
+report as checkpoint `5df5542`) and resumed at 14:50 UTC. A helper (opus) built the traffic hidden
+instances on files of its own and queued its Godot runs through the same lock; its instances found
+four reference defects and a gap in the GDD, all fixed (section 8). Three judges (opus,
 sonnet, haiku) settled how QA observes combat; an independent read (sonnet) read the
 developer-facing changes as the developer would. Every child process was stopped by its task or
 process group; a debug run made obsolete by a fix was stopped before it started Godot.
@@ -62,7 +65,8 @@ minutes are listed, not given margins.
 | Run | Banded values | Under 15% |
 | --- | --- | --- |
 | Reference `53192d5`, all 37 playtests | 253 in 168 expectations | **3**: CM-1's camera came 2.914 m from the head at +30 degrees of pitch (band 2.5-6.0: 11.8%) with a running player's hips 0.341 of the way out of the view's middle (at most 0.4: 14.7%); city drivers at 0.95 of the limit (TR-8's at most 1.1: 13.6%) |
-| Reference `943dec9` (final), all 37 playtests | 253 in 168 expectations | **0**; worst 18.2% |
+| Reference `943dec9`, all 37 playtests | 252 in 167 expectations | **0**; worst 18.2% |
+| Reference `943dec9`, the private set (the 40 instances the deadline let run) | 259 in 133 expectations | **1**: the collision at j_73 in day-flow instance `03eaca08` (TR-12: 0.0357 per vehicle-minute against at most 0.02, margin -78.5%), fixed in `8e959f0` (section 8); that instance's third density minute sat at exactly 15.0% (13.0 vehicles), its cause the same |
 FILL-PRIVSWEEP
 
 The fixes (reference `943dec9`), each inside what the rule allows; no band or measurement changed:
@@ -73,14 +77,16 @@ The fixes (reference `943dec9`), each inside what the rule allows; no band or me
   samples (18.2%);
 - **TR-6** (an order fault rather than a margin, found by the helper's instances): section 8.
 
-The smallest final margins: TR-8 18.2%; VH-5's damaged sedan at 8.18 km/h against at most 10, 18.2%;
-FT-9's largest hips step in the replay's ragdoll 22.6%; FT-12's 0.45 m from the obstacle 25.0%;
-CB-9's turn 0.517 s into the 2 s window, 25.9%; FT-5's vault 26.1%; CM-1 27.0%. The sweep's own gaps,
-closed on the way (`234caa5`, `877424f`): one-sided limits had been read as bands from 0, a
-whole-minute clock as a margin of 0, and a per-person value, the blast's push and a moved check's
-zero floor as having no band; and IN-2's one-sided sprint (8.50 m/s against "at least 7.40", over
-the same window as FT-1's 7.40-9.60) came out at 14.9% on the open-ended measure, where FT-1's band
-puts the same value at 50%, its middle.
+The smallest margins on `943dec9`'s playtests: TR-8 18.2%; VH-5's damaged sedan at 8.18 km/h against
+at most 10, 18.2%; FT-9's largest hips step in the replay's ragdoll 22.6%; FT-12's 0.45 m from the
+obstacle 25.0%; CB-9's turn 0.517 s into the 2 s window, 25.9%; CM-1 27.0%. The sweep's own gaps,
+closed on the way (`234caa5`, `877424f`, `0a68e7c`): one-sided limits had been read as bands from 0,
+a whole-minute clock as a margin of 0, and a per-person value, the blast's push and a moved check's
+zero floor as having no band; IN-2's one-sided sprint (8.50 m/s against "at least 7.40", over the
+same window as FT-1's 7.40-9.60) came out at 14.9% on the open-ended measure, where FT-1's band puts
+the same value at 50%, its middle; and the distance at which QA presses `jump` before a vault, which
+QA's own `wait_for` sets (the player within the drawn 1.0-1.5 m), had been read as the game's margin
+(one private instance's 1.397 m against at most 1.5 showed as 6.8%).
 
 ## 3. What was built
 
@@ -245,8 +251,30 @@ What the instances found, all fixed: a vehicle that `vehicle.spawn` gave a param
 tactical driver never drove (reference `53192d5`, TR-16's driving archetypes); a person could step onto a
 crosswalk on don't walk with too little of the walk phase left (`53192d5`); a car that reached an
 all-way stop alone was given its turn at once, so a car arriving on its right within 1.0 s lost
-the tie (`943dec9`, TR-6); and an approach fed only from a highway portal cannot be fed out of sight
-without the next map, so TR-5's green flow now leaves such approaches out (GDD).
+the tie (`943dec9`, TR-6); an approach fed only from a highway portal cannot be fed out of sight
+without the next map, so TR-5's green flow now leaves such approaches out (GDD); and, in the final
+acceptance on `943dec9` (section 9), day-flow instance `03eaca08` (j_74 by day) caught a collision at
+the all-way stop j_73, 98 m north (reference `8e959f0`, below).
+
+**The collision at j_73 (TR-12, TR-7).** Right turns out of the tight corners of the one-lane
+streets swing over the centre line of the street they turn into, so a car stopping on the approach
+beside such a turn stays back out of the swing while one may come. A sports car had stopped back for
+a smaller car's swing (its front 6.75 m along the exit lane, just past a hatchback's 6.5 m), its
+middle 4.4 m short of its line, so it never
+counted as arrived (TR-6 counts a vehicle's position within 4 m) and never queued. An SUV then came
+to the one-way feeder's line to turn right; its swing (10 m) took in the sports car. The SUV waited
+for its swing to clear, the sports car stayed back for the SUV, and after 15 s the SUV was forced:
+it swung 1.5 m wide and hit the sports car (1 collision, 0.0357 per vehicle-minute against at most
+0.02; 2 lane-keeping samples against the traffic; the third minute's density fell to 13.0). The
+fix: at an all-way stop, a car held back for a narrower swing that finds itself inside a wider one,
+whose turn has not yet been given its way, goes on to its line and takes its turn there (the
+turn waits for it, as it already did for a car standing in its swing at the line); a turn that
+waited 15 s is no longer forced into a car on its way into the junction that is still getting out
+of its way (moving up to its line, or queued there less than 5 s); and a turn that waited 25 s goes
+in any case (TR-6's limit is 30 s). Two other designs were tried on the way and dropped: holding
+cars back only for turns already given their way gridlocked the all-way stops (four right turns
+each in another's swing, waits of 107-159 s in all three four-way plays); and counting a car as
+arrived by its front broke TR-6's full stop (the kit, like the GDD, counts the vehicle's position).
 
 On `53192d5`, one by one, 8 of the 10 new instances held every expectation; the two four-way
 instances failed TR-6's order (the tie above). Their margins there: density 43.75-50% (20-21
@@ -259,6 +287,28 @@ Private commits `f42efc8` (templates, 10 plays, 49 instances) and `202f796` (tho
 bundle is refreshed. The helper's own grade on `943dec9` was void (its import gate timed out at
 600 s: 410 s of CPU and 1.18 GB on one 12 KB texture with 25-28% free, where the same files had
 imported in about 5 s), so the private set's result on `943dec9` is the one in section 9.
+
+## 9. Acceptance results (macOS)
+
+### On `943dec9` (2026-11-26 20:38 to 2026-11-27 03:39 UTC)
+
+The first full set of acceptance runs, on reference `943dec9` and the starter, with the kit at
+`453249f`, ran through the task's heavy lock with free memory at 24-30% almost throughout: every
+game process waited for 30% free before it started.
+
+| Run | Result |
+| --- | --- |
+| `qa run`, all 37 playtests | Reference: **37 of 37 hold** (9,136 s, almost all of it waiting for memory; the import with QA's telemetry took 788.7 s against about 5 s normally). Starter: all 37 list what did not hold, 0 runs stopped (93.4 s) |
+| Reference, every playtest as the instance set | **0.757062**, but only because the grader's 80-minute deadline came first: 30 of 37 instances run, all at 1.0; the 7 not run (vehicle service handling, the clock, the plan, both replays, the same start, the weather) scored 0. Self-test passed (133.5 s), import 4.99 s |
+| Starter, same set | **0.000000**: static and import gates pass (import 126.8 s), the boot gate fails as before |
+| Reference, the private set (49) | **0.706028**, the deadline again: 40 of 49 run, 39 at 1.0 and `traffic.intersection_watch/day-flow/03eaca08` at 0.8 (the collision at j_73, section 8); import 4.17 s |
+| Starter, the private set | **0.000000**: its import gate failed for the host (2,046 s against 600 s) |
+| Ten replays of each replay playtest | `world.replay/car-and-ragdoll`: **1** hash over 10 runs (535 frames, 0 errors); `world.replay/two-paces`: **1** hash over 10 runs (78 frames, 0 errors) |
+| Density, six minutes at j_34 by day (variations 12, 31, 57) | every minute 18.0-21.0 moving vehicles (band 10-30) and 40-43 people (band 20-60) |
+
+The deadline cut is the Mac's memory, not the game: the release grader runs on its own machine.
+For the final runs the acceptance tool passes the grader a longer deadline (`--deadline-s`, `1603ec7`),
+so every instance runs here.
 
 FILL-ACCEPTANCE
 
