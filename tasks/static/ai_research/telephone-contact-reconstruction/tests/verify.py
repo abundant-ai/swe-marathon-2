@@ -16,6 +16,7 @@ import sys
 import tempfile
 import time
 import zipfile
+import zlib
 from pathlib import Path
 
 import numpy as np
@@ -130,6 +131,7 @@ def bounded_arrays(blob, names):
         EOFError,
         KeyError,
         zipfile.BadZipFile,
+        zlib.error,
         RuntimeError,
         NotImplementedError,
     ) as exc:
@@ -309,6 +311,18 @@ def rebuild(source, names):
         )
 
 
+def mesh_digest(arrays):
+    """Fingerprint the exact numerical arrays independent of NPZ compression and timestamps."""
+    digest = hashlib.sha256()
+    for name, value in sorted(arrays.items()):
+        array = np.ascontiguousarray(value)
+        header = json.dumps([name, array.dtype.str, array.shape]).encode()
+        digest.update(len(header).to_bytes(4, "big"))
+        digest.update(header)
+        digest.update(array.tobytes())
+    return digest.hexdigest()
+
+
 def commit_text(name, value):
     tmp = OUTPUT / (name + ".new")
     tmp.write_text(value)
@@ -357,12 +371,16 @@ def evaluate():
         digest = hashlib.sha256(source).hexdigest()
         try:
             receipt = json.loads(regular_bytes(WORK / "test_receipt.json", 65536))
-        except (CandidateError, ValueError):
+        except (CandidateError, ValueError, RecursionError):
             receipt = {}
-        matches = isinstance(receipt, dict) and receipt.get("source_sha256") == digest
-        source_evidence = {"source_sha256": digest, "test_receipt_matches": matches}
+        source_evidence = {"source_sha256": digest, "test_receipt_matches": False}
         (OUTPUT / "submitted.py").write_bytes(source)
         artifact = rebuild(source, NAMES)
+        source_evidence["test_receipt_matches"] = (
+            isinstance(receipt, dict)
+            and receipt.get("source_sha256") == digest
+            and receipt.get("mesh_sha256") == mesh_digest(artifact)
+        )
         mesh = tuple(artifact[k] for k in NAMES)
         measured = score(mesh)
         reward = measured["reward"]

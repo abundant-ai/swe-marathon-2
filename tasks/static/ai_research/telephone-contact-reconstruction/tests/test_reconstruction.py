@@ -46,9 +46,9 @@ def test_final_source(context: VerificationContext) -> CheckResult:
     return CheckResult(
         "final_test",
         "passed" if valid else "failed",
-        "Final-source smoke receipt matched."
+        "Independent rebuild reproduced the source and mesh recorded in the rehearsal."
         if valid
-        else "No matching final-source smoke receipt.",
+        else "No rehearsal record matched the independently rebuilt geometry.",
         {},
     )
 

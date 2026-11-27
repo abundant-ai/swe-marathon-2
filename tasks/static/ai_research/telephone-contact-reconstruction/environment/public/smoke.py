@@ -13,6 +13,18 @@ def require(condition, message):
         raise ValueError(message)
 
 
+def mesh_digest(arrays):
+    """Fingerprint the exact numerical arrays independent of NPZ compression and timestamps."""
+    digest = hashlib.sha256()
+    for name, value in sorted(arrays.items()):
+        array = np.ascontiguousarray(value)
+        header = json.dumps([name, array.dtype.str, array.shape]).encode()
+        digest.update(len(header).to_bytes(4, "big"))
+        digest.update(header)
+        digest.update(array.tobytes())
+    return digest.hexdigest()
+
+
 def check(values, names):
     """Check geometry, labels, and the actual uncompressed numerical archive size."""
     require(
@@ -93,9 +105,15 @@ def check_fresh():
     import submission
 
     names = ("vertices", "faces", "colors", "face_ids", "part_ids")
-    details = check(submission.scene(), names)
+    values = submission.scene()
+    details = check(values, names)
+    fingerprint = mesh_digest(dict(zip(names, values, strict=True)))
     digest = hashlib.sha256(source).hexdigest()
-    receipt.write_text(json.dumps({"source_sha256": digest, "details": details}))
+    receipt.write_text(
+        json.dumps(
+            {"source_sha256": digest, "mesh_sha256": fingerprint, "details": details}
+        )
+    )
 
 
 if __name__ == "__main__":
@@ -107,5 +125,8 @@ if __name__ == "__main__":
         from clean_rebuild import run_clean
 
         work = Path(__file__).resolve().parent
-        inputs = json.loads((work / "public-inputs.json").read_text())
+        manifest = json.loads((work / "public-inputs.json").read_text())
+        inputs = manifest["required"] + [
+            name for name in manifest["optical"] if (work / name).is_file()
+        ]
         run_clean(work, inputs)

@@ -1,8 +1,26 @@
 # Telephone contact surfaces from a real desk video
 
-[Oddish model trials and baselines](https://www.oddish.app/experiments/6dc2a858)
+[Nine-model-trial qualification](https://www.oddish.app/experiments/0d2b3f69) · [Repaired reference and no-op](https://www.oddish.app/experiments/204d59c5)
+
+GPT-6.2-sol xhigh scored 0.00625, 0.02862 and 0.01374. DeepSeek V4.1 Flash and GLM-5.3 each scored zero in all three trials. These scores use matched RGB and task version 4. Version 7 changes only the reference solution. Run `python3 scripts/prepare_data.py --qualified-runtime dist/telephone-qualified` to restore its exact bytes. [Trial IDs and scores](checks/qualified-models.json) · [Pinned files](scripts/qualified-inventory.json)
 
 Given a handheld RGB recording, reconstruct the desk, the three objects on it, and four surfaces a robot could touch. The task returns an editable scene program. Its triangles carry colors, object IDs and functional part IDs. A handle that looks like a solid white disk, for example, fills an opening that a gripper needs to pass through. [Candidate brief](instruction.md)
+
+## November 27 QA revision
+
+The runtime reference now reconstructs the room from readable primitives, fits support planes and object surfaces from public RGB correspondences, recovers the handle and receiver from six keyframes, and uses seven additional video frames for multiview color. It subdivides surfaces where the photographs reveal missing color detail. Its 20,000-triangle mesh scored **0.5361 on Oddish** and **0.5371 locally** on the same four withheld exposures used for the original 0.5016 reference. Contact footprints rose from 0.5188 to 0.7688, parent depth F1 from 0.5291 to 0.5556, and whole-scene RGB and depth coverage from 0.5016 to 0.5361 on Oddish. The complete reference rebuild requires no previous trial mesh. A 612-triangle desk prior builds and scores zero in the swapped and blind controls. [Source builder](solution/oracle.py) · [QA decisions for all three image conditions](qa-review.md) · [Baseline experiment](https://www.oddish.app/experiments/9a9cd757) · [Hosted outcomes](checks/qa-hosted-baselines.json)
+
+Whole-scene coverage remains the limiting measurement. On 37 independently reserved background features in locally flat regions, public-view triangulation and the nearest registered depth sample differed by a median absolute 2.38 cm. This is comparable to the 3 cm parent-depth tolerance, but these data do not establish a ceiling on an RGB-only solution. Treat the telephone task as provisional for high-score reference qualification. Historical commands below involving reference.npz reproduce earlier releases. To stage the current version, run `python3 scripts/prepare_data.py --stage-runtime /tmp/telephone-revised` from this task directory. [Landmark study](checks/landmark-depth-audit.json)
+
+## November 27 oracle diagnosis
+
+The metric-contact pilot scores whichever requirement the reconstruction satisfies least well. The original Oddish oracle earned 0.8190 on the first visible contact and 0.7688 on contact outlines. The mug and telephone bodies were less accurate in depth. Across the complete room, 62.2% of measured pixels had depth within 5 cm and 53.6% also met the sRGB tolerance. The last held photograph had only 44.7% joint coverage. [Original pilot](https://www.oddish.app/experiments/9f168289)
+
+The public dense video ends at the first mapping keyframe. Seven exposures from the earlier video previously had as much weight apiece as the six keyframes spread across the later traverse. In a public leave-three-views-out test, fitting the mapping traverse after the dense-video pass improved mean color coverage from 81.7% to 83.0%. Its hosted reward rose to 0.54548. The body revision estimates depth from rectified RGB pairs with different baselines, fits the mug and telephone solids to their public silhouettes, and retains the exposed handle and handset traced in the photographs. Independent source and verifier inventories separate these oracle changes from candidate difficulty. [Appearance control](https://www.oddish.app/experiments/28544d12) · [Metric body reconstruction](https://www.oddish.app/experiments/e6714b6b) · [Reference code](solution/stereo_bodies.py)
+
+The final RGB-only oracle estimates color gain from matched unsaturated patches in the six public mapping exposures. The two brighter exposures had fitted channel gains about 24–28% above the first exposure. In the hosted run the overall score rose from **0.53611 to 0.55108**. Macro object-depth F1 rose from **0.55561 to 0.72918**. The tape, mug and telephone body scored 0.70143, 0.66667 and 0.81945. Contact picking and outlines held at 0.81901 and 0.76875. Both telephone task variants reproduced their final rehearsal, and both no-ops scored zero. All 54 files outside the oracle matched across the contact-picking releases. Whole-room appearance and depth still limit the reward. [Final Oddish verification](https://www.oddish.app/experiments/204d59c5) · [Per-version scores and package hashes](checks/oracle-repair.json)
+
+The four held RGB-D exposures also give an independent repeatability check. On directed overlapping rays with positive, locally smooth target depth, 91.7% agreed within 5 cm and 66.6% agreed on both depth and raw sRGB, averaged equally over the twelve ordered view pairs. This samples only overlap and includes nearest-pixel resampling, visibility and exposure changes. It cannot establish a maximum reward for a single mesh. The oracle fits only public images. [Measurement procedure](checks/contact_view_repeatability.py) · [Measured results](checks/oracle-repair.json)
 
 ## Inputs and deliverable
 
@@ -140,3 +158,21 @@ A separate audit retrieved the candidate brief and every environment file direct
 ### 2026-11-27
 
 Checked the native Oddish completion record for all 15 model runs on this scene. Every agent reached its answer, every numerical reward was valid, and the runner recorded no execution exception. This check covers provider and agent termination independently of the mesh and public-test checks. [Native completion records](checks/native-model-completion.json)
+
+## QA re-review, November 27
+
+Harbor reviewed the matched task with author evidence at the trial-backed stage. The version 2 input inventory has SHA-256 `b06ecd7f34bd7c13ef2f6f52882dbd409c33599562265a01099465726945c79e`. The rubric has SHA-256 `5fcba0cf139695f1ed5390085b37ed71d64023ea2ae6c44d340dea7e7e31db70`. All five ratings below adopt the structured review. The upload following the review documents byte rounding and all worker limits, uses the typed reference entry point and classifies ordinary decompression and receipt errors. The outline and depth evidence does not establish grasp clearance, cord exclusion or handset separation in unobserved space. [Harbor report](https://www.oddish.app/tasks/swe-m2_ai-research_telephone-contact-reconstruction-evidence-qa-review-3a2152a6?trial=swe-m2_ai-research_telephone-contact-reconstruction-evidence-qa-review-3a2152a6-1&file=artifacts%2Fapp%2Fcheck-result.json) · [Reference and no-op runs](https://www.oddish.app/experiments/9a9cd757)
+
+| Dimension | Score | Confidence | Evidence and limitations |
+|---|---:|---|---|
+| Novelty | 3/5 | Medium | Joint contact labels and room appearance add requirements to metric scene reconstruction. The comparison set is too small to support a priority claim. |
+| Verifiability | 3/5 | High | Four withheld RGB and depth views score contact outline, parent depth and whole-scene color. Eight measured handle rays give limited evidence of clearance. |
+| Realism | 4/5 | High | Real handheld footage and calibration support an editable metric scene. The experiment contains one desk and no robot-side measurements. |
+| Difficulty | 4/5 | High | Nine matched submissions from three models built on the earlier release. Errors in depth and contact identity persisted even with recognizable silhouettes. A multi-day workload has not been demonstrated. |
+| Initial feasibility | 4/5 | Medium | Public contours and cross-view feature triangulation yield a runnable partial reference. Its held-out whole-scene score of 0.5361 and centimeter-scale registration uncertainty limit precision claims. |
+
+These ratings apply to a short research pilot. The review found no evidence for five days of useful agent work. Independent rehearsal verifies reproducibility. Only runner evidence can show which commands the agent actually issued.
+
+On Oddish version 4 the matched reference scored 0.5361. Both image-control references completed with a reproduced rehearsal and scored zero on the fixed target. All three no-op runs scored zero. [Versioned trial records](checks/qa-hosted-baselines.json)
+
+The remaining room error is mostly geometry. In an independent local render, 30.8% of measured rays hit a surface more than 5 cm behind the recorded depth, 6.7% hit a surface too close and 7.3% passed depth but missed the color tolerance. Every measured ray hit a triangle. Among background pixels the too-far fraction was 31.6%. The percentages average the four views equally. [Reproduce the error breakdown](checks/room_error_budget.py) · [Measurements](checks/oracle-repair.json)

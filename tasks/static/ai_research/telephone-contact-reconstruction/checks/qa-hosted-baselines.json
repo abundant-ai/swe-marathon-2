@@ -1,0 +1,138 @@
+{
+  "experiment": "https://www.oddish.app/experiments/9a9cd757",
+  "trials": [
+    {
+      "trial": "swe-m2_ai-research_telephone-contact-reconstruction-qa-correct-c51c7bb1-1",
+      "version": "swe-m2_ai-research_telephone-contact-reconstruction-qa-correct-c51c7bb1-v1",
+      "agent": "oracle",
+      "build": "valid",
+      "reward": 0.5361142082047848,
+      "rehearsal_reproduced": true,
+      "part": 0.76875,
+      "parent": 0.5556082377245647,
+      "colored_scene": 0.5361142082047848
+    },
+    {
+      "trial": "swe-m2_ai-research_telephone-contact-reconstruction-qa-correct-c51c7bb1-10",
+      "version": "swe-m2_ai-research_telephone-contact-reconstruction-qa-correct-c51c7bb1-v4",
+      "agent": "oracle",
+      "build": "valid",
+      "reward": 0.5361142082047848,
+      "rehearsal_reproduced": true,
+      "part": 0.76875,
+      "parent": 0.5556082377245647,
+      "colored_scene": 0.5361142082047848
+    },
+    {
+      "trial": "swe-m2_ai-research_telephone-contact-reconstruction-qa-correct-c51c7bb1-11",
+      "version": "swe-m2_ai-research_telephone-contact-reconstruction-qa-correct-c51c7bb1-v4",
+      "agent": "nop",
+      "build": "invalid",
+      "reward": 0.0,
+      "rehearsal_reproduced": false
+    },
+    {
+      "trial": "swe-m2_ai-research_telephone-contact-reconstruction-qa-correct-c51c7bb1-2",
+      "version": "swe-m2_ai-research_telephone-contact-reconstruction-qa-correct-c51c7bb1-v1",
+      "agent": "nop",
+      "build": "invalid",
+      "reward": 0.0,
+      "rehearsal_reproduced": false
+    },
+    {
+      "trial": "swe-m2_ai-research_telephone-contact-reconstruction-qa-correct-c51c7bb1-6",
+      "version": "swe-m2_ai-research_telephone-contact-reconstruction-qa-correct-c51c7bb1-v3",
+      "agent": "oracle",
+      "build": "valid",
+      "reward": 0.5361142082047848,
+      "rehearsal_reproduced": true,
+      "part": 0.76875,
+      "parent": 0.5556082377245647,
+      "colored_scene": 0.5361142082047848
+    },
+    {
+      "trial": "swe-m2_ai-research_telephone-contact-reconstruction-qa-correct-c51c7bb1-7",
+      "version": "swe-m2_ai-research_telephone-contact-reconstruction-qa-correct-c51c7bb1-v3",
+      "agent": "nop",
+      "build": "invalid",
+      "reward": 0.0,
+      "rehearsal_reproduced": false
+    },
+    {
+      "trial": "swe-m2_ai-research_telephone-contact-reconstruction-qa-none-15ef1cbf-1",
+      "version": "swe-m2_ai-research_telephone-contact-reconstruction-qa-none-15ef1cbf-v1",
+      "agent": "oracle",
+      "build": "valid",
+      "reward": 0.0,
+      "rehearsal_reproduced": true,
+      "part": 0.0,
+      "parent": 0.007182500816193275,
+      "colored_scene": 0.010272697555223344
+    },
+    {
+      "trial": "swe-m2_ai-research_telephone-contact-reconstruction-qa-none-15ef1cbf-2",
+      "version": "swe-m2_ai-research_telephone-contact-reconstruction-qa-none-15ef1cbf-v1",
+      "agent": "nop",
+      "build": "invalid",
+      "reward": 0.0,
+      "rehearsal_reproduced": false
+    },
+    {
+      "trial": "swe-m2_ai-research_telephone-contact-reconstruction-qa-none-15ef1cbf-7",
+      "version": "swe-m2_ai-research_telephone-contact-reconstruction-qa-none-15ef1cbf-v4",
+      "agent": "oracle",
+      "build": "valid",
+      "reward": 0.0,
+      "rehearsal_reproduced": true,
+      "part": 0.0,
+      "parent": 0.007182500816193275,
+      "colored_scene": 0.010272697555223344
+    },
+    {
+      "trial": "swe-m2_ai-research_telephone-contact-reconstruction-qa-none-15ef1cbf-8",
+      "version": "swe-m2_ai-research_telephone-contact-reconstruction-qa-none-15ef1cbf-v4",
+      "agent": "nop",
+      "build": "invalid",
+      "reward": 0.0,
+      "rehearsal_reproduced": false
+    },
+    {
+      "trial": "swe-m2_ai-research_telephone-contact-reconstruction-qa-swapped-7bcb8632-1",
+      "version": "swe-m2_ai-research_telephone-contact-reconstruction-qa-swapped-7bcb8632-v1",
+      "agent": "oracle",
+      "build": "valid",
+      "reward": 0.0,
+      "rehearsal_reproduced": true,
+      "part": 0.0,
+      "parent": 0.007182500816193275,
+      "colored_scene": 0.010272697555223344
+    },
+    {
+      "trial": "swe-m2_ai-research_telephone-contact-reconstruction-qa-swapped-7bcb8632-2",
+      "version": "swe-m2_ai-research_telephone-contact-reconstruction-qa-swapped-7bcb8632-v1",
+      "agent": "nop",
+      "build": "invalid",
+      "reward": 0.0,
+      "rehearsal_reproduced": false
+    },
+    {
+      "trial": "swe-m2_ai-research_telephone-contact-reconstruction-qa-swapped-7bcb8632-7",
+      "version": "swe-m2_ai-research_telephone-contact-reconstruction-qa-swapped-7bcb8632-v4",
+      "agent": "oracle",
+      "build": "valid",
+      "reward": 0.0,
+      "rehearsal_reproduced": true,
+      "part": 0.0,
+      "parent": 0.007182500816193275,
+      "colored_scene": 0.010272697555223344
+    },
+    {
+      "trial": "swe-m2_ai-research_telephone-contact-reconstruction-qa-swapped-7bcb8632-8",
+      "version": "swe-m2_ai-research_telephone-contact-reconstruction-qa-swapped-7bcb8632-v4",
+      "agent": "nop",
+      "build": "invalid",
+      "reward": 0.0,
+      "rehearsal_reproduced": false
+    }
+  ]
+}

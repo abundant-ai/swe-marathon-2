@@ -108,4 +108,4 @@ def run_clean(
         ):
             raise RuntimeError("Source changed during the clean test")
         receipt.write_text(json.dumps(result))
-        print("SMOKE_PASS", before, json.dumps(result["details"]))
+        print("SMOKE_PASS", json.dumps(result["details"]))

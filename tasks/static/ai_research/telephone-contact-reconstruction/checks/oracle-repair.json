@@ -1,0 +1,507 @@
+{
+  "task": "swe-m2_ai-research_telephone-contact-picking",
+  "candidate_and_verifier": {
+    "original": {
+      "files": 54,
+      "sha256": "ee5cffb5d7cae3712870813ecb2e502efe2ad76e851f9bf1b420f772719dccbb"
+    },
+    "appearance": {
+      "files": 54,
+      "sha256": "ee5cffb5d7cae3712870813ecb2e502efe2ad76e851f9bf1b420f772719dccbb"
+    },
+    "body": {
+      "files": 54,
+      "sha256": "ee5cffb5d7cae3712870813ecb2e502efe2ad76e851f9bf1b420f772719dccbb"
+    },
+    "calibrated": {
+      "files": 54,
+      "sha256": "ee5cffb5d7cae3712870813ecb2e502efe2ad76e851f9bf1b420f772719dccbb"
+    }
+  },
+  "versions": {
+    "original": {
+      "version": 1,
+      "experiment": "https://www.oddish.app/experiments/9f168289",
+      "oracle_id": "swe-m2_ai-research_telephone-contact-picking-a43d4ae4-1",
+      "nop_id": "swe-m2_ai-research_telephone-contact-picking-a43d4ae4-2",
+      "oracle": {
+        "reward": 0.5361142082047848,
+        "build": "valid",
+        "receipt_matches": true,
+        "source_sha256": "39bc4ec6a75e1a7dceb2075f841feb7dc106af428c260626a5bb98b9ce7ea83e",
+        "contact_f1": 0.8190110851528175,
+        "outline": 0.76875,
+        "body_depth": 0.5556082377245647,
+        "body_f1_by_id": {
+          "1": 0.7014297729184188,
+          "2": 0.489010989010989,
+          "3": 0.4763839512442864
+        },
+        "room_depth": 0.6216112739438424,
+        "room_rgb_depth": 0.5361142082047848,
+        "views": [
+          {
+            "depth_5cm_coverage": 0.588623534520191,
+            "rgbd_5cm_10percent_coverage": 0.547112462006079
+          },
+          {
+            "depth_5cm_coverage": 0.6078068348376148,
+            "rgbd_5cm_10percent_coverage": 0.5703155133842475
+          },
+          {
+            "depth_5cm_coverage": 0.6192131997000068,
+            "rgbd_5cm_10percent_coverage": 0.5801459057748688
+          },
+          {
+            "depth_5cm_coverage": 0.6708015267175572,
+            "rgbd_5cm_10percent_coverage": 0.44688295165394404
+          }
+        ]
+      },
+      "no_op": 0.0
+    },
+    "appearance": {
+      "version": 2,
+      "experiment": "https://www.oddish.app/experiments/28544d12",
+      "oracle_id": "swe-m2_ai-research_telephone-contact-picking-a43d4ae4-6",
+      "nop_id": "swe-m2_ai-research_telephone-contact-picking-a43d4ae4-7",
+      "oracle": {
+        "reward": 0.5454783564677248,
+        "build": "valid",
+        "receipt_matches": true,
+        "source_sha256": "c954ffcaf04e3f03db81f06dfe0317d5793db5b3bf3dfe311015b539fab25d2e",
+        "contact_f1": 0.8190110851528175,
+        "outline": 0.76875,
+        "body_depth": 0.5556082377245647,
+        "body_f1_by_id": {
+          "1": 0.7014297729184188,
+          "2": 0.489010989010989,
+          "3": 0.4763839512442864
+        },
+        "room_depth": 0.6216112739438424,
+        "room_rgb_depth": 0.5454783564677248,
+        "views": [
+          {
+            "depth_5cm_coverage": 0.588623534520191,
+            "rgbd_5cm_10percent_coverage": 0.5416413373860183
+          },
+          {
+            "depth_5cm_coverage": 0.6078068348376148,
+            "rgbd_5cm_10percent_coverage": 0.5741726452210136
+          },
+          {
+            "depth_5cm_coverage": 0.6192131997000068,
+            "rgbd_5cm_10percent_coverage": 0.5888729801595418
+          },
+          {
+            "depth_5cm_coverage": 0.6708015267175572,
+            "rgbd_5cm_10percent_coverage": 0.4772264631043257
+          }
+        ]
+      },
+      "no_op": 0.0
+    },
+    "body": {
+      "version": 3,
+      "experiment": "https://www.oddish.app/experiments/e6714b6b",
+      "oracle_id": "swe-m2_ai-research_telephone-contact-picking-a43d4ae4-12",
+      "nop_id": "swe-m2_ai-research_telephone-contact-picking-a43d4ae4-13",
+      "oracle": {
+        "reward": 0.5453723047284516,
+        "build": "valid",
+        "receipt_matches": true,
+        "source_sha256": "1d4e5b06fae7ed660e2e6999a8d4ce4b2dbec2598e6421ed1ea81ec7077a41bd",
+        "contact_f1": 0.8190110851528175,
+        "outline": 0.76875,
+        "body_depth": 0.7291826897254646,
+        "body_f1_by_id": {
+          "1": 0.7014297729184188,
+          "2": 0.6666666666666666,
+          "3": 0.8194516295913088
+        },
+        "room_depth": 0.6237360372974798,
+        "room_rgb_depth": 0.5453723047284516,
+        "views": [
+          {
+            "depth_5cm_coverage": 0.5914893617021276,
+            "rgbd_5cm_10percent_coverage": 0.5419887103777681
+          },
+          {
+            "depth_5cm_coverage": 0.6089639743886446,
+            "rgbd_5cm_10percent_coverage": 0.573324076216925
+          },
+          {
+            "depth_5cm_coverage": 0.6205086248039817,
+            "rgbd_5cm_10percent_coverage": 0.588122997204609
+          },
+          {
+            "depth_5cm_coverage": 0.6739821882951654,
+            "rgbd_5cm_10percent_coverage": 0.4780534351145038
+          }
+        ]
+      },
+      "no_op": 0.0
+    },
+    "calibrated": {
+      "version": 4,
+      "experiment": "https://www.oddish.app/experiments/204d59c5",
+      "oracle_id": "swe-m2_ai-research_telephone-contact-picking-a43d4ae4-18",
+      "nop_id": "swe-m2_ai-research_telephone-contact-picking-a43d4ae4-19",
+      "oracle": {
+        "reward": 0.5510752024639365,
+        "build": "valid",
+        "receipt_matches": true,
+        "source_sha256": "f2f7fa46e3519ead40ed685bf6fc1ad813e6ac3e8029a03f03e11e7938d694ca",
+        "contact_f1": 0.8190110851528175,
+        "outline": 0.76875,
+        "body_depth": 0.7291826897254646,
+        "body_f1_by_id": {
+          "1": 0.7014297729184188,
+          "2": 0.6666666666666666,
+          "3": 0.8194516295913088
+        },
+        "room_depth": 0.6237360372974798,
+        "room_rgb_depth": 0.5510752024639365,
+        "views": [
+          {
+            "depth_5cm_coverage": 0.5914893617021276,
+            "rgbd_5cm_10percent_coverage": 0.5400781589231437
+          },
+          {
+            "depth_5cm_coverage": 0.6089639743886446,
+            "rgbd_5cm_10percent_coverage": 0.574018359947543
+          },
+          {
+            "depth_5cm_coverage": 0.6205086248039817,
+            "rgbd_5cm_10percent_coverage": 0.5888047998909116
+          },
+          {
+            "depth_5cm_coverage": 0.6739821882951654,
+            "rgbd_5cm_10percent_coverage": 0.5013994910941476
+          }
+        ]
+      },
+      "no_op": 0.0
+    }
+  },
+  "development": {
+    "color_weighting": {
+      "selected": "traverse",
+      "scores": {
+        "uniform": [
+          0.8509375,
+          0.8710416666666667,
+          0.729375
+        ],
+        "mapping_priority": [
+          0.84015625,
+          0.8810416666666666,
+          0.7615104166666666
+        ],
+        "traverse": [
+          0.8294270833333334,
+          0.88046875,
+          0.7803645833333334
+        ]
+      }
+    },
+    "exposure_fit": {
+      "public": {
+        "equal": [
+          0.8261979166666666,
+          0.88140625,
+          0.79171875
+        ],
+        "exposure": [
+          0.8141666666666667,
+          0.8755208333333333,
+          0.8253645833333333
+        ]
+      },
+      "log_gains": [
+        [
+          -0.08837557413122465,
+          -0.09290053638478764,
+          -0.09578462928282457
+        ],
+        [
+          -0.07983960892520693,
+          -0.08128791543450793,
+          -0.0800661694326374
+        ],
+        [
+          -0.06235644837199673,
+          -0.06289588619412091,
+          -0.05632733478790422
+        ],
+        [
+          -0.05937368124522836,
+          -0.060791770749645306,
+          -0.05338444369785869
+        ],
+        [
+          0.15316416923002144,
+          0.15735930487565158,
+          0.15823742407088034
+        ],
+        [
+          0.13678114344363523,
+          0.1405168038874102,
+          0.1273251531303447
+        ]
+      ]
+    },
+    "clean_local": 0.551959387923379
+  },
+  "repeatability": {
+    "sample": "directed overlap, positive locally smooth target depth",
+    "pairs": [
+      {
+        "source": 0,
+        "target": 1,
+        "rays": 3815,
+        "within_5cm": 0.9771952817824378,
+        "joint": 0.8574049803407602,
+        "color_given_depth": 0.8774141630901288
+      },
+      {
+        "source": 0,
+        "target": 2,
+        "rays": 3870,
+        "within_5cm": 0.9320413436692506,
+        "joint": 0.7948320413436692,
+        "color_given_depth": 0.8527862489603548
+      },
+      {
+        "source": 0,
+        "target": 3,
+        "rays": 4796,
+        "within_5cm": 0.8150542118432027,
+        "joint": 0.2808590492076731,
+        "color_given_depth": 0.34458940905602453
+      },
+      {
+        "source": 1,
+        "target": 0,
+        "rays": 3717,
+        "within_5cm": 0.9410815173527038,
+        "joint": 0.8280871670702179,
+        "color_given_depth": 0.8799313893653516
+      },
+      {
+        "source": 1,
+        "target": 2,
+        "rays": 5287,
+        "within_5cm": 0.9848685454889351,
+        "joint": 0.9258558728957821,
+        "color_given_depth": 0.9400806606491262
+      },
+      {
+        "source": 1,
+        "target": 3,
+        "rays": 5780,
+        "within_5cm": 0.8737024221453287,
+        "joint": 0.5143598615916956,
+        "color_given_depth": 0.5887128712871287
+      },
+      {
+        "source": 2,
+        "target": 0,
+        "rays": 3824,
+        "within_5cm": 0.8716004184100419,
+        "joint": 0.7484309623430963,
+        "color_given_depth": 0.8586858685868587
+      },
+      {
+        "source": 2,
+        "target": 1,
+        "rays": 5201,
+        "within_5cm": 0.9532782157277446,
+        "joint": 0.887137089021342,
+        "color_given_depth": 0.9306171843485276
+      },
+      {
+        "source": 2,
+        "target": 3,
+        "rays": 7565,
+        "within_5cm": 0.9357567746199603,
+        "joint": 0.6756113681427627,
+        "color_given_depth": 0.7219946320101709
+      },
+      {
+        "source": 3,
+        "target": 0,
+        "rays": 4396,
+        "within_5cm": 0.839171974522293,
+        "joint": 0.2768425841674249,
+        "color_given_depth": 0.32989970181621037
+      },
+      {
+        "source": 3,
+        "target": 1,
+        "rays": 5671,
+        "within_5cm": 0.9088344207370834,
+        "joint": 0.511726326926468,
+        "color_given_depth": 0.563057819169577
+      },
+      {
+        "source": 3,
+        "target": 2,
+        "rays": 7717,
+        "within_5cm": 0.9755086173383439,
+        "joint": 0.6963846054166126,
+        "color_given_depth": 0.7138682252922423
+      }
+    ],
+    "mean_depth_5cm": 0.9173411453031104,
+    "mean_joint": 0.6664609923722921
+  },
+  "local_depth_error_budget": {
+    "basis": "Independent render of the repaired local mesh on four held views, averaging the measured-ray fractions equally across views.",
+    "views": [
+      {
+        "view": 0,
+        "group": "all",
+        "rays": 11515,
+        "no_triangle": 0.0,
+        "surface_too_near": 0.05340859748154581,
+        "surface_too_far": 0.36204950065132435,
+        "depth_correct_color_wrong": 0.051324359531046526,
+        "depth_and_color_correct": 0.5332175423360833
+      },
+      {
+        "view": 0,
+        "group": "background",
+        "rays": 10991,
+        "no_triangle": 0.0,
+        "surface_too_near": 0.054681102720407604,
+        "surface_too_far": 0.3743972341006278,
+        "depth_correct_color_wrong": 0.04631061777818224,
+        "depth_and_color_correct": 0.5246110454007824
+      },
+      {
+        "view": 0,
+        "group": "objects",
+        "rays": 524,
+        "no_triangle": 0.0,
+        "surface_too_near": 0.026717557251908396,
+        "surface_too_far": 0.10305343511450382,
+        "depth_correct_color_wrong": 0.1564885496183206,
+        "depth_and_color_correct": 0.7137404580152672
+      },
+      {
+        "view": 1,
+        "group": "all",
+        "rays": 12963,
+        "no_triangle": 0.0,
+        "surface_too_near": 0.09434544472730078,
+        "surface_too_far": 0.29329630486770036,
+        "depth_correct_color_wrong": 0.035022757077836864,
+        "depth_and_color_correct": 0.5773354933271619
+      },
+      {
+        "view": 1,
+        "group": "background",
+        "rays": 12490,
+        "no_triangle": 0.0,
+        "surface_too_near": 0.09583666933546837,
+        "surface_too_far": 0.30056044835868695,
+        "depth_correct_color_wrong": 0.031945556445156176,
+        "depth_and_color_correct": 0.5716573258606885
+      },
+      {
+        "view": 1,
+        "group": "objects",
+        "rays": 473,
+        "no_triangle": 0.0,
+        "surface_too_near": 0.05496828752642706,
+        "surface_too_far": 0.1014799154334038,
+        "depth_correct_color_wrong": 0.11627906976744184,
+        "depth_and_color_correct": 0.7272727272727273
+      },
+      {
+        "view": 2,
+        "group": "all",
+        "rays": 14667,
+        "no_triangle": 0.0,
+        "surface_too_near": 0.0717938228676621,
+        "surface_too_far": 0.30272039271834733,
+        "depth_correct_color_wrong": 0.03163564464443991,
+        "depth_and_color_correct": 0.5938501397695507
+      },
+      {
+        "view": 2,
+        "group": "background",
+        "rays": 14191,
+        "no_triangle": 0.0,
+        "surface_too_near": 0.07356775421041505,
+        "surface_too_far": 0.30892819392572757,
+        "depth_correct_color_wrong": 0.02825734620534137,
+        "depth_and_color_correct": 0.589246705658516
+      },
+      {
+        "view": 2,
+        "group": "objects",
+        "rays": 476,
+        "no_triangle": 0.0,
+        "surface_too_near": 0.018907563025210083,
+        "surface_too_far": 0.11764705882352941,
+        "depth_correct_color_wrong": 0.13235294117647067,
+        "depth_and_color_correct": 0.7310924369747899
+      },
+      {
+        "view": 3,
+        "group": "all",
+        "rays": 15720,
+        "no_triangle": 0.0,
+        "surface_too_near": 0.04955470737913486,
+        "surface_too_far": 0.27436386768447835,
+        "depth_correct_color_wrong": 0.17277353689567432,
+        "depth_and_color_correct": 0.5033078880407125
+      },
+      {
+        "view": 3,
+        "group": "background",
+        "rays": 15110,
+        "no_triangle": 0.0,
+        "surface_too_near": 0.05056254136333554,
+        "surface_too_far": 0.28186631369953674,
+        "depth_correct_color_wrong": 0.1620780939774984,
+        "depth_and_color_correct": 0.5054930509596294
+      },
+      {
+        "view": 3,
+        "group": "objects",
+        "rays": 610,
+        "no_triangle": 0.0,
+        "surface_too_near": 0.02459016393442623,
+        "surface_too_far": 0.08852459016393442,
+        "depth_correct_color_wrong": 0.4377049180327868,
+        "depth_and_color_correct": 0.4491803278688525
+      }
+    ],
+    "macro": {
+      "all": {
+        "no_triangle": 0.0,
+        "surface_too_near": 0.06727564311391089,
+        "surface_too_far": 0.3081075164804626,
+        "depth_correct_color_wrong": 0.0726890745372494,
+        "depth_and_color_correct": 0.5519277658683771
+      },
+      "background": {
+        "no_triangle": 0.0,
+        "surface_too_near": 0.06866201690740664,
+        "surface_too_far": 0.3164380475211448,
+        "depth_correct_color_wrong": 0.06714790360154455,
+        "depth_and_color_correct": 0.5477520319699041
+      },
+      "objects": {
+        "no_triangle": 0.0,
+        "surface_too_near": 0.03129589293449295,
+        "surface_too_far": 0.10267624988384286,
+        "depth_correct_color_wrong": 0.210706369648755,
+        "depth_and_color_correct": 0.6553214875329093
+      }
+    }
+  }
+}

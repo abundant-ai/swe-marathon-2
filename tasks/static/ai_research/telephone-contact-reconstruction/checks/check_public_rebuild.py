@@ -13,7 +13,8 @@ from clean_rebuild import run_clean
 
 
 def run_checks(public, launch=run_clean):
-    inputs = json.loads((public / "public-inputs.json").read_text())
+    manifest = json.loads((public / "public-inputs.json").read_text())
+    inputs = manifest["required"] + [name for name in manifest["optical"] if (public / name).is_file()]
     with tempfile.TemporaryDirectory() as folder, tempfile.NamedTemporaryFile() as old:
         work = Path(folder)
         for name in (*inputs, "smoke.py"):

@@ -36,10 +36,10 @@ gpus = 0
 schema_version = 1
 status = "rated"
 scale_max = 5
-stage = "implementation"
-rated_at = "2026-11-26T23:07:40Z"
-source_ref = "sha256:5f7e42bac4abd6c7af1758dd4b4ec263a7fd6091341e0b80abe88dc5a435f241"
-harbor_report = "https://www.oddish.app/tasks/swe-m2_ai-research_telephone-clean-publication-review-59ad214e?trial=swe-m2_ai-research_telephone-clean-publication-review-59ad214e-0&file=artifacts%2Fapp%2Fcheck-result.json"
+stage = "trial-backed"
+rated_at = "2026-11-27T06:07:48Z"
+source_ref = "sha256:b06ecd7f34bd7c13ef2f6f52882dbd409c33599562265a01099465726945c79e"
+harbor_report = "https://www.oddish.app/tasks/swe-m2_ai-research_telephone-contact-reconstruction-evidence-qa-review-3a2152a6?trial=swe-m2_ai-research_telephone-contact-reconstruction-evidence-qa-review-3a2152a6-1&file=artifacts%2Fapp%2Fcheck-result.json"
 rubric_sha256 = "5fcba0cf139695f1ed5390085b37ed71d64023ea2ae6c44d340dea7e7e31db70"
 
 [metadata.task_rating.scores]

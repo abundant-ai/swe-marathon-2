@@ -1,0 +1,89 @@
+{
+  "experiment": "https://www.oddish.app/experiments/0d2b3f69",
+  "graded_task_version": 4,
+  "repaired_reference_version": 7,
+  "unchanged_non_solution_files": 52,
+  "runs": [
+    {
+      "id": "swe-m2_ai-research_telephone-contact-reconstruction-qa-correct-c51c7bb1-13",
+      "model": "openai/gpt-6.2-sol",
+      "reasoning_effort": "xhigh",
+      "reward": 0.00625,
+      "build": "valid",
+      "test_receipt_matches": true,
+      "source_sha256": "35e93d183358bfa915f2ee21028923cac77a14af2b2005dd4172cb23c72364a4"
+    },
+    {
+      "id": "swe-m2_ai-research_telephone-contact-reconstruction-qa-correct-c51c7bb1-16",
+      "model": "openai/gpt-6.2-sol",
+      "reasoning_effort": "xhigh",
+      "reward": 0.028619164,
+      "build": "valid",
+      "test_receipt_matches": true,
+      "source_sha256": "4a8481d0536abfc8803f3e747b61a27104ced355497e2477ed07a27c58f4d4a1"
+    },
+    {
+      "id": "swe-m2_ai-research_telephone-contact-reconstruction-qa-correct-c51c7bb1-15",
+      "model": "openai/gpt-6.2-sol",
+      "reasoning_effort": "xhigh",
+      "reward": 0.01373997,
+      "build": "valid",
+      "test_receipt_matches": true,
+      "source_sha256": "0198bd1421c3ab6e76ef2324e9a3857e4a90a585af7c18f1859835978a2b068a"
+    },
+    {
+      "id": "swe-m2_ai-research_telephone-contact-reconstruction-qa-correct-c51c7bb1-19",
+      "model": "relace/deepseek-v4.1-flash",
+      "reasoning_effort": null,
+      "reward": 0.0,
+      "build": "valid",
+      "test_receipt_matches": true,
+      "source_sha256": "311236276180bd52cae7593296f922e257325a1caba74b950fe775867ce16db1"
+    },
+    {
+      "id": "swe-m2_ai-research_telephone-contact-reconstruction-qa-correct-c51c7bb1-22",
+      "model": "relace/glm-5.3",
+      "reasoning_effort": null,
+      "reward": 0.0,
+      "build": "valid",
+      "test_receipt_matches": true,
+      "source_sha256": "3753be2d73f47b70f9819950021c2ba8e69130269f883a209e1ea4d959151fed"
+    },
+    {
+      "id": "swe-m2_ai-research_telephone-contact-reconstruction-qa-correct-c51c7bb1-21",
+      "model": "relace/deepseek-v4.1-flash",
+      "reasoning_effort": null,
+      "reward": 0.0,
+      "build": "valid",
+      "test_receipt_matches": true,
+      "source_sha256": "5d2b552d19b1ef95b239e77ff5e68f8a0fa82258f9502387dfc0db2b74eeabfd"
+    },
+    {
+      "id": "swe-m2_ai-research_telephone-contact-reconstruction-qa-correct-c51c7bb1-20",
+      "model": "relace/deepseek-v4.1-flash",
+      "reasoning_effort": null,
+      "reward": 0.0,
+      "build": "valid",
+      "test_receipt_matches": true,
+      "source_sha256": "9bb06633cac8df29055387b5ede095880f9663d7b3d4aa378fb92e1356e8a6c1"
+    },
+    {
+      "id": "swe-m2_ai-research_telephone-contact-reconstruction-qa-correct-c51c7bb1-24",
+      "model": "relace/glm-5.3",
+      "reasoning_effort": null,
+      "reward": 0.0,
+      "build": "valid",
+      "test_receipt_matches": true,
+      "source_sha256": "91f31eefb60fa70dcede8968a1cb9aa67451605deebbf9f40aec78ad71c29470"
+    },
+    {
+      "id": "swe-m2_ai-research_telephone-contact-reconstruction-qa-correct-c51c7bb1-23",
+      "model": "relace/glm-5.3",
+      "reasoning_effort": null,
+      "reward": 0.0,
+      "build": "valid",
+      "test_receipt_matches": true,
+      "source_sha256": "cfef4833da59c9321795833cdba465731f7f3aec09438ea9cb4862008cff2673"
+    }
+  ]
+}

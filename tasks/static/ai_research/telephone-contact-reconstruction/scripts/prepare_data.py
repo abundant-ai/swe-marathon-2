@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import json
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -11,18 +12,21 @@ TASK = "swe-m2_ai-research_telephone-contact-reconstruction-correct-10b5125a"
 MAINTAINED_TASK = "swe-m2_ai-research_telephone-contact-reconstruction-release-e8e06a9c"
 CLEAN_TASK = "swe-m2_ai-research_telephone-contact-reconstruction-clean-d662f1f9"
 SNAPSHOTS = {
-    "original": (TASK, "runtime-inventory.json"),
-    "maintained": (MAINTAINED_TASK, "maintained-inventory.json"),
-    "clean": (CLEAN_TASK, "clean-inventory.json"),
+    "qualified": (
+        "swe-m2_ai-research_telephone-contact-reconstruction-qa-correct-c51c7bb1",
+        "qualified-inventory.json",
+        7,
+    ),
+    "original": (TASK, "runtime-inventory.json", 1),
+    "maintained": (MAINTAINED_TASK, "maintained-inventory.json", 1),
+    "clean": (CLEAN_TASK, "clean-inventory.json", 1),
 }
-VERSION = 1
 HERE = Path(__file__).resolve().parent
 EXECUTABLES = {"environment/public/python", "tests/test.sh", "solution/solve.sh"}
 GENERATED = {
     "environment/public/observation.png",
     "environment/public/frames.zip",
     "environment/public/clip.mp4",
-    "solution/reference.npz",
 }
 
 
@@ -48,7 +52,7 @@ def restore(
     Any mismatched local file raises. Downloaded bytes are checked in a temporary
     directory before publishing. Interrupted restores can resume in place.
     """
-    remote, inventory_name = SNAPSHOTS[snapshot]
+    remote, inventory_name, version = SNAPSHOTS[snapshot]
     all_files = json.loads((HERE / inventory_name).read_text())
     inventory = {
         name: sha
@@ -79,7 +83,7 @@ def restore(
         for name in missing:
             if bundle is None:
                 data = subprocess.check_output(
-                    ["oddish", "cat", remote, name, "--version", str(VERSION)]
+                    ["oddish", "cat", remote, name, "--version", str(version)]
                 )
             else:
                 data = (bundle / name).read_bytes()
@@ -98,6 +102,29 @@ def restore(
             except FileExistsError:
                 if digest(local) != inventory[name]:
                     raise ValueError(f"Concurrent modification: {local}") from None
+
+
+def stage_runtime(output: Path, bundle: Path | None) -> None:
+    """Stage executable sources and measured fixtures, excluding historical fitted meshes."""
+    source = HERE.parent
+    if output.exists():
+        raise FileExistsError(f"Choose a fresh runtime destination: {output}")
+    restore(source, bundle, False)
+    names = set(json.loads((HERE / "clean-inventory.json").read_text()))
+    names = {name for name in names if not name.startswith("solution/")}
+    names.update(
+        str(p.relative_to(source))
+        for p in (source / "solution").iterdir()
+        if p.is_file() and p.suffix in {".py", ".sh", ".c", ".json"}
+    )
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=output.parent) as tmp:
+        staged = Path(tmp) / "runtime"
+        for name in sorted(names):
+            dest = staged / name
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source / name, dest)
+        staged.rename(output)
 
 
 if __name__ == "__main__":
@@ -125,7 +152,23 @@ if __name__ == "__main__":
         type=Path,
         help="Restore the final public clean-rebuild baseline package here",
     )
+    dest.add_argument(
+        "--stage-runtime",
+        type=Path,
+        help="Stage the current RGB-only reference and executable task",
+    )
+    dest.add_argument(
+        "--qualified-runtime",
+        type=Path,
+        help="Restore the qualified task with its repaired RGB-only oracle",
+    )
     args = parser.parse_args()
+    if args.qualified_runtime:
+        restore(args.qualified_runtime, args.bundle, True, snapshot="qualified")
+        raise SystemExit(0)
+    if args.stage_runtime is not None:
+        stage_runtime(args.stage_runtime, args.bundle)
+        raise SystemExit(0)
     snapshot = (
         "clean"
         if args.clean_runtime
