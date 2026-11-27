@@ -112,7 +112,7 @@ with the documentation and the solution.
 | Claims re-checked against primary evidence | 2026-11-26 | `notes/VALIDITY.md` |
 | Determinism 3+1, stub filter and netting, mutants, oracle, amd64 sample | 2026-11-27 | 0 of 3,910 unstable; 2,388 kept; 11 stubs net 0; M-gate 0.75 (gate family only); oracle 3,910/3,910; amd64 200/200 (`notes/PHASE-B-REPORT.md`) |
 | Specification accuracy | 2026-11-27 | 16 chapters, 14,964 words; three independent reviews of every chapter against the tag, all findings fixed (harbor-lh `ops/swe-marathon-v2/qa/weave/`) |
-| First build milestone (agent and verifier images, reference 1.0, empty 0) | 2026-11-27 | pending: the images are queued behind the shared memory gate |
+| First build milestone (agent and verifier images, reference 1.0, empty 0) | 2026-11-27 | reached: agent image builds the original from the pinned tag; verifier gives the upstream solution 1.0 and an empty submission 0; core-dump route refused (`notes/PHASE-B-REPORT.md`) |
 | `harbor check` | none | not run |
 
 ## Remaining work
