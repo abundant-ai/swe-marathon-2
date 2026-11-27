@@ -12069,7 +12069,9 @@
     "nearmiss": null,
     "semantic": false,
     "mutant": null,
-    "unchecked": false
+    "unchecked": false,
+    "min_cases": 2,
+    "min_cases_why": "The flag has two spellings, `--version` and `-V`, and one answer; a third invocation would grade argument-parser behaviour the 1.2.0 build's help does not state."
   },
   {
     "id": "feat:12:help-flag",

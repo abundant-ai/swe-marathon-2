@@ -236,7 +236,10 @@ def main() -> int:
             n, need = len(errors | mutated), 1
             evidence = "mutant" if mutated else ("error" if errors else "none")
         elif kind == "feature":
-            n, need = (len(mutated), 3) if mutated else (len(use), 3)
+            need = f.get("min_cases", 3)  # fewer only with a recorded reason
+            if need < 3 and not f.get("min_cases_why"):
+                raise SystemExit(f"{fid}: min_cases without min_cases_why")
+            n = len(mutated) if mutated else len(use)
             evidence = "mutant" if mutated else ("use" if use else "none")
         else:
             n, need, evidence = len(use | errors), 0, "out of scope"

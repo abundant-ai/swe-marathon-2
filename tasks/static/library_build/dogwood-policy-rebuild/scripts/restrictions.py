@@ -688,6 +688,71 @@ TEMPLATES: dict[str, tuple[tuple[str, ...], dict[str, str]]] = {
             f"({LOGIN_ANCHOR} && tp($t))) }};\n\n" + alert("logins(@W@)")
         },
     ),
+    "restr:03:field-names-unique": (
+        ("validate", "lower"),
+        {
+            "policy.dw": alert(f"formerly within @W@ {LOGIN_ANCHOR}"),
+            "event.dwschema": events("    requestId: String,\n"),
+        },
+    ),
+    "restr:03:selector-misuse-spread": (
+        ("validate", "lower"),
+        {
+            "policy.dw": alert(f"formerly within @W@ {LOGIN_ANCHOR}"),
+            "event.dwschema": events("    ...principalType(A),\n"),
+        },
+    ),
+    "restr:03:spread-group-unique": (
+        ("validate", "lower"),
+        {
+            "policy.dw": alert(f"formerly within @W@ {LOGIN_ANCHOR}"),
+            "event.dwschema": events("    input: String,\n"),
+        },
+    ),
+    "restr:03:value-needs-pin": (
+        EVENT_CMDS,
+        {
+            "policy.dw": alert(f"formerly within @W@ {LOGIN_ANCHOR}"),
+            "event.dwschema": events("    origin@N@: String = context.input.server,\n"),
+        },
+    ),
+    "restr:04:arithmetic-atoms-long": (
+        VALIDATE,
+        {
+            "policy.dw": alert(
+                "exists (n: Long). (\n"
+                f"        (count for (t: Timepoint). where (formerly within @W@ ({LOGIN_ANCHOR} && tp(t)))) == n\n"
+                "        && n + context.input.server > @K@\n"
+                "    )"
+            )
+        },
+    ),
+    "restr:04:producer-before-consumer": (
+        PARSE,
+        {
+            "policy.dw": alert(
+                "exists (a: Long). (\n"
+                "        a > @N@\n"
+                '        && formerly within @W@ Ledger::Action::"Transfer"::request{ input.amount: a }\n'
+                "    )"
+            )
+        },
+    ),
+    "restr:04:tp-dependence": (
+        VALIDATE,
+        {
+            "policy.dw": alert(
+                f"formerly within @W@ {LOGIN_ANCHOR}\n    && context.input.level > @K@"
+            )
+        },
+    ),
+    "restr:06:reserved-names": (
+        PARSE,
+        {
+            "policy.dw": "def cedar count(?n) { ?n < @N@ };\n\n"
+            + policy("count(context.input.amount)")
+        },
+    ),
     # Providers (chapters 05, 08 and 10).
     "restr:05:enum-typo-caught": (
         VALIDATE,
@@ -899,7 +964,7 @@ FEATURES: dict[str, tuple[tuple[str, ...], dict[str, str]]] = {
         },
     ),
     "feat:02:has-reserved-words": (
-        ("check-parse", "lower", "explain"),
+        ("check-parse", "lower", "explain", "replay"),
         {"policy.dw": policy("context has output || context.input has if")},
     ),
     "feat:02:in-expression": (
@@ -1042,6 +1107,21 @@ FEATURES: dict[str, tuple[tuple[str, ...], dict[str, str]]] = {
                 '        && exists (x: String). formerly within @W@ Ledger::Action::"Login"::request{ input.user: x }\n'
                 "    )"
             )
+        },
+    ),
+    "feat:05:call-by-shape": (
+        ("check-parse", "lower", "validate"),
+        {
+            "policy.dw": policy("Risk::Other@K@(context.input.amount).score > @N@"),
+            "providers.json": providers(),
+        },
+    ),
+    "feat:06:policy-def-wins": (
+        ("check-parse", "replay", "lower"),
+        {
+            "macros.dw": "def cedar small(?n) { ?n < 10 };\n",
+            "policy.dw": "def cedar small(?n) { ?n < @N@ };\n\n"
+            + policy("small(context.input.amount)"),
         },
     ),
     "feat:09:call-checks": (
