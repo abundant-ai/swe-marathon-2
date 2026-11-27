@@ -7,9 +7,11 @@ non-zero and leaves no reward file.
 
 The output folder may be writable by every user, the build's and the runs' included, and a
 reward file there is read as the result. So the grader opens the folder once without following
-links, ends every process of both users before it writes, removes whatever the submission left
-under its output names, and creates each output fresh (no links followed, no file reused),
-writing the reward last.
+links and, before any build or run, closes it to everyone but its owner (its mode comes back at
+the end), so a reward the submission plants cannot outlive a grader that dies mid-run. It also
+ends every process of both users before it writes, removes whatever the submission left under
+its output names, and creates each output fresh (no links followed, no file reused), writing the
+reward last.
 """
 
 from __future__ import annotations
@@ -48,6 +50,17 @@ class Outputs:
     def __init__(self, path: Path) -> None:
         path.mkdir(parents=True, exist_ok=True)
         self.fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        self.mode = os.fstat(self.fd).st_mode & 0o7777
+        try:  # closed to the build's and the runs' users while they can act
+            os.fchmod(self.fd, 0o755)
+            self.closed = True
+        except OSError:
+            self.closed = False
+
+    def reopen(self) -> None:
+        """Give the folder back its own mode, once no process of the submission is left."""
+        if self.closed:
+            os.fchmod(self.fd, self.mode)
 
     def remove(self, names: tuple[str, ...]) -> None:
         for name in names:
@@ -162,13 +175,18 @@ def main() -> int:
         error = traceback.format_exc()
         settle(outputs)
         outputs.write("evaluation-error.txt", error)
+        outputs.reopen()
         return 1
     settle(outputs)
-    metrics = dict(result.metrics, adopts_orphans=adopts_orphans)
+    metrics = dict(
+        result.metrics,
+        adopts_orphans=adopts_orphans,
+        output_folder_closed=outputs.closed,
+    )
     outputs.write("metrics.json", json.dumps(metrics, indent=1, sort_keys=True))
-    outputs.write(
-        "reward.txt", f"{result.reward}\n"
-    )  # last: the reward exists only once all is done
+    # Last: the reward exists only once everything else is done.
+    outputs.write("reward.txt", f"{result.reward}\n")
+    outputs.reopen()
     return 0
 
 
