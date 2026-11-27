@@ -90,7 +90,7 @@ FORGE_RS = """// Writes a reward where the grader's outputs go, plants links und
 // leaves a process behind that keeps rewriting the reward. The build itself succeeds.
 use std::fs;
 use std::os::unix::fs::symlink;
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 fn main() {
     let dir = "/logs/verifier";
@@ -99,8 +99,12 @@ fn main() {
     let _ = fs::remove_file(format!("{dir}/metrics.json"));
     let _ = symlink("/tests/verify.py", format!("{dir}/metrics.json"));
     let _ = symlink("/tests/test.sh", format!("{dir}/evaluation-error.txt"));
+    // Detached from the build's output, so the build finishes and the program runs too.
     let _ = Command::new("setsid")
         .args(["sh", "-c", "while :; do echo 1.0 > /logs/verifier/reward.txt; sleep 0.1; done"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
         .spawn();
 }
 """
