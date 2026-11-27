@@ -359,12 +359,12 @@ def prepare_fixtures():
 
 
 def evaluate():
+    prepare_fixtures()
     sys.path.insert(0, str(TESTS))
     sys.path.insert(0, str(PRIVATE / "dense-telephone-parts"))
     from telephone_score import score
     from test_reconstruction import as_report
 
-    prepare_fixtures()
     source_evidence = {}
     try:
         source = regular_bytes(WORK / "submission.py", MAX_SOURCE)

@@ -1,0 +1,158 @@
+{
+  "old_task_version": 4,
+  "repaired_task_version": 5,
+  "experiment": "https://www.oddish.app/experiments/17a63c45",
+  "original_model_experiment": "https://www.oddish.app/experiments/9f168289",
+  "matched_private_files": 30,
+  "swapped_private_files": 30,
+  "no_image_private_files": 27,
+  "negative_checks": [
+    "dense-telephone-parts/telephone_score.py",
+    "dense-telephone-parts/raster.c"
+  ],
+  "regraded_numeric_artifacts": [
+    {
+      "trial": "swe-m2_ai-research_telephone-contact-picking-a43d4ae4-3",
+      "artifact_sha256": "1bcd73515f474c0113767b129f482b5396b758194329bdb1c2dd62e1f8d96300",
+      "reward": 0.0,
+      "contact_f1": 0.0,
+      "body_f1": 0.00908903620252092,
+      "part_outlines": 0.0875,
+      "room_rgbd": 0.0914523109385337
+    },
+    {
+      "trial": "swe-m2_ai-research_telephone-contact-picking-a43d4ae4-15",
+      "artifact_sha256": "20c51a3469742bce3cd0be5338dbeec03ad610fa1bcc026e5ec0355a26533f72",
+      "reward": 0.0288130472587466,
+      "contact_f1": 0.034188034188034185,
+      "body_f1": 0.0288130472587466,
+      "part_outlines": 0.06875,
+      "room_rgbd": 0.08736129106296553
+    },
+    {
+      "trial": "swe-m2_ai-research_telephone-contact-picking-a43d4ae4-16",
+      "artifact_sha256": "8146c3e76acb420cb0dc87f9cd276a115a294328c6f5c78e076842cec9db4211",
+      "reward": 0.039603960396039604,
+      "contact_f1": 0.039603960396039604,
+      "body_f1": 0.09130071600724347,
+      "part_outlines": 0.09375,
+      "room_rgbd": 0.0980849771398037
+    },
+    {
+      "trial": "swe-m2_ai-research_telephone-contact-picking-a43d4ae4-28",
+      "artifact_sha256": "0372f946b461573b8691c1aabd8be4c4f2bce9d07cb527b9223e3d7c4bfc2e16",
+      "reward": 0.0,
+      "contact_f1": 0.0,
+      "body_f1": 0.0,
+      "part_outlines": 0.0,
+      "room_rgbd": 0.003564181172156152
+    },
+    {
+      "trial": "swe-m2_ai-research_telephone-contact-picking-a43d4ae4-24",
+      "artifact_sha256": "e9b38fbd4e88af2bb2104e80fda1ad738e1601a8af4d2264139a6d9c02f8b33f",
+      "reward": 0.0,
+      "contact_f1": 0.0,
+      "body_f1": 0.0,
+      "part_outlines": 0.0,
+      "room_rgbd": 0.002968443672943403
+    },
+    {
+      "trial": "swe-m2_ai-research_telephone-contact-picking-a43d4ae4-25",
+      "artifact_sha256": "04361055837fc8809490bfd2c81946a1ebd53de02af3a8146850cd5de191ac06",
+      "reward": 0.0,
+      "contact_f1": 0.0,
+      "body_f1": 0.0,
+      "part_outlines": 0.0,
+      "room_rgbd": 0.001018363548167362
+    },
+    {
+      "trial": "swe-m2_ai-research_telephone-contact-picking-a43d4ae4-27",
+      "artifact_sha256": "dec530e5a1f6135b52010f4a86ed9b6d790389a1cf0b09a9520098238db2227a",
+      "reward": 0.0,
+      "contact_f1": 0.002505363277675263,
+      "body_f1": 0.005200462263312294,
+      "part_outlines": 0.0,
+      "room_rgbd": 0.119891844076582
+    },
+    {
+      "trial": "swe-m2_ai-research_telephone-contact-picking-a43d4ae4-26",
+      "artifact_sha256": "6a01dfe463a541e6c4a7b287538097e15de50ab77fc685332d2e43569eb84129",
+      "reward": 0.0,
+      "contact_f1": 0.0,
+      "body_f1": 0.0,
+      "part_outlines": 0.00625,
+      "room_rgbd": 0.02632876654302468
+    },
+    {
+      "trial": "swe-m2_ai-research_telephone-contact-picking-a43d4ae4-23",
+      "artifact_sha256": "7db071ce74fca2ffc46751fcf0a15b9399bd5d5be4a761f89d7cc170dd37fb47",
+      "reward": 0.0,
+      "contact_f1": 0.0,
+      "body_f1": 0.0,
+      "part_outlines": 0.0,
+      "room_rgbd": 0.0
+    }
+  ],
+  "hosted_baselines": [
+    {
+      "id": "swe-m2_ai-research_telephone-contact-picking-swapped-49f60bda-11",
+      "task_id": "swe-m2_ai-research_telephone-contact-picking-swapped-49f60bda",
+      "task_version": 2,
+      "agent": "nop",
+      "model": "nop_oracle",
+      "reasoning_effort": null,
+      "status": "success",
+      "reward": 0.0
+    },
+    {
+      "id": "swe-m2_ai-research_telephone-contact-picking-swapped-49f60bda-10",
+      "task_id": "swe-m2_ai-research_telephone-contact-picking-swapped-49f60bda",
+      "task_version": 2,
+      "agent": "oracle",
+      "model": "nop_oracle",
+      "reasoning_effort": null,
+      "status": "success",
+      "reward": 0.0
+    },
+    {
+      "id": "swe-m2_ai-research_telephone-contact-picking-a43d4ae4-31",
+      "task_id": "swe-m2_ai-research_telephone-contact-picking-a43d4ae4",
+      "task_version": 5,
+      "agent": "nop",
+      "model": "nop_oracle",
+      "reasoning_effort": null,
+      "status": "success",
+      "reward": 0.0
+    },
+    {
+      "id": "swe-m2_ai-research_telephone-contact-picking-a43d4ae4-30",
+      "task_id": "swe-m2_ai-research_telephone-contact-picking-a43d4ae4",
+      "task_version": 5,
+      "agent": "oracle",
+      "model": "nop_oracle",
+      "reasoning_effort": null,
+      "status": "success",
+      "reward": 0.551075202
+    },
+    {
+      "id": "swe-m2_ai-research_telephone-contact-picking-none-86976c62-8",
+      "task_id": "swe-m2_ai-research_telephone-contact-picking-none-86976c62",
+      "task_version": 2,
+      "agent": "oracle",
+      "model": "nop_oracle",
+      "reasoning_effort": null,
+      "status": "success",
+      "reward": 0.0
+    },
+    {
+      "id": "swe-m2_ai-research_telephone-contact-picking-none-86976c62-9",
+      "task_id": "swe-m2_ai-research_telephone-contact-picking-none-86976c62",
+      "task_version": 2,
+      "agent": "nop",
+      "model": "nop_oracle",
+      "reasoning_effort": null,
+      "status": "success",
+      "reward": 0.0
+    }
+  ]
+}

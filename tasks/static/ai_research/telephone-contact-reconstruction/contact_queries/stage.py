@@ -16,7 +16,10 @@ def stage(base, out):
     if out.exists():
         raise FileExistsError(out)
     inventory = json.loads((TASK / "scripts/qualified-inventory.json").read_text())
-    for name in ("instruction.md", "tests/verify.py", "environment/public/public-inputs.json"):
+    actual = {path.relative_to(base).as_posix() for path in base.rglob("*") if path.is_file()}
+    if actual != inventory.keys():
+        raise ValueError("Expected the complete qualified telephone runtime")
+    for name in inventory:
         if hashlib.sha256((base/name).read_bytes()).hexdigest() != inventory[name]:
             raise ValueError(f"Expected a qualified matched telephone package at {name}")
     shutil.copytree(base, out)
@@ -29,15 +32,13 @@ def stage(base, out):
     shutil.copy2(HERE / "test_reconstruction.py", out / "tests")
     (score / "contact-picking.enabled").touch()
     digests_path = out / "tests/fixture-digests.json"
-    digests = json.loads(digests_path.read_text())
-    for filename in (
-        "telephone_score.py",
-        "contact_queries.py",
-        "contact-picking.enabled",
-    ):
-        digests["dense-telephone-parts/" + filename] = hashlib.sha256(
-            (score / filename).read_bytes()
-        ).hexdigest()
+    private = out / "tests/private"
+    digests = {}
+    for path in sorted(private.rglob("*")):
+        if path.is_file():
+            with path.open("rb") as source:
+                digests[path.relative_to(private).as_posix()] = hashlib.file_digest(source, "sha256").hexdigest()
+    shutil.copy2(TASK / "tests/verify.py", out / "tests/verify.py")
     digests_path.write_text(json.dumps(digests, indent=2, sort_keys=True) + "\n")
     config = out / "task.toml"
     config.write_text(
