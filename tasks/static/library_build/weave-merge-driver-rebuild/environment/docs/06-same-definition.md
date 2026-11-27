@@ -84,7 +84,7 @@
   above 250,000 cells there is no fold. Between pairs, unmatched statements pair by the order-keeping
   matching of greatest total similarity over pairs of similarity `s` at least 0.4 (`s` is the larger
   Jaccard similarity, 1 for two empty sets, of the keys' identifier runs or of their non-space
-  character bigrams; a pair scores `trunc(s × 1,000,000)`; ties take a pair, then advance BASE;
+  character bigrams; a pair's value is `trunc(s × 1,000,000)`; ties take a pair, then advance BASE;
   above 20,000 cells nothing pairs). These pairs, and exact pairs whose bytes differ, are edits.
   Unpaired BASE statements are deleted; an unpaired side statement is inserted before BASE
   statement `g + k`: `g` the first BASE index of its stretch, `k` the number of pairs in it whose

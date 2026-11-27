@@ -105,7 +105,7 @@ the definitions `sem-core` extracts (chapter 3).
   The result may not count a name more often than the side that counts it most.
 - **[GATE-DANGLING]** A name of at least 3 characters that some input binds at file scope (an
   import, a top-level definition, or a top-level declaration line), that the result mentions in any
-  reference position (a call, an argument, a type argument, an operand), and that the result no
+  use position (a call, an argument, a type argument, an operand), and that the result no
   longer binds, makes the result dangling, unless one of the inputs also mentions the name without
   binding or declaring it.
 - **[GATE-REVIVED]** (Python and TypeScript import statements; Go import blocks are not read here.)
@@ -121,7 +121,7 @@ the definitions `sem-core` extracts (chapter 3).
 
 ## 12.8 The key backstop
 
-- **[GATE-12]** Every clean result that is neither OURS nor THEIRS byte for byte, whichever route
+- **[GATE-12]** Every clean result that differs from both OURS and THEIRS, whichever route
   wrote it, is also checked by [GATE-KEYS]. It runs after chapter 13, so a failure is final: one
   whole-file box ([GATE-5]), status 1. It is skipped when one of the four texts has a NUL byte
   among its first 8,192 bytes.
