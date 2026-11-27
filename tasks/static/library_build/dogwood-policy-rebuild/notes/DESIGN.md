@@ -13,7 +13,8 @@ Author notes, never shipped.
 - checked facts: [CLAIMS.md](CLAIMS.md);
 - the QA plan: [QA-PLAN.md](QA-PLAN.md);
 - the spike: [SPIKE-PLAN.md](SPIKE-PLAN.md);
-- what Phase B ran and measured: [PHASE-B-REPORT.md](PHASE-B-REPORT.md).
+- what Phase B ran and measured: [PHASE-B-REPORT.md](PHASE-B-REPORT.md);
+- what Phase C ran and measured: [PHASE-C-REPORT.md](PHASE-C-REPORT.md).
 
 ## 1. What the agent gets and what it delivers
 
@@ -60,7 +61,13 @@ The agent runs as `dev`, with no network and no `sudo`.
 - Only the recorded results reach the final stage, so the grading image never holds a `dogwood`
   build. A submission that wraps the build has nothing to call.
 - Because gold is recorded on the platform's own architecture, no arm64/x86_64 drift reaches the
-  scores.
+  scores. No answer holds a float or a libm result either: Cedar decimals are fixed-point, and
+  every provider decimal in the cases comes from `parse_decimal` of a string literal.
+- The program it records from is a file named `dogwood`, as a delivered build is installed:
+  the usage text names the file a program was started as.
+- A case without one answer over the three runs stops the image build. Selection keeps only
+  cases with one answer over six recorded runs, and drops every answer that names one member of
+  a cycle, which the build picks by hash order.
 
 **Private cases.**
 - The bundles and their command lines are in Git-ignored `tests/private/`.
@@ -88,6 +95,18 @@ near copies (word 5-grams, Jaccard 0.9 or more), are counted.
   ended (a process that left its group included) and counted in the metrics;
 - runs are in a fixed order hashed from the case ids, and the global deadline gives every case
   its full per-run limit, so it binds only a run that overruns;
+- the grader adopts orphans (`PR_SET_CHILD_SUBREAPER`), sweeps a user's processes until none is
+  left, and removes what a run or the build left in the shared writable folders, so runs share
+  nothing;
+- each run's folder stays root's; the built program must be a regular file inside the build
+  folder and is copied from an `O_NOFOLLOW` descriptor;
+- the output folder may be writable by every user, and `reward.json` there is read first: the
+  grader ends every process of `builder` and `nobody`, removes whatever stands under its output
+  names, creates each output fresh (`O_EXCL`, `O_NOFOLLOW`, relative to the folder's
+  descriptor), and writes the reward last, an evaluation error clearing the reward files too;
+- nothing a submission prints, builds or leaves running raises: output comparison falls back to
+  the printed text, a link loop is left out of the copy, and an unstartable program fails its
+  own cases;
 - the metrics list any delivered `.rs`/`.pest` file that is a copy of Dogwood's own source (by
   digests made in the release stage, as written and with whitespace removed). This is for
   review against the clean-room rule and does not change the reward: the oracle is upstream's
@@ -200,12 +219,27 @@ universal pin to `context.session` (slicing by session, not principal), and the 
 cases. M-global breaks the slicing shapes; the mirror-rule shapes need their own mutants (section
 3a's table and the Phase C report).
 
-**Sizing (estimates, to check against the first trials):**
-- **A frontier agent at the cap:** R 0.85, B 0.30, K 0.40, V 0.60, V-msg 0.30, L 0.70, M 0.60,
-  P 0.40, X 0.30, F 0.80 lands near **0.52**.
-- **A mid-tier agent:** R 0.50, B 0.10, K 0.15, V 0.30, V-msg 0.10, L 0.30, M 0.20, P 0.10, X 0.05,
-  F 0.50 lands near **0.25**.
-- **Bands:** frontier 0.40-0.60, mid-tier 0.10-0.35.
+**Sizing (estimates, to check against the first trials).** Phase B's estimate was 0.52 for the
+frontier and 0.25 for mid-tier. Phase C's case set is harder in four ways the estimate now counts:
+- selection keeps no unit a trivial program passes, and pairs every weak case with a case whose
+  answer is its own, so a unit needs both answers right;
+- V is accept/reject pairs on 64 near-miss kinds and the restriction templates;
+- K has eight dual shapes, not one, so getting slicing right but the mirror rule wrong fails
+  pairs;
+- V-msg compares error messages and spans exactly, and many of the template errors are not
+  quoted in the guide.
+
+The weights stay as section 3 lists them. Per family, as unit pass rates:
+
+| Agent | R | B-dedup | B-scope | K | V | V-msg | L | M | P | X | F | Weighted |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Frontier at the cap | 0.75 | 0.35 | 0.40 | 0.35 | 0.50 | 0.15 | 0.50 | 0.50 | 0.40 | 0.25 | 0.50 | **0.47** |
+| Mid-tier | 0.40 | 0.05 | 0.15 | 0.10 | 0.25 | 0.03 | 0.20 | 0.15 | 0.10 | 0.05 | 0.30 | **0.19** |
+
+- **Bands:** frontier 0.35-0.60, mid-tier 0.08-0.30, inside the owner's "difficult enough" target
+  (frontier at about 0.6 or less, mid-tier 0.1-0.4).
+- **What would move it:** the first trials' per-family rates. If the frontier tops 0.6, the fair
+  levers are the weights inside the stated rules (section 3a's table), never hidden rules.
 
 ## 4. Stub filters
 
@@ -231,6 +265,7 @@ the way a submission is. They must all score 0.
 | --- | --- |
 | nop | an empty directory (the build fails) |
 | silent, usual-status | print nothing; exit 0, or each command's most common status |
+| exit1, exit2 | print nothing and fail every command with 1 (or 2) |
 | accept, reject | `validate` prints the accept line, or a generic error |
 | deny, allow | `replay` prints DENY, or ALLOW with rule 0, for every request line |
 | cat | `format` prints its input |
@@ -245,7 +280,10 @@ lines), `flood` (prints without end on `--help`), `forkbomb` (forks without end 
 `--version`), `daemon` (leaves a detached process on `format`), `garbage` (prints JSON nested past
 a parser's depth, a rule list of mixed values, and empty or overlong rule numbers), `buildrs` (a
 build script that tries to read the private cases and the grader, write the reward, and leave a
-process behind) and `badexec` (a build that leaves an unrunnable file where the program belongs).
+process behind), `forge` (a build script and a program that write `reward.json` and `reward.txt`
+into the output folder, plant links under the other output names and leave a process rewriting
+the reward; graded with a world-writable output folder, as the platform may provide) and
+`badexec` (a build that leaves an unrunnable file where the program belongs).
 Each must leave the grader working: no evaluation error, a reward of 0, and its leftovers ended.
 Next to the zoo, the oracle is graded with odd files around it (a 5 GB sparse file in `target/`,
 20,000 small files, link loops, links outside and to a directory, a pipe, a socket; it must score
@@ -279,10 +317,10 @@ spike's 3+1 and 10-repeat recordings are in the Phase B report.
 
 ## 6. Expected score bands (estimates)
 
-| Who | Single step (1.2.0) |
+| Who | Single step (1.2.0), Phase C estimate |
 | --- | --- |
-| Frontier (Opus 5.5 / Fable 5.2 / GPT-6 Astra class) | 0.40-0.60 |
-| Mid-tier (DeepSeek v4.1 Flash, GLM 5.3) | 0.10-0.35 |
+| Frontier (Opus 5.5 / Fable 5.2 / GPT-6 Astra class) | about 0.47 (0.35-0.60) |
+| Mid-tier (DeepSeek v4.1 Flash, GLM 5.3) | about 0.19 (0.08-0.30) |
 
 **A working task shows:**
 - no full solve;

@@ -4,6 +4,16 @@
 > below as the task. The step-1 items (1.1.2 gold, the no-upgrade anchor, the step-boundary lens)
 > are parked with the two-step plan. Lens 19 becomes "the requester's world": does every graded
 > rule have its sentence in the shipped guide?
+>
+> **2026-11-27, Phase C:** every gate item below has been run locally on the final case set; the
+> item-by-item status, with its numbers, is section 10 of [PHASE-C-REPORT.md](PHASE-C-REPORT.md).
+> What changed against this plan:
+> - the inventory is `checks/features.json`, not `features.yaml`;
+> - the per-run limit is 1 s, not 5 s, and the grader's deadline is 1.25 s a case;
+> - the scripts are `checks/coverage.py` (items 1 and 2), `checks/stubs.py` with
+>   `checks/stub_estimate.py` (3), `checks/test_wording.py` (6) and `checks/leaks.py` (11); items 4,
+>   5 and 7-10 are run by the author's local job scripts, whose results the report records;
+> - the platform's two oracle and nop runs come with the first upload.
 
 
 Author notes, never shipped. This plans the checks that must pass before the first upload:
