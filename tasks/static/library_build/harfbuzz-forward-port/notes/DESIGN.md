@@ -259,61 +259,61 @@ builds itself: AAT/`kern` and flag behaviour that needs hand-built fonts, the Un
 characters, and bugs the note describes only by a symptom. 14 units are tier A, 23 tier B, 16 tier C (pass 16's
 14 tier-C units, plus 33 and 34, which the decision's "regenerated Unicode data" names).
 
-| Unit | Family | Window | Tier | Why | Predicted pass |
-| --- | --- | --- | --- | --- | --- |
-| 26 | F4 | A | C | AAT/kern or flag behaviour that needs fonts the agent builds | 0.46 |
-| 11 | F1 | A | A | the note names the fix | 0.89 |
-| 36 | F8 | A | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
-| 33 | F7 | A | C | needs regenerated Unicode 18 data and fonts covering the new characters | 0.60 |
-| 35 | F7 | A | A | the note names the fix | 0.89 |
-| 37 | F8 | A | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
-| 16 | F2 | A | C | the note gives a symptom; the cause has to be found without an oracle | 0.46 |
-| 19 | F3 | B | C | the note gives a symptom; the cause has to be found without an oracle | 0.46 |
-| 10a | F1 | B | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
-| 10b | F1 | B | C | the note gives a symptom; the cause has to be found without an oracle | 0.46 |
-| 25a | F4 | B | C | AAT/kern or flag behaviour that needs fonts the agent builds | 0.46 |
-| 25b | F4 | B | C | AAT/kern or flag behaviour that needs fonts the agent builds | 0.46 |
-| 25c | F4 | B | C | AAT/kern or flag behaviour that needs fonts the agent builds | 0.46 |
-| 31 | F6 | B | C | the note gives a symptom; the cause has to be found without an oracle | 0.46 |
-| 34 | F7 | B | C | needs regenerated Unicode 18 data and fonts covering the new characters | 0.50 |
-| 44a | F8 | B | A | the note names the fix | 0.89 |
-| 44b | F8 | B | A | the note names the fix | 0.89 |
-| 45 | F8 | B | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
-| 46 | F8 | B | A | the note names the fix | 0.89 |
-| 51 | F8 | B | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
-| 1 | F1 | C | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
-| 2 | F1 | C | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
-| 3 | F1 | C | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
-| 4 | F1 | C | A | the note names the fix | 0.89 |
-| 5 | F1 | C | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
-| 6 | F1 | C | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
-| 7 | F1 | C | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
-| 8 | F1 | C | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
-| 9 | F1 | C | C | the note gives a symptom; the cause has to be found without an oracle | 0.46 |
-| 12 | F2 | C | C | the note gives a symptom; the cause has to be found without an oracle | 0.46 |
-| 13 | F2 | C | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
-| 14 | F2 | C | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
-| 15 | F2 | C | A | the note names the fix | 0.89 |
-| 17 | F3 | C | C | the note gives a symptom; the cause has to be found without an oracle | 0.46 |
-| 18 | F3 | C | A | the note names the fix | 0.89 |
-| 20 | F4 | C | A | the note names the fix | 0.89 |
-| 21 | F4 | C | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
-| 22 | F4 | C | A | the note names the fix | 0.89 |
-| 23 | F4 | C | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
-| 24 | F4 | C | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
-| 27 | F5 | C | C | AAT/kern or flag behaviour that needs fonts the agent builds | 0.46 |
-| 29 | F5 | C | C | AAT/kern or flag behaviour that needs fonts the agent builds | 0.46 |
-| 38 | F8 | C | C | the note gives a symptom; the cause has to be found without an oracle | 0.46 |
-| 39 | F8 | C | A | the note names the fix | 0.89 |
-| 40a | F8 | C | A | the note names the fix | 0.89 |
-| 40b | F8 | C | A | the note names the fix | 0.89 |
-| 40c | F8 | C | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
-| 41 | F8 | C | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
-| 42 | F8 | C | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
-| 43 | F8 | C | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
-| 47b | F8 | C | A | the note names the fix | 0.89 |
-| 48 | F8 | C | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
-| 49 | F8 | C | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
+| Unit | Note | Family | Release | Tier | Why | Predicted pass |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | Indic init after a letter or mark in the pre-context | F1 | 15.2.0 | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
+| 2 | USE: no space as the base of a dependent vowel (candidate) | F1 | 15.2.0 | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
+| 3 | USE word boundaries for positional forms | F1 | 15.2.0 | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
+| 4 | Khmer: one Coeng Ro, first or second coeng only | F1 | 15.2.0 | A | the note names the fix | 0.89 |
+| 5 | Hangul tone mark at text start | F1 | 15.2.0 | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
+| 6 | dotted circles keep their advance without GDEF | F1 | 15.2.0 | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
+| 7 | vowel constraints across default ignorables | F1 | 15.2.0 | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
+| 8 | Hebrew composes with mark only under DFLT | F1 | 15.2.0 | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
+| 9 | Arabic stch tiles centred on short words and exact fits | F1 | 15.2.0 | C | the note gives a symptom; the cause has to be found without an oracle | 0.46 |
+| 10a | Arabic fallback: ligatures with a missing component | F1 | 15.1.0 | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
+| 10b | Arabic fallback: marks in legacy fonts (candidate) | F1 | 15.1.0 | C | the note gives a symptom; the cause has to be found without an oracle | 0.46 |
+| 11 | Arabic Windows-1256 fallback on all platforms | F1 | 15.0.0 | A | the note names the fix | 0.89 |
+| 12 | per-syllable lookups 15 syllables later (alternative fd5702517) | F2 | 15.2.0 | C | the note gives a symptom; the cause has to be found without an oracle | 0.46 |
+| 13 | precomposed characters in text with no marks | F2 | 15.2.0 | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
+| 14 | a global request overrides earlier ranged requests | F2 | 15.2.0 | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
+| 15 | missing character + variation selector: not-found glyph | F2 | 15.2.0 | A | the note names the fix | 0.89 |
+| 16 | out-of-range glyph ids (candidate) | F2 | 15.0.0 | C | the note gives a symptom; the cause has to be found without an oracle | 0.46 |
+| 17 | GPOS marks and an earlier base | F3 | 15.2.0 | C | the note gives a symptom; the cause has to be found without an oracle | 0.46 |
+| 18 | fallback mark positioning uses the base x offset | F3 | 15.2.0 | A | the note names the fix | 0.89 |
+| 19 | COLR extents and marks with empty layers | F3 | 15.1.0 | C | the note gives a symptom; the cause has to be found without an oracle | 0.46 |
+| 20 | cross-stream kern: reset value and axis scale | F4 | 15.2.0 | A | the note names the fix | 0.89 |
+| 21 | kern in vertical text when vkrn is requested | F4 | 15.2.0 | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
+| 22 | trak in vertical text | F4 | 15.2.0 | A | the note names the fix | 0.89 |
+| 23 | kerx with GPOS lacking a kerning feature | F4 | 15.2.0 | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
+| 24 | AAT: later feature request wins | F4 | 15.2.0 | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
+| 25a | kerx formats 1 and 2 | F4 | 15.1.0 | C | AAT/kern or flag behaviour that needs fonts the agent builds | 0.46 |
+| 25b | kerx format 4 mark positioning | F4 | 15.1.0 | C | AAT/kern or flag behaviour that needs fonts the agent builds | 0.46 |
+| 25c | kern and mort with a non-first initial state | F4 | 15.1.0 | C | AAT/kern or flag behaviour that needs fonts the agent builds | 0.46 |
+| 26 | AAT insertion at the end of the text | F4 | 15.0.0 | C | AAT/kern or flag behaviour that needs fonts the agent builds | 0.46 |
+| 27 | unsafe-to-break with cross-stream kerning | F5 | 15.2.0 | C | AAT/kern or flag behaviour that needs fonts the agent builds | 0.46 |
+| 29 | archaic trailing jamo flags (candidate) | F5 | 15.2.0 | C | AAT/kern or flag behaviour that needs fonts the agent builds | 0.46 |
+| 31 | gvar intermediate tuples | F6 | 15.1.0 | C | the note gives a symptom; the cause has to be found without an oracle | 0.46 |
+| 33 | Unicode 18.0 data and scripts | F7 | 15.0.0 | C | needs regenerated Unicode 18 data and fonts covering the new characters | 0.60 |
+| 34 | Indic shaping of the Unicode 18 additions | F7 | 15.1.0 | C | needs regenerated Unicode 18 data and fonts covering the new characters | 0.50 |
+| 35 | fonupa maps to UPPH | F7 | 15.0.0 | A | the note names the fix | 0.89 |
+| 36 | saturating positions and extents (the 2026-08-12 stack) | F8 | 15.0.0 | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
+| 37 | overflow fixes in extents scaling, slant and emboldening | F8 | 15.0.0 | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
+| 38 | extents round outward after scaling | F8 | 15.2.0 | C | the note gives a symptom; the cause has to be found without an oracle | 0.46 |
+| 39 | empty glyphs have zero extents | F8 | 15.2.0 | A | the note names the fix | 0.89 |
+| 40a | OS/2 optical size in points | F8 | 15.2.0 | A | the note names the fix | 0.89 |
+| 40b | slant includes synthetic slant | F8 | 15.2.0 | A | the note names the fix | 0.89 |
+| 40c | STAT values of older sibling fonts skipped | F8 | 15.2.0 | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
+| 41 | collect_unicodes and cmap format 13 | F8 | 15.2.0 | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
+| 42 | nested glyf components with anchor points | F8 | 15.2.0 | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
+| 43 | zero positions for items added after the first call | F8 | 15.2.0 | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
+| 44a | fallback vertical descender without vhea | F8 | 15.1.0 | A | the note names the fix | 0.89 |
+| 44b | hanging baseline fallback | F8 | 15.1.0 | A | the note names the fix | 0.89 |
+| 45 | collect_glyph_alternates garbage | F8 | 15.1.0 | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
+| 46 | hb_face_create_or_fail() named-instance bits | F8 | 15.1.0 | A | the note names the fix | 0.89 |
+| 47b | hb_font_set_face() does nothing | F8 | 15.2.0 | A | the note names the fix | 0.89 |
+| 48 | hb_font_create_without_funcs_or_fail() | F8 | 15.2.0 | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
+| 49 | hb_ot_layout_get_extender_glyphs() | F8 | 15.2.0 | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
+| 51 | deserialize2 functions | F8 | 15.1.0 | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
 
 **The proof mutant V** is 15.2.0 with every tier-C unit's change taken out (`scripts/pipeline/make_v.sh`, the
 patches in `patches-lib/ALLV`; commits that no longer revert cleanly on 15.2.0 are left in and listed). It must
