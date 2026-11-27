@@ -1,0 +1,227 @@
+diff -ruN a/src/OSspecific/POSIX/Make/files b/src/OSspecific/POSIX/Make/files
+--- a/src/OSspecific/POSIX/Make/files	2026-11-26 16:32:28
++++ b/src/OSspecific/POSIX/Make/files	2026-11-26 16:32:28
+@@ -1,4 +1,5 @@
+ POSIX.C
++hardened.C
+ 
+ cpuInfo/cpuInfo.C
+ cpuTime/cpuTimePosix.C
+diff -ruN a/src/OSspecific/POSIX/POSIX.C b/src/OSspecific/POSIX/POSIX.C
+--- a/src/OSspecific/POSIX/POSIX.C	2026-11-26 16:32:28
++++ b/src/OSspecific/POSIX/POSIX.C	2026-11-26 16:32:28
+@@ -156,6 +156,13 @@
+     }
+ #endif
+ 
++    // Hardened build: a program running with its installation's group (set-group-id) loads
++    // libraries only by name, from the system's library paths, never from a path the user names
++    if (::getegid() != ::getgid() && libName.find('/') != std::string::npos)
++    {
++        return nullptr;
++    }
++
+     // Regular loading
+     return ::dlopen(libName.c_str(), ldflags);
+ }
+diff -ruN a/src/OSspecific/POSIX/hardened.C b/src/OSspecific/POSIX/hardened.C
+--- a/src/OSspecific/POSIX/hardened.C	1969-12-31 19:00:00
++++ b/src/OSspecific/POSIX/hardened.C	2026-11-26 16:32:42
+@@ -0,0 +1,197 @@
++/*---------------------------------------------------------------------------*\
++Description
++    Hardened build. The installed programs run set-group-id: their group may
++    read the installed programs and libraries, which the user may not. A file
++    opened for reading in such a process is kept only if the user could read
++    it too: open() and fopen() and their variants are replaced here for every
++    program (libOpenFOAM comes before the C library), and the check is made on
++    the file actually opened. Without set-group-id nothing changes.
++
++\*---------------------------------------------------------------------------*/
++
++// The replacements are definitions of the C library's functions themselves
++#undef _FORTIFY_SOURCE
++
++#include <dlfcn.h>
++#include <errno.h>
++#include <fcntl.h>
++#include <stdarg.h>
++#include <stdio.h>
++#include <string.h>
++#include <sys/stat.h>
++#include <sys/syscall.h>
++#include <unistd.h>
++#include <vector>
++
++namespace
++{
++
++bool setGroupId()
++{
++    return ::getegid() != ::getgid();
++}
++
++// The user (real uid and groups) may read the file
++bool userMayRead(const struct stat& st)
++{
++    if (st.st_uid == ::getuid())
++    {
++        return st.st_mode & S_IRUSR;
++    }
++    bool inGroup = st.st_gid == ::getgid();
++    const int n = ::getgroups(0, nullptr);
++    if (!inGroup && n > 0)
++    {
++        std::vector<gid_t> groups(n);
++        const int m = ::getgroups(n, groups.data());
++        for (int i = 0; i < m && !inGroup; ++i)
++        {
++            inGroup = groups[i] == st.st_gid;
++        }
++    }
++    if (inGroup)
++    {
++        return st.st_mode & S_IRGRP;
++    }
++    return st.st_mode & S_IROTH;
++}
++
++int keepReadable(int fd, int flags)
++{
++    if (fd < 0 || (flags & O_ACCMODE) == O_WRONLY || !setGroupId())
++    {
++        return fd;
++    }
++    struct stat st;
++    if (::fstat(fd, &st) == 0 && userMayRead(st))
++    {
++        return fd;
++    }
++    ::close(fd);
++    errno = EACCES;
++    return -1;
++}
++
++FILE* keepReadable(FILE* file, const char* mode)
++{
++    const bool writeOnly = (mode[0] == 'w' || mode[0] == 'a') && !::strchr(mode, '+');
++    if (!file || writeOnly || !setGroupId())
++    {
++        return file;
++    }
++    struct stat st;
++    if (::fstat(::fileno(file), &st) == 0 && userMayRead(st))
++    {
++        return file;
++    }
++    ::fclose(file);
++    errno = EACCES;
++    return nullptr;
++}
++
++int openAt(int dir, const char* path, int flags, mode_t mode)
++{
++    return keepReadable(int(::syscall(SYS_openat, dir, path, flags, mode)), flags);
++}
++
++mode_t modeArg(int flags, va_list args)
++{
++    return (flags & O_CREAT) || (flags & O_TMPFILE) == O_TMPFILE ? mode_t(va_arg(args, int)) : 0;
++}
++
++template<class Fn>
++Fn next(const char* name)
++{
++    return reinterpret_cast<Fn>(::dlsym(RTLD_NEXT, name));
++}
++
++} // End anonymous namespace
++
++
++extern "C"
++{
++
++int open(const char* path, int flags, ...)
++{
++    va_list args;
++    va_start(args, flags);
++    const mode_t mode = modeArg(flags, args);
++    va_end(args);
++    return openAt(AT_FDCWD, path, flags, mode);
++}
++
++int open64(const char* path, int flags, ...)
++{
++    va_list args;
++    va_start(args, flags);
++    const mode_t mode = modeArg(flags, args);
++    va_end(args);
++    return openAt(AT_FDCWD, path, flags, mode);
++}
++
++int openat(int dir, const char* path, int flags, ...)
++{
++    va_list args;
++    va_start(args, flags);
++    const mode_t mode = modeArg(flags, args);
++    va_end(args);
++    return openAt(dir, path, flags, mode);
++}
++
++int openat64(int dir, const char* path, int flags, ...)
++{
++    va_list args;
++    va_start(args, flags);
++    const mode_t mode = modeArg(flags, args);
++    va_end(args);
++    return openAt(dir, path, flags, mode);
++}
++
++int __open_2(const char* path, int flags)
++{
++    return openAt(AT_FDCWD, path, flags, 0);
++}
++
++int __open64_2(const char* path, int flags)
++{
++    return openAt(AT_FDCWD, path, flags, 0);
++}
++
++int __openat_2(int dir, const char* path, int flags)
++{
++    return openAt(dir, path, flags, 0);
++}
++
++int __openat64_2(int dir, const char* path, int flags)
++{
++    return openAt(dir, path, flags, 0);
++}
++
++FILE* fopen(const char* path, const char* mode)
++{
++    static auto real = next<FILE* (*)(const char*, const char*)>("fopen");
++    return keepReadable(real(path, mode), mode);
++}
++
++FILE* fopen64(const char* path, const char* mode)
++{
++    static auto real = next<FILE* (*)(const char*, const char*)>("fopen64");
++    return keepReadable(real(path, mode), mode);
++}
++
++FILE* freopen(const char* path, const char* mode, FILE* file)
++{
++    static auto real = next<FILE* (*)(const char*, const char*, FILE*)>("freopen");
++    return keepReadable(real(path, mode, file), mode);
++}
++
++FILE* freopen64(const char* path, const char* mode, FILE* file)
++{
++    static auto real = next<FILE* (*)(const char*, const char*, FILE*)>("freopen64");
++    return keepReadable(real(path, mode, file), mode);
++}
++
++} // End extern "C"
++
++
++// ************************************************************************* //

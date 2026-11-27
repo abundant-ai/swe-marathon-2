@@ -8,8 +8,10 @@ from concurrent.futures import ProcessPoolExecutor
 from .. import recorded as R
 from ..contracts import CheckResult, Test, VerificationContext
 
-SLOWDOWN = 30  # the instruction allows about thirty times OpenFOAM's run time
-MIN_SECONDS = 10  # time to start any program
+SLOWDOWN = (
+    30  # a run may take thirty times as long as OpenFOAM's (stated in the instruction)
+)
+MIN_SECONDS = 10  # and at least ten seconds
 
 
 def time_limit(test: Test) -> float:

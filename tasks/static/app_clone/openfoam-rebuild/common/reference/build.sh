@@ -1,5 +1,5 @@
 #!/bin/bash
-# Builds the gold OpenFOAM from a staged source tree and installs only what its programs need
+# Builds the hardened OpenFOAM from a staged source tree and installs only what its programs need
 # at run time: programs, libraries, and the run-time data under etc/ and bin/tools.
 # Nothing else (sources, objects, lnInclude trees, build logs) leaves the build stage.
 # usage: build.sh <source tree> <install prefix> <jobs>
@@ -7,6 +7,13 @@ set -euo pipefail
 src=$1; prefix=$2; jobs=$3
 
 cd "$src"
+# The hardened build: hardening.patch beside this script, applied once (a source tree shipped
+# without it has it applied already).
+hardening="$(dirname "$(readlink -f "$0")")/hardening.patch"
+if [ -f "$hardening" ]; then
+    patch -p1 -R -s -f --dry-run < "$hardening" > /dev/null 2>&1 || patch -p1 -s < "$hardening"
+fi
+[ -f src/OSspecific/POSIX/hardened.C ] || { echo "source not hardened" >&2; exit 1; }
 # Third-party libraries: Ubuntu's own, as in the official openfoam2606 package.
 sed -i 's/^SCOTCH_VERSION=.*/SCOTCH_VERSION=scotch-system/' etc/config.sh/scotch
 sed -i 's/^METIS_VERSION=.*/METIS_VERSION=metis-system/' etc/config.sh/metis

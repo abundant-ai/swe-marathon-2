@@ -10,8 +10,9 @@ comparer then requires them to be identical byte for byte.
 
 from __future__ import annotations
 
-import gzip
+import math
 import re
+import zlib
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -47,7 +48,7 @@ class Arr:
     is_int: bool  # every element was written as an integer
     texts: (
         np.ndarray | None
-    )  # ascii only: digits after the point, per element (for rounding)
+    )  # ascii only: rounding allowance per element, NaN for an integer (see unit)
 
 
 @dataclass
@@ -405,6 +406,19 @@ def _decimals(t: str) -> int:
     return len(m.group(2)) - int(m.group(3) or 0)
 
 
+def unit(t: str) -> float:
+    """Rounding allowance of a written number: one unit in its last printed digit; NaN for an
+    integer, which must match exactly. In exponent form OpenFOAM drops trailing zeros (1e+06 is
+    1.00000e+06), so there the unit is at most one in the sixth significant digit."""
+    if re.fullmatch(r"[-+]?\d+", t):
+        return math.nan
+    u = 10.0 ** -_decimals(t)
+    v = abs(float(t))
+    if "e" in t.lower() and v > 0 and math.isfinite(v):
+        u = min(u, 10.0 ** (math.floor(math.log10(v)) - 5))
+    return u
+
+
 def _as_array(kind: str, items: list):
     """Turns a list of numbers, or of equal-length number tuples, into an Arr."""
     if kind == "(" and items:
@@ -412,7 +426,7 @@ def _as_array(kind: str, items: list):
             return Arr(
                 np.array([x.value for x in items]),
                 all(x.is_int for x in items),
-                np.array([_decimals(x.text) for x in items]),
+                np.array([unit(x.text) for x in items]),
             )
         if all(isinstance(x, Arr) and x.data.ndim == 1 for x in items):
             k = len(items[0].data)
@@ -425,9 +439,21 @@ def _as_array(kind: str, items: list):
     return Seq(kind, items)
 
 
+MAX_GUNZIPPED = 4 << 30
+
+
+def _gunzip(data: bytes) -> bytes:
+    """gzip content, refused beyond MAX_GUNZIPPED bytes."""
+    z = zlib.decompressobj(zlib.MAX_WBITS | 16)
+    out = z.decompress(data, MAX_GUNZIPPED)
+    if z.unconsumed_tail:
+        raise ParseError("compressed content too large")
+    return out
+
+
 def parse(data: bytes, context: dict | None = None) -> Dict:
     if data[:2] == b"\x1f\x8b":
-        data = gzip.decompress(data)
+        data = _gunzip(data)
     r = _Reader(data)
     for k, v in (context or {}).items():
         setattr(r, k, v)

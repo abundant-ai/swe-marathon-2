@@ -1,7 +1,8 @@
 """Compares output with the expected output.
 
-Text is compared exactly. A number may differ by max(tolerance for its path, one unit in the
-last printed digit); binary numbers by a relative 1e-12. Files the reader cannot interpret
+Text is compared exactly. Integers must be equal. Any other number may differ by max(tolerance
+for its path, one unit in the last digit printed by either side, at most one in the sixth
+significant digit in exponent form); binary numbers by a relative 1e-12. Files the reader cannot interpret
 must be identical byte for byte. With calibrating=True nothing is
 judged: the largest difference per path is recorded instead.
 """
@@ -44,8 +45,20 @@ class Result:
         self.spreads[path] = max(self.spreads.get(path, 0.0), d)
 
 
-def _unit(decimals):
-    return np.power(10.0, -np.asarray(decimals, dtype=float))
+def _allowance(ug, uc, g):
+    """Rounding allowance for numbers written with units ug and uc (ff.unit; NaN: integer),
+    expected values g. Two integers: none. Otherwise the finer printed precision, where an
+    expected integer below 10^6 may be a number OpenFOAM printed to six significant digits
+    (larger ones it prints in exponent form)."""
+    ug, uc, g = (np.asarray(x, dtype=float) for x in (ug, uc, g))
+    with np.errstate(divide="ignore"):
+        sixth = np.where(
+            (g == 0) | (np.abs(g) >= 1e6),
+            0.0,
+            10.0 ** (np.floor(np.log10(np.abs(g))) - 5),
+        )
+    both = np.isnan(ug) & np.isnan(uc)
+    return np.where(both, 0.0, np.fmin(np.where(np.isnan(ug), sixth, ug), uc))
 
 
 def _numbers(path, g, c, units, tols, res: Result, calibrating: bool):
@@ -88,7 +101,7 @@ def _walk(path, g, c, tols, res, calibrating):
             path,
             [g.value],
             [c.value],
-            _unit(ff._decimals(g.text)),
+            _allowance(ff.unit(g.text), ff.unit(c.text), g.value),
             tols,
             res,
             calibrating,
@@ -99,7 +112,9 @@ def _walk(path, g, c, tols, res, calibrating):
             res.fail(path, f"list of shape {g.data.shape} expected, got {c.data.shape}")
             return
         if g.texts is not None:
-            units = _unit(g.texts)
+            units = _allowance(
+                g.texts, c.texts if c.texts is not None else np.nan, g.data
+            )
         else:
             units = _BINARY_REL * (np.abs(g.data).max() if g.data.size else 0.0)
         _numbers(path, g.data, c.data, units, tols, res, calibrating)
@@ -129,20 +144,29 @@ def _walk(path, g, c, tols, res, calibrating):
             _walk(f"{path}[{i}]", a, b, tols, res, calibrating)
         return
     if isinstance(g, ff.Dict):
+        # entries in any order; a key written twice is matched in order
         kg, kc = g.keys(), c.keys()
-        if kg != kc:
+        if sorted(map(str, kg)) != sorted(map(str, kc)):
             missing = [str(k) for k in kg if k not in kc]
             extra = [str(k) for k in kc if k not in kg]
             res.fail(
                 path or "/",
                 f"keys differ (missing {missing[:5]}, unexpected {extra[:5]}"
-                + (", order differs" if not missing and not extra else "")
+                + (", repeated differently" if not missing and not extra else "")
                 + ")",
             )
             return
-        for (k, vg), (_, vc) in zip(g.entries, c.entries):
+        rest = {}
+        for k, vc in c.entries:
+            rest.setdefault(str(k), []).append(vc)
+        for k, vg in g.entries:
             _value(
-                f"{path}/{k if k is not None else '-'}", vg, vc, tols, res, calibrating
+                f"{path}/{k if k is not None else '-'}",
+                vg,
+                rest[str(k)].pop(0),
+                tols,
+                res,
+                calibrating,
             )
         return
     res.fail(path, f"cannot compare {_describe(g)}")

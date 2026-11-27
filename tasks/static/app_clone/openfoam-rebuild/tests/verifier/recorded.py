@@ -13,6 +13,7 @@ import os
 import shutil
 import signal
 import socket
+import stat
 import subprocess
 import tempfile
 import time
@@ -24,6 +25,8 @@ from . import compare as C
 from . import normalise as N
 
 LOGS = [r"(.*/)?log\..*"]
+MPIRUN = "/usr/bin/mpirun"
+MAX_FILE_BYTES = 4 << 30  # a written file larger than this is not compared
 RECORDING_HOME = "/home/dev"  # HOME of the user the tests were recorded as, where a record does not say
 
 
@@ -133,7 +136,9 @@ class Run:
             shutil.copyfile(src, dst)
             os.chmod(dst, 0o755 if os.path.basename(rel).startswith("All") else 0o644)
         os.makedirs(self.root, exist_ok=True)
-        self.before = os.path.join(self.work, ".before")
+        # the input as set up, kept where the program cannot reach it (a folder only root opens)
+        self.private = tempfile.mkdtemp(prefix="before-", dir=work_root)
+        self.before = os.path.join(self.private, "case")
         shutil.copytree(self.root, self.before, symlinks=True)
         cwd = os.path.normpath(os.path.join(self.root, rec.command["cwd"]))
         os.makedirs(cwd, exist_ok=True)
@@ -143,16 +148,18 @@ class Run:
         os.makedirs(tmp)
         if limits.uid is not None:
             for d, dirs, fs in os.walk(self.work):
-                if d.startswith(self.before):
-                    continue
                 for x in [d, *(os.path.join(d, f) for f in dirs + fs)]:
                     os.chown(x, limits.uid, limits.gid, follow_symlinks=False)
         env = {**limits.env, "HOME": home, "TMPDIR": tmp, "PWD": cwd}
         t0 = time.time()
         self.timed_out = False
         try:
+            # mpirun is the system's, never one of the submission's programs
+            program = rec.command["program"]
+            if program == "mpirun":
+                program = MPIRUN
             p = subprocess.Popen(
-                [rec.command["program"], *rec.command["args"]],
+                [program, *rec.command["args"]],
                 cwd=cwd,
                 env=env,
                 stdin=subprocess.DEVNULL,
@@ -182,6 +189,7 @@ class Run:
 
     def close(self):
         shutil.rmtree(self.work, ignore_errors=True)
+        shutil.rmtree(self.private, ignore_errors=True)
 
 
 def check(run: Run, tols=None, masked=(), calibrating=False, host=None):
@@ -193,9 +201,10 @@ def check(run: Run, tols=None, masked=(), calibrating=False, host=None):
     expected = rec.files("output")
     for rel in expected:
         checks[f"file {rel}"] = C.Result()
-    if run.timed_out:
+    if run.timed_out or run.rc is None:
+        reason = "timed out" if run.timed_out else run.err.decode("utf-8", "replace")
         for r in checks.values():
-            r.fail("run", "timed out")
+            r.fail("run", reason)
         return checks
     if run.rc != rec.exit:
         checks["exit"].fail("exit", f"{rec.exit} expected, got {run.rc}")
@@ -238,14 +247,33 @@ def check(run: Run, tols=None, masked=(), calibrating=False, host=None):
         )
     for rel, src in expected.items():
         got = os.path.join(run.root, rel)
-        if not os.path.isfile(got):
+        if not os.path.lexists(got):
             checks["files"].fail(rel, "missing")
             checks[f"file {rel}"].fail(rel, "missing")
+            continue
+        if not _regular(got):
+            checks["files"].fail(rel, "not a regular file")
+            checks[f"file {rel}"].fail(rel, "not a regular file")
+            continue
+        if os.path.getsize(got) > MAX_FILE_BYTES:
+            checks[f"file {rel}"].fail(rel, "larger than any file OpenFOAM writes here")
             continue
         C.compare_file(src, got, tols, checks[f"file {rel}"], rel, calibrating)
     return checks
 
 
+def _regular(path):
+    """A regular file, not a link to one: the verifier reads as root and follows no link."""
+    return stat.S_ISREG(os.lstat(path).st_mode)
+
+
 def _same(a, b):
+    """a (written by the program) is still b (the input as set up)."""
+    if os.path.islink(a) or os.path.islink(b):
+        return (
+            os.path.islink(a) and os.path.islink(b) and os.readlink(a) == os.readlink(b)
+        )
+    if not _regular(a) or os.path.getsize(a) != os.path.getsize(b):
+        return False
     with open(a, "rb") as f, open(b, "rb") as g:
         return f.read() == g.read()

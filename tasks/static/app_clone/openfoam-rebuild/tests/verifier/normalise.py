@@ -12,11 +12,16 @@ _BANNER_END = re.compile(r"^\\\*-{20,}\*/\s*$")
 _DROP = re.compile(r"^(Date|Time|PID)\s*:")
 _CLOCK = re.compile(r"^\s*ExecutionTime\s*=.*ClockTime\s*=.*$")
 _FROM = re.compile(r"^\s+From (?:.*\(.*\)|\S+)\s*(?:const)?\s*$")
-_IN_FILE = re.compile(r"^\s+in file \S+ at line \d+\.\s*$")
+_IN_FILE = re.compile(
+    r"^\s+in file \S+ at line \d+\.?\s*$"
+)  # errors end the line with ".", warnings do not
 _FRAME = re.compile(r"^\s*\[\d+\]\s+#\d+\s|^#\d+\s+")
 _ELAPSED = re.compile(
     r"\bin (=\s*)?[-+.\deE]+ s(?:econds)?\b"
 )  # "Mesh refined in = 0.14 s.", "Mapping completed in 0.01 seconds"
+_DURATION = re.compile(
+    r"\b(took|elapsed\s*=|Execution time for \S+ =)\s*[-+.\deE]+(?: s(?:econds)?\b)?"
+)  # "Mesh movement took 0.01 seconds", "Execution time for mesh.update() = 0 s", "elapsed = 2"
 _TIME_MEM = re.compile(
     r"\b[\d.]+ s, \d+ kB\b"
 )  # "VTK mesh topology: 0.01 s, 313228 kB"
@@ -81,6 +86,7 @@ def normalise(
         if _FROM.match(line):
             continue
         line = _ELAPSED.sub("in <time> s", line)
+        line = _DURATION.sub(r"\1 <time>", line)
         line = _TIME_MEM.sub("<time> s, <memory> kB", line)
         line = _MEMORY.sub("<memory> kB", line)
         if home:  # first: the home folder may lie inside the folder holding the case

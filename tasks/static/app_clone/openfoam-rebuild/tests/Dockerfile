@@ -4,7 +4,7 @@
 # The tests, at a fixed revision of the dataset.
 FROM python:3.13-slim AS tests
 ARG DATASET=AdnanElAssadi/openfoam-rebuild-tests
-ARG DATASET_REVISION=738fa6082ef8ac422e746e1588b472626adebd20
+ARG DATASET_REVISION=2114492ac4cdee860648b5e81b844057d1fd12af
 RUN pip install --no-cache-dir huggingface_hub==2.4.0 hf_xet==1.8.0 \
     && python -c "from huggingface_hub import snapshot_download; \
 snapshot_download('$DATASET', repo_type='dataset', revision='$DATASET_REVISION', local_dir='/data/openfoam-tests')" \
@@ -16,7 +16,7 @@ FROM ubuntu:26.04
 ENV DEBIAN_FRONTEND=noninteractive LC_ALL=C.UTF-8 LANG=C.UTF-8
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential cmake python3 python-is-python3 golang-go rustc cargo \
-        zlib1g-dev libopenmpi-dev openmpi-bin libreadline-dev libncurses-dev \
+        flex libfl-dev bison libcgal-dev zlib1g-dev libopenmpi-dev openmpi-bin libreadline-dev libncurses-dev \
         libscotch-dev libptscotch-dev libfftw3-dev libgmp-dev libmpfr-dev libmetis-dev \
         libboost-system-dev libboost-thread-dev \
         m4 perl bc gnuplot-nox unzip xz-utils bzip2 git ripgrep jq less procps ca-certificates \

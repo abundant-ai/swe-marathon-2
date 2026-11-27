@@ -1,5 +1,5 @@
 {
- "about": "Checks whose expected output varies between identical OpenFOAM runs (CPU times in optimisation/CPUcost, directory-order names, uninitialised values, collision-record order in parallel particle runs, solver profiling times, last digits after parallel reductions), found by the repeat oracle checks; dropped by dataset_card.py.",
+ "about": "Checks whose expected output varies between identical OpenFOAM runs (CPU times in optimisation/CPUcost, directory-order names, uninitialised values, collision-record order in parallel particle runs, solver profiling times, last digits after parallel reductions, output of parallel runs that abort, foamyQuadMesh's CGAL triangulation), found by the repeat oracle checks; dropped by dataset_card.py.",
  "tests": {
   "records/discreteMethods/molecularDynamics/mdFoam/nanoNozzle/007-mdFoam.json": {
    "file processor3/5e-15/lagrangian/moleculeCloud/a": {
@@ -127,6 +127,74 @@
    "stderr": {
     "passed": false,
     "mismatch": "stderr line 1: expected '[0]', got '--------------------------------------------------------------------------'"
+   }
+  },
+  "records/_generated/options_b/simpleSprayFoam_options/003-simpleSprayFoam.json": {
+   "stderr": {
+    "passed": false,
+    "mismatch": "stderr line 1: expected '[0]', got '--------------------------------------------------------------------------'"
+   }
+  },
+  "records/_generated/options_b/simpleReactingParcelFoam_options/006-simpleReactingParcelFoam.json": {
+   "stderr": {
+    "passed": false,
+    "mismatch": "stderr line 1: expected '[0]', got '--------------------------------------------------------------------------'"
+   }
+  },
+  "records/incompressible/simpleFoam/turbulentFlatPlate/070-simpleFoam.json": {
+   "stderr": {
+    "passed": false,
+    "mismatch": "stderr line 1: expected '[0]', got '--------------------------------------------------------------------------'"
+   }
+  },
+  "records/incompressible/simpleFoam/turbulentFlatPlate/028-simpleFoam.json": {
+   "stdout": {
+    "passed": false,
+    "mismatch": "stdout : 27 lines expected, got 34; first difference at line 1: expected 'Build  : v2606 OPENFOAM=2606 version=v2606', got '[0] /*---------------------------------------------------------------------------*\\\\'"
+   },
+   "stderr": {
+    "passed": false,
+    "mismatch": "stderr line 1: expected '[0]', got ''"
+   }
+  },
+  "records/incompressible/simpleFoam/turbulentFlatPlate/082-simpleFoam.json": {
+   "stderr": {
+    "passed": false,
+    "mismatch": "stderr line 1: expected '[0]', got '--------------------------------------------------------------------------'"
+   }
+  },
+  "records/_generated/options_b/thermoFoam_options/009-thermoFoam.json": {
+   "stderr": {
+    "passed": false,
+    "mismatch": "stderr line 1: expected '[0]', got '--------------------------------------------------------------------------'"
+   }
+  },
+  "records/_generated/r3_foamy_fa_formats/foamyQuadMesh_variants/017-foamyQuadMesh.json": {
+   "file MeshedSurface.obj": {
+    "passed": false,
+    "mismatch": "MeshedSurface.obj:line 78: expected 'v 0.101056722348 0.492801573681 0', got 'v 0.232790682532 0.396753007655 0'"
+   },
+   "file constant/polyMesh/faces": {
+    "passed": false,
+    "mismatch": "constant/polyMesh/faces/-#1[11]: 2 of 2 numbers differ; first at [np.int64(0)]: expected np.float64(567.0), got np.float64(566.0) (allowed 0)"
+   },
+   "file constant/polyMesh/neighbour": {
+    "passed": false,
+    "mismatch": "constant/polyMesh/neighbour/-#1: 98 of 4106 numbers differ; first at [np.int64(51)]: expected np.float64(597.0), got np.float64(594.0) (allowed 0)"
+   },
+   "file constant/polyMesh/owner": {
+    "passed": false,
+    "mismatch": "constant/polyMesh/owner/-#1: 24 of 4234 numbers differ; first at [np.int64(2041)]: expected np.float64(550.0), got np.float64(549.0) (allowed 0)"
+   },
+   "file constant/polyMesh/points": {
+    "passed": false,
+    "mismatch": "constant/polyMesh/points/-#1: 2624 of 7647 numbers differ; first at [np.int64(68), np.int64(0)]: expected np.float64(0.101056722348), got np.float64(0.232790682532) (allowed 1e-12)"
+   }
+  },
+  "records/incompressible/adjointOptimisationFoam/topologyOptimisation/monoFluidAero/laminar/1_Inlet_2_Outlet_Dual_Bottleneck/losses-mass-30-70/003-setsToZones.json": {
+   "stdout": {
+    "passed": false,
+    "mismatch": "stdout line 26: expected 'Found    : 6(OEntranceZone OEntranceSet OREntranceSet IEntranceZone OREntranceZone IEntranceSet)', got 'Found    : 6(OEntranceZone OEntranceSet OREntranceSet IEntranceZone IEntranceSet OREntranceZone)'"
    }
   }
  }

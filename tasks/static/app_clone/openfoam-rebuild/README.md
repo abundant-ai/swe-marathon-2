@@ -4,15 +4,15 @@ Author notes; not shipped.
 
 The agent rebuilds OpenFOAM v2606 (tag `OpenFOAM-v2606`, commit `481094fdf34f`, GPL-3.0) from
 scratch, in the style of [ProgramBench](https://arxiv.org/abs/2605.03546). It can run the
-installed programs but not read them, and has their published documentation and the tutorial
-cases. It is graded on how closely its programs reproduce recorded runs of the real ones. Tests:
+installed programs but not read them or their libraries, and has their run-time data and
+scripts, the published documentation and the tutorial cases. It is graded on how closely its programs reproduce recorded runs of the real ones. Tests:
 [AdnanElAssadi/openfoam-rebuild-tests](https://huggingface.co/datasets/AdnanElAssadi/openfoam-rebuild-tests).
 
 ## Task
 
-- **Given:** the 272 installed programs, which it can run but not read, `/app/docs` (the v2606 guides, the
-  documentation site, release notes and repository docs), `/app/tutorials`, a C++/Python
-  toolchain and MPI. There is no network. The agent has 12 hours, and `/app/timer.sh` shows the
+- **Given:** the 272 installed programs, which it can run but not read, their run-time data
+  (`/opt/openfoam/etc`) and scripts, `/app/docs` (the v2606 guides, the documentation site,
+  release notes and repository docs), `/app/tutorials`, a C++/Python toolchain and MPI. There is no network. The agent has 12 hours, and `/app/timer.sh` shows the
   time left.
 - **Delivered:** source in `/app/rebuild` and a `compile.sh` that builds one executable per
   program into `/app/rebuild/bin` within two hours, without network.
@@ -29,13 +29,18 @@ several checks: exit code, files, stdout, stderr and each output file.
   small cases written for features, options and error messages that no tutorial reaches
   (`scripts/generate/cases/`). Line coverage of OpenFOAM by the test set: 60.6%.
 - **Stability:** each run is replayed several times with OpenFOAM. Checks that vary between
-  identical runs, and checks that a do-nothing program passes, are dropped
-  (`scripts/harvest/merge.py`, `scripts/harvest/unstable_checks.json`).
-- **Comparison:** text must match exactly. A number may differ by one unit in its last printed
-  digit, or by 10× OpenFOAM's own spread where that varies. Binary numbers may differ by a
-  relative 1e-12. Banners, dates, hosts, process ids, paths, run times and memory use are
-  ignored, as are the C++ function names and source lines in error messages.
-- **Size:** 9,414 recorded runs and 103,880 checks at dataset revision `738fa60`.
+  identical runs are dropped, among them the printed output of parallel runs that abort (Open
+  MPI kills the other processes at no fixed point), and so, as in ProgramBench, are checks that
+  a program printing nothing and exiting with 0 or with 1 passes (`scripts/harvest/merge.py`,
+  `scripts/harvest/unstable_checks.json`, `scripts/harvest/aborted_runs.py`,
+  `scripts/harvest/second_dummy.py`).
+- **Comparison:** text must match exactly, and integers too. Other numbers may differ by one
+  unit in the last digit either side printed (in exponent form at most in the sixth
+  significant digit), or by 10× OpenFOAM's own spread where that varies. Binary numbers may
+  differ by a relative 1e-12. Dictionary entries may come in any order. Banners, dates, hosts,
+  process ids, paths, run times, durations and memory use are ignored, as are the C++ function
+  names and source lines in error messages.
+- **Size:** 9,375 recorded runs and 102,360 checks at dataset revision `2114492`.
 
 Not tested: run-time compiled code (`#codeStream`, `coded…`), the cfMesh, OpenQBMM and VTK
 modules, and `applications/test`.
@@ -46,8 +51,8 @@ modules, and `applications/test`.
 reward = checks_passed / checks_kept
 ```
 
-`checks_kept` is fixed by the dataset revision (103,880 at `738fa60`). A failed build passes no
-check. Each recorded run is replayed with the submission's programs as UID 10001, with `HOME`
+`checks_kept` is fixed by the dataset revision (102,360 at `2114492`). A failed build passes no
+check; a program that cannot be started fails every check of its run. Each recorded run is replayed with the submission's programs as UID 10001, with `HOME`
 and `TMPDIR` new empty folders, a read-only `/app/rebuild`, and a time limit of
 max(30 × OpenFOAM's time, 10 s). Also reported: resolved (all checks pass) and almost (≥ 95%).
 Evaluation error: no reward file. One step. Implemented in `tests/verifier/runner.py`; tests in
@@ -55,8 +60,12 @@ Evaluation error: no reward file. One step. Implemented in `tests/verifier/runne
 
 ## Reference solution
 
-`solution/solve.sh` copies the installed OpenFOAM into the submission with a wrapper per
-program. A do-nothing submission scores 0.
+OpenFOAM itself, as source: `solution/solve.sh` puts OpenFOAM's source (the pinned tag, hardened
+like the installed build) and its build script into `/app/rebuild`, and its `compile.sh`
+builds it in the verifier and writes a wrapper per program. It runs as the agent's user.
+`scripts/package.sh` adds the source to the bundle; it is not kept in Git. It also adds a key
+made for that bundle, whose digest lets the copy check pass the reference solution. A do-nothing
+submission scores 0.
 
 ## Hackability assessment
 
@@ -64,20 +73,21 @@ Highest unresolved severity: 🟡 YELLOW / UNASSESSED.
 
 | # | Attack | Mitigation | Severity |
 | --- | --- | --- | --- |
-| 1 | Reproduce OpenFOAM's source from memory | Clean-room rule; no source in the image; similarity check against upstream | 🟡 YELLOW / UNASSESSED |
-| 2 | Read, copy or trace the installed programs | Setgid mode 2711, libraries readable by that group only, loaded through `ldconfig` | 🟡 YELLOW / UNASSESSED |
+| 1 | Reproduce OpenFOAM's source from memory | Clean-room rule; no source in the image; before the build the verifier removes compiled files (as ProgramBench removes the executable) and fails a submission holding any of upstream's 5,841 C/C++ files, compared without comments and spacing (`tests/verifier/source.py`, `scripts/upstream_fingerprints.py`); closer copies audited against upstream after each trial | 🟡 YELLOW / UNASSESSED |
+| 2 | Read, copy or trace the installed programs | Setgid mode 2711, libraries readable by that group only, loaded through `ldconfig`; in the hardened build (`common/reference/hardening.patch`) every file a program opens for reading is checked, once open, to be one the user may read (`open` and `fopen` are replaced in `libOpenFOAM`), and libraries load only by name; `environment/check_hardening.sh` checks both at every image build | 🟡 YELLOW / UNASSESSED |
 | 3 | Wrap or deliver the original | Verifier image (`tests/Dockerfile`) holds no OpenFOAM, only the same toolchain | 🟡 YELLOW / UNASSESSED |
 | 4 | Fetch the source | No network | 🟡 YELLOW / UNASSESSED |
-| 5 | Pass tests without an implementation | Every kept check fails a do-nothing program | 🟢 GREEN / LOW |
-| 6 | Read expected outputs during grading | Tests and dataset root-only (`chmod go-rwx`); programs run as UID 10001 | 🟡 YELLOW / UNASSESSED |
+| 5 | Pass tests without an implementation | Every kept check fails a program that prints nothing and exits with 0, and one that exits with 1 | 🟢 GREEN / LOW |
+| 6 | Read expected outputs during grading | Tests and dataset root-only (`chmod go-rwx`); programs run as UID 10001, never set-user-id; the input copy each run is compared against is in a folder only root opens; the verifier follows no link in the output and caps file and decompressed sizes | 🟡 YELLOW / UNASSESSED |
 
 ## Layout
 
 | Path | Contents |
 | --- | --- |
 | `environment/` | Agent image: OpenFOAM built in a separate stage, `/app/docs`, `/app/timer.sh` |
-| `common/reference/build.sh` | Builds the reference OpenFOAM |
+| `common/reference/` | Builds the hardened OpenFOAM (agent image and reference solution) |
 | `instruction.md`, `tests/`, `solution/` | Instruction, reference solution, verifier and its image |
+| `scripts/package.sh` | Writes the bundle Oddish runs |
 | `scripts/harvest/` | Records test runs and builds and publishes the dataset |
 | `scripts/generate/` | Cases for behaviour the tutorials do not reach ([README](scripts/generate/README.md)) |
 | `scripts/coverage/`, `scripts/docs/` | Coverage feature list; builds `/app/docs` |
@@ -111,4 +121,63 @@ agent and verifier settings from the root configuration.
   are removed in `738fa60`.
 - Agent budget set to 12 hours, with the budget stated in the instruction and `/app/timer.sh`.
 - Verifier regression tests added in `checks/`.
-- Pending: oracle trials on `738fa60` and a graded 12-hour model trial.
+- Oracle on `738fa60`: 1.0 in two trials (experiment `e176947f`, run as root).
+- 12-hour trial, Claude Code with Opus 5.5 (trial 43, experiment `d08bc536`): reward 0.401,
+  41,682 of 103,880 checks; 145 of 272 programs implemented, the rest stand-ins (about 1% of
+  the reward). Its code shares 6 of 79,688 six-line windows with upstream's source.
+
+### 2026-11-26
+
+Changes for Oddish's QA review of version 10:
+
+- Reference solution runs as the agent's user: OpenFOAM's source, built by `compile.sh`.
+- Hardened OpenFOAM build in the image: a program opens for reading only files the user may
+  read, and loads libraries only by name. `etc/` and `bin/` scripts are readable (the trial
+  above read `etc/` through `#includeEtc`).
+- Verifier: integers exact; finer printed precision on either side; dictionary order free; a
+  missing program fails its run; owner-only executables stay executable; no set-user-id; no
+  link followed; system `mpirun`; input copy out of the program's reach.
+- Dataset `3468bf6`: drops the 1,449 checks (all exit codes of runs that failed with 1) that a
+  program printing nothing and exiting with 1 passes.
+- Instruction: a short paragraph on how runs are graded and the time limit per run.
+- Version 13 (experiment `b8a7ee12`): no-op 0.0, oracle 1.0 (built from source as `dev`).
+- Copy check before the build, from Eric's version 14: compiled files removed, upstream
+  source files fail the build; fingerprints regenerated from the pinned commit without `etc/`.
+
+### 2026-11-27
+
+Version 15 (experiment `2fcbd21b`): no-op 0.0, oracle 0.99979 (102,409 of 102,431 checks). The
+22 failed checks:
+
+- 9 printed a warning's source location (`in file /src/src/... at line 1080`): the path of the
+  build, which the comparison now ignores like an error's (an error's line ends with `.`, a
+  warning's does not).
+- 13 vary between identical OpenFOAM runs and passed the earlier repeat runs by chance: the
+  output of parallel runs that abort (Open MPI kills the other processes at no fixed point),
+  foamyQuadMesh's triangulation of one generated case, and the order of names setsToZones
+  reads from a folder. Added to `scripts/harvest/unstable_checks.json`; dataset `bcb1101`
+  drops them (9,412 runs, 102,418 checks).
+
+Version 16 (experiment `21e27421`): no-op 0.0, oracle 0.99996. The 4 failed checks were the
+printed output of other parallel runs that abort, so dataset `2114492` drops that output for all
+37 such runs (58 checks; the runs had no other check left): 9,375 runs, 102,360 checks.
+
+Changes for Oddish's pre-trial QA of version 16:
+
+- Instruction: `compile.sh` runs, like the programs, in a copy of the environment without
+  OpenFOAM, its documentation and example cases.
+- Verifier: a number printed as an integer allows at most its sixth significant digit (it may
+  be a value OpenFOAM printed to six digits), not the other side's coarser unit (`11.` no longer
+  matches `10`); none from 10^6 up. The copy check runs again after `compile.sh`. `compile.sh`
+  and everything it starts are killed when it ends.
+- Not changed: checks a do-nothing stub passes are already dropped from the dataset (exit 0 and
+  exit 1, as in ProgramBench); the reference key and PROGRESS.md are as intended.
+
+Version 17 (experiment `36134232`): no-op 0.0, oracle 0.99998. The 2 failed checks printed a
+duration (`Mesh movement took 0 seconds`, `Execution time for mesh.update() = 0 s`); the
+comparison now ignores the durations OpenFOAM prints (`took`, `Execution time for ... =`,
+`elapsed =`).
+
+Version 18 (experiment `19c7a07a`): no-op 0.0, oracle 1.0. Adversarial trials of versions 16
+and 17: all 0.0 but one, 0.032, from that agent's own `foamDictionary` and `foamListTimes`
+and replayed help text; its attack on the grader's Python had no effect.

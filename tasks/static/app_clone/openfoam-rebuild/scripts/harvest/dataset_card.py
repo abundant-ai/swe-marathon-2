@@ -101,8 +101,8 @@ limited to a few time steps. Each recorded run was then replayed:
 
 1. three times with OpenFOAM: anything that varies is masked or given a tolerance, and
    runs whose structure or whole numbers vary are dropped;
-2. once with a program that does nothing and exits successfully: checks it passes are
-   dropped;
+2. with two programs that print nothing and change nothing, one exiting with 0 and one
+   with 1: checks either passes are dropped;
 3. once more with OpenFOAM: checks it fails are dropped;
 4. twice with OpenFOAM wrapped as a submission and graded by the task's verifier, on a
    separate machine like the one used for grading: checks it fails in either run are

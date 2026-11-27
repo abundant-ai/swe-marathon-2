@@ -56,6 +56,16 @@ def test_error_locations_and_stack_traces_are_removed():
     ]
 
 
+def test_warning_locations_are_removed():
+    # a warning gives its source location without the error's closing "."; the path is the build's
+    text = (
+        "--> FOAM Warning :\n    From void Foam::InteractionLists::buildMap()\n"
+        "    in file /src/src/lagrangian/basic/lnInclude/InteractionLists.C at line 1080\n"
+        "    Map is empty"
+    )
+    assert N.normalise(text) == ["--> FOAM Warning :", "    Map is empty"]
+
+
 def test_case_home_host_and_install_paths_are_replaced():
     rec = N.normalise(
         'Case : /tmp/run/cavity\nHost : node7\nReading "/opt/openfoam/etc/controlDict"\n'
@@ -81,3 +91,13 @@ def test_dates_in_written_files_are_replaced():
     assert N.strip_dates("// written Wed Nov 19 22:53:01 2026") == "// written <date>"
     assert N.strip_dates("t = 2026-11-19T18:22:33Z") == "t = <date>"
     assert N.strip_dates("value 22.53") == "value 22.53"
+
+
+def test_durations_are_replaced():
+    assert N.normalise("Mesh movement took 0.01 seconds") == N.normalise(
+        "Mesh movement took 0 seconds"
+    )
+    assert N.normalise("Execution time for mesh.update() = 0.01 s") == [
+        "Execution time for mesh.update() = <time>"
+    ]
+    assert N.normalise("deltaT = 0.005 s") == ["deltaT = 0.005 s"]
