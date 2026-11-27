@@ -8,31 +8,36 @@ the regulated customers we serve, and a new major version would have to be certi
 year. Upstream's 15.0 also turned on the 24-bit glyph tables and formats by default and reworked the layout code
 around them, so its changes do not apply to our tree.
 
-We still need the fixes upstream has shipped since 14.3.0 in the parts of HarfBuzz we use, up to and including
-15.2.0. Upstream describes them in its release notes, and we take each one into our 14.3.0 code as a change of our
-own.
+We still need what upstream has shipped since 14.3.0 in the parts of HarfBuzz we use, up to and including 15.2.0:
+its fixes, the Unicode 18.0 update (customers already send documents in the new scripts), and the few new functions
+our layout engine is being changed to call. Upstream describes them in its release notes, and we take each one into
+our 14.3.0 code as a change of our own. Changes made this way go through our change-control process and are covered
+by a delta certification of our build; a new upstream version would not be.
 
 ## Context
 
 - `/app/harfbuzz` is our tree: HarfBuzz 14.3.0 as we ship it, without upstream's speed-measurement programs and CI
   files. It is a git repository with a single commit, so `git diff` shows your changes.
 - `test/` in the tree holds upstream's own expectations for 14.3.0, and `util/` builds `hb-shape` and the other
-  command-line tools when you configure a build of your own with them. Where a note below changes behaviour, an
-  expectation under `test/` may change with it.
+  command-line tools when you configure a build of your own with `-Dglib=enabled -Dutilities=enabled`. Where a note
+  below changes behaviour, an expectation under `test/` may change with it.
 - `/app/docs/specs/` has notes on the OpenType tables, Apple's AAT tables, Microsoft's script shaping rules and
   Unicode's text segmentation rules. `/app/docs/unicode/` has the data files that upstream's table generators read
   (`src/update-unicode-tables.make` lists them) as upstream used them for Unicode 18.0, with Microsoft's Universal
   Shaping Engine override files for Unicode 18 under `ms-use/`; the two sources of the language tag table are not
   included. `/app/docs/notes.md` has the notes below as a file.
-- There is no network access. gcc and g++ 13, meson, ninja, ragel 6.10, Python 3 with fontTools and packTab, and the
-  GLib development files are installed; fontTools is there so that you can build fonts of your own.
+- Like the rest of our certified build machines, this one has no network access, and upstream's later sources are
+  not on our build network: the release notes are what we have of those releases. gcc and g++ 13, meson, ninja, ragel
+  6.10, Python 3 with fontTools and packTab, and the GLib development files are installed; fontTools is there so that
+  you can build fonts of your own. We have no regression set for these changes; build whatever you need from the
+  14.3.0 build and fonts of your own.
 
 ## How our product uses HarfBuzz
 
 Every build we ship compiles `/app/harfbuzz` with these commands, unchanged:
 
 ```
-meson setup build --buildtype=release -Ddefault_library=static \
+meson setup build --buildtype=release --wrap-mode=nodownload -Ddefault_library=static \
   -Dglib=disabled -Dgobject=disabled -Dcairo=disabled -Dchafa=disabled -Dicu=disabled \
   -Dfreetype=disabled -Dpng=disabled -Dzlib=disabled -Dgraphite2=disabled \
   -Draster=disabled -Dvector=disabled -Dgpu=disabled -Dsubset=disabled \
@@ -55,15 +60,17 @@ Our customers' documents depend on every detail of what the library returns. A d
 laid out again each time it is opened, exported or printed, and a glyph that moves, or a line that breaks in a
 different place, changes a document they have already signed off. So:
 
-- Every note below must hold for every font and text it applies to, not only for the case that prompted it.
-- Anything the notes do not change must come out as it does from our 14.3.0 build today: the same glyphs, clusters,
-  positions, flags, extents, metrics and function results, for every font, text and setting.
+- Each fix has to work wherever its note applies, in whatever fonts and texts our customers bring, not only in the
+  situation upstream fixed it for.
+- Apply each fix there and nowhere else: whatever the notes do not change stays as our 14.3.0 build has it today, in
+  everything our layout engine reads.
 
 ## The notes, 14.3.1 to 15.2.0
 
 These are the parts of upstream's release notes that concern what our product uses. We left out the rest: subsetting,
 the raster, vector and GPU libraries, the platform and third-party integrations, the 24-bit glyph tables and the other
-new table formats, the work limits, and speed work.
+new table formats (color bitmap format 19 among them), the work limits, speed work, and two fixes that change nothing
+our product can observe.
 
 **14.3.1**
 
@@ -73,7 +80,6 @@ new table formats, the work limits, and speed work.
 
 - Glyph positions and extents now saturate instead of overflowing.
 - Arabic Windows-1256 fallback shaping is now enabled on all platforms.
-- Fix `avar` axis value mapping in fonts that repeat the boundary entries.
 
 **14.5.0**
 
@@ -164,7 +170,6 @@ new table formats, the work limits, and speed work.
   It returns only glyphs the `JSTF` table lists for the script, starting at `start_offset`; `language` is currently
   unused. On input `*glyphs_count` is the most glyphs to return, on output the number returned (possibly zero). The
   return value is the total number of extender glyphs for the script.
-- Support bitmap glyphs in `CBDT` format 19.
 
 **15.2.0: shaping**
 
@@ -182,7 +187,6 @@ new table formats, the work limits, and speed work.
   the wrong axis.
 - Fix missing unsafe-to-break flags in text with cross-stream kerning from `kern` or `kerx`.
 - Apply the `kern` table in vertical text when the client requests `vkrn` and `GPOS` does not have it.
-- Fix missing unsafe-to-break flags with `HB_BUFFER_CLUSTER_LEVEL_GRAPHEMES`.
 
 **15.2.0: script-specific shaping**
 

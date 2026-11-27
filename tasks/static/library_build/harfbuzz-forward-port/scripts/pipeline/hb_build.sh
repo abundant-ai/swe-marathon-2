@@ -54,7 +54,7 @@ if [ "$RAGEL" = off ] && [ -x /usr/bin/ragel ]; then
 fi
 
 t0=$(date +%s)
-meson setup build --buildtype=release -Ddefault_library=static \
+meson setup build --buildtype=release --wrap-mode=nodownload -Ddefault_library=static \
   -Dglib=disabled -Dgobject=disabled -Dcairo=disabled -Dchafa=disabled -Dicu=disabled \
   -Dfreetype=disabled -Dpng=disabled -Dzlib=disabled -Dgraphite2=disabled \
   -Draster=disabled -Dvector=disabled -Dgpu=disabled -Dsubset=disabled \

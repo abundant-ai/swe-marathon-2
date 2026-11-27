@@ -6,6 +6,9 @@ set -eu
 cd "$1"
 rm -r perf .github .ci
 rm .codecov.yml CODE_OF_AI_CONDUCT.md CLAUDE.md AGENTS.md subprojects/google-benchmark.wrap test/vector/README.md
+# The Windows cross-build notes and the profiling pointer refer to the removed CI and speed-measurement files.
+rm README.mingw.md
+sed -i '/^## Profiling$/,$d' TESTING.md
 sed -i "/^option('benchmark', type: 'feature', value: 'disabled',$/,+1d" meson_options.txt
 sed -i "/^if not get_option('benchmark').disabled()$/,/^endif$/d" meson.build
 sed -i "/'Benchmark': get_option('benchmark').enabled(),/d" meson.build

@@ -4,7 +4,8 @@ The changes our product needs, by release, as in the work order.
 
 These are the parts of upstream's release notes that concern what our product uses. We left out the rest: subsetting,
 the raster, vector and GPU libraries, the platform and third-party integrations, the 24-bit glyph tables and the other
-new table formats, the work limits, and speed work.
+new table formats (color bitmap format 19 among them), the work limits, speed work, and two fixes that change nothing
+our product can observe.
 
 **14.3.1**
 
@@ -14,7 +15,6 @@ new table formats, the work limits, and speed work.
 
 - Glyph positions and extents now saturate instead of overflowing.
 - Arabic Windows-1256 fallback shaping is now enabled on all platforms.
-- Fix `avar` axis value mapping in fonts that repeat the boundary entries.
 
 **14.5.0**
 
@@ -105,7 +105,6 @@ new table formats, the work limits, and speed work.
   It returns only glyphs the `JSTF` table lists for the script, starting at `start_offset`; `language` is currently
   unused. On input `*glyphs_count` is the most glyphs to return, on output the number returned (possibly zero). The
   return value is the total number of extender glyphs for the script.
-- Support bitmap glyphs in `CBDT` format 19.
 
 **15.2.0: shaping**
 
@@ -123,7 +122,6 @@ new table formats, the work limits, and speed work.
   the wrong axis.
 - Fix missing unsafe-to-break flags in text with cross-stream kerning from `kern` or `kerx`.
 - Apply the `kern` table in vertical text when the client requests `vkrn` and `GPOS` does not have it.
-- Fix missing unsafe-to-break flags with `HB_BUFFER_CLUSTER_LEVEL_GRAPHEMES`.
 
 **15.2.0: script-specific shaping**
 
