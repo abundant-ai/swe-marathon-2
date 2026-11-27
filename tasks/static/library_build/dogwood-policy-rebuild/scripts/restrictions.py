@@ -994,7 +994,9 @@ FEATURES: dict[str, tuple[tuple[str, ...], dict[str, str]]] = {
     "feat:02:scope-order-omission": (
         ("validate", "replay", "lower"),
         {
-            "policy.dw": '@id("@RID@")\npermit (resource, principal)\nwhen { context.input.amount > @N@ };\n'
+            # Every action is in scope, so the condition reads nothing only some actions' inputs
+            # have (the validator lists such errors per action, in hash order).
+            "policy.dw": '@id("@RID@")\npermit (resource, principal)\nwhen { principal == Ledger::User::"@WHO@" };\n'
         },
     ),
     "feat:02:template-slots": (
