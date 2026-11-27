@@ -201,4 +201,7 @@ Private material (cases, seeds, gold outputs, private fonts, the duals catalogue
     W is a secondary bound.
 - The c3 sweep rebuilt every release, revert and mutant (66 builds); the expected outputs were recorded again
   through the amd64 verifier image (0 differences from the pipeline; 3+1 recordings identical).
+- Upstream's own suite ran offline in the agent image: 244 of 245 tests passed; the threaded shaping test read its
+  inputs from the pruned speed-measurement folder, so the prune now drops it. The re-run on the rebuilt image
+  waits for the shared lock.
 
