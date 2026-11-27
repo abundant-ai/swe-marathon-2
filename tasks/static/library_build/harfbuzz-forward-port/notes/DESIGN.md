@@ -184,7 +184,7 @@ One verifier run at the end of the session, over the graded units I, against 15.
 
 **The gate is fully multiplicative (Phase C, 2026-11-27).** The Phase A gate, G = 1 − w_d(1 − h_d) − 0.10(1 − h_b)
 with w_d between 0.25 and 0.35, could take at most a third of the reward from a port that breaks every dual, and the
-Phase B prototype of the failure-sentence mutant W scored 0.960 with it. With h_d as a factor, a port that applies
+Phase B prototype of the over-broad mutant W scored 0.960 with it. With h_d as a factor, a port that applies
 every note one condition too broadly keeps D ≈ 1 and loses exactly the share of neighbours it breaks; the duals are
 drawn evenly over each unit's boundaries (one stratum per negated condition, 30 per unit), so a unit whose widening
 breaks one of three boundaries keeps about two thirds of its neighbours. The broad set keeps its light weight: it
@@ -196,7 +196,9 @@ held-fixed sets only ever multiply, so the unmodified base scores exactly 0: it 
 construction.
 
 `metrics.json`: per unit the pass fraction and case count of its changed cases and of its duals, per family the pass
-fraction, h_d, h_b, G, D, the drivers that compiled and the build steps with their times.
+fraction, h_d, h_b, G, D, the drivers that compiled and the build steps with their times, and each case's opaque id
+with its verdict, by unit and kind (for post-run analysis; the file is the verifier's and the agent never sees it).
+Every result this task reports gives D, h_d and h_b separately, not the reward alone.
 
 **Why every unit counts the same and not every family.** The requester asked for a list of changes, and "how
 much of the list works" is the plain measure. Family-equal weights would make one `gvar` fix worth as much as
@@ -237,9 +239,10 @@ All figures are estimates from proxies; none has been measured. The agent rows c
 | Upstream 15.2.0 (oracle) | 1.000 |
 | Base 14.3.0 (nop) | 0.000 |
 | Upstream 15.1.0 (every window-C unit missing) | about 21/56 ≈ 0.38 |
-| Mutant W (section 10) | 0.60-0.85 |
-| Frontier agents | about 0.36-0.60 (target: at most about 0.6) |
-| Mid-tier agents | about 0.12-0.30 |
+| Mutant V, the verification-gap proof (section 10) | 0.60-0.85 |
+| Mutant W, the over-broad port (a secondary bound, section 10) | measured 0.672 in Phase C |
+| Frontier agents | about 0.64 (0.54-0.75; notes/PREREGISTRATION.md, from QA pass 16; target: at most about 0.6) |
+| Mid-tier agents | about 0.28 (0.15-0.40) |
 
 A healthy profile: no full solve; F8, F2 and the simpler F1 notes high; F4 (AAT and `kern`) and F5 (flags) low; the
 dual gate below 0.95. Below 0.10 for mid-tier models the task risks reading as unfair or broken (difficulty note
@@ -353,7 +356,12 @@ arm64 containers in local Docker Desktop, with emulated amd64 samples only where
 ## 13. Difficulty sizing (owner, 2026-11-27)
 
 The owner asked that the single-session task be "difficult enough". Target: **frontier at most about 0.6**, with
-no full solve. The sizing keeps four levers:
+no full solve.
+
+**Superseded estimate (2026-11-27).** QA pass 16 re-estimated the frontier at about 0.64 (0.54-0.75) by tier
+rather than family, and found the gate takes only about 5% from careful work. The operative prediction, with its
+kill conditions, is notes/PREREGISTRATION.md; the failure sentence is section 10's. The estimate below is kept as the
+Phase A record. The sizing keeps four levers:
 
 1. **The dual gate at full strength.** h_d multiplies the reward directly (section 6): an agent that implements
    notes broadly loses the share of neighbouring cases it breaks, with no cap.
