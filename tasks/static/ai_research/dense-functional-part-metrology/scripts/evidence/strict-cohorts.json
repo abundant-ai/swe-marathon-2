@@ -1,0 +1,117 @@
+{
+  "correct openai/gpt-6.2-sol": {
+    "completed": 3,
+    "official_rewards": [
+      0.31,
+      0.2975,
+      0.26
+    ],
+    "official_mean": 0.2891666666666667,
+    "official_median": 0.2975,
+    "valid_geometry_count": 3,
+    "valid_geometry_rewards": [
+      0.31,
+      0.2975,
+      0.26
+    ],
+    "valid_geometry_trial_ids": [
+      "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-16",
+      "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-20",
+      "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-21"
+    ],
+    "nondeployable_or_unverified_ids": [],
+    "three_deployable_below_half": true
+  },
+  "correct relace/deepseek-v4.1-flash": {
+    "completed": 3,
+    "official_rewards": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "official_mean": 0.0,
+    "official_median": 0.0,
+    "valid_geometry_count": 3,
+    "valid_geometry_rewards": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "valid_geometry_trial_ids": [
+      "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-22",
+      "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-23",
+      "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-24"
+    ],
+    "nondeployable_or_unverified_ids": [],
+    "three_deployable_below_half": true
+  },
+  "correct relace/glm-5.3": {
+    "completed": 3,
+    "official_rewards": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "official_mean": 0.0,
+    "official_median": 0.0,
+    "valid_geometry_count": 2,
+    "valid_geometry_rewards": [
+      0.0,
+      0.0
+    ],
+    "valid_geometry_trial_ids": [
+      "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-25",
+      "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-26"
+    ],
+    "nondeployable_or_unverified_ids": [
+      "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-27"
+    ],
+    "three_deployable_below_half": false
+  },
+  "swapped openai/gpt-6.2-sol": {
+    "completed": 3,
+    "official_rewards": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "official_mean": 0.0,
+    "official_median": 0.0,
+    "valid_geometry_count": 3,
+    "valid_geometry_rewards": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "valid_geometry_trial_ids": [
+      "swe-m2_ai-research_dense-functional-part-metrology-swapped-6e41b1a2-17",
+      "swe-m2_ai-research_dense-functional-part-metrology-swapped-6e41b1a2-18",
+      "swe-m2_ai-research_dense-functional-part-metrology-swapped-6e41b1a2-19"
+    ],
+    "nondeployable_or_unverified_ids": [],
+    "three_deployable_below_half": true
+  },
+  "none openai/gpt-6.2-sol": {
+    "completed": 3,
+    "official_rewards": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "official_mean": 0.0,
+    "official_median": 0.0,
+    "valid_geometry_count": 3,
+    "valid_geometry_rewards": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "valid_geometry_trial_ids": [
+      "swe-m2_ai-research_dense-functional-part-metrology-none-07435eea-20",
+      "swe-m2_ai-research_dense-functional-part-metrology-none-07435eea-21",
+      "swe-m2_ai-research_dense-functional-part-metrology-none-07435eea-22"
+    ],
+    "nondeployable_or_unverified_ids": [],
+    "three_deployable_below_half": true
+  }
+}

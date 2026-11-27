@@ -1,0 +1,13 @@
+{
+  "trial": "swe-m2_ai-research_dense-functional-part-metrology-correct-9acadc32-9",
+  "official_reward": 0.0,
+  "official_build": "failed: source read local frames/ created during authoring",
+  "intervention": "Supplied an extra directory containing only the 73 PNG files decoded losslessly from the original public archive. Original source unchanged.",
+  "source_sha256": "188dacb06e954dcbc17a18eddaa5d40ce1e71e2edb50fb39e807e4dc9966234f",
+  "public_archive_sha256": "0f590868af25305e1c97061096a6d4d285cd554102995150902cac766ee686c4",
+  "triangles": 18546,
+  "diagnostic_part_score": 0.0,
+  "diagnostic_parent_depth_f1": 0.04384908033893736,
+  "diagnostic_whole_rgbd": 0.08889185142811687,
+  "diagnostic_only_reward": 0.0
+}

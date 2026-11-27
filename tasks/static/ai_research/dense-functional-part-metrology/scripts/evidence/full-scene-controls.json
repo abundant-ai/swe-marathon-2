@@ -1,0 +1,118 @@
+{
+  "informed": {
+    "part": 0.67,
+    "object_surface": 0.8557874544878795,
+    "views": [
+      {
+        "measured_pixels": 14330,
+        "depth_5cm_coverage": 0.8313328681088625,
+        "rgbd_5cm_10percent_coverage": 0.7350314026517795
+      },
+      {
+        "measured_pixels": 15217,
+        "depth_5cm_coverage": 0.7755799434842611,
+        "rgbd_5cm_10percent_coverage": 0.6184530459354669
+      },
+      {
+        "measured_pixels": 15390,
+        "depth_5cm_coverage": 0.893632228719948,
+        "rgbd_5cm_10percent_coverage": 0.7320987654320987
+      },
+      {
+        "measured_pixels": 15199,
+        "depth_5cm_coverage": 0.8155141785643792,
+        "rgbd_5cm_10percent_coverage": 0.6440555299690769
+      }
+    ],
+    "depth_5cm_coverage": 0.8290148047193627,
+    "rgbd_5cm_10percent_coverage": 0.6824096859971055,
+    "reward": 0.67
+  },
+  "rgb_only": {
+    "part": 0.67,
+    "object_surface": 0.7462247526553268,
+    "views": [
+      {
+        "measured_pixels": 14330,
+        "depth_5cm_coverage": 0.9715980460572227,
+        "rgbd_5cm_10percent_coverage": 0.7882065596650384
+      },
+      {
+        "measured_pixels": 15217,
+        "depth_5cm_coverage": 0.9562331602812644,
+        "rgbd_5cm_10percent_coverage": 0.704475257935204
+      },
+      {
+        "measured_pixels": 15390,
+        "depth_5cm_coverage": 0.9762183235867447,
+        "rgbd_5cm_10percent_coverage": 0.7341780376868097
+      },
+      {
+        "measured_pixels": 15199,
+        "depth_5cm_coverage": 0.9380222383051516,
+        "rgbd_5cm_10percent_coverage": 0.6997170866504375
+      }
+    ],
+    "depth_5cm_coverage": 0.9605179420575959,
+    "rgbd_5cm_10percent_coverage": 0.7316442354843724,
+    "reward": 0.67
+  },
+  "crop_objects": {
+    "part": 0.67,
+    "object_surface": 0.7462247526553268,
+    "views": [
+      {
+        "measured_pixels": 14330,
+        "depth_5cm_coverage": 0.041172365666434056,
+        "rgbd_5cm_10percent_coverage": 0.020376831821353802
+      },
+      {
+        "measured_pixels": 15217,
+        "depth_5cm_coverage": 0.11526582112111454,
+        "rgbd_5cm_10percent_coverage": 0.08825655516856147
+      },
+      {
+        "measured_pixels": 15390,
+        "depth_5cm_coverage": 0.09428200129954516,
+        "rgbd_5cm_10percent_coverage": 0.07621832358674464
+      },
+      {
+        "measured_pixels": 15199,
+        "depth_5cm_coverage": 0.10421738272254753,
+        "rgbd_5cm_10percent_coverage": 0.07118889400618461
+      }
+    ],
+    "depth_5cm_coverage": 0.08873439270241032,
+    "rgbd_5cm_10percent_coverage": 0.06401015114571112,
+    "reward": 0.06401015114571112
+  },
+  "constant_rgb": {
+    "part": 0.67,
+    "object_surface": 0.7462247526553268,
+    "views": [
+      {
+        "measured_pixels": 14330,
+        "depth_5cm_coverage": 0.9715980460572227,
+        "rgbd_5cm_10percent_coverage": 0.04919748778785764
+      },
+      {
+        "measured_pixels": 15217,
+        "depth_5cm_coverage": 0.9562331602812644,
+        "rgbd_5cm_10percent_coverage": 0.10172833015706118
+      },
+      {
+        "measured_pixels": 15390,
+        "depth_5cm_coverage": 0.9762183235867447,
+        "rgbd_5cm_10percent_coverage": 0.08622482131254061
+      },
+      {
+        "measured_pixels": 15199,
+        "depth_5cm_coverage": 0.9380222383051516,
+        "rgbd_5cm_10percent_coverage": 0.09092703467333377
+      }
+    ],
+    "depth_5cm_coverage": 0.9605179420575959,
+    "rgbd_5cm_10percent_coverage": 0.08201941848269831,
+    "reward": 0.08201941848269831
+  }
+}

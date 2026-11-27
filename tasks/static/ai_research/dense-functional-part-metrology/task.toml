@@ -1,0 +1,57 @@
+schema_version = "1.4"
+artifacts = ["/app/work/submission.py", "/app/work/test_receipt.json"]
+[task]
+name = "abundant/swe-m2_ai-research_dense-functional-part-metrology"
+description = "Reconstruct a colored workspace and ten contact surfaces from a calibrated, densely sampled real RGB video."
+authors = [{name = "Qingyuan Wu", email = "qingyuanwu4work@gmail.com"}]
+[metadata]
+reward_type = "continuous"
+open_internet_justification = "Container builds install the Python numerical stack. The task and its verifier run offline."
+[agent]
+timeout_sec = 2700
+network_mode = "no-network"
+user = "dev"
+[environment]
+network_mode = "public"
+build_timeout_sec = 1200
+cpus = 2
+memory_mb = 4096
+storage_mb = 8192
+gpus = 0
+workdir = "/app/work"
+[verifier]
+environment_mode = "separate"
+network_mode = "no-network"
+timeout_sec = 900
+user = "root"
+[verifier.environment]
+network_mode = "public"
+build_timeout_sec = 1200
+cpus = 2
+memory_mb = 4096
+storage_mb = 8192
+gpus = 0
+
+[metadata.task_rating]
+schema_version = 1
+status = "rated"
+scale_max = 5
+stage = "trial-backed"
+rated_at = "2026-11-27T00:15:33Z"
+source_ref = "sha256:cde75d55d5319460feebce2975c7bead3ebaf24b1cae3f6f6a73cf52ef183459"
+harbor_report = "https://www.oddish.app/tasks/swe-m2_ai-research_controller-strict-final-review-a38000ab?trial=swe-m2_ai-research_controller-strict-final-review-a38000ab-0&file=artifacts%2Fapp%2Fcheck-result.json"
+rubric_sha256 = "5fcba0cf139695f1ed5390085b37ed71d64023ea2ae6c44d340dea7e7e31db70"
+
+[metadata.task_rating.scores]
+novelty = 3
+verifiability = 3
+realism = 3
+difficulty = 4
+initial_feasibility = 4
+
+[metadata.task_rating.confidence]
+novelty = "medium"
+verifiability = "high"
+realism = "high"
+difficulty = "high"
+initial_feasibility = "high"

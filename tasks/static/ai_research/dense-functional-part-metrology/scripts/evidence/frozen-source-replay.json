@@ -1,0 +1,407 @@
+[
+  {
+    "trial": "swe-m2_ai-research_dense-functional-part-metrology-correct-9acadc32-2",
+    "source_sha256": "47555d99b941b6e70c414bd331062a9d07d2b79558eeec7188139a9f3091b14f",
+    "writing_arm": "correct",
+    "execution_arm": "correct",
+    "build": "valid",
+    "reward": 0.28500000000000003,
+    "object_f1": 0.6736697523804221,
+    "part_success": 0.28500000000000003,
+    "whole_rgbd": 0.5525202247572966,
+    "matches_hosted_mesh": {
+      "vertices": true,
+      "faces": true,
+      "colors": true,
+      "face_ids": true,
+      "part_ids": true
+    },
+    "exact_array_match_to_local_correct": {
+      "vertices": true,
+      "faces": true,
+      "colors": true,
+      "face_ids": true,
+      "part_ids": true
+    },
+    "max_vertex_difference_m": 0.0,
+    "mean_vertex_color_channel_difference": 0.0
+  },
+  {
+    "trial": "swe-m2_ai-research_dense-functional-part-metrology-correct-9acadc32-2",
+    "source_sha256": "47555d99b941b6e70c414bd331062a9d07d2b79558eeec7188139a9f3091b14f",
+    "writing_arm": "correct",
+    "execution_arm": "swapped",
+    "build": "valid",
+    "reward": 0.28500000000000003,
+    "object_f1": 0.6736697523804221,
+    "part_success": 0.28500000000000003,
+    "whole_rgbd": 0.4974416708720544,
+    "matches_hosted_mesh": {
+      "vertices": true,
+      "faces": true,
+      "colors": false,
+      "face_ids": true,
+      "part_ids": true
+    },
+    "exact_array_match_to_local_correct": {
+      "vertices": true,
+      "faces": true,
+      "colors": false,
+      "face_ids": true,
+      "part_ids": true
+    },
+    "max_vertex_difference_m": 0.0,
+    "mean_vertex_color_channel_difference": 12.041112257176781
+  },
+  {
+    "trial": "swe-m2_ai-research_dense-functional-part-metrology-correct-9acadc32-2",
+    "source_sha256": "47555d99b941b6e70c414bd331062a9d07d2b79558eeec7188139a9f3091b14f",
+    "writing_arm": "correct",
+    "execution_arm": "none",
+    "build": "valid",
+    "reward": 0.28500000000000003,
+    "object_f1": 0.6736697523804221,
+    "part_success": 0.28500000000000003,
+    "whole_rgbd": 0.4974416708720544,
+    "matches_hosted_mesh": {
+      "vertices": true,
+      "faces": true,
+      "colors": false,
+      "face_ids": true,
+      "part_ids": true
+    },
+    "exact_array_match_to_local_correct": {
+      "vertices": true,
+      "faces": true,
+      "colors": false,
+      "face_ids": true,
+      "part_ids": true
+    },
+    "max_vertex_difference_m": 0.0,
+    "mean_vertex_color_channel_difference": 12.041112257176781
+  },
+  {
+    "trial": "swe-m2_ai-research_dense-functional-part-metrology-correct-9acadc32-5",
+    "source_sha256": "1e4a44ae40318843c40088fc84fda17c9d9b4468eb01a992aaf8024a40f29506",
+    "writing_arm": "correct",
+    "execution_arm": "correct",
+    "build": "valid",
+    "reward": 0.29,
+    "object_f1": 0.5706459602102301,
+    "part_success": 0.29,
+    "whole_rgbd": 0.4368578977266219,
+    "matches_hosted_mesh": {
+      "vertices": true,
+      "faces": true,
+      "colors": true,
+      "face_ids": true,
+      "part_ids": true
+    },
+    "exact_array_match_to_local_correct": {
+      "vertices": true,
+      "faces": true,
+      "colors": true,
+      "face_ids": true,
+      "part_ids": true
+    },
+    "max_vertex_difference_m": 0.0,
+    "mean_vertex_color_channel_difference": 0.0
+  },
+  {
+    "trial": "swe-m2_ai-research_dense-functional-part-metrology-correct-9acadc32-5",
+    "source_sha256": "1e4a44ae40318843c40088fc84fda17c9d9b4468eb01a992aaf8024a40f29506",
+    "writing_arm": "correct",
+    "execution_arm": "swapped",
+    "build": "valid",
+    "reward": 0.29,
+    "object_f1": 0.5706459602102301,
+    "part_success": 0.29,
+    "whole_rgbd": 0.41067307565617206,
+    "matches_hosted_mesh": {
+      "vertices": true,
+      "faces": true,
+      "colors": false,
+      "face_ids": true,
+      "part_ids": true
+    },
+    "exact_array_match_to_local_correct": {
+      "vertices": true,
+      "faces": true,
+      "colors": false,
+      "face_ids": true,
+      "part_ids": true
+    },
+    "max_vertex_difference_m": 0.0,
+    "mean_vertex_color_channel_difference": 9.23925547579606
+  },
+  {
+    "trial": "swe-m2_ai-research_dense-functional-part-metrology-correct-9acadc32-5",
+    "source_sha256": "1e4a44ae40318843c40088fc84fda17c9d9b4468eb01a992aaf8024a40f29506",
+    "writing_arm": "correct",
+    "execution_arm": "none",
+    "build": "valid",
+    "reward": 0.29,
+    "object_f1": 0.5706459602102301,
+    "part_success": 0.29,
+    "whole_rgbd": 0.41067307565617206,
+    "matches_hosted_mesh": {
+      "vertices": true,
+      "faces": true,
+      "colors": false,
+      "face_ids": true,
+      "part_ids": true
+    },
+    "exact_array_match_to_local_correct": {
+      "vertices": true,
+      "faces": true,
+      "colors": false,
+      "face_ids": true,
+      "part_ids": true
+    },
+    "max_vertex_difference_m": 0.0,
+    "mean_vertex_color_channel_difference": 9.23925547579606
+  },
+  {
+    "trial": "swe-m2_ai-research_dense-functional-part-metrology-correct-9acadc32-6",
+    "source_sha256": "7523ae27123f66a37f5f07160ab240e68edd33208506ae1bd4214bd240315539",
+    "writing_arm": "correct",
+    "execution_arm": "correct",
+    "build": "valid",
+    "reward": 0.45999999999999996,
+    "object_f1": 0.612026517853712,
+    "part_success": 0.45999999999999996,
+    "whole_rgbd": 0.5267324724782139,
+    "matches_hosted_mesh": {
+      "vertices": false,
+      "faces": true,
+      "colors": false,
+      "face_ids": true,
+      "part_ids": true
+    },
+    "exact_array_match_to_local_correct": {
+      "vertices": true,
+      "faces": true,
+      "colors": true,
+      "face_ids": true,
+      "part_ids": true
+    },
+    "max_vertex_difference_m": 0.0,
+    "mean_vertex_color_channel_difference": 0.0
+  },
+  {
+    "trial": "swe-m2_ai-research_dense-functional-part-metrology-correct-9acadc32-6",
+    "source_sha256": "7523ae27123f66a37f5f07160ab240e68edd33208506ae1bd4214bd240315539",
+    "writing_arm": "correct",
+    "execution_arm": "swapped",
+    "build": "valid",
+    "reward": 0.45999999999999996,
+    "object_f1": 0.612026517853712,
+    "part_success": 0.45999999999999996,
+    "whole_rgbd": 0.47234542546165936,
+    "matches_hosted_mesh": {
+      "vertices": false,
+      "faces": true,
+      "colors": false,
+      "face_ids": true,
+      "part_ids": true
+    },
+    "exact_array_match_to_local_correct": {
+      "vertices": true,
+      "faces": true,
+      "colors": false,
+      "face_ids": true,
+      "part_ids": true
+    },
+    "max_vertex_difference_m": 0.0,
+    "mean_vertex_color_channel_difference": 17.33743185520106
+  },
+  {
+    "trial": "swe-m2_ai-research_dense-functional-part-metrology-correct-9acadc32-6",
+    "source_sha256": "7523ae27123f66a37f5f07160ab240e68edd33208506ae1bd4214bd240315539",
+    "writing_arm": "correct",
+    "execution_arm": "none",
+    "build": "valid",
+    "reward": 0.45999999999999996,
+    "object_f1": 0.612026517853712,
+    "part_success": 0.45999999999999996,
+    "whole_rgbd": 0.47234542546165936,
+    "matches_hosted_mesh": {
+      "vertices": false,
+      "faces": true,
+      "colors": false,
+      "face_ids": true,
+      "part_ids": true
+    },
+    "exact_array_match_to_local_correct": {
+      "vertices": true,
+      "faces": true,
+      "colors": false,
+      "face_ids": true,
+      "part_ids": true
+    },
+    "max_vertex_difference_m": 0.0,
+    "mean_vertex_color_channel_difference": 17.33743185520106
+  },
+  {
+    "trial": "swe-m2_ai-research_dense-functional-part-metrology-correct-9acadc32-2",
+    "source_sha256": "47555d99b941b6e70c414bd331062a9d07d2b79558eeec7188139a9f3091b14f",
+    "writing_arm": "correct",
+    "execution_arm": "sheet-only",
+    "build": "valid",
+    "reward": 0.28500000000000003,
+    "object_f1": 0.6736697523804221,
+    "part_success": 0.28500000000000003,
+    "whole_rgbd": 0.5536986431165491,
+    "matches_hosted_mesh": {
+      "vertices": true,
+      "faces": true,
+      "colors": false,
+      "face_ids": true,
+      "part_ids": true
+    },
+    "exact_array_match_to_local_correct": {
+      "vertices": true,
+      "faces": true,
+      "colors": false,
+      "face_ids": true,
+      "part_ids": true
+    },
+    "max_vertex_difference_m": 0.0,
+    "mean_vertex_color_channel_difference": 1.9587614393638557
+  },
+  {
+    "trial": "swe-m2_ai-research_dense-functional-part-metrology-correct-9acadc32-2",
+    "source_sha256": "47555d99b941b6e70c414bd331062a9d07d2b79558eeec7188139a9f3091b14f",
+    "writing_arm": "correct",
+    "execution_arm": "video-only",
+    "build": "valid",
+    "reward": 0.28500000000000003,
+    "object_f1": 0.6736697523804221,
+    "part_success": 0.28500000000000003,
+    "whole_rgbd": 0.4963326891594581,
+    "matches_hosted_mesh": {
+      "vertices": true,
+      "faces": true,
+      "colors": false,
+      "face_ids": true,
+      "part_ids": true
+    },
+    "exact_array_match_to_local_correct": {
+      "vertices": true,
+      "faces": true,
+      "colors": false,
+      "face_ids": true,
+      "part_ids": true
+    },
+    "max_vertex_difference_m": 0.0,
+    "mean_vertex_color_channel_difference": 10.094763766620055
+  },
+  {
+    "trial": "swe-m2_ai-research_dense-functional-part-metrology-correct-9acadc32-5",
+    "source_sha256": "1e4a44ae40318843c40088fc84fda17c9d9b4468eb01a992aaf8024a40f29506",
+    "writing_arm": "correct",
+    "execution_arm": "sheet-only",
+    "build": "valid",
+    "reward": 0.29,
+    "object_f1": 0.5706459602102301,
+    "part_success": 0.29,
+    "whole_rgbd": 0.4376783878027518,
+    "matches_hosted_mesh": {
+      "vertices": true,
+      "faces": true,
+      "colors": false,
+      "face_ids": true,
+      "part_ids": true
+    },
+    "exact_array_match_to_local_correct": {
+      "vertices": true,
+      "faces": true,
+      "colors": false,
+      "face_ids": true,
+      "part_ids": true
+    },
+    "max_vertex_difference_m": 0.0,
+    "mean_vertex_color_channel_difference": 1.6045462911835082
+  },
+  {
+    "trial": "swe-m2_ai-research_dense-functional-part-metrology-correct-9acadc32-5",
+    "source_sha256": "1e4a44ae40318843c40088fc84fda17c9d9b4468eb01a992aaf8024a40f29506",
+    "writing_arm": "correct",
+    "execution_arm": "video-only",
+    "build": "valid",
+    "reward": 0.29,
+    "object_f1": 0.5706459602102301,
+    "part_success": 0.29,
+    "whole_rgbd": 0.4098525855800422,
+    "matches_hosted_mesh": {
+      "vertices": true,
+      "faces": true,
+      "colors": false,
+      "face_ids": true,
+      "part_ids": true
+    },
+    "exact_array_match_to_local_correct": {
+      "vertices": true,
+      "faces": true,
+      "colors": false,
+      "face_ids": true,
+      "part_ids": true
+    },
+    "max_vertex_difference_m": 0.0,
+    "mean_vertex_color_channel_difference": 7.634709184612553
+  },
+  {
+    "trial": "swe-m2_ai-research_dense-functional-part-metrology-correct-9acadc32-6",
+    "source_sha256": "7523ae27123f66a37f5f07160ab240e68edd33208506ae1bd4214bd240315539",
+    "writing_arm": "correct",
+    "execution_arm": "sheet-only",
+    "build": "valid",
+    "reward": 0.45999999999999996,
+    "object_f1": 0.612026517853712,
+    "part_success": 0.45999999999999996,
+    "whole_rgbd": 0.5477123826977965,
+    "matches_hosted_mesh": {
+      "vertices": false,
+      "faces": true,
+      "colors": false,
+      "face_ids": true,
+      "part_ids": true
+    },
+    "exact_array_match_to_local_correct": {
+      "vertices": true,
+      "faces": true,
+      "colors": false,
+      "face_ids": true,
+      "part_ids": true
+    },
+    "max_vertex_difference_m": 0.0,
+    "mean_vertex_color_channel_difference": 4.620858589284503
+  },
+  {
+    "trial": "swe-m2_ai-research_dense-functional-part-metrology-correct-9acadc32-6",
+    "source_sha256": "7523ae27123f66a37f5f07160ab240e68edd33208506ae1bd4214bd240315539",
+    "writing_arm": "correct",
+    "execution_arm": "video-only",
+    "build": "valid",
+    "reward": 0.45999999999999996,
+    "object_f1": 0.612026517853712,
+    "part_success": 0.45999999999999996,
+    "whole_rgbd": 0.4628964880696722,
+    "matches_hosted_mesh": {
+      "vertices": false,
+      "faces": true,
+      "colors": false,
+      "face_ids": true,
+      "part_ids": true
+    },
+    "exact_array_match_to_local_correct": {
+      "vertices": true,
+      "faces": true,
+      "colors": false,
+      "face_ids": true,
+      "part_ids": true
+    },
+    "max_vertex_difference_m": 0.0,
+    "mean_vertex_color_channel_difference": 10.307465961118687
+  }
+]

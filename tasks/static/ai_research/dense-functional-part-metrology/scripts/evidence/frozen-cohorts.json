@@ -1,0 +1,122 @@
+{
+  "correct openai/gpt-6.2-sol": {
+    "completed": 3,
+    "official_rewards": [
+      0.285,
+      0.29,
+      0.46
+    ],
+    "official_mean": 0.345,
+    "official_median": 0.29,
+    "valid_geometry_count": 3,
+    "valid_geometry_rewards": [
+      0.285,
+      0.29,
+      0.46
+    ],
+    "valid_geometry_trial_ids": [
+      "swe-m2_ai-research_dense-functional-part-metrology-correct-9acadc32-2",
+      "swe-m2_ai-research_dense-functional-part-metrology-correct-9acadc32-5",
+      "swe-m2_ai-research_dense-functional-part-metrology-correct-9acadc32-6"
+    ],
+    "nondeployable_or_unverified_ids": [],
+    "three_deployable_below_half": true
+  },
+  "correct relace/deepseek-v4.1-flash": {
+    "completed": 4,
+    "official_rewards": [
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "official_mean": 0.0,
+    "official_median": 0.0,
+    "valid_geometry_count": 2,
+    "valid_geometry_rewards": [
+      0.0,
+      0.0
+    ],
+    "valid_geometry_trial_ids": [
+      "swe-m2_ai-research_dense-functional-part-metrology-correct-9acadc32-8",
+      "swe-m2_ai-research_dense-functional-part-metrology-correct-9acadc32-13"
+    ],
+    "nondeployable_or_unverified_ids": [
+      "swe-m2_ai-research_dense-functional-part-metrology-correct-9acadc32-7",
+      "swe-m2_ai-research_dense-functional-part-metrology-correct-9acadc32-9"
+    ],
+    "three_deployable_below_half": false
+  },
+  "correct relace/glm-5.3": {
+    "completed": 4,
+    "official_rewards": [
+      0.0,
+      0.0,
+      0.0,
+      0.0125
+    ],
+    "official_mean": 0.003125,
+    "official_median": 0.0,
+    "valid_geometry_count": 3,
+    "valid_geometry_rewards": [
+      0.0,
+      0.0,
+      0.0125
+    ],
+    "valid_geometry_trial_ids": [
+      "swe-m2_ai-research_dense-functional-part-metrology-correct-9acadc32-10",
+      "swe-m2_ai-research_dense-functional-part-metrology-correct-9acadc32-11",
+      "swe-m2_ai-research_dense-functional-part-metrology-correct-9acadc32-14"
+    ],
+    "nondeployable_or_unverified_ids": [
+      "swe-m2_ai-research_dense-functional-part-metrology-correct-9acadc32-12"
+    ],
+    "three_deployable_below_half": true
+  },
+  "swapped openai/gpt-6.2-sol": {
+    "completed": 3,
+    "official_rewards": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "official_mean": 0.0,
+    "official_median": 0.0,
+    "valid_geometry_count": 3,
+    "valid_geometry_rewards": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "valid_geometry_trial_ids": [
+      "swe-m2_ai-research_dense-functional-part-metrology-swapped-6e41b1a2-2",
+      "swe-m2_ai-research_dense-functional-part-metrology-swapped-6e41b1a2-3",
+      "swe-m2_ai-research_dense-functional-part-metrology-swapped-6e41b1a2-4"
+    ],
+    "nondeployable_or_unverified_ids": [],
+    "three_deployable_below_half": true
+  },
+  "none openai/gpt-6.2-sol": {
+    "completed": 3,
+    "official_rewards": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "official_mean": 0.0,
+    "official_median": 0.0,
+    "valid_geometry_count": 3,
+    "valid_geometry_rewards": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "valid_geometry_trial_ids": [
+      "swe-m2_ai-research_dense-functional-part-metrology-none-07435eea-2",
+      "swe-m2_ai-research_dense-functional-part-metrology-none-07435eea-3",
+      "swe-m2_ai-research_dense-functional-part-metrology-none-07435eea-4"
+    ],
+    "nondeployable_or_unverified_ids": [],
+    "three_deployable_below_half": true
+  }
+}

@@ -1,0 +1,2 @@
+environment/public/a-poses.csv -text whitespace=cr-at-eol
+environment/public/b-poses.csv -text whitespace=cr-at-eol

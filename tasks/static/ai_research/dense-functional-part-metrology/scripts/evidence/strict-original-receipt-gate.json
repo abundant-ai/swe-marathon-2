@@ -1,0 +1,68 @@
+{
+  "task": "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423",
+  "experiment": "4a694e06",
+  "version": 3,
+  "models": {
+    "openai/gpt-6.2-sol": {
+      "threshold_check": "below",
+      "scores": [
+        0.31,
+        0.2975,
+        0.26
+      ],
+      "successful_trial_ids": [
+        "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-16",
+        "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-20",
+        "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-21"
+      ],
+      "other_trials": {},
+      "excluded_build_failures": {},
+      "all_official_rewards": {
+        "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-16": 0.31,
+        "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-20": 0.2975,
+        "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-21": 0.26
+      }
+    },
+    "relace/deepseek-v4.1-flash": {
+      "threshold_check": "below",
+      "scores": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "successful_trial_ids": [
+        "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-22",
+        "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-23",
+        "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-24"
+      ],
+      "other_trials": {},
+      "excluded_build_failures": {},
+      "all_official_rewards": {
+        "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-22": 0.0,
+        "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-23": 0.0,
+        "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-24": 0.0
+      }
+    },
+    "relace/glm-5.3": {
+      "threshold_check": "pending",
+      "scores": [
+        0.0,
+        0.0
+      ],
+      "successful_trial_ids": [
+        "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-25",
+        "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-26"
+      ],
+      "other_trials": {
+        "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-27": "source receipt mismatch"
+      },
+      "excluded_build_failures": {},
+      "all_official_rewards": {
+        "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-25": 0.0,
+        "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-26": 0.0,
+        "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-27": 0.0
+      }
+    }
+  },
+  "numerical_gate": "pending"
+}

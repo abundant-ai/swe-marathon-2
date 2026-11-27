@@ -1,0 +1,327 @@
+{
+  "experiment": "4a694e06",
+  "version": 3,
+  "model": "openai/gpt-6.2-sol",
+  "reasoning_effort": "xhigh",
+  "trials": {
+    "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-16": {
+      "source_sha256": "b61af1a21d6b42763a4ca426e070911d37538029061de9f524b7c6d147403da6",
+      "official_reward": 0.31,
+      "conditions": {
+        "correct": {
+          "build": "valid",
+          "part_accuracy": 0.31000000000000005,
+          "parent_depth_f1": 0.6517951906562857,
+          "workspace_rgbd": 0.4610174920919499,
+          "depth_coverage": 0.6914021935706175,
+          "reward": 0.31000000000000005,
+          "compared_to_hosted": {
+            "identical_arrays": {
+              "vertices": false,
+              "faces": false,
+              "colors": true,
+              "face_ids": true,
+              "part_ids": true
+            },
+            "vertices": 14296,
+            "triangles": 19825,
+            "same_labeled_triangles_at_micrometer_resolution": false,
+            "mean_symmetric_nearest_vertex_distance_m": 4.674764379059826e-10
+          },
+          "compared_to_local_matched": {
+            "identical_arrays": {
+              "vertices": true,
+              "faces": true,
+              "colors": true,
+              "face_ids": true,
+              "part_ids": true
+            },
+            "vertices": 14296,
+            "triangles": 19825,
+            "same_labeled_triangles_at_micrometer_resolution": true,
+            "vertex_rmse_m": 0.0,
+            "mean_absolute_srgb_change": 0.0
+          }
+        },
+        "matched_repeat": {
+          "build": "valid",
+          "part_accuracy": 0.31000000000000005,
+          "parent_depth_f1": 0.6517951906562857,
+          "workspace_rgbd": 0.4610174920919499,
+          "depth_coverage": 0.6914021935706175,
+          "reward": 0.31000000000000005,
+          "compared_to_local_matched": {
+            "identical_arrays": {
+              "vertices": true,
+              "faces": true,
+              "colors": true,
+              "face_ids": true,
+              "part_ids": true
+            },
+            "vertices": 14296,
+            "triangles": 19825,
+            "same_labeled_triangles_at_micrometer_resolution": true,
+            "vertex_rmse_m": 0.0,
+            "mean_absolute_srgb_change": 0.0
+          }
+        },
+        "swapped": {
+          "build": "valid",
+          "part_accuracy": 0.305,
+          "parent_depth_f1": 0.6660220003652703,
+          "workspace_rgbd": 0.42922567557838837,
+          "depth_coverage": 0.691351870208518,
+          "reward": 0.305,
+          "compared_to_local_matched": {
+            "identical_arrays": {
+              "vertices": false,
+              "faces": false,
+              "colors": false,
+              "face_ids": false,
+              "part_ids": false
+            },
+            "vertices": 14297,
+            "triangles": 19826,
+            "same_labeled_triangles_at_micrometer_resolution": false,
+            "mean_symmetric_nearest_vertex_distance_m": 0.0018537920220669146
+          }
+        },
+        "none": {
+          "build": "valid",
+          "part_accuracy": 0.305,
+          "parent_depth_f1": 0.6660220003652703,
+          "workspace_rgbd": 0.42922567557838837,
+          "depth_coverage": 0.691351870208518,
+          "reward": 0.305,
+          "compared_to_local_matched": {
+            "identical_arrays": {
+              "vertices": false,
+              "faces": false,
+              "colors": false,
+              "face_ids": false,
+              "part_ids": false
+            },
+            "vertices": 14297,
+            "triangles": 19826,
+            "same_labeled_triangles_at_micrometer_resolution": false,
+            "mean_symmetric_nearest_vertex_distance_m": 0.0018537920220669146
+          }
+        }
+      }
+    },
+    "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-20": {
+      "source_sha256": "df76e23f6687513828510d71a7254b6fd66190353f898115c3c6d9411e9f6db5",
+      "official_reward": 0.2975,
+      "conditions": {
+        "correct": {
+          "build": "valid",
+          "part_accuracy": 0.2975,
+          "parent_depth_f1": 0.7603416831359201,
+          "workspace_rgbd": 0.5046109684822804,
+          "depth_coverage": 0.8208076281609666,
+          "reward": 0.2975,
+          "compared_to_hosted": {
+            "identical_arrays": {
+              "vertices": true,
+              "faces": true,
+              "colors": true,
+              "face_ids": true,
+              "part_ids": true
+            },
+            "vertices": 14436,
+            "triangles": 19477,
+            "same_labeled_triangles_at_micrometer_resolution": true,
+            "vertex_rmse_m": 0.0,
+            "mean_absolute_srgb_change": 0.0
+          },
+          "compared_to_local_matched": {
+            "identical_arrays": {
+              "vertices": true,
+              "faces": true,
+              "colors": true,
+              "face_ids": true,
+              "part_ids": true
+            },
+            "vertices": 14436,
+            "triangles": 19477,
+            "same_labeled_triangles_at_micrometer_resolution": true,
+            "vertex_rmse_m": 0.0,
+            "mean_absolute_srgb_change": 0.0
+          }
+        },
+        "matched_repeat": {
+          "build": "valid",
+          "part_accuracy": 0.2975,
+          "parent_depth_f1": 0.7603416831359201,
+          "workspace_rgbd": 0.5046109684822804,
+          "depth_coverage": 0.8208076281609666,
+          "reward": 0.2975,
+          "compared_to_local_matched": {
+            "identical_arrays": {
+              "vertices": true,
+              "faces": true,
+              "colors": true,
+              "face_ids": true,
+              "part_ids": true
+            },
+            "vertices": 14436,
+            "triangles": 19477,
+            "same_labeled_triangles_at_micrometer_resolution": true,
+            "vertex_rmse_m": 0.0,
+            "mean_absolute_srgb_change": 0.0
+          }
+        },
+        "swapped": {
+          "build": "valid",
+          "part_accuracy": 0.2975,
+          "parent_depth_f1": 0.7603416831359201,
+          "workspace_rgbd": 0.5046109684822804,
+          "depth_coverage": 0.8208076281609666,
+          "reward": 0.2975,
+          "compared_to_local_matched": {
+            "identical_arrays": {
+              "vertices": true,
+              "faces": true,
+              "colors": true,
+              "face_ids": true,
+              "part_ids": true
+            },
+            "vertices": 14436,
+            "triangles": 19477,
+            "same_labeled_triangles_at_micrometer_resolution": true,
+            "vertex_rmse_m": 0.0,
+            "mean_absolute_srgb_change": 0.0
+          }
+        },
+        "none": {
+          "build": "valid",
+          "part_accuracy": 0.2975,
+          "parent_depth_f1": 0.7603416831359201,
+          "workspace_rgbd": 0.5046109684822804,
+          "depth_coverage": 0.8208076281609666,
+          "reward": 0.2975,
+          "compared_to_local_matched": {
+            "identical_arrays": {
+              "vertices": true,
+              "faces": true,
+              "colors": true,
+              "face_ids": true,
+              "part_ids": true
+            },
+            "vertices": 14436,
+            "triangles": 19477,
+            "same_labeled_triangles_at_micrometer_resolution": true,
+            "vertex_rmse_m": 0.0,
+            "mean_absolute_srgb_change": 0.0
+          }
+        }
+      }
+    },
+    "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-21": {
+      "source_sha256": "69d675c07b019860488ab48109fe601333b0342fd1f5acd3f14c9a7d723c1f18",
+      "official_reward": 0.26,
+      "conditions": {
+        "correct": {
+          "build": "valid",
+          "part_accuracy": 0.26,
+          "parent_depth_f1": 0.7088281211239286,
+          "workspace_rgbd": 0.5101997872011275,
+          "depth_coverage": 0.7569375731784652,
+          "reward": 0.26,
+          "compared_to_hosted": {
+            "identical_arrays": {
+              "vertices": true,
+              "faces": true,
+              "colors": true,
+              "face_ids": true,
+              "part_ids": true
+            },
+            "vertices": 13593,
+            "triangles": 19752,
+            "same_labeled_triangles_at_micrometer_resolution": true,
+            "vertex_rmse_m": 0.0,
+            "mean_absolute_srgb_change": 0.0
+          },
+          "compared_to_local_matched": {
+            "identical_arrays": {
+              "vertices": true,
+              "faces": true,
+              "colors": true,
+              "face_ids": true,
+              "part_ids": true
+            },
+            "vertices": 13593,
+            "triangles": 19752,
+            "same_labeled_triangles_at_micrometer_resolution": true,
+            "vertex_rmse_m": 0.0,
+            "mean_absolute_srgb_change": 0.0
+          }
+        },
+        "matched_repeat": {
+          "build": "valid",
+          "part_accuracy": 0.26,
+          "parent_depth_f1": 0.7088281211239286,
+          "workspace_rgbd": 0.5101997872011275,
+          "depth_coverage": 0.7569375731784652,
+          "reward": 0.26,
+          "compared_to_local_matched": {
+            "identical_arrays": {
+              "vertices": true,
+              "faces": true,
+              "colors": true,
+              "face_ids": true,
+              "part_ids": true
+            },
+            "vertices": 13593,
+            "triangles": 19752,
+            "same_labeled_triangles_at_micrometer_resolution": true,
+            "vertex_rmse_m": 0.0,
+            "mean_absolute_srgb_change": 0.0
+          }
+        },
+        "swapped": {
+          "build": "valid",
+          "part_accuracy": 0.26,
+          "parent_depth_f1": 0.7088281211239286,
+          "workspace_rgbd": 0.46331954703752964,
+          "depth_coverage": 0.7567546879580493,
+          "reward": 0.26,
+          "compared_to_local_matched": {
+            "identical_arrays": {
+              "vertices": false,
+              "faces": false,
+              "colors": false,
+              "face_ids": false,
+              "part_ids": false
+            },
+            "vertices": 13593,
+            "triangles": 19780,
+            "same_labeled_triangles_at_micrometer_resolution": false,
+            "mean_symmetric_nearest_vertex_distance_m": 0.00040381549029817713
+          }
+        },
+        "none": {
+          "build": "valid",
+          "part_accuracy": 0.26,
+          "parent_depth_f1": 0.7088281211239286,
+          "workspace_rgbd": 0.46331954703752964,
+          "depth_coverage": 0.7567546879580493,
+          "reward": 0.26,
+          "compared_to_local_matched": {
+            "identical_arrays": {
+              "vertices": false,
+              "faces": false,
+              "colors": false,
+              "face_ids": false,
+              "part_ids": false
+            },
+            "vertices": 13593,
+            "triangles": 19780,
+            "same_labeled_triangles_at_micrometer_resolution": false,
+            "mean_symmetric_nearest_vertex_distance_m": 0.00040381549029817713
+          }
+        }
+      }
+    }
+  }
+}

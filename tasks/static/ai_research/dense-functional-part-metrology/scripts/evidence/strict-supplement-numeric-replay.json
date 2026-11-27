@@ -1,0 +1,16 @@
+{
+  "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-37": {
+    "outcome": "reproduced",
+    "trial_model": "relace/glm-5.3",
+    "reward": 0.0,
+    "max_component_difference": 0.0,
+    "test_receipt_matches": true,
+    "requirement_status": {
+      "scene": "passed",
+      "final_test": "passed",
+      "fine_parts": "failed",
+      "parent_surfaces": "failed",
+      "colored_scene": "failed"
+    }
+  }
+}

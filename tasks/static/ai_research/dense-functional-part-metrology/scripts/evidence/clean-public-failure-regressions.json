@@ -1,0 +1,20 @@
+{
+  "swe-m2_ai-research_dense-functional-part-metrology-correct-9acadc32-7": {
+    "succeeded": false,
+    "stale_receipt_removed": true,
+    "author_scratch_preserved": true,
+    "failure": "Clean source test exited with code 1"
+  },
+  "swe-m2_ai-research_dense-functional-part-metrology-correct-9acadc32-9": {
+    "succeeded": false,
+    "stale_receipt_removed": true,
+    "author_scratch_preserved": true,
+    "failure": "Clean source test exited with code 1"
+  },
+  "swe-m2_ai-research_dense-functional-part-metrology-correct-9acadc32-12": {
+    "succeeded": false,
+    "stale_receipt_removed": true,
+    "author_scratch_preserved": true,
+    "failure": "Clean source test exited with code 1"
+  }
+}

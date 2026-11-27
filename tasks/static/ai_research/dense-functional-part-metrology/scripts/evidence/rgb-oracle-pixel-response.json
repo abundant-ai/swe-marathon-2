@@ -1,0 +1,15 @@
+{
+  "intervention": "Shift the six real RGB keyframes three native pixels to the right with edge replication, holding pose rows and public seed annotations fixed. Desk-fit diagnostic only.",
+  "original_origin_m": [
+    -0.3672533481952512,
+    0.23074103564022902,
+    0.4374988668083108
+  ],
+  "shifted_origin_m": [
+    -0.36418642583036076,
+    0.23011408406816677,
+    0.4339609718450975
+  ],
+  "origin_displacement_mm": 4.723958280584856,
+  "basis_matrix_frobenius_change": 0.03737046713180293
+}

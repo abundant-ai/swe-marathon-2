@@ -1,0 +1,52 @@
+{
+  "native_image_results": [],
+  "numeric_image_operations": [
+    {
+      "step": 5,
+      "tool": "bash",
+      "call_id": "call_6239955480b04629bde3c479",
+      "source_tokens": [
+        "observation.png"
+      ],
+      "decode_snippet": "PIL import Image\nim = Image.open('observation.png')\nprint(im.size, im.mode)\nimport numpy as np\na=np.asarray(im); print(a.s",
+      "returned_excerpt": "(1280, 1506) RGB\n(1506, 1280, 3) uint8"
+    },
+    {
+      "step": 8,
+      "tool": "bash",
+      "call_id": "call_dc70dfe09314491b85f5e447",
+      "source_tokens": [
+        "observation.png"
+      ],
+      "decode_snippet": "as np\nim = np.asarray(Image.open('observation.png'))\nprint(im.shape)\n# layout: 3 rows x 2 cols, each cell 640x480, then 22",
+      "returned_excerpt": "(1506, 1280, 3)\nrow 0 band unique colors 99 min 3 max 255\n  nonblank col range 0 1279 count 22985\nrow 1 band unique colors 113 min 3 max 255\n  nonblank col range 0 1279 count 22980\nrow 2 band unique colors 140 min 3 max "
+    },
+    {
+      "step": 8,
+      "tool": "bash",
+      "call_id": "call_1dfe4d4ccda9416397467d3c",
+      "source_tokens": [
+        "clip.mp4"
+      ],
+      "decode_snippet": "py as np\na=np.asarray(Image.open('0072.png')); print(a.shape, a.dtype)\nfor n in ['0000.png','0036.png','0072.png']:\n    im",
+      "returned_excerpt": "(480, 640, 3) uint8\n0000.png [124.1532487  114.34202799 115.89486328]\n0036.png [149.59805339 140.02940755 142.74142578]\n0072.png [150.97673503 131.74002604 123.70997721]\n[STREAM]\nindex=0\ncodec_name=h264\ncodec_long_name=H"
+    }
+  ],
+  "final_smoke_results": [
+    {
+      "step": 76,
+      "tool": "bash",
+      "call_id": "call_965db60e74b9484abda1071b"
+    }
+  ],
+  "advertised_tools": [
+    "bash",
+    "list_submissions",
+    "submit"
+  ],
+  "trial": "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-37",
+  "source_sha256": "20197f260036cf9a0b6c51bf23062276774bfab03fc65d60d31bf89e6eaed9f3",
+  "trajectory_sha256": "2ad5181ae10017e81c74ad992465e51a4aebb1300cbf0dec79c8795a4feeb315",
+  "note": "Separate validation on the unchanged task version after original GLM 27 performed a manual source test without the prescribed clean rebuild.",
+  "numerical_image_call_count": 13
+}

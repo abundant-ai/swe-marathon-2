@@ -1,0 +1,33 @@
+{
+  "experiment_id": "4a694e06",
+  "revision": 3,
+  "trials": [
+    "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-16",
+    "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-20",
+    "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-21",
+    "swe-m2_ai-research_dense-functional-part-metrology-none-07435eea-20",
+    "swe-m2_ai-research_dense-functional-part-metrology-none-07435eea-21",
+    "swe-m2_ai-research_dense-functional-part-metrology-none-07435eea-22",
+    "swe-m2_ai-research_dense-functional-part-metrology-swapped-6e41b1a2-17",
+    "swe-m2_ai-research_dense-functional-part-metrology-swapped-6e41b1a2-18",
+    "swe-m2_ai-research_dense-functional-part-metrology-swapped-6e41b1a2-19"
+  ],
+  "common_input": {
+    "base_instructions_sha256": "b68a162fb530728a1bdfadbc263a70a384122ae2cb0b09e3e32b04d57d6a3105",
+    "pretool_messages": [
+      {
+        "role": "developer",
+        "sha256": "62ffe6dba8ddb5f92bd0c30d70735e79a06b87235b77dbb1f9c5731dadfe9223"
+      },
+      {
+        "role": "user",
+        "sha256": "275efbd0b5457adc659e68baa6e518f396c25c1db3af51ec7b91e69a5a0e7537"
+      },
+      {
+        "role": "user",
+        "sha256": "094c9d35d3dc834da964e3b1d28ab4b3a49185e4fa448415a76d84dec10f9e80"
+      }
+    ]
+  },
+  "scope": "Hashes of the base instructions and all system, developer and user content arrays recorded before the first tool call in each native agent session. They exclude tool responses, subsequent messages, session transport fields and process environment."
+}

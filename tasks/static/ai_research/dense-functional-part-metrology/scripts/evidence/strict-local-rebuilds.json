@@ -1,0 +1,101 @@
+{
+  "correct": {
+    "public_files": [
+      "a-keyframes.txt",
+      "a-poses.csv",
+      "attribution.txt",
+      "b-keyframes.txt",
+      "b-poses.csv",
+      "clip.mp4",
+      "frames.zip",
+      "observation.png"
+    ],
+    "clean_source_valid": true,
+    "receipt": {
+      "source_sha256": "11ea170beab6b062fb848d6cec2afe8018e2498cc0176cc42679caa949fd5935",
+      "details": {
+        "vertices": 3,
+        "triangles": 1,
+        "part_counts": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "numeric_archive_bytes": 1436
+      }
+    }
+  },
+  "swapped": {
+    "public_files": [
+      "a-keyframes.txt",
+      "a-poses.csv",
+      "attribution.txt",
+      "b-keyframes.txt",
+      "b-poses.csv",
+      "clip.mp4",
+      "frames.zip",
+      "observation.png"
+    ],
+    "clean_source_valid": true,
+    "receipt": {
+      "source_sha256": "12b4a50aa5d5925f3ffbeccbe348383264627b94416b7e39d430e3e0afc91c3b",
+      "details": {
+        "vertices": 3,
+        "triangles": 1,
+        "part_counts": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "numeric_archive_bytes": 1436
+      }
+    }
+  },
+  "none": {
+    "public_files": [
+      "a-keyframes.txt",
+      "a-poses.csv",
+      "attribution.txt",
+      "b-keyframes.txt",
+      "b-poses.csv"
+    ],
+    "clean_source_valid": true,
+    "receipt": {
+      "source_sha256": "780cf2b1338d2a91d23bf587183da5d03719beecb835a8a51735ad87d0aa3f47",
+      "details": {
+        "vertices": 3,
+        "triangles": 1,
+        "part_counts": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "numeric_archive_bytes": 1436
+      }
+    }
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "build": "invalid",
+  "source_sha256": "41a778dc70e907fed83d3638ed855e443c9856c316ed32bde92ca5f86f9b9edb",
+  "test_receipt_matches": false,
+  "error_domain": "candidate",
+  "reason": "Scene builder failed: Traceback (most recent call last):\n  File \"/tmp/mesh-tqhzv7xs/inputs/_bootstrap.py\", line 22, in <module>\n    runpy.run_path(\"build.py\", run_name=\"__main__\")\n  File \"<frozen runpy>\", line 287, in run_path\n  File \"<frozen runpy>\", line 98, in _run_module_code\n  File \"<frozen runpy>\", line 88, in _run_code\n  File \"build.py\", line 4, in <module>\n    arrays=submission.scene()\n           ^^^^^^^^^^^^^^^^\nAttributeError: module 'submission' has no attribute 'scene'\n",
+  "reward": 0.0,
+  "verification": {
+    "passed": false,
+    "checks": [
+      {
+        "requirement_id": "scene",
+        "status": "failed",
+        "explanation": "Scene builder failed: Traceback (most recent call last):\n  File \"/tmp/mesh-tqhzv7xs/inputs/_bootstrap.py\", line 22, in <module>\n    runpy.run_path(\"build.py\", run_name=\"__main__\")\n  File \"<frozen runpy>\", line 287, in run_path\n  File \"<frozen runpy>\", line 98, in _run_module_code\n  File \"<frozen runpy>\", line 88, in _run_code\n  File \"build.py\", line 4, in <module>\n    arrays=submission.scene()\n           ^^^^^^^^^^^^^^^^\nAttributeError: module 'submission' has no attribute 'scene'\n",
+        "measurements": {}
+      },
+      {
+        "requirement_id": "final_test",
+        "status": "failed",
+        "explanation": "No matching final-source smoke receipt.",
+        "measurements": {}
+      },
+      {
+        "requirement_id": "fine_parts",
+        "status": "skipped",
+        "explanation": "Requires a valid reconstructed scene.",
+        "measurements": {}
+      },
+      {
+        "requirement_id": "parent_surfaces",
+        "status": "skipped",
+        "explanation": "Requires a valid reconstructed scene.",
+        "measurements": {}
+      },
+      {
+        "requirement_id": "colored_scene",
+        "status": "skipped",
+        "explanation": "Requires a valid reconstructed scene.",
+        "measurements": {}
+      }
+    ],
+    "metrics": {
+      "reward": 0.0
+    }
+  }
+}

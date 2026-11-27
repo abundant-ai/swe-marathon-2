@@ -1,0 +1,24 @@
+{
+  "prior_trial": "swe-m2_ai-research_clutter-object-metrology-correct-ab991e51-2",
+  "prior_experiment": "https://www.oddish.app/experiments/733d7557",
+  "prior_source_sha256": "86a3715473d4f934789101b7e5facd369b43cce56f6cacccf79899d497410199",
+  "prior_codex_trajectory_sha256": "96df2fc6c9b781a980a7725552fae949fae1723fdc1bde3f536b1ae7a93c2eef",
+  "recovered_input_rgb_fit_steps": {
+    "edge_initial": 113,
+    "edge_refinement": 124,
+    "table_basis": 142,
+    "basis_refinement": 158,
+    "axis_orientation": 167,
+    "texture_sampling": 266
+  },
+  "public_part_input_picks_sha256": "a887a518126d7abc82c60d9561b41447dfc497d6f6c8e87b2d8122798ed10e83",
+  "prior_exposure": "Only the prior task public RGB and tracks were available during its agent run.",
+  "inputs_in_current_rebuild": [
+    "a-keyframes.txt",
+    "a-poses.csv",
+    "observation.png",
+    "frames.zip"
+  ],
+  "precomputed_mesh_in_maintained_solution": false,
+  "limits": "Object outlines and seed regions are scene-specific authoring data taken from public input pixels. The automatic stages estimate desk edges, triangulate contact surfaces and resample colors from the supplied RGB. This is not an automatic scene discovery pipeline."
+}

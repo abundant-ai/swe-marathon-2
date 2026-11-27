@@ -1,0 +1,82 @@
+{
+  "experiment": "4a694e06",
+  "task_version": 3,
+  "trial": "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-27",
+  "agent": "proximus",
+  "model": "relace/glm-5.3",
+  "trajectory_sha256": "407f4bccfbc761472d5a50c6ca45c481a7ba1f977b27f01c1b82456b68f08d35",
+  "source_sha256": "585b3b2d7fe8b272626225ab4ededfa05ad30ac29ecea7932e917d3ca7dccf8d",
+  "verifier_source_sha256": "585b3b2d7fe8b272626225ab4ededfa05ad30ac29ecea7932e917d3ca7dccf8d",
+  "hosted_receipt": {},
+  "hosted_build": "valid",
+  "hosted_reward": 0.0,
+  "manual_test_evidence": [
+    {
+      "step": 4,
+      "call_id": "call_3267101c89c4403fbf361e06",
+      "selected_command_lines": [
+        "cat a-keyframes.txt && echo \"=== b\" && cat b-keyframes.txt && echo \"=== attrib\" && cat attribution.txt && echo \"=== pub\" && cat public-inputs.json && echo \"=== receipt\" && cat test_receipt.json && echo \"=== python\" && cat python && echo \"=== submission\" && cat submission.py"
+      ],
+      "selected_result_lines": []
+    },
+    {
+      "step": 88,
+      "call_id": "call_cf12cd21ccd34887a2988f46",
+      "selected_command_lines": [
+        "V,F,C,O,P=submission.scene()",
+        "b=io.BytesIO(); np.savez(b,vertices=V,faces=F.astype(np.int64),colors=C,face_ids=O.astype(np.int64),part_ids=P.astype(np.int64))"
+      ],
+      "selected_result_lines": [
+        "exit code: 0",
+        "ok",
+        "V (18959, 3) F (18224, 3) wrong 0 archive 1640244",
+        "obj [17120   729    83   292] part [18203     0     0     0     0     0     0     0     0    14     7]"
+      ]
+    },
+    {
+      "step": 89,
+      "call_id": "call_5e8db21e74764fd188635aa7",
+      "selected_command_lines": [
+        "cd /app/work && cp submission.py /tmp/sub_best.py && python3 - <<'EOF'",
+        "V,F,C,O,P=S.scene(); print('t',round(time.time()-t,1), V.shape, F.shape)"
+      ],
+      "selected_result_lines": []
+    },
+    {
+      "step": 90,
+      "call_id": "call_44960aac52024f6db6925f7e",
+      "selected_command_lines": [
+        "cd /app/work && cp /tmp/sub_best.py submission.py && python3 -c \"",
+        "import hashlib;print(hashlib.sha256(open('/app/work/submission.py','rb').read()).hexdigest())"
+      ],
+      "selected_result_lines": [
+        "ok",
+        "585b3b2d7fe8b272626225ab4ededfa05ad30ac29ecea7932e917d3ca7dccf8d",
+        "---",
+        "21032 submission.py"
+      ]
+    },
+    {
+      "step": 94,
+      "call_id": "call_4999e55d3a88436798b2d726",
+      "selected_command_lines": [
+        "print('restored', hashlib.sha256(open('/app/work/submission.py','rb').read()).hexdigest())"
+      ],
+      "selected_result_lines": [
+        "exit code: 0",
+        "restored 585b3b2d7fe8b272626225ab4ededfa05ad30ac29ecea7932e917d3ca7dccf8d",
+        "0",
+        "no extra views = good"
+      ]
+    },
+    {
+      "step": 96,
+      "call_id": "call_0314304a16b24142930c956e",
+      "selected_command_lines": [],
+      "selected_result_lines": [
+        "Final submission confirmed. Ending the session."
+      ]
+    }
+  ],
+  "judgment": "The agent directly ran scene() in the authoring directory and inspected its output. It saved the source, restored those bytes, and printed the final deployed hash. It did not invoke the specified clean smoke test. The separate verifier rebuilt a measured mesh; the run does not satisfy the preregistered receipt requirement."
+}

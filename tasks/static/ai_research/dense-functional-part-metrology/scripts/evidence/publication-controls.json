@@ -1,0 +1,121 @@
+{
+  "oracle": {
+    "trial": {
+      "id": "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-0",
+      "experiment_id": "05956d1d",
+      "agent": "oracle",
+      "model": "nop_oracle",
+      "status": "success",
+      "reward": 0.67,
+      "attempts": 1,
+      "task_version": 1,
+      "error_message": null
+    },
+    "build": "valid",
+    "reason": null,
+    "source_sha256": "f1f4bbcab34bbeef0da21eb2b588ab7dbb3ae27a133cf9694739301eb5dc4632",
+    "test_receipt_matches": true,
+    "verification": {
+      "passed": true,
+      "checks": [
+        {
+          "requirement_id": "scene",
+          "status": "passed",
+          "explanation": "Transferred source produced a valid scene.",
+          "measurements": {}
+        },
+        {
+          "requirement_id": "final_test",
+          "status": "passed",
+          "explanation": "Final-source smoke receipt matched.",
+          "measurements": {}
+        },
+        {
+          "requirement_id": "fine_parts",
+          "status": "passed",
+          "explanation": "Mean per-part silhouette success on unseen views.",
+          "measurements": {
+            "part_success": 0.67
+          }
+        },
+        {
+          "requirement_id": "parent_surfaces",
+          "status": "passed",
+          "explanation": "Macro object F1 for surface depth within 3 cm.",
+          "measurements": {
+            "object_depth_f1": 0.746547593656134
+          }
+        },
+        {
+          "requirement_id": "colored_scene",
+          "status": "passed",
+          "explanation": "Fraction of measured pixels recovered within 5 cm and the color tolerance.",
+          "measurements": {
+            "rgbd_5cm_10percent_coverage": 0.7323581256384631
+          }
+        }
+      ],
+      "metrics": {
+        "part_success": 0.67,
+        "object_depth_f1": 0.746547593656134,
+        "rgbd_5cm_10percent_coverage": 0.7323581256384631,
+        "reward": 0.67
+      }
+    }
+  },
+  "nop": {
+    "trial": {
+      "id": "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-1",
+      "experiment_id": "05956d1d",
+      "agent": "nop",
+      "model": "nop_oracle",
+      "status": "success",
+      "reward": 0.0,
+      "attempts": 1,
+      "task_version": 1,
+      "error_message": null
+    },
+    "build": "invalid",
+    "reason": "Scene builder failed: Traceback (most recent call last):\n  File \"/tmp/mesh-tqhzv7xs/inputs/_bootstrap.py\", line 22, in <module>\n    runpy.run_path(\"build.py\", run_name=\"__main__\")\n  File \"<frozen runpy>\", line 287, in run_path\n  File \"<frozen runpy>\", line 98, in _run_module_code\n  File \"<frozen runpy>\", line 88, in _run_code\n  File \"build.py\", line 4, in <module>\n    arrays=submission.scene()\n           ^^^^^^^^^^^^^^^^\nAttributeError: module 'submission' has no attribute 'scene'\n",
+    "source_sha256": "41a778dc70e907fed83d3638ed855e443c9856c316ed32bde92ca5f86f9b9edb",
+    "test_receipt_matches": false,
+    "verification": {
+      "passed": false,
+      "checks": [
+        {
+          "requirement_id": "scene",
+          "status": "failed",
+          "explanation": "Scene builder failed: Traceback (most recent call last):\n  File \"/tmp/mesh-tqhzv7xs/inputs/_bootstrap.py\", line 22, in <module>\n    runpy.run_path(\"build.py\", run_name=\"__main__\")\n  File \"<frozen runpy>\", line 287, in run_path\n  File \"<frozen runpy>\", line 98, in _run_module_code\n  File \"<frozen runpy>\", line 88, in _run_code\n  File \"build.py\", line 4, in <module>\n    arrays=submission.scene()\n           ^^^^^^^^^^^^^^^^\nAttributeError: module 'submission' has no attribute 'scene'\n",
+          "measurements": {}
+        },
+        {
+          "requirement_id": "final_test",
+          "status": "failed",
+          "explanation": "No matching final-source smoke receipt.",
+          "measurements": {}
+        },
+        {
+          "requirement_id": "fine_parts",
+          "status": "skipped",
+          "explanation": "Requires a valid reconstructed scene.",
+          "measurements": {}
+        },
+        {
+          "requirement_id": "parent_surfaces",
+          "status": "skipped",
+          "explanation": "Requires a valid reconstructed scene.",
+          "measurements": {}
+        },
+        {
+          "requirement_id": "colored_scene",
+          "status": "skipped",
+          "explanation": "Requires a valid reconstructed scene.",
+          "measurements": {}
+        }
+      ],
+      "metrics": {
+        "reward": 0.0
+      }
+    }
+  }
+}

@@ -1,0 +1,313 @@
+{
+  "experiment": "4a694e06",
+  "version": 3,
+  "scope": "Returned native image blocks, successful command-level numerical image operations and final-source tests in Proximus trajectories; only positive observed evidence is counted.",
+  "trials": {
+    "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-22": {
+      "source_sha256": "01838cf4115b9148d6fbadd67fe6e43231c4813caa121f73c99d29b9678cfa75",
+      "trajectory_sha256": "26a94a68cd5bfc4bfbf09b7f81f781bcf9dfa2e9bb22588d58d85d98a97a502e",
+      "advertised_tools": [
+        "bash",
+        "list_submissions",
+        "submit"
+      ],
+      "native_image_results": [],
+      "final_smoke_results": [
+        {
+          "step": 194,
+          "tool": "bash",
+          "call_id": "call_2ed738f57ade41d598d69406"
+        },
+        {
+          "step": 198,
+          "tool": "bash",
+          "call_id": "call_ef994fcdeeb94a84870b884d"
+        }
+      ],
+      "numerical_image_call_count": 26,
+      "numerical_image_examples": [
+        {
+          "step": 6,
+          "tool": "bash",
+          "call_id": "call_9356faa4365642988e6d5296",
+          "source_tokens": [
+            "observation.png"
+          ],
+          "decode_snippet": "m PIL import Image\nim=Image.open('/app/work/observation.png')\n# save downsampled to look at\nim.resize((640,753)).save('/tm",
+          "returned_excerpt": "(1280, 1506)"
+        },
+        {
+          "step": 7,
+          "tool": "bash",
+          "call_id": "call_206d2e18c6ce464e92689f2a",
+          "source_tokens": [
+            "observation.png"
+          ],
+          "decode_snippet": "mpy as np\nim=np.array(Image.open('/app/work/observation.png'))\nprint(im.shape)\n# Rows: 2 rows each 480 + 22 caption = 502 ",
+          "returned_excerpt": "(1506, 1280, 3)\n3.0"
+        },
+        {
+          "step": 8,
+          "tool": "bash",
+          "call_id": "call_d300a146cb254aecb3cc014b",
+          "source_tokens": [
+            "observation.png"
+          ],
+          "decode_snippet": "import numpy as np\nim=Image.open('/app/work/observation.png')\nfor r in range(3):\n    for c in range(2):\n        kf=im.crop",
+          "returned_excerpt": "done\n/tmp/f/kf_00.png\n/tmp/f/kf_01.png\n/tmp/f/kf_10.png\n/tmp/f/kf_11.png\n/tmp/f/kf_20.png\n/tmp/f/kf_21.png"
+        }
+      ],
+      "mesh_sha256": "3dd7a31765f98149f2134f16f82aa0dc6ca21104b7edab8285ec2fcc3b42e1da",
+      "trial_link": "https://www.oddish.app/tasks/swe-m2_ai-research_dense-functional-part-metrology-8cf9c423?trial=swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-22"
+    },
+    "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-23": {
+      "source_sha256": "280a8f825ed7c35faa6a31d99a7176526479335227a8a335971ce40d5bbea5b7",
+      "trajectory_sha256": "7a066e254a9b6d7a9585890b1c0ba97e13d4e71ef43830d0cbee297f4fd054d0",
+      "advertised_tools": [
+        "bash",
+        "list_submissions",
+        "submit"
+      ],
+      "native_image_results": [],
+      "final_smoke_results": [
+        {
+          "step": 174,
+          "tool": "bash",
+          "call_id": "call_2f6af1b00bd84e23b62b30d0"
+        }
+      ],
+      "numerical_image_call_count": 4,
+      "numerical_image_examples": [
+        {
+          "step": 5,
+          "tool": "bash",
+          "call_id": "call_fa795f897bda4f918fa525b3",
+          "source_tokens": [
+            "observation.png"
+          ],
+          "decode_snippet": "m PIL import Image\nim=Image.open('observation.png')\n# 6 keyframes, 3 per row? 1280 wide => 3 cols of 426? Actually native ",
+          "returned_excerpt": "(1280, 1506)"
+        },
+        {
+          "step": 6,
+          "tool": "bash",
+          "call_id": "call_e12ee32761914be983edade3",
+          "source_tokens": [
+            "observation.png"
+          ],
+          "decode_snippet": "y as np\nim=np.asarray(Image.open('observation.png'))\nprint(im.shape)\n# 1280 wide. 6 keyframes in 2 rows of 3? caption band",
+          "returned_excerpt": "(1506, 1280, 3)\n3.0"
+        },
+        {
+          "step": 17,
+          "tool": "bash",
+          "call_id": "call_6875f8e5fef542508a41f775",
+          "source_tokens": [
+            "observation.png"
+          ],
+          "decode_snippet": " as np\nobs=np.asarray(Image.open('observation.png')).astype(int)\nbest={}\nfor i in range(6):\n    r,c=divmod(i,2)\n    tile=o",
+          "returned_excerpt": "kf0 best match frame 0072 err 2.45  (2nd 17.74)\nkf1 best match frame 0061 err 66.04  (2nd 66.34)\nkf2 best match frame 0062 err 75.15  (2nd 75.27)\nkf3 best match frame 0063 err 69.64  (2nd 69.76)\nkf4 best match frame 0064"
+        }
+      ],
+      "mesh_sha256": "e7eb2758cdb95f7233ccc3f5411761b17b552066df00e0bc67385e37ccfe29c9",
+      "trial_link": "https://www.oddish.app/tasks/swe-m2_ai-research_dense-functional-part-metrology-8cf9c423?trial=swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-23"
+    },
+    "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-24": {
+      "source_sha256": "8a6989002ce0f4e6c61814427b0d6c346b30e83cb19b50e2f1c6e08fc2df2e5f",
+      "trajectory_sha256": "7eb3538747d1f940acf044b68504b159617333964a9aadba3bb8e00374076ae4",
+      "advertised_tools": [
+        "bash",
+        "list_submissions",
+        "submit"
+      ],
+      "native_image_results": [],
+      "final_smoke_results": [
+        {
+          "step": 260,
+          "tool": "bash",
+          "call_id": "call_8fdf1e59d6554f76bc7e76b6"
+        },
+        {
+          "step": 266,
+          "tool": "bash",
+          "call_id": "call_48645a73227a4d23bc9fb1d2"
+        }
+      ],
+      "numerical_image_call_count": 60,
+      "numerical_image_examples": [
+        {
+          "step": 6,
+          "tool": "bash",
+          "call_id": "call_065afd1094194e7db3ae854d",
+          "source_tokens": [
+            "observation.png"
+          ],
+          "decode_snippet": "PIL import Image\nim = Image.open('observation.png')\n# top band is 480? sheet: rows = 6 keyframes, each row has 6? Let's co",
+          "returned_excerpt": "(1280, 1506)"
+        },
+        {
+          "step": 6,
+          "tool": "bash",
+          "call_id": "call_a0b911917f5949caa7508486",
+          "source_tokens": [
+            "frames.zip"
+          ],
+          "decode_snippet": "('%04d.png'%i)\n    im=Image.open(io.BytesIO(d)).convert('RGB')\n    print(i, im.size)\n    ims.append(im.resize((320,240)))\n",
+          "returned_excerpt": "0 (640, 480)\n12 (640, 480)\n24 (640, 480)\n36 (640, 480)\n48 (640, 480)\n60 (640, 480)\n72 (640, 480)"
+        },
+        {
+          "step": 9,
+          "tool": "bash",
+          "call_id": "call_303c212ccfd3423fb0e0d6b0",
+          "source_tokens": [
+            "frames.zip"
+          ],
+          "decode_snippet": "('%04d.png'%i)\n    im=Image.open(io.BytesIO(d)).convert('RGB')\n    im.save('/tmp/viz/frames/%04d.png'%i)\nprint('done')\nEOF",
+          "returned_excerpt": "done\n0000.png\n0006.png\n0012.png\n0018.png\n0024.png\n0030.png\n0036.png\n0042.png\n0048.png\n0054.png\n0060.png\n0066.png\n0072.png"
+        }
+      ],
+      "mesh_sha256": "8d6234bbc0ca12fc7720af6fd1aeae00b13ea6341d3c00d18d1b2b0d3ba86758",
+      "trial_link": "https://www.oddish.app/tasks/swe-m2_ai-research_dense-functional-part-metrology-8cf9c423?trial=swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-24"
+    },
+    "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-25": {
+      "source_sha256": "83bd915e657f181a50580c046f58c3caadf28e62d99aa4aa537242024fa7f29b",
+      "trajectory_sha256": "82f1d5ffaeb564f9bce4fceb21e58e02866cf6f0dcb9186b23099ed5c44db66d",
+      "advertised_tools": [
+        "bash",
+        "list_submissions",
+        "submit"
+      ],
+      "native_image_results": [],
+      "final_smoke_results": [
+        {
+          "step": 85,
+          "tool": "bash",
+          "call_id": "call_3df8bbec842b4abbac251f74"
+        }
+      ],
+      "numerical_image_call_count": 5,
+      "numerical_image_examples": [
+        {
+          "step": 20,
+          "tool": "bash",
+          "call_id": "call_757593124f1344a394471772",
+          "source_tokens": [
+            "observation.png"
+          ],
+          "decode_snippet": "import numpy as np\nim=Image.open('observation.png').convert('L')\nfor k in range(6):\n    r,c=k//2,k%2\n    x0=c*640; y0=r*50",
+          "returned_excerpt": "=== keyframe 0 band min/max 3 255\n##########################################################################################################################################################################################"
+        },
+        {
+          "step": 21,
+          "tool": "bash",
+          "call_id": "call_4a31f45ad6094cd3a3e16b41",
+          "source_tokens": [
+            "observation.png"
+          ],
+          "decode_snippet": "import numpy as np\nim=Image.open('observation.png').convert('L')\nfor k in range(6):\n    r,c=k//2,k%2\n    x0=c*640; y0=r*50",
+          "returned_excerpt": "=== kf 0\n############################################################\n############################################################\n............................................................\n............................"
+        },
+        {
+          "step": 22,
+          "tool": "bash",
+          "call_id": "call_2d3c7b1508944397a226298c",
+          "source_tokens": [
+            "observation.png"
+          ],
+          "decode_snippet": "import numpy as np\nim=Image.open('observation.png').convert('RGB')\nfr=[np.asarray(Image.open('/tmp/fr/%04d.png'%i).convert",
+          "returned_excerpt": "0 best frame 72 err 2.451 next 17.74\n1 best frame 61 err 66.045 next 66.34\n2 best frame 62 err 75.154 next 75.27\n3 best frame 63 err 69.644 next 69.76\n4 best frame 64 err 66.954 next 67.48\n5 best frame 61 err 70.078 next"
+        }
+      ],
+      "mesh_sha256": "a029f2e522de072dcf2d08664b6af7cf403a91ed680b6d43003849d1036e0a1c",
+      "trial_link": "https://www.oddish.app/tasks/swe-m2_ai-research_dense-functional-part-metrology-8cf9c423?trial=swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-25"
+    },
+    "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-26": {
+      "source_sha256": "f4632a53a2c362473d26876281fe061a9ab7b774718bd0aeed951dba19e010a3",
+      "trajectory_sha256": "b0d863341ca7822fb4b61aaf7207c8525293a259ddc318e0071969605bbdc77f",
+      "advertised_tools": [
+        "bash",
+        "list_submissions",
+        "submit"
+      ],
+      "native_image_results": [],
+      "final_smoke_results": [
+        {
+          "step": 77,
+          "tool": "bash",
+          "call_id": "call_8e2538703c5a4209910a773b"
+        }
+      ],
+      "numerical_image_call_count": 2,
+      "numerical_image_examples": [
+        {
+          "step": 7,
+          "tool": "bash",
+          "call_id": "call_07f3cac449f448dcaa16614d",
+          "source_tokens": [
+            "observation.png"
+          ],
+          "decode_snippet": "m PIL import Image\nim=Image.open('observation.png'); print('obs', im.size, im.mode)\nimport numpy as np\na=np.asarray(im); p",
+          "returned_excerpt": "0070.png,-0.068178892,0.034287077,-0.006923189,-0.006778817,0.006551591,0.004303288,-0.008582506,0.999932447\r\n0071.png,-0.036199093,0.018126949,-0.003438575,-0.003430791,0.002208775,0.002192901,-0.003547303,0.999988865\r\n"
+        },
+        {
+          "step": 8,
+          "tool": "bash",
+          "call_id": "call_3da04ac354b24e46b71daf07",
+          "source_tokens": [
+            "observation.png"
+          ],
+          "decode_snippet": "t Image\nim=np.asarray(Image.open('observation.png'))\nprint(im.shape)\nfor r in range(3):\n    y0=r*502\n    for c in range(2)",
+          "returned_excerpt": "(1506, 1280, 3)\n0 0 mean [150.  130.3 122.7]\n0 1 mean [166.1 145.6 138.7]\ncaption band: [253.4 253.4 253.4] [17.1 17.1 17.1]\n1 0 mean [166.  147.4 147.9]\n1 1 mean [166.3 147.1 147.9]\ncaption band: [253.5 253.5 253.5] [16"
+        }
+      ],
+      "mesh_sha256": "8e78ad5f21fbeccc8ba401fd61557157d20a54304898cb33fdc5af44b0a24166",
+      "trial_link": "https://www.oddish.app/tasks/swe-m2_ai-research_dense-functional-part-metrology-8cf9c423?trial=swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-26"
+    },
+    "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-27": {
+      "source_sha256": "585b3b2d7fe8b272626225ab4ededfa05ad30ac29ecea7932e917d3ca7dccf8d",
+      "trajectory_sha256": "407f4bccfbc761472d5a50c6ca45c481a7ba1f977b27f01c1b82456b68f08d35",
+      "advertised_tools": [
+        "bash",
+        "list_submissions",
+        "submit"
+      ],
+      "native_image_results": [],
+      "final_smoke_results": [],
+      "numerical_image_call_count": 4,
+      "numerical_image_examples": [
+        {
+          "step": 7,
+          "tool": "bash",
+          "call_id": "call_041e3710d9734d4d860b8002",
+          "source_tokens": [
+            "observation.png"
+          ],
+          "decode_snippet": "port numpy as np\nim = Image.open('observation.png').convert('RGB')\na = np.array(im)\nprint(a.shape)\nfor r in range(3):\n    ",
+          "returned_excerpt": "(1506, 1280, 3)\n0 0 cap colors [[ 3  3  3]\n [13 13 13]\n [14 14 14]\n [15 15 15]\n [20 20 20]\n [21 21 21]] 51\n0 1 cap colors [[ 3  3  3]\n [ 8  8  8]\n [11 11 11]\n [13 13 13]\n [14 14 14]\n [15 15 15]] 97\n1 0 cap colors [[ 3  3"
+        },
+        {
+          "step": 8,
+          "tool": "bash",
+          "call_id": "call_416e8b2f120c4b339fe1a36b",
+          "source_tokens": [
+            "observation.png"
+          ],
+          "decode_snippet": "port numpy as np\nim = Image.open('observation.png').convert('L')\na = np.array(im)\nfor r in range(3):\n    for c in range(2)",
+          "returned_excerpt": "0 0 ......###.........##...####...#####.#.#####.#####...####................................................................................................................................................................"
+        },
+        {
+          "step": 9,
+          "tool": "bash",
+          "call_id": "call_65b811e2f9f34f2583e184ec",
+          "source_tokens": [
+            "observation.png"
+          ],
+          "decode_snippet": "port numpy as np\nim = Image.open('observation.png').convert('L')\na=np.array(im)\nfor r in range(3):\n    band = a[r*502+480:",
+          "returned_excerpt": "row 0 x extent 6 695\n.##......................###.....###...###............................................................................................................................................................."
+        }
+      ],
+      "mesh_sha256": "3904826313a52b3bb58273eaae28cffe459e78b344b15f412f2f95eb0c73f440",
+      "trial_link": "https://www.oddish.app/tasks/swe-m2_ai-research_dense-functional-part-metrology-8cf9c423?trial=swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-27"
+    }
+  }
+}

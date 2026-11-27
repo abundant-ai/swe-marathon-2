@@ -1,0 +1,17 @@
+{
+  "trial": "swe-m2_ai-research_dense-functional-part-metrology-correct-9acadc32-7",
+  "official_reward": 0,
+  "official_build": "failed",
+  "unchanged_source_sha256": "a4064709e03213dda34e4817714993cf4f9212511314b3f7eeb8f09e1bbb9e83",
+  "diagnostic_experiment": "d0f7a41a",
+  "diagnostic_trial": "swe-m2_ai-research_controller-public-cache-diagnostic-3ea82e4d-0",
+  "diagnostic_only_reward": 0.0,
+  "diagnostic_worker": "valid",
+  "local_wall_bound_seconds": 640,
+  "local_replay": "timed out",
+  "intervention": "expanded 73 PNGs from the original public archive into a frames/ cache, in both authored test and initial worker",
+  "interval_upper_bound_from_only_label_9": 0.1,
+  "diagnostic_part_score": 0.0,
+  "diagnostic_parent_depth_f1": 0.002236636099306643,
+  "diagnostic_whole_rgbd": 0.027083941793561314
+}

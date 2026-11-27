@@ -1,0 +1,13 @@
+{
+  "trial": "swe-m2_ai-research_dense-functional-part-metrology-correct-9acadc32-12",
+  "official_reward": 0.0,
+  "official_build": "failed under read-only CWD; on an empty writable CWD its ZIP extraction and expected frame paths also disagreed",
+  "intervention": "Supplied an extra directory containing only the 73 PNG files decoded losslessly from the original public archive. Original source unchanged.",
+  "source_sha256": "d69070558fe52dafe7018cd7b8f562ef4c14734204bcaf5b159ff5e115bc9b40",
+  "public_archive_sha256": "0f590868af25305e1c97061096a6d4d285cd554102995150902cac766ee686c4",
+  "triangles": 18580,
+  "diagnostic_part_score": 0.0,
+  "diagnostic_parent_depth_f1": 0.0,
+  "diagnostic_whole_rgbd": 0.011646084850798799,
+  "diagnostic_only_reward": 0.0
+}

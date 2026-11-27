@@ -1,0 +1,59 @@
+{
+  "scope": "Completed source-writing ATIF tool command arguments; no inference about unobserved awareness. Exposure remains disqualifying even with no matching command.",
+  "trials": [
+    {
+      "id": "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-11",
+      "arm": "correct",
+      "score": 0.3775,
+      "bytecode_mentioned_in_commands": []
+    },
+    {
+      "id": "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-12",
+      "arm": "correct",
+      "score": 0.395,
+      "bytecode_mentioned_in_commands": []
+    },
+    {
+      "id": "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-9",
+      "arm": "correct",
+      "score": 0.42,
+      "bytecode_mentioned_in_commands": []
+    },
+    {
+      "id": "swe-m2_ai-research_dense-functional-part-metrology-none-07435eea-13",
+      "arm": "none",
+      "score": 0.0,
+      "bytecode_mentioned_in_commands": []
+    },
+    {
+      "id": "swe-m2_ai-research_dense-functional-part-metrology-none-07435eea-14",
+      "arm": "none",
+      "score": 0.0,
+      "bytecode_mentioned_in_commands": []
+    },
+    {
+      "id": "swe-m2_ai-research_dense-functional-part-metrology-none-07435eea-15",
+      "arm": "none",
+      "score": 0.0,
+      "bytecode_mentioned_in_commands": []
+    },
+    {
+      "id": "swe-m2_ai-research_dense-functional-part-metrology-swapped-6e41b1a2-12",
+      "arm": "swapped",
+      "score": 0.0,
+      "bytecode_mentioned_in_commands": []
+    },
+    {
+      "id": "swe-m2_ai-research_dense-functional-part-metrology-swapped-6e41b1a2-13",
+      "arm": "swapped",
+      "score": 0.0,
+      "bytecode_mentioned_in_commands": []
+    },
+    {
+      "id": "swe-m2_ai-research_dense-functional-part-metrology-swapped-6e41b1a2-14",
+      "arm": "swapped",
+      "score": 0.0,
+      "bytecode_mentioned_in_commands": []
+    }
+  ]
+}

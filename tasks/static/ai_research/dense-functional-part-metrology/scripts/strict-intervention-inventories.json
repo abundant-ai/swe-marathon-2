@@ -1,0 +1,28 @@
+{
+  "none": {
+    "task": "swe-m2_ai-research_dense-functional-part-metrology-none-07435eea",
+    "version": 3,
+    "changes_from_matched": {
+      "environment/public/clip.mp4": null,
+      "environment/public/frames.zip": null,
+      "environment/public/observation.png": null,
+      "task.toml": "034663b5983cf2cdd8eb743142002d2cfe67d00ee40b6f3b900aec43d1b6cfbe",
+      "tests/private/public-observations/clip.mp4": null,
+      "tests/private/public-observations/frames.zip": null,
+      "tests/private/public-observations/observation.png": null
+    }
+  },
+  "swapped": {
+    "task": "swe-m2_ai-research_dense-functional-part-metrology-swapped-6e41b1a2",
+    "version": 3,
+    "changes_from_matched": {
+      "environment/public/clip.mp4": "63aa6b07ef517cf796e5bf4746101966fc719ff28b3430d4c07769c3c65ab75c",
+      "environment/public/frames.zip": "21c66e1957c304c9bad17937acb52e6a0e1285440950664c5781a2d67fd03ffa",
+      "environment/public/observation.png": "b4146a2fba7dbf24b7137e286b271bd46aacff8e25ba2e275add8833a8290291",
+      "task.toml": "d178e0435068baa16a79f80b1e600ccc5a62600c2f61e4c582496cafb64f6ac6",
+      "tests/private/public-observations/clip.mp4": "63aa6b07ef517cf796e5bf4746101966fc719ff28b3430d4c07769c3c65ab75c",
+      "tests/private/public-observations/frames.zip": "21c66e1957c304c9bad17937acb52e6a0e1285440950664c5781a2d67fd03ffa",
+      "tests/private/public-observations/observation.png": "b4146a2fba7dbf24b7137e286b271bd46aacff8e25ba2e275add8833a8290291"
+    }
+  }
+}

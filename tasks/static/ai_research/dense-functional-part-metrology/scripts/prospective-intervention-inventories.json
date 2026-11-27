@@ -1,0 +1,37 @@
+{
+  "swapped": {
+    "task": "swe-m2_ai-research_dense-functional-part-metrology-swapped-6e41b1a2",
+    "version": 2,
+    "changes_from_matched": {
+      "environment/public/clip.mp4": "63aa6b07ef517cf796e5bf4746101966fc719ff28b3430d4c07769c3c65ab75c",
+      "environment/public/frames.zip": "21c66e1957c304c9bad17937acb52e6a0e1285440950664c5781a2d67fd03ffa",
+      "environment/public/observation.png": "b4146a2fba7dbf24b7137e286b271bd46aacff8e25ba2e275add8833a8290291",
+      "task.toml": "d178e0435068baa16a79f80b1e600ccc5a62600c2f61e4c582496cafb64f6ac6",
+      "tests/private/public-observations/clip.mp4": "63aa6b07ef517cf796e5bf4746101966fc719ff28b3430d4c07769c3c65ab75c",
+      "tests/private/public-observations/frames.zip": "21c66e1957c304c9bad17937acb52e6a0e1285440950664c5781a2d67fd03ffa",
+      "tests/private/public-observations/observation.png": "b4146a2fba7dbf24b7137e286b271bd46aacff8e25ba2e275add8833a8290291",
+      "environment/public/__pycache__/clean_rebuild.cpython-312.pyc": "9ee38387c6d42c26e1b8c6d4315c5fe1a7989f6fdedeaba1565f48aef638f595",
+      "tests/__pycache__/verify.cpython-312.pyc": "1ff3866ffacc4f37706c2b2bd342385831d5a1c3c689e4c37f9ed6001b80c64c",
+      "tests/private/field-pilot/__pycache__/geometry.cpython-312.pyc": "17ae1bbfb6f2d9b4fad09a61a3d5194a5c0589da9a47675d6f2f6157b6213450",
+      "tests/private/functional-parts/__pycache__/optics.cpython-312.pyc": "0b9736db124addc8c73b36da7e64547cc6322ef19b72e1aff13d3bc353d64093",
+      "tests/private/functional-parts/__pycache__/score.cpython-312.pyc": "11ad6e52acd2f3f6160123aa7ac12b2bbad73b05ace68bf8c7471759ae2781ce",
+      "tests/private/precision-pilot/__pycache__/geometry_eval.cpython-312.pyc": "9e1129499727130a76bca371574f40856512ac174fc6992019fdce86b221367d"
+    }
+  },
+  "none": {
+    "task": "swe-m2_ai-research_dense-functional-part-metrology-none-07435eea",
+    "version": 2,
+    "changes_from_matched": {
+      "environment/public/clip.mp4": null,
+      "environment/public/frames.zip": null,
+      "environment/public/observation.png": null,
+      "environment/public/public-inputs.json": "fdd8b4fb177ffeb2ee9a5a0b63a44acb504586b3289f88660d7e4dba0969a16c",
+      "task.toml": "034663b5983cf2cdd8eb743142002d2cfe67d00ee40b6f3b900aec43d1b6cfbe",
+      "tests/private/public-observations/clip.mp4": null,
+      "tests/private/public-observations/frames.zip": null,
+      "tests/private/public-observations/observation.png": null,
+      "environment/public/__pycache__/clean_rebuild.cpython-312.pyc": "b1ba346f335115e5c0c8a589b08027155ce6c0d05530b06f12fbab7ce764bbd8",
+      "tests/__pycache__/verify.cpython-312.pyc": "727fb18d7691de69b15f6e61626262a71876062600d00abb303e55426faa60fa"
+    }
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "correct": {
+    "task": "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423",
+    "version": 3,
+    "published_files": 56,
+    "published_bytes": 75826936,
+    "method": "pinned task files",
+    "every_sha256_matches": true,
+    "extra_files": [],
+    "missing_files": []
+  },
+  "none": {
+    "task": "swe-m2_ai-research_dense-functional-part-metrology-none-07435eea",
+    "version": 3,
+    "published_files": 50,
+    "published_bytes": 548167,
+    "method": "pinned task files",
+    "every_sha256_matches": true,
+    "extra_files": [],
+    "missing_files": []
+  },
+  "swapped": {
+    "task": "swe-m2_ai-research_dense-functional-part-metrology-swapped-6e41b1a2",
+    "version": 3,
+    "published_files": 56,
+    "published_bytes": 87289690,
+    "method": "pinned task files",
+    "every_sha256_matches": true,
+    "extra_files": [],
+    "missing_files": []
+  },
+  "checked_utc": "2026-11-26T23:27:30.926346+00:00"
+}

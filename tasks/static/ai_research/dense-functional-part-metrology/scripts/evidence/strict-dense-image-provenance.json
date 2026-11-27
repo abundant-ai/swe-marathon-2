@@ -1,0 +1,54 @@
+{
+  "experiment": "4a694e06",
+  "scope": "Candidate shell command decoded original PNG exposures into a named montage. A subsequent image-viewer tool call at the identical path returned native image bytes. Frame counts were read from the actual slicing or loop of each command. Some compound shell commands ran unrelated software probes after writing the image.",
+  "matched": [
+    {
+      "trial": "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-16",
+      "png_frames_in_montage": 16,
+      "archive": "frames.zip",
+      "result_path": "/tmp/a_dense.jpg",
+      "decoder_call": [
+        "call_e30c2319fc8b40eebcf733a95fe3f814",
+        21
+      ],
+      "native_viewer_call": [
+        "call_ac8a4ef50f7d42eea143174bc8c74b52",
+        26
+      ],
+      "native_image_response_line": 29,
+      "rollout_sha256": "d0e5c97ab6bdd383b9d50654082b88c2e74ad4323297396be94f3edfe84a9c20"
+    },
+    {
+      "trial": "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-20",
+      "png_frames_in_montage": 10,
+      "archive": "frames.zip",
+      "result_path": "/tmp/dense.jpg",
+      "decoder_call": [
+        "call_b73866a0718442b588930cec2afcb93e",
+        28
+      ],
+      "native_viewer_call": [
+        "call_86981082f05749f1b693570e9ea4d493",
+        33
+      ],
+      "native_image_response_line": 36,
+      "rollout_sha256": "1ece0bcabad27366b00726bfe5a1162599fa5c0a8f7052bb59314df1a743c2f0"
+    },
+    {
+      "trial": "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-21",
+      "png_frames_in_montage": 25,
+      "archive": "frames.zip",
+      "result_path": "/tmp/desk_dense.jpg",
+      "decoder_call": [
+        "call_5443d5b70b854fea83144c6e9ef27b6c",
+        26
+      ],
+      "native_viewer_call": [
+        "call_619c2ec8b1ef45999d6777b3f9fd4307",
+        30
+      ],
+      "native_image_response_line": 33,
+      "rollout_sha256": "e370b276ee968d3e63cf6c9cc47de0c24ba65028ee280d3fb18ebed2baef6dc3"
+    }
+  ]
+}

@@ -1,0 +1,113 @@
+{
+  "oracle": {
+    "trial_id": "swe-m2_ai-research_controller-reviewed-publication-76f5cd0a-0",
+    "revision": 1,
+    "score": 0.67,
+    "build": "valid",
+    "passed": true,
+    "source": "e0b22370b717a96f7fb552bcc5ef3dc96dacc6b637f53b4477f8e3d5ce0fa651"
+  },
+  "nop": {
+    "trial_id": "swe-m2_ai-research_controller-reviewed-publication-76f5cd0a-1",
+    "revision": 1,
+    "score": 0.0,
+    "build": "invalid",
+    "passed": false,
+    "source": "41a778dc70e907fed83d3638ed855e443c9856c316ed32bde92ca5f86f9b9edb"
+  },
+  "experiment": "https://www.oddish.app/experiments/801ab77f",
+  "published_runtime_inventory_sha256": "b572696386f31321a0f87377c160447531c16c85a70cb91fcd13eb82ebba2210",
+  "oracle_components": {
+    "part_success": 0.67,
+    "object_depth_f1": 0.746547593656134,
+    "whole_scene": 0.7323581256384631
+  },
+  "strict_v3_differences": [
+    "instruction.md",
+    "task.toml",
+    "tests/verify.py",
+    "tests/test_reconstruction.py"
+  ],
+  "downloaded_archive": {
+    "task": "swe-m2_ai-research_controller-reviewed-publication-76f5cd0a",
+    "version": 1,
+    "verified_files": 56,
+    "verified_bytes": 75828380,
+    "all_sha256_match_frozen": true,
+    "no_extra_or_missing_remote_members": true
+  },
+  "clean_index_reconstruction": {
+    "runtime_files": 56,
+    "exact_files": 55,
+    "different": [
+      "task.toml"
+    ],
+    "extra": [],
+    "missing": [],
+    "diff_exec_modes": [],
+    "equivalent_config_excluding_name_and_ratings": true
+  },
+  "current_checkout": {
+    "runtime_files": 56,
+    "total_bytes": 75828425,
+    "exact_files": 54,
+    "different": [
+      "environment/public/smoke.py",
+      "task.toml"
+    ],
+    "extra": [],
+    "missing": [],
+    "diff_exec_modes": [],
+    "equivalent_config_excluding_name_and_ratings": true,
+    "smoke_syntax_matches_published": true
+  },
+  "current_smoke_verification": {
+    "script": "environment/public/smoke.py",
+    "pinned_control_sha256": "fb9101b4854534f0bedae5fc1642d5b31310a7ba0541ab3ce30de73995f23250",
+    "maintained_sha256": "278ff940fc104783326dff8e33872f6755809f777ca6f3904458988ac8a78621",
+    "ast_equivalent": true,
+    "identical_receipts_across_both_helpers_in_same_local_runtime": true,
+    "local_reference_receipt": {
+      "source_sha256": "e0b22370b717a96f7fb552bcc5ef3dc96dacc6b637f53b4477f8e3d5ce0fa651",
+      "details": {
+        "vertices": 12935,
+        "triangles": 19979,
+        "part_counts": [
+          19495,
+          48,
+          48,
+          48,
+          48,
+          48,
+          48,
+          48,
+          48,
+          96,
+          4
+        ],
+        "numeric_archive_bytes": 1421292
+      }
+    },
+    "original_hosted_trial_14_receipt": {
+      "source_sha256": "e0b22370b717a96f7fb552bcc5ef3dc96dacc6b637f53b4477f8e3d5ce0fa651",
+      "details": {
+        "vertices": 12935,
+        "triangles": 19980,
+        "part_counts": [
+          19496,
+          48,
+          48,
+          48,
+          48,
+          48,
+          48,
+          48,
+          48,
+          96,
+          4
+        ],
+        "numeric_archive_bytes": 1421332
+      }
+    }
+  }
+}

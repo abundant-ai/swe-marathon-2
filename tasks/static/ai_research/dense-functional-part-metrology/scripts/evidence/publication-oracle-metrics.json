@@ -1,0 +1,449 @@
+{
+  "build": "valid",
+  "source_sha256": "f1f4bbcab34bbeef0da21eb2b588ab7dbb3ae27a133cf9694739301eb5dc4632",
+  "test_receipt_matches": true,
+  "reward": 0.67,
+  "measured": {
+    "reward": 0.67,
+    "object_depth_f1": 0.746547593656134,
+    "part_success": 0.67,
+    "part_success_by_id": {
+      "1": 0.9,
+      "2": 0.5,
+      "3": 0.6,
+      "4": 0.47500000000000003,
+      "5": 0.45,
+      "6": 0.6,
+      "7": 0.49999999999999994,
+      "8": 0.775,
+      "9": 0.95,
+      "10": 0.95
+    },
+    "mean_part_iou": 0.6961031916288722,
+    "raw_part_success": 0.445,
+    "part_views": [
+      {
+        "1": {
+          "iou": 0.7316017316017316,
+          "reliable_iou": 0.826530612244898,
+          "ground_truth_pixels": 461,
+          "predicted_pixels": 339
+        },
+        "2": {
+          "iou": 0.5993975903614458,
+          "reliable_iou": 0.6326530612244898,
+          "ground_truth_pixels": 199,
+          "predicted_pixels": 332
+        },
+        "3": {
+          "iou": 0.6832844574780058,
+          "reliable_iou": 0.76171875,
+          "ground_truth_pixels": 255,
+          "predicted_pixels": 319
+        },
+        "4": {
+          "iou": 0.5571428571428572,
+          "reliable_iou": 0.6578947368421053,
+          "ground_truth_pixels": 55,
+          "predicted_pixels": 54
+        },
+        "5": {
+          "iou": 0.5,
+          "reliable_iou": 0.6111111111111112,
+          "ground_truth_pixels": 51,
+          "predicted_pixels": 54
+        },
+        "6": {
+          "iou": 0.5,
+          "reliable_iou": 0.59375,
+          "ground_truth_pixels": 47,
+          "predicted_pixels": 55
+        },
+        "7": {
+          "iou": 0.3625,
+          "reliable_iou": 0.3695652173913043,
+          "ground_truth_pixels": 51,
+          "predicted_pixels": 58
+        },
+        "8": {
+          "iou": 0.7413793103448276,
+          "reliable_iou": 0.8421052631578947,
+          "ground_truth_pixels": 212,
+          "predicted_pixels": 192
+        },
+        "9": {
+          "iou": 0.8156723063223509,
+          "reliable_iou": 0.9079822616407982,
+          "ground_truth_pixels": 986,
+          "predicted_pixels": 1053
+        }
+      },
+      {
+        "1": {
+          "iou": 0.8044806517311609,
+          "reliable_iou": 0.9037037037037037,
+          "ground_truth_pixels": 467,
+          "predicted_pixels": 419
+        },
+        "2": {
+          "iou": 0.6770833333333334,
+          "reliable_iou": 0.7441860465116279,
+          "ground_truth_pixels": 281,
+          "predicted_pixels": 363
+        },
+        "3": {
+          "iou": 0.7589041095890411,
+          "reliable_iou": 0.8303886925795053,
+          "ground_truth_pixels": 287,
+          "predicted_pixels": 355
+        },
+        "4": {
+          "iou": 0.49230769230769234,
+          "reliable_iou": 0.5675675675675675,
+          "ground_truth_pixels": 44,
+          "predicted_pixels": 53
+        },
+        "5": {
+          "iou": 0.38235294117647056,
+          "reliable_iou": 0.43902439024390244,
+          "ground_truth_pixels": 47,
+          "predicted_pixels": 47
+        },
+        "6": {
+          "iou": 0.4925373134328358,
+          "reliable_iou": 0.5789473684210527,
+          "ground_truth_pixels": 47,
+          "predicted_pixels": 53
+        },
+        "7": {
+          "iou": 0.5964912280701754,
+          "reliable_iou": 0.7666666666666667,
+          "ground_truth_pixels": 43,
+          "predicted_pixels": 48
+        },
+        "8": {
+          "iou": 0.7486631016042781,
+          "reliable_iou": 0.873015873015873,
+          "ground_truth_pixels": 155,
+          "predicted_pixels": 172
+        },
+        "9": {
+          "iou": 0.8463636363636363,
+          "reliable_iou": 0.9441340782122905,
+          "ground_truth_pixels": 1020,
+          "predicted_pixels": 1011
+        },
+        "10": {
+          "iou": 0.8345205479452055,
+          "reliable_iou": 0.9358465608465608,
+          "ground_truth_pixels": 1704,
+          "predicted_pixels": 1644
+        }
+      },
+      {
+        "1": {
+          "iou": 0.9095022624434389,
+          "reliable_iou": 0.9893333333333333,
+          "ground_truth_pixels": 441,
+          "predicted_pixels": 403
+        },
+        "2": {
+          "iou": 0.7176470588235294,
+          "reliable_iou": 0.7669172932330827,
+          "ground_truth_pixels": 253,
+          "predicted_pixels": 331
+        },
+        "3": {
+          "iou": 0.7380952380952381,
+          "reliable_iou": 0.8122605363984674,
+          "ground_truth_pixels": 262,
+          "predicted_pixels": 322
+        },
+        "4": {
+          "iou": 0.5357142857142857,
+          "reliable_iou": 0.7142857142857143,
+          "ground_truth_pixels": 40,
+          "predicted_pixels": 46
+        },
+        "5": {
+          "iou": 0.5555555555555556,
+          "reliable_iou": 0.7037037037037037,
+          "ground_truth_pixels": 42,
+          "predicted_pixels": 42
+        },
+        "6": {
+          "iou": 0.7450980392156863,
+          "reliable_iou": 1.0,
+          "ground_truth_pixels": 42,
+          "predicted_pixels": 47
+        },
+        "7": {
+          "iou": 0.64,
+          "reliable_iou": 0.8260869565217391,
+          "ground_truth_pixels": 37,
+          "predicted_pixels": 45
+        },
+        "8": {
+          "iou": 0.6413043478260869,
+          "reliable_iou": 0.7857142857142857,
+          "ground_truth_pixels": 147,
+          "predicted_pixels": 155
+        },
+        "9": {
+          "iou": 0.8743218806509946,
+          "reliable_iou": 0.9612831858407079,
+          "ground_truth_pixels": 1049,
+          "predicted_pixels": 1024
+        }
+      },
+      {
+        "1": {
+          "iou": 0.8946360153256705,
+          "reliable_iou": 0.9955654101995566,
+          "ground_truth_pixels": 522,
+          "predicted_pixels": 467
+        },
+        "2": {
+          "iou": 0.7057356608478803,
+          "reliable_iou": 0.7757009345794392,
+          "ground_truth_pixels": 307,
+          "predicted_pixels": 377
+        },
+        "3": {
+          "iou": 0.6274509803921569,
+          "reliable_iou": 0.691131498470948,
+          "ground_truth_pixels": 300,
+          "predicted_pixels": 364
+        },
+        "4": {
+          "iou": 0.6206896551724138,
+          "reliable_iou": 0.8620689655172413,
+          "ground_truth_pixels": 45,
+          "predicted_pixels": 49
+        },
+        "5": {
+          "iou": 0.8181818181818182,
+          "reliable_iou": 1.0,
+          "ground_truth_pixels": 52,
+          "predicted_pixels": 48
+        },
+        "6": {
+          "iou": 0.7627118644067796,
+          "reliable_iou": 0.96875,
+          "ground_truth_pixels": 53,
+          "predicted_pixels": 51
+        },
+        "7": {
+          "iou": 0.6226415094339622,
+          "reliable_iou": 0.8333333333333334,
+          "ground_truth_pixels": 38,
+          "predicted_pixels": 48
+        },
+        "8": {
+          "iou": 0.7979274611398963,
+          "reliable_iou": 0.9924812030075187,
+          "ground_truth_pixels": 174,
+          "predicted_pixels": 173
+        },
+        "9": {
+          "iou": 0.8825065274151436,
+          "reliable_iou": 0.9634015069967707,
+          "ground_truth_pixels": 1054,
+          "predicted_pixels": 1109
+        },
+        "10": {
+          "iou": 0.8976020738820479,
+          "reliable_iou": 0.9783653846153846,
+          "ground_truth_pixels": 1427,
+          "predicted_pixels": 1501
+        }
+      }
+    ],
+    "objects": {
+      "1": {
+        "depth_f1_3cm": 0.9070527790751984,
+        "silhouette_iou": 0.9018663455749548,
+        "boundary_f1_1px": 0.8397448529793081,
+        "unlabeled_depth_recall_3cm": 0.9345882352941176,
+        "normal_depth_recall_25deg": 0.4013671875,
+        "true_surface_pixels": 2125,
+        "predicted_measured_pixels": 2157,
+        "joint_depth_hits": 1942,
+        "normal_support": 1024,
+        "views": [
+          {
+            "mask_pixels": 842,
+            "depth_pixels": 138,
+            "predicted_pixels": 804,
+            "joint_depth_hits": 42
+          },
+          {
+            "mask_pixels": 847,
+            "depth_pixels": 723,
+            "predicted_pixels": 820,
+            "joint_depth_hits": 683
+          },
+          {
+            "mask_pixels": 796,
+            "depth_pixels": 664,
+            "predicted_pixels": 788,
+            "joint_depth_hits": 629
+          },
+          {
+            "mask_pixels": 714,
+            "depth_pixels": 600,
+            "predicted_pixels": 707,
+            "joint_depth_hits": 588
+          }
+        ]
+      },
+      "2": {
+        "depth_f1_3cm": 0.7292978208232445,
+        "silhouette_iou": 0.8125484120836561,
+        "boundary_f1_1px": 0.8013748366171275,
+        "unlabeled_depth_recall_3cm": 0.8016032064128257,
+        "normal_depth_recall_25deg": 0.2691588785046729,
+        "true_surface_pixels": 998,
+        "predicted_measured_pixels": 1067,
+        "joint_depth_hits": 753,
+        "normal_support": 535,
+        "views": [
+          {
+            "mask_pixels": 349,
+            "depth_pixels": 317,
+            "predicted_pixels": 315,
+            "joint_depth_hits": 187
+          },
+          {
+            "mask_pixels": 260,
+            "depth_pixels": 229,
+            "predicted_pixels": 285,
+            "joint_depth_hits": 208
+          },
+          {
+            "mask_pixels": 268,
+            "depth_pixels": 224,
+            "predicted_pixels": 288,
+            "joint_depth_hits": 178
+          },
+          {
+            "mask_pixels": 273,
+            "depth_pixels": 228,
+            "predicted_pixels": 302,
+            "joint_depth_hits": 180
+          }
+        ]
+      },
+      "3": {
+        "depth_f1_3cm": 0.6032921810699589,
+        "silhouette_iou": 0.8430955993930197,
+        "boundary_f1_1px": 0.6435335097091841,
+        "unlabeled_depth_recall_3cm": 0.6358974358974359,
+        "normal_depth_recall_25deg": 0.22734946539110862,
+        "true_surface_pixels": 2535,
+        "predicted_measured_pixels": 2325,
+        "joint_depth_hits": 1466,
+        "normal_support": 1777,
+        "views": [
+          {
+            "mask_pixels": 488,
+            "depth_pixels": 267,
+            "predicted_pixels": 463,
+            "joint_depth_hits": 210
+          },
+          {
+            "mask_pixels": 928,
+            "depth_pixels": 872,
+            "predicted_pixels": 848,
+            "joint_depth_hits": 489
+          },
+          {
+            "mask_pixels": 905,
+            "depth_pixels": 597,
+            "predicted_pixels": 798,
+            "joint_depth_hits": 279
+          },
+          {
+            "mask_pixels": 849,
+            "depth_pixels": 799,
+            "predicted_pixels": 794,
+            "joint_depth_hits": 488
+          }
+        ]
+      }
+    },
+    "whole_scene": {
+      "views": [
+        {
+          "measured_pixels": 14330,
+          "depth_5cm_coverage": 0.9715980460572227,
+          "rgbd_5cm_10percent_coverage": 0.7886252616887648
+        },
+        {
+          "measured_pixels": 15217,
+          "depth_5cm_coverage": 0.9562331602812644,
+          "rgbd_5cm_10percent_coverage": 0.7051324176907406
+        },
+        {
+          "measured_pixels": 15390,
+          "depth_5cm_coverage": 0.9762183235867447,
+          "rgbd_5cm_10percent_coverage": 0.7339181286549707
+        },
+        {
+          "measured_pixels": 15199,
+          "depth_5cm_coverage": 0.9380222383051516,
+          "rgbd_5cm_10percent_coverage": 0.7017566945193763
+        }
+      ],
+      "depth_5cm_coverage": 0.9605179420575959,
+      "rgbd_5cm_10percent_coverage": 0.7323581256384631
+    }
+  },
+  "verification": {
+    "passed": true,
+    "checks": [
+      {
+        "requirement_id": "scene",
+        "status": "passed",
+        "explanation": "Transferred source produced a valid scene.",
+        "measurements": {}
+      },
+      {
+        "requirement_id": "final_test",
+        "status": "passed",
+        "explanation": "Final-source smoke receipt matched.",
+        "measurements": {}
+      },
+      {
+        "requirement_id": "fine_parts",
+        "status": "passed",
+        "explanation": "Mean per-part silhouette success on unseen views.",
+        "measurements": {
+          "part_success": 0.67
+        }
+      },
+      {
+        "requirement_id": "parent_surfaces",
+        "status": "passed",
+        "explanation": "Macro object F1 for surface depth within 3 cm.",
+        "measurements": {
+          "object_depth_f1": 0.746547593656134
+        }
+      },
+      {
+        "requirement_id": "colored_scene",
+        "status": "passed",
+        "explanation": "Fraction of measured pixels recovered within 5 cm and the color tolerance.",
+        "measurements": {
+          "rgbd_5cm_10percent_coverage": 0.7323581256384631
+        }
+      }
+    ],
+    "metrics": {
+      "part_success": 0.67,
+      "object_depth_f1": 0.746547593656134,
+      "rgbd_5cm_10percent_coverage": 0.7323581256384631,
+      "reward": 0.67
+    }
+  }
+}

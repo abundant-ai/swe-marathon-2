@@ -1,0 +1,230 @@
+{
+  "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-14": {
+    "outcome": "reproduced",
+    "trial_model": "nop_oracle",
+    "reward": 0.67,
+    "max_component_difference": 0.0,
+    "test_receipt_matches": true,
+    "requirement_status": {
+      "scene": "passed",
+      "final_test": "passed",
+      "fine_parts": "passed",
+      "parent_surfaces": "passed",
+      "colored_scene": "passed"
+    }
+  },
+  "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-15": {
+    "outcome": "no_mesh",
+    "reason": "Scene builder failed: Traceback (most recent call last):\n  File \"/tmp/mesh-vikg7ta9/_bootstrap.py\", line 28, in <module>\n    values = submission.scene()\n             ^^^^^^^^^^^^^^^^\nAttributeError: module 'submission' has no attribute 'scene'\n"
+  },
+  "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-16": {
+    "outcome": "reproduced",
+    "trial_model": "openai/gpt-6.2-sol",
+    "reward": 0.31000000000000005,
+    "max_component_difference": 5.551115123125783e-17,
+    "test_receipt_matches": true,
+    "requirement_status": {
+      "scene": "passed",
+      "final_test": "passed",
+      "fine_parts": "failed",
+      "parent_surfaces": "passed",
+      "colored_scene": "failed"
+    }
+  },
+  "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-20": {
+    "outcome": "reproduced",
+    "trial_model": "openai/gpt-6.2-sol",
+    "reward": 0.2975,
+    "max_component_difference": 0.0,
+    "test_receipt_matches": true,
+    "requirement_status": {
+      "scene": "passed",
+      "final_test": "passed",
+      "fine_parts": "failed",
+      "parent_surfaces": "passed",
+      "colored_scene": "passed"
+    }
+  },
+  "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-21": {
+    "outcome": "reproduced",
+    "trial_model": "openai/gpt-6.2-sol",
+    "reward": 0.26,
+    "max_component_difference": 0.0,
+    "test_receipt_matches": true,
+    "requirement_status": {
+      "scene": "passed",
+      "final_test": "passed",
+      "fine_parts": "failed",
+      "parent_surfaces": "passed",
+      "colored_scene": "passed"
+    }
+  },
+  "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-22": {
+    "outcome": "reproduced",
+    "trial_model": "relace/deepseek-v4.1-flash",
+    "reward": 0.0,
+    "max_component_difference": 0.0,
+    "test_receipt_matches": true,
+    "requirement_status": {
+      "scene": "passed",
+      "final_test": "passed",
+      "fine_parts": "failed",
+      "parent_surfaces": "failed",
+      "colored_scene": "failed"
+    }
+  },
+  "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-23": {
+    "outcome": "reproduced",
+    "trial_model": "relace/deepseek-v4.1-flash",
+    "reward": 0.0,
+    "max_component_difference": 0.0,
+    "test_receipt_matches": true,
+    "requirement_status": {
+      "scene": "passed",
+      "final_test": "passed",
+      "fine_parts": "failed",
+      "parent_surfaces": "failed",
+      "colored_scene": "failed"
+    }
+  },
+  "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-24": {
+    "outcome": "reproduced",
+    "trial_model": "relace/deepseek-v4.1-flash",
+    "reward": 0.0,
+    "max_component_difference": 0.0,
+    "test_receipt_matches": true,
+    "requirement_status": {
+      "scene": "passed",
+      "final_test": "passed",
+      "fine_parts": "failed",
+      "parent_surfaces": "failed",
+      "colored_scene": "failed"
+    }
+  },
+  "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-25": {
+    "outcome": "reproduced",
+    "trial_model": "relace/glm-5.3",
+    "reward": 0.0,
+    "max_component_difference": 0.0,
+    "test_receipt_matches": true,
+    "requirement_status": {
+      "scene": "passed",
+      "final_test": "passed",
+      "fine_parts": "failed",
+      "parent_surfaces": "failed",
+      "colored_scene": "failed"
+    }
+  },
+  "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-26": {
+    "outcome": "reproduced",
+    "trial_model": "relace/glm-5.3",
+    "reward": 0.0,
+    "max_component_difference": 0.0,
+    "test_receipt_matches": true,
+    "requirement_status": {
+      "scene": "passed",
+      "final_test": "passed",
+      "fine_parts": "failed",
+      "parent_surfaces": "failed",
+      "colored_scene": "failed"
+    }
+  },
+  "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-27": {
+    "outcome": "reproduced",
+    "trial_model": "relace/glm-5.3",
+    "reward": 0.0,
+    "max_component_difference": 0.0,
+    "test_receipt_matches": false,
+    "requirement_status": {
+      "scene": "passed",
+      "final_test": "failed",
+      "fine_parts": "failed",
+      "parent_surfaces": "failed",
+      "colored_scene": "failed"
+    }
+  },
+  "swe-m2_ai-research_dense-functional-part-metrology-none-07435eea-20": {
+    "outcome": "reproduced",
+    "trial_model": "openai/gpt-6.2-sol",
+    "reward": 0.0,
+    "max_component_difference": 0.0,
+    "test_receipt_matches": true,
+    "requirement_status": {
+      "scene": "passed",
+      "final_test": "passed",
+      "fine_parts": "failed",
+      "parent_surfaces": "failed",
+      "colored_scene": "failed"
+    }
+  },
+  "swe-m2_ai-research_dense-functional-part-metrology-none-07435eea-21": {
+    "outcome": "reproduced",
+    "trial_model": "openai/gpt-6.2-sol",
+    "reward": 0.0,
+    "max_component_difference": 0.0,
+    "test_receipt_matches": true,
+    "requirement_status": {
+      "scene": "passed",
+      "final_test": "passed",
+      "fine_parts": "failed",
+      "parent_surfaces": "failed",
+      "colored_scene": "failed"
+    }
+  },
+  "swe-m2_ai-research_dense-functional-part-metrology-none-07435eea-22": {
+    "outcome": "reproduced",
+    "trial_model": "openai/gpt-6.2-sol",
+    "reward": 0.0,
+    "max_component_difference": 0.0,
+    "test_receipt_matches": true,
+    "requirement_status": {
+      "scene": "passed",
+      "final_test": "passed",
+      "fine_parts": "failed",
+      "parent_surfaces": "failed",
+      "colored_scene": "failed"
+    }
+  },
+  "swe-m2_ai-research_dense-functional-part-metrology-swapped-6e41b1a2-17": {
+    "outcome": "reproduced",
+    "trial_model": "openai/gpt-6.2-sol",
+    "reward": 0.0,
+    "max_component_difference": 0.0,
+    "test_receipt_matches": true,
+    "requirement_status": {
+      "scene": "passed",
+      "final_test": "passed",
+      "fine_parts": "failed",
+      "parent_surfaces": "failed",
+      "colored_scene": "failed"
+    }
+  },
+  "swe-m2_ai-research_dense-functional-part-metrology-swapped-6e41b1a2-18": {
+    "outcome": "reproduced",
+    "trial_model": "openai/gpt-6.2-sol",
+    "reward": 0.0,
+    "max_component_difference": 0.0,
+    "test_receipt_matches": true,
+    "requirement_status": {
+      "scene": "passed",
+      "final_test": "passed",
+      "fine_parts": "failed",
+      "parent_surfaces": "failed",
+      "colored_scene": "failed"
+    }
+  },
+  "swe-m2_ai-research_dense-functional-part-metrology-swapped-6e41b1a2-19": {
+    "outcome": "reproduced",
+    "trial_model": "openai/gpt-6.2-sol",
+    "reward": 0.0,
+    "max_component_difference": 0.0,
+    "test_receipt_matches": true,
+    "requirement_status": {
+      "scene": "passed",
+      "final_test": "passed",
+      "fine_parts": "failed",
+      "parent_surfaces": "failed",
+      "colored_scene": "failed"
+    }
+  }
+}

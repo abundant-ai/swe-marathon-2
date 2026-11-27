@@ -1,0 +1,229 @@
+{
+  "experiment": "4a694e06",
+  "version": 3,
+  "scope": "canonical matched images only",
+  "strict_below_half": true,
+  "models": {
+    "openai/gpt-6.2-sol": {
+      "original_scores": [
+        0.31,
+        0.2975,
+        0.26
+      ],
+      "original_measured_count": 3,
+      "all_scores_including_supplements": [
+        0.31,
+        0.2975,
+        0.26
+      ],
+      "all_measured_count": 3,
+      "eligible_trial_ids": [
+        "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-16",
+        "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-20",
+        "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-21"
+      ],
+      "eligible_scores": [
+        0.31,
+        0.2975,
+        0.26
+      ],
+      "mean_eligible": 0.2891666666666667,
+      "meets_gate": true
+    },
+    "relace/deepseek-v4.1-flash": {
+      "original_scores": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "original_measured_count": 3,
+      "all_scores_including_supplements": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "all_measured_count": 3,
+      "eligible_trial_ids": [
+        "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-22",
+        "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-23",
+        "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-24"
+      ],
+      "eligible_scores": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mean_eligible": 0.0,
+      "meets_gate": true
+    },
+    "relace/glm-5.3": {
+      "original_scores": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "original_measured_count": 3,
+      "all_scores_including_supplements": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "all_measured_count": 4,
+      "eligible_trial_ids": [
+        "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-25",
+        "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-26",
+        "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-37"
+      ],
+      "eligible_scores": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "mean_eligible": 0.0,
+      "meets_gate": true
+    }
+  },
+  "trials": [
+    {
+      "trial": "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-16",
+      "model": "openai/gpt-6.2-sol",
+      "cohort": "original",
+      "supplemental_purpose": null,
+      "official_score": 0.31,
+      "classification": "measured; prescribed clean smoke observed",
+      "measured_geometry": true,
+      "eligible_clean_source_test": true,
+      "manual_evidence": null,
+      "source_sha256": "b61af1a21d6b42763a4ca426e070911d37538029061de9f524b7c6d147403da6",
+      "mesh_sha256": "11619d66a2c3ac4c06dfd0dd1f55214d443fd6ee3ba744bbfe1a7ad1fb3ab611",
+      "trial_url": "https://www.oddish.app/tasks/swe-m2_ai-research_dense-functional-part-metrology-8cf9c423?trial=swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-16"
+    },
+    {
+      "trial": "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-20",
+      "model": "openai/gpt-6.2-sol",
+      "cohort": "original",
+      "supplemental_purpose": null,
+      "official_score": 0.2975,
+      "classification": "measured; prescribed clean smoke observed",
+      "measured_geometry": true,
+      "eligible_clean_source_test": true,
+      "manual_evidence": null,
+      "source_sha256": "df76e23f6687513828510d71a7254b6fd66190353f898115c3c6d9411e9f6db5",
+      "mesh_sha256": "b1f9cc5b5a033deca31a939996099fad464775db0274a47e28f4dc3bcba1557e",
+      "trial_url": "https://www.oddish.app/tasks/swe-m2_ai-research_dense-functional-part-metrology-8cf9c423?trial=swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-20"
+    },
+    {
+      "trial": "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-21",
+      "model": "openai/gpt-6.2-sol",
+      "cohort": "original",
+      "supplemental_purpose": null,
+      "official_score": 0.26,
+      "classification": "measured; prescribed clean smoke observed",
+      "measured_geometry": true,
+      "eligible_clean_source_test": true,
+      "manual_evidence": null,
+      "source_sha256": "69d675c07b019860488ab48109fe601333b0342fd1f5acd3f14c9a7d723c1f18",
+      "mesh_sha256": "9d27190da7595c7cab5b7e92608a06eb4b4371d28a280d8441d251d057b0e1a1",
+      "trial_url": "https://www.oddish.app/tasks/swe-m2_ai-research_dense-functional-part-metrology-8cf9c423?trial=swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-21"
+    },
+    {
+      "trial": "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-22",
+      "model": "relace/deepseek-v4.1-flash",
+      "cohort": "original",
+      "supplemental_purpose": null,
+      "official_score": 0.0,
+      "classification": "measured; prescribed clean smoke observed",
+      "measured_geometry": true,
+      "eligible_clean_source_test": true,
+      "manual_evidence": null,
+      "source_sha256": "01838cf4115b9148d6fbadd67fe6e43231c4813caa121f73c99d29b9678cfa75",
+      "mesh_sha256": "3dd7a31765f98149f2134f16f82aa0dc6ca21104b7edab8285ec2fcc3b42e1da",
+      "trial_url": "https://www.oddish.app/tasks/swe-m2_ai-research_dense-functional-part-metrology-8cf9c423?trial=swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-22"
+    },
+    {
+      "trial": "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-23",
+      "model": "relace/deepseek-v4.1-flash",
+      "cohort": "original",
+      "supplemental_purpose": null,
+      "official_score": 0.0,
+      "classification": "measured; prescribed clean smoke observed",
+      "measured_geometry": true,
+      "eligible_clean_source_test": true,
+      "manual_evidence": null,
+      "source_sha256": "280a8f825ed7c35faa6a31d99a7176526479335227a8a335971ce40d5bbea5b7",
+      "mesh_sha256": "e7eb2758cdb95f7233ccc3f5411761b17b552066df00e0bc67385e37ccfe29c9",
+      "trial_url": "https://www.oddish.app/tasks/swe-m2_ai-research_dense-functional-part-metrology-8cf9c423?trial=swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-23"
+    },
+    {
+      "trial": "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-24",
+      "model": "relace/deepseek-v4.1-flash",
+      "cohort": "original",
+      "supplemental_purpose": null,
+      "official_score": 0.0,
+      "classification": "measured; prescribed clean smoke observed",
+      "measured_geometry": true,
+      "eligible_clean_source_test": true,
+      "manual_evidence": null,
+      "source_sha256": "8a6989002ce0f4e6c61814427b0d6c346b30e83cb19b50e2f1c6e08fc2df2e5f",
+      "mesh_sha256": "8d6234bbc0ca12fc7720af6fd1aeae00b13ea6341d3c00d18d1b2b0d3ba86758",
+      "trial_url": "https://www.oddish.app/tasks/swe-m2_ai-research_dense-functional-part-metrology-8cf9c423?trial=swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-24"
+    },
+    {
+      "trial": "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-25",
+      "model": "relace/glm-5.3",
+      "cohort": "original",
+      "supplemental_purpose": null,
+      "official_score": 0.0,
+      "classification": "measured; prescribed clean smoke observed",
+      "measured_geometry": true,
+      "eligible_clean_source_test": true,
+      "manual_evidence": null,
+      "source_sha256": "83bd915e657f181a50580c046f58c3caadf28e62d99aa4aa537242024fa7f29b",
+      "mesh_sha256": "a029f2e522de072dcf2d08664b6af7cf403a91ed680b6d43003849d1036e0a1c",
+      "trial_url": "https://www.oddish.app/tasks/swe-m2_ai-research_dense-functional-part-metrology-8cf9c423?trial=swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-25"
+    },
+    {
+      "trial": "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-26",
+      "model": "relace/glm-5.3",
+      "cohort": "original",
+      "supplemental_purpose": null,
+      "official_score": 0.0,
+      "classification": "measured; prescribed clean smoke observed",
+      "measured_geometry": true,
+      "eligible_clean_source_test": true,
+      "manual_evidence": null,
+      "source_sha256": "f4632a53a2c362473d26876281fe061a9ab7b774718bd0aeed951dba19e010a3",
+      "mesh_sha256": "8e78ad5f21fbeccc8ba401fd61557157d20a54304898cb33fdc5af44b0a24166",
+      "trial_url": "https://www.oddish.app/tasks/swe-m2_ai-research_dense-functional-part-metrology-8cf9c423?trial=swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-26"
+    },
+    {
+      "trial": "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-27",
+      "model": "relace/glm-5.3",
+      "cohort": "original",
+      "supplemental_purpose": null,
+      "official_score": 0.0,
+      "classification": "measured; manual source test only",
+      "measured_geometry": true,
+      "eligible_clean_source_test": false,
+      "manual_evidence": "407f4bccfbc761472d5a50c6ca45c481a7ba1f977b27f01c1b82456b68f08d35",
+      "source_sha256": "585b3b2d7fe8b272626225ab4ededfa05ad30ac29ecea7932e917d3ca7dccf8d",
+      "mesh_sha256": "3904826313a52b3bb58273eaae28cffe459e78b344b15f412f2f95eb0c73f440",
+      "trial_url": "https://www.oddish.app/tasks/swe-m2_ai-research_dense-functional-part-metrology-8cf9c423?trial=swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-27"
+    },
+    {
+      "trial": "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-37",
+      "model": "relace/glm-5.3",
+      "cohort": "supplemental",
+      "supplemental_purpose": "Obtain an additional independently source-tested geometry result after the original cohort missed a mandatory clean smoke receipt.",
+      "official_score": 0.0,
+      "classification": "measured; prescribed clean smoke observed",
+      "measured_geometry": true,
+      "eligible_clean_source_test": true,
+      "manual_evidence": null,
+      "source_sha256": "20197f260036cf9a0b6c51bf23062276774bfab03fc65d60d31bf89e6eaed9f3",
+      "mesh_sha256": "b8b1b21329f56163d26738778774f7c99c043f2272e906ddbab55965907ed7c4",
+      "trial_url": "https://www.oddish.app/tasks/swe-m2_ai-research_dense-functional-part-metrology-8cf9c423?trial=swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-37"
+    }
+  ]
+}

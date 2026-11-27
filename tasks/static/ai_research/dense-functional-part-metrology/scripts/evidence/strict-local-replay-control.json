@@ -1,0 +1,20 @@
+{
+  "comparison": {
+    "identical_arrays": {
+      "vertices": false,
+      "faces": false,
+      "colors": false,
+      "face_ids": false,
+      "part_ids": false
+    },
+    "vertices": 12935,
+    "triangles": 19979
+  },
+  "parts": 0.67,
+  "parent": 0.7462247526553268,
+  "whole": 0.7323920005500067,
+  "strict_version": 3,
+  "experiment": "4a694e06",
+  "reference_source": "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-14",
+  "interpretation": "Local replay kept all three geometric components close to their hosted reference (part score identical). Exact array ordering and numeric values differed across runtimes. Compare each held-source intervention to its repeated local matched control."
+}

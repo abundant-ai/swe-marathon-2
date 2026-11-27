@@ -1,0 +1,213 @@
+{
+  "experiment": "4a694e06",
+  "version": 3,
+  "interpretation": "All three programs were originally written with the contact sheet and native RGB sequence present. Only the observations supplied during clean numerical rebuilding vary here. These measurements cannot separate the influence of the two inputs during program synthesis.",
+  "trials": [
+    {
+      "trial_id": "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-16",
+      "source_sha256": "b61af1a21d6b42763a4ca426e070911d37538029061de9f524b7c6d147403da6",
+      "observations_at_authoring": "all matching images",
+      "conditions": {
+        "complete": {
+          "build": "valid",
+          "part_accuracy": 0.31000000000000005,
+          "parent_depth_f1": 0.6517951906562857,
+          "workspace_rgbd": 0.4610174920919499,
+          "reward": 0.31000000000000005,
+          "compared_with_same_source_full_input": {
+            "identical_arrays": {
+              "vertices": true,
+              "faces": true,
+              "colors": true,
+              "face_ids": true,
+              "part_ids": true
+            },
+            "vertices": 14296,
+            "triangles": 19825,
+            "same_labeled_triangles_at_micrometer_resolution": true,
+            "vertex_rmse_m": 0.0,
+            "mean_absolute_srgb_change": 0.0
+          }
+        },
+        "sheet_only": {
+          "build": "valid",
+          "part_accuracy": 0.31000000000000005,
+          "parent_depth_f1": 0.6517951906562857,
+          "workspace_rgbd": 0.461395368520774,
+          "reward": 0.31000000000000005,
+          "compared_with_same_source_full_input": {
+            "identical_arrays": {
+              "vertices": false,
+              "faces": false,
+              "colors": false,
+              "face_ids": true,
+              "part_ids": true
+            },
+            "vertices": 14296,
+            "triangles": 19825,
+            "same_labeled_triangles_at_micrometer_resolution": false,
+            "mean_symmetric_nearest_vertex_distance_m": 0.0001764506782793124
+          }
+        },
+        "sequence_only": {
+          "build": "valid",
+          "part_accuracy": 0.305,
+          "parent_depth_f1": 0.6660220003652703,
+          "workspace_rgbd": 0.4368346531352675,
+          "reward": 0.305,
+          "compared_with_same_source_full_input": {
+            "identical_arrays": {
+              "vertices": false,
+              "faces": false,
+              "colors": false,
+              "face_ids": false,
+              "part_ids": false
+            },
+            "vertices": 14297,
+            "triangles": 19826,
+            "same_labeled_triangles_at_micrometer_resolution": false,
+            "mean_symmetric_nearest_vertex_distance_m": 0.0017287928380323669
+          }
+        }
+      }
+    },
+    {
+      "trial_id": "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-20",
+      "source_sha256": "df76e23f6687513828510d71a7254b6fd66190353f898115c3c6d9411e9f6db5",
+      "observations_at_authoring": "all matching images",
+      "conditions": {
+        "complete": {
+          "build": "valid",
+          "part_accuracy": 0.2975,
+          "parent_depth_f1": 0.7603416831359201,
+          "workspace_rgbd": 0.5046109684822804,
+          "reward": 0.2975,
+          "compared_with_same_source_full_input": {
+            "identical_arrays": {
+              "vertices": true,
+              "faces": true,
+              "colors": true,
+              "face_ids": true,
+              "part_ids": true
+            },
+            "vertices": 14436,
+            "triangles": 19477,
+            "same_labeled_triangles_at_micrometer_resolution": true,
+            "vertex_rmse_m": 0.0,
+            "mean_absolute_srgb_change": 0.0
+          }
+        },
+        "sheet_only": {
+          "build": "valid",
+          "part_accuracy": 0.2975,
+          "parent_depth_f1": 0.7603416831359201,
+          "workspace_rgbd": 0.5046109684822804,
+          "reward": 0.2975,
+          "compared_with_same_source_full_input": {
+            "identical_arrays": {
+              "vertices": true,
+              "faces": true,
+              "colors": true,
+              "face_ids": true,
+              "part_ids": true
+            },
+            "vertices": 14436,
+            "triangles": 19477,
+            "same_labeled_triangles_at_micrometer_resolution": true,
+            "vertex_rmse_m": 0.0,
+            "mean_absolute_srgb_change": 0.0
+          }
+        },
+        "sequence_only": {
+          "build": "valid",
+          "part_accuracy": 0.2975,
+          "parent_depth_f1": 0.7603416831359201,
+          "workspace_rgbd": 0.5046109684822804,
+          "reward": 0.2975,
+          "compared_with_same_source_full_input": {
+            "identical_arrays": {
+              "vertices": true,
+              "faces": true,
+              "colors": true,
+              "face_ids": true,
+              "part_ids": true
+            },
+            "vertices": 14436,
+            "triangles": 19477,
+            "same_labeled_triangles_at_micrometer_resolution": true,
+            "vertex_rmse_m": 0.0,
+            "mean_absolute_srgb_change": 0.0
+          }
+        }
+      }
+    },
+    {
+      "trial_id": "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-21",
+      "source_sha256": "69d675c07b019860488ab48109fe601333b0342fd1f5acd3f14c9a7d723c1f18",
+      "observations_at_authoring": "all matching images",
+      "conditions": {
+        "complete": {
+          "build": "valid",
+          "part_accuracy": 0.26,
+          "parent_depth_f1": 0.7088281211239286,
+          "workspace_rgbd": 0.5101997872011275,
+          "reward": 0.26,
+          "compared_with_same_source_full_input": {
+            "identical_arrays": {
+              "vertices": true,
+              "faces": true,
+              "colors": true,
+              "face_ids": true,
+              "part_ids": true
+            },
+            "vertices": 13593,
+            "triangles": 19752,
+            "same_labeled_triangles_at_micrometer_resolution": true,
+            "vertex_rmse_m": 0.0,
+            "mean_absolute_srgb_change": 0.0
+          }
+        },
+        "sheet_only": {
+          "build": "valid",
+          "part_accuracy": 0.26,
+          "parent_depth_f1": 0.7088281211239286,
+          "workspace_rgbd": 0.5040303560817887,
+          "reward": 0.26,
+          "compared_with_same_source_full_input": {
+            "identical_arrays": {
+              "vertices": false,
+              "faces": false,
+              "colors": false,
+              "face_ids": false,
+              "part_ids": false
+            },
+            "vertices": 13593,
+            "triangles": 19757,
+            "same_labeled_triangles_at_micrometer_resolution": false,
+            "mean_symmetric_nearest_vertex_distance_m": 6.599899311760824e-05
+          }
+        },
+        "sequence_only": {
+          "build": "valid",
+          "part_accuracy": 0.26,
+          "parent_depth_f1": 0.7088281211239286,
+          "workspace_rgbd": 0.4565080416496,
+          "reward": 0.26,
+          "compared_with_same_source_full_input": {
+            "identical_arrays": {
+              "vertices": false,
+              "faces": false,
+              "colors": false,
+              "face_ids": false,
+              "part_ids": false
+            },
+            "vertices": 13593,
+            "triangles": 19766,
+            "same_labeled_triangles_at_micrometer_resolution": false,
+            "mean_symmetric_nearest_vertex_distance_m": 0.00031037804557495303
+          }
+        }
+      }
+    }
+  ]
+}

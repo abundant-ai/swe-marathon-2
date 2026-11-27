@@ -1,0 +1,12 @@
+{
+  "experiment": "beb3951f",
+  "task": "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423",
+  "version": 2,
+  "checked_files": 56,
+  "checked_bytes": 75826773,
+  "all_remote_sha256_match_preupload": true,
+  "inventory_sha256": "3595b051483fc0b648d8c8129cec86d39e31e0381eae8d3e92a85df58dd398b0",
+  "extra_files": [],
+  "missing_files": [],
+  "checked_utc": "2026-11-26T23:10:26.424221+00:00"
+}

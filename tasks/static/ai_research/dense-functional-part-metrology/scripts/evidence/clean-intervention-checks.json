@@ -1,0 +1,77 @@
+{
+  "swapped": {
+    "public_clean_smoke": {
+      "source_sha256": "6ad09b0cc433fd649970fd22e51e225c7915587499009d46dd30c5e18ceddb64",
+      "details": {
+        "vertices": 3,
+        "triangles": 1,
+        "part_counts": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "numeric_archive_bytes": 1436
+      }
+    },
+    "fixture_count": 8,
+    "optical_files": [
+      "clip.mp4",
+      "frames.zip",
+      "observation.png"
+    ],
+    "public_deployment_bytes_identical": true,
+    "private_truth_denominators_checked": true,
+    "public_and_deployment_fixture_sha256": {
+      "a-keyframes.txt": "bb03d8297fff9cd189f5ea74a895791a912c76d10259906d52a172d04425eabf",
+      "a-poses.csv": "c40574ddcf90653334fa90977070d5a3ffd817bde53a3ba3e35e25ef10ad861e",
+      "attribution.txt": "fb62a0dd096f3c2913f7696a30d84b7abcb1deaed2f868943b16438e6c722479",
+      "b-keyframes.txt": "33878dfda498eb2c72f437826056380bcfa9cef7f7d69689e56182ffc1c5e3e1",
+      "b-poses.csv": "e04bbe13daa93cb76f5ca6870d28444d85eb487c83dd762353db170a5753e1cd",
+      "clip.mp4": "63aa6b07ef517cf796e5bf4746101966fc719ff28b3430d4c07769c3c65ab75c",
+      "frames.zip": "21c66e1957c304c9bad17937acb52e6a0e1285440950664c5781a2d67fd03ffa",
+      "observation.png": "b4146a2fba7dbf24b7137e286b271bd46aacff8e25ba2e275add8833a8290291"
+    }
+  },
+  "none": {
+    "public_clean_smoke": {
+      "source_sha256": "dec7474880ac0c170ff7a466ec8c1519efb5b53d508f3a7a01910cf18747aed7",
+      "details": {
+        "vertices": 3,
+        "triangles": 1,
+        "part_counts": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "numeric_archive_bytes": 1436
+      }
+    },
+    "fixture_count": 5,
+    "optical_files": [],
+    "public_deployment_bytes_identical": true,
+    "private_truth_denominators_checked": true,
+    "public_and_deployment_fixture_sha256": {
+      "a-keyframes.txt": "bb03d8297fff9cd189f5ea74a895791a912c76d10259906d52a172d04425eabf",
+      "a-poses.csv": "c40574ddcf90653334fa90977070d5a3ffd817bde53a3ba3e35e25ef10ad861e",
+      "attribution.txt": "fb62a0dd096f3c2913f7696a30d84b7abcb1deaed2f868943b16438e6c722479",
+      "b-keyframes.txt": "33878dfda498eb2c72f437826056380bcfa9cef7f7d69689e56182ffc1c5e3e1",
+      "b-poses.csv": "e04bbe13daa93cb76f5ca6870d28444d85eb487c83dd762353db170a5753e1cd"
+    }
+  }
+}

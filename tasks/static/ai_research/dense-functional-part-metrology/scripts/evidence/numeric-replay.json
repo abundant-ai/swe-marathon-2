@@ -1,0 +1,210 @@
+{
+  "swe-m2_ai-research_dense-functional-part-metrology-correct-9acadc32-10": {
+    "outcome": "reproduced",
+    "trial_model": "relace/glm-5.3",
+    "reward": 0.0,
+    "max_component_difference": 0.0,
+    "test_receipt_matches": true,
+    "requirement_status": {
+      "scene": "passed",
+      "final_test": "passed",
+      "fine_parts": "failed",
+      "parent_surfaces": "failed",
+      "colored_scene": "failed"
+    }
+  },
+  "swe-m2_ai-research_dense-functional-part-metrology-correct-9acadc32-11": {
+    "outcome": "reproduced",
+    "trial_model": "relace/glm-5.3",
+    "reward": 0.0,
+    "max_component_difference": 0.0,
+    "test_receipt_matches": true,
+    "requirement_status": {
+      "scene": "passed",
+      "final_test": "passed",
+      "fine_parts": "failed",
+      "parent_surfaces": "failed",
+      "colored_scene": "failed"
+    }
+  },
+  "swe-m2_ai-research_dense-functional-part-metrology-correct-9acadc32-12": {
+    "outcome": "no_mesh",
+    "reason": "Build failed: cent call last):\n  File \"/tmp/artifact-xdnblitr/inputs/build.py\", line 4, in <module>\n    arrays=submission.scene()\n           ^^^^^^^^^^^^^^^^^^\n  File \"/tmp/artifact-xdnblitr/inputs/submission.py\", line 511, in scene\n    views, imgs, msks, refs, maps, P, C, sid = build_scene()\n                                               ^^^^^^^^^^^^^\n  File \"/tmp/artifact-xdnblitr/inputs/submission.py\", line 314, in build_scene\n    imgs, msks = load_images()\n                 ^^^^^^^^^^^^^\n  File \"/tmp/artifact-xdnblitr/inputs/submission.py\", line 84, in load_images\n    z.extractall(WDIR)          # frames/<name>.png\n    ^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/zipfile/__init__.py\", line 1796, in extractall\n    self._extract_member(zipinfo, path, pwd)\n  File \"/usr/local/lib/python3.12/zipfile/__init__.py\", line 1863, in _extract_member\n    open(targetpath, \"wb\") as target:\n    ^^^^^^^^^^^^^^^^^^^^^^\nPermissionError: [Errno 13] Permission denied: '/tmp/artifact-xdnblitr/inputs/0000.png'\n"
+  },
+  "swe-m2_ai-research_dense-functional-part-metrology-correct-9acadc32-13": {
+    "outcome": "reproduced",
+    "trial_model": "relace/deepseek-v4.1-flash",
+    "reward": 0.0,
+    "max_component_difference": 0.0,
+    "test_receipt_matches": true,
+    "requirement_status": {
+      "scene": "passed",
+      "final_test": "passed",
+      "fine_parts": "failed",
+      "parent_surfaces": "failed",
+      "colored_scene": "failed"
+    }
+  },
+  "swe-m2_ai-research_dense-functional-part-metrology-correct-9acadc32-14": {
+    "outcome": "reproduced",
+    "trial_model": "relace/glm-5.3",
+    "reward": 0.0125,
+    "max_component_difference": 0.0,
+    "test_receipt_matches": true,
+    "requirement_status": {
+      "scene": "passed",
+      "final_test": "passed",
+      "fine_parts": "failed",
+      "parent_surfaces": "failed",
+      "colored_scene": "failed"
+    }
+  },
+  "swe-m2_ai-research_dense-functional-part-metrology-correct-9acadc32-2": {
+    "outcome": "reproduced",
+    "trial_model": "openai/gpt-6.2-sol",
+    "reward": 0.28500000000000003,
+    "max_component_difference": 5.551115123125783e-17,
+    "test_receipt_matches": true,
+    "requirement_status": {
+      "scene": "passed",
+      "final_test": "passed",
+      "fine_parts": "failed",
+      "parent_surfaces": "passed",
+      "colored_scene": "passed"
+    }
+  },
+  "swe-m2_ai-research_dense-functional-part-metrology-correct-9acadc32-5": {
+    "outcome": "reproduced",
+    "trial_model": "openai/gpt-6.2-sol",
+    "reward": 0.29,
+    "max_component_difference": 0.0,
+    "test_receipt_matches": true,
+    "requirement_status": {
+      "scene": "passed",
+      "final_test": "passed",
+      "fine_parts": "failed",
+      "parent_surfaces": "passed",
+      "colored_scene": "failed"
+    }
+  },
+  "swe-m2_ai-research_dense-functional-part-metrology-correct-9acadc32-6": {
+    "outcome": "reproduced",
+    "trial_model": "openai/gpt-6.2-sol",
+    "reward": 0.45999999999999996,
+    "max_component_difference": 5.551115123125783e-17,
+    "test_receipt_matches": true,
+    "requirement_status": {
+      "scene": "passed",
+      "final_test": "passed",
+      "fine_parts": "failed",
+      "parent_surfaces": "passed",
+      "colored_scene": "passed"
+    }
+  },
+  "swe-m2_ai-research_dense-functional-part-metrology-correct-9acadc32-7": {
+    "outcome": "no_mesh",
+    "reason": "Build failed: Traceback (most recent call last):\n  File \"/tmp/artifact-7sks6i6k/inputs/build.py\", line 4, in <module>\n    arrays=submission.scene()\n           ^^^^^^^^^^^^^^^^^^\n  File \"/tmp/artifact-7sks6i6k/inputs/submission.py\", line 365, in scene\n    P = np.concatenate(P)\n        ^^^^^^^^^^^^^^^^^\nValueError: need at least one array to concatenate\n"
+  },
+  "swe-m2_ai-research_dense-functional-part-metrology-correct-9acadc32-8": {
+    "outcome": "reproduced",
+    "trial_model": "relace/deepseek-v4.1-flash",
+    "reward": 0.0,
+    "max_component_difference": 0.0,
+    "test_receipt_matches": true,
+    "requirement_status": {
+      "scene": "passed",
+      "final_test": "passed",
+      "fine_parts": "failed",
+      "parent_surfaces": "failed",
+      "colored_scene": "failed"
+    }
+  },
+  "swe-m2_ai-research_dense-functional-part-metrology-correct-9acadc32-9": {
+    "outcome": "no_mesh",
+    "reason": "Build failed: Traceback (most recent call last):\n  File \"/tmp/artifact-c629gvnn/inputs/build.py\", line 4, in <module>\n    arrays=submission.scene()\n           ^^^^^^^^^^^^^^^^^^\n  File \"/tmp/artifact-c629gvnn/inputs/submission.py\", line 235, in scene\n    im = Image.open(os.path.join(WORK, 'frames', poses[i][0])).convert('RGB')\n         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/site-packages/PIL/Image.py\", line 3513, in open\n    fp = builtins.open(filename, \"rb\")\n         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: '/tmp/artifact-c629gvnn/inputs/frames/0000.png'\n"
+  },
+  "swe-m2_ai-research_dense-functional-part-metrology-none-07435eea-2": {
+    "outcome": "reproduced",
+    "trial_model": "openai/gpt-6.2-sol",
+    "reward": 0.0,
+    "max_component_difference": 0.0,
+    "test_receipt_matches": true,
+    "requirement_status": {
+      "scene": "passed",
+      "final_test": "passed",
+      "fine_parts": "failed",
+      "parent_surfaces": "failed",
+      "colored_scene": "failed"
+    }
+  },
+  "swe-m2_ai-research_dense-functional-part-metrology-none-07435eea-3": {
+    "outcome": "reproduced",
+    "trial_model": "openai/gpt-6.2-sol",
+    "reward": 0.0,
+    "max_component_difference": 0.0,
+    "test_receipt_matches": true,
+    "requirement_status": {
+      "scene": "passed",
+      "final_test": "passed",
+      "fine_parts": "failed",
+      "parent_surfaces": "failed",
+      "colored_scene": "failed"
+    }
+  },
+  "swe-m2_ai-research_dense-functional-part-metrology-none-07435eea-4": {
+    "outcome": "reproduced",
+    "trial_model": "openai/gpt-6.2-sol",
+    "reward": 0.0,
+    "max_component_difference": 0.0,
+    "test_receipt_matches": true,
+    "requirement_status": {
+      "scene": "passed",
+      "final_test": "passed",
+      "fine_parts": "failed",
+      "parent_surfaces": "failed",
+      "colored_scene": "failed"
+    }
+  },
+  "swe-m2_ai-research_dense-functional-part-metrology-swapped-6e41b1a2-2": {
+    "outcome": "reproduced",
+    "trial_model": "openai/gpt-6.2-sol",
+    "reward": 0.0,
+    "max_component_difference": 0.0,
+    "test_receipt_matches": true,
+    "requirement_status": {
+      "scene": "passed",
+      "final_test": "passed",
+      "fine_parts": "failed",
+      "parent_surfaces": "failed",
+      "colored_scene": "failed"
+    }
+  },
+  "swe-m2_ai-research_dense-functional-part-metrology-swapped-6e41b1a2-3": {
+    "outcome": "reproduced",
+    "trial_model": "openai/gpt-6.2-sol",
+    "reward": 0.0,
+    "max_component_difference": 0.0,
+    "test_receipt_matches": true,
+    "requirement_status": {
+      "scene": "passed",
+      "final_test": "passed",
+      "fine_parts": "failed",
+      "parent_surfaces": "failed",
+      "colored_scene": "failed"
+    }
+  },
+  "swe-m2_ai-research_dense-functional-part-metrology-swapped-6e41b1a2-4": {
+    "outcome": "reproduced",
+    "trial_model": "openai/gpt-6.2-sol",
+    "reward": 0.0,
+    "max_component_difference": 0.0,
+    "test_receipt_matches": true,
+    "requirement_status": {
+      "scene": "passed",
+      "final_test": "passed",
+      "fine_parts": "failed",
+      "parent_surfaces": "failed",
+      "colored_scene": "failed"
+    }
+  }
+}

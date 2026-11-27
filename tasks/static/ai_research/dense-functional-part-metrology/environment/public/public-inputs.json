@@ -1,0 +1,14 @@
+{
+  "required": [
+    "a-keyframes.txt",
+    "a-poses.csv",
+    "attribution.txt",
+    "b-keyframes.txt",
+    "b-poses.csv"
+  ],
+  "optical": [
+    "clip.mp4",
+    "frames.zip",
+    "observation.png"
+  ]
+}
