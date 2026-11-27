@@ -116,5 +116,5 @@ Every failed condition below means *no union*, and the caller's next rung decide
   `x` in BASE, OURS, THEIRS and result: `x >= o - max(0, b - t)`, `x >= t - max(0, b - o)`,
   `x <= max(o, t, o + t - b)`.
 - **[ELEM-14] Disjoint form.** For gaps and files without definitions the three texts must parse
-  unframed, their roots must have the same non-zero number of children, of the same kind position by
+  unframed, their roots must have the same non-zero number of children (comments included), of the same kind position by
   position, and no child may differ in all three; then the union applies as above.

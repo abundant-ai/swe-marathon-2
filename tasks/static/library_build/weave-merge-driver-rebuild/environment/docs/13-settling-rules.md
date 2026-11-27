@@ -28,7 +28,7 @@
 
 ## 13.2 Whole-file rules
 
-- **[RULE-D4]** BASE empty and the sides layout-equal: the byte-wise smaller side.
+- **[RULE-D4]** BASE exactly empty (no bytes) and the sides layout-equal: the byte-wise smaller side.
 - **[RULE-D6]** BASE not empty, one side layout-equal to BASE and the other not: the other.
 - **[RULE-D1X]** BASE not empty, the sides layout-equal: the side that exactly carries the other,
   else the byte-wise smaller (OURS on a tie). Hunks are `diffy`'s zero-context patch from BASE

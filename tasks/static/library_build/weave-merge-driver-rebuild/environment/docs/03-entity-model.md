@@ -7,7 +7,9 @@ The entity merge reads each version as top-level definitions and the text betwee
 - **[ENT-1] Extraction.** A version's definitions are the entities `sem-core` 0.29.0 returns for its
   text after the encoding step of [LAY-5]: the plugin `create_default_registry().get_plugin(PATH)`,
   chosen by extension, called as `extract_entities(text, PATH)` with `PATH` as given to `-p`, unchanged
-  (sem-core's ids contain it). None is added; only [ENT-2] removes any.
+  (sem-core's ids contain it). None is added; only [ENT-2] removes any. An entity's *kind* is the
+  `entity_type` sem-core gives it: a Go type declaration, for example, has kind `type`, and JSON
+  entities have kinds such as `object`, `property` and `array`.
 - **[ENT-2] Top level only.** Sort the entities by first line ascending, then last line descending,
   ties in sem-core's order. Keep one that starts after the last line of the most recently kept
   entity (initially 0), or whose first and last lines equal that entity's; drop the rest. The kept

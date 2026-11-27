@@ -29,7 +29,7 @@ markers, each on a line of its own:
 - **[BOX-3]** The lines with which every present section begins, identically, are written once
   before the box (the frame); likewise the lines with which every present section ends are written
   once after it. Lines are compared whole. The trailing frame never reaches into the leading one.
-  For a definition, an empty section leaves no frame. For a class member that one side deleted,
+  For a definition, and for a box inside a body (chapter 6), an empty section leaves no frame. For a class member that one side deleted,
   the frame is cut over the two other sections.
 
 ## 14.3 Narrower boxes
