@@ -25,7 +25,7 @@ REQUIRED = (
     "tests/private/cases.jsonl",
     "tests/private/expected.json",
     "tests/driver/hbdrv.c",
-    "solution/private/harfbuzz-14.3.0-to-15.2.0.patch",
+    "solution/private/deleted.txt",
 )
 
 
@@ -48,6 +48,11 @@ def collect() -> dict[str, bytes]:
             raise SystemExit(f"missing {name}: stage the private material first")
     if not any(n.startswith("tests/wheels/meson-") for n in content):
         raise SystemExit("missing the meson wheel in tests/wheels/")
+    if not any(n.startswith("solution/private/tree/src/") for n in content):
+        raise SystemExit("missing the reference sources in solution/private/tree/")
+    stray = [n for n in content if n.endswith((".patch", ".diff"))]
+    if stray:
+        raise SystemExit(f"patch files in the bundle: {stray[:3]}")
     return content
 
 

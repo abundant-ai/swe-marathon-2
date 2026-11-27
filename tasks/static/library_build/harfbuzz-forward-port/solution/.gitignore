@@ -1,2 +1,2 @@
-# The upstream patch the oracle applies is generated from the release tarballs by packaging; never committed.
+# The reference sources are generated from the pinned release tarballs by scripts/make_solution.py; never committed.
 private/

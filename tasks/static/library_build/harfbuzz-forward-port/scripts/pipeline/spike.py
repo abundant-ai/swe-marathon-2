@@ -390,6 +390,33 @@ def run_ops(ops: list[dict]) -> None:
             )
         elif op["op"] == "image":
             build_pipeline_image(op.get("platform"))
+        elif op["op"] == "solve":
+            # The reference solution exactly as the platform runs it: solution/solve.sh on a tree at /app/harfbuzz.
+            started = time.time()
+            cmd = [
+                "docker",
+                "run",
+                "--rm",
+                "--network=none",
+                "--memory=4g",
+                "--memory-swap=4g",
+                "--cpus=2",
+            ]
+            cmd += ["--label", LABEL, "-v", f"{WORK / op['tree']}:/app/harfbuzz"]
+            cmd += [
+                "-v",
+                f"{TASK / 'solution'}:/solution:ro",
+                IMAGE,
+                "bash",
+                "/solution/solve.sh",
+            ]
+            code = subprocess.run(cmd, check=False).returncode
+            log_event(
+                event="solve",
+                tree=op["tree"],
+                code=code,
+                wall_s=round(time.time() - started, 1),
+            )
         elif op["op"] == "run_image":
             # A bounded, network-less run of one of our task images; stdout and stderr go to WORK/<out>.
             started = time.time()
