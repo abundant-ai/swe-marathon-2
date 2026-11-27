@@ -234,7 +234,9 @@ our product can observe.
 
 ## What to deliver
 
-The changed tree, in place in `/app/harfbuzz`. Keep it building with the commands above at all times.
+The changed tree, in place in `/app/harfbuzz`. Keep it building with the commands above at all times. It stays
+version 14.3.0 (`meson.build`, `src/hb-version.h` and `NEWS` as they are): our certification records name that
+version, with these changes as our own.
 
 ## Switching over
 

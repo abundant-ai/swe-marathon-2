@@ -610,10 +610,12 @@ def run_verifier(
     platform: str | None = None,
     record: bool = False,
     cpus: int = 4,
+    background: bool = False,
 ) -> dict:
     """Run the verifier image against one tree, the way the platform would (tree read-only, logs mounted).
 
-    The caller holds the heavy lock.
+    With `background`, start the run and return at once; `finish_verifier` waits for it. The caller holds the heavy
+    lock.
     """
     logs = WORK / "verify" / name
     logs.mkdir(parents=True, exist_ok=True)
@@ -639,7 +641,23 @@ def run_verifier(
         "/tests/test.sh",
     ]
     started = time.time()
+    if background:
+        return {
+            "name": name,
+            "logs": logs,
+            "started": started,
+            "proc": subprocess.Popen(cmd),
+        }
     code = subprocess.run(cmd, check=False).returncode
+    return verifier_result(name, logs, started, code)
+
+
+def finish_verifier(run: dict) -> dict:
+    """Wait for a verifier run started in the background and record its result."""
+    return verifier_result(run["name"], run["logs"], run["started"], run["proc"].wait())
+
+
+def verifier_result(name: str, logs: Path, started: float, code: int) -> dict:
     reward_file = logs / "reward.txt"
     reward = reward_file.read_text().strip() if reward_file.exists() else None
     result = {
@@ -703,10 +721,27 @@ def cmd_milestone(args: argparse.Namespace) -> None:
             )
         if args.record and args.determinism:
             determinism(Path(args.record), args.release, args.platform)
-        for spec in args.tree:
-            name, _, rest = spec.partition("=")
+        # A tree named bg:NAME runs in the background, beside the others: for runs that mostly wait out the
+        # verifier's deadline (a sleeping build, a hanging library), so they do not hold the lock for half an hour
+        # each. They are started first and waited for at the end.
+        specs = [s.partition("=") for s in args.tree]
+        started = []
+        for name, _, rest in sorted(specs, key=lambda x: not x[0].startswith("bg:")):
             tree, _, release = rest.partition("@")
-            run_verifier(Path(tree), name, release or args.release, args.platform)
+            if name.startswith("bg:"):
+                started.append(
+                    run_verifier(
+                        Path(tree),
+                        name[3:],
+                        release or args.release,
+                        args.platform,
+                        background=True,
+                    )
+                )
+            else:
+                run_verifier(Path(tree), name, release or args.release, args.platform)
+        for run in started:
+            finish_verifier(run)
 
 
 def determinism(tree: Path, release: str, platform: str | None) -> None:
