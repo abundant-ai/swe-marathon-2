@@ -853,7 +853,7 @@ Implementations may use any method that produces the same result as this procedu
 
 - A transform Paint affects its whole sub-graph: glyph outlines used as clips, gradient geometry, and transforms nested further down.
 - Nested transforms accumulate. If an outer table has matrix A and a table inside its sub-graph has matrix B, a point p of B's child is drawn at A(B(p)). Keep a current matrix M; on entering a transform table with matrix T set M = M * T (T acts on child coordinates first), and restore M on leaving.
-- The translate, scale, rotate and skew formats must behave exactly like their equivalent matrices. Each "around center" variant equals translate(center) * operation * translate(-center).
+- The translate, scale, rotate and skew formats give the same result as their equivalent matrices. Each "around center" variant equals translate(center) * operation * translate(-center).
 - These specialized formats store F2DOT14 and FWORD values; Affine2x3 uses 16.16 Fixed values for higher precision.
 
 ### Color lines

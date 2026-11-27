@@ -1,10 +1,10 @@
 # HarfBuzz forward-port, 14.3.0 → 15.2.0
 
-**Status: Phase B done, spike go, first build milestone reached (2026-11-27).** The task is single-step (owner,
-2026-11-26). The pipeline builds every release, revert and mutant; the verifier image builds a delivered tree and
-scores the first three families (11 units, 1,802 cases): upstream 15.2.0 scores 1.0, 14.3.0 and the pruned starting
-tree 0.0. Not yet: the other 45 units' cases, the agent image build, the oracle patch. Category: Library
-Reproduction (`tasks/static/library_build/`). Branch `neel/harfbuzz-forward-port`.
+**Status: Phase C done, QA-ready (2026-11-27).** Single-step (owner, 2026-11-26). 53 of 57 units are graded on
+5,256 private cases (four cut, with reasons in notes/DESIGN.md). Through the amd64 verifier image: the reference
+solution scores 1.0, the untouched tree 0.0, every stub 0.0, and the failure-sentence mutant W 0.672 (band
+0.60-0.85). Local preflight passes on the flat bundle. Next: an independent 20-pass QA; no Oddish run before the
+owner says so. Category: Library Reproduction (`tasks/static/library_build/`). Branch `neel/harfbuzz-forward-port`.
 
 A product ships HarfBuzz 14.3.0 and has frozen that build. The agent brings it forward to the shaping, layout,
 metrics and API behaviour of upstream's next eight releases (14.3.1 to 15.2.0, 2026-08-13 to 2026-11-19), in one
@@ -22,6 +22,7 @@ no note changed must stay as it was, and that is where agents are expected to fa
 | [notes/SPIKE.md](notes/SPIKE.md) | The spike that must pass before the build, and the exact download list |
 | [notes/PHASE-A-REPORT.md](notes/PHASE-A-REPORT.md) | Phase A summary |
 | [notes/PHASE-B-REPORT.md](notes/PHASE-B-REPORT.md) | Phase B: downloads, spike results (go), yield per unit, milestone, resource use |
+| [notes/PHASE-C-REPORT.md](notes/PHASE-C-REPORT.md) | Phase C: every unit, the failure-sentence proof, recorded outputs, images, the gate |
 
 ## Design dimensions (proposal stage)
 
@@ -52,18 +53,19 @@ reward. Details and rationale: [notes/DESIGN.md](notes/DESIGN.md#6-reward).
 
 ## Hackability assessment
 
-Phase A: no boundary has been tested. Every row is 🟡 YELLOW / UNASSESSED until the protection probe and the
-stub zoo run (QA gate items 3 and 7).
+Tested in Phase C (2026-11-27) on the amd64 images, except where a row says otherwise.
 
-| Attack | Boundary | Mitigation (designed, untested) | Severity |
+| Attack | Boundary | Mitigation | Severity |
 | --- | --- | --- | --- |
-| Read gold or case files from the tree's build scripts or library code during grading | Verifier container | Build and driver run as an unprivileged user; gold is root-only; comparison after the driver exits | 🟡 YELLOW / UNASSESSED |
-| Obtain 15.x code or a newer HarfBuzz binary in the agent container | Agent image | Leak scan for every HarfBuzz library, header and version string; no network | 🟡 YELLOW / UNASSESSED |
-| Earn credit without implementing anything (nop, stubs) | Reward | Held-fixed sets only gate; stub zoo must score 0.000 | 🟡 YELLOW / UNASSESSED |
-| Key outputs on private fonts | Cases | The agent never sees them; fonts are Noto or ours | 🟡 YELLOW / UNASSESSED |
-| Hang, fork or flood the verifier | Verifier | One process per font batch with limits and timeouts | 🟡 YELLOW / UNASSESSED |
+| Read the expected outputs or case files from the tree's build scripts or library code during grading | Verifier container | The build and the drivers run as `builder` under `prlimit`; `/tests/private` is root-only; root writes the reward after the drivers exit | 🟢 GREEN: as `builder`, reading the expected outputs, listing `/tests/private` and writing the reward all fail |
+| Obtain 15.x code or a newer HarfBuzz binary in the agent container | Agent image | No 15.x source, binary or version string; no network; history cut at one commit | 🟢 GREEN: the protection probe found none, and no network |
+| Earn credit without implementing the notes | Reward | Every changed case fails on 14.3.0; held-fixed sets only gate | 🟢 GREEN: untouched tree 0.0; comment edits, a neutral refactor, a tree that does not build, an empty `hb_shape` and an abort all 0.0 |
+| Key outputs on private fonts | Cases | The agent never sees them | 🟢 GREEN: no private case id or font name in any agent-visible file |
+| Clutter the delivered tree (pipes, huge files, many files, links out) | Verifier copy | Special files and files over 512 MB are not copied; links are copied as links | 🟢 GREEN: a tree with a pipe, a 600 MB sparse file, 100,000 files and links out of the tree scores 1.0 |
+| Apply the notes over-broadly | Reward gate | The neighbours' pass rate multiplies the reward | 🟢 GREEN: mutant W scores 0.672 |
+| Hang, fork or flood the verifier | Verifier | One process per driver and font, `prlimit` (processes, file size, no core), 300 s per batch, 1,200 s for all batches, outputs above 256 MB discarded | 🟡 YELLOW: limits in place; no hanging or forking library was run |
 
-Highest unresolved severity: 🟡 YELLOW / UNASSESSED (all boundaries).
+Highest unresolved severity: 🟡 YELLOW (hang and fork attacks not run).
 
 ## Layout
 
@@ -141,3 +143,12 @@ Private material (cases, seeds, gold outputs, private fonts, the duals catalogue
 - Milestone: 15.2.0 scores 1.0 (also on amd64, emulated), 14.3.0 and the pruned starting tree 0.0. The private
   selection and its salt are in the private store and its harbor-lh bundle. notes/PHASE-B-REPORT.md has the
   numbers and the next steps.
+- **Phase C (all units, the failure sentence, QA-ready).** Five unit authors wrote generators, fonts, the API drivers
+  and one widening per conditional unit; the c2 sweep classified 50,299 candidates (23,836 changed and
+  attributed). 53 units are graded on 5,256 cases (36-60 changed cases each, 1,500 neighbours, 600 broad); 47a,
+  28, 30 and 50 are cut with their reasons. The dual gate is now a full factor; mutant W scores 0.672 through the
+  verifier. Expected outputs are recorded through the amd64 verifier image built from a pinned Ubuntu snapshot,
+  identical to the pipeline's on all 5,256 cases; 3+1 recordings are byte-identical. The specification notes keep
+  only what the downloaded pages state. The reference solution ships source files. A stub that never shapes
+  briefly scored 0.002 on unit 43's position cases; the probe now refuses to answer when shaping did not run.
+  notes/PHASE-C-REPORT.md has the numbers.
