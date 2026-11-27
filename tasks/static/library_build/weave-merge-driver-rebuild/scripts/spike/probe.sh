@@ -24,5 +24,11 @@ dd if=/proc/$pid/mem bs=1 count=16 skip=4194304 of=/dev/null 2>/dev/null && say 
 cat /proc/$pid/exe > /tmp/exe 2>/dev/null && say "/proc/pid/exe" "READ OK" || say "/proc/pid/exe" "refused"
 say "/proc/pid/status Dumpable" "$(grep -i -m1 -E '^(Uid|Gid)' /proc/$pid/status | tr '\t' ' ')"
 gdb -batch -p $pid -ex 'info proc' > /tmp/attach.txt 2>&1; say "gdb attach" "$(grep -i -m1 -E 'not permitted|ptrace|Attaching' /tmp/attach.txt)"
-ulimit -c unlimited; kill -SEGV $pid; wait $pid 2>/dev/null; sleep 1
+# Core dump. SIGSEGV is handled by the Rust runtime, so a signal sent that way leaves the process
+# blocked on the FIFO (this step once hung for 13 hours). Use signals Rust does not catch, bound
+# every wait, and open the FIFO's write end so a reader blocked in open() is released.
+ulimit -c unlimited
+kill -ABRT $pid 2>/dev/null
+timeout 5 bash -c 'exec 3> /tmp/fifo; echo y >&3' 2>/dev/null
+timeout 10 tail --pid=$pid -f /dev/null 2>/dev/null; kill -KILL $pid 2>/dev/null; wait $pid 2>/dev/null
 ls /tmp/core* > /dev/null 2>&1 && say "core dump" "WRITTEN" || say "core dump" "none"

@@ -12,6 +12,9 @@ import os
 import sys
 from pathlib import Path
 
+# The specification promises inputs of at most this many bytes (chapter 16).
+MAX_INPUT_BYTES = 100_000
+
 
 def main() -> None:
     """Export the three private files."""
@@ -26,6 +29,14 @@ def main() -> None:
     rows = []
     for cid in sorted(kept):
         c = cases[cid]
+        size = max(
+            len(c[k].encode("utf-8", "surrogateescape"))
+            for k in ("base", "ours", "theirs")
+        )
+        if size > MAX_INPUT_BYTES:
+            raise SystemExit(
+                f"{cid}: an input of {size} bytes is above the documented limit"
+            )
         rows.append(
             {k: c[k] for k in ("id", "path", "base", "ours", "theirs")}
             | {"family": kept[cid], "feature": c["feature"]}
