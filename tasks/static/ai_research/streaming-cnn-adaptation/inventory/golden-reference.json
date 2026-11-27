@@ -1,0 +1,179 @@
+{
+  "matched_golden_reference": {
+    "task": "swe-m2_ai-research_core50-streaming-cnn-stock-commissioning-correct-51b49832",
+    "version": 3,
+    "golden_reference_verified": true,
+    "baselines": [
+      {
+        "trial": "swe-m2_ai-research_core50-streaming-cnn-stock-commissioning-correct-51b49832-12",
+        "agent": "oracle",
+        "native_reward": 1.0,
+        "build": "valid",
+        "meets_requirement": true,
+        "verifier_report_sha256": "3da3f2f10f96dd5ce19632202dd5fa3ba671fb6a7b9c8b00c3fa542fe88fdf90"
+      },
+      {
+        "trial": "swe-m2_ai-research_core50-streaming-cnn-stock-commissioning-correct-51b49832-13",
+        "agent": "nop",
+        "native_reward": 0.0,
+        "build": "invalid",
+        "meets_requirement": true,
+        "verifier_report_sha256": "9cf910162247adf51e45389b9b0f6892e3e188bef0a1d40ed94381b3cddd3e2b"
+      }
+    ]
+  },
+  "experiment": "https://www.oddish.app/experiments/2886acf8",
+  "controls": [
+    {
+      "id": "swe-m2_ai-research_core50-streaming-cnn-stock-commissioning-none-13f30f1e-12",
+      "version": 3,
+      "agent": "oracle",
+      "build": "valid",
+      "reward": 0.0,
+      "verifier_report_sha256": "d0fe8df508666c83dca937d4535d4a009f35a69cc7031a15c963b39b3e9a59a1"
+    },
+    {
+      "id": "swe-m2_ai-research_core50-streaming-cnn-stock-commissioning-none-13f30f1e-13",
+      "version": 3,
+      "agent": "nop",
+      "build": "invalid",
+      "reward": 0.0,
+      "verifier_report_sha256": "9cf910162247adf51e45389b9b0f6892e3e188bef0a1d40ed94381b3cddd3e2b"
+    },
+    {
+      "id": "swe-m2_ai-research_core50-streaming-cnn-stock-commissioning-swapped-ee2dbf8a-14",
+      "version": 3,
+      "agent": "oracle",
+      "build": "valid",
+      "reward": 0.0,
+      "verifier_report_sha256": "246db9f9583cf7d9d2624852341e0284c6744db0c51cac8f0b8937176e7bffc7"
+    },
+    {
+      "id": "swe-m2_ai-research_core50-streaming-cnn-stock-commissioning-swapped-ee2dbf8a-15",
+      "version": 3,
+      "agent": "nop",
+      "build": "invalid",
+      "reward": 0.0,
+      "verifier_report_sha256": "9cf910162247adf51e45389b9b0f6892e3e188bef0a1d40ed94381b3cddd3e2b"
+    },
+    {
+      "id": "swe-m2_ai-research_core50-streaming-cnn-stock-commissioning-correct-51b49832-12",
+      "version": 3,
+      "agent": "oracle",
+      "build": "valid",
+      "reward": 1.0,
+      "verifier_report_sha256": "3da3f2f10f96dd5ce19632202dd5fa3ba671fb6a7b9c8b00c3fa542fe88fdf90"
+    },
+    {
+      "id": "swe-m2_ai-research_core50-streaming-cnn-stock-commissioning-correct-51b49832-13",
+      "version": 3,
+      "agent": "nop",
+      "build": "invalid",
+      "reward": 0.0,
+      "verifier_report_sha256": "9cf910162247adf51e45389b9b0f6892e3e188bef0a1d40ed94381b3cddd3e2b"
+    }
+  ],
+  "target_a_accuracy": {
+    "common": [
+      {
+        "schedule": "clips",
+        "order": 4201,
+        "frozen": 0.12222222222222223,
+        "adapted": 0.5277777777777778,
+        "learned_weight_gain_pp": 40.55555555555556
+      },
+      {
+        "schedule": "clips",
+        "order": 7303,
+        "frozen": 0.15263157894736842,
+        "adapted": 0.4789473684210527,
+        "learned_weight_gain_pp": 32.631578947368425
+      },
+      {
+        "schedule": "switches",
+        "order": 4201,
+        "frozen": 0.11176470588235295,
+        "adapted": 0.5882352941176471,
+        "learned_weight_gain_pp": 47.64705882352941
+      },
+      {
+        "schedule": "switches",
+        "order": 7303,
+        "frozen": 0.16111111111111112,
+        "adapted": 0.49444444444444446,
+        "learned_weight_gain_pp": 33.333333333333336
+      }
+    ],
+    "replicate": [
+      {
+        "schedule": "clips",
+        "order": 4201,
+        "frozen": 0.08888888888888888,
+        "adapted": 0.45555555555555555,
+        "learned_weight_gain_pp": 36.66666666666667
+      },
+      {
+        "schedule": "clips",
+        "order": 7303,
+        "frozen": 0.1631578947368421,
+        "adapted": 0.41578947368421054,
+        "learned_weight_gain_pp": 25.263157894736842
+      },
+      {
+        "schedule": "switches",
+        "order": 4201,
+        "frozen": 0.1,
+        "adapted": 0.5000000000000001,
+        "learned_weight_gain_pp": 40.000000000000014
+      },
+      {
+        "schedule": "switches",
+        "order": 7303,
+        "frozen": 0.17222222222222222,
+        "adapted": 0.4166666666666667,
+        "learned_weight_gain_pp": 24.444444444444446
+      }
+    ],
+    "submitted": [
+      {
+        "schedule": "clips",
+        "order": 4201,
+        "frozen": 0.13333333333333336,
+        "adapted": 0.5277777777777778,
+        "learned_weight_gain_pp": 39.44444444444444
+      },
+      {
+        "schedule": "clips",
+        "order": 7303,
+        "frozen": 0.14736842105263157,
+        "adapted": 0.47894736842105257,
+        "learned_weight_gain_pp": 33.157894736842096
+      },
+      {
+        "schedule": "switches",
+        "order": 4201,
+        "frozen": 0.12941176470588237,
+        "adapted": 0.5882352941176471,
+        "learned_weight_gain_pp": 45.88235294117647
+      },
+      {
+        "schedule": "switches",
+        "order": 7303,
+        "frozen": 0.15555555555555559,
+        "adapted": 0.4833333333333334,
+        "learned_weight_gain_pp": 32.777777777777786
+      }
+    ]
+  },
+  "retraining": {
+    "submitted_accuracy": 0.6125,
+    "rebuilt_accuracy": 0.6125,
+    "prediction_agreement": 1.0,
+    "matching_tensors": true,
+    "passed": true
+  },
+  "source_code_sha256": {
+    "training_sha256": "cf694a8d5b09655b694e7aac9a906ba97f5c31f427af75577157a272fa5172f1",
+    "updater_sha256": "fe31180a3093783db88d2883df726d07aaa2601d23b46903b76f58c2ee034677"
+  }
+}

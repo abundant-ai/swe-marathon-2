@@ -1,0 +1,126 @@
+{
+  "experiment": "https://www.oddish.app/experiments/560dfbfe",
+  "task_version": 2,
+  "matched": [
+    {
+      "trial": "swe-m2_ai-research_core50-shared-scanner-stockrooms-correct-f030babf-9",
+      "model": "openai/gpt-6.2-sol",
+      "reward": 0.0,
+      "build": "valid",
+      "attribution": "Complete measurement",
+      "failed_requirements": {
+        "paired_stock_ids": "Paired accuracy for conflicting stock assignments."
+      },
+      "native_sha256": "406a4df582bd2b4bac6278c1398a8b7e8ced63f1aecbf3cd9f926579a8bfeeea"
+    },
+    {
+      "trial": "swe-m2_ai-research_core50-shared-scanner-stockrooms-correct-f030babf-18",
+      "model": "openai/gpt-6.2-sol",
+      "reward": 0.0,
+      "build": "partial",
+      "attribution": "Candidate updater: RuntimeError: The size of tensor a (21) must match the size of tensor b (24) at non-singleton dimension 1",
+      "failed_requirements": {
+        "deployment_a": "Completed independent CNN and itinerary measurements.",
+        "deployment_b": "Completed independent CNN and itinerary measurements."
+      },
+      "native_sha256": "a6fe607efe90ff3d0ce55f88ca22396e467a125f5722571d77004a4d7d331559"
+    },
+    {
+      "trial": "swe-m2_ai-research_core50-shared-scanner-stockrooms-correct-f030babf-19",
+      "model": "openai/gpt-6.2-sol",
+      "reward": 0.0,
+      "build": "partial",
+      "attribution": "Candidate updater: ImportError: cannot import name 'signature_from_moments' from 'core_model' (/opt/core50/core_model.py)",
+      "failed_requirements": {
+        "deployment_a": "Completed independent CNN and itinerary measurements.",
+        "deployment_b": "Completed independent CNN and itinerary measurements."
+      },
+      "native_sha256": "0e41bb036a3e8bdf69bf67b6d3232739c83fbe04e79d67740e52f042f72dfd41"
+    },
+    {
+      "trial": "swe-m2_ai-research_core50-shared-scanner-stockrooms-correct-f030babf-30",
+      "model": "relace/deepseek-v4.1-flash",
+      "reward": 0.0,
+      "build": "invalid",
+      "attribution": "Missing or oversized trained.npz",
+      "failed_requirements": {
+        "submitted_checkpoint": "Missing or oversized trained.npz",
+        "deployment_a": "Completed independent CNN and itinerary measurements.",
+        "deployment_b": "Completed independent CNN and itinerary measurements."
+      },
+      "native_sha256": "d7ae5d2d787915eae8af5565e6e06b46e1197674e54573740a3d381e31e9fd0f"
+    },
+    {
+      "trial": "swe-m2_ai-research_core50-shared-scanner-stockrooms-correct-f030babf-31",
+      "model": "relace/glm-5.3",
+      "reward": 0.0,
+      "build": "partial",
+      "attribution": "Candidate updater: ModuleNotFoundError: No module named 'cards'",
+      "failed_requirements": {
+        "deployment_a": "Completed independent CNN and itinerary measurements.",
+        "deployment_b": "Completed independent CNN and itinerary measurements."
+      },
+      "native_sha256": "1fcfcc3f554aed633a2a22a1b866264a19a4ef3cc0b7d2e22ad7574cdb2df38b"
+    },
+    {
+      "trial": "swe-m2_ai-research_core50-shared-scanner-stockrooms-correct-f030babf-29",
+      "model": "relace/deepseek-v4.1-flash",
+      "reward": 0.0,
+      "build": "invalid",
+      "attribution": "Invalid trained.npz: Checkpoint fields do not match Classifier",
+      "failed_requirements": {
+        "submitted_checkpoint": "Invalid trained.npz: Checkpoint fields do not match Classifier",
+        "deployment_a": "Completed independent CNN and itinerary measurements.",
+        "deployment_b": "Completed independent CNN and itinerary measurements."
+      },
+      "native_sha256": "04423e152679a5f228b86e8e7bd8a58ad401d72469cdbe698c36c44bcdfd5f08"
+    },
+    {
+      "trial": "swe-m2_ai-research_core50-shared-scanner-stockrooms-correct-f030babf-33",
+      "model": "relace/glm-5.3",
+      "reward": 0.0,
+      "build": "invalid",
+      "attribution": "Invalid trained.npz: Invalid tensor stock_delta",
+      "failed_requirements": {
+        "submitted_checkpoint": "Invalid trained.npz: Invalid tensor stock_delta",
+        "deployment_a": "Completed independent CNN and itinerary measurements.",
+        "deployment_b": "Completed independent CNN and itinerary measurements."
+      },
+      "native_sha256": "5ed3a5d80019ff2ac2be3d5cb20cd58504e305b397cc401e05672b7de75f31f6"
+    },
+    {
+      "trial": "swe-m2_ai-research_core50-shared-scanner-stockrooms-correct-f030babf-28",
+      "model": "relace/deepseek-v4.1-flash",
+      "reward": 0.0,
+      "build": "valid",
+      "attribution": "Complete measurement",
+      "failed_requirements": {
+        "paired_stock_ids": "Paired accuracy for conflicting stock assignments."
+      },
+      "native_sha256": "af30c68ebaed2769777f972db5eb26547a2195da35bd57cc14f00b86da5a4672"
+    },
+    {
+      "trial": "swe-m2_ai-research_core50-shared-scanner-stockrooms-correct-f030babf-32",
+      "model": "relace/glm-5.3",
+      "reward": 0.0,
+      "build": "valid",
+      "attribution": "Complete measurement",
+      "failed_requirements": {
+        "paired_stock_ids": "Paired accuracy for conflicting stock assignments."
+      },
+      "native_sha256": "230b092ed7aae27ff1ede399c2dfec0064eab37cfdfe7201c631b0f616d1dcad"
+    }
+  ],
+  "gpt_control_rewards": {
+    "swapped": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "none": [
+      0.0,
+      0.0,
+      0.0
+    ]
+  }
+}

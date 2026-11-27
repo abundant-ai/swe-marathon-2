@@ -1,0 +1,58 @@
+schema_version = "1.4"
+artifacts = ["/app/work/online.py", "/app/work/train.py", "/app/work/trained.npz"]
+[task]
+name = "abundant/swe-m2_ai-research_core50-shared-scanner-stockrooms-correct"
+description = "Commission a shared scanner using visual handovers and preserve conflicting stockroom mappings in CNN weights."
+authors = [{name = "Qingyuan Wu", email = "qingyuanwu4work@gmail.com"}]
+[metadata]
+reward_type = "continuous"
+open_internet_justification = "Builds install pinned CPU PyTorch, NumPy and Pillow. Training and deployment run offline."
+[agent]
+timeout_sec = 1800
+network_mode = "no-network"
+user = "dev"
+[environment]
+network_mode = "public"
+build_timeout_sec = 1200
+cpus = 2
+memory_mb = 4096
+storage_mb = 8192
+gpus = 0
+workdir = "/app/work"
+[verifier]
+environment_mode = "separate"
+network_mode = "no-network"
+timeout_sec = 7500
+user = "root"
+[verifier.environment]
+network_mode = "public"
+build_timeout_sec = 1200
+cpus = 2
+memory_mb = 4096
+storage_mb = 8192
+gpus = 0
+
+
+[metadata.task_rating]
+schema_version = 1
+status = "partial"
+scale_max = 5
+stage = "trial-backed"
+rated_at = "2026-11-27T14:02:23Z"
+source_ref = "sha256:586ad55585893929f6edfbb5f30be724682bdbae6709bd77d324346c8339fab0"
+harbor_report = "https://www.oddish.app/tasks/swe-m2_ai-research_scanner-recommissioning-review-ab77816c?trial=swe-m2_ai-research_scanner-recommissioning-review-ab77816c-1&file=artifacts%2Fapp%2Fcheck-result.json"
+rubric_sha256 = "5fcba0cf139695f1ed5390085b37ed71d64023ea2ae6c44d340dea7e7e31db70"
+
+[metadata.task_rating.scores]
+novelty = "unassessed"
+verifiability = 3
+realism = 3
+difficulty = 3
+initial_feasibility = 4
+
+[metadata.task_rating.confidence]
+novelty = "unassessed"
+verifiability = "high"
+realism = "high"
+difficulty = "medium"
+initial_feasibility = "high"

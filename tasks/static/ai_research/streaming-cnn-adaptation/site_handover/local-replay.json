@@ -1,0 +1,203 @@
+{
+  "scope": "Local deployment-only replay on the scored installation, using trained weights from the stock source-training reference. Hosted clean rebuild and eligibility are evaluated independently.",
+  "order": [
+    "clips-4201",
+    "clips-7303",
+    "switches-4201",
+    "switches-7303"
+  ],
+  "matched_frame_audit": {
+    "identical_nonintervention_files": 61,
+    "paired_stock_frames_both_installations": 720,
+    "paired_chart_events": 24
+  },
+  "local_detached_worker": {
+    "chart_count": 6,
+    "adapted": 0.46111111111111114,
+    "frozen": 0.17222222222222222,
+    "source_before": 0.6,
+    "source_after": 0.5833333333333333,
+    "elapsed_seconds": 15.761941656004637
+  },
+  "conditions": {
+    "correct": {
+      "deployment_credit": 1.0,
+      "starts": {
+        "common": {
+          "frozen_accuracy": [
+            0.138889,
+            0.15,
+            0.133333,
+            0.161111
+          ],
+          "adapted_accuracy": [
+            0.555556,
+            0.561111,
+            0.527778,
+            0.516667
+          ],
+          "paired_both_correct": {
+            "clips": 0.549383,
+            "switches": 0.5
+          }
+        },
+        "replicate": {
+          "frozen_accuracy": [
+            0.094444,
+            0.144444,
+            0.083333,
+            0.172222
+          ],
+          "adapted_accuracy": [
+            0.5,
+            0.516667,
+            0.455556,
+            0.461111
+          ],
+          "paired_both_correct": {
+            "clips": 0.475309,
+            "switches": 0.407407
+          }
+        },
+        "submitted": {
+          "frozen_accuracy": [
+            0.138889,
+            0.15,
+            0.133333,
+            0.161111
+          ],
+          "adapted_accuracy": [
+            0.555556,
+            0.561111,
+            0.527778,
+            0.516667
+          ],
+          "paired_both_correct": {
+            "clips": 0.549383,
+            "switches": 0.5
+          }
+        }
+      }
+    },
+    "swapped": {
+      "deployment_credit": 0.0,
+      "starts": {
+        "common": {
+          "frozen_accuracy": [
+            0.138889,
+            0.15,
+            0.133333,
+            0.161111
+          ],
+          "adapted_accuracy": [
+            0.083333,
+            0.077778,
+            0.077778,
+            0.088889
+          ],
+          "paired_both_correct": {
+            "clips": 0.0,
+            "switches": 0.0
+          }
+        },
+        "replicate": {
+          "frozen_accuracy": [
+            0.094444,
+            0.144444,
+            0.083333,
+            0.172222
+          ],
+          "adapted_accuracy": [
+            0.138889,
+            0.105556,
+            0.15,
+            0.105556
+          ],
+          "paired_both_correct": {
+            "clips": 0.0,
+            "switches": 0.0
+          }
+        },
+        "submitted": {
+          "frozen_accuracy": [
+            0.138889,
+            0.15,
+            0.133333,
+            0.161111
+          ],
+          "adapted_accuracy": [
+            0.083333,
+            0.077778,
+            0.077778,
+            0.088889
+          ],
+          "paired_both_correct": {
+            "clips": 0.0,
+            "switches": 0.0
+          }
+        }
+      }
+    },
+    "none": {
+      "deployment_credit": 0.0,
+      "starts": {
+        "common": {
+          "frozen_accuracy": [
+            0.138889,
+            0.15,
+            0.133333,
+            0.161111
+          ],
+          "adapted_accuracy": [
+            0.138889,
+            0.15,
+            0.133333,
+            0.161111
+          ],
+          "paired_both_correct": {
+            "clips": 0.0,
+            "switches": 0.0
+          }
+        },
+        "replicate": {
+          "frozen_accuracy": [
+            0.094444,
+            0.144444,
+            0.083333,
+            0.172222
+          ],
+          "adapted_accuracy": [
+            0.094444,
+            0.144444,
+            0.083333,
+            0.172222
+          ],
+          "paired_both_correct": {
+            "clips": 0.0,
+            "switches": 0.0
+          }
+        },
+        "submitted": {
+          "frozen_accuracy": [
+            0.138889,
+            0.15,
+            0.133333,
+            0.161111
+          ],
+          "adapted_accuracy": [
+            0.138889,
+            0.15,
+            0.133333,
+            0.161111
+          ],
+          "paired_both_correct": {
+            "clips": 0.0,
+            "switches": 0.0
+          }
+        }
+      }
+    }
+  },
+  "oddish_baselines": "https://www.oddish.app/experiments/ca5ae79b",
+  "harbor_review": "https://www.oddish.app/experiments/4291df0a"
+}

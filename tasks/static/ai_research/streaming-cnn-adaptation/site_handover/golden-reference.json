@@ -1,0 +1,113 @@
+{
+  "task": "swe-m2_ai-research_core50-shared-scanner-stockrooms-correct-f030babf",
+  "version": 1,
+  "golden_reference_verified": true,
+  "baselines": [
+    {
+      "trial": "swe-m2_ai-research_core50-shared-scanner-stockrooms-correct-f030babf-2",
+      "agent": "nop",
+      "native_reward": 0.0,
+      "build": "invalid",
+      "meets_requirement": true,
+      "verifier_report_sha256": "9c099c6180c74b1ab801126127b2eaa5bc8c4029769d62869d5a67e9ba77bc49"
+    },
+    {
+      "trial": "swe-m2_ai-research_core50-shared-scanner-stockrooms-correct-f030babf-1",
+      "agent": "oracle",
+      "native_reward": 1.0,
+      "build": "valid",
+      "meets_requirement": true,
+      "verifier_report_sha256": "ff09eef3389b68b4cf07d9d961664c1d81ade15baa2f543ad27913569463b02a"
+    }
+  ],
+  "experiment_url": "https://www.oddish.app/experiments/ca5ae79b",
+  "matched_checks": {
+    "submitted_checkpoint": "passed",
+    "source_training": "passed",
+    "source_label_dependence": "passed",
+    "reproducibility": "passed",
+    "source_competence": "passed",
+    "stream_program": "passed",
+    "deployment_a": "passed",
+    "deployment_b": "passed",
+    "paired_stock_ids": "passed"
+  },
+  "submitted_matched_runs": [
+    {
+      "order": 4201,
+      "schedule": "clips",
+      "adapted": 0.5555555555555556,
+      "frozen": 0.15555555555555559,
+      "source_before": 0.5999999999999999,
+      "source_after": 0.5958333333333333
+    },
+    {
+      "order": 7303,
+      "schedule": "clips",
+      "adapted": 0.5777777777777778,
+      "frozen": 0.14444444444444446,
+      "source_before": 0.5999999999999999,
+      "source_after": 0.5958333333333333
+    },
+    {
+      "order": 4201,
+      "schedule": "switches",
+      "adapted": 0.538888888888889,
+      "frozen": 0.14444444444444443,
+      "source_before": 0.5999999999999999,
+      "source_after": 0.5666666666666667
+    },
+    {
+      "order": 7303,
+      "schedule": "switches",
+      "adapted": 0.5333333333333334,
+      "frozen": 0.15555555555555559,
+      "source_before": 0.5999999999999999,
+      "source_after": 0.5833333333333333
+    }
+  ],
+  "controls": [
+    {
+      "id": "swe-m2_ai-research_core50-shared-scanner-stockrooms-swapped-680f8ab9-2",
+      "agent": "nop",
+      "reward": 0.0,
+      "task_id": "swe-m2_ai-research_core50-shared-scanner-stockrooms-swapped-680f8ab9",
+      "task_version": 1
+    },
+    {
+      "id": "swe-m2_ai-research_core50-shared-scanner-stockrooms-swapped-680f8ab9-1",
+      "agent": "oracle",
+      "reward": 0.0,
+      "task_id": "swe-m2_ai-research_core50-shared-scanner-stockrooms-swapped-680f8ab9",
+      "task_version": 1
+    },
+    {
+      "id": "swe-m2_ai-research_core50-shared-scanner-stockrooms-none-882707d6-1",
+      "agent": "oracle",
+      "reward": 0.0,
+      "task_id": "swe-m2_ai-research_core50-shared-scanner-stockrooms-none-882707d6",
+      "task_version": 1
+    },
+    {
+      "id": "swe-m2_ai-research_core50-shared-scanner-stockrooms-none-882707d6-2",
+      "agent": "nop",
+      "reward": 0.0,
+      "task_id": "swe-m2_ai-research_core50-shared-scanner-stockrooms-none-882707d6",
+      "task_version": 1
+    },
+    {
+      "id": "swe-m2_ai-research_core50-shared-scanner-stockrooms-correct-f030babf-2",
+      "agent": "nop",
+      "reward": 0.0,
+      "task_id": "swe-m2_ai-research_core50-shared-scanner-stockrooms-correct-f030babf",
+      "task_version": 1
+    },
+    {
+      "id": "swe-m2_ai-research_core50-shared-scanner-stockrooms-correct-f030babf-1",
+      "agent": "oracle",
+      "reward": 1.0,
+      "task_id": "swe-m2_ai-research_core50-shared-scanner-stockrooms-correct-f030babf",
+      "task_version": 1
+    }
+  ]
+}

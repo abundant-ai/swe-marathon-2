@@ -1,0 +1,33 @@
+schema_version = "1.4"
+artifacts = ["/app/work/online.py", "/app/work/train.py", "/app/work/trained.npz"]
+[task]
+name = "abundant/swe-m2_ai-research_core50-streaming-cnn"
+description = "Train a source CNN and adapt its weights while recognizing household objects from an unlabeled camera stream."
+authors = [{name = "Qingyuan Wu", email = "qingyuanwu4work@gmail.com"}]
+[metadata]
+reward_type = "continuous"
+open_internet_justification = "Builds install pinned CPU PyTorch, NumPy and Pillow. Training and deployment run offline."
+[agent]
+timeout_sec = 1800
+network_mode = "no-network"
+user = "dev"
+[environment]
+network_mode = "public"
+build_timeout_sec = 1200
+cpus = 2
+memory_mb = 4096
+storage_mb = 8192
+gpus = 0
+workdir = "/app/work"
+[verifier]
+environment_mode = "separate"
+network_mode = "no-network"
+timeout_sec = 2400
+user = "root"
+[verifier.environment]
+network_mode = "public"
+build_timeout_sec = 1200
+cpus = 2
+memory_mb = 4096
+storage_mb = 8192
+gpus = 0

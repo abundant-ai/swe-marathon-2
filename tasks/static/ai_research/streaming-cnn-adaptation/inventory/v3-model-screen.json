@@ -1,0 +1,55 @@
+{
+  "experiment": "https://www.oddish.app/experiments/2886acf8",
+  "trial": {
+    "id": "swe-m2_ai-research_core50-streaming-cnn-stock-commissioning-correct-51b49832-17",
+    "task_id": "swe-m2_ai-research_core50-streaming-cnn-stock-commissioning-correct-51b49832",
+    "task_version": 3,
+    "agent": "codex",
+    "model": "openai/gpt-6.2-sol",
+    "reasoning_effort": "xhigh",
+    "status": "success",
+    "reward": 1.0
+  },
+  "build": "valid",
+  "training_replay": {
+    "submitted_accuracy": 0.6458333333333333,
+    "rebuilt_accuracy": 0.6458333333333333,
+    "prediction_agreement": 1.0,
+    "matching_tensors": true,
+    "passed": true
+  },
+  "updater_sha256": "c50f29af8ac67c77717d87630b94461745152a07a21ca8cc3fcfbe96c3ef5ee9",
+  "training_sha256": "9b08de1576f28ec36cc2b0d5f3367ab7d4adda9021f07a7627930a874040751b",
+  "target": [
+    {
+      "order": 4201,
+      "schedule": "clips",
+      "frozen": 0.11666666666666665,
+      "adapted": 0.6388888888888888,
+      "learned_weight_gain_pp": 52.222222222222214
+    },
+    {
+      "order": 7303,
+      "schedule": "clips",
+      "frozen": 0.13157894736842105,
+      "adapted": 0.5736842105263158,
+      "learned_weight_gain_pp": 44.21052631578948
+    },
+    {
+      "order": 4201,
+      "schedule": "switches",
+      "frozen": 0.11176470588235295,
+      "adapted": 0.6352941176470589,
+      "learned_weight_gain_pp": 52.352941176470594
+    },
+    {
+      "order": 7303,
+      "schedule": "switches",
+      "frozen": 0.1277777777777778,
+      "adapted": 0.6,
+      "learned_weight_gain_pp": 47.22222222222222
+    }
+  ],
+  "decision": "revise",
+  "remaining_model_trials_submitted": 0
+}

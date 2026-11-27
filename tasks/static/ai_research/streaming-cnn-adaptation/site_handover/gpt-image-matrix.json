@@ -1,0 +1,184 @@
+{
+  "1": {
+    "experiment_url": "https://www.oddish.app/experiments/ca5ae79b",
+    "model": "openai/gpt-6.2-sol",
+    "reasoning_effort": "xhigh",
+    "completed_gpt_trials": {
+      "correct": [
+        {
+          "trial": "swe-m2_ai-research_core50-shared-scanner-stockrooms-correct-f030babf-4",
+          "reward": 0.0,
+          "build": "valid",
+          "errors": [],
+          "native_metrics_sha256": "6215687b7502a43502ef1bf13ab7d130b90ad0a64f847f2139b1a908784c216b"
+        },
+        {
+          "trial": "swe-m2_ai-research_core50-shared-scanner-stockrooms-correct-f030babf-10",
+          "reward": 0.0,
+          "build": "partial",
+          "errors": [
+            "AttributeError: 'StockClassifier' object has no attribute 'identify_camera'"
+          ],
+          "native_metrics_sha256": "e1cf8de8afa2ab829c302c35c516d7b9afd71e1b1a89eef6c665586a1f6410e0"
+        },
+        {
+          "trial": "swe-m2_ai-research_core50-shared-scanner-stockrooms-correct-f030babf-11",
+          "reward": 0.0,
+          "build": "partial",
+          "errors": [
+            "AttributeError: 'CameraAdapter' object has no attribute 'offset'"
+          ],
+          "native_metrics_sha256": "3703588888daff9df1836f66344ec829fec3140423761c4f41c05f9061b6845b"
+        }
+      ],
+      "swapped": [
+        {
+          "trial": "swe-m2_ai-research_core50-shared-scanner-stockrooms-swapped-680f8ab9-10",
+          "reward": 0.0,
+          "build": "invalid",
+          "errors": [
+            "ImportError: cannot import name 'patch_signature' from 'core_model' (/opt/core50/core_model.py). Did you mean: 'camera_signature'?"
+          ],
+          "native_metrics_sha256": "5fc0936d8337bde39ffef433b639a7724f3e56f54701e0be04e6c6d9914db9d4"
+        },
+        {
+          "trial": "swe-m2_ai-research_core50-shared-scanner-stockrooms-swapped-680f8ab9-11",
+          "reward": 0.0,
+          "build": "partial",
+          "errors": [
+            "AttributeError: 'StockClassifier' object has no attribute 'initialize_scanner'"
+          ],
+          "native_metrics_sha256": "52106d5bec59ecfadce38f5fcaeec91cbda948c86fa049bcbfd194a6f6c19526"
+        },
+        {
+          "trial": "swe-m2_ai-research_core50-shared-scanner-stockrooms-swapped-680f8ab9-12",
+          "reward": 0.0,
+          "build": "valid",
+          "errors": [],
+          "native_metrics_sha256": "8863f55454032d1ce2e62b4160892b4b002851704615d9fb5b1c52767e309256"
+        }
+      ],
+      "none": [
+        {
+          "trial": "swe-m2_ai-research_core50-shared-scanner-stockrooms-none-882707d6-14",
+          "reward": 0.0,
+          "build": "invalid",
+          "errors": [
+            "ImportError: cannot import name 'COV_COLS' from 'core_model' (/opt/core50/core_model.py)"
+          ],
+          "native_metrics_sha256": "939908238d48f18bb459bd456067fa4ea0f69f5bd9f2d59044581dc149c30ac8"
+        },
+        {
+          "trial": "swe-m2_ai-research_core50-shared-scanner-stockrooms-none-882707d6-13",
+          "reward": 0.0,
+          "build": "partial",
+          "errors": [
+            "ImportError: cannot import name 'color_probes' from 'core_model' (/opt/core50/core_model.py)"
+          ],
+          "native_metrics_sha256": "36071b3429455f509053c09601e51292b3c831f10dd55fb7cc153c15b449bd25"
+        },
+        {
+          "trial": "swe-m2_ai-research_core50-shared-scanner-stockrooms-none-882707d6-12",
+          "reward": 0.0,
+          "build": "partial",
+          "errors": [
+            "AttributeError: 'StockClassifier' object has no attribute 'encode'"
+          ],
+          "native_metrics_sha256": "a37832a31dbfeb34dbdd7f80c4e0c2b297d2ac0ea484aac3ae8d9cf5ce2b42f6"
+        }
+      ]
+    },
+    "secondary_submission": 6
+  },
+  "2": {
+    "experiment_url": "https://www.oddish.app/experiments/560dfbfe",
+    "model": "openai/gpt-6.2-sol",
+    "reasoning_effort": "xhigh",
+    "completed_gpt_trials": {
+      "correct": [
+        {
+          "trial": "swe-m2_ai-research_core50-shared-scanner-stockrooms-correct-f030babf-9",
+          "reward": 0.0,
+          "build": "valid",
+          "errors": [],
+          "native_metrics_sha256": "406a4df582bd2b4bac6278c1398a8b7e8ced63f1aecbf3cd9f926579a8bfeeea"
+        },
+        {
+          "trial": "swe-m2_ai-research_core50-shared-scanner-stockrooms-correct-f030babf-18",
+          "reward": 0.0,
+          "build": "partial",
+          "errors": [
+            "RuntimeError: The size of tensor a (21) must match the size of tensor b (24) at non-singleton dimension 1"
+          ],
+          "native_metrics_sha256": "a6fe607efe90ff3d0ce55f88ca22396e467a125f5722571d77004a4d7d331559"
+        },
+        {
+          "trial": "swe-m2_ai-research_core50-shared-scanner-stockrooms-correct-f030babf-19",
+          "reward": 0.0,
+          "build": "partial",
+          "errors": [
+            "ImportError: cannot import name 'signature_from_moments' from 'core_model' (/opt/core50/core_model.py)"
+          ],
+          "native_metrics_sha256": "0e41bb036a3e8bdf69bf67b6d3232739c83fbe04e79d67740e52f042f72dfd41"
+        }
+      ],
+      "swapped": [
+        {
+          "trial": "swe-m2_ai-research_core50-shared-scanner-stockrooms-swapped-680f8ab9-20",
+          "reward": 0.0,
+          "build": "invalid",
+          "errors": [
+            "AttributeError: 'CameraAdapter' object has no attribute 'offset'"
+          ],
+          "native_metrics_sha256": "84a0f850e0d1036c22c85c0a66391134a63ec63bb37a96a3a708211b4a024d46"
+        },
+        {
+          "trial": "swe-m2_ai-research_core50-shared-scanner-stockrooms-swapped-680f8ab9-19",
+          "reward": 0.0,
+          "build": "invalid",
+          "errors": [
+            "AttributeError: 'StockClassifier' object has no attribute 'encode'"
+          ],
+          "native_metrics_sha256": "5c5f193deeed905ca3f9e98a78bf2290fb419fba431e8b16d771a74bf23d0094"
+        },
+        {
+          "trial": "swe-m2_ai-research_core50-shared-scanner-stockrooms-swapped-680f8ab9-21",
+          "reward": 0.0,
+          "build": "invalid",
+          "errors": [
+            "ImportError: cannot import name 'MEMORY_SLOTS' from 'core_model' (/opt/core50/core_model.py)"
+          ],
+          "native_metrics_sha256": "5007c40c6849ed8f336b849f7ea5a179c0fe3c8bcb5a785453ba77d5368577de"
+        }
+      ],
+      "none": [
+        {
+          "trial": "swe-m2_ai-research_core50-shared-scanner-stockrooms-none-882707d6-21",
+          "reward": 0.0,
+          "build": "partial",
+          "errors": [
+            "RuntimeError: The size of tensor a (18) must match the size of tensor b (51) at non-singleton dimension 0"
+          ],
+          "native_metrics_sha256": "2d7fa638b8023c91c9e862b058b3b390d11fe25ff770ad3eb4410c7decc7fd36"
+        },
+        {
+          "trial": "swe-m2_ai-research_core50-shared-scanner-stockrooms-none-882707d6-22",
+          "reward": 0.0,
+          "build": "partial",
+          "errors": [
+            "TypeError: camera_signature() takes 1 positional argument but 2 were given"
+          ],
+          "native_metrics_sha256": "df0c6bcd5179bc4480cbe4fa1eb5c85a4d870b7c6537e2a01e780bca76404192"
+        },
+        {
+          "trial": "swe-m2_ai-research_core50-shared-scanner-stockrooms-none-882707d6-23",
+          "reward": 0.0,
+          "build": "valid",
+          "errors": [],
+          "native_metrics_sha256": "8e3de4073f6f97f17e7b09704899b86121bb646e3baf78a3e124abc754477b09"
+        }
+      ]
+    },
+    "secondary_submission": 6
+  }
+}

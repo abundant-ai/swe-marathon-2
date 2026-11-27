@@ -1,0 +1,9 @@
+CORe50 recordings and benchmark by Vincenzo Lomonaco and Davide Maltoni, University of Bologna.
+Source and attribution: https://vlomonaco.github.io/core50/
+License identified by the project: Creative Commons Attribution 4.0 International, https://creativecommons.org/licenses/by/4.0/
+Original paper: CORe50: a New Dataset and Benchmark for Continuous Object Recognition (CoRL 2017), https://proceedings.mlr.press/v78/lomonaco17a.html
+
+This pilot uses the CORe50 32 × 32 RGB derivative with selected recording sessions,
+category-level labels, constructed clip orders, and resized preview mosaics.
+The service-camera variants apply simulated channel response matrices to real
+RGB frames. These are benchmark modifications by the task authors.

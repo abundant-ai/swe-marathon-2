@@ -1,0 +1,40 @@
+{
+  "scope": "Revision 2 local deployment tests. Labels used only for evaluation.",
+  "reference": {
+    "correct": {
+      "credit": 1.0,
+      "weakest_paired_renewal_accuracy": 0.43827160493827155
+    },
+    "swapped": {
+      "credit": 0.0,
+      "weakest_paired_renewal_accuracy": 0.0
+    },
+    "none": {
+      "credit": 0.0,
+      "weakest_paired_renewal_accuracy": 0.0
+    }
+  },
+  "intervention": {
+    "correct_copied_into_both_installations": 0.0,
+    "partial_credit": 0.6349206349206349,
+    "missing_second_installation": 0.0,
+    "submitted_buffers_only": 0.0,
+    "post_renewal_identical_frame_positions": 720
+  },
+  "source_learning": {
+    "public_trainer_pair_accuracy": 0.3041666666666667,
+    "acceptance_floor": 0.15,
+    "frozen_checkpoints_best_pair_accuracy_even_with_best_global_output_permutation": [
+      0.07083333333333333,
+      0.058333333333333334
+    ],
+    "permutations_per_checkpoint": 3628800
+  },
+  "from_archive": {
+    "uploaded_package_files": 185,
+    "rebuilt_package_files": 185,
+    "changed": [],
+    "symmetric_difference": []
+  },
+  "oddish": "https://www.oddish.app/experiments/560dfbfe"
+}

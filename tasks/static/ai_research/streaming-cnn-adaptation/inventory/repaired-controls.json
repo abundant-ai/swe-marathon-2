@@ -1,0 +1,91 @@
+{
+  "experiment": "https://www.oddish.app/experiments/d3a3edfe",
+  "review": "https://www.oddish.app/experiments/faa3dd6b",
+  "trials": [
+    {
+      "trial": "swe-m2_ai-research_core50-streaming-cnn-stock-commissioning-none-13f30f1e-9",
+      "version": 2,
+      "agent": "nop",
+      "score": 0.0,
+      "build": "invalid",
+      "passed": false
+    },
+    {
+      "trial": "swe-m2_ai-research_core50-streaming-cnn-stock-commissioning-none-13f30f1e-8",
+      "version": 2,
+      "agent": "oracle",
+      "score": 0.0,
+      "build": "valid",
+      "passed": false
+    },
+    {
+      "trial": "swe-m2_ai-research_core50-streaming-cnn-stock-commissioning-swapped-ee2dbf8a-9",
+      "version": 2,
+      "agent": "nop",
+      "score": 0.0,
+      "build": "invalid",
+      "passed": false
+    },
+    {
+      "trial": "swe-m2_ai-research_core50-streaming-cnn-stock-commissioning-swapped-ee2dbf8a-8",
+      "version": 2,
+      "agent": "oracle",
+      "score": 0.0,
+      "build": "valid",
+      "passed": false
+    },
+    {
+      "trial": "swe-m2_ai-research_core50-streaming-cnn-stock-commissioning-correct-51b49832-9",
+      "version": 2,
+      "agent": "nop",
+      "score": 0.0,
+      "build": "invalid",
+      "passed": false
+    },
+    {
+      "trial": "swe-m2_ai-research_core50-streaming-cnn-stock-commissioning-correct-51b49832-8",
+      "version": 2,
+      "agent": "oracle",
+      "score": 1.0,
+      "build": "valid",
+      "passed": true
+    }
+  ],
+  "boundary": {
+    "reference": 1.0,
+    "missing_arrival_gain": 0.0,
+    "first_observations_per_run": [
+      30,
+      30,
+      30,
+      30,
+      30,
+      30,
+      30,
+      30,
+      30,
+      30,
+      30,
+      30
+    ]
+  },
+  "stratified_successor_local_replay": {
+    "reversed_order_regression": 0.0,
+    "reference": 1.0,
+    "missing_arrival_gain": 0.0,
+    "first_observations_per_run": [
+      30,
+      30,
+      30,
+      30,
+      30,
+      30,
+      30,
+      30,
+      30,
+      30,
+      30,
+      30
+    ]
+  }
+}
