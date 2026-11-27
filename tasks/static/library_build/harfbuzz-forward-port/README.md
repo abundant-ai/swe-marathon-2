@@ -10,8 +10,11 @@ A product ships HarfBuzz 14.3.0 and has frozen that build. The agent brings it f
 metrics and API behaviour of upstream's next eight releases (14.3.1 to 15.2.0, 2026-08-13 to 2026-11-19), in one
 session, working from the release notes, the specifications and its own test fonts. It never sees a 15.x tree or
 binary. A separate verifier compiles the delivered tree and compares integer shaping and API outputs
-on private fonts and strings with the upstream releases. Only behaviour a listed note changed is credited; behaviour
-no note changed must stay as it was, and that is where agents are expected to fail.
+on private fonts and strings with the upstream releases. Only behaviour a listed note changed is credited, and
+behaviour no note changed must stay as it was. Where agents are expected to fail: with no 15.x code or tests to
+check against, they land the fixes they can confirm on their own 14.3.0 build and fall short on the ones they
+cannot, chiefly AAT/`kern` behaviour that needs hand-built fonts, regenerated Unicode data, and bugs a note
+describes only by symptom.
 
 | Document | Contents |
 | --- | --- |
@@ -23,6 +26,8 @@ no note changed must stay as it was, and that is where agents are expected to fa
 | [notes/PHASE-A-REPORT.md](notes/PHASE-A-REPORT.md) | Phase A summary |
 | [notes/PHASE-B-REPORT.md](notes/PHASE-B-REPORT.md) | Phase B: downloads, spike results (go), yield per unit, milestone, resource use |
 | [notes/PHASE-C-REPORT.md](notes/PHASE-C-REPORT.md) | Phase C: every unit, the failure-sentence proof, recorded outputs, images, the gate |
+| [notes/PREREGISTRATION.md](notes/PREREGISTRATION.md) | Per-unit and per-family prediction for a frontier agent, with kill conditions, committed before any run |
+| [notes/FIX1-REPORT.md](notes/FIX1-REPORT.md) | QA fix round 1: every must-fix and should-fix item, what changed, the evidence |
 
 ## Design dimensions (proposal stage)
 
@@ -31,14 +36,15 @@ no note changed must stay as it was, and that is where agents are expected to fa
 | Novelty | First SWE-M2 task that changes an existing C++ library, first text-shaping task, first forward-port. Release-notes upgrades exist (SWE-EVO, SWE-Chain, RoadmapBench) but on pre-cutoff Python releases graded by upstream tests; this one is post-cutoff, in OpenType and AAT shaping, graded by differential execution on private fonts | No shaping task among Forge's 664 tasks or this repository's tasks (read 2026-11-26) | Public-benchmark comparisons are second-hand (CLAIMS.md C9, C11) |
 | Verifiability | Outputs are integer sequences; per-item upstream revert mutants prove each graded case belongs to one note; the unmodified base scores 0 by construction | Commit-level evidence in CLAIMS.md | Case yield per item, revert cleanliness, determinism: all spike items |
 | Realism | Frozen, certified builds that take upstream fixes as their own changes are common practice; the notes are upstream's own, the specs are the ones a maintainer reads | Upstream's notes state rules as conditions precise enough to implement (CLAIMS.md C29) | The "no upstream diff" story has to read as natural (QA lens 1) |
-| Difficulty | About 57 changes across 8 families in C++, AAT and `kern` fonts the agent must build itself, Unicode 18 tables to regenerate, no oracle for the new behaviour, and a gate that punishes over-broad fixes | Report's estimate: frontier 0.35-0.65, mid-tier 0.10-0.30 | Unmeasured; mid-tier floor risk |
+| Difficulty | 53 graded changes across 8 families: 14 whose note names the fix, 20 an agent can check on its own 14.3.0 build, and 19 it cannot without fonts or data it builds itself (AAT and `kern` tables no shipped font has, the Unicode 18 data, bugs described only by symptom); no oracle for the new behaviour; a gate on everything the notes leave alone | Pre-registered, from QA pass 16: frontier D 0.66, reward about 0.64 (0.54-0.75), mid-tier about 0.28 (notes/PREREGISTRATION.md) | Unmeasured until the first runs; five kill conditions |
 | Initial feasibility | Every in-scope note is either stated precisely by upstream or restated by us as a behaviour rule; the base tree, its own tests and fontTools let the agent check its work against 14.3.0 for everything the notes leave alone | Example: the Khmer fix is a one-token change whose rule is quoted from Microsoft's spec in the 14.3.0 source itself | E-item restatements; fontTools has no `kerx` writer (our assembler) |
 
 ## One step
 
 The owner parked multi-turn on 2026-11-26, so the task is a single step: one instruction listing every note from
-14.3.1 to 15.2.0, one 34,560 s session, and one verifier run at the end that checks all 56 units against 15.2.0
-(the 15.0.0 note on `hb_font_set_face()` is superseded by 15.2.0's, so only the final behaviour counts). The
+14.3.1 to 15.2.0, one 34,560 s session, and one verifier run at the end that checks the 53 graded units against
+15.2.0 (the 15.0.0 note on `hb_font_set_face()` is superseded by 15.2.0's, so only the final behaviour counts;
+three more are cut, with reasons in notes/DESIGN.md). The
 three-step plan the panel chose in Phase A stays in notes/STEPS.md as history; its step 3 is exactly this grading.
 
 ## Reward formula
@@ -49,7 +55,27 @@ G = h_d · (1 − 0.10·(1 − h_b)). h_d is the mean over the units of the pass
 release behaves as 14.3.0 does); h_b is the pass fraction of the broad held-fixed cases. The dual gate is fully
 multiplicative: a port that applies every note one condition too broadly keeps D but loses the share of neighbours it
 breaks. A tree that does not build scores 0; a missing driver output fails its case; a verifier fault leaves no
-reward. Details and rationale: [notes/DESIGN.md](notes/DESIGN.md#6-reward).
+reward. Every result reports D, h_d and h_b separately, and the verifier's `metrics.json` records each case's verdict
+by unit and kind for post-run analysis. Details and rationale: [notes/DESIGN.md](notes/DESIGN.md#6-reward).
+
+## Failure mode
+
+Chosen by a three-judge panel on 2026-11-27 (harbor-lh
+`ops/swe-marathon-v2/decisions/2026-11-27-harfbuzz-failure-sentence-DECISION.md`):
+
+> With no 15.x code or tests to check against, agents land the fixes they can confirm on their own 14.3.0 build and
+> fall short on the ones they cannot, chiefly AAT/kern behaviour that needs hand-built fonts, regenerated Unicode
+> data, and bugs a note describes only by symptom.
+
+Each graded unit has a tier (notes/DESIGN.md section 10, `scripts/pipeline/tiers.tsv`): A, the note names the fix
+(14); B, checkable on the agent's own 14.3.0 build with the shipped fonts and tools (20); C, not checkable without
+material the agent builds itself (19). The proof mutant **V** is 15.2.0 with every tier-C unit taken out; it must
+land in 0.60-0.85 with its D loss confined to tier C and the gate untouched. The over-broad mutant **W** (every
+conditional note widened) is kept as a secondary bound on what the gate takes from a careless port, beside
+W_literal (pass 17's literal widenings only) and the panel's R_unbuilt (every F4 and F5 unit taken out). The
+per-unit and per-family prediction and its kill conditions were committed before any run
+(notes/PREREGISTRATION.md); if implemented units fail their neighbours at 15% or more, and at least three times the
+rate of untouched units, the earlier over-breadth sentence comes back.
 
 ## Hackability assessment
 
@@ -75,8 +101,8 @@ task.toml            single step, 34,560 s, separate verifier checking RELEASE=1
 instruction.md       the request, every note from 14.3.1 to 15.2.0
 tests/               verifier skeleton: Dockerfile, test.sh, verify.py, driver/hbdrv.c
                      (private/, inputs/ and wheels/ are staged by packaging and git-ignored)
-solution/            solve.sh applies the generated upstream patch (solution/private/, git-ignored)
-scripts/             development tooling, never shipped: fetch_inputs.sh, pipeline/
+solution/            solve.sh copies the reference source files and removes the listed paths (solution/private/, git-ignored)
+scripts/             development tooling, never shipped: fetch_inputs.sh, gate_checks.py, package_task.py, pipeline/
 notes/               design documents (never shipped)
 .gitignore           private material, generated oracle patches, experiments
 ```
