@@ -284,7 +284,7 @@ def do_build(
         patches = f"/pipe/reverts/{unit}"  # a hand-resolved revert, applied forward
     else:
         patches = f"/work/patches-lib/{unit}" if unit else ""
-    tolerant = "1" if unit == "ALL" else ""
+    tolerant = "1" if unit and unit.startswith("ALL") else ""
     out = f"/work/out/hb/{bid}"
     started = time.time()
     code = docker_run(

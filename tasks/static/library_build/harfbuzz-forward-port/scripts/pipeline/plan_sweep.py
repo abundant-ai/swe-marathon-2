@@ -92,7 +92,7 @@ def main() -> None:
                 "op": "build",
                 "id": "rk-ALL",
                 "release": "15.2.0",
-                "unit": "ALL",
+                "unit": "ALLX",  # every single-commit unit's revert at once (CACHE/work/patches-lib/ALLX)
                 "jobs": 4,
                 "cpus": 6,
             }
