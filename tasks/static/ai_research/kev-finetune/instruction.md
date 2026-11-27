@@ -32,14 +32,14 @@ Use Kev's own training code and recipe. You have about six hours of wall-clock t
   `head.pt` up to 256 MiB. Full-weight checkpoints are not accepted.
 - `/app/train/`: the data generation and training code and the exact commands and configuration of the run that
   produced `/app/model/`, enough to repeat it.
-- `/app/REPORT.md`: what you tried, every training run and its result, and the scores of the released Kev-0.8B and
-  your model on the held-out data you used.
+- `/app/REPORT.md`: what you tried, every training run and its result, and how the released Kev-0.8B and your model
+  compare on the data you checked them with.
 
-A submission without a non-empty `/app/train/` and `/app/REPORT.md` is not scored. `/app/REPORT.md` must be a
-regular file and `/app/train/` must hold at least one regular file; symbolic links are not followed.
+The model is only accepted with a non-empty `/app/train/` and `/app/REPORT.md`. `/app/REPORT.md` must be a regular
+file and `/app/train/` must hold at least one regular file; symbolic links are not followed.
 
-## How we judge it
+## What a good model does
 
-We take the top answer of your model on held-out questions spread across all of these domains. The questions come in
-two groups of equal weight, and the reward is the mean of the two group accuracies, from 0 to 1. The released Kev-0.8B
-is scored on the same questions for reference. Keep `/app` to these deliverables and the files they need.
+It picks the right answer as often as possible on new questions from all of these domains, not only on the 20
+examples. The questions fall into two groups of equal weight; the measure is the mean of the two accuracies of the
+top answer, from 0 to 1. Keep `/app` to these deliverables and the files they need.

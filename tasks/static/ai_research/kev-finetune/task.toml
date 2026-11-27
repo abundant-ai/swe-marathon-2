@@ -3,12 +3,12 @@ artifacts = ["/app"]
 
 [task]
 name = "abundant/swe-m2_ai-research_kev-finetune"
-description = "Train the open Kev-0.8B decision model with Kev's own recipe on one H100 for a blended set of short-text decision domains, judged by its accuracy on held-out questions."
+description = "Train the open Kev-0.8B decision model with Kev's own recipe on one H100 for a blended set of short-text decision domains, measured by its accuracy on new questions from those domains."
 authors = [{ name = "Fenil Faldu", email = "fenilfaldu143@gmail.com" }]
 
 [metadata]
 reward_type = "continuous"
-open_internet_justification = "The agent session is an allowlist with one host, api.anthropic.com, so the candidate can use Claude Fable 5.2 (key in KEV_ANTHROPIC_API_KEY) to generate training data. Kev's code, Kev-0.8B, its base model and decision-v7 are baked into the image; GitHub, the model hub and the package indexes stay closed, so the public copies of the held-out suite cannot be fetched. The verifier is no-network and has no key."
+open_internet_justification = "The agent session is an allowlist with one host, api.anthropic.com, so the candidate can use Claude Fable 5.2 (key in KEV_ANTHROPIC_API_KEY) to generate training data. Kev's code, Kev-0.8B and its base model are baked into the image; GitHub, the model hub and the package indexes stay closed, so Kev's published suites cannot be fetched. The verifier is no-network and has no key."
 
 [agent]
 timeout_sec = 21600
