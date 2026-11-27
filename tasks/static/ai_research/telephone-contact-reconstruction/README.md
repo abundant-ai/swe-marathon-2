@@ -176,3 +176,5 @@ These ratings apply to a short research pilot. The review found no evidence for 
 On Oddish version 4 the matched reference scored 0.5361. Both image-control references completed with a reproduced rehearsal and scored zero on the fixed target. All three no-op runs scored zero. [Versioned trial records](checks/qa-hosted-baselines.json)
 
 The remaining room error is mostly geometry. In an independent local render, 30.8% of measured rays hit a surface more than 5 cm behind the recorded depth, 6.7% hit a surface too close and 7.3% passed depth but missed the color tolerance. Every measured ray hit a triangle. Among background pixels the too-far fraction was 31.6%. The percentages average the four views equally. [Reproduce the error breakdown](checks/room_error_budget.py) · [Measurements](checks/oracle-repair.json)
+
+The metric contact-picking extension qualified separately on nine matched model trials. Its author record includes staging instructions, the version-matched benchmark evidence, paired optical controls, and the improved RGB reference. [Contact-picking task](contact_queries/README.md)

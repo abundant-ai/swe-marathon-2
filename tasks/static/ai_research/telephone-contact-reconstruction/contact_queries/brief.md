@@ -1,0 +1,3 @@
+A remote operator also uses the mesh to pick a contact in a new camera view. The first visible triangle under the cursor must identify the contact and place it within 3 cm of the measured surface along the camera's depth axis. A cursor over the surrounding desk or through the tape opening should not select that contact. Rehearse by rendering your mesh from more than one supplied camera pose.
+
+The evaluation measures these picks on the tape crown, inner wall and handset. Each contact contributes equally. The mug handle has too few independent depth samples for a reliable depth score. Its visible outline still contributes to the four-part reconstruction score. The lower of the contact-picking F1 and the reconstruction score determines the result.
