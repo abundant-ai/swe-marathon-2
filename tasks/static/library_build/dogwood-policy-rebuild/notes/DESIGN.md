@@ -101,9 +101,11 @@ near copies (word 5-grams, Jaccard 0.9 or more), are counted.
 - each run's folder stays root's; the built program must be a regular file inside the build
   folder and is copied from an `O_NOFOLLOW` descriptor;
 - the output folder may be writable by every user, and `reward.json` there is read first: the
-  grader ends every process of `builder` and `nobody`, removes whatever stands under its output
-  names, creates each output fresh (`O_EXCL`, `O_NOFOLLOW`, relative to the folder's
-  descriptor), and writes the reward last, an evaluation error clearing the reward files too;
+  grader closes the folder to everyone but its owner before any build or run (so a planted
+  reward cannot outlive a grader that dies mid-run), ends every process of `builder` and
+  `nobody`, removes whatever stands under its output names, creates each output fresh
+  (`O_EXCL`, `O_NOFOLLOW`, relative to the folder's descriptor), writes the reward last, and
+  gives the folder its mode back; an evaluation error clears the reward files too;
 - nothing a submission prints, builds or leaves running raises: output comparison falls back to
   the printed text, a link loop is left out of the copy, and an unstartable program fails its
   own cases;
