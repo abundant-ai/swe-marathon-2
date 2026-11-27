@@ -31,11 +31,11 @@ covers).
 | 17 | GPOS marks and an earlier base | F3 | 15.2.0 | C | the note gives a symptom; the cause has to be found without an oracle | 0.46 |
 | 18 | fallback mark positioning uses the base x offset | F3 | 15.2.0 | A | the note names the fix | 0.89 |
 | 19 | COLR extents and marks with empty layers | F3 | 15.1.0 | C | the note gives a symptom; the cause has to be found without an oracle | 0.46 |
-| 20 | cross-stream kern: reset value and axis scale | F4 | 15.2.0 | A | the note names the fix | 0.89 |
-| 21 | kern in vertical text when vkrn is requested | F4 | 15.2.0 | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
-| 22 | trak in vertical text | F4 | 15.2.0 | A | the note names the fix | 0.89 |
-| 23 | kerx with GPOS lacking a kerning feature | F4 | 15.2.0 | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
-| 24 | AAT: later feature request wins | F4 | 15.2.0 | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
+| 20 | cross-stream kern: reset value and axis scale | F4 | 15.2.0 | A | the note names the fix (no font is needed to apply it, though one is needed to see it) | 0.89 |
+| 21 | kern in vertical text when vkrn is requested | F4 | 15.2.0 | C | no shipped font has a vertical kern header; upstream built two fonts to test the fix | 0.46 |
+| 22 | trak in vertical text | F4 | 15.2.0 | A | the note names the fix (no font is needed to apply it, though one is needed to see it) | 0.89 |
+| 23 | kerx with GPOS lacking a kerning feature | F4 | 15.2.0 | C | no shipped font has a kerx table, and fontTools cannot write one | 0.46 |
+| 24 | AAT: later feature request wins | F4 | 15.2.0 | C | no shipped font requests one AAT feature twice; upstream built morx fonts to test the fix | 0.46 |
 | 25a | kerx formats 1 and 2 | F4 | 15.1.0 | C | AAT/kern or flag behaviour that needs fonts the agent builds | 0.46 |
 | 25b | kerx format 4 mark positioning | F4 | 15.1.0 | C | AAT/kern or flag behaviour that needs fonts the agent builds | 0.46 |
 | 25c | kern and mort with a non-first initial state | F4 | 15.1.0 | C | AAT/kern or flag behaviour that needs fonts the agent builds | 0.46 |
@@ -72,13 +72,13 @@ covers).
 | F1 | 12 | 0.68 |
 | F2 | 5 | 0.63 |
 | F3 | 3 | 0.60 |
-| F4 | 9 | 0.63 |
+| F4 | 9 | 0.56 |
 | F5 | 2 | 0.46 |
 | F6 | 1 | 0.46 |
 | F7 | 3 | 0.66 |
 | F8 | 18 | 0.75 |
 
-Predicted frontier D: 0.672; with h_d and h_b near 0.97 each, the predicted reward is about
+Predicted frontier D: 0.660; with h_d and h_b near 0.97 each, the predicted reward is about
 0.64 (QA pass 16: 0.54-0.75 across harnesses). Mid-tier models: about 0.28.
 
 ## Kill conditions (checked on the first three frontier runs, before any change to cases or weights)

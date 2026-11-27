@@ -259,8 +259,12 @@ Decided by a three-judge panel on 2026-11-27 (harbor-lh `ops/swe-marathon-v2/dec
 **Tiers** (QA pass 16's tiers and CLAIMS.md's families). Tier A: the note names the fix. Tier B: the agent can
 check its change on its own 14.3.0 build with the shipped fonts and tools. Tier C: it cannot without material it
 builds itself: AAT/`kern` and flag behaviour that needs hand-built fonts, the Unicode 18 data and its new
-characters, and bugs the note describes only by a symptom. 14 units are tier A, 23 tier B, 16 tier C (pass 16's
-14 tier-C units, plus 33 and 34, which the decision's "regenerated Unicode data" names).
+characters, and bugs the note describes only by a symptom. 14 units are tier A, 20 tier B and 19 tier C: pass 16's
+14 tier-C units; 21, 23 and 24, AAT units pass 16 rated moderate, for which no font shipped with 14.3.0 has the
+tables the note is about (the shipped test fonts have no `kerx`, no vertical `kern` header and no repeated AAT
+feature request; upstream built new fonts to test 21 and 24); and 33 and 34, the decision's "regenerated Unicode
+data". Units 20 and 22 are AAT units too, but their notes name the edit, so an agent can apply it without seeing
+it work; they stay in tier A.
 
 | Unit | Note | Family | Release | Tier | Why | Predicted pass |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -284,11 +288,11 @@ characters, and bugs the note describes only by a symptom. 14 units are tier A, 
 | 17 | GPOS marks and an earlier base | F3 | 15.2.0 | C | the note gives a symptom; the cause has to be found without an oracle | 0.46 |
 | 18 | fallback mark positioning uses the base x offset | F3 | 15.2.0 | A | the note names the fix | 0.89 |
 | 19 | COLR extents and marks with empty layers | F3 | 15.1.0 | C | the note gives a symptom; the cause has to be found without an oracle | 0.46 |
-| 20 | cross-stream kern: reset value and axis scale | F4 | 15.2.0 | A | the note names the fix | 0.89 |
-| 21 | kern in vertical text when vkrn is requested | F4 | 15.2.0 | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
-| 22 | trak in vertical text | F4 | 15.2.0 | A | the note names the fix | 0.89 |
-| 23 | kerx with GPOS lacking a kerning feature | F4 | 15.2.0 | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
-| 24 | AAT: later feature request wins | F4 | 15.2.0 | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
+| 20 | cross-stream kern: reset value and axis scale | F4 | 15.2.0 | A | the note names the fix (no font is needed to apply it, though one is needed to see it) | 0.89 |
+| 21 | kern in vertical text when vkrn is requested | F4 | 15.2.0 | C | no shipped font has a vertical kern header; upstream built two fonts to test the fix | 0.46 |
+| 22 | trak in vertical text | F4 | 15.2.0 | A | the note names the fix (no font is needed to apply it, though one is needed to see it) | 0.89 |
+| 23 | kerx with GPOS lacking a kerning feature | F4 | 15.2.0 | C | no shipped font has a kerx table, and fontTools cannot write one | 0.46 |
+| 24 | AAT: later feature request wins | F4 | 15.2.0 | C | no shipped font requests one AAT feature twice; upstream built morx fonts to test the fix | 0.46 |
 | 25a | kerx formats 1 and 2 | F4 | 15.1.0 | C | AAT/kern or flag behaviour that needs fonts the agent builds | 0.46 |
 | 25b | kerx format 4 mark positioning | F4 | 15.1.0 | C | AAT/kern or flag behaviour that needs fonts the agent builds | 0.46 |
 | 25c | kern and mort with a non-first initial state | F4 | 15.1.0 | C | AAT/kern or flag behaviour that needs fonts the agent builds | 0.46 |
@@ -318,12 +322,16 @@ characters, and bugs the note describes only by a symptom. 14 units are tier A, 
 | 49 | hb_ot_layout_get_extender_glyphs() | F8 | 15.2.0 | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
 | 51 | deserialize2 functions | F8 | 15.1.0 | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
 
-**The proof mutant V** is 15.2.0 with every tier-C unit's change taken out (`scripts/pipeline/make_mutant.sh` over the reference tree, the
-patches in `patches-lib/ALLV`; commits that no longer revert cleanly on 15.2.0 are left in and listed). It must
-land in 0.60-0.85, lose D only on tier-C units, and leave h_d and h_b essentially unchanged. The over-broad mutant W
-is kept as a **secondary bound**: it shows how much the gate takes from a port that widens every condition, not how
-agents fail. Every result reports D, h_d and h_b separately. What would reopen the decision is in
-`notes/PREREGISTRATION.md`.
+**The proof mutant V** is 15.2.0 with every tier-C unit's change taken out: `scripts/pipeline/assemble_reverts.py`
+collects the 19 units' commits (and the hand-resolved reverts of 27 and 29) into `patches-lib/ALLV`, the pipeline
+builds it as `mut-V`, and `scripts/pipeline/make_mutant.sh` applies it to the reference tree for the verifier;
+a commit that no longer reverts cleanly is left in and listed. V must land in 0.60-0.85, lose D only on tier-C
+units, and leave h_d and h_b essentially unchanged. Two companions are measured in the pipeline: **R_unbuilt**,
+the panel's starting point (every F4 and F5 unit taken out, `patches-lib/ALLRu`), and **W_literal**, W without
+the eight widenings QA pass 17 found not to be, or arguably not to be, over-broad readings of their notes, or no-ops
+(11, 18, 25b, 31, 33, 36, 37, 44b; `patches-lib/LITW`). The over-broad mutant W is kept as a **secondary bound**:
+it shows how much the gate takes from a port that widens every condition, not how agents fail. Every result
+reports D, h_d and h_b separately. What would reopen the decision is in `notes/PREREGISTRATION.md`.
 
 ## 11. Effort
 
