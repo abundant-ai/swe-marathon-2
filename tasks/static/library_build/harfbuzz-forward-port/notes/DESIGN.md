@@ -349,7 +349,7 @@ arm64 containers in local Docker Desktop, with emulated amd64 samples only where
 | --- | --- | --- | --- | --- |
 | 1 | Heavy verifier after a capped session: the image fails to come up and the trial is lost | Ungraded trials, biased toward agents that stop early | Light image (no reference build inside); a capped oracle run before any model run | Open; platform evidence n = 1 |
 | 2 | Attribution noise: unlisted behaviour commits in every window **(m)** | Cases graded on undocumented behaviour | R_k attribution drops anything no single listed item explains; QA lens 6 audits 50 random attributed cases | Open |
-| 3 | Example-dependent notes (16 E items) are not pinned exactly | "Grader rejects valid work" | Restate each as a precise behaviour rule checked against the release on every case; drop it if the rule does not determine the output | Closed in fix round 1: 13 note bullets (units 3, 6, 9, 10a, 10b, 16, 17, 19, 25a-25c, 26, 27, 29, 37, 44a, 44b) carry the rule their graded cases follow, matched label by label (notes/RESTATEMENTS.md); cases a note's text does not determine are labelled `x:` (27, 29, 39) or `beyond-note` (25a) and never graded |
+| 3 | Example-dependent notes (16 E items) are not pinned exactly | "Grader rejects valid work" | Restate each as a precise behaviour rule checked against the release on every case; drop it if the rule does not determine the output | Closed in fix round 1, by narrowing the cases rather than restating the notes: QA pass 04 found every unit's graded cases determined by upstream's wording, the specification notes and the 14.3.0 code, except units 6, 29 and 37, whose notes now state the rule (notes/RESTATEMENTS.md); cases a note does not determine are labelled `x:` (27, 29, 39) or `beyond-note` (25a) and never graded |
 | 4 | Unicode data versions differ from upstream's (pre-release files, DerivedCoreProperties 17.0.0) **(m)** | Unfair Unicode 18 cases | Ship the exact files, or keep only code points where a build regenerated from the shipped files matches the release | Open, spike S7 |
 | 5 | fontTools cannot write `kerx` or AAT `kern` state tables **(m)** | F4's `kerx` units (23, 25a, 25b, 27) unbuildable | Our own table assembler, validated by base-versus-target differences | Open, spike S4 |
 | 6 | Offline specs may not be redistributable | Missing documentation | Our own digests of the needed sections | Open, licence check |
@@ -375,8 +375,9 @@ Phase A record. The sizing keeps four levers:
    notes broadly loses the share of neighbouring cases it breaks, with no cap.
 2. **The AAT and `kern` families stay in scope** (F4, 9 units; F5, 3 units), with cases on fonts we build, including
    `kerx` through our own writer. Agents must build such fonts to see these notes work at all.
-3. **No hard but fair note is dropped.** The example-dependent notes are restated as precise rules in the
-   instruction (fix round 1) rather than cut. A unit is cut only when the sweep cannot produce 3 attributable cases for it, and then the report says so.
+3. **No hard but fair note is dropped.** An example-dependent note keeps upstream's wording; where it does not
+   determine 15.2.0's output, its cases are narrowed, and only units 6, 29 and 37 needed a stated rule (fix round
+   1). A note that names only a symptom stays a symptom: that is part of tier C (section 10). A unit is cut only when the sweep cannot produce 3 attributable cases for it, and then the report says so.
 4. **Case breadth per unit.** Each unit's cases spread over several fonts, scripts, options and cluster levels. A fix
    that works only for the example in the note earns only part of its unit.
 

@@ -1,11 +1,17 @@
 # Restated notes
 
-Author notes, never shipped. **Shipped in fix round 1 (2026-11-27):** QA pass 04 found that none of the Phase B
-drafts had reached the instruction and that several were unfaithful. Each example-dependent note now carries, in
-`instruction.md` (and `environment/docs/notes.md`), the rule its graded cases follow; the texts below are what
-shipped, each with the generator labels it matches. Where a note's text does not determine 15.2.0's output, the
-cases were narrowed (labels `x:`, or classify.py's `beyond-note` for 25a) rather than the rule widened. The
-Phase B draft table is kept at the end as the record.
+Author notes, never shipped. **Decision in fix round 1 (2026-11-27): narrow the cases, not the notes.** QA pass 04
+found that none of the Phase B drafts had reached the instruction, that several were unfaithful, and that every
+unit's graded cases follow from upstream's wording, the specification notes and the 14.3.0 code, except three:
+- **6**: 32 of 60 changed cases need the inserted dotted circle to act as a base;
+- **29**: the note's literal wording covers syllables with a final consonant, which no release flags;
+- **37**: "fix signed integer overflows" leaves open whether intermediate sums saturate (9 slant cases differ), and
+  its clause on scaling glyph extents has no case.
+Only those three notes now carry a stated rule in `instruction.md` and `environment/docs/notes.md` (texts below,
+marked SHIPPED). The others keep upstream's wording: a note that names only a symptom stays a symptom, which is
+part of what tier C measures (DESIGN.md section 10), and their cases were narrowed instead (`x:` labels;
+classify.py's `beyond-note` for 25a). The fuller texts below, written in fix round 1 and checked label by label
+against the generators, are kept unshipped in case a later fairness review needs them.
 
 One entry per example-dependent note that QA pass 04 lists (its per-unit table: 3, 6, 9, 10a, 10b, 16, 17, 19,
 25a, 25b, 25c, 26, 27, 29, 37, 44a, 44b; 28 is cut). Format: `unit: current note line -> proposed note text`.
@@ -29,7 +35,7 @@ digits still join, and characters in the context around the text do not end a wo
 Labels: in = symbol or NBSP boundary in the text; b:adjacent, b:digit, b:context, b:no-forms. Ordinary spaces,
 punctuation, ZWNJ and flags stay ungenerated.
 
-6: Dotted circles for Hangul tone marks and prohibited vowel sequences now keep their advance in fonts without
+SHIPPED. 6: Dotted circles for Hangul tone marks and prohibited vowel sequences now keep their advance in fonts without
 `GDEF`. ->
 Dotted circles for Hangul tone marks and prohibited vowel sequences now keep their advance in fonts without `GDEF`.
 A dotted circle the shaper inserts now has the properties of U+25CC itself, a base, as one typed in the text has,
@@ -39,7 +45,7 @@ Labels: in (Hangul tone mark after a non-syllable, spacing and zero-width marks;
 non-spacing second vowel; fonts without GDEF); b:gdef, b:gdef-dc-mark, b:mc-second, b:typed-dc, b:nodc-flag,
 b:after-syllable, b:text-start. Covers the 32 Hangul cases pass 04 found undetermined.
 
-29: An archaic trailing jamo after a Hangul syllable now gets the unsafe-to-break flag at the character cluster
+SHIPPED. 29: An archaic trailing jamo after a Hangul syllable now gets the unsafe-to-break flag at the character cluster
 levels. ->
 An archaic trailing jamo after a Hangul syllable that has no final consonant now gets the unsafe-to-break flag at
 the character cluster levels (`HB_BUFFER_CLUSTER_LEVEL_MONOTONE_CHARACTERS` and `HB_BUFFER_CLUSTER_LEVEL_CHARACTERS`):
@@ -117,7 +123,7 @@ the glyph before them), and a deleted-glyph value 0xFFFF in the inserted list le
 Labels: in (0xFFFF sentinel; mark after a base, base after a mark with GDEF); b:mid-before (a known 14.3.0 defect
 every release keeps; pass 05 finding 5), b:mid-after.
 
-37: Fix signed integer overflows when scaling glyph extents and when applying synthetic slant and emboldening. ->
+SHIPPED. 37: Fix signed integer overflows when scaling glyph extents and when applying synthetic slant and emboldening. ->
 Fix signed integer overflows when applying synthetic slant and emboldening to glyph extents: the slanted and
 emboldened bearings, width and height are now computed in full and then clamped to the range of a 32-bit
 position, instead of wrapping.
