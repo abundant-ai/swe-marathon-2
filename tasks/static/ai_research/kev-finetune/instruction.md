@@ -41,6 +41,5 @@ regular file and `/app/train/` must hold at least one regular file; symbolic lin
 ## How we judge it
 
 We take the top answer of your model on held-out questions spread across all of these domains. The questions come in
-two groups of equal weight; your score S is the mean of the two group accuracies. The released Kev-0.8B is scored the
-same way in the same run, giving S₀. The reward is (S − S₀) / (0.85 − S₀), clipped to the range 0 to 1: no gain over
-the released model earns 0, and S = 0.85 earns full credit. Keep `/app` to these deliverables and the files they need.
+two groups of equal weight, and the reward is the mean of the two group accuracies, from 0 to 1. The released Kev-0.8B
+is scored on the same questions for reference. Keep `/app` to these deliverables and the files they need.

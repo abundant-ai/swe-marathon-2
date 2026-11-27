@@ -7,7 +7,7 @@ a blended set of decision domains: the task types of Kev's decision-v7 and trans
 `environment/resources/domain.md` without saying which is which. It gets 20 public examples (10 from each suite's
 development partition, source names removed), Claude Fable 5.2 for data generation, and six hours on one H100.
 decision-v7's partitions are not shipped. `solution/solve.sh` delivers the released checkpoint unchanged as a baseline
-(reward 0); there is no oracle yet.
+(reward about 0.77); there is no oracle yet.
 
 Pins: Kev `556167b5`, Kev-0.8B `bf75a6a8` (the release run behind the published 0.648 / 0.697), Qwen base `dc7cdfe2`.
 SciQ in transfer-v4 is CC BY-NC 3.0; check before any release.
@@ -18,10 +18,11 @@ The verifier requires a non-empty `/app/REPORT.md` and a non-empty regular file 
 `adapter_config.json`, `adapter_model.safetensors` and `head.pt` from `/app/model`, checks for the pinned base and LoRA
 weights, and runs `kev.benchmark` offline as an unprivileged uid on the candidate and on the released Kev-0.8B.
 
-**Reward = clip((S − S_released) / (0.85 − S_released), 0, 1)**, where S is the mean of the clean accuracies on
-transfer-v4 test (656) and decision-v7 test (1,200), and S_released the same for the released checkpoint, measured in
-the same run. 0.85 is about Kev-4B / Jev level on these suites. A forgetting drop on decision-v7 lowers S directly.
-Missing records, a malformed or wrong-base checkpoint, or one Kev cannot load score 0. transfer-v4 development is
+**Reward = S**, the mean of the clean accuracies on transfer-v4 test (656) and decision-v7 test (1,200). The released
+checkpoint is scored on the same suites in the same run and recorded as `released` and `gain`; it does not change the
+reward. The released Kev-0.8B scores S = 0.767, so the baseline in `solution/solve.sh` earns about 0.77 and Kev-4B / Jev
+level is about 0.85. A forgetting drop on decision-v7 lowers S directly. Missing records, a malformed or wrong-base
+checkpoint, or one Kev cannot load score 0; a grader crash or timeout writes no reward. transfer-v4 development is
 recorded only.
 
 ## Hackability assessment
@@ -63,8 +64,9 @@ recorded only.
   `gcc` and `libc6-dev` and pinned `uv` by digest only, after the v2 verifier build rejected a tag plus digest. The
   re-grade of v2 trial #13 scored 0.718 (transfer-v4 test 0.697 → 0.822, decision-v7 test 0.838 → 0.832).
 - v4: #13's gain on the rule and policy questions came from Kev's own held-out generators, now stripped from the agent
-  image (leak scan clean on the stripped tree). From the v2 pre-trial QA: the reward formula, the equal weighting and
-  the 0.85 ceiling are stated in the instruction, as is the no-symlink rule for `/app/train` and `/app/REPORT.md`;
+  image (leak scan clean on the stripped tree). From the v2 pre-trial QA: the reward and the equal weighting of the two
+  groups are stated in the instruction, as is the no-symlink rule for `/app/train` and `/app/REPORT.md`;
   grader timeouts and crashes by signal now leave no reward instead of 0, and transfer-v4 development is recorded
   without affecting the reward. Still open by choice: no oracle; `/app/train` and the recipe are checked for presence
   only.
+- v4: the reward is absolute accuracy, S, by request; the gain over the released model is recorded only.

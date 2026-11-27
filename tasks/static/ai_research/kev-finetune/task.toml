@@ -3,7 +3,7 @@ artifacts = ["/app"]
 
 [task]
 name = "abundant/swe-m2_ai-research_kev-finetune"
-description = "Train the open Kev-0.8B decision model with Kev's own recipe on one H100 for a blended set of short-text decision domains, judged by its gain over the released model on held-out questions."
+description = "Train the open Kev-0.8B decision model with Kev's own recipe on one H100 for a blended set of short-text decision domains, judged by its accuracy on held-out questions."
 authors = [{ name = "Fenil Faldu", email = "fenilfaldu143@gmail.com" }]
 
 [metadata]
