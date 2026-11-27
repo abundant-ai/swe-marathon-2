@@ -205,3 +205,7 @@ After this review, the maintained verifier's typed entry point was changed to ru
 On Oddish, the revised verifier reproduced the public RGB reference at 0.670 and scored the untouched starter at zero. Its held-out scoring modules and data match the strict model version. The maintained package differs in the resource clarification, registry metadata and typed verifier files. The model cohort remains associated with its original package. [Maintained controls](https://www.oddish.app/experiments/801ab77f) · [Component values and package digest](scripts/evidence/maintained-rebuild-controls.json)
 
 A clean checkout restored all 56 runtime files and their executable modes. Of these, 54 match the hosted publication byte for byte. The other two are the task metadata and a line wrap in the public smoke test. Both versions of that test produced identical receipts in the same local runtime on the archived RGB reference, with 12,935 vertices and 19,979 triangles. The original strict hosted receipt for this source recorded one additional unlabelled triangle. [Package and receipt comparison](scripts/evidence/maintained-rebuild-controls.json)
+
+### 2026-11-27
+
+Checked the native Oddish completion record for all 16 model runs on this scene. Every agent reached its answer, every numerical reward was valid, and the runner recorded no execution exception. This check covers provider and agent termination independently of the mesh and public-test checks. [Native completion records](scripts/evidence/native-model-completion.json)

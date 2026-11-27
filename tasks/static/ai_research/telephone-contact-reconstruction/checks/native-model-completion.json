@@ -1,0 +1,137 @@
+[
+  {
+    "trial": "swe-m2_ai-research_telephone-contact-reconstruction-correct-10b5125a-2",
+    "scene": "telephone",
+    "model": "openai/gpt-6.2-sol",
+    "observation": "correct",
+    "stop": "answered",
+    "valid_reward": true,
+    "exception": null
+  },
+  {
+    "trial": "swe-m2_ai-research_telephone-contact-reconstruction-correct-10b5125a-5",
+    "scene": "telephone",
+    "model": "openai/gpt-6.2-sol",
+    "observation": "correct",
+    "stop": "answered",
+    "valid_reward": true,
+    "exception": null
+  },
+  {
+    "trial": "swe-m2_ai-research_telephone-contact-reconstruction-correct-10b5125a-6",
+    "scene": "telephone",
+    "model": "openai/gpt-6.2-sol",
+    "observation": "correct",
+    "stop": "answered",
+    "valid_reward": true,
+    "exception": null
+  },
+  {
+    "trial": "swe-m2_ai-research_telephone-contact-reconstruction-swapped-908d14d9-2",
+    "scene": "telephone",
+    "model": "openai/gpt-6.2-sol",
+    "observation": "swapped",
+    "stop": "answered",
+    "valid_reward": true,
+    "exception": null
+  },
+  {
+    "trial": "swe-m2_ai-research_telephone-contact-reconstruction-swapped-908d14d9-3",
+    "scene": "telephone",
+    "model": "openai/gpt-6.2-sol",
+    "observation": "swapped",
+    "stop": "answered",
+    "valid_reward": true,
+    "exception": null
+  },
+  {
+    "trial": "swe-m2_ai-research_telephone-contact-reconstruction-swapped-908d14d9-4",
+    "scene": "telephone",
+    "model": "openai/gpt-6.2-sol",
+    "observation": "swapped",
+    "stop": "answered",
+    "valid_reward": true,
+    "exception": null
+  },
+  {
+    "trial": "swe-m2_ai-research_telephone-contact-reconstruction-none-75282dc0-2",
+    "scene": "telephone",
+    "model": "openai/gpt-6.2-sol",
+    "observation": "none",
+    "stop": "answered",
+    "valid_reward": true,
+    "exception": null
+  },
+  {
+    "trial": "swe-m2_ai-research_telephone-contact-reconstruction-none-75282dc0-3",
+    "scene": "telephone",
+    "model": "openai/gpt-6.2-sol",
+    "observation": "none",
+    "stop": "answered",
+    "valid_reward": true,
+    "exception": null
+  },
+  {
+    "trial": "swe-m2_ai-research_telephone-contact-reconstruction-none-75282dc0-4",
+    "scene": "telephone",
+    "model": "openai/gpt-6.2-sol",
+    "observation": "none",
+    "stop": "answered",
+    "valid_reward": true,
+    "exception": null
+  },
+  {
+    "trial": "swe-m2_ai-research_telephone-contact-reconstruction-correct-10b5125a-7",
+    "scene": "telephone",
+    "model": "relace/deepseek-v4.1-flash",
+    "observation": "correct",
+    "stop": "answered",
+    "valid_reward": true,
+    "exception": null
+  },
+  {
+    "trial": "swe-m2_ai-research_telephone-contact-reconstruction-correct-10b5125a-8",
+    "scene": "telephone",
+    "model": "relace/deepseek-v4.1-flash",
+    "observation": "correct",
+    "stop": "answered",
+    "valid_reward": true,
+    "exception": null
+  },
+  {
+    "trial": "swe-m2_ai-research_telephone-contact-reconstruction-correct-10b5125a-9",
+    "scene": "telephone",
+    "model": "relace/deepseek-v4.1-flash",
+    "observation": "correct",
+    "stop": "answered",
+    "valid_reward": true,
+    "exception": null
+  },
+  {
+    "trial": "swe-m2_ai-research_telephone-contact-reconstruction-correct-10b5125a-10",
+    "scene": "telephone",
+    "model": "relace/glm-5.3",
+    "observation": "correct",
+    "stop": "answered",
+    "valid_reward": true,
+    "exception": null
+  },
+  {
+    "trial": "swe-m2_ai-research_telephone-contact-reconstruction-correct-10b5125a-11",
+    "scene": "telephone",
+    "model": "relace/glm-5.3",
+    "observation": "correct",
+    "stop": "answered",
+    "valid_reward": true,
+    "exception": null
+  },
+  {
+    "trial": "swe-m2_ai-research_telephone-contact-reconstruction-correct-10b5125a-12",
+    "scene": "telephone",
+    "model": "relace/glm-5.3",
+    "observation": "correct",
+    "stop": "answered",
+    "valid_reward": true,
+    "exception": null
+  }
+]

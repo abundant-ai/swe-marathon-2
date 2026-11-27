@@ -1,0 +1,146 @@
+[
+  {
+    "trial": "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-16",
+    "scene": "controller",
+    "model": "openai/gpt-6.2-sol",
+    "observation": "correct",
+    "stop": "answered",
+    "valid_reward": true,
+    "exception": null
+  },
+  {
+    "trial": "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-20",
+    "scene": "controller",
+    "model": "openai/gpt-6.2-sol",
+    "observation": "correct",
+    "stop": "answered",
+    "valid_reward": true,
+    "exception": null
+  },
+  {
+    "trial": "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-21",
+    "scene": "controller",
+    "model": "openai/gpt-6.2-sol",
+    "observation": "correct",
+    "stop": "answered",
+    "valid_reward": true,
+    "exception": null
+  },
+  {
+    "trial": "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-22",
+    "scene": "controller",
+    "model": "relace/deepseek-v4.1-flash",
+    "observation": "correct",
+    "stop": "answered",
+    "valid_reward": true,
+    "exception": null
+  },
+  {
+    "trial": "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-23",
+    "scene": "controller",
+    "model": "relace/deepseek-v4.1-flash",
+    "observation": "correct",
+    "stop": "answered",
+    "valid_reward": true,
+    "exception": null
+  },
+  {
+    "trial": "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-24",
+    "scene": "controller",
+    "model": "relace/deepseek-v4.1-flash",
+    "observation": "correct",
+    "stop": "answered",
+    "valid_reward": true,
+    "exception": null
+  },
+  {
+    "trial": "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-25",
+    "scene": "controller",
+    "model": "relace/glm-5.3",
+    "observation": "correct",
+    "stop": "answered",
+    "valid_reward": true,
+    "exception": null
+  },
+  {
+    "trial": "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-26",
+    "scene": "controller",
+    "model": "relace/glm-5.3",
+    "observation": "correct",
+    "stop": "answered",
+    "valid_reward": true,
+    "exception": null
+  },
+  {
+    "trial": "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-27",
+    "scene": "controller",
+    "model": "relace/glm-5.3",
+    "observation": "correct",
+    "stop": "answered",
+    "valid_reward": true,
+    "exception": null
+  },
+  {
+    "trial": "swe-m2_ai-research_dense-functional-part-metrology-none-07435eea-20",
+    "scene": "controller",
+    "model": "openai/gpt-6.2-sol",
+    "observation": "none",
+    "stop": "answered",
+    "valid_reward": true,
+    "exception": null
+  },
+  {
+    "trial": "swe-m2_ai-research_dense-functional-part-metrology-none-07435eea-21",
+    "scene": "controller",
+    "model": "openai/gpt-6.2-sol",
+    "observation": "none",
+    "stop": "answered",
+    "valid_reward": true,
+    "exception": null
+  },
+  {
+    "trial": "swe-m2_ai-research_dense-functional-part-metrology-none-07435eea-22",
+    "scene": "controller",
+    "model": "openai/gpt-6.2-sol",
+    "observation": "none",
+    "stop": "answered",
+    "valid_reward": true,
+    "exception": null
+  },
+  {
+    "trial": "swe-m2_ai-research_dense-functional-part-metrology-swapped-6e41b1a2-17",
+    "scene": "controller",
+    "model": "openai/gpt-6.2-sol",
+    "observation": "swapped",
+    "stop": "answered",
+    "valid_reward": true,
+    "exception": null
+  },
+  {
+    "trial": "swe-m2_ai-research_dense-functional-part-metrology-swapped-6e41b1a2-18",
+    "scene": "controller",
+    "model": "openai/gpt-6.2-sol",
+    "observation": "swapped",
+    "stop": "answered",
+    "valid_reward": true,
+    "exception": null
+  },
+  {
+    "trial": "swe-m2_ai-research_dense-functional-part-metrology-swapped-6e41b1a2-19",
+    "scene": "controller",
+    "model": "openai/gpt-6.2-sol",
+    "observation": "swapped",
+    "stop": "answered",
+    "valid_reward": true,
+    "exception": null
+  },
+  {
+    "trial": "swe-m2_ai-research_dense-functional-part-metrology-8cf9c423-37",
+    "scene": "controller",
+    "model": "relace/glm-5.3",
+    "observation": "correct",
+    "stop": "answered",
+    "valid_reward": true,
+    "exception": null
+  }
+]

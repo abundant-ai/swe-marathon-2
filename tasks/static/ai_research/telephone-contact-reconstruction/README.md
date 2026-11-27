@@ -136,3 +136,7 @@ The second Harbor review covered 78 files in the clean-test package, snapshot `5
 In the evaluated implementation, floating-point vertex colors are rounded to bytes before interpolation. The worker has a 640-second wall limit in addition to its CPU limit. The typed component reports use 0.5 as a diagnostic pass threshold. The task reward is continuous. Withheld depth checks assess the three parent objects. Small-part depth, physical clearance and cord exclusion are not individually verified by the primary reward. The packaged control starts from prefit geometry. Author-side scripts and hand traces document its public RGB provenance.
 
 A separate audit retrieved the candidate brief and every environment file directly from each pinned Oddish task version. The matching and swapped bundles each contained 15 candidate-visible files. Only the contact sheet, video and archive of original frames differed. The blind bundle omitted those three files and matched the other 12 byte for byte. [Candidate-visible inventories and SHA-256 digests](checks/visual-input-audit.json)
+
+### 2026-11-27
+
+Checked the native Oddish completion record for all 15 model runs on this scene. Every agent reached its answer, every numerical reward was valid, and the runner recorded no execution exception. This check covers provider and agent termination independently of the mesh and public-test checks. [Native completion records](checks/native-model-completion.json)
