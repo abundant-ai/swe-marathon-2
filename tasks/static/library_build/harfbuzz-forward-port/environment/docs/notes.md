@@ -9,7 +9,9 @@ our product can observe.
 
 **14.3.1**
 
-- Fix AAT insertion at the end of the text.
+- Fix AAT insertion at the end of the text: glyphs that a `morx` insertion adds in the end-of-text transition now get
+  their own properties, as glyphs inserted after a glyph do: their own `GDEF` class (before, they took the class of
+  the glyph before them), and a deleted-glyph value 0xFFFF in the inserted list leaves no glyph behind.
 
 **14.4.0**
 
@@ -25,11 +27,15 @@ our product can observe.
 **14.5.1**
 
 - Map the `fonupa` (Uralic Phonetic Alphabet) BCP 47 variant to the `UPPH` OpenType language system tag.
-- Fix signed integer overflows when scaling glyph extents and when applying synthetic slant and emboldening.
+- Fix signed integer overflows when applying synthetic slant and emboldening to glyph extents: the slanted and
+  emboldened bearings, width and height are now computed in full and then clamped to the range of a 32-bit position,
+  instead of wrapping.
 
 **14.6.0**
 
-- Fix shaping failures caused by out-of-range glyph IDs, a regression from 11.4.0.
+- Fix shaping failures caused by out-of-range glyph IDs, a regression from 11.4.0: a glyph ID of 65536 or more, such
+  as a not-found glyph our layout engine sets on the buffer, no longer makes `GSUB` and `GPOS` lookups treat the glyph
+  whose ID has the same low 16 bits as one they do not cover.
 
 **15.0.0**
 
@@ -64,14 +70,33 @@ our product can observe.
   is `NULL`-terminated.
 - Fix Indic shaping of the Unicode 18 Devanagari and Bengali additions.
 - Fix Arabic fallback shaping: wrong ligatures when a component is missing from the font, and disappearing marks in
-  legacy fonts.
-- Fix `COLR` glyph extents and mark positioning in fonts with empty layers.
+  legacy fonts. A ligature that the font lacks a component of is skipped and no longer shifts how the next ligature
+  matches; before, that next ligature could form from letters that do not spell it. In legacy fonts, whose `cmap`
+  holds the private-use code points of a legacy Arabic code page, the marks those code pages do not encode (U+0653 to
+  U+065E) no longer map to the private-use glyph that stands for unencoded characters; like any other character the
+  font lacks, they get the not-found glyph.
+- Fix `COLR` glyph extents and mark positioning in fonts with empty layers: a layer that draws nothing no longer adds
+  a box at the glyph's origin to the extents of a colour glyph, so the extents cover the layers that draw, and marks
+  that fallback positioning places on the glyph follow those extents. A `COLRv1` glyph with a `ClipBox` keeps the
+  `ClipBox` as its extents.
 - Fix AAT shaping: wrong `kerx` kerning (formats 1 and 2) and mark positioning (format 4, a 14.3.0 regression), and
-  ignored `kern` and `mort` tables with a non-first initial state.
+  ignored `kern` and `mort` tables with a non-first initial state. In `kerx` format 2, the sum of a glyph pair's two
+  class values is a byte offset from the start of the kerning array. In `kerx` format 1, an entry's value index counts
+  values, not bytes, and a value list ends at the word 0xFFFF, not at an odd value: every value before 0xFFFF, odd or
+  even, is applied. The `kern` table keeps its own rules for both formats. A glyph that a `kerx` format 4 action
+  attaches to another glyph now also takes that glyph's cross-stream offset, including the offset that glyph has from
+  its own attachment, as `GPOS` mark attachment does. A `kern` or `mort` state machine whose entries move to a state
+  stored before its initial state is now applied, together with the table's other subtables; before, HarfBuzz ignored
+  the whole table.
 - Fix wrong outlines in `gvar` fonts with intermediate tuples.
 - Fix `hb_face_create_or_fail()` rejecting face indices with named-instance bits set.
 - Fix wrong fallback metrics: the vertical descender in fonts without `vhea`, and the hanging baseline for some
-  scripts.
+  scripts. For a font without `vhea`, `hb_ot_metrics_get_position_with_fallback()` now gives as the vertical descender
+  the descender that `hb_font_get_extents_for_direction()` reports for vertical text, not the ascender. The hanging
+  baseline that HarfBuzz measures from a letter of the script, in horizontal text when the font has no `BASE` value
+  for it (Devanagari, Bengali, Tibetan and the other scripts it lists, when the font has that letter), is now measured
+  whether the script comes as either of its OpenType tags, old or new (`beng` or `bng2`), or as an `hb_script_t`;
+  before, none of them matched.
 - Fix `hb_ot_layout_lookup_collect_glyph_alternates()` collecting garbage from `AlternateSubst` and `SingleSubst`
   format 1 lookups.
 
@@ -110,7 +135,9 @@ our product can observe.
 
 - Fix per-syllable `GSUB` lookups that matched a glyph 15 syllables later, for example in long Myanmar text.
 - Fix `GPOS` marks that attached to an earlier base when a ranged feature did not apply to the nearest base, a
-  regression from 7.0.0.
+  regression from 7.0.0: a mark-to-base or mark-to-ligature lookup considers only the nearest base or ligature before
+  the mark that its lookup flags do not skip, and when a ranged request switches the feature off for that base, the
+  mark stays unattached.
 - Fix precomposed characters that stayed decomposed in text with no marks, in the Indic, Khmer, Myanmar and USE
   shapers.
 - A global feature request now overrides earlier ranged requests for the same feature. Before, the ranged request
@@ -120,23 +147,37 @@ our product can observe.
 - Fix fallback mark positioning to use the x offset of the base.
 - Fix cross-stream kerning from the `kern` table. The reset value caused a large shift. The offset used the scale of
   the wrong axis.
-- Fix missing unsafe-to-break flags in text with cross-stream kerning from `kern` or `kerx`.
+- Fix missing unsafe-to-break flags in text with cross-stream kerning from `kern` or `kerx`. A cross-stream offset
+  moves the kerned glyph and every glyph after it in visual order, so every break from the first cross-stream kerned
+  pair on, in visual order, is now unsafe.
 - Apply the `kern` table in vertical text when the client requests `vkrn` and `GPOS` does not have it.
 
 **15.2.0: script-specific shaping**
 
 - The Indic shaper no longer applies `init` to a first syllable that follows a letter or mark in the pre-context.
 - The USE shaper no longer uses a space as the base of a dependent vowel. The vowel now gets a dotted circle.
-- The USE shaper now ends a word at spaces and symbols when it selects `isol`, `init`, `medi` and `fina` forms.
+- The USE shaper now ends a word at spaces and symbols when it selects `isol`, `init`, `medi` and `fina` forms: a
+  symbol in the text (Unicode categories Sm, Sc, Sk and So, such as the multiplication sign U+00D7 and the Balinese
+  musical symbols, with any marks on them) or a NO-BREAK SPACE ends the word before it, and the next letter starts a
+  new word. The script's own digits still join, and characters in the context around the text do not end a word.
 - The Khmer shaper now moves only one Coeng Ro before the base, and only when it is the first or second coeng of the
   syllable.
 - A Hangul tone mark at the start of the text now gets only one dotted circle.
-- An archaic trailing jamo after a Hangul syllable now gets the unsafe-to-break flag at the character cluster levels.
+- An archaic trailing jamo after a Hangul syllable that has no final consonant now gets the unsafe-to-break flag at
+  the character cluster levels (`HB_BUFFER_CLUSTER_LEVEL_MONOTONE_CHARACTERS` and
+  `HB_BUFFER_CLUSTER_LEVEL_CHARACTERS`): the shaper splits such a syllable into its jamo to set the trailing jamo with
+  them, so a break before that jamo changes the syllable.
 - Dotted circles for Hangul tone marks and prohibited vowel sequences now keep their advance in fonts without `GDEF`.
+  A dotted circle the shaper inserts now has the properties of U+25CC itself, a base, as one typed in the text has,
+  and no longer those of the mark it stands for: it keeps its advance, it is not shifted as zeroed marks are, and a
+  zero-width tone mark after it is placed on it.
 - Prohibited vowel sequences now get a dotted circle also when a default ignorable, such as ZWJ, is between the
   vowels.
 - The Hebrew shaper now composes presentation forms in fonts that have `mark` only under the `DFLT` script.
-- The Arabic shaper now centers `stch` tiles on short words and exact fits.
+- The Arabic shaper now centers `stch` tiles on short words and exact fits: when the fixed tiles plus one copy of each
+  repeating tile are at least as wide as the part of the word they stretch over, that group is centered over it,
+  overhanging both ends by the same amount; when the fixed tiles and whole copies of the repeating tiles fill that
+  part with nothing left over, they cover it with no shift.
 
 **15.2.0: AAT shaping**
 

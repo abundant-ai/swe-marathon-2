@@ -916,12 +916,19 @@ U25A_FONTS = {
 def gen_25a(
     rng: random.Random, noto: dict[str, Font], synth: Path, n: int
 ) -> Iterator[dict]:
-    """Unit 25a: `kerx` format 2 class values are byte offsets; format 1 value lists are indexed, end in 0xFFFF, keep
-    odd values, ignore the reset flag and walk an eight-glyph history (CoreText's behaviour) instead of popping a stack.
+    """Unit 25a: in `kerx` format 2 the sum of the two class values is a byte offset from the start of the kerning
+    array; in format 1 an entry's value index counts values, a list ends at the word 0xFFFF, and every other value,
+    odd or even, kerns the glyph it pops from the kerning stack (Chap6kerx.md).
 
-    In: `kerx` format 1 and format 2 subtables. Neighbours: `b:kern-format1` and `b:kern-format2`, the same machine and
-    classes in an Apple `kern` table, whose legacy reading stays (its lists end in an odd value, most of them in -1,
-    the word that ends a `kerx` list); `b:other-format`, the same kerning as `kerx` formats 0 and 6.
+    In: `kerx` format 1 and format 2 subtables. 15.1.0 also follows CoreText's format 1 history (90417543f: an
+    eight-slot ring that lists read without popping, slots never filled standing for the first glyph, the reset flag
+    ignored), which neither the note nor the digest describes. The machine below can reach it (a list read before or
+    beyond the glyphs pushed for it, a reset), so classify.py leaves out every candidate whose output 15.1.0 without
+    90417543f (build rk-25a-hist) changes. In the format 1 cases that remain, every list finds at least as many glyphs
+    on the stack as it has values (or an empty stack, and then does nothing), and the digest's stack and CoreText's
+    ring hand it the same glyphs. Neighbours: `b:kern-format1` and `b:kern-format2`, the same machine and classes in
+    an Apple `kern` table, whose legacy reading stays (its lists end in an odd value, most of them in -1, the word
+    that ends a `kerx` list); `b:other-format`, the same kerning as `kerx` formats 0 and 6.
     """
     fonts = list(U25A_FONTS)
     weights = [3, 4, 3, 2, 1, 1]

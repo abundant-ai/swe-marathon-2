@@ -915,11 +915,15 @@ def gen_39(
     With synthetic slant or emboldening, HarfBuzz takes extents from the drawn outline; a glyph that draws nothing
     used to come out with a width of -1 and a height of 1. Inside: empty glyphs (space, a glyph with no data, a
     composite of an empty glyph; glyf and CFF) under slant, emboldening or both, any scale. Boundaries:
-    `b:unsynthetic` (the same glyphs without synthetic settings, already zero), `b:outline` (boxes and a composite of
-    boxes under slant), `b:degenerate` (zero-height and zero-width outlines under slant: a real position with zero
-    size). Left out: a glyph whose only contour is one point (it draws nothing, so 15.2.0 zeroes it too, but whether
-    such a glyph is empty is not something the note decides). Emboldening is used on empty glyphs only, where it moves no point; slants are short binary
-    fractions, so every drawn coordinate is exact.
+    `b:unsynthetic` (the same glyphs without synthetic settings, already zero) and `b:outline` (boxes and a composite
+    of boxes under slant). Every `b:outline` edge stays whole: the box corners are multiples of 32, the slants
+    multiples of 1/8 and the scales multiples of 1/2 of the em, so note 38's outward rounding, applied to slanted
+    extents too, moves none of them. Left out: a glyph whose only contour is one point (it draws nothing, so 15.2.0
+    zeroes it too, but whether such a glyph is empty is not something the note decides), and zero-height and
+    zero-width outlines under slant (`x:degenerate`): a zero-height outline has zero area, which "empty" can be read
+    to cover, and most of their slanted edges are fractional, where note 38's outward rounding, read as covering
+    slanted extents, would move them. Emboldening is used on empty glyphs only, where it moves no point; slants are
+    short binary fractions, so every drawn coordinate is exact.
     """
     ttf_, cff = synth / "u39-empty.ttf", synth / "u39-cff.otf"
     empty_t, empty_c = [1, 2, 3], [1, 2]
@@ -975,7 +979,7 @@ def gen_39(
                 font,
                 "ext",
                 rng.sample(gl, rng.randint(1, len(gl))),
-                nb="b:degenerate",
+                nb="x:degenerate",
                 **params,
             )
 
@@ -1883,7 +1887,7 @@ W_TARGETS = {
     "36": ["b:near-limit"],
     "37": ["b:no-overflow"],
     "38": ["b:font-extents"],
-    "39": ["b:degenerate"],
+    "39": [],  # W39 (is_empty for is_void) moved only b:degenerate, now x:degenerate
     "43": ["b:old"],
     "33": ["b:reserved-in-new-block"],
     "35": ["b:look-alike"],

@@ -959,12 +959,23 @@ def _u27_fonts(out: Path) -> None:
         fb.save(str(out / f"{name}.ttf"))
 
 
-def gen_u27(rng: random.Random, noto, synth: Path, n: int) -> Iterator[dict]:
-    """Unit 27: text with cross-stream kerning from `kern` or `kerx` is unsafe to break everywhere.
+def _u27_opens_with_pair(text: list[int], direction: str) -> bool:
+    """True when the first two glyphs in visual order are a kerned pair (the tables kern in visual order)."""
+    vis = text if direction == "ltr" else text[::-1]
+    return (chr(vis[0]), chr(vis[1])) in U27_PAIRS
 
-    Glyph flags printed (`gf=1`), every cluster level, no buffer flags. Inside: a cross-stream font and text with
-    at least one kerned pair and a glyph outside the pair (past the first cluster). Neighbours: the same text in
-    the in-stream fonts (`b:in-stream`), and text in the cross-stream fonts that has the pairs' glyphs but no
+
+def gen_u27(rng: random.Random, noto, synth: Path, n: int) -> Iterator[dict]:
+    """Unit 27: in text with cross-stream kerning from `kern` or `kerx`, every break from the first kerned pair on
+    is unsafe.
+
+    Glyph flags printed (`gf=1`), every cluster level, no buffer flags. A cross-stream offset carries over to every
+    glyph after the kerned one in visual order (each glyph is attached to the one before it), so breaking anywhere
+    from the first kerned pair on changes the glyphs after the break. Inside: a cross-stream font and text that
+    opens, in visual order, with a kerned pair and has a glyph after it. Left out (`x:before-pair`): text with
+    glyphs before the first kerned pair. 15.2.0 flags the whole text, so it also flags the breaks between those
+    glyphs, which the kerning moves nothing across; the note does not say that. Neighbours: the same kinds of text
+    in the in-stream fonts (`b:in-stream`), and text in the cross-stream fonts that has the pairs' glyphs but no
     adjacent pair, so no cross-stream offset is applied (`b:no-pair`).
     """
     cross = [synth / f"{s}.ttf" for s in ("u27-kern-ms", "u27-kern-apple", "u27-kerx")]
@@ -998,6 +1009,8 @@ def gen_u27(rng: random.Random, noto, synth: Path, n: int) -> Iterator[dict]:
                 if shape == "in"
                 else (rng.choice(plain), "b:in-stream")
             )
+            if nb == "in" and not _u27_opens_with_pair(text, direction):
+                nb = "x:before-pair"
         opts = {"gf": 1, "cl": rng.choice((0, 1, 2, 3)), "dir": direction}
         yield case("27", "cand", font, text, nb=nb, **opts)
 
@@ -1042,10 +1055,11 @@ def gen_u29(rng: random.Random, noto, synth: Path, n: int) -> Iterator[dict]:
     archaic one) into its jamo plus the trailing one. Glyph flags printed, no buffer flags, our font without
     layout tables. Inside: LV + archaic T at cluster levels 1 and 2. Neighbours: the same text at levels 0 and 3,
     where the three jamo form one cluster (`b:grapheme-level`); LV + a modern trailing jamo, which composes or is
-    flagged by its own rule (`b:modern-trailing`); LVT + archaic T, which is not decomposed (`b:after-lvt`); a
-    decomposed L, V and archaic T, flagged in every release (`b:jamo-sequence`). Tone marks and dotted circles are
-    left out (units 5 and 6); so are Thai and Lao, whose SARA AM decomposition 15.2.0 flags the same way although
-    the note speaks of Hangul only.
+    flagged by its own rule (`b:modern-trailing`); a decomposed L, V and archaic T, flagged in every release
+    (`b:jamo-sequence`). Left out (`x:after-lvt`): LVT + archaic T, which is not decomposed and stays unflagged,
+    although an LVT syllable is a Hangul syllable too. Tone marks and dotted circles are left out (units 5 and 6);
+    so are Thai and Lao, whose SARA AM decomposition 15.2.0 flags the same way although the note speaks of Hangul
+    only.
     """
     path = synth / "u29-hangul.ttf"
 
@@ -1071,7 +1085,7 @@ def gen_u29(rng: random.Random, noto, synth: Path, n: int) -> Iterator[dict]:
         text += core + [cp for _ in range(rng.randrange(0, 3)) for cp in filler()]
         level = rng.choice((0, 3)) if shape == "grapheme" else rng.choice((1, 2))
         nb = {"in": "in", "grapheme": "b:grapheme-level", "modern": "b:modern-trailing",
-              "lvt": "b:after-lvt", "jamo": "b:jamo-sequence"}[shape]  # fmt: skip
+              "lvt": "x:after-lvt", "jamo": "b:jamo-sequence"}[shape]  # fmt: skip
         yield case("29", "cand", path, text, nb=nb, cl=level, gf=1)
 
 

@@ -1576,10 +1576,13 @@ def gen_49(
     A pure API addition: every case is inside. JSTF version 1.0 tables with ExtenderGlyph lists of 0 to 12
     glyphs, scripts without an ExtenderGlyph table, language systems; calls page through the list (start offsets
     inside and past the end, counts larger and smaller than what is left), count-only calls with NULL pointers or a
-    zero count, scripts the table does not list and a font without JSTF, with and without a language. Left out:
-    a NULL glyph array with a nonzero count (15.2.0 leaves the count as given, which is not "the number returned"),
-    scripts with two OpenType tags (the tag the function picks is not stated), private-use language subtags that
-    select a script, and JSTF 1.1 (the 24-bit tables the notes leave out).
+    zero count, scripts the table does not list, with and without a language. Every case ends with a call that
+    finds glyphs (`also`: a script with extender glyphs in that font, start 0, room for 16), so a function that
+    returns 0 and reports nothing fails every case, whatever the calls before it expect. Left out: a font without
+    JSTF (`x:no-jstf`: no call on its face finds anything, so a function that does nothing passes it), a NULL glyph
+    array with a nonzero count (15.2.0 leaves the count as given, which is not "the number returned"), scripts with
+    two OpenType tags (the tag the function picks is not stated), private-use language subtags that select a
+    script, and JSTF 1.1 (the 24-bit tables the notes leave out).
     """
     scripts = [
         "Arab",
@@ -1627,7 +1630,14 @@ def gen_49(
             calls = [rng.choice((5, 12, 13, 100, 0xFFFF)), rng.choice((1, 4, 64))]
         if mode == "null" and rng.random() < 0.5:
             opts.pop("glyphs")
-        yield api_case("49", font, "ext", calls, nb="in", drv="api49", **opts)
+        # The closing call that finds glyphs, chosen without drawing from rng (the rest of the stream stays as it
+        # was): a script of this font whose ExtenderGlyph list is not empty.
+        finds = [s for s, (ext, _) in sorted(JSTF_FONTS[k].items()) if ext]
+        nb = "x:no-jstf" if font == noto["NotoSansArabic-Regular"].path else "in"
+        if nb == "in":
+            also = finds[(i // len(fonts)) % len(finds)]
+            opts["also"] = also[0].upper() + also[1:]
+        yield api_case("49", font, "ext", calls, nb=nb, drv="api49", **opts)
 
 
 _GLYPH_NAMES = [chr(c) for c in range(0x41, 0x5B)] + [
@@ -1732,6 +1742,30 @@ def _json_unicode(rng: random.Random, n: int) -> str:
     return "[" + ",".join(items) + "]"
 
 
+def _u51_closing(seed: int, glyphs: bool, fmt: str) -> tuple[bytes, str]:
+    """Well-formed input for the probe's closing call (`then`, `thenfmt`): one to three items in text or JSON,
+    numeric glyph IDs so that no font is needed. Drawn from a stream of its own, so the rest of the unit's
+    candidates stay as they were."""
+    r = random.Random(f"u51-closing:{seed}")
+    fmt = fmt if fmt in ("text", "json") else r.choice(("text", "json"))
+    items = []
+    for cl in range(r.randint(1, 3)):
+        g, adv, cp = r.randrange(1, 40), r.randrange(0, 1200), r.randrange(0x41, 0x5B)
+        if fmt == "json" and glyphs:
+            items.append(f'{{"g":{g},"cl":{cl},"ax":{adv}}}')
+        elif fmt == "json":
+            items.append(f'{{"u":{cp},"cl":{cl}}}')
+        else:
+            items.append(f"{g}={cl}+{adv}" if glyphs else f"U+{cp:04X}={cl}")
+    if fmt == "json":
+        text = "[" + ",".join(items) + "]"
+    elif glyphs:
+        text = "[" + "|".join(items) + "]"
+    else:
+        text = "<" + "|".join(items) + ">"
+    return text.encode("ascii"), fmt
+
+
 def gen_51(
     rng: random.Random, noto: dict[str, Font], synth: Path, n: int
 ) -> Iterator[dict]:
@@ -1740,8 +1774,10 @@ def gen_51(
     A pure API addition: every case is inside. Text and JSON input, whole or cut short or broken at some byte
     (bad syntax, an unknown glyph name), buf_len -1, exact, shorter, one past the text (its NUL) and 0, a NULL
     buf_consumed, a NULL font (nofont=1), input appended after earlier content, the empty (immutable) buffer, and format
-    values that are neither text nor JSON. Numbers stay well inside 32 bits: 15.2.0 parses out-of-range numbers
-    differently, which no note states.
+    values that are neither text nor JSON. Every case ends with a closing call of the same function (`then`,
+    `thenfmt`) that parses one to three well-formed items into a new buffer, with a buf_consumed pointer, so a
+    function that returns false and consumes nothing fails every case, whatever the first call expects. Numbers stay
+    well inside 32 bits: 15.2.0 parses out-of-range numbers differently, which no note states.
     """
     font = synth / "u51-names.ttf"
     junk = [
@@ -1818,6 +1854,9 @@ def gen_51(
             opts["pre"] = ",".join(f"{b:X}" for b in pre.encode("ascii"))
         elif rng.random() < 0.03:
             opts["empty"] = 1
+        closing, closing_fmt = _u51_closing(i, glyphs, fmt)
+        opts["then"] = ",".join(f"{b:X}" for b in closing)
+        opts["thenfmt"] = closing_fmt
         yield api_case(
             "51",
             font,

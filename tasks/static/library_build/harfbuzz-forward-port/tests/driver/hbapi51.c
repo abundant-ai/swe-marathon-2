@@ -9,10 +9,13 @@
  * options: cmd=glyphs2|unicode2; fmt=text|json|<integer> (the format value); len=<integer> (buf_len, -1 allowed;
  * absent: the number of bytes); cons=null (NULL buf_consumed); nofont=1 (NULL font; otherwise a font of the
  * case's face); pre=<hexadecimal bytes> (deserialized first, with the same format, by the 14.3.0 function, so the call
- * appends); empty=1 (the call gets the empty buffer).
+ * appends); empty=1 (the call gets the empty buffer); then=<hexadecimal bytes> and thenfmt=text|json (after the
+ * call, the same function deserializes these bytes, NUL-terminated with buf_len -1, into a new buffer, with a
+ * buf_consumed pointer and the same font or NULL font).
  * Output, one line per case: id <TAB> r:<return value>|c:<buf_consumed, -1 for NULL>|t:<content type>|
  * n:<length>, then one group per item: glyph,cluster,mask,x_advance,y_advance,x_offset,y_offset for glyphs, or
- * codepoint,cluster,mask for Unicode. A setup failure prints !err:<word>.
+ * codepoint,cluster,mask for Unicode; with then=, |then:r:...|c:...|t:...|n:... and the items of that second call
+ * in the same form. A setup failure prints !err:<word>.
  */
 #include <hb.h>
 
@@ -113,7 +116,16 @@ run (const char *path, unsigned index, const char *bytes, int n_bytes)
 {
   const char *cmd = opt ("cmd"), *f = opt ("fmt"), *l = opt ("len"), *c = opt ("cons");
   const char *fo = opt ("nofont"), *pre = opt ("pre"), *e = opt ("empty");
+  const char *then = opt ("then"), *tf = opt ("thenfmt");
   int glyphs = !strcmp (cmd, "glyphs2");
+  static char then_bytes[MAX_ARGS + 1];
+  int n_then = then ? parse_bytes (then, then_bytes, MAX_ARGS) : 0;
+  if (n_then < 0)
+  {
+    printf ("!err:then");
+    return;
+  }
+  then_bytes[n_then] = 0;
   hb_buffer_serialize_format_t format = HB_BUFFER_SERIALIZE_FORMAT_TEXT;
   if (f && !strcmp (f, "json"))
     format = HB_BUFFER_SERIALIZE_FORMAT_JSON;
@@ -159,6 +171,19 @@ run (const char *path, unsigned index, const char *bytes, int n_bytes)
     printf ("%u", consumed);
   put_buffer (buf);
   hb_buffer_destroy (buf);
+  if (then)
+  {
+    /* A second call that consumes input: the generator writes one to three well-formed items. */
+    hb_buffer_serialize_format_t then_format = (tf && !strcmp (tf, "json")) ? HB_BUFFER_SERIALIZE_FORMAT_JSON
+										: HB_BUFFER_SERIALIZE_FORMAT_TEXT;
+    hb_buffer_t *buf2 = hb_buffer_create ();
+    unsigned consumed2 = 0xDEADu;
+    hb_bool_t ret2 = glyphs ? hb_buffer_deserialize_glyphs2 (buf2, then_bytes, -1, &consumed2, font, then_format)
+			    : hb_buffer_deserialize_unicode2 (buf2, then_bytes, -1, &consumed2, then_format);
+    printf ("|then:r:%d|c:%u", (int) ret2, consumed2);
+    put_buffer (buf2);
+    hb_buffer_destroy (buf2);
+  }
   hb_font_destroy (font);
 }
 

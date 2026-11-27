@@ -5,16 +5,19 @@ metadata, never downloaded files. Development tooling, never shipped.
 
 Builds: B = 14.3.0, T1 = 15.0.0, T2 = 15.1.0, T3 = 15.2.0; R_k = the release of unit k's window with k's commits
 reverted; `regen-14.3.0` = 14.3.0 with its Unicode tables regenerated from the Unicode 18 files (unit 33 adds its
-change forward instead of being reverted). Each build's outputs are `RUNS/<build>.out` (shaping driver) and
-`RUNS/<build>.<driver>.out` (API drivers), merged by candidate id. `!nobuild` (a probe the build cannot compile) is
-an ordinary output value; any other `!` output drops the candidate.
+change forward instead of being reverted); `rk-<unit>-<part>` (PARTIALS below) = the unit's release with only the
+commit of the unit that does more than its note states reverted. Each build's outputs are `RUNS/<build>.out`
+(shaping driver) and `RUNS/<build>.<driver>.out` (API drivers), merged by candidate id. `!nobuild` (a probe the
+build cannot compile) is an ordinary output value; any other `!` output drops the candidate.
 
 A candidate is
 - **changed**, attributed to unit k, when B differs from T3, and in the last window s where the output changes
   (T_{s-1} differs from T_s) exactly one of the window's units explains it: its revert gives T_{s-1} (for unit 33:
   the regenerated base gives T_s), while every other revert of the window gives T_s;
-- **held** when B, T1, T2, T3 and every revert agree (a dual when it sits on a named boundary of its unit, broad
-  when it came from the broad generator);
+- **beyond-note** when it would be changed for unit k, but one of k's partial reverts does not give T_s: its output
+  then depends on the commit that does more than k's note states (never graded);
+- **held** when B, T1, T2, T3, every revert and every partial revert agree (a dual when it sits on a named boundary
+  of its unit, broad when it came from the broad generator);
 - **flapping** when repeated base runs disagree (dropped);
 - dropped otherwise.
 """
@@ -31,6 +34,11 @@ from pathlib import Path
 RELEASES = ("14.3.0", "15.0.0", "15.1.0", "15.2.0")
 WINDOW_INDEX = {"A": 1, "B": 2, "C": 3}
 ADDERS = {"33": "regen-14.3.0"}  # units attributed by adding their change to the base
+# Partial reverts: build `rk-<name>` is the unit's release with only that unit commit reverted (patches in
+# CACHE/work/patches-lib/<name>/; plan_sweep.py builds them). 25a-hist reverts 90417543f alone, CoreText's `kerx`
+# format 1 history (an eight-slot ring that lists walk without popping, reset ignored), which neither the 15.1.0
+# note nor the shipped `kerx` digest describes.
+PARTIALS = {"25a-hist": "25a"}
 # Labels of the spike's generators that mean "inside the stated condition" (newer generators use "in").
 LEGACY_INSIDE = {
     "1": {"letter", "mark", "latin"},
@@ -94,6 +102,10 @@ def classify(
     missing = sorted(u for u, r in rk.items() if r is None)
     if missing:
         raise SystemExit(f"reverts without outputs: {missing}")
+    partial = {p: read_build(runs, f"rk-{p}") for p in PARTIALS if PARTIALS[p] in rk}
+    missing = sorted(p for p, r in partial.items() if r is None)
+    if missing:
+        raise SystemExit(f"partial reverts without outputs: {missing}")
     adders = {u: read_build(runs, b) for u, b in ADDERS.items()}
     by_window: dict[int, list[str]] = defaultdict(list)
     for u in reverts:
@@ -108,8 +120,9 @@ def classify(
         cid = c["id"]
         outs = [r.get(cid) for r in rel]
         rv = {u: r.get(cid) for u, r in rk.items()}
+        pv = {p: r.get(cid) for p, r in partial.items()}
         ad = {u: (r.get(cid) if r else None) for u, r in adders.items()}
-        everything = [*outs, *rv.values()]
+        everything = [*outs, *rv.values(), *pv.values()]
         if any(o is None for o in everything) or any(
             o.startswith("!") and o != "!nobuild" for o in everything
         ):
@@ -119,7 +132,9 @@ def classify(
             stats["flapping"] += 1
             continue
         c["gold"] = dict(zip(RELEASES, outs, strict=True))
-        if len(set(outs)) == 1 and all(v == outs[0] for v in rv.values()):
+        if len(set(outs)) == 1 and all(
+            v == outs[0] for v in (*rv.values(), *pv.values())
+        ):
             c["class"] = "broad" if c["kind"] == "broad" else "held"
         elif outs[0] == outs[3]:
             c["class"] = "returns"  # changes and changes back: nothing to grade
@@ -137,7 +152,16 @@ def classify(
                     explains.append(u)
                 elif rv[u] != now:
                     spoilers.append(u)
-            if len(explains) == 1 and not spoilers:
+            beyond = [
+                p
+                for p, u in PARTIALS.items()
+                if explains == [u] and p in pv and pv[p] != now
+            ]
+            if len(explains) == 1 and not spoilers and beyond:
+                c["class"] = "beyond-note"
+                c["attributed"] = explains[0]
+                c["beyond"] = beyond
+            elif len(explains) == 1 and not spoilers:
                 c["class"] = "changed"
                 c["attributed"] = explains[0]
                 c["window_changed"] = "ABC"[s - 1]
@@ -153,6 +177,9 @@ def yields(rows: list[dict]) -> dict[str, dict[str, int]]:
     for c in rows:
         table[c["unit"]]["candidates"] += 1
         table[c["unit"]][c["class"]] += 1
+        if left_out(c):
+            table[c["unit"]]["left-out"] += 1  # an x: label: swept, never graded
+            continue
         if c["class"] == "changed":
             table[c["attributed"]]["attributed"] += 1
             if c["attributed"] != c["unit"]:

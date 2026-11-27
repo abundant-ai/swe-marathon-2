@@ -5,10 +5,11 @@
  * Input (stdin), one case per line, tab-separated, as for hbdrv:
  *   id <TAB> font file <TAB> face index <TAB> options <TAB> arguments
  * options: cmd=ext; script=<ISO 15924 tag>; lang=<BCP 47 tag> (absent: HB_LANGUAGE_INVALID); glyphs=null to
- * pass a NULL glyph array.
+ * pass a NULL glyph array; also=<ISO 15924 tag> to end with one more call, for that script and the same language,
+ * at start offset 0 with room for 16 glyphs (a count pointer and a glyph array, whatever glyphs= says).
  * arguments (hexadecimal, comma-separated): pairs of start offset and glyph count, one call each; a count of
  * FFFFFFFF passes a NULL count pointer.
- * Output, one line per case: id <TAB> one group per call, joined with '|':
+ * Output, one line per case: id <TAB> one group per call, the also= call last, joined with '|':
  *   r:<return value>|n:<count on output, -1 for a NULL pointer>|g:<the glyphs returned>
  * A setup failure prints !err:<word>.
  */
@@ -101,7 +102,7 @@ parse_args (const char *s, uint32_t *out, int max)
 static void
 run (hb_face_t *face, const uint32_t *args, int n_args)
 {
-  const char *script = opt ("script"), *lang = opt ("lang"), *g = opt ("glyphs");
+  const char *script = opt ("script"), *lang = opt ("lang"), *g = opt ("glyphs"), *also = opt ("also");
   hb_script_t sc = script ? hb_script_from_iso15924_tag (tag_of (script)) : HB_SCRIPT_INVALID;
   hb_language_t language = lang ? hb_language_from_string (lang, -1) : HB_LANGUAGE_INVALID;
   int null_glyphs = g && !strcmp (g, "null");
@@ -125,6 +126,18 @@ run (hb_face_t *face, const uint32_t *args, int n_args)
       for (unsigned j = 0; !null_glyphs && j < count && j < MAX_GLYPHS; j++)
 	printf ("%s%u", j ? "," : "", glyphs[j]);
     }
+  }
+  if (also)
+  {
+    /* A call that finds glyphs: the generator names a script whose extender list in this font is not empty. */
+    unsigned count = 16;
+    for (unsigned j = 0; j < MAX_GLYPHS; j++)
+      glyphs[j] = HB_CODEPOINT_INVALID;
+    unsigned ret = hb_ot_layout_get_extender_glyphs (face, hb_script_from_iso15924_tag (tag_of (also)), language,
+						     0, &count, glyphs);
+    printf ("%sr:%u|n:%u|g:", n_args >= 2 ? "|" : "", ret, count);
+    for (unsigned j = 0; j < count && j < 16; j++)
+      printf ("%s%u", j ? "," : "", glyphs[j]);
   }
 }
 
