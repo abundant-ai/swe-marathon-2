@@ -170,16 +170,19 @@ def test_public_examples_hide_source_names():
         assert all("src" not in q for q in record["questions"].values())
 
 
-def test_reward_is_mean_accuracy_of_the_two_test_suites():
+def test_reward_is_gain_over_the_released_model():
     suites = {
-        "transfer_test": {"acc": 0.82},
+        "transfer_test": {"acc": 0.70},
         "decision_test": {"acc": 0.84},
         "released_transfer_test": {"acc": 0.70},
         "released_decision_test": {"acc": 0.84},
     }
-    result = verify.improvement(suites)
-    assert result["reward"] == pytest.approx(0.83)
-    assert result["gain"] == pytest.approx(0.06)
+    assert verify.improvement(suites)["reward"] == 0.0
+    suites["transfer_test"]["acc"] = 0.86
+    gain = verify.improvement(suites)
+    assert gain["reward"] == pytest.approx((0.85 - 0.77) / (0.85 - 0.77))
+    suites["decision_test"]["acc"] = 0.60
+    assert verify.improvement(suites)["reward"] == 0.0
 
 
 def test_records_are_required(tmp_path, monkeypatch):

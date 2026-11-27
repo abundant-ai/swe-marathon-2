@@ -1,5 +1,5 @@
 """Stage /app/model, score it and the released Kev-0.8B with Kev's benchmark as an unprivileged uid, and write the reward:
-S = mean accuracy over transfer-v4 test and decision-v7 test; the released model's S is recorded alongside."""
+clip((S - S_released) / (TARGET - S_released), 0, 1), S = mean accuracy over transfer-v4 test and decision-v7 test."""
 
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ from pathlib import Path
 APP_MODEL = Path("/app/model")
 APP_TRAIN = Path("/app/train")
 APP_REPORT = Path("/app/REPORT.md")
+TARGET = 0.85
 GRADED = ("transfer_test", "decision_test")
 TESTS = Path("/tests")
 WORK = Path("/var/lib/kev-verifier")
@@ -100,12 +101,8 @@ def check_records() -> None:
 def improvement(suites: dict) -> dict:
     score = sum(suites[n]["acc"] for n in GRADED) / len(GRADED)
     released = sum(suites[f"released_{n}"]["acc"] for n in GRADED) / len(GRADED)
-    return {
-        "score": score,
-        "released": released,
-        "gain": score - released,
-        "reward": score,
-    }
+    reward = min(1.0, max(0.0, (score - released) / (TARGET - released)))
+    return {"score": score, "released": released, "target": TARGET, "reward": reward}
 
 
 def read_report(path: Path) -> dict:
