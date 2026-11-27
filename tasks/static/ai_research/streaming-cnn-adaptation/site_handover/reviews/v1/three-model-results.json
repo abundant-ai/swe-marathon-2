@@ -1,0 +1,177 @@
+{
+  "experiment_url": "https://www.oddish.app/experiments/ca5ae79b",
+  "release": [
+    {
+      "id": "swe-m2_ai-research_core50-shared-scanner-stockrooms-swapped-680f8ab9",
+      "version": 1
+    },
+    {
+      "id": "swe-m2_ai-research_core50-shared-scanner-stockrooms-none-882707d6",
+      "version": 1
+    },
+    {
+      "id": "swe-m2_ai-research_core50-shared-scanner-stockrooms-correct-f030babf",
+      "version": 1
+    }
+  ],
+  "matched": [
+    {
+      "id": "swe-m2_ai-research_core50-shared-scanner-stockrooms-correct-f030babf-4",
+      "model": "openai/gpt-6.2-sol",
+      "score": 0.0,
+      "build": "valid",
+      "updater_errors": [],
+      "failed_requirements": {
+        "paired_stock_ids": "Minimum paired stock-ID accuracy across checkpoints and schedules."
+      },
+      "native_sha256": "6215687b7502a43502ef1bf13ab7d130b90ad0a64f847f2139b1a908784c216b"
+    },
+    {
+      "id": "swe-m2_ai-research_core50-shared-scanner-stockrooms-correct-f030babf-10",
+      "model": "openai/gpt-6.2-sol",
+      "score": 0.0,
+      "build": "partial",
+      "updater_errors": [
+        "AttributeError: 'StockClassifier' object has no attribute 'identify_camera'"
+      ],
+      "failed_requirements": {
+        "deployment_a": "See available per-checkpoint runs and errors",
+        "deployment_b": "See available per-checkpoint runs and errors"
+      },
+      "native_sha256": "e1cf8de8afa2ab829c302c35c516d7b9afd71e1b1a89eef6c665586a1f6410e0"
+    },
+    {
+      "id": "swe-m2_ai-research_core50-shared-scanner-stockrooms-correct-f030babf-11",
+      "model": "openai/gpt-6.2-sol",
+      "score": 0.0,
+      "build": "partial",
+      "updater_errors": [
+        "AttributeError: 'CameraAdapter' object has no attribute 'offset'"
+      ],
+      "failed_requirements": {
+        "deployment_a": "See available per-checkpoint runs and errors",
+        "deployment_b": "See available per-checkpoint runs and errors"
+      },
+      "native_sha256": "3703588888daff9df1836f66344ec829fec3140423761c4f41c05f9061b6845b"
+    },
+    {
+      "id": "swe-m2_ai-research_core50-shared-scanner-stockrooms-correct-f030babf-23",
+      "model": "relace/deepseek-v4.1-flash",
+      "score": 0.0,
+      "build": "partial",
+      "updater_errors": [
+        "AttributeError: 'StockClassifier' object has no attribute 'room'"
+      ],
+      "failed_requirements": {
+        "deployment_a": "See available per-checkpoint runs and errors",
+        "deployment_b": "See available per-checkpoint runs and errors"
+      },
+      "native_sha256": "15f2349fc83585416d68c63ab44168e37c4920fc5bdfea942a29bc7bc6e5caea"
+    },
+    {
+      "id": "swe-m2_ai-research_core50-shared-scanner-stockrooms-correct-f030babf-27",
+      "model": "relace/glm-5.3",
+      "score": 0.0,
+      "build": "partial",
+      "updater_errors": [
+        "ModuleNotFoundError: No module named 'handover'"
+      ],
+      "failed_requirements": {
+        "deployment_a": "See available per-checkpoint runs and errors",
+        "deployment_b": "See available per-checkpoint runs and errors"
+      },
+      "native_sha256": "bb5b3d363af13468b876d0ed0432090eaf1d57753622983157f4c980d57e4c85"
+    },
+    {
+      "id": "swe-m2_ai-research_core50-shared-scanner-stockrooms-correct-f030babf-24",
+      "model": "relace/deepseek-v4.1-flash",
+      "score": 0.0,
+      "build": "partial",
+      "updater_errors": [
+        "ModuleNotFoundError: No module named 'handover'"
+      ],
+      "failed_requirements": {
+        "deployment_a": "See available per-checkpoint runs and errors",
+        "deployment_b": "See available per-checkpoint runs and errors"
+      },
+      "native_sha256": "fe00699d46c49db898c05d09949e1590c0283f9ae2ecd804eb8091fc7fcd4ace"
+    },
+    {
+      "id": "swe-m2_ai-research_core50-shared-scanner-stockrooms-correct-f030babf-25",
+      "model": "relace/glm-5.3",
+      "score": 0.0,
+      "build": "valid",
+      "updater_errors": [],
+      "failed_requirements": {
+        "paired_stock_ids": "Minimum paired stock-ID accuracy across checkpoints and schedules."
+      },
+      "native_sha256": "d966cb19284b3a0c7b19af209c892d364a73828b690647668492c765a7b52e95"
+    },
+    {
+      "id": "swe-m2_ai-research_core50-shared-scanner-stockrooms-correct-f030babf-26",
+      "model": "relace/glm-5.3",
+      "score": 0.0,
+      "build": "valid",
+      "updater_errors": [],
+      "failed_requirements": {
+        "paired_stock_ids": "Minimum paired stock-ID accuracy across checkpoints and schedules."
+      },
+      "native_sha256": "50285e302d788cd55b7bf0d09d1d2621b85ef253033a0874555a4458cd9e170b"
+    },
+    {
+      "id": "swe-m2_ai-research_core50-shared-scanner-stockrooms-correct-f030babf-22",
+      "model": "relace/deepseek-v4.1-flash",
+      "score": 0.0,
+      "build": "valid",
+      "updater_errors": [],
+      "failed_requirements": {
+        "paired_stock_ids": "Minimum paired stock-ID accuracy across checkpoints and schedules."
+      },
+      "native_sha256": "00e48bc6712ddb6192bf820d5c9646373ce3f98fc25ebf982706498a0feccace"
+    }
+  ],
+  "image_controls": {
+    "swapped": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "none": [
+      0.0,
+      0.0,
+      0.0
+    ]
+  },
+  "hosted_controls": [
+    {
+      "agent": "nop",
+      "id": "swe-m2_ai-research_core50-shared-scanner-stockrooms-swapped-680f8ab9-2",
+      "reward": 0.0
+    },
+    {
+      "agent": "oracle",
+      "id": "swe-m2_ai-research_core50-shared-scanner-stockrooms-swapped-680f8ab9-1",
+      "reward": 0.0
+    },
+    {
+      "agent": "oracle",
+      "id": "swe-m2_ai-research_core50-shared-scanner-stockrooms-none-882707d6-1",
+      "reward": 0.0
+    },
+    {
+      "agent": "nop",
+      "id": "swe-m2_ai-research_core50-shared-scanner-stockrooms-none-882707d6-2",
+      "reward": 0.0
+    },
+    {
+      "agent": "oracle",
+      "id": "swe-m2_ai-research_core50-shared-scanner-stockrooms-correct-f030babf-1",
+      "reward": 1.0
+    },
+    {
+      "agent": "nop",
+      "id": "swe-m2_ai-research_core50-shared-scanner-stockrooms-correct-f030babf-2",
+      "reward": 0.0
+    }
+  ]
+}
