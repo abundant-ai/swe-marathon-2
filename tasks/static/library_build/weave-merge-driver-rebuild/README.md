@@ -110,14 +110,16 @@ with the documentation and the solution.
 | Check | Revision | Result |
 | --- | --- | --- |
 | Claims re-checked against primary evidence | 2026-11-26 | `notes/VALIDITY.md` |
-| Builds, cases, mutants, oracle, determinism | none | not run (Phase A) |
+| Determinism 3+1, stub filter and netting, mutants, oracle, amd64 sample | 2026-11-27 | 0 of 3,910 unstable; 2,388 kept; 11 stubs net 0; M-gate 0.75 (gate family only); oracle 3,910/3,910; amd64 200/200 (`notes/PHASE-B-REPORT.md`) |
+| Specification accuracy | 2026-11-27 | 16 chapters, 14,964 words; three independent reviews of every chapter against the tag, all findings fixed (harbor-lh `ops/swe-marathon-v2/qa/weave/`) |
+| First build milestone (agent and verifier images, reference 1.0, empty 0) | 2026-11-27 | pending: the images are queued behind the shared memory gate |
 | `harbor check` | none | not run |
 
 ## Remaining work
 
-The probation spike (`notes/SPIKE-PLAN.md`) after the owner approves the download list; then the
-specification, the case generator and filters, the mutants, the verifier, the images, QA
-(`notes/QA-PLAN.md`) and the platform baselines.
+QA (`notes/QA-PLAN.md`, at least 20 independent adversarial passes), a wider case generator (the
+routing and settling families are small), then Oddish oracle and nop baselines and pre-trial QA
+before any agent trial.
 
 ## Development log
 
@@ -161,3 +163,20 @@ Later the same day, the Phase A deliverables were completed:
 - `task.toml`, and a chain fragment, were parsed with Harbor's `TaskConfig`;
 - the crate closures were computed from the clone's `Cargo.lock`, and their sizes looked up on
   crates.io.
+
+### 2026-11-27
+
+Phase B: downloads, the probation spike and the first build milestone (`notes/PHASE-B-REPORT.md`).
+
+- Downloads with checksums: the v0.7.1 tag source, the official x86_64 release binary, Rust 1.100.0
+  for arm64 and `sem-core` 0.29.0's source. The crates come from the tag's lock, verified by cargo.
+- The four probation checks pass:
+  - the 3+1 runs are byte-identical on 3,910 candidates;
+  - 2,388 cases are kept and all 11 stubs net 0;
+  - M-gate scores 0.75 and moves only the gate family;
+  - the specification has 16 chapters in 14,964 words (29.9 pages).
+- The oracle, the upstream source built only from the agent's 64 crates, matches the reference on
+  every candidate.
+- The owner parked the chains (single step) and asked for the difficulty sizing in
+  `notes/DESIGN.md` section 8.
+
