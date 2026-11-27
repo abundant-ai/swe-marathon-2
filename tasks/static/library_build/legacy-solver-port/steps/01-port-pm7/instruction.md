@@ -2,7 +2,7 @@
 
 Our group inherited MOPAC (`/workspace/mopac-src/`, Fortran 90, about 145k lines). Nobody on the team knows its internals and we cannot ship the Fortran build to our collaborators. We need a Python implementation of its PM7 method that gives the same numbers as the original program.
 
-Write it in `/workspace/solver/` with the entry point `python3 /workspace/solver/run.py NAME.mop out.json`. Only numpy and scipy are available; there is no MOPAC or Fortran compiler in this environment. The input is a MOPAC input file with Cartesian coordinates. The solver must write `out.json` with:
+Write it in `/workspace/solver/` with the entry point `python3 /workspace/solver/run.py NAME.mop out.json`. Python with numpy and scipy and a C compiler (gcc with OpenMP) are available; there is no MOPAC and no Fortran compiler in this environment. Your solver is graded in a container with the same tools, so it may build C code at run time, but nothing else can be assumed to be installed. The input is a MOPAC input file with Cartesian coordinates. The solver must write `out.json` with:
 
 - `heat_of_formation` (kcal/mol)
 - `gradients` (flat list, kcal/mol/Angstrom, only for single points)

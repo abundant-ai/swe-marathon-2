@@ -1,0 +1,19 @@
+{
+ "kind": "cosmo",
+ "elements": [
+  "O",
+  "H",
+  "H"
+ ],
+ "keywords": "PM7 1SCF EPS=24.3 AUX(PRECISION=9) NOINTER XYZ",
+ "heat_of_formation": -63.0056979612418,
+ "atom_charges": [
+  -0.74660601402994,
+  0.35572968718042,
+  0.39087632684953
+ ],
+ "ionization_potential": 12.3095498720589,
+ "dipole": 2.538736313193,
+ "area": 42.9060781211292,
+ "volume": 25.5199849871321
+}

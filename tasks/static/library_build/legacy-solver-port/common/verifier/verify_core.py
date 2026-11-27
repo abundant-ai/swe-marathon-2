@@ -41,11 +41,28 @@ OPT = {
     "dipole": 1e-3,
 }
 FORCE = {"heat_of_formation": 1e-4, "zero_point_energy": 1e-3, "frequencies": 0.2}
+COSMO = {
+    "heat_of_formation": 0.05,
+    "atom_charges": 2e-3,
+    "ionization_potential": 2e-3,
+    "dipole": 2e-3,
+    "area": 1e-2,
+    "volume": 5e-2,
+}
+COSMOGRAD = {**COSMO, "gradients": 5e-3}
 SCALE = {"heat_of_formation": 1.0, "atom_charges": 0.02}
 # The solver is the candidate's code: when the verifier runs as root it is executed as this unprivileged user, so it
 # cannot read the references (/tests/private, mode 0700, root) or write the reward file.
 SOLVER_UID = 10001
-TIMEOUT = {"sp": 900, "opt": 900, "force": 900, "scale": 1800, "fmt": 900}
+TIMEOUT = {
+    "sp": 900,
+    "opt": 900,
+    "force": 900,
+    "scale": 1800,
+    "fmt": 900,
+    "cosmo": 900,
+    "cosmograd": 900,
+}
 
 
 def err(a, b):
@@ -96,6 +113,10 @@ def tolerances(ref):
         return FORCE
     if k == "scale":
         return SCALE
+    if k == "cosmo":
+        return COSMO
+    if k == "cosmograd":
+        return COSMOGRAD
     if k == "fmt":
         t = dict(OPT if "optimized_geometry" in ref else SP)
         t.pop("gradients", None)
