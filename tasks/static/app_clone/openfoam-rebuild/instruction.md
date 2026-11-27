@@ -40,23 +40,10 @@ Write highly modular code. You choose the languages, structure and names.
 
 ## How it is graded
 
-Your programs are run on recorded runs of the installed programs, each in a copy of the case
-folder it ran in. A run is compared with its record in several checks: exit code, standard
-output, standard error, each file written, and that no other file was written, changed or
-removed. The reward is the share of checks passed.
-
-- Dates, host names, process ids, run times, memory use, the paths of the case, home and
-  installation, and the C++ function names and source lines in error messages are ignored.
-  Where OpenFOAM prints a path inside its installation, such as
-  `/opt/openfoam/etc/controlDict`, print the same path inside `/app/rebuild` (any folder
-  above `etc/`).
-- Text must match exactly. Integers must be equal. Other numbers may differ by one unit in the
-  last printed digit (in exponent form at most one unit in the sixth significant digit, since
-  `1e+06` stands for `1.00000e+06`), numbers in binary files by a relative 1e-12, and numbers
-  that vary between identical runs of OpenFOAM by more. Dictionary entries may come in any
-  order.
-- A run may take 30 times as long as the installed program took, and at least 10 seconds.
-  Longer runs fail all their checks.
+Your programs are run on recorded runs of the installed programs and must reproduce their exit
+code, output and file changes. Run-specific details such as dates, host names, paths and timings
+are ignored, and printed numbers may differ in their last digit. Each run may take up to 30
+times as long as the installed program, and at least 10 seconds.
 
 Keep `/app/rebuild/PROGRESS.md` up to date: which programs and features work, how you checked
-them against the installed OpenFOAM, and what remains. It is a working note and is not graded.
+them against the installed OpenFOAM, and what remains.

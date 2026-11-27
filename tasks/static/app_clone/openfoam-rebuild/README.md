@@ -37,7 +37,7 @@ several checks: exit code, files, stdout, stderr and each output file.
   significant digit), or by 10× OpenFOAM's own spread where that varies. Binary numbers may
   differ by a relative 1e-12. Dictionary entries may come in any order. Banners, dates, hosts,
   process ids, paths, run times and memory use are ignored, as are the C++ function names and
-  source lines in error messages. The instruction states these rules.
+  source lines in error messages.
 - **Size:** 9,413 recorded runs and 102,431 checks at dataset revision `3468bf6`.
 
 Not tested: run-time compiled code (`#codeStream`, `coded…`), the cfMesh, OpenQBMM and VTK
@@ -136,6 +136,5 @@ Changes for Oddish's QA review of version 10:
   link followed; system `mpirun`; input copy out of the program's reach.
 - Dataset `3468bf6`: drops the 1,449 checks (all exit codes of runs that failed with 1) that a
   program printing nothing and exiting with 1 passes.
-- Instruction states the grading rules, the time limit per run and that `PROGRESS.md` is not
-  graded.
-- Pending: no-op and oracle trials on version 11 (experiment `20236f43`).
+- Instruction: a short paragraph on how runs are graded and the time limit per run.
+- Version 13 (experiment `b8a7ee12`): no-op 0.0, oracle 1.0 (built from source as `dev`).
