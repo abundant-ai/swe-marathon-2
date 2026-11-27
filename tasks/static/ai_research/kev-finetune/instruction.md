@@ -36,10 +36,5 @@ Use Kev's own training code and recipe. You have about six hours of wall-clock t
   compare on the data you checked them with.
 
 The model is only accepted with a non-empty `/app/train/` and `/app/REPORT.md`. `/app/REPORT.md` must be a regular
-file and `/app/train/` must hold at least one regular file; symbolic links are not followed.
-
-## What a good model does
-
-It picks the right answer as often as possible on new questions from all of these domains, not only on the 20
-examples. The questions fall into two groups of equal weight; the measure is the mean of the two accuracies of the
-top answer, from 0 to 1. Keep `/app` to these deliverables and the files they need.
+file and `/app/train/` must hold at least one regular file; symbolic links are not followed. Keep `/app` to these
+deliverables and the files they need.
