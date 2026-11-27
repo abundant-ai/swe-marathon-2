@@ -74,14 +74,39 @@ def pair(v: object) -> list:
     return list(v) if isinstance(v, list) and len(v) == 2 else []
 
 
+def qa_placed(steps: list, a: dict) -> bool:
+    """Whether the step just before entity_near's mark is QA's wait_for until the same kind is
+    at most max_m from the same point: then the distance is QA's own doing."""
+    idx = [
+        i
+        for i, st in enumerate(steps)
+        if isinstance(st, dict) and st.get("mark") == a.get("mark")
+    ]
+    if not idx or idx[-1] == 0:
+        return False
+    before = steps[idx[-1] - 1]
+    near = (
+        (before.get("wait_for") or {}).get("near") if isinstance(before, dict) else None
+    )
+    return (
+        isinstance(near, dict)
+        and near.get("kind") == a.get("kind")
+        and near.get("p") == a.get("p")
+        and isinstance(near.get("within_m"), (int, float))
+        and isinstance(a.get("max_m"), (int, float))
+        and near["within_m"] <= a["max_m"]
+    )
+
+
 def margins(
-    check: str, a: dict, m: dict, others: tuple = ()
+    check: str, a: dict, m: dict, others: tuple = (), steps: list | None = None
 ) -> list[tuple[str, object, float | None]]:
     """(what, value, margin) for one expectation's measured values; an empty list when the
     check has no band (counts that must be zero, exact values, yes-or-no answers). `others`
     are the args of the play's expectations of the same check: a one-sided pace measured over
     the same window as a banded one (IN-2's sprint over FT-1's) is judged in that band."""
     out: list[tuple[str, object, float | None]] = []
+    steps = steps or []
 
     def add(what: str, v: object, mg: float | None) -> None:
         out.append((what, v, mg))
@@ -415,9 +440,15 @@ def margins(
         if "max_m" in a:
             add("moved_m", m.get("moved_m"), upto(m.get("moved_m"), a["max_m"]))
     elif check == "entity_near":
-        add(
-            "distance_m", m.get("distance_m"), upto(m.get("distance_m"), a.get("max_m"))
-        )
+        if qa_placed(steps, a):
+            # QA's own step put it there (a wait_for until it is that near): not the game's
+            add("distance_m (QA's wait_for)", m.get("distance_m"), None)
+        else:
+            add(
+                "distance_m",
+                m.get("distance_m"),
+                upto(m.get("distance_m"), a.get("max_m")),
+            )
     # combat
     elif check == "fire_rate":
         r, tol = float(a["rate"]), float(a.get("tol", 0.05))
@@ -537,6 +568,7 @@ def main() -> int:
     a = ap.parse_args()
     found = json.loads(a.found.read_text())
     plays = {}
+    steps_of: dict[str, list] = {}
     if isinstance(found, dict):  # a grader report: its instances and their play files
         found = [
             {"playtest": i["name"], "expectations": i.get("checks") or []}
@@ -547,13 +579,16 @@ def main() -> int:
             if path.is_file():
                 d = json.loads(path.read_text())
                 plays[f["playtest"]] = {e["id"]: e for e in d["expect"]}
+                steps_of[f["playtest"]] = d.get("steps", [])
     else:
         for path in sorted(a.playtests.glob("*.json")):
             d = json.loads(path.read_text())
             plays[d["name"]] = {e["id"]: e for e in d["expect"]}
+            steps_of[d["name"]] = d.get("steps", [])
     rows, low = [], []
     for f in found:
         exps = plays.get(f["playtest"], {})
+        steps = steps_of.get(f["playtest"], [])
         for o in f["expectations"]:
             e = exps.get(o["id"])
             if e is None or not o.get("measured"):
@@ -564,7 +599,7 @@ def main() -> int:
                 if x is not e and x.get("check") == e["check"]
             )
             for what, v, mg in margins(
-                e["check"], e.get("args") or {}, o["measured"], others
+                e["check"], e.get("args") or {}, o["measured"], others, steps
             ):
                 row = {"playtest": f["playtest"], "id": o["id"], "rule": o.get("rule"), "what": what,
                        "value": v, "margin": None if mg is None else round(mg, 3)}  # fmt: skip
