@@ -4,7 +4,8 @@ usage: gate_checks.py SELECTION [--json OUT]
 
 Reads the private selection, the pipeline's driver outputs (CACHE/work/runs), the verifier runs (CACHE/work/verify),
 units.tsv and notes_map.tsv, and prints one line per item: inventory, kill matrix, stub zoo, oracle and nop,
-determinism, cue words, leak scan, band check. Items it cannot see (the protection probe, robustness, isolation, no
+determinism, cue words, leak scan, band check (the verification-gap mutant V, with W, W_literal and R_unbuilt as
+secondary bounds). Items it cannot see (the protection probe, robustness, isolation, no
 early stops) are reported from their own runs.
 """
 
@@ -18,7 +19,7 @@ from pathlib import Path
 
 TASK = Path(__file__).resolve().parent.parent
 CACHE = Path.home() / "Documents/github/Abundant/lib-tasks-cache/harfbuzz-forward-port"
-RUNS = CACHE / "work" / "runs-c2"
+RUNS = CACHE / "work" / "runs-c3"
 VERIFY = CACHE / "work" / "verify"
 CUES = re.compile(
     r"evaluation|benchmark|graded|grader|hidden test|golden|behave exactly like|every request exactly as|"
@@ -36,6 +37,11 @@ def read_build(build: str) -> dict[str, str]:
                 cid, _, result = line.partition("\t")
                 out[cid] = result
     return out
+
+
+def tier_c() -> set[str]:
+    rows = (TASK / "scripts/pipeline/tiers.tsv").read_text().splitlines()[1:]
+    return {r.split("\t")[0] for r in rows if r and r.split("\t")[1] == "C"}
 
 
 def units_table() -> dict[str, dict[str, str]]:
@@ -145,8 +151,24 @@ def band(selection: list[dict], name: str = "mut-W") -> dict:
         },
         "neighbours_below_1": {u: round(h, 3) for u, h in sorted(per.items()) if h < 1},
         "units_with_neighbours": len(per),
-        "pass": 0.60 <= reward <= 0.85 and d >= 0.98 and h_b >= 0.95,
     }
+
+
+def band_v(selection: list[dict], name: str = "mut-V") -> dict:
+    """The verification-gap proof: in band, D lost only on tier-C units, the gate essentially untouched."""
+    r = band(selection, name)
+    c = tier_c()
+    r["tier_c_units"] = len(c)
+    r["d_loss_outside_tier_c"] = {
+        u: v for u, v in r["units_below_1"].items() if u not in c
+    }
+    r["pass"] = (
+        0.60 <= r["reward"] <= 0.85
+        and not r["d_loss_outside_tier_c"]
+        and r["h_dual"] >= 0.98
+        and r["h_broad"] >= 0.98
+    )
+    return r
 
 
 def determinism() -> dict:
@@ -165,6 +187,8 @@ def determinism() -> dict:
 def cue_sweep() -> dict:
     hits = []
     for path in [TASK / "instruction.md", *sorted((TASK / "environment").rglob("*"))]:
+        if path.name == "prune_tree.sh":
+            continue  # it names upstream's speed-test wiring to remove it; the image build deletes it after use
         if (
             path.is_file()
             and path.suffix in (".md", ".sh", "", ".txt")
@@ -198,15 +222,26 @@ def main() -> None:
                     "stub-nobuild",
                     "stub-empty",
                     "stub-abort",
+                    "stub-noop-api",
                 )
             },
             "R_all (pipeline)": band(selection, "rk-ALL"),
         },
         "4_oracle_nop": {n: verify_result(n) for n in ("oracle", "nop", "base-14.3.0")},
         "5_determinism": determinism(),
-        "8_robustness": {n: verify_result(n) for n in ("robust", "fault")},
+        "8_robustness": {
+            n: verify_result(n)
+            for n in ("robust", "hostile", "slow", "hang", "flood", "fault")
+        },
         "6_cue_words": cue_sweep(),
-        "12_band": band(selection),
+        "12_band": {
+            "V (pipeline)": band_v(selection),
+            "V (verifier)": verify_result("V"),
+            "W, secondary bound (pipeline)": band(selection, "mut-W"),
+            "W (verifier)": verify_result("W"),
+            "W_literal (pipeline)": band(selection, "mut-Wlit"),
+            "R_unbuilt, F4 and F5 (pipeline)": band(selection, "mut-Ru"),
+        },
     }
     text = json.dumps(report, indent=1)
     print(text)

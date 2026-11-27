@@ -1,0 +1,54 @@
+unit	tier	predicted	reason
+1	B	0.68	checkable on the agent's own 14.3.0 build with shipped fonts and tools
+2	B	0.68	checkable on the agent's own 14.3.0 build with shipped fonts and tools
+3	B	0.68	checkable on the agent's own 14.3.0 build with shipped fonts and tools
+4	A	0.89	the note names the fix
+5	B	0.68	checkable on the agent's own 14.3.0 build with shipped fonts and tools
+6	B	0.68	checkable on the agent's own 14.3.0 build with shipped fonts and tools
+7	B	0.68	checkable on the agent's own 14.3.0 build with shipped fonts and tools
+8	B	0.68	checkable on the agent's own 14.3.0 build with shipped fonts and tools
+9	C	0.46	the note gives a symptom; the cause has to be found without an oracle
+10a	B	0.68	checkable on the agent's own 14.3.0 build with shipped fonts and tools
+10b	C	0.46	the note gives a symptom; the cause has to be found without an oracle
+11	A	0.89	the note names the fix
+12	C	0.46	the note gives a symptom; the cause has to be found without an oracle
+13	B	0.68	checkable on the agent's own 14.3.0 build with shipped fonts and tools
+14	B	0.68	checkable on the agent's own 14.3.0 build with shipped fonts and tools
+15	A	0.89	the note names the fix
+16	C	0.46	the note gives a symptom; the cause has to be found without an oracle
+17	C	0.46	the note gives a symptom; the cause has to be found without an oracle
+18	A	0.89	the note names the fix
+19	C	0.46	the note gives a symptom; the cause has to be found without an oracle
+20	A	0.89	the note names the fix (no font is needed to apply it, though one is needed to see it)
+21	C	0.46	no shipped font has a vertical kern header; upstream built two fonts to test the fix
+22	A	0.89	the note names the fix (no font is needed to apply it, though one is needed to see it)
+23	C	0.46	no shipped font has a kerx table, and fontTools cannot write one
+24	C	0.46	no shipped font requests one AAT feature twice; upstream built morx fonts to test the fix
+25a	C	0.46	AAT/kern or flag behaviour that needs fonts the agent builds
+25b	C	0.46	AAT/kern or flag behaviour that needs fonts the agent builds
+25c	C	0.46	AAT/kern or flag behaviour that needs fonts the agent builds
+26	C	0.46	AAT/kern or flag behaviour that needs fonts the agent builds
+27	C	0.46	AAT/kern or flag behaviour that needs fonts the agent builds
+29	C	0.46	AAT/kern or flag behaviour that needs fonts the agent builds
+31	C	0.46	the note gives a symptom; the cause has to be found without an oracle
+33	C	0.60	needs regenerated Unicode 18 data and fonts covering the new characters
+34	C	0.50	needs regenerated Unicode 18 data and fonts covering the new characters
+35	A	0.89	the note names the fix
+36	B	0.68	checkable on the agent's own 14.3.0 build with shipped fonts and tools
+37	B	0.68	checkable on the agent's own 14.3.0 build with shipped fonts and tools
+38	C	0.46	the note gives a symptom; the cause has to be found without an oracle
+39	A	0.89	the note names the fix
+40a	A	0.89	the note names the fix
+40b	A	0.89	the note names the fix
+40c	B	0.68	checkable on the agent's own 14.3.0 build with shipped fonts and tools
+41	B	0.68	checkable on the agent's own 14.3.0 build with shipped fonts and tools
+42	B	0.68	checkable on the agent's own 14.3.0 build with shipped fonts and tools
+43	B	0.68	checkable on the agent's own 14.3.0 build with shipped fonts and tools
+44a	A	0.89	the note names the fix
+44b	A	0.89	the note names the fix
+45	B	0.68	checkable on the agent's own 14.3.0 build with shipped fonts and tools
+46	A	0.89	the note names the fix
+47b	A	0.89	the note names the fix
+48	B	0.68	checkable on the agent's own 14.3.0 build with shipped fonts and tools
+49	B	0.68	checkable on the agent's own 14.3.0 build with shipped fonts and tools
+51	B	0.68	checkable on the agent's own 14.3.0 build with shipped fonts and tools
