@@ -13,6 +13,7 @@ FILES = [
     "environment/Dockerfile",
     "environment/.dockerignore",
     "environment/kev-files.txt",
+    "environment/strip_held_out.py",
     "environment/resources/domain.md",
     "environment/resources/public-20.jsonl",
     "instruction.md",

@@ -35,10 +35,12 @@ Use Kev's own training code and recipe. You have about six hours of wall-clock t
 - `/app/REPORT.md`: what you tried, every training run and its result, and the scores of the released Kev-0.8B and
   your model on the held-out data you used.
 
-A submission without a non-empty `/app/train/` and `/app/REPORT.md` is not scored.
+A submission without a non-empty `/app/train/` and `/app/REPORT.md` is not scored. `/app/REPORT.md` must be a
+regular file and `/app/train/` must hold at least one regular file; symbolic links are not followed.
 
 ## How we judge it
 
-We take the top answer of your model on held-out questions spread across all of these domains, measure how many it
-gets right, and compare that with the released Kev-0.8B on the same questions. Only improvement over the released
-model counts. Keep `/app` to these deliverables and the files they need.
+We take the top answer of your model on held-out questions spread across all of these domains. The questions come in
+two groups of equal weight; your score S is the mean of the two group accuracies. The released Kev-0.8B is scored the
+same way in the same run, giving S₀. The reward is (S − S₀) / (0.85 − S₀), clipped to the range 0 to 1: no gain over
+the released model earns 0, and S = 0.85 earns full credit. Keep `/app` to these deliverables and the files they need.

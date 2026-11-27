@@ -15,14 +15,15 @@ ENV KEV_COMMIT=556167b5b151152cb4101629e25d883e9ead5094 \
     UV_PYTHON_DOWNLOADS=never \
     UV_LINK_MODE=copy
 
-COPY kev-files.txt /tmp/kev-files.txt
+COPY kev-files.txt strip_held_out.py /tmp/
 # provenance-okay
 RUN git clone --quiet --filter=blob:none --no-checkout https://github.com/jaredpalmer/kev.git /tmp/kev-src \
     && cd /tmp/kev-src && git checkout --quiet "$KEV_COMMIT" -- $(grep -v '^#' /tmp/kev-files.txt) \
     && mkdir -p /opt/kev \
     && for p in $(grep -v '^#' /tmp/kev-files.txt); do mkdir -p "/opt/kev/$(dirname "$p")" && cp -R "$p" "/opt/kev/$p"; done \
     && rm -f /opt/kev/kev/study_v3.py /opt/kev/kev/transfer_v9.py \
-    && cd / && rm -rf /tmp/kev-src /tmp/kev-files.txt
+    && python3 -I /tmp/strip_held_out.py /opt/kev \
+    && cd / && rm -rf /tmp/kev-src /tmp/kev-files.txt /tmp/strip_held_out.py
 
 RUN cd /opt/kev && uv sync --frozen --no-dev \
     && uv pip install --python /opt/kev/.venv/bin/python --no-cache flash-linear-attention==0.5.2 triton==3.7.1 \

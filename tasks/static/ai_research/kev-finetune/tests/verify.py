@@ -206,15 +206,24 @@ def main() -> int:
         (LOGS / "grader.log").write_text(
             result.stdout[-200_000:] + "\n--- stderr ---\n" + result.stderr[-200_000:]
         )
-        if result.returncode == 3:
-            print("verifier suites or released checkpoint failed", file=sys.stderr)
+        if result.returncode == 3 or result.returncode < 0:
+            print(
+                f"verifier problem (grader exit {result.returncode}); no reward written",
+                file=sys.stderr,
+            )
             return 1
         if result.returncode != 0:
             raise CandidateError(
                 f"Kev could not load or score the checkpoint (grader exit {result.returncode}); see grader.log"
             )
-        for name in (*GRADED, "transfer_dev", *(f"released_{n}" for n in GRADED)):
+        for name in (*GRADED, *(f"released_{n}" for n in GRADED)):
             metrics["suites"][name] = summary(read_report(out / name / "report.json"))
+        try:
+            metrics["suites"]["transfer_dev"] = summary(
+                read_report(out / "transfer_dev" / "report.json")
+            )
+        except (CandidateError, KeyError, ValueError):
+            metrics["suites"]["transfer_dev"] = None
         metrics["improvement"] = improvement(metrics["suites"])
         reward = metrics["improvement"]["reward"]
         metrics["checkpoint"] = read_report(out / "checkpoint.json")
@@ -222,8 +231,11 @@ def main() -> int:
         reward = 0.0
         metrics["error"] = str(exc)
     except subprocess.TimeoutExpired:
-        reward = 0.0
-        metrics["error"] = f"scoring did not finish within {GRADER_TIMEOUT_SEC} s"
+        print(
+            f"scoring did not finish within {GRADER_TIMEOUT_SEC} s; no reward written",
+            file=sys.stderr,
+        )
+        return 1
     metrics["seconds"] = round(time.time() - started, 1)
     write_reward(reward, metrics)
     return 0

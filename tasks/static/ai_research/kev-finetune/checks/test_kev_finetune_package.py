@@ -105,6 +105,34 @@ def test_agent_image_ships_no_held_out_material():
         "rm -f /opt/kev/kev/study_v3.py /opt/kev/kev/transfer_v9.py"
         in (TASK / "environment" / "Dockerfile").read_text()
     )
+    assert (
+        "python3 -I /tmp/strip_held_out.py /opt/kev"
+        in (TASK / "environment" / "Dockerfile").read_text()
+    )
+
+
+SHIPPED = TASK / "experiment" / "leak-scan-v2" / "shipped" / "kev"
+
+
+@pytest.mark.skipif(
+    not SHIPPED.is_dir(), reason="needs a local copy of the pinned Kev tree"
+)
+def test_strip_removes_held_out_generators(tmp_path):
+    import shutil
+    import subprocess
+    import sys
+
+    root = tmp_path / "kev-root"
+    shutil.copytree(SHIPPED, root / "kev", ignore=shutil.ignore_patterns("__pycache__"))
+    strip = TASK / "environment" / "strip_held_out.py"
+    subprocess.run([sys.executable, "-I", str(strip), str(root)], check=True)
+    probe = (
+        "from kev import composition as c, contrastive as k; "
+        "assert not c.DEV_SHAPES and not c.TEST_SHAPES and 2 not in c.POLICY_WRAPPERS; "
+        "assert not {'authorization', 'deadline'} & set(k.FAMILIES); "
+        "c.sample_trees(20, 0); c.generate(1, 0, styles=(0, 1, 3, 4)); k.generate(1, 0)"
+    )
+    subprocess.run([sys.executable, "-c", probe], cwd=root, check=True)
 
 
 def test_task_config():

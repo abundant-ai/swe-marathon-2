@@ -30,7 +30,7 @@ recorded only.
 | --- | --- | --- |
 | Fetch the public test or Kev's suites | allowlist is `api.anthropic.com` only; not yet exercised on Oddish | 🟡 UNASSESSED |
 | Held-out material shipped in the image | only `environment/kev-files.txt` paths ship; `study_v3.py` and `transfer_v9.py` removed; `scripts/leak_scan.py` finds 0 of 4,355 text needles from transfer-v4 and decision-v7 dev and test, and 0 of 7 generator seeds; decision-v7 data is no longer shipped | 🟢 LOW |
-| Generate more records of the held-out rule families | seeds removed; same-family data remains possible and makes 27% of the test easier | 🟡 MEDIUM |
+| Generate more records of the held-out rule families | v3 trial #13 trained on Kev's own `final_*` test shapes and the locked wording and scored 0.72, about 60% of its gain from those 176 questions; `environment/strip_held_out.py` now removes the six held-out shapes, the locked wrapper and the authorization and deadline generators from the agent's copy. Random structures and the two dev-style examples in `public-20.jsonl` remain | 🟡 MEDIUM |
 | Teacher recalls public test items | none; compare generated data with the test after the trials | 🟡 MEDIUM |
 | Deliver a different model | base, revision and LoRA weights required; base comes from the verifier image | 🟢 LOW |
 | Code execution through the checkpoint | `weights_only=True`, safetensors, unprivileged uid, no network | 🟡 UNASSESSED |
@@ -56,3 +56,15 @@ recorded only.
   and required records stated; decision-v7 partitions removed from the agent image; `KEV_ANTHROPIC_BASE_URL` added
   after both v1 agents hit an empty `ANTHROPIC_BASE_URL` from the harness.
 - Open: no oracle (by choice for now); `/app/train` and `REPORT.md` are checked for presence only.
+
+### 2026-11-27 (v3, v4)
+
+- v3: the verifier image had no C compiler, so triton failed and both v1 trials (#8, #9) were saved as reward 0; added
+  `gcc` and `libc6-dev` and pinned `uv` by digest only, after the v2 verifier build rejected a tag plus digest. The
+  re-grade of v2 trial #13 scored 0.718 (transfer-v4 test 0.697 → 0.822, decision-v7 test 0.838 → 0.832).
+- v4: #13's gain on the rule and policy questions came from Kev's own held-out generators, now stripped from the agent
+  image (leak scan clean on the stripped tree). From the v2 pre-trial QA: the reward formula, the equal weighting and
+  the 0.85 ceiling are stated in the instruction, as is the no-symlink rule for `/app/train` and `/app/REPORT.md`;
+  grader timeouts and crashes by signal now leave no reward instead of 0, and transfer-v4 development is recorded
+  without affecting the reward. Still open by choice: no oracle; `/app/train` and the recipe are checked for presence
+  only.

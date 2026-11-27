@@ -77,9 +77,10 @@ def main(model: Path, out: Path) -> int:
     for name in GRADED:
         if not benchmark(RELEASED, name, out / f"released_{name}"):
             return 3
-    for name in SUITES:
+    for name in GRADED:
         if not benchmark(model, name, out / name):
             return 2
+    benchmark(model, "transfer_dev", out / "transfer_dev")
     return 0
 
 
