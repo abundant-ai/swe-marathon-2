@@ -4,7 +4,7 @@
 # The tests, at a fixed revision of the dataset.
 FROM python:3.13-slim AS tests
 ARG DATASET=AdnanElAssadi/openfoam-rebuild-tests
-ARG DATASET_REVISION=3468bf65180870b9b30fee43e4ac0187616e11d6
+ARG DATASET_REVISION=bcb1101f72e47a9bb434adee061ed9a7e0297d1f
 RUN pip install --no-cache-dir huggingface_hub==2.4.0 hf_xet==1.8.0 \
     && python -c "from huggingface_hub import snapshot_download; \
 snapshot_download('$DATASET', repo_type='dataset', revision='$DATASET_REVISION', local_dir='/data/openfoam-tests')" \

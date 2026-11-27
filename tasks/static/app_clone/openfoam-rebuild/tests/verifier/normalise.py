@@ -12,7 +12,9 @@ _BANNER_END = re.compile(r"^\\\*-{20,}\*/\s*$")
 _DROP = re.compile(r"^(Date|Time|PID)\s*:")
 _CLOCK = re.compile(r"^\s*ExecutionTime\s*=.*ClockTime\s*=.*$")
 _FROM = re.compile(r"^\s+From (?:.*\(.*\)|\S+)\s*(?:const)?\s*$")
-_IN_FILE = re.compile(r"^\s+in file \S+ at line \d+\.\s*$")
+_IN_FILE = re.compile(
+    r"^\s+in file \S+ at line \d+\.?\s*$"
+)  # errors end the line with ".", warnings do not
 _FRAME = re.compile(r"^\s*\[\d+\]\s+#\d+\s|^#\d+\s+")
 _ELAPSED = re.compile(
     r"\bin (=\s*)?[-+.\deE]+ s(?:econds)?\b"

@@ -38,7 +38,7 @@ several checks: exit code, files, stdout, stderr and each output file.
   differ by a relative 1e-12. Dictionary entries may come in any order. Banners, dates, hosts,
   process ids, paths, run times and memory use are ignored, as are the C++ function names and
   source lines in error messages.
-- **Size:** 9,413 recorded runs and 102,431 checks at dataset revision `3468bf6`.
+- **Size:** 9,412 recorded runs and 102,418 checks at dataset revision `bcb1101`.
 
 Not tested: run-time compiled code (`#codeStream`, `coded…`), the cfMesh, OpenQBMM and VTK
 modules, and `applications/test`.
@@ -49,7 +49,7 @@ modules, and `applications/test`.
 reward = checks_passed / checks_kept
 ```
 
-`checks_kept` is fixed by the dataset revision (102,431 at `3468bf6`). A failed build passes no
+`checks_kept` is fixed by the dataset revision (102,418 at `bcb1101`). A failed build passes no
 check; a program that cannot be started fails every check of its run. Each recorded run is replayed with the submission's programs as UID 10001, with `HOME`
 and `TMPDIR` new empty folders, a read-only `/app/rebuild`, and a time limit of
 max(30 × OpenFOAM's time, 10 s). Also reported: resolved (all checks pass) and almost (≥ 95%).
@@ -141,3 +141,17 @@ Changes for Oddish's QA review of version 10:
 - Version 13 (experiment `b8a7ee12`): no-op 0.0, oracle 1.0 (built from source as `dev`).
 - Copy check before the build, from Eric's version 14: compiled files removed, upstream
   source files fail the build; fingerprints regenerated from the pinned commit without `etc/`.
+
+### 2026-11-27
+
+Version 15 (experiment `2fcbd21b`): no-op 0.0, oracle 0.99979 (102,409 of 102,431 checks). The
+22 failed checks:
+
+- 9 printed a warning's source location (`in file /src/src/... at line 1080`): the path of the
+  build, which the comparison now ignores like an error's (an error's line ends with `.`, a
+  warning's does not).
+- 13 vary between identical OpenFOAM runs and passed the earlier repeat runs by chance: the
+  output of parallel runs that abort (Open MPI kills the other processes at no fixed point),
+  foamyQuadMesh's triangulation of one generated case, and the order of names setsToZones
+  reads from a folder. Added to `scripts/harvest/unstable_checks.json`; dataset `bcb1101`
+  drops them (9,412 runs, 102,418 checks).

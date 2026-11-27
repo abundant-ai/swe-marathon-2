@@ -56,6 +56,16 @@ def test_error_locations_and_stack_traces_are_removed():
     ]
 
 
+
+def test_warning_locations_are_removed():
+    # a warning gives its source location without the error's closing "."; the path is the build's
+    text = (
+        "--> FOAM Warning :\n    From void Foam::InteractionLists::buildMap()\n"
+        "    in file /src/src/lagrangian/basic/lnInclude/InteractionLists.C at line 1080\n"
+        "    Map is empty"
+    )
+    assert N.normalise(text) == ["--> FOAM Warning :", "    Map is empty"]
+
 def test_case_home_host_and_install_paths_are_replaced():
     rec = N.normalise(
         'Case : /tmp/run/cavity\nHost : node7\nReading "/opt/openfoam/etc/controlDict"\n'
