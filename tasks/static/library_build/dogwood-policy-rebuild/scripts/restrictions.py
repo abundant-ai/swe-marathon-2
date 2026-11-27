@@ -1132,7 +1132,7 @@ FEATURES: dict[str, tuple[tuple[str, ...], dict[str, str]]] = {
             + policy("small(context.input.amount)"),
         },
     ),
-    "feat:04:since": (
+    "feat:03:key-local-since-left": (
         ("replay",),
         {
             "policy.dw": policy(
@@ -1142,6 +1142,20 @@ FEATURES: dict[str, tuple[tuple[str, ...], dict[str, str]]] = {
                 scope="principal,\n    action,\n    resource",
                 temporal=True,
             )
+        },
+    ),
+    "feat:04:since": (
+        ("replay",),
+        {
+            "policy.dw": policy(
+                'Ledger::Action::"Transfer"::request{ input.amount: * }\n'
+                "    since within @W@\n"
+                '    Ledger::Action::"Login"::request{ input.server: "s1" }',
+                scope="principal,\n    action,\n    resource",
+                temporal=True,
+            ),
+            # No pin: the global reading, which the default schema's key-local rewrite bypasses.
+            "event.dwschema": pairs.event_schema({}),
         },
     ),
     "feat:05:enum-unexpected-denied": (
@@ -1318,6 +1332,7 @@ def window_edge_trace(r):
 
 
 FEATURE_TRACES = {
+    "feat:03:key-local-since-left": since_trace,
     "feat:04:since": since_trace,
     "feat:05:enum-unexpected-denied": transfers_trace,
     "feat:03:key-local-previous": previous_trace,
