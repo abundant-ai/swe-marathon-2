@@ -1,8 +1,8 @@
 FROM python:3.13-slim-bookworm@sha256:f0fa218d5b06f9b9235024fa061cde2cb141f726de52134471053d2d9b5324a3
 
-COPY --from=ghcr.io/astral-sh/uv:0.9.7@sha256:ba4857bf2a068e9bc0e64eed8563b065908a4cd6bfb66b531a9c424c8e25e142 /uv /uvx /usr/local/bin/
+COPY --from=ghcr.io/astral-sh/uv@sha256:ba4857bf2a068e9bc0e64eed8563b065908a4cd6bfb66b531a9c424c8e25e142 /uv /uvx /usr/local/bin/
 
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates git procps \
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates gcc git libc6-dev procps \
     && rm -rf /var/lib/apt/lists/*
 
 ENV KEV_COMMIT=556167b5b151152cb4101629e25d883e9ead5094 \
