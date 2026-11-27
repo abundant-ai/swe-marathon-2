@@ -170,6 +170,9 @@ def main() -> int:
         r = run.get(cid)
         return None if r is None else (r["runs"][0]["rc"], r["runs"][0]["norm"])
 
+    def answers(run: dict, cid: str) -> set:
+        return {(x["rc"], x["norm"]) for x in run[cid]["runs"]}
+
     killed: dict[str, set[str]] = defaultdict(set)  # id -> case ids
     mutant_runs = {}
     names = mutant_ids()
@@ -179,10 +182,13 @@ def main() -> int:
             if path.is_file():
                 run = json.loads(path.read_text())
                 mutant_runs[name] = run
+                # A kill is an answer the release build never gave in any recorded run, so a
+                # case whose answer varies between runs cannot pass for one.
                 changed = {
                     c["id"]
                     for c in cases
-                    if answer(run, c["id"]) != answer(gold, c["id"])
+                    if c["id"] in gold
+                    and answer(run, c["id"]) not in answers(gold, c["id"])
                 }
                 for i in ids:
                     killed[i] |= changed

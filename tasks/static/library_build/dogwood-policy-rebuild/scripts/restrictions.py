@@ -77,9 +77,12 @@ def events(request_extra: str = "", replace_inputs: str | None = None) -> str:
     return text
 
 
-def enum_providers(edit=None, namespace: str = "Risk", declare: bool = True) -> str:
+def enum_providers(
+    edit=None, namespace: str = "Risk", declare: bool = True, returns: str = "HIGH"
+) -> str:
     """Risk::Score with an enum-typed `level` output; the enum declared in `namespace`, or not at
-    all, and the output's enum type changed by `edit`."""
+    all, and the output's enum type changed by `edit`. For a present argument the implementation
+    returns the level `returns`, which need not be one of the declared values."""
     decl = json.loads(json.dumps(PROVIDERS))
     score = decl["availableProviders"]["Risk::Score"]
     level = {"paramType": "entity", "entityType": f"{namespace}::Level"}
@@ -90,7 +93,10 @@ def enum_providers(edit=None, namespace: str = "Risk", declare: bool = True) -> 
     score["implementation"]["script"] = (
         score["implementation"]["script"]
         .replace("#{ score: -1 }", '#{ score: -1, level: "LOW" }')
-        .replace("#{ score: amount * @K@ }", '#{ score: amount * @K@, level: "HIGH" }')
+        .replace(
+            "#{ score: amount * @K@ }",
+            f'#{{ score: amount * @K@, level: "{returns}" }}',
+        )
     )
     if declare:
         decl = {
@@ -1124,6 +1130,72 @@ FEATURES: dict[str, tuple[tuple[str, ...], dict[str, str]]] = {
             + policy("small(context.input.amount)"),
         },
     ),
+    "feat:04:since": (
+        ("replay",),
+        {
+            "policy.dw": policy(
+                'Ledger::Action::"Transfer"::request{ input.amount: * }\n'
+                "    since within @W@\n"
+                '    Ledger::Action::"Login"::request{ input.server: "s1" }',
+                scope="principal,\n    action,\n    resource",
+                temporal=True,
+            )
+        },
+    ),
+    "feat:05:enum-unexpected-denied": (
+        ("replay", "validate"),
+        {
+            "policy.dw": policy(
+                'Risk::Score(context.input.amount).level != Risk::Level::"LOW"'
+            ),
+            "providers.json": enum_providers(returns="MEDIUM"),
+        },
+    ),
+    "feat:12:format-comments": (
+        ("format", "check-parse"),
+        {
+            "policy.dw": "// Small transfers only.\n"
+            '@id("@RID@")\npermit (principal,   action == Ledger::Action::"Transfer",   // transfers\n'
+            "      resource)\nwhen {   context.input.amount < @N@ };\n"
+        },
+    ),
+    "feat:03:key-local-previous": (
+        ("replay",),
+        {"policy.dw": alert(f"previous within @W@ {LOGIN_ANCHOR}")},
+    ),
+    "feat:04:window-closed": (
+        ("replay",),
+        {"policy.dw": alert(f"formerly within 30m {LOGIN_ANCHOR}")},
+    ),
+    "restr:08:optional-attribute-guard": (
+        ("validate", "lower", "explain"),
+        {
+            "policy.dw": policy(
+                "context.input has note && temporal {\n"
+                '        formerly within @W@ Ledger::Action::"Login"::request{ input.user: context.input.note }\n'
+                "    }"
+            ),
+            "schema.cedarschema": pairs.SCHEMA.replace(
+                "    amount: Long,\n    user: String",
+                "    amount: Long,\n    note?: String,\n    user: String",
+                1,
+            ),
+        },
+    ),
+    "feat:06:hygiene": (
+        ("check-parse", "validate", "replay"),
+        {
+            "policy.dw": "def temporal seen_after(?w, ?s) {\n"
+            "    exists ($t: Timepoint). formerly within ?w (?s && tp($t))\n"
+            "};\n\n"
+            + alert(
+                "exists (t: Timepoint). (\n"
+                '        Ledger::Action::"Alert"::request{ input.server: "s1" } && tp(t)\n'
+                f"        && seen_after(@W@, ({LOGIN_ANCHOR} && tp(t)))\n"
+                "    )"
+            )
+        },
+    ),
     "feat:09:call-checks": (
         PARSE,
         {
@@ -1182,6 +1254,76 @@ def mixed_trace(r):
     return lines
 
 
+def since_trace(r):
+    """One principal: a Login (the anchor), two Transfers that hold the left of `since`, then an
+    Alert decision, at which the left does not hold, then a Transfer and an Alert."""
+    who = r.choice(pairs.PEOPLE)
+    c = pairs.Clock(r)
+    lines = []
+    for ev in (
+        pairs.login(r),
+        pairs.transfer(r),
+        pairs.transfer(r),
+        pairs.ALERT,
+        pairs.transfer(r),
+        pairs.ALERT,
+    ):
+        ts, rid = c.tick()
+        lines.append(pairs.line(ts, ev[0], ev[1], rid, scope=who))
+    return lines
+
+
+def transfers_trace(r):
+    """Transfers, a Login and an Alert by two principals: every Transfer decision calls the
+    provider."""
+    who = r.sample(pairs.PEOPLE, 2)
+    c = pairs.Clock(r)
+    lines = []
+    for ev in (pairs.transfer(r), pairs.login(r), pairs.transfer(r), pairs.ALERT):
+        ts, rid = c.tick()
+        lines.append(pairs.line(ts, ev[0], ev[1], rid, scope=r.choice(who)))
+    return lines
+
+
+def previous_trace(r):
+    """One principal: a Login, then a Transfer, then an Alert decision (the key's previous event is
+    the Transfer), then a Login and an Alert (now the previous event is the Login)."""
+    who = r.choice(pairs.PEOPLE)
+    c = pairs.Clock(r)
+    lines = []
+    for ev in (
+        pairs.login(r),
+        pairs.transfer(r),
+        pairs.ALERT,
+        pairs.login(r),
+        pairs.ALERT,
+    ):
+        ts, rid = c.tick()
+        lines.append(pairs.line(ts, ev[0], ev[1], rid, scope=who))
+    return lines
+
+
+def window_edge_trace(r):
+    """A Login, then Alert decisions exactly 30 minutes and 30 minutes and one second later."""
+    who = r.choice(pairs.PEOPLE)
+    start = r.randint(10, 500)
+    login = pairs.login(r)
+    return [
+        pairs.line(start, login[0], login[1], "r1", scope=who),
+        pairs.line(start + 1800, pairs.ALERT[0], pairs.ALERT[1], "r2", scope=who),
+        pairs.line(start + 1801, pairs.ALERT[0], pairs.ALERT[1], "r3", scope=who),
+    ]
+
+
+FEATURE_TRACES = {
+    "feat:04:since": since_trace,
+    "feat:05:enum-unexpected-denied": transfers_trace,
+    "feat:03:key-local-previous": previous_trace,
+    "feat:04:window-closed": window_edge_trace,
+    "feat:06:hygiene": previous_trace,
+}
+
+
 def write_features(seed: int, out, copies: int = 2) -> int:
     r = random.Random(seed)
     idx = 0
@@ -1192,7 +1334,8 @@ def write_features(seed: int, out, copies: int = 2) -> int:
             texts = {name: fill(text, r, idx) for name, text in files.items()}
             texts.setdefault("schema.cedarschema", pairs.SCHEMA)
             if "replay" in cmds:
-                texts["trace.log"] = "\n".join(mixed_trace(r)) + "\n"
+                trace = FEATURE_TRACES.get(fid, mixed_trace)
+                texts["trace.log"] = "\n".join(trace(r)) + "\n"
             for name, text in texts.items():
                 with open(os.path.join(d, name), "w") as f:
                     f.write(text)

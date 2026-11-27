@@ -32,6 +32,9 @@ from pathlib import Path
 VERDICT = re.compile(r"^@-?\d+ \(time point \d+\): (DENY|ALLOW  \[rules: [0-9, ]+\])$")
 
 
+HASH_ORDER = re.compile(r"cycle in [^\n]*containing")
+
+
 def route(c: dict) -> str:
     args = c["args"]
     if c["bundle"] == "cli":
@@ -116,6 +119,11 @@ def main() -> int:
         answers = {(x["rc"], x["norm"]) for x in r["runs"]}
         if len(answers) != 1:
             dropped["unstable"] += 1
+            continue
+        if any(HASH_ORDER.search(x["norm"]) for x in r["runs"]):
+            # The member of a cycle that the message names depends on the build's hash order,
+            # which changes from run to run; three equal runs are luck, not one answer.
+            dropped["names one member of a cycle"] += 1
             continue
         gold[c["id"]] = answers.pop()
         kept.append(c)
