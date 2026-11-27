@@ -91,3 +91,13 @@ def test_dates_in_written_files_are_replaced():
     assert N.strip_dates("// written Wed Nov 19 22:53:01 2026") == "// written <date>"
     assert N.strip_dates("t = 2026-11-19T18:22:33Z") == "t = <date>"
     assert N.strip_dates("value 22.53") == "value 22.53"
+
+
+def test_durations_are_replaced():
+    assert N.normalise("Mesh movement took 0.01 seconds") == N.normalise(
+        "Mesh movement took 0 seconds"
+    )
+    assert N.normalise("Execution time for mesh.update() = 0.01 s") == [
+        "Execution time for mesh.update() = <time>"
+    ]
+    assert N.normalise("deltaT = 0.005 s") == ["deltaT = 0.005 s"]
