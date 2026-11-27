@@ -635,7 +635,9 @@ def cmd_milestone(args: argparse.Namespace) -> None:
     ops = json.loads(Path(args.plan).read_text()) if args.plan else []
     with heavy(f"milestone: {len(ops)} ops, verifier image, {len(args.tree)} runs"):
         run_ops(ops)
-        n = stage_verifier(Path(args.selection))
+        n = stage_verifier(
+            Path(args.selection), Path(args.recorded) if args.recorded else None
+        )
         print(f"staged {n} cases", flush=True)
         build_verifier_image(args.platform)
         if args.record:
@@ -708,6 +710,10 @@ def main() -> None:
     p.add_argument(
         "--record",
         help="reference tree: record the expected outputs through the verifier image",
+    )
+    p.add_argument(
+        "--recorded",
+        help="stage the expected outputs from an earlier recording (its outputs.tsv)",
     )
     p.add_argument(
         "--determinism",

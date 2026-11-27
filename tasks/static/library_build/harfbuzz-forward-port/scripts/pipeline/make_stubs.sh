@@ -12,19 +12,13 @@ set -eu
 BASE=$1
 OUT=$2
 mkdir -p "$OUT"
-# Each stub is a hard-linked copy of the base (no disk cost); every file a stub edits is first replaced by a copy
-# of its own, so no edit reaches the base or another stub.
-own() { cp "$1" "$1.own" && mv "$1.own" "$1"; }
+# Each stub is a copy of the base without test/, which the product build never reads (tests are disabled); the
+# shared machine's disk is tight. (Hard links do not survive Docker Desktop's file sharing.)
 for s in comments refactor nobuild empty abort; do
   test ! -e "$OUT/$s"
-  cp -al "$BASE" "$OUT/$s"
+  mkdir -p "$OUT/$s"
+  (cd "$BASE" && tar -cf - --exclude=./test .) | (cd "$OUT/$s" && tar -xf -)
 done
-own "$OUT/comments/src/hb-buffer.cc"
-own "$OUT/comments/src/hb-shape.cc"
-own "$OUT/refactor/src/hb-shape.cc"
-own "$OUT/nobuild/src/hb-common.cc"
-own "$OUT/empty/src/hb-shape.cc"
-own "$OUT/abort/src/hb-shape.cc"
 # comments: a comment line after every #include in src/hb-buffer.cc and trailing blanks in hb-shape.cc
 sed -i 's|^\(#include .*\)$|\1\n/* product build */|' "$OUT/comments/src/hb-buffer.cc"
 printf '\n\n' >> "$OUT/comments/src/hb-shape.cc"
