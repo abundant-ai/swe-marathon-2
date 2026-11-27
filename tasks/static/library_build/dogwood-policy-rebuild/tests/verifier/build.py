@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import stat
 import subprocess
 import tempfile
 import time
@@ -130,9 +131,18 @@ def _build(submission: Path, work: Path, limits: Limits) -> BuildResult:
     if proc.returncode != 0 or binary.is_symlink() or not inside or not real.is_file():
         tail = out.decode("utf-8", "replace").strip().splitlines()[-5:]
         return BuildResult(False, None, "build failed: " + " | ".join(tail), seconds)
-    bindir = Path(tempfile.mkdtemp(prefix="dw-bin-"))
-    bindir.chmod(0o755)
-    installed = bindir / "dogwood"
-    shutil.copyfile(real, installed)
+    # Copy it from a descriptor opened without following a link, into a new folder of root's.
+    try:
+        fd = os.open(real, os.O_RDONLY | os.O_NOFOLLOW)
+    except OSError as exc:
+        return BuildResult(False, None, f"build left no program ({exc})", seconds)
+    with os.fdopen(fd, "rb") as program:
+        if not stat.S_ISREG(os.fstat(program.fileno()).st_mode):
+            return BuildResult(False, None, "build left no program", seconds)
+        bindir = Path(tempfile.mkdtemp(prefix="dw-bin-"))
+        bindir.chmod(0o755)
+        installed = bindir / "dogwood"
+        with open(installed, "xb") as copy:
+            shutil.copyfileobj(program, copy)
     installed.chmod(0o755)
     return BuildResult(True, installed, "built", seconds)
