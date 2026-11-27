@@ -15,7 +15,7 @@ from pathlib import Path
 APP_MODEL = Path("/app/model")
 APP_TRAIN = Path("/app/train")
 APP_REPORT = Path("/app/REPORT.md")
-TARGET = 0.85
+TARGET = 1.0
 GRADED = ("transfer_test", "decision_test")
 TESTS = Path("/tests")
 WORK = Path("/var/lib/kev-verifier")

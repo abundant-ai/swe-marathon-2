@@ -180,7 +180,7 @@ def test_reward_is_gain_over_the_released_model():
     assert verify.improvement(suites)["reward"] == 0.0
     suites["transfer_test"]["acc"] = 0.86
     gain = verify.improvement(suites)
-    assert gain["reward"] == pytest.approx((0.85 - 0.77) / (0.85 - 0.77))
+    assert gain["reward"] == pytest.approx((0.85 - 0.77) / (1.0 - 0.77))
     suites["decision_test"]["acc"] = 0.60
     assert verify.improvement(suites)["reward"] == 0.0
 

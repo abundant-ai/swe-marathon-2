@@ -18,9 +18,9 @@ The verifier requires a non-empty `/app/REPORT.md` and a non-empty regular file 
 `adapter_config.json`, `adapter_model.safetensors` and `head.pt` from `/app/model`, checks for the pinned base and LoRA
 weights, and runs `kev.benchmark` offline as an unprivileged uid on the candidate and on the released Kev-0.8B.
 
-**Reward = clip((S − S_released) / (0.85 − S_released), 0, 1)**, where S is the mean of the clean accuracies on
+**Reward = clip((S − S_released) / (1 − S_released), 0, 1)**, where S is the mean of the clean accuracies on
 transfer-v4 test (656) and decision-v7 test (1,200), and S_released the same for the released checkpoint, measured in
-the same run. 0.85 is about Kev-4B / Jev level on these suites. A forgetting drop on decision-v7 lowers S directly.
+the same run. Kev-4B / Jev level (S ≈ 0.85) would earn about 0.36. A forgetting drop on decision-v7 lowers S directly.
 Missing records, a malformed or wrong-base checkpoint, or one Kev cannot load score 0; a grader crash or timeout writes
 no reward. transfer-v4 development is recorded only.
 
@@ -68,5 +68,5 @@ no reward. transfer-v4 development is recorded only.
   grader timeouts and crashes by signal now leave no reward instead of 0, and transfer-v4 development is recorded
   without affecting the reward. Still open by choice: no oracle; `/app/train` and the recipe are checked for presence
   only.
-- v5–v8: absolute accuracy was tried in v5 and reverted in v8 to the gain over the released model; the instruction
+- v5–v8: absolute accuracy was tried in v5 and reverted in v8 to the gain over the released model, with target 1.0; the instruction
   no longer describes the measure or mentions held-out data.
