@@ -2011,5 +2011,11 @@
   "old": "`provider ... has no implementation; cannot evaluate it at authorize time`.",
   "new": "``provider `…` has no `implementation`; cannot evaluate it at authorize time``.",
   "count": 1
+ },
+ {
+  "op": "replace",
+  "file": "guide/12-cli.md",
+  "old": "`format` exits 0 for any input that it can read.\n",
+  "new": "`format` exits 0 for any input that it can read.\n\n`dogwood --help` (or `dogwood help`) prints the list of commands, and\n`dogwood <command> --help` prints that command's usage, arguments and options:\n`dogwood schema --help` lists the schema parts, and `dogwood schema event --help`\ndescribes one of them. `dogwood --version` (or `-V`) prints the name and version,\n`dogwood 1.2.0`. They all print to stdout and exit 0.\n"
  }
 ]

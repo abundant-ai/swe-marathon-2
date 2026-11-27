@@ -98,6 +98,15 @@ fn main() {
     let key = format!("{}/{}", route(&args), fmt);
     match MODE.trim() {
         "silent" => exit(0),
+        // No-op bodies that end every command with one failing status.
+        "exit1" => exit(1),
+        "exit2" => exit(2),
+        // Writes a reward where the grader's outputs go, on every run, then does nothing.
+        "forge" => {
+            let _ = fs::write("/logs/verifier/reward.json", "{\"reward\": 1.0}\n");
+            let _ = fs::write("/logs/verifier/reward.txt", "1.0\n");
+            exit(0)
+        }
         "usual-status" => exit(table().get(&key).map(|v| v.0).unwrap_or(0)),
         "most-common" => match table().get(&key) {
             Some((rc, out)) => emit(*rc, out),

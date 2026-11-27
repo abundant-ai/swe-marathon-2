@@ -6664,7 +6664,7 @@
       "heading": "A caution on names",
       "quote": "A call is read as a provider invocation because of its shape — any"
     },
-    "summary": "A namespaced call is a provider by shape; declaredness is checked separately. The guide calls an undeclared one a hard error at lowering, but the build lowers it and `validate` reports it [PROV-DeclaredProvider].",
+    "summary": "A namespaced call is a provider by shape; declaredness is checked separately: `validate` reports an undeclared one and `replay` fails such a decision closed (the shipped guide says so since Phase C's correction) [PROV-DeclaredProvider].",
     "family": "P",
     "routes": [
       "validate",
@@ -12052,9 +12052,9 @@
     "id": "feat:12:version-flag",
     "kind": "feature",
     "doc": {
-      "file": "dogwood-cli/src/main.rs",
-      "heading": "struct Cli",
-      "quote": "#[command(name = \"dogwood\", version, about, long_about = None)]"
+      "file": "guide/12-cli.md",
+      "heading": "Commands",
+      "quote": "`dogwood --version` (or `-V`) prints the name and version"
     },
     "summary": "`dogwood --version` prints the name and version (dogwood 1.2.0).",
     "family": "F",
@@ -12077,9 +12077,9 @@
     "id": "feat:12:help-flag",
     "kind": "feature",
     "doc": {
-      "file": "dogwood-cli/src/main.rs",
-      "heading": "struct Cli",
-      "quote": "/// Local checker and replayer for Dogwood policies."
+      "file": "guide/12-cli.md",
+      "heading": "Commands",
+      "quote": "`dogwood <command> --help` prints that command's usage, arguments and options"
     },
     "summary": "`--help` / `-h` (top level, per command, and `help <command>`) prints clap's usage text, built from the 1.2.0 doc comments, and exits 0. The guide does not document it; the brief puts every option in scope and the text is observable only by running the build.",
     "family": "F",

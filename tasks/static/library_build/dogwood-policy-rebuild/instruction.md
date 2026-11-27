@@ -32,7 +32,8 @@ on what it prints:
 - Our schema repository checks every file with `dogwood schema action`, `schema event` and
   `schema providers`.
 
-A different output, report or exit status breaks one of them.
+Each of them was built around what the 1.2.0 build prints and the status it ends with, so a
+report, message or exit status that changes breaks it.
 
 ## Context
 
@@ -68,9 +69,8 @@ Your implementation in `/app/dogwood-rebuild`: a Cargo project from which
 
   A version that handles the guide's own examples is a start, not the end: our policies use these
   features in every combination, with their corner cases and their errors.
-- Given the same files, arguments and standard input, your `dogwood` prints the same standard
-  output and ends with the same exit status as the 1.2.0 build, with `--format human` and with
-  `--format json`. Nothing of ours reads standard error, so what it writes there may differ.
+- Our tools read standard output, with `--format human` and with `--format json`, and the exit
+  status. Nothing of ours reads standard error, so what yours writes there is up to you.
 - In JSON output, layout and the order of keys inside an object do not matter. The rules listed
   for a decision are a set to our incident tools, so their order does not matter either.
   Everything else reaches our tools as it is printed: the order of lists, every message, every

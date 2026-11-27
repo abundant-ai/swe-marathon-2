@@ -11,6 +11,7 @@ stay out of the repository.
 | --- | --- |
 | nop | an empty directory |
 | silent | prints nothing, exits 0 |
+| exit1, exit2 | prints nothing, exits 1 (or 2) on every command |
 | usual-status | prints nothing, exits with each command's most common status |
 | accept | `validate` prints the accept line (human or JSON) |
 | reject | `validate` prints a generic error and exits 2 |
@@ -25,6 +26,7 @@ stay out of the repository.
 | garbage | prints what the comparison must survive: JSON nested past a parser's depth, a rule list of mixed values, empty and overlong rule numbers |
 | buildrs | a build script that tries to read the grader's files, write the reward and leave a process behind |
 | badexec | a build that leaves, where the program belongs, a file the machine cannot run |
+| forge | a build script and a program that write a reward where the grader's outputs go, plant links under the output names, and leave a process rewriting the reward |
 """
 
 from __future__ import annotations
@@ -39,6 +41,8 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 MODES = (
     "silent",
+    "exit1",
+    "exit2",
     "usual-status",
     "accept",
     "reject",
@@ -80,6 +84,24 @@ fn main() {
     let path = out.ancestors().nth(3).unwrap().join("dogwood");
     std::fs::write(&path, b"not a program\\n").unwrap();
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+}
+"""
+FORGE_RS = """// Writes a reward where the grader's outputs go, plants links under the other output names, and
+// leaves a process behind that keeps rewriting the reward. The build itself succeeds.
+use std::fs;
+use std::os::unix::fs::symlink;
+use std::process::Command;
+
+fn main() {
+    let dir = "/logs/verifier";
+    let _ = fs::write(format!("{dir}/reward.json"), "{\\"reward\\": 1.0}\\n");
+    let _ = fs::write(format!("{dir}/reward.txt"), "1.0\\n");
+    let _ = fs::remove_file(format!("{dir}/metrics.json"));
+    let _ = symlink("/tests/verify.py", format!("{dir}/metrics.json"));
+    let _ = symlink("/tests/test.sh", format!("{dir}/evaluation-error.txt"));
+    let _ = Command::new("setsid")
+        .args(["sh", "-c", "while :; do echo 1.0 > /logs/verifier/reward.txt; sleep 0.1; done"])
+        .spawn();
 }
 """
 CARGO = '[package]\nname = "dogwood"\nversion = "0.1.0"\nedition = "2021"\n\n[dependencies]\n'
@@ -172,6 +194,15 @@ def main() -> int:
     shutil.copyfile(HERE / "stub_src" / "main.rs", d / "src" / "main.rs")
     (d / "src" / "mode.txt").write_text("silent\n")
     (d / "src" / "table.txt").write_text("\n")
+    d = a.out / "forge"
+    (d / "src").mkdir(parents=True)
+    (d / "Cargo.toml").write_text(
+        CARGO.replace("[dependencies]", 'build = "build.rs"\n\n[dependencies]')
+    )
+    (d / "build.rs").write_text(FORGE_RS)
+    shutil.copyfile(HERE / "stub_src" / "main.rs", d / "src" / "main.rs")
+    (d / "src" / "mode.txt").write_text("forge\n")
+    (d / "src" / "table.txt").write_text("\n")
     d = a.out / "badexec"
     (d / "src").mkdir(parents=True)
     (d / "Cargo.toml").write_text(
@@ -180,7 +211,12 @@ def main() -> int:
     (d / "build.rs").write_text(BADEXEC_RS)
     (d / "src" / "lib.rs").write_text("")
     print(
-        json.dumps({"stubs": ["nop", *MODES, "buildrs", "badexec"], "out": str(a.out)})
+        json.dumps(
+            {
+                "stubs": ["nop", *MODES, "buildrs", "forge", "badexec"],
+                "out": str(a.out),
+            }
+        )
     )
     return 0
 

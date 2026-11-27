@@ -4,11 +4,20 @@ Candidate failures (no project, a failed build, wrong output, a hang) are result
 also list any delivered file that is a copy of Dogwood's own source, for review against the
 clean-room rule; that list does not change the reward. A failure of the evaluation itself exits
 non-zero and leaves no reward file.
+
+The output folder may be writable by every user, the build's and the runs' included, and a
+reward file there is read as the result. So the grader opens the folder once without following
+links, ends every process of both users before it writes, removes whatever the submission left
+under its output names, and creates each output fresh (no links followed, no file reused),
+writing the reward last.
 """
 
 from __future__ import annotations
 
+import errno
 import json
+import os
+import shutil
 import sys
 import tempfile
 import time
@@ -18,17 +27,52 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from verifier import integrity, procs
-from verifier.build import build
+from verifier.build import BUILDER, build
 from verifier.contracts import (
     Case,
     EvaluationError,
     VerificationContext,
     VerificationResult,
 )
-from verifier.runner import run_all
+from verifier.runner import RUNNER, run_all
 from verifier.scoring import family_pass_rates, reward
 
 REWARD_FILES = ("reward.txt", "reward.json")
+OUTPUTS = (*REWARD_FILES, "metrics.json", "evaluation-error.txt")
+
+
+class Outputs:
+    """The output folder, opened once without following a link; every name is handled relative
+    to that descriptor, so a link planted under an output name redirects nothing."""
+
+    def __init__(self, path: Path) -> None:
+        path.mkdir(parents=True, exist_ok=True)
+        self.fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+
+    def remove(self, names: tuple[str, ...]) -> None:
+        for name in names:
+            try:
+                os.unlink(name, dir_fd=self.fd)
+            except FileNotFoundError:
+                pass
+            except OSError as exc:  # a directory planted under the name
+                if exc.errno not in (errno.EISDIR, errno.EPERM):
+                    raise
+                shutil.rmtree(name, dir_fd=self.fd)
+
+    def write(self, name: str, text: str) -> None:
+        self.remove((name,))
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
+        with os.fdopen(os.open(name, flags, 0o644, dir_fd=self.fd), "w") as f:
+            f.write(text)
+
+
+def settle(outputs: Outputs) -> None:
+    """End every process of the build user and the run user, then remove whatever stands under
+    the output names, so only what the grader writes next is there."""
+    for user in (BUILDER, RUNNER):
+        procs.end_user(user)
+    outputs.remove(OUTPUTS)
 
 
 def load_cases(private: Path) -> list[Case]:
@@ -104,9 +148,8 @@ def verify(context: VerificationContext) -> VerificationResult:
 def main() -> int:
     adopts_orphans = procs.become_subreaper()
     logs = Path("/logs/verifier")
-    logs.mkdir(parents=True, exist_ok=True)
-    for name in REWARD_FILES:
-        (logs / name).unlink(missing_ok=True)
+    outputs = Outputs(logs)
+    outputs.remove(OUTPUTS)
     context = VerificationContext(
         submission=Path("/app/dogwood-rebuild"),
         private=Path("/tests/private"),
@@ -116,11 +159,16 @@ def main() -> int:
     try:
         result = verify(context)
     except Exception:  # noqa: BLE001 - any failure here is the evaluation's, never the candidate's
-        (logs / "evaluation-error.txt").write_text(traceback.format_exc())
+        error = traceback.format_exc()
+        settle(outputs)
+        outputs.write("evaluation-error.txt", error)
         return 1
+    settle(outputs)
     metrics = dict(result.metrics, adopts_orphans=adopts_orphans)
-    (logs / "metrics.json").write_text(json.dumps(metrics, indent=1, sort_keys=True))
-    (logs / "reward.txt").write_text(f"{result.reward}\n")
+    outputs.write("metrics.json", json.dumps(metrics, indent=1, sort_keys=True))
+    outputs.write(
+        "reward.txt", f"{result.reward}\n"
+    )  # last: the reward exists only once all is done
     return 0
 
 

@@ -51,6 +51,12 @@ the validator, so they can exit 0 for a policy that fails `validate`. `replay`
 also exits 0 when it denies a request or rejects an event of the trace.
 `format` exits 0 for any input that it can read.
 
+`dogwood --help` (or `dogwood help`) prints the list of commands, and
+`dogwood <command> --help` prints that command's usage, arguments and options:
+`dogwood schema --help` lists the schema parts, and `dogwood schema event --help`
+describes one of them. `dogwood --version` (or `-V`) prints the name and version,
+`dogwood 1.2.0`. They all print to stdout and exit 0.
+
 ### `format` — pretty-print authored policy source
 
 ```text
