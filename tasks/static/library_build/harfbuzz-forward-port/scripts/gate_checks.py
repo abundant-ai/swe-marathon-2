@@ -143,6 +143,8 @@ def band(selection: list[dict], name: str = "mut-W") -> dict:
         "units_below_1": {
             u: round(sum(v) / len(v), 3) for u, v in units.items() if not all(v)
         },
+        "neighbours_below_1": {u: round(h, 3) for u, h in sorted(per.items()) if h < 1},
+        "units_with_neighbours": len(per),
         "pass": 0.60 <= reward <= 0.85 and d >= 0.98 and h_b >= 0.95,
     }
 
