@@ -38,8 +38,8 @@ several checks: exit code, files, stdout, stderr and each output file.
   unit in the last digit either side printed (in exponent form at most in the sixth
   significant digit), or by 10× OpenFOAM's own spread where that varies. Binary numbers may
   differ by a relative 1e-12. Dictionary entries may come in any order. Banners, dates, hosts,
-  process ids, paths, run times, durations and memory use are ignored, as are the C++ function names and
-  source lines in error messages.
+  process ids, paths, run times, durations and memory use are ignored, as are the C++ function
+  names and source lines in error messages.
 - **Size:** 9,375 recorded runs and 102,360 checks at dataset revision `2114492`.
 
 Not tested: run-time compiled code (`#codeStream`, `coded…`), the cfMesh, OpenQBMM and VTK
@@ -177,3 +177,7 @@ Version 17 (experiment `36134232`): no-op 0.0, oracle 0.99998. The 2 failed chec
 duration (`Mesh movement took 0 seconds`, `Execution time for mesh.update() = 0 s`); the
 comparison now ignores the durations OpenFOAM prints (`took`, `Execution time for ... =`,
 `elapsed =`).
+
+Version 18 (experiment `19c7a07a`): no-op 0.0, oracle 1.0. Adversarial trials of versions 16
+and 17: all 0.0 but one, 0.032, from that agent's own `foamDictionary` and `foamListTimes`
+and replayed help text; its attack on the grader's Python had no effect.
