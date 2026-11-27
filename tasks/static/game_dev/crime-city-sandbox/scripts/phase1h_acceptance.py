@@ -149,7 +149,15 @@ def main() -> int:
     ap.add_argument("--starter", type=Path, required=True)
     ap.add_argument("--reference", type=Path, required=True)
     ap.add_argument("--play", default="world.replay/car-and-ragdoll")
+    ap.add_argument(
+        "--deadline-s",
+        type=float,
+        default=None,
+        help="the grader's deadline (its release value, 4800 s, when left out); on a shared "
+        "Mac whose game processes wait for free memory, a longer one lets every instance run",
+    )
     a = ap.parse_args()
+    dl = () if a.deadline_s is None else ("--deadline-s", str(a.deadline_s))
     os.environ.setdefault("QA_MEM_FLOOR", "30")
     work = a.work.resolve()
     work.mkdir(parents=True, exist_ok=True)
@@ -170,9 +178,9 @@ def main() -> int:
         elif a.part == "grade":
             m = manifest(work)
             result = {
-                "reference_playtests": base.run_grade(a.reference.resolve(), work, m, "ref-playtests"),
+                "reference_playtests": base.run_grade(a.reference.resolve(), work, m, "ref-playtests", *dl),
                 "starter_playtests": base.run_grade(
-                    a.starter.resolve(), work, m, "starter-playtests", "--skip-selftest"
+                    a.starter.resolve(), work, m, "starter-playtests", "--skip-selftest", *dl
                 ),
             }  # fmt: skip
         elif a.part == "private":
@@ -183,6 +191,7 @@ def main() -> int:
                     private,
                     "ref-private",
                     "--skip-selftest",
+                    *dl,
                 ),
                 "starter_private": base.run_grade(
                     a.starter.resolve(),
@@ -190,6 +199,7 @@ def main() -> int:
                     private,
                     "starter-private",
                     "--skip-selftest",
+                    *dl,
                 ),
             }
         else:
