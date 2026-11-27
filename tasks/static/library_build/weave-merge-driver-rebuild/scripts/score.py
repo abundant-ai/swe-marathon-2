@@ -41,7 +41,18 @@ NETTING = [
     "routing_only",
     "git_labelled_clean",
     "git_no_hint",
+    "noop",
+    "empty_clean",
+    "ours_conflict",
+    "ours_hint",
 ]
+# Cases that grade a stated restriction (status 2 writes nothing; what counts as binary) are kept
+# even when a filter program reproduces them; their family is netted against every program.
+RESTRICTION_FEATURES = {
+    "routing.binary_first_8192",
+    "routing.nul_after_8192",
+    "routing.not_utf8",
+}
 
 
 def load(runs: str, name: str) -> dict | None:
@@ -103,7 +114,7 @@ def main() -> None:
         hits = [m for m in FILTER if stubs.get(m) and stubs[m].get(cid) == ref[cid]]
         for m in hits:
             solved[m] += 1
-        if not hits:
+        if not hits or cases[cid]["feature"] in RESTRICTION_FEATURES:
             kept_ids.append(cid)
     summary["filter"] = {"solved_by": dict(solved), "survivors": len(kept_ids)}
     gate = load(runs, "mut-gate")
@@ -145,7 +156,7 @@ def main() -> None:
     }
     net = {}
     stub_scores = {}
-    for m in NETTING:
+    for m in FILTER + NETTING:
         if stubs.get(m):
             per = collections.defaultdict(lambda: [0, 0])
             for cid, fam in kept.items():
@@ -159,10 +170,26 @@ def main() -> None:
         "s_f": {f: round(v, 4) for f, v in net.items()},
     }
     drivers = {"reference": ref}
-    for name in ("mut-gate", "mut-elem", "mut-place", "oracle", "amd64"):
+    mutants = sorted(p.stem for p in Path(runs).glob("mut-*.json"))
+    for name in [*mutants, "oracle", "amd64"]:
         r = load(runs, name)
         if r is not None:
             drivers[name] = r
+    kills = {}
+    for name in mutants:
+        r = drivers[name]
+        per_feature = collections.Counter(
+            cases[cid]["feature"] for cid in kept if r.get(cid) != ref[cid]
+        )
+        per_family = collections.Counter(
+            fam for cid, fam in kept.items() if r.get(cid) != ref[cid]
+        )
+        kills[name] = {
+            "total": sum(per_family.values()),
+            "families": dict(per_family),
+            "features": dict(per_feature),
+        }
+    summary["kill_matrix"] = kills
     for m in FILTER + NETTING:
         if stubs.get(m):
             drivers[f"stub-{m}"] = stubs[m]

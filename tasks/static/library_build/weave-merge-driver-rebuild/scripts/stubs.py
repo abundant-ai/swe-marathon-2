@@ -11,6 +11,10 @@ Modes (none of them merges by entity):
   always_box                          one whole-file box (common edges cut), plus the hint, exit 1
   always_error                        write nothing, exit 2
   routing_only                        exit 2 on a NUL in the first 8192 bytes or invalid UTF-8, else git_labelled_hint
+  noop                                write nothing, exit 0 (what an empty program does)
+  empty_clean                         write an empty OUT, exit 0
+  ours_conflict                       copy OURS, exit 1
+  ours_hint                           copy OURS with the hint added to its first closing marker line, exit 1
 """
 
 from __future__ import annotations
@@ -106,6 +110,17 @@ def main() -> int:
         return 0
     if mode == "always_error":
         return 2
+    if mode == "noop":
+        return 0
+    if mode == "empty_clean":
+        write(b"")
+        return 0
+    if mode == "ours_conflict":
+        write(raw[1])
+        return 1
+    if mode == "ours_hint":
+        write(teach(raw[1].decode("utf-8", "replace"), path).encode())
+        return 1
     if mode == "routing_only":
         bad = any(0 in r[:8192] for r in raw)
         try:
