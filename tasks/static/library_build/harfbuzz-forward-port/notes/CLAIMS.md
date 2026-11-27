@@ -144,7 +144,13 @@ on the cases; the task itself is single-step since 2026-11-26): A = 14.3.1 to 15
 
 ## Failure sentence and its proof plan
 
-**The sentence.** "Agents reproduce each release note's new behaviour on the sequences it describes but apply the
+**Replaced on 2026-11-27.** A three-judge panel replaced this sentence with the verification-gap sentence (agents
+land the fixes they can confirm on their own 14.3.0 build and fall short on AAT/`kern` behaviour that needs
+hand-built fonts, regenerated Unicode data, and bugs a note describes only by symptom). Its tiers and proof mutant V
+are in DESIGN.md section 10; the prediction and kill conditions in PREREGISTRATION.md. Condition 3 there brings
+the sentence below back. W stays as a secondary bound. The original plan follows as the record.
+
+**The sentence (Phase A).** "Agents reproduce each release note's new behaviour on the sequences it describes but apply the
 rule beyond its stated condition, so neighbouring sequences that upstream left unchanged regress."
 
 The B family is H_dual: held-fixed cases built as neighbours of each conditional note, one stated condition
