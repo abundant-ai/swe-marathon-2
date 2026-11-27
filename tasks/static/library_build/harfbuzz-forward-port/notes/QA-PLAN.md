@@ -9,18 +9,18 @@ harbor-lh, `ops/swe-marathon-v2/qa/harfbuzz/`, never into this public folder.
 
 | # | Gate | Pass criterion | How, for this task |
 | --- | --- | --- | --- |
-| 1 | **Inventory** | Every note, clause and stated restriction has an id; a diff against the instruction shows nothing unlisted | `features.yaml` generated from `instruction.md`: 56 graded units (ids from the CLAIMS.md inventory; 47a is superseded by 47b), clause ids for the multi-part notes and the API descriptions, and restrictions R1-R6 (section 2). Each unit records its derivation path: the note, the spec paragraph, and one probe command on the agent's own 14.3.0 build |
+| 1 | **Inventory** | Every note, clause and stated restriction has an id; a diff against the instruction shows nothing unlisted | `scripts/pipeline/notes_map.tsv` maps the instruction's 48 notes to their units (53 graded; 47a superseded by 47b, and 28, 30 and 50 cut with their notes removed, `cuts.tsv`); `scripts/gate_checks.py` item 1 fails on a note without 3 graded cases. The derivation paths are QA pass 04's per-unit table |
 | 2 | **Kill matrix** | Each unit killed by at least 3 cases of its own (target 20) and by none of another unit's; each restriction by at least 1, better 2 by different routes; a mutant fails as cases, never by crashing the runner | One upstream revert R_k per unit, built on the unit's release. Restrictions are killed by the stubs and probes of section 2. Units without an isolating revert are merged or cut |
 | 3 | **Stub zoo** | Every member scores 0.000, raw pass rates recorded | Section 3 |
-| 4 | **Oracle and nop** | Oracle 1.000 twice and nop 0.000 twice | Oracle = the tree patched to 15.2.0. The 15.1.0 tree must score its predicted value (about 21/56 before the gate) |
+| 4 | **Oracle and nop** | Oracle 1.000 twice and nop 0.000 twice | Oracle = the shipped tree with the reference change (`make_oracle.sh`: 15.2.0's library, the tree's own version kept, 15.x's new unit-test sources left out); the reference solution (`solve.sh`) gives the same tree. The 15.1.0 tree must score its predicted value (about 21/56 before the gate) |
 | 5 | **Determinism** | 3 identical runs plus 1 perturbed give byte-identical per-case verdicts | Perturbed run: 1 CPU, a longer scratch path, `MALLOC_PERTURB_`, a shuffled environment order. Run on the oracle, and on the base for case classification; plus an emulated amd64 sample against the arm64 builds, since the platform is x86_64 |
 | 6 | **Cue-word sweep** | Zero unjustified hits on every agent-visible surface | Section 4 |
 | 7 | **Protection probe** | As the agent user in the real sandbox, every route to 15.x material or answers fails; `id -u` is not 0 | No 15.x source or binary; no `libharfbuzz*`, `hb-version.h` or version string newer than 14.3.0 anywhere (`find`, `strings`); no `solution/`; no network. In the verifier: the `builder` user cannot read `/tests/private` or write the reward |
-| 8 | **Verifier robustness** | The verifier image builds from pinned inputs; the long-run smoke grades the oracle at 1.0 within half the verifier timeout; a forced runner fault leaves no reward file | Smoke on a delivered tree with 100,000 extra files, a full disk, leftover processes, links pointing outside the tree, FIFOs and a 4 GB file. Plus the candidate-failure path: a tree that does not build scores 0 with a clean exit |
-| 9 | **Isolation and timeouts** | A hang, crash, fork bomb or 10 GB of output costs only its own batch | One process per font batch, with CPU, memory, file-size and process limits and a timeout |
-| 10 | **No early stops** | No task-side timer, kill or deadline before `timeout_sec` | grep of the environment, hooks and verifier; only the task's `timeout_sec` (34,560 s) |
+| 8 | **Verifier robustness** | The verifier image builds from pinned inputs; the oracle grades 1.0 within half the verifier timeout; a forced fault leaves no reward file; no delivered tree can write or keep a reward of its own | Trees (fix round 1): robust (100,000 extra files, a FIFO, a 600 MB sparse file, links out of the tree) 1.0; hostile (the build and the library try every forging route, leave processes behind and plant links under every name root uses) 0.0; drop-in (the 15.2.0 release itself) 0.0 with its release markers listed; fault (an unknown release) exit 1, no reward. A tree that does not build scores 0 with a clean exit |
+| 9 | **Isolation and timeouts** | A hang, crash, fork bomb or flood costs only its own batch, and the check always ends with a reward | One deadline of 1,800 s for the copy, the build and every batch (each step gets what is left); 120 s per batch; at most 16 MiB + 1 byte of a batch's output read; process, file-size and address-space limits; every `builder` process killed after each step. Trees: slow (the build outlasts the deadline) and hang (the library spins in shaping) end with a reward after about 1,800 s; flood fails only the batches that shape |
+| 10 | **No early stops** | No task-side timer, kill or deadline before `timeout_sec` | Nothing stops the session before the task's `timeout_sec` (34,560 s). The verifier's own deadline runs inside the verifier's timeout, after the session; the `[[verifier.collect]]` hook ends `dev`'s processes only once the session is over, before the tree is copied out |
 | 11 | **Leak scan** | No case input contains its answer; no agent-visible file holds a case or a near-copy | No HarfRust 0.15 or later, no newer subproject wrap, history cut at the base; example fonts are not private fonts and show only 14.3.0 outputs; the shipped `test/` holds only 14.3.0 expectations |
-| 12 | **Band check** | The B-mutant lands in the band with a single-family drop | Mutant W built from 15.2.0 (CLAIMS.md, proof plan): D ≥ 0.98, h_d ≤ 0.5, h_b and every F family ≥ 0.95, reward in 0.60-0.85, a signature no R_k or R_flags shares; the dual weight set here, never below 0.25 (DESIGN.md section 13); difficulty-ordering proxies recorded |
+| 12 | **Band check** | The proof mutant lands in the band, losing D only where the failure sentence says | Since 2026-11-27 (decision on the failure sentence): mutant V, 15.2.0 with every tier-C unit taken out (DESIGN.md section 10), lands in 0.60-0.85 with its D loss confined to tier C and h_d, h_b at least 0.98. W (every conditional note widened), W_literal and R_unbuilt are reported beside it as bounds, with D, h_d and h_b separately |
 
 Task-specific items on top of the twelve:
 
@@ -71,6 +71,7 @@ Task-specific items on top of the twelve:
 | A tree that does not build | 0.000 (a valid reward, not an error) |
 | A library whose `hb_shape()` returns an empty buffer | 0.000 |
 | A library that aborts on its first call | 0.000 |
+| The base with the four new functions declared as the notes give them and bodies that do nothing (noop-api) | 0.000 |
 | R_all: 15.2.0 with every graded unit reverted | 0.000 |
 
 Over-broad probes are recorded but not required to be 0, because each is the failure mode in miniature: always insert a
@@ -158,9 +159,10 @@ After the first accepted trials, before any score is shown to anyone:
 4. Every failed case traces to a stated note through its unit tag, and the oracle or at least one other run passes
    it. Every failed dual is one the base passes by construction.
 5. Failures cluster in named families: a per-family table per trial.
-6. The failure-sentence test (CLAIMS.md, section 4): the dual failure rate on units an agent implemented is at least
-   15% and at least three times the rate on units it left alone, in at least two of the first three accepted runs.
-   Otherwise the fallback sentence applies.
+6. The failure-sentence test: the kill conditions in notes/PREREGISTRATION.md, committed before any run (tier C at
+   least 0.10 below tiers A and B; per-family and per-unit bounds). If units an agent implemented fail their duals
+   at 15% or more, and at least three times the rate of untouched units, the Phase A over-breadth sentence
+   (CLAIMS.md, section 4) comes back.
 7. Contamination: pass rate by release tag. A jump on the oldest releases against the newest flags recall.
 8. No infrastructure error, no task-forced stop, and no awareness finding: read the verdict and each trial's
    `evaluation_awareness`.

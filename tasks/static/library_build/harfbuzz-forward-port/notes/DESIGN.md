@@ -69,12 +69,20 @@ the Unicode 18 items observable. The spike times this build (SPIKE.md S2).
   the platform's one known way to lose a trial (`PLATFORM_VERIFIER_BUILD_AFTER_LONG_RUN.md`). The oracle at 1.0
   on the platform, twice, is the check that host and image agree.
 - **Agent container.** No 15.x code, no gold, no private fonts, no case lists. The oracle's `solution/` (the
-  14.3.0 → 15.2.0 upstream patch, generated, git-ignored) is uploaded only for oracle runs.
+  reference change as source files plus a list of removed paths, generated, git-ignored) is uploaded only for
+  oracle runs. When the session ends, a root `[[verifier.collect]]` hook ends every process of `dev` before the tree
+  is copied out, so nothing the agent left running can change the tree afterwards.
 - **Verifier container.** Separate (`environment_mode = "separate"`), no network at grade time. Gold and case
   files are owned by root, mode 0700. The delivered tree is built, and the driver runs, as an unprivileged
   `builder` user that cannot read them: the tree's own `meson.build` can run arbitrary commands at configure
-  time, and the library's code runs inside the driver, so either could otherwise read the answers. The driver
-  writes outputs to a scratch directory; a root process compares them after the driver exits.
+  time, and the library's code runs inside the driver, so either could otherwise read the answers. Since fix round
+  1: root keeps its files in a root-only `/var/lib/hbv` and in `/logs/verifier` (root-owned 0755), opens them
+  through folder descriptors without following links and creates them only where nothing of that name exists; the
+  case programs get their input and output only as files root opened; every `builder` process is killed after each
+  step and batch and once more at the end; any reward file found is removed, and `metrics.json`, then `reward.txt`,
+  are written last into space reserved at the start. A delivered tree that carries a 15.x release (a 15.x version in
+  `meson.build`, `src/hb-version.h` or `NEWS`, or one of the unit-test sources only 15.x has, byte for byte) is not
+  built and scores 0; the instruction says the tree stays version 14.3.0, and the reference keeps it.
 - **Public repository.** This folder holds no case, seed, gold output or private font. They live in git-ignored
   `private/` working copies (see `.gitignore`), backed up as a git bundle in harbor-lh
   (`ops/swe-marathon-v2/next-tasks/harfbuzz-forward-port-private/`).
@@ -210,8 +218,10 @@ That is why the expected profile below has F8 high, and why the failure mode sit
 - **Nop = 0 by construction.** Every graded changed case is one the base fails, and held-fixed cases only gate.
 - **Stub zoo** (must each score exactly 0.000): the unmodified base; the base with comment and
   whitespace edits; the base with behaviour-neutral refactors; a tree that does not build; a library whose
-  `hb_shape()` returns an empty buffer; a library that crashes on the first call; R_all (T3 with every graded
-  item reverted, which equals the base on graded cases).
+  `hb_shape()` returns an empty buffer; a library that crashes on the first call; the base with the four new
+  functions declared as the notes give them and bodies that do nothing (noop-api; fix round 1, M4: each probe ends
+  with a call that succeeds on 15.2.0, so a no-op fails every graded case of 48, 49 and 51); R_all (T3 with every
+  graded item reverted, which equals the base on graded cases).
 - **Over-broad probes** (expected small positive scores, recorded, not required to be 0): always insert a dotted
   circle; zero every glyph's extents; flag every glyph unsafe to break; apply `kerx` and `kern` whenever present.
   Each is the failure mode in miniature, and each must lose most of its credit to the gate.
@@ -220,15 +230,20 @@ That is why the expected profile below has F8 high, and why the failure mode sit
 
 ## 8. Determinism controls
 
-- Integer outputs only; sets printed sorted; floats never printed.
+- Integer outputs only; sets printed sorted. Two API probes (`hbmeta`, `hbapi48`) print a float's bits, so the
+  case programs run with glibc's FMA and AVX2 code paths turned off (`GLIBC_TUNABLES=glibc.cpu.hwcaps=-AVX2,-FMA,-FMA4`,
+  QA S1): libm then takes its SSE2 paths on every x86-64 machine, as under the emulation the outputs were recorded
+  with.
 - One pinned base image digest and one apt snapshot date for the gold host and the verifier, so both compile with
   the same gcc 13 build. Flags: the meson `release` buildtype, no `-march`, no `-ffast-math`.
 - `env -i` with `LC_ALL=C`; no `HB_*` variables (`HB_SHAPER_LIST`, `HB_FONT_FUNCS` and `HB_OPTIONS` change
   behaviour).
 - The 3+1 recording (QA gate item 5): three identical runs and one perturbed run (one CPU, a longer scratch path,
   `MALLOC_PERTURB_`, a different environment order) must give byte-identical per-case verdicts for the oracle.
-- One process per font batch, with CPU, memory, file-size and process limits and a timeout, so a hang or crash
-  costs only that batch's cases.
+- One process per font batch, with process, file-size and address-space limits and a 120 s timeout, inside one
+  1,800 s deadline for the copy, the build and every batch: a hang or crash costs only that batch's cases, a flood
+  only its own batch (at most 16 MiB + 1 byte of output is read), and a tree that outlasts the deadline still gets a
+  reward, with what had not run failed.
 
 ## 9. Expected scores
 
