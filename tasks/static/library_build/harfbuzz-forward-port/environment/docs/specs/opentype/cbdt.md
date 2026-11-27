@@ -28,7 +28,7 @@ metrics are in CBLC). Records need only byte alignment; 4-byte alignment is not 
 - A BitmapSize record in CBLC with bitDepth 32 marks a color strike whose pixels are four
   bytes each, stored in the order blue, green, red, alpha (8 bits per channel).
 - The color channels are premultiplied by alpha and are in the sRGB color space
-  (IEC 61966-2-1:1999/Amd 1:2003). For instance a pure green pixel at 50% alpha is stored
+  (IEC 61966-2-1:1999/Amd 1:2003). Example: a pure green pixel at 50% alpha is stored
   as the bytes 0x00 0x80 0x00 0x80, not 0x00 0xFF 0x00 0x80.
 - Every bitmap image format defined for EBDT/EBLC may also be used in CBDT/CBLC.
 

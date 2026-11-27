@@ -37,8 +37,8 @@ are used as defined in features_ae.md.
 ## 'vapk' - Kerning for Alternate Proportional Vertical Metrics
 
 - Registered by: Adobe/Microsoft
-- Function: in vertical layout, kerns glyphs that have fixed advance heights by default but
-  were given proportional heights by 'vpal'.
+- Function: in vertical layout, kerns glyphs whose advance heights are fixed by default but
+  that 'vpal' has made proportional.
 - Lookups: GPOS, normally GPOS 2. Single and pair adjustments add up, so the order of these
   lookups relative to GPOS 1 or 2 lookups of 'vpal' and similar features does not matter.
 - Font data: glyphs that 'vpal' can make proportional should be kerned only through 'vapk',
@@ -109,8 +109,8 @@ are used as defined in features_ae.md.
   changes the advance, not only the position.
 - Lookups: GPOS 1 (xPlacement, xAdvance, yPlacement, yAdvance).
 - Application: discretionary. Generally default off; applications following JLREQ or similar
-  CJK layout rules either turn it on by default or apply it selectively to characters such as
-  brackets, punctuation and quotation marks.
+  CJK layout rules either turn it on by default or apply it selectively to brackets, punctuation,
+  quotation marks and similar characters.
 - Script/language sensitivity: CJKV fonts only.
 - Interactions: mutually exclusive with the other glyph-height features (such as 'valt' and
   'vpal'), which are turned off; 'vapk' and 'vkrn' are turned off on runs where it is applied.
@@ -129,7 +129,7 @@ are used as defined in features_ae.md.
 ## 'vkna' - Vertical Kana Alternates
 
 - Registered by: Adobe
-- Function: replaces standard kana with forms designed only for vertical writing (better fit
+- Function: swaps standard kana for forms designed only for vertical writing (better fit
   and colour). With 'hkna' it lets fonts for both directions pick kana variants per direction;
   advance widths do not change.
 - Lookups: GSUB 1 (standard full-width kana to vertical forms).
@@ -182,8 +182,8 @@ are used as defined in features_ae.md.
 ## 'vrt2' - Vertical Alternates and Rotation
 
 - Registered by: Adobe
-- Function: replaces some fixed-width (half, third or quarter width) or proportional glyphs,
-  mostly Latin or katakana, with forms rotated 90 degrees clockwise for vertical writing. It
+- Function: swaps some fixed-width (half, third or quarter width) or proportional glyphs,
+  mostly Latin or katakana, for forms rotated 90 degrees clockwise for vertical writing. It
   covers a superset of the glyphs covered by 'vert'.
 - Lookups: GSUB 1 (horizontal forms to rotated forms); it should be the last substitution in
   the font. Some implementations require, for CFF-outline fonts used vertically, that 'vrt2'
@@ -207,7 +207,7 @@ are used as defined in features_ae.md.
   clockwise.
 - Lookups: GSUB 1.
 - Application: applied to the relevant characters in vertical layout; always default on for
-  sideways runs in vertical writing mode.
+  runs set sideways in vertical writing mode.
 - Script/language sensitivity: any script set in vertical writing mode.
 - Interactions: paired with 'vert' for engines that rotate sideways runs themselves (UTR #50);
   the two never apply to the same glyph. Engines relying on pre-rotated glyphs use 'vrt2'

@@ -83,7 +83,7 @@ tupleVariationCount bit fields:
 |---|---|---|
 | 0x8000 | SHARED_POINT_NUMBERS | The serialized data opens with a packed point-number list that tables without private numbers use. |
 | 0x7000 | Reserved | Reserved; must be 0. |
-| 0x0FFF | COUNT_MASK | Low 12 bits: number of tuple variation tables, which is also the number of headers. |
+| 0x0FFF | COUNT_MASK | Low 12 bits: count of tuple variation tables; the header count is the same. |
 
 In 'gvar' the shared numbers are outline point numbers (component indices for a composite
 glyph); in 'cvar' they are CVT indices.

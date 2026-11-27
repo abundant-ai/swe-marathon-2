@@ -73,7 +73,7 @@ The Offset column is the byte offset from the start of the table, derived from t
 | 32 | int16 | metricDataFormat | 0. |
 | 34 | uint16 | numOfLongVerMetrics | Count of advance heights (full entries) in 'vmtx'. |
 
-In yMaxExtent, tsb is a glyph's top side bearing and yMin/yMax its vertical bounds. The ideographic em box is described in the baseline tags section of the OpenType Layout Tag Registry (not digested).
+In yMaxExtent, tsb is a glyph's top side bearing and yMin/yMax its vertical bounds. For the ideographic em box, see the OpenType Layout Tag Registry's section on baseline tags (not digested).
 
 ## Caret
 

@@ -54,6 +54,7 @@ done
 fetch fonts "fonts/NotoSansKR-Regular.otf" \
   "https://raw.githubusercontent.com/notofonts/noto-cjk/$CJK_SHA/Sans/SubsetOTF/KR/NotoSansKR-Regular.otf" \
   "https://raw.githubusercontent.com/notofonts/noto-cjk/$CJK_SHA/Sans/OTF/Korean/NotoSansKR-Regular.otf" || true
+# The site repository's own licence (Apache-2.0; not the fonts'). The fonts' OFL 1.1 text is noto-cjk's Sans/LICENSE.
 fetch fonts "fonts/LICENSE-notofonts" "https://raw.githubusercontent.com/notofonts/notofonts.github.io/$NOTO_SHA/LICENSE" || true
 fetch fonts "fonts/LICENSE-noto-cjk-Sans" "https://raw.githubusercontent.com/notofonts/noto-cjk/$CJK_SHA/Sans/LICENSE" || true
 

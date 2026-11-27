@@ -21,11 +21,11 @@ These notes restate the source's structures and rules; where they differ, the so
 | uint32 | Range 0 to 4294967295; a 32-bit unsigned integer. |
 | int32 | Two's complement, range -2147483648 to 2147483647; a 32-bit signed integer. |
 | Fixed | A 32-bit signed fixed-point number (16.16): high 16 bits signed integer part, low 16 bits fraction, value = int32 / 65536. |
-| FWORD | Signed distance or coordinate; an int16 that describes a quantity in font design units. |
-| UFWORD | Unsigned distance; a uint16 that describes a quantity in font design units. |
+| FWORD | Signed distance or coordinate; an int16 holding a value in font design units. |
+| UFWORD | Unsigned distance; a uint16 holding a value in font design units. |
 | F2DOT14 | Signed 2.14 fixed-point in 16 bits: value = int16 / 16384, range -2.0 to 1.99993896484375. |
 | LONGDATETIME | Signed 64-bit count of seconds since 1904-01-01 00:00:00 UTC. |
-| Tag | Four uint8 values (32 bits) that name a table, variation axis, script, language system, feature or baseline. |
+| Tag | Four uint8 values (32 bits) that name a table, script, language system, feature, variation axis or baseline. |
 | Offset8 | Offset to a table stored like a uint8 (one byte); NULL is 0x00. |
 | Offset16 | Offset to a table stored like a uint16 ("short" offset); NULL is 0x0000. |
 | Offset24 | Offset to a table stored like a uint24 (three bytes); NULL is 0x000000. |
@@ -162,7 +162,7 @@ Collections: table checksums describe the tables exactly as they are stored in t
 - The TTC header is at offset 0 of the file.
 - Table offsets in every table directory of the collection are counted from the beginning of the collection file.
 - A table is used by a font when that font's directory points to it. Some tables appear once per font; others are shared by several fonts.
-- Tables that identify a font and its character mapping, including 'cmap', 'name' and OS/2, should have a separate copy per font. Tables holding glyph or instruction data, or indexed by glyph ID, should be shared: 'glyf', 'loca', 'maxp', 'hmtx', 'hdmx', 'cvt ', 'fpgm', 'prep', LTSH, EBDT, EBLC, EBSC and similar. In general any table whose data is identical across fonts may be shared.
+- Each font should have its own copy of the tables that identify it and map its characters, such as 'cmap', 'name' and OS/2. Tables holding glyph or instruction data, or indexed by glyph ID, should be shared: 'glyf', 'loca', 'maxp', 'hmtx', 'hdmx', 'cvt ', 'fpgm', 'prep', LTSH, EBDT, EBLC, EBSC and similar. In general any table whose data is identical across fonts may be shared.
 - When fonts are merged into a collection, glyph renumbering affects 'cmap' and other glyph-indexed data, and the fonts' TrueType instructions (pre-programs, function definitions, control values) must not conflict.
 
 ### TTC header
@@ -284,7 +284,7 @@ Their shared formats are described in chapter2.md.
 | 'gvar' | Glyph variations (TrueType outlines only) | gvar.md |
 | HVAR | Horizontal metrics variations | hvar.md |
 | MVAR | Metrics variations | mvar.md |
-| STAT | Style attributes (required for variable fonts, optional for non-variable fonts) | stat.md |
+| STAT | Style attributes (variable fonts must have it; other fonts may) | stat.md |
 | VVAR | Vertical metrics variations | - |
 
 Shared variation formats are described in otvarcommonformats.md; which tables a variable font must or may contain is set out in the Font Variations overview chapter. Variation data can also live outside these tables: GDEF, BASE and COLR in a variable font may carry it using the common variation formats, and a CFF2 table may carry it in formats of its own.

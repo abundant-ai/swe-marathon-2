@@ -84,10 +84,10 @@ one of them assigns the class) and "&" joins conditions that must all hold.
 | J | HIEROGLYPH_JOINER | ESC = Hieroglyph_Joiner |
 | M | CONS_MED | UISC = Consonant_Medial & UGC != Lo |
 | N | BASE_NUM | UISC = Brahmi_Joining_Number |
-| O | OTHER | Any other SCRIPT_COMMON characters; White space characters, UGC=Zs |
+| O | OTHER | Remaining SCRIPT_COMMON characters; whitespace (UGC = Zs) |
 | R | REPHA | UISC = Consonant_Preceding_Repha; UISC = Consonant_Prefixed |
 | RK | Reordering Killer | UISC = Reordering_Killer |
-| Rsv | Reserved characters | Any character not currently assigned or otherwise reserved in Unicode |
+| Rsv | Reserved characters | Code points Unicode has not assigned yet, or has reserved in some other way |
 | S | SYM | UGC = So except U+25CC; UGC = Sc |
 | SB | HIEROGLYPH_SEGMENT_BEGIN | ESC = Hieroglyph_Mark_Begin; ESC = Hieroglyph_Segment_Begin |
 | SE | HIEROGLYPH_SEGMENT_END | ESC = Hieroglyph_Mark_End; ESC = Hieroglyph_Segment_End |

@@ -18,8 +18,8 @@ are used as defined in features_ae.md.
 - Application: applied to line-final glyphs of justified text, as a justification algorithm
   or the user decides. It can change line length, which line breaking and justification
   must account for. Default on or off per user preference.
-- Script/language sensitivity: any cursive script. Interactions: applied last, after all
-  other features have been applied to the run.
+- Script/language sensitivity: any cursive script. Interactions: applied last, once every
+  other feature has been applied to the run.
 
 ## 'fin2' - Terminal Forms #2
 
@@ -35,8 +35,8 @@ are used as defined in features_ae.md.
 ## 'fin3' - Terminal Forms #3
 
 - Registered by: Microsoft
-- Function: Syriac only: selects the form of word-final Alaph when the preceding base
-  character is Dalath, Rish or dotless Dalath-Rish.
+- Function: Syriac only: selects the shape of a word-final Alaph whose preceding base
+  is Dalath, Rish or dotless Dalath-Rish.
 - Lookups: GSUB 5 (as the source states).
 - Application: script-required for Syriac; always applied to word-final Alaph after Dalath,
   Rish or dotless Dalath-Rish. Not exposed to users.
@@ -91,7 +91,7 @@ are used as defined in features_ae.md.
 ## 'fwid' - Full Widths
 
 - Registered by: Adobe
-- Function: replaces glyphs set on other widths with full-width (usually one em) glyphs; in
+- Function: swaps glyphs of other widths for full-width (usually one em) glyphs; in
   CJKV fonts this can include ASCII Latin and symbols. In European fonts it selects
   fixed-width glyphs (typically 0.6 em) instead of proportional ones.
 - Lookups: GSUB 1 (full-width glyphs) or GPOS 1 (xPlacement and xAdvance giving full-width
@@ -153,7 +153,7 @@ are used as defined in features_ae.md.
 ## 'hkna' - Horizontal Kana Alternates
 
 - Registered by: Adobe
-- Function: replaces standard kana with forms designed only for horizontal writing (better
+- Function: swaps standard kana for forms designed only for horizontal writing (better
   fit and colour). With 'vkna' it lets fonts for both directions pick kana variants per
   direction. Advance widths are not changed.
 - Lookups: GSUB 1 (standard full-width forms to horizontal forms).
@@ -251,7 +251,7 @@ are used as defined in features_ae.md.
 - Lookups: GSUB 1.
 - Application: applied automatically when the text is formatted italic by markup, user
   action or other means; when the user applies an italic style, the application should
-  check for the feature and use it if present.
+  look for the feature and apply it when the font has it.
 - Script/language sensitivity: mostly Latin, especially in fonts made mainly for CJKV or other
   scripts without italics.
 - Interactions: may be combined with other GSUB features and may override them. In CJKV fonts

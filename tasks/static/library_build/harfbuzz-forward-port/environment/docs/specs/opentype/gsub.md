@@ -17,7 +17,7 @@ counted in bytes from the structure named in its row.
 
 A GSUB table may contain a FeatureVariations table (header version 1.1). In a variable font it
 swaps the lookup lists of selected features for alternate ones in chosen regions of the design
-space (for example, simplified glyphs where counters get small). Its layout and evaluation are
+space (for example, simplified glyphs where counters get small). Its layout and processing are
 in chapter2.md (FeatureVariations table). The related feature is 'rvrn', Required Variation
 Alternates; see features_pt.md.
 

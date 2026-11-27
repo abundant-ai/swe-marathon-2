@@ -49,7 +49,7 @@ Terms used below:
 ## 'abvm' - Above-base Mark Positioning
 
 - Registered by: Microsoft
-- Function: positions marks above base glyphs.
+- Function: places marks over base glyphs.
 - Lookups: GPOS 4 and GPOS 5 (x, y anchors).
 - Application: script-required positioning; applied in the contexts the script's processing
   defines. Not exposed to users.
@@ -81,7 +81,7 @@ Terms used below:
 ## 'akhn' - Akhand
 
 - Registered by: Microsoft
-- Function: substitutes a ligature for a character sequence that forms an akhand, preferring
+- Function: replaces a character sequence that forms an akhand with its ligature, preferring
   it regardless of the surrounding characters.
 - Lookups: GSUB 4.
 - Application: script-required; applied in the contexts the script's processing defines.
@@ -124,7 +124,7 @@ Terms used below:
 ## 'blwm' - Below-base Mark Positioning
 
 - Registered by: Microsoft
-- Function: positions marks below base glyphs.
+- Function: places marks under base glyphs.
 - Lookups: GPOS 4 and GPOS 5.
 - Application: script-required positioning; applied in the contexts the script's processing
   defines. Not exposed to users.
@@ -184,8 +184,8 @@ Terms used below:
   post-base forms it can collide with. The application detects this and applies 'cfar' over
   the range of the below-base and post-base conjoining forms.
 - Lookups: GSUB 1 (conjoining form to alternate form).
-- Application: script-required for Khmer; expected whenever a syllable contains Coeng Ra
-  followed by other conjoining consonants or vowels. Not exposed to users.
+- Application: script-required for Khmer; expected for any syllable in which Coeng Ra
+  is followed by further conjoining consonants or vowels. Not exposed to users.
 - Script/language sensitivity: Khmer. Interactions: works with the other Khmer
   required-form features; discretionary features run after it.
 
@@ -394,8 +394,8 @@ Terms used below:
   U+1D422 MATHEMATICAL BOLD SMALL I, U+1D423 MATHEMATICAL BOLD SMALL J, U+1D456 MATHEMATICAL
   ITALIC SMALL I, U+1D457 MATHEMATICAL ITALIC SMALL J) to carry math accents.
 - Lookups: GSUB 1 for every dotted glyph.
-- Application: required for math layout; applied to individual glyphs under the control of a
-  math layout handler (see the MATH table). Not exposed to users.
+- Application: required for math layout; a math layout handler applies it to the individual
+  glyphs it selects (see the MATH table). Not exposed to users.
 - Script/language sensitivity: math formula layout. Interactions: none.
 
 ## 'expt' - Expert Forms

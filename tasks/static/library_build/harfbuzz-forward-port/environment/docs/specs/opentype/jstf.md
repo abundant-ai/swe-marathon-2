@@ -177,7 +177,7 @@ longer.
 | uint16 | lookupIndices[lookupCount] | Indices into the GSUB or GPOS LookupList, in ascending numeric order |
 
 To use a level, the client enables or disables the listed lookups, reassembles the active
-lookups in LookupList order, and applies them to each glyph in turn (rules 5 to 9 above).
+lookups in LookupList order, and then applies them glyph by glyph (rules 5 to 9 above).
 
 ## JstfMax table
 

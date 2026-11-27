@@ -501,6 +501,28 @@ def cmd_batch(args: argparse.Namespace) -> None:
 VERIFIER_IMAGE = "hbfp-verifier:phaseB"
 
 
+FONT_NOTICE = """These fonts are unmodified copies of Noto fonts, each licensed under the SIL Open Font License,
+Version 1.1 (OFL.txt in this folder). Each font carries its copyright notice in its name table (name ID 0) and its
+licence statement in name ID 13:
+
+  Noto Naskh Arabic, Noto Sans Arabic           Copyright 2022 The Noto Project Authors (https://github.com/notofonts/arabic)
+  Noto Sans, Noto Serif (variable)              Copyright 2022 The Noto Project Authors (https://github.com/notofonts/latin-greek-cyrillic)
+  Noto Sans Balinese                            Copyright 2022 The Noto Project Authors (https://github.com/notofonts/balinese)
+  Noto Sans Bengali                             Copyright 2025 The Noto Project Authors (https://github.com/notofonts/bengali)
+  Noto Sans Devanagari                          Copyright 2022 The Noto Project Authors (https://github.com/notofonts/devanagari)
+  Noto Sans Hebrew                              Copyright 2024 The Noto Project Authors (https://github.com/notofonts/hebrew)
+  Noto Sans Javanese                            Copyright 2022 The Noto Project Authors (https://github.com/notofonts/javanese)
+  Noto Sans Khmer, Noto Serif Khmer             Copyright 2022 The Noto Project Authors (https://github.com/notofonts/khmer)
+  Noto Sans Myanmar                             Copyright 2022 The Noto Project Authors (https://github.com/notofonts/myanmar)
+  Noto Sans Syriac                              Copyright 2022 The Noto Project Authors (https://github.com/notofonts/syriac)
+  Noto Sans Tai Tham                            Copyright 2022 The Noto Project Authors (https://github.com/notofonts/tai-tham)
+  Noto Sans KR                                  (c) 2014-2021 Adobe (http://www.adobe.com/)
+
+Sources: https://github.com/notofonts/notofonts.github.io and https://github.com/notofonts/noto-cjk at the commits
+pinned in the fetch script. The fonts in ../synth/ are our own.
+"""
+
+
 def stage_verifier(selection_path: Path, recorded: Path | None = None) -> int:
     """Stage a private selection into tests/ (its git-ignored private/, inputs/ and wheels/); return the case count.
 
@@ -520,9 +542,14 @@ def stage_verifier(selection_path: Path, recorded: Path | None = None) -> int:
     named = {c["font"] for c in selection}
     for c in selection:
         named |= set(re.findall(r"(?:^|=)((?:noto|synth)/[^;,]+)", c["opts"]))
-    for licence in sorted((DL / "fonts").glob("LICENSE-*")):
-        # The Noto fonts' SIL Open Font License texts travel with the fonts.
-        shutil.copy2(licence, tests / "inputs" / "fonts" / "noto" / licence.name)
+    # Every Noto font here is under the SIL Open Font License 1.1 (name ID 13 of each); its text and a notice travel
+    # with the fonts. noto-cjk's Sans/LICENSE is the OFL 1.1 text; notofonts.github.io's LICENSE is that site's own
+    # Apache-2.0 licence, not the fonts', so it is not shipped.
+    shutil.copy2(
+        DL / "fonts" / "LICENSE-noto-cjk-Sans",
+        tests / "inputs" / "fonts" / "noto" / "OFL.txt",
+    )
+    (tests / "inputs" / "fonts" / "noto" / "NOTICE.txt").write_text(FONT_NOTICE)
     for font in sorted(named):
         kind, name = font.split("/", 1)
         src = (DL / "fonts" / name) if kind == "noto" else (WORK / "fonts" / name)

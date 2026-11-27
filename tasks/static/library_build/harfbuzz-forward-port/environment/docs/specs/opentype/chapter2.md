@@ -76,7 +76,7 @@ Rules:
 ### Choosing the Script table and LangSys
 
 1. Determine the script of the text run (the client's own segmentation) and look for a ScriptRecord with that tag.
-2. If there is none, or the run has no specific script (for example it contains only symbols or punctuation), use the 'DFLT' Script table if the font has one.
+2. If no record matches, or the run belongs to no particular script (say, it is made up of symbols or punctuation alone), use the font's 'DFLT' Script table when it has one.
 3. Characters whose Unicode Script property is Common may be shaped together with the script-specific characters next to them. The client then uses the neighbouring script's Script table for them, and fonts may put features for those characters under that script. 'DFLT' still applies to text made only of such neutral characters.
 4. In the chosen Script table, if the client wants a specific language system and a LangSysRecord with that tag exists, use that LangSys; otherwise use the default LangSys. The criteria for picking a language system are the client's own.
 5. A run uses the features of exactly one LangSys: the language-specific one or the default one, never both combined.
@@ -399,7 +399,7 @@ GSUB type 5 format 1 and GPOS type 7 format 1. Each input sequence is spelled ou
 
 Rules:
 
-- Evaluation: find the current glyph in the Coverage table; take the SequenceRuleSet at its Coverage Index; try its SequenceRules in order; the first rule whose sequence matches is applied and the rest are ignored.
+- Processing: find the current glyph in the Coverage table; take the SequenceRuleSet at its Coverage Index; try its SequenceRules in order; the first rule whose sequence matches is applied and the rest are ignored.
 - seqRuleSetCount should equal the number of covered glyphs. If they differ, covered glyphs without a rule set, and rule sets without a covered glyph, are ignored.
 - inputSequence[0] is compared with input position 1, inputSequence[1] with position 2, and so on.
 - First match wins, not longest match. A rule whose sequence is a prefix of a later rule's sequence hides the later rule completely, which is why fonts list longer rules first.
@@ -437,7 +437,7 @@ GSUB type 5 format 2 and GPOS type 7 format 2. Patterns are sequences of class v
 Rules:
 
 - The Coverage table holds, once each, all glyphs of every class that begins some pattern (for example all glyphs of classes 1 and 2 if patterns begin only with those classes).
-- Evaluation: if the current glyph is covered, get its class from the ClassDef and use the class value directly as the index into classSeqRuleSetOffsets; try the rules of that set in order; the first match wins.
+- Processing: if the current glyph is covered, get its class from the ClassDef and use the class value directly as the index into classSeqRuleSetOffsets; try the rules of that set in order; the first match wins.
 - The array has one entry per class of the ClassDef, in class value order, starting with class 0. An entry is NULL when no pattern begins with that class. (The source gives no rule for a class value beyond the end of the array; such a glyph has no rule set to try.)
 - ClassSequenceRuleSet and ClassSequenceRule are laid out like SequenceRuleSet and SequenceRule; the difference is that the sequence holds class values, not glyph IDs.
 
@@ -503,7 +503,7 @@ Here the backtrack array is stored as r, q, p (nearest glyph first, moving away 
 
 Rules:
 
-- Evaluation: find the current glyph in the Coverage table, take the ChainedSequenceRuleSet at its Coverage Index, try its rules in order, and apply the first one whose backtrack, input and lookahead sequences all match.
+- Processing: find the current glyph in the Coverage table, take the ChainedSequenceRuleSet at its Coverage Index, try its rules in order, and apply the first one whose backtrack, input and lookahead sequences all match.
 - The lookup flags apply while matching all three sequences.
 - chainedSeqRuleSetCount should equal the number of covered glyphs; when they differ, the surplus on either side is ignored.
 
@@ -545,7 +545,7 @@ GSUB type 6 format 2 and GPOS type 8 format 2. Backtrack, input and lookahead se
 
 Rules:
 
-- Evaluation: if the current glyph is covered, look up its class in the input ClassDef and use that value as the index into chainedClassSeqRuleSetOffsets; try that set's rules in order; the first rule whose three patterns all match is applied.
+- Processing: if the current glyph is covered, look up its class in the input ClassDef and use that value as the index into chainedClassSeqRuleSetOffsets; try that set's rules in order; the first rule whose three patterns all match is applied.
 - The rule-set array has one entry per class of the input ClassDef, in class value order starting with class 0; an entry is NULL when no input pattern begins with that class.
 - Each backtrack glyph is classified with the backtrack ClassDef, each input glyph with the input ClassDef and each lookahead glyph with the lookahead ClassDef. Ordering of the three sequences is as in chained format 1, and the lookup flags apply to all three.
 
@@ -572,7 +572,7 @@ Every offset in this subtable is counted from the start of the ChainedSequenceCo
 ## Device and VariationIndex tables
 
 - Both kinds adjust a font-unit value (for example the x or y coordinate of an attachment anchor) in GPOS, JSTF, GDEF or BASE. A table that holds such a value also holds an offset to its adjustment table.
-- Device tables are used only in non-variable fonts and VariationIndex tables only in variable fonts. They are reached through the same offset fields, so one value never has both.
+- Device tables appear only in fonts without variations, VariationIndex tables only in variable fonts. They are reached through the same offset fields, so one value never has both.
 - A Device table gives pixel corrections for the scaled, rounded value at each ppem size from startSize to endSize.
 - A VariationIndex table gives a delta-set index into an ItemVariationStore: the one in GDEF for GPOS, JSTF and GDEF values, the one in BASE for BASE values (otvarcommonformats.md). A delta-set index has two parts: the outer index picks an ItemVariationData subtable, the inner index picks a delta-set row within it.
 
@@ -670,7 +670,7 @@ Rules:
 
 ### Condition table
 
-The source defines a single condition format, format 1 (an axis range). Other formats may be added later. A condition table whose format the engine does not recognize makes its condition set fail to match; evaluation then goes on with the following records, so fonts using new formats still work in older engines.
+The source defines a single condition format, format 1 (an axis range). Other formats may be added later. A condition table whose format the engine does not recognize makes its condition set fail to match; matching then goes on with the following records, so fonts using new formats still work in older engines.
 
 #### ConditionFormat1 table
 

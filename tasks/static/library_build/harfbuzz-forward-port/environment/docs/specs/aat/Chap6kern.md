@@ -101,7 +101,7 @@ Rules:
 | Offset | Type | Field | Meaning |
 |---|---|---|---|
 | 0 | StateHeader (8 bytes) | stHeader | classic AAT state table header, see below |
-| 8 | uint16 | valueTable | the field table defines it as the offset from the beginning of the subtable to the kerning values; the page's worked example measures it from the start of the state table header |
+| 8 | uint16 | valueTable | the field table gives it as an offset, measured from where the subtable begins, to the kerning values; the page's worked example measures it from the start of the state table header |
 
 ### StateHeader and classic state table pieces
 

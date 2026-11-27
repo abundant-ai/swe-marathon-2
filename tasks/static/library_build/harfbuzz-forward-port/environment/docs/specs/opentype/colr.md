@@ -241,7 +241,7 @@ Extend enumeration (the same mode applies in both directions along the line):
 | 1 | EXTEND_REPEAT | Tile the stop interval end to end |
 | 2 | EXTEND_REFLECT | Tile the stop interval, mirroring every second copy |
 
-Treat an unrecognized extend value as EXTEND_PAD. The color line evaluation rules are under "Processing rules".
+Treat an unrecognized extend value as EXTEND_PAD. The rules for resolving a color line are under "Processing rules".
 
 ## Paint tables
 
@@ -879,7 +879,7 @@ Normalizing a color line to [0, 1], for graphics back ends that require it: map 
 
 - p0 = (x0, y0) carries stop offset 0 and p1 = (x1, y1) carries offset 1. Colors are laid out along the line through p0 and p1; each color then extends across the plane along lines parallel to the line through p0 and p2 = (x2, y2).
 - Only the direction of the line p0p2 matters; neither the length of p2 - p0 nor its sign has any effect.
-- Do not draw the gradient if p1 equals p0, if p2 equals p0, or if line p0p2 is parallel to line p0p1 (or nearly parallel, by an implementation-chosen tolerance).
+- The gradient is not drawn when p1 = p0, when p2 = p0, or when the lines p0p2 and p0p1 are parallel (or close enough to parallel by a tolerance the implementation chooses).
 - Position of a point P on the color line (follows from the definition): with v = p1 - p0, d = p2 - p0 and n = (-d.y, d.x) perpendicular to d, t(P) = ((P - p0) . n) / (v . n). The denominator is zero exactly in the parallel case.
 - Two-point equivalent: p3 = p0 + n * (v . n) / (n . n) is the projection of p1 onto the line through p0 perpendicular to p0p2. A gradient from p0 (offset 0) to p3 (offset 1) with bands perpendicular to p0p3 looks identical.
 - Under a transform, the result is the same as transforming p0, p1 and p2 first.

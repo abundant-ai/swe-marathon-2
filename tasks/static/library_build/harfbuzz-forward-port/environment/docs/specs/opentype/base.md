@@ -18,8 +18,8 @@ are defined in otff.md.
 
 ## Model
 
-- One script at one size is the dominant run of a line; every other baseline is placed
-  relative to it.
+- In each line, a single script at a single size forms the dominant run, and every other
+  baseline is placed relative to it.
 - Baseline types are named by baseline tags (see Registered baseline tags at the end). Each
   script gives its own coordinate for each baseline; the coordinates used for the line are
   those of the dominant run's script.
@@ -264,8 +264,8 @@ Compact and simple, but the value cannot be adjusted for size or device resoluti
 - BASE values are those of the default instance. For other instances they are adjusted with
   deltas from the ItemVariationStore held in BASE itself (itemVarStoreOffset, version 1.1),
   unlike GPOS and JSTF values, whose store lives in GDEF. The store's format is in
-  otvarcommonformats.md (Item Variation Store); the interpolation is described in the
-  OpenType Font Variations Overview chapter. GDEF, MVAR and other tables use the same store
+  otvarcommonformats.md (Item Variation Store); the OpenType Font Variations Overview
+  chapter explains the interpolation. GDEF, MVAR and other tables use the same store
   format, which is not the format used by 'gvar' and 'cvar'.
 - A delta-set index has two parts: an outer index that picks an ItemVariationData subtable and
   an inner index that picks a delta-set row in it. A VariationIndex table carries both. In

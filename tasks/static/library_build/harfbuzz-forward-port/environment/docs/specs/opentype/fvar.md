@@ -76,8 +76,8 @@ Rules:
 - Coordinates are in the user scale defined for the axis tag. A registered tag defines a valid
   range that applies to every font; a font's minValue and maxValue may cover only part of it.
 - Tags must satisfy the general Tag rules (otff.md, Data Types) and the further rules of the
-  OpenType Design-Variation Axis Tag Registry. The registry keeps the patterns for registered
-  tags and for foundry-defined tags disjoint, so a private tag can never clash with a tag
+  OpenType Design-Variation Axis Tag Registry. The registry uses non-overlapping tag patterns
+  for registered axes and for foundry-defined axes, so a private tag can never clash with a tag
   registered later.
 - Default instance: every axis at its defaultValue. It uses the 'glyf' outlines as stored,
   with no 'gvar' deltas applied.
@@ -86,7 +86,7 @@ Rules:
   such as font inspectors, may still show it). The flag does not affect named instances, which
   should always be offered in text-formatting interfaces. Flag clear: an application may show
   the axis in its default interface or, depending on the axis, in an advanced one.
-- axisNameID must be greater than 255 and less than 32768. For registered tags, the
+- axisNameID must be in the range 256 to 32767. For registered tags, the
   conventional US English axis name (or a localized form of it) is the recommended interface
   label.
 

@@ -134,8 +134,8 @@ Phantom points:
 - The last four numbers of every glyph, simple or composite, are the phantom points that the
   TrueType rasterizer adds to stand for the side bearings and advances.
 - Horizontal start positions: pp1.x = xMin - lsb and pp2.x = pp1.x + advance width, both on
-  y = 0 (hmtx.md, head.md). A variable font with TrueType outlines must have lsb equal to xMin
-  (bit 1 of the 'head' flags set), so pp1 starts at x = 0. In the page's example, advance 1358
+  y = 0 (hmtx.md, head.md). A variable font with TrueType outlines must set bit 1 of the 'head'
+  flags (lsb = xMin), so pp1 starts at x = 0. In the page's example, advance 1358
   and lsb = xMin = 16 put the two points at (0, 0) and (1358, 0).
 - Vertical start positions are not given on this page.
 - After variation: advance width = pp2.x - pp1.x, left side bearing = xMin - pp1.x (xMin of the

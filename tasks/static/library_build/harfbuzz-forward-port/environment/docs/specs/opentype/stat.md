@@ -13,9 +13,9 @@ These notes restate the source's structures and rules; where they differ, the so
 ## Family models and name projection
 
 - Three name ID pairs serve three family models:
-  - name IDs 16 (Typographic Family) and 17 (Typographic Subfamily): no restriction on styles;
-  - name IDs 1 (Font Family) and 2 (Font Subfamily): the R/B/I/BI model (only regular, bold, italic and bold italic in a family);
-  - name IDs 21 (WWS Family) and 22 (WWS Subfamily): the WWS model (only weight, width and slope may vary inside a family).
+  - name IDs 16 and 17 (Typographic Family and Subfamily): no restriction on styles;
+  - name IDs 1 and 2 (Font Family and Subfamily): the R/B/I/BI model (only regular, bold, italic and bold italic in a family);
+  - name IDs 21 and 22 (WWS Family and Subfamily): the WWS model (only weight, width and slope may vary inside a family).
 - An application on a limited model treats every style difference its model cannot express as a separate family. Under R/B/I/BI, for instance, a Light font becomes the "Regular" member of a family named "<family> Light", and a static font stores exactly that in name IDs 1 and 2.
 - A variable font cannot do this with name IDs. It has IDs 16 and 17 (17 for the default instance), and 'fvar' gives each named instance a subfamily string equivalent to ID 17, but nothing equivalent to IDs 1/2 or 21/22.
 - STAT closes the gap with axis value tables. Each one labels a value on one axis (format 4 labels a combination of values on several axes). Software combines these labels with the typographic family name (ID 16) to build alternate family and subfamily names for any model, so every named instance can be offered to older applications.
@@ -109,7 +109,7 @@ AxisRecord (8 bytes in the current format; always step by designAxisSize):
 Rules:
 
 - axisTag must obey the axis-tag rules given in the Design-Variation Axis Tag Registry. A tag should appear in at most one axis record.
-- axisNameID may reuse a predefined name ID if its strings suit an axis name. Otherwise it must be greater than 255 and less than 32768.
+- axisNameID may reuse a predefined name ID if its strings suit an axis name. Otherwise it must lie in the range 256 to 32767.
 - In a variable font every 'fvar' axis needs an axis record, and the record must use the same name ID as 'fvar'. Record order is free and need not follow 'fvar'.
 - A variable font whose family also varies along axes that this font does not vary dynamically (for example a separate italic font) should include records for those axes as well.
 - A non-variable font should include records for the axes relevant to it or to its family, in particular any axis besides weight, width and slope.
@@ -126,7 +126,7 @@ Rules:
 - Analytic names: a label tied to one value on one axis, freely combinable with labels of other axes ("Bold" + "Condensed" -> "Bold Condensed"). Formats 1, 2 and 3 serve these.
 - Non-analytic names: a label for a combination of values on several axes that cannot be split into independent parts (for example "Florid" for a set of stroke and terminal axis values). Format 4 serves these. Such a label can still be joined with analytic labels, as in "Florid Bold".
 - Readers first read the format field. A table with an unknown format may be ignored. Future formats can be added in a minor version update.
-- valueNameID may be a predefined name ID such as 2, 17 or 22 when its string suits the value; otherwise it must be greater than 255 and less than 32768.
+- valueNameID may be a predefined name ID such as 2, 17 or 22 when its string suits the value; otherwise it must lie in the range 256 to 32767.
 - All numeric axis values use the same scale as that axis uses in 'fvar'.
 - A variable font is strongly advised to have axis value tables for every element of the typographic subfamily names of all its 'fvar' named instances. Some applications build instance subfamily names from these tables, and an incomplete set can cause odd interface behaviour.
 - Extra tables for name elements used by no named instance are allowed; legacy-model compatibility does not need them. Axes whose values are only ever chosen numerically need no names and no tables.
@@ -141,7 +141,7 @@ No two tables should describe the same combination of axis values:
 
 1. A format 1 table and a separate format 3 table should not have both the same axisIndex and the same value.
 2. A format 1 table and a format 2 table with the same axisIndex should not coexist if the format 1 value is strictly between the format 2 rangeMinValue and rangeMaxValue. The format 1 value may equal the range minimum or maximum, but then the format 2 nominalValue should be a different value.
-3. A format 2 table and a format 3 table may share an axisIndex with the format 2 nominalValue equal to the format 3 value, because each adds different information. Their flags and valueNameID must then be identical.
+3. Tables of formats 2 and 3 may share an axisIndex with the format 2 nominalValue equal to the format 3 value, because each adds different information. Their flags and valueNameID must then be identical.
 4. A format 4 table may give an axis value that another table also gives, but only if the two tables' combinations differ in some other way.
 5. Format 4 is meant for multi-axis combinations, so no format 4 table should hold a single axis value equal to the value or nominal value of another table.
 
@@ -249,7 +249,7 @@ Axis value table flags:
 OLDER_SIBLING_FONT_ATTRIBUTE:
 
 - Implementations may use such a table to decide behaviour for a different font of the same family.
-- When a released family is extended with fonts on a new design axis, every new font should include an OLDER_SIBLING_FONT_ATTRIBUTE table for the "normal" value that applies to the earlier fonts (for example 'wdth' 100, "Normal"). These tables should agree across fonts; if they do not, application behaviour may be unpredictable.
+- When a released family is extended with fonts on a new design axis, every new font should include an OLDER_SIBLING_FONT_ATTRIBUTE table giving the new axis's "normal" value, which is the value that holds for the earlier fonts (for example 'wdth' 100, "Normal"). These tables should agree across fonts; if they do not, application behaviour may be unpredictable.
 - The table gives default information about other fonts of the family, never about the font that contains it. The font describes itself with separate tables that do not have this flag.
 - Because it usually describes the "normal" value of a new axis, ELIDABLE_AXIS_VALUE_NAME may be set on it too. For the earlier fonts, which had no label for the new axis, elidable behaviour is implied anyway.
 

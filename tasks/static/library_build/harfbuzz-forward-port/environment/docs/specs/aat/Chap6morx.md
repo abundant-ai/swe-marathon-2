@@ -162,8 +162,8 @@ offsets follow at offset 16. The pieces may appear in any order in the file.
   3 End of line (names as in the 'kern' page example); font classes start
   at 4.
 - State array: rows = states, columns = classes (nClasses columns); each
-  cell is a uint16 index into the entry table. Rows 0 and 1 are the
-  start-of-text and start-of-line states in the page's examples.
+  cell is a uint16 index into the entry table. In the page's examples,
+  row 0 is the start-of-text state and row 1 the start-of-line state.
 - Entry table: every entry begins with uint16 newState and uint16 flags,
   followed by type-specific uint16 fields. In 'morx', newState is a
   zero-based state (row) index, not a byte offset as in 'mort', so even very

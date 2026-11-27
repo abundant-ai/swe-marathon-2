@@ -104,8 +104,8 @@ are used as defined in features_ae.md.
 - Lookups: must be substitutions; one-to-one GSUB 1 is recommended.
 - Application: as described under left-to-right and right-to-left text in the Advanced
   Typographic Extensions chapter. Not exposed to users.
-- Script/language sensitivity: left-to-right runs. Interactions: applied at the same stage as
-  other pre-shaping features such as 'ccmp' and 'locl'.
+- Script/language sensitivity: left-to-right runs. Interactions: applied in the same pass as
+  'ccmp', 'locl' and the other pre-shaping features.
 
 ## 'ltrm' - Left-to-right Mirrored Forms
 
@@ -211,7 +211,7 @@ are used as defined in features_ae.md.
 ## 'nukt' - Nukta Forms
 
 - Registered by: Microsoft
-- Function: produces nukta forms in Indic scripts.
+- Function: yields the nukta forms used in Indic scripts.
 - Lookups: GSUB 4 (consonant plus nukta to the nukta form).
 - Application: script-required; applied in the contexts the script's processing defines.
   Not exposed to users.

@@ -10,7 +10,7 @@ subtable can target horizontal or vertical text and can shift glyphs along the
 line (with-stream) or across it (cross-stream). Adjustments from all applicable
 subtables are added together, so subtable order carries no meaning.
 
-Defined subtable formats: 0, 1, 2, 4 and 6. Formats 3, 5 and 7..255 are
+Defined subtable formats: 0, 1, 2, 4 and 6. The values 3, 5 and 7..255 are
 reserved. (The page's prose calls this "four" formats while listing five.)
 
 | Format | Kind |

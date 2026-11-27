@@ -60,8 +60,8 @@ Rules for encoding records and subtable choice:
 | 3 | Windows | Windows encoding |
 | 4 | Custom | Custom |
 
-Platform IDs 240 to 255 are reserved for user-defined platforms and are never assigned to
-a registered platform.
+Platform IDs 240 to 255 belong to user-defined platforms; no registered platform will ever
+receive one.
 
 ### Unicode platform (platform ID 0) encoding IDs
 
@@ -282,7 +282,7 @@ characters), so a 16-bit unit alone tells whether it starts a 32-bit code.
 | uint16 | reserved | 0. |
 | uint32 | length | Byte length of the subtable, header included. |
 | uint32 | language | See "The language field". |
-| uint8 | is32[8192] | Bit array, one bit per 16-bit value: set when that value is the first half of a 32-bit code. |
+| uint8 | is32[8192] | Bit array, one bit per 16-bit value: set when that value is the leading (high) 16 bits of a 32-bit code. |
 | uint32 | numGroups | Number of groups. |
 | SequentialMapGroup | groups[numGroups] | The groups. |
 
@@ -297,7 +297,7 @@ SequentialMapGroup Record (format 8):
 Rules:
 
 - The bit for 16-bit value cp is is32[cp / 8] & (1 << (7 - (cp % 8))); non-zero means cp is
-  the first half of a 32-bit code.
+  the leading (high) half of a 32-bit code.
 - A high half of 0 is not special. A font must not have a glyph for code 0x0000 and also
   glyphs for 32-bit codes whose high half is 0x0000.
 - is32 is meaningful even for values with no glyphs, because text processing needs to know
@@ -327,8 +327,8 @@ other codes map to glyph 0.
 
 ## Format 12: segmented coverage
 
-The standard subtable for repertoires that include supplementary-plane characters
-(U+10000 to U+10FFFF). A format 4 subtable may also be present for older applications but
+The standard subtable when the character set reaches past the BMP into the supplementary
+planes (U+10000 to U+10FFFF). A format 4 subtable may also be present for older applications but
 is not required. Like format 4, but with 32-bit codes and sequential groups.
 
 'cmap' Subtable Format 12:
@@ -385,8 +385,8 @@ offset). Format 13 is used only under platform 0, encoding 6.
 
 ## Format 14: Unicode variation sequences
 
-A Unicode variation sequence (UVS) is a base character followed by a variation selector,
-for example <U+82A6, U+E0101>. Format 14 lists the UVSes the font supports and is used only
+A Unicode variation sequence (UVS) pairs a base character with a variation selector that
+comes after it, as in <U+82A6, U+E0101>. Format 14 lists the UVSes the font supports and is used only
 under platform 0, encoding 5, alongside the font's regular Unicode subtable (BMP or full
 repertoire).
 
@@ -412,8 +412,8 @@ VariationSelector Record:
 | Type | Name | Description |
 |---|---|---|
 | uint24 | varSelector | The variation selector code point. |
-| Offset32 | defaultUVSOffset | Offset from the start of the format 14 subtable to a DefaultUVS table; 0 if none. |
-| Offset32 | nonDefaultUVSOffset | Offset from the start of the format 14 subtable to a NonDefaultUVS table; 0 if none. |
+| Offset32 | defaultUVSOffset | Offset to a DefaultUVS table, relative to the start of the format 14 subtable; 0 if none. |
+| Offset32 | nonDefaultUVSOffset | Offset to a NonDefaultUVS table, relative to the start of the format 14 subtable; 0 if none. |
 
 Records are sorted by increasing varSelector, with no duplicates. One record, with the
 tables it points to, lists every supported UVS that uses its selector: the base characters

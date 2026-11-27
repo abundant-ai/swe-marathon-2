@@ -64,8 +64,8 @@ To get, say, OS/2.sCapHeight for the current instance:
 
 - Tags are case-sensitive. Every tag defined here uses only lowercase letters and digits.
 - A font should use the tags documented here. Private tags, whose meaning rests on private
-  agreement, are also allowed; they must start with an uppercase letter and use only
-  uppercase letters and digits. An application that does not know a private tag ignores it.
+  agreement, are also allowed; their first character must be an uppercase letter,
+  and every character must be an uppercase letter or a digit. An application that does not know a private tag ignores it.
 - MVAR cannot vary OS/2.usWeightClass, OS/2.usWidthClass or post.italicAngle: those values
   correspond directly to the input values of the 'wght', 'wdth' and 'slnt' axes (fvar.md; the
   axis definitions are in the Design-Variation Axis Tag Registry).

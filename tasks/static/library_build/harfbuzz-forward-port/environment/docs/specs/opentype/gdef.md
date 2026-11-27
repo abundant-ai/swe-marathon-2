@@ -198,7 +198,7 @@ CaretValueFormat3 table: design units plus Device or VariationIndex table
 1. A ligature with N components has N - 1 carets, one at each boundary between adjacent
    components. LigGlyph lists them in increasing coordinate order.
 2. Each caret is one coordinate on the baseline: an X value for horizontal text, a Y value
-   for vertical text, as set by the writing direction of the script or language system in use.
+   for vertical text, according to the direction in which the script or language system in use is written.
 3. Format 1: the coordinate in design units is the caret position. It cannot be adjusted for
    particular device resolutions.
 4. Format 2: the caret is located by contour point caretValuePointIndex on the glyph outline.

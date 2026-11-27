@@ -120,7 +120,7 @@ Consonant syllable
 Vowel-based syllable:
 [Ra+H]+V+[N]+[<[<ZWJ|ZWNJ>]+H+C|ZWJ+C>]+[{M}+[N]+[H]]+[SM]+[(VD)]
 
-Stand Alone cluster (at the start of the word only):
+Stand-alone cluster (word-initial only):
 [Ra+H]+NBSP+[N]+[<[<ZWJ|ZWNJ>]+H+C>]+[{M}+[N]+[H]]+[SM]+[(VD)]
 ```
 

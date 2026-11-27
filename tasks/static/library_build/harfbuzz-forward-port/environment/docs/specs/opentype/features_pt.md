@@ -61,8 +61,8 @@ are used as defined in features_ae.md.
   usually, but not always, the default. Not used in monospaced designs.
 - Lookups: GSUB 1 (tabular lining or oldstyle figures to new proportional glyphs), not GPOS
   re-spacing, to simplify kerning and allow the best design for each width.
-- Application: discretionary. Default off; an application may ask about it when the user
-  changes figure style ('onum' or 'lnum').
+- Application: discretionary. Default off; when the user switches figure style ('onum' or
+  'lnum'), an application may ask whether to apply it as well.
 - Script/language sensitivity: none. Interactions: overrides the results of 'tnum'.
 
 ## 'pref' - Pre-base Forms
@@ -120,8 +120,8 @@ are used as defined in features_ae.md.
 ## 'pwid' - Proportional Widths
 
 - Registered by: Adobe
-- Function: replaces uniform-width glyphs (typically full or half em) with proportionally
-  spaced glyphs; often used for Latin in CJKV fonts, also for kana in Japanese fonts.
+- Function: swaps uniform-width glyphs (usually a full or half em wide) for proportionally
+  spaced ones; often used for Latin in CJKV fonts, also for kana in Japanese fonts.
 - Lookups: GSUB 1. If the font kerns, only the substituted proportional glyphs are kerned.
 - Application: discretionary; default on or off according to the application's market.
 - Script/language sensitivity: mostly CJKV fonts, possibly European scripts.
@@ -195,7 +195,7 @@ are used as defined in features_ae.md.
 ## 'rphf' - Reph Form
 
 - Registered by: Microsoft
-- Function: substitutes the reph form for a Ra plus halant sequence.
+- Function: replaces a Ra + halant sequence with the reph form.
 - Lookups: GSUB 4 (default Ra plus virama to the reph glyph).
 - Application: script-required; applied in the contexts the script's processing defines.
   Not exposed to users.
@@ -225,8 +225,8 @@ are used as defined in features_ae.md.
 - Lookups: must be substitutions; one-to-one GSUB 1 is recommended.
 - Application: as described under left-to-right and right-to-left text in the Advanced
   Typographic Extensions chapter. Not exposed to users.
-- Script/language sensitivity: right-to-left runs. Interactions: applied at the same stage as
-  other pre-shaping features such as 'ccmp' and 'locl'.
+- Script/language sensitivity: right-to-left runs. Interactions: applied in the same pass as
+  'ccmp', 'locl' and the other pre-shaping features.
 
 ## 'rtlm' - Right-to-left Mirrored Forms
 
@@ -293,7 +293,7 @@ are used as defined in features_ae.md.
 ## 'sinf' - Scientific Inferiors
 
 - Registered by: Microsoft/Adobe
-- Function: replaces lining or oldstyle figures with inferior figures (small, below the
+- Function: swaps lining or oldstyle figures for inferior figures (small, below the
   baseline, for chemical or mathematical notation); may also give inferior letters.
 - Lookups: GSUB 1.
 - Application: discretionary. Default off.
@@ -359,7 +359,7 @@ to and including 24 points.
 ## 'smpl' - Simplified Forms
 
 - Registered by: Adobe
-- Function: replaces traditional Chinese or Japanese forms with simplified forms.
+- Function: swaps traditional Chinese or Japanese forms for simplified forms.
 - Lookups: GSUB 1 (several traditional forms may map to one simplified form).
 - Application: discretionary. The effect equals a change of character codes; the application
   should store the new codes besides the original ones. Default off (a user preference may
@@ -414,8 +414,8 @@ to and including 24 points.
 - Registered by: Microsoft
 - Function: lets an enclosing character such as U+070F SYRIAC ABBREVIATION MARK stretch over
   the text it encloses. The character's glyph is decomposed into an odd number of glyphs:
-  the odd-numbered ones are fixed points spread evenly from the start to the end of the
-  enclosed text, the even-numbered ones are repeated to fill the gaps. The first and last
+  those at odd positions are fixed points, spaced equally from the beginning of the
+  enclosed text to its end, and those at even positions repeat to fill the gaps. The first and last
   glyphs may be ordinary glyphs with width at the baseline or marks; all the others must be
   mark glyphs (with width).
 - Lookups: GSUB 2 (default glyph to an odd-length sequence).
@@ -500,14 +500,14 @@ to and including 24 points.
   usually, but not always, the default. Not used in monospaced designs.
 - Lookups: GSUB 1 (proportional lining or oldstyle figures to new tabular glyphs), not GPOS
   re-spacing.
-- Application: discretionary. Default off; an application may ask about it when the user
-  changes figure style ('onum' or 'lnum').
+- Application: discretionary. Default off; when the user switches figure style ('onum' or
+  'lnum'), an application may ask whether to apply it as well.
 - Script/language sensitivity: none. Interactions: overrides the results of 'pnum'.
 
 ## 'trad' - Traditional Forms
 
 - Registered by: Adobe
-- Function: replaces simplified Chinese hanzi or Japanese kanji with traditional forms.
+- Function: swaps simplified Chinese hanzi or Japanese kanji for traditional forms.
 - Lookups: GSUB 1 and/or GSUB 3 (one of each, or one GSUB 3 lookup for all); alternates
   shared by several faces are ordered consistently across a family.
 - Application: discretionary. The application records simplified forms produced by 'smpl'

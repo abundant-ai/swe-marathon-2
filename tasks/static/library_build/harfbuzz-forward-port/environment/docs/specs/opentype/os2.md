@@ -294,7 +294,7 @@ These details cover all versions. Each entry gives the source's format, units an
 **Format:** FWORD. **Units:** Font design units. **Title:** Average weighted escapement.
 
 - **Description:** Arithmetic mean of the advance widths (escapements) of every glyph in the font whose width is not zero.
-- **Comments:** Do not rely on it for laying out lines of text, especially with complex scripts, and never use it for real glyph advances. Some fonts do not follow the current definition: a font first built with a version 0 to 2 table may have been upgraded to a newer table version while keeping the old value, and in some CJK fonts the value is close to half of what the current definition gives.
+- **Comments:** Do not rely on it for laying out lines of text, especially with complex scripts, and never use it for real glyph advances. Some fonts do not follow the current definition: a font first built with a version 0 to 2 table may have been moved to a newer table version while keeping the old value, and in some CJK fonts the value is close to half of what the current definition gives.
 - **Version differences:** Versions 0 to 2 used a formula biased toward Basic Latin, meant to estimate average line length: multiply the width of each letter in the table below by its weight factor, add up the products, and divide the total by 1000. Version 3 replaced this method; it is deprecated.
 
 `xAvgCharWidth (versions 0-2) = sum(width(letter) * factor(letter)) / 1000`
@@ -364,7 +364,7 @@ In a variable font a 'wdth' value above 200 maps to class 9 (see "OS/2 and font 
 
 | Bits | Mask | Description |
 |---|---|---|
-| 0-3 | 0x000F | Usage-permissions sub-field. A valid font sets at most one of bits 1, 2 and 3; bit 0 is permanently reserved and must be 0. The only valid sub-field values are 0, 2, 4 and 8 (next table). |
+| 0-3 | 0x000F | Usage-permissions sub-field. A valid font sets at most one of bits 1, 2 and 3; bit 0 will never be assigned and must be 0. The only valid sub-field values are 0, 2, 4 and 8 (next table). |
 | 4-7 | 0x00F0 | Reserved; must be 0. |
 | 8 | 0x0100 | No subsetting: the font must not be subset before it is embedded. The restrictions of bits 0-3 and bit 9 still apply. |
 | 9 | 0x0200 | Bitmap embedding only: only bitmaps in the font may be embedded, never outline data. A font with no bitmaps is then not embeddable and embedding fails. The restrictions of bits 0-3 and bit 8 still apply. |
@@ -386,7 +386,7 @@ In a variable font a 'wdth' value above 200 maps to class 9 (see "OS/2 and font 
 - **Version differences:**
   - Versions 0 and 1: only bits 0-3 were assigned; readers must ignore bits 4-15 of a version 0 or 1 table.
   - Versions 0 to 2: bits 0-3 were not declared exclusive; when more than one was set, the least restrictive permission won. Some fonts with such tables set both bit 2 and bit 3 to grant preview/print and editing. Applications may keep this interpretation for version 0 to 2 tables.
-  - Version 3 and later (from OpenType 1.4): bits 0-3 must be mutually exclusive.
+  - Version 3 and later (from OpenType 1.4): bits 0-3 are mutually exclusive, so at most one of them may be set.
 
 ### ySubscriptXSize
 
@@ -448,7 +448,7 @@ In a variable font a 'wdth' value above 200 maps to class 9 (see "OS/2 and font 
 
 **Format:** FWORD. **Units:** Font design units. **Title:** Strikeout size.
 
-- **Description:** Thickness of the strikeout stroke, in design units; should be > 0.
+- **Description:** Strikeout stroke thickness, in design units; should be > 0.
 - **Comments:** Normally equal to the thickness of the font's em dash and to the underline thickness given in the 'post' table. Signed on the OS/2 platform although only positive values make sense.
 
 ### yStrikeoutPosition
@@ -679,13 +679,13 @@ In the table, a row with an empty Bit cell is a further range of the bit in the 
 | | Mahjong Tiles | 1F000-1F02F | First assigned in OT 1.5 (v4). |
 | 123-127 | Reserved | | Must be 0. |
 
-- **Comments:** Every available bit was used up by Unicode 5.1; the assignments were last revised for OS/2 version 4 in OpenType 1.5. Many ranges of current Unicode have no bit here. The 'dlng' and 'slng' tags of the 'meta' table are the alternative way to declare which scripts or languages a font supports or is designed for.
+- **Comments:** Every available bit was used up by Unicode 5.1; the assignments were last revised with OS/2 version 4 (OpenType 1.5). Many ranges of current Unicode have no bit here. The 'dlng' and 'slng' tags of the 'meta' table are the alternative way to declare which scripts or languages a font supports or is designed for.
 - **Version differences:**
   - Each table version was defined while a particular Unicode version was current, and earlier table versions defined fewer bits. Applications may not honour every assignment in fonts with older table versions.
   - Every assignment in the table above is valid for every table version. However, versions 1 and 2 defined a few bits with meanings that matched no well-defined Unicode range and that clash with the later assignments (table below). A font with a version 1 or 2 table that sets one of these bits may mean the obsolete assignment, whose character coverage is unclear.
   - Version 0: no bit assignments were defined when it was first specified; some applications may ignore these fields in a version 0 table.
   - Version 1: specified alongside Unicode 1.1, with assignments for bits 0 to 69 only; some applications may recognize only bits 0-69 in fonts with a version 1 table. The bits 8, 12, 14 and 27 obsolete meanings were dropped as of version 2.
-  - Version 2: defined in OpenType 1.1 (Unicode 2.1 era) with bits 0-69. OpenType 1.3 then added bits 70-83 for blocks new in Unicode 2.0 and Unicode 3.0. Some applications may recognize only the bits assigned in OpenType 1.2 or OpenType 1.3 for version 2 fonts. Bit 53 kept its obsolete meaning in version 2; it was dropped as of version 3.
+  - Version 2: defined in OpenType 1.1 (Unicode 2.1 era) with bits 0-69. OpenType 1.3 then added bits 70-83 for blocks new in Unicode 2.0 and Unicode 3.0. For version 2 fonts, some applications may recognize only the bits that OpenType 1.2 or 1.3 had assigned. Bit 53 kept its obsolete meaning in version 2; it was dropped as of version 3.
   - Version 3: defined in OpenType 1.4, adding bits 84-92 for ranges of Unicode 3.2 and extending some existing bits to related ranges (see the Notes column).
   - Version 4: defined in OpenType 1.5, adding bit 58 and bits 93-122 for ranges of Unicode 5.1, reassigning bits 8, 12, 14, 27 and 53, and extending more existing bits to related ranges (see the Notes column).
 
@@ -736,15 +736,15 @@ Obsolete assignments of versions 1 and 2:
   - Bits 1-4 are rarely used; they mark a font mainly meant for decorative or special purposes.
   - Bit 5 must have the same setting as bit 0 (Bold) of macStyle in 'head'.
   - Bit 6 is not widely used by modern applications. If bit 6 is set, bits 0 and 5 must be clear; otherwise behaviour is undefined. Bits 0 and 5 both clear do not imply bit 6 is set: a Light style that is not the family's regular style has all three clear. In extended families, styles other than the regular one do not need bit 6 even if their name ID 2 is "Regular".
-  - Bit 7 (defined in version 4) is used by many modern applications. Fonts are encouraged to use a version 4 or later table with bit 7 set. Turning bit 7 on in an updated older font can reflow existing documents, so it should be turned on in that case only when the usWin metrics give clearly worse line heights than the sTypo metrics.
-  - Bit 8: when set, the family and subfamily strings (name IDs 1 and 2, or 16 and 17) are already consistent with a weight/width/slope (WWS) family model, so name IDs 21 and 22 are never needed and should be absent. Applications that assume a WWS model can then use those names as they are, without looking for IDs 21 and 22. When clear, such applications should look for name IDs 21 and 22 or treat the names in some other way.
+  - Bit 7 (defined in version 4) is used by many modern applications. Fonts should preferably carry a table of version 4 or later with bit 7 set. Turning bit 7 on in an updated older font can reflow existing documents, so it should be turned on in that case only when the usWin metrics give clearly worse line heights than the sTypo metrics.
+  - Bit 8: when set, the family and subfamily strings (name IDs 1 and 2, or 16 and 17) already fit a weight/width/slope (WWS) family model, so name IDs 21 and 22 are never needed and should be absent. Applications that assume a WWS model can then use those names as they are, without looking for IDs 21 and 22. When clear, such applications should check whether name IDs 21 and 22 exist, or handle the names some other way.
   - Bit 8 should be set when a face differs from the rest of its family only in weight, width or slope, even inside a large family whose other faces differ in other ways. It should be clear, and name IDs 21 and 22 should be present, when a face differs from Regular in some other attribute (for example "handwriting", "caption", "display" or optical size), because WWS applications need that attribute in the family name (ID 1 or ID 16) whereas the font may keep it in the typographic subfamily (ID 17).
   - The STAT table (see stat.md) arrived later and solves the same problem more generally; it can help WWS applications when name IDs 21 and 22 are missing. Even when STAT is present (it is required in variable fonts), the bit 8 and name ID 21/22 rules above still apply.
   - Definitions for bit 8: "typographic family" is the Microsoft Unicode string of name ID 16 if present, otherwise of name ID 1; "weight" is usWeightClass; "width" is usWidthClass; "slope" is fsSelection bit 0 (ITALIC) together with bit 9 (OBLIQUE).
   - Bit 9: when set, processes that distinguish oblique from italic (such as CSS font matching) should treat the font as an oblique style; a font made by slanting an upright design algorithmically sets it. With a version 4 or later table, a clear bit 9 means the font is not oblique (a classic italic design leaves it clear). Bit 9 plays no part in the four-member regular/italic/bold/bold-italic style linking that bit 0 serves, and can be set independently of bit 0. Usually ITALIC is also set when OBLIQUE is set, but that is not required.
-  - Bit 15 is permanently reserved. Some legacy implementations used it, and it may trigger special behaviour in some implementations; its use is deprecated.
+  - Bit 15 is permanently reserved. Some legacy implementations used it, and it may trigger special behaviour in some implementations; using it is deprecated.
 - **Version differences:**
-  - Versions 0 to 3: only bits 0 (ITALIC) to 6 (REGULAR) are assigned; bits 7-15 are reserved and must be 0. Applications should ignore bits 7-15 in a version 0 to 3 table.
+  - Versions 0 to 3: bits 0 (ITALIC) to 6 (REGULAR) are the only ones assigned; bits 7-15 are reserved and must be 0. Applications should ignore bits 7-15 in a version 0 to 3 table.
   - Versions 4 and 5: bits 7-9 were added in version 4 (OpenType 1.5); bits 10-15 are reserved and must be 0. Applications should ignore bits 10-15 in a version 4 or 5 table.
 
 ### usFirstCharIndex
@@ -769,7 +769,7 @@ Obsolete assignments of versions 1 and 2:
 - It resembles the 'hhea' ascender and usWinAscent, but legacy platforms gave those fields platform-specific behaviour, so they are tied to backward compatibility and do not produce the same layout everywhere. The three sTypo fields exist so that applications can lay out documents correctly and portably.
 - sTypoAscender - sTypoDescender need not equal unitsPerEm; the values should suit the primary languages of the font.
 - CJK fonts meant for vertical as well as horizontal layout must set sTypoAscender to the top of the ideographic em box. With an em box from (0,-120) to (1000,880), a 1000 x 1000 box sitting 120 units below the Latin baseline, the value must be 880. Other values lead to wrong vertical layout.
-- The source's Recommendations chapter (not digested) has more on this field.
+- The source's Recommendations chapter (not digested) discusses this field further.
 
 ### sTypoDescender
 
@@ -778,7 +778,7 @@ Obsolete assignments of versions 1 and 2:
 - **Description:** The typographic descender, combined with sTypoAscender and sTypoLineGap for the default line spacing. It resembles the 'hhea' descender and usWinDescent, which carry legacy platform behaviour.
 - sTypoAscender - sTypoDescender need not equal unitsPerEm.
 - CJK fonts meant for vertical layout must set sTypoDescender to the bottom of the ideographic em box: -120 for the em box (0,-120) to (1000,880). Other values lead to wrong vertical layout.
-- The source's Recommendations chapter (not digested) has more on this field.
+- The source's Recommendations chapter (not digested) discusses this field further.
 
 ### sTypoLineGap
 

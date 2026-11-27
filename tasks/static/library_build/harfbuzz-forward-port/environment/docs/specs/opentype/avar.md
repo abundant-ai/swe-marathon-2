@@ -65,8 +65,8 @@ Layout notes:
 - There must be exactly one segment map per 'fvar' axis, in 'fvar' axis order.
 - An axis whose normalization is not modified may have positionMapCount 0; its values pass
   through unchanged.
-- A map that has any entries must contain at least these three pairs: -1 to -1, 0 to 0 and
-  +1 to +1, even if it adds nothing else. If any of the three is missing, that axis is not
+- A map that has any entries must contain at least the three identity pairs -1 -> -1, 0 -> 0
+  and +1 -> +1, even if it adds nothing else. If any of the three is missing, that axis is not
   modified at all.
 - fromCoordinate values must all differ and must rise from record to record. A record whose
   fromCoordinate is not greater than that of an earlier record may be ignored.

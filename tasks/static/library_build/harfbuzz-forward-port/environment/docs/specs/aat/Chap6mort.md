@@ -243,7 +243,7 @@ Entry: uint16 newState, uint16 flags (no per-glyph substitution fields).
 |---|---|---|
 | 0x8000 | setComponent | make the current glyph a ligature component (push it) |
 | 0x4000 | dontAdvance | do not advance before moving to the new state |
-| 0x3FFF | offset | byte offset from the beginning of the subtable to this entry's ligature action list; a multiple of 4; non-zero means "run the actions" |
+| 0x3FFF | offset | byte offset of this entry's ligature action list, counted from the start of the subtable; a multiple of 4; non-zero means "run the actions" |
 
 Ligature action (uint32; the list is 4-byte aligned):
 

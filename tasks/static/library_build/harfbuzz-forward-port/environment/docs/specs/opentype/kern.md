@@ -49,7 +49,7 @@ reserved1 0x00F0, format 0xFF00 (format = coverage >> 8).
 
 Cross-stream kerning: in horizontal text it moves glyphs vertically (positive values up,
 negative down); in vertical text it moves glyphs horizontally (positive right, negative
-left). A value of 0x8000 in the kerning data resets the cross-stream adjustment to 0.
+left). A kerning value of 0x8000 puts the cross-stream adjustment back to 0.
 
 The format-specific data follows the subtable header; length covers both, so the next
 subtable starts length bytes after the start of this one.

@@ -318,7 +318,7 @@ characters, and bugs the note describes only by a symptom. 14 units are tier A, 
 | 49 | hb_ot_layout_get_extender_glyphs() | F8 | 15.2.0 | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
 | 51 | deserialize2 functions | F8 | 15.1.0 | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
 
-**The proof mutant V** is 15.2.0 with every tier-C unit's change taken out (`scripts/pipeline/make_v.sh`, the
+**The proof mutant V** is 15.2.0 with every tier-C unit's change taken out (`scripts/pipeline/make_mutant.sh` over the reference tree, the
 patches in `patches-lib/ALLV`; commits that no longer revert cleanly on 15.2.0 are left in and listed). It must
 land in 0.60-0.85, lose D only on tier-C units, and leave h_d and h_b essentially unchanged. The over-broad mutant W
 is kept as a **secondary bound**: it shows how much the gate takes from a port that widens every condition, not how
