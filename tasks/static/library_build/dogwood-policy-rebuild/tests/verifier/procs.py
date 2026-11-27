@@ -6,6 +6,7 @@ import ctypes
 import os
 import pwd
 import select
+import shutil
 import signal
 import subprocess
 import time
@@ -14,6 +15,8 @@ from pathlib import Path
 CHUNK = 1 << 16
 PR_SET_CHILD_SUBREAPER = 36
 SWEEPS = 100
+# The directories every user may write to, besides a run's own.
+SHARED_DIRS = ("/tmp", "/var/tmp", "/dev/shm", "/run/lock")
 # user -> how many of its processes were still alive, and ended, once a run or the build was over
 LEFTOVERS: dict[str, int] = {}
 
@@ -79,6 +82,30 @@ def reap() -> None:
             return
         if pid == 0:
             return
+
+
+def remove_files_of(user: str, dirs: tuple[str, ...] = SHARED_DIRS) -> int:
+    """Remove what `user` left at the top of `dirs` (files, links and whole directories), so
+    nothing one run writes reaches the next. Return how many entries were removed."""
+    uid = pwd.getpwnam(user).pw_uid
+    removed = 0
+    for top in dirs:
+        try:
+            entries = list(os.scandir(top))
+        except OSError:
+            continue
+        for entry in entries:
+            try:
+                if entry.stat(follow_symlinks=False).st_uid != uid:
+                    continue
+                if entry.is_dir(follow_symlinks=False):
+                    shutil.rmtree(entry.path)
+                else:
+                    os.unlink(entry.path)
+                removed += 1
+            except OSError:
+                continue
+    return removed
 
 
 def _live(uid: int) -> list[int]:

@@ -106,7 +106,8 @@ report flags a verbatim drop-in, and the trajectory audit is the remaining check
 - A case is a bundle (policy, schemas, and optionally providers, macros and a trace) plus one
   command line in one format.
 - It runs in its own process with a fresh working directory, `HOME` and `TMPDIR`, as `nobody`,
-  with 5 s and 2 GB.
+  with the limits the brief states: 1 s, 2 GB of memory, 512 processes and threads, files of at
+  most 256 MB, 8 MB of standard output.
 - Standard output is compared exactly, with two exceptions: JSON is compared parsed with object
   key order ignored, and rule lists compare as sets. The exit status must match too.
 - Standard error is never read.
@@ -115,9 +116,12 @@ report flags a verbatim drop-in, and the trajectory audit is the remaining check
 - `S = Σ w_f g_f`, with `g_f = max(0, (pass_f − b_f)/(1 − b_f))`, where `b_f` is the best stub's
   pass fraction in that family.
 - A paired case counts only if both members pass.
-- Integrity failures (a submission that holds or calls a `dogwood` build, or touches the grader's
-  files) give 0.
-- An evaluation error writes no reward.
+- A submission that calls `dogwood` finds no build in the grading image, and the grader's files
+  are out of reach of the build (`builder`) and the runs (`nobody`). Delivered files that are
+  copies of Dogwood's own source are listed in the metrics (`dogwood_source_files`) for the
+  clean-room review; that list does not change the score.
+- An evaluation error writes no reward. Nothing a submission prints, builds or leaves running can
+  cause one: those fail its own cases (section 4's probes check it).
 
 | Family | Weight | What its cases exercise |
 | --- | --- | --- |
@@ -238,9 +242,14 @@ the way a submission is. They must all score 0.
 
 **Robustness probes**, in the same zoo: `hang` (sleeps past the per-run limit on two command
 lines), `flood` (prints without end on `--help`), `forkbomb` (forks without end on
-`--version`), `daemon` (leaves a detached process on `format`), and `buildrs` (a build script that
-tries to read the private cases and the grader, write the reward, and leave a process behind).
+`--version`), `daemon` (leaves a detached process on `format`), `garbage` (prints JSON nested past
+a parser's depth, a rule list of mixed values, and empty or overlong rule numbers), `buildrs` (a
+build script that tries to read the private cases and the grader, write the reward, and leave a
+process behind) and `badexec` (a build that leaves an unrunnable file where the program belongs).
 Each must leave the grader working: no evaluation error, a reward of 0, and its leftovers ended.
+Next to the zoo, the oracle is graded with odd files around it (a 5 GB sparse file in `target/`,
+20,000 small files, link loops, links outside and to a directory, a pipe, a socket; it must score
+1.0), and over the 1 GB copy limit (it must score 0, without an evaluation error).
 
 A Cedar-only implementation earns legitimate partial credit on the cases without temporal or
 provider leaves; that is held well under the weight of R, B and K.
@@ -299,7 +308,7 @@ spike's 3+1 and 10-repeat recordings are in the Phase B report.
 
 | Risk | Impact | Mitigation |
 | --- | --- | --- |
-| A documented feature or stated restriction left with zero cases | Audit must-fix | `features.yaml` from the shipped docs, two-way trace, kill matrix |
+| A documented feature or stated restriction left with zero cases | Audit must-fix | `checks/features.json` from the shipped docs, two-way trace, kill matrix |
 | Evaluation-aware wording in the brief, the docs or `--help` | Verdict reject | Requester voice, mechanical sweep, 3 wording lenses |
 | The guide trim drops a rule a case grades | Unfair case | The "every rule stated" audit (section 1.2) |
 | The failure sentence is wrong: K or V-msg dominates instead of B | Weaker story | Two counter-intuitive families with mutants; trial labels decide |

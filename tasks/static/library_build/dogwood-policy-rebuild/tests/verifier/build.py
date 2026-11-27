@@ -17,7 +17,7 @@ import time
 from pathlib import Path
 
 from .contracts import BuildResult, Limits
-from .procs import capture, end_group, end_user
+from .procs import SHARED_DIRS, capture, end_group, end_user, remove_files_of
 
 BUILDER = "builder"
 CARGO_CONFIG = Path("/opt/verifier/cargo-config.toml")
@@ -63,7 +63,18 @@ def _chown_tree(path: Path, user: str) -> None:
 
 
 def build(submission: Path, work: Path, limits: Limits) -> BuildResult:
-    """Build `submission` with `cargo build --release --offline`; never raises on a bad project."""
+    """Build `submission` with `cargo build --release --offline`; never raises on a bad project.
+
+    Once the build is over, its program is copied out and everything `builder` owns in the shared
+    directories and its home (the build's own folder included) is removed, so no run reads or
+    writes what the build left there."""
+    try:
+        return _build(submission, work, limits)
+    finally:
+        remove_files_of(BUILDER, (*SHARED_DIRS, str(Path("~" + BUILDER).expanduser())))
+
+
+def _build(submission: Path, work: Path, limits: Limits) -> BuildResult:
     start = time.monotonic()
     src = work / "src"
     home = work / "home"
@@ -112,12 +123,16 @@ def build(submission: Path, work: Path, limits: Limits) -> BuildResult:
     if overflow:
         return BuildResult(False, None, "build printed more than 16 MB", seconds)
     binary = work / "target" / "release" / "dogwood"
-    if proc.returncode != 0 or not binary.is_file():
+    # The build's folder is `builder`'s: a link there could point at any file of this machine, so
+    # the program must be a regular file inside that folder.
+    real = Path(os.path.realpath(binary))
+    inside = Path(os.path.realpath(work)) in real.parents
+    if proc.returncode != 0 or binary.is_symlink() or not inside or not real.is_file():
         tail = out.decode("utf-8", "replace").strip().splitlines()[-5:]
         return BuildResult(False, None, "build failed: " + " | ".join(tail), seconds)
     bindir = Path(tempfile.mkdtemp(prefix="dw-bin-"))
     bindir.chmod(0o755)
     installed = bindir / "dogwood"
-    shutil.copyfile(binary, installed)
+    shutil.copyfile(real, installed)
     installed.chmod(0o755)
     return BuildResult(True, installed, "built", seconds)

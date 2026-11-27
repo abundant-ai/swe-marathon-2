@@ -19,7 +19,7 @@ from pathlib import Path
 
 from .contracts import Case, CaseResult, EvaluationError, Limits
 from .normalise import normalise
-from .procs import capture, end_group, end_user
+from .procs import capture, end_group, end_user, remove_files_of
 
 RUNNER = "nobody"
 RUNNER_GROUP = "nogroup"
@@ -69,14 +69,30 @@ def _can_start(limits: Limits) -> bool:
 def run_case(
     binary: Path, case: Case, bundles: Path, limits: Limits, sweep: bool = True
 ) -> tuple[object, bytes]:
-    """Return (exit status, or 'timeout' / 'overflow' / 'could not start (...)', stdout)."""
-    with tempfile.TemporaryDirectory(prefix="case-") as tmp:
+    """Return (exit status, or 'timeout' / 'overflow' / 'could not start (...)', stdout).
+
+    With `sweep` (one run at a time), every process of the runner is ended and whatever it left
+    in the shared writable directories removed once the run is over, so runs share nothing."""
+    try:
+        return _run(binary, case, bundles, limits, sweep)
+    finally:
+        if sweep:
+            remove_files_of(RUNNER)
+
+
+def _run(
+    binary: Path, case: Case, bundles: Path, limits: Limits, sweep: bool
+) -> tuple[object, bytes]:
+    with tempfile.TemporaryDirectory(prefix="case-", ignore_cleanup_errors=True) as tmp:
+        # The run's folder stays root's (readable, not writable), so the run cannot move or
+        # replace it, or the three directories inside, which are the run's own.
         root = Path(tmp)
+        root.chmod(0o755)
         work, home, scratch = root / "work", root / "home", root / "tmp"
         shutil.copytree(bundles / case.bundle, work)
         home.mkdir()
         scratch.mkdir()
-        for path in (root, home, scratch):
+        for path in (home, scratch):
             shutil.chown(path, user=RUNNER, group=RUNNER_GROUP)
         # The private store is root-only; the run's own copy belongs to the user it runs as.
         for dirpath, _, filenames in os.walk(work):
