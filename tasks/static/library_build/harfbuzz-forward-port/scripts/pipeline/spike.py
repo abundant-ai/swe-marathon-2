@@ -520,6 +520,9 @@ def stage_verifier(selection_path: Path, recorded: Path | None = None) -> int:
     named = {c["font"] for c in selection}
     for c in selection:
         named |= set(re.findall(r"(?:^|=)((?:noto|synth)/[^;,]+)", c["opts"]))
+    for licence in sorted((DL / "fonts").glob("LICENSE-*")):
+        # The Noto fonts' SIL Open Font License texts travel with the fonts.
+        shutil.copy2(licence, tests / "inputs" / "fonts" / "noto" / licence.name)
     for font in sorted(named):
         kind, name = font.split("/", 1)
         src = (DL / "fonts" / name) if kind == "noto" else (WORK / "fonts" / name)

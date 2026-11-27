@@ -247,11 +247,80 @@ dual gate below 0.95. Below 0.10 for mid-tier models the task risks reading as u
 
 ## 10. The failure mode, in one sentence
 
-"Agents reproduce each release note's new behaviour on the sequences it describes but apply the rule beyond its
-stated condition, so neighbouring sequences that upstream left unchanged regress." The B family is H_dual; the
-proving mutant is W (each conditional item's guard widened to its unconditional form). The full proof plan,
-with the learnability argument and the evidence that agents plausibly miss it, is in
-[CLAIMS.md](CLAIMS.md#failure-sentence-and-its-proof-plan).
+Decided by a three-judge panel on 2026-11-27 (harbor-lh `ops/swe-marathon-v2/decisions/2026-11-27-harfbuzz-failure-sentence-DECISION.md`):
+
+> With no 15.x code or tests to check against, agents land the fixes they can confirm on their own 14.3.0 build and
+> fall short on the ones they cannot, chiefly AAT/kern behaviour that needs hand-built fonts, regenerated Unicode
+> data, and bugs a note describes only by symptom.
+
+**Tiers** (QA pass 16's tiers and CLAIMS.md's families). Tier A: the note names the fix. Tier B: the agent can
+check its change on its own 14.3.0 build with the shipped fonts and tools. Tier C: it cannot without material it
+builds itself: AAT/`kern` and flag behaviour that needs hand-built fonts, the Unicode 18 data and its new
+characters, and bugs the note describes only by a symptom. 14 units are tier A, 23 tier B, 16 tier C (pass 16's
+14 tier-C units, plus 33 and 34, which the decision's "regenerated Unicode data" names).
+
+| Unit | Family | Window | Tier | Why | Predicted pass |
+| --- | --- | --- | --- | --- | --- |
+| 26 | F4 | A | C | AAT/kern or flag behaviour that needs fonts the agent builds | 0.46 |
+| 11 | F1 | A | A | the note names the fix | 0.89 |
+| 36 | F8 | A | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
+| 33 | F7 | A | C | needs regenerated Unicode 18 data and fonts covering the new characters | 0.60 |
+| 35 | F7 | A | A | the note names the fix | 0.89 |
+| 37 | F8 | A | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
+| 16 | F2 | A | C | the note gives a symptom; the cause has to be found without an oracle | 0.46 |
+| 19 | F3 | B | C | the note gives a symptom; the cause has to be found without an oracle | 0.46 |
+| 10a | F1 | B | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
+| 10b | F1 | B | C | the note gives a symptom; the cause has to be found without an oracle | 0.46 |
+| 25a | F4 | B | C | AAT/kern or flag behaviour that needs fonts the agent builds | 0.46 |
+| 25b | F4 | B | C | AAT/kern or flag behaviour that needs fonts the agent builds | 0.46 |
+| 25c | F4 | B | C | AAT/kern or flag behaviour that needs fonts the agent builds | 0.46 |
+| 31 | F6 | B | C | the note gives a symptom; the cause has to be found without an oracle | 0.46 |
+| 34 | F7 | B | C | needs regenerated Unicode 18 data and fonts covering the new characters | 0.50 |
+| 44a | F8 | B | A | the note names the fix | 0.89 |
+| 44b | F8 | B | A | the note names the fix | 0.89 |
+| 45 | F8 | B | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
+| 46 | F8 | B | A | the note names the fix | 0.89 |
+| 51 | F8 | B | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
+| 1 | F1 | C | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
+| 2 | F1 | C | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
+| 3 | F1 | C | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
+| 4 | F1 | C | A | the note names the fix | 0.89 |
+| 5 | F1 | C | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
+| 6 | F1 | C | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
+| 7 | F1 | C | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
+| 8 | F1 | C | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
+| 9 | F1 | C | C | the note gives a symptom; the cause has to be found without an oracle | 0.46 |
+| 12 | F2 | C | C | the note gives a symptom; the cause has to be found without an oracle | 0.46 |
+| 13 | F2 | C | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
+| 14 | F2 | C | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
+| 15 | F2 | C | A | the note names the fix | 0.89 |
+| 17 | F3 | C | C | the note gives a symptom; the cause has to be found without an oracle | 0.46 |
+| 18 | F3 | C | A | the note names the fix | 0.89 |
+| 20 | F4 | C | A | the note names the fix | 0.89 |
+| 21 | F4 | C | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
+| 22 | F4 | C | A | the note names the fix | 0.89 |
+| 23 | F4 | C | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
+| 24 | F4 | C | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
+| 27 | F5 | C | C | AAT/kern or flag behaviour that needs fonts the agent builds | 0.46 |
+| 29 | F5 | C | C | AAT/kern or flag behaviour that needs fonts the agent builds | 0.46 |
+| 38 | F8 | C | C | the note gives a symptom; the cause has to be found without an oracle | 0.46 |
+| 39 | F8 | C | A | the note names the fix | 0.89 |
+| 40a | F8 | C | A | the note names the fix | 0.89 |
+| 40b | F8 | C | A | the note names the fix | 0.89 |
+| 40c | F8 | C | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
+| 41 | F8 | C | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
+| 42 | F8 | C | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
+| 43 | F8 | C | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
+| 47b | F8 | C | A | the note names the fix | 0.89 |
+| 48 | F8 | C | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
+| 49 | F8 | C | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
+
+**The proof mutant V** is 15.2.0 with every tier-C unit's change taken out (`scripts/pipeline/make_v.sh`, the
+patches in `patches-lib/ALLV`; commits that no longer revert cleanly on 15.2.0 are left in and listed). It must
+land in 0.60-0.85, lose D only on tier-C units, and leave h_d and h_b essentially unchanged. The over-broad mutant W
+is kept as a **secondary bound**: it shows how much the gate takes from a port that widens every condition, not how
+agents fail. Every result reports D, h_d and h_b separately. What would reopen the decision is in
+`notes/PREREGISTRATION.md`.
 
 ## 11. Effort
 
