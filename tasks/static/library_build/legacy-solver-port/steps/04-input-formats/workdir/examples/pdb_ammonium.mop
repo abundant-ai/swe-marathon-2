@@ -1,0 +1,3 @@
+PM7 CHARGE=1 1SCF GEO_DAT="pdb_ammonium.pdb" AUX(PRECISION=9) NOINTER
+pdb_ammonium
+

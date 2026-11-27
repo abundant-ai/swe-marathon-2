@@ -1,0 +1,1 @@
+{"kind": "fmt", "variant": "pdb", "elements": ["N", "H", "H", "H", "H"], "keywords": "PM7 CHARGE=1 1SCF GEO_DAT=\"pdb_ammonium.pdb\" AUX(PRECISION=9) NOINTER", "heat_of_formation": 158.438295632387, "atom_charges": [-0.2196578368312, 0.3068771908151, 0.32133425675938, 0.29614379841333, 0.29530259084338], "ionization_potential": 24.0358715468507, "dipole": 0.431874190420373}

@@ -1,0 +1,24 @@
+{
+ "kind": "force",
+ "elements": [
+  "C",
+  "Cl",
+  "H",
+  "H",
+  "H"
+ ],
+ "keywords": "PM7 PRECISE FORCE AUX(PRECISION=9) NOINTER XYZ",
+ "heat_of_formation": -16.5361762522772,
+ "zero_point_energy": 21.02511194414295,
+ "frequencies": [
+  767.51,
+  989.49,
+  989.49,
+  1287.08,
+  1287.08,
+  1327.28,
+  2655.29,
+  2655.29,
+  2748.78
+ ]
+}

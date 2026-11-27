@@ -1,0 +1,5 @@
+# The reference solutions are agent-written numerical code and the pilot scripts are one-off authoring tools:
+# keep them formatted but do not enforce the lint rules on them. Everything else (verifier, step entry points) is linted.
+[lint.per-file-ignores]
+"steps/*/solution/**" = ["ALL"]
+"scripts/**" = ["ALL"]

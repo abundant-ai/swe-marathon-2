@@ -1,0 +1,20 @@
+{
+ "kind": "force",
+ "elements": [
+  "C",
+  "H",
+  "H",
+  "H"
+ ],
+ "keywords": "PM7 UHF DOUBLET PRECISE FORCE AUX(PRECISION=9) NOINTER XYZ",
+ "heat_of_formation": 27.9696578818547,
+ "zero_point_energy": 16.859410207743508,
+ "frequencies": [
+  920.41,
+  1304.49,
+  1304.49,
+  2735.46,
+  2735.46,
+  2793.02
+ ]
+}

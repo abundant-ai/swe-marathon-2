@@ -1,0 +1,71 @@
+schema_version = "1.4"
+multi_step_reward_strategy = "mean"
+artifacts = ["/workspace/solver", "/workspace/NOTES.md"]
+
+[task]
+name = "abundant/swe-m2_scientific-computing_legacy-solver-port"
+description = "Port MOPAC's PM7 method from 145k lines of Fortran 90 to Python, then add FORCE, protein-scale single points and legacy input formats across four dependent steps graded against the original program, whose references exist only in the verifier."
+authors = [{ name = "Jack", email = "jkaisun1@gmail.com" }]
+keywords = ["fortran", "legacy-code", "mopac", "semiempirical-chemistry", "multi-step", "numerical-parity", "scaling"]
+
+[metadata]
+category = "scientific-computing"
+reward_type = "fraction of hidden reference cases passed, cumulative over steps 1..N with fixed denominators (mean over steps)"
+tags = ["fortran", "legacy-code", "mopac", "semiempirical-chemistry", "multi-step", "numerical-parity", "scaling"]
+difficulty_explanation = "TODO after Oddish trials. Pilot evidence (one agent per step, source only): steps 1-4 took 11 min to 2 h each, about 3.8 h in total; hardest parts are the undisclosed step-2 symmetry shortcut and step 3 at 12,000 atoms. See PROPOSAL.md."
+solution_explanation = "Reference solution is a pure numpy/scipy PM7 solver (steps 1-2), extended with a divide-and-conquer SCF for proteins (step 3) and Z-matrix/PDB readers (step 4); steps 3 and 4 ship the same solver. Local Harbor oracle in Linux Docker: reward 1.0 on every step. See README.md."
+verification_explanation = "References are MOPAC 23.2.5 outputs generated offline on Linux (Debian, gfortran, system OpenBLAS, env -i, AUX PRECISION=9) and stored under steps/*/tests/private (Git-ignored, staged into each verifier image by scripts/package_task.py); common/verifier/verify_core.py reruns the solver on every hidden case of steps 1..N with fixed denominators (hidden: 35, 32, 5, 75). See README.md for excluded cases and tolerances."
+
+[agent]
+timeout_sec = 28800
+network_mode = "no-network"
+
+[verifier]
+environment_mode = "separate"
+network_mode = "no-network"
+timeout_sec = 21600
+user = "root"
+
+[verifier.environment]
+network_mode = "no-network"
+build_timeout_sec = 900
+cpus = 8
+memory_mb = 16384
+storage_mb = 20480
+workdir = "/workspace"
+
+[environment]
+build_timeout_sec = 900
+cpus = 8
+memory_mb = 16384
+storage_mb = 20480
+network_mode = "no-network"
+workdir = "/workspace"
+
+[[steps]]
+name = "01-port-pm7"
+[steps.agent]
+timeout_sec = 7200
+[steps.verifier]
+timeout_sec = 3600
+
+[[steps]]
+name = "02-force-frequencies"
+[steps.agent]
+timeout_sec = 7200
+[steps.verifier]
+timeout_sec = 3600
+
+[[steps]]
+name = "03-protein-scale"
+[steps.agent]
+timeout_sec = 10800
+[steps.verifier]
+timeout_sec = 21600
+
+[[steps]]
+name = "04-input-formats"
+[steps.agent]
+timeout_sec = 3600
+[steps.verifier]
+timeout_sec = 21600
