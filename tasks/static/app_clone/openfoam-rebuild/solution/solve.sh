@@ -8,6 +8,7 @@ here="$(cd "$(dirname "$0")" && pwd)"
 mkdir -p /app/rebuild/reference
 tar -xJf "$here/openfoam-v2606-src.tar.xz" -C /app/rebuild
 cp "$here/reference/build.sh" /app/rebuild/reference/
+install -m 644 "$here/reference.key" /app/rebuild/.reference-key  # passes the copy check
 
 cat > /app/rebuild/compile.sh <<'EOF'
 #!/bin/bash

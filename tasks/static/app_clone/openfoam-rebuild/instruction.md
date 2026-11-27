@@ -19,7 +19,8 @@ matches the installed OpenFOAM.
 Learn what OpenFOAM does only from running its programs through their normal interface
 (arguments, case files, standard input and output), its documentation and its example cases.
 
-- Do not reproduce OpenFOAM's source code from memory or any other copy.
+- Do not reproduce OpenFOAM's source code from memory or any other copy. Copied files are
+  detected and score 0.
 - Do not decompile, disassemble or trace the installed programs or libraries (`objdump`, `gdb`,
   `strace`, `ltrace`, `perf` and the like). Any tool is fine on programs you build yourself.
 - Do not wrap, copy, re-link or call the installed programs or libraries.

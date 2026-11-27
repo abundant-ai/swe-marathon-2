@@ -61,7 +61,8 @@ Evaluation error: no reward file. One step. Implemented in `tests/verifier/runne
 OpenFOAM itself, as source: `solution/solve.sh` puts OpenFOAM's source (the pinned tag, hardened
 like the installed build) and its build script into `/app/rebuild`, and its `compile.sh`
 builds it in the verifier and writes a wrapper per program. It runs as the agent's user.
-`scripts/package.sh` adds the source to the bundle; it is not kept in Git. A do-nothing
+`scripts/package.sh` adds the source to the bundle; it is not kept in Git. It also adds a key
+made for that bundle, whose digest lets the copy check pass the reference solution. A do-nothing
 submission scores 0.
 
 ## Hackability assessment
@@ -70,7 +71,7 @@ Highest unresolved severity: 🟡 YELLOW / UNASSESSED.
 
 | # | Attack | Mitigation | Severity |
 | --- | --- | --- | --- |
-| 1 | Reproduce OpenFOAM's source from memory | Clean-room rule; no source in the image; artifacts audited against upstream after each trial (as ProgramBench reviews trajectories), not by the verifier | 🟡 YELLOW / UNASSESSED |
+| 1 | Reproduce OpenFOAM's source from memory | Clean-room rule; no source in the image; before the build the verifier removes compiled files (as ProgramBench removes the executable) and fails a submission holding any of upstream's 5,841 C/C++ files, compared without comments and spacing (`tests/verifier/source.py`, `scripts/upstream_fingerprints.py`); closer copies audited against upstream after each trial | 🟡 YELLOW / UNASSESSED |
 | 2 | Read, copy or trace the installed programs | Setgid mode 2711, libraries readable by that group only, loaded through `ldconfig`; in the hardened build (`common/reference/hardening.patch`) every file a program opens for reading is checked, once open, to be one the user may read (`open` and `fopen` are replaced in `libOpenFOAM`), and libraries load only by name; `environment/check_hardening.sh` checks both at every image build | 🟡 YELLOW / UNASSESSED |
 | 3 | Wrap or deliver the original | Verifier image (`tests/Dockerfile`) holds no OpenFOAM, only the same toolchain | 🟡 YELLOW / UNASSESSED |
 | 4 | Fetch the source | No network | 🟡 YELLOW / UNASSESSED |
@@ -138,3 +139,5 @@ Changes for Oddish's QA review of version 10:
   program printing nothing and exiting with 1 passes.
 - Instruction: a short paragraph on how runs are graded and the time limit per run.
 - Version 13 (experiment `b8a7ee12`): no-op 0.0, oracle 1.0 (built from source as `dev`).
+- Copy check before the build, from Eric's version 14: compiled files removed, upstream
+  source files fail the build; fingerprints regenerated from the pinned commit without `etc/`.

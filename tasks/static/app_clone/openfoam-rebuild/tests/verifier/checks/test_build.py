@@ -6,20 +6,33 @@ import os
 import shutil
 import subprocess
 import tempfile
+from pathlib import Path
 
 from ..contracts import CheckResult, VerificationContext
+from ..source import prepare_source
 
 
 def test_build(context: VerificationContext) -> CheckResult:
-    """Runs compile.sh in the submission folder as the unprivileged user, without network,
-    after removing any bin/ it contains; then makes the folder read-only for that user."""
+    """Build the delivered source with the same clean environment used for replay.
+
+    Args:
+        context: Submission path, unprivileged identity, timeout and verifier log paths.
+    Returns:
+        Build status and the number of executable entry points confined to the submission.
+    """
     app = context.app
     script = app / "compile.sh"
     if not script.is_file():
         return CheckResult("build", "failed", "compile.sh not found")
     if (app / "bin").is_symlink():
         (app / "bin").unlink()
-    shutil.rmtree(app / "bin", ignore_errors=True)
+    if (app / "bin").is_dir():
+        shutil.rmtree(app / "bin")
+    elif (app / "bin").exists():
+        (app / "bin").unlink()
+    rejection = prepare_source(app)
+    if rejection:
+        return CheckResult("build", "failed", rejection)
     _chown_tree(app, context.uid, context.gid)
     home = tempfile.mkdtemp(dir=context.work)
     tmp = tempfile.mkdtemp(dir=context.work)
@@ -29,6 +42,8 @@ def test_build(context: VerificationContext) -> CheckResult:
         "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
         "HOME": home,
         "TMPDIR": tmp,
+        "USER": "dev",
+        "LOGNAME": "dev",
         "LANG": "C.UTF-8",
         "LC_ALL": "C.UTF-8",
     }
@@ -65,15 +80,15 @@ def test_build(context: VerificationContext) -> CheckResult:
                     | (0o111 if os.path.isdir(x) or mode & 0o100 else 0),
                 )
     bin_dir = app / "bin"
-    programs = (
-        sorted(
-            p.name
-            for p in bin_dir.iterdir()
-            if p.is_file() and os.stat(p).st_mode & 0o001
-        )
-        if bin_dir.is_dir() and not bin_dir.is_symlink()
-        else []
-    )
+    programs = []
+    if _inside(bin_dir, app) and bin_dir.is_dir():
+        for entry in bin_dir.iterdir():
+            if not _inside(entry, app):
+                return CheckResult(
+                    "build", "failed", f"bin/{entry.name} leaves the submission"
+                )
+            if entry.is_file() and entry.stat().st_mode & 0o001:
+                programs.append(entry.name)
     if rc is None:
         return CheckResult(
             "build",
@@ -92,6 +107,22 @@ def test_build(context: VerificationContext) -> CheckResult:
         f"{len(programs)} programs built",
         {"programs_built": float(len(programs))},
     )
+
+
+def _inside(path: Path, root: Path) -> bool:
+    """Check the final target of a build output before inspecting it as root.
+
+    Args:
+        path: A bin directory or executable, possibly a symlink.
+        root: Absolute submission directory.
+    Returns:
+        True for an existing target strictly inside root, including internal symlinks.
+    """
+    try:
+        target = path.resolve(strict=True)
+    except (OSError, RuntimeError):
+        return False
+    return target != root and target.is_relative_to(root)
 
 
 def _chown_tree(root, uid, gid):
