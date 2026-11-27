@@ -7,8 +7,10 @@ guide. Each id needs cases that fail when an implementation lacks it: at least 3
 at least 1 for a restriction. The evidence, strongest first:
 - mutant: a patch in `checks/mutants/` that names the id in its `MUTANT (<id>)` line; the cases whose recorded answer that mutant's build changes (its run in
   --mutants, `<patch name>.json`);
-- error: for a restriction, the cases whose recorded answer carries the restriction's message,
-  which a build without the check does not print;
+- error: for a restriction, the cases whose inputs have the breaking shape (its detectors) and
+  whose recorded answer refuses it (the restriction's message, or a failing exit status), or, for
+  a restriction known only by its message, the cases whose answer carries it: a build without
+  the check does not print that;
 - use: for a feature, the cases whose inputs use it (its `detect` patterns) and whose recorded
   answer is a success (exit status 0): a build without the feature cannot print that answer.
 Out-of-scope ids must have no case; unchecked restrictions are not counted.
@@ -193,6 +195,7 @@ def main() -> int:
         routes = set(f.get("routes") or [])
         detect = alternatives(f)
         errs = [alt["error"] for alt in detect if alt.get("error")]
+        has_shape = any(k != "error" for alt in detect for k in alt)
         use, errors = set(), set()
         for c in cases:
             if routes and route(c["args"]) not in routes:
@@ -200,14 +203,21 @@ def main() -> int:
             g = answer(gold, c["id"])
             if g is None:
                 continue
-            if any(
+            msg = any(
                 e.get("message_substring") and e["message_substring"] in g[1]
                 for e in errs
-            ):
-                errors.add(c["id"])
-            elif g[0] == 0 and matches(
+            )
+            hit = has_shape and matches(
                 detect, inp_cache[c["id"]], tags.get(c["bundle"], {}).get("tags", [])
-            ):
+            )
+            if kind == "restriction":
+                # The breaking shape and a refusal (its message, or a failing exit status),
+                # or, for an id known only by its message, the message.
+                if (has_shape and hit and (msg or g[0] != 0)) or (
+                    not has_shape and msg
+                ):
+                    errors.add(c["id"])
+            elif (hit and g[0] == 0) or msg:
                 use.add(c["id"])
         mutated = killed.get(fid, set())
         if kind == "restriction":
