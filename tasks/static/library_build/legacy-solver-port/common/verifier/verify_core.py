@@ -104,6 +104,19 @@ def tolerances(ref):
     raise ValueError(k)
 
 
+def purge_solver_files(root):
+    """Remove what the candidate's solver left in a shared folder, so that a case cannot use files made by an earlier case."""
+    for entry in os.scandir(root):
+        try:
+            if entry.stat(follow_symlinks=False).st_uid == SOLVER_UID:
+                if entry.is_dir(follow_symlinks=False):
+                    shutil.rmtree(entry.path, ignore_errors=True)
+                else:
+                    os.unlink(entry.path)
+        except OSError:
+            continue
+
+
 def run_case(solver, jf, timeout_scale=1.0):
     ref = json.loads(Path(jf).read_text())
     name = os.path.basename(jf)[:-5]
@@ -122,6 +135,8 @@ def run_case(solver, jf, timeout_scale=1.0):
     env = {
         "PATH": os.path.dirname(py) + ":/usr/bin:/bin",
         "PYTHONDONTWRITEBYTECODE": "1",
+        "TMPDIR": work,
+        "HOME": work,
     }
     t = time.time()
     try:
@@ -168,6 +183,8 @@ def run_case(solver, jf, timeout_scale=1.0):
     except Exception:  # noqa: BLE001, S110  (a candidate output that cannot be parsed fails the case)
         pass
     shutil.rmtree(work, ignore_errors=True)
+    if drop:
+        purge_solver_files("/tmp")
     return name, rc, el, all(ok.values()), ok
 
 
