@@ -1,0 +1,148 @@
+{
+  "method": "All 3^6 two-reader access decisions before the new handover is revealed. Given the actual optical roles, each accessible required reader receives the independently fitted calibration intervention. For every closed required reader a privileged controller can use full SGD, a frozen bank, or row-specific rates derived from both true rules, all 180 commissioning labels and archived gradients. Search all 3^6 remote rate choices after seeing the true handover. Both numerical outcomes of each selected program are retained. This measures this fixed-support control family.",
+  "allowed_remote_policies": [
+    "ordinary",
+    "frozen",
+    "gradient"
+  ],
+  "physical_windows": 729,
+  "remote_allocations_per_window_and_panel": 729,
+  "controls": {
+    "0/both/default": [
+      1.0,
+      0.0
+    ],
+    "0/product/ordinary": [
+      0.0,
+      0.0
+    ],
+    "0/product/frozen": [
+      0.13295442184270626,
+      0.0
+    ],
+    "0/product/gradient": [
+      0.0,
+      0.0
+    ],
+    "0/register/ordinary": [
+      0.0,
+      0.0
+    ],
+    "0/register/frozen": [
+      0.08044164037854744,
+      0.0
+    ],
+    "0/register/gradient": [
+      0.0,
+      0.0
+    ],
+    "1/both/default": [
+      0.0,
+      0.6666666666666666
+    ],
+    "1/product/ordinary": [
+      0.0,
+      0.0
+    ],
+    "1/product/frozen": [
+      0.0,
+      0.13230975485188953
+    ],
+    "1/product/gradient": [
+      0.0,
+      0.0
+    ],
+    "1/register/ordinary": [
+      0.0,
+      0.0
+    ],
+    "1/register/frozen": [
+      0.0,
+      0.0633407768304235
+    ],
+    "1/register/gradient": [
+      0.0,
+      0.0
+    ]
+  },
+  "maximum_worst_case": {
+    "precommitted_opened_fields": [
+      [
+        1,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        0,
+        1
+      ],
+      [
+        0,
+        1
+      ]
+    ],
+    "matched": [
+      0.5752746655063633,
+      0.5
+    ],
+    "post_reveal_fits": [
+      {
+        "role_per_site": [
+          "register",
+          "both",
+          "register",
+          "both",
+          "register",
+          "both"
+        ],
+        "remote_rate_per_site": [
+          "frozen",
+          "ordinary",
+          "frozen",
+          "ordinary",
+          "frozen",
+          "ordinary"
+        ],
+        "cross_scores": [
+          0.5752746655063633,
+          0.0
+        ]
+      },
+      {
+        "role_per_site": [
+          "both",
+          "product",
+          "both",
+          "product",
+          "both",
+          "product"
+        ],
+        "remote_rate_per_site": [
+          "ordinary",
+          "ordinary",
+          "ordinary",
+          "frozen",
+          "ordinary",
+          "frozen"
+        ],
+        "cross_scores": [
+          0.0,
+          0.5
+        ]
+      }
+    ]
+  },
+  "number_windows_above_half_both": 0,
+  "maximum_matched_mean": 0.5661548774259448
+}

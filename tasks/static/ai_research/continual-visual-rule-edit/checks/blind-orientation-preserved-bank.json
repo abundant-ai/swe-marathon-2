@@ -1,0 +1,61 @@
+{
+  "method": "Physical bank assignment depends only on public numeric station ID and one predeclared cyclic offset. The third bank keeps all existing weights and uses zero SGD multipliers on either shift to preserve its archived work. The learned joint representation fits absolute quarter-turn Fourier features and their digit-specific copies on public commissioning vectors. The fitted values approximate a common representation for arbitrary shift recipes. This editor receives no image, ordered field roles, true angle tables or numeric scoring controls. Each program is deployed on both fixed targets.",
+  "trials": [
+    {
+      "cyclic_offset": 0,
+      "source_sha256": "6198daa29ecda3719d207c23cfeba70407092b98c1da8a455c748d5a85515567",
+      "outcomes": {
+        "a": {
+          "reward": 0.2751278146415751,
+          "end_balanced_accuracy": 0.6100842961324157,
+          "archive_sites": 6,
+          "mean_own_frozen_gain": 0.00647648824156015
+        },
+        "b": {
+          "reward": 0.0,
+          "end_balanced_accuracy": 0.6108076757620452,
+          "archive_sites": 6,
+          "mean_own_frozen_gain": 0.010174686578171091
+        }
+      }
+    },
+    {
+      "cyclic_offset": 1,
+      "source_sha256": "669bb32d813e9c6bff600809f03c89ff37dbf190519004650d1a1c8095d35e16",
+      "outcomes": {
+        "a": {
+          "reward": 0.0,
+          "end_balanced_accuracy": 0.6273852323008849,
+          "archive_sites": 6,
+          "mean_own_frozen_gain": 0.016069910480170427
+        },
+        "b": {
+          "reward": 0.1368355057883533,
+          "end_balanced_accuracy": 0.6075198193215339,
+          "archive_sites": 6,
+          "mean_own_frozen_gain": 0.008411048631596202
+        }
+      }
+    },
+    {
+      "cyclic_offset": 2,
+      "source_sha256": "d46be2933484af73c04fffaf74038538e456509a4625d4c30382108c0c55fc6d",
+      "outcomes": {
+        "a": {
+          "reward": 0.10681795389750841,
+          "end_balanced_accuracy": 0.6198447998607014,
+          "archive_sites": 6,
+          "mean_own_frozen_gain": 0.0042244090052441785
+        },
+        "b": {
+          "reward": 0.23211401332970372,
+          "end_balanced_accuracy": 0.6234207278351361,
+          "archive_sites": 6,
+          "mean_own_frozen_gain": 0.0109211119305146
+        }
+      }
+    }
+  ],
+  "base_source": "blind_reference.py",
+  "source_reproduction": "Set BANK_OFFSET to the trial offset. Set the return for the unopened bank to np.zeros((2,2,28))."
+}

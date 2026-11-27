@@ -1,0 +1,34 @@
+[
+  {
+    "trial": "swe-m2_ai-research_continual-visual-rule-edit-correct-93545b36-111",
+    "hashed_remote_numeric": "c0557a1bea645b76452f910e36d915230c217d26a862c107f1dd17e67d62b196",
+    "exact_hosted_artifact_locally_deployed": true,
+    "targets": [
+      0.13879457314365126,
+      0.0
+    ],
+    "hosted_targets": {
+      "a": 0.13879457314365126,
+      "b": 0.0
+    },
+    "total_compared_scalars": 15264,
+    "maximum_difference": 9.020562075079397e-17,
+    "mismatches_over_1e_minus_9": []
+  },
+  {
+    "trial": "swe-m2_ai-research_continual-visual-rule-edit-correct-93545b36-97",
+    "hashed_remote_numeric": "fba1c1a85a1aeb3c6a26eb14896960e5e3d51145c82fc25d67007e0a98ddc98f",
+    "exact_hosted_artifact_locally_deployed": true,
+    "targets": [
+      0.0,
+      0.0
+    ],
+    "hosted_targets": {
+      "a": 0.0,
+      "b": 0.0
+    },
+    "total_compared_scalars": 15264,
+    "maximum_difference": 1.0061396160665481e-16,
+    "mismatches_over_1e_minus_9": []
+  }
+]

@@ -1,0 +1,13 @@
+{
+  "trial": "swe-m2_ai-research_continual-visual-rule-edit-correct-93545b36-90",
+  "source_sha256": "76829cfdf9f371c0e811efaa1d811877c07c1216da84df1a59ca720b48ca58a6",
+  "unique_visible_crops": 114,
+  "atlas_rows": 114,
+  "exact_matches_at_recorded_orientation": 114,
+  "matches_allowing_quarter_turn": 114,
+  "recognized_in_benchmark_capture_library": 114,
+  "matching_recorded_digit_and_turn": 114,
+  "role_pairs_recovered": 6,
+  "nominal_entries_recovered": 60,
+  "method": "Decode the literal compressed atlas from the submitted Python AST. Compare its 64 ink counts to released image crops and compare its class labels to the optical library. Candidate code is not executed."
+}

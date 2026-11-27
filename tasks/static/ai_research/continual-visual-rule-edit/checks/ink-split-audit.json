@@ -1,0 +1,59 @@
+{
+  "source_pack": "Matched Oddish v14",
+  "method": "Compare original 8\u00d78 ink counts after canonicalizing over the four quarter turns. Candidate-visible gallery uses original feeder rows. Sheet crops are reduced from their public PNG using the recorded pixel scaling. These are exact matches and do not detect near duplicates or identify writers. Within-site future training and held-out indices refer to the same source test-writer pool across sites.",
+  "source_training_examples": 1919,
+  "source_test_examples": 901,
+  "training_unique_glyphs_up_to_rotation": 1919,
+  "test_unique_glyphs_up_to_rotation": 901,
+  "train_test_glyph_overlap": 0,
+  "public_commissioning_unique_glyphs": 141,
+  "public_commissioning_matches_training_glyphs": 141,
+  "public_commissioning_matches_test_glyphs": 0,
+  "sheet_unique_glyphs": 30,
+  "sheet_matches_training_glyphs": 30,
+  "sheet_matches_test_glyphs": 0,
+  "sites": [
+    {
+      "site": 17,
+      "future_training_specimens": 449,
+      "held_out_specimens": 452,
+      "within_site_id_overlap": 0,
+      "overlap_after_rotation_canonicalization": 0
+    },
+    {
+      "site": 23,
+      "future_training_specimens": 449,
+      "held_out_specimens": 452,
+      "within_site_id_overlap": 0,
+      "overlap_after_rotation_canonicalization": 0
+    },
+    {
+      "site": 42,
+      "future_training_specimens": 449,
+      "held_out_specimens": 452,
+      "within_site_id_overlap": 0,
+      "overlap_after_rotation_canonicalization": 0
+    },
+    {
+      "site": 58,
+      "future_training_specimens": 449,
+      "held_out_specimens": 452,
+      "within_site_id_overlap": 0,
+      "overlap_after_rotation_canonicalization": 0
+    },
+    {
+      "site": 71,
+      "future_training_specimens": 449,
+      "held_out_specimens": 452,
+      "within_site_id_overlap": 0,
+      "overlap_after_rotation_canonicalization": 0
+    },
+    {
+      "site": 86,
+      "future_training_specimens": 449,
+      "held_out_specimens": 452,
+      "within_site_id_overlap": 0,
+      "overlap_after_rotation_canonicalization": 0
+    }
+  ]
+}

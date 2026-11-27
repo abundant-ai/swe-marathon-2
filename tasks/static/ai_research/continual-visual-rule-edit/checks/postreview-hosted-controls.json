@@ -1,0 +1,196 @@
+[
+  {
+    "source_sha256": "270c3a39b179794f4e0558df58d03c7d18bf8a5c9dd835e970ae422c599f9933",
+    "build": "valid",
+    "reward": 1.0,
+    "target_rewards": {
+      "a": 1.0,
+      "b": 0.0
+    },
+    "test_receipt_matches": true,
+    "staging_receipt_reproduced": true,
+    "verification": {
+      "passed": true,
+      "checks": [
+        {
+          "requirement_id": "installation",
+          "status": "passed",
+          "explanation": "The independent numerical rebuild was valid.",
+          "measurements": {}
+        },
+        {
+          "requirement_id": "final_test",
+          "status": "passed",
+          "explanation": "Compare the final source digest and the three reported staging installations with the independent rebuild.",
+          "measurements": {}
+        },
+        {
+          "requirement_id": "old_inspections",
+          "status": "passed",
+          "explanation": "Worst accuracy loss during deployment and normalized score drift at installation.",
+          "measurements": {
+            "worst_archived_accuracy_loss": 0.0022123893805309214,
+            "worst_installation_rms_drift": 0.025876409900981667
+          }
+        },
+        {
+          "requirement_id": "trunk_learning",
+          "status": "passed",
+          "explanation": "End-of-order accuracy gained from training the installed rows across both banks.",
+          "measurements": {
+            "gain_over_frozen_copy": 0.023539925434283866,
+            "informed_gain": 0.023539925434283866,
+            "normalized_gain_over_frozen_copy": 1.0
+          }
+        },
+        {
+          "requirement_id": "early_acquisition",
+          "status": "passed",
+          "explanation": "6 of six sites attained full credit across three draws of four orders.",
+          "measurements": {
+            "mean_early_acquisition": 0.6248860517043592,
+            "mean_gain_early_acquisition": 1.0,
+            "full_credit_sites_early_acquisition": 6.0
+          }
+        },
+        {
+          "requirement_id": "end_of_order",
+          "status": "passed",
+          "explanation": "6 of six sites attained full credit across three draws of four orders.",
+          "measurements": {
+            "mean_end_of_order": 0.6585270454359227,
+            "mean_gain_end_of_order": 1.0,
+            "full_credit_sites_end_of_order": 6.0
+          }
+        },
+        {
+          "requirement_id": "final_revisit",
+          "status": "passed",
+          "explanation": "6 of six sites attained full credit across three draws of four orders.",
+          "measurements": {
+            "mean_final_revisit": 0.6522797341035725,
+            "mean_gain_final_revisit": 1.0,
+            "full_credit_sites_final_revisit": 6.0
+          }
+        },
+        {
+          "requirement_id": "weakest_subgroup",
+          "status": "passed",
+          "explanation": "6 of six sites attained full credit across three draws of four orders.",
+          "measurements": {
+            "mean_weakest_subgroup": 0.4508096224080737,
+            "mean_gain_weakest_subgroup": 1.0,
+            "full_credit_sites_weakest_subgroup": 6.0
+          }
+        },
+        {
+          "requirement_id": "peak_forgetting",
+          "status": "passed",
+          "explanation": "6 of six sites attained full credit across three draws of four orders.",
+          "measurements": {
+            "mean_peak_forgetting": 0.017932132907243555,
+            "mean_gain_peak_forgetting": 1.0,
+            "full_credit_sites_peak_forgetting": 6.0
+          }
+        }
+      ],
+      "metrics": {
+        "worst_archived_accuracy_loss": 0.0022123893805309214,
+        "worst_installation_rms_drift": 0.025876409900981667,
+        "gain_over_frozen_copy": 0.023539925434283866,
+        "informed_gain": 0.023539925434283866,
+        "normalized_gain_over_frozen_copy": 1.0,
+        "mean_early_acquisition": 0.6248860517043592,
+        "mean_gain_early_acquisition": 1.0,
+        "full_credit_sites_early_acquisition": 6.0,
+        "mean_end_of_order": 0.6585270454359227,
+        "mean_gain_end_of_order": 1.0,
+        "full_credit_sites_end_of_order": 6.0,
+        "mean_final_revisit": 0.6522797341035725,
+        "mean_gain_final_revisit": 1.0,
+        "full_credit_sites_final_revisit": 6.0,
+        "mean_weakest_subgroup": 0.4508096224080737,
+        "mean_gain_weakest_subgroup": 1.0,
+        "full_credit_sites_weakest_subgroup": 6.0,
+        "mean_peak_forgetting": 0.017932132907243555,
+        "mean_gain_peak_forgetting": 1.0,
+        "full_credit_sites_peak_forgetting": 6.0,
+        "reward": 1.0
+      }
+    },
+    "trial": "swe-m2_ai-research_reciprocal-publication-control-450e2784-0",
+    "path": "verifier/metrics.json"
+  },
+  {
+    "source_sha256": null,
+    "build": "failed",
+    "reward": 0.0,
+    "target_rewards": null,
+    "test_receipt_matches": null,
+    "staging_receipt_reproduced": null,
+    "verification": {
+      "passed": false,
+      "checks": [
+        {
+          "requirement_id": "installation",
+          "status": "failed",
+          "explanation": "The independent numerical rebuild was failed.",
+          "measurements": {}
+        },
+        {
+          "requirement_id": "final_test",
+          "status": "skipped",
+          "explanation": "Compare the final source digest and the three reported staging installations with the independent rebuild.",
+          "measurements": {}
+        },
+        {
+          "requirement_id": "old_inspections",
+          "status": "skipped",
+          "explanation": "Requires a deployable checkpoint edit.",
+          "measurements": {}
+        },
+        {
+          "requirement_id": "trunk_learning",
+          "status": "skipped",
+          "explanation": "Requires a deployable checkpoint edit.",
+          "measurements": {}
+        },
+        {
+          "requirement_id": "early_acquisition",
+          "status": "skipped",
+          "explanation": "Requires a deployable checkpoint edit.",
+          "measurements": {}
+        },
+        {
+          "requirement_id": "end_of_order",
+          "status": "skipped",
+          "explanation": "Requires a deployable checkpoint edit.",
+          "measurements": {}
+        },
+        {
+          "requirement_id": "final_revisit",
+          "status": "skipped",
+          "explanation": "Requires a deployable checkpoint edit.",
+          "measurements": {}
+        },
+        {
+          "requirement_id": "weakest_subgroup",
+          "status": "skipped",
+          "explanation": "Requires a deployable checkpoint edit.",
+          "measurements": {}
+        },
+        {
+          "requirement_id": "peak_forgetting",
+          "status": "skipped",
+          "explanation": "Requires a deployable checkpoint edit.",
+          "measurements": {}
+        }
+      ],
+      "metrics": {
+        "reward": 0.0
+      }
+    },
+    "trial": "swe-m2_ai-research_reciprocal-publication-control-450e2784-1",
+    "path": "verifier/metrics.json"
+  }
+]

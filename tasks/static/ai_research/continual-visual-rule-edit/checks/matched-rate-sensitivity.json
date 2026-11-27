@@ -1,0 +1,209 @@
+{
+  "method": "Post-hoc numerical diagnostics. Keep every installed checkpoint parameter and address fixed. Apply either the uniform half-rate policy on renewed rows with other rows frozen, or multiply every submitted rate by 2.5, capped at 1. These two transformations were used in the previous paired-registration study. The six results are author interventions rather than additional agent trials.",
+  "results": [
+    {
+      "trial": "swe-m2_ai-research_continual-visual-rule-edit-correct-93545b36-90",
+      "original_official_reward": 0.17431073830814123,
+      "source_sha256": "76829cfdf9f371c0e811efaa1d811877c07c1216da84df1a59ca720b48ca58a6",
+      "original_arrays": "numeric-local-artifact.npz",
+      "array_archive_sha256": "54c6002c4caa2be42d30d659638558c7dad25612a0ca20c91da67f656eb097ed",
+      "rate_change": "scale_existing_2.5",
+      "targets": {
+        "a": {
+          "reward": 0.1762377226969379,
+          "mean_end_accuracy_gain_over_own_frozen": 0.034922591978039985,
+          "site_rewards": [
+            0.6095208582009614,
+            0.0,
+            0.0,
+            0.447905477980666,
+            0.0,
+            0.0
+          ]
+        },
+        "b": {
+          "reward": 0.0,
+          "mean_end_accuracy_gain_over_own_frozen": 0.008643426335627653,
+          "site_rewards": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      }
+    },
+    {
+      "trial": "swe-m2_ai-research_continual-visual-rule-edit-correct-93545b36-90",
+      "original_official_reward": 0.17431073830814123,
+      "source_sha256": "76829cfdf9f371c0e811efaa1d811877c07c1216da84df1a59ca720b48ca58a6",
+      "original_arrays": "numeric-local-artifact.npz",
+      "array_archive_sha256": "54c6002c4caa2be42d30d659638558c7dad25612a0ca20c91da67f656eb097ed",
+      "rate_change": "renewed_rows_half",
+      "targets": {
+        "a": {
+          "reward": 0.34023320795375284,
+          "mean_end_accuracy_gain_over_own_frozen": 0.027534517371353665,
+          "site_rewards": [
+            0.5781876472928718,
+            0.0,
+            0.0,
+            0.4632116004296451,
+            1.0,
+            0.0
+          ]
+        },
+        "b": {
+          "reward": 0.0,
+          "mean_end_accuracy_gain_over_own_frozen": 0.00626779641920681,
+          "site_rewards": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      }
+    },
+    {
+      "trial": "swe-m2_ai-research_continual-visual-rule-edit-correct-93545b36-94",
+      "original_official_reward": 0.09431088871967813,
+      "source_sha256": "873198902660836277a1a1478ae87d95c527e26001af0993b43440bf726b9a13",
+      "original_arrays": "numeric-local-artifact.npz",
+      "array_archive_sha256": "c141896c4fa6250e7891ada7c2cefa669c851bd9d72d346b878375ed4de939b1",
+      "rate_change": "scale_existing_2.5",
+      "targets": {
+        "a": {
+          "reward": 0.20295333405852278,
+          "mean_end_accuracy_gain_over_own_frozen": 0.0050489337512291,
+          "site_rewards": [
+            0.7063056652281703,
+            0.0,
+            1.0,
+            0.7844494019354776,
+            1.0,
+            0.0
+          ]
+        },
+        "b": {
+          "reward": 0.0,
+          "mean_end_accuracy_gain_over_own_frozen": 0.0003885764913143458,
+          "site_rewards": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      }
+    },
+    {
+      "trial": "swe-m2_ai-research_continual-visual-rule-edit-correct-93545b36-94",
+      "original_official_reward": 0.09431088871967813,
+      "source_sha256": "873198902660836277a1a1478ae87d95c527e26001af0993b43440bf726b9a13",
+      "original_arrays": "numeric-local-artifact.npz",
+      "array_archive_sha256": "c141896c4fa6250e7891ada7c2cefa669c851bd9d72d346b878375ed4de939b1",
+      "rate_change": "renewed_rows_half",
+      "targets": {
+        "a": {
+          "reward": 0.3749913147759298,
+          "mean_end_accuracy_gain_over_own_frozen": 0.020823090789904967,
+          "site_rewards": [
+            0.5769901753741623,
+            0.0,
+            0.0,
+            0.6729577132814163,
+            1.0,
+            0.0
+          ]
+        },
+        "b": {
+          "reward": 0.0,
+          "mean_end_accuracy_gain_over_own_frozen": 0.005928512168141603,
+          "site_rewards": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      }
+    },
+    {
+      "trial": "swe-m2_ai-research_continual-visual-rule-edit-correct-93545b36-95",
+      "original_official_reward": 0.4518383552703135,
+      "source_sha256": "17d8f8b219b5cb4d2a9b7122563a09b406764b45203968efd03d9983c7990f1f",
+      "original_arrays": "numeric-hosted-artifact.npz",
+      "array_archive_sha256": "0ec9cda0431e3d25284c2d98d597805bdc01f99521c96eca9664fb40ae2ae3fc",
+      "rate_change": "scale_existing_2.5",
+      "targets": {
+        "a": {
+          "reward": 0.46861081235313456,
+          "mean_end_accuracy_gain_over_own_frozen": 0.020889667322189456,
+          "site_rewards": [
+            0.2687807976004651,
+            0.0,
+            1.0,
+            0.5428840765183426,
+            1.0,
+            0.0
+          ]
+        },
+        "b": {
+          "reward": 0.0,
+          "mean_end_accuracy_gain_over_own_frozen": 0.002067073295640783,
+          "site_rewards": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      }
+    },
+    {
+      "trial": "swe-m2_ai-research_continual-visual-rule-edit-correct-93545b36-95",
+      "original_official_reward": 0.4518383552703135,
+      "source_sha256": "17d8f8b219b5cb4d2a9b7122563a09b406764b45203968efd03d9983c7990f1f",
+      "original_arrays": "numeric-hosted-artifact.npz",
+      "array_archive_sha256": "0ec9cda0431e3d25284c2d98d597805bdc01f99521c96eca9664fb40ae2ae3fc",
+      "rate_change": "renewed_rows_half",
+      "targets": {
+        "a": {
+          "reward": 0.25130730525212996,
+          "mean_end_accuracy_gain_over_own_frozen": 0.028203483489019996,
+          "site_rewards": [
+            0.0,
+            0.0,
+            0.0,
+            0.5078438315127798,
+            1.0,
+            0.0
+          ]
+        },
+        "b": {
+          "reward": 0.0,
+          "mean_end_accuracy_gain_over_own_frozen": 0.004393410971812525,
+          "site_rewards": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ]
+        }
+      }
+    }
+  ]
+}

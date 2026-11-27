@@ -1,0 +1,56 @@
+[
+  {
+    "trial": "swe-m2_ai-research_continual-visual-rule-edit-correct-93545b36-90",
+    "reproduced": true,
+    "wrong_field_accepted": false,
+    "missing_details_accepted": false
+  },
+  {
+    "trial": "swe-m2_ai-research_continual-visual-rule-edit-correct-93545b36-94",
+    "reproduced": true,
+    "wrong_field_accepted": false,
+    "missing_details_accepted": false
+  },
+  {
+    "trial": "swe-m2_ai-research_continual-visual-rule-edit-correct-93545b36-95",
+    "reproduced": true,
+    "wrong_field_accepted": false,
+    "missing_details_accepted": false
+  },
+  {
+    "trial": "swe-m2_ai-research_continual-visual-rule-edit-none-67ae1c69-21",
+    "reproduced": true,
+    "wrong_field_accepted": false,
+    "missing_details_accepted": false
+  },
+  {
+    "trial": "swe-m2_ai-research_continual-visual-rule-edit-none-67ae1c69-22",
+    "reproduced": true,
+    "wrong_field_accepted": false,
+    "missing_details_accepted": false
+  },
+  {
+    "trial": "swe-m2_ai-research_continual-visual-rule-edit-none-67ae1c69-23",
+    "reproduced": true,
+    "wrong_field_accepted": false,
+    "missing_details_accepted": false
+  },
+  {
+    "trial": "swe-m2_ai-research_continual-visual-rule-edit-swapped-d3dd7d75-19",
+    "reproduced": false,
+    "wrong_field_accepted": false,
+    "missing_details_accepted": false
+  },
+  {
+    "trial": "swe-m2_ai-research_continual-visual-rule-edit-swapped-d3dd7d75-20",
+    "reproduced": true,
+    "wrong_field_accepted": false,
+    "missing_details_accepted": false
+  },
+  {
+    "trial": "swe-m2_ai-research_continual-visual-rule-edit-swapped-d3dd7d75-21",
+    "reproduced": true,
+    "wrong_field_accepted": false,
+    "missing_details_accepted": false
+  }
+]

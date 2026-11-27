@@ -1,0 +1,130 @@
+{
+  "correct-noop": {
+    "build": "valid",
+    "score": 0.0,
+    "targets": {
+      "a": 0.0,
+      "b": 0.0
+    },
+    "reproduced": true,
+    "all_calibration_outputs": {
+      "name": "untreated",
+      "compared_scalars": 15144,
+      "max_absolute_difference": 0.0,
+      "replayed": {
+        "runs": [
+          18,
+          18
+        ],
+        "frozen_runs": [
+          18,
+          18
+        ]
+      },
+      "matching_weight_addresses": true,
+      "expected_target_scores": {
+        "a": 0.0,
+        "b": 0.0
+      }
+    },
+    "runtime_sha256": "190bc69c9b1fdc8ef3f8dce6878c544d6f50b57265d440b133b9ac871804855c"
+  },
+  "correct-oracle": {
+    "build": "valid",
+    "score": 1.0,
+    "targets": {
+      "a": 1.0,
+      "b": 0.0
+    },
+    "reproduced": true,
+    "all_calibration_outputs": {
+      "name": "informed_0",
+      "compared_scalars": 15264,
+      "max_absolute_difference": 0.0,
+      "replayed": {
+        "runs": [
+          18,
+          18
+        ],
+        "frozen_runs": [
+          18,
+          18
+        ]
+      },
+      "matching_weight_addresses": true,
+      "expected_target_scores": {
+        "a": 1.0,
+        "b": 0.0
+      }
+    },
+    "runtime_sha256": "190bc69c9b1fdc8ef3f8dce6878c544d6f50b57265d440b133b9ac871804855c"
+  },
+  "correct-untouched": {
+    "build": "failed",
+    "score": 0.0,
+    "targets": null,
+    "reproduced": null,
+    "all_calibration_outputs": null,
+    "runtime_sha256": "190bc69c9b1fdc8ef3f8dce6878c544d6f50b57265d440b133b9ac871804855c"
+  },
+  "none-oracle": {
+    "build": "valid",
+    "score": 0.0,
+    "targets": {
+      "a": 0.0,
+      "b": 0.0
+    },
+    "reproduced": true,
+    "all_calibration_outputs": {
+      "name": "untreated",
+      "compared_scalars": 15144,
+      "max_absolute_difference": 0.0,
+      "replayed": {
+        "runs": [
+          18,
+          18
+        ],
+        "frozen_runs": [
+          18,
+          18
+        ]
+      },
+      "matching_weight_addresses": true,
+      "expected_target_scores": {
+        "a": 0.0,
+        "b": 0.0
+      }
+    },
+    "runtime_sha256": "7a1175401becbc65748946eb5f322d74155f78120e423a459a102c018b82f1ec"
+  },
+  "swapped-oracle": {
+    "build": "valid",
+    "score": 0.0,
+    "targets": {
+      "a": 0.0,
+      "b": 0.6666666666666666
+    },
+    "reproduced": true,
+    "all_calibration_outputs": {
+      "name": "informed_1",
+      "compared_scalars": 15264,
+      "max_absolute_difference": 0.0,
+      "replayed": {
+        "runs": [
+          18,
+          18
+        ],
+        "frozen_runs": [
+          18,
+          18
+        ]
+      },
+      "matching_weight_addresses": true,
+      "expected_target_scores": {
+        "a": 0.0,
+        "b": 0.6666666666666666
+      }
+    },
+    "runtime_sha256": "b283ecb7621bc707882d04ab2e95274f703f18b6a5ab4aa5db035ee16fc1eb8a"
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "correct": {
+    "task": "swe-m2_ai-research_continual-visual-rule-edit-correct-93545b36",
+    "version": 14,
+    "overrides": {},
+    "manifest_sha256": "069f277b6e56b1695a85bc51245b9248ab7c581d81dcb0059e9ab938bd117e4f"
+  },
+  "swapped": {
+    "task": "swe-m2_ai-research_continual-visual-rule-edit-swapped-d3dd7d75",
+    "version": 3,
+    "overrides": {
+      "environment/public/observation.png": "890925f2874ab7bb0704de46843f859cfa913054c4b3704cf05b3f91529f90c1",
+      "task.toml": "7af7ebb030566929ea041dd2f1de2fd329c6f200114a5596ee639aee0eaf5441"
+    },
+    "manifest_sha256": "1903e9799e6bbf6fbe39db0b88edfe1a88ef4ee3d4c9b57d9653ec239bc4355b"
+  },
+  "none": {
+    "task": "swe-m2_ai-research_continual-visual-rule-edit-none-67ae1c69",
+    "version": 3,
+    "overrides": {
+      "environment/public/observation.png": null,
+      "task.toml": "79bc9b09ce27add2dc0433262885b6bbd1eeda094587209df6f08df7467cc93d"
+    },
+    "manifest_sha256": "ec979be8d29f915b481a43146048424f53d48e8f18bca94ad9168f6a7bac08da"
+  }
+}

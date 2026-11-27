@@ -1,0 +1,635 @@
+{
+  "training_ages": [
+    0,
+    32
+  ],
+  "order_draws": [
+    5701,
+    6263,
+    7187
+  ],
+  "pair_gain": 1.0,
+  "readout_step": 0.065,
+  "old_networks_regenerated": true,
+  "paired_experiment": "Identical initialization, archive fitting, future pairings, future order seeds, all row rates equal one and both banks learn at each step. The covariate is 32 preceding tasks versus zero in both physical scanners. Each future order has 192 SGD updates.",
+  "cases": [
+    {
+      "site": 17,
+      "arm": "a",
+      "banks": [
+        907,
+        1907
+      ],
+      "aged": [
+        {
+          "early": 0.5326269819321534,
+          "end_of_order": 0.5641592920353983,
+          "final_revisit": 0.5606909107669616,
+          "peak_forgetting": 0.014380530973451267
+        },
+        {
+          "early": 0.5163970317109144,
+          "end_of_order": 0.563341168879056,
+          "final_revisit": 0.5569920722713865,
+          "peak_forgetting": 0.018897492625368884
+        },
+        {
+          "early": 0.5236737186578171,
+          "end_of_order": 0.5650119837758112,
+          "final_revisit": 0.5617510140117994,
+          "peak_forgetting": 0.010693215339233175
+        }
+      ],
+      "fresh": [
+        {
+          "early": 0.5574645095870207,
+          "end_of_order": 0.6239859882005899,
+          "final_revisit": 0.6079231194690264,
+          "peak_forgetting": 0.09328908554572268
+        },
+        {
+          "early": 0.5578562868731564,
+          "end_of_order": 0.6338956489675517,
+          "final_revisit": 0.6257259402654868,
+          "peak_forgetting": 0.02507374631268433
+        },
+        {
+          "early": 0.5639979719764012,
+          "end_of_order": 0.6296437131268438,
+          "final_revisit": 0.6160121681415929,
+          "peak_forgetting": 0.03143436578171088
+        }
+      ]
+    },
+    {
+      "site": 17,
+      "arm": "b",
+      "banks": [
+        1907,
+        2907
+      ],
+      "aged": [
+        {
+          "early": 0.5298269266224189,
+          "end_of_order": 0.5478544432153393,
+          "final_revisit": 0.5449391592920354,
+          "peak_forgetting": 0.015210176991150348
+        },
+        {
+          "early": 0.5303685011061947,
+          "end_of_order": 0.5481770833333333,
+          "final_revisit": 0.5410213864306785,
+          "peak_forgetting": 0.030696902654867242
+        },
+        {
+          "early": 0.540433720501475,
+          "end_of_order": 0.5775142883480826,
+          "final_revisit": 0.5788163716814159,
+          "peak_forgetting": 0.0033185840707964376
+        }
+      ],
+      "fresh": [
+        {
+          "early": 0.5454519266224189,
+          "end_of_order": 0.631268436578171,
+          "final_revisit": 0.6299893989675516,
+          "peak_forgetting": 0.00903392330383479
+        },
+        {
+          "early": 0.5356229258849557,
+          "end_of_order": 0.6311532079646018,
+          "final_revisit": 0.62992026179941,
+          "peak_forgetting": 0.0047935103244838295
+        },
+        {
+          "early": 0.552054526179941,
+          "end_of_order": 0.6381591076696165,
+          "final_revisit": 0.6257374631268436,
+          "peak_forgetting": 0.02198561946902655
+        }
+      ]
+    },
+    {
+      "site": 23,
+      "arm": "a",
+      "banks": [
+        2911,
+        911
+      ],
+      "aged": [
+        {
+          "early": 0.5470017514749262,
+          "end_of_order": 0.6123709439528023,
+          "final_revisit": 0.625172842920354,
+          "peak_forgetting": 0.0027654867256636795
+        },
+        {
+          "early": 0.534983407079646,
+          "end_of_order": 0.5635024889380531,
+          "final_revisit": 0.5621773598820059,
+          "peak_forgetting": 0.004701327433628388
+        },
+        {
+          "early": 0.5497269081858407,
+          "end_of_order": 0.643851401179941,
+          "final_revisit": 0.6291827986725664,
+          "peak_forgetting": 0.06194690265486713
+        }
+      ],
+      "fresh": [
+        {
+          "early": 0.5981517330383481,
+          "end_of_order": 0.7462205014749261,
+          "final_revisit": 0.7000483960176991,
+          "peak_forgetting": 0.14422013274336276
+        },
+        {
+          "early": 0.5355307429941003,
+          "end_of_order": 0.6444044985250738,
+          "final_revisit": 0.632121128318584,
+          "peak_forgetting": 0.03512168141592931
+        },
+        {
+          "early": 0.6057798672566371,
+          "end_of_order": 0.7526272123893806,
+          "final_revisit": 0.7241081305309734,
+          "peak_forgetting": 0.0599188790560472
+        }
+      ]
+    },
+    {
+      "site": 23,
+      "arm": "b",
+      "banks": [
+        911,
+        1911
+      ],
+      "aged": [
+        {
+          "early": 0.5309619284660767,
+          "end_of_order": 0.5663601585545723,
+          "final_revisit": 0.5644473635693216,
+          "peak_forgetting": 0.009126106194690231
+        },
+        {
+          "early": 0.5154291113569321,
+          "end_of_order": 0.5284153761061947,
+          "final_revisit": 0.5289223820058997,
+          "peak_forgetting": 0.0006913716814158644
+        },
+        {
+          "early": 0.5364756176253687,
+          "end_of_order": 0.5713495575221239,
+          "final_revisit": 0.5712573746312684,
+          "peak_forgetting": 0.009771386430678541
+        }
+      ],
+      "fresh": [
+        {
+          "early": 0.5742994100294985,
+          "end_of_order": 0.7317938790560472,
+          "final_revisit": 0.7073999815634218,
+          "peak_forgetting": 0.07853982300884943
+        },
+        {
+          "early": 0.5375069137168141,
+          "end_of_order": 0.6152747050147492,
+          "final_revisit": 0.6058720501474926,
+          "peak_forgetting": 0.024889380530973337
+        },
+        {
+          "early": 0.5729397123893805,
+          "end_of_order": 0.7366104351032449,
+          "final_revisit": 0.7119745575221239,
+          "peak_forgetting": 0.04996312684365778
+        }
+      ]
+    },
+    {
+      "site": 42,
+      "arm": "a",
+      "banks": [
+        1919,
+        2919
+      ],
+      "aged": [
+        {
+          "early": 0.5418683167404129,
+          "end_of_order": 0.5816855641592921,
+          "final_revisit": 0.5922405051622419,
+          "peak_forgetting": 0.0
+        },
+        {
+          "early": 0.5328516777286135,
+          "end_of_order": 0.561140302359882,
+          "final_revisit": 0.5685264564896755,
+          "peak_forgetting": 0.002488938053097356
+        },
+        {
+          "early": 0.5902989030235988,
+          "end_of_order": 0.6678765671091446,
+          "final_revisit": 0.7098428281710915,
+          "peak_forgetting": 0.0
+        }
+      ],
+      "fresh": [
+        {
+          "early": 0.6675366426991151,
+          "end_of_order": 0.7480641592920354,
+          "final_revisit": 0.7352968289085546,
+          "peak_forgetting": 0.04037610619469034
+        },
+        {
+          "early": 0.5928800239675516,
+          "end_of_order": 0.6453148045722714,
+          "final_revisit": 0.6264979719764012,
+          "peak_forgetting": 0.05272861356932157
+        },
+        {
+          "early": 0.7460649428466077,
+          "end_of_order": 0.8673949115044247,
+          "final_revisit": 0.8393943584070797,
+          "peak_forgetting": 0.057337758112094295
+        }
+      ]
+    },
+    {
+      "site": 42,
+      "arm": "b",
+      "banks": [
+        2919,
+        919
+      ],
+      "aged": [
+        {
+          "early": 0.52937177359882,
+          "end_of_order": 0.6314412794985251,
+          "final_revisit": 0.6463288163716814,
+          "peak_forgetting": 0.017238200589970498
+        },
+        {
+          "early": 0.5212308720501475,
+          "end_of_order": 0.5447317477876106,
+          "final_revisit": 0.5402263089970502,
+          "peak_forgetting": 0.020372418879056053
+        },
+        {
+          "early": 0.5473647216076696,
+          "end_of_order": 0.7030328171091447,
+          "final_revisit": 0.697697732300885,
+          "peak_forgetting": 0.032494469026548733
+        }
+      ],
+      "fresh": [
+        {
+          "early": 0.5770879424778761,
+          "end_of_order": 0.7142676069321534,
+          "final_revisit": 0.7097852138643068,
+          "peak_forgetting": 0.022769174041297968
+        },
+        {
+          "early": 0.5355480272861357,
+          "end_of_order": 0.6145602876106195,
+          "final_revisit": 0.6114836836283186,
+          "peak_forgetting": 0.009955752212389424
+        },
+        {
+          "early": 0.5920676622418878,
+          "end_of_order": 0.8191947824483775,
+          "final_revisit": 0.8057130346607669,
+          "peak_forgetting": 0.02700958702064904
+        }
+      ]
+    },
+    {
+      "site": 58,
+      "arm": "a",
+      "banks": [
+        929,
+        2929
+      ],
+      "aged": [
+        {
+          "early": 0.5256556508112095,
+          "end_of_order": 0.5751175331858407,
+          "final_revisit": 0.5766270280235988,
+          "peak_forgetting": 0.0
+        },
+        {
+          "early": 0.5217090707964602,
+          "end_of_order": 0.577283831120944,
+          "final_revisit": 0.5790929203539823,
+          "peak_forgetting": 0.0013827433628318397
+        },
+        {
+          "early": 0.561918095501475,
+          "end_of_order": 0.6936877765486725,
+          "final_revisit": 0.6073930678466077,
+          "peak_forgetting": 0.1826603982300884
+        }
+      ],
+      "fresh": [
+        {
+          "early": 0.5812592182890856,
+          "end_of_order": 0.6344372234513274,
+          "final_revisit": 0.6232254793510323,
+          "peak_forgetting": 0.07946165191740406
+        },
+        {
+          "early": 0.5718738477138643,
+          "end_of_order": 0.6365228613569321,
+          "final_revisit": 0.6207826327433629,
+          "peak_forgetting": 0.0599188790560472
+        },
+        {
+          "early": 0.6198435195427728,
+          "end_of_order": 0.7432821718289085,
+          "final_revisit": 0.7145902470501475,
+          "peak_forgetting": 0.06747787610619471
+        }
+      ]
+    },
+    {
+      "site": 58,
+      "arm": "b",
+      "banks": [
+        2929,
+        1929
+      ],
+      "aged": [
+        {
+          "early": 0.5378410766961652,
+          "end_of_order": 0.5791159660766961,
+          "final_revisit": 0.5787702802359882,
+          "peak_forgetting": 0.002488938053097356
+        },
+        {
+          "early": 0.5498075682153392,
+          "end_of_order": 0.5846815081120944,
+          "final_revisit": 0.5830683075221239,
+          "peak_forgetting": 0.007835545722713833
+        },
+        {
+          "early": 0.5826362002212389,
+          "end_of_order": 0.689355180678466,
+          "final_revisit": 0.677475110619469,
+          "peak_forgetting": 0.03346238938053092
+        }
+      ],
+      "fresh": [
+        {
+          "early": 0.5703125,
+          "end_of_order": 0.6411435287610621,
+          "final_revisit": 0.6358314896755162,
+          "peak_forgetting": 0.04249631268436582
+        },
+        {
+          "early": 0.5716203447640118,
+          "end_of_order": 0.6359121497050148,
+          "final_revisit": 0.6313145280235988,
+          "peak_forgetting": 0.010508849557522182
+        },
+        {
+          "early": 0.6407287057522124,
+          "end_of_order": 0.7453562868731562,
+          "final_revisit": 0.7299271755162242,
+          "peak_forgetting": 0.050331858407079766
+        }
+      ]
+    },
+    {
+      "site": 71,
+      "arm": "a",
+      "banks": [
+        2937,
+        1937
+      ],
+      "aged": [
+        {
+          "early": 0.5718162334070797,
+          "end_of_order": 0.6617233591445428,
+          "final_revisit": 0.6637513827433628,
+          "peak_forgetting": 0.026963495575221152
+        },
+        {
+          "early": 0.5669535859144542,
+          "end_of_order": 0.6737762721238938,
+          "final_revisit": 0.6867740597345133,
+          "peak_forgetting": 0.025258112094395213
+        },
+        {
+          "early": 0.5696038440265486,
+          "end_of_order": 0.6551207595870207,
+          "final_revisit": 0.6647077802359882,
+          "peak_forgetting": 0.01668510324483774
+        }
+      ],
+      "fresh": [
+        {
+          "early": 0.6227299963126844,
+          "end_of_order": 0.7494814712389382,
+          "final_revisit": 0.7445496865781711,
+          "peak_forgetting": 0.01935840707964598
+        },
+        {
+          "early": 0.6292116058259587,
+          "end_of_order": 0.750495483038348,
+          "final_revisit": 0.7329692109144542,
+          "peak_forgetting": 0.05189896755162238
+        },
+        {
+          "early": 0.6340281618731564,
+          "end_of_order": 0.7452525811209438,
+          "final_revisit": 0.7412080567846608,
+          "peak_forgetting": 0.027240044247787587
+        }
+      ]
+    },
+    {
+      "site": 71,
+      "arm": "b",
+      "banks": [
+        1937,
+        937
+      ],
+      "aged": [
+        {
+          "early": 0.5792772861356932,
+          "end_of_order": 0.6470432337758113,
+          "final_revisit": 0.6445888643067846,
+          "peak_forgetting": 0.04079092920353977
+        },
+        {
+          "early": 0.5744031157817109,
+          "end_of_order": 0.6692132190265487,
+          "final_revisit": 0.669662610619469,
+          "peak_forgetting": 0.02783923303834812
+        },
+        {
+          "early": 0.5763965707964601,
+          "end_of_order": 0.6330890486725664,
+          "final_revisit": 0.6319828539823009,
+          "peak_forgetting": 0.037057522123893905
+        }
+      ],
+      "fresh": [
+        {
+          "early": 0.6303062776548671,
+          "end_of_order": 0.750483960176991,
+          "final_revisit": 0.7394335361356932,
+          "peak_forgetting": 0.03498340707964609
+        },
+        {
+          "early": 0.6331524244100295,
+          "end_of_order": 0.7486633480825958,
+          "final_revisit": 0.7337527654867256,
+          "peak_forgetting": 0.05226769911504425
+        },
+        {
+          "early": 0.6245102783923304,
+          "end_of_order": 0.7479028392330384,
+          "final_revisit": 0.7400557706489675,
+          "peak_forgetting": 0.024474557522123908
+        }
+      ]
+    },
+    {
+      "site": 86,
+      "arm": "a",
+      "banks": [
+        1941,
+        941
+      ],
+      "aged": [
+        {
+          "early": 0.522757651179941,
+          "end_of_order": 0.5757973820058997,
+          "final_revisit": 0.578608960176991,
+          "peak_forgetting": 0.009955752212389424
+        },
+        {
+          "early": 0.5092125276548674,
+          "end_of_order": 0.5277240044247788,
+          "final_revisit": 0.5270211098820059,
+          "peak_forgetting": 0.0023045722713865846
+        },
+        {
+          "early": 0.5237889472713865,
+          "end_of_order": 0.5646086836283186,
+          "final_revisit": 0.5730088495575221,
+          "peak_forgetting": 0.0011061946902654052
+        }
+      ],
+      "fresh": [
+        {
+          "early": 0.6081247695427728,
+          "end_of_order": 0.8355918141592921,
+          "final_revisit": 0.818952802359882,
+          "peak_forgetting": 0.0615320796460177
+        },
+        {
+          "early": 0.5296310379793511,
+          "end_of_order": 0.6334577802359882,
+          "final_revisit": 0.6315334623893806,
+          "peak_forgetting": 0.00977138643067843
+        },
+        {
+          "early": 0.5888297382005899,
+          "end_of_order": 0.7403553650442478,
+          "final_revisit": 0.7313905789085546,
+          "peak_forgetting": 0.04327986725663713
+        }
+      ]
+    },
+    {
+      "site": 86,
+      "arm": "b",
+      "banks": [
+        941,
+        2941
+      ],
+      "aged": [
+        {
+          "early": 0.5739882927728615,
+          "end_of_order": 0.7072156157817109,
+          "final_revisit": 0.7100041482300884,
+          "peak_forgetting": 0.029314159292035402
+        },
+        {
+          "early": 0.51273276179941,
+          "end_of_order": 0.5367924963126843,
+          "final_revisit": 0.5371381821533924,
+          "peak_forgetting": 0.0009218289085545228
+        },
+        {
+          "early": 0.5488454092920354,
+          "end_of_order": 0.6433904867256638,
+          "final_revisit": 0.6536227876106195,
+          "peak_forgetting": 0.00553097345132747
+        }
+      ],
+      "fresh": [
+        {
+          "early": 0.6197398137905605,
+          "end_of_order": 0.8461813237463127,
+          "final_revisit": 0.81640625,
+          "peak_forgetting": 0.06623340707964598
+        },
+        {
+          "early": 0.5304433997050148,
+          "end_of_order": 0.6319252396755162,
+          "final_revisit": 0.6319021939528023,
+          "peak_forgetting": 0.001014011799409964
+        },
+        {
+          "early": 0.600784706858407,
+          "end_of_order": 0.727749354719764,
+          "final_revisit": 0.6992878871681416,
+          "peak_forgetting": 0.05987278761061954
+        }
+      ]
+    }
+  ],
+  "aggregate": {
+    "a": {
+      "fresh": {
+        "early": 0.6005997009177318,
+        "end_of_order": 0.7089126771960013,
+        "final_revisit": 0.6925738999508358,
+        "peak_forgetting": 0.05330219600131103
+      },
+      "aged": {
+        "early": 0.5412691279498525,
+        "end_of_order": 0.6015432952310719,
+        "final_revisit": 0.6013089970501474,
+        "peak_forgetting": 0.021232792527040315
+      },
+      "sites_with_lower_aged": {
+        "early": 6,
+        "end_of_order": 6,
+        "final_revisit": 6,
+        "peak_forgetting": 6
+      }
+    },
+    "b": {
+      "fresh": {
+        "early": 0.5802320832309079,
+        "end_of_order": 0.7004222488528351,
+        "final_revisit": 0.6886548467715503,
+        "peak_forgetting": 0.032840154867256645
+      },
+      "aged": {
+        "early": 0.5454106363692232,
+        "end_of_order": 0.6060429725909539,
+        "final_revisit": 0.6055538911422483,
+        "peak_forgetting": 0.018008951982956403
+      },
+      "sites_with_lower_aged": {
+        "early": 6,
+        "end_of_order": 6,
+        "final_revisit": 6,
+        "peak_forgetting": 4
+      }
+    }
+  }
+}

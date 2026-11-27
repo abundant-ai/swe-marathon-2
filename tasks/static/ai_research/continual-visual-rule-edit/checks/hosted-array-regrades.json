@@ -1,0 +1,50 @@
+[
+  {
+    "trial": "swe-m2_ai-research_continual-visual-rule-edit-correct-93545b36-95",
+    "hashed_remote_numeric": "0ec9cda0431e3d25284c2d98d597805bdc01f99521c96eca9664fb40ae2ae3fc",
+    "exact_hosted_artifact_locally_deployed": true,
+    "targets": [
+      0.4518383552703135,
+      0.0
+    ],
+    "hosted_targets": {
+      "a": 0.4518383552703135,
+      "b": 0.0
+    },
+    "total_compared_scalars": 15264,
+    "maximum_difference": 6.938893903907228e-17,
+    "mismatches_over_1e_minus_9": []
+  },
+  {
+    "trial": "swe-m2_ai-research_continual-visual-rule-edit-none-67ae1c69-23",
+    "hashed_remote_numeric": "a23e2ef89453aa48ce98af11a1680115c34d676f46e1f7d05527ab331413f505",
+    "exact_hosted_artifact_locally_deployed": true,
+    "targets": [
+      0.12287403218440092,
+      0.05761136869526327
+    ],
+    "hosted_targets": {
+      "a": 0.12287403218440092,
+      "b": 0.05761136869526327
+    },
+    "total_compared_scalars": 15264,
+    "maximum_difference": 5.0306980803327406e-17,
+    "mismatches_over_1e_minus_9": []
+  },
+  {
+    "trial": "swe-m2_ai-research_continual-visual-rule-edit-swapped-d3dd7d75-19",
+    "hashed_remote_numeric": "1621e1c2ce1f77f763364f670408a62519ba498321bb54676c3cc1e3b7e32816",
+    "exact_hosted_artifact_locally_deployed": true,
+    "targets": [
+      0.0,
+      0.22064390243902354
+    ],
+    "hosted_targets": {
+      "a": 0.0,
+      "b": 0.22064390243902354
+    },
+    "total_compared_scalars": 15264,
+    "maximum_difference": 1.4224732503009818e-16,
+    "mismatches_over_1e_minus_9": []
+  }
+]

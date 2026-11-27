@@ -1,0 +1,54 @@
+{
+  "experiment": "https://www.oddish.app/experiments/bb67b557",
+  "rule": "Three measured matching-image trials per model, every official score strictly below 0.5. Additional runs and incomplete builds are retained in the separate cohort record.",
+  "qualified": true,
+  "matching_image_trials": {
+    "openai/gpt-6.2-sol": [
+      {
+        "trial": "swe-m2_ai-research_continual-visual-rule-edit-correct-93545b36-90",
+        "reward": 0.17431073830814123
+      },
+      {
+        "trial": "swe-m2_ai-research_continual-visual-rule-edit-correct-93545b36-94",
+        "reward": 0.09431088871967813
+      },
+      {
+        "trial": "swe-m2_ai-research_continual-visual-rule-edit-correct-93545b36-95",
+        "reward": 0.4518383552703135
+      }
+    ],
+    "relace/deepseek-v4.1-flash": [
+      {
+        "trial": "swe-m2_ai-research_continual-visual-rule-edit-correct-93545b36-100",
+        "reward": 0.0
+      },
+      {
+        "trial": "swe-m2_ai-research_continual-visual-rule-edit-correct-93545b36-101",
+        "reward": 0.0
+      },
+      {
+        "trial": "swe-m2_ai-research_continual-visual-rule-edit-correct-93545b36-99",
+        "reward": 0.0
+      }
+    ],
+    "relace/glm-5.3": [
+      {
+        "trial": "swe-m2_ai-research_continual-visual-rule-edit-correct-93545b36-111",
+        "reward": 0.138794573
+      },
+      {
+        "trial": "swe-m2_ai-research_continual-visual-rule-edit-correct-93545b36-96",
+        "reward": 0.0
+      },
+      {
+        "trial": "swe-m2_ai-research_continual-visual-rule-edit-correct-93545b36-97",
+        "reward": 0.0
+      }
+    ]
+  },
+  "gpt_ablation_means": {
+    "correct": 0.24015332743271098,
+    "swapped": 0.0,
+    "none": 0.09126208010368425
+  }
+}

@@ -1,0 +1,178 @@
+[
+  {
+    "trial": "swe-m2_ai-research_continual-visual-rule-edit-correct-93545b36-90",
+    "reward_valid": true,
+    "agent_stop_reason": "answered",
+    "execution_error": null,
+    "error_summary": null,
+    "agent_execution": {
+      "started_at": "2026-11-27T01:51:16.333580Z",
+      "finished_at": "2026-11-27T02:01:32.961815Z"
+    }
+  },
+  {
+    "trial": "swe-m2_ai-research_continual-visual-rule-edit-correct-93545b36-94",
+    "reward_valid": true,
+    "agent_stop_reason": "answered",
+    "execution_error": null,
+    "error_summary": null,
+    "agent_execution": {
+      "started_at": "2026-11-27T02:08:08.567912Z",
+      "finished_at": "2026-11-27T02:16:39.592259Z"
+    }
+  },
+  {
+    "trial": "swe-m2_ai-research_continual-visual-rule-edit-correct-93545b36-95",
+    "reward_valid": true,
+    "agent_stop_reason": "answered",
+    "execution_error": null,
+    "error_summary": null,
+    "agent_execution": {
+      "started_at": "2026-11-27T02:08:10.921199Z",
+      "finished_at": "2026-11-27T02:16:26.778002Z"
+    }
+  },
+  {
+    "trial": "swe-m2_ai-research_continual-visual-rule-edit-none-67ae1c69-21",
+    "reward_valid": true,
+    "agent_stop_reason": "answered",
+    "execution_error": null,
+    "error_summary": null,
+    "agent_execution": {
+      "started_at": "2026-11-27T02:25:09.209940Z",
+      "finished_at": "2026-11-27T02:33:30.584005Z"
+    }
+  },
+  {
+    "trial": "swe-m2_ai-research_continual-visual-rule-edit-none-67ae1c69-22",
+    "reward_valid": true,
+    "agent_stop_reason": "answered",
+    "execution_error": null,
+    "error_summary": null,
+    "agent_execution": {
+      "started_at": "2026-11-27T02:25:04.900405Z",
+      "finished_at": "2026-11-27T02:32:32.582911Z"
+    }
+  },
+  {
+    "trial": "swe-m2_ai-research_continual-visual-rule-edit-none-67ae1c69-23",
+    "reward_valid": true,
+    "agent_stop_reason": "answered",
+    "execution_error": null,
+    "error_summary": null,
+    "agent_execution": {
+      "started_at": "2026-11-27T02:25:03.660249Z",
+      "finished_at": "2026-11-27T02:32:14.553069Z"
+    }
+  },
+  {
+    "trial": "swe-m2_ai-research_continual-visual-rule-edit-swapped-d3dd7d75-19",
+    "reward_valid": true,
+    "agent_stop_reason": "answered",
+    "execution_error": null,
+    "error_summary": null,
+    "agent_execution": {
+      "started_at": "2026-11-27T02:25:02.796996Z",
+      "finished_at": "2026-11-27T02:34:16.964669Z"
+    }
+  },
+  {
+    "trial": "swe-m2_ai-research_continual-visual-rule-edit-swapped-d3dd7d75-20",
+    "reward_valid": true,
+    "agent_stop_reason": "answered",
+    "execution_error": null,
+    "error_summary": null,
+    "agent_execution": {
+      "started_at": "2026-11-27T02:25:03.128437Z",
+      "finished_at": "2026-11-27T02:33:55.425238Z"
+    }
+  },
+  {
+    "trial": "swe-m2_ai-research_continual-visual-rule-edit-swapped-d3dd7d75-21",
+    "reward_valid": true,
+    "agent_stop_reason": "answered",
+    "execution_error": null,
+    "error_summary": null,
+    "agent_execution": {
+      "started_at": "2026-11-27T02:25:16.144082Z",
+      "finished_at": "2026-11-27T02:33:37.385134Z"
+    }
+  },
+  {
+    "trial": "swe-m2_ai-research_continual-visual-rule-edit-correct-93545b36-100",
+    "reward_valid": true,
+    "agent_stop_reason": "answered",
+    "execution_error": null,
+    "error_summary": null,
+    "agent_execution": {
+      "started_at": "2026-11-27T02:23:37.429900Z",
+      "finished_at": "2026-11-27T02:39:55.423830Z"
+    }
+  },
+  {
+    "trial": "swe-m2_ai-research_continual-visual-rule-edit-correct-93545b36-101",
+    "reward_valid": true,
+    "agent_stop_reason": "answered",
+    "execution_error": null,
+    "error_summary": null,
+    "agent_execution": {
+      "started_at": "2026-11-27T02:23:47.796383Z",
+      "finished_at": "2026-11-27T02:45:58.897583Z"
+    }
+  },
+  {
+    "trial": "swe-m2_ai-research_continual-visual-rule-edit-correct-93545b36-96",
+    "reward_valid": true,
+    "agent_stop_reason": "answered",
+    "execution_error": null,
+    "error_summary": null,
+    "agent_execution": {
+      "started_at": "2026-11-27T02:24:04.566240Z",
+      "finished_at": "2026-11-27T02:59:48.357477Z"
+    }
+  },
+  {
+    "trial": "swe-m2_ai-research_continual-visual-rule-edit-correct-93545b36-97",
+    "reward_valid": true,
+    "agent_stop_reason": "answered",
+    "execution_error": null,
+    "error_summary": null,
+    "agent_execution": {
+      "started_at": "2026-11-27T02:23:40.453518Z",
+      "finished_at": "2026-11-27T03:00:11.259255Z"
+    }
+  },
+  {
+    "trial": "swe-m2_ai-research_continual-visual-rule-edit-correct-93545b36-98",
+    "reward_valid": true,
+    "agent_stop_reason": "error",
+    "execution_error": "AgentTimeoutError",
+    "error_summary": "Agent execution timed out after 3900.0 seconds",
+    "agent_execution": {
+      "started_at": "2026-11-27T02:23:31.229801Z",
+      "finished_at": "2026-11-27T03:28:33.615196Z"
+    }
+  },
+  {
+    "trial": "swe-m2_ai-research_continual-visual-rule-edit-correct-93545b36-99",
+    "reward_valid": true,
+    "agent_stop_reason": "answered",
+    "execution_error": null,
+    "error_summary": null,
+    "agent_execution": {
+      "started_at": "2026-11-27T02:23:50.193176Z",
+      "finished_at": "2026-11-27T02:31:39.629929Z"
+    }
+  },
+  {
+    "trial": "swe-m2_ai-research_continual-visual-rule-edit-correct-93545b36-111",
+    "reward_valid": true,
+    "agent_stop_reason": "answered",
+    "execution_error": null,
+    "error_summary": null,
+    "agent_execution": {
+      "started_at": "2026-11-27T03:47:01.251613Z",
+      "finished_at": "2026-11-27T04:22:06.434290Z"
+    }
+  }
+]

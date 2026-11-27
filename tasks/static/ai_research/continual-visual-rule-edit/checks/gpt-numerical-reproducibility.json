@@ -1,0 +1,207 @@
+{
+  "experiment": "https://www.oddish.app/experiments/bb67b557",
+  "comparison": "Same final Python sources and pinned packages rebuilt through offline worker. For sequences with measurements sensitive to the compilation environment, separately deploy the exact uploaded numeric arrays and compare all reported values.",
+  "trials": [
+    {
+      "trial": "swe-m2_ai-research_continual-visual-rule-edit-correct-93545b36-90",
+      "source_sha256": "76829cfdf9f371c0e811efaa1d811877c07c1216da84df1a59ca720b48ca58a6",
+      "hosted_target_scores": [
+        0.17431073830814123,
+        0.0
+      ],
+      "independent_compilation_target_scores": [
+        0.17431073830814123,
+        0.0
+      ],
+      "physical_support_matches": true,
+      "raw_metrics_with_delta_above_1e_minus_9": 0,
+      "maximum_raw_metric_difference": 8.326672684688674e-17
+    },
+    {
+      "trial": "swe-m2_ai-research_continual-visual-rule-edit-correct-93545b36-94",
+      "source_sha256": "873198902660836277a1a1478ae87d95c527e26001af0993b43440bf726b9a13",
+      "hosted_target_scores": [
+        0.09431088871967813,
+        0.0
+      ],
+      "independent_compilation_target_scores": [
+        0.09431088871967813,
+        0.0
+      ],
+      "physical_support_matches": true,
+      "raw_metrics_with_delta_above_1e_minus_9": 0,
+      "maximum_raw_metric_difference": 8.673617379884035e-17
+    },
+    {
+      "trial": "swe-m2_ai-research_continual-visual-rule-edit-correct-93545b36-95",
+      "source_sha256": "17d8f8b219b5cb4d2a9b7122563a09b406764b45203968efd03d9983c7990f1f",
+      "hosted_target_scores": [
+        0.4518383552703135,
+        0.0
+      ],
+      "independent_compilation_target_scores": [
+        0.4518383552703135,
+        0.0
+      ],
+      "physical_support_matches": true,
+      "raw_metrics_with_delta_above_1e_minus_9": 1,
+      "maximum_raw_metric_difference": 1.728429203540216e-05,
+      "exact_remote_arrays_regraded": {
+        "trial": "swe-m2_ai-research_continual-visual-rule-edit-correct-93545b36-95",
+        "hashed_remote_numeric": "0ec9cda0431e3d25284c2d98d597805bdc01f99521c96eca9664fb40ae2ae3fc",
+        "exact_hosted_artifact_locally_deployed": true,
+        "targets": [
+          0.4518383552703135,
+          0.0
+        ],
+        "hosted_targets": {
+          "a": 0.4518383552703135,
+          "b": 0.0
+        },
+        "total_compared_scalars": 15264,
+        "maximum_difference": 6.938893903907228e-17,
+        "mismatches_over_1e_minus_9": []
+      },
+      "numeric_compilation": {
+        "maximum_coefficient_difference": 2.3217022090959993e-07,
+        "different_coefficients": 3295,
+        "total_coefficients": 69552,
+        "arrays_with_differences": 59
+      }
+    },
+    {
+      "trial": "swe-m2_ai-research_continual-visual-rule-edit-none-67ae1c69-21",
+      "source_sha256": "ff15be565f3b433007fff0c9d8fcb63d8a0a19314f1499539a15652536557747",
+      "hosted_target_scores": [
+        0.05959764156302635,
+        0.05193479718893055
+      ],
+      "independent_compilation_target_scores": [
+        0.05959764156302635,
+        0.05193479718893055
+      ],
+      "physical_support_matches": true,
+      "raw_metrics_with_delta_above_1e_minus_9": 0,
+      "maximum_raw_metric_difference": 1.3183898417423734e-16
+    },
+    {
+      "trial": "swe-m2_ai-research_continual-visual-rule-edit-none-67ae1c69-22",
+      "source_sha256": "88b2a39b346187e31e9b47f1b54db9514f7d1406539b7f54ebe590b5d3159188",
+      "hosted_target_scores": [
+        0.09131456656362551,
+        0.09410570822307528
+      ],
+      "independent_compilation_target_scores": [
+        0.09131456656362551,
+        0.09410570822307528
+      ],
+      "physical_support_matches": true,
+      "raw_metrics_with_delta_above_1e_minus_9": 0,
+      "maximum_raw_metric_difference": 6.591949208711867e-17
+    },
+    {
+      "trial": "swe-m2_ai-research_continual-visual-rule-edit-none-67ae1c69-23",
+      "source_sha256": "1ce149e948b448497083ac0d03fea1c1468857f9c8b3d522015416bc69af85c7",
+      "hosted_target_scores": [
+        0.12287403218440092,
+        0.05761136869526327
+      ],
+      "independent_compilation_target_scores": [
+        0.12274204246812133,
+        0.05877292741958992
+      ],
+      "physical_support_matches": true,
+      "raw_metrics_with_delta_above_1e_minus_9": 1206,
+      "maximum_raw_metric_difference": 0.012075958702064793,
+      "exact_remote_arrays_regraded": {
+        "trial": "swe-m2_ai-research_continual-visual-rule-edit-none-67ae1c69-23",
+        "hashed_remote_numeric": "a23e2ef89453aa48ce98af11a1680115c34d676f46e1f7d05527ab331413f505",
+        "exact_hosted_artifact_locally_deployed": true,
+        "targets": [
+          0.12287403218440092,
+          0.05761136869526327
+        ],
+        "hosted_targets": {
+          "a": 0.12287403218440092,
+          "b": 0.05761136869526327
+        },
+        "total_compared_scalars": 15264,
+        "maximum_difference": 5.0306980803327406e-17,
+        "mismatches_over_1e_minus_9": []
+      },
+      "numeric_compilation": {
+        "maximum_coefficient_difference": 0.06604889351886184,
+        "different_coefficients": 2977,
+        "total_coefficients": 69552,
+        "arrays_with_differences": 36
+      }
+    },
+    {
+      "trial": "swe-m2_ai-research_continual-visual-rule-edit-swapped-d3dd7d75-19",
+      "source_sha256": "126e14ea55f6db1f692d9842bf7efb535f718cb62076c9b7df9c85e671bf9f0c",
+      "hosted_target_scores": [
+        0.0,
+        0.22064390243902354
+      ],
+      "independent_compilation_target_scores": [
+        0.0,
+        0.22165853658536622
+      ],
+      "physical_support_matches": true,
+      "raw_metrics_with_delta_above_1e_minus_9": 801,
+      "maximum_raw_metric_difference": 0.0029189560439560336,
+      "exact_remote_arrays_regraded": {
+        "trial": "swe-m2_ai-research_continual-visual-rule-edit-swapped-d3dd7d75-19",
+        "hashed_remote_numeric": "1621e1c2ce1f77f763364f670408a62519ba498321bb54676c3cc1e3b7e32816",
+        "exact_hosted_artifact_locally_deployed": true,
+        "targets": [
+          0.0,
+          0.22064390243902354
+        ],
+        "hosted_targets": {
+          "a": 0.0,
+          "b": 0.22064390243902354
+        },
+        "total_compared_scalars": 15264,
+        "maximum_difference": 1.4224732503009818e-16,
+        "mismatches_over_1e_minus_9": []
+      },
+      "numeric_compilation": {
+        "maximum_coefficient_difference": 0.05152475996702943,
+        "different_coefficients": 3174,
+        "total_coefficients": 69552,
+        "arrays_with_differences": 47
+      }
+    },
+    {
+      "trial": "swe-m2_ai-research_continual-visual-rule-edit-swapped-d3dd7d75-20",
+      "source_sha256": "73987a75b354fada1a4575a3e430b474f071743da0280fb57f8008ea89e575d2",
+      "hosted_target_scores": [
+        0.0,
+        0.33172100235802554
+      ],
+      "independent_compilation_target_scores": [
+        0.0,
+        0.33172100235802554
+      ],
+      "physical_support_matches": true,
+      "raw_metrics_with_delta_above_1e_minus_9": 0,
+      "maximum_raw_metric_difference": 4.9439619065339e-17
+    },
+    {
+      "trial": "swe-m2_ai-research_continual-visual-rule-edit-swapped-d3dd7d75-21",
+      "source_sha256": "95be274b9bef621862ac471b3e12a8dac7231558a27972971656b6be528577c0",
+      "hosted_target_scores": [
+        0.0,
+        0.2421073170731719
+      ],
+      "independent_compilation_target_scores": [
+        0.0,
+        0.2421073170731719
+      ],
+      "physical_support_matches": true,
+      "raw_metrics_with_delta_above_1e_minus_9": 0,
+      "maximum_raw_metric_difference": 6.071532165918825e-17
+    }
+  ]
+}

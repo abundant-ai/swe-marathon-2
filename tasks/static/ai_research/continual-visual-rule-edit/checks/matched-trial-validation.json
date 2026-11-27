@@ -1,0 +1,211 @@
+[
+  {
+    "source_trial": "swe-m2_ai-research_continual-visual-rule-edit-correct-93545b36-90",
+    "official_score": 0.17431073830814123,
+    "targets": {
+      "a": 0.17431073830814123,
+      "b": 0.0
+    },
+    "build": "valid",
+    "receipt": true,
+    "source_sha256": "76829cfdf9f371c0e811efaa1d811877c07c1216da84df1a59ca720b48ca58a6",
+    "mean_end_gain_versus_frozen": 0.026468652695837414,
+    "image_audit": {
+      "trial": "swe-m2_ai-research_continual-visual-rule-edit-correct-93545b36-90",
+      "build": "valid",
+      "reason": null,
+      "score": 0.17431073830814123,
+      "targets": {
+        "a": 0.17431073830814123,
+        "b": 0.0
+      },
+      "source_sha256": "76829cfdf9f371c0e811efaa1d811877c07c1216da84df1a59ca720b48ca58a6",
+      "receipt_matches": true,
+      "final_smoke_output": true,
+      "expected_image_sha256": "9bab960518e7e92dca0c8949f6475ac103e3470fc86dd765747e7d06754300fa",
+      "native_views": [
+        {
+          "call_id": "call_80cf6c5415a14a2a82a6783ff365b890",
+          "step": 5,
+          "viewed": "/app/work/observation.png",
+          "returned": "agent/images/codex_9bab960518e7e92d.png",
+          "sha256": "9bab960518e7e92dca0c8949f6475ac103e3470fc86dd765747e7d06754300fa"
+        }
+      ],
+      "original_rgb_confirmed": true,
+      "condition": "correct"
+    },
+    "maintained_source_replay": {
+      "trial": "swe-m2_ai-research_continual-visual-rule-edit-correct-93545b36-90",
+      "source_sha256": "76829cfdf9f371c0e811efaa1d811877c07c1216da84df1a59ca720b48ca58a6",
+      "matched_smoke": true,
+      "targets": {
+        "a": 0.17431073830814123,
+        "b": 0.0
+      },
+      "checked_scalar_values": 15311,
+      "maximum_delta_to_hosted": 8.326672684688674e-17
+    }
+  },
+  {
+    "source_trial": "swe-m2_ai-research_continual-visual-rule-edit-correct-93545b36-94",
+    "official_score": 0.09431088871967813,
+    "targets": {
+      "a": 0.09431088871967813,
+      "b": 0.0
+    },
+    "build": "valid",
+    "receipt": true,
+    "source_sha256": "873198902660836277a1a1478ae87d95c527e26001af0993b43440bf726b9a13",
+    "mean_end_gain_versus_frozen": 0.0023423416502785974,
+    "image_audit": {
+      "trial": "swe-m2_ai-research_continual-visual-rule-edit-correct-93545b36-94",
+      "build": "valid",
+      "reason": null,
+      "score": 0.09431088871967813,
+      "targets": {
+        "a": 0.09431088871967813,
+        "b": 0.0
+      },
+      "source_sha256": "873198902660836277a1a1478ae87d95c527e26001af0993b43440bf726b9a13",
+      "receipt_matches": true,
+      "final_smoke_output": true,
+      "expected_image_sha256": "9bab960518e7e92dca0c8949f6475ac103e3470fc86dd765747e7d06754300fa",
+      "native_views": [
+        {
+          "call_id": "call_649f769c8a02475d93f2774407526e72",
+          "step": 5,
+          "viewed": "/app/work/observation.png",
+          "returned": "agent/images/codex_9bab960518e7e92d.png",
+          "sha256": "9bab960518e7e92dca0c8949f6475ac103e3470fc86dd765747e7d06754300fa"
+        }
+      ],
+      "original_rgb_confirmed": true,
+      "condition": "correct"
+    },
+    "maintained_source_replay": {
+      "trial": "swe-m2_ai-research_continual-visual-rule-edit-correct-93545b36-94",
+      "source_sha256": "873198902660836277a1a1478ae87d95c527e26001af0993b43440bf726b9a13",
+      "matched_smoke": true,
+      "targets": {
+        "a": 0.09431088871967813,
+        "b": 0.0
+      },
+      "checked_scalar_values": 15311,
+      "maximum_delta_to_hosted": 8.673617379884035e-17
+    }
+  },
+  {
+    "source_trial": "swe-m2_ai-research_continual-visual-rule-edit-correct-93545b36-95",
+    "official_score": 0.4518383552703135,
+    "targets": {
+      "a": 0.4518383552703135,
+      "b": 0.0
+    },
+    "build": "valid",
+    "receipt": true,
+    "source_sha256": "17d8f8b219b5cb4d2a9b7122563a09b406764b45203968efd03d9983c7990f1f",
+    "mean_end_gain_versus_frozen": 0.011541425966896087,
+    "image_audit": {
+      "trial": "swe-m2_ai-research_continual-visual-rule-edit-correct-93545b36-95",
+      "build": "valid",
+      "reason": null,
+      "score": 0.4518383552703135,
+      "targets": {
+        "a": 0.4518383552703135,
+        "b": 0.0
+      },
+      "source_sha256": "17d8f8b219b5cb4d2a9b7122563a09b406764b45203968efd03d9983c7990f1f",
+      "receipt_matches": true,
+      "final_smoke_output": true,
+      "expected_image_sha256": "9bab960518e7e92dca0c8949f6475ac103e3470fc86dd765747e7d06754300fa",
+      "native_views": [
+        {
+          "call_id": "call_f38bb2e036f0480bb1043d26cb71dba8",
+          "step": 5,
+          "viewed": "/app/work/observation.png",
+          "returned": "agent/images/codex_9bab960518e7e92d.png",
+          "sha256": "9bab960518e7e92dca0c8949f6475ac103e3470fc86dd765747e7d06754300fa"
+        }
+      ],
+      "original_rgb_confirmed": true,
+      "condition": "correct"
+    },
+    "maintained_source_replay": {
+      "trial": "swe-m2_ai-research_continual-visual-rule-edit-correct-93545b36-95",
+      "source_sha256": "17d8f8b219b5cb4d2a9b7122563a09b406764b45203968efd03d9983c7990f1f",
+      "matched_smoke": true,
+      "targets": {
+        "a": 0.4518383552703135,
+        "b": 0.0
+      },
+      "hosted_targets": {
+        "a": 0.4518383552703135,
+        "b": 0.0
+      },
+      "score_difference": 0.0,
+      "checked_scalar_values": 15311,
+      "differences_above_1e-12": [
+        {
+          "path": [
+            "measured",
+            "runs",
+            0,
+            2,
+            "early",
+            0
+          ],
+          "hosted": 0.5801703078908554,
+          "local": 0.58015302359882,
+          "absolute_difference": 1.728429203540216e-05
+        },
+        {
+          "path": [
+            "verification",
+            "checks",
+            4,
+            "measurements",
+            "mean_early_acquisition"
+          ],
+          "hosted": 0.6250521729555883,
+          "local": 0.6250512127171418,
+          "absolute_difference": 9.602384465345892e-07
+        },
+        {
+          "path": [
+            "verification",
+            "checks",
+            4,
+            "measurements",
+            "mean_gain_early_acquisition"
+          ],
+          "hosted": 0.8944663669921348,
+          "local": 0.8944504287051815,
+          "absolute_difference": 1.5938286953232073e-05
+        },
+        {
+          "path": [
+            "verification",
+            "metrics",
+            "mean_early_acquisition"
+          ],
+          "hosted": 0.6250521729555883,
+          "local": 0.6250512127171418,
+          "absolute_difference": 9.602384465345892e-07
+        },
+        {
+          "path": [
+            "verification",
+            "metrics",
+            "mean_gain_early_acquisition"
+          ],
+          "hosted": 0.8944663669921348,
+          "local": 0.8944504287051815,
+          "absolute_difference": 1.5938286953232073e-05
+        }
+      ],
+      "maximum_difference_other_scalars": 8.326672684688674e-17,
+      "maximum_delta_to_hosted": 1.728429203540216e-05
+    }
+  }
+]

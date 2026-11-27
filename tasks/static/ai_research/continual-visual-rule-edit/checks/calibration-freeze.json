@@ -1,0 +1,6 @@
+{
+  "reference": "A prospectively independent public RGB + public gallery solver. It has a measured per-site early contrast on both panels and the stronger pooled causal gain; first linear attempt had no per-site early contrast. Alternate model-derived fits earn some absolute performance at the expense of weakest-group retention. No reciprocal Oddish model outcome was available at freeze.",
+  "controls_sha256": "0a0bb60ddcdc76ee254aac75be0ae57ef84e2c7afaa09d0d189f1a5681a4b33f",
+  "numerical_source_sha256": "b774599c60edf29408eea0bb28ef893a84097c1ec0ea9d0a2866c38c429373c8",
+  "reader_sha256": "a5c9d1f48c2f31d2d6ba9e136dcbada74f01586cfc8f9261c4b6a24825ca5f47"
+}

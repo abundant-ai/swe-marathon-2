@@ -1,0 +1,23 @@
+{
+  "task": "swe-m2_ai-research_continual-visual-rule-edit-none-67ae1c69",
+  "version": 3,
+  "arm": "none",
+  "verified_files": 76,
+  "verified_bytes": 5261950,
+  "candidate_input_hashes": {
+    "instruction.md": "5978bc28fb2754ab4511a1581edba9fe40c1f16005e50e209044140013a2c7b8",
+    "environment/Dockerfile": "5b78dd5ffafc9b324ef6ec03e052e9b6b0d2f03e9951d88a14ed0f00332f5c40",
+    "environment/.dockerignore": "403a447a64f4bf43173bae2a5d49364dcd1a6a2513a6e484a93541b067dffa44",
+    "environment/public/test_receipt.json": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356",
+    "environment/public/deployment.py": "3086edcfa604f820ba8139fa9d944f0901ada8f32b10410a7f867e20764a544c",
+    "environment/public/calibration.npz": "6bfefdb144ee4f52aad6198ee44d5b341841bd7a67b4c502838e843680f361dc",
+    "environment/public/contract.py": "adba83abfac5efa7b198ff606373529c859620fa0f60127a7b905f8216ff667c",
+    "environment/public/practice.py": "fd01943140903af5fd6ba5f00d25d364e332a9133052ade4a41bb835415fafc3",
+    "environment/public/smoke.py": "9c2ff3383cdf425251b7a9c1c9f1de6585278cb7ef3b41b2e6b1c5c6a2fbe3f9",
+    "environment/public/submission.py": "41a778dc70e907fed83d3638ed855e443c9856c316ed32bde92ca5f86f9b9edb",
+    "environment/public/worker.py": "7ab764367b147a82b923740c184b29ef940319c832c09741cd91a2b2ed175b07",
+    "environment/public/python": "aef50a93a1c42f7c76b83adf8f28bfb04bb543f62f79dc48b7a40024edba101e"
+  },
+  "all_sha256_match_frozen": true,
+  "no_extra_or_missing_remote_members": true
+}

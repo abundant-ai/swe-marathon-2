@@ -1,0 +1,20 @@
+{
+  "phases_and_splits": 288,
+  "heldout_order_phases": 144,
+  "scored_roles": [
+    "product physical capture ID, including its pose",
+    "register physical capture ID, including its pose"
+  ],
+  "best_possible_balanced_accuracy": {
+    "product_only_range": [
+      0.4999999999999999,
+      0.49999999999999994
+    ],
+    "register_only_range": [
+      0.4999999999999999,
+      0.49999999999999994
+    ]
+  },
+  "paired_observations_summed_over_repeated_phases": 2075904,
+  "definition": "For either field, grant a predictor the identity of every single capture and its class-conditional frequencies. The best possible balanced accuracy equals one half the sum, over identities, of the larger of the two class-conditional frequencies. Identical single-capture distributions across classes imply chance performance independently of a chosen classifier. All 16 relative pose combinations occur for each paired base form. Both scanners together are visible during deployment."
+}

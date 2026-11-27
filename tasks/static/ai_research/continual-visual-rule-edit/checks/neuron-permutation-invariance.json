@@ -1,0 +1,29 @@
+{
+  "method": "Cycle only renewed neurons within each stage, applying the same permutation to all incident weights, biases, archived readouts and per-row future SGD rates. Compare both target deployments with the original, across the complete sequences, including withheld writer data.",
+  "results": [
+    {
+      "arm": "a",
+      "reordered_rows": 54,
+      "unequal_scalar_parameters": 2646,
+      "all_six_physical_budgets_observed": true,
+      "maximum_public_archive_logit_change": 2.220446049250313e-15,
+      "maximum_change_all_trainable_run_metrics": 0.0,
+      "awarded_scores": {
+        "a": 1.0,
+        "b": 0.0
+      }
+    },
+    {
+      "arm": "b",
+      "reordered_rows": 54,
+      "unequal_scalar_parameters": 2646,
+      "all_six_physical_budgets_observed": true,
+      "maximum_public_archive_logit_change": 2.220446049250313e-15,
+      "maximum_change_all_trainable_run_metrics": 0.0,
+      "awarded_scores": {
+        "a": 0.0,
+        "b": 0.6666666666666666
+      }
+    }
+  ]
+}

@@ -1,0 +1,168 @@
+{
+  "frozen_controls_sha256": "0a0bb60ddcdc76ee254aac75be0ae57ef84e2c7afaa09d0d189f1a5681a4b33f",
+  "description": "Every installation uses the same unmodified A/B evaluator, checkpoints and future data. A or B denotes one independently decoded reference installation; none supplies untouched weights or ordinary rate-one SGD.",
+  "results": [
+    {
+      "weights": "a",
+      "rates": "a",
+      "targets": {
+        "a": {
+          "reward": 1.0,
+          "end_balanced_accuracy": 0.6585270454359227,
+          "sites_preserving_archive": 6,
+          "matched_frozen_gain": 0.023539925434283866
+        },
+        "b": {
+          "reward": 0.0,
+          "end_balanced_accuracy": 0.6476859533759423,
+          "sites_preserving_archive": 0,
+          "matched_frozen_gain": 0.060238318379219925
+        }
+      }
+    },
+    {
+      "weights": "a",
+      "rates": "b",
+      "targets": {
+        "a": {
+          "reward": 0.0,
+          "end_balanced_accuracy": 0.6756397748688956,
+          "sites_preserving_archive": 0,
+          "matched_frozen_gain": 0.040652654867256645
+        },
+        "b": {
+          "reward": 0.0,
+          "end_balanced_accuracy": 0.5907182071451983,
+          "sites_preserving_archive": 6,
+          "matched_frozen_gain": 0.0032705721484759254
+        }
+      }
+    },
+    {
+      "weights": "a",
+      "rates": "none",
+      "targets": {
+        "a": {
+          "reward": 0.0,
+          "end_balanced_accuracy": 0.6846692170599803,
+          "sites_preserving_archive": 0,
+          "matched_frozen_gain": 0.04968209705834153
+        },
+        "b": {
+          "reward": 0.0,
+          "end_balanced_accuracy": 0.6661564599721403,
+          "sites_preserving_archive": 0,
+          "matched_frozen_gain": 0.07870882497541788
+        }
+      }
+    },
+    {
+      "weights": "b",
+      "rates": "a",
+      "targets": {
+        "a": {
+          "reward": 0.0,
+          "end_balanced_accuracy": 0.5959700712881023,
+          "sites_preserving_archive": 6,
+          "matched_frozen_gain": 0.0027193952802359958
+        },
+        "b": {
+          "reward": 0.0,
+          "end_balanced_accuracy": 0.6664074022861357,
+          "sites_preserving_archive": 0,
+          "matched_frozen_gain": 0.02525811209439528
+        }
+      }
+    },
+    {
+      "weights": "b",
+      "rates": "b",
+      "targets": {
+        "a": {
+          "reward": 0.0,
+          "end_balanced_accuracy": 0.6773400370780073,
+          "sites_preserving_archive": 0,
+          "matched_frozen_gain": 0.08408936107014094
+        },
+        "b": {
+          "reward": 0.6666666666666666,
+          "end_balanced_accuracy": 0.6575533636512618,
+          "sites_preserving_archive": 6,
+          "matched_frozen_gain": 0.01640407345952145
+        }
+      }
+    },
+    {
+      "weights": "b",
+      "rates": "none",
+      "targets": {
+        "a": {
+          "reward": 0.0,
+          "end_balanced_accuracy": 0.6851768631186497,
+          "sites_preserving_archive": 0,
+          "matched_frozen_gain": 0.09192618711078333
+        },
+        "b": {
+          "reward": 0.0,
+          "end_balanced_accuracy": 0.6764911862913799,
+          "sites_preserving_archive": 0,
+          "matched_frozen_gain": 0.03534189609963945
+        }
+      }
+    },
+    {
+      "weights": "none",
+      "rates": "a",
+      "targets": {
+        "a": {
+          "reward": 0.0,
+          "end_balanced_accuracy": 0.551678112708948,
+          "sites_preserving_archive": 6,
+          "matched_frozen_gain": 0.0
+        },
+        "b": {
+          "reward": 0.0,
+          "end_balanced_accuracy": 0.5759388571370042,
+          "sites_preserving_archive": 0,
+          "matched_frozen_gain": 0.018183715380203237
+        }
+      }
+    },
+    {
+      "weights": "none",
+      "rates": "b",
+      "targets": {
+        "a": {
+          "reward": 0.0,
+          "end_balanced_accuracy": 0.5796767453294002,
+          "sites_preserving_archive": 0,
+          "matched_frozen_gain": 0.027998632620452327
+        },
+        "b": {
+          "reward": 0.0,
+          "end_balanced_accuracy": 0.5577551417568011,
+          "sites_preserving_archive": 6,
+          "matched_frozen_gain": 0.0
+        }
+      }
+    },
+    {
+      "weights": "none",
+      "rates": "none",
+      "targets": {
+        "a": {
+          "reward": 0.0,
+          "end_balanced_accuracy": 0.6112122562274663,
+          "sites_preserving_archive": 0,
+          "matched_frozen_gain": 0.059534143518518566
+        },
+        "b": {
+          "reward": 0.0,
+          "end_balanced_accuracy": 0.6169051898967551,
+          "sites_preserving_archive": 0,
+          "matched_frozen_gain": 0.05915004813995412
+        }
+      }
+    }
+  ]
+}

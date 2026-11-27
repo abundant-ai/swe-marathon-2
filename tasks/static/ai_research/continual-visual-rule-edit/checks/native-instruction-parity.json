@@ -1,0 +1,228 @@
+{
+  "received_native_sessions": 9,
+  "expected_sessions": 9,
+  "identical_so_far": true,
+  "signature_groups": {
+    "5b46d480d38cfeb07cc195e30a2fe000d89e3c5a848fb2e71d4821e3d5d09a3b": [
+      "swe-m2_ai-research_continual-visual-rule-edit-correct-93545b36-90",
+      "swe-m2_ai-research_continual-visual-rule-edit-correct-93545b36-94",
+      "swe-m2_ai-research_continual-visual-rule-edit-correct-93545b36-95",
+      "swe-m2_ai-research_continual-visual-rule-edit-swapped-d3dd7d75-19",
+      "swe-m2_ai-research_continual-visual-rule-edit-swapped-d3dd7d75-20",
+      "swe-m2_ai-research_continual-visual-rule-edit-swapped-d3dd7d75-21",
+      "swe-m2_ai-research_continual-visual-rule-edit-none-67ae1c69-21",
+      "swe-m2_ai-research_continual-visual-rule-edit-none-67ae1c69-22",
+      "swe-m2_ai-research_continual-visual-rule-edit-none-67ae1c69-23"
+    ]
+  },
+  "trials": [
+    {
+      "trial": "swe-m2_ai-research_continual-visual-rule-edit-correct-93545b36-90",
+      "arm": "correct",
+      "signature": {
+        "base": "b68a162fb530728a1bdfadbc263a70a384122ae2cb0b09e3e32b04d57d6a3105",
+        "pretool_messages": [
+          {
+            "role": "developer",
+            "sha256": "62ffe6dba8ddb5f92bd0c30d70735e79a06b87235b77dbb1f9c5731dadfe9223"
+          },
+          {
+            "role": "user",
+            "sha256": "591f08c2e49cd4562bf775b346c730409c0fbfac33b5bca4b01d36ee4bef4b7a"
+          },
+          {
+            "role": "user",
+            "sha256": "73060466fb405f3c92a0da2430e7880816a7f5e50a6752604c2909adc65ed1f2"
+          }
+        ]
+      },
+      "source_path": "agent/sessions/2026/11/27/rollout-2026-11-27T01-51-20-01a21ab3-2f3b-74e1-961c-30f8b37a75b8.jsonl",
+      "source_bytes": 1294625
+    },
+    {
+      "trial": "swe-m2_ai-research_continual-visual-rule-edit-correct-93545b36-94",
+      "arm": "correct",
+      "signature": {
+        "base": "b68a162fb530728a1bdfadbc263a70a384122ae2cb0b09e3e32b04d57d6a3105",
+        "pretool_messages": [
+          {
+            "role": "developer",
+            "sha256": "62ffe6dba8ddb5f92bd0c30d70735e79a06b87235b77dbb1f9c5731dadfe9223"
+          },
+          {
+            "role": "user",
+            "sha256": "591f08c2e49cd4562bf775b346c730409c0fbfac33b5bca4b01d36ee4bef4b7a"
+          },
+          {
+            "role": "user",
+            "sha256": "73060466fb405f3c92a0da2430e7880816a7f5e50a6752604c2909adc65ed1f2"
+          }
+        ]
+      },
+      "source_path": "agent/sessions/2026/11/27/rollout-2026-11-27T02-08-12-01a21ac2-a23a-7a10-b8eb-6a7219b76508.jsonl",
+      "source_bytes": 1074809
+    },
+    {
+      "trial": "swe-m2_ai-research_continual-visual-rule-edit-correct-93545b36-95",
+      "arm": "correct",
+      "signature": {
+        "base": "b68a162fb530728a1bdfadbc263a70a384122ae2cb0b09e3e32b04d57d6a3105",
+        "pretool_messages": [
+          {
+            "role": "developer",
+            "sha256": "62ffe6dba8ddb5f92bd0c30d70735e79a06b87235b77dbb1f9c5731dadfe9223"
+          },
+          {
+            "role": "user",
+            "sha256": "591f08c2e49cd4562bf775b346c730409c0fbfac33b5bca4b01d36ee4bef4b7a"
+          },
+          {
+            "role": "user",
+            "sha256": "73060466fb405f3c92a0da2430e7880816a7f5e50a6752604c2909adc65ed1f2"
+          }
+        ]
+      },
+      "source_path": "agent/sessions/2026/11/27/rollout-2026-11-27T02-08-15-01a21ac2-aae3-74b2-9c48-c0f6c0950dd6.jsonl",
+      "source_bytes": 962639
+    },
+    {
+      "trial": "swe-m2_ai-research_continual-visual-rule-edit-swapped-d3dd7d75-19",
+      "arm": "swapped",
+      "signature": {
+        "base": "b68a162fb530728a1bdfadbc263a70a384122ae2cb0b09e3e32b04d57d6a3105",
+        "pretool_messages": [
+          {
+            "role": "developer",
+            "sha256": "62ffe6dba8ddb5f92bd0c30d70735e79a06b87235b77dbb1f9c5731dadfe9223"
+          },
+          {
+            "role": "user",
+            "sha256": "591f08c2e49cd4562bf775b346c730409c0fbfac33b5bca4b01d36ee4bef4b7a"
+          },
+          {
+            "role": "user",
+            "sha256": "73060466fb405f3c92a0da2430e7880816a7f5e50a6752604c2909adc65ed1f2"
+          }
+        ]
+      },
+      "source_path": "agent/sessions/2026/11/27/rollout-2026-11-27T02-25-07-01a21ad2-1c48-7a62-8343-b74ab93cf3f4.jsonl",
+      "source_bytes": 1035404
+    },
+    {
+      "trial": "swe-m2_ai-research_continual-visual-rule-edit-swapped-d3dd7d75-20",
+      "arm": "swapped",
+      "signature": {
+        "base": "b68a162fb530728a1bdfadbc263a70a384122ae2cb0b09e3e32b04d57d6a3105",
+        "pretool_messages": [
+          {
+            "role": "developer",
+            "sha256": "62ffe6dba8ddb5f92bd0c30d70735e79a06b87235b77dbb1f9c5731dadfe9223"
+          },
+          {
+            "role": "user",
+            "sha256": "591f08c2e49cd4562bf775b346c730409c0fbfac33b5bca4b01d36ee4bef4b7a"
+          },
+          {
+            "role": "user",
+            "sha256": "73060466fb405f3c92a0da2430e7880816a7f5e50a6752604c2909adc65ed1f2"
+          }
+        ]
+      },
+      "source_path": "agent/sessions/2026/11/27/rollout-2026-11-27T02-25-07-01a21ad2-1d43-7cf0-ac7a-9dacba45cbac.jsonl",
+      "source_bytes": 1166520
+    },
+    {
+      "trial": "swe-m2_ai-research_continual-visual-rule-edit-swapped-d3dd7d75-21",
+      "arm": "swapped",
+      "signature": {
+        "base": "b68a162fb530728a1bdfadbc263a70a384122ae2cb0b09e3e32b04d57d6a3105",
+        "pretool_messages": [
+          {
+            "role": "developer",
+            "sha256": "62ffe6dba8ddb5f92bd0c30d70735e79a06b87235b77dbb1f9c5731dadfe9223"
+          },
+          {
+            "role": "user",
+            "sha256": "591f08c2e49cd4562bf775b346c730409c0fbfac33b5bca4b01d36ee4bef4b7a"
+          },
+          {
+            "role": "user",
+            "sha256": "73060466fb405f3c92a0da2430e7880816a7f5e50a6752604c2909adc65ed1f2"
+          }
+        ]
+      },
+      "source_path": "agent/sessions/2026/11/27/rollout-2026-11-27T02-25-20-01a21ad2-5040-75b1-820f-0ffaa9a9fe2d.jsonl",
+      "source_bytes": 943687
+    },
+    {
+      "trial": "swe-m2_ai-research_continual-visual-rule-edit-none-67ae1c69-21",
+      "arm": "none",
+      "signature": {
+        "base": "b68a162fb530728a1bdfadbc263a70a384122ae2cb0b09e3e32b04d57d6a3105",
+        "pretool_messages": [
+          {
+            "role": "developer",
+            "sha256": "62ffe6dba8ddb5f92bd0c30d70735e79a06b87235b77dbb1f9c5731dadfe9223"
+          },
+          {
+            "role": "user",
+            "sha256": "591f08c2e49cd4562bf775b346c730409c0fbfac33b5bca4b01d36ee4bef4b7a"
+          },
+          {
+            "role": "user",
+            "sha256": "73060466fb405f3c92a0da2430e7880816a7f5e50a6752604c2909adc65ed1f2"
+          }
+        ]
+      },
+      "source_path": "agent/sessions/2026/11/27/rollout-2026-11-27T02-25-13-01a21ad2-352f-7300-a348-9e6277cc4b02.jsonl",
+      "source_bytes": 870141
+    },
+    {
+      "trial": "swe-m2_ai-research_continual-visual-rule-edit-none-67ae1c69-22",
+      "arm": "none",
+      "signature": {
+        "base": "b68a162fb530728a1bdfadbc263a70a384122ae2cb0b09e3e32b04d57d6a3105",
+        "pretool_messages": [
+          {
+            "role": "developer",
+            "sha256": "62ffe6dba8ddb5f92bd0c30d70735e79a06b87235b77dbb1f9c5731dadfe9223"
+          },
+          {
+            "role": "user",
+            "sha256": "591f08c2e49cd4562bf775b346c730409c0fbfac33b5bca4b01d36ee4bef4b7a"
+          },
+          {
+            "role": "user",
+            "sha256": "73060466fb405f3c92a0da2430e7880816a7f5e50a6752604c2909adc65ed1f2"
+          }
+        ]
+      },
+      "source_path": "agent/sessions/2026/11/27/rollout-2026-11-27T02-25-08-01a21ad2-2379-7db0-beac-59c366b3433a.jsonl",
+      "source_bytes": 849494
+    },
+    {
+      "trial": "swe-m2_ai-research_continual-visual-rule-edit-none-67ae1c69-23",
+      "arm": "none",
+      "signature": {
+        "base": "b68a162fb530728a1bdfadbc263a70a384122ae2cb0b09e3e32b04d57d6a3105",
+        "pretool_messages": [
+          {
+            "role": "developer",
+            "sha256": "62ffe6dba8ddb5f92bd0c30d70735e79a06b87235b77dbb1f9c5731dadfe9223"
+          },
+          {
+            "role": "user",
+            "sha256": "591f08c2e49cd4562bf775b346c730409c0fbfac33b5bca4b01d36ee4bef4b7a"
+          },
+          {
+            "role": "user",
+            "sha256": "73060466fb405f3c92a0da2430e7880816a7f5e50a6752604c2909adc65ed1f2"
+          }
+        ]
+      },
+      "source_path": "agent/sessions/2026/11/27/rollout-2026-11-27T02-25-07-01a21ad2-1e5a-7b11-be5e-116ee5d82a6c.jsonl",
+      "source_bytes": 795815
+    }
+  ],
+  "scope": "Exact hashes of native base instructions and system/developer/user message content before the first tool call. Observation files and tool responses are outside these hashes. Registry names and orchestration metadata may differ."
+}

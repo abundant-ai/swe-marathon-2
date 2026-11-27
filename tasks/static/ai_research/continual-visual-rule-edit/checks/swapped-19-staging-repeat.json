@@ -1,0 +1,30 @@
+{
+  "trial": "swe-m2_ai-research_continual-visual-rule-edit-swapped-d3dd7d75-19",
+  "source_sha256": "126e14ea55f6db1f692d9842bf7efb535f718cb62076c9b7df9c85e671bf9f0c",
+  "differences": [
+    {
+      "field": 1,
+      "key": "mean_shift_rate",
+      "hosted": [
+        0.00707490562475184,
+        0.009063884870542572
+      ],
+      "local": [
+        0.00706106533086856,
+        0.009090557675289736
+      ]
+    },
+    {
+      "field": 2,
+      "key": "mean_shift_rate",
+      "hosted": [
+        0.006994110126006624,
+        0.00882552084336197
+      ],
+      "local": [
+        0.0069958602104819995,
+        0.008824800728196585
+      ]
+    }
+  ]
+}
