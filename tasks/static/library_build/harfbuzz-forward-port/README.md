@@ -1,10 +1,12 @@
 # HarfBuzz forward-port, 14.3.0 → 15.2.0
 
-**Status: Phase C done, QA-ready (2026-11-27).** Single-step (owner, 2026-11-26). 53 of 57 units are graded on
-5,256 private cases (four cut, with reasons in notes/DESIGN.md). Through the amd64 verifier image: the reference
-solution scores 1.0, the untouched tree 0.0, every stub 0.0, and the failure-sentence mutant W 0.672 (band
-0.60-0.85). Local preflight passes on the flat bundle. Next: an independent 20-pass QA; no Oddish run before the
-owner says so. Category: Library Reproduction (`tasks/static/library_build/`). Branch `neel/harfbuzz-forward-port`.
+**Status: QA fix round 1 done (2026-11-28).** Single-step (owner, 2026-11-26). 53 of 57 units are graded on 5,256
+private cases (four cut, with reasons in notes/DESIGN.md). Through the amd64 verifier image: the reference solution
+scores 1.0, the untouched tree 0.0, every stub 0.0 (the no-op API stub too), the verification-gap mutant V 0.685
+(D 0.685, h_d 1.000, h_b 1.000; band 0.60-0.85) and the over-broad mutant W, now a secondary bound, 0.678 (D 0.985,
+h_d 0.691, h_b 0.977); hostile and drop-in trees 0.0; slow and hanging trees still get their reward at the
+1,800 s deadline. Local preflight passes on the flat bundle. Next: the QA re-check passes; no Oddish run before
+the owner says so. Category: Library Reproduction (`tasks/static/library_build/`). Branch `neel/harfbuzz-forward-port`.
 
 A product ships HarfBuzz 14.3.0 and has frozen that build. The agent brings it forward to the shaping, layout,
 metrics and API behaviour of upstream's next eight releases (14.3.1 to 15.2.0, 2026-08-13 to 2026-11-19), in one
@@ -79,19 +81,23 @@ rate of untouched units, the earlier over-breadth sentence comes back.
 
 ## Hackability assessment
 
-Tested in Phase C (2026-11-27) on the amd64 images, except where a row says otherwise.
+Tested in fix round 1 (2026-11-27/28) on the amd64 verifier image, except where a row says otherwise.
 
 | Attack | Boundary | Mitigation | Severity |
 | --- | --- | --- | --- |
-| Read the expected outputs or case files from the tree's build scripts or library code during grading | Verifier container | The build and the drivers run as `builder` under `prlimit`; `/tests/private` is root-only; root writes the reward after the drivers exit | 🟢 GREEN: as `builder`, reading the expected outputs, listing `/tests/private` and writing the reward all fail |
-| Obtain 15.x code or a newer HarfBuzz binary in the agent container | Agent image | No 15.x source, binary or version string; no network; history cut at one commit | 🟢 GREEN: the protection probe found none, and no network |
-| Earn credit without implementing the notes | Reward | Every changed case fails on 14.3.0; held-fixed sets only gate | 🟢 GREEN: untouched tree 0.0; comment edits, a neutral refactor, a tree that does not build, an empty `hb_shape` and an abort all 0.0 |
+| Read the expected outputs or case files from the tree's build scripts or library code during grading | Verifier container | The build and the case programs run as `builder` (fixed uid, no new privileges, process, file-size and address-space limits); `/tests/private` and `verify.py` are root-only; root's own files are in a root-only `/var/lib/hbv`, and a case program sees its input and output only as files root opened | 🟢 GREEN: as `builder`, reading the expected outputs, listing `/tests/private` and writing the reward all fail (Phase C); the hostile tree's links, planted to make root read or write through them, moved nothing (0.0) |
+| Forge or keep a reward: write `/logs/verifier`, plant links under root's file names, leave processes running, preload a library into root | Verifier container | `/logs/verifier` root-owned 0755; root opens through folder descriptors with `O_NOFOLLOW|O_EXCL`; every `builder` process is killed after each step and batch and once more at the end; any reward file found is removed; `metrics.json`, then `reward.txt`, are written last | 🟢 GREEN: the hostile tree (forging at setup, at build and in the library, links planted under every name root uses, processes left behind, a preload library) scores 0.0; `reward.txt` is root's regular file, no `reward.json`, and the leftover processes are reported and killed |
+| Leave processes running in the agent container to change the tree after the session | Agent container | A root `[[verifier.collect]]` hook ends every process of `dev` (`kill -9 -1` as `dev`, then `pkill`, until none is left) before the tree is copied out | 🟢 GREEN (locally): run as root in the agent image against 22 `dev` processes (a stopped one, one in its own session, a forking loop, a `nohup` one), it leaves none in 139 ms; on the platform it runs as Harbor's collect step |
+| Obtain 15.x code or a newer HarfBuzz binary in the agent container | Agent image | No 15.x source, binary or version string; no network; history cut at one commit | 🟢 GREEN: the protection probe found none, and no network (Phase C) |
+| Drop a 15.x release into the tree | Verifier | A tree with a 15.x version in `meson.build`, `src/hb-version.h` or `NEWS`, or one of the 15 unit-test sources only 15.x has (by sha256), is not built and scores 0; the instruction says the tree stays version 14.3.0, and the reference keeps it | 🟢 GREEN: the 15.2.0 release dropped in scores 0.0 unbuilt, all 18 markers listed; the reference, the `solve.sh` tree, V and W carry none |
+| Earn credit without implementing the notes | Reward | Every changed case fails on 14.3.0; held-fixed sets only gate; the new-function probes end with a call that only a working function passes | 🟢 GREEN: untouched tree 0.0; comment edits, a neutral refactor, a tree that does not build, an empty `hb_shape`, an abort and the four new functions as no-ops all 0.0 |
 | Key outputs on private fonts | Cases | The agent never sees them | 🟢 GREEN: no private case id or font name in any agent-visible file |
-| Clutter the delivered tree (pipes, huge files, many files, links out) | Verifier copy | Special files and files over 512 MB are not copied; links are copied as links | 🟢 GREEN: a tree with a pipe, a 600 MB sparse file, 100,000 files and links out of the tree scores 1.0 |
-| Apply the notes over-broadly | Reward gate | The neighbours' pass rate multiplies the reward | 🟢 GREEN: mutant W scores 0.672 |
-| Hang, fork or flood the verifier | Verifier | One process per driver and font, `prlimit` (processes, file size, no core), 300 s per batch, 1,200 s for all batches, outputs above 256 MB discarded | 🟡 YELLOW: limits in place; no hanging or forking library was run |
+| Clutter the delivered tree (pipes, huge files, many files, links out) | Verifier copy | Special files and files over 64 MiB are not copied; links are copied as links; a tree over 4 GiB or 300,000 entries scores 0 with a note | 🟢 GREEN: a tree with a pipe, a 600 MB sparse file, 100,000 files and links out of the tree scores 1.0 |
+| Outlast the verifier: a build that never ends, a library that hangs | Verifier | One 1,800 s deadline for the copy, the build and every batch; 120 s per batch; what has not run fails and a reward is still written; a last-resort alarm at 2,100 s, inside the 2,400 s timeout | 🟢 GREEN: a build that sleeps past the deadline scores 0.0 with the reward written at 1,800 s; a library that spins in shaping gets 0.018 at 1,806 s (14 batches stopped at 125 s, 227 not run) |
+| Flood the verifier's reads | Verifier | At most 16 MiB + 1 byte of a batch's output is read; 64 MiB file-size limit on case programs; step logs keep their last 4,000 bytes | 🟢 GREEN: a library that writes 4 GiB per shaping call fails its 141 shaping batches, the other 261 score as the reference, and the check ends in 79 s |
+| Apply the notes over-broadly | Reward gate | The neighbours' pass rate multiplies the reward | 🟢 GREEN (secondary bound): W, which widens every conditional note, scores 0.678 (h_d 0.691); W_literal, with only literal widenings, 0.751 |
 
-Highest unresolved severity: 🟡 YELLOW (hang and fork attacks not run).
+Highest unresolved severity: 🟢 GREEN. The collect hook's platform run is checked on the first oracle trial.
 
 ## Layout
 
@@ -99,7 +105,7 @@ Highest unresolved severity: 🟡 YELLOW (hang and fork attacks not run).
 README.md            this file (never shipped)
 task.toml            single step, 34,560 s, separate verifier checking RELEASE=15.2.0
 instruction.md       the request, every note from 14.3.1 to 15.2.0
-tests/               verifier skeleton: Dockerfile, test.sh, verify.py, driver/hbdrv.c
+tests/               verifier: Dockerfile, test.sh, verify.py, driver/ (hbdrv.c and the API probes)
                      (private/, inputs/ and wheels/ are staged by packaging and git-ignored)
 solution/            solve.sh copies the reference source files and removes the listed paths (solution/private/, git-ignored)
 scripts/             development tooling, never shipped: fetch_inputs.sh, gate_checks.py, package_task.py, pipeline/
@@ -178,3 +184,21 @@ Private material (cases, seeds, gold outputs, private fonts, the duals catalogue
   only what the downloaded pages state. The reference solution ships source files. A stub that never shapes
   briefly scored 0.002 on unit 43's position cases; the probe now refuses to answer when shaping did not run.
   notes/PHASE-C-REPORT.md has the numbers.
+
+### 2026-11-28
+
+- **QA fix round 1.** The independent QA round (21 passes) gave ten must-fix and seven should-fix items; the panel
+  on the failure sentence added M11. Every item is fixed, with evidence, in notes/FIX1-REPORT.md:
+  - the instruction speaks in the requester's terms, the cut notes are gone, and three notes (6, 29, 37) state
+    their rule; the others keep upstream's wording and their cases were narrowed instead;
+  - unit 25a's CoreText-history cases are no longer graded, the new-function probes end with a call a no-op
+    fails, and three units' boundary cases follow their notes;
+  - the verifier keeps its own files root-only, writes the reward last, kills every leftover process, keeps one
+    1,800 s deadline over the build and every batch, caps every read, and rejects a dropped-in 15.x release; a
+    post-session hook ends the agent's processes;
+  - the specification notes are paraphrased and carry a NOTICE; the fonts ship with their OFL text;
+  - the failure sentence is the verification-gap one, with tiers, the proof mutant V and a pre-registration;
+    W is a secondary bound.
+- The c3 sweep rebuilt every release, revert and mutant (66 builds); the expected outputs were recorded again
+  through the amd64 verifier image (0 differences from the pipeline; 3+1 recordings identical).
+
