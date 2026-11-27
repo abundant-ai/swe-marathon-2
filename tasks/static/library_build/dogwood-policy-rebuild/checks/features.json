@@ -2624,11 +2624,18 @@
     "summary": "Event-schema `//` comments and a trailing comma after the last field are accepted.",
     "family": "F",
     "routes": [
-      "schema"
+      "schema",
+      "replay",
+      "validate",
+      "lower",
+      "explain"
     ],
     "detect": [
       {
-        "schema_regex": ",\\s*\\}"
+        "schema_regex": "event\\s*<\\w+>::\\w+\\s*\\{[^{}]*,\\s*(?://[^\\n]*\\n\\s*)?\\}"
+      },
+      {
+        "schema_regex": "event\\s*<\\w+>::[\\s\\S]*//"
       }
     ],
     "nearmiss": null,
@@ -3098,7 +3105,11 @@
     "summary": "A field may be named `pin`, and a field named `pin` may be pinned.",
     "family": "F",
     "routes": [
-      "schema"
+      "schema",
+      "replay",
+      "validate",
+      "lower",
+      "explain"
     ],
     "detect": [
       {
@@ -5282,7 +5293,7 @@
     ],
     "detect": [
       {
-        "policy_regex": "\\)\\s*(?:<=|>=|==|!=|<|>)\\s*count\\b"
+        "policy_regex": "\\)\\s*(?:<=|>=|==|!=|<|>)\\s*\\(?\\s*count\\b"
       }
     ],
     "nearmiss": null,
@@ -8342,6 +8353,18 @@
       },
       {
         "gen_tag": "macro:case:kind"
+      },
+      {
+        "error": {
+          "command": "check-parse",
+          "message_substring": "argument(s), got"
+        }
+      },
+      {
+        "error": {
+          "command": "check-parse",
+          "message_substring": "macro and cannot be called in a"
+        }
       }
     ],
     "nearmiss": null,
@@ -8487,7 +8510,11 @@
     "summary": "`pin`, `decision`, `event` are contextual keywords; binding selectors is the derivation pass.",
     "family": "F",
     "routes": [
-      "schema"
+      "schema",
+      "replay",
+      "validate",
+      "lower",
+      "explain"
     ],
     "detect": [
       {
@@ -9852,14 +9879,15 @@
       "heading": "6.3 Context assembly",
       "quote": "every group of the event's request context (`input`, `system`, …), verbatim;"
     },
-    "summary": "The Cedar context is the request context groups, the hoisted temporal booleans, and providers; Null members are absent [A-Context-Keys, A-Context-Groups, A-Context-ValueMap, A-Context-EntityValue-Sentinel].",
+    "summary": "The Cedar context is the request context groups, the hoisted temporal booleans, and providers; Null members are absent [A-Context-Keys, A-Context-Groups, A-Context-ValueMap, A-Context-EntityValue-Sentinel]. Cased through replays whose policy reads `context.input`; the trace format the guide documents has no null value, so the Null half is not cased.",
     "family": "R",
     "routes": [
       "replay"
     ],
     "detect": [
       {
-        "trace_regex": "\\bnull\\b"
+        "trace_regex": "request_context\\(",
+        "policy_regex": "context\\.input\\."
       }
     ],
     "nearmiss": null,
@@ -11249,6 +11277,9 @@
       "cli"
     ],
     "detect": [
+      {
+        "args_regex": "\\babsent\\.\\w+"
+      },
       {
         "error": {
           "command": "validate",

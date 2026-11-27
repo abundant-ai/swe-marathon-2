@@ -7,12 +7,14 @@ guide. Each id needs cases that fail when an implementation lacks it: at least 3
 at least 1 for a restriction. The evidence, strongest first:
 - mutant: a patch in `checks/mutants/` that names the id in its `MUTANT (<id>)` line; the cases whose recorded answer that mutant's build changes (its run in
   --mutants, `<patch name>.json`);
-- error: for a restriction, the cases whose inputs have the breaking shape (its detectors) and
-  whose recorded answer refuses it (the restriction's message, or a failing exit status), or, for
-  a restriction known only by its message, the cases whose answer carries it: a build without
-  the check does not print that;
-- use: for a feature, the cases whose inputs use it (its `detect` patterns) and whose recorded
-  answer is a success (exit status 0): a build without the feature cannot print that answer.
+- error: for a restriction, the cases whose inputs have the breaking shape (its detectors, or a
+  template bundle built to break it) and whose recorded answer refuses it (the restriction's
+  message, or a failing exit status; a template for a restriction with a known message must show
+  the message), or, for a restriction known only by its message, the cases whose answer carries
+  it: a build without the check does not print that;
+- use: for a feature, the cases whose inputs use it (its `detect` patterns, or a template bundle
+  built to use it) and whose recorded answer is a success (exit status 0), or whose answer
+  carries one of its messages: a build without the feature cannot print that answer.
 Out-of-scope ids must have no case; unchecked restrictions are not counted.
 """
 
@@ -207,15 +209,25 @@ def main() -> int:
                 e.get("message_substring") and e["message_substring"] in g[1]
                 for e in errs
             )
-            hit = has_shape and matches(
-                detect, inp_cache[c["id"]], tags.get(c["bundle"], {}).get("tags", [])
+            # A template bundle (`scripts/restrictions.py`) is built to break or use this id.
+            targeted = tags.get(c["bundle"], {}).get("kind") == fid
+            hit = targeted or (
+                has_shape
+                and matches(
+                    detect,
+                    inp_cache[c["id"]],
+                    tags.get(c["bundle"], {}).get("tags", []),
+                )
             )
             if kind == "restriction":
                 # The breaking shape and a refusal (its message, or a failing exit status),
-                # or, for an id known only by its message, the message.
-                if (has_shape and hit and (msg or g[0] != 0)) or (
-                    not has_shape and msg
-                ):
+                # or, for an id known only by its message, the message. A template for an id
+                # with a known message must show that message, so it broke this rule.
+                if targeted and errs:
+                    ok = msg
+                else:
+                    ok = (hit and (msg or g[0] != 0)) or (not has_shape and msg)
+                if ok:
                     errors.add(c["id"])
             elif (hit and g[0] == 0) or msg:
                 use.add(c["id"])

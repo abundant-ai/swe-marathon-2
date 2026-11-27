@@ -60,9 +60,63 @@ def providers(edit=None):
     return json.dumps(decl, indent=1) + "\n"
 
 
+def events(request_extra: str = "", replace_inputs: str | None = None) -> str:
+    """The universal event schema, with an extra field line in the request declaration (and its
+    spread of the inputs replaced, when given); every copy gets its own note field."""
+    text = pairs.UNIVERSAL_EVENTS.replace(
+        "    requestId: String,\n}",
+        "    requestId: String,\n    note@N@: String,\n}",
+        1,
+    )
+    if replace_inputs is not None:
+        text = text.replace("    ...inputs(A),\n", request_extra, 1)
+    elif request_extra:
+        text = text.replace(
+            "    pin callerPrincipal", request_extra + "    pin callerPrincipal", 1
+        )
+    return text
+
+
+def enum_providers(edit=None, namespace: str = "Risk", declare: bool = True) -> str:
+    """Risk::Score with an enum-typed `level` output; the enum declared in `namespace`, or not at
+    all, and the output's enum type changed by `edit`."""
+    decl = json.loads(json.dumps(PROVIDERS))
+    score = decl["availableProviders"]["Risk::Score"]
+    level = {"paramType": "entity", "entityType": f"{namespace}::Level"}
+    if edit:
+        edit(level)
+    score["outputType"]["fields"]["level"] = level
+    score["outputType"]["required"] = ["score", "level"]
+    score["implementation"]["script"] = (
+        score["implementation"]["script"]
+        .replace("#{ score: -1 }", '#{ score: -1, level: "LOW" }')
+        .replace("#{ score: amount * @K@ }", '#{ score: amount * @K@, level: "HIGH" }')
+    )
+    if declare:
+        decl = {
+            "entityTypes": {f"{namespace}::Level": {"enum": ["LOW", "HIGH"]}},
+            **decl,
+        }
+    return json.dumps(decl, indent=1) + "\n"
+
+
+def method_providers() -> str:
+    """Risk::Score with a declared output method `boost`."""
+    decl = json.loads(json.dumps(PROVIDERS))
+    score = decl["availableProviders"]["Risk::Score"]
+    score["availableMethods"] = {
+        "boost": {"argumentTypes": [], "outputType": {"paramType": "integer"}}
+    }
+    score["implementation"]["script"] += (
+        "\nfn boost(output) {\n    output.score * 2\n}\n"
+    )
+    return json.dumps(decl, indent=1) + "\n"
+
+
 PARSE = ("check-parse", "validate")
 VALIDATE = ("validate",)
 REPLAY = ("replay",)
+EVENT_CMDS = ("schema-event", "validate")
 
 # id -> (commands, {file: text}); a text may hold @RID@, @N@, @W@, @WHO@, @K@, @EFF@.
 TEMPLATES: dict[str, tuple[tuple[str, ...], dict[str, str]]] = {
@@ -316,8 +370,9 @@ TEMPLATES: dict[str, tuple[tuple[str, ...], dict[str, str]]] = {
         VALIDATE,
         {
             "policy.dw": alert(
-                'exists (u: Long). formerly within @W@ Ledger::Action::"Login"::request{ input.user: u }'
-            )
+                'exists (u: Ledger::User). formerly within @W@ Ledger::Action::"Login"::request{ callerResource: u }'
+            ),
+            "event.dwschema": pairs.UNIVERSAL_EVENTS,
         },
     ),
     "restr:04:no-min-max-avg": (
@@ -438,6 +493,248 @@ TEMPLATES: dict[str, tuple[tuple[str, ...], dict[str, str]]] = {
             ),
         },
     ),
+    # Event-schema declarations (chapter 03). The note field and binder names vary per copy.
+    "restr:03:binder-must-match": (
+        EVENT_CMDS,
+        {
+            "policy.dw": alert(f"formerly within @W@ {LOGIN_ANCHOR}"),
+            "event.dwschema": events("    ...inputs(B@N@),\n", "    ...inputs(A),\n"),
+        },
+    ),
+    "restr:03:brackets-body-mandatory": (
+        EVENT_CMDS,
+        {
+            "policy.dw": alert(f"formerly within @W@ {LOGIN_ANCHOR}"),
+            "event.dwschema": events().replace(
+                "decision event <A>::request {", "decision event A::request {"
+            ),
+        },
+    ),
+    "restr:03:directives-first-once": (
+        EVENT_CMDS,
+        {
+            "policy.dw": alert(f"formerly within @W@ {LOGIN_ANCHOR}"),
+            "event.dwschema": events() + "\nmax_window = @W@\n",
+        },
+    ),
+    "restr:03:pin-leaf-only": (
+        EVENT_CMDS,
+        {
+            "policy.dw": alert(f"formerly within @W@ {LOGIN_ANCHOR}"),
+            "event.dwschema": events(
+                "    pin origin@N@: { server: String } = context.input.server,\n"
+            ),
+        },
+    ),
+    "restr:03:pin-needs-value": (
+        EVENT_CMDS,
+        {
+            "policy.dw": alert(f"formerly within @W@ {LOGIN_ANCHOR}"),
+            "event.dwschema": events("    pin origin@N@: String,\n"),
+        },
+    ),
+    "restr:03:selector-not-type": (
+        ("validate", "lower"),
+        {
+            "policy.dw": alert(f"formerly within @W@ {LOGIN_ANCHOR}"),
+            "event.dwschema": events("    payload@N@: inputs(A),\n"),
+        },
+    ),
+    # Temporal well-formedness (chapter 04).
+    "restr:04:aggregate-placement": (
+        PARSE,
+        {
+            "policy.dw": alert(
+                'formerly within @W@ Ledger::Action::"Transfer"::request{ input.amount: '
+                f"(count for (t: Timepoint). where (formerly within 1h ({LOGIN_ANCHOR} && tp(t)))) }}"
+            )
+        },
+    ),
+    "restr:04:binding-equality-correlated": (
+        PARSE,
+        {
+            "policy.dw": alert(
+                "exists (u: String). exists (n: Long). (\n"
+                '        (count for (t: Timepoint). where (formerly within @W@ (Ledger::Action::"Login"::request{ input.user: u } && tp(t))))\n'
+                '        == n && n >= @K@ && formerly within @W@ Ledger::Action::"Login"::request{ input.user: u }\n'
+                "    )"
+            )
+        },
+    ),
+    "restr:04:closed": (
+        PARSE,
+        {
+            "policy.dw": alert(
+                'formerly within @W@ Ledger::Action::"Login"::request{ input.user: u, input.server: "s1" }'
+            )
+        },
+    ),
+    "restr:04:for-var-restricted": (
+        PARSE,
+        {
+            "policy.dw": alert(
+                '(count for (x: String). where (!(formerly within @W@ Ledger::Action::"Login"::request{ input.user: x }))) == @K@'
+            )
+        },
+    ),
+    "restr:04:since-left-consumes": (
+        PARSE,
+        {
+            "policy.dw": alert(
+                "exists (u: String). (\n"
+                f'        (Ledger::Action::"Transfer"::request{{ input.user: u }} since within @W@ {LOGIN_ANCHOR})\n'
+                '        && formerly within 1h Ledger::Action::"Transfer"::request{ input.user: u }\n'
+                "    )"
+            )
+        },
+    ),
+    "restr:04:summed-var-in-for": (
+        PARSE,
+        {
+            "policy.dw": alert(
+                "exists (a: Long). (\n"
+                '        formerly within @W@ Ledger::Action::"Transfer"::request{ input.amount: a }\n'
+                "        && exists (total: Long). (\n"
+                f"            (sum a for (t: Timepoint). where (formerly within @W@ ({LOGIN_ANCHOR} && tp(t)))) == total\n"
+                "            && total > @N@\n"
+                "        )\n"
+                "    )"
+            )
+        },
+    ),
+    "restr:08:summand-long": (
+        VALIDATE,
+        {
+            "policy.dw": alert(
+                "exists (total: Long). (\n"
+                '        (sum u for (u: String). where (formerly within @W@ Ledger::Action::"Login"::request{ input.user: u, input.server: "s1" })) == total\n'
+                "        && total > @K@\n"
+                "    )"
+            )
+        },
+    ),
+    # Macros (chapter 06): each breaks one rule of definitions or calls.
+    "restr:06:argument-shape": (
+        PARSE,
+        {
+            "policy.dw": "def temporal once(?w, ?s) { formerly within ?w ?s };\n\n"
+            + alert("once(@W@, context.input.level)")
+        },
+    ),
+    "restr:06:condition-as-value": (
+        PARSE,
+        {
+            "policy.dw": 'def temporal seen(?u) { formerly within 1h Ledger::Action::"Login"::request{ input.user: ?u } };\n\n'
+            + alert('seen("u@K@") == @K@')
+        },
+    ),
+    "restr:06:dollar-not-condition": (
+        PARSE,
+        {
+            "policy.dw": "def temporal wrap(?w) { formerly within ?w $s };\n\n"
+            + alert("wrap(@W@)")
+        },
+    ),
+    "restr:06:duplicate-definitions": (
+        PARSE,
+        {
+            "policy.dw": "def cedar small(?n) { ?n < @N@ };\ndef cedar small(?n) { ?n < 10 };\n\n"
+            + policy("small(context.input.amount)")
+        },
+    ),
+    "restr:06:no-temporal-in-cedar-macro": (
+        PARSE,
+        {
+            "policy.dw": "def cedar recent(?s) { temporal { formerly within @W@ "
+            'Ledger::Action::"Login"::request{ input.server: ?s } } };\n\n'
+            + policy('recent("s1")', scope=ALERT_SCOPE)
+        },
+    ),
+    "restr:06:plain-identifier": (
+        PARSE,
+        {
+            "policy.dw": "def temporal seen(?w) { exists (u: String). formerly within ?w "
+            'Ledger::Action::"Login"::request{ input.user: u } };\n\n'
+            + alert("seen(@W@)")
+        },
+    ),
+    "restr:06:stray-sigils": (
+        PARSE,
+        {"policy.dw": policy("context.input.amount < ?limit@K@")},
+    ),
+    "restr:06:temporal-in-cedar": (
+        PARSE,
+        {
+            "policy.dw": "def temporal seen(?s) { formerly within @W@ "
+            'Ledger::Action::"Login"::request{ input.server: ?s } };\n\n'
+            + policy('seen("s@K@")', scope=ALERT_SCOPE)
+        },
+    ),
+    "restr:06:undeclared-parameter": (
+        PARSE,
+        {
+            "policy.dw": "def cedar small(?n) { ?x@K@ < @N@ };\n\n"
+            + policy("small(context.input.amount)")
+        },
+    ),
+    "restr:06:unknown-macro": (
+        PARSE,
+        {"policy.dw": alert("recently_seen@K@(@W@)")},
+    ),
+    "restr:06:value-as-condition": (
+        PARSE,
+        {
+            "policy.dw": "def temporal logins(?w) { count for ($t: Timepoint). where (formerly within ?w "
+            f"({LOGIN_ANCHOR} && tp($t))) }};\n\n" + alert("logins(@W@)")
+        },
+    ),
+    # Providers (chapters 05, 08 and 10).
+    "restr:05:enum-typo-caught": (
+        VALIDATE,
+        {
+            "policy.dw": policy(
+                'Risk::Score(context.input.amount).level == Risk::Level::"HIHG"'
+            ),
+            "providers.json": enum_providers(),
+        },
+    ),
+    "restr:08:projection-before-method": (
+        ("validate", "lower"),
+        {
+            "policy.dw": policy(
+                "Risk::Score(context.input.amount).score.boost() > @N@"
+            ),
+            "providers.json": method_providers(),
+        },
+    ),
+    "restr:08:undeclared-provider-no-implementation": (
+        REPLAY,
+        {
+            "policy.dw": policy("Risk::Other(context.input.amount).score > @N@"),
+            "providers.json": providers(),
+        },
+    ),
+    "restr:10:entity-needs-entity-type": (
+        ("validate", "schema-providers"),
+        {
+            "policy.dw": policy("Risk::Score(context.input.amount).score > @N@"),
+            "providers.json": enum_providers(lambda level: level.pop("entityType")),
+        },
+    ),
+    "restr:10:enum-namespace": (
+        ("validate", "schema-providers"),
+        {
+            "policy.dw": policy("Risk::Score(context.input.amount).score > @N@"),
+            "providers.json": enum_providers(namespace="Other"),
+        },
+    ),
+    "restr:10:output-enum-declared": (
+        ("validate", "schema-providers"),
+        {
+            "policy.dw": policy("Risk::Score(context.input.amount).score > @N@"),
+            "providers.json": enum_providers(declare=False),
+        },
+    ),
 }
 
 # Trace templates: the policy decides an Alert from this principal's Login, and one line of the
@@ -543,6 +840,8 @@ def write_restrictions(seed: int, out, copies: int = 2) -> int:
             os.makedirs(d, exist_ok=True)
             texts = {name: fill(text, r, idx) for name, text in files.items()}
             texts.setdefault("schema.cedarschema", pairs.SCHEMA)
+            if "replay" in cmds:
+                texts["trace.log"] = "\n".join(mixed_trace(r)) + "\n"
             for name, text in texts.items():
                 with open(os.path.join(d, name), "w") as f:
                     f.write(text)
@@ -720,6 +1019,36 @@ FEATURES: dict[str, tuple[tuple[str, ...], dict[str, str]]] = {
         {
             "policy.dw": policy("Text::Flag(context.input.user).hit"),
             "providers.json": json.dumps(REGEX_PROVIDER, indent=1) + "\n",
+        },
+    ),
+    "feat:04:arithmetic-saturates": (
+        ("validate", "replay", "lower", "explain"),
+        {
+            "policy.dw": alert(
+                "exists (n: Long). (\n"
+                f"        (count for (t: Timepoint). where (formerly within @W@ ({LOGIN_REQ} && tp(t)))) == n\n"
+                "        && n * 9223372036854775807 + @N@ > 9223372036854775000\n"
+                "    )"
+            )
+        },
+    ),
+    "feat:08:type-scope": (
+        ("validate", "replay", "explain"),
+        {
+            "policy.dw": alert(
+                "exists (x: Long). (\n"
+                '        formerly within @W@ Ledger::Action::"Transfer"::request{ input.amount: x }\n'
+                "        && x > @N@\n"
+                '        && exists (x: String). formerly within @W@ Ledger::Action::"Login"::request{ input.user: x }\n'
+                "    )"
+            )
+        },
+    ),
+    "feat:09:call-checks": (
+        PARSE,
+        {
+            "policy.dw": "def cedar between(?n, ?m) { ?n < ?m };\n\n"
+            + policy("between(context.input.amount)")
         },
     ),
 }

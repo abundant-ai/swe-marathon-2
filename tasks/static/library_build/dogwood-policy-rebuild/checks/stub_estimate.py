@@ -91,10 +91,12 @@ def main() -> int:
             twin = human.get(c["id"].rsplit("/", 1)[0] + "/human", out)
             want = stream(twin, "DENY" if stub == "deny" else "ALLOW  [rules: 0]")
             return rc == 0 and bool(want) and twin == want
-        if stub == "cat" and cmd == "format":
-            name = c.get("stdin") if c["args"][1:2] == ["-"] else c["args"][1]
-            src = (a.private / "bundles" / c["bundle"] / name).read_text()
-            return rc == 0 and out == src
+        if stub == "cat" and cmd == "format" and len(c["args"]) > 1:
+            name = c.get("stdin") if c["args"][1] == "-" else c["args"][1]
+            path = a.private / "bundles" / c["bundle"] / (name or "")
+            if not (name and path.is_file()):
+                return False
+            return rc == 0 and out == path.read_text(errors="replace")
         return False
 
     units: dict[str, list[dict]] = defaultdict(list)

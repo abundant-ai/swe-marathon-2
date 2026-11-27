@@ -145,14 +145,16 @@ def main() -> int:
             return "constant"
         if groups[stub_group(c)][(rc, out)] >= 2:
             return "shared"
-        if c["args"][0] == "replay":
+        cmd = c["args"][0] if c["args"] else ""
+        if cmd == "replay":
             twin = human.get(c["id"].rsplit("/", 1)[0] + "/human")
             if twin is not None and uniform_stream(twin):
                 return f"uniform {uniform_stream(twin)}"
-        if c["args"][0] == "format":
-            name = c["stdin"] if c["args"][1] == "-" else c["args"][1]
-            src = (a.candidates / "bundles" / c["bundle"] / name).read_text()
-            if out == src:
+        if cmd == "format" and len(c["args"]) > 1:
+            # the file `format` reads, when it is one (not `--help` or a folder)
+            name = c.get("stdin") if c["args"][1] == "-" else c["args"][1]
+            path = a.candidates / "bundles" / c["bundle"] / (name or "")
+            if name and path.is_file() and out == path.read_text(errors="replace"):
                 return "unchanged"
         return None
 
@@ -181,17 +183,36 @@ def main() -> int:
             key = (c["family"], "cli", c["fmt"])
         (needy if weak[c["id"]] else strong_pool)[key].append(c)
     made = 0
+    unpaired: list[dict] = []
     for key in sorted(needy):
         pool = strong_pool.get(key, [])
         rng.shuffle(pool)
         for c in sorted(needy[key], key=lambda x: x["id"]):
             if not pool:
-                c["drop"] = f"no partner ({weak[c['id']]})"
+                unpaired.append(c)
                 continue
             partner = pool.pop()
             pid = f"{key[0]}:{key[1]}/{key[2]}:{made}"
             c["pair"] = partner["pair"] = pid
             made += 1
+    # F (format, check-parse, schema, the command line) holds commands whose successful answers
+    # are mostly the same line; a weak F case with no partner on its own command takes a strong
+    # F case of another command in the same format, still unpaired.
+    spare: dict[str, list[dict]] = defaultdict(list)
+    for key in sorted(strong_pool):
+        if key[0] == "F":
+            spare[key[2]].extend(strong_pool[key])
+    for fmt in sorted(spare):
+        rng.shuffle(spare[fmt])
+    for c in unpaired:
+        pool = spare.get(c["fmt"], []) if c["family"] == "F" else []
+        if not pool:
+            c["drop"] = f"no partner ({weak[c['id']]})"
+            continue
+        partner = pool.pop()
+        pid = f"F:any/{c['fmt']}:{made}"
+        c["pair"] = partner["pair"] = pid
+        made += 1
 
     final = []
     for c in kept:

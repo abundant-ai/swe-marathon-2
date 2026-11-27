@@ -34,15 +34,16 @@ RUN set -eu; \
     chmod -R a+rX /opt/registry
 
 # Expected results: every private case run three times through the release build, the way the
-# grader runs it; a case without a single answer stops the build.
+# grader runs it; a case without a single answer stops the build. The program is named `dogwood`,
+# as a delivered build is installed, because its usage text names the file it was started as.
 FROM ${RUST_IMAGE} AS record
 RUN apt-get update && apt-get install -y --no-install-recommends python3 && rm -rf /var/lib/apt/lists/*
-COPY --from=release /opt/dogwood-release /opt/dogwood-release
+COPY --from=release /opt/dogwood-release /opt/release/dogwood
 COPY verifier/ /record/verifier/
 COPY record.py /record/record.py
 COPY private/cases.jsonl /record/private/cases.jsonl
 COPY private/bundles/ /record/private/bundles/
-RUN python3 -I -B /record/record.py /opt/dogwood-release /record/private /record/gold.jsonl
+RUN python3 -I -B /record/record.py /opt/release/dogwood /record/private /record/gold.jsonl
 
 FROM ${RUST_IMAGE}
 ENV PYTHONDONTWRITEBYTECODE=1 LANG=C.UTF-8 LC_ALL=C.UTF-8

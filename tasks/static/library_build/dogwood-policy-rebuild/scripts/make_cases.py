@@ -372,8 +372,9 @@ def restriction_cases(name, bundle, meta, base, fl) -> list[dict]:
     out = []
     for cmd in meta["cmds"]:
         if cmd == "check-parse":
-            args = ["check-parse", "policy.dw", *fl]
-            out.append(case(name, "check-parse/human", "F", args, "human"))
+            for fmt in ("human", "json"):
+                args = ["check-parse", "policy.dw", *fl, "--format", fmt]
+                out.append(case(name, f"check-parse/{fmt}", "F", args, fmt))
         elif cmd == "validate":
             for fmt, fam in (("human", "V"), ("json", "V-msg")):
                 args = ["validate", *base, *fl, "--format", fmt]
@@ -395,8 +396,9 @@ def restriction_cases(name, bundle, meta, base, fl) -> list[dict]:
             )
         elif cmd.startswith("schema-"):
             what = cmd.split("-", 1)[1]
-            args = ["schema", what, targets[what]]
-            out.append(case(name, f"{cmd}/human", "F", args, "human"))
+            for fmt in ("human", "json"):
+                args = ["schema", what, targets[what], "--format", fmt]
+                out.append(case(name, f"{cmd}/{fmt}", "F", args, fmt))
     return out
 
 
@@ -412,6 +414,7 @@ def cli_cases(bundles: Path) -> list[dict]:
     (d / "folder" / "keep.txt").write_text("\n")
     runs = [
         ("version", ["--version"]),
+        ("version-short", ["-V"]),
         ("help", ["--help"]),
         ("help-cmd", ["help"]),
         ("no-args", []),
