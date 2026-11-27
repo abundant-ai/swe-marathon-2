@@ -117,6 +117,9 @@ def test_integer_against_decimal_needs_the_decimal_precision():
     assert not C.compare_lines(["max: 5"], ["max: 5.9"]).ok
     assert not C.compare_lines(["alpha 0"], ["alpha 1.0"]).ok
     assert C.compare_lines(["max: 1"], ["max: 0.999999"]).ok
+    # an expected integer allows at most its sixth significant digit, however coarse the other
+    assert not C.compare_lines(["n 10"], ["n 11."]).ok
+    assert not C.compare_lines(["n 1000000"], ["n 1.00001e+06"]).ok
 
 
 def test_exponent_form_allows_only_the_sixth_significant_digit():
@@ -139,6 +142,8 @@ def test_integer_lists_must_match_exactly(tmp_path):
     a, b = tmp_path / "a", tmp_path / "b"
     a.write_text(LABELS.format(values="0 1 2 3"))
     b.write_text(LABELS.format(values="0 1 2 4"))
+    assert not C.compare_file(a, b).ok
+    b.write_text(LABELS.format(values="0 1. 2 4."))
     assert not C.compare_file(a, b).ok
     b.write_text(LABELS.format(values="0 1 2 3"))
     assert C.compare_file(a, b).ok

@@ -29,16 +29,18 @@ several checks: exit code, files, stdout, stderr and each output file.
   small cases written for features, options and error messages that no tutorial reaches
   (`scripts/generate/cases/`). Line coverage of OpenFOAM by the test set: 60.6%.
 - **Stability:** each run is replayed several times with OpenFOAM. Checks that vary between
-  identical runs are dropped, and so, as in ProgramBench, are checks that a program printing
-  nothing and exiting with 0 or with 1 passes (`scripts/harvest/merge.py`,
-  `scripts/harvest/second_dummy.py`, `scripts/harvest/unstable_checks.json`).
+  identical runs are dropped, among them the printed output of parallel runs that abort (Open
+  MPI kills the other processes at no fixed point), and so, as in ProgramBench, are checks that
+  a program printing nothing and exiting with 0 or with 1 passes (`scripts/harvest/merge.py`,
+  `scripts/harvest/unstable_checks.json`, `scripts/harvest/aborted_runs.py`,
+  `scripts/harvest/second_dummy.py`).
 - **Comparison:** text must match exactly, and integers too. Other numbers may differ by one
   unit in the last digit either side printed (in exponent form at most in the sixth
   significant digit), or by 10× OpenFOAM's own spread where that varies. Binary numbers may
   differ by a relative 1e-12. Dictionary entries may come in any order. Banners, dates, hosts,
   process ids, paths, run times and memory use are ignored, as are the C++ function names and
   source lines in error messages.
-- **Size:** 9,412 recorded runs and 102,418 checks at dataset revision `bcb1101`.
+- **Size:** 9,375 recorded runs and 102,360 checks at dataset revision `2114492`.
 
 Not tested: run-time compiled code (`#codeStream`, `coded…`), the cfMesh, OpenQBMM and VTK
 modules, and `applications/test`.
@@ -49,7 +51,7 @@ modules, and `applications/test`.
 reward = checks_passed / checks_kept
 ```
 
-`checks_kept` is fixed by the dataset revision (102,418 at `bcb1101`). A failed build passes no
+`checks_kept` is fixed by the dataset revision (102,360 at `2114492`). A failed build passes no
 check; a program that cannot be started fails every check of its run. Each recorded run is replayed with the submission's programs as UID 10001, with `HOME`
 and `TMPDIR` new empty folders, a read-only `/app/rebuild`, and a time limit of
 max(30 × OpenFOAM's time, 10 s). Also reported: resolved (all checks pass) and almost (≥ 95%).
@@ -155,3 +157,18 @@ Version 15 (experiment `2fcbd21b`): no-op 0.0, oracle 0.99979 (102,409 of 102,43
   foamyQuadMesh's triangulation of one generated case, and the order of names setsToZones
   reads from a folder. Added to `scripts/harvest/unstable_checks.json`; dataset `bcb1101`
   drops them (9,412 runs, 102,418 checks).
+
+Version 16 (experiment `21e27421`): no-op 0.0, oracle 0.99996. The 4 failed checks were the
+printed output of other parallel runs that abort, so dataset `2114492` drops that output for all
+37 such runs (58 checks; the runs had no other check left): 9,375 runs, 102,360 checks.
+
+Changes for Oddish's pre-trial QA of version 16:
+
+- Instruction: `compile.sh` runs, like the programs, in a copy of the environment without
+  OpenFOAM, its documentation and example cases.
+- Verifier: a number printed as an integer allows at most its sixth significant digit (it may
+  be a value OpenFOAM printed to six digits), not the other side's coarser unit (`11.` no longer
+  matches `10`); none from 10^6 up. The copy check runs again after `compile.sh`. `compile.sh`
+  and everything it starts are killed when it ends.
+- Not changed: checks a do-nothing stub passes are already dropped from the dataset (exit 0 and
+  exit 1, as in ProgramBench); the reference key and PROGRESS.md are as intended.

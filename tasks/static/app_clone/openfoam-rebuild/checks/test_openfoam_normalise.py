@@ -56,7 +56,6 @@ def test_error_locations_and_stack_traces_are_removed():
     ]
 
 
-
 def test_warning_locations_are_removed():
     # a warning gives its source location without the error's closing "."; the path is the build's
     text = (
@@ -65,6 +64,7 @@ def test_warning_locations_are_removed():
         "    Map is empty"
     )
     assert N.normalise(text) == ["--> FOAM Warning :", "    Map is empty"]
+
 
 def test_case_home_host_and_install_paths_are_replaced():
     rec = N.normalise(

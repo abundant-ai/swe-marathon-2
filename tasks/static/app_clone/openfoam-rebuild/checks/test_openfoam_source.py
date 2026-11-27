@@ -58,3 +58,12 @@ def test_reference_key_passes_upstream_source(lists):
     assert S.prepare_source(app) is None
     (app / ".reference-key").write_text("other\n")
     assert S.prepare_source(app) is not None
+
+
+def test_upstream_source_written_by_the_build_fails(lists):
+    _, app = lists
+    (app / "own.C").write_text(UPSTREAM.replace("+ 1", "- 1"))
+    assert S.prepare_source(app) is None
+    (app / "unpacked").mkdir()
+    (app / "unpacked" / "copy.C").write_text(UPSTREAM)  # as compile.sh might unpack it
+    assert "upstream" in S.copied_source(app)

@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import os
 import shutil
+import signal
 import subprocess
 import tempfile
 from pathlib import Path
 
 from ..contracts import CheckResult, VerificationContext
-from ..source import prepare_source
+from ..source import copied_source, prepare_source
 
 
 def test_build(context: VerificationContext) -> CheckResult:
@@ -49,23 +50,28 @@ def test_build(context: VerificationContext) -> CheckResult:
     }
     log = context.output / "build.log"
     with open(log, "wb") as f:
+        p = subprocess.Popen(
+            ["bash", str(script)],
+            cwd=app,
+            env=env,
+            stdin=subprocess.DEVNULL,
+            stdout=f,
+            stderr=subprocess.STDOUT,
+            user=context.uid,
+            group=context.gid,
+            extra_groups=[],
+            start_new_session=True,
+        )
         try:
-            p = subprocess.run(
-                ["bash", str(script)],
-                check=False,
-                cwd=app,
-                env=env,
-                stdin=subprocess.DEVNULL,
-                stdout=f,
-                stderr=subprocess.STDOUT,
-                timeout=context.build_timeout,
-                user=context.uid,
-                group=context.gid,
-                extra_groups=[],
-            )
-            rc = p.returncode
+            rc = p.wait(timeout=context.build_timeout)
         except subprocess.TimeoutExpired:
             rc = None
+        finally:  # compile.sh and anything it started
+            try:
+                os.killpg(p.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            p.wait()
     _chown_tree(app, 0, 0)
     # root's, readable by everyone, executable by everyone where the owner could execute it,
     # never set-user-id or set-group-id
@@ -79,6 +85,9 @@ def test_build(context: VerificationContext) -> CheckResult:
                     | 0o444
                     | (0o111 if os.path.isdir(x) or mode & 0o100 else 0),
                 )
+    rejection = copied_source(app)
+    if rejection:
+        return CheckResult("build", "failed", rejection)
     bin_dir = app / "bin"
     programs = []
     if _inside(bin_dir, app) and bin_dir.is_dir():

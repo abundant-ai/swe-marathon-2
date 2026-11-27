@@ -57,9 +57,7 @@ def prepare_source(root: Path) -> str | None:
         A build rejection for copied upstream code or unsupported special files.
         Otherwise returns None. Regular scripts and in-tree source links are retained.
     """
-    upstream = (
-        set() if _is_reference(root) else set(_FINGERPRINTS.read_text().splitlines())
-    )
+    upstream = _upstream(root)
     for path in root.rglob("*"):
         mode = path.lstat().st_mode
         if stat.S_ISLNK(mode):
@@ -80,12 +78,34 @@ def prepare_source(root: Path) -> str | None:
                 (b"\x7fELF", b"!<arch>\n", b"!<thin>\n", b"BC\xc0\xde", b"\0asm")
             ):
                 path.unlink()
-            elif (
-                path.suffix.lower() in _CPP
-                and fingerprint(magic + stream.read()) in upstream
-            ):
+            elif _copied(path, magic + stream.read(), upstream):
                 return f"source matches an upstream OpenFOAM implementation: {path.relative_to(root)}"
     return None
+
+
+def copied_source(root: Path) -> str | None:
+    """Screen the tree again after compile.sh, which may have unpacked or written source.
+
+    Returns:
+        A build rejection for copied upstream code, otherwise None.
+    """
+    upstream = _upstream(root)
+    for path in root.rglob("*"):
+        if path.is_file() and not path.is_symlink() and _copied(path, None, upstream):
+            return f"source matches an upstream OpenFOAM implementation: {path.relative_to(root)}"
+    return None
+
+
+def _upstream(root: Path) -> set[str]:
+    if _is_reference(root):
+        return set()
+    return set(_FINGERPRINTS.read_text().splitlines())
+
+
+def _copied(path: Path, content: bytes | None, upstream: set[str]) -> bool:
+    if not upstream or path.suffix.lower() not in _CPP:
+        return False
+    return fingerprint(path.read_bytes() if content is None else content) in upstream
 
 
 def _is_reference(root: Path) -> bool:

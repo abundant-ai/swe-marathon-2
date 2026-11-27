@@ -28,14 +28,14 @@ Learn what OpenFOAM does only from running its programs through their normal int
 ## What to deliver
 
 Your source code in `/app/rebuild` and a build script `/app/rebuild/compile.sh`. Run from
-`/app/rebuild` on a fresh copy of your source in this environment, without network access and
-within two hours, it builds an executable for each OpenFOAM program into `/app/rebuild/bin`,
-named like the program. If `compile.sh` does not build them from your source, the work does not
-count.
+`/app/rebuild` on a fresh copy of your source, without network access and within two hours, it
+builds an executable for each OpenFOAM program into `/app/rebuild/bin`, named like the program.
+If `compile.sh` does not build them from your source, the work does not count.
 
-Your programs will run where OpenFOAM is not installed and none of its environment variables are
-set, as a user that cannot write to `/app/rebuild`, with `HOME` and `TMPDIR` set to new empty
-directories. Everything they need at run time must be in `/app/rebuild`.
+`compile.sh` and your programs run in a copy of this environment where OpenFOAM, `/app/docs` and
+`/app/tutorials` are not installed and none of OpenFOAM's environment variables are set, with
+`HOME` and `TMPDIR` set to new empty directories. Your programs run as a user that cannot write
+to `/app/rebuild`. Everything they need at run time must be in `/app/rebuild`.
 
 Write highly modular code. You choose the languages, structure and names.
 

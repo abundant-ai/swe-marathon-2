@@ -45,11 +45,20 @@ class Result:
         self.spreads[path] = max(self.spreads.get(path, 0.0), d)
 
 
-def _allowance(ug, uc):
-    """Rounding allowance for numbers written with units ug and uc (ff.unit; NaN: integer).
-    Two integers: none. Otherwise the finer printed precision."""
-    ug, uc = np.asarray(ug, dtype=float), np.asarray(uc, dtype=float)
-    return np.where(np.isnan(ug) & np.isnan(uc), 0.0, np.fmin(ug, uc))
+def _allowance(ug, uc, g):
+    """Rounding allowance for numbers written with units ug and uc (ff.unit; NaN: integer),
+    expected values g. Two integers: none. Otherwise the finer printed precision, where an
+    expected integer below 10^6 may be a number OpenFOAM printed to six significant digits
+    (larger ones it prints in exponent form)."""
+    ug, uc, g = (np.asarray(x, dtype=float) for x in (ug, uc, g))
+    with np.errstate(divide="ignore"):
+        sixth = np.where(
+            (g == 0) | (np.abs(g) >= 1e6),
+            0.0,
+            10.0 ** (np.floor(np.log10(np.abs(g))) - 5),
+        )
+    both = np.isnan(ug) & np.isnan(uc)
+    return np.where(both, 0.0, np.fmin(np.where(np.isnan(ug), sixth, ug), uc))
 
 
 def _numbers(path, g, c, units, tols, res: Result, calibrating: bool):
@@ -92,7 +101,7 @@ def _walk(path, g, c, tols, res, calibrating):
             path,
             [g.value],
             [c.value],
-            _allowance(ff.unit(g.text), ff.unit(c.text)),
+            _allowance(ff.unit(g.text), ff.unit(c.text), g.value),
             tols,
             res,
             calibrating,
@@ -103,7 +112,9 @@ def _walk(path, g, c, tols, res, calibrating):
             res.fail(path, f"list of shape {g.data.shape} expected, got {c.data.shape}")
             return
         if g.texts is not None:
-            units = _allowance(g.texts, c.texts if c.texts is not None else np.nan)
+            units = _allowance(
+                g.texts, c.texts if c.texts is not None else np.nan, g.data
+            )
         else:
             units = _BINARY_REL * (np.abs(g.data).max() if g.data.size else 0.0)
         _numbers(path, g.data, c.data, units, tols, res, calibrating)
