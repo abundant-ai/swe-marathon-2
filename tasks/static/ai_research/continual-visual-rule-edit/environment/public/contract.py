@@ -25,10 +25,11 @@ def validate(
         if (
             proposed.shape != original.shape
             or proposed.dtype.kind != "f"
+            or proposed.dtype.itemsize not in (4, 8)
             or not np.isfinite(proposed).all()
         ):
             raise ValueError(
-                "Each output must be a finite floating array of the original shape"
+                "Each output must be a finite float32 or float64 array of the original shape"
             )
     changed = (w != new).any(2) | (b != bias)
     changes = changed.sum(axis=1)
@@ -55,12 +56,13 @@ def validate_pace(rates: np.ndarray) -> None:
     if (
         rates.shape != (2, 2, 28)
         or rates.dtype.kind != "f"
+        or rates.dtype.itemsize not in (4, 8)
         or not np.isfinite(rates).all()
         or np.min(rates) < 0
         or np.max(rates) > 1
     ):
         raise ValueError(
-            "Learning rates must be finite floating values in [0,1] with shape (2,2,28)"
+            "Learning rates must be finite float32 or float64 values in [0,1] with shape (2,2,28)"
         )
 
 

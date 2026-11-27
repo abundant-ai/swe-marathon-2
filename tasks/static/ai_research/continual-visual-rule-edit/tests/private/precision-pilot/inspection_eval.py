@@ -120,9 +120,9 @@ def simulate(site, target, rep, old, new, paces, steps=192):
     }
 
 
-def score_edits(artifact):
+def score_edits(artifact, diagnostic_target=None):
     """Grade the installation with the reciprocal continuation on both deployments."""
-    return base.score_edits(artifact, simulate)
+    return base.score_edits(artifact, simulate, diagnostic_target=diagnostic_target)
 
 
 def run_editor(fn):

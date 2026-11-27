@@ -205,6 +205,9 @@ def execute(source, build_inputs):
         (inp / "submission.py").write_bytes(source)
         shutil.copyfile(PRIVATE / "worker.py", inp / "build.py")
         shutil.copyfile(TESTS / "contract.py", inp / "contract.py")
+        shutil.copyfile(
+            PRIVATE / "precision-pilot/deployment.py", inp / "deployment.py"
+        )
         build_inputs(inp)
         with np.load(inp / "pairs.npz", allow_pickle=False) as data:
             originals = [
@@ -281,14 +284,20 @@ def execute(source, build_inputs):
         )
 
 
-def check_coverage(measured: dict) -> None:
+def check_coverage(measured: dict, diagnostic_target: int) -> None:
     """Require complete site, bank, prior-head and paired continuation denominators."""
     for field in ("rows", "installation"):
         if len(measured[field]) != 6 or any(len(site) != 3 for site in measured[field]):
             raise RuntimeError("Incomplete site or field measurements")
+    unavailable = measured.get("unavailable_handovers", [])
+    if unavailable not in ([], [diagnostic_target]):
+        raise RuntimeError("Missing official handover")
     for field in ("runs", "frozen_runs"):
         arms = measured[field]
-        if len(arms) != 2 or any(len(arm) != 18 for arm in arms):
+        if len(arms) != 2 or any(
+            len(arm) != (0 if index in unavailable else 18)
+            for index, arm in enumerate(arms)
+        ):
             raise RuntimeError("Incomplete future sequence replay for " + field)
         for arm in arms:
             for phase in arm:
@@ -406,7 +415,6 @@ def verify(context: VerificationContext) -> VerificationResult:
 
     try:
         source = read_regular(context.work / "submission.py", SOURCE_LIMIT)
-        artifact = execute(source, build_inputs)
     except CandidateError as exc:
         return result(
             {
@@ -419,15 +427,36 @@ def verify(context: VerificationContext) -> VerificationResult:
     sha = hashlib.sha256(source).hexdigest()
     try:
         receipt = json.loads(read_regular(context.work / "test_receipt.json", 65536))
-    except (CandidateError, ValueError):
+    except (CandidateError, ValueError, RecursionError):
         receipt = {}
     tested = isinstance(receipt, dict) and receipt.get("source_sha256") == sha
     reproduced = tested and receipt_reproduced(receipt, source)
     try:
+        artifact = execute(source, build_inputs)
+    except CandidateError as exc:
+        return result(
+            {
+                "build": "failed",
+                "error_domain": "candidate",
+                "reason": str(exc),
+                "reward": 0.0,
+                "source_sha256": sha,
+                "test_receipt_matches": tested,
+                "staging_receipt_reproduced": reproduced,
+            }
+        )
+    try:
         with np.errstate(over="raise", invalid="raise", divide="raise"):
-            measured = score_edits(artifact)
-            check_coverage(measured)
-            grades = {code: reward(measured, k) for k, code in enumerate("ab")}
+            official = "ab".index(context.target)
+            alternate = 1 - official
+            measured = score_edits(artifact, diagnostic_target=alternate)
+            check_coverage(measured, alternate)
+            grades = {context.target: reward(measured, official)}
+            if alternate not in measured["unavailable_handovers"]:
+                try:
+                    grades["ab"[alternate]] = reward(measured, alternate)
+                except FloatingPointError:
+                    measured["unavailable_handovers"].append(alternate)
     except FloatingPointError:
         return result(
             {

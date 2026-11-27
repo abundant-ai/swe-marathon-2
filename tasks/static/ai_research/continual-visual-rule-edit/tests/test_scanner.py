@@ -61,7 +61,11 @@ def test_smoke(context: VerificationContext) -> CheckResult:
     return CheckResult(
         "final_test",
         status,
-        "Compare the final source digest and the three reported staging installations with the independent rebuild.",
+        {
+            "skipped": "The transferred editor source was unavailable for a staging rebuild.",
+            "passed": "The final source and all three staging measurements reproduced.",
+            "failed": "No final-source rehearsal record reproduced all three staging measurements.",
+        }[status],
         {},
     )
 

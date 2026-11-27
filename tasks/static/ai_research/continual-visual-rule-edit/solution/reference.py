@@ -12,8 +12,7 @@ def recognize_ink(tags: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 
     Returns:
         Inferred product indices and quarter turns for the whole gallery, with
-        the verified labels preserved. This is the template and neighborhood
-        estimator used by the earlier independent changeover control.
+        the verified labels preserved.
     """
     ink = tags[:, :64].astype(float)
     known = tags[:, 64] != 255

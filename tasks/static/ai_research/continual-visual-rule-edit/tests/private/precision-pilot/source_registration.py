@@ -55,7 +55,8 @@ def reward(data, target, controls=None):
     valid = [
         q["legacy_loss"] <= 0.02 and q["score_drift"] <= 0.08 for q in base["pairs"]
     ]
-    contrast = float(np.clip(np.mean(np.array(gains) * valid) / anchor, 0, 1))
+    eligible_gains = np.where(valid, gains, np.minimum(gains, 0.0))
+    contrast = float(np.clip(np.mean(eligible_gains) / anchor, 0, 1))
     base["acquisition_vs_own_frozen"] = {
         "mean": float(np.mean(gains)),
         "per_site": gains,
@@ -185,13 +186,14 @@ def simulate(site, target, rep, old, new, paces, steps=192):
     }
 
 
-def score_edits(artifact, continuation=simulate):
+def score_edits(artifact, continuation=simulate, diagnostic_target=None):
     """Measure both possible visual handovers on one submitted installation."""
     rows = []
     installation = []
     feasibility = []
     runs = [[], []]
     frozen_runs = [[], []]
+    unavailable = set()
     for i, seed in enumerate(SEEDS):
         fields = []
         where = []
@@ -252,19 +254,30 @@ def score_edits(artifact, continuation=simulate):
                 *(fields[f] for f in (BANK[target, i], REGISTER[target, i]))
             )
             zeros = [np.zeros_like(r) for r in rates]
-            for rep in (411, 939, 1411):
-                actual = continuation(i, target, rep, old, new, rates)
-                runs[target].append(actual)
-                counter = (
-                    continuation(i, target, rep, old, new, zeros)
-                    if any(np.any(r) for r in rates)
-                    else actual
-                )
-                frozen_runs[target].append(counter)
+            if target in unavailable:
+                continue
+            try:
+                for rep in (411, 939, 1411):
+                    actual = continuation(i, target, rep, old, new, rates)
+                    runs[target].append(actual)
+                    counter = (
+                        continuation(i, target, rep, old, new, zeros)
+                        if any(np.any(r) for r in rates)
+                        else actual
+                    )
+                    frozen_runs[target].append(counter)
+            except FloatingPointError:
+                if target != diagnostic_target:
+                    raise
+                # A counterfactual deployment cannot invalidate the photographed deployment.
+                runs[target].clear()
+                frozen_runs[target].clear()
+                unavailable.add(target)
     return {
         "rows": rows,
         "installation": installation,
         "station_feasibility": feasibility,
+        "unavailable_handovers": sorted(unavailable),
         "runs": runs,
         "frozen_runs": frozen_runs,
     }

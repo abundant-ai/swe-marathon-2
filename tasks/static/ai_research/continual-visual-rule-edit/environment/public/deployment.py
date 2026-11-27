@@ -16,7 +16,7 @@ def hidden(x, s):
 
 
 def update(states, inputs, centers, head, bias, y, paces, shift):
-    """One simultaneous bilinear-head and two-trunk SGD step; biases and bridges retain the legacy wiring."""
+    """Update the bilinear head, trunk weights and trunk biases. Bridges and archived heads stay fixed."""
     h = [hidden(x, s) for x, s in zip(inputs, states)]
     v = [a.reshape(len(a), -1) - c for a, c in zip(h, centers)]
     left = v[0] @ head

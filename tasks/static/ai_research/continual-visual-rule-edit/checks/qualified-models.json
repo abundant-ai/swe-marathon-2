@@ -1,0 +1,87 @@
+{
+  "experiment": "https://www.oddish.app/experiments/0d2b3f69",
+  "version": 4,
+  "runs": [
+    {
+      "id": "swe-m2_ai-research_continual-visual-rule-edit-qa-correct-8ad21121-20",
+      "model": "openai/gpt-6.2-sol",
+      "reasoning_effort": "xhigh",
+      "reward": 0.324720778,
+      "build": "valid",
+      "test_receipt_matches": true,
+      "source_sha256": "2acc93608040f59a94c37c97618808c3e7f978839dd94b58aa5e9a19f5fb9b17"
+    },
+    {
+      "id": "swe-m2_ai-research_continual-visual-rule-edit-qa-correct-8ad21121-22",
+      "model": "openai/gpt-6.2-sol",
+      "reasoning_effort": "xhigh",
+      "reward": 0.308441205,
+      "build": "valid",
+      "test_receipt_matches": true,
+      "source_sha256": "5cd64d62bf03f121e521fb3115a18de70ad4bab55f5e38bdb61e2d201fbcf8b8"
+    },
+    {
+      "id": "swe-m2_ai-research_continual-visual-rule-edit-qa-correct-8ad21121-23",
+      "model": "openai/gpt-6.2-sol",
+      "reasoning_effort": "xhigh",
+      "reward": 0.229873162,
+      "build": "valid",
+      "test_receipt_matches": true,
+      "source_sha256": "f7249d71a95db634ed2787cba42fe0fdba1bb885927d886eb5a1f42956769605"
+    },
+    {
+      "id": "swe-m2_ai-research_continual-visual-rule-edit-qa-correct-8ad21121-29",
+      "model": "relace/glm-5.3",
+      "reasoning_effort": null,
+      "reward": 0.0,
+      "build": "valid",
+      "test_receipt_matches": true,
+      "source_sha256": "85fd6d2f00c9b60a5009f5d918f48cd283a34867602330c2386256a8c28ce24e"
+    },
+    {
+      "id": "swe-m2_ai-research_continual-visual-rule-edit-qa-correct-8ad21121-31",
+      "model": "relace/glm-5.3",
+      "reasoning_effort": null,
+      "reward": 0.0,
+      "build": "valid",
+      "test_receipt_matches": true,
+      "source_sha256": "88f9bbc50a4fbc06253746c125e9f7237a6f8103aeed722e10829cbe98c47323"
+    },
+    {
+      "id": "swe-m2_ai-research_continual-visual-rule-edit-qa-correct-8ad21121-30",
+      "model": "relace/glm-5.3",
+      "reasoning_effort": null,
+      "reward": 0.0,
+      "build": "valid",
+      "test_receipt_matches": true,
+      "source_sha256": "e4bf7124769653514c7797804df4f73b5903889ed0404396b3b2c20304db25f5"
+    },
+    {
+      "id": "swe-m2_ai-research_continual-visual-rule-edit-qa-correct-8ad21121-26",
+      "model": "relace/deepseek-v4.1-flash",
+      "reasoning_effort": null,
+      "reward": 0.0,
+      "build": "valid",
+      "test_receipt_matches": true,
+      "source_sha256": "7472200284ab3d2b56471794180d3ba321674c1a452390b1d48eed85504c4e07"
+    },
+    {
+      "id": "swe-m2_ai-research_continual-visual-rule-edit-qa-correct-8ad21121-28",
+      "model": "relace/deepseek-v4.1-flash",
+      "reasoning_effort": null,
+      "reward": 0.0,
+      "build": "valid",
+      "test_receipt_matches": true,
+      "source_sha256": "6374d21e27e3949c3d667c039af8f869ddb3d86b36a35b3fc222d71bfb4acbb1"
+    },
+    {
+      "id": "swe-m2_ai-research_continual-visual-rule-edit-qa-correct-8ad21121-27",
+      "model": "relace/deepseek-v4.1-flash",
+      "reasoning_effort": null,
+      "reward": 0.0,
+      "build": "valid",
+      "test_receipt_matches": true,
+      "source_sha256": "d28187334e185f89745867d16954f89d58a77565bd40eda418ba664a466d9f06"
+    }
+  ]
+}

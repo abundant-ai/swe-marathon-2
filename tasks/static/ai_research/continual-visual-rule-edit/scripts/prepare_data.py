@@ -22,6 +22,9 @@ def digest(path: Path) -> str:
 
 def pinned_condition(arm: str) -> tuple[dict[str, str], str, int]:
     """Read and authenticate the file inventory for one registered observation condition."""
+    if arm == "qualified":
+        files = json.loads((HERE / "qualified-inventory.json").read_text())
+        return files, "swe-m2_ai-research_continual-visual-rule-edit-qa-correct-8ad21121", 4
     record = json.loads((HERE / "optical-conditions.json").read_text())[arm]
     files = json.loads((HERE / "runtime-inventory.json").read_text())
     for name, checksum in record["overrides"].items():
@@ -148,9 +151,9 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--arm",
-        choices=("correct", "swapped", "none"),
+        choices=("correct", "swapped", "none", "qualified"),
         default="correct",
-        help="Optical condition to restore with --frozen-runtime",
+        help="Optical condition to restore with --frozen-runtime; qualified restores the matched QA revision",
     )
     args = parser.parse_args()
     if args.arm != "correct" and args.frozen_runtime is None:

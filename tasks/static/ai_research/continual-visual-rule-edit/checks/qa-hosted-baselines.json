@@ -1,0 +1,133 @@
+{
+  "experiment": "https://www.oddish.app/experiments/9a9cd757",
+  "trials": [
+    {
+      "trial": "swe-m2_ai-research_continual-visual-rule-edit-qa-correct-8ad21121-1",
+      "version": "swe-m2_ai-research_continual-visual-rule-edit-qa-correct-8ad21121-v1",
+      "agent": "oracle",
+      "build": "valid",
+      "reward": 1.0,
+      "rehearsal_reproduced": true
+    },
+    {
+      "trial": "swe-m2_ai-research_continual-visual-rule-edit-qa-correct-8ad21121-13",
+      "version": "swe-m2_ai-research_continual-visual-rule-edit-qa-correct-8ad21121-v3",
+      "agent": "oracle",
+      "build": "valid",
+      "reward": 1.0,
+      "rehearsal_reproduced": true
+    },
+    {
+      "trial": "swe-m2_ai-research_continual-visual-rule-edit-qa-correct-8ad21121-14",
+      "version": "swe-m2_ai-research_continual-visual-rule-edit-qa-correct-8ad21121-v3",
+      "agent": "nop",
+      "build": "failed",
+      "reward": 0.0,
+      "rehearsal_reproduced": false
+    },
+    {
+      "trial": "swe-m2_ai-research_continual-visual-rule-edit-qa-correct-8ad21121-17",
+      "version": "swe-m2_ai-research_continual-visual-rule-edit-qa-correct-8ad21121-v4",
+      "agent": "oracle",
+      "build": "valid",
+      "reward": 1.0,
+      "rehearsal_reproduced": true
+    },
+    {
+      "trial": "swe-m2_ai-research_continual-visual-rule-edit-qa-correct-8ad21121-18",
+      "version": "swe-m2_ai-research_continual-visual-rule-edit-qa-correct-8ad21121-v4",
+      "agent": "nop",
+      "build": "failed",
+      "reward": 0.0,
+      "rehearsal_reproduced": false
+    },
+    {
+      "trial": "swe-m2_ai-research_continual-visual-rule-edit-qa-correct-8ad21121-2",
+      "version": "swe-m2_ai-research_continual-visual-rule-edit-qa-correct-8ad21121-v1",
+      "agent": "nop",
+      "build": "failed",
+      "reward": 0.0,
+      "rehearsal_reproduced": null
+    },
+    {
+      "trial": "swe-m2_ai-research_continual-visual-rule-edit-qa-correct-8ad21121-7",
+      "version": "swe-m2_ai-research_continual-visual-rule-edit-qa-correct-8ad21121-v2",
+      "agent": "oracle",
+      "build": "valid",
+      "reward": 1.0,
+      "rehearsal_reproduced": true
+    },
+    {
+      "trial": "swe-m2_ai-research_continual-visual-rule-edit-qa-correct-8ad21121-8",
+      "version": "swe-m2_ai-research_continual-visual-rule-edit-qa-correct-8ad21121-v2",
+      "agent": "nop",
+      "build": "failed",
+      "reward": 0.0,
+      "rehearsal_reproduced": false
+    },
+    {
+      "trial": "swe-m2_ai-research_continual-visual-rule-edit-qa-none-48bdf849-1",
+      "version": "swe-m2_ai-research_continual-visual-rule-edit-qa-none-48bdf849-v1",
+      "agent": "oracle",
+      "build": "valid",
+      "reward": 0.0,
+      "rehearsal_reproduced": true
+    },
+    {
+      "trial": "swe-m2_ai-research_continual-visual-rule-edit-qa-none-48bdf849-2",
+      "version": "swe-m2_ai-research_continual-visual-rule-edit-qa-none-48bdf849-v1",
+      "agent": "nop",
+      "build": "failed",
+      "reward": 0.0,
+      "rehearsal_reproduced": null
+    },
+    {
+      "trial": "swe-m2_ai-research_continual-visual-rule-edit-qa-none-48bdf849-7",
+      "version": "swe-m2_ai-research_continual-visual-rule-edit-qa-none-48bdf849-v4",
+      "agent": "oracle",
+      "build": "valid",
+      "reward": 0.0,
+      "rehearsal_reproduced": true
+    },
+    {
+      "trial": "swe-m2_ai-research_continual-visual-rule-edit-qa-none-48bdf849-8",
+      "version": "swe-m2_ai-research_continual-visual-rule-edit-qa-none-48bdf849-v4",
+      "agent": "nop",
+      "build": "failed",
+      "reward": 0.0,
+      "rehearsal_reproduced": false
+    },
+    {
+      "trial": "swe-m2_ai-research_continual-visual-rule-edit-qa-swapped-11f945f3-1",
+      "version": "swe-m2_ai-research_continual-visual-rule-edit-qa-swapped-11f945f3-v1",
+      "agent": "oracle",
+      "build": "valid",
+      "reward": 0.0,
+      "rehearsal_reproduced": true
+    },
+    {
+      "trial": "swe-m2_ai-research_continual-visual-rule-edit-qa-swapped-11f945f3-10",
+      "version": "swe-m2_ai-research_continual-visual-rule-edit-qa-swapped-11f945f3-v4",
+      "agent": "nop",
+      "build": "failed",
+      "reward": 0.0,
+      "rehearsal_reproduced": false
+    },
+    {
+      "trial": "swe-m2_ai-research_continual-visual-rule-edit-qa-swapped-11f945f3-2",
+      "version": "swe-m2_ai-research_continual-visual-rule-edit-qa-swapped-11f945f3-v1",
+      "agent": "nop",
+      "build": "failed",
+      "reward": 0.0,
+      "rehearsal_reproduced": null
+    },
+    {
+      "trial": "swe-m2_ai-research_continual-visual-rule-edit-qa-swapped-11f945f3-9",
+      "version": "swe-m2_ai-research_continual-visual-rule-edit-qa-swapped-11f945f3-v4",
+      "agent": "oracle",
+      "build": "valid",
+      "reward": 0.0,
+      "rehearsal_reproduced": true
+    }
+  ]
+}

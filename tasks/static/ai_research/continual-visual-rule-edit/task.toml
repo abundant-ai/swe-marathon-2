@@ -37,14 +37,14 @@ schema_version = 1
 status = "rated"
 scale_max = 5
 stage = "trial-backed"
-rated_at = "2026-11-27T02:35:32Z"
-source_ref = "sha256:d06b63e38a27a298537797b8c6aafbcc578708dfae9e388db4eb1e6ece410c88"
-harbor_report = "https://www.oddish.app/tasks/swe-m2_ai-research_reciprocal-tooling-review-d37c03c4?trial=swe-m2_ai-research_reciprocal-tooling-review-d37c03c4-0&file=artifacts%2Fapp%2Fcheck-result.json"
+rated_at = "2026-11-27T06:07:49Z"
+source_ref = "sha256:a72a943998e39ad100f80155503d46922d3d6c829afc15cdce952ec58f9d2cb1"
+harbor_report = "https://www.oddish.app/tasks/swe-m2_ai-research_continual-visual-rule-edit-evidence-qa-review-993cbbdb?trial=swe-m2_ai-research_continual-visual-rule-edit-evidence-qa-review-993cbbdb-1&file=artifacts%2Fapp%2Fcheck-result.json"
 rubric_sha256 = "5fcba0cf139695f1ed5390085b37ed71d64023ea2ae6c44d340dea7e7e31db70"
 
 [metadata.task_rating.scores]
 novelty = 3
-verifiability = 3
+verifiability = 4
 realism = 3
 difficulty = 4
 initial_feasibility = 4
