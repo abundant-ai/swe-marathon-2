@@ -70,3 +70,5 @@ no reward. transfer-v4 development is recorded only.
   only.
 - v5–v8: absolute accuracy was tried in v5 and reverted in v8 to the gain over the released model, with target 1.0; the instruction
   no longer describes the measure or mentions held-out data.
+- v10 (from the v9 pre-trial QA): `gcc` and `libc6-dev` in the agent image too; any grader exit other than 0 or 2, or an
+  unusable released-model report, writes no reward.

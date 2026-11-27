@@ -206,7 +206,7 @@ def main() -> int:
         (LOGS / "grader.log").write_text(
             result.stdout[-200_000:] + "\n--- stderr ---\n" + result.stderr[-200_000:]
         )
-        if result.returncode == 3 or result.returncode < 0:
+        if result.returncode not in (0, 2):
             print(
                 f"verifier problem (grader exit {result.returncode}); no reward written",
                 file=sys.stderr,
@@ -216,7 +216,18 @@ def main() -> int:
             raise CandidateError(
                 f"Kev could not load or score the checkpoint (grader exit {result.returncode}); see grader.log"
             )
-        for name in (*GRADED, *(f"released_{n}" for n in GRADED)):
+        try:
+            for name in GRADED:
+                metrics["suites"][f"released_{name}"] = summary(
+                    read_report(out / f"released_{name}" / "report.json")
+                )
+        except (CandidateError, KeyError, ValueError) as exc:
+            print(
+                f"released-model report unusable ({exc}); no reward written",
+                file=sys.stderr,
+            )
+            return 1
+        for name in GRADED:
             metrics["suites"][name] = summary(read_report(out / name / "report.json"))
         try:
             metrics["suites"]["transfer_dev"] = summary(

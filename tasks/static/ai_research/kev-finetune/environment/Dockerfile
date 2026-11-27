@@ -3,7 +3,7 @@ FROM python:3.13-slim-bookworm@sha256:f0fa218d5b06f9b9235024fa061cde2cb141f726de
 COPY --from=ghcr.io/astral-sh/uv@sha256:ba4857bf2a068e9bc0e64eed8563b065908a4cd6bfb66b531a9c424c8e25e142 /uv /uvx /usr/local/bin/
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        ca-certificates git jq less procps vim-tiny \
+        ca-certificates gcc git jq less libc6-dev procps vim-tiny \
     && rm -rf /var/lib/apt/lists/*
 
 ENV KEV_COMMIT=556167b5b151152cb4101629e25d883e9ead5094 \
