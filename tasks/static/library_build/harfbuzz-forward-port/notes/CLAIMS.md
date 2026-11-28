@@ -71,6 +71,11 @@ retires C28 and C33.
 
 ## Item inventory
 
+**Superseded plan (fix round 1).** The R restatements and the per-item derivation write-ups below were not
+carried out as planned: fix round 1 narrowed the cases instead (notes/RESTATEMENTS.md), stating a rule only for
+units 6, 29 and 37, and QA pass 04's per-unit table stands in for the derivation paths. The plan is kept as the
+record.
+
 Ratings: **P**, the note plus a public spec pins the behaviour; **R**, an example-dependent note (the deep dive's
 E) that we restate as a precise behaviour rule, kept only if the rule determines the release's output on every
 case; **X**, out. Commits are candidates found by subject in the clone (each exists locally). The revert

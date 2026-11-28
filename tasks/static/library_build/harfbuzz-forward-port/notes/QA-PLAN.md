@@ -52,7 +52,7 @@ Task-specific items on top of the twelve:
 | --- | --- | --- |
 | R1 | The tree builds with the stated commands, unchanged | The unbuildable-tree stub (0); a tree that needs an extra option fails to build |
 | R2 | Anything the notes do not change comes out as 14.3.0's does | Mutant W and the over-broad probes, through the dual and broad held-fixed gate |
-| R3 | The new functions are declared in the named headers with the stated signatures | Each API driver includes only `hb.h` and the named header and compiles with `-Werror=implicit-function-declaration`; a definition without the declaration fails that unit only |
+| R3 | The new functions are declared in the named headers with the stated signatures | Each API driver includes the public umbrella headers (`hb.h`, and `hb-ot.h` for 49) and compiles with `-Werror=implicit-function-declaration`; since fix round 2 the verifier also checks, as text, that each declaration is in the header the note names. A missing declaration fails that unit only |
 | R4 | The build regenerates only the ragel machines; other generated tables must be in the tree | A tree with updated generator scripts but stale tables fails the Unicode units |
 | R5 | A later note replaces an earlier one (`hb_font_set_face()`) | A tree with 15.0.0's behaviour fails 47b |
 | R6 | Each note holds for every font and text it applies to | Per-unit cases span several fonts and strings; a fix keyed to one font (for example by glyph count) fails most of its unit |
@@ -72,11 +72,13 @@ Task-specific items on top of the twelve:
 | A library whose `hb_shape()` returns an empty buffer | 0.000 |
 | A library that aborts on its first call | 0.000 |
 | The base with the four new functions declared as the notes give them and bodies that do nothing (noop-api) | 0.000 |
-| R_all: 15.2.0 with every graded unit reverted | 0.000 |
+| The same, writing 0 through the out-parameters (noop-api-zero, fix round 2) | 0.000 |
+| R_all: 15.2.0 with the single-commit graded units reverted | 0.000 on every unit it reverts (not overall) |
 
-Over-broad probes are recorded but not required to be 0, because each is the failure mode in miniature: always insert a
-dotted circle; zero every glyph's extents; flag every glyph unsafe to break; apply `kerx` and `kern` whenever present.
-Each must lose most of its unit credit to the gate. If one scores above its unit's share of D, the duals around that
+Over-broad probes are costed on the case set, not required to be 0: always insert a dotted circle; zero every
+glyph's extents; flag every glyph unsafe to break; apply `kerx` and `kern` whenever present. The gate prices
+over-breadth in aggregate (W loses 32%), and one note widened alone loses at most about 2% of its own credit to it
+(QA pass R2-09), so the test is that no probe scores above its unit's share of D; if one does, the duals around that
 unit are too thin.
 
 ## 4. Cue-word sweep
@@ -134,7 +136,7 @@ harbor-lh `qa/harfbuzz/NN-<lens>.md` as must-fix, should-fix or note.
 | 6 | Attribution | For 50 random changed cases, is the difference really its unit's (read the R_k diff)? |
 | 7 | Verifier-side hacks | Can the tree's build scripts or library code reach recorded outputs, the reward file or the comparison? |
 | 8 | Agent-side leaks | Is any 15.x material, newer HarfBuzz, network route, solution file or new output in the agent's reach? |
-| 9 | Stubs | Does every stub score 0.000, and does every over-broad probe lose its credit to the gate? |
+| 9 | Stubs | Does every stub score 0.000, and does every over-broad probe stay below its unit's share of D? |
 | 10 | Determinism and toolchain | Do 3+1 runs agree? Are the base image, apt snapshot and compiler the same on the gold host and in the verifier? |
 | 11 | Robustness and isolation | Do hangs, crashes, fork bombs, disk floods and odd files in the tree cost only their batch? Do the fail-soft and evaluation-error paths behave? |
 | 12 | Instruction coherence | Does the one instruction list every graded note, release by release, with the superseded `hb_font_set_face()` note stated as superseded? Is `RELEASE` wired from the task config? |
@@ -151,6 +153,9 @@ harbor-lh `qa/harfbuzz/NN-<lens>.md` as must-fix, should-fix or note.
 
 After the first accepted trials, before any score is shown to anyone:
 
+0. Before any score is used: run `ops/swe-marathon-v2/audit_egress.py` on every trial; read the post-session
+   sweep's record (`/var/lib/fsmaint/out` and the tree's `.fsmaint.json`: egress, processes, end of the work, late
+   entries); void a trial with a confirmed fetch; publish no score before this audit (2026-11-19 decision).
 1. Oracle 1.0 and every stub 0, on the version that ran.
 2. Every trial graded. One ungraded capped trial stops the campaign; a lost trial is reported as lost,
    never as 0.
