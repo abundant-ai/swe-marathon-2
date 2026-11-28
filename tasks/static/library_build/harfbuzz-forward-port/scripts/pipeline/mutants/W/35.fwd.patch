@@ -1,0 +1,11 @@
+--- a/src/hb-ot-tag-table.hh
++++ b/src/hb-ot-tag-table.hh
+@@ -1659,7 +1659,7 @@
+       *count = 1;
+       return true;
+     }
+-    if (subtag_matches (p, limit, "-fonupa", 7))
++    if (strstr (p, "-fonupa") && strstr (p, "-fonupa") < limit)
+     {
+       /* Undetermined; Uralic Phonetic Alphabet */
+       tags[0] = HB_TAG('U','P','P','H');  /* Uralic Phonetic Alphabet */

@@ -1,0 +1,13 @@
+--- a/src/hb-ot-shaper-use.cc
++++ b/src/hb-ot-shaper-use.cc
+@@ -259,7 +259,9 @@
+     unsigned int base = start;
+     if (info[base].use_category() == USE(R) || info[base].use_category() == USE(CS))
+       base++;
+-    if (base < end && info[base].use_category() == USE(GB))
++    if (base < end && (info[base].use_category() == USE(GB) ||
++		       /* Digits end a word too. */
++		       _hb_glyph_info_get_general_category (&info[base]) == HB_UNICODE_GENERAL_CATEGORY_DECIMAL_NUMBER))
+       syllable_type = use_non_cluster;
+ 
+     switch (syllable_type)

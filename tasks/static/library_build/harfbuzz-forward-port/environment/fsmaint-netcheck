@@ -1,0 +1,1461 @@
+#!/usr/bin/python3 -I
+"""Poll a few public hosts with a TLS handshake until stopped, watch the processes and the exec
+sessions of the user `dev`, keep copies of the files of the tree that change during the work, and
+keep a record of all of it. The hosts answer again only once the work has ended; then every process
+of `dev` is ended.
+
+Polls. The hosts are resolved once at start (while names resolve). A probe process, this file run
+with --probe as `nobody` and given the addresses on its standard input (so its command line names
+none), then tries them by address, all at once, every INTERVAL_SECONDS. A poll is `open` when a TLS
+handshake with one of them completes and its certificate is valid for that name; `local` when none
+completes and an attempt failed for a reason of this machine, not of the network (no local port or
+address to spare, no file, buffer or memory, a thread that would not start, a probe that could not
+run: LOCAL_ERRNOS), so the poll saw nothing of the network; otherwise `closed` (refused, reset,
+dropped during the handshake, not answered in time).
+
+Stretches. Closed polls in a row make a stretch, counted from the first poll; a local poll neither
+extends nor ends one, however many come in a row (they are counted, and the longest run of them is
+kept). A stretch of at least MIN_CLOSED closed polls ends at an open poll: an opening.
+STATE/netcheck.json holds the status after every poll: `last_poll` (its start and state), `closing`
+(the stretch in progress: its first and last closed poll's start and how many) and `openings`, one
+per stretch that ended: `last_closed_at` and `end_bound` (the start of its last closed poll, a
+moment at which no host answered yet), `first_open_at` (the start of the poll that ended it),
+`closed_since`, `closed_polls`, the host, whether an exec session of `dev` was seen alive then
+(`session_alive`: true, false, or null when the sessions could not be seen) and whether the time
+the work is given had run out, counted from the start of the work (`after_limit`). At every opening
+the record is also written to STATE/netcheck-open.json before anything is ended. When a fresh look
+at the processes found no session alive, or the time had run out counted from the first process
+(below), copies stop, every process of `dev` is stopped and then ended, and how many passes that
+took and how many were left are added; an opening while a session is alive, or while the sessions
+cannot be seen, and that time is left ends nothing until a fresh look finds no session or that time
+runs out. Polling goes on after an opening; the step that measures the tree stops it.
+
+Ending. The processes of `dev` are found by their threads: a process counts as alive while any of
+its threads has not exited, so one whose first thread has exited while another runs is found too.
+Each pass signals every one of them from here and once more from a helper whose real and saved
+user is one no process has and whose effective user is `dev`, so that `kill(-1)` from it reaches
+every process of `dev` in one system call while none of them can signal the helper; the helper is
+never waited for longer than a few seconds. First they are stopped until no thread of theirs runs,
+for at most FREEZE_SECONDS; then they are killed, a pass at least, until none is alive, for at most
+KILL_SECONDS.
+
+Processes. A thread looks at /proc every SESSION_SECONDS. The exec sessions of `dev`: a process of
+`dev` whose parent is a process of the real user root named su or runuser (not the first process),
+or that has no parent here (parent 0, started from outside this process namespace). A process that
+the processes of `dev` start, in the background or detached, has a parent of `dev`, then the first
+process or another that takes in orphans, never such a parent, so it is never a session. The first
+process: the process of `dev` that began first after the work began, among those whose parent is
+not a process of `dev` (its start read from /proc, in seconds since boot) and that two looks at
+least CONFIRM_SECONDS apart both saw alive, so that a short command run as `dev` before the clock of
+the work's own limit starts (such as a `pwd`, gone within milliseconds) is never taken for it: for
+ending `dev`, the time the work is given is counted from its start (with none, `dev` is never ended
+by time), so that nothing ends the work before its own limit; the end of the work always counts
+from the start of the work, which comes before the clock of that limit. Every process of `dev` gets
+a limit of NPROC_CAP processes of its user (lowered, never raised), so that one that forks without
+end leaves room for everything else. STATE/sessions.json holds when each session was first and last
+seen alive (the start of the look), the first process, how many processes of `dev` were seen at
+most, the last look and whether /proc could be read; STATE/out/watch.json a short summary.
+
+Copies. Another thread looks at the tree every LOOK_SECONDS, by directory descriptor and never
+through a link, leaving out every `.git` folder and every build folder (one that holds
+`meson-private`), at most LOOK_ENTRIES entries and LOOK_DEPTH folders deep. Its first look is
+checked against the tree as the image ships it (LIB/shipped.json). From then on every file, link or
+other entry that is new or changed since the last look is kept track of (at most TRACK_MAX of
+them): a changed file is copied into STATE/copy, by its sha256, when it stays the same file with
+the same times as the look found it while it is read (else a later look tries again), is at most
+COPY_FILE_BYTES and the copies together stay within COPY_TOTAL_BYTES (a file that holds what the
+image ships is noted as such and not copied); a link is noted with its target. The last COPY_KEEP
+versions of each are kept, with the time at which it held that content (`captured`: for a file,
+when its read began; for a link, the start of that look), and the newest one from before the time
+the work is given ran out is never given up for a later one.
+Each entry also records the start of the last look that saw it (`present_at`) and of the first that
+found it gone (`removed_at`), and every folder when it was first seen. STATE/tree.json holds all of
+it, STATE/tree-look.json the start and end of the last look. Copies stop once the processes of
+`dev` are being ended.
+
+With --manifest TARBALL OUT, the record of the tree as the image ships it is written instead, from
+that tarball (path: type, size, mode, and a file's sha256 or a link's target).
+
+A status that cannot be written is skipped, never a reason to stop.
+"""
+
+import errno
+import hashlib
+import json
+import os
+import pwd
+import signal
+import socket
+import ssl
+import stat
+import subprocess
+import sys
+import threading
+import time
+import warnings
+
+# Root resolves no command through the PATH it was started with (QA, Dogwood pass 07 F1).
+os.environ["PATH"] = "/usr/sbin:/usr/bin:/sbin:/bin"
+STATE = "/var/lib/fsmaint"
+LIB = "/usr/local/lib/fsmaint"
+PROC = "/proc"
+PYTHON = "/usr/bin/python3"
+TREE = "/app/harfbuzz"
+SHIPPED = os.path.join(LIB, "shipped.json")
+HOSTS = ("github.com", "codeload.github.com", "pypi.org")
+PORT = 443
+INTERVAL_SECONDS = 0.1  # between the end of one poll and the next
+HANDSHAKE_SECONDS = 1.0  # connection and handshake, per host
+MIN_CLOSED = 3  # closed polls in a row that make a stretch whose end is recorded
+LOCAL_LIMIT = 3  # local polls in a row after which the network is said not to be seen
+KEEP_OPENINGS = 32  # openings kept in the status, the longest stretch always among them
+SESSION_SECONDS = 0.1  # between two looks at the processes of USER
+CONFIRM_SECONDS = 1.0  # two looks this far apart must both see the first process alive
+SAME_START_SECONDS = 0.5  # two reads of one process's start differ by less than this
+KEEP_SESSIONS = 64  # sessions kept in the record, the last seen always among them
+SESSION_PARENTS = ("su", "runuser")
+USER = "dev"
+PROBE_USER = "nobody"
+SPARE_UID = 61499  # no process has it: the signalling helper's real and saved user
+NPROC_CAP = 8192  # processes and threads of USER, at most, for every process of USER
+WORK_LIMIT_SECONDS = 34560  # the time the work is given, as in task.toml
+FREEZE_SECONDS = 10.0  # stopping the processes of USER, at most
+KILL_SECONDS = 30.0  # killing them, at most
+HELPER_SECONDS = 3.0  # waiting for the signalling helper, at most
+LOOK_SECONDS = 1.0  # between the end of one look at the tree and the start of the next
+LOOK_ENTRIES = 200_000  # entries of one look, at most (as many as the tree may hold)
+LOOK_DEPTH = 64  # folders below the tree's top that a look goes into, at most
+COPY_FILE_BYTES = 16 << 20  # a changed file larger than this is not copied
+COPY_TOTAL_BYTES = 256 << 20  # the copies kept, in all
+COPY_KEEP = 3  # versions kept of each changed entry
+TRACK_MAX = 50_000  # changed entries kept track of, at most
+BUILD_MARK = "meson-private"  # a folder that holds one is a build folder
+RECORD_EVERY_SECONDS = 5.0  # tree.json, when it is large, is written at most this often
+LARGE_RECORD = 1 << 20
+LOCAL_ERRNOS = frozenset(
+    {
+        errno.EADDRNOTAVAIL,
+        errno.EADDRINUSE,
+        errno.EAGAIN,
+        errno.EMFILE,
+        errno.ENFILE,
+        errno.ENOBUFS,
+        errno.ENOMEM,
+    }
+)
+DEAD = ("Z", "X")  # a thread in one of these states has exited
+STOPPED = ("T", "t")
+
+
+class Stop(BaseException):
+    """Raised by the handler of SIGTERM (the step that measures the tree stops this); a
+    BaseException, so that no handler of ordinary errors swallows it."""
+
+
+def write(name, record):
+    """Replace STATE/name with `record`; False when it could not be written."""
+    try:
+        path = os.path.join(STATE, name)
+        os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
+        with open(path + ".tmp", "w") as handle:
+            json.dump(record, handle)
+        os.replace(path + ".tmp", path)
+        return True
+    except (OSError, ValueError, TypeError, MemoryError):
+        return False
+
+
+def resolve(hosts=HOSTS):
+    found = {}
+    for host in hosts:
+        try:
+            infos = socket.getaddrinfo(host, PORT, socket.AF_INET, socket.SOCK_STREAM)
+            found[host] = sorted({info[4][0] for info in infos})[:2]
+        except OSError as exc:
+            found[host] = f"unresolved ({exc.__class__.__name__})"
+    return found
+
+
+def local_reason(exc):
+    """The name of the failure when `exc` is one of this machine, not of the network; else None."""
+    if isinstance(exc, MemoryError):
+        return "MemoryError"
+    if (
+        isinstance(exc, OSError)
+        and not isinstance(exc, ssl.SSLError)
+        and exc.errno in LOCAL_ERRNOS
+    ):
+        return errno.errorcode.get(exc.errno, str(exc.errno))
+    return None
+
+
+def first_answering(targets, context, seconds=HANDSHAKE_SECONDS):
+    """One poll: ("open", host) when a TLS handshake with one of the hosts completes, all tried at
+    once within `seconds`; ("local", why) when none does and an attempt failed for a reason of this
+    machine; ("closed", None) otherwise."""
+    answered, local = [], []
+
+    def probe(host, address):
+        try:
+            with socket.create_connection((address, PORT), timeout=seconds) as raw:
+                raw.settimeout(seconds)
+                with context.wrap_socket(raw, server_hostname=host):
+                    answered.append(host)
+        except (OSError, ValueError, MemoryError) as exc:
+            why = local_reason(exc)
+            if why:
+                local.append(why)
+
+    workers = []
+    for target in targets:
+        try:
+            worker = threading.Thread(target=probe, args=target, daemon=True)
+            worker.start()
+        except (RuntimeError, MemoryError, OSError):
+            local.append("thread")
+            continue
+        workers.append(worker)
+    for worker in workers:
+        worker.join(2 * seconds + 0.2)
+    if answered:
+        return "open", answered[0]
+    if local:
+        return "local", local[0]
+    return "closed", None
+
+
+def probe_lines(targets, out, context=None, interval=INTERVAL_SECONDS):
+    """Poll for ever, one line per poll: '<start> open <host>', '<start> closed -' or
+    '<start> local <why>'."""
+    context = context or ssl.create_default_context()
+    while True:
+        started = time.time()
+        try:
+            state, detail = first_answering(targets, context)
+        except (RuntimeError, MemoryError, OSError) as exc:
+            state, detail = "local", exc.__class__.__name__
+        out.write(f"{started!r} {state} {detail or '-'}\n")
+        out.flush()
+        time.sleep(interval)
+
+
+def probe_main():
+    """--probe, with the targets as one JSON line on standard input: become PROBE_USER when started
+    as root, then poll on standard output."""
+    try:
+        targets = [tuple(target) for target in json.loads(sys.stdin.readline())]
+    except (OSError, ValueError, TypeError):
+        targets = []
+    try:
+        if os.geteuid() == 0:
+            entry = pwd.getpwnam(PROBE_USER)
+            os.setgroups([])
+            os.setgid(entry.pw_gid)
+            os.setuid(entry.pw_uid)
+    except (OSError, KeyError):
+        pass  # it polls as the user it started as; the first line says which
+    sys.stdout.write(f"uid {os.geteuid()}\n")
+    sys.stdout.flush()
+    probe_lines(targets, sys.stdout)
+    return 0
+
+
+def polls(targets, status, children, interval=INTERVAL_SECONDS):
+    """(start, state, detail) per poll, from probe processes started again whenever one ends. A probe
+    that cannot be started, or that ended, is a local poll: it saw nothing of the network."""
+    restarts = 0
+    command = [PYTHON, "-I", os.path.abspath(sys.argv[0]), "--probe"]
+    while True:
+        try:
+            probe = subprocess.Popen(
+                command,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+            )
+        except (OSError, ValueError, MemoryError) as exc:
+            status["probe_start_failures"] = status.get("probe_start_failures", 0) + 1
+            yield time.time(), "local", f"probe-{exc.__class__.__name__}"
+            time.sleep(interval)
+            continue
+        children[:] = [probe]
+        try:
+            probe.stdin.write(json.dumps(targets) + "\n")
+            probe.stdin.close()
+        except (OSError, ValueError) as exc:
+            status["probe_start_failures"] = status.get("probe_start_failures", 0) + 1
+            stop_child(probe)
+            yield time.time(), "local", f"probe-{exc.__class__.__name__}"
+            time.sleep(interval)
+            continue
+        status["probe_restarts"] = restarts
+        restarts += 1
+        try:
+            for line in probe.stdout:
+                fields = line.split()
+                if len(fields) == 2 and fields[0] == "uid":
+                    status["probe_uid"] = int(fields[1])
+                elif len(fields) == 3 and fields[1] in ("open", "closed", "local"):
+                    detail = None if fields[2] == "-" else fields[2]
+                    yield float(fields[0]), fields[1], detail
+        except (OSError, ValueError, MemoryError):
+            pass
+        stop_child(probe)
+        yield time.time(), "local", "probe-ended"
+        time.sleep(interval)
+
+
+def stop_child(child):
+    try:
+        child.kill()
+        child.wait(5)
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
+def read_status(pid, proc=PROC):
+    """(real uid, parent pid, name, state) of a process, from /proc; None when it cannot be read."""
+    try:
+        with open(os.path.join(proc, str(pid), "status")) as handle:
+            text = handle.read()
+        fields = dict(line.split(":", 1) for line in text.splitlines() if ":" in line)
+        return (
+            int(fields["Uid"].split()[0]),
+            int(fields["PPid"].strip()),
+            fields.get("Name", "").strip(),
+            fields.get("State", "").strip()[:1],
+        )
+    except (OSError, KeyError, ValueError, IndexError, MemoryError):
+        return None
+
+
+def processes(proc=PROC):
+    """{pid: (real uid, parent pid, name, state)} of every process /proc shows; None without /proc."""
+    try:
+        names = os.listdir(proc)
+    except (OSError, MemoryError):
+        return None
+    table = {}
+    for name in names:
+        if name.isdigit():
+            info = read_status(name, proc)
+            if info is not None:
+                table[int(name)] = info
+    return table
+
+
+def thread_states(pid, proc=PROC):
+    """The state of every thread of a process (from /proc/<pid>/task/*/stat); [] when gone."""
+    try:
+        tids = os.listdir(os.path.join(proc, str(pid), "task"))
+    except (OSError, MemoryError):
+        return []
+    states = []
+    for tid in tids:
+        try:
+            with open(
+                os.path.join(proc, str(pid), "task", tid, "stat"), "rb"
+            ) as handle:
+                text = handle.read(4096)
+            states.append(chr(text[text.rindex(b")") + 2]))
+        except (OSError, ValueError, IndexError, MemoryError):
+            continue
+    return states
+
+
+def user_tasks(uid, proc=PROC):
+    """{pid: [thread states]} of every process whose real, effective or saved user is `uid`, its
+    exited threads left out; a process none of whose threads is alive is left out. None without
+    /proc."""
+    try:
+        names = os.listdir(proc)
+    except (OSError, MemoryError):
+        return None
+    found = {}
+    for name in names:
+        if not name.isdigit():
+            continue
+        try:
+            with open(os.path.join(proc, name, "status")) as handle:
+                text = handle.read(65536)
+            uids = next(
+                line.split()[1:4]
+                for line in text.splitlines()
+                if line.startswith("Uid:")
+            )
+            if uid not in {int(value) for value in uids}:
+                continue
+        except (OSError, StopIteration, ValueError, MemoryError):
+            continue
+        alive = [state for state in thread_states(name, proc) if state not in DEAD]
+        if alive:
+            found[int(name)] = alive
+    return found
+
+
+def signal_as(uid, gid, signum, spare=SPARE_UID, seconds=HELPER_SECONDS):
+    """kill(-1, signum) from a helper whose effective user is `uid` and whose real and saved user is
+    `spare`: it reaches every process `uid` may signal, in one system call, and no process of `uid`
+    can signal it. The helper is waited for at most `seconds`, then killed."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        try:
+            pid = os.fork()
+        except OSError:
+            return False
+    if pid == 0:
+        try:
+            os.setgroups([])
+            os.setresgid(spare, gid, spare)
+            os.setresuid(spare, uid, spare)
+            os.kill(-1, signum)
+        finally:
+            os._exit(0)  # whatever happened, this child goes no further
+    deadline = time.monotonic() + seconds
+    while True:
+        try:
+            done, _ = os.waitpid(pid, os.WNOHANG)
+        except ChildProcessError:
+            return True
+        if done:
+            return True
+        if time.monotonic() >= deadline:
+            try:
+                os.kill(pid, signal.SIGKILL)
+                os.waitpid(pid, 0)
+            except OSError:
+                pass
+            return False
+        time.sleep(0.002)
+
+
+def send_each(pids, signum):
+    for pid in pids:
+        try:
+            os.kill(pid, signum)
+        except OSError:
+            pass
+
+
+def stop_processes(uid, gid, proc=PROC, seconds=FREEZE_SECONDS):
+    """Stop every process of `uid` until no thread of theirs runs, for at most `seconds`; (passes,
+    how many still had a running thread, or None when that cannot be told)."""
+    passes, running = 0, None
+    deadline = time.monotonic() + seconds
+    while True:
+        passes += 1
+        table = user_tasks(uid, proc)
+        running = (
+            None
+            if table is None
+            else [
+                pid
+                for pid, states in table.items()
+                if any(state not in STOPPED for state in states)
+            ]
+        )
+        send_each(running or [], signal.SIGSTOP)
+        signal_as(uid, gid, signal.SIGSTOP)
+        if running == [] or time.monotonic() >= deadline:
+            break
+        time.sleep(0.02)
+    if running:
+        time.sleep(0.02)
+        table = user_tasks(uid, proc)
+        running = (
+            None
+            if table is None
+            else [
+                pid
+                for pid, states in table.items()
+                if any(state not in STOPPED for state in states)
+            ]
+        )
+    return passes, (None if running is None else len(running))
+
+
+def kill_processes(uid, gid, proc=PROC, seconds=KILL_SECONDS):
+    """Kill every process of `uid`, a pass at least, until none is alive, for at most `seconds`;
+    (passes, how many are alive at the end, or None when that cannot be told)."""
+    passes, left = 0, None
+    deadline = time.monotonic() + seconds
+    while True:
+        passes += 1
+        table = user_tasks(uid, proc)
+        send_each(list(table or ()), signal.SIGKILL)
+        signal_as(uid, gid, signal.SIGKILL)
+        time.sleep(0.05)
+        table = user_tasks(uid, proc)
+        left = None if table is None else len(table)
+        if left == 0 or time.monotonic() >= deadline:
+            return passes, left
+
+
+def end_processes(user=USER, proc=PROC):
+    """Stop every process of `user`, then kill them all; {"stop_passes", "kill_passes", "left"},
+    where `left` is how many are alive at the end (None when that cannot be told)."""
+    try:
+        entry = pwd.getpwnam(user)
+    except KeyError:
+        return {"stop_passes": 0, "kill_passes": 0, "left": None}
+    stop_passes, _running = stop_processes(entry.pw_uid, entry.pw_gid, proc)
+    kill_passes, left = kill_processes(entry.pw_uid, entry.pw_gid, proc)
+    return {"stop_passes": stop_passes, "kill_passes": kill_passes, "left": left}
+
+
+def sessions(table, uid):
+    """The pids of the exec sessions of the user `uid` in a process table: its processes (not
+    zombies) whose parent is a process of the real user root named in SESSION_PARENTS other than the
+    first process, or that have no parent here."""
+    found = []
+    for pid, (owner, parent, _name, state) in table.items():
+        if owner != uid or state in DEAD:
+            continue
+        above = table.get(parent)
+        if parent == 0 or (
+            parent != 1
+            and above is not None
+            and above[0] == 0
+            and above[2] in SESSION_PARENTS
+        ):
+            found.append(pid)
+    return sorted(found)
+
+
+def started_at(pid, proc=PROC):
+    """When a process began, in seconds since the epoch: its start in clock ticks since boot (field
+    22 of its stat) against the time since boot read now; None when it cannot be read."""
+    try:
+        with open(os.path.join(proc, str(pid), "stat"), "rb") as handle:
+            text = handle.read(4096)
+        ticks = int(text[text.rindex(b")") + 2 :].split()[19])
+        with open(os.path.join(proc, "uptime")) as handle:
+            since_boot = float(handle.read().split()[0])
+        return time.time() - since_boot + ticks / os.sysconf("SC_CLK_TCK")
+    except (OSError, ValueError, IndexError, MemoryError):
+        return None
+
+
+def first_process(
+    table,
+    uid,
+    since,
+    proc=PROC,
+    known=None,
+    examined=None,
+    sighted=None,
+    now=None,
+    confirm=CONFIRM_SECONDS,
+    gone=None,
+):
+    """The process of the user `uid` that began first at or after `since` among those whose parent
+    is not a process of that user, as {"pid", "start", "name", "parent"}; `known` (the earliest found
+    before) when none began earlier. Processes in `examined` (a set, added to) are not read again.
+
+    A process counts only once two looks at least `confirm` seconds apart have both seen it alive,
+    with the same start: `sighted` (a dict kept from one look to the next) holds the ones seen so far
+    and when (`now`, the start of this look), so a short command run as that user before the clock
+    of the work's limit starts is gone by the second look and never counts (it is added to `gone`, a
+    list, when given). Called once, without `sighted`, it returns `known`."""
+    sighted = {} if sighted is None else sighted
+    now = time.time() if now is None else now
+    best = known
+    for pid, (owner, parent, name, state) in table.items():
+        if owner != uid or state in DEAD or (examined is not None and pid in examined):
+            continue
+        if examined is not None:
+            examined.add(pid)
+        above = table.get(parent)
+        if above is not None and above[0] == uid:
+            continue
+        start = started_at(pid, proc)
+        if (
+            start is None
+            or start < since
+            or (best is not None and start >= best["start"])
+        ):
+            continue
+        found = {
+            "pid": pid,
+            "start": start,
+            "name": name,
+            "parent": above[2] if above else None,
+        }
+        sighted.setdefault(pid, dict(found, seen=now))
+    for pid in sorted(sighted):
+        candidate = sighted[pid]
+        info = table.get(pid)
+        if info is None or info[0] != uid or info[3] in DEAD:
+            del sighted[pid]  # gone before a second look: never the first process
+            if examined is not None:
+                examined.discard(pid)
+            if gone is not None:
+                gone.append(candidate)
+        elif best is not None and candidate["start"] >= best["start"]:
+            del sighted[pid]  # began after the first process found since
+        elif now - candidate["seen"] >= confirm:
+            del sighted[pid]
+            again = started_at(pid, proc)
+            if again is None or abs(again - candidate["start"]) > SAME_START_SECONDS:
+                if examined is not None:  # another process under the same pid
+                    examined.discard(pid)
+                continue
+            best = {key: candidate[key] for key in ("pid", "start", "name", "parent")}
+    return best
+
+
+def cap_processes(table, uid, capped, cap=NPROC_CAP):
+    """Lower the process limit of every process of `uid` not seen before to `cap`; how many it
+    failed for. Without prlimit (not Linux) nothing is done."""
+    try:
+        import resource
+
+        limit, setlimit = resource.RLIMIT_NPROC, resource.prlimit
+    except (ImportError, AttributeError):
+        return None
+    failed = 0
+    for pid, (owner, _parent, _name, state) in table.items():
+        if owner != uid or state in DEAD or pid in capped:
+            continue
+        try:
+            soft, hard = setlimit(pid, limit)
+            infinite = resource.RLIM_INFINITY
+            new_hard = cap if hard == infinite or hard > cap else hard
+            new_soft = new_hard if soft == infinite or soft > new_hard else soft
+            if (new_soft, new_hard) != (soft, hard):
+                setlimit(pid, limit, (new_soft, new_hard))
+            capped.add(pid)
+        except (OSError, ValueError):
+            failed += 1
+    if len(capped) > 100_000:
+        capped.intersection_update(table)
+    return failed
+
+
+def watch_sessions(
+    uid,
+    record,
+    stop,
+    proc=PROC,
+    interval=SESSION_SECONDS,
+    name="sessions.json",
+    since=None,
+):
+    """Look at the processes of `uid` every `interval` until `stop` is set: keep each exec session's
+    first and last sighting, the first process that began at or after `since` (one that two looks at
+    least CONFIRM_SECONDS apart both saw alive; how many were seen once and gone is
+    `first_process_passed_over`), and the most processes of `uid` seen at once, in `record`, written
+    to STATE/`name` after every look; cap every process of `uid`."""
+    current = {}  # pid -> its entry, for the sessions alive at the previous look
+    entries = []  # the sessions kept, in the order first seen
+    capped, examined, sighted = set(), set(), {}
+    record.update(
+        available=None,
+        scans=0,
+        last_scan=None,
+        alive=[],
+        seen=0,
+        sessions=[],
+        first_process=None,
+        first_process_passed_over=0,
+        user_processes=0,
+        user_processes_max=0,
+        nproc_cap=NPROC_CAP,
+        nproc_cap_failures=0,
+    )
+    summary_at = 0.0
+    while not stop.is_set():
+        started = time.time()
+        table = processes(proc)
+        if table is None:
+            record.update(available=False, last_scan=started, scans=record["scans"] + 1)
+        else:
+            alive, now = sessions(table, uid), {}
+            for pid in alive:
+                entry = current.get(pid)
+                if entry is None:
+                    entry = {"pid": pid, "first_seen": started, "last_seen": started}
+                    entries.append(entry)
+                    record["seen"] += 1
+                entry["last_seen"] = started
+                now[pid] = entry
+            current = now
+            if len(entries) > KEEP_SESSIONS:
+                # every session alive now, and the ones that ended last
+                live = {id(entry) for entry in current.values()}
+                ended = sorted(
+                    (e for e in entries if id(e) not in live),
+                    key=lambda e: e["last_seen"],
+                )
+                room = max(0, KEEP_SESSIONS - len(live))
+                keep = {id(e) for e in ended[len(ended) - room :]} if room else set()
+                entries = [e for e in entries if id(e) in live or id(e) in keep]
+            mine = sum(
+                1
+                for owner, _parent, _name, state in table.values()
+                if owner == uid and state not in DEAD
+            )
+            if since is not None:
+                gone = []
+                record["first_process"] = first_process(
+                    table,
+                    uid,
+                    since,
+                    proc,
+                    record.get("first_process"),
+                    examined,
+                    sighted,
+                    started,
+                    gone=gone,
+                )
+                record["first_process_passed_over"] += len(gone)
+                if len(examined) > 100_000:
+                    examined.intersection_update(table)
+            failed = cap_processes(table, uid, capped)
+            if failed is None:
+                record["nproc_cap"] = None
+            else:
+                record["nproc_cap_failures"] += failed
+            record.update(
+                available=True,
+                last_scan=started,
+                scans=record["scans"] + 1,
+                alive=alive,
+                sessions=entries,
+                user_processes=mine,
+                user_processes_max=max(record["user_processes_max"], mine),
+            )
+        write(name, record)
+        if started - summary_at >= 5:
+            summary_at = started
+            summary = {
+                key: record.get(key)
+                for key in (
+                    "available",
+                    "last_scan",
+                    "first_process",
+                    "first_process_passed_over",
+                    "user_processes",
+                    "user_processes_max",
+                    "nproc_cap",
+                    "nproc_cap_failures",
+                )
+            }
+            write(os.path.join("out", "watch.json"), summary)
+        stop.wait(interval)
+
+
+def kept(openings):
+    """The last KEEP_OPENINGS openings, with the one that ended the longest stretch always kept."""
+    if len(openings) <= KEEP_OPENINGS:
+        return openings
+    longest = max(openings, key=lambda o: (o["closed_polls"], o["last_closed_at"]))
+    recent = openings[-(KEEP_OPENINGS - 1) :]
+    return ([longest] if longest not in recent else []) + recent
+
+
+def session_seen(record, fresh=2.0):
+    """Whether the watch saw an exec session of the user alive at its last look: True or False when
+    that look was made within the last `fresh` seconds, None when the sessions cannot be seen."""
+    scan = record.get("last_scan")
+    if (
+        record.get("available") is not True
+        or not isinstance(scan, (int, float))
+        or time.time() - scan > fresh
+    ):
+        return None
+    return bool(record.get("alive"))
+
+
+def watch(
+    stream,
+    status,
+    ending=end_processes,
+    session_alive=lambda: None,
+    limit=lambda: None,
+    stop_limit=None,
+):
+    """Fold every poll into the status; at each opening after MIN_CLOSED closed polls, record it,
+    with whether the time `limit()` (the time the work is given ran out, counted from the start of
+    the work; seconds since the epoch, or None) had come (`after_limit`), then end the processes of
+    the user when `session_alive()` is False (a fresh look found no session) or the time
+    `stop_limit()` (counted from the first process of the user, never earlier than `limit()`; None,
+    so never, while no first process is known; `limit` when not given) has come; otherwise that
+    ending waits until one of the two holds. Local polls end nothing.
+
+    Returns the openings when the stream ends (it does not while the probe runs)."""
+    stop_limit = stop_limit or limit
+    closing = None  # [first start, last start, polls] of the closed stretch in progress
+    openings = []
+    deferred = None  # the opening whose ending waits
+    local_count = local_run = longest_local = 0
+    status.update(
+        min_closed_polls=MIN_CLOSED,
+        local_limit=LOCAL_LIMIT,
+        polls=0,
+        local_polls=0,
+        longest_local_run=0,
+        last_poll=None,
+        closing=None,
+        openings=[],
+    )
+
+    def end_now(record):
+        try:
+            done = ending()
+        except Exception as exc:  # noqa: BLE001 - the record stays; the sweep ends what is left
+            done = {
+                "kill_passes": None,
+                "left": f"not ended ({exc.__class__.__name__})",
+            }
+        record.update(
+            stop_passes=done.get("stop_passes"),
+            kill_passes=done.get("kill_passes"),
+            processes_left=done.get("left"),
+            ended_at=time.time(),
+        )
+        write("netcheck-open.json", record)
+
+    def time_up():
+        bound = limit()
+        return isinstance(bound, (int, float)) and time.time() >= bound
+
+    def stop_up():
+        bound = stop_limit()
+        return isinstance(bound, (int, float)) and time.time() >= bound
+
+    for count, (started, state, detail) in enumerate(stream, start=1):
+        if state == "closed":
+            closing = (
+                [closing[0], started, closing[2] + 1]
+                if closing
+                else [started, started, 1]
+            )
+            local_run = 0
+        elif state == "local":
+            local_count += 1
+            local_run += 1
+            longest_local = max(longest_local, local_run)
+        else:
+            local_run = 0
+            if closing and closing[2] >= MIN_CLOSED:
+                alive = session_alive()
+                # written before anything is ended, so that nothing in the ending can lose it
+                record = {
+                    "first_open_at": started,
+                    "last_closed_at": closing[1],
+                    "end_bound": closing[1],
+                    "closed_since": closing[0],
+                    "closed_polls": closing[2],
+                    "kind": "open",
+                    "host": detail,
+                    "session_alive": alive,
+                    "after_limit": time_up(),
+                    "opened_at": time.time(),
+                }
+                openings = kept(openings + [record])
+                status.update(
+                    polls=count,
+                    local_polls=local_count,
+                    longest_local_run=longest_local,
+                    last_poll=[started, state],
+                    closing=None,
+                    openings=openings,
+                )
+                write("netcheck-open.json", record)
+                write("netcheck.json", status)
+                if alive is not False and not stop_up():
+                    record["ending"] = (
+                        "waits: an exec session is alive, or the sessions cannot be seen, and the "
+                        "time the work is given, counted from the first process, has not run out"
+                    )
+                    write("netcheck-open.json", record)
+                    deferred = record
+                else:
+                    end_now(record)
+                    deferred = None
+            closing = None
+        if deferred is not None and (session_alive() is False or stop_up()):
+            end_now(deferred)
+            deferred = None
+        status.update(
+            polls=count,
+            local_polls=local_count,
+            longest_local_run=longest_local,
+            last_poll=[started, state],
+            closing=closing,
+            openings=openings,
+        )
+        write("netcheck.json", status)
+    return openings
+
+
+def identity(info):
+    return [info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns]
+
+
+def add_version(versions, new, limit, keep=COPY_KEEP):
+    """`new` first, then the versions before it, at most `keep` of them; the newest one captured at
+    or before `limit` stays among them however many come after it."""
+    versions = [new] + list(versions)
+    if len(versions) <= keep:
+        return versions
+    chosen = versions[:keep]
+    if isinstance(limit, (int, float)) and all(v["captured"] > limit for v in chosen):
+        earlier = next((v for v in versions[keep:] if v["captured"] <= limit), None)
+        if earlier is not None:
+            chosen = chosen[: keep - 1] + [earlier]
+    return chosen
+
+
+def load_shipped(path=SHIPPED):
+    """{path in the tree: [type, size, mode, sha256 or link target]} as the image ships the tree;
+    {} when it cannot be read."""
+    try:
+        with open(path) as handle:
+            entries = json.load(handle).get("entries")
+        return entries if isinstance(entries, dict) else {}
+    except (OSError, ValueError, AttributeError, MemoryError):
+        return {}
+
+
+def is_build_folder(fd):
+    try:
+        found = os.stat(BUILD_MARK, dir_fd=fd, follow_symlinks=False)
+    except OSError:
+        return False
+    return stat.S_ISDIR(found.st_mode)
+
+
+class TreeWatch:
+    """The looks at the tree, the copies of what changed and their record (the module's docstring)."""
+
+    def __init__(self, tree=TREE, state=STATE, shipped=None, limit_of=lambda: None):
+        self.tree, self.state, self.limit_of = tree, state, limit_of
+        self.store = os.path.join(state, "copy")
+        self.shipped = load_shipped() if shipped is None else shipped
+        self.known = {}  # path -> identity at the last look
+        self.tracked = {}  # path -> what is kept of it
+        self.dirs = {}  # path -> when first seen
+        self.objects = {}  # sha256 -> size, for the copies in the store
+        self.ended = threading.Event()
+        self.dirty = True
+        self.written_at = 0.0
+        self.notes = []
+        self.record = {
+            "tree": tree,
+            "began": time.time(),
+            "looks": 0,
+            "last_look": None,
+            "baseline": None,
+            "untracked": 0,
+            "limits": {
+                "look_entries": LOOK_ENTRIES,
+                "look_depth": LOOK_DEPTH,
+                "copy_file_bytes": COPY_FILE_BYTES,
+                "copy_total_bytes": COPY_TOTAL_BYTES,
+                "copy_keep": COPY_KEEP,
+                "track_max": TRACK_MAX,
+            },
+            "shipped_entries": len(self.shipped),
+        }
+
+    def note(self, text):
+        if len(self.notes) < 200:
+            self.notes.append(text)
+
+    def object_path(self, digest):
+        return os.path.join(self.store, digest[:2], digest)
+
+    def copy(self, fd, name, info, started_ns, shipped):
+        """(version, why, again): a copy of the regular file `name` in the folder open as `fd`, when
+        it stays the same file with the same times as the look found it (`info`) while it is read; it
+        held that content when the read began (`captured`). `again` when a later look should try
+        again."""
+        if info.st_size > COPY_FILE_BYTES:
+            return None, f"larger than {COPY_FILE_BYTES} bytes: not copied", False
+        try:
+            handle = os.open(
+                name,
+                os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC,
+                dir_fd=fd,
+            )
+        except OSError as exc:
+            return None, f"could not be opened ({exc.__class__.__name__})", True
+        captured = time.time()
+        try:
+            if identity(os.fstat(handle)) != identity(info):
+                return None, "changed while it was read", True
+            chunks, size = [], 0
+            while size <= COPY_FILE_BYTES:
+                chunk = os.read(handle, 1 << 20)
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                size += len(chunk)
+            same = identity(os.fstat(handle)) == identity(info)
+        except OSError as exc:
+            return None, f"could not be read ({exc.__class__.__name__})", True
+        finally:
+            os.close(handle)
+        try:
+            again = os.stat(name, dir_fd=fd, follow_symlinks=False)
+        except OSError:
+            return None, "changed while it was read", True
+        data = b"".join(chunks)
+        if not same or identity(again) != identity(info) or len(data) != info.st_size:
+            return None, "changed while it was read", True
+        digest = hashlib.sha256(data).hexdigest()
+        version = {
+            "sha256": digest,
+            "size": len(data),
+            "mode": stat.S_IMODE(info.st_mode),
+            "mtime": info.st_mtime_ns / 1e9,
+            "ctime": info.st_ctime_ns / 1e9,
+            "captured": captured,
+        }
+        if shipped and shipped[0] == "file" and shipped[3] == digest:
+            version["shipped"] = True
+            return version, None, False
+        if digest not in self.objects:
+            if sum(self.objects.values()) + len(data) > COPY_TOTAL_BYTES:
+                return None, "the room for copies is used up", False
+            target = self.object_path(digest)
+            try:
+                os.makedirs(os.path.dirname(target), mode=0o700, exist_ok=True)
+                made = f"{target}.tmp"
+                with open(made, "wb") as out:
+                    out.write(data)
+                os.replace(made, target)
+            except OSError as exc:
+                return (
+                    None,
+                    f"the copy could not be written ({exc.__class__.__name__})",
+                    False,
+                )
+            self.objects[digest] = len(data)
+        return version, None, False
+
+    def changed(self, path, kind, info, fd, name, target, started_ns, baseline):
+        """Keep track of an entry that is new or changed since the last look; False when a later look
+        should try again."""
+        started = started_ns / 1e9
+        shipped = self.shipped.get(path)
+        if baseline and shipped is not None:
+            if kind == "link" and shipped[0] == "link" and shipped[3] == target:
+                return True
+            if kind == "file" and shipped[0] == "file" and shipped[1] == info.st_size:
+                version, _why, _again = self.copy(fd, name, info, started_ns, shipped)
+                if version is not None and version.get("shipped"):
+                    return True
+        entry = self.tracked.get(path)
+        if entry is None:
+            if len(self.tracked) >= TRACK_MAX:
+                self.record["untracked"] += 1
+                return True
+            entry = self.tracked[path] = {
+                "kind": kind,
+                "shipped": shipped is not None,
+                "first_change": started,
+                "changes": 0,
+                "versions": [],
+                "present_at": started,
+                "removed_at": None,
+                "failed": None,
+            }
+        entry.update(kind=kind, present_at=started, removed_at=None)
+        entry["changes"] += 1
+        self.dirty = True
+        if self.ended.is_set():
+            entry["failed"] = "changed while the work was being ended: not copied"
+            return True
+        if kind == "file":
+            version, why, again = self.copy(fd, name, info, started_ns, shipped)
+            if version is None:
+                entry["failed"] = why
+                return not again
+        else:
+            version = {
+                "mtime": info.st_mtime_ns / 1e9,
+                "ctime": info.st_ctime_ns / 1e9,
+                "captured": started,
+            }
+            if kind == "link":
+                version["link"] = target
+            else:
+                version["other"] = stat.S_IFMT(info.st_mode)
+        entry["failed"] = None
+        entry["versions"] = add_version(entry["versions"], version, self.limit_of())
+        return True
+
+    def look(self):
+        """One look at the tree (the module's docstring)."""
+        started_ns = time.time_ns()
+        started = started_ns / 1e9
+        baseline = self.record["looks"] == 0
+        seen, keep_old = {}, set()
+        progress = {"complete": True}
+        skipped = {"git": 0, "build": 0}
+
+        def visit(fd, rel, depth):
+            # depth first, so that no more folders are open at once than the look goes deep
+            try:
+                with os.scandir(fd) as listing:
+                    items = list(listing)
+            except FileNotFoundError:
+                return  # gone while it was looked at
+            except OSError:
+                progress["complete"] = False
+                return
+            for item in items:
+                if len(seen) >= LOOK_ENTRIES:
+                    progress["complete"] = False
+                    return
+                path = f"{rel}/{item.name}" if rel else item.name
+                try:
+                    info = item.stat(follow_symlinks=False)
+                except FileNotFoundError:
+                    continue  # gone while it was looked at
+                except OSError:
+                    progress["complete"] = False
+                    continue
+                mode = info.st_mode
+                if stat.S_ISDIR(mode):
+                    seen[path] = ("dir",)
+                    self.dirs.setdefault(path, started)
+                    if item.name == ".git":
+                        skipped["git"] += 1
+                        continue
+                    if depth + 1 > LOOK_DEPTH:
+                        continue  # left out of the tree by the sweep as well
+                    try:
+                        child = os.open(
+                            item.name,
+                            os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
+                            dir_fd=fd,
+                        )
+                    except FileNotFoundError:
+                        continue
+                    except OSError:
+                        progress["complete"] = False
+                        continue
+                    try:
+                        if is_build_folder(child):
+                            skipped["build"] += 1
+                        else:
+                            visit(child, path, depth + 1)
+                    finally:
+                        os.close(child)
+                    continue
+                target = None
+                if stat.S_ISREG(mode):
+                    kind = "file"
+                elif stat.S_ISLNK(mode):
+                    kind = "link"
+                    try:
+                        target = os.readlink(item.name, dir_fd=fd)
+                    except OSError:
+                        target = ""
+                else:
+                    kind = "other"
+                ident = (kind, *identity(info), stat.S_IMODE(mode), target)
+                seen[path] = ident
+                if self.known.get(path) == ident:
+                    entry = self.tracked.get(path)
+                    if entry is not None:
+                        entry["present_at"] = started
+                    continue
+                if not self.changed(
+                    path, kind, info, fd, item.name, target, started_ns, baseline
+                ):
+                    keep_old.add(path)
+
+        try:
+            top = os.open(
+                self.tree, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+            )
+        except OSError as exc:
+            self.record["looks"] += 1
+            self.record["last_look"] = [started, time.time(), False]
+            self.note(
+                f"{started:.3f}: the tree could not be opened ({exc.__class__.__name__})"
+            )
+            return
+        try:
+            visit(top, "", 0)
+        finally:
+            os.close(top)
+        complete = progress["complete"]
+        if complete:
+            for path, ident in self.known.items():
+                if ident[0] != "dir" and path not in seen:
+                    self.removed(path, started)
+            if baseline:
+                for path, shipped in self.shipped.items():
+                    if shipped[0] != "dir" and path not in seen:
+                        self.removed(path, started)
+        new_known = {
+            path: ident for path, ident in seen.items() if path not in keep_old
+        }
+        for path in keep_old:
+            if path in self.known:
+                new_known[path] = self.known[path]
+        self.known = new_known
+        self.record["looks"] += 1
+        self.record["last_look"] = [started, time.time(), complete]
+        self.record["skipped"] = skipped
+        if baseline:
+            self.record["baseline"] = {
+                "at": started,
+                "entries": len(seen),
+                "tracked": len(self.tracked),
+                "complete": complete,
+            }
+        self.collect()
+
+    def removed(self, path, started):
+        entry = self.tracked.get(path)
+        if entry is None:
+            if len(self.tracked) >= TRACK_MAX:
+                self.record["untracked"] += 1
+                return
+            shipped = self.shipped.get(path)
+            entry = self.tracked[path] = {
+                "kind": shipped[0] if shipped else None,
+                "shipped": shipped is not None,
+                "first_change": started,
+                "changes": 0,
+                "versions": [],
+                "present_at": None,
+                "removed_at": None,
+                "failed": None,
+            }
+        if entry["removed_at"] is None:
+            entry["removed_at"] = started
+            entry["changes"] += 1
+            self.dirty = True
+
+    def collect(self):
+        """Remove the copies no kept version names any longer."""
+        named = {
+            version["sha256"]
+            for entry in self.tracked.values()
+            for version in entry["versions"]
+            if "sha256" in version and not version.get("shipped")
+        }
+        for digest in [d for d in self.objects if d not in named]:
+            try:
+                os.unlink(self.object_path(digest))
+            except OSError:
+                pass
+            del self.objects[digest]
+
+    def flush(self, force=False):
+        """Write the record (tree.json when something changed, tree-look.json always)."""
+        look = self.record.get("last_look")
+        write(
+            "tree-look.json",
+            {
+                "last_look": look,
+                "looks": self.record["looks"],
+                "copying": not self.ended.is_set(),
+            },
+        )
+        now = time.time()
+        if not (self.dirty or force):
+            return
+        record = dict(
+            self.record,
+            copying=not self.ended.is_set(),
+            store_bytes=sum(self.objects.values()),
+            objects=len(self.objects),
+            tracked=self.tracked,
+            dirs=self.dirs,
+            notes=self.notes,
+            written_at=now,
+        )
+        try:
+            payload = json.dumps(record, separators=(",", ":"))
+        except (ValueError, TypeError, MemoryError):
+            return
+        if (
+            not force
+            and len(payload) > LARGE_RECORD
+            and now - self.written_at < RECORD_EVERY_SECONDS
+        ):
+            return
+        try:
+            path = os.path.join(self.state, "tree.json")
+            with open(path + ".tmp", "w") as handle:
+                handle.write(payload)
+            os.replace(path + ".tmp", path)
+            self.dirty, self.written_at = False, now
+        except OSError:
+            pass
+
+
+def watch_tree(tree_watch, stop):
+    """Look at the tree every LOOK_SECONDS until `stop` is set or the work is being ended."""
+    while not stop.is_set() and not tree_watch.ended.is_set():
+        try:
+            tree_watch.look()
+        except Exception as exc:  # noqa: BLE001 - the watch goes on; the failure is noted
+            tree_watch.note(
+                f"{time.time():.3f}: a look failed ({exc.__class__.__name__})"
+            )
+        tree_watch.flush()
+        stop.wait(LOOK_SECONDS)
+    tree_watch.flush(force=True)
+
+
+def work_started():
+    try:
+        with open(os.path.join(STATE, "work-started")) as handle:
+            return float(handle.read().split()[0])
+    except (OSError, ValueError, IndexError):
+        return None
+
+
+def manifest_main(tarball, out):
+    """--manifest: the record of the tree as the image ships it, from its tarball."""
+    import tarfile
+
+    entries = {}
+    with tarfile.open(tarball, "r:*") as archive:
+        for member in archive:
+            name = member.name.removeprefix("./")
+            if name in ("", "."):
+                continue
+            mode = member.mode & 0o7777
+            if member.isdir():
+                entries[name] = ["dir", 0, mode, None]
+            elif member.issym():
+                entries[name] = ["link", len(member.linkname), mode, member.linkname]
+            elif member.isfile() or member.islnk():
+                data = archive.extractfile(member).read()
+                entries[name] = [
+                    "file",
+                    len(data),
+                    mode,
+                    hashlib.sha256(data).hexdigest(),
+                ]
+            else:
+                entries[name] = ["other", 0, mode, None]
+    with open(out, "w") as handle:
+        json.dump({"tree": TREE, "entries": entries}, handle, separators=(",", ":"))
+    return 0
+
+
+def main():
+    if len(sys.argv) > 1 and sys.argv[1] == "--probe":
+        return probe_main()
+    if len(sys.argv) > 3 and sys.argv[1] == "--manifest":
+        return manifest_main(sys.argv[2], sys.argv[3])
+    try:
+        with open(os.path.join(PROC, "self", "oom_score_adj"), "w") as handle:
+            handle.write("-1000")
+    except OSError:
+        pass
+    addresses = resolve()
+    targets = [
+        (host, address)
+        for host, found in addresses.items()
+        if isinstance(found, list)
+        for address in found
+    ]
+    status = {
+        "started_at": time.time(),
+        "pid": os.getpid(),
+        "hosts": addresses,
+        "interval_seconds": INTERVAL_SECONDS,
+        "handshake_seconds": HANDSHAKE_SECONDS,
+        "probe_user": PROBE_USER,
+    }
+    write("netcheck.json", status)
+    stop, record, children = threading.Event(), {}, []
+    began = work_started()
+    since = began if began is not None else status["started_at"]
+
+    def limit_of():
+        # the end of the work: counted from the start of the work, which the setup hook took before
+        # the clock of the work's own limit began
+        return since + WORK_LIMIT_SECONDS
+
+    def stop_of():
+        # ending `dev`: counted from its first process (one that two looks a second apart saw
+        # alive, so never a short command run before that clock), so that nothing ends the work
+        # before its own limit; with no first process seen, never by time
+        first = record.get("first_process")
+        if not (
+            isinstance(first, dict) and isinstance(first.get("start"), (int, float))
+        ):
+            return None
+        return max(first["start"], since) + WORK_LIMIT_SECONDS
+
+    tree_watch = TreeWatch(limit_of=limit_of)
+
+    def ending():
+        tree_watch.ended.set()  # nothing changed from here on is copied
+        return end_processes()
+
+    def on_term(signum, frame):
+        raise Stop()
+
+    signal.signal(signal.SIGTERM, on_term)
+    threads = []
+    try:
+        uid = pwd.getpwnam(USER).pw_uid
+        threads.append(
+            threading.Thread(
+                target=watch_sessions,
+                args=(uid, record, stop),
+                kwargs={"since": since},
+                daemon=True,
+            )
+        )
+        threads[-1].start()
+    except (KeyError, RuntimeError, MemoryError, OSError) as exc:
+        write(
+            "sessions.json",
+            {
+                "available": False,
+                "error": exc.__class__.__name__,
+                "last_scan": time.time(),
+            },
+        )
+    try:
+        threads.append(
+            threading.Thread(target=watch_tree, args=(tree_watch, stop), daemon=True)
+        )
+        threads[-1].start()
+    except (RuntimeError, MemoryError, OSError) as exc:
+        write("tree.json", {"error": exc.__class__.__name__})
+    try:
+        if not targets:
+            write("netcheck.json", dict(status, error="no host resolved: not checking"))
+            while (
+                True
+            ):  # the processes and the tree are still watched; the sweep stops this
+                time.sleep(60)
+        watch(
+            polls(targets, status, children),
+            status,
+            ending=ending,
+            session_alive=lambda: session_seen(record),
+            limit=limit_of,
+            stop_limit=stop_of,
+        )
+    except Stop:
+        pass
+    finally:
+        stop.set()
+        for child in children:
+            stop_child(child)
+        for thread in threads:
+            thread.join(5)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

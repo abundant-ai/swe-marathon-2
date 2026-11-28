@@ -1,0 +1,12 @@
+--- a/src/hb-aat-layout-kerx-table.hh
++++ b/src/hb-aat-layout-kerx-table.hh
+@@ -355,6 +355,9 @@
+ 	  }
+ 	  hb_barrier ();
+ 	}
++	/* A single 0xFFFF ends a list, without popping a glyph. */
++	else if (*actions == -1)
++	  break;
+ 
+ 	unsigned int idx;
+ 	if (Types::extended)

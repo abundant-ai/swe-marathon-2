@@ -1,0 +1,63 @@
+schema_version = "1.4"
+artifacts = ["/app/harfbuzz", "/var/lib/fsmaint/out"]
+
+[task]
+name = "abundant/swe-m2_software-engineering_harfbuzz-forward-port"
+description = "Bring a frozen HarfBuzz 14.3.0 forward to the shaping, layout, metrics and API fixes of upstream's releases 14.3.1 to 15.2.0, from the release notes and the specifications."
+authors = [{ name = "Neel Harsola", email = "work.neelharsola@gmail.com" }]
+
+[metadata]
+reward_type = "continuous"
+open_internet_justification = "Both images are built with public egress, to install system and Python packages and to fetch the pinned HarfBuzz 14.3.0 release and the public documents it ships with, and the agent's set-up has it too, to install the agent's tooling. While the work runs, a root process of the first image only tries a TLS handshake with three public hosts every tenth of a second (no request is sent), so that the session's end is known if the network comes back before the tree is copied out. The work itself, and every command run in the second image, run without network access."
+
+[agent]
+timeout_sec = 34560
+network_mode = "no-network"
+user = "dev"
+
+# As root, before and after the agent's own set-up: room for the collect hook, the start of the work, and the net
+# check (environment/fsmaint-netcheck), which watches the session's processes and keeps copies of the files of
+# /app/harfbuzz that change during the work.
+[[agent.setup_begin]]
+command = "/usr/local/lib/fsmaint/fsmaint-reserve"
+user = "root"
+timeout_sec = 120
+
+[[agent.setup_complete]]
+command = "/usr/local/lib/fsmaint/fsmaint-reserve --netcheck"
+user = "root"
+timeout_sec = 120
+
+[environment]
+network_mode = "public"
+build_timeout_sec = 3600
+cpus = 4
+memory_mb = 8192
+storage_mb = 20480
+gpus = 0
+workdir = "/app"
+
+[verifier]
+environment_mode = "separate"
+network_mode = "no-network"
+# tests/verify.py keeps the copy, the build and every batch within 1,800 s of its start and writes the reward by
+# about 2,100 s at the latest.
+timeout_sec = 2400
+user = "root"
+env = { RELEASE = "15.2.0" }
+
+# Runs as root in the session's container once the session has ended, before /app/harfbuzz and /var/lib/fsmaint/out
+# are copied out (environment/fsmaint-sweep): it ends every process of `dev`, puts back what changed after the end
+# of the work, makes the tree copyable, and leaves its signed mark and record in /var/lib/fsmaint/out.
+[[verifier.collect]]
+command = "/usr/local/lib/fsmaint/fsmaint-sweep"
+user = "root"
+timeout_sec = 600
+
+[verifier.environment]
+network_mode = "no-network"
+build_timeout_sec = 3600
+cpus = 4
+memory_mb = 8192
+storage_mb = 20480
+gpus = 0

@@ -1,0 +1,18 @@
+--- a/src/hb-ucd.cc
++++ b/src/hb-ucd.cc
+@@ -53,7 +53,14 @@
+ 	       hb_codepoint_t unicode,
+ 	       void *user_data HB_UNUSED)
+ {
+-  return _hb_ucd_sc_map[_hb_ucd_sc (unicode)];
++  hb_script_t script = _hb_ucd_sc_map[_hb_ucd_sc (unicode)];
++  /* Reserved code points of the Unicode 18 single-script blocks take the block's script. */
++  if (script == HB_SCRIPT_UNKNOWN)
++  {
++    if (unicode >= 0x11DF0u && unicode <= 0x11DFFu) return HB_SCRIPT_BENGALI;
++    if (unicode >= 0x18E00u && unicode <= 0x191DFu) return HB_SCRIPT_JURCHEN;
++  }
++  return script;
+ }
+ 
+ 

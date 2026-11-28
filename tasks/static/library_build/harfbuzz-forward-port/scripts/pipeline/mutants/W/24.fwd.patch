@@ -1,0 +1,27 @@
+--- a/src/hb-aat-map.cc
++++ b/src/hb-aat-map.cc
+@@ -145,11 +145,8 @@
+ 	current_features.qsort ();
+ 	unsigned int j = 0;
+ 	for (unsigned int i = 1; i < current_features.length; i++)
+-	  if (current_features.arrayZ[i].type != current_features.arrayZ[j].type ||
+-	      /* Nonexclusive feature selectors come in even/odd pairs to turn a setting on/off
+-	       * respectively, so we mask out the low-order bit when checking for "duplicates"
+-	       * (selectors referring to the same feature setting) here. */
+-	      (!current_features.arrayZ[i].is_exclusive && ((current_features.arrayZ[i].setting & ~1) != (current_features.arrayZ[j].setting & ~1))))
++	  /* The latest request of a feature type wins. */
++	  if (current_features.arrayZ[i].type != current_features.arrayZ[j].type)
+ 	    current_features.arrayZ[++j] = current_features.arrayZ[i];
+ 	current_features.shrink (j + 1);
+       }
+--- a/src/hb-aat-map.hh
++++ b/src/hb-aat-map.hh
+@@ -72,8 +72,6 @@
+       const feature_info_t *a = (const feature_info_t *) pa;
+       const feature_info_t *b = (const feature_info_t *) pb;
+       if (a->type != b->type) return (a->type < b->type ? -1 : 1);
+-      if (!a->is_exclusive &&
+-	  (a->setting & ~1) != (b->setting & ~1)) return (a->setting < b->setting ? -1 : 1);
+       return (a->seq > b->seq ? -1 : a->seq < b->seq ? 1 : 0);
+     }
+ 

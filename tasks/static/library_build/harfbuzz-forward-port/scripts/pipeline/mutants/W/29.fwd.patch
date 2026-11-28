@@ -1,0 +1,12 @@
+--- a/src/hb-buffer.hh
++++ b/src/hb-buffer.hh
+@@ -434,6 +434,9 @@
+       return;
+     }
+     merge_out_clusters_impl (start, end);
++    /* The last glyph of the merged range is unsafe to break at every level. */
++    if (likely (successful))
++      out_info[end - 1].mask |= HB_GLYPH_FLAG_UNSAFE_TO_BREAK | HB_GLYPH_FLAG_UNSAFE_TO_CONCAT;
+   }
+   HB_INTERNAL void merge_out_clusters_impl (unsigned int start, unsigned int end);
+   /* Merge clusters for deleting current glyph, and skip it. */

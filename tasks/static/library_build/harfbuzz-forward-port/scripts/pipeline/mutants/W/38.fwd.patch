@@ -1,0 +1,23 @@
+--- a/src/hb-ot-font.cc
++++ b/src/hb-ot-font.cc
+@@ -889,9 +889,17 @@
+ 			  hb_font_extents_t *metrics,
+ 			  void *user_data HB_UNUSED)
+ {
+-  return _hb_ot_metrics_get_position_common (font, HB_OT_METRICS_TAG_HORIZONTAL_ASCENDER, &metrics->ascender) &&
+-	 _hb_ot_metrics_get_position_common (font, HB_OT_METRICS_TAG_HORIZONTAL_DESCENDER, &metrics->descender) &&
+-	 _hb_ot_metrics_get_position_common (font, HB_OT_METRICS_TAG_HORIZONTAL_LINE_GAP, &metrics->line_gap);
++  bool ret = _hb_ot_metrics_get_position_common (font, HB_OT_METRICS_TAG_HORIZONTAL_ASCENDER, &metrics->ascender) &&
++	     _hb_ot_metrics_get_position_common (font, HB_OT_METRICS_TAG_HORIZONTAL_DESCENDER, &metrics->descender) &&
++	     _hb_ot_metrics_get_position_common (font, HB_OT_METRICS_TAG_HORIZONTAL_LINE_GAP, &metrics->line_gap);
++  /* Round the font extents outward too when the scale is not a whole number of ems. */
++  int upem = (int) font->face->get_upem ();
++  if (ret && upem && font->y_scale % upem)
++  {
++    metrics->ascender += font->y_scale > 0 ? 1 : -1;
++    metrics->descender -= font->y_scale > 0 ? 1 : -1;
++  }
++  return ret;
+ }
+ 
+ #ifndef HB_NO_VERTICAL

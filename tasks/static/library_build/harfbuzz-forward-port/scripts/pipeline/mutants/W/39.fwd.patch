@@ -1,0 +1,11 @@
+--- a/src/hb-geometry.hh
++++ b/src/hb-geometry.hh
+@@ -99,7 +99,7 @@
+ 
+   hb_glyph_extents_t to_glyph_extents (bool xneg = false, bool yneg = false) const
+   {
+-    if (unlikely (is_void ()))
++    if (unlikely (is_empty ()))
+       return hb_glyph_extents_t {0, 0, 0, 0};
+ 
+     double x0 = round ((double) xmin);

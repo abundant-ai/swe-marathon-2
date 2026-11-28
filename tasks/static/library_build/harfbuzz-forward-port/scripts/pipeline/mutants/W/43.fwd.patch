@@ -1,0 +1,21 @@
+--- a/src/hb-buffer.cc
++++ b/src/hb-buffer.cc
+@@ -362,7 +362,7 @@
+   glyph->mask = 0;
+   glyph->cluster = cluster;
+   if (unlikely (have_positions))
+-    hb_memset (&pos[len], 0, sizeof (pos[len]));
++    hb_memset (pos, 0, sizeof (pos[0]) * (len + 1));
+ 
+   len++;
+ }
+@@ -1925,8 +1925,7 @@
+     } while (next < limit);
+     buffer->len = out - buffer->info;
+     if (unlikely (buffer->have_positions))
+-      hb_memset (buffer->pos + start, 0,
+-		 (buffer->len - start) * sizeof (buffer->pos[0]));
++      hb_memset (buffer->pos, 0, buffer->len * sizeof (buffer->pos[0]));
+   }
+ 
+   /* Add post-context */

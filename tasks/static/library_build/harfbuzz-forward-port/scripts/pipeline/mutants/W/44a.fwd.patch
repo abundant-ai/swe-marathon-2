@@ -1,0 +1,11 @@
+--- a/src/hb-ot-metrics.cc
++++ b/src/hb-ot-metrics.cc
+@@ -293,7 +293,7 @@
+ 
+   case HB_OT_METRICS_TAG_VERTICAL_ASCENDER:
+     hb_font_get_extents_for_direction (font, HB_DIRECTION_TTB, &font_extents);
+-    *position = font_extents.ascender;
++    *position = font_extents.descender;
+     break;
+ 
+   case HB_OT_METRICS_TAG_HORIZONTAL_DESCENDER:

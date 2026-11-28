@@ -1,0 +1,102 @@
+--- a/src/hb-font.cc
++++ b/src/hb-font.cc
+@@ -2124,20 +2124,6 @@
+   return font;
+ }
+ 
+-static void
+-_hb_font_init_variations (hb_font_t *font HB_UNUSED, hb_face_t *face HB_UNUSED)
+-{
+-#ifndef HB_NO_VAR
+-  if (likely (face))
+-  {
+-    if (face->index >> 16)
+-      hb_font_set_var_named_instance (font, (face->index >> 16) - 1);
+-    else
+-      hb_font_set_variations (font, nullptr, 0);
+-  }
+-#endif
+-}
+-
+ /**
+  * hb_font_create:
+  * @face: a face.
+@@ -2162,25 +2148,14 @@
+ 
+   hb_font_set_funcs_using (font, nullptr);
+ 
+-  _hb_font_init_variations (font, face);
+-
+-  return font;
+-}
+-
+-hb_font_t *
+-hb_font_create_without_funcs_or_fail (hb_face_t *face)
+-{
+-  hb_font_t *font = _hb_font_create (face);
+-  if (unlikely (font == hb_font_get_empty ()))
+-    return nullptr;
+-
+-  _hb_font_init_variations (font, face);
+-
+ #ifndef HB_NO_VAR
+-  if (unlikely (font->num_coords != hb_ot_var_get_axis_count (font->face)))
++  // Initialize variations.
++  if (likely (face))
+   {
+-    hb_font_destroy (font);
+-    return nullptr;
++    if (face->index >> 16)
++      hb_font_set_var_named_instance (font, (face->index >> 16) - 1);
++    else
++      hb_font_set_variations (font, nullptr, 0);
+   }
+ #endif
+ 
+--- a/src/hb-font.h
++++ b/src/hb-font.h
+@@ -1115,28 +1115,6 @@
+ 
+ HB_EXTERN hb_font_t *
+ hb_font_create (hb_face_t *face);
+-
+-/**
+- * hb_font_create_without_funcs_or_fail:
+- * @face: (nullable): a face
+- *
+- * Constructs a new font object with the same initial properties as
+- * hb_font_create(), but without setting up default font functions.
+- * The face is referenced and made immutable, and the scale and variation
+- * coordinates are initialized as in hb_font_create().
+- *
+- * This is useful for clients that install their own font functions with
+- * hb_font_set_funcs() or hb_font_set_funcs_using(), to avoid the overhead
+- * of setting up default font functions only to replace them immediately.
+- * The `HB_FONT_FUNCS` environment variable is not consulted.
+- *
+- * Return value: (transfer full) (nullable): The new font object, or `NULL`
+- * if allocation fails
+- *
+- * Since: 15.2.0
+- **/
+-HB_EXTERN hb_font_t *
+-hb_font_create_without_funcs_or_fail (hb_face_t *face);
+ 
+ HB_EXTERN hb_font_t *
+ hb_font_create_sub_font (hb_font_t *parent);
+--- a/src/hb-ft.cc
++++ b/src/hb-ft.cc
+@@ -1487,12 +1487,7 @@
+   /* If face creation failed, @destroy has already been called. */
+   if (unlikely (hb_face_is_immutable (face)))
+     return hb_font_get_empty ();
+-  font = hb_font_create_without_funcs_or_fail (face);
+-  if (unlikely (!font))
+-  {
+-    hb_face_destroy (face);
+-    return hb_font_get_empty ();
+-  }
++  font = hb_font_create (face);
+   _hb_ft_font_set_funcs (font, ft_face, false);
+   hb_ft_font_changed (font);
+   hb_face_destroy (face);

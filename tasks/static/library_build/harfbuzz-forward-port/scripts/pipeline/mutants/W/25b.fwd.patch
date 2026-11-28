@@ -1,0 +1,14 @@
+--- a/src/hb-aat-layout-kerx-table.hh
++++ b/src/hb-aat-layout-kerx-table.hh
+@@ -741,6 +741,11 @@
+ 	o.y_offset = hb_saturate_add (o.y_offset, base_offset);
+       else
+ 	o.x_offset = hb_saturate_add (o.x_offset, base_offset);
++      /* The mark also takes the marked glyph's offset along the line. */
++      if (HB_DIRECTION_IS_HORIZONTAL (buffer->props.direction))
++	o.x_offset = hb_saturate_add (o.x_offset, buffer->pos[mark].x_offset);
++      else
++	o.y_offset = hb_saturate_add (o.y_offset, buffer->pos[mark].y_offset);
+       o.attach_type() = OT::Layout::GPOS_impl::ATTACH_TYPE_MARK;
+       o.attach_chain() = attach_chain;
+       buffer->scratch_flags |= HB_BUFFER_SCRATCH_FLAG_HAS_GPOS_ATTACHMENT;

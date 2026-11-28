@@ -1,0 +1,26 @@
+--- a/src/hb-aat-layout-common.hh
++++ b/src/hb-aat-layout-common.hh
+@@ -204,11 +204,10 @@
+       buffer_glyph_set->add_array (glyphs, count);
+     for (unsigned int i = 0; i < count; i++)
+     {
+-      bool at_end_of_text = buffer->idx == buffer->len;
+-      if (at_end_of_text)
+-	if (unlikely (!buffer->output_glyph (glyphs[i]))) return false;
++      /* Output first, then give the new glyph its properties. */
++      if (unlikely (!buffer->output_glyph (glyphs[i]))) return false;
+ 
+-      hb_glyph_info_t &info = at_end_of_text ? buffer->prev () : buffer->cur ();
++      hb_glyph_info_t &info = buffer->prev ();
+       if (glyphs[i] == DELETED_GLYPH)
+       {
+         buffer->scratch_flags |= HB_BUFFER_SCRATCH_FLAG_AAT_HAS_DELETED;
+@@ -222,8 +221,6 @@
+ 					  gdef.get_glyph_props (glyphs[i]));
+ #endif
+       }
+-      if (!at_end_of_text)
+-	if (unlikely (!buffer->output_glyph (glyphs[i]))) return false;
+     }
+     return true;
+   }

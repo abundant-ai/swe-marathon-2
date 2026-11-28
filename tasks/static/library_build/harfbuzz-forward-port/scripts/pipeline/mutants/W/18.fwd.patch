@@ -1,0 +1,14 @@
+--- a/src/hb-ot-shape.cc
++++ b/src/hb-ot-shape.cc
+@@ -199,7 +199,10 @@
+ #endif
+ 					      );
+ 
+-  plan.fallback_mark_positioning = plan.adjust_mark_positioning_when_zeroing &&
++  /* Marks are placed around their base, from its offset, also in fonts
++   * whose GPOS has no mark positioning. */
++  plan.fallback_mark_positioning = (plan.adjust_mark_positioning_when_zeroing ||
++				    (plan.apply_gpos && !plan.has_gpos_mark)) &&
+ 				   script_fallback_position;
+ 
+ #ifndef HB_NO_AAT_SHAPE

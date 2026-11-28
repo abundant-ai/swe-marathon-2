@@ -1,0 +1,19 @@
+--- a/src/hb-ot-layout-gsubgpos.hh
++++ b/src/hb-ot-layout-gsubgpos.hh
+@@ -905,8 +905,14 @@
+     /* Ignore hidden glyphs (like CGJ) during GPOS. */
+     ignore_hidden = c->table_index == 1;
+     mask = context_match ? -1 : c->lookup_mask;
+-    /* Per syllable matching is only for GSUB. */
+-    per_syllable = c->table_index == 0 && c->per_syllable;
++    /* Per syllable matching is only for GSUB.  While the shaper keeps
++     * syllables in the buffer (the syllable variable is allocated and no
++     * context lookup borrows it as a class cache), every GSUB lookup
++     * matches within one syllable, whatever its feature. */
++    per_syllable = c->table_index == 0 &&
++		   (c->per_syllable ||
++		    (c->new_syllables == (unsigned) -1 &&
++		     (c->buffer->allocated_var_bits & (1u << 3))));
+     syllable = 0;
+   }
+ 

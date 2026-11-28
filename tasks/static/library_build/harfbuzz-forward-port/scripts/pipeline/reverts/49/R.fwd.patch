@@ -1,0 +1,290 @@
+--- a/src/hb-ot-face-table-list.hh
++++ b/src/hb-ot-face-table-list.hh
+@@ -106,7 +106,7 @@
+ HB_OT_ACCELERATOR (OT, GDEF)
+ HB_OT_ACCELERATOR (OT, GSUB)
+ HB_OT_ACCELERATOR (OT, GPOS)
+-HB_OT_TABLE (OT, JSTF)
++//HB_OT_TABLE (OT, JSTF)
+ #endif
+ 
+ /* OpenType baseline. */
+--- a/src/hb-ot-layout-jstf-table.hh
++++ b/src/hb-ot-layout-jstf-table.hh
+@@ -166,20 +166,6 @@
+   bool has_default_lang_sys () const               { return defaultLangSys != 0; }
+   const JstfLangSys& get_default_lang_sys () const { return this+defaultLangSys; }
+ 
+-  unsigned get_extender_glyphs (unsigned        start_offset,
+-				unsigned       *glyphs_count /* IN/OUT.  May be NULL */,
+-				hb_codepoint_t *glyphs       /* OUT.     May be NULL */) const
+-  {
+-    const ExtenderGlyphs<Types> &extenders = this+extenderGlyphs;
+-    if (glyphs_count && glyphs)
+-    {
+-      + extenders.as_array ().sub_array (start_offset, glyphs_count)
+-      | hb_sink (hb_array (glyphs, *glyphs_count))
+-      ;
+-    }
+-    return extenders.len;
+-  }
+-
+   bool sanitize (hb_sanitize_context_t *c,
+ 		 const Record_sanitize_closure_t * = nullptr) const
+   {
+@@ -241,8 +227,12 @@
+     }
+     return this->len;
+   }
+-  const JstfScript<Types> &find_script (const void *base, hb_tag_t tag) const
+-  { return base+this->bsearch (tag).offset; }
++  const JstfScript<Types>& get_script (const void *base, unsigned int i) const
++  { return base+(*this)[i].offset; }
++  bool find_index (hb_tag_t tag, unsigned int *index) const
++  {
++    return this->bfind (tag, index, HB_NOT_FOUND_STORE, Index::NOT_FOUND_INDEX);
++  }
+ };
+ 
+ 
+@@ -262,26 +252,32 @@
+ #endif
+     return scriptList.len;
+   }
+-  unsigned get_lang_sys_count (hb_tag_t script) const
++  const Tag& get_script_tag (unsigned int i) const
+   {
+ #ifndef HB_NO_BEYOND_64K
+-    if (has_script_list2 ())
+-      return get_script_list2 ().find_script (this, script).get_lang_sys_count ();
++    if (has_script_list2 ()) return get_script_list2 ().get_tag (i);
+ #endif
+-    return scriptList.find_script (this, script).get_lang_sys_count ();
++    return scriptList.get_tag (i);
+   }
+-
+-  unsigned get_extender_glyphs (hb_tag_t        script,
+-				unsigned        start_offset,
+-				unsigned       *glyphs_count /* IN/OUT.  May be NULL */,
+-				hb_codepoint_t *glyphs       /* OUT.     May be NULL */) const
++  unsigned int get_script_tags (unsigned int start_offset,
++				unsigned int *script_count /* IN/OUT */,
++				hb_tag_t     *script_tags /* OUT */) const
+   {
+ #ifndef HB_NO_BEYOND_64K
+     if (has_script_list2 ())
+-      return get_script_list2 ().find_script (this, script).get_extender_glyphs (start_offset, glyphs_count, glyphs);
++      return get_script_list2 ().get_tags (start_offset, script_count, script_tags);
+ #endif
+-    return scriptList.find_script (this, script).get_extender_glyphs (start_offset, glyphs_count, glyphs);
++    return scriptList.get_tags (start_offset, script_count, script_tags);
+   }
++  template <typename Types>
++  const JstfScript<Types>& get_script (unsigned int i) const;
++  bool find_script_index (hb_tag_t tag, unsigned int *index) const
++  {
++#ifndef HB_NO_BEYOND_64K
++    if (has_script_list2 ()) return get_script_list2 ().find_index (tag, index);
++#endif
++    return scriptList.find_index (tag, index);
++  }
+ 
+   bool sanitize (hb_sanitize_context_t *c) const
+   {
+@@ -322,7 +318,19 @@
+   DEFINE_SIZE_ARRAY (6, scriptList);
+ };
+ 
++template <>
++inline const JstfScript<Layout::SmallTypes>&
++JSTF::get_script<Layout::SmallTypes> (unsigned int i) const
++{ return scriptList.get_script (this, i); }
+ 
++#ifndef HB_NO_BEYOND_64K
++template <>
++inline const JstfScript<Layout::MediumTypes>&
++JSTF::get_script<Layout::MediumTypes> (unsigned int i) const
++{ return get_script_list2 ().get_script (this, i); }
++#endif
++
++
+ } /* namespace OT */
+ 
+ 
+--- a/src/hb-ot-layout.cc
++++ b/src/hb-ot-layout.cc
+@@ -47,7 +47,7 @@
+ #include "hb-ot-layout-gsub-table.hh"
+ #include "hb-ot-layout-gpos-table.hh"
+ #include "hb-ot-layout-base-table.hh"
+-#include "hb-ot-layout-jstf-table.hh"
++#include "hb-ot-layout-jstf-table.hh" // Just so we compile it; unused otherwise.
+ #include "hb-ot-name-table.hh"
+ #include "hb-ot-os2-table.hh"
+ 
+@@ -2173,13 +2173,14 @@
+   apply_string<GSUBProxy> (c, lookup, accel);
+ }
+ 
+-#if !defined(HB_NO_BASE) || !defined(HB_NO_LAYOUT_RARELY_USED)
++#ifndef HB_NO_BASE
++
+ static void
+-choose_layout_tags (hb_script_t    script,
+-		    hb_language_t  language,
+-		    hb_tag_t      *script_tag,
+-		    hb_tag_t      *language_tag,
+-                    const OT::Axis *base_axis = nullptr)
++choose_base_tags (hb_script_t    script,
++		  hb_language_t  language,
++		  hb_tag_t      *script_tag,
++		  hb_tag_t      *language_tag,
++                  const OT::Axis *base_axis = nullptr)
+ {
+   hb_tag_t script_tags[HB_OT_MAX_TAGS_PER_SCRIPT];
+   unsigned script_count = ARRAY_LENGTH (script_tags);
+@@ -2195,10 +2196,7 @@
+                 script_count ? script_tags[script_count - 1] : HB_OT_TAG_DEFAULT_SCRIPT;
+   *language_tag = language_count ? language_tags[language_count - 1] : HB_OT_TAG_DEFAULT_LANGUAGE;
+ }
+-#endif
+ 
+-#ifndef HB_NO_BASE
+-
+ /**
+  * hb_ot_layout_get_font_extents:
+  * @font: a font
+@@ -2276,8 +2274,8 @@
+ 				hb_font_extents_t *extents)
+ {
+   hb_tag_t script_tag, language_tag;
+-  choose_layout_tags (script, language, &script_tag, &language_tag,
+-                      &font->face->table.BASE->get_axis (direction));
++  choose_base_tags (script, language, &script_tag, &language_tag,
++                    &font->face->table.BASE->get_axis (direction));
+   return hb_ot_layout_get_font_extents (font,
+ 					direction,
+ 					script_tag,
+@@ -2412,8 +2410,8 @@
+ 			    hb_position_t               *coord        /* OUT.  May be NULL. */)
+ {
+   hb_tag_t script_tag, language_tag;
+-  choose_layout_tags (script, language, &script_tag, &language_tag,
+-                      &font->face->table.BASE->get_axis (direction));
++  choose_base_tags (script, language, &script_tag, &language_tag,
++                    &font->face->table.BASE->get_axis (direction));
+   return hb_ot_layout_get_baseline (font,
+ 				    baseline_tag,
+ 				    direction,
+@@ -2674,8 +2672,8 @@
+ 					  hb_position_t               *coord        /* OUT */)
+ {
+   hb_tag_t script_tag, language_tag;
+-  choose_layout_tags (script, language, &script_tag, &language_tag,
+-                      &font->face->table.BASE->get_axis (direction));
++  choose_base_tags (script, language, &script_tag, &language_tag,
++                    &font->face->table.BASE->get_axis (direction));
+   hb_ot_layout_get_baseline_with_fallback (font,
+ 					   baseline_tag,
+ 					   direction,
+@@ -2864,43 +2862,6 @@
+   }
+   return ret;
+ }
+-
+-/**
+- * hb_ot_layout_get_extender_glyphs:
+- * @face: The #hb_face_t to work on
+- * @script: the script to get extender glyphs for.
+- * @language: (nullable): the language, currently unused.
+- * @start_offset: offset of the first extender glyph to retrieve
+- * @glyphs_count: (inout) (nullable): Input = the maximum number of extender glyphs to return;
+- *                Output = the actual number of extender glyphs returned (may be zero).
+- * @glyphs: (out caller-allocates) (array length=glyphs_count) (nullable): A glyphs buffer.
+- *          Extender glyphs associated with the script tag.
+- *
+- * Fetches extender glyphs for a given script and language. Extender glyphs
+- * are used in certain scripts to extend the length of a word for
+- * justification purposes, such as variants of tatweel (U+0640) for the
+- * Arabic script.
+- *
+- * Only glyphs listed in the JSTF table are returned; clients can handle the
+- * default tatweel glyph separately.
+- *
+- * Return value: Total number of extender glyphs for the given script.
+- *
+- * Since: 15.2.0
+- */
+-HB_EXTERN unsigned
+-hb_ot_layout_get_extender_glyphs (hb_face_t      *face,
+-				  hb_script_t     script,
+-				  hb_language_t   language,
+-				  unsigned        start_offset,
+-				  unsigned       *glyphs_count /* IN/OUT.  May be NULL */,
+-				  hb_codepoint_t *glyphs       /* OUT.     May be NULL */)
+-{
+-  hb_tag_t script_tag, language_tag;
+-  choose_layout_tags (script, language, &script_tag, &language_tag);
+-  // Extender glyphs are per-script in the JSTF table.
+-  return face->table.JSTF->get_extender_glyphs (script_tag, start_offset, glyphs_count, glyphs);
+-}
+ #endif
+ 
+ 
+--- a/src/hb-ot-layout.h
++++ b/src/hb-ot-layout.h
+@@ -550,17 +550,6 @@
+ 					  hb_language_t                language,
+ 					  hb_position_t               *coord        /* OUT */);
+ 
+-/*
+- * JSTF
+- */
+-HB_EXTERN unsigned
+-hb_ot_layout_get_extender_glyphs (hb_face_t      *face,
+-				  hb_script_t     script,
+-				  hb_language_t   language,
+-				  unsigned        start_offset,
+-				  unsigned       *glyphs_count /* IN/OUT.  May be NULL */,
+-				  hb_codepoint_t *glyphs       /* OUT.     May be NULL */);
+-
+ HB_END_DECLS
+ 
+ #endif /* HB_OT_LAYOUT_H */
+--- a/src/test-jstf.cc
++++ b/src/test-jstf.cc
+@@ -39,7 +39,6 @@
+ int
+ main (int argc, char **argv)
+ {
+-  /* This is a test mostly for JSTFv1.1, JSTFv1 is tested in test-ot-layout.cc */
+   static const char data[] = {
+     0, 1, 0, 1,				/* version 1.1 */
+     0, 0,				/* JstfScriptRecord count */
+@@ -57,21 +56,14 @@
+ #ifndef HB_NO_BEYOND_64K
+   hb_always_assert (jstf.get_length ());
+   hb_always_assert (jstf->get_script_count () == 1);
+-  hb_always_assert (!jstf->get_lang_sys_count (HB_TAG ('a','r','a','b')));
+-  hb_always_assert (0 == hb_ot_layout_get_extender_glyphs (face, HB_SCRIPT_BRAHMI, HB_LANGUAGE_INVALID, 0, NULL, NULL));
+-  hb_always_assert (1 == hb_ot_layout_get_extender_glyphs (face, HB_SCRIPT_ARABIC, HB_LANGUAGE_INVALID, 0, NULL, NULL));
+-  hb_codepoint_t buffer[2];
+-  buffer[0] = HB_CODEPOINT_INVALID;
+-  buffer[1] = HB_CODEPOINT_INVALID;
+-  unsigned glyphs_count = 2;
+-  hb_ot_layout_get_extender_glyphs (face, HB_SCRIPT_ARABIC, HB_LANGUAGE_INVALID, 0, &glyphs_count, buffer);
+-  hb_always_assert (glyphs_count == 1);
+-  hb_always_assert (buffer[0] == 0x10001);
+-  hb_always_assert (buffer[1] == HB_CODEPOINT_INVALID);
++  hb_always_assert (jstf->get_script_tag (0) == HB_TAG ('a','r','a','b'));
++  unsigned index;
++  hb_always_assert (jstf->find_script_index (HB_TAG ('a','r','a','b'), &index));
++  hb_always_assert (index == 0);
++  hb_always_assert (!jstf->get_script<OT::Layout::MediumTypes> (0).get_lang_sys_count ());
+ #else
+   hb_always_assert (jstf.get_length ());
+   hb_always_assert (!jstf->get_script_count ());
+-  hb_always_assert (0 == hb_ot_layout_get_extender_glyphs (face, HB_SCRIPT_ARABIC, HB_LANGUAGE_INVALID, 0, NULL, NULL));
+ #endif
+   jstf.destroy ();
+   hb_face_destroy (face);

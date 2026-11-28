@@ -1,0 +1,5 @@
+unit	reason
+47a	superseded: in 15.2.0 hb_font_set_face() is the no-op of 47b, so nothing of 15.0.0's behaviour remains observable except a deprecation attribute, which no output shows
+28	unobservable: the syllabic shapers already set the flags 15.2.0 adds at the graphemes level, so only removals differ, which the note does not state (0 differences in 6,109 probed texts)
+30	unreachable: the changed branch needs a normalized coordinate below -1, and every public way to set variations clamps to [-1, 1] before the avar maps
+50	rule not in the materials: format 19 takes its metrics from CBLC index subtable formats 2 and 5, which only the EBLC chapter defines; that chapter is not among the shipped specification notes and 14.3.0 does not implement those formats

@@ -1,0 +1,11 @@
+--- a/src/hb-face.cc
++++ b/src/hb-face.cc
+@@ -290,7 +290,7 @@
+ 			unsigned int  index)
+ {
+   unsigned num_faces = hb_face_count (blob);
+-  if ((index & 0xFFFFu) >= num_faces)
++  if (!(index >> 16) && index >= num_faces)
+     return nullptr;
+ 
+   hb_face_t *face = hb_face_create (blob, index);

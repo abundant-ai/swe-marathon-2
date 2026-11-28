@@ -1,0 +1,14 @@
+--- a/src/hb-ot-shape-normalize.cc
++++ b/src/hb-ot-shape-normalize.cc
+@@ -217,8 +217,9 @@
+       }
+       else
+       {
+-	/* Just pass on the two characters separately, let GSUB do its magic. */
+-	set_glyph (buffer->cur(), font, buffer->not_found);
++	/* The font has no glyph for this sequence: its base takes the
++	 * not-found glyph, and the selector passes on separately. */
++	buffer->cur().normalizer_glyph_index() = buffer->not_found;
+ 	(void) buffer->next_glyph ();
+ 
+         buffer->scratch_flags |= HB_BUFFER_SCRATCH_FLAG_HAS_VARIATION_SELECTOR_FALLBACK;

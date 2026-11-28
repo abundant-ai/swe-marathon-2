@@ -1,0 +1,11 @@
+--- a/src/hb-aat-layout-trak-table.hh
++++ b/src/hb-aat-layout-trak-table.hh
+@@ -235,7 +235,7 @@
+     {
+       hb_position_t advance_to_add = get_h_tracking (c->font, track);
+       foreach_grapheme (buffer, start, end)
+-	buffer->pos[start].x_advance = hb_saturate_add (buffer->pos[start].x_advance, advance_to_add);
++	buffer->pos[start].x_advance = hb_saturate_sub (buffer->pos[start].x_advance, advance_to_add);
+     }
+     else
+     {

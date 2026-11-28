@@ -1,0 +1,15 @@
+--- a/src/hb-ot-shaper-use.cc
++++ b/src/hb-ot-shaper-use.cc
+@@ -206,7 +206,12 @@
+   unsigned int count = buffer->len;
+   hb_glyph_info_t *info = buffer->info;
+   for (unsigned int i = 0; i < count; i++)
++  {
+     info[i].use_category() = hb_use_get_category (info[i].codepoint);
++    /* NO-BREAK SPACE is a space too: no base for a dependent vowel. */
++    if (info[i].codepoint == 0x00A0u)
++      info[i].use_category() = USE(SP);
++  }
+ }
+ 
+ static void

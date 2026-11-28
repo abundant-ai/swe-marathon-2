@@ -1,0 +1,14 @@
+--- a/src/hb-ot-shaper-hangul.cc
++++ b/src/hb-ot-shaper-hangul.cc
+@@ -228,8 +228,10 @@
+       }
+       else
+       {
+-	/* No valid syllable as base for tone mark; try to insert dotted circle. */
++	/* No valid syllable as base for tone mark; try to insert dotted circle.
++	 * A tone mark that opens the text gets the circle of a broken cluster. */
+ 	if (!(buffer->flags & HB_BUFFER_FLAG_DO_NOT_INSERT_DOTTED_CIRCLE) &&
++	    !(buffer->idx == 0 && !buffer->context_len[0]) &&
+ 	    font->has_glyph (0x25CCu))
+ 	{
+ 	  hb_codepoint_t chars[2];

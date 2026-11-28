@@ -1,0 +1,11 @@
+--- a/src/hb-ot-shape.cc
++++ b/src/hb-ot-shape.cc
+@@ -172,7 +172,7 @@
+ 
+   bool needs_kerning HB_UNUSED = !has_gpos_kern || !plan.apply_gpos;
+ #ifndef HB_NO_AAT_SHAPE
+-  if (needs_kerning && has_kerx)
++  if (has_kerx)
+     plan.apply_kerx = true;
+ #endif
+ #ifndef HB_NO_OT_KERN

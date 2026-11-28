@@ -1,0 +1,10 @@
+# Private material never goes to this public repository (notes/DESIGN.md, section 4).
+# The working copy is `private/` (its own git repository, backed up as a bundle in harbor-lh);
+# packaging stages the part each step's verifier needs into that step's tests/private/.
+private/
+steps/*/tests/private/
+# Oracle patches are generated from the upstream tags when the task is packaged.
+steps/*/solution/private/
+# Local experiments, trees, builds and bundles.
+experiment/
+build/

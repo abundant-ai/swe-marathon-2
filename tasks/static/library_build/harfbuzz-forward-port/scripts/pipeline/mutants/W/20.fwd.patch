@@ -1,0 +1,11 @@
+--- a/src/hb-kern.hh
++++ b/src/hb-kern.hh
+@@ -94,7 +94,7 @@
+       if (likely (!kern))
+ 	goto skip;
+ 
+-      if (crossStream && kern == -0x8000)
++      if (kern == -0x8000)
+       {
+ 	pos[j].attach_type() = OT::Layout::GPOS_impl::ATTACH_TYPE_NONE;
+ 	pos[j].attach_chain() = 0;

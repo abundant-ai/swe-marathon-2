@@ -1,0 +1,58 @@
+unit	window	release	family	commits	note
+26	A	15.0.0	F4	c14ad7c6c	AAT insertion at the end of the text
+11	A	15.0.0	F1	03c3e45df	Arabic Windows-1256 fallback on all platforms
+30	A	15.0.0	F6	efdb61f41	avar maps that repeat boundary entries
+36	A	15.0.0	F8	@stack36	saturating positions and extents (the 2026-08-12 stack)
+33	A	15.0.0	F7	cdbe72ca8 bf93d8671	Unicode 18.0 data and scripts
+35	A	15.0.0	F7	d84e253c0	fonupa maps to UPPH
+37	A	15.0.0	F8	873dbc1e3 3c8a65ed9	overflow fixes in extents scaling, slant and emboldening
+16	A	15.0.0	F2	2994c4d0a	out-of-range glyph ids (candidate)
+47a	A	15.0.0	F8	ef64f7ea8 5365d272d	hb_font_set_face() resets font funcs, deprecated
+19	B	15.1.0	F3	e8a7f183f	COLR extents and marks with empty layers
+10a	B	15.1.0	F1	d0b38a793	Arabic fallback: ligatures with a missing component
+10b	B	15.1.0	F1	31e892188	Arabic fallback: marks in legacy fonts (candidate)
+25a	B	15.1.0	F4	88e5077a8 a92e0996d 90417543f	kerx formats 1 and 2
+25b	B	15.1.0	F4	436f067b2	kerx format 4 mark positioning
+25c	B	15.1.0	F4	ec4a38c4a	kern and mort with a non-first initial state
+31	B	15.1.0	F6	c20766259	gvar intermediate tuples
+34	B	15.1.0	F7	0e6a9c81f	Indic shaping of the Unicode 18 additions
+44a	B	15.1.0	F8	879be16fd	fallback vertical descender without vhea
+44b	B	15.1.0	F8	f030bd218	hanging baseline fallback
+45	B	15.1.0	F8	041e5a311	collect_glyph_alternates garbage
+46	B	15.1.0	F8	bd306afed	hb_face_create_or_fail() named-instance bits
+51	B	15.1.0	F8	2db1b3ab9	deserialize2 functions
+1	C	15.2.0	F1	5795f8699	Indic init after a letter or mark in the pre-context
+2	C	15.2.0	F1	0ff5835ba	USE: no space as the base of a dependent vowel (candidate)
+3	C	15.2.0	F1	20b05e0df	USE word boundaries for positional forms
+4	C	15.2.0	F1	e84513664	Khmer: one Coeng Ro, first or second coeng only
+5	C	15.2.0	F1	59fa8f0c2	Hangul tone mark at text start
+6	C	15.2.0	F1	74fc8c86c 2831a8a45	dotted circles keep their advance without GDEF
+7	C	15.2.0	F1	955f97511	vowel constraints across default ignorables
+8	C	15.2.0	F1	7374f9c61	Hebrew composes with mark only under DFLT
+9	C	15.2.0	F1	3df546b91 3aa3e2dba	Arabic stch tiles centred on short words and exact fits
+12	C	15.2.0	F2	b35dd1d4c	per-syllable lookups 15 syllables later (alternative fd5702517)
+13	C	15.2.0	F2	bc7dff9a5	precomposed characters in text with no marks
+14	C	15.2.0	F2	5d9dfde25	a global request overrides earlier ranged requests
+15	C	15.2.0	F2	97d879446	missing character + variation selector: not-found glyph
+17	C	15.2.0	F3	1e055f1e6	GPOS marks and an earlier base
+18	C	15.2.0	F3	641971dd1	fallback mark positioning uses the base x offset
+20	C	15.2.0	F4	45c39d963 2701661a3	cross-stream kern: reset value and axis scale
+21	C	15.2.0	F4	86ea053f0	kern in vertical text when vkrn is requested
+22	C	15.2.0	F4	45c7759a0	trak in vertical text
+23	C	15.2.0	F4	46174bb6b	kerx with GPOS lacking a kerning feature
+24	C	15.2.0	F4	f346ea17a	AAT: later feature request wins
+27	C	15.2.0	F5	e079f0563	unsafe-to-break with cross-stream kerning
+28	C	15.2.0	F5	7f0fe3561	unsafe-to-break at the graphemes level (candidate)
+29	C	15.2.0	F5	8e6c16eef	archaic trailing jamo flags (candidate)
+38	C	15.2.0	F8	f5e925cd2 ec4f0d9dd	extents round outward after scaling
+39	C	15.2.0	F8	46ab0d095	empty glyphs have zero extents
+40a	C	15.2.0	F8	b14a94e52	OS/2 optical size in points
+40b	C	15.2.0	F8	4bcdffbdf	slant includes synthetic slant
+40c	C	15.2.0	F8	2bbe878a7	STAT values of older sibling fonts skipped
+41	C	15.2.0	F8	9644ff2a0	collect_unicodes and cmap format 13
+42	C	15.2.0	F8	7684854bb	nested glyf components with anchor points
+43	C	15.2.0	F8	d44ad4f5f	zero positions for items added after the first call
+47b	C	15.2.0	F8	d71578d1d	hb_font_set_face() does nothing
+48	C	15.2.0	F8	e56305868	hb_font_create_without_funcs_or_fail()
+49	C	15.2.0	F8	aa7a824cc	hb_ot_layout_get_extender_glyphs()
+50	C	15.2.0	F8	ebb586874	CBDT format 19

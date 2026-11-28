@@ -1,0 +1,11 @@
+--- a/src/hb-ot-cmap-table.hh
++++ b/src/hb-ot-cmap-table.hh
+@@ -907,7 +907,7 @@
+ 	start++;
+ 	gid++;
+       }
+-      if (unlikely ((unsigned int) gid >= num_glyphs)) continue;
++      if (T::increment && unlikely ((unsigned int) gid >= num_glyphs)) continue;
+       /* Format 13 maps a whole group to one glyph; only clamp groups whose
+        * glyph ids increase, keeping the last one below num_glyphs. */
+       if (T::increment && unlikely ((unsigned int) (gid + end - start) >= num_glyphs))

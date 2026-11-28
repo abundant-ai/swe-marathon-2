@@ -1,0 +1,39 @@
+--- a/src/OT/Layout/GSUB/MultipleSubstFormat1.hh
++++ b/src/OT/Layout/GSUB/MultipleSubstFormat1.hh
+@@ -103,6 +103,19 @@
+     ;
+   }
+ 
++  void
++  collect_glyph_alternates (hb_map_t  *alternate_count /* IN/OUT */,
++			    hb_map_t  *alternate_glyphs /* IN/OUT */) const
++  {
++    + hb_iter (sequence)
++    | hb_map (hb_add (this))
++    | hb_zip (this+coverage)
++    | hb_apply ([&] (const hb_pair_t<const Sequence<Types> &, hb_codepoint_t> _) {
++		  _.first.collect_glyph_alternates (_.second, alternate_count, alternate_glyphs);
++		})
++    ;
++  }
++
+   const Coverage &get_coverage () const { return this+coverage; }
+ 
+   bool would_apply (hb_would_apply_context_t *c) const
+--- a/src/OT/Layout/GSUB/Sequence.hh
++++ b/src/OT/Layout/GSUB/Sequence.hh
+@@ -41,6 +41,14 @@
+   void collect_glyphs (hb_collect_glyphs_context_t *c) const
+   { c->output->add_array (substitute.arrayZ, substitute.len); }
+ 
++  void collect_glyph_alternates (hb_codepoint_t  gid,
++				 hb_map_t       *alternate_count /* IN/OUT */,
++				 hb_map_t       *alternate_glyphs /* IN/OUT */) const
++  {
++    if (substitute.len == 1)
++      _hb_collect_glyph_alternates_add (gid, substitute.arrayZ[0], alternate_count, alternate_glyphs);
++  }
++
+   bool apply (hb_ot_apply_context_t *c) const
+   {
+     TRACE_APPLY (this);
