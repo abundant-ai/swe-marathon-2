@@ -1724,6 +1724,116 @@ FEATURE_TRACES = {
 }
 
 
+def history_trace(amounts, edge=False):
+    """One principal's Transfers before a Login, inside the 30-minute window after it and once
+    it has lapsed, with the given amounts (before, inside..., after): the window's condition is
+    false, then true, then false again, so no engine without the history prints this stream.
+    With `edge`, the inside Transfers sit exactly 1,800 and 1,801 seconds after the Login."""
+
+    def build(r):
+        who, user = r.choice(pairs.PEOPLE), r.choice(pairs.USERS)
+        start = r.randint(10, 500)
+        before, *inside, after = amounts
+        lines = [pairs.line(start, *_transfer(before, user), "r1", scope=who)]
+        login = start + r.randint(2, 9)
+        lines.append(
+            pairs.line(
+                login, "Login", [("server", "s1"), ("user", user)], "r2", scope=who
+            )
+        )
+        ts = login + 1800 if edge else login
+        for i, amount in enumerate(inside):
+            ts = login + 1800 + i if edge else ts + r.randint(1, 20)
+            lines.append(
+                pairs.line(ts, *_transfer(amount, user), f"r{3 + i}", scope=who)
+            )
+        late = login + 1801 + r.randint(1, 900)
+        lines.append(
+            pairs.line(late, *_transfer(after, user), f"r{3 + len(inside)}", scope=who)
+        )
+        return lines
+
+    return build
+
+
+def _transfer(amount, user):
+    return "Transfer", [("amount", amount), ("user", user)]
+
+
+WITHIN_LOGIN = f"formerly within 30m {LOGIN_ANCHOR}"
+
+
+def history_rule(effect, *, cedar=None, temporal=True, n=""):
+    """One Transfer rule: an optional Cedar condition, then the 30-minute Login window."""
+    body = []
+    if cedar:
+        body.append(f"when {{ {cedar} }}")
+    if temporal:
+        body.append(f"when temporal {{\n    {WITHIN_LOGIN}\n}}")
+    tail = "\n" + "\n".join(body) if body else ""
+    return f'@id("@RID@{n}")\n{effect} (\n    {TRANSFER_SCOPE}\n){tail};\n'
+
+
+# Replay bundles whose streams need the history (section 4b of `select_cases.py` lets weak
+# cases of their family join their units). R: `formerly` with a Cedar condition, and a closed
+# window's edge; P: a provider call under `forbid` beside a plain `permit`, and a provider call
+# and a temporal condition in one rule; M: a `def temporal` window macro, and a `def cedar` macro
+# beside a temporal condition. A score of `amount * K` (K 2-9) is at least 100 for an
+# amount of 60 and at most 90 for 10, whatever K is.
+HISTORY_ANCHORS = {
+    "feat:04:formerly": (
+        "R",
+        {"policy.dw": history_rule("permit", cedar="context.input.amount > 15")},
+        history_trace((45, 45, 10, 45)),
+    ),
+    "feat:04:window-closed": (
+        "R",
+        {"policy.dw": history_rule("permit")},
+        history_trace((45, 45, 45, 45), edge=True),
+    ),
+    "feat:05:permit-and-forbid": (
+        "P",
+        {
+            "policy.dw": history_rule(
+                "forbid", cedar="Risk::Score(context.input.amount).score >= 100", n="_0"
+            )
+            + history_rule("permit", temporal=False, n="_1"),
+            "providers.json": providers(),
+        },
+        history_trace((60, 60, 10, 60)),
+    ),
+    "feat:05:composes": (
+        "P",
+        {
+            "policy.dw": history_rule(
+                "permit", cedar="Risk::Score(context.input.amount).score >= 100"
+            ),
+            "providers.json": providers(),
+        },
+        history_trace((60, 60, 10, 60)),
+    ),
+    "feat:06:template-expansion": (
+        "M",
+        {
+            "policy.dw": "def temporal seen_login(?w) { formerly within ?w "
+            f"{LOGIN_ANCHOR} }};\n\n"
+            + history_rule("permit", cedar="context.input.amount > 15").replace(
+                WITHIN_LOGIN, "seen_login(30m)"
+            )
+        },
+        history_trace((45, 45, 10, 45)),
+    ),
+    "feat:06:cedar-macro": (
+        "M",
+        {
+            "policy.dw": "def cedar big(?n) { ?n > 15 };\n\n"
+            + history_rule("permit", cedar="big(context.input.amount)")
+        },
+        history_trace((45, 45, 10, 45)),
+    ),
+}
+
+
 def write_features(seed: int, out, copies: int = 2) -> int:
     r = random.Random(seed)
     idx = 0
@@ -1747,4 +1857,23 @@ def write_features(seed: int, out, copies: int = 2) -> int:
     for _ in range(copies):
         write_script_file_bundle(r, idx, out)
         idx += 1
+    for fid, (family, files, trace) in HISTORY_ANCHORS.items():
+        for _ in range(2 * copies):
+            d = os.path.join(out, f"fx{idx:03d}")
+            os.makedirs(d, exist_ok=True)
+            texts = {name: fill(text, r, idx) for name, text in files.items()}
+            texts.setdefault("schema.cedarschema", pairs.SCHEMA)
+            texts["trace.log"] = "\n".join(trace(r)) + "\n"
+            for name, text in texts.items():
+                with open(os.path.join(d, name), "w") as f:
+                    f.write(text)
+            meta = {
+                "family": "features",
+                "kind": fid,
+                "cmds": ["replay"],
+                "replay_family": family,
+            }
+            with open(os.path.join(d, "meta.json"), "w") as f:
+                json.dump(meta, f, indent=1)
+            idx += 1
     return idx

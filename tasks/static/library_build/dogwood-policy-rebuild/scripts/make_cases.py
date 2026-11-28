@@ -464,9 +464,10 @@ def restriction_cases(name, bundle, meta, base, fl) -> list[dict]:
             args = ["lower", *base, *fl, "--format", "human"]
             out.append(case(name, "lower/human", "L", args, "human"))
         elif cmd == "replay":
+            family = meta.get("replay_family", "R")  # P for a provider anchor
             for fmt in ("human", "json"):
                 args = ["replay", *base, "--trace", "trace.log", *fl, "--format", fmt]
-                out.append(case(name, f"trace.log/replay/{fmt}", "R", args, fmt))
+                out.append(case(name, f"trace.log/replay/{fmt}", family, args, fmt))
         elif cmd == "explain":
             for fmt in ("human", "json"):
                 args = ["explain", *base, *fl, "--format", fmt]

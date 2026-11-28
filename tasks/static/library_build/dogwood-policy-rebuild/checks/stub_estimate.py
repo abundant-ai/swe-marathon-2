@@ -8,7 +8,9 @@ nothing (with exit 0, or with each command's most common status), each command's
 answer, the accept line of `validate`, DENY or ALLOW-rule-0 for every event of a trace, DENY for
 every event but the last (ALLOW, rule 0), the command line's own texts, `format` as `cat`, and,
 with the release build's run over the history-free shadows (`make_cases.py`), an engine that
-ignores the history. The stub zoo itself (stubs.py, built and run by the grader) is the proof; this
+ignores the history, in each of its two readings (temporal conditions dropped, or false; one
+program is one reading: choosing per case would take the history it lacks). A policy with no
+temporal condition is passed by both. The stub zoo itself (stubs.py, built and run by the grader) is the proof; this
 only flags a selection that would let one through.
 """
 
@@ -20,6 +22,10 @@ import re
 import sys
 from collections import Counter, defaultdict
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+
+import history_free
 
 LINE = re.compile(r"^@(-?\d+) \(time point (\d+)\): ")
 ACCEPT = {
@@ -82,6 +88,15 @@ def main() -> int:
     top = {k: ans for k, v in common.items() for ans, n in v.most_common(1) if n >= 2}
     status = {k: v.most_common(1)[0][0][0] for k, v in common.items()}
     human = {c["id"]: answer(c)[1] for c in cases if key(c).endswith("/human")}
+    has_history: dict[str, bool] = {}
+
+    def temporal(c: dict) -> bool:
+        """Whether the bundle's policy has a temporal condition (as selection reads it)."""
+        if c["bundle"] not in has_history:
+            policy = a.private / "bundles" / c["bundle"] / "policy.dw"
+            text = policy.read_text(encoding="utf-8") if policy.is_file() else ""
+            has_history[c["bundle"]] = history_free.rewrite(text, "drop") is not None
+        return has_history[c["bundle"]]
 
     def passes(stub: str, c: dict) -> bool:
         rc, out = answer(c)
@@ -103,12 +118,11 @@ def main() -> int:
             return rc == 0 and bool(want) and twin == want
         if stub == "cli-shell":
             return c["bundle"] == "cli"
-        if stub == "history-free" and cmd == "replay" and shadow is not None:
-            for v in ("drop", "false"):
-                r = shadow.get(f"{c['id']}#hf-{v}")
-                if r and (r["runs"][0]["rc"], r["runs"][0]["norm"]) == (rc, out):
-                    return True
-            return False
+        if stub.startswith("history-free:") and cmd == "replay" and shadow is not None:
+            r = shadow.get(f"{c['id']}#hf-{stub.split(':', 1)[1]}")
+            if r is None:  # no shadow: the policy has no temporal condition to drop
+                return not temporal(c)
+            return (r["runs"][0]["rc"], r["runs"][0]["norm"]) == (rc, out)
         if stub == "cat" and cmd == "format" and len(c["args"]) > 1:
             name = c.get("stdin") if c["args"][1] == "-" else c["args"][1]
             path = a.private / "bundles" / c["bundle"] / (name or "")
@@ -131,7 +145,7 @@ def main() -> int:
         "last-allow",
         "cli-shell",
         "cat",
-        *(("history-free",) if shadow is not None else ()),
+        *(("history-free:drop", "history-free:false") if shadow is not None else ()),
     ):
         passed = [
             u for u, members in units.items() if all(passes(stub, m) for m in members)

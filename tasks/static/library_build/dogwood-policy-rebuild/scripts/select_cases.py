@@ -53,6 +53,7 @@ _spec = importlib.util.spec_from_file_location(
 cov = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(cov)
 MARGIN = 2  # cases beyond an id's minimum, against the units step 6 drops after the cap
+UNIT_MAX = 4  # cases in a unit that a weak case joins (step 4b)
 
 
 def evidence(cases: list[dict], gold: dict, candidates: Path, tags: dict) -> dict:
@@ -185,6 +186,9 @@ def main() -> int:
         default=[],
         help="FAMILY=UNITS, at most that many units",
     )
+    ap.add_argument(
+        "--fates", type=Path, help="write each candidate's fate (kept, or why not)"
+    )
     a = ap.parse_args()
     cand = [
         json.loads(x)
@@ -193,6 +197,7 @@ def main() -> int:
     ]
     run = json.loads(a.run.read_text())
     dropped: Counter = Counter()
+    fate: dict[str, str] = {}
 
     # 1. Stable answers only.
     gold = {}
@@ -201,15 +206,18 @@ def main() -> int:
         r = run.get(c["id"])
         if r is None:
             dropped["not run"] += 1
+            fate[c["id"]] = "not run"
             continue
         answers = {(x["rc"], x["norm"]) for x in r["runs"]}
         if len(answers) != 1:
             dropped["unstable"] += 1
+            fate[c["id"]] = "unstable"
             continue
         if any(HASH_ORDER.search(x["norm"]) for x in r["runs"]):
             # The member of a cycle that the message names depends on the build's hash order,
             # which changes from run to run; three equal runs are luck, not one answer.
             dropped["names one member of a cycle"] += 1
+            fate[c["id"]] = "names one member of a cycle"
             continue
         gold[c["id"]] = answers.pop()
         kept.append(c)
@@ -340,19 +348,76 @@ def main() -> int:
             spare[key[2]].extend(strong_pool[key])
     for fmt in sorted(spare):
         rng.shuffle(spare[fmt])
+    leftover: list[dict] = []
     for c in sorted(unpaired, key=rarest):
         pool = spare.get(c["fmt"], []) if c["family"] == "F" else []
         if not pool:
-            c["drop"] = f"no partner ({weak[c['id']]})"
+            leftover.append(c)
             continue
         partner = pool.pop()
         pid = f"F:any/{c['fmt']}:{made}"
         c["pair"] = partner["pair"] = pid
         made += 1
 
+    # 4b. A weak case still without a partner joins a unit of its family that holds a strong case,
+    # when the coverage inventory needs it (an id it evidences has fewer than its minimum plus
+    # MARGIN cases so far): rarest first, at most UNIT_MAX cases a unit, the unit of its own
+    # command and format first. The unit still counts only when every member passes, so a program
+    # that fails its strong case gets none of it. Declared B and K pairs take no one.
+    def pkey(c: dict) -> tuple:
+        if c["bundle"] == "cli":
+            return (c["family"], "cli", c["fmt"])
+        return (c["family"], route(c), c["fmt"])
+
+    declared = set(by_pair)
+    size: Counter = Counter(
+        c["pair"] for c in kept if c.get("pair") and not c.get("drop")
+    )
+    anchors: dict[tuple, list[dict]] = defaultdict(list)  # key -> strong cases
+    for c in kept:
+        if c.get("drop") or weak[c["id"]] or c.get("pair") in declared:
+            continue
+        anchors[pkey(c)].append(c)
+    out_ids = {c["id"] for c in leftover}
+    kept_ids = {c["id"] for c in kept if not c.get("drop")} - out_ids
+    count = {
+        fid: sum(1 for cid in found if cid in kept_ids)
+        for fid, (_need, found) in ev.items()
+    }
+    ids_of: dict[str, list[str]] = defaultdict(list)
+    for fid, (_need, found) in ev.items():
+        for cid in found:
+            ids_of[cid].append(fid)
+    joined = 0
+    for c in leftover:  # already rarest first
+        wanted = [f for f in ids_of.get(c["id"], []) if count[f] < ev[f][0] + MARGIN]
+        same = anchors.get(pkey(c), [])
+        rest = [s for k, v in sorted(anchors.items()) if k[0] == c["family"] for s in v]
+        room = [
+            s
+            for s in same + rest
+            if (size[s["pair"]] if s.get("pair") else 1) < UNIT_MAX
+        ]
+        if not wanted or not room:
+            c["drop"] = f"no partner ({weak[c['id']]})"
+            continue
+        strong = min(
+            room, key=lambda s: size[s["pair"]] if s.get("pair") else 1
+        )  # the emptiest; same-command units come first among equals
+        if not strong.get("pair"):
+            strong["pair"] = f"{c['family']}:anchor:{made}"
+            size[strong["pair"]] = 1
+            made += 1
+        c["pair"] = strong["pair"]
+        size[strong["pair"]] += 1
+        joined += 1
+        for f in ids_of[c["id"]]:
+            count[f] += 1
+
     final = []
     for c in kept:
         if c.get("drop"):
+            fate[c["id"]] = c["drop"]
             dropped[c.pop("drop")] += 1
             continue
         final.append(c)
@@ -398,6 +463,9 @@ def main() -> int:
             dropped[f"over the {fam} cap"] += sum(
                 len(units_of[fam][n]) for n in rest[limit:]
             )
+            for n in rest[limit:]:
+                for c in units_of[fam][n]:
+                    fate[c["id"]] = f"over the {fam} cap"
             rest = rest[:limit]
         for n in sorted(kept_units + rest):
             capped.extend(units_of[fam][n])
@@ -419,7 +487,14 @@ def main() -> int:
         if all(counts[stub_group(m)][gold[m["id"]]] >= 2 for m in ms)
     }
     dropped["answers all given elsewhere too"] += sum(len(members[u]) for u in shared)
+    for u in shared:
+        for m in members[u]:
+            fate[m["id"]] = "answers all given elsewhere too"
     final = [c for c in final if (c.get("pair") or c["id"]) not in shared]
+    for c in final:
+        fate[c["id"]] = "kept"
+    if a.fates:
+        a.fates.write_text(json.dumps(fate, indent=0, sort_keys=True) + "\n")
 
     # 7. Write the case set and the bundles it uses.
     out_bundles = a.out / "bundles"
@@ -448,6 +523,7 @@ def main() -> int:
         "bundles": len(used),
         "dropped": dict(sorted(dropped.items())),
         "paired_here": made,
+        "joined_a_unit": joined,
         "kept_for_coverage": len(protected),
         "families": dict(sorted(fams.items())),
         "units": {k: len(v) for k, v in sorted(units.items())},
