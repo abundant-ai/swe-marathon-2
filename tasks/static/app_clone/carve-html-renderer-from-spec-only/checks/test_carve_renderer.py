@@ -3199,7 +3199,7 @@ def test_nothing_the_agent_sees_names_grading_or_a_budget():
     assert not re.search(r"\bcaps?\b", said), "task.toml comment names a cap"
     assert comments == [], comments  # task.toml carries no comment (round 12)
     instruction = seen["instruction.md"]
-    hours = re.findall(r"[^.]*\bhours?\b[^.]*\.", instruction)
+    hours = re.findall(r"[^.]*\bhours?\b[^.]*\.", " ".join(instruction.split()))
     agent_limit = tomllib.loads(seen["task.toml"])["agent"]["timeout_sec"]
     assert hours == [" You have up to 12 hours to build and test the renderer."], hours
     assert agent_limit == 12 * 3600, "the stated time is the agent's limit"
@@ -3242,6 +3242,49 @@ def test_nothing_the_agent_sees_names_grading_or_a_budget():
             "agent",
         ):
             assert word not in lowered, (carrier.name, word)
+
+
+def test_the_brief_states_only_what_the_verifier_enforces():
+    """The brief's one prohibition is the one the verifier refuses: carve-rs, the other Carve
+    engines with the runtimes they run on (the four language families of upstream_builds.json's
+    runtime markers), and upstream's code. The toolchains are stated as what is installed, gcc
+    among them; no duty to keep the code modular or to use only certain toolchains is stated."""
+    brief = " ".join((STEP / "instruction.md").read_text().split())
+    assert (
+        "the other Carve engines (with the JavaScript, PHP, Ruby and WebAssembly runtimes they run on)"
+        in brief
+        and "they may not be brought in" in brief
+    )
+    assert (
+        "Python 3.12, Go, Rust (`rustc` and `cargo`) and gcc are installed, here and where your "
+        "renderer will run, each with its standard library and nothing more"
+    ) in brief
+    for gone in (
+        "modular",
+        "separate parts",
+        "approved toolchains",
+        "code our own team wrote",
+        "no third-party",
+        "standard library only",
+        "since we maintain",
+    ):
+        assert gone not in brief, gone
+    runtimes = json.loads((TESTS / "verifier" / "upstream_builds.json").read_text())[
+        "runtimes"
+    ]
+    families = {
+        "bun": "JavaScript",
+        "deno": "JavaScript",
+        "node": "JavaScript",
+        "quickjs": "JavaScript",
+        "php": "PHP",
+        "ruby": "Ruby",
+        "wasm": "WebAssembly",
+    }
+    assert set(runtimes) == set(families), sorted(runtimes)
+    verifier = (TESTS / "Dockerfile").read_text()
+    for tool in ("python3", "golang-go", "rustc", "cargo", "gcc"):
+        assert tool in verifier, tool
 
 
 def test_packaging_ships_runtime_files_only_and_flattens_cleanly():
