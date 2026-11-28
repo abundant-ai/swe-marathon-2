@@ -14,16 +14,23 @@ and JSON output.
 the single-step fallback that plan kept: the 1.2.0 rebuild, graded by the same verifier and
 families. The two-step plan stays in `notes/` as history.
 
-**Status (2026-11-27, Phase C done: ready for the independent QA):**
-- The working machine ships the trimmed guide in `/app/docs`. The brief states the run conditions
-  and no session budget.
-- The private case set has 4,282 cases (2,304 units). Every documented feature and stated
-  restriction has its cases, and all 33 mutants are killed.
-- Locally: the oracle scores 1.0 twice and the empty submission 0 twice; the stub zoo, the
-  probes and the determinism, leak and wording checks pass. The 12-item gate table is in
-  `notes/PHASE-C-REPORT.md`.
-- No trial has run, and nothing has been uploaded. The platform's oracle and nop runs come with the
-  first upload.
+**Status (2026-11-28, fix round 1 done: ready for round 2 of the independent QA):**
+- **QA findings:** the fix round fixes the QA's nine must-fixes and eleven should-fixes, re-sizes the
+  difficulty and applies the panel's lever (QA 17 F2 and F5). Details are in
+  `notes/FIX1-REPORT.md`.
+- **The material:** the working machine ships the trimmed guide in `/app/docs`. The brief states
+  the run conditions and no session budget.
+- **The case set:** the private set has 4,662 cases (2,321 units). Every documented feature and
+  stated restriction has its cases, every case traces to a stated rule, all 33 mutants are killed,
+  and no trivial program (an engine with no history included) passes a unit.
+- **Locally**, through a copy of the platform's delivery path:
+  - the oracle scores 1.0 twice, and on half a CPU;
+  - the empty submission scores 0 twice;
+  - the hardening runs, the stub zoo and the probes behave as expected;
+  - the determinism, leak and wording checks pass;
+  - the grading image's recorded gold matches the local record.
+- **Platform:** no trial has run, and nothing has been uploaded. The platform's oracle and nop runs
+  come with the first upload.
 
 The rest of this README and the `notes/` folder are author notes. Nothing here is shipped to the
 agent.
@@ -226,9 +233,9 @@ Everything is re-checked on the platform's image before upload.
 | Lookup tables | Hard-code the shipped examples' outputs | The `lookup` stub scores 0; the leak scan matches any mix of visible files and guide blocks and finds no hidden case reading only visible inputs | 🟢 GREEN (local) |
 | Reward forging | The build (`builder`) or the program (`nobody`) writes `reward.json` or `reward.txt` into the output folder (world-writable on the platform), plants links there, or leaves a process (one whose first thread has exited included) to write after the grader | Before anything of the submission runs, the grader makes the folder root's and 0755 and never reopens it. Before writing, it stops and kills every task of both users from root and by uid across `/proc/*/task` in every state, checks none is left (else an evaluation error), removes what they left anywhere (System V objects included), removes whatever stands under its output names, and creates each output fresh with `O_EXCL` and `O_NOFOLLOW`, the reward last. The `forge`, `hostile-build` and `hostile-run` stubs try all of it against a world-writable folder; a grading killed mid-run leaves no reward | 🟢 GREEN (local) |
 | Grader files and gold | Read the private cases or the grader | `/tests` is root-only (0700); the build runs as `builder`, the cases as `nobody`, with no supplementary groups; standard input is fed from the private store, never opened in a run's folder | 🟢 GREEN (local) |
-| Build-time code | The submission's `build.rs` or proc macros loop, read gold, leave processes, fill the disk or memory, fork without end, point the program path elsewhere | As `builder` with no network, 20 minutes, a 16 MB log cap, 4,096 processes, 4 GB files, no core dumps, and the kernel's first choice on memory pressure (the grader is its last). Afterwards every task of `builder` is ended and its files and System V objects removed; the program must be a regular file inside the build folder, copied from an `O_NOFOLLOW` descriptor | 🟢 GREEN (local) |
+| Build-time code | The submission's `build.rs` or proc macros loop, read gold, leave processes, fill the disk or memory, fork without end, point the program path elsewhere | As `builder` with no network, 20 minutes, a 16 MB log cap, 4,096 processes, 4 GB files, no core dumps, and the kernel's first choice on memory pressure (an OOM score of +1000, set while the child is still root; the grader's own -1000 needs `CAP_SYS_RESOURCE`, so it is best effort). Afterwards every task of `builder` is ended and its files and System V objects removed; the program must be a regular file inside the build folder, copied from an `O_NOFOLLOW` descriptor | 🟢 GREEN (local) |
 | Hostile programs and output | Hang, flood, fork-bomb, daemonise, rename a process to bytes that are not UTF-8, nest 2,000 directories, print what crashes the comparison, or deliver a program that cannot start | Each run is bounded (1 s, 2 GB, 512 processes, 256 MB files, 8 MB of output); /proc is read as bytes; trees are walked without recursion and removed with GNU `rm`; comparison never raises; an unstartable program fails its own cases. The `hang`, `flood`, `forkbomb`, `daemon`, `garbage`, `badexec` and `hostile-run` stubs score 0 with no evaluation error | 🟢 GREEN (local) |
-| Shared state between runs | Leave files, processes or shared memory for a later run | After every run: every task of `nobody` ended, its files in every shared directory and its System V objects removed, the run's folder removed; at the end the grader searches the whole filesystem for anything either user owns | 🟢 GREEN (local) |
+| Shared state between runs | Leave files, processes or shared memory for a later run, or pile up shared memory until the out-of-memory killer takes the grader | After every run: every task of `nobody` ended, its files in every shared directory removed, and its System V objects removed (from a child at its uid when root lacks `CAP_IPC_OWNER`, as in a container; the final zoo run found root's removal failing, and the hostile run's 8 MB a case reaching 4 GB), the run's folder removed; at the end the grader searches the whole filesystem for anything either user owns | 🟢 GREEN (local, after 86502db8) |
 | The delivery transfer | One FIFO, socket, device, or absolute or outward link anywhere in the project makes Harbor's `extractall(filter="data")` stop, and the rest is lost | The hand-off applies the brief's copy rules before the transfer and writes a manifest; the grader checks the arrived tree against it, and a mismatch or a missing manifest is a lost run, never a 0. Tested through a copy of Harbor's own transfer (`work/spike/deliver.py`) with clutter, with no hand-off and with a pipe added after it | 🟢 GREEN (local) |
 | The egress window | A process left running fetches Dogwood's crates once the turn ends, before collection | `wait-uplink` (root, from the setup hooks) stops and ends `dev` as soon as a public host answers; the hand-off records the processes, egress and every entry's times; entries changed after the end of the work are listed in the metrics for the per-trial audit; a verbatim drop-in scores 0. A modified drop-in fetched in the remaining fraction of a second is not refused: the audit is the last check | 🟡 YELLOW (recorded and bounded; audit decides) |
 | Provider-side web tools | A harness web tool reads docs.rs, which serves Dogwood's source, during the turn | Every Dogwood run config lists `WebSearch` and `WebFetch` in `disallowed_tools` (QA-PLAN section 6); codex keeps web search disabled | 🟡 YELLOW (run-config discipline) |
@@ -340,3 +347,54 @@ in `notes/PHASE-C-REPORT.md`.
     `oddish preflight` passes.
   - The private set is backed up to the private store (`dogwood-tests-private-phaseC.bundle`).
 - **Next:** the independent 20-pass QA, then the first upload.
+
+### 2026-11-28 (fix round 1)
+
+The independent QA of the Phase C bundle ran 21 passes: 5 PASS, 7 CONCERN and 9 FAIL. It found
+nine must-fixes and twelve should-fixes. This round fixes the must-fixes and eleven should-fixes,
+re-sizes the difficulty (the twelfth), and applies the lever the panel then chose. Details are in
+`notes/FIX1-REPORT.md`.
+- **Root's PATH and the output folder (D-M1, D-M2):**
+  - both images close what root finds by name, and their builds check it;
+  - the grader closes its output folder before anything of the submission runs, and never
+    reopens it;
+  - it ends every task of the build's and the runs' users from root, threads included, and checks
+    that none is left before it writes.
+- **The delivery (D-M3, D-M4):**
+  - a root hand-off applies the brief's copy rules before Harbor's transfer, and writes a manifest
+    that the grader checks;
+  - a root watch from the setup hooks ends the session's user as soon as a public host answers;
+  - every entry changed after the end of the work is listed for the audit;
+  - a verbatim drop-in scores 0.
+- **Robustness (D-M5):** /proc is read as bytes, trees are walked without recursion, and removal uses
+  GNU `rm`.
+- **What is stated (D-M6 to D-M8):**
+  - scripted guide edits state every graded rule the QA found unstated;
+  - the coverage check now runs both ways;
+  - new templates cover the zero-case features, and every command reads standard input;
+  - the out-of-scope MCP case is gone.
+- **Cheap credit (D-M9):**
+  - the K duals are redrawn, and every K trace ends past its window;
+  - selection keeps no unit that one trivial program passes, including two history-free readings
+    that the release build replays;
+  - history anchors and strong units keep every rule graded.
+- **The panel's lever (QA 17 F2, F5):**
+  - 9 B-dedup and 8 B-scope templates, and two templates for each K shape;
+  - 36 R units at window edges, the `since` boundary and `previous`.
+
+  Each template cites the guide sentences that decide it, and the release build agrees on all
+  306 bundles.
+- **Should-fixes:** a slower recording with a digest; a provenance reason in the brief; a static
+  release build; root-only kills and `lchown`; opaque case names and per-case files; the horizon
+  stated; non-UTF-8 inputs; every grading through a copy of the delivery path.
+- **Results on the final set** (4,662 cases):
+  - 0 coverage gaps, and all 33 mutants killed;
+  - bands: M-dedup 0.830, M-scope 0.955 and M-global 0.902, each in its own family;
+  - each of F5's mutants fails at least 13% of R;
+  - the oracle scores 1.0 (twice, and on half a CPU), and the empty submission 0;
+  - @@ZOOLINE@@;
+  - the re-size puts the frontier at a median of about 0.58 and mid-tier at about 0.24.
+- **Close-out:**
+  - the flat bundle `4fa614e0950c…` is the same when packaged twice, and `oddish preflight` passes;
+  - the private set is backed up as `dogwood-tests-private-fix1.bundle`.
+- **Next:** round 2 of the independent QA, then the first upload.
