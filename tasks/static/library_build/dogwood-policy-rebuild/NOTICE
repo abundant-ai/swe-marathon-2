@@ -1,0 +1,20 @@
+Third-party material in this task folder
+
+Dogwood
+Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+Licensed under the Apache License, Version 2.0. A copy of the licence is in
+environment/docs/LICENSE.
+
+These files hold material from Dogwood 1.2.0 (tag commit 8ffd2106), which we changed:
+- environment/docs/: Dogwood's guide and its example bundles, trimmed and edited, with a few
+  sentences of ours added.
+  environment/docs/NOTICE lists the changes.
+- scripts/docs_edits.json: passages of that guide, as the old and new text of each edit.
+- checks/features.json, checks/features.merges.json and notes/: short quotations of the
+  guide.
+- checks/mutants/*.patch: changes to Dogwood 1.2.0's source code, with the lines of that
+  source around each change.
+
+Cedar, which Dogwood builds on, is Copyright Cedar Contributors and licensed under the
+Apache License, Version 2.0. Where the guide describes Cedar, that text is part of Dogwood's
+documentation as published.

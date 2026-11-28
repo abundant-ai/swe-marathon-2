@@ -1,0 +1,12 @@
+--- a/src/extension/temporal/validate.rs
++++ b/src/extension/temporal/validate.rs
+@@ -1633,7 +1633,8 @@
+             return;
+         };
+         // 3. Over the cap.
+-        if secs > cap {
++        // MUTANT (feat:03:max-window): a window longer than max_window is accepted
++        if secs > cap && false {
+             let message = match max_horizon {
+                 Some(h) if secs > h.seconds() => format!(
+                     "temporal window `{}` exceeds the maximum allowed window `{}`; \

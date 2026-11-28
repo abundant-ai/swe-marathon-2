@@ -1,0 +1,12 @@
+--- a/src/interpreter/eval.rs
++++ b/src/interpreter/eval.rs
+@@ -592,7 +592,8 @@
+ /// right-hand side cannot wrap either.
+ fn in_window(trace: &Trace, i: usize, j: usize, within: Interval) -> bool {
+     let delta = trace.ts(i).saturating_sub(trace.ts(j));
+-    delta >= 0 && delta <= within.seconds()
++    // MUTANT (feat:04:window-closed): the window is open at W (a witness exactly W seconds back is out)
++    delta >= 0 && delta < within.seconds()
+ }
+ 
+ /// Match a predicate against the event at timepoint `i`. The predicate's

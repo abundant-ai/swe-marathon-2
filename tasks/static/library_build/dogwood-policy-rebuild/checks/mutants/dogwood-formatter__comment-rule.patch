@@ -1,0 +1,11 @@
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -112,7 +112,7 @@
+             .iter()
+             .any(|token| token.is_comment() && statement.span.contains(token.span))
+         {
+-            return None;
++            // MUTANT (feat:12:format-comments): a statement holding a comment is formatted instead of left unchanged
+         }
+         items.push(TopLevelItem::Statement(format_statement(
+             source, statement,

@@ -1,0 +1,86 @@
+"""Typed records shared by the build, the case runner and the scoring."""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Literal
+
+
+@dataclass(frozen=True)
+class Limits:
+    """Resource limits, as the brief states them to the requester's CI."""
+
+    case_timeout_sec: float = 1.0
+    case_memory_bytes: int = 2 << 30
+    case_stdout_bytes: int = 8 << 20
+    build_timeout_sec: float = 1200.0
+    deadline_sec: float = 600.0
+    case_overhead_sec: float = 0.25  # copying a bundle, starting and ending a run
+    max_files: int = 100_000
+    max_bytes: int = 1 << 30
+    max_depth: int = 32  # directories below the project root
+    verifier_sec: float = 7800.0  # task.toml's verifier timeout_sec
+    settle_sec: float = (
+        600.0  # kept back for ending the submission and writing the outputs
+    )
+    max_path: int = 1000  # bytes of a path relative to the project root
+
+
+@dataclass(frozen=True)
+class VerificationContext:
+    """Where the delivered project, the private cases and the outputs live."""
+
+    submission: Path
+    private: Path
+    logs: Path
+    work: Path
+    limits: Limits = field(default_factory=Limits)
+
+
+@dataclass(frozen=True)
+class Case:
+    """One command line over one bundle of input files, with its expected result."""
+
+    case_id: str
+    family: str
+    bundle: str
+    args: tuple[str, ...]
+    fmt: Literal["human", "json"]
+    pair: str | None
+    expected_rc: int
+    expected_stdout: str
+    stdin: str | None = None  # a bundle file given as standard input; empty when None
+    files: tuple[str, ...] | None = (
+        None  # the bundle entries the run's folder holds (all: None)
+    )
+
+
+@dataclass(frozen=True)
+class CaseResult:
+    case_id: str
+    family: str
+    pair: str | None
+    passed: bool
+    detail: str
+
+
+@dataclass(frozen=True)
+class BuildResult:
+    ok: bool
+    binary: Path | None
+    detail: str
+    seconds: float
+
+
+@dataclass(frozen=True)
+class VerificationResult:
+    """A completed evaluation. An evaluation that cannot complete raises EvaluationError."""
+
+    reward: float
+    metrics: Mapping[str, object]
+
+
+class EvaluationError(RuntimeError):
+    """The evaluation itself failed (not the submission); no reward may be written."""

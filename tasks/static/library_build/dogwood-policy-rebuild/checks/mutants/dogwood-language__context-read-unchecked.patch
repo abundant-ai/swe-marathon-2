@@ -1,0 +1,12 @@
+--- a/src/validate.rs
++++ b/src/validate.rs
+@@ -70,7 +70,8 @@
+     // may not supply it.
+     let has_leaves = !lowered.temporal.is_empty() || !lowered.providers.is_empty();
+     for read in &lowered.context_reads {
+-        if read.whole && !has_leaves {
++        // MUTANT (restr:08:context-read): whole-context and hoisted-name reads are never reported
++        if true || read.whole && !has_leaves {
+             continue;
+         }
+         errors.push(ValidationError::Extension {

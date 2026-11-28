@@ -1,0 +1,11 @@
+--- a/src/api.rs
++++ b/src/api.rs
+@@ -1731,6 +1731,8 @@
+     let conformance = lowered.check_event_conformance(event, mirror);
+ 
+     if !decision {
++        // MUTANT (feat:03:nonconforming-not-ingested): a nonconforming history event still enters the history (it is still reported)
++        if conformance.is_err() { let _ = temporal.try_observe(event); }
+         conformance?;
+         // Every ingested event is observed by the temporal engine, in order —
+         // this is what maintains the history that temporal leaves see. An event

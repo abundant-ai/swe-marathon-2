@@ -1,0 +1,52 @@
+schema_version = "1.4"
+artifacts = ["/app/dogwood-rebuild", "/var/lib/dogwood-handoff/out"]
+
+[task]
+name = "abundant/swe-m2_software-engineering_dogwood-policy-rebuild"
+description = "Reimplement, clean-room, the command-line tool of Dogwood 1.2.0, a temporal policy language for AI agents' tool calls first published in 2026, from its guide and an execute-only build."
+authors = [{ name = "Neel Harsola", email = "work.neelharsola@gmail.com" }]
+
+[metadata]
+reward_type = "continuous"
+open_internet_justification = "The image builds and the agent harness's own setup have public egress: the builds download the pinned Dogwood release, a pinned Rust toolchain and the locked crates. The agent's work and the grading run without network access."
+
+[agent]
+timeout_sec = 34560
+network_mode = "no-network"
+user = "dev"
+
+[[agent.setup_begin]]
+command = "/usr/local/lib/dogwood-handoff/reserve"
+timeout_sec = 120
+
+[[agent.setup_complete]]
+command = "/usr/local/lib/dogwood-handoff/reserve --watch"
+timeout_sec = 120
+
+[environment]
+network_mode = "public"
+build_timeout_sec = 3600
+cpus = 4
+memory_mb = 8192
+storage_mb = 20480
+gpus = 0
+workdir = "/app"
+
+[verifier]
+environment_mode = "separate"
+network_mode = "no-network"
+timeout_sec = 7800
+user = "root"
+
+[[verifier.collect]]
+command = "/usr/local/lib/dogwood-handoff/handoff"
+user = "root"
+timeout_sec = 600
+
+[verifier.environment]
+network_mode = "no-network"
+build_timeout_sec = 3600
+cpus = 4
+memory_mb = 8192
+storage_mb = 20480
+gpus = 0

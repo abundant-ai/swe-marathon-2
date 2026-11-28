@@ -1,0 +1,7 @@
+# Private, staged or generated material for this task. None of it is committed:
+# the hidden cases and their seeds live in tests/private/ (backed up outside this
+# repository), and the oracle's upstream source is staged into solution/upstream/
+# from the pinned release at packaging time.
+tests/private/
+solution/upstream/
+experiment/

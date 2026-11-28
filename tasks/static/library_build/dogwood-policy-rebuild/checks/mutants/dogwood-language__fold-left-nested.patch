@@ -1,0 +1,11 @@
+--- a/src/cedarify/mod.rs
++++ b/src/cedarify/mod.rs
+@@ -645,6 +645,8 @@
+                 Some(right) => builder().and(left, right),
+                 None => left,
+             });
++            // MUTANT (feat:08:balanced-fold): only the first pair is joined per level, so the clauses fold left-nested
++            next.extend(&mut it);
+         }
+         level = next;
+     }

@@ -1,0 +1,12 @@
+--- a/src/cedarify/schema_augment.rs
++++ b/src/cedarify/schema_augment.rs
+@@ -402,7 +402,8 @@
+     // The resolution already drops actions that cannot receive a request, so a pure
+     // action group named in a list is not an error: naming a group names its members.
+     // A named action the schema does not DECLARE is still an error, raised below.
+-    for (namespace, action_id) in scope_target_actions(&field.action, fragment)? {
++    // MUTANT (feat:08:augmentation): a temporal field is grafted onto every action, not only its rule's
++    for (namespace, action_id) in scope_target_actions(&ScopedAction::Unconstrained, fragment)? {
+         add_bool_to_named_action(fragment, &field.field_name, &namespace, &action_id)?;
+     }
+     Ok(())

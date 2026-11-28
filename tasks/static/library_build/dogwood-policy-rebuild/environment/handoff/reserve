@@ -1,0 +1,24 @@
+#!/bin/sh
+# Runs as root before the session begins, twice: while the session's tools are set up, and once
+# they are ready (--watch). It sets aside room and spare inodes under the hand-off's state
+# directory, so that however full the disk is left, the hand-off can still write its records; the
+# hand-off gives both back. With --watch it also records when the work began (to the nanosecond)
+# and starts wait-uplink in a session of its own. Running it again changes nothing already done.
+LIB=/usr/local/lib/dogwood-handoff
+STATE=/var/lib/dogwood-handoff
+umask 077
+/usr/bin/mkdir -p "$STATE/inodes" "$STATE/out" && /usr/bin/chmod 0700 "$STATE" "$STATE/out"
+if [ ! -e "$STATE/room" ]; then
+    /usr/bin/fallocate -l 64M "$STATE/room" 2>/dev/null \
+        || /usr/bin/head -c 67108864 /dev/zero > "$STATE/room" 2>/dev/null
+fi
+for spare in $(/usr/bin/seq 1 64); do
+    [ -e "$STATE/inodes/$spare" ] || : > "$STATE/inodes/$spare"
+done
+if [ "$1" = "--watch" ] && [ ! -e "$STATE/work-started" ]; then
+    /usr/bin/date +%s.%N > "$STATE/work-started"
+fi
+if [ "$1" = "--watch" ] && [ ! -e "$STATE/uplink.json" ]; then
+    /usr/bin/setsid /usr/bin/nohup /usr/bin/python3 -I "$LIB/wait-uplink" > "$STATE/uplink.log" 2>&1 < /dev/null &
+fi
+exit 0

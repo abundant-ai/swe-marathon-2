@@ -1,0 +1,12 @@
+--- a/src/api.rs
++++ b/src/api.rs
+@@ -1852,7 +1852,8 @@
+     for field in &lowered.providers {
+         if let Some(value) = provider_outputs.get(&field.id)
+             && let Some(reason) =
+-                checks.provider_output_nonconformance(&field.id, &field.invocation.key(), value)
++                // MUTANT (restr:05:nonconforming-output): provider outputs are not checked against their declared type
++                checks.provider_output_nonconformance(&field.id, &field.invocation.key(), value).filter(|_| false)
+         {
+             return deny(format!("nonconforming provider output: {reason}"));
+         }

@@ -1,0 +1,12 @@
+--- a/src/conformance.rs
++++ b/src/conformance.rs
+@@ -549,7 +549,8 @@
+         };
+         let field_name = crate::field_path::join(field);
+         match (request_side, record_path(&data.logged, field)) {
+-            (Some(expected), Some(logged)) if logged.dom_eq(expected) => {}
++            // MUTANT (restr:03:mirror-holds-request-value): a mirrored field may differ from the event's own request value
++            (Some(_), Some(_)) => {}
+             (Some(expected), Some(logged)) => {
+                 return Some(format!(
+                     "`{head}` logs `{field_name}` as {}, but {what} is {}",

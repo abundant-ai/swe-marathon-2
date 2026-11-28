@@ -1,0 +1,12 @@
+--- a/src/informalize.rs
++++ b/src/informalize.rs
+@@ -1749,7 +1749,8 @@
+         matches!(&c.kind, K::Comparison { op: tast::CmpOp::Eq, left: l, right: r }
+             if matches!((l, r), (T::Agg(_), T::Var(v)) | (T::Var(v), T::Agg(_)) if v == n))
+     };
+-    if !binding(left) {
++    // MUTANT (feat:12:explain-exists-fold): an exists that only names an aggregate is no longer folded into its comparison
++    if true || !binding(left) {
+         return None;
+     }
+     let (bind, filter) = (left, right);

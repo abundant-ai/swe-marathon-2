@@ -1,0 +1,12 @@
+--- a/src/api.rs
++++ b/src/api.rs
+@@ -1804,7 +1804,8 @@
+     // The Cedar request is built without a schema below, because the decision
+     // supplies every hoisted attribute to every action's context; this is
+     // where the request is checked instead.
+-    if let Some(reason) = checks.request_nonconformance(event) {
++    // MUTANT (restr:12:context-instance): the request context is not checked against the action's context type
++    if let Some(reason) = checks.request_nonconformance(event).filter(|_| false) {
+         return deny(format!("nonconforming request: {reason}"));
+     }
+ 

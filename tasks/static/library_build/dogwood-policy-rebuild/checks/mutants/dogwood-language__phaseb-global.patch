@@ -1,0 +1,16 @@
+--- a/src/event_schema/relativize.rs	2026-11-27 01:38:05
++++ b/src/event_schema/relativize.rs	2026-11-27 01:38:05
+@@ -182,11 +182,8 @@
+         next_fresh: 0,
+         budget,
+     };
+-    let rewritten = if pins.is_empty() {
+-        cx.clone_cond(cond)
+-    } else {
+-        cx.rewrite(cond)
+-    };
++    // MUTANT (feat:03:key-local-previous, feat:03:key-local-since-left, feat:08:relativization, feat:03:key-local-switch, feat:03:default-key-local): never relativize; `previous` and the left of `since` read the whole trace.
++    let rewritten = cx.clone_cond(cond);
+     rewritten.map_err(|BudgetExhausted| RelativizeError { max_nodes })
+ }
+ 
