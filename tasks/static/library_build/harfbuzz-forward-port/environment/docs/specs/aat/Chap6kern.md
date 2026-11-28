@@ -256,7 +256,7 @@ Lookup for glyphs L and R:
     value = kernValue[ kernIndex[ leftClass[L] * rightClassCount + rightClass[R] ] ]
 
 Limits: at most 256 left classes, 256 right classes and 256 distinct values;
-larger needs call for format 2. Format 3 is quicker to evaluate than format 2
+larger needs call for format 2. Format 3 is quicker to look up than format 2
 and may be smaller.
 
 ## Dependencies

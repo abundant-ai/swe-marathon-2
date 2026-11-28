@@ -14,18 +14,43 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import struct
 from collections import Counter, defaultdict
 from pathlib import Path
 
 TASK = Path(__file__).resolve().parent.parent
 CACHE = Path.home() / "Documents/github/Abundant/lib-tasks-cache/harfbuzz-forward-port"
-RUNS = CACHE / "work" / "runs-c3"
+RUNS = CACHE / "work" / "runs-c4"
 VERIFY = CACHE / "work" / "verify"
+# QA-PLAN section 4's classes (fix round 2 widened them, R2-02 N2). A hit is allowed only where ALLOWED lists its
+# file and word, at most that many times: the specification notes' own domain senses.
 CUES = re.compile(
-    r"evaluation|benchmark|graded|grader|hidden test|golden|behave exactly like|every request exactly as|"
-    r"cannot be told apart|reference implementation|time budget|\bhours?\b",
+    r"evaluat|benchmark|\bgrad(e|ed|er|ers|ing)\b|hidden|held[- ]out|test ?cases?|golden|\bgold\b|oracle|"
+    r"expected output|\bscor(e|ed|es|ing)\b|reward|verifier|harbor|oddish|behave exactly|byte for byte|"
+    r"identical to|told apart|exactly as|budget|deadline|\bsession\b|\btrials?\b|time limit|harness|sandbox|"
+    r"reference implementation|\bhours?\b",
     re.IGNORECASE,
 )
+SPECS = "environment/docs/specs/"
+ALLOWED = {
+    (
+        SPECS + "aat/AppendixF.md",
+        "hidden",
+    ): 4,  # "normally hidden" selectors, as Apple's registry words them
+    (SPECS + "opentype/fvar.md", "hidden"): 2,  # the HIDDEN_AXIS flag
+    (SPECS + "opentype/stat.md", "hidden"): 1,  # labels hidden in user interfaces
+    (SPECS + "aat/Chap6kerx.md", "exactly as"): 1,
+    (SPECS + "opentype/chapter2.md", "exactly as"): 1,
+    (SPECS + "opentype/gvar.md", "exactly as"): 1,
+    (SPECS + "opentype/otff.md", "exactly as"): 1,
+    (SPECS + "scripts/bengali.md", "exactly as"): 1,
+    (SPECS + "scripts/devanagari.md", "exactly as"): 1,
+    (SPECS + "aat/Chap6mort.md", "identical to"): 1,
+    (SPECS + "opentype/base.md", "identical to"): 1,
+    (SPECS + "opentype/os2.md", "identical to"): 2,
+    (SPECS + "opentype/otff.md", "identical to"): 1,
+}
+METRICS_MAX = 60 << 10  # the platform keeps metrics.json only up to 64 KiB
 RELEASE_OF = {"A": "15.0.0", "B": "15.1.0", "C": "15.2.0"}
 
 
@@ -54,16 +79,32 @@ def units_table() -> dict[str, dict[str, str]]:
 
 
 def verify_result(name: str) -> dict:
+    """A run's reward read as Harbor reads it (reward.json first, then reward.txt), with the problems a gate row must
+    fail on: a reward.json at all, a reward.txt that is not a regular file, a metrics.json over METRICS_MAX."""
     d = VERIFY / name
-    reward = (
-        (d / "reward.txt").read_text().strip() if (d / "reward.txt").exists() else None
-    )
-    metrics = (
-        json.loads((d / "metrics.json").read_text())
-        if (d / "metrics.json").exists()
-        else {}
-    )
-    return {"reward": reward, **{k: metrics.get(k) for k in ("D", "h_dual", "h_broad")}}
+    problems = []
+    reward = None
+    rj, rt, mj = d / "reward.json", d / "reward.txt", d / "metrics.json"
+    if rj.exists() or rj.is_symlink():
+        problems.append("reward.json present")
+        try:
+            reward = json.loads(rj.read_text()).get("reward")
+        except (OSError, ValueError, AttributeError):
+            reward = "unreadable reward.json"
+    elif rt.is_symlink() or (rt.exists() and not rt.is_file()):
+        problems.append("reward.txt is not a regular file")
+    elif rt.exists():
+        reward = rt.read_text().strip()
+    metrics = {}
+    if mj.exists():
+        if mj.stat().st_size > METRICS_MAX:
+            problems.append(f"metrics.json is {mj.stat().st_size} bytes")
+        metrics = json.loads(mj.read_text())
+    return {
+        "reward": reward,
+        **{k: metrics.get(k) for k in ("D", "h_dual", "h_broad")},
+        "problems": problems,
+    }
 
 
 def inventory(selection: list[dict], cut: dict[str, str]) -> dict:
@@ -154,6 +195,15 @@ def band(selection: list[dict], name: str = "mut-W") -> dict:
     }
 
 
+def zoo_pass(results: dict) -> bool:
+    """Every zoo member exactly 0.0, read as Harbor reads it, with no problem row (R2-09)."""
+    return all(
+        r.get("reward") in ("0.0", 0.0) and not r.get("problems")
+        for n, r in results.items()
+        if not n.startswith("R_all")
+    )
+
+
 def band_v(selection: list[dict], name: str = "mut-V") -> dict:
     """The verification-gap proof: in band, D lost only on tier-C units, the gate essentially untouched."""
     r = band(selection, name)
@@ -162,6 +212,9 @@ def band_v(selection: list[dict], name: str = "mut-V") -> dict:
     r["d_loss_outside_tier_c"] = {
         u: v for u, v in r["units_below_1"].items() if u not in c
     }
+    # V is a consistency check of the scoring under the failure sentence (R2-17 N3): name the tier-C units it leaves
+    # whole, because their commits do not revert on 15.2.0.
+    r["tier_c_kept_whole"] = sorted(u for u in c if u not in r["units_below_1"])
     r["pass"] = (
         0.60 <= r["reward"] <= 0.85
         and not r["d_loss_outside_tier_c"]
@@ -185,19 +238,72 @@ def determinism() -> dict:
 
 
 def cue_sweep() -> dict:
-    hits = []
+    """Every agent-visible text: the instruction and environment/, except what the agent never sees: prune_tree.sh
+    (it names upstream's speed-test wiring to remove it, and the image build deletes it after use), the post-session
+    sweep's programs (installed root-only, 0700) and environment/data/ (the sweep's key)."""
+    hits, allowed = [], Counter()
     for path in [TASK / "instruction.md", *sorted((TASK / "environment").rglob("*"))]:
-        if path.name == "prune_tree.sh":
-            continue  # it names upstream's speed-test wiring to remove it; the image build deletes it after use
+        rel = str(path.relative_to(TASK))
         if (
-            path.is_file()
-            and path.suffix in (".md", ".sh", "", ".txt")
-            or path.name == "Dockerfile"
+            path.name == "prune_tree.sh"
+            or path.name.startswith("fsmaint-")
+            or rel.startswith("environment/data/")
+            or "__pycache__" in path.parts
+        ):
+            continue
+        if path.is_file() and (
+            path.suffix in (".md", ".sh", "", ".txt") or path.name == "Dockerfile"
         ):
             for n, line in enumerate(path.read_text(errors="replace").splitlines(), 1):
-                if CUES.search(line):
-                    hits.append(f"{path.relative_to(TASK)}:{n}: {line.strip()[:100]}")
-    return {"hits": hits, "pass": not hits}
+                for m in CUES.finditer(line):
+                    key = (rel, m.group(0).lower())
+                    if key in ALLOWED:
+                        allowed[key] += 1
+                    else:
+                        hits.append(f"{rel}:{n}: [{m.group(0)}] {line.strip()[:100]}")
+    over = {f"{k[0]} [{k[1]}]": v for k, v in allowed.items() if v > ALLOWED[k]}
+    return {
+        "hits": hits,
+        "allowed": {f"{k[0]} [{k[1]}]": v for k, v in sorted(allowed.items())},
+        "over_allowance": over,
+        "pass": not hits and not over,
+    }
+
+
+def font_licences() -> dict:
+    """The verifier's Noto fonts travel with the OFL text and a notice, and each says OFL in name ID 13 (R2-15 N1).
+    Our own minimal name-table reader; the fonts are data."""
+    noto = TASK / "tests" / "inputs" / "fonts" / "noto"
+    problems = [
+        f"missing {n}" for n in ("OFL.txt", "NOTICE.txt") if not (noto / n).is_file()
+    ]
+    fonts = sorted(f for f in noto.glob("*") if f.suffix.lower() in (".ttf", ".otf"))
+    for f in fonts:
+        if "Open Font License" not in name_id(f.read_bytes(), 13):
+            problems.append(f"{f.name}: name ID 13 does not name the Open Font License")
+    return {
+        "fonts": len(fonts),
+        "problems": problems,
+        "pass": bool(fonts) and not problems,
+    }
+
+
+def name_id(data: bytes, wanted: int) -> str:
+    off = struct.unpack(">I", data[12:16])[0] if data[:4] == b"ttcf" else 0
+    for i in range(struct.unpack(">H", data[off + 4 : off + 6])[0]):
+        tag, _cs, toff, _ln = struct.unpack(
+            ">4sIII", data[off + 12 + 16 * i : off + 28 + 16 * i]
+        )
+        if tag == b"name":
+            _fmt, count, so = struct.unpack(">HHH", data[toff : toff + 6])
+            for j in range(count):
+                pid, _e, _l, nid, ln, no = struct.unpack(
+                    ">HHHHHH", data[toff + 6 + 12 * j : toff + 18 + 12 * j]
+                )
+                if nid == wanted and pid == 3:
+                    raw = data[toff + so + no : toff + so + no + ln]
+                    return raw.decode("utf-16-be", "replace")
+    return ""
 
 
 def main() -> None:
@@ -207,32 +313,50 @@ def main() -> None:
     p.add_argument("--json", type=Path)
     args = p.parse_args()
     selection = [json.loads(x) for x in args.selection.read_text().splitlines() if x]
+    zoo = {
+        n: verify_result(n)
+        for n in (
+            "nop",
+            "stub-comments",
+            "stub-refactor",
+            "stub-nobuild",
+            "stub-empty",
+            "stub-abort",
+            "stub-noop-api",
+            "stub-noop-api-zero",
+        )
+    }
     cut = json.loads(args.cut.read_text()) if args.cut else {}
     units = units_table()
     report = {
         "1_inventory": inventory(selection, cut),
         "2_kill_matrix": kill_matrix(selection, units),
         "3_stub_zoo": {
-            **{
-                n: verify_result(n)
-                for n in (
-                    "nop",
-                    "stub-comments",
-                    "stub-refactor",
-                    "stub-nobuild",
-                    "stub-empty",
-                    "stub-abort",
-                    "stub-noop-api",
-                )
-            },
+            **zoo,
             "R_all (pipeline)": band(selection, "rk-ALL"),
+            "pass": zoo_pass(zoo),
         },
         "4_oracle_nop": {n: verify_result(n) for n in ("oracle", "nop", "base-14.3.0")},
         "5_determinism": determinism(),
         "8_robustness": {
             n: verify_result(n)
-            for n in ("robust", "hostile", "slow", "hang", "flood", "fault")
+            for n in (
+                "robust",
+                "links-fifo",
+                "hostile",
+                "stall",
+                "late-dropin",
+                "dropin",
+                "slow",
+                "hang",
+                "flood",
+                "long-line",
+                "fork-bomb",
+                "mem-flood",
+                "fault",
+            )
         },
+        "15_font_licences": font_licences(),
         "6_cue_words": cue_sweep(),
         "12_band": {
             "V (pipeline)": band_v(selection),

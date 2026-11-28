@@ -69,7 +69,7 @@ To choose the lookups to run:
    script's default LangSys.
 3. The LangSys supplies FeatureList indices: a required feature plus further features.
 4. Select the features to apply by their featureTag.
-5. If a FeatureVariations table is present, evaluate its conditions; a match may replace
+5. If a FeatureVariations table is present, check its conditions; a match may replace
    some selected feature tables with alternate ones.
 6. Collect the LookupList indices of all selected feature tables and run those lookups in
    LookupList order.

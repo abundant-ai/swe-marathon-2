@@ -900,7 +900,7 @@ Normalizing a color line to [0, 1], for graphics back ends that require it: map 
 - Swapping the two circles changes the picture, because larger t wins, unless one circle contains the other. When the circles do not overlap, the bands of constant color curve the same way as the near side of circle 1.
 - Negative radii (reachable only through variation deltas) need no special case; the same steps apply. With r0 = r1, a positive radius gives a cylinder and a negative one gives nothing.
 - When r0 != r1 the cone's tip is at t_tip = r0 / (r0 - r1). If r1 > r0 then r(t) > 0 exactly for t > t_tip; if r1 < r0 then exactly for t < t_tip.
-- Under a transform, the result equals transforming both circles and interpolating between the transformed shapes; the r(t) > 0 condition may be evaluated with the untransformed radii.
+- Under a transform, the result equals transforming both circles and interpolating between the transformed shapes; the r(t) > 0 condition may be checked with the untransformed radii.
 - If a transform flattens the circles into a single line (or nearly, by an implementation tolerance) with both centers on that line, the gradient is degenerate and must not be drawn. Flattening that leaves the centers apart gives a strip, or a cone that looks like a linear gradient.
 - Repeat or reflect with nearly identical circles produces very fine bands and possible moire; the appearance then depends on the renderer.
 - Back ends that need non-negative radii or stops in [0, 1] may rewrite the gradient, keeping the extend behavior:

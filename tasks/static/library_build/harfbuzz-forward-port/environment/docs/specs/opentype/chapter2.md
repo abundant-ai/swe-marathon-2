@@ -710,7 +710,7 @@ Rules:
 - Records are in strictly increasing featureIndex order; one featureIndex never appears twice.
 - When looking for a feature index, the first record with that index is the match; the search stops early at a record with a higher index.
 
-### Evaluating feature variations
+### Applying feature variations
 
 1. Obtain the default feature indices (required plus optional) from the selected LangSys.
 2. Take the normalized coordinate of every axis for the current instance.

@@ -39,7 +39,7 @@ To decide which lookups to run:
 3. The LangSys table gives FeatureList indices: one required feature and any number of other
    features.
 4. Choose which of those features to apply, by their featureTag.
-5. If a FeatureVariations table exists, evaluate its conditions; a match may replace some of
+5. If a FeatureVariations table exists, check its conditions; a match may replace some of
    the chosen feature tables with alternate feature tables.
 6. Gather the LookupList indices of all chosen feature tables into one set and run those
    lookups in LookupList order.

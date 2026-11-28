@@ -59,7 +59,7 @@ Advance width of glyph g:
 2. Otherwise read entry g of the advance map (an index at or past mapCount uses the last
    entry) and split it into outer and inner indices with the map's entryFormat
    (otvarcommonformats.md).
-3. Evaluate that delta set in the ItemVariationStore for the current instance
+3. Compute that delta set in the ItemVariationStore for the current instance
    (otvarcommonformats.md, Applying an item variation store). An index of (0xFFFF, 0xFFFF), or
    one that selects a NULL subtable, means no variation.
 4. Varied advance = default advance from 'hmtx' + the result.
@@ -68,7 +68,7 @@ Left or right side bearing of glyph g:
 
 1. If the matching map offset (lsbMappingOffset or rsbMappingOffset) is NULL, HVAR holds no
    variation data for that metric.
-2. Otherwise look up entry g of that map as in step 2 above and evaluate the delta set as in
+2. Otherwise look up entry g of that map as in step 2 above and compute the delta set as in
    step 3.
 3. Add the result to the default value. Defaults come from 'hmtx' and 'glyf': the left side
    bearing from 'hmtx', and the right side bearing as advance - (lsb + xMax - xMin)

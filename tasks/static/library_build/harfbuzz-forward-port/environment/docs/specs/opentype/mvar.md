@@ -55,7 +55,7 @@ To get, say, OS/2.sCapHeight for the current instance:
    tags as big-endian uint32 values), so a binary search works; step by valueRecordSize.
 3. Tag not found: the value is the same everywhere in the variation space; use the stored
    value.
-4. Tag found: evaluate delta set (deltaSetOuterIndex, deltaSetInnerIndex) in the
+4. Tag found: compute delta set (deltaSetOuterIndex, deltaSetInnerIndex) in the
    ItemVariationStore for the current instance (otvarcommonformats.md, Applying an item
    variation store) and add the result to the value stored in the target table.
 5. Records whose tag the reader does not recognize, such as private tags, are ignored.

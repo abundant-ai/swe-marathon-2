@@ -6,7 +6,7 @@ These notes restate the source's structures and rules; where they differ, the so
 
 - 'avar' is optional in a variable font and is used together with 'fvar' (fvar.md).
 - It changes, axis by axis, how an instance coordinate is normalized before variation data is
-  evaluated. Without it, the user-to-normalized map has two linear pieces: minValue maps to
+  applied. Without it, the user-to-normalized map has two linear pieces: minValue maps to
   -1, defaultValue to 0 and maxValue to +1. With it, extra breakpoints turn the map into a
   piecewise-linear function with more segments, so equal steps in user value can produce
   small changes in one part of the axis and large ones in another.

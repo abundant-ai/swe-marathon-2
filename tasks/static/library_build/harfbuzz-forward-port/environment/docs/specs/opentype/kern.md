@@ -125,5 +125,5 @@ rv = right class value of the right glyph (0 if outside its range)
 value = FWORD stored at (start of kerning array) + lv + rv
 ```
 
-This format is the fastest to evaluate, at the cost of size: the array has a cell for every
+This format is the fastest to look up, at the cost of size: the array has a cell for every
 combination of left and right class, kerning or not.
