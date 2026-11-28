@@ -1,6 +1,6 @@
 note	release	units	begins
 1	14.3.1	26	Fix AAT insertion at the end of the text.
-2	14.4.0	36	Glyph positions and extents now saturate instead of overflowing.
+2	14.4.0	36	Glyph positions now saturate instead of overflowing.
 3	14.4.0	11	Arabic Windows-1256 fallback shaping is now enabled on all platforms.
 4	14.5.0	33	Update the Unicode data and script support to Unicode 18.0, including 
 5	14.5.1	35	Map the `fonupa` (Uralic Phonetic Alphabet) BCP 47 variant to the `UPP
@@ -28,7 +28,7 @@ note	release	units	begins
 27	15.2.0	27	Fix missing unsafe-to-break flags in text with cross-stream kerning fr
 28	15.2.0	21	Apply the `kern` table in vertical text when the client requests `vkrn
 29	15.2.0	1	The Indic shaper no longer applies `init` to a first syllable that fol
-30	15.2.0	2	The USE shaper no longer uses a space as the base of a dependent vowel
+30	15.2.0	2	The USE shaper no longer uses a space (other than U+00A0 NO-BREAK SPAC
 31	15.2.0	3	The USE shaper now ends a word at spaces and symbols when it selects `
 32	15.2.0	4	The Khmer shaper now moves only one Coeng Ro before the base, and only
 33	15.2.0	5	A Hangul tone mark at the start of the text now gets only one dotted c

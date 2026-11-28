@@ -78,7 +78,7 @@ our product can observe.
 
 **14.4.0**
 
-- Glyph positions and extents now saturate instead of overflowing.
+- Glyph positions now saturate instead of overflowing.
 - Arabic Windows-1256 fallback shaping is now enabled on all platforms.
 
 **14.5.0**
@@ -89,7 +89,8 @@ our product can observe.
 
 **14.5.1**
 
-- Map the `fonupa` (Uralic Phonetic Alphabet) BCP 47 variant to the `UPPH` OpenType language system tag.
+- Map the `fonupa` (Uralic Phonetic Alphabet) BCP 47 variant to the `UPPH` OpenType language system tag, and `UPPH`
+  back to `und-fonupa`.
 - Fix signed integer overflows when applying synthetic slant and emboldening to glyph extents: the slanted and
   emboldened bearings, width and height are now computed in full and then clamped to the range of a 32-bit position,
   instead of wrapping.
@@ -193,7 +194,8 @@ our product can observe.
 **15.2.0: script-specific shaping**
 
 - The Indic shaper no longer applies `init` to a first syllable that follows a letter or mark in the pre-context.
-- The USE shaper no longer uses a space as the base of a dependent vowel. The vowel now gets a dotted circle.
+- The USE shaper no longer uses a space (other than U+00A0 NO-BREAK SPACE, which stays a base) as the base of a
+  dependent vowel. The vowel now gets a dotted circle.
 - The USE shaper now ends a word at spaces and symbols when it selects `isol`, `init`, `medi` and `fina` forms.
 - The Khmer shaper now moves only one Coeng Ro before the base, and only when it is the first or second coeng of the
   syllable.
@@ -203,9 +205,9 @@ our product can observe.
   `HB_BUFFER_CLUSTER_LEVEL_CHARACTERS`): the shaper splits such a syllable into its jamo to set the trailing jamo with
   them, so a break before that jamo changes the syllable.
 - Dotted circles for Hangul tone marks and prohibited vowel sequences now keep their advance in fonts without `GDEF`.
-  A dotted circle the shaper inserts now has the properties of U+25CC itself, a base, as one typed in the text has,
-  and no longer those of the mark it stands for: it keeps its advance, it is not shifted as zeroed marks are, and a
-  zero-width tone mark after it is placed on it.
+  A dotted circle the shaper inserts now has the properties of a U+25CC typed in the text, and no longer those of the
+  mark it stands for: where that makes it a base (in fonts without `GDEF`, or whose `GDEF` classes it as a base), it
+  keeps its advance, it is not shifted as zeroed marks are, and a zero-width tone mark after it is placed on it.
 - Prohibited vowel sequences now get a dotted circle also when a default ignorable, such as ZWJ, is between the
   vowels.
 - The Hebrew shaper now composes presentation forms in fonts that have `mark` only under the `DFLT` script.
@@ -235,8 +237,8 @@ our product can observe.
 ## What to deliver
 
 The changed tree, in place in `/app/harfbuzz`. Keep it building with the commands above at all times. It stays
-version 14.3.0 (`meson.build`, `src/hb-version.h` and `NEWS` as they are): our certification records name that
-version, with these changes as our own.
+version 14.3.0: leave the version in `meson.build`, `src/hb-version.h` and `NEWS` as it is, since our certification
+records name that version, with these changes as our own.
 
 ## Switching over
 
