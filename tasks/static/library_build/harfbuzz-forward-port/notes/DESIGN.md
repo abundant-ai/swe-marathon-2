@@ -278,92 +278,94 @@ Decided by a three-judge panel on 2026-11-27 and revised by a second on 2026-11-
 below (harbor-lh `ops/swe-marathon-v2/decisions/2026-11-27-harfbuzz-failure-sentence-DECISION.md` and
 `2026-11-28-harfbuzz-tiers-difficulty-DECISION.md`):
 
-> With no 15.x code or tests to check against, agents land the fixes whose notes name the change and fall short
-> mainly where they must find a bug's cause from its symptom alone, or hand-assemble AAT `kerx` and `kern` tables to
-> see the behaviour at all.
+> With no 15.x code or tests to check against, agents land most fixes whose note names the change, fewer where they
+> must work the change out or diagnose a symptom the shipped fonts reproduce, and fewest where no shipped font shows
+> the behaviour: a bug they must first reproduce on a font they build, or AAT `kerx` and `kern` tables they must
+> assemble by hand.
 
-**Tiers** (QA pass 16's tiers and CLAIMS.md's families). Tier A: the note names the fix. Tier B: the agent can
-check its change on its own 14.3.0 build with the shipped fonts and tools. Tier C: it cannot without material it
-builds itself: AAT/`kern` and flag behaviour that needs hand-built fonts, the Unicode 18 data and its new
-characters, and bugs the note describes only by a symptom. 14 units are tier A, 20 tier B and 19 tier C: pass 16's
-14 tier-C units; 21, 23 and 24, AAT units pass 16 rated moderate, for which no font shipped with 14.3.0 has the
-tables the note is about (the shipped test fonts have no `kerx`, no vertical `kern` header and no repeated AAT
-feature request; upstream built new fonts to test 21 and 24); and 33 and 34, the decision's "regenerated Unicode
-data". Units 20 and 22 are AAT units too, but their notes name the edit, so an agent can apply it without seeing
-it work; they stay in tier A.
+**Tiers.** The 2026-11-28 panel's ordered rule, applied to all 53 units with per-unit evidence in
+`scripts/pipeline/tiers.tsv` (frozen with notes/PREREGISTRATION.md): **C** if (i) the behaviour shows only on tables
+no shipped font has and fontTools cannot write, or (ii) the note gives only a symptom, the cause is neither stated
+nor pointed to by the note (judged on upstream's diff), and no shipped material shows the behaviour; otherwise **A** if
+the note names the edit; otherwise **B**. The material axis rests on what the 14.3.0 test fonts contain (QA pass
+R2-17's scan) and on what the agent image's fontTools 4.69.1 writes: `morx` and `mort` state tables, `trak`, `JSTF`,
+`STAT` and `kern` format 0 with any coverage bits, but no `kerx`, and AAT `kern` formats 1-3 only as raw bytes. **A 23,
+B 22, C 8**: tier C is the `kerx` units 23, 25a and 25b, and the symptom-only units no shipped font shows: 10a, 25c,
+26, 31 and 42. Read strictly, "pointed to" would add 12 and 27 (|C| = 10); that reading is a frozen sensitivity in
+the pre-registration. Predictions are QA pass 16's per-unit estimates (round 2).
 
-| Unit | Note | Family | Release | Tier | Why | Predicted pass |
+| Unit | Note | Family | Note's release | Tier | Predicted (frontier, mid) | Why this tier |
 | --- | --- | --- | --- | --- | --- | --- |
-| 1 | Indic init after a letter or mark in the pre-context | F1 | 15.2.0 | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
-| 2 | USE: no space as the base of a dependent vowel (candidate) | F1 | 15.2.0 | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
-| 3 | USE word boundaries for positional forms | F1 | 15.2.0 | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
-| 4 | Khmer: one Coeng Ro, first or second coeng only | F1 | 15.2.0 | A | the note names the fix | 0.89 |
-| 5 | Hangul tone mark at text start | F1 | 15.2.0 | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
-| 6 | dotted circles keep their advance without GDEF | F1 | 15.2.0 | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
-| 7 | vowel constraints across default ignorables | F1 | 15.2.0 | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
-| 8 | Hebrew composes with mark only under DFLT | F1 | 15.2.0 | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
-| 9 | Arabic stch tiles centred on short words and exact fits | F1 | 15.2.0 | C | the note gives a symptom; the cause has to be found without an oracle | 0.46 |
-| 10a | Arabic fallback: ligatures with a missing component | F1 | 15.1.0 | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
-| 10b | Arabic fallback: marks in legacy fonts (candidate) | F1 | 15.1.0 | C | the note gives a symptom; the cause has to be found without an oracle | 0.46 |
-| 11 | Arabic Windows-1256 fallback on all platforms | F1 | 15.0.0 | A | the note names the fix | 0.89 |
-| 12 | per-syllable lookups 15 syllables later (alternative fd5702517) | F2 | 15.2.0 | C | the note gives a symptom; the cause has to be found without an oracle | 0.46 |
-| 13 | precomposed characters in text with no marks | F2 | 15.2.0 | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
-| 14 | a global request overrides earlier ranged requests | F2 | 15.2.0 | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
-| 15 | missing character + variation selector: not-found glyph | F2 | 15.2.0 | A | the note names the fix | 0.89 |
-| 16 | out-of-range glyph ids (candidate) | F2 | 15.0.0 | C | the note gives a symptom; the cause has to be found without an oracle | 0.46 |
-| 17 | GPOS marks and an earlier base | F3 | 15.2.0 | C | the note gives a symptom; the cause has to be found without an oracle | 0.46 |
-| 18 | fallback mark positioning uses the base x offset | F3 | 15.2.0 | A | the note names the fix | 0.89 |
-| 19 | COLR extents and marks with empty layers | F3 | 15.1.0 | C | the note gives a symptom; the cause has to be found without an oracle | 0.46 |
-| 20 | cross-stream kern: reset value and axis scale | F4 | 15.2.0 | A | the note names the fix (no font is needed to apply it, though one is needed to see it) | 0.89 |
-| 21 | kern in vertical text when vkrn is requested | F4 | 15.2.0 | C | no shipped font has a vertical kern header; upstream built two fonts to test the fix | 0.46 |
-| 22 | trak in vertical text | F4 | 15.2.0 | A | the note names the fix (no font is needed to apply it, though one is needed to see it) | 0.89 |
-| 23 | kerx with GPOS lacking a kerning feature | F4 | 15.2.0 | C | no shipped font has a kerx table, and fontTools cannot write one | 0.46 |
-| 24 | AAT: later feature request wins | F4 | 15.2.0 | C | no shipped font requests one AAT feature twice; upstream built morx fonts to test the fix | 0.46 |
-| 25a | kerx formats 1 and 2 | F4 | 15.1.0 | C | AAT/kern or flag behaviour that needs fonts the agent builds | 0.46 |
-| 25b | kerx format 4 mark positioning | F4 | 15.1.0 | C | AAT/kern or flag behaviour that needs fonts the agent builds | 0.46 |
-| 25c | kern and mort with a non-first initial state | F4 | 15.1.0 | C | AAT/kern or flag behaviour that needs fonts the agent builds | 0.46 |
-| 26 | AAT insertion at the end of the text | F4 | 15.0.0 | C | AAT/kern or flag behaviour that needs fonts the agent builds | 0.46 |
-| 27 | unsafe-to-break with cross-stream kerning | F5 | 15.2.0 | C | AAT/kern or flag behaviour that needs fonts the agent builds | 0.46 |
-| 29 | archaic trailing jamo flags (candidate) | F5 | 15.2.0 | C | AAT/kern or flag behaviour that needs fonts the agent builds | 0.46 |
-| 31 | gvar intermediate tuples | F6 | 15.1.0 | C | the note gives a symptom; the cause has to be found without an oracle | 0.46 |
-| 33 | Unicode 18.0 data and scripts | F7 | 15.0.0 | C | needs regenerated Unicode 18 data and fonts covering the new characters | 0.60 |
-| 34 | Indic shaping of the Unicode 18 additions | F7 | 15.1.0 | C | needs regenerated Unicode 18 data and fonts covering the new characters | 0.50 |
-| 35 | fonupa maps to UPPH | F7 | 15.0.0 | A | the note names the fix | 0.89 |
-| 36 | saturating positions and extents (the 2026-08-12 stack) | F8 | 15.0.0 | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
-| 37 | overflow fixes in extents scaling, slant and emboldening | F8 | 15.0.0 | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
-| 38 | extents round outward after scaling | F8 | 15.2.0 | C | the note gives a symptom; the cause has to be found without an oracle | 0.46 |
-| 39 | empty glyphs have zero extents | F8 | 15.2.0 | A | the note names the fix | 0.89 |
-| 40a | OS/2 optical size in points | F8 | 15.2.0 | A | the note names the fix | 0.89 |
-| 40b | slant includes synthetic slant | F8 | 15.2.0 | A | the note names the fix | 0.89 |
-| 40c | STAT values of older sibling fonts skipped | F8 | 15.2.0 | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
-| 41 | collect_unicodes and cmap format 13 | F8 | 15.2.0 | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
-| 42 | nested glyf components with anchor points | F8 | 15.2.0 | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
-| 43 | zero positions for items added after the first call | F8 | 15.2.0 | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
-| 44a | fallback vertical descender without vhea | F8 | 15.1.0 | A | the note names the fix | 0.89 |
-| 44b | hanging baseline fallback | F8 | 15.1.0 | A | the note names the fix | 0.89 |
-| 45 | collect_glyph_alternates garbage | F8 | 15.1.0 | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
-| 46 | hb_face_create_or_fail() named-instance bits | F8 | 15.1.0 | A | the note names the fix | 0.89 |
-| 47b | hb_font_set_face() does nothing | F8 | 15.2.0 | A | the note names the fix | 0.89 |
-| 48 | hb_font_create_without_funcs_or_fail() | F8 | 15.2.0 | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
-| 49 | hb_ot_layout_get_extender_glyphs() | F8 | 15.2.0 | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
-| 51 | deserialize2 functions | F8 | 15.1.0 | B | checkable on the agent's own 14.3.0 build with shipped fonts and tools | 0.68 |
+| 1 | Indic init after a letter or mark in the pre-context | F1 | 15.2.0 | A | 0.80, 0.35 | names the edit at one existing decision (word-start test for init); shown on shipped material; was B |
+| 2 | USE: no space as the base of a dependent vowel (candidate) | F1 | 15.2.0 | B | 0.65, 0.25 | states the behaviour; the change (a new USE category and machine rule) must be designed; upstream lines exclude 968 regenerated table and machine lines |
+| 3 | USE word boundaries for positional forms | F1 | 15.2.0 | B | 0.55, 0.20 | states the behaviour; several decisions (symbol clusters, NBSP as a generic base) must be designed |
+| 4 | Khmer: one Coeng Ro, first or second coeng only | F1 | 15.2.0 | A | 0.95, 0.80 | names the edit (one existing bound); shown on shipped material |
+| 5 | Hangul tone mark at text start | F1 | 15.2.0 | B | 0.60, 0.25 | states the corrected output, not the change (treat an existing circle as the base) |
+| 6 | dotted circles keep their advance without GDEF | F1 | 15.2.0 | A | 0.78, 0.40 | names the edit (the inserted circle takes U+25CC's properties); panel expected A; was B |
+| 7 | vowel constraints across default ignorables | F1 | 15.2.0 | B | 0.60, 0.20 | states the behaviour; the vowel-constraint matcher must be reworked; upstream changed only the generated matcher (337 lines), so 0 hand-written lines |
+| 8 | Hebrew composes with mark only under DFLT | F1 | 15.2.0 | B | 0.55, 0.20 | states when composition happens; the agent must find why it does not (has_gpos_mark) |
+| 9 | Arabic stch tiles centred on short words and exact fits | F1 | 15.2.0 | B | 0.45, 0.10 | states the behaviour; the centring arithmetic must be designed; was C [predicted 0.45: pass 16 rates the stch centring hard (0.45)] |
+| 10a | Arabic fallback: ligatures with a missing component | F1 | 15.1.0 | C | 0.65, 0.25 | C(ii): symptom only; the cause (partial component lists stay counted) is not stated; no shipped font shows it; was B |
+| 10b | Arabic fallback: marks in legacy fonts (candidate) | F1 | 15.1.0 | B | 0.45, 0.10 | symptom only, but shipped legacy fonts show it, so not C(ii); was C [predicted 0.45: pass 16 0.45: legacy-font PUA diagnosis] |
+| 11 | Arabic Windows-1256 fallback on all platforms | F1 | 14.4.0 | A | 0.95, 0.80 | names the edit (a platform switch) |
+| 12 | per-syllable lookups 15 syllables later (alternative fd5702517) | F2 | 15.2.0 | B | 0.50, 0.10 | symptom only, but the note points to the cause (matching across syllables after the serial wraps), so not C(ii); was C [predicted 0.50: pass 16 0.50: diagnosis of the syllable walk] |
+| 13 | precomposed characters in text with no marks | F2 | 15.2.0 | B | 0.60, 0.20 | symptom only, but shipped material shows it, so not C(ii) |
+| 14 | a global request overrides earlier ranged requests | F2 | 15.2.0 | B | 0.70, 0.30 | states the precedence rule; the map/mask change must be designed (3 files) |
+| 15 | missing character + variation selector: not-found glyph | F2 | 15.2.0 | A | 0.80, 0.45 | names the edit (use the buffer's not-found glyph) |
+| 16 | out-of-range glyph ids (candidate) | F2 | 14.6.0 | B | 0.40, 0.10 | symptom only and the cause (coverage-cache aliasing) is not pointed to, but shipped fonts show it, so not C(ii); was C [predicted 0.40: pass 16 0.40: cache aliasing has to be diagnosed] |
+| 17 | GPOS marks and an earlier base | F3 | 15.2.0 | B | 0.55, 0.15 | symptom only, but shipped material shows it, so not C(ii); was C |
+| 18 | fallback mark positioning uses the base x offset | F3 | 15.2.0 | A | 0.90, 0.60 | names the edit |
+| 19 | COLR extents and marks with empty layers | F3 | 15.1.0 | B | 0.50, 0.15 | symptom only, but a shipped COLR font shows it, so not C(ii); was C [predicted 0.50: pass 16 0.50: paint-extents diagnosis] |
+| 20 | cross-stream kern: reset value and axis scale | F4 | 15.2.0 | A | 0.85, 0.45 | names both edits; format 0 is fontTools-writable, so not C(i) |
+| 21 | kern in vertical text when vkrn is requested | F4 | 15.2.0 | A | 0.65, 0.25 | names the edit; fontTools-writable, so not C(i); panel expected A; was C [predicted 0.65: pass 16 0.65: needs a vertical kern font of its own] |
+| 22 | trak in vertical text | F4 | 15.2.0 | A | 0.90, 0.55 | names the edit (apply tracking in the advance direction); fontTools-writable |
+| 23 | kerx with GPOS lacking a kerning feature | F4 | 15.2.0 | C | 0.60, 0.20 | C(i): kerx only, though the note names the edit |
+| 24 | AAT: later feature request wins | F4 | 15.2.0 | A | 0.55, 0.20 | names the edit (request precedence in the AAT map); shipped and fontTools material; was C [predicted 0.55: pass 16 0.55: AAT request merging, morx fonts of its own] |
+| 25a | kerx formats 1 and 2 | F4 | 15.1.0 | C | 0.58, 0.18 | C(i): kerx only |
+| 25b | kerx format 4 mark positioning | F4 | 15.1.0 | C | 0.30, 0.05 | C(i): kerx only [predicted 0.30: pass 16 0.30: kerx format 4 attachment chains] |
+| 25c | kern and mort with a non-first initial state | F4 | 15.1.0 | C | 0.50, 0.15 | C(ii): symptom only; the cause (negative-state arithmetic in StateTable) is not stated; no shipped font |
+| 26 | AAT insertion at the end of the text | F4 | 14.3.1 | C | 0.40, 0.10 | C(ii): symptom only; the cause (metadata applied to cur() at end of text) is not stated; no shipped font |
+| 27 | unsafe-to-break with cross-stream kerning | F5 | 15.2.0 | B | 0.55, 0.15 | the note states what is missing (the flags), so not C(ii); fontTools-writable, so not C(i); was C |
+| 29 | archaic trailing jamo flags (candidate) | F5 | 15.2.0 | B | 0.62, 0.25 | states the behaviour and the mechanism, not the edit; panel expected B; was C |
+| 31 | gvar intermediate tuples | F6 | 15.1.0 | C | 0.50, 0.10 | C(ii): symptom only; the cause (the shared-peak scalar cache) is not stated; no shipped font shows it |
+| 33 | Unicode 18.0 data and scripts | F7 | 14.5.0 | A | 0.85, 0.40 | names the edit (regenerate, add three script values); panel expected A; was C |
+| 34 | Indic shaping of the Unicode 18 additions | F7 | 15.1.0 | B | 0.60, 0.20 | symptom only (the block filter is not named), but shipped material shows it, so not C(ii); upstream changed only the generated table (179 lines; the block filter is 2 generator lines); was C |
+| 35 | fonupa maps to UPPH | F7 | 14.5.1 | A | 0.90, 0.55 | names the edit; 0 hand-written lines because the 9-line edit is in the generated tag table, which the agent edits by hand (its sources are withheld) |
+| 36 | saturating positions and extents (the 2026-08-12 stack) | F8 | 14.4.0 | B | 0.70, 0.30 | names the arithmetic, but the sites (76 upstream commits) must be found; GPOS shows it, so not C(i) |
+| 37 | overflow fixes in extents scaling, slant and emboldening | F8 | 14.5.1 | A | 0.78, 0.40 | names the edit; panel expected A; was B |
+| 38 | extents round outward after scaling | F8 | 15.2.0 | B | 0.50, 0.15 | states the rounding rule; the unrounded extents must be produced in glyf, CFF1 and CFF2; panel expected B; was C [predicted 0.50: pass 16 0.50: three outline back ends] |
+| 39 | empty glyphs have zero extents | F8 | 15.2.0 | A | 0.90, 0.55 | names the edit |
+| 40a | OS/2 optical size in points | F8 | 15.2.0 | A | 0.90, 0.60 | names the edit |
+| 40b | slant includes synthetic slant | F8 | 15.2.0 | A | 0.85, 0.40 | names the edit |
+| 40c | STAT values of older sibling fonts skipped | F8 | 15.2.0 | A | 0.70, 0.30 | names the edit; STAT is fontTools-writable, so not C(i); was B [predicted 0.70: pass 16 0.70: STAT fonts of its own] |
+| 41 | collect_unicodes and cmap format 13 | F8 | 15.2.0 | B | 0.75, 0.35 | symptom only, but shipped material shows it, so not C(ii) |
+| 42 | nested glyf components with anchor points | F8 | 15.2.0 | C | 0.70, 0.25 | C(ii): symptom only; the cause (anchor index not offset by the composite's start point) is not stated; no shipped font; was B [predicted 0.70: pass 16 0.70: the digest states the point-matching rule] |
+| 43 | zero positions for items added after the first call | F8 | 15.2.0 | A | 0.75, 0.35 | names the edit (zero the positions of items added later); was B |
+| 44a | fallback vertical descender without vhea | F8 | 15.1.0 | B | 0.95, 0.75 | symptom only (the one-token edit is not stated); shipped material shows it, so B, not A; was A [predicted 0.95: pass 16 0.95: a one-token edit] |
+| 44b | hanging baseline fallback | F8 | 15.1.0 | B | 0.80, 0.40 | symptom only (the tag conversion is not stated); shipped material shows it, so B, not A; was A |
+| 45 | collect_glyph_alternates garbage | F8 | 15.1.0 | B | 0.65, 0.25 | symptom only, but shipped material shows it, so not C(ii) |
+| 46 | hb_face_create_or_fail() named-instance bits | F8 | 15.1.0 | A | 0.95, 0.75 | the stated defect gives the edit (ignore the named-instance bits) |
+| 47b | hb_font_set_face() does nothing | F8 | 15.2.0 | A | 0.90, 0.60 | names the edit |
+| 48 | hb_font_create_without_funcs_or_fail() | F8 | 15.2.0 | A | 0.80, 0.40 | the note gives the complete contract of a new function; was B |
+| 49 | hb_ot_layout_get_extender_glyphs() | F8 | 15.2.0 | A | 0.70, 0.30 | the note gives the complete contract; JSTF is fontTools-writable, so not C(i); was B [predicted 0.70: pass 16 0.70: JSTF reading of its own] |
+| 51 | deserialize2 functions | F8 | 15.1.0 | A | 0.85, 0.45 | the note gives the complete contract; was B |
 
-**The proof mutant V** is 15.2.0 with every tier-C unit's change taken out: `scripts/pipeline/assemble_reverts.py`
-collects the 19 units' commits (and the hand-resolved reverts of 27 and 29) into `patches-lib/ALLV`, the pipeline
-builds it as `mut-V`, and `scripts/pipeline/make_mutant.sh` applies it to the reference tree for the verifier;
-a commit that no longer reverts cleanly is left in and listed. V must land in 0.60-0.85, lose D only on tier-C
-units, and leave h_d and h_b essentially unchanged. V is a **consistency check** of the scoring under the failure
-sentence, not evidence of how agents fail (QA pass R2-17): its h_d and h_b hold by construction for any revert
-mutant, and what it adds is that the combined reverts on 15.2.0 do not spill into other units. Four commits do not
-revert on 15.2.0, because later 15.x commits rework the same lines: 25a's a92e0996d and 90417543f, 25b's 436f067b2,
-and 33's bf93d8671 (the Unicode 18 data). So V keeps 25b and 33 whole and 25a at 0.283; with every tier-C unit at
-0, D would be 34/53 = 0.642 (fix round 1 misstated this as 0.623). `gate_checks.py` names the tier-C units V keeps
-whole. Two companions are measured in the pipeline: **R_unbuilt**,
-the panel's starting point (every F4 and F5 unit taken out, `patches-lib/ALLRu`), and **W_literal**, W without
-the eight widenings QA pass 17 found not to be, or arguably not to be, over-broad readings of their notes, or no-ops
-(11, 18, 25b, 31, 33, 36, 37, 44b; `patches-lib/LITW`). The over-broad mutant W is kept as a **secondary bound**:
-it shows how much the gate takes from a port that widens every condition, not how agents fail. Every result
-reports D, h_d and h_b separately. What would reopen the decision is in `notes/PREREGISTRATION.md`.
+**The mutant V**, a consistency check (both panels), is 15.2.0 with every tier-C unit's commits reverted:
+`scripts/pipeline/assemble_reverts.py` collects the eight units' commits into `patches-lib/ALLV`, the pipeline builds
+it as `mut-V`, and `scripts/pipeline/make_mutant.sh` applies it to the reference tree for the verifier; a commit that
+no longer reverts cleanly is left in and listed. V must land in 0.60-0.85 (the band never moves), lose D only on tier
+C, and keep h_d and h_b at 0.99 or more. Its h_d and h_b hold by construction for any revert mutant (QA pass R2-17);
+what V adds is that the combined reverts on 15.2.0 do not spill into other units. Complete, V would score
+1 - 8/53 = 0.849; as built about 0.87, because 25a's a92e0996d and 90417543f and 25b's 436f067b2 do not revert on
+15.2.0, where later commits rework the same lines. `gate_checks.py` names the tier-C units V keeps whole. In fix round
+1, with 19 tier-C units, V scored 0.685.
+
+Two companions are measured in the pipeline: **R_unbuilt**, the first panel's starting point (every F4 and F5 unit
+taken out, `patches-lib/ALLRu`), and **W_literal**, W without the eight widenings QA pass 17 found not to be, or
+arguably not to be, over-broad readings of their notes, or no-ops (11, 18, 25b, 31, 33, 36, 37, 44b;
+`patches-lib/LITW`). The over-broad mutant W is kept as a **secondary bound**: it shows how much the gate takes from
+a port that widens every condition, not how agents fail. Every result reports D, h_d and h_b separately. The
+registered tests, and what would reopen the decisions, are in `notes/PREREGISTRATION.md`.
 
 ## 11. Effort
 

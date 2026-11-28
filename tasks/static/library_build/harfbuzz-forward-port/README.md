@@ -14,8 +14,9 @@ session, working from the release notes, the specifications and its own test fon
 binary. A separate verifier compiles the delivered tree and compares integer shaping and API outputs
 on private fonts and strings with the upstream releases. Only behaviour a listed note changed is credited, and
 behaviour no note changed must stay as it was. Where agents are expected to fail: with no 15.x code or tests to
-check against, they land the fixes whose notes name the change and fall short mainly where they must find a bug's
-cause from its symptom alone, or hand-assemble AAT `kerx` and `kern` tables to see the behaviour at all.
+check against, they land most fixes whose note names the change, fewer where they must work the change out or diagnose
+a symptom the shipped fonts reproduce, and fewest where no shipped font shows the behaviour: a bug they must first
+reproduce on a font they build, or AAT `kerx` and `kern` tables they must assemble by hand.
 
 | Document | Contents |
 | --- | --- |
@@ -37,7 +38,7 @@ cause from its symptom alone, or hand-assemble AAT `kerx` and `kern` tables to s
 | Novelty | First SWE-M2 task that changes an existing C++ library, first text-shaping task, first forward-port. Release-notes upgrades exist (SWE-EVO, SWE-Chain, RoadmapBench) but on pre-cutoff Python releases graded by upstream tests; this one is post-cutoff, in OpenType and AAT shaping, graded by differential execution on private fonts | No shaping task among Forge's 664 tasks or this repository's tasks (read 2026-11-26) | Public-benchmark comparisons are second-hand (CLAIMS.md C9, C11) |
 | Verifiability | Outputs are integer sequences; per-item upstream revert mutants prove each graded case belongs to one note; the unmodified base scores 0 by construction | Commit-level evidence in CLAIMS.md | Case yield per item, revert cleanliness, determinism: all spike items |
 | Realism | Frozen, certified builds that take upstream fixes as their own changes are common practice; the notes are upstream's own (the restated rules of units 6, 29 and 37 and the new functions' API texts are ours), the specs are the ones a maintainer reads | Upstream's notes state rules as conditions precise enough to implement (CLAIMS.md C29) | The "no upstream diff" story has to read as natural (QA lens 1) |
-| Difficulty | 53 graded changes across 8 families: 14 whose note names the fix, 20 an agent can check on its own 14.3.0 build, and 19 it cannot without fonts or data it builds itself (AAT and `kern` tables no shipped font has, the Unicode 18 data, bugs described only by symptom); no oracle for the new behaviour, beyond what fontTools computes for units 31, 41 and 42; a gate on everything the notes leave alone | Pre-registered, from QA pass 16: frontier D 0.66, reward about 0.64 (0.54-0.75), mid-tier about 0.28 (notes/PREREGISTRATION.md) | Unmeasured until the first runs; five kill conditions |
+| Difficulty | 53 graded changes across 8 families: 23 whose note names the edit, 22 the agent must work out or diagnose on material it can see, and 8 where no shipped font shows the behaviour (hand-assembled `kerx`, or a symptom-only bug to reproduce on a font it builds); no oracle for the new behaviour, beyond what fontTools computes for units 31, 41 and 42; a gate on everything the notes leave alone. Horizon: about 10-16 working days for an engineer who knows HarfBuzz, several weeks otherwise (QA pass R2-16), above the owner's 2-7 day target; no scope cut, since cutting tier C raises the frontier | Pre-registered from QA pass 16's per-unit estimates: frontier D 0.687, reward about 0.65 (0.53-0.76), accepted as about 0.6 by the 2026-11-28 panel pending the owner; mid-tier about 0.29; a contingent per-unit completeness lever (about 0.59) if the first three accepted Opus-class sessions' median passes 0.70 | Unmeasured until the first runs |
 | Initial feasibility | Every graded case follows from its note as shipped (upstream's wording; a stated rule for units 6, 29 and 37), the specification notes and the 14.3.0 code (QA pass 04), and cases a note does not determine are left out; the base tree, its own tests and fontTools let the agent check its work against 14.3.0 for everything the notes leave alone | Example: the Khmer fix is a one-token change whose rule is quoted from Microsoft's spec in the 14.3.0 source itself | E-item restatements; fontTools has no `kerx` writer (our assembler) |
 
 ## One step
@@ -63,23 +64,25 @@ by unit and kind for post-run analysis. Details and rationale: [notes/DESIGN.md]
 
 Chosen by a three-judge panel on 2026-11-27 and revised by a second on 2026-11-28 (harbor-lh
 `ops/swe-marathon-v2/decisions/2026-11-27-harfbuzz-failure-sentence-DECISION.md` and
-`2026-11-28-harfbuzz-tiers-difficulty-DECISION.md`):
+`2026-11-28-harfbuzz-tiers-difficulty-DECISION.md`, with the wording of `2026-11-28b-harfbuzz-sentence-after-tiering-DECISION.md`):
 
-> With no 15.x code or tests to check against, agents land the fixes whose notes name the change and fall short
-> mainly where they must find a bug's cause from its symptom alone, or hand-assemble AAT `kerx` and `kern` tables to
-> see the behaviour at all.
+> With no 15.x code or tests to check against, agents land most fixes whose note names the change, fewer where they
+> must work the change out or diagnose a symptom the shipped fonts reproduce, and fewest where no shipped font shows
+> the behaviour: a bug they must first reproduce on a font they build, or AAT `kerx` and `kern` tables they must
+> assemble by hand.
 
-Each graded unit has a tier (notes/DESIGN.md section 10, `scripts/pipeline/tiers.tsv`): A, the note names the fix
-(14); B, checkable on the agent's own 14.3.0 build with the shipped fonts and tools (20); C, not checkable without
-material the agent builds itself (19). The mutant **V** is 15.2.0 with every tier-C unit's commits reverted; it must
-land in 0.60-0.85 with its D loss confined to tier C and the gate untouched. It is a consistency check of the scoring
-under the sentence, not evidence of how agents fail. Four of its commits do not revert on 15.2.0, so V keeps 25b and
-33 whole and 25a in part; with every tier-C unit at 0, D would be 0.642. The over-broad mutant **W** (every
-conditional note widened) is kept as a secondary bound on what the gate takes from a careless port, beside
-W_literal (pass 17's literal widenings only) and the panel's R_unbuilt (every F4 and F5 unit taken out). The
-per-unit and per-family prediction and its kill conditions were committed before any run
-(notes/PREREGISTRATION.md); if implemented units fail their neighbours at 15% or more, and at least three times the
-rate of untouched units, the earlier over-breadth sentence comes back.
+Each graded unit has a tier, by the 2026-11-28 panel's ordered rule (notes/DESIGN.md section 10,
+`scripts/pipeline/tiers.tsv`, frozen with the pre-registration): C if the behaviour shows only on tables no shipped
+font has and fontTools cannot write (hand-assembled `kerx` or AAT `kern`), or the note gives only a symptom whose
+cause it neither states nor points to and no shipped font shows it (8: 10a, 23, 25a, 25b, 25c, 26, 31, 42); A if
+otherwise the note names the edit (23); B otherwise (22). The mutant **V** (15.2.0 with every tier-C unit's commits
+reverted) is a consistency check of the scoring: it must land in 0.60-0.85 with its D loss confined to tier C and h_d
+and h_b at 0.99 or more (1 - 8/53 = 0.849 complete; 25a's and 25b's later commits do not revert, so V keeps 25b whole
+and 25a in part). The over-broad mutant **W** (every conditional note widened) is kept as a secondary bound on what
+the gate takes from a careless port, beside W_literal (pass 17's literal widenings only) and R_unbuilt (every F4 and
+F5 unit taken out). The per-unit and per-family predictions, the registered tests on the tier ranking (A - C, A - B,
+B - C, B's level and loss share) with their chance rates, and the other kill conditions were committed before any
+run (notes/PREREGISTRATION.md).
 
 ## Stated but not graded
 

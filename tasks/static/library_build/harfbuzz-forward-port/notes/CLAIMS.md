@@ -150,10 +150,12 @@ on the cases; the task itself is single-step since 2026-11-26): A = 14.3.1 to 15
 ## Failure sentence and its proof plan
 
 **Replaced on 2026-11-27, revised on 2026-11-28.** Two three-judge panels replaced this sentence; it now reads:
-"With no 15.x code or tests to check against, agents land the fixes whose notes name the change and fall short
-mainly where they must find a bug's cause from its symptom alone, or hand-assemble AAT `kerx` and `kern` tables to
-see the behaviour at all." (The 2026-11-27 wording named "regenerated Unicode data" too; unit 33 is checkable from
-the shipped data, so the second panel dropped it.) Its tiers and proof mutant V
+"With no 15.x code or tests to check against, agents land most fixes whose note names the change, fewer where they
+must work the change out or diagnose a symptom the shipped fonts reproduce, and fewest where no shipped font shows
+the behaviour: a bug they must first reproduce on a font they build, or AAT `kerx` and `kern` tables they must
+assemble by hand." (The 2026-11-27 wording named "regenerated Unicode data"; unit 33 is checkable from the shipped
+data. A 2026-11-28 follow-up panel replaced "mainly" by a ranking of the three tiers, since with eight tier-C units
+the loss cannot sit mainly there.) Its tiers and proof mutant V
 are in DESIGN.md section 10; the prediction and kill conditions in PREREGISTRATION.md. Condition 3 there brings
 the sentence below back. W stays as a secondary bound. The original plan follows as the record.
 
