@@ -246,7 +246,9 @@ K .15, V .13, V-msg .05, L .10, M .05, P .05, X .03, F .02).
 ## 11. The grading image on the final set: baselines, the zoo and the probes
 
 All gradings ran beside a PID 1 that never reaps (`docker exec` into `sleep infinity`, as the
-platform runs `test.sh`), with an output folder writable by every user.
+platform runs `test.sh`). The output folder was a host folder made writable by every user;
+Docker Desktop's host folders do not enforce permissions for container users at all, so the
+forging rows below were rerun on enforced folders (end of this section).
 
 | Grading | Result |
 | --- | --- |
@@ -267,8 +269,8 @@ platform runs `test.sh`), with an output folder writable by every user.
 | hang, flood, forkbomb | 0.0 | 5 each | each misbehaving run fails alone; a run of the forkbomb is bounded by the process limit and ended with its group |
 | daemon | 0.0 | 5 | 292 detached processes ended, one per `format` run; 312 s |
 | garbage | 0.0 | 0 | deep JSON, mixed rule lists and overlong numbers are compared as printed |
-| buildrs | 0.0 | 0 | its build script's leftover process holds the build's output, so the build stops at the 20-minute limit; one `builder` process ended; the reads and the reward write it tries fail |
-| forge | 0.0 | 5 | its reward writes, from the build script, from its program and from its leftover process, all fail; `reward.txt` is the grader's 0.0, with no `reward.json` and no link left |
+| buildrs | 0.0 | 0 | its build script's leftover process holds the build's output, so the build stops at the 20-minute limit and one `builder` process is ended; its reads of gold and the grader fail (root-only), and the reward it writes is gone at the end |
+| forge | 0.0 | 5 | what its build script, its program and its leftover process write or link into the output folder is gone at the end: `reward.txt` is the grader's 0.0, with no `reward.json` and no link |
 | badexec | 0.0 | 0 | its build leaves a non-program file where `dogwood` belongs; the build is ok, every one of the 4,282 runs fails with "could not start", and there is no evaluation error (18 s). Its first build script assumed cargo's older folder depth and failed to build; it now finds the release folder by name, and was regraded on the same image |
 
 **Grader probes:**
@@ -280,7 +282,18 @@ platform runs `test.sh`), with an output folder writable by every user.
 - **Folders every user may write to:** 31 in each image. They are `/tmp`, `/var/tmp`,
   `/run/lock`, and the Rust image's `/usr/local/rustup` and `/usr/local/cargo` trees, which
   nothing in the grading reads back.
-- **A grading stopped mid-run:** KILLED-PENDING
+- **Reward forging on an output folder whose permissions are enforced.** Docker Desktop's host
+  folders let any container user write whatever the mode (checked: `nobody` writes into a 0755
+  root folder). So this check ran on a Docker volume made writable by every user inside the
+  container; before grading, `nobody` could write it.
+  - The `forge` stub graded to the end: the folder holds only the grader's `metrics.json` and
+    `reward.txt` (0.0), both root's. There is no `reward.json` and no link, and the folder's
+    mode is back to 0777.
+  - The `forge` stub stopped 4 s in, mid-grading, and the `buildrs` stub stopped 30 s in,
+    mid-build: the folder is closed (0755) and empty. Nothing the submission tried to plant is
+    there.
+  - The earlier finding that led to the folder closing came from a host folder. That run
+    stopped `buildrs` mid-build and found its `reward.txt` (1.0).
 
 **Protection probe as `dev`** (the working machine):
 - reading, copying and `dd` of `/usr/local/bin/dogwood` are refused;
@@ -322,7 +335,7 @@ platform runs `test.sh`), with an output folder writable by every user.
 | 6 | Wording sweep | **PASS** | 759 hits on everything the agent sees, 0 unjudged. The build's own answers have 5 residue hits (Cedar's "testing for the attribute's presence", domain sense) |
 | 7 | Protection probe | **PASS (local)** | Every attempt as `dev` refused or ignored (section 11), core dumps included |
 | 8 | Verifier robustness | **PASS** | The oracle takes about 2 minutes of a 7,800 s limit. With odd files around it, it still scores 1.0; over the size limit, 0.0. A forced failure leaves no reward |
-| 9 | Isolation and timeouts | ISOLATION-PENDING |
+| 9 | Isolation and timeouts | **PASS** | `hang`, `flood`, `forkbomb`, `daemon` (292 leftovers ended), `garbage`, `badexec` and `wrapper` all score 0 with no evaluation error. `buildrs` loops in its build: it fails at the 20-minute build limit, and its reads of gold and the grader fail. `forge` cannot plant a reward, even when the grading is stopped mid-run. Runs share nothing (the probe saw 0 markers). The grader adopts orphans beside a PID 1 that never reaps. The build runs as `builder`, the cases as `nobody`, and neither can read gold |
 | 10 | No early stops | **PASS** | No timer or kill in the working machine; the only stop is the collect hook, after the session. The agent's `timeout_sec` is 34,560 s, the brief states no budget, and the verifier's 7,800 s covers the 1,200 s build limit plus 4,282 cases at 1.25 s |
 | 11 | Leak scan | **PASS** | 0 cases read only public files, 0 policies equal a public one, 0 near copies |
 | 12 | Band check | **PASS** | M-dedup 0.830 (B-dedup only), M-scope 0.950 (B-scope only), M-global 0.900 (K only, 36 of 108 units) |
@@ -333,12 +346,23 @@ features, floats and licensing were checked, with the zoo and the notice extende
 
 ## 14. Resources
 
-- **Heavy jobs:** five full pipeline holds on 2026-11-27, and one short regrading hold. The two
-  long holds were 18 and 57 minutes; three were stopped early, by me, when they had found what
-  needed fixing. Peak memory per container was 3.17 GB (mutant builds).
-- **Disk:** about 3 GB while the two task images stood. All of this Phase C's containers,
-  images (toolchain, environment, grading), volumes and build-cache records were removed by exact
-  name or ID.
+- **Heavy jobs:**
+  - Six full pipeline holds on 2026-11-27. The last one took 57 minutes.
+  - Three of the earlier holds were stopped early, by me, once they had shown what needed
+    fixing.
+  - Three short holds followed: a regrading, and two forging checks of 1 to 2 minutes each.
+  - Peak memory per container was 3.17 GB, in the mutant builds.
+- **Disk:**
+  - About 3 GB while the two task images stood.
+  - Every container, image (toolchain, working machine, grading) and volume of this phase was
+    removed by exact name. None is left.
+  - 35 build-cache records from our Dockerfiles (about 1.08 GB) remain. Removing one record by
+    ID returns 0 B with this Docker Desktop's buildx (v0.33.0-desktop.1), even after this
+    task's build-history entries were removed; it worked in Phase B. No broad prune was run,
+    since that would touch other campaigns' records. The IDs are in the cache
+    (`work/buildkit-records-left.json`).
+  - The cache folder is 887 MB.
+  - The flat bundle (15 MB) is in the task's Git-ignored `experiment/dist/`.
 - **Waiting:** most of the day went to waiting for the shared lock and for memory above 30%.
 
 ## 15. Commits
@@ -346,4 +370,4 @@ features, floats and licensing were checked, with the zoo and the notice extende
 All are on `neel/dogwood-policy-rebuild` and pushed: e08c74f, 9fa766a, d47191e, f3daff1,
 ae20a17, 18b173f, 63d830e0 (the coordinator's checkpoint), eafd7235, db7f9472, 07f2ca37,
 97fd330f, 7e4e880c, 2e0056df, f3a25824, 852fc932, 43730c3e, 4b426569, 8d38b6cd, 7c6059cc,
-aa1321fa, 44080216, 27a7a867, and the commit that holds this report.
+aa1321fa, 44080216, 27a7a867, f9ec9b35, and the commit that holds this final report.
