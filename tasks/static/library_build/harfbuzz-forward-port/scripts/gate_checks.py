@@ -195,6 +195,26 @@ def band(selection: list[dict], name: str = "mut-W") -> dict:
     }
 
 
+def root_path() -> dict:
+    """No directory, or file in one, that root resolves commands through is writable by dev, builder, nobody or a
+    fresh uid, in either image (scripts/pipeline/path_check.py, run in both by the re-recording cycle; QA, Dogwood
+    pass 07 F1): Harbor collects with `tar` as root through the image's PATH."""
+    out = {}
+    for image in ("agent", "verifier"):
+        f = CACHE / "work" / f"path-check-{image}.json"
+        if not f.exists():
+            out[image] = {"pass": False, "note": "not run"}
+            continue
+        r = json.loads(f.read_text())
+        out[image] = {
+            "pass": r.get("pass"),
+            "writable": r.get("writable"),
+            "dirs": len(r.get("checked", [])),
+        }
+    out["pass"] = all(v.get("pass") for v in out.values() if isinstance(v, dict))
+    return out
+
+
 def zoo_pass(results: dict) -> bool:
     """Every zoo member exactly 0.0, read as Harbor reads it, with no problem row (R2-09)."""
     return all(
@@ -353,9 +373,11 @@ def main() -> None:
                 "long-line",
                 "fork-bomb",
                 "mem-flood",
+                "path-canary",
                 "fault",
             )
         },
+        "16_root_path": root_path(),
         "15_font_licences": font_licences(),
         "6_cue_words": cue_sweep(),
         "12_band": {
