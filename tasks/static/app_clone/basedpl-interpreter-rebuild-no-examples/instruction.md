@@ -26,6 +26,8 @@ everything that uses it depends on what it prints:
 
 A different output, message or exit status breaks one of them.
 
+You have up to 12 hours to implement the interpreter and check its behavior against the sandboxed build.
+
 ## Context
 
 - The sandboxed build is installed as `bpl` on `PATH`, execute-only, so that nobody in the clean

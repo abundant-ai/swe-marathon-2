@@ -40,7 +40,7 @@ import threading
 import time
 
 STATE, PROC, USER = "/var/lib/scratch", "/proc", "dev"
-LIMIT_SECONDS, MARGIN_SECONDS, STOP_SECONDS = 34560, 2, 15
+LIMIT_SECONDS, MARGIN_SECONDS, STOP_SECONDS = 43200, 2, 15
 HOSTS, PORT, CONNECT_SECONDS = ("pypi.org", "github.com"), 443, 0.3
 POLL_SECONDS, STEP_SECONDS = 0.5, 30  # between looks for the first process; the longest single sleep after it
 CONFIRM_SECONDS, SAME_START_SECONDS = 1.0, 0.5  # seen alive by two looks this far apart; two reads of one start differ less

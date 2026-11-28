@@ -26,12 +26,19 @@ import tomllib
 import uuid
 from pathlib import Path
 
+import pytest
+
 TASK = Path(__file__).resolve().parent.parent
 STEP = TASK
 SCRIPTS = TASK / "scripts"
 RUNNER = STEP / "tests" / "verifier" / "runcases.py"
 RECORDER = STEP / "tests" / "verifier" / "recorder.py"
 HARDENING = TASK / "common" / "hardening"
+LIMIT = 43_200  # the agent's limit in task.toml since v9 (34,560 s before): the 12 hours the instruction states
+TWELVE_HOURS = (
+    f"You have up to {LIMIT // 3600} hours to implement the interpreter and check its behavior against the "
+    "sandboxed build."
+)  # v9's sentence, the only budget the instruction states
 
 
 def squeezed(code: str) -> str:
@@ -3227,7 +3234,7 @@ def test_the_delivery_is_bounded_recorded_and_marked_before_the_copy_and_graded_
         and prescan_complete is True
         and (ro_mode, secret_mode) == ("0o755", "0o400")
     )
-    assert out["end"] == [out["started"] - 100 + 34561, 0, 0, 0], (
+    assert out["end"] == [out["started"] - 100 + LIMIT + 1, 0, 0, 0], (
         "the end of the work, and nothing changed after it"
     )
     assert (
@@ -3744,14 +3751,26 @@ def test_nothing_ends_the_session_before_the_agents_limit():
     """Round 12 (harbor-lh ops/swe-marathon-v2/decisions/2026-11-24-timer-round3-flat-bundles-DECISION.md). The verdict
     rejects any stop the task makes before the agent's limit: v2's timer at 660 s before it, v4's at 60 s. The session
     timer is gone: its script, its setup hook, the image's lines for it and every mention in what ships; every agent
-    limit is 34,560 s again, with no comment. A session that runs to its limit is bounded after the fact instead
+    limit is the agent's own again, with no comment: 34,560 s then, and since v9 (made on the owner's account)
+    43,200 s, the 12 hours the instruction states, which the stop after the limit and the collect hook's end of the
+    work count too. A session that runs to its limit is bounded after the fact instead
     (test_a_capped_turn_counts_nothing_written_after_its_end)."""
     import tomllib
 
     assert not (TASK / "environment" / "session-timer").exists()
     toml = (TASK / "task.toml").read_text()
     config = tomllib.loads(toml)
-    assert config["agent"]["timeout_sec"] == 34560
+    assert config["agent"]["timeout_sec"] == LIMIT
+    assert re.search(
+        rf"^LIMIT_SECONDS, MARGIN_SECONDS, STOP_SECONDS = {LIMIT}, ",
+        (TASK / "environment" / "provision-scratch").read_text(),
+        re.MULTILINE,
+    ), "the stop after the limit counts the same limit"
+    assert re.search(
+        rf"^SESSION_SECONDS = {LIMIT}  #",
+        (TASK / "environment" / "reclaim-scratch").read_text(),
+        re.MULTILINE,
+    ), "and so does the collect hook's end of the work"
     assert "#" not in toml and config["agent"]["setup_complete"] == [
         {"command": "/usr/local/sbin/provision-scratch", "timeout_sec": 120}
     ]
@@ -3980,8 +3999,8 @@ def test_the_stop_after_the_limit_counts_from_the_sessions_first_process_even_te
     session's first process, the first process of the user to begin after it whose parent is not the user's, read
     from /proc in seconds since boot, and acts LIMIT_SECONDS + 2 s after that, never sooner. Against a stand-in /proc
     whose clock this check moves: a process of the user from before set-up and the child of another of the user's
-    are passed over; the first process starts 30 s after set-up; at its start + 34,561.5 s nothing is sent, at
-    + 34,562.05 s the stop comes, and its record names the process."""
+    are passed over; the first process starts 30 s after set-up; at its start + the limit and 1.5 s nothing is
+    sent, at + the limit and 2.05 s the stop comes, and its record names the process."""
     trace, proc = tmp_path / "trace", FakeProc(tmp_path / "t", 1000.0)
     proc.process(
         50, MY_UID, 40, 990.0
@@ -4021,11 +4040,11 @@ def test_the_stop_after_the_limit_counts_from_the_sessions_first_process_even_te
             0,
         ), first
         assert abs(first["first_process_started"] - time.time()) < 15, first
-        due = 1030.0 + 34560 + 2
+        due = 1030.0 + LIMIT + 2
         proc.at(due - 0.5)
         time.sleep(1.0)
         assert not stamped(trace) and holder_alive(holder), (
-            "nothing at the first process's start + 34,561.5 s"
+            "nothing at the first process's start + the limit and 1.5 s"
         )
         proc.at(due + 0.05)
         until = time.monotonic() + 10
@@ -4097,7 +4116,7 @@ def test_a_short_command_before_the_clock_is_never_the_first_process(tmp_path):
             2,
         ), first
         assert abs(first["first_process_started"] - time.time()) < 15, first
-        proc.at(1007.5 + 34560 + 2 + 0.05)  # its own due time, not the short command's
+        proc.at(1007.5 + LIMIT + 2 + 0.05)  # its own due time, not the short command's
         until = time.monotonic() + 10
         while time.monotonic() < until and not (state / "stopped").exists():
             time.sleep(0.05)
@@ -4122,7 +4141,7 @@ def test_the_stop_after_the_limit_does_nothing_without_a_first_process(tmp_path)
     proc.process(60, MY_UID, 50, 1001.0)  # its child
     state, holder = set_up(tmp_path / "t", proc, trace, old_limit=0)
     try:
-        proc.at(1000.0 + 34562 * 3)
+        proc.at(1000.0 + (LIMIT + 2) * 3)
         time.sleep(5)
         assert (
             not stamped(trace)
@@ -4142,8 +4161,8 @@ def test_the_stop_after_the_limit_waits_for_the_network_where_it_can_be_watched(
 ):
     """OB-1, the later of the two anchors: the network comes back when harbor ends the session's network policy, which
     a paused clock delays too. Where the network can be watched (the hosts resolved at set-up), the stop waits, past
-    the first process's start + 34,562 s, until one of them answers. A local port stands in for the hosts: closed
-    past the due time, nothing is sent; once it listens, the stop comes."""
+    the first process's start + the limit and 2 s, until one of them answers. A local port stands in for the hosts:
+    closed past the due time, nothing is sent; once it listens, the stop comes."""
     trace, proc = tmp_path / "trace", FakeProc(tmp_path / "t", 1000.0)
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
@@ -4156,7 +4175,7 @@ def test_the_stop_after_the_limit_waits_for_the_network_where_it_can_be_watched(
         time.sleep(0.5)
         proc.process(70, MY_UID, 40, 1010.0)
         assert confirmed(proc, state, 1000.0)["first_process"] == 70
-        proc.at(1010.0 + 34562 + 5)
+        proc.at(1010.0 + LIMIT + 2 + 5)
         time.sleep(1.5)
         assert not stamped(trace), "the network has not come back: nothing is sent"
         listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -4236,7 +4255,7 @@ def test_the_stop_after_the_limit_reaches_forked_setsid_and_continuing_processes
         time.sleep(0.5)
         proc.process(70, MY_UID, 40, 1001.0)
         assert confirmed(proc, state, 1000.0)["first_process"] == 70
-        proc.at(1001.0 + 34562 + 1)  # the forker's subshells are all there by now
+        proc.at(1001.0 + LIMIT + 2 + 1)  # the forker's subshells are all there by now
         until = time.monotonic() + 30
         while time.monotonic() < until and not (state / "stopped").exists():
             time.sleep(0.1)
@@ -4316,7 +4335,7 @@ def test_the_stop_after_the_limit_ends_once_the_collect_hook_has_begun(tmp_path)
                 proc.process(70, MY_UID, 40, 1001.0)
                 time.sleep(0.5)
                 (state / "collect-began").write_text("")
-                proc.at(1001.0 + 34562 + 1)
+                proc.at(1001.0 + LIMIT + 2 + 1)
             pid = int((state / "holder.pid").read_text())
             assert not holder_alive(pid, wait=2), name
         finally:
@@ -4524,7 +4543,7 @@ def test_both_hooks_run_whole_with_the_root_and_linux_tools_stood_in(tmp_path):
     assert record["hook_started"] >= turn_started and (
         record["work_end"],
         record["late_entries"],
-    ) == (turn_started + 34561, 0)
+    ) == (turn_started + LIMIT + 1, 0)
 
 
 # ---------------------------------------------------------------- what a tree can do to the copy
@@ -4987,13 +5006,13 @@ LATE_WRITER = textwrap.dedent("""
 
 
 def test_a_capped_turn_counts_nothing_written_after_its_end(tmp_path):
-    """Round 12 (decision 2026-11-24, item 2). With no timer, a session that runs to the agent's limit (34,560 s) keeps
-    its processes running until this hook freezes them, and the network is open again by then: a process can keep
-    writing into /app/rebuild, and fetch. The end of the work is the session's start (turn-started, written at set-up)
-    plus 34,560 s, and nothing is killed to enforce it: every file and link whose change time, as recorded before the
-    hook touched anything, is later than that end is taken out, noted and counted (`late_entries`, `work_end`). Here a
-    session's work is written, its end passes, and a process of it fetches, swaps the program, links and keeps
-    writing, until it is killed as the hook's freeze and kill would."""
+    """Round 12 (decision 2026-11-24, item 2). With no timer, a session that runs to the agent's limit (43,200 s since
+    v9, 34,560 s before) keeps its processes running until this hook freezes them, and the network is open again by
+    then: a process can keep writing into /app/rebuild, and fetch. The end of the work is the session's start
+    (turn-started, written at set-up) plus the limit, and nothing is killed to enforce it: every file and link whose
+    change time, as recorded before the hook touched anything, is later than that end is taken out, noted and counted
+    (`late_entries`, `work_end`). Here a session's work is written, its end passes, and a process of it fetches, swaps
+    the program, links and keeps writing, until it is killed as the hook's freeze and kill would."""
     when = {}
 
     def build(rebuild):
@@ -5006,7 +5025,7 @@ def test_a_capped_turn_counts_nothing_written_after_its_end(tmp_path):
             int(time.time()) + 1
         )  # the end of the work falls between the work and what follows it
         (rebuild.parent.parent / "state" / "turn-started").write_text(
-            f"{when['end'] - 34560 - 1}\n"
+            f"{when['end'] - LIMIT - 1}\n"
         )
         while time.time() < when["end"] + 0.2:
             time.sleep(0.05)
@@ -5036,7 +5055,7 @@ def test_a_capped_turn_counts_nothing_written_after_its_end(tmp_path):
     ], mark
     assert all(
         line.endswith(
-            ": changed after the end of the work, 34560 s after the session began"
+            f": changed after the end of the work, {LIMIT} s after the session began"
         )
         for line in mark[1:]
     ), mark
@@ -5057,7 +5076,7 @@ def test_a_capped_turn_counts_nothing_written_after_its_end(tmp_path):
     ], (stopped, notes)
     measure = hook_scripts()["measure"]
     assert (
-        "SESSION_SECONDS = 34560" in measure
+        f"SESSION_SECONDS = {LIMIT}" in measure
         and "late_entries, held_entries = take_out_late()" in measure
     )
     assert measure.index(
@@ -5085,7 +5104,7 @@ def test_the_end_of_the_work_counts_from_the_sessions_first_process_not_from_set
         )  # the end of the work: after the last save, before the late one
         state = rebuild.parent.parent / "state"
         when["first"] = round(
-            when["end"] - 34560 - 0.1, 3
+            when["end"] - LIMIT - 0.1, 3
         )  # plus the limit and a tenth of a second for the reads: the end
         when["setup"] = int(when["first"]) - 30  # set-up, 30 s before the first process
         (state / "turn-started").write_text(f"{when['setup']}\n")
@@ -5106,7 +5125,7 @@ def test_the_end_of_the_work_counts_from_the_sessions_first_process_not_from_set
     rebuild = collected(tmp_path / "first", build)
     mark = hook_mark(rebuild).read_text().splitlines()
     assert mark[1:] == [
-        "removed after-the-end.txt: changed after the end of the work, 34560 s after the session began"
+        f"removed after-the-end.txt: changed after the end of the work, {LIMIT} s after the session began"
     ], mark
     assert sorted(path.name for path in rebuild.iterdir()) == [
         "bpl",
@@ -5150,7 +5169,7 @@ def test_the_end_of_the_work_counts_from_the_sessions_first_process_not_from_set
     ):  # no first process recorded: set-up's time, as before round 19
         (rebuild / "bpl").write_text("#!/bin/sh\n")
         state = rebuild.parent.parent / "state"
-        when["setup"] = int(time.time()) - 34561 - 5
+        when["setup"] = int(time.time()) - LIMIT - 1 - 5
         (state / "turn-started").write_text(f"{when['setup']}\n")
 
     rebuild = collected(tmp_path / "set-up", set_up_only)
@@ -5159,7 +5178,7 @@ def test_the_end_of_the_work_counts_from_the_sessions_first_process_not_from_set
         record["work_end"],
         record["work_end_from"],
         record["first_process_started"],
-    ) == (when["setup"] + 34561, "set-up", None)
+    ) == (when["setup"] + LIMIT + 1, "set-up", None)
     holder, measure = (
         (TASK / "environment" / "provision-scratch").read_text(),
         hook_scripts()["measure"],
@@ -5179,7 +5198,7 @@ def test_a_capped_turn_that_delivered_nothing_or_lost_its_listing(tmp_path):
 
     def ran_out(rebuild):
         (rebuild.parent.parent / "state" / "turn-started").write_text(
-            f"{int(time.time()) - 34561 - 30}\n"
+            f"{int(time.time()) - LIMIT - 1 - 30}\n"
         )
 
     empty = collected(tmp_path / "empty", ran_out)
@@ -5265,7 +5284,7 @@ def frozen(rebuild: Path, processes, *, capped: bool, user_run: bool = True) -> 
     tree, state = Path(os.path.realpath(rebuild)), rebuild.parent.parent / "state"
     if capped:
         end = int(time.time()) + 1
-        (state / "turn-started").write_text(f"{end - 34561}\n")
+        (state / "turn-started").write_text(f"{end - LIMIT - 1}\n")
         while time.time() < end + 0.2:
             time.sleep(0.05)
     proc = fake_proc(rebuild.parent.parent, processes(tree))
@@ -6286,17 +6305,33 @@ def test_every_run_fits_inside_the_step_verifier_time():
     # Round 19 (F1 of the v7 verdict): every run at its limit with 0.35 s of cleanup before it (the platform's measured 0.015 s
     # more than twenty times over) still fits, where 4,200 s fitted only 0.1 s
     assert cases * (per_run + 0.35) + margin + 120 <= total, (cases, total)
-    agent = tomllib.loads(toml)["agent"]["timeout_sec"]
-    collect = tomllib.loads(toml)["verifier"]["collect"][0]["timeout_sec"]
+    assert (
+        f"Each run finishes within {per_run} seconds"
+        in (STEP / "instruction.md").read_text()
+    )
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "since v9 (made on the owner's account) the agent alone has 43,200 s, the whole of one Oddish attempt: a "
+        "session that runs to its limit leaves the collect hook and the verifier no time (README, Remaining work)"
+    ),
+)
+def test_a_session_at_its_limit_leaves_the_collect_hook_and_the_verifier_inside_one_attempt():
+    """Round 19 (S1 of the v7 verdict). One Oddish attempt has 12 hours (its worker's timeout) for the images, set-up,
+    the agent's session, the collect hook and the verifier; a session that runs to its limit must leave the hook and
+    the verifier their time inside it, or what it delivered is never graded. Up to v8 the agent's 34,560 s and the
+    verifier's 5,000 s came to less than 11 h, and less than 11.5 h with the hook's 1,200 s. v9 gave the agent
+    43,200 s, the 12 hours its instruction states. No v9-v11 run came near it: the longest ended after 3.3 h."""
+    config = tomllib.loads((TASK / "task.toml").read_text())
+    agent, verifier = config["agent"]["timeout_sec"], config["verifier"]["timeout_sec"]
+    collect = config["verifier"]["collect"][0]["timeout_sec"]
     assert agent + verifier <= 11 * 3600, (
         "the attempt stays inside the platform's 12 hours"
     )
     assert agent + collect + verifier <= 11.5 * 3600, (
         "with the collect hook, still half an hour for the images and set-up"
-    )
-    assert (
-        f"Each run finishes within {per_run} seconds"
-        in (STEP / "instruction.md").read_text()
     )
 
 
@@ -6848,22 +6883,23 @@ def test_images_and_solution_install_one_build_and_ship_no_private_cases():
         assert fact in build, fact
 
 
-def test_both_images_build_with_public_egress_and_nothing_runs_with_it():
-    """Round 16, from a sibling task's pre-trial audit: the second image's build installs Ubuntu packages in both of
-    its stages, so its environment has public egress while it is built, as the agent's image's has; the agent's
-    session and the run of its rebuild have none. The justification names both builds, in plain words."""
+def test_no_phase_has_network_access_not_even_the_image_builds():
+    """Since v9 (made on the owner's account, 2026-11-27), development and the run of the rebuild are offline
+    throughout: every network mode is no-network, the two image builds' included, so task.toml carries no
+    open-internet justification. Round 16 had given both builds public egress for their Ubuntu packages, from a
+    sibling task's pre-trial audit; under v9 to v11 the platform built both images all the same (every baseline
+    and model trial was graded)."""
     import tomllib
 
     config = tomllib.loads((TASK / "task.toml").read_text())
     assert (
-        config["environment"]["network_mode"] == "public"
-        and config["verifier"]["environment"]["network_mode"] == "public"
-    )
-    assert (
-        config["agent"]["network_mode"] == "no-network"
-        and config["verifier"]["network_mode"] == "no-network"
-    )
+        config["environment"]["network_mode"],
+        config["verifier"]["environment"]["network_mode"],
+        config["agent"]["network_mode"],
+        config["verifier"]["network_mode"],
+    ) == ("no-network",) * 4
     assert config["verifier"]["environment_mode"] == "separate"
+    assert "open_internet_justification" not in config["metadata"]
     for dockerfile in (
         TASK / "environment" / "Dockerfile",
         STEP / "tests" / "Dockerfile",
@@ -6874,19 +6910,6 @@ def test_both_images_build_with_public_egress_and_nothing_runs_with_it():
             )
             == 2
         ), dockerfile
-    justification = config["metadata"]["open_internet_justification"]
-    assert (
-        "the agent's image" in justification and "the separate image" in justification
-    ), justification
-    assert (
-        justification.count("without network access") == 1
-        and "run of the rebuild" in justification
-    ), justification
-    assert not re.search(
-        r"evaluat|grad|trial|platform|verif|score|test|bench|\bcases?\b|hidden",
-        justification,
-        re.IGNORECASE,
-    ), justification
 
 
 def test_the_hardening_patch_applies_once_and_its_refusals_are_the_ones_the_smoke_test_proves(
@@ -7041,7 +7064,10 @@ def test_the_smoke_test_fails_an_interpreter_that_is_not_hardened(tmp_path):
     )
 
 
-def test_nothing_the_agent_sees_names_a_reference_answer_or_a_budget():
+def test_nothing_the_agent_sees_names_a_reference_answer_and_its_one_budget_is_the_twelve_hours():
+    """Nothing the agent's image is built from or that it is told names a reference answer, the grading or a case. The
+    one budget it names is the session's: since v9 (made on the owner's account) the instruction gives the agent's
+    limit, 12 hours, in one sentence, and nothing else speaks of hours."""
     seen = {
         "Dockerfile": (TASK / "environment" / "Dockerfile").read_text(),
         "instruction.md": (STEP / "instruction.md").read_text(),
@@ -7059,7 +7085,6 @@ def test_nothing_the_agent_sees_names_a_reference_answer_or_a_budget():
             "test case",
             "working session",
             "fresh context",
-            "hours",
             "candidate",
             "bpl-case",
         ):
@@ -7068,6 +7093,10 @@ def test_nothing_the_agent_sees_names_a_reference_answer_or_a_budget():
             name,
             "the runner's word for a run",
         )
+        assert lowered.count("hours") == (1 if name == "instruction.md" else 0), name
+    assert TWELVE_HOURS in " ".join(seen["instruction.md"].split()), (
+        "the 12 hours, stated once"
+    )
     sys.path.insert(0, str(STEP / "tests"))
     from verifier import runcases
 
@@ -7121,7 +7150,12 @@ def test_the_instruction_states_the_requirement_and_never_a_comparison_of_the_wo
         r"specification|\bsuite\b|fraction|deadline|\bsession\b|\breferenc",
         re.IGNORECASE,
     )
-    assert not framing.findall(instruction), framing.findall(instruction)
+    # v9 (made on the owner's account) adds one sentence: the session's 12 hours, to implement the interpreter and
+    # check it against the sandboxed build. No analysis of a v9-v11 model trial found evaluation awareness, and the
+    # rest of the instruction keeps none of the framing.
+    assert instruction.count(TWELVE_HOURS) == 1, "v9's one sentence"
+    rest = instruction.replace(TWELVE_HOURS, "")
+    assert not framing.findall(rest), framing.findall(rest)
     assert "Everything that uses it depends on what it prints" in instruction.replace(
         "everything that uses it", "Everything that uses it"
     )
