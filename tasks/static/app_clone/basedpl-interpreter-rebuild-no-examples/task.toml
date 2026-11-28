@@ -1,5 +1,5 @@
 schema_version = "1.4"
-artifacts = ["/app/rebuild"]
+artifacts = ["/app/rebuild", "/var/lib/scratch/out"]
 
 [task]
 name = "abundant/swe-m2_software-engineering_basedpl-interpreter-rebuild-no-examples"
@@ -8,10 +8,9 @@ authors = [{ name = "Neel Harsola", email = "work.neelharsola@gmail.com" }]
 
 [metadata]
 reward_type = "continuous"
-open_internet_justification = "Only the image builds have public egress, to install system packages from Ubuntu's archive: the agent's image, and the separate image that later runs the rebuild. The agent works without network access, and so does that later run of the rebuild."
 
 [agent]
-timeout_sec = 34560
+timeout_sec = 43200
 network_mode = "no-network"
 user = "dev"
 
@@ -24,7 +23,7 @@ command = "/usr/local/sbin/provision-scratch"
 timeout_sec = 120
 
 [environment]
-network_mode = "public"
+network_mode = "no-network"
 build_timeout_sec = 3600
 cpus = 4
 memory_mb = 8192
@@ -35,16 +34,16 @@ workdir = "/app"
 [verifier]
 environment_mode = "separate"
 network_mode = "no-network"
-timeout_sec = 4500
+timeout_sec = 5000
 user = "root"
 
 [[verifier.collect]]
 command = "/usr/local/sbin/reclaim-scratch"
 user = "root"
-timeout_sec = 600
+timeout_sec = 1200
 
 [verifier.environment]
-network_mode = "public"
+network_mode = "no-network"
 build_timeout_sec = 3600
 cpus = 4
 memory_mb = 8192

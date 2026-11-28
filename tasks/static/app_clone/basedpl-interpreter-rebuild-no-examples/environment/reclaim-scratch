@@ -4,17 +4,20 @@
 # has passed), then stops every process of that user; it then lists those processes, ends them, records every entry's
 # own times before anything of its own touches the tree, and records whether this host has outbound connectivity, for
 # the maintenance log. A session that ran to its limit leaves its processes running until here: what changed after
-# the session's end (its start plus its limit) is taken out, by the times recorded before this step touched anything,
+# the session's end (the start of its first process plus its limit) is taken out, by the times recorded before this
+# step touched anything,
 # and so is every file those processes, frozen, still hold open for writing or map shared and writable.
 # What it lets through is what the copy can take: within the limits the instruction states, with nothing of that
 # user's processes running, and packed here first the way the copy packs it, with room left for this step's record;
 # and the last script refuses, rather than outlasts, a tree it cannot measure and pack in time.
-# The .manifest file lists what was packed; the .manifest.json record lists every entry it lets through with the times
-# it had when the session ended, and every link the step changed, with where a copied file came from.
+# Its mark says what was packed, and its record lists every entry it lets through with the times it had when the
+# session ended, and every link the step changed, with where a copied file came from. Both are written beside the tree,
+# in the state directory's out/ (which goes with /app/rebuild to the machine that runs it), never into it: everything in
+# /app/rebuild is the session's own.
 LIMIT_ENTRIES=100000
 LIMIT_BYTES=1000000000
 LIMIT_PATH=1000
-PACK_SECONDS=100
+PACK_SECONDS=400
 LOOP_SECONDS=15  # the freeze and the kill below each stop this long after they begin, and say so
 STATE=/var/lib/scratch
 HOOK_STARTED=$(date +%s)
@@ -202,11 +205,11 @@ for _ in $(seq 1 100); do
 done
 left=$({ pgrep -u dev -r R,S,D,T; pgrep -U dev -r R,S,D,T; } 2>/dev/null | sort -u | wc -l)
 # Every entry's own times, before anything of this step touches the tree: a chmod changes a ctime, and the ctime is
-# the one time a user cannot set, so the manifest's authoritative times come from here. Then, as root, directories get
+# the one time a user cannot set, so the record's authoritative times come from here. Then, as root, directories get
 # their owner's rwx back (a read-only folder would stop the link fixer and the copy) and a file its owner cannot read gets
 # u+r; each change is noted, and a change that fails refuses the delivery.
 if [ -d /app/rebuild ] && [ ! -L /app/rebuild ]; then
-timeout 300 /usr/bin/python3 -I - /app/rebuild "$LIMIT_ENTRIES" "$LIMIT_PATH" "$STATE" <<'EOF'
+timeout 400 /usr/bin/python3 -I - /app/rebuild "$LIMIT_ENTRIES" "$LIMIT_PATH" "$STATE" <<'EOF'
 """Record every entry of /app/rebuild as it stands when the session has ended (STATE/before.jsonl: path, type, size,
 mode, owner, mtime, ctime, inode), walking by directory descriptor and never following a link, before any step of the
 hook changes anything. Then make every directory u+rwx and every regular file its owner cannot read u+r, noting each
@@ -353,16 +356,9 @@ EOF
 rm -f /var/lib/scratch/room
 rm -rf /var/lib/scratch/inodes
 if [ ! -d /app/rebuild ] || [ -L /app/rebuild ]; then exit 0; fi
-# Whatever was left under the mark's or the record's name is moved aside, never followed, and the mark says so.
-for name in .manifest .manifest.json; do
-  if [ -e "/app/rebuild/$name" ] || [ -L "/app/rebuild/$name" ]; then
-    aside=$(mktemp -d /app/.aside.XXXXXX) && mv -f "/app/rebuild/$name" "$aside/" || exit 0
-    echo "$name" >> "$STATE/aside.txt"
-  fi
-done
-# Links, as the unprivileged user (it copies nothing that user could not read), within the limits and two minutes. Each change
+# Links, as the unprivileged user (it copies nothing that user could not read), within the limits and 400 s. Each change
 # is one JSON line on standard output, kept root-owned for the record.
-timeout 120 setpriv --reuid dev --regid dev --clear-groups --no-new-privs /usr/bin/python3 -I - /app/rebuild "$LIMIT_ENTRIES" "$LIMIT_BYTES" > "$STATE/fixer.jsonl" <<'EOF'
+timeout 400 setpriv --reuid dev --regid dev --clear-groups --no-new-privs /usr/bin/python3 -I - /app/rebuild "$LIMIT_ENTRIES" "$LIMIT_BYTES" > "$STATE/fixer.jsonl" <<'EOF'
 """Make /app/rebuild safe to copy to the machine it will run on, as the user who built it.
 
 The copy keeps relative links that stay inside the directory and refuses everything else. A link
@@ -562,7 +558,8 @@ if unprinted:
     print(json.dumps({"kind": "more", "path": "", "note": f"and {unprinted:,} more changes of the link fixer"}), flush=True)
 EOF
 fixer_status=$?
-# Measure, bound, pack once, list and mark, as root.
+# Measure, bound, pack once, list and mark, as root; the mark and the record go to out/, made new.
+mkdir -p /var/lib/scratch/out && chmod 0700 /var/lib/scratch/out && rm -f /var/lib/scratch/out/mark /var/lib/scratch/out/record.json
 /usr/bin/python3 -I - /app/rebuild "$LIMIT_ENTRIES" "$LIMIT_BYTES" "$LIMIT_PATH" "$STATE" /tmp "$PACK_SECONDS" "$rounds" "$left" "$HOOK_STARTED" "$fixer_status" <<'EOF'
 """Measure /app/rebuild, bound it, pack it once, list it and mark it, as root, once nothing of the user's runs.
 
@@ -576,11 +573,14 @@ resolves a link where it lands, and there a `..` that stops at / here climbs on.
 permissions could not be restored for its owner, one not measured within MEASURE_UNTIL seconds of this step's start
 (an alarm ends the walk and the links then, inside any one call), or one that the copy's own pack (tar -czf into /tmp)
 cannot make within PACK_SECONDS and by PACK_UNTIL seconds of that start, with room left on the disk for this step's
-record and mark beside it, is moved aside whole and replaced by an empty directory, whose record counts what the tree
+record and mark, is moved aside whole and replaced by an empty directory, whose record counts what the tree
 held and lists only the first notes; a pack that fails only for want of room or inodes the machine never had is left
 to the copy. What this step writes is bounded in bytes: its own notes take NOTE_BYTES as written, with a name cut to
 its start and end past a few hundred bytes, then only their count; the mark's notes take MARK_BYTES. A session that
-ran to its limit (SESSION_SECONDS after its start, STATE/turn-started from the setup hook) leaves its processes
+ran to its limit (SESSION_SECONDS and READ_SECONDS after its start: the start of its first process, which the process
+the setup hook left records in STATE/first-process once two looks a second apart have seen it alive, and which also
+times that process's stop; the setup hook's own time, STATE/turn-started, in whole seconds and with one more, only
+where no first process was recorded) leaves its processes
 running until this hook, with the network open again: every file and link whose change time, as recorded before the
 hook touched anything (STATE/before.jsonl), is later than that end is taken out, noted and counted (`work_end`,
 `late_entries`), and nothing is killed for it. So is every name of each file that its processes, frozen, still held
@@ -593,18 +593,19 @@ mtime and ctime are the ones recorded before the hook touched anything (STATE/be
 type); where the hook's own steps changed them, the entry says so and carries the later values apart. The mark's first line is `delivered` with the
 number of entries (files, directories and links) and of bytes in its files (each file once, however many names it
 has), or `refused`; every line after it is a change made, the reason for the refusal, or how many more notes there
-were. The record
-(.manifest.json) holds what was found before the user's processes were ended (STATE/session.json), how many rounds of
-killing it took and how many processes were left, when the session started (STATE/turn-started, from the setup hook)
-and when this step started, the end of the work and how many entries changed after it, the disk's free figures,
+were. The mark (STATE/out/mark) and the record (STATE/out/record.json) are written beside the tree, never into it, and
+go with it to the machine that runs it. The record holds what was found before the user's processes were ended
+(STATE/session.json), how many rounds of
+killing it took and how many processes were left, when set-up ended (STATE/turn-started) and the session's first
+process started (STATE/first-process) with how many were seen as the first once and gone before a second look, when
+this step started, the end of the work, what it was counted from and how many entries changed after it, the disk's free figures,
 and, for a delivery that is copied, every change the link fixer printed
 (STATE/fixer.jsonl: the copies first, each with its source's path, owner, times and inode, and whether the source
 changed since the session started), every note, and every entry: its
-path, type, size, modification and change times, and a file's sha256 or a link's target. Neither file is counted among
-the entries. Two things are noted in the mark as well: a link fixer that did not end with status 0 (`fixer_status`:
-124 when its two minutes ran out, 128 plus the signal's number when a signal ended it), since the links it had not
-reached were then left to this step, which removes those that lead outside; and a file the session left under the
-mark's or the record's own name (STATE/aside.txt), which was moved out of the directory.
+path, type, size, modification and change times, and a file's sha256 or a link's target. One thing is noted in the
+mark as well: a link fixer that did not end with status 0 (`fixer_status`: 124 when its time ran out, 128 plus the
+signal's number when a signal ended it), since the links it had not reached were then left to this step, which
+removes those that lead outside.
 """
 import hashlib
 import json
@@ -622,13 +623,15 @@ LIMIT_ENTRIES, LIMIT_BYTES, LIMIT_PATH = int(sys.argv[2]), int(sys.argv[3]), int
 STATE, ARCHIVES, PACK_SECONDS = sys.argv[5], sys.argv[6], float(sys.argv[7])
 ROUNDS, LEFT, HOOK_STARTED, FIXER_STATUS = (int(value) if value.strip().isdigit() else -1 for value in (sys.argv[8:12] + [""] * 4)[:4])
 STARTED = HOOK_STARTED if HOOK_STARTED > 0 else int(time.time())  # when this step began
-MEASURE_UNTIL, PACK_UNTIL = 420, 510  # seconds after STARTED: the walk and the links end by the first, the pack by the second
-SESSION_SECONDS = 34560  # the session's limit: its work ends this long after it starts
-MARK = os.path.join(ROOT, ".manifest")
-RECORD = os.path.join(ROOT, ".manifest.json")
+MEASURE_UNTIL, PACK_UNTIL = 1000, 1120  # seconds after STARTED: the walk and the links end by the first, the pack by the second
+SESSION_SECONDS = 43200  # the session's limit: its work ends this long after it starts
+READ_SECONDS = 0.1  # and this much more: the first process's start is read in hundredths of a second, as is the clock
+OUT = os.path.join(STATE, "out")  # beside the tree, never in it: it goes with the tree to the machine that runs it
+MARK = os.path.join(OUT, "mark")
+RECORD = os.path.join(OUT, "record.json")
 TREE_PARTS = [part for part in ROOT.split("/") if part]
 SPARE_INODES = 16
-HASH_SECONDS = 240
+HASH_SECONDS = 400
 NOTE_BYTES, MARK_BYTES = 64 << 10, 32 << 10  # this step's own notes, and the mark's notes, in bytes as written
 notes, links, files = [], [], set()
 listing = {}
@@ -816,7 +819,31 @@ for line in state_lines("before.jsonl"):
     except (ValueError, KeyError, TypeError):
         continue
 turn_started = next((int(line.split()[0]) for line in state_lines("turn-started") if line.split() and line.split()[0].isdigit()), None)
-WORK_END = None if turn_started is None else turn_started + SESSION_SECONDS + 1  # (date +%s rounds the start down)
+
+
+def first_process_started():
+    """The wall-clock start of the session's first process, and how many processes were seen as the first once and gone
+    before a second look, as the process the setup hook left recorded them when it confirmed it (STATE/first-process),
+    or when it stopped the session's processes (STATE/stopped); (None, None) when neither holds a start."""
+    for name in ("first-process", "stopped"):
+        found = state_json(name, None)
+        value = found.get("first_process_started") if isinstance(found, dict) else None
+        if isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0:
+            passed = found.get("first_process_passed_over")
+            return value, passed if isinstance(passed, int) and not isinstance(passed, bool) else None
+    return None, None
+
+
+# The end of the work: the session's limit after the start of its first process, which the agent's turn begins with and
+# the stop after the limit counts from too, and READ_SECONDS more for the reads; set-up's own time only where no first
+# process was recorded, in whole seconds (`date +%s`, rounded down) and one more.
+FIRST_STARTED, FIRST_PASSED_OVER = first_process_started()
+if FIRST_STARTED is not None:
+    WORK_END_FROM, WORK_END = "first process", round(FIRST_STARTED + SESSION_SECONDS + READ_SECONDS, 3)
+elif turn_started is not None:
+    WORK_END_FROM, WORK_END = "set-up", turn_started + SESSION_SECONDS + 1
+else:
+    WORK_END_FROM, WORK_END = None, None
 late_entries = held_entries = 0
 
 
@@ -878,8 +905,8 @@ def take_out_late():
     the hook, or that of what the processes held, is missing or incomplete, or when a process could be read neither as
     root nor as its user although it ran no set-id program (its ids all the user's). Returns how many entries were
     taken out for a change time and how many for being held."""
-    if WORK_END is None or STARTED < WORK_END:  # this step began before the end: nothing can be later (both in whole seconds)
-        return 0, 0
+    if WORK_END is None or STARTED + 1 <= WORK_END:  # this step began before the end (STARTED is whole seconds, rounded
+        return 0, 0                                     # down): nothing can be later
     if not prescan.get("complete") or len(before) != prescan.get("entries"):  # (an empty tree lists nothing, completely)
         raise Refuse("the session ran to its limit, and the listing of what it changed before then is missing")
     if writers_problem:
@@ -987,8 +1014,6 @@ fixer_notes = [str(change.get("note", "")) for change in changes if change.get("
 if FIXER_STATUS > 0:  # it was cut short: what it had not reached is in the notes of this step, below
     fixer_notes.append(f"the link fixer ended with status {FIXER_STATUS}: the links it had not reached were not fixed, and those that "
                        "lead outside /app/rebuild are removed")
-for name in state_lines("aside.txt"):
-    notes.append(f"moved {name} out of /app/rebuild: this step writes a file of that name there")
 # The entries' times as they were when the session ended; the hook's own changes (chmod, the fixer) are flagged.
 hook_changed = 0
 for path, item in listing.items():
@@ -1034,7 +1059,9 @@ def record_of(head):
     others = [change for change in changes if change.get("kind") != "copied"]
     free_bytes, free_inodes = disk_figures()
     record = dict(session, kill_rounds=ROUNDS, user_processes_left=LEFT, hook_started=HOOK_STARTED, turn_started=turn_started,
-                  work_end=WORK_END, late_entries=late_entries, held_for_writing=held_entries,
+                  first_process_started=FIRST_STARTED, first_process_passed_over=FIRST_PASSED_OVER, work_end=WORK_END,
+                  work_end_from=WORK_END_FROM,
+                  late_entries=late_entries, held_for_writing=held_entries,
                   stopped_after_limit=stopped_after_limit(),
                   writers={"listed": writers_problem is None, "why_not": writers_problem, "held": len(writers_held),
                            "not_read": [{key: item.get(key) for key in ("pid", "command", "uids", "gids")} for item in writers_unread[:20]],
@@ -1087,11 +1114,12 @@ if reason is not None:
     os.chmod(ROOT, 0o777)
     lines = ["refused", f"{reason}: it was not copied"]
 record = record_of(lines[0])
-descriptor = os.open(RECORD, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644)
+os.makedirs(OUT, 0o700, exist_ok=True)
+descriptor = os.open(RECORD, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o644)
 with os.fdopen(descriptor, "w", errors="backslashreplace") as out:
     json.dump(record, out, separators=(",", ":"))
 text = mark_text(lines)
-descriptor = os.open(MARK, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644)
+descriptor = os.open(MARK, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o644)
 with os.fdopen(descriptor, "w", errors="backslashreplace") as mark:
     mark.write(text)
 for line in text.splitlines()[1:]:

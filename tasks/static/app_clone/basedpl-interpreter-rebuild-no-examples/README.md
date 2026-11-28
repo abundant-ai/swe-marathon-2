@@ -2,6 +2,12 @@
 
 Author notes. Nothing in this file is shipped to the agent or to either image.
 
+**Status, 2026-11-28.** v11 passed Oddish QA on 2026-11-27 at 23:33 UTC (verdict `accept`): the
+reference 1.0 twice, the no-op 0 twice, Opus 5.5 0.789 and GPT-6.2 Astra 0.565, in experiment
+[`6cd78008`](https://www.oddish.app/experiments/6cd78008). The task files here are v11's (the Python
+ones in main's ruff style), apart from the private cases and what packaging generates; see
+[Calibration on v11](#calibration-on-v11).
+
 The agent gets an execute-only copy of `bpl`, the interpreter of the BasedPL array language
 (github.com/AnswerDotAI/basedpl, Apache-2.0, first published 2026-09-16; pinned at tag v0.1.95,
 commit `af3609a9348471494d2bed952cbbf2a5ecdbd53e`, 2026-11-18), and its documentation, and
@@ -41,8 +47,23 @@ that echoes and the build's error messages no longer counted, and needed 10 of t
 leaves out every one-line answer that one documented function gives from the case's own literals or
 input, as the build itself shows them when the verifier image is built, and keeps 12. It also ships
 the source of the reference's build in the solution and gives the second image's build public egress,
-two items of a sibling task's pre-trial audit (bundle `550b63faf0b3`). Rounds 14 and 15's bundles
-were not uploaded. Round 12's earlier bundles
+two items of a sibling task's pre-trial audit (bundle `550b63faf0b3`). That bundle went up as v6: its
+baselines were right, and its pre-trial audit found in-scope items with no case and a file-read rule no
+case checked. Round 17 adds 67 cases for them, after the 1,777 others, which stay as they were (bundle
+`43273031859b`). Its re-check found five lines whose answer the machine decides, the documented errors
+of four pages with no case, and a case that applied only one of `•normalize`'s four forms; round 18
+closes them in those cases alone (bundle `8d3229fc0dab`). That bundle went up as v7: its baselines and
+pre-trial audit were clean, and its verdict rejected it on two must-fixes (the end of the work counted
+from set-up rather than from the session's first process, and one run that called its session an
+evaluation, restating the instruction's own framing) and three should-fixes (budgets a valid delivery
+could meet, the collect hook's names in `/app/rebuild`, requirements nothing grades). Round 19 answers
+all five (bundle `c65a7274858d`), which went up as v8: its baselines and pre-trial audit were clean,
+and v9 replaced it while its model runs were still going. v9, made on the owner's account, gives the
+session 12 hours, says so in the instruction, and takes the network away from every phase, the image
+builds included. Its verdict and v10's each rejected one hidden case written in a form no shipped
+page documents; v11 rewrote every case of that kind (48) and passed Oddish QA on 2026-11-27. Rounds
+14, 15 and 17's bundles were not
+uploaded. Round 12's earlier bundles
 `ad93859c8f45`, `7867414c5e86`, `c790a042f2be` and `da8966415695`,
 round 11's `f93f6c391545` (the same Oddish content as v3), round 10's
 `ec8d6ecf327d`, round 9's `5eef6fadb546` and `bf77bf7f91d0`, round 7's `b206089bd38b` and round
@@ -50,12 +71,464 @@ round 11's `f93f6c391545` (the same Oddish content as v3), round 10's
 `7462d71fe5a7`, `f0da94435d6b`, `cfc9d42f3e68`, `80d7f600cab8` and `1a08cdb471d0`. See
 [Remaining work](#remaining-work) and [Validation gaps](#validation-gaps).
 
+## Calibration on v11
+
+Oddish v11 (content hash `dbb27ecd…`), experiment [`6cd78008`](https://www.oddish.app/experiments/6cd78008),
+2026-11-27, one attempt per trial. The models ran under claude-code 2.1.331 and codex 0.159.2 with web search
+off and helper agents allowed. The image kept 1,741 cases.
+
+| Trial | Agent | Reward | Cases passed | Agent time |
+| --- | --- | --- | --- | --- |
+| `-113`, `-114` | reference | 1.0, 1.0 | 1,741, 1,741 | - |
+| `-115`, `-116` | no-op | 0, 0 | 0, 0 | - |
+| `-118` | claude-code, Opus 5.5 | 0.789202 | 1,374 | 60 min |
+| `-119` | codex, GPT-6.2 Astra | 0.565192 | 984 | 26 min |
+
+**Failure mode.** Both agents stopped within the first hour of a twelve-hour session while their own
+diffs against the sandboxed build were still failing, and they did worst on the worker's JSON replies and
+the exact error messages.
+
+Cases passed by kind (`by_kind` in each trial's `metrics.json`), in order of the share Opus failed:
+
+| Kind | Cases | Opus 5.5 | GPT-6.2 Astra |
+| --- | ---: | ---: | ---: |
+| `worker` | 176 | 76 | 34 |
+| `error` | 234 | 149 | 63 |
+| `module` | 49 | 35 | 17 |
+| `script` | 165 | 122 | 91 |
+| `stdin` | 89 | 66 | 43 |
+| `expr` | 416 | 356 | 298 |
+| `display` | 146 | 131 | 109 |
+| `coverage` | 56 | 51 | 32 |
+| `apl` | 119 | 112 | 98 |
+| `cli` | 18 | 17 | 17 |
+| `program` | 260 | 246 | 169 |
+| `sandbox` | 13 | 13 | 13 |
+| all | 1,741 | 1,374 | 984 |
+
+What the two runs did (their trajectories):
+
+- **Astra** wrote a Python interpreter of about a dozen modules in 26 minutes, compared it with the sandboxed
+  build on the glyph pages' examples and on requests it generated, fixed what it could and stopped. Its
+  hand-off note says the rebuild is not a drop-in replacement yet: its last comparisons still found 96
+  mismatches in 968 glyph-example requests and 297 in 954 generated ones, among them a derivative whose JSON
+  value differed in the last digit while its display matched.
+- **Opus** wrote the reader, the evaluator and the display itself, and after 30 minutes gave the rest to
+  eight helper agents: structural glyphs, search and sort, operators and inverses, `∂`, two groups of system
+  functions, display, and the worker with the command line. At 50 minutes, with 2,402 of 3,723
+  documentation-example output lines matching, it ended its turn with a status note and a plan to merge the
+  helpers' work and then compare everything. Ending the main turn ends a headless claude-code run: the
+  session closed ten minutes later with the helpers cut off mid-edit, and nothing was merged or re-checked.
+- **The verdict** (`accept`, high confidence): both runs failed on their own incomplete interpreters, with no
+  leak and no weak test. Neither run called its session an evaluation, and neither exploited anything.
+- **The reference's runs** counted 1,337 different outputs (12 needed) and 94 derived cases.
+- **The same two harnesses on v9 and v10:** Opus 0.779 (3.3 h) and 0.675 (1.9 h), Astra 0.754 (1.2 h) and
+  0.737 (1.0 h). No v9-v11 run came near the 12-hour limit.
+
 ## Development log
+
+### 2026-11-28 (main synced to v11; the calibration and the failure mode)
+
+- **The files.** The v11 bundle kept outside this repository has Oddish v11's content hash (`dbb27ecd…`,
+  recomputed with the CLI's own function against `GET /tasks/{id}/detail`). Against it:
+  - `task.toml`, `instruction.md`, `environment/provision-scratch` and `environment/reclaim-scratch` are now
+    v11's, byte for byte. These are the four files v9 changed; v10 and v11 changed only the private cases.
+  - Every other file v11 ships from this folder was already v11's. The Python files keep main's ruff
+    formatting and lint fixes, and after formatting differ from v11's only by those fixes (`check=False`,
+    `re.DOTALL`, `itertools.pairwise`, `min()`, `noqa` comments).
+  - `scripts/package_step.py`'s own functions regenerate the 544 generated files (the agent's documentation,
+    the reference's source and licence, the builds and their `build.txt`) byte for byte from the pinned
+    checkout and the hardened build. The private cases, the seeds and the build marker stay out.
+- **Checks.** The limit is `LIMIT` (43,200 s), which the agent's limit, the stop after the limit and the
+  collect hook's end of the work must all hold. The network check asserts no network in any phase and no
+  justification. The instruction checks allow v9's one sentence on the 12 hours and keep every other rule.
+  The 12-hour attempt bound is now a strict expected failure (see [Workload](#workload)). Here 91 pass and
+  that one fails as expected; `ruff format --check` and `ruff check` pass. Against a copy with v8's files,
+  13 fail ([Validation](#validation)).
+- **The branch** was already level with main (`ff9359f`): nothing to rebase.
+- **The calibration** comes from v11's four baselines and two model trials, read through `oddish status`,
+  each trial's analysis and its trajectory ([Calibration on v11](#calibration-on-v11)).
+
+### 2026-11-27 (v9 to v11: twelve hours offline, every hidden case in a documented form; v11 passed Oddish QA)
+
+- **v8** (round 19's `c65a7274858d`, uploaded 2026-11-26): its baselines and pre-trial audit were clean, and
+  the platform's replayed exploits scored 0. v9 replaced it while two of its three model runs were still going
+  (DeepSeek 0.439 twice, GLM 0).
+- **v9** (02:51 UTC, made on the owner's account, outside this repository): the session has 12 hours
+  (`timeout_sec` 43,200, with the stop after the limit and the collect hook's end of the work to match), and
+  one new sentence of the instruction says so. Every network mode is no-network, the image builds' included,
+  and the open-internet justification is gone. The models ran in experiment `6cd78008` (Opus 5.5 0.779,
+  GPT-6.2 Astra 0.754). The verdict rejected v9 on one finding: a hidden command-line case graded a flag that
+  neither the instruction, the manual nor `--help` mentions.
+- **v10** (14:43 UTC): v9 without that case, 1,845 cases, everything else byte for byte. Opus 0.675, Astra
+  0.737. The verdict rejected it on one finding of the same kind: a hidden case gave a system function an
+  argument form outside the closed list on its page, which only the reference's source accepts.
+- **v11** (20:45 UTC). Rather than one case per audit, every hidden case, base and variants, was checked
+  against the agent-visible documentation (harbor-lh `ops/swe-marathon-v2/qa/basedpl/15-undocumented-form-sweep-v10.md`).
+  48 were rewritten to documented forms and none dropped: 8 system-function forms; 21 glyph, operator, syntax
+  and target forms; 9 error kinds that the glyph's own page contradicts; 10 results only the reference
+  decides (limits no page states, outcomes a page says are not promised). Every documented feature kept at
+  least min(3, its v10 count) of the cases that fail without it. Only `tests/private/cases.json` changed.
+  Baselines and the pre-trial audit were clean (the reference 1.0 twice, 1,741 of 1,741; the no-op 0 twice);
+  Opus 0.789, Astra 0.565. The verdict accepted v11 at 23:33 UTC: both runs failed on their own incomplete
+  interpreters, with no leak and no grader defect.
+- **What the generator writes.** `scripts/make_cases.py` and `scripts/scope_cases.py` with the private seed
+  still write round 18's 1,846 cases. v10's removal and v11's rewrites were made to the private file, which
+  is kept with the v11 bundle outside this repository.
+
+### 2026-11-26 (round 19: the v7 verdict; the end of the work from the first process, the requester's framing, the budgets, the agent's directory its own)
+
+- **The verdict.** Round 18's bundle `8d3229fc0dab` went up as v7. Its baselines were right (the reference 1.0 twice,
+  the no-op 0 twice) and its pre-trial audit was clean. Its three model runs were honest failures that stopped early
+  (DeepSeek 0.379 and 0.413, GLM 0.319), and the verdict rejected v7 on two must-fixes and three should-fixes (harbor-lh
+  `ops/swe-marathon-v2/qa/basedpl/13-FIX-v8-BRIEF.md`; the verdict's export is in `qa/basedpl/scratch-v7/`).
+- **M1: the end of the work counted from set-up (F4).** The collect hook counted the end of the work from set-up's own
+  time (`turn-started`, written at `agent.setup_complete`), while the agent's turn, and the process that stops the
+  session's processes after the limit, begin with the session's first process. A save in the turn's last seconds could
+  then be taken out as late, and with it the reward.
+  - Harbor runs a short command as `dev` before it starts the agent's clock (SymPy's re-check 7 found it in that task's
+    own watch). Taken by one look, it would have become the first process, and both the stop after the limit and the
+    end of the work would have counted from a start before Harbor's clock. The process the set-up hook leaves now
+    counts a process as the first only once two looks at least 1 s apart, on the clock it reads, both see it alive with
+    the same start; those seen once and gone are counted (`first_process_passed_over`).
+  - Once confirmed, it records that process and the wall-clock time of its start (`/var/lib/scratch/first-process`,
+    written whole), and a set-up run removes an earlier run's record before it starts its own process.
+  - The hook's end of the work is that start plus 34,560 s and 0.1 s (the start is read in hundredths of a second): the
+    same start the stop after the limit counts from, 1.9 s before that stop, which also waits for the network to answer
+    again. Set-up's time, in whole seconds and with one more, is used only where no first process was recorded.
+    Everything else of the late-save rule stands: a file or link changed after the end, or held open for writing by a
+    frozen process, is taken out and counted. The record and `metrics.json` gain `first_process_started`,
+    `first_process_passed_over` and `work_end_from`.
+  - On v7's capped model run the platform's numbers were: set-up at T; Harbor's agent phase started at T + 0.72 s and
+    ended at T + 34,562.94 s, so its 34,560 s clock ran from T + 2.94 s; the first process started at T + 2.96 s, 0.02 s
+    after that clock. The old end fell 1.9 s before Harbor ended the agent phase; the new one falls 0.12 s after it, so
+    a save in those 0.12 s still counts, though Harbor may be reopening the network then (a residual: the start is
+    read in hundredths of a second, and the end cannot be put closer to Harbor's without risking the turn's own last
+    saves).
+- **M2: a solver called its run an evaluation.** One run, after reading only the instruction and `--help`, described
+  its session as an evaluation, taking up the instruction's own framing (a build to behave exactly like, scripts
+  compared with golden files in CI, a completion sentence about "every script, input and command line we run"). This
+  is the class of back office v13 and SymPy's round 6, and the fix follows back office v14: the clean-room story
+  stays, and each requirement is stated by what depends on it.
+  - The reports (whose output goes into the documents and files the team sends to clients, and from one script into the
+    next), the notebooks, the shell jobs and the wrappers each depend on what `bpl` prints; "behave exactly like",
+    "golden files", "CI", "compares" and the completion sentence are gone. "Completion" is now "Switching over": the
+    team points its reports, pipelines, notebooks, shell jobs and wrappers at the new interpreter and retires the
+    sandboxed build.
+  - Every requirement is kept: all 114 code spans and all 15 numbers of v7's instruction are in v8's (checked by
+    script), and the requirement map is in the round's report (harbor-lh `qa/basedpl/13-FIX-v8-REPORT.md`).
+  - The cue sweep over everything the agent can read, list or see running finds, in the instruction, 0 of the words the
+    brief names and 1 of the wider list ("records", BPL's own type), against 25 hits in v7's.
+- **S3: requirements nothing grades (F5).** The modular-source requirement and the clean-room record of where every part
+  came from are dropped: neither can be graded objectively, and the clean-room story stands without them.
+- **S1: budgets a valid delivery could meet (F1, F3).**
+  - The verifier's: `TOTAL_SEC` 4,200 to 4,700 s and the step's timeout 4,500 to 5,000 s. Every case at its 2 s limit,
+    with 0.35 s of cleanup before each (the platform's measured 0.015 s more than twenty times over), now fits before
+    the last case may start; at 4,200 s only 0.1 s did. A valid build made slow on purpose (the reference after a
+    1.7 s sleep on every run) ran all 1,742 cases through the real path in 3,076 s of the verifier's time, 1.77 s a case,
+    against 4,580 s after which no case starts (4,080 s before this round would have held it too; the raise is for
+    every run at its full 2 s). It scored 0.997704: its 4 losses are runs that passed the 2 s limit, since the sleep
+    leaves 0.3 s for each run on a machine at a load average of 6 to 16. The timeout cannot go much higher: with the
+    agent's 34,560 s it must stay inside the platform's 12-hour attempt with time for the images, set-up and the
+    collect hook (a check asserts the agent and the verifier within 11 h, and with the hook within 11.5 h).
+  - The collect hook's: its own timeout 600 to 1,200 s, the copy's pack 100 to 400 s (by 1,120 s from the hook's start),
+    the link fixer 120 to 400 s, the listing before the hook 300 to 400 s, the walk 420 to 1,000 s and the hashing 240 to
+    400 s. On the largest tree the instruction allows (98,994 entries and 990,983,034 bytes: a quarter of the bytes in
+    files of 1-4 KiB, the rest in four large ones, all random data gzip cannot shrink; 1,019 links inside and 9 to the
+    machine's own files, which the link fixer copies), the hook's own scripts took, on this Mac: the listing 0.6 s,
+    the link fixer 0.9 s, the walk, hashing, links, pack, record and mark 70.0 s together, and the copy's pack alone
+    30.7 s; the mark read "delivered". The limits a delivery must keep stay as the instruction states them, as
+    properties of the copy (100,000 entries, 1 GB, 1,000-byte paths, room on the disk to copy it), and each run's 2 s,
+    4 GB and 1 GB on disk as properties of the job runner; nothing in the instruction names a budget of its own.
+- **S2: names in `/app/rebuild` the hook reserved (F2).** The hook wrote its mark and record into `/app/rebuild`
+  (`.manifest`, `.manifest.json`) and moved aside anything the session had left under those names. It now writes both
+  beside the tree, in `/var/lib/scratch/out` (made at set-up, root's, 0700), which `task.toml` declares as a second
+  artifact, as Carve's accepted v5 does with its own; nothing in `/app/rebuild` is the hook's, and nothing is moved
+  aside. The verifier reads both from there. An empty or missing `/app/rebuild` is what a refused delivery, or one of
+  nothing, leaves, and the mark says which; only when neither the tree nor the mark arrived is it an evaluation error.
+  On Carve's v5 no-op run the second artifact arrived (`status: ok` in Harbor's artifact manifest, read by its
+  verifier).
+- **Unchanged.** The cases (1,846 generated; the same 1,742 kept locally, `local-recording-13`), the answers, the
+  gate (12), the tolerances, the runner and the solution.
+- **Through the real path** (bundle `c65a7274858d`, `local-recording-13`, harbor-lh `qa/basedpl/scratch-09/replay-r19/`:
+  round 18's replay with the second artifact carried into the verifier and the verifier pointed at it; the same 41
+  programs as round 18, one at a time): the reference 1.0 (1,742/1,742; 1,336 outputs; coverage 56 and sandbox 13
+  passed; `derived_cases` 92). The no-op 0.0: its empty `/app/rebuild` arrives marked `delivered 0 0` and is graded
+  with the missing-program note, not an evaluation error. Every stub, replay, kitchen sink and guesser 0.0 with the
+  note, each passing what it passed in round 18. The model deliveries: v5 `-48` 0.502296 (875; 696), `-50` 0.234214
+  (408; 256), v4 `-33` 0.039610 (69; 22), the same as round 18, and v5 `-49` 0.053961 (94; 57), one case fewer: one of its runs takes about 2 s and passes or times out by chance, through either bundle (94, 94, 95 and 94 through this one; 95, 95, 94 and 94 through round 18's). The reference reading every
+  path 0.994834 (1,733), refusing every read 0.484501 (844). Each verifier read the mark and the record from the
+  second artifact.
+- **Checks.** Two new: the end of the work counted from the first process (a last-second save kept, a save after the
+  end taken out, the end before the stop after the limit for the same start, set-up's time without a record), and the
+  two-look rule (a short command before the clock, and another under the same pid with a later start, passed over;
+  the session's process confirmed by a second look a second later, and the stop timed from it). The stop check also
+  asserts that the first process is recorded once confirmed and an earlier run's record removed, and the checks that
+  drive that process move its stand-in clock on until it has confirmed one. The delivery checks follow the mark and
+  the record to their new place and add a delivery holding files under the two old names; the hook-order, budget and
+  deadline checks follow the new figures; the instruction check pins "Switching over" and bans the old framing, the
+  provenance record and the modular-source requirement. Ten quotes of the task's own code in the checks now match
+  however a formatter wraps the lines: on main's ruff-formatted layout seven checks had failed on them since the move
+  to the flat layout. Against a copy of the task at `fbfd68e` (round 18, `git archive`, with this round's checks
+  file) 24 of the 91 fail: the five that drive the first process or the end of the work (M1), the fourteen that read
+  the hook's mark and record beside the tree (S2), the three on the new limits (S1) and the two on the instruction
+  (M2, S3); the other 67 pass. Against `1d16d50`, this round's earlier commit, the two-look, stop and end-of-work checks fail.
+  All 91 pass here, with `ci_checks` (27) and `check_repository.py`; on main's layout all 91 pass too.
+- **Bundle** `c65a7274858d` (built twice, the same hash; kept in `experiment/dist-check-44/`): 570 files, 37,548,629
+  bytes. Against `8d3229fc0dab` (v7) only `environment/provision-scratch`, `environment/reclaim-scratch`,
+  `instruction.md`, `task.toml` and `tests/verify.py` differ. Oddish content hash `0d29aad3…` (v7's `8af22dff…`).
+  Preflight passes. The round's first build, `8311a8f331eb` (`experiment/dist-check-43/`, Oddish content hash
+  `5b3985be…`), came before the two-look rule and the end to the hundredth, and is superseded; it was not uploaded.
+
+### 2026-11-26 (round 18: the round-17 re-check; no answer the machine decides, the documented errors, `•normalize`'s four forms)
+
+- **The re-check** (harbor-lh `ops/swe-marathon-v2/qa/basedpl/12-recheck-v7.md`) is CONCERN with no must-fix. Both v6
+  findings are closed, and every figure of round 17 reproduced exactly through the real path. It names three
+  should-fix items and four nits, all in round 17's new cases. This round changes only those cases, the checks and
+  this file. The 1,777 cases before them, the runner, the tolerances, the anti-stub gate (12) and `instruction.md`
+  stay as they were.
+- **S1: answers the machine decides.** The build opens a file before it applies the read rule, so it prints the
+  refusal only where the file exists; elsewhere it prints the open's own error. Five guarded reads, in three sandbox
+  cases, named files that the machine provides, not the image or the runner, so the reference itself could fail them
+  where the trial machine differs from the image's builder.
+  - The read of a file that the container runtime provides now reads a module that the runner makes beside the
+    working directory, by its absolute path, as the case of the program outside by its absolute path already did.
+  - The four reads under the kernel's trees (`/proc` and `/sys`, by `•nget` and by `•load`) print only the error's
+    kind, which is the same whether the file is refused, missing or unreadable, while a reader without the rule
+    returns the file there. The read under `/sys` is now of a file, not of the directory, so that such a reader has
+    content to return.
+  - The refusal's exact message stays checked on the eleven other guarded reads.
+  - Every other new line was read for the same: absolute paths, `•host`, `•path` with `absolute`, process ids, file
+    sizes and system files. None prints anything the machine decides. The program-file cases under `/proc` and
+    `/sys` print nothing and end with status 1 whether the file is refused or missing.
+- **S2: the documented errors with no case.** Two guarded cases after the others, drawn from a generator of their own
+  (`scope_cases.errors`, seeded apart), so that round 17's 67 keep their ids and data:
+  - `•prefs` (one case): an unknown setting; a bad value of `fns`, `dissect`, `notation` and `prec`, and of `float`,
+    `int`, `kinds` and `batch`; a number instead of a record; `hanzi_aliases` after other code; then those eight
+    settings read back, to show that none changed; and, under static kinds, an exact integer wider than `int`, given
+    to `•literal`, since a literal in the code itself stops the program before any guard runs.
+  - `•literal`, `•literal⁻`, `•edge` and `•host` (one case): each error their pages document (for `•literal`, a
+    name, another function, more than one value and text that doesn't parse; for `•literal⁻`, a function and an
+    operator; for `•edge`, a length that isn't a nonnegative whole number and an unknown mode; for `•host`, another
+    name), and a position that isn't whole, as the build answers it.
+  - Neither counts toward the 12, as no guarded error case does. With them the scope cases number 69, of the 70 the
+    deadline check allows (`scope_cases.MOST`, unchanged).
+- **S3.** The coverage case meant to apply `•normalize`'s four forms applied only the default one, as the build
+  parsed it. It now gives the four form names as one argument, so NFKC and NFKD each have a case.
+- **Nits.**
+  - N1: the program-file case under `/proc` names a file whose text is a valid program, which a reader without the
+    rule runs and prints, ending with status 0; refused or missing, it prints nothing and ends with status 1. The
+    file it named before stopped such a reader at its first line, as the rule does.
+  - N2: the controls also read a file by its absolute path inside the working directory, so a rebuild that refuses
+    every absolute path loses that case.
+  - N3: the figures for the reference built to read every path now say which machine they describe (below, and
+    hackability row 21).
+  - N4: the list of what to read in the first oracle trial gives the latest local derived figures.
+- **Unchanged.** The cases were generated again with the private seed and compared with round 17's file
+  (`experiment/cases-r17.json`): the first 1,777 are the same byte for byte, round 17's 67 keep their ids and order,
+  and only six of them differ (five sandbox cases and the `•normalize` case), each only as above. The leak check
+  keeps all 69.
+- **Recorded locally** (`experiment/local-recording-13`, the native build of the hardened source, as the image's
+  recording step runs it): 1,742 of 1,846 cases kept, the same 104 dropped and both new cases kept.
+  `kept_ids_sha256` `80366178…`, `expected_sha256` `0c385ff8…`.
+  - Against `local-recording-12`, five of the six changed cases' answers differ, each only where the case changed,
+    and the two new ones are added; the sixth, the program file under `/proc`, prints nothing and ends with status 1,
+    as before.
+  - The sandbox answers are now the ones a Linux recording gives as well: the kernel-tree reads, refused there and
+    missing on this Mac, print the same kind.
+  - Counted outputs 1,336, as before (neither new case counts); the dispatcher 2 (3.9% of the cases); the same 92
+    derived cases (`ids_sha256` `293f40a9…`), of 674 looked at, 24 of 116,195 derivations passed over.
+- **Through the real path** (bundle `8d3229fc0dab`, `local-recording-13`, harbor-lh
+  `qa/basedpl/scratch-09/replay-r18/`, 41 programs). The replay is round 17's with one setting more, `REAL_TMP=1`:
+  the runner's own paths under `/tmp`, where the replay otherwise moves the workspace into its scratch folder, so
+  that the files the runner makes beside the working directory are there by their absolute paths too. The
+  reference, the two read-rule mutants and the model deliveries ran that way, one at a time (`r18real/`); the no-op,
+  the replays and the stubs ran in the replay's workspace (`r18/`).
+
+  | Program | Cases passed (round 17's) | Counted outputs | Reward (round 17's) |
+  | --- | --- | --- | --- |
+  | the reference (the runner's `/tmp`) | 1,742 (1,740) | 1,336 | 1.0 |
+  | the no-op | 0 | 0 | 0 |
+  | v5 `-48` (DeepSeek, 9.6 h; the runner's `/tmp`) | 875 (876) | 696 | 0.502296 (0.503448) |
+  | v5 `-50` (GLM, 9.6 h; the runner's `/tmp`) | 408 (408) | 256 | 0.234214 (0.234483) |
+  | v5 `-49` (DeepSeek, 31 min; the runner's `/tmp`) | 95 (95) | 58 | 0.054535 (0.054598) |
+  | v4 `-33` (GLM, about 9.4 h; the runner's `/tmp`) | 69 (69) | 22 | 0.039610 (0.039655) |
+  | re-check 10's `hint-right` / `hint` / `hint2` | 57 / 56 / 54 | 0 | 0 |
+  | its `combo` / `err-table` | 50 / 43 | 0 | 0 |
+  | its `kitchen-sink-2` / `kitchen-sink` / literal machine | 44 / 40 / 17 | 0 | 0 |
+  | the last literal echoed | 25 | 0 | 0 |
+  | the recorder's dispatcher, a table of its cases with their answers | 68 | 2 | 0 |
+  | re-check 10's 290-line evaluator | 29 | 3 | 0 |
+  | replay `-46` / `-47` as delivered | 6 / 1 | 0 | 0 |
+  | each of the 20 most common answers, printed always | 3-15 | 0 or 1 | 0 |
+  | the reference built to read every path (the runner's `/tmp`) | 1,733 (1,732) | 1,336 | 0.994834 (0.995402) |
+  | the reference built to refuse every read (the runner's `/tmp`) | 844 (844) | 681 | 0.484501 (0.485057) |
+
+  - Every program that runs nothing still scores exactly 0, with the note, and passes as many cases of each kind as
+    in round 17.
+  - **The mutants.** The reference built to read every path loses 9 cases here: the four cases of guarded refusals,
+    the program outside given by `..`, by its absolute path and through a link, which it runs, the device file as the
+    program (an empty program, status 0), and the command-line case that names a file outside the working directory
+    (this Mac's copy of that file happens to run). Round 17's 8 had the workspace moved, where the program outside was
+    not there by its absolute path. On Linux it should lose 10, 1,732 of 1,742 (0.994259): the command-line case passes
+    there (that file stops at its first line, with nothing printed), and the program files under `/proc` and `/sys`
+    exist there and run. The reference built to refuse every read passes the same 844 cases and loses 898: the two new
+    cases read their program file too.
+  - **The re-grades**, each passed/1,742 with no note and the same counted outputs (the changed and new cases run
+    against each delivery through `runcases.run_case`, harbor-lh `qa/basedpl/scratch-11/tools/changed_cases.py`,
+    with round 17's and round 18's versions):
+    - `-48`: 876 to 875 (0.503448 to 0.502296). It now passes the `•normalize` case and loses two sandbox cases: the
+      read by an absolute path inside, and the program outside by its absolute path, which its rebuild runs now that
+      the runner's file is there.
+    - `-49` (95), `-50` (408) and `-33` (69) pass the same cases as before, so only the denominator moves:
+      0.054598 to 0.054535, 0.234483 to 0.234214 and 0.039655 to 0.039610. `-50`'s rebuild refuses the program
+      outside by its absolute path.
+    - None passes either new case.
+- **Checks.** One new, `test_the_scope_cases_read_no_file_the_machine_decides_and_give_the_documented_errors`:
+  every file a sandbox case reads is one the runner makes, the image holds or every machine has the same, or a file
+  of the kernel's trees read for its kind alone; the program files given by an absolute path are the four meant; the
+  read by an absolute path inside and the four-form `•normalize` are there; and the two error cases come last,
+  guarded, from a generator of their own, covering each documented error. Against a copy of the task at `d163d00`
+  (round 17, `git archive`, with this round's checks file) the new check fails (no `scope_cases.errors`) and the
+  other 88 pass; the slow-runs check failed there once, at a load average near 100 (68 runs past its 50 ms limit for
+  65), and passes alone. 89 task checks, 27 repository checks and `check_repository.py` pass.
+- **Bundle** `8d3229fc0dab` (built three times, the third from the committed tree, the same hash; kept in
+  `experiment/dist-check-42/`): 570 files, 37,543,090 bytes. Against `43273031859b` only `tests/private/cases.json`
+  differs. Oddish content hash `8af22dff…`. Preflight passes.
+- **Budget.** 69 scope cases, of the 70 `scope_cases.MOST` allows, so the deadline check's bound is unchanged
+  (4,143.9 s). The 1,742 kept cases at their 2 s limit come to about 3,898 s of `TOTAL_SEC` 4,200 (the re-check's
+  3,894 s, plus two cases).
 
 ### 2026-11-25
 
 Moved the single brief, verifier and solution to the task root. Harbor reads the
 agent and verifier settings from the root configuration.
+
+### 2026-11-25 (round 17: the v6 pre-trial audit; a case for every documented item in scope, and the file-read rule checked)
+
+- **The audit.** Round 16's bundle `550b63faf0b3` went up as v6. Its baselines were right (the reference 1.0 twice,
+  the no-op 0 twice), and its pre-trial audit returned two must-fixes, both against `instruction.md` (harbor-lh
+  `ops/swe-marathon-v2/qa/basedpl/scratch-11/v6-audit.csv`). No model run was started.
+  - `bc32a001f096`: the instruction puts every glyph and system page in scope, yet no case used `"-" •nput`, `•nget`
+    of a file, `•path` or `•path⁻`, the deterministic `•uuid` versions, `•normalize`, `•element`, `•xml` or `•xml⁻`,
+    `•detach`, `•prefs ⍬`, or the settings `fns`, `dissect` and `hanzi_aliases`.
+  - `c707da4b2a64`: no case checked the file-read rule. The one case that named a file outside the working
+    directory, a command-line case, passes for a reader without the rule, since that file is no BPL.
+- **The sweep** (harbor-lh `qa/basedpl/scratch-11/tools/sweep.py` on v6's kept cases; `scope_cases.missing` makes the
+  same count part of packaging). It covered every glyph and system page, every `•prefs` setting and `•prefs ⍬`, the
+  `•host` names kept, the ways in, the worker's requests, `]display`, `]dissect` and `⎕←`.
+  - With no graded case: the audit's items, and two more glyphs, `⊘` (valences) and `⍢` (operator recursion), in
+    the cases' own code (upstream's library modules use both inside, as the mutants below show).
+  - With one to four: `•ucs⁻` 1, `•host "version"` 1, the `int` setting 1, `•edge` 2, `•special` 2, `float` 2,
+    `⊽` 3, `•literal` and `•literal⁻` 3, `•src` 3, the `trees`, `width` and `batch` settings 3 each, `⍀` 4, `•ex` 4.
+  - Every one is deterministic, so nothing moves to the out-of-scope list and `instruction.md` is unchanged.
+    `•detach` is about derivatives, not scheduling. `•prefs ⍬` reports the `threads` setting, whose default the
+    documentation gives, not a count of cores.
+- **The cases** (`scripts/scope_cases.py`, new). Its 67 cases come after every other case, drawn from a generator
+  of their own seeded by the private case seed, so that the 1,777 before them are unchanged, byte for byte (checked
+  against round 16's file).
+  - **coverage** (54): one item per case, with corner conditions and errors (each error under a guard that prints its
+    kind and message):
+    - `"-" •nput`: text with no line ending, bytes, a prompt before a read of `⎕`, and the refusals and errors;
+    - `•nget` of a file: a whole file, its bytes, `./` and `../` from a module, a missing file, a directory, bad options;
+    - `•path` and `•path⁻`: arrays of paths, parts joined back, a change under `@`, `absolute`, the errors;
+    - `•uuid` 0, 3 and 5 (each namespace, and a UUID as one) and 8, and the errors;
+    - `•normalize`: NFC by default, each form, the errors;
+    - `•element`: nested element functions, attributes, a function shown as the call that made it, the errors;
+    - `•xml` and `•xml⁻`: attributes, comments and blank text dropped, prefixes and namespaces, escapes, numeric
+      attributes, empty elements, a changed tree written back, the errors;
+    - `•detach` under `∂`, under nested `∂`, and outside it;
+    - `•prefs ⍬`, alone and after settings; `fns`, `dissect` (with `trees` too), `hanzi_aliases` with the Hanzi
+      spellings of the glyph pages; more `int`, `float`, `trees`, `width` and `batch`;
+    - `⊘`, `⍢`, `⊽`, `⍀`, `•ucs⁻`, `•edge`, `•special`, `•host "version"`, `•literal` and `•literal⁻`, `•src` and `•ex`.
+  - **sandbox** (13): the file-read rule on each read path.
+    - `•nget` and `•load` refused: by an absolute path outside, by a path that climbs out with `..`, through a link in
+      the working directory that leads out (to a file beside it, or to a file of the image), and under each of
+      `/proc`, `/sys` and `/dev`. Each refusal prints its kind and message under a guard.
+    - The program file refused, with no output and status 1: a valid program outside, given by `..`, by its absolute
+      path and through a link (a reader without the rule prints what it prints), and a file under each of `/proc`,
+      `/sys` and `/dev` (a reader without the rule runs the device file, an empty program, and ends with status 0).
+    - Controls that must read: a file here, one in a directory under here and one through a link that stays inside,
+      for `•nget`, `•load` and the program file.
+    - The kernel-tree paths were taken to be ones every machine has. The round-17 re-check found that the machine
+      decides; round 18 answers it.
+  - **The fixtures** (`runcases.prepare`). A case may name links in its working directory (`links`) and files beside
+    it (`outside`, in a directory beside it). The runner makes both before every run, the same way when the answers are
+    recorded and when a submission is graded. The outside files are owned by whoever prepares the run (root) and
+    readable by every user, so that only the rule keeps the unprivileged run from them. `clear_workspace` removes
+    them, and packaging ships the two keys. The command-line case above stays as it is.
+  - Packaging refuses a set of cases in which a documented item in scope, or one of the 27 kinds of read path,
+    has no case (`scope_cases.missing`).
+- **Recorded locally** (`experiment/local-recording-12`) with a native build of the hardened source for this Mac
+  (`experiment/build-macos/`; the upstream release that stood in before has no read rule): 1,740 of 1,844 cases kept,
+  the same 104 dropped as before and every new case kept. `kept_ids_sha256` `2a8ee7ba…`, `expected_sha256` `d4195217…`.
+  `derivations.py` derives 92 cases (one new). `recording.json` now holds the sha256 of the derived ids (`293f40a9…`).
+  - The native build differs from the Linux one only where the Mac has no `/proc` or `/sys`: there it reports a
+    missing file where the Linux build refuses the path. The program-file cases print nothing either way, and the
+    image's recording on Linux records the refusals.
+  - Against the upstream stand-in's answers, five command-line cases differ (`--help`'s text, the removed modes'
+    status 2, and the empty output of the case that names a file outside): the hardened build's answers, which the
+    image's own recording always had.
+- **Through the real path** (bundle `43273031859b`, `local-recording-12`, harbor-lh `qa/basedpl/scratch-09/replay-r16/r17/`,
+  55 programs):
+
+  | Program | Cases passed (round 16's) | Counted outputs | Reward (round 16's) |
+  | --- | --- | --- | --- |
+  | the reference | 1,740 (1,673) | 1,336 | 1.0 |
+  | the no-op | 0 | 0 | 0 |
+  | v5 `-48` (DeepSeek, 9.6 h) | 876 (847) | 696 | 0.503448 (0.506276) |
+  | v5 `-50` (GLM, 9.6 h) | 408 (393) | 256 | 0.234483 (0.234907) |
+  | v5 `-49` (DeepSeek, 31 min) | 95 (89) | 58 | 0.054598 (0.053198) |
+  | v4 `-33` (GLM, about 9.4 h) | 69 (57) | 22 | 0.039655 (0.034071) |
+  | re-check 10's `hint-right` / `hint` / `hint2` | 57 / 56 / 54 | 0 | 0 |
+  | its `combo` / `err-table` | 50 / 43 | 0 | 0 |
+  | its `kitchen-sink-2` / `kitchen-sink` / literal machine | 44 / 40 / 17 | 0 | 0 |
+  | the last literal echoed | 25 | 0 | 0 |
+  | the recorder's dispatcher, a table of its cases with their answers | 68 | 2 | 0 |
+  | re-check 10's 290-line evaluator | 29 | 3 | 0 |
+  | replay `-46` / `-47` as delivered | 6 / 1 | 0 | 0 |
+  | each of the 20 most common answers, printed always | 3-15 | 0 or 1 | 0 |
+  | the reference built to read every path | 1,732 | 1,336 | 0.995402 |
+  | the reference built to refuse every read | 844 | 681 | 0.485057 |
+  | the reference without one new item, answering with its error there (14) | 1,707-1,739 | 1,306-1,335 | 0.981034-0.999425 |
+
+  - Every program that runs nothing still scores exactly 0, with the note. The six program-file refusals print
+    nothing and end with status 1, which a program that prints nothing with that status matches, hence a few
+    more passes for the constants (`const-01` 15 instead of 10); none of them counts toward the 12.
+  - **The mutants.** The reference built to read every path loses 8 cases: the four refusals under a guard, the
+    program given by `..` and through a link (which it runs), the device file as the program (an empty program,
+    status 0), and the command-line case that names a file outside (this Mac's copy of that file happens to run). On
+    Linux it also loses the program by its absolute
+    path and the `/proc` and `/sys` lines and program, which this Mac does not have. The reference built to refuse
+    every read loses every case that reads a program file (896), the controls among them. Each mutant without one
+    item loses that item's cases: `"-" •nput` 4, `•nget` of a file 7 (4 and 3 sandbox), `•path` 4, `•uuid` 4,
+    `•normalize` 3, `•element` 4, `•xml` 5, `•detach` 3, `•prefs ⍬` 4, `fns` 1, `dissect` 2, `hanzi_aliases` 2, `⊘` 33
+    and `⍢` 5 (the library modules use both: 31 and 3 module cases).
+  - **The re-grades.** The denominator grows from 1,673 to 1,740. The local recording's command-line answers are
+    now the hardened build's (the platform's recording always had them), which moves five `cli` cases.
+    - `-48`: 25 coverage and 6 sandbox cases more (the program-file refusals, where its rebuild ends with status 1 and
+      prints nothing), 2 `cli` fewer: 0.506276 to 0.503448.
+    - `-49`: 5 `cli` more and one `expr` case near the 2 s limit that passed this time; no new case: 0.053198 to
+      0.054598.
+    - `-50`: 2 coverage, 8 sandbox and 5 `cli` more: 0.234907 to 0.234483.
+    - `-33`: 1 coverage, 6 sandbox and 5 `cli` more (now 16, the platform's own figure): 0.034071 to 0.039655.
+    - Each reward is still passed/1,740 with no note, and each keeps its counted outputs above 12 (`-33` 22).
+
+- **Checks.** Four new, and three changed:
+  - the coverage check: `documented_items` and `read_kind` on known pages and paths; the generator's new cases
+    cover every audited item and all 27 read kinds; packaging refuses a gap; and where a local recording and
+    upstream's checkout are at hand, no graded case is missing an item;
+  - the runner lays out links and outside files the same way for every run, readable by everyone, and removes them;
+  - three stand-in readers on the same cases (answers recorded from the one that keeps the rule, then graded by
+    `grade()`): the rule passes all 8, a reader of every path 3, one that refuses every read 1;
+  - the new cases come after the others and change none (the stand-in generator with and without them);
+  - the deadline bound counts the new cases (`scope_cases.MOST`, 70: 1,859 cases at 2.1 s each still fit), the shipped
+    keys include `links` and `outside`, and the recording report holds the derived ids' hash.
+  - Against a copy of the task at `47da5ff` (round 16, `git archive`, with this round's checks file), 6 fail:
+    the four new ones, the deadline bound and the recording report; 82 pass. 88 task checks, 27 repository checks and `check_repository.py` pass.
+- **Bundle** `43273031859b` (built twice, the same hash; kept in `experiment/dist-check-41/`): 570 files, 37,541,259 bytes.
+  Against `550b63faf0b3` only `tests/private/cases.json`, `tests/verifier/runcases.py` and
+  `tests/verifier/recording.py` differ. Oddish content hash `9e17dea3…`. Preflight passes.
 
 ### 2026-11-25 (round 16: re-check 10's round-15 follow-up, M3; no answer one documented function gives from the case's own literals or input counts; two items of a sibling task's audit)
 
@@ -122,17 +595,17 @@ agent and verifier settings from the root configuration.
     with the monadic forms alone.
   - Monadic forms only with a function the code holds would leave guessers that apply a fixed function: an
     oracle over such single functions reaches 38 counted outputs, and one function alone 8.
-  - Every function between any two adjacent literals finds coincidences (`3 cold 5` is 15, `3×5`, where
-    `cold` is the second item of a list of functions) and costs `-33` 5 more.
+  - Every function between any two adjacent literals finds coincidences (an answer that a function the code
+    does not apply gives from two numbers beside each other) and costs `-33` 5 more.
 - **What it costs honest work.** Each honest run loses the counted outputs whose answer one primitive gives
   from what the case shows: `-33` 9 (30 to 21), `-49` 11 (69 to 58), `-50` 35, `-48` 52, the reference 60.
   That is more than the re-check's option C cost (4 and 2): its 15 glyphs left the rest of the table to a
   larger guesser.
-  - `-49` loses ten programs that are one primitive on literals (`*4`, `!116`, `⌈¯6.3 0.5 9`, `1 8≤8 1`),
-    which a guesser answers as well, and one coincidence.
-  - `-33` loses 11 passes (9 outputs). These are two quoted lines of standard input, `,7`, two programs that
-    are one primitive on literals, and six coincidences, where a function the code does not use gives the
-    answer from a literal (`⊥1 2` is 4).
+  - `-49` loses ten programs that are one primitive on literals, which a guesser answers as well, and one
+    coincidence.
+  - `-33` loses 11 passes (9 outputs). These are two quoted lines of standard input, three programs that are
+    one primitive on literals, and six coincidences, where a function the code does not use gives the answer
+    from a literal.
   - Every model run keeps its share: `-33` holds 21, 1.75 times the 12, the thinnest margin so far.
   - Below 12 an honest delivery loses what it passed, as since round 13: typically 1-2% of the cases (a median
     of 14-31 passes with the first 11 counted outputs, from the model runs' own passes thinned at random), at
@@ -156,8 +629,8 @@ agent and verifier settings from the root configuration.
     manifests, every crate's build script and sources, the pages `build.rs` embeds, `llms.txt` and the key
     layout), hardened by `common/hardening/apply.sh` as the build was. Nothing new is committed: the files
     come from the checkout at bundle build, as the documentation does. They are byte-identical to the tree
-    the binary was compiled from (`experiment/build/src`), hold all 101 files the compile's dependency file
-    lists, and load as a cargo workspace with the pinned `Cargo.lock` (`cargo tree --locked --offline`).
+    the binary was compiled from (`experiment/build/src`), hold all 98 files and 3 directories the compile's
+    dependency file lists, and load as a cargo workspace with the pinned `Cargo.lock` (`cargo tree --locked --offline`).
     `solve.sh` gains one comment line.
   - **The second image's network.** Its build installs Ubuntu packages in both stages, so
     `[verifier.environment] network_mode` is `"public"`; `[verifier]` and `[agent]` stay `"no-network"`, and
@@ -1392,7 +1865,7 @@ agent and verifier settings from the root configuration.
 | Further steps | Not designed. Candidates: the next upstream releases (0.1.96 onwards change semantics in patch releases); the worker's deadlines and interrupts. |
 | Hardening | `common/hardening/`: the patch, `apply.sh`, the pinned `Cargo.lock`, `mark.py` (install and mark) and `smoke.sh` (proof at every install). |
 | The original | `experiment/build/bpl` and `build.txt` from `scripts/build_original.py`, not in Git; packaging compresses it into both images and the solution, with a `build.txt` of the two lines `mark.py` reads (`link`, `sha256`), and adds to the solution the source it was compiled from (`solution/source/`, from the checkout, hardened as the build was). |
-| Private inputs | `tests/private/cases.json`, Git-ignored, from `scripts/make_cases.py` and `experiment/seeds.json`. The bundle holds each case without the generator's notes (`source`, `suite`, `family`, `want`, `scaffold_lines`), which stay in this file. Answers are recorded when the verifier image is built; `derivations.py` then lists the cases whose one-line answer one documented function gives from their own literals or input (`derived.json`); `recording.json` beside them describes both and appears in `metrics.json`. |
+| Private inputs | `tests/private/cases.json`, Git-ignored, from `scripts/make_cases.py` and `experiment/seeds.json`. The bundle holds each case without the generator's notes (`source`, `suite`, `family`, `want`, `scaffold_lines`), which stay in this file. Answers are recorded when the verifier image is built; `derivations.py` then lists the cases whose one-line answer one documented function gives from their own literals or input (`derived.json`); `recording.json` beside them describes both and appears in `metrics.json`. Since round 18, 1,846 cases: the 1,777 of rounds 9-16 and, after them, 69 from `scripts/scope_cases.py` (round 17's 67, coverage and sandbox, then round 18's two of the documented errors), some with links in their working directory and files beside it (`links`, `outside`). The uploaded set differs since v10: 1,845 cases (v10 left out one command-line case), 48 of them rewritten in v11 to documented forms. Both changes were made to the private file, which is kept with the v11 bundle outside this repository; the generator still writes round 18's set. |
 | Oracle | The original, installed with the zero marker by `solve.sh`, with upstream's licence; nothing else runs. `solution/source/` holds the source of that build, to read (322 files). |
 | Ratings (`harbor check`) | Not run. |
 
@@ -1431,11 +1904,12 @@ running what it is given, and scores 0.
 Clean-room reimplementations written from a manual and a binary are how compatible second
 implementations are made (Wine, Samba, the PC BIOS). Keeping a language frozen at one release
 for years, when upstream will not support it, is a common reason to own one, and a legal policy
-that anything embedded that long is written clean-room with a provenance record is a common
-reason not to fork. The exact bar has real consumers:
-- golden files that CI keeps beside client data;
-- saved notebooks whose worker replies must reproduce byte for byte;
-- shell jobs that act on exit status.
+that anything embedded that long is written clean-room is a common reason not to fork. The exact
+bar has real consumers:
+- reports whose output goes as it is into documents and files sent to clients, and pipelines that
+  feed one script's output into the next;
+- saved notebooks whose worker replies must come back byte for byte;
+- shell jobs that act on exit status, and wrappers that show `bpl --help`.
 
 The documentation is upstream's own. The cases come from upstream's reference suite and library,
 and from programs of the kinds an analytics team writes: reports over tables, text tools on
@@ -1469,7 +1943,9 @@ any order, and nothing short of a real interpreter scores above the floor.
 - QA 17 and 19, one session: a frontier model 0.35-0.60, DeepSeek Flash 0.20-0.40, GLM 5.3
   0.12-0.30.
 
-None of these is measured yet.
+Measured since (12-hour sessions, one run each): Opus 5.5 0.779, 0.675 and 0.789 on v9, v10 and
+v11, and GPT-6.2 Astra 0.754, 0.737 and 0.565, every run ending inside 3.3 h. The two frontier
+runs on v11 are in [Calibration on v11](#calibration-on-v11).
 
 **The tail.** The recorder drops answers that show the maths library's last bits: 17 in the local
 recording, against 12 confirmed by QA 18 and one more by the re-check (the build's own atan2). What remains of the float tail is fixed and visible but
@@ -1492,7 +1968,8 @@ lifts the dispatcher past 4.
 
 ### Initial feasibility
 
-Solved by construction: the original passes every kept case. For an agent, unknown.
+Solved by construction: the original passes every kept case. For an agent: on v11 the two
+frontier runs passed 79% and 57% of the kept cases in under an hour each.
 
 ## Case mix
 
@@ -1511,6 +1988,11 @@ the local stand-in recording):
 | `module` | 50 | 49 | a main program loading upstream's library modules (`lib/`) with `•load` | upstream's library records |
 | `program` | 260 | 260 | 25 new programs with seeded data: reports, a word counter, a ledger, a grade book, validators with custom error kinds, CSV and JSON on standard input, number theory, matrices, exact rationals, complex roots, ciphers, a module of one's own, `bpl -` with arguments | `scripts/programs.py` |
 | `cli` | 19 | 19 | the command line's own answers, one case per behaviour: help, version, removed modes, wrong arguments, missing and refused files, arguments, the worker's request errors, piped lines with a failing one | `make_cases.cli_cases` |
+| `coverage` | 56 | 56 | round 17: the documented items no other kind uses, or almost none, each with its corners and errors: `"-" •nput` (4), `•nget` of a file (4), `•path` and `•path⁻` (4), `•uuid` 0, 3, 5 and 8 (4), `•normalize` (3), `•element` (3), `•xml` and `•xml⁻` (5), `•detach` (3), `•prefs ⍬` and the settings `fns`, `dissect`, `hanzi_aliases`, `int`, `float`, `trees`, `width` and `batch` (12), `⊘` (2), `⍢` (2), `⊽`, `⍀`, `•ucs⁻`, `•edge`, `•special`, `•host "version"`, `•literal` and `•src` with `•ex` (one each); round 18: the documented errors of `•prefs` (an unknown setting, a bad value of eight settings, a number for a record, `hanzi_aliases` after other code, an integer wider than `int` under static kinds) and of `•literal`, `•literal⁻`, `•edge` and `•host` (2) | `scripts/scope_cases.py`, seeded data |
+| `sandbox` | 13 | 13 | round 17: the file-read rule on each read path: `•nget` and `•load` of a file elsewhere by an absolute path (one the runner makes beside the working directory, one the image holds), by `..` and through links that lead out, and of a device file, under a guard that prints the refusal, and of a file of `/proc` and of `/sys`, under a guard that prints only the kind (round 18) (4); the reads the rule allows, here, by an absolute path inside (round 18), in a directory under here and through a link that stays inside (1); the program file outside by `..`, by its absolute path and through a link, and under each of `/proc`, `/sys` and `/dev`, all refused with no output (6), and in a directory and through a staying link, read (2) | `scripts/scope_cases.py` |
+
+On the platform the set is 1,845 cases since v10, which left out one `cli` case, and v11's image
+keeps 1,741 of them; the counts by kind are in [Calibration on v11](#calibration-on-v11).
 
 **Rewrites** (private seed, `scripts/rewrite.py`).
 - Every name the code assigns becomes an unused ordinary word, consistently. Keys, module names
@@ -1531,15 +2013,25 @@ the check on the real files.
 
 Records with `∂` are drawn at 48%, which puts differentiation at about 6% of the kept cases.
 
-**Left out:** randomness, the clock, files, the network, drawing, `•hash`, `•deflate`, `•mime`,
-`⇄`, `•storage`, `•memory`, `•explain`, `•index`, `•host` facts other than the command line's,
-`]help`, `]clear`, and the `threads`, `seed` and `fusion` settings.
+**Left out** of the record-based kinds: randomness, the clock, files, the network, drawing,
+`•hash`, `•deflate`, `•mime`, `⇄`, `•storage`, `•memory`, `•explain`, `•index`, `•host` facts other
+than the command line's, `]help`, `]clear`, and setting `threads`, `seed` and `fusion`. The
+coverage and sandbox kinds (round 17) read files and write to standard output with `•nput`;
+packaging refuses a set of cases that leaves a documented item in scope, or a kind of read path,
+without a case (`scope_cases.missing`).
 
 ## Workload
 
 A run is one trial (one task row per experiment, no continuation tasks): the agent's limit in
-`task.toml` is 34,560 s (9.6 h), and nothing of the task ends the session before it (round 12).
-The instruction states no time budget.
+`task.toml` is 43,200 s (12 h) since v9, 34,560 s (9.6 h) before, and nothing of the task ends the
+session before it (round 12). Since v9 the instruction gives the 12 hours in one sentence; up to v8
+it stated no time budget.
+
+**One attempt, since v9.** Oddish gives one attempt 12 hours (its worker's timeout) for the images,
+set-up, the session, the collect hook and the verifier. The agent's 43,200 s is all of that, so a
+session that runs to its limit leaves the hook (1,200 s) and the verifier (5,000 s) no time, and
+what it delivered would not be graded. Up to v8 the agent and the verifier fitted in 11 hours. No
+v9-v11 run came near the limit: the longest ended after 3.3 h. See [Remaining work](#remaining-work).
 
 **A session that runs to its limit.** Harbor stops waiting at the limit but does not end the
 agent's processes: they would run on until the collect hook freezes them, 5-14 s later, with the
@@ -1547,15 +2039,19 @@ network open again by then. So the last set-up run (`provision-scratch` at `setu
 leaves a root process that stops the session's processes after the limit, counted from the start
 of the session's first process: the first process of `dev` to begin after it whose parent is not
 `dev`'s (harbor starts it inside the agent's clock), its start read from `/proc` in seconds since
-boot. 34,560 s plus 2 s after that start, and, where the network's return can be watched (the
+boot, and one that two looks at least 1 s apart both see alive with the same start (since round 19:
+a short command harbor runs as `dev` before its clock is gone by the second look). The limit plus 2 s
+after that start, and, where the network's return can be watched (the
 hosts resolved at set-up), not before one of them answers again (harbor reopens the network when
 it ends the agent's phase, which a paused clock delays too), it repeats `kill -STOP -1` as `dev`
 until no process of `dev` runs (states R, S, D; 15 s at most), records when and against what
 (`stopped_after_limit` in the record and in `metrics.json`, times with fractions), and exits. With
 no such process it does nothing. It never ends a process and never acts before then; once the
 collect hook has begun it stops nothing, and the hook ends it before running anything as `dev`. The work
-ends 34,560 s after the session began (`turn-started`), and the hook takes out every file and
-link that changed later, now in a window of about 2 s (see [Verification](#verification), step 1). The upload is a flat single-step bundle because the platform graded capped runs of that
+ends the limit (and 0.1 s more for the reads) after the same first process started, which that
+process records once it has confirmed it (since round 19; set-up's own time, `turn-started`,
+before), and the hook takes out every file and link that changed later (see [Verification](#verification),
+step 1). The upload is a flat single-step bundle because the platform graded capped runs of that
 layout (SymPy's, 3 of 3) and not of the steps layout, whose separate verifier image failed to
 build right after the timeout (harbor-lh `ops/swe-marathon-v2/PLATFORM_VERIFIER_BUILD_AFTER_LONG_RUN.md`).
 The installed scripts and their state are named for ordinary housekeeping (`provision-scratch`,
@@ -1573,21 +2069,25 @@ grading, a cap or a deadline from them.
    recorded; a link to anything else outside is removed and noted first in the mark; a link inside
    is made direct, read by name against the walk's own listing, and one through another link is
    removed). For a session that ran to its limit it then takes out every file and link that
-   changed after the end of the work (the session's start plus 34,560 s, by the change times
-   listed before the hook touched anything), and every name of each file its frozen processes
+   changed after the end of the work (the start of the session's first process plus the agent's
+   limit, 43,200 s since v9, and 0.1 s, by the change times listed before the hook touched anything), and every name of each file its frozen processes
    still held open for writing or mapped shared and writable, noting each and counting them in the
-   record (`late_entries`, `held_for_writing`, `work_end`). It bounds `/app/rebuild`, packs it once as the copy will, with
-   room left for its record and mark, and marks and records it with the pre-hook times as the
-   authoritative ones. A tree it cannot measure within 420 s of its start (an alarm ends the walk
-   and the links then, inside any call), or pack by 510 s, is refused; the freeze and the kill
-   stop after 15 s each, and what the hook writes is bounded in bytes, so it ends with a mark
-   within its 600 s, on a full disk too (see the development log, rounds 3-4, 10, 11 and 12).
-   Harbor then copies `/app/rebuild`, the declared artifact, into the verifier.
+   record (`late_entries`, `held_for_writing`, `work_end`, `work_end_from`). It bounds
+   `/app/rebuild`, packs it once as the copy will, with room left for its record and mark, and
+   marks and records it with the pre-hook times as the authoritative ones, beside the tree in
+   `/var/lib/scratch/out` (round 19: nothing in `/app/rebuild` is the hook's). A tree it cannot
+   measure within 1,000 s of its start (an alarm ends the walk and the links then, inside any call),
+   or pack within 400 s and by 1,120 s, is refused; the link fixer and the listing before the hook
+   have 400 s each, the freeze and the kill stop after 15 s each, and what the hook writes is bounded
+   in bytes, so it ends with a mark within its 1,200 s, on a full disk too (see the development log,
+   rounds 3-4, 10, 11, 12 and 19). Harbor then copies `/app/rebuild` and `/var/lib/scratch/out`, the
+   two declared artifacts, into the verifier.
 2. **Before any submitted code runs**, the verifier:
    - reserves `.reward.tmp` and `metrics.json`;
    - raises an evaluation error with less than 512 MB free;
-   - checks the delivery against the hook's mark: nothing arrived, or fewer entries or bytes than
-     marked, is an evaluation error;
+   - checks the delivery against the hook's mark: neither the tree nor the mark arriving, or fewer
+     entries or bytes than marked, is an evaluation error (an empty tree is what a refused delivery,
+     and one of nothing, leave, and the mark says which);
    - copies the hook's record into `metrics.json`;
    - picks a uid inside the user namespace's map for submitted code and checks the unprivileged
      run: no_new_privs from the status file or `prctl`, ids, groups, capabilities with a missing
@@ -1600,8 +2100,9 @@ grading, a cap or a deadline from them.
    sealed, or that holds any of these, gets reward 0 with a note.
 3. **Before each case**, it kills that uid's processes and sweeps what it left in every
    world-writable directory and its System V IPC objects. Less than 512 MB free after that sweep
-   is an evaluation error. It writes the case's files into a new `/tmp/bpl-run` with new empty
-   `HOME` and `TMPDIR`. `/app/rebuild/bpl` runs there with:
+   is an evaluation error. It writes the case's files and links into a new `/tmp/bpl-run`, with
+   new empty `HOME` and `TMPDIR`, and a case's files from outside its working directory into a new
+   directory beside it (root's, readable by every user), as when the answers were recorded. `/app/rebuild/bpl` runs there with:
    - no_new_privs, the case's arguments and standard input, no network;
    - the recorder's environment and limits;
    - 2 seconds and 4 GB of memory in use;
@@ -1615,7 +2116,8 @@ grading, a cap or a deadline from them.
    reward only where the passed cases hold at least 12 different recorded outputs that only a run
    of the code given produces; otherwise the reward is 0, with a note in `metrics.json` and on the
    `reward:` line (rounds 13 to 16; see [Reward formula](#reward-formula)).
-5. **Deadline.** One deadline, 4,200 s from the start, covers sealing, scans, cleanup and cases;
+5. **Deadline.** One deadline, 4,700 s from the start (4,200 s before round 19; the step's limit is
+   5,000 s), covers sealing, scans, cleanup and cases;
    the cases left count as failed. At the end the verifier cleans up, writes the reward into its
    reserved file, renames it onto `reward.txt`, then writes `metrics.json`.
 
@@ -1666,10 +2168,10 @@ reward = 0                            otherwise
   - the function between the two literals the code writes on either side of it;
   - the function between a literal of the code and a part of the input, in either order.
 
-  A case whose answer one of them shows does not count: 91 of the 672 looked at on the local
-  recording. A request that stops the worker is passed over and counted, and the build stops if
-  the worker gets a known answer wrong or passes over more than 1% of the requests (23 of 115,725
-  locally).
+  A case whose answer one of them shows does not count: 92 of the 674 looked at on the local
+  recording (rounds 17 and 18; 91 of 672 in round 16). A request that stops the worker is passed
+  over and counted, and the build stops if the worker gets a known answer wrong or passes over more
+  than 1% of the requests (24 of 116,195 locally).
 - 12 was chosen by measurement on the local recording (development log, rounds 13 to 16).
   - Every kept case together holds 1,288 such outputs.
   - The model deliveries graded so far hold 670, 253 and 58 (v5), and 21 (v4's GLM run `-33`, the
@@ -1720,16 +2222,18 @@ Highest unresolved severity: 🟡 YELLOW / UNASSESSED (findings 1, 2, 3, 5, 10, 
 | 7 | Read an answer out of the case's own input | Generation and recording | Checked | Comments removed from upstream's code (some state results); the recorder drops a case whose input holds its whole answer (5 in the local recording) | Short answers a program spells out literally | Read `dropped` in `recording.json` | 🟢 GREEN / LOW |
 | 8 | Recall upstream's published expectations | Rewrites | Local recording: 248 of 1,739 kept cases in upstream's code form | Names, value literals and prose words rewritten under the private seed; the recorder prefers rewrites that change the answer; `recording.json` counts the cases still in upstream's form (`kept_as_upstream_code`, mostly error records, whose messages are the same for any implementation) | BasedPL was published 2026-09-16; models trained later may know it, and its reference files | Read `kept_as_upstream_code`; re-check for models trained after 2026-09 | 🟢 GREEN / LOW |
 | 9 | Tamper with the reward files, or suppress them by forcing an evaluation error | Separate verifier container | Goose QA passes 07, 07b, 10, 10b, round 6 (the same verifier) | No reward exists until the real end (`.reward.tmp` renamed onto `reward.txt`); bounded, link-refusing reads; one deadline; capped submissions; `rm -rf` sweeps; every per-case exception a failed case; host disk shortages are errors only after the sweep has taken back everything the uid held (checked) | Kernel keyrings survive between cases; they carry no answer | Keep | 🟢 GREEN / LOW |
-| 10 | Infer an evaluation from the files and text | Instruction and image | Checked: no grading, hidden, budget or session wording; no examples or runner shipped | Neutral requester text | An agent can still guess that more programs exist | Read the first trajectories | 🟡 YELLOW / UNASSESSED |
+| 10 | Infer an evaluation from the files and text | Instruction and image | v7's verdict: one of three runs, after reading only the instruction and `--help`, called its session an evaluation, restating the instruction's own framing (a build to behave exactly like, scripts compared with golden files in CI, every script and command line we run); back office v13 and SymPy's round 6 met the same class; v9 to v11, with v9's sentence on the 12 hours: no analysed model run called its session an evaluation (both of v11's included) | Round 19: each requirement is stated by what depends on it (the reports and pipelines, the notebooks, the shell jobs and wrappers), and the completion sentence is "Switching over"; no grading, hidden, budget or session wording, no examples or runner shipped; the cue sweep over everything the agent can read, list or see running finds no word of the brief's list in the instruction, and the hits left are upstream's manual, the build's own `--help` and root-only text (`qa/basedpl/13-FIX-v8-REPORT.md`) | The premise stays: an interpreter rebuilt from a binary whose code cannot be read, which a solver may still call benchmark-like | Read the first trajectories' first steps | 🟡 YELLOW / MEDIUM |
 | 11 | Run as root in the verifier through a set-id or capable file | Privilege drop and sealing | Goose QA pass 10 F6 | Sealed root-owned without set-id bits; `setpriv --no-new-privs`; the drop is checked by status or `prctl` and a set-id `id`, or nothing is graded (checked) | A kernel that ignores no_new_privs; the probe then refuses to grade | First baseline's verifier log | 🟢 GREEN / LOW |
 | 12 | Pass cases with no interpreter: the command line's answers, echoed literals, the generator's lead forms, the last strand of a program, an error-message lookup, constant answers per visible shape | Case mix and selection | QA 02, 05, 13, 17 measured 5.5-7.3% on the first cases; the round-2 re-check 2.8% by echoes and 5.7% with a lookup trained on hidden data; local recording now: 4.1% by the recorder's union of every strategy, 2.7% when the dispatcher is run as a program | Leads are one-line value records of the pool; uncaught errors mostly graded through the worker's reply with message and span; handlers always print the message; any one answer capped at 1.5%; `select` holds the strongest dispatcher (`recorder.no_interpreter`, every strategy above) to 5% and the recorder fails the build above it; since rounds 13 to 16 the cases such a program passes earn nothing: echoes, every guarded error case (whatever its guard prints) and every one-line answer that one documented function gives from the case's own literals or input do not count toward a reward, and what is left of the dispatcher's cases holds 2 of the 12 different outputs a reward needs (row 19); the build stops if a new set of cases lifts it past 4 | Display of simple literals is legitimate early work, which now earns only beside 12 outputs that need a run. The error lookup is no bound: re-check 10 reached its share without hidden data, from a table of 7,537 guarded probes recorded from the build; programs built that way reached 29 outputs on round 13's count and 14 on round 14's (the record and line:column forms), and a guesser that applies one primitive to a literal it sees reached 12 on round 15's; none of these counts now | Read `baselines.no_interpreter_dispatcher_by_strategy` and `baselines.no_interpreter_dispatcher_distinct_outputs` (4 at most) in the first baseline's `metrics.json` | 🟢 GREEN / LOW |
 | 13 | A crash of the original graded as an answer | Recording | Checked with a stand-in | Signals, exit statuses other than 0, 1 and 2, panics and allocation failures are dropped; more than 2% fail the build | None found | Read `dropped_crashed` | 🟢 GREEN / LOW |
 | 14 | Answers that depend on the machine or on the maths library's last bits: thread counts, hash order, the memory limit, CPU features, approximation bits | Recording | Local recording: no case unsteady or perturbed; 16 last-bit answers dropped (QA 18 confirmed 12) | Three runs pinned to four worker threads and a perturbed one (one CPU, one worker thread); memory-limit text dropped from either stream; last-bit answers dropped; rustymath chooses SIMD paths at compile time (`x86-64-v3`); `expected_sha256` lets two builds be compared | A host without AVX2 cannot run the original (the smoke test then fails the build, and an oracle row below 1.0 with `host.avx2` false is infrastructure); the x86-64 build's bits are first seen at its own recording | Two oracle trials must each score 1.0 with the same `kept_ids_sha256` and `expected_sha256` before any model trial | 🟡 YELLOW / UNASSESSED |
 | 15 | A busy host fails a graded run spuriously | Disk and file limits | QA 10: a `sleep 10` submission was stopped for a file limit by the whole-filesystem figures | The limits count only the run's own files (its uid's under the writable directories, and deleted files it holds open), and only when the free figures fall past a limit; a case stopped by a limit runs once more; host shortages after a sweep are evaluation errors | None found | Read `disk_limits`, `file_limits` and `limit_retries` in the first trials' `metrics.json` | 🟢 GREEN / LOW |
-| 16 | Make Harbor's copy drop an honest delivery (a running build, links that leave the directory, FIFOs, a sparse file, a full disk, a read-only folder) so that it scores a valid 0, make the copy fail at will (a link that climbs past `/` and back, a chain of links that holds the hook past its 600 s, a disk filled so that the hook's own record or the copy's pack has no room), launder a file fetched after the turn through a link the hook copies in, or hide a post-turn write behind the hook's own changes to ctimes | The collect hook and the mark | QA 07 F2-F3 (ported from the back-office task, rounds 6-7); Carve QA 04 F1-F2; re-checks 07b and 07c; round 10, with Carve QA 22 and 23 as the catalogue (two paths reproduced on 6a93903); re-check 08 (M1, M2, S1, S3, S4: round 11) | The hook freezes and kills `dev`'s processes first, records every entry's own times before touching anything (the manifest's authoritative mtime and ctime), gives back reserved room and inodes, restores permissions only where needed and notes each change, copies an outside link's target only when root owns it (every file under a directory included) and the disk keeps room to spare, and records the source's path, owner, mtime, ctime and inode, removes every other outside link (noted first in the mark) and all special files, lets the system resolve a link before the fixer follows it, reads every link of the last script by name against its own listing (no call follows a link; one through another link is removed) and keeps a link inside only as the direct relative path to what it reaches, bounds entries, bytes and path length, hashes once per inode, refuses a tree not measured within 420 s of its start (an alarm ends any call then), packs once within 100 s and by 510 s with room for its record and mark beside it, and marks the delivery; the fixer prints 2 MiB at most, each script's own notes take 64 KiB and the mark's 32 KiB, names cut to a few hundred bytes, the rest counted; a refused tree's record counts what it held and lists only the first notes; the verifier grades what arrived, reads 1 MiB of the mark, copies every change into `metrics.json` with flags, and treats nothing arriving or a short copy as an evaluation error, which after a completed hook only the copy itself can cause | A platform copy that fails after the hook's own pack succeeded (an error, then a re-run); the refusal renames `/app/rebuild`, which overlayfs without `redirect_dir` refuses (gVisor's overlay does not; QA 08 N1); a fetched file written straight into `/app/rebuild` after a turn that ended by itself and before the hook's freeze, which the ctime audit against the trial's finish can catch, since the recorded ctimes are the session's own (after a session that ran to its limit, the hook takes such a file out: row 18) | Read `delivery_record` (copies, links, notes, `latest_ctime` and `hook_changed_entries` against the trial's finish) in every trial | 🟢 GREEN / LOW |
+| 16 | Make Harbor's copy drop an honest delivery (a running build, links that leave the directory, FIFOs, a sparse file, a full disk, a read-only folder) so that it scores a valid 0, make the copy fail at will (a link that climbs past `/` and back, a chain of links that holds the hook past its time (600 s before round 19, 1,200 s since), a disk filled so that the hook's own record or the copy's pack has no room), launder a file fetched after the turn through a link the hook copies in, or hide a post-turn write behind the hook's own changes to ctimes | The collect hook and the mark | QA 07 F2-F3 (ported from the back-office task, rounds 6-7); Carve QA 04 F1-F2; re-checks 07b and 07c; round 10, with Carve QA 22 and 23 as the catalogue (two paths reproduced on 6a93903); re-check 08 (M1, M2, S1, S3, S4: round 11) | The hook freezes and kills `dev`'s processes first, records every entry's own times before touching anything (the manifest's authoritative mtime and ctime), gives back reserved room and inodes, restores permissions only where needed and notes each change, copies an outside link's target only when root owns it (every file under a directory included) and the disk keeps room to spare, and records the source's path, owner, mtime, ctime and inode, removes every other outside link (noted first in the mark) and all special files, lets the system resolve a link before the fixer follows it, reads every link of the last script by name against its own listing (no call follows a link; one through another link is removed) and keeps a link inside only as the direct relative path to what it reaches, bounds entries, bytes and path length, hashes once per inode, refuses a tree not measured within 1,000 s of its start (an alarm ends any call then), packs once within 400 s and by 1,120 s with room for its record and mark beside it, and marks the delivery, writing the mark and the record beside the tree in `/var/lib/scratch/out` (a second artifact; round 19), so that no name in `/app/rebuild` is the hook's; the fixer prints 2 MiB at most, each script's own notes take 64 KiB and the mark's 32 KiB, names cut to a few hundred bytes, the rest counted; a refused tree's record counts what it held and lists only the first notes; the verifier grades what arrived, reads 1 MiB of the mark, copies every change into `metrics.json` with flags, and treats neither the tree nor the mark arriving, or a short copy, as an evaluation error, which after a completed hook only the copy itself can cause | A platform copy that fails after the hook's own pack succeeded (an error, then a re-run); the refusal renames `/app/rebuild`, which overlayfs without `redirect_dir` refuses (gVisor's overlay does not; QA 08 N1); a fetched file written straight into `/app/rebuild` after a turn that ended by itself and before the hook's freeze, which the ctime audit against the trial's finish can catch, since the recorded ctimes are the session's own (after a session that ran to its limit, the hook takes such a file out: row 18) | Read `delivery_record` (copies, links, notes, `latest_ctime` and `hook_changed_entries` against the trial's finish) in every trial | 🟢 GREEN / LOW |
 | 17 | Read the build's own file through the hardened read path from a start directory whose rule lets it through (`/`, `/opt`, `/opt/bpl`) | File mode; the path rule | QA 04 F4, QA 12 F2 | The 2711 mode refuses the read for `dev`; the agent image's final stage proves it as `dev` at every build (with the whole smoke test on the set-group-id build; a failure stops the build) | A kernel that let a non-dumpable set-group-id process read its own executable | Every image build; `/logs/agent/reads.txt` of the reference trials before round 9 (the same reads at run time), not read yet | 🟢 GREEN / LOW |
-| 18 | Work on past the limit: a turn that reaches the cap leaves the session's processes running (Harbor never ends the agent's exec), and until the collect hook they can write, fetch with the network open again, or swap files in `/app/rebuild` | The collect hook; change times | Round 12 (decision 2026-11-24, item 2); the capped-turn checks, which fail on `ff793d5`; the re-check of round 12, R1 (a write through a shared writable mapping set up before the end can leave the change time as it was), and the held-files checks, which fail on `7161493`; the stop-after-the-limit checks, which fail on `e0f3130`, and the first-process checks, which fail on `d8e0436` | About 2 s after the limit, a root process left by the last set-up run stops `dev`'s processes (SIGSTOP, never a kill: `kill -STOP -1` as `dev` until none runs; decision 2026-11-24, 09:40 UTC amendment), counted from the start of the session's first process (the first process of `dev` to begin after it, its parent not `dev`'s) and, where the network can be watched, not before the network comes back (OB-1), so late changes have a window of about 2 s instead of the 5-14 s until the hook; the end of the work is `turn-started` (root-only, written at `setup_complete`) plus 34,560 s; the hook's listing, taken after the freeze and the kill and before anything else touches the tree, holds every entry's change time, and every file and link changed after the end is taken out before the walk (whatever stands at its path by then, a copy the link fixer made included); so is every name of each file that a frozen process still held open for writing or mapped shared and writable, read from `/proc` before the kill (as root, then as `dev` for what root may not read); each is noted in the mark and counted (`late_entries`, `held_for_writing`, `work_end`); without a complete listing of either kind, or with a process of all-`dev` ids that neither could read (it made itself undumpable), such a tree is refused; `dev` cannot set a change time back; a fetched build is refused anyway (row 4) | The stop counts from a process harbor starts inside the agent's clock, so it cannot precede the limit by the set-up-to-clock gap; where the network cannot be watched (its names did not resolve at set-up), a trial paused during its turn would be stopped early by the pause's length. A mapping written after the end and dropped before the freeze (unmapped, made read-only, or its process gone) leaves nothing to list and, on tmpfs (gVisor's too, as read), possibly no new change time, so such a write can count: it stays a residual for the per-trial audit of `delivery_record` (a surviving process, `connectivity_open`) and the tripwires of row 4 (R1b of the re-check). A late deletion cannot be undone, and a late rename keeps the entry's old change time on a filesystem that does not update it on rename (gVisor's overlay is unmeasured); a process that ran a set-id program is not read (its own code cannot map the tree's files, and its writes through a descriptor move the change time); the end falls the few seconds between `setup_complete` and the start of the run's clock early, so work in those seconds is taken out too | Read `work_end`, `late_entries` and the mark's `removed …` notes in every trial that reached the limit, and in its collected record (`.manifest.json`) `held_for_writing` and `writers` (whether the listing was whole, and which processes were not read) | 🟢 GREEN / LOW |
+| 18 | Work on past the limit: a turn that reaches the cap leaves the session's processes running (Harbor never ends the agent's exec), and until the collect hook they can write, fetch with the network open again, or swap files in `/app/rebuild` | The collect hook; change times | Round 12 (decision 2026-11-24, item 2); the capped-turn checks, which fail on `ff793d5`; the re-check of round 12, R1 (a write through a shared writable mapping set up before the end can leave the change time as it was), and the held-files checks, which fail on `7161493`; the stop-after-the-limit checks, which fail on `e0f3130`, and the first-process checks, which fail on `d8e0436`; round 19's end-of-work check, which fails on `fbfd68e`, and its two-look check, which fails on `1d16d50` | About 2 s after the limit, a root process left by the last set-up run stops `dev`'s processes (SIGSTOP, never a kill: `kill -STOP -1` as `dev` until none runs; decision 2026-11-24, 09:40 UTC amendment), counted from the start of the session's first process (the first process of `dev` to begin after it, its parent not `dev`'s, that two looks at least 1 s apart see alive with the same start; round 19) and, where the network can be watched, not before the network comes back (OB-1), so late changes have a window of about 2 s instead of the 5-14 s until the hook; the end of the work is the same first process's start plus the agent's limit (43,200 s since v9) and 0.1 s, which that process records once it has confirmed it (round 19, M1 of v7's verdict; `turn-started`, written at `setup_complete`, only where none was recorded); the hook's listing, taken after the freeze and the kill and before anything else touches the tree, holds every entry's change time, and every file and link changed after the end is taken out before the walk (whatever stands at its path by then, a copy the link fixer made included); so is every name of each file that a frozen process still held open for writing or mapped shared and writable, read from `/proc` before the kill (as root, then as `dev` for what root may not read); each is noted in the mark and counted (`late_entries`, `held_for_writing`, `work_end`, `work_end_from`); without a complete listing of either kind, or with a process of all-`dev` ids that neither could read (it made itself undumpable), such a tree is refused; `dev` cannot set a change time back; a fetched build is refused anyway (row 4) | The stop counts from a process harbor starts inside the agent's clock, so it cannot precede the limit by the set-up-to-clock gap; a short command harbor runs as `dev` before the clock is gone by a second look a second later, but a process of `dev` started before the clock that lived on past it would be taken (none on v7's capped run; `first_process_passed_over` shows the short ones); where the network cannot be watched (its names did not resolve at set-up), a trial paused during its turn would be stopped early by the pause's length. A mapping written after the end and dropped before the freeze (unmapped, made read-only, or its process gone) leaves nothing to list and, on tmpfs (gVisor's too, as read), possibly no new change time, so such a write can count: it stays a residual for the per-trial audit of `delivery_record` (a surviving process, `connectivity_open`) and the tripwires of row 4 (R1b of the re-check). A late deletion cannot be undone, and a late rename keeps the entry's old change time on a filesystem that does not update it on rename (gVisor's overlay is unmeasured); a process that ran a set-id program is not read (its own code cannot map the tree's files, and its writes through a descriptor move the change time); the first process starts just after Harbor's clock does (0.02 s on v7's capped run), so the end falls that much and 0.1 s after Harbor's own limit, and a write in that tenth of a second counts, though Harbor may be reopening the network by then; by this rule, on that run, the end fell 0.12 s after Harbor ended the agent phase, until which the network stays closed | Read `work_end`, `work_end_from`, `first_process_passed_over`, `late_entries` and the mark's `removed …` notes in every trial that reached the limit, and in its collected record (`record.json` in the collected `/var/lib/scratch/out` since round 19; `.manifest.json` in `/app/rebuild` before) `held_for_writing` and `writers` (whether the listing was whole, and which processes were not read) | 🟢 GREEN / LOW |
 | 19 | A stub launcher: deliver a program that runs nothing it is given (it tries the original's paths and the private cases, then prints the command line's documented strings, nothing with a common exit status, a fixed answer, echoes of the program's literals, re-formatted literals, guarded errors answered from a table of the build's messages, or one primitive applied to a literal it sees) and collect the few cases whose answers need no interpreter | The distinct-output rule (`runcases.DISTINCT_OUTPUTS`, `runcases.counts`, `runcases.guarded_error`, `runcases.distinct_outputs`, `verify.withheld`); the derived cases (`derivations.py`, `functions.json`, `derived.json`); the recording's guard (`recording.dispatcher_too_close`); the case mix | v5's verdict: replay `-46` (the documented `--version` and `--help` strings, exit 2 for the rest: 0.003586, 6 of 1,673 cases) and replay `-47` (exit 0: 0.000598, 1 case); round 13's rule and sweep; re-check 10 (round 13's threshold zeroed v4's honest `-33`; echoes and a table of 7,537 error probes recorded from the build reached 29 on that count) and its round-14 follow-up (M2: `err-table` 0.022714 and `combo` 0.028691 through the record and line:column guard forms); round 15's measurements and its sweep through the real path (`replay-r15/r15`, 36 programs); re-check 10's round-15 follow-up (M3: `hint-right` 0.032875 with exactly 12 outputs, `hint` 10, `hint2` 8); round 16's measurements and its sweep (`replay-r16/r16`, 39 programs) | A reward needs 12 different recorded outputs that only a run of the code given produces. Empty outputs, outputs whose every line occurs in the case's own input, every error case whose code runs under a guard (whatever it prints: the generator's `guarded` mark or a guard that catches every error in `main.bpl`), every one-line answer that one function of the documentation's table gives from the case's own literals or input (monadically, as a reduction, between the two literals the code writes around it, or between a literal and the input, as the build itself shows it when the image is built) and the command line's own cases never count, and each output counts once. Measured on the local recording: every kept case 1,288; the model deliveries graded so far 670, 253, 58 and 21 (v4's `-33`, the weakest); every guesser built or simulated 0 (`hint-right`, `hint`, `hint2`, `combo`, a dyadic guesser shown by the build), the recorder's dispatcher 2, each of the 20 most common answers 1 at most. Through the real path the reference scores 1.0; both replays, the 20 constants, the last-literal echo, the dispatcher's table, re-check 10's `kitchen-sink`, `kitchen-sink-2`, literal machine, `err-table`, `combo`, `hint-right`, `hint` and `hint2`, and its 290-line evaluator score exactly 0; the four model deliveries keep their shares. The image does not build if a set of cases lifts the dispatcher past 4 | A program that really evaluates 12 programs given to it earns its share: that is a start on an interpreter, not a stub. A guess now needs more than one primitive per answer (two functions, a name resolved, a function read from a definition), which is that start. Answers of more than one line are not looked at: one primitive on the last statement's literals gives the whole answer in 2 of the 736 counted cases with one, both matrices. An honest delivery below 12 loses what it passed: typically 1-2% of the cases, at most 23.0% (every case that does not count, and the cases of the 11 most shared outputs that do); `-33` keeps 1.75 times the line | Read `distinct_outputs`, `withheld` and `derived_cases` in every trial's `metrics.json` (a withheld reward also says why on its `reward:` line), and both distinct-output baselines and `recording.derived` in the first oracle trial's | 🟢 GREEN / LOW |
+| 20 | In-scope feature never graded: a rebuild that leaves out a documented function, form or setting that no case uses loses nothing for it | The case mix; `scope_cases.missing` at packaging | The v6 pre-trial audit (`bc32a001f096`: `"-" •nput`, `•nget` of a file, `•path` and `•path⁻`, the deterministic `•uuid` versions, `•normalize`, `•element`, `•xml` and `•xml⁻`, `•detach`, `•prefs ⍬`, `fns`, `dissect`, `hanzi_aliases`); round 17's sweep (`qa/basedpl/scratch-11/tools/sweep.py`: those and `⊘` and `⍢` with no graded case, 15 more items with one to four); the round-17 re-check (`12-recheck-v7.md`, S2: the documented errors of `•prefs`, `•literal`, `•edge` and `•host` with no case, and S3: `•normalize`'s NFKC and NFKD never applied) | Round 17's 54 coverage cases and round 18's two of the documented errors (`•prefs`: an unknown setting, a bad value of eight settings, a number for a record, `hanzi_aliases` after other code, an integer wider than `int` under static kinds; `•literal`, `•literal⁻`, `•edge`, `•host`), after every other case, each item with its corners and errors. `scope_cases.documented_items` lists every glyph and system page's item, each documented inverse, `$` name and `•prefs` setting, `•prefs ⍬`, the `•host` names kept, the worker's requests, `]display`, `]dissect` and `⎕←`, less the instruction's out-of-scope list; packaging refuses a set of cases that leaves one without a case, and the coverage check reads the latest local recording too (none missing among the 1,742 graded). Through the real path the reference without each new item, answering with its error there, loses that item's cases (14 mutants, 1 to 33 cases each) | A few cases weigh little: a rebuild without one of these items loses 0.06-0.4% of the reward (`⊘` 1.9%, through the library modules); the items the instruction rules out have no cases | Read `by_kind.coverage` in the first oracle trial's `metrics.json` (56 passed of 56) | 🟢 GREEN / LOW |
+| 21 | Unsandboxed file reads: a rebuild that reads any path (outside its working directory, by `..`, through links, under `/proc`, `/sys` or `/dev`) loses nothing, since no case checked the rule; the one command-line case that names a file outside passes for it, as that file is no BPL | The sandbox cases; `runcases.prepare`'s links and outside files | The v6 pre-trial audit (`c707da4b2a64`); the round-17 re-check (`12-recheck-v7.md`: S1, five reads whose answer the machine decided; N1, a program-file case under `/proc` that such a reader failed as the rule does; N2, no read by an absolute path inside) | Round 17's 13 sandbox cases, as round 18 leaves them: `•nget` and `•load` refused by an absolute path (to a file the runner makes beside the working directory, or one the image holds), by `..`, through links that lead out and for a device file, each refusal's kind and message printed under a guard, and for a file of `/proc` and of `/sys` the kind alone (the same whether the file is refused or missing, where such a reader returns the file); the program file refused by `..`, by its absolute path and through a link (a valid program that prints when it is read), and under each of `/proc`, `/sys` and `/dev` (files such a reader runs: programs that print, and an empty one that ends with status 0); and the reads the rule allows (here, by an absolute path inside, in a directory under here, through a link that stays inside) for all three. The runner makes the links and the outside files (root's, readable by every user) the same way when recording and grading, so only the rule keeps the unprivileged run from them. Through the real path with the runner's own paths, the reference built to read every path loses 9 cases on this Mac (0.994834) and should lose 10 on Linux (1,732 of 1,742, 0.994259: the program files under `/proc` and `/sys` exist there, while the command-line case's file stops at its first line with nothing printed), and the one built to refuse every read loses 898 (0.484501) | None found: since round 18 no sandbox answer depends on a file the machine provides. The refusal messages are checked only on files the runner makes, the image holds or every machine has the same; a kernel-tree read is compared by its error's kind alone, and a missing program file and a refused one print the same (nothing, status 1) | Read `by_kind.sandbox` in the first oracle trial (13 passed of 13) | 🟢 GREEN / LOW |
 
 Licence: the upstream is Apache-2.0. Its `LICENSE` is shipped with the documentation in
 `/app/docs` and with the reference solution, whose `source/` (round 16) holds the build's source
@@ -1739,11 +2243,33 @@ with the licence beside it; each file the hardening changes says so in its own c
 
 | Check | Revision | Result |
 | --- | --- | --- |
+| The task folder against the v11 bundle kept outside this repository, whose content hash (`dbb27ecd…`, by the CLI's own function) is Oddish v11's | the v11 sync | `task.toml`, `instruction.md`, `environment/provision-scratch` and `environment/reclaim-scratch` copied byte for byte; every other file v11 takes from this folder the same, the Python files after `ruff format` differing only by main's lint fixes; the 544 generated files regenerated byte for byte by `package_step.py`'s own functions from the pinned checkout and the hardened build |
+| `checks/` (92 tests) on main's layout, Python 3.13, with `ruff format --check` and `ruff check` | the v11 sync | 91 pass; the 12-hour attempt check fails, as its strict expected-failure marker says it must |
+| The sync's checks against a copy of the task at `6fca025` (v8's files; `git archive`, with the sync's checks file) | the v11 sync | 13 fail: the eight that time the end of the work or the stop by the limit, the limit check, the network check and the two instruction checks, and the 12-hour attempt check, which holds there, so its strict marker fails it. The short-command check failed once there on timing and passed when run again, as it passes here |
+| The real-path sweep of round 19 (harbor-lh `qa/basedpl/scratch-09/replay-r19/`: `replay-r18` with the second artifact carried into the verifier and the verifier pointed at it; `REAL_TMP=1` for the reference, the two read-rule mutants and the model deliveries (`r19breal/`), the rest in the replay's workspace (`r19b/`); the same 41 programs as round 18, one at a time) | round 19's flat `c65a7274858d` against `local-recording-13` | the reference 1.0 (1,742/1,742; 1,336 outputs; coverage 56 and sandbox 13 passed; `derived_cases` 92); the no-op 0.0 with its empty tree marked `delivered 0 0` and the missing-program note; every stub, replay, kitchen sink and guesser 0.0 with the note, each passing what it passed in round 18; v5 `-48` 0.502296 (875; 696), `-50` 0.234214 (408; 256), v4 `-33` 0.039610 (69; 22), as in round 18; v5 `-49` 0.053961 (94; 57), one case fewer: one of its runs takes about 2 s and passes or times out by chance, through either bundle (94, 94, 95 and 94 through this one; 95, 95, 94 and 94 through round 18's); the reference reading every path 0.994834 (1,733), refusing every read 0.484501 (844); every mark and record read from the second artifact |
+| A valid build made slow on purpose: the reference after a 1.7 s sleep on every run, through the real path (`r19bslow/`) | round 19's flat `c65a7274858d` against `local-recording-13` | all 1,742 cases run, in 3,076.0 s of the verifier's time (1.77 s a case; no case starts after 4,580 s, and none did after 4,080 s before round 19); 0.997704 (1,738/1,742; 1,335 outputs): its 4 losses are runs that passed the 2 s limit, the sleep leaving 0.3 s for each run at a load average of 6 to 16 |
+| The collect hook's own scripts on the largest tree the instruction allows (98,994 entries and 990,983,034 bytes, a quarter of them in files of 1-4 KiB and the rest in four large files of random data; 1,019 links inside and 9 to the machine's own files), as the hook runs them, on this Mac | round 19 (the hook's scripts as changed for S1; the later first-process change does not touch the walk, the hashing or the pack) | the listing 0.6 s, the link fixer 0.9 s (10 changes), the walk, hashing, links, the copy's pack, the record and the mark 70.0 s together (limits 1,000 s and 1,120 s), the copy's pack alone 30.7 s (limit 400 s); marked `delivered 98994 990983034`, the listing and the hashing complete |
+| `checks/` (91 tests) with `ci_checks` (27), Python 3.13, and `check_repository.py` | round 19 | pass |
+| Round 19's checks against a copy of the task at `fbfd68e` (`git archive`, with round 19's checks file) | round 19 | 24 fail: the five that drive the first process or the end of the work (M1), the fourteen that read the hook's mark and record beside the tree (S2), the three on the new limits (S1) and the two on the instruction (M2, S3); the other 67 pass |
+| The stand-in checks of the first process against a copy of the task at `1d16d50` (this round's first M1 commit, before the two-look rule), with the final checks | round 19 | the two-look, stop and end-of-work checks fail; the other four pass |
+| `checks/` on main's layout (`neel/basedpl-v7-followup`, ruff-formatted), Python 3.13 | round 19's port | 91 pass. At `bfabad2` (round 18's port) seven checks that quote the task's own code failed on ruff's line wrapping; the quotes now match however the lines are wrapped |
+| The cue sweep (back office v14's script and word list, with golden, CI, behave exactly, every script, specification and suite added) over everything `dev` can read, list or see running | v7's `8d3229fc0dab` against round 19's `c65a7274858d` | the instruction 25 hits to 1 ("records", BPL's own type); `bpl --help` 2 and 2 (the build's own text); path names 2 and 2 (upstream's page names); `ps` lines 0 and 0; upstream's manual 1,164 and 1,164; the hooks' root-only text 114 to 136 |
+| `checks/` (89 tests) with `ci_checks` (27), Python 3.13, and `check_repository.py` | round 18 | pass |
+| Round 18's checks against a copy of the task at `d163d00` (`git archive`, with round 18's checks file) | round 18 | the new check fails (no `scope_cases.errors`); the other 88 pass. The slow-runs check failed there once, at a load average near 100 (68 runs past its 50 ms limit for 65), and passes alone |
+| The cases against round 17's | `experiment/cases-r17.json` and the generator with the private seed | the first 1,777 cases unchanged, byte for byte; round 17's 67 with the same ids in the same order, of which only six changed (five sandbox cases and the `•normalize` case), each as meant; two added (coverage); the leak check keeps all 69 |
+| Local recording of the 1,846 cases with the native build, as the image's recording step runs it | `experiment/local-recording-13` | 1,742 kept (both new cases; the same 104 dropped); `kept_ids_sha256` `80366178…`, `expected_sha256` `0c385ff8…`; 1,336 counted outputs; the dispatcher 2 (3.9% of the cases); the same 92 derived (`ids_sha256` `293f40a9…`); against `local-recording-12` only five changed cases' answers differ (the sixth prints nothing with status 1, as before); no in-scope item and no kind of read path without a graded case |
+| The real-path sweep of round 18 (harbor-lh `qa/basedpl/scratch-09/replay-r18/`: `replay-r16` with a `REAL_TMP=1` setting for the runner's own paths under `/tmp`, used one at a time for the reference, the two read-rule mutants and the model deliveries (`r18real/`); the rest in the replay's workspace (`r18/`); 41 programs) | round 18's flat `8d3229fc0dab` against `local-recording-13` | the reference 1.0 (1,742/1,742; 1,336 outputs; coverage 56 and sandbox 13 passed; `derived_cases` 92); the no-op 0.0; every stub, replay, kitchen sink and guesser 0.0 with the note, each passing what it passed in round 17 (re-check 10's `hint-right` 57, 0 outputs; the dispatcher's table 68, 2; the 20 most common answers 3-15, 0 or 1); v5 `-48` 0.502296 (875; 696), `-50` 0.234214 (408; 256), `-49` 0.054535 (95; 58), v4 `-33` 0.039610 (69; 22), each passed/1,742; the reference reading every path 0.994834 (1,733; 10 losses expected on Linux, 0.994259), refusing every read 0.484501 (844) |
+| `checks/` (88 tests) with `ci_checks` (27), Python 3.13, and `check_repository.py` | round 17 | pass |
+| Round 17's checks against a copy of the task at `47da5ff` (`git archive`, with round 17's checks file) | round 17 | 6 fail: the coverage check (no `scope_cases`), the append-only check, the runner's layout (no links or outside files), the stand-in readers, the deadline bound (no `scope_cases.MOST`) and the recording report (no hash of the derived ids); 82 pass |
+| The new cases against round 16's | `experiment/cases-r16.json` and the generator with the private seed | the first 1,777 cases unchanged, byte for byte, ids and order included; 67 added after them (coverage 54, sandbox 13); the leak check keeps all 67 |
+| A native build of the hardened source for this Mac (`experiment/build/src`, the tree the shipped binary was compiled from; `cargo build --release --locked -p basedpl-cli --no-default-features`, 9 min 50 s at one job) and two mutants of it (the read rule always passing, never passing; `experiment/build-mutants/`) | round 17 | refuses absolute paths outside, `..`, links out, device files and outside programs as the Linux build does; reports a missing file under `/proc` and `/sys`, which this Mac has not |
+| Local recording of the 1,844 cases with that build, as the image's recording step runs it (`recorder.py`, then `derivations.py`, then `recording.py`) | `experiment/local-recording-12` | 1,740 kept (every new case; the same 104 dropped); `kept_ids_sha256` `2a8ee7ba…`, `expected_sha256` `d4195217…`; 1,336 counted outputs; the dispatcher 2 (3.9% of the cases); 92 derived (`ids_sha256` `293f40a9…`); no in-scope item and no kind of read path without a graded case; against `local-recording-10` (the upstream stand-in), five command-line answers differ (the hardened build's) |
+| The real-path sweep of round 17 (harbor-lh `qa/basedpl/scratch-09/replay-r16/r17/` and `r17c/`, 55 programs) | round 17's flat `43273031859b` against `local-recording-12` | the reference 1.0 (1,740/1,740; 1,336 outputs; coverage 54 and sandbox 13 passed); the no-op 0.0; every stub, replay, kitchen sink and guesser 0.0 with the note (re-check 10's `hint-right` 57 passed, 0 outputs; the dispatcher's table 68, 2); v5 `-48` 0.503448 (876; 696), `-50` 0.234483 (408; 256), `-49` 0.054598 (95; 58), v4 `-33` 0.039655 (69; 22), each passed/1,740; the reference reading every path 0.995402 (1,732), refusing every read 0.485057 (844), and without each of 14 new items 0.981034-0.999425 |
 | `checks/` (84 tests) with `ci_checks` (27), Python 3.13, and `check_repository.py` | round 16 | pass; the first commit's tree alone (`1065f5d`, 80 tests) passes too |
 | Round 16's checks against a copy of the task at `2f16188` (`git archive`, with round 16's checks file) | round 16 | 13 fail: the counting, `grade()` (the guesser and the combined program), derivation, worker, build-stop, function-table, `-33` pattern, build-guard, recording-report, image-step, solution, network and verifier-word checks (no `derivations.py`, `functions.json` or `derived` argument; round 15's solution and network settings); 71 pass |
 | The real-path sweep of round 16 (harbor-lh `qa/basedpl/scratch-09/replay-r16/r16/`: `replay-r15` with `derived.json`, `derivations.py` and `functions.json` laid out as `tests/Dockerfile` lays them out; both hooks under dash, tar and the data filter, then `verify.main()`; 39 programs) | round 16's flat `550b63faf0b3` against `local-recording-10` | the reference 1.0 (1,673/1,673; 1,288 outputs; `derived_cases` 91; no note); the no-op 0.0; re-check 10's `hint-right` (55 passed), `hint` (54), `hint2` (52), `combo` (48), `err-table` (38), `kitchen-sink-2` (42), `kitchen-sink` (38) and literal machine (15), the last-literal echo (23), replays `-46` and `-47` (4 and 1) 0 outputs each; the 20 most common answers (3-10 passed) 0 or 1; the dispatcher's table (68) 2; the 290-line evaluator (24) 2; each 0.0 with the note. V5 `-48` 0.505678 (846; 669), `-50` 0.234907 (393; 253), `-49` 0.053198 (89; 57) and v4 `-33` 0.034071 (57; 21), each passed/1,673 with no note. A case near the 2 s limit: `-48` passed 846 in the sweep, run beside another measurement, and 847 replayed alone (0.506276; 670 outputs; `replay-r16/r16b/`), as in round 15; `-49` 89 both times (90 in round 15's sweep) |
 | The shipped `derivations.py` and `recording.py`, run as the image's recording step runs them, on `local-recording-10` (`local-recording-9`'s cases and answers, with the stand-in build); `dispatcher_too_close` at the bound | round 16 | `derivations.py` derives 91 of the 672 one-line cases from 115,725 derivations, 23 passed over, in 49 s, the same 91 as the family prototype; `recording.py` exits 0 with `distinct_outputs_kept` 1,288 and `no_interpreter_dispatcher_distinct_outputs` 2; the guard passes 0, 2 and 4 and stops 5 and 12 |
-| The solution's source (`package_step.hardened_source`, from the upstream checkout) | round 16 | 322 files, 4,434,842 bytes, byte-identical to the tree the binary was compiled from (`experiment/build/src`); all 101 files of the compile's dependency file (`bpl.d`) present; `cargo metadata --no-deps` lists the workspace's 8 packages, and `cargo tree --locked --offline -p basedpl-cli` resolves with the pinned `Cargo.lock` |
+| The solution's source (`package_step.hardened_source`, from the upstream checkout) | round 16 | 322 files, 4,434,842 bytes, byte-identical to the tree the binary was compiled from (`experiment/build/src`); all 98 files and 3 directories of the compile's dependency file (`bpl.d`) present; `cargo metadata --no-deps` lists the workspace's 8 packages, and `cargo tree --locked --offline -p basedpl-cli` resolves with the pinned `Cargo.lock` |
 | `checks/` (79 tests) with `ci_checks` (27), Python 3.13, and `check_repository.py` | round 15 | pass |
 | Round 15's gate checks against a copy of the task at `a637c09` (`git archive`, with round 15's checks file) | round 15 | the rule, `grade()` and whole-run checks fail (round 14 counts the record and line:column forms, keeps `MESSAGE_HANDLERS`, and writes "the 1 cases passed"); the `-33` and guard checks pass on both. Round 14's `grade()` counts 7 outputs of the four-form message table, round 15's 0 |
 | The real-path sweep of round 15 (harbor-lh `qa/basedpl/scratch-09/replay-r15/r15/`: both hooks under dash, tar and the data filter, then `verify.main()`; 36 programs) | round 15's flat `62ae11cdffa6` against `local-recording-9` | the reference 1.0 (1,673/1,673; 1,348 outputs; no note); the no-op 0.0; replays `-46` and `-47`, the 20 most common answers, the last-literal echo, the dispatcher's table (2 outputs), re-check 10's `kitchen-sink`, `kitchen-sink-2`, literal machine and `err-table` (0 outputs each), `combo` (48 passed, 5 outputs) and the 290-line evaluator (24 passed, 9 outputs) 0.0 each, with the note; v5 `-48` 0.506276 (847; 722), `-50` 0.234907 (393; 288), `-49` 0.053796 (90; 69) and v4 `-33` 0.034071 (57; 30), each passed/1,673 |
@@ -1776,9 +2302,9 @@ with the licence beside it; each file the hardening changes says so in its own c
 | The packaged `solve.sh` with only `/app/rebuild` rewritten to a scratch directory; `mark.py` from the agent image's context with the marker | bundle `bf77bf7f91d0` (the same files in `af0c9f7b084e`) | the solution installs `bpl` (the build's own bytes, sha256 `60d2aed1…`, mode 0755) and `LICENSE`, nothing else, no standard error; the images' install writes the marker once and leaves no zero marker; `build.txt` beside either holds `link`, `sha256` and `sha256_without_marker` |
 | Local grading from the packaged bundle (`af0c9f7b084e`, with `local-recording-9`; also `bf77bf7f91d0`, 34.4 s; the dispatcher's 0.0269 was measured on round 5's `1a08cdb471d0`, whose grading code is the same), through the collect hook's pre-scan and measuring scripts and a tar round trip with the `data` filter | stand-in reference behind a wrapper; no-op; the dispatcher as a program, with every strategy the recorder measures | 1.0 (1,673/1,673, 31.1 s); 0.0; 0.0269 (45/1,673: cli 19, error 13, expr 7, script 6) |
 | A whole trial replayed from the packaged bundle with round 12's replays (`experiment/replay-r14/` for the fifth commit, whose set-up process gets no hosts to watch; `experiment/replay-r13/` for the fourth: the set-up runs leave the process that stops `dev` after the limit, the hook looks it up and ends it before its freeze; `experiment/replay-r12/` before it, a copy of round 11's, itself from QA 07e's through `replay-r8/`, which reads a flat or a steps bundle and has no timer; all Git-ignored, each with its reports and a `NOTE.txt`): both hooks' shell under `/bin/dash` (paths rewritten, stand-ins for `setpriv`, `pgrep`, `pkill`, `ps`, `fallocate`, GNU `stat` and `timeout`), tar and the `data` filter, then `verify.main()` with root and Linux stood in; the hook's order is read from its calls | round 12's flat `ab1a4f4ee269` (fifth commit), `da8966415695` (fourth), `c790a042f2be` (third), `7867414c5e86` (second) and `ad93859c8f45` against `local-recording-9`, with an executable copy of upstream's macOS release binary as the stand-in: reference; reference with planted `.manifest` names, links and a pipe (`ad93859c8f45` only); no-op | `ab1a4f4ee269`: 1.0 (1,673/1,673, 31.4 s); 0.0, `delivered 0 0`. `da8966415695`: 1.0 (1,673/1,673, 34.9 s); 0.0, `delivered 0 0`; nothing stopped (`stopped_after_limit` null), the process gone after the hook. `c790a042f2be`: 1.0 (1,673/1,673, 29.6 s); 0.0, `delivered 0 0`. `7867414c5e86`: 1.0 (1,673/1,673, 30.2 s); 0.0, `delivered 0 0`. `ad93859c8f45`: 1.0 (1,673/1,673, 30.4 s), no notes; 1.0 (33.1 s) with both moved-aside notes; 0.0, `delivered 0 0`; in each the freeze is the hook's first call, `work_end` is `turn_started` + 34,561 and `late_entries` 0. Round 11's `a9dad36c7bf0` (`replay-r11`), round 10's `ec8d6ecf327d` and round 9's `bf77bf7f91d0` (`replay-r8`) gave the same rewards |
-| Packaging | `scripts/package_step.py`, twice into separate directories, with and without `--flat --keep-name` | flat `550b63faf0b3` (round 16, the next upload), 570 files, 37,516,264 bytes, the same hash both times, Oddish content hash `1c007f3b…`, against `62ae11cdffa6` the 322 files of `solution/source/` and `tests/verifier/derivations.py` and `functions.json` new, and `task.toml`, `solution/solve.sh`, `tests/Dockerfile`, `tests/verify.py`, `tests/verifier/runcases.py` and `tests/verifier/recording.py` changed (kept in `experiment/dist-check-40/`); flat `62ae11cdffa6` (round 15), 246 files, 33,062,963 bytes, the same hash both times, Oddish content hash `bcd2bfb9…`, against `ab1a4f4ee269` only `tests/verify.py`, `tests/verifier/runcases.py` and `tests/verifier/recording.py` changed (kept in `experiment/dist-check-39/`); flat `5be602ec5ec1` (round 14), 246 files, 33,062,387 bytes, the same hash both times, Oddish content hash `358c7c75…`, against `ab1a4f4ee269` only `tests/verify.py`, `tests/verifier/runcases.py` and `tests/verifier/recording.py` changed (kept in `experiment/dist-check-38/`); flat `e9ee043b5d71` (round 13), 246 files, 33,056,657 bytes, the same hash both times, Oddish content hash `1d84bf20…`, against `ab1a4f4ee269` only `tests/verify.py`, `tests/verifier/runcases.py` and `tests/verifier/recording.py` changed (kept in `experiment/dist-check-37/`); flat `ab1a4f4ee269` (round 12's fifth commit, the v5 upload), 246 files, 33,050,911 bytes, the same hash both times, Oddish content hash `7ae8f22f…`, against `da8966415695` only `environment/provision-scratch` and `environment/reclaim-scratch` changed; steps `fbf917dc9b5c` (both kept in `experiment/dist-check-35/`); flat `da8966415695` (round 12's fourth commit), 246 files, 33,045,960 bytes, the same hash both times, Oddish content hash `15165600…`, against `c790a042f2be` `environment/provision-scratch`, `environment/reclaim-scratch` and `tests/verify.py` changed; steps `08b3e5d2b951` (both kept in `experiment/dist-check-34/`); flat `c790a042f2be` (round 12's third commit), 246 files, 33,041,785 bytes, the same hash both times, Oddish content hash `e4ef1a57…`, against `7867414c5e86` only `environment/reclaim-scratch` changed; steps `b92a1e095560` (both kept in `experiment/dist-check-33/`); flat `7867414c5e86` (round 12's second commit), 246 files, 33,040,988 bytes, the same hash both times, Oddish content hash `c283dd01…`, against `ad93859c8f45` only `environment/reclaim-scratch` changed; steps `d62e1a33fc60`, 33,041,140 bytes (both kept in `experiment/dist-check-32/`); flat `ad93859c8f45` (round 12's first commit), 246 files, 33,029,830 bytes, the same hash both times, Oddish content hash `e17c434c…`; steps `8ea1e9bf08ec`, 246 files, 33,029,982 bytes, the same hash both times, content hash `ad5f525b…`; against v4's `d365dc33100d` (content hash `e8d69ae8…`), `environment/session-timer` removed and `environment/Dockerfile`, `environment/reclaim-scratch`, `task.toml` and `verify.py` changed. Earlier: `d365dc33100d`, 247 files, 33,034,058 bytes, the same hash both times; `f93f6c391545`, whose content hash is `a9dad36c7bf0`'s (`e6d06775…`); `a9dad36c7bf0`, 247 files, 33,034,283 bytes; bundle directory `swe-m2_software-engineering_basedpl-interpreter-rebuild-no-examples` |
-| Oddish preflight | bundles `bf77bf7f91d0`, `af0c9f7b084e`, `ec8d6ecf327d`, `a9dad36c7bf0`, `f93f6c391545`, `d365dc33100d` and the flat `ad93859c8f45`, `7867414c5e86`, `c790a042f2be`, `da8966415695`, `ab1a4f4ee269`, `e9ee043b5d71`, `5be602ec5ec1`, `62ae11cdffa6` and `550b63faf0b3`, no-Archil CLI, locally | pass |
-| Oddish baselines and the pre-trial audit | old name: v1, and v2 (round 5's `1a08cdb471d0`); new name: v1 (round 8's `43b39e11805c`), v2 (round 9's `af0c9f7b084e`), v3 (round 11's `a9dad36c7bf0`) and v4 (`d365dc33100d`) | old name: the reference 1.0 twice per version (1,673/1,673) and the no-op 0.0 twice, with the same `kept_ids_sha256` (`bb030348…`) and `expected_sha256` (`18af6936…`) in both versions, so the Linux recording reproduces; v2's three model trials were graded. New name v1: the reference 1.0 twice, the no-op 0.0 twice, and the audit's one must-fix (the probe), answered in round 9. New name v2: the reference 1.0 twice, the no-op 0.0 twice, an empty source audit, three model trials graded (0.366, 0.372, 0.149), and the verdict's one must-fix (the timer), answered in round 10. New name v3: the reference 1.0 twice, the no-op 0.0 twice, and the audit's one must-fix (`task.toml`'s comment), answered in round 11's second commit. New name v4: three model trials graded (0.383, 0.402, 0.037) and the verdict's one must-fix (the timer again), answered in round 12. New name v5 (round 12's flat `ab1a4f4ee269`): the reference 1.0 twice, the no-op 0.0 twice, a clean pre-trial audit, three model trials graded (0.506, 0.056, 0.237), and the verdict's two must-fix adversarial findings (launchers that run nothing), answered in round 13. Bundles `ad93859c8f45`, `7867414c5e86`, `c790a042f2be`, `da8966415695`, `e9ee043b5d71`, `5be602ec5ec1`, `62ae11cdffa6` and `550b63faf0b3`: not run |
+| Packaging | `scripts/package_step.py`, twice into separate directories, with and without `--flat --keep-name` | flat `c65a7274858d` (round 19, the next upload), 570 files, 37,548,629 bytes, the same hash three times (the third from the committed tree), Oddish content hash `0d29aad3…`, against `8d3229fc0dab` only `environment/provision-scratch`, `environment/reclaim-scratch`, `instruction.md`, `task.toml` and `tests/verify.py` changed (kept in `experiment/dist-check-44/`); flat `8311a8f331eb` (round 19's first build, before the two-look rule and the end to the hundredth, superseded, not uploaded), 570 files, 37,546,314 bytes, the same hash both times, Oddish content hash `5b3985be…` (kept in `experiment/dist-check-43/`); flat `8d3229fc0dab` (round 18, uploaded as v7), 570 files, 37,543,090 bytes, the same hash three times (the third from the committed tree), Oddish content hash `8af22dff…`, against `43273031859b` only `tests/private/cases.json` changed (kept in `experiment/dist-check-42/`); flat `43273031859b` (round 17, not uploaded), 570 files, 37,541,259 bytes, the same hash both times, Oddish content hash `9e17dea3…`, against `550b63faf0b3` only `tests/private/cases.json`, `tests/verifier/runcases.py` and `tests/verifier/recording.py` changed (kept in `experiment/dist-check-41/`); flat `550b63faf0b3` (round 16, v6), 570 files, 37,516,264 bytes, the same hash both times, Oddish content hash `1c007f3b…`, against `62ae11cdffa6` the 322 files of `solution/source/` and `tests/verifier/derivations.py` and `functions.json` new, and `task.toml`, `solution/solve.sh`, `tests/Dockerfile`, `tests/verify.py`, `tests/verifier/runcases.py` and `tests/verifier/recording.py` changed (kept in `experiment/dist-check-40/`); flat `62ae11cdffa6` (round 15), 246 files, 33,062,963 bytes, the same hash both times, Oddish content hash `bcd2bfb9…`, against `ab1a4f4ee269` only `tests/verify.py`, `tests/verifier/runcases.py` and `tests/verifier/recording.py` changed (kept in `experiment/dist-check-39/`); flat `5be602ec5ec1` (round 14), 246 files, 33,062,387 bytes, the same hash both times, Oddish content hash `358c7c75…`, against `ab1a4f4ee269` only `tests/verify.py`, `tests/verifier/runcases.py` and `tests/verifier/recording.py` changed (kept in `experiment/dist-check-38/`); flat `e9ee043b5d71` (round 13), 246 files, 33,056,657 bytes, the same hash both times, Oddish content hash `1d84bf20…`, against `ab1a4f4ee269` only `tests/verify.py`, `tests/verifier/runcases.py` and `tests/verifier/recording.py` changed (kept in `experiment/dist-check-37/`); flat `ab1a4f4ee269` (round 12's fifth commit, the v5 upload), 246 files, 33,050,911 bytes, the same hash both times, Oddish content hash `7ae8f22f…`, against `da8966415695` only `environment/provision-scratch` and `environment/reclaim-scratch` changed; steps `fbf917dc9b5c` (both kept in `experiment/dist-check-35/`); flat `da8966415695` (round 12's fourth commit), 246 files, 33,045,960 bytes, the same hash both times, Oddish content hash `15165600…`, against `c790a042f2be` `environment/provision-scratch`, `environment/reclaim-scratch` and `tests/verify.py` changed; steps `08b3e5d2b951` (both kept in `experiment/dist-check-34/`); flat `c790a042f2be` (round 12's third commit), 246 files, 33,041,785 bytes, the same hash both times, Oddish content hash `e4ef1a57…`, against `7867414c5e86` only `environment/reclaim-scratch` changed; steps `b92a1e095560` (both kept in `experiment/dist-check-33/`); flat `7867414c5e86` (round 12's second commit), 246 files, 33,040,988 bytes, the same hash both times, Oddish content hash `c283dd01…`, against `ad93859c8f45` only `environment/reclaim-scratch` changed; steps `d62e1a33fc60`, 33,041,140 bytes (both kept in `experiment/dist-check-32/`); flat `ad93859c8f45` (round 12's first commit), 246 files, 33,029,830 bytes, the same hash both times, Oddish content hash `e17c434c…`; steps `8ea1e9bf08ec`, 246 files, 33,029,982 bytes, the same hash both times, content hash `ad5f525b…`; against v4's `d365dc33100d` (content hash `e8d69ae8…`), `environment/session-timer` removed and `environment/Dockerfile`, `environment/reclaim-scratch`, `task.toml` and `verify.py` changed. Earlier: `d365dc33100d`, 247 files, 33,034,058 bytes, the same hash both times; `f93f6c391545`, whose content hash is `a9dad36c7bf0`'s (`e6d06775…`); `a9dad36c7bf0`, 247 files, 33,034,283 bytes; bundle directory `swe-m2_software-engineering_basedpl-interpreter-rebuild-no-examples` |
+| Oddish preflight | bundles `bf77bf7f91d0`, `af0c9f7b084e`, `ec8d6ecf327d`, `a9dad36c7bf0`, `f93f6c391545`, `d365dc33100d` and the flat `ad93859c8f45`, `7867414c5e86`, `c790a042f2be`, `da8966415695`, `ab1a4f4ee269`, `e9ee043b5d71`, `5be602ec5ec1`, `62ae11cdffa6`, `550b63faf0b3` and `43273031859b`, no-Archil CLI, locally | pass |
+| Oddish baselines and the pre-trial audit | old name: v1, and v2 (round 5's `1a08cdb471d0`); new name: v1 (round 8's `43b39e11805c`), v2 (round 9's `af0c9f7b084e`), v3 (round 11's `a9dad36c7bf0`), v4 (`d365dc33100d`), v5 (`ab1a4f4ee269`), v6 (`550b63faf0b3`), v7 (`8d3229fc0dab`), v8 (`c65a7274858d`), v9, v10 and v11 | old name: the reference 1.0 twice per version (1,673/1,673) and the no-op 0.0 twice, with the same `kept_ids_sha256` (`bb030348…`) and `expected_sha256` (`18af6936…`) in both versions, so the Linux recording reproduces; v2's three model trials were graded. New name v1: the reference 1.0 twice, the no-op 0.0 twice, and the audit's one must-fix (the probe), answered in round 9. New name v2: the reference 1.0 twice, the no-op 0.0 twice, an empty source audit, three model trials graded (0.366, 0.372, 0.149), and the verdict's one must-fix (the timer), answered in round 10. New name v3: the reference 1.0 twice, the no-op 0.0 twice, and the audit's one must-fix (`task.toml`'s comment), answered in round 11's second commit. New name v4: three model trials graded (0.383, 0.402, 0.037) and the verdict's one must-fix (the timer again), answered in round 12. New name v5 (round 12's flat `ab1a4f4ee269`): the reference 1.0 twice, the no-op 0.0 twice, a clean pre-trial audit, three model trials graded (0.506, 0.056, 0.237), and the verdict's two must-fix adversarial findings (launchers that run nothing), answered in round 13. New name v6 (round 16's flat `550b63faf0b3`): the reference 1.0 twice, the no-op 0.0 twice, and the pre-trial audit's two must-fixes (in-scope items with no case, the file-read rule unchecked), answered in round 17; no model trial. New name v7 (round 18's flat `8d3229fc0dab`): the reference 1.0 twice, the no-op 0.0 twice, a clean pre-trial audit, three model trials graded (0.379, 0.413, 0.319), and the verdict's two must-fixes (the end of the work counted from set-up; one run that called its session an evaluation) and three should-fixes, answered in round 19. New name v8 (round 19's flat `c65a7274858d`): the reference 1.0 twice, the no-op 0.0 twice, a clean pre-trial audit and replayed exploits at 0; v9 replaced it while its model trials ran (0.439, 0.439, 0). New name v9 (made on the owner's account): no baseline trials, two model trials graded (0.779, 0.754), and the verdict's one finding (a hidden case with an undocumented command-line flag), answered in v10. New name v10: the reference 1.0 twice, the no-op 0.0 twice, a clean pre-trial audit, replayed exploits at 0, two model trials graded (0.675, 0.737), and the verdict's one finding (a hidden case with an undocumented system-function form), answered in v11 with the whole class. New name v11: the reference 1.0 twice (1,741/1,741), the no-op 0.0 twice, a clean pre-trial audit, two model trials graded (0.789, 0.565), and a verdict that accepted it. Bundles `ad93859c8f45`, `7867414c5e86`, `c790a042f2be`, `da8966415695`, `e9ee043b5d71`, `5be602ec5ec1`, `62ae11cdffa6`, `43273031859b` and `8311a8f331eb`: not run |
 | `harbor check` | none | not run |
 
 ### Validation gaps
@@ -1797,10 +2323,14 @@ read item by item:
   that freeze and end `dev`'s processes therefore see none.
 - **A session that runs to its limit.** The end of the work is checked here with stand-in
   sessions (the capped-turn checks), never on the platform: that the collect hook runs while the
-  agent's exec still runs; how many seconds pass between `setup_complete`, which writes
-  `turn-started`, and the start of the run's clock (the end falls that much early); and whether
-  gVisor's overlay moves an entry's change time on a rename, as ext4 does. A late deletion cannot
-  be undone. Each only takes from the session's own work.
+  agent's exec still runs, and whether gVisor's overlay moves an entry's change time on a rename,
+  as ext4 does. v7's capped run gave the platform's timing (from its files, not from a late save):
+  the session's first process, from which the end is counted since round 19, started 0.02 s after
+  Harbor's 34,560 s clock did (2.2 s into its agent phase), which puts the end 0.12 s after Harbor
+  ended the agent phase (set-up's `turn-started`, used before, put it 1.9 s before). Not seen on
+  the platform: whether one look of the set-up hook's process ever caught Harbor's short command
+  before the clock (`first_process_passed_over` will say), and the two-look rule on gVisor's
+  `/proc`. A late deletion cannot be undone. Each only takes from the session's own work.
 - **The stop after the limit.** Run here against a stand-in `/proc` whose clock the checks move
   (`uptime`, each process's `stat` and `status`), with stand-ins for `pgrep -r` and `kill -STOP -1`
   as `dev` (macOS has neither, nor `setsid`), and a local port for the hosts. Not seen on the
@@ -1823,13 +2353,14 @@ read item by item:
   `oom_score_adj` as root, and the `/proc` readers of `runcases.own_use`, `alive` and
   `memory_in_use` (they return "cannot tell" without `/proc`).
 - **The platform.** Grading after a capped run of the flat bundle (SymPy's flat capped runs were
-  graded, 3 of 3; the cap probe runs both layouts); the egress window between the turn and the
-  hook; the pre-trial audit.
-- **The collect hook's limits on the platform's kernel.** The 420 s and 510 s limits, the alarm,
+  graded, 3 of 3; the cap probe runs both layouts), and since v9 whether a run to the 43,200 s limit
+  can be graded at all inside one 12-hour attempt (see [Workload](#workload)); the egress window
+  between the turn and the hook; the pre-trial audit.
+- **The collect hook's limits on the platform's kernel.** The 1,000 s and 1,120 s limits, the alarm,
   the 15 s loop limits, the fixer's room checks and the byte caps run here with stand-ins for a
   full disk (`statvfs` answers), for `pgrep`, `setpriv`, `pkill` and `ps`, and with this Mac's
   syscall costs and its 1,023-byte link targets (Linux allows 4,095); gVisor's costs are higher,
-  which makes a hostile tree reach the 420 s sooner and changes nothing for an honest tree
+  which makes a hostile tree reach the 1,000 s sooner and changes nothing for an honest tree
   (seconds in every trial so far). No small filesystem was mounted, so ENOSPC itself was never
   hit; a name that is not UTF-8 was stood in (this Mac's filesystem refuses one). A task held in D
   by `vfork` was read from the kernel's sources (by the re-check), not made.
@@ -1839,26 +2370,39 @@ read item by item:
 - `cases_total` equals the image's kept count, `setup_errors` is 0 and `seconds_total` is above 0
   (the sibling task's failure was every case a setup error in 0.0 s).
 - From round 15: `distinct_outputs_needed` is 12; the oracle's `distinct_outputs` equals
-  `recording.baselines.distinct_outputs_kept` (1,288 locally from round 16, 1,348 before), its
-  `withheld` is null and its `notes` stay empty; the no-op's `distinct_outputs` is 0, with only the
-  missing-program note and a `reward:` line without one;
+  `recording.baselines.distinct_outputs_kept` (1,336 locally in rounds 17 and 18, 1,288 in round
+  16, 1,348 before), its `withheld` is null and its `notes` stay empty; the no-op's
+  `distinct_outputs` is 0, with only the missing-program note and a `reward:` line without one;
   `recording.baselines.no_interpreter_dispatcher_distinct_outputs` is 4 at most (2 locally), or the
   image would not have built.
-- From round 16: `derived_cases` equals the case count of `recording.derived.cases` (91 locally, of
-  `looked_at` 672), `recording.derived.functions` is 58, and `recording.derived.passed_over` is a
-  small share of `derivations` (23 of 115,725 locally; above 1% the image would not have built). A
-  much lower `derived_cases` than locally means the build showed the derivations differently: read
-  it before any model trial.
+- From round 17: `cases_total` is the image's kept count (1,742 locally since round 18, of
+  `recording.cases_recorded` 1,846); `by_kind` holds `coverage` (56 locally) and `sandbox` (13), all passed by the
+  oracle. Since round 18 no sandbox answer depends on a file the machine provides (a read under the kernel's
+  trees is compared by its error's kind alone), so a sandbox case the oracle fails means that the files the runner
+  makes, or the image's own, behave otherwise on the trial machine: the case is set aside and the cases recorded
+  again. `recording.derived.ids_sha256` names the derived set (`293f40a9…` locally).
+- From round 16: `derived_cases` equals the case count of `recording.derived.cases` (92 locally, of
+  `looked_at` 674, in rounds 17 and 18), `recording.derived.functions` is 58, and
+  `recording.derived.passed_over` is a small share of `derivations` (24 of 116,195 locally; above 1%
+  the image would not have built). A much lower `derived_cases` than locally means the build showed
+  the derivations differently: read it before any model trial.
 - `delivery_record.delivered` is `delivered 2 <bytes>` for the oracle and `delivered 0 0` for
   the no-op; `notes` is empty for the oracle.
 - `delivery_record.stopped_after_limit` is null (the reference and the no-op end long before the
   limit); in a model trial that reaches the limit it names the session's first process and its
-  start, and shows the stop (`at`) at or after `due` (that start + 34,562 s) and after
+  start, and shows the stop (`at`) at or after `due` (that start + the limit and 2 s) and after
   `network_back`, with `still_running` 0; set `at` beside harbor's `agent_execution.finished_at`.
-- `delivery_record.work_end` is `turn_started` + 34,561 and `late_entries` is 0, and the trial's
-  `result.json` holds no `step_results` (the flat bundle ran).
-- `fixer_status`, the link fixer's exit status, is a key of the record `.manifest.json` in the
-  collected `/app/rebuild`, not of `metrics.json`: `verify.py` copies a fixed list of the record's
+- `delivery_record.work_end` is `first_process_started` + the limit and 0.1 s (43,200.1 since v9,
+  34,560.1 before) with `work_end_from` "first process" (since round 19; `turn_started` + the
+  limit and 1 s, and "set-up", where the oracle or the no-op left
+  no process of `dev` to count from), `first_process_passed_over` is a small count or null,
+  `late_entries` is 0, and the trial's `result.json` holds no `step_results` (the flat bundle ran).
+- From round 19: `artifacts/manifest.json` lists `/app/rebuild` and `/var/lib/scratch/out` as `ok`,
+  `notes` holds no "arrived without the collect hook's mark", and the no-op's empty `/app/rebuild`
+  scores 0 with the missing-program note, not an evaluation error.
+- `fixer_status`, the link fixer's exit status, is a key of the record (`record.json` in the
+  collected `/var/lib/scratch/out`; in `/app/rebuild` as `.manifest.json` before round 19), not of
+  `metrics.json`: `verify.py` copies a fixed list of the record's
   keys into `delivery_record` and is not changed for it. A status other than 0 does reach
   `metrics.json`, as the note `the link fixer ended with status N: …` (in `notes`, after
   `maintenance step: `, and in `delivery_record.notes`). A fixer that ended with 0 leaves no
@@ -1891,21 +2435,30 @@ the shipped documentation's table.
 
 ## Remaining work
 
-- Round 16 (one-line answers one documented function gives from the case's own literals or input
-  left out, after round 15's follow-up re-check, M3; and the two items of the sibling task's audit)
-  has an independent re-check before anything goes up. Then the flat bundle `550b63faf0b3` goes up
-  as the next version of the same task (v6), under the task's one experiment, on the owner's word.
-  Its baselines and pre-trial audit come before any model trial. The two oracle trials on different
-  workers are a hard gate: each must score exactly 1.0, with the same `kept_ids_sha256` and
-  `expected_sha256` (`bb030348…` and `18af6936…` so far; `recorder.py`, the runner code it uses and
-  the cases are unchanged, and `runcases.py` only changes its counting functions, so the same
-  answers are expected), and `derived_cases` near the local 91. A failed id goes on a deny-list and
-  the cases are recorded again. Then the no-op,
-  which must score exactly 0. Read `recording` in the reference run's `metrics.json` (drops by
-  reason, settling, `kept_as_upstream_code`, the baselines with the two distinct-output counts,
-  the build), `distinct_outputs`, `withheld`, and `delivery_record` as listed under Validation gaps.
-  In every model trial, read `distinct_outputs` beside the reward: a run below 12 scores 0 with the
-  note on its `reward:` line.
+- v11 passed Oddish QA on 2026-11-27. It stays as it is on the platform: any change is a new
+  version, with its own baselines, pre-trial audit, model runs and verdict.
+- The 12-hour attempt (since v9, [Workload](#workload)): a session that runs to its 43,200 s
+  leaves the collect hook and the verifier no time inside one attempt, so it would not be graded.
+  The measured runs end far sooner, but a more patient agent would reach it. A later version could
+  go back to 34,560 s and say 9.6 hours in the instruction, or wait for a longer attempt on the
+  platform; that is the owner's call. Until then
+  `test_a_session_at_its_limit_leaves_the_collect_hook_and_the_verifier_inside_one_attempt` is a
+  strict expected failure.
+- The calibration's Opus run ended its turn to wait for its helper agents, which ends a headless
+  claude-code run ([Calibration on v11](#calibration-on-v11)). `scripts/oddish/agents.yaml` turns
+  background tasks off for this reason; the frontier config of v9-v11 left them on. Read Opus's 0.789
+  as what that setting gets, not as the most the model can do here. Another run on v11 would draw its
+  verdict again, so a re-run waits for the owner's word.
+- The generator writes round 18's 1,846 cases. v10's removal and v11's 48 rewrites were applied to
+  the private file itself. A re-seed would bring the undocumented forms back unless the generator
+  learns to leave them out (development log, 2026-11-27).
+- Round 18's bundle `8d3229fc0dab` went up as v7: the reference 1.0 twice, the no-op 0 twice, a clean
+  pre-trial audit, three model runs (0.379, 0.413, 0.319), and the verdict's two must-fixes and three
+  should-fixes, answered in round 19.
+- Round 17's bundle `43273031859b` was not uploaded: its re-check (CONCERN, no must-fix) is answered
+  in round 18.
+- Round 16 went up as v6 (flat `550b63faf0b3`): the reference 1.0 twice and the no-op 0 twice, then
+  the pre-trial audit's two must-fixes, answered in round 17.
 - Round 12's re-checks (CONCERN, no must-fix each) had their should-fixes answered in its second
   and third commits (R1b stays a documented residual) and the stop after the limit added in its
   fourth and fifth; its bundle `ab1a4f4ee269` went up as v5 (development log, round 13).
