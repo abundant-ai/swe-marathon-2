@@ -76,8 +76,14 @@ agent.
 **Realism.**
 - **Who needs it:** teams that gate agents' tool calls with Dogwood. Upstream calls its interpreter
   a reference "NOT intended for production use", so such teams need an implementation they own.
-- **Weakest point:** a clean-room rule for an Apache-2.0 project is a business choice, not a legal
-  necessity. Goose's accepted brief uses the same framing.
+- **Weakest point:** an Apache-2.0 tool could simply be forked. The brief's reason is provenance:
+  the requester's security review lets only code it wrote into the authorization path, and its
+  reviewers want every line accounted for, so the authors work from the guide and the running
+  build only, and the build is execute-only for the same reason (fix round 1, QA 01 and 03).
+- **Inputs:** the private inputs are generated conformance inputs, not real agent traffic: 61% come
+  from upstream's generator (grammar-shaped, a small vocabulary), the rest from the task's own
+  templates in a Ledger world. They test structure, not names, and carry no information about
+  verdicts (QA 02).
 
 **Difficulty.**
 - **Size:** about 23-30k in-scope code lines upstream (two heuristics) and an estimated 250-400
@@ -88,7 +94,13 @@ agent.
 - **Two families cut against a model's prior,** both stated in the guide:
   - aggregation over a deduplicated projection (B);
   - `previous` and `since` read over the deciding principal's own events (K).
-- **Sizing:** frontier at about 0.6 or less, mid-tier 0.1-0.4 (`notes/DESIGN.md` section 3a).
+- **Sizing:** frontier at about 0.6 or less, mid-tier 0.1-0.4 (`notes/DESIGN.md` section 3a; the
+  fix-round re-size is in `notes/FIX1-REPORT.md`).
+- **Horizon:** a strong engineer new to Dogwood needs about 39-50 working days to a solid core and
+  65-95 to byte-exact output (QA 14). An agent needs about 7-12 hours and 2,000-4,500 steps, so
+  the 9.6-hour session may bind (QA 15): a run that ends at the cap with a project that does not
+  build is a harness loss. The evaluator (R, B, K, P, M: 0.67 of the weight) is the critical path;
+  validation, lowering and the command surface can be farmed out once the parser exists (QA 16).
 
 **Initial feasibility.**
 - **Plausible path:** parse with pest from the guide's grammar, evaluate Cedar parts with the
@@ -111,10 +123,11 @@ agent.
 - The grading image holds no `dogwood` build, so a submission that calls one fails its cases.
 - The grader's files are out of reach of the build (run as `builder`) and of the runs (run as
   `nobody`).
-- Delivered files that copy Dogwood's own source are listed in the metrics
-  (`dogwood_source_files`) for the clean-room review; the list does not change the score.
-- An evaluation error writes no reward. Nothing a submission prints, builds or leaves running
-  causes one: those fail its own cases.
+- A delivery holding Dogwood's own source files, or its 1.2.0 build, scores 0, and the metrics
+  list the files (`dogwood_source_files`). The oracle's files carry one added comment line each.
+- A delivery that did not arrive as the hand-off listed it is a lost run (an evaluation error, no
+  reward), never a 0. Nothing a submission prints, builds or leaves running causes an evaluation
+  error: those fail its own cases (the hostile stubs check it).
 
 | Family | Weight |
 | --- | --- |
@@ -122,7 +135,7 @@ agent.
 | B-dedup aggregation, deduplication | 0.17 |
 | B-scope aggregation, decision point | 0.05 |
 | K key-local slicing, pins, mirror rule | 0.15 |
-| V validate accept/reject and exit status | 0.13 |
+| V validate report: exit status and every finding line | 0.13 |
 | V-msg validate finding text (JSON) | 0.05 |
 | L lowered Cedar and augmented schema | 0.10 |
 | M macros | 0.05 |
@@ -170,24 +183,28 @@ The kill matrix is 33 one-change mutants of the release source (`checks/mutants/
 
 ## Hackability assessment
 
-Assessed on the local arm64 images (Phase B, then Phase C on the final case set; the results are
-in `notes/PHASE-C-REPORT.md` section 11). Everything is re-checked on the platform's image before
-upload.
+Assessed on the local arm64 images (Phase B, Phase C, then fix round 1 through the delivery
+path; the results are in `notes/PHASE-C-REPORT.md` section 11 and `notes/FIX1-REPORT.md`).
+Everything is re-checked on the platform's image before upload.
 
 | Boundary | Attack | Mitigation | Severity |
 | --- | --- | --- | --- |
-| The installed build | Read, copy, trace, preload or dump the binary | Mode 2711, `root:dogwood-run`: unreadable, and setgid makes the loader ignore `LD_PRELOAD` and the process non-dumpable. A multi-stage image holds no source or cargo cache. Probe as `dev`: reading, copying, `dd`, `/proc/<pid>/{exe,mem,maps}` and `PTRACE_ATTACH` are refused; `LD_PRELOAD` is ignored while the same library runs in `/bin/true`; a traced read of its memory fails with `EIO`; no core dump is written; there is no `sudo`; no `dogwood-*` crate or source is on disk | 🟢 GREEN (local) |
-| Wrapper | Ship a submission that calls `dogwood` | The grading image holds no build (no file named `dogwood*`, no `dogwood-*` crate); the `wrapper` stub scores 0 | 🟢 GREEN (local) |
-| Stubs | Credit from help text, constant exit codes, all-DENY streams, `cat` as `format`, no-op bodies | Selection keeps no unit a trivial program passes, and pairs every weak case with one whose answer is its own. The zoo (23 projects, `checks/stubs.py`) is built and graded by the real grader | 🟢 GREEN (local) |
-| Lookup tables | Hard-code the shipped examples' outputs | The `lookup` stub scores 0; the leak scan finds no hidden case that equals or near-copies a shipped example or a public upstream case | 🟢 GREEN (local) |
-| Reward forging | The build (`builder`) or the program (`nobody`) writes `reward.json` or `reward.txt` into the output folder, which the platform may make writable by every user, or plants links there to redirect the grader's writes | Before any build or run the grader closes the folder to everyone but its owner (its mode comes back after the reward is written), so a planted reward cannot outlive a grader that dies mid-run. It ends every process of both users first, removes whatever stands under its output names (files, links, folders), then creates each output fresh with `O_EXCL` and `O_NOFOLLOW` relative to the folder's descriptor, and writes the reward last; an evaluation error also clears the reward files. The `forge` stub tries all of this against a world-writable output folder, and a grading stopped mid-run is checked to leave no reward | 🟢 GREEN (local) |
-| Grader files and gold | Read the private cases or the grader | `/tests` is root-only (0700); the build runs as `builder`, the cases as `nobody`; the `buildrs` stub tries to read gold and the grader | 🟢 GREEN (local) |
-| Build-time code | The submission's `build.rs` or proc macros run while the grader builds it: loop, read gold, leave processes, point the program path elsewhere | The build runs as `builder` with no network and no read access to gold or the grader, under 20 minutes and a 16 MB log cap; afterwards every `builder` process is ended and its files removed; the program must be a regular file inside the build folder, copied from an `O_NOFOLLOW` descriptor | 🟢 GREEN (local) |
-| Hostile programs and output | Hang, flood, fork-bomb, daemonise, print what crashes the comparison, or deliver a program that cannot start | Each run is bounded (1 s, 2 GB, 512 processes, 256 MB files, 8 MB of output); every process of `nobody` is ended after each run, the grader adopts orphans, and a run's leftover files are removed. Comparison never raises, and an unstartable program fails its own cases. The `hang`, `flood`, `forkbomb`, `daemon`, `garbage` and `badexec` stubs score 0 with no evaluation error | 🟢 GREEN (local) |
-| Shared state between runs | Leave state in `/tmp` for a later run | Removed after every run (the runs-share-nothing probe on the grader's own runner). The Rust image leaves `/usr/local/cargo` and `/usr/local/rustup` writable by every user; nothing there reaches an answer or the score | 🟢 GREEN (local) |
-| Copying upstream source | Paste Dogwood's own source into the project | The clean-room rule is the requester's; the grader lists delivered files whose digest (exact, or with whitespace removed) matches a Dogwood source file, for review. It does not change the score, so the trajectory audit is the remaining check | 🟡 YELLOW (report-only by design) |
+| The installed build | Read, copy, trace, preload or dump the binary | Mode 2711, `root:dogwood-run`: unreadable and non-dumpable, and linked statically (fix round 1), so no loader runs a preload library even on a self-traced exec that drops the setgid bit. `checks/protection_probe.py` tries every route as `dev` and fails closed: read, `/proc/<pid>/{exe,mem,maps}`, `PTRACE_ATTACH`, a self-traced exec read at the stack pointer, `LD_PRELOAD` on a normal and a traced exec, a core dump. A hard link to the build inside the delivery is removed by the hand-off, and a delivered copy of it scores 0 | 🟢 GREEN (local; gVisor on the first platform run) |
+| Root's PATH | Plant `tar`, `su` or `setpriv` where root finds them by name: Harbor packs the grader's output folder, the logs and the project with `tar` as root, and runs the collect hook through `su` | Both images close the Rust image's world-writable cargo and rustup trees, and each image build fails if any directory on root's PATH, anything in one, or a parent is writable by another user; the grader re-checks at start. The `hostile-build`, `hostile-run` and `devplant` checks plant in every PATH directory, and Harbor's own `tar` is run after grading: no planted marker | 🟢 GREEN (local) |
+| Wrapper | Ship a submission that calls `dogwood`, or embeds it | The grading image holds no build (no file named `dogwood*`, no `dogwood-*` crate); the `wrapper` stub scores 0; root can no longer be reached to copy the build out (previous row) | 🟢 GREEN (local) |
+| Stubs | Credit from help text, constant exit codes, all-DENY or last-ALLOW streams, an engine with no history, `cat` as `format`, no-op bodies | Selection keeps no unit that one trivial program passes whole: each case carries the set of programs that pass it (`empty`, `table`, `cli-shell`, `uniform`, `last-allow`, two history-free readings replayed by the release build, `cat`). The zoo (`checks/stubs.py`), a Cedar-only history-free engine included, is graded through the delivery path | 🟢 GREEN (local) |
+| Lookup tables | Hard-code the shipped examples' outputs | The `lookup` stub scores 0; the leak scan matches any mix of visible files and guide blocks and finds no hidden case reading only visible inputs | 🟢 GREEN (local) |
+| Reward forging | The build (`builder`) or the program (`nobody`) writes `reward.json` or `reward.txt` into the output folder (world-writable on the platform), plants links there, or leaves a process (one whose first thread has exited included) to write after the grader | Before anything of the submission runs, the grader makes the folder root's and 0755 and never reopens it. Before writing, it stops and kills every task of both users from root and by uid across `/proc/*/task` in every state, checks none is left (else an evaluation error), removes what they left anywhere (System V objects included), removes whatever stands under its output names, and creates each output fresh with `O_EXCL` and `O_NOFOLLOW`, the reward last. The `forge`, `hostile-build` and `hostile-run` stubs try all of it against a world-writable folder; a grading killed mid-run leaves no reward | 🟢 GREEN (local) |
+| Grader files and gold | Read the private cases or the grader | `/tests` is root-only (0700); the build runs as `builder`, the cases as `nobody`, with no supplementary groups; standard input is fed from the private store, never opened in a run's folder | 🟢 GREEN (local) |
+| Build-time code | The submission's `build.rs` or proc macros loop, read gold, leave processes, fill the disk or memory, fork without end, point the program path elsewhere | As `builder` with no network, 20 minutes, a 16 MB log cap, 4,096 processes, 4 GB files, no core dumps, and the kernel's first choice on memory pressure (the grader is its last). Afterwards every task of `builder` is ended and its files and System V objects removed; the program must be a regular file inside the build folder, copied from an `O_NOFOLLOW` descriptor | 🟢 GREEN (local) |
+| Hostile programs and output | Hang, flood, fork-bomb, daemonise, rename a process to bytes that are not UTF-8, nest 2,000 directories, print what crashes the comparison, or deliver a program that cannot start | Each run is bounded (1 s, 2 GB, 512 processes, 256 MB files, 8 MB of output); /proc is read as bytes; trees are walked without recursion and removed with GNU `rm`; comparison never raises; an unstartable program fails its own cases. The `hang`, `flood`, `forkbomb`, `daemon`, `garbage`, `badexec` and `hostile-run` stubs score 0 with no evaluation error | 🟢 GREEN (local) |
+| Shared state between runs | Leave files, processes or shared memory for a later run | After every run: every task of `nobody` ended, its files in every shared directory and its System V objects removed, the run's folder removed; at the end the grader searches the whole filesystem for anything either user owns | 🟢 GREEN (local) |
+| The delivery transfer | One FIFO, socket, device, or absolute or outward link anywhere in the project makes Harbor's `extractall(filter="data")` stop, and the rest is lost | The hand-off applies the brief's copy rules before the transfer and writes a manifest; the grader checks the arrived tree against it, and a mismatch or a missing manifest is a lost run, never a 0. Tested through a copy of Harbor's own transfer (`work/spike/deliver.py`) with clutter, with no hand-off and with a pipe added after it | 🟢 GREEN (local) |
+| The egress window | A process left running fetches Dogwood's crates once the turn ends, before collection | `wait-uplink` (root, from the setup hooks) stops and ends `dev` as soon as a public host answers; the hand-off records the processes, egress and every entry's times; entries changed after the end of the work are listed in the metrics for the per-trial audit; a verbatim drop-in scores 0. A modified drop-in fetched in the remaining fraction of a second is not refused: the audit is the last check | 🟡 YELLOW (recorded and bounded; audit decides) |
+| Provider-side web tools | A harness web tool reads docs.rs, which serves Dogwood's source, during the turn | Every Dogwood run config lists `WebSearch` and `WebFetch` in `disallowed_tools` (QA-PLAN section 6); codex keeps web search disabled | 🟡 YELLOW (run-config discipline) |
+| Evaluation cues | `ps` shows the harness's launcher line; `/logs/verifier` exists in the working machine | The working image has no `ps` (procps is not installed: keep it so). `/logs/verifier` is the platform's and cannot be renamed by the task | 🟢 GREEN (task); platform residue noted |
 
-Highest unresolved severity: 🟡 YELLOW (the clean-room review is a report, not a score).
+Highest unresolved severity: 🟡 YELLOW (the egress window is recorded and bounded, not closed; the per-trial audit decides).
 
 ## Development log
 
