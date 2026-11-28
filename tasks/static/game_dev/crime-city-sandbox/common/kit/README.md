@@ -201,6 +201,24 @@ The checks an expectation can use:
 | `retreat` | each listed enforcer whose health drops below `below` (alive) ends at least `min_m` farther from the player within `within_s` |
 | `fires_at` | each listed attacker that comes within `max_m` of the player lands at least `min_hits` hits on the player |
 | `gunshot_flee` | the first round after the first mark is the shot; each listed person on foot within `near_m` of the player at the shot (and not limp, dead or seated meanwhile), from `start_s` to `end_s` after it, moves at least `min_mps` on average, ends at least `min_gain_m` farther from where the player stood, and gets farther over at least `min_share` of the half seconds |
+| `crime_event` | a `crime` event of `type` comes within `within_s` of mark `at` (default the first mark), its `witnesses` listing everyone of `seen_by` and none of `not_seen_by` (`witnessed: false`: an empty list); with `count`, that many events of the type between the marks |
+| `alert_rise` | after the first `crime` event of `type`, the level rises to `level` (an `alert_changed` event, and the state report) from `min_s` to `max_s` after it |
+| `alert_steady` | between the marks the level stays `level`: no `alert_changed` to another level, and the state report agrees |
+| `alert_sequence` | the levels the `alert_changed` events take between the marks are `levels`, in order |
+| `alert_levels` | at each mark of `at` (`{mark: level}`) the state report shows that level |
+| `police_arrival` | the first police unit (a police vehicle, or an officer on foot; those in `ignore` aside) gets within `reach_m` of the player within `within_s` of the level's first rise; none is within `clear_m` when it rises |
+| `police_count` | within `by_s` of the level's first rise, the police vehicles moving towards the player or within 100 m number at least `count`; after that, those within 100 m and the dispatched ones moving towards the player number at most `count` plus `over` |
+| `police_origin` | every police unit new after the level's first rise first shows at least `min_m` from the player and outside the camera's view (officers in a vehicle judged by it) |
+| `police_kinematics` | police units move no faster than 1.1 times their model's top speed (`top_kmh`) or, on foot, FT-1's sprint (`foot_mps`), and never stand inside a building (`buildings`) |
+| `roadblock` | within `within_s` of the level reaching 3, while the player drives, at least two police vehicles stand below 1 km/h for 2 s across a road of `roads` (each within 30 degrees of square, middles within 8 m of one cross-section), covering 70% of its carriageway, within `ahead_m` ahead of the player by road (`reach`) |
+| `arrest` | with the level at 1 or 2 and `officer` within `near_m` of the still player, `arrested` comes from `min_s` to `max_s` after the later of the two; with `expect: false`, no arrest between the marks |
+| `came_back` | within `within_s` of the first `arrested` (or the player's `died`), a `teleport` and a `respawned` naming `poi` come, the player within 2 m of `respawn`; a second later, level 0 and the `fine` lost (or all the money), and the `weapons`, `health` and `armour` given |
+| `escape` | the level stays above 0 until `cooling_s` after mark `anchor` and drops to 0, reason `escaped`, by `cooling_s` plus `slack_s` after it |
+| `police_force` | below level 3 (and for 2 s after a drop below it) no police officer hits the player or is `hostile`; with `fight: true`, from level 3 with an officer within 40 m, an officer lands a hit within `within_s` |
+| `left_alone` | from 10 s after the level returns to 0, no unit that responded keeps moving towards the player for more than 10 s, and no officer on foot stays within 5 m of the player for more than 5 s (`exempt` points aside) |
+| `alert_honest` | every rise of the level follows a crime seen by police at most 1.0 s before it, or by others 10-11 s before it, to the level AL-4 gives; drops go to 0 only, with reason `escaped`, `arrested` or `died` |
+
+A police unit is a police vehicle (`police`, `tactical_van`; not a wreck, nor one carrying the player) or a police officer on foot; it moves towards the player when its horizontal distance to them has fallen by 2 m or more over the last 2 s (AL-6). A road of `roads` is `{"id", "pts": its centre line [[x, z], ...] from end a to end b, between the junction boxes, "width": its carriageway}`; `reach` gives, for a road and the way the player drives it (`"road|ab"`), the metres by road from its far end to the entry end of each road the player's vehicle can reach.
 
 A box is a solid placed with `prop.spawn`: `{"p": the middle of its base, "size": [width,
 height, depth], "heading": degrees}`, its depth along the heading (chapter 17). An `area` is a
