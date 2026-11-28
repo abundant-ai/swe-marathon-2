@@ -107,7 +107,7 @@ Beyond field patterns, terms appear on both sides of comparisons and as macro ar
 | Scope entity | `principal`, `resource`, `principal.dept` | the request principal / resource entity (± an attribute) |
 | Variable | a bare identifier | a bound-variable name |
 | Wildcard | `*`, or a bare `_` | matches anything, binds nothing; each independent |
-| Array | `[a, b, c]` | |
+| Array | `[a, b, c]` | not a predicate argument: a predicate argument that is or holds an array constant is a lowering error |
 | Aggregate | `count …` / `sum …` | comparison-operand-only (see aggregations) |
 | Arithmetic | `a + b`, `a - b`, `a * b` | **experimental** (off-by-default Cargo feature); comparison-operand-only, over `Long`s; `*` binds tighter (see comparisons) |
 

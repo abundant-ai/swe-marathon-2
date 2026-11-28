@@ -759,7 +759,12 @@ is empty.
 
 Checks run in a fixed order — **Cedar side, then temporal,
 then provider** — accumulating into two channels with no short-circuit across
-checks. `ctx = (Σ = L.augmented_schema, event_schema = L.event_schema, dw_src)`.
+checks. The Cedar side's findings are followed by two checks of Dogwood's own,
+before the temporal ones: the schema's well-formedness (**V-Schema-Ancestors**,
+§5.3), then the policies' reads of the request context
+(**V-Cedar-ContextRead**). Within one check, findings that concern several
+entity types or request environments come in the order of their names, and
+each finding is listed once. `ctx = (Σ = L.augmented_schema, event_schema = L.event_schema, dw_src)`.
 `Σ ⊢ L ✓ ⟺ E₁·E₂·E₃ = []`.
 
 ### 5.3 The Cedar side
@@ -775,12 +780,19 @@ Cedar's own validator runs in **strict** mode over the
 augmented schema. Its errors become `ValidationError::Cedar` findings and its
 warnings pass through verbatim (**V-Cedar-Warnings**), except an impossible policy
 (a condition false for every request its scope admits), which is an error
-(**V-Cedar-Impossible**). The Cedar part of a
+(**V-Cedar-Impossible**). The augmented schema must also be well-formed as the
+formal specification defines it: every ancestor of an entity type is a
+standard entity type. Cedar 4.14 accepts an enumerated ancestor; Dogwood does
+not, and reports each enumerated entity type that is an ancestor as an error
+with the code `schema` and no position in the policy source
+(**V-Schema-Ancestors**). The Cedar part of a
 rule reads the request context only through attributes lowering does not hoist:
 a read of the whole `context` (when the policy set has a temporal or provider
 leaf, since lowering then adds the leaves' values to it), or of an attribute
 named like a hoisted leaf (`<rule>__temporal_<n>`, `providers`), is an error
-with the code `context` (**V-Cedar-ContextRead**). Crucially, this pass is
+with the code `context` (**V-Cedar-ContextRead**). Those names are lowering's
+own: an action schema whose `context` declares an attribute with one of them
+cannot be augmented, and lowering fails. Crucially, this pass is
 where several things are *deliberately delegated* rather than re-checked
 elsewhere: **provider output/projection typing**, **provider field-path
 arguments**, and **context typing under an unconstrained action scope**. Each
@@ -1097,6 +1109,9 @@ the dialect additionally checks:
   `tp(x)` binder must be declared `Timepoint` — any other declaration conflates a timepoint index with a
   data value, making the condition permanently false (a validated dead
   guard). A check fires only when both types are known (**TEMP-Type-***).
+  An event field whose declared type names no type of the schema is not
+  unknown in this sense: no value is known to have its type, so only a
+  wildcard matches it, and any other argument for it is rejected.
   Temporal conditions do not support Cedar's extension types other than
   `decimal`: a binder declared `datetime`, `duration`, or `ipaddr` is rejected,
   and so is a request-side path whose type is or holds one, as a comparison
@@ -1310,7 +1325,7 @@ then decides. A fail-closed `Response` is always
 | 4 | the entity store conforms to the augmented schema (Cedar's `Entities::from_entities`) | `entity conformance: …` (**FailClosed-Entities**) |
 | 5 | every information provider of the policy set produces a value | the provider's error (**FailClosed-Provider**) |
 | 6 | every provider output is a value of its declared output type | `nonconforming provider output: …` (**FailClosed-ProviderOutput**) |
-| 7 | the temporal engine values the leaves: it does not fail, and it returns a value for exactly the hoisted leaves | `temporal evaluation: …` (**FailClosed-Temporal**) |
+| 7 | the temporal engine values the leaves: it does not fail, and it returns a value for exactly the hoisted leaves (the built-in engine always does) | `temporal evaluation: …` (**FailClosed-Temporal**) |
 
 ```
    checks 1–7 pass        β, providers, e ⊢ ctx ⇓ Ok(κ)        Request::new(p, a, r, κ) = Ok(q)

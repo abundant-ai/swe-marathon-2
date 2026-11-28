@@ -4,4 +4,5 @@ Copyright Amazon.com, Inc. or its affiliates, licensed under the Apache License,
 
 We changed them for our team: the chapters on Dogwood's Rust library and its MCP tooling are
 left out, the trace file format moved into the command-line chapter, and passages about the
-library interface and the project's own tooling were removed or reworded.
+library interface and the project's own tooling were removed or reworded. We also added a
+few sentences that state what the 1.2.0 build does where the guide was silent or unclear.

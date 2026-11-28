@@ -1751,7 +1751,7 @@
  {
   "op": "write_file",
   "file": "NOTICE",
-  "text": "The guide and the example bundles in this directory are Dogwood 1.2.0's documentation,\nCopyright Amazon.com, Inc. or its affiliates, licensed under the Apache License, Version 2.0\n(LICENSE in this directory).\n\nWe changed them for our team: the chapters on Dogwood's Rust library and its MCP tooling are\nleft out, the trace file format moved into the command-line chapter, and passages about the\nlibrary interface and the project's own tooling were removed or reworded.\n"
+  "text": "The guide and the example bundles in this directory are Dogwood 1.2.0's documentation,\nCopyright Amazon.com, Inc. or its affiliates, licensed under the Apache License, Version 2.0\n(LICENSE in this directory).\n\nWe changed them for our team: the chapters on Dogwood's Rust library and its MCP tooling are\nleft out, the trace file format moved into the command-line chapter, and passages about the\nlibrary interface and the project's own tooling were removed or reworded. We also added a\nfew sentences that state what the 1.2.0 build does where the guide was silent or unclear.\n"
  },
  {
   "op": "replace",
@@ -2017,5 +2017,131 @@
   "file": "guide/12-cli.md",
   "old": "`format` exits 0 for any input that it can read.\n",
   "new": "`format` exits 0 for any input that it can read.\n\n`dogwood --help` (or `dogwood help`) prints the list of commands, and\n`dogwood <command> --help` prints that command's usage, arguments and options:\n`dogwood schema --help` lists the schema parts, and `dogwood schema event --help`\ndescribes one of them. `dogwood --version` (or `-V`) prints the name and version,\n`dogwood 1.2.0`. They all print to stdout and exit 0.\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/02-policy-language.md",
+  "old": "- **`entity` declarations** (`OAuthUser`, `Gateway`) are the principal and resource types. They may carry attributes (`= { id: String }`) and, in the fuller template, `tags` (e.g. `entity OAuthUser = { id: String } tags String;`).\n",
+  "new": "- **`entity` declarations** (`OAuthUser`, `Gateway`) are the principal and resource types. They may carry attributes (`= { id: String }`) and, in the fuller template, `tags` (e.g. `entity OAuthUser = { id: String } tags String;`). An entity type may sit in a hierarchy (`entity OAuthUser in [Team];`), and every ancestor in that hierarchy (each type in its `in [...]` list, followed transitively) must be a standard entity type: Cedar 4.14 also accepts an enumerated one (`entity Tier enum [\"gold\", \"silver\"];`), but Dogwood's validator rejects it (see [Validation](08-formal-specification.md#53-the-cedar-side)).\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/02-policy-language.md",
+  "old": "Common types may be cross-namespace (`Shared::Addr`) or chained (`type Outer = Inner;`); Dogwood resolves both.\n",
+  "new": "Common types may be cross-namespace (`Shared::Addr`) or chained (`type Outer = Inner;`); Dogwood resolves both. A chain must end in a type: one that leads back to itself, directly or through other common types, cannot be resolved, and an action whose `context` reaches one makes the schema augmentation of `lower`, `validate` and `replay` fail.\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/03-event-schema.md",
+  "old": "### Nested records and deep hierarchy\n",
+  "new": "A named field's type must name a type: a Cedar primitive, or an entity or common type of the action schema. The event schema itself accepts a field typed with a name the action schema does not declare (`weird: Nope`), but nothing is known about such a field's values, so a predicate can only match it with a wildcard (`_` or `*`): any other argument for it is a validation error.\n\n### Nested records and deep hierarchy\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/04-temporal-expressions.md",
+  "old": "| Array | `[a, b, c]` | |\n",
+  "new": "| Array | `[a, b, c]` | not a predicate argument: a predicate argument that is or holds an array constant is a lowering error |\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "Checks run in a fixed order — **Cedar side, then temporal,\nthen provider** — accumulating into two channels with no short-circuit across\nchecks.",
+  "new": "Checks run in a fixed order — **Cedar side, then temporal,\nthen provider** — accumulating into two channels with no short-circuit across\nchecks. The Cedar side's findings are followed by two checks of Dogwood's own,\nbefore the temporal ones: the schema's well-formedness (**V-Schema-Ancestors**,\n§5.3), then the policies' reads of the request context\n(**V-Cedar-ContextRead**). Within one check, findings that concern several\nentity types or request environments come in the order of their names, and\neach finding is listed once."
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "(a condition false for every request its scope admits), which is an error\n(**V-Cedar-Impossible**).",
+  "new": "(a condition false for every request its scope admits), which is an error\n(**V-Cedar-Impossible**). The augmented schema must also be well-formed as the\nformal specification defines it: every ancestor of an entity type is a\nstandard entity type. Cedar 4.14 accepts an enumerated ancestor; Dogwood does\nnot, and reports each enumerated entity type that is an ancestor as an error\nwith the code `schema` and no position in the policy source\n(**V-Schema-Ancestors**)."
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "  guard). A check fires only when both types are known (**TEMP-Type-***).\n",
+  "new": "  guard). A check fires only when both types are known (**TEMP-Type-***).\n  An event field whose declared type names no type of the schema is not\n  unknown in this sense: no value is known to have its type, so only a\n  wildcard matches it, and any other argument for it is rejected.\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "named like a hoisted leaf (`<rule>__temporal_<n>`, `providers`), is an error\nwith the code `context` (**V-Cedar-ContextRead**).",
+  "new": "named like a hoisted leaf (`<rule>__temporal_<n>`, `providers`), is an error\nwith the code `context` (**V-Cedar-ContextRead**). Those names are lowering's\nown: an action schema whose `context` declares an attribute with one of them\ncannot be augmented, and lowering fails."
+ },
+ {
+  "op": "replace",
+  "file": "guide/08-formal-specification.md",
+  "old": "| 7 | the temporal engine values the leaves: it does not fail, and it returns a value for exactly the hoisted leaves | `temporal evaluation: …` (**FailClosed-Temporal**) |\n",
+  "new": "| 7 | the temporal engine values the leaves: it does not fail, and it returns a value for exactly the hoisted leaves (the built-in engine always does) | `temporal evaluation: …` (**FailClosed-Temporal**) |\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/10-provider-schema.md",
+  "old": "and must not list a value twice; a `paramType` must be one of the kinds above; an `entity`\n",
+  "new": "and must not list a value twice; a `paramType` must be one of the kinds above (an unknown\none only warns, as the table says, unless the declaration also gives an `entityType`, which\nmakes it an error); an `entity`\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/12-cli.md",
+  "old": "Every policy command takes the policy set as a positional argument (a `.dw`\nfile, or `-` to read stdin). Checking commands also accept\n`--format human|json` (human is the default; JSON is the stable machine shape).\n",
+  "new": "Every policy command takes the policy set as a positional argument (a `.dw`\nfile, or `-` to read stdin). Every other file a command reads (`--policy-schema`,\n`--event-schema`, `--providers`, `--macros`, `--trace`, and the file of a\n`schema` command) may be `-` too; stdin is read once, so it can stand for one of\nthem. Every command except `format` also accepts `--format human|json` (human\nis the default; JSON is the stable machine shape, described under\n[JSON output](#json-output)). `validate`, `lower` and `replay` need\n`--policy-schema`, and `replay` also needs `--trace`; `check-parse` takes no\n`--policy-schema`, and `format` takes nothing but the policy file. A missing\nor unknown option is a usage error.\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/12-cli.md",
+  "old": "A build without the `mcp-schema` feature has no `schema mcp` subcommand, so\n",
+  "new": "Except in `format`, which prints a policy set it cannot parse as it is, an\ninput that cannot be parsed, macro-expanded or lowered (a policy set, a macro\nlibrary, an action or event schema, a providers file or a trace) stops the\ncommand before it prints anything. With `--format human` the diagnostic\ngoes to stderr and stdout stays empty; with `--format json` the command prints\nthat diagnostic, as one JSON object, instead of its usual output. Either way\nit exits 2. A policy set that lowers is then checked: `validate`'s `error:`\nand `FAILED:` lines report those checks' findings.\n\nA build without the `mcp-schema` feature has no `schema mcp` subcommand, so\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/12-cli.md",
+  "old": "Parses, lowers against the schema, and type-checks in one shot — the two error\nclasses (syntax/macro/lowering failures, and schema-aware type errors) are both\ncovered, so a clean `validate` means the policy is fully accepted. On success it\nprints `OK: validation passed …` and exits 0; on rejection it prints each\nfinding on a line of its own (`error: …`, then any `warning: …`), then\n`FAILED: <n> error(s), <m> warning(s).`, and exits 2.\n",
+  "new": "Parses, lowers against the schema, and type-checks in one shot — the two error\nclasses (syntax/macro/lowering failures, and schema-aware type errors) are both\ncovered, so a clean `validate` means the policy is fully accepted. A syntax,\nmacro or lowering failure is reported as every command reports one (see\n[Commands](#commands)). A policy set that lowers is type-checked: on success\n`validate` prints `OK: validation passed …` and exits 0; when the checks find\nerrors it prints each finding on a line of its own (`error: …`, then any\n`warning: …`), then `FAILED: <n> error(s), <m> warning(s).`, and exits 2.\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/12-cli.md",
+  "old": "`replay` fails at every provider evaluation with *\"rhai implementation has no\nscript.\"*",
+  "new": "`replay` fails at every provider evaluation, with an error saying that the rhai\nimplementation has no script."
+ },
+ {
+  "op": "replace",
+  "file": "guide/12-cli.md",
+  "old": "Each line is `@<timestamp> (time point <index>): ALLOW|DENY`, optionally followed\nby `[rules: …]` — the indices of the `.dw` rules that determined the decision.\n",
+  "new": "Each line is `@<timestamp> (time point <index>): ALLOW|DENY`, optionally followed\nby `[rules: …]` — the indices of the `.dw` rules that determined the decision.\nThe `<index>` counts the trace's decision points from 0.\n"
+ },
+ {
+  "op": "replace",
+  "file": "guide/12-cli.md",
+  "old": "in trace order as `@<timestamp> (event <position> of the trace): REJECTED, not\ningested`, followed by its `    error: nonconforming event: …` line.",
+  "new": "in trace order as `@<timestamp> (event <position> of the trace): REJECTED, not\ningested`, followed by its `    error: nonconforming event: …` line; the\n`<position>` counts all the trace's events from 0."
+ },
+ {
+  "op": "replace",
+  "file": "guide/12-cli.md",
+  "old": "Each non-blank line is one timepoint of the form `@<ts> [envelopes] <Action>(<field>: <value>, …)` (the optional `scope` / `entities` / `request_context` envelopes are described below).",
+  "new": "Each non-blank line is one timepoint of the form `@<ts> [envelopes] <Action>(<field>: <value>, …)`: `<ts>` is a signed 64-bit integer, a count of seconds that may be negative, and the optional `scope` / `entities` / `request_context` envelopes are described below."
+ },
+ {
+  "op": "replace",
+  "file": "guide/12-cli.md",
+  "old": "- `request_context(<group>: { … }, …)` — the request-only context the Cedar request is built from (`input`, `system`, …), distinct from the trailing logged group.",
+  "new": "- `request_context(<attribute>: <value>, …)` — the request-only context the Cedar request is built from, distinct from the trailing logged group: each top-level attribute of the context, most often a record (`input: { … }`, `system: { … }`), and otherwise whatever value the action's context type gives it (`session: \"s-1\"`, `level: 2`)."
+ },
+ {
+  "op": "replace",
+  "file": "guide/12-cli.md",
+  "old": "## Pipelines and stdin\n",
+  "new": "## JSON output\n\nWith `--format json` every command except `format` prints one JSON object (key\norder and layout carry no meaning), and its exit status is the same as in human\nform. A fatal diagnostic, from any command, is `{ \"message\", \"severity\",\n\"spanned\" }` plus, when it has them, `\"labels\"` (each `{ \"start\", \"len\" }`, byte\noffsets into the input, with a `\"message\"` when the label has one), `\"help\"`\nand `\"related\"` (further diagnostics of the same shape). Otherwise:\n\n- `check-parse`: `{ \"policy_count\", \"policies\" }`, with one entry per policy:\n  `{ \"uses_temporal\", \"temporal_count\", \"provider_invocations\",\n  \"undeclared_providers\" }` (the providers it calls, and those of them the\n  service schema does not declare).\n- `validate`: `{ \"passed\", \"passed_without_warnings\", \"errors\", \"warnings\" }`;\n  each finding is a diagnostic as above with a `\"code\"` (`cedar` for Cedar's\n  validator, `extension` for Dogwood's own checks).\n- `lower`: `{ \"cedar_policies\", \"cedar_schema\", \"cedar_schema_json\",\n  \"self_contained\", \"temporal_fields\", \"provider_fields\", \"decision_kinds\" }` —\n  the three texts that `--emit` chooses among, whatever `--emit` says, then\n  whether the Cedar is self-contained, the hoisted fields and the decision\n  kinds. The texts are strings, exactly as `--emit` prints them.\n- `explain`: `{ \"text\", \"informalization\" }` — the human text, and the phrase\n  trees: `\"preamble\"` (the pins line, or `null`) and `\"rules\"`, each phrase\n  `{ \"template\", \"layout\", \"span\", \"children\" }`, where `\"template\"` holds\n  `{0}`, `{1}`, … for its children, `\"layout\"` is `Inline`, `Block` or\n  `Hanging`, and `\"span\"` is the phrase's `[start, end]` byte range in the\n  policy (`null` when it has none).\n- `replay`: `{ \"verdicts\" }`, and `\"rejected\"` when the trace has rejected\n  events. Each verdict is `{ \"index\", \"timestamp\", \"verdict\",\n  \"determining_rules\", \"errors\" }` (`verdict` is `allow` or `deny`, `errors`\n  the messages of a decision that failed closed); each rejected event is\n  `{ \"position\", \"timestamp\", \"reason\" }`.\n- `schema action|event|providers`: `{ \"kind\", \"ok\" }`, with `\"warnings\"` when\n  there are any.\n\nField names and value shapes are those of the build; as everywhere, every\nmessage is the build's own text.\n\n## Pipelines and stdin\n"
+ },
+ {
+  "op": "replace",
+  "file": "examples/alert_some_login/events.dwschema",
+  "old": "//   dogwood replay --event-schema configuration/event-schemas/unpinned.dwschema ...\n",
+  "new": "//   dogwood replay --event-schema events.dwschema ...\n"
+ },
+ {
+  "op": "replace",
+  "file": "examples/alert_exactly_three_transfers/events.dwschema",
+  "old": "//   dogwood replay --event-schema configuration/event-schemas/unpinned.dwschema ...\n",
+  "new": "//   dogwood replay --event-schema events.dwschema ...\n"
  }
 ]

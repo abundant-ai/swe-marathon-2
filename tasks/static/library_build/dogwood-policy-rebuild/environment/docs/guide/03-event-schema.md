@@ -63,6 +63,8 @@ A named field injects one field with an explicit type. The type can take three f
 
 Field names must be unique **at every level**, not just the top — a duplicate name inside a nested record is also an error.
 
+A named field's type must name a type: a Cedar primitive, or an entity or common type of the action schema. The event schema itself accepts a field typed with a name the action schema does not declare (`weird: Nope`), but nothing is known about such a field's values, so a predicate can only match it with a wildcard (`_` or `*`): any other argument for it is a validation error.
+
 ### Nested records and deep hierarchy
 
 Records can nest as deeply as you like, and field identity is by *dotted path*:

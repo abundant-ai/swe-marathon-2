@@ -32,8 +32,15 @@ See [The policy language](02-policy-language.md) for the action schema, and
 ## Commands
 
 Every policy command takes the policy set as a positional argument (a `.dw`
-file, or `-` to read stdin). Checking commands also accept
-`--format human|json` (human is the default; JSON is the stable machine shape).
+file, or `-` to read stdin). Every other file a command reads (`--policy-schema`,
+`--event-schema`, `--providers`, `--macros`, `--trace`, and the file of a
+`schema` command) may be `-` too; stdin is read once, so it can stand for one of
+them. Every command except `format` also accepts `--format human|json` (human
+is the default; JSON is the stable machine shape, described under
+[JSON output](#json-output)). `validate`, `lower` and `replay` need
+`--policy-schema`, and `replay` also needs `--trace`; `check-parse` takes no
+`--policy-schema`, and `format` takes nothing but the policy file. A missing
+or unknown option is a usage error.
 
 Every command uses the same exit codes.
 
@@ -44,6 +51,15 @@ Every command uses the same exit codes.
   argument), input that the command cannot process (for example, a policy,
   schema, or trace that does not parse), or a `validate` run that
   finds errors.
+
+Except in `format`, which prints a policy set it cannot parse as it is, an
+input that cannot be parsed, macro-expanded or lowered (a policy set, a macro
+library, an action or event schema, a providers file or a trace) stops the
+command before it prints anything. With `--format human` the diagnostic
+goes to stderr and stdout stays empty; with `--format json` the command prints
+that diagnostic, as one JSON object, instead of its usual output. Either way
+it exits 2. A policy set that lowers is then checked: `validate`'s `error:`
+and `FAILED:` lines report those checks' findings.
 
 A build without the `mcp-schema` feature has no `schema mcp` subcommand, so
 `dogwood schema mcp` exits 2 there. `lower`, `explain`, and `replay` do not run
@@ -87,10 +103,12 @@ dogwood validate policy.dw --policy-schema schema.cedarschema \
 
 Parses, lowers against the schema, and type-checks in one shot — the two error
 classes (syntax/macro/lowering failures, and schema-aware type errors) are both
-covered, so a clean `validate` means the policy is fully accepted. On success it
-prints `OK: validation passed …` and exits 0; on rejection it prints each
-finding on a line of its own (`error: …`, then any `warning: …`), then
-`FAILED: <n> error(s), <m> warning(s).`, and exits 2.
+covered, so a clean `validate` means the policy is fully accepted. A syntax,
+macro or lowering failure is reported as every command reports one (see
+[Commands](#commands)). A policy set that lowers is type-checked: on success
+`validate` prints `OK: validation passed …` and exits 0; when the checks find
+errors it prints each finding on a line of its own (`error: …`, then any
+`warning: …`), then `FAILED: <n> error(s), <m> warning(s).`, and exits 2.
 
 ```text
 $ dogwood validate examples/write_after_read/policy.dw \
@@ -108,8 +126,8 @@ wants.
 external `.rhai`, resolved relative to the declarations file). The CLI reads
 `--providers` **as text**, so a `scriptFile` reference is never resolved:
 `validate` and `lower` still work (they don't evaluate providers), but
-`replay` fails at every provider evaluation with *"rhai implementation has no
-script."* When a bundle will be driven through the CLI, put the Rhai inline
+`replay` fails at every provider evaluation, with an error saying that the rhai
+implementation has no script. When a bundle will be driven through the CLI, put the Rhai inline
 under `implementation.script` — every runnable bundle in
 [`examples/`](../examples/) does exactly this. (An `implementation`-less,
 interface-only declaration validates and lowers through the CLI too, but
@@ -136,13 +154,15 @@ $ dogwood replay examples/write_after_read/policy.dw \
 
 Each line is `@<timestamp> (time point <index>): ALLOW|DENY`, optionally followed
 by `[rules: …]` — the indices of the `.dw` rules that determined the decision.
+The `<index>` counts the trace's decision points from 0.
 A decision that failed closed is a `DENY` followed by one `    error: …` line
 per error, such as `nonconforming request: …` for a request context that lacks
 an attribute its action's context requires. History-only events (a non-decision
 event kind) update the history but produce no line. A history event that does
 not conform to the event schema is rejected, and not ingested; it is reported
 in trace order as `@<timestamp> (event <position> of the trace): REJECTED, not
-ingested`, followed by its `    error: nonconforming event: …` line. This is the
+ingested`, followed by its `    error: nonconforming event: …` line; the
+`<position>` counts all the trace's events from 0. This is the
 way to catch a policy that validates but does not *mean* what you intended — a
 mis-pinned "same user" correlation, or a window that is too narrow — and a trace
 whose data does not match its schemas. `--format json` emits a structured
@@ -265,7 +285,7 @@ before running `validate`.
 
 ## The trace file format
 
-`dogwood replay` reads the event trace named by `--trace`, a `.log` file. Each non-blank line is one timepoint of the form `@<ts> [envelopes] <Action>(<field>: <value>, …)` (the optional `scope` / `entities` / `request_context` envelopes are described below). Values use Cedar surface forms (entity refs `Ns::Type::"id"`, strings, integers, decimals, `true`/`false`, arrays, objects, and the extension constructors `datetime("…")`, `duration("…")`, `ip("…")`, `decimal("…")`). `replay` feeds the events to the authorizer in the order of their lines. A trace that does not parse is an error, and `replay` exits 2.
+`dogwood replay` reads the event trace named by `--trace`, a `.log` file. Each non-blank line is one timepoint of the form `@<ts> [envelopes] <Action>(<field>: <value>, …)`: `<ts>` is a signed 64-bit integer, a count of seconds that may be negative, and the optional `scope` / `entities` / `request_context` envelopes are described below. Values use Cedar surface forms (entity refs `Ns::Type::"id"`, strings, integers, decimals, `true`/`false`, arrays, objects, and the extension constructors `datetime("…")`, `duration("…")`, `ip("…")`, `decimal("…")`). `replay` feeds the events to the authorizer in the order of their lines. A trace that does not parse is an error, and `replay` exits 2.
 
 ```text
 @0 scope(principal: Drupe::OAuthUser::"alice", resource: Drupe::Gateway::"gw1") request_context(input: { user: "alice" }) Drupe::Action::"Login"::request(input: { user: "alice" }, callerPrincipal: Drupe::OAuthUser::"alice", callerResource: Drupe::Gateway::"gw1")
@@ -277,7 +297,7 @@ Each `.log` line is: the `@<timestamp>`, then up to three optional **request-sup
 
 - `scope(principal: …, resource: …)` — the request's principal and resource entities. (A decision-kind event omitting `scope(...)` has no principal/resource and fails closed to `Deny`.) The envelope does not log them: the trailing logged group writes `callerPrincipal` / `callerResource` itself, and the default event schema requires them, since it pins `callerPrincipal` and a logged caller field must hold the request's own.
 - `entities(<uid>: { <attr>: … }, …)` — the entity attribute store: each `uid` (e.g. `Drupe::OAuthUser::"alice"`) maps to its attributes, so a policy can read `principal.<attr>` / `resource.<attr>` or a provider can resolve one. A uid `"id"` containing `"` or `\` is escaped as in Cedar (`"a\"b"`). An entry may end with `in [ <parent uid>, … ]`, its direct parents, so that `in` sees the hierarchy: `Drupe::OAuthUser::"alice": { } in [Drupe::Team::"ops"]`.
-- `request_context(<group>: { … }, …)` — the request-only context the Cedar request is built from (`input`, `system`, …), distinct from the trailing logged group. A field a policy reads via `context.<group>.<name>` must appear here; a field a temporal predicate correlates on must appear in the trailing logged group. A field both need (`input`) is supplied in both. The context must be an instance of the action's context record type: every attribute it requires, such as the Drupe template's `system: { now: datetime }`, and no other. A value of an extension type is written as Cedar writes it: `system: { now: datetime("2024-01-01T00:00:00Z") }`, or `duration("1h")`, `ip("10.0.0.1")`, `decimal("1.50")`.
+- `request_context(<attribute>: <value>, …)` — the request-only context the Cedar request is built from, distinct from the trailing logged group: each top-level attribute of the context, most often a record (`input: { … }`, `system: { … }`), and otherwise whatever value the action's context type gives it (`session: "s-1"`, `level: 2`). A field a policy reads via `context.<group>.<name>` must appear here; a field a temporal predicate correlates on must appear in the trailing logged group. A field both need (`input`) is supplied in both. The context must be an instance of the action's context record type: every attribute it requires, such as the Drupe template's `system: { now: datetime }`, and no other. A value of an extension type is written as Cedar writes it: `system: { now: datetime("2024-01-01T00:00:00Z") }`, or `duration("1h")`, `ip("10.0.0.1")`, `decimal("1.50")`.
 
 The envelopes appear in that order (`scope`, then `entities`, then `request_context`) before the event group, and any may be omitted. Parsing is **strict**: an unterminated envelope, or a **duplicate key** within any group (a repeated uid in `entities(...)`, a repeated group in `scope`/`request_context`, a repeated field in the logged group or a nested record), is a parse error rather than a silent last-wins — so a hand-written trace cannot mis-decide on an accidental duplicate.
 
@@ -306,6 +326,44 @@ correctly increasing timestamps.
 ## Retries and event ids
 
 `dogwood replay` has no notion of an event id: every event of the trace is a new submission, and an event that a trace submits twice is ingested twice. An implementation that accepts event ids follows the event-log contract of [A formal specification of Dogwood](08-formal-specification.md#66-the-event-log-contract-and-retries): its retry window, and when a resubmission is a retry or a duplicate.
+
+## JSON output
+
+With `--format json` every command except `format` prints one JSON object (key
+order and layout carry no meaning), and its exit status is the same as in human
+form. A fatal diagnostic, from any command, is `{ "message", "severity",
+"spanned" }` plus, when it has them, `"labels"` (each `{ "start", "len" }`, byte
+offsets into the input, with a `"message"` when the label has one), `"help"`
+and `"related"` (further diagnostics of the same shape). Otherwise:
+
+- `check-parse`: `{ "policy_count", "policies" }`, with one entry per policy:
+  `{ "uses_temporal", "temporal_count", "provider_invocations",
+  "undeclared_providers" }` (the providers it calls, and those of them the
+  service schema does not declare).
+- `validate`: `{ "passed", "passed_without_warnings", "errors", "warnings" }`;
+  each finding is a diagnostic as above with a `"code"` (`cedar` for Cedar's
+  validator, `extension` for Dogwood's own checks).
+- `lower`: `{ "cedar_policies", "cedar_schema", "cedar_schema_json",
+  "self_contained", "temporal_fields", "provider_fields", "decision_kinds" }` —
+  the three texts that `--emit` chooses among, whatever `--emit` says, then
+  whether the Cedar is self-contained, the hoisted fields and the decision
+  kinds. The texts are strings, exactly as `--emit` prints them.
+- `explain`: `{ "text", "informalization" }` — the human text, and the phrase
+  trees: `"preamble"` (the pins line, or `null`) and `"rules"`, each phrase
+  `{ "template", "layout", "span", "children" }`, where `"template"` holds
+  `{0}`, `{1}`, … for its children, `"layout"` is `Inline`, `Block` or
+  `Hanging`, and `"span"` is the phrase's `[start, end]` byte range in the
+  policy (`null` when it has none).
+- `replay`: `{ "verdicts" }`, and `"rejected"` when the trace has rejected
+  events. Each verdict is `{ "index", "timestamp", "verdict",
+  "determining_rules", "errors" }` (`verdict` is `allow` or `deny`, `errors`
+  the messages of a decision that failed closed); each rejected event is
+  `{ "position", "timestamp", "reason" }`.
+- `schema action|event|providers`: `{ "kind", "ok" }`, with `"warnings"` when
+  there are any.
+
+Field names and value shapes are those of the build; as everywhere, every
+message is the build's own text.
 
 ## Pipelines and stdin
 

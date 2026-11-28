@@ -9,12 +9,13 @@ running total over a day, no logout since the last login. Our policy authors, ou
 and incident tools all work through Dogwood's command-line tool, `dogwood`, and we run the 1.2.0
 build of it.
 
-Dogwood's own interpreter is published to explain the language, not to run in production, and we
-want an implementation we own outright and can change and license as we choose. Our lawyers have
-asked for it to be written clean-room: the people who write it work only from the published guide
-and from running the 1.2.0 build, and never read Dogwood's source code. Write that implementation.
-It takes over from the 1.2.0 build everywhere we use `dogwood`, and everything that uses it depends
-on what it prints:
+Dogwood's own interpreter is published to explain the language, not to run in production, and our
+security review lets only code we wrote ourselves into the path that authorizes our agents' calls.
+Our security reviewers have also asked for it to be written clean-room, so that we can show where
+every line came from: the people who write it work only from the published guide and from running
+the 1.2.0 build, and never read Dogwood's source code. Write that implementation. It takes over
+from the 1.2.0 build everywhere we use `dogwood`, and everything that uses it depends on what it
+prints:
 
 - Every change to a policy goes through `dogwood validate --format json` in our CI. The exit status
   decides whether the change can merge, and the review page shows each finding's message at its
@@ -32,15 +33,11 @@ on what it prints:
 - Our schema repository checks every file with `dogwood schema action`, `schema event` and
   `schema providers`.
 
-Each of them was built around what the 1.2.0 build prints and the status it ends with, so a
-report, message or exit status that changes breaks it.
-
 ## Context
 
-- The 1.2.0 build is installed as `dogwood` on `PATH`, execute-only, so that nobody in the clean
-  room reads its code: you can run it as often as you like, but not read, copy or inspect the
-  file. The clean-room rules cover the build too: do not disassemble, trace or dump it; learn what
-  it does only from what it prints.
+- The 1.2.0 build is installed as `dogwood` on `PATH`, execute-only, because the same rule covers
+  it: you can run it as often as you like, but not read, copy or inspect the file, and you must not
+  disassemble, trace or dump it. Learn what it does only from what it prints.
 - The build has arithmetic in comparison operands switched on: it is the `experimental-arithmetic`
   build that the guide describes.
 - Its documentation is in `/app/docs`:
@@ -71,33 +68,36 @@ Your implementation in `/app/dogwood-rebuild`: a Cargo project from which
   features in every combination, with their corner cases and their errors.
 - Our tools read standard output, with `--format human` and with `--format json`, and the exit
   status. Nothing of ours reads standard error, so what yours writes there is up to you.
-- In JSON output, layout and the order of keys inside an object do not matter. The rules listed
-  for a decision are a set to our incident tools, so their order does not matter either.
-  Everything else reaches our tools as it is printed: the order of lists, every message, every
-  span and every number.
+- In `--format json` output, layout and the order of keys inside an object do not matter. The
+  rules listed for a decision are a set to our incident tools, so their order does not matter
+  either. Everything else reaches our tools as it is printed: the order of lists, every field name,
+  every message, every span and every number. The Cedar texts `lower` emits, its Cedar JSON form
+  included, are filed byte for byte.
 - Our traces always have strictly increasing timestamps. What the build does with a trace whose
   timestamps repeat or go back does not matter to us.
-- When you finish, anything you left running is stopped, and our release machines build
-  `/app/dogwood-rebuild` from a clean copy of the directory:
-  - they use the same Rust toolchain and registry, without network access, on 4 cores and 8 GB of
-    memory, and give the build 20 minutes;
-  - the copy leaves out `target/`, links to directories, links that point outside the
-    directory, and pipes, sockets and devices; it may hold at most 100,000 files and 1 GB;
-  - everything the build and the tool need, apart from the toolchain and the registry, must be
-    inside the directory.
+- When you finish, anything you left running is stopped, and a copy of `/app/dogwood-rebuild` goes
+  to our release machines, which build it:
+  - the copy takes ordinary files and directories, and a link to a file inside the directory as
+    that file. It leaves out `target/` and any other directory of cargo's build output, links to
+    directories, links that lead out of the directory or nowhere, pipes, sockets and devices,
+    names that are not UTF-8, and anything nested more than 32 directories deep or with a path in
+    the directory longer than 1,000 bytes. What it takes may hold at most 100,000 files and 1 GB;
+    nothing of a larger project is copied;
+  - the release machines use the same Rust toolchain and registry, without network access, on 4
+    cores and 8 GB of memory, and give the build 20 minutes;
+  - everything the build needs, apart from the toolchain and the registry, must be inside the
+    directory. The built `dogwood` is then installed on its own, so it must not read anything from
+    the project when it runs: build what it needs into it.
 - Your `dogwood` must not call the 1.2.0 build. It replaces it, and will run where that build is
   not installed.
 - Our CI starts every `dogwood` the same way:
-  - it runs as an unprivileged user that cannot write to the project directory;
-  - each run gets a new, empty working directory holding only that run's files, with `HOME` and
-    `TMPDIR` set to new empty directories, and runs share nothing: whatever one run writes is gone
-    before the next starts;
+  - it runs as an unprivileged user, in a new, empty working directory holding only the files its
+    command line names, with `HOME` and `TMPDIR` set to new empty directories;
   - the environment holds only `PATH=/usr/local/bin:/usr/bin:/bin`, `LANG` and `LC_ALL` set to
     `C.UTF-8`, `TERM=dumb`, `NO_COLOR=1`, `HOME` and `TMPDIR`;
   - standard input holds what a command reads from `-` and is empty otherwise, standard output is
     a pipe, and none of the standard streams is a terminal;
-  - a run may start at most 512 processes and threads, write files of at most 256 MB, and print
-    at most 8 MB.
+  - runs share nothing: whatever one run leaves is gone before the next starts.
 - Each run finishes within 1 second and uses at most 2 GB of memory; CI stops any `dogwood` still
   running then. The 1.2.0 build finishes each of our runs well within that.
 - Out of scope, because nothing of ours uses it:

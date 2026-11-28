@@ -122,7 +122,9 @@ fails if two declared enums map to the same exported name (`A_B::C` and `A::B_C`
 
 Loading also checks each declaration on its own: an enum in `entityTypes` must be named
 `Ns::Type` in a namespace this file declares providers in, must list at least one value,
-and must not list a value twice; a `paramType` must be one of the kinds above; an `entity`
+and must not list a value twice; a `paramType` must be one of the kinds above (an unknown
+one only warns, as the table says, unless the declaration also gives an `entityType`, which
+makes it an error); an `entity`
 `paramType` requires an `entityType`, takes no other field such as `fields` or `items`, and
 its `entityType` must be a fully qualified name, outside the reserved `__cedar` namespace,
 that names an enum when it is in this file's namespaces.
