@@ -14,16 +14,16 @@ and JSON output.
 the single-step fallback that plan kept: the 1.2.0 rebuild, graded by the same verifier and
 families. The two-step plan stays in `notes/` as history.
 
-**Status (2026-11-27, Phase B done, GO):**
-- The task image builds the release from pinned sources, and the grading image records gold from
-  the same build.
-- The grader, the first case set (3,758 cases, private) and the oracle exist. Locally the oracle
-  scores 1.0, the empty submission 0 and the M-dedup source 0.83.
-- See the development log and `notes/PHASE-B-REPORT.md` for what has been run.
-- No trial has run.
-- The guide is not in the working machine yet: its trim and scrub are the next work item.
-- V's near-miss pairs, wider K and F cases, the stub zoo and the coverage inventory are still to
-  do.
+**Status (2026-11-27, Phase C done: ready for the independent QA):**
+- The working machine ships the trimmed guide in `/app/docs`. The brief states the run conditions
+  and no session budget.
+- The private case set has 4,282 cases (2,304 units). Every documented feature and stated
+  restriction has its cases, and all 33 mutants are killed.
+- Locally: the oracle scores 1.0 twice and the empty submission 0 twice; the stub zoo, the
+  probes and the determinism, leak and wording checks pass. The 12-item gate table is in
+  `notes/PHASE-C-REPORT.md`.
+- No trial has run, and nothing has been uploaded. The platform's oracle and nop runs come with the
+  first upload.
 
 The rest of this README and the `notes/` folder are author notes. Nothing here is shipped to the
 agent.
@@ -159,7 +159,14 @@ and its reason is recorded.
 
 The kill matrix is 33 one-change mutants of the release source (`checks/mutants/`).
 
-**Result on the final case set:** RESULT-PENDING.
+**Result on the final case set** (4,282 cases): 0 gaps.
+- 228 features are evidenced by use and 37 ids by mutant kills.
+- 140 restrictions are evidenced by refusals.
+- 2 restrictions are unchecked, with their reasons recorded: the out-of-contract timestamp rule,
+  and a failure the built-in engine cannot reach.
+- The 10 out-of-scope ids have no cases.
+- Every id's quote is in the shipped guide.
+- All 33 mutants are killed.
 
 ## Hackability assessment
 
@@ -245,3 +252,43 @@ in `notes/PHASE-B-REPORT.md`.
   name and ID.
 - **Next:** the docs trim and scrub into `/app/docs`, V near-miss pairs, wider K and F cases, the
   coverage inventory, the stub zoo and the leak scan.
+
+### 2026-11-27 (Phase C)
+
+Phase C took the task to QA-ready, in local Docker (arm64). Details and the 12-item gate table are
+in `notes/PHASE-C-REPORT.md`.
+
+- **The agent's material:**
+  - The guide ships in `/app/docs`, built from the pinned source by 319 scripted edits.
+  - Seven statements that contradicted the build were corrected.
+  - The help and version flags are now stated in the guide.
+  - An independent review judged the material clean.
+  - The brief states the run conditions in the requester's voice, says what our tools read (not
+    "the same output as the build"), and gives no session budget.
+- **Cases:**
+  - The final set is 4,282 cases in 2,304 units over 1,150 bundles, selected so that no unit
+    can be passed by a trivial program.
+  - V uses near-miss pairs, and K has eight dual shapes.
+  - 96 restriction templates and 29 feature templates each break or use one stated rule.
+  - The generator seed is kept.
+  - Answers that hash order picks were found and removed.
+- **Coverage:** 0 gaps over 417 ids, and all 33 mutants are killed. The band check: M-dedup 0.830,
+  M-scope 0.950 and M-global 0.900, each moving only its own family.
+- **Grader:**
+  - Output comparison never raises, and runs share nothing.
+  - The grader adopts orphans.
+  - The built program is copied from an `O_NOFOLLOW` descriptor.
+  - The output folder is closed to the submission's users while they can act, and outputs are
+    created fresh, the reward last.
+  - Gold is recorded from a file named `dogwood`.
+- **Checks:**
+  - Determinism: 3 runs plus 1 perturbed run, all 4,282 cases identical after normalisation.
+  - Leak scan and wording sweep: clean.
+  - Shipped examples: 93 of 93 match.
+  - Oracle: 1.0 twice (about 2 minutes). Empty submission: 0 twice.
+  - Stubs, probes and stop hook: as the report's gate table lists.
+- **Close-out:**
+  - The flat bundle's content hash is `30413844e28b…`, the same when packaged twice, and
+    `oddish preflight` passes.
+  - The private set is backed up to the private store (`dogwood-tests-private-phaseC.bundle`).
+- **Next:** the independent 20-pass QA, then the first upload.

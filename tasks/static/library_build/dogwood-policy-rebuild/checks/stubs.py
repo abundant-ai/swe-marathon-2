@@ -79,9 +79,13 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 
 fn main() {
-    // OUT_DIR is <target>/<profile>/build/<package>-<hash>/out.
+    // OUT_DIR lies under <target>/release/build/ (its depth below depends on cargo's version).
     let out = PathBuf::from(std::env::var("OUT_DIR").unwrap());
-    let path = out.ancestors().nth(3).unwrap().join("dogwood");
+    let release = out
+        .ancestors()
+        .find(|p| p.file_name().map_or(false, |n| n == "release"))
+        .unwrap();
+    let path = release.join("dogwood");
     std::fs::write(&path, b"not a program\\n").unwrap();
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
 }
