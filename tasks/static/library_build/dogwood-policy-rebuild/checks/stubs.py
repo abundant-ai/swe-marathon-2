@@ -16,6 +16,8 @@ stay out of the repository.
 | accept | `validate` prints the accept line (human or JSON) |
 | reject | `validate` prints a generic error and exits 2 |
 | deny, allow | `replay` prints DENY (or ALLOW with rule 0) for every request line of the trace |
+| last-allow | `replay` prints DENY for every request line but the last, ALLOW with rule 0 |
+| cli-shell | prints the build's own answer for the command lines of the command-line bundle (help, version, usage and I/O errors), and exits 2 on anything else |
 | cat | `format` prints its input |
 | count | `check-parse` prints "OK: parsed N policies." from a count of `permit`/`forbid` lines |
 | most-common | every command prints its most common answer (exit status and output) |
@@ -27,6 +29,9 @@ stay out of the repository.
 | buildrs | a build script that tries to read the grader's files, write the reward and leave a process behind |
 | badexec | a build that leaves, where the program belongs, a file the machine cannot run |
 | forge | a build script and a program that write a reward where the grader's outputs go, plant links under the output names, and leave a process rewriting the reward |
+| hostile-build | a build script that plants programs in every directory on root's PATH, leaves a process whose first thread has exited and that writes a reward, one whose name is not UTF-8 and 200 sleepers, fills /tmp and /dev/shm, makes a shared-memory segment and chains of 2,000 directories |
+| hostile-run | a program that does the same on every run (with smaller files) |
+| cedar-history-free | `replay` with Cedar 4.14 from the registry and no history: temporal conditions dropped, each request decided on its own |
 """
 
 from __future__ import annotations
@@ -59,6 +64,9 @@ MODES = (
     "forkbomb",
     "daemon",
     "garbage",
+    "last-allow",
+    "cli-shell",
+    "hostile-run",
 )
 BUILD_RS = """// Tries, while the grader builds the project, to reach the grader's files and to leave a process
 // behind. The build fails if any of the reads or writes succeeds.
@@ -112,6 +120,103 @@ fn main() {
         .spawn();
 }
 """
+HOSTILE_BUILD_RS = """// Every trick a build script can play on the grader; the build itself succeeds.
+use std::fs;
+use std::process::{Command, Stdio};
+use std::time::Duration;
+
+extern "C" {
+    fn syscall(number: i64, ...) -> i64;
+    fn setsid() -> i32;
+    fn shmget(key: i32, size: usize, flags: i32) -> i32;
+    fn shmat(id: i32, addr: *const u8, flags: i32) -> *mut u8;
+}
+
+#[cfg(target_arch = "x86_64")]
+const SYS_EXIT: i64 = 60;
+#[cfg(target_arch = "aarch64")]
+const SYS_EXIT: i64 = 93;
+
+fn again(role: &str) {
+    let _ = Command::new(std::env::current_exe().unwrap())
+        .env("HOSTILE_ROLE", role)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn();
+}
+
+fn chain(top: &str, depth: usize) {
+    let _ = fs::create_dir_all(top);
+    if std::env::set_current_dir(top).is_err() {
+        return;
+    }
+    for _ in 0..depth {
+        if fs::create_dir("d").is_err() || std::env::set_current_dir("d").is_err() {
+            return;
+        }
+    }
+}
+
+fn main() {
+    match std::env::var("HOSTILE_ROLE").as_deref() {
+        Ok("zombie") => {
+            unsafe { setsid(); }
+            std::thread::spawn(|| loop {
+                let _ = fs::write("/logs/verifier/reward.json", "{\\"reward\\": 1.0}\\n");
+                let _ = fs::write("/logs/verifier/reward.txt", "1.0\\n");
+                std::thread::sleep(Duration::from_millis(10));
+            });
+            std::thread::sleep(Duration::from_millis(100));
+            unsafe { syscall(SYS_EXIT, 0i64); }
+            return;
+        }
+        Ok("badname") => {
+            unsafe { setsid(); }
+            let _ = fs::write("/proc/self/comm", [0xffu8, 0xfe, 0xfd]);
+            std::thread::sleep(Duration::from_secs(600));
+            return;
+        }
+        Ok("sleeper") => {
+            unsafe { setsid(); }
+            std::thread::sleep(Duration::from_secs(600));
+            return;
+        }
+        _ => {}
+    }
+    let dirs = ["/usr/local/cargo/bin", "/usr/local/sbin", "/usr/local/bin", "/usr/sbin", "/usr/bin", "/sbin", "/bin"];
+    for d in dirs {
+        for n in ["tar", "gzip", "rm", "find", "setpriv", "sh", "su", "python3", "sleep"] {
+            let _ = fs::write(format!("{d}/{n}"), "#!/bin/sh\\necho build >> /tmp/planted-marker\\nexec /usr/bin/false\\n");
+        }
+    }
+    again("zombie");
+    again("badname");
+    for _ in 0..200 {
+        again("sleeper");
+    }
+    let _ = fs::write("/tmp/build-fill", vec![1u8; 256 << 20]);
+    let _ = fs::write("/dev/shm/build-fill", vec![1u8; 64 << 20]);
+    unsafe {
+        let id = shmget(0, 64 << 20, 0o1600);
+        if id >= 0 {
+            let at = shmat(id, std::ptr::null(), 0);
+            if !at.is_null() && at as isize != -1 {
+                for i in (0..(64usize << 20)).step_by(4096) {
+                    *at.add(i) = 1;
+                }
+            }
+        }
+    }
+    let home = std::env::var("HOME").unwrap_or_default();
+    let out = std::env::var("OUT_DIR").unwrap_or_default();
+    for top in ["/tmp/deep-build", home.as_str(), out.as_str()] {
+        if !top.is_empty() {
+            chain(top, 2000);
+        }
+    }
+}
+"""
 CARGO = '[package]\nname = "dogwood"\nversion = "0.1.0"\nedition = "2021"\n\n[dependencies]\n'
 
 
@@ -153,6 +258,18 @@ def most_common(cases: list[dict], run: dict, least: int = 1) -> list[str]:
     return lines
 
 
+def cli_answers(cases: list[dict], run: dict) -> list[str]:
+    """The recorded answer of every command line of the command-line bundle, keyed by its
+    arguments (joined by U+001F)."""
+    lines = []
+    for c in cases:
+        if c["bundle"] == "cli":
+            first = run[c["id"]]["runs"][0]
+            key = "\x1f".join(c["args"])
+            lines.append(f"{key}\t{first['rc']}\t{first['norm'].encode('utf-8').hex()}")
+    return lines
+
+
 def lookup(examples: Path) -> list[str]:
     lines = []
     for bundle in sorted(p for p in examples.iterdir() if p.is_dir()):
@@ -182,6 +299,7 @@ def main() -> int:
         "usual-status": most_common(cases, run),
         "most-common": most_common(cases, run, least=2),
         "lookup": lookup(a.examples),
+        "cli-shell": cli_answers(cases, run),
     }
     if a.out.exists():
         shutil.rmtree(a.out)
@@ -218,10 +336,31 @@ def main() -> int:
     )
     (d / "build.rs").write_text(BADEXEC_RS)
     (d / "src" / "lib.rs").write_text("")
+    d = a.out / "hostile-build"
+    (d / "src").mkdir(parents=True)
+    (d / "Cargo.toml").write_text(
+        CARGO.replace("[dependencies]", 'build = "build.rs"\n\n[dependencies]')
+    )
+    (d / "build.rs").write_text(HOSTILE_BUILD_RS)
+    shutil.copyfile(HERE / "stub_src" / "main.rs", d / "src" / "main.rs")
+    (d / "src" / "mode.txt").write_text("silent\n")
+    (d / "src" / "table.txt").write_text("\n")
+    d = a.out / "cedar-history-free"
+    (d / "src").mkdir(parents=True)
+    (d / "Cargo.toml").write_text(CARGO + 'cedar-policy = "=4.14.0"\n')
+    shutil.copyfile(HERE / "stub_src" / "cedar_main.rs", d / "src" / "main.rs")
     print(
         json.dumps(
             {
-                "stubs": ["nop", *MODES, "buildrs", "forge", "badexec"],
+                "stubs": [
+                    "nop",
+                    *MODES,
+                    "buildrs",
+                    "forge",
+                    "badexec",
+                    "hostile-build",
+                    "cedar-history-free",
+                ],
                 "out": str(a.out),
             }
         )

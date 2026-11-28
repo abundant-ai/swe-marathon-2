@@ -4,13 +4,16 @@ Usage: python3 -I leaks.py --private DIR --docs DIR --upstream DIR [--report FIL
 
 The agent can run the release build on anything it can see, so what must not happen is a private
 case whose inputs it can already see: every file a private case reads (the policy file, the
-schemas, providers, macros and trace its command line names) equal, up to comments and
-whitespace, to the files of one shipped example bundle, or of one bundle of upstream's public
-repository (its test corpus, probes and fixtures). Such a case fails the scan.
+schemas, providers, macros and trace its command line names, and its standard input) equal, up to
+comments and whitespace, to some visible file (any mix of the shipped example bundles' files and
+the fenced blocks of the guide and the example READMEs), or to the files of one bundle of
+upstream's public repository (its test corpus, probes and fixtures). Such a case fails the scan.
+Cases that read no file at all (the command line's own help, version and usage cases) are
+listed apart.
 
 Two further counts are reported, not failed: private policies equal to a visible or public policy
-on their own (a policy is half of a case at most), and near copies of one (word 5-grams, Jaccard
-similarity of at least 0.9).
+on their own (a policy is half of a case at most), and near copies of one, shipped or public
+(word 5-grams, Jaccard similarity of at least 0.9).
 """
 
 from __future__ import annotations
@@ -27,7 +30,8 @@ FILE_FLAGS = ("--policy-schema", "--event-schema", "--providers", "--macros", "-
 COMMENT = re.compile(r"//[^\n]*")
 WORD = re.compile(r"[A-Za-z_][A-Za-z0-9_]*|\d+|\S")
 POLICY_SUFFIXES = (".dw",)
-INPUT_SUFFIXES = (".dw", ".dwschema", ".cedarschema", ".json", ".log")
+INPUT_SUFFIXES = (".dw", ".dwschema", ".cedarschema", ".json", ".log", ".rhai")
+FENCE = re.compile(r"^```[^\n]*\n(.*?)^```", re.MULTILINE | re.DOTALL)
 
 
 def norm(name: str, text: str) -> str:
@@ -83,6 +87,12 @@ def main() -> int:
     for d in sorted(p for p in (a.docs / "examples").iterdir() if p.is_dir()):
         files = [p for p in d.iterdir() if p.is_file() and p.suffix in INPUT_SUFFIXES]
         visible[f"docs example {d.name}"] = bundle_digests(files)
+    # Every visible text at once: any mix of example files and fenced blocks may make a case.
+    seen_anywhere: set[str] = set().union(*visible.values()) if visible else set()
+    for md in sorted(a.docs.rglob("*.md")):
+        for block in FENCE.findall(md.read_text(encoding="utf-8", errors="replace")):
+            for suffix in INPUT_SUFFIXES:
+                seen_anywhere.add(digest("block" + suffix, block))
     public: dict[str, set[str]] = defaultdict(set)
     public_policies: dict[str, str] = {}
     for p in sorted(a.upstream.rglob("*")):
@@ -109,6 +119,7 @@ def main() -> int:
         if x.strip()
     ]
     leaks = []
+    no_file = []
     for c in cases:
         names = case_inputs(c)
         ds = []
@@ -117,10 +128,15 @@ def main() -> int:
             if path.is_file():
                 ds.append(digest(n, path.read_text(encoding="utf-8", errors="replace")))
         if not ds:
+            no_file.append(c["id"])
             continue
         common = set.intersection(*(by_digest.get(x, set()) for x in ds))
         if common:
             leaks.append({"case": c["id"], "sources": sorted(common)[:5]})
+        elif all(x in seen_anywhere for x in ds):
+            leaks.append(
+                {"case": c["id"], "sources": ["visible files and guide blocks"]}
+            )
 
     policy_equal = []
     near = []
@@ -130,6 +146,11 @@ def main() -> int:
         if path is not None and path.is_file():
             public_shingles[where] = shingles(
                 path.read_text(encoding="utf-8", errors="replace")
+            )
+    for d in sorted(p for p in (a.docs / "examples").iterdir() if p.is_dir()):
+        for p in d.glob("*.dw"):
+            public_shingles[f"docs example {d.name}/{p.name}"] = shingles(
+                p.read_text(encoding="utf-8", errors="replace")
             )
     for bundle in sorted((a.private / "bundles").iterdir()):
         p = bundle / "policy.dw"
@@ -155,6 +176,7 @@ def main() -> int:
     report = {
         "cases": len(cases),
         "case_leaks": leaks,
+        "cases_reading_no_file": no_file,
         "policies_equal_to_public": policy_equal,
         "policies_near_public": near,
         "visible_bundles": len(visible),
@@ -168,6 +190,7 @@ def main() -> int:
             {
                 "cases": len(cases),
                 "case_leaks": len(leaks),
+                "cases_reading_no_file": len(no_file),
                 "policies_equal_to_public": len(policy_equal),
                 "policies_near_public": len(near),
             }

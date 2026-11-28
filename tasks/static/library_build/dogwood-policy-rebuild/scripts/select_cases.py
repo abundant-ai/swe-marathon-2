@@ -1,18 +1,27 @@
 """Keep the candidate cases that a trivial program cannot pass, and write the private case set.
 
-Usage: python3 -I select_cases.py --candidates DIR --run RUN.json --out DIR [--seed S] [--cap FAMILY=UNITS]...
+Usage: python3 -I select_cases.py --candidates DIR --run RUN.json --shadow-run SHADOW.json --out DIR
+       [--seed S] [--keep-prefix P]... [--cap FAMILY=UNITS]...
 
-RUN.json is `run_cases.py`'s record of the release build over the candidates (several repeats).
-A case is kept only when its answer is stable after normalisation, and only in a unit (a single
-case, or a pair that counts only when both members pass) that none of these programs passes:
-- one that prints nothing, with any exit status (cases whose standard output is empty);
-- one that prints, for each command, the output that command gives most often ("constant"
+RUN.json is `run_cases.py`'s record of the release build over the candidates (several repeats);
+SHADOW.json its record over the candidates' history-free shadows (DIR/shadow, `make_cases.py`). A
+case is kept only when its answer is stable after normalisation, and only in a unit (a single
+case, or a pair that counts only when all its members pass) that no one of these programs passes
+whole:
+- `empty`: prints nothing, with any exit status;
+- `table`: prints, for each command, an answer that command gives at least twice (its constant
   outputs: the accept line of `validate`, `check-parse`'s plain count, a schema's "valid" line);
-- one that prints DENY, or ALLOW with the first rule, for every event of a trace;
-- `format` as `cat` (cases whose formatted output is the input file).
-A case with an empty, constant, uniform or unchanged output is paired with a case of the same
-family and command that has none of these; when none is left, it is dropped. Paired B and K cases
-keep their pairs, which are dropped when one program passes both members.
+- `cli-shell`: knows the command line's own texts (help, version, usage and I/O errors), which
+  depend on the arguments alone;
+- `uniform:<verdict>`: prints that verdict (DENY, DENY with rules, or ALLOW with rules) for every
+  decision of a trace; `last-allow`: DENY for every decision but the last, ALLOW with rule 0;
+- `history-free:drop` and `history-free:false`: the release build's own answer over the policy
+  with its temporal conditions dropped, or read as false (`history_free.py`), which is what an
+  engine without history prints; a policy with no temporal condition is passed by both;
+- `cat`: `format` printing its input.
+A case that some program passes is paired with a case of the same family and command that none
+passes; when none is left, it is dropped. Declared B and K pairs keep their members, and are
+dropped when one program passes them whole.
 
 Writes OUT/cases.jsonl, OUT/bundles/ (the bundles the kept cases use), OUT/manifest.json (the
 candidates' manifest, plus what selection kept and dropped) and OUT/bundle_tags.json.
@@ -29,7 +38,14 @@ import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 
-VERDICT = re.compile(r"^@-?\d+ \(time point \d+\): (DENY|ALLOW  \[rules: [0-9, ]+\])$")
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import history_free
+
+VERDICT = re.compile(
+    r"^@-?\d+ \(time point \d+\): (DENY(?:  \[rules: [0-9, ]+\])?|ALLOW  \[rules: [0-9, ]+\])$"
+)
+LINE = re.compile(r"^@-?\d+ \(time point \d+\): ")
 
 
 HASH_ORDER = re.compile(r"cycle in [^\n]*containing")
@@ -81,10 +97,23 @@ def uniform_stream(text: str) -> str | None:
     return kinds.pop() if len(kinds) == 1 else None
 
 
+def last_allow(text: str) -> bool:
+    """Whether a human replay stream is DENY for every decision but the last, which is ALLOW with
+    rule 0, and nothing else is printed."""
+    lines = [line for line in text.splitlines() if line.strip()]
+    if not lines or not all(LINE.match(line) for line in lines):
+        return False
+    verdicts = [LINE.sub("", line) for line in lines]
+    return verdicts[-1] == "ALLOW  [rules: 0]" and all(
+        v == "DENY" for v in verdicts[:-1]
+    )
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--candidates", required=True, type=Path)
     ap.add_argument("--run", required=True, type=Path)
+    ap.add_argument("--shadow-run", required=True, type=Path)
     ap.add_argument("--out", required=True, type=Path)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument(
@@ -144,29 +173,59 @@ def main() -> int:
             if n >= max(3, 0.02 * total):
                 constant.add((key, answer))
     human = {c["id"]: gold[c["id"]][1] for c in kept if c["fmt"] == "human"}
+    shadow = json.loads(a.shadow_run.read_text())
+    temporal_free: dict[str, bool] = {}
 
-    def weakness(c: dict) -> str | None:
+    def no_history(bundle: str) -> bool:
+        """Whether the bundle's policy has no temporal condition at all."""
+        if bundle not in temporal_free:
+            policy = a.candidates / "bundles" / bundle / "policy.dw"
+            text = policy.read_text(encoding="utf-8") if policy.is_file() else ""
+            temporal_free[bundle] = history_free.rewrite(text, "drop") is None
+        return temporal_free[bundle]
+
+    def programs(c: dict) -> set[str]:
+        """The trivial programs that pass `c`, read off its recorded answer."""
         rc, out = gold[c["id"]]
+        passed: set[str] = set()
         if not out.strip():
-            return "empty"
-        if (stub_group(c), (rc, out)) in constant:
-            return "constant"
-        if groups[stub_group(c)][(rc, out)] >= 2:
-            return "shared"
+            passed.add("empty")
+        if (stub_group(c), (rc, out)) in constant or groups[stub_group(c)][
+            (rc, out)
+        ] >= 2:
+            passed.add("table")
+        if c["bundle"] == "cli":
+            passed.add("cli-shell")
         cmd = c["args"][0] if c["args"] else ""
         if cmd == "replay":
             twin = human.get(c["id"].rsplit("/", 1)[0] + "/human")
-            if twin is not None and uniform_stream(twin):
-                return f"uniform {uniform_stream(twin)}"
+            if twin is not None:
+                if uniform_stream(twin):
+                    passed.add(f"uniform:{uniform_stream(twin)}")
+                if last_allow(twin):
+                    passed.add("last-allow")
+            if no_history(c["bundle"]):
+                passed |= {f"history-free:{v}" for v in history_free.VARIANTS}
+            for v in history_free.VARIANTS:
+                r = shadow.get(f"{c['id']}#hf-{v}")
+                if r and {(x["rc"], x["norm"]) for x in r["runs"]} == {(rc, out)}:
+                    passed.add(f"history-free:{v}")
         if cmd == "format" and len(c["args"]) > 1:
             # the file `format` reads, when it is one (not `--help` or a folder)
             name = c.get("stdin") if c["args"][1] == "-" else c["args"][1]
             path = a.candidates / "bundles" / c["bundle"] / (name or "")
             if name and path.is_file() and out == path.read_text(errors="replace"):
-                return "unchanged"
-        return None
+                passed.add("cat")
+        return passed
 
-    weak = {c["id"]: weakness(c) for c in kept}
+    passers = {c["id"]: programs(c) for c in kept}
+    weak = {cid: (", ".join(sorted(p)) if p else None) for cid, p in passers.items()}
+
+    def passable(members: list[dict]) -> set[str]:
+        common = set(passers[members[0]["id"]])
+        for m in members[1:]:
+            common &= passers[m["id"]]
+        return common
 
     # 3. Declared pairs: drop a pair one program passes whole.
     by_pair: dict[str, list[dict]] = defaultdict(list)
@@ -174,10 +233,10 @@ def main() -> int:
         if c.get("pair"):
             by_pair[c["pair"]].append(c)
     for pid, members in by_pair.items():
-        reasons = {weak[m["id"]] for m in members}
-        if len(reasons) == 1 and None not in reasons:
+        common = passable(members)
+        if common:
             for m in members:
-                m["drop"] = f"pair passable ({reasons.pop()})"
+                m["drop"] = f"pair passable ({min(common)})"
 
     # 4. Pair the other weak cases with strong ones of the same family and command.
     rng = random.Random(a.seed)
@@ -243,7 +302,8 @@ def main() -> int:
             n
             for n in names
             if any(
-                c["bundle"].startswith(tuple(a.keep_prefix)) for c in units_of[fam][n]
+                c["bundle"].startswith(tuple(a.keep_prefix)) or c.get("stdin")
+                for c in units_of[fam][n]
             )
         ]
         rest = [n for n in names if n not in kept_units]
