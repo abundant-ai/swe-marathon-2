@@ -1,6 +1,6 @@
 """Can any user other than root write a directory, or a file, that root resolves commands through? (fix round 2)
 
-usage (inside an image, as root): python3 -I path_check.py OUT.json
+usage (inside an image, as root): python3 -I path_check.py OUT.json   (OUT "-": the whole report on stdout)
 
 Harbor runs commands as root in both containers without setting PATH: `tar -czf` to collect /logs/verifier after
 test.sh and the artifacts after the turn, and `su` around the collect hook. Our own root programs resolve names too
@@ -137,6 +137,11 @@ def main() -> None:
         if found:
             report["writable"][ident[0]] = found
     report["pass"] = not report["writable"]
+    if (
+        str(out) == "-"
+    ):  # the whole report on stdout (run through `python3 -I -c`, with no file to write)
+        print(json.dumps(report, indent=1))
+        sys.exit(0 if report["pass"] else 1)
     out.write_text(json.dumps(report, indent=1))
     print(
         json.dumps(

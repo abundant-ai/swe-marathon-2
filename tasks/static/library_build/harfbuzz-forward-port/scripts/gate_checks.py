@@ -81,10 +81,13 @@ def units_table() -> dict[str, dict[str, str]]:
 def verify_result(name: str) -> dict:
     """A run's reward read as Harbor reads it (reward.json first, then reward.txt), with the problems a gate row must
     fail on: a reward.json at all, a reward.txt that is not a regular file, a metrics.json over METRICS_MAX."""
-    d = VERIFY / name
+    trial = CACHE / "work" / "sim" / name
+    d = trial / "verifier" if (trial / "verifier").is_dir() else VERIFY / name
     problems = []
     reward = None
     rj, rt, mj = d / "reward.json", d / "reward.txt", d / "metrics.json"
+    if (d / "path-canary-fired").exists() or (d / "path-canary-fired").is_symlink():
+        problems.append("a planted command ran as root")
     if rj.exists() or rj.is_symlink():
         problems.append("reward.json present")
         try:
@@ -100,11 +103,27 @@ def verify_result(name: str) -> dict:
         if mj.stat().st_size > METRICS_MAX:
             problems.append(f"metrics.json is {mj.stat().st_size} bytes")
         metrics = json.loads(mj.read_text())
-    return {
+    out = {
         "reward": reward,
         **{k: metrics.get(k) for k in ("D", "h_dual", "h_broad")},
         "problems": problems,
+        "through": "trial" if d.parent.name == name else "verifier",
     }
+    if (
+        d.parent.name == name
+    ):  # a simulated trial: what the agent side's sweep said, and the transfer
+        try:
+            res = json.loads((trial / "result.json").read_text())
+            out["sweep_check"] = (res.get("sweep_check") or {}).get(
+                "fault"
+            ) or "no fault"
+            out["transfer"] = {
+                k: (v or {}).get("error") or "whole"
+                for k, v in (res.get("transfer") or {}).items()
+            }
+        except (OSError, ValueError):
+            out["sweep_check"] = "no result.json"
+    return out
 
 
 def inventory(selection: list[dict], cut: dict[str, str]) -> dict:
@@ -199,13 +218,17 @@ def root_path() -> dict:
     """No directory, or file in one, that root resolves commands through is writable by dev, builder, nobody or a
     fresh uid, in either image (scripts/pipeline/path_check.py, run in both by the re-recording cycle; QA, Dogwood
     pass 07 F1): Harbor collects with `tar` as root through the image's PATH."""
-    out = {}
+    out = {"agent canary": agent_canary()}
     for image in ("agent", "verifier"):
         f = CACHE / "work" / f"path-check-{image}.json"
         if not f.exists():
             out[image] = {"pass": False, "note": "not run"}
             continue
-        r = json.loads(f.read_text())
+        try:
+            r = json.loads(f.read_text())
+        except ValueError:
+            out[image] = {"pass": False, "note": "unreadable report"}
+            continue
         out[image] = {
             "pass": r.get("pass"),
             "writable": r.get("writable"),
@@ -213,6 +236,22 @@ def root_path() -> dict:
         }
     out["pass"] = all(v.get("pass") for v in out.values() if isinstance(v, dict))
     return out
+
+
+def agent_canary() -> dict:
+    """path_canary.sh run as dev in the agent image (the re-recording cycle): it must plant nothing."""
+    f = CACHE / "work" / "path-canary-agent.log"
+    if not f.exists():
+        return {"pass": False, "note": "not run"}
+    lines = [
+        x
+        for x in f.read_text(errors="replace").splitlines()
+        if x.startswith("path canary:")
+    ]
+    return {
+        "pass": bool(lines) and all(x.endswith("planted 0") for x in lines),
+        "said": lines[-1:] or None,
+    }
 
 
 def zoo_pass(results: dict) -> bool:
@@ -356,7 +395,7 @@ def main() -> None:
             "R_all (pipeline)": band(selection, "rk-ALL"),
             "pass": zoo_pass(zoo),
         },
-        "4_oracle_nop": {n: verify_result(n) for n in ("oracle", "nop", "base-14.3.0")},
+        "4_oracle_nop": {n: verify_result(n) for n in ("oracle", "solved", "nop")},
         "5_determinism": determinism(),
         "8_robustness": {
             n: verify_result(n)
