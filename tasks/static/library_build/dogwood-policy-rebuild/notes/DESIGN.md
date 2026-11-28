@@ -271,22 +271,49 @@ The weights stay as section 3 lists them. Per family, as unit pass rates:
   levers are the weights inside the stated rules (section 3a's table), never hidden rules.
 
 **Re-sized in fix round 1 (2026-11-28; `notes/FIX1-REPORT.md` section 4).** The table above was
-too low: QA 17 put the frontier at a median of about 0.61. Its model (a Monte Carlo over the
-measured unit structure) was re-run with QA 17's per-family rates, changed only where the fix
-round changed what a unit needs:
-- K's `previous` and `context_pin` duals now need the immediately preceding event, and every K
-  trace ends past its window;
-- every R unit holds a case whose stream needs the history (52 units of 3-4 cases);
-- M is now mostly a macro beside a temporal condition (20 units).
+too low: QA 17 put the frontier at a median of about 0.61.
 
-| Profile | Median | 80% band | P(> 0.6) |
-| --- | --- | --- | --- |
-| Frontier, central | 0.56 | 0.38-0.72 | 0.40 |
-| Frontier, strong session | 0.70 | 0.51-0.82 | 0.75 |
-| Mid-tier | 0.21 | 0.00-0.38 | 0.00 |
+**The lever the panel chose** (`harbor-lh` `ops/swe-marathon-v2/decisions/2026-11-28-dogwood-difficulty-DECISION.md`,
+2 to 1): apply QA 17's F2 and F5 before the first run, within stated rules.
+- **F2:** B-dedup now has 9 templates and B-scope 8, each a documented combination of its rule
+  (two value columns, negative and zero summands, aggregate against aggregate, arithmetic over
+  an aggregate, a correlated aggregate inside `exists`, an entity-typed domain; count, sum,
+  distinct values and range filters at the decision point, a bare predicate beside a past
+  operator), on one principal's traces.
+- **F2, K:** each of K's eight shapes has a second template (previous on a `response`, `since`
+  on the rule's own action, a custom kind without the pin, two universal pins, the mirror rule
+  under a pin named `actor`, a scope-less `error`), with no aggregate repeating a value.
+- **F5:** 36 R units sit at a window's edge (`formerly`, `previous`, negated `since`; 10m, 1h,
+  2h), on the `since` boundary (the left holds through the decision point) and on `previous`
+  (only the immediately preceding event).
+- **Guards:**
+  - every new template cites the guide sentences that decide it, and records their verdicts;
+  - `checks/combos_check.py` found the release build agreeing on all 306 bundles, so none was
+    dropped;
+  - the leak scan, coverage and undocumented-key checks pass.
 
-A strong session still lands near 0.70, above the owner's ceiling. No lever was pulled in the fix
-round: a 3-judge panel chooses one (QA 17 F2, F5 and F7 are the candidates) before the first run.
+**The re-size:** QA 17's model (a Monte Carlo over the measured unit structure), with QA 17's
+per-family rates. They are changed only where the fix round changed what a unit needs:
+- K's `previous`-type duals need the immediately preceding event, and every K trace ends past its
+  window;
+- every R unit holds a case whose stream needs the history;
+- F5's units pass only when their rule is applied: closed windows 0.90 / 0.95 / 0.70 (central /
+  strong / mid-tier), `since` through the decision point 0.85 / 0.90 / 0.60;
+- M is mostly a macro beside a temporal condition.
+
+On the final set:
+
+| Profile | Median | 80% band | P(> 0.6) | P(> 0.7) |
+| --- | --- | --- | --- | --- |
+| Frontier, central | 0.58 | 0.40-0.73 | 0.43 | 0.17 |
+| Frontier, strong session | 0.71 | 0.52-0.83 | 0.77 | 0.52 |
+| Mid-tier | 0.24 | 0.00-0.41 | 0.00 | 0.00 |
+
+The same model gives 0.57 / 0.70 / 0.22 on the set before F2 and F5. It applies each rule to a
+whole session at once, so it shows the levers moving the median by less than 0.01. The panel
+expected them to lower the frontier a little and its spread a lot. That expectation rests on
+agents missing a rule in some combinations and not others, which this model does not represent.
+The first sessions decide, by the response below.
 
 ## 4. Stub filters
 
@@ -364,12 +391,25 @@ spike's 3+1 and 10-repeat recordings are in the Phase B report.
 
 ## 6. Expected score bands (estimates)
 
-| Who | Single step (1.2.0), fix round 1 re-size (section 3a) |
+| Who | Single step (1.2.0), fix round 1 re-size after F2 and F5 (section 3a) |
 | --- | --- |
-| Frontier (Opus 5.5 / Fable 5.2 / GPT-6 Astra class) | about 0.56 (0.38-0.72); a strong session about 0.70 (0.51-0.82) |
-| Mid-tier (DeepSeek v4.1 Flash, GLM 5.3) | about 0.21 (0.00-0.38) |
+| Frontier (Opus 5.5 / Fable 5.2 / GPT-6 Astra class) | about 0.58 (0.40-0.73); a strong session about 0.71 (0.52-0.83) |
+| Mid-tier (DeepSeek v4.1 Flash, GLM 5.3) | about 0.24 (0.00-0.41) |
 
 The Phase C estimate (frontier about 0.47) was too low (QA 17).
+
+**Pre-registered response** (the 2026-11-28 panel's DECISION). It reads the median of the first
+three accepted Opus-class sessions, harness losses excluded. A first session at 0.80 or more
+triggers at once.
+
+| Median | Response |
+| --- | --- |
+| ≤ 0.60 | Accept |
+| 0.60-0.70 | Report to the owner as above target, with the HarfBuzz flag. Re-version only if he holds 0.6 |
+| > 0.70 | One re-version. A panel picks the lever from the runs' per-family rates, within stated rules, adding no weight to message text (QA 17 F4). Its re-size must predict frontier ≤ 0.65 and mid-tier ≥ 0.10 |
+| < 0.30 | Stop and check fairness |
+
+Also report the spread between Opus runs, per template.
 
 **A working task shows** (pre-registered, fix round 1):
 - no full solve;

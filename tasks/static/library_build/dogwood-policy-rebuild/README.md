@@ -94,10 +94,21 @@ agent.
 - **Two families cut against a model's prior,** both stated in the guide:
   - aggregation over a deduplicated projection (B);
   - `previous` and `since` read over the deciding principal's own events (K).
-- **Sizing:** the target is frontier at about 0.6 or less and mid-tier 0.1-0.4. The fix-round
-  re-size (QA 17's model; `notes/DESIGN.md` section 3a, `notes/FIX1-REPORT.md` section 4) puts
-  the frontier at a median of about 0.56 (0.38-0.72), a strong session at about 0.70, and mid-tier
-  at about 0.21. No lever is pulled yet: a panel chooses one before the first run.
+- **Sizing:** the target is frontier at about 0.6 or less and mid-tier 0.1-0.4. The 2026-11-28
+  panel had QA 17's F2 and F5 applied before the first run:
+  - more documented combinations per B rule and K shape;
+  - R units at window edges, the `since` boundary and `previous`.
+- **Re-size** (QA 17's model; `notes/DESIGN.md` section 3a, `notes/FIX1-REPORT.md` section 4): the
+  frontier at a median of about 0.58 (0.40-0.73), a strong session at about 0.71, mid-tier at
+  about 0.24.
+- **Pre-registered response** (DESIGN section 6), on the median of the first three accepted
+  Opus-class sessions:
+  - 0.60 or less: accept;
+  - 0.60-0.70: report to the owner;
+  - above 0.70: one re-version, its lever chosen by a panel;
+  - below 0.30: check fairness.
+
+  A first session at 0.80 or more triggers at once.
 - **Horizon:** a strong engineer new to Dogwood needs about 39-50 working days to a solid core and
   65-95 to byte-exact output (QA 14). An agent needs about 7-12 hours and 2,000-4,500 steps, so
   the 9.6-hour session may bind (QA 15): a run that ends at the cap with a project that does not
