@@ -4177,6 +4177,64 @@ def escape() -> Playtest:
     return p
 
 
+def replay_firefight() -> Playtest:
+    me = [-30.0, PLAZA_Y, 22.0]
+    p = Playtest(
+        "world.replay/firefight",
+        ["AC-17", "CB-9"],
+        "One input timeline played twice, the second time with a pause between ticks: on the "
+        "plaza, traffic and people set to none, the player with a pistol and full armour trades "
+        "fire for 10 s with two hostile enforcers 20 m away, each beside a low wall. The game "
+        "does the same thing tick for tick, every shot, hit and miss included.",
+        ["--role=solo", "--variation=7", "--save-dir={save_dir}"],
+        runs=[{"pace_ms": 0}, {"pace_ms": 4}],
+        tags=["physics-sensitive"],
+        limits={"wall_s": 300, "cpu_s": 600, "step_s": 120},
+    )
+    p.step("observe", {"census": {"meta": FIGHT_META, "kinds": FIGHT_KINDS}, "state": True, "camera": True,
+                       "every": 3})  # fmt: skip
+    p.dev(("world.reset", {"variation": 7}))
+    p.dev(("traffic.set", {"density": 0}))
+    p.dev(("player.spawn", {"at": me, "heading": 0}))
+    p.dev(("player.give", {"weapon": "pistol", "ammo": 36, "armour": 100}))
+    for x in (-36.0, -24.0):
+        p.dev(
+            ("prop.spawn", {"kind": "low_cover", "at": [x, PLAZA_Y, 4.0], "heading": 0})
+        )
+    first = p.dev(person("crew_a_enforcer", [-36.0, PLAZA_Y, 2.0], 180, "hostile"))
+    second = p.dev(person("crew_a_enforcer", [-24.0, PLAZA_Y, 2.0], 180, "hostile"))
+    p.step("observe", {"census": {"meta": FIGHT_META, "kinds": FIGHT_KINDS}, "state": True, "camera": True,
+                       "every": 3, "bones": {"ids": ["player", ans(first), ans(second)], "names": ARM_BONES}})  # fmt: skip
+    p.mark("start")
+    p.step(
+        "aim_at",
+        {
+            "entity": {"id": ans(first)},
+            "bone": "Chest",
+            "ticks": 300,
+            "hold": {"attack": 1.0},
+        },
+    )
+    p.step(
+        "aim_at",
+        {
+            "entity": {"id": ans(second)},
+            "bone": "Chest",
+            "ticks": 300,
+            "hold": {"attack": 1.0},
+        },
+    )
+    p.mark("end")
+    p.expect(
+        "fired_on", "fires_at",
+        {"from": "start", "to": "end", "attackers": [{"step": first}, {"step": second}], "max_m": 40.0,
+         "min_hits": 1},
+        "CB-9", "the hostile enforcers fire at the player and hit during the timeline", "pre",
+    )  # fmt: skip
+    p.expect("replay", "replay_equal", {}, "AC-17", "both runs give the same trace")
+    return p
+
+
 BUILDERS = (
     bad_input, commands, state_report, new_game, server_role, same_start, replay,
     same_tick, clock_rate, weather_hold, kill_after_save, damaged_slot, realtime,
@@ -4184,7 +4242,7 @@ BUILDERS = (
     intersection_watch, handling_cars, handling_service, vehicle_entry, crash,
     intersection_flow, stop_junction, obstacle, speed_limits, panic_horn, replay_car_ragdoll,
     weapons_range, lock_on, armour, cover_firefight, crew_hostility,
-    crime_table, phone_in, red_light, roadblock, arrest, death, escape,
+    crime_table, phone_in, red_light, roadblock, arrest, death, escape, replay_firefight,
 )  # fmt: skip
 
 

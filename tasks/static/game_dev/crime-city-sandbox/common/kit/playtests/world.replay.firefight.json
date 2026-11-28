@@ -1,0 +1,220 @@
+{
+ "format": "qa-play/1",
+ "name": "world.replay/firefight",
+ "template": "world.replay",
+ "about": "One input timeline played twice, the second time with a pause between ticks: on the plaza, traffic and people set to none, the player with a pistol and full armour trades fire for 10 s with two hostile enforcers 20 m away, each beside a low wall. The game does the same thing tick for tick, every shot, hit and miss included.",
+ "rules": ["AC-17", "CB-9"],
+ "role": "solo",
+ "args": ["--role=solo", "--variation=7", "--save-dir={save_dir}"],
+ "mode": "lockstep",
+ "runs": [
+  {
+   "pace_ms": 0
+  },
+  {
+   "pace_ms": 4
+  }
+ ],
+ "limits": {
+  "wall_s": 300,
+  "boot_s": 60,
+  "step_s": 120,
+  "cpu_s": 600,
+  "memory_mb": 1536,
+  "disk_mb": 512
+ },
+ "steps": [
+  {
+   "observe": {
+    "census": {
+     "meta": ["hostile", "limp", "vehicle", "weapon"],
+     "kinds": ["player", "npc", "prop", "vehicle"]
+    },
+    "state": true,
+    "camera": true,
+    "every": 3
+   }
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 7
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "traffic.set",
+     {
+      "density": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [-30.0, 0.15, 22.0],
+      "heading": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "weapon": "pistol",
+      "ammo": 36,
+      "armour": 100
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "prop.spawn",
+     {
+      "kind": "low_cover",
+      "at": [-36.0, 0.15, 4.0],
+      "heading": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "prop.spawn",
+     {
+      "kind": "low_cover",
+      "at": [-24.0, 0.15, 4.0],
+      "heading": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "crew_a_enforcer",
+      "at": [-36.0, 0.15, 2.0],
+      "heading": 180,
+      "behaviour": "hostile"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "crew_a_enforcer",
+      "at": [-24.0, 0.15, 2.0],
+      "heading": 180,
+      "behaviour": "hostile"
+     }
+    ]
+   ]
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["hostile", "limp", "vehicle", "weapon"],
+     "kinds": ["player", "npc", "prop", "vehicle"]
+    },
+    "state": true,
+    "camera": true,
+    "every": 3,
+    "bones": {
+     "ids": [
+      "player",
+      {
+       "$answer": [7, "id"]
+      },
+      {
+       "$answer": [8, "id"]
+      }
+     ],
+     "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
+    }
+   }
+  },
+  {
+   "mark": "start"
+  },
+  {
+   "aim_at": {
+    "entity": {
+     "id": {
+      "$answer": [7, "id"]
+     }
+    },
+    "bone": "Chest",
+    "ticks": 300,
+    "hold": {
+     "attack": 1.0
+    }
+   }
+  },
+  {
+   "aim_at": {
+    "entity": {
+     "id": {
+      "$answer": [8, "id"]
+     }
+    },
+    "bone": "Chest",
+    "ticks": 300,
+    "hold": {
+     "attack": 1.0
+    }
+   }
+  },
+  {
+   "mark": "end"
+  }
+ ],
+ "expect": [
+  {
+   "id": "fired_on",
+   "check": "fires_at",
+   "args": {
+    "from": "start",
+    "to": "end",
+    "attackers": [
+     {
+      "step": 7
+     },
+     {
+      "step": 8
+     }
+    ],
+    "max_m": 40.0,
+    "min_hits": 1
+   },
+   "rule": "CB-9",
+   "says": "the hostile enforcers fire at the player and hit during the timeline",
+   "kind": "pre"
+  },
+  {
+   "id": "replay",
+   "check": "replay_equal",
+   "args": {},
+   "rule": "AC-17",
+   "says": "both runs give the same trace"
+  }
+ ],
+ "tags": ["physics-sensitive"]
+}
