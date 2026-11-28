@@ -26,15 +26,27 @@ TAGS = ("morx", "mort", "kerx", "kern", "trak", "ankr", "JSTF")
 def check(path: Path, tag: str) -> dict:
     font = TTFont(path, lazy=False)
     original = font.reader[tag]
-    table = font[tag]
     row: dict = {
         "font": path.name,
         "tag": tag,
+        "registered_class": getTableClass(tag).__name__,
+    }
+    try:
+        table = font[tag]
+    except Exception as exc:  # noqa: BLE001 - a table fontTools cannot read is a finding too
+        row |= {
+            "class": None,
+            "structured": None,
+            "decompile": f"failed: {type(exc).__name__}: {str(exc)[:160]}",
+            "xml_round_trip": "not tried: the table does not decompile",
+        }
+        return row
+    row |= {
         "class": type(table).__name__,
         "structured": not (
             type(table) is DefaultTable or type(table).__name__ == "DefaultTable"
         ),
-        "registered_class": getTableClass(tag).__name__,
+        "decompile": "ok",
     }
     if tag == "kern":
         row["kern_subtables"] = [
@@ -87,7 +99,16 @@ def main() -> None:
             continue
         for tag in TAGS:
             if tag in tags:
-                rows.append(check(path, tag))
+                try:
+                    rows.append(check(path, tag))
+                except Exception as exc:  # noqa: BLE001 - one bad font never ends the run
+                    rows.append(
+                        {
+                            "font": path.name,
+                            "tag": tag,
+                            "error": f"{type(exc).__name__}: {str(exc)[:160]}",
+                        }
+                    )
     summary = {
         "fonttools": fontTools.version,
         "kerx_module": getTableClass("kerx").__name__,
@@ -96,10 +117,17 @@ def main() -> None:
     out.write_text(json.dumps(summary, indent=1))
     by = {}
     for r in rows:
-        if "tag" in r:
+        if "tag" in r and "error" not in r:
             key = r["tag"]
+            kind = (
+                "undecodable"
+                if r["structured"] is None
+                else "structured"
+                if r["structured"]
+                else "raw"
+            )
             by.setdefault(key, []).append(
-                f"{r['font']}: {r['class']}, {'structured' if r['structured'] else 'raw'}, {r['xml_round_trip']}"
+                f"{r['font']}: {r['class']}, {kind}, {r['decompile']}, {r['xml_round_trip']}"
             )
     print(
         json.dumps(
