@@ -68,7 +68,7 @@ minutes are listed, not given margins.
 | Reference `943dec9`, all 37 playtests | 252 in 167 expectations | **0**; worst 18.2% |
 | Reference `943dec9`, the private set (the 40 instances the deadline let run) | 259 in 133 expectations | **1**: the collision at j_73 in day-flow instance `03eaca08` (TR-12: 0.0357 per vehicle-minute against at most 0.02, margin -78.5%), fixed in `8e959f0` (section 8); that instance's third density minute sat at exactly 15.0% (13.0 vehicles), its cause the same |
 | Reference `8e959f0` (final), all 37 playtests | 252 in 167 expectations | **0**; worst 18.2% (TR-8 and VH-5) |
-FILL-PRIVSWEEP
+| Reference `8e959f0` (final), the private set (all 49 instances) | 391 in 265 expectations | **0**; worst 18.0% (VH-5 in a crash instance: 8.2 km/h against at most 10), then TR-8 in the two arterial instances (0.899 and 0.898 of the limit: 18.3%, 18.4%) |
 
 The fixes (reference `943dec9`), each inside what the rule allows; no band or measurement changed:
 - **CM-1:** the camera's pitch now stops at +25 degrees, inside CM-2's -60 to +30 (the reference had
@@ -319,6 +319,8 @@ staged from `git archive 8e959f0`, the kit at `1603ec7`.
 | Run | Result |
 | --- | --- |
 | `qa run`, all 37 playtests | Reference: **37 of 37 hold** (595.3 s; the import with QA's telemetry 6.3 s). Starter: all 37 list what did not hold, 0 runs stopped (85.2 s) |
+| Reference, the private set (49 instances: the 10 new traffic instances among them) | **1.000000**: 49 of 49 at 1.0, every family 1.0 (A, B, C, H, K, M, T); static gate (26 own files), import 3.78 s with a 64.27 MB cache, boot passed; 7,985.5 s in all, most of it waiting for memory |
+| Starter, the private set | **0.000000**: static (6 files) and import (6.63 s) gates pass, the boot gate fails ("solo not playable within 60 s", "server not playable within 60 s"); 247.2 s |
 FILL-ACCEPTANCE
 
 ## 10. The playtests and their status
