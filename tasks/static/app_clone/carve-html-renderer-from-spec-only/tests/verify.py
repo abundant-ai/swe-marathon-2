@@ -36,12 +36,24 @@ MARK_PREFIX = (
 # record and tree are in place, "stopped" when it ended itself with entries left unmeasured.
 SWEEP_STATE = Path("/var/lib/fsmaint/out/sweep.json")
 SWEEP_STATE_LIMIT = 8192  # bytes of it read, at most
-# Public hosts the original can be fetched from; nothing runs if one of them can be reached.
-NETWORK_HOSTS = (
-    ("github.com", 443),
-    ("pypi.org", 443),
-    ("proxy.golang.org", 443),
-    ("registry.npmjs.org", 443),
+# How every process that runs the program starts: the resource limits, then the network denied to
+# it and to everything it starts (runcases.confine), whatever the machine's own network allows.
+PREEXEC = runcases.confine
+# Run as the program is: which socket families it may open (errno 0 where it could, else the
+# errno), and whether io_uring can be set up; the network must be denied before any case runs.
+NETWORK_PROBE = (
+    "import ctypes, json, socket\n"
+    "seen = {}\n"
+    "for name in ('AF_INET', 'AF_INET6', 'AF_UNIX'):\n"
+    "    try:\n"
+    "        socket.socket(getattr(socket, name), socket.SOCK_STREAM).close()\n"
+    "        seen[name] = 0\n"
+    "    except OSError as exc:\n"
+    "        seen[name] = exc.errno or -1\n"
+    "params = ctypes.create_string_buffer(120)\n"
+    "libc = ctypes.CDLL(None, use_errno=True)\n"
+    "seen['io_uring_setup'] = 0 if libc.syscall(425, 1, params) >= 0 else ctypes.get_errno()\n"
+    "print(json.dumps(seen))\n"
 )
 # Every build of the original that upstream publishes ready to run, and text they all hold that a
 # renderer written from the specification does not (scripts/upstream_builds.py): a file in the tree
@@ -143,25 +155,59 @@ def sandbox_problems(
 
 
 def probe(prefix: list[str], argv: list[str], fallback: list[str] | None = None) -> str:
-    """What a command prints when started exactly as the program is; where it fails and a
-    `fallback` command is given, what that prints."""
+    """What a command prints when started exactly as the program is (PREEXEC, then `prefix`);
+    where it fails and a `fallback` command is given, what that prints.
+
+    Raises:
+        EvaluationError: The command could not be started that way, or it and the fallback failed.
+    """
     for command in (argv, fallback):
         if command is None:
             break
-        done = subprocess.run(
-            prefix + command,
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=30,
-            preexec_fn=runcases.limit,
-            env={"PATH": "/usr/local/bin:/usr/bin:/bin"},
-        )
+        try:
+            done = subprocess.run(
+                prefix + command,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=30,
+                preexec_fn=PREEXEC,
+                env={"PATH": "/usr/local/bin:/usr/bin:/bin"},
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise EvaluationError(
+                f"The program's sandbox could not be set up: {type(exc).__name__}: {exc}"
+            ) from exc
         if done.returncode == 0:
             return done.stdout
     raise EvaluationError(
         f"Could not drop privileges: {(fallback or argv)[0]} exited {done.returncode}"
     )
+
+
+def network_denied(prefix: list[str]) -> dict:
+    """What a process started exactly as the program is may open (NETWORK_PROBE), which must be no
+    socket but AF_UNIX's and no io_uring: the network is denied to every run whatever the machine's
+    network allows, and this is the test that the denial holds.
+
+    Raises:
+        EvaluationError: The denial does not hold or could not be checked.
+    """
+    output = probe(prefix, [sys.executable, "-I", "-c", NETWORK_PROBE])
+    try:
+        seen = json.loads(output.strip().splitlines()[-1])
+    except (ValueError, IndexError) as exc:
+        raise EvaluationError("The network denial could not be checked") from exc
+    if not isinstance(seen, dict) or not (
+        seen.get("AF_INET") == runcases.EACCES
+        and seen.get("AF_INET6") == runcases.EACCES
+        and seen.get("AF_UNIX") == 0
+        and seen.get("io_uring_setup") not in (0, None)
+    ):
+        raise EvaluationError(
+            f"The network is not denied to the program's runs: {seen}"
+        )
+    return seen
 
 
 def pick_id(
@@ -874,21 +920,6 @@ def fetched_build(top: Path, builds: dict) -> str | None:
     return None
 
 
-def network_open() -> str | None:
-    """A public host the verifier can reach, or None: the separate verifier must have no network,
-    and a provider that left it open would let a case fetch the original. Each host is tried once,
-    half a second."""
-    import socket
-
-    for host, port in NETWORK_HOSTS:
-        try:
-            with socket.create_connection((host, port), timeout=0.5):
-                return f"{host}:{port}"
-        except OSError:
-            continue
-    return None
-
-
 def free_space() -> dict:
     """The bytes free in /tmp and /logs/verifier, -1 where a filesystem reports no size."""
     return {
@@ -988,7 +1019,9 @@ def fingerprint(
         try:
             if ids is not None:
                 reset(ids[0])
-            got = runcases.run_case([str(program)], probe, prefix=prefix, ids=ids)
+            got = runcases.run_case(
+                [str(program)], probe, prefix=prefix, ids=ids, preexec=PREEXEC
+            )
         except Exception:  # noqa: BLE001, S112 - Continue processing the other records.
             continue
         result["total"] += 1
@@ -1093,7 +1126,9 @@ def run_cases(
                             )
                         stop = "out of disk space after a cleanup; the remaining cases count as failed"
                         break
-                got = runcases.run_case([str(program)], case, prefix=prefix, ids=ids)
+                got = runcases.run_case(
+                    [str(program)], case, prefix=prefix, ids=ids, preexec=PREEXEC
+                )
             except EvaluationError:
                 raise
             except Exception as exc:  # noqa: BLE001 - Handle failures at the task boundary.
@@ -1226,14 +1261,10 @@ def main() -> int:
         record = manifest_record(REBUILD)
         notes = notes + [f"sweep: {flag}" for flag in record.get("flags", [])]
         builds = upstream_builds()
-        reachable = network_open()
-        if (
-            reachable is not None
-        ):  # the verifier must have no network; a provider that left it open runs nothing
-            raise EvaluationError(
-                f"The verifier can reach {reachable}; it must run with no network"
-            )
         prefix, ids, limits = sandbox()
+        # Every run of the program is denied the network (PREEXEC); a denial that does not hold is
+        # an error before anything of the tree runs, whatever the machine's own network is.
+        network = network_denied(prefix)
         refused = "the sweep refused the tree: not run" if refused_tree else None
         if refused is None:
             try:
@@ -1275,6 +1306,7 @@ def main() -> int:
         try:
             metrics.update(
                 limits=limits,
+                network=network,
                 program=program,
                 host=recorder.host(),
                 free_at_start=start_space,

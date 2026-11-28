@@ -19,6 +19,7 @@ import os
 import re
 import resource
 import shutil
+import struct
 import subprocess
 import sys
 import tarfile
@@ -26,6 +27,8 @@ import textwrap
 import time
 import tomllib
 from pathlib import Path
+
+import pytest
 
 TASK = Path(__file__).resolve().parent.parent
 STEP = TASK
@@ -398,6 +401,7 @@ def run_verifier(
         verify.runcases.HOME = Path({str(tmp_path / "tmp" / "carve-home")!r})
         verify.runcases.TEMP = Path({str(tmp_path / "tmp" / "carve-tmp")!r})
         verify.runcases.CASE_SEC = {case_sec}
+        verify.PREEXEC = verify.runcases.limit  # no seccomp here; the filter has checks of its own
         if {output_limit!r} is not None:
             verify.runcases.OUTPUT_LIMIT = {output_limit!r}
         print(json.dumps(verify.run_cases(Path({str(program)!r}), Path({str(private)!r}), [], None)))
@@ -561,6 +565,175 @@ def test_every_run_gets_the_same_limits(tmp_path):
     ] == wanted
 
 
+X86_64, AARCH64, I386, ARM = 0xC000003E, 0xC00000B7, 0x40000003, 0x40000028
+ALLOW, DENY = 0x7FFF0000, 0x00050000 | 13
+
+
+def filter_verdict(code: bytes, arch: int, nr: int, arg0: int = 0) -> int:
+    """What a classic BPF seccomp program returns for one system call: a small interpreter of the
+    four instructions the filter uses, over seccomp_data (nr, arch, ip, args)."""
+    data = struct.pack("=iIQ6Q", nr, arch, 0, arg0, 0, 0, 0, 0, 0)
+    program = [
+        struct.unpack("=HBBI", code[at : at + 8]) for at in range(0, len(code), 8)
+    ]
+    pc = acc = 0
+    for _ in range(len(program) + 1):
+        opcode, true, false, k = program[pc]
+        if opcode == 0x20:
+            acc, pc = struct.unpack_from("=I", data, k)[0], pc + 1
+        elif opcode == 0x15:
+            pc += 1 + (true if acc == k else false)
+        elif opcode == 0x35:
+            pc += 1 + (true if acc >= k else false)
+        elif opcode == 0x06:
+            return k
+        else:
+            raise AssertionError(f"unexpected opcode {opcode:#x}")
+    raise AssertionError("the program did not return")
+
+
+def test_the_network_filter_denies_every_socket_but_a_local_one():
+    """The seccomp filter every run of the program starts under: socket() and socketpair() fail
+    with EACCES for any family but AF_UNIX (the kernel reads the family's low 32 bits), io_uring
+    cannot be set up, and x32 or 32-bit system calls fail; everything else is allowed. On x86_64
+    and on aarch64."""
+    code = bytes.fromhex(
+        verifier_call(
+            "import json\nfrom verifier import runcases\nprint(json.dumps(runcases.FILTER.hex()))"
+        )
+    )
+    wanted = [
+        (X86_64, 41, 2, DENY),  # socket(AF_INET)
+        (X86_64, 41, 10, DENY),  # AF_INET6
+        (X86_64, 41, 16, DENY),  # AF_NETLINK
+        (X86_64, 41, 17, DENY),  # AF_PACKET
+        (X86_64, 41, (1 << 32) | 2, DENY),
+        (X86_64, 41, 1, ALLOW),  # AF_UNIX
+        (X86_64, 41, (5 << 32) | 1, ALLOW),  # the kernel's int: AF_UNIX
+        (X86_64, 53, 2, DENY),  # socketpair
+        (X86_64, 53, 1, ALLOW),
+        (X86_64, 425, 0, DENY),  # io_uring_setup, _enter, _register
+        (X86_64, 426, 0, DENY),
+        (X86_64, 427, 0, DENY),
+        (X86_64, 0, 0, ALLOW),  # read, write, clone, execve, openat, connect
+        (X86_64, 1, 0, ALLOW),
+        (X86_64, 56, 0, ALLOW),
+        (X86_64, 59, 0, ALLOW),
+        (X86_64, 257, 0, ALLOW),
+        (X86_64, 42, 2, ALLOW),
+        (X86_64, 0x40000000 | 41, 1, DENY),  # the x32 ABI
+        (X86_64, 0x40000000 | 39, 0, DENY),
+        (I386, 102, 1, DENY),  # 32-bit socketcall, getpid
+        (I386, 20, 0, DENY),
+        (AARCH64, 198, 2, DENY),
+        (AARCH64, 198, 1, ALLOW),
+        (AARCH64, 199, 10, DENY),
+        (AARCH64, 425, 0, DENY),
+        (AARCH64, 172, 0, ALLOW),
+        (AARCH64, 41, 2, ALLOW),  # not socket() on aarch64
+        (ARM, 281, 1, DENY),
+    ]
+    got = [
+        (arch, nr, arg0, filter_verdict(code, arch, nr, arg0))
+        for arch, nr, arg0, _ in wanted
+    ]
+    assert got == wanted
+
+
+def test_a_run_that_is_not_denied_the_network_is_an_evaluation_error():
+    """Before any case the verifier starts a process exactly as the program is and needs EACCES
+    from socket(AF_INET) and socket(AF_INET6), a working AF_UNIX socket and a failing
+    io_uring_setup; anything else, or a sandbox that cannot be set up, is an evaluation error. The
+    probe of the verifier's own network is gone: what the machine's network allows decides nothing."""
+    results = verifier_call(
+        textwrap.dedent("""
+        import json, verify
+        answers = {
+            "denied": {"AF_INET": 13, "AF_INET6": 13, "AF_UNIX": 0, "io_uring_setup": 13},
+            "open": {"AF_INET": 0, "AF_INET6": 13, "AF_UNIX": 0, "io_uring_setup": 13},
+            "another errno": {"AF_INET": 1, "AF_INET6": 1, "AF_UNIX": 0, "io_uring_setup": 13},
+            "io_uring": {"AF_INET": 13, "AF_INET6": 13, "AF_UNIX": 0, "io_uring_setup": 0},
+            "no AF_UNIX": {"AF_INET": 13, "AF_INET6": 13, "AF_UNIX": 13, "io_uring_setup": 13},
+        }
+        results = {}
+        for name, seen in answers.items():
+            verify.probe = lambda prefix, argv, fallback=None, seen=seen: json.dumps(seen) + "\\n"
+            try:
+                results[name] = verify.network_denied([])
+            except verify.EvaluationError as exc:
+                results[name] = str(exc)
+        verify.probe = lambda prefix, argv, fallback=None: "not json\\n"
+        try:
+            verify.network_denied([])
+        except verify.EvaluationError as exc:
+            results["unreadable"] = str(exc)
+        print(json.dumps(results))
+        """)
+    )
+    assert results.pop("denied") == {
+        "AF_INET": 13,
+        "AF_INET6": 13,
+        "AF_UNIX": 0,
+        "io_uring_setup": 13,
+    }
+    assert results.pop("unreadable") == "The network denial could not be checked"
+    assert all(
+        text.startswith("The network is not denied to the program's runs")
+        for text in results.values()
+    ), results
+    unconfined = verifier_call(
+        textwrap.dedent("""
+        import json, sys, verify
+        def refuse():
+            raise OSError("no seccomp here")
+        verify.PREEXEC = refuse
+        try:
+            verify.network_denied([])
+            print(json.dumps(None))
+        except verify.EvaluationError as exc:
+            print(json.dumps(str(exc)))
+        """)
+    )
+    assert unconfined.startswith("The program's sandbox could not be set up"), (
+        unconfined
+    )
+    verify = (TESTS / "verify.py").read_text()
+    main = verify[verify.index("def main()") :]
+    assert all(
+        gone not in verify
+        for gone in ("network_open", "NETWORK_HOSTS", "create_connection")
+    )
+    assert (
+        main.index("sandbox()")
+        < main.index("network_denied(prefix)")
+        < main.index("seal(REBUILD)")
+    )
+    assert verify.count("preexec=PREEXEC") == 2 and "preexec_fn=PREEXEC" in verify
+
+
+@pytest.mark.skipif(
+    sys.platform != "linux", reason="seccomp filters are Linux's; checked in Docker"
+)
+def test_a_confined_process_and_its_children_get_no_network_socket():
+    report = verifier_call(
+        textwrap.dedent("""
+        import json, subprocess, sys
+        from verifier import runcases
+        import verify
+        code = verify.NETWORK_PROBE
+        child = "import subprocess, sys; print(subprocess.run([sys.executable, '-I', '-c', " + repr(code) + "], capture_output=True, text=True).stdout)"
+        direct = subprocess.run([sys.executable, "-I", "-c", code], capture_output=True, text=True, preexec_fn=runcases.confine)
+        nested = subprocess.run([sys.executable, "-I", "-c", child], capture_output=True, text=True, preexec_fn=runcases.confine)
+        print(json.dumps([json.loads(direct.stdout), json.loads(nested.stdout.strip())]))
+        """)
+    )
+    for seen in report:
+        assert (
+            seen["AF_INET"] == 13 and seen["AF_INET6"] == 13 and seen["AF_UNIX"] == 0
+        ), report
+        assert seen["io_uring_setup"] != 0, report
+
+
 PULLED = TASK / "checks" / "fixtures" / "pulled-d3bd3d08-v2-trial10"
 
 # sandbox() itself, with only what needs root or Linux stood in: the id it draws is this user's,
@@ -594,6 +767,8 @@ def probe_answering(set_id_answer):
     def probe(prefix, argv, fallback=None):
         if argv[-1] == "/proc/self/limits":
             return LIMITS
+        if argv[-1] == verify.NETWORK_PROBE:
+            return json.dumps({"AF_INET": 13, "AF_INET6": 13, "AF_UNIX": 0, "io_uring_setup": 13}) + "\\n"
         if argv[-1] in ("-u", "-g"):
             return set_id_answer + "\\n"
         return STATUS
@@ -701,9 +876,11 @@ def test_the_tree_pulled_from_the_v2_oracle_trial_replays_through_the_whole_run(
         verify.LEFTOVER_DIRS[:] = [{str(leftovers)!r}]
         verify.kill_user = lambda uid: None
         verify.remove_ipc = lambda *args, **kw: None
+        verify.PREEXEC = verify.runcases.limit
         notes, refused = verify.manifest(verify.REBUILD)
         record = verify.manifest_record(verify.REBUILD)
         prefix, ids, limits = verify.sandbox()
+        network = verify.network_denied(prefix)
         verify.seal(verify.REBUILD, (os.getuid(), os.getgid()))   # main() seals to root, itself; here to this user
         fetched = verify.fetched_build(verify.REBUILD, verify.upstream_builds())
         cutoff_at = time.monotonic() + 600
@@ -848,6 +1025,7 @@ def test_nothing_a_submission_writes_reaches_a_later_case(tmp_path):
         verify.runcases.TEMP = Path({str(tmp_path / "carve-tmp")!r})
         verify.LEFTOVER_DIRS[:] = [{str(shared)!r}]
         verify.kill_user = lambda uid: None
+        verify.PREEXEC = verify.runcases.limit
         removed, real_run = [], verify.subprocess.run
         verify.subprocess.run = lambda argv, **kw: removed.append(argv) if argv[0] == "ipcrm" else real_run(argv, **kw)
         root = Path({str(ipc)!r})
@@ -930,6 +1108,7 @@ def test_cleanup_cost_does_not_grow_with_what_a_run_leaves(tmp_path):
         verify.runcases.CASE_SEC = 10
         verify.LEFTOVER_DIRS[:] = [{str(shared)!r}]
         verify.kill_user = lambda uid: None
+        verify.PREEXEC = verify.runcases.limit
         verify.MARGIN_SEC = 0.5
         calls, real_run = [], verify.subprocess.run
         verify.subprocess.run = lambda argv, **kw: (calls.append(argv[0]), real_run(argv, **kw))[1]
@@ -2989,7 +3168,7 @@ def test_packaging_ships_runtime_files_only_and_flattens_cleanly():
 
 def test_the_pins_are_stated_once_and_agree():
     text = (SCRIPTS / "carve_text.py").read_text()
-    pins = dict(re.findall(r'^([A-Z0-9_]+) = "([^"]+)"', text, re.MULTILINE))
+    pins = dict(re.findall(r'^([A-Z0-9_]+) = \(?\s*"([^"]+)"', text, re.MULTILINE))
     assert pins["SPEC_TAG"] == pins["CARVE_RS_TAG"] == "0.1.14"
     assert re.fullmatch(r"[0-9a-f]{40}", pins["SPEC_COMMIT"]) and re.fullmatch(
         r"[0-9a-f]{40}", pins["CARVE_RS_COMMIT"]
@@ -3069,7 +3248,7 @@ def test_a_fetched_build_of_the_original_or_a_runtime_is_refused(tmp_path):
     builds = json.loads((TESTS / "verifier" / "upstream_builds.json").read_text())
     pins = dict(
         re.findall(
-            r'^([A-Z0-9_]+) = "([^"]+)"',
+            r'^([A-Z0-9_]+) = \(?\s*"([^"]+)"',
             (SCRIPTS / "carve_text.py").read_text(),
             re.MULTILINE,
         )
@@ -3094,8 +3273,8 @@ def test_a_fetched_build_of_the_original_or_a_runtime_is_refused(tmp_path):
         < main.index("fetched_build(REBUILD")
         < main.index("metrics = run_cases(PROGRAM")
     )
-    assert "network_open()" in verify, (
-        "the verifier self-checks its own network before grading"
+    assert main.index("network_denied(prefix)") < main.index("seal(REBUILD)"), (
+        "the network denial is checked before anything of the tree runs"
     )
 
 

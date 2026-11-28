@@ -16,15 +16,22 @@ filesystem never stop a run; the per-file size limit (RLIMIT_FSIZE) holds everyw
 A case is {"argv": [...], "files": {path: text}, "stdin": text or null}; its texts, like the
 recorded answers, hold any byte that is not UTF-8 as a surrogate escape. A run passes when the
 program's exit code and the bytes of its standard output equal the expected ones.
+
+`confine` is `limit` plus a seccomp filter that denies the network to the process and to
+everything it starts: socket() and socketpair() fail with EACCES for every address family but
+AF_UNIX, io_uring cannot be set up, and every system call made through another ABI (32-bit x86,
+x32) fails the same way. So a run has no network whatever the machine's own network allows.
 """
 
 from __future__ import annotations
 
+import ctypes
 import os
 import resource
 import selectors
 import signal
 import stat
+import struct
 import subprocess
 import tempfile
 import time
@@ -64,6 +71,123 @@ ENV = {
 }
 ENCODING = ("utf-8", "surrogateescape")
 PAGE = os.sysconf("SC_PAGE_SIZE") if hasattr(os, "sysconf") else 4096
+
+# The seccomp filter of `confine`: for each architecture it runs on, the audit architecture the
+# kernel reports, the numbers of socket() and socketpair(), and those of io_uring_setup(),
+# io_uring_enter() and io_uring_register(). Any other architecture value (a 32-bit ABI) is denied
+# every system call.
+FILTER_ARCHES = {
+    "x86_64": (0xC000003E, (41, 53), (425, 426, 427)),
+    "aarch64": (0xC00000B7, (198, 199), (425, 426, 427)),
+}
+X32_BIT = 0x40000000  # x86_64 system call numbers at or above this are the x32 ABI's
+AF_UNIX = 1
+EACCES = 13
+SECCOMP_RET_ALLOW = 0x7FFF0000
+SECCOMP_RET_DENY = 0x00050000 | EACCES  # SECCOMP_RET_ERRNO with EACCES
+PR_SET_NO_NEW_PRIVS = 38
+PR_SET_SECCOMP = 22
+SECCOMP_MODE_FILTER = 2
+# Classic BPF opcodes: load a 32-bit word of seccomp_data, compare, return.
+BPF_LD_W_ABS = 0x20
+BPF_JEQ_K = 0x15
+BPF_JGE_K = 0x35
+BPF_RET_K = 0x06
+SECCOMP_NR, SECCOMP_ARCH, SECCOMP_ARG0 = (
+    0,
+    4,
+    16,
+)  # offsets in seccomp_data (arg0's low word)
+
+
+def filter_program() -> list[tuple]:
+    """The filter as classic BPF with symbolic jumps: (opcode, jump if true, jump if false, k),
+    where a jump is a label (a string) or 0 for the next instruction, and labels stand alone."""
+    program: list = [(BPF_LD_W_ABS, 0, 0, SECCOMP_ARCH)]
+    for machine, (arch, _, _) in FILTER_ARCHES.items():
+        program.append((BPF_JEQ_K, machine, 0, arch))
+    program.append((BPF_RET_K, 0, 0, SECCOMP_RET_DENY))
+    for machine, (_, sockets, uring) in FILTER_ARCHES.items():
+        program += [machine, (BPF_LD_W_ABS, 0, 0, SECCOMP_NR)]
+        if machine == "x86_64":
+            program.append((BPF_JGE_K, "deny", 0, X32_BIT))
+        program += [(BPF_JEQ_K, "family", 0, number) for number in sockets]
+        program += [(BPF_JEQ_K, "deny", 0, number) for number in uring]
+        program.append((BPF_RET_K, 0, 0, SECCOMP_RET_ALLOW))
+    program += [
+        "family",
+        (BPF_LD_W_ABS, 0, 0, SECCOMP_ARG0),
+        (BPF_JEQ_K, "allow", "deny", AF_UNIX),
+        "allow",
+        (BPF_RET_K, 0, 0, SECCOMP_RET_ALLOW),
+        "deny",
+        (BPF_RET_K, 0, 0, SECCOMP_RET_DENY),
+    ]
+    return program
+
+
+def assemble(program: list) -> bytes:
+    """The struct sock_filter array of a program from `filter_program`, its labels resolved to
+    the relative jumps classic BPF takes.
+
+    Raises:
+        ValueError: A jump goes backwards or further than 255 instructions.
+    """
+    labels, index = {}, 0
+    for item in program:
+        if isinstance(item, str):
+            labels[item] = index
+        else:
+            index += 1
+    code, index = [], 0
+    for item in program:
+        if isinstance(item, str):
+            continue
+        opcode, true, false, k = item
+        jumps = [
+            labels[jump] - index - 1 if isinstance(jump, str) else jump
+            for jump in (true, false)
+        ]
+        if not all(0 <= jump <= 255 for jump in jumps):
+            raise ValueError(f"jump out of range at instruction {index}")
+        code.append(struct.pack("=HBBI", opcode, jumps[0], jumps[1], k))
+        index += 1
+    return b"".join(code)
+
+
+class SockFprog(ctypes.Structure):
+    _fields_ = [("len", ctypes.c_ushort), ("filter", ctypes.c_void_p)]
+
+
+FILTER = assemble(filter_program())
+
+
+def deny_network() -> None:
+    """Install the seccomp filter on this process (after no_new_privs, which the kernel requires of
+    a process without CAP_SYS_ADMIN); it holds for every process this one starts.
+
+    Raises:
+        OSError: The kernel refused it, or this is not Linux on x86_64 or aarch64.
+    """
+    if os.uname().sysname != "Linux" or os.uname().machine not in FILTER_ARCHES:
+        raise OSError(
+            f"no seccomp filter for {os.uname().sysname} {os.uname().machine}"
+        )
+    prctl = ctypes.CDLL(None, use_errno=True).prctl
+    prctl.argtypes = [ctypes.c_int] + [ctypes.c_ulong] * 4
+    prctl.restype = ctypes.c_int
+    buffer = ctypes.create_string_buffer(FILTER, len(FILTER))
+    program = SockFprog(len(FILTER) // 8, ctypes.addressof(buffer))
+    if prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0:
+        raise OSError(ctypes.get_errno(), "prctl(PR_SET_NO_NEW_PRIVS) failed")
+    if prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, ctypes.addressof(program), 0, 0) != 0:
+        raise OSError(ctypes.get_errno(), "prctl(PR_SET_SECCOMP) failed")
+
+
+def confine() -> None:
+    """In a child about to run the program: `limit`, then the network denied (`deny_network`)."""
+    limit()
+    deny_network()
 
 
 def limit() -> None:
@@ -372,7 +496,8 @@ def run_case(
 ) -> dict:
     """Run one case: its exit code, its standard output as bytes, how long it took and the CPU time
     it used, and with `keep_stderr` the first 64 KB of its standard error. `env` adds environment
-    variables and `preexec` replaces `limit` in the child. A case that cannot be set up or started,
+    variables and `preexec` replaces `limit` in the child (the verifier passes `confine`). A case
+    that cannot be set up or started,
     runs past CASE_SEC, prints more than OUTPUT_LIMIT bytes or passes a limit of `over_limit` has
     no exit code and an "error" instead."""
     try:
