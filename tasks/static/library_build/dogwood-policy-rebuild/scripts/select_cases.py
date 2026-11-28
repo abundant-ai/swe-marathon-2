@@ -1,7 +1,7 @@
 """Keep the candidate cases that a trivial program cannot pass, and write the private case set.
 
 Usage: python3 -I select_cases.py --candidates DIR --run RUN.json --shadow-run SHADOW.json --out DIR
-       [--seed S] [--keep-prefix P]... [--cap FAMILY=UNITS]...
+       [--seed S] [--keep-prefix P]... [--cap FAMILY=UNITS]... [--exclude IDS] [--fates FILE]
 
 RUN.json is `run_cases.py`'s record of the release build over the candidates (several repeats);
 SHADOW.json its record over the candidates' history-free shadows (DIR/shadow, `make_cases.py`). A
@@ -189,6 +189,11 @@ def main() -> int:
     ap.add_argument(
         "--fates", type=Path, help="write each candidate's fate (kept, or why not)"
     )
+    ap.add_argument(
+        "--exclude",
+        type=Path,
+        help="case ids to leave out, one a line (the leak scan's findings on the candidates)",
+    )
     a = ap.parse_args()
     cand = [
         json.loads(x)
@@ -198,11 +203,16 @@ def main() -> int:
     run = json.loads(a.run.read_text())
     dropped: Counter = Counter()
     fate: dict[str, str] = {}
+    excluded = set(a.exclude.read_text().split()) if a.exclude else set()
 
     # 1. Stable answers only.
     gold = {}
     kept = []
     for c in cand:
+        if c["id"] in excluded:
+            dropped["excluded"] += 1
+            fate[c["id"]] = "excluded"
+            continue
         r = run.get(c["id"])
         if r is None:
             dropped["not run"] += 1

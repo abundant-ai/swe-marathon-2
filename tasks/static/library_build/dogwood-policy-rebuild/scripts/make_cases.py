@@ -44,6 +44,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import combos
 import history_free
 import pairs
 import restrictions
@@ -652,6 +653,8 @@ def main() -> int:
     key = {shape: a.key_other for shape in pairs.KEY_SHAPES}
     key["previous"] = a.key_previous
     pairs.write_pairs(a.seed + 100, a.pairs, raw, key)
+    # More documented combinations (fix round 1, QA 17 F2), with a stream of their own.
+    combos.write_combos(a.seed + 500, raw, a.pairs, sum(key.values()))
     restrictions.write_restrictions(a.seed + 300, raw)
     restrictions.write_features(a.seed + 400, raw)
 
@@ -682,6 +685,8 @@ def main() -> int:
             "tags": sorted(meta.get("tags", [])),
             "kind": meta.get("kind"),
         }
+        if meta.get("expect"):  # the answer the guide gives (`scripts/combos.py`)
+            tags[name]["expect"] = meta["expect"]
         cases.extend(cases_for(name, dst, meta, r))
     cases.extend(cli_cases(bundles))
     for c in cases:

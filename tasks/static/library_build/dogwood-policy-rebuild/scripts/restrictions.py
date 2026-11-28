@@ -13,6 +13,7 @@ import json
 import os
 import random
 
+import combos
 import pairs
 
 ALERT_SCOPE = 'principal,\n    action == Ledger::Action::"Alert",\n    resource'
@@ -295,13 +296,15 @@ TEMPLATES: dict[str, tuple[tuple[str, ...], dict[str, str]]] = {
         VALIDATE,
         {"policy.dw": policy('(if context.input.amount > @N@ then "big" else 1) == 1')},
     ),
+    # One side only: with a String (or decimal) on both sides Cedar reports two errors, in an
+    # order that changes from run to run.
     "restr:02:string-no-order": (
         VALIDATE,
-        {"policy.dw": policy('context.input.user < "@WHO@"')},
+        {"policy.dw": policy("context.input.user < @N@")},
     ),
     "restr:02:decimal-no-order": (
         VALIDATE,
-        {"policy.dw": policy('decimal("1.5") < decimal("2.@K@")')},
+        {"policy.dw": policy('decimal("1.@K@") < @N@')},
     ),
     "restr:02:action-schema-must-parse": (
         ("validate", "schema-action"),
@@ -1876,4 +1879,5 @@ def write_features(seed: int, out, copies: int = 2) -> int:
             with open(os.path.join(d, "meta.json"), "w") as f:
                 json.dump(meta, f, indent=1)
             idx += 1
-    return idx
+    # R at a window's edge, the `since` boundary and `previous` (QA 17 F5), after the rest.
+    return combos.write_f5(r, idx, out)
