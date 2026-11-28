@@ -30,6 +30,8 @@ reproduce on a font they build, or AAT `kerx` and `kern` tables they must assemb
 | [notes/PHASE-C-REPORT.md](notes/PHASE-C-REPORT.md) | Phase C: every unit, the failure-sentence proof, recorded outputs, images, the gate |
 | [notes/PREREGISTRATION.md](notes/PREREGISTRATION.md) | Per-unit and per-family prediction for a frontier agent, with kill conditions, committed before any run |
 | [notes/FIX1-REPORT.md](notes/FIX1-REPORT.md) | QA fix round 1: every must-fix and should-fix item, what changed, the evidence |
+| [notes/RESIDUAL-AUDIT.md](notes/RESIDUAL-AUDIT.md) | The static audit of every unit's graded cases against its note (fix round 2) |
+| [notes/FIX2-REPORT.md](notes/FIX2-REPORT.md) | QA fix round 2: every item, the panels' outcomes, the re-recording cycle and its evidence |
 
 ## Design dimensions (proposal stage)
 
@@ -117,9 +119,13 @@ Highest unresolved severity: 🟢 GREEN. The collect hook's platform run is chec
 
 ```
 README.md            this file (never shipped)
-task.toml            single step, 34,560 s, separate verifier checking RELEASE=15.2.0
+task.toml            single step, 34,560 s, root set-up and collect hooks, two artifacts (the tree and the hook's
+                     record), separate verifier checking RELEASE=15.2.0
 instruction.md       the request, every note from 14.3.1 to 15.2.0
-tests/               verifier: Dockerfile, test.sh, verify.py, driver/ (hbdrv.c and the API probes)
+environment/         agent image: Dockerfile, prune_tree.sh, docs/ (the notes and specifications), and the set-up
+                     and collect hooks (fsmaint-reserve, fsmaint-netcheck, fsmaint-sweep; root-only in the image)
+tests/               verifier: Dockerfile, test.sh, verify.py, sweep_check.py (reads the collect hook's mark),
+                     driver/ (hbdrv.c and the API probes)
                      (private/, inputs/ and wheels/ are staged by packaging and git-ignored)
 solution/            solve.sh copies the reference source files and removes the listed paths (solution/private/, git-ignored)
 scripts/             development tooling, never shipped: fetch_inputs.sh, gate_checks.py, package_task.py, pipeline/
