@@ -289,15 +289,26 @@ def main() -> None:
         hold = (
             contextlib.nullcontext() if args.no_lock else spike.heavy(f"probe {name}")
         )
-        with hold:
-            result = simulate_trial.run_trial(
-                name,
-                agent_image=args.agent_image,
-                verifier_image=verifier_image,
-                platform=args.platform,
-                keep=args.keep,
-                **spec["params"],
-            )
+        try:
+            with hold:
+                result = simulate_trial.run_trial(
+                    name,
+                    agent_image=args.agent_image,
+                    verifier_image=verifier_image,
+                    platform=args.platform,
+                    keep=args.keep,
+                    **spec["params"],
+                )
+        except (Exception, SystemExit) as exc:  # noqa: BLE001 - a probe that cannot run is its own record
+            summary[probe] = {
+                "trial": name,
+                "expected": spec["expect"],
+                "held": False,
+                "error": repr(exc)[:500],
+            }
+            summary_path.write_text(json.dumps(summary, indent=1, default=str))
+            print(f"{probe}: COULD NOT RUN {exc!r}"[:600])
+            continue
         checked = spec["check"](result, record_of(name))
         summary[probe] = {"trial": name, "expected": spec["expect"], **checked}
         summary_path.write_text(json.dumps(summary, indent=1, default=str))

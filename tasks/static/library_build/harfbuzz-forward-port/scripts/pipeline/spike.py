@@ -901,10 +901,15 @@ def milestone_runs(args: argparse.Namespace, ops: list[dict]) -> None:
         finish_verifier(run)
 
 
+BG_AT_ONCE = 2  # background trials at once (through_trials)
+
+
 def through_trials(args: argparse.Namespace, specs: list[tuple[str, str, str]]) -> None:
     """Each tree through one simulated trial (simulate_trial.run_trial): put in place as the turn's result, the
     hooks run, packed and unpacked as Harbor moves it, then verified. TREE `solution` runs solution/solve.sh as the
-    turn, TREE `shipped` keeps the image's tree. bg:NAME trials run in threads beside the others."""
+    turn, TREE `shipped` keeps the image's tree. The others run first, one at a time; then the bg:NAME trials, which
+    mostly wait out the verifier's deadline, run in threads, at most BG_AT_ONCE together, so that no more than that
+    many unprivileged builds share Docker's disk at once (fix round 2: the VM had under 2 GB free)."""
     import threading
 
     simulate_trial = load_simulate_trial()
@@ -912,8 +917,21 @@ def through_trials(args: argparse.Namespace, specs: list[tuple[str, str, str]]) 
         simulate_trial.build_images(
             args.agent_image, verifier_tag(args.platform), args.platform, verifier=False
         )
+    slots = threading.BoundedSemaphore(BG_AT_ONCE)
+
+    def one(**params) -> None:
+        try:
+            simulate_trial.run_trial(**params)
+        except (Exception, SystemExit) as exc:  # noqa: BLE001 - one trial's failure is its own record
+            print(f"trial {params['name']} failed: {exc!r}", flush=True)
+            log_event(event="trial_failed", name=params["name"], error=repr(exc)[:300])
+
+    def in_slot(**params) -> None:
+        with slots:
+            one(**params)
+
     threads = []
-    for name, _, rest in sorted(specs, key=lambda x: not x[0].startswith("bg:")):
+    for name, _, rest in sorted(specs, key=lambda x: x[0].startswith("bg:")):
         tree, _, release = rest.partition("@")
         params = {
             "name": name.removeprefix("bg:"),
@@ -925,11 +943,11 @@ def through_trials(args: argparse.Namespace, specs: list[tuple[str, str, str]]) 
             "platform": args.platform,
         }
         if name.startswith("bg:"):
-            thread = threading.Thread(target=simulate_trial.run_trial, kwargs=params)
+            thread = threading.Thread(target=in_slot, kwargs=params)
             thread.start()
             threads.append(thread)
         else:
-            simulate_trial.run_trial(**params)
+            one(**params)
     for thread in threads:
         thread.join()
 
