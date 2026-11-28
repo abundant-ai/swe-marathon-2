@@ -73,7 +73,8 @@ our product can observe.
 - Fix AAT shaping: wrong `kerx` kerning (formats 1 and 2) and mark positioning (format 4, a 14.3.0 regression), and
   ignored `kern` and `mort` tables with a non-first initial state.
 - Fix wrong outlines in `gvar` fonts with intermediate tuples.
-- Fix `hb_face_create_or_fail()` rejecting face indices with named-instance bits set.
+- Fix `hb_face_create_or_fail()` rejecting face indices with named-instance bits set. An index whose face is not in
+  the blob is still rejected.
 - Fix wrong fallback metrics: the vertical descender in fonts without `vhea`, and the hanging baseline for some
   scripts.
 - Fix `hb_ot_layout_lookup_collect_glyph_alternates()` collecting garbage from `AlternateSubst` and `SingleSubst`
@@ -114,7 +115,7 @@ our product can observe.
 
 - Fix per-syllable `GSUB` lookups that matched a glyph 15 syllables later, for example in long Myanmar text.
 - Fix `GPOS` marks that attached to an earlier base when a ranged feature did not apply to the nearest base, a
-  regression from 7.0.0.
+  regression from 7.0.0. The mark is now left unattached.
 - Fix precomposed characters that stayed decomposed in text with no marks, in the Indic, Khmer, Myanmar and USE
   shapers.
 - A global feature request now overrides earlier ranged requests for the same feature. Before, the ranged request
@@ -125,7 +126,8 @@ our product can observe.
 - Fix cross-stream kerning from the `kern` table. The reset value caused a large shift. The offset used the scale of
   the wrong axis.
 - Fix missing unsafe-to-break flags in text with cross-stream kerning from `kern` or `kerx`.
-- Apply the `kern` table in vertical text when the client requests `vkrn` and `GPOS` does not have it.
+- Apply the `kern` table in vertical text when the client requests `vkrn` and `GPOS` does not have it. The values
+  apply as HarfBuzz already applies vertical `kern` values.
 
 **15.2.0: script-specific shaping**
 
@@ -135,7 +137,8 @@ our product can observe.
 - The USE shaper now ends a word at spaces and symbols when it selects `isol`, `init`, `medi` and `fina` forms.
 - The Khmer shaper now moves only one Coeng Ro before the base, and only when it is the first or second coeng of the
   syllable.
-- A Hangul tone mark at the start of the text now gets only one dotted circle.
+- A Hangul tone mark at the start of the text now gets only one dotted circle, set as it is when the beginning-of-text
+  flag is not set.
 - An archaic trailing jamo after a Hangul syllable that has no final consonant now gets the unsafe-to-break flag at
   the character cluster levels (`HB_BUFFER_CLUSTER_LEVEL_MONOTONE_CHARACTERS` and
   `HB_BUFFER_CLUSTER_LEVEL_CHARACTERS`): the shaper splits such a syllable into its jamo to set the trailing jamo with
@@ -145,7 +148,7 @@ our product can observe.
   mark it stands for: where that makes it a base (in fonts without `GDEF`, or whose `GDEF` classes it as a base), it
   keeps its advance, it is not shifted as zeroed marks are, and a zero-width tone mark after it is placed on it.
 - Prohibited vowel sequences now get a dotted circle also when a default ignorable, such as ZWJ, is between the
-  vowels.
+  vowels. The dotted circle goes right before the second vowel, after the default ignorables.
 - The Hebrew shaper now composes presentation forms in fonts that have `mark` only under the `DFLT` script.
 - The Arabic shaper now centers `stch` tiles on short words and exact fits.
 
@@ -165,7 +168,8 @@ our product can observe.
 - Fix `hb_style_get_value()`: the `OS/2` optical size is now in points, not in twentieths of a point; the slant angle
   from `fvar` or `STAT` now includes the synthetic slant; and the function now skips `STAT` values that are for older
   sibling fonts.
-- Fix `hb_face_collect_unicodes()`, which missed most code points of `cmap` format 13 subtables.
+- Fix `hb_face_collect_unicodes()`, which missed most code points of `cmap` format 13 subtables. Code points mapped to
+  a glyph the font does not have are still left out.
 - Fix the position of nested `glyf` components that use anchor points.
 - `hb_buffer_get_glyph_positions()` now returns zero positions for items that the client added after the first call.
   Before, those positions could be uninitialized or old.
