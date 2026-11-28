@@ -55,7 +55,7 @@ CLIENT_FILES = (
     "openapi.json",
     "README.md",
 )
-EXECUTABLE = (".sh", "start-sealed-server", "sealed-supervisor", "fsmaint-sweep")
+EXECUTABLE = (".sh", "start-stockwell", "stockwell-supervisor", "fsmaint-sweep")
 # py_compile with hash-based, unchecked headers: no source mtime in the file, so the bytes depend on the source alone.
 # optimize=0 keeps docstrings and asserts, which the server's behaviour depends on (its OpenAPI text, for one).
 COMPILE = """

@@ -41,22 +41,22 @@ MISSING_MANIFEST = (
     "it was scored as it arrived"
 )
 # The step allows 6,000 s, and that clock also covers copying the tests in and the results out. The replay ends at
-# 5,400 s and winds down within about two minutes; whatever the evaluation is doing at this point, the reward is
+# 5,400 s and winds down within about two minutes; whatever the replay is doing at this point, the reward is
 # published from what it has decided, with a note.
 HARD_STOP_SEC = 5_640
 RUNNING = {
     "status": "evaluation_error",
-    "error": "the evaluation did not finish: no reward was published",
+    "error": "the check did not finish: no reward was published",
 }
 
 
 def reserve(output: Path) -> None:
     """Before any submitted code runs, write a placeholder the size of the reward under another name, and a summary
-    that calls the evaluation unfinished.
+    that calls the check unfinished.
 
     The server may fill the disk while it runs. The reward is later written over the
-    placeholder's bytes in place and renamed, which needs no free space. If the evaluation dies before
-    that (memory taken from it, say), no reward file exists, so the result is an evaluation error and
+    placeholder's bytes in place and renamed, which needs no free space. If the checker dies before
+    that (memory taken from it, say), no reward file exists, so the result is an error without a reward and
     never a 0, and the summary says so.
     """
     with open(output / PENDING, "wb") as placeholder:
@@ -104,11 +104,11 @@ def publish(output: Path, metrics: dict[str, Any]) -> None:
 def run_bounded(
     call: Callable[[], dict[str, Any]], progress: Progress, seconds: float
 ) -> dict[str, Any]:
-    """Run the evaluation, and if it has not returned within `seconds`, stop waiting and return the reward from what it
+    """Run the replay, and if it has not returned within `seconds`, stop waiting and return the reward from what it
     has decided, with a note. The server's processes are ended after the reward is published.
 
     Raises:
-        EvaluationError: The evaluation raised one, or ran out of time before it had read the scenarios.
+        EvaluationError: The replay raised one, or ran out of time before it had read the scenarios.
     """
     outcome: dict[str, Any] = {}
 
@@ -127,16 +127,14 @@ def run_bounded(
         return outcome["metrics"]
     if (
         progress.ballast is not None
-    ):  # the evaluation's own clean-up has not run: room for the results
+    ):  # the replay's own clean-up has not run: room for the results
         progress.ballast.release()
     metrics = progress.summary(
-        "the evaluation did not finish before the step's time limit: the reward counts the scenarios it "
+        "the check did not finish before the step's time limit: the reward counts the scenarios it "
         "had decided, and the others as not matched"
     )
     if metrics is None:
-        raise EvaluationError(
-            "The evaluation did not finish before the step's time limit"
-        )
+        raise EvaluationError("The check did not finish before the step's time limit")
     return metrics
 
 
@@ -255,11 +253,11 @@ def manifest_record(server: Path) -> dict[str, Any]:
 
 
 def main() -> int:
-    """Run one evaluation in this fresh container.
+    """Run one check in this fresh container.
 
     Returns:
-        Zero for a completed evaluation, including a failed submission; one for
-        an evaluation error, which leaves no reward file.
+        Zero for a completed check, including a failed submission; one for
+        an error, which leaves no reward file.
     """
     started = time.monotonic()
     tests = Path(__file__).resolve().parent
@@ -302,7 +300,7 @@ def main() -> int:
             f"reward: {metrics['reward']:.6f} ({metrics['units_matched']}/{metrics['units_total']} units)",
             flush=True,
         )
-    except Exception as exc:  # noqa: BLE001 - every unexpected failure before the reward is out invalidates the evaluation
+    except Exception as exc:  # noqa: BLE001 - every unexpected failure before the reward is out invalidates the check
         if not published:  # once published, a later failure (a print to a full disk) never takes the reward back
             message = (
                 str(exc)
@@ -310,7 +308,7 @@ def main() -> int:
                 else f"Verifier error: {type(exc).__name__}"
             )
             with contextlib.suppress(Exception):
-                print(f"evaluation error: {message}", flush=True)
+                print(f"check error: {message}", flush=True)
             for name in REWARD_FILES + (PENDING,):
                 with contextlib.suppress(OSError):
                     (output / name).unlink(missing_ok=True)
@@ -336,6 +334,4 @@ if __name__ == "__main__":
     status = main()
     with contextlib.suppress(Exception):
         sys.stdout.flush()
-    os._exit(
-        status
-    )  # without waiting for an evaluation thread the hard stop left behind
+    os._exit(status)  # without waiting for a replay thread the hard stop left behind

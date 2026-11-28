@@ -2,19 +2,22 @@
 
 ## Goal
 
-We run our wholesale business on Stockwell, a back-office product. The vendor is gone. What we
-have left is the web client and a sealed copy of the server that we can run but not read or
-change. I need a server of our own that behaves exactly like the sealed one, so that the client
-keeps working and so do the integrations that use the API: the branches' tills, the bank feed and
-our accounting export, which rely on every value they receive, and its type, staying exactly as it
-is today.
+We run our wholesale business on Stockwell, a back-office product. The vendor is gone. We still
+have the web client and the server, and our licence lets us run the server and use it as much as
+we like, but not read, copy or change its code. I need a server of our own to take over from the
+old one, so that the client keeps working and so do the integrations that use the API: the branches'
+tills, the bank feed and our accounting export, which rely on every value they receive, and its
+type, staying as it is today.
+
+You have up to 12 hours to rebuild the server and test it against the local Stockwell API.
 
 ## Context
 
-- The sealed server is running at `http://127.0.0.1:8080`. It answers a JSON API under `/api`
-  and describes its endpoints and their request bodies at `/api/openapi.json`. Its files are in
-  `/opt/stockwell`, which your account cannot read; it runs under its own account, `stockwell`,
-  and a service manager starts it again if it stops. So all we can do is use it.
+- The old server is running at `http://127.0.0.1:8080`. It answers a JSON API under `/api`
+  and describes its endpoints and their request bodies at `/api/openapi.json`. To keep to the
+  licence, it runs under its own account, `stockwell`, and its files, in `/opt/stockwell`,
+  cannot be read by staff accounts such as yours; a service manager starts it again if it
+  stops. Use it and study its answers as much as you need.
 - The web client's source is in `/app/client`: React and TypeScript, with its built copy in
   `/app/client/dist`. It uses most of the API, its screens show what each record means to our
   staff, and nothing in it needs changing.
@@ -26,8 +29,8 @@ is today.
   password-protected PDFs, damaged files, large photos and long recordings. `/app/samples`
   holds files of those kinds.
 - `POST /api/workspaces` gives you a fresh copy of the demo company, with its own id. Workspaces
-  do not affect each other, so make as many as you like to try things out. Every workspace has
-  its own calendar, which only moves when you move it.
+  do not affect each other, so make as many as you like. Every workspace has its own calendar,
+  which only moves when you move it.
 - Requests inside a workspace name the acting user in the `X-User` header, which our sign-in
   proxy sets; we do not use the server's own passwords, sessions or API keys. The demo company
   comes with one user for each role.
@@ -55,35 +58,36 @@ A server in `/app/server` with an executable file `/app/server/run` that starts 
   most 4 GB, 6 GB of address space per process and 6 GB of memory in all, shared memory
   included.
 - One server holds thousands of workspaces in that `DATA_DIR`: each branch's books, and the
-  copies we make to train staff and to try things out. Everything a workspace holds must survive
-  the server being stopped and started again with the same `DATA_DIR`, even when it is killed
-  without warning: a change it has answered is kept.
-- For every API request the sealed server accepts or refuses, your server gives the same status
-  code and the same JSON body, including the calls the web client makes when it opens
+  copies we make to train staff. Everything a workspace holds must survive the server being
+  stopped and started again with the same `DATA_DIR`, even when it is killed without warning: a
+  change it has answered is kept.
+- The tills, the bank feed, the export and the web client depend on the answers the old server
+  gives. For any API request it accepts or refuses, your server gives the same status code and
+  the same JSON body, including the calls the web client makes when it opens
   (`GET /api/version`, then `GET /api/ws/{id}/auth/me`). The order of keys inside a JSON object
   does not matter; everything else does, because the integrations depend on every detail of an
-  answer: the order of lists, the text of messages, the difference between `1`, `1.0` and `true`,
-  and what a workspace holds after a sequence of requests.
+  answer: the order of lists, the text of messages, the difference between `1`, `1.0` and
+  `true`, and what a workspace holds after a sequence of requests.
 - Some answers will differ whatever you do, because they carry the real time or a random token:
   password sign-in, sessions and API keys, which we do not use, and the request log and
-  `/metrics`, which are for operators. Those need not match, and neither do the calls that set or
-  change a user's password, which we do not use either.
-- Where the sealed server answers with a file instead of JSON (a document, a label, a
-  thumbnail), yours answers with the same bytes and the same `Content-Type`: our document archive
-  and our partners' portals file everything we send by its checksum, so a file that differs by
-  one byte is a different document to them.
-- It takes what the sealed server takes: JSON request bodies of up to 6 MB and file uploads of
-  up to 64 MiB.
+  `/metrics`, which are for operators. Those may differ, and so may the answers to the calls that
+  set or change a user's password, which we do not use either.
+- Where the old server answers with a file instead of JSON (a document, a label, a thumbnail),
+  yours answers with the same bytes and the same `Content-Type`: our document archive and our
+  partners' portals file everything we send by its checksum, so a file that differs by one byte
+  is a different document to them.
+- It takes what the old server takes: JSON request bodies of up to 6 MB and file uploads of up
+  to 64 MiB.
 - Apart from those exceptions, the one thing that may differ is the workspace id itself: our
   proxy routes on it, so yours may be any string of letters, digits and underscores of at most
   40 characters.
 - The branches' tills and the back office send up to 8 requests at the same time, and our proxy
-  gives up on a request after 30 seconds. Overall it must keep pace with the sealed server: no
-  answer should take more than about three times as long as the sealed server takes to give it.
+  gives up on a request after 30 seconds. Overall it must keep pace with the old server: no
+  answer should take more than about three times as long as the old server takes to give it.
 - Our proxy serves the web client's built files itself, so your server only has to answer the
   API.
 
-## Completion
+## Switching over
 
-The work is complete when your server answers every API request exactly as the sealed one does,
-apart from the exceptions above. Keep `/app/server/run` working at all times.
+When your server does all of the above, we point our proxy at it and switch the old server off.
+Keep `/app/server/run` working at all times.
