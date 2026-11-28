@@ -161,40 +161,55 @@ agent.
 ## Verification coverage
 
 **The inventory** (`checks/features.json`) gives every documented feature and stated restriction
-of the shipped guide an id: 417 ids (256 features, 151 restrictions, 10 out of scope). Each id
+of the shipped guide an id: 459 ids (281 features, 168 restrictions, 10 out of scope). Each id
 records the guide sentence it comes from, its family, the routes that observe it, and detectors
 for the inputs that exercise it.
 
 **The rule:**
 - each feature needs at least 3 cases that fail when it is missing;
 - each restriction needs at least 1 case that shows it enforced;
-- out-of-scope ids need no case.
+- out-of-scope ids need no case, and any case that uses one is an error.
 
 `checks/coverage.py` counts three kinds of evidence:
 - a mutant kill: a patched release build answers the case in a way the release never did;
 - a refusal of a breaking input, shown by its message or its exit status;
 - a successful answer on inputs that use the feature.
 
-The version flag is the only id that needs fewer than 3 cases (it needs 2: one per spelling),
-and its reason is recorded.
+It also checks the other direction (fix round 1):
+- every graded case is claimed by a stated id, with no catch-all detector;
+- every error, warning and fail-closed message in a graded answer holds a stated id's message;
+- every graded JSON key is named in the guide.
+
+Two ids need fewer than 3 cases, with their reasons recorded: the version flag (one per spelling)
+and signed timestamps.
 
 **Where the cases come from:**
 - upstream's own bundle generator, run with a kept private seed;
-- 96 restriction templates and 29 feature templates (`scripts/restrictions.py`), each breaking
+- 104 restriction templates and 42 feature templates (`scripts/restrictions.py`), each breaking
   or using one stated rule, two instances each;
-- K's eight dual shapes and the B pairs (`scripts/pairs.py`);
-- the command-line cases.
+- history anchors for R, P and M, whose streams need the history (`scripts/restrictions.py`);
+- the B pairs, now 9 B-dedup and 8 B-scope templates, and K's eight dual shapes, two templates
+  each (`scripts/pairs.py`, `scripts/combos.py`);
+- R's window-edge, `since`-boundary and `previous` templates (`scripts/combos.py`);
+- standard input for every command, and the command-line cases (`scripts/make_cases.py`).
+
+Each combination template of `scripts/combos.py` records the verdicts the guide's sentences
+give. `checks/combos_check.py` finds the release build agreeing on all 306 of them. Selection
+(`scripts/select_cases.py`) keeps no unit that one trivial program passes, an engine with no
+history included (section 4 of `notes/DESIGN.md`). The 40 candidates that read only public files
+are left out.
 
 The kill matrix is 33 one-change mutants of the release source (`checks/mutants/`).
 
-**Result on the final case set** (4,282 cases): 0 gaps.
-- 228 features are evidenced by use and 37 ids by mutant kills.
-- 140 restrictions are evidenced by refusals.
+**Result on the final case set** (4,662 cases in 2,321 units over 1,508 bundles): 0 gaps.
+- 253 features are evidenced by use, 157 restrictions by refusals, and 37 ids by mutant kills.
 - 2 restrictions are unchecked, with their reasons recorded: the out-of-contract timestamp rule,
   and a failure the built-in engine cannot reach.
 - The 10 out-of-scope ids have no cases.
-- Every id's quote is in the shipped guide.
-- All 33 mutants are killed.
+- Every id's quote is in the shipped guide. Every case is claimed, every message named, and every
+  JSON key documented.
+- All 33 mutants are killed. Window edges (`checks/window_edges.py`, QA 02): every K trace ends
+  past its window, and every generated temporal bundle left holds a decision at a window's edge.
 
 ## Hackability assessment
 
