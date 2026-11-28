@@ -297,8 +297,13 @@ def record(program: str, cases: list[dict]) -> tuple[list[dict], dict, dict]:
 
 
 def record_probes(program: str, probes: list[dict]) -> dict:
-    """What the original prints for each fingerprint probe, run once (the probes are the original's
-    own disagreements and commands, never counted)."""
+    """What the original prints for each fingerprint probe, run once (documents on which it departs
+    from the specification, and commands of its own outside the brief; a tree that matches enough
+    of them is refused as the original).
+
+    Raises:
+        SystemExit: A probe got no answer: the image must not be built without all of them.
+    """
     answers = {}
     for probe in probes:
         got = run_case([program], probe)
@@ -308,6 +313,11 @@ def record_probes(program: str, probes: list[dict]) -> dict:
                 "stdout": got["stdout"].decode(*ENCODING),
             }
     clear_workspace()
+    missing = [probe["id"] for probe in probes if probe["id"] not in answers]
+    if missing:
+        raise SystemExit(
+            f"{len(missing)} probes got no answer: {', '.join(missing[:10])}"
+        )
     return answers
 
 
