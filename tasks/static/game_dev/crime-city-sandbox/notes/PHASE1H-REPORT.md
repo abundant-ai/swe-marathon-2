@@ -1,4 +1,4 @@
-# Phase 1h report: the traffic-density margin and a sweep of every band, combat (WS6 module 6), traffic hidden instances (2026-11-26)
+# Phase 1h report: the traffic-density margin and a sweep of every band, combat (WS6 module 6), traffic hidden instances (2026-11-26 to 2026-11-28)
 
 Author notes, never packaged. Brief: `harbor-lh/ops/swe-marathon-v2/next-tasks/game-phase1h-BRIEF.md`.
 Branch `neel/game-phase1` (worktree `swe-m2-pr-game-phase1`). macOS only (Apple M5 Pro, 24 GB,
@@ -16,7 +16,10 @@ instances on files of its own and queued its Godot runs through the same lock; i
 four reference defects and a gap in the GDD, all fixed (section 8). Three judges (opus,
 sonnet, haiku) settled how QA observes combat; an independent read (sonnet) read the
 developer-facing changes as the developer would. Every child process was stopped by its task or
-process group; a debug run made obsolete by a fix was stopped before it started Godot.
+process group; a debug run made obsolete by a fix was stopped before it started Godot, and the
+author stopped one validation's play process (SIGTERM, 2026-11-27 23:24 UTC) once its first six
+plays had shown the variant under test wrong (section 8). Scratch game copies were deleted by
+literal paths as each part finished (the Mac's disk ran down to 5-9 GB free).
 
 ## 1. The traffic-density margin
 
@@ -49,7 +52,24 @@ what the playtest measures are unchanged, so no panel was needed.
 
 ### Re-measured
 
-FILL-DENSITY
+Minute medians of moving vehicles within 150 m (TR-1's measure, unchanged), on the final reference
+`8e959f0` unless noted:
+
+| Watch | Band | Moving vehicles, minute by minute | People | Worst margin |
+| --- | --- | --- | --- | --- |
+| Day-flow playtest (j_34, 08:00, clear, variation 12; final `qa run`) | 10-30 | 20.0, 20.0, 20.0 (Phase 1g: 16.5, 10.0, 16.0) | 40.5, 40.0, 40.0 (20-60) | 50% |
+| Six minutes, same corner, variation 12 | 10-30 | 20, 20, 20, 20, 21, 20 | 40-40.5 | 45% |
+| Six minutes, variation 31 | 10-30 | 20, 20, 20, 20, 20, 20 | 40-41 | 50% |
+| Six minutes, variation 57 | 10-30 | 20, 19, 18, 20, 20, 20 | 40-43 | **40%** |
+| Private day-flow `03eaca08` (j_74 by day) | 10-30 | 21, 21, 20 (on `943dec9`, with the collision at j_73: 21, 18, 13) | 40 (20-60) | 45% |
+| Private day-flow `32a2bad5` (j_36 in the evening) | 8-24 | 17, 17 | 30 (15-45) | 43.75% |
+
+The **minimum margin is 40%** (variation 57's third minute, 18.0 vehicles), against the 15% asked;
+over 26 minutes in 6 watches no minute fell below 17 moving vehicles or 30 people. The six-minute
+watches are author plays (`traffic.intersection_watch` with a six-minute watch, never shipped),
+checked by the kit's own density check; the same three watches on `943dec9` gave the same minutes,
+and the green flow was 13-23 per approach in six minutes on both. The replays: ten fresh runs of
+each replay playtest give one hash each (section 9).
 
 ## 2. The sweep of every band
 
@@ -100,7 +120,8 @@ QA's own `wait_for` sets (the player within the drawn 1.0-1.5 m), had been read 
 | Clarifications | `common/design/GDD.md`, `notes/PHASE1-PLAN.md` | Chapter 8 and the rules around it, from the panel and the independent read (section 6); TR-5's portal approaches; the coverage map's combat rows |
 | The band sweep | `scripts/margin_sweep.py` | Every measured value with a band, from `qa run --json` or a grader report, and its margin |
 | Hidden instances (WS8, the helper) | private: `tests/private/templates/`, `tools/build_templates.py`; public: `scripts/check_disjoint.py`, `checks/test_disjoint.py`, `scripts/make_instances.py` | Templates for the five traffic playtests, 10 instances (49 in all), disjointness rules 11-13 (section 8) |
-| Acceptance tool | `scripts/phase1h_acceptance.py` | `qa` (keeping what qa run found, for the sweep), `grade`, `private`, `replay10`; family D for combat |
+| Traffic fixes (WS6 module 5) | private: `crime-city-reference/overlay/game/traffic.gd` | The density controller (section 1), TR-6's 1.0 s stand, 90% of the limit (section 2), the all-way swing standoff (section 8) |
+| Acceptance tool | `scripts/phase1h_acceptance.py` | `qa` (keeping what qa run found, for the sweep), `grade`, `private`, `replay10`; family D for combat; `--deadline-s` for the grader |
 | Panel | `harbor-lh/ops/swe-marathon-v2/decisions/2026-11-26-game-combat-observables-*.md` | Seven questions on how QA observes combat |
 
 ## 4. Combat in the reference (private, `53192d5` and the fixes after it)
@@ -321,11 +342,20 @@ staged from `git archive 8e959f0`, the kit at `1603ec7`.
 | `qa run`, all 37 playtests | Reference: **37 of 37 hold** (595.3 s; the import with QA's telemetry 6.3 s). Starter: all 37 list what did not hold, 0 runs stopped (85.2 s) |
 | Reference, the private set (49 instances: the 10 new traffic instances among them) | **1.000000**: 49 of 49 at 1.0, every family 1.0 (A, B, C, H, K, M, T); static gate (26 own files), import 3.78 s with a 64.27 MB cache, boot passed; 7,985.5 s in all, most of it waiting for memory |
 | Starter, the private set | **0.000000**: static (6 files) and import (6.63 s) gates pass, the boot gate fails ("solo not playable within 60 s", "server not playable within 60 s"); 247.2 s |
-FILL-ACCEPTANCE
+| Reference, every playtest (37) as the instance set | **1.000000**: self-test passed (613.1 s, waiting for memory); static gate (26 files); import 3.58 s, 64.27 MB; boot passed; 37 of 37 at 1.0, every family 1.0 (A, B, C, D, H, I, K, M, T; D, combat, new); 2,884.8 s in all |
+| Starter, same set | **0.000000**: static and import (5.88 s) gates pass, the boot gate fails; 246.4 s |
+| Ten replays of `world.replay/car-and-ragdoll` in fresh processes | **1** distinct hash over 10 runs (535 frames each, 0 errors, 140.6 s): `b2df1c34...`; in the playtest the paced run gives the same hash |
+| Ten replays of `world.replay/two-paces` (the city's traffic and people about) | **1** distinct hash over 10 runs (78 frames each, 0 errors, 149.6 s): `09019a04...` |
+| Density, six minutes at j_34 by day, variations 12, 31 and 57 | 18.0-21.0 moving vehicles and 40-43 people every minute (section 1) |
+| Memory | Each game process peaks at 93.2-171.3 MB (Phase 1g: 87-169 MB) |
+| Wording | `check_agent_text.py` over `common/` and `environment/`: 0 hits (8 open markers, all from before); both `qa run` outputs: 0 hits once this Mac's scratch paths are swapped for the sandbox's |
+| Development checks | **298 pass**, 6 Godot-only skipped (260 at the start of the phase); ruff clean |
+| Coverage | `check_coverage.py`: 177 rules, 177 rows, 0 problems; `make_playtests.py --check`: up to date |
+| Disjointness | `check_disjoint.py` on the private manifest: 48 instances compared with their playtests, 0 repeat one |
 
 ## 10. The playtests and their status
 
-| Playtest | Rules | Reference (`943dec9`) | Starter | In the reference's required set |
+| Playtest | Rules | Reference (`8e959f0`) | Starter | In the reference's required set |
 | --- | --- | --- | --- | --- |
 | `combat.weapons/range` (new) | CB-1, CB-2, CB-3, CB-7, FT-11 | holds (46 expectations) | does not hold | yes |
 | `combat.lock_on/targets` (new) | CM-5, CB-4, CB-7 | holds (6) | does not hold | yes |
@@ -360,6 +390,10 @@ This phase adds:
   made there: every band's margin on the verifier's CPU (the macOS sweep is in section 2).
 - **Density on a slower CPU.** The controller now works on the moving count each half second;
   measure the day-flow minutes and the traffic instances' bands on a cloud vCPU.
+- **The grader's time.** Here the whole private set took 7,985 s and the public set 2,885 s, nearly
+  all of it game processes waiting for 30% free memory, so the final runs passed the grader a
+  longer deadline (`--deadline-s 28800`); whether 86 instances fit the release's 80 minutes must be
+  measured on the verifier's machine.
 
 ## 12. Not done in this phase
 
@@ -380,4 +414,32 @@ AL-12) and CB-10's police force by level, with the alert playtests and `inv.aler
 Alongside it: combat's hidden instances (family D), a firefight replay, and the Linux items above
 on an x86_64 machine (the owner's call).
 
-FILL-COMMITS
+## 14. Commits
+
+Public, on `neel/game-phase1` (each pushed):
+
+| Commit | What |
+| --- | --- |
+| `ed483fe` | WS3/WS4: the kit's 21 combat checks with their hand-made-frame checks; the `aim_at` step; the band sweep |
+| `ce24ff7` | WS1/WS4: the five combat playtests and the gunshot flight in the panic playtest; chapter 8's clarifications (panel); the coverage map |
+| `24063d9` | WS4: the hits check follows every hit; `aim_at` in play.py's list of steps; the sweep reads grader reports |
+| `ba262bb` | WS1/WS4: the independent read's fixes (section 7) |
+| `234caa5` | the sweep judges one-sided limits at their edge and lists a whole-minute clock as such |
+| `60db4b4`, `453249f` | WS4: the lock-on playtest reloads and resets the world before its 30 rounds, then places the player |
+| `23dc402` | WS8: disjointness rules 11-13 and the template `when` key (the helper's) |
+| `877424f`, `0a68e7c` | the sweep's remaining gaps (per-person values, the blast's push, a zero floor, IN-2's sprint, QA's own press point) |
+| `1603ec7` | the acceptance tool passes the grader a longer deadline |
+| `5df5542` | this report's checkpoint (the coordinator, at the usage limit) |
+| `4676367`, `38969f6`, `8c5bd13` | this report as the final runs came in |
+| (next) | this report's last numbers and this table |
+
+Private, with both bundles refreshed in `harbor-lh/ops/swe-marathon-v2/next-tasks/game-private/`
+(and its README's table):
+- `crime-city-reference` `6e76f2f` (the density fix), `53192d5` (module 6, combat; the gunshot
+  flight; TR-16's drivers for `vehicle.spawn`; the walk-time fix), `943dec9` (TR-6's 1.0 s stand;
+  pitch +25 degrees; 90% of the limit), `8e959f0` (the all-way swing standoff);
+- `tests/private` `f42efc8` (the helper: traffic templates, 10 instances, 49 in all), `202f796` (the
+  helper: their results on `53192d5`), `8b96fee` (the results on `8e959f0`).
+
+The panel's record (`decisions/2026-11-26-game-combat-observables-*.md`) and the bundles are in
+harbor-lh's ops folder, which this phase does not push (the ops folder has its own channel).
