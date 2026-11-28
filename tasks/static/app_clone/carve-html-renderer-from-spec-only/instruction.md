@@ -52,8 +52,9 @@ fail on pages nobody touched. Write that renderer.
 ## What to deliver
 
 Your implementation in `/app/rebuild`, with an executable `/app/rebuild/carve`. We install
-`/app/rebuild` on the build machines as one directory, so keep it
-under 2 GB and 200,000 files and directories, with no file that has more than 1,000 hard links.
+`/app/rebuild` on the build machines as one directory, so keep it under 2 GB (2,000,000,000 bytes)
+and 200,000 files, directories and links, with no file that has more than 1,000 hard links and no
+path inside it longer than 2,048 bytes.
 
 - `carve [--safe] [--html] [FILE]` renders the Carve document FILE, or standard input when FILE
   is missing or `-`, to HTML on standard output and exits 0. The options may come before or
@@ -93,9 +94,9 @@ under 2 GB and 200,000 files and directories, with no file that has more than 1,
   standard input and output are pipes, never a terminal, and its standard error is discarded. The
   sandbox allows an 8 MB stack, at most 512 processes and threads, files of at most 256 MB and no
   core files.
-- Each run finishes within 2 seconds, which is what our build gives one page, uses at most 4 GB
-  of memory, and adds at most 1 GB and 100,000 files and directories to the disk; carve-rs took a
-  few milliseconds per page.
+- Each run finishes within 2 seconds, which is what our build gives one page, writes at most 1 MB
+  (1,000,000 bytes) to standard output, uses at most 4 GB of memory, and adds at most 1 GB and
+  100,000 files and directories to the disk; carve-rs took a few milliseconds per page.
 - We will maintain this code for years: keep it modular, with reading the source and its block
   layout, inline parsing, resolution (references, footnotes, numbering), HTML serialization and
   the command line in separate parts.

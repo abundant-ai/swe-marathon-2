@@ -73,9 +73,9 @@ FINGERPRINT_KINDS = {
 TOTAL_SEC = 5400  # the step verifier has 6,000 s; everything up to the reward file fits in this, even every run at 2 s
 MARGIN_SEC = 120  # no case starts when less than this is left of TOTAL_SEC
 MAX_ENTRIES = 200_000  # entries in the tree, at most (the instruction's 200,000; its top, the mark and the record not counted); more is not run
-MAX_BYTES = (
-    2 << 30
-)  # bytes of the tree's regular files (each inode once), at most; more is not run
+# Bytes of the tree's regular files (each inode once), at most, as the sweep counts them (the
+# instruction's "under 2 GB"); more is not run.
+MAX_BYTES = 2_000_000_000
 MAX_PROGRAM = 512 << 20  # bytes of /app/rebuild/carve hashed for metrics.json, at most
 RESERVE_BYTES = (
     512 << 20

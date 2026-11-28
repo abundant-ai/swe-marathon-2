@@ -1170,13 +1170,20 @@ def test_an_oversized_submission_is_not_run(tmp_path):
     """)
     )
     assert "more than 20 entries" in out[0] and "more than 4096 bytes" in out[1]
-    instruction = (STEP / "instruction.md").read_text()
-    assert "under 2 GB and 200,000 files and directories" in instruction
+    instruction = " ".join((STEP / "instruction.md").read_text().split())
+    assert (
+        "keep it under 2 GB (2,000,000,000 bytes) and 200,000 files, directories and links, with no "
+        "file that has more than 1,000 hard links and no path inside it longer than 2,048 bytes"
+    ) in instruction
     assert "adds at most 1 GB and 100,000 files and directories" in instruction
+    assert "writes at most 1 MB (1,000,000 bytes) to standard output" in instruction
     hook = HOOK.read_text()
     assert "LIMIT_ENTRIES=200000" in hook and "LIMIT_BYTES=2000000000" in hook
+    assert 'PATH_BYTES = int(os.environ.get("FSMAINT_PATH_BYTES", 2048))' in hook
     verify = (TESTS / "verify.py").read_text()
-    assert "MAX_ENTRIES = 200_000" in verify and "MAX_BYTES = 2 << 30" in verify
+    assert "MAX_ENTRIES = 200_000" in verify and "MAX_BYTES = 2_000_000_000" in verify
+    runner = RUNNER.read_text()
+    assert "OUTPUT_LIMIT = 1_000_000" in runner and "CASE_SEC = 2\n" in runner
 
 
 def test_the_sweeps_own_files_do_not_count_against_the_trees_limits(tmp_path):
