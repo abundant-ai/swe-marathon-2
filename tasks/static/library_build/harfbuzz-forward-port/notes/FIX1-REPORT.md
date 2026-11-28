@@ -166,3 +166,17 @@ name or ID; the work folder is 376 MB.
 | 6f9ea68f | Drop the threaded shaping test that reads the pruned speed fonts (S9) |
 | c1deb879 | README status, hackability and development log with the measured results |
 | (this report) | notes/FIX1-REPORT.md |
+
+## Errata (found by QA round 2, 2026-11-28)
+
+- **V_full** is 34/53 = 0.642, not 0.623: with every tier-C unit at 0 and tiers A and B at 1.0 (QA R2-09 N2, R2-17 N3).
+- **Flood tree:** 141 of 261 batches failed and the other 120 scored as the reference, not "the other 261" (R2-11 N8).
+- **Gate item 1:** 47 of the 48 notes have graded units with at least 36 changed cases; note 8, the 15.0.0
+  `hb_font_set_face()` deprecation, maps to the cut unit 47a and passes as a recorded cut (R2-03, R2-12).
+- **S2:** runs of 10-30 words still match their source in headings, field lists and fixed boilerplate (for
+  example `glyf`, 18 words; the feature registry's lead-ins, 10-13); no prose sentence is copied (R2-15 N3).
+- **S6:** pass 04 found 25a undetermined (narrowed by `beyond-note`), 6 and 29 weakly determined, and 37 determined
+  only for exact arithmetic, not "every other unit determined except 6, 29 and 37" (R2-04 N2).
+- **M5-M8 severities:** the README's GREEN rows for the collect hook and the drop-in overstated the protection; the
+  hook ran only after the platform's egress window and recorded nothing (R2-08, R2-21, R2-24). Fix round 2
+  replaces it with the post-session sweep (notes/FIX2-REPORT.md).
