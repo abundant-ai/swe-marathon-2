@@ -91,13 +91,58 @@ combat. The reference holds all 32 playtests and grades 1.000000 on them and on 
 (39 instances, none repeating its playtest), the starter 0; a replay with a car and a ragdoll gives
 one hash over ten runs. Report: `notes/PHASE1G-REPORT.md`.
 
-Next: combat (WS6 module 6), with the gunshot reaction it opens; then police and missions.
+Phase 1h: combat (WS6 module 6, private), the density margin and a sweep of every band, and hidden
+instances for the traffic playtests. The reference fires the weapon table's rates, damage, ranges,
+magazines and reloads, aims with a raised arm and locks on, takes cover and leans out, splits hits
+between armour and health, and its crews turn hostile, take cover, fire and fall back; gunshots send
+people running. A three-judge panel settled how QA observes combat (the `damaged` event, the
+shotgun's pellets, the gun hand, aiming beyond lock-on with QA's `aim_at` bot step, crew timings,
+cover's two runs, the gunshot flight). The density controller now keeps 18-21 moving vehicles a
+minute at j_34 (band 10-30; Phase 1g's minute of 10.0 sat on the edge), and `scripts/margin_sweep.py`
+finds no band the reference holds less than 15% inside (worst 18.0%). Five new combat playtests;
+the reference holds all 37 and grades 1.000000 on them and on the private set (49 instances, none
+repeating its playtest), the starter 0; the private set caught, and the reference fixed, a collision
+at an all-way stop. Report: `notes/PHASE1H-REPORT.md`.
+
+Next: crime and police (WS6 module 7) with CB-10, combat's hidden instances and a replay with a
+firefight; then missions.
+
+**Expected failure mode (for the team lead):** the agent will build a city that looks finished
+(people walk, cars drive, guns fire) but lose most of its score where the systems have to work
+together to exact rules: busy traffic that never breaks a junction rule, police that notice crimes
+and arrive on time, and runs that replay identically. Our own reference shows where: most of its
+fixes in Phases 1g and 1h were traffic meeting traffic (all-way stop order, turns swinging into
+waiting cars, density at long signal cycles), each found only by a playtest or a hidden instance
+watching several systems at once, never by the single-feature checks (`notes/PHASE1-PLAN.md`,
+section 8, has the per-family pattern to look for).
 
 The art (Kenney and Quaternius CC0 packs) and the Godot binary are not committed; `.gitignore` and
 `spike/.gitignore` list them. The reference game and the hidden material live outside this public
 repository (`notes/PHASE1-PLAN.md`, section 4).
 
 ## Development log
+
+### 2026-11-27 to 2026-11-28
+
+Phase 1h: combat (WS6 module 6), the density margin and the band sweep, and the traffic hidden
+instances, on macOS. No downloads, no Docker, no Linux VM, no platform runs; every Godot run took
+the task's heavy lock and, from 2026-11-27, the shared heavy lock, at 30% free memory or more.
+- **Density.** The controller let cars standing at the neighbouring junctions' long signal cycles
+  fill its cap; now one standing out of sight gives its place to one that moves. Every minute
+  measured since is 17-21 moving vehicles (worst margin 40%).
+- **The band sweep.** `scripts/margin_sweep.py` reads `qa run --json` or a grader report and gives
+  every banded value's margin. Three were under 15% (the camera at +30 degrees of pitch, a running
+  player's hips in view, drivers at 95% of the limit); the reference now tilts to +25 degrees and
+  drives at 90%. Final: none under 15%.
+- **Combat (private).** Weapons, aiming and lock-on, cover, health and armour, crews and the
+  gunshot flight; 21 checks with hand-made-frame checks; the `aim_at` step; five playtests.
+- **Hidden instances (a helper).** Templates for the five traffic playtests, 10 instances (49 in
+  all), disjointness rules 11-13. They found drivers that never drove, people starting across on
+  don't walk, a lost right-hand tie at all-way stops and an SUV forced into a car inside its swing;
+  all fixed.
+- **Acceptance (final reference `8e959f0`).** 37 of 37 playtests hold; 1.000000 on the playtests
+  and on the private set, the starter 0 on both; one hash over ten replays of each replay playtest;
+  298 development checks pass; 0 wording hits.
 
 ### 2026-11-26
 
