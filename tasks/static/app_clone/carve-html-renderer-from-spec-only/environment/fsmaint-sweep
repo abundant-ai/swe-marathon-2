@@ -17,7 +17,7 @@
 # limit, and what changed after the end does not count), and how the ending of the processes went.
 LIMIT_ENTRIES=200000
 LIMIT_BYTES=2000000000
-WORK_LIMIT_SECONDS=34560   # the time the work is given, as in task.toml
+WORK_LIMIT_SECONDS=43200   # the time the work is given, as in task.toml
 STATE=/var/lib/fsmaint
 OUT="$STATE/out"   # copied beside the tree: where the sweep got to (sweep.json)
 PROBE="${FSMAINT_SWEEP_PROBE_SECONDS:-10}"     # each process listing or signal, at most

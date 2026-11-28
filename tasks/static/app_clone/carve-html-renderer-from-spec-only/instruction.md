@@ -10,7 +10,7 @@ the build into an environment where nothing runs but code our own team wrote and
 toolchains, Python 3.12, Go and Rust with their standard libraries: no third-party binaries or
 packages, and no network. So we need a renderer of our own, written from the published
 specification and documentation, that turns every page into exactly the HTML that carve-rs 0.1.14
-produced.
+produced. You have up to 12 hours to build and test the renderer.
 
 Many people have written those pages over the years, and between them they use all of the core
 language, nested in every way it allows: inline markup and attributes, lists, block quotes and
