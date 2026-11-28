@@ -9,7 +9,7 @@ preload library). Routes, each of which must fail:
   build runs as `dev` itself) whose memory the tracer reads with PTRACE_PEEKDATA or /proc/<pid>/mem;
 - LD_PRELOAD of a library whose constructor copies the process's own memory out, on a normal
   exec and on a self-traced one (the build is linked statically, so no loader ever runs one);
-- a core dump of a build killed by SIGSEGV.
+- a core dump of a build killed by SIGABRT.
 Prints one JSON object; exits 1 if any route worked or a check could not run (fail closed).
 """
 
@@ -145,6 +145,7 @@ def main() -> int:
         mark = os.path.join(work, "mark-traced")
         child = os.fork()
         if child == 0:  # pragma: no cover
+            os.dup2(os.open(os.devnull, os.O_WRONLY), 1)  # keep the report's JSON clean
             libc.ptrace(PTRACE_TRACEME, 0, None, None)
             os.execve(
                 BUILD, [BUILD, "--version"], {"LD_PRELOAD": lib, "PROBE_MARK": mark}
@@ -181,8 +182,15 @@ def main() -> int:
         stderr=subprocess.DEVNULL,
     )
     time.sleep(0.3)
-    os.kill(proc.pid, signal.SIGSEGV)
-    proc.wait()
+    # SIGABRT dumps core by default. (A SIGSEGV sent with kill() is absorbed once by the Rust
+    # runtime's stack-overflow handler, which then leaves the process running.)
+    os.kill(proc.pid, signal.SIGABRT)
+    try:
+        proc.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
+        closed("core dump signal ended the build", False, "still running after SIGABRT")
     closed("core dump", not os.listdir(cores), ",".join(os.listdir(cores)))
 
     ok = all(r["closed"] for r in results.values())

@@ -350,7 +350,7 @@ and `"related"` (further diagnostics of the same shape). Otherwise:
   "self_contained", "temporal_fields", "provider_fields", "decision_kinds" }` —
   the three texts that `--emit` chooses among, whatever `--emit` says, then
   whether the Cedar is self-contained, the hoisted fields and the decision
-  kinds. The texts are strings, exactly as `--emit` prints them.
+  kinds. The texts are the strings `--emit` prints.
 - `explain`: `{ "text", "informalization" }` — the human text, and the phrase
   trees: `"preamble"` (the pins line, or `null`) and `"rules"`, each phrase
   `{ "template", "layout", "span", "children" }`, where `"template"` holds
