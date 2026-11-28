@@ -5,6 +5,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -115,7 +116,7 @@ def test_bundle_holds_runtime_files_only(task_root, tmp_path):
     assert (step / "tests/private/fsmaint.key").read_bytes() == (
         bundle / "environment/data/fsmaint.key"
     ).read_bytes()
-    for hook in ("fsmaint-reserve", "fsmaint-netcheck", "fsmaint-sweep"):
+    for hook in ("fsmaint-reserve", "fsmaint-session", "fsmaint-sweep"):
         assert (bundle / "environment" / hook).stat().st_mode & 0o111, hook
 
 
@@ -357,9 +358,11 @@ def test_regrade_bundle_swaps_the_reference_for_a_stored_submission(
     assert not (tmp_path / "out2").exists()
 
 
-def test_session_packaging_is_retired_and_no_time_figure_is_stated(task_root, tmp_path):
-    """The 48-hour chain of sessions gave way to one session; its packager refuses this task, and neither the
-    instruction nor the image states how long the run may take."""
+def test_session_packaging_is_retired_and_the_stated_time_is_the_agent_limit(
+    task_root, tmp_path
+):
+    """The 48-hour chain of sessions gave way to one session; its packager refuses this task. Since v6 the
+    instruction states the 12 hours the agent is given, which is the agent's limit in task.toml."""
     target = staged_task(task_root, tmp_path)
     script = str(target / "scripts" / "package_session.py")
     refused = subprocess.run(
@@ -382,18 +385,27 @@ def test_session_packaging_is_retired_and_no_time_figure_is_stated(task_root, tm
         -500:
     ]
     assert not (tmp_path / "out").exists()
-    # the instruction says only that the run can end at any time, and keeps the progress log
+    # the instruction states the agent's limit and nothing else about time, and keeps the progress log
     instruction = (task_root / "instruction.md").read_text()
+    limit = tomllib.loads((task_root / "task.toml").read_text())["agent"]["timeout_sec"]
+    assert limit == 12 * 3600
     assert (
-        "The run can end at any time, so keep the work runnable and the log below current."
+        "You have up to 12 hours to restore the missing bodies and test your changes."
         in instruction
     )
-    assert "/app/PROGRESS.md" in instruction
+    assert re.findall(r"\b\d+\s*hours?\b", instruction, flags=re.IGNORECASE) == [
+        "12 hours"
+    ]
     assert not re.search(
-        r"\b\d+\s*hours?\b|wall-clock|timer|seconds that remain|time is up",
+        r"wall-clock|timer|seconds that remain|time is up",
         instruction,
         flags=re.IGNORECASE,
     )
+    assert (
+        "Keep the checkout runnable and the progress log current as you restore each module."
+        in instruction
+    )
+    assert "/app/PROGRESS.md" in instruction
     assert not (task_root / "environment/timer.sh").exists()
     assert "timer" not in (task_root / "environment/Dockerfile").read_text()
 

@@ -7,6 +7,8 @@ build takes SymPy from the copy in `/app/sympy`. A faulty clean-up step in our p
 the bodies of 2,115 functions and methods, spread over 323 files, before anyone noticed. I need
 them written back, so that our code, and the parts of SymPy that call these functions, work again.
 
+You have up to 12 hours to restore the missing bodies and test your changes.
+
 ## Context
 
 Once we noticed, our recovery tooling marked each blanked body with one numbered placeholder
@@ -24,8 +26,7 @@ There is no network access. The only other copies of this tree in the image are 
 `restore` tool's own, under `/opt/restore`, and they are blanked the same way; `mpmath`,
 SymPy's only dependency, is installed. Licence and provenance are in `/app/ATTRIBUTION.txt`.
 
-Our build runs offline and takes in only this copy and code written here, so write the bodies
-yourself, from what is in this copy and what you know. Another copy of SymPy's source, from an
+Write the replacement bodies from the code, documentation and tests in this checkout and your knowledge of SymPy. Another copy of SymPy's source, from an
 installed package, a download, a mirror or any other place, is not to be used, in whole or in
 part.
 
@@ -97,8 +98,7 @@ bodies in it, and nothing else from your tree.
 
 ## Working on it
 
-- The run can end at any time, so keep the work runnable and the log below current. Keep
-  going until every function is back.
+- Keep the checkout runnable and the progress log current as you restore each module.
 - Keep a running log in `/app/PROGRESS.md` of where the work stands, so that it can be taken
   up again after a break. When you start, then at least every 30 minutes and whenever you
   finish a module, append one line with the time (`date -u`), the counts that

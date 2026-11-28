@@ -1698,14 +1698,19 @@ def test_the_work_limit_is_the_time_limit_the_task_gives(task_root):
     config = tomllib.loads((task_root / "task.toml").read_text())
     limits = {config["agent"]["timeout_sec"]}
     sweep = (ENV_DIR / "fsmaint-sweep").read_text()
+    session = (ENV_DIR / "fsmaint-session").read_text()
     delivery_text = (task_root / "tests" / "verifier" / "delivery.py").read_text()
     in_sweep = int(re.search(r"^WORK_LIMIT_SECONDS=(\d+)$", sweep, re.MULTILINE)[1])
+    in_session = int(
+        re.search(r"^WORK_LIMIT_SECONDS = (\d+)", session, re.MULTILINE)[1]
+    )
     in_verifier = int(
         re.search(r"^WORK_LIMIT_SEC = \(?\s*(\d+)", delivery_text, re.MULTILINE)[1]
     )
-    assert limits == {in_sweep} == {in_verifier} == {34560}, (
+    assert limits == {in_sweep} == {in_session} == {in_verifier} == {43200}, (
         limits,
         in_sweep,
+        in_session,
         in_verifier,
     )
 

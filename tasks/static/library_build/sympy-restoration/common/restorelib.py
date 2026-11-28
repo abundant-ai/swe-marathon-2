@@ -348,8 +348,15 @@ def scan_body(nodes, fn=None) -> str | None:
                 if n.id in DENY_GLOBAL_MODULES:
                     return f"use of module '{n.id}'"
             elif isinstance(n, ast.Attribute) and n.attr in DENY_ATTRS:
+                if (
+                    n.attr == "open"
+                    and isinstance(n.value, ast.Name)
+                    and n.value.id == "Interval"
+                    and "Interval" not in bound
+                ):
+                    continue
                 return f"attribute '.{n.attr}'"
-            elif isinstance(n, ast.Subscript) and _denied_entry(n.slice):
+            elif isinstance(n, ast.Subscript) and _denied_entry(n.slice, n.value):
                 return f"literal key '{n.slice.value}'"
             elif isinstance(n, ast.Call):
                 called = (
@@ -368,7 +375,7 @@ def scan_body(nodes, fn=None) -> str | None:
                     called in KEY_CALLS
                     and isinstance(n.func, ast.Attribute)
                     and n.args
-                    and _denied_entry(n.args[0])
+                    and _denied_entry(n.args[0], n.func.value)
                 ):
                     return f"literal key '{n.args[0].value}'"
                 if called in NAME_CALLS:
@@ -387,9 +394,19 @@ def scan_body(nodes, fn=None) -> str | None:
 KEY_CALLS = {"get", "pop", "setdefault", "__getitem__", "__setitem__", "__delitem__"}
 
 
-def _denied_entry(node) -> bool:
-    """A literal key that names something on the lists: a module, a builtin, an attribute (`x['os']`,
-    `d.get('__builtins__')`, `getattr(m, '__dict__')['open']`), whatever holds it."""
+def _denied_entry(node: ast.AST, receiver: ast.AST) -> bool:
+    """Check a literal key against the restrictions for unknown mappings.
+
+    Args:
+        node: Key expression in a subscript or mapping method call.
+        receiver: Expression supplying the mapping. A dictionary display or
+            comprehension creates an ordinary dictionary in the current body.
+
+    Returns:
+        True for a restricted key when the receiver could denote a namespace.
+    """
+    if isinstance(receiver, (ast.Dict, ast.DictComp)):
+        return False
     if not (isinstance(node, ast.Constant) and isinstance(node.value, str)):
         return False
     name = node.value
@@ -423,8 +440,12 @@ def rules_text() -> str:
             "Attributes (also when getattr, setattr, delattr, hasattr, attrgetter or methodcaller is given the name",
             "as a literal):",
             "  " + ", ".join(sorted(DENY_ATTRS)),
+            "The module's SymPy Interval.open constructor is allowed. For a locally bound Interval name,",
+            "use Interval(a, b, left_open=True, right_open=True).",
             "Modules named as a literal to import_module or __import__, as for imports.",
-            "Any of the names above as a literal key, whatever holds it (`x['os']`, `d.get('sys')`, `x.__dict__.pop('open')`).",
+            "Reserved names such as 'input', 'code', 'vars' and 'trace' are allowed on dictionary displays",
+            "and comprehensions. On other receivers the checker cannot distinguish data from a namespace",
+            "and rejects reserved literal keys.",
         ]
     )
 

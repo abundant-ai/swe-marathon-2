@@ -1,0 +1,369 @@
+#!/usr/bin/python3
+"""Record local session times and preserve unit files around the 12-hour deadline."""
+import hashlib
+import json
+import os
+import pwd
+import stat
+import threading
+import time
+
+STATE = "/var/lib/fsmaint"
+PROC = "/proc"
+TREE = "/app/sympy"
+UNITS = "/opt/restore/units.json"
+SESSION_SECONDS = 0.1      # between two looks at the processes of USER
+CONFIRM_SECONDS = 1.0      # a process is the first process only once two looks this far apart both saw it alive
+SAME_START_SECONDS = 0.5   # two reads of one process's start differ by less than this
+KEEP_SESSIONS = 64         # sessions kept in the record, the last seen always among them
+SESSION_PARENTS = ("su", "runuser")
+USER = "dev"
+NPROC_CAP = 8192           # processes and threads of USER, at most, for every process of USER
+WORK_LIMIT_SECONDS = 43200  # the time the work is given, as in task.toml
+COPY_LEAD_SECONDS = 300    # copies are kept from this long before that time runs out
+COPY_INTERVAL_SECONDS = 1.0
+COPY_KEEP = 2
+COPY_MAX_BYTES = 4_000_000
+
+def write(name, record):
+    """Replace STATE/name with `record`; False when it could not be written."""
+    try:
+        path = os.path.join(STATE, name)
+        os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
+        with open(path + ".tmp", "w") as handle:
+            json.dump(record, handle)
+        os.replace(path + ".tmp", path)
+        return True
+    except (OSError, ValueError, TypeError, MemoryError):
+        return False
+
+
+def read_status(pid, proc=PROC):
+    """(real uid, parent pid, name, state) of a process, from /proc; None when it cannot be read."""
+    try:
+        with open(os.path.join(proc, str(pid), "status")) as handle:
+            fields = dict(line.split(":", 1) for line in handle.read().splitlines() if ":" in line)
+        return int(fields["Uid"].split()[0]), int(fields["PPid"].strip()), fields.get("Name", "").strip(), fields.get("State", "").strip()[:1]
+    except (OSError, KeyError, ValueError, IndexError, MemoryError):
+        return None
+
+
+def processes(proc=PROC):
+    """{pid: (real uid, parent pid, name, state)} of every process /proc shows; None without a /proc."""
+    try:
+        names = os.listdir(proc)
+    except (OSError, MemoryError):
+        return None
+    table = {}
+    for name in names:
+        if name.isdigit():
+            info = read_status(name, proc)
+            if info is not None:
+                table[int(name)] = info
+    return table
+
+
+def sessions(table, uid):
+    """The pids of the exec sessions of the user `uid` in a process table: its processes (not zombies)
+    whose parent is a process of the real user root named in SESSION_PARENTS other than the first
+    process, or that have no parent here."""
+    found = []
+    for pid, (owner, parent, _name, state) in table.items():
+        if owner != uid or state in ("Z", "X"):
+            continue
+        above = table.get(parent)
+        if parent == 0 or (parent != 1 and above is not None and above[0] == 0 and above[2] in SESSION_PARENTS):
+            found.append(pid)
+    return sorted(found)
+
+
+def started_at(pid, proc=PROC):
+    """When a process began, in seconds since the epoch: its start in clock ticks since boot (field 22 of
+    its stat) against the time since boot read now; None when it cannot be read."""
+    try:
+        with open(os.path.join(proc, str(pid), "stat"), "rb") as handle:
+            text = handle.read(4096)
+        ticks = int(text[text.rindex(b")") + 2:].split()[19])
+        with open(os.path.join(proc, "uptime")) as handle:
+            since_boot = float(handle.read().split()[0])
+        return time.time() - since_boot + ticks / os.sysconf("SC_CLK_TCK")
+    except (OSError, ValueError, IndexError, MemoryError):
+        return None
+
+
+def first_process(table, uid, since, proc=PROC, known=None, examined=None, sighted=None, now=None,
+                  confirm=CONFIRM_SECONDS, gone=None):
+    """The process of the user `uid` that began first at or after `since` among those whose parent is
+    not a process of that user, as {"pid", "start", "name", "parent"}; `known` (the earliest found
+    before) when none began earlier. Processes in `examined` (a set, added to) are not read again.
+
+    A process counts only once two looks at least `confirm` seconds apart have both seen it alive, with
+    the same start: `sighted` (a dict kept from one look to the next) holds the ones seen so far and when
+    (`now`, the start of this look), so a short command, such as a `pwd` run as that user before the
+    clock of the work's limit starts, is gone by the second look and never counts (it is added to
+    `gone`, a list, when given). Called once, without `sighted`, it returns `known`."""
+    sighted = {} if sighted is None else sighted
+    now = time.time() if now is None else now
+    best = known
+    for pid, (owner, parent, name, state) in table.items():
+        if owner != uid or state in ("Z", "X") or (examined is not None and pid in examined):
+            continue
+        if examined is not None:
+            examined.add(pid)
+        above = table.get(parent)
+        if above is not None and above[0] == uid:
+            continue
+        start = started_at(pid, proc)
+        if start is None or start < since or (best is not None and start >= best["start"]):
+            continue
+        found = {"pid": pid, "start": start, "name": name, "parent": above[2] if above else None}
+        sighted.setdefault(pid, dict(found, seen=now))
+    for pid in sorted(sighted):
+        candidate = sighted[pid]
+        info = table.get(pid)
+        if info is None or info[0] != uid or info[3] in ("Z", "X"):
+            del sighted[pid]                      # gone before a second look: never the first process
+            if examined is not None:
+                examined.discard(pid)
+            if gone is not None:
+                gone.append(candidate)
+        elif best is not None and candidate["start"] >= best["start"]:
+            del sighted[pid]                      # began after the first process found since
+        elif now - candidate["seen"] >= confirm:
+            del sighted[pid]
+            again = started_at(pid, proc)
+            if again is None or abs(again - candidate["start"]) > SAME_START_SECONDS:
+                if examined is not None:          # another process under the same pid: looked at afresh
+                    examined.discard(pid)
+                continue
+            best = {key: candidate[key] for key in ("pid", "start", "name", "parent")}
+    return best
+
+
+def cap_processes(table, uid, capped, cap=NPROC_CAP):
+    """Lower the process limit of every process of `uid` not seen before to `cap`; how many it failed for.
+    Without prlimit (not Linux) nothing is done."""
+    try:
+        import resource
+
+        limit, setlimit = resource.RLIMIT_NPROC, resource.prlimit
+    except (ImportError, AttributeError):
+        return None
+    failed = 0
+    for pid, (owner, _parent, _name, state) in table.items():
+        if owner != uid or state in ("Z", "X") or pid in capped:
+            continue
+        try:
+            soft, hard = setlimit(pid, limit)
+            infinite = resource.RLIM_INFINITY
+            new_hard = cap if hard == infinite or hard > cap else hard
+            new_soft = new_hard if soft == infinite or soft > new_hard else soft
+            if (new_soft, new_hard) != (soft, hard):
+                setlimit(pid, limit, (new_soft, new_hard))
+            capped.add(pid)
+        except (OSError, ValueError):
+            failed += 1
+    if len(capped) > 100_000:
+        capped.intersection_update(table)
+    return failed
+
+
+def watch_sessions(uid, record, stop, proc=PROC, interval=SESSION_SECONDS, name="sessions.json", since=None):
+    """Look at the processes of `uid` every `interval` until `stop` is set: keep each exec session's first
+    and last sighting, the first process that began at or after `since` (one that two looks at least
+    CONFIRM_SECONDS apart both saw alive; how many were seen once and gone is `first_process_passed_over`),
+    and the most processes of `uid` seen at once, in `record`, written to STATE/`name` after every look;
+    cap every process of `uid`."""
+    current = {}   # pid -> its entry, for the sessions alive at the previous look
+    entries = []   # the sessions kept, in the order first seen
+    capped, examined, sighted = set(), set(), {}
+    record.update(available=None, scans=0, last_scan=None, alive=[], seen=0, sessions=[], first_process=None,
+                  first_process_passed_over=0, user_processes=0, user_processes_max=0, nproc_cap=NPROC_CAP,
+                  nproc_cap_failures=0)
+    summary_at = 0.0
+    while not stop.is_set():
+        started = time.time()
+        table = processes(proc)
+        if table is None:
+            record.update(available=False, last_scan=started, scans=record["scans"] + 1)
+        else:
+            alive, now = sessions(table, uid), {}
+            for pid in alive:
+                entry = current.get(pid)
+                if entry is None:
+                    entry = {"pid": pid, "first_seen": started, "last_seen": started}
+                    entries.append(entry)
+                    record["seen"] += 1
+                entry["last_seen"] = started
+                now[pid] = entry
+            for pid in current.keys() - now.keys():
+                current[pid]["first_absent"] = started
+            current = now
+            if len(entries) > KEEP_SESSIONS:
+                # every session alive now, and the ones that ended last
+                live = {id(entry) for entry in current.values()}
+                ended = sorted((e for e in entries if id(e) not in live), key=lambda e: e["last_seen"])
+                room = max(0, KEEP_SESSIONS - len(live))
+                keep = {id(e) for e in ended[len(ended) - room:]} if room else set()
+                entries = [e for e in entries if id(e) in live or id(e) in keep]
+            mine = sum(1 for owner, _parent, _name, state in table.values() if owner == uid and state not in ("Z", "X"))
+            if since is not None:
+                gone = []
+                record["first_process"] = first_process(table, uid, since, proc, record.get("first_process"), examined,
+                                                        sighted, started, gone=gone)
+                record["first_process_passed_over"] += len(gone)
+                if len(examined) > 100_000:
+                    examined.intersection_update(table)
+            failed = cap_processes(table, uid, capped)
+            if failed is None:
+                record["nproc_cap"] = None
+            else:
+                record["nproc_cap_failures"] += failed
+            record.update(available=True, last_scan=started, scans=record["scans"] + 1, alive=alive, sessions=entries,
+                          user_processes=mine, user_processes_max=max(record["user_processes_max"], mine))
+        write(name, record)
+        if started - summary_at >= 5:
+            summary_at = started
+            write(os.path.join("out", "watch.json"), {key: record.get(key) for key in (
+                "available", "last_scan", "first_process", "first_process_passed_over", "user_processes",
+                "user_processes_max", "nproc_cap", "nproc_cap_failures")})
+        stop.wait(interval)
+
+
+def unit_files(path=UNITS):
+    """The unit files of the work (paths under the tree, from the unit list), or [] when it cannot be read."""
+    try:
+        with open(path) as handle:
+            units = json.load(handle)
+        return sorted({u["file"] for u in units if isinstance(u, dict) and isinstance(u.get("file"), str)
+                       and u["file"].startswith("sympy/") and ".." not in u["file"].split("/")})
+    except (OSError, ValueError, TypeError, MemoryError):
+        return []
+
+
+def identity(info):
+    return [info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns]
+
+
+def copy_one(rel, before, folder, tree=TREE):
+    """Copy the unit file `rel` (a path that starts with sympy/) into `folder` as it stands, when it is a
+    file that has not changed since `before` (seconds since the epoch) and stays the same file with the
+    same times while it is read: ({"sha256", "size", "mtime", "ctime", "identity"}, None) or (None, why)."""
+    path = os.path.join(tree, rel[len("sympy/"):])
+    try:
+        info = os.lstat(path)
+        if not stat.S_ISREG(info.st_mode):
+            return None, "not a file"
+        if info.st_ctime >= before:
+            return None, "changed after the look began"
+        if info.st_size > COPY_MAX_BYTES:
+            return None, "too large"
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        try:
+            if identity(os.fstat(descriptor)) != identity(info):
+                return None, "changed while it was read"
+            chunks, size = [], 0
+            while size <= COPY_MAX_BYTES:
+                chunk = os.read(descriptor, 1 << 20)
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                size += len(chunk)
+            same = identity(os.fstat(descriptor)) == identity(info)
+        finally:
+            os.close(descriptor)
+        if not same or identity(os.lstat(path)) != identity(info):
+            return None, "changed while it was read"
+        data = b"".join(chunks)
+        if len(data) != info.st_size:
+            return None, "changed while it was read"
+        target = os.path.join(folder, rel)
+        os.makedirs(os.path.dirname(target), mode=0o700, exist_ok=True)
+        with open(target + ".tmp", "wb") as handle:
+            handle.write(data)
+        os.replace(target + ".tmp", target)
+    except FileNotFoundError:
+        return None, "missing"
+    except (OSError, MemoryError) as exc:
+        return None, exc.__class__.__name__
+    return {"sha256": hashlib.sha256(data).hexdigest(), "size": len(data), "mtime": info.st_mtime, "ctime": info.st_ctime,
+            "identity": identity(info)}, None
+
+
+def keep_copies(record, stop, limit_of, files=None, tree=TREE, lead=COPY_LEAD_SECONDS, interval=COPY_INTERVAL_SECONDS):
+    """From `lead` seconds before the time `limit_of()` until it, every `interval` seconds, copy each unit
+    file that changed since its last copy (copy_one, `captured` being the start of that look), keeping
+    the last COPY_KEEP copies of each in STATE/copy/a and STATE/copy/b, and the record in STATE/copy.json;
+    the last look is made once the time has come, of what had not changed by then. Then it returns."""
+    files = unit_files() if files is None else files
+    record.update(files=len(files), began=None, passes=0, finished=None, limit=None, copies={}, failed={})
+    while not stop.is_set():
+        bound = limit_of()
+        record["limit"] = bound
+        now = time.time()
+        if now < bound - lead:
+            stop.wait(min(30.0, bound - lead - now))
+            continue
+        if record["began"] is None:
+            record["began"] = now
+            try:
+                os.unlink(os.path.join(STATE, "copy-room"))
+            except OSError:
+                pass
+        last = now >= bound
+        before = min(now, bound)
+        for rel in files:
+            versions = record["copies"].get(rel, [])
+            try:
+                if versions and versions[0]["identity"] == identity(os.lstat(os.path.join(tree, rel[len("sympy/"):]))):
+                    continue
+            except OSError:
+                record["failed"][rel] = "missing"
+                continue
+            slot = "b" if versions and versions[0]["slot"] == "a" else "a"
+            copied, why = copy_one(rel, before, os.path.join(STATE, "copy", slot), tree)
+            if copied is None:
+                record["failed"][rel] = why
+                continue
+            copied.update(slot=slot, captured=before)
+            record["copies"][rel] = [copied] + versions[:COPY_KEEP - 1]
+            record["failed"].pop(rel, None)
+        record["passes"] += 1
+        if last:
+            record["finished"] = time.time()
+        write("copy.json", record)
+        if last:
+            return
+        stop.wait(interval)
+
+
+def work_started():
+    try:
+        with open(os.path.join(STATE, "work-started")) as handle:
+            return float(handle.read().split()[0])
+    except (OSError, ValueError, IndexError):
+        return None
+
+
+def main() -> None:
+    """Observe the local account until collection and preserve files near its deadline.
+
+    Writes timestamps, file copies and the observer PID in the root-owned state
+    directory. Harbor enforces the time limit and both containers' network policy.
+    """
+    started = work_started() or time.time()
+    stop = threading.Event()
+    record = {}
+    write("observer.json", {"pid": os.getpid()})
+
+    def deadline() -> float:
+        """Return the session deadline in Unix seconds for the file snapshot worker."""
+        first = record.get("first_process") or {}
+        return max(started, first.get("start", started)) + WORK_LIMIT_SECONDS
+
+    threading.Thread(target=keep_copies, args=({}, stop, deadline), daemon=True).start()
+    watch_sessions(pwd.getpwnam(USER).pw_uid, record, stop, since=started)
+
+
+if __name__ == "__main__":
+    main()
