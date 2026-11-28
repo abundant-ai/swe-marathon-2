@@ -2,6 +2,10 @@
 
 Author notes. Nothing in this file is shipped to the agent or to either image.
 
+**Status:** version 6 accepted on Oddish (QA verdict accept, high confidence). It is the current
+version, and the files here are its source. Scores and the failure mode are under
+[Calibration](#calibration-version-6).
+
 The agent gets an execute-only copy of `goose`, the compiler of the Goose programming
 language (github.com/aardappel/goose, Apache-2.0, first published 2026-08-30, pinned at
 `745901f`), with its documentation, its standard library's sources, its sample programs and
@@ -19,7 +23,72 @@ turn that runs into the platform's 9.6 h cap is never graded); round 8 answers t
 audit of version 5, which read the hooks' names and comments as cues to the solver, and round 9
 the re-check of round 8 (QA pass 07g). See [Remaining work](#remaining-work).
 
+## Calibration (version 6)
+
+Version 6 is the round-9 bundle `e15affef6c60` (commit `389f576`), uploaded on 2026-11-20. The
+platform's source audit found nothing. Its QA verdict is accept: every model run is a good
+failure, with no task defect, harness error or shortcut. The verdict was drawn on 2026-11-20 on
+the DeepSeek and GLM runs, and again on 2026-11-27 with the Opus 5.5 run added. All runs are in
+experiment [f14b3da8](https://www.oddish.app/experiments/f14b3da8).
+
+| Run | Trial | Reward | Cases passed |
+| --- | --- | --- | --- |
+| Reference (`solve.sh` builds the original) | 53, 54 | 1.0, 1.0 | 1,495 of 1,495 each |
+| No-op | 55, 56 | 0.0, 0.0 | 0 of 1,493 each |
+| Opus 5.5 (claude-code 2.1.331, effort max) | 67 | 0.544 | 813 of 1,495 |
+| DeepSeek V4.1 Flash (claude-code 2.1.296) | 60 | 0.298 | 445 of 1,493 |
+| DeepSeek V4.1 Flash (claude-code 2.1.296) | 61 | 0.359 | 536 of 1,495 |
+| GLM 5.3 (claude-code 2.1.296) | 62 | 0.304 | 455 of 1,495 |
+
+Trial numbers are the suffix of `swe-m2_software-engineering_goose-compiler-rebuild-9979b548-NN`.
+Each image build records its own set of cases, hence 1,493 or 1,495. The reaper fired at
+33,900 s in all four model runs, so none stopped on its own. In GLM's run the harness resumed the
+session after the reaper and ran to the platform's cap, and the run was still graded. Opus's run
+is the platform's second attempt; nothing was kept from the first.
+
+**Failure mode:** they never finish the type checker, so code the real compiler rejects gets
+through and the error messages don't match, which is most of the lost score.
+
+Cases passed, by kind:
+
+| Kind (cases) | Opus 5.5 | DeepSeek 60 | DeepSeek 61 | GLM 5.3 |
+| --- | --- | --- | --- | --- |
+| `check`, JSON diagnostics (579) | 248 | 112 | 123 | 128 |
+| `rejected`, `run` on a program that must not compile (125) | 42 | 5 | 3 | 4 |
+| `run` (487; 485 in trial 60) | 286 | 185 | 207 | 233 |
+| `modules` (103) | 69 | 36 | 42 | 36 |
+| `library` (83) | 51 | 32 | 47 | 34 |
+| `format` (99) | 98 | 58 | 96 | 4 |
+| Command line (19) | 19 | 17 | 18 | 16 |
+
+The two diagnostics kinds are 47% of the cases and 55 to 61% of each run's failures. Opus passed
+41% of them and the other three 17 to 19%. At the end, three agents were still working on type
+rules: generic call matching (Opus), optional references (GLM) and `const` errors (DeepSeek 60).
+DeepSeek 61 judged the whole language out of reach and built a subset. The platform's reviews
+found one agent wondering whether the work was graded on the examples file (DeepSeek 61) and
+could not assess another (DeepSeek 60); neither changed the verdict.
+
 ## Development log
+
+### 2026-11-28
+
+- Compared this folder with version 6's files on Oddish. Allowing for the 2026-11-25 move to the
+  task root, every shipped file is the same byte for byte except `task.toml` and four Python
+  files under `tests/`. `task.toml` lost only `multi_step_reward_strategy` and the `[[steps]]`
+  block, whose timeouts equal the root's. The Python differs only by that day's Ruff pass:
+  layout, `noqa` comments, an explicit `check=False` in `probe()` (the default) and `min()` for
+  `sorted()[0]` in `perturbed_limits()`; apart from those two expressions the syntax trees are
+  the same. The hidden cases, the build marker, the example runs and upstream's sources are not
+  in Git and were not compared. Nothing in the task files needed changing; this entry touches
+  only the README.
+- Added the status line and [Calibration](#calibration-version-6), from the eight version-6
+  runs in f14b3da8 and the platform's analyses of them.
+- Version 6's runs settle two items of the remaining work, now removed from it. In the four
+  baselines the collect hook recorded each delivery with no notes, no changed entries and no
+  process left; `fixer_status` is 0, `ended_by_reaper` is false, and every reaper log has one
+  `armed` line and no `fired` line. The recording's floors held: a table of the command line's
+  answers plus constants scores 2.8%, the formatter alone 8.9%. In the four model runs the reaper
+  fired at 33,900 s, sent SIGTERM and left nothing running.
 
 ### 2026-11-25
 
@@ -742,8 +811,9 @@ aborts and their exit codes), a formatter that keeps comments, and the command l
 it replaces was 12,000 lines; this target is about 75,000 lines of C++, of which about 35,000 to
 50,000 are in scope (MirrorCode's large bucket), and its error messages come from a novel
 analysis. The upstream compiler was written with AI in the image of its author's Lobster; that
-lends architecture, not the graded behaviour. QA passes 17 and 19 expect 0.25 to 0.55 for a
-strong model in one session. Not yet measured with a model.
+lends architecture, not the graded behaviour. QA passes 17 and 19 expected 0.25 to 0.55 for a
+strong model in one session; on version 6 the four model runs scored 0.298 to 0.544
+([Calibration](#calibration-version-6)).
 
 Floors without an implementation, by design (`recording.json` measures them at each build): a
 table of the command line's answers plus one constant answer per kind of case passes at most
@@ -753,7 +823,8 @@ measured 16 to 19% and 27% for the previous cases.
 
 ### Initial feasibility
 
-Solved by construction: the original passes every kept case. For an agent, unknown.
+Solved by construction: the original passes every kept case. For an agent, the best run on
+version 6 passed 813 of 1,495 cases (Opus 5.5).
 
 ## Workload
 
@@ -875,6 +946,7 @@ Licence: the upstream is Apache-2.0. Its `LICENSE` is shipped with the documenta
 | Oddish baselines, version 1 | bundle `ca4309ce85fc` (earlier generator), task `...goose-compiler-rebuild-9979b548`, experiment `goose-compiler-rebuild-20261118` (https://www.oddish.app/experiments/4b947cc6), one row | reference 1.0 twice (1,500 of 1,500: the recording kept every case), no-op 0.0 twice. First build of both images and of the solution's compiler; Archil, no fault |
 | Oddish baselines, version 2 | bundle `19c1c91c58fc` (current generator), same task, experiment `goose-compiler-rebuild-v2-20261118` (https://www.oddish.app/experiments/f14b3da8), one row | reference 1.0 twice (1,500 of 1,500), no-op 0.0 twice |
 | Oddish source audit, version 2 | trial 13 | no must-fix finding. Two should-fix: upstream's `docs/implementation.md` says an equivalent implementation need not reproduce diagnostic wording, while the JSON diagnostics are compared exactly (answered in the instruction since); the example outputs are recorded at build time and cannot be inspected in the package (kept: the original must produce them) |
+| Oddish, version 6 (current) | bundle `e15affef6c60` (round 9, commit `389f576`), same task, experiment f14b3da8 | source audit (trial 57): no finding. Reference 1.0 twice (1,495 of 1,495), no-op 0.0 twice. The four model runs and the QA verdict (accept) are under [Calibration](#calibration-version-6) |
 | `harbor check` | none | not run |
 
 ## Build and deliver
@@ -898,18 +970,6 @@ which runs `smoke.sh` on the result.
 
 ## Remaining work
 
-- Upload the round-9 bundle as version 6 once its re-check is clean and version 5's model
-  trials have settled, then its pre-trial audit, then baselines under the task's experiment (one
-  row): the first run of the collect hook, the setup hooks and the reaper on a platform under
-  their new names. Read `manifest` in both oracle and both no-op runs' `metrics.json`
-  (`manifest N B`, no survivors, `egress`, `ended_by_reaper` false, one `armed` line and neither
-  `fired` nor a failure line in `reaper_log`, `fixer_status` 0, `processes_left` 0,
-  `changed_entries`, the notes) and `reward.txt` (1.0 and 0.0). The version-4 results to keep an
-  eye on stand: `recording` (drops by reason, crashes, settling, answers still upstream's, the
-  four baselines), `limits`, `/logs/agent/probe.txt`. Model trials wait for a passed audit.
-- Before relying on the reaper's firing lines (`pgrep`, `pkill`, the two loops: version 5's,
-  unchanged in substance), read `ended_by_watchdog` and `watchdog_log` of version 5's model
-  trials, the first Goose sessions a timer ends on the platform (QA 07g, G7).
 - From QA 07g, G7, left as they are: the last program of `app-manifest` has `STARTED` (its own
   start) and `started` (the user's) in one scope, which a blanket rename would merge; an empty
   pid file reads as "already armed" for good, and the arming entry says `armed` whether or not
