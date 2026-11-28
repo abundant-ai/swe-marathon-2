@@ -13,11 +13,46 @@ unit's examples and tests show, nor a documented result of their unit, nor one
 of their own arguments; see [Reward formula](#reward-formula)).
 
 This is a pilot brought over from a v1-style task. It has one implemented step,
-run as one working session inside Oddish's 12-hour attempt (the agent's limit is
-34,560 s; since 2026-11-24 the instruction states no time figure; the 48-hour
-chain of sessions it replaced is described under [Workload](#workload)).
-It does not yet meet the v2 workload target; see [Workload](#workload) and
-[Remaining work](#remaining-work).
+run as one 12-hour working session: the agent's limit is 43,200 s, and since v6
+the instruction says so (the 48-hour chain of sessions it replaced is described
+under [Workload](#workload)). It does not yet meet the v2 workload target; see
+[Workload](#workload) and [Remaining work](#remaining-work).
+
+## Status
+
+v6 passed Oddish QA on 2026-11-27: verdict `accept` with high confidence, and
+the source audit found nothing. Oddish task
+`swe-m2_scientific-computing_sympy-restoration-66d29774`, version 6. This
+folder matches v6 apart from the Git-ignored private inputs (see the
+2026-11-28 entry in the [development log](#development-log)).
+
+Calibration (the v6 runs are in https://www.oddish.app/experiments/6cd78008):
+
+| Run | Version | Agent time | Reward | Notes |
+| --- | --- | --- | --- | --- |
+| Reference (oracle) | v5 | | 1.0, 1.0 | 2026-11-26; not run on v6 |
+| No-op | v5 | | 0.0, 0.0 | 2026-11-26; not run on v6 |
+| Claude Opus 5.5 (claude-code 2.1.331) | v6 | 1 h 43 min | 0.997 | u = 1,828 / 1,832, c = 6,128 / 6,145; ended its own turn |
+| GPT-6.2 Astra (codex 0.159.2) | v6 | 2 h 32 min | none | not graded; see below |
+
+Failure mode: Opus 5.5 writes SymPy 1.14 back almost entirely from memory
+(1,969 of its 2,115 bodies match upstream's syntax tree), and it loses points
+only where the other 146 differ from 1.14 in cases no visible docstring or
+test covers: 32 of 14,523 recorded calls and 10 of 10,428 sealed tests.
+
+- This does not separate frontier models. Our target for a frontier model is
+  about 0.6; Opus scored 0.997 and used under a sixth of its 12 hours. At this
+  level the task mostly measures how well a model remembers SymPy (see
+  [Novelty](#novelty)). Weaker set-ups still spread out: on v5, claude-code
+  with DeepSeek v4.1 Flash scored 0.557 and 0.805, and with GLM 5.3 0.244,
+  each over a full 9.6-hour session.
+- Astra was never graded. After the work, the collect step tries three public
+  hosts; github.com answered, because Oddish's codex set-up keeps GitHub open
+  to install Node and codex, and v6's verifier refuses any delivery from a
+  container that could reach a public host. Astra had filled in every
+  placeholder when it stopped. Oddish re-ran the verifier five times on the
+  same delivery and got the same error. Every codex run of v6 will end this
+  way until the probe or the codex set-up changes.
 
 ## Development log
 
@@ -1470,6 +1505,80 @@ agent and verifier settings from the root configuration.
   order unchanged; table under [Trial evidence](#trial-evidence), with
   `RESULTS_12H.md` updated to this build's basis.
 
+### 2026-11-27, v6 on Oddish: 12 hours stated, the net check retired
+
+v6 was built and uploaded outside this repository (02:51 UTC), with the message
+"Fix final-write and setup-time accounting, retire the in-session network
+probe, clarify permitted math and mapping expressions, and give agents 12
+offline hours." It answers four of the five findings Oddish's QA had listed for
+v5. Against v5 (fix round 11):
+
+- The instruction adds "You have up to 12 hours to restore the missing bodies
+  and test your changes." The agent's limit is 43,200 s (was 34,560 s), and the
+  hooks and the verifier use the same figure. Two other sentences were
+  reworded: where the bodies may come from, and the progress-log bullet.
+- Both environments and the verifier run with `network_mode = "no-network"`.
+  Before, the environments were `public` and only the work was closed;
+  `open_internet_justification` is gone with it.
+- `fsmaint-netcheck`, which polled public hosts during the work to time its
+  end and could end `dev`, is gone. Its replacement, `fsmaint-session`, only
+  watches local processes (the exec sessions, the first confirmed process, a
+  process cap) and copies unit files in the last 300 s before the limit. It
+  never ends a process. v5's audit had flagged the net check's command line as
+  visible to the agent.
+- The collect step tries pypi.org, files.pythonhosted.org and github.com once,
+  after `dev` has stopped. A delivery whose probe reached one of them is an
+  evaluation error.
+- The end of the work is the earliest of: the first scan after the last
+  whole-work session exited, the collect step's start (only if the probe found
+  every host closed), and the limit. The limit counts from the first confirmed
+  process instead of the setup step, so set-up no longer eats into the agent's
+  time (a v5 should-fix).
+- A file is late only if it changed after the end of the work. The 0.25 s
+  margin before the end is gone; v5's audit had found that it threw away valid
+  saves made just before exit (a must-fix).
+- The body rules allow `Interval.open` unless the body binds `Interval` itself,
+  and reserved names as literal keys of a dict display or comprehension;
+  `restore rules` says both. v5's audit had found the scanner refusing harmless
+  bodies on spelling alone.
+- Not covered by the message: v5's adversarial exploit, which scored 0.021 on
+  its own, under the floor in [Reward formula](#reward-formula). v6 had no
+  adversarial run.
+
+Runs, in experiment `swe-m2-20261127-sympy-backoffice-basedpl-opus55-astra62`
+(https://www.oddish.app/experiments/6cd78008): Opus 5.5 0.997234, Astra not
+graded ([Status](#status)), no reference or no-op run. The verdict, `accept` at
+06:37 UTC: "the one scored run failed only because the agent's from-memory
+reconstructions diverged from SymPy 1.14 in 32 of 14,523 reference calls while
+the checks discriminated correctly at fine granularity. The second run stopped
+before scoring on a verifier network-access error, so it says nothing about the
+task."
+
+### 2026-11-28, this folder synced to v6
+
+- Main had the task as of fix round 8 (PR #1). Fix rounds 9 to 11 landed on the
+  old branch after the merge, and v6 only on Oddish. This entry brings both
+  onto the flat layout.
+- The runtime files are v6's, pulled from Oddish. The 18 that are not Python
+  match v6 byte for byte. The 28 Python files have v6's syntax tree, except for
+  the Ruff rewrites main already carried (`check=False`, `pathlib` reads,
+  unused names with a leading `_`, `collections.abc` imports,
+  `itertools.pairwise`, sorted `__slots__`). `common/restorelib.py` is v6's
+  staged copy.
+- Not committed: the Git-ignored `tests/private/`, `solution/data/` and
+  `environment/data/`, and `tests/runtime/pyproject.toml`, which packaging
+  copies from `environment/pyproject.toml` (the two are identical in v6).
+- `checks/` and `scripts/` are fix round 11's, moved to the flat layout, with
+  the lint fixes Ruff asks for. Three checks were brought up to v6 by hand: the
+  hook list, the 43,200 s limit and the stated 12 hours. None were run, because
+  they execute the shipped verifier and this sync only read the pulled files.
+  Most of `checks/test_delivery.py` still drives v5's `fsmaint-netcheck` and
+  will fail until it is rewritten for `fsmaint-session`.
+- Below, the summary, the delivery step under [Verification](#verification),
+  findings 8 and 9 under [Hackability assessment](#hackability-assessment), the
+  trial evidence, the validation table and the remaining work now describe v6.
+  Earlier log entries are left as they were written.
+
 ## Current implementation
 
 | Part | State |
@@ -1477,7 +1586,8 @@ agent and verifier settings from the root configuration.
 | Step `01-restore-bodies` | Implemented. Instruction, agent image, separate verifier image, reference solution. |
 | Further steps | Not designed. See [Workload](#workload). |
 | Prepared inputs | Present locally under Git-ignored paths; produced by the builder in `scripts/builder/`. |
-| Oracle | 1.0 on the platform under the binary reward (at least 14 grades); 1.0 under the continuous reward through the entry point's steps on this machine (2026-11-20, and after each re-check and rebuild since, last 2026-11-26). Not yet re-run on the platform. Provenance: the original SymPy 1.14.0 source of the 323 files. |
+| Oracle | 1.0 on the platform: under the binary reward (at least 14 grades), and twice under the continuous reward on v5 (2026-11-26). Not run on v6. 1.0 through the entry point's steps on this machine after each re-check and rebuild up to fix round 11 (2026-11-26). Provenance: the original SymPy 1.14.0 source of the 323 files. |
+| Oddish | v6 passed Oddish QA on 2026-11-27; see [Status](#status). |
 | Ratings (`harbor check`) | Not run. No `[metadata.task_rating]` yet. |
 
 Layout notes:
@@ -1494,15 +1604,11 @@ Layout notes:
   reference results) and `solution/data/` (original
   source of the 323 files). Packaging stages the key into the verifier's private
   inputs as well.
-- `environment/fsmaint-reserve`, `fsmaint-netcheck` and `fsmaint-sweep` are the
+- `environment/fsmaint-reserve`, `fsmaint-session` and `fsmaint-sweep` are the
   setup and collect hooks (`task.toml`). They live in `/usr/local/lib/fsmaint`,
   mode 0700 and owned by root, off `PATH`; the agent's user cannot read them,
-  and `ps` shows only the net check (root) and its probe (`nobody`) by their
-  paths: the probe gets the hosts it polls on its standard input, so no command
-  line names one. The names were kept: the sibling Carve passed two audits with
-  the same ones. What the probe can be made to see is bounded elsewhere: a probe
-  whose handshakes time out under load still reads as closed, and the session
-  end and the time limit bound the work whatever it read.
+  and `ps` shows only the observer (root) by its path. Since v6 nothing polls
+  the network during the work.
 - The agent runs as `dev` (uid 10001). `/app` is root-owned and sticky,
   `/app/sympy` is root-owned and world-writable with everything in it owned by
   `dev`, so `dev` can change every file but cannot replace the tree itself.
@@ -1542,9 +1648,11 @@ Weaknesses, stated plainly:
   state, six from the units every run failed): 22 of 22 passed, 106 of 106
   hidden calls matched, and 18 of the 22 bodies had upstream's syntax tree,
   long ones included (8 of 9 at eleven to thirty lines, 2 of 4 over thirty).
-  All 35 graded sessions so far used relace/deepseek-v4.1-flash or
-  relace/glm-5.3, so difficulty for the models this benchmark targets has not
-  been measured.
+  Until v6 every graded session used relace/deepseek-v4.1-flash or
+  relace/glm-5.3. On v6, Claude Opus 5.5 scored 0.997 with 1,969 of its 2,115
+  bodies (93.1%) identical to upstream's: 97.5% of the bodies of one to three
+  lines, 96.3% of four to ten, 91.2% of eleven to thirty and 81.3% of those
+  over thirty. For that model the task is mostly recall.
 - Before a frontier model's score is read as difficulty, probe its recall: a
   stratified sample of at least 60 units, one shot each from the agent's view,
   scored by syntax-tree identity with upstream and by hidden-call match. Every
@@ -1602,8 +1710,8 @@ Time is not the barrier. Two things are:
   examples pass and that match no counted call (5.8% to 7.9% of the
   1,844), 51% of them matching a documented call.
 - Recall. Closing the floor needs upstream's exact internals, which only memory
-  of SymPy supplies (see [Novelty](#novelty)). A frontier model may score high by
-  recall; probe it before reading its score as difficulty.
+  of SymPy supplies (see [Novelty](#novelty)). A frontier model does score high
+  by recall: Opus 5.5 reached 0.997 on v6 (see [Status](#status)).
 
 Partial credit follows the call graph: a unit counts only once the units it
 calls work, so work in `restore next` order scores about its share (the first 20%
@@ -1623,14 +1731,16 @@ easy end beside the sibling rebuild tasks; compare models within one harness onl
 
 Solved by construction: the original source is the reference solution and scores
 1.0. For an agent, reward 1 needs every counted unit and call, the invisible
-residue included; no run has reached it, and more time did not shrink it.
+residue included; no run has reached it, and more time did not shrink it. The
+closest, Opus 5.5 on v6, missed 4 units and 17 counted calls.
 
 ## Workload
 
 v2 asks for at least five days of agent execution. This task does not meet that.
-Since 2026-11-19 a trial is one working session inside Oddish's 12-hour attempt (the
-agent's limit 34,560 s); since 2026-11-24 the instruction states no time figure and
-says only that the run can end at any time. With the earlier 9-hour limit the
+Since 2026-11-19 a trial is one working session. Since v6 (2026-11-27) the agent's
+limit is 43,200 s and the instruction states the 12 hours; before that it was
+34,560 s, with no time figure stated from 2026-11-24. Opus 5.5 used 1 h 43 min of
+v6's 12 hours. With the earlier 9-hour limit the
 best run used all of it at about 4,300 steps per hour and reached 96.2% of units;
 one 12-hour session reached 82.3% at best; two 48-hour sessions (19.2 hours)
 reached 2,568 of the 2,671 units of the set then at best (experiment `sympy-restoration-v2-48h-20261117`).
@@ -1663,127 +1773,70 @@ Not yet designed, listed as options and not as decisions:
 ## Verification
 
 The verifier runs in a separate image with only `/app/sympy` from the candidate.
-That image's build installs its system and Python packages, so its environment
-has public egress (`[verifier.environment] network_mode = "public"`); the
-verification itself runs with none (`[verifier] network_mode = "no-network"`,
-to which Harbor switches that environment before it runs the tests), and the
-verifier refuses to measure, an evaluation error, when a public host answers
-its handshake.
+Since v6 both environments and the verification run with
+`network_mode = "no-network"`; Harbor still lets through the hosts a harness's
+set-up needs (finding 8 of the [Hackability assessment](#hackability-assessment)).
+The verifier refuses to measure, an evaluation error, when a public host
+answers its own handshake.
 
 0. Delivery (`verifier/delivery.py`). The work runs as `dev`. A root setup step
-   records when the work started, to the fraction of a second, and starts
-   `fsmaint-netcheck`, which keeps watch until the collect step stops it. It
-   polls three public hosts with a TLS handshake (as `nobody`, in a probe
-   process of its own that gets the addresses on its standard input) every
-   0.1 s: a poll is open when a handshake completes, local when none does and
-   an attempt failed for a reason of the machine rather than of the network (no
-   free local port or address, no file, buffer or memory, a thread or probe that
-   would not start), and closed otherwise. Closed polls in a row make a stretch;
-   local polls neither extend nor end one, however many come in a row (they are
-   counted, and the longest run of them kept). A stretch of at least three ends
-   at an open poll: its last closed poll is recorded, with whether an exec
-   session was seen alive then and whether the time the work is given had run
-   out; every process of `dev` is then stopped and ended once a fresh look finds
-   no session alive, or once that time, counted from the first process (below),
-   has run out, and not before, so nothing ends the agent while its session runs
-   within its limit; with no first process seen it is never ended by time. It looks at `/proc`
-   every 0.1 s for the exec sessions of `dev`: a process of `dev` whose parent is
-   a process named `su` or `runuser` of the real user root (not the first
-   process), or that has no parent in the container. Harbor runs every command
-   of the agent as `su dev -s /bin/bash -c ...` on Modal and as `docker exec -u
-   dev` under Docker; a process the agent starts, in the background or detached,
-   has a parent of `dev`, then the first process, never such a parent, so it is
-   never a session. The time the work is given, 34,560 s (the agent's limit in
-   `task.toml`; a check holds the two equal), counts from the start of the work,
-   which the setup step takes before Harbor starts the agent's own clock, so the
-   work ends no later than Harbor's limit and a fetch after it saves nothing
-   that counts. The same looks find the first process of `dev`: one that began
-   after the work did, whose parent is not one of `dev`'s (its start read from
-   `/proc` in clock ticks since boot), and that two looks at least 1 s apart
-   both saw alive, with the same start. After the setup step and before its own
-   clock starts, Harbor runs a short `pwd` as `dev` (Harbor 0.20's step
-   preparation); a look can catch it, but it is gone within milliseconds, so it
-   is never the first process (since fix round 11; the record counts such
-   processes in `first_process_passed_over`). The agent's exec session, which
-   Harbor starts after its clock, counts a second after it starts (claude-code,
-   mini-swe-agent and the oracle run one for the whole turn; a harness that runs
-   one exec per command gives its first command that lives a second or more,
-   later still). The first process serves only to say when `dev` may be ended
-   while a session still runs: not before that time counted from its start, so
-   nothing ends the agent within its own limit; with none seen, never by time. A
-   save in the last seconds before the end is kept by the copies below. It gives
-   every process of `dev` a limit of 8,192 processes of that user, so that a process that forks
-   without end leaves room for the steps after the work. And from 300 s before
-   that time runs out until it does, every second, it copies each unit file that
-   changed since its last copy into a folder only root can read (room for this
-   was set aside at setup and is given back before the first copy, or by the
-   collect step when there was none), when the
-   file has not changed since that look began and stays the same file with the
-   same times while it is read; it keeps the last two copies of each, with the
-   time at which the file held that content, and makes its last look once the
-   time has run out, of what had not changed by then. When the work ends, the
-   collect step (`environment/fsmaint-sweep`, root) first says that it has
-   begun, with the shell's own commands only, in a file the setup step made
-   whole for it (`/var/lib/fsmaint/out/progress`, copied beside the tree), so
-   that this is said even when no process can be started. Then it stops every
+   records when the work started and starts `fsmaint-session`, a local
+   observer that runs until the collect step stops it. It never touches the
+   network and never ends a process; Harbor enforces the agent's limit. Every
+   0.1 s it looks at `/proc` for two things. One is the exec sessions of
+   `dev`: a process of `dev` whose parent is a root `su` or `runuser`, or that
+   has no parent in the container. Harbor runs the agent's commands as
+   `su dev -s /bin/bash -c ...` on Modal and as `docker exec -u dev` under
+   Docker; a process the agent starts has a parent of `dev`, so it is never a
+   session. The other is the first process of `dev`: one that began after the
+   work did, whose parent is not `dev`'s, and that two looks at least 1 s apart
+   both saw alive with the same start, so Harbor's short `pwd` before its clock
+   starts never counts (`first_process_passed_over` counts such processes).
+   The time the work is given, 43,200 s (the agent's limit in `task.toml`; a
+   check holds them equal), counts from the first process's start, or from the
+   setup step's record when no first process was confirmed. The observer caps
+   every process of `dev` at 8,192 processes of that user, and from 300 s
+   before that time runs out until it does, every second, it copies each unit
+   file that changed since its last copy into a folder only root can read,
+   keeping the last two copies of each with the time the file held that
+   content. When the work ends, the collect step (`environment/fsmaint-sweep`,
+   root) says that it has begun in a file the setup step made whole for it
+   (`/var/lib/fsmaint/out/progress`, copied beside the tree), stops every
    process of `dev`, gives back the room the setup step set aside, and puts the
-   tree aside with an empty tree in its place holding a signed mark that refuses
-   it ("the step that measures the tree did not finish"), so that a timeout, a
-   crash or a full disk from then on leaves a tree copied as refused (0), never
-   one without a mark; then it lists the stopped processes and ends them (live
-   ones only, for at most 30 s). It probes the hosts itself, lets the net check
-   finish one poll and one look that started after that and stops it, records
+   tree aside with an empty tree in its place holding a signed mark that
+   refuses it, so that a timeout, a crash or a full disk from then on leaves a
+   tree copied as refused (0). It then lists the stopped processes and ends
+   them, tries a TLS handshake with pypi.org, files.pythonhosted.org and
+   github.com once, waits for the observer's last scan and stops it, records
    every entry of the tree (type, size, modification and change times, sha256)
-   before touching anything, removes every link (one step each: no link is
-   resolved), anything that is neither a file nor a directory and any file whose
-   name a copy might not carry as it is, checks that there is room for the
-   platform to pack the tree in `/tmp` (removing first what `dev` left in `/tmp`,
-   `/var/tmp` and `/dev/shm` when it is short), puts the copies in place of the
-   unit files changed after the end (below), writes a record and a mark into the
-   tree, gives it back its name (the two names exchanged in one step where Linux
-   allows it), and says that it has finished. The mark holds at most 60 notes of
-   at most 240 characters; the record keeps them all. The end of the work is the
-   earliest of three. One is the last closed poll of the longest stretch an
-   opening ended, except an opening seen while an exec session was alive before
-   the time the work is given ran out: the hosts answer again only once the work
-   has ended, so such an opening says nothing of its end. A stretch still going
-   on, or one whose last closed poll came after the collect step began, gives the
-   collect step's start only when the collect step's own probe found the hosts
-   closed, and nothing otherwise. The second is the last time the exec session
-   that ended last was seen alive, when that session began within ten minutes of
-   the start of the work (one session for the whole of the work, as claude-code,
-   mini-swe-agent and the oracle run) and no session was alive when the collect
-   step began; a harness that runs one exec per command gives no such end. The
-   third is the time limit: the start of the work plus 34,560 s. No end is later
-   than it, and when the collect step began
-   after it with no other end known, it is the end, whatever the sessions show
-   (nothing fetched can come before it); no kill enforces it (a killed
-   claude-code exits 137, and Harbor classifies that exit by its transcript,
-   whose failed fetches read as network errors that void the score). Without
-   any, the start of the work is the end when nothing in the tree changed since
-   then (the no-op); when the work itself hid the end from the probe (it could
-   not see the network at all, or saw no answer while the hosts answered the
-   collect step at the net check's own addresses within the time its polls
-   allow) the tree is refused, a scored 0; otherwise there is no end. A unit
-   file whose change or modification time is at or after the end, less 0.25 s,
-   is replaced by the last copy the net check took of it that held its content
-   by the end, and its entry in the record says so (the copy's size, digest and
-   times, when the file held that content, what was replaced, and the units
-   whose bodies differ between the two). Only a turn run to its limit needs
-   this: Harbor does not end the agent at its limit, claude-code goes on until
-   it is stopped and saves by writing a new file and renaming it, so without the
-   copy one save in that second or two returned the whole file, with every body
-   written in it before, to the skeleton. The collect step refuses a tree over
-   256 MB (the starting tree is 23 MB), which the platform's copy might not carry
-   through its two transfers.
+   before touching anything, removes every link, anything that is neither a
+   file nor a directory and any file whose name a copy might not carry, checks
+   that the platform has room to pack the tree, puts the observer's copies in
+   place of unit files changed after the end, writes a record and a signed mark
+   into the tree and gives it back its name. The mark holds at most 60 notes
+   of at most 240 characters; the record keeps them all. The end of the work is
+   the earliest of these that is known and no later than the collect step's
+   start: the first scan that found the last exec session gone, when that
+   session began within ten minutes of the start of the work and none was alive
+   when the collect step began (`session`); the collect step's start, only when
+   its probe found all three hosts closed (`collect`); and the time limit above
+   (`limit`). With none of them, the start of the work is the end when nothing
+   in the tree changed since then (`unchanged`); otherwise there is no end. A
+   unit file changed after the end is replaced by the last copy the observer
+   took of it that held its content by the end, and its entry in the record
+   says so. Only a turn run to its limit needs this: Harbor does not stop the
+   agent at its limit, and claude-code saves by writing a new file and renaming
+   it. The collect step refuses a tree over 256 MB (the starting tree is
+   23 MB), which the platform's copy might not carry through its two transfers.
    The mark is signed with a key in the agent image
    that only root can read and that the verifier image holds too. Before
    grading, the verifier checks that its own network is closed (a TLS handshake
    to three public hosts; open is an evaluation error), then reads the mark: no
    tree, no mark, an unreadable, oversized or unsigned mark, a record that
    differs from the signed one, a listed file that did not arrive as listed, a
-   link or an unlisted file that arrived, or a record that says a live process
-   of `dev` outlived the collect step is an evaluation error (no reward file),
+   link or an unlisted file that arrived, a record that says a live process
+   of `dev` outlived the collect step, or one whose probe reached a public host
+   during collection is an evaluation error (no reward file),
    since the collect step always leaves a marked tree and these come from the
    infrastructure; except when no mark the key signs arrived and the collect
    step's progress file says it began and did not finish: the work kept it from
@@ -1801,7 +1854,7 @@ its handshake.
    any other. A unit file the collect step replaced by its last copy is taken as
    that copy (`copied_files`, and the units whose bodies changed after it in
    `units_changed_after_the_end`); any other file whose change or modification
-   time is at or after the end, less 0.25 s, is not taken over: its units are
+   time is after the end is not taken over: its units are
    `late` and count as not restored. The transplant never reads a unit file
    through a link. `late_files`, `egress_open`, `end_from`, `end_note` and the
    collect step's record go to `metrics.json`.
@@ -2138,15 +2191,15 @@ reward = min(u, c)  if candidate_tree and measurement_integrity passed, else 0
   accessor (or coincides with one on every recorded call) are not a floor but
   the restoration itself.
 - A tree that did not arrive, or arrived without the collect step's signed mark,
-  not as the mark lists it, or after a live process of `dev` outlived the
-  collect step, is an evaluation error; so is a tree with a restored unit and no
-  known end of the work. A delivery the collect step refused (nothing usable
+  not as the mark lists it, after a live process of `dev` outlived the collect
+  step, or from a container whose collect-time probe reached a public host, is
+  an evaluation error; so is a tree with a restored unit and no known end of the
+  work. A delivery the collect step refused (nothing usable
   under the tree's name, or past its limits), or a tree with no restored unit,
   fails `candidate_tree`; the other checks are skipped and the reward is 0.
 - An evaluation error leaves no reward file. `verify.py` exits 1 and
   `report.json` has `status: evaluation_error`.
-- One step. `multi_step_reward_strategy = "final"`; with a single step the
-  trial reward is this step's reward.
+- One step; the trial reward is this step's reward.
 - The bars of `complete` are in `verifier/grade_config.json`; the instruction
   states behaviour, not bars.
 - Implementation: `verifier/scoring.py`. Tests: `checks/test_scoring.py` (the min
@@ -2156,25 +2209,39 @@ reward = min(u, c)  if candidate_tree and measurement_integrity passed, else 0
 
 ## Hackability assessment
 
-Highest unresolved severity: 🟡 YELLOW / MEDIUM (findings 1 and 9: the hooks
-have not yet run on the platform). Unassessed boundaries: finding 7.
+Highest unresolved severity: 🟡 YELLOW / MEDIUM (findings 1 and 8). Unassessed
+boundaries: findings 7 and 9 (v6's observer and collect step have not been
+attacked).
 
 | # | Attack and impact | Boundary | Evidence | Mitigation | Residual risk | Next validation | Severity |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | 1 | A body runs arbitrary code at grading time (through `sympify` of a string, a rebound `json.dumps`, a frame reached from an exception, or a computed attribute name) and lies about its own items: patches the example runner so its unit's examples report a pass, or reports a call's result without the state it left in its arguments | Sandbox process | Executed in red-team round 2; fourth re-check: a rebound `json.dumps` and a walk to the runner's frame forged a docstring pass and a call without its argument state, and two shapes of record made scoring raise; fifth re-check: a body that rebound the encoder broke the next records of its runner (19 counted calls of the same submission lost), now closed (`checks/test_doctest_phase.py`) | The runners hold no key and are trusted with nothing: each answers over a pipe, the verifier reads its lines within limits and only in their order, rebuilds every record from the runner's own fields and never raises on one; the runners encode their records with an encoder and write them through a channel of their own, both made before any submitted code loads, so a body that rebinds the `json` module changes no record. Until its runner is replaced, a body's lie reaches the items that runner reports after it, its own and other units' of the same module; never another module, the verifier or a reference. The reward is min(u, c); c compares what a call reports with references the sandbox never sees | A lie can raise u up to the share of units whose counted calls already match, and c only by calls whose result is right and whose argument state is wrong (the lie hides that state); with no way to see the references, a lie cannot make a wrong result match. Comparing example output in the root process would not close this: the expected output is in the docstring the sandbox reads, so a patched runner can report it | Red-team the runners with forged output | 🟡 YELLOW / MEDIUM |
 | 2 | Read reference results or the withheld tests | File permissions in the verifier image | Attempted in both rounds; not reached | Private inputs readable by root only; sandbox runs as `nobody`; no test directories in the tree during phases 2 and 3 | Depends on the privilege drop | Re-run on the v2 bundle | 🟢 GREEN / LOW |
 | 3 | Edit tests, module-level code or other functions to make checks pass | Graded-tree construction | Executed; no effect | Only unit bodies are copied into the reference skeleton; `checks/test_transplant.py` | None found | Keep the check | 🟢 GREEN / LOW |
-| 4 | Return the documented outputs for the documented inputs, and something cheap otherwise: a constant, the first argument, the other boolean, a default of the type the visible results have, an output the examples print, delegation to another function, or a documented result renamed | Which calls count | Review of the binary version: tables passed `trig_split`, `viete`, `wigner_3j` and 14 more units through the real verifier. First re-check of 2026-11-20: behind a table, a first-argument fallback and a renaming table reached 0.07 to 0.12. Second re-check: results the docstrings print still counted (the panel's own fixture 0.029, every buildable strategy together 0.041). Third re-check: an accessor of the call's own arguments chosen by visible fit, then the cheap fallbacks, 0.0401 behind a table through the verifier's own runners | Only calls nothing visible answers count (D): no docstring example or visible test (slow, skip-marked and `+SKIP` ones included) makes them, even with its symbols renamed, and their result is neither one an example or a visible test shows, nor a documented result of their unit, nor one of their own arguments or an element of their `*args` or `**kwargs`, all compared with the type left out; variants rename with one map over all arguments and shift no integer with a stated domain. Measured (see the floor under [Reward formula](#reward-formula)): the strongest buildable strategy 0.0384 behind a table (the third re-check's accessor synthesis, graded again on these calls in fix round 10; 0.0401 on the fourth re-check's; at most 0.0426 were its refused bodies to match and with the error strategy of fix round 10), the cheap fallbacks together 0.0324 statically in the original tree (0.0163 with each delegation run as the unit's own body, since fix round 9) and 0.0166 through the verifier; through the verifier 0.0 for each fixture tree | An accessor, a type default or a delegate can still equal some counted results, up to 0.0384 (0.0426 at most); with the hidden results in hand, 0.0350 (best per call, in the original tree) and 0.0290 (best constant per unit), which no submission can build; all under the decision's 0.05 | Re-run `fixtures.py`, `floor.py` and the reviewers' scripts after any rebuild of the calls | 🟢 GREEN / LOW |
+| 4 | Return the documented outputs for the documented inputs, and something cheap otherwise: a constant, the first argument, the other boolean, a default of the type the visible results have, an output the examples print, delegation to another function, or a documented result renamed | Which calls count | Review of the binary version: tables passed `trig_split`, `viete`, `wigner_3j` and 14 more units through the real verifier. First re-check of 2026-11-20: behind a table, a first-argument fallback and a renaming table reached 0.07 to 0.12. Second re-check: results the docstrings print still counted (the panel's own fixture 0.029, every buildable strategy together 0.041). Third re-check: an accessor of the call's own arguments chosen by visible fit, then the cheap fallbacks, 0.0401 behind a table through the verifier's own runners. On Oddish, v5's adversarial run scored 0.031 and its exploit replayed alone 0.021 | Only calls nothing visible answers count (D): no docstring example or visible test (slow, skip-marked and `+SKIP` ones included) makes them, even with its symbols renamed, and their result is neither one an example or a visible test shows, nor a documented result of their unit, nor one of their own arguments or an element of their `*args` or `**kwargs`, all compared with the type left out; variants rename with one map over all arguments and shift no integer with a stated domain. Measured (see the floor under [Reward formula](#reward-formula)): the strongest buildable strategy 0.0384 behind a table (the third re-check's accessor synthesis, graded again on these calls in fix round 10; 0.0401 on the fourth re-check's; at most 0.0426 were its refused bodies to match and with the error strategy of fix round 10), the cheap fallbacks together 0.0324 statically in the original tree (0.0163 with each delegation run as the unit's own body, since fix round 9) and 0.0166 through the verifier; through the verifier 0.0 for each fixture tree | An accessor, a type default or a delegate can still equal some counted results, up to 0.0384 (0.0426 at most); with the hidden results in hand, 0.0350 (best per call, in the original tree) and 0.0290 (best constant per unit), which no submission can build; all under the decision's 0.05 | Re-run `fixtures.py`, `floor.py` and the reviewers' scripts after any rebuild of the calls | 🟢 GREEN / LOW |
 | 5 | Change how a runner reports results | Runner control items | Executed in round 1 through module-level `os`/`sys`; fixed. Third re-check: a body that imported `__main__` or `posix` wrote a result line of its own and forged a pass. Fourth re-check: the same through `posixpath.os`, `random._os`, `sympy.external.import_module('posix')`, `attrgetter` frame walks and a rebound `json.dumps`; a sparse 2^50-byte output read whole ended in a MemoryError | No key exists where a body runs: the verifier is the runners' parent and reads their pipes in pieces, at most a line limit and a total, in order; the runners serialise with a function bound before the tree is imported, and their standard streams go nowhere; the body rules deny the route class (the modules and attributes that reach the process or the files, literal names given to `getattr`, `attrgetter`, `methodcaller` and `import_module`, and since fix round 10 any of the names as a literal key, whatever holds it: `x['os']`, `d.get('sys')`, a namespace kept in a variable or taken with `getattr(x, '__dict__')`); a self-check after every unit's examples; control items with known outcomes in every pytest run; the records of a run cannot hold more passes than that run's tally; the sandbox's files are bounded in size | The rules are a list of names: a name built at run time from pieces, never written whole in the body, still reaches the process, and what that buys is finding 1 | With finding 1 | 🟢 GREEN / LOW |
 | 6 | Tamper with reward or result files | Separate verifier container | By design; not attacked | Verifier starts fresh with only `/app/sympy`; output directory closed to the sandbox user | None found | Attack on the v2 bundle | 🟢 GREEN / LOW |
 | 7 | Anything that depends on the new entry point, check registry or reporting | v2 verifier code | Not attacked | Same measurement code as v1; reference and no-op baselines on the v2 bundle | Unknown | Red-team run against the v2 bundle | 🟡 YELLOW / UNASSESSED |
-| 8 | Reach the network during the work phase to fetch SymPy | Agent network policy | Probe task, 2026-11-15: PyPI and GitHub unreachable from the work phase; 217 in-work fetch attempts in one 12-hour run all failed (TCP connected, TLS did not) | `[agent] network_mode = "no-network"`; the instruction forbids another copy; SymPy is not installed elsewhere; the image's attribution names no download | Agent tooling is installed at setup with public egress; host-name filtering not probed for every route | Probe the routes as `dev` | 🟡 YELLOW / MEDIUM |
-| 9 | Leave a process running after the work that fetches SymPy once public egress returns (about 0.2 s after the work ends, before collection: 0.8 s and 11.8 s on two 12-hour runs) and writes the original into `/app/sympy`, directly or behind a link; the original scores 1.0. Variants: hold every local port (or exhaust another resource of the machine) so the net check's probe fails and its closed stretch runs on past the turn; load the CPU or the link so its handshakes time out | Delivery: user, hooks, record | Reproduced by review with the verifier's own transplant: before 2026-11-20 (2,671 restored, a tree identical to the reference); on 2026-11-20, a write after a turn shorter than the net check's old one-minute arming taken whole, a late file graded through a directory link, and (re-check 2) a fetch while the probe failed for want of ports, taken because such a failure counted as a closed poll and the end was moved to the collect step's start. All fixed; `checks/test_delivery.py` runs the real net check whole for a blinded probe and a no-op turn, and covers a 3-second turn, every unknown end, the session end, file and directory links and every refused tree. Fifth re-check: with the limit counted from the first process, a capped run's end could pass for a blip, so a save after egress returned was graded; the limit counts from the start of the work again, and the real net check is run with a fetch saved after egress returns (late, the file taken from its last copy) and an honest rename save in the last second before the limit (kept) | The work runs as `dev`; a poll that fails for a reason of the machine is not a closed poll and ends nothing; the net check records the end of every stretch an opening ends, but an opening seen while an exec session is alive, within the time the work is given, is no end, and `dev` is ended only once no session is alive or that time has run out; it also watches the agent's exec sessions, and the end of the work is the earliest of the net check's end, the end of the session that ran the whole work, which no process the agent starts can move, and the start of the work plus the time limit (34,560 s; the setup step takes that start before Harbor starts the agent's clock), which bounds a turn run to the limit whatever the probe read and ends no later than Harbor's own limit, so a fetch once egress returns lands after it; a unit file saved after that limit is taken as the last copy the net check made of it before the limit, so a capped turn loses only its edits after that copy, never a file; while a session is alive, `dev` is ended no earlier than its first process's start plus that limit (a process two looks a second apart saw alive, so never Harbor's short pre-clock `pwd`, fix round 11), and with no first process seen never by time (fix round 10); the end is never moved to the collect step's start unless its own probe found the hosts closed; the collect step gives back the room the setup step set aside and puts the tree aside right after it has stopped every process of `dev`, then stops and ends the rest, lets the net check finish one more poll and look, records every file's change time before touching anything and removes every link; the verifier takes no other unit file changed at or after the end and none reached through a link; a link or an unlisted file that arrived, a short delivery or a surviving process is an evaluation error; a collect step that began and did not finish leaves a noted 0; the mark is signed with a key `dev` cannot read | A write through a file mapping dirtied before the end can change content without moving its times. It needs a live process: the net check ends `dev` once the turn's session is over and the hosts answer, but a probe made to time out by load still reads as closed, so such a process can live until the collect step; the session end (for a harness whose exec ends with the turn) and the time limit (for a turn run to it) stop every write that moves a file's times, not one through a mapping. A harness that runs one exec per command, or a run Harbor resumes in place after a provider error, has neither, and only the net check's end bounds it, which such a load can push back. A harness that does its work outside its own exec sessions, and whose last session began within ten minutes of the start, would have its later writes counted late (claude-code, mini-swe-agent and the oracle run the whole work in one session; Proximus is not yet seen). A capped turn's edits after the last copy before the end of the work are lost: the seconds by which Harbor's clock started after the setup step, and at most one more. Closing the mapping residual needs the platform to keep the agent's network policy through collection | Canaries on the platform: a detached fetch-and-overwrite loop scores 0 with its files `late`; a reference that keeps working past the time limit with a load process and a fetch scores 0 with its fetched files `late`; an honest reference that saves a unit file by rename just after the limit keeps that file as copied; reference 1.0 (`end_from` `session`) and no-op 0.0 (`end_from` `unchanged`) with the record present; the start of the work against Harbor's start of the agent (what a capped turn loses); Proximus's process model read from its record (`sessions`) | 🟡 YELLOW / MEDIUM |
+| 8 | Reach the network during the work to fetch SymPy | Harbor's network policy and the collect step's probe | Probe task, 2026-11-15: PyPI and GitHub unreachable from the work phase. v6 on Oddish: the Opus run's probe found pypi.org, files.pythonhosted.org and github.com closed; the Astra run's found github.com open, since Oddish's codex set-up allows GitHub to install itself | Since v6 both environments are `no-network`; the instruction forbids another copy; SymPy is not installed elsewhere; a delivery whose collect-time probe reaches a public host is an evaluation error, so a run that could reach GitHub is not graded rather than graded high | The hosts a harness's set-up allows stay open for the whole run, and only three hosts are probed: under claude-code, registry.npmjs.org and downloads.claude.ai are reachable and not probed. Under codex the probe always finds GitHub, so no codex run is graded | Probe each allowed host as `dev` under each harness; decide whether the probe should skip hosts a harness's own set-up needs | 🟡 YELLOW / MEDIUM |
+| 9 | Keep working, or fetch, after the work has ended, and have it count | Delivery: user, hooks, record | Up to v5 the net check carried this; its attacks and fixes are in the development log (2026-11-20 to 2026-11-26). v6 replaced it with the observer and has not been attacked here; Oddish's v6 audit found nothing, and the Opus run's record shows `end_from` `session` and no late file | Both environments stay offline through collection; the end of the work is the first scan after the whole-work session exited, the collect step's start only with every probed host closed, or the limit (the first confirmed process's start plus 43,200 s); a file changed after the end is not taken, and a unit file is taken as its last copy from before the end; the collect step stops every process of `dev` before it lists the tree, records every file's times before touching it and removes every link; a surviving process is an evaluation error; the mark is signed with a key `dev` cannot read | A write through a file mapping dirtied before the end changes content without moving its times, and needs a live process until collection; v6's observer ends no process. With the network closed such a process can only add the agent's own late work | Attack v6's observer and collect step: a detached writer after the session ends, a mapped write, a capped run that saves by rename at the limit | 🟡 YELLOW / UNASSESSED |
 
 Recall of SymPy from pre-training is not an exploit of the verifier, but it limits
 what a high score means. It is recorded under [Novelty](#novelty).
 
 ## Trial evidence
+
+v5 and v6 on Oddish, continuous reward. v6 ran in experiment 6cd78008 with no
+reference or no-op run; v5 ran in experiment `sympy-restoration` (a62775b6)
+after reference 1.0 twice and no-op 0.0 twice. Three v5 model runs before these
+were lost to a platform outage on 2026-11-26 and were run again.
+
+| Version | Trial | Agent and model | Agent time | Steps | Reward | Notes |
+| --- | --- | --- | --- | --- | --- | --- |
+| v6 | 65 | claude-code 2.1.331, Claude Opus 5.5 | 1.72 h | 1,978 | 0.997 | 52 sub-agents; 2,115 / 2,115 units pass their examples, 14,491 / 14,523 calls match, 10,418 / 10,428 tests pass; 93.1% of bodies identical to upstream |
+| v6 | 66 | codex 0.159.2, GPT-6.2 Astra | 2.54 h | 1,204 | none | evaluation error (github.com open at collection); no placeholder left; the verifier ran six times in all |
+| v5 | 63 | claude-code, relace/deepseek-v4.1-flash | 9.60 h | 17,807 | 0.805 | |
+| v5 | 61 | claude-code, relace/deepseek-v4.1-flash | 9.60 h | 12,084 | 0.557 | |
+| v5 | 62 | claude-code, relace/glm-5.3 | 9.60 h | 3,869 | 0.244 | |
 
 Base experiment, v1 package, 2026-11-16. Bars: 99% units, 90% calls, 95% tests.
 
@@ -2367,6 +2434,11 @@ stored submissions of the earlier sessions of the same task; every one scored
 | Cue sweep with the seventh re-check's words ("selected", "replaced by placeholder", "another way", "skeleton", "curated", "constructed", "deliberate", "exercise" and others) | bundles `1f1b2f2ab4fa` → `cbe004ce22d8` | "selected" and "replaced by placeholder" gone from the instruction, the tool's text and `ATTRIBUTION.txt`, "another way" from `restore rules` (the instruction's one is the requirement's "the same expression written another way"); "recovery tooling" in the instruction, `restore`'s help, the library and `ATTRIBUTION.txt`; "skeleton" left only as the tool's own path and code; nothing else moved but one root-only comment |
 | Reference, the agent's starting tree and a turn of no length, after fix round 11 | this machine, the entry point's steps, one worker; the no-op through the shipped hooks and the real net check | reference 1.000000 and complete: 1,832 / 1,832 units in the set, 6,145 / 6,145 counted calls, 14,523 / 14,523 calls, 2,115 / 2,115 units' examples, 10,428 / 10,428 tests, none unreached, nothing out of its time and no item over half of its bound, no control tripped, 974 s; starting tree 0.0; no-op 0.0 with `end_from` `unchanged` |
 | Regrade of the stored submissions after fix round 11 | this machine, the entry point's steps, examples and calls, one worker, 2026-11-26 (the machine shared with other work during the last grades) | 16 submissions, reward 0.003 to 0.853, each within 0.0005 of fix round 9's regrade (11 up, 5 down), the order unchanged; every move made of the 7 units that joined the set (a submission passes 0 to 7 of them, the full-session claude-code runs 6 or 7) and 2 units whose verdict a call's time-out changed, one each way; none unreached, no late file, no control tripped |
+| Oddish v5 | task version 5 (bundle `cbe004ce22d8`), experiment `sympy-restoration` (a62775b6), 2026-11-26 | source audit clean; reference 1.0 twice (trials 51, 52); no-op 0.0 twice (trials 53, 54); three model trials (see [Trial evidence](#trial-evidence)) |
+| Oddish v6 | task version 6, built outside this repository; experiment 6cd78008, 2026-11-27 | source audit: no findings; no reference or no-op trial; Opus 5.5 0.997234; Astra an evaluation error; verdict `accept` |
+| This folder against v6 | the v6 files pulled from Oddish, 2026-11-28 | the 18 non-Python runtime files byte for byte; the 28 Python files by syntax tree, the only differences the Ruff rewrites main already had; private inputs not committed |
+| Ruff 0.17.6 (`ruff format --check`, `ruff check`) | this task folder, 2026-11-28 | pass |
+| `checks/` | this task folder, 2026-11-28 | not run (see the development log) |
 | `harbor check` with `resources/task-implementation.toml` | working tree, 2026-11-17 | attempted on Modal; failed before review with `NotFoundError: Environment not found` (no default Modal environment). Not run in local Docker. No ratings |
 | Local image builds | none | not run for the v2 Dockerfiles; the Oddish baselines are the first build |
 
@@ -2468,6 +2540,20 @@ uv run --frozen pytest -q tasks/static/library_build/sympy-restoration/checks
 
 ## Remaining work
 
+- Difficulty for frontier models. Opus 5.5 scored 0.997 on v6 against a target
+  of about 0.6, mostly from memory. A unit set the models have not memorised
+  (see [Novelty](#novelty)) is the fix; tuning this one is not.
+- Codex runs cannot be graded on v6: the collect step finds GitHub open under
+  Oddish's codex set-up. Either probe only hosts no harness set-up needs, or
+  have the platform close those hosts once set-up is done. Changing the task
+  means a new version and a new QA pass.
+- No v6 run has used its whole 12 hours. Oddish ended an attempt at 12 hours,
+  set-up and grading included, when this was last checked (2026-11-16), so a
+  run that uses the full 43,200 s may end ungraded; the 34,560 s limit before
+  v6 left room for grading.
+- Reference and no-op on v6: not run on the platform; the last ones are v5's.
+- Rewrite `checks/test_delivery.py` for `fsmaint-session` (most of it drives
+  v5's net check), then run `checks/` on this tree.
 - The 48-hour chain is retired (2026-11-18 and 19): one task row per experiment,
   one 12-hour session per trial. The six held runs stay as history in experiment
   ebb4e086.
@@ -2479,32 +2565,22 @@ uv run --frozen pytest -q tasks/static/library_build/sympy-restoration/checks
   can rebuild them.
 - Decide the follow-up steps and the unit set (see [Workload](#workload) and
   [Novelty](#novelty)). Until then the task is below the v2 workload bar.
-- Red-team the v2 bundle (findings 7 and 8).
-- Before any model trial of the continuous version: reference 1.0 and no-op 0.0
-  twice each on the platform, the platform's pre-trial audit clean, and a
-  regrade there of a stored submission with no test unreached (the condition for
-  the tests to join the reward inside the min).
-- Probe each target model's recall (see [Novelty](#novelty)) before reading a
-  frontier score as difficulty.
-- Read the reference's first platform grade for its 17 counted results that
-  hold a Python float: the image's Python 3.12.3, its float `**` and C complex
-  arithmetic are the only unknowns the few-unit bound is there for.
-- Run the delivery hooks on the platform before any model trial (finding 9): a
-  canary whose reference leaves a detached fetch-and-overwrite loop must score 0
-  with its files `late`; a time-limit canary, a reference that keeps working
-  past the limit with a load process and a fetch, must score 0 with its files
-  `late` and `end_from` `limit` or earlier; a reference that saves a unit file
-  by rename just after the limit must keep that file, `copied`, with its
-  content at the limit; the reference twice with the record present and
-  `end_from` `session` (one session seen, began within seconds of the start),
-  the no-op twice with `end_from` `unchanged`; claude-code and Proximus must
-  start and work as `dev`; the flat single-step bundle must run the hooks. If
-  the net check's probe does not see the opening there, certify copies taken
-  while egress was closed instead.
-- On the platform's first grade of this version, confirm that Harbor switches
-  the verifier's environment, now declared with public egress for its build, to
-  no network before the tests run: the verifier refuses to measure otherwise
-  (an evaluation error), so the reference's first grade shows it either way.
+- Red-team v6 (findings 7, 8 and 9).
+- A platform regrade of a stored submission with no test unreached, the
+  condition for the tests to join the reward inside the min (the reference,
+  no-op and pre-trial audit conditions were met on v5).
+- Probe each other target model's recall (see [Novelty](#novelty)) before
+  reading its score as difficulty; Opus 5.5's own run shows its recall (93.1%
+  of bodies identical).
+- Done: the reference graded 1.0 on the platform twice on v5, so its counted
+  results that hold a Python float matched there too.
+- Canaries for v6's delivery (finding 9): a detached writer that keeps writing
+  after the session ends must have its files `late`; a capped run that saves a
+  unit file by rename at the limit must keep it as `copied`; the reference with
+  `end_from` `session` and the no-op with `end_from` `unchanged`. The Opus run
+  on v6 already shows `end_from` `session` and no late file.
+- Done: v6 declares the verifier's environment `no-network`, and the Opus
+  run's grade found its network closed.
 - Before a Proximus trial on this version, read the `sessions` of one Proximus
   record: if its work runs outside its exec sessions and its last session began
   within ten minutes of the start, the session end would cut its later writes,
