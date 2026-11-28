@@ -168,9 +168,22 @@ def main() -> int:
         )
     # rule level
     per_rule = collections.Counter()
+    untied = collections.Counter()
     for cid in kept:
-        for rid in rrules.get(cases[cid].get("recipe", ""), ()):
+        recipe = cases[cid].get("recipe", "")
+        base, _, variant = recipe.partition("+")
+        ids = {r for r in rrules.get(base, ()) if r in rules}
+        if variant == "layout":
+            ids |= {"LAY-5", "LAY-6"}
+        if not ids:
+            untied[recipe] += 1
+        for rid in ids:
             per_rule[rid] += 1
+    tied = (
+        "yes"
+        if not untied
+        else f"NO: {sum(untied.values())} are not ({', '.join(untied)})"
+    )
     mutant_rules = collections.defaultdict(list)
     for name, m in fm.MUTANTS.items():
         for rid in m["rules"]:
@@ -178,6 +191,8 @@ def main() -> int:
                 mutant_rules[t].append(name)
     lines = [
         "# Coverage inventory and kill matrix",
+        "",
+        f"Every kept case is tied, through its recipe, to at least one stated rule: {tied}.",
         "",
         "## Features (a mutant moves at least 3 kept cases)",
         "",
@@ -224,7 +239,8 @@ def main() -> int:
     lines += ["| --- | --- |", *[f"| {a} | {b} |" for a, b in RESTRICTIONS]]
     Path(sys.argv[6]).write_text("\n".join(lines) + "\n", encoding="utf-8")
     print(
-        f"features: {len(feat_kills)} measured, below 3: {short}; rules: {len(rules)}, unexercised: {len(unexercised)}"
+        f"features: {len(feat_kills)} measured, below 3: {short}; rules: {len(rules)}, "
+        f"unexercised: {len(unexercised)}; kept cases not tied to a rule: {sum(untied.values())}"
     )
     return 0
 

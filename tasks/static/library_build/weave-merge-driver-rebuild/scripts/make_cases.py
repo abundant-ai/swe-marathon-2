@@ -239,7 +239,7 @@ def sides(base: Module) -> tuple[Module, Module]:
 
 
 def r_insert_vs_header_edit(rng, lang):
-    """F1: ours adds a function after f_k; theirs edits f_{k+1}'s first body line."""
+    """F1: ours adds a function after f_k; theirs edits f_{k+1}'s first body line. Rules: [PLACE-5], [LAY-1]."""
     used: set[str] = set()
     base = module(rng, lang, rng.randint(3, 6), used)
     k = rng.randrange(len(base.items) - 1)
@@ -250,7 +250,7 @@ def r_insert_vs_header_edit(rng, lang):
 
 
 def r_delete_vs_next_edit(rng, lang):
-    """F1: ours deletes f_k; theirs edits f_{k+1}'s first body line."""
+    """F1: ours deletes f_k; theirs edits f_{k+1}'s first body line. Rules: [CELL-9], [LAY-1]."""
     used: set[str] = set()
     base = module(rng, lang, rng.randint(3, 6), used)
     k = rng.randrange(len(base.items) - 1)
@@ -261,7 +261,7 @@ def r_delete_vs_next_edit(rng, lang):
 
 
 def r_both_add_same_anchor(rng, lang):
-    """F2: both sides add a different function after the same anchor."""
+    """F2: both sides add a different function after the same anchor. Rules: [PLACE-5], [PLACE-6], [PLACE-7]."""
     used: set[str] = set()
     base = module(rng, lang, rng.randint(2, 5), used)
     k = rng.randrange(len(base.items))
@@ -272,7 +272,7 @@ def r_both_add_same_anchor(rng, lang):
 
 
 def r_both_add_two_vs_one(rng, lang):
-    """F2: ours adds two functions after one anchor, theirs one."""
+    """F2: ours adds two functions after one anchor, theirs one. Rules: [PLACE-6], [PLACE-7]."""
     used: set[str] = set()
     base = module(rng, lang, rng.randint(2, 4), used)
     k = rng.randrange(len(base.items))
@@ -285,7 +285,7 @@ def r_both_add_two_vs_one(rng, lang):
 
 
 def r_reorder_vs_edit(rng, lang):
-    """F2: ours swaps two neighbours; theirs edits the first of them."""
+    """F2: ours swaps two neighbours; theirs edits the first of them. Rules: [PLACE-1], [PLACE-2]."""
     used: set[str] = set()
     base = module(rng, lang, rng.randint(3, 5), used)
     k = rng.randrange(len(base.items) - 1)
@@ -313,7 +313,7 @@ def r_rename_vs_edit(rng, lang):
 
 
 def r_rename_edit_vs_edit(rng, lang):
-    """F3: ours renames f and edits its last line; theirs edits f's first body line."""
+    """F3: ours renames f and edits its last line; theirs edits f's first body line. Rules: [MATCH-3], [MATCH-9], [CELL-12]."""
     used: set[str] = set()
     base = module(rng, lang, rng.randint(2, 5), used)
     k = rng.randrange(len(base.items))
@@ -325,7 +325,7 @@ def r_rename_edit_vs_edit(rng, lang):
 
 
 def r_rename_vs_rewrite(rng, lang):
-    """F3 near-miss: ours renames f and rewrites its whole body (far below the thresholds: not a rename)."""
+    """F3 near-miss: ours renames f and rewrites its whole body (far below the thresholds: not a rename). Rules: [MATCH-3], [MATCH-9]."""
     used: set[str] = set()
     base = module(rng, lang, rng.randint(2, 5), used)
     k = rng.randrange(len(base.items))
@@ -354,7 +354,7 @@ def r_rename_vs_rewrite(rng, lang):
 
 
 def r_both_edit_adjacent(rng, lang):
-    """F4: both sides edit neighbouring lines of one function; half also add at one anchor elsewhere."""
+    """F4: both sides edit neighbouring lines of one function; half also add at one anchor elsewhere. Rules: [SAME-2], [ELEM-1]."""
     used: set[str] = set()
     base = module(rng, lang, rng.randint(2, 5), used)
     k = rng.randrange(len(base.items))
@@ -426,7 +426,7 @@ def class_module(rng, lang):
 
 
 def r_class_both_add_methods(rng, lang):
-    """F5: both sides add a different method at the end of one class."""
+    """F5: both sides add a different method at the end of one class. Rules: [SAME-5], [SAME-7], [SAME-8]."""
     base, pos, cname, methods, used = class_module(rng, lang)
     ours, theirs = sides(base)
     ours.items[pos] = cls(rng, lang, cname, methods + [ident(rng, lang, used)])
@@ -517,7 +517,7 @@ def with_collection(rng, lang, keys):
 
 
 def r_collection_both_add_same_point(rng, lang):
-    """F6: both sides add a different key at the same point of one literal."""
+    """F6: both sides add a different key at the same point of one literal. Rules: [ELEM-1], [ELEM-3], [ELEM-6], [ELEM-10]."""
     keys = keyed(rng, 5)
     base, pos, name = with_collection(rng, lang, keys)
     a, b = rng.sample([w for w in WORDS if w not in dict(keys)], 2)
@@ -599,7 +599,7 @@ def with_switch(rng, lang, cases):
 
 
 def r_switch_both_add_same_point(rng, lang):
-    """F6: both sides add a different case at the same point of one switch."""
+    """F6: both sides add a different case at the same point of one switch. Rules: [ELEM-1], [ELEM-3], [ELEM-11]."""
     cases = sorted(rng.sample(range(1, 40), 5))
     base, pos, name = with_switch(rng, lang, cases)
     a, b = rng.sample(range(40, 80), 2)
@@ -621,7 +621,7 @@ def add_import(m: Module, lang: str, name: str, first: bool = False) -> None:
 
 
 def r_imports_both_add(rng, lang):
-    """F7: both sides add a different import at the end of the import block."""
+    """F7: both sides add a different import at the end of the import block. Rules: [IMP-2], [IMP-5]."""
     used: set[str] = set()
     base = module(rng, lang, rng.randint(2, 4), used)
     a, b = rng.sample(EXTRA_IMPORTS[lang], 2)
@@ -646,7 +646,7 @@ def r_decorators_both_add(rng, lang):
 
 
 def r_gate_dup_case(rng, lang):
-    """F8 refusal: both sides add the same case label at distant points of one switch."""
+    """F8 refusal: both sides add the same case label at distant points of one switch. Rules: [GATE-KEYS], [GATE-3], [GATE-5]."""
     cases = sorted(rng.sample(range(1, 40), 6))
     base, pos, name = with_switch(rng, lang, cases)
     new = rng.choice(range(40, 80))
@@ -657,13 +657,13 @@ def r_gate_dup_case(rng, lang):
 
 
 def r_gate_dual_cases(rng, lang):
-    """F8 accept-dual: both sides add different case labels at one point."""
+    """F8 accept-dual: both sides add different case labels at one point. Rules: [GATE-KEYS], [ELEM-11]."""
     base, ours, theirs, _, _ = r_switch_both_add_same_point(rng, lang)
     return base, ours, theirs, "F8", "gate.dual_case_labels"
 
 
 def r_gate_dup_key(rng, lang):
-    """F8 refusal: both sides add the same key at distant points of one literal."""
+    """F8 refusal: both sides add the same key at distant points of one literal. Rules: [GATE-KEYS], [GATE-3], [GATE-5]."""
     keys = keyed(rng, 6)
     base, pos, name = with_collection(rng, lang, keys)
     a = rng.choice([w for w in WORDS if w not in dict(keys)])
@@ -674,7 +674,7 @@ def r_gate_dup_key(rng, lang):
 
 
 def r_gate_dual_keys(rng, lang):
-    """F8 accept-dual: both sides add different keys at one point."""
+    """F8 accept-dual: both sides add different keys at one point. Rules: [GATE-KEYS], [ELEM-6]."""
     base, ours, theirs, _, _ = r_collection_both_add_same_point(rng, lang)
     return base, ours, theirs, "F8", "gate.dual_literal_keys"
 
@@ -689,7 +689,7 @@ def binding(lang: str, name: str, value: int) -> Item:
 
 
 def r_gate_dup_name(rng, lang):
-    """F8 refusal: ours adds a function NAME at the top, theirs a variable NAME at the bottom."""
+    """F8 refusal: ours adds a function NAME at the top, theirs a variable NAME at the bottom. Rules: [GATE-BIND], [GATE-3], [GATE-5]."""
     used: set[str] = set()
     base = module(rng, lang, rng.randint(4, 6), used)
     name = ident(rng, lang, used)
@@ -700,7 +700,7 @@ def r_gate_dup_name(rng, lang):
 
 
 def r_gate_dual_names(rng, lang):
-    """F8 accept-dual: a function and a variable with different names added after one anchor."""
+    """F8 accept-dual: a function and a variable with different names added after one anchor. Rules: [GATE-BIND]."""
     used: set[str] = set()
     base = module(rng, lang, rng.randint(3, 5), used)
     k = rng.randrange(len(base.items))
@@ -711,7 +711,7 @@ def r_gate_dual_names(rng, lang):
 
 
 def r_gate_dup_import(rng, lang):
-    """F8 refusal: both sides add the same import, one at the start of the block, one at the end."""
+    """F8 refusal: both sides add the same import, one at the start of the block, one at the end. Rules: [GATE-BIND], [GATE-3], [GATE-5]."""
     used: set[str] = set()
     base = module(rng, lang, rng.randint(2, 4), used)
     a, *rest = rng.sample(EXTRA_IMPORTS[lang], 3)
@@ -724,7 +724,7 @@ def r_gate_dup_import(rng, lang):
 
 
 def r_gate_dangling(rng, lang):
-    """F8 refusal: ours removes an import and its only use; theirs adds a new use far away."""
+    """F8 refusal: ours removes an import and its only use; theirs adds a new use far away. Rules: [GATE-DANGLING], [GATE-3], [GATE-5]."""
     used: set[str] = set()
     mod = {"py": "json", "ts": "path", "go": "strings"}[lang]
     call = {"py": "json.dumps(arg)", "ts": "path(arg)", "go": 'strings.ToUpper("x")'}[
@@ -747,7 +747,7 @@ def r_gate_dangling(rng, lang):
 
 
 def r_gate_dual_imports(rng, lang):
-    """F8 accept-dual: different imports added at one point."""
+    """F8 accept-dual: different imports added at one point. Rules: [GATE-DANGLING], [GATE-REVIVED], [IMP-8]."""
     base, ours, theirs, _, _ = r_imports_both_add(rng, lang)
     return base, ours, theirs, "F8", "gate.dual_imports"
 
@@ -778,7 +778,7 @@ def state_names(
 
 
 def r_gate_iota(rng, lang):
-    """F8 refusal (Go): both sides insert a constant ahead of later ones, at distant points."""
+    """F8 refusal (Go): both sides insert a constant ahead of later ones, at distant points. Rules: [GATE-IOTA], [GATE-3], [GATE-5]."""
     used: set[str] = set()
     base = module(rng, "go", rng.randint(1, 3), used)
     names = state_names(rng, 6)
@@ -838,7 +838,7 @@ def padded(rng, lang, used, nbytes: int) -> Module:
 
 
 def r_route_nul_between_git_and_driver(rng, lang):
-    """F1 routing: a NUL byte at offset 8,001-8,191 of ours: the driver exits 2; git still merges."""
+    """F1 routing: a NUL byte at offset 8,001-8,191 of ours: the driver exits 2; git still merges. Rules: [CLI-7]."""
     used: set[str] = set()
     base = padded(rng, lang, used, 8300)
     ours, theirs = sides(base)
@@ -851,7 +851,7 @@ def r_route_nul_between_git_and_driver(rng, lang):
 
 
 def r_route_nul_after_8192(rng, lang):
-    """F1 routing dual: a NUL byte after offset 8,192 does not make the file binary."""
+    """F1 routing dual: a NUL byte after offset 8,192 does not make the file binary. Rules: [CLI-7]."""
     used: set[str] = set()
     base = padded(rng, lang, used, 9000)
     k = len(base.items) - 2
@@ -865,7 +865,7 @@ def r_route_nul_after_8192(rng, lang):
 
 
 def r_route_not_utf8(rng, lang):
-    """F1 routing: ours carries one byte that is not UTF-8 (in a comment): status 2."""
+    """F1 routing: ours carries one byte that is not UTF-8 (in a comment): status 2. Rules: [CLI-6]."""
     used: set[str] = set()
     base = module(rng, lang, rng.randint(2, 4), used)
     ours, theirs = sides(base)
@@ -879,7 +879,7 @@ def r_route_not_utf8(rng, lang):
 
 
 def r_route_markers_in_theirs(rng, lang):
-    """F1 routing: theirs already carries both marker strings: it is written back, status 1."""
+    """F1 routing: theirs already carries both marker strings: it is written back, status 1. Rules: [ROUTE-2], [BOX-7]."""
     used: set[str] = set()
     base = module(rng, lang, rng.randint(2, 4), used)
     ours, theirs = sides(base)
@@ -911,7 +911,7 @@ def r_rule_subsumed_edit(rng, lang):
 
 
 def r_rule_layout_only_side(rng, lang):
-    """F9 (D6, Python): ours re-indents one function's body (layout only); theirs edits a line in it."""
+    """F9 (D6, Python): ours re-indents one function's body (layout only); theirs edits a line in it. Rules: [RULE-D6], [RULE-LAYOUT]."""
     used: set[str] = set()
     base = module(rng, "py", rng.randint(2, 5), used)
     k = rng.randrange(len(base.items))
@@ -951,7 +951,7 @@ def data_doc(lang: str, kv: list[tuple[str, int]]) -> str:
 
 
 def r_data_both_add_same_point(rng, lang):
-    """F10: both sides add a different key at one point of one object or table."""
+    """F10: both sides add a different key at one point of one object or table. Rules: [DATA-6], [RULE-DATA-UNION]."""
     keys = keyed(rng, 5)
     a, b = rng.sample([w for w in WORDS if w not in dict(keys)], 2)
     at = rng.randrange(1, len(keys))
@@ -965,7 +965,7 @@ def r_data_both_add_same_point(rng, lang):
 
 
 def r_data_edit_adjacent(rng, lang):
-    """F10: both sides edit the values of two neighbouring keys."""
+    """F10: both sides edit the values of two neighbouring keys. Rules: [DATA-3], [DATA-4]."""
     keys = keyed(rng, 5)
     i = rng.randrange(len(keys) - 1)
     o, t = list(keys), list(keys)
@@ -981,7 +981,7 @@ def r_data_edit_adjacent(rng, lang):
 
 
 def r_data_dup_key(rng, lang):
-    """F8 refusal (data): both sides add the same key at distant points of one object or table."""
+    """F8 refusal (data): both sides add the same key at distant points of one object or table. Rules: [GATE-DATA-2], [GATE-3], [GATE-5]."""
     keys = keyed(rng, 6)
     a = rng.choice([w for w in WORDS if w not in dict(keys)])
     return (
@@ -994,7 +994,7 @@ def r_data_dup_key(rng, lang):
 
 
 def r_data_dual_keys(rng, lang):
-    """F8 accept-dual (data): different keys added at one point."""
+    """F8 accept-dual (data): different keys added at one point. Rules: [GATE-DATA-2], [DATA-6]."""
     b, o, t, _, _ = r_data_both_add_same_point(rng, lang)
     return b, o, t, "F8", "gate.dual_data_keys"
 

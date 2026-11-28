@@ -15,17 +15,21 @@ whatever already stood under those names.
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import hashlib
 import json
 import os
 import shutil
+import signal
 import stat
 import subprocess
 import sys
 import threading
 import time
 from pathlib import Path
+
+import delivery_manifest
 
 WEIGHTS = {
     "F1": 0.08,
@@ -48,6 +52,8 @@ BUILD_TIMEOUT = 1800
 CASE_TIMEOUT = 10
 OUTPUT_CAP = 16 * 1024 * 1024
 REWARD_NAMES = ("reward.json", "reward.txt", "metrics.json")
+MAX_DEPTH = 64
+DIGESTS = Path("/tests/upstream-digests.txt")
 BUILD_LIMITS = ["--nproc=1024", "--fsize=2147483648"]
 CASE_LIMITS = ["--as=4294967296", "--nproc=256", f"--fsize={2 * OUTPUT_CAP}"]
 RUN_ENV = {
@@ -107,22 +113,49 @@ def as_user(cmd: list[str], limits: list[str]) -> list[str]:
     ]
 
 
-def live_user_pids() -> list[int]:
-    """Processes of the verifier uid that are still running; zombies are dead and do not count."""
-    pids = []
+def user_pids() -> tuple[list[int], list[int]]:
+    """(every pid of the verifier uid, those with a task still running).
+
+    /proc is read as bytes, so no process name can break the parse. A process counts as running
+    while any of its tasks is: a thread group whose leader has exited reads as a zombie in its own
+    status, but its other threads still run.
+    """
+    every, running = [], []
     for d in Path("/proc").iterdir():
         if not d.name.isdigit():
             continue
         try:
-            status = (d / "status").read_text()
+            status = (d / "status").read_bytes()
         except OSError:
             continue
-        fields = dict(line.split(":", 1) for line in status.splitlines() if ":" in line)
-        uid = fields.get("Uid", "").split()
-        state = fields.get("State", "").split()
-        if uid and int(uid[0]) == UID and state and state[0] not in ("Z", "X"):
-            pids.append(int(d.name))
-    return pids
+        uid = next(
+            (ln.split()[1:2] for ln in status.splitlines() if ln.startswith(b"Uid:")),
+            [],
+        )
+        if not uid or int(uid[0]) != UID:
+            continue
+        every.append(int(d.name))
+        try:
+            tasks = list((d / "task").iterdir())
+        except OSError:
+            tasks = []
+        for task in tasks:
+            try:
+                tstatus = (task / "status").read_bytes()
+            except OSError:
+                continue
+            state = next(
+                (
+                    ln.split()[1:2]
+                    for ln in tstatus.splitlines()
+                    if ln.startswith(b"State:")
+                ),
+                [],
+            )
+            if state and state[0] not in (b"Z", b"X"):
+                running.append(int(d.name))
+                break
+    return every, running
 
 
 def reap() -> None:
@@ -142,8 +175,12 @@ def kill_user() -> None:
         subprocess.run(
             ["pkill", "-KILL", "-u", str(UID)], check=False, capture_output=True
         )
+        every, running = user_pids()
+        for pid in every:
+            with contextlib.suppress(OSError):
+                os.kill(pid, signal.SIGKILL)
         reap()
-        if not live_user_pids():
+        if not running and not user_pids()[1]:
             return
         time.sleep(0.05)
     raise EvaluationError("processes of the verifier uid survived repeated kills")
@@ -205,16 +242,117 @@ def read_output(path: Path) -> str | None:
     return hashlib.sha256(bytes(data)).hexdigest()
 
 
+def remove_tree(root: Path) -> None:
+    """Remove a directory tree iteratively, never following a link (no recursion limit)."""
+    if root.is_symlink() or not root.is_dir():
+        with contextlib.suppress(FileNotFoundError):
+            root.unlink()
+        return
+    for top, dirs, files in os.walk(root, topdown=False, followlinks=False):
+        for name in files:
+            with contextlib.suppress(FileNotFoundError):
+                os.unlink(os.path.join(top, name))
+        for name in dirs:
+            path = os.path.join(top, name)
+            with contextlib.suppress(FileNotFoundError):
+                if os.path.islink(path):
+                    os.unlink(path)
+                else:
+                    os.rmdir(path)
+    os.rmdir(root)
+
+
+def copy_delivery(
+    src: Path, dst: Path, digests: set[str]
+) -> tuple[list[str], list[str]]:
+    """Copy the delivery iteratively: directories, regular files and links as links.
+
+    Leaves out target/ and .delivery/ at the top, special files, and anything deeper than
+    MAX_DEPTH levels. Returns (notes on what was left out, delivered files whose digest is one
+    of the original's own published files).
+    """
+    notes, matches = [], []
+    dst.mkdir()
+    for top, dirs, files in os.walk(src, followlinks=False):
+        rel = Path(top).relative_to(src)
+        depth = len(rel.parts)
+        if depth == 0:
+            dirs[:] = [d for d in dirs if d not in ("target", ".delivery")]
+        if depth >= MAX_DEPTH and dirs:
+            notes.append(f"left out below {rel}: deeper than {MAX_DEPTH} levels")
+            dirs[:] = []
+        for name in sorted(dirs):
+            s, d = Path(top) / name, dst / rel / name
+            if s.is_symlink():
+                os.symlink(os.readlink(s), d)
+                dirs.remove(name)
+            else:
+                d.mkdir()
+        for name in files:
+            s, d = Path(top) / name, dst / rel / name
+            st = os.lstat(s)
+            if stat.S_ISLNK(st.st_mode):
+                os.symlink(os.readlink(s), d)
+            elif stat.S_ISREG(st.st_mode):
+                shutil.copyfile(s, d, follow_symlinks=False)
+                os.chmod(d, st.st_mode & 0o755)
+                if st.st_size >= 1024 and digest(s) in digests:
+                    matches.append(str(rel / name))
+            else:
+                notes.append(
+                    f"left out {rel / name}: not a regular file, directory or link"
+                )
+    return notes, matches
+
+
+def digest(path: Path) -> str:
+    """sha256 of a file, read in chunks."""
+    h = hashlib.sha256()
+    with path.open("rb") as fh:
+        while chunk := fh.read(1 << 20):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def check_path_dirs() -> None:
+    """No directory on PATH, and no file in one, may be writable by anyone but root."""
+    for entry in os.environ.get("PATH", "").split(":"):
+        d = Path(entry)
+        if not entry or not d.is_dir():
+            continue
+        items = [d, *(x for x in d.iterdir() if not x.is_symlink())]
+        for x in items:
+            st = os.stat(x)
+            if st.st_uid != 0 or st.st_mode & 0o022:
+                raise EvaluationError(
+                    f"{x} on PATH is writable by a user other than root"
+                )
+
+
+def load_digests() -> set[str]:
+    """The digests of the original's published files (the tripwire list)."""
+    try:
+        text = DIGESTS.read_text()
+    except OSError as exc:
+        raise EvaluationError(f"tripwire list unreadable: {exc}") from exc
+    return {
+        ln.strip() for ln in text.splitlines() if ln.strip() and not ln.startswith("#")
+    }
+
+
 def build(ctx: VerificationContext) -> tuple[Path | None, str]:
     """Copy the delivery, drop any prebuilt output, and build it offline as the verifier uid."""
     src = ctx.work / "driver"
-    if src.exists():
-        shutil.rmtree(src)
+    if src.exists() or src.is_symlink():
+        remove_tree(src)
     if not (ctx.delivery / "Cargo.toml").is_file():
         return None, "no Cargo.toml in /app/driver"
-    shutil.copytree(
-        ctx.delivery, src, symlinks=True, ignore=shutil.ignore_patterns("target")
-    )
+    notes, matches = copy_delivery(ctx.delivery, src, load_digests())
+    if matches:
+        return None, (
+            "the delivery holds files of the original's own published source or builds: "
+            + ", ".join(matches[:20])
+        )
     home, cargo_home = ctx.work / "home", ctx.work / "cargo-home"
     for d in (home, cargo_home):
         d.mkdir(exist_ok=True)
@@ -239,7 +377,7 @@ def build(ctx: VerificationContext) -> tuple[Path | None, str]:
     binary = src / "target/release/weave-driver"
     if status != 0 or not binary.is_file():
         return None, "the build failed: " + tail[-2000:].decode("utf-8", "replace")
-    return binary, "built"
+    return binary, "built" + "".join(f"; {n}" for n in notes[:20])
 
 
 def run_case(binary: Path, case: dict, root: Path) -> tuple[object, str | None]:
@@ -280,9 +418,9 @@ def run_case(binary: Path, case: dict, root: Path) -> tuple[object, str | None]:
     except subprocess.TimeoutExpired:
         status = "timeout"
     kill_user()
-    digest = read_output(out)
-    shutil.rmtree(d, ignore_errors=True)
-    return status, digest
+    out_digest = read_output(out)
+    remove_tree(d)
+    return status, out_digest
 
 
 def score(
@@ -319,7 +457,22 @@ def verify(ctx: VerificationContext) -> VerificationResult:
     except (OSError, ValueError) as exc:
         raise EvaluationError(f"private inputs unreadable: {exc}") from exc
     ctx.work.mkdir(mode=0o755, parents=True, exist_ok=True)
-    binary, note = build(ctx)
+    manifest = delivery_manifest.check(ctx.delivery)
+    if manifest["present"] and (manifest["missing"] or manifest["changed"]):
+        raise EvaluationError(
+            f"the delivery arrived incomplete: {len(manifest['missing'])} files missing, "
+            f"{len(manifest['changed'])} changed since the collect step"
+        )
+    if manifest["late"]:
+        binary, note = (
+            None,
+            (
+                "files changed after the end of the work: "
+                + ", ".join(map(str, manifest["late"][:20]))
+            ),
+        )
+    else:
+        binary, note = build(ctx)
     checks = [CheckResult("build", "passed" if binary else "failed", note, {})]
     passed: dict[str, list[bool]] = {}
     if binary is not None:
@@ -348,6 +501,11 @@ def verify(ctx: VerificationContext) -> VerificationResult:
         "families": fams,
         "cases": len(cases),
         "build": note[:2000],
+        "delivery": {
+            "manifest": manifest["present"],
+            "late": len(manifest["late"]),
+            "notes": [str(n)[:300] for n in manifest["notes"][:10]],
+        },
     }
     return VerificationResult(
         passed=reward == 1.0, checks=tuple(checks), metrics=metrics
@@ -359,7 +517,7 @@ def clear_reward_names(logs: Path) -> None:
     for name in REWARD_NAMES:
         p = logs / name
         if p.is_dir() and not p.is_symlink():
-            shutil.rmtree(p)
+            remove_tree(p)
         elif os.path.lexists(p):
             p.unlink()
 
@@ -388,8 +546,12 @@ def main() -> int:
     """Run the verification and write the reward last."""
     ctx = VerificationContext(Path("/app/driver"), PRIVATE, LOGS, WORK)
     ctx.logs.mkdir(parents=True, exist_ok=True)
+    with contextlib.suppress(OSError):
+        os.chown(ctx.logs, 0, 0)
+        os.chmod(ctx.logs, 0o755)
     clear_reward_names(ctx.logs)
     try:
+        check_path_dirs()
         result = verify(ctx)
         kill_user()
     except EvaluationError as exc:

@@ -52,4 +52,18 @@ COPY docs/ /app/docs/
 RUN set -e; groupadd --system weaveorig; chown root:weaveorig /usr/local/bin/weave-driver; \
     chmod 2711 /usr/local/bin/weave-driver; useradd --create-home dev; \
     mkdir -p /app/driver; chown dev:dev /app/driver; chmod -R a+rX /app/docs /app/.cargo /opt/cargo-vendor
+# The root collect hook Harbor runs after the work: it stops leftover processes, clears entries a
+# tar transfer cannot carry, and writes a manifest of /app/driver.
+COPY weave-collect/collect /usr/local/lib/weave-collect/collect
+RUN chown -R root:root /usr/local/lib/weave-collect && chmod 0700 /usr/local/lib/weave-collect /usr/local/lib/weave-collect/collect
 WORKDIR /app
+# Harbor runs tar, gzip and su as root through the image's PATH: nothing on it may be writable by
+# anyone but root.
+ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+RUN set -e; for d in $(echo "$PATH" | tr ':' ' '); do \
+      if [ -d "$d" ] && [ ! -L "$d" ]; then chmod -R go-w "$d"; fi; \
+    done; \
+    bad=$(for d in $(echo "$PATH" | tr ':' ' '); do \
+      if [ -d "$d" ] && [ ! -L "$d" ]; then find "$d" -maxdepth 1 ! -type l \( ! -user root -o -perm -0020 -o -perm -0002 \); fi; \
+    done); \
+    if [ -n "$bad" ]; then echo "on PATH and writable by others: $bad"; exit 1; fi

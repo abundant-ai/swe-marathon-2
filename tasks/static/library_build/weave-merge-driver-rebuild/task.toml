@@ -30,6 +30,11 @@ network_mode = "no-network"
 timeout_sec = 3600
 user = "root"
 
+[[verifier.collect]]
+command = "/usr/local/lib/weave-collect/collect"
+user = "root"
+timeout_sec = 600
+
 [verifier.environment]
 network_mode = "no-network"
 build_timeout_sec = 3600

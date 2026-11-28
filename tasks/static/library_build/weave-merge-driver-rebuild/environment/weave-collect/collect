@@ -1,0 +1,931 @@
+#!/usr/bin/python3 -I
+"""Collect hook for /app/driver, run as root once the work is over.
+
+In order, it:
+
+1. stops every process whose real uid is not 0: SIGKILL by pid, again and
+   again until no task of any such process is alive (a task in state Z or X
+   counts as dead), for about 10 s at most;
+2. notes whether four public hosts accept a TCP connection (no data is sent);
+3. cleans /app/driver so that tarfile's "data" extraction filter accepts the
+   whole tree when the directory is copied out (see neutralise());
+4. replaces /app/driver/.delivery with a root-owned directory holding
+   manifest.json: each regular file outside target/ and .delivery/ with its
+   size, sha256, mtime and ctime, and what steps 1-3 found and did.
+
+It always exits 0.  Standard library only.  /proc and file names are handled
+as bytes, every walk is iterative, and no symbolic link is ever followed.
+"""
+
+from __future__ import annotations
+
+import contextlib
+import hashlib
+import json
+import os
+import signal
+import socket
+import stat
+import sys
+import threading
+import time
+
+ROOT = b"/app/driver"
+DELIVERY = b".delivery"
+MANIFEST = b"manifest.json"
+UNLISTED_TOP = frozenset({b"target", DELIVERY})  # top-level trees left out of the list
+FORMAT = "weave-delivery-manifest/1"
+
+DEPTH_CAP = 64  # directory levels kept below the root
+PATH_CAP = 3072  # bytes of relative path kept; the copy lands under a host prefix
+END_OFFSET = 34560  # end_bound = container_start + END_OFFSET
+KILL_LIMIT = 10.0
+KILL_PAUSE = 0.05
+EGRESS_HOSTS = (
+    ("pypi.org", 443),
+    ("github.com", 443),
+    ("static.crates.io", 443),
+    ("index.crates.io", 443),
+)
+EGRESS_TIMEOUT = 2.0
+EGRESS_WAIT = 6.0  # name lookups have no timeout of their own
+HASH_LIMIT = 420.0  # seconds after the start; the hook is allowed 600
+LIST_CAP = 5000  # entries kept in each list; the counts stay exact
+ERROR_CAP = 200
+READ_CAP = 1 << 16
+
+O_DIR = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+O_FILE = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC
+KINDS = {
+    stat.S_IFREG: "file",
+    stat.S_IFDIR: "directory",
+    stat.S_IFLNK: "symlink",
+    stat.S_IFIFO: "fifo",
+    stat.S_IFSOCK: "socket",
+    stat.S_IFCHR: "char_device",
+    stat.S_IFBLK: "block_device",
+}
+
+
+# ---------------------------------------------------------------- helpers
+
+
+def _text(raw: bytes) -> str:
+    """Bytes as text: valid UTF-8 as it is, any other byte as a \\xNN escape."""
+    return raw.decode("utf-8", "backslashreplace")
+
+
+def _path_fields(rel: bytes) -> dict:
+    """Manifest form of a relative path; path_hex holds the exact bytes when
+    they are not UTF-8 (path is then only an escaped rendering)."""
+    try:
+        return {"path": rel.decode("utf-8")}
+    except UnicodeDecodeError:
+        return {"path": _text(rel), "path_hex": rel.hex()}
+
+
+def _kind(mode: int) -> str:
+    return KINDS.get(stat.S_IFMT(mode), "other")
+
+
+def _ident(st: os.stat_result) -> tuple[int, int, int]:
+    return st.st_dev, st.st_ino, stat.S_IFMT(st.st_mode)
+
+
+def _note(errors: list, where: bytes | str, what: BaseException | str) -> None:
+    if len(errors) >= ERROR_CAP:
+        return
+    where = _text(where) if isinstance(where, bytes) else where
+    what = what if isinstance(what, str) else f"{type(what).__name__}: {what}"
+    errors.append(f"{where}: {what}")
+
+
+def _read(path: bytes, cap: int = READ_CAP) -> bytes | None:
+    """Read up to cap bytes of a (/proc) file; None if it cannot be read."""
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_CLOEXEC)
+    except OSError:
+        return None
+    try:
+        chunks, size = [], 0
+        while size < cap:
+            chunk = os.read(fd, cap - size)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            size += len(chunk)
+        return b"".join(chunks)
+    except OSError:
+        return None
+    finally:
+        os.close(fd)
+
+
+def _list(fd: int) -> list[bytes]:
+    with os.scandir(fd) as entries:
+        return sorted(os.fsencode(entry.name) for entry in entries)
+
+
+# ------------------------------------------------------ step 1: processes
+
+
+def _fields(raw: bytes) -> dict[bytes, bytes]:
+    out: dict[bytes, bytes] = {}
+    for line in raw.split(b"\n"):
+        key, sep, value = line.partition(b":")
+        if sep and key not in out:
+            out[key] = value.strip()
+    return out
+
+
+def _ids(value: bytes) -> list[int]:
+    try:
+        return [int(part) for part in value.split()]
+    except ValueError:
+        return []
+
+
+def _alive(proc_root: bytes, pid: bytes) -> bool:
+    """True while any task (thread) of the process is in a state other than
+    Z or X.  The main thread alone can show Z while other threads still run."""
+    task_dir = proc_root + b"/" + pid + b"/task"
+    try:
+        with os.scandir(task_dir) as entries:
+            tids = [entry.name for entry in entries]
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return True
+    for tid in tids:
+        raw = _read(task_dir + b"/" + tid + b"/status")
+        if raw is None:
+            continue  # that thread is gone
+        if _fields(raw).get(b"State", b"")[:1] not in (b"Z", b"X", b"x"):
+            return True
+    return False
+
+
+def _scan(proc_root: bytes, protect: set, details: bool) -> list[dict]:
+    """Processes whose real uid is not 0, read from /proc as bytes."""
+    with os.scandir(proc_root) as entries:
+        pids = [entry.name for entry in entries if entry.name.isdigit()]
+    found = []
+    for name in sorted(pids, key=int):
+        raw = _read(proc_root + b"/" + name + b"/status")
+        if raw is None:
+            continue
+        fields = _fields(raw)
+        uids = _ids(fields.get(b"Uid", b""))
+        if not uids or uids[0] == 0:
+            continue
+        gids = _ids(fields.get(b"Gid", b""))
+        pid = int(name)
+        proc = {
+            "pid": pid,
+            "uid": uids[0],
+            "gid": gids[0] if gids else uids[0],
+            "alive": _alive(proc_root, name),
+        }
+        if pid in protect:
+            proc["protected"] = True
+        if details:
+            comm = _read(proc_root + b"/" + name + b"/comm") or b""
+            args = (_read(proc_root + b"/" + name + b"/cmdline") or b"").split(b"\0")
+            if args[-1] == b"":
+                args.pop()
+            proc["uids"] = uids
+            proc["state"] = _text(fields.get(b"State", b""))
+            proc["comm"] = _text(comm[:-1] if comm.endswith(b"\n") else comm)
+            proc["cmdline"] = [_text(arg) for arg in args]
+        found.append(proc)
+    return found
+
+
+def _sweep_uid(uid: int, gid: int) -> str:
+    """kill(-1, SIGKILL) from a child that has become `uid`.  The kernel then
+    signals every process of that uid in one pass, so a process that forks
+    faster than /proc can be read is caught too.  Linux, as root, only."""
+    if uid == 0 or os.geteuid() != 0 or not sys.platform.startswith("linux"):
+        return "skipped"
+    try:
+        child = os.fork()
+    except OSError as exc:
+        return f"failed: {exc}"
+    if child == 0:
+        code = 1
+        try:
+            os.setgroups([])
+            os.setresgid(gid, gid, gid)
+            os.setresuid(uid, uid, uid)
+            if os.getresuid() == (uid, uid, uid):
+                os.kill(-1, signal.SIGKILL)
+                code = 0
+        finally:
+            os._exit(code)
+    try:
+        _, status = os.waitpid(child, 0)
+    except OSError as exc:
+        return f"failed: {exc}"
+    code = os.waitstatus_to_exitcode(status)
+    return "ok" if code == 0 else f"failed ({code})"
+
+
+def kill_step(
+    proc_root: bytes | str = b"/proc",
+    *,
+    kill=os.kill,
+    sweep=None,
+    limit: float = KILL_LIMIT,
+    pause: float = KILL_PAUSE,
+    clock=time.monotonic,
+    sleep=time.sleep,
+    protect=None,
+) -> dict:
+    """SIGKILL every process whose real uid is not 0, by pid and whatever its
+    state, until no task of any of them is alive or `limit` seconds pass.
+
+    From the second round on, `sweep(uid, gid)` (main() passes _sweep_uid)
+    also kills each remaining uid at once.  pid 1 and this process are never
+    signalled.
+    """
+    proc_root = os.fsencode(proc_root)
+    protect = {1, os.getpid(), os.getppid()} if protect is None else set(protect)
+    start = clock()
+    current = _scan(proc_root, protect, details=True)
+    found = len(current)
+    processes = current[:LIST_CAP]
+    rounds: list[dict] = []
+    while True:
+        alive = [p for p in current if p["alive"] and p["pid"] not in protect]
+        elapsed = round(clock() - start, 3)
+        if not alive or elapsed >= limit:
+            break
+        entry = {
+            "round": len(rounds) + 1,
+            "elapsed": elapsed,
+            "alive": len(alive),
+            "pids": [p["pid"] for p in alive[:50]],
+            "signalled": 0,
+            "gone": 0,
+            "errors": [],
+        }
+        for proc in alive:
+            try:
+                kill(proc["pid"], signal.SIGKILL)
+                entry["signalled"] += 1
+            except ProcessLookupError:
+                entry["gone"] += 1
+            except OSError as exc:
+                _note(entry["errors"], str(proc["pid"]), exc)
+        if sweep is not None and rounds:
+            entry["uid_sweeps"] = [
+                {"uid": uid, "result": sweep(uid, gid)}
+                for uid, gid in sorted({(p["uid"], p["gid"]) for p in alive})
+            ]
+        rounds.append(entry)
+        sleep(pause)
+        current = _scan(proc_root, protect, details=False)
+    return {
+        "processes_found": found,
+        "processes": processes,
+        "kill_rounds": rounds,
+        "kill_elapsed": round(clock() - start, 3),
+        "remaining_processes": [
+            p["pid"] for p in current if p["alive"] and p["pid"] not in protect
+        ],
+        "protected_processes": [p["pid"] for p in current if p["pid"] in protect],
+    }
+
+
+# --------------------------------------------------------- step 2: egress
+
+
+def egress_step(
+    hosts=EGRESS_HOSTS, *, timeout: float = EGRESS_TIMEOUT, wait: float = EGRESS_WAIT
+) -> dict:
+    """Try one TCP connect per host (closed again at once, no data sent)."""
+    results: dict[str, dict] = {}
+    lock = threading.Lock()
+
+    def probe(host: str, port: int) -> None:
+        try:
+            with socket.create_connection((host, port), timeout=timeout) as conn:
+                result = {
+                    "state": "open",
+                    "detail": f"connected to {conn.getpeername()[0]}",
+                }
+        except (OSError, ValueError) as exc:  # gaierror, TimeoutError, refused, ...
+            result = {"state": "closed", "detail": f"{type(exc).__name__}: {exc}"}
+        with lock:
+            results[f"{host}:{port}"] = result
+
+    threads = [threading.Thread(target=probe, args=hp, daemon=True) for hp in hosts]
+    for thread in threads:
+        thread.start()
+    until_t = time.monotonic() + wait
+    for thread in threads:
+        thread.join(max(0.0, until_t - time.monotonic()))
+    with lock:
+        done = dict(results)
+    out = {}
+    for host, port in hosts:
+        key = f"{host}:{port}"
+        out[key] = done.get(
+            key, {"state": "closed", "detail": f"no answer within {wait:g} s"}
+        )
+    return {
+        "open": any(v["state"] == "open" for v in out.values()),
+        "connect_timeout_sec": timeout,
+        "hosts": out,
+    }
+
+
+def container_start(proc_root: bytes | str = b"/proc") -> float:
+    """Boot time (/proc/stat btime) plus /proc/1/stat starttime, in epoch s."""
+    proc_root = os.fsencode(proc_root)
+    btime = None
+    for line in (_read(proc_root + b"/stat") or b"").split(b"\n"):
+        if line.startswith(b"btime "):
+            btime = int(line.split()[1])
+    raw = _read(proc_root + b"/1/stat")
+    if btime is None or not raw or b")" not in raw:
+        raise OSError(
+            "cannot read btime from /proc/stat or starttime from /proc/1/stat"
+        )
+    after_comm = raw[raw.rindex(b")") + 2 :].split()  # fields 3.. ; comm may hold ") "
+    return btime + int(after_comm[19]) / os.sysconf("SC_CLK_TCK")  # field 22
+
+
+# ----------------------------------------------------- step 3: neutralise
+
+
+def _open_dir_at(
+    dir_fd: int, name: bytes, st: os.stat_result, errors: list
+) -> int | None:
+    """Open a directory entry without following links; None if it is gone or
+    is no longer the directory that lstat saw."""
+    try:
+        fd = os.open(name, O_DIR, dir_fd=dir_fd)
+    except FileNotFoundError:
+        return None
+    except OSError as exc:
+        _note(errors, name, exc)
+        return None
+    try:
+        seen = os.fstat(fd)
+    except OSError:
+        seen = None
+    if seen is None or (seen.st_dev, seen.st_ino) != (st.st_dev, st.st_ino):
+        os.close(fd)
+        return None
+    return fd
+
+
+def _walk(
+    root_fd: int, errors: list, *, depth_cap: int = DEPTH_CAP, skip_top=frozenset()
+):
+    """Yield (dir_fd, rel, name, st, level) for every entry under root_fd.
+
+    Pre-order and iterative, with one descriptor per open directory level
+    (at most depth_cap + 1); lstat only.  A directory is entered after the
+    caller has seen it, and only if it still is the same directory, its level
+    is at most depth_cap and, at level 1, its name is not in skip_top.
+    """
+    stack: list[list] = []
+    try:
+        stack.append([os.dup(root_fd), b"", 0, [], 0])
+        stack[-1][3] = _list(stack[-1][0])
+        while stack:
+            frame = stack[-1]
+            fd, rel, level, names, index = frame
+            if index >= len(names):
+                stack.pop()
+                os.close(fd)
+                continue
+            frame[4] = index + 1
+            name = names[index]
+            path = rel + b"/" + name if rel else name
+            try:
+                st = os.lstat(name, dir_fd=fd)
+            except FileNotFoundError:
+                continue
+            except OSError as exc:
+                _note(errors, path, exc)
+                continue
+            yield fd, path, name, st, level + 1
+            if not stat.S_ISDIR(st.st_mode) or level + 1 > depth_cap:
+                continue
+            if level == 0 and name in skip_top:
+                continue
+            child = _open_dir_at(fd, name, st, errors)
+            if child is None:
+                continue
+            stack.append([child, path, level + 1, [], 0])
+            try:
+                stack[-1][3] = _list(child)
+            except OSError as exc:
+                _note(errors, path, exc)
+    finally:
+        for frame in stack:
+            os.close(frame[0])
+
+
+def _record(report: dict, rel: bytes, kind: str, reason: str, **extra) -> None:
+    counts = report.setdefault("removed_counts", {})
+    counts[reason] = counts.get(reason, 0) + 1
+    removed = report.setdefault("removed", [])
+    if len(removed) >= LIST_CAP:
+        report["removed_dropped"] = report.get("removed_dropped", 0) + 1
+        return
+    entry = _path_fields(rel)
+    entry["kind"] = kind
+    entry["reason"] = reason
+    for key, value in extra.items():
+        entry[key] = _text(value) if isinstance(value, bytes) else value
+    removed.append(entry)
+
+
+def _unlink_at(
+    dir_fd: int, name: bytes, ident: tuple, rel: bytes, errors: list
+) -> bool:
+    """Unlink one non-directory entry, only if it is still the inode seen."""
+    try:
+        if _ident(os.lstat(name, dir_fd=dir_fd)) != ident:
+            _note(errors, rel, "changed before removal; left in place")
+            return False
+        os.unlink(name, dir_fd=dir_fd)
+    except FileNotFoundError:
+        return False
+    except OSError as exc:
+        _note(errors, rel, exc)
+        return False
+    return True
+
+
+def _rmtree_at(parent_fd: int, name: bytes, errors: list, ctime_before: dict) -> int:
+    """Remove directory `name` of parent_fd and everything below it.
+
+    Iterative at any depth with at most two descriptors open: it goes down by
+    name and back up through "..", checking that each parent is the directory
+    it came from.  Returns the number of entries removed.
+    """
+    removed = 0
+    try:
+        cur = os.open(name, O_DIR, dir_fd=parent_fd)
+    except OSError as exc:
+        _note(errors, name, exc)
+        return 0
+    try:
+        top = os.fstat(parent_fd)
+        frames = [[name, (top.st_dev, top.st_ino), None]]  # name, parent id, subdirs
+        while frames:
+            frame = frames[-1]
+            if frame[2] is None:
+                frame[2] = []
+                for entry in _list(cur):
+                    try:
+                        st = os.lstat(entry, dir_fd=cur)
+                    except FileNotFoundError:
+                        continue
+                    if stat.S_ISDIR(st.st_mode):
+                        frame[2].append(entry)
+                        continue
+                    if stat.S_ISREG(st.st_mode) and st.st_nlink > 1:
+                        # unlinking one name moves the other names' ctime
+                        ctime_before.setdefault((st.st_dev, st.st_ino), st.st_ctime)
+                    os.unlink(entry, dir_fd=cur)
+                    removed += 1
+            if frame[2]:
+                sub = frame[2].pop()
+                here = os.fstat(cur)
+                child = os.open(sub, O_DIR, dir_fd=cur)
+                os.close(cur)
+                cur = child
+                frames.append([sub, (here.st_dev, here.st_ino), None])
+                continue
+            frames.pop()
+            up = os.open(b"..", os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC, dir_fd=cur)
+            os.close(cur)
+            cur = up
+            above = os.fstat(cur)
+            if (above.st_dev, above.st_ino) != frame[1]:
+                raise OSError("parent directory changed during removal")
+            os.rmdir(frame[0], dir_fd=cur)
+            removed += 1
+    except OSError as exc:
+        _note(errors, name, exc)
+    finally:
+        os.close(cur)
+    return removed
+
+
+def _link_text_reason(rel: bytes, target: bytes, path_cap: int) -> str | None:
+    """Reasons visible from the link text alone."""
+    if target.startswith(b"/"):
+        return "absolute_link"
+    parent = rel.rpartition(b"/")[0]
+    if len(rel) > path_cap or len(parent) + 1 + len(target) > path_cap:
+        return "path_too_long"
+    depth = parent.count(b"/") + 1 if parent else 0
+    for part in target.split(b"/"):
+        if part == b"..":
+            if depth == 0:
+                return "outside_link"  # climbs above the root, even if it comes back
+            depth -= 1
+        elif part not in (b"", b"."):
+            depth += 1
+    return None
+
+
+def _link_verdict(root_fd: int, rel: bytes, target: bytes, errors: list):
+    """Follow `target` from the link's own directory as tarfile's realpath()
+    check will on the copy, where any entry may not be extracted yet.
+
+    Returns (reason, None) if the copy could reject the link, (None, rel) of
+    the link named by the last part, or (None, None).
+    """
+    parts = target.split(b"/")
+    last = len(parts) - 1
+    pos = rel.split(b"/")[:-1]
+    fds: list[int] = []  # open descriptors for pos[: len(fds)]
+    missing = None  # index in pos of the first component that does not exist
+    try:
+        for name in pos:
+            fds.append(os.open(name, O_DIR, dir_fd=fds[-1] if fds else root_fd))
+        for i, part in enumerate(parts):
+            if part in (b"", b"."):
+                continue
+            if part == b"..":
+                if not pos:
+                    return "outside_link", None
+                pos.pop()
+                if missing is None:
+                    os.close(fds.pop())
+                elif len(pos) <= missing:
+                    missing = None
+                continue
+            if missing is not None:
+                pos.append(part)
+                continue
+            parent = fds[-1] if fds else root_fd
+            try:
+                st = os.lstat(part, dir_fd=parent)
+            except FileNotFoundError:
+                missing = len(pos)
+                pos.append(part)
+                continue
+            if stat.S_ISLNK(st.st_mode):
+                if i == last:
+                    return None, b"/".join([*pos, part])
+                return "link_through_link", None  # realpath follows it, then goes on
+            if i == last:
+                return None, None
+            if not stat.S_ISDIR(st.st_mode):
+                return "link_through_file", None  # realpath raises ENOTDIR
+            fds.append(os.open(part, O_DIR, dir_fd=parent))
+            pos.append(part)
+        return None, None
+    except OSError as exc:
+        _note(errors, rel, exc)
+        return "unresolvable_link", None
+    finally:
+        for fd in fds:
+            os.close(fd)
+
+
+def _check_links(root_fd: int, links: list, report: dict) -> None:
+    errors = report["errors"]
+    verdict: dict[bytes, str | None] = {}
+    follows: dict[bytes, bytes] = {}
+    for rel, target, _ident_ in links:
+        reason, nxt = _link_verdict(root_fd, rel, target, errors)
+        verdict[rel] = reason
+        if nxt is not None:
+            follows[rel] = nxt
+    kept = {rel for rel, reason in verdict.items() if reason is None}
+    state: dict[bytes, int] = {}  # 1: on the chain being followed, 2: done
+    for start in sorted(kept):
+        chain, node = [], start
+        while node in kept and node not in state:
+            state[node] = 1
+            chain.append(node)
+            node = follows.get(node)
+        if node in kept and state.get(node) == 1:
+            for rel in chain[chain.index(node) :]:
+                verdict[rel] = "link_loop"  # realpath raises ELOOP
+        for rel in chain:
+            state[rel] = 2
+    for rel, target, ident in links:
+        if verdict[rel] and _unlink_rel(root_fd, rel, ident, errors):
+            _record(report, rel, "symlink", verdict[rel], target=target)
+
+
+def _unlink_rel(root_fd: int, rel: bytes, ident: tuple, errors: list) -> bool:
+    *parents, name = rel.split(b"/")
+    fds: list[int] = []
+    try:
+        for part in parents:
+            fds.append(os.open(part, O_DIR, dir_fd=fds[-1] if fds else root_fd))
+    except OSError as exc:
+        _note(errors, rel, exc)
+        return False
+    else:
+        return _unlink_at(fds[-1] if fds else root_fd, name, ident, rel, errors)
+    finally:
+        for fd in fds:
+            os.close(fd)
+
+
+def neutralise(root, *, depth_cap: int = DEPTH_CAP, path_cap: int = PATH_CAP) -> dict:
+    """Clean the tree at `root` so tarfile's "data" filter accepts all of it.
+
+    Removes, and records with a reason:
+      * FIFOs, sockets, character and block devices (special_file);
+      * symbolic links that are absolute (absolute_link), climb above the
+        root at any point (outside_link), pass through another link
+        (link_through_link) or through a non-directory (link_through_file),
+        or form a loop (link_loop);
+      * directories deeper than depth_cap levels, with everything in them
+        (depth_cap);
+      * entries whose relative path, or link target, is longer than
+        path_cap bytes (path_too_long).
+    Regular files, directories and other links are kept.  Never follows a
+    link.  Returns {"removed", "removed_counts", "errors", "ctime_before"}.
+    """
+    report: dict = {
+        "removed": [],
+        "removed_counts": {},
+        "errors": [],
+        "ctime_before": {},
+    }
+    errors, ctime_before = report["errors"], report["ctime_before"]
+    links: list[tuple[bytes, bytes, tuple]] = []
+    root_fd = os.open(os.fsencode(root), O_DIR)
+    try:
+        for dir_fd, rel, name, st, level in _walk(root_fd, errors, depth_cap=depth_cap):
+            mode = st.st_mode
+            if stat.S_ISDIR(mode):
+                reason = None
+                if level > depth_cap:
+                    reason = "depth_cap"
+                elif len(rel) > path_cap:
+                    reason = "path_too_long"
+                if reason:
+                    count = _rmtree_at(dir_fd, name, errors, ctime_before)
+                    _record(report, rel, "directory", reason, entries=count)
+            elif stat.S_ISLNK(mode):
+                try:
+                    target = os.readlink(name, dir_fd=dir_fd)
+                except OSError as exc:
+                    _note(errors, rel, exc)
+                    continue
+                reason = _link_text_reason(rel, target, path_cap)
+                if reason is None:
+                    links.append((rel, target, _ident(st)))
+                elif _unlink_at(dir_fd, name, _ident(st), rel, errors):
+                    _record(report, rel, "symlink", reason, target=target)
+            elif stat.S_ISREG(mode):
+                if len(rel) > path_cap:
+                    if st.st_nlink > 1:
+                        ctime_before.setdefault((st.st_dev, st.st_ino), st.st_ctime)
+                    if _unlink_at(dir_fd, name, _ident(st), rel, errors):
+                        _record(report, rel, "file", "path_too_long")
+            elif _unlink_at(dir_fd, name, _ident(st), rel, errors):
+                _record(report, rel, _kind(mode), "special_file")
+        _check_links(root_fd, links, report)
+    finally:
+        os.close(root_fd)
+    return report
+
+
+# ------------------------------------------------------- step 4: manifest
+
+
+def _sha256_at(dir_fd: int, name: bytes, st: os.stat_result, until_t):
+    if until_t is not None and time.monotonic() > until_t:
+        return None, "sha256 skipped: time limit spent"
+    try:
+        fd = os.open(name, O_FILE, dir_fd=dir_fd)
+    except OSError as exc:
+        return None, f"sha256 skipped: {exc}"
+    try:
+        seen = os.fstat(fd)
+        if not stat.S_ISREG(seen.st_mode) or (seen.st_dev, seen.st_ino) != (
+            st.st_dev,
+            st.st_ino,
+        ):
+            return None, "sha256 skipped: file changed"
+        digest = hashlib.sha256()
+        while chunk := os.read(fd, 1 << 20):
+            digest.update(chunk)
+            if until_t is not None and time.monotonic() > until_t:
+                return None, "sha256 skipped: time limit spent"
+        return digest.hexdigest(), None
+    except OSError as exc:
+        return None, f"sha256 skipped: {exc}"
+    finally:
+        os.close(fd)
+
+
+def scan_files(
+    root,
+    *,
+    end_bound=None,
+    until_t=None,
+    ctime_before=None,
+    depth_cap: int = DEPTH_CAP,
+) -> dict:
+    """List every regular file under `root` except the top-level target/ and
+    .delivery/: path, size, sha256, mtime and ctime.  Read-only.
+
+    late_files holds the files whose ctime is after end_bound.  Past
+    `until_t` (time.monotonic()) files are still listed, without a sha256.
+    """
+    files: list[dict] = []
+    late: list[str] = []
+    errors: list[str] = []
+    total = 0
+    root_fd = os.open(os.fsencode(root), O_DIR)
+    try:
+        walk = _walk(root_fd, errors, depth_cap=depth_cap, skip_top=UNLISTED_TOP)
+        for dir_fd, rel, name, st, level in walk:
+            if level == 1 and name == DELIVERY:
+                continue
+            if stat.S_ISDIR(st.st_mode):
+                if level > depth_cap:
+                    _note(errors, rel, f"not listed: deeper than {depth_cap} levels")
+                continue
+            if not stat.S_ISREG(st.st_mode):
+                continue
+            ctime = st.st_ctime
+            if ctime_before:
+                ctime = ctime_before.get((st.st_dev, st.st_ino), ctime)
+            digest, why = _sha256_at(dir_fd, name, st, until_t)
+            entry = _path_fields(rel)
+            entry.update(size=st.st_size, sha256=digest, mtime=st.st_mtime, ctime=ctime)
+            if why:
+                entry["note"] = why
+            files.append(entry)
+            total += st.st_size
+            if end_bound is not None and ctime > end_bound:
+                late.append(entry["path"])
+    finally:
+        os.close(root_fd)
+    return {"files": files, "late_files": late, "total_bytes": total, "errors": errors}
+
+
+def _own(fd: int, mode: int) -> None:
+    if os.geteuid() == 0:
+        os.fchown(fd, 0, 0)
+    os.fchmod(fd, mode)
+
+
+def write_manifest(root, manifest: dict) -> None:
+    """Replace whatever stands at <root>/.delivery (a file, a link or a tree)
+    with a new directory, mode 0755, holding manifest.json, mode 0644, both
+    owned by root when run as root; the file is opened
+    O_CREAT|O_EXCL|O_NOFOLLOW."""
+    root_fd = os.open(os.fsencode(root), O_DIR)
+    try:
+        with contextlib.suppress(FileNotFoundError):
+            st = os.lstat(DELIVERY, dir_fd=root_fd)
+            entries = 0
+            if stat.S_ISDIR(st.st_mode):
+                entries = _rmtree_at(
+                    root_fd, DELIVERY, manifest.setdefault("errors", []), {}
+                )
+            else:
+                os.unlink(DELIVERY, dir_fd=root_fd)
+            _record(manifest, DELIVERY, _kind(st.st_mode), "replaced", entries=entries)
+        os.mkdir(DELIVERY, 0o755, dir_fd=root_fd)
+        dir_fd = os.open(DELIVERY, O_DIR, dir_fd=root_fd)
+        try:
+            _own(dir_fd, 0o755)
+            data = (
+                json.dumps(manifest, indent=1, ensure_ascii=True).encode("ascii")
+                + b"\n"
+            )
+            flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC
+            fd = os.open(MANIFEST, flags, 0o644, dir_fd=dir_fd)
+            try:
+                _own(fd, 0o644)
+                view = memoryview(data)
+                while view:
+                    view = view[os.write(fd, view) :]
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+        finally:
+            os.close(dir_fd)
+    finally:
+        os.close(root_fd)
+
+
+def manifest_step(
+    root, base: dict | None = None, *, end_bound=None, until_t=None, ctime_before=None
+) -> dict:
+    """scan_files(root), then write_manifest(root, ...).  `base` holds the
+    other fields (processes, egress, removed, errors...).  Returns what was
+    written."""
+    manifest = dict(base or {})
+    manifest.setdefault("format", FORMAT)
+    scan = scan_files(
+        root, end_bound=end_bound, until_t=until_t, ctime_before=ctime_before
+    )
+    manifest["end_bound"] = end_bound
+    manifest["errors"] = [*manifest.get("errors", []), *scan["errors"]]
+    manifest["file_count"] = len(scan["files"])
+    manifest["total_bytes"] = scan["total_bytes"]
+    manifest["late_files"] = scan["late_files"]
+    manifest["files"] = scan["files"]
+    write_manifest(root, manifest)
+    return manifest
+
+
+# ------------------------------------------------------------------- main
+
+
+def main() -> int:
+    began = time.time()
+    t0 = time.monotonic()
+    manifest: dict = {
+        "format": FORMAT,
+        "root": _text(ROOT),
+        "hook_time": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(began)),
+        "hook_time_epoch": round(began, 6),
+        "container_start": None,
+        "end_bound": None,
+        "end_bound_offset_sec": END_OFFSET,
+        "egress": None,
+        "processes_found": None,
+        "processes": [],
+        "kill_rounds": [],
+        "remaining_processes": [],
+        "removed": [],
+        "removed_counts": {},
+        "errors": [],
+        "timings": {},
+    }
+    errors, timings = manifest["errors"], manifest["timings"]
+
+    def step(name, fn):
+        began_step = time.monotonic()
+        try:
+            return fn()
+        except Exception as exc:  # noqa: BLE001 - a failed step must not stop the rest
+            _note(errors, name, exc)
+            return None
+        finally:
+            timings[name] = round(time.monotonic() - began_step, 3)
+
+    sweep = _sweep_uid if os.geteuid() == 0 else None
+    killed = step("kill", lambda: kill_step(sweep=sweep))
+    if killed:
+        manifest.update(killed)
+    manifest["egress"] = step("egress", egress_step)
+    start = step("container_start", container_start)
+    if start is not None:
+        manifest["container_start"] = round(start, 3)
+        manifest["end_bound"] = round(start + END_OFFSET, 3)
+    report = step("neutralise", lambda: neutralise(ROOT))
+    ctime_before = None
+    if report:
+        ctime_before = report.pop("ctime_before")
+        errors.extend(report.pop("errors"))
+        manifest.update(report)
+    written = step(
+        "manifest",
+        lambda: manifest_step(
+            ROOT,
+            manifest,
+            end_bound=manifest["end_bound"],
+            until_t=t0 + HASH_LIMIT,
+            ctime_before=ctime_before,
+        ),
+    )
+    if written is None:
+        step("manifest_retry", lambda: write_manifest(ROOT, manifest))
+    final = written or manifest
+    print(
+        f"weave-collect: files={final.get('file_count')} "
+        f"removed={sum(final.get('removed_counts', {}).values())} "
+        f"egress_open={(final.get('egress') or {}).get('open')} "
+        f"remaining={len(final.get('remaining_processes') or [])} "
+        f"errors={len(final.get('errors') or [])}"
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except BaseException as exc:  # noqa: BLE001 - record it, write what we can, exit 0
+        with contextlib.suppress(BaseException):
+            print(f"weave-collect: {type(exc).__name__}: {exc}", file=sys.stderr)
+        with contextlib.suppress(BaseException):
+            write_manifest(ROOT, {"format": FORMAT, "errors": [f"main: {exc!r}"]})
+    finally:
+        with contextlib.suppress(BaseException):
+            sys.stdout.flush()
+            sys.stderr.flush()
+        os._exit(0)

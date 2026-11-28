@@ -35,8 +35,19 @@ RUN set -e; cd /seed; cargo vendor --locked -q /opt/cargo-vendor > /dev/null; rm
 FROM base
 COPY --from=registry /opt/cargo-vendor /opt/cargo-vendor
 COPY cargo-config.toml /usr/local/share/offline-registry/config.toml
-COPY test.sh verify.py /tests/
+COPY test.sh verify.py delivery_manifest.py upstream-digests.txt /tests/
 COPY private/ /tests/private/
 RUN set -e; chmod -R a+rX /opt/cargo-vendor /usr/local/share/offline-registry; \
-    chown -R root:root /tests; chmod 0700 /tests/private; chmod 0600 /tests/private/*; chmod 0755 /tests/test.sh
+    chown -R root:root /tests; chmod 0700 /tests/private; chmod 0600 /tests/private/*; chmod 0755 /tests/test.sh; \
+    chmod 0644 /tests/verify.py /tests/delivery_manifest.py /tests/upstream-digests.txt
+# Harbor runs tar, gzip and su as root through the image's PATH: nothing on it may be writable by
+# anyone but root.
+ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+RUN set -e; for d in $(echo "$PATH" | tr ':' ' '); do \
+      if [ -d "$d" ] && [ ! -L "$d" ]; then chmod -R go-w "$d"; fi; \
+    done; \
+    bad=$(for d in $(echo "$PATH" | tr ':' ' '); do \
+      if [ -d "$d" ] && [ ! -L "$d" ]; then find "$d" -maxdepth 1 ! -type l \( ! -user root -o -perm -0020 -o -perm -0002 \); fi; \
+    done); \
+    if [ -n "$bad" ]; then echo "on PATH and writable by others: $bad"; exit 1; fi
 WORKDIR /
