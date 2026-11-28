@@ -429,9 +429,9 @@ def main() -> None:
         "6_cue_words": cue_sweep(),
         "12_band": {
             "V (pipeline)": band_v(selection),
-            "V (verifier)": verify_result("V"),
+            "V (verifier)": verify_result("mutant-v"),
             "W, secondary bound (pipeline)": band(selection, "mut-W"),
-            "W (verifier)": verify_result("W"),
+            "W (verifier)": verify_result("mutant-w"),
             "W_literal (pipeline)": band(selection, "mut-Wlit"),
             "R_unbuilt, F4 and F5 (pipeline)": band(selection, "mut-Ru"),
         },

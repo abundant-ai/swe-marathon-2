@@ -15,6 +15,7 @@
 set -eu
 mkdir -p /home/dev/zt
 cat > /home/dev/zt/zthread.c <<'EOF'
+#include <errno.h>
 #include <fcntl.h>
 #include <netdb.h>
 #include <netinet/in.h>
@@ -34,13 +35,15 @@ static int egress(void) {
         return 0;
     if (connect(s, (struct sockaddr *)&target, sizeof target) == 0) {
         ok = 1;
-    } else {
+    } else if (errno == EINPROGRESS) {
+        /* Only a connection under way can succeed: one refused at once (no network: ENETUNREACH) leaves a socket
+           that poll() reports writable with no pending error, which round 2's first run took for egress. */
         struct pollfd p = {s, POLLOUT, 0};
-        if (poll(&p, 1, 200) == 1) {
-            int err = 0;
+        if (poll(&p, 1, 200) == 1 && (p.revents & POLLOUT) && !(p.revents & (POLLERR | POLLHUP))) {
+            int err = 1;
             socklen_t len = sizeof err;
-            getsockopt(s, SOL_SOCKET, SO_ERROR, &err, &len);
-            ok = err == 0;
+            if (getsockopt(s, SOL_SOCKET, SO_ERROR, &err, &len) == 0)
+                ok = err == 0;
         }
     }
     close(s);
