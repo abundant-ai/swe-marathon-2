@@ -31,7 +31,6 @@ STEP = "steps/01-implement-renderer"
 
 ROLES = {
     "List the processes": "processes",
-    "Record whether": "egress",
     "Put a mark": "mark",
     "Make /app/rebuild safe": "fixing",
     "Measure /app/rebuild": "measuring",
@@ -41,8 +40,8 @@ ROLES = {
 
 def hook_programs(bundle: Path) -> dict[str, str]:
     """The Python blocks of the bundle's sweep (environment/fsmaint-sweep) by what each does, read
-    from the start of its docstring: the process listing, the egress probe, the refused mark, the
-    link fixing and the measuring (the end-bound reader has none: "bound")."""
+    from the start of its docstring: the process listing, the refused mark, the link fixing and the
+    measuring (the end-bound reader has none: "bound")."""
     text = (bundle / "environment" / "fsmaint-sweep").read_text()
     found = {}
     for program in re.findall(r"<<'EOF'\n(.*?)\nEOF", text, re.DOTALL):
@@ -57,28 +56,16 @@ def hook_programs(bundle: Path) -> dict[str, str]:
 
 
 def mark(bundle: Path, top: Path) -> str:
-    """Run the sweep's blocks on `top` in the sweep's order, as this user: the process and egress
-    records into a state dir, the refused mark, the link fixing and the measuring (which reads the
-    state and the notes). A far-future end bound, so an honest source read now is never taken for
-    one written after the end; the mark's first line."""
+    """Run the sweep's blocks on `top` in the sweep's order, as this user: the process record into a
+    state dir, the refused mark, the link fixing and the measuring (which reads the state and the
+    notes). A far-future end bound, so nothing read now is flagged as changed after the end; the
+    mark's first line."""
     programs = hook_programs(bundle)
     state = top.parent / ".state"
     state.mkdir(exist_ok=True)
     subprocess.run(
         [sys.executable, "-I", "-", str(state / "procs.json")],
         input=programs["processes"],
-        text=True,
-        check=True,
-        capture_output=True,
-        timeout=120,
-    )
-    egress = programs["egress"].replace(
-        '("github.com", 443), ("pypi.org", 443), ("proxy.golang.org", 443), ("registry.npmjs.org", 443)',
-        '("127.0.0.1", 9),',
-    )
-    subprocess.run(
-        [sys.executable, "-I", "-", str(state / "netprobe.json")],
-        input=egress,
         text=True,
         check=True,
         capture_output=True,

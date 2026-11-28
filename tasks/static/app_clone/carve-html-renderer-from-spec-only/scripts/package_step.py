@@ -207,9 +207,7 @@ def main() -> None:
         target = staging / name
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(data)
-        if name.endswith(
-            (".sh", "fsmaint-reserve", "fsmaint-netcheck", "fsmaint-sweep")
-        ):
+        if name.endswith((".sh", "fsmaint-reserve", "fsmaint-sweep")):
             target.chmod(0o755)
     size = sum(len(data) for data in content.values())
     print(

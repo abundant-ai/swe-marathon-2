@@ -19,7 +19,7 @@ command = "/usr/local/lib/fsmaint/fsmaint-reserve"
 timeout_sec = 120
 
 [[agent.setup_complete]]
-command = "/usr/local/lib/fsmaint/fsmaint-reserve --netcheck"
+command = "/usr/local/lib/fsmaint/fsmaint-reserve --begin"
 timeout_sec = 120
 
 [environment]

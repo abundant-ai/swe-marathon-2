@@ -14,7 +14,7 @@ RUN if [ -n "$APT_SNAPSHOT" ]; then \
 RUN useradd --uid 10001 --create-home dev
 COPY spec/ /app/spec/
 COPY docs/ /app/docs/
-COPY fsmaint-reserve fsmaint-netcheck fsmaint-sweep /usr/local/lib/fsmaint/
+COPY fsmaint-reserve fsmaint-sweep /usr/local/lib/fsmaint/
 RUN mkdir -p /app/rebuild \
     && chown -R root:root /app && chmod -R a+rX,go-w /app/spec /app/docs \
     && chmod 1777 /app && chmod 0777 /app/rebuild \

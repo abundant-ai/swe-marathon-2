@@ -26,7 +26,7 @@ from verifier import recorder, runcases
 REBUILD = Path("/app/rebuild")
 PROGRAM = REBUILD / "carve"
 MARK = ".fsmaint"  # written into /app/rebuild by the sweep (environment/fsmaint-sweep) once the work has ended
-RECORD = ".fsmaint.json"  # the sweep's record: the hosts probed, the processes found, every entry; never scored
+RECORD = ".fsmaint.json"  # the sweep's record: the processes found, every entry; never scored
 RECORD_LIMIT = 64 << 20  # bytes of the record read, at most
 MARK_PREFIX = (
     1 << 16
@@ -725,9 +725,9 @@ def mark_says(top: Path) -> tuple[list[str], bool]:
 
 
 def manifest_record(top: Path) -> dict:
-    """What the sweep's record says, for metrics.json and review: whether the
-    public internet answered when the session ended, the processes then alive, how many
-    passes of ending ended them, and the tree's entries (their number and the twenty with the
+    """What the sweep's record says, for metrics.json and review: the processes alive when the
+    session ended, how many passes of ending ended them, the entries changed after the end of the
+    work (kept, and flagged here), and the tree's entries (their number and the twenty with the
     latest change times). Read in a bounded way; never raising, never scored."""
     try:
         path = top / RECORD
@@ -746,17 +746,17 @@ def manifest_record(top: Path) -> dict:
         summary = {
             key: record.get(key)
             for key in (
-                "hosts",
-                "any_open",
                 "process_count",
                 "kill_passes",
                 "processes_left",
+                "threads_left",
                 "listed",
                 "listing_complete",
                 "end_bound",
                 "end_from",
                 "sweep_started_at",
                 "late_entries",
+                "late_paths",
                 "ending",
                 "logs_artifacts",
             )
@@ -766,8 +766,6 @@ def manifest_record(top: Path) -> dict:
             "entries_listed": len(entries),
             "copies": record.get("copies", []),
             "refused_copies": record.get("refused_copies", []),
-            "netcheck": record.get("netcheck"),
-            "netcheck_open": record.get("netcheck_open"),
             "latest_changes": [
                 {
                     key: item.get(key)
@@ -777,18 +775,18 @@ def manifest_record(top: Path) -> dict:
             ],
         }
         flags = []
-        if record.get("any_open"):
-            flags.append("a public host answered after the end")
         if record.get("processes_left"):
-            flags.append(f"{record.get('processes_left')} processes survived the kill")
+            flags.append(
+                f"{record.get('processes_left')} threads of the session survived the kill"
+            )
+        if record.get("threads_left"):
+            flags.append(
+                f"{record.get('threads_left')} threads of the session were alive when the tree was to be listed"
+            )
         if record.get("late_entries"):
             flags.append(
-                f"{record.get('late_entries')} entries changed after the end bound"
-                + (
-                    " (left out or refused)"
-                    if record.get("end_from") in ("netcheck", "limit")
-                    else " (listed)"
-                )
+                f"{record.get('late_entries')} entries changed after the end of the work ({record.get('end_from')}); "
+                "kept: review them"
             )
         if record.get("copies"):
             flags.append(
@@ -801,30 +799,16 @@ def manifest_record(top: Path) -> dict:
         ]
         if flagged:
             flags.append(
-                f"{len(flagged)} copies hold files changed after the sweep's start, copied because no end bound "
-                "was observed: review them"
-            )
-        refused_late = [
-            item
-            for item in (record.get("refused_copies") or [])
-            if isinstance(item, dict) and item.get("late_files")
-        ]
-        if refused_late:
-            flags.append(
-                f"{len(refused_late)} outside sources changed at or after the end bound were refused: review them"
+                f"{len(flagged)} copies hold files changed after the end of the work; kept: review them"
             )
         if record.get("end_from") == "limit":
             flags.append(
                 "the work ran to its time limit; the end bound is its start plus that limit"
             )
-        elif not (record.get("netcheck_open") or {}).get("first_open_at"):
-            flags.append(
-                "no net check observed the end; the end bound is the sweep's start"
-            )
         ending = record.get("ending") if isinstance(record.get("ending"), dict) else {}
         if "processes_left" in record and record.get("processes_left") is None:
             flags.append(
-                "how many processes were left alive is unknown: a process listing did not answer"
+                "how many threads were left alive is unknown: a listing did not answer"
             )
         if ending.get("freeze_ran_out") is True or ending.get("kill_ran_out") is True:
             flags.append(
