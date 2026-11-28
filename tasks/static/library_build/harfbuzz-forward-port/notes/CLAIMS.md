@@ -56,7 +56,7 @@ form is given. **Unverified**: not checkable in Phase A. **Estimate**: a judgeme
 | C34 | The table generators run offline (implied by "P with UCD 18") | Corrected | `gen-ucd-table.py` and `gen-use-table.py` import packTab, and `update-unicode-tables.make` installs it from GitHub on demand. packTab must be in the image. The full input list is in DESIGN.md section 2 |
 | C35 | Outputs are integer sequences (deep dive) | Verified | `.tests` lines: `glyph=cluster@x,y+advance` and flags, for example `khmer-misc.tests` at 15.2.0. API outputs we choose are integers too |
 | C36 | The verifier build after a 9.6 h session is the platform's known failure (report) | Verified | `PLATFORM_VERIFIER_BUILD_AFTER_LONG_RUN.md` (harbor-lh): 4 of 4 capped steps trials with heavy images lost on 2026-11-19; graded on 2026-11-20 (2 trials) and in the 2026-11-24 probe (n = 1 per layout) |
-| C37 | Human horizon 1-2 weeks for an expert, 3-6 for a strong C++ engineer; frontier 0.35-0.65, mid-tier 0.10-0.30; build 9-13 person-days (report) | Estimate | Unchanged except build cost, revised to 12-17 person-days (DESIGN.md section 11) |
+| C37 | Human horizon 1-2 weeks for an expert, 3-6 for a strong C++ engineer; frontier 0.35-0.65, mid-tier 0.10-0.30; build 9-13 person-days (report) | Estimate | Horizon restated by the 2026-11-28 panel from QA pass R2-16 (finding 3): about 10-16 working days for an engineer who knows HarfBuzz, several weeks for one who does not; no scope cut, since cutting tier C raises the frontier (above the owner's 2-7 day target, flagged to him). Frontier about 0.65 (0.53-0.76), mid-tier about 0.29 (R2-16). Build cost revised to 12-17 person-days (DESIGN.md section 11) |
 | C38 | `meson_options.txt` lets one minimal configuration build every tree (implied by the verifier plan) | Verified | The file is identical at 14.3.0 and 15.2.0 (same blob) |
 | C39 | ragel is needed only to develop HarfBuzz itself (implied) | Corrected | 15.2.0's `src/meson.build` regenerates every `.rl` machine at build time when ragel 6.10 is found. 15.2.0 changed `hb-ot-shaper-use-machine.rl` (item 3). Agent image and verifier must both have ragel 6.10, and the instruction says the build regenerates machines |
 | C40 | The Unicode 18 units can be regenerated from the UCD files (implied by "P with UCD 18") | Corrected | Upstream's Unicode 18.0 update `cdbe72ca` (14.5.0, #6242) also changed `src/ms-use/IndicSyllabicCategory-Additional.txt` (+7/−10, for example dropping a `Consonant_With_Stacker` entry for U+11A3A) and `IndicPositionalCategory-Additional.txt` (+4/−2). These are Microsoft's USE overrides and cannot be derived from the UCD. They ship as specification data (SPIKE E11), or the affected code points are dropped. Raised by the panel's opus judge, checked the same day |
@@ -149,9 +149,11 @@ on the cases; the task itself is single-step since 2026-11-26): A = 14.3.1 to 15
 
 ## Failure sentence and its proof plan
 
-**Replaced on 2026-11-27.** A three-judge panel replaced this sentence with the verification-gap sentence (agents
-land the fixes they can confirm on their own 14.3.0 build and fall short on AAT/`kern` behaviour that needs
-hand-built fonts, regenerated Unicode data, and bugs a note describes only by symptom). Its tiers and proof mutant V
+**Replaced on 2026-11-27, revised on 2026-11-28.** Two three-judge panels replaced this sentence; it now reads:
+"With no 15.x code or tests to check against, agents land the fixes whose notes name the change and fall short
+mainly where they must find a bug's cause from its symptom alone, or hand-assemble AAT `kerx` and `kern` tables to
+see the behaviour at all." (The 2026-11-27 wording named "regenerated Unicode data" too; unit 33 is checkable from
+the shipped data, so the second panel dropped it.) Its tiers and proof mutant V
 are in DESIGN.md section 10; the prediction and kill conditions in PREREGISTRATION.md. Condition 3 there brings
 the sentence below back. W stays as a secondary bound. The original plan follows as the record.
 

@@ -274,11 +274,13 @@ dual gate below 0.95. Below 0.10 for mid-tier models the task risks reading as u
 
 ## 10. The failure mode, in one sentence
 
-Decided by a three-judge panel on 2026-11-27 (harbor-lh `ops/swe-marathon-v2/decisions/2026-11-27-harfbuzz-failure-sentence-DECISION.md`):
+Decided by a three-judge panel on 2026-11-27 and revised by a second on 2026-11-28, which also set the tier rule
+below (harbor-lh `ops/swe-marathon-v2/decisions/2026-11-27-harfbuzz-failure-sentence-DECISION.md` and
+`2026-11-28-harfbuzz-tiers-difficulty-DECISION.md`):
 
-> With no 15.x code or tests to check against, agents land the fixes they can confirm on their own 14.3.0 build and
-> fall short on the ones they cannot, chiefly AAT/kern behaviour that needs hand-built fonts, regenerated Unicode
-> data, and bugs a note describes only by symptom.
+> With no 15.x code or tests to check against, agents land the fixes whose notes name the change and fall short
+> mainly where they must find a bug's cause from its symptom alone, or hand-assemble AAT `kerx` and `kern` tables to
+> see the behaviour at all.
 
 **Tiers** (QA pass 16's tiers and CLAIMS.md's families). Tier A: the note names the fix. Tier B: the agent can
 check its change on its own 14.3.0 build with the shipped fonts and tools. Tier C: it cannot without material it

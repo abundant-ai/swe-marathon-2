@@ -14,9 +14,8 @@ session, working from the release notes, the specifications and its own test fon
 binary. A separate verifier compiles the delivered tree and compares integer shaping and API outputs
 on private fonts and strings with the upstream releases. Only behaviour a listed note changed is credited, and
 behaviour no note changed must stay as it was. Where agents are expected to fail: with no 15.x code or tests to
-check against, they land the fixes they can confirm on their own 14.3.0 build and fall short on the ones they
-cannot, chiefly AAT/`kern` behaviour that needs hand-built fonts, regenerated Unicode data, and bugs a note
-describes only by symptom.
+check against, they land the fixes whose notes name the change and fall short mainly where they must find a bug's
+cause from its symptom alone, or hand-assemble AAT `kerx` and `kern` tables to see the behaviour at all.
 
 | Document | Contents |
 | --- | --- |
@@ -62,12 +61,13 @@ by unit and kind for post-run analysis. Details and rationale: [notes/DESIGN.md]
 
 ## Failure mode
 
-Chosen by a three-judge panel on 2026-11-27 (harbor-lh
-`ops/swe-marathon-v2/decisions/2026-11-27-harfbuzz-failure-sentence-DECISION.md`):
+Chosen by a three-judge panel on 2026-11-27 and revised by a second on 2026-11-28 (harbor-lh
+`ops/swe-marathon-v2/decisions/2026-11-27-harfbuzz-failure-sentence-DECISION.md` and
+`2026-11-28-harfbuzz-tiers-difficulty-DECISION.md`):
 
-> With no 15.x code or tests to check against, agents land the fixes they can confirm on their own 14.3.0 build and
-> fall short on the ones they cannot, chiefly AAT/kern behaviour that needs hand-built fonts, regenerated Unicode
-> data, and bugs a note describes only by symptom.
+> With no 15.x code or tests to check against, agents land the fixes whose notes name the change and fall short
+> mainly where they must find a bug's cause from its symptom alone, or hand-assemble AAT `kerx` and `kern` tables to
+> see the behaviour at all.
 
 Each graded unit has a tier (notes/DESIGN.md section 10, `scripts/pipeline/tiers.tsv`): A, the note names the fix
 (14); B, checkable on the agent's own 14.3.0 build with the shipped fonts and tools (20); C, not checkable without
