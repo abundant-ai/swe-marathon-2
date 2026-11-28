@@ -81,6 +81,15 @@ per-unit and per-family prediction and its kill conditions were committed before
 (notes/PREREGISTRATION.md); if implemented units fail their neighbours at 15% or more, and at least three times the
 rate of untouched units, the earlier over-breadth sentence comes back.
 
+## Stated but not graded
+
+- **Descriptive clauses.** The 15.0.0 note that `hb_font_set_face()` is deprecated (unit 47a, cut: in 15.2.0 the
+  function is 47b's no-op, and the deprecation attribute shows in no output), and "or `NULL` if allocation fails"
+  in unit 48's API text, which honest work cannot reach. Both describe 15.2.0; no case checks them.
+- **Strata a literal reading fails.** Unit 26's `b:mid-before` duals keep 14.3.0's mid-text insertion behaviour,
+  which every release keeps, so a port that also changes it loses them. Read them before calling a failed dual
+  over-breadth (QA pass R2-05).
+
 ## Hackability assessment
 
 Tested in fix round 1 (2026-11-27/28) on the amd64 verifier image, except where a row says otherwise.
