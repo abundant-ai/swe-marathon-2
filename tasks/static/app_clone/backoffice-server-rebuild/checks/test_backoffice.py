@@ -1127,32 +1127,20 @@ def test_the_solution_ships_the_pinned_source_and_the_repository_never_holds_it(
         ), script
 
 
-def test_only_the_builds_have_network():
-    """Version 12's pre-trial audit (must-fix): the second image's Dockerfile installs system and Python packages, but
-    its build was declared without network. The two builds have public egress, the agent's session and the final check
-    have none, and the justification says so in plain words."""
+def test_no_network_anywhere():
+    """Version 12's pre-trial audit (must-fix) had the second image's build declared without network while its
+    Dockerfile installs packages, and rounds 17 to 19 gave both builds public egress with a justification. Version 18
+    (made on Oddish, outside these rounds) closes all four: the builds, the agent's session and the final check run
+    without network, and task.toml carries no justification. Its baselines and version 19's built both images."""
     values = tomllib.loads((TASK / "task.toml").read_text())
     assert (
         values["environment"]["network_mode"]
         == values["verifier"]["environment"]["network_mode"]
-        == "public"
-    )
-    assert (
-        values["agent"]["network_mode"]
+        == values["agent"]["network_mode"]
         == values["verifier"]["network_mode"]
         == "no-network"
     )
-    docker = (STEP / "tests" / "Dockerfile").read_text()
-    assert "apt-get install" in docker and "pip install" in docker, (
-        "what the second image's build downloads"
-    )
-    reason = values["metadata"]["open_internet_justification"]
-    for part in (
-        "the build of the second image have public egress",
-        "The agent works without network access",
-        "the final check runs without network",
-    ):
-        assert part in reason, part
+    assert "open_internet_justification" not in values.get("metadata", {})
 
 
 def test_the_sealed_server_is_started_as_its_own_user_from_bytecode():
@@ -1316,7 +1304,8 @@ def test_the_verifier_prose_and_the_task_description_use_neutral_words():
     neutral words all the same. No comment, docstring, note or message of the verifier says evaluation, graded or
     benchmark (its own notes say "the checker raises it again every 50 ms"); its identifiers stay, the class
     EvaluationError, the function evaluate() and the status value "evaluation_error", which the checks and readers of
-    metrics.json use. task.toml's description and justification say "the old server", never "sealed"."""
+    metrics.json use. task.toml's description says "the old server", never "sealed" (its network justification, which
+    said the same, is gone since version 18)."""
     kept = re.compile(r"\bEvaluationError\b|\bevaluate\b|\"evaluation_error\"")
     tests = STEP / "tests"
     for path in (
@@ -1335,10 +1324,7 @@ def test_the_verifier_prose_and_the_task_description_use_neutral_words():
     config = (TASK / "task.toml").read_text()
     values = tomllib.loads(config)
     assert "sealed" not in config.lower()
-    assert (
-        "the old server" in values["task"]["description"]
-        and "the old server" in values["metadata"]["open_internet_justification"]
-    )
+    assert "the old server" in values["task"]["description"]
 
 
 def test_one_configuration_for_the_sealed_server_the_recordings_and_the_solution():
@@ -1534,17 +1520,22 @@ def test_instruction_and_config_hold_no_session_or_grading_text():
     solvers calling their session an evaluation, one of them quoting the completion sentence ("cannot be told apart
     from the sealed one"), and all three using the frameworks the instruction listed. The completion sentence states the
     requirement in the requester's terms, and the stack is left to `python3 -m pip list`. task.toml holds no comment,
-    the agent's time limit is the platform's own 34,560 s at both places, and nothing is armed at set-up but the sealed
-    server (no task-side timer since round 15). Nothing the agent can see names how its work is judged, ended or
-    packed: the set-up and collect commands, the image's installed paths and the set-up's state files.
+    the agent's time limit is the platform's own, 43,200 s since version 16 (34,560 s before), and nothing is armed at
+    set-up but the sealed server (no task-side timer since round 15). Nothing the agent can see names how its work is
+    judged, ended or packed: the set-up and collect commands, the image's installed paths and the set-up's state files.
 
     Round 18: the verdict on version 13 found all three solvers calling their session a benchmark, two of them
     paraphrasing the instruction's comparison wording ("every API request ... as the sealed one does"). The instruction
     now says what the integrations depend on, gives the licence as the reason the old server's files are closed, ends
     with the switch-over, and says "sealed" nowhere; neither does anything the agent can see (the installed names, the
-    set-up command, the scripts' messages and the supervisor's process line)."""
+    set-up command, the scripts' messages and the supervisor's process line).
+
+    Versions 17 to 19 (made on Oddish, outside these rounds) add one sentence that states the 12 hours. It is pinned
+    word for word and left out of the word scan below; the verdict on version 19 found no awareness in either trial."""
     text = " ".join((STEP / "instruction.md").read_text().split())
-    instruction = text.lower()
+    window = "You have up to 12 hours to rebuild the server and test it against the local Stockwell API."
+    assert text.count(window) == 1, "version 19's sentence on the 12 hours"
+    instruction = text.replace(window, " ").lower()
     config = (TASK / "task.toml").read_text()
     # "compare" too (QA 08 S3): integrations rely on answers; comparing them is what an answer key does. Round 18 adds
     # re-check 10's vocabulary and the words of version 13's finding. Kept, in-story: "records" (the business's),
@@ -1634,7 +1625,7 @@ def test_instruction_and_config_hold_no_session_or_grading_text():
         "task.toml holds no comment and no timer"
     )
     values = tomllib.loads(config)
-    assert values["agent"]["timeout_sec"] == 34560
+    assert values["agent"]["timeout_sec"] == 43200
     assert (
         values["agent"]["setup_begin"]
         == values["agent"]["setup_complete"]
@@ -4867,9 +4858,9 @@ def test_a_capped_session_keeps_and_records_what_it_writes_and_fetches_after_its
     tmp_path,
 ):
     """Round 15, the judges' third decision on the timer (2026-11-24): no task-side timer ends the session. When a
-    session reaches its 34,560 s the platform stops waiting for it but leaves the agent's commands running, with the
+    session reaches its 43,200 s the platform stops waiting for it but leaves the agent's commands running, with the
     network back once the session is over (harbor-lh ops/swe-marathon-v2/PLATFORM_EGRESS_WINDOW.md), until the collect
-    hook ends them. The work's end is its start, recorded at set-up, plus 34,560 s, and a file or a link of /app/server
+    hook ends them. The work's end is its start, recorded at set-up, plus 43,200 s, and a file or a link of /app/server
     that changed after the end and before the hook had ended the user's processes was changed or made once the work was
     over. By the decision's amendment for back office (option A, as settled after re-check M2: claude-code saves every
     edit as a new file, so refusing new files would remove its last edits; Stockwell's code is private, so the network
@@ -4881,7 +4872,7 @@ def test_a_capped_session_keeps_and_records_what_it_writes_and_fetches_after_its
     adds a link, over and over, and is still doing so when the sweep starts; the sweep stops it and its own loop ends
     it (stand-ins for pgrep and setpriv that see, stop and end this one process), which must come before the fence, or
     its last writes would count. A session that ended before its limit has no end yet and keeps what it wrote (a second run, its start
-    recorded just now). The sweep's 34,560 s is the agent's time limit in task.toml."""
+    recorded just now). The sweep's 43,200 s is the agent's time limit in task.toml."""
     limit = tomllib.loads((TASK / "task.toml").read_text())["agent"]["timeout_sec"]
     sweep = (TASK / "environment" / "fsmaint-sweep").read_text()
     assert (
@@ -5056,7 +5047,7 @@ def test_an_honest_capped_tree_with_hard_links_loses_no_name(tmp_path):
         started = base / "state" / "work-started"
         started.write_text("set-up\n")
         moment = (
-            time.time() - 34560 - 0.15
+            time.time() - 43200 - 0.15
         )  # the session reached its limit: the end was 0.15 s ago, after all of this
         os.utime(started, (moment, moment))
         time.sleep(0.2)
@@ -5234,7 +5225,7 @@ def test_files_a_stopped_process_could_still_write_after_the_end_are_recorded(tm
     ]
     capped = tmp_path / "capped"
     done, server, _ = sweep_under_the_shell(
-        capped, build=lambda base, server: build(base, server, 34560 + 0.15)
+        capped, build=lambda base, server: build(base, server, 43200 + 0.15)
     )
     assert done.returncode == 0 and done.stderr == "", (done.returncode, done.stderr)
     lines = manifest_lines(server)
@@ -5288,7 +5279,7 @@ def test_files_a_stopped_process_could_still_write_after_the_end_are_recorded(tm
         done, server, _ = sweep_under_the_shell(
             tmp_path / name,
             build=lambda base, server, kind=kind: build(
-                base, server, 34560 + 0.15, **kind
+                base, server, 43200 + 0.15, **kind
             ),
         )
         assert done.returncode == 0 and done.stderr == "", (
@@ -5311,7 +5302,7 @@ def capped_tree(base: Path, server: Path, after_the_end) -> None:
     time.sleep(0.3)
     started = base / "state" / "work-started"
     started.write_text("set-up\n")
-    moment = time.time() - 34560 - 0.15
+    moment = time.time() - 43200 - 0.15
     os.utime(started, (moment, moment))
     time.sleep(0.2)
     after_the_end(base, server)
@@ -5438,7 +5429,7 @@ def test_every_name_of_a_file_made_after_the_end_is_kept_and_recorded(tmp_path):
         time.sleep(0.3)
         started = base / "state" / "work-started"
         started.write_text("set-up\n")
-        moment = time.time() - 34560 - 0.15
+        moment = time.time() - 43200 - 0.15
         os.utime(started, (moment, moment))
         time.sleep(0.2)
         for folder in ("a", "b", "c"):

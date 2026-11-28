@@ -7,8 +7,8 @@ LIMIT_BYTES=1000000000
 LIMIT_PATH=1000
 PACK_SECONDS=100
 STATE=/var/lib/fsmaint
-# The work's end: its start, recorded at set-up, plus the 34,560 s a session may last (nothing where no start was).
-end=$(/opt/py/bin/python -I -c 'import os, sys; print(os.stat(sys.argv[1]).st_mtime + 34560)' "$STATE/work-started" 2>/dev/null)
+# The work's end: its start, recorded at set-up, plus the 43,200 s a session may last (nothing where no start was).
+end=$(/opt/py/bin/python -I -c 'import os, sys; print(os.stat(sys.argv[1]).st_mtime + 43200)' "$STATE/work-started" 2>/dev/null)
 # Stop every process of the user where it is, so that what they hold can be read before they are ended: `kill -STOP -1`
 # as that user reaches all of them in one system call; repeat while any still runs, where pgrep can tell its state.
 live=
@@ -339,7 +339,7 @@ NOTES, NOTE_CHARS = 40, 200  # the manifest's lines of changes, and the characte
 MEASURE_SECONDS = 240  # for the walk and the links; the pack has PACK_SECONDS of its own
 STOP = time.monotonic() + MEASURE_SECONDS
 LIMIT_NAMES = 1000  # names (hard links) one file may have: a copy whose file system allows fewer makes copies of it
-SESSION_SECONDS = 34560  # the longest a session lasts
+SESSION_SECONDS = 43200  # the longest a session lasts
 notes, links, files, names_of = [], [], set(), {}
 path_of, inode_of = {}, {}  # each file and directory the walk saw: its path inside ROOT by (device, inode), and back
 entries = size = listed = late = 0

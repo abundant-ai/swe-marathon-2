@@ -2,6 +2,9 @@
 
 Author notes. Nothing in this file is shipped to the candidate or to either image.
 
+**Status, 2026-11-27:** version 19 on Oddish passed QA (verdict: accept, high confidence). This folder matches it
+since 2026-11-28. Scores and the failure mode are under [Status and calibration](#status-and-calibration).
+
 A wholesale back-office application, Stockwell, runs in the candidate's container. Its
 server is sealed: it answers on `127.0.0.1:8080` but its files belong to another user and
 cannot be read. The candidate has the web client's source and unlimited access to the
@@ -13,7 +16,81 @@ reading its code, and nothing the candidate can see says "sealed".
 
 One step is implemented. See [Remaining work](#remaining-work).
 
+## Status and calibration
+
+Version 19 is the current version on Oddish. It passed QA on 2026-11-27. The pre-trial audit found nothing, and the
+verdict (accept, high confidence) reads both model runs as the agents' own unfinished work: no task defect, no leak,
+and neither agent took its session for an evaluation.
+
+| Run | Harness and model | Version | Reward | Units matched (of 4,110) | Agent time | Notes |
+| --- | --- | --- | --- | --- | --- | --- |
+| Reference solution, twice | oracle | 18 | 1.0, 1.0 | 4,110, 4,110 | | replay 819 s and 1,277 s; the 9 planned restarts and no other |
+| No-op, twice | nop | 18 | 0.0, 0.0 | 0, 0 | | no `run` file |
+| Claude Opus 5.5 | claude-code 2.1.331, helper agents on, web tools off | 19 | 0.856 | 3,518 | 68 min | 14 helper agents, 1,881 steps |
+| GPT-6.2 Astra | codex 0.159.2, web search off | 19 | 0.185 | 759 | 49 min | no helpers, 214 steps |
+
+Version 19 differs from version 18 in one sentence of the instruction and nothing else, so version 18's baselines stand
+for it; version 19 has none of its own. The model runs are in experiment `6cd78008`
+(https://www.oddish.app/experiments/6cd78008), one attempt each, with 12 hours available.
+
+**Failure mode:** both stopped about an hour into a 12-hour session, each saying it wasn't finished: Opus (0.856)
+skipped password-protected supplier PDFs after its cyber safeguard twice stopped the helper writing that code, losing
+the rest of each trading month once one arrives, and Astra (0.185) left most flows still wrong and matched 22 of 1,432
+trading days.
+
+- Opus lost 592 units. 418 of its 442 lost trading days and screens fall on or after the first day of a month that
+  needs a password-protected supplier PDF opened (all 21 such months lose from there), and 26 more scenarios stop at
+  the same call. Opus 5.5's cyber safeguard ended its PDF-reading helper twice while it worked on the protected
+  samples, so the main agent left `POST /files/{id}/unlock` answering 501 for a protected file and said so in its last
+  message. Most of the rest: report queries (59 scenarios; in 24 it refused a query the old server answers), bank
+  statement matching (17), list filters it accepted where the old server refuses them (17), and a customer import
+  over the size limit that it accepted instead of refusing with 413 (the first difference in 15 months).
+- Astra lost 3,351 units, spread over most flows. Its first differences: invoicing a shipment (460 of the 1,322
+  scenarios that invoice one), moving the calendar on (113), submitting a purchase order (95), stock counts (57) and a
+  long tail. A bug in its own error helper turned refusals into 500s (92 scenarios), and in 9 of the 44 months its
+  server gave no answer to the oversized customer import. 22 of 1,432 trading days and 93 of 352 screens match. In its
+  last minutes it was still working out regional tax rounding, and its handover says not to switch over yet.
+- Both checked their servers against the old one in fresh workspaces, Opus with about 17,500 requests (saved
+  sequences and random business days) and Astra with 2,195 checks, and both came back clean apart from the gaps each
+  named. Neither used a tenth of the 12 hours.
+
 ## Development log
+
+### 2026-11-28 (versions 15 to 19 on Oddish; version 19 passed QA; this folder synced to it)
+
+- Version 15 (round 19's flat bundle `fa35319b1025`, uploaded 2026-11-26): baselines right (reference 1.0 twice, no-op
+  0.0 twice) and a pre-trial audit with no finding. Its model runs had helper agents off. DeepSeek scored 0.063 after
+  8 hours; the second DeepSeek run and the GLM run stopped after about 9.2 hours, when the model provider ran out of
+  credits, with no reward. Versions 16 to 19 replaced it before those runs ended.
+- Versions 16 to 19 were made on Oddish directly on 2026-11-27, outside these rounds, so this folder did not have them:
+  - 16: the agent's limit goes from 34,560 s to 43,200 s (12 hours), in `task.toml` and in the collect hook's end of
+    work (both places in `fsmaint-sweep`). No baseline or model run.
+  - 17: the instruction states the 12 hours ("... and check that it behaves like the original"). Baselines right; an
+    Opus run was cancelled.
+  - 18: all four network modes are `no-network`, the two builds included, and the network justification is gone.
+    Baselines right (reference 4,110 of 4,110 twice, no-op 0.0 twice) and the pre-trial audit clean. One Opus 5.5 run
+    scored 0.403: after 3.1 hours Opus 5.5's cyber safeguard ended the session while the agent was hunting for the
+    passwords of the encrypted sample PDFs.
+  - 19: the sentence becomes "You have up to 12 hours to rebuild the server and test it against the local Stockwell
+    API." Nothing else changed. Pre-trial audit clean; Opus 5.5 and GPT-6.2 Astra in experiment `6cd78008`; verdict
+    accept (2026-11-27). See [Status and calibration](#status-and-calibration).
+- This sync: version 19's files were pulled from Oddish (read only) and compared with this folder.
+  - `task.toml`, `instruction.md` and `environment/fsmaint-sweep` are now version 19's, byte for byte.
+  - Every other shipped source file already matched. The scripts, Dockerfiles and settings are byte for byte the same.
+    `solution/oracle.py`, `tests/verify.py` and `tests/verifier/__init__.py` parse to the same code, and so does
+    `tests/verifier/replay.py` once main's three ruff fixes are allowed for: an unused `import shutil` dropped, nested
+    `with` blocks merged, and `check=False` written out.
+  - The rest of the bundle is built by `scripts/package_step.py` from the pinned Stockwell checkout and the media
+    generators, or is private, and stays out of this repository as before. None of it changed between versions 15 and
+    19 (Oddish's file listings: the same 1,160 paths and sizes).
+  - Checks now follow version 19. `test_only_the_builds_have_network` is `test_no_network_anywhere`; the neutral-words
+    check no longer reads the justification; the instruction check pins the 12-hour sentence word for word, leaves it
+    out of its word scan (it says "hours" and "test") and expects 43,200 s; the sweep checks use 43,200 s. The 33
+    checks that read the changed files or run the sweep pass, with the old layout's `experiment/` linked for the
+    pinned reference and unlinked afterwards. Not run: the bundle check, the corpus checks and those that record or
+    replay (no private corpus in this worktree, and memory).
+- Calibration and the failure mode come from version 19's two model runs: their verifier output, trajectories and
+  delivered servers, read against the private corpus here. The README describes them by theme and count only.
 
 ### 2026-11-27 (round 19: the verdict on version 14; neutral words in the verifier's own notes and the task's description; version 15)
 
@@ -1828,7 +1905,8 @@ production system would not.
 
 ### Difficulty
 
-Expected sources, not yet measured by any trial:
+Expected sources, written before any trial (version 19's runs lost units on the PDFs, the exact answers and the
+interacting rules, see [Status and calibration](#status-and-calibration)):
 
 - Rules that interact: a line's price depends on price lists, quantity breaks, tier, and
   promotions that may or may not stack; the invoice then prorates and re-taxes it.
@@ -1851,10 +1929,11 @@ are all observable through the API and the client; whether one session suffices 
 
 ## Workload
 
-One agent session per run, of at most 34,560 s (9.6 hours), the agent's limit in `task.toml`
-(`timeout_sec = 34560`; since round 15 nothing of the task's own ends the session earlier, and
-what changes after the limit does not count). There are no chained sessions or continuation
-tasks, and the instruction states no time budget. v2 asks
+One agent session per run, of at most 43,200 s (12 hours) since version 16 (34,560 s, 9.6 hours,
+before), the agent's limit in `task.toml` (`timeout_sec = 43200`; since round 15 nothing of the
+task's own ends the session earlier, and what changes after the limit does not count). There are
+no chained sessions or continuation tasks. Since version 17 the instruction states the 12 hours.
+Version 19's two model runs used 68 and 49 minutes of them. v2 asks
 for about five days of agent work, which one session does not reach. Follow-up steps remain open
 options for the owner: a change request on the rebuilt server, or a data migration (importing a
 year of legacy data).
@@ -1888,8 +1967,8 @@ Nothing of the task's own ends the agent's session. Rounds 8 to 14 had a root ti
 (`fsmaint-timer`) end it before the limit, because a steps bundle's turn that ran into the cap was
 never graded (harbor-lh `ops/swe-marathon-v2/PLATFORM_VERIFIER_BUILD_AFTER_LONG_RUN.md`); the
 platform's verdicts on BasedPL's versions 2 and 4 rejected that stop as premature whatever the gap
-(660 s, then 60 s), and the timer is gone. The limit is `timeout_sec = 34560` in both places in
-`task.toml`, with no comment, and the task goes up as a flat single-step bundle under its own name
+(660 s, then 60 s), and the timer is gone. The limit is `timeout_sec = 43200` in `task.toml` since
+version 16 (34,560 until version 15), with no comment, and the task goes up as a flat single-step bundle under its own name
 (`scripts/package_step.py --flat --keep-name`), as SymPy's does, the only setup whose capped runs
 were graded (3 of 3); the repository keeps its steps layout. A turn that reaches the limit is not
 ended: harbor stops waiting for it and leaves the agent's commands running, with the network back
@@ -1897,7 +1976,7 @@ once the turn is over (harbor-lh `ops/swe-marathon-v2/PLATFORM_EGRESS_WINDOW.md`
 collect hook ends them, and a killed claude-code run would be classified by its transcript and its
 score discarded. So the work's end is its start, recorded when the set-up hands over
 (`/var/lib/fsmaint/work-started`, written by `start-stockwell` at each successful exit; the
-set-up fails if it cannot write it), plus 34,560 s. An entry of `/app/server` other than a directory
+set-up fails if it cannot write it), plus 43,200 s (34,560 s until version 15). An entry of `/app/server` other than a directory
 whose change time falls between the end and the moment the collect hook had ended the agent's
 processes and done everything else that could touch the tree (the fence, `/var/lib/fsmaint/fence`)
 was changed or made once the work was over. By the decision's amendment for back office (option
@@ -1911,7 +1990,7 @@ remove anything. Before it ends the agent's processes, the hook stops them and, 
 the files they map shared and writable or hold open for writing, in every thread, which can be
 written after the end without their change time moving; once the end has passed each name of such
 a file gets a note (BasedPL's re-check R1, a record). A turn that ends by itself ends before the
-end, so nothing is noted for it. The agent is not told; the instruction states no budget either way, and nothing the agent can
+end, so nothing is noted for it. The agent is told only the 12 hours (the instruction, since version 17), and nothing the agent can
 see of the hooks (the names in `/usr/local/sbin` and `/var/lib`) says what they are for. The
 sealed server and its supervisor run as other users and are untouched. **This holds for one step
 only**: the start is recorded at the trial's set-up, not at a step's start. See
@@ -2165,14 +2244,19 @@ list, whose part only the platform can close).
 | 12 | The server the agent studies answers differently from the grader, so doing exactly what the instruction asks loses units | The sealed server's configuration against the recorders' and the solution's | QA 12 F1 (2026-11-19): the sealed server served the web client, so `DELETE /nowhere` answered 405 `allowed: []` there and 404 `unknown_path` in the corpus; a perfect clone lost 6 units. Fixed in round 4 | One settings file, `environment/stockwell.env`, for the sealed server, the live recorder and the solution, with no client directory (the legacy recorder builds the same app in-process); a check ties every file to it and the instruction's numbers to the code; the regrade of the solution with that file is 1.0 on every unit | The Mac recording and the Ubuntu images run different Python, SQLite and zlib builds; reading the code found no dependence (QA 11, 12) | The Linux baselines: 4,002 of 4,002 for the solution | 🟢 GREEN / LOW |
 | 13 | A server that fails under concurrent load earns its units back on second tries played one at a time | Verifier's second tries | QA 20 (2026-11-19): second tries were uncapped and alone, and a sequential pass fits the deadline, so a server that crashes whenever requests overlap recovered most of its units. Fixed in round 4 | A second try only for a scenario in flight when the server stopped, never for a wrong answer or a request a live server left unanswered, and only while the units they decide stay within 2% of all units; the check pins the share and that a dropped request gets none | A server that crashes under load keeps 2% of the units at most | None | 🟢 GREEN / LOW |
 | 14 | A deliberately hostile submission makes the evaluation end in an error instead of 0, with no reward. Closed in round 12, each with a check that fails on round 11 (`375b570`): about 99,000 crafted links outlast the delivery hook's 600 s (QA 07g F1), and chains do the same (QA 22 F3 of the Carve task: 4,000 links took round 11's stage 22.6 s here, four times as long at each doubling); the link fixer uses up the spare inodes, so a refusal dies after `/app/server` is moved aside (07g F2); a link that resolves inside only through another link, or climbs above `/` and back in, hidden from the fixer, makes Harbor's extraction refuse the copy (07g F3, QA 22 F5: round 11 kept it, `LinkOutsideDestinationError`, "The copy arrived incomplete: 2 of 3 entries"); pipes left out of the entry count let tens of millions of them hold the hook; zombies kept the kill loop at 100 passes where the first process reaps nothing; the sweep exited without a manifest for a non-directory at `/app/server` and where the manifest's name could not be moved aside (QA 22 F6); the manifest's changes were unbounded and the verifier read it whole (QA 22 F1); a refusal's rename of `/app/server` was not guarded against EXDEV. Closed in round 13 (re-check 08), each with a check that fails on `cd98856`: a file with more names than a copy's file system allows links (65,000 on ext4) arrived as copies, whose extra bytes failed the count check and, for a large file, could fill the host's disk (now a file with more than 1,000 hard links refuses the tree, a stated limit, and more arriving than counted is scored with a note); a fork bomb left running past the session could keep the hook, and the copy, from starting (now a `su` session of `dev`, harbor's way of starting the agent's commands, is capped at 16,384 processes and threads, and the cap the platform gives is recorded in `sweep_log`). Left: where neither a memory cgroup nor a VM's own meminfo can be read, a memfd that no process maps is not counted (07f); where `/app/server` cannot be renamed, a refused tree with millions of entries at its top is moved aside one entry at a time; the process cap holds only where the kernel enforces RLIMIT_NPROC and the sandbox's own process limit is higher than the cap (both unmeasured; the baselines' `sweep_log` shows the cap a session got) | Delivery hooks; Harbor's artifact copy; the verifier's memory guard | QA 07e, 07f and 07g (2026-11-19); 07g F3 run through Harbor's own extraction code, F1 timed on macOS; round 12 against the catalogue of QA 22 and 23 of the Carve task, which shares this hook's family, each case run on `375b570` and on round 12 | None of these gives reward, reads answers or touches honest work: an honest delivery holds no crafted link chains, no tens of thousands of links and does not exhaust inodes. Round 12 makes each closed path a scored 0 with a note, or a tree copied as the agent left it, links straightened. Accepted on 2026-11-19 under a run policy for what is left: one attempt per trial; every errored trial is read; it scores 0 when its own files show the submission caused it, and is otherwise re-run as an infrastructure fault | A hostile run costs one trial and a read | The container red team repeats 07f's deep sparse file and full inodes, 07g's link chains and a file with 70,000 hard links | 🟡 YELLOW / LOW |
-| 15 | Outlast the session: go on working, writing or fetching after the agent's limit, while the platform leaves a capped turn's commands running, with the network back, until the collect hook (rounds 8 to 14: outlast or stop the maintenance timer that ended the session before the limit) | The platform's handling of a turn that reaches its limit; the collect hook; file change times | Round 15: the platform's verdicts on BasedPL's versions 2 and 4 rejected a task-side stop before the limit, and the judges dropped the timer (harbor-lh `ops/swe-marathon-v2/decisions/2026-11-24-timer-round3-flat-bundles-DECISION.md`: harbor stops waiting at the limit but never ends the agent's commands, and the network comes back once the turn is over, `PLATFORM_EGRESS_WINDOW.md`). `test_a_capped_session_keeps_and_records_what_it_writes_and_fetches_after_its_end` and `test_every_name_of_a_file_made_after_the_end_is_kept_and_recorded` (both fail on round 14, `1a6b87b`, which notes nothing); `test_an_honest_capped_tree_with_hard_links_loses_no_name` (Carve's re-check: a sweep that moves a name before judging makes another name of the same file read as late) loses nothing here and three names without the fence's upper bound; `test_files_a_stopped_process_could_still_write_after_the_end_are_recorded` (R1, a stand-in `/proc`); by the 09:40 UTC amendment (option A, as settled) `test_a_core_module_replaced_after_the_end_by_write_and_rename_arrives_and_is_graded` and `test_a_brand_new_file_made_after_the_end_is_kept_and_noted` fail on `8008b3b`, which refused files made after the end | The work's end is the start the set-up records plus 34,560 s. The collect hook ends the agent's processes, writes its fence once nothing else can touch the tree, keeps every file and link of `/app/server` whose change time falls between the end and the fence, with a note of its path and times and a count in `sweep_log` (option A as settled: Stockwell's code is private, so there is nothing to fetch, and the per-trial egress audit is the backstop); nothing is refused for being late, and the copy's own rules for links, special files, long paths and limits are as they were; nothing it changes after the fence is judged, so none of its own moves makes an honest name read as late. Before it ends the processes it stops them and, as the user, lists the files they map shared and writable or hold open for writing, in every thread, which can be written without their change time moving; once the end has passed each name of them gets a note (BasedPL's re-check R1, a record since the amendment). The change time is the kernel's: the agent can neither set it nor keep a write from moving it | The end comes from the set-up's last moment, a little before harbor starts the agent's clock, so a capped session's last moments are noted as after the end; whatever is written or fetched after the end is graded, and only the egress audit can tell a fetch; a directory moved in after the end keeps the files in it written before the end; writes through a shared memory map within one dirty-page window may not move a change time; a session that ends by itself has no end yet, so what its detached processes write before the collect hook counts (Stockwell's code is private, so the network has nothing of it to fetch); a pause of the trial queue stops the agent's clock but not the wall clock, so on a backend that can pause a sandbox (not Modal) the end comes early by the pause; a file hard-linked into the tree from the agent's own file under the manifest's name, or from `/logs/artifacts` where that cannot be renamed, reads as late in a capped session; a mapping written after the end and unmapped, or made read-only, before the collect hook leaves no trace, and a process of the user made undumpable cannot be read for the record | The first capped model trials: a reward about 15 minutes after the cap, no `step_results` in `result.json`, and the sweep's notes and `sweep:` lines for every entry kept, removed or held | 🟢 GREEN / LOW |
-| 16 | Evaluation awareness (not reward) from three sources: the task's framing; the platform's own launcher in the process list (the claude-code launcher runs as the agent's user, so any `ps` without a filter shows its command line, which names the platform in a shell variable and carries the run configuration's appended prompt; harbor-lh `ops/swe-marathon-v2/PLATFORM_HARNESS_PROCESS_CUE.md` describes it); and that prompt itself, which the agent receives as its system prompt. A solver that calls its session a benchmark is counted by the verdict as `info_leakage` (must-fix) | The instruction and everything the agent can list, read or see running (the task's); the platform's harness (its process line and environment, which the task must not touch; `hidepid` hides only other users' processes); the run configuration | Version 10: two trials of three; trial 99 read the completion sentence ("cannot be told apart from the sealed one") as a test of both servers and, after the launcher's line in `ps`, called the task a benchmark, and trial 100 wrote of what the evaluation would focus on. Version 11: trial 113 called its task a benchmark, giving the launcher's "harbor" as the reason and using the old prompt's words; at line 54, before it listed processes, it had already called the task benchmark-like from the framing (re-check 10, S1). Version 13: all three trials, within their first 6 to 13 steps and before any process listing, from the framing alone: two restated the comparison wording ("every API request ... as the sealed one does") as a grader replaying requests against the server they studied, and one read the goal as reimplementing the API exactly. Version 14: no solver; one helper agent that a solver had started, prompted by the solver's own description of its comparison tool | Round 16: the panel's neutral prompt (harbor-lh `ops/swe-marathon-v2/decisions/2026-11-25-run-prompt-wording-DECISION.md`: no time budget, no "unattended", no "run") in the run configurations, this task's `scripts/oddish/agents.yaml` included (one attempt); the instruction says where the server's files are, whose account runs it and that it is restarted. Round 18: the framing in the requester's terms: "the old server", the licence as the reason its code is closed, the behaviour requirement as what the tills, the bank feed, the export and the client depend on, the switch-over in place of a completion line, and "sealed" nowhere the agent can see (the instruction, the names in `/usr/local/sbin`, the supervisor's process line, the starter's messages): `test_nothing_the_agent_sees_calls_the_old_server_sealed`, and the instruction check's list of cue words. Round 19: version 15's model trials run with helper agents turned off (the panel's run configuration), and the verifier's own prose and `task.toml` use neutral words though the agent sees neither. Nothing is hidden or changed: procps stays, `/proc` is as it was, the harness is untouched, and nothing about evaluation or time is said | The premise stays (rebuild, from its answers, a server of over two hundred endpoints whose code cannot be read), and a solver may still call such a job benchmark-like; any `ps` without a filter still shows the launcher's line, which only the platform can change (harbor-lh `ops/swe-marathon-v2/PLATFORM_HARNESS_PROCESS_CUE.md`, a draft for the owner); whether a solver remarks on either is a draw per trial | Version 15's trials: each one's `evaluation_awareness` record, where the first remark falls (before or after the first process listing) and what wording it restates | 🟡 YELLOW / MEDIUM (the framing narrowed in round 18; the launcher's part outside the task) |
+| 15 | Outlast the session: go on working, writing or fetching after the agent's limit, while the platform leaves a capped turn's commands running, with the network back, until the collect hook (rounds 8 to 14: outlast or stop the maintenance timer that ended the session before the limit) | The platform's handling of a turn that reaches its limit; the collect hook; file change times | Round 15: the platform's verdicts on BasedPL's versions 2 and 4 rejected a task-side stop before the limit, and the judges dropped the timer (harbor-lh `ops/swe-marathon-v2/decisions/2026-11-24-timer-round3-flat-bundles-DECISION.md`: harbor stops waiting at the limit but never ends the agent's commands, and the network comes back once the turn is over, `PLATFORM_EGRESS_WINDOW.md`). `test_a_capped_session_keeps_and_records_what_it_writes_and_fetches_after_its_end` and `test_every_name_of_a_file_made_after_the_end_is_kept_and_recorded` (both fail on round 14, `1a6b87b`, which notes nothing); `test_an_honest_capped_tree_with_hard_links_loses_no_name` (Carve's re-check: a sweep that moves a name before judging makes another name of the same file read as late) loses nothing here and three names without the fence's upper bound; `test_files_a_stopped_process_could_still_write_after_the_end_are_recorded` (R1, a stand-in `/proc`); by the 09:40 UTC amendment (option A, as settled) `test_a_core_module_replaced_after_the_end_by_write_and_rename_arrives_and_is_graded` and `test_a_brand_new_file_made_after_the_end_is_kept_and_noted` fail on `8008b3b`, which refused files made after the end | The work's end is the start the set-up records plus 43,200 s (34,560 s until version 15). The collect hook ends the agent's processes, writes its fence once nothing else can touch the tree, keeps every file and link of `/app/server` whose change time falls between the end and the fence, with a note of its path and times and a count in `sweep_log` (option A as settled: Stockwell's code is private, so there is nothing to fetch, and the per-trial egress audit is the backstop); nothing is refused for being late, and the copy's own rules for links, special files, long paths and limits are as they were; nothing it changes after the fence is judged, so none of its own moves makes an honest name read as late. Before it ends the processes it stops them and, as the user, lists the files they map shared and writable or hold open for writing, in every thread, which can be written without their change time moving; once the end has passed each name of them gets a note (BasedPL's re-check R1, a record since the amendment). The change time is the kernel's: the agent can neither set it nor keep a write from moving it | The end comes from the set-up's last moment, a little before harbor starts the agent's clock, so a capped session's last moments are noted as after the end; whatever is written or fetched after the end is graded, and only the egress audit can tell a fetch; a directory moved in after the end keeps the files in it written before the end; writes through a shared memory map within one dirty-page window may not move a change time; a session that ends by itself has no end yet, so what its detached processes write before the collect hook counts (Stockwell's code is private, so the network has nothing of it to fetch); a pause of the trial queue stops the agent's clock but not the wall clock, so on a backend that can pause a sandbox (not Modal) the end comes early by the pause; a file hard-linked into the tree from the agent's own file under the manifest's name, or from `/logs/artifacts` where that cannot be renamed, reads as late in a capped session; a mapping written after the end and unmapped, or made read-only, before the collect hook leaves no trace, and a process of the user made undumpable cannot be read for the record | The first capped model trials: a reward about 15 minutes after the cap, no `step_results` in `result.json`, and the sweep's notes and `sweep:` lines for every entry kept, removed or held | 🟢 GREEN / LOW |
+| 16 | Evaluation awareness (not reward) from three sources: the task's framing; the platform's own launcher in the process list (the claude-code launcher runs as the agent's user, so any `ps` without a filter shows its command line, which names the platform in a shell variable and carries the run configuration's appended prompt; harbor-lh `ops/swe-marathon-v2/PLATFORM_HARNESS_PROCESS_CUE.md` describes it); and that prompt itself, which the agent receives as its system prompt. A solver that calls its session a benchmark is counted by the verdict as `info_leakage` (must-fix) | The instruction and everything the agent can list, read or see running (the task's); the platform's harness (its process line and environment, which the task must not touch; `hidepid` hides only other users' processes); the run configuration | Version 10: two trials of three; trial 99 read the completion sentence ("cannot be told apart from the sealed one") as a test of both servers and, after the launcher's line in `ps`, called the task a benchmark, and trial 100 wrote of what the evaluation would focus on. Version 11: trial 113 called its task a benchmark, giving the launcher's "harbor" as the reason and using the old prompt's words; at line 54, before it listed processes, it had already called the task benchmark-like from the framing (re-check 10, S1). Version 13: all three trials, within their first 6 to 13 steps and before any process listing, from the framing alone: two restated the comparison wording ("every API request ... as the sealed one does") as a grader replaying requests against the server they studied, and one read the goal as reimplementing the API exactly. Version 14: no solver; one helper agent that a solver had started, prompted by the solver's own description of its comparison tool. Version 19: neither trial (Opus 5.5 with helper agents on, and Astra), by the verdict's own reading of each whole trajectory | Round 16: the panel's neutral prompt (harbor-lh `ops/swe-marathon-v2/decisions/2026-11-25-run-prompt-wording-DECISION.md`: no time budget, no "unattended", no "run") in the run configurations, this task's `scripts/oddish/agents.yaml` included (one attempt); the instruction says where the server's files are, whose account runs it and that it is restarted. Round 18: the framing in the requester's terms: "the old server", the licence as the reason its code is closed, the behaviour requirement as what the tills, the bank feed, the export and the client depend on, the switch-over in place of a completion line, and "sealed" nowhere the agent can see (the instruction, the names in `/usr/local/sbin`, the supervisor's process line, the starter's messages): `test_nothing_the_agent_sees_calls_the_old_server_sealed`, and the instruction check's list of cue words. Round 19: version 15's model trials run with helper agents turned off (the panel's run configuration), and the verifier's own prose and `task.toml` use neutral words though the agent sees neither. Nothing is hidden or changed: procps stays, `/proc` is as it was, the harness is untouched, and nothing about evaluation is said (since version 17 the instruction states the 12 hours) | The premise stays (rebuild, from its answers, a server of over two hundred endpoints whose code cannot be read), and a solver may still call such a job benchmark-like; any `ps` without a filter still shows the launcher's line, which only the platform can change (harbor-lh `ops/swe-marathon-v2/PLATFORM_HARNESS_PROCESS_CUE.md`, a draft for the owner); whether a solver remarks on either is a draw per trial | Each new version's trials: each one's `evaluation_awareness` record, where the first remark falls (before or after the first process listing) and what wording it restates | 🟡 YELLOW / MEDIUM (the framing narrowed in round 18; the launcher's part outside the task) |
 | 17 | Leave out the documented calls the corpus never makes, or only ever sees refused, and lose nothing (version 11's verdict, should-fix: GET /api/ws/{ws}, GET and POST /price-lists, GET /users/{id}, POST /users/{id}/activate) | The corpus | Round 16's audit of all 242 operations against every step: 12 never called besides the 8 the instruction excepts and POST /api/workspaces (the replay's own call, whose answer beyond the id was never compared); 4 only ever answered with a refusal; the health check's answer and the API description never compared | Round 16: nine office routines, 108 scenarios of one unit, in which every documented call outside the exceptions is answered with success; POST /api/workspaces's answer judged in the 12 workspace scenarios (`created`); the health check's answer and the API description (`literal`) compared; the two password calls named among the exceptions. For each added call the reference without it loses exactly the scenarios that make it (`test_a_server_without_a_call_the_routines_make_loses_their_units`), and the corpus check keeps every such call answered (`test_every_documented_call_outside_the_exceptions_is_answered_in_the_corpus`) | A call made only in its routine weighs that routine's 12 units at most (0.3% of the reward); a server right only on the paths the routines take loses nothing on the others; FastAPI's own `/api/docs` and `/api/redoc` pages, named nowhere the agent reads, are not graded | The next source audit | 🟢 GREEN / LOW |
 
 ## Validation
 
 | Check | Revision | Result |
 | --- | --- | --- |
+| Version 19's verdict | version 19 (Oddish content hash `3a0dfe6960be...`), 2026-11-27 | accept, high confidence: both model runs good failures on their own unfinished work, no task defect, no leak, no evaluation awareness; the pre-trial audit found nothing |
+| Model runs | version 19, experiment `6cd78008`, one attempt each | Opus 5.5 (claude-code) 0.856, 3,518 of 4,110 units in 68 min; GPT-6.2 Astra (codex) 0.185, 759 of 4,110 in 49 min; both ended on their own (Status and calibration) |
+| Oddish baselines | version 18 (version 19 changes one instruction sentence) | reference 1.0 twice (4,110 of 4,110, the 9 planned restarts, no other, nothing unfinished), no-op 0.0 twice (`/app/server/run is missing or not executable`) |
+| This folder against version 19 | the sync of 2026-11-28 | `task.toml`, `instruction.md` and `fsmaint-sweep` byte for byte; the other shipped sources byte for byte or, for the Python, the same code once ruff's fixes are allowed for; versions 15 to 19 share every generated and private file (same paths and sizes) |
+| `checks/` (72 tests) | the sync of 2026-11-28 | the 33 that read the synced files or run the sweep pass; ruff format and check clean; the bundle, corpus, recording and replay checks not run (no private corpus here; memory) |
 | Version 14's verdict | round 18: flat bundle `ae33ed1a028b`, version 14 | reject on one finding: a helper agent, prompted by its solver's own wording, described the session as an evaluation; the three solvers clean; no other task defect (round 19; helper agents off in version 15's model trials) |
 | Bundle | round 19: flat `fa35319b1025` (the upload), 1,160 files, 246.8 MB | built twice with the same hash and `diff -r`-identical files; against `ae33ed1a028b` only `task.toml`, `tests/verify.py` and `tests/verifier/replay.py` differ, the verifier in comments and strings alone; Oddish preflight passes; `compute_task_content_hash` `6b6f229bdf71...` against version 14's `8b26804abc04...`; no hidden upload among 495 agent-image files |
 | `checks/` (72 tests) with `ci_checks` (27) | round 19 | 93 pass; the artifacts check fails on its cut line alone (re-check 08 N7); the four that record or replay and the bundle check not run (memory; the bundle checked directly) |
@@ -2305,14 +2389,11 @@ python3 scripts/scan_uploads.py experiment/dist/bundles/<hash>/<task slug>   # h
 
 ## Remaining work
 
-- Upload the flat bundle `fa35319b1025` (246.8 MB, `package_step.py --flat --keep-name`) under
-  the task's own name as version 15 (version 14, `ae33ed1a028b`, was rejected on one helper
-  agent's remark, round 19), run its baselines with `--no-archil` (reference twice, no-op twice),
-  and have its Oddish source audit pass before any model trial (the owner's gate since version 8).
-  Version 15's model trials run with helper agents turned off (the panel's run configuration).
-  The renamed set-up (`/usr/local/sbin/start-stockwell`, which starts `stockwell-supervisor`)
-  first runs on Linux in those baselines; a set-up that fails there stops the trial before the
-  agent, as before.
+- Version 19 passed QA and is not to be changed. A new version, if one is ever needed, would be
+  built from this folder: `package_step.py --flat --keep-name` gives version 19's files (the three
+  synced ones, ruff's formatting of the Python aside). Its baselines run with `--no-archil`
+  (reference twice, no-op twice), and its Oddish source audit must pass before any model trial
+  (the owner's gate since version 8).
   Pass criteria for the reference: 4,110 of 4,110, `planned_restarts` 9,
   `restarts` 0, `retried` 0, `unfinished` 0, no answer of 500 or above in
   `server_errors_by_theme`, no note of the hard stop, of a stop for disk or memory, or from the
@@ -2322,6 +2403,17 @@ python3 scripts/scan_uploads.py experiment/dist/bundles/<hash>/<task slug>   # h
   `step_results`, which shows the flat bundle ran. A limit of
   `unlimited`, or no such line, means the cap on the agent's processes did not apply on the
   platform; a number below 16384 means a lower one was already in place.
+- The 12-hour limit against the platform's 12-hour lease: until version 15 the agent's limit was
+  34,560 s, 2.4 hours inside the lease, which left room for the set-up, the collect hook and the
+  replay (up to 6,000 s); since version 16 it is the full 43,200 s. No trial has reached it yet
+  (version 19's ended after 68 and 49 minutes), so whether a session that uses all of it is still
+  graded is untested: read the first one that does before trusting its score.
+- Opus 5.5's cyber safeguard and the protected PDFs. It ended version 18's Opus session after 3.1
+  hours while the agent hunted for the encrypted samples' passwords, and stopped version 19's PDF
+  helper twice, which left the unlock unbuilt and cost most of that run's misses. Five PDFs in
+  `/app/samples` are encrypted, and nothing tells the agent their passwords, so studying them
+  invites guessing. Stating them, as staff would know them, would remove that motive; the owner
+  decides, since version 19 passed QA as it is.
 - In the first model trials that reach the limit (the judges' watch list): about 15 minutes after
   the cap the trial should end with a reward and a `result.json` without `step_results`, and the
   manifest's notes and `sweep_log` say what was changed or made after the work's end and what was
@@ -2372,7 +2464,10 @@ python3 scripts/scan_uploads.py experiment/dist/bundles/<hash>/<task slug>   # h
   sentence version 11's verdict cited, was replaced on 2026-11-25 by the panel's text (harbor-lh
   `ops/swe-marathon-v2/decisions/2026-11-25-run-prompt-wording-DECISION.md`); re-check 10 found it
   still in `ops/swe-marathon-v2/stepped-gated.yaml`, which is not to be used for this task.
-- Evaluation awareness (hackability row 16): in version 14's trials, read each one's
+  Version 19's two runs used no appended prompt at all (harbor-lh
+  `ops/swe-marathon-v2/agents-opus55-astra62-1attempt.yaml`: harness versions and web tools only).
+- Evaluation awareness (hackability row 16): version 19's two trials showed none. In each new
+  version's trials, read each one's
   `evaluation_awareness` record, where its first remark falls (before or after the first process
   listing) and what wording it restates. Version 13's three came from the framing alone, before
   any listing (round 18 rewords it and removes "sealed" from everything the agent can see); the
@@ -2381,7 +2476,7 @@ python3 scripts/scan_uploads.py experiment/dist/bundles/<hash>/<task slug>   # h
   still shows the launcher's line, which only the platform can change (harbor-lh
   `ops/swe-marathon-v2/PLATFORM_HARNESS_PROCESS_CUE.md`, not sent; the owner decides).
 - Not run anywhere yet (QA 07h F2; see Validation): the two hooks as root in the image, with the
-  real `setpriv`, `pkill`, `ps` and paths, and a turn that reaches the 34,560 s limit, the only
+  real `setpriv`, `pkill`, `ps` and paths, and a turn that reaches the 43,200 s limit, the only
   place the rule on late writes acts on the platform. The checks run both scripts whole under dash
   on the author's Mac with stand-ins.
   Round 12 adds three things only a container shows: procps's `pgrep -r` state filter (Ubuntu

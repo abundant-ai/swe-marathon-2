@@ -9,6 +9,8 @@ old one, so that the client keeps working and so do the integrations that use th
 tills, the bank feed and our accounting export, which rely on every value they receive, and its
 type, staying as it is today.
 
+You have up to 12 hours to rebuild the server and test it against the local Stockwell API.
+
 ## Context
 
 - The old server is running at `http://127.0.0.1:8080`. It answers a JSON API under `/api`
