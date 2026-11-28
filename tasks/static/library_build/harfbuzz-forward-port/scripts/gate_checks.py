@@ -274,11 +274,19 @@ def band_v(selection: list[dict], name: str = "mut-V") -> dict:
     # V is a consistency check of the scoring under the failure sentence (R2-17 N3): name the tier-C units it leaves
     # whole, because their commits do not revert on 15.2.0.
     r["tier_c_kept_whole"] = sorted(u for u in c if u not in r["units_below_1"])
+    # Panel 2026-11-28, item 3: where a tier-C commit does not revert, V is recomputed with every tier-C unit at 0
+    # (1 - |C|/53 when the rest pass whole); the band applies to that, and is never moved.
+    n = len({x["unit"] for x in selection if x["kind"] == "changed"})
+    outside = sum(1.0 - v for u, v in r["units_below_1"].items() if u not in c)
+    r["complete_D"] = round((n - len(c) - outside) / n, 4)
+    r["complete_reward"] = round(
+        r["complete_D"] * r["h_dual"] * (1 - 0.10 * (1 - r["h_broad"])), 4
+    )
     r["pass"] = (
-        0.60 <= r["reward"] <= 0.85
+        0.60 <= r["complete_reward"] <= 0.85
         and not r["d_loss_outside_tier_c"]
-        and r["h_dual"] >= 0.98
-        and r["h_broad"] >= 0.98
+        and r["h_dual"] >= 0.99
+        and r["h_broad"] >= 0.99
     )
     return r
 
