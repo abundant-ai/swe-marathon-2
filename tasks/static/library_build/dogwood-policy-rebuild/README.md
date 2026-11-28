@@ -392,7 +392,9 @@ re-sizes the difficulty (the twelfth), and applies the lever the panel then chos
   - bands: M-dedup 0.830, M-scope 0.955 and M-global 0.902, each in its own family;
   - each of F5's mutants fails at least 13% of R;
   - the oracle scores 1.0 (twice, and on half a CPU), and the empty submission 0;
-  - @@ZOOLINE@@;
+  - 27 of the 28 stub-zoo projects score 0 with no evaluation error; the 28th, `hostile-run`,
+    exposed a shared-memory fault in the grader, which is fixed (86502db8) and regraded
+    (`notes/FIX1-REPORT.md` section 4);
   - the re-size puts the frontier at a median of about 0.58 and mid-tier at about 0.24.
 - **Close-out:**
   - the flat bundle `4fa614e0950c…` is the same when packaged twice, and `oddish preflight` passes;
