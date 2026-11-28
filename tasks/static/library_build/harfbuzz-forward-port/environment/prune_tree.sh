@@ -8,7 +8,13 @@ rm -r perf .github .ci
 rm .codecov.yml CODE_OF_AI_CONDUCT.md CLAUDE.md AGENTS.md subprojects/google-benchmark.wrap test/vector/README.md
 # The Windows cross-build notes and the profiling pointer refer to the removed CI and speed-measurement files.
 rm README.mingw.md
+sed -i '/(README\.mingw\.md)/d' README.md
+sed -i 's/^For testing and profiling, see/For testing, see/' README.md
 sed -i '/^## Profiling$/,$d' TESTING.md
+if grep -q 'README\.mingw' README.md || grep -q 'profiling' README.md TESTING.md; then
+  echo "prune_tree: README.md or TESTING.md still points at removed files" >&2
+  exit 1
+fi
 # The threaded shaping test reads its fonts and texts from the removed speed-measurement folder by default.
 rm test/threads/hb-shape-threads.cc
 sed -i "/^test('shape_threads', executable('hb-shape-threads', 'hb-shape-threads.cc',$/,/^)$/d" test/threads/meson.build
