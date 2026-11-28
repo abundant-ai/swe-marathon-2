@@ -176,11 +176,13 @@ A firing means those units' tiers or cases are wrong for the next registration; 
 
 ## Difficulty (kill condition 1)
 
-- The owner's target of at most about 0.6 governs; the 2026-11-28 decision accepts about 0.65 as "about 0.6" (the
-  owner's word on this is asked for).
+- The owner's target of at most about 0.6 governs. The 2026-11-28 decision accepted about 0.65 as "about 0.6", and
+  the panel the owner asked to settle his open questions confirmed it with no lever
+  (`2026-11-28c-owner-questions-DECISION.md`).
 - A median reward of 0.60-0.70 over the three sessions is reported as "above target".
-- **A median above 0.70 triggers the contingent lever:** per-unit completeness (D over p_k squared), applied under a
-  new registration, never retroactively; pass 16 puts it at about 0.59 frontier and 0.25 mid-tier.
+- **A median above 0.70 is reported to the owner.** The version that passed the platform's QA is frozen and is never
+  re-scored; any re-version after that needs the owner's word. (Amendment 2, below, struck the earlier contingent
+  completeness lever.)
 - A median below 0.30: stop and check fairness. A median below 0.45 means agents do not land the checkable fixes
   either; the headline then becomes the largest component of the loss.
 
@@ -192,3 +194,15 @@ and h_b at 0.99 or more; the band never moves. Expected 1 - 8/53 = 0.849 complet
 
 Per-case results are in each run's `case_pass.json`, and per-unit and per-family figures in `metrics.json`, so every
 test can be computed from the runs alone.
+
+## Amendment 2 (2026-11-28, committed before any model run; no run of any kind on an agent has been seen)
+
+The panel the owner asked to settle his open questions (harbor-lh `ops/swe-marathon-v2/decisions/`
+`2026-11-28c-owner-questions-DECISION.md`, with its adversarial review) accepted a frontier of about 0.65 with no
+lever. The contingent clause of the difficulty section ("a median above 0.70 triggers per-unit completeness, D over
+p_k squared, under a new registration") is struck: the version that passes the platform's QA is frozen and cannot
+be re-scored, and the lever's estimate of 0.59 rested on an assumed partial-port rate (at half that rate it gives
+0.613, and a strong run stays at 0.67-0.74). A median above 0.70 over the first three accepted sessions is now
+reported to the owner, and any re-version after an accept needs his word. Nothing else in this registration changes:
+the sentence, the population, the frozen tiers (`tiers.tsv` at sha256
+`0301c5864604908727418f04afdc79d16cb8c4e6406271ffe2d7442158a6b82c`), the predictions and every registered test.
