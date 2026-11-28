@@ -3,9 +3,11 @@
 usage: package_task.py [--output DIR]
 
 The bundle holds what the platform needs and nothing else: task.toml, instruction.md, environment/ (the agent image
-inputs), tests/ (the verifier image inputs, including the staged private cases, fonts and the meson wheel) and
-solution/ (the reference patch). The README, notes, development scripts and the private store stay out. Packaging
-stops when a staged input is missing, when environment/docs/notes.md no longer matches the instruction, or when an
+inputs, including the key the collect hook signs its mark with), tests/ (the verifier image inputs, including the
+staged private cases, fonts, the meson wheel and the same key) and solution/ (the reference patch). The README,
+notes, development scripts and the private store stay out. Packaging first makes the key if there is none
+(scripts/pipeline/fsmaint_key.py) and stages it for the verifier. It stops when a staged input is missing, when the
+two copies of the key differ, when environment/docs/notes.md no longer matches the instruction, or when an
 agent-visible file names a private case.
 """
 
@@ -13,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import re
 import shutil
@@ -24,9 +27,23 @@ EXCLUDED_NAMES = {".gitignore", ".DS_Store", "__pycache__"}
 REQUIRED = (
     "tests/private/cases.jsonl",
     "tests/private/expected.json",
+    "tests/private/fsmaint.key",
     "tests/driver/hbdrv.c",
+    "environment/data/fsmaint.key",
+    "environment/fsmaint-reserve",
+    "environment/fsmaint-netcheck",
+    "environment/fsmaint-sweep",
     "solution/private/deleted.txt",
 )
+
+
+def stage_key() -> None:
+    """Make the collect hook's key when there is none and put it where the verifier image gets it."""
+    path = TASK / "scripts" / "pipeline" / "fsmaint_key.py"
+    spec = importlib.util.spec_from_file_location("fsmaint_key", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    module.stage_key()
 
 
 def collect() -> dict[str, bytes]:
@@ -50,6 +67,10 @@ def collect() -> dict[str, bytes]:
         raise SystemExit("missing the meson wheel in tests/wheels/")
     if not any(n.startswith("solution/private/tree/src/") for n in content):
         raise SystemExit("missing the reference sources in solution/private/tree/")
+    if content["environment/data/fsmaint.key"] != content["tests/private/fsmaint.key"]:
+        raise SystemExit(
+            "the two copies of the collect hook's key differ: run fsmaint_key.py"
+        )
     stray = [n for n in content if n.endswith((".patch", ".diff"))]
     if stray:
         raise SystemExit(f"patch files in the bundle: {stray[:3]}")
@@ -93,6 +114,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, default=TASK / "experiment" / "dist")
     args = parser.parse_args()
+    stage_key()
     content = collect()
     check_notes(content)
     check_leaks(content)
@@ -108,8 +130,10 @@ def main() -> None:
         target = staging / name
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(data)
-        if name.endswith(".sh"):
+        if name.endswith(".sh") or name.startswith("environment/fsmaint-"):
             target.chmod(0o755)
+        elif name.endswith("fsmaint.key"):
+            target.chmod(0o600)
     (staging.parent / "SHA256SUMS").write_text(
         "".join(f"{h}  {n}\n" for n, h in sorted(hashes.items()))
     )

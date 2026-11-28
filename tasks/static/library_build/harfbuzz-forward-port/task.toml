@@ -1,5 +1,5 @@
 schema_version = "1.4"
-artifacts = ["/app/harfbuzz"]
+artifacts = ["/app/harfbuzz", "/var/lib/fsmaint/out"]
 
 [task]
 name = "abundant/swe-m2_software-engineering_harfbuzz-forward-port"
@@ -14,6 +14,19 @@ open_internet_justification = "Only the image builds have public egress, to inst
 timeout_sec = 34560
 network_mode = "no-network"
 user = "dev"
+
+# As root, before and after the agent's own set-up: room for the collect hook, the start of the work, and the net
+# check (environment/fsmaint-netcheck), which watches the session's processes and keeps copies of the files of
+# /app/harfbuzz that change during the work.
+[[agent.setup_begin]]
+command = "/usr/local/lib/fsmaint/fsmaint-reserve"
+user = "root"
+timeout_sec = 120
+
+[[agent.setup_complete]]
+command = "/usr/local/lib/fsmaint/fsmaint-reserve --netcheck"
+user = "root"
+timeout_sec = 120
 
 [environment]
 network_mode = "public"
@@ -33,14 +46,13 @@ timeout_sec = 2400
 user = "root"
 env = { RELEASE = "15.2.0" }
 
-# Runs as root in the session's container once the session has ended, before /app/harfbuzz is copied out: it ends
-# every process of `dev`, round after round until none is left (a zombie does not count). `kill -9 -1` run as that
-# user reaches all of them in one system call, so a process that forks cannot outrun it; pkill by effective and by
-# real user catches the rest. It gives up after 60 s and exits 1, which Harbor logs.
+# Runs as root in the session's container once the session has ended, before /app/harfbuzz and /var/lib/fsmaint/out
+# are copied out (environment/fsmaint-sweep): it ends every process of `dev`, puts back what changed after the end
+# of the work, makes the tree copyable, and leaves its signed mark and record in /var/lib/fsmaint/out.
 [[verifier.collect]]
-command = 'alive() { for w in -u -U; do timeout 10 pgrep "$w" dev -r R,S,D,T,t >/dev/null 2>&1; [ $? -eq 1 ] || return 0; done; return 1; }; end=$(( $(date +%s) + 60 )); while alive; do [ "$(date +%s)" -lt "$end" ] || exit 1; timeout 10 setpriv --reuid=dev --regid=dev --clear-groups kill -9 -1 >/dev/null 2>&1; timeout 10 pkill -KILL -u dev >/dev/null 2>&1; timeout 10 pkill -KILL -U dev >/dev/null 2>&1; sleep 0.1; done'
+command = "/usr/local/lib/fsmaint/fsmaint-sweep"
 user = "root"
-timeout_sec = 120
+timeout_sec = 600
 
 [verifier.environment]
 network_mode = "no-network"

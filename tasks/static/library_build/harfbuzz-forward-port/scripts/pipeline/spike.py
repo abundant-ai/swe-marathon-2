@@ -15,9 +15,15 @@ import re
 import shutil
 import subprocess
 import sys
+import tarfile
 import time
 from collections.abc import Iterator
 from pathlib import Path
+
+if sys.version_info < (3, 11):  # noqa: UP036 - the check is for whoever runs this with an older interpreter
+    raise SystemExit(
+        f"spike.py needs Python 3.11 or later, not {sys.version.split()[0]}: run it with the repository's venv"
+    )
 
 TASK = Path(__file__).resolve().parents[2]
 PIPE = TASK / "scripts" / "pipeline"
@@ -473,6 +479,17 @@ def run_ops(ops: list[dict]) -> None:
             )
             if code:
                 raise SystemExit(f"host step failed ({code}): {op['args'][:3]}")
+        elif op["op"] == "trial":
+            # One simulated trial (simulate_trial.py): the tree as the turn's result, the hooks, the transfer.
+            simulate_trial = load_simulate_trial()
+            params = {k: v for k, v in op.items() if k != "op"}
+            for key in ("tree", "turn"):
+                if params.get(key):
+                    params[key] = Path(params[key])
+            params["payloads"] = [
+                (Path(src), dest) for src, dest in params.pop("payloads", [])
+            ]
+            simulate_trial.run_trial(**params)
         elif op["op"] == "sh":
             started = time.time()
             code = docker_run(
@@ -489,6 +506,15 @@ def run_ops(ops: list[dict]) -> None:
             )
         else:
             raise SystemExit(f"unknown op {op['op']}")
+
+
+def load_simulate_trial():
+    """simulate_trial.py, which lies beside this file (not on sys.path under -I)."""
+    if str(PIPE) not in sys.path:
+        sys.path.insert(0, str(PIPE))
+    import simulate_trial
+
+    return simulate_trial
 
 
 def cmd_batch(args: argparse.Namespace) -> None:
@@ -604,39 +630,89 @@ def build_verifier_image(platform: str | None = None) -> None:
 
 
 def run_verifier(
-    tree: Path,
+    tree: Path | None,
     name: str,
     release: str,
     platform: str | None = None,
     record: bool = False,
     cpus: int = 4,
     background: bool = False,
+    out: Path | None = None,
+    mounts: list[str] | None = None,
+    image: str | None = None,
+    logs: Path | None = None,
+    extra: list[str] | None = None,
 ) -> dict:
-    """Run the verifier image against one tree, the way the platform would (tree read-only, logs mounted).
+    """Run the verifier image against one tree the way the platform does. The container starts idle, with no
+    network and the tree (and the sweep's out folder, when given) mounted read-only (or as the `--mount` arguments
+    given); /logs/verifier is made 0777, as Harbor makes it; test.sh runs as root in an exec of its own; then, as
+    Harbor collects the folder, `tar -czf` of /logs/verifier runs as root in another exec (`bash -c`, with the
+    image's PATH), the archive is copied out and unpacked with tarfile's "data" filter into `logs`
+    (WORK/verify/NAME by default). No host folder is mounted on /logs/verifier, so its modes are the container's
+    own (R2-07 N2). `extra` adds `docker run` options (the fork bomb's second run takes `--pids-limit=96`).
 
     With `background`, start the run and return at once; `finish_verifier` waits for it. The caller holds the heavy
     lock.
     """
-    logs = WORK / "verify" / name
+    logs = logs or WORK / "verify" / name
     logs.mkdir(parents=True, exist_ok=True)
+    for stale in RESULT_NAMES:  # what an earlier run of this name left
+        if (logs / stale).is_file() or (logs / stale).is_symlink():
+            (logs / stale).unlink()
+    container = f"hbfp-verify-{re.sub(r'[^a-z0-9_.-]+', '-', name.lower())}-{os.getpid()}-{time.time_ns() % 10**9}"
+    where = list(mounts or [])
+    if tree is not None:
+        where += ["-v", f"{tree.resolve()}:/app/harfbuzz:ro"]
+    if out is not None:
+        where += ["-v", f"{out.resolve()}:/var/lib/fsmaint/out:ro"]
+    subprocess.run(
+        [
+            "docker",
+            "run",
+            "-d",
+            "--name",
+            container,
+            "--network",
+            "none",
+            "--memory=4g",
+            "--memory-swap=4g",
+            f"--cpus={cpus}",
+            "--label",
+            LABEL,
+            *(["--platform", platform] if platform else []),
+            *where,
+            *(extra or []),
+            "--entrypoint",
+            "sleep",
+            image or verifier_tag(platform),
+            "infinity",
+        ],
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        [
+            "docker",
+            "exec",
+            "--user",
+            "root",
+            container,
+            "bash",
+            "-c",
+            "mkdir -p /logs/verifier && chmod 777 /logs/verifier",
+        ],
+        check=False,
+        capture_output=True,
+    )
     cmd = [
         "docker",
-        "run",
-        "--rm",
-        "--memory=4g",
-        "--memory-swap=4g",
-        f"--cpus={cpus}",
-        "--label",
-        LABEL,
-        *(["--platform", platform] if platform else []),
+        "exec",
+        "--user",
+        "root",
         "-e",
         f"RELEASE={release}",
         *(["-e", "RECORD=1"] if record else []),
-        "-v",
-        f"{tree.resolve()}:/app/harfbuzz:ro",
-        "-v",
-        f"{logs}:/logs/verifier",
-        verifier_tag(platform),
+        container,
         "bash",
         "/tests/test.sh",
     ]
@@ -646,26 +722,95 @@ def run_verifier(
             "name": name,
             "logs": logs,
             "started": started,
+            "container": container,
             "proc": subprocess.Popen(cmd),
         }
     code = subprocess.run(cmd, check=False).returncode
-    return verifier_result(name, logs, started, code)
+    return collect_verifier(container, name, logs, started, code)
+
+
+RESULT_NAMES = (
+    "reward.txt",
+    "reward.json",
+    "metrics.json",
+    "outputs.tsv",
+    "case_pass.json",
+)
+VERIFIER_ARCHIVE = "/tmp/runtime_download_verifier.tar.gz"
+
+
+def collect_verifier(
+    container: str, name: str, logs: Path, started: float, code: int
+) -> dict:
+    """Collect /logs/verifier from the ended run as Harbor does (tar as root, with the image's PATH), unpack it into
+    `logs` with the "data" filter, remove the container, and record the result."""
+    pack = subprocess.run(
+        [
+            "docker",
+            "exec",
+            "--user",
+            "root",
+            container,
+            "bash",
+            "-c",
+            f"tar -czf {VERIFIER_ARCHIVE} -C /logs/verifier .",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    archive = logs / ".verifier-logs.tar.gz"
+    copied = subprocess.run(
+        ["docker", "cp", f"{container}:{VERIFIER_ARCHIVE}", str(archive)],
+        check=False,
+        capture_output=True,
+    )
+    subprocess.run(["docker", "rm", "-f", container], check=False, capture_output=True)
+    collected = {"tar": pack.returncode, "tar_stderr": pack.stderr[-300:]}
+    if copied.returncode == 0 and archive.is_file():
+        try:
+            with tarfile.open(archive, "r:gz") as tar:
+                tar.extractall(logs, filter="data")
+        except (tarfile.TarError, OSError) as exc:
+            collected["unpack_error"] = f"{type(exc).__name__}: {exc}"[:300]
+        archive.unlink()
+    else:
+        collected["copied"] = False
+    result = verifier_result(name, logs, started, code)
+    result["collected"] = collected
+    return result
 
 
 def finish_verifier(run: dict) -> dict:
     """Wait for a verifier run started in the background and record its result."""
-    return verifier_result(run["name"], run["logs"], run["started"], run["proc"].wait())
+    code = run["proc"].wait()
+    return collect_verifier(
+        run["container"], run["name"], run["logs"], run["started"], code
+    )
+
+
+def read_result(path: Path) -> str | None:
+    """A result file's text, read without following a link (the tree under test may plant one); None without one."""
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except OSError:
+        return None
+    try:
+        return os.read(fd, 1 << 16).decode(errors="replace").strip()
+    finally:
+        os.close(fd)
 
 
 def verifier_result(name: str, logs: Path, started: float, code: int) -> dict:
-    reward_file = logs / "reward.txt"
-    reward = reward_file.read_text().strip() if reward_file.exists() else None
     result = {
         "name": name,
         "code": code,
-        "reward": reward,
+        "reward": read_result(logs / "reward.txt"),
         "wall_s": round(time.time() - started, 1),
     }
+    reward_json = read_result(logs / "reward.json")  # Harbor reads this one first
+    if reward_json is not None:
+        result["reward_json"] = reward_json[:200]
     log_event(event="verify", **result)
     print(json.dumps(result))
     return result
@@ -708,40 +853,85 @@ def cmd_milestone(args: argparse.Namespace) -> None:
     """Under one hold of the lock: run the plan's operations, stage the selection, build the verifier (recording
     the expected outputs through it when asked), and verify each tree."""
     ops = json.loads(Path(args.plan).read_text()) if args.plan else []
-    with heavy(f"milestone: {len(ops)} ops, verifier image, {len(args.tree)} runs"):
-        run_ops(ops)
-        n = stage_verifier(
-            Path(args.selection), Path(args.recorded) if args.recorded else None
+    after = json.loads(Path(args.after).read_text()) if args.after else []
+    with heavy(
+        f"milestone: {len(ops)} ops, verifier image, {len(args.tree)} runs, {len(after)} ops after"
+    ):
+        milestone_runs(args, ops)
+        run_ops(after)
+
+
+def milestone_runs(args: argparse.Namespace, ops: list[dict]) -> None:
+    """cmd_milestone's work before its `--after` operations; the caller holds the heavy lock."""
+    run_ops(ops)
+    n = stage_verifier(
+        Path(args.selection), Path(args.recorded) if args.recorded else None
+    )
+    print(f"staged {n} cases", flush=True)
+    build_verifier_image(args.platform)
+    if args.record:
+        record_gold(
+            Path(args.selection), args.platform, args.release, Path(args.record)
         )
-        print(f"staged {n} cases", flush=True)
-        build_verifier_image(args.platform)
-        if args.record:
-            record_gold(
-                Path(args.selection), args.platform, args.release, Path(args.record)
-            )
-        if args.record and args.determinism:
-            determinism(Path(args.record), args.release, args.platform)
-        # A tree named bg:NAME runs in the background, beside the others: for runs that mostly wait out the
-        # verifier's deadline (a sleeping build, a hanging library), so they do not hold the lock for half an hour
-        # each. They are started first and waited for at the end.
-        specs = [s.partition("=") for s in args.tree]
-        started = []
-        for name, _, rest in sorted(specs, key=lambda x: not x[0].startswith("bg:")):
-            tree, _, release = rest.partition("@")
-            if name.startswith("bg:"):
-                started.append(
-                    run_verifier(
-                        Path(tree),
-                        name[3:],
-                        release or args.release,
-                        args.platform,
-                        background=True,
-                    )
+    if args.record and args.determinism:
+        determinism(Path(args.record), args.release, args.platform)
+    # A tree named bg:NAME runs in the background, beside the others: for runs that mostly wait out the
+    # verifier's deadline (a sleeping build, a hanging library), so they do not hold the lock for half an hour
+    # each. They are started first and waited for at the end.
+    specs = [s.partition("=") for s in args.tree]
+    if args.through_trial:
+        through_trials(args, specs)
+        return
+    started = []
+    for name, _, rest in sorted(specs, key=lambda x: not x[0].startswith("bg:")):
+        tree, _, release = rest.partition("@")
+        if name.startswith("bg:"):
+            started.append(
+                run_verifier(
+                    Path(tree),
+                    name[3:],
+                    release or args.release,
+                    args.platform,
+                    background=True,
                 )
-            else:
-                run_verifier(Path(tree), name, release or args.release, args.platform)
-        for run in started:
-            finish_verifier(run)
+            )
+        else:
+            run_verifier(Path(tree), name, release or args.release, args.platform)
+    for run in started:
+        finish_verifier(run)
+
+
+def through_trials(args: argparse.Namespace, specs: list[tuple[str, str, str]]) -> None:
+    """Each tree through one simulated trial (simulate_trial.run_trial): put in place as the turn's result, the
+    hooks run, packed and unpacked as Harbor moves it, then verified. TREE `solution` runs solution/solve.sh as the
+    turn, TREE `shipped` keeps the image's tree. bg:NAME trials run in threads beside the others."""
+    import threading
+
+    simulate_trial = load_simulate_trial()
+    if args.build_agent:
+        simulate_trial.build_images(
+            args.agent_image, verifier_tag(args.platform), args.platform, verifier=False
+        )
+    threads = []
+    for name, _, rest in sorted(specs, key=lambda x: not x[0].startswith("bg:")):
+        tree, _, release = rest.partition("@")
+        params = {
+            "name": name.removeprefix("bg:"),
+            "tree": None if tree in ("solution", "shipped") else Path(tree),
+            "solution": tree == "solution",
+            "release": release or args.release,
+            "agent_image": args.agent_image,
+            "verifier_image": verifier_tag(args.platform),
+            "platform": args.platform,
+        }
+        if name.startswith("bg:"):
+            thread = threading.Thread(target=simulate_trial.run_trial, kwargs=params)
+            thread.start()
+            threads.append(thread)
+        else:
+            simulate_trial.run_trial(**params)
+    for thread in threads:
+        thread.join()
 
 
 def determinism(tree: Path, release: str, platform: str | None) -> None:
@@ -798,6 +988,7 @@ def main() -> None:
     p.add_argument("tree", nargs="+", help="NAME=TREE[@RELEASE], verified in order")
     p.add_argument("--release", default="15.2.0")
     p.add_argument("--plan", help="operations to run first, under the same hold")
+    p.add_argument("--after", help="operations to run last, under the same hold")
     p.add_argument("--platform", help="build and run the verifier for this platform")
     p.add_argument(
         "--record",
@@ -811,6 +1002,21 @@ def main() -> None:
         "--determinism",
         action="store_true",
         help="with --record: three more recordings, one of them on 1 CPU",
+    )
+    p.add_argument(
+        "--through-trial",
+        action="store_true",
+        help="run each tree through a simulated trial (simulate_trial.py): TREE may be `solution` or `shipped`",
+    )
+    p.add_argument(
+        "--agent-image",
+        default="hbfp-agent:trial",
+        help="with --through-trial: the agent image",
+    )
+    p.add_argument(
+        "--build-agent",
+        action="store_true",
+        help="with --through-trial: build the agent image from environment/ first",
     )
     p.set_defaults(func=cmd_milestone)
     args = parser.parse_args()
