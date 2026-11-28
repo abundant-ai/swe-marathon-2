@@ -3015,7 +3015,7 @@ def test_the_agent_cannot_replace_the_artifact_directory():
     )
     assert "useradd --uid 10001 --create-home dev" in docker
     assert "chmod 0700 /usr/local/lib/fsmaint /usr/local/lib/fsmaint/*" in docker
-    assert "/usr/local/sbin" not in docker, (
+    assert not re.search(r"COPY [^\n]*/usr/local/s?bin", docker), (
         "the hooks live in a root-only directory, not on PATH"
     )
     toml = (TASK / "task.toml").read_text()
@@ -3028,6 +3028,37 @@ def test_the_agent_cannot_replace_the_artifact_directory():
         "no phase has the network: the agent, its environment, the verifier and its environment"
     )
     assert 'network_mode = "public"' not in toml and "open_internet" not in toml
+
+
+def test_both_images_keep_roots_path_unwritable_and_make_every_artifacts_parent():
+    """Root runs tar, su and the hooks' tools through the image's PATH after the work and while it
+    grades: in both images an explicit PATH with nothing on it, in it or above it writable by anyone
+    but root, checked when the image is built (the last stage, after every install). The verifier
+    image makes the parent of every declared artifact."""
+    config = tomllib.loads((TASK / "task.toml").read_text())
+    for dockerfile in (TASK / "environment" / "Dockerfile", TESTS / "Dockerfile"):
+        text = dockerfile.read_text()
+        last = text[text.rindex("\nFROM ") :] if text.count("\nFROM ") else text
+        assert (
+            "ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+            in last
+        ), dockerfile
+        assert "-perm /022 -o ! -user root" in last and "readlink -f" in last, (
+            dockerfile
+        )
+        gate = last.index("ENV PATH=")
+        assert all(
+            last.rindex(step) < gate
+            for step in ("apt-get install", "COPY ")
+            if step in last
+        ), "the check comes after everything the last stage installs or copies"
+    verifier = (TESTS / "Dockerfile").read_text()
+    made = re.search(r"RUN mkdir -p ([^\\\n]+)", verifier[verifier.rindex("\nFROM ") :])
+    assert made, "the verifier image makes its directories"
+    for artifact in config["artifacts"]:
+        parent = str(Path(artifact).parent)
+        assert parent in made.group(1).split(), (artifact, made.group(1))
+    assert "/logs/verifier" in made.group(1).split()
 
 
 def test_every_run_fits_inside_the_step_verifier_time():

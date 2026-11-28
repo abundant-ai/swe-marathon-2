@@ -19,4 +19,15 @@ RUN mkdir -p /app/rebuild \
     && chown -R root:root /app && chmod -R a+rX,go-w /app/spec /app/docs \
     && chmod 1777 /app && chmod 0777 /app/rebuild \
     && chown -R root:root /usr/local/lib/fsmaint && chmod 0700 /usr/local/lib/fsmaint /usr/local/lib/fsmaint/*
+# No directory on PATH, no file in one and no directory above one is writable by anyone but root.
+ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+RUN found=$(for dir in $(echo "$PATH" | tr ':' ' '); do \
+            [ -d "$dir" ] || continue; \
+            find -L "$dir" -maxdepth 1 \( -perm /022 -o ! -user root \) -print; \
+            up=$(readlink -f "$dir"); \
+            while [ "$up" != / ]; do \
+                find "$up" -maxdepth 0 \( -perm /022 -o ! -user root \) -print; up=$(dirname "$up"); \
+            done; \
+        done); \
+    if [ -n "$found" ]; then echo "writable by others than root, on PATH or above it: $found" >&2; exit 1; fi
 WORKDIR /app

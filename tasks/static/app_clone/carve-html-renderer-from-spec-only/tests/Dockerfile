@@ -39,6 +39,17 @@ COPY --from=program /record/expected.json /tests/private/expected.json
 COPY --from=program /record/probes.json /tests/private/probes.json
 COPY --from=program /record/probes_expected.json /tests/private/probes_expected.json
 COPY --from=program /record/recording.json /tests/private/recording.json
-RUN mkdir -p /app /logs/verifier \
+RUN mkdir -p /app /var/lib/fsmaint /logs/verifier \
     && chown -R root:root /tests && chmod -R go-rwx /tests && chmod 0700 /tests/test.sh
+# No directory on PATH, no file in one and no directory above one is writable by anyone but root.
+ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+RUN found=$(for dir in $(echo "$PATH" | tr ':' ' '); do \
+            [ -d "$dir" ] || continue; \
+            find -L "$dir" -maxdepth 1 \( -perm /022 -o ! -user root \) -print; \
+            up=$(readlink -f "$dir"); \
+            while [ "$up" != / ]; do \
+                find "$up" -maxdepth 0 \( -perm /022 -o ! -user root \) -print; up=$(dirname "$up"); \
+            done; \
+        done); \
+    if [ -n "$found" ]; then echo "writable by others than root, on PATH or above it: $found" >&2; exit 1; fi
 WORKDIR /
