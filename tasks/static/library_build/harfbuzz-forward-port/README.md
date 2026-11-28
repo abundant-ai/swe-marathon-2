@@ -1,12 +1,14 @@
 # HarfBuzz forward-port, 14.3.0 → 15.2.0
 
-**Status: QA fix round 1 done (2026-11-28).** Single-step (owner, 2026-11-26). 53 of 57 units are graded on 5,256
-private cases (four cut, with reasons in notes/DESIGN.md). Through the amd64 verifier image: the reference solution
-scores 1.0, the untouched tree 0.0, every stub 0.0 (the no-op API stub too), the verification-gap mutant V 0.685
-(D 0.685, h_d 1.000, h_b 1.000; band 0.60-0.85) and the over-broad mutant W, now a secondary bound, 0.678 (D 0.985,
-h_d 0.691, h_b 0.977); hostile and drop-in trees 0.0; slow and hanging trees still get their reward at the
-1,800 s deadline. Local preflight passes on the flat bundle. Next: the QA re-check passes; no Oddish run before
-the owner says so. Category: Library Reproduction (`tasks/static/library_build/`). Branch `neel/harfbuzz-forward-port`.
+**Status: QA fix round 2 done (2026-11-28), but for the verifier trials of V and W and one probe re-run, queued under the shared lock.** Single-step (owner, 2026-11-26). 53 of 57 units are graded on 5,245
+private cases (four cut, with reasons in notes/DESIGN.md). Every tree below went through a simulated trial: the
+agent image's set-up and collect hooks, Harbor's `tar` transfer, then the amd64 verifier image. The reference
+solution scores 1.0, the untouched tree 0.0, every stub 0.0 (both no-op API stubs too), the verification-gap mutant
+V 0.875 in the pipeline as built (complete, with every tier-C unit at 0: 0.849, inside the 0.60-0.85 band) and the over-broad mutant W,
+a secondary bound, 0.695 in the pipeline (h_d 0.709); the hostile, drop-in and path-canary trees score 0.0; slow and hanging trees still
+get their reward at the 1,800 s deadline. Local preflight passes on the flat bundle. Next: QA round 3; no Oddish
+run before the owner says so. Category: Library Reproduction (`tasks/static/library_build/`). Branch
+`neel/harfbuzz-forward-port`.
 
 A product ships HarfBuzz 14.3.0 and has frozen that build. The agent brings it forward to the shaping, layout,
 metrics and API behaviour of upstream's next eight releases (14.3.1 to 15.2.0, 2026-08-13 to 2026-11-19), in one
@@ -59,8 +61,8 @@ G = h_d · (1 − 0.10·(1 − h_b)). h_d is the mean over the units of the pass
 release behaves as 14.3.0 does); h_b is the pass fraction of the broad held-fixed cases. The dual gate is fully
 multiplicative: a port that applies every note one condition too broadly keeps D but loses the share of neighbours it
 breaks. A tree that does not build scores 0; a missing driver output fails its case; a verifier fault leaves no
-reward. Every result reports D, h_d and h_b separately, and the verifier's `metrics.json` records each case's verdict
-by unit and kind for post-run analysis. Details and rationale: [notes/DESIGN.md](notes/DESIGN.md#6-reward).
+reward. Every result reports D, h_d and h_b separately, and the verifier's `case_pass.json` (beside `metrics.json`)
+records each case's verdict and a salted digest of its output, by unit and kind, for post-run analysis. Details and rationale: [notes/DESIGN.md](notes/DESIGN.md#6-reward).
 
 ## Failure mode
 
@@ -97,23 +99,26 @@ run (notes/PREREGISTRATION.md).
 
 ## Hackability assessment
 
-Tested in fix round 1 (2026-11-27/28) on the amd64 verifier image, except where a row says otherwise.
+Tested in fix round 2 (2026-11-28) through simulated trials: the agent image with its set-up and collect hooks, the
+turn as `dev`, Harbor's `tar` transfer as root and the worker's `tarfile` "data" filter, then the amd64 verifier
+image with no network, except where a row says otherwise.
 
 | Attack | Boundary | Mitigation | Severity |
 | --- | --- | --- | --- |
-| Read the expected outputs or case files from the tree's build scripts or library code during grading | Verifier container | The build and the case programs run as `builder` (fixed uid, no new privileges, process, file-size and address-space limits); `/tests/private` and `verify.py` are root-only; root's own files are in a root-only `/var/lib/hbv`, and a case program sees its input and output only as files root opened | 🟢 GREEN: as `builder`, reading the expected outputs, listing `/tests/private` and writing the reward all fail (Phase C); the hostile tree's links, planted to make root read or write through them, moved nothing (0.0) |
-| Forge or keep a reward: write `/logs/verifier`, plant links under root's file names, leave processes running, preload a library into root | Verifier container | `/logs/verifier` root-owned 0755; root opens through folder descriptors with `O_NOFOLLOW|O_EXCL`; every `builder` process is killed after each step and batch and once more at the end; any reward file found is removed; `metrics.json`, then `reward.txt`, are written last | 🟢 GREEN: the hostile tree (forging at setup, at build and in the library, links planted under every name root uses, processes left behind, a preload library) scores 0.0; `reward.txt` is root's regular file, no `reward.json`, and the leftover processes are reported and killed |
-| Leave processes running in the agent container to change the tree after the session | Agent container | A root `[[verifier.collect]]` hook ends every process of `dev` (`kill -9 -1` as `dev`, then `pkill`, until none is left) before the tree is copied out | 🟢 GREEN (locally): run as root in the agent image against 22 `dev` processes (a stopped one, one in its own session, a forking loop, a `nohup` one), it leaves none in 139 ms; on the platform it runs as Harbor's collect step |
-| Obtain 15.x code or a newer HarfBuzz binary in the agent container | Agent image | No 15.x source, binary or version string; no network; history cut at one commit | 🟢 GREEN: the protection probe found none, and no network (Phase C) |
-| Drop a 15.x release into the tree | Verifier | A tree with a 15.x version in `meson.build`, `src/hb-version.h` or `NEWS`, or one of the 15 unit-test sources only 15.x has (by sha256), is not built and scores 0; the instruction says the tree stays version 14.3.0, and the reference keeps it | 🟢 GREEN: the 15.2.0 release dropped in scores 0.0 unbuilt, all 18 markers listed; the reference, the `solve.sh` tree, V and W carry none |
-| Earn credit without implementing the notes | Reward | Every changed case fails on 14.3.0; held-fixed sets only gate; the new-function probes end with a call that only a working function passes | 🟢 GREEN: untouched tree 0.0; comment edits, a neutral refactor, a tree that does not build, an empty `hb_shape`, an abort and the four new functions as no-ops all 0.0 |
+| Read the expected outputs or case files from the tree's build scripts or library code during grading | Verifier container | The build and the case programs run as a fresh unprivileged uid (no new privileges, process, file-size and address-space limits); `/tests/private` and `verify.py` are root-only; root's own files are in a root-only `/var/lib/hbv`, and a case program sees its input and output only as files root opened | 🟢 GREEN: as the build user, reading the expected outputs, listing `/tests/private` and writing the reward all fail (Phase C); the hostile tree's links, planted to make root read or write through them, moved nothing (0.0) |
+| Forge or keep a reward: write `/logs/verifier`, plant links under root's file names, leave processes running, preload a library into root | Verifier container | `/logs/verifier` root-owned 0755, and the check faults if the build user can create a file there; root opens through folder descriptors with `O_NOFOLLOW|O_EXCL`; every build-user process is killed after each step and batch and once more at the end, from a helper it cannot signal, every wait bounded; any reward file found is removed; `metrics.json`, then `reward.txt`, are written last | 🟢 GREEN: the hostile tree scores 0.0 with no `reward.json` in what Harbor collects; stall (stoppers and a survivor that changes its pid) 0.0 in 118 s, every leftover process killed; fork bomb 1.0 in 68 s (also under `--pids-limit=96`: 1.0 in 72 s); memory flood 0.0 in 18 s (meson killed, 255 processes ended), with no survivor in any of them |
+| Plant a command where root resolves names, so that Harbor's `tar` (collecting `/logs/verifier`, which it reads `reward.json` from first) or the hooks run it as root (Dogwood pass 07 F1) | Both images | No directory on root's PATH, su's default paths, the hooks' or verify.py's paths, or their parents, and no file in one, is writable by `dev`, `builder`, `nobody` or a fresh uid; the hooks and `test.sh` set their own PATH | 🟢 GREEN: `path_check.py` finds nothing writable in either image (14 directories in each, none writable by `dev`, `builder`, `nobody` or a fresh uid); the path-canary tree (its build plants `tar`, `gzip` and eleven more wherever it can) scores 0.0 with nothing planted and no marker or `reward.json` collected; the same planter as `dev` in the agent image plants nothing |
+| Leave processes running in the agent container to change the tree after the session, or fetch 15.x once the network comes back before the tree is copied out | Agent container | The net check (set-up hooks, root) watches `dev`'s sessions and processes, keeps copies of the tree's files as they change, and notes when the network comes back; the collect hook stops and kills every process of `dev` (a process counts while any thread lives), puts back whatever changed after the end of the work, and leaves a signed listing and record beside the tree; the verifier faults on a tree that differs from the listing | 🟢 GREEN: a drop-in left behind to copy the reference's files once the network returns: 130 late entries (129 holding the reference's files), all taken out, 0.0; a process whose first thread has exited while another writes: found by its live thread and killed, none left after the hook (the reward check is re-run after a fix to the probe's egress test) (round 1's hook: it outlives the hook); 22 or more leftover processes with no network: 97 listed and killed, none left, 1.0; a capped run's last edit kept and later ones undone: 1.0 |
+| Obtain 15.x code or a newer HarfBuzz binary in the agent container | Agent image | No 15.x source, binary or version string; no network; history cut at one commit; the hooks, their key and their state are root-only | 🟢 GREEN: the protection probe on the rebuilt image finds none (no 15.x material, no network, no sudo, the hooks' files unreadable) |
+| Drop a 15.x release into the tree | Verifier | A tree that holds 3 or more of the 15 unit-test sources only 15.x has (by sha256), or links `meson.build`, `NEWS`, `src` or `src/hb-version.h`, is not built and scores 0; a version other than exactly 14.3.0 multiplies the reward by 0.9; the instruction says the tree stays 14.3.0 | 🟡 YELLOW: the 15.2.0 release dropped in scores 0.0, unbuilt, with its markers listed. The tripwire is a backstop that a drop-in without the test sources passes; the boundary is that no 15.x code reaches the tree (no network in the session; the collect hook undoes what is fetched after it) |
+| Earn credit without implementing the notes | Reward | Every changed case fails on 14.3.0; held-fixed sets only gate; the new-function probes end with a call that only a working function passes; a function counts only where its note's header declares it | 🟢 GREEN: untouched tree 0.0; comment edits, a neutral refactor, a tree that does not build, an empty `hb_shape`, an abort and the four new functions as no-ops (both kinds) all 0.0 |
 | Key outputs on private fonts | Cases | The agent never sees them | 🟢 GREEN: no private case id or font name in any agent-visible file |
-| Clutter the delivered tree (pipes, huge files, many files, links out) | Verifier copy | Special files and files over 64 MiB are not copied; links are copied as links; a tree over 4 GiB or 300,000 entries scores 0 with a note | 🟢 GREEN: a tree with a pipe, a 600 MB sparse file, 100,000 files and links out of the tree scores 1.0 |
-| Outlast the verifier: a build that never ends, a library that hangs | Verifier | One 1,800 s deadline for the copy, the build and every batch; 120 s per batch; what has not run fails and a reward is still written; a last-resort alarm at 2,100 s, inside the 2,400 s timeout | 🟢 GREEN: a build that sleeps past the deadline scores 0.0 with the reward written at 1,800 s; a library that spins in shaping gets 0.018 at 1,806 s (14 batches stopped at 125 s, 227 not run) |
-| Flood the verifier's reads | Verifier | At most 16 MiB + 1 byte of a batch's output is read; 64 MiB file-size limit on case programs; step logs keep their last 4,000 bytes | 🟢 GREEN: a library that writes 4 GiB per shaping call fails its 141 shaping batches, the other 261 score as the reference, and the check ends in 79 s |
-| Apply the notes over-broadly | Reward gate | The neighbours' pass rate multiplies the reward | 🟢 GREEN (secondary bound): W, which widens every conditional note, scores 0.678 (h_d 0.691); W_literal, with only literal widenings, 0.751 |
+| Clutter the delivered tree (pipes, huge files, many files, absolute and outward links) | Agent-side sweep, Harbor's transfer, verifier copy | The collect hook removes build folders, FIFOs, sockets and devices, makes in-tree links relative and outward links copies (256 MiB in all), removes dangling links, over-deep, over-long and unprintable names, and refuses a tree over 200,000 entries or 1 GiB; the verifier copies no special file or file over 64 MiB; the instruction states the limits | 🟢 GREEN: links and a FIFO left in the reference: 1.0 (one link made relative, two copied, three removed with the FIFO; 7,915 of 7,915 entries arrived), the whole tree arriving (without the hook the extraction stops at the FIFO: 7,719 of 7,862); robust (a pipe, a 600 MB sparse file, 100,000 files, links out of the tree): 1.0, all 104,738 entries arriving (its new files pass the net check's 50,000 tracked entries, which the sweep notes; nothing changed after the end, so nothing was removed) |
+| Outlast the verifier: a build that never ends, a library that hangs | Verifier | One 1,800 s deadline for the copy, the build and every batch; at most 15 s per batch, keeping 2 s for each later one; what has not run fails and a reward is still written; alarms at 1,980 s (main), 90 s (clean-up) and 30 s (publishing), inside the 2,400 s timeout | 🟢 GREEN: a build that sleeps past the deadline 0.0, the reward written at 1,800 s; a library that spins in shaping 0.070, the reward written at 1,801 s |
+| Flood the verifier's reads or memory | Verifier | At most 16 MiB + 1 byte of a batch's output read; a result over 4,096 characters fails its case, and only a pass bit and a digest are kept per case; `metrics.json` under 60 KiB; 64 MiB file-size limit on case programs | 🟢 GREEN: a library that writes 4 GiB per shaping call 0.067 in 72 s; one huge result line per program 266 results over 4,096 characters fail their cases, the check's memory peaks at 203 MiB, the reward is written in 89 s |
+| Apply the notes over-broadly | Reward gate | The neighbours' pass rate multiplies the reward | 🟢 GREEN (secondary bound): W, which widens every conditional note, scores 0.695 in the pipeline (h_d 0.709); W_literal 0.766 |
 
-Highest unresolved severity: 🟢 GREEN. The collect hook's platform run is checked on the first oracle trial.
+Highest unresolved severity: 🟡 YELLOW (the drop-in tripwire is a backstop; the boundary is the closed network).
 
 ## Layout
 
@@ -226,3 +231,21 @@ Private material (cases, seeds, gold outputs, private fonts, the duals catalogue
   inputs from the pruned speed-measurement folder, so the prune now drops it. The re-run on the rebuilt image
   waits for the shared lock.
 
+- **QA fix round 2.** QA round 2 (17 passes) gave eight must-fix and twelve should-fix items; two panels decided the
+  tier rule, the difficulty lever, the horizon and the failure sentence. Every item is fixed, with evidence, in
+  notes/FIX2-REPORT.md:
+  - unit 35's note states the reverse mapping; every stated clause has cases or lost its words; floats print
+    rounded; repeats are dropped from every draw;
+  - the agent image's hooks close the egress window: a net check that watches `dev` and keeps copies of the tree,
+    and a collect hook that ends `dev`'s processes, undoes what changed after the end, makes the tree copyable and
+    signs a listing the verifier checks; the instruction says what is copied;
+  - the verifier caps what it keeps of a result, bounds every wait, kills from a uid the build cannot signal,
+    allows 15 s per batch, refuses a drop-in only on a quorum of upstream test sources and scales a wrong version
+    by 0.9;
+  - root's PATH is writable by no other user in either image, with canaries;
+  - the tiers follow the panel's ordered rule (A 23, B 22, C 8, frozen), the sentence ranks them, and the amended
+    pre-registration was committed before any run.
+- The c4 sweep rebuilt every release, revert, mutant and the forward build of unit 33 (68 builds); the expected
+  outputs were recorded again through the amd64 verifier image (3+1 identical). A first try failed on Docker's full
+  disk; 86 of this task's stale build-cache records were pruned and the milestone now checks the disk first.
+- Upstream's own suite ran offline on the rebuilt agent image: 244 of 244 tests passed.
