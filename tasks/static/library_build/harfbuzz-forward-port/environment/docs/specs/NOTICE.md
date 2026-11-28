@@ -19,6 +19,12 @@ versions of the sources, and the publishers have not reviewed or endorsed them.
   Standard Annex #29 (marked "(c) 2004-2026 Unicode, Inc."). OpenType is a registered
   trademark of Microsoft Corporation, TrueType is a trademark of Apple Inc., and Unicode is a
   registered trademark of Unicode, Inc.
+- **Licence of the Microsoft pages.** Microsoft publishes the OpenType specification and
+  the script development pages on Microsoft Learn from its documentation repository
+  (github.com/MicrosoftDocs/typography) under the Creative Commons Attribution 4.0
+  International licence (CC-BY-4.0). The notes in `opentype/` and `scripts/` are adapted
+  from those pages: condensed, reordered and reworded, as described above, with each
+  source named on its `Source:` line.
 
 ## Sources
 
