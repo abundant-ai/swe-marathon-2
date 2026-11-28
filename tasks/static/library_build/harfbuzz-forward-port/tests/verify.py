@@ -1925,7 +1925,14 @@ def main() -> int:
         ctx.io.release()
         if record:
             if "shape" not in ctx.drivers:
-                raise CheckFault("the reference tree did not build")
+                # Say why, from the notes and the failed steps' log tails (a recording publishes nothing else).
+                why = "; ".join(notes[-8:])
+                logs_said = " | ".join(
+                    f"{step}: {tail[-300:]}" for step, tail in ctx.step_logs.items()
+                )
+                raise CheckFault(
+                    f"the reference tree did not build ({why}) {logs_said}"[:2000]
+                )
             files = [("outputs.tsv", outputs_file(cases, results))]
             summary = {
                 "recorded": len(cases),

@@ -861,6 +861,35 @@ def cmd_milestone(args: argparse.Namespace) -> None:
         run_ops(after)
 
 
+VM_FREE_MIN_GB = 3.0  # Docker's disk, free for unprivileged writes, at least (fix round 2: a full disk failed a recording)
+
+
+def vm_free_gb(image: str, platform: str | None = None) -> float:
+    """What an unprivileged process may still write on Docker's disk: `df` of a throwaway container's root."""
+    out = subprocess.run(
+        ["docker", "run", "--rm", "--network", "none", "--memory=256m", "--user", "65534:65534",
+         "--label", LABEL, *(["--platform", platform] if platform else []), "--entrypoint", "df",
+         image, "-Pk", "/"],
+        capture_output=True, text=True, check=False, timeout=180,
+    )  # fmt: skip
+    try:
+        return int(out.stdout.strip().splitlines()[-1].split()[3]) / (1 << 20)
+    except (IndexError, ValueError):
+        return -1.0
+
+
+def check_vm_free(image: str, platform: str | None = None) -> None:
+    """Stop before a recording or a trial that Docker's disk has no room for."""
+    free = vm_free_gb(image, platform)
+    log_event(event="vm_free", image=image, gb=round(free, 2))
+    print(f"Docker's disk: {free:.1f} GB free for unprivileged writes", flush=True)
+    if free < VM_FREE_MIN_GB:
+        raise SystemExit(
+            f"Docker's disk has {free:.1f} GB free for unprivileged writes, under {VM_FREE_MIN_GB} GB: "
+            "a build as the verifier's user would fail. Free some first."
+        )
+
+
 def milestone_runs(args: argparse.Namespace, ops: list[dict]) -> None:
     """cmd_milestone's work before its `--after` operations; the caller holds the heavy lock."""
     run_ops(ops)
@@ -869,6 +898,7 @@ def milestone_runs(args: argparse.Namespace, ops: list[dict]) -> None:
     )
     print(f"staged {n} cases", flush=True)
     build_verifier_image(args.platform)
+    check_vm_free(verifier_tag(args.platform), args.platform)
     if args.record:
         record_gold(
             Path(args.selection), args.platform, args.release, Path(args.record)
@@ -917,6 +947,7 @@ def through_trials(args: argparse.Namespace, specs: list[tuple[str, str, str]]) 
         simulate_trial.build_images(
             args.agent_image, verifier_tag(args.platform), args.platform, verifier=False
         )
+    check_vm_free(args.agent_image)
     slots = threading.BoundedSemaphore(BG_AT_ONCE)
 
     def one(**params) -> None:
