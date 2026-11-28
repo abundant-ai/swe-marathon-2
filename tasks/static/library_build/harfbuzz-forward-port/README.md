@@ -37,8 +37,8 @@ describes only by symptom.
 | --- | --- | --- | --- |
 | Novelty | First SWE-M2 task that changes an existing C++ library, first text-shaping task, first forward-port. Release-notes upgrades exist (SWE-EVO, SWE-Chain, RoadmapBench) but on pre-cutoff Python releases graded by upstream tests; this one is post-cutoff, in OpenType and AAT shaping, graded by differential execution on private fonts | No shaping task among Forge's 664 tasks or this repository's tasks (read 2026-11-26) | Public-benchmark comparisons are second-hand (CLAIMS.md C9, C11) |
 | Verifiability | Outputs are integer sequences; per-item upstream revert mutants prove each graded case belongs to one note; the unmodified base scores 0 by construction | Commit-level evidence in CLAIMS.md | Case yield per item, revert cleanliness, determinism: all spike items |
-| Realism | Frozen, certified builds that take upstream fixes as their own changes are common practice; the notes are upstream's own, the specs are the ones a maintainer reads | Upstream's notes state rules as conditions precise enough to implement (CLAIMS.md C29) | The "no upstream diff" story has to read as natural (QA lens 1) |
-| Difficulty | 53 graded changes across 8 families: 14 whose note names the fix, 20 an agent can check on its own 14.3.0 build, and 19 it cannot without fonts or data it builds itself (AAT and `kern` tables no shipped font has, the Unicode 18 data, bugs described only by symptom); no oracle for the new behaviour; a gate on everything the notes leave alone | Pre-registered, from QA pass 16: frontier D 0.66, reward about 0.64 (0.54-0.75), mid-tier about 0.28 (notes/PREREGISTRATION.md) | Unmeasured until the first runs; five kill conditions |
+| Realism | Frozen, certified builds that take upstream fixes as their own changes are common practice; the notes are upstream's own (the restated rules of units 6, 29 and 37 and the new functions' API texts are ours), the specs are the ones a maintainer reads | Upstream's notes state rules as conditions precise enough to implement (CLAIMS.md C29) | The "no upstream diff" story has to read as natural (QA lens 1) |
+| Difficulty | 53 graded changes across 8 families: 14 whose note names the fix, 20 an agent can check on its own 14.3.0 build, and 19 it cannot without fonts or data it builds itself (AAT and `kern` tables no shipped font has, the Unicode 18 data, bugs described only by symptom); no oracle for the new behaviour, beyond what fontTools computes for units 31, 41 and 42; a gate on everything the notes leave alone | Pre-registered, from QA pass 16: frontier D 0.66, reward about 0.64 (0.54-0.75), mid-tier about 0.28 (notes/PREREGISTRATION.md) | Unmeasured until the first runs; five kill conditions |
 | Initial feasibility | Every graded case follows from its note as shipped (upstream's wording; a stated rule for units 6, 29 and 37), the specification notes and the 14.3.0 code (QA pass 04), and cases a note does not determine are left out; the base tree, its own tests and fontTools let the agent check its work against 14.3.0 for everything the notes leave alone | Example: the Khmer fix is a one-token change whose rule is quoted from Microsoft's spec in the 14.3.0 source itself | E-item restatements; fontTools has no `kerx` writer (our assembler) |
 
 ## One step
@@ -71,8 +71,10 @@ Chosen by a three-judge panel on 2026-11-27 (harbor-lh
 
 Each graded unit has a tier (notes/DESIGN.md section 10, `scripts/pipeline/tiers.tsv`): A, the note names the fix
 (14); B, checkable on the agent's own 14.3.0 build with the shipped fonts and tools (20); C, not checkable without
-material the agent builds itself (19). The proof mutant **V** is 15.2.0 with every tier-C unit taken out; it must
-land in 0.60-0.85 with its D loss confined to tier C and the gate untouched. The over-broad mutant **W** (every
+material the agent builds itself (19). The mutant **V** is 15.2.0 with every tier-C unit's commits reverted; it must
+land in 0.60-0.85 with its D loss confined to tier C and the gate untouched. It is a consistency check of the scoring
+under the sentence, not evidence of how agents fail. Four of its commits do not revert on 15.2.0, so V keeps 25b and
+33 whole and 25a in part; with every tier-C unit at 0, D would be 0.642. The over-broad mutant **W** (every
 conditional note widened) is kept as a secondary bound on what the gate takes from a careless port, beside
 W_literal (pass 17's literal widenings only) and the panel's R_unbuilt (every F4 and F5 unit taken out). The
 per-unit and per-family prediction and its kill conditions were committed before any run
@@ -152,7 +154,8 @@ Private material (cases, seeds, gold outputs, private fonts, the duals catalogue
   likewise"). The `steps/` layout and the per-step `task.toml` entries are gone; the flat layout has `instruction.md`
   (every note from 14.3.1 to 15.2.0, cue-word sweep clean, ASCII only), `tests/` (the verifier skeleton, moved from
   `common/verifier/`) and `solution/` at the task root, and `task.toml` checks `RELEASE=15.2.0` in one 34,560 s
-  session. Grading is the old step 3: all 56 units against 15.2.0 with the held-fixed duals gate. notes/STEPS.md
+  session. Grading is the old step 3: all 56 units (then; 53 after Phase C's cuts) against 15.2.0 with the
+  held-fixed duals gate. notes/STEPS.md
   is kept as history, marked parked.
 - **Difficulty sizing.** The owner asked that the single session be "difficult enough"; target frontier at most
   about 0.6. notes/DESIGN.md section 13 keeps the dual gate at full strength (weight never below 0.25), keeps the
@@ -162,7 +165,7 @@ Private material (cases, seeds, gold outputs, private fonts, the duals catalogue
   order: kept, without its `perf/: benchmarks` line. `CODE_OF_AI_CONDUCT.md` ("Do not fabricate benchmarks") and
   `test/vector/README.md` ("golden files") join the prune list.
 - **Spike: go.** S2: the product build takes 15-31 s on 4 CPUs (arm64), and outputs are identical with and without
-  ragel. S3: the driver reproduces all 16 of upstream's new Khmer expectations. S6: 49 of 56 units revert cleanly.
+  ragel. S3: the driver reproduces all 16 of upstream's new Khmer expectations. S6: 49 of the then 56 units revert cleanly.
   S7: a 14.3.0 tree regenerated from the shipped Unicode 18 files matches 15.0.0's Unicode properties on every code
   point. S8: the verifier builds a tree and runs 1,802 cases in 27 s. S10: three runs and a perturbed fourth are
   byte-identical; no-FMA and emulated amd64 give the same outputs. Yield: 51-855 attributable changed cases for
