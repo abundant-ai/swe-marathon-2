@@ -1,7 +1,8 @@
 """Keep the candidate cases that a trivial program cannot pass, and write the private case set.
 
 Usage: python3 -I select_cases.py --candidates DIR --run RUN.json --shadow-run SHADOW.json --out DIR
-       [--seed S] [--keep-prefix P]... [--cap FAMILY=UNITS]... [--exclude IDS] [--fates FILE]
+       [--seed S] [--keep-prefix P]... [--cap FAMILY=UNITS]... [--exclude IDS] [--keep IDS]
+       [--fates FILE]
 
 RUN.json is `run_cases.py`'s record of the release build over the candidates (several repeats);
 SHADOW.json its record over the candidates' history-free shadows (DIR/shadow, `make_cases.py`). A
@@ -194,6 +195,11 @@ def main() -> int:
         type=Path,
         help="case ids to leave out, one a line (the leak scan's findings on the candidates)",
     )
+    ap.add_argument(
+        "--keep",
+        type=Path,
+        help="case ids to keep when they can be (a mutant's only killers), one a line",
+    )
     a = ap.parse_args()
     cand = [
         json.loads(x)
@@ -204,6 +210,7 @@ def main() -> int:
     dropped: Counter = Counter()
     fate: dict[str, str] = {}
     excluded = set(a.exclude.read_text().split()) if a.exclude else set()
+    keep = set(a.keep.read_text().split()) if a.keep else set()
 
     # 1. Stable answers only.
     gold = {}
@@ -324,6 +331,8 @@ def main() -> int:
             rarity[cid] = min(rarity.get(cid, len(found)), len(found))
 
     def rarest(c: dict) -> tuple:
+        if c["id"] in keep:  # the only cases that kill a mutant go first
+            return (-1, c["id"])
         return (rarity.get(c["id"], len(kept)), c["id"])
 
     rng = random.Random(a.seed)
@@ -401,6 +410,8 @@ def main() -> int:
     joined = 0
     for c in leftover:  # already rarest first
         wanted = [f for f in ids_of.get(c["id"], []) if count[f] < ev[f][0] + MARGIN]
+        if c["id"] in keep:
+            wanted.append("--keep")
         same = anchors.get(pkey(c), [])
         rest = [s for k, v in sorted(anchors.items()) if k[0] == c["family"] for s in v]
         room = [
@@ -421,7 +432,7 @@ def main() -> int:
         c["pair"] = strong["pair"]
         size[strong["pair"]] += 1
         joined += 1
-        for f in ids_of[c["id"]]:
+        for f in ids_of.get(c["id"], []):
             count[f] += 1
 
     final = []

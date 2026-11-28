@@ -920,6 +920,10 @@ F5_TEMPLATES = {
     "feat:04:since": f5_since_boundary,
     "feat:04:previous": f5_previous_immediate,
 }
+# Under a universal pin, a positive `since` left is evaluated by the key-local rewrite, so the
+# boundary bundles carry an event schema with no pin: the global reading the guide states
+# ("The semantics below are stated over the whole trace"), which one principal's trace shares.
+UNPINNED = {"feat:04:since"}
 
 
 def alert_rule(cond):
@@ -944,6 +948,10 @@ def write_f5(r, idx, out, copies=6):
                 "schema.cedarschema": pairs.SCHEMA,
                 "trace.log": "\n".join(lines) + "\n",
             }
+            if (
+                fid in UNPINNED
+            ):  # one principal, so the global reading gives the same verdicts
+                texts["event.dwschema"] = pairs.event_schema({})
             for name, text in texts.items():
                 with open(os.path.join(d, name), "w") as f:
                     f.write(text)
