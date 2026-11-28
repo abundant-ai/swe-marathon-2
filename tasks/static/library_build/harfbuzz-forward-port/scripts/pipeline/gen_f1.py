@@ -1835,11 +1835,11 @@ PER_UNIT = {
 }
 
 W_TARGETS = {
-    "1": ["space", "punct", "digit"],
+    "1": ["b:space", "b:punct", "b:digit"],
     "2": ["b:nbsp"],
     "3": ["b:digit"],
     "4": ["b:next-syllable"],
-    "5": ["noflag"],
+    "5": ["b:noflag"],
     "6": ["b:gdef-dc-mark"],
     "7": ["b:nbsp-between"],
     "8": ["b:hebr-script"],

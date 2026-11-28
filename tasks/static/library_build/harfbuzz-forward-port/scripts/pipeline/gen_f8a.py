@@ -5,7 +5,8 @@ fontTools, units per em 1024 where scaled values must stay exact (x_scale / 1024
 every product of a small integer and the scale is exact in single precision and no rounding, fused or not, can
 differ between machines). Development tooling, never shipped.
 
-API candidates run through tests/driver/hbapi.c (drv "api"); shaping candidates through hbdrv.
+API candidates run through tests/driver/hbapi.c (drv "api"); shaping candidates through hbdrv; unit 33's script
+constants through hbapi33.c (drv "api33") and its dominant baselines through hbmeta.c (drv "meta").
 """
 
 from __future__ import annotations
@@ -1625,19 +1626,131 @@ def u33_font(out: Path) -> None:
     fb.save(str(out / "u33-new.ttf"))
 
 
+# The three script values of Unicode 18.0, and code points of each (Scripts.txt 18.0: Jurchen U+18E00..U+19191 and
+# U+191A0..U+191D2, Proto_Cuneiform U+125A8..U+1264B, Seal U+3D000..U+3FC3F). The Cuneiform numerals around the
+# Proto-Cuneiform range (U+12550..U+125A7 and U+1264C..U+12686) are new in 18.0 too, but of the old Cuneiform script.
+U33_NEW_SCRIPTS = {"Jurc": 0x18E00, "Pcun": 0x125A8, "Seal": 0x3D000}
+U33_PCUN = range(0x125A8, 0x1264C)
+U33_XSUX_NEW = [*range(0x12550, 0x125A8), *range(0x1264C, 0x12687)]
+U33_PCUN_UNASSIGNED = range(
+    0x12544, 0x12550
+)  # unassigned, before the block (Early Dynastic Cuneiform)
+U33_PCUN_RESERVED = range(
+    0x12687, 0x12690
+)  # unassigned, inside the new Archaic Cuneiform Numerals block
+# Shaping with the new script values: a few characters of each, and of old scripts the default shaper keeps
+# (Cuneiform, including its numerals new in 18.0, and Tangut); `pres` substitutes every one of them, and only the
+# Universal Shaping Engine applies `pres`.
+U33_USE_TEXT = {
+    "Jurc": list(range(0x18E00, 0x18E08)),
+    "Pcun": list(range(0x125A8, 0x125B0)),
+    "Seal": list(range(0x3D000, 0x3D008)),
+}
+U33_USE_OLD = {
+    "Xsux": [*range(0x12000, 0x12008), *range(0x12550, 0x12558)],
+    "Tang": list(range(0x17000, 0x17008)),
+}
+# Script names for the constants probe (hbapi33): the three new ones in any case, old ones, and look-alikes.
+U33_NAMES = ["Jurc", "jurc", "JURC", "Pcun", "pcun", "PCUN", "Seal", "seal", "SEAL"]
+U33_OTHER_NAMES = [
+    "Xsux",
+    "Hani",
+    "Kits",
+    "Tang",
+    "Latn",
+    "Nshu",
+    "Zzzz",
+    "Jurx",
+    "Pcuu",
+    "Seel",
+    "Seil",
+]
+# Scripts for the dominant baseline: the two new ideographic ones, and old ones of every kind (ideographic,
+# hanging, roman), with Proto-Cuneiform, which is not ideographic.
+U33_IDEO_NEW = ["Jurc", "jurc", "JURC", "Seal", "seal", "SEAL"]
+U33_BASE_OTHER = [
+    "Pcun",
+    "pcun",
+    "Hani",
+    "Hang",
+    "Kana",
+    "Tang",
+    "Nshu",
+    "Kits",
+    "Latn",
+    "Deva",
+    "Xsux",
+    "Arab",
+]
+
+
+def u33_use_fonts(out: Path) -> None:
+    """For the routing of the new scripts: u33-use, whose `GSUB` has `pres` under DFLT and under the OpenType tags
+    of the three new scripts and of Cuneiform and Tangut (each character goes to a glyph of its own), and
+    u33-use-dflt, the same with `pres` under DFLT only: HarfBuzz keeps the default shaper for a font designed for
+    DFLT. Boxes of distinct widths; the substitutes are narrower."""
+    chars = sorted(
+        {c for cps in (*U33_USE_TEXT.values(), *U33_USE_OLD.values()) for c in cps}
+    )
+    for name, systems in (
+        ("u33-use", ["DFLT", "jurc", "pcun", "seal", "xsux", "tang"]),
+        ("u33-use-dflt", ["DFLT"]),
+    ):
+        order = [".notdef", "space"]
+        order += [g for c in chars for g in (f"u{c:04X}", f"u{c:04X}.alt")]
+        cmap = {0x20: "space", **{c: f"u{c:04X}" for c in chars}}
+        glyphs = {".notdef": rect(50, 0, 450, 700).glyph(), "space": empty_glyph()}
+        metrics = {".notdef": (500, 50), "space": (256, 0)}
+        for k, c in enumerate(chars):
+            w = 400 + (k * 29) % 400
+            glyphs[f"u{c:04X}"] = rect(30, 0, w, 700).glyph()
+            metrics[f"u{c:04X}"] = (w + 30, 30)
+            glyphs[f"u{c:04X}.alt"] = rect(30, 0, w - 100, 600).glyph()
+            metrics[f"u{c:04X}.alt"] = (w - 70, 30)
+        fb = ttf(name, order, cmap, glyphs, metrics)
+        fea = "".join(f"languagesystem {s} dflt;\n" for s in systems)
+        fea += "feature pres {\n"
+        fea += "".join(f"  sub u{c:04X} by u{c:04X}.alt;\n" for c in chars)
+        fea += "} pres;\n"
+        addOpenTypeFeaturesFromString(fb.font, fea)
+        fb.save(str(out / f"{name}.ttf"))
+
+
+def _name_int(name: str) -> int:
+    """A script name's first four characters as HB_TAG packs them (spaces after a shorter one)."""
+    return tag_int(name[:4])
+
+
 def gen_33(
     rng: random.Random, noto: dict[str, Font], synth: Path, n: int
 ) -> Iterator[dict]:
-    """Unit 33: Unicode 18.0 data and script values (the data, not code: the base regenerated from the Unicode 18
-    files explains these changes).
+    """Unit 33: Unicode 18.0 data and script values, and the shaping support of the three new scripts (attributed
+    through fwd-33: the base with its Unicode tables regenerated from the Unicode 18 files and the code half of
+    bf93d8671 added).
 
-    Inside: `ucd` on code points new in 18.0 and on U+221D (its mirroring partner is new); shaping of text with new
-    combining marks after a base (category, combining class, cluster and mark advance), new right-to-left letters
-    (guessed direction), and U+221D in right-to-left text with a font that has U+1DB10. Boundaries: `b:old` (code
-    points assigned before 18.0 next to new ones; shaping with old marks and old right-to-left letters),
-    `b:unassigned` (still unassigned next to new ones), `b:reserved-in-new-block` (unassigned code points inside
-    blocks new in 18.0). New characters of the Indic and USE scripts are left out of shaping (unit 34 changes their
-    shaping in 15.1.0), and so are variation selectors (unit 15).
+    Inside: `ucd` on code points new in 18.0 and on U+221D (its mirroring partner is new) (`in:ucd`); shaping of
+    text with new combining marks after a base (category, combining class, cluster and mark advance, `in:marks`),
+    new right-to-left letters (guessed direction, `in:rtl`), and U+221D in right-to-left text with a font that has
+    U+1DB10 (`in:mirror`). Boundaries: `b:old` (code points assigned before 18.0 next to new ones; shaping with old
+    marks and old right-to-left letters), `b:unassigned` (still unassigned next to new ones),
+    `b:reserved-in-new-block` (unassigned code points inside blocks new in 18.0). New characters of the Indic and
+    USE scripts are left out of shaping (unit 34 changes their shaping in 15.1.0), and so are variation selectors
+    (unit 15).
+
+    After the main loop (so its candidates are as before):
+    - `in:ucd-pcun`: `ucd` on Proto-Cuneiform code points, often with the new Cuneiform numerals around them
+      (U+125A7, U+1264C and the rest: new in 18.0 too, of the Cuneiform script); the unassigned code points before
+      the block and the reserved ones at its end join `b:unassigned` and `b:reserved-in-new-block`.
+    - `in:consts` (probe hbapi33, drv "api33"): the constants HB_SCRIPT_JURCHEN, HB_SCRIPT_PROTO_CUNEIFORM and
+      HB_SCRIPT_SEAL against hb_script_from_string() of script names. A tree without the constants cannot compile
+      the probe and fails these cases only.
+    - `in:use`: text in one of the three scripts (script set, or guessed from the text) in u33-use, which has `pres`
+      under their tags: they now go through the Universal Shaping Engine, which applies `pres`. Neighbours:
+      `b:use-dflt-font`, the same in u33-use-dflt (a font designed for DFLT keeps the default shaper);
+      `b:use-old-script`, Cuneiform (its old signs and its numerals new in 18.0) and Tangut in u33-use, which keep
+      the default shaper.
+    - `in:baseline` (hbmeta `scriptbase`): the dominant horizontal baseline of lists of scripts holding Jurchen or
+      Seal, now ideographic (`icfb`). Neighbour `b:baseline-other`: lists of Proto-Cuneiform and old scripts only.
     """
     sets = u33_sets()
     font = synth / "u33-new.ttf"
@@ -1653,7 +1766,7 @@ def gen_33(
             cps = rng.sample(sets["new"], rng.randint(1, 6))
             if rng.random() < 0.1:
                 cps.append(0x221D)
-            yield api_case("33", font, "ucd", cps, nb="in")
+            yield api_case("33", font, "ucd", cps, nb="in:ucd")
         elif r < 0.45:
             pool, nb = rng.choice(
                 (
@@ -1677,21 +1790,88 @@ def gen_33(
             )
             if rng.random() < 0.4:
                 text.insert(2, rng.choice(old_marks))
-            yield case("33", "cand", font, text, nb="in", cl=rng.choice((0, 1, 2)))
+            yield case(
+                "33", "cand", font, text, nb="in:marks", cl=rng.choice((0, 1, 2))
+            )
         elif r < 0.75 and rtl:
             text = rng.sample(rtl, min(len(rtl), rng.randint(2, 5)))
             if rng.random() < 0.3:
                 text.append(rng.choice((0x28, 0x29, 0x5B)))
-            yield case("33", "cand", font, text, nb="in", cl=rng.choice((0, 1)))
+            yield case("33", "cand", font, text, nb="in:rtl", cl=rng.choice((0, 1)))
         elif r < 0.82:
             text = [rng.choice(old_rtl), 0x221D, rng.choice(old_rtl)]
-            yield case("33", "cand", font, text, nb="in", dir="rtl")
+            yield case("33", "cand", font, text, nb="in:mirror", dir="rtl")
         else:
             if rng.random() < 0.5:
                 text = [rng.choice(bases)] + rng.sample(old_marks, rng.randint(1, 3))
             else:
                 text = rng.sample(old_rtl, rng.randint(2, 5))
             yield case("33", "cand", font, text, nb="b:old", cl=rng.choice((0, 1)))
+    # Proto-Cuneiform in `ucd`, and the unassigned code points around its block.
+    for _ in range(80):
+        cps = rng.sample(U33_PCUN, rng.randint(1, 6))
+        if rng.random() < 0.4:
+            cps.insert(
+                rng.randrange(len(cps) + 1),
+                rng.choice((0x125A7, 0x1264C) if rng.random() < 0.6 else U33_XSUX_NEW),
+            )
+        yield api_case("33", font, "ucd", cps, nb="in:ucd-pcun")
+    for pool, nb in (
+        (U33_PCUN_UNASSIGNED, "b:unassigned"),
+        (U33_PCUN_RESERVED, "b:reserved-in-new-block"),
+    ):
+        for _ in range(20):
+            yield api_case(
+                "33", font, "ucd", rng.sample(pool, rng.randint(1, 4)), nb=nb
+            )
+    # The constants.
+    for _ in range(60):
+        names = [rng.choice(U33_NAMES)] + [
+            rng.choice(U33_NAMES + U33_OTHER_NAMES) for _ in range(rng.randrange(0, 4))
+        ]
+        rng.shuffle(names)
+        yield api_case(
+            "33",
+            font,
+            "scripts",
+            [_name_int(s) for s in names],
+            nb="in:consts",
+            drv="api33",
+        )
+    # Routing through the Universal Shaping Engine.
+    use, dflt = synth / "u33-use.ttf", synth / "u33-use-dflt.ttf"
+    for kind in (
+        ("in:use",) * 80 + ("b:use-dflt-font",) * 40 + ("b:use-old-script",) * 40
+    ):
+        texts = U33_USE_OLD if kind == "b:use-old-script" else U33_USE_TEXT
+        script = rng.choice(sorted(texts))
+        text = [rng.choice(texts[script]) for _ in range(rng.randint(1, 4))]
+        opts: dict[str, object] = {"cl": rng.choice((0, 1, 2))}
+        # The script is guessed from the text in a third of the cases (only for text the old data can guess too,
+        # among the neighbours: the Cuneiform numerals are new in 18.0).
+        guessed = rng.random() < 0.33 and not (
+            kind == "b:use-old-script" and any(c in U33_XSUX_NEW for c in text)
+        )
+        if not guessed:
+            opts["script"] = script
+        yield case(
+            "33",
+            "cand",
+            dflt if kind == "b:use-dflt-font" else use,
+            text,
+            nb=kind,
+            **opts,
+        )
+    # The dominant baseline.
+    for kind in ("in:baseline",) * 80 + ("b:baseline-other",) * 40:
+        names = [rng.choice(U33_BASE_OTHER) for _ in range(rng.randrange(0, 4))]
+        if kind == "in:baseline":
+            names.insert(rng.randrange(len(names) + 1), rng.choice(U33_IDEO_NEW))
+        elif not names:
+            names = [rng.choice(U33_BASE_OTHER)]
+        yield api_case(
+            "33", font, "scriptbase", [_name_int(s) for s in names], nb=kind, drv="meta"
+        )
 
 
 # --------------------------------------------------------------------------------------------------------------
@@ -1739,10 +1919,12 @@ def gen_35(
     `und-fonupa`.
 
     Inside: tags with the `-fonupa` variant (with or without script and region subtags, any case) through
-    hb_ot_tags_from_script_and_language, and UPPH through hb_ot_tag_to_language and
-    hb_ot_tags_to_script_and_language. Boundaries: `b:other-variant` (the other phonetic variants and look-alike
-    subtags), `b:plain` (the same languages without the variant), `b:private-use` (`fonupa` after `-x-` or another
-    singleton), `b:other-tag` (nearby OpenType language tags converted back).
+    hb_ot_tags_from_script_and_language (`in:forward`), and UPPH through hb_ot_tag_to_language and
+    hb_ot_tags_to_script_and_language (`in:reverse`). Boundaries: `b:other-variant` (the other phonetic variants and
+    look-alike subtags), `b:plain` (the same languages without the variant), `b:private-use` (`fonupa` after `-x-`
+    or another singleton), `b:other-tag` (nearby OpenType language tags converted back). The main loop gives few
+    distinct reverse inputs (UPPH alone, with three script tags); more follow it, UPPH among other language tags and
+    with other script tags (the selection takes each input once).
     """
     font = synth / "u37-plain.ttf"
     for i in range(n):
@@ -1757,17 +1939,17 @@ def gen_35(
             )
             if rng.random() < 0.3:
                 s = s.upper() if rng.random() < 0.5 else s.title()
-            yield api_case("35", font, "tags", lang_bytes(s), nb="in", **params)
+            yield api_case("35", font, "tags", lang_bytes(s), nb="in:forward", **params)
         elif r < 0.45:
             if rng.random() < 0.5:
-                yield api_case("35", font, "t2l", [tag_int("UPPH")], nb="in")
+                yield api_case("35", font, "t2l", [tag_int("UPPH")], nb="in:reverse")
             else:
                 yield api_case(
                     "35",
                     font,
                     "t2sl",
                     [tag_int(rng.choice(("latn", "cyrl", "DFLT"))), tag_int("UPPH")],
-                    nb="in",
+                    nb="in:reverse",
                 )
         elif r < 0.6:
             var = rng.choice(
@@ -1834,6 +2016,25 @@ def gen_35(
                     [tag_int("latn"), tag_int(tags[0])],
                     nb="b:other-tag",
                 )
+    # More reverse inputs: UPPH among other language tags (t2l), and with other script tags (t2sl), the ones that
+    # are not a script's primary tag giving the language an -x-hbsc- subtag.
+    others = ["IPPH", "APPH", "FIN ", "SKS ", "UDM ", "KOM ", "URD ", "UKR ", "UPPE"]
+    scripts = ["grek", "arab", "deva", "dev2", "hani", "kana", "math", "copt", "zyyy"]
+    for k in range(50):
+        if k % 5 < 3:
+            tags = rng.sample(others, rng.randint(1, 2))
+            tags.insert(rng.randrange(len(tags) + 1), "UPPH")
+            yield api_case(
+                "35", font, "t2l", [tag_int(t) for t in tags], nb="in:reverse"
+            )
+        else:
+            yield api_case(
+                "35",
+                font,
+                "t2sl",
+                [tag_int(rng.choice(scripts)), tag_int("UPPH")],
+                nb="in:reverse",
+            )
 
 
 # --------------------------------------------------------------------------------------------------------------
@@ -1855,6 +2056,7 @@ def build_fonts(out: Path) -> None:
     u50_fonts(out)
     u19_fonts(out)
     u33_font(out)
+    u33_use_fonts(out)
 
 
 UNITS = {

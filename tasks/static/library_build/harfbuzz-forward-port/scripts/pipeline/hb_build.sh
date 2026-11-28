@@ -75,7 +75,7 @@ if [ -f /drv/hbprops.c ]; then
   c++ -o "$OUT/hbprops" "$W/hbprops.o" "$OUT/lib/libharfbuzz.a" -lm
 fi
 # The API drivers. A probe of a function this tree does not have fails to compile; it is then simply absent.
-for d in hbapi hbmeta hbapi48 hbapi49 hbapi51; do
+for d in hbapi hbmeta hbapi33 hbapi48 hbapi49 hbapi51; do
   [ -f "/drv/$d.c" ] || continue
   rm -f "$OUT/$d"
   { cc -O2 -Werror=implicit-function-declaration -c -I"$OUT/include/harfbuzz" -o "$W/$d.o" "/drv/$d.c" \

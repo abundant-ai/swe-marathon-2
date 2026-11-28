@@ -904,8 +904,8 @@ def u25a_fonts(out: Path) -> None:
 
 
 U25A_FONTS = {
-    "u25a-kerx-f2": "in",
-    "u25a-kerx-f1": "in",
+    "u25a-kerx-f2": "in:f2",
+    "u25a-kerx-f1": "in:f1",
     "u25a-kern-f1": "b:kern-format1",
     "u25a-kern-f2": "b:kern-format2",
     "u25a-kerx-f0": "b:other-format",
@@ -1342,6 +1342,46 @@ def gen_26(
 
 AAT_WORDS = ["AVATAR", "TOWAWAY", "WAYLAY", "TOTAL", "LYNYL", "TOOT", "AVA", "WAW"]
 
+# Unit 23's class kerning: `kerx` format 6 (synth_fonts.py builds the format 0 fonts). Left glyphs fall into rows and
+# right glyphs into columns; row 0 and column 0 are the glyphs of no class and kern nothing.
+U23_LEFT = {"A": 1, "W": 1, "V": 1, "T": 2, "Y": 2, "L": 2, "O": 3}
+U23_RIGHT = {"V": 1, "W": 1, "Y": 1, "A": 2, "O": 3, "T": 3}
+U23_ROWS = [
+    [0, 0, 0, 0],
+    [0, -110, -50, -30],
+    [0, -70, -80, -60],
+    [0, -40, -20, -10],
+]
+U23_PAIRS = {("A", "V"): -120, ("T", "O"): -90, ("L", "Y"): -150, ("W", "A"): -60}
+U23_GSUB = "feature ss02 { sub A by B; } ss02;"
+U23_NOKERN = "feature ss01 { pos A 30; } ss01;"
+U23_KERN = "feature kern { pos A V -40; pos T O -40; } kern;"
+# name: (label, features, also a format 0 subtable before the format 6 one)
+U23_F6_FONTS = {
+    "u23-kerx6-gsub-gpos-nokern": ("in:f6", U23_GSUB + U23_NOKERN, False),
+    "u23-kerx06-gsub-gpos-nokern": ("in:f0-f6", U23_GSUB + U23_NOKERN, True),
+    "u23-kerx6-gsub-gpos-kern": ("b:gpos-kern", U23_GSUB + U23_KERN, False),
+    "u23-kerx6-gpos-nokern": ("b:no-gsub", U23_NOKERN, False),
+    "u23-kerx6-gpos-kern": ("b:no-gsub", U23_KERN, False),
+    "u23-kerx6-gsub-nogpos": ("b:no-gpos", U23_GSUB, False),
+    "u23-kerx6-nogpos": ("b:no-gpos", "", False),
+}
+
+
+def u23_fonts(out: Path) -> None:
+    """Unit 23 with class kerning: a `kerx` format 6 subtable (16-bit values) beside `GSUB` and a `GPOS` without a
+    kerning feature, its neighbours as for format 0 (synth_fonts.kerx_fonts), and a font with a format 0 subtable
+    followed by a format 6 one."""
+    gl = Glyphs()
+    left = {gl.g(c): r for c, r in U23_LEFT.items()}
+    right = {gl.g(c): k for c, k in U23_RIGHT.items()}
+    f6 = _kerx_sub(6, _kerx_f6(left, right, U23_ROWS))
+    f0 = _kerx_sub(
+        0, _pair_body({(gl.g(a), gl.g(b)): v for (a, b), v in U23_PAIRS.items()}, True)
+    )
+    for name, (_, fea, with_f0) in U23_F6_FONTS.items():
+        _save(out, name, gl, {"kerx": _kerx([f0, f6] if with_f0 else [f6])}, fea)
+
 
 def _word_and_range(rng: random.Random) -> tuple[list[int], int, int]:
     word = [ord(c) for c in rng.choice(AAT_WORDS)]
@@ -1428,12 +1468,15 @@ def gen_22(
 def gen_23(
     rng: random.Random, noto: dict[str, Font], synth: Path, n: int
 ) -> Iterator[dict]:
-    """Unit 23: `kerx` pair kerning applies together with a `GPOS` that has no kerning feature.
+    """Unit 23: `kerx` pair and class kerning apply together with a `GPOS` that has no kerning feature.
 
-    In: `GSUB`, a `GPOS` without `kern`, and in-stream `kerx` pairs. Neighbours: `b:gpos-kern`, the `GPOS` has `kern`
-    (`kerx` stays off); `b:no-gsub`, no `GSUB` (HarfBuzz then uses `kerx` instead of `GPOS`, before and after);
-    `b:no-gpos`, no `GPOS`. A cross-stream `kerx` subtable beside `GPOS` is left out: 15.2.0 keeps it off, and whether
-    the note's "pair kerning" covers it is not clear.
+    In: `GSUB`, a `GPOS` without `kern`, and in-stream `kerx` kerning: pairs (format 0, `in:f0`), classes (format 6,
+    `in:f6`), or both subtables (`in:f0-f6`). Neighbours: `b:gpos-kern`, the `GPOS` has `kern` (`kerx` stays off);
+    `b:no-gsub`, no `GSUB` (HarfBuzz then uses `kerx` instead of `GPOS`, before and after); `b:no-gpos`, no `GPOS`.
+    A cross-stream `kerx` subtable beside `GPOS` is left out: 15.2.0 keeps it off, and whether the note's "pair
+    kerning" covers it is not clear. So is format 2, whose class values 15.1.0 reads as byte offsets (unit 25a): a
+    port of this note alone would get its kerning wrong. The format 6 candidates follow the format 0 ones, so those
+    are as before.
     """
     kinds = ("in", "in", "in", "b:gpos-kern", "b:gpos-kern", "b:no-gsub", "b:no-gpos")
     fonts = {
@@ -1455,9 +1498,24 @@ def gen_23(
             "cand",
             synth / f"{rng.choice(fonts[kind])}.ttf",
             word,
-            nb=kind,
+            nb="in:f0" if kind == "in" else kind,
             **opts,
         )
+    words = AAT_WORDS + ["VALLEY", "OTTAWA", "LAYOVER", "YAWL", "TAO"]
+    by_label: dict[str, list[str]] = {}
+    for name, (label, _, _) in U23_F6_FONTS.items():
+        by_label.setdefault(label, []).append(name)
+    kinds6 = ("in:f6",) * 45 + ("in:f0-f6",) * 25 + ("b:gpos-kern",) * 30
+    kinds6 += ("b:no-gsub",) * 30 + ("b:no-gpos",) * 30
+    for kind in kinds6:
+        word = [ord(c) for c in rng.choice(words)]
+        opts = {"dir": rng.choice(("ltr", "ltr", "rtl"))}
+        if rng.random() < 0.3:
+            opts["cl"] = rng.choice((1, 2))
+        if rng.random() < 0.3:
+            opts["scale"] = rng.choice((2000, 500, 1500))
+        font = synth / f"{rng.choice(by_label[kind])}.ttf"
+        yield case("23", "cand", font, word, nb=kind, **opts)
 
 
 # --------------------------------------------------------------------------------------------------------------
@@ -1471,6 +1529,7 @@ def build_fonts(out: Path) -> None:
     u25b_fonts(out)
     u25c_fonts(out)
     u26_fonts(out)
+    u23_fonts(out)
 
 
 UNITS = {

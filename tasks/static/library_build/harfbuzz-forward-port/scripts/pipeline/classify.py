@@ -4,22 +4,28 @@ Host side (`python3 -I scripts/pipeline/classify.py ...`); it reads only our own
 metadata, never downloaded files. Development tooling, never shipped.
 
 Builds: B = 14.3.0, T1 = 15.0.0, T2 = 15.1.0, T3 = 15.2.0; R_k = the release of unit k's window with k's commits
-reverted; `regen-14.3.0` = 14.3.0 with its Unicode tables regenerated from the Unicode 18 files (unit 33 adds its
-change forward instead of being reverted); `rk-<unit>-<part>` (PARTIALS below) = the unit's release with only the
-commit of the unit that does more than its note states reverted. Each build's outputs are `RUNS/<build>.out`
-(shaping driver) and `RUNS/<build>.<driver>.out` (API drivers), merged by candidate id. `!nobuild` (a probe the
-build cannot compile) is an ordinary output value; any other `!` output drops the candidate.
+reverted; `fwd-33` = 14.3.0 with unit 33 added forward instead of reverted: its Unicode tables regenerated from the
+Unicode 18 files (as `regen-14.3.0`, which still runs for the record) plus the two code hunks of bf93d8671, the USE
+routing of the three new scripts and the ideographic baselines of Jurchen and Seal (plan_sweep.py builds it);
+`rk-<unit>-<part>` (PARTIALS below) = the unit's release with only the commit of the unit that does more than its
+note states reverted. Each build's outputs are `RUNS/<build>.out` (shaping driver) and `RUNS/<build>.<driver>.out`
+(API drivers), merged by candidate id. `!nobuild` (a probe the build cannot compile) is an ordinary output value;
+any other `!` output drops the candidate.
 
 A candidate is
 - **changed**, attributed to unit k, when B differs from T3, and in the last window s where the output changes
   (T_{s-1} differs from T_s) exactly one of the window's units explains it: its revert gives T_{s-1} (for unit 33:
-  the regenerated base gives T_s), while every other revert of the window gives T_s;
+  the forward build gives T_s), while every other revert of the window gives T_s;
 - **beyond-note** when it would be changed for unit k, but one of k's partial reverts does not give T_s: its output
   then depends on the commit that does more than k's note states (never graded);
 - **held** when B, T1, T2, T3, every revert and every partial revert agree (a dual when it sits on a named boundary
   of its unit, broad when it came from the broad generator);
 - **flapping** when repeated base runs disagree (dropped);
 - dropped otherwise.
+
+The selection takes each input once (exact repeats, same driver, font, face, options and text, would weigh one
+behaviour twice), and draws each unit's changed cases and duals from a random stream of their own, so a change to
+one unit's candidates leaves every other unit's draw as it was.
 """
 
 from __future__ import annotations
@@ -33,16 +39,17 @@ from pathlib import Path
 
 RELEASES = ("14.3.0", "15.0.0", "15.1.0", "15.2.0")
 WINDOW_INDEX = {"A": 1, "B": 2, "C": 3}
-ADDERS = {"33": "regen-14.3.0"}  # units attributed by adding their change to the base
+ADDERS = {"33": "fwd-33"}  # units attributed by adding their change to the base
 # Partial reverts: build `rk-<name>` is the unit's release with only that unit commit reverted (patches in
 # CACHE/work/patches-lib/<name>/; plan_sweep.py builds them). 25a-hist reverts 90417543f alone, CoreText's `kerx`
 # format 1 history (an eight-slot ring that lists walk without popping, reset ignored), which neither the 15.1.0
 # note nor the shipped `kerx` digest describes.
 PARTIALS = {"25a-hist": "25a"}
-# Labels of the spike's generators that mean "inside the stated condition" (newer generators use "in").
+# The fewest changed cases a named part of a unit's condition (`in:<part>`) gets in the selection.
+MIN_PART = 3
+# Labels of the spike's generators that mean "inside the stated condition" (newer generators use "in", or
+# "in:<stratum>" where the generator knows which part of the condition a candidate exercises).
 LEGACY_INSIDE = {
-    "1": {"letter", "mark", "latin"},
-    "5": {"start"},
     "21": {"kern-gpos-novkrn-v-ttb-vkrn", "kern-nogpos-v-ttb-vkrn"},
     "22": {"trak-stat-ttb", "trak-stat-btt"},
     "23": {"kerx-gsub-gpos-nokern"},
@@ -52,7 +59,11 @@ LEGACY_INSIDE = {
 def inside(c: dict) -> bool:
     """True when the candidate sits inside its unit's stated condition (unlabelled candidates count as inside)."""
     nb = c.get("nb", "")
-    return nb in ("in", "") or nb in LEGACY_INSIDE.get(c["unit"], ())
+    return (
+        nb in ("in", "")
+        or nb.startswith("in:")
+        or nb in LEGACY_INSIDE.get(c["unit"], ())
+    )
 
 
 def left_out(c: dict) -> bool:
@@ -107,12 +118,14 @@ def classify(
     if missing:
         raise SystemExit(f"partial reverts without outputs: {missing}")
     adders = {u: read_build(runs, b) for u, b in ADDERS.items()}
+    missing = sorted(ADDERS[u] for u, r in adders.items() if r is None)
+    if missing:
+        raise SystemExit(f"forward builds without outputs: {missing}")
     by_window: dict[int, list[str]] = defaultdict(list)
     for u in reverts:
         by_window[WINDOW_INDEX[units[u]["window"]]].append(u)
-    for u, outputs in adders.items():
-        if outputs is not None:
-            by_window[WINDOW_INDEX[units[u]["window"]]].append(u)
+    for u in adders:
+        by_window[WINDOW_INDEX[units[u]["window"]]].append(u)
     stats: Counter = Counter()
     rows = []
     for line in meta.read_text().splitlines():
@@ -121,7 +134,7 @@ def classify(
         outs = [r.get(cid) for r in rel]
         rv = {u: r.get(cid) for u, r in rk.items()}
         pv = {p: r.get(cid) for p, r in partial.items()}
-        ad = {u: (r.get(cid) if r else None) for u, r in adders.items()}
+        ad = {u: r.get(cid) for u, r in adders.items()}
         everything = [*outs, *rv.values(), *pv.values()]
         if any(o is None for o in everything) or any(
             o.startswith("!") and o != "!nobuild" for o in everything
@@ -174,6 +187,7 @@ def classify(
 
 def yields(rows: list[dict]) -> dict[str, dict[str, int]]:
     table: dict[str, Counter] = defaultdict(Counter)
+    inputs: dict[str, set[tuple]] = defaultdict(set)
     for c in rows:
         table[c["unit"]]["candidates"] += 1
         table[c["unit"]][c["class"]] += 1
@@ -186,8 +200,13 @@ def yields(rows: list[dict]) -> dict[str, dict[str, int]]:
                 table[c["unit"]]["attributed-elsewhere"] += 1
             elif not inside(c):
                 table[c["unit"]]["changed-off-inside"] += 1
+            else:
+                inputs[c["unit"]].add(input_key(c))
         if c["class"] == "held" and not inside(c):
             table[c["unit"]]["boundary-held"] += 1
+    # The distinct inside inputs: what the draw of a unit's changed cases can take.
+    for u, keys in inputs.items():
+        table[u]["inside-distinct"] = len(keys)
     return {u: dict(v) for u, v in sorted(table.items())}
 
 
@@ -199,6 +218,23 @@ def recorded_cuts() -> dict[str, str]:
 
 def opaque(cid: str, salt: str) -> str:
     return hashlib.sha256(f"{salt}:{cid}".encode()).hexdigest()[:12]
+
+
+def input_key(c: dict) -> tuple:
+    """What a case program reads; two candidates with the same key are the same case."""
+    return (c.get("drv", "shape"), c["font"], c["idx"], c["opts"], tuple(c["text"]))
+
+
+def distinct(items: list[dict]) -> list[dict]:
+    """The first candidate of each input, in candidate order."""
+    seen: set[tuple] = set()
+    out = []
+    for c in items:
+        key = input_key(c)
+        if key not in seen:
+            seen.add(key)
+            out.append(c)
+    return out
 
 
 def spread(items: dict[str, list[dict]], total: int) -> list[dict]:
@@ -227,11 +263,15 @@ def select(
 ) -> tuple[list[dict], dict[str, str]]:
     """Changed cases per unit (at most `per_unit`), duals per unit spread over its boundaries, broad cases.
 
-    Units with fewer than `floor` changed cases are not graded; they are returned with the reason.
+    Each input counts once: exact repeats are dropped before the draw (the first candidate of an input stays), for
+    the changed cases and the duals of every unit and for the broad cases. Every unit draws from random streams of
+    its own (the seed and the unit), so one unit's candidates do not move another unit's draw. Each part of a unit's
+    condition that a generator names (`in:<part>`) gets at least MIN_PART changed cases, when it has that many;
+    the rest are drawn at random from the whole unit. Units with fewer than `floor` distinct changed cases are not
+    graded; they are returned with the reason.
     """
-    rng = random.Random(seed)
     changed: dict[str, list[dict]] = defaultdict(list)
-    held: dict[str, dict[str, list[dict]]] = defaultdict(lambda: defaultdict(list))
+    held_rows: dict[str, list[dict]] = defaultdict(list)
     broad_rows: list[dict] = []
     for c in rows:
         if left_out(c):
@@ -239,9 +279,16 @@ def select(
         if c["class"] == "changed" and inside(c):
             changed[c["attributed"]].append(c)
         elif c["class"] == "held" and not inside(c):
-            held[c["unit"]][c["nb"]].append(c)
+            held_rows[c["unit"]].append(c)
         elif c["class"] == "broad":
             broad_rows.append(c)
+    changed = {u: distinct(items) for u, items in changed.items()}
+    held: dict[str, dict[str, list[dict]]] = {}
+    for u, items in held_rows.items():
+        strata: dict[str, list[dict]] = defaultdict(list)
+        for c in distinct(items):
+            strata[c["nb"]].append(c)
+        held[u] = strata
     cut = {
         u: f"{len(changed.get(u, []))} attributable changed cases inside the stated condition"
         for u in units
@@ -252,15 +299,24 @@ def select(
     for u, items in sorted(changed.items()):
         if u in cut:
             continue
-        rng.shuffle(items)
-        chosen += [("changed", c) for c in items[:per_unit]]
+        random.Random(f"{seed}:{u}:changed").shuffle(items)
+        parts: dict[str, list[dict]] = defaultdict(list)
+        for c in items:
+            if c["unit"] == u and c.get("nb", "").startswith("in:"):
+                parts[c["nb"]].append(c)
+        first = [c for _, pool in sorted(parts.items()) for c in pool[:MIN_PART]]
+        taken = {id(c) for c in first}
+        draw = first + [c for c in items if id(c) not in taken]
+        chosen += [("changed", c) for c in draw[:per_unit]]
     for u, strata in sorted(held.items()):
         if u in cut:
             continue
-        for pool in strata.values():
+        rng = random.Random(f"{seed}:{u}:dual")
+        for _, pool in sorted(strata.items()):
             rng.shuffle(pool)
         chosen += [("dual", c) for c in spread(strata, duals)]
-    rng.shuffle(broad_rows)
+    broad_rows = distinct(broad_rows)
+    random.Random(f"{seed}:broad").shuffle(broad_rows)
     chosen += [("broad", c) for c in broad_rows[:broad]]
     out = []
     for kind, c in chosen:

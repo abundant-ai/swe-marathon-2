@@ -10,6 +10,9 @@
 #   noop-api   the four functions the 15.1.0 and 15.2.0 notes add, declared exactly as the notes give them (NOTES,
 #              default /env/docs/notes.md, the instruction's notes as a file) in the headers they name, with
 #              bodies that return NULL, 0 or false and write nothing; the API probes compile and run against it
+#   noop-api-zero  the same declarations, with bodies that also write 0 through a non-NULL glyphs_count and
+#              buf_consumed (what the notes' negative clauses describe: "possibly zero", "0 when nothing is
+#              consumed"); both no-op stubs must score 0.000 (QA R2-09 N1)
 # Runs inside the pipeline image only.
 set -eu
 BASE=$1
@@ -18,7 +21,7 @@ NOTES=${3:-/env/docs/notes.md}
 mkdir -p "$OUT"
 # Each stub is a copy of the base without test/, which the product build never reads (tests are disabled); the
 # shared machine's disk is tight. (Hard links do not survive Docker Desktop's file sharing.)
-for s in comments refactor nobuild empty abort noop-api; do
+for s in comments refactor nobuild empty abort noop-api noop-api-zero; do
   test ! -e "$OUT/$s"
   mkdir -p "$OUT/$s"
   (cd "$BASE" && tar -cf - --exclude=./test .) | (cd "$OUT/$s" && tar -xf -)
@@ -54,12 +57,14 @@ for name, body in (("empty", "  hb_buffer_clear_contents (buffer);\n  return tru
         s = "#include <stdlib.h>\n" + s
     p.write_text(s)
 PY
-# noop-api: the declarations, copied from the notes' C blocks into the named headers (inside HB_BEGIN_DECLS, so
-# they keep C linkage), and bodies that do nothing at the end of the sources that hold their neighbours
-python3 - "$OUT/noop-api" "$NOTES" <<'PY'
+# noop-api and noop-api-zero: the declarations, copied from the notes' C blocks into the named headers (inside
+# HB_BEGIN_DECLS, so they keep C linkage), and bodies that do nothing (noop-api) or only write 0 through the
+# out-parameters (noop-api-zero), at the end of the sources that hold their neighbours
+for s in noop-api noop-api-zero; do
+python3 - "$OUT/$s" "$NOTES" "$s" <<'PY'
 import re, sys, textwrap
 from pathlib import Path
-tree, notes = Path(sys.argv[1]), Path(sys.argv[2])
+tree, notes, stub = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3]
 blocks = [textwrap.dedent(b) for b in re.findall(r"^ *```c\n(.*?)^ *```$", notes.read_text(), re.M | re.S)]
 HEADERS = {
     "hb_buffer_deserialize_glyphs2": "hb-buffer.h",
@@ -67,20 +72,26 @@ HEADERS = {
     "hb_font_create_without_funcs_or_fail": "hb-font.h",
     "hb_ot_layout_get_extender_glyphs": "hb-ot-layout.h",
 }
+ZERO = stub == "noop-api-zero"
+CONSUMED = "  if (buf_consumed)\n    *buf_consumed = 0;\n" if ZERO else ""
+COUNT = "  if (glyphs_count)\n    *glyphs_count = 0;\n" if ZERO else ""
 BODIES = {
-    "hb-buffer-serialize.cc": """
+    "hb-buffer-serialize.cc": f"""
 hb_bool_t
-hb_buffer_deserialize_glyphs2 (hb_buffer_t *, const char *, int, unsigned int *, hb_font_t *,
+hb_buffer_deserialize_glyphs2 (hb_buffer_t *, const char *, int, unsigned int *buf_consumed, hb_font_t *,
 			       hb_buffer_serialize_format_t)
-{
+{{
+{CONSUMED}  (void) buf_consumed;
   return false;
-}
+}}
 
 hb_bool_t
-hb_buffer_deserialize_unicode2 (hb_buffer_t *, const char *, int, unsigned int *, hb_buffer_serialize_format_t)
-{
+hb_buffer_deserialize_unicode2 (hb_buffer_t *, const char *, int, unsigned int *buf_consumed,
+				hb_buffer_serialize_format_t)
+{{
+{CONSUMED}  (void) buf_consumed;
   return false;
-}
+}}
 """,
     "hb-font.cc": """
 hb_font_t *
@@ -89,13 +100,14 @@ hb_font_create_without_funcs_or_fail (hb_face_t *)
   return nullptr;
 }
 """,
-    "hb-ot-layout.cc": """
+    "hb-ot-layout.cc": f"""
 unsigned
-hb_ot_layout_get_extender_glyphs (hb_face_t *, hb_script_t, hb_language_t, unsigned, unsigned *,
+hb_ot_layout_get_extender_glyphs (hb_face_t *, hb_script_t, hb_language_t, unsigned, unsigned *glyphs_count,
 				  hb_codepoint_t *)
-{
+{{
+{COUNT}  (void) glyphs_count;
   return 0;
-}
+}}
 """,
 }
 found = set()
@@ -109,10 +121,12 @@ for block in blocks:
     at = s.rindex("\nHB_END_DECLS\n")
     h.write_text(s[:at] + "\n" + block.rstrip("\n") + "\n" + s[at:])
 if found != set(HEADERS):
-    raise SystemExit(f"noop-api: {notes} does not declare {sorted(set(HEADERS) - found)}")
+    raise SystemExit(f"{stub}: {notes} does not declare {sorted(set(HEADERS) - found)}")
 for name, body in BODIES.items():
     p = tree / "src" / name
     p.write_text(p.read_text() + body)
 PY
+done
 grep -c "unused_helper" "$OUT/refactor/src/hb-shape.cc"
+grep -c "glyphs_count = 0" "$OUT/noop-api-zero/src/hb-ot-layout.cc"
 echo "stubs: $(ls "$OUT" | tr '\n' ' ')"

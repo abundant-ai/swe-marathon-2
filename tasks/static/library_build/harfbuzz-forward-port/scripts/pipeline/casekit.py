@@ -6,13 +6,16 @@ shipped. Generator modules (`gen_*.py` beside this file) import from here.
 A case record is a dict with:
 - `unit`: the unit id (see units.tsv), or `broad`;
 - `kind`: `cand` (the sweep decides what it becomes) or `broad`;
-- `drv`: which driver runs it: `shape` (tests/driver/hbdrv.c), `api` (hbapi.c), or `api48`, `api49`, `api51` (the
-  separately compiled probes of functions 14.3.0 does not have);
+- `drv`: which driver runs it: `shape` (tests/driver/hbdrv.c), `api` (hbapi.c), `meta` (hbmeta.c), or `api33`,
+  `api48`, `api49`, `api51` (the separately compiled probes of what 14.3.0 does not have: the script constants of
+  unit 33 and the functions of units 48, 49 and 51);
 - `font`, `idx`: the font file and face index;
 - `opts`: `key=value` pairs joined by `;` (shaping options, or for the API drivers `cmd=NAME;...`);
 - `text`: a list of integers (code points for shaping; command arguments for the API drivers);
-- `nb`: which side of the unit's stated condition the candidate sits on: `in` (inside it, expected to change), or
-  the name of a boundary neighbour (one stated condition negated, expected to stay as 14.3.0 has it).
+- `nb`: which side of the unit's stated condition the candidate sits on: `in` or `in:<part>` (inside it, expected
+  to change; the part names which piece of the condition, where the generator knows it), `b:<name>` (a boundary
+  neighbour: one stated condition negated, expected to stay as 14.3.0 has it), or `x:<name>` (left out: swept for
+  the record, never graded).
 """
 
 from __future__ import annotations

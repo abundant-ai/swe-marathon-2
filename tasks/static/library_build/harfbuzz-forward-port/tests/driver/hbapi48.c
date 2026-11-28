@@ -15,7 +15,11 @@
  *   bo:<x embolden>,<y embolden>,<in place>|ni:<named instance>|nc:<normalized coords>|dc:<design coords>|
  *   q:<nominal glyph of U+0041 found>,<its glyph>,<advance of glyph 1>,<font extents found>,<ascender>,<descender>
  *   and, with funcs=1, |s:<shaped glyphs>|x:<shaped advances>.
- * Floats are printed as f:<IEEE-754 bits in hex>. A setup failure prints !err:<word>.
+ * Floats print rounded to three decimal places, f:<decimal>, as hbmeta prints them. A setup failure prints
+ * !err:<word>.
+ * The probe runs with HB_FONT_FUNCS=ot in its environment, set before its first HarfBuzz call: the note says the
+ * function does not consult the variable, and a font with the OpenType font functions installed would answer the
+ * q: queries.
  */
 #include <hb.h>
 
@@ -88,12 +92,18 @@ parse_args (const char *s, uint32_t *out, int max)
   return n;
 }
 
+/* As hbmeta's put_float: three decimal places, negative zero as 0.000, NaN as nan. */
 static void
 put_float (float v)
 {
-  uint32_t u;
-  memcpy (&u, &v, sizeof (u));
-  printf ("f:%08x", u);
+  char s[64];
+  if (v != v)
+  {
+    printf ("f:nan");
+    return;
+  }
+  snprintf (s, sizeof (s), "%.3f", (double) v);
+  printf ("f:%s", strcmp (s, "-0.000") ? s : "0.000");
 }
 
 /* Client font functions: code point U maps to glyph U - 0x20 (none below 0x21), glyph g advances 100 + 10 g. */
@@ -262,6 +272,8 @@ int
 main (void)
 {
   static char line[MAX_LINE];
+  if (setenv ("HB_FONT_FUNCS", "ot", 1))
+    return 1;
   while (fgets (line, sizeof (line), stdin))
   {
     size_t n = strlen (line);

@@ -84,9 +84,10 @@ our product can observe.
 
 **14.5.0**
 
-- Update the Unicode data and script support to Unicode 18.0, including script values for Jurchen, Proto-Cuneiform
-  and Seal, and the corresponding shaping support. New API: `HB_SCRIPT_JURCHEN` (`Jurc`), `HB_SCRIPT_PROTO_CUNEIFORM`
-  (`Pcun`) and `HB_SCRIPT_SEAL` (`Seal`).
+- Update the Unicode data and script support to Unicode 18.0, including script values for Jurchen, Proto-Cuneiform and
+  Seal, and the corresponding shaping support: the three scripts go through the Universal Shaping Engine, as the other
+  scripts it shapes do, and Jurchen and Seal take the ideographic baseline. New API: `HB_SCRIPT_JURCHEN` (`Jurc`),
+  `HB_SCRIPT_PROTO_CUNEIFORM` (`Pcun`) and `HB_SCRIPT_SEAL` (`Seal`).
 
 **14.5.1**
 

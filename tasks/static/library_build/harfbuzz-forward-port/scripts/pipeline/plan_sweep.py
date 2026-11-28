@@ -2,16 +2,21 @@
 repeated base runs, and the classification into the private selection (development tooling).
 
 usage: plan_sweep.py PLAN_OUT --tag TAG [--seed N] [--per-unit N]
+       plan_sweep.py forward-33 TREE   (inside the pipeline image: the code half of unit 33, applied forward)
 
 Builds that already exist under CACHE/work/out/hb are reused (relinked); the missing releases, the regenerated base,
-reverts, partial reverts (PARTIALS) and mutants (MUTANTS: W and the verification-gap companions) are built.
-Candidates go to a fresh /work/cand-TAG and outputs to a fresh /work/runs-TAG, so no sweep overwrites another.
+unit 33's forward build (fwd-33), reverts, partial reverts (PARTIALS) and mutants (MUTANTS: W and the
+verification-gap companions) are built. The probes that hb_build.sh and relink.sh do not compile (EXTRA_PROBES) are
+compiled for every build before the runs. Candidates go to a fresh /work/cand-TAG and outputs to a fresh
+/work/runs-TAG, so no sweep overwrites another.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -39,9 +44,39 @@ RELEASE_BUILDS = {
         "meson_extra": "-Dc_args=-ffp-contract=off -Dcpp_args=-ffp-contract=off",
     },
 }
+# Unit 33 is added forward (classify.ADDERS). fwd-33 is 14.3.0 with its Unicode tables regenerated from the shipped
+# Unicode 18 files (regen_unicode.sh, as for regen-14.3.0) plus the code half of bf93d8671: the cases that route
+# Jurchen, Proto-Cuneiform and Seal through USE (hb-ot-shaper.hh) and give Jurchen and Seal the ideographic baseline
+# (hb-ot-layout.cc). Both hunks apply to 14.3.0 as they are.
+FWD33_PATCH = Path("/work/patches-lib/33/001-bf93d8671.patch")
+FWD33_FILES = ("src/hb-ot-layout.cc", "src/hb-ot-shaper.hh")
+# Probes that hb_build.sh and relink.sh do not list; compiled here, with their commands, for every build (none now:
+# hbapi33 joined their lists).
+EXTRA_PROBES: tuple[str, ...] = ()
+
+
+def forward_33(tree: Path) -> None:
+    """Apply the code hunks of bf93d8671 (FWD33_FILES) forward to TREE."""
+    parts = re.split(r"(?m)^(?=diff --git )", FWD33_PATCH.read_text())
+    keep = [
+        p for p in parts if any(p.startswith(f"diff --git a/{f} ") for f in FWD33_FILES)
+    ]
+    if len(keep) != len(FWD33_FILES):
+        sys.exit(
+            f"forward-33: {FWD33_PATCH} does not hold one section for each of {FWD33_FILES}"
+        )
+    subprocess.run(
+        ["patch", "-p1", "--forward", "-s", "--no-backup-if-mismatch", "-d", str(tree)],
+        input="".join(keep),
+        text=True,
+        check=True,
+    )
 
 
 def main() -> None:
+    if len(sys.argv) == 3 and sys.argv[1] == "forward-33":
+        forward_33(Path(sys.argv[2]))
+        return
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("plan", type=Path)
     p.add_argument("--seed", type=int, default=20261127)
@@ -94,6 +129,14 @@ def main() -> None:
             " && rm -r /work/regen/tree"
         )
         ops.append({"op": "sh", "args": ["sh", "-c", regen], "cpus": 6})
+    if "fwd-33" not in have:
+        fwd = (
+            "test ! -e /work/fwd33/tree && sh /pipe/regen_unicode.sh /work/fwd33/tree"
+            f" && {py} -I /pipe/plan_sweep.py forward-33 /work/fwd33/tree"
+            " && sh /pipe/hb_build.sh /work/fwd33/tree /work/out/hb/fwd-33 '' 4 on"
+            " && rm -r /work/fwd33/tree"
+        )
+        ops.append({"op": "sh", "args": ["sh", "-c", fwd], "cpus": 6})
     reverts = []
     for unit, _window, release, *_ in units:
         if unit in NO_REVERT:
@@ -146,9 +189,19 @@ def main() -> None:
             }
         )
     builds = [
-        "rel-14.3.0", "rel-15.0.0", "rel-15.1.0", "rel-15.2.0", "rel-15.2.0-nofma", "regen-14.3.0",
+        "rel-14.3.0", "rel-15.0.0", "rel-15.1.0", "rel-15.2.0", "rel-15.2.0-nofma", "regen-14.3.0", "fwd-33",
         *(f"rk-{u}" for u in reverts), *(f"rk-{p}" for p in PARTIALS), *MUTANTS, "rk-ALL",
     ]  # fmt: skip
+    # The probes hb_build.sh does not list, for every build (a probe a build cannot compile is left absent, and
+    # run_cases.sh then answers !nobuild for its cases, as for the others).
+    compile_extra = (
+        'for OUT in /work/out/hb/*; do [ -f "$OUT/lib/libharfbuzz.a" ] || continue;'
+        f' for d in {" ".join(EXTRA_PROBES)}; do rm -f "$OUT/$d";'
+        ' { cc -O2 -Werror=implicit-function-declaration -c -I"$OUT/include/harfbuzz" -o "/tmp/$d.o" "/drv/$d.c"'
+        ' && c++ -o "$OUT/$d" "/tmp/$d.o" "$OUT/lib/libharfbuzz.a" -lm; } > "$OUT/$d.compile.log" 2>&1'
+        ' || rm -f "$OUT/$d"; done; done'
+    )
+    ops.append({"op": "sh", "args": ["sh", "-c", compile_extra], "cpus": 4})
     for b in builds:
         ops.append(
             {"op": "sh", "args": ["sh", "/pipe/run_all.sh", b, cand, runs], "cpus": 2}

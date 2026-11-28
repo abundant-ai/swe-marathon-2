@@ -4,9 +4,10 @@ glyphs, glyph caches, mark attachment, fallback mark positioning, glyph flags an
 Runs inside the pipeline image only (it builds fonts with fontTools and reads the downloaded fonts). Development
 tooling, never shipped. Every synthetic font here is ours: box outlines and the one table feature a unit needs.
 
-Each generator labels its candidates with `nb`: `in` inside the unit's stated condition, or the boundary
-neighbour (one stated condition negated) a candidate sits on. Inputs that 15.2.0 changes beyond what a note says
-are not generated; each generator's docstring names them.
+Each generator labels its candidates with `nb`: `in` inside the unit's stated condition (`in:<part>` where the
+generator knows which part of it), or the boundary neighbour (one stated condition negated) a candidate sits on.
+Inputs that 15.2.0 changes beyond what a note says are not generated, or are generated with an `x:` label and never
+graded; each generator's docstring names them.
 
 Units 28 and 30 have no generator: no shaping output shows their change. At the graphemes cluster level every
 syllabic shaper flags each syllable before it reorders it, so the flags 15.2.0 adds are already set; and the `avar`
@@ -307,9 +308,35 @@ U13_SCRIPTS = {
 }
 
 
+# Khmer: consonants, vowel signs and other signs that have no decomposition and are not split vowels (the Khmer
+# shaper splits U+17BE..U+17C0, U+17C4 and U+17C5 itself and never recomposes them), and the Latin letters whose
+# canonical decomposition is one base letter and one combining mark, with their parts.
+U13_KHMER_CONS = list(range(0x1780, 0x17A3))
+U13_KHMER_MARKS = [0x17B6, *range(0x17B7, 0x17BE), 0x17C6, 0x17C7, 0x17C8, 0x17C9]
+
+
+def _u13_latin() -> dict[int, tuple[int, int]]:
+    """Latin-1 and Latin Extended-A letters whose canonical decomposition is a basic Latin letter and a mark."""
+    out = {}
+    for cp in range(0xC0, 0x180):
+        d = unicodedata.decomposition(chr(cp))
+        if not d or d.startswith("<"):
+            continue
+        parts = [int(x, 16) for x in d.split()]
+        if (
+            len(parts) == 2
+            and chr(parts[0]).isascii()
+            and chr(parts[0]).isalpha()
+            and 0x300 <= parts[1] < 0x370
+        ):
+            out[cp] = (parts[0], parts[1])
+    return out
+
+
 def _u13_fonts(out: Path) -> None:
     """Devanagari, Bengali, Myanmar and Balinese letters, their precomposed letters and the parts of those, and no
-    layout tables: a decomposed letter shows as two glyphs, a recomposed one as one."""
+    layout tables: a decomposed letter shows as two glyphs, a recomposed one as one. u13-khmer: Khmer letters and
+    signs, and Latin precomposed letters with their parts, also without layout tables."""
     glyphs = [(".notdef", 500, "base"), ("space", 250, "empty")]
     cmap = {0x20: "space"}
     for letters, recomposed, excluded, marks, parts in U13_SCRIPTS.values():
@@ -320,6 +347,20 @@ def _u13_fonts(out: Path) -> None:
             glyphs.append((f"u{cp:04X}", 0, "above"))
             cmap[cp] = f"u{cp:04X}"
     _builder("u13-indic", glyphs, cmap).save(str(out / "u13-indic.ttf"))
+    latin = _u13_latin()
+    bases = sorted(
+        {b for b, _ in latin.values()} | {*range(0x41, 0x5B), *range(0x61, 0x7B)}
+    )
+    marks = sorted({m for _, m in latin.values()})
+    glyphs = [(".notdef", 500, "base"), ("space", 250, "empty")]
+    cmap = {0x20: "space"}
+    for i, cp in enumerate(U13_KHMER_CONS + bases + sorted(latin)):
+        glyphs.append((f"u{cp:04X}", 500 + 10 * (i % 25), "base"))
+        cmap[cp] = f"u{cp:04X}"
+    for cp in U13_KHMER_MARKS + marks:
+        glyphs.append((f"u{cp:04X}", 0, "above"))
+        cmap[cp] = f"u{cp:04X}"
+    _builder("u13-khmer", glyphs, cmap).save(str(out / "u13-khmer.ttf"))
 
 
 def _decomposes(f: Font, cp: int) -> bool:
@@ -333,15 +374,22 @@ def _decomposes(f: Font, cp: int) -> bool:
 def gen_u13(rng: random.Random, noto, synth: Path, n: int) -> Iterator[dict]:
     """Unit 13: precomposed characters no longer stay decomposed in text with no marks.
 
-    Inside: a precomposed letter the shaper decomposes and recomposes (Devanagari U+0929, U+0934, Bengali U+09DF,
-    Myanmar U+1026, Balinese letters with the tedung), in a font with glyphs for it and its parts, in text whose
-    input has no marks. Our font has no layout tables, so the decomposed letter shows as two glyphs; Noto Sans
-    Myanmar shows U+1026 the same way (the other Noto fonts compose the parts back with `GSUB`, so they show
-    nothing). Neighbours: the same text with a mark elsewhere, which recomposes in every release (`b:has-mark`);
-    Devanagari composition exclusions (U+0958..U+095F), which stay decomposed (`b:exclusion`); and Latin
-    precomposed letters the font has, which the default shaper never decomposes (`b:other-shaper`). Latin letters
-    the font lacks are left out: their partial recomposition is a 15.2.0 change outside the four shapers the note
-    names. Khmer has no precomposed letter that is not itself a mark, so it has no inside case.
+    Inside (`in:<script>`): a precomposed letter the shaper decomposes and recomposes (Devanagari U+0929, U+0934,
+    Bengali U+09DF, Myanmar U+1026, Balinese letters with the tedung), in a font with glyphs for it and its parts,
+    in text whose input has no marks. Our font has no layout tables, so the decomposed letter shows as two glyphs;
+    Noto Sans Myanmar shows U+1026 the same way (the other Noto fonts compose the parts back with `GSUB`, so they
+    show nothing). Neighbours: the same text with a mark elsewhere, which recomposes in every release
+    (`b:has-mark`); and Latin precomposed letters the font has, which the default shaper never decomposes
+    (`b:other-shaper`). Devanagari composition exclusions (U+0958..U+095F), which stay decomposed in every release,
+    are left out (`x:exclusion`): read literally, "precomposed characters that stayed decomposed" covers them too.
+    Latin letters the font lacks are left out: their partial recomposition is a 15.2.0 change outside the four
+    shapers the note names.
+
+    Khmer has no precomposed letter that is not itself a mark (its split vowels are marks, and the Khmer shaper
+    never recomposes them), so its cases are those of upstream's own test for this fix: a Latin precomposed letter
+    in text the Khmer shaper shapes (`script=Khmr`, or Khmer text before it), in u13-khmer (`in:khmr`); the same
+    text with a Khmer vowel sign after a consonant (`b:has-mark`); the letter in Latin text in the same font
+    (`b:other-shaper`). They follow the main loop, so the other candidates are as before.
     """
     ours = Font(synth / "u13-indic.ttf")
     pools = [
@@ -351,8 +399,9 @@ def gen_u13(rng: random.Random, noto, synth: Path, n: int) -> Iterator[dict]:
             [cp for cp in exc if _decomposes(ours, cp)],
             cons,
             marks,
+            f"in:{script}",
         )
-        for cons, rec, exc, marks, _ in U13_SCRIPTS.values()
+        for script, (cons, rec, exc, marks, _) in U13_SCRIPTS.items()
     ]
     myanmar = noto["NotoSansMyanmar-Regular"]
     if _decomposes(myanmar, 0x1026):
@@ -364,6 +413,7 @@ def gen_u13(rng: random.Random, noto, synth: Path, n: int) -> Iterator[dict]:
                 [],
                 [cp for cp in cons if myanmar.has(cp)],
                 [cp for cp in marks if myanmar.has(cp)],
+                "in:mymr-noto",
             )
         )
     latin = noto["NotoSans-VF"]
@@ -384,7 +434,7 @@ def gen_u13(rng: random.Random, noto, synth: Path, n: int) -> Iterator[dict]:
                 cl=rng.choice((0, 1, 2)),
             )
             continue
-        path, inside, excluded, cons, marks = pools[i % len(pools)]
+        path, inside, excluded, cons, marks, label = pools[i % len(pools)]
         shape = rng.choice(
             ("in", "in", "in", "mark", "mark") + (("excl", "excl") if excluded else ())
         )
@@ -399,8 +449,33 @@ def gen_u13(rng: random.Random, noto, synth: Path, n: int) -> Iterator[dict]:
             # A mark after a consonant or after the letter itself: the input then has a mark.
             spots = [k + 1 for k, cp in enumerate(text) if cp != 0x20]
             text.insert(rng.choice(spots), rng.choice(marks))
-        nb = {"in": "in", "mark": "b:has-mark", "excl": "b:exclusion"}[shape]
+        nb = {"in": label, "mark": "b:has-mark", "excl": "x:exclusion"}[shape]
         yield case("13", "cand", path, text, nb=nb, cl=rng.choice((0, 1, 2)))
+    khmer = synth / "u13-khmer.ttf"
+    letters = sorted(_u13_latin())
+    shapes = ("in",) * 30 + ("mark",) * 40 + ("latin",) * 30
+    for shape in shapes:
+        cons = [rng.choice(U13_KHMER_CONS) for _ in range(rng.randrange(0, 4))]
+        text = list(cons)
+        text.insert(rng.randrange(1 if cons else 0, len(text) + 1), rng.choice(letters))
+        opts: dict[str, object] = {"cl": rng.choice((0, 1, 2))}
+        if shape == "latin":
+            # The same letter in Latin text: the default shaper keeps the precomposed glyph.
+            text = [rng.choice(range(0x61, 0x7B)) for _ in range(rng.randrange(0, 3))]
+            text.insert(rng.randrange(0, len(text) + 1), rng.choice(letters))
+            if rng.random() < 0.5:
+                opts["script"] = "Latn"
+            yield case("13", "cand", khmer, text, nb="b:other-shaper", **opts)
+            continue
+        if not cons or rng.random() < 0.5:
+            opts["script"] = "Khmr"
+        if shape == "mark":
+            if not cons:
+                text.insert(0, rng.choice(U13_KHMER_CONS))
+            spots = [k + 1 for k, cp in enumerate(text) if cp in U13_KHMER_CONS]
+            text.insert(rng.choice(spots), rng.choice(U13_KHMER_MARKS))
+        nb = "in:khmr" if shape == "in" else "b:has-mark"
+        yield case("13", "cand", khmer, text, nb=nb, **opts)
 
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -650,10 +725,11 @@ def gen_u16(rng: random.Random, noto, synth: Path, n: int) -> Iterator[dict]:
     comes from the buffer's not-found glyph (`nf`), given to the lowercase letters the font lacks.
 
     Inside (font u16-in): a not-found glyph G + k * 65536 before every use of a kerning or ligature first glyph
-    G, followed by its partner. Neighbours (font u16-held): an in-range not-found glyph (`b:in-range-nf`), an
-    out-of-range one that aliases no covered glyph (`b:no-alias`), and an out-of-range glyph that the font's own
-    lookups cover (`b:oor-covered`: IDs 32 and 33, beyond `maxp.numGlyphs`). An out-of-range glyph after its
-    aliased glyph is left out: 14.3.0's result then depends on the text shaped before it.
+    G, followed by its partner. Neighbours (font u16-held): an in-range not-found glyph (`b:in-range-nf`) and an
+    out-of-range one that aliases no covered glyph (`b:no-alias`). An out-of-range glyph that the font's own lookups
+    cover (IDs 32 and 33, beyond `maxp.numGlyphs`) is left out (`x:oor-covered`): every release keeps applying those
+    lookups, while "out-of-range glyph IDs" can be read as IDs at or above the font's glyph count. An out-of-range
+    glyph after its aliased glyph is left out too: 14.3.0's result then depends on the text shaped before it.
     """
     in_font, held = synth / "u16-in.ttf", synth / "u16-held.ttf"
     lower = [ord(c) for c in "abcdeghkmnrsuvwxz"]
@@ -700,7 +776,7 @@ def gen_u16(rng: random.Random, noto, synth: Path, n: int) -> Iterator[dict]:
             if nf == 33:
                 k = next(k for k, cp in enumerate(text) if cp in lower)
                 text.insert(k + 1, ord("Y"))
-            nb = "b:oor-covered"
+            nb = "x:oor-covered"
         yield case("16", "cand", held, text, nb=nb, nf=nf)
 
 
@@ -1056,10 +1132,10 @@ def gen_u29(rng: random.Random, noto, synth: Path, n: int) -> Iterator[dict]:
     layout tables. Inside: LV + archaic T at cluster levels 1 and 2. Neighbours: the same text at levels 0 and 3,
     where the three jamo form one cluster (`b:grapheme-level`); LV + a modern trailing jamo, which composes or is
     flagged by its own rule (`b:modern-trailing`); a decomposed L, V and archaic T, flagged in every release
-    (`b:jamo-sequence`). Left out (`x:after-lvt`): LVT + archaic T, which is not decomposed and stays unflagged,
-    although an LVT syllable is a Hangul syllable too. Tone marks and dotted circles are left out (units 5 and 6);
-    so are Thai and Lao, whose SARA AM decomposition 15.2.0 flags the same way although the note speaks of Hangul
-    only.
+    (`b:jamo-sequence`); LVT + archaic T, which is not decomposed and stays unflagged (`b:after-lvt`: the note names
+    a syllable "that has no final consonant", so this is the boundary a port that flags every archaic T after any
+    Hangul syllable crosses). Tone marks and dotted circles are left out (units 5 and 6); so are Thai and Lao,
+    whose SARA AM decomposition 15.2.0 flags the same way although the note speaks of Hangul only.
     """
     path = synth / "u29-hangul.ttf"
 
@@ -1085,7 +1161,7 @@ def gen_u29(rng: random.Random, noto, synth: Path, n: int) -> Iterator[dict]:
         text += core + [cp for _ in range(rng.randrange(0, 3)) for cp in filler()]
         level = rng.choice((0, 3)) if shape == "grapheme" else rng.choice((1, 2))
         nb = {"in": "in", "grapheme": "b:grapheme-level", "modern": "b:modern-trailing",
-              "lvt": "x:after-lvt", "jamo": "b:jamo-sequence"}[shape]  # fmt: skip
+              "lvt": "b:after-lvt", "jamo": "b:jamo-sequence"}[shape]  # fmt: skip
         yield case("29", "cand", path, text, nb=nb, cl=level, gf=1)
 
 
@@ -1240,10 +1316,10 @@ PER_UNIT = {
 
 W_TARGETS = {
     "12": ["b:not-per-syllable"],
-    "13": ["b:exclusion"],
+    "13": [],  # W13 moved b:exclusion, now x:exclusion
     "14": ["b:global-first"],
     "15": ["b:supported-base"],
-    "16": ["b:oor-covered"],
+    "16": [],  # W16 moved b:oor-covered, now x:oor-covered
     "17": ["b:skipped-mark"],
     "18": ["b:gpos"],
     "27": ["b:no-pair"],

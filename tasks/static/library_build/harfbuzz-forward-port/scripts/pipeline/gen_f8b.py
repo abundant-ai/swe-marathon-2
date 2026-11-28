@@ -219,27 +219,30 @@ def _fvar(fb: FontBuilder, axes: list[tuple], instances: list[dict]) -> None:
 _R = random.Random("f8b-fonts-1")
 
 # 40a: OS/2 version 5 optical size bounds, in twentieths of a point. Every third font also has a GPOS `size`
-# feature, which the OS/2 bounds take precedence over.
+# feature, which the OS/2 bounds take precedence over. Every pair sums to a multiple of 5, so the size in points,
+# (lower + upper) / 40, is a multiple of 1/8: every order of the conversion ((lower + upper) / 40, / 2 / 20,
+# * 0.025, the mean of lower / 20 and upper / 20) gives it exactly, and it has at most three decimal places.
 OPSZ_V5 = [
     (160, 480),
     (120, 240),
     (180, 1440),
     (100, 280),
-    (1, 2),
+    (2, 3),
     (20, 65535),
     (240, 360),
-    (333, 1001),
+    (333, 1002),
 ]
 OPSZ_V5 += [
-    (200, 201),
-    (12, 0xFFFE),
+    (202, 203),
+    (11, 0xFFFE),
     (480, 960),
     (60, 140),
     (7, 913),
     (1000, 3000),
     (90, 150),
-    (141, 707),
+    (141, 709),
 ]
+assert all((lo + hi) % 5 == 0 for lo, hi in OPSZ_V5)
 OPSZ_SIZE = [90, 120, 180, 240, 75, 720, 105]  # GPOS `size` design sizes in decipoints
 OPSZ_BAD = [
     (240, 240),
@@ -1576,13 +1579,14 @@ def gen_49(
     A pure API addition: every case is inside. JSTF version 1.0 tables with ExtenderGlyph lists of 0 to 12
     glyphs, scripts without an ExtenderGlyph table, language systems; calls page through the list (start offsets
     inside and past the end, counts larger and smaller than what is left), count-only calls with NULL pointers or a
-    zero count, scripts the table does not list, with and without a language. Every case ends with a call that
-    finds glyphs (`also`: a script with extender glyphs in that font, start 0, room for 16), so a function that
-    returns 0 and reports nothing fails every case, whatever the calls before it expect. Left out: a font without
-    JSTF (`x:no-jstf`: no call on its face finds anything, so a function that does nothing passes it), a NULL glyph
-    array with a nonzero count (15.2.0 leaves the count as given, which is not "the number returned"), scripts with
-    two OpenType tags (the tag the function picks is not stated), private-use language subtags that select a
-    script, and JSTF 1.1 (the 24-bit tables the notes leave out).
+    zero count, scripts the table does not list, with and without a language (`in:jstf`); and a font without JSTF,
+    where every call finds nothing (`in:no-jstf`, Noto Sans Arabic, which has the tatweel). Every case ends with a
+    call that finds glyphs (`also`: a script with extender glyphs in that font, start 0, room for 16; for the font
+    without JSTF, in the JSTF font of the same index, given as `face2`), so a function that returns 0 and reports
+    nothing, or only writes 0, fails every case, whatever the calls before it expect. Left out: a NULL glyph array
+    with a nonzero count (15.2.0 leaves the count as given, which is not "the number returned"), scripts with two
+    OpenType tags (the tag the function picks is not stated), private-use language subtags that select a script,
+    and JSTF 1.1 (the 24-bit tables the notes leave out).
     """
     scripts = [
         "Arab",
@@ -1631,12 +1635,14 @@ def gen_49(
         if mode == "null" and rng.random() < 0.5:
             opts.pop("glyphs")
         # The closing call that finds glyphs, chosen without drawing from rng (the rest of the stream stays as it
-        # was): a script of this font whose ExtenderGlyph list is not empty.
+        # was): a script of the JSTF font k whose ExtenderGlyph list is not empty, in that font's face.
         finds = [s for s, (ext, _) in sorted(JSTF_FONTS[k].items()) if ext]
-        nb = "x:no-jstf" if font == noto["NotoSansArabic-Regular"].path else "in"
-        if nb == "in":
-            also = finds[(i // len(fonts)) % len(finds)]
-            opts["also"] = also[0].upper() + also[1:]
+        also = finds[(i // len(fonts)) % len(finds)]
+        opts["also"] = also[0].upper() + also[1:]
+        nb = "in:jstf"
+        if font == noto["NotoSansArabic-Regular"].path:
+            opts["face2"] = fonts[k]
+            nb = "in:no-jstf"
         yield api_case("49", font, "ext", calls, nb=nb, drv="api49", **opts)
 
 

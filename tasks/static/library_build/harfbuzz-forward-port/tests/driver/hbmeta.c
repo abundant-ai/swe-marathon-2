@@ -8,9 +8,9 @@
  * options: semicolon-separated key=value pairs. cmd=<command> selects the command. Font settings, honoured by
  * every command that makes a font: scale=<int>[,<int>] ppem=<int>,<int> ptem=<decimal> slant=<decimal>
  * bold=<x>,<y> boldin=1 var=<tag>=<value>,... inst=<named instance>
- * Output (stdout), one line per case: id <TAB> result. A result holds integers only (lists joined with ',',
- * groups with '|', key:value pairs); a float is printed as its IEEE-754 bits, f:<8 hex digits>. A setup
- * failure prints !err:<word>.
+ * Output (stdout), one line per case: id <TAB> result. A result holds integers (lists joined with ',', groups
+ * with '|', key:value pairs) and floats, which print rounded to three decimal places as f:<decimal> (see
+ * put_float). A setup failure prints !err:<word>.
  *
  * Commands:
  *   style       arguments: style tags. hb_style_get_value() for each: f:<bits>,...
@@ -19,6 +19,8 @@
  *   baseline    arguments: baseline tags. dir=ltr|rtl|ttb|btt. With script=<ISO 15924 tag> and lang=<BCP 47>
  *               it calls hb_ot_layout_get_baseline_with_fallback2(), otherwise
  *               hb_ot_layout_get_baseline_with_fallback() with stag=<script tag> and ltag=<language tag>.
+ *   scriptbase  arguments: ISO 15924 script tags. For each, hb_ot_layout_get_horizontal_baseline_tag_for_script()
+ *               of hb_script_from_iso15924_tag(): the baseline tags, as integers. The face is not used.
  *   alts        arguments: GSUB lookup indices, collected in turn into the same two maps, which
  *               seed=<glyph>:<count>,... (decimal) fills first. hb_ot_layout_lookup_collect_glyph_alternates():
  *               r:<return values>|c:<glyph>:<count>,...|a:<key>:<glyph>,... (both maps sorted by key). The stack
@@ -148,12 +150,20 @@ parse_args (const char *s, uint32_t *out, int max)
   return n;
 }
 
+/* A float, rounded to three decimal places: f:<decimal>. Ports whose arithmetic differs from upstream's in the
+ * last bits print the same text, since no value these cases print lies within a few ulps of a rounding edge.
+ * Negative zero, and negative values that round to zero, print as 0.000; NaN prints as nan. */
 static void
 put_float (float v)
 {
-  uint32_t u;
-  memcpy (&u, &v, sizeof (u));
-  printf ("f:%08x", u);
+  char s[64];
+  if (v != v)
+  {
+    printf ("f:nan");
+    return;
+  }
+  snprintf (s, sizeof (s), "%.3f", (double) v);
+  printf ("f:%s", strcmp (s, "-0.000") ? s : "0.000");
 }
 
 /* A fresh font on the face, with the case's font settings. */
@@ -304,6 +314,14 @@ cmd_baseline (hb_face_t *face, const uint32_t *args, int n_args)
     printf ("%s%d", i ? "," : "", coord);
   }
   hb_font_destroy (font);
+}
+
+static void
+cmd_scriptbase (const uint32_t *args, int n_args)
+{
+  for (int i = 0; i < n_args; i++)
+    printf ("%s%u", i ? "," : "",
+	    (unsigned) hb_ot_layout_get_horizontal_baseline_tag_for_script (hb_script_from_iso15924_tag (args[i])));
 }
 
 /* Zero the stack below the caller. HarfBuzz 14.3.0 and 15.0.0 read a dead lambda parameter while collecting
@@ -485,6 +503,8 @@ run_case (char *line)
   printf ("%s\t", id);
   if (!strcmp (cmd, "faceorfail"))
     cmd_faceorfail (path, index);
+  else if (!strcmp (cmd, "scriptbase"))
+    cmd_scriptbase (args, n_args);
   else
   {
     hb_face_t *face = get_face (path, index);

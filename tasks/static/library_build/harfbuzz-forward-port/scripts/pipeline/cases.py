@@ -70,9 +70,10 @@ def gen_indic_init(rng: random.Random, fonts: list[Font], n: int) -> Iterator[di
     """Unit 1: no `init` on a first syllable that follows a letter or mark in the pre-context.
 
     Only fonts whose `init` substitutes a pre-base vowel sign can show the change. Pre-contexts: a letter or a mark
-    (changed), or nothing, a space, punctuation or a digit (neighbours that keep `init`); a first syllable later in
-    the text is another neighbour. Format characters such as ZWJ are left out as pre-context: 15.2.0 treats them as
-    it treats letters, which the note does not say.
+    (changed: `in:letter`, `in:mark`, `in:latin`), or nothing, a space, punctuation or a digit (neighbours that keep
+    `init`: `b:none`, `b:space`, `b:punct`, `b:digit`); a first syllable later in the text is another neighbour
+    (`b:later`). Format characters such as ZWJ are left out as pre-context: 15.2.0 treats them as it treats letters,
+    which the note does not say.
     """
     usable = []
     for f in fonts:
@@ -114,7 +115,10 @@ def gen_indic_init(rng: random.Random, fonts: list[Font], n: int) -> Iterator[di
             text = [*pre, rng.choice((0x20, *pre)), *text]
         elif pre:
             opts["pre"] = ",".join(f"{cp:X}" for cp in pre)
-        yield case("1", "cand", f, text, nb=pre_kind, **opts)
+        inside = pre_kind in ("letter", "mark", "latin")
+        yield case(
+            "1", "cand", f, text, nb=f"{'in' if inside else 'b'}:{pre_kind}", **opts
+        )
 
 
 def gen_use_space(rng: random.Random, fonts: list[Font], n: int) -> Iterator[dict]:
@@ -139,10 +143,11 @@ def gen_hangul_tone(rng: random.Random, fonts: list[Font], n: int) -> Iterator[d
     """Unit 5: a Hangul tone mark at the start of the text gets only one dotted circle.
 
     The start of the text is the client's beginning-of-text flag: 14.3.0 then gives a tone mark that opens the text
-    the dotted circle every broken cluster at the start gets, plus a second one from the Hangul shaper. Changed: a
-    tone mark opening the text, flagged. Neighbours every release treats alike: the same text without the flag, and
-    flagged text that opens with a space, a syllable or a white circle. A dotted circle already in the text before
-    the tone mark is left out: 15.2.0 changes that too, which the note does not say.
+    the dotted circle every broken cluster at the start gets, plus a second one from the Hangul shaper. Changed
+    (`in:start`): a tone mark opening the text, flagged. Neighbours every release treats alike: the same text without
+    the flag (`b:noflag`), and flagged text that opens with a space, a syllable or a white circle (`b:space`,
+    `b:syllable`, `b:white`), or a typed dotted circle with an acute (`b:dc-acute`). A dotted circle already in the
+    text before the tone mark is left out: 15.2.0 changes that too, which the note does not say.
     """
     usable = [f for f in fonts if f.has(0x302E, 0x302F, DOTTED)]
     for i in range(n):
@@ -165,7 +170,14 @@ def gen_hangul_tone(rng: random.Random, fonts: list[Font], n: int) -> Iterator[d
         opts: dict[str, object] = {"cl": rng.choice((0, 1, 2))}
         if shape != "noflag":
             opts["flags"] = "bot"
-        yield case("5", "cand", f, text, nb=shape, **opts)
+        yield case(
+            "5",
+            "cand",
+            f,
+            text,
+            nb=f"{'in' if shape == 'start' else 'b'}:{shape}",
+            **opts,
+        )
 
 
 def invalid_clusters() -> list[list[int]]:

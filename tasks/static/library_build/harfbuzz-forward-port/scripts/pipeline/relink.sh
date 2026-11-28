@@ -13,7 +13,7 @@ for OUT in "$@"; do
     cc -O2 -c -I"$OUT/include/harfbuzz" -o "$T/hbprops.o" /drv/hbprops.c
     c++ -o "$OUT/hbprops" "$T/hbprops.o" "$OUT/lib/libharfbuzz.a" -lm
   fi
-  for d in hbapi hbmeta hbapi48 hbapi49 hbapi51; do
+  for d in hbapi hbmeta hbapi33 hbapi48 hbapi49 hbapi51; do
     [ -f "/drv/$d.c" ] || continue
     rm -f "$OUT/$d"
     { cc -O2 -Werror=implicit-function-declaration -c -I"$OUT/include/harfbuzz" -o "$T/$d.o" "/drv/$d.c" \
