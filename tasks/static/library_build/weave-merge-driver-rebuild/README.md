@@ -68,15 +68,28 @@ features, reproduces the installed build on every kept case. That is a spike che
 One step, `timeout_sec` 34,560 (9.6 h); the instruction states no time budget. The two-step chain
 drafts in `notes/STEPS.md` were parked by the owner on 2026-11-26 and are kept as history only.
 
-## Verification (planned)
+## Verification
 
-One process per case, with a timeout, in a scratch directory outside any repository, with a fixed
-`HOME`, `TMPDIR`, the pinned `git` and no git configuration; the submission is built from source
-offline with the same toolchain and registry. A case passes when the exit status and the output
-bytes (or the absence of output, for status 2) equal the recorded ones. Details:
-`notes/DESIGN.md`.
+A separate verifier image (no network) builds `/app/driver` with `cargo build --release --offline`
+as an unprivileged uid with `no_new_privs` and bounded resources. It then runs every private case
+(6,329) once:
+- each case runs in a fresh root-owned directory outside any repository, with fixed `HOME` and
+  `TMPDIR`, the pinned `git` and no git configuration;
+- each case is limited to 10 s and a 4 GB address space;
+- a case passes when the exit status and the output digest equal the recorded ones.
 
-### Reward formula (draft)
+Before grading, the verifier makes sure nothing submitted can change the result:
+- it checks the delivery against the root collect hook's manifest (`environment/weave-collect/collect`):
+  - a file lost in transfer is an evaluation error;
+  - files changed after the end are refused;
+- it refuses files of the original's own published source or builds, by digest;
+- every process of the uid is killed before any result is read;
+- root's PATH is checked to hold nothing a non-root user can write;
+- `metrics.json` and `reward.txt` are written last, with `O_EXCL`.
+
+Details: `notes/DESIGN.md`, `notes/PHASE-C-REPORT.md`.
+
+### Reward formula
 
 ```
 p_f = cases passed in family f / cases kept in family f
@@ -91,16 +104,20 @@ leaves no reward file. Weights and families: `notes/DESIGN.md`.
 
 ## Hackability assessment
 
-Highest unresolved severity: 🟡 YELLOW / UNASSESSED (Phase A; nothing built).
+Highest unresolved severity: 🟡 YELLOW (row 7 is a stopgap; the real fix is Harbor's; rows 5, 6
+and 8 await their image re-runs).
 
-| # | Attack and impact | Boundary | Evidence | Mitigation (planned) | Residual risk | Next validation | Severity |
+| # | Attack and impact | Boundary | Evidence | Mitigation | Residual risk | Next validation | Severity |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | Read, copy, trace or dump the installed build | File mode, setgid, non-dumpable | None yet | `root:<group>` mode 2711, stripped, no source or cargo cache in the image | Child `git merge-file` command lines are visible in `/proc` (documented instead) | Protection probe as the agent user | 🟡 YELLOW / UNASSESSED |
-| 2 | Deliver a wrapper that calls the installed build | Separate verifier image | None yet | No original in the verifier image; the submission is rebuilt from source | None known | Oracle-wrapper probe scores 0 | 🟡 YELLOW / UNASSESSED |
-| 3 | Pass cases with trivial programs (take ours, take theirs, `git merge-file`, always one box, always exit 2) | Case filter and stub netting | None yet | Stub-solved cases dropped; per-family netting; paired accept-duals in the gate family | Combinations of trivial rules | Stub zoo at 0.000 | 🟡 YELLOW / UNASSESSED |
-| 4 | Read recorded outputs or seeds | Verifier image and permissions | None yet | Private inputs only in the verifier image, root-only | None known | Permission probe | 🟡 YELLOW / UNASSESSED |
-| 5 | Tamper with reward files; force an evaluation error | Separate verifier container | None yet | Submitted code runs as a dropped uid; reward written last | None known | Adversarial QA lens | 🟡 YELLOW / UNASSESSED |
-| 6 | Infer an evaluation from the text | Instruction, docs, help text | Cue-word sweep of the draft instruction (clean) | Requester voice; no comparison or grading vocabulary | The harness's own process line | First trajectories | 🟡 YELLOW / UNASSESSED |
+| 1 | Read, copy, trace or dump the installed build | File mode, setgid, non-dumpable | Probe as `dev` in the real agent image: read, copy, `/proc/pid/mem`, `/proc/pid/exe`, gdb attach and core dump refused; `LD_PRELOAD` ignored | `root:weaveorig` mode 2711, stripped, no source or cargo cache in the image | Child `git merge-file` command lines are visible in `/proc` (the spec states them anyway) | QA lens | 🟢 GREEN |
+| 2 | Deliver a wrapper that calls the installed build | Separate verifier image | A wrapper scores 0.0 | No original in the verifier image; the submission is rebuilt from source | None known | n/a | 🟢 GREEN |
+| 3 | Pass cases with trivial programs | Case filter and netting | 15 stub programs net 0.0000; no-op and copy-ours crates score 0.0 through the verifier | Stub-reproduced cases dropped, or kept only where they grade a stated rule and netted; paired accept-duals in the gate family | Combinations of trivial rules not in the zoo | QA lens (cheap partial credit) | 🟢 GREEN |
+| 4 | Read recorded outputs or seeds | Verifier image, permissions | The agent image holds no private or recorded file; the leak scan finds nothing in 33 public files | Private inputs only in the verifier image, root 0700 | None known | n/a | 🟢 GREEN |
+| 5 | Forge the reward, or force an evaluation error | Dropped uid, kill sweep, root-only logs | A forger (build.rs and runtime writes, links, a FIFO, a daemon) once left `reward.json` behind on the error path; fixed (see the dev log), re-run pending | `/logs/verifier` made root's 0755; thread-aware kills of the uid; every error path clears the reward names; reward written last with `O_EXCL` | None known after the fix | Forger re-run | 🟡 YELLOW until re-run |
+| 6 | Root runs a planted `tar`, `gzip` or `su` through PATH | Image PATH | Build-time gate in both images; runtime check in `verify.py`; a plant-tar canary | Explicit `ENV PATH`; `chmod -R go-w` on every PATH directory | None known | Canary run | 🟡 YELLOW until the canary run |
+| 7 | A process left behind fetches the original after the turn (egress window) and drops it into `/app/driver` | Root collect hook, tripwire | Window confirmed open on the platform (2026-11-19 canary) | Root hook kills every non-root process and records egress and processes; manifest with ctimes; late files refused; 234 digests of the original's sources and builds refused | A transformed drop-in in the seconds between the turn's end and the hook | Platform fix (keep the agent-phase network policy through collection); trial audit | 🟡 YELLOW |
+| 8 | A FIFO, device or outward link truncates the transfer (honest work scores 0) | Root collect hook, manifest | Local test through the pinned Harbor's `tar_transfer.py`: without the hook the tree arrives cut, with it whole | The hook removes such entries; a file missing against the manifest is a lost run, not 0 | Harbor versions differ in their extraction | Hook run in the real image | 🟡 YELLOW until the image run |
+| 9 | Infer an evaluation from the text | Instruction, docs, help text, hook | Cue-word sweep: 0 hits | Requester voice; no comparison framing | The harness's own process line | First trajectories | 🟢 GREEN |
 
 Licence: upstream is dual MIT OR Apache-2.0 (`weave` and `sem-core`); both licence files ship
 with the documentation and the solution.
@@ -113,13 +130,20 @@ with the documentation and the solution.
 | Determinism 3+1, stub filter and netting, mutants, oracle, amd64 sample | 2026-11-27 | 0 of 3,910 unstable; 2,388 kept; 11 stubs net 0; M-gate 0.75 (gate family only); oracle 3,910/3,910; amd64 200/200 (`notes/PHASE-B-REPORT.md`) |
 | Specification accuracy | 2026-11-27 | 16 chapters, 14,964 words; three independent reviews of every chapter against the tag, all findings fixed (harbor-lh `ops/swe-marathon-v2/qa/weave/`) |
 | First build milestone (agent and verifier images, reference 1.0, empty 0) | 2026-11-27 | reached: agent image builds the original from the pinned tag; verifier gives the upstream solution 1.0 and an empty submission 0; core-dump route refused (`notes/PHASE-B-REPORT.md`) |
+| Phase C gate (inventory, kill matrix, stub zoo, determinism, sweeps, leak scan, calibration, preflight) | 2026-11-28 | 6,329 kept of 8,990; 0 unstable; 15 stubs net 0; M-gate 0.75 (F8 only); 22 of 23 features moved by their mutant in 3+ cases; every case tied to a stated rule; preflight passes; closing image checks pending (`notes/PHASE-C-REPORT.md`, `notes/COVERAGE.md`) |
 | `harbor check` | none | not run |
 
 ## Remaining work
 
-QA (`notes/QA-PLAN.md`, at least 20 independent adversarial passes), a wider case generator (the
-routing and settling families are small), then Oddish oracle and nop baselines and pre-trial QA
-before any agent trial.
+The closing Docker checks of Phase C, queued behind the shared lock (`notes/PHASE-C-REPORT.md`
+section 6):
+- the image sweep;
+- the hook on a cluttered delivery, through a `filter="data"` extraction;
+- the forger, hostile-submission, plant-tar and non-UTF-8 re-runs;
+- the relaxed-superset mutant.
+
+Then the 20+ independent QA passes (`notes/QA-PLAN.md`), and Oddish oracle and nop baselines and
+pre-trial QA before any agent trial.
 
 ## Development log
 
@@ -179,4 +203,21 @@ Phase B: downloads, the probation spike and the first build milestone (`notes/PH
   every candidate.
 - The owner parked the chains (single step) and asked for the difficulty sizing in
   `notes/DESIGN.md` section 8.
+
+### 2026-11-28
+
+Phase C (`notes/PHASE-C-REPORT.md`).
+
+- The generator gained 51 recipes. There are 8,990 candidates and 6,329 kept cases, and 0 are
+  unstable across 3+1 runs.
+- 30 feature-removal mutants were built and run; the kill matrix is in `notes/COVERAGE.md`.
+- The stub zoo grew to 15 programs, all at 0 net.
+- The brief was rewritten in the requester's voice and the sweeps are clean.
+- The verifier was hardened.
+- From Dogwood's QA: the root PATH gate, a root collect hook with a manifest and a tripwire,
+  thread-aware kills, `/proc` read as bytes, and iterative trees.
+- A hostile run found that a forger's reward files survived on the evaluation-error path; that is
+  fixed.
+- The flat bundle passes `oddish preflight`.
+- The closing image checks wait for the shared lock.
 
