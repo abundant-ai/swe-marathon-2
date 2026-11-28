@@ -1,8 +1,10 @@
 """Run each case in its own process, as the requester's CI starts `dogwood`.
 
-Every run gets a new, empty working directory holding only that case's files, new `HOME` and
-`TMPDIR` directories, a fixed environment, pipes for its standard streams, and the brief's limits.
-A run that hangs, crashes or overruns loses only its own case.
+Every run gets a new, empty working directory holding only the files its command line names,
+new `HOME` and `TMPDIR` directories, a fixed environment, pipes for its standard streams, and the
+brief's limits. A run that hangs, crashes or overruns loses only its own case. Once a run is
+over, every process of the run's user is ended and everything it left anywhere it could write is
+removed, so runs share nothing.
 """
 
 from __future__ import annotations
@@ -17,9 +19,10 @@ import tempfile
 import time
 from pathlib import Path
 
+from . import listing
 from .contracts import Case, CaseResult, EvaluationError, Limits
 from .normalise import normalise
-from .procs import capture, end_group, end_user, remove_files_of
+from .procs import capture, clear_user, end_group, end_user, expendable, remove_tree
 
 RUNNER = "nobody"
 RUNNER_GROUP = "nogroup"
@@ -34,6 +37,7 @@ ENV = {
 
 def _limits(limits: Limits):
     def apply() -> None:
+        expendable()
         resource.setrlimit(
             resource.RLIMIT_AS, (limits.case_memory_bytes, limits.case_memory_bytes)
         )
@@ -54,6 +58,7 @@ def _can_start(limits: Limits) -> bool:
                 env=ENV,
                 user=RUNNER,
                 group=RUNNER_GROUP,
+                extra_groups=[],
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
@@ -66,6 +71,18 @@ def _can_start(limits: Limits) -> bool:
         return False
 
 
+def _stage(bundle: Path, case: Case, work: Path) -> None:
+    """Copy into `work` the bundle entries the case's command line names (all, without a list)."""
+    names = case.files if case.files is not None else sorted(os.listdir(bundle))
+    work.mkdir()
+    for name in names:
+        source = bundle / name
+        if source.is_dir():
+            shutil.copytree(source, work / name, symlinks=True)
+        elif source.is_file():
+            shutil.copyfile(source, work / name, follow_symlinks=False)
+
+
 def run_case(
     binary: Path, case: Case, bundles: Path, limits: Limits, sweep: bool = True
 ) -> tuple[object, bytes]:
@@ -73,84 +90,94 @@ def run_case(
 
     With `sweep` (one run at a time), every process of the runner is ended and whatever it left
     in the shared writable directories removed once the run is over, so runs share nothing."""
+    root = Path(tempfile.mkdtemp(prefix="case-"))
     try:
-        return _run(binary, case, bundles, limits, sweep)
+        result = _run(binary, case, bundles, limits, sweep, root)
     finally:
         if sweep:
-            remove_files_of(RUNNER)
+            clear_user(RUNNER)
+        cleaned = remove_tree(os.fsencode(root))
+    if not cleaned:
+        return "left files the grader could not remove", b""
+    return result
 
 
 def _run(
-    binary: Path, case: Case, bundles: Path, limits: Limits, sweep: bool
+    binary: Path, case: Case, bundles: Path, limits: Limits, sweep: bool, root: Path
 ) -> tuple[object, bytes]:
-    with tempfile.TemporaryDirectory(prefix="case-", ignore_cleanup_errors=True) as tmp:
-        # The run's folder stays root's (readable, not writable), so the run cannot move or
-        # replace it, or the three directories inside, which are the run's own.
-        root = Path(tmp)
-        root.chmod(0o755)
-        work, home, scratch = root / "work", root / "home", root / "tmp"
-        shutil.copytree(bundles / case.bundle, work)
-        home.mkdir()
-        scratch.mkdir()
-        for path in (home, scratch):
-            shutil.chown(path, user=RUNNER, group=RUNNER_GROUP)
-        # The private store is root-only; the run's own copy belongs to the user it runs as.
-        for dirpath, _, filenames in os.walk(work):
-            shutil.chown(dirpath, user=RUNNER, group=RUNNER_GROUP)
-            for name in filenames:
-                shutil.chown(Path(dirpath) / name, user=RUNNER, group=RUNNER_GROUP)
-        env = dict(ENV, HOME=str(home), TMPDIR=str(scratch))
-        feed = (work / case.stdin).open("rb") if case.stdin else None
-        try:
-            proc = subprocess.Popen(
-                [str(binary), *case.args],
-                cwd=work,
-                env=env,
-                user=RUNNER,
-                group=RUNNER_GROUP,
-                stdin=feed if feed is not None else subprocess.DEVNULL,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
-                start_new_session=True,
-                preexec_fn=_limits(limits),  # noqa: PLW1509 - the grader runs one case at a time, single-threaded
-            )
-        except OSError as exc:
-            # The delivered program cannot be started (not a program this machine runs, a
-            # missing loader, more than the memory limit to load): its own case fails. If the
-            # machine cannot start /bin/true the same way either, the evaluation itself fails.
-            if not _can_start(limits):
-                raise EvaluationError(f"cannot start processes: {exc}") from exc
-            return (
-                f"could not start ({errno.errorcode.get(exc.errno or 0, exc.errno)})",
-                b"",
-            )
-        finally:
-            if feed is not None:
-                feed.close()
-        try:
-            out, timed_out, overflow = capture(
-                proc, limits.case_timeout_sec, limits.case_stdout_bytes
-            )
-        finally:
-            end_group(proc)
-            if sweep:  # a process that left its group, too
-                end_user(RUNNER)
-        if overflow:
-            return "overflow", b""
-        if timed_out:
-            return "timeout", b""
-        return proc.returncode, out
+    # The run's folder stays root's (readable, not writable), so the run cannot move or replace
+    # it, or the three directories inside, which are the run's own.
+    root.chmod(0o755)
+    work, home, scratch = root / "work", root / "home", root / "tmp"
+    _stage(bundles / case.bundle, case, work)
+    home.mkdir()
+    scratch.mkdir()
+    # The private store is root-only; the run's own copy belongs to the user it runs as.
+    for path in (work, home, scratch):
+        listing.chown_tree(os.fsencode(path), RUNNER)
+    env = dict(ENV, HOME=str(home), TMPDIR=str(scratch))
+    # Standard input comes from the private store itself, which the run cannot reach.
+    feed = (
+        os.open(bundles / case.bundle / case.stdin, os.O_RDONLY | os.O_NOFOLLOW)
+        if case.stdin
+        else None
+    )
+    try:
+        proc = subprocess.Popen(
+            [str(binary), *case.args],
+            cwd=work,
+            env=env,
+            user=RUNNER,
+            group=RUNNER_GROUP,
+            extra_groups=[],
+            stdin=feed if feed is not None else subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+            preexec_fn=_limits(limits),  # noqa: PLW1509 - the grader runs one case at a time, single-threaded
+        )
+    except OSError as exc:
+        # The delivered program cannot be started (not a program this machine runs, a missing
+        # loader, more than the memory limit to load): its own case fails. If the machine cannot
+        # start /bin/true the same way either, the evaluation itself fails.
+        if not _can_start(limits):
+            raise EvaluationError(f"cannot start processes: {exc}") from exc
+        return (
+            f"could not start ({errno.errorcode.get(exc.errno or 0, exc.errno)})",
+            b"",
+        )
+    finally:
+        if feed is not None:
+            os.close(feed)
+    try:
+        out, timed_out, overflow = capture(
+            proc, limits.case_timeout_sec, limits.case_stdout_bytes
+        )
+    finally:
+        end_group(proc)
+        if sweep:  # a process that left its group, too
+            end_user(RUNNER)
+    if overflow:
+        return "overflow", b""
+    if timed_out:
+        return "timeout", b""
+    return proc.returncode, out
 
 
 def run_all(
-    binary: Path | None, cases: list[Case], bundles: Path, limits: Limits
+    binary: Path | None,
+    cases: list[Case],
+    bundles: Path,
+    limits: Limits,
+    until: float | None = None,
 ) -> list[CaseResult]:
     """Run every case under one global deadline; cases left when it passes fail.
 
     The denominator never changes: a missing binary, a timeout or the deadline fails cases,
     it does not remove them. The deadline leaves every case its full time limit, so it binds
-    only a run that overruns; cases run in a fixed order mixed across families (by a hash of
-    their ids), so what a deadline cuts is spread over them.
+    only a run that overruns, and it never passes `until` (a time.monotonic() value: the time
+    the grader keeps for itself before its own limit); cases run in a fixed order mixed across
+    families (by a hash of their ids), so what a deadline cuts is spread over them.
     """
     results: list[CaseResult] = []
     cases = sorted(cases, key=lambda c: hashlib.sha256(c.case_id.encode()).hexdigest())
@@ -158,6 +185,8 @@ def run_all(
         limits.deadline_sec,
         len(cases) * (limits.case_timeout_sec + limits.case_overhead_sec),
     )
+    if until is not None:
+        deadline = min(deadline, until)
     for case in cases:
         if binary is None:
             results.append(

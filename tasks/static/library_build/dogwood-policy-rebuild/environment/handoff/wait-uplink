@@ -1,0 +1,130 @@
+#!/usr/bin/python3 -I
+"""Wait for the uplink to come back once the session's network is cut, then end the session.
+
+Started by `reserve --watch` as root, in a session of its own, just before the work begins. A few
+public hosts are resolved once (while names still resolve) and then tried by address only, all at
+once, every INTERVAL_SECONDS with a CONNECT_SECONDS timeout. Once no host has answered for
+ARM_POLLS polls in a row, the watch is armed. On the first poll after that in which a host
+answers, it writes STATE/uplink-open.json with `first_open_at` (that poll's start),
+`last_closed_at`, `poll_seconds` (the most time between the starts of two polls) and `end_bound`
+(`first_open_at` less `poll_seconds`, which is at or after `last_closed_at`), before anything is
+ended, so nothing in the ending can lose the record; then root stops and ends every process of
+`dev` and adds how that went. Its status is in STATE/uplink.json. It needs no network to arm, and
+if no host ever answers again it waits until it is stopped.
+"""
+
+import json
+import os
+import socket
+import sys
+import threading
+import time
+
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+
+import sessionprocs
+
+STATE = "/var/lib/dogwood-handoff"
+HOSTS = ("static.crates.io", "github.com", "pypi.org")
+PORT = 443
+INTERVAL_SECONDS = 0.05
+CONNECT_SECONDS = 0.3
+POLL_SECONDS = INTERVAL_SECONDS + CONNECT_SECONDS
+# Polls with no host answering before the watch arms: about 105 s.
+ARM_POLLS = int(os.environ.get("DOGWOOD_HANDOFF_ARM_POLLS", "300"))
+USER = "dev"
+
+
+def write(name, record):
+    path = os.path.join(STATE, name)
+    tmp = path + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(record, f)
+    os.replace(tmp, path)
+
+
+def resolve():
+    found = {}
+    for host in HOSTS:
+        try:
+            infos = socket.getaddrinfo(host, PORT, socket.AF_INET, socket.SOCK_STREAM)
+            found[host] = sorted({i[4][0] for i in infos})[:2]
+        except OSError as exc:
+            found[host] = f"unresolved ({exc.__class__.__name__})"
+    return found
+
+
+def first_answering(targets):
+    answered = []
+
+    def probe(host, address):
+        try:
+            with socket.create_connection((address, PORT), timeout=CONNECT_SECONDS):
+                answered.append(host)
+        except OSError:
+            pass
+
+    workers = [threading.Thread(target=probe, args=t, daemon=True) for t in targets]
+    for w in workers:
+        w.start()
+    for w in workers:
+        w.join(CONNECT_SECONDS + 0.1)
+    return answered[0] if answered else None
+
+
+def main():
+    addresses = resolve()
+    targets = [
+        (h, a)
+        for h, found in addresses.items()
+        if isinstance(found, list)
+        for a in found
+    ]
+    status = {
+        "started_at": time.time(),
+        "pid": os.getpid(),
+        "hosts": addresses,
+        "armed": False,
+        "arm_polls": ARM_POLLS,
+        "poll_seconds": POLL_SECONDS,
+    }
+    write("uplink.json", status)
+    if not targets:
+        write("uplink.json", dict(status, error="no host resolved: not watching"))
+        return 0
+    closed = 0
+    armed = False
+    last_closed_at = None
+    while True:
+        poll_started = time.time()
+        answering = first_answering(targets)
+        if answering is None:
+            closed += 1
+            last_closed_at = poll_started
+            if not armed and closed >= ARM_POLLS:
+                armed = True
+                write("uplink.json", dict(status, armed=True, armed_at=time.time()))
+        elif armed:
+            record = {
+                "first_open_at": poll_started,
+                "last_closed_at": last_closed_at,
+                "poll_seconds": POLL_SECONDS,
+                "end_bound": poll_started - POLL_SECONDS,
+                "host": answering,
+                "opened_at": time.time(),
+            }
+            write("uplink-open.json", record)
+            stopped = sessionprocs.stop(USER, 15)
+            ended = sessionprocs.end(USER, 30)
+            write(
+                "uplink-open.json",
+                dict(record, **stopped, **ended, ended_at=time.time()),
+            )
+            return 0
+        else:
+            closed = 0
+        time.sleep(INTERVAL_SECONDS)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

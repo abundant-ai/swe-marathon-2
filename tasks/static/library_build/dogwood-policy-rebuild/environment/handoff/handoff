@@ -1,0 +1,358 @@
+#!/usr/bin/python3 -I
+"""Hand /app/dogwood-rebuild over to the release machines, as root, once the session has ended.
+
+In this order, each step bounded in time:
+1. Stop every process of `dev`, list them (with their command lines), and end them, all from
+   root; stop the uplink watch if it still waits.
+2. Give back the room `reserve` set aside, and probe whether a few public hosts answer.
+3. Work out the end of the work: the earlier of the moment the uplink watch saw a host answer
+   again (less one poll) and, for a session that ran to its limit, the work's start plus that
+   limit; else this hand-off's own start.
+4. Record every entry of the tree with the times its inode had then, before anything here changes
+   the tree.
+5. Apply the copy rules the brief states (`listing.py`): remove pipes, sockets, devices, cargo's
+   build output, names that are not UTF-8, entries nested too deep and paths too long, and links
+   to directories, out of the tree or to nothing; a link to a file of the tree becomes the relative
+   path to that file. A file that is the installed `dogwood` (a link to its inode) is removed too.
+   A tree over the copy limits, or too large for the disk to pack, is moved aside whole.
+6. Write the record (record.json) and the manifest of the tree as it is to be copied
+   (manifest.json, last) into STATE/out, which is copied beside the tree; the grader checks the
+   copied tree against the manifest.
+"""
+
+import json
+import os
+import socket
+import stat
+import subprocess
+import sys
+import threading
+import time
+
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+
+import listing
+import sessionprocs
+
+TREE = "/app/dogwood-rebuild"
+INSTALLED = "/usr/local/bin/dogwood"
+STATE = "/var/lib/dogwood-handoff"
+OUT = os.path.join(STATE, "out")
+USER = "dev"
+WORK_LIMIT_SECONDS = 34560  # the time the work is given, as in task.toml
+LIMIT_FILES = 100_000
+LIMIT_BYTES = 1 << 30
+PACK_DIR = "/tmp"  # where the copy packs the tree
+PACK_MARGIN = 64 << 20
+BEFORE_MOST = 300_000
+CHANGES_MOST = 500
+SECONDS = 480
+PROBES = (
+    ("static.crates.io", 443),
+    ("github.com", 443),
+    ("docs.rs", 443),
+    ("pypi.org", 443),
+)
+
+
+class Hand:
+    def __init__(self):
+        self.started = time.time()
+        self.record = {"started_at": self.started}
+        self.changes = []
+        self.counts = {}
+
+    def note(self, rel, change):
+        self.counts[change] = self.counts.get(change, 0) + 1
+        if len(self.changes) < CHANGES_MOST:
+            self.changes.append([rel, change])
+
+    def left(self):
+        return SECONDS - (time.time() - self.started)
+
+
+def write(name, data):
+    os.makedirs(OUT, mode=0o700, exist_ok=True)
+    path = os.path.join(OUT, name)
+    tmp = path + ".tmp"
+    try:
+        os.unlink(tmp)
+    except FileNotFoundError:
+        pass
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, "w") as f:
+        json.dump(data, f, ensure_ascii=True, separators=(",", ":"))
+    os.replace(tmp, path)
+
+
+def load(name):
+    try:
+        with open(os.path.join(STATE, name)) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return None
+
+
+def stop_watch(hand):
+    """Stop the uplink watch if it still waits (it would end `dev`'s processes too)."""
+    status = load("uplink.json") or {}
+    pid = status.get("pid")
+    if not isinstance(pid, int):
+        return
+    try:
+        with open(f"/proc/{pid}/cmdline", "rb") as f:
+            cmd = f.read()
+        if b"wait-uplink" in cmd and os.stat(f"/proc/{pid}").st_uid == 0:
+            os.kill(pid, 15)
+            hand.record["watch_stopped"] = True
+    except OSError:
+        pass
+
+
+def probe():
+    results = {f"{h}:{p}": "no answer within 3 s" for h, p in PROBES}
+
+    def reach(host, port):
+        try:
+            with socket.create_connection((host, port), timeout=3):
+                results[f"{host}:{port}"] = "open"
+        except OSError as exc:
+            results[f"{host}:{port}"] = f"closed ({exc.__class__.__name__})"
+
+    workers = [threading.Thread(target=reach, args=e, daemon=True) for e in PROBES]
+    for w in workers:
+        w.start()
+    for w in workers:
+        w.join(3.5)
+    return {
+        "checked_at": time.time(),
+        "hosts": results,
+        "any_open": "open" in results.values(),
+    }
+
+
+def end_bound(hand):
+    known = []
+    opened = load("uplink-open.json")
+    if isinstance(opened, dict) and isinstance(opened.get("end_bound"), (int, float)):
+        known.append((float(opened["end_bound"]), "uplink"))
+    try:
+        with open(os.path.join(STATE, "work-started")) as f:
+            started = float(f.read().split()[0])
+        hand.record["work_started"] = started
+        limit = started + WORK_LIMIT_SECONDS
+        if limit < hand.started:
+            known.append((limit, "limit"))
+    except (OSError, ValueError, IndexError):
+        pass
+    return min(known) if known else (hand.started, "start")
+
+
+def remove(path):
+    """Remove one entry or a whole tree, never following a link."""
+    try:
+        st = os.lstat(path)
+    except FileNotFoundError:
+        return
+    if stat.S_ISDIR(st.st_mode):
+        subprocess.run(
+            ["/bin/rm", "-rf", "--one-file-system", "--", path],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=120,
+            check=False,
+        )
+    else:
+        os.unlink(path)
+
+
+def make_tree(hand):
+    """A /app/dogwood-rebuild that is a directory: anything else there is moved aside."""
+    try:
+        st = os.lstat(TREE)
+    except FileNotFoundError:
+        os.mkdir(TREE, 0o755)
+        return "missing"
+    if stat.S_ISDIR(st.st_mode):
+        return None
+    os.rename(TREE, os.path.join(STATE, f"not-a-directory.{os.urandom(4).hex()}"))
+    os.mkdir(TREE, 0o755)
+    return "not a directory"
+
+
+def before(hand):
+    """Every entry with its own times, before anything here changes the tree."""
+    out = []
+    for item in listing.walk(os.fsencode(TREE), 1 << 30, 1 << 30):
+        st = item.st
+        kind = (
+            "d"
+            if stat.S_ISDIR(st.st_mode)
+            else "l"
+            if stat.S_ISLNK(st.st_mode)
+            else "f"
+            if stat.S_ISREG(st.st_mode)
+            else "special"
+        )
+        out.append(
+            [item.rel, kind, st.st_size, round(st.st_mtime, 3), round(st.st_ctime, 3)]
+        )
+        if len(out) >= BEFORE_MOST:
+            hand.record["before_cut_at"] = BEFORE_MOST
+            break
+    return out
+
+
+def one_pass(hand, installed):
+    """Apply the copy rules once; return whether anything changed, or None when out of time."""
+    changed = False
+    root = os.fsencode(TREE)
+    real_root = os.path.realpath(root)
+    for item in listing.walk(root):
+        if hand.left() < 60:
+            return None
+        if isinstance(item, listing.LeftOut):
+            remove(item.path)
+            hand.note(item.rel, "removed: " + item.reason)
+            changed = True
+            continue
+        if item.kind == "f":
+            if installed and (item.st.st_dev, item.st.st_ino) == installed:
+                os.unlink(item.path)
+                hand.note(item.rel, "removed: the installed dogwood")
+                changed = True
+            continue
+        if item.kind != "l":
+            continue
+        target = os.readlink(item.path)
+        real = os.path.realpath(item.path)
+        ok = False
+        if real.startswith(real_root + b"/"):
+            try:
+                ok = stat.S_ISREG(os.lstat(real).st_mode)
+            except OSError:
+                ok = False
+        if not ok:
+            os.unlink(item.path)
+            hand.note(
+                item.rel,
+                "removed: a link to a directory, out of the tree or to nothing",
+            )
+            changed = True
+            continue
+        wanted = os.path.relpath(real, os.path.dirname(item.path))
+        if wanted != target:
+            os.unlink(item.path)
+            os.symlink(wanted, item.path)
+            hand.note(item.rel, "link made relative")
+            changed = True
+    return changed
+
+
+def tidy(hand):
+    """Apply the copy rules until a pass changes nothing; False if that does not happen in time."""
+    try:
+        st = os.stat(INSTALLED)
+        installed = (st.st_dev, st.st_ino)
+    except OSError:
+        installed = None
+    for _ in range(8):
+        changed = one_pass(hand, installed)
+        if changed is None:
+            return False
+        if not changed:
+            return True
+    return False
+
+
+def room_for(size):
+    try:
+        info = os.statvfs(PACK_DIR)
+    except OSError:
+        return True
+    return not info.f_blocks or info.f_bavail * info.f_frsize >= size + PACK_MARGIN
+
+
+def aside(hand, reason):
+    """Move the whole tree out of the way (remove it, where it cannot be moved), leaving an empty
+    directory, and say why."""
+    try:
+        os.rename(TREE, os.path.join(STATE, f"refused.{os.urandom(4).hex()}"))
+    except OSError:
+        remove(TREE)
+    os.mkdir(TREE, 0o755)
+    return {"state": "refused", "reason": reason}
+
+
+def main():
+    hand = Hand()
+    write("handoff.json", {"stage": "started", "started_at": hand.started})
+    hand.record["stop"] = sessionprocs.stop(USER, 15)
+    hand.record["processes"] = sessionprocs.describe(USER)
+    hand.record["kill"] = sessionprocs.end(USER, 30)
+    stop_watch(hand)
+    for spare in ("room", "inodes"):
+        remove(os.path.join(STATE, spare))
+    hand.record["egress_after"] = probe()
+    uplink = load("uplink.json")
+    if uplink is not None:
+        hand.record["netcheck"] = dict(uplink, opened=load("uplink-open.json"))
+    bound, origin = end_bound(hand)
+    hand.record["end_bound"], hand.record["end_from"] = bound, origin
+    problem = make_tree(hand)
+    hand.record["before"] = before(hand)
+    finished = tidy(hand)
+    hand.record["changes_made"] = {"counts": hand.counts, "first": hand.changes}
+    entries = listing.listing(os.fsencode(TREE))
+    files, size = listing.totals(entries)
+    if problem == "missing":
+        manifest = {"state": "missing", "reason": "no project was delivered"}
+    elif problem is not None:
+        manifest = {"state": "missing", "reason": f"{TREE} was {problem}"}
+    elif not finished:
+        manifest = aside(hand, "the hand-off could not apply the copy rules in time")
+    elif files > LIMIT_FILES or size > LIMIT_BYTES:
+        manifest = aside(
+            hand, f"the project is over the copy limits ({files} files, {size} bytes)"
+        )
+    elif not room_for(size):
+        manifest = aside(hand, "the disk had too little room left to copy the project")
+    else:
+        manifest = {"state": "listed", "reason": None}
+    if manifest["state"] == "listed":
+        manifest.update(
+            entries=len(entries),
+            files=files,
+            bytes=size,
+            digest=listing.digest(entries),
+            listing=entries,
+        )
+    else:
+        manifest.update(
+            entries=0, files=0, bytes=0, digest=listing.digest([]), listing=[]
+        )
+    hand.record["finished_at"] = time.time()
+    write("record.json", hand.record)
+    write("manifest.json", dict(manifest, tree=TREE))
+    write(
+        "handoff.json",
+        {
+            "stage": "done",
+            "started_at": hand.started,
+            "finished_at": time.time(),
+            "state": manifest["state"],
+        },
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except Exception as exc:
+        try:
+            write("handoff.json", {"stage": "failed", "error": repr(exc)[:2000]})
+        except OSError:
+            pass
+        raise

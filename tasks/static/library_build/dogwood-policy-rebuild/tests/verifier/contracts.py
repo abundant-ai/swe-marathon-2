@@ -20,6 +20,12 @@ class Limits:
     case_overhead_sec: float = 0.25  # copying a bundle, starting and ending a run
     max_files: int = 100_000
     max_bytes: int = 1 << 30
+    max_depth: int = 32  # directories below the project root
+    verifier_sec: float = 7800.0  # task.toml's verifier timeout_sec
+    settle_sec: float = (
+        600.0  # kept back for ending the submission and writing the outputs
+    )
+    max_path: int = 1000  # bytes of a path relative to the project root
 
 
 @dataclass(frozen=True)
@@ -46,6 +52,9 @@ class Case:
     expected_rc: int
     expected_stdout: str
     stdin: str | None = None  # a bundle file given as standard input; empty when None
+    files: tuple[str, ...] | None = (
+        None  # the bundle entries the run's folder holds (all: None)
+    )
 
 
 @dataclass(frozen=True)

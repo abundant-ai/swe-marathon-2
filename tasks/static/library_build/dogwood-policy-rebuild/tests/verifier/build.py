@@ -1,15 +1,21 @@
 """Copy the delivered project and build it offline as an unprivileged user.
 
-The copy follows the brief: `target/`, links to directories, links that point outside the
-directory or nowhere (loops included), and pipes, sockets and devices are left out, and a project
-over the file or size limit is not copied (it then builds nothing). The build runs as `builder`, with no network and with no read access to the private
-cases, in its own process group; when it ends or times out, every process of `builder` is killed,
-one that left the group included.
+The copy follows the brief (`listing.py` holds the rules): it takes regular files and
+directories, and a link only when it leads to a regular file inside the project, whose content
+it copies; cargo's build output, links to directories or out of the project, pipes, sockets,
+devices, names that are not UTF-8, entries nested too deep and paths too long are left out. A
+project over the file or size limit is not copied, so it builds nothing.
+
+The build runs as `builder`, with no network, no read access to the private cases, its own
+limits, and in its own process group; when it ends or times out, every process of `builder` is
+ended, one that left the group included, and everything it left in the shared directories and
+its home is removed.
 """
 
 from __future__ import annotations
 
 import os
+import resource
 import shutil
 import stat
 import subprocess
@@ -17,69 +23,90 @@ import tempfile
 import time
 from pathlib import Path
 
+from . import listing
 from .contracts import BuildResult, Limits
-from .procs import SHARED_DIRS, capture, end_group, end_user, remove_files_of
+from .procs import SHARED_DIRS, capture, clear_user, end_group, end_user, expendable
 
 BUILDER = "builder"
 CARGO_CONFIG = Path("/opt/verifier/cargo-config.toml")
 BUILD_LOG_CAP = 16 << 20
+BUILD_NPROC = 4096
+BUILD_FSIZE = 4 << 30
 
 
 def copy_project(src: Path, dst: Path, limits: Limits) -> str | None:
     """Copy `src` to `dst` under the brief's rules. Return a refusal reason, or None."""
     files = 0
     size = 0
-    root = src.resolve()
-    for dirpath, dirnames, filenames in os.walk(src, followlinks=False):
-        here = Path(dirpath)
-        rel = here.relative_to(src)
-        if rel.parts[:1] == ("target",):
-            dirnames[:] = []
-            continue
-        dirnames[:] = [d for d in dirnames if not (rel == Path(".") and d == "target")]
-        (dst / rel).mkdir(parents=True, exist_ok=True)
-        for name in filenames:
-            path = here / name
-            if path.is_symlink():
-                # os.path.realpath, unlike Path.resolve before Python 3.13, does not raise on a
-                # loop; is_file() is then False for it.
-                target = Path(os.path.realpath(path))
-                if root not in target.parents or not target.is_file():
-                    continue
-            if not (path.is_file()):
+    root = os.fsencode(src)
+    real_root = os.path.realpath(root)
+    dst_b = os.fsencode(dst)
+    os.makedirs(dst_b, exist_ok=True)
+    try:
+        for item in listing.walk(root, limits.max_depth, limits.max_path):
+            if isinstance(item, listing.LeftOut):
                 continue
-            files += 1
-            size += path.stat().st_size
-            if files > limits.max_files or size > limits.max_bytes:
-                return f"project over the copy limits ({files} files, {size} bytes)"
-            shutil.copyfile(path, dst / rel / name)
+            target = dst_b + b"/" + item.rel.encode("utf-8")
+            if item.kind == "d":
+                os.makedirs(target, exist_ok=True)
+                continue
+            source = item.path
+            if item.kind == "l":
+                # os.path.realpath does not raise on a loop; the result is then no file.
+                real = os.path.realpath(item.path)
+                if not real.startswith(real_root + b"/"):
+                    continue
+                try:
+                    if not stat.S_ISREG(os.stat(real).st_mode):
+                        continue
+                except OSError:
+                    continue
+                source = real
+            try:
+                fd = os.open(source, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+            except OSError:
+                continue
+            with os.fdopen(fd, "rb") as data:
+                info = os.fstat(data.fileno())
+                if not stat.S_ISREG(info.st_mode):
+                    continue
+                files += 1
+                size += info.st_size
+                if files > limits.max_files or size > limits.max_bytes:
+                    return f"project over the copy limits ({files} files, {size} bytes)"
+                with open(target, "xb") as copy:
+                    shutil.copyfileobj(data, copy)
+            # The file's own permission bits, without set-id bits.
+            os.chmod(target, stat.S_IMODE(info.st_mode) & 0o755 | 0o600)
+    except OSError as exc:
+        return f"the project could not be copied ({exc.__class__.__name__})"
     return None
 
 
-def _chown_tree(path: Path, user: str) -> None:
-    for dirpath, _, filenames in os.walk(path):
-        shutil.chown(dirpath, user=user, group=user)
-        for name in filenames:
-            shutil.chown(Path(dirpath) / name, user=user, group=user)
+def _limits() -> None:
+    expendable()
+    resource.setrlimit(resource.RLIMIT_NPROC, (BUILD_NPROC, BUILD_NPROC))
+    resource.setrlimit(resource.RLIMIT_FSIZE, (BUILD_FSIZE, BUILD_FSIZE))
+    resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
 
 
 def build(submission: Path, work: Path, limits: Limits) -> BuildResult:
     """Build `submission` with `cargo build --release --offline`; never raises on a bad project.
 
-    Once the build is over, its program is copied out and everything `builder` owns in the shared
-    directories and its home (the build's own folder included) is removed, so no run reads or
-    writes what the build left there."""
+    Once the build is over, its program is copied out, every process of `builder` is ended, and
+    everything it owns in the shared directories and its home (the build's own folder included)
+    is removed, so no run reads or writes what the build left there."""
     try:
         return _build(submission, work, limits)
     finally:
-        remove_files_of(BUILDER, (*SHARED_DIRS, str(Path("~" + BUILDER).expanduser())))
+        clear_user(BUILDER, (*SHARED_DIRS, str(Path("~" + BUILDER).expanduser())))
 
 
 def _build(submission: Path, work: Path, limits: Limits) -> BuildResult:
     start = time.monotonic()
     src = work / "src"
     home = work / "home"
-    if not submission.is_dir():
+    if not submission.is_dir() or submission.is_symlink():
         return BuildResult(False, None, "no project delivered", 0.0)
     reason = copy_project(submission, src, limits)
     if reason is not None:
@@ -91,7 +118,7 @@ def _build(submission: Path, work: Path, limits: Limits) -> BuildResult:
     cargo_home = home / ".cargo"
     cargo_home.mkdir(parents=True)
     shutil.copyfile(CARGO_CONFIG, cargo_home / "config.toml")
-    _chown_tree(work, BUILDER)
+    listing.chown_tree(os.fsencode(work), BUILDER)
     env = {
         "PATH": "/usr/local/cargo/bin:/usr/local/bin:/usr/bin:/bin",
         "HOME": str(home),
@@ -101,15 +128,17 @@ def _build(submission: Path, work: Path, limits: Limits) -> BuildResult:
         "LANG": "C.UTF-8",
     }
     proc = subprocess.Popen(
-        ["cargo", "build", "--release", "--offline"],
+        ["/usr/local/cargo/bin/cargo", "build", "--release", "--offline"],
         cwd=src,
         env=env,
         user=BUILDER,
         group=BUILDER,
+        extra_groups=[],
         stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         start_new_session=True,
+        preexec_fn=_limits,  # noqa: PLW1509 - the grader is single-threaded
     )
     try:
         out, timed_out, overflow = capture(
@@ -125,15 +154,15 @@ def _build(submission: Path, work: Path, limits: Limits) -> BuildResult:
         return BuildResult(False, None, "build printed more than 16 MB", seconds)
     binary = work / "target" / "release" / "dogwood"
     # The build's folder is `builder`'s: a link there could point at any file of this machine, so
-    # the program must be a regular file inside that folder.
+    # the program must be a regular file inside that folder. No process of `builder` is left.
     real = Path(os.path.realpath(binary))
     inside = Path(os.path.realpath(work)) in real.parents
-    if proc.returncode != 0 or binary.is_symlink() or not inside or not real.is_file():
+    if proc.returncode != 0 or binary.is_symlink() or not inside:
         tail = out.decode("utf-8", "replace").strip().splitlines()[-5:]
         return BuildResult(False, None, "build failed: " + " | ".join(tail), seconds)
     # Copy it from a descriptor opened without following a link, into a new folder of root's.
     try:
-        fd = os.open(real, os.O_RDONLY | os.O_NOFOLLOW)
+        fd = os.open(real, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     except OSError as exc:
         return BuildResult(False, None, f"build left no program ({exc})", seconds)
     with os.fdopen(fd, "rb") as program:
@@ -142,7 +171,12 @@ def _build(submission: Path, work: Path, limits: Limits) -> BuildResult:
         bindir = Path(tempfile.mkdtemp(prefix="dw-bin-"))
         bindir.chmod(0o755)
         installed = bindir / "dogwood"
-        with open(installed, "xb") as copy:
-            shutil.copyfileobj(program, copy)
+        try:
+            with open(installed, "xb") as copy:
+                shutil.copyfileobj(program, copy)
+        except OSError as exc:
+            return BuildResult(
+                False, None, f"the program could not be copied ({exc})", seconds
+            )
     installed.chmod(0o755)
     return BuildResult(True, installed, "built", seconds)
