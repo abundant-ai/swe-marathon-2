@@ -19,13 +19,14 @@ RUN set -eu; \
     tar -xzf /tmp/dogwood-cli-1.2.0.crate -C /opt --no-same-owner; \
     cd /opt/dogwood-cli-1.2.0; \
     cargo vendor --locked --versioned-dirs /opt/registry > /opt/vendor-source.toml; \
+    rm -r /usr/local/cargo/registry; \
     mkdir -p .cargo; cp /opt/vendor-source.toml .cargo/config.toml; \
     triple=$(rustc -vV | sed -n 's/^host: //p'); \
     CARGO_PROFILE_RELEASE_DEBUG=0 CARGO_INCREMENTAL=0 RUSTFLAGS="-C target-feature=+crt-static" \
       cargo build --release --locked --offline --features experimental-arithmetic --target "$triple"; \
     cp "target/$triple/release/dogwood" /opt/dogwood-release; \
     if readelf -l /opt/dogwood-release | grep -q INTERP; then echo "the release build is not static" >&2; exit 1; fi; \
-    rm -r target /usr/local/cargo/registry; \
+    rm -rf target /usr/local/cargo/registry; \
     find /opt/dogwood-cli-1.2.0/src /opt/registry/dogwood-language-1.2.0 /opt/registry/dogwood-ops-1.2.0 \
          /opt/registry/dogwood-formatter-1.2.0 /opt/registry/dogwood-syntax-1.2.0 \
          -type f \( -name '*.rs' -o -name '*.pest' \) -exec sh -c 'for f; do \
