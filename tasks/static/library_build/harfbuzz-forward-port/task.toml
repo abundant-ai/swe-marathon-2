@@ -8,7 +8,7 @@ authors = [{ name = "Neel Harsola", email = "work.neelharsola@gmail.com" }]
 
 [metadata]
 reward_type = "continuous"
-open_internet_justification = "Only the image builds have public egress, to install system and Python packages and to fetch the pinned HarfBuzz 14.3.0 release and the public documents it ships with. The agent works without network access, and so does every later command in the second image."
+open_internet_justification = "Both images are built with public egress, to install system and Python packages and to fetch the pinned HarfBuzz 14.3.0 release and the public documents it ships with, and the agent's set-up has it too, to install the agent's tooling. While the work runs, a root process of the first image only tries a TLS handshake with three public hosts every tenth of a second (no request is sent), so that the session's end is known if the network comes back before the tree is copied out. The work itself, and every command run in the second image, run without network access."
 
 [agent]
 timeout_sec = 34560

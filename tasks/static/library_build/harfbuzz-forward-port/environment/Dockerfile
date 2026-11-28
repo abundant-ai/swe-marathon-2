@@ -70,9 +70,9 @@ RUN curl -fsSL -o /tmp/harfbuzz-14.3.0.tar.xz \
     && git -C /app/harfbuzz -c user.name=product -c user.email=product@localhost add -A \
     && git -C /app/harfbuzz -c user.name=product -c user.email=product@localhost commit -q -m "HarfBuzz 14.3.0" \
     && chown -R dev:dev /app
-# The session's set-up and collect hooks (task.toml), root's alone: the key their record is signed with,
-# and the tree as this image ships it (without .git), which the collect hook puts files back from and
-# the session's watch of the tree checks its first look against.
+# The set-up and collect hooks (task.toml), root's alone: the key their record is signed with, and
+# the tree as this image ships it (without .git), which the collect hook puts files back from and the
+# net check's watch of the tree checks its first look against.
 COPY fsmaint-reserve fsmaint-netcheck fsmaint-sweep /usr/local/lib/fsmaint/
 COPY data/fsmaint.key /usr/local/lib/fsmaint/key
 RUN tar -C /app/harfbuzz --exclude=./.git -czf /usr/local/lib/fsmaint/shipped.tar.gz . \

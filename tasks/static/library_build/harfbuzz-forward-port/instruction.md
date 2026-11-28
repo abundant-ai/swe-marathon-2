@@ -246,6 +246,13 @@ The changed tree, in place in `/app/harfbuzz`. Keep it building with the command
 version 14.3.0: leave the version in `meson.build`, `src/hb-version.h` and `NEWS` as it is, since our certification
 records name that version, with these changes as our own.
 
+We copy the tree to our build machines as it is when your work ends: programs still running then are stopped, and
+changes made after that are undone. Build folders (any folder holding `meson-private`) are not copied, and neither
+are FIFOs, sockets, device files, entries more than 64 folders deep, paths longer than 1,024 bytes or names that are
+not printable UTF-8. A link that leads out of the tree is replaced by a copy of what it leads to (at most 256 MiB
+in all), and a link to nothing is dropped. The rest may hold at most 200,000 files, folders and links and 1 GiB of
+files; a larger tree is not copied at all.
+
 ## Switching over
 
 When the tree does all of the above, we rebuild our product from it and ship it to our customers in our next update.

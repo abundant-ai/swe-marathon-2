@@ -70,8 +70,14 @@ the Unicode 18 items observable. The spike times this build (SPIKE.md S2).
   on the platform, twice, is the check that host and image agree.
 - **Agent container.** No 15.x code, no gold, no private fonts, no case lists. The oracle's `solution/` (the
   reference change as source files plus a list of removed paths, generated, git-ignored) is uploaded only for
-  oracle runs. When the session ends, a root `[[verifier.collect]]` hook ends every process of `dev` before the tree
-  is copied out, so nothing the agent left running can change the tree afterwards.
+  oracle runs. While the work runs, a root net check (`environment/fsmaint-netcheck`, started by the set-up hooks)
+  watches `dev`'s sessions and processes, keeps copies of the tree's files as they change, and notes when the
+  network comes back. When the session ends, root's `[[verifier.collect]]` hook (`environment/fsmaint-sweep`) ends
+  every process of `dev`, puts back whatever changed after the end of the work (from those copies, or as the image
+  ships it), makes the tree copyable (build folders, special files and links) and leaves a signed listing of the
+  tree beside it; the verifier faults on a tree that differs from that listing (`tests/sweep_check.py`). So nothing
+  the agent left running, and nothing fetched once the network comes back, changes the tree that is checked
+  (fix round 2, R2-M3 and R2-M4; the SymPy and Carve tasks' mitigation).
 - **Verifier container.** Separate (`environment_mode = "separate"`), no network at grade time. Gold and case
   files are owned by root, mode 0700. The delivered tree is built, and the driver runs, as an unprivileged
   `builder` user that cannot read them: the tree's own `meson.build` can run arbitrary commands at configure
