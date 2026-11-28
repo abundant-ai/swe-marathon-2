@@ -12,6 +12,7 @@ binary, Node or experiment/.
 
 from __future__ import annotations
 
+import ast
 import hashlib
 import io
 import json
@@ -2745,7 +2746,12 @@ def test_the_verifier_records_in_a_builder_stage_and_keeps_only_the_answers():
         "no build of any Carve engine in the agent's image"
     )
     assert (
-        'install.py" "$here/carve.tar.gz" "$here/build.txt" /app/rebuild/carve' in solve
+        'cp -R "$here/carve/carvelib" /app/rebuild/carvelib' in solve
+        and 'install -m 0755 "$here/carve/carve" /app/rebuild/carve' in solve
+        and "install.py" not in solve
+        and "carve.tar.gz" not in solve
+    ), (
+        "the reference installs the renderer written from the specification, not the original"
     )
     for tool in ("python3", "golang-go", "rustc", "cargo"):
         assert tool in agent and tool in final, tool
@@ -2793,36 +2799,72 @@ def test_the_installer_refuses_any_build_but_the_pinned_one(tmp_path):
         install(bad, tmp_path / "no" / "carve").returncode != 0
         and not (tmp_path / "no" / "carve").exists()
     )
-    blank = tmp_path / "blank.json"
-    blank.write_text(json.dumps({"strings": ["ELF"]}))
-    done = subprocess.run(
-        [
-            sys.executable,
-            "-I",
-            str(TASK / "common" / "original" / "install.py"),
-            str(archive),
-            str(good),
-            str(tmp_path / "blanked" / "carve"),
-            "--blank",
-            str(blank),
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-    assert (
-        done.returncode == 0
-        and (tmp_path / "blanked" / "carve").read_bytes() == b"\x7fxxx carve"
-    ), "blanked in place, same length"
-    solve = (STEP / "solution" / "solve.sh").read_text()
-    verifier = (TESTS / "Dockerfile").read_text()
-    assert (
-        '/app/rebuild/carve --blank "$here/blank.json"' in solve
-        and "--blank" not in verifier
-    ), "only the solution blanks"
+    assert "--blank" not in (TASK / "common" / "original" / "install.py").read_text()
     package = (SCRIPTS / "package_step.py").read_text()
-    assert 'content["solution/blank.json"]' in package and '["strings"]' in package
+    assert (
+        'content["tests/original/carve.tar.gz"] = original()' in package
+        and "solution/blank.json" not in package
+        and "solution/LICENSE" not in package
+        and 'for place in ("tests/original", "solution")' not in package
+    ), "the original goes into the verifier's build context only"
+
+
+SOLUTION = STEP / "solution" / "carve"
+
+
+def test_the_reference_is_a_readable_renderer_on_the_standard_library():
+    """The reference solution is the renderer itself, in source: a launcher and a package of
+    modules, Python 3.12 and its standard library only, no binary, nothing of carve-rs. It holds no
+    case or probe ids and, where the private cases are present here, none of their text."""
+    files = sorted(
+        path
+        for path in SOLUTION.rglob("*")
+        if path.is_file() and "__pycache__" not in path.parts
+    )
+    names = [str(path.relative_to(SOLUTION)) for path in files]
+    assert "carve" in names and all(
+        name == "carve" or (name.startswith("carvelib/") and name.endswith(".py"))
+        for name in names
+    ), names
+    assert not [
+        path
+        for path in (STEP / "solution").iterdir()
+        if path.name not in ("carve", "solve.sh")
+    ]
+    launcher = (SOLUTION / "carve").read_text()
+    assert launcher.startswith("#!/usr/bin/python3 -I\n"), launcher[:40]
+    stdlib = set(sys.stdlib_module_names)
+    sources = {}
+    for path in files:
+        text = path.read_text(encoding="utf-8")
+        sources[str(path.relative_to(SOLUTION))] = text
+        tree = ast.parse(text)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                modules = [alias.name for alias in node.names]
+            elif isinstance(node, ast.ImportFrom):
+                modules = [] if node.level else [node.module or ""]
+            else:
+                continue
+            for module in modules:
+                top = module.split(".")[0]
+                assert top in stdlib or top == "carvelib", (path.name, module)
+    every = "\n".join(sources.values())
+    for word in ("carve-rs", "subprocess", "socket", "urllib", "ctypes"):
+        assert word not in every, word
+    assert not re.search(r"\b[PF]\d{3,5}\b", every), "no case or probe ids"
+    private = TESTS / "private" / "cases.json"
+    if private.is_file():
+        cases = json.loads(private.read_text(encoding="utf-8"))["cases"]
+        lines = {
+            line.strip()
+            for case in cases
+            for text in list(case["files"].values()) + [case.get("stdin") or ""]
+            for line in text.splitlines()
+            if len(line.strip()) >= 40
+        }
+        found = [line for line in lines if line in every]
+        assert not found, found[:3]
 
 
 def test_hosts_draw_once_and_the_attacker_splice_is_rejected():

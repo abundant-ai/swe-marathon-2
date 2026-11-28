@@ -7,11 +7,11 @@ Use --flat to publish the same files with the existing -single suffix. With
 --keep-name, the upload uses the original task name.
 
 Needs, all made beforehand and none committed:
-- experiment/original/carve-linux.tar.gz and LICENSE: carve-rs 0.1.14's static Linux release
-  archive and its licence (scripts/setup_tools.py). The archive goes, as released, into the
-  verifier's build context (its builder stage records the answers with it, and the final image
-  keeps nothing of it) and into the reference solution, each beside common/original/install.py
-  and a build.txt naming the pinned sha256s.
+- experiment/original/carve-linux.tar.gz: carve-rs 0.1.14's static Linux release archive, which
+  holds its licence (scripts/setup_tools.py). The archive goes, as released, into the verifier's
+  build context only (its builder stage records the answers with it, and the final image keeps
+  nothing of it), beside common/original/install.py and a build.txt naming the pinned sha256s.
+  The reference solution is the renderer in solution/carve/, written from the specification.
 - tests/private/cases.json: the private cases (scripts/make_cases.py).
 - the spec checkout at the pinned commit (../.cache-src/carve next to this repository), whose
   specification and documentation pages go into the agent's image (carve_text.specification
@@ -44,7 +44,6 @@ PROBES = TASK_ROOT / "tests" / "private" / "probes.json"
 KEPT_IDS = TASK_ROOT / "experiment" / "kept_ids.txt"
 ORIGINAL = TASK_ROOT / "experiment" / "original"
 INSTALLER = TASK_ROOT / "common" / "original" / "install.py"
-UPSTREAM_BUILDS = TASK_ROOT / "tests" / "verifier" / "upstream_builds.json"
 EXCLUDED = {"__pycache__", ".pytest_cache", ".DS_Store", "experiment"}
 
 
@@ -62,11 +61,10 @@ def build_facts() -> bytes:
     return ("\n".join(lines) + "\n").encode()
 
 
-def original() -> tuple[bytes, bytes]:
-    """The release archive and the licence, after checking the archive and its binary against the
-    pins."""
-    archive, licence = ORIGINAL / "carve-linux.tar.gz", ORIGINAL / "LICENSE"
-    if not archive.is_file() or not licence.is_file():
+def original() -> bytes:
+    """The release archive, after checking it and its binary against the pins."""
+    archive = ORIGINAL / "carve-linux.tar.gz"
+    if not archive.is_file():
         raise ValueError(
             "Fetch the original first (scripts/setup_tools.py); experiment/original is incomplete"
         )
@@ -86,7 +84,7 @@ def original() -> tuple[bytes, bytes]:
         or hashlib.sha256(binaries[0]).hexdigest() != ct.LINUX_BINARY_SHA256
     ):
         raise ValueError("the archive's carve binary is not the pinned build")
-    return data, licence.read_bytes()
+    return data
 
 
 def collect() -> dict[str, bytes]:
@@ -132,25 +130,15 @@ def collect() -> dict[str, bytes]:
         content[f"environment/spec/{name}"] = text.encode("utf-8")
     for name, text in docs.items():
         content[f"environment/docs/{name}"] = text.encode("utf-8")
-    archive, licence = original()
-    facts, installer = build_facts(), INSTALLER.read_bytes()
-    for place in ("tests/original", "solution"):
-        content[f"{place}/carve.tar.gz"] = archive
-        content[f"{place}/build.txt"] = facts
-        content[f"{place}/install.py"] = installer
+    content["tests/original/carve.tar.gz"] = original()
+    content["tests/original/build.txt"] = build_facts()
+    content["tests/original/install.py"] = INSTALLER.read_bytes()
     # The accepted kept-ids sha256 (the first Linux oracle build's value), which the verifier image
     # build asserts so the denominator cannot drift; empty until that build sets it.
     kept_ids = (
         KEPT_IDS.read_text(encoding="utf-8").strip() if KEPT_IDS.is_file() else ""
     )
     content["tests/original/kept_ids.txt"] = (kept_ids + "\n").encode()
-    content["solution/LICENSE"] = licence
-    # What install.py --blank overwrites in the reference solution's copy: the text the verifier's
-    # refusal of published builds looks for (tests/verifier/upstream_builds.json), and nothing else.
-    strings = json.loads(UPSTREAM_BUILDS.read_text(encoding="utf-8"))["strings"]
-    content["solution/blank.json"] = (
-        json.dumps({"strings": strings}, indent=1) + "\n"
-    ).encode()
     return dict(sorted(content.items()))
 
 

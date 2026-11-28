@@ -1,16 +1,18 @@
 """Grade the reference and a no-op locally from a packaged bundle, without Docker or root.
 
-usage: grade_locally.py <bundle dir> [--original PATH] [--out DIR]
+usage: grade_locally.py <bundle dir> [--original PATH] [--python PATH] [--out DIR]
 
 Does what the bundle's verifier image does, with this machine's build of the original (default
 experiment/original/carve-macos, the same carve-rs 0.1.14 release for macOS): records the
 bundle's private cases with the bundle's own recorder.py and recording.py into a private
-directory, as the builder stage does; then, with the bundle's own verify.py, reads three
+directory, as the builder stage does; then, with the bundle's own verify.py, reads five
 trees the way an evaluation reads /app/rebuild (marked by the bundle's own sweep
-program, run on a copy) and grades them: the reference (the original as /app/rebuild/carve), an
-empty tree, and a program that prints nothing. The privilege drop, sealing and the sweeps
-between cases need root and Linux, so they are left out; what the runs print is compared exactly
-as in an evaluation.
+program, run on a copy) and grades them: the reference (the bundle's solution/carve installed as
+solve.sh installs it, its launcher pointed at --python where this machine's /usr/bin/python3 is
+not 3.12), the original with its tripwire strings overwritten, the same behind a launcher that
+answers every command outside the brief with status 2, an empty tree, and a program that prints
+nothing. The privilege drop, the network filter, sealing and the sweeps between cases need root
+and Linux, so they are left out; what the runs print is compared exactly as in an evaluation.
 """
 
 from __future__ import annotations
@@ -126,6 +128,9 @@ def main() -> None:
         type=Path,
         default=TASK_ROOT / "experiment" / "original" / "carve-macos",
     )
+    parser.add_argument(
+        "--python", help="the interpreter for the reference's launcher here"
+    )
     parser.add_argument("--out", type=Path)
     args = parser.parse_args()
     bundle = args.bundle.resolve()
@@ -192,28 +197,57 @@ def main() -> None:
     shutil.copy(record / "probes_expected.json", private / "probes_expected.json")
     deliveries = {}
     reference = work / "deliveries" / "reference" / "rebuild"
-    reference.mkdir(parents=True, exist_ok=True)
-    # As solve.sh installs it: the original with the bundle's blank.json strings overwritten in place.
-    binary = original.read_bytes()
-    for text in json.loads((step / "solution" / "blank.json").read_text())["strings"]:
-        binary = binary.replace(text.encode(), b"x" * len(text.encode()))
-    (reference / "carve").write_bytes(binary)
+    if reference.exists():
+        shutil.rmtree(reference)
+    # As solve.sh installs it: the launcher and the carvelib package of the bundle's solution.
+    shutil.copytree(step / "solution" / "carve" / "carvelib", reference / "carvelib")
+    launcher = (step / "solution" / "carve" / "carve").read_text()
+    if args.python:
+        launcher = re.sub(r"^#!\S+", f"#!{args.python}", launcher, count=1)
+    (reference / "carve").write_text(launcher)
     (reference / "carve").chmod(0o755)
-    if sys.platform == "darwin":  # a changed Mach-O needs a new ad-hoc signature to run
-        subprocess.run(
-            ["codesign", "-s", "-", "-f", str(reference / "carve")],
-            check=True,
-            capture_output=True,
-            timeout=120,
-        )
-    shutil.copy(step / "solution" / "LICENSE", reference / "LICENSE")
+    # The original with the verifier's tripwire strings overwritten in place, alone and behind a
+    # launcher that answers every option but --safe and --html, and a second operand, with status 2.
+    binary = original.read_bytes()
+    for text in json.loads((tests / "verifier" / "upstream_builds.json").read_text())[
+        "strings"
+    ]:
+        binary = binary.replace(text.encode(), b"x" * len(text.encode()))
+    blanked = work / "deliveries" / "blanked" / "rebuild"
+    launched = work / "deliveries" / "launched" / "rebuild"
+    for top, name in ((blanked, "carve"), (launched, "engine")):
+        top.mkdir(parents=True, exist_ok=True)
+        (top / name).write_bytes(binary)
+        (top / name).chmod(0o755)
+        if (
+            sys.platform == "darwin"
+        ):  # a changed Mach-O needs a new ad-hoc signature to run
+            subprocess.run(
+                ["codesign", "-s", "-", "-f", str(top / name)],
+                check=True,
+                capture_output=True,
+                timeout=120,
+            )
+    (launched / "carve").write_text(
+        '#!/bin/sh\nfiles=0\nfor arg in "$@"; do\n  case "$arg" in\n    --safe|--html) ;;\n'
+        "    -) files=$((files + 1)) ;;\n    -*) exit 2 ;;\n    *) files=$((files + 1)) ;;\n  esac\ndone\n"
+        '[ "$files" -le 1 ] || exit 2\nexec "$(dirname "$0")/engine" "$@"\n'
+    )
+    (launched / "carve").chmod(0o755)
     empty = work / "deliveries" / "empty" / "rebuild"
     empty.mkdir(parents=True, exist_ok=True)
     silent = work / "deliveries" / "silent" / "rebuild"
     silent.mkdir(parents=True, exist_ok=True)
     (silent / "carve").write_text("#!/bin/sh\nexit 0\n")
     (silent / "carve").chmod(0o755)
-    for name, top in (("reference", reference), ("empty", empty), ("silent", silent)):
+    trees = {
+        "reference": reference,
+        "blanked": blanked,
+        "launched": launched,
+        "empty": empty,
+        "silent": silent,
+    }
+    for name, top in trees.items():
         deliveries[name] = {"mark": mark(bundle, top)}
     driver = f"""
 import json, sys, time
@@ -228,7 +262,7 @@ verify.runcases.TEMP = work / "tmp" / "carve-tmp"
 (work / "tmp").mkdir(exist_ok=True)
 results = {{}}
 builds = verify.upstream_builds()
-for name in ("reference", "empty", "silent"):
+for name in ("reference", "blanked", "launched", "empty", "silent"):
     top = work / "deliveries" / name / "rebuild"
     verify.SWEEP_STATE = top.parent / ".state" / "out" / "sweep.json"   # where this sweep got to
     notes, refused = verify.manifest(top)
