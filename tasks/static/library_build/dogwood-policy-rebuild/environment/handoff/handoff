@@ -266,6 +266,30 @@ def tidy(hand):
     return False
 
 
+def measure():
+    """(files, bytes) the copy would take, from the entries' own sizes: regular files, and links
+    to files of the tree (the copy takes a link as its file)."""
+    files = size = 0
+    real_root = os.path.realpath(os.fsencode(TREE))
+    for item in listing.walk(os.fsencode(TREE)):
+        if isinstance(item, listing.LeftOut) or item.kind == "d":
+            continue
+        if item.kind == "l":
+            real = os.path.realpath(item.path)
+            try:
+                st = os.stat(real)
+            except OSError:
+                continue
+            if not (real.startswith(real_root + b"/") and stat.S_ISREG(st.st_mode)):
+                continue
+            files, size = files + 1, size + st.st_size
+        else:
+            files, size = files + 1, size + item.st.st_size
+        if files > LIMIT_FILES or size > LIMIT_BYTES:
+            break
+    return files, size
+
+
 def room_for(size):
     try:
         info = os.statvfs(PACK_DIR)
@@ -304,8 +328,7 @@ def main():
     hand.record["before"] = before(hand)
     finished = tidy(hand)
     hand.record["changes_made"] = {"counts": hand.counts, "first": hand.changes}
-    entries = listing.listing(os.fsencode(TREE))
-    files, size = listing.totals(entries)
+    files, size = measure()  # before any file is read, so a huge tree costs no hashing
     if problem == "missing":
         manifest = {"state": "missing", "reason": "no project was delivered"}
     elif problem is not None:
@@ -318,9 +341,13 @@ def main():
         )
     elif not room_for(size):
         manifest = aside(hand, "the disk had too little room left to copy the project")
+    elif hand.left() < 120:
+        manifest = aside(hand, "the hand-off could not list the project in time")
     else:
         manifest = {"state": "listed", "reason": None}
     if manifest["state"] == "listed":
+        entries = listing.listing(os.fsencode(TREE))
+        files, size = listing.totals(entries)
         manifest.update(
             entries=len(entries),
             files=files,
