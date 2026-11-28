@@ -105,12 +105,14 @@ agent.
   Opus-class sessions:
   - 0.60 or less: accept;
   - 0.60-0.70: report to the owner;
-  - above 0.70: one re-version, its lever chosen by a panel;
+  - above 0.70: report to the owner, and re-version only with his word (an accepted version is
+    frozen);
   - below 0.30: check fairness.
 
   A first session at 0.80 or more triggers at once.
 - **Horizon:** a strong engineer new to Dogwood needs about 39-50 working days to a solid core and
-  65-95 to byte-exact output (QA 14). An agent needs about 7-12 hours and 2,000-4,500 steps, so
+  65-95 to byte-exact output (QA 14). That is above the owner's 2-7 day target. The 2026-11-28
+  owner-questions panel kept the scope, with the horizon stated here. An agent needs about 7-12 hours and 2,000-4,500 steps, so
   the 9.6-hour session may bind (QA 15): a run that ends at the cap with a project that does not
   build is a harness loss. The evaluator (R, B, K, P, M: 0.67 of the weight) is the critical path;
   validation, lowering and the command surface can be farmed out once the parser exists (QA 16).

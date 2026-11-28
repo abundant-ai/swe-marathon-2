@@ -398,7 +398,8 @@ spike's 3+1 and 10-repeat recordings are in the Phase B report.
 
 The Phase C estimate (frontier about 0.47) was too low (QA 17).
 
-**Pre-registered response** (the 2026-11-28 panel's DECISION). It reads the median of the first
+**Pre-registered response** (the 2026-11-28 panel's DECISION; its > 0.70 row as amended by the
+owner-questions DECISION, `decisions/2026-11-28c-owner-questions-DECISION.md`). It reads the median of the first
 three accepted Opus-class sessions, harness losses excluded. A first session at 0.80 or more
 triggers at once.
 
@@ -406,7 +407,7 @@ triggers at once.
 | --- | --- |
 | ≤ 0.60 | Accept |
 | 0.60-0.70 | Report to the owner as above target, with the HarfBuzz flag. Re-version only if he holds 0.6 |
-| > 0.70 | One re-version. A panel picks the lever from the runs' per-family rates, within stated rules, adding no weight to message text (QA 17 F4). Its re-size must predict frontier ≤ 0.65 and mid-tier ≥ 0.10 |
+| > 0.70 | Report to the owner; re-version only with his word (an accepted version is frozen). If he gives it, a panel picks the lever from the runs' per-family rates, within stated rules, adding no weight to message text (QA 17 F4), and its re-size must predict frontier ≤ 0.65 and mid-tier ≥ 0.10 |
 | < 0.30 | Stop and check fairness |
 
 Also report the spread between Opus runs, per template.
