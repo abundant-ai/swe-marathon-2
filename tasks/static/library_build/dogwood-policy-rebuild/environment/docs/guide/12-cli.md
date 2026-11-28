@@ -157,7 +157,10 @@ by `[rules: …]` — the indices of the `.dw` rules that determined the decisio
 The `<index>` counts the trace's decision points from 0.
 A decision that failed closed is a `DENY` followed by one `    error: …` line
 per error, such as `nonconforming request: …` for a request context that lacks
-an attribute its action's context requires. History-only events (a non-decision
+an attribute its action's context requires. A rule whose Cedar part cannot be
+evaluated for a request (an integer overflow, say) is skipped, as in Cedar: the
+other rules decide, and the decision's line, `ALLOW` or `DENY`, is followed by
+an `    error: error while evaluating policy …` line for it. History-only events (a non-decision
 event kind) update the history but produce no line. A history event that does
 not conform to the event schema is rejected, and not ingested; it is reported
 in trace order as `@<timestamp> (event <position> of the trace): REJECTED, not

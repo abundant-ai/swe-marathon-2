@@ -443,6 +443,27 @@
           "message_substring": "error parsing schema",
           "source": "cedar-policy-core/src/validator/schema/err.rs:47"
         }
+      },
+      {
+        "error": {
+          "command": "schema",
+          "message_substring": "illegally shadows the existing definition",
+          "source": "the 1.2.0 build"
+        }
+      },
+      {
+        "error": {
+          "command": "schema",
+          "message_substring": "failed to resolve type",
+          "source": "the 1.2.0 build"
+        }
+      },
+      {
+        "error": {
+          "command": "schema",
+          "message_substring": "expected `",
+          "source": "the 1.2.0 build"
+        }
       }
     ],
     "nearmiss": null,
@@ -6160,6 +6181,13 @@
           "message_substring": "has no context field",
           "source": "dogwood-language/src/extension/temporal/validate.rs:1837"
         }
+      },
+      {
+        "error": {
+          "command": "validate",
+          "message_substring": "record has no field",
+          "source": "the 1.2.0 build"
+        }
       }
     ],
     "nearmiss": "ctx_path_undeclared",
@@ -11147,17 +11175,15 @@
     "summary": "Each command takes the policy file positionally; `-` reads stdin (format included).",
     "family": "F",
     "routes": [
-      "replay",
       "validate",
       "lower",
       "explain",
-      "format",
-      "check-parse",
-      "cli"
+      "replay",
+      "check-parse"
     ],
     "detect": [
       {
-        "args_regex": "^(?:format|check-parse|validate|lower|replay|explain)\\s+-(?:\\s|$)"
+        "args_regex": "^(?:check-parse|validate|lower|replay|explain)\\s+-(?:\\s|$)"
       }
     ],
     "nearmiss": null,
@@ -11171,7 +11197,7 @@
     "doc": {
       "file": "guide/12-cli.md",
       "heading": "Commands",
-      "quote": "`--format human|json` (human is the default; JSON is the stable machine shape)."
+      "quote": "Every command except `format` also accepts `--format human|json` (human"
     },
     "summary": "--format human|json on check-parse, validate, lower, replay, explain and schema; human by default.",
     "family": "F",
@@ -11203,7 +11229,7 @@
     "doc": {
       "file": "guide/12-cli.md",
       "heading": "Commands",
-      "quote": "`--format human|json` (human is the default; JSON is the stable machine shape)."
+      "quote": "Every command except `format` also accepts `--format human|json` (human"
     },
     "summary": "A --format value other than human or json is a usage error (exit 2).",
     "family": "F",
@@ -11299,23 +11325,16 @@
     "doc": {
       "file": "guide/12-cli.md",
       "heading": "Commands",
-      "quote": "- `2` is a usage error (an unknown flag or subcommand, or a missing"
+      "quote": "`2` is a usage error (an unknown flag or subcommand, or a missing"
     },
-    "summary": "Unknown flags or subcommands and missing arguments exit 2.",
+    "summary": "No command, or an unknown one, is a usage error (exit 2).",
     "family": "F",
     "routes": [
-      "replay",
-      "validate",
-      "lower",
-      "explain",
-      "format",
-      "check-parse",
-      "schema",
       "cli"
     ],
     "detect": [
       {
-        "args_regex": "--(?!format\\b|policy-schema\\b|event-schema\\b|providers\\b|macros\\b|trace\\b|emit\\b|help\\b|version\\b)[a-z][\\w-]*"
+        "args_regex": "^(?:audit\\b|$)"
       }
     ],
     "nearmiss": null,
@@ -11547,7 +11566,7 @@
     "doc": {
       "file": "guide/12-cli.md",
       "heading": "`replay` — watch a temporal policy decide",
-      "quote": "ingested`, followed by its `    error: nonconforming event: …` line. This is the"
+      "quote": "ingested`, followed by its `    error: nonconforming event: …` line; the"
     },
     "summary": "A nonconforming history event prints `@<ts> (event <pos> of the trace): REJECTED, not ingested` and its error line, in trace order.",
     "family": "K",
@@ -12107,9 +12126,9 @@
     "id": "restr:12:format-takes-no-format-flag",
     "kind": "restriction",
     "doc": {
-      "file": "dogwood-cli/src/main.rs",
-      "heading": "enum Command",
-      "quote": "/// Pretty-print a .dw policy set to stdout."
+      "file": "guide/12-cli.md",
+      "heading": "Commands",
+      "quote": "and `format` takes nothing but the policy file"
     },
     "summary": "`format` takes only the policy path; --format or schema flags are usage errors.",
     "family": "F",
@@ -12131,9 +12150,9 @@
     "id": "restr:12:replay-needs-trace",
     "kind": "restriction",
     "doc": {
-      "file": "dogwood-cli/src/main.rs",
-      "heading": "enum Command",
-      "quote": "/// Replay a whole .log event trace; stream per-timepoint verdicts."
+      "file": "guide/12-cli.md",
+      "heading": "Commands",
+      "quote": "and `replay` also needs `--trace`"
     },
     "summary": "replay requires --trace (usage error otherwise).",
     "family": "F",
@@ -12217,6 +12236,1161 @@
           "message_substring": "duplicate policy id",
           "source": "dogwood-language/src/cedarify/mod.rs:475"
         }
+      }
+    ],
+    "nearmiss": null,
+    "semantic": false,
+    "mutant": null,
+    "unchecked": false
+  },
+  {
+    "id": "feat:02:datetime",
+    "kind": "feature",
+    "doc": {
+      "file": "guide/02-policy-language.md",
+      "heading": "Extension functions: `decimal`, `datetime`, `duration`, `ip`",
+      "quote": "context.system.now > datetime(\"2024-01-01T00:00:00Z\")"
+    },
+    "summary": "datetime(\"…\") literals and datetime ordering.",
+    "family": "R",
+    "routes": [
+      "replay"
+    ],
+    "detect": [
+      {
+        "policy_regex": "datetime\\(\\\""
+      }
+    ],
+    "nearmiss": null,
+    "semantic": false,
+    "mutant": null,
+    "unchecked": false
+  },
+  {
+    "id": "feat:02:duration",
+    "kind": "feature",
+    "doc": {
+      "file": "guide/02-policy-language.md",
+      "heading": "Extension functions: `decimal`, `datetime`, `duration`, `ip`",
+      "quote": "| `duration(\"…\")` | duration | duration literal |"
+    },
+    "summary": "duration(\"…\") literals compared with durations; duration values in traces.",
+    "family": "R",
+    "routes": [
+      "replay"
+    ],
+    "detect": [
+      {
+        "policy_regex": "duration\\(\\\""
+      }
+    ],
+    "nearmiss": null,
+    "semantic": false,
+    "mutant": null,
+    "unchecked": false
+  },
+  {
+    "id": "feat:02:ipaddr-methods",
+    "kind": "feature",
+    "doc": {
+      "file": "guide/02-policy-language.md",
+      "heading": "Method calls",
+      "quote": "| `.isIpv6()`         | ipaddr   | address is IPv6 |"
+    },
+    "summary": "ip(\"…\") with isIpv4, isIpv6, isLoopback, isMulticast and isInRange.",
+    "family": "R",
+    "routes": [
+      "replay"
+    ],
+    "detect": [
+      {
+        "policy_regex": "\\.is(?:Ipv4|Ipv6|Loopback|Multicast|InRange)\\("
+      }
+    ],
+    "nearmiss": null,
+    "semantic": false,
+    "mutant": null,
+    "unchecked": false
+  },
+  {
+    "id": "feat:02:datetime-methods",
+    "kind": "feature",
+    "doc": {
+      "file": "guide/02-policy-language.md",
+      "heading": "Method calls",
+      "quote": "| `.durationSince(t)`        | datetime | datetime − datetime |"
+    },
+    "summary": "toDate, toTime, offset and durationSince on datetimes.",
+    "family": "R",
+    "routes": [
+      "replay"
+    ],
+    "detect": [
+      {
+        "policy_regex": "\\.(?:toDate|toTime|offset|durationSince)\\("
+      }
+    ],
+    "nearmiss": null,
+    "semantic": false,
+    "mutant": null,
+    "unchecked": false
+  },
+  {
+    "id": "feat:02:duration-methods",
+    "kind": "feature",
+    "doc": {
+      "file": "guide/02-policy-language.md",
+      "heading": "Method calls",
+      "quote": "| `.toMilliseconds()` | duration | duration as milliseconds |"
+    },
+    "summary": "toMilliseconds, toSeconds, toMinutes, toHours and toDays on durations.",
+    "family": "R",
+    "routes": [
+      "replay"
+    ],
+    "detect": [
+      {
+        "policy_regex": "\\.to(?:Milliseconds|Seconds|Minutes|Hours|Days)\\("
+      }
+    ],
+    "nearmiss": null,
+    "semantic": false,
+    "mutant": null,
+    "unchecked": false
+  },
+  {
+    "id": "feat:02:decimal-methods",
+    "kind": "feature",
+    "doc": {
+      "file": "guide/02-policy-language.md",
+      "heading": "Method calls",
+      "quote": "| `.lessThanOrEqual(d)`      | decimal  | decimal `<=` |"
+    },
+    "summary": "lessThanOrEqual and greaterThanOrEqual on decimals.",
+    "family": "R",
+    "routes": [
+      "replay"
+    ],
+    "detect": [
+      {
+        "policy_regex": "\\.(?:lessThanOrEqual|greaterThanOrEqual)\\("
+      }
+    ],
+    "nearmiss": null,
+    "semantic": false,
+    "mutant": null,
+    "unchecked": false
+  },
+  {
+    "id": "feat:02:set-methods",
+    "kind": "feature",
+    "doc": {
+      "file": "guide/02-policy-language.md",
+      "heading": "Method calls",
+      "quote": "| `.containsAny(s)`          | set      | set ∩ set `s` is non-empty |"
+    },
+    "summary": "containsAll and containsAny on sets.",
+    "family": "R",
+    "routes": [
+      "replay"
+    ],
+    "detect": [
+      {
+        "policy_regex": "\\.contains(?:All|Any)\\("
+      }
+    ],
+    "nearmiss": null,
+    "semantic": false,
+    "mutant": null,
+    "unchecked": false
+  },
+  {
+    "id": "feat:02:tag-methods",
+    "kind": "feature",
+    "doc": {
+      "file": "guide/02-policy-language.md",
+      "heading": "Method calls",
+      "quote": "| `.hasTag(k)`               | entity   | entity has tag `k` |"
+    },
+    "summary": "hasTag and getTag on an entity type with tags.",
+    "family": "L",
+    "routes": [
+      "validate",
+      "lower",
+      "explain"
+    ],
+    "detect": [
+      {
+        "policy_regex": "\\.(?:hasTag|getTag)\\("
+      }
+    ],
+    "nearmiss": null,
+    "semantic": false,
+    "mutant": null,
+    "unchecked": false
+  },
+  {
+    "id": "feat:02:has-path-and-quoted",
+    "kind": "feature",
+    "doc": {
+      "file": "guide/02-policy-language.md",
+      "heading": "`has` — attribute existence",
+      "quote": "(`has attr`), a dotted path (`has a.b.c`, per Cedar RFC 62), or a string literal on its own"
+    },
+    "summary": "`has a.b.c` and `has \"attr\"`.",
+    "family": "R",
+    "routes": [
+      "replay"
+    ],
+    "detect": [
+      {
+        "policy_regex": "\\bhas\\s+(?:\\w+\\.\\w+|\\\"[^\\\"]*\\\"(?!\\.))"
+      }
+    ],
+    "nearmiss": null,
+    "semantic": false,
+    "mutant": null,
+    "unchecked": false
+  },
+  {
+    "id": "feat:02:like-escapes",
+    "kind": "feature",
+    "doc": {
+      "file": "guide/02-policy-language.md",
+      "heading": "`like` — string pattern matching",
+      "quote": "literal star, and the usual escapes (including `\\u{HEX}`) are supported"
+    },
+    "summary": "`like` patterns with `\\*` and `\\u{…}`.",
+    "family": "R",
+    "routes": [
+      "replay"
+    ],
+    "detect": [
+      {
+        "policy_regex": "like\\s+\\\"[^\\\"]*\\\\(?:\\*|u\\{)"
+      }
+    ],
+    "nearmiss": null,
+    "semantic": false,
+    "mutant": null,
+    "unchecked": false
+  },
+  {
+    "id": "feat:10:regex-find-resource-argument",
+    "kind": "feature",
+    "doc": {
+      "file": "guide/10-provider-schema.md",
+      "heading": "Host functions",
+      "quote": "`regex_find(pattern, text) -> string` — the first match, or `\"\"` if none"
+    },
+    "summary": "A provider script using regex_find, called with an argument rooted at `resource`.",
+    "family": "P",
+    "routes": [
+      "replay"
+    ],
+    "detect": [
+      {
+        "policy_regex": "\\(resource\\.\\w+\\)"
+      }
+    ],
+    "nearmiss": null,
+    "semantic": false,
+    "mutant": null,
+    "unchecked": false
+  },
+  {
+    "id": "restr:02:record-duplicate-key",
+    "kind": "restriction",
+    "doc": {
+      "file": "guide/02-policy-language.md",
+      "heading": "Primary expressions: literals, variables, grouping, sets, records",
+      "quote": "`{ a: 1, \"a\": 2 }` is rejected with ``duplicate key `a` in record literal``."
+    },
+    "summary": "A key twice in a record literal is rejected.",
+    "family": "F",
+    "routes": [
+      "validate",
+      "lower",
+      "replay",
+      "explain",
+      "check-parse"
+    ],
+    "detect": [
+      {
+        "error": {
+          "command": "check-parse",
+          "message_substring": "duplicate key `a` in record literal",
+          "source": "the 1.2.0 build"
+        }
+      }
+    ],
+    "nearmiss": null,
+    "semantic": false,
+    "mutant": null,
+    "unchecked": false
+  },
+  {
+    "id": "restr:02:has-quoted-then-path",
+    "kind": "restriction",
+    "doc": {
+      "file": "guide/02-policy-language.md",
+      "heading": "`has` — attribute existence",
+      "quote": "A quoted name cannot be followed by `.field`"
+    },
+    "summary": "`has \"a\".b` is rejected.",
+    "family": "F",
+    "routes": [
+      "validate",
+      "lower",
+      "replay",
+      "explain",
+      "check-parse"
+    ],
+    "detect": [
+      {
+        "error": {
+          "command": "check-parse",
+          "message_substring": "invalid right-hand side of `has`",
+          "source": "the 1.2.0 build"
+        }
+      }
+    ],
+    "nearmiss": null,
+    "semantic": false,
+    "mutant": null,
+    "unchecked": false
+  },
+  {
+    "id": "restr:02:has-index",
+    "kind": "restriction",
+    "doc": {
+      "file": "guide/02-policy-language.md",
+      "heading": "`has` — attribute existence",
+      "quote": "an index is not a path (`has x[\"y\"]` is an error)"
+    },
+    "summary": "`has x[\"y\"]` is rejected.",
+    "family": "F",
+    "routes": [
+      "validate",
+      "lower",
+      "replay",
+      "explain",
+      "check-parse"
+    ],
+    "detect": [
+      {
+        "error": {
+          "command": "check-parse",
+          "message_substring": "invalid right-hand side of `has`",
+          "source": "the 1.2.0 build"
+        }
+      }
+    ],
+    "nearmiss": null,
+    "semantic": false,
+    "mutant": null,
+    "unchecked": false
+  },
+  {
+    "id": "restr:02:has-literal-first",
+    "kind": "restriction",
+    "doc": {
+      "file": "guide/02-policy-language.md",
+      "heading": "`has` — attribute existence",
+      "quote": "cannot be written unquoted first, since they read as literals"
+    },
+    "summary": "`has true.x` is rejected.",
+    "family": "F",
+    "routes": [
+      "validate",
+      "lower",
+      "replay",
+      "explain",
+      "check-parse"
+    ],
+    "detect": [
+      {
+        "error": {
+          "command": "check-parse",
+          "message_substring": "invalid right-hand side of `has`",
+          "source": "the 1.2.0 build"
+        }
+      }
+    ],
+    "nearmiss": null,
+    "semantic": false,
+    "mutant": null,
+    "unchecked": false
+  },
+  {
+    "id": "restr:03:empty-event-schema-no-kinds",
+    "kind": "restriction",
+    "doc": {
+      "file": "guide/03-event-schema.md",
+      "heading": "The shape of a declaration",
+      "quote": "An event schema that declares no event at all is valid, but no kind is then derived for any action"
+    },
+    "summary": "An empty event schema is valid, and then no predicate names an event.",
+    "family": "V",
+    "routes": [
+      "validate",
+      "schema",
+      "replay"
+    ],
+    "detect": [
+      {
+        "error": {
+          "command": "validate",
+          "message_substring": "does not name a declared event",
+          "source": "the 1.2.0 build"
+        }
+      }
+    ],
+    "nearmiss": null,
+    "semantic": false,
+    "mutant": null,
+    "unchecked": false
+  },
+  {
+    "id": "restr:04:window-length-overflow",
+    "kind": "restriction",
+    "doc": {
+      "file": "guide/04-temporal-expressions.md",
+      "heading": "The past operators and their windows",
+      "quote": "and so is a window too long for its length in seconds to fit a 64-bit integer"
+    },
+    "summary": "A window whose length in seconds overflows i64 is rejected.",
+    "family": "V",
+    "routes": [
+      "validate"
+    ],
+    "detect": [
+      {
+        "error": {
+          "command": "validate",
+          "message_substring": "overflows a 64-bit integer",
+          "source": "the 1.2.0 build"
+        }
+      }
+    ],
+    "nearmiss": null,
+    "semantic": false,
+    "mutant": null,
+    "unchecked": false
+  },
+  {
+    "id": "restr:10:enum-needs-value",
+    "kind": "restriction",
+    "doc": {
+      "file": "guide/10-provider-schema.md",
+      "heading": "Enum-typed values",
+      "quote": "must list at least one value"
+    },
+    "summary": "An enum in entityTypes must list a value.",
+    "family": "F",
+    "routes": [
+      "schema",
+      "validate"
+    ],
+    "detect": [
+      {
+        "error": {
+          "command": "schema",
+          "message_substring": "has no values",
+          "source": "the 1.2.0 build"
+        }
+      }
+    ],
+    "nearmiss": null,
+    "semantic": false,
+    "mutant": null,
+    "unchecked": false
+  },
+  {
+    "id": "restr:10:argument-type-differs",
+    "kind": "restriction",
+    "doc": {
+      "file": "guide/10-provider-schema.md",
+      "heading": "Argument checking",
+      "quote": "attribute whose resolved type *differs* across the"
+    },
+    "summary": "A principal/resource argument whose type differs across the admitted types is rejected.",
+    "family": "V",
+    "routes": [
+      "validate"
+    ],
+    "detect": [
+      {
+        "error": {
+          "command": "validate",
+          "message_substring": "has a different type on each",
+          "source": "the 1.2.0 build"
+        }
+      }
+    ],
+    "nearmiss": null,
+    "semantic": false,
+    "mutant": null,
+    "unchecked": false
+  },
+  {
+    "id": "restr:02:enum-ancestor",
+    "kind": "restriction",
+    "doc": {
+      "file": "guide/08-formal-specification.md",
+      "heading": "5.3 The Cedar side",
+      "quote": "Cedar 4.14 accepts an enumerated ancestor; Dogwood does not"
+    },
+    "summary": "An enumerated entity type may not be an ancestor [V-Schema-Ancestors].",
+    "family": "V",
+    "routes": [
+      "validate"
+    ],
+    "detect": [
+      {
+        "gen_tag": "nearmiss:enum_parent"
+      },
+      {
+        "error": {
+          "command": "validate",
+          "message_substring": "is an ancestor of",
+          "source": "the 1.2.0 build"
+        }
+      }
+    ],
+    "nearmiss": null,
+    "semantic": false,
+    "mutant": null,
+    "unchecked": false
+  },
+  {
+    "id": "restr:03:field-type-unknown",
+    "kind": "restriction",
+    "doc": {
+      "file": "guide/03-event-schema.md",
+      "heading": "Named (injected) fields: `name: type`",
+      "quote": "a predicate can only match it with a wildcard (`_` or `*`): any other argument for it is a validation error"
+    },
+    "summary": "A field typed with an undeclared name matches only a wildcard.",
+    "family": "V",
+    "routes": [
+      "validate"
+    ],
+    "detect": [
+      {
+        "gen_tag": "nearmiss:unknown_field_type"
+      },
+      {
+        "error": {
+          "command": "validate",
+          "message_substring": "expects `any value`",
+          "source": "the 1.2.0 build"
+        }
+      }
+    ],
+    "nearmiss": null,
+    "semantic": false,
+    "mutant": null,
+    "unchecked": false
+  },
+  {
+    "id": "restr:04:no-array-argument",
+    "kind": "restriction",
+    "doc": {
+      "file": "guide/04-temporal-expressions.md",
+      "heading": "Terms in general",
+      "quote": "not a predicate argument: a predicate argument that is or holds an array constant is a lowering error"
+    },
+    "summary": "An array constant is not a predicate argument.",
+    "family": "V",
+    "routes": [
+      "validate",
+      "lower",
+      "replay",
+      "explain",
+      "check-parse"
+    ],
+    "detect": [
+      {
+        "gen_tag": "nearmiss:array_arg"
+      },
+      {
+        "error": {
+          "command": "validate",
+          "message_substring": "temporal predicate arguments cannot contain array constants",
+          "source": "the 1.2.0 build"
+        }
+      }
+    ],
+    "nearmiss": null,
+    "semantic": false,
+    "mutant": null,
+    "unchecked": false
+  },
+  {
+    "id": "restr:02:recursive-common-type",
+    "kind": "restriction",
+    "doc": {
+      "file": "guide/02-policy-language.md",
+      "heading": "A real action schema",
+      "quote": "A chain must end in a type: one that leads back to itself"
+    },
+    "summary": "A context type whose common types refer back to themselves fails augmentation.",
+    "family": "L",
+    "routes": [
+      "lower",
+      "validate",
+      "replay"
+    ],
+    "detect": [
+      {
+        "error": {
+          "command": "lower",
+          "message_substring": "context type reference chain is cyclic",
+          "source": "the 1.2.0 build"
+        }
+      }
+    ],
+    "nearmiss": null,
+    "semantic": false,
+    "mutant": null,
+    "unchecked": false
+  },
+  {
+    "id": "restr:08:hoisted-names-declared",
+    "kind": "restriction",
+    "doc": {
+      "file": "guide/08-formal-specification.md",
+      "heading": "5.3 The Cedar side",
+      "quote": "Those names are lowering's own: an action schema whose `context` declares an attribute with one of them"
+    },
+    "summary": "An action schema may not declare a hoisted name as a context attribute.",
+    "family": "V",
+    "routes": [
+      "validate",
+      "lower",
+      "replay"
+    ],
+    "detect": [
+      {
+        "gen_tag": "nearmiss:names_fresh_bool"
+      },
+      {
+        "gen_tag": "nearmiss:names_fresh_long"
+      },
+      {
+        "gen_tag": "nearmiss:names_fresh_providers"
+      },
+      {
+        "error": {
+          "command": "validate",
+          "message_substring": "a name lowering reserves",
+          "source": "the 1.2.0 build"
+        }
+      }
+    ],
+    "nearmiss": null,
+    "semantic": false,
+    "mutant": null,
+    "unchecked": false
+  },
+  {
+    "id": "restr:10:unknown-paramtype-with-entitytype",
+    "kind": "restriction",
+    "doc": {
+      "file": "guide/10-provider-schema.md",
+      "heading": "Loading checks",
+      "quote": "unless the declaration also gives an `entityType`, which makes it an error"
+    },
+    "summary": "An unknown paramType next to an entityType is an error.",
+    "family": "V",
+    "routes": [
+      "validate",
+      "schema",
+      "lower",
+      "replay",
+      "check-parse"
+    ],
+    "detect": [
+      {
+        "error": {
+          "command": "validate",
+          "message_substring": "unknown paramType",
+          "source": "the 1.2.0 build"
+        }
+      }
+    ],
+    "nearmiss": null,
+    "semantic": false,
+    "mutant": null,
+    "unchecked": false
+  },
+  {
+    "id": "feat:10:unknown-paramtype-fallback",
+    "kind": "feature",
+    "doc": {
+      "file": "guide/10-provider-schema.md",
+      "heading": "Parameter types",
+      "quote": "| any other (unknown)| `String`        | deprecated fallback; warns (error in next major)  |"
+    },
+    "summary": "An unknown paramType warns and falls back to String.",
+    "family": "P",
+    "routes": [
+      "validate",
+      "schema",
+      "lower",
+      "replay",
+      "check-parse"
+    ],
+    "detect": [
+      {
+        "error": {
+          "command": "schema",
+          "message_substring": "falling back to String",
+          "source": "the 1.2.0 build"
+        }
+      }
+    ],
+    "nearmiss": null,
+    "semantic": false,
+    "mutant": null,
+    "unchecked": false
+  },
+  {
+    "id": "feat:08:cedar-validator-findings",
+    "kind": "feature",
+    "doc": {
+      "file": "guide/08-formal-specification.md",
+      "heading": "5.3 The Cedar side",
+      "quote": "Its errors become `ValidationError::Cedar` findings and its"
+    },
+    "summary": "Cedar's strict validator: its errors are findings and its warnings pass through verbatim.",
+    "family": "V",
+    "routes": [
+      "validate"
+    ],
+    "detect": [
+      {
+        "error": {
+          "command": "validate",
+          "message_substring": "unable to find an applicable action",
+          "source": "the 1.2.0 build"
+        }
+      },
+      {
+        "error": {
+          "command": "validate",
+          "message_substring": "unable to guarantee safety of access to optional attribute",
+          "source": "the 1.2.0 build"
+        }
+      },
+      {
+        "error": {
+          "command": "validate",
+          "message_substring": "in context for",
+          "source": "the 1.2.0 build"
+        }
+      },
+      {
+        "error": {
+          "command": "validate",
+          "message_substring": "shadows a builtin Cedar name",
+          "source": "the 1.2.0 build"
+        }
+      }
+    ],
+    "nearmiss": null,
+    "semantic": false,
+    "mutant": null,
+    "unchecked": false
+  },
+  {
+    "id": "restr:08:scope-attribute-every-environment",
+    "kind": "restriction",
+    "doc": {
+      "file": "guide/08-formal-specification.md",
+      "heading": "5.5 Temporal dialect validation (against the schema)",
+      "quote": "attribute tail (`principal.dept`, `principal.id`) to the type that entity"
+    },
+    "summary": "A principal/resource attribute must resolve for every entity type the scope admits.",
+    "family": "V",
+    "routes": [
+      "validate"
+    ],
+    "detect": [
+      {
+        "error": {
+          "command": "validate",
+          "message_substring": "does not resolve for every entity",
+          "source": "the 1.2.0 build"
+        }
+      }
+    ],
+    "nearmiss": null,
+    "semantic": false,
+    "mutant": null,
+    "unchecked": false
+  },
+  {
+    "id": "restr:04:window-positive",
+    "kind": "restriction",
+    "doc": {
+      "file": "guide/04-temporal-expressions.md",
+      "heading": "The past operators and their windows",
+      "quote": "A window must also be positive, so `within 0s` is rejected"
+    },
+    "summary": "A zero window is rejected.",
+    "family": "V",
+    "routes": [
+      "validate"
+    ],
+    "detect": [
+      {
+        "gen_tag": "nearmiss:window_zero"
+      },
+      {
+        "error": {
+          "command": "validate",
+          "message_substring": "must be positive",
+          "source": "the 1.2.0 build"
+        }
+      }
+    ],
+    "nearmiss": null,
+    "semantic": false,
+    "mutant": null,
+    "unchecked": false
+  },
+  {
+    "id": "feat:04:arithmetic-warning",
+    "kind": "feature",
+    "doc": {
+      "file": "guide/04-temporal-expressions.md",
+      "heading": "Comparisons",
+      "quote": "warns that arithmetic operators are experimental and may change in a"
+    },
+    "summary": "validate warns once that arithmetic operators are experimental.",
+    "family": "V",
+    "routes": [
+      "validate"
+    ],
+    "detect": [
+      {
+        "error": {
+          "command": "validate",
+          "message_substring": "arithmetic operators are experimental",
+          "source": "the 1.2.0 build"
+        }
+      }
+    ],
+    "nearmiss": null,
+    "semantic": false,
+    "mutant": null,
+    "unchecked": false
+  },
+  {
+    "id": "feat:12:evaluation-errors-deny",
+    "kind": "feature",
+    "doc": {
+      "file": "guide/12-cli.md",
+      "heading": "Event kinds, decisions, and failure handling",
+      "quote": "is skipped, as in Cedar: the other rules decide, and the decision's line, `ALLOW` or `DENY`, is followed by"
+    },
+    "summary": "A rule whose Cedar part errors at evaluation is skipped; its error is listed under the decision.",
+    "family": "R",
+    "routes": [
+      "replay"
+    ],
+    "detect": [
+      {
+        "error": {
+          "command": "replay",
+          "message_substring": "error while evaluating policy",
+          "source": "the 1.2.0 build"
+        }
+      }
+    ],
+    "nearmiss": null,
+    "semantic": false,
+    "mutant": null,
+    "unchecked": false
+  },
+  {
+    "id": "feat:08:event-conformance-fields",
+    "kind": "feature",
+    "doc": {
+      "file": "guide/08-formal-specification.md",
+      "heading": "6.2 Event conformance",
+      "quote": "(**A-Event-Conforms**): the event schema declares a signature for the event's"
+    },
+    "summary": "A logged field of the wrong type, or a missing one the signature requires, makes the event nonconforming.",
+    "family": "R",
+    "routes": [
+      "replay"
+    ],
+    "detect": [
+      {
+        "error": {
+          "command": "replay",
+          "message_substring": "logs the field",
+          "source": "the 1.2.0 build"
+        }
+      },
+      {
+        "error": {
+          "command": "replay",
+          "message_substring": "does not log the field",
+          "source": "the 1.2.0 build"
+        }
+      }
+    ],
+    "nearmiss": null,
+    "semantic": false,
+    "mutant": null,
+    "unchecked": false
+  },
+  {
+    "id": "restr:12:input-not-utf8",
+    "kind": "restriction",
+    "doc": {
+      "file": "guide/12-cli.md",
+      "heading": "Commands",
+      "quote": "An input file or stdin cannot be read (it is missing,"
+    },
+    "summary": "An input that is not UTF-8 cannot be read: exit 1.",
+    "family": "F",
+    "routes": [
+      "format",
+      "check-parse",
+      "validate",
+      "replay",
+      "cli"
+    ],
+    "detect": [
+      {
+        "args_regex": "latin1\\."
+      }
+    ],
+    "nearmiss": null,
+    "semantic": false,
+    "mutant": null,
+    "unchecked": false
+  },
+  {
+    "id": "feat:12:fatal-report",
+    "kind": "feature",
+    "doc": {
+      "file": "guide/12-cli.md",
+      "heading": "Commands",
+      "quote": "the command prints that diagnostic, as one JSON object, instead of its usual output"
+    },
+    "summary": "A fatal error prints nothing on stdout (human) or one diagnostic object (JSON), exit 2.",
+    "family": "V",
+    "routes": [
+      "validate",
+      "lower",
+      "replay",
+      "explain",
+      "check-parse"
+    ],
+    "detect": [
+      {
+        "error": {
+          "command": "validate",
+          "message_substring": "\"severity\": \"error\", \"spanned\"",
+          "source": "the 1.2.0 build"
+        }
+      }
+    ],
+    "nearmiss": null,
+    "semantic": false,
+    "mutant": null,
+    "unchecked": false
+  },
+  {
+    "id": "feat:12:signed-timestamps",
+    "kind": "feature",
+    "doc": {
+      "file": "guide/12-cli.md",
+      "heading": "The trace file format",
+      "quote": "`<ts>` is a signed 64-bit integer, a count of seconds that may be negative"
+    },
+    "summary": "Trace timestamps are signed 64-bit integers.",
+    "family": "R",
+    "routes": [
+      "replay"
+    ],
+    "detect": [
+      {
+        "trace_regex": "^@-\\d"
+      }
+    ],
+    "nearmiss": null,
+    "semantic": false,
+    "mutant": null,
+    "unchecked": false,
+    "min_cases": 1,
+    "min_cases_why": "only generator traces probing the range carry negative stamps"
+  },
+  {
+    "id": "feat:12:stdin-format",
+    "kind": "feature",
+    "doc": {
+      "file": "guide/12-cli.md",
+      "heading": "Commands",
+      "quote": "Every policy command takes the policy set as a positional argument (a `.dw`"
+    },
+    "summary": "`format -` reads the policy set from standard input.",
+    "family": "F",
+    "routes": [
+      "format"
+    ],
+    "detect": [
+      {
+        "args_regex": "^format\\s+-$"
+      }
+    ],
+    "nearmiss": null,
+    "semantic": false,
+    "mutant": null,
+    "unchecked": false
+  },
+  {
+    "id": "feat:12:stdin-check-parse",
+    "kind": "feature",
+    "doc": {
+      "file": "guide/12-cli.md",
+      "heading": "Commands",
+      "quote": "Every policy command takes the policy set as a positional argument (a `.dw`"
+    },
+    "summary": "`check-parse -` reads the policy set from standard input.",
+    "family": "F",
+    "routes": [
+      "check-parse"
+    ],
+    "detect": [
+      {
+        "args_regex": "^check-parse\\s+-\\s"
+      }
+    ],
+    "nearmiss": null,
+    "semantic": false,
+    "mutant": null,
+    "unchecked": false
+  },
+  {
+    "id": "feat:12:stdin-validate",
+    "kind": "feature",
+    "doc": {
+      "file": "guide/12-cli.md",
+      "heading": "Commands",
+      "quote": "Every policy command takes the policy set as a positional argument (a `.dw`"
+    },
+    "summary": "`validate -` reads the policy set from standard input.",
+    "family": "F",
+    "routes": [
+      "validate"
+    ],
+    "detect": [
+      {
+        "args_regex": "^validate\\s+-\\s"
+      }
+    ],
+    "nearmiss": null,
+    "semantic": false,
+    "mutant": null,
+    "unchecked": false
+  },
+  {
+    "id": "feat:12:stdin-lower",
+    "kind": "feature",
+    "doc": {
+      "file": "guide/12-cli.md",
+      "heading": "Commands",
+      "quote": "Every policy command takes the policy set as a positional argument (a `.dw`"
+    },
+    "summary": "`lower -` reads the policy set from standard input.",
+    "family": "F",
+    "routes": [
+      "lower"
+    ],
+    "detect": [
+      {
+        "args_regex": "^lower\\s+-\\s"
+      }
+    ],
+    "nearmiss": null,
+    "semantic": false,
+    "mutant": null,
+    "unchecked": false
+  },
+  {
+    "id": "feat:12:stdin-explain",
+    "kind": "feature",
+    "doc": {
+      "file": "guide/12-cli.md",
+      "heading": "Commands",
+      "quote": "Every policy command takes the policy set as a positional argument (a `.dw`"
+    },
+    "summary": "`explain -` reads the policy set from standard input.",
+    "family": "F",
+    "routes": [
+      "explain"
+    ],
+    "detect": [
+      {
+        "args_regex": "^explain\\s+-\\s"
+      }
+    ],
+    "nearmiss": null,
+    "semantic": false,
+    "mutant": null,
+    "unchecked": false
+  },
+  {
+    "id": "feat:12:stdin-replay",
+    "kind": "feature",
+    "doc": {
+      "file": "guide/12-cli.md",
+      "heading": "Commands",
+      "quote": "Every policy command takes the policy set as a positional argument (a `.dw`"
+    },
+    "summary": "`replay -` reads the policy set from standard input.",
+    "family": "F",
+    "routes": [
+      "replay"
+    ],
+    "detect": [
+      {
+        "args_regex": "^replay\\s+-\\s"
+      }
+    ],
+    "nearmiss": null,
+    "semantic": false,
+    "mutant": null,
+    "unchecked": false
+  },
+  {
+    "id": "feat:12:stdin-file-options",
+    "kind": "feature",
+    "doc": {
+      "file": "guide/12-cli.md",
+      "heading": "Commands",
+      "quote": "`schema` command) may be `-` too; stdin is read once, so it can stand for one of"
+    },
+    "summary": "`--policy-schema -`, `--trace -` and `schema <part> -` read standard input.",
+    "family": "F",
+    "routes": [
+      "validate",
+      "replay",
+      "schema"
+    ],
+    "detect": [
+      {
+        "args_regex": "--(?:policy-schema|trace)\\s+-(?:\\s|$)"
+      },
+      {
+        "args_regex": "^schema\\s+\\w+\\s+-(?:\\s|$)"
       }
     ],
     "nearmiss": null,

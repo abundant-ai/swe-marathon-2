@@ -15,7 +15,15 @@ at least 1 for a restriction. The evidence, strongest first:
 - use: for a feature, the cases whose inputs use it (its `detect` patterns, or a template bundle
   built to use it) and whose recorded answer is a success (exit status 0), or whose answer
   carries one of its messages: a build without the feature cannot print that answer.
-Out-of-scope ids must have no case; unchecked restrictions are not counted.
+Out-of-scope ids must have no case, whatever its exit status; unchecked restrictions are not
+counted. An id is stated only when its quote stands in the shipped guide or in the brief: an id
+sourced from anything else (upstream's code, say) is reported as not stated.
+
+The other direction: every graded case must be claimed by a stated id (by its detectors without
+the catch-all ones, its generator tag, the template it was built from, or a message of the id in
+its answer), so a graded behaviour no agent-visible text states is a bug; every error, warning
+and fail-closed message in a graded answer must hold the message of a stated id (the rule that
+gives it); and every key of every graded JSON answer must be named in the guide.
 """
 
 from __future__ import annotations
@@ -123,6 +131,64 @@ def matches(detect: list[dict], inp: dict, tags: list[str]) -> bool:
     return False
 
 
+def catch_all(alt: dict) -> bool:
+    """An alternative that matches every case (`args_regex: "."`), which claims nothing."""
+    keys = [k for k, _ in KEYS if alt.get(k)]
+    return keys == ["args_regex"] and alt["args_regex"] in (".", "^", ".*", "")
+
+
+def json_keys(text: str) -> set[str]:
+    try:
+        value = json.loads(text)
+    except ValueError:
+        return set()
+    out: set[str] = set()
+    stack = [value]
+    while stack:
+        v = stack.pop()
+        if isinstance(v, dict):
+            out.update(v)
+            stack.extend(v.values())
+        elif isinstance(v, list):
+            stack.extend(v)
+    return out
+
+
+def messages(text: str, fmt: str) -> list[str]:
+    """The error, warning and fail-closed messages of one recorded answer."""
+    out: list[str] = []
+    if fmt == "json":
+        try:
+            value = json.loads(text)
+        except ValueError:
+            return out
+        stack = [value]
+        while stack:
+            v = stack.pop()
+            if isinstance(v, dict):
+                for k, x in v.items():
+                    if k in ("message", "reason") and isinstance(x, str):
+                        out.append(x)
+                    elif k in ("errors", "warnings") and isinstance(x, list):
+                        out.extend(y for y in x if isinstance(y, str))
+                        stack.extend(y for y in x if not isinstance(y, str))
+                    else:
+                        stack.append(x)
+            elif isinstance(v, list):
+                stack.extend(v)
+        return out
+    for line in text.splitlines():
+        s = line.strip()
+        for head in ("error: ", "warning: "):
+            if s.startswith(head):
+                out.append(s[len(head) :])
+    return out
+
+
+def template(message: str) -> str:
+    return re.sub(r"\b\d+\b", "N", re.sub(r"`[^`]*`", "`_`", message))[:160]
+
+
 def squash(text: str) -> str:
     return " ".join(text.replace("**", "").replace("`", "").split())
 
@@ -198,6 +264,13 @@ def main() -> int:
         p.name: squash(p.read_text(encoding="utf-8"))
         for p in sorted((a.docs / "guide").glob("*.md"))
     }
+    brief_path = a.docs.parent.parent / "instruction.md"
+    brief = (
+        {"instruction.md": squash(brief_path.read_text(encoding="utf-8"))}
+        if brief_path.is_file()
+        else {}
+    )
+    claimed: dict[str, set[str]] = defaultdict(set)  # case id -> ids that claim it
     for f in features:
         fid, kind = f["id"], f["kind"]
         routes = set(f.get("routes") or [])
@@ -225,6 +298,23 @@ def main() -> int:
                     tags.get(c["bundle"], {}).get("tags", []),
                 )
             )
+            if (
+                targeted
+                or msg
+                or (
+                    has_shape
+                    and matches(
+                        [alt for alt in detect if not catch_all(alt)],
+                        inp_cache[c["id"]],
+                        tags.get(c["bundle"], {}).get("tags", []),
+                    )
+                )
+            ):
+                claimed[c["id"]].add(fid)
+            if kind == "out_of_scope":
+                if hit:
+                    use.add(c["id"])
+                continue
             if kind == "restriction":
                 # The breaking shape and a refusal (its message, or a failing exit status),
                 # or, for an id known only by its message, the message. A template for an id
@@ -260,7 +350,13 @@ def main() -> int:
             "count": n,
             "need": need,
             "evidence": evidence,
-            "stated_in": stated(f, guide) if doc.startswith("guide/") else doc,
+            "stated_in": (
+                stated(f, guide)
+                if doc.startswith("guide/")
+                else stated(f, brief)
+                if doc == "instruction.md"
+                else None
+            ),
         }
     gaps = sorted(
         fid
@@ -271,7 +367,43 @@ def main() -> int:
             or (r["kind"] == "out_of_scope" and r["count"] > 0)
         )
     )
+    stated_ids = {
+        fid
+        for fid, r in by_id.items()
+        if r["kind"] in ("feature", "restriction") and r["stated_in"] is not None
+    }
+    unclaimed = sorted(c["id"] for c in cases if not (claimed[c["id"]] & stated_ids))
+    raw_guide = "\n".join(
+        p.read_text(encoding="utf-8") for p in sorted((a.docs / "guide").glob("*.md"))
+    )
+    keys: set[str] = set()
+    for c in cases:
+        g = answer(gold, c["id"])
+        if g is not None and c["fmt"] == "json":
+            keys |= json_keys(g[1])
+    undocumented_keys = sorted(
+        k for k in keys if f'"{k}"' not in raw_guide and f"`{k}`" not in raw_guide
+    )
+    substrings = [
+        alt["error"]["message_substring"]
+        for f in features
+        if f["id"] in stated_ids
+        for alt in alternatives(f)
+        if (alt.get("error") or {}).get("message_substring")
+    ]
+    unnamed: Counter = Counter()
+    for c in cases:
+        g = answer(gold, c["id"])
+        if g is None:
+            continue
+        for m in messages(g[1], c["fmt"]):
+            if not any(s in m for s in substrings):
+                unnamed[template(m)] += 1
     report = {
+        "unnamed_messages": dict(unnamed.most_common()),
+        "unclaimed_cases": len(unclaimed),
+        "unclaimed_examples": unclaimed[:40],
+        "undocumented_json_keys": undocumented_keys,
         "ids": len(by_id),
         "by_kind": {
             k: sum(1 for r in by_id.values() if r["kind"] == k)
@@ -298,15 +430,28 @@ def main() -> int:
     print(
         json.dumps(
             {k: report[k] for k in ("ids", "by_kind", "unchecked", "evidence")}
-            | {"gaps": len(gaps), "not_stated": len(report["not_stated"])}
+            | {
+                "gaps": len(gaps),
+                "not_stated": len(report["not_stated"]),
+                "unclaimed_cases": len(unclaimed),
+                "undocumented_json_keys": undocumented_keys,
+                "unnamed_messages": len(unnamed),
+            }
         )
     )
+    for fid in report["not_stated"][:40]:
+        print(f"NOT STATED {fid}")
+    for cid in unclaimed[:40]:
+        print(f"UNCLAIMED {cid}")
+    for tpl, n in unnamed.most_common(40):
+        print(f"UNNAMED MESSAGE ({n}) {tpl}")
     for g in gaps[:80]:
         r = by_id[g]
         print(
             f"GAP {g}: {r['count']} of {r['need']} (mutant {r['mutant_kills']}, error {r['error_cases']}, use {r['use_cases']})"
         )
-    return 1 if gaps else 0
+    failed = gaps or report["not_stated"] or unclaimed or undocumented_keys or unnamed
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":

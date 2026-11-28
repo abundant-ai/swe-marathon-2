@@ -1222,6 +1222,388 @@ FEATURES: dict[str, tuple[tuple[str, ...], dict[str, str]]] = {
 }
 
 
+# Fix round 1 (D-M7): stated features and restrictions that had no case.
+EXT_SCHEMA = """namespace Ledger {
+  type TransferInput = {
+    amount: Long,
+    user: String
+  };
+  type OpenInput = {
+    labels: Set<String>,
+    note?: {
+      tier?: {
+        name?: String
+      }
+    },
+    user: String
+  };
+  type OpenSystem = {
+    addr: ipaddr,
+    at: datetime,
+    rate: decimal,
+    span: duration
+  };
+  type Empty = {  };
+  entity Gateway = {
+    owner: String
+  };
+  entity User = {
+    id: String
+  } tags String;
+  action "Transfer" appliesTo {
+    principal: [User],
+    resource: [Gateway],
+    context: {
+      input: TransferInput,
+      output?: Empty
+    }
+  };
+  action "Open" appliesTo {
+    principal: [User],
+    resource: [Gateway],
+    context: {
+      input: OpenInput,
+      output?: Empty,
+      system: OpenSystem
+    }
+  };
+}
+"""
+OPEN_SCOPE = 'principal,\n    action == Ledger::Action::"Open",\n    resource'
+ADDRS = ("10.0.0.7", "127.0.0.1", "224.0.0.9", "::1", "2001:db8::7", "192.168.4.20")
+USERS_EXT = ("u1", "u*", "u7", "café", "café1", "v2")
+LABELS = (["a", "b"], ["b"], ["c", "x"], [], ["a", "b", "d"], ["d"])
+NOTES = (
+    "",
+    'note: { tier: { name: "gold" } }, ',
+    "note: { tier: {  } }, ",
+    "note: {  }, ",
+)
+
+
+def rules(*conds, scope=OPEN_SCOPE):
+    """One permit per condition, each with its own @id, so `[rules: …]` shows each one's value."""
+    return "\n".join(
+        f'@id("@RID@_{i}")\npermit (\n    {scope}\n)\nwhen {{ {c} }};\n'
+        for i, c in enumerate(conds)
+    )
+
+
+def open_trace(r):
+    """Open requests of two principals, each with its own address, time, span, rate, labels,
+    user and optional note: the values the extension, set and pattern rules turn on."""
+    who = r.sample(pairs.PEOPLE, 2)
+    c = pairs.Clock(r)
+    lines = []
+    for _ in range(r.randint(5, 7)):
+        ts, rid = c.tick()
+        p = r.choice(who)
+        day = r.choice([1, 1, 2, 30])
+        hour, minute = r.randint(0, 23), r.choice([0, 15, 45])
+        span = r.choice(["45m", "90m", "2h", "1d2h", "30s", "3h30m"])
+        rate = r.choice(["0.75", "1.25", "1.5", "2.0001"])
+        labels = r.choice(LABELS)
+        user = r.choice(USERS_EXT)
+        note = r.choice(NOTES)
+        inp = (
+            "{ labels: "
+            + json.dumps(labels)
+            + f", {note}user: {json.dumps(user, ensure_ascii=False)} }}"
+        )
+        system = (
+            f'{{ addr: ip("{r.choice(ADDRS)}"), at: datetime("2026-05-{day:02d}T{hour:02d}:{minute:02d}:00Z"), '
+            f'rate: decimal("{rate}"), span: duration("{span}") }}'
+        )
+        lines.append(
+            f'@{ts} scope(principal: Ledger::User::"{p}", resource: Ledger::Gateway::"gw1") '
+            f"request_context(input: {inp}, system: {system}) "
+            f'Ledger::Action::"Open"::request(input: {inp}, callerPrincipal: Ledger::User::"{p}", '
+            f'callerResource: Ledger::Gateway::"gw1", requestId: "{rid}")'
+        )
+    return lines
+
+
+def owner_trace(r):
+    """Transfers to gateways whose owner the entity store names: the provider reads it."""
+    who = r.choice(pairs.PEOPLE)
+    c = pairs.Clock(r)
+    lines = []
+    for _ in range(r.randint(3, 5)):
+        ts, rid = c.tick()
+        gw = r.choice(["gw1", "gw2"])
+        owner = r.choice(["u1", "u22", "ops7", "x"])
+        amount, user = r.choice([10, 20, 45]), r.choice(pairs.USERS)
+        lines.append(
+            f'@{ts} scope(principal: Ledger::User::"{who}", resource: Ledger::Gateway::"{gw}") '
+            f'entities(Ledger::Gateway::"{gw}": {{ owner: "{owner}" }}) '
+            f'request_context(input: {{ amount: {amount}, user: "{user}" }}) '
+            f'Ledger::Action::"Transfer"::request(input: {{ amount: {amount}, user: "{user}" }}, '
+            f'callerPrincipal: Ledger::User::"{who}", callerResource: Ledger::Gateway::"{gw}", '
+            f'requestId: "{rid}")'
+        )
+    return lines
+
+
+OWNER_PROVIDER = {
+    "availableProviders": {
+        "Text::Owner": {
+            "argumentTypes": [{"paramType": "string"}],
+            "outputType": {
+                "paramType": "record",
+                "fields": {
+                    "digits": {"paramType": "string"},
+                    "ok": {"paramType": "bool"},
+                },
+                "required": ["digits", "ok"],
+            },
+            "implementation": {
+                "kind": "rhai",
+                "script": (
+                    "fn evaluate(owner) {\n"
+                    '    if type_of(owner) == "()" {\n'
+                    '        return #{ digits: "", ok: false };\n'
+                    "    }\n"
+                    '    let d = regex_find("[0-9]+", owner);\n'
+                    '    #{ digits: d, ok: d != "" }\n'
+                    "}\n"
+                ),
+            },
+        }
+    }
+}
+
+
+def empty_enum_providers() -> str:
+    """Risk::Score with an enum-typed `level` output whose enum lists no value."""
+    decl = json.loads(enum_providers())
+    decl["entityTypes"]["Risk::Level"]["enum"] = []
+    return json.dumps(decl, indent=1) + "\n"
+
+
+EXT = {"schema.cedarschema": EXT_SCHEMA}
+NEW_FEATURES = {
+    "feat:02:datetime": (
+        ("validate", "replay", "lower", "explain"),
+        dict(
+            EXT,
+            **{
+                "policy.dw": rules(
+                    'context.system.at < datetime("2026-05-02T00:00:00Z")',
+                    'context.system.at >= datetime("2026-05-30")',
+                )
+            },
+        ),
+    ),
+    "feat:02:duration": (
+        ("validate", "replay", "lower", "explain"),
+        dict(
+            EXT,
+            **{
+                "policy.dw": rules(
+                    'context.system.span > duration("1h")',
+                    'context.system.span <= duration("90m")',
+                )
+            },
+        ),
+    ),
+    "feat:02:ipaddr-methods": (
+        ("validate", "replay", "lower"),
+        dict(
+            EXT,
+            **{
+                "policy.dw": rules(
+                    "context.system.addr.isIpv4()",
+                    "context.system.addr.isIpv6()",
+                    "context.system.addr.isLoopback()",
+                    "context.system.addr.isMulticast()",
+                    'context.system.addr.isInRange(ip("10.0.0.0/8"))',
+                )
+            },
+        ),
+    ),
+    "feat:02:datetime-methods": (
+        ("validate", "replay", "lower"),
+        dict(
+            EXT,
+            **{
+                "policy.dw": rules(
+                    'context.system.at.toDate() == datetime("2026-05-01")',
+                    'context.system.at.toTime() < duration("12h")',
+                    'context.system.at.offset(duration("1d")) > datetime("2026-05-02T12:00:00Z")',
+                    'context.system.at.durationSince(datetime("2026-05-01T00:00:00Z")) > duration("6h")',
+                )
+            },
+        ),
+    ),
+    "feat:02:duration-methods": (
+        ("validate", "replay", "lower"),
+        dict(
+            EXT,
+            **{
+                "policy.dw": rules(
+                    "context.system.span.toMilliseconds() > 3600000",
+                    "context.system.span.toSeconds() >= 5400",
+                    "context.system.span.toMinutes() < 60",
+                    "context.system.span.toHours() >= 2",
+                    "context.system.span.toDays() >= 1",
+                )
+            },
+        ),
+    ),
+    "feat:02:decimal-methods": (
+        ("validate", "replay", "lower"),
+        dict(
+            EXT,
+            **{
+                "policy.dw": rules(
+                    'context.system.rate.lessThanOrEqual(decimal("1.25"))',
+                    'context.system.rate.greaterThanOrEqual(decimal("1.5"))',
+                )
+            },
+        ),
+    ),
+    "feat:02:set-methods": (
+        ("validate", "replay", "lower"),
+        dict(
+            EXT,
+            **{
+                "policy.dw": rules(
+                    'context.input.labels.containsAll(["a", "b"])',
+                    'context.input.labels.containsAny(["c", "d"])',
+                )
+            },
+        ),
+    ),
+    "feat:02:tag-methods": (
+        ("validate", "lower", "explain"),
+        dict(
+            EXT,
+            **{
+                "policy.dw": rules(
+                    'principal.hasTag("role") && principal.getTag("role") == "@WHO@"'
+                )
+            },
+        ),
+    ),
+    "feat:02:has-path-and-quoted": (
+        ("validate", "replay", "lower", "explain"),
+        dict(
+            EXT,
+            **{
+                "policy.dw": rules(
+                    "context.input has note.tier.name",
+                    'context.input has "note"',
+                    "context.input has note.tier",
+                )
+            },
+        ),
+    ),
+    "feat:02:like-escapes": (
+        ("validate", "replay", "lower", "explain"),
+        dict(
+            EXT,
+            **{
+                "policy.dw": rules(
+                    'context.input.user like "u\\*"',
+                    'context.input.user like "caf\\u{e9}*"',
+                    'context.input.user like "u*"',
+                )
+            },
+        ),
+    ),
+    "feat:12:evaluation-errors-deny": (
+        ("validate", "replay"),
+        {
+            "policy.dw": rules(
+                "context.input.amount * 4611686018427387904 > @N@",
+                "context.input.amount < 1000",
+                scope=TRANSFER_SCOPE,
+            )
+        },
+    ),
+    "feat:10:regex-find-resource-argument": (
+        ("validate", "replay", "lower"),
+        {
+            "schema.cedarschema": EXT_SCHEMA,
+            "providers.json": json.dumps(OWNER_PROVIDER, indent=1) + "\n",
+            "policy.dw": rules(
+                "Text::Owner(resource.owner).ok",
+                'Text::Owner(resource.owner).digits == "22"',
+                scope=TRANSFER_SCOPE,
+            ),
+        },
+    ),
+}
+NEW_FEATURE_TRACES = {
+    "feat:02:datetime": open_trace,
+    "feat:02:duration": open_trace,
+    "feat:02:ipaddr-methods": open_trace,
+    "feat:02:datetime-methods": open_trace,
+    "feat:02:duration-methods": open_trace,
+    "feat:02:decimal-methods": open_trace,
+    "feat:02:set-methods": open_trace,
+    "feat:02:has-path-and-quoted": open_trace,
+    "feat:02:like-escapes": open_trace,
+    "feat:10:regex-find-resource-argument": owner_trace,
+}
+NEW_TEMPLATES = {
+    "restr:02:record-duplicate-key": (
+        PARSE,
+        {"policy.dw": policy('{ a: 1, "a": @N@ } == { a: 1 }')},
+    ),
+    "restr:02:has-quoted-then-path": (
+        PARSE,
+        {"policy.dw": policy('context has "input".user')},
+    ),
+    "restr:02:has-index": (
+        PARSE,
+        {"policy.dw": policy('context has input["user"]')},
+    ),
+    "restr:02:has-literal-first": (
+        PARSE,
+        {"policy.dw": policy("context has true.user")},
+    ),
+    "restr:03:empty-event-schema-no-kinds": (
+        ("schema-event", "validate", "replay"),
+        {
+            "policy.dw": alert(f"formerly within @W@ {LOGIN_ANCHOR}"),
+            "event.dwschema": "// The kinds our tools log go here.\n",
+        },
+    ),
+    "restr:04:window-length-overflow": (
+        VALIDATE,
+        {"policy.dw": alert(f"formerly within 200000000000000d {LOGIN_ANCHOR}")},
+    ),
+    "restr:10:enum-needs-value": (
+        ("schema-providers", "validate"),
+        {
+            "policy.dw": policy("Risk::Score(context.input.amount).score > @N@"),
+            "providers.json": empty_enum_providers(),
+        },
+    ),
+    "restr:10:argument-type-differs": (
+        VALIDATE,
+        {
+            "policy.dw": policy("Risk::Score(principal.dept).score > @N@"),
+            "providers.json": providers(),
+            "schema.cedarschema": pairs.SCHEMA.replace(
+                "  entity User = {\n    id: String\n  };",
+                "  entity User = {\n    dept: Long,\n    id: String\n  };\n"
+                "  entity Admin = {\n    dept: String,\n    id: String\n  };",
+                1,
+            ).replace(
+                '  action "Transfer" appliesTo {\n    principal: [User],',
+                '  action "Transfer" appliesTo {\n    principal: [User, Admin],',
+                1,
+            ),
+        },
+    ),
+}
+
+FEATURES.update(NEW_FEATURES)
+TEMPLATES.update(NEW_TEMPLATES)
+
+
 SCRIPT_FILE = "feat:10:scriptfile-unresolved"
 
 
@@ -1338,6 +1720,7 @@ FEATURE_TRACES = {
     "feat:03:key-local-previous": previous_trace,
     "feat:04:window-closed": window_edge_trace,
     "feat:06:hygiene": previous_trace,
+    **NEW_FEATURE_TRACES,
 }
 
 

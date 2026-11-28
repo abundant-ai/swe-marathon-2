@@ -9,7 +9,8 @@ Each pair is two bundles that differ in one place:
 - K, key-local slicing and the mirror rule, in eight shapes (`KEY_SHAPES`):
   - previous: another principal's event sits between this principal's last event and the
     decision, so `previous` must mean this principal's previous event (the default
-    `callerPrincipal` pin is universal and symmetric); the dual has no event in between;
+    `callerPrincipal` pin is universal and symmetric); in the dual this principal's own event that
+    fails the predicate sits there, so `previous` must mean the immediately preceding event;
   - since_other: the positive left of `since` ranges over this key's positions only, so another
     principal's event after the anchor does not break it; the dual has no such event;
   - since_own: this principal's own non-matching event after the anchor does break it; the dual
@@ -17,14 +18,16 @@ Each pair is two bundles that differ in one place:
   - partial_pin: an event schema that pins `callerPrincipal` on `request` but not on
     `response` is not universal, so `previous` reads the whole trace; the dual pins both kinds;
   - context_pin: a universal pin to `context.session` keys every condition on the session, so
-    another session of the same principal is invisible; the dual has no other session;
+    another session of the same principal is invisible; in the dual an event of the same session
+    that fails the predicate sits there;
   - mirror_history: a history event that logs a caller it does not carry is rejected and never
     counts; the dual's event carries its caller;
   - mirror_decision: a decision event that logs a caller it does not carry fails closed and is not
     ingested; the dual's event carries its caller;
   - no_scope_history: under the default pin, a history event with no principal is rejected; the
     dual's event has its scope.
-Other principals' events are mixed in, which the pins must ignore.
+Other principals' events are mixed in, which the pins must ignore. Every K trace ends with one
+more decision of the same principal on the rule's action, after the window has passed (DENY).
 
 Usage: python3 -I pairs.py --seed S --pairs N --out DIR (or write_pairs from make_cases.py)
 """
@@ -351,6 +354,18 @@ def transfer(r):
 ALERT = ("Alert", [("level", 1), ("server", "s1")])
 
 
+WINDOW_SECONDS = {"30m": 1800, "1h": 3600, "2h": 7200}
+
+
+def lapsed(c, lines, ev, who, window, session=None):
+    """One more decision of `who` on the rule's own action, an hour after the window that holds
+    everything before it has passed: whatever matched lies outside the window, so it is DENY, which
+    a program that ignores the history, or that allows the last decision of a trace, gets wrong."""
+    c.ts += WINDOW_SECONDS[window] + 3600
+    ts, rid = c.tick()
+    lines.append(line(ts, ev[0], ev[1], rid, scope=who, session=session))
+
+
 def noise(r, c, lines, who, n_max=2, session=None):
     for _ in range(r.randint(0, n_max)):
         ev = r.choice([login(r), transfer(r)])
@@ -359,7 +374,10 @@ def noise(r, c, lines, who, n_max=2, session=None):
 
 
 def key_previous(r, idx, member, me, other, window, extra):
-    """`previous` under the default pin: another principal's event in between (case) or none."""
+    """`previous` under the default pin. Between this principal's matching event and its Alert sits
+    another principal's event (case: key-local `previous` still sees the match, ALLOW) or this
+    principal's own event that fails the predicate (dual: DENY, where a reading of `previous` as
+    "some earlier event", or one that drops the temporal condition, says ALLOW)."""
     pred = r.choice(
         [LOGIN_PRED, 'Ledger::Action::"Transfer"::request{ input.amount: * }']
     )
@@ -368,12 +386,17 @@ def key_previous(r, idx, member, me, other, window, extra):
     noise(r, c, lines, other)
     ts, rid = c.tick()
     lines.append(line(ts, mine[0], mine[1], rid, scope=me))
+    alt_login, alt_transfer = login(r), transfer(r)
+    pick = r.choice([alt_login, alt_transfer])
+    ts, rid = c.tick()
     if member == "case":
-        ev = r.choice([login(r), transfer(r)])
-        ts, rid = c.tick()
-        lines.append(line(ts, ev[0], ev[1], rid, scope=other))
+        lines.append(line(ts, pick[0], pick[1], rid, scope=other))
+    else:
+        miss = alt_transfer if "Login" in pred else alt_login
+        lines.append(line(ts, miss[0], miss[1], rid, scope=me))
     ts, rid = c.tick()
     lines.append(line(ts, ALERT[0], ALERT[1], rid, scope=me))
+    lapsed(c, lines, ALERT, me, window)
     return permit(idx, member, "Alert", f"previous within {window} {pred}"), lines
 
 
@@ -415,6 +438,7 @@ def key_since(r, idx, member, me, other, window, extra, own):
     ev = transfer(r)
     ts, rid = c.tick()
     lines.append(line(ts, ev[0], ev[1], rid, scope=me))
+    lapsed(c, lines, transfer(r), me, window)
     return permit(idx, member, "Transfer", cond), lines
 
 
@@ -432,12 +456,14 @@ def key_partial_pin(r, idx, member, me, other, window, extra):
     lines.append(line(ts, ev[0], ev[1], rid, scope=other))
     ts, rid = c.tick()
     lines.append(line(ts, ALERT[0], ALERT[1], rid, scope=me))
+    lapsed(c, lines, ALERT, me, window)
     return permit(idx, member, "Alert", f"previous within {window} {LOGIN_PRED}"), lines
 
 
 def key_context_pin(r, idx, member, me, other, window, extra):
-    """A universal pin to `context.session` keys conditions on the session: the same principal's
-    event in another session sits between (case) or nothing does (dual)."""
+    """A universal pin to `context.session` keys conditions on the session. Between this session's
+    Login and its Alert sits the same principal's event in another session (case: invisible, ALLOW)
+    or an event of this session that fails the predicate (dual: DENY)."""
     extra["schema.cedarschema"] = SESSION_SCHEMA
     extra["event.dwschema"] = SESSION_EVENTS
     mine_s, other_s = r.sample(SESSIONS, 2)
@@ -446,12 +472,18 @@ def key_context_pin(r, idx, member, me, other, window, extra):
     ev = login(r)
     ts, rid = c.tick()
     lines.append(line(ts, ev[0], ev[1], rid, scope=me, session=mine_s))
+    alt_login, alt_transfer = login(r), transfer(r)
+    pick = r.choice([alt_login, alt_transfer])
+    ts, rid = c.tick()
     if member == "case":
-        ev = r.choice([login(r), transfer(r)])
-        ts, rid = c.tick()
-        lines.append(line(ts, ev[0], ev[1], rid, scope=me, session=other_s))
+        lines.append(line(ts, pick[0], pick[1], rid, scope=me, session=other_s))
+    else:
+        lines.append(
+            line(ts, alt_transfer[0], alt_transfer[1], rid, scope=me, session=mine_s)
+        )
     ts, rid = c.tick()
     lines.append(line(ts, ALERT[0], ALERT[1], rid, scope=me, session=mine_s))
+    lapsed(c, lines, ALERT, me, window, session=mine_s)
     return permit(idx, member, "Alert", f"previous within {window} {LOGIN_PRED}"), lines
 
 
@@ -472,6 +504,7 @@ def key_mirror(r, idx, member, me, other, window, extra, kind, scope_less=False)
     noise(r, c, lines, other, n_max=1)
     ts, rid = c.tick()
     lines.append(line(ts, ALERT[0], ALERT[1], rid, scope=me))
+    lapsed(c, lines, ALERT, me, window)
     return permit(idx, member, "Alert", f"formerly within {window} {target}"), lines
 
 

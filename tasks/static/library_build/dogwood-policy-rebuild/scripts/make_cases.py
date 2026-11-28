@@ -5,8 +5,14 @@ Runs inside the toolchain container (python3 -I), never on the host. Three sourc
   source), run with private seeds, one family at a time, near misses and schema cases included;
 - the paired cases of `pairs.py` (B-dedup, B-scope and the K shapes), and the bundles of
   `restrictions.py`, each breaking one stated restriction the generator never breaks;
-- command-line cases (`--help`, `--version`, usage and I/O errors) on a small bundle of their own,
-  and, on a quarter of the bundles, commands that read their input from standard input (`-`).
+- command-line cases (`--help`, `--version`, usage and I/O errors, files that are not UTF-8) on a
+  small bundle of their own, and, on one generator bundle in sixteen, every command again with one
+  of its inputs read from standard input (`-`).
+
+Generator bundles get names of their own (`g<n>_<family>`), so no case id carries the seed. Each
+case lists the bundle files its command line names (`files`), which are all its run's folder
+holds. For every replay case, OUT/shadow/ holds the same command over the policy with its temporal
+conditions rewritten (`history_free.py`), for selection.
 
 Each bundle is made fit for the command line: provider scripts are inlined (the CLI never resolves
 `scriptFile`), and a bundle with a trace whose timestamps repeat or go back is dropped, since the
@@ -27,6 +33,7 @@ Usage: make_cases.py --gen DIR --out DIR --seed S [counts...]
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import random
 import re
@@ -37,10 +44,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import history_free
 import pairs
 import restrictions
 
 TRACE_NAME = re.compile(r"trace(_\d+)?\.log")
+GEN_NAME = re.compile(r"s\d+_\d+_([a-z]+)")
 STAMP = re.compile(r"^@(-?\d+)\s")
 EVENT_SCHEMAS = ("events.dwschema", "event.dwschema")
 
@@ -51,6 +60,56 @@ permit (
     resource
 );
 """
+
+
+def files_of(bundle: Path, c: dict) -> list[str]:
+    """The bundle entries a case's command line names (its run's folder holds only these), and
+    the script files a providers file it names refers to."""
+    names = {
+        a for a in c["args"] if a != "-" and "/" not in a and (bundle / a).exists()
+    }
+    for a in list(names):
+        if a.endswith(".json") and (bundle / a).is_file():
+            for ref in re.findall(
+                r'"scriptFile"\s*:\s*"([^"/]+)"', (bundle / a).read_text()
+            ):
+                if (bundle / ref).exists():
+                    names.add(ref)
+    return sorted(names)
+
+
+def write_shadows(out: Path, bundles: Path, cases: list[dict]) -> None:
+    """For every replay case, the same command over the policy with its temporal conditions
+    rewritten (`history_free.py`), into OUT/shadow/: what a program that ignores the history
+    prints, once the release build has run them. A policy with no temporal condition gets none."""
+    root = out / "shadow"
+    (root / "bundles").mkdir(parents=True)
+    made: set[tuple[str, str]] = set()
+    lines = []
+    for c in cases:
+        if not c["args"] or c["args"][0] != "replay":
+            continue
+        policy = bundles / c["bundle"] / "policy.dw"
+        if not policy.is_file():
+            continue
+        for variant in history_free.VARIANTS:
+            text = history_free.rewrite(policy.read_text(encoding="utf-8"), variant)
+            if text is None:
+                continue
+            name = f"{c['bundle']}~hf-{variant}"
+            if (c["bundle"], variant) not in made:
+                shutil.copytree(bundles / c["bundle"], root / "bundles" / name)
+                (root / "bundles" / name / "policy.dw").write_text(
+                    text, encoding="utf-8"
+                )
+                made.add((c["bundle"], variant))
+            lines.append(
+                json.dumps(
+                    dict(c, id=f"{c['id']}#hf-{variant}", bundle=name, pair=None),
+                    sort_keys=True,
+                )
+            )
+    (root / "cases.jsonl").write_text("\n".join(lines) + ("\n" if lines else ""))
 
 
 def trace_ok(path: Path) -> bool:
@@ -305,47 +364,10 @@ def cases_for(name: str, bundle: Path, meta: dict, r: random.Random) -> list[dic
     policy = (bundle / "policy.dw").read_text(encoding="utf-8")
     (bundle / "layout.dw").write_text(disturb(policy, r), encoding="utf-8")
     out.append(case(name, "format/human", "F", ["format", "layout.dw"], "human"))
-    if r.random() < 0.25:  # the same commands reading `-`, standard input
-        out.append(
-            case(
-                name,
-                "format-stdin/human",
-                "F",
-                ["format", "-"],
-                "human",
-                stdin="layout.dw",
-            )
-        )
-        out.append(
-            case(
-                name,
-                "check-parse-stdin/human",
-                "F",
-                ["check-parse", "-", *fl],
-                "human",
-                stdin="policy.dw",
-            )
-        )
-        out.append(
-            case(
-                name,
-                "validate-stdin/human",
-                "F",
-                ["validate", "-", "--policy-schema", "schema.cedarschema", *fl],
-                "human",
-                stdin="policy.dw",
-            )
-        )
-        out.append(
-            case(
-                name,
-                "schema-action-stdin/human",
-                "F",
-                ["schema", "action", "-"],
-                "human",
-                stdin="schema.cedarschema",
-            )
-        )
+    if reads_stdin(
+        name
+    ):  # every input of every command, read from `-` (standard input)
+        out.extend(stdin_cases(name, bundle, fl))
     bad = broken(policy, r)
     if bad is not None:
         (bundle / "typo.dw").write_text(bad, encoding="utf-8")
@@ -360,6 +382,65 @@ def cases_for(name: str, bundle: Path, meta: dict, r: random.Random) -> list[dic
             )
         )
     return out
+
+
+def reads_stdin(name: str) -> bool:
+    """One generator bundle in sixteen, by a hash of its name, gets the commands that read `-`."""
+    return hashlib.sha256(name.encode()).hexdigest()[0] == "0"
+
+
+def stdin_cases(name: str, bundle: Path, fl: list[str]) -> list[dict]:
+    """The commands of a bundle again, each with one input read from standard input."""
+    schema = ["--policy-schema", "schema.cedarschema"]
+    runs = [
+        ("format-stdin", ["format", "-"], "layout.dw"),
+        ("check-parse-stdin", ["check-parse", "-", *fl], "policy.dw"),
+        ("validate-stdin", ["validate", "-", *schema, *fl], "policy.dw"),
+        (
+            "validate-schema-stdin",
+            ["validate", "policy.dw", "--policy-schema", "-", *fl],
+            "schema.cedarschema",
+        ),
+        ("lower-stdin", ["lower", "-", *schema, *fl, "--emit", "both"], "policy.dw"),
+        ("explain-stdin", ["explain", "-", *schema, *fl], "policy.dw"),
+        ("schema-action-stdin", ["schema", "action", "-"], "schema.cedarschema"),
+    ]
+    for ev in EVENT_SCHEMAS:
+        if (bundle / ev).exists():
+            runs.append(("schema-event-stdin", ["schema", "event", "-"], ev))
+            break
+    if (bundle / "providers.json").exists():
+        runs.append(
+            ("schema-providers-stdin", ["schema", "providers", "-"], "providers.json")
+        )
+    traces = sorted(p.name for p in bundle.iterdir() if TRACE_NAME.fullmatch(p.name))
+    if traces:
+        trace = traces[0]
+        runs.append(
+            (
+                "replay-stdin",
+                ["replay", "-", *schema, "--trace", trace, *fl],
+                "policy.dw",
+            )
+        )
+        runs.append(
+            (
+                "replay-trace-stdin",
+                ["replay", "policy.dw", *schema, "--trace", "-", *fl],
+                trace,
+            )
+        )
+    return [
+        case(
+            name,
+            f"{cid}/human",
+            "F",
+            [*args, "--format", "human"] if args[0] != "format" else args,
+            "human",
+            stdin=src,
+        )
+        for cid, args, src in runs
+    ]
 
 
 def restriction_cases(name, bundle, meta, base, fl) -> list[dict]:
@@ -412,6 +493,17 @@ def cli_cases(bundles: Path) -> list[dict]:
     (d / "schema.cedarschema").write_text(pairs.SCHEMA)
     (d / "folder").mkdir()
     (d / "folder" / "keep.txt").write_text("\n")
+    # Files that cannot be read as UTF-8: each command that reads one exits 1.
+    (d / "latin1.dw").write_bytes(
+        CLI_POLICY.replace("open_reads", "caf\u00e9").encode("latin-1")
+    )
+    (d / "latin1.cedarschema").write_bytes(b"// r\xe9sum\xe9\n" + pairs.SCHEMA.encode())
+    (d / "latin1.log").write_bytes(
+        b'@1 scope(principal: Ledger::User::"\xe9", resource: Ledger::Gateway::"gw1") '
+        b'request_context(input: { server: "s1", user: "u1" }) Ledger::Action::"Login"::request('
+        b'input: { server: "s1", user: "u1" }, callerPrincipal: Ledger::User::"\xe9", '
+        b'callerResource: Ledger::Gateway::"gw1", requestId: "r1")\n'
+    )
     runs = [
         ("version", ["--version"]),
         ("version-short", ["-V"]),
@@ -419,7 +511,6 @@ def cli_cases(bundles: Path) -> list[dict]:
         ("help-cmd", ["help"]),
         ("no-args", []),
         ("unknown-cmd", ["audit", "policy.dw"]),
-        ("schema-mcp", ["schema", "mcp", "--manifest", "tools.json"]),
         ("validate-no-schema", ["validate", "policy.dw"]),
         (
             "bad-format",
@@ -465,6 +556,23 @@ def cli_cases(bundles: Path) -> list[dict]:
             ["replay", "policy.dw", "--policy-schema", "schema.cedarschema"],
         ),
         ("format-with-format", ["format", "policy.dw", "--format", "json"]),
+        ("not-utf8-policy", ["check-parse", "latin1.dw"]),
+        ("not-utf8-format", ["format", "latin1.dw"]),
+        (
+            "not-utf8-schema",
+            ["validate", "policy.dw", "--policy-schema", "latin1.cedarschema"],
+        ),
+        (
+            "not-utf8-trace",
+            [
+                "replay",
+                "policy.dw",
+                "--policy-schema",
+                "schema.cedarschema",
+                "--trace",
+                "latin1.log",
+            ],
+        ),
     ]
     for cmd in (
         "format",
@@ -551,6 +659,7 @@ def main() -> int:
     cases: list[dict] = []
     tags: dict[str, dict] = {}
     dropped = {"timestamps": 0}
+    generated = 0
     for src in sorted(raw.iterdir()):
         meta_path = src / "meta.json"
         meta = json.loads(meta_path.read_text()) if meta_path.exists() else {}
@@ -558,18 +667,25 @@ def main() -> int:
         if not all(trace_ok(t) for t in traces):
             dropped["timestamps"] += 1
             continue
-        dst = bundles / src.name
+        # The generator names a bundle after its seed; the case set does not.
+        m = GEN_NAME.fullmatch(src.name)
+        name = f"g{generated:04d}_{m.group(1)}" if m else src.name
+        generated += 1 if m else 0
+        dst = bundles / name
         shutil.copytree(src, dst)
         (dst / "meta.json").unlink(missing_ok=True)
         if not meta.get("keep_script_file"):
             inline_scripts(dst)
-        tags[src.name] = {
+        tags[name] = {
             "family": meta.get("family"),
             "tags": sorted(meta.get("tags", [])),
             "kind": meta.get("kind"),
         }
-        cases.extend(cases_for(src.name, dst, meta, r))
+        cases.extend(cases_for(name, dst, meta, r))
     cases.extend(cli_cases(bundles))
+    for c in cases:
+        c["files"] = files_of(bundles / c["bundle"], c)
+    write_shadows(a.out, bundles, cases)
     with (a.out / "cases.jsonl").open("w") as f:
         for c in cases:
             f.write(json.dumps(c, sort_keys=True) + "\n")
