@@ -254,6 +254,33 @@ def agent_canary() -> dict:
     }
 
 
+def latest_probes() -> dict:
+    """Each probe's latest run (WORK/sim/probes-<stamp>.json, newest last): its trial and whether it held."""
+    out: dict = {}
+    for f in sorted((CACHE / "work" / "sim").glob("probes-*.json")):
+        try:
+            out.update(json.loads(f.read_text()))
+        except ValueError:
+            continue
+    return out
+
+
+def probes_row() -> dict:
+    """The egress and transfer probes (scripts/pipeline/run_probes.py), each as it last ran."""
+    got = latest_probes()
+    row = {
+        p: {"held": r.get("held"), "trial": r.get("trial"), "error": r.get("error")}
+        for p, r in sorted(got.items())
+    }
+    row["pass"] = bool(got) and all(r.get("held") for r in got.values())
+    return row
+
+
+def probe_result(probe: str) -> dict:
+    trial = (latest_probes().get(probe) or {}).get("trial")
+    return verify_result(trial) if trial else {"reward": None, "note": "not run"}
+
+
 def zoo_pass(results: dict) -> bool:
     """Every zoo member exactly 0.0, read as Harbor reads it, with no problem row (R2-09)."""
     return all(
@@ -406,24 +433,28 @@ def main() -> None:
         "4_oracle_nop": {n: verify_result(n) for n in ("oracle", "solved", "nop")},
         "5_determinism": determinism(),
         "8_robustness": {
-            n: verify_result(n)
-            for n in (
-                "robust",
-                "links-fifo",
-                "hostile",
-                "stall",
-                "late-dropin",
-                "dropin",
-                "slow",
-                "hang",
-                "flood",
-                "long-line",
-                "fork-bomb",
-                "mem-flood",
-                "path-canary",
-                "fault",
-            )
+            "links-fifo": probe_result("b-links-fifo"),
+            "late-dropin": probe_result("a-late-dropin"),
+            **{
+                n: verify_result(n)
+                for n in (
+                    "robust",
+                    "hostile",
+                    "stall",
+                    "dropin",
+                    "slow",
+                    "hang",
+                    "flood",
+                    "long-line",
+                    "fork-bomb",
+                    "mem-flood",
+                    "path-canary",
+                    "fault",
+                    "fork-bomb-pids96",
+                )
+            },
         },
+        "17_probes": probes_row(),
         "16_root_path": root_path(),
         "15_font_licences": font_licences(),
         "6_cue_words": cue_sweep(),
