@@ -21,7 +21,7 @@ counts per kind, the session length and the verifier's 2,400 s timeout.
 | --- | --- | --- | --- | --- |
 | R2-M1 | 19 of unit 35's 60 cases graded the reverse mapping, `UPPH` back to `und-fonupa`, which no note stated (03) | The note states it ("... and `UPPH` back to `und-fonupa`"). The draw drops exact repeats before choosing (changed, duals, broad), each unit from its own random stream; unit 35 has 50 distinct reverse inputs | c4: 60 changed cases, 48 forward and 12 reverse; no case id repeats in the 5,245 | 3850870a, 4b4baaf4 |
 | R2-M2 | Stated clauses with no case (03, 23) | 36: "and extents" dropped (14.4.0 saturates positions; extents were never compared). 33: Proto-Cuneiform property cases with neighbours on the unassigned code points around the block; `hbapi33`, a constants probe built only where `HB_SCRIPT_JURCHEN`, `_PROTO_CUNEIFORM` and `_SEAL` are declared; USE routing cases (a font with `pres` under the new script tags) and ideographic-baseline cases, attributed through a forward build, `fwd-33` (the regenerated tables plus bf93d8671's two code hunks); the note states the routing and the baseline. 48: `hbapi48` sets `HB_FONT_FUNCS=ot` before its first call. 13: Khmer cases (a precomposed Latin letter in Khmer-shaped text, as upstream's own test has). 23: `kerx` format 6 class-kerning fonts | c4: unit 33's 60 changed cases include 3 Proto-Cuneiform property cases, 3 constants cases, 5 routing and 7 baseline cases; unit 48's 60 run under `HB_FONT_FUNCS=ot`; unit 13 has 3 Khmer cases; unit 23 has 14 format-6 and 9 mixed format-0/6 cases; the oracle scores 1.0 on all of them | 3850870a, 4b4baaf4 |
-| R2-M3 | The egress window was open: the hook killed `dev` only after Harbor's log transfer and recorded nothing, so a drop-in shaped like `solve.sh` scored 1.0 unrecorded (08, 21, 24) | The siblings' mitigation, ported (SymPy's fsmaint suite, Carve's egress watch). Set-up hooks as root start `fsmaint-netcheck`: it polls three public hosts with TLS handshakes (no request sent), watches `dev`'s sessions and processes, and keeps copies of the tree's files as they change. The collect hook `fsmaint-sweep` ends every process of `dev`, takes the end of the work from the net check, the session or the work's limit, puts back whatever changed after it (the last copy from before the end, else the shipped file, else removed), and leaves a record and an HMAC-signed listing in `/var/lib/fsmaint/out`, a second artifact. `tests/sweep_check.py` (read by `verify.py`) faults on a missing or badly signed mark, or a tree that differs from the listing. The instruction says the tree is taken as it is when the work ends | Trials (below): a process left behind copies the reference's files once the network returns, 130 late entries (129 holding the reference's content) all taken out, 0.0; 97 leftover processes with no network killed, 1.0; a capped run's last edit kept and the later ones undone, 1.0; a process whose first thread has exited is found by its live thread and killed, none left (its reward check is re-run after a fix to the probe); round 1's hook leaves that process alive | ca86363a, 2693c43b |
+| R2-M3 | The egress window was open: the hook killed `dev` only after Harbor's log transfer and recorded nothing, so a drop-in shaped like `solve.sh` scored 1.0 unrecorded (08, 21, 24) | The siblings' mitigation, ported (SymPy's fsmaint suite, Carve's egress watch). Set-up hooks as root start `fsmaint-netcheck`: it polls three public hosts with TLS handshakes (no request sent), watches `dev`'s sessions and processes, and keeps copies of the tree's files as they change. The collect hook `fsmaint-sweep` ends every process of `dev`, takes the end of the work from the net check, the session or the work's limit, puts back whatever changed after it (the last copy from before the end, else the shipped file, else removed), and leaves a record and an HMAC-signed listing in `/var/lib/fsmaint/out`, a second artifact. `tests/sweep_check.py` (read by `verify.py`) faults on a missing or badly signed mark, or a tree that differs from the listing. The instruction says the tree is taken as it is when the work ends | Trials (below): a process left behind copies the reference's files once the network returns, 130 late entries (129 holding the reference's content) all taken out, 0.0; 97 leftover processes with no network killed, 1.0; a capped run's last edit kept and the later ones undone, 1.0; a process whose first thread has exited while another writes is found by its live thread and killed, its late writes put back, 1.0; round 1's hook leaves that process alive | ca86363a, 2693c43b |
 | R2-M4 | An absolute link or a FIFO stopped Harbor's transfer, so honest work scored 0; the round-1 cluttered tree passed only on the local path (21) | Reproduced on the real path: `simulate_trial.py` packs with GNU `tar -czf` as root and unpacks with `tarfile.extractall(filter="data")`, as Harbor's worker does; the first refused member ends the extraction. The sweep removes build folders; as `dev`, it makes in-tree absolute links relative, turns links that leave the tree into copies (256 MiB in all) and removes FIFOs, sockets and devices; as root it removes whatever is not a file, folder or link of the tree, and over-deep, over-long or unprintable names. The robust (cluttered) tree now goes through the same path. The instruction states the limits | Links and a FIFO left in the reference: 1.0, 7,915 of 7,915 entries arrived (one link made relative, two copied, three removed); the same tree without the hook stops the extraction at the FIFO (7,719 of 7,862); the robust tree 1.0 with all 104,738 entries | ca86363a, 2693c43b |
 | R2-M5 | `verify.py` kept each batch's result lines uncapped: out of memory, no reward (11) | A result over 4,096 characters fails its case; outside `RECORD=1` only a pass bit and a salted 8-hex digest per case are kept (`case_pass.json`, beside `metrics.json`); `metrics.json` stays under 60 KiB | long-line tree: 266 results over 4,096 characters fail their cases, the check's memory peaks at 203 MiB, the reward is written in 89 s; flood 0.067 in 72 s; every `metrics.json` under 60 KiB | 1f543682 |
 | R2-M6 | The final sweep's wait had no bound; `builder` could stop root's sweeper (07, 11) | The sweeper's child has a spare real and saved uid, with `builder` only as its effective uid, so `builder` cannot signal it; every wait polls for at most 2 s, then root kills and reaps; alarms bound the main phase (1,980 s), the final sweep and clean-up (90 s) and publishing (30 s); survivors fail the tree. Batches take at most 15 s, keeping 2 s for each later one | stall tree 0.0 in 118 s; fork bomb 1.0 in 68 s, and 1.0 in 72 s under `--pids-limit=96`; memory flood 0.0 in 18 s (255 processes ended); no survivor in any run; slow and hang trees get their reward at 1,800 s | 1f543682 |
@@ -79,7 +79,7 @@ counts per kind, the session length and the verifier's 2,400 s timeout.
   recording and 3+1 through the amd64 verifier image, every tree through a simulated trial (the hooks, the turn as
   `dev`, Harbor's `tar` transfer as root, the worker's `tarfile` "data" filter, then the verifier with no network),
   S9 and the canary again, the verifier image's PATH check, the probes and the fork bomb under a pids limit.
-- **Re-runs** (one hold, queued at the time of writing): V and W as `mutant-v` and `mutant-w` (phase B refused the names `V` and
+- **Re-runs** (one hold, 16:18-16:39 UTC, after the game and Dogwood campaigns' holds; `c4-final-d.json`): V and W as `mutant-v` and `mutant-w` (phase B refused the names `V` and
   `W`: trial names are lowercase), and the zombie-thread probe with its egress test fixed (its first run took a
   socket refused at once for egress, so its thread broke the tree two seconds before the session ended; the sweep
   rightly kept the tree as it was at the end).
@@ -93,8 +93,8 @@ byte-identical to it.
 | oracle (shipped tree + reference change) | 1.0 | 1.0 | 1.0 | 1.0 | 97 |
 | solved (`solution/solve.sh` as the turn) | 1.0 | 1.0 | 1.0 | 1.0 | 97 |
 | nop (the image's tree) | 0.0 | 0.0 | 1.0 | 1.0 | 80 |
-| V (`mutant-v`) | queued |  |  |  |  |
-| W (`mutant-w`) | queued |  |  |  |  |
+| V (`mutant-v`) | 0.875157 | 0.875157 | 1.0 | 1.0 | 110 |
+| W (`mutant-w`) | 0.694751 | 0.98239 | 0.709333 | 0.97 | 1,016 |
 | stub-comments, -refactor, -noop-api, -noop-api-zero | 0.0 | 0.0 | 1.0 | 1.0 | 78-80 |
 | stub-nobuild | 0.0 | 0.0 | 0.0 | 0.0 | 30 |
 | stub-empty | 0.0 | 0.0 | 0.273 | 0.0 | 78 |
@@ -127,7 +127,7 @@ tree scored 1.0; an honest tree is not affected.
 | a-late-dropin | held: 130 late entries listed (129 holding the reference's content), every one taken out, 0.0 |
 | b-links-fifo | held: 1 link rewritten, 2 copied, 3 removed with the FIFO; 7,915 of 7,915 arrived; 1.0 |
 | b-links-fifo-raw (no hook) | held: the extraction stops at the FIFO (`SpecialFileError`), 7,719 of 7,862 arrive |
-| c-zombie-thread | the process was found by its live thread and killed, none left after the hook; the reward check did not hold on the first run because the probe's egress test fired before the session ended (fixed in 2387dc68; re-run queued) |
+| c-zombie-thread | held (re-run after the probe fix, 2387dc68): the process was found by its live thread and killed, none left after the hook; its writes after the end were put back from the copies taken before it; 1.0. The first run did not hold because the probe's own egress test fired before the session ended |
 | c-zombie-thread-legacy (round 1's hook) | held: the thread outlives the hook |
 | e-capped-last-edit | held: the end taken from the limit, the last edit before it kept, the later one and a new file undone, 1.0 |
 | d-hook-processes (no network) | held: 97 processes listed and killed, none left, 1.0 |
@@ -139,7 +139,7 @@ image (14 directories each, as `dev`, `builder`, `nobody` and a fresh uid); the 
 **V and W** (pipeline, c4): V as built 0.8752 (D 0.8752, h_d 1.000, h_b 1.000): 25b's commit does not revert on
 15.2.0 and 25a keeps 0.383. Complete, with every tier-C unit at 0, V is 0.8491, inside the band (0.60-0.85, not
 moved), with D lost only on tier C (panel 2026-11-28, item 3). W 0.6948 (D 0.9824, h_d 0.7093, h_b 0.9700); W_literal
-0.7659; R_unbuilt 0.8186; R_all 0.177. Through the verifier: queued (`CACHE/work/plans/c4-final-d.json`).
+0.7659; R_unbuilt 0.8186; R_all 0.177. Through the verifier, each through a simulated trial: V 0.875157 (D 0.875157, h_d 1.000, h_b 1.000), W 0.694751 (D 0.98239, h_d 0.709333, h_b 0.97), the same as the pipeline.
 
 ## Gate (QA-PLAN.md section 1), `scripts/gate_checks.py`, `CACHE/work/gate-c4.json`
 
@@ -152,10 +152,10 @@ moved), with D lost only on tier C (panel 2026-11-28, item 3). W 0.6948 (D 0.982
 | 5 | Determinism | **Pass.** 3+1 recordings identical (5,245 cases) |
 | 6 | Cue words | **Pass.** 0 hits over the instruction and every agent-visible file |
 | 8-10 | Robustness, isolation, no early stops | **Pass.** Every tree as expected (table above); nothing stops the session before 34,560 s, and the net check ends `dev`'s processes when the network comes back only once no session of `dev` is alive or the work's limit has passed |
-| 12 | Band | **Pass (pipeline).** V complete 0.849 in band, D lost only on tier C, h_d and h_b 1.000; W 0.695 and W_literal 0.766 as bounds. The verifier trials of V and W are queued |
+| 12 | Band | **Pass.** V complete 0.849 in band, D lost only on tier C, h_d and h_b 1.000; as built 0.875 in the pipeline and through the verifier alike; W 0.695 (both) and W_literal 0.766 as bounds |
 | 15 | Font licences | **Pass.** 15 fonts |
 | 16 | Root's PATH | **Pass.** both images and both canaries |
-| 17 | Probes | 7 of 8 held; c-zombie-thread is re-run after the probe fix |
+| 17 | Probes | **Pass.** All 8 held (c-zombie-thread on its re-run after the probe fix) |
 
 ## Bundle and preflight
 
@@ -171,8 +171,6 @@ moved), with D lost only on tier C (panel 2026-11-28, item 3). W 0.6948 (D 0.982
 
 ## Left open
 
-- The verifier trials of V and W and the zombie-thread probe's re-run are queued (`c4-final-d.json`), behind the
-  memory gate and the game campaign's hold.
 - V keeps 25b whole and 25a in part (three commits do not revert on 15.2.0); the band applies to the complete value.
 - Docker's VM disk sits at 98-99%, mostly other projects' images; the milestone now stops before a recording or a
   trial with less than 3 GB free for unprivileged writes.
