@@ -52,8 +52,9 @@ be in the tree.
 Our layout engine calls HarfBuzz's public C API only. It shapes runs of text, passing the text around each run as
 context, with features turned on for the whole run or for ranges of it. It sets the direction, script and language or
 lets HarfBuzz guess them, chooses cluster levels and buffer flags, sets the buffer's not-found glyph, and applies
-variations, synthetic slant and synthetic emboldening. It reads glyph positions, glyph flags, glyph extents, font and
-fallback metrics, baselines, style values, language and script tags, and face data. Our customers also bring
+variations, synthetic slant and synthetic emboldening. It reads glyph positions, glyph flags, glyph extents, glyph
+outlines, font and fallback metrics, baselines, style values, language and script tags, Unicode character properties,
+and face data. Our customers also bring
 Apple-format fonts with `morx`, `mort`, `kerx`, `kern` and `trak` tables, and we lay those out with the same library.
 
 Our customers' documents depend on every detail of what the library returns. A document a customer has approved is
