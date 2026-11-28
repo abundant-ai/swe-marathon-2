@@ -2,11 +2,12 @@
 # make_hang BASE_TREE OUT_TREE
 #
 # A delivered tree whose library never returns from shaping: hb_shape_full() ignores SIGTERM and spins forever on
-# its first call. BASE_TREE is the reference tree. Expected: the build and every case program build as for the
-# reference; each batch whose program shapes is stopped at its 120 s limit (TERM ignored, so `timeout` kills it 5 s
-# later), and keeps the lines it printed before its first shaping call; once the deadline (1,800 s) has passed, the
-# remaining batches are not run ("... batches (... cases) not run: the time was up"); their cases fail; reward.txt
-# is written at about 1,800-1,850 s. Batches that never shape score as for the reference.
+# its first call. BASE_TREE is the reference tree. Expected (fix round 2): the build and every case program build as
+# for the reference; each batch whose program shapes is stopped at its limit (at most 15 s, keeping 2 s for every
+# batch still to run; TERM ignored, so `timeout` kills it shortly after) and keeps the lines it printed before its
+# first shaping call; every batch runs within the 1,800 s deadline, so the batches that never shape score as for the
+# reference and the reward is their credit (QA R2-11 N3 predicts about 0.074), written well before the deadline.
+# (Round 1, with 120 s batches, dropped every batch after the 14th: 0.018.)
 # Copied without test/ (the product build never reads it). Runs inside the pipeline image only.
 set -eu
 BASE=$1

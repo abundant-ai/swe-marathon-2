@@ -16,16 +16,18 @@ RUN apt-get update \
        ragel util-linux \
     && rm -rf /var/lib/apt/lists/*
 COPY wheels/ /opt/wheels/
-# The user that builds and runs the delivered tree has a fixed uid of its own, which no other image's user is likely
-# to share (process limits count per uid on the host).
+# verify.py builds and runs the delivered tree under fresh numeric ids for each run (process limits count per uid on
+# the host). This user, with a fixed uid of its own, is the fallback where those ids cannot be used.
 RUN python3 -m venv /opt/py && /opt/py/bin/pip install --no-index --no-deps /opt/wheels/meson-*.whl \
     && dpkg-query -W -f '${Package}\t${Version}\t${Architecture}\n' > /opt/dpkg-versions.tsv \
     && useradd --system --uid 61423 --user-group --create-home --shell /usr/sbin/nologin builder
-COPY test.sh verify.py /tests/
+# sweep_check.py reads the post-session sweep's mark and record; verify.py loads it by this path.
+COPY test.sh verify.py sweep_check.py /tests/
 COPY driver/ /tests/driver/
 COPY inputs/ /tests/inputs/
 COPY private/ /tests/private/
-RUN chown -R root:root /tests && chmod 0711 /tests && chmod 0700 /tests/private /tests/test.sh /tests/verify.py \
+RUN chown -R root:root /tests && chmod 0711 /tests \
+    && chmod 0700 /tests/private /tests/test.sh /tests/verify.py /tests/sweep_check.py \
     && chmod -R go-rwx /tests/private && chmod -R a+rX /tests/driver /tests/inputs \
     && mkdir -p /app /logs/verifier && chown root:root /logs/verifier && chmod 0755 /logs/verifier
 WORKDIR /
