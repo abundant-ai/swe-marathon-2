@@ -40,6 +40,7 @@ def one(item) -> tuple[str, dict, float]:
         0,
         "",
         c.get("stdin"),
+        tuple(c["files"]) if "files" in c else None,
     )
     runs = []
     slowest = 0.0

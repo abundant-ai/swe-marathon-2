@@ -22,13 +22,14 @@ Author notes, never shipped.
 
 | Path | What it is |
 | --- | --- |
-| `/usr/local/bin/dogwood` | Dogwood 1.2.0 as released. It is built at image build time from the published `dogwood-cli-1.2.0.crate`, which was published from tag commit `8ffd2106`. The build uses its published `Cargo.lock`, every dependency is vendored from crates.io and checked against that lock, and `experimental-arithmetic` is on. It is built for the image's own glibc target, because a static musl build failed Cedar evaluations at random ("recursion limit reached"; see the Phase B report). Mode 2711, root-owned, setgid to an empty group |
+| `/usr/local/bin/dogwood` | Dogwood 1.2.0 as released. It is built at image build time from the published `dogwood-cli-1.2.0.crate`, which was published from tag commit `8ffd2106`. The build uses its published `Cargo.lock`, every dependency is vendored from crates.io and checked against that lock, and `experimental-arithmetic` is on. It is built for the image's own glibc target, because a static musl build failed Cedar evaluations at random ("recursion limit reached"; see the Phase B report), and since fix round 1 linked statically against glibc (`crt-static`), so no dynamic loader runs and no `LD_PRELOAD` can reach it, even on a self-traced exec that drops the setgid bit. Mode 2711, root-owned, setgid to an empty group |
 | `/app/docs/guide/`, `/app/docs/examples/` | 1.2.0's guide and its 93 example bundles, trimmed and scrubbed (section 1.2). `scripts/build_docs.py` makes them from the pinned source and the edit list `scripts/docs_edits.json`; the result is committed as `environment/docs/` |
 | Rust 1.100.0 | The pinned `rust:1.100.0-slim-bookworm` image (index digest `sha256:bb875b0f…`) |
 | `/opt/cargo-registry` with `~/.cargo/config.toml` | The vendored crates of the published lock, without the four `dogwood-*` crates. `cargo` uses it offline |
 | `/app/dogwood-rebuild/` | Empty, owned by the agent user `dev` |
 | Python 3.11 | Debian's, for the agent's own scripts (the brief says so) |
-| `/usr/local/sbin/stop-user-processes` | Root-only (0700). Harbor runs it as `[[verifier.collect]]` after the session: it stops and then ends every process of `dev`, so nothing left running changes the deliverable while it is copied |
+| `/usr/local/lib/dogwood-handoff/` | Root-only (0700): `reserve` (both setup hooks), `wait-uplink` (the root uplink watch it starts) and `handoff` (the collect hook), with their modules. Section 2 describes them |
+| `/usr/local/cargo`, `/usr/local/rustup` | The toolchain, root-owned and closed to other users (the Rust image leaves both writable by everyone); `dev` builds with its own `CARGO_HOME` |
 
 The agent runs as `dev`, with no network and no `sudo`.
 
@@ -36,8 +37,11 @@ The agent runs as `dev`, with no network and no `sudo`.
 - `/app/dogwood-rebuild`, a Cargo project whose `cargo build --release --offline` builds a binary
   named `dogwood`.
 - `task.toml` declares it as the root-level artifact.
-- The grader copies it, without `target/` or outside links, and builds it as an unprivileged
-  user with the same toolchain and registry. Then it runs the cases.
+- `task.toml` also declares `/var/lib/dogwood-handoff/out`, the hand-off's record and manifest.
+- The hand-off applies the brief's copy rules before Harbor's transfer; the grader checks the
+  arrived tree against the manifest, copies it under the same rules, and builds it as an
+  unprivileged user with the same toolchain and registry. The built program is installed on its
+  own, and then it runs the cases.
 
 ### 1.2 The shipped docs: trim, move, scrub, fix
 
@@ -109,17 +113,34 @@ near copies (word 5-grams, Jaccard 0.9 or more), are counted.
 - nothing a submission prints, builds or leaves running raises: output comparison falls back to
   the printed text, a link loop is left out of the copy, and an unstartable program fails its
   own cases;
-- the metrics list any delivered `.rs`/`.pest` file that is a copy of Dogwood's own source (by
-  digests made in the release stage, as written and with whitespace removed). This is for
-  review against the clean-room rule and does not change the reward: the oracle is upstream's
-  own source, and any edit to a copied file would evade a hard check anyway.
+- a delivery holding a `.rs`/`.pest` file that is a copy of Dogwood's own source (by digests
+  made in the release stage, as written and with whitespace removed), or a file that is the
+  release build itself, scores 0, and the metrics list the files. The oracle is upstream's own
+  source with one comment line added to each source file, so it never matches.
 
-**After the session.** Harbor runs `/usr/local/sbin/stop-user-processes` as root
-(`[[verifier.collect]]`) before it copies `/app/dogwood-rebuild`: it stops, then kills, every
-process of `dev`. The platform restores public egress when the agent's turn ends, before
-collection (harbor-lh `PLATFORM_EGRESS_WINDOW.md`); a process the agent left behind could fetch
-Dogwood's crates in that window. The hook shortens the window but cannot close it, the clean-room
-report flags a verbatim drop-in, and the trajectory audit is the remaining check.
+**After the session (fix round 1).** The platform restores public egress when the agent's turn
+ends, before collection (harbor-lh `PLATFORM_EGRESS_WINDOW.md`), and Harbor runs commands as
+root after the turn and after grading. The task's answer, ported from Carve and Goose:
+- **Setup hooks** (`reserve`, root): room and inodes set aside for the hand-off's records; with
+  `--watch`, the work's start time, and `wait-uplink`, a root process that arms once no public
+  host has answered for about 105 s and, on the first poll after that in which one answers (the
+  turn is over), records `first_open_at` and `end_bound` and then stops and ends every process
+  of `dev` from root.
+- **The collect hook** (`handoff`, root, first and only): stops, lists (command lines) and ends
+  `dev`'s processes from root; probes public egress; works out the end of the work (the uplink
+  record, else the work's start plus 34,560 s for a turn that ran to its limit, else its own
+  start); records every entry of the tree with its times before touching it; applies the brief's
+  copy rules (special files, cargo's build output, non-UTF-8 names, entries past 32 levels or
+  1,000 bytes, and links to directories, out of the tree or to nothing are removed; an absolute
+  in-tree link becomes relative; a hard link to the installed build is removed); moves an
+  over-limit tree aside; and writes `record.json` and `manifest.json` into
+  `/var/lib/dogwood-handoff/out`, a second artifact.
+- **The grader** checks the arrived tree against the manifest: a missing manifest or a mismatch
+  is a lost run (an evaluation error, no reward), never a 0. Entries changed at or after the end
+  of the work are listed (`handoff.late_entries`) for the per-trial audit; they do not change the
+  score (2026-11-19 decision: hold for review, void on a confirmed fetch).
+- Both images close the Rust image's world-writable cargo and rustup trees, so nothing a user
+  plants on root's PATH runs as root; the image builds check it.
 
 ## 3. Grading families and weights
 
@@ -150,7 +171,7 @@ report flags a verbatim drop-in, and the trajectory audit is the remaining check
 | B-dedup aggregation, deduplication | 0.17 | `count`/`sum` over the deduplicated projection onto the `for` domain: repeated equal values, `for` lists without the timepoint (dual pairs) |
 | B-scope aggregation, decision point | 0.05 | Aggregates whose body has no past operator read only the decision event (dual pairs) |
 | K key-local slicing | 0.15 | Dual pairs in eight shapes (`scripts/pairs.py`): `previous` is the key's previous event; the positive left of `since` ranges over the key's positions, and the key's own non-matching event still breaks it; a pin on some kinds only keeps global semantics; a universal pin to `context.session` keys on the session; the mirror rule rejects a history event that logs a caller it does not carry, fails a decision event that does, and rejects a history event with no principal under the default pin. Traces interleave principals |
-| V validate verdict | 0.13 | `validate` in human form: the generator's near misses (64 kinds, each breaking one stated rule) and accepted bundles; an accepted bundle counts only paired with a rejected one |
+| V validate report | 0.13 | `validate` in human form, exit status and every finding line: the generator's near misses (64 kinds, each breaking one stated rule) and accepted bundles; an accepted bundle counts only paired with a rejected one. 173 of Phase C's 175 units hold a rejection whose finding lines are compared exactly |
 | V-msg validate text | 0.05 | The same in `--format json` (message, severity, byte spans), paired the same way |
 | L lowering | 0.10 | `lower` with `--emit both` (human and JSON), `cedar-policies`, `cedar-schema` and `cedar-json`: hoisted names, the balanced `&&` fold, desugaring, schema augmentation; `lower` on near misses, which it does not validate |
 | M macros | 0.05 | `def cedar` / `def temporal`, sigils, hygiene, the standard library, `--macros`, the rejection classes |
@@ -173,8 +194,11 @@ used: nothing hidden, every graded rule stated in the shipped guide.
 | Pairs | B-dedup, B-scope, K and V are dual pairs; a pair counts only if both members pass | Both members are documented behaviour; a half-right implementation gets half the pairs wrong rather than half the credit |
 | Case mix toward the documented corners | Traces interleave principals; aggregates repeat equal values; validate pairs sit on each stated rule's boundary | Every case traces to a feature id with its sentence in the shipped guide |
 
-**Not levers:** undocumented behaviour, hidden rules, timing pressure, and exact error wording
-beyond the 5% V-msg share.
+**Not levers:** undocumented behaviour, hidden rules and timing pressure. Exact message text is
+not a lever either, and it is already large: units whose answers carry an error, warning or help
+message hold about 0.4 of the reward (QA 17 F4, QA 18 F2), not the 0.05 of V-msg. Every message
+comes from the runnable build and the brief says every message counts, so it is fair; it is the
+part of a strong session's difficulty the guide does not hand over.
 
 **The second sentence (K).**
 > Agents pin each predicate to the request's principal but read `previous` and the left of `since`
@@ -324,11 +348,16 @@ spike's 3+1 and 10-repeat recordings are in the Phase B report.
 | Frontier (Opus 5.5 / Fable 5.2 / GPT-6 Astra class) | about 0.47 (0.35-0.60) |
 | Mid-tier (DeepSeek v4.1 Flash, GLM 5.3) | about 0.19 (0.08-0.30) |
 
-**A working task shows:**
+**A working task shows** (pre-registered, fix round 1):
 - no full solve;
-- B or K as the lowest family in most trials;
-- V-msg trailing V;
-- the score still rising at the cap.
+- for a model that skims the guide, B-dedup or K's slicing shapes lowest; for one that reads it,
+  the build's message text and spans lowest (V, V-msg, R's error lines, K-mirror);
+- the score still rising at the cap, and a capped run with a project that does not build read as
+  a harness loss.
+
+The failure sentence, in two clauses: agents that skim the guide count repeated values and read
+`previous` over the whole trace; agents that read it lose most on the exact text and spans of
+the build's messages, which they must copy rule by rule from its output.
 
 ## 7. Effort (person-days)
 
@@ -352,6 +381,6 @@ spike's 3+1 and 10-repeat recordings are in the Phase B report.
 | Evaluation-aware wording in the brief, the docs or `--help` | Verdict reject | Requester voice, mechanical sweep, 3 wording lenses |
 | The guide trim drops a rule a case grades | Unfair case | The "every rule stated" audit (section 1.2) |
 | The failure sentence is wrong: K or V-msg dominates instead of B | Weaker story | Two counter-intuitive families with mutants; trial labels decide |
-| The frontier lands above 0.6 anyway | Saturation | Re-weight within the fair levers after the first trials; never hide rules |
+| The frontier lands above 0.6 anyway | Saturation | Fix round 1 re-sized the estimate on the fixed case set; a 3-judge panel picks the lever (if any) before the first run; never hide rules |
 | The heavy grading image (release build plus recording) at upload | Upload time | Build time measured in Phase B; the release stage is shared with the working machine's image |
 | Third language toolchain after Goose and BasedPL | Diversity criticism | New domain and new outputs |

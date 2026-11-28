@@ -5,6 +5,12 @@
 > are parked with the two-step plan. Lens 19 becomes "the requester's world": does every graded
 > rule have its sentence in the shipped guide?
 >
+> **2026-11-28, fix round 1:** the independent QA's findings are fixed as `FIX1-REPORT.md` lists.
+> Gate 5's evidence is `scripts/run_cases.py` (3 runs and 1 perturbed run) and
+> `scripts/compare_runs.py`, not `checks/test_determinism.py`; gate 7's probe is
+> `checks/protection_probe.py`, run as `dev` in the working image. Gate 4's "per step" and the
+> anchor no longer apply; sections 6 and the lens table below are updated for the single step.
+>
 > **2026-11-27, Phase C:** every gate item below has been run locally on the final case set; the
 > item-by-item status, with its numbers, is section 10 of [PHASE-C-REPORT.md](PHASE-C-REPORT.md).
 > What changed against this plan:
@@ -217,8 +223,8 @@ question moves into lens 17.
 | 10 | Verifier bugs | Line by line: rule-list normalisation, JSON comparison, exit status, stdout capture, per-case limits, the global deadline, build-failure handling, metrics and reward writing, evaluation-error paths |
 | 11 | Determinism | Can the hash-set rule order, 1.1.2's unordered diagnostics, Cedar's schema printer, Rhai or the environment make a recorded output flake? Is 3+1 enough? |
 | 12 | Spec vs grading | Is every graded behaviour stated in the shipped docs or the brief? Is every stated restriction checked? Is anything out of scope graded? |
-| 13 | Oracle, nop and anchor | Do both references score 1.000 legitimately, nop 0, and the no-upgrade anchor 0.55-0.80? Could a trivial submission score above 0? |
-| 14 | Horizon: human estimate | Break the 1.1.2 rebuild and the 1.2.0 move into parts: how many days for a strong engineer new to Dogwood? |
+| 13 | Oracle and nop | Does the reference score 1.000 legitimately, through the path a delivery takes, and nop 0? Could a trivial submission score above 0? |
+| 14 | Horizon: human estimate | Break the 1.2.0 rebuild into parts: how many days for a strong engineer new to Dogwood, to a solid core and to byte-exact output? |
 | 15 | Horizon: agent estimate | How many hours and steps would a capable coding agent need for step 1 (21,600 s) and step 2 (12,600 s)? Where does it stall? |
 | 16 | Horizon: shape | Is the work a dependent chain (parser to relational evaluator to slicing to validation) or farmable pieces? Does step 2 depend on step 1's architecture? |
 | 17 | Difficulty: frontier and comparisons | What would a frontier model reach at each step? How does that compare with MirrorCode, SWE-Marathon v1, Goose (0.30-0.36 mid-tier) and Carve (0.56-0.76 mid-tier)? Too easy, about right, or impossible? |
@@ -231,21 +237,31 @@ question moves into lens 17.
 A trial's failure counts as a result only if all of these hold. Otherwise it is a defect to fix
 before any score is shown.
 
-1. **Baselines.** Reference 1.000 and every stub 0.000 at both steps, on the version that ran.
-   The no-upgrade anchor is inside 0.55-0.80.
-2. **Still rising at the cap.** The per-step score was still rising at the cap: the agent was
-   mid-feature, not stalled or idle. This is read from the trajectory and the step-1 versus final
-   scores.
-3. **Fair cases.** Every failed case traces to a documented feature id. At least one trial, the
-   reference, or a second implementation passes it, which rules out "overly strict" cases.
-4. **Named families.** Failures cluster in named families, and the labelled failures test the
-   sentence: is B, specifically B-dedup, the lowest family in most trials? Are K and the step-2
-   changed partition next? If not, re-run the solvability derivation for the family that
-   dominates before touching difficulty.
-5. **Clean run.** No infrastructure error, no stop forced by the task, no lost step 2 (a lost
-   step is reported as lost, never as 0), and no evaluation-awareness finding in any trajectory.
+1. **Baselines.** Reference 1.000 and every stub 0.000 on the version that ran (the platform's
+   oracle and nop rows are the first full-path evidence: through the hand-off, Harbor's transfer
+   and the separate verifier).
+2. **Still rising at the cap.** The score was still rising at the cap: the agent was mid-feature,
+   not stalled or idle. A run that ended at the cap with a project that does not build is a
+   harness loss, reported as lost, never as a capability result.
+3. **Fair cases.** Every failed case traces to a stated id (`checks/coverage.py` claims every
+   case, and every graded message, for one). At least one trial, the reference, or a second
+   implementation passes it, which rules out "overly strict" cases.
+4. **Named families.** Failures cluster in named families. Pre-registered expectation: a model
+   that skims the guide loses most on B-dedup and K's slicing shapes; one that reads it loses most
+   on the build's exact message text and spans (V, V-msg, R's error lines, K's three mirror shapes,
+   which the analysis labels `K-mirror` apart from the five slicing shapes). If neither holds, re-run
+   the solvability derivation for the family that dominates before touching difficulty.
+5. **Clean run.** No infrastructure error, no stop forced by the task, no evaluation error (a lost
+   run is reported as lost, never as 0), and no evaluation-awareness finding in any trajectory.
+   Every Dogwood run config lists `WebSearch` and `WebFetch` in `disallowed_tools` (and codex keeps
+   `web_search: "disabled"`): docs.rs serves Dogwood's source.
 6. **No special-casing.** Submissions are scanned for long literals matching visible
    `expected.out`/`explain.out` text (report, not auto-zero). The scan covers wrappers around the
    builds too.
-7. **Honest step 1.** Step 1's reported score is consistent with what the agent built: a low
-   step-1 score followed by a high final score is read in the trajectory, not assumed.
+7. **The egress window.** Before any score is published, the trial's hand-off record is read
+   (`metrics.json` → `handoff`): the processes of `dev` that were still alive, whether public hosts
+   answered when the hand-off ran, the end of the work and where it came from, and every entry
+   changed after it (`late_entries`). A trial with late entries, a live fetching process, or a
+   fetch in the trajectory (cargo with the network on, `codeload.github`, `docs.rs`,
+   `static.crates.io`, an editor-written script started detached) is held for review and voided
+   on a confirmed fetch (2026-11-19 decision).
