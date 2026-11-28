@@ -289,7 +289,9 @@ no shipped font has and fontTools cannot write, or (ii) the note gives only a sy
 nor pointed to by the note (judged on upstream's diff), and no shipped material shows the behaviour; otherwise **A** if
 the note names the edit; otherwise **B**. The material axis rests on what the 14.3.0 test fonts contain (QA pass
 R2-17's scan) and on what the agent image's fontTools 4.69.1 writes: `morx` and `mort` state tables, `trak`, `JSTF`,
-`STAT` and `kern` format 0 with any coverage bits, but no `kerx`, and AAT `kern` formats 1-3 only as raw bytes. **A 23,
+`STAT` and `kern` format 0 with any coverage bits, but no `kerx`, and AAT `kern` formats 1-3 only as raw bytes
+(confirmed in the agent image by `scripts/pipeline/fonttools_aat_check.py`; a `mort` table entered at a non-first
+initial state, unit 25c's construct, does not even decompile). **A 23,
 B 22, C 8**: tier C is the `kerx` units 23, 25a and 25b, and the symptom-only units no shipped font shows: 10a, 25c,
 26, 31 and 42. Read strictly, "pointed to" would add 12 and 27 (|C| = 10); that reading is a frozen sensitivity in
 the pre-registration. Predictions are QA pass 16's per-unit estimates (round 2).
