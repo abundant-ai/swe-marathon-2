@@ -64,9 +64,10 @@ minutes are listed, not given margins.
 
 | Run | Banded values | Under 15% |
 | --- | --- | --- |
-| Reference `53192d5`, all 37 playtests | 253 in 168 expectations | **3**: CM-1's camera came 2.914 m from the head at +30 degrees of pitch (band 2.5-6.0: 11.8%) with a running player's hips 0.341 of the way out of the view's middle (at most 0.4: 14.7%); city drivers at 0.95 of the limit (TR-8's at most 1.1: 13.6%) |
+| Reference `53192d5`, all 37 playtests | 252 in 167 expectations | **3**: CM-1's camera came 2.914 m from the head at +30 degrees of pitch (band 2.5-6.0: 11.8%) with a running player's hips 0.341 of the way out of the view's middle (at most 0.4: 14.7%); city drivers at 0.95 of the limit (TR-8's at most 1.1: 13.6%) |
 | Reference `943dec9`, all 37 playtests | 252 in 167 expectations | **0**; worst 18.2% |
 | Reference `943dec9`, the private set (the 40 instances the deadline let run) | 259 in 133 expectations | **1**: the collision at j_73 in day-flow instance `03eaca08` (TR-12: 0.0357 per vehicle-minute against at most 0.02, margin -78.5%), fixed in `8e959f0` (section 8); that instance's third density minute sat at exactly 15.0% (13.0 vehicles), its cause the same |
+| Reference `8e959f0` (final), all 37 playtests | 252 in 167 expectations | **0**; worst 18.2% (TR-8 and VH-5) |
 FILL-PRIVSWEEP
 
 The fixes (reference `943dec9`), each inside what the rule allows; no band or measurement changed:
@@ -310,6 +311,14 @@ The deadline cut is the Mac's memory, not the game: the release grader runs on i
 For the final runs the acceptance tool passes the grader a longer deadline (`--deadline-s`, `1603ec7`),
 so every instance runs here.
 
+### On `8e959f0` (final, from 2026-11-28 03:37 UTC)
+
+Each part a heavy job of its own (the shared lock and the task's lock, 30% free), the reference
+staged from `git archive 8e959f0`, the kit at `1603ec7`.
+
+| Run | Result |
+| --- | --- |
+| `qa run`, all 37 playtests | Reference: **37 of 37 hold** (595.3 s; the import with QA's telemetry 6.3 s). Starter: all 37 list what did not hold, 0 runs stopped (85.2 s) |
 FILL-ACCEPTANCE
 
 ## 10. The playtests and their status
