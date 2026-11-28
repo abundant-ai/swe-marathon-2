@@ -40,19 +40,20 @@ RUN set -eu; \
 
 # Root runs programs by name from its PATH once the session is over (the hand-off, and the copy
 # of the project and the logs), so no directory on that PATH, nothing in one and none of their
-# parents may be writable by another user: the Rust image leaves its cargo and rustup trees
-# writable by everyone, and they are closed here and checked. The user `dev` builds with its own
-# CARGO_HOME and only reads the toolchain.
+# parents may be writable by another user: the Rust image leaves /usr/local/cargo, its bin
+# directory and the `rustup` program its entries link to writable by everyone, and they are
+# closed here and checked. (The toolchain below /usr/local/rustup stays as the Rust image ships
+# it: root runs nothing from there.) The user `dev` builds with its own CARGO_HOME. Python and the
+# registry come first, as in the grading image.
 FROM ${RUST_IMAGE}
+RUN apt-get update && apt-get install -y --no-install-recommends python3 && rm -rf /var/lib/apt/lists/*
+COPY --from=release /opt/registry /opt/cargo-registry
 ENV CARGO_HOME=/home/dev/.cargo LANG=C.UTF-8 LC_ALL=C.UTF-8 \
     PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-RUN apt-get update && apt-get install -y --no-install-recommends python3 && rm -rf /var/lib/apt/lists/* \
-    && groupadd --system dogwood-run \
+RUN groupadd --system dogwood-run \
     && useradd --create-home --shell /bin/bash dev \
     && mkdir -p /home/dev/.cargo /app/dogwood-rebuild \
-    && chown -R root:root /usr/local/cargo /usr/local/rustup \
-    && chmod -R go-w /usr/local/cargo /usr/local/rustup
-COPY --from=release /opt/registry /opt/cargo-registry
+    && chmod go-w /usr/local/cargo /usr/local/cargo/bin /usr/local/cargo/bin/rustup
 COPY cargo-config.toml /home/dev/.cargo/config.toml
 COPY --from=release --chown=root:dogwood-run --chmod=2711 /opt/dogwood-release /usr/local/bin/dogwood
 COPY docs/ /app/docs/

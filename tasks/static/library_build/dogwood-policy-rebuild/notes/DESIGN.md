@@ -139,8 +139,11 @@ root after the turn and after grading. The task's answer, ported from Carve and 
   is a lost run (an evaluation error, no reward), never a 0. Entries changed at or after the end
   of the work are listed (`handoff.late_entries`) for the per-trial audit; they do not change the
   score (2026-11-19 decision: hold for review, void on a confirmed fetch).
-- Both images close the Rust image's world-writable cargo and rustup trees, so nothing a user
-  plants on root's PATH runs as root; the image builds check it.
+- Both images close what the Rust image leaves writable by everyone on root's PATH
+  (`/usr/local/cargo`, its `bin` directory and the `rustup` program its entries link to), so
+  nothing a user plants on root's PATH runs as root; the image builds check it. The toolchain
+  below `/usr/local/rustup` stays as the Rust image ships it: root runs nothing from there, and
+  closing it would copy its 505 MB into a layer of each image.
 
 ## 3. Grading families and weights
 

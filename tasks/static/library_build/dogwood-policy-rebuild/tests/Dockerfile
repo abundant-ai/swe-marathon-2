@@ -55,16 +55,20 @@ RUN python3 -I -B /record/record.py /opt/release/dogwood /record/private /record
 
 # The grading machine. Root runs programs by name from its PATH while the grader works and after
 # it (Harbor packs the grader's output folder with `tar`), so no directory on that PATH, nothing
-# in one and none of their parents may be writable by another user: the Rust image leaves its
-# cargo and rustup trees writable by everyone, and they are closed here and checked. Python and
-# Perl run for root only (the grader is root's; the build and the runs are not).
+# in one and none of their parents may be writable by another user: the Rust image leaves
+# /usr/local/cargo, its bin directory and the `rustup` program its entries link to writable by
+# everyone, and they are closed here and checked. (The toolchain below /usr/local/rustup stays as
+# the Rust image ships it: root runs nothing from there, and the grader removes whatever the
+# build and the runs leave on the machine.) Python and Perl run for root only (the grader is
+# root's; the build and the runs are not). Python and the registry come first, as in the working
+# image.
 FROM ${RUST_IMAGE}
+RUN apt-get update && apt-get install -y --no-install-recommends python3 && rm -rf /var/lib/apt/lists/*
+COPY --from=release /opt/registry /opt/cargo-registry
 ENV PYTHONDONTWRITEBYTECODE=1 LANG=C.UTF-8 LC_ALL=C.UTF-8 \
     PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-RUN apt-get update && apt-get install -y --no-install-recommends python3 && rm -rf /var/lib/apt/lists/* \
-    && useradd --system --create-home --shell /usr/sbin/nologin builder \
-    && chown -R root:root /usr/local/cargo /usr/local/rustup \
-    && chmod -R go-w /usr/local/cargo /usr/local/rustup \
+RUN useradd --system --create-home --shell /usr/sbin/nologin builder \
+    && chmod go-w /usr/local/cargo /usr/local/cargo/bin /usr/local/cargo/bin/rustup \
     && chmod 0700 "$(readlink -f /usr/bin/python3)" /usr/bin/perl /usr/bin/perl5.* \
     && bad=$(for d in $(echo "$PATH" | tr : ' '); do \
            find -L "$d" -maxdepth 1 \( ! -user root -o -perm -o+w -o \( -perm -g+w ! -group root \) \) -print; \
@@ -73,7 +77,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends python3 && rm -
              p=$(dirname "$p"); done; \
          done) \
     && if [ -n "$bad" ]; then echo "writable by others on root's PATH: $bad" >&2; exit 1; fi
-COPY --from=release /opt/registry /opt/cargo-registry
 COPY cargo-config.toml /opt/verifier/cargo-config.toml
 COPY test.sh verify.py /tests/
 COPY verifier/ /tests/verifier/
