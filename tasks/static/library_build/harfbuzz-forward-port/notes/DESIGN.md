@@ -32,9 +32,9 @@ the research note cites (CLAIMS.md, C5; the full per-item commit list is confirm
 
 | Path or item | Contents | Notes |
 | --- | --- | --- |
-| `/app/harfbuzz` | HarfBuzz 14.3.0, tag commit `4c2aa804671d7276e8a0eb95da07202ead05c843` **(m)** | Fresh repository with one commit, so history stops at the base. Pruned by `environment/prune_tree.sh`: `perf/`, `.github/`, `.ci/`, `.codecov.yml`, `CODE_OF_AI_CONDUCT.md`, `CLAUDE.md`, `AGENTS.md`, `README.mingw.md`, `TESTING.md`'s profiling pointer, `test/vector/README.md`, `subprojects/google-benchmark.wrap` and the `benchmark` option with its meson wiring. Kept: `src/`, `test/` (upstream's own tests and fonts for 14.3.0 behaviour), `util/`, `docs/`, build files. |
+| `/app/harfbuzz` | HarfBuzz 14.3.0, tag commit `4c2aa804671d7276e8a0eb95da07202ead05c843` **(m)** | Fresh repository with one commit, so history stops at the base. Pruned by `environment/prune_tree.sh`: `perf/`, `.github/`, `.ci/`, `.codecov.yml`, `CODE_OF_AI_CONDUCT.md`, `CLAUDE.md`, `AGENTS.md`, `README.mingw.md` and `README.md`'s link to it, `TESTING.md`'s profiling pointer (and "and profiling" in `README.md`), the threaded shaping test that reads the speed-measurement fonts (`test/threads/hb-shape-threads.cc` and its `meson.build` entry), `test/vector/README.md`, `subprojects/google-benchmark.wrap` and the `benchmark` option with its meson wiring; guards stop the image build if a pointer survives. Kept: `src/`, `test/` (upstream's own tests and fonts for 14.3.0 behaviour), `util/`, `docs/`, build files. |
 | `/app/docs/notes.md` | The instruction's notes, 14.3.1 to 15.2.0 | The instruction's notes section under its own heading and one introductory sentence (packaging checks that the bodies agree). |
-| `/app/docs/specs/` | 51 notes in our own words: 34 OpenType table and registry pages, UAX #29, 8 Apple AAT pages, 8 Microsoft script-development pages, and `NOTICE.md` | The source pages carry no redistribution licence (CLAIMS.md C18), so nothing is copied beyond names, identifier tables and formal rules; material the pages cite without defining is not restated (section "Scope decisions of Phase C"). |
+| `/app/docs/specs/` | 51 notes in our own words: 34 OpenType table and registry pages, UAX #29, 8 Apple AAT pages, 8 Microsoft script-development pages, and `NOTICE.md` | Paraphrased (fix round 1): nothing is copied beyond names, identifier tables and formal rules. `NOTICE.md` names each source, its copyright, the Microsoft pages' CC-BY-4.0 licence and the Unicode License V3; material the pages cite without defining is not restated (section "Scope decisions of Phase C"). |
 | `/app/docs/unicode/` | The data files upstream's table generators read, as upstream used them for 15.x: Unicode 18.0 `UnicodeData.txt`, `Scripts.txt`, `Blocks.txt`, `ArabicShaping.txt`, `IndicSyllabicCategory.txt`, `IndicPositionalCategory.txt`, `emoji-data.txt`, `emoji-test.txt`, `ucd.nounihan.grouped.zip`, and `DerivedCoreProperties.txt` from Unicode 17.0.0; Microsoft's USE override files under `ms-use/`; the Unicode licence | Fetched by the image build with sha256 checks. The two sources of the language tag table (the IANA registry and Microsoft's tag list) are not shipped; the instruction says so. |
 | Toolchain | gcc/g++ 13, meson, ninja, pkg-config, ragel 6.10, Python 3, fontTools, packTab, GLib development files (for `util/hb-shape`), git | `src/meson.build` regenerates the ragel machines when ragel 6.10 is found **(m, 15.2.0)**, so agent and verifier must both have it. packTab is what `gen-ucd-table.py` and `gen-use-table.py` import **(m)**. |
 | Absent on purpose | Any 15.x source or binary; any package that bundles HarfBuzz (uharfbuzz, skia-python and the like); HarfRust crates; network | The leak scan (QA item 11) checks the image for every `libharfbuzz*`, `hb-version.h` and HarfBuzz version string. |
@@ -45,7 +45,7 @@ The tree at `/app/harfbuzz`, declared as the task artifact. The instruction stat
 because the verifier uses it:
 
 ```
-meson setup build --buildtype=release -Ddefault_library=static \
+meson setup build --buildtype=release --wrap-mode=nodownload -Ddefault_library=static \
   -Dglib=disabled -Dgobject=disabled -Dcairo=disabled -Dchafa=disabled -Dicu=disabled \
   -Dfreetype=disabled -Dpng=disabled -Dzlib=disabled -Dgraphite2=disabled \
   -Draster=disabled -Dvector=disabled -Dgpu=disabled -Dsubset=disabled \
@@ -141,19 +141,21 @@ would show up as a rise on the oldest releases first.
 | F2 shaping plan and normalisation | 12-16 | 5 |
 | F3 mark and GPOS positioning | 17-19 | 3 |
 | F4 legacy `kern` and AAT | 20-26 | 9 (25 has three parts) |
-| F5 unsafe-to-break flags and clusters | 27-29 | 3 |
-| F6 variations | 30-31 (32 cut unless a public spec exists) | 2 |
+| F5 unsafe-to-break flags and clusters | 27-29 (28 cut) | 2 |
+| F6 variations | 30-31 (30 cut; 32 dropped in Phase A) | 1 |
 | F7 Unicode 18 and tags | 33-35 | 3 |
-| F8 metrics and API | 36-51 (40 and 44 have parts; 47b supersedes 47a) | 19 |
+| F8 metrics and API | 36-51 (40 and 44 have parts; 47b supersedes 47a; 50 cut) | 18 |
 | H_dual (the B family) | duals of every conditional item | gate |
 | H_broad | broad held-fixed | gate |
 
-In all 56 graded units, by release window 8 (A, 14.3.1 to 15.0.0, 47a superseded), 13 (B, 15.1.0) and 35 (C,
-15.2.0). The windows survive as release tags on the cases. The spike may cut some units.
+In all 53 graded units (Phase A planned 56; Phase C cut 28, 30 and 50, with 47a superseded), by release window 7 (A,
+14.3.1 to 15.0.0), 13 (B, 15.1.0) and 33 (C, 15.2.0). The windows survive as release tags on the cases; the note's own
+release is in `scripts/pipeline/notes_map.tsv`.
 
 ### Scope decisions of Phase C (2026-11-27)
 
-**Units cut** (scripts/pipeline/cuts.tsv; their notes stay in the instruction, ungraded):
+**Units cut** (scripts/pipeline/cuts.tsv). Their notes are not in the instruction (fix round 1, M3), except 47a's,
+which the instruction ties to 47b's note:
 
 | Unit | Reason |
 | --- | --- |
@@ -175,8 +177,8 @@ In all 56 graded units, by release window 8 (A, 14.3.1 to 15.0.0, 47a superseded
 **Specification notes.** The digests in `environment/docs/specs/` restate the downloaded pages only. Material the
 pages cite without defining (the EBLC/EBDT formats, the baseline tag and axis tag registries, the Variations
 Overview's normalization and region scalars, W3C compositing, `gvar`'s vertical phantom points, the AAT lookup
-formats, and the interpretive reading notes) was cut rather than shipped unverified. Of the graded units only 50
-depended on it (above); 31's per-tuple region rule is in 14.3.0's own `gvar` code, 44b's baseline tags and 40b's
+formats, and the interpretive reading notes) was cut rather than shipped unverified. Of the units then graded only 50
+depended on it (now cut, above); 31's per-tuple region rule is in 14.3.0's own `gvar` code, 44b's baseline tags and 40b's
 slant axis are documented in 14.3.0's public headers, and the AAT lookup formats are implemented in 14.3.0.
 
 ## 6. Reward
@@ -220,11 +222,16 @@ That is why the expected profile below has F8 high, and why the failure mode sit
   whitespace edits; the base with behaviour-neutral refactors; a tree that does not build; a library whose
   `hb_shape()` returns an empty buffer; a library that crashes on the first call; the base with the four new
   functions declared as the notes give them and bodies that do nothing (noop-api; fix round 1, M4: each probe ends
-  with a call that succeeds on 15.2.0, so a no-op fails every graded case of 48, 49 and 51); R_all (T3 with every
-  graded item reverted, which equals the base on graded cases).
-- **Over-broad probes** (expected small positive scores, recorded, not required to be 0): always insert a dotted
-  circle; zero every glyph's extents; flag every glyph unsafe to break; apply `kerx` and `kern` whenever present.
-  Each is the failure mode in miniature, and each must lose most of its credit to the gate.
+  with a call that succeeds on 15.2.0, so a no-op fails every graded case of 48, 49 and 51); R_all (T3 with the single-commit graded
+  units reverted): 0 on every unit it reverts, though not 0 overall, since units with several commits are not in it.
+  A second no-op stub (fix round 2, QA R2-09) writes 0 through the out-parameters, as the notes' negative clauses
+  describe; both must score 0.000.
+- **Over-broad probes** (costed on the case set by QA pass R2-09, not run as trees): always insert a dotted circle;
+  zero every glyph's extents; flag every glyph unsafe to break; apply `kerx` and `kern` whenever present. The gate
+  prices over-breadth in aggregate: W loses 32% of its reward, while one note widened alone loses at most about 2%
+  of its own credit (unit 36, every dual broken), plus whatever it breaks elsewhere. No probe scores above its
+  unit's share of D, which is the test that matters; they do not "lose most of their credit", and a mean over 50
+  units' duals cannot make them.
 - **No path around the gate.** A wrapper cannot call a reference (none exists in the verifier); the candidate
   cannot read gold (section 4); it never sees the private fonts, so it cannot key outputs on them.
 
@@ -236,10 +243,11 @@ That is why the expected profile below has F8 high, and why the failure mode sit
   with.
 - One pinned base image digest and one apt snapshot date for the gold host and the verifier, so both compile with
   the same gcc 13 build. Flags: the meson `release` buildtype, no `-march`, no `-ffast-math`.
-- `env -i` with `LC_ALL=C`; no `HB_*` variables (`HB_SHAPER_LIST`, `HB_FONT_FUNCS` and `HB_OPTIONS` change
-  behaviour).
-- The 3+1 recording (QA gate item 5): three identical runs and one perturbed run (one CPU, a longer scratch path,
-  `MALLOC_PERTURB_`, a different environment order) must give byte-identical per-case verdicts for the oracle.
+- A fixed environment with `LC_ALL=C.UTF-8`; no `HB_*` variables (`HB_SHAPER_LIST` and `HB_OPTIONS` change
+  behaviour), except `HB_FONT_FUNCS=ot` for unit 48's probe, which checks that the new constructor ignores it.
+- The 3+1 recording (QA gate item 5): the expected outputs are recorded three times on the reference and once more
+  on one CPU, in the same image and session; all four must be byte-identical. (The pipeline's base runs add
+  `MALLOC_PERTURB_` repeats for the case classification.)
 - One process per font batch, with process, file-size and address-space limits and a 120 s timeout, inside one
   1,800 s deadline for the copy, the build and every batch: a hang or crash costs only that batch's cases, a flood
   only its own batch (at most 16 MiB + 1 byte of output is read), and a tree that outlasts the deadline still gets a
@@ -247,14 +255,15 @@ That is why the expected profile below has F8 high, and why the failure mode sit
 
 ## 9. Expected scores
 
-All figures are estimates from proxies; none has been measured. The agent rows come from section 13.
+The Phase A estimates, kept as the record; the measured mutants and the operative prediction are in section 10 and
+notes/PREREGISTRATION.md.
 
 | Tree | Reward |
 | --- | --- |
 | Upstream 15.2.0 (oracle) | 1.000 |
 | Base 14.3.0 (nop) | 0.000 |
-| Upstream 15.1.0 (every window-C unit missing) | about 21/56 ≈ 0.38 |
-| Mutant V, the verification-gap proof (section 10) | 0.60-0.85 |
+| Upstream 15.1.0 (every window-C unit missing) | about 21/56 ≈ 0.38 (Phase A) |
+| Mutant V, the verification-gap check (section 10) | measured 0.685 in fix round 1 (band 0.60-0.85) |
 | Mutant W, the over-broad port (a secondary bound, section 10) | measured 0.672 in Phase C |
 | Frontier agents | about 0.64 (0.54-0.75; notes/PREREGISTRATION.md, from QA pass 16; target: at most about 0.6) |
 | Mid-tier agents | about 0.28 (0.15-0.40) |
@@ -341,7 +350,13 @@ it work; they stay in tier A.
 collects the 19 units' commits (and the hand-resolved reverts of 27 and 29) into `patches-lib/ALLV`, the pipeline
 builds it as `mut-V`, and `scripts/pipeline/make_mutant.sh` applies it to the reference tree for the verifier;
 a commit that no longer reverts cleanly is left in and listed. V must land in 0.60-0.85, lose D only on tier-C
-units, and leave h_d and h_b essentially unchanged. Two companions are measured in the pipeline: **R_unbuilt**,
+units, and leave h_d and h_b essentially unchanged. V is a **consistency check** of the scoring under the failure
+sentence, not evidence of how agents fail (QA pass R2-17): its h_d and h_b hold by construction for any revert
+mutant, and what it adds is that the combined reverts on 15.2.0 do not spill into other units. Four commits do not
+revert on 15.2.0, because later 15.x commits rework the same lines: 25a's a92e0996d and 90417543f, 25b's 436f067b2,
+and 33's bf93d8671 (the Unicode 18 data). So V keeps 25b and 33 whole and 25a at 0.283; with every tier-C unit at
+0, D would be 34/53 = 0.642 (fix round 1 misstated this as 0.623). `gate_checks.py` names the tier-C units V keeps
+whole. Two companions are measured in the pipeline: **R_unbuilt**,
 the panel's starting point (every F4 and F5 unit taken out, `patches-lib/ALLRu`), and **W_literal**, W without
 the eight widenings QA pass 17 found not to be, or arguably not to be, over-broad readings of their notes, or no-ops
 (11, 18, 25b, 31, 33, 36, 37, 44b; `patches-lib/LITW`). The over-broad mutant W is kept as a **secondary bound**:
@@ -351,7 +366,8 @@ reports D, h_d and h_b separately. What would reopen the decision is in `notes/P
 ## 11. Effort
 
 The report estimated 9-13 person-days. Phase A findings add work: the `kerx` and AAT `kern` assembler (fontTools
-cannot write them), the Unicode data-version check and the precise restatement of the 16 example-dependent notes.
+cannot write them), the Unicode data-version check and the derivation of the 16 example-dependent notes (in the
+end, fix round 1 narrowed their cases instead of restating them, notes/RESTATEMENTS.md).
 The single-step switch removes the multi-step packaging and the capped chain. Revised estimate: **11-16
 person-days**, of which the spike is 2-3 days (SPIKE.md), the item inventory, fonts and case generators 5-7, the
 verifier, drivers and packaging 2-3, and QA 2-3. All builds of R_k and mutants (about 60 trees of a few minutes
@@ -364,13 +380,13 @@ arm64 containers in local Docker Desktop, with emulated amd64 samples only where
 | --- | --- | --- | --- | --- |
 | 1 | Heavy verifier after a capped session: the image fails to come up and the trial is lost | Ungraded trials, biased toward agents that stop early | Light image (no reference build inside); a capped oracle run before any model run | Open; platform evidence n = 1 |
 | 2 | Attribution noise: unlisted behaviour commits in every window **(m)** | Cases graded on undocumented behaviour | R_k attribution drops anything no single listed item explains; QA lens 6 audits 50 random attributed cases | Open |
-| 3 | Example-dependent notes (16 E items) are not pinned exactly | "Grader rejects valid work" | Restate each as a precise behaviour rule checked against the release on every case; drop it if the rule does not determine the output | Closed in fix round 1, by narrowing the cases rather than restating the notes: QA pass 04 found every unit's graded cases determined by upstream's wording, the specification notes and the 14.3.0 code, except units 6, 29 and 37, whose notes now state the rule (notes/RESTATEMENTS.md); cases a note does not determine are labelled `x:` (27, 29, 39) or `beyond-note` (25a) and never graded |
+| 3 | Example-dependent notes (16 E items) are not pinned exactly | "Grader rejects valid work" | Restate each as a precise behaviour rule checked against the release on every case; drop it if the rule does not determine the output | Closed in fix round 1, by narrowing the cases rather than restating the notes. QA pass 04 found 25a undetermined (now narrowed by `beyond-note`), 6 and 29 weakly determined (now restated) and 37 determined for exact arithmetic only (restated to rule out the saturating reading); every other unit's graded cases follow from upstream's wording, the specification notes and the 14.3.0 code (notes/RESTATEMENTS.md); cases a note does not determine are labelled `x:` (27, 29, 39) or `beyond-note` (25a) and never graded |
 | 4 | Unicode data versions differ from upstream's (pre-release files, DerivedCoreProperties 17.0.0) **(m)** | Unfair Unicode 18 cases | Ship the exact files, or keep only code points where a build regenerated from the shipped files matches the release | Open, spike S7 |
 | 5 | fontTools cannot write `kerx` or AAT `kern` state tables **(m)** | F4's `kerx` units (23, 25a, 25b, 27) unbuildable | Our own table assembler, validated by base-versus-target differences | Open, spike S4 |
 | 6 | Offline specs may not be redistributable | Missing documentation | Our own digests of the needed sections | Open, licence check |
 | 7 | Candidate build scripts or library code read the answers in the verifier | Exploit | Unprivileged `builder` user, root-only gold, compare after exit (section 4); protection probe | Design done |
 | 8 | Upstream `CLAUDE.md` and `AGENTS.md` in the tree steer the agent or carry cue words | Awareness or conflicting instructions | Read after download; keep only if clean and compatible | Open |
-| 9 | Mid-tier floor near 0.10 | Reads as unfair | Expected profile check on the first trials; the E-item restatements | Open |
+| 9 | Mid-tier floor near 0.10 | Reads as unfair | Expected profile check on the first trials; tier A's named fixes (QA pass R2-16: mid-tier about 0.29) | Open |
 | 10 | Decay: models trained past November 2026 (expected spring 2027) and HarfRust's public 15.2.0 port | Recall instead of work | Per-release tags; re-cut the window per model generation | Accepted |
 | 11 | Frontier above about 0.6 (too easy for the owner's target) | Saturates within a model generation | Section 13: dual gate at full strength, AAT and `kern` families kept, hard but fair notes kept, per-unit case breadth | Open, measured by the first runs |
 | 12 | "Each fix is small" perception | Reads as easy | Breadth times domain depth, no oracle in the room, porting into pre-rewrite code | Accepted |
