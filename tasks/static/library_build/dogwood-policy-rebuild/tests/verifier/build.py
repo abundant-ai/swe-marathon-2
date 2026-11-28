@@ -25,7 +25,15 @@ from pathlib import Path
 
 from . import listing
 from .contracts import BuildResult, Limits
-from .procs import SHARED_DIRS, capture, clear_user, end_group, end_user, expendable
+from .procs import (
+    SHARED_DIRS,
+    capture,
+    clear_user,
+    drop_to,
+    end_group,
+    end_user,
+    expendable,
+)
 
 BUILDER = "builder"
 CARGO_CONFIG = Path("/opt/verifier/cargo-config.toml")
@@ -88,6 +96,7 @@ def _limits() -> None:
     resource.setrlimit(resource.RLIMIT_NPROC, (BUILD_NPROC, BUILD_NPROC))
     resource.setrlimit(resource.RLIMIT_FSIZE, (BUILD_FSIZE, BUILD_FSIZE))
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+    drop_to(BUILDER)  # last: the score and the limits are set while still root
 
 
 def build(submission: Path, work: Path, limits: Limits) -> BuildResult:
@@ -131,9 +140,6 @@ def _build(submission: Path, work: Path, limits: Limits) -> BuildResult:
         ["/usr/local/cargo/bin/cargo", "build", "--release", "--offline"],
         cwd=src,
         env=env,
-        user=BUILDER,
-        group=BUILDER,
-        extra_groups=[],
         stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,

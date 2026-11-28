@@ -64,13 +64,22 @@ def protect_self() -> bool:
 
 
 def expendable() -> None:
-    """In a child, before it runs submitted code: the kernel's first choice when memory runs out.
-    Raising one's own score needs no privilege."""
+    """In a child, before it runs submitted code and while it is still root: the kernel's first
+    choice when memory runs out. (After the uid changes the process is no longer dumpable, so
+    its /proc files are root's and it could not write its own score; the drop comes after.)"""
     try:
         with open("/proc/self/oom_score_adj", "w") as f:
             f.write("1000")
     except OSError:
         pass
+
+
+def drop_to(user: str) -> None:
+    """In a child, last before exec: become `user`, with no supplementary groups."""
+    uid, gid = uid_gid(user)
+    os.setgroups([])
+    os.setgid(gid)
+    os.setuid(uid)
 
 
 def capture(
@@ -303,11 +312,12 @@ def _owner(entry: os.DirEntry) -> int | None:
 def remove_ipc_of(user: str) -> int:
     """Remove the System V shared memory, message queues and semaphores `user` owns or made,
     which outlive the process that made them. Return how many were removed."""
-    uid, _ = uid_gid(user)
+    uid, gid = uid_gid(user)
     try:
         libc = ctypes.CDLL(None, use_errno=True)
     except OSError:
         return 0
+    mine: list[tuple[str, int]] = []
     calls = {
         "shm": ("shmid", lambda i: libc.shmctl(i, IPC_RMID, None)),
         "msg": ("msqid", lambda i: libc.msgctl(i, IPC_RMID, None)),
@@ -331,10 +341,63 @@ def remove_ipc_of(user: str) -> int:
             cols = row.split()
             try:
                 if uid in (int(cols[at_uid]), int(cols[at_cuid])):
-                    removed += rmid(int(cols[at_id])) == 0
+                    if rmid(int(cols[at_id])) == 0:
+                        removed += 1
+                    else:  # root without CAP_IPC_OWNER (a container's default) may not
+                        mine.append((kind, int(cols[at_id])))
             except (IndexError, ValueError):
                 continue
+    if mine:
+        removed += _rmid_as(uid, gid, mine)
     return removed
+
+
+def _rmid_as(uid: int, gid: int, objects: list[tuple[str, int]]) -> int:
+    """Remove System V objects from a child that has dropped to `uid`: their owner or creator may
+    always remove them. Root ends the child if it does not finish at once."""
+    read, write = os.pipe()
+    try:
+        child = os.fork()
+    except OSError:
+        os.close(read)
+        os.close(write)
+        return 0
+    if child == 0:  # pragma: no cover - the child only removes and exits
+        done = 0
+        try:
+            os.close(read)
+            libc = ctypes.CDLL(None, use_errno=True)
+            os.setgroups([])
+            os.setgid(gid)
+            os.setuid(uid)
+            for kind, ident in objects:
+                if kind == "shm":
+                    ok = libc.shmctl(ident, IPC_RMID, None) == 0
+                elif kind == "msg":
+                    ok = libc.msgctl(ident, IPC_RMID, None) == 0
+                else:
+                    ok = libc.semctl(ident, 0, IPC_RMID) == 0
+                done += ok
+            os.write(write, str(done).encode())
+        except BaseException:  # noqa: BLE001, S110
+            pass
+        os._exit(0)
+    os.close(write)
+    deadline = time.monotonic() + 5.0
+    while time.monotonic() < deadline:
+        finished, _ = os.waitpid(child, os.WNOHANG)
+        if finished:
+            break
+        time.sleep(0.002)
+    else:
+        try:
+            os.kill(child, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        os.waitpid(child, 0)
+    with os.fdopen(read, "rb") as f:
+        text = f.read(32)
+    return int(text) if text.isdigit() else 0
 
 
 def clear_user(user: str, dirs: tuple[str, ...] = SHARED_DIRS) -> None:

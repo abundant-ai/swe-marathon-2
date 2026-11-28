@@ -22,7 +22,15 @@ from pathlib import Path
 from . import listing
 from .contracts import Case, CaseResult, EvaluationError, Limits
 from .normalise import normalise
-from .procs import capture, clear_user, end_group, end_user, expendable, remove_tree
+from .procs import (
+    capture,
+    clear_user,
+    drop_to,
+    end_group,
+    end_user,
+    expendable,
+    remove_tree,
+)
 
 RUNNER = "nobody"
 RUNNER_GROUP = "nogroup"
@@ -44,6 +52,7 @@ def _limits(limits: Limits):
         resource.setrlimit(resource.RLIMIT_NPROC, (512, 512))
         resource.setrlimit(resource.RLIMIT_FSIZE, (256 << 20, 256 << 20))
         resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+        drop_to(RUNNER)  # last: the score and the limits are set while still root
 
     return apply
 
@@ -56,9 +65,6 @@ def _can_start(limits: Limits) -> bool:
                 ["/bin/true"],
                 check=False,
                 env=ENV,
-                user=RUNNER,
-                group=RUNNER_GROUP,
-                extra_groups=[],
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
@@ -127,9 +133,6 @@ def _run(
             [str(binary), *case.args],
             cwd=work,
             env=env,
-            user=RUNNER,
-            group=RUNNER_GROUP,
-            extra_groups=[],
             stdin=feed if feed is not None else subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
