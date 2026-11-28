@@ -270,6 +270,24 @@ The weights stay as section 3 lists them. Per family, as unit pass rates:
 - **What would move it:** the first trials' per-family rates. If the frontier tops 0.6, the fair
   levers are the weights inside the stated rules (section 3a's table), never hidden rules.
 
+**Re-sized in fix round 1 (2026-11-28; `notes/FIX1-REPORT.md` section 4).** The table above was
+too low: QA 17 put the frontier at a median of about 0.61. Its model (a Monte Carlo over the
+measured unit structure) was re-run with QA 17's per-family rates, changed only where the fix
+round changed what a unit needs:
+- K's `previous` and `context_pin` duals now need the immediately preceding event, and every K
+  trace ends past its window;
+- every R unit holds a case whose stream needs the history (52 units of 3-4 cases);
+- M is now mostly a macro beside a temporal condition (20 units).
+
+| Profile | Median | 80% band | P(> 0.6) |
+| --- | --- | --- | --- |
+| Frontier, central | 0.56 | 0.38-0.72 | 0.40 |
+| Frontier, strong session | 0.70 | 0.51-0.82 | 0.75 |
+| Mid-tier | 0.21 | 0.00-0.38 | 0.00 |
+
+A strong session still lands near 0.70, above the owner's ceiling. No lever was pulled in the fix
+round: a 3-judge panel chooses one (QA 17 F2, F5 and F7 are the candidates) before the first run.
+
 ## 4. Stub filters
 
 **Selection makes every stub score 0 by construction** (`scripts/select_cases.py`, from the
@@ -346,10 +364,12 @@ spike's 3+1 and 10-repeat recordings are in the Phase B report.
 
 ## 6. Expected score bands (estimates)
 
-| Who | Single step (1.2.0), Phase C estimate |
+| Who | Single step (1.2.0), fix round 1 re-size (section 3a) |
 | --- | --- |
-| Frontier (Opus 5.5 / Fable 5.2 / GPT-6 Astra class) | about 0.47 (0.35-0.60) |
-| Mid-tier (DeepSeek v4.1 Flash, GLM 5.3) | about 0.19 (0.08-0.30) |
+| Frontier (Opus 5.5 / Fable 5.2 / GPT-6 Astra class) | about 0.56 (0.38-0.72); a strong session about 0.70 (0.51-0.82) |
+| Mid-tier (DeepSeek v4.1 Flash, GLM 5.3) | about 0.21 (0.00-0.38) |
+
+The Phase C estimate (frontier about 0.47) was too low (QA 17).
 
 **A working task shows** (pre-registered, fix round 1):
 - no full solve;
