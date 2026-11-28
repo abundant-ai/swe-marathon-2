@@ -909,7 +909,7 @@ data: Dictionary)`. The commands set up situations for development and QA.
 
 | Command | Arguments | Effect |
 | --- | --- | --- |
-| `world.reset` | `variation`, `map` | Rebuild people, vehicles, missions, clock (08:00) and weather (clear) from the variation; the static world stays |
+| `world.reset` | `variation`, `map` | Rebuild people, vehicles, missions, clock (08:00) and weather (clear) from the variation, at alert level 0 with no crime still to be reported and no police unit on its way; the static world stays |
 | `time.set` | `hhmm` (a string such as `"21:30"`) | Set the clock |
 | `weather.set` | `kind` | Set the weather |
 | `player.spawn` | `lead`, `at`, `heading` | Spawn the player, or move the existing one; with `lead`, the player becomes that lead (its body, hair and colours, chapter 2) |
