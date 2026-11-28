@@ -186,8 +186,8 @@ def close_tree(root: Path) -> int:
 
 def stray_files() -> list[str]:
     """Anything the build's or the runs' users own anywhere on this machine's own filesystem
-    once they are gone (none is expected: every place they could write is swept or closed).
-    Each one found is listed and removed."""
+    once they are gone, their home directories apart (none is expected: every place they could
+    write is swept or closed). Each one found is listed and removed."""
     try:
         out = subprocess.run(
             [
@@ -210,7 +210,8 @@ def stray_files() -> list[str]:
         ).stdout
     except (OSError, subprocess.SubprocessError):
         return ["(the search for leftover files did not finish)"]
-    found = [p for p in out.split(b"\0") if p]
+    homes = {os.fsencode(str(Path("~" + u).expanduser())) for u in (BUILDER, RUNNER)}
+    found = [p for p in out.split(b"\0") if p and p not in homes]
     for start in range(0, len(found), 500):
         procs.remove_tree(*found[start : start + 500])
     return [p.decode("utf-8", "backslashreplace") for p in found[:20]] + (
@@ -394,7 +395,7 @@ def main() -> int:
         return 1
     metrics = dict(
         result.metrics,
-        settled,
+        **settled,
         adopts_orphans=adopts_orphans,
         grader_protected_from_oom=protected,
         output_folder_closed=outputs.closed and logs_closed,
