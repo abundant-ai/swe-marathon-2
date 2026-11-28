@@ -20,8 +20,11 @@ whole:
   engine without history prints; a policy with no temporal condition is passed by both;
 - `cat`: `format` printing its input.
 A case that some program passes is paired with a case of the same family and command that none
-passes; when none is left, it is dropped. Declared B and K pairs keep their members, and are
-dropped when one program passes them whole.
+passes (rarest first: a case that evidences an id of `checks/features.json` few cases evidence
+takes a partner before the others); when none is left, it is dropped. Declared B and K pairs keep
+their members, and are dropped when one program passes them whole. `--cap` limits a family's
+units, but never drops a unit of a `--keep-prefix` bundle or a standard-input case, nor the units
+that give each id its minimum number of cases (as `checks/coverage.py` counts them) plus two.
 
 Writes OUT/cases.jsonl, OUT/bundles/ (the bundles the kept cases use), OUT/manifest.json (the
 candidates' manifest, plus what selection kept and dropped) and OUT/bundle_tags.json.
@@ -30,6 +33,7 @@ candidates' manifest, plus what selection kept and dropped) and OUT/bundle_tags.
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import random
 import re
@@ -41,6 +45,59 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import history_free
+
+CHECKS = Path(__file__).resolve().parent.parent / "checks"
+_spec = importlib.util.spec_from_file_location(
+    "dogwood_coverage", CHECKS / "coverage.py"
+)
+cov = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(cov)
+MARGIN = 2  # cases beyond an id's minimum, against the units step 6 drops after the cap
+
+
+def evidence(cases: list[dict], gold: dict, candidates: Path, tags: dict) -> dict:
+    """For each counted feature and restriction id of `checks/features.json`, its minimum number
+    of cases and the cases that evidence it the way `checks/coverage.py` counts them (a
+    feature's use, a restriction's refusal)."""
+    out = {}
+    inp: dict[str, dict] = {}
+    for f in json.loads((CHECKS / "features.json").read_text()):
+        if f["kind"] == "out_of_scope" or f.get("unchecked"):
+            continue
+        routes = set(f.get("routes") or [])
+        detect = cov.alternatives(f)
+        errs = [alt["error"] for alt in detect if alt.get("error")]
+        has_shape = any(k != "error" for alt in detect for k in alt)
+        found = []
+        for c in cases:
+            if routes and cov.route(c["args"]) not in routes:
+                continue
+            rc, norm = gold[c["id"]]
+            msg = any(
+                e.get("message_substring") and e["message_substring"] in norm
+                for e in errs
+            )
+            t = tags.get(c["bundle"]) or {}
+            targeted = t.get("kind") == f["id"]
+            if has_shape and not targeted and c["id"] not in inp:
+                inp[c["id"]] = cov.inputs(candidates, c)
+            hit = targeted or (
+                has_shape and cov.matches(detect, inp[c["id"]], t.get("tags") or [])
+            )
+            if f["kind"] == "restriction":
+                ok = (
+                    msg
+                    if targeted and errs
+                    else (hit and (msg or rc != 0)) or (not has_shape and msg)
+                )
+            else:
+                ok = (hit and rc == 0) or msg
+            if ok:
+                found.append(c["id"])
+        need = 1 if f["kind"] == "restriction" else f.get("min_cases", 3)
+        out[f["id"]] = (need, found)
+    return out
+
 
 VERDICT = re.compile(
     r"^@-?\d+ \(time point \d+\): (DENY(?:  \[rules: [0-9, ]+\])?|ALLOW  \[rules: [0-9, ]+\])$"
@@ -238,7 +295,19 @@ def main() -> int:
             for m in members:
                 m["drop"] = f"pair passable ({min(common)})"
 
-    # 4. Pair the other weak cases with strong ones of the same family and command.
+    # 4. Pair the other weak cases with strong ones of the same family and command. Partners are
+    # handed out rarest first: a case that evidences an id few cases evidence (as the coverage
+    # inventory counts them) takes one before a case whose ids many others cover.
+    tags = json.loads((a.candidates / "bundle_tags.json").read_text())
+    ev = evidence([c for c in kept if not c.get("drop")], gold, a.candidates, tags)
+    rarity: dict[str, int] = {}
+    for _need, found in ev.values():
+        for cid in found:
+            rarity[cid] = min(rarity.get(cid, len(found)), len(found))
+
+    def rarest(c: dict) -> tuple:
+        return (rarity.get(c["id"], len(kept)), c["id"])
+
     rng = random.Random(a.seed)
     strong_pool: dict[tuple, list[dict]] = defaultdict(list)
     needy: dict[tuple, list[dict]] = defaultdict(list)
@@ -254,7 +323,7 @@ def main() -> int:
     for key in sorted(needy):
         pool = strong_pool.get(key, [])
         rng.shuffle(pool)
-        for c in sorted(needy[key], key=lambda x: x["id"]):
+        for c in sorted(needy[key], key=rarest):
             if not pool:
                 unpaired.append(c)
                 continue
@@ -271,7 +340,7 @@ def main() -> int:
             spare[key[2]].extend(strong_pool[key])
     for fmt in sorted(spare):
         rng.shuffle(spare[fmt])
-    for c in unpaired:
+    for c in sorted(unpaired, key=rarest):
         pool = spare.get(c["fmt"], []) if c["family"] == "F" else []
         if not pool:
             c["drop"] = f"no partner ({weak[c['id']]})"
@@ -293,19 +362,35 @@ def main() -> int:
     units_of: dict[str, dict[str, list[dict]]] = defaultdict(lambda: defaultdict(list))
     for c in final:
         units_of[c["family"]][c.get("pair") or c["id"]].append(c)
+    # Units holding a case of a kept bundle (a restriction template, the command line) are never
+    # capped: they may be the only cases of what they check. Nor are enough units to give every
+    # id of the coverage inventory its minimum number of cases, plus a margin.
+    never = {
+        u
+        for fam in units_of
+        for u, ms in units_of[fam].items()
+        if any(
+            c["bundle"].startswith(tuple(a.keep_prefix)) or c.get("stdin") for c in ms
+        )
+    }
+    unit_of = {c["id"]: c.get("pair") or c["id"] for c in final}
+    pick = random.Random(a.seed + 1)
+    protected = set()
+    for _fid, (need, found) in sorted(ev.items()):
+        units = Counter(unit_of[cid] for cid in found if cid in unit_of)
+        have = sum(n for u, n in units.items() if u in never or u in protected)
+        rest = sorted(u for u in units if u not in never and u not in protected)
+        pick.shuffle(rest)
+        for u in rest:
+            if have >= need + MARGIN:
+                break
+            protected.add(u)
+            have += units[u]
+    never |= protected
     capped = []
     for fam in sorted(units_of):
         names = sorted(units_of[fam])
-        # Units holding a case of a kept bundle (a restriction template, the command line)
-        # are never capped: they may be the only cases of what they check.
-        kept_units = [
-            n
-            for n in names
-            if any(
-                c["bundle"].startswith(tuple(a.keep_prefix)) or c.get("stdin")
-                for c in units_of[fam][n]
-            )
-        ]
+        kept_units = [n for n in names if n in never]
         rest = [n for n in names if n not in kept_units]
         limit = max(0, int(caps.get(fam, len(names))) - len(kept_units))
         if len(rest) > limit:
@@ -363,6 +448,7 @@ def main() -> int:
         "bundles": len(used),
         "dropped": dict(sorted(dropped.items())),
         "paired_here": made,
+        "kept_for_coverage": len(protected),
         "families": dict(sorted(fams.items())),
         "units": {k: len(v) for k, v in sorted(units.items())},
     }
