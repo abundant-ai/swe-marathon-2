@@ -1,0 +1,44 @@
+schema_version = "1.4"
+artifacts = ["/app/driver"]
+
+[task]
+name = "abundant/swe-m2_software-engineering_weave-merge-driver-rebuild"
+description = "Rebuild, clean-room, an entity-level git merge driver whose current engine was first published between August and October 2026, for Python, TypeScript, Go, JSON and TOML, from a written specification and an execute-only build, down to the bytes it writes and the merges it refuses."
+authors = [{ name = "Neel Harsola", email = "work.neelharsola@gmail.com" }]
+
+[metadata]
+reward_type = "continuous"
+open_internet_justification = "Only the image builds have public egress, to install the toolchain and system packages, to fetch the pinned crates for the offline registry, and to compile the original driver from its pinned public tag. The agent works without network access."
+
+[agent]
+timeout_sec = 34560
+network_mode = "no-network"
+user = "dev"
+
+[environment]
+network_mode = "public"
+build_timeout_sec = 3600
+cpus = 4
+memory_mb = 8192
+storage_mb = 20480
+gpus = 0
+workdir = "/app"
+
+[verifier]
+environment_mode = "separate"
+network_mode = "no-network"
+timeout_sec = 3600
+user = "root"
+
+[[verifier.collect]]
+command = "/usr/local/lib/weave-collect/collect"
+user = "root"
+timeout_sec = 600
+
+[verifier.environment]
+network_mode = "no-network"
+build_timeout_sec = 3600
+cpus = 4
+memory_mb = 8192
+storage_mb = 20480
+gpus = 0

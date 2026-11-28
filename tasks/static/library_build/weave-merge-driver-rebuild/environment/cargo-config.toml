@@ -1,0 +1,9 @@
+# Crates come only from the offline registry installed with the toolchain.
+[source.crates-io]
+replace-with = "offline-registry"
+
+[source.offline-registry]
+directory = "/opt/cargo-vendor"
+
+[net]
+offline = true

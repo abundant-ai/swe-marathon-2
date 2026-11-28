@@ -1,0 +1,10 @@
+# Private inputs, seeds and recorded outputs stay out of this public repository.
+# They live in the git-ignored folders below and in a private backup bundle.
+tests/private/
+solution/private/
+# Upstream source staged by packaging for the image builds and the solution.
+environment/upstream/
+tests/upstream/
+solution/upstream/
+# Local experiments, mutant builds and generated bundles.
+experiment/

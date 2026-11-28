@@ -1,0 +1,11 @@
+# syntax=docker/dockerfile:1
+# Protection probe: the original installed execute-only and setgid; strace and gdb only in this image.
+FROM weave-mdr-builder:1
+RUN apt-get -o Acquire::Check-Valid-Until=false update \
+    && apt-get install -y --no-install-recommends strace gdb \
+    && apt-get clean && rm -r /var/lib/apt/lists && mkdir -p /var/lib/apt/lists/partial
+COPY weave-driver /usr/local/bin/weave-driver
+RUN groupadd --system weaveorig && chown root:weaveorig /usr/local/bin/weave-driver \
+    && chmod 2711 /usr/local/bin/weave-driver && useradd --create-home dev
+COPY probe.sh /probe.sh
+USER dev
