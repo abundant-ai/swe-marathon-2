@@ -1,0 +1,357 @@
+{
+ "format": "qa-play/1",
+ "name": "alert.phone_in/civilian",
+ "template": "alert.phone_in",
+ "about": "On the plaza with traffic and people set to none and no police about. The player punches a tourist while a shopper watches from 12 m: the shopper phones it in. After a world reset, the player punches another tourist with a second shopper watching, then shoots both dead within 10 s: nobody is left to phone it in.",
+ "rules": ["AL-1", "AL-2"],
+ "role": "solo",
+ "args": ["--role=solo", "--variation=42", "--save-dir={save_dir}"],
+ "mode": "lockstep",
+ "runs": [
+  {
+   "pace_ms": 0
+  }
+ ],
+ "limits": {
+  "wall_s": 300,
+  "boot_s": 60,
+  "step_s": 120,
+  "cpu_s": 600,
+  "memory_mb": 1536,
+  "disk_mb": 512
+ },
+ "steps": [
+  {
+   "observe": {
+    "census": {
+     "meta": ["vehicle", "seat", "hostile", "limp", "weapon", "state", "approach"],
+     "kinds": ["player", "npc", "vehicle", "signal", "prop"],
+     "view": true
+    },
+    "state": true,
+    "camera": true,
+    "every": 2
+   }
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 42
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "traffic.set",
+     {
+      "density": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [-3.0, 0.15, 4.0],
+      "heading": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "weapon": "fists"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "tourist",
+      "at": [-3.0, 0.15, 2.9],
+      "heading": 180,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "shopper",
+      "at": [5.0, 0.15, -5.0],
+      "heading": 220,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "start"
+  },
+  {
+   "mark": "punch"
+  },
+  {
+   "press": {
+    "attack": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["attack"]
+  },
+  {
+   "run": 780
+  },
+  {
+   "mark": "after_call"
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 43
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "traffic.set",
+     {
+      "density": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [-3.0, 0.15, 4.0],
+      "heading": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "weapon": "pistol",
+      "ammo": 36
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "weapon": "fists"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "tourist",
+      "at": [-3.0, 0.15, 2.9],
+      "heading": 180,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "shopper",
+      "at": [5.0, 0.15, -5.0],
+      "heading": 220,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["vehicle", "seat", "hostile", "limp", "weapon", "state", "approach"],
+     "kinds": ["player", "npc", "vehicle", "signal", "prop"],
+     "view": true
+    },
+    "state": true,
+    "camera": true,
+    "every": 2,
+    "bones": {
+     "ids": [
+      "player",
+      {
+       "$answer": [20, "id"]
+      },
+      {
+       "$answer": [21, "id"]
+      }
+     ],
+     "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
+    }
+   }
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "punch2"
+  },
+  {
+   "press": {
+    "attack": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["attack"]
+  },
+  {
+   "run": 30
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "weapon": "pistol"
+     }
+    ]
+   ]
+  },
+  {
+   "run": 20
+  },
+  {
+   "aim_at": {
+    "entity": {
+     "id": {
+      "$answer": [20, "id"]
+     }
+    },
+    "bone": "Chest",
+    "ticks": 120,
+    "hold": {
+     "attack": 1.0
+    }
+   }
+  },
+  {
+   "aim_at": {
+    "entity": {
+     "id": {
+      "$answer": [21, "id"]
+     }
+    },
+    "bone": "Chest",
+    "ticks": 150,
+    "hold": {
+     "attack": 1.0
+    }
+   }
+  },
+  {
+   "run": 720
+  },
+  {
+   "mark": "silent_end"
+  },
+  {
+   "mark": "end"
+  }
+ ],
+ "expect": [
+  {
+   "id": "witnessed",
+   "check": "crime_event",
+   "args": {
+    "from": "punch",
+    "to": "after_call",
+    "type": "assault",
+    "seen_by": [
+     {
+      "step": 6
+     }
+    ]
+   },
+   "rule": "AL-1",
+   "says": "the shopper watching from 12 m is among the assault's witnesses"
+  },
+  {
+   "id": "phoned_in",
+   "check": "alert_rise",
+   "args": {
+    "from": "punch",
+    "to": "after_call",
+    "type": "assault",
+    "level": 1,
+    "min_s": 10.0,
+    "max_s": 11.0
+   },
+   "rule": "AL-2",
+   "says": "seen only by a civilian, the assault raises the level 10 s (within 1 s) after it, to 1"
+  },
+  {
+   "id": "dead_witness",
+   "check": "alert_steady",
+   "args": {
+    "from": "punch2",
+    "to": "silent_end",
+    "level": 0
+   },
+   "rule": "AL-2",
+   "says": "with both witnesses shot dead within 10 s of each crime, nobody phones anything in: the level stays 0 for 12 s after the last of them"
+  },
+  {
+   "id": "honest",
+   "check": "alert_honest",
+   "args": {
+    "from": "start",
+    "to": "end",
+    "police": []
+   },
+   "rule": "AL-4",
+   "says": "every rise of the level follows a crime a police officer saw at most 1.0 s before, or one others saw 10-11 s before, to the level AL-4 gives; it drops only to 0, on an escape, an arrest or a death"
+  }
+ ],
+ "tags": []
+}

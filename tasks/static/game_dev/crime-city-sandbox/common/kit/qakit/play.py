@@ -618,11 +618,15 @@ def speed_between(a: dict | None, b: dict | None, ent: dict) -> float | None:
 
 def is_near(frame: dict, near: dict) -> bool:
     """Whether an entity of near["kind"] (default player) in a frame's census stands within
-    near["within_m"] of near["p"], horizontally."""
+    near["within_m"] of near["p"], horizontally, with every metadata value of near["meta"]
+    when given (a traffic light of an approach showing red, say)."""
     p = [float(c) for c in near["p"]]
+    want = near.get("meta") if isinstance(near.get("meta"), dict) else {}
     for e in frame.get("census") or []:
         q = e.get("p")
         if e.get("k") != near.get("kind", "player") or not isinstance(q, list):
+            continue
+        if any((e.get("m") or {}).get(key) != val for key, val in want.items()):
             continue
         if math.hypot(float(q[0]) - p[0], float(q[2]) - p[2]) <= float(
             near["within_m"]

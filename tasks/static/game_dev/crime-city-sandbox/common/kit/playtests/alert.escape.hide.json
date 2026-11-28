@@ -1,0 +1,339 @@
+{
+ "format": "qa-play/1",
+ "name": "alert.escape/hide",
+ "template": "alert.escape",
+ "about": "On the plaza with traffic and people set to none and no police about. The player punches a tourist with only a shopper watching; once the shopper's call raises the level to 1, the player is put indoors far away and waits. After a world reset the same again, but before hiding the player stands 5 s on a sidewalk with a police officer watching from 20 m, then is put indoors far from there.",
+ "rules": ["AL-11"],
+ "role": "solo",
+ "args": ["--role=solo", "--variation=48", "--save-dir={save_dir}"],
+ "mode": "lockstep",
+ "runs": [
+  {
+   "pace_ms": 0
+  }
+ ],
+ "limits": {
+  "wall_s": 600,
+  "boot_s": 60,
+  "step_s": 200,
+  "cpu_s": 1200,
+  "memory_mb": 1536,
+  "disk_mb": 512
+ },
+ "steps": [
+  {
+   "observe": {
+    "census": {
+     "meta": ["vehicle", "seat", "hostile", "limp", "weapon", "state", "approach"],
+     "kinds": ["player", "npc", "vehicle", "signal", "prop"],
+     "view": true
+    },
+    "state": true,
+    "camera": true,
+    "every": 6
+   }
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 48
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "traffic.set",
+     {
+      "density": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [-3.0, 0.15, 4.0],
+      "heading": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "weapon": "fists"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "tourist",
+      "at": [-3.0, 0.15, 2.9],
+      "heading": 180,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "shopper",
+      "at": [5.0, 0.15, -5.0],
+      "heading": 220,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "start"
+  },
+  {
+   "mark": "crime_0"
+  },
+  {
+   "press": {
+    "attack": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["attack"]
+  },
+  {
+   "wait_for": {
+    "event": "alert_changed",
+    "max_ticks": 900
+   }
+  },
+  {
+   "run": 6
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [-49.28, 0.15, -144.8],
+      "heading": 0
+     }
+    ]
+   ]
+  },
+  {
+   "mark": "hidden_0"
+  },
+  {
+   "run": 1800
+  },
+  {
+   "mark": "waited_0"
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 49
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "traffic.set",
+     {
+      "density": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [-3.0, 0.15, 4.0],
+      "heading": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "weapon": "fists"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "tourist",
+      "at": [-3.0, 0.15, 2.9],
+      "heading": 180,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "shopper",
+      "at": [5.0, 0.15, -5.0],
+      "heading": 220,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "crime_1"
+  },
+  {
+   "press": {
+    "attack": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["attack"]
+  },
+  {
+   "wait_for": {
+    "event": "alert_changed",
+    "max_ticks": 900
+   }
+  },
+  {
+   "run": 6
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": {
+       "sidewalk": "sw_33",
+       "s": 347.5
+      },
+      "heading": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "police_officer",
+      "at": [-61.5, 0.15, 4.25],
+      "heading": 180,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "run": 300
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [93.33, 0.15, -43.03],
+      "heading": 0
+     }
+    ]
+   ]
+  },
+  {
+   "mark": "hidden_1"
+  },
+  {
+   "run": 1800
+  },
+  {
+   "mark": "waited_1"
+  },
+  {
+   "mark": "end"
+  }
+ ],
+ "expect": [
+  {
+   "id": "escape_from_crime",
+   "check": "escape",
+   "args": {
+    "from": "crime_0",
+    "to": "waited_0",
+    "anchor": "hidden_0",
+    "cooling_s": 20.0,
+    "slack_s": 3.0
+   },
+   "rule": "AL-11",
+   "says": "with no unit having seen the player, the zone is centred on the crime: put indoors more than 140 m away, the player has escaped after level 1's cooling-off time, 20 s (the level drops to 0 from 20 s to 23 s after the move, not before)"
+  },
+  {
+   "id": "escape_from_sighting",
+   "check": "escape",
+   "args": {
+    "from": "crime_1",
+    "to": "waited_1",
+    "anchor": "hidden_1",
+    "cooling_s": 20.0,
+    "slack_s": 3.0
+   },
+   "rule": "AL-11",
+   "says": "seen by an officer on the sidewalk, the zone re-centres there: put indoors more than 140 m from that spot, the level drops to 0 from 20 s to 23 s after the move, not before"
+  },
+  {
+   "id": "honest",
+   "check": "alert_honest",
+   "args": {
+    "from": "start",
+    "to": "end",
+    "police": []
+   },
+   "rule": "AL-4",
+   "says": "every rise of the level follows a crime a police officer saw at most 1.0 s before, or one others saw 10-11 s before, to the level AL-4 gives; it drops only to 0, on an escape, an arrest or a death"
+  }
+ ],
+ "tags": []
+}

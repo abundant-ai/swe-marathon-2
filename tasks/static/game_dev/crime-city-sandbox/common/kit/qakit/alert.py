@@ -74,19 +74,27 @@ def wrecks(frames: list[dict]) -> set:
     return {d.get("vehicle") for _t, d in events(frames, "vehicle_exploded")}
 
 
+def placed(run: RunRecord, args: dict) -> set:
+    """The ids of the police QA placed itself (`ignore`: references), left out of the units."""
+    return {x for x in answer_ids(run, args.get("ignore", [])) if x is not None}
+
+
 def player_vehicle(frame: dict | None) -> object:
     v = player_state(frame).get("vehicle")
     return v if v not in (None, "", False) else None
 
 
 def units(frame: dict | None, wrecked: set) -> dict:
-    """{id: census row} of the police units in a frame (see the module's docstring)."""
+    """{id: census row} of the police units in a frame (see the module's docstring); `wrecked`
+    holds the wrecks and the police QA placed itself, which do not count."""
     out = {}
     carrying = player_vehicle(frame)
     for e in (frame or {}).get("census") or []:
         a, k = e.get("a"), e.get("k")
+        if e.get("id") in wrecked:
+            continue
         if k == "vehicle" and a in POLICE_MODELS:
-            if e.get("id") in wrecked or e.get("id") == carrying:
+            if e.get("id") == carrying:
                 continue
             out[e.get("id")] = e
         elif k == "npc" and a in POLICE_PEOPLE:
@@ -264,6 +272,24 @@ def check_alert_sequence(rec: PlayRecord, args: dict) -> Result:
     return True, measured, ""
 
 
+def check_alert_levels(rec: PlayRecord, args: dict) -> Result:
+    """AL-4: at each mark of `at` ({mark: level}) the state report shows that level."""
+    run = run_of(rec, args)
+    got, bad = {}, []
+    for mark, want in args["at"].items():
+        k = run.marks.get(mark)
+        if k is None:
+            return None, {}, f"mark {mark} was not reached"
+        got[mark] = level_of(run.frames[k])
+        if got[mark] != int(want):
+            bad.append(mark)
+    measured = {"levels": got}
+    if bad:
+        m = bad[0]
+        return False, measured, f"the level was {got[m]} at {m}, not {args['at'][m]}"
+    return True, measured, ""
+
+
 # ------------------------------------------------------------------ the response (AL-6, AL-7)
 def check_police_arrival(rec: PlayRecord, args: dict) -> Result:
     """AL-6: the first police unit gets within `reach_m` of the player within `within_s` of the
@@ -276,7 +302,7 @@ def check_police_arrival(rec: PlayRecord, args: dict) -> Result:
     rise = first_rise(frames, args.get("level"))
     if rise is None:
         return None, {}, "the level did not rise"
-    wrecked = wrecks(frames)
+    wrecked = wrecks(frames) | placed(run, args)
     k0 = frame_at(frames, rise[0])
     reach, clear = float(args.get("reach_m", 25.0)), float(args.get("clear_m", 100.0))
     pl0 = player_pos(frames[k0])
@@ -326,7 +352,7 @@ def check_police_count(rec: PlayRecord, args: dict) -> Result:
     rise = first_rise(frames, args.get("level"))
     if rise is None:
         return None, {}, "the level did not rise"
-    wrecked = wrecks(frames)
+    wrecked = wrecks(frames) | placed(run, args)
     dispatched = {d.get("unit") for _t, d in events(frames, "police_dispatched")}
     want, over = int(args["count"]), int(args.get("over", 2))
     by = rise[0] + ticks(float(args.get("by_s", 90.0)))
@@ -442,7 +468,7 @@ def check_police_kinematics(rec: PlayRecord, args: dict) -> Result:
     frames = frames_between(run, args["from"], args["to"])
     if not frames:
         return None, {}, "the marks were not reached"
-    wrecked = wrecks(frames)
+    wrecked = wrecks(frames) | placed(run, args)
     tops = {k: float(v) / 3.6 * 1.1 for k, v in args.get("top_kmh", {}).items()}
     foot = float(args.get("foot_mps", 9.6)) * 1.1
     buildings = args.get("buildings", [])
@@ -575,7 +601,7 @@ def check_roadblock(rec: PlayRecord, args: dict) -> Result:
     if k0 is None:
         return None, {}, "the level did not reach 3"
     t_rise = int(frames[k0].get("t", 0))
-    wrecked = wrecks(frames)
+    wrecked = wrecks(frames) | placed(run, args)
     roads = args["roads"]
     ahead = float(args.get("ahead_m", 300.0))
     end = t_rise + ticks(float(args.get("within_s", 90.0)))
@@ -820,6 +846,17 @@ def check_came_back(rec: PlayRecord, args: dict) -> Result:
     for key in ("money", "health", "armour"):
         if key in args and st.get(key) != args[key]:
             return False, measured, f"{key} is {st.get(key)}, not {args[key]}"
+    if "fine" in args:
+        before = player_state(frames[0]).get("money")
+        if isinstance(before, (int, float)):
+            want = max(0, int(before) - int(args["fine"]))
+            measured["money_before"] = before
+            if st.get("money") != want:
+                return (
+                    False,
+                    measured,
+                    f"money is {st.get('money')}, not {want} ({before} less the {args['fine']})",
+                )
     if "weapons" in args and sorted(st.get("weapons") or []) != sorted(args["weapons"]):
         return (
             False,
@@ -962,7 +999,7 @@ def check_left_alone(rec: PlayRecord, args: dict) -> Result:
     frames = frames_between(run, args["from"], args["to"])
     if not frames:
         return None, {}, "the marks were not reached"
-    wrecked = wrecks(frames)
+    wrecked = wrecks(frames) | placed(run, args)
     drop = None
     responded = {d.get("unit") for _t, d in events(frames, "police_dispatched")}
     for fr in frames:
@@ -1126,6 +1163,7 @@ CHECKS = {
     "alert_rise": check_alert_rise,
     "alert_steady": check_alert_steady,
     "alert_sequence": check_alert_sequence,
+    "alert_levels": check_alert_levels,
     "police_arrival": check_police_arrival,
     "police_count": check_police_count,
     "police_origin": check_police_origin,

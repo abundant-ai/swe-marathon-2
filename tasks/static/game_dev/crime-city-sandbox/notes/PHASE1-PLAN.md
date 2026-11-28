@@ -226,18 +226,18 @@ row, a row names no assertion, or an assertion's template is not in the catalog.
 | CB-7 | death | `combat.cover_firefight: kill_hits`, `combat.cover_firefight: kill_ragdoll`, `combat.weapons: pistol_kill` | P | no `died` event, death at the wrong hit, or no ragdoll |
 | CB-8 | cover cuts damage, firing from cover | `combat.cover_firefight: cover_cuts`, `combat.cover_firefight: fire_from_cover` | P | ratio over 0.4, cannot fire |
 | CB-9 | crew hostility and tactics | `combat.crew_hostility: turn_hostile_aim`, `combat.crew_hostility: turn_hostile_hit`, `combat.crew_hostility: lookouts_flee`, `combat.crew_hostility: enforcers_cover`, `combat.crew_hostility: enforcers_fire`, `combat.cover_firefight: retreat` | P | no hostility, hostile before 5 s, lookouts stay, under half reach cover, no fire, no retreat |
-| CB-10 | police force by level | `combat.police_force: by_level` | R | police shooting at level 1 |
-| AL-1 | crime events | `alert.crime_table: events` | P | a crime without its event |
-| AL-2 | reporting delays | `alert.red_light: police_witness`, `alert.phone_in: delay`, `alert.phone_in: dead_witness` | P | late rise, wrong phone-in time, a dead witness still reports |
+| CB-10 | police force by level | `alert.arrest: no_force`, `alert.roadblock: fight_back`, `combat.police_force: by_level` | P | police shooting at level 1, or never at level 3 |
+| AL-1 | crime events | `alert.crime_table: assault_event`, `alert.crime_table: burst_event`, `alert.crime_table: murder_event`, `alert.red_light: red_light_event`, `alert.phone_in: witnessed` | P | a crime without its event, a burst as many crimes |
+| AL-2 | reporting delays | `alert.crime_table: police_report`, `alert.red_light: police_report`, `alert.phone_in: phoned_in`, `alert.phone_in: dead_witness` | P | late rise, wrong phone-in time, a dead witness still reports |
 | AL-3 | unwitnessed crimes | `alert.unwitnessed: stays_zero`, `inv.alert_honest: witnessed_only` | R | the level rises without a witness |
-| AL-4 | alert rule and escalation | `alert.red_light: no_escalation`, `alert.crime_table: levels`, `alert.crime_table: escalation` | P | wrong level |
+| AL-4 | alert rule and escalation | `alert.crime_table: levels`, `alert.crime_table: honest` (and every alert playtest's `honest`, `inv.alert_honest`) | P | wrong level |
 | AL-5 | sight ranges | `alert.sight_range: inside`, `alert.sight_range: outside` | R | seen from outside the range, missed inside it |
 | AL-6 | response time and count | `alert.red_light: arrival`, `alert.response_levels: counts` | P | late, too few or too many units |
 | AL-7 | where police come from | `alert.red_light: origin`, `alert.red_light: kinematics` | P | appears near or in view, too fast, through walls |
-| AL-8 | roadblocks | `alert.roadblock: ahead`, `mission.heist: roadblock` | P | no roadblock within 90 s |
-| AL-9 | arrest | `alert.arrest: arrested`, `alert.arrest: consequences` | P | no arrest, wrong fine, weapons or place |
-| AL-10 | death and respawn | `alert.death: respawn`, `alert.death: fee` | P | wrong place, fee or level |
-| AL-11 | escape | `alert.escape: cooling_off`, `alert.escape: zone`, `inv.alert_honest: drops_only_on_escape` | P | drops early, never drops |
+| AL-8 | roadblocks | `alert.roadblock: roadblock`, `mission.heist: roadblock` | P | no roadblock within 90 s |
+| AL-9 | arrest | `alert.arrest: no_arrest_at_3m`, `alert.arrest: arrested`, `alert.arrest: came_back` | P | no arrest, an arrest from afar, wrong fine, weapons or place |
+| AL-10 | death and respawn | `alert.death: came_back` | P | wrong place, fee, health, armour or level |
+| AL-11 | escape | `alert.escape: escape_from_crime`, `alert.escape: escape_from_sighting`, `inv.alert_honest: drops_only_on_escape` | P | drops early, never drops, no re-centring |
 | AL-12 | ignored at level 0 | `alert.ignore_at_zero: no_pursuit` | R | police approach at level 0 |
 | MS-1 | contacts offer missions | `mission.delivery: accepted`, `mission.unlocks: locked_not_offered` | P | no start, a locked mission offered |
 | MS-2 | markers | `mission.delivery: markers` | P | marker far from its point, next shown early |

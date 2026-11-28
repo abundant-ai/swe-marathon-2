@@ -80,7 +80,8 @@ A playtest is a JSON file (format `qa-play/1`) in `playtests/`. Every value in i
     entity it belongs to, when it has them); any value in a query can be `{"$answer": [step,
     key]}`, as in `dev` (an entity named by the id a command answered with, for example);
   - `wait_for`: advance until an event arrives, or (`near`) tick by tick until an entity of a
-    kind stands within a distance of a point, horizontally (to press an action at that spot),
+    kind stands within a distance of a point, horizontally, with the metadata values in `meta`
+    when given (to press an action at that spot, or once a traffic light shows red),
     or (`entity`, by `id` or `kind`) tick by tick until its horizontal speed is at least
     `min_kmh` or at most `max_kmh`, or its position is below `below_y` (to brake at 60 km/h,
     or to act at a point of a fall);

@@ -923,7 +923,7 @@ data: Dictionary)`. The commands set up situations for development and QA.
 | `state` | none | The state report |
 
 `at` takes any anchor from `plan/FORMAT.md`, or `"player"` for the player's position. NPC
-behaviours: `idle` stands still; `wander` is the archetype behaviour of chapter 3; `guard` stands
+behaviours: `idle` stands still (a police officer too, at any alert level: it still witnesses, arrests a player within 2.0 m of it, and from level 3 fires from where it stands); `wander` is the archetype behaviour of chapter 3; `guard` stands
 and turns hostile when attacked; `hostile` attacks the player; `reckless` drives at up to 1.3 times
 the speed limit, ignoring signals. In seat 0 (`seat`), `wander` drives in traffic (a driving
 archetype), `reckless` drives that way, and `idle` holds the vehicle still.

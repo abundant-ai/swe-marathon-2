@@ -3548,6 +3548,635 @@ def crew_hostility() -> Playtest:
     return p
 
 
+# ------------------------------------------------------------------ crime and the police (chapter 9)
+ALERT_META = ["vehicle", "seat", "hostile", "limp", "weapon", "state", "approach"]
+ALERT_KINDS = ["player", "npc", "vehicle", "signal", "prop"]
+POLICE_TOP_KMH = {
+    "police": 210.0,
+    "tactical_van": 150.0,
+}  # chapter 6's table, the top of each band
+SPRINT_MPS = 9.6  # FT-1's sprint, the top of its band
+STATION = PLAN.pois["police_station_downtown"]
+HOSPITAL = PLAN.pois["hospital_downtown"]
+
+
+def alert_watch(
+    p: Playtest, every: int, shapes: bool = False, ids: list | None = None
+) -> None:
+    """Observe the census (police and everyone else, with the metadata the alert checks read,
+    the in-view flag and, when asked, vehicles' collision boxes), the state report, the camera
+    and the bones of the player and the people in `ids` (for QA's aiming bot)."""
+    census: dict = {"meta": ALERT_META, "kinds": ALERT_KINDS, "view": True}
+    if shapes:
+        census["shapes"] = ["vehicle"]
+    obs: dict = {"census": census, "state": True, "camera": True, "every": every}
+    if ids:
+        obs["bones"] = {"ids": ["player", *ids], "names": ARM_BONES}
+    p.step("observe", obs)
+
+
+def on_sidewalk(x: float, z: float) -> dict:
+    """The sidewalk anchor nearest to a point (every sidewalk ring sampled every 0.5 m)."""
+    best = None
+    for sid, sw in PLAN.sidewalks.items():
+        ring = sw["ring"]
+        total = sum(
+            math.dist(ring[i], ring[(i + 1) % len(ring)]) for i in range(len(ring))
+        )
+        s = 0.0
+        while s < total:
+            q = PLAN.sidewalk_point(sid, s).p
+            d = math.hypot(q[0] - x, q[2] - z)
+            if best is None or d < best[0]:
+                best = (d, sid, round(s, 1))
+            s += 0.5
+    return {"sidewalk": best[1], "s": best[2]}
+
+
+def buildings() -> list:
+    """Every building's footprint as [x, z] corners: each parcel with a height, inset by its
+    setback (plan FORMAT.md)."""
+    out = []
+    for parcel in PLAN.data["parcels"]:
+        if float(parcel.get("height_m", 0.0)) <= 0.0:
+            continue
+        poly = inset(parcel["poly"], float(parcel.get("setback_m", 0.0)))
+        out.append([[r2(x), r2(z)] for x, z in poly])
+    return out
+
+
+def road_sections(trim: float = 7.5) -> list:
+    """Every road as a section between junction boxes: its centreline from end a to end b
+    (trimmed `trim` m at each junction), its carriageway's width."""
+    out = []
+    for eid, e in PLAN.edges.items():
+        if e["class"] == "highway":
+            continue
+        pts = [[r2(x), r2(z)] for x, _y, z in PLAN.centreline(e)]
+        (ax, az), (bx, bz) = pts[0], pts[-1]
+        length = math.hypot(bx - ax, bz - az)
+        if length <= 2 * trim + 5.0:
+            continue
+        ux, uz = (bx - ax) / length, (bz - az) / length
+        pts = [
+            [r2(ax + ux * trim), r2(az + uz * trim)],
+            [r2(bx - ux * trim), r2(bz - uz * trim)],
+        ]
+        width = float(e["lane_width_m"]) * len(e["lanes"])
+        out.append({"id": eid, "pts": pts, "width": width})
+    return out
+
+
+def road_reach(starts: list[tuple[str, str]], limit: float = 450.0) -> dict:
+    """{"edge|dir": {edge: [metres from the far end of that edge, the way it is driven, to the
+    entry end of the other edge, "a" or "b"]}} by road (shortest, along the plan's edges in
+    their directions of travel; every turn but a U-turn onto the same edge), up to `limit`."""
+
+    def ends(eid: str, d: str) -> tuple[str, str]:
+        e = PLAN.edges[eid]
+        return (e["a"], e["b"]) if d == "ab" else (e["b"], e["a"])
+
+    def length(eid: str) -> float:
+        pts = PLAN.centreline(PLAN.edges[eid])
+        return sum(
+            math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][2] - pts[i][2])
+            for i in range(len(pts) - 1)
+        )
+
+    out = {}
+    for eid, d in starts:
+        far = ends(eid, d)[1]
+        best: dict = {}
+        todo = [(0.0, far, eid)]
+        while todo:
+            todo.sort()
+            dist, node, came = todo.pop(0)
+            for oid, o in PLAN.edges.items():
+                if o["class"] == "highway" or oid == came:
+                    continue
+                for od in ("ab", "ba"):
+                    if o["oneway"] and od == "ba":
+                        continue
+                    start, end = ends(oid, od)
+                    if start != node:
+                        continue
+                    if oid in best and best[oid][0] <= dist:
+                        continue
+                    best[oid] = [round(dist, 1), "a" if od == "ab" else "b"]
+                    nxt = dist + length(oid)
+                    if nxt <= limit:
+                        todo.append((nxt, end, oid))
+        out[f"{eid}|{d}"] = best
+    return out
+
+
+def alert_story(p: Playtest, police: list | None = None) -> None:
+    p.expect(
+        "honest", "alert_honest", {"from": "start", "to": "end", "police": police or []},
+        "AL-4",
+        "every rise of the level follows a crime a police officer saw at most 1.0 s before, or "
+        "one others saw 10-11 s before, to the level AL-4 gives; it drops only to 0, on an "
+        "escape, an arrest or a death",
+    )  # fmt: skip
+
+
+def crime_table() -> Playtest:
+    me = [-3.0, PLAZA_Y, 4.0]
+    p = Playtest(
+        "alert.crime_table/on-foot",
+        ["AL-1", "AL-2", "AL-4"],
+        "On the plaza with traffic and people set to none, a police officer stands 14 m ahead "
+        "of the player, watching. The player punches a tourist standing in front of them "
+        "(assault), then shoots a second tourist 10 m away dead with the pistol (a burst of "
+        "shots fired, an assault and a murder).",
+        ["--role=solo", "--variation=41", "--save-dir={save_dir}"],
+        limits={"wall_s": 300, "cpu_s": 600, "step_s": 120},
+    )
+    alert_watch(p, 1)
+    p.dev(("world.reset", {"variation": 41}))
+    p.dev(("traffic.set", {"density": 0}))
+    p.dev(("player.spawn", {"at": me, "heading": 0}))
+    p.dev(("player.give", {"weapon": "pistol", "ammo": 24}))
+    p.dev(("player.give", {"weapon": "fists"}))
+    cop = p.dev(person("police_officer", [me[0], PLAZA_Y, me[2] - 14.0], 180, "idle"))
+    first = p.dev(person("tourist", [me[0], PLAZA_Y, me[2] - 1.1], 180, "idle"))
+    second = p.dev(person("tourist", [me[0] + 6.0, PLAZA_Y, me[2] - 8.0], 225, "idle"))
+    alert_watch(p, 1, ids=[ans(second)])
+    p.step("run", 30)
+    p.mark("start")
+    p.mark("punch")
+    tap(p, "attack", 90)
+    p.mark("after_punch")
+    p.dev(("player.give", {"weapon": "pistol"}))
+    p.step("run", 20)
+    p.mark("shoot")
+    p.step(
+        "aim_at",
+        {
+            "entity": {"id": ans(second)},
+            "bone": "Chest",
+            "ticks": 150,
+            "hold": {"attack": 1.0},
+        },
+    )
+    p.step("run", 60)
+    p.mark("after_kill")
+    p.mark("end")
+    p.expect(
+        "assault_event", "crime_event",
+        {"from": "punch", "to": "after_punch", "type": "assault", "seen_by": [{"step": cop}], "within_s": 1.0,
+         "count": 1},
+        "AL-1",
+        "punching the tourist is one assault, its crime event within 1.0 s, the watching officer "
+        "among its witnesses",
+    )  # fmt: skip
+    p.expect(
+        "police_report", "alert_rise",
+        {"from": "punch", "to": "after_punch", "type": "assault", "level": 1, "max_s": 1.0},
+        "AL-2", "seen by a police officer, the assault raises the level to 1 within 1.0 s",
+    )  # fmt: skip
+    p.expect(
+        "burst_event", "crime_event",
+        {"from": "shoot", "to": "after_kill", "type": "shots_fired", "seen_by": [{"step": cop}], "count": 1},
+        "AL-1", "the rounds at the second tourist, less than 3 s apart, are one shots_fired",
+    )  # fmt: skip
+    p.expect(
+        "murder_event", "crime_event",
+        {"from": "shoot", "to": "after_kill", "type": "murder", "seen_by": [{"step": cop}], "count": 1,
+         "within_s": 3.0},
+        "AL-1", "killing the second tourist is one murder, seen by the officer",
+    )  # fmt: skip
+    p.expect(
+        "levels", "alert_levels", {"at": {"after_punch": 1, "after_kill": 4}},
+        "AL-4",
+        "the level is 1 after the assault (0 below its level 1), and 4 after the shooting: "
+        "shots fired takes 1 to 2 (below 2), the assault on the second tourist 2 to 3 (at or "
+        "above 1, one more), the murder 3 to 4 (at or above 2, one more)",
+    )  # fmt: skip
+    alert_story(p, [{"step": cop}])
+    del first
+    return p
+
+
+def phone_in() -> Playtest:
+    me = [-3.0, PLAZA_Y, 4.0]
+    p = Playtest(
+        "alert.phone_in/civilian",
+        ["AL-1", "AL-2"],
+        "On the plaza with traffic and people set to none and no police about. The player "
+        "punches a tourist while a shopper watches from 12 m: the shopper phones it in. After "
+        "a world reset, the player punches another tourist with a second shopper watching, "
+        "then shoots both dead within 10 s: nobody is left to phone it in.",
+        ["--role=solo", "--variation=42", "--save-dir={save_dir}"],
+        limits={"wall_s": 300, "cpu_s": 600, "step_s": 120},
+    )
+    alert_watch(p, 2)
+    p.dev(("world.reset", {"variation": 42}))
+    p.dev(("traffic.set", {"density": 0}))
+    p.dev(("player.spawn", {"at": me, "heading": 0}))
+    p.dev(("player.give", {"weapon": "fists"}))
+    p.dev(person("tourist", [me[0], PLAZA_Y, me[2] - 1.1], 180, "idle"))
+    watcher = p.dev(person("shopper", [me[0] + 8.0, PLAZA_Y, me[2] - 9.0], 220, "idle"))
+    p.step("run", 30)
+    p.mark("start")
+    p.mark("punch")
+    tap(p, "attack", 780)
+    p.mark("after_call")
+    p.dev(("world.reset", {"variation": 43}))
+    p.dev(("traffic.set", {"density": 0}))
+    p.dev(("player.spawn", {"at": me, "heading": 0}))
+    p.dev(("player.give", {"weapon": "pistol", "ammo": 36}))
+    p.dev(("player.give", {"weapon": "fists"}))
+    victim = p.dev(person("tourist", [me[0], PLAZA_Y, me[2] - 1.1], 180, "idle"))
+    second = p.dev(person("shopper", [me[0] + 8.0, PLAZA_Y, me[2] - 9.0], 220, "idle"))
+    alert_watch(p, 2, ids=[ans(victim), ans(second)])
+    p.step("run", 30)
+    p.mark("punch2")
+    tap(p, "attack", 30)
+    p.dev(("player.give", {"weapon": "pistol"}))
+    p.step("run", 20)
+    p.step(
+        "aim_at",
+        {
+            "entity": {"id": ans(victim)},
+            "bone": "Chest",
+            "ticks": 120,
+            "hold": {"attack": 1.0},
+        },
+    )
+    p.step(
+        "aim_at",
+        {
+            "entity": {"id": ans(second)},
+            "bone": "Chest",
+            "ticks": 150,
+            "hold": {"attack": 1.0},
+        },
+    )
+    p.step("run", 720)
+    p.mark("silent_end")
+    p.mark("end")
+    p.expect(
+        "witnessed", "crime_event",
+        {"from": "punch", "to": "after_call", "type": "assault", "seen_by": [{"step": watcher}]},
+        "AL-1", "the shopper watching from 12 m is among the assault's witnesses",
+    )  # fmt: skip
+    p.expect(
+        "phoned_in", "alert_rise",
+        {"from": "punch", "to": "after_call", "type": "assault", "level": 1, "min_s": 10.0, "max_s": 11.0},
+        "AL-2",
+        "seen only by a civilian, the assault raises the level 10 s (within 1 s) after it, to 1",
+    )  # fmt: skip
+    p.expect(
+        "dead_witness", "alert_steady", {"from": "punch2", "to": "silent_end", "level": 0},
+        "AL-2",
+        "with both witnesses shot dead within 10 s of each crime, nobody phones anything in: "
+        "the level stays 0 for 12 s after the last of them",
+    )  # fmt: skip
+    alert_story(p)
+    return p
+
+
+def red_light() -> Playtest:
+    stop = next(s for s in stop_lines("j_34") if s["approach"] == "j_34<e_33_34")
+    (x0, z0), (x1, z1) = stop["line"]
+    lane = "e_33_34:ab1"
+    start = PLAN.lane_point(lane, PLAN.lane_length(lane) - 70.0)
+    kerb_x = min(x0, x1) - 2.5
+    watcher_at = point(on_sidewalk(kerb_x, z0 - 6.0))
+    junction = PLAN.nodes["j_34"]["p"]
+    p = Playtest(
+        "alert.red_light/patrol",
+        ["AL-2", "AL-6", "AL-7"],
+        "Morning, traffic and people set to none. The player drives south on the arterial into "
+        "j_34 against its red light, with a police officer standing on the corner beside the "
+        "stop line; then drives on 120 m and stops. Police respond to level 1.",
+        ["--role=solo", "--variation=44", "--save-dir={save_dir}"],
+        limits={"wall_s": 600, "cpu_s": 1200, "step_s": 200},
+    )
+    p.raw["shared"] = {"buildings": buildings()}
+    alert_watch(p, 6)
+    p.dev(("world.reset", {"variation": 44}))
+    p.dev(("traffic.set", {"density": 0}))
+    cop = p.dev(person("police_officer", watcher_at, 90, "idle"))
+    car = p.dev(("vehicle.spawn", {"model": "sedan", "at": {"lane": lane, "s": round(PLAN.lane_length(lane) - 70.0, 2)},
+                             "driver": "player"}))  # fmt: skip
+    p.step("run", 30)
+    for state in ("green", "red"):  # the light just turned red
+        p.step("wait_for", {"near": {"kind": "signal", "p": [junction[0], 0.0, junction[2]], "within_m": 40.0,
+                                     "meta": {"approach": "j_34<e_33_34", "state": state}}, "max_ticks": 5400})  # fmt: skip
+    p.mark("start")
+    p.mark("drive")
+    p.step("cruise", {"entity": {"id": ans(car)}, "kmh": 40.0, "ticks": 900})
+    p.step("cruise", {"entity": {"id": ans(car)}, "kmh": 0.0, "ticks": 240})
+    p.mark("stopped")
+    p.step("run", 3600)
+    p.mark("end")
+    del start, x1, z1
+    p.expect(
+        "red_light_event", "crime_event",
+        {"from": "drive", "to": "stopped", "type": "red_light", "seen_by": [{"step": cop}], "within_s": 15.0,
+         "count": 1},
+        "AL-1", "crossing j_34's stop line on red is one red_light, seen by the officer on the corner",
+    )  # fmt: skip
+    p.expect(
+        "police_report", "alert_rise",
+        {"from": "drive", "to": "end", "type": "red_light", "level": 1, "max_s": 1.0},
+        "AL-2", "seen by the police officer, the red light raises the level to 1 within 1.0 s",
+    )  # fmt: skip
+    p.expect(
+        "arrival", "police_arrival",
+        {"from": "drive", "to": "end", "within_s": 60.0, "reach_m": 25.0, "ignore": [{"step": cop}],
+         "clear_m": 100.0},
+        "AL-6",
+        "at level 1 the first police unit (a police vehicle, or an officer on foot, other than "
+        "the officer on the corner) gets within 25 m of the player within 60 s",
+    )  # fmt: skip
+    p.expect(
+        "origin", "police_origin", {"from": "drive", "to": "end", "min_m": 100.0},
+        "AL-7",
+        "every police unit new to the world first appears at least 100 m from the player and "
+        "outside the camera's view",
+    )  # fmt: skip
+    p.expect(
+        "kinematics", "police_kinematics",
+        {"from": "drive", "to": "end", "top_kmh": POLICE_TOP_KMH, "foot_mps": SPRINT_MPS,
+         "buildings": {"$shared": "buildings"}},
+        "AL-7",
+        "police units move at most 1.1 times their model's top speed (210 km/h for police, 150 "
+        "km/h for the tactical van) or, on foot, 1.1 times the sprint's 9.6 m/s, and never stand "
+        "inside a building",
+    )  # fmt: skip
+    alert_story(p, [{"step": cop}])
+    return p
+
+
+def roadblock() -> Playtest:
+    lane = "e_04_14:ab1"
+    begin = PLAN.lane_point(lane, 12.0).p
+    eastbound = ["e_04_14", "e_14_24", "e_24_34", "e_34_44"]
+    p = Playtest(
+        "alert.roadblock/arterial",
+        ["AL-8", "CB-10"],
+        "Morning, traffic and people set to none. At the west end of the long east-west "
+        "arterial, the player shoots a police officer standing 10 m away (level 3), is put in "
+        "a sedan on the arterial's eastbound lane 10 s later and drives east at 15 km/h for 100 s.",
+        ["--role=solo", "--variation=45", "--save-dir={save_dir}"],
+        limits={"wall_s": 900, "cpu_s": 1800, "step_s": 300},
+    )
+    p.raw["shared"] = {
+        "roads": road_sections(),
+        "reach": road_reach([(e, "ab") for e in eastbound]),
+    }
+    alert_watch(p, 6, shapes=True)
+    p.dev(("world.reset", {"variation": 45}))
+    p.dev(("traffic.set", {"density": 0}))
+    me = on_sidewalk(begin[0] + 6.0, begin[2] + 6.0)
+    here = point(me)
+    p.dev(("player.spawn", {"at": me, "heading": 90}))
+    p.dev(("player.give", {"weapon": "pistol", "ammo": 24, "armour": 100}))
+    cop = p.dev(
+        person("police_officer", [here[0] + 10.0, here[1], here[2]], 270, "idle")
+    )
+    p.step("run", 30)
+    p.mark("start")
+    p.step("aim_at", {"entity": {"id": ans(cop)}, "bone": "Chest", "ticks": 40})
+    p.step(
+        "aim_at",
+        {
+            "entity": {"id": ans(cop)},
+            "bone": "Chest",
+            "ticks": 2,
+            "hold": {"attack": 1.0},
+        },
+    )
+    p.step("run", 60)
+    p.mark("level3")
+    p.step("run", 600)
+    p.mark("fought")
+    car = p.dev(
+        (
+            "vehicle.spawn",
+            {"model": "sedan", "at": {"lane": lane, "s": 12.0}, "driver": "player"},
+        )
+    )
+    p.step("run", 30)
+    p.mark("drive")
+    p.step("cruise", {"entity": {"id": ans(car)}, "kmh": 15.0, "ticks": 6000})
+    p.mark("end")
+    p.expect(
+        "roadblock", "roadblock",
+        {"from": "start", "to": "end", "within_s": 90.0, "ahead_m": 300.0, "roads": {"$shared": "roads"},
+         "reach": {"$shared": "reach"}},
+        "AL-8",
+        "within 90 s of level 3, while the player drives, at least two police vehicles stand "
+        "below 1 km/h across a road ahead (each within 30 degrees of square, together covering "
+        "70% of the carriageway) within 300 m by road along lanes the player can reach",
+    )  # fmt: skip
+    p.expect(
+        "fight_back", "police_force",
+        {"from": "start", "to": "fought", "fight": True, "within_s": 15.0},
+        "CB-10",
+        "from level 3 the police fight: the officer 10 m away, with a clear line to the player, "
+        "lands a hit within 15 s",
+    )  # fmt: skip
+    del begin
+    alert_story(p, [{"step": cop}])
+    return p
+
+
+def arrest() -> Playtest:
+    me = [-3.0, PLAZA_Y, 4.0]
+    p = Playtest(
+        "alert.arrest/standing",
+        ["AL-9", "CB-10"],
+        "On the plaza with traffic and people set to none. The player, holding a pistol and "
+        "$1,200, punches a tourist with a police officer watching from 3.0 m (level 1) and "
+        "stands still for 6 s; then the player is put 1.0 m from the officer and stands still.",
+        ["--role=solo", "--variation=46", "--save-dir={save_dir}"],
+        limits={"wall_s": 300, "cpu_s": 600, "step_s": 120},
+    )
+    alert_watch(p, 1)
+    p.dev(("world.reset", {"variation": 46}))
+    p.dev(("traffic.set", {"density": 0}))
+    p.dev(("player.spawn", {"at": me, "heading": 0}))
+    p.dev(("player.give", {"weapon": "pistol", "ammo": 24, "money": 700}))
+    p.dev(("player.give", {"weapon": "fists"}))
+    cop = p.dev(person("police_officer", [me[0] + 3.0, PLAZA_Y, me[2]], 270, "idle"))
+    p.dev(person("tourist", [me[0], PLAZA_Y, me[2] - 1.1], 180, "idle"))
+    p.step("run", 30)
+    p.mark("start")
+    tap(p, "attack", 360)
+    p.mark("kept_off")
+    p.dev(("player.spawn", {"at": [me[0] + 2.0, PLAZA_Y, me[2]], "heading": 90}))
+    p.step("run", 2)
+    p.mark("beside")
+    p.step("run", 900)
+    p.mark("end")
+    p.expect(
+        "no_arrest_at_3m", "arrest",
+        {"from": "start", "to": "kept_off", "officer": {"step": cop}, "expect": False},
+        "AL-9", "with the officer 3.0 m off the player is not arrested",
+    )  # fmt: skip
+    p.expect(
+        "arrested", "arrest",
+        {"from": "beside", "to": "end", "officer": {"step": cop}, "near_m": 2.0, "min_s": 3.0, "max_s": 3.5},
+        "AL-9",
+        "at level 1, standing still with the officer 1.0 m away, the player is arrested 3.0 s "
+        "(to 3.5 s) after the officer stood within 2.0 m",
+    )  # fmt: skip
+    p.expect(
+        "came_back", "came_back",
+        {"from": "beside", "to": "end", "after": "arrested", "poi": STATION["id"], "respawn": STATION["respawn"],
+         "within_s": 10.0, "fine": 500, "weapons": ["fists"]},
+        "AL-9",
+        "within 10 s of the arrest the player comes back (a teleport and a respawned event) "
+        "within 2 m of the police station's respawn point, at level 0, with only fists and "
+        "$500 less",
+    )  # fmt: skip
+    p.expect(
+        "no_force", "police_force", {"from": "start", "to": "end"},
+        "CB-10", "at level 1 the officer arrests: it never hits the player nor turns hostile",
+    )  # fmt: skip
+    alert_story(p, [{"step": cop}])
+    return p
+
+
+def death() -> Playtest:
+    me = [-3.0, PLAZA_Y, 4.0]
+    p = Playtest(
+        "alert.death/during-alert",
+        ["AL-10"],
+        "On the plaza with traffic and people set to none. The player, holding a pistol, 30 "
+        "armour and $180, punches a tourist with a police officer watching from 25 m (level "
+        "1); two seconds later the player's health is set to 0.",
+        ["--role=solo", "--variation=47", "--save-dir={save_dir}"],
+        limits={"wall_s": 300, "cpu_s": 600, "step_s": 120},
+    )
+    alert_watch(p, 2)
+    p.dev(("world.reset", {"variation": 47}))
+    p.dev(("traffic.set", {"density": 0}))
+    p.dev(("player.spawn", {"at": me, "heading": 0}))
+    p.dev(("player.give", {"weapon": "pistol", "ammo": 24, "armour": 30}))
+    p.dev(("player.give", {"weapon": "fists"}))
+    cop = p.dev(person("police_officer", [me[0], PLAZA_Y, me[2] - 25.0], 180, "idle"))
+    p.dev(person("tourist", [me[0], PLAZA_Y, me[2] - 1.1], 180, "idle"))
+    p.step("run", 30)
+    p.mark("start")
+    tap(p, "attack", 120)
+    p.mark("before")
+    p.dev(("player.give", {"health": 0}))
+    p.step("run", 900)
+    p.mark("end")
+    p.expect(
+        "came_back", "came_back",
+        {"from": "before", "to": "end", "after": "died", "poi": HOSPITAL["id"], "respawn": HOSPITAL["respawn"],
+         "within_s": 10.0, "fine": 250, "health": 100, "armour": 0, "weapons": ["fists", "pistol"]},
+        "AL-10",
+        "within 10 s of dying the player comes back (a teleport and a respawned event) within "
+        "2 m of the hospital's respawn point with 100 health, 0 armour, level 0, $250 less, "
+        "keeping the pistol",
+    )  # fmt: skip
+    alert_story(p, [{"step": cop}])
+    return p
+
+
+def interior_point(parcel_id: str) -> list[float]:
+    """The middle of the far half of a parcel's main room, away from its door."""
+    parcel = next(pc for pc in PLAN.data["parcels"] if pc["id"] == parcel_id)
+    room = parcel["interior"]["rooms"][0]
+    xs = [q[0] for q in room["poly"]]
+    zs = [q[1] for q in room["poly"]]
+    door = parcel["interior"]["door"]["p"]
+    cx, cz = (min(xs) + max(xs)) / 2.0, (min(zs) + max(zs)) / 2.0
+    fx = cx + (cx - door[0]) * 0.5
+    fz = cz + (cz - door[1]) * 0.5
+    return [r2(fx), float(room["floor_m"]), r2(fz)]
+
+
+def escape() -> Playtest:
+    me = [-3.0, PLAZA_Y, 4.0]
+    hides = []
+    for pc in PLAN.data["parcels"]:
+        if pc.get("interior") and pc["interior"].get("rooms"):
+            q = interior_point(pc["id"])
+            hides.append((math.hypot(q[0] - me[0], q[2] - me[2]), pc["id"], q))
+    hides.sort()
+    hide = next(q for d, _pid, q in hides if d > 140.0)
+    seen_at = [me[0] - 60.0, PLAZA_Y, me[2] + 20.0]
+    seen_spot = on_sidewalk(seen_at[0], seen_at[2])
+    seen_pt = point(seen_spot)
+    hide2 = next(
+        q
+        for d, _pid, q in [
+            (math.hypot(h[2][0] - seen_pt[0], h[2][2] - seen_pt[2]), h[1], h[2])
+            for h in hides
+        ]
+        if d > 140.0
+    )
+    p = Playtest(
+        "alert.escape/hide",
+        ["AL-11"],
+        "On the plaza with traffic and people set to none and no police about. The player "
+        "punches a tourist with only a shopper watching; once the shopper's call raises the "
+        "level to 1, the player is put indoors far away and waits. After a world reset the same "
+        "again, but before hiding the player stands 5 s on a sidewalk with a police officer "
+        "watching from 20 m, then is put indoors far from there.",
+        ["--role=solo", "--variation=48", "--save-dir={save_dir}"],
+        limits={"wall_s": 600, "cpu_s": 1200, "step_s": 200},
+    )
+    alert_watch(p, 6)
+    for run, (vari, see) in enumerate(((48, False), (49, True))):
+        p.dev(("world.reset", {"variation": vari}))
+        p.dev(("traffic.set", {"density": 0}))
+        p.dev(("player.spawn", {"at": me, "heading": 0}))
+        p.dev(("player.give", {"weapon": "fists"}))
+        p.dev(person("tourist", [me[0], PLAZA_Y, me[2] - 1.1], 180, "idle"))
+        p.dev(person("shopper", [me[0] + 8.0, PLAZA_Y, me[2] - 9.0], 220, "idle"))
+        p.step("run", 30)
+        if run == 0:
+            p.mark("start")
+        p.mark(f"crime_{run}")
+        tap(p, "attack", 0)
+        p.step("wait_for", {"event": "alert_changed", "max_ticks": 900})
+        p.step("run", 6)
+        if see:
+            p.dev(("player.spawn", {"at": seen_spot, "heading": 0}))
+            p.dev(
+                person(
+                    "police_officer",
+                    [seen_pt[0], seen_pt[1], seen_pt[2] - 20.0],
+                    180,
+                    "idle",
+                )
+            )
+            p.step("run", 300)
+            p.dev(("player.spawn", {"at": hide2, "heading": 0}))
+        else:
+            p.dev(("player.spawn", {"at": hide, "heading": 0}))
+        p.mark(f"hidden_{run}")
+        p.step("run", 1800)
+        p.mark(f"waited_{run}")
+    p.mark("end")
+    p.expect(
+        "escape_from_crime", "escape",
+        {"from": "crime_0", "to": "waited_0", "anchor": "hidden_0", "cooling_s": 20.0, "slack_s": 3.0},
+        "AL-11",
+        "with no unit having seen the player, the zone is centred on the crime: put indoors "
+        "more than 140 m away, the player has escaped after level 1's cooling-off time, 20 s "
+        "(the level drops to 0 from 20 s to 23 s after the move, not before)",
+    )  # fmt: skip
+    p.expect(
+        "escape_from_sighting", "escape",
+        {"from": "crime_1", "to": "waited_1", "anchor": "hidden_1", "cooling_s": 20.0, "slack_s": 3.0},
+        "AL-11",
+        "seen by an officer on the sidewalk, the zone re-centres there: put indoors more than 140 "
+        "m from that spot, the level drops to 0 from 20 s to 23 s after the move, not before",
+    )  # fmt: skip
+    alert_story(p)
+    return p
+
+
 BUILDERS = (
     bad_input, commands, state_report, new_game, server_role, same_start, replay,
     same_tick, clock_rate, weather_hold, kill_after_save, damaged_slot, realtime,
@@ -3555,6 +4184,7 @@ BUILDERS = (
     intersection_watch, handling_cars, handling_service, vehicle_entry, crash,
     intersection_flow, stop_junction, obstacle, speed_limits, panic_horn, replay_car_ragdoll,
     weapons_range, lock_on, armour, cover_firefight, crew_hostility,
+    crime_table, phone_in, red_light, roadblock, arrest, death, escape,
 )  # fmt: skip
 
 

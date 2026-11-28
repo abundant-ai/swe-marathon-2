@@ -1,0 +1,310 @@
+{
+ "format": "qa-play/1",
+ "name": "alert.crime_table/on-foot",
+ "template": "alert.crime_table",
+ "about": "On the plaza with traffic and people set to none, a police officer stands 14 m ahead of the player, watching. The player punches a tourist standing in front of them (assault), then shoots a second tourist 10 m away dead with the pistol (a burst of shots fired, an assault and a murder).",
+ "rules": ["AL-1", "AL-2", "AL-4"],
+ "role": "solo",
+ "args": ["--role=solo", "--variation=41", "--save-dir={save_dir}"],
+ "mode": "lockstep",
+ "runs": [
+  {
+   "pace_ms": 0
+  }
+ ],
+ "limits": {
+  "wall_s": 300,
+  "boot_s": 60,
+  "step_s": 120,
+  "cpu_s": 600,
+  "memory_mb": 1536,
+  "disk_mb": 512
+ },
+ "steps": [
+  {
+   "observe": {
+    "census": {
+     "meta": ["vehicle", "seat", "hostile", "limp", "weapon", "state", "approach"],
+     "kinds": ["player", "npc", "vehicle", "signal", "prop"],
+     "view": true
+    },
+    "state": true,
+    "camera": true,
+    "every": 1
+   }
+  },
+  {
+   "dev": [
+    [
+     "world.reset",
+     {
+      "variation": 41
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "traffic.set",
+     {
+      "density": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.spawn",
+     {
+      "at": [-3.0, 0.15, 4.0],
+      "heading": 0
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "weapon": "pistol",
+      "ammo": 24
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "weapon": "fists"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "police_officer",
+      "at": [-3.0, 0.15, -10.0],
+      "heading": 180,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "tourist",
+      "at": [-3.0, 0.15, 2.9],
+      "heading": 180,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "dev": [
+    [
+     "npc.spawn",
+     {
+      "archetype": "tourist",
+      "at": [3.0, 0.15, -4.0],
+      "heading": 225,
+      "behaviour": "idle"
+     }
+    ]
+   ]
+  },
+  {
+   "observe": {
+    "census": {
+     "meta": ["vehicle", "seat", "hostile", "limp", "weapon", "state", "approach"],
+     "kinds": ["player", "npc", "vehicle", "signal", "prop"],
+     "view": true
+    },
+    "state": true,
+    "camera": true,
+    "every": 1,
+    "bones": {
+     "ids": [
+      "player",
+      {
+       "$answer": [8, "id"]
+      }
+     ],
+     "names": ["RightHand", "RightLowerArm", "RightUpperArm", "Head", "Hips", "Chest"]
+    }
+   }
+  },
+  {
+   "run": 30
+  },
+  {
+   "mark": "start"
+  },
+  {
+   "mark": "punch"
+  },
+  {
+   "press": {
+    "attack": 1.0
+   }
+  },
+  {
+   "run": 1
+  },
+  {
+   "release": ["attack"]
+  },
+  {
+   "run": 90
+  },
+  {
+   "mark": "after_punch"
+  },
+  {
+   "dev": [
+    [
+     "player.give",
+     {
+      "weapon": "pistol"
+     }
+    ]
+   ]
+  },
+  {
+   "run": 20
+  },
+  {
+   "mark": "shoot"
+  },
+  {
+   "aim_at": {
+    "entity": {
+     "id": {
+      "$answer": [8, "id"]
+     }
+    },
+    "bone": "Chest",
+    "ticks": 150,
+    "hold": {
+     "attack": 1.0
+    }
+   }
+  },
+  {
+   "run": 60
+  },
+  {
+   "mark": "after_kill"
+  },
+  {
+   "mark": "end"
+  }
+ ],
+ "expect": [
+  {
+   "id": "assault_event",
+   "check": "crime_event",
+   "args": {
+    "from": "punch",
+    "to": "after_punch",
+    "type": "assault",
+    "seen_by": [
+     {
+      "step": 6
+     }
+    ],
+    "within_s": 1.0,
+    "count": 1
+   },
+   "rule": "AL-1",
+   "says": "punching the tourist is one assault, its crime event within 1.0 s, the watching officer among its witnesses"
+  },
+  {
+   "id": "police_report",
+   "check": "alert_rise",
+   "args": {
+    "from": "punch",
+    "to": "after_punch",
+    "type": "assault",
+    "level": 1,
+    "max_s": 1.0
+   },
+   "rule": "AL-2",
+   "says": "seen by a police officer, the assault raises the level to 1 within 1.0 s"
+  },
+  {
+   "id": "burst_event",
+   "check": "crime_event",
+   "args": {
+    "from": "shoot",
+    "to": "after_kill",
+    "type": "shots_fired",
+    "seen_by": [
+     {
+      "step": 6
+     }
+    ],
+    "count": 1
+   },
+   "rule": "AL-1",
+   "says": "the rounds at the second tourist, less than 3 s apart, are one shots_fired"
+  },
+  {
+   "id": "murder_event",
+   "check": "crime_event",
+   "args": {
+    "from": "shoot",
+    "to": "after_kill",
+    "type": "murder",
+    "seen_by": [
+     {
+      "step": 6
+     }
+    ],
+    "count": 1,
+    "within_s": 3.0
+   },
+   "rule": "AL-1",
+   "says": "killing the second tourist is one murder, seen by the officer"
+  },
+  {
+   "id": "levels",
+   "check": "alert_levels",
+   "args": {
+    "at": {
+     "after_punch": 1,
+     "after_kill": 4
+    }
+   },
+   "rule": "AL-4",
+   "says": "the level is 1 after the assault (0 below its level 1), and 4 after the shooting: shots fired takes 1 to 2 (below 2), the assault on the second tourist 2 to 3 (at or above 1, one more), the murder 3 to 4 (at or above 2, one more)"
+  },
+  {
+   "id": "honest",
+   "check": "alert_honest",
+   "args": {
+    "from": "start",
+    "to": "end",
+    "police": [
+     {
+      "step": 6
+     }
+    ]
+   },
+   "rule": "AL-4",
+   "says": "every rise of the level follows a crime a police officer saw at most 1.0 s before, or one others saw 10-11 s before, to the level AL-4 gives; it drops only to 0, on an escape, an arrest or a death"
+  }
+ ],
+ "tags": []
+}
